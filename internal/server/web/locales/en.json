@@ -767,7 +767,7 @@
   "obs_peer_no_peers": "no peers registered",
   "obs_peer_resources": "Peer Resources",
   "obs_backend_health": "Backend Health",
-"obs_certificates": "Certificates",
+  "obs_certificates": "Certificates",
   "obs_backend_none": "no backends configured",
   "obs_backend_unavailable": "unavailable",
   "obs_envelopes": "Envelopes",
@@ -1662,5 +1662,8 @@
   "community_plugins_install_success": "Installed",
   "community_plugins_install_failed": "Install failed",
   "community_plugins_not_connected": "This registry isn't connected yet.",
-  "community_plugins_connect": "Connect"
+  "community_plugins_connect": "Connect",
+  "settings_audit_access_log_enabled": "Log HTTP/WS access + auth failures",
+  "settings_audit_retention_days": "Audit log retention (days, -1 = never prune)",
+  "settings_audit_cef_mirror_enabled": "Mirror audit logs in CEF format (for SIEM)"
 }

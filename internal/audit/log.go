@@ -11,6 +11,7 @@ package audit
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -32,6 +33,7 @@ type Log struct {
 	mu   sync.Mutex
 	path string
 	f    *os.File
+	cef  *os.File // CEF mirror (nil unless EnableCEFMirror succeeded)
 }
 
 // New opens (or creates) the operator audit log file at <dir>/audit.log.
@@ -62,20 +64,47 @@ func NewAt(path string) (*Log, error) {
 	return &Log{path: path, f: f}, nil
 }
 
-// Close flushes + closes the underlying file.
+// EnableCEFMirror (AGENT.md's Audit Logging Rule) opens <path>.cef and
+// starts appending a CEF-formatted line alongside every JSON-lines
+// Write, for operators forwarding to a SIEM. The JSON-lines file stays
+// the sole source Read/Prune operate on — CEF is an additive mirror,
+// not a format switch, since Read can't parse CEF lines back into
+// Entry. Safe to call at most once per Log; a second call is a no-op.
+func (l *Log) EnableCEFMirror() error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.cef != nil {
+		return nil
+	}
+	f, err := os.OpenFile(l.path+".cef", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return err
+	}
+	l.cef = f
+	return nil
+}
+
+// Close flushes + closes the underlying file(s).
 func (l *Log) Close() error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if l.f == nil {
-		return nil
+	var err error
+	if l.f != nil {
+		err = l.f.Close()
+		l.f = nil
 	}
-	err := l.f.Close()
-	l.f = nil
+	if l.cef != nil {
+		if cerr := l.cef.Close(); err == nil {
+			err = cerr
+		}
+		l.cef = nil
+	}
 	return err
 }
 
 // Write appends one entry. Caller-supplied timestamp wins; zero gets
-// time.Now().
+// time.Now(). Also appends a CEF line to the mirror file when
+// EnableCEFMirror has been called.
 func (l *Log) Write(e Entry) error {
 	if e.Timestamp.IsZero() {
 		e.Timestamp = time.Now()
@@ -91,6 +120,13 @@ func (l *Log) Write(e Entry) error {
 	}
 	if _, err := l.f.Write(append(line, '\n')); err != nil {
 		return err
+	}
+	if l.cef != nil {
+		if _, err := io.WriteString(l.cef, FormatCEFLine(e)+"\n"); err != nil {
+			// CEF mirror is best-effort (SIEM forwarding, not the source
+			// of truth) — don't fail the real write over it.
+			fmt.Fprintf(os.Stderr, "[audit] CEF mirror write failed for %s.cef: %v\n", l.path, err)
+		}
 	}
 	return nil
 }

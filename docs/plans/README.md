@@ -1516,6 +1516,20 @@ _(Historical: every numbered feature pre-BL241 has shipped. Mempalace alignment 
 > agent-cluster events) and `auth/audit.jsonl` (git-token-broker events)
 > were both correctly wired, just legitimately empty — neither one was
 > ever a general access/auth-failure log.
+> **Phase 1 gap closure shipped (v8.74.0):** an explicit AGENT.md
+> re-check (operator-instructed) found 8 real gaps against Phase 1's
+> own first pass — CEF mirror support (Audit Logging Rule), the
+> version bump itself (feature = minor, shipped as patch by mistake),
+> this plan's missing required `## Parity surface` section,
+> config/doc/MCP-doc parity, Prometheus + in-process observability,
+> and the `release-smoke.sh` extension. Full repo suite (3268 tests)
+> and a full smoke run (185 passed, 0 failed, 35 skipped) both clean
+> before tagging, per the minor-release cadence rule. See the plan
+> doc's "Phase 1 gap closure" section for the itemized list, including
+> the two items explicitly left as pre-existing, flagged gaps rather
+> than fixed (no `docs/cursor-mcp.md` entry since this tool's sibling
+> `audit_query` was never added there either; no `app.js` Monitor card
+> since `web_search_*`'s stats fields never got one either).
 > **Phases 2-5 not started** — cross-federation-hop actor attribution
 > (a real open design question, not a quick fix), chained-children
 > (F10 `ParentAgentID`) threading into the audit trail, the full

@@ -5,6 +5,37 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.74.0 — feat: GH#201/BL399 Phase 1 gap closure — AGENT.md compliance for the access log
+
+### Added
+- CEF (ArcSight) mirror output for `internal/audit.Log` — AGENT.md's
+  Audit Logging Rule requires every audit-style event be emittable as
+  both JSON-lines and CEF. New `Log.EnableCEFMirror()` additively
+  writes a CEF-formatted line to `<path>.cef` alongside every entry
+  (JSON-lines stays the sole source `Read`/`Prune` operate on, since
+  CEF can't be a format switch on a log the daemon's own REST/MCP
+  surface reads back). Config: `audit.cef_mirror_enabled` (default
+  false). New `internal/audit/cef.go` + `cef_test.go` (header/extension
+  escaping, every signature/severity triple, mirror-write property).
+- `audit.*` config fields now round-trip through `GET`/`PUT
+  /api/config`, a new PWA "Audit & Access Log" settings card (3 new
+  locale keys × 5 bundles), `docs/config-reference.yaml`, and
+  `docs/implementation.md`.
+- `datawatch_access_log_events_total{action,principal_kind}` Prometheus
+  counter and `AccessLogEnabled`/`AccessLogEventsTotal`/
+  `AccessLogAuthFailuresTotal` on `GET /api/stats` (in-process counts).
+- `docs/mcp.md` gained a full `audit_access_query` entry (parameter
+  table + example); `docs/operations.md` gained an "Audit & Access
+  Logging" section; `scripts/release-smoke.sh` section 66.
+- Plan doc (`docs/plans/2026-10-09-gh201-audit-completeness.md`) now
+  has the required `## Parity surface` section, a status-at-a-glance
+  table, and a reusable release checklist mapped to AGENT.md's Section
+  A/B/C — full smoke run clean (185 pass, 0 fail, 35 skip) before this
+  tag, per the minor-release cadence rule.
+- Version bump corrected to minor (v8.74.0) — Phase 1 itself shipped as
+  a patch (v8.73.41) by mistake; "every completed feature = minor bump"
+  per AGENT.md's Versioning rule.
+
 ## v8.73.41 — feat: GH#201/BL399 Phase 1 — HTTP access / WS lifecycle / auth-failure log
 
 ### Added

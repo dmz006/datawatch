@@ -1662,5 +1662,8 @@
   "community_plugins_install_success": "Installiert",
   "community_plugins_install_failed": "Installation fehlgeschlagen",
   "community_plugins_not_connected": "Diese Registry ist noch nicht verbunden.",
-  "community_plugins_connect": "Verbinden"
+  "community_plugins_connect": "Verbinden",
+  "settings_audit_access_log_enabled": "HTTP/WS-Zugriffe + Authentifizierungsfehler protokollieren",
+  "settings_audit_retention_days": "Audit-Log-Aufbewahrung (Tage, -1 = nie löschen)",
+  "settings_audit_cef_mirror_enabled": "Audit-Logs im CEF-Format spiegeln (für SIEM)"
 }

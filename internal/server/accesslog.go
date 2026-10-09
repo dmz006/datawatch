@@ -22,10 +22,14 @@ import (
 	"net"
 	"net/http"
 	"strconv"
+	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/dmz006/datawatch/internal/audit"
 	"github.com/dmz006/datawatch/internal/federation"
+	"github.com/dmz006/datawatch/internal/metrics"
+	"github.com/dmz006/datawatch/internal/stats"
 )
 
 // SetAccessLog wires the HTTP/WS access log used by /api/audit/access.
@@ -33,6 +37,15 @@ func (s *Server) SetAccessLog(l *audit.Log) { s.accessLog = l }
 
 // AccessLog returns the wired access log (nil if disabled).
 func (s *Server) AccessLog() *audit.Log { return s.accessLog }
+
+// PopulateAccessLogStats (GH#201, DATAWATCH-CONTEXT.md's Observability
+// checklist) fills the access-log fields on a stats snapshot. Wired via
+// stats.Collector.SetAccessLogStatsFunc at daemon startup.
+func (s *Server) PopulateAccessLogStats(out *stats.SystemStats) {
+	out.AccessLogEnabled = s.accessLog != nil && (s.cfg == nil || s.cfg.Audit.AccessLogEnabledOrDefault())
+	out.AccessLogEventsTotal = atomic.LoadInt64(&s.accessLogEventCount)
+	out.AccessLogAuthFailuresTotal = atomic.LoadInt64(&s.accessLogAuthFailCount)
+}
 
 // principalFromContext resolves which fedAuthMiddleware branch accepted
 // this request into a short, loggable label. Never includes the token
@@ -53,6 +66,18 @@ func principalFromContext(ctx context.Context) string {
 	return "unauthenticated"
 }
 
+// principalKind reduces a principal string ("peer:demo-ios", "proxy:x",
+// "admin", "session-scoped", "unauthenticated") to its coarse category
+// for Prometheus labeling — the exact peer/proxy name must never become
+// a label value, since that's unbounded cardinality (a new value per
+// peer ever added, never cleaned up from the metric's label set).
+func principalKind(principal string) string {
+	if i := strings.IndexByte(principal, ':'); i >= 0 {
+		return principal[:i]
+	}
+	return principal
+}
+
 // logAccess appends one http_access or auth_failure entry to the access
 // log. No-op when the access log isn't wired or is disabled in config.
 func (s *Server) logAccess(r *http.Request, status int, principal string) {
@@ -65,6 +90,11 @@ func (s *Server) logAccess(r *http.Request, status int, principal string) {
 	action := "http_access"
 	if status == http.StatusUnauthorized {
 		action = "auth_failure"
+	}
+	metrics.AccessLogEventsTotal.WithLabelValues(action, principalKind(principal)).Inc()
+	atomic.AddInt64(&s.accessLogEventCount, 1)
+	if action == "auth_failure" {
+		atomic.AddInt64(&s.accessLogAuthFailCount, 1)
 	}
 	_ = s.accessLog.Write(audit.Entry{
 		Actor:  principal,

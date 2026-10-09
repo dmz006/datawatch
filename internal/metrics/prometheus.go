@@ -84,6 +84,15 @@ var (
 		[]string{"level"},
 	)
 
+	// GH#201 — HTTP access / WS lifecycle / auth-failure log.
+	AccessLogEventsTotal = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "datawatch_access_log_events_total",
+			Help: "Total access-log events (http_access, auth_failure, ws_connect, ws_disconnect) by action and resolved principal kind",
+		},
+		[]string{"action", "principal_kind"},
+	)
+
 	// RTK metrics
 	RTKTokensSaved = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "datawatch_rtk_tokens_saved_total",
@@ -148,6 +157,7 @@ func Register() {
 		SessionsActive, SessionsTotal,
 		CPUUsage, MemoryUsed, DiskUsed, DaemonRSS, Goroutines, UptimeSeconds,
 		MessagesTotal, AlertsTotal,
+		AccessLogEventsTotal,
 		RTKTokensSaved, RTKSavingsPct,
 		VerifierDiffInjectionsTotal,
 		InjectionGuardHitsTotal,

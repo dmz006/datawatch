@@ -113,7 +113,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.73.41"
+var Version = "8.74.0"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -3508,11 +3508,20 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		} else {
 			fmt.Printf("[warn] compute registry init: %v\n", computeInitErr)
 		}
+		// AGENT.md's Audit Logging Rule — inject the real version into
+		// every CEF line this package writes (avoids an import cycle).
+		auditpkg.SetCEFVersionFn(func() string { return Version })
+
 		// BL9 — open the operator audit log under the data dir.
 		var wiredAuditLog, wiredAccessLog *auditpkg.Log
 		if auditLog, err := auditpkg.New(expandHome(cfg.DataDir)); err == nil {
 			httpServer.SetAuditLog(auditLog)
 			wiredAuditLog = auditLog
+			if cfg.Audit.CEFMirrorEnabled {
+				if err := auditLog.EnableCEFMirror(); err != nil {
+					fmt.Printf("[warn] audit log CEF mirror failed: %v\n", err)
+				}
+			}
 		} else {
 			fmt.Printf("[warn] audit log open failed: %v\n", err)
 		}
@@ -3524,6 +3533,11 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			if accessLog, err := auditpkg.NewAt(filepath.Join(expandHome(cfg.DataDir), "access.log")); err == nil {
 				httpServer.SetAccessLog(accessLog)
 				wiredAccessLog = accessLog
+				if cfg.Audit.CEFMirrorEnabled {
+					if err := accessLog.EnableCEFMirror(); err != nil {
+						fmt.Printf("[warn] access log CEF mirror failed: %v\n", err)
+					}
+				}
 			} else {
 				fmt.Printf("[warn] access log open failed: %v\n", err)
 			}
@@ -6057,6 +6071,8 @@ Return STRICT JSON:
 				s.MemoryKeyFP = ms.KeyFingerprint
 			})
 		}
+		// GH#201 — HTTP access / WS lifecycle / auth-failure log stats.
+		statsCollector.SetAccessLogStatsFunc(httpServer.PopulateAccessLogStats)
 		// BL367 — autonomous quality gate stats in WS broadcast.
 		if autonomousMgrRef != nil {
 			amgrRef := autonomousMgrRef

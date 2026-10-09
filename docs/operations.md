@@ -844,6 +844,51 @@ journalctl --user -u datawatch -f
 
 ---
 
+## Audit & Access Logging
+
+Two append-only JSON-lines logs under `data_dir`:
+
+- **`audit.log`** — operator action log: session/config/etc. state
+  changes (`start`, `kill`, `send_input`, `configure`, `rollback`,
+  `schedule`, ...). Query: `GET /api/audit` or the `audit_query` MCP
+  tool.
+- **`access.log`** — every HTTP request/response, auth failure, and
+  WebSocket connect/disconnect, from all of CLI, REST, and MCP (all
+  three are HTTP clients against the same `/api/*` surface behind one
+  auth middleware, so this one log covers all three). Query:
+  `GET /api/audit/access` or the `audit_access_query` MCP tool, both
+  taking `actor`, `action`, `since`, `until`, `limit`.
+
+Neither log ever records the `Authorization` header or a token/nonce
+value — only request metadata (method, path, status, remote IP, user
+agent) and the resolved principal (`admin`, `session-scoped`,
+`peer:<name>`, `proxy:<name>`, or `unauthenticated`).
+
+**Retention**: `audit.retention_days` (default 30; negative = never
+prune) applies to both logs, pruned at daemon startup and every 24h.
+
+**SIEM forwarding**: set `audit.cef_mirror_enabled: true` to
+additionally write a CEF-formatted line (`audit.log.cef`,
+`access.log.cef`) alongside every entry — point your Splunk/QRadar/
+ArcSight/Sentinel forwarder at the `.cef` file. The JSON-lines file
+stays the one the daemon's own REST/MCP query surface reads.
+
+**Metrics**: `datawatch_access_log_events_total{action,principal_kind}`
+(Prometheus, `/metrics`) and `access_log_events_total`/
+`access_log_auth_failures_total` on `GET /api/stats` (in-process
+counts, reset on restart — the Prometheus counter is the durable one).
+
+Example — find every successful connection and auth failure from a new
+IP in the last day:
+```bash
+curl -s "$DATAWATCH_API_URL/api/audit/access?action=http_access&since=$(date -u -d '1 day ago' +%Y-%m-%dT%H:%M:%SZ)" \
+  -H "Authorization: Bearer $DATAWATCH_TOKEN" | jq -r '.entries[].details.remote_ip' | sort -u
+curl -s "$DATAWATCH_API_URL/api/audit/access?action=auth_failure" \
+  -H "Authorization: Bearer $DATAWATCH_TOKEN" | jq '.entries'
+```
+
+---
+
 ## 7. Network Security
 
 ### Listener Overview

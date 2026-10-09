@@ -3343,6 +3343,39 @@ else
   fi
 fi
 
+H "66. GH#201 — HTTP access / WS lifecycle / auth-failure log (/api/audit/access)"
+if [[ -z "$TOK" ]]; then
+  skip "S66 — sandbox admin token is empty"
+else
+  AL_CODE=$(curl "${curl_args[@]}" -s -o /dev/null -w '%{http_code}' \
+    -H "Authorization: Bearer $TOK" \
+    "$BASE/api/audit/access?limit=1" 2>/dev/null || echo "000")
+  if [[ "$AL_CODE" == "200" ]]; then
+    ok "S66 — GET /api/audit/access returns 200"
+  else
+    ko "S66 — GET /api/audit/access returned $AL_CODE, expected 200"
+  fi
+
+  BAD_TOKEN="smoke-bad-token-$$"
+  curl "${curl_args[@]}" -s -o /dev/null \
+    -H "Authorization: Bearer $BAD_TOKEN" \
+    "$BASE/api/sessions" 2>/dev/null || true
+  sleep 0.3
+  AL_ENTRIES=$(curl "${curl_args[@]}" -s \
+    -H "Authorization: Bearer $TOK" \
+    "$BASE/api/audit/access?action=auth_failure&limit=5" 2>/dev/null || echo "")
+  if echo "$AL_ENTRIES" | grep -q '"action":"auth_failure"'; then
+    ok "S66 — a bad-token request is recorded as an auth_failure entry"
+  else
+    ko "S66 — expected an auth_failure entry after a bad-token request: ${AL_ENTRIES:0:300}"
+  fi
+  if echo "$AL_ENTRIES" | grep -q "$BAD_TOKEN"; then
+    ko "S66 — access-log entry contains the raw bad token value (must never log tokens)"
+  else
+    ok "S66 — access-log entries never contain a raw token value"
+  fi
+fi
+
 # ---------------------------------------------------------------------------
 H "Summary"
 echo "  Pass:  $PASS"

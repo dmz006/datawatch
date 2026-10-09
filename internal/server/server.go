@@ -930,6 +930,12 @@ func (s *HTTPServer) SetAccessLog(l *audit.Log) {
 	s.api.SetAccessLog(l)
 }
 
+// PopulateAccessLogStats (GH#201) forwards to the api Server for wiring
+// into stats.Collector.SetAccessLogStatsFunc.
+func (s *HTTPServer) PopulateAccessLogStats(out *stats.SystemStats) {
+	s.api.PopulateAccessLogStats(out)
+}
+
 // SetSecretsStore (BL242) wires the centralized secrets store for /api/secrets.
 func (s *HTTPServer) SetSecretsStore(st secretsStore) {
 	s.api.SetSecretsStore(st)

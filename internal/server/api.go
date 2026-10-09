@@ -19,6 +19,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/dmz006/datawatch/internal/acme"
@@ -38,6 +39,7 @@ import (
 	"github.com/dmz006/datawatch/internal/llm/backends/opencode"
 	"github.com/dmz006/datawatch/internal/llm/backends/openwebui"
 	"github.com/dmz006/datawatch/internal/memory"
+	"github.com/dmz006/datawatch/internal/metrics"
 	"github.com/dmz006/datawatch/internal/messaging"
 	"github.com/dmz006/datawatch/internal/profile"
 	"github.com/dmz006/datawatch/internal/proxy"
@@ -184,7 +186,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.73.41"
+var Version = "8.74.0"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -247,7 +249,9 @@ type Server struct {
 	auditLog *audit.Log
 
 	// GH#201 — HTTP access / WS lifecycle / auth-failure log.
-	accessLog *audit.Log
+	accessLog               *audit.Log
+	accessLogEventCount     int64 // atomic
+	accessLogAuthFailCount  int64 // atomic
 
 	// BL242 — centralized secrets store.
 	secretsStore secretsStore
@@ -2005,6 +2009,8 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	wsRemoteIP := remoteIP(r)
 	wsUA := r.Header.Get("User-Agent")
 	if s.accessLog != nil && (s.cfg == nil || s.cfg.Audit.AccessLogEnabledOrDefault()) {
+		metrics.AccessLogEventsTotal.WithLabelValues("ws_connect", principalKind(wsPrincipal)).Inc()
+		atomic.AddInt64(&s.accessLogEventCount, 1)
 		_ = s.accessLog.Write(audit.Entry{
 			Actor:  wsPrincipal,
 			Action: "ws_connect",
@@ -2034,6 +2040,8 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		s.hub.unregister <- c
 		_ = conn.Close()
 		if s.accessLog != nil && (s.cfg == nil || s.cfg.Audit.AccessLogEnabledOrDefault()) {
+			metrics.AccessLogEventsTotal.WithLabelValues("ws_disconnect", principalKind(wsPrincipal)).Inc()
+			atomic.AddInt64(&s.accessLogEventCount, 1)
 			_ = s.accessLog.Write(audit.Entry{
 				Actor:  wsPrincipal,
 				Action: "ws_disconnect",
@@ -5135,6 +5143,12 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 				"hot_swap": s.cfg.Acme.Apply.HotSwap,
 			},
 		},
+		// GH#201 — HTTP access / WS lifecycle / auth-failure log.
+		"audit": map[string]interface{}{
+			"access_log_enabled": s.cfg.Audit.AccessLogEnabledOrDefault(),
+			"retention_days":     s.cfg.Audit.RetentionDaysOrDefault(),
+			"cef_mirror_enabled": s.cfg.Audit.CEFMirrorEnabled,
+		},
 		"signal": map[string]interface{}{
 			"enabled":        s.cfg.Signal.AccountNumber != "",
 			"account_number": s.cfg.Signal.AccountNumber,
@@ -5984,6 +5998,16 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			cfg.Acme.DNS01.ZoneID = toString(v)
 		case "acme.apply.hot_swap":
 			cfg.Acme.Apply.HotSwap = toBool(v)
+		// GH#201 — HTTP access / WS lifecycle / auth-failure log.
+		case "audit.access_log_enabled":
+			b := toBool(v)
+			cfg.Audit.AccessLogEnabled = &b
+		case "audit.retention_days":
+			if n, ok := toInt(v); ok {
+				cfg.Audit.RetentionDays = n
+			}
+		case "audit.cef_mirror_enabled":
+			cfg.Audit.CEFMirrorEnabled = toBool(v)
 		case "mcp.enabled":
 			cfg.MCP.Enabled = toBool(v)
 		case "mcp.sse_host":

@@ -54,12 +54,12 @@ Browse the catalog in-app (Settings → Skills → Registry) or on GitHub. To co
 
 ## Current release
 
-**Current release: v8.73.2 (2026-10-07).** Fixed the federated-server picker
-never appearing (and switching to a remote host hanging with no status or
-error) — see below. A v9.0.0 major-version milestone is staged and fully
-E2E-validated but not yet tagged, pending a final release-checklist pass;
-ordinary fixes continue shipping on the 8.x line until then. Full detail:
-[CHANGELOG.md](CHANGELOG.md).
+**Current release: v8.74.0 (2026-10-09).** Added an HTTP access / WebSocket
+lifecycle / auth-failure log — see "Audit & Access Logging" in
+[operations.md](docs/operations.md). A v9.0.0 major-version milestone is
+staged and fully E2E-validated but not yet tagged, pending a final
+release-checklist pass; ordinary fixes continue shipping on the 8.x line
+until then. Full detail: [CHANGELOG.md](CHANGELOG.md).
 
 - **[v8.72.0](CHANGELOG.md)** — Three-finger swipe now opens a real
   server-picker overlay (server list + an explicit "Add server" action)

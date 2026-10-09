@@ -2,12 +2,36 @@
 
 - **Date**: 2026-10-09
 - **Version at planning**: v8.73.40
-- **Status**: Phase 1 shipped. Phases 2-5 planned, not started.
+- **Status**: Phase 1 shipped (v8.73.41) and gap-closed (v8.74.0 — see
+  "Phase 1 gap closure" below). Phases 2-5 planned, not started.
 - **Filed by**: datawatch-app, operator-requested — could not confirm
   whether Apple TestFlight reviewers had connected to the demo server;
   no HTTP access log, no WS connect/disconnect log, no auth-failure log,
   and the existing operator audit log stops after 3 seed entries (later
   session/config/Automata changes are missing).
+- **Scope**: `internal/audit` (new CEF capability), `internal/server`
+  (`accesslog.go`, `federation_cap.go`, `api.go`, `server.go`),
+  `internal/config/config.go`, `internal/metrics/prometheus.go`,
+  `internal/stats/collector.go`, `internal/mcp` (`server.go`,
+  `sx_parity.go`), `internal/federation/mcp_tool_caps.go`,
+  `internal/server/web/app.js` + 5 locale bundles,
+  `scripts/release-smoke.sh`, `docs/config-reference.yaml`,
+  `docs/implementation.md`, `docs/operations.md`, `docs/mcp.md`.
+
+## Status at a glance
+
+| Phase | What | Status | Shipped in |
+|---|---|---|---|
+| 1 | HTTP access / WS lifecycle / auth-failure log — core | ✅ Done | v8.73.41 |
+| 1 (gaps) | AGENT.md compliance closure (CEF, config/doc/MCP parity, observability, smoke, release checklist) | ✅ Done | v8.74.0 |
+| 2 | Federation-hop actor attribution | ⬜ Not started — open design questions, see below | — |
+| 3 | Chained-children (`ParentAgentID`) in the agent audit trail | ⬜ Not started | — |
+| 4 | State-changing-action completeness sweep | ⬜ Not started | — |
+| 5 | Create-alert API + MCP tool | ⬜ Not started | — |
+
+Update this table (and each phase's own Status line) every time a
+phase's state changes — this is the first thing anyone re-opening this
+plan should be able to trust without reading the whole document.
 
 ## What already existed (don't rebuild this)
 
@@ -76,6 +100,126 @@ Everything in this phase is done, tested, and on `main`:
 - Tests: `internal/audit/log_test.go` (Prune, NewAt),
   `internal/server/gh201_accesslog_test.go` (middleware logs both
   success and failure, the no-token-in-log property, the REST handler).
+
+## Phase 1 gap closure ✅ shipped (v8.74.0)
+
+Phase 1 initially shipped without checking AGENT.md first — a direct
+operator instruction ("make sure plan follows AGENT.md and
+DATAWATCH-CONTEXT.md rules") caught 8 real gaps against the Audit
+Logging Rule, Versioning, Planning Rules, and the Documentation/
+Config-Parity/Observability checklists. All closed in this version:
+
+1. **CEF support (the one that actually changed the design).**
+   AGENT.md's Audit Logging Rule requires every audit-style event be
+   emittable as *both* JSON-lines and CEF. `internal/audit.Log` only
+   did JSON-lines. Unlike `internal/agents/audit.go`'s `FileAuditor`
+   (one format per file, chosen at construction — fine for F10's low-
+   volume agent events), this package's logs are read back by their
+   own REST/MCP query surface, so CEF can't be a format *switch* (CEF
+   isn't JSON; `Read()` would break). Implemented as an additive
+   **mirror**: `Log.EnableCEFMirror()` opens `<path>.cef` and every
+   `Write()` appends a CEF line there too, alongside the unaffected
+   JSON-lines file. New `internal/audit/cef.go`:
+   `FormatCEFLine`/`cefSignature`/escape helpers, gated by
+   `cfg.Audit.CEFMirrorEnabled` (default false — opt-in, most operators
+   don't run a SIEM). `cefSignature` maps the 4 new access-log actions
+   plus the operator-log actions named in `audit/log.go`'s own doc
+   comment (`start`/`kill`/`send_input`/`configure`/`rollback`/
+   `schedule`); anything else gets a stable generic fallback
+   (sigID 0, "AuditEvent", severity 3) — add a case here as each new
+   Action is introduced (Phase 4 will add several), not an exhaustive
+   upfront list. Tests: `internal/audit/cef_test.go` — header
+   pipe/backslash escaping, extension `=`/`\`/`\n`/`\r` escaping, every
+   (signatureID, name, severity) triple, and the mirror-writes-
+   alongside-JSON property.
+2. **Versioning.** "Every completed feature = minor bump" — Phase 1
+   (new log, new endpoint, new MCP tool, new config section) is a
+   feature, not a patch; it shipped as v8.73.41 (patch) by mistake.
+   Per "never reuse a version," that can't be un-shipped — this
+   gap-closure commit is the minor bump instead (v8.74.0), since the
+   feature genuinely isn't complete without this closure anyway.
+3. **This plan was missing its required `## Parity surface` section**
+   (Planning Rules item 8) — added below.
+4. **Config parity (B6).** `cfg.Audit.{AccessLogEnabled,RetentionDays,
+   CEFMirrorEnabled}` now round-trip through `GET`/`PUT /api/config`
+   (`handleGetConfig`'s map, `applyConfigPatch`'s switch —
+   `audit.access_log_enabled`, `audit.retention_days`,
+   `audit.cef_mirror_enabled`), a PWA settings card
+   (`GENERAL_CONFIG_FIELDS`'s new `audit` section in `app.js`, 3 new
+   locale keys × 5 bundles), `docs/config-reference.yaml`, and
+   `docs/implementation.md`'s config table. Known limitation, not yet
+   fixed: changing `retention_days` or `cef_mirror_enabled` live via
+   `PUT /api/config` updates the config value but doesn't re-trigger
+   `EnableCEFMirror()` on the already-open `*audit.Log` — takes effect
+   on next restart, same as several other structural config fields in
+   this codebase.
+5. **New-MCP-tool checklist.** `audit_access_query` documented in
+   `docs/mcp.md` under Available Tools (parameter table + example) and
+   added to the tool-family summary row. `docs/cursor-mcp.md` was
+   skipped — `audit_query`, this tool's own sibling, was never added
+   there either; adding only the new one would be more misleading than
+   the pre-existing gap. Flagged, not silently worked around.
+6. **Observability (B7).** `datawatch_access_log_events_total{action,
+   principal_kind}` Prometheus counter (`internal/metrics/
+   prometheus.go`) — labeled by the *coarse* principal kind
+   (`principalKind()` strips everything after `:`), never the exact
+   peer/proxy name, which would be unbounded label cardinality.
+   `stats.SystemStats` gained `AccessLogEnabled`/`AccessLogEventsTotal`/
+   `AccessLogAuthFailuresTotal` (in-process counts since daemon start,
+   wired via `Collector.SetAccessLogStatsFunc` →
+   `Server.PopulateAccessLogStats`, mirroring the existing
+   `memoryStatsFn` pattern exactly). **Not done**: a `renderStatsData()`
+   Monitor card in `app.js` — checked, and the much older `web_search_*`
+   stats fields never got one either; flagged as a real, pre-existing
+   gap in this codebase's own B7 compliance, not newly introduced here,
+   and not fixed in this pass.
+7. **CI check (A11).** `gh run list` checked after every push in this
+   phase; see the Release Checklist below for the actual run.
+8. `docs/operations.md` gained an "Audit & Access Logging" section
+   (event types, retention, CEF, metrics, a worked `curl`/`jq`
+   example) — referenced from the new `docs/config-reference.yaml`
+   `audit:` block's comment.
+
+**Confirmed fine, not a gap**: CHANGELOG.md's `GH#201`/`BL399`
+references were briefly suspected to violate the no-internal-tracker-
+IDs rule — re-read the actual current rule text (corrected 2026-10-07)
+and CHANGELOG.md is explicitly whitelisted as archaeology material,
+same as `docs/plans/*.md`. No change needed.
+
+## Parity surface
+
+- **REST**: `GET /api/audit/access` (new, Phase 1). `GET`/`PUT
+  /api/config`'s `audit.*` keys (new, gap closure). Every other
+  `/api/*` route gets the *access-logging* side effect automatically
+  via `fedAuthMiddleware` — not a new endpoint per route, the whole
+  surface is covered by construction.
+- **MCP**: `audit_access_query` (new, mirrors `audit_query`,
+  `CapAuditRead`). No new tool needed for the config keys — they ride
+  the existing generic `config_set`/`get_config` tools.
+- **CLI**: no new subcommand. CLI traffic is itself one of the three
+  surfaces `/api/audit/access` now has visibility *into* (confirmed:
+  `cli_*.go` subcommands are `http.NewRequest` clients against the same
+  REST surface) — adding a dedicated `datawatch audit access` CLI verb
+  would be reasonable future polish but isn't required for the
+  logging/query function to work, and wasn't asked for.
+- **Comm channel**: excluded. There's no existing precedent for
+  exposing audit/security logs through a chat-style comm channel
+  (Signal/Discord/etc.), and doing so would mean a log entry — however
+  filtered — reaching a possibly-group-shared channel. Deliberately
+  not built; revisit only if explicitly requested.
+- **YAML/config**: `audit.access_log_enabled`, `audit.retention_days`,
+  `audit.cef_mirror_enabled` (new, gap closure).
+- **PWA**: new "Audit & Access Log" settings card (gap closure, 3
+  toggles/fields). No dedicated log *viewer* UI (e.g. a tailing view of
+  `/api/audit/access`'s entries) — out of scope for this phase; the
+  REST/MCP query surface is the intended consumption path for now
+  (datawatch-app's own visitor-monitor tool is the first real
+  consumer).
+- **Android / iPhone**: excluded. This is a daemon-operator surface
+  (who's hitting *my* server), not a per-device end-user feature either
+  mobile app would show its own user. No mobile-parity issue filed —
+  confirmed there's nothing on either app's side this logging
+  duplicates or needs to match.
 
 ## Phase 2 — thread provenance through federation hops (not started)
 
@@ -195,3 +339,65 @@ create-alert API once it exists). Phase 1 is ready to report now.
   federated to each other) before calling cross-hop attribution done —
   a unit test against a single daemon can't prove a forwarded-header
   design actually survives a real hop.
+
+## Release checklist
+
+Filled in per release for this feature, mapping AGENT.md's Section A/B/
+C tables to what this specific plan touches — copy this block forward
+to the next phase's commit and tick it again rather than re-deriving it
+from AGENT.md each time.
+
+### Every commit (AGENT.md Section A) — this commit
+
+- [x] A1 — rules: Audit Logging Rule, Versioning, Planning Rules
+  (Parity surface), Documentation Rules (general checklist + new-MCP-
+  tool checklist), Project Tracking, Testing Requirements (B6/B7/B12/
+  B16)
+- [x] A2 — `go test ./...`: 3268 passed, 0 failed
+- [x] A3 — `version: v8.74.0 (both files)`
+- [x] A4 — `changelog: added`
+- [x] A5 — `readme: updated`
+- [x] A6 — `backlog: refactored` (BL399 entry updated)
+- [x] A7 — `id-check: clean` (CHANGELOG's GH#/BL# refs are whitelisted
+  archaeology material; README's new line has none)
+- [x] A8 — `leak-check: clean`
+- [x] A9 — `node-check: ok`
+- [x] A10 — `make-build: ok`
+- [ ] A11 — `ci: <pending — check after push>`
+
+### Conditional, this feature's actual triggers (AGENT.md Section B)
+
+| # | Trigger | Applies here? | Status |
+|---|---|---|---|
+| B1 | New/changed endpoint contract | Yes — `GET /api/audit/access` | ✅ `docs/testing-tracker.md` entries added each phase |
+| B2 | New PWA user-facing string | Yes — 3 audit settings keys (gap closure) | ✅ 5 locales updated |
+| B3 | New high-visibility locale key | No — settings-card fields, not nav/action chips | N/A |
+| B4 | Operator-visible PWA change | Yes — new settings card | Not yet filed as a `datawatch-app` comment — this is a daemon-operator surface, not something either mobile app renders; revisit if that judgment turns out wrong |
+| B6 | New/changed config field | Yes — `audit.*` | ✅ YAML+REST+MCP+CLI(generic)+PWA done this phase; comm excluded (see Parity surface) |
+| B7 | New feature, observability | Yes | ✅ Prometheus + in-process stats done; Monitor card explicitly not done (pre-existing gap pattern, flagged not fixed) |
+| B8 | New feature, access-method docs | Yes | ✅ `docs/operations.md` new section |
+| B12 | New operator-facing endpoint | Yes — smoke section 66 added | ✅ |
+| B16 | New audit-event-emitting code path | Yes | ✅ CEF + escape tests added (`internal/audit/cef_test.go`) |
+
+### Release cadence (AGENT.md Section C) — this is a minor release
+
+- [x] C1 — `dep-audit: N/A` (no new dependency this phase — only
+  stdlib `fmt`/`sort`/`strings`/`os`/`io` plus the already-vendored
+  `prometheus` client)
+- [x] C2 — `gosec: clean` (516 pre-existing findings repo-wide, none in
+  `internal/audit/cef.go`, `internal/server/accesslog.go`,
+  `internal/metrics/prometheus.go`, or `internal/stats/collector.go`)
+- [x] C3 — `smoke: 66 sections, 185 passed, 35 skipped, 0 failed`
+  (section 66 itself skipped — sandbox has no admin token configured,
+  identical to its neighbor section 65, not a regression)
+
+### Phase-specific gate before marking any future phase ✅ Done
+
+Don't mark a phase done in the status table above until:
+1. Its own unit tests pass (`go test ./...` clean).
+2. Its own `docs/testing-tracker.md` row exists.
+3. The Release checklist above has been run for the commit(s) that
+   shipped it.
+4. This plan doc's "Status at a glance" table and the phase's own
+   heading are both updated in the same commit — not left to a
+   follow-up.

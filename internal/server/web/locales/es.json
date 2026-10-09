@@ -1662,5 +1662,8 @@
   "community_plugins_install_success": "Instalado",
   "community_plugins_install_failed": "Error al instalar",
   "community_plugins_not_connected": "Este registro aún no está conectado.",
-  "community_plugins_connect": "Conectar"
+  "community_plugins_connect": "Conectar",
+  "settings_audit_access_log_enabled": "Registrar accesos HTTP/WS + fallos de autenticación",
+  "settings_audit_retention_days": "Retención del registro de auditoría (días, -1 = nunca purgar)",
+  "settings_audit_cef_mirror_enabled": "Duplicar registros de auditoría en formato CEF (para SIEM)"
 }

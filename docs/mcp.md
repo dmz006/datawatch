@@ -250,7 +250,7 @@ shape.
 | Templates / scheduling / cooldown | `template_list/upsert/delete`, `schedule_list/add/cancel`, `cooldown_status/set/clear` |
 | Devices + routing | `device_alias_list/upsert/delete`, `routing_rules_list/test` |
 | Channel bridge | `channel_info`, `channel_diagnostics` |
-| Cost + audit + config + alerts | `cost_summary/usage/rates`, `analytics`, `audit_query`, `get_config`, `config_set`, `get_stats`, `get_version`, `diagnose`, `reload`, `restart_daemon`, `splash_info`, `get_alerts`, `mark_alert_read` |
+| Cost + audit + config + alerts | `cost_summary/usage/rates`, `analytics`, `audit_query`, `audit_access_query`, `get_config`, `config_set`, `get_stats`, `get_version`, `diagnose`, `reload`, `restart_daemon`, `splash_info`, `get_alerts`, `mark_alert_read` |
 | Saved commands | `list_saved_commands`, `send_saved_command` |
 | Ask / assist | `ask`, `assist` |
 | Voice | (no MCP tools — REST `/api/voice/transcribe` + chat-channel auto-handle) |
@@ -399,6 +399,30 @@ Send a reply to a session waiting for input.
 **Example response:**
 ```
 Input sent to session a3f2.
+```
+
+---
+
+### `audit_access_query`
+
+Query the HTTP access / WebSocket lifecycle / auth-failure log (GH#201). Newest-first. Never returns a token or the Authorization header — only request metadata and the resolved principal.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `actor` | string | No | Filter by resolved principal: `admin`, `session-scoped`, `peer:<name>`, `proxy:<name>`, `unauthenticated` |
+| `action` | string | No | Filter by event type: `http_access`, `auth_failure`, `ws_connect`, `ws_disconnect` |
+| `since` | string | No | RFC3339 lower bound |
+| `until` | string | No | RFC3339 upper bound |
+| `limit` | number | No | Max entries (default 100) |
+
+**Example — auth failures in the last day:**
+```
+audit_access_query(action="auth_failure", since="2026-10-08T00:00:00Z")
+```
+```json
+{"count":1,"entries":[{"ts":"2026-10-09T02:14:03Z","actor":"unauthenticated","action":"auth_failure","details":{"method":"GET","path":"/api/sessions","status":401,"remote_ip":"198.51.100.4","user_agent":"curl/8.4.0"}}]}
 ```
 
 ---

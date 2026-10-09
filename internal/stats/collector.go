@@ -136,6 +136,14 @@ type SystemStats struct {
 	WebSearchQueriesTotal int64     `json:"web_search_queries_total,omitempty"`
 	WebSearchErrorsTotal  int64     `json:"web_search_errors_total,omitempty"`
 	WebSearchLastQueryAt  time.Time `json:"web_search_last_query_at,omitempty"`
+
+	// GH#201 — HTTP access / WS lifecycle / auth-failure log. Counts are
+	// since daemon start (in-process, reset on restart); the durable,
+	// cross-restart totals are the datawatch_access_log_events_total
+	// Prometheus counter.
+	AccessLogEnabled           bool  `json:"access_log_enabled,omitempty"`
+	AccessLogEventsTotal       int64 `json:"access_log_events_total,omitempty"`
+	AccessLogAuthFailuresTotal int64 `json:"access_log_auth_failures_total,omitempty"`
 }
 
 // CommChannelStat holds detailed stats for a communication channel or LLM backend.
@@ -222,6 +230,10 @@ type Collector struct {
 
 	// memoryStatsFn populates episodic memory metrics
 	memoryStatsFn func(*SystemStats)
+
+	// accessLogStatsFn (GH#201) populates HTTP access / WS lifecycle /
+	// auth-failure log fields.
+	accessLogStatsFn func(*SystemStats)
 
 	// autonomousStatsFn populates autonomous quality gate metrics
 	autonomousStatsFn func(*SystemStats)
@@ -311,6 +323,12 @@ func (c *Collector) SetDaemonNetFunc(fn func() (uint64, uint64)) {
 // SetRTKFunc sets a callback that populates RTK fields on each stats snapshot.
 func (c *Collector) SetRTKFunc(fn func(*SystemStats)) {
 	c.rtkFn = fn
+}
+
+// SetAccessLogStatsFunc (GH#201) sets a callback that populates the
+// access-log fields on each stats snapshot.
+func (c *Collector) SetAccessLogStatsFunc(fn func(*SystemStats)) {
+	c.accessLogStatsFn = fn
 }
 
 // SetMemoryStatsFunc sets a callback that populates episodic memory stats on each snapshot.
@@ -446,6 +464,9 @@ func (c *Collector) collect() {
 	}
 	if c.commStatsFn != nil {
 		s.CommStats = c.commStatsFn()
+	}
+	if c.accessLogStatsFn != nil {
+		c.accessLogStatsFn(&s)
 	}
 
 	// RTK integration stats

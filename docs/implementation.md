@@ -657,6 +657,9 @@ All fields in `~/.datawatch/config.yaml`:
 | `web_search.url` | string | `""` | Base URL of the SearXNG instance (required when enabled). |
 | `web_search.engine` | string | `bing` | SearXNG engine to use. Only `bing` is reliable; others trigger CAPTCHA/rate-limiting. |
 | `web_search.num_results` | int | `10` | Maximum results returned per query. |
+| `audit.access_log_enabled` | bool | `true` | Log every HTTP request/response, auth failure, and WS connect/disconnect to `access.log` (method, path, status, remote IP, user agent, resolved principal — never the token). |
+| `audit.retention_days` | int | `30` | Prune entries older than this from both `audit.log` and `access.log`. Negative = never prune. |
+| `audit.cef_mirror_enabled` | bool | `false` | Additionally write a CEF-formatted line (`<file>.cef`) alongside every entry, for SIEM forwarding. |
 
 ### Dependencies
 
@@ -683,6 +686,9 @@ All persistent data is stored in `~/.datawatch/` (or `data_dir` if overridden):
 | `commands.json` | Named reusable command library (SavedCommand records) |
 | `filters.json` | Output filter rules (FilterPattern records) |
 | `alerts.json` | Persistent system alert log |
+| `audit.log` | Operator action log (session/config/etc. state changes) — JSON-lines |
+| `access.log` | HTTP access / WS lifecycle / auth-failure log — JSON-lines |
+| `audit.log.cef`, `access.log.cef` | CEF mirror of the above, written only when `audit.cef_mirror_enabled: true` |
 | `logs/<hostname>-<id>.log` | Per-session output log |
 | `tls/server/` | Auto-generated TLS certificate/key (when `tls_auto_generate: true`) |
 | `daemon.pid` | PID file written in daemon mode |

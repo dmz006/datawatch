@@ -1010,6 +1010,12 @@ type AuditConfig struct {
 	// operator audit log and the access log. 0 = use the default (30).
 	// Negative disables pruning (keep forever).
 	RetentionDays int `yaml:"retention_days,omitempty"`
+	// CEFMirrorEnabled (AGENT.md's Audit Logging Rule), default false,
+	// additionally writes a CEF-formatted line (<file>.cef) alongside
+	// every JSON-lines entry in both audit.log and access.log, for
+	// forwarding to a SIEM (Splunk/QRadar/ArcSight/Sentinel). Opt-in —
+	// most operators don't run a SIEM and don't need the second file.
+	CEFMirrorEnabled bool `yaml:"cef_mirror_enabled,omitempty"`
 }
 
 // AccessLogEnabledOrDefault returns the effective access-log setting,

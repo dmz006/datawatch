@@ -430,6 +430,23 @@ push:
     # false (default) = api.push.apple.com (App Store builds)
     sandbox: false
 
+# HTTP access / WS lifecycle / auth-failure log. See operations.md
+# "Audit & Access Logging".
+audit:
+  # Log every HTTP request/response, auth failure, and WS connect/
+  # disconnect to <data_dir>/access.log (method, path, status, remote
+  # IP, user agent, resolved principal -- never the Authorization
+  # header or a token value). Separate from the operator action log
+  # (audit.log) since request volume is much higher.
+  access_log_enabled: true
+  # Prune entries older than this from both audit.log and access.log.
+  # 0 = use the default (30). Negative = never prune.
+  retention_days: 30
+  # Additionally write a CEF-formatted line (<file>.cef) alongside every
+  # entry in both logs, for forwarding to a SIEM (Splunk/QRadar/
+  # ArcSight/Sentinel). Opt-in -- most operators don't run a SIEM.
+  cef_mirror_enabled: false
+
 # ── LLM Backends ──
 # AI coding assistant backend configurations. Each has optional console_cols/console_rows for terminal size.
 ollama:

@@ -13605,6 +13605,12 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'session.summarizer.llm_ref', label: 'Summarizer LLM', labelKey: 'session_summarizer_llm', type: 'llm_summarizer' },
     { key: 'session.summarizer.model', label: 'Summarizer model', type: 'summarizer_model' },
   ]},
+  // GH#201 — HTTP access / WS lifecycle / auth-failure log.
+  { id: 'audit', section: 'Audit & Access Log', fields: [
+    { key: 'audit.access_log_enabled', label: 'Log HTTP/WS access + auth failures', labelKey: 'settings_audit_access_log_enabled', type: 'toggle' },
+    { key: 'audit.retention_days', label: 'Audit log retention (days, -1 = never prune)', labelKey: 'settings_audit_retention_days', type: 'number', placeholder: '30' },
+    { key: 'audit.cef_mirror_enabled', label: 'Mirror audit logs in CEF format (for SIEM)', labelKey: 'settings_audit_cef_mirror_enabled', type: 'toggle' },
+  ]},
   // v5.19.0 — RTK section moved out of General (operator: "should only
   // be in LLM"). The fuller version with auto_update + update_check_interval
   // lives in LLM_CONFIG_FIELDS at the same id='rtk'.
