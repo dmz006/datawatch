@@ -5,6 +5,24 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.74.1 — fix(security): bump Go toolchain + golang.org/x/net for real, reachable CVEs
+
+### Fixed
+- `go.mod`'s toolchain directive bumped 1.26.6 → 1.26.9: `net/http@
+  go1.26.6` has a known, reachable vulnerability (GO-2026-6617, HTTP/2
+  server crash via an HPACK encoder race), fixed in 1.26.9. Found while
+  pinning CI's govulncheck job to the actually-shipped Go version
+  (previously floating on `go-version: stable`, which masked this as
+  apparent CI flakiness rather than a real finding against our own
+  toolchain).
+- `golang.org/x/net` v0.58.0 → v0.60.0 (indirect dependency): fixes
+  GO-2026-6605 (HTTP/1 client desync after a CONNECT rejection) and
+  GO-2026-6603 (HTTP/2 server memory exhaustion via Trailer headers).
+- Both are patch-level/indirect-dependency bumps — no API or behavior
+  change, exempted from the 72-hour dependency-upgrade wait per
+  AGENT.md's explicit CVE exception. Full suite (3268 tests) green
+  under the new toolchain before tagging.
+
 ## v8.74.0 — feat: GH#201/BL399 Phase 1 gap closure — AGENT.md compliance for the access log
 
 ### Added
