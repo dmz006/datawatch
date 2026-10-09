@@ -74,7 +74,7 @@ func TestHandleClaudeModels_FullNamesCurrentAsOfV9(t *testing.T) {
 			values[v] = true
 		}
 	}
-	want := []string{"claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-4-5-20251001", "claude-fable-5-1"}
+	want := []string{"claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5", "claude-fable-5-1"}
 	for _, w := range want {
 		if !values[w] {
 			t.Errorf("full_names missing %q (got: %v)", w, values)

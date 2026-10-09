@@ -5,6 +5,35 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.80.0 — chore: v9.0.0 pre-tag re-verification pass
+
+### Fixed
+- `handleClaudeModels`'s `full_names`/`aliases` and the PWA's two
+  hardcoded claude-code model pickers (`populateModelSelect` call in
+  `llmAddComputeNodesChanged`, `MODELS_BY_BACKEND['claude-code']` in
+  `app.js`) were still pinned to the prior model generation (`haiku`
+  → `claude-haiku-4-5-20251001`, `opus`/`sonnet` → `-4-7`/`-4-6`)
+  despite the rest of the alias map already having been refreshed —
+  found while re-running the major-release checklist's "refresh
+  hardcoded LLM alias lists" step (AGENT.md) against current HEAD.
+  Refreshed all three to the current `claude-{opus,sonnet,haiku}-5-5`
+  / `claude-fable-5-1` family. Also refreshed a stale
+  `docs/llm-backends.md` OpenCode model-list example and AGENT.md's
+  own rule text.
+- GH#201 and GH#203 closed on GitHub — both fully shipped in the
+  v8.73.41–v8.78.2 arc, left open after shipping.
+
+### Context
+- This is a re-verification pass before re-tagging v9.0.0: the prior
+  full verification (`docs/plans/2026-10-07-v9.0.0-major-release.md`,
+  commit `baa9a93f`) was 71 commits stale. Fresh E2E, govulncheck, and
+  gosec (baseline-diff, still 63/63, same per-rule breakdown) all
+  re-run against current HEAD before the actual v9.0.0 tag.
+- Batched a backlog of pre-existing uncommitted plan-doc/research work
+  (harness-research refresh, identity-scaffold bootstrap, eval-sweep
+  spec update) that had accumulated in the working tree — docs only,
+  no version bump needed for that commit.
+
 ## v8.79.0 — feat: Cross-Session Communication Rule (BL401)
 
 ### Added

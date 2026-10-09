@@ -401,7 +401,7 @@ with `-s <ID>`. The **Restart** button pre-fills this automatically.
 OpenCode supports multiple AI providers. Select the model in the **New Session** form when using an OpenCode backend. Format: `provider/model`.
 
 **Cloud models** (provider API key required):
-- `anthropic/claude-sonnet-5`, `anthropic/claude-opus-4-5`, `anthropic/claude-haiku-4-5-20251001`
+- `anthropic/claude-sonnet-5-5`, `anthropic/claude-opus-5-5`, `anthropic/claude-haiku-5-5`
 - `openai/gpt-4o`, `openai/gpt-4o-mini`, `openai/o3-mini`
 - `google/gemini-2.0-flash`, `google/gemini-1.5-pro`
 

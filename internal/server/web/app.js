@@ -10625,7 +10625,7 @@ window.llmAddComputeNodesChanged = function() {
   if (!modelSel || !modelTxt) return;
   // Cloud kinds (claude) — show curated model list, hide nothing.
   if (kind === 'claude') {
-    populateModelSelect(modelSel, ['claude-opus-4-7','claude-sonnet-4-6','claude-haiku-4-5','(custom — type below)'], modelTxt);
+    populateModelSelect(modelSel, ['claude-opus-5-5','claude-sonnet-5-5','claude-haiku-5-5','claude-fable-5-1','(custom — type below)'], modelTxt);
     return;
   }
   // Local kinds with a node selected — probe the first picked node.
@@ -11318,7 +11318,7 @@ function renderEffortSelect(id, current, onchange, backend) {
 // work can wire `/api/backends/<name>/models` for live model lists.
 const MODELS_BY_BACKEND = {
   '':                ['(inherit)'],
-  'claude-code':     ['(inherit)', 'claude-opus-4-7', 'claude-sonnet-4-6', 'claude-haiku-4-5-20251001'],
+  'claude-code':     ['(inherit)', 'claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5', 'claude-fable-5-1'],
   'opencode':        ['(inherit)'],
   'opencode-acp':    ['(inherit)'],
   'opencode-prompt': ['(inherit)'],
