@@ -2564,7 +2564,7 @@ func (s *Server) handleCreateAlert(_ context.Context, req mcpsdk.CallToolRequest
 	if title == "" {
 		return mcpsdk.NewToolResultText("Error: title required"), nil
 	}
-	level := alerts.LevelInfo
+	var level alerts.Level
 	switch alerts.Level(req.GetString("level", "")) {
 	case alerts.LevelInfo, "":
 		level = alerts.LevelInfo

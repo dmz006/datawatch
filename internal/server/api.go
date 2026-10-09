@@ -7952,7 +7952,7 @@ func (s *Server) handleAlertCreate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "title required", http.StatusBadRequest)
 		return
 	}
-	level := alerts.LevelInfo
+	var level alerts.Level
 	switch alerts.Level(req.Level) {
 	case alerts.LevelInfo, "":
 		level = alerts.LevelInfo
