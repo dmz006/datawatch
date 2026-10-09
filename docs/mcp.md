@@ -250,7 +250,7 @@ shape.
 | Templates / scheduling / cooldown | `template_list/upsert/delete`, `schedule_list/add/cancel`, `cooldown_status/set/clear` |
 | Devices + routing | `device_alias_list/upsert/delete`, `routing_rules_list/test` |
 | Channel bridge | `channel_info`, `channel_diagnostics` |
-| Cost + audit + config + alerts | `cost_summary/usage/rates`, `analytics`, `audit_query`, `audit_access_query`, `get_config`, `config_set`, `get_stats`, `get_version`, `diagnose`, `reload`, `restart_daemon`, `splash_info`, `get_alerts`, `mark_alert_read` |
+| Cost + audit + config + alerts | `cost_summary/usage/rates`, `analytics`, `audit_query`, `audit_access_query`, `get_config`, `config_set`, `get_stats`, `get_version`, `diagnose`, `reload`, `restart_daemon`, `splash_info`, `get_alerts`, `create_alert`, `mark_alert_read` |
 | Saved commands | `list_saved_commands`, `send_saved_command` |
 | Ask / assist | `ask`, `assist` |
 | Voice | (no MCP tools — REST `/api/voice/transcribe` + chat-channel auto-handle) |

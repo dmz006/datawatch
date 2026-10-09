@@ -18,6 +18,7 @@
 //	rename_session      — set a human-readable name for a session
 //	stop_all_sessions   — kill all running/waiting sessions
 //	get_alerts          — list recent system alerts
+//	create_alert        — raise a new system alert (GH#201 Phase 5)
 //	mark_alert_read     — mark an alert as read
 //	restart_daemon      — restart the datawatch daemon
 //	get_version         — get current and latest version info
@@ -365,6 +366,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	// BL107 — agent audit query.
 	mcpSrv.AddTool(s.toolAgentAudit(), tracked(s.handleAgentAudit))
 	mcpSrv.AddTool(s.toolGetAlerts(), tracked(s.handleGetAlerts))
+	mcpSrv.AddTool(s.toolCreateAlert(), tracked(s.handleCreateAlert)) // GH#201 Phase 5
 	mcpSrv.AddTool(s.toolMarkAlertRead(), tracked(s.handleMarkAlertRead))
 	mcpSrv.AddTool(s.toolRestartDaemon(), tracked(s.handleRestartDaemon))
 	// BL397 — ACME subsystem.
@@ -1192,6 +1194,7 @@ func (s *Server) ToolDocs() []ToolDoc {
 		{s.toolSessionSummarize, "session_summarize"},
 		{s.toolAgentAudit, "agent_audit"},
 		{s.toolGetAlerts, "get_alerts"},
+		{s.toolCreateAlert, "create_alert"},
 		{s.toolMarkAlertRead, "mark_alert_read"},
 		{s.toolRestartDaemon, "restart_daemon"},
 		{s.toolAcmeStatus, "acme_status"},
@@ -1590,6 +1593,22 @@ func (s *Server) toolGetAlerts() mcpsdk.Tool {
 		),
 		mcpsdk.WithString("source",
 			mcpsdk.Description("Filter alerts by source (e.g. 'system' for pipeline/plugin/ebpf failures)"),
+		),
+	)
+}
+
+func (s *Server) toolCreateAlert() mcpsdk.Tool {
+	return mcpsdk.NewTool("create_alert",
+		mcpsdk.WithDescription("Raise a new system alert (GH#201 Phase 5) — fans out through the same SSE/ntfy/UnifiedPush/APNs delivery every alert already uses, regardless of source. For an external monitor or integration reporting something the operator should see, not for routine session chatter."),
+		mcpsdk.WithString("level",
+			mcpsdk.Description("info, warn, or error (default: info)"),
+		),
+		mcpsdk.WithString("title",
+			mcpsdk.Required(),
+			mcpsdk.Description("Short alert title"),
+		),
+		mcpsdk.WithString("body",
+			mcpsdk.Description("Longer alert body/detail (optional)"),
 		),
 	)
 }
@@ -2535,6 +2554,29 @@ func (s *Server) handleGetAlerts(_ context.Context, req mcpsdk.CallToolRequest) 
 		return mcpsdk.NewToolResultText("No alerts."), nil
 	}
 	return mcpsdk.NewToolResultText(sb.String()), nil
+}
+
+func (s *Server) handleCreateAlert(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	if s.alertStore == nil {
+		return mcpsdk.NewToolResultText("Alert store not available."), nil
+	}
+	title := req.GetString("title", "")
+	if title == "" {
+		return mcpsdk.NewToolResultText("Error: title required"), nil
+	}
+	level := alerts.LevelInfo
+	switch alerts.Level(req.GetString("level", "")) {
+	case alerts.LevelInfo, "":
+		level = alerts.LevelInfo
+	case alerts.LevelWarn:
+		level = alerts.LevelWarn
+	case alerts.LevelError:
+		level = alerts.LevelError
+	default:
+		return mcpsdk.NewToolResultText("Error: level must be info, warn, or error"), nil
+	}
+	a := s.alertStore.AddSystem(level, title, req.GetString("body", ""))
+	return mcpsdk.NewToolResultText(fmt.Sprintf("Alert %s created.", a.ID)), nil
 }
 
 func (s *Server) handleMarkAlertRead(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {

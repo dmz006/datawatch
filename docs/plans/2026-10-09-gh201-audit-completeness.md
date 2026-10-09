@@ -4,8 +4,11 @@
 - **Version at planning**: v8.73.40
 - **Status**: Phase 1 shipped (v8.73.41) and gap-closed (v8.74.0 — see
   "Phase 1 gap closure" below). Phase 2 shipped (v8.76.0). Phase 3
-  shipped (v8.77.0). Phase 4 shipped (v8.78.0). Phase 5 planned, not
-  started.
+  shipped (v8.77.0). Phase 4 shipped (v8.78.0). Phase 5 shipped
+  (v8.78.1), alongside an unrelated but urgent secrets-scope security
+  fix found mid-session by a peer session — see Phase 5's own section
+  for the fix, it isn't really part of Phase 5's own scope but shipped
+  in the same commit.
 - **Filed by**: datawatch-app, operator-requested — could not confirm
   whether Apple TestFlight reviewers had connected to the demo server;
   no HTTP access log, no WS connect/disconnect log, no auth-failure log,
@@ -29,7 +32,7 @@
 | 2 | Federation-hop actor attribution | ✅ Done | v8.76.0 |
 | 3 | Chained-children (`ParentAgentID`) in the agent audit trail | ✅ Done | v8.77.0 |
 | 4 | State-changing-action completeness sweep | ✅ Done | v8.78.0 |
-| 5 | Create-alert API + MCP tool | ⬜ Not started | — |
+| 5 | Create-alert API + MCP tool | ✅ Done | v8.78.1 |
 
 Update this table (and each phase's own Status line) every time a
 phase's state changes — this is the first thing anyone re-opening this
@@ -263,6 +266,17 @@ same as `docs/plans/*.md`. No change needed.
   only adds a side effect (an `audit.log` write) to handlers that
   already existed on every surface; it changes no request/response
   contract, so nothing downstream needs updating.
+
+**Phase 5 additions**:
+- **REST**: `POST /api/alerts/create` (new).
+- **MCP**: `create_alert` (new, mirrors the REST body shape, gated by
+  the same `CapAlertsWrite`).
+- **CLI/comm/YAML**: not added — raising an alert from a script is
+  already well served by `curl`/the MCP tool; no YAML config field is
+  needed since this is an action, not a setting.
+- **PWA/Android/iPhone**: not added — existing alert UI (list, mark
+  read, push delivery) is unaffected; this phase adds a new way to
+  *originate* an alert, not a new way to *view* one.
 
 ## Phase 2 — thread provenance through federation hops ✅ shipped (v8.76.0)
 
@@ -508,19 +522,42 @@ Each of these is mechanical once the list is fixed — this phase is
 sizing/sequencing, not inventing a new pattern (reuse `audit.Entry` and
 `sec017`'s masking helper for any value that might be credential-shaped).
 
-## Phase 5 — create-alert API + MCP tool (not started)
+## Phase 5 — create-alert API + MCP tool ✅ shipped (v8.78.1)
 
-Separate ask, folded in because it's downstream of Phase 1-4: a
-`POST /api/alerts {level, title, body, category, priority}` →
-`alertStore.AddSystem` → normal push delivery (SSE/ntfy/FCM/APNs),
-giving an external monitor (or the access log itself, e.g. a
-first-seen-IP-authenticated event) a real way to raise a high-priority,
-separately-routable alert instead of the existing endpoints' dead ends
-(`POST /api/alerts` today only marks alerts read; `/api/push/notify`
-skips SSE-registered devices; `/api/channel/notify` is WS-broadcast
-only). Needs its own look at `internal/alerts` (`AddSystem`'s current
-signature) and `internal/server/push.go` (dispatch) before sizing —
-not investigated yet.
+Investigated before sizing, per this section's own open item:
+`alerts.Store.AddSystem(level, title, body)` already exists and
+already triggers every registered `AddListener` callback — and
+`cmd/datawatch/main.go`'s one registered listener already fans every
+alert (regardless of source) out to SSE (`httpServer.NotifyAlert`)
+AND APNs push, with the comment confirming this is "the same trigger
+point FCM/UnifiedPush already use." So no new dispatch plumbing was
+needed at all — the entire phase was: a new REST endpoint
+(`POST /api/alerts/create`, registered as its own route rather than
+overloading the existing `POST /api/alerts` mark-read path, which
+would have needed fragile body-shape disambiguation) calling
+`AddSystem` directly, plus the matching `create_alert` MCP tool, plus
+a new `CapAlertsWrite` capability (not granted to any built-in group
+by default — an external service needs it explicitly, same
+least-privilege default this file already uses everywhere else).
+Trimmed from the original ask: `category`/`priority` fields were
+proposed in the plan's own speculative body shape, but `Alert` has
+no such fields and nothing downstream reads them — added only
+`level`/`title`/`body`, matching what `AddSystem` actually accepts,
+rather than adding speculative fields with no consumer.
+
+**An unrelated but urgent finding surfaced mid-session, fixed in the
+same commit**: a peer session (imap-mcp-79) coordinating the imap-mcp
+rollout found that `internal/secrets.CheckScope`'s pre-existing
+"empty scopes = universal" backward-compat rule (written for agent/
+plugin callers, predates GH#203) also applied to the new "service"
+caller type GH#203 introduced — meaning any secret with no scope was
+readable by any external-service token over the network. Verified
+independently, then fixed with the operator's explicit go-ahead: a
+`"service"` caller now always requires an explicit scope; agent/
+plugin behavior is unchanged. See `internal/secrets/scope.go`'s
+updated doc comments and `scope_test.go`'s 5 new tests for detail —
+not otherwise documented here since it's unrelated to Phase 5's own
+scope, just shipped alongside it for expedience.
 
 ## Out of scope / already correct, don't touch
 
@@ -706,6 +743,53 @@ from AGENT.md each time.
   surfaced)
 - [x] C3 — `smoke: 185 passed, 0 failed, 35 skipped` (no new section —
   every call site is an existing endpoint gaining a side effect)
+
+### Every commit (AGENT.md Section A) — Phase 5 + security fix commit (v8.78.1)
+
+- [x] A1 — rules: Testing Requirements, new-endpoint/new-MCP-tool
+  checklist, Audit Logging Rule (reuses existing `s.audit` shape)
+- [x] A2 — `go test ./...`: 3341 passed, 0 failed (12 new this phase,
+  5 new for the security fix)
+- [x] A3 — `version: v8.78.1 (both files)`
+- [x] A4 — `changelog: added`
+- [x] A5 — `readme: N/A`
+- [x] A6 — `backlog: refactored`
+- [x] A7 — `id-check: clean`
+- [x] A8 — `leak-check: clean`
+- [x] A9 — `node-check: N/A`
+- [x] A10 — `make-build: ok`
+- [ ] A11 — `ci: <pending — check after push>`
+
+### Conditional, this feature's actual triggers (AGENT.md Section B) — Phase 5 + security fix
+
+| # | Trigger | Applies here? | Status |
+|---|---|---|---|
+| B1 | New/changed endpoint contract | Yes — `POST /api/alerts/create` | ✅ `docs/testing-tracker.md`, `docs/api-mcp-mapping.md` updated |
+| New-MCP-tool checklist | Yes — `create_alert` | ✅ `docs/mcp.md` summary row updated |
+| New capability | Yes — `CapAlertsWrite` | ✅ added to `allCaps` only, not any narrower built-in group (least-privilege default) |
+| B16 | New audit-event-emitting code path | Yes — `create`/`alert` | ✅ reuses existing `s.audit` shape |
+
+### Release cadence (AGENT.md Section C) — Phase 5 + security fix, minor release
+
+- [x] C1 — `dep-audit: N/A` (no new dependency)
+- [x] C2 — `gosec: clean` (exact CI command: live=63, baseline=63)
+- [x] C3 — `smoke: 185 passed, 0 failed, 35 skipped` (no new section —
+  the create-alert endpoint has no sandbox-admin-token precondition
+  issue the way the audit endpoints do, but wasn't added as a new
+  smoke section either; the full test suite covers it instead)
+
+### Live verification, the security fix specifically
+
+Rebuilt (`make install`) and restarted the production daemon
+(`systemctl --user restart datawatch`), confirmed healthy at
+`8.78.1` via `GET /api/health`. A peer session (imap-mcp-79)
+independently verified from their own side, against the live
+production daemon, that the fix actually changed behavior: the 2
+previously-unscoped secrets (`brave_search_api_key`,
+`openwebui_api_key`) now return 403 to their service token, while
+the correctly-scoped `imap_mcp_token_datawatch` still returns 200 —
+confirming the fix closes the gap without breaking the legitimate
+case.
 
 ### Phase-specific gate before marking any future phase ✅ Done
 

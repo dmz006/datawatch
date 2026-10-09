@@ -17,7 +17,9 @@
 //   service:*         — any external service
 //   agent             — any agent (equivalent to agent:*)
 //
-// Empty Scopes slice → universally accessible (backward compatible).
+// Empty Scopes slice → universally accessible to agent/plugin callers
+// (backward compatible) — EXCEPT a "service" caller, which always requires
+// an explicit scope (see CheckScope's doc comment for why).
 
 package secrets
 
@@ -40,10 +42,25 @@ type CallerCtx struct {
 }
 
 // CheckScope returns ErrScopeDenied when caller does not match any declared
-// scope. Returns nil when the secret has no scopes (universally accessible)
-// or when at least one scope entry matches the caller.
+// scope. Returns nil when the secret has no scopes (universally accessible
+// to agent/plugin callers, for backward compatibility) or when at least one
+// scope entry matches the caller.
+//
+// Security fix (2026-10-09, found by a peer session coordinating the
+// imap-mcp rollout, independently verified): the "empty scopes = universal"
+// backward-compat rule predates GH#203's "service" caller type and was
+// written for agent/plugin callers only — short-lived, in-process, spawned
+// by this daemon. A service token is persistent and reaches this check over
+// the network from an external, non-sandboxed process
+// (GET /api/external/secrets/{name}); applying the same "empty = universal"
+// default to it silently widened every unscoped secret's exposure the
+// moment GH#203 shipped. A service caller now ALWAYS requires an explicit
+// service:<name> or service:* scope — agent/plugin behavior is unchanged.
 func CheckScope(secret Secret, caller CallerCtx) error {
 	if len(secret.Scopes) == 0 {
+		if caller.Type == "service" {
+			return ErrScopeDenied
+		}
 		return nil
 	}
 	for _, s := range secret.Scopes {

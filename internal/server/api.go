@@ -187,7 +187,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.78.0"
+var Version = "8.78.1"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -7910,6 +7910,65 @@ func (s *Server) handleAlerts(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// handleAlertCreate serves POST /api/alerts/create — GH#201 Phase 5.
+// Gives an external monitor or webhook (anything holding a token with
+// CapAlertsWrite — not granted to any built-in group by default, see
+// capabilities.go) a real way to raise a high-priority, separately
+// routable alert, instead of the two existing dead ends: POST
+// /api/alerts only marks alerts read, and /api/channel/notify is
+// WS-broadcast only (no push fan-out).
+//
+// Body: {"level": "info"|"warn"|"error", "title": "...", "body": "..."}
+// level defaults to "info" when empty or unrecognized. Delegates to
+// alertStore.AddSystem, the SAME call every other system-sourced
+// alert (peer health, alert-rule firings) already goes through — its
+// existing AddListener callback (main.go) already fans this out to
+// SSE/ntfy/UnifiedPush/APNs for every alert regardless of source, so
+// no new dispatch plumbing is needed here.
+func (s *Server) handleAlertCreate(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.fedCap(w, r, federation.CapAlertsWrite) {
+		return
+	}
+	if s.alertStore == nil {
+		http.Error(w, "alert store not available", http.StatusServiceUnavailable)
+		return
+	}
+	var req struct {
+		Level string `json:"level"`
+		Title string `json:"title"`
+		Body  string `json:"body"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid JSON", http.StatusBadRequest)
+		return
+	}
+	if req.Title == "" {
+		http.Error(w, "title required", http.StatusBadRequest)
+		return
+	}
+	level := alerts.LevelInfo
+	switch alerts.Level(req.Level) {
+	case alerts.LevelInfo, "":
+		level = alerts.LevelInfo
+	case alerts.LevelWarn:
+		level = alerts.LevelWarn
+	case alerts.LevelError:
+		level = alerts.LevelError
+	default:
+		http.Error(w, "level must be info, warn, or error", http.StatusBadRequest)
+		return
+	}
+	a := s.alertStore.AddSystem(level, req.Title, req.Body)
+	s.audit(r.Context(), "create", "alert", a.ID, map[string]any{"level": string(level), "title": req.Title}) // GH#201 Phase 5
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(a) //nolint:errcheck
 }
 
 // ---- Channel API (MCP channel server integration) -------------------------

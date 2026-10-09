@@ -209,6 +209,7 @@ var MCPToolCap = map[string]string{
 	"filter_delete":                  CapConfigWrite,
 	"filter_list":                    CapSessionsRead,
 	"filter_toggle":                  CapConfigWrite,
+	"create_alert":                   CapAlertsWrite,
 	"get_alerts":                     CapAlertsRead,
 	"get_config":                     CapConfigRead,
 	"get_identity":                   CapConfigRead,

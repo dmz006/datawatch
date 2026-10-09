@@ -444,6 +444,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/commands", api.handleCommands)
 	apiMux.HandleFunc("/api/filters", api.handleFilters)
 	apiMux.HandleFunc("/api/alerts/aggregated", api.handleAggregatedAlerts) // BL312 S5
+	apiMux.HandleFunc("/api/alerts/create", api.handleAlertCreate) // GH#201 Phase 5
 	apiMux.HandleFunc("/api/alerts", api.handleAlerts)
 	apiMux.HandleFunc("/api/capacity", api.handleCapacity) // admission ledger: pools, holders, wait queue
 	apiMux.HandleFunc("/api/channel/reply", api.handleChannelReply)

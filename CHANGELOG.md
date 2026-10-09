@@ -5,6 +5,42 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.78.1 — feat: GH#201 Phase 5 — create-alert API/MCP tool; fix: service-caller secret-scope gap
+
+### Added
+- `POST /api/alerts/create` and the `create_alert` MCP tool (GH#201
+  Phase 5) — gives an external monitor or webhook a real way to raise
+  a high-priority alert, instead of the two prior dead ends (`POST
+  /api/alerts` only ever marked alerts read; `/api/channel/notify` is
+  WS-broadcast only). Delegates to the existing `alertStore.AddSystem`
+  + `AddListener` fan-out every other system alert already uses
+  (SSE/ntfy/UnifiedPush/APNs) — no new dispatch plumbing needed, as
+  the plan predicted once this was actually investigated.
+- New `federation.CapAlertsWrite` capability, deliberately NOT granted
+  to any built-in group by default (least-privilege default every
+  other write-class capability in this codebase already uses) —
+  an external service needs it granted explicitly via a custom group.
+- 12 new tests (`internal/server/gh201_phase5_create_alert_test.go`,
+  `internal/mcp/gh201_phase5_create_alert_test.go`): level defaulting/
+  validation, title requirement, method enforcement, audit logging,
+  and a capability-enforcement test confirming a read-only peer is
+  rejected while full-control/admin succeed.
+
+### Fixed — security
+- **Secret-scope gap found by a peer session (imap-mcp-79) coordinating
+  the imap-mcp rollout, independently verified.**
+  `internal/secrets.CheckScope`'s "empty Scopes slice = universally
+  accessible" rule predates GH#203 (this session) and was written for
+  agent/plugin callers only — short-lived, in-process, spawned by this
+  daemon. GH#203 extended `CallerCtx` to a new `"service"` type without
+  carving out an exception, so any secret with no scope became ALSO
+  readable by any external-service token over the network via `GET
+  /api/external/secrets/{name}` — a materially different trust
+  boundary than an in-process agent. A `"service"` caller now always
+  requires an explicit `service:<name>` or `service:*` scope;
+  agent/plugin backward compatibility is completely unchanged. 5 new
+  tests in `internal/secrets/scope_test.go`.
+
 ## v8.78.0 — feat: GH#201 Phase 4 — state-changing-action completeness sweep
 
 ### Added

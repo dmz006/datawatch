@@ -114,6 +114,15 @@ const (
 	// alerts
 	CapAlertsList = "alerts:list"
 	CapAlertsRead = "alerts:read"
+	// CapAlertsWrite (GH#201 Phase 5) gates raising a NEW alert
+	// (POST /api/alerts/create / the create_alert MCP tool) — distinct
+	// from CapAlertsRead, which only ever gated marking an EXISTING
+	// alert read. Deliberately not added to any built-in group below
+	// except the full-control allCaps list: an external monitor or
+	// webhook that should be able to raise alerts needs it granted
+	// explicitly via a custom group, same least-privilege default this
+	// file already uses for every other write-class capability.
+	CapAlertsWrite = "alerts:write"
 
 	// dashboard
 	CapDashboardRead  = "dashboard:read"
@@ -156,7 +165,7 @@ var allCaps = []string{
 	CapDocsRead,
 	CapAuditRead,
 	CapCommRead, CapCommWrite,
-	CapAlertsList, CapAlertsRead,
+	CapAlertsList, CapAlertsRead, CapAlertsWrite,
 	CapDashboardRead, CapDashboardWrite,
 	CapQueueRead, CapQueueWrite,
 	CapResultsList, CapResultsRead, CapResultsWrite,

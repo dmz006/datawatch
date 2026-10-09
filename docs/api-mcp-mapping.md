@@ -99,6 +99,7 @@ documenting coverage gaps and the reasoning behind them.
 |-------------|----------|--------|-------|
 | `GET /api/alerts` | `get_alerts` | Complete | |
 | `POST /api/alerts` (mark read) | `mark_alert_read` | Complete | |
+| `POST /api/alerts/create` | `create_alert` | Complete | GH#201 Phase 5 — raises a new system alert (`CapAlertsWrite`, not granted to any built-in group by default) |
 
 ### Autonomous PRD Planning
 

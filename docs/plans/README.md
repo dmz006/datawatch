@@ -1564,8 +1564,22 @@ _(Historical: every numbered feature pre-BL241 has shipped. Mempalace alignment 
 > `CapSessionsWrite`) — closed with the same check. Confirmed council
 > config was already fully audited (9 pre-existing call sites),
 > correcting this phase's own "lower-priority bucket" assumption.
-> **Phase 5 not started** — the create-alert API/MCP tool. See the
-> plan doc for the full scope.
+> **Phase 5 (create-alert API/MCP tool) shipped (v8.78.1) — all 5
+> phases now complete, BL399 closed.** `POST /api/alerts/create` +
+> `create_alert` MCP tool, delegating to the existing
+> `alertStore.AddSystem`/`AddListener` fan-out (already drives SSE +
+> APNs for every alert) — investigating before sizing found zero new
+> dispatch plumbing was actually needed. New `CapAlertsWrite`
+> capability, deliberately not granted to any built-in group by
+> default. Shipped alongside an unrelated but urgent fix a peer
+> session found and this session independently verified:
+> `internal/secrets.CheckScope`'s pre-GH#203 "empty scope = universal"
+> rule incorrectly also applied to GH#203's new `"service"` caller
+> type, letting any unscoped secret be read by any external-service
+> token over the network — a `"service"` caller now always requires
+> an explicit scope. Live-verified on the production daemon, including
+> independent confirmation from the peer session against the running
+> fix.
 
 > **BL398** — Full review of suppressed container-image CVEs (filed
 > 2026-10-08, operator-requested immediately after SEC-026/v8.73.26's
