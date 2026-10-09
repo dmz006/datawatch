@@ -8568,9 +8568,15 @@ function renderSettingsView() {
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M3 20.5v-17c0-.83.94-1.3 1.6-.8l14 8.5c.6.37.6 1.23 0 1.6l-14 8.5c-.66.5-1.6.03-1.6-.8z"/></svg>
                   Join Beta on Google Play
                 </a>
-                <div style="font-size:10px;color:var(--text2);margin-top:4px;">${(t('settings_mobile_app_beta_info')||'Android: closed testing — join the tester group above, then {opt_in}, then {install} (the listing appears after you opt in) and stay opted in for 14 days (need 12 testers). iOS: public TestFlight link coming after Apple\'s beta review.')
+                <a href="https://testflight.apple.com/join/qta87V4Q" target="_blank" rel="noopener"
+                  style="display:inline-flex;align-items:center;gap:6px;background:#0d84ff;color:#fff;font-size:11px;font-weight:600;padding:5px 10px;border-radius:6px;text-decoration:none;margin-left:6px;">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2c.38 2.1-1.2 4-3.3 4C8.4 3.9 10 2 12 2zm3.3 6c-1.8 0-2.6 1-3.9 1-1.3 0-2.4-1-4-1-2 0-4.1 1.6-4.1 5 0 3.2 2.5 8 4.3 8 1 0 1.5-.7 2.8-.7 1.3 0 1.7.7 2.9.7 1.9 0 4.4-5 4.4-8.1 0-2.9-1.8-4.9-2.4-4.9z"/></svg>
+                  Join TestFlight Beta
+                </a>
+                <div style="font-size:10px;color:var(--text2);margin-top:4px;">${(t('settings_mobile_app_beta_info')||'Android: closed testing — join the tester group above, then {opt_in}, then {install} (the listing appears after you opt in) and stay opted in for 14 days (need 12 testers). iOS: {testflight} — install TestFlight from the App Store, open the link, tap Accept, then Install.')
                   .replace('{opt_in}', '<a href="https://play.google.com/apps/testing/com.dmzs.datawatchclient" target="_blank" rel="noopener" style="color:var(--accent);">'+(t('settings_mobile_app_opt_in')||'opt in on Play')+'</a>')
-                  .replace('{install}', '<a href="https://play.google.com/store/apps/details?id=com.dmzs.datawatchclient" target="_blank" rel="noopener" style="color:var(--accent);">'+(t('settings_mobile_app_install')||'install from Google Play')+'</a>')}</div>
+                  .replace('{install}', '<a href="https://play.google.com/store/apps/details?id=com.dmzs.datawatchclient" target="_blank" rel="noopener" style="color:var(--accent);">'+(t('settings_mobile_app_install')||'install from Google Play')+'</a>')
+                  .replace('{testflight}', '<a href="https://testflight.apple.com/join/qta87V4Q" target="_blank" rel="noopener" style="color:var(--accent);">'+(t('settings_mobile_app_testflight')||'join the public TestFlight beta')+'</a>')}</div>
               </div>
             </div>
           </div>

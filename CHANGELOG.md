@@ -5,6 +5,44 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.0 — Memory Lifecycle Complete
+
+First major version since the memory-scope/lifecycle work (BL385–387)
+landed. Highlights (see prior per-version entries below for full detail
+on each):
+
+- Memory scopes (per-session/shared/PRD), seeding/harvest/archive,
+  and Automata memory-stats reporting (BL385–387) — stable.
+- Most of the SEC-001–026 / HLLM-001–007 security hardening sweep:
+  session-scoped credentials (Design A3) replacing the admin token on
+  every spawned session, SSRF/path-traversal/prototype-pollution/
+  reflected-XSS fixes, bearer-token leakage and federation-proxy
+  origin-isolation closures.
+- Full HTTP access/audit logging with SIEM/CEF forwarding and
+  cross-hop attribution (GH#201).
+- Cross-Session Communication Rule guardrail for spawned sessions
+  (BL401).
+- Native ACME/Let's Encrypt certificate management, APNs push
+  (iOS), three-way PWA/Android/iOS parity.
+- iOS public TestFlight beta link is live (`https://testflight.apple.com/join/qta87V4Q`)
+  — added next to the existing Android closed-testing links in
+  README.md and the PWA's About/Settings "Mobile app" card (+ new
+  `settings_mobile_app_testflight` locale key, 5 bundles).
+
+**Deliberately deferred past this release** (fully designed, not yet
+built — see `docs/plans/historical-plans/2026-09-22-security-remediation-activation.md`
+§8): TLS fingerprint pinning (SEC-012/015), cosign/sigstore release
+signing (SEC-019/020), Helm `securityContext` + mandatory `apiToken`
+(SEC-024), legacy Node channel-bridge removal (SEC-025), an egress
+allowlist (HLLM-006), plugin/skill-install diff-confirm gating
+(HLLM-008), and real sandbox isolation for session workers
+(HLLM-009 / F-2 — the largest remaining item).
+
+**Known open bug, unrelated to this release's scope**: B98 — session
+token/cost accounting reports zero on every backend; root-caused
+(`Manager.AddUsage` is never called from real session lifecycle, only
+from the manual `POST /api/cost/usage` endpoint), not yet fixed.
+
 ## v8.80.0 — chore: v9.0.0 pre-tag re-verification pass
 
 ### Fixed
