@@ -195,7 +195,7 @@ datawatch secrets revoke-service-token imap-mcp
 Tokens are persistent (survive a daemon restart) and stored at
 `<data_dir>/service_tokens.json`, 0600. This is distinct from
 `GET /api/agents/secrets/{name}`, which is also per-secret scoped but
-only ever issues tokens to F10 agent-cluster workers at spawn time
+only ever issues tokens to spawned remote-agent-cluster workers at spawn time
 (in-memory, lost on restart) — not usable by an external process.
 
 ### 4b. Happy path — PWA
