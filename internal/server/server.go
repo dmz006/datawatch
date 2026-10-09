@@ -26,6 +26,7 @@ import (
 	"github.com/dmz006/datawatch/internal/alerts"
 	"github.com/dmz006/datawatch/internal/apns"
 	"github.com/dmz006/datawatch/internal/audit"
+	"github.com/dmz006/datawatch/internal/secrets"
 	"github.com/dmz006/datawatch/internal/auth"
 	"github.com/dmz006/datawatch/internal/compute"
 	"github.com/dmz006/datawatch/internal/config"
@@ -208,6 +209,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	// BL242 Phase 5c — agent runtime secret access. Pre-auth: auth is
 	// the per-agent SecretsToken delivered in the bootstrap response.
 	mux.HandleFunc("/api/agents/secrets/", api.handleAgentSecretsGet)
+	mux.HandleFunc("/api/external/secrets/", api.handleExternalSecretsGet) // GH#203
 	mux.Handle("/metrics", metrics.Handler())
 
 	// Docs routes (no auth required, served directly)
@@ -330,6 +332,8 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/cooldown", api.handleCooldown)                                     // BL30
 	apiMux.HandleFunc("/api/audit", api.handleAudit)                                           // BL9
 	apiMux.HandleFunc("/api/audit/access", api.handleAuditAccess)                              // GH#201
+	apiMux.HandleFunc("/api/secrets/service-tokens", api.handleSecretServiceTokens)             // GH#203 (list + mint)
+	apiMux.HandleFunc("/api/secrets/service-tokens/", api.handleSecretServiceTokens)            // GH#203 (revoke by name)
 	apiMux.HandleFunc("/api/secrets/", api.handleSecrets)                                      // BL242
 	apiMux.HandleFunc("/api/secrets", api.handleSecrets)                                       // BL242 (list + create)
 	apiMux.HandleFunc("/api/docs/", api.handleDocs)                                            // BL274 (v6.16.0)
@@ -934,6 +938,12 @@ func (s *HTTPServer) SetAccessLog(l *audit.Log) {
 // into stats.Collector.SetAccessLogStatsFunc.
 func (s *HTTPServer) PopulateAccessLogStats(out *stats.SystemStats) {
 	s.api.PopulateAccessLogStats(out)
+}
+
+// SetServiceTokenStore (GH#203) wires the external-service token store
+// for GET /api/external/secrets/{name}.
+func (s *HTTPServer) SetServiceTokenStore(st *secrets.ServiceTokenStore) {
+	s.api.SetServiceTokenStore(st)
 }
 
 // SetSecretsStore (BL242) wires the centralized secrets store for /api/secrets.

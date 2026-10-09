@@ -85,6 +85,159 @@ func (s *Server) handleAgentSecretsGet(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]string{"name": sec.Name, "value": sec.Value})
 }
 
+// SetServiceTokenStore wires the external-service token store (GH#203)
+// used by GET /api/external/secrets/{name}.
+func (s *Server) SetServiceTokenStore(st *secrets.ServiceTokenStore) { s.serviceTokenStore = st }
+
+// handleExternalSecretsGet serves GET /api/external/secrets/{name}
+// (GH#203). Registered pre-auth, like handleAgentSecretsGet, so an
+// independent external service (not a spawned F10 agent, not a
+// federation peer — e.g. imap-mcp, running as its own systemd service)
+// can resolve a secret using a persistent token the operator minted via
+// `datawatch secrets mint-service-token <name>`. Scope is enforced: the
+// secret's Scopes must allow CallerCtx{Type:"service", Name:<svcName>}.
+//
+// Authorization: Bearer <service-token>
+// Response: {"name":"…","value":"…"}
+func (s *Server) handleExternalSecretsGet(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.serviceTokenStore == nil || s.secretsStore == nil {
+		http.Error(w, "external secrets not available", http.StatusServiceUnavailable)
+		return
+	}
+
+	tok := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if tok == "" {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	svcName, ok := s.serviceTokenStore.Lookup(tok)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	name := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/external/secrets/"), "/")
+	if name == "" {
+		http.Error(w, "secret name required", http.StatusBadRequest)
+		return
+	}
+
+	sec, err := s.secretsStore.Get(name)
+	if err != nil {
+		if errors.Is(err, secrets.ErrSecretNotFound) {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	if err := secrets.CheckScope(sec, secrets.CallerCtx{Type: "service", Name: svcName}); err != nil {
+		http.Error(w, "forbidden: "+err.Error(), http.StatusForbidden)
+		return
+	}
+
+	if s.auditLog != nil {
+		_ = s.auditLog.Write(audit.Entry{
+			Actor:  "service:" + svcName,
+			Action: "secret_access",
+			Details: map[string]any{
+				"resource_type": "secret",
+				"resource_id":   name,
+				"via":           "external-service-token",
+			},
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{"name": sec.Name, "value": sec.Value})
+}
+
+// handleSecretServiceTokens dispatches the admin-only (regular
+// fedAuthMiddleware-gated) CRUD surface for external-service tokens
+// (GH#203):
+//
+//	GET    /api/secrets/service-tokens        — list (name/description/created_at only, never the token)
+//	POST   /api/secrets/service-tokens        — mint a new token for {"name","description"}, returns {"name","token"} ONCE
+//	DELETE /api/secrets/service-tokens/{name} — revoke
+//
+// This is the operator-facing side; handleExternalSecretsGet is the
+// unrelated pre-auth side the external service itself calls with the
+// minted token. Minting should only ever be run directly by the
+// operator in their own terminal (`datawatch secrets mint-service-token
+// <name>`) — never by an agent on the operator's behalf — since the
+// response is the only place the plaintext token is ever shown, and an
+// agent running the command would see it in its own tool output.
+func (s *Server) handleSecretServiceTokens(w http.ResponseWriter, r *http.Request) {
+	if s.serviceTokenStore == nil {
+		http.Error(w, "external secrets not available", http.StatusServiceUnavailable)
+		return
+	}
+	path := strings.TrimPrefix(r.URL.Path, "/api/secrets/service-tokens")
+	name := strings.Trim(path, "/")
+
+	switch {
+	case r.Method == http.MethodGet && name == "":
+		if !s.fedCap(w, r, federation.CapSecretsRead) {
+			return
+		}
+		list := s.serviceTokenStore.List()
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"count": len(list), "service_tokens": list})
+
+	case r.Method == http.MethodPost && name == "":
+		if !s.fedCap(w, r, federation.CapSecretsWrite) {
+			return
+		}
+		var body struct {
+			Name        string `json:"name"`
+			Description string `json:"description"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Name == "" {
+			http.Error(w, "name required", http.StatusBadRequest)
+			return
+		}
+		tok, err := s.serviceTokenStore.Mint(body.Name, body.Description)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if s.auditLog != nil {
+			_ = s.auditLog.Write(audit.Entry{
+				Actor:  "operator",
+				Action: "service_token_mint",
+				Details: map[string]any{"resource_type": "service_token", "resource_id": body.Name},
+			})
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{"name": body.Name, "token": tok})
+
+	case r.Method == http.MethodDelete && name != "":
+		if !s.fedCap(w, r, federation.CapSecretsWrite) {
+			return
+		}
+		if err := s.serviceTokenStore.Revoke(name); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if s.auditLog != nil {
+			_ = s.auditLog.Write(audit.Entry{
+				Actor:  "operator",
+				Action: "service_token_revoke",
+				Details: map[string]any{"resource_type": "service_token", "resource_id": name},
+			})
+		}
+		writeJSONOK(w, map[string]bool{"ok": true})
+
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
 // secretsStore is the narrow interface the REST handlers need.
 type secretsStore interface {
 	List() ([]secrets.Secret, error)

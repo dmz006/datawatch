@@ -5,6 +5,49 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.75.0 — feat: GH#203 — external-service secrets tokens
+
+### Added
+- A persistent, per-secret-scoped bearer token for an independent
+  external service (not a datawatch-spawned F10 agent, not a
+  federation peer) to resolve a specific named secret — closes the gap
+  imap-mcp hit coordinating its 0.5.3 auth rollout: `GET /api/agents/
+  secrets/{name}` is correctly per-secret scoped but only ever issues
+  tokens to F10 agents at spawn time (in-memory, lost on restart); a
+  federation-peer token with `secrets:read` isn't scoped at all (reads
+  every secret in the store).
+- New `secrets.CallerCtx.Type == "service"`, using the existing scope
+  mechanism unchanged (`Scopes: ["service:imap-mcp"]` / `"service:*"`).
+- `internal/secrets.ServiceTokenStore` — JSON file (`service_tokens.
+  json`, 0600, atomic writes), survives a daemon restart (unlike F10
+  agent tokens).
+- `GET /api/external/secrets/{name}` (pre-auth, like the agent-secrets
+  endpoint) — the external service's own resolve call.
+- Operator-facing CRUD, admin-token-gated: `GET`/`POST
+  /api/secrets/service-tokens`, `DELETE /api/secrets/service-tokens/
+  {name}`, and CLI `datawatch secrets {mint,list,revoke}-service-
+  token(s)`. Minting is meant to be run directly by the operator in a
+  real terminal — the response is the only place the plaintext token
+  is ever shown, so running it via an agent or Claude Code's `!`
+  shell-passthrough would still leak it into a transcript.
+- 17 new tests (`internal/secrets/service_tokens_test.go`,
+  `internal/server/gh203_external_secrets_test.go`): mint/lookup/list/
+  revoke round-trip, persistence across a simulated restart, re-mint
+  replaces the old token, the scope-check integration itself (a
+  same-named wrong-Type caller is denied), the REST handlers' scoped-
+  allow/out-of-scope-deny/unknown-token-401 paths, and that neither
+  the list nor the external GET response ever includes a token value
+  where it shouldn't.
+- Also fixed, found while re-running gosec with the exact CI baseline
+  command (not the looser one used earlier this session):
+  `internal/server/proxy.go` and `internal/server/multiserver/
+  store.go` had `//nolint:gosec` on a `TLSSkipVerify` line — the
+  wrong directive (that's golangci-lint-only; gosec needs `// #nosec
+  G###`), silently not suppressing anything, predating this session.
+  `internal/audit/log.go`'s `Prune` (this session's own GH#201 work)
+  had the same unsuppressed G703 false-positive. All three now use the
+  correct directive; baseline-diff count confirmed back to exactly 63.
+
 ## v8.74.2 — fix: GH#203 — imap_mcp backend sends a bearer token (imap-mcp ≥ 0.5.3 auth)
 
 ### Fixed

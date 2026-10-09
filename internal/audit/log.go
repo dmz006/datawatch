@@ -178,6 +178,8 @@ func (l *Log) Prune(cutoff time.Time) (int, error) {
 	if err := l.f.Close(); err != nil {
 		return 0, err
 	}
+	// #nosec G703 -- l.path is set once at New/NewAt construction from a
+	// daemon-internal, config-derived path, never from request input.
 	if err := os.WriteFile(l.path, []byte(out), 0644); err != nil {
 		return 0, err
 	}

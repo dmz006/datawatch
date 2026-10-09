@@ -159,6 +159,45 @@ datawatch secrets import ~/secrets-backup.json
 shred -u ~/secrets-backup.json    # the export was plaintext
 ```
 
+### 4c. External services (GH#203)
+
+For an independent service that isn't a datawatch-spawned agent and isn't
+a federation peer (for example a sibling daemon like imap-mcp, running as
+its own systemd service) to resolve a specific, named secret without
+being able to read every secret in the store:
+
+```bash
+# 1. Mint a persistent token for the service. Run this YOURSELF, in a
+#    real terminal — never by asking an agent to run it, and not via
+#    Claude Code's `!` shell-passthrough either, since both still land
+#    the printed token in a conversation transcript. This command's
+#    response is the ONLY place the plaintext value is ever shown.
+datawatch secrets mint-service-token imap-mcp --desc "imap-mcp secret resolver"
+#  → {"name":"imap-mcp","token":"<64 hex chars>"}
+
+# 2. Scope the secret(s) that service should be able to read.
+datawatch secrets set imap_mcp_token_datawatch "<value>" --scope service:imap-mcp
+
+# 3. The external service resolves it itself:
+#    GET <datawatch-url>/api/external/secrets/imap_mcp_token_datawatch
+#    Authorization: Bearer <64 hex chars from step 1>
+#  → {"name":"imap_mcp_token_datawatch","value":"<value>"}
+#    A secret scoped to a different service, or not scoped to any
+#    service, is denied (403) or simply not readable this way.
+
+# List provisioned services (names only, never the token).
+datawatch secrets list-service-tokens
+
+# Revoke.
+datawatch secrets revoke-service-token imap-mcp
+```
+
+Tokens are persistent (survive a daemon restart) and stored at
+`<data_dir>/service_tokens.json`, 0600. This is distinct from
+`GET /api/agents/secrets/{name}`, which is also per-secret scoped but
+only ever issues tokens to F10 agent-cluster workers at spawn time
+(in-memory, lost on restart) — not usable by an external process.
+
 ### 4b. Happy path — PWA
 
 1. PWA → Settings → General → **Secrets store** card.

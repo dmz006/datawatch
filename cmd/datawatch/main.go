@@ -113,7 +113,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "8.74.2"
+var Version = "8.75.0"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -3674,6 +3674,17 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			websearchAPIKeyRefs[p.Name] = p.APIKey
 		}
 		httpServer.SetWebSearchAPIKeyRefs(websearchAPIKeyRefs)
+
+		// GH#203 — external-service tokens (persistent, operator-minted
+		// via `datawatch secrets mint-service-token`), independent of
+		// which secrets Store backend is configured.
+		if svcTokStore, err := secretspkg.NewServiceTokenStore(
+			filepath.Join(expandHome(cfg.DataDir), "service_tokens.json"),
+		); err == nil {
+			httpServer.SetServiceTokenStore(svcTokStore)
+		} else {
+			fmt.Printf("[warn] service token store open failed: %v\n", err)
+		}
 
 		if secretsStore != nil {
 			httpServer.SetSecretsStore(secretsStore)

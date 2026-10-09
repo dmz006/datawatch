@@ -9,6 +9,12 @@
 //   agent:*           — any agent
 //   plugin:gh-hooks   — only the plugin named gh-hooks
 //   plugin:*          — any plugin
+//   service:imap-mcp  — only the external service named imap-mcp
+//                        (GH#203 — ServiceTokenStore; a persistent,
+//                        operator-minted token for an independent
+//                        service that is neither a spawned F10 agent
+//                        nor a federation peer)
+//   service:*         — any external service
 //   agent             — any agent (equivalent to agent:*)
 //
 // Empty Scopes slice → universally accessible (backward compatible).
@@ -25,10 +31,11 @@ import (
 var ErrScopeDenied = errors.New("secret access denied: caller not in scope")
 
 // CallerCtx identifies an automated caller requesting a secret at runtime.
-// Type is "agent" or "plugin". Name is the profile name or plugin name.
-// Operator access never constructs a CallerCtx — it bypasses scope checks.
+// Type is "agent", "plugin", or "service" (GH#203). Name is the profile/
+// plugin/service name. Operator access never constructs a CallerCtx — it
+// bypasses scope checks.
 type CallerCtx struct {
-	Type string // "agent" | "plugin"
+	Type string // "agent" | "plugin" | "service"
 	Name string
 }
 

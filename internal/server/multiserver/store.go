@@ -37,7 +37,7 @@ func HTTPClient(skipVerify bool, timeout time.Duration) *http.Client {
 	return &http.Client{
 		Timeout: timeout,
 		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // operator-opted-in per peer, documented risk
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, // #nosec G402 -- operator-opted-in per peer, documented risk
 		},
 	}
 }

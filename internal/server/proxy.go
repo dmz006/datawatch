@@ -64,7 +64,7 @@ func (s *Server) handleProxyWS(w http.ResponseWriter, r *http.Request) {
 	}
 	dialer := websocket.Dialer{HandshakeTimeout: 10 * time.Second}
 	if remote.TLSSkipVerify {
-		dialer.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} //nolint:gosec // operator-opted-in per peer, documented risk
+		dialer.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} // #nosec G402 -- operator-opted-in per peer, documented risk
 	}
 	remoteConn, _, err := dialer.Dial(wsURL, header)
 	if err != nil {

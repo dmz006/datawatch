@@ -46,6 +46,7 @@ import (
 	"github.com/dmz006/datawatch/internal/router"
 	"github.com/dmz006/datawatch/internal/rtk"
 	"github.com/dmz006/datawatch/internal/server/multiserver"
+	"github.com/dmz006/datawatch/internal/secrets"
 	"github.com/dmz006/datawatch/internal/session"
 	"github.com/dmz006/datawatch/internal/stats"
 	"github.com/dmz006/datawatch/internal/tooling"
@@ -186,7 +187,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.74.2"
+var Version = "8.75.0"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -255,6 +256,11 @@ type Server struct {
 
 	// BL242 — centralized secrets store.
 	secretsStore secretsStore
+
+	// GH#203 — external-service token store (persistent, operator-minted
+	// tokens for independent services that are neither spawned F10 agents
+	// nor federation peers).
+	serviceTokenStore *secrets.ServiceTokenStore
 
 	// BL243 — Tailscale k8s sidecar client (nil when not configured).
 	tailscaleClient tailscaleClient
