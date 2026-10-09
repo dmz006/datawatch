@@ -22,6 +22,12 @@
 # manual dispatch (for spot checks). Tag-push trigger stays removed —
 # release.yaml already runs govulncheck + gosec before goreleaser.
 #
+#   - govulncheck-latest-advisory (NON-BLOCKING, GH#201/BL399
+#     2026-10-09) — the same scan against Go's latest "stable" release
+#     instead of the pinned one above, so an upgrade that would fix (or
+#     newly flag) something is visible without making every push to
+#     main hostage to whatever Go shipped that morning.
+#
 #   - security-registry (BLOCKING, schema-only) — validates
 #     security/accepted-risks.yml against the shared datawatch/
 #     datawatch-app acceptance standard (GH#197) with
@@ -46,7 +52,39 @@ permissions:
 
 jobs:
   govulncheck:
+    # GH#201/BL399 (2026-10-09) — was `go-version: stable`, which installs
+    # whatever Go release is newest AT CI-RUN TIME, not the version this
+    # repo actually ships with (go.mod's 1.26.6, same as ci.yaml's build
+    # job). That meant a brand-new upstream Go release landing with a
+    # freshly-disclosed CVE broke this gate on the very next push to
+    # main, for every commit, regardless of whether that commit changed
+    # anything — happened literally the push after this comment was
+    # written (go1.27.1 flagged, fixed in go1.27.2, zero datawatch code
+    # involved in any flagged call chain). Pinned to go.mod's version so
+    # this job checks what we actually ship, not a moving target; see
+    # the advisory job below for the "should we upgrade" signal this
+    # pin alone would otherwise lose.
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+      - name: Run govulncheck against the shipped Go version (blocking)
+        run: $(go env GOPATH)/bin/govulncheck ./...
+
+  govulncheck-latest-advisory:
+    # GH#201/BL399 (2026-10-09) — the "should we upgrade Go" signal the
+    # pinned job above deliberately no longer provides as a blocker.
+    # Runs the identical scan against whatever Go is newest today;
+    # continue-on-error so a new upstream release — or its CVEs — never
+    # blocks CI, but still shows up as a visibly failed (non-blocking)
+    # step for the operator to actually look at, not silently discarded.
+    runs-on: ubuntu-latest
+    continue-on-error: true
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
       - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6
@@ -55,7 +93,7 @@ jobs:
           cache: true
       - name: Install govulncheck
         run: go install golang.org/x/vuln/cmd/govulncheck@latest
-      - name: Run govulncheck (blocking)
+      - name: Run govulncheck against latest-stable Go (advisory, non-blocking)
         run: $(go env GOPATH)/bin/govulncheck ./...
 
   gosec:
