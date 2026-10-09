@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+  <!-- Hallmark · design-system: design.md -->
+  <link rel="icon" href="/favicon.ico" sizes="32x32"/>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml"/>
+  <link rel="apple-touch-icon" href="/images/logo.png"/>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta name="robots" content="max-image-preview:large"/>
+  <title>LLM Benchmark Design: Building the Ed-o-meter — Reinvently</title>
+  <meta name="description" content="How I built Featherbench, a single-file LLM eval harness running 28 tasks: one variable held constant, refusals counted as failures, and judge bias measured."/>
+  <link rel="stylesheet" href="../../blog/blog.css"/>
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-3Y8T2WZJ7M"></script>
+  <script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','G-3Y8T2WZJ7M');</script>
+<script type="text/javascript">
+    (function(c,l,a,r,i,t,y){
+        c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};
+        t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i;
+        y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);
+    })(window, document, "clarity", "script", "xzbx2iww8n");
+</script>
+<script>
+(function(){
+  document.addEventListener('click', function(e){
+    var link = e.target.closest('a[href="/contact/"]');
+    if (!link || typeof gtag !== 'function') return;
+    gtag('event', 'subscribe_click', {
+      location: link.getAttribute('data-subscribe-location') || (link.closest('nav') ? 'nav' : 'article'),
+      link_text: link.textContent.trim()
+    });
+  });
+})();
+</script>
+  <link rel="canonical" href="https://reinvently.co.uk/blog/building-the-ed-o-meter-llm-eval-harness/"/>
+  <meta property="og:title" content="Building the Ed-o-meter: Notes on Writing My Own LLM Benchmark"/>
+  <meta property="og:description" content="How I built Featherbench, a single-file LLM eval harness running 28 tasks: one variable held constant, refusals counted as failures, and judge bias measured."/>
+  <meta property="og:type" content="article"/>
+  <meta property="og:url" content="https://reinvently.co.uk/blog/building-the-ed-o-meter-llm-eval-harness/"/>
+  <meta property="og:image" content="https://reinvently.co.uk/images/hero-eval-harness.jpg"/>
+  <meta property="og:image:width" content="1200"/>
+  <meta property="og:image:height" content="669"/>
+  <meta property="og:image:alt" content="Abstract illustration of several paths fanning out from a single point of origin, one drawn as a dense triangulated mesh and the others as clean curves"/>
+  <meta property="og:site_name" content="Reinvently"/>
+  <meta property="og:locale" content="en_GB"/>
+  <meta property="article:published_time" content="2026-07-16T00:00:00+01:00"/>
+  <meta property="article:modified_time" content="2026-09-19T00:00:00+01:00"/>
+  <meta name="twitter:card" content="summary_large_image"/>
+  <meta name="twitter:title" content="Building the Ed-o-meter: Notes on Writing My Own LLM Benchmark"/>
+  <meta name="twitter:description" content="How I built Featherbench, a single-file LLM eval harness running 28 tasks: one variable held constant, refusals counted as failures, and judge bias measured."/>
+  <meta name="twitter:image" content="https://reinvently.co.uk/images/hero-eval-harness.jpg"/>
+  <meta name="twitter:image:alt" content="Abstract illustration of several paths fanning out from a single point of origin, one drawn as a dense triangulated mesh and the others as clean curves"/>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "BlogPosting",
+    "headline": "Building the Ed-o-meter: Notes on Writing My Own LLM Benchmark",
+    "description": "How I built Featherbench, a single-file LLM eval harness running 28 tasks: one variable held constant, refusals counted as failures, and judge bias measured.",
+    "datePublished": "2026-07-16T00:00:00+01:00",
+    "dateModified": "2026-09-19T00:00:00+01:00",
+    "image": "https://reinvently.co.uk/images/hero-eval-harness.jpg",
+    "author": {"@type": "Person", "name": "Ed Yau", "url": "https://reinvently.co.uk/about/#ed-yau", "sameAs": ["https://uk.linkedin.com/in/edmond-yau", "https://github.com/ed-is-ai"], "jobTitle": "Applied AI Architect", "worksFor": {"@type": "Organization", "name": "Kerv", "url": "https://kerv.com"}},
+    "publisher": {"@type": "Organization", "name": "Reinvently", "url": "https://reinvently.co.uk", "logo": {"@type": "ImageObject", "url": "https://reinvently.co.uk/images/logo.png", "width": 512, "height": 512}},
+    "url": "https://reinvently.co.uk/blog/building-the-ed-o-meter-llm-eval-harness/", "mainEntityOfPage": {"@type": "WebPage", "@id": "https://reinvently.co.uk/blog/building-the-ed-o-meter-llm-eval-harness/"},
+    "inLanguage": "en-GB",
+    "keywords": ["Featherbench", "LLM benchmark", "LLM evaluation harness", "eval harness design", "AI model refusals", "judge bias", "OpenRouter"]
+  }
+  </script>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    "itemListElement": [
+      {"@type": "ListItem", "position": 1, "name": "Home", "item": "https://reinvently.co.uk/"},
+      {"@type": "ListItem", "position": 2, "name": "Blog", "item": "https://reinvently.co.uk/blog/"},
+      {"@type": "ListItem", "position": 3, "name": "Building the Ed-o-meter: Notes on Writing My Own LLM Benchmark", "item": "https://reinvently.co.uk/blog/building-the-ed-o-meter-llm-eval-harness/"}
+    ]
+  }
+  </script>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "mainEntity": [
+      {
+        "@type": "Question",
+        "name": "What is the difference between Featherbench and the Ed-o-meter?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Featherbench is the eval harness: a single Python file that runs a fixed set of tasks against any model and grades the results. The Ed-o-meter is the leaderboard it produces, published as a public results page. One is the instrument, the other is the reading."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Why build a new LLM eval harness instead of using Inspect AI or promptfoo?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "The strength of a comprehensive Eval solution is also its weakness: the weight of the framework, the cost to run all the Evals. I'd rather have a simple, auditable solution that gets the job done; and is simple to bolt onto any project without engineering. The KISS principle."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "How should a benchmark count model refusals?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Featherbench counts benign refusals as failures, on the reasoning that the user wants something from the model and if it doesn't produce anything then it leaves them disappointed. It's debatable but I've gone with the assumption most users want to get stuff done."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "How do you stop the judge model from favouring its own answers?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "You cannot eliminate judge bias, so Featherbench measures it. Every selected model judges every response blind, and the harness publishes a judge-bias matrix showing the mean score each judge gives each contestant. Most published evals use a single judge that is quietly one of the contestants and leave the bias as an assumption."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Why run models through OpenRouter rather than each vendor's API?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "One endpoint, one streaming path and one latency clock for every model, so no vendor-specific SDK is quietly doing its own retries or connection pooling and contaminating the comparison. It also makes adding a model a one-line config change, which is how the panel came to include open-weight releases most shortlists omit. The risk of a router re-serving a request on a different upstream or a quantized variant is pinned shut with allow_fallbacks:false."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Why does Featherbench grade only the input and output, not the steps in between?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Grading is black-box by design, so the checker or rubric never needs to know how a model reached its answer, only whether the one thing being judged came out right. That is what lets a single task stand in for either an atomic capability, like fixing one bug, or an entire compressed process, like planning a holiday, judged purely on the finished itinerary."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Why are the 28 tasks split so unevenly across categories?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Coverage, not balance, is the goal. Realworld carries nine of the 28 tasks because everyday planning and advice-giving is the actual point of the exercise; tool-use has two because that was enough to catch what needed catching first. The taxonomy exists so a model that excels at one kind of task cannot hide a weakness in another behind a single average, and the task set is built to grow: tasks are JSON specifically so a new one is a diff, not a change to the harness itself."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Why does the Ed-o-meter publish wide confidence intervals instead of running more trials?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Given a fixed token budget, the design choice was width over depth: every model runs the full spread of 28 tasks once, rather than a narrower set many times over. There is no minimum trial count a result has to clear before publishing; every pass rate ships with its Wilson interval, however wide, shown as whiskers on the chart rather than smoothed into a false-precision average."
+        }
+      }
+    ]
+  }
+  </script>
+</head>
+<body>
+<a class="skip-link" href="#main-content">Skip to content</a>
+
+<nav class="nav">
+  <a class="nav-logo" href="/">Reinvently</a>
+  <div class="nav-links">
+    <a href="/">Home</a>
+    <a href="/news/">News</a>
+    <a href="/guides/">Guides</a>
+    <a href="/tools/ed-o-meter/">Ed-o-meter</a>
+    <a href="/about/">About</a>
+    <a href="/contact/">Subscribe</a>
+  </div>
+</nav>
+
+<header class="article-header">
+  <div class="post-meta">16 July 2026 &nbsp;·&nbsp; Updated 19 September 2026 &nbsp;·&nbsp; Model Evaluation &nbsp;&middot;&nbsp; <a href="/about/#ed-yau" style="color:var(--color-ink-2);border-bottom:1px solid var(--color-rule-2);">Ed Yau</a>, Applied AI Architect, Kerv</div>
+  <h1>Building the Ed-o-meter: Notes on Writing My Own LLM Benchmark</h1>
+  <p class="summary">The harness, the tasks, the decisions that turned out to matter, and the mistakes — written down as the process matters as much as the results</p>
+</header>
+
+<main id="main-content" tabindex="-1" class="container">
+  <article class="article-body">
+    <nav class="research-context" aria-label="Research context"><a href="/topics/engineering-evaluation/">AI engineering and model evaluation</a> &nbsp;·&nbsp; <a href="/research-standards/">Research and editorial standards</a></nav>
+
+
+    <a class="back-link" href="/blog/">&#8592; All posts</a>
+
+    <picture>
+      <source srcset="../../images/hero-eval-harness.webp" type="image/webp"/>
+      <img class="article-hero-image" src="../../images/hero-eval-harness.jpg" width="1200" height="669" fetchpriority="high" decoding="async" alt="Abstract illustration of several paths fanning out from a single point of origin, one drawn as a dense triangulated mesh and the others as clean curves"/>
+    </picture>
+
+    <div class="key-takeaways">
+      <h2>At a glance</h2>
+      <ul>
+        <li>Featherbench is a compact, single-file harness for testing LLMs directly,comparing model quality, latency, cost and refusal behaviour.</li>
+        <li>Provider and model variables are controlled, versioned so the comparison is reproducible.</li>
+        <li>Refusals from models are counted as failures</li>
+        <li>Its 28 tasks test simulate realworld usage scenarios rather than focusing on a single area.</li>
+        <li>Task variety is prioritised over repeated trials: five categories weighted toward realworld use, each run at least once, with the resulting uncertainty shown honestly rather than smoothed away.</li>
+      </ul>
+    </div>
+
+    <p>Every model launch arrives with a wall of benchmark scores: MMLU, GPQA, SWE-bench, an alphabet of acronyms that grows with each release. The numbers are always fascinating. The problem is that each score measures expected performance in domains other than yours. A model can top a maths reasoning suite and still fumble the tasks your team actually runs.</p>
+
+    <p>The question that matters in production is more specific, because LLMs get expensive at scale. Once something runs millions of times a month, the pressure is to minimise tokens, spend and latency by running the <em>smallest</em> model that still clears your bar, that is "good enough" for your application rather than "good enough" to top a public leaderboard or be AGI.  We made that argument at length in <a href="/blog/is-claude-fable-5-1-worth-it-for-enterprise-coding/" style="color:var(--color-ink-2);border-bottom:1px solid var(--color-rule);">our original GLM-5.2 vs GPT-5.5 comparison</a>; this post is about what happened when we acted on it.</p>
+
+    <p><strong>The short answer:</strong> Featherbench is the harness — a single Python file that runs 28 fixed tasks against any model and grades them. <a href="/tools/ed-o-meter/" style="color:var(--color-ink-2);border-bottom:1px solid var(--color-rule);">The Ed-o-meter LLM Leaderboard</a> is what the harness produces. One variable changes between runs (the LLM), every model judges every response blind, and the raw results are made public for maximum transparency. The <a href="/tools/ed-o-meter/" style="color:var(--color-ink-2);border-bottom:1px solid var(--color-rule);">latest published run</a> is the source for current scores; this article explains the method.</p>
+
+    <p>There is a second reason to run your own. Increasingly the public suites are a question the models have already seen: benchmark maxxing is a documented problem, and labs under real competitive pressure have every incentive to optimise for the suites everyone reports. That is <a href="https://en.wikipedia.org/wiki/Goodhart%27s_law" style="color:var(--color-ink-2);border-bottom:1px solid var(--color-rule);">Goodhart's law</a> applied to evaluation: a benchmark everyone trains against stops measuring what it was built to measure. Simon Willison's <a href="https://github.com/simonw/pelican-bicycle" style="color:var(--color-ink-2);border-bottom:1px solid var(--color-rule);">pelican-riding-a-bicycle SVG test</a> is probably the best-known public illustration: it worked precisely because the scene was too absurd for any model to have memorised a good answer, and it's now famous enough that there's a live debate over whether labs have started training against it specifically. A private task set, written after the models shipped and embedding documents that exist nowhere else, is immune to this.</p>
+
+    <p>So I ran the measurements myself, on my own under-the-radar realworld tasks. Everyone already vibe-checks a new model, pasting in a few favourite prompts and forming an impression. This isn't more scientific than that so much as it adds a modicum of rigour: the same prompts every time, a written-down pass bar, costs and latencies recorded, and the whole thing repeatable when the next model drops.</p>
+
+    <hr/>
+
+    <h2>Methodology</h2>
+
+    <h2>What Does It Mean to Hold One Variable Constant?</h2>
+
+    <p>Nothing changes between runs other than the model under test. The 28 tasks, the prompts, the answer keys, the checkers, the rubric, the scoring and the routing are all fixed and tracked in source control, so any two runs differ by exactly one thing. That is the whole design constraint: if a score moves, the model moved it, not a quietly re-tuned prompt or a changed grader. It sounds obvious, but most informal model comparisons vary the prompt and the model at the same time and then attribute the difference to the model.</p>
+
+    <h2>Why Build a New Eval Harness?</h2>
+
+    <p>There are excellent eval frameworks already. <a href="https://inspect.aisi.org.uk/" style="color:var(--color-ink-2);border-bottom:1px solid var(--color-rule);">Inspect AI</a>, <a href="https://github.com/promptfoo/promptfoo" style="color:var(--color-ink-2);border-bottom:1px solid var(--color-rule);">promptfoo</a> and <a href="https://www.braintrust.dev/" style="color:var(--color-ink-2);border-bottom:1px solid var(--color-rule);">Braintrust</a> are all more capable than what I built, and if you need tracing, dataset versioning or a UI, use one of them.</p>
+
+    <p>My requirement was narrower: I wanted to be able to run my own realworld tasks, like get a sour dough recipe for my mum, audit the entire measurement path. When the results look odd, I can review the code myself, no need to log a ticket with a support desk to tell you what's happening in their proprietary solution. So Featherbench is a single Python file, just over 1k lines, with a dependency on jinja2 so I can format a report at the end. Tasks are JSON, not code, so they diff cleanly in review and a non-engineer can author one. Three provider families run through the same scaffold. It's <a href="https://github.com/ed-is-ai/featherbench/blob/main/LICENSE" style="color:var(--color-ink-2);border-bottom:1px solid var(--color-rule);">MIT-licensed</a>, since a result that can't be reproduced is a claim, not a measurement.</p>
+
+    <p>The models are called through <a href="https://openrouter.ai/" style="color:var(--color-ink-2);border-bottom:1px solid var(--color-rule);">OpenRouter</a> rather than each vendor's API directly. Lazy or clever, I wanted to offer a way to eval models using one API key and one billing relationship instead of registering with a dozen providers.  This makes adding a model to the panel a one-line change rather than a new integration project. But it earns its place on measurement grounds too. Open Router offers pretty much every model, whether a frontier lab's flagship or an open-weight release way before anyone else as it doesn't do any hosting. It's just the universal endpoint to the models.</p>
+
+  
+    <h2>Task Design: Check the Floor, Judge the Ceiling</h2>
+
+    <p>Most useful answers can't be fully graded by machine. So task design splits into two approaches:-</p>
+
+    <p>The floor is the objective minimum a checker can verify: a constraint respected, a fact present, a dangerous tool not called. The technique that makes loosely-specified tasks gradeable is authoring the answer key — e.g. I wrote the tenancy agreement embedded in the prompt, I know the correct notice period, and a checker can assert it. A vegetarian-recipe checker forbids meat words; it makes no attempt to decide whether the recipe is good. Encoding taste in a regex produces false confidence, so the checker stops at the floor.</p>
+
+    <p>The ceiling — pacing, tone, sensible trade-offs — goes to an LLM rubric. Here I made the design decision that later proved most useful: every selected model judges every response, blind, and the harness publishes a judge-bias matrix — the mean score each judge gives each contestant. I couldn't eliminate judge bias, so I settled for measuring it. Most published evals use a single judge that is quietly one of the contestants and leave the bias as an assumption.</p>
+
+    <p>Grading is black-box by design: the checker or rubric only ever sees the final input and output, never how the model got there. That is what lets one task stand in for either a single atomic capability or an entire compressed process. A debugging task tests one fix. A holiday-planning task asks for a finished itinerary and judges only the itinerary — the checker has no opinion on how many draft passes or dead ends the model took to reach it. Both are "one task" in the same sense: one thing gets judged, however many steps produced it.</p>
+
+    <p>I also landed on three further rules during authoring:</p>
+
+    <ul>
+      <li><strong>One thing judged per task, not one action.</strong> A task can compress an entire process — researching, sequencing, planning — as long as there is one unambiguous thing the checker or rubric is judging at the end. The discipline is that the verdict is singular, not that the model only does one thing to reach it.</li>
+      <li><strong>Labelled sub-checks.</strong> A failure should provide detailed feedback on what went wrong.</li>
+      <li><strong>Negative controls for security testing.</strong> Security testing is about tricking a model to do something it shouldn't. So we seed a canary the model would only emit if it failed, then assert its absence.</li>
+    </ul>
+
+    <h2>How Should a Benchmark Count Refusals?</h2>
+
+    <p>Models sometimes refuse a task when it trips some built-in policy. How to score that is a genuine point of debate, and it materially moves rankings. Featherbench counts benign refusals as failures, on the reasoning that from the user's side a refused bug fix and a failed bug fix are indistinguishable — either way the work you needed doesn't get done. The raw JSONL is published so anyone who prefers different accounting can re-score it.</p>
+
+    <h2>Why Five Categories, Weighted Unevenly</h2>
+
+    <p>The 28 tasks split into five categories — coding, data, realworld, security and tool-use — and the split is deliberately lopsided: nine realworld, seven coding, six security, four data, two tool-use. Realworld is the largest because it is the actual point of the exercise: planning a holiday, pushing back on bad health advice, reading a tenancy agreement, formatting an answer under a constraint. The other four categories exist so a model that is excellent at chatty realworld tasks and quietly bad at debugging or jailbreak resistance doesn't get to hide behind a single average.</p>
+
+    <p>Coverage, not balance, is the goal. Tool-use has two tasks not because function-calling matters less, but because two was enough to catch what needed catching first — the framework assumes from the outset that tasks get added and adapted over time, which is also why tasks are JSON rather than code: a new one is a diff, not a pull request against the harness itself.</p>
+
+    <p>The same logic governs trials. Given a fixed token budget, the choice was width over depth: run every model against the full spread of task types once, rather than running a narrower set many times over for a false sense of precision. There's no minimum trial count below which a result gets held back — every pass rate publishes with its Wilson interval, however wide, drawn as whiskers on <a href="/tools/ed-o-meter/" style="color:var(--color-ink-2);border-bottom:1px solid var(--color-rule);">the pass-rate chart</a> rather than smoothed into a single number. A wide whisker is the harness telling you it hasn't earned a tighter claim yet, not a flaw to hide.</p>
+
+    <h2>Mistakes I Made Building the Harness</h2>
+
+    <p>Even something this simple can be tricky to get right.</p>
+
+    <p><strong>I over-engineered the provider layer before I understood the actual constraint.</strong> My first version was a plugin architecture, an adapter per provider so any of them could be swapped in cleanly — the right instinct for extensibility, the wrong one for a weekend project once I saw how many separate accounts it demanded. OpenRouter was the actual fix, and the plugin architecture got deleted rather than finished.</p>
+
+    <p><strong>The vegetarian recipe check kept giving me incorrect failures.</strong> My forbidden-term checker for the vegetarian recipe flagged a response that contained any animal product terms, e.g. a warning that "some stock cubes contain animal products" = FAIL. I added a negation-aware shield to cover this.</p>
+
+    <p><strong>I was overly paranoid about running these models</strong> I bought separate hardware to isolate the runs from my day-to-day work, though a Docker sandbox would have done the job - the framework only currently asks a model to generate text, not execute anything, so the actual blast radius was smaller than I'd assumed.</p>
+
+    <h2>Results</h2>
+
+    <h2>What Did I Learn Through the Process?</h2>
+
+    <p>Whether the exercise was worth it comes down to whether you learn something new that wasn't readily reported. I learned quickly why most people don't do this (it's harder than it looks), but also gained some practical understanding of the nuances of these LLMs. Whilst the market sees the commoditisation of the capabilities, the behaviours of the models are diverging, making them less interchangeable if you want the optimal results.</p>
+
+    <p>For instance, the top rubric score went to Kimi-3, which aligns with the hype. But its median time-to-first-token was 26.4 seconds — several times longer than anything else on <a href="/tools/ed-o-meter/" style="color:var(--color-ink-2);border-bottom:1px solid var(--color-rule);">the LLM Leaderboard</a>. That latency makes it impractical for interactive work: highest quality on paper, too slow to use.</p>
+
+    <p>It soon became clear that Fable-5 was a very fussy model. It hard-refused a run of tasks that nothing else thought twice about, which made it a poor fit for real-world use. The <a href="/blog/glm-5-2-fable-5-gpt-5-5-eval-results/" style="color:var(--color-ink-2);border-bottom:1px solid var(--color-rule);">full refusal breakdown</a> is in the original write-up. Most leaderboards make that accounting choice silently; making it explicit, with the raw data published, changed both the result and the conversation about it.</p>
+
+    <p>Another surprising finding was how badly the GPT-5.6 range performed on jailbreak canary tests, much worse than GPT-5.5 or similarly capable models. OpenAI have clearly taken a different architectural approach for this range, and it is the kind of regression you only catch if your harness tests for it directly.</p>
+
+
+    <h2>What's Next for the Ed-o-meter</h2>
+
+    <ul>
+      <li><strong>Deepen trials selectively</strong> where a result is worth resolving more precisely, without abandoning single-pass coverage as the default.</li>
+      <li><strong>A  judging panel approach</strong>, so no score on the board is self-assigned.</li>
+      <li><strong>A fresh run at each major model release</strong>, which is the only way the numbers stay worth reading.</li>
+    </ul>
+
+    <p>The harness, the 28 verbatim prompts and the raw results are on <a href="https://github.com/ed-is-ai/featherbench" style="color:var(--color-ink-2);border-bottom:1px solid var(--color-rule);">GitHub</a>; current leaderboard results are published on the <a href="/tools/ed-o-meter/">latest Ed-o-meter run</a>. If you find a flaw in the method, I'd genuinely rather hear it than not.</p>
+
+    <p><em>Featherbench is MIT-licensed. The Ed-o-meter is re-run on every major model release. To get future posts as they are published, <a href="/contact/" style="color:var(--color-ink-2);border-bottom:1px solid var(--color-rule);">leave your email address</a>.</em></p>
+
+    <h2>Frequently asked questions</h2>
+
+    <h3>What is the difference between Featherbench and the Ed-o-meter?</h3>
+    <p>Featherbench is the eval harness: a single Python file that runs a fixed set of tasks against any model and grades the results. The Ed-o-meter is the leaderboard it produces, published as a public results page. Featherbench is the test track, Ed-o-meter the leaderboard of results.</p>
+
+    <h3>Why build a new LLM eval harness instead of using Inspect AI or promptfoo?</h3>
+    <p>The strength of a comprehensive Eval solution is also its weakness: the weight of the framework, the cost to run all the Evals.  I'd rather have a simple, auditable solution that gets the job done; and is simple to bolt onto any project without engineering.  The KISS principle.</p>
+
+    <h3>How should a benchmark count model refusals?</h3>
+    <p>Featherbench counts benign refusals as failures, on the reasoning that the user wants something from the model and if it doesn't produce anything then it leaves them disappointed.  It's debatable but I've gone with the assumption most users want to get stuff done!</p>
+
+
+    <h3>Why run models through OpenRouter rather than each vendor's API?</h3>
+    <p>One endpoint, one streaming path and one latency clock for every model, so no vendor-specific SDK is quietly doing its own retries or connection pooling and contaminating the comparison. It also makes adding a model a one-line config change, which is how the panel can include brand new open-weight releases. Open Router does have a route to alternatives feature, so the risk of a router re-serving a request on a different upstream or a quantized variant is pinned shut with <code>allow_fallbacks:false</code>.</p>
+
+    <h3>Why does Featherbench grade only the input and output, not the steps in between?</h3>
+    <p>Grading is black-box by design for simplicity, so the checker or rubric never needs to know how a model reached its answer, only whether the one thing being judged came out right. That is what lets a single task stand in for either an atomic capability, like fixing one bug, or an entire compressed process, like planning a holiday, judged purely on the finished itinerary.</p>
+
+    <h3>Why are the 28 tasks split so unevenly across categories?</h3>
+    <p>Coverage, not balance, is the goal. Realworld carries nine of the 28 tasks because everyday planning and advice-giving is the actual point of the exercise; tool-use has two because that was enough to catch what needed catching first. The taxonomy exists so a model that excels at one kind of task can't hide a weakness in another behind a single average, and the task set is built to grow: tasks are JSON specifically so a new one is a diff, not a change to the harness itself.</p>
+
+    <h3>Why does the Ed-o-meter publish wide confidence intervals instead of running more trials?</h3>
+    <p>Given a fixed token budget, the design choice was width over depth: every model runs the full spread of 28 tasks once, rather than a narrower set many times over. There's no minimum trial count a result has to clear before publishing — every pass rate ships with its Wilson interval, however wide, shown as whiskers on the chart rather than smoothed into a false-precision average.</p>
+
+    <div class="related-posts">
+      <p class="related-posts-label">Continue reading</p>
+      <ul class="related-list">
+        <li><a href="/tools/ed-o-meter/">The Ed-o-meter: LLM Leaderboard</a></li>
+        <li><a href="/blog/glm-5-2-fable-5-gpt-5-5-eval-results/">Locked-Down Fable Disappoints, Cheap-as-Chips GLM-5.2 Unsafe, GPT-5.5 Wins as the All-Rounder</a></li>
+        <li><a href="/blog/is-claude-fable-5-1-worth-it-for-enterprise-coding/">Is Claude Fable 5.1 Worth It for Enterprise Coding?</a></li>
+      </ul>
+    </div>
+
+  </article>
+</main>
+
+<footer class="footer">
+  <p>&copy; 2026 Reinvently. All rights reserved.</p>
+  <p style="margin-top:8px;font-size:12px;color:var(--color-ink-2);">Reinvently writes about topics that inform engineering teams adopting AI tooling and modern development practices.</p>
+</footer>
+
+</body>
+</html>

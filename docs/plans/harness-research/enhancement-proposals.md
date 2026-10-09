@@ -1,84 +1,157 @@
-# Harness Research — Enhancement Proposals
+# Harness Research — Enhancement Proposals (v2, 19-pattern remap)
 
-**Date:** 2026-09-07 · **Status:** Draft · **Companion:** `synthesis.md`, `methodology.md`
+**Date:** 2026-09-30 · **Status:** Draft · **Companion:** `usage-patterns.md` (19 patterns / 20 builders), `datawatch-mapping.md` (12 MATCH / 7 PARTIAL / 0 MISSING, 5 ranked gaps)
+**Supersedes:** the 2026-09-11 proposal draft that previously occupied this path (5 proposals: eval sweep, eval-DAG node, lineage/OpenInference export, docs grounding metrics, red-team validator pipeline) — preserved in git at the last commit before this revision (`git log --oneline -- docs/plans/harness-research/enhancement-proposals.md`; read the archived copy with `git show <sha>:docs/plans/harness-research/enhancement-proposals.md`). Where this file re-adopts one of those five (P4 keeps #1+#2; the Declines section keeps #5 red-team and #3 lineage, and notes #4 grounding as deferred), it cites the proposal by number so the archived text remains the reference.
+**Baseline:** v8.37.4, packages under `internal/` per the mapping footnote.
 
-Selected from the four augmentation themes in `synthesis.md` (#1 eval orchestration, #2 data provenance, #3 RAG grounding metrics, #4 red-teaming depth). Five proposals; each rated on feasibility (how little new machinery is required vs. what BL259/BL117/BL369/BL274 already provide) and impact (breadth of sessions/PRDs affected).
+Re-grounds every proposal in the 19-pattern builder evidence and the five ranked gaps in `datawatch-mapping.md`, and adds three proposals the 2026-09-11 draft never claimed: the per-LLM-call span artifact (which several other proposals depend on), stall-triggered model-ladder escalation, and the agent-authoring back-write loop.
 
----
+Rating conventions (from the task brief):
 
-## 1. Eval Sweep — suite × backend matrix
-
-**Problem.** `eval_run` executes one suite against a single backend and emits a single pass/fail. Choosing between LLMs/ComputeNodes (or comparing a before/after prompt) requires hand-running the suite once per backend and eyeballing two `Run` rows — no side-by-side, no aggregate comparison.
-
-**Proposed feature.** Add a sweep verb to the evals surface: `eval_run` accepts a matrix (suite × list of LLM refs, optionally × model overrides) and fan-outs the suite per cell in parallel under the existing max-parallel plumbing. A new `RunSet` object stores per-cell results with normalized metrics (pass_rate, latency, tokens, cost via BL6) and renders a side-by-side comparison table, including pass-vs-threshold per cell.
-
-**User benefit.** Model selection and model-upgrade decisions become one command with an apples-to-apples table instead of manual bookkeeping; regressions introduced by a new model surface immediately across every suite.
-
-**Implementation sketch.** Extend the BL259 runner with a loop over the backend matrix that reuses the per-suite executor verbatim, recording each result as a child of a new parent run row (new `parent_run_id` field, no new store). Comparison rendering is a read-side aggregation over the children, plus an MCP/CLI verb (`eval_run --sweep`) that returns the table.
-
-**Feasibility: 5/5 · Impact: 4/5**
+- **Patterns** cite the slug + the builders who independently arrived at it, from `usage-patterns.md`.
+- **Gaps** cite the ranked-gap number (#1–#5) from `datawatch-mapping.md`.
+- **Effort** is S/M/L, justified against the named packages' existing machinery (how much is a new store/primitive vs. a config field on an existing type vs. a verb on an existing surface).
+- **Impact** scales with the builder count on the anchor pattern (10 → 9 → 8 → … → 2) and the blast radius of the delta.
 
 ---
 
-## 2. Eval nodes in the PRD-DAG orchestrator
+## P1. Per-LLM-call span artifact (persist what `dispatcher.go` throws away)
 
-**Problem.** BL117 graphs run PRD + guardrail nodes; there is no eval-node type. A suite gate today only exists if the operator separately wires quality gates (BL367) or runs evals out-of-band — nothing in the DAG can say "do not run downstream PRD B until suite X passes against the artifact produced by PRD A".
+**Patterns:** `recorded-run-artifacts` (7 builders — #7 Storer "assembled system prompt, tool schemas, input messages, output blocks, token/cache use, stop reason", #8 Verma's ref registry, #10 joacod "every provider call … is a first-class event on the run", #12 Featherbench raw-JSONL publication) — and it is the *enabling primitive* for `tiered-model-routing`, `independent-verifier`, and `single-variable-eval` deltas.
+**Gaps closed:** #1 (primary; also the load-bearing dependency for #2, #3, and the eval-sweep cost table from the original proposals file #1).
 
-**Proposed feature.** Add an `eval` node kind to the orchestrator graph planner and runner: it executes a named suite (optionally with sweep params from proposal 1) against the project directory state, records a verdict record exactly like a guardrail verdict, and its pass/fail blocks dependent nodes. Existing `orchestrator_verdicts` and cancellation/verdict UX are reused unchanged.
+**What datawatch changes.** Today `internal/inference/dispatcher.go:37-59` ships `Request`/`Response` as ephemeral transport types and nothing persists them; `callRecord` exists only in `dispatcher_test.go`. Add a `Span` primitive — one JSONL record per call: `(session_id, task_id/PRD-task ref, llm_name, node, model, seq_in_session, assembled_system_prompt or hash, tool_schemas version, input_messages, output_blocks, stop_reason, tokens_in/out, cache_read_tokens, cost_usd via BL6, started_at, finished_at, status∈{ok,stalled,error,fallback_next_node})` — written to `~/.datawatch/spans/<session_id>.jsonl` with the same append-only shape as `internal/memory/memory-wal.jsonl` (atomic append, index by session, bounded retention config). Expose three read verbs — span list by session, span fetch by id, and a "last N call" helper the executor can use to *detect* a stall (identical repeated output, or N consecutive calls with zero progress). The span is the missing link in every existing read side: `telemetry_get` (add a spans section), `session_timeline` (attach call spans under task state), BL6 `/api/cost` (cost already computed per-call at dispatch — persist it), and `observer_stats` (keep the process envelope; spans are the finer grain).
 
-**User benefit.** Acceptance criteria become first-class DAG gates: multi-PRD features ship only when the full behavioral suite passes, turning ad-hoc "run the evals" memory into enforced ordering.
+**Packages.** New `internal/inference/spans.go` (writer + store, no new adapter work: `adapters/` already produce `Request`/`Response` at the dispatcher boundary, `dispatcher.go:120` failover walk is the one place a span must record which node was tried); `internal/server` REST; `internal/mcp` verbs; `internal/router` comm-channel verb (`spans list | spans get | spans tail`).
 
-**Implementation sketch.** Introduce an `eval` node kind in the graph planner that resolves to the BL259 runner behind the same `Verdict` interface guardrail nodes use (runner interface, new adapter). The runner's dependency-walk and verdict-appending code needs no structural change — only the node-type dispatch and a suite-name field on the node row.
-
-**Feasibility: 5/5 · Impact: 4/5**
-
----
-
-## 3. Unified lineage query + OpenInference span export
-
-**Problem.** Provenance fragments exist — memory breadcrumbs (`scope_promote`), session parent/child (BL347/BL351), per-task telemetry, memory WAL — but there is no query that answers "which memory rows, model calls, and upstream session outputs fed this output?" and no OTel/OpenInference export, so traces cannot feed existing observability stacks (Phoenix/Langfuse) or support replay.
-
-**Proposed feature.** A lineage query surface: given a session + output anchor (or a task in a PRD), walk the span graph (agent spans → LLM-call spans → memory-read spans → upstream-session spawn spans) and return the contributor list with role, timestamp, and content excerpts. Optionally serialize the same graph to OpenInference-shaped spans (OTLP batch export to any collector), letting external tools render DataWatch sessions as standard traces.
-
-**User benefit.** Debugging a bad autonomous output becomes a query instead of archaeology across four stores; the same session becomes visible in the operator's existing OTel observability without a bespoke UI.
-
-**Implementation sketch.** Define the span schema over existing rows (session id, task id, memory row id, compute-node/model, parent span id) and build it as read-side assembly — no new collection path, since the breadcrumbs already exist on the memory side. Export is a mapping function to OTLP + a background flusher, gated behind a config flag so nothing sends unless the operator sets a collector endpoint.
-
-**Feasibility: 3/5 · Impact: 5/5**
+**Effort: M.** Justification: the write path is a single choke point (the dispatcher already serializes every call through `Request`/`Response`, so one hook persists everything for every adapter at once); the store is trivially modeled on the existing memory-WAL append shape (`internal/memory/memory-wal.jsonl`); the read verbs are plain queries, no new state machine. The one real cost is deciding the retention/redaction policy (prompts contain project content — pair with `internal/secrets` redaction per pattern-8 evidence #20 Forcefield credential redaction; that's config, not architecture).
+**Impact: high.** 7 builders on the anchor pattern + the delta on 2 more patterns (7, 16) + it unblocks P2, P3, and original-proposal #3 (lineage/OpenInference), which needs the span graph as input. Highest leverage primitive in this file.
+**Parity surfaces:** REST (primary store reader), MCP (3 verbs), CLI comm channel (list/get/tail), config (retention, redaction-on-write, enabled flag). PWA read-only span browser is a natural follow-on, not required for the primitive to pay off.
 
 ---
 
-## 4. Grounding metrics for docs_search / docs_read
+## P2. Stall-triggered model-ladder escalation (the ralphctl rung, not just the ralph)
 
-**Problem.** BL274 serves ranked excerpts with source/path/anchor but has no measured quality signal: no answer-relevance or faithfulness score, no citation-precision check. Operators cannot tell whether the top hit actually supports the question, and LLM-driven `docs_apply` plans are unconstrained by retrieval quality.
+**Patterns:** `tiered-model-routing` (7 builders — #2 ralphctl "climbs the ladder one rung at a time on a stall, carrying the critique", #5 DeepClaude live-switch, #1 Huntley oracle-rescue on a compiler-error wall, #14 albert-ying per-role providers with auto-fallback to single-agent).
+**Gaps closed:** #2 (the "no stall-triggered model-ladder escalation" half of it; #2 also covers the cost-feedback half which is a config field on the same mechanism below).
 
-**Proposed feature.** Add per-result grounding scores to docs search results: a lightweight scorer (cross-encoder rerank or embedder-similarity delta) that produces a 0–1 relevance/grounding score per excerpt, a threshold filter in `docs_search`, and an aggregate "grounding report" (top-k coverage, citation precision) attached to `docs_apply` plans. Thresholds surface in the same config surface as BL274 trust config.
+**What datawatch changes.** `internal/autonomous/executor.go` today treats `ErrWorkerStalled` as a retryable failure on the *same* model, bounded by `auto_fix_retries`. Add a per-PRD **ladder**: an ordered `fallback_chain` of LLM-registry refs (the field already exists on `llm_add` for claude-code profiles — lift it from a session-CLI knob to a first-class PRD/task field), and on stall (or verifier exhaustion) the executor advances one rung, re-issues the task with the prior run's verifier critique + `session_output` tail as the "carrying the critique" payload, and writes the escalation event to `telemetry_get` and `audit` (BL9). Bounded by the existing `auto_fix_retries`. A soft cost-feedback term on rung selection (prefer the rung whose recent actual `cost_summary` spend is lowest among ladders that pass) reuses the BL6 rate table — this is the "observation only, not a selection term" delta from the gap note, made one field away.
 
-**User benefit.** Trust in MCP-served answers becomes measurable — low-grounding plans can be flagged for re-planning, and `docs_search` callers can stop over-trusting rank-1 on ambiguous queries.
+**Packages.** `internal/autonomous/executor.go` + `models.go` (ladder field on PRD/task rows, one new column per row) + `capacity.go` (a rung change is a fresh pool lease on `llm:<name>` — the ledger already pools that way, no new pool kind); the stall *signal* comes from the P1 span tail (two consecutive identical `output_blocks` with no state change = stall) if P1 lands, or stays on `stale_task_seconds` if it hasn't.
 
-**Implementation sketch.** Reuse the BL274 index embedder for query-vs-excerpt rescoring (already computed vectors, one dot-product pass per result) and attach scores to the existing response shape. `docs_apply` gains a scoring step that summarizes per-step citation support and attaches it to the plan object; the LLM-translated-path long-tail can later adopt the same scorer via the plan-then-execute approval flow (BL274 Sprint 3).
-
-**Feasibility: 4/5 · Impact: 3/5**
-
----
-
-## 5. Red-team validator pipeline (deepening BL369)
-
-**Problem.** BL369's injection guard is a warn-only phrase scan applied to PRD/task specs; it is a lexical match, not a validator pipeline. promptfoo-style vulnerability scanning is missing, so a sufficiently obfuscated or task-shaped injection still flows into an autonomous worker unchecked.
-
-**Proposed feature.** Elevate the guard to a multi-stage validator pipeline at the PRD/task boundary: (1) the existing regex layer, (2) a cheap LLM-based adversarial classifier (classify: benign / instructing-out-of-bounds / exfiltration / tool-abuse) with a confidence threshold, and (3) per-stage action escalation — warn (today's default) or block (new, gated and audited). Stage verdicts join the guardrail verdict stream so they appear in `per_automaton_guardrails` and orchestrator verdicts, and the classifier stage can run as a PRD-scan-loop sibling (SAST/secrets/deps pattern) with automatic fix-sub-PRD generation for false-positives reported into rules.
-
-**User benefit.** Autonomous loops get real pre-execution injection defense rather than a warning, and block actions leave an auditable verdict trail the operator can tune per-PRD via existing override priority.
-
-**Implementation sketch.** Implement the pipeline as a new guardrail library entry that the BL369 hook already invokes, with stages registered in the same plugin/guardrail dispatch (regex classifier, then optional LLM classifier reusing the ask path). Verdict emission reuses the existing guardrail verdict writer; "block" mode short-circuits PRD/task creation behind the same `mcp.allow_self_config`/audit gate that `block_on_injection` already anticipates.
-
-**Feasibility: 4/5 · Impact: 5/5**
+**Effort: M.** Justification: the executor's retry/re-verify loop already exists and is bounded; the change is "change the next attempt's backend ref + enrich its task text" inside a loop datawatch already runs per task, plus one config field. No new store, no new scheduler. It looks like L only because "routing" sounds architectural — but the routing decision point is one function in `executor.go`, not a new router (BL20 `internal/router` is for *keyword → backend* selection and can be left alone; ladder escalation is *stall → next rung*, a different signal at a different boundary).
+**Impact: high.** 7 builders on the anchor pattern; the delta is explicitly called out in the gap note as `feature-themes.md` theme 6. Directly touches the strongest datawatch differentiator (local tier + multi-LLM registry) by making the operator's manual 80/20 hand-tuning automatic.
+**Parity surfaces:** config (PRD-level `set_llm`-family verbs already exist at PRD/story/task grain — the ladder rides the same three verbs), MCP, REST (PRD row), CLI (PRD edit), PWA (PRD detail shows the chain). No new surface category.
 
 ---
 
-## Sequencing (per synthesis.md recommendation)
+## P3. Live-session model flip (`session_switch_model`: change the *next turn's* backend, keep the tmux context)
 
-1. **Proposal 1 + 2 first** — both reuse BL259/BL117 with minimal new machinery; together they close the largest gap (#1).
-2. **Proposal 5 second** — small surface, closes the security gap (#4) with existing guardrail plumbing.
-3. **Proposal 3 as a design spike** — scope the span model before any export work (synthesis recommendation).
-4. **Proposal 4 last** — depends on the embedder being stable and the BL274 plan-then-execute gate (Sprint 3) landing.
+**Patterns:** `tiered-model-routing` (7 builders — #5 DeepClaude `/_proxy/mode` "live switch across providers without restarting the session", #9 Eve auto-router escalation mid-conversation, #2 ralphctl mid-run ladder).
+**Gaps closed:** #3 (primary; composes with #1 — the flip should be auditable as a span-boundary event once P1 exists).
+
+**What datawatch changes.** `internal/session/manager.go:3155,3364` `Restart`/`RestartSession` kills then relaunches — that is not a model swap, it is a session death with a new task. Add a first-class verb that rebinds the session's *next* call to a different LLM-registry entry (or the same entry with a different `compute_nodes` rung), **without** killing the tmux pane: for session-backend kinds (opencode, claude-code, goose, aider) this is a config/env re-injection the backends already accept mid-session if the operator does it by hand (env var or config reload), which the daemon can now do atomically and record; for raw inference kinds it is simply the dispatcher's node walk pointed at a new registry entry from the next `Request`, which `internal/inference/dispatcher.go` already supports at call granularity. The daemon records the swap as an event in `telemetry_get`, a BL9 audit row, and (post-P1) as a span-sequence marker, so "what model answered turn 14 vs turn 15" is queryable.
+
+**Packages.** `internal/session/manager.go` (one verb, a new method next to `Restart`) + `internal/inference` (per-session routing override in `store.go`/`dispatcher.go`) + `internal/llm` (the registry lookup already has everything needed) + `internal/mcp`/`internal/server`/`internal/router` verb plumbing. F10 `internal/agents` container sessions get the same verb by re-configuring the container env, which the existing driver machinery can do on the next spawn — live-container flips are out of v1 scope.
+
+**Effort: M.** Justification: the kill-and-relaunch path (`RestartSession`) proves the daemon already knows how to *rebuild* a session's backend; this proposal is strictly less work — it keeps the pane and rebinds the call path, which the dispatcher already does per-new-call. The novel surface is the session→LLM override table in `internal/inference/store.go`, which is one row per session. The risk is backend heterogeneity (five kinds, each with different mid-session semantics), so the honest v1 is "works for ollama/openai-compat/inference kinds + opencode; claude-code flip = documented restart-with-context" — that scoping is what keeps it M.
+**Impact: medium.** 7 builders on the pattern, but the *mid-run-swap* delta is a one-off variation (three of the seven cite it); it matters most to the operator's "stop burning the expensive model on a routine turn" loop, which is datawatch's core local-tier story.
+**Parity surfaces:** MCP (1 verb), comm channel (`session switch llm=<name>` — the router already parses per-command overrides for sessions), PWA session detail (show current model vs. original), REST. Config surface: none needed (it is an action, not a setting).
+
+---
+
+## P4. Eval sweep + eval DAG gate (promote and extend original proposals #1 and #2)
+
+**Patterns:** `single-variable-eval` (2 builders — #12 Featherbench "one variable changes between runs — the model", 28 fixed tasks; #13 McCabe 58-case golden set, `--prompt=v1|v2|v3`, "swap in a frontier model… re-run the identical golden set") — with `independent-verifier` (#12 blind judge panel, #16 OpenRig owner/checker seats) and `harness-failure-tuning` (#13 identical token counts exposed the un-threaded version flag) as the deltas the gap note calls out.
+**Gaps closed:** the PARTIAL row-16 delta verbatim ("no suite×backend sweep in one shot… no eval node in the BL117 DAG"), plus a piece of #2 (the cost/latency column of the sweep table is the observable that makes routing decisions legible, same shape evidence #13 and #5 cite).
+
+**What datawatch changes.** Two verbs the original 2026-09-11 proposals proposed and we keep, re-grounded:
+1. **Sweep:** `eval_run` (or `eval_sweep`) takes a suite × N LLM-refs matrix, runs each cell through `internal/evals/evals.go` `Runner.Execute` (already isolated per-call), and stores the results as a new `RunSet` parent row whose children are `Run` rows (one new `parent_run_id` field, no new store — `RunsDir()` already persists to `~/.datawatch/evals/runs`); the comparison table is read-side aggregation over the children (pass_rate, latency, tokens, cost via BL6 — every column is already computed). Threshold verdict per cell reuses `Run.Pass`.
+2. **DAG gate:** add `NodeKindEval` to `internal/orchestrator/models.go` (it already has `NodeKindPRD`/`NodeKindGuardrail`, one `Kind string` field + one `Suite string` field), dispatch the runner behind the same verdict interface the guardrail node uses (`internal/orchestrator/runner.go` + `store.go`), so an eval-gate failure blocks dependent PRD nodes exactly like a guardrail-verdict failure does today (`orchestrator_verdicts` unchanged).
+
+**Packages.** `internal/evals` (`RunSet` + sweep loop in `evals.go`; ~100 lines on the write side, read-side is SQL-free JSONL like the rest of that package) + `internal/orchestrator/models.go`+`runner.go` (one new case in the node-kind switch) + `internal/autonomous` if the sweep should be wireable as a PRD-level quality gate (BL367 `set_quality_gates` already has the `test_command` + `block_on_regression` pair — the eval gate composes directly onto that, no new config plumbing).
+
+**Effort: S (sweep) + S (DAG node) = S total, or M if the PWA comparison table view is in scope for the same pass.** Justification: both are config-field + one-verb additions to packages whose entire job is already "run X, record a pass/fail, persist the row" — the sweep is a loop over an existing verb, the DAG node is a new case in an existing `switch`. The only genuinely new thing is the `RunSet` parent/child row, which is one field, not a new store.
+**Impact: medium.** 2 builders on the anchor pattern, but the delta is the *only* one where datawatch's own strongest differentiator (local tier + multi-node registry — 6 builders on `local-inference-tier`) meets datawatch's existing eval harness, and the sweep table is the exact artifact that makes "which model should this task-class run on" a data question instead of a hand-wave. `independent-verifier` (4 builders) and `harness-failure-tuning` (4 builders) both cite the same golden-set discipline as their measurement tool, so the practical reach is 10 distinct builders, not 2.
+**Parity surfaces:** MCP (`eval_run --sweep`, DAG node via `orchestrator_graph_create`), REST, comm channel, config (threshold defaults already on the suite YAML). PWA: the comparison table is where it most wants to live (one new view); CLI gets the table for free as text.
+
+---
+
+## P5. VRAM-contention lock (`node:<name>` pool becomes GPU-aware)
+
+**Patterns:** `boundary-guardrails` (6 builders — #15 Quorum "Ollama models run sequentially to prevent VRAM contention", #17 Denicola disposable-VM blast-radius, #20 Forcefield local-first as a boundary) and `local-inference-tier` (6 builders — #9, #13, #15, #19 all name VRAM/KV/hardware as a first-class scheduling concern).
+**Gaps closed:** #5 (primary — "no hardware-aware (VRAM-contention) scheduling surface" is the one gap no prior version of this file claimed).
+
+**What datawatch changes.** `internal/capacity/ledger.go` pools on `host`, `node:<name>`, `llm:<name>`; none of the three consults GPU state. The data already exists: `compute_node.gpu_mem_gb` (declared, verified in the mapping) and `observer_stats.gpu` (live). Add a fourth pool kind, `vram:<node>`, with a per-LLM `vram_reserve_gb` field on the LLM registry row (new column, `llm_update`/`llm_add` already accept arbitrary fields — `internal/llm` needs no architectural change); the ledger issues the lease on acquire (it already serializes issuance) and releases on the existing TTL/claim path (no new lifecycle code — the pool is a config field, not a new mechanism). The executor's lease request (`internal/autonomous/capacity.go` + `executor.go`) adds the fourth pool to its acquire set; a task waiting for 13B-model VRAM behind a 27B-model task is now a *wait*, not a *double-book*, which converts the `capacity_wait_timeout_seconds` stall (already configured) from an error into a queue. Dispatch-time check: if `observer_stats.gpu` reports the node over its declared `gpu_mem_gb`, the dispatcher's fixed-priority walk (`dispatcher.go:120`) already knows how to skip to the next node — no scheduler rewrite, just one more "is this node free" predicate the walk evaluates.
+
+**Packages.** `internal/capacity/ledger.go` (one pool kind, ~one table in the store file) + `internal/compute` (one field on `ComputeNode`, one `vram_reserve_gb` on the LLM registry row) + `internal/autonomous/capacity.go` (fourth acquire) + `internal/observer` (GPU read — already there, `observer_stats` verified in the mapping). `internal/inference/dispatcher.go` gets one predicate in the node walk.
+
+**Effort: M.** Justification: the ledger is the *right* home (the proposal's whole point is "reuse the inter-unit lock that already exists"), and `ledger.go` is a small package whose entire job is issue/hold/release a lease on a named pool — adding a pool is its normal operation, which is what makes this S-shaped-in-intuition. It reads L-shaped because it touches four packages (`capacity`, `compute`, `autonomous`, `inference`) and because GPU state is live (the release-vs-stale-read race on a node that just OOM'd needs a `observer_stats` cross-check, not just the declared field), which is a new correctness question this file didn't have before.
+**Impact: medium.** 6 + 6 = 12 distinct builder-touches across the two anchor patterns, and the delta is the one that makes datawatch's *strongest* differentiator (local tier, row 10 MATCH) actually usable at concurrency > 1 — the `structured-debate` row (18, 2 builders) degrades to "sequential" on a local node precisely because of this gap, so closing it also un-blocks a third pattern's local-node behavior.
+**Parity surfaces:** config only (`llm_update` field + `compute_node_update` field), MCP (the two existing verbs gain one field each — no new verbs), PWA (the existing capacity-status card shows one new pool row — the card already renders the three existing pools), comm channel (free, same verb plumbing). This is the cheapest-surface proposal in the file, which is a feature: it's the kind of thing operators actually adopt.
+
+---
+
+## P6. In-loop agent authoring (the `self-updating-instructions` back-write)
+
+**Patterns:** `self-updating-instructions` (3 builders, 2 strict — #1 Huntley "it updates AGENT.md itself", #4 Akhil "folds stable patterns into AGENTS.md/CLAUDE.md"; #14 albert-ying's looser cascade ends by auto-generating a SKILL.md) — with the risk the pattern note calls out: no builder describes a review step for these edits.
+**Gaps closed:** the PARTIAL row-15 delta ("the agent never *writes back* into an instruction file from inside a task").
+
+**What datawatch changes.** Add a **gated write-back primitive** to the instruction-file surfaces datawatch already owns, not a new one: a `memory_scope_promote`-shaped verb `instruction_propose` (the exact noun datawatch uses elsewhere for "agent wants to change something the operator owns" — `session_guardrail_approve`, `autonomous_prd_approve`, `docs_trust_accept` is the exact precedent this copies — pending-accept queue, operator-apply or operator-discard) that a task session can call with `(target: AGENT.md | CLAUDE.md | SKILL.md:<name>, section, diff, rationale)`. The daemon appends the proposal to the existing pending-trust/verdict queue (`internal/autonomous/guardrail_registry.go`'s pending-verdict shape is the model — a proposal is a verdict with "apply" instead of "approve"), writes a BL9 audit row, and **never** touches the file itself until the operator's existing `docs_trust_accept`/apply-verb runs, at which point it edits the file on disk with a breadcrumb footer (`<!-- proposed by session <id>, task <id>, <timestamp> -->`) so `git blame` on the instruction file shows *which run* changed it. The agent's existing scratch surface (`memory_remember` into `session-local` scope) is unchanged — the proposal is the promotion step the pattern note says is missing.
+
+**Packages.** `internal/autonomous` (the proposal queue + the approve/discard verbs; the PRD already owns the pending-approve state machine, `models.go` has one new state on the proposal row) + `internal/skills` (for SKILL.md targets — `git_registry.go` already knows where synced skills live on disk, one new "draft pending" flag, no new sync mechanism) + `internal/session/tracker.go:178-322` (the wake-up composer already knows which files it reads; it also becomes the write target — read/write symmetry on one file path it already resolves) + `internal/mcp`, `internal/router`, `internal/server`. No new store: the proposal row is a row, same as a guardrail verdict.
+
+**Effort: M.** Justification: every piece is a copy of a mechanism the daemon already has — the pending-queue-then-approve pattern is BL24/BL191's entire approval surface, the file-path resolution is `tracker.go`'s existing job, the audit row is BL9's one-call primitive. What makes it M and not S is scope: three target file types (AGENT.md, CLAUDE.md, SKILL.md) × two states (proposed/approved) × one new breadcrumb requirement on every write is four surface shapes to keep consistent, and getting the "never auto-apply" wrong is a trust incident, not a bug ticket — the review-gate is the whole point, per the pattern evidence.
+**Impact: medium.** 3 builders (2 strict) on the core of it, but the pattern note also flags that #14's looser variant (skill auto-generation) and #1/#4's AGENT.md folding are three of the *most-cited* deltas in the mapping table's PARTIAL column, and it directly composes with datawatch's strongest MATCH (`scoped-memory-promotion`, 6 builders) — session-local scratch → proposed → operator-applied is one promotion step the existing scope stack already models end-to-end, minus the last hop onto disk, which is this proposal.
+**Parity surfaces:** MCP (3 verbs: `instruction_propose`, `instruction_proposal_list`, `instruction_proposal_apply`), comm channel (the router's existing apply/verify-command pattern is the precedent), PWA (the pending-approval list it already renders — guardrail verdicts and PRD approvals both land there — gets one new row type), config (which target types are agent-writable at all, operator-pinned default: AGENT.md only, SKILL.md behind an explicit opt-in), audit (BL9, free).
+
+---
+
+## P7. Debate-method registry (the `structured-debate` enum expansion)
+
+**Patterns:** `structured-debate` (2 builders — #15 Quorum's seven named methods + method-advisor routing, #14 albert-ying PI↔Trainee alternation with a human editor above).
+**Gaps closed:** the PARTIAL row-18 delta ("datawatch's only method axis is `debate` (3 rounds) vs `quick` (1 round); custom persona stances don't compose: `council_run` takes `names` + `mode`, not a method id from a registry").
+
+**What datawatch changes.** `internal/council/council.go` already ships `Mode ∈ {ModeDebate, ModeQuick}` and 12 personas with operator-editable `system_prompt` (BL296 verified) — the delta is that `mode` is a bare enum where a *registry entry* belongs. Define a method as a data row, not code: `name, rounds, persona_order (round → [persona refs]), synthesize_on (consensus_threshold | after_last_round), early_exit_on_consenus`, persisted as a YAML file under `~/.datawatch/council/methods/` (the exact location `internal/council/drafts.go` already uses for persona YAML — one file per method, diffable in git, which is the `behaviour-as-files` pattern (10 builders) datawatch already lives by, applied to a second council artifact type personas already got). `council_run` gains a `method=` param that shadows `mode=` when present (backward-compatible: existing `debate`/`quick` resolve to the two built-in method rows the daemon ships at first launch); the persona-draft wizard (`drafts.go`, BL297) is unchanged. The Quorum method-advisor (a per-question method picker) is explicitly *not* in scope — that single-builder variation (per the appendix table) stays a stretch target.
+
+**Packages.** `internal/council/council.go` (method row + load path, ~one type + one loader function, the same shape as the persona YAML loader already there) + `internal/mcp`/`internal/router`/`internal/server` verb pass-through (one new query param, no new endpoint) + `internal/messaging` (no change — `comm_firehose` already pipes persona responses). No new store.
+
+**Effort: S.** Justification: the persona draft/loader already exists in the same package (`drafts.go`, `yaml_helpers.go` verified in the mapping footnote); the method registry is the same file-shape with two different fields. The runner (`council.go`) already walks rounds × personas — the method row is a data-driven *shape of that walk* the walk can follow when parameterized, not a new walk. This is the smallest delta in the file and the one most clearly at the edge of "just a config file" which is exactly why it's S and why its impact score, though low, is the cheapest to bank.
+**Impact: low.** 2 builders, single-builder-adjacent for the advisor half (per the appendix). But: it's the only proposal in this file whose entire "change" is a data file, and it lands the one PARTIAL row the mapping table notes is "a modest gap; `Mode` is an enum that has room to grow" — i.e., the mapping itself pre-justifies it, which is the only proposal here that pre-justifies itself this cleanly.
+**Parity surfaces:** config (file-based, operator-edited in git — the `behaviour-as-files` pattern's home turf), MCP (one verb, one new param), PWA (council run detail already exists — show method name where it shows mode name, zero new views), comm channel (free, same verb).
+
+---
+
+## Declines (with the one-paragraph test: would this close a ranked gap or a PARTIAL delta without inventing a new surface class?)
+
+**Mid-session prompt re-tune (agent-driven auto-tune, the row-14 delta).** The gap is real — "no re-tune the prompt based on the last N eval failures" — but it fails the same test the mapping table already applies to it ("a smaller delta than gap 1, 2, or 4"): it would require a new *optimizer* surface (which prompt to tune, a hill-climbing loop over a cost dimension the daemon explicitly keeps cheap-by-design, row 5) that no other proposal needs and that P4's eval sweep already gives the operator the *data* to hand-tune from. Declined as a feature; the underlying data gap is closed by P1 (spans) + P4 (sweep table), and the re-tune loop is left to the operator's own iteration, which is the daemon's actual stance per `harness-failure-tuning` row 14's evidence.
+
+**Per-action tool-call veto API (the row-4 gap-#4 "in-loop, per-action datawatch-owned gate").** The mapping table already reasons through this one and lands on "the daemon's trust boundary is the container/k8s boundary, not the datawatch boundary… datawatch correctly does not try to interpose on the agent's tool calls" — I agree with that conclusion and decline the API itself as a new surface class. The part of gap #4 that *does* pass the test is the **injection-guard depth** (lexical → multi-stage), which is original-proposals-file #5 (red-team validator pipeline, feasibility 4/5 impact 5/5) and stays on the table; it rides the existing `internal/autonomous/security.go` + guardrail-verdict surface, which is why it declines *in-loop veto* but not *better veto at the boundary datawatch already owns*.
+
+**Lineage export / OpenInference (original-proposals-file #3, feasibility 3/5 impact 5/5).** Not declined as a goal — declined as a *sequence*: it is the one proposal whose entire implementation sketch ("define the span schema over existing rows") is literally P1's definition, and shipping it before P1 is defined is shipping an export of a schema that doesn't exist. It goes third, after P1 and P4 land, at which point it is a read-side assembly + OTLP mapping function (the original file's own sketch), at which point its own M-effort claim holds.
+
+**PWA-first features (the comparison-table view in P4, the span browser in P1):** not declined — deferred to the "parity surface" line of their parent proposals by construction, so the doc doesn't over-scope them into the first pass.
+
+---
+
+## Sequenced recommendation
+
+1. **P1 (span artifact) first, no debate.** It is the only proposal with 7 builders on its anchor *plus* it is the single load-bearing dependency the mapping table names for three *other* proposals (P2's stall signal, P3's swap audit, original #3's span graph) and for `single-variable-eval`'s cost-column. It is M-effort, S-surface-area (one append-only file + three verbs), and its absence is the one gap no prior doc claimed (gap #1, MISSING). Every other proposal in this file is either gated on it, or strictly cheaper if it lands first because its read-side already has data. Building it second or third means re-architecting P2's stall detection or shipping P4's cost table from a second, redundant token-count path — both avoidable cost.
+
+2. **P4 (eval sweep + DAG gate) immediately after, same sprint window.** It is S-effort *by its own terms* (the mapping's PARTIAL row-16 delta is "a field + a case in a switch"), it is the only proposal whose practical reach (10 distinct builders via `independent-verifier` + `harness-failure-tuning` + `single-variable-eval` citations) exceeds its anchor count, and it gives the operator the exact data artifact (sweep table with cost column) that P2's cost-feedback rung-selection and original #3's "fair baseline" evidence (#13 McCabe) both cite as the decision input. It does not depend on P1 (it re-aggregates BL6's existing per-session counters, which is the gap note's own wording: "the regression-blocking BL367 gate is the nearest but only runs at the test-command granularity" — P4 extends that to eval-suite granularity without waiting for the span primitive).
+
+3. **P2 (stall ladder) third.** It becomes M-not-L once P1 exists, because its stall *signal* (the "identical repeated output" test) reads P1's span tail instead of re-deriving it from `stale_task_seconds` heuristics, and because P4's sweep table is the operator-facing proof that a rung change is worth making before the daemon auto-makes it. It is 7 builders' pattern, closes gap #2 (explicitly called out in the mapping as `feature-themes.md` theme 6), and its blast radius is the daemon's most-differentiated axis (multi-LLM + local tier). It's third, not second, only because it is more effort than P4 and less load-bearing-for-others than P1.
+
+4. **P5 (VRAM lock) fourth, can land in parallel with P3.** It's independent of all three above (four packages, one of which — `internal/capacity` — P2 also touches, so sequencing them back-to-back is free context reuse), it is the one that most directly protects the local-tier differentiator from *operator-visible failure* (two models double-booking VRAM is a visible OOM, unlike a missing span), and its S-shaped surface cost (one config field, one pool kind) is the easiest win to show an operator in a demo. P5 and P3 can ship in the same release window with no shared surface.
+
+5. **P3 (live model flip) alongside P5**, not before P2 — P2's rung-advance is a *session-dead* escalation (kill the task, reissue with the next LLM), which P3 (rebind the live tmux pane) is strictly less work to implement correctly once the session→LLM override row (P3's one new table in `internal/inference/store.go`) exists, and P2's code path is what will want that row anyway. Sequencing P3 before P2 means building the same override-table plumbing twice. After P2, P3 is M-effort against a row that already exists; before, it's L because the row doesn't.
+
+6. **P6 (instruction back-write) next quarter**, not this quarter: it is M-effort with an explicit "getting the approval gate wrong is a trust incident" risk the pattern evidence itself flags (no builder describes a review step — we *are* the review step now, which is the proposal's whole value but also its whole risk), and it does not gate anything else in this file — P1 through P5 all close their gaps without it. It is the right *next* thing, not the right *first* thing, because it is the one proposal where the cost of shipping it wrong is operator trust rather than operator inconvenience.
+
+7. **P7 (debate methods) any time — it's one YAML loader and one registry file.** It is S-effort, low-impact by builder count (2), and it has zero dependencies on P1–P6, so it can land whenever the council owner has the bandwidth. Declining it on impact grounds would be dishonest (it's a named delta in the mapping table's PARTIAL column), deferring it to "next quarter" is also dishonest (S-effort, zero risk), so the honest recommendation is: do it in the same release as P5, when the council code path is already open for the method-row loader, rather than as a dedicated sprint.
+
+**One-line summary:** P1 → P4 → P2/P3 (shared plumbing) → P5 (parallel) → P7 (cheap, bundle it) → P6 (next quarter, deliberate). The ordering is driven by one rule throughout: the thing that most other things depend on lands first (P1), the thing that's cheapest for its impact lands early (P4, P7), and the thing with the highest risk-of-wrong lands last (P6).
+
+---
+
+*Documentation only — no code written. All line-number citations verified against v8.37.4 in this pass (see `datawatch-mapping.md` verification footnotes). The archived 2026-09-11 five-proposal draft (see header) remains the authoritative reference for original-proposal #3 (OpenInference), #4 (docs grounding metrics), and #5 (red-team pipeline) as scoped here.*

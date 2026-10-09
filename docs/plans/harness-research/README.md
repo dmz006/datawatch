@@ -1,52 +1,58 @@
-# harness-research — Index for the directory
+# harness-research — Directory Index
 
 **Root:** `docs/plans/harness-research/`
-**Two research passes** share this directory. The **Sept 7-11 framework pass** catalogs 16 public vendor harnesses and derives the baseline gap analysis. The **Sept 17-19 practitioner pass** studies 17 individual builders (Ralph-loop lineage, solo OSS harnesses, eval rigs) and derives the v2 gap analysis and v2 enhancements. The two passes share no inputs and are reconciled against each other in `synthesis-v2.md`.
+**Last close-out:** 2026-09-30 (v8.37.4 baseline)
 
-Reading order is bottom-up in the "Recommended reading order" section at the end. Do not read them top-to-bottom if you are short on time — the synthesis files are the load-bearing documents.
+Two research passes share this directory, now fully reconciled:
+
+- **Framework pass (Sept 7-11).** Catalogs 16 public vendor harnesses (`examples-catalog.md`) and derives the baseline gap analysis + first 5 proposals.
+- **Practitioner pass (Sept 17-30).** Studies 20 individual builders (`case-studies.md`), extracts 19 recurring patterns (`usage-patterns.md`), maps each against v8.37.4 (`datawatch-mapping.md`), and produces the re-grounded proposals (`enhancement-proposals.md`).
+
+The `synthesis.md` close-out executive summary, `diagrams.md` (pattern→package + top-recommendation data-flow), and this `README.md` index are the load-bearing documents — read those first.
 
 ---
 
-## Sept 7-11 framework pass
+## All files in `docs/plans/harness-research/`
 
 | File | One-line description |
 |---|---|
-| `methodology.md` | Define the inclusion criteria (public, functional, documented, harness-shaped), the 6 target categories (eval, RAG, guardrail, orchestration, verification, session/state), and the commercial-adjacent appendix scope. This is the "why these 16" — read it before `examples-catalog.md` if you are questioning a selection. |
-| `examples-catalog.md` | 16 public vendor harnesses (promptfoo, lm-eval-harness, DeepEval, RAGAS, DSPy, LangGraph, AutoGen, pydantic-ai, LiteLLM, Haystack, Dify, Phoenix, Langfuse, OpenInference, Guardrails AI), each with stack, data flow, license/stars, and a "vs. DataWatch" comparison row. Stars and repo URLs re-verified via GitHub API on 2026-09-10. |
-| `synthesis.md` | The framework pass's 5-category gap analysis (eval orchestration, provenance/OTel, RAG grounding, red-teaming) plus the "Where DataWatch already matches" table — the table that establishes session-lifecycle ownership as datawatch's differentiator. |
-| `feature-themes.md` | The 6 candidate enhancement themes the gap analysis produces: (1) eval sweep + DAG eval nodes, (2) drift + feedback loops, (3) provenance/OTel, (4) red-team validator pipeline, (5) RAG grounding, (6) quality- and cost-aware routing. Each theme is "user needs" + "datawatch value," not a concrete proposal. |
-| `impact-matrix.md` | The 4 quadrants (effort × strategic impact) the 6 themes map into, with the sequenced read: #1 do now (top-left), #2 design spike (top-right), #3/4 deferred or declined (bottom row). |
-| `enhancement-proposals.md` | 5 concrete proposals (eval sweep, DAG eval node, lineage query + OpenInference export, grounding metrics, red-team pipeline) with feasibility/impact scores and a 4-step sequencing. This is the framework pass's recommendation; the v2 pass differentiates against these 5. |
+| `README.md` | This file — the index, one-line description per file, and the recommended reading order. |
+| `synthesis.md` | **Close-out executive synthesis:** the 5 most common builder patterns with the case names behind them, the 3 most important datawatch gaps, the top 3 recommended enhancements with their why-them-first rationale, and the cross-pass reconciliation. **Read this first.** |
+| `diagrams.md` | Two Mermaid diagrams: (1) each recurring builder pattern → the datawatch internal package(s) that implement it (or are the named gap), and (2) the top recommendation (P1 per-LLM-call span artifact) proposed data flow. Conceptual, not code. |
+| `case-studies.md` | 20 curated individual builders (from 63 raw candidates), each with the 5 required fields: problem, harness architecture/data flow, recurring usage loop, tools/backends, what breaks / what they wish existed. |
+| `candidates.md` | The over-collection pass: 63 raw individual builder candidates + 4 awesome-list curation surfaces, with URLs, category, description, and source. HTTP statuses spot-checked. |
+| `usage-patterns.md` | The 19 recurring cross-builder patterns (each ≥2 builders), ranked by builder count, plus a one-off techniques appendix and the expected-areas verification table. |
+| `datawatch-mapping.md` | The 19 patterns mapped against the v8.37.4 baseline: MATCH / PARTIAL / MISSING per pattern, evidence + deltas, and the 5 ranked gaps (MISSING: per-LLM-call artifact; PARTIAL: routing/verifier/tune/triage/debate). |
+| `enhancement-proposals.md` | **v2 proposals re-grounded in the 19-pattern evidence:** P1 span artifact, P4 eval sweep + DAG gate, P2 stall-ladder, P5 VRAM lock, P3 live model flip, P6 instruction back-write, P7 debate-methods, plus the 3 explicit declines and the full sequenced recommendation. |
+| `methodology.md` | The definition of "AI harness," the 6 target categories (eval, RAG, guardrail, orchestration, verification, session/state), and the inclusion criteria. |
+| `examples-catalog.md` | 16 public vendor harnesses, each with stack, data flow, license/stars, and a "vs. DataWatch" comparison row. Stars/URLs re-verified 2026-09-10. |
+| `feature-themes.md` | The 6 candidate enhancement themes the framework gap analysis produces (eval sweep, drift, provenance, red-team, RAG grounding, cost/quality routing) — needs + value, not concrete proposals. |
+| `impact-matrix.md` | The effort×impact 4-quadrant the 6 themes map into, with the sequenced read. |
+| `synthesis-v2.md` | Exec-summary of the practitioner pass: 5 most common patterns, 3 ranked gaps, top-3 enhancements with sequencing, and the framework⇄practitioner reconciliation. |
+| `enhancements-v2.md` | The 9 original v2 proposals from the practitioner pass, differentiated against the 5 framework proposals, with 3-tier sequencing and a traceability diagram. (Superseded in detail by the close-out `enhancement-proposals.md` v2 — kept for provenance.) |
+| `.evidence/` | Local HTML/MD captures of the primary-source pages behind the 20 case studies. |
+| `.urls.txt`, `.url-status.txt`, `.verify-urls.sh` | URL collection, status-check results, and the re-verification script. |
 
-## Sept 17-19 practitioner pass
-
-| File | One-line description |
-|---|---|
-| `candidates.md` | Over-collection pass: 63 raw candidates (individuals, solo builders, personal projects) who built their own AI agent harnesses, coding loops, eval rigs, guardrails, or orchestration tooling. HTTP status spot-checked 2026-09-17. |
-| `case-studies.md` | 17 curated builders (from 63 candidates) selected on real-person / harness-shaped / documented criteria. Each case study is a concrete recurring usage loop a builder independently arrived at. |
-| `usage-patterns.md` | The 12 recurring patterns that 2+ builders independently arrived at (ranked by builder count), plus a one-off techniques appendix. This is the cross-builder abstraction — the "what the loop looks like" layer. |
-| `datawatch-mapping.md` | Maps the 12 patterns against the v8.19.8 baseline: MATCH / PARTIAL / MISSING per pattern. Identifies the 3 highest-ranked gaps and differentiates them against the Sept 7-11 proposals. |
-| `enhancements-v2.md` | 9 new enhancement proposals grounded in the practitioner pass, differentiated (not re-stated) against the 5 framework proposals. Includes a 3-tier sequencing ("build data first, design spikes second, small standalone surfaces last") and a traceability diagram (pattern slug → datawatch module → v2 proposal slug). |
-| `synthesis-v2.md` | Exec-summary of the practitioner pass: the 5 most common patterns with case-study names, the 3 highest-ranked gaps, the top-3 recommended enhancements with sequencing rationale, and the reconciliation of the framework pass against the practitioner pass. |
-| `README.md` | This file: the index for the directory, grouped by pass, with the recommended reading order. |
+---
 
 ## Recommended reading order
 
-Top to bottom, shortest-to-longest first (start at the load-bearing docs, then zoom into evidence):
+Shortest-to-longest, load-bearing documents first, evidence last:
 
-1. `synthesis-v2.md` — the v2 exec-summary (practitioner pass); read this first.
-2. `datawatch-mapping.md` — the MATCH/PARTIAL/MISSING table against the v8.19.8 baseline.
-3. `enhancements-v2.md` — the 9 v2 proposals with sequencing and traceability.
-4. `synthesis.md` — the framework pass's 5-category gap analysis (context for what the v2 differentiates against).
-5. `enhancement-proposals.md` — the 5 framework-era proposals the v2 pass references and extends.
-6. `usage-patterns.md` — the 12 recurring patterns the v2 pass draws from.
-7. `case-studies.md` — the 17 builder case studies behind the patterns.
-8. `feature-themes.md` — the 6 candidate themes the framework pass's gap analysis produces.
-9. `impact-matrix.md` — the framework pass's sequencing logic.
+1. `synthesis.md` — the close-out executive summary (patterns, gaps, top-3, why-them-first). **Start here.**
+2. `diagrams.md` — the pattern→package map and the P1 data-flow, to see the shape of the work.
+3. `datawatch-mapping.md` — the MATCH/PARTIAL/MISSING table and the 5 ranked gaps behind the synthesis's gaps.
+4. `enhancement-proposals.md` — the full P1–P7 proposal set, the declines, and the sequenced recommendation.
+5. `usage-patterns.md` — the 19 recurring patterns the mapping and proposals draw from.
+6. `case-studies.md` — the 20 builder case studies behind the patterns.
+7. `candidates.md` — the 63 raw candidates behind the 20 case studies.
+8. `synthesis-v2.md` + `enhancements-v2.md` — the earlier practitioner-pass exec-summary and proposals (provenance for the v2 reconciliation).
+9. `feature-themes.md` + `impact-matrix.md` — the framework-pass themes and their effort×impact positioning.
 10. `examples-catalog.md` — the 16 vendor harnesses the framework pass cataloged.
-11. `methodology.md` — the inclusion criteria (read only if you are auditing a selection).
-12. `candidates.md` — the 63 raw candidates behind the 17 case studies.
+11. `methodology.md` — the inclusion criteria (read if you are auditing a selection).
+
+*(Optional: `.evidence/`, `.urls.txt`, `.verify-urls.sh` — the primary-source captures and URL-check trail.)*
 
 ---
 
-*No code was written for this pass. One file created: `docs/plans/harness-research/README.md`. Index for the directory, grouped into Sept 7-11 (framework) and Sept 17-19 (practitioner) passes, with a recommended reading order. Under 120 lines as per the task. The two deliverables of this task are `synthesis-v2.md` and `README.md`; no other file in the directory was modified.*
+*Index for the directory. All listed files exist as of the 2026-09-30 close-out; cross-references verified. No code was written for this documentation set.*

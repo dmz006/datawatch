@@ -1,0 +1,342 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width"><link rel="icon" type="image/x-icon" href="/favicon.ico"><meta name="theme-color" content="#0a0e0b"><meta name="msapplication-TileColor" content="#0a0e0b"><style>@font-face{font-family:"Chakra Petch-74883dd7f39162fb";src:url("/_astro/fonts/5f9895d2bf08a5cb.woff2") format("woff2");font-display:swap;unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;font-weight:300;font-style:normal;}@font-face{font-family:"Chakra Petch-74883dd7f39162fb";src:url("/_astro/fonts/d04f3f093764b2aa.woff2") format("woff2");font-display:swap;unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;font-weight:500;font-style:normal;}@font-face{font-family:"Chakra Petch-74883dd7f39162fb";src:url("/_astro/fonts/3788b7222a3a0ec9.woff2") format("woff2");font-display:swap;unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;font-weight:600;font-style:normal;}@font-face{font-family:"Chakra Petch-74883dd7f39162fb";src:url("/_astro/fonts/c22e3d523c199ca9.woff2") format("woff2");font-display:swap;unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;font-weight:700;font-style:normal;}@font-face{font-family:"Chakra Petch-74883dd7f39162fb fallback: Arial";src:local("Arial");font-display:swap;font-weight:300;font-style:normal;size-adjust:100.7176%;ascent-override:98.4932%;descent-override:30.5805%;line-gap-override:0%;}@font-face{font-family:"Chakra Petch-74883dd7f39162fb fallback: Arial";src:local("Arial");font-display:swap;font-weight:500;font-style:normal;size-adjust:100.7176%;ascent-override:98.4932%;descent-override:30.5805%;line-gap-override:0%;}@font-face{font-family:"Chakra Petch-74883dd7f39162fb fallback: Arial";src:local("Arial");font-display:swap;font-weight:600;font-style:normal;size-adjust:100.7176%;ascent-override:98.4932%;descent-override:30.5805%;line-gap-override:0%;}@font-face{font-family:"Chakra Petch-74883dd7f39162fb fallback: Arial Bold";src:local("Arial Bold");font-display:swap;font-weight:700;font-style:normal;size-adjust:93.5455%;ascent-override:106.0447%;descent-override:32.9252%;line-gap-override:0%;}:root{--font-chakra-petch:"Chakra Petch-74883dd7f39162fb","Chakra Petch-74883dd7f39162fb fallback: Arial","Chakra Petch-74883dd7f39162fb fallback: Arial Bold",sans-serif;}</style><style>@font-face{font-family:"IBM Plex Mono-b5dc432d920fdc40";src:url("/_astro/fonts/be27e7c4ecd9e8d3.woff2") format("woff2");font-display:swap;unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;font-weight:300;font-style:normal;}@font-face{font-family:"IBM Plex Mono-b5dc432d920fdc40";src:url("/_astro/fonts/45f5561f938fa232.woff2") format("woff2");font-display:swap;unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;font-weight:400;font-style:normal;}@font-face{font-family:"IBM Plex Mono-b5dc432d920fdc40";src:url("/_astro/fonts/e24ff982d90e3401.woff2") format("woff2");font-display:swap;unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;font-weight:500;font-style:normal;}@font-face{font-family:"IBM Plex Mono-b5dc432d920fdc40";src:url("/_astro/fonts/f276da2ba24f5203.woff2") format("woff2");font-display:swap;unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;font-weight:600;font-style:normal;}@font-face{font-family:"IBM Plex Mono-b5dc432d920fdc40 fallback: Arial";src:local("Arial");font-display:swap;font-weight:300;font-style:normal;size-adjust:134.5893%;ascent-override:76.1576%;descent-override:20.4325%;line-gap-override:0%;}@font-face{font-family:"IBM Plex Mono-b5dc432d920fdc40 fallback: Arial";src:local("Arial");font-display:swap;font-weight:400;font-style:normal;size-adjust:134.5893%;ascent-override:76.1576%;descent-override:20.4325%;line-gap-override:0%;}@font-face{font-family:"IBM Plex Mono-b5dc432d920fdc40 fallback: Arial";src:local("Arial");font-display:swap;font-weight:500;font-style:normal;size-adjust:134.5893%;ascent-override:76.1576%;descent-override:20.4325%;line-gap-override:0%;}@font-face{font-family:"IBM Plex Mono-b5dc432d920fdc40 fallback: Arial";src:local("Arial");font-display:swap;font-weight:600;font-style:normal;size-adjust:134.5893%;ascent-override:76.1576%;descent-override:20.4325%;line-gap-override:0%;}:root{--font-ibm-plex-mono:"IBM Plex Mono-b5dc432d920fdc40","IBM Plex Mono-b5dc432d920fdc40 fallback: Arial",sans-serif;}</style><link rel="sitemap" href="/sitemap-index.xml"><meta name="generator" content="Astro v7.3.1"><title>What I Learned Building My Own AI Harness | joacod</title><meta name="description" content="After building nano-harness, I have a clearer view of AI assistants, local-first workflows, architecture, and why building the small version yourself still…"><meta name="author" content="Joaquin Diaz"><meta name="robots" content="index, follow"><link rel="canonical" href="https://joacod.com/blog/what-i-learned-building-nano-harness/"><meta property="og:title" content="What I Learned Building My Own AI Harness | joacod"><meta property="og:description" content="After building nano-harness, I have a clearer view of AI assistants, local-first workflows, architecture, and why building the small version yourself still…"><meta property="og:type" content="article"><meta property="og:url" content="https://joacod.com/blog/what-i-learned-building-nano-harness/"><meta property="og:image" content="https://joacod.com/jd-og.png"><meta property="og:image:secure_url" content="https://joacod.com/jd-og.png"><meta property="og:image:type" content="image/png"><meta property="og:image:width" content="1200"><meta property="og:image:height" content="630"><meta property="og:image:alt" content="What I Learned Building My Own AI Harness | joacod — After building nano-harness, I have a clearer view of AI assistants, local-first workflows, architecture, and why building the small version yourself still teaches more than reading the hype."><meta property="og:site_name" content="joacod"><meta property="article:published_time" content="2026-05-22T00:00:00.000Z"><meta property="article:author" content="Joaquin Diaz"><meta property="article:tag" content="engineering"><meta property="article:tag" content="ai"><meta property="article:tag" content="architecture"><meta property="article:tag" content="devtools"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:site" content="@joacodok"><meta name="twitter:creator" content="@joacodok"><meta name="twitter:title" content="What I Learned Building My Own AI Harness | joacod"><meta name="twitter:description" content="After building nano-harness, I have a clearer view of AI assistants, local-first workflows, architecture, and why building the small version yourself still…"><meta name="twitter:image" content="https://joacod.com/jd-og.png"><meta name="twitter:image:alt" content="What I Learned Building My Own AI Harness | joacod — After building nano-harness, I have a clearer view of AI assistants, local-first workflows, architecture, and why building the small version yourself still teaches more than reading the hype."><link rel="alternate" type="application/rss+xml" title="joacod | Blog" href="/rss.xml"><script type="application/ld+json">{"@context":"https://schema.org","@graph":[{"@type":"WebSite","@id":"https://joacod.com/#website","name":"joacod","url":"https://joacod.com/","description":"Engineering lead with 15+ years building and delivering software across media, finance, healthcare, IoT, and utilities. Focused on team leadership, software architecture, and technical delivery.","publisher":{"@id":"https://joacod.com/#person"},"inLanguage":"en"},{"@type":"Person","@id":"https://joacod.com/#person","name":"Joaquin Diaz","alternateName":"joacod","url":"https://joacod.com/","image":"https://joacod.com/jd-og.png","sameAs":["https://github.com/joacod","https://x.com/joacodok","https://www.linkedin.com/in/joacod","https://dev.to/joacod","https://medium.com/@joacod"],"jobTitle":"Engineering Lead","knowsAbout":["Software architecture","AI-assisted software engineering","Developer tooling","Product engineering","Technical leadership"]},{"@type":"WebPage","@id":"https://joacod.com/blog/what-i-learned-building-nano-harness/#webpage","url":"https://joacod.com/blog/what-i-learned-building-nano-harness/","name":"What I Learned Building My Own AI Harness | joacod","description":"After building nano-harness, I have a clearer view of AI assistants, local-first workflows, architecture, and why building the small version yourself still teaches more than reading the hype.","isPartOf":{"@id":"https://joacod.com/#website"},"about":{"@id":"https://joacod.com/#person"},"inLanguage":"en"},{"@type":"BlogPosting","@id":"https://joacod.com/blog/what-i-learned-building-nano-harness/#article","headline":"What I Learned Building My Own AI Harness","description":"After building nano-harness, I have a clearer view of AI assistants, local-first workflows, architecture, and why building the small version yourself still teaches more than reading the hype.","url":"https://joacod.com/blog/what-i-learned-building-nano-harness/","datePublished":"2026-05-22T00:00:00.000Z","dateModified":"2026-05-22T00:00:00.000Z","author":{"@id":"https://joacod.com/#person"},"publisher":{"@id":"https://joacod.com/#person"},"mainEntityOfPage":{"@id":"https://joacod.com/blog/what-i-learned-building-nano-harness/#webpage"},"isPartOf":{"@id":"https://joacod.com/#website"},"image":"https://joacod.com/jd-og.png","inLanguage":"en","keywords":"engineering, ai, architecture, devtools"}]}</script><meta name="astro-view-transitions-enabled" content="true"><meta name="astro-view-transitions-fallback" content="swap"><script type="module" src="/_astro/ClientRouter.astro_astro_type_script_index_0_lang.DTpKmnsT.js"></script><style>.prose h2{font-family:var(--font-display);color:var(--color-text);margin-top:2rem;margin-bottom:.75rem;font-size:1.375rem;font-weight:600}.prose h3{font-family:var(--font-display);color:var(--color-text);margin-top:1.5rem;margin-bottom:.5rem;font-size:1.125rem;font-weight:600}.prose p{color:var(--color-text-muted);margin-bottom:1rem;line-height:1.75}.prose a{color:var(--color-primary);text-underline-offset:3px;text-decoration:underline;text-decoration-color:color-mix(in srgb, var(--color-primary) 40%, transparent);transition:text-decoration-color .2s}.prose a:hover{text-decoration-color:var(--color-primary)}.prose strong{color:var(--color-text);font-weight:600}.prose ul,.prose ol{color:var(--color-text-muted);margin-bottom:1rem;padding-left:1.5rem}.prose li{margin-bottom:.375rem;line-height:1.75}.prose ul>li{list-style-type:disc}.prose ol>li{list-style-type:decimal}.prose blockquote{border-left:3px solid var(--color-primary);color:var(--color-text-muted);margin:1.5rem 0;padding-left:1rem;font-style:italic}.prose code{background:color-mix(in srgb, var(--color-primary) 8%, transparent);border:1px solid color-mix(in srgb, var(--color-primary) 15%, transparent);color:var(--color-primary);border-radius:4px;padding:.15em .35em;font-size:.875em}.prose pre{background:var(--color-bg-surface);border:1px solid color-mix(in srgb, var(--color-primary) 15%, transparent);border-radius:6px;margin:1.5rem 0;padding:1rem;overflow-x:auto}.prose pre code{color:var(--color-text);background:0 0;border:none;padding:0;font-size:.875rem}.prose hr{border:none;border-top:1px solid color-mix(in srgb, var(--color-primary) 20%, transparent);margin:2rem 0}
+</style><link rel="stylesheet" href="/_astro/Layout.CHTnwwvI.css"><style>@keyframes astroFadeInOut{0%{opacity:1}to{opacity:0}}@keyframes astroFadeIn{0%{opacity:0;mix-blend-mode:plus-lighter}to{opacity:1;mix-blend-mode:plus-lighter}}@keyframes astroFadeOut{0%{opacity:1;mix-blend-mode:plus-lighter}to{opacity:0;mix-blend-mode:plus-lighter}}@keyframes astroSlideFromRight{0%{transform:translate(100%)}}@keyframes astroSlideFromLeft{0%{transform:translate(-100%)}}@keyframes astroSlideToRight{to{transform:translate(100%)}}@keyframes astroSlideToLeft{to{transform:translate(-100%)}}@media (prefers-reduced-motion){::view-transition-group(*),::view-transition-old(*),::view-transition-new(*),[data-astro-transition-scope]{animation:none!important}}
+</style><style>[data-astro-transition-scope="astro-vsev7mas-1"] { view-transition-name: blog-title-what-i-learned-building-nano-harness; }@layer astro { ::view-transition-old(blog-title-what-i-learned-building-nano-harness) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(blog-title-what-i-learned-building-nano-harness) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(blog-title-what-i-learned-building-nano-harness) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(blog-title-what-i-learned-building-nano-harness) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-vsev7mas-1"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-vsev7mas-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-vsev7mas-1"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-vsev7mas-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-vsev7mas-1"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-vsev7mas-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-vsev7mas-1"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-vsev7mas-1"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-jinekv7r-2"] { view-transition-name: tag-title-engineering; }@layer astro { ::view-transition-old(tag-title-engineering) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(tag-title-engineering) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(tag-title-engineering) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(tag-title-engineering) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-jinekv7r-2"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-jinekv7r-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-jinekv7r-2"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-jinekv7r-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-jinekv7r-2"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-jinekv7r-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-jinekv7r-2"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-jinekv7r-2"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-jinekv7r-3"] { view-transition-name: tag-title-ai; }@layer astro { ::view-transition-old(tag-title-ai) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(tag-title-ai) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(tag-title-ai) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(tag-title-ai) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-jinekv7r-3"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-jinekv7r-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-jinekv7r-3"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-jinekv7r-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-jinekv7r-3"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-jinekv7r-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-jinekv7r-3"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-jinekv7r-3"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-jinekv7r-4"] { view-transition-name: tag-title-architecture; }@layer astro { ::view-transition-old(tag-title-architecture) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(tag-title-architecture) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(tag-title-architecture) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(tag-title-architecture) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-jinekv7r-4"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-jinekv7r-4"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-jinekv7r-4"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-jinekv7r-4"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-jinekv7r-4"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-jinekv7r-4"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-jinekv7r-4"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-jinekv7r-4"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-jinekv7r-5"] { view-transition-name: tag-title-devtools; }@layer astro { ::view-transition-old(tag-title-devtools) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(tag-title-devtools) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(tag-title-devtools) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(tag-title-devtools) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-jinekv7r-5"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-jinekv7r-5"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-jinekv7r-5"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-jinekv7r-5"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-jinekv7r-5"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-jinekv7r-5"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-jinekv7r-5"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-jinekv7r-5"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-pxsk7gnx-6"] { view-transition-name: blog-title-context-is-not-memory-it-needs-an-engine; }@layer astro { ::view-transition-old(blog-title-context-is-not-memory-it-needs-an-engine) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(blog-title-context-is-not-memory-it-needs-an-engine) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(blog-title-context-is-not-memory-it-needs-an-engine) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(blog-title-context-is-not-memory-it-needs-an-engine) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-pxsk7gnx-6"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-pxsk7gnx-6"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-pxsk7gnx-6"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-pxsk7gnx-6"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-pxsk7gnx-6"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-pxsk7gnx-6"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-pxsk7gnx-6"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-pxsk7gnx-6"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style><style>[data-astro-transition-scope="astro-pxsk7gnx-7"] { view-transition-name: blog-title-small-ai-and-the-return-of-better-software; }@layer astro { ::view-transition-old(blog-title-small-ai-and-the-return-of-better-software) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }::view-transition-new(blog-title-small-ai-and-the-return-of-better-software) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back]::view-transition-old(blog-title-small-ai-and-the-return-of-better-software) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back]::view-transition-new(blog-title-small-ai-and-the-return-of-better-software) { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; } }[data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-pxsk7gnx-7"],
+			[data-astro-transition-fallback="old"][data-astro-transition-scope="astro-pxsk7gnx-7"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-pxsk7gnx-7"],
+			[data-astro-transition-fallback="new"][data-astro-transition-scope="astro-pxsk7gnx-7"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }[data-astro-transition=back][data-astro-transition-fallback="old"] [data-astro-transition-scope="astro-pxsk7gnx-7"],
+			[data-astro-transition=back][data-astro-transition-fallback="old"][data-astro-transition-scope="astro-pxsk7gnx-7"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeOut; }[data-astro-transition=back][data-astro-transition-fallback="new"] [data-astro-transition-scope="astro-pxsk7gnx-7"],
+			[data-astro-transition=back][data-astro-transition-fallback="new"][data-astro-transition-scope="astro-pxsk7gnx-7"] { 
+	animation-duration: 180ms;
+	animation-timing-function: cubic-bezier(0.76, 0, 0.24, 1);
+	animation-fill-mode: both;
+	animation-name: astroFadeIn; }</style></head><body class="antialiased"><a href="#main-content" class="sr-only fixed top-3 left-3 z-50 rounded border border-accent/40 bg-surface px-3 py-2 text-sm text-accent focus:not-sr-only">Skip to content</a><div class="relative min-h-dvh px-6 md:px-12 lg:px-16"><div class="pointer-events-none absolute inset-0 -z-10"><div class="bg-ambient absolute inset-0"></div><div class="bg-grid absolute inset-0 opacity-55"></div><div class="scanlines absolute inset-0"></div></div><header class="sticky top-0 z-40 border-b border-accent/10 bg-canvas/80 py-4 backdrop-blur-sm"><div class="mx-auto flex w-full max-w-5xl items-center justify-between gap-4"><nav aria-label="Primary navigation" class="flex flex-wrap items-center gap-x-4 gap-y-2"><a href="/" class="nav-link relative inline-flex min-h-11 items-center rounded px-1 py-1 text-xs uppercase tracking-[0.16em] text-muted transition hover:text-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">Home</a><div class="flex flex-wrap items-center justify-end gap-x-2.5 sm:gap-x-4"><a href="/blog/" aria-current="page" class="nav-link relative inline-flex min-h-11 items-center rounded px-1 py-1 text-xs uppercase tracking-[0.16em] text-muted transition hover:text-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus text-accent">Blog</a><a href="/projects/" class="nav-link relative inline-flex min-h-11 items-center rounded px-1 py-1 text-xs uppercase tracking-[0.16em] text-muted transition hover:text-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">Projects</a><a href="https://lab.joacod.com/" target="_blank" rel="noopener noreferrer" aria-label="Lab (opens in a new tab)" class="nav-link relative inline-flex min-h-11 items-center rounded px-1 py-1 text-xs uppercase tracking-[0.16em] text-muted transition hover:text-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">Lab<span aria-hidden="true"> ↗</span></a><a href="/terminal/" class="nav-link relative inline-flex min-h-11 items-center rounded px-1 py-1 text-xs uppercase tracking-[0.16em] text-muted transition hover:text-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus">Terminal</a></div></nav><div class="items-center gap-1 hidden lg:flex" aria-label="Social and contact links" role="group"><a href="https://github.com/joacod" aria-label="GitHub" target="_blank" rel="noopener noreferrer" class="group relative inline-flex size-11 shrink-0 items-center justify-center rounded text-muted transition-colors hover:text-accent focus-visible:text-accent"><span aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"></path><path d="M9 19c-4.3 1.4 -4.3 -2.5 -6 -3m12 5v-3.5c0 -1 .1 -1.4 -.5 -2c2.8 -.3 5.5 -1.4 5.5 -6a4.6 4.6 0 0 0 -1.3 -3.2a4.2 4.2 0 0 0 -.1 -3.2s-1.1 -.3 -3.5 1.3a12.3 12.3 0 0 0 -6.2 0c-2.4 -1.6 -3.5 -1.3 -3.5 -1.3a4.2 4.2 0 0 0 -.1 3.2a4.6 4.6 0 0 0 -1.3 3.2c0 4.6 2.7 5.7 5.5 6c-.6 .6 -.6 1.2 -.5 2v3.5"></path></svg></span><span class="pointer-events-none absolute top-full left-1/2 z-50 mt-1 -translate-x-1/2 whitespace-nowrap rounded border border-accent/30 bg-surface px-2 py-1 text-xs text-fg opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">GitHub</span></a><a href="https://dev.to/joacod" aria-label="DEV.to" target="_blank" rel="noopener noreferrer" class="group relative inline-flex size-11 shrink-0 items-center justify-center rounded text-muted transition-colors hover:text-accent focus-visible:text-accent"><span aria-hidden="true"><svg aria-hidden="true" xmlns="http://www.w3.org/2000/svg" class="size-4" viewBox="0 0 448 512" fill="currentColor"><path d="M120.12 208.29c-3.88-2.9-7.77-4.35-11.65-4.35H91.03v104.47h17.45c3.88 0 7.77-1.45 11.65-4.35 3.88-2.9 5.82-7.25 5.82-13.06v-69.65c-.01-5.8-1.96-10.16-5.83-13.06zM404.1 32H43.9C19.7 32 .06 51.59 0 75.8v360.4C.06 460.41 19.7 480 43.9 480h360.2c24.21 0 43.84-19.59 43.9-43.8V75.8c-.06-24.21-19.7-43.8-43.9-43.8zM154.2 291.19c0 18.81-11.61 47.31-48.36 47.25h-46.4V172.98h47.38c35.44 0 47.36 28.46 47.37 47.28l.01 70.93zm100.68-88.66H201.6v38.42h32.57v29.57H201.6v38.41h53.29v29.57h-62.18c-11.16.29-20.44-8.53-20.72-19.69V193.7c-.27-11.15 8.56-20.41 19.71-20.69h63.19l-.01 29.52zm103.64 115.29c-13.2 30.75-36.85 24.63-47.44 0l-38.53-144.8h32.57l29.71 113.72 29.57-113.72h32.58l-38.46 144.8z"></path></svg></span><span class="pointer-events-none absolute top-full left-1/2 z-50 mt-1 -translate-x-1/2 whitespace-nowrap rounded border border-accent/30 bg-surface px-2 py-1 text-xs text-fg opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">DEV.to</span></a><a href="https://x.com/joacodok" aria-label="X" target="_blank" rel="noopener noreferrer" class="group relative inline-flex size-11 shrink-0 items-center justify-center rounded text-muted transition-colors hover:text-accent focus-visible:text-accent"><span aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"></path><path d="M4 4l11.733 16h4.267l-11.733 -16z"></path><path d="M4 20l6.768 -6.768m2.46 -2.46l6.772 -6.772"></path></svg></span><span class="pointer-events-none absolute top-full left-1/2 z-50 mt-1 -translate-x-1/2 whitespace-nowrap rounded border border-accent/30 bg-surface px-2 py-1 text-xs text-fg opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">X</span></a><a href="https://www.linkedin.com/in/joacod" aria-label="LinkedIn" target="_blank" rel="noopener noreferrer" class="group relative inline-flex size-11 shrink-0 items-center justify-center rounded text-muted transition-colors hover:text-accent focus-visible:text-accent"><span aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"></path><path d="M8 11v5"></path><path d="M8 8v.01"></path><path d="M12 16v-5"></path><path d="M16 16v-3a2 2 0 1 0 -4 0"></path><path d="M3 7a4 4 0 0 1 4 -4h10a4 4 0 0 1 4 4v10a4 4 0 0 1 -4 4h-10a4 4 0 0 1 -4 -4z"></path></svg></span><span class="pointer-events-none absolute top-full left-1/2 z-50 mt-1 -translate-x-1/2 whitespace-nowrap rounded border border-accent/30 bg-surface px-2 py-1 text-xs text-fg opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">LinkedIn</span></a><a href="mailto:dev@joacod.com" aria-label="Contact me" class="group relative inline-flex size-11 shrink-0 items-center justify-center rounded text-muted transition-colors hover:text-accent focus-visible:text-accent"><span aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="16" x="2" y="4" rx="2"></rect><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"></path></svg></span><span class="pointer-events-none absolute top-full left-1/2 z-50 mt-1 -translate-x-1/2 whitespace-nowrap rounded border border-accent/30 bg-surface px-2 py-1 text-xs text-fg opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">Contact me</span></a></div></div></header><main id="main-content" class="relative overflow-x-hidden"><div class="mx-auto flex w-full max-w-5xl flex-col gap-10 pt-4 pb-16 md:gap-12 md:pb-24"><header class="mx-auto grid w-full max-w-4xl gap-3"><h1 data-astro-transition-scope="astro-vsev7mas-1" class="text-3xl font-bold md:text-4xl">What I Learned Building My Own AI Harness</h1><div class="flex flex-wrap items-center gap-2 text-sm text-muted"><time datetime="2026-05-22T00:00:00.000Z">May 22, 2026</time><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="size-4 opacity-60"><path stroke="none" d="M0 0h24v24H0z" fill="none"></path><path d="M8 7a4 4 0 1 0 8 0a4 4 0 0 0 -8 0"></path><path d="M6 21v-2a4 4 0 0 1 4 -4h4a4 4 0 0 1 4 4v2"></path></svg><span>by joacod</span></div><div class="flex flex-wrap gap-2"><a data-astro-transition-scope="astro-jinekv7r-2" href="/blog/tags/engineering/" class="rounded border px-2 py-0.5 text-xs font-medium transition hover:-translate-y-0.5 border-accent/30 text-muted hover:border-accent hover:text-accent">engineering</a><a data-astro-transition-scope="astro-jinekv7r-3" href="/blog/tags/ai/" class="rounded border px-2 py-0.5 text-xs font-medium transition hover:-translate-y-0.5 border-accent/30 text-muted hover:border-accent hover:text-accent">ai</a><a data-astro-transition-scope="astro-jinekv7r-4" href="/blog/tags/architecture/" class="rounded border px-2 py-0.5 text-xs font-medium transition hover:-translate-y-0.5 border-accent/30 text-muted hover:border-accent hover:text-accent">architecture</a><a data-astro-transition-scope="astro-jinekv7r-5" href="/blog/tags/devtools/" class="rounded border px-2 py-0.5 text-xs font-medium transition hover:-translate-y-0.5 border-accent/30 text-muted hover:border-accent hover:text-accent">devtools</a></div></header><article class="prose mx-auto w-full max-w-4xl"><p>Last month I spent some time building <a href="https://github.com/joacod/nano-harness" target="_blank" rel="noopener noreferrer">nano-harness</a>, a small personal <strong>AI harness</strong>.</p>
+<p>Not a framework, not the final agent platform that will replace everything and save humanity, or whatever people are saying this week.</p>
+<p>Just a <strong>local-first desktop app</strong> to understand how these systems actually work when you stop talking about agents in abstract terms and start connecting the pieces yourself.</p>
+<p>That was the real goal. I wanted to learn the shape of the thing. Provider adapters, local state, runs, tool calls, approvals, events, sessions, memory ideas, MCP, skills, all the boring plumbing behind the nice demos.</p>
+<p>And like it usually happens, the project went further than planned.</p>
+<p>The app runs on Electron, can be packaged for macOS, Linux, and Windows, has a local database (SQLite), a core runtime, provider abstractions, a run inspector, approval boundaries, and the beginning of a few bigger ideas that are still unfinished or behind feature flags.</p>
+<p>Which is fine.</p>
+<p>It was never supposed to become a huge product. It was a learning project, and I have a lot of fun building it.</p>
+<p>Now I think it is time to wrap it up.</p>
+<h2 id="the-main-thing">The Main Thing</h2>
+<p>The most useful thing I got from this project is not that AI can write code, we already know that. The useful part was seeing again how far you can go when you combine <strong>good software architecture</strong> with a good AI assistant.</p>
+<p>No magic there. The assistant helps a lot. It keeps momentum, writes boring implementation details, moves code around, catches mistakes, proposes tests, and makes it easier to keep going when the project has too many small pieces.</p>
+<p>But the assistant is not the architecture.</p>
+<p>That part still matters, and honestly I think it matters more now, because AI makes it very easy to produce code faster than you can think about whether that code belongs in the right place.</p>
+<p>If the structure is bad, AI helps you make the bad structure bigger. If the abstractions are confused, AI extends the confusion. If every feature leaks into every layer, the assistant will not save you from that, it will just help you create a more impressive mess.</p>
+<p>But if the structure is clear, AI becomes much more useful.</p>
+<p>In nano-harness, the important abstraction was the <strong>run</strong>.</p>
+<p>A run is just a bounded attempt to satisfy one user request. It has messages, provider calls, actions, policy decisions, approvals, events, and persisted state. Nothing fancy, but that one idea makes the rest of the app easier to reason about.</p>
+<p>That is the kind of abstraction I like. Not abstract because it sounds smart, abstract because it reduces the number of things you need to keep in your head.</p>
+<p>The rest was the usual discipline:</p>
+<ul>
+<li>the desktop app owns the UI</li>
+<li>the core owns orchestration</li>
+<li>the infra layer owns side effects</li>
+<li>the shared package owns contracts</li>
+</ul>
+<p>Nothing revolutionary, just useful, and useful beats clever almost every time.</p>
+<h2 id="the-buzzwords-get-smaller-when-you-build">The Buzzwords Get Smaller When You Build</h2>
+<p>There are a lot of words around AI development right now. Agents, harnesses, skills, MCP memory, spec-driven development, self-improving systems, context engines.</p>
+<p>Some of those ideas are real, some are overloaded, some are early, and some are mostly marketing, until you try to build the small version and realize what they actually require. That is why I wanted to build my own version.</p>
+<p>Not because nano-harness is better than mature tools. It is not. I use other tools every day, but building the small version gives you a different kind of knowledge. You stop treating the concept as magic and start seeing the cracks.</p>
+<ul>
+<li>A provider is an adapter.</li>
+<li>A tool call is a contract, an input schema, an execution boundary, and a result.</li>
+<li>Memory is storage, recall, ranking, confidence, provenance, approval, and deciding what should not be remembered.</li>
+<li>MCP exposes resources and tools, and immediately creates questions about filtering, credentials, safety, and context bloat.</li>
+<li>Skills are reusable workflow packages, and the hard part is knowing when to inject them and when to leave the model alone.</li>
+</ul>
+<p>Once you see it that way, the field becomes less intimidating and more interesting. It also becomes obvious that many of the hard parts are still the same old software engineering problems.</p>
+<p>Boundaries, contracts, state, observability, safety, UX, debuggability, maintainability.</p>
+<p>Same old friends, different interface.</p>
+<h2 id="the-tools">The Tools</h2>
+<p>For the actual coding workflow, my tool of choice is still <a href="https://opencode.ai/" target="_blank" rel="noopener noreferrer">opencode</a>.</p>
+<p>I have tried almost everything at this point, and opencode is the one that feels best to me. It is open source, it is not trying to trap me inside one company, and it fits the way I like to work. That matters more to me every month.</p>
+<p>For models, I used a combination of GPT-5.5 for planning and GPT-5.4 for execution. And this project reinforced something I already believed, once the plan is good enough, a lot of models can do useful execution work.</p>
+<p>The quality of the plan matters a lot, if you ask the model to design the architecture, implement the feature, refactor the code, infer all missing context, and test everything at the same time, sometimes it works. Many times it creates very <strong>convincing nonsense</strong>.</p>
+<p>I had better results when I used stronger models for planning, architecture, and review, and cheaper or local models for simpler execution tasks.</p>
+<p>For some parts I even used a local model with MLX, specifically Qwen3.6-35B-A3B. Very impressive for its size.</p>
+<p>No, it is not GPT-5.5 or Opus 4.7, it is not the model I would pick for the hardest architecture decisions. But if I showed myself one year ago that a local model could perform this well on real coding tasks, I probably would not believe it.</p>
+<p>And that changes something.</p>
+<h2 id="local-is-not-a-toy-anymore">Local Is Not a Toy Anymore</h2>
+<p>I have no doubt that the strongest models will stay inside big companies for a long time, and they will be useful for specific high-value tasks.</p>
+<p>But a lot of normal work does not need the biggest possible model. A lot of company workflows are repetitive, structured, private, and full of local context. For that kind of work, open models and local execution are going to be enough in many cases.</p>
+<p>That is not only a cost argument, although cost matters a lot with all the crazy pricing changes around AI tools lately. It is also a <strong>privacy argument</strong>.</p>
+<p>We have sold our information very cheaply for a very long time. Maybe we should not repeat the same mistake with every repo, every document, every customer workflow, and every internal decision we feed into AI systems. Maybe we should do it better this time.</p>
+<p>At least that is what I want to believe. This is why I keep paying attention to local inference with llama.cpp and MLX. Not because local models are always better, they are not. Because knowing when a local model <strong>is enough</strong> is becoming a real advantage.</p>
+<p>Some useful skills for future engineering are model routing, workflow design, cost control, privacy boundaries, and knowing which model to use for which job.</p>
+<p>Less sexy, much closer to real engineering.</p>
+<h2 id="what-it-actually-taught-me">What It Actually Taught Me</h2>
+<p>The most useful part of nano-harness was thinking about the abstractions.</p>
+<ul>
+<li>What belongs in the core?</li>
+<li>What belongs in infra?</li>
+<li>What should be a local artifact?</li>
+<li>What should be persisted?</li>
+<li>What should require approval?</li>
+<li>What should be visible in the UI?</li>
+<li>What should never become a primitive too early?</li>
+</ul>
+<p>That last one matters a lot. A lot of software gets worse because we promote ideas into primitives too fast.</p>
+<p>You add one workflow, then another, then another, and suddenly the core knows about everything. Specs, memory, skills, projects, providers, UI modes, files, shell commands, and half the roadmap. Then every change becomes risky because every layer depends on every other layer.</p>
+<p>I wanted to avoid that. So the rule became <strong>“keep the core small and boring”</strong>.</p>
+<p>Most things should be compositions of existing primitives: runs, actions, policy, events, context, and local artifacts.</p>
+<p>Spec-driven development does not need to be a new core. It can be a workflow built on runs.</p>
+<p>Memory does not need to be shoved into every layer. It can be proposed from evidence and recalled with provenance.</p>
+<p>Skills do not need to become a marketplace. They can start as local markdown packages.</p>
+<p>MCP does not need to take over the product. It can sit behind filtering, inspection, and approval.</p>
+<p>That was the fun part, not because the code is perfect, it is not. But because the project kept forcing small architectural decisions where I had to choose between adding power and preserving clarity. That is the real game.</p>
+<h2 id="wrapping-it-up">Wrapping It Up</h2>
+<p>I am wrapping this project up now.</p>
+<p>There is a lot more that could be done. A proper Spec Workbench, better memory, stronger skills, real MCP transport, better packaging, better docs, more benchmarks, a cleaner onboarding flow. Maybe a real release.</p>
+<p>But not every project needs to become a product. Sometimes a project has already done its job when it changed how you think, nano-harness did that for me.</p>
+<p>It made me more confident building AI-assisted tools. It made me more confident in my own architecture instincts. It gave me a <strong>clearer picture</strong> of what these harnesses are under the hood. And it reminded me again that every MVP leaves knowledge for the next one.</p>
+<p>That knowledge compounds. Every time you finish something, even something small or unfinished or weird, the next thing starts from a better place.</p>
+<p>There has never been a better time to try ideas, AI lowers the cost of exploring, refactoring, testing, and learning by doing. You can move faster, but you still need taste, judgment, know when to stop, and you still need to review the code and care about quality. <strong>No shortcuts</strong>.</p>
+<p>Experiment, build the thing, fail a little, refactor, write down what you learned, repeat.</p>
+<p><strong>The best</strong> is yet to come.</p>
+</article><nav class="mx-auto grid w-full max-w-4xl grid-cols-1 gap-3 border-t border-accent/20 pt-6 text-sm md:grid-cols-2"><a href="/blog/context-is-not-memory-it-needs-an-engine/" class="flex h-full w-full flex-col gap-1 rounded-md border border-accent/20 px-4 py-3 text-muted transition hover:border-accent/50 hover:text-accent"><span class="text-xs uppercase tracking-[0.16em] text-muted/80">Previous</span><span data-astro-transition-scope="astro-pxsk7gnx-6" class="leading-snug text-balance">← Context Is Not Memory, It Needs an Engine</span></a><a href="/blog/small-ai-and-the-return-of-better-software/" class="flex h-full w-full flex-col gap-1 rounded-md border border-accent/20 px-4 py-3 text-muted transition hover:border-accent/50 hover:text-accent items-end text-right"><span class="text-xs uppercase tracking-[0.16em] text-muted/80">Next</span><span data-astro-transition-scope="astro-pxsk7gnx-7" class="leading-snug text-balance">Small AI and the Return of Better Software →</span></a></nav><div class="mx-auto w-full max-w-4xl"><div class="flex items-center justify-end gap-3 text-sm text-muted"><span>Share</span><a href="https://x.com/intent/tweet?url=https%3A%2F%2Fjoacod.com%2Fblog%2Fwhat-i-learned-building-nano-harness%2F&amp;text=What%20I%20Learned%20Building%20My%20Own%20AI%20Harness" target="_blank" rel="noopener noreferrer" class="inline-flex size-11 items-center justify-center rounded-control transition hover:text-accent" aria-label="Share on X"><svg xmlns="http://www.w3.org/2000/svg" class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path stroke="none" d="M0 0h24v24H0z" fill="none"></path><path d="M4 4l11.733 16h4.267l-11.733 -16z"></path><path d="M4 20l6.768 -6.768m2.46 -2.46l6.772 -6.772"></path></svg></a><button type="button" class="copy-link-btn inline-flex size-11 cursor-pointer items-center justify-center rounded-control transition hover:text-accent" data-url="https://joacod.com/blog/what-i-learned-building-nano-harness/" aria-label="Copy link"><span class="copy-icon"><svg xmlns="http://www.w3.org/2000/svg" class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg></span><span class="copy-feedback hidden text-xs text-accent" aria-live="polite">Article link copied!</span></button></div><script type="module">globalThis.process??={},globalThis.process.env??={};async function e(e){if(!navigator.clipboard?.writeText)return!1;try{return await navigator.clipboard.writeText(e),!0}catch{return!1}}function t(){document.querySelectorAll(`.copy-link-btn`).forEach(t=>{let n=t;n.dataset.initialized!==`true`&&(n.dataset.initialized=`true`,n.addEventListener(`click`,async t=>{t.preventDefault(),t.stopPropagation();let r=window.location.href,i=await e(n.dataset.url||r),a=n.querySelector(`.copy-icon`),o=n.querySelector(`.copy-feedback`);!a||!o||(o.textContent=i?`Article link copied!`:`Copy unavailable`,a.classList.add(`hidden`),o.classList.remove(`hidden`),window.setTimeout(()=>{a.classList.remove(`hidden`),o.classList.add(`hidden`)},1500))}))})}function n(){document.documentElement.dataset.shareBarBound!==`true`&&(document.addEventListener(`astro:page-load`,t),document.documentElement.dataset.shareBarBound=`true`),t()}n();</script></div></div></main></div><script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a42898e5fc12b16e',t:'MTc5MDY1OTg0MA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body></html>

@@ -1,0 +1,799 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Ralph Wiggum as a &quot;software engineer&quot;</title>
+    <link rel="stylesheet" href="https://ghuntley.com/assets/built/screen.css?v=nhSsoj7othC7SDG-">
+
+    <link rel="icon" href="https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/size/w256h256/format/jpeg/2026/02/A-black-and-white--low-angle-digital-illustration-in-a-symbolic-traditional-tattoo-art-style.--A-bald--light-skinned-man-with-a-bushy-beard--prominent-eyebrows--and-a-friendly-expression-wears-denim-overalls--2-.jpg" type="image/jpeg">
+    <link rel="canonical" href="https://ghuntley.com/ralph/">
+    <meta name="referrer" content="no-referrer-when-downgrade">
+    
+    <meta property="og:site_name" content="Geoffrey Huntley">
+    <meta property="og:type" content="article">
+    <meta property="og:title" content="Ralph Wiggum as a &quot;software engineer&quot;">
+    <meta property="og:description" content="How Ralph Wiggum went from &#x27;The Simpsons&#x27; to the biggest name in AI right now - Venture Beat
+
+😎Here&#x27;s a cool little field report from a Y Combinator hackathon event where they put Ralph Wiggum to the test.
+
+&quot;We Put a Coding Agent in a While Loop and It Shipped">
+    <meta property="og:url" content="https://ghuntley.com/ralph/">
+    <meta property="og:image" content="https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/size/w1200/2025/06/3ea367ed-cae3-454a-840f-134531dea1fd.jpg">
+    <meta property="article:published_time" content="2025-07-14T04:22:55.000Z">
+    <meta property="article:modified_time" content="2026-02-19T09:14:25.000Z">
+    <meta property="article:tag" content="AI">
+    <meta property="article:tag" content="Software Development">
+    
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Ralph Wiggum as a &quot;software engineer&quot;">
+    <meta name="twitter:description" content="How Ralph Wiggum went from &#x27;The Simpsons&#x27; to the biggest name in AI right now - Venture Beat
+
+😎Here&#x27;s a cool little field report from a Y Combinator hackathon event where they put Ralph Wiggum to the test.
+
+&quot;We Put a Coding Agent in a While Loop and It Shipped">
+    <meta name="twitter:url" content="https://ghuntley.com/ralph/">
+    <meta name="twitter:image" content="https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/size/w1200/2025/06/3ea367ed-cae3-454a-840f-134531dea1fd.jpg">
+    <meta name="twitter:label1" content="Written by">
+    <meta name="twitter:data1" content="Geoffrey Huntley">
+    <meta name="twitter:label2" content="Filed under">
+    <meta name="twitter:data2" content="AI, Software Development">
+    <meta name="twitter:site" content="@geoffreyhuntley">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="670">
+    
+    <script type="application/ld+json">
+{
+    "@context": "https://schema.org",
+    "@type": "Article",
+    "publisher": {
+        "@type": "Organization",
+        "name": "Geoffrey Huntley",
+        "url": "https://ghuntley.com/",
+        "logo": {
+            "@type": "ImageObject",
+            "url": "https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/size/w256h256/format/jpeg/2026/02/A-black-and-white--low-angle-digital-illustration-in-a-symbolic-traditional-tattoo-art-style.--A-bald--light-skinned-man-with-a-bushy-beard--prominent-eyebrows--and-a-friendly-expression-wears-denim-overalls--2-.jpg",
+            "width": 60,
+            "height": 60
+        }
+    },
+    "author": {
+        "@type": "Person",
+        "name": "Geoffrey Huntley",
+        "image": {
+            "@type": "ImageObject",
+            "url": "https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/size/w1200/2025/08/A-black-and-white--low-angle-digital-illustration-in-a-symbolic-traditional-tattoo-art-style.--A-bald--light-skinned-man-with-a-bushy-beard--prominent-eyebrows--and-a-friendly-expression-wears-denim-overalls--2--1.jpg",
+            "width": 1200,
+            "height": 1200
+        },
+        "url": "https://ghuntley.com/author/ghuntley/",
+        "sameAs": []
+    },
+    "headline": "Ralph Wiggum as a \"software engineer\"",
+    "url": "https://ghuntley.com/ralph/",
+    "datePublished": "2025-07-14T04:22:55.000Z",
+    "dateModified": "2026-02-19T09:14:25.000Z",
+    "image": {
+        "@type": "ImageObject",
+        "url": "https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/size/w1200/2025/06/3ea367ed-cae3-454a-840f-134531dea1fd.jpg",
+        "width": 1200,
+        "height": 670
+    },
+    "keywords": "AI, Software Development",
+    "description": "How Ralph Wiggum went from 'The Simpsons' to the biggest name in AI right now - Venture Beat\n\n😎Here's a cool little field report from a Y Combinator hackathon event where they put Ralph Wiggum to the test.\n\n\"We Put a Coding Agent in a While Loop and It Shipped 6 Repos Overnight\"\n\nhttps://github.com/repomirrorhq/repomirror/blob/main/repomirror.md\n\nIf you've seen my socials lately, you might have seen me talking about Ralph and wondering what Ralph is. Ralph is a technique. In its purest form, Ra",
+    "mainEntityOfPage": "https://ghuntley.com/ralph/"
+}
+    </script>
+
+    <meta name="generator" content="Ghost 6.65">
+    <link rel="alternate" type="application/rss+xml" title="Geoffrey Huntley" href="https://ghuntley.com/rss/">
+    <script defer src="https://cdn.jsdelivr.net/ghost/portal@~2.71/umd/portal.min.js" data-i18n="true" data-ghost="https://ghuntley.com/" data-key="1d8547be704545694fd5aa19e8" data-api="https://ghuntley-com.ghost.io/ghost/api/content/" data-locale="en" crossorigin="anonymous"></script><style id="gh-members-styles">.gh-post-upgrade-cta-content,
+.gh-post-upgrade-cta {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+    text-align: center;
+    width: 100%;
+    color: #ffffff;
+    font-size: 16px;
+}
+
+.gh-post-upgrade-cta-content {
+    border-radius: 8px;
+    padding: 40px 4vw;
+}
+
+.gh-post-upgrade-cta h2 {
+    color: #ffffff;
+    font-size: 28px;
+    letter-spacing: -0.2px;
+    margin: 0;
+    padding: 0;
+}
+
+.gh-post-upgrade-cta p {
+    margin: 20px 0 0;
+    padding: 0;
+}
+
+.gh-post-upgrade-cta small {
+    font-size: 16px;
+    letter-spacing: -0.2px;
+}
+
+.gh-post-upgrade-cta a {
+    color: #ffffff;
+    cursor: pointer;
+    font-weight: 500;
+    box-shadow: none;
+    text-decoration: underline;
+}
+
+.gh-post-upgrade-cta a:hover {
+    color: #ffffff;
+    opacity: 0.8;
+    box-shadow: none;
+    text-decoration: underline;
+}
+
+.gh-post-upgrade-cta a.gh-btn {
+    display: block;
+    background: #ffffff;
+    text-decoration: none;
+    margin: 28px 0 0;
+    padding: 8px 18px;
+    border-radius: 4px;
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.gh-post-upgrade-cta a.gh-btn:hover {
+    opacity: 0.92;
+}</style><script async src="https://js.stripe.com/v3/"></script>
+    <script defer src="https://cdn.jsdelivr.net/ghost/sodo-search@~1.8/umd/sodo-search.min.js" data-key="1d8547be704545694fd5aa19e8" data-styles="https://cdn.jsdelivr.net/ghost/sodo-search@~1.8/umd/main.css" data-sodo-search="https://ghuntley-com.ghost.io/" data-locale="en" crossorigin="anonymous"></script>
+    
+    <link href="https://ghuntley.com/webmentions/receive/" rel="webmention">
+    <script defer src="/public/cards.min.js?v=ShRHxgy4po8zN-Wf"></script>
+    <link rel="stylesheet" type="text/css" href="/public/cards.min.css?v=WwnU9jw5ancNC8Gc">
+    <script defer src="/public/member-attribution.min.js?v=AKG4hWena9j3yX3I"></script>
+    <script defer src="/public/ghost-stats.min.js?v=vFcCUf6ZQ0Hyhc8h" data-stringify-payload="false" data-datasource="analytics_events" data-storage="localStorage" data-host="https://ghuntley.com/.ghost/analytics/api/v1/page_hit"  tb_site_uuid="06e5d12b-0328-469d-a0d0-3a0f0ba34c46" tb_post_uuid="eca90b1e-74f1-4d97-94b4-0c9e6908babd" tb_post_type="post" tb_member_uuid="undefined" tb_member_status="undefined" tb_gift_link=""></script><style>:root {--ghost-accent-color: #955189;}</style>
+    <style>
+  :root {
+    --hero-image: url('/assets/light-hero.jpg');
+    --logo-image: url('/assets/light-logo.png');
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-user-color-scheme]) {
+      --hero-image: url('/assets/dark-hero.jpg');
+    }
+  }
+
+  [data-user-color-scheme='dark'] {
+    --hero-image: url('/assets/dark-hero.jpg');
+  }
+
+  .c-hero {
+    background-size: cover;
+    background-repeat: no-repeat;
+    background-image: var(--hero-image);
+  }
+  
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-user-color-scheme]) {
+      --logo-image: url('/assets/dark-logo.png');
+    }
+  }
+
+  [data-user-color-scheme='dark'] {
+    --logo-image: url('/assets/dark-logo.png');
+  }
+    
+  .c-header .is-membership { display: none; }
+
+  .c-post-card__visibility { display: none; }
+    
+  .c-hero__content {  text-shadow: 0 0 8px white; }
+
+  /* Pre tag styles */
+.c-content pre {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 1rem;
+  margin: 0;
+  background-color: var(--bg-gray);
+  border-radius: 0.5rem;
+  font-family: monospace;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  white-space: pre;
+  word-wrap: normal;
+  word-break: normal;
+}
+
+/* Optional: Style code blocks inside pre tags */
+.c-content pre code {
+  display: block;
+  color: var(--color-text);
+  padding: 0;
+  background: none;
+  font-size: inherit;
+  line-height: inherit;
+}
+
+/* Optional: Style inline code differently from block code */
+.c-content :not(pre) > code {
+  padding: 0.2em 0.4em;
+  font-size: 85%;
+  background-color: var(--bg-gray);
+  border-radius: 3px;
+}
+
+/* Optional: Add a subtle border */
+.c-content pre {
+  border: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+/* Optional: Style scrollbar for webkit browsers */
+.c-content pre::-webkit-scrollbar {
+  height: 8px;
+  background-color: transparent;
+}
+
+.c-content pre::-webkit-scrollbar-thumb {
+  background-color: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+}
+
+/* Optional: Add hover effect */
+.c-content pre:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+</style>
+
+<script>
+  var search_api_key = 'afc6d2943f5516cc77e956576b';
+</script>
+
+<script>
+    !function(t,e){var o,n,p,r;e.__SV||(window.posthog && window.posthog.__loaded)||(window.posthog=e,e._i=[],e.init=function(i,s,a){function g(t,e){var o=e.split(".");2==o.length&&(t=t[o[0]],e=o[1]),t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}}p||((p=t.createElement("script")).type="text/javascript",p.crossOrigin="anonymous",p.async=!0,p.src=s.api_host.replace(".i.posthog.com","-assets.i.posthog.com")+"/static/array.js",p.onerror=function(){p=null},(r=t.getElementsByTagName("script")[0]).parentNode.insertBefore(p,r));var u=e;for(void 0!==a?u=e[a]=[]:a="posthog",u.people=u.people||[],u.toString=function(t){var e="posthog";return"posthog"!==a&&(e+="."+a),t||(e+=" (stub)"),e},u.people.toString=function(){return u.toString(1)+".people (stub)"},o="an ln init xn Cn Br kn In capture Fn nn calculateEventProperties On register register_once register_for_session unregister unregister_for_session Ln getFeatureFlag getFeatureFlagPayload getFeatureFlagResult getAllFeatureFlags isFeatureEnabled reloadFeatureFlags updateFlags updateEarlyAccessFeatureEnrollment getEarlyAccessFeatures on onFeatureFlags onSurveysLoaded onSessionId getSurveys getActiveMatchingSurveys renderSurvey displaySurvey cancelPendingSurvey canRenderSurvey canRenderSurveyAsync Dn identify setPersonProperties unsetPersonProperties group resetGroups setPersonPropertiesForFlags resetPersonPropertiesForFlags setGroupPropertiesForFlags resetGroupPropertiesForFlags reset shutdown setIdentity clearIdentity get_distinct_id getGroups get_session_id get_session_replay_url alias set_config startSessionRecording stopSessionRecording sessionRecordingStarted captureException addExceptionStep captureLog startExceptionAutocapture stopExceptionAutocapture loadToolbar get_property getSessionProperty An Rn createPersonProfile setInternalOrTestUser $n yn jn opt_in_capturing opt_out_capturing has_opted_in_capturing has_opted_out_capturing get_explicit_consent_status is_capturing clear_opt_in_out_capturing Tn debug Ur Rt getPageViewId captureTraceFeedback captureTraceMetric pn".split(" "),n=0;n<o.length;n++)g(u,o[n]);e._i.push([i,s,a])},e.__SV=1)}(document,window.posthog||[]);
+    posthog.init('phc_GOG06XTuTR4fHBACHSKosGZ53SM1B8dc9K7ZHWcdZkR', {
+        api_host: 'https://us.i.posthog.com',
+        defaults: '2026-05-30',
+        person_profiles: 'identified_only', // or 'always' to create profiles for anonymous users as well
+    })
+</script>
+
+<script data-collect-dnt="true" async src="https://api.ghuntley.com/latest.js"></script>
+<noscript><img src="https://api.ghuntley.com/noscript.gif?collect-dnt=true" alt="" referrerpolicy="no-referrer-when-downgrade"/></noscript>
+
+<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6929026601613068"
+     crossorigin="anonymous"></script>
+</head>
+
+<body class="post-template tag-ai tag-software-development is-head-stacked">
+<div class="gh-site">
+
+    <header id="gh-head" class="gh-head gh-outer">
+        <div class="gh-head-inner gh-inner">
+            <div class="gh-head-brand">
+                <div class="gh-head-brand-wrapper">
+                    <a class="gh-head-logo" href="https://ghuntley.com">
+                            Geoffrey Huntley
+                    </a>
+                </div>
+                <button class="gh-search gh-icon-btn" aria-label="Search this site" data-ghost-search><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" width="20" height="20"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg></button>
+                <button class="gh-burger" aria-label="Toggle menu"></button>
+            </div>
+
+            <nav class="gh-head-menu">
+                <ul class="nav">
+    <li class="nav-home"><a href="https://ghuntley.com/">Home</a></li>
+    <li class="nav-lately"><a href="https://ghuntley.com/now/">Lately</a></li>
+    <li class="nav-media"><a href="https://ghuntley.com/media/">Media</a></li>
+    <li class="nav-workshops"><a href="https://ghuntley.com/workshops/">Workshops</a></li>
+    <li class="nav-speaking"><a href="https://ghuntley.com/speaking/">Speaking</a></li>
+    <li class="nav-disclosures"><a href="https://ghuntley.com/disclosures/">Disclosures</a></li>
+    <li class="nav-contact"><a href="https://ghuntley.com/contact/">Contact</a></li>
+</ul>
+
+            </nav>
+
+            <div class="gh-head-actions">
+                    <button class="gh-search gh-icon-btn" aria-label="Search this site" data-ghost-search><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" width="20" height="20"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg></button>
+                    <div class="gh-head-members">
+                                <a class="gh-head-link" href="#/portal/signin" data-portal="signin">Sign in</a>
+                                <a class="gh-head-btn gh-btn gh-primary-btn" href="#/portal/signup" data-portal="signup">Subscribe</a>
+                    </div>
+            </div>
+        </div>
+    </header>
+
+    <div class="site-content">
+        
+<main class="site-main">
+
+
+    <article class="gh-article post tag-ai tag-software-development featured">
+
+        <header class="gh-article-header gh-canvas">
+            <span class="gh-article-meta">
+                By <a href="/author/ghuntley/">Geoffrey Huntley</a>
+                    in
+                    <a class="gh-article-tag" href="https://ghuntley.com/tag/ai/">AI</a>
+                —
+                <time datetime="2025-07-14">14 Jul 2025</time>
+            </span>
+
+            <h1 class="gh-article-title">Ralph Wiggum as a &quot;software engineer&quot;</h1>
+
+
+                <figure class="gh-article-image kg-width-wide">
+        <img
+            srcset="https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/size/w400/2025/06/3ea367ed-cae3-454a-840f-134531dea1fd.jpg 400w,
+                    https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/size/w720/2025/06/3ea367ed-cae3-454a-840f-134531dea1fd.jpg 720w,
+                    https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/size/w960/2025/06/3ea367ed-cae3-454a-840f-134531dea1fd.jpg 960w,
+                    https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/size/w1200/2025/06/3ea367ed-cae3-454a-840f-134531dea1fd.jpg 1200w,
+                    https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/size/w2000/2025/06/3ea367ed-cae3-454a-840f-134531dea1fd.jpg 2000w"
+            sizes="(max-width: 1200px) 100vw, 1200px"
+            src="https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/size/w1200/2025/06/3ea367ed-cae3-454a-840f-134531dea1fd.jpg"
+            alt="Ralph Wiggum as a &quot;software engineer&quot;"
+        >
+    </figure>
+        </header>
+
+        <div class="gh-content gh-canvas">
+            <blockquote>How Ralph Wiggum went from 'The Simpsons' to the biggest name in AI right now - <a href="https://venturebeat.com/technology/how-ralph-wiggum-went-from-the-simpsons-to-the-biggest-name-in-ai-right-now?ref=ghuntley.com">Venture Beat</a> </blockquote><hr><figure class="kg-card kg-embed-card kg-card-hascaption"><iframe width="200" height="150" src="https://www.youtube.com/embed/4Nna09dG_c0?feature=oembed" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen="" title="The Ralph Wiggum Loop from 1st principles (by the creator of Ralph)"></iframe><figcaption><p dir="ltr"><span style="white-space: pre-wrap;">watch this to see it in practice and learn the theory; read below to go deeper </span></p></figcaption></figure><figure class="kg-card kg-embed-card kg-card-hascaption"><iframe width="200" height="113" src="https://www.youtube.com/embed/O2bBWDoxO4s?feature=oembed" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen="" title="Ralph Wiggum (and why Claude Code's implementation isn't it) with Geoffrey Huntley and Dexter Horthy"></iframe><figcaption><p dir="ltr"><span style="white-space: pre-wrap;">watch this to learn why the claude code plugin isn’t it 🤝</span></p></figcaption></figure><hr><div class="kg-card kg-callout-card kg-callout-card-blue"><div class="kg-callout-emoji">😎</div><div class="kg-callout-text">Here's a cool little field report from a Y Combinator hackathon event where they put Ralph Wiggum to the test.<br><br><b><strong style="white-space: pre-wrap;">"We Put a Coding Agent in a While Loop and It Shipped 6 Repos Overnight"</strong></b><br><br><a href="https://github.com/repomirrorhq/repomirror/blob/main/repomirror.md?ref=ghuntley.com">https://github.com/repomirrorhq/repomirror/blob/main/repomirror.md</a></div></div><hr><p>If you've seen my socials lately, you might have seen me talking about Ralph and wondering what Ralph is. Ralph is a technique. In its purest form, Ralph is a Bash loop.</p><pre><code>while :; do cat PROMPT.md | claude-code ; done</code></pre><p>Ralph can replace the majority of outsourcing at most companies for greenfield projects. It has defects, but these are identifiable and resolvable through various styles of prompts. </p><blockquote><strong>That's the beauty of Ralph - the technique is deterministically bad in an undeterministic world. </strong></blockquote><p>Ralph can be done with any tool that does not cap tool calls and usage. </p><p>Ralph is currently building a brand new programming language. We are on the final leg before a brand new production-grade esoteric programming language is released.  What's kind of wild to me is that Ralph has been able to build this language and is also able to program in this language without that language being in the LLM's training data set.</p><figure class="kg-card kg-embed-card"><blockquote class="twitter-tweet"><p lang="en" dir="ltr">Amp creating a new programming language AFK <a href="https://t.co/KmmOtHIGK4?ref=ghuntley.com">https://t.co/KmmOtHIGK4</a></p>— geoff (@GeoffreyHuntley) <a href="https://twitter.com/GeoffreyHuntley/status/1944377299425706060?ref_src=twsrc%5Etfw&ref=ghuntley.com">July 13, 2025</a></blockquote>
+<script async="" src="https://platform.twitter.com/widgets.js" charset="utf-8"></script></figure><p>Building software with Ralph requires a great deal of faith and a belief in eventual consistency. Ralph will test you. Every time Ralph has taken a wrong direction in making CURSED, I haven't blamed the tools; instead, I've looked inside. Each time Ralph does something bad, Ralph gets tuned - like a guitar.</p><figure class="kg-card kg-bookmark-card"><a class="kg-bookmark-container" href="https://ghuntley.com/play"><div class="kg-bookmark-content"><div class="kg-bookmark-title">deliberate intentional practice</div><div class="kg-bookmark-description">Something I’ve been wondering about for a really long time is, essentially, why do people say AI doesn’t work for them? What do they mean when they say that? From which identity are they coming from? Are they coming from the perspective of an engineer with a job title and</div><div class="kg-bookmark-metadata"><img class="kg-bookmark-icon" src="https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/icon/7V0ak3am_400x400-1-31.jpg" alt=""><span class="kg-bookmark-author">Geoffrey Huntley</span><span class="kg-bookmark-publisher">Geoffrey Huntley</span></div></div><div class="kg-bookmark-thumbnail"><img src="https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/thumbnail/A-vibrant-retro-style-traditional-tattoo-art-print-featuring-a-guitar--rendered-with-high-contrast-and-dramatic-lighting.-The-complex-ornamental-design-is-set-against-a-stark-white-background--showcasing-intense-color-saturation-and-a-symbo-3.jpg" alt="" onerror="this.style.display = 'none'"></div></a></figure><figure class="kg-card kg-bookmark-card"><a class="kg-bookmark-container" href="https://ghuntley.com/mirrors"><div class="kg-bookmark-content"><div class="kg-bookmark-title">LLMs are mirrors of operator skill</div><div class="kg-bookmark-description">This is a follow-up from my previous blog post: “deliberate intentional practice”. I didn’t want to get into the distinction between skilled and unskilled because people take offence to it, but AI is a matter of skill. Someone can be highly experienced as a software engineer in 2024, but that</div><div class="kg-bookmark-metadata"><img class="kg-bookmark-icon" src="https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/icon/7V0ak3am_400x400-1-30.jpg" alt=""><span class="kg-bookmark-author">Geoffrey Huntley</span><span class="kg-bookmark-publisher">Geoffrey Huntley</span></div></div><div class="kg-bookmark-thumbnail"><img src="https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/thumbnail/download--2--3.jpeg" alt="" onerror="this.style.display = 'none'"></div></a></figure><p>It begins with no playground, and Ralph is given instructions to construct one. </p><p>Ralph is very good at making playgrounds, but he comes home bruised because he fell off the slide, so one then tunes Ralph by adding a sign next to the slide saying “SLIDE DOWN, DON’T JUMP, LOOK AROUND,” and Ralph is more likely to look and see the sign.</p><figure class="kg-card kg-image-card"><img src="https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/2025/07/image-1.png" class="kg-image" alt="" loading="lazy" width="640" height="362" srcset="https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/size/w600/2025/07/image-1.png 600w, https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/2025/07/image-1.png 640w"></figure><p>Eventually all Ralph thinks about is the signs so that’s when you get a new Ralph that doesn't feel defective like Ralph, at all.</p><p>When I was in SFO, I taught a few smart people about Ralph. One incredibly talented engineer listened and used Ralph on their next contract, walking away with the wildest ROI. These days, all they think about is Ralph.</p><figure class="kg-card kg-embed-card"><blockquote class="twitter-tweet"><p lang="en" dir="ltr">From my iMessage <br><br>(shared with permission)<br><br>Cost of a $50k USD contract, delivered, MVP, tested + reviewed with <a href="https://twitter.com/AmpCode?ref_src=twsrc%5Etfw&ref=ghuntley.com">@ampcode</a>.<br><br>$297 USD. <a href="https://t.co/0JgT8Q19bV?ref=ghuntley.com">pic.twitter.com/0JgT8Q19bV</a></p>— geoff (@GeoffreyHuntley) <a href="https://twitter.com/GeoffreyHuntley/status/1943528204393955634?ref_src=twsrc%5Etfw&ref=ghuntley.com">July 11, 2025</a></blockquote>
+<script async="" src="https://platform.twitter.com/widgets.js" charset="utf-8"></script></figure><h2 id="whats-in-the-promptmd-can-i-have-it">what's in the prompt.md? can I have it?</h2><!--members-only--><p>There seems to be an obsession in the programming community with the perfect prompt. There is no such thing as a perfect prompt. </p><p>Whilst it might be tempting to take the prompt from CURSED, it won't make sense unless you know how to wield it. You probably won't get the same outcomes by taking the prompt verbatim, because it has evolved through continual tuning based on observation of LLM behaviour. When CURSED is being built, I'm sitting there watching the stream, looking for patterns of bad behaviour—opportunities to tune Ralph.</p><h2 id="first-some-fundamentals">first some fundamentals</h2><p>While I was in SFO, everyone seemed to be trying to crack on multi-agent, agent-to-agent communication and multiplexing. At this stage, it's not needed. Consider microservices and all the complexities that come with them. Now, consider what microservices would look like if the microservices (agents) themselves are non-deterministic—a red hot mess.</p><p>What's the opposite of microservices? A monolithic application. A single operating system process that scales vertically. Ralph is monolithic. Ralph works autonomously in a single repository as a single process that performs one task per loop. </p><figure class="kg-card kg-image-card kg-width-full kg-card-hascaption"><img src="https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/2025/07/The-ralph-Process.png" class="kg-image" alt="" loading="lazy" width="2000" height="1065" srcset="https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/size/w600/2025/07/The-ralph-Process.png 600w, https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/size/w1000/2025/07/The-ralph-Process.png 1000w, https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/size/w1600/2025/07/The-ralph-Process.png 1600w, https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/size/w2400/2025/07/The-ralph-Process.png 2400w"><figcaption><span style="white-space: pre-wrap;">the ralph wiggum technique as a diagram</span></figcaption></figure><p>To get good outcomes with Ralph, you need to ask Ralph to do one thing per loop. <strong>Only one thing</strong>. Now, this might seem wild, but you also need to trust Ralph to decide what's the most important thing to implement. This is full hands-off vibe coding that will test the bounds of what you consider "responsible engineering". </p><p>LLMs are surprisingly good at reasoning about what is important to implement and what the next steps are.</p><blockquote>Your task is to implement missing stdlib (see @specs/stdlib/*) and compiler functionality and produce an compiled application in the cursed language via LLVM for that functionality using parrallel subagents. Follow the @fix_plan.md and <strong>choose the most important thing</strong>. </blockquote><p>There's a few things in the above prompt which I'll expand upon shortly but the other key thing is <strong>deterministically</strong> <strong>allocate the stack the same way every loop</strong>.</p><figure class="kg-card kg-image-card"><img src="https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/2025/07/CleanShot-2025-07-14-at-12.40.30@2x.png" class="kg-image" alt="" loading="lazy" width="2000" height="1006" srcset="https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/size/w600/2025/07/CleanShot-2025-07-14-at-12.40.30@2x.png 600w, https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/size/w1000/2025/07/CleanShot-2025-07-14-at-12.40.30@2x.png 1000w, https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/size/w1600/2025/07/CleanShot-2025-07-14-at-12.40.30@2x.png 1600w, https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/2025/07/CleanShot-2025-07-14-at-12.40.30@2x.png 2210w" sizes="(min-width: 720px) 720px"></figure><p>The items that you want to allocate to the stack every loop are your plan ("@fix_plan.md") and your specifications. See below if specs are a new concept to you. </p><figure class="kg-card kg-bookmark-card"><a class="kg-bookmark-container" href="https://ghuntley.com/specs/"><div class="kg-bookmark-content"><div class="kg-bookmark-title">From Design doc to code: the Groundhog AI coding assistant (and new Cursor vibecoding meta)</div><div class="kg-bookmark-description">Ello everyone, in the “Yes, Claude Code can decompile itself. Here’s the source code” blog post, I teased about a new meta when using Cursor. This post is a follow-up to the post below. You are using Cursor AI incorrectly...I’m hesitant to give this advice away for free,</div><div class="kg-bookmark-metadata"><img class="kg-bookmark-icon" src="https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/icon/7V0ak3am_400x400-1-32.jpg" alt=""><span class="kg-bookmark-author">Geoffrey Huntley</span><span class="kg-bookmark-publisher">Geoffrey Huntley</span></div></div><div class="kg-bookmark-thumbnail"><img src="https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/thumbnail/A-symbolic-traditional-tattoo-art-print-of-a-groundhog-reading-a-book--vibrant-colors--retro-flair--complex-ornamental-details--white-background--warm-golden-glow--radiant-and-luxurious-feel--light-aura--mystical-ethereal-vibe-2.jpg" alt="" onerror="this.style.display = 'none'"></div></a></figure><p>Specs are formed through a conversation with the agent at the beginning phase of a project. Instead of asking the agent to implement the project, what you want to do is have a long conversation with the LLM about your requirements for what you're about to implement. Once your agent has a decent understanding of the task to be done, it's at that point that you issue a prompt to write the specifications out, one per file, in the specifications folder.</p><h2 id="one-item-per-loop">one item per loop</h2><p>One item per loop. I need to repeat myself here—one item per loop. You may relax this restriction as the project progresses, but if it starts going off the rails, then you need to narrow it down to just one item.</p><p>The name of the game is that you only have approximately 170k of context window to work with. So it's essential to use as little of it as possible. The more you use the context window, the worse the outcomes you'll get. Yes, this is wasteful because you're effectively burning the allocation of the specifications every loop and not reusing the allocation.</p><h2 id="extend-the-context-window">extend the context window</h2><p>The way that agentic loops work is by executing a tool and then evaluating the result of that tool. The evaluation results in an allocation being added to your context window. See below.</p><figure class="kg-card kg-bookmark-card"><a class="kg-bookmark-container" href="https://ghuntley.com/gutter"><div class="kg-bookmark-content"><div class="kg-bookmark-title">autoregressive queens of failure</div><div class="kg-bookmark-description">Have you ever had your AI coding assistant suggest something so off-base that you wonder if it’s trolling you? Welcome to the world of autoregressive failure. LLMs, the brains behind these assistants, are great at predicting the next word—or line of code—based on what’s been fed into</div><div class="kg-bookmark-metadata"><img class="kg-bookmark-icon" src="https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/icon/7V0ak3am_400x400-1-33.jpg" alt=""><span class="kg-bookmark-author">Geoffrey Huntley</span><span class="kg-bookmark-publisher">Geoffrey Huntley</span></div></div><div class="kg-bookmark-thumbnail"><img src="https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/thumbnail/A-traditional-tattoo-style-print-of-a-bowling-ball-split-in-the-gutter--rendered-in-vibrant-colors-with-bold-lines-and-diffused-shadows.--The-image-features-a-retro-flair-and-complex-ornamental-details-against-a-white-background-1.jpg" alt="" onerror="this.style.display = 'none'"></div></a></figure><p>Ralph requires a mindset of not allocating to the primary context window. Instead, what you should do is spawn subagents. Your primary context window should operate as a scheduler, scheduling other subagents to perform expensive allocation-type work, such as summarising whether your test suite worked.</p><figure class="kg-card kg-bookmark-card"><a class="kg-bookmark-container" href="https://ghuntley.com/subagents"><div class="kg-bookmark-content"><div class="kg-bookmark-title">I dream about AI subagents; they whisper to me while I’m asleep</div><div class="kg-bookmark-description">In a previous post, I shared about “real context window” sizes and “advertised context window sizes” Claude 3.7’s advertised context window is 200k, but I’ve noticed that the quality of output clips at the 147k-152k mark. Regardless of which agent is used, when clipping occurs, tool call to</div><div class="kg-bookmark-metadata"><img class="kg-bookmark-icon" src="https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/icon/7V0ak3am_400x400-1-34.jpg" alt=""><span class="kg-bookmark-author">Geoffrey Huntley</span><span class="kg-bookmark-publisher">Geoffrey Huntley</span></div></div><div class="kg-bookmark-thumbnail"><img src="https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/thumbnail/A-traditional-tattoo-art-print-of-AI-subagents--computer-programming-agents--a-butler-for-an-AI-agent--symbolic-imagery--vibrant-colors--retro-flair--complex-ornamental-details--white-background--diffused-shadows--bold-3.jpg" alt="" onerror="this.style.display = 'none'"></div></a></figure><blockquote>Your task is to implement missing stdlib (see @specs/stdlib/*) and compiler functionality and <strong>produce an compiled application in the cursed language via LLVM for that functionality using parrallel subagents</strong>. Follow the fix_plan.md and choose the most important thing. Before making changes search codebase (don't assume not implemented) using subagents. <strong>You may use up to parrallel subagents for all operations but only 1 subagent for build/tests of rust.</strong></blockquote><p>Another thing to realise is that you can control the amount of parallelism for subagents. </p><figure class="kg-card kg-video-card kg-width-regular kg-card-hascaption" data-kg-thumbnail="https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/media/2025/07/CleanShot-2025-06-29-at-22.19.58_thumb.jpg" data-kg-custom-thumbnail="">
+            <div class="kg-video-container">
+                <video src="https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/media/2025/07/CleanShot-2025-06-29-at-22.19.58.mp4" poster="https://img.spacergif.org/v1/1370x2156/0a/spacer.png" width="1370" height="2156" playsinline="" preload="metadata" style="background: transparent url('https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/media/2025/07/CleanShot-2025-06-29-at-22.19.58_thumb.jpg') 50% 50% / cover no-repeat;"></video>
+                <div class="kg-video-overlay">
+                    <button class="kg-video-large-play-icon" aria-label="Play video">
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                            <path d="M23.14 10.608 2.253.164A1.559 1.559 0 0 0 0 1.557v20.887a1.558 1.558 0 0 0 2.253 1.392L23.14 13.393a1.557 1.557 0 0 0 0-2.785Z"></path>
+                        </svg>
+                    </button>
+                </div>
+                <div class="kg-video-player-container">
+                    <div class="kg-video-player">
+                        <button class="kg-video-play-icon" aria-label="Play video">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                                <path d="M23.14 10.608 2.253.164A1.559 1.559 0 0 0 0 1.557v20.887a1.558 1.558 0 0 0 2.253 1.392L23.14 13.393a1.557 1.557 0 0 0 0-2.785Z"></path>
+                            </svg>
+                        </button>
+                        <button class="kg-video-pause-icon kg-video-hide" aria-label="Pause video">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                                <rect x="3" y="1" width="7" height="22" rx="1.5" ry="1.5"></rect>
+                                <rect x="14" y="1" width="7" height="22" rx="1.5" ry="1.5"></rect>
+                            </svg>
+                        </button>
+                        <span class="kg-video-current-time">0:00</span>
+                        <div class="kg-video-time">
+                            /<span class="kg-video-duration">0:20</span>
+                        </div>
+                        <input type="range" class="kg-video-seek-slider" max="100" value="0">
+                        <button class="kg-video-playback-rate" aria-label="Adjust playback speed">1×</button>
+                        <button class="kg-video-unmute-icon" aria-label="Unmute">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                                <path d="M15.189 2.021a9.728 9.728 0 0 0-7.924 4.85.249.249 0 0 1-.221.133H5.25a3 3 0 0 0-3 3v2a3 3 0 0 0 3 3h1.794a.249.249 0 0 1 .221.133 9.73 9.73 0 0 0 7.924 4.85h.06a1 1 0 0 0 1-1V3.02a1 1 0 0 0-1.06-.998Z"></path>
+                            </svg>
+                        </button>
+                        <button class="kg-video-mute-icon kg-video-hide" aria-label="Mute">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
+                                <path d="M16.177 4.3a.248.248 0 0 0 .073-.176v-1.1a1 1 0 0 0-1.061-1 9.728 9.728 0 0 0-7.924 4.85.249.249 0 0 1-.221.133H5.25a3 3 0 0 0-3 3v2a3 3 0 0 0 3 3h.114a.251.251 0 0 0 .177-.073ZM23.707 1.706A1 1 0 0 0 22.293.292l-22 22a1 1 0 0 0 0 1.414l.009.009a1 1 0 0 0 1.405-.009l6.63-6.631A.251.251 0 0 1 8.515 17a.245.245 0 0 1 .177.075 10.081 10.081 0 0 0 6.5 2.92 1 1 0 0 0 1.061-1V9.266a.247.247 0 0 1 .073-.176Z"></path>
+                            </svg>
+                        </button>
+                        <input type="range" class="kg-video-volume-slider" max="100" value="100">
+                    </div>
+                </div>
+            </div>
+            <figcaption><p><span style="white-space: pre-wrap;">84 squee (claude subagents) chasing &lt;T&gt;</span></p></figcaption>
+        </figure><p>If you were to fan out to a couple of hundred subagents and then tell those subagents to run the build and test of an application, what you'll get is bad form back pressure. Thus, the instruction above is that only a single subagent should be used for validation, but Ralph can use as many subagents as he likes for searching the file system and for writing files.</p><h2 id="dont-assume-its-not-implemented">don't assume it's not implemented</h2><p>The way that all these coding agents work is via <code>ripgrep</code>, and it's essential to understand that code-based search can be non-deterministic. </p><figure class="kg-card kg-bookmark-card"><a class="kg-bookmark-container" href="https://ghuntley.com/overton"><div class="kg-bookmark-content"><div class="kg-bookmark-title">from Luddites to AI: the Overton Window of disruption</div><div class="kg-bookmark-description">I’ve been thinking about Overton Windows lately, but not of the political variety. You see, the Overton window can be adapted to model disruptive innovation by framing the acceptance of novel technologies, business models, or ideas within a market or society. So I’ve been pondering about where, when and how</div><div class="kg-bookmark-metadata"><img class="kg-bookmark-icon" src="https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/icon/7V0ak3am_400x400-1-35.jpg" alt=""><span class="kg-bookmark-author">Geoffrey Huntley</span><span class="kg-bookmark-publisher">Geoffrey Huntley</span></div></div><div class="kg-bookmark-thumbnail"><img src="https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/thumbnail/download-2.jpeg" alt="" onerror="this.style.display = 'none'"></div></a></figure><p>A common failure scenario for Ralph is when the LLM runs <code>ripgrep</code> and comes to the incorrect conclusion that the code has not been implemented. This failure scenario is easily resolved by erecting a sign for Ralph, instructing Ralph not to make assumptions.</p><blockquote>Before making changes search codebase (don't assume an item is not implemented) using parrallel subagents. Think hard.</blockquote><p>If you wake up to find that Ralph is doing multiple implementations, then you need to tune this step. This nondeterminism is the Achilles' heel of Ralph.</p><h2 id="phase-one-generate">phase one: generate</h2><p>Generating code is now cheap, and the code that Ralph generates is within your complete control through your technical standard library and your specifications.</p><figure class="kg-card kg-bookmark-card"><a class="kg-bookmark-container" href="https://ghuntley.com/specs"><div class="kg-bookmark-content"><div class="kg-bookmark-title">From Design doc to code: the Groundhog AI coding assistant (and new Cursor vibecoding meta)</div><div class="kg-bookmark-description">Ello everyone, in the “Yes, Claude Code can decompile itself. Here’s the source code” blog post, I teased about a new meta when using Cursor. This post is a follow-up to the post below. You are using Cursor AI incorrectly...I’m hesitant to give this advice away for free,</div><div class="kg-bookmark-metadata"><img class="kg-bookmark-icon" src="https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/icon/7V0ak3am_400x400-1-36.jpg" alt=""><span class="kg-bookmark-author">Geoffrey Huntley</span><span class="kg-bookmark-publisher">Geoffrey Huntley</span></div></div><div class="kg-bookmark-thumbnail"><img src="https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/thumbnail/A-symbolic-traditional-tattoo-art-print-of-a-groundhog-reading-a-book--vibrant-colors--retro-flair--complex-ornamental-details--white-background--warm-golden-glow--radiant-and-luxurious-feel--light-aura--mystical-ethereal-vibe-3.jpg" alt="" onerror="this.style.display = 'none'"></div></a></figure><figure class="kg-card kg-image-card"><img src="https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/2025/07/image-3.png" class="kg-image" alt="" loading="lazy" width="1440" height="810" srcset="https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/size/w600/2025/07/image-3.png 600w, https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/size/w1000/2025/07/image-3.png 1000w, https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/2025/07/image-3.png 1440w" sizes="(min-width: 720px) 720px"></figure><figure class="kg-card kg-bookmark-card"><a class="kg-bookmark-container" href="https://ghuntley.com/stdlib"><div class="kg-bookmark-content"><div class="kg-bookmark-title">You are using Cursor AI incorrectly...</div><div class="kg-bookmark-description">🗞️I recently shipped a follow-up blog post to this one; this post remains true. You’ll need to know this to be able to drive the N-factor of weeks of co-worker output in hours technique as detailed at https://ghuntley.com/specs I’m hesitant to give this advice away for free,</div><div class="kg-bookmark-metadata"><img class="kg-bookmark-icon" src="https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/icon/7V0ak3am_400x400-1-37.jpg" alt=""><span class="kg-bookmark-author">Geoffrey Huntley</span><span class="kg-bookmark-publisher">Geoffrey Huntley</span></div></div><div class="kg-bookmark-thumbnail"><img src="https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/thumbnail/A-symbolic-traditional-tattoo-art-print-of-a-Lego-brick-stack-in-vibrant-colors--retro-flair--and-complex-ornamentals.-White-background--warm-golden-glow--intense-dramatic-lighting--high-contrast--luxurious-feel-2.jpg" alt="" onerror="this.style.display = 'none'"></div></a></figure><p>If Ralph is generating the wrong code or using the wrong technical patterns, then you should update your standard library to steer it to use the correct patterns. </p><p>If Ralph is building the wrong thing completely, then your specifications may be incorrect. A big, hard lesson for me when building CURSED was that it was only a month in that I noticed that my specification for the lexer defined a keyword twice for two opposing scenarios, which resulted in a lot of time wasted. Ralph was doing stupid shit, and I guess it's easy to blame the tools instead of the operator.</p><h2 id="phase-two-backpressure">phase two: backpressure</h2><figure class="kg-card kg-image-card"><img src="https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/2025/07/image-4.png" class="kg-image" alt="" loading="lazy" width="1440" height="810" srcset="https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/size/w600/2025/07/image-4.png 600w, https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/size/w1000/2025/07/image-4.png 1000w, https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/2025/07/image-4.png 1440w" sizes="(min-width: 720px) 720px"></figure><p>This is where you need to have your engineering hat on. As code generation is easy now, what is hard is ensuring that Ralph has generated the right thing. Specific programming languages have inbuilt back pressure through their type system. </p><p>Now you might be thinking, "Rust! It's got the best type system." However, one thing with Rust is that the compilation speed is slow. It's the speed of the wheel turning that matters, balanced against the axis of correctness. </p><p>Which language to use requires experimentation. As I'm creating a compiler, I wanted extreme correctness, which meant using Rust; however, this approach means it's built more slowly. These LLMs are not very good at generating the perfect Rust code in one attempt, which means they need to make more attempts. </p><p>That can be either a positive or a negative thing.</p><p>In the diagram above, it just shows the words "test and build", but this is where you put your engineering hat on. Anything can be wired in as back pressure to reject invalid code generation. That could be security scanners, it could be static analysers, it could be anything. But the key collective sum is that the wheel has got to turn fast.</p><p>A staple when building CURSED has been the following prompt. After making a change, run a test just for that unit of code that was implemented and improved.</p><blockquote><strong>After implementing functionality or resolving problems, run the tests for that unit of code that was improved</strong>. </blockquote><p>If you're using a dynamically typed language, I must stress the importance of wiring in a static analyser/type checker when Ralphing, such as:</p><ul><li><a href="https://www.erlang.org/doc/apps/dialyzer/dialyzer.html?ref=ghuntley.com">https://www.erlang.org/doc/apps/dialyzer/dialyzer.html</a>  </li><li><a href="https://pyrefly.org/?ref=ghuntley.com">https://pyrefly.org/</a></li></ul><p>If you do not, then you will run into a bonfire of outcomes.</p><h2 id="capture-the-importance-of-tests-in-the-moment">capture the importance of tests in the moment</h2><p>When you instruct Ralph to write tests as a form of back pressure, because we are writing Ralph doing one thing and one thing only, every loop, with each loop with its new context window, it's crucial in that moment to ask Ralph to write out the meaning and the importance of the test explaining what it's trying to do.</p><blockquote>Important: When authoring documentation (ie. rust doc or cursed stdlib documentation) capture the why tests and the backing implementation is important.</blockquote><p>In implementation, it looks similar to this. To me, I see it like leaving little notes for future iterations by the LLM, explaining why a test exists and its importance because future loops will not have the reasoning in their context window. </p><pre><code>defmodule Anole.Database.QueryOptimizerTest do
+  @moduledoc """
+  Tests for the database query optimizer.
+
+  These tests verify the functionality of the QueryOptimizer module, ensuring that
+  it correctly implements caching, batching, and analysis of database queries to
+  improve performance.
+
+  The tests use both real database calls and mocks to ensure comprehensive coverage
+  while maintaining test isolation and reliability.
+  """
+
+  use Anole.DataCase
+
+  import ExUnit.CaptureLog
+  import Ecto.Query
+  import Mock
+
+  alias Anole.Database.QueryOptimizer
+  alias Anole.Repo
+  alias Anole.Tenant.Isolator
+  alias Anole.Test.Factory
+
+  # Set up the test environment with a tenant context
+  setup do
+    # Create a tenant for isolation testing
+    tenant = Factory.insert(:tenant)
+
+    # Ensure the optimizer is initialized
+    QueryOptimizer.init()
+
+    # Return context
+    {:ok, %{tenant: tenant}}
+  end
+
+  describe "init/0" do
+    @doc """
+    Tests that the QueryOptimizer initializes the required ETS tables.
+
+    This test ensures that the init function properly creates the ETS tables
+    needed for caching and statistics tracking. This is fundamental to the
+    module's operation.
+    """
+    test "creates required ETS tables" do
+      # Clean up any existing tables first
+      try do :ets.delete(:anole_query_cache) catch _:_ -&gt; :ok end
+      try do :ets.delete(:anole_query_stats) catch _:_ -&gt; :ok end
+
+      # Call init
+      assert :ok = QueryOptimizer.init()
+
+      # Verify tables exist
+      assert :ets.info(:anole_query_cache) != :undefined
+      assert :ets.info(:anole_query_stats) != :undefined
+
+      # Verify table properties
+      assert :ets.info(:anole_query_cache, :type) == :set
+      assert :ets.info(:anole_query_stats, :type) == :set
+    end
+  end</code></pre><p>I've found that it helps the LLMs decide if a test is no longer relevant or if the test is important, and it affects the decision-making whether to delete, modify or resolve a test [failure].</p><h2 id="no-cheating">no cheating</h2><p>Claude has the inherent bias to do minimal and placeholder implementations. So, at various stages in the development of CURSED, I've brought in a variation of this prompt. </p><blockquote>After implementing functionality or resolving problems, run the tests for that unit of code that was improved. <strong>If functionality is missing then it's your job to add it as per the application specifications</strong>. Think hard.<br><br>If tests unrelated to your work fail then it's your job to resolve these tests as part of the increment of change.<br><br>9999999999999999999999999999. DO NOT IMPLEMENT PLACEHOLDER OR SIMPLE IMPLEMENTATIONS. WE WANT FULL IMPLEMENTATIONS. <strong>DO IT OR I WILL YELL AT YOU</strong></blockquote><p>Do not be dismayed if, in the early days, Ralph ignores this sign and does placeholder implementations. The models have been trained to chase their reward function, and the reward function is compiling code. You can always run more Ralphs to identify placeholders and minimal implementations and transform that into a to-do list for future Ralph loops.</p><h2 id="the-todo-list">the todo list</h2><p>Speaking of which, here is the prompt stack I've been using over the last couple of weeks to build the TODO list. This is the part where I say Ralph will test you. You have to believe in eventual consistency and know that most issues can be resolved through more loops with Ralph, focusing on the areas where Ralph is making mistakes.</p><blockquote>study specs/* to learn about the compiler specifications and fix_plan.md to understand plan so far.<br><br>The source code of the compiler is in src/*<br><br>The source code of the examples is in examples/* and the source code of the tree-sitter is in tree-sitter/*. Study them.<br><br>The source code of the stdlib is in src/stdlib/*. Study them.<br><br>First task is to study @fix_plan.md (it may be incorrect) and is to use up to 500 subagents to study existing source code in src/ and compare it against the compiler specifications. From that create/update a @fix_plan.md which is a bullet point list sorted in priority of the items which have yet to be implemeneted. Think extra hard and use the oracle to plan. <strong>Consider searching for TODO, minimal implementations and placeholders</strong>. Study @fix_plan.md to determine starting point for research and keep it up to date with items considered complete/incomplete using subagents.<br><br>Second task is to use up to 500 subagents to study existing source code in examples/ then compare it against the compiler specifications. From that create/update a fix_plan.md which is a bullet point list sorted in priority of the items which have yet to be implemeneted. Think extra hard and use the oracle to plan. Consider searching for TODO, minimal implementations and placeholders. Study fix_plan.md to determine starting point for research and keep it up to date with items considered complete/incomplete.<br><br>IMPORTANT: The standard library in src/stdlib should be built in cursed itself, not rust. If you find stdlib authored in rust then it must be noted that it needs to be migrated.<br><br>ULTIMATE GOAL we want to achieve a self-hosting compiler release with full standard library (stdlib). Consider missing stdlib modules and plan. If the stdlib is missing then author the specification at specs/stdlib/FILENAME.md (do NOT assume that it does not exist, search before creating). The naming of the module should be GenZ named and not conflict with another stdlib module name. If you create a new stdlib module then document the plan to implement in @fix_plan.md</blockquote><p>Eventually, Ralph will run out of things to do in the TODO list. Or, it goes completely off track. It's Ralph Wiggum, after all. It's at this stage where it's a matter of taste. Through building of CURSED, I have deleted the TODO list multiple times. The TODO list is what I'm watching like a hawk. And I throw it out often.</p><p>Now, if I throw the TODO list out, you might be asking, "Well, how does it know what the next step is?" Well, it's simple. You run a Ralph loop with explicit instructions such as above to generate a new TODO list.</p><figure class="kg-card kg-embed-card"><blockquote class="twitter-tweet"><p lang="en" dir="ltr">Frequent question: how do you plan?<br><br>I don’t. The models know what a compiler is better than I do. I just ask it. <a href="https://t.co/JhZPIBJLiF?ref=ghuntley.com">pic.twitter.com/JhZPIBJLiF</a></p>— geoff (@GeoffreyHuntley) <a href="https://twitter.com/GeoffreyHuntley/status/1944384001935909359?ref_src=twsrc%5Etfw&ref=ghuntley.com">July 13, 2025</a></blockquote>
+<script async="" src="https://platform.twitter.com/widgets.js" charset="utf-8"></script></figure><p>Then when you've got your todo list you kick Ralph back off again with... instructions to switch from planning mode to building mode...</p><h2 id="loop-back-is-everything">loop back is everything</h2><p>You want to program in ways where Ralph can loop himself back into the LLM for evaluation. This is incredibly important. Always look for opportunities to loop Ralph back on itself. This could be as simple as instructing it to add additional logging, or in the case of a compiler, asking Ralph to compile the application and then looking at the LLVM IR representation. </p><blockquote>You may add extra logging if required to be able to debug the issues.</blockquote><h2 id="ralph-can-take-himself-to-university">ralph can take himself to university</h2><p>The @<a href="https://agent.md/?ref=ghuntley.com" rel="noreferrer">AGENT.md</a> is the heart of the loop. It instructs how Ralph should compile and run the project. If Ralph discovers a learning, permit him to self-improve:</p><blockquote>When you learn something new about how to run the compiler or examples make sure you update @AGENT.md using a subagent but keep it brief. For example if you run commands multiple times before learning the correct command then that file should be updated.</blockquote><p>During a loop, Ralph might determine that something needs to be fixed. It's crucial to capture that reasoning.</p><blockquote>For any bugs you notice, it's important to resolve them or document them in @fix_plan.md to be resolved using a subagent even if it is unrelated to the current piece of work after documenting it in @fix_plan.md</blockquote><h2 id="you-will-wake-up-to-a-broken-code-base">you will wake up to a broken code base</h2><p>Yep, it's true, you'll wake up to a broken codebase that doesn't compile from time to time, and you'll have situations where Ralph can't fix it himself. This is where you need to put your brain on. You need to make a judgment call. Is it easier to do a <code>git reset --hard</code> and to kick Ralph back off again? Or do you need to come up with another series of prompts to be able to rescue Ralph? </p><blockquote>When the tests pass update the @fix_plan.md`, then add changed code and @fix_plan.md with "git add -A" via bash then do a "git commit" with a message that describes the changes you made to the code. After the commit do a "git push" to push the changes to the remote repository. <br><br>As soon as there are no build or test errors create a git tag. If there are no git tags start at 0.0.0 and increment patch by 1 for example 0.0.1 if 0.0.0 does not exist.</blockquote><p>I recall when I was first getting this compiler up and running, and the number of compilation errors was so large that it filled Claude's context window. So, at that point, I took the file of compilation errors and threw it into Gemini, asking Gemini to create a plan for Ralph.</p><h2 id="but-maintainability">but maintainability?</h2><p>When I hear that argument, I question “by whom”? By humans? Why are humans the frame for maintainability? Aren’t we in the post-AI phase where you can just run loops to resolve/adapt when needed? 😎</p><h2 id="any-problem-created-by-ai-can-be-resolved-through-a-different-series-of-prompts">any problem created by AI can be resolved through a different series of prompts</h2><p>Which brings me to this point. If you wanted to be cheeky, you could probably find the codebase for CURSED on GitHub. I ask that you refrain from sharing it on social media, as it's not yet ready for launch. I want to dial this thing in so much that we have indisputable proof that AI can build a brand new programming language and program a programming language where it has no training data in its training set is possible.</p><figure class="kg-card kg-image-card kg-card-hascaption"><img src="https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/2025/07/image-5.png" class="kg-image" alt="" loading="lazy" width="1200" height="900" srcset="https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/size/w600/2025/07/image-5.png 600w, https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/size/w1000/2025/07/image-5.png 1000w, https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/2025/07/image-5.png 1200w" sizes="(min-width: 720px) 720px"><figcaption><span style="white-space: pre-wrap;">cursed as a webserver</span></figcaption></figure><p>What I'd like people to understand is that all these issues, created by Ralph, can be resolved by crafting a different series of prompts and running more loops with Ralph. </p><p>I'm expecting CURSED to have some significant gaps, just like Ralph Wiggum. It'd be so easy for people to poke holes in CURSED, as it is right now, which is why I have been holding off on publishing this post. The repository is full of garbage, temporary files, and binaries. </p><blockquote>Ralph has three states. Under baked, baked, or baked with unspecified latent behaviours (which are sometimes quite nice!)</blockquote><p>When CURSED ships, understand that Ralph built it. What comes next, technique-wise, won’t be Ralph. I firmly maintain that if models and tools remain as they are now, we are in post-AGI territory. All you need are tokens; these models yearn for tokens, so throw them at them, and you have primitives to automate software development if you take the right approaches.</p><p>Having said all of that, engineers are still needed. There is no way this is possible without senior expertise guiding Ralph. Anyone claiming that engineers are no longer required and a tool can do 100% of the work without an engineer is peddling horseshit. </p><p>However, the Ralph technique is surprisingly effective enough to displace a large majority of SWEs as they are currently for Greenfield projects. </p><p>As a final closing remark, I'll say, </p><blockquote>"There's no way in heck would I use Ralph in an existing code base" </blockquote><p>though, if you try, I'd be interested in hearing what your outcomes are. This works best as a technique for bootstrapping Greenfield, with the expectation you'll get 90% done with it.</p><h3 id="current-prompt-used-to-build-cursed">current prompt used to build cursed</h3><p>Here's the current prompt used by Ralph to build CURSED.</p><pre><code>0a. study specs/* to learn about the compiler specifications
+
+0b. The source code of the compiler is in src/
+
+0c. study fix_plan.md.
+
+1. Your task is to implement missing stdlib (see @specs/stdlib/*) and compiler functionality and produce an compiled application in the cursed language via LLVM for that functionality using parrallel subagents. Follow the fix_plan.md and choose the most important 10 things. Before making changes search codebase (don't assume not implemented) using subagents. You may use up to 500 parrallel subagents for all operations but only 1 subagent for build/tests of rust.
+
+2. After implementing functionality or resolving problems, run the tests for that unit of code that was improved. If functionality is missing then it's your job to add it as per the application specifications. Think hard.
+
+2. When you discover a parser, lexer, control flow or LLVM issue. Immediately update @fix_plan.md with your findings using a subagent. When the issue is resolved, update @fix_plan.md and remove the item using a subagent.
+
+3. When the tests pass update the @fix_plan.md`, then add changed code and @fix_plan.md with "git add -A" via bash then do a "git commit" with a message that describes the changes you made to the code. After the commit do a "git push" to push the changes to the remote repository.
+
+999. Important: When authoring documentation (ie. rust doc or cursed stdlib documentation) capture the why tests and the backing implementation is important.
+
+9999. Important: We want single sources of truth, no migrations/adapters. If tests unrelated to your work fail then it's your job to resolve these tests as part of the increment of change.
+
+999999. As soon as there are no build or test errors create a git tag. If there are no git tags start at 0.0.0 and increment patch by 1 for example 0.0.1  if 0.0.0 does not exist.
+
+999999999. You may add extra logging if required to be able to debug the issues.
+
+
+9999999999. ALWAYS KEEP @fix_plan.md up to do date with your learnings using a subagent. Especially after wrapping up/finishing your turn.
+
+99999999999. When you learn something new about how to run the compiler or examples make sure you update @AGENT.md using a subagent but keep it brief. For example if you run commands multiple times before learning the correct command then that file should be updated.
+
+999999999999. IMPORTANT DO NOT IGNORE: The standard libray should be authored in cursed itself and tests authored. If you find rust implementation then delete it/migrate to implementation in the cursed language.
+
+99999999999999. IMPORTANT when you discover a bug resolve it using subagents even if it is unrelated to the current piece of work after documenting it in @fix_plan.md
+
+
+9999999999999999. When you start implementing the standard library (stdlib) in the cursed language, start with the testing primitives so that future standard library in the cursed language can be tested.
+
+
+99999999999999999. The tests for the cursed standard library "stdlib" should be located in the folder of the stdlib library next to the source code. Ensure you document the stdlib library with a README.md in the same folder as the source code.
+
+
+9999999999999999999. Keep AGENT.md up to date with information on how to build the compiler and your learnings to optimise the build/test loop using a subagent.
+
+
+999999999999999999999. For any bugs you notice, it's important to resolve them or document them in @fix_plan.md to be resolved using a subagent.
+
+
+99999999999999999999999. When authoring the standard library in the cursed language you may author multiple standard libraries at once using up to 1000 parrallel subagents
+
+
+99999999999999999999999999. When @fix_plan.md becomes large periodically clean out the items that are completed from the file using a subagent.
+
+
+99999999999999999999999999. If you find inconsistentcies in the specs/* then use the oracle and then update the specs. Specifically around types and lexical tokens.
+
+9999999999999999999999999999. DO NOT IMPLEMENT PLACEHOLDER OR SIMPLE IMPLEMENTATIONS. WE WANT FULL IMPLEMENTATIONS. DO IT OR I WILL YELL AT YOU
+
+
+9999999999999999999999999999999. SUPER IMPORTANT DO NOT IGNORE. DO NOT PLACE STATUS REPORT UPDATES INTO @AGENT.md</code></pre><h3 id="current-prompt-used-to-plan-cursed">current prompt used to plan cursed</h3><pre><code>study specs/* to learn about the compiler specifications and fix_plan.md to understand plan so far.
+
+The source code of the compiler is in src/*
+
+The source code of the examples is in examples/* and the source code of the tree-sitter is in tree-sitter/*. Study them.
+
+The source code of the stdlib is in src/stdlib/*. Study them.
+
+First task is to study @fix_plan.md (it may be incorrect) and is to use up to 500 subagents to study existing source code in src/ and compare it against the compiler specifications. From that create/update a @fix_plan.md which is a bullet point list sorted in priority of the items which have yet to be implemeneted. Think extra hard and use the oracle to plan. Consider searching for TODO, minimal implementations and placeholders. Study @fix_plan.md to determine starting point for research and keep it up to date with items considered complete/incomplete using subagents.
+
+Second task is to use up to 500 subagents to study existing source code in examples/ then compare it against the compiler specifications. From that create/update a fix_plan.md which is a bullet point list sorted in priority of the items which have yet to be implemeneted. Think extra hard and use the oracle to plan. Consider searching for TODO, minimal implementations and placeholders. Study fix_plan.md to determine starting point for research and keep it up to date with items considered complete/incomplete.
+
+IMPORTANT: The standard library in src/stdlib should be built in cursed itself, not rust. If you find stdlib authored in rust then it must be noted that it needs to be migrated.
+
+ULTIMATE GOAL we want to achieve a self-hosting compiler release with full standard library (stdlib). Consider missing stdlib modules and plan. If the stdlib is missing then author the specification at specs/stdlib/FILENAME.md (do NOT assume that it does not exist, search before creating). The naming of the module should be GenZ named and not conflict with another stdlib module name. If you create a new stdlib module then document the plan to implement in @fix_plan.md</code></pre><h3 id="ps-socials">ps. socials</h3><ul><li>X - <a href="https://x.com/GeoffreyHuntley/status/1944614322107564194?ref=ghuntley.com">https://x.com/GeoffreyHuntley/status/1944614322107564194</a></li><li>LinkedIn - <a href="https://www.linkedin.com/posts/geoffreyhuntley_ralph-wiggum-as-a-software-engineer-activity-7350383201233608705-vBRf?utm_source=share&utm_medium=member_desktop&rcm=ACoAAABQKuUB2AJ059keUcRUVLbtmoa6miLVlTI">https://www.linkedin.com/posts/geoffreyhuntley_ralph-wiggum-as-a-software-engineer-activity-7350383201233608705-vBRf</a></li><li>Bsky - <a href="https://bsky.app/profile/ghuntley.com/post/3ltvkz6gkh22g?ref=ghuntley.com">https://bsky.app/profile/ghuntley.com/post/3ltvkz6gkh22g</a></li></ul>
+        </div>
+
+    </article>
+
+            <br/>
+        <section class="newsletter-signup gh-canvas">
+            <div class="newsletter-signup-inner">
+                <h3 class="newsletter-signup-title">p.p.s don't miss out on free lifetime access</h3>
+                <p class="newsletter-signup-description">Join thousands getting premium insights delivered weekly. <strong>Subscribe now and you'll never pay</strong> - even when I start charging new subscribers. This free-for-life offer won't last forever.</p>
+                <br/>
+                <div class="newsletter-signup-actions">
+                    <a class="newsletter-signup-btn gh-btn gh-primary-btn" href="#/portal/signup" data-portal="signup">
+                        Subscribe to Newsletter
+                    </a>
+                </div>
+            </div>
+        </section>
+
+    <div class="gh-canvas">
+    <div class="navigation">
+            <a class="navigation-item navigation-previous" href="/cars/">
+                <span class="navigation-label">Previous</span>
+                <h4 class="navigation-title">Claude Sonnet is a small-brained mechanical squirrel of &lt;T&gt;</h4>
+            </a>
+            <a class="navigation-item navigation-next" href="/amazon-kiro-source-code/">
+                <span class="navigation-label">Next</span>
+                <h4 class="navigation-title">source code analysis of Amazon Kiro</h4>
+            </a>
+    </div>
+</div>
+
+
+
+        <div class="related-wrapper gh-outer">
+        <section class="related-posts gh-inner">
+            <h3 class="related-title">
+                <span class="text">You might also like...</span>
+            </h3>
+            <div class="post-feed">
+                    <article class="post tag-ai featured u-shadow">
+<a class="post-link" href="/eighteen-month-recap/">
+            <img
+                class="post-image u-object-fit"
+                src="https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/2026/09/Symbolic-traditional-tattoo-art-print-on-white-with-a-small-software-engineer-in-intricately-patterned-overalls--a-vivid-rose-tattoo--and-an-In-N-Out-burger-hat-at-a-Singapore-conference.-Divide-the-composition-into-bold-ornamental-sections.jpg"
+                alt="the eighteen-month recap: AI Engineer, Singapore, May 2026"
+                loading="lazy"
+            >
+
+    <div class="post-wrapper">
+        <header class="post-header">
+                <span class="post-tag">AI</span>
+
+            <h2 class="post-title">
+                the eighteen-month recap: AI Engineer, Singapore, May 2026
+            </h2>
+        </header>
+
+            <div class="post-excerpt">
+                This is the eighteen-month recap: the talk I gave on day
+            </div>
+    </div>
+
+    <footer class="post-footer">
+        <span class="post-more">Read More</span>
+
+        <div class="post-author">
+                    <span class="post-author-link">
+                        <img class="post-author-image" src="https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/size/w150/2025/08/A-black-and-white--low-angle-digital-illustration-in-a-symbolic-traditional-tattoo-art-style.--A-bald--light-skinned-man-with-a-bushy-beard--prominent-eyebrows--and-a-friendly-expression-wears-denim-overalls--2--1.jpg" alt="Geoffrey Huntley" loading="lazy">
+                    </span>
+        </div>
+    </footer>
+</a>
+</article>                    <article class="post tag-ai u-shadow">
+<a class="post-link" href="/miami/">
+        <figure class="post-media">
+            <div class="u-placeholder same-height rectangle">
+                <img
+                    class="post-image u-object-fit"
+                    srcset="https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/size/w400/2026/06/download.jpeg 400w,
+                            https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/size/w720/2026/06/download.jpeg 750w,
+                            https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/size/w960/2026/06/download.jpeg 960w,
+                            https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/size/w1200/2026/06/download.jpeg 1140w,
+                            https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/size/w2000/2026/06/download.jpeg 1920w"
+                    sizes="600px"
+                    src="https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/size/w960/2026/06/download.jpeg"
+                    alt="A couple of months ago in Miami, I sat down and dumped my brains. Here&#x27;s the interview..."
+                    loading="lazy"
+                >
+            </div>
+        </figure>
+
+    <div class="post-wrapper">
+        <header class="post-header">
+                <span class="post-tag">AI</span>
+
+            <h2 class="post-title">
+                A couple of months ago in Miami, I sat down and dumped my brains. Here&#x27;s the interview...
+            </h2>
+        </header>
+
+            <div class="post-excerpt">
+                Some personal hot takes from AI: Engineer Miami follows...
+
+1. Software development
+            </div>
+    </div>
+
+    <footer class="post-footer">
+        <span class="post-more">Read More</span>
+
+        <div class="post-author">
+                    <span class="post-author-link">
+                        <img class="post-author-image" src="https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/size/w150/2025/08/A-black-and-white--low-angle-digital-illustration-in-a-symbolic-traditional-tattoo-art-style.--A-bald--light-skinned-man-with-a-bushy-beard--prominent-eyebrows--and-a-friendly-expression-wears-denim-overalls--2--1.jpg" alt="Geoffrey Huntley" loading="lazy">
+                    </span>
+        </div>
+    </footer>
+</a>
+</article>                    <article class="post tag-ai u-shadow">
+<a class="post-link" href="/cogsec/">
+        <figure class="post-media">
+            <div class="u-placeholder same-height rectangle">
+                <img
+                    class="post-image u-object-fit"
+                    srcset="https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/size/w400/2026/03/download--3-.jpeg 400w,
+                            https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/size/w720/2026/03/download--3-.jpeg 750w,
+                            https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/size/w960/2026/03/download--3-.jpeg 960w,
+                            https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/size/w1200/2026/03/download--3-.jpeg 1140w,
+                            https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/size/w2000/2026/03/download--3-.jpeg 1920w"
+                    sizes="600px"
+                    src="https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/size/w960/2026/03/download--3-.jpeg"
+                    alt="cognitive security"
+                    loading="lazy"
+                >
+            </div>
+        </figure>
+
+    <div class="post-wrapper">
+        <header class="post-header">
+                <span class="post-tag">AI</span>
+
+            <h2 class="post-title">
+                cognitive security
+            </h2>
+        </header>
+
+            <div class="post-excerpt">
+                This is a follow-up from my previous post about AI as
+            </div>
+    </div>
+
+    <footer class="post-footer">
+        <span class="post-more">Read More</span>
+
+        <div class="post-author">
+                    <span class="post-author-link">
+                        <img class="post-author-image" src="https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/size/w150/2025/08/A-black-and-white--low-angle-digital-illustration-in-a-symbolic-traditional-tattoo-art-style.--A-bald--light-skinned-man-with-a-bushy-beard--prominent-eyebrows--and-a-friendly-expression-wears-denim-overalls--2--1.jpg" alt="Geoffrey Huntley" loading="lazy">
+                    </span>
+        </div>
+    </footer>
+</a>
+</article>                    <article class="post tag-ai u-shadow">
+<a class="post-link" href="/warfare/">
+        <figure class="post-media">
+            <div class="u-placeholder same-height rectangle">
+                <img
+                    class="post-image u-object-fit"
+                    srcset="https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/size/w400/2026/03/download--2-.jpeg 400w,
+                            https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/size/w720/2026/03/download--2-.jpeg 750w,
+                            https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/size/w960/2026/03/download--2-.jpeg 960w,
+                            https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/size/w1200/2026/03/download--2-.jpeg 1140w,
+                            https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/size/w2000/2026/03/download--2-.jpeg 1920w"
+                    sizes="600px"
+                    src="https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/size/w960/2026/03/download--2-.jpeg"
+                    alt="AI as economic warfare"
+                    loading="lazy"
+                >
+            </div>
+        </figure>
+
+    <div class="post-wrapper">
+        <header class="post-header">
+                <span class="post-tag">AI</span>
+
+            <h2 class="post-title">
+                AI as economic warfare
+            </h2>
+        </header>
+
+            <div class="post-excerpt">
+                People often ask me how I feel about open-source models, and
+            </div>
+    </div>
+
+    <footer class="post-footer">
+        <span class="post-more">Read More</span>
+
+        <div class="post-author">
+                    <span class="post-author-link">
+                        <img class="post-author-image" src="https://storage.ghost.io/c/06/e5/06e5d12b-0328-469d-a0d0-3a0f0ba34c46/content/images/size/w150/2025/08/A-black-and-white--low-angle-digital-illustration-in-a-symbolic-traditional-tattoo-art-style.--A-bald--light-skinned-man-with-a-bushy-beard--prominent-eyebrows--and-a-friendly-expression-wears-denim-overalls--2--1.jpg" alt="Geoffrey Huntley" loading="lazy">
+                    </span>
+        </div>
+    </footer>
+</a>
+</article>            </div>
+        </section>
+</div>
+</main>
+    </div>
+
+    <footer class="gh-foot no-menu gh-outer">
+        <div class="gh-foot-inner gh-inner">
+            <div class="gh-copyright">
+                Geoffrey Huntley © 2026
+            </div>
+            <div class="gh-powered-by">
+                <a href="https://ghost.org/" target="_blank" rel="noopener">Powered by Ghost</a>
+            </div>
+        </div>
+    </footer>
+
+</div>
+
+    <div class="pswp" tabindex="-1" role="dialog" aria-hidden="true">
+    <div class="pswp__bg"></div>
+
+    <div class="pswp__scroll-wrap">
+        <div class="pswp__container">
+            <div class="pswp__item"></div>
+            <div class="pswp__item"></div>
+            <div class="pswp__item"></div>
+        </div>
+
+        <div class="pswp__ui pswp__ui--hidden">
+            <div class="pswp__top-bar">
+                <div class="pswp__counter"></div>
+
+                <button class="pswp__button pswp__button--close" title="Close (Esc)"></button>
+                <button class="pswp__button pswp__button--share" title="Share"></button>
+                <button class="pswp__button pswp__button--fs" title="Toggle fullscreen"></button>
+                <button class="pswp__button pswp__button--zoom" title="Zoom in/out"></button>
+
+                <div class="pswp__preloader">
+                    <div class="pswp__preloader__icn">
+                        <div class="pswp__preloader__cut">
+                            <div class="pswp__preloader__donut"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="pswp__share-modal pswp__share-modal--hidden pswp__single-tap">
+                <div class="pswp__share-tooltip"></div>
+            </div>
+
+            <button class="pswp__button pswp__button--arrow--left" title="Previous (arrow left)"></button>
+            <button class="pswp__button pswp__button--arrow--right" title="Next (arrow right)"></button>
+
+            <div class="pswp__caption">
+                <div class="pswp__caption__center"></div>
+            </div>
+        </div>
+    </div>
+</div>
+<script src="https://ghuntley.com/assets/built/main.min.js?v=Pl5xwHlscx4db4Iy"></script>
+
+<script>
+    window.ga = function () { ga.q.push(arguments) }; ga.q = []; ga.l = +new Date;
+    ga('create', 'UA-22210999-1', 'auto'); ga('set', 'anonymizeIp', false); ga('set', 'transport', 'beacon'); ga('send', 'pageview')
+</script>
+
+<script src="https://www.google-analytics.com/analytics.js" async></script>
+
+</body>
+</html>

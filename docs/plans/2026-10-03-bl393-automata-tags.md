@@ -226,20 +226,20 @@ this planning session:
 
 1. **Deleting a tag that has children:** cascade-delete the whole subtree,
    reparent children up to the deleted tag's own parent (or to root), or
-   refuse the delete until children are moved/removed first?
+   refuse the delete until children are moved/removed first? --- Refuse to delete until children are moved/removed first.
 2. **Deleting a tag that's still assigned to Automatons:** just remove it
-   from their `TagIDs` silently, or refuse/warn with a count first?
+   from their `TagIDs` silently, or refuse/warn with a count first? --- refuse/warn with a count first.
 3. **Selecting a parent tag in the browse view:** show only Automatons
    tagged with that exact tag, or also everything tagged with any
    descendant (e.g. selecting `Work` also shows things tagged only
    `Work/Mobile App/iOS`)? This is a real UX choice, not just an
    implementation detail — affects whether tagging something only at a
    leaf is enough or whether operators will expect to also tag it at
-   intermediate levels.
+   intermediate levels. --- lets iterate and discuss this; give me examples of what the options are and what that will change for both configuration, browsing, managing, ec
 4. **Suggested-tag-from-alias behavior (§7.2):** pre-check a suggested tag
    derived from the BL27 alias as proposed, or go further and
    auto-*create* that tag if it doesn't exist yet (vs. only suggesting
-   among tags that already exist)?
+   among tags that already exist)? --- only suggesting
 
 ## 9. Explicitly out of scope / deferred
 
@@ -255,7 +255,7 @@ this planning session:
   contradicts "I make all decisions."
 - **Per-federation-peer tag namespacing** — tags are local to one daemon's
   registry for v1; federation-wide shared tag registries (if ever wanted)
-  are a separate, bigger design question not implied by the original ask.
+  are a separate, bigger design question not implied by the original ask. -- keep this in mind, it is a good idea
 
 ## 10. Parity surface
 
@@ -292,3 +292,4 @@ parity set: `REST`, `MCP`, `CLI`, `comm channel`, `PWA`, `Android`, `iPhone/iOS`
   actually happens.
 - Full `go test ./...` clean + CHANGELOG + version bump, per this repo's
   standard release cadence.
+- full e2e testing configuration
