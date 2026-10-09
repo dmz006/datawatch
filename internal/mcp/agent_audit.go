@@ -24,6 +24,9 @@ func (s *Server) toolAgentAudit() mcpsdk.Tool {
 		mcpsdk.WithString("project",
 			mcpsdk.Description("Filter to one Project Profile name"),
 		),
+		mcpsdk.WithString("parent_agent_id",
+			mcpsdk.Description("Filter to the full spawn chain for one parent agent ID (GH#201 Phase 3)"),
+		),
 		mcpsdk.WithNumber("limit",
 			mcpsdk.Description("Maximum events to return (default 100)"),
 		),
@@ -43,9 +46,10 @@ func (s *Server) handleAgentAudit(_ context.Context, req mcpsdk.CallToolRequest)
 		limit = 100
 	}
 	filter := agents.ReadEventsFilter{
-		Event:   req.GetString("event", ""),
-		AgentID: req.GetString("agent_id", ""),
-		Project: req.GetString("project", ""),
+		Event:         req.GetString("event", ""),
+		AgentID:       req.GetString("agent_id", ""),
+		Project:       req.GetString("project", ""),
+		ParentAgentID: req.GetString("parent_agent_id", ""),
 	}
 	events, err := agents.ReadEvents(s.agentAuditPath, filter, limit)
 	if err != nil {

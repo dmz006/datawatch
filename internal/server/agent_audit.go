@@ -12,7 +12,8 @@ import (
 )
 
 // handleAgentAudit serves GET /api/agents/audit with optional
-// ?event=, ?agent_id=, ?project=, and ?limit= filters. Returns JSON
+// ?event=, ?agent_id=, ?project=, ?parent_agent_id= (GH#201 Phase 3 —
+// the full spawn chain for one parent), and ?limit= filters. Returns JSON
 // {events: [...], path: "..."}. Refuses when no audit file is
 // configured (file IO disabled) or when the active file is CEF
 // (queryable via the operator's SIEM, not via this handler).
@@ -43,9 +44,10 @@ func (s *Server) handleAgentAudit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	filter := agents.ReadEventsFilter{
-		Event:   r.URL.Query().Get("event"),
-		AgentID: r.URL.Query().Get("agent_id"),
-		Project: r.URL.Query().Get("project"),
+		Event:         r.URL.Query().Get("event"),
+		AgentID:       r.URL.Query().Get("agent_id"),
+		Project:       r.URL.Query().Get("project"),
+		ParentAgentID: r.URL.Query().Get("parent_agent_id"),
 	}
 
 	events, err := agents.ReadEvents(s.agentAuditPath, filter, limit)

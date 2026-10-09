@@ -1544,8 +1544,15 @@ _(Historical: every numbered feature pre-BL241 has shipped. Mempalace alignment 
 > attribution, never a rejected request. Verified with a real two-
 > daemon test (two `*Server`s wired to each other over a real
 > `httptest.Server`), per the plan's own requirement.
-> **Phases 3-5 not started** — chained-children (F10 `ParentAgentID`)
-> threading into the audit trail, the full state-changing-handler
+> **Phase 3 (chained-children `ParentAgentID`) shipped (v8.77.0):**
+> `agents.AuditEvent` gains a first-class `ParentAgentID` field,
+> threaded through all 10 emit call sites across `spawn.go`,
+> `oncrash.go`, `reconcile.go` (corrected the plan's own estimate —
+> `spawn` already smuggled it into `Extra`; the real gap was the other
+> 9 events dropping it entirely, plus making it a directly-filterable
+> field instead of a loose Extra key). `GET /api/agents/audit` and the
+> `agent_audit` MCP tool both gain a matching `parent_agent_id` filter.
+> **Phases 4-5 not started** — the full state-changing-handler
 > completeness sweep (session/Automata/alert-rules/federation-peer/
 > device management confirmed still uncovered), and the create-alert
 > API/MCP tool. See the plan doc for the full per-phase scope.

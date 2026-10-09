@@ -58,7 +58,7 @@ func (m *Manager) HandleCrash(ctx context.Context, original *Agent) (*Agent, boo
 	default:
 		// Unknown policy — log but don't crash on top of crash; treat
 		// as fail_parent so operator gets a chance to fix the profile.
-		emit(m.Auditor, "crash_policy_unknown", original.ID,
+		emitWithParent(m.Auditor, "crash_policy_unknown", original.ID, original.ParentAgentID,
 			original.ProjectProfile, original.ClusterProfile,
 			string(original.State),
 			fmt.Sprintf("on_crash=%q falls through to fail_parent", policy),
@@ -82,7 +82,7 @@ func (m *Manager) respawnOnce(ctx context.Context, original *Agent) (*Agent, boo
 	if st.count >= 1 {
 		// Already used the single retry — fall back to fail_parent.
 		m.mu.Unlock()
-		emit(m.Auditor, "crash_respawn_exhausted", original.ID,
+		emitWithParent(m.Auditor, "crash_respawn_exhausted", original.ID, original.ParentAgentID,
 			original.ProjectProfile, original.ClusterProfile,
 			string(original.State),
 			"respawn_once budget exhausted; falling back to fail_parent",
@@ -93,7 +93,7 @@ func (m *Manager) respawnOnce(ctx context.Context, original *Agent) (*Agent, boo
 	st.lastAt = time.Now().UTC()
 	m.mu.Unlock()
 
-	emit(m.Auditor, "crash_respawn", original.ID,
+	emitWithParent(m.Auditor, "crash_respawn", original.ID, original.ParentAgentID,
 		original.ProjectProfile, original.ClusterProfile,
 		string(original.State),
 		"on_crash=respawn_once retry #1",
@@ -131,7 +131,7 @@ func (m *Manager) respawnWithBackoff(ctx context.Context, original *Agent) (*Age
 		wait = delay - since
 	}
 
-	emit(m.Auditor, "crash_respawn_backoff", original.ID,
+	emitWithParent(m.Auditor, "crash_respawn_backoff", original.ID, original.ParentAgentID,
 		original.ProjectProfile, original.ClusterProfile,
 		string(original.State),
 		fmt.Sprintf("on_crash=respawn_with_backoff attempt %d wait=%s",

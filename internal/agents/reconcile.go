@@ -166,7 +166,7 @@ func (m *Manager) ReconcileServiceMode(ctx context.Context) (*ServiceReconcileRe
 			m.agents[a.ID] = a
 			m.mu.Unlock()
 			res.Reattached = append(res.Reattached, a.ID)
-			emit(m.Auditor, "service_reattach", a.ID,
+			emitWithParent(m.Auditor, "service_reattach", a.ID, a.ParentAgentID,
 				inst.ProjectProfile, inst.ClusterProfile, string(StateReady),
 				"reattached after parent restart", nil)
 		}

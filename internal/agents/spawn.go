@@ -616,7 +616,7 @@ func (m *Manager) Spawn(ctx context.Context, req SpawnRequest) (*Agent, error) {
 		if m.ObserverPeers != nil {
 			_ = m.ObserverPeers.Delete(a.ID)
 		}
-		emit(m.Auditor, "spawn_fail", a.ID, a.ProjectProfile, a.ClusterProfile,
+		emitWithParent(m.Auditor, "spawn_fail", a.ID, a.ParentAgentID, a.ProjectProfile, a.ClusterProfile,
 			string(a.State), err.Error(), nil)
 
 		// BL106 — consult OnCrash. If a respawn fires the caller still
@@ -628,10 +628,12 @@ func (m *Manager) Spawn(ctx context.Context, req SpawnRequest) (*Agent, error) {
 		return a, fmt.Errorf("driver spawn: %w", err)
 	}
 
-	emit(m.Auditor, "spawn", a.ID, a.ProjectProfile, a.ClusterProfile,
+	// GH#201 Phase 3 — ParentAgentID is now the first-class field
+	// above (emitWithParent), not duplicated into Extra as it used to
+	// be; "branch" stays in Extra, it has no dedicated field.
+	emitWithParent(m.Auditor, "spawn", a.ID, a.ParentAgentID, a.ProjectProfile, a.ClusterProfile,
 		string(a.State), "", map[string]interface{}{
-			"branch":          a.Branch,
-			"parent_agent_id": a.ParentAgentID,
+			"branch": a.Branch,
 		})
 	return a, nil
 }
@@ -729,7 +731,7 @@ func (m *Manager) Terminate(ctx context.Context, id string) error {
 	a.State = StateStopped
 	a.StoppedAt = time.Now().UTC()
 	m.mu.Unlock()
-	emit(m.Auditor, "terminate", a.ID, a.ProjectProfile, a.ClusterProfile,
+	emitWithParent(m.Auditor, "terminate", a.ID, a.ParentAgentID, a.ProjectProfile, a.ClusterProfile,
 		string(a.State), "", nil)
 	return nil
 }
@@ -947,9 +949,10 @@ func (m *Manager) NoteActivity(agentID string) {
 // expirations without sleeping.
 func (m *Manager) ReapIdle(ctx context.Context, now time.Time) []string {
 	type victim struct {
-		id      string
-		idle    time.Duration
-		project string
+		id            string
+		idle          time.Duration
+		project       string
+		parentAgentID string
 	}
 	var victims []victim
 	m.mu.Lock()
@@ -970,7 +973,7 @@ func (m *Manager) ReapIdle(ctx context.Context, now time.Time) []string {
 			floor = a.CreatedAt
 		}
 		if now.Sub(floor) > a.project.IdleTimeout {
-			victims = append(victims, victim{id: id, idle: now.Sub(floor), project: a.project.Name})
+			victims = append(victims, victim{id: id, idle: now.Sub(floor), project: a.project.Name, parentAgentID: a.ParentAgentID})
 		}
 	}
 	m.mu.Unlock()
@@ -978,7 +981,7 @@ func (m *Manager) ReapIdle(ctx context.Context, now time.Time) []string {
 	reaped := make([]string, 0, len(victims))
 	for _, v := range victims {
 		_ = m.Terminate(ctx, v.id) // Terminate emits its own audit event
-		emit(m.Auditor, "idle_reap", v.id, v.project, "", string(StateStopped),
+		emitWithParent(m.Auditor, "idle_reap", v.id, v.parentAgentID, v.project, "", string(StateStopped),
 			fmt.Sprintf("idle %s exceeded profile.idle_timeout", v.idle.Round(time.Second)),
 			nil)
 		reaped = append(reaped, v.id)
@@ -1039,7 +1042,7 @@ func (m *Manager) RecordResult(agentID string, result *AgentResult) error {
 	cp := *result
 	a.Result = &cp
 	a.LastActivityAt = time.Now().UTC() // F10 S8.6 — fan-in is activity
-	emit(m.Auditor, "result", agentID, a.ProjectProfile, a.ClusterProfile,
+	emitWithParent(m.Auditor, "result", agentID, a.ParentAgentID, a.ProjectProfile, a.ClusterProfile,
 		string(a.State), result.Status, map[string]interface{}{
 			"summary": result.Summary,
 		})

@@ -5,6 +5,37 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.77.0 — feat: GH#201 Phase 3 — chained-children (ParentAgentID) in the agent audit trail
+
+### Added
+- `Agent.ParentAgentID` was already tracked on the agent instance
+  (recursion-budget enforcement, Docker/K8s container labels) but
+  never made it into `agents.AuditEvent` as a first-class field — only
+  the `spawn` event carried it, buried inside a loosely-typed `Extra`
+  map, and every other lifecycle event (`terminate`, `result`,
+  `crash_respawn*`, `idle_reap`, `service_reattach`,
+  `crash_policy_unknown`) dropped it entirely.
+- `AuditEvent.ParentAgentID` (`json:"parent_agent_id,omitempty"`) now
+  threads through all 10 `emit`/`emitWithParent` call sites across
+  `spawn.go`, `oncrash.go`, `reconcile.go` — the full spawn chain is
+  attributable for every event type, not just spawn.
+- `ReadEventsFilter.ParentAgentID` + the matching `?parent_agent_id=`
+  REST query param (`GET /api/agents/audit`) and MCP tool parameter
+  (`agent_audit`) — query the full chain for one parent directly,
+  without parsing `Extra`.
+- CEF mirror gains `deviceCustomString5`/`deviceCustomString5Label` for
+  `ParentAgentID` when set, omitted cleanly for a top-level spawn.
+- `spawn`'s old Extra-based `parent_agent_id` duplicate removed now
+  it's a first-class field.
+- 6 new tests (`internal/agents/gh201_phase3_parentid_test.go`): a
+  real recursive child spawn (through the actual recursion-budget
+  gate, not a hand-built struct) with every lifecycle event verified
+  to carry `ParentAgentID`, a top-level spawn confirmed to still emit
+  cleanly with an empty one, `ReapIdle`'s one call site whose data
+  comes from a local struct rather than straight off an `*Agent`,
+  `ReadEvents` filtering by parent, the CEF extension field, and the
+  JSON `omitempty` round trip.
+
 ## v8.76.0 — feat: GH#201 Phase 2 — federation-hop origin-actor attribution
 
 ### Added

@@ -25,14 +25,24 @@ import (
 // Fields are deliberately string-typed where possible so the
 // log is human-readable + easy to grep/jq.
 type AuditEvent struct {
-	At        time.Time              `json:"at"`
-	Event     string                 `json:"event"` // spawn | terminate | result | bootstrap | spawn_fail | revoke | sweep
-	AgentID   string                 `json:"agent_id,omitempty"`
-	Project   string                 `json:"project,omitempty"`
-	Cluster   string                 `json:"cluster,omitempty"`
-	State     string                 `json:"state,omitempty"`
-	Note      string                 `json:"note,omitempty"`
-	Extra     map[string]interface{} `json:"extra,omitempty"`
+	At      time.Time              `json:"at"`
+	Event   string                 `json:"event"` // spawn | terminate | result | bootstrap | spawn_fail | revoke | sweep
+	AgentID string                 `json:"agent_id,omitempty"`
+	Project string                 `json:"project,omitempty"`
+	Cluster string                 `json:"cluster,omitempty"`
+	State   string                 `json:"state,omitempty"`
+	Note    string                 `json:"note,omitempty"`
+	// ParentAgentID (GH#201 Phase 3) threads the already-tracked
+	// Agent.ParentAgentID spawn-chain data into the audit trail
+	// itself — previously only the "spawn" event carried it, buried
+	// inside Extra's loosely-typed map, and every other event
+	// (terminate, result, crash_*, idle_reap, service_reattach)
+	// dropped it entirely. A first-class field makes the whole chain
+	// (who spawned whom, for every lifecycle event, not just spawn)
+	// directly filterable, matching AgentID's own treatment. Empty
+	// for a top-level operator spawn.
+	ParentAgentID string                 `json:"parent_agent_id,omitempty"`
+	Extra         map[string]interface{} `json:"extra,omitempty"`
 }
 
 // Auditor is the sink interface. Append must be safe for concurrent
@@ -166,9 +176,10 @@ func (a *FileAuditor) Close() error {
 
 // ReadEventsFilter narrows a ReadEvents call. Empty fields match all.
 type ReadEventsFilter struct {
-	Event   string // exact match on AuditEvent.Event
-	AgentID string // exact match on AuditEvent.AgentID
-	Project string // exact match on AuditEvent.Project
+	Event         string // exact match on AuditEvent.Event
+	AgentID       string // exact match on AuditEvent.AgentID
+	Project       string // exact match on AuditEvent.Project
+	ParentAgentID string // exact match on AuditEvent.ParentAgentID (GH#201 Phase 3) — the full spawn chain for one parent
 }
 
 // ReadEvents (BL107) parses a JSON-lines audit file and returns the
@@ -205,6 +216,9 @@ func ReadEvents(path string, filter ReadEventsFilter, limit int) ([]AuditEvent, 
 		if filter.Project != "" && ev.Project != filter.Project {
 			continue
 		}
+		if filter.ParentAgentID != "" && ev.ParentAgentID != filter.ParentAgentID {
+			continue
+		}
 		out = append(out, ev)
 	}
 
@@ -218,18 +232,25 @@ func ReadEvents(path string, filter ReadEventsFilter, limit int) ([]AuditEvent, 
 // struct each call. Callers pass nil-safe Auditor (pre-flight check
 // happens here).
 func emit(a Auditor, event, agentID, project, cluster, state, note string, extra map[string]interface{}) {
+	emitWithParent(a, event, agentID, "", project, cluster, state, note, extra)
+}
+
+// emitWithParent (GH#201 Phase 3) is emit plus the spawn-chain
+// ParentAgentID, threaded as a first-class AuditEvent field.
+func emitWithParent(a Auditor, event, agentID, parentAgentID, project, cluster, state, note string, extra map[string]interface{}) {
 	if a == nil {
 		return
 	}
 	a.Append(AuditEvent{
-		At:      time.Now().UTC(),
-		Event:   event,
-		AgentID: agentID,
-		Project: project,
-		Cluster: cluster,
-		State:   state,
-		Note:    note,
-		Extra:   extra,
+		At:            time.Now().UTC(),
+		Event:         event,
+		AgentID:       agentID,
+		ParentAgentID: parentAgentID,
+		Project:       project,
+		Cluster:       cluster,
+		State:         state,
+		Note:          note,
+		Extra:         extra,
 	})
 }
 
@@ -270,6 +291,10 @@ func FormatCEFLine(ev AuditEvent) string {
 	}
 	if ev.AgentID != "" {
 		ext = append(ext, "duser="+cefExtEscape(ev.AgentID))
+	}
+	if ev.ParentAgentID != "" {
+		ext = append(ext, "deviceCustomString5Label=parent_agent_id",
+			"deviceCustomString5="+cefExtEscape(ev.ParentAgentID))
 	}
 	if ev.Project != "" {
 		ext = append(ext, "deviceCustomString2Label=project",

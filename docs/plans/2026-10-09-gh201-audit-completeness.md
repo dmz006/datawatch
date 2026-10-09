@@ -3,8 +3,8 @@
 - **Date**: 2026-10-09
 - **Version at planning**: v8.73.40
 - **Status**: Phase 1 shipped (v8.73.41) and gap-closed (v8.74.0 — see
-  "Phase 1 gap closure" below). Phase 2 shipped (v8.76.0). Phases 3-5
-  planned, not started.
+  "Phase 1 gap closure" below). Phase 2 shipped (v8.76.0). Phase 3
+  shipped (v8.77.0). Phases 4-5 planned, not started.
 - **Filed by**: datawatch-app, operator-requested — could not confirm
   whether Apple TestFlight reviewers had connected to the demo server;
   no HTTP access log, no WS connect/disconnect log, no auth-failure log,
@@ -26,7 +26,7 @@
 | 1 | HTTP access / WS lifecycle / auth-failure log — core | ✅ Done | v8.73.41 |
 | 1 (gaps) | AGENT.md compliance closure (CEF, config/doc/MCP parity, observability, smoke, release checklist) | ✅ Done | v8.74.0 |
 | 2 | Federation-hop actor attribution | ✅ Done | v8.76.0 |
-| 3 | Chained-children (`ParentAgentID`) in the agent audit trail | ⬜ Not started | — |
+| 3 | Chained-children (`ParentAgentID`) in the agent audit trail | ✅ Done | v8.77.0 |
 | 4 | State-changing-action completeness sweep | ⬜ Not started | — |
 | 5 | Create-alert API + MCP tool | ⬜ Not started | — |
 
@@ -239,6 +239,18 @@ same as `docs/plans/*.md`. No change needed.
   peer sends the header, which the older peer's `fedAuthMiddleware`
   (not yet knowing this header) simply ignores.
 
+**Phase 3 additions**:
+- **REST**: `GET /api/agents/audit` gains `?parent_agent_id=` alongside
+  its existing `event`/`agent_id`/`project`/`limit` filters.
+- **MCP**: `agent_audit` gains the matching `parent_agent_id`
+  parameter. (This tool has no `docs/mcp.md` entry at all, pre-dating
+  this phase — flagged above, not fixed here.)
+- **CLI**: no CLI subcommand exists for the agent audit trail at all
+  (confirmed by grep) — pre-existing, out of scope for this phase.
+- **Comm/YAML/PWA/Android/iPhone**: unaffected — this is an F10
+  agent-cluster internal audit trail, not a config field or a UI
+  surface on any client.
+
 ## Phase 2 — thread provenance through federation hops ✅ shipped (v8.76.0)
 
 **Design questions, as settled by the operator (2026-10-09):**
@@ -316,18 +328,61 @@ real `httptest.Server`, meeting this phase's own stated requirement
 that a single-daemon unit test can't prove a forwarded-header design
 survives an actual hop.
 
-## Phase 3 — chained-children (F10 agent spawn) attribution (not started)
+## Phase 3 — chained-children (F10 agent spawn) attribution ✅ shipped (v8.77.0)
 
 `internal/agents` already tracks `ParentAgentID` on every agent
 instance (confirmed in `oncrash.go`, `post_session_validate.go`,
 `reconcile.go`, `docker_driver.go`, `k8s_driver.go` — even threaded into
-container labels: `datawatch.parent_agent_id`). But
-`agents.AuditEvent` (`internal/agents/audit.go`) has no `ParentAgentID`
-field — the spawn-chain data exists on the instance, it just never
-makes it into the audit trail itself. This is a small, well-scoped fix
-once someone's looking at it (add the field, thread it through the ~6
-call sites that construct an `AuditEvent`), not a design question like
-Phase 2 — just not done yet.
+container labels: `datawatch.parent_agent_id`). What shipped: a
+correction to the plan's own estimate — it wasn't quite true that
+`AuditEvent` carried no `ParentAgentID` at all; the `spawn` event
+already smuggled it into `Extra` as a loose, unfiltered string key.
+The real gap was that (a) it wasn't a first-class, directly-filterable
+field, and (b) every OTHER event type (`terminate`, `result`,
+`crash_respawn`/`crash_respawn_backoff`/`crash_respawn_exhausted`/
+`crash_policy_unknown`, `idle_reap`, `service_reattach`) dropped it
+entirely.
+
+`AuditEvent.ParentAgentID` added as a proper field; `emit()` kept as
+the existing 7-arg signature (no call-site churn for events that never
+carry one) with a new `emitWithParent()` sibling taking the extra
+value — threaded through all 10 actual call sites (4 in `oncrash.go`,
+1 in `reconcile.go`, 5 in `spawn.go`, more than the plan's "~6"
+estimate once each was actually counted). `ReapIdle`'s local `victim`
+struct — the one call site whose data doesn't come straight off an
+`*Agent` — gained a `parentAgentID` field populated at victim-selection
+time. `ReadEventsFilter.ParentAgentID` plus the matching REST
+(`?parent_agent_id=` on `GET /api/agents/audit`) and MCP
+(`agent_audit`'s new parameter) query surface, so the full spawn chain
+for one parent is directly queryable, not something a caller has to
+dig out of `Extra`. CEF gained `deviceCustomString5`/Label, following
+the same per-field-slot pattern `State`/`Project`/`Cluster` already
+use. `spawn`'s old Extra-based duplicate was removed now the field is
+first-class.
+
+**Confirmed not a regression**: nothing else in the codebase reads
+`Extra["parent_agent_id"]` (checked via a full-repo grep) — the
+`parent_agent_id` matches elsewhere are an unrelated memory-wakeup
+query param (`internal/mcp/v5278_gap_closures.go`,
+`internal/server/api.go`) and the pre-existing `Agent.ParentAgentID`/
+container-label code this phase builds on, not a second reader of the
+removed Extra key.
+
+**Flagged, not fixed (pre-existing, out of scope)**: `agent_audit`
+(both the REST handler and the MCP tool) has never had a `docs/mcp.md`
+entry at all, since BL107 shipped it — same pattern as Phase 1's
+`docs/cursor-mcp.md` gap for `audit_query`. Adding one now, scoped to
+just the new parameter, would be more misleading than the pre-existing
+gap; a real doc pass for this tool is a separate, larger task than
+this phase.
+
+**Tests**: 6 new in `internal/agents/gh201_phase3_parentid_test.go` —
+a real recursive spawn through the actual recursion-budget gate (not
+a hand-built `AuditEvent`), confirming every lifecycle event for the
+child carries `ParentAgentID`; a top-level spawn confirming an empty
+one doesn't leak in; `ReapIdle`'s struct-mediated path specifically;
+`ReadEvents` filtering; the CEF extension field present/absent; the
+JSON `omitempty` round trip.
 
 ## Phase 4 — state-changing-action completeness sweep (not started)
 
@@ -492,6 +547,40 @@ from AGENT.md each time.
 - [x] C3 — `smoke: 185 passed, 0 failed, 35 skipped` (no new section —
   Phase 2 adds no new operator-facing endpoint; S66's existing skip is
   unchanged, sandbox has no admin token configured)
+
+### Every commit (AGENT.md Section A) — Phase 3 commit (v8.77.0)
+
+- [x] A1 — rules: Planning Rules (Parity surface), Testing
+  Requirements, new-MCP-tool-parameter parity (REST+MCP both gained
+  `parent_agent_id`)
+- [x] A2 — `go test ./...`: 3314 passed, 0 failed (6 new this phase)
+- [x] A3 — `version: v8.77.0 (both files)`
+- [x] A4 — `changelog: added`
+- [x] A5 — `readme: N/A` (internal F10 audit-trail field, not a
+  top-level feature)
+- [x] A6 — `backlog: refactored` (plan doc + `docs/plans/README.md`
+  BL399 entry updated in this commit)
+- [x] A7 — `id-check: clean`
+- [x] A8 — `leak-check: clean`
+- [x] A9 — `node-check: N/A` (no JS/PWA touched)
+- [x] A10 — `make-build: ok`
+- [ ] A11 — `ci: <pending — check after push>`
+
+### Conditional, this feature's actual triggers (AGENT.md Section B) — Phase 3
+
+| # | Trigger | Applies here? | Status |
+|---|---|---|---|
+| B1 | New/changed endpoint contract | Yes — `GET /api/agents/audit` gains `?parent_agent_id=` | ✅ `docs/testing-tracker.md` row added |
+| B16 | New audit-event-emitting code path | No new event type — existing events gain a field | N/A |
+| New-MCP-tool-parameter parity | Yes — `agent_audit` MCP tool gains the matching parameter | ✅ both REST and MCP updated together |
+
+### Release cadence (AGENT.md Section C) — Phase 3, minor release
+
+- [x] C1 — `dep-audit: N/A` (no new dependency)
+- [x] C2 — `gosec: clean` (exact CI command: live=63, baseline=63)
+- [x] C3 — `smoke: 185 passed, 0 failed, 35 skipped` (no new section —
+  no new operator-facing endpoint surface, just a new filter param on
+  an existing one)
 
 ### Phase-specific gate before marking any future phase ✅ Done
 
