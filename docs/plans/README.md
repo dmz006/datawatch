@@ -1530,13 +1530,25 @@ _(Historical: every numbered feature pre-BL241 has shipped. Mempalace alignment 
 > than fixed (no `docs/cursor-mcp.md` entry since this tool's sibling
 > `audit_query` was never added there either; no `app.js` Monitor card
 > since `web_search_*`'s stats fields never got one either).
-> **Phases 2-5 not started** — cross-federation-hop actor attribution
-> (a real open design question, not a quick fix), chained-children
-> (F10 `ParentAgentID`) threading into the audit trail, the full
-> state-changing-handler completeness sweep (session/Automata/alert-
-> rules/federation-peer/device management confirmed still uncovered),
-> and the create-alert API/MCP tool. See the plan doc for the full
-> per-phase scope.
+> **Phase 2 (federation-hop actor attribution) shipped (v8.76.0):** a
+> verified, HMAC-signed hop chain (`X-Datawatch-Hop-Chain`,
+> `internal/federation/hopchain.go`) threading who actually initiated a
+> forwarded action — not just which peer presented it — across
+> daemon-to-daemon federation hops (LLM delegation + the 3
+> `/api/proxy`/`/remote` aggregation routes). Trust model: HMAC over
+> each hop's existing shared peer bearer token, not new asymmetric
+> keys (operator decision — none exist in this codebase, building one
+> was oversized for this ask); hop-by-hop verified, not end-to-end
+> re-verifiable by the final daemon alone, a documented tradeoff. An
+> invalid/missing chain degrades safely to Phase 1's `peer:<name>`
+> attribution, never a rejected request. Verified with a real two-
+> daemon test (two `*Server`s wired to each other over a real
+> `httptest.Server`), per the plan's own requirement.
+> **Phases 3-5 not started** — chained-children (F10 `ParentAgentID`)
+> threading into the audit trail, the full state-changing-handler
+> completeness sweep (session/Automata/alert-rules/federation-peer/
+> device management confirmed still uncovered), and the create-alert
+> API/MCP tool. See the plan doc for the full per-phase scope.
 
 > **BL398** — Full review of suppressed container-image CVEs (filed
 > 2026-10-08, operator-requested immediately after SEC-026/v8.73.26's

@@ -96,16 +96,26 @@ func (s *Server) logAccess(r *http.Request, status int, principal string) {
 	if action == "auth_failure" {
 		atomic.AddInt64(&s.accessLogAuthFailCount, 1)
 	}
+	details := map[string]any{
+		"method":     r.Method,
+		"path":       r.URL.Path,
+		"status":     status,
+		"remote_ip":  remoteIP(r),
+		"user_agent": r.Header.Get("User-Agent"),
+	}
+	// GH#201 Phase 2 — surface a verified cross-hop origin actor (who
+	// behind a forwarding peer actually initiated this), when present.
+	if chain := federation.ChainFromContext(r.Context()); len(chain) > 0 {
+		details["origin_actor"] = federation.OriginActor(chain)
+		details["hop_chain"] = chain
+	}
+	if hopChainInvalidFromContext(r.Context()) {
+		details["hop_chain_invalid"] = true
+	}
 	_ = s.accessLog.Write(audit.Entry{
-		Actor:  principal,
-		Action: action,
-		Details: map[string]any{
-			"method":     r.Method,
-			"path":       r.URL.Path,
-			"status":     status,
-			"remote_ip":  remoteIP(r),
-			"user_agent": r.Header.Get("User-Agent"),
-		},
+		Actor:   principal,
+		Action:  action,
+		Details: details,
 	})
 }
 

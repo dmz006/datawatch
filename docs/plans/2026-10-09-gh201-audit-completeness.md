@@ -3,7 +3,8 @@
 - **Date**: 2026-10-09
 - **Version at planning**: v8.73.40
 - **Status**: Phase 1 shipped (v8.73.41) and gap-closed (v8.74.0 — see
-  "Phase 1 gap closure" below). Phases 2-5 planned, not started.
+  "Phase 1 gap closure" below). Phase 2 shipped (v8.76.0). Phases 3-5
+  planned, not started.
 - **Filed by**: datawatch-app, operator-requested — could not confirm
   whether Apple TestFlight reviewers had connected to the demo server;
   no HTTP access log, no WS connect/disconnect log, no auth-failure log,
@@ -24,7 +25,7 @@
 |---|---|---|---|
 | 1 | HTTP access / WS lifecycle / auth-failure log — core | ✅ Done | v8.73.41 |
 | 1 (gaps) | AGENT.md compliance closure (CEF, config/doc/MCP parity, observability, smoke, release checklist) | ✅ Done | v8.74.0 |
-| 2 | Federation-hop actor attribution | ⬜ Not started — open design questions, see below | — |
+| 2 | Federation-hop actor attribution | ✅ Done | v8.76.0 |
 | 3 | Chained-children (`ParentAgentID`) in the agent audit trail | ⬜ Not started | — |
 | 4 | State-changing-action completeness sweep | ⬜ Not started | — |
 | 5 | Create-alert API + MCP tool | ⬜ Not started | — |
@@ -221,38 +222,99 @@ same as `docs/plans/*.md`. No change needed.
   confirmed there's nothing on either app's side this logging
   duplicates or needs to match.
 
-## Phase 2 — thread provenance through federation hops (not started)
+**Phase 2 additions**:
+- **REST/MCP/YAML/comm/PWA/Android/iPhone**: unaffected. Phase 2 adds no
+  new endpoint, tool, config field, or UI surface — it's a header
+  (`X-Datawatch-Hop-Chain`) and extra fields inside the EXISTING
+  `/api/audit/access` entries' `details`, both already covered by
+  Phase 1's surfaces above.
+- **CLI**: unaffected, same reasoning as Phase 1 — CLI traffic doesn't
+  itself forward across a federation hop.
+- **Federation wire protocol**: the one genuinely new surface. Any
+  daemon on either side of a `/api/proxy/*`, `/remote/*`, or
+  datawatch-proxy LLM-delegation hop now optionally sends/reads
+  `X-Datawatch-Hop-Chain`. Backward compatible in both directions: an
+  older peer that doesn't send the header gets Phase 1's `peer:<name>`
+  attribution exactly as before; a newer daemon forwarding to an older
+  peer sends the header, which the older peer's `fedAuthMiddleware`
+  (not yet knowing this header) simply ignores.
 
-**The real gap, raised directly by the operator.** Phase 1's
-`peer:<name>` / `proxy:<name>` principal only records *which peer
-presented the request to this daemon* — not who behind that peer
-actually initiated it on their own daemon. Concretely: if operator
-Alice on daemon A triggers an action that daemon A forwards to daemon B
-as a federated peer call, daemon B's access log says `peer:daemon-a`,
-never `Alice`. Nothing in the federation/proxy code today forwards an
-origin-actor identity across a hop — confirmed by reading
-`internal/server/agent_proxy.go`, `comm_proxy.go`, `bl320_proxy_llm.go`,
-`proxy.go`: none carry an origin-actor field.
+## Phase 2 — thread provenance through federation hops ✅ shipped (v8.76.0)
 
-Open design questions this phase needs to settle before implementing
-(don't guess at these — they're genuine tradeoffs):
-- **A new forwarded header**, e.g. `X-Datawatch-Origin-Actor`, set by
-  the forwarding daemon and read (not trusted blindly) by the receiving
-  one. Trust model: a federation peer is already a trusted principal
-  (it holds a real peer token) — is "I say this came from Alice"
-  sufficient, or does the receiving daemon need a cryptographic chain
-  (each hop signs/extends the chain) so a compromised mid-chain peer
-  can't fabricate an upstream actor for its own requests?
-- **Chain depth/format**: a single "origin" field, or a full hop list
-  (`[Alice@daemon-a, daemon-a→daemon-b]`) so a 3+ hop chain stays fully
-  attributable, not just collapsed to "whoever asked first"?
-- **Multi-host compute nodes** (`internal/compute`) are a related but
-  distinct case: a session's work can execute on a remote compute node
-  the daemon doesn't directly operate. Does the audit entry need to
-  record which *host* actually ran the action, separate from which
-  *daemon* logged it? Check `internal/compute/node.go`/`probe.go` for
-  what identity a compute node already reports back, before adding a
-  new field — it may already carry enough to attribute with.
+**Design questions, as settled by the operator (2026-10-09):**
+- **Trust model**: cryptographic hop chain over a blindly-trusted
+  forwarded header. Concretely, HMAC-SHA256 over each hop's EXISTING
+  shared peer bearer token — not new asymmetric per-daemon signing
+  keys. No asymmetric identity infrastructure exists anywhere in this
+  codebase today (confirmed: `internal/server/multiserver.Entry` is a
+  flat symmetric bearer token per peer pair; `AuthType: "spiffe"` is
+  wire-ready but unimplemented); building one was explicitly declined
+  as oversized for this ask. A peer that already holds a real shared
+  token for some hop already has full access at that trust level today
+  — this doesn't lower the existing bar, it adds a tamper-evident way
+  for an honest forwarder to vouch for what it received.
+- **Chain depth/format**: full hop list (every daemon traversed, in
+  order), not a single collapsed origin field — see `HopEntry`/`Chain`
+  in `internal/federation/hopchain.go`.
+- **Multi-host compute nodes**: checked `internal/compute/node.go` —
+  `Node`'s only identity field is `Name` (no separate host/probe-
+  reported identity exists to thread through). That's already the
+  identity surfaced in `inference.Response.UsedNode` for any dispatch
+  through a named compute node, so no new field was needed here;
+  genuinely distinct per-host attribution (if a Node's own address
+  changes identity mid-flight) is deferred, unraised as a real need.
+
+**What shipped**: `internal/federation/hopchain.go` — `Chain`/
+`HopEntry` (Actor constant across every entry, Daemon/TS/Sig vary per
+hop), `SignHop`/`VerifyLastHop`, `EncodeChain`/`DecodeChain`,
+`BuildOrExtendChain` (reads the locally-resolved principal + any prior
+chain from context, so `internal/inference` doesn't need to import
+`internal/server` to extend one). Documented explicitly as **hop-by-
+hop verified, not end-to-end re-verifiable by the final daemon alone**:
+in a 3-hop chain, the first link is checked by the second daemon at
+the moment it's received, not re-checked by the third — an accepted
+tradeoff given the trust-model decision above, not an oversight.
+
+Wired into:
+- `fedAuthMiddleware`'s federation-peer branch (`internal/server/
+  federation_cap.go`) — decodes and verifies any incoming
+  `X-Datawatch-Hop-Chain` using the token the request just
+  authenticated with. Valid → attached to context, surfaced in
+  `access.log` as `details.origin_actor`/`details.hop_chain`. Invalid
+  → dropped, logged as `details.hop_chain_invalid: true`, request
+  proceeds exactly as Phase 1 would have (never rejected over this).
+- The 4 daemon-to-daemon forward call sites that had no origin-actor
+  field (confirmed by reading all 4 at Phase 2 planning time):
+  `internal/inference/proxy_router.go`'s `ProxyRouter.Infer`,
+  `internal/server/proxy.go`'s `handleProxyWS`,
+  `handleAggregatedSessions`, `handleRemotePWA`.
+  `agent_proxy.go`/`comm_proxy.go` are explicitly **not** wired — they
+  forward to F10 worker containers and comm backends respectively, not
+  another datawatch daemon, so there's no receiving `fedAuthMiddleware`
+  on the other end to verify a chain against. Flagged, not silently
+  worked around.
+- `handleWS`'s `ws_connect` logging (`internal/server/api.go`) gets the
+  same `origin_actor`/`hop_chain` surfacing as `logAccess`, for a peer
+  dialing `/ws` on another daemon's behalf.
+
+**A real bug the tests caught**: `encoding/json` marshals a nil `Chain`
+as `"null"` but a non-nil, zero-length one as `"[]"` — `SignHop`'s
+typical call with a literal `nil` prior and `VerifyLastHop`'s derived
+`chain[:len(chain)-1]` (a non-nil empty slice for a 1-entry chain)
+produced different signing input for the same logical state, so every
+origin entry failed its own verification. Fixed by normalizing nil to
+an empty slice before marshaling in `signingInput`.
+
+**Tests**: 19 in `internal/federation/hopchain_test.go` (sign/verify,
+tamper detection per field, wrong key, 3-hop chain with per-hop key
+verification, the documented hop-by-hop limitation demonstrated
+directly, encode/decode, `BuildOrExtendChain`'s origin/extend/no-key/
+no-principal cases) + 5 in `internal/server/
+gh201_phase2_hopchain_test.go`, including `TestGH201Phase2_
+TwoDaemonSimulation` — two real `*Server`s wired to each other over a
+real `httptest.Server`, meeting this phase's own stated requirement
+that a single-daemon unit test can't prove a forwarded-header design
+survives an actual hop.
 
 ## Phase 3 — chained-children (F10 agent spawn) attribution (not started)
 
@@ -390,6 +452,46 @@ from AGENT.md each time.
 - [x] C3 — `smoke: 66 sections, 185 passed, 35 skipped, 0 failed`
   (section 66 itself skipped — sandbox has no admin token configured,
   identical to its neighbor section 65, not a regression)
+
+### Every commit (AGENT.md Section A) — Phase 2 commit (v8.76.0)
+
+- [x] A1 — rules: Planning Rules (Parity surface), Testing Requirements,
+  Audit Logging Rule (this phase only extends existing `access.log`
+  entries' `details`, doesn't introduce a new log format)
+- [x] A2 — `go test ./...`: 3308 passed, 0 failed
+- [x] A3 — `version: v8.76.0 (both files)`
+- [x] A4 — `changelog: added`
+- [x] A5 — `readme: N/A` (no user-facing feature summary line needed —
+  this is an internal federation-attribution capability, not a
+  top-level feature the README's overview describes)
+- [x] A6 — `backlog: refactored` (this plan doc's own status table +
+  Phase 2 heading updated in the same commit)
+- [x] A7 — `id-check: clean`
+- [x] A8 — `leak-check: clean`
+- [x] A9 — `node-check: N/A` (no JS/PWA touched this phase)
+- [x] A10 — `make-build: ok`
+- [ ] A11 — `ci: <pending — check after push>`
+
+### Conditional, this feature's actual triggers (AGENT.md Section B) — Phase 2
+
+| # | Trigger | Applies here? | Status |
+|---|---|---|---|
+| B1 | New/changed endpoint contract | No new endpoint — existing `/api/audit/access` entries gain new `details` fields | ✅ `docs/testing-tracker.md` row added |
+| B6 | New/changed config field | No — no new config field this phase | N/A |
+| B7 | New feature, observability | No new metric — reuses the existing `datawatch_access_log_events_total` counter and `access.log` query surface | N/A |
+| B8 | New feature, access-method docs | Yes | ✅ `docs/operations.md`'s existing Audit & Access Logging section extended |
+| B12 | New operator-facing endpoint | No | N/A |
+| B16 | New audit-event-emitting code path | No new Action/event type — extends existing `http_access`/`auth_failure`/`ws_connect` entries' details | N/A |
+
+### Release cadence (AGENT.md Section C) — Phase 2, minor release
+
+- [x] C1 — `dep-audit: N/A` (stdlib only: `crypto/hmac`, `crypto/sha256`,
+  `encoding/base64`, `encoding/hex`, `strconv`, `os`)
+- [x] C2 — `gosec: clean` (exact CI command — `-severity=high
+  -confidence=medium`: live=63, baseline=63, no net-new findings)
+- [x] C3 — `smoke: 185 passed, 0 failed, 35 skipped` (no new section —
+  Phase 2 adds no new operator-facing endpoint; S66's existing skip is
+  unchanged, sandbox has no admin token configured)
 
 ### Phase-specific gate before marking any future phase ✅ Done
 

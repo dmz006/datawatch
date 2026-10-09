@@ -41,6 +41,11 @@ const (
 	// rather than the admin token or a federation peer token. nil for
 	// every other principal.
 	sessionCapsKey
+	// hopChainInvalidKey (GH#201 Phase 2) is set to true when an
+	// incoming X-Datawatch-Hop-Chain header was present but failed
+	// VerifyLastHop — logged as a flag, never trusted, never rejected
+	// (see fedAuthMiddleware's peer branch).
+	hopChainInvalidKey
 )
 
 // peerFromContext returns the federated peer from the request context,
@@ -72,6 +77,15 @@ func callerTokenFromContext(ctx context.Context) string {
 func sessionCapsFromContext(ctx context.Context) []string {
 	c, _ := ctx.Value(sessionCapsKey).([]string)
 	return c
+}
+
+// hopChainInvalidFromContext reports whether this request arrived
+// with an X-Datawatch-Hop-Chain header that failed verification
+// (GH#201 Phase 2) — logged by logAccess as a tamper-attempt/stale-key
+// signal, never treated as authorization failure on its own.
+func hopChainInvalidFromContext(ctx context.Context) bool {
+	v, _ := ctx.Value(hopChainInvalidKey).(bool)
+	return v
 }
 
 // fedCap checks whether the request's caller has the required capability.
@@ -199,8 +213,10 @@ func (s *Server) fedAuthMiddleware(next http.Handler) http.Handler {
 			if caps, ok := s.sessionTokens.CapsForToken(tok); ok {
 				ctx := context.WithValue(r.Context(), sessionCapsKey, caps)
 				ctx = context.WithValue(ctx, callerTokenKey, tok)
-				s.logAccess(r, http.StatusOK, "session-scoped")
-				next.ServeHTTP(w, r.WithContext(ctx))
+				ctx = federation.ContextWithPrincipal(ctx, "session-scoped")
+				r2 := r.WithContext(ctx)
+				s.logAccess(r2, http.StatusOK, "session-scoped")
+				next.ServeHTTP(w, r2)
 				return
 			}
 		}
@@ -211,8 +227,10 @@ func (s *Server) fedAuthMiddleware(next http.Handler) http.Handler {
 		// window.)
 		if tok != "" && s.checkToken(tok) {
 			ctx := context.WithValue(r.Context(), callerTokenKey, tok)
-			s.logAccess(r, http.StatusOK, "admin")
-			next.ServeHTTP(w, r.WithContext(ctx))
+			ctx = federation.ContextWithPrincipal(ctx, "admin")
+			r2 := r.WithContext(ctx)
+			s.logAccess(r2, http.StatusOK, "admin")
+			next.ServeHTTP(w, r2)
 			return
 		}
 		// Federation peer token.
@@ -221,14 +239,32 @@ func (s *Server) fedAuthMiddleware(next http.Handler) http.Handler {
 			if ok && peer.Federated {
 				ctx := context.WithValue(r.Context(), fedPeerKey, peer)
 				ctx = context.WithValue(ctx, callerTokenKey, tok)
-				// GH#201 — this only records WHICH PEER forwarded the
-				// request, not who behind that peer actually initiated
-				// it on their own daemon. Real cross-hop attribution
-				// needs the peer to forward its own origin-actor
-				// alongside the request; nothing does that yet (see the
-				// audit plan doc's federation-attribution section).
-				s.logAccess(r, http.StatusOK, "peer:"+peer.Name)
-				next.ServeHTTP(w, r.WithContext(ctx))
+				principal := "peer:" + peer.Name
+				ctx = federation.ContextWithPrincipal(ctx, principal)
+				// GH#201 Phase 2 — this records WHICH PEER forwarded the
+				// request; if that peer is itself relaying an action on
+				// behalf of an actor on ITS OWN daemon, it can carry that
+				// attribution forward in X-Datawatch-Hop-Chain. Verify
+				// using the SAME token (tok) this request just
+				// authenticated with — the one secret shared between
+				// this peer and us for this specific hop. A chain that
+				// doesn't verify (tampered, stale key, or just a peer
+				// that hasn't been upgraded to send one) is dropped, not
+				// trusted and not rejected: falling back to the
+				// peer:<name> principal above is always at least as safe
+				// as Phase 1 was.
+				if raw := r.Header.Get(federation.HopChainHeader); raw != "" {
+					if chain, err := federation.DecodeChain(raw); err == nil && len(chain) > 0 {
+						if federation.VerifyLastHop(chain, tok) {
+							ctx = federation.ContextWithChain(ctx, chain)
+						} else {
+							ctx = context.WithValue(ctx, hopChainInvalidKey, true)
+						}
+					}
+				}
+				r2 := r.WithContext(ctx)
+				s.logAccess(r2, http.StatusOK, principal)
+				next.ServeHTTP(w, r2)
 				return
 			}
 		}
@@ -251,8 +287,10 @@ func (s *Server) fedAuthMiddleware(next http.Handler) http.Handler {
 			}
 			if peerName != "" && proxyTokens.valid(tok, peerName) {
 				ctx := context.WithValue(r.Context(), scopedProxyPeerKey, peerName)
-				s.logAccess(r, http.StatusOK, "proxy:"+peerName)
-				next.ServeHTTP(w, r.WithContext(ctx))
+				ctx = federation.ContextWithPrincipal(ctx, "proxy:"+peerName)
+				r2 := r.WithContext(ctx)
+				s.logAccess(r2, http.StatusOK, "proxy:"+peerName)
+				next.ServeHTTP(w, r2)
 				return
 			}
 		}

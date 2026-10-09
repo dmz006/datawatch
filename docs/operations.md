@@ -887,6 +887,29 @@ curl -s "$DATAWATCH_API_URL/api/audit/access?action=auth_failure" \
   -H "Authorization: Bearer $DATAWATCH_TOKEN" | jq '.entries'
 ```
 
+**Cross-hop attribution (federation)**: when a request to this daemon
+was forwarded by another datawatch daemon acting as a federation peer
+— LLM delegation (`ProxyRouter`), `/api/proxy/{name}/...`, or
+`/remote/{name}/...` — a `peer:<name>` entry only tells you which peer
+presented the request, not who behind that peer actually initiated it.
+If the forwarding daemon sent a verified `X-Datawatch-Hop-Chain`
+header, the entry also carries `details.origin_actor` (who initiated
+it, e.g. `admin` or `session-scoped`, on the forwarding daemon) and the
+full `details.hop_chain` (every daemon the request passed through).
+The chain is HMAC-signed per hop using each pair of daemons' existing
+shared peer bearer token — not new asymmetric keys — and verified
+hop-by-hop: each daemon checks only the link signed with the token it
+directly shares with its sender, not the whole chain back to the
+origin. A chain that fails verification is dropped (never trusted,
+never rejected) and logged as `details.hop_chain_invalid: true`; a
+peer running an older version that doesn't send a chain at all just
+gets the plain `peer:<name>` attribution, same as before this existed.
+```bash
+curl -s "$DATAWATCH_API_URL/api/audit/access?action=http_access" \
+  -H "Authorization: Bearer $DATAWATCH_TOKEN" \
+  | jq '.entries[] | select(.details.origin_actor != null) | {actor, origin_actor: .details.origin_actor, hop_chain: .details.hop_chain}'
+```
+
 ---
 
 ## 7. Network Security

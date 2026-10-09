@@ -10,8 +10,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/federation"
 )
 
 // ProxyRouter makes inference calls through a peer datawatch instance.
@@ -39,6 +42,18 @@ func (p *ProxyRouter) Infer(ctx context.Context, remoteLLM string, req Request) 
 	httpReq.Header.Set("Content-Type", "application/json")
 	if p.PeerToken != "" {
 		httpReq.Header.Set("Authorization", "Bearer "+p.PeerToken)
+	}
+	// GH#201 Phase 2 — thread origin-actor attribution across this hop.
+	// Best-effort: ctx only carries a resolvable principal/prior chain
+	// when the call path up to here derived its context from the
+	// original HTTP request (confirmed for the direct handler surfaces
+	// in internal/server/proxy.go); where it doesn't, BuildOrExtendChain
+	// returns nil and this degrades safely to no header at all — the
+	// same behavior as before this phase existed, never a failure.
+	if chain, err := federation.BuildOrExtendChain(ctx, selfDaemonLabel(), p.PeerToken); err == nil {
+		if enc := federation.EncodeChain(chain); enc != "" {
+			httpReq.Header.Set(federation.HopChainHeader, enc)
+		}
 	}
 	client := &http.Client{Timeout: timeout}
 	resp, err := client.Do(httpReq)
@@ -74,4 +89,15 @@ func (p *ProxyRouter) Infer(ctx context.Context, remoteLLM string, req Request) 
 		DurationMs: out.DurationMs,
 		Backend:    "datawatch-proxy",
 	}, nil
+}
+
+// selfDaemonLabel (GH#201 Phase 2) is this process's own identity for
+// hop-chain Daemon fields. internal/inference has no access to
+// cfg.Hostname (that's internal/server/internal/config territory, and
+// importing either here would cycle), so this is a direct os.Hostname()
+// call — a label-only field with no bearing on the chain's security
+// property, which comes entirely from the HMAC signature.
+func selfDaemonLabel() string {
+	h, _ := os.Hostname()
+	return h
 }

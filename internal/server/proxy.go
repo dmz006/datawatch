@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
 	"regexp"
 	"strings"
 	"sync"
@@ -19,6 +20,23 @@ import (
 	"github.com/dmz006/datawatch/internal/session"
 	"github.com/gorilla/websocket"
 )
+
+// selfDaemonLabel (GH#201 Phase 2) is this daemon's own identity for
+// hop-chain Daemon fields — reuses s.hostname, the same field already
+// used throughout api.go for session/device labeling, falling back to
+// a direct os.Hostname() call if it's ever unset. Deliberately
+// separate from federationSelfName (observer_peers.go): that field is
+// only populated when this daemon has observer-federation configured
+// with a ParentURL, which is a narrower condition than "is this daemon
+// forwarding ANY proxied request" — the case every call site here
+// actually needs to label.
+func (s *Server) selfDaemonLabel() string {
+	if s.hostname != "" {
+		return s.hostname
+	}
+	h, _ := os.Hostname()
+	return h
+}
 
 // handleProxyWS relays a WebSocket connection between the client and a remote
 // datawatch server. Route: /api/proxy/{serverName}/ws
@@ -61,6 +79,12 @@ func (s *Server) handleProxyWS(w http.ResponseWriter, r *http.Request) {
 	header := http.Header{}
 	if remote.Token != "" {
 		header.Set("Authorization", "Bearer "+remote.Token)
+	}
+	// GH#201 Phase 2 — thread origin-actor attribution across this hop.
+	if chain, err := federation.BuildOrExtendChain(r.Context(), s.selfDaemonLabel(), remote.Token); err == nil {
+		if enc := federation.EncodeChain(chain); enc != "" {
+			header.Set(federation.HopChainHeader, enc)
+		}
 	}
 	dialer := websocket.Dialer{HandshakeTimeout: 10 * time.Second}
 	if remote.TLSSkipVerify {
@@ -191,6 +215,12 @@ func (s *Server) handleAggregatedSessions(w http.ResponseWriter, r *http.Request
 			if sv.Token != "" {
 				req.Header.Set("Authorization", "Bearer "+sv.Token)
 			}
+			// GH#201 Phase 2 — thread origin-actor attribution across this hop.
+			if chain, err := federation.BuildOrExtendChain(r.Context(), s.selfDaemonLabel(), sv.Token); err == nil {
+				if enc := federation.EncodeChain(chain); enc != "" {
+					req.Header.Set(federation.HopChainHeader, enc)
+				}
+			}
 			resp, err := client.Do(req)
 			if err != nil {
 				log.Printf("[proxy] %s: fetch sessions failed: %v", sv.Name, err)
@@ -308,6 +338,12 @@ func (s *Server) handleRemotePWA(w http.ResponseWriter, r *http.Request) {
 	}
 	if remote.Token != "" {
 		proxyReq.Header.Set("Authorization", "Bearer "+remote.Token)
+	}
+	// GH#201 Phase 2 — thread origin-actor attribution across this hop.
+	if chain, err := federation.BuildOrExtendChain(r.Context(), s.selfDaemonLabel(), remote.Token); err == nil {
+		if enc := federation.EncodeChain(chain); enc != "" {
+			proxyReq.Header.Set(federation.HopChainHeader, enc)
+		}
 	}
 
 	client := multiserver.HTTPClient(remote.TLSSkipVerify, 30*time.Second)

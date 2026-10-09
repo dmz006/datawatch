@@ -187,7 +187,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "8.75.0"
+var Version = "8.76.0"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -2017,12 +2017,19 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 	if s.accessLog != nil && (s.cfg == nil || s.cfg.Audit.AccessLogEnabledOrDefault()) {
 		metrics.AccessLogEventsTotal.WithLabelValues("ws_connect", principalKind(wsPrincipal)).Inc()
 		atomic.AddInt64(&s.accessLogEventCount, 1)
+		wsDetails := map[string]any{
+			"remote_ip": wsRemoteIP, "user_agent": wsUA,
+		}
+		// GH#201 Phase 2 — same cross-hop origin-actor surfacing as
+		// logAccess, for a peer dialing /ws on behalf of its own actor.
+		if chain := federation.ChainFromContext(r.Context()); len(chain) > 0 {
+			wsDetails["origin_actor"] = federation.OriginActor(chain)
+			wsDetails["hop_chain"] = chain
+		}
 		_ = s.accessLog.Write(audit.Entry{
-			Actor:  wsPrincipal,
-			Action: "ws_connect",
-			Details: map[string]any{
-				"remote_ip": wsRemoteIP, "user_agent": wsUA,
-			},
+			Actor:   wsPrincipal,
+			Action:  "ws_connect",
+			Details: wsDetails,
 		})
 	}
 

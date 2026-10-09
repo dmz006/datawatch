@@ -5,6 +5,47 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v8.76.0 — feat: GH#201 Phase 2 — federation-hop origin-actor attribution
+
+### Added
+- A verified, signed hop chain (`X-Datawatch-Hop-Chain`) carrying who
+  actually initiated a forwarded action across daemon-to-daemon
+  federation hops — closes the gap Phase 1 left open: `peer:<name>`
+  only recorded which peer PRESENTED a request, never who behind that
+  peer actually initiated it on its own daemon.
+- `internal/federation/hopchain.go` — `Chain`/`HopEntry`, `SignHop`/
+  `VerifyLastHop` (HMAC-SHA256 over each hop's existing shared peer
+  bearer token — no new asymmetric key infrastructure, an explicit
+  operator decision: none exists anywhere in this codebase today and
+  building one was oversized for this ask), `EncodeChain`/
+  `DecodeChain`, `BuildOrExtendChain`. Hop-by-hop verified, not
+  end-to-end re-verifiable by the final daemon alone — documented
+  tradeoff, not an oversight (see the package doc comment).
+- Wired into `fedAuthMiddleware`'s federation-peer branch (verify any
+  incoming chain using the token the request just authenticated with;
+  an invalid chain is dropped, never trusted and never rejected — it
+  degrades to Phase 1 behavior, exactly as safe as before this phase
+  existed) and into every daemon-to-daemon forward that didn't already
+  carry an origin-actor field: `ProxyRouter.Infer` (LLM delegation),
+  `handleProxyWS`, `handleAggregatedSessions`, `handleRemotePWA`.
+  `agent_proxy.go`/`comm_proxy.go` are explicitly out of scope — they
+  forward to F10 worker containers / comm backends, not another
+  datawatch daemon, so a hop chain has no receiving `fedAuthMiddleware`
+  to verify it there.
+- `access.log` entries gain `origin_actor`/`hop_chain` (when a verified
+  chain is present) and `hop_chain_invalid: true` (when one was
+  present but failed verification) — never the raw peer token.
+- 24 new tests: `internal/federation/hopchain_test.go` (sign/verify
+  round trip, tamper detection on every field, wrong-key rejection,
+  3-hop chain with per-hop key verification, encode/decode, the
+  documented hop-by-hop limitation itself), `internal/server/
+  gh201_phase2_hopchain_test.go` (middleware verifies/drops/ignores a
+  chain correctly, never logs the token) including a live two-daemon
+  simulation (two real `*Server`s wired to each other over a real
+  `httptest.Server`, per the plan's own requirement that a single-
+  daemon unit test can't prove a forwarded-header design survives a
+  real hop).
+
 ## v8.75.0 — feat: GH#203 — external-service secrets tokens
 
 ### Added
