@@ -1498,6 +1498,21 @@ _(Historical: every numbered feature pre-BL241 has shipped. Mempalace alignment 
 
 ## Pending backlog
 
+> **BL400** — Alerts: conditions, filtering, and SIEM parity (filed
+> 2026-10-09, operator-raised while reviewing GH#201 Phase 5's
+> `create_alert` docs: "alerts on every event is really just a log
+> event queue" — confirmed real, not hypothetical: `internal/alerts`
+> has zero SIEM/CEF integration of its own, and `create_alert` has no
+> condition/filter/priority, unlike the separate, pre-existing
+> alert-rules system). Plan:
+> `docs/plans/2026-10-09-alerts-conditions-and-filtering.md`. Design-
+> options doc only, explicitly deferred — no implementation scheduled.
+> Three open questions for whenever it's picked up: where filtering
+> logic should live (extend alert rules vs. a new smaller policy
+> concept vs. just add category/priority fields), whether alerts
+> get their own CEF mirror or feed into the existing audit-log
+> pipeline, and whether a dedupe/rate-limit window is worth adding.
+
 > **BL399** — GH#201: access/audit logging completeness (filed
 > 2026-10-09, datawatch-app relaying an operator ask after they couldn't
 > confirm whether Apple TestFlight reviewers had connected to the demo

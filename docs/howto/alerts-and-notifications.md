@@ -185,17 +185,68 @@ Cursor, VS Code, etc.):
 | Tool | Description |
 |------|-------------|
 | `get_alerts` | List alerts; optional `limit` and `session_id` filters |
+| `create_alert` | Raise a new alert — `title` required, `level` (info/warn/error, default info) and `body` optional |
 | `mark_alert_read` | Mark one alert read (`id`) or all (`all: true`) |
 
 Example (Claude Code):
 
 ```
 get_alerts limit=20
+create_alert title="disk space low" body="/data is 95% full" level=warn
 mark_alert_read all=true
 ```
 
 Useful for an LLM coordinator that polls for `waiting_input` alerts
 before deciding to send a reply to a blocked session.
+
+### 5f. Raising an alert yourself (external monitor / webhook)
+
+Every alert documented above is *daemon-internal* — the daemon itself
+decides when a session state change, backend error, or peer-health
+transition is alert-worthy. `create_alert`/`POST /api/alerts/create`
+is the one path for something *outside* the daemon (an external
+monitor, a webhook receiver, a cron job) to raise an alert directly,
+without needing to fake one of the internal trigger conditions.
+
+```sh
+curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"level":"warn","title":"disk space low","body":"/data is 95% full"}' \
+  "$BASE/api/alerts/create"
+#  → 201 {"id":"...", "level":"warn", "title":"disk space low", ...}
+```
+
+Requires the `alerts:write` capability — **not** granted to any
+built-in capability group by default (the same least-privilege
+default every other write-class capability in this codebase uses).
+Grant it explicitly to a federation peer or custom group; see
+[federation-cbac.md](federation-cbac.md).
+
+This is deliberately a plain fire-and-create action: `level`/`title`/
+`body` only, no conditions, no filters, no persistent on/off state —
+every call creates exactly one alert. If what you actually want is an
+*ongoing, automated* alert that fires when a metric crosses a
+threshold, use [alert-rules.md](alert-rules.md) instead — that system
+has real conditions, source filters, cooldowns, and an enable/disable
+toggle per rule. `create_alert` and alert *rules* are two separate,
+unrelated mechanisms that both end up as rows in the same alert store.
+
+**Not SIEM-integrated the way audit events are.** Alerts (this whole
+doc) are a separate persistence mechanism (`alerts.json`) from the
+operator audit trail (`audit.log`/`access.log`, see
+[audit-logging.md](audit-logging.md)) — they are **not** CEF-mirrored
+to a SIEM by default. The one exception: an alert raised via the REST
+`POST /api/alerts/create` path specifically (not the MCP tool, not any
+other internal alert source) incidentally also writes an
+`audit.log` entry (`action: "create"`, `resource_type: "alert"`)
+because that endpoint happens to call the same `s.audit(...)` helper
+every other Phase 4 write path uses — it was not designed as a
+deliberate "alerts stream to the SIEM" feature, and every other alert
+source (session events, peer-health transitions, alert-rule firings,
+the MCP `create_alert` tool) produces no audit/CEF trace at all. A
+real, uniform alerts→SIEM pipeline is tracked as a planned
+improvement — see
+[2026-10-09-alerts-conditions-and-filtering.md](../plans/2026-10-09-alerts-conditions-and-filtering.md).
 
 ### 5d. Comm channel
 
@@ -282,14 +333,17 @@ tool, and Settings > Detection timing in the PWA.
     │
     ├─ alerts.json          (persistent store, survives restart)
     │
-    ├─ GET  /api/alerts     → list + unread_count
-    ├─ POST /api/alerts     → mark read (id or all:true)
+    ├─ GET  /api/alerts        → list + unread_count
+    ├─ POST /api/alerts        → mark read (id or all:true)
+    ├─ POST /api/alerts/create → raise a new alert (external monitor/webhook)
     │
-    ├─ MCP  get_alerts      → same list, MCP clients
-    ├─ MCP  mark_alert_read → same mark-read, MCP clients
+    ├─ MCP  get_alerts         → same list, MCP clients
+    ├─ MCP  create_alert       → same raise, MCP clients
+    ├─ MCP  mark_alert_read    → same mark-read, MCP clients
     │
     ├─ CLI  datawatch alerts [--system] [--mark-read <id>]
     │                        [--mark-all-read]
+    │                        (no --create flag — REST/MCP only, see 5f)
     │
     └─ Comm  alerts [N] [system]
 ```
@@ -345,6 +399,11 @@ tool, and Settings > Detection timing in the PWA.
   state that triggers prompt-category alerts.
 - [`channel-state-engine.md`](channel-state-engine.md) — state
   transitions that generate system events surfaced as alerts.
+- [`audit-logging.md`](audit-logging.md) — the separate operator
+  audit trail; alerts are not part of it except incidentally (see 5f).
+- [`alert-rules.md`](alert-rules.md) — the richer, condition-based
+  alerting system; `create_alert` is a one-shot fire action, not a
+  rule.
 
 ## Screenshots needed (operator weekend pass)
 
@@ -361,4 +420,6 @@ tool, and Settings > Detection timing in the PWA.
 - [howto/comm-channels](comm-channels.md)
 - [howto/daemon-operations](daemon-operations.md)
 - [howto/sessions-deep-dive](sessions-deep-dive.md)
+- [howto/alert-rules](alert-rules.md)
+- [howto/audit-logging](audit-logging.md)
 - [datawatch-definitions](../datawatch-definitions.md)

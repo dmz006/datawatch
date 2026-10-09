@@ -649,7 +649,9 @@ Per-session counters across the daemon's lifetime: messages in / out, tokens, co
 
 ### Audit log
 
-Every operator action (config change, session start/stop, secret read, etc.) recorded with actor / action / details / timestamp. Default view shows the last 5 entries; bump the limit dropdown for more (20 / 50 / 100). Filter by actor or action substring.
+Every operator action (config change, session start/stop, secret read, rollback, Automata lifecycle, alert-rule and federation-peer changes, etc.) recorded with actor / action / details / timestamp, never the bearer token. Default view shows the last 5 entries; bump the limit dropdown for more (20 / 50 / 100). Filter by actor or action substring.
+
+This is one of **two** separate logs: `audit.log` (operator actions, shown here) and `access.log` (every HTTP request/auth-failure/WS connect across CLI+REST+MCP). Both are retained for `audit.retention_days` (default 30), can SIEM-mirror as CEF (`audit.cef_mirror_enabled`), and — for a request forwarded through a federation peer — can carry **cross-hop attribution**: `origin_actor` + `hop_chain` detail fields naming who actually initiated the action on the forwarding daemon, not just which peer presented it, verified via an HMAC-signed chain over each hop's existing shared peer token. See [howto/audit-logging](howto/audit-logging.md) for the full query surface and the trust-model detail.
 
 ### Knowledge graph
 
@@ -757,7 +759,7 @@ Capability-based access control (CBAC) for federation peers — remote datawatch
 | `comm-bridge` | sessions:list/read/input + comm:read/write + alerts |
 | `full-control` | All 50 capabilities |
 
-**Individual `surface:action` caps** — 50 across 18 surfaces: `sessions:list/read/write/kill/input`, `agents:list/read/spawn/terminate`, `observers:list/read/write`, `llms:list/read/write`, `compute:list/read/write`, `analytics:read`, `health:read`, `config:read/write`, `secrets:list/read/write`, `pipelines:list/read/start/cancel`, `autonomous:list/read/write/run`, `council:list/read/run`, `federation:list/read/write`, `docs:read`, `audit:read`, `comm:read/write`, `alerts:list/read`, `dashboard:read/write`.
+**Individual `surface:action` caps** — 51 across 18 surfaces: `sessions:list/read/write/kill/input`, `agents:list/read/spawn/terminate`, `observers:list/read/write`, `llms:list/read/write`, `compute:list/read/write`, `analytics:read`, `health:read`, `config:read/write`, `secrets:list/read/write`, `pipelines:list/read/start/cancel`, `autonomous:list/read/write/run`, `council:list/read/run`, `federation:list/read/write`, `docs:read`, `audit:read`, `comm:read/write`, `alerts:list/read/write`, `dashboard:read/write`. `alerts:write` (raising an alert via `create_alert`) is deliberately not granted to any built-in group by default — grant it explicitly to a peer/custom group.
 
 **Custom groups** — create reusable named groups (Settings → Comms → Communication Configuration, or `datawatch federation group add <name> --caps "..."`) and reference them by name in the Capabilities field.
 

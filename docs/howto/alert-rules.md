@@ -182,6 +182,16 @@ datawatch reload
 `scale_amount` defaults to 1 when omitted. `scale_target` must match
 a registered compute node name exactly.
 
+**Not the only way to raise an alert.** The `alert` action here is
+*condition-driven*: the rule's metric/operator/threshold decides when
+to fire, automatically, on an ongoing basis. For raising a one-off
+alert directly — from an external monitor, a webhook, a script, with
+no condition to evaluate — use `POST /api/alerts/create` or the MCP
+`create_alert` tool instead (see
+[alerts-and-notifications.md](alerts-and-notifications.md)). Both
+mechanisms write to the same alert store and dock, but only this
+page's rules have conditions, filters, or an enable/disable toggle.
+
 ## Cooldown
 
 Cooldown prevents the same rule from re-firing continuously while the
@@ -394,5 +404,6 @@ datawatch alert-rules firings
 
 - [howto/federated-observer](federated-observer.md) — observer peers and envelope delivery.
 - [howto/compute-nodes](compute-nodes.md) — compute node registration; required for `scale_up`/`scale_down` actions.
-- [howto/alerts-and-notifications](alerts-and-notifications.md) — the alert dock that receives `action=alert` firings.
+- [howto/alerts-and-notifications](alerts-and-notifications.md) — the alert dock that receives `action=alert` firings, and the separate one-shot `create_alert` action.
+- [plans/2026-10-09-alerts-conditions-and-filtering](../plans/2026-10-09-alerts-conditions-and-filtering.md) — planned work extending condition-based filtering/richer config to manually- and system-raised alerts, not just rule firings.
 - [datawatch-definitions](../datawatch-definitions.md) — glossary of system terms.
