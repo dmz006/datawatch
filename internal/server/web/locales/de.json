@@ -1225,7 +1225,7 @@
   "settings_link_device": "Gerät verknüpfen",
   "settings_mcp_token": "MCP-SSE-Bearer-Token",
   "settings_mobile_app": "Mobile App",
-  "settings_mobile_app_beta_info": "Android: geschlossener Test — treten Sie zuerst der Testergruppe oben bei, dann {opt_in}, dann {install} (der Eintrag erscheint nach der Anmeldung) und bleiben Sie 14 Tage dabei (12 Tester nötig). iOS: {testflight} — TestFlight aus dem App Store installieren, den Link öffnen, auf Akzeptieren, dann Installieren tippen.",
+  "settings_mobile_app_beta_info": "Android: geschlossener Test, wartet auf Googles Überprüfung — die Anmelde-/Installationslinks unten funktionieren möglicherweise noch nicht, bis diese abgeschlossen ist. Treten Sie zuerst der Testergruppe oben bei, dann {opt_in}, dann {install} (der Eintrag erscheint nach der Anmeldung, sobald die Überprüfung abgeschlossen ist) und bleiben Sie 14 Tage dabei (12 Tester nötig). iOS: {testflight} — TestFlight aus dem App Store installieren, den Link öffnen, auf Akzeptieren, dann Installieren tippen.",
   "settings_mobile_app_install": "bei Google Play installieren",
   "settings_mobile_app_opt_in": "bei Play anmelden",
   "settings_mobile_app_testflight": "öffentlicher TestFlight-Beta beitreten",

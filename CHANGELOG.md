@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.4 — docs: clarify Android beta is pending Google review
+
+### Changed
+- README.md and the PWA's About/Settings "Mobile app" card (+ all 5
+  locale bundles) now say plainly that Android closed testing is
+  pending Google's app review, and that the opt-in/install links may
+  not load the app yet until it clears — avoids testers thinking a
+  dead link means something is broken on our end.
+
 ## v9.0.3 — fix: orphaned-tmux PWA card not federation-aware + real test leak
 
 ### Fixed

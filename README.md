@@ -27,11 +27,11 @@ It started as a daemon that bridged Signal/Telegram to AI coding sessions runnin
 
 > [![Join the beta on Google Play](https://img.shields.io/badge/Google%20Play-Join%20Beta-4285F4?style=for-the-badge&logo=google-play&logoColor=white)](https://groups.google.com/g/datawatch-testers)
 >
-> **Android is in Google Play closed testing.** Google requires 12 testers opted in for 14 continuous days before production access:
+> **Android is in Google Play closed testing, currently pending Google's app review.** Google requires 12 testers opted in for 14 continuous days before production access. **The opt-in/install links below may not load the app yet** if the review hasn't cleared — if a link 404s or shows nothing to install, the app isn't visible to new testers yet; try again later or watch `dmz006/datawatch-app`'s CHANGELOG for the review-cleared announcement.
 >
 > 1. [Join the tester group](https://groups.google.com/g/datawatch-testers) with the same Google account your phone uses for Play
 > 2. [Opt in on Google Play](https://play.google.com/apps/testing/com.dmzs.datawatchclient)
-> 3. [Install from Google Play](https://play.google.com/store/apps/details?id=com.dmzs.datawatchclient) (the listing appears after you opt in) and stay opted in for 14 days — **we need 12 testers.**
+> 3. [Install from Google Play](https://play.google.com/store/apps/details?id=com.dmzs.datawatchclient) (the listing appears after you opt in, once Google's review clears) and stay opted in for 14 days — **we need 12 testers.**
 >
 > **Wear OS** is in the same closed test. Once you've opted in, open Play Store on the watch and search **datawatch**, or install it from play.google.com in a browser and pick the watch. Android Auto is part of the phone app.
 >
