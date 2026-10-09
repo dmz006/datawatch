@@ -5,6 +5,24 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.1 — fix: agent-base container build failure in v9.0.0's release run
+
+### Fixed
+- `docker/dockerfiles/Dockerfile.agent-base`'s `ARG GO_VERSION=1.26.6`
+  had fallen behind `go.mod`'s `go 1.26.9` directive, so the
+  `go mod download` step failed outright in the v9.0.0 tag's release
+  run. Because every other agent-\* image (`agent-claude`,
+  `agent-opencode`, `agent-aider`, `agent-gemini`, `agent-goose`,
+  `parent-full`) builds on top of `agent-base` (`needs: build-base`),
+  that single failure cascaded into 6 more images being skipped
+  entirely — only `validator` and `stats-cluster` (which float on
+  `GO_VERSION=1.26`, not an exact patch) were pushed for v9.0.0.
+  Bumped to `1.26.9` (confirmed to exist for both amd64 and arm64,
+  and locally build-verified end-to-end — not just assumed) while
+  keeping the exact-pin convention and its CVE-fix rationale intact.
+  The GitHub Release binaries themselves (goreleaser job) were
+  unaffected and published correctly under v9.0.0.
+
 ## v9.0.0 — Memory Lifecycle Complete
 
 First major version since the memory-scope/lifecycle work (BL385–387)
