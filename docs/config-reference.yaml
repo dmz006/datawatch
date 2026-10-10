@@ -908,6 +908,44 @@ autonomous:
   injection_guard: false
   block_on_injection: false
 
+  # ── BL221 Phase 3 (v6.2.0) — scan framework ──
+  # Security + project-rules scan run against a PRD's project_dir, on
+  # demand (POST /api/autonomous/prds/{id}/scan) and (once BL406 Phase 3
+  # ships) at task/story/PRD-completion checkpoints. Config lives here
+  # (daemon-wide); GET/PUT /api/autonomous/scan/config is the dedicated
+  # read/write surface (richer than the generic PUT /api/config patch
+  # below, which only exposes it read-only for consistency with
+  # default_quality_gates above).
+  scan:
+    enabled: true
+    sast_enabled: true
+    secrets_enabled: true
+    deps_enabled: true
+    fail_on_severity: error # info | warning | error | critical
+    max_findings: 0 # 0 = unlimited
+    rules_grader_enabled: false # LLM verdict on findings; needs an ask-compatible backend
+    fix_loop_enabled: false # auto-create a fix child-PRD on scan failure
+    fix_loop_max_retries: 0
+    # BL406 — the fourth, operator-defined scan category. Each entry:
+    # {id, name, type: content|consistency|presence|parity,
+    #  granularity: task_complete|story_complete|prd_complete,
+    #  pattern, severity, action: ""|file_upstream_issue, upstream_target}.
+    # Full-replace via PUT, not a merge — omit the key entirely to leave
+    # the existing list untouched.
+    project_rules: []
+
+  # ── BL406 — project-rules enforcement ──
+  # rules_file/context_file are operator-configured paths, never
+  # hardcoded, so another project's differently-named equivalents work
+  # without renaming anything. Both relative to a PRD's project_dir.
+  rules_file: "" # default "AGENT.md" applied at read time when empty
+  # Descriptive "state of the project" doc. Explicitly optional — not
+  # every project has one; leave empty if you don't.
+  context_file: "" # default "CONTEXT.md" applied at read time, only if that file exists
+  # Named upstream repos a project-rule's file_upstream_issue action can
+  # reference (e.g. a parity gap this repo's own PRD can't close alone).
+  upstream_repos: [] # [{name: "app", owner_repo: "org/repo"}, ...]
+
 # ── Orchestrator (BL117 — v4.0.0) ──
 # PRD-DAG orchestrator with guardrail sub-agents. Composes BL24
 # autonomous PRDs into a graph; each PRD is attested by configured

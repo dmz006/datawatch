@@ -134,6 +134,13 @@ line + this doc's own top-level Status/shipped-version note as each
 phase ships, per AGENT.md's Planning Rule. A phase with any unchecked
 item is not done, regardless of what's been committed elsewhere.
 
+**Every phase also carries AGENT.md's Phase Completion Checklist**
+(Planning Rules §5 — added 2026-10-10 after Phase 0 shipped missing
+several items on its first pass; see Phase 0's retrofitted checklist
+below for what that looked like in practice). Phases 1-5 include it
+from the start; don't treat "functionality implemented + unit tests
+pass" as done without it.
+
 ### Phase 0 — Config scaffolding
 **Status: Done.** Shipped on `main` 2026-10-10 (pre-v9.0.10 patch chain,
 not yet tagged).
@@ -217,6 +224,42 @@ not yet tagged).
   before any PUT ever happens. Full suite re-confirmed green after the
   fix (3369 Go tests, 83 packages).
 
+**Phase Completion Checklist** (AGENT.md Planning Rules §5 — retrofitted
+2026-10-10 after the gap was found; every later phase does this from the
+start, not after the fact):
+- [x] `go test ./...` + `node --test` both green (3369 Go tests, 182 JS).
+- [x] `CHANGELOG.md` — v9.0.11 entry added.
+- [x] `docs/config-reference.yaml` — full `autonomous.scan`/`rules_file`/
+  `context_file`/`upstream_repos` block added (also closed a pre-existing
+  gap: `scan:` itself, from BL221 Phase 3/v6.2.0, was never documented
+  there either).
+- [x] `docs/operations.md` — **N/A**: that doc's scope is service
+  lifecycle (start/stop/restart/boot), not per-feature config; this
+  phase doesn't touch deployment or security posture.
+- [x] `README.md` — **N/A**: no functioning user-visible feature yet
+  (the new fields are inert until Phase 1-2 ship real rule-checking);
+  revisit when Phase 1-2 land.
+- [x] Documentation index — N/A, no new doc files.
+- [x] `docs/testing-tracker.md` — entry added (BL406 Phase 0 row).
+- [x] No internal tracker IDs in user-facing PWA text — confirmed
+  (Settings labels/tooltips say "Rules file"/"Context file"/"Upstream
+  repos," never "BL406").
+- [x] **Mobile-Parity Rule** — triggered (API contract change to
+  `/api/config` + `/api/autonomous/scan/config`; new PWA affordances).
+  Filed [`datawatch-app`#246](https://github.com/dmz006/datawatch-app/issues/246).
+- [x] Localization Rule — 3 new tooltip keys in all 5 locale bundles,
+  confirmed by `TestLocales_AllAppJSKeysExistInEnglishBundle`.
+- [x] Version bumped both files (`9.0.10` → `9.0.11`) — this phase is
+  its own shippable unit.
+- [x] `docs/mcp.md` — **N/A for this phase specifically**: confirmed
+  `autonomous_scan_config_get/set` (and the whole BL221 scan-tool
+  family) were never documented there at all — a large, pre-existing,
+  project-wide gap (the doc covers 43 of ~390 real tools), not something
+  proportionate to fix as a side effect of adding one param to an
+  already-undocumented tool. Worth its own backlog item if a full
+  `docs/mcp.md` audit is ever prioritized — not filed as one yet.
+- [x] This plan doc's own phase-status line updated to reflect reality.
+
 ### Phase 1 — Rule engine core
 **Status: Not started.**
 - [ ] `ProjectRulesScanner` implementing the existing `Scanner`
@@ -231,6 +274,14 @@ not yet tagged).
   introduced mismatch.
 - [ ] Unit tests: one passing + one deliberately-failing fixture per
   rule type.
+- [ ] **Phase Completion Checklist** (AGENT.md Planning Rules §5, full
+  list) — `go test`/`node --test` green; `CHANGELOG.md`;
+  `docs/config-reference.yaml` if any new field; `docs/operations.md`/
+  `README.md`/doc index if applicable or marked N/A with reason;
+  `docs/testing-tracker.md` entry; no leaked tracker IDs; Mobile-Parity
+  Rule checked (this phase has no PWA surface of its own, but confirm);
+  Localization Rule if any new string; version bump; this plan's status
+  line updated.
 
 ### Phase 2 — Parity-inheritance rule (first built-in)
 **Status: Not started.**
@@ -240,6 +291,8 @@ not yet tagged).
   prose (quoted in Confirmed findings above).
 - [ ] Regression test: a story that narrows/drops a surface with no
   stated reason must fail the scan.
+- [ ] **Phase Completion Checklist** (AGENT.md Planning Rules §5, full
+  list — see Phase 0's worked example above).
 
 ### Phase 3 — Multi-granularity wiring
 **Status: Not started.**
@@ -250,6 +303,8 @@ not yet tagged).
   rule at every hook).
 - [ ] Tests: a task-granularity rule fires at task-complete and not at
   story/PRD-complete, and vice versa for the other granularities.
+- [ ] **Phase Completion Checklist** (AGENT.md Planning Rules §5, full
+  list — see Phase 0's worked example above).
 
 ### Phase 4 — Upstream issue-filing action
 **Status: Not started.**
@@ -260,6 +315,8 @@ not yet tagged).
   resolving its target against `autonomous.upstream_repos`.
 - [ ] Test: a firing rule with `Action: file_upstream_issue` calls
   `CreateIssue` with the right repo/title/body (fake `GitHub.Provider`).
+- [ ] **Phase Completion Checklist** (AGENT.md Planning Rules §5, full
+  list — see Phase 0's worked example above).
 
 ### Phase 5 — Fix B111 and B112 for real
 **Status: Not started.**
@@ -287,6 +344,9 @@ not yet tagged).
 - [ ] Update B111/B112's entries in `docs/plans/README.md` from "fixed
   as part of BL406 Phase 5" to a real shipped-version note once this
   phase ships.
+- [ ] **Phase Completion Checklist** (AGENT.md Planning Rules §5, full
+  list — this phase definitely needs the Mobile-Parity check: a new
+  guided-mode source selector is a real PWA affordance change).
 
 ## Parity surface
 

@@ -5,6 +5,43 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.11 — feat(autonomous): BL406 Phase 0 — configurable project-rules enforcement scaffolding
+
+### Added
+- New `autonomous.rules_file`/`context_file`/`upstream_repos` config fields —
+  operator-configured paths to a project's prescriptive rules file (its
+  `AGENT.md` equivalent) and descriptive state-of-the-project doc, plus named
+  upstream repos a future project-rule can file an issue into. Never
+  hardcoded, so another operator's differently-named files work without
+  renaming anything.
+- `scan.Config` gains `project_rules` — the fourth, data-driven scan category
+  (alongside SAST/secrets/deps), with a real `scan.ProjectRule` type
+  (`id`/`name`/`type`/`granularity`/`pattern`/`severity`/`action`/
+  `upstream_target`). No rule-checking logic yet (Phase 1) — this phase is
+  config scaffolding only.
+- Full parity: `GET/PUT /api/config` round-trips the 3 new fields;
+  `autonomous_scan_config_set` MCP tool gains a `project_rules` JSON-array
+  param; CLI `config set`/comm `configure` confirmed already generic (zero
+  new code needed); PWA Settings → Automata panel gains the 3 new rows.
+
+### Fixed
+- **B113** — `internal/autonomous`'s scan config (SAST/secrets/deps toggles)
+  had zero YAML persistence and was never wired at daemon startup — always
+  the Go zero-value (every scanner disabled) regardless of
+  `scan.DefaultConfig()`'s all-on intent, and any operator-enabled setting
+  via the API was lost on the next restart. Fixed in both directions:
+  startup now reaches the real default when untouched, and a `PUT
+  /api/autonomous/scan/config` write now persists to YAML. Caught a second,
+  subtler bug via live smoke-testing (a real sandbox daemon, `kill -9` +
+  restart) before it shipped: the first version of the persistence fix
+  mutated a stale, never-defaulted copy of the config; fixed by
+  round-tripping through the Manager's own current (correctly-defaulted)
+  config instead of re-deriving a second copy from the request.
+- `PRD.GuidedMode` (**B111**) and AGENT.md's BL384 scope-drift scan rule
+  (**B112**) were found dead (documented, never implemented) while scoping
+  this work — not fixed in this phase (that's BL406 Phase 5), but filed and
+  tracked.
+
 ## v9.0.10 — fix: imap_mcp outbound mail bounced — sent to the literal string "imap_mcp"
 
 ### Fixed

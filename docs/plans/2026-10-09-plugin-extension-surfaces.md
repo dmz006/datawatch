@@ -465,6 +465,17 @@ Per the Mobile-Parity Rule's full surface set
 
 ## Verification
 
+- **Every phase additionally carries AGENT.md's Phase Completion
+  Checklist** (Planning Rules §5, added 2026-10-10): CHANGELOG entry,
+  `docs/config-reference.yaml` for any new field, `docs/operations.md`/
+  `README.md`/doc index if applicable (or marked N/A with a reason),
+  `docs/testing-tracker.md` entry, no leaked tracker IDs, Mobile-Parity
+  Rule check (this plan adds real PWA affordances across several
+  phases — expect this to trigger, not just the Federation/Audit items
+  already called out below), Localization Rule for any new string,
+  version bump if the phase ships as its own unit. Not retrofitted here
+  phase-by-phase in full prose (unlike BL406, where the gap was found
+  the hard way) — apply it when each phase actually lands, not before.
 - Per-phase: `go test ./internal/plugins/... ./internal/federation/...
   ./internal/audit/... ./internal/server/...` and `node --test
   internal/server/web/*.test.js` as each phase lands.

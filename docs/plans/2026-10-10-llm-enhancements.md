@@ -481,6 +481,18 @@ What each new piece reuses rather than invents, per decision:
 
 ## Testing / verification
 
+- **Every phase additionally carries AGENT.md's Phase Completion
+  Checklist** (Planning Rules §5, added 2026-10-10 after BL406 Phase 0
+  shipped missing several items on its first pass): CHANGELOG entry,
+  `docs/config-reference.yaml` for any new field, `docs/operations.md`/
+  `README.md`/doc index if applicable (or marked N/A with a reason),
+  `docs/testing-tracker.md` entry, no leaked tracker IDs, Mobile-Parity
+  Rule check (this plan adds real PWA affordances — the Scheduler
+  surface, Workload Roles card, Council Profiles CRUD, the play-well
+  dialog — each should expect a `datawatch-app` issue, not just the
+  11 phases' functional work), Localization Rule for any new string,
+  version bump if the phase ships as its own unit. Apply it when each
+  phase actually lands.
 - Go unit tests per phase, matching this codebase's existing style
   (ledger tests for the new rate-ceiling dimension and `Decision` shape;
   council tests for the sequential-topology mode; cost tests for the flat

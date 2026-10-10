@@ -426,6 +426,17 @@ as each PRD completes (mirroring how v9.0.0 absorbed the prior
 security-refresh work); the major cut to **v10.0.0** happens once Stage
 3's queue is empty.
 
+**Phase Completion Checklist, applies to this whole arc**: every phase
+of every plan in this arc (BL406, BL407, BL403, BL402, BL405, BL398,
+and the security track) must satisfy AGENT.md's Phase Completion
+Checklist (Planning Rules §5, added 2026-10-10) — not just functional
+code + unit tests, but the full documentation/Mobile-Parity/version-
+bump checklist. BL406 and BL405's plans already carry an explicit
+cross-reference per phase; BL407 and BL404 (no plan docs written yet)
+must include it from the start when written. This is also the
+mechanism a PRD — human or Claude-driven — uses to know a phase is
+actually done vs. what's still missing, per the operator's own framing.
+
 ## Unclassified
 
 _(empty — drop new operator-filed items here; the backlog refactor each release pulls them into BL### entries below.)_

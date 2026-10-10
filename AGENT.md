@@ -124,6 +124,46 @@ When creating a large implementation plan (3+ files or non-trivial architectural
 3. After implementation, update the plan's status and note the **version it shipped in**.
 4. Plans saved in `~/.claude/plans/` are session-local; for durable record keeping,
    copy or symlink them to `docs/plans/` before committing.
+5. **Every phase's own checklist must include the Phase Completion Checklist below**,
+   not just functional/test items. A phase whose checklist only tracks code+tests is
+   incomplete even if the code and tests are both done — this is how BL406 Phase 0
+   shipped missing a CHANGELOG entry, `docs/config-reference.yaml`, a
+   `docs/testing-tracker.md` section, and a required `datawatch-app` issue (found and
+   fixed 2026-10-10, see that plan's own retrofitted Phase 0). This item exists so
+   a PRD — human or LLM-driven — executing a phase has one place that says "done" vs.
+   "missing X," not just "tests pass."
+
+### Phase Completion Checklist (applies to every phase of every plan)
+
+A phase is not done until every item below is either checked or explicitly marked
+N/A with a one-line reason (never silently skipped):
+
+- [ ] Functionality implemented per the phase's own description.
+- [ ] Unit tests added/passing for anything new.
+- [ ] Live/smoke test against a real running daemon if the phase touches persistence,
+  security, capability gating, or anything else where a unit test can mock away the
+  actual bug (per this project's own established discipline — BL406 Phase 0's live
+  smoke caught two real bugs unit tests missed entirely).
+- [ ] `go test ./...` and `node --test internal/server/web/*.test.js` both green,
+  not just the phase's own new tests.
+- [ ] **General documentation checklist** (AGENT.md, above) — all 8 items checked or
+  marked N/A with a reason: `CHANGELOG.md`, `docs/config-reference.yaml`,
+  `docs/operations.md`, `README.md`, the doc index in `README.md`/`docs/README.md`,
+  `docs/testing-tracker.md`, no leaked tracker IDs, this plan's own `Parity surface`
+  section still accurate.
+- [ ] **Mobile-Parity Rule** — if this phase changed anything operator-visible on the
+  PWA (layout, behavior, API contract, affordances, defaults) or any REST/WS contract
+  mobile clients parse: a `datawatch-app` issue was filed or an existing one was
+  commented on, per that rule's own "Action per change." Checked explicitly, not
+  assumed — this is the item BL406 Phase 0 missed on its first pass.
+- [ ] Localization Rule — any new `t('key')` usage in `app.js` has a real entry in
+  all 5 locale bundles (enforced by `TestLocales_AllAppJSKeysExistInEnglishBundle`,
+  but check before the test does).
+- [ ] Version bumped in both `cmd/datawatch/main.go` and `internal/server/api.go`
+  (if this phase is itself a shippable/tagged unit — not every phase needs its own
+  tag, but say explicitly in the phase's status line either way).
+- [ ] This plan doc's own phase-status line updated to reflect reality (Planned →
+  In Progress → Done, with the shipped version noted) — don't let it go stale.
 
 ## Documentation Rules
 
