@@ -1,7 +1,7 @@
 // GH#192 Phase 2 — #2 per-Automaton memory section. Reuses the existing
 // BL386 Phase 4 (GET /api/autonomous/prds/{id}/memory-report) and Phase 5
 // (GET /api/memory/scopes/recall) REST endpoints -- no backend change.
-// See docs/plans/2026-10-07-gh192-parity-batch.md.
+// See docs/plans/historical-plans/2026-10-07-gh192-parity-batch.md.
 
 const test = require('node:test');
 const assert = require('node:assert/strict');

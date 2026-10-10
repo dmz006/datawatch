@@ -1,6 +1,6 @@
 // BL397 — ACME/Let's Encrypt subsystem CLI commands. Thin REST proxies,
 // same shape as every other cli_*.go command in this package.
-// See docs/plans/2026-10-06-bl397-native-acme-letsencrypt.md.
+// See docs/plans/historical-plans/2026-10-06-bl397-native-acme-letsencrypt.md.
 
 package main
 

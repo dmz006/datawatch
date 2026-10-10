@@ -169,7 +169,7 @@ Verify buttons — same underlying REST calls as the CLI above.
 
 ## See also
 
-- [docs/plans/2026-10-06-bl397-native-acme-letsencrypt.md](../plans/2026-10-06-bl397-native-acme-letsencrypt.md)
+- [docs/plans/historical-plans/2026-10-06-bl397-native-acme-letsencrypt.md](../plans/historical-plans/2026-10-06-bl397-native-acme-letsencrypt.md)
   — full design, the operator-interview decision log, and four real bugs
   found and fixed during live verification against a real Let's Encrypt
   directory.

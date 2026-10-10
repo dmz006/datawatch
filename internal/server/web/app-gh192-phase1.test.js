@@ -1,6 +1,6 @@
 // GH#192 Phase 1 — data-only / existing-API items (#8 agent badge, #1
 // watched-only alert badge, #3 Observer server info). See
-// docs/plans/2026-10-07-gh192-parity-batch.md for the full batch plan.
+// docs/plans/historical-plans/2026-10-07-gh192-parity-batch.md for the full batch plan.
 
 const test = require('node:test');
 const assert = require('node:assert/strict');

@@ -4,8 +4,8 @@
 // sub-card loaders, all of which already route through apiFetch (so
 // already get the real 401/403/502 text via _fedFetchError) but
 // replaced it with a generic "unavailable" string in their own
-// .catch(). See docs/plans/2026-10-08-pwa-federated-error-visibility.md
-// for the full list and docs/plans/2026-10-08-gh194-never-say-local.md
+// .catch(). See docs/plans/historical-plans/2026-10-08-pwa-federated-error-visibility.md
+// for the full list and docs/plans/historical-plans/2026-10-08-gh194-never-say-local.md
 // for the related GH#194 round.
 //
 // Not every one of the 12 loaders gets its own test here -- most share

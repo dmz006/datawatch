@@ -178,4 +178,4 @@ revisit once real behavior changes — not just this plan doc.
 - [`docs/howto/alerts-and-notifications.md`](../howto/alerts-and-notifications.md)
 - [`docs/howto/alert-rules.md`](../howto/alert-rules.md)
 - [`docs/howto/audit-logging.md`](../howto/audit-logging.md)
-- [`docs/plans/2026-10-09-gh201-audit-completeness.md`](2026-10-09-gh201-audit-completeness.md) — Phase 5's own investigation findings this plan builds on
+- [`docs/plans/historical-plans/2026-10-09-gh201-audit-completeness.md`](historical-plans/2026-10-09-gh201-audit-completeness.md) — Phase 5's own investigation findings this plan builds on

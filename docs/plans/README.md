@@ -38,9 +38,11 @@ If you find a rule that applies to operating behavior duplicated in this file,
 move it to AGENT.md and replace it with a cross-reference. AGENT.md is the
 single source of truth.
 
-## Current state — 2026-10-09/10
+## Current state — 2026-10-10
 
-Latest release: **v9.0.7** (2026-10-09). fix(daemon): `datawatch restart`/`stop`/`start` now detect and delegate to an active/enabled `datawatch.service` systemd --user unit instead of raw PID signaling + self-daemonizing; the daemon now falls back to the dedicated `~/.datawatch/tmux` socket when `TMUX_TMPDIR` is unset at boot; `ResumeMonitors` self-heals a `StateFailed` session back to `StateRunning` at boot when its tmux pane is actually still alive. Full history for every release between this and the v8.39.1 entry below is in `CHANGELOG.md` (this section was 8 days / ~400 versions stale until this backlog refactor — see the "Gotcha" note in AGENT.md's Project Tracking Rule: this header is meant to be refreshed every release, not just major ones).
+Latest release: **v9.0.10** (2026-10-10). fix: `imap_mcp` outbound mail was addressed to the literal string `"imap_mcp"` and bounced. v9.0.8 fixed usage-tracker restart amplification of backend cost totals; v9.0.9 corrected the stale README current-release line. **Active work:** the v10.0.0 self-build arc — see [§ Roadmap](#roadmap-self-build-arc--v1000-locked-2026-10-10); BL406 Phase 0 is in progress (B113 fixed in-tree). Plans folder refactored 2026-10-10: 11 completed plan docs archived to `historical-plans/`, BL381 closed as shipped, and unscheduled work called out in the Roadmap's "Not yet placed" list.
+
+Previous: **v9.0.7** (2026-10-09). fix(daemon): `datawatch restart`/`stop`/`start` now detect and delegate to an active/enabled `datawatch.service` systemd --user unit instead of raw PID signaling + self-daemonizing; the daemon now falls back to the dedicated `~/.datawatch/tmux` socket when `TMUX_TMPDIR` is unset at boot; `ResumeMonitors` self-heals a `StateFailed` session back to `StateRunning` at boot when its tmux pane is actually still alive. Full history for every release between this and the v8.39.1 entry below is in `CHANGELOG.md` (this section was 8 days / ~400 versions stale until this backlog refactor — see the "Gotcha" note in AGENT.md's Project Tracking Rule: this header is meant to be refreshed every release, not just major ones).
 
 **Headline jump since the previous entry below:** v9.0.0 "Memory Lifecycle Complete" major release (2026-10-07, memory trilogy BL385/386/387 + every v8.x release since formally cut as a milestone); v9.0.1–v9.0.7 patch chain fixing the Dockerfile `GO_VERSION` drift that silently dropped 7 of 9 container images from the v9.0.0 release, a `datawatch-channel` sibling-binary self-update gap stale since 2026-05-12, and the systemd/tmux/boot-self-heal fixes above. Between v8.39.1 and v9.0.0: the full BL394/BL395/security-remediation walkthrough, BL396 PWA parity sweep, BL397 ACME+APNs, BL398 CVE suppression review, BL399 GH#201 audit-logging completeness (5 phases), BL400/BL401/BL402/BL403 filed.
 
@@ -168,18 +170,18 @@ Previous: **v8.25.3** (2026-09-12). feat(observer): nvidia-smi and tegrastats GP
 
  Previous: **v8.25.0** (2026-09-12). feat(automata/pwa): automata UI improvements — spec expand (show full / collapse), status graphs (per-story progress bars + async CPU%/RSS from observer), cancel button always visible in toolbar, "View Sessions" in ⋯ Edit dropdown. Fixes: task click in list "Stories & tasks" panel no longer collapses it; expand button in Stories tab works on first click.
 
- Next (**v-next**, planned — no version assigned yet): harness-impl planning docs; parity-gate rule added to AGENT.md; see `.decompose-output.json` / `docs/plans/harness-impl/`.
+ Next: **v10.0.0** via the self-build arc (see § Roadmap). The harness-impl planning docs (`docs/plans/harness-impl/`) previously listed here as "v-next" are **not yet placed** in that roadmap — see its "Not yet placed" list.
 
  | Bucket | Count | Notes |
 |---|---|---|
-| Open bugs | 0 | — (B102 ✅ v8.33.27; B103 ✅ v8.33.27) |
-| Open features | 4 | BL241 — Matrix.org channel (design interview needed); BL365 — core security assessment (plan filed 2026-08-28); BL389 — capacity-aware Automata admission and queueing (implemented in the v9.0.0 tree 2026-09-25, awaiting release); BL390 — Council multi-backend persona assignment + capacity integration + PRD gate wiring (Phase 1 shipped v8.38.0; Phase 2/3 planned) |
+| Open bugs | 3 | B111 (dead `GuidedMode`), B112 (dead scope-drift rule) — both fixed by BL406 Phase 5; B113 (scan config never persisted/wired) — fixed in-tree by BL406 Phase 0, live smoke pending |
+| Open features | 7 | BL241 Matrix (design interview needed); BL365 + BL408 + BL395 security remediation track (roadmap Stage 3 #7); BL390 Phase 2/3 (folded into BL405 Phase 8a); BL393 nested tags (excluded until authorized); BL394 + BL392 (substantially done, residue cross-repo). BL389 shipped v9.0.0; BL381 shipped v8.28.0/v8.28.2 |
 | Active backlog | 0 | BL387 complete (v8.31–33.0 ✅) |
-| Pending backlog | 1 | BL335 — APNs push for iOS client (GH#107) |
+| Pending backlog | 7 | BL402, BL403, BL404, BL405, BL406, BL407 (v10.0.0 roadmap) + BL398 Phase 2; BL400 deferred (open questions). BL335 shipped v8.62.x via BL397 Phase 4 |
 | Active (in-progress) | 0 | — |
 | Deferred | 0 | — |
 | Awaiting operator action | 0 | — |
-| Open GH issues | 5 | GH#4 — mobile parity tracking (meta); GH#107 — extend PWA==Android parity to native iOS; GH#158 — APNs HTTP/2 dispatch for iOS push; GH#160 — Observer local-card rendering mismatch vs peer cards; GH#161 — observer self-monitor missing NVML GPU stats on x86_64 |
+| Open GH issues | 3 | GH#4 — mobile parity tracking (meta, perpetual); GH#196 — `security/accepted-risks.yml` daily watch; GH#204 — result panel for scheduled jobs (= BL402) |
 | Recently closed | GH#162 ✅ v8.37.0 (session_state WS broadcast; client adoption tracked datawatch-app#204); B106 ✅ v8.33.30; B105 ✅ v8.33.29; B104 ✅ v8.33.28; B103 ✅ v8.33.27; B102 ✅ v8.33.27; B101 ✅ v8.33.26; B99 ✅ v8.33.25; B98 ✅ v8.33.24; B97 ✅ v8.33.23; BL374 ✅ v8.33.22; B96 ✅ v8.33.22; B94 ✅ v8.33.21; B95 ✅ v8.33.20; B93 ✅ v8.33.19; B92 ✅ v8.33.18; B91 ✅ v8.33.17; GH#153 ✅ v8.33.3; GH#154 ✅ v8.33.3; B90 ✅ v8.33.2; B89 ✅ v8.33.1; BL387 ✅ v8.33.0; BL386 ✅ v8.30.0; B88 ✅ v8.28.9; B87 ✅ v8.28.8; BL381 ✅ v8.28.0; B86 ✅ v8.27.4; B85 ✅ v8.27.3; B84 ✅ v8.27.2; B83 ✅ v8.27.1; BL382 ✅ v8.27.0; BL380 ✅ v8.27.0; B82 ✅ v8.25.12; B81 ✅ v8.25.11; B79+B80 ✅ v8.25.10; BL377 ✅ v8.25.6; BL376 ✅ v8.25.5; BL375 ✅ v8.25.4; BL373 ✅ v8.25.0; BL374 ✅ v8.33.22; B78 ✅ v8.23.0; BL372 ✅ v8.22.0; BL327–BL334 ✅ v8.2.0–v8.6.0; BL336 ✅ v8.9.17–v8.9.19; BL337 ✅ v8.9.20; BL338 ✅ v8.9.21; BL339 ✅ v8.9.22; BL340 ✅ v8.9.23; BL341 ✅ v8.9.24; BL342+BL343 ✅ v8.9.25; BL347 ✅ v8.10.0; BL353 ✅ v8.10.4; BL354 ✅ v8.10.5; BL355 ✅ v8.10.6; BL356 ✅ v8.10.7; BL357 ✅ v8.10.8; BL358 ✅ v8.10.9; BL359 ✅ v8.10.10; BL360 ✅ v8.10.11; BL361 ✅ v8.10.12; BL362 ✅ v8.10.17; BL319 ✅ v8.13.0; GH#117 ✅ v8.13.1; GH#120 ✅ v8.13.0; GH#125 ✅ v8.9.25 (already existed); GH#128 ✅ v8.13.2; GH#129 ✅ v8.13.4; BL368 ✅ v8.15.0; BL366 ✅ v8.16.0; BL367 ✅ v8.17.0; BL369 ✅ v8.18.0; B55+B56 ✅ v8.19.9; B57 ✅ v8.19.10; BL371 ✅ v8.20.0; B58 ✅ v8.20.1; B59+B60+B61+B62+B63 ✅ v8.20.2–v8.20.3; B64+B65 ✅ v8.20.4; B66 ✅ v8.20.5; B67 ✅ v8.20.6; B68 ✅ v8.20.7; B69+B70+B71 ✅ v8.20.8; B72+B73+B74+B75+B76 ✅ v8.20.9–v8.20.11; B77 ✅ v8.21.0; B79+B80 ✅ v8.25.10; B81 ✅ v8.25.11 | badge/chip, async decompose, push, channel routing, file service, discussion scopes, operational encryption; anti-clobber typing hold + queue; line-printing renderer lock; update self-update archive priority + channel co-update; container builder CVE fix; imap-mcp email command channel; MCP session name resolution + permission_mode; compute migrate CLI + federation peer health alerts; session lineage + cascade kill + reply_to_parent; recurring named schedules; name-addressed session ops; claude_alive zombie detection; exit hooks; work queue; discussion push/subscribe; restart_session; result store; list_sessions filters; channel bridge diagnostics; extra_mcp_servers injection; alert dock fix; FCM payload enrichment; schedule spawn overlap guard + run history; downloadChannelBinary version fix; vision input system; verifier git-diff grounding; autonomous PRD quality gates; prompt injection hardening; PRD backend filter; PRD Approve/Reject restore; autonomous task backend resolution; PRD split planning vs execution backend; cancelled PRD restart; session wait/cleanup; wizard create modal execution backend + dir validation; Plan/Run prominent toolbar buttons; image attachment file picker; Start Planning feedback + detail view progress; Edit menu stacking context fix; Start Planning button disables in-place + Cancel warning; opencode one-shot task delivery via state-change handler; prd_id/task_id on sessions; verifying progress + glyphs; active session filter fix; generalized TUI task delivery (goose/aider/all backends); session-based PRD decomposer with codebase access; DATAWATCH_COMPLETE: detection fixed for one-shot sessions (v8.21.1–v8.21.4: visible scan limit, firstTick skip, daemon-restart recovery, creation-time screen capture) |
 | Frozen / external | 7 items | BL281–BL285 (Vault follow-ups) · F7 · S14c · mobile parity GH#4 |
 | GH issues closed/triaged | GH#52 ✅ (BL316), GH#63 ✅ (BL317), GH#77→BL328 ✅, GH#75→BL329 ✅, GH#76→BL330 ✅, GH#72→BL331 ✅, GH#68+69→BL332 ✅, GH#70→BL333 ✅, GH#78 ✅ v8.8.0 (PWA E2E Phase 0+1), GH#91–GH#101 ✅ v8.8.0 (security/dashboard/observer/docs sprint), GH#117 ✅ v8.13.1 (FCM payload), GH#118 ✅ v8.13.0 (extra_mcp_servers), GH#120 ✅ v8.13.0 (alert dock), GH#125 ✅ v8.9.25 (compute migrate already existed), GH#128 ✅ v8.13.2 (schedule spawn), GH#129 ✅ v8.13.4 (downloadChannelBinary version), GH#152 ✅ v8.27.0 (BL382 cancel_story/cancel_task/requeue_task) | |
@@ -352,8 +354,8 @@ established. Not started; blocked on Stage 2.**
    interleaved against their phases.
 
 **Outside the queue, handled separately, not blocking Stage 3:**
-- **BL381** — status-verify only (likely already shipped per BL390's
-  own cross-reference); a direct check, not a PRD slot.
+- ~~**BL381**~~ — status-verified 2026-10-10: shipped v8.28.0 + v8.28.2
+  (PWA picker). Moved to Completed. No slot needed.
 - **BL393** (nested tags) — stays excluded until explicitly authorized
   for implementation.
 - **BL241** (Matrix) — stays excluded pending its own design interview
@@ -371,6 +373,47 @@ established. Not started; blocked on Stage 2.**
   residue is two cross-repo issues already filed
   (`datawatch-app`#206/#207) — no in-repo implementation work left to
   queue, follow-up lives in the other repo.
+
+**Not yet placed in the roadmap (found during the 2026-10-10 plans
+refactor — each needs an operator decision: queue it, defer it
+explicitly, or drop it):**
+- **Harness implementation — Eval Sweep / Eval-DAG / Red-team
+  validator** (`docs/plans/harness-impl/`, research in
+  `docs/plans/harness-research/`). Draft specs dated 2026-09-14/16, no
+  BL number, zero code in the tree (no `EvalSweep`/`RunSet`/red-team
+  types anywhere under `internal/`). Only referenced by a stale "Next
+  (v-next)" line in Current state. Biggest unscheduled body of work.
+- **Settings-tab federation residue** — the v8.73.15 pass ended
+  **Partial**: three judgment calls deferred (`loadServers`/
+  `loadServersList`, `loadTailscaleConfig`, `fileServiceUpload`) and the
+  inventory flagged as possibly non-exhaustive
+  ([historical-plans/2026-10-08-settings-tab-federation.md](historical-plans/2026-10-08-settings-tab-federation.md)).
+  No BL number.
+- **BL397 B1 — delegated-subzone DNS-01** — "deferred, not declined" in
+  the ACME plan; everything else in BL397 shipped.
+- **GH#196** (`security/accepted-risks.yml` daily watch) — open issue,
+  no BL entry; likely the same body of work as BL398 Phase 2 and could
+  ride that slot.
+- **Frozen items** (BL281–BL285 Vault follow-ups, F7, S14c) and
+  **BL190** (howto screenshot density, cosmetic) — intentionally
+  parked; listed here only so "the roadmap covers the whole backlog" is
+  literally true.
+
+**Active plan docs (`docs/plans/*.md`) → roadmap slot** (everything
+else is in `historical-plans/`):
+
+| Plan doc | BL | Roadmap slot |
+|---|---|---|
+| `2026-10-10-configurable-project-rules-enforcement.md` | BL406 (+B111/B112/B113) | Stage 1 #1 — in progress |
+| _(no plan doc yet)_ | BL407 | Stage 1 #2 |
+| _(no plan doc yet)_ | BL404 | Stage 2 #3 |
+| `2026-10-09-plugin-extension-surfaces.md` | BL403 | Stage 3 #4 |
+| `2026-10-09-gh204-result-panel.md` | BL402 (GH#204) | Stage 3 #5 |
+| `2026-10-10-llm-enhancements.md` | BL405 (absorbs BL390 P2/P3) | Stage 3 #6 |
+| `2026-10-04-f2-session-worker-isolation.md` | BL395 (security track) | Stage 3 #7 |
+| `2026-10-08-bl398-trivyignore-cve-review.md` | BL398 Phase 2 only | Stage 3 #7 (paired) |
+| `2026-10-09-alerts-conditions-and-filtering.md` | BL400 | Outside the queue — 3 open questions |
+| `harness-impl/`, `harness-research/` | — | **Unplaced** (see above) |
 
 **Sequencing mechanism**: BL357's existing role-based work queue
 (`queue push/claim/complete/fail`) — one queue item per Stage-3 PRD, a
@@ -391,7 +434,7 @@ _(empty — drop new operator-filed items here; the backlog refactor each releas
 
 #### v9.0.0 — Memory Lifecycle Complete (major release milestone) ✅ Executed 2026-10-07
 
-**Operator-filed 2026-09-15. Status corrected 2026-10-07**: this entry had sat at "Status: in-progress"/"Status: planned" (below, for BL386/BL387) since 2026-09-16 — stale leftover, never updated after BL385/386/387 all actually shipped (BL385 v8.29.0, BL386 v8.30.0, BL387 v8.31.0–v8.33.0; see the Completed Backlog table above, which already tracked this correctly). The referenced `docs/plans/2026-09-15-v9-memory-lifecycle-major.md` does not exist on disk. The operator's 2026-10-07 instruction to execute the major release is the current authorization; see `docs/plans/2026-10-07-v9.0.0-major-release.md` for what v9.0.0 actually ships (the memory trilogy, already-shipped since September, plus every v8.x release since — this milestone had simply never been formally cut).
+**Operator-filed 2026-09-15. Status corrected 2026-10-07**: this entry had sat at "Status: in-progress"/"Status: planned" (below, for BL386/BL387) since 2026-09-16 — stale leftover, never updated after BL385/386/387 all actually shipped (BL385 v8.29.0, BL386 v8.30.0, BL387 v8.31.0–v8.33.0; see the Completed Backlog table above, which already tracked this correctly). The referenced `docs/plans/2026-09-15-v9-memory-lifecycle-major.md` does not exist on disk. The operator's 2026-10-07 instruction to execute the major release is the current authorization; see `docs/plans/historical-plans/2026-10-07-v9.0.0-major-release.md` for what v9.0.0 actually ships (the memory trilogy, already-shipped since September, plus every v8.x release since — this milestone had simply never been formally cut).
 
 **E2E status (2026-09-16, historical)**: Full suite ran: 551 passed, 18 failed, 39 skipped. All 18 failures fixed (T45 sprint TS-680–694). T47 sprint added TS-696–705. Re-verified clean as part of the 2026-10-07 release pass — see the new plan doc for current numbers.
 
@@ -584,23 +627,6 @@ Add Matrix as a communication channel. Matrix is extensive and has multiple inte
 
 **References:** https://spec.matrix.org/latest/ · https://github.com/mautrix/go (`maunium.net/go/mautrix v0.22.0` already in `go.sum`)
 **Status:** Open — design discussion in flight (see design doc); operator answers in §11 of design doc drive the implementation plan.
-
-
-#### BL381 — Per-story LLM config + multi-story concurrent execution with different LLMs (filed 2026-09-13)
-
-Stories currently have no LLM override fields — only Tasks (`backend`/`effort`/`model`) and PRDs do. This means you cannot say "Story 1 uses claude-opus, Story 2 uses llama3 via ollama." You have to set each task individually.
-
-**Scope:**
-- Add `Backend`, `Effort`, `Model` fields to the `Story` struct in `autonomous/models.go`
-- Resolution order: per-task → per-story → per-PRD → global config (task inherits from story when unset; story inherits from PRD when unset)
-- Expose per-story LLM picker in the PWA story editor modal
-- No executor changes needed: BL370's concurrent goroutine pool already fans independent tasks out in parallel; tasks from Story A (claude-opus) and Story B (llama3) will run concurrently once both stories have tasks in the ready state
-
-**Not in scope:** Cross-story `DependsOn` — the existing topo-sort handles cross-story task dependencies already. If Story B's first task lists Story A's last task in its DependsOn, the executor waits correctly.
-
-**Status:** Pending — filed 2026-09-13. Targeting v8.27.0 (next minor after v8.26.0 tag + CI).
-
----
 
 
 #### BL365 — Core security assessment: daemon, code & features (filed 2026-08-28, plan ready)
@@ -1287,7 +1313,7 @@ per-PRD council-profile override field (the Automata-page entry point).
 
 ### Active work (no decision needed — keep iterating)
 
-> **BL316** — Cross-host session federation + CBAC GH#52 (v7.3.0). **S1 shipped 2026-05-18**: capability-based access control (CBAC) package (`internal/federation/`) — 50 individual cap strings, 13 builtin groups, `Resolve()`/`Check()` functions, `GroupStore` with full CRUD + persistence. REST API: `GET/POST/PUT/DELETE /api/federation/peers{/name}`, `POST /api/federation/peers/{name}/test`, `GET/POST/PUT/DELETE /api/federation/groups{/name}`, `GET /api/federation/groups/builtins`. `fedAuthMiddleware` accepts peer tokens alongside admin token. Capability enforcement wired at: REST (sessions list/write/kill/input, MCP call, start session), WebSocket (command/new-session), and via `fedCap()` helper callable from all handlers. Multiserver Entry extended with `Capabilities []string` + `GetByToken()`. New peer defaults to `federation-peer` group. 12 new integration tests pass. **S2 ✅ shipped v8.67.0 (2026-10-07)**: audited before touching — confirmed `RemoteDispatcher.servers` was a frozen `cfg.Servers` snapshot from daemon startup, never refreshed from the live `multiserver.Store`, so cross-host comm-channel `send` and the CLI's `--server` flag couldn't see any peer added after startup (`federation peer add`, PWA panel, `POST /api/servers`) until a restart. Fixed via `RemoteDispatcher.SetStore()` + `effectiveServers()` (reads the live store on every call); CLI `--server` now routes through the local daemon's existing `/api/proxy/<name>/...` passthrough instead of resolving the remote directly from its own stale config snapshot. 7 new tests, full details in `docs/testing-tracker.md`. Plan doc (backfilled 2026-10-07 per the compliance-audit rule check): `docs/plans/2026-10-07-bl316-s2-bl317-federation-dispatch.md`.
+> **BL316** — Cross-host session federation + CBAC GH#52 (v7.3.0). **S1 shipped 2026-05-18**: capability-based access control (CBAC) package (`internal/federation/`) — 50 individual cap strings, 13 builtin groups, `Resolve()`/`Check()` functions, `GroupStore` with full CRUD + persistence. REST API: `GET/POST/PUT/DELETE /api/federation/peers{/name}`, `POST /api/federation/peers/{name}/test`, `GET/POST/PUT/DELETE /api/federation/groups{/name}`, `GET /api/federation/groups/builtins`. `fedAuthMiddleware` accepts peer tokens alongside admin token. Capability enforcement wired at: REST (sessions list/write/kill/input, MCP call, start session), WebSocket (command/new-session), and via `fedCap()` helper callable from all handlers. Multiserver Entry extended with `Capabilities []string` + `GetByToken()`. New peer defaults to `federation-peer` group. 12 new integration tests pass. **S2 ✅ shipped v8.67.0 (2026-10-07)**: audited before touching — confirmed `RemoteDispatcher.servers` was a frozen `cfg.Servers` snapshot from daemon startup, never refreshed from the live `multiserver.Store`, so cross-host comm-channel `send` and the CLI's `--server` flag couldn't see any peer added after startup (`federation peer add`, PWA panel, `POST /api/servers`) until a restart. Fixed via `RemoteDispatcher.SetStore()` + `effectiveServers()` (reads the live store on every call); CLI `--server` now routes through the local daemon's existing `/api/proxy/<name>/...` passthrough instead of resolving the remote directly from its own stale config snapshot. 7 new tests, full details in `docs/testing-tracker.md`. Plan doc (backfilled 2026-10-07 per the compliance-audit rule check): `docs/plans/historical-plans/2026-10-07-bl316-s2-bl317-federation-dispatch.md`.
 
 
 
@@ -2005,6 +2031,7 @@ Per-item plans live in [`2026-04-11-backlog-plans.md`](2026-04-11-backlog-plans.
 | BL380 | CPU/GPU/memory stats card in PRD status view for active sessions | v8.26.0 |
 | BL382 | Automata lifecycle: `cancel_story`/`cancel_task`/`requeue_task` (REST+MCP+PWA+comm), active session resource bars — corrected during the 2026-10-09/10 refactor from a stale "Pending, targeting v8.28.0" status; confirmed shipped via `git log` | v8.27.0 |
 | BL389 | Capacity-aware Automata admission and queueing (3 phases) | v9.0.0 |
+| BL381 | Per-story LLM config (`Story.Backend/Effort/Model`, task → story → PRD → global resolution) — REST/MCP/CLI/comm/fedCap v8.28.0, PWA story-editor picker v8.28.2; concurrent cross-story execution was already provided by BL370. Status-verified and closed during the 2026-10-10 plans refactor (had sat at a stale "Pending" in Open Features) | v8.28.0 / v8.28.2 |
 | BL391 | Multi-provider web search registry + usage tracking + caching (SearXNG + Brave, SQLite result cache) | v8.39.0 |
 | BL315 | PWA window-expand + install prompt — `.pwa-expanded` CSS toggle, `beforeinstallprompt`/`appinstalled` wiring, ⬇ Install header button | v8.66.2 |
 | BL317 | Multi-server PWA — server picker on 5 nav views, real aggregation fan-out, per-row server attribution, Dashboard/Observer fan-out, TS-387–396 re-verified | v8.69.2 |

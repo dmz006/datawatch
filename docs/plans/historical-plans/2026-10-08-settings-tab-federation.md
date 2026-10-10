@@ -8,9 +8,9 @@
 Operator decision: "do all three" (GH#194, Dashboard/Observer denial
 coverage, full Settings-tab federation), this is item 3 — the original
 directive's literal subject. GH#194 shipped as v8.73.10
-(`docs/plans/2026-10-08-gh194-never-say-local.md`); the Dashboard/
+(`docs/plans/historical-plans/2026-10-08-gh194-never-say-local.md`); the Dashboard/
 Observer extension shipped as v8.73.11
-(`docs/plans/2026-10-08-pwa-federated-error-visibility.md`, Phase 4).
+(`docs/plans/historical-plans/2026-10-08-pwa-federated-error-visibility.md`, Phase 4).
 
 Files:
 - `internal/server/web/app.js`
@@ -126,7 +126,7 @@ rather than a name-pattern grep.
 Added to `renderSettingsView()` via `_injectServerPickerBar(view,
 renderSettingsView, { hideAll: true })`, right after the view's
 template renders and before any `load*()` call fires. `hideAll: true`
-matches the Observer precedent (`docs/plans/2026-10-08-pwa-federated-error-visibility.md`
+matches the Observer precedent (`docs/plans/historical-plans/2026-10-08-pwa-federated-error-visibility.md`
 Phase 2 comment) — an aggregated "All servers" view of ~45 independent
 config sections has no coherent meaning the way Dashboard's single
 PRD/cost rollup does.

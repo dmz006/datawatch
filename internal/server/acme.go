@@ -1,5 +1,5 @@
 // BL397 — ACME / Let's Encrypt subsystem REST surface.
-// See docs/plans/2026-10-06-bl397-native-acme-letsencrypt.md.
+// See docs/plans/historical-plans/2026-10-06-bl397-native-acme-letsencrypt.md.
 package server
 
 import (

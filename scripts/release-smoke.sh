@@ -3201,7 +3201,7 @@ H "62. BL397 — native ACME subsystem REST surface"
 # Structural/wiring check only -- the sandbox daemon has no real public
 # hostname or port 80, so a full issue/renew cycle isn't exercised here
 # (that was live-verified separately against a real host + real Let's
-# Encrypt directory; see docs/plans/2026-10-06-bl397-native-acme-letsencrypt.md).
+# Encrypt directory; see docs/plans/historical-plans/2026-10-06-bl397-native-acme-letsencrypt.md).
 # This section just confirms the REST surface is wired and degrades
 # gracefully when acme.enabled is false (the sandbox's default).
 ACME_STATUS=$(curl "${curl_args[@]}" -s "$BASE/api/acme/status" 2>/dev/null || echo "")

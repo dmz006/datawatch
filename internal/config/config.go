@@ -359,7 +359,7 @@ type Config struct {
 	DNSChannel DNSChannelConfig `yaml:"dns_channel"`
 
 	// Acme holds the native ACME / Let's Encrypt subsystem configuration
-	// (BL397). See docs/plans/2026-10-06-bl397-native-acme-letsencrypt.md.
+	// (BL397). See docs/plans/historical-plans/2026-10-06-bl397-native-acme-letsencrypt.md.
 	Acme AcmeConfig `yaml:"acme,omitempty"`
 
 	// Push controls outbound mobile push-endpoint validation (BL394 SSRF fix).
@@ -896,7 +896,7 @@ type DNSChannelConfig struct {
 // AcmeConfig controls the native ACME / Let's Encrypt subsystem (BL397).
 // The daemon itself performs the ACME handshake and renewal — the
 // operator never leaves datawatch for certificate management. See
-// docs/plans/2026-10-06-bl397-native-acme-letsencrypt.md.
+// docs/plans/historical-plans/2026-10-06-bl397-native-acme-letsencrypt.md.
 type AcmeConfig struct {
 	// Enabled is the master switch, mirroring server.tls_enabled's shape.
 	Enabled bool `yaml:"enabled"`

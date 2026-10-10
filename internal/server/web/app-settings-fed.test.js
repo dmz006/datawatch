@@ -20,7 +20,7 @@
 //     that needed NO change (loadComputeNodesPanel, loadLLMsPanel,
 //     loadSecretsPanel) -- confirmed, not just assumed
 //
-// See docs/plans/2026-10-08-settings-tab-federation.md for the full
+// See docs/plans/historical-plans/2026-10-08-settings-tab-federation.md for the full
 // per-function inventory.
 
 const test = require('node:test');

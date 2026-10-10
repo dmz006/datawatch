@@ -2,7 +2,7 @@
 // this (full end-to-end, per operator decision) is tested in
 // internal/memory, internal/server, internal/mcp. This covers
 // addMemoryQuick()'s new tags input and the memory browser's tag-chip
-// display. See docs/plans/2026-10-07-gh192-parity-batch.md.
+// display. See docs/plans/historical-plans/2026-10-07-gh192-parity-batch.md.
 
 const test = require('node:test');
 const assert = require('node:assert/strict');

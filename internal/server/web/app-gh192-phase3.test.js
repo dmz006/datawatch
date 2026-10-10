@@ -1,6 +1,6 @@
 // GH#192 Phase 3 — #7 three-finger swipe opens a real server-picker
 // modal (operator decision 2026-10-07, reversing the prior scroll+
-// highlight approach). See docs/plans/2026-10-07-gh192-parity-batch.md.
+// highlight approach). See docs/plans/historical-plans/2026-10-07-gh192-parity-batch.md.
 
 const test = require('node:test');
 const assert = require('node:assert/strict');

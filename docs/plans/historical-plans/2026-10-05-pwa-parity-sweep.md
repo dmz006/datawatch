@@ -83,7 +83,7 @@
     verification test; not live-verified against Apple's real servers
     (no Apple Developer credentials available in this environment) —
     see `docs/parity-status.md`. All 4 items BL335 originally listed
-    shipped. See `docs/plans/2026-10-06-bl397-native-acme-letsencrypt.md`.
+    shipped. See `docs/plans/historical-plans/2026-10-06-bl397-native-acme-letsencrypt.md`.
   - **GH#172 ✅ closed 2026-10-07.** All 25 D-items shipped, including
     the two that looked blocked above: D65 (three-finger swipe-up —
     pulled the real spec from datawatch-app's

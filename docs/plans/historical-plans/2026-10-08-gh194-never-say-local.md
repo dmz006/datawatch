@@ -160,5 +160,5 @@ Mobile-Parity Rule.
 **Done**, shipped in this commit. Items 2 (Dashboard/Observer denial
 coverage extension) and 3 (full Settings-tab federation) are next per
 the operator's queue — see
-`docs/plans/2026-10-08-pwa-federated-error-visibility.md` for item 2's
+`docs/plans/historical-plans/2026-10-08-pwa-federated-error-visibility.md` for item 2's
 starting point (the two judgment calls flagged there).

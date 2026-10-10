@@ -138,5 +138,5 @@ apply that gets the new cert into the live TLS listener.
   instead.
 
 Full design + the operator-interview decision log + live-test bug
-writeups: [docs/plans/2026-10-06-bl397-native-acme-letsencrypt.md](../plans/2026-10-06-bl397-native-acme-letsencrypt.md).
+writeups: [docs/plans/historical-plans/2026-10-06-bl397-native-acme-letsencrypt.md](../plans/historical-plans/2026-10-06-bl397-native-acme-letsencrypt.md).
 Operator workflow: [docs/howto/letsencrypt-acme.md](../howto/letsencrypt-acme.md).

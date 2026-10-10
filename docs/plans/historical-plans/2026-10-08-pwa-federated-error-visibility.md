@@ -123,7 +123,7 @@ Status: **Done**, shipped this round.
 ## Phase 4 — Dashboard periodic re-polls + Observer's remaining 11 sub-cards (2026-10-08, follow-up)
 
 Operator queued this as item 2, after GH#194 (never say "local" —
-`docs/plans/2026-10-08-gh194-never-say-local.md`) and before the full
+`docs/plans/historical-plans/2026-10-08-gh194-never-say-local.md`) and before the full
 Settings-tab work (item 3). Closes the two gaps Phase 2/3 explicitly
 deferred:
 

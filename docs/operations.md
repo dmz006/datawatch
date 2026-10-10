@@ -1223,7 +1223,7 @@ certificate-source selector (Self-signed | Custom | Let's Encrypt), with
 a validation-method picker when Let's Encrypt is selected.
 
 Full design, the operator-interview decision log, and the real bugs
-found during live verification: `docs/plans/2026-10-06-bl397-native-acme-letsencrypt.md`.
+found during live verification: `docs/plans/historical-plans/2026-10-06-bl397-native-acme-letsencrypt.md`.
 
 ### APNs Push Notifications (BL397 Phase 4 / BL335)
 

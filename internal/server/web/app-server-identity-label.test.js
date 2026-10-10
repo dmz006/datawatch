@@ -10,7 +10,7 @@
 //
 // "local" itself stays the stable routing/comparison key used
 // throughout apiFetch/selectServer/etc. -- this is purely a display
-// layer fix. See docs/plans/2026-10-08-gh194-never-say-local.md.
+// layer fix. See docs/plans/historical-plans/2026-10-08-gh194-never-say-local.md.
 
 const test = require('node:test');
 const assert = require('node:assert/strict');

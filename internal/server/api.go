@@ -326,7 +326,7 @@ type Server struct {
 
 	// acmeManager (BL397) is wired from main.go when acme.enabled is
 	// true. nil when ACME is disabled — every acmeManager consumer must
-	// nil-check. See docs/plans/2026-10-06-bl397-native-acme-letsencrypt.md.
+	// nil-check. See docs/plans/historical-plans/2026-10-06-bl397-native-acme-letsencrypt.md.
 	acmeManager *acme.Manager
 
 	// apnsDispatcher (BL397 Phase 4 / BL335) is wired from main.go when

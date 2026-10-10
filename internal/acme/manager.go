@@ -2,7 +2,7 @@
 // subsystem. The daemon itself performs the ACME handshake and holds the
 // cert lifecycle; the operator never leaves datawatch for certificate
 // management. See
-// docs/plans/2026-10-06-bl397-native-acme-letsencrypt.md for the full
+// docs/plans/historical-plans/2026-10-06-bl397-native-acme-letsencrypt.md for the full
 // design and the operator-interview decision log this package implements.
 //
 // Scope: HTTP-01 (no DNS management needed) and DNS-01 via a zone-scoped

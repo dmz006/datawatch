@@ -73,7 +73,7 @@ Added in v8.73.27/v8.73.28/v8.73.29/v8.73.30/v8.73.31. See `docs/plans/2026-10-0
 
 ## Settings-Tab Federation (item 3 of 3)
 
-Added in v8.73.15. See `docs/plans/2026-10-08-settings-tab-federation.md` for the full per-function inventory.
+Added in v8.73.15. See `docs/plans/historical-plans/2026-10-08-settings-tab-federation.md` for the full per-function inventory.
 
 | Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
 |---|---|---|---|---|
@@ -88,7 +88,7 @@ Added in v8.73.15. See `docs/plans/2026-10-08-settings-tab-federation.md` for th
 
 ## PWA Federated Error Visibility Phase 4 — Dashboard Periodic Re-polls + Observer's Remaining Sub-cards
 
-Added in v8.73.11. See `docs/plans/2026-10-08-pwa-federated-error-visibility.md` (Phase 4).
+Added in v8.73.11. See `docs/plans/historical-plans/2026-10-08-pwa-federated-error-visibility.md` (Phase 4).
 
 | Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
 |---|---|---|---|---|
@@ -101,7 +101,7 @@ Added in v8.73.11. See `docs/plans/2026-10-08-pwa-federated-error-visibility.md`
 
 ## GH#194 — Never Label the Connected Server "local"
 
-Added in v8.73.10. `handleListServers`'s new `hostname` field + client-side `_ensureLocalHostname`/`_localHostname`. See `docs/plans/2026-10-08-gh194-never-say-local.md`.
+Added in v8.73.10. `handleListServers`'s new `hostname` field + client-side `_ensureLocalHostname`/`_localHostname`. See `docs/plans/historical-plans/2026-10-08-gh194-never-say-local.md`.
 
 | Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
 |---|---|---|---|---|
@@ -117,7 +117,7 @@ Added in v8.73.10. `handleListServers`'s new `hostname` field + client-side `_en
 
 ## PWA Federated Error Visibility (401/403/502)
 
-Added in v8.73.8. `_fedFetchError`/`apiFetch` central classifier across Sessions, Alerts, Automata, Dashboard (partial), Observer (partial), server picker reachability. See `docs/plans/2026-10-08-pwa-federated-error-visibility.md`.
+Added in v8.73.8. `_fedFetchError`/`apiFetch` central classifier across Sessions, Alerts, Automata, Dashboard (partial), Observer (partial), server picker reachability. See `docs/plans/historical-plans/2026-10-08-pwa-federated-error-visibility.md`.
 
 | Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
 |---|---|---|---|---|
@@ -617,7 +617,7 @@ Operator: "sent a command after being idle for a few minutes and had to exit the
 ## Native ACME / Let's Encrypt subsystem (BL397) — v8.61.9
 
 Full design + operator-interview decision log:
-`docs/plans/2026-10-06-bl397-native-acme-letsencrypt.md`. The ACME
+`docs/plans/historical-plans/2026-10-06-bl397-native-acme-letsencrypt.md`. The ACME
 protocol handshake itself (account registration, HTTP-01 validation,
 issuance) has no meaningful offline simulation — it was live-verified
 against a real Let's Encrypt directory (both staging and production) on
@@ -920,7 +920,7 @@ pattern (`multiserver.Entry.Redacted()`/`RedactedList()`) one-for-one:
 | Pre-release dependency audit (release-checklist C1) | **Yes** | **Yes** | `go list -m -u all` reviewed; `govulncheck ./...` run fresh: 0 vulnerabilities in our code, 3 in unreachable transitive deps | No upgrade required under the 72h/CVE-exception rule |
 | Pre-release gosec scan (release-checklist C2), matched exactly to CI's invocation (`-severity=high -confidence=medium`) | **Yes** | Partial | Live count drifted from the `.gosec-baseline.json` total (60) across three different `gosec@latest` installs within the same hour (19 / 61 / 63) — root-caused to gosec's own unpinned, rapidly-changing taint-analysis rule coverage, not any code change. Confirmed 0 new findings in any file this release's actual diff touches | Flagging as a real CI fragility (recommend pinning gosec's version in `release.yaml`) — not fixed in this pass since it's a CI-config decision, not mine to make unilaterally |
 | `tests/integration/spawn_docker.sh` / `spawn_k8s.sh` (release-checklist E3, single-host + k8s smoke) — never wired into CI or `run-tests.sh`, apparently never actually passed since the profiles REST API was introduced | **Yes** | **Yes** | Found via `git log -S` that both scripts called the singular `/api/profiles/project(cluster)` against routes that have always been plural (404 on every call); `spawn_docker.sh` separately hardcoded an `image_pair.agent` that the docker driver composes into a non-existent registry tag, with its own `$IMAGE` variable dead code. Fixed both (route pluralization; local image-tag workaround querying the live `/api/info` version, no driver code touched). Both now pass fully end-to-end — real Pod create/delete via `kubectl` for k8s, real `docker run`/terminate for docker | Commit `2073ba0d` |
-| Cross-feature flow / UI smoke / config-channel parity (release-checklist E3 items 3–5) | No | N/A | Confirmed against this release's own `## Parity surface` table (`docs/plans/2026-10-07-v9.0.0-major-release.md`): PWA/Android/iPhone/YAML-config all "No" — no new UI surface or config knob ships in v9.0.0, so these are vacuous passes | No live browser UI walkthrough was performed this pass — flagging honestly rather than implying one was done |
+| Cross-feature flow / UI smoke / config-channel parity (release-checklist E3 items 3–5) | No | N/A | Confirmed against this release's own `## Parity surface` table (`docs/plans/historical-plans/2026-10-07-v9.0.0-major-release.md`): PWA/Android/iPhone/YAML-config all "No" — no new UI surface or config knob ships in v9.0.0, so these are vacuous passes | No live browser UI walkthrough was performed this pass — flagging honestly rather than implying one was done |
 | The 14 E2E skips (final re-run), individually confirmed as pre-existing infrastructure-floor / LLM-timing gaps, not code bugs | No | **Yes** | Slow-LLM PRDs not reaching terminal state within the test window (TS-779, TS-783 — each explicitly logs its own primary assertion passed first), an Ollama vision model unavailable cascading into related vision/council skips, Tailscale/Signal/1Password unconfigured | Same category as the first run's 15 skips; count/composition shifted slightly run-to-run due to live-LLM timing variance, not a regression |
 
 ## Federated server picker — missing picker + no connection status — v8.73.2

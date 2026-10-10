@@ -1,5 +1,5 @@
 // GH#192 Phase 1 — #6 header refresh spinner, #5 terminal-connect splash
-// min/max dwell. See docs/plans/2026-10-07-gh192-parity-batch.md.
+// min/max dwell. See docs/plans/historical-plans/2026-10-07-gh192-parity-batch.md.
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
