@@ -462,6 +462,90 @@ func TestTerminate_RevokesGitToken(t *testing.T) {
 	}
 }
 
+// BL407 Phase 0 (B114) — every Spawn mints a result-report token
+// unconditionally (unlike the secrets token, which only mints when a
+// SecretsStore is wired): every cluster-dispatched agent needs a way
+// to report its outcome.
+func TestSpawn_MintsResultToken(t *testing.T) {
+	m, ps, cs, _ := managerFixture(t)
+	_ = ps.Create(&profile.ProjectProfile{Name: "p", Git: profile.GitSpec{URL: "https://github.com/x/y"}, ImagePair: profile.ImagePair{Agent: "agent-claude"}, Memory: profile.MemorySpec{Mode: profile.MemorySyncBack}})
+	_ = cs.Create(&profile.ClusterProfile{Name: "c", Kind: profile.ClusterDocker, Context: "x"})
+
+	a, err := m.Spawn(context.Background(), SpawnRequest{ProjectProfile: "p", ClusterProfile: "c"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rtok := m.GetResultTokenFor(a.ID)
+	if rtok == "" {
+		t.Fatal("empty result token")
+	}
+	gotID, ok := m.LookupResultToken(rtok)
+	if !ok || gotID != a.ID {
+		t.Errorf("LookupResultToken = (%q, %v), want (%q, true)", gotID, ok, a.ID)
+	}
+}
+
+func TestLookupResultToken_UnknownTokenRejected(t *testing.T) {
+	m, _, _, _ := managerFixture(t)
+	if _, ok := m.LookupResultToken("no-such-token"); ok {
+		t.Error("unknown token must not resolve")
+	}
+}
+
+func TestTerminate_RevokesResultToken(t *testing.T) {
+	m, ps, cs, _ := managerFixture(t)
+	_ = ps.Create(&profile.ProjectProfile{Name: "p", Git: profile.GitSpec{URL: "https://github.com/x/y"}, ImagePair: profile.ImagePair{Agent: "agent-claude"}, Memory: profile.MemorySpec{Mode: profile.MemorySyncBack}})
+	_ = cs.Create(&profile.ClusterProfile{Name: "c", Kind: profile.ClusterDocker, Context: "x"})
+
+	a, err := m.Spawn(context.Background(), SpawnRequest{ProjectProfile: "p", ClusterProfile: "c"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rtok := m.GetResultTokenFor(a.ID)
+	if err := m.Terminate(context.Background(), a.ID); err != nil {
+		t.Fatalf("Terminate: %v", err)
+	}
+	if _, ok := m.LookupResultToken(rtok); ok {
+		t.Error("result token must be revoked after Terminate")
+	}
+	if m.GetResultTokenFor(a.ID) != "" {
+		t.Error("GetResultTokenFor must return empty after Terminate")
+	}
+}
+
+// BL407 Phase 0 (B114) — Backend/Effort/Model/PermissionMode on the
+// spawn request must land on the Agent record so the bootstrap
+// response (internal/server) can re-surface them to the worker.
+func TestSpawn_CopiesTaskSettingsOntoAgent(t *testing.T) {
+	m, ps, cs, _ := managerFixture(t)
+	_ = ps.Create(&profile.ProjectProfile{Name: "p", Git: profile.GitSpec{URL: "https://github.com/x/y"}, ImagePair: profile.ImagePair{Agent: "agent-claude"}, Memory: profile.MemorySpec{Mode: profile.MemorySyncBack}})
+	_ = cs.Create(&profile.ClusterProfile{Name: "c", Kind: profile.ClusterDocker, Context: "x"})
+
+	a, err := m.Spawn(context.Background(), SpawnRequest{
+		ProjectProfile: "p", ClusterProfile: "c",
+		Backend: "claude-code", Effort: "quick", Model: "haiku", PermissionMode: "plan",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.Backend != "claude-code" || a.Effort != "quick" || a.Model != "haiku" || a.PermissionMode != "plan" {
+		t.Errorf("task settings not copied onto Agent: %+v", a)
+	}
+}
+
+func TestVirtualSessionFullID_Deterministic(t *testing.T) {
+	got := VirtualSessionFullID("host1", "agent-abc")
+	want := "host1-agent-agent-abc"
+	if got != want {
+		t.Errorf("VirtualSessionFullID = %q, want %q", got, want)
+	}
+	// Same inputs must always produce the same output -- the
+	// result-report handler relies on recomputing this, not an index.
+	if got2 := VirtualSessionFullID("host1", "agent-abc"); got2 != got {
+		t.Errorf("VirtualSessionFullID not deterministic: %q vs %q", got, got2)
+	}
+}
+
 // GetProjectFor returns the resolved project profile so the server's
 // bootstrap handler can populate the Git bundle without exposing
 // the private profile pointer.
@@ -497,8 +581,8 @@ func TestGetProjectFor(t *testing.T) {
 func TestSpawn_WorkspaceLock_RejectsDuplicate(t *testing.T) {
 	m, ps, cs, _ := managerFixture(t)
 	_ = ps.Create(&profile.ProjectProfile{
-		Name: "p",
-		Git:  profile.GitSpec{URL: "https://github.com/x/y", Branch: "main"},
+		Name:      "p",
+		Git:       profile.GitSpec{URL: "https://github.com/x/y", Branch: "main"},
 		ImagePair: profile.ImagePair{Agent: "agent-claude"},
 		Memory:    profile.MemorySpec{Mode: profile.MemorySyncBack},
 	})
@@ -520,8 +604,8 @@ func TestSpawn_WorkspaceLock_RejectsDuplicate(t *testing.T) {
 func TestSpawn_WorkspaceLock_DifferentBranchesOK(t *testing.T) {
 	m, ps, cs, _ := managerFixture(t)
 	_ = ps.Create(&profile.ProjectProfile{
-		Name: "p",
-		Git:  profile.GitSpec{URL: "https://github.com/x/y", Branch: "main"},
+		Name:      "p",
+		Git:       profile.GitSpec{URL: "https://github.com/x/y", Branch: "main"},
 		ImagePair: profile.ImagePair{Agent: "agent-claude"},
 		Memory:    profile.MemorySpec{Mode: profile.MemorySyncBack},
 	})
@@ -539,8 +623,8 @@ func TestSpawn_WorkspaceLock_DifferentBranchesOK(t *testing.T) {
 func TestSpawn_WorkspaceLock_FreedAfterTerminate(t *testing.T) {
 	m, ps, cs, _ := managerFixture(t)
 	_ = ps.Create(&profile.ProjectProfile{
-		Name: "p",
-		Git:  profile.GitSpec{URL: "https://github.com/x/y", Branch: "main"},
+		Name:      "p",
+		Git:       profile.GitSpec{URL: "https://github.com/x/y", Branch: "main"},
 		ImagePair: profile.ImagePair{Agent: "agent-claude"},
 		Memory:    profile.MemorySpec{Mode: profile.MemorySyncBack},
 	})
@@ -564,8 +648,8 @@ func TestSpawn_WorkspaceLock_FreedAfterTerminate(t *testing.T) {
 func TestSpawn_RecursionGate_RejectsWhenNotAllowed(t *testing.T) {
 	m, ps, cs, _ := managerFixture(t)
 	_ = ps.Create(&profile.ProjectProfile{
-		Name: "p",
-		Git:  profile.GitSpec{URL: "https://github.com/x/y"},
+		Name:      "p",
+		Git:       profile.GitSpec{URL: "https://github.com/x/y"},
 		ImagePair: profile.ImagePair{Agent: "agent-claude"},
 		Memory:    profile.MemorySpec{Mode: profile.MemorySyncBack},
 		// AllowSpawnChildren defaults to false
@@ -592,10 +676,10 @@ func TestSpawn_RecursionGate_RejectsWhenNotAllowed(t *testing.T) {
 func TestSpawn_RecursionGate_TotalCap(t *testing.T) {
 	m, ps, cs, _ := managerFixture(t)
 	_ = ps.Create(&profile.ProjectProfile{
-		Name: "p",
-		Git:  profile.GitSpec{URL: "https://github.com/x/y"},
-		ImagePair: profile.ImagePair{Agent: "agent-claude"},
-		Memory:    profile.MemorySpec{Mode: profile.MemorySyncBack},
+		Name:               "p",
+		Git:                profile.GitSpec{URL: "https://github.com/x/y"},
+		ImagePair:          profile.ImagePair{Agent: "agent-claude"},
+		Memory:             profile.MemorySpec{Mode: profile.MemorySyncBack},
 		AllowSpawnChildren: true,
 		SpawnBudgetTotal:   2,
 	})
@@ -632,10 +716,10 @@ func TestSpawn_RecursionGate_TotalCap(t *testing.T) {
 func TestSpawn_RecursionGate_PerMinuteCap(t *testing.T) {
 	m, ps, cs, _ := managerFixture(t)
 	_ = ps.Create(&profile.ProjectProfile{
-		Name: "p",
-		Git:  profile.GitSpec{URL: "https://github.com/x/y"},
-		ImagePair: profile.ImagePair{Agent: "agent-claude"},
-		Memory:    profile.MemorySpec{Mode: profile.MemorySyncBack},
+		Name:                 "p",
+		Git:                  profile.GitSpec{URL: "https://github.com/x/y"},
+		ImagePair:            profile.ImagePair{Agent: "agent-claude"},
+		Memory:               profile.MemorySpec{Mode: profile.MemorySyncBack},
 		AllowSpawnChildren:   true,
 		SpawnBudgetPerMinute: 1,
 	})
@@ -667,11 +751,11 @@ func TestSpawn_RecursionGate_PerMinuteCap(t *testing.T) {
 func TestSpawn_RecursionGate_TopLevelExempt(t *testing.T) {
 	m, ps, cs, _ := managerFixture(t)
 	_ = ps.Create(&profile.ProjectProfile{
-		Name: "p",
-		Git:  profile.GitSpec{URL: "https://github.com/x/y"},
-		ImagePair: profile.ImagePair{Agent: "agent-claude"},
-		Memory:    profile.MemorySpec{Mode: profile.MemorySyncBack},
-		AllowSpawnChildren:   false, // would block recursive spawns
+		Name:               "p",
+		Git:                profile.GitSpec{URL: "https://github.com/x/y"},
+		ImagePair:          profile.ImagePair{Agent: "agent-claude"},
+		Memory:             profile.MemorySpec{Mode: profile.MemorySyncBack},
+		AllowSpawnChildren: false, // would block recursive spawns
 	})
 	_ = cs.Create(&profile.ClusterProfile{Name: "c", Kind: profile.ClusterDocker, Context: "x"})
 

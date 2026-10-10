@@ -113,7 +113,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "9.0.17"
+var Version = "9.0.18"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -605,6 +605,70 @@ func (a brokerAdapter) RevokeForWorker(ctx context.Context, workerID string) err
 	return a.b.RevokeForWorker(ctx, workerID)
 }
 
+// runWorkerBootstrapTask (BL407 Phase 0 / B114) runs a cluster-dispatched
+// worker's task as a local one-shot session (the worker is a full
+// datawatch daemon, same as the parent — this just points mgr.Start at
+// the freshly-cloned repo instead of some other directory) and reports
+// the outcome back to the parent via ReportResult. Runs in its own
+// goroutine; errors are logged, never fatal to the worker daemon.
+//
+// Known limitation, accepted for this phase: the parent's own
+// autonomousVerify wait loop (cmd/datawatch/main.go) applies real
+// stall detection (stale-log mtime, SSE-stall patterns,
+// waiting_input debounce) to a session it owns directly — none of
+// that reaches a virtual/agent session, since those signals all key
+// off fields (LogFile, TmuxSession) a virtual session never has. A
+// worker task that genuinely hangs (as opposed to crashing or
+// finishing) is only caught by the existing idle-timeout reaper on
+// the parent's agent manager, not by this loop. Replicating the full
+// stall-detection sophistication inside the worker is out of scope
+// here — B114 was "cluster dispatch never resolves at all, even on
+// success," not "cluster dispatch has the same stall-detection the
+// local path has."
+func runWorkerBootstrapTask(mgr *session.Manager, env agentspkg.BootstrapEnv, boot *agentspkg.BootstrapResponse, projectDir string) {
+	opts := &session.StartOptions{
+		Backend:        boot.Backend,
+		Effort:         boot.Effort,
+		Model:          boot.Model,
+		PermissionMode: boot.PermissionMode,
+		OneShot:        true,
+	}
+	result := &agentspkg.AgentResult{Status: "ok"}
+	sess, err := mgr.Start(context.Background(), boot.Task, "", projectDir, opts)
+	if err != nil {
+		result.Status = "fail"
+		result.Summary = "start task session: " + err.Error()
+	} else {
+		tick := time.NewTicker(3 * time.Second)
+		for range tick.C {
+			s, ok := mgr.GetSession(sess.FullID)
+			if !ok {
+				result.Status = "fail"
+				result.Summary = "task session disappeared before completion"
+				break
+			}
+			if s.State == session.StateComplete {
+				result.Summary = s.LastSummaryLong
+				break
+			}
+			if s.State == session.StateFailed || s.State == session.StateKilled {
+				result.Status = "fail"
+				result.Summary = s.LastSummaryLong
+				if result.Summary == "" {
+					result.Summary = "task session ended: " + string(s.State)
+				}
+				break
+			}
+		}
+		tick.Stop()
+	}
+	reportCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	if rerr := agentspkg.ReportResult(reportCtx, env, boot.ResultToken, result); rerr != nil {
+		fmt.Fprintf(os.Stderr, "[worker] report result: %v\n", rerr)
+	}
+}
+
 func runStart(cmd *cobra.Command, _ []string) error {
 	fg, _ := cmd.Flags().GetBool("foreground")
 	if !fg {
@@ -645,6 +709,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	// — the parent is the sole source of truth.
 	bootEnv := agentspkg.LoadBootstrapEnv()
 	var workerBootstrap *agentspkg.BootstrapResponse
+	var workerCloneDir string
 	if bootEnv.IsWorker() {
 		// Operator-tunable deadline (parent injects via spawn env).
 		// Falls back to 60s when unset/invalid.
@@ -696,6 +761,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		if path != "" {
 			fmt.Fprintf(os.Stderr, "[worker] cloned %s → %s\n", resp.Git.URL, path)
 		}
+		workerCloneDir = path
 	}
 
 	// PID lock: the daemonize path checks for a running instance before spawning us.
@@ -920,6 +986,22 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	}
 	if cfg.Session.MaxSessions > 0 {
 		mgr.SetMaxSessions(cfg.Session.MaxSessions)
+	}
+
+	// BL407 Phase 0 (B114) — now that the session manager exists, a
+	// worker with a task to run (its bootstrap response carried one)
+	// starts it as a local one-shot session and reports the outcome
+	// back to the parent. Runs in the background so the rest of this
+	// daemon's own startup (HTTP server, etc.) isn't blocked on it —
+	// the worker is a full datawatch daemon in its own right, this is
+	// just its one job. Previously: the task was only ever visible to
+	// the worker via the DATAWATCH_TASK env var, never actually run.
+	if bootEnv.IsWorker() && workerBootstrap != nil && workerBootstrap.Task != "" {
+		if workerCloneDir == "" {
+			fmt.Fprintln(os.Stderr, "[worker] bootstrap carried a task but no git clone — nothing to run it against, skipping")
+		} else {
+			go runWorkerBootstrapTask(mgr, bootEnv, workerBootstrap, workerCloneDir)
+		}
 	}
 
 	// F10 S5.4 — post-session PR hook holder. Assigned later when the
@@ -4453,6 +4535,14 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					"project_profile": req.ProjectProfile,
 					"cluster_profile": req.ClusterProfile,
 					"task":            spec,
+					// BL407 Phase 0 (B114) — threaded through to the
+					// worker's bootstrap response so the container runs
+					// the task with the same settings the local-session
+					// path below already sends.
+					"backend":         req.Backend,
+					"effort":          mapEffortToSession(req.Effort),
+					"permission_mode": req.PermissionMode,
+					"model":           req.Model,
 				})
 				agentReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
 					loopbackBaseURL(cfg)+"/api/agents",
@@ -4477,6 +4567,41 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					ID string `json:"id"`
 				}
 				_ = json.Unmarshal(rb, &out)
+				if out.ID == "" {
+					return autonomouspkg.SpawnResult{}, fmt.Errorf("agent spawn: empty agent id in response")
+				}
+				// BL407 Phase 0 (B114) — register a virtual session so
+				// the executor's verify loop (which only knows how to
+				// watch session.State) can observe completion instead
+				// of waiting on a session ID that's never registered.
+				// handleAgentReport (internal/server/agent_api.go)
+				// flips this to a terminal state once the worker
+				// reports back. Mirrors the council-virtual pattern
+				// used elsewhere in this file.
+				if mgr != nil {
+					fullID := agentspkg.VirtualSessionFullID(cfg.Hostname, out.ID)
+					vsess := &session.Session{
+						ID:            out.ID[:min(8, len(out.ID))],
+						FullID:        fullID,
+						Name:          "autonomous:" + req.Title,
+						Task:          spec,
+						State:         session.StateRunning,
+						CreatedAt:     time.Now().UTC(),
+						UpdatedAt:     time.Now().UTC(),
+						Hostname:      cfg.Hostname,
+						BackendFamily: "agent-virtual",
+						AgentID:       out.ID,
+						OutputMode:    "log",
+						InputMode:     "none",
+						PRDID:         req.PRDID,
+						TaskID:        req.TaskID,
+						StoryID:       req.StoryID,
+					}
+					if err := mgr.SaveSession(vsess); err != nil {
+						return autonomouspkg.SpawnResult{}, fmt.Errorf("register virtual session for agent %s: %w", out.ID, err)
+					}
+					return autonomouspkg.SpawnResult{SessionID: fullID}, nil
+				}
 				return autonomouspkg.SpawnResult{SessionID: "agent:" + out.ID}, nil
 			}
 			// local session path

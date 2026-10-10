@@ -2,7 +2,7 @@
 
 - **Date**: 2026-10-10
 - **Version at planning**: v9.0.17
-- **Status**: Planned — not started
+- **Status**: In progress — Phase 0 done (v9.0.18, fixes B114), Phase 1 next
 
 ## Context
 
@@ -180,26 +180,57 @@ problem is bigger than "add git wiring":
 ## Phases
 
 ### Phase 0 — Make `PRD.ClusterProfile` dispatch actually work (no git yet)
-**Status: Not started.** Blocking prerequisite for Phases 3-4;
-independently a real correctness fix regardless of this plan.
-- [ ] Replace the synthetic `SpawnResult{SessionID: "agent:"+out.ID}`
-  (`cmd/datawatch/main.go:4480`) with a real, pollable completion
-  signal — either register a lightweight `session.Session` for the
-  agent dispatch (so the existing verify-loop's `GetSession` works
-  unchanged) or change the verify loop to poll `/api/agents/{id}`
-  directly when the task was cluster-dispatched. Prefer the session-
-  registration route: it keeps the verify loop's existing code path
-  single, and gives `PostSessionPRHook`'s `AgentID` gate something real
-  to fire against later if ever needed.
-- [ ] Wire actual task execution inside the container: extend whatever
-  `docker_driver.go`'s Sprint-6+ TODO was waiting on so the worker
-  process, once booted and cloned (`CloneOnBootstrap`), actually runs
-  the task content it receives (today only visible via env, never
-  invoked) and reports completion via the existing
-  `POST /api/agents/{id}/result`.
-- [ ] Regression test: a real (test-doubled docker driver) cluster-
-  dispatched PRD task reaches `completed`, not an infinite poll.
-- [ ] **Phase Completion Checklist** (AGENT.md Planning Rules §5).
+**Status: Done (v9.0.18, shipped 2026-10-10).**
+- [x] Replaced the synthetic `SpawnResult{SessionID: "agent:"+out.ID}`
+  with a real virtual `session.Session`, registered by
+  `autonomousSpawn`'s cluster branch via `mgr.SaveSession` and a new
+  `agents.VirtualSessionFullID(hostname, agentID)` helper (deterministic
+  so the result-report handler can recompute it without a reverse
+  index) — mirrors the existing council-virtual-session pattern
+  (`cmd/datawatch/main.go`'s `councilOrch.SessionFn`). Chose the
+  session-registration route over polling `/api/agents/{id}` directly,
+  as planned: the verify loop's existing `GetSession`/`Kill` code path
+  needed zero changes (`Kill` already guards the no-tmux case for
+  virtual sessions).
+- [x] Wired actual task execution inside the container — but this
+  needed one more piece than the plan anticipated: `/api/agents/{id}/
+  result` (the "existing" completion-report endpoint) turned out to be
+  registered on the authenticated API router with no credential a
+  worker actually holds (its bootstrap token is single-use, already
+  burned). New `agents.Manager` mints a per-agent **result-report
+  token** at `Spawn` (same pattern as the existing secrets token);
+  new pre-auth `POST /api/agents/report` (registered alongside
+  bootstrap/secrets on `mux`, not `apiMux`) authenticates with it
+  instead. `Backend`/`Effort`/`Model`/`PermissionMode` added to
+  `SpawnRequest`/`Agent`/`BootstrapResponse` so the worker knows what
+  to run `Task` with (previously dropped entirely on the cluster
+  path). The worker — a full datawatch daemon itself — now starts
+  `Task` as a local one-shot session (`mgr.Start`, `OneShot: true`)
+  once its own daemon finishes booting after the clone, waits for a
+  terminal state, and calls the new `agents.ReportResult` (mirrors
+  `CallBootstrap`'s TLS-pinning shape). On receipt,
+  `handleAgentReport` flips the virtual session directly — no polling
+  bridge was needed in the end, since the report is itself the event.
+- [x] Regression tests: 11 new (`internal/agents/spawn_test.go`:
+  token mint/lookup/revoke-on-Terminate, task-settings copied onto
+  `Agent`, `VirtualSessionFullID` determinism; new
+  `internal/server/agent_result_report_test.go`: success/failure
+  report flips the virtual session to the right terminal state, wrong/
+  missing token rejected, bootstrap response carries the result token
+  + task settings).
+- [x] **Phase Completion Checklist**: full `go test ./...` green (0
+  failures), `go vet ./...` clean, `gosec -severity high -confidence
+  medium` shows zero new findings on any touched file, `gofmt` clean.
+  No new operator-facing REST/MCP/CLI/comm/PWA surface — the new route
+  and token are worker↔parent plumbing only — so no Mobile-Parity
+  issue needed. CHANGELOG + `docs/testing-tracker.md` + this plan +
+  `docs/plans/README.md`'s B114 entry updated; version bumped to
+  v9.0.18. **Known, accepted limitation** (documented in code and
+  CHANGELOG, not silently dropped): a worker task that genuinely hangs
+  isn't caught by the parent's existing stall-detection (keyed off
+  fields a virtual session doesn't have) — the existing agent
+  idle-timeout reaper is the backstop. Out of scope for "make it
+  resolve at all."
 
 ### Phase 1 — `PRD.Git` config + local worktree isolation
 **Status: Not started.**

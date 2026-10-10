@@ -100,6 +100,14 @@ type Agent struct {
 	// when not overridden at spawn time.
 	Branch          string          `json:"branch,omitempty"`
 
+	// BL407 Phase 0 (B114) — see SpawnRequest's fields of the same
+	// name; copied from the request at Spawn time, re-surfaced to the
+	// worker via the bootstrap response.
+	Backend        string `json:"backend,omitempty"`
+	Effort         string `json:"effort,omitempty"`
+	Model          string `json:"model,omitempty"`
+	PermissionMode string `json:"permission_mode,omitempty"`
+
 	// ParentAgentID is set when this agent was spawned recursively by
 	// another worker (F10 S7.4). Empty for top-level operator spawns.
 	ParentAgentID   string          `json:"parent_agent_id,omitempty"`
@@ -164,6 +172,17 @@ type SpawnRequest struct {
 	// S7.3 — workspace lock rejects a second spawn on the same
 	// (project_profile, branch) tuple. Empty = profile's default branch.
 	Branch string `json:"branch,omitempty"`
+
+	// BL407 Phase 0 (B114) — threaded through to the worker's
+	// bootstrap response so it knows which backend/effort/model/
+	// permission-mode to run Task with. Mirrors the same fields
+	// autonomous.SpawnRequest already sends down the local-session
+	// path; empty values fall back to the worker's own daemon
+	// defaults, same as an unset local session.
+	Backend        string `json:"backend,omitempty"`
+	Effort         string `json:"effort,omitempty"`
+	Model          string `json:"model,omitempty"`
+	PermissionMode string `json:"permission_mode,omitempty"`
 }
 
 // Driver plugs container-platform-specific behaviour into the Manager.
@@ -311,6 +330,16 @@ type Manager struct {
 	// are always initialised so nil-map panics can't occur.
 	secretsTokens     map[string]agentSecretsEntry
 	secretsTokenIndex map[string]string
+
+	// BL407 Phase 0 (B114) — per-agent result-report tokens. A worker
+	// has no reusable credential for POST /api/agents/report (its
+	// only token, the bootstrap token, is single-use and already
+	// burned by ConsumeBootstrap) — this mints a second, longer-lived
+	// one scoped to that single callback, same pattern as
+	// secretsTokens above. resultTokens: token → agentID.
+	// resultTokenIndex: agentID → token (for revocation in Terminate).
+	resultTokens      map[string]string
+	resultTokenIndex  map[string]string
 }
 
 // ObserverPeerRegistry is the narrow surface Manager needs from
@@ -349,6 +378,8 @@ func NewManager(projects *profile.ProjectStore, clusters *profile.ClusterStore) 
 		observerPeerTokens: map[string]string{},
 		secretsTokens:      map[string]agentSecretsEntry{},
 		secretsTokenIndex:  map[string]string{},
+		resultTokens:       map[string]string{},
+		resultTokenIndex:   map[string]string{},
 	}
 }
 
@@ -489,6 +520,10 @@ func (m *Manager) Spawn(ctx context.Context, req SpawnRequest) (*Agent, error) {
 		BootstrapToken: newBootstrapToken(),
 		Branch:         branch,
 		ParentAgentID:  req.ParentAgentID,
+		Backend:        req.Backend,
+		Effort:         req.Effort,
+		Model:          req.Model,
+		PermissionMode: req.PermissionMode,
 		project:        proj,
 		cluster:        cluster,
 	}
@@ -580,6 +615,16 @@ func (m *Manager) Spawn(ctx context.Context, req SpawnRequest) (*Agent, error) {
 		m.secretsTokenIndex[a.ID] = stok
 		m.mu.Unlock()
 	}
+
+	// BL407 Phase 0 (B114) — mint the result-report token unconditionally
+	// (unlike the secrets token above, every cluster-dispatched agent
+	// needs a way to report its outcome, not just ones with a secrets
+	// store wired).
+	rtok := newBootstrapToken()
+	m.mu.Lock()
+	m.resultTokens[rtok] = a.ID
+	m.resultTokenIndex[a.ID] = rtok
+	m.mu.Unlock()
 
 	// S13 — mint an observer-peer token BEFORE the driver spawn so
 	// the bootstrap response can hand it to the worker on first call.
@@ -724,6 +769,11 @@ func (m *Manager) Terminate(ctx context.Context, id string) error {
 	if stok, ok := m.secretsTokenIndex[a.ID]; ok {
 		delete(m.secretsTokens, stok)
 		delete(m.secretsTokenIndex, a.ID)
+	}
+	// BL407 Phase 0 (B114) — revoke the result-report token too.
+	if rtok, ok := m.resultTokenIndex[a.ID]; ok {
+		delete(m.resultTokens, rtok)
+		delete(m.resultTokenIndex, a.ID)
 	}
 	m.mu.Unlock()
 
@@ -1128,6 +1178,36 @@ func (m *Manager) LookupSecretsToken(token string) (profileName string, ok bool)
 		return "", false
 	}
 	return e.profileName, true
+}
+
+// GetResultTokenFor returns the per-agent result-report token minted
+// at Spawn (BL407 Phase 0 / B114) for inclusion in the bootstrap
+// response. Empty if the agent is unknown.
+func (m *Manager) GetResultTokenFor(agentID string) string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.resultTokenIndex[agentID]
+}
+
+// LookupResultToken validates a result-report bearer token and
+// returns the agent ID it's scoped to (BL407 Phase 0 / B114). Returns
+// ("", false) for unknown / revoked tokens.
+func (m *Manager) LookupResultToken(token string) (agentID string, ok bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	agentID, ok = m.resultTokens[token]
+	return agentID, ok
+}
+
+// VirtualSessionFullID derives the deterministic session.Session
+// FullID used to track a cluster-dispatched agent's completion on the
+// parent (BL407 Phase 0 / B114). Both the spawn path (autonomous
+// dispatch, cmd/datawatch/main.go) and the result-report handler
+// (internal/server) must agree on this exact format — it's how the
+// handler finds the right virtual session to flip to a terminal state
+// without a reverse index.
+func VirtualSessionFullID(hostname, agentID string) string {
+	return hostname + "-agent-" + agentID
 }
 
 // cloneAgent returns a deep-ish copy so callers can't mutate the

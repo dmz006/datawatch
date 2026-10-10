@@ -22,6 +22,7 @@ import (
 
 	"github.com/dmz006/datawatch/internal/agents"
 	"github.com/dmz006/datawatch/internal/federation"
+	"github.com/dmz006/datawatch/internal/session"
 )
 
 // SetAgentManager wires the agent manager for the /api/agents routes.
@@ -209,6 +210,64 @@ func (s *Server) agentRecordResult(w http.ResponseWriter, r *http.Request, id st
 	w.WriteHeader(http.StatusAccepted)
 }
 
+// handleAgentReport serves POST /api/agents/report (BL407 Phase 0 /
+// B114). Registered pre-auth, like bootstrap/secrets — a worker's
+// only credential for this call is its per-agent ResultToken (minted
+// at Spawn, delivered once in the bootstrap response); it never had
+// (and must never need) an operator API token to report its own
+// task's outcome. The token itself identifies the agent, so unlike
+// agentRecordResult there's no {id} in the path or body.
+//
+// On success, also flips the virtual session autonomousSpawn's
+// cluster-dispatch branch registered (session.VirtualSessionFullID)
+// to a terminal state — this is the other half of B114's fix: the
+// executor's existing verify loop only knows how to watch
+// session.State, so without this it would keep polling a session
+// that correctly exists now but never changes state.
+func (s *Server) handleAgentReport(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.agentMgr == nil {
+		http.Error(w, "agent manager not available", http.StatusServiceUnavailable)
+		return
+	}
+	tok := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if tok == "" {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	agentID, ok := s.agentMgr.LookupResultToken(tok)
+	if !ok {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	var body agents.AgentResult
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, fmt.Sprintf("invalid body: %v", err), http.StatusBadRequest)
+		return
+	}
+	if err := s.agentMgr.RecordResult(agentID, &body); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if s.manager != nil {
+		fullID := agents.VirtualSessionFullID(s.hostname, agentID)
+		newState := session.StateComplete
+		if body.Status == "fail" {
+			newState = session.StateFailed
+		}
+		if err := s.manager.SetState(fullID, newState); err == nil {
+			if sess, ok := s.manager.GetSession(fullID); ok && body.Summary != "" {
+				sess.LastSummaryLong = body.Summary
+				_ = s.manager.SaveSession(sess)
+			}
+		}
+	}
+	w.WriteHeader(http.StatusAccepted)
+}
+
 // ── Bootstrap ──────────────────────────────────────────────────────────
 
 // BootstrapRequest is what a worker POSTs on startup. Keys kept in
@@ -247,6 +306,17 @@ type BootstrapResponse struct {
 	// Empty when the parent has no secrets store.
 	SecretsToken string `json:"secrets_token,omitempty"`
 	SecretsURL   string `json:"secrets_url,omitempty"`
+
+	// BL407 Phase 0 (B114) — ResultToken authenticates the worker's
+	// one POST /api/agents/report call on task completion (the
+	// bootstrap token above is single-use, already burned by this
+	// point). Backend/Effort/Model/PermissionMode tell the worker what
+	// to run Task with.
+	ResultToken    string `json:"result_token,omitempty"`
+	Backend        string `json:"backend,omitempty"`
+	Effort         string `json:"effort,omitempty"`
+	Model          string `json:"model,omitempty"`
+	PermissionMode string `json:"permission_mode,omitempty"`
 }
 
 // BootstrapGit is the git-clone bundle delivered to the worker on
@@ -350,6 +420,12 @@ func (s *Server) handleAgentBootstrap(w http.ResponseWriter, r *http.Request) {
 		ProjectProfile: agent.ProjectProfile,
 		ClusterProfile: agent.ClusterProfile,
 		Task:           agent.Task,
+		// BL407 Phase 0 (B114) — see Agent's fields of the same name.
+		Backend:        agent.Backend,
+		Effort:         agent.Effort,
+		Model:          agent.Model,
+		PermissionMode: agent.PermissionMode,
+		ResultToken:    s.agentMgr.GetResultTokenFor(agent.ID),
 		Env: map[string]string{
 			"DATAWATCH_AGENT_ID": agent.ID,
 		},

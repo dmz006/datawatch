@@ -5,6 +5,43 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.18 — fix(autonomous): BL407 Phase 0 — PRD.ClusterProfile dispatch never resolves (B114)
+
+### Fixed
+- **B114.** A PRD task dispatched via `ClusterProfile` (the F10 agent/
+  container path) returned a synthetic `SessionID: "agent:"+id` never
+  registered in `session.Manager` — the executor's verify loop polled
+  `mgr.GetSession` for an ID that could never resolve and spun until
+  context cancellation, on success or failure alike. Separately,
+  `docker_driver.go` never actually invoked the task inside the
+  container at all (`DATAWATCH_TASK` was injected as an env var but
+  nothing read it), and `PostSessionPRHook`'s completion-reporting
+  design had never been exercised against a real container spawn in
+  production.
+- Fixed end-to-end: `autonomousSpawn`'s cluster branch now threads
+  `Backend`/`Effort`/`Model`/`PermissionMode` through to the worker and
+  registers a real "virtual" `session.Session` (mirroring the existing
+  council-virtual-session pattern) so the verify loop has something
+  real to watch. The worker — a full datawatch daemon in its own
+  right — now actually starts the task as a local one-shot session
+  once it's cloned its repo and finished booting, waits for it to
+  reach a terminal state, and reports the outcome back to the parent.
+- New `POST /api/agents/report`, pre-auth like `/api/agents/bootstrap`
+  and `/api/agents/secrets/{name}`: a worker's only prior credential
+  (the bootstrap token) is single-use and already burned by this
+  point, so `agents.Manager.Spawn` now also mints a per-agent
+  result-report token, delivered once in the bootstrap response. On
+  report, the handler flips the matching virtual session to
+  `complete`/`failed` directly — no polling bridge needed.
+- Known, accepted limitation: a worker task that genuinely hangs
+  (rather than crashing or finishing) isn't caught by the parent's
+  existing stall-detection (stale-log mtime, SSE-stall patterns — all
+  keyed off fields a virtual session doesn't have); the existing
+  agent idle-timeout reaper is the backstop. Replicating full
+  stall-detection inside the worker is out of scope for this fix —
+  B114 was "cluster dispatch never resolves at all," not parity with
+  the local path's stall detection.
+
 ## v9.0.17 — feat(autonomous): BL406 Phase 5 — real GuidedMode (B111) + scope-drift rule (B112)
 
 ### Added

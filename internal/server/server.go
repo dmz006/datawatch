@@ -209,6 +209,11 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	// BL242 Phase 5c — agent runtime secret access. Pre-auth: auth is
 	// the per-agent SecretsToken delivered in the bootstrap response.
 	mux.HandleFunc("/api/agents/secrets/", api.handleAgentSecretsGet)
+	// BL407 Phase 0 (B114) — same pre-auth shape as the two routes
+	// above: auth is the per-agent ResultToken delivered in the
+	// bootstrap response, not an operator API token the worker was
+	// never given.
+	mux.HandleFunc("/api/agents/report", api.handleAgentReport)
 	mux.HandleFunc("/api/external/secrets/", api.handleExternalSecretsGet) // GH#203
 	mux.Handle("/metrics", metrics.Handler())
 

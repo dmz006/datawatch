@@ -85,6 +85,19 @@ type BootstrapResponse struct {
 	// ApplyBootstrapEnv. Empty when the parent has no secrets store.
 	SecretsToken string `json:"secrets_token,omitempty"`
 	SecretsURL   string `json:"secrets_url,omitempty"`
+
+	// BL407 Phase 0 (B114) — ResultToken authenticates the worker's
+	// one POST /api/agents/report call when its task finishes
+	// (the bootstrap token above is single-use and already burned by
+	// the time this response is read). Backend/Effort/Model/
+	// PermissionMode tell the worker what to run Task with — mirrors
+	// autonomous.SpawnRequest's fields of the same name on the local-
+	// session dispatch path.
+	ResultToken    string `json:"result_token,omitempty"`
+	Backend        string `json:"backend,omitempty"`
+	Effort         string `json:"effort,omitempty"`
+	Model          string `json:"model,omitempty"`
+	PermissionMode string `json:"permission_mode,omitempty"`
 }
 
 // BootstrapGit mirrors server.BootstrapGit (F10 S5.3 — git clone
@@ -196,6 +209,60 @@ func CallBootstrap(ctx context.Context, env BootstrapEnv) (*BootstrapResponse, e
 			}
 		}
 	}
+}
+
+// ReportResult (BL407 Phase 0 / B114) POSTs a worker's task outcome
+// to the parent's POST /api/agents/report, authenticated with the
+// per-agent ResultToken (BootstrapResponse.ResultToken) rather than
+// the bootstrap token above (single-use, already burned by this
+// point). Same TLS-pinning behavior as CallBootstrap: pins to
+// DATAWATCH_PARENT_CERT_FINGERPRINT when the parent injected one,
+// otherwise falls back to InsecureSkipVerify. Single attempt, no
+// retry loop — the caller (runWorkerBootstrapTask) is already running
+// in a best-effort background goroutine after the task session ended;
+// a failed report is logged by the caller, not retried here, since by
+// this point the real work is already done and sitting in the
+// worker's own session store for manual recovery if the callback
+// never lands.
+func ReportResult(ctx context.Context, env BootstrapEnv, resultToken string, result *AgentResult) error {
+	if resultToken == "" {
+		return errors.New("report result: no result token")
+	}
+	body, err := json.Marshal(result)
+	if err != nil {
+		return fmt.Errorf("report result: marshal: %w", err)
+	}
+	url := env.URL + "/api/agents/report"
+
+	tlsCfg := &tls.Config{InsecureSkipVerify: true} // #nosec G402 -- same fallback as CallBootstrap for legacy/dev parents; upgrades to PinnedTLSConfig below when available
+	if fp := os.Getenv("DATAWATCH_PARENT_CERT_FINGERPRINT"); fp != "" {
+		pinned, perr := PinnedTLSConfig(fp)
+		if perr != nil {
+			return fmt.Errorf("report result: invalid pinned fingerprint: %w", perr)
+		}
+		tlsCfg = pinned
+	}
+	client := &http.Client{
+		Timeout:   10 * time.Second,
+		Transport: &http.Transport{TLSClientConfig: tlsCfg},
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("report result: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+resultToken)
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("report result: %w", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	if resp.StatusCode/100 != 2 {
+		msg, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("report result rejected (%d): %s", resp.StatusCode, bytes.TrimSpace(msg))
+	}
+	return nil
 }
 
 // ApplyBootstrapEnv exports each key of resp.Env into the current

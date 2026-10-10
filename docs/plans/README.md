@@ -40,7 +40,7 @@ single source of truth.
 
 ## Current state — 2026-10-10
 
-Latest release: **v9.0.17** (2026-10-10). feat(autonomous): BL406 Phase 5 — real GuidedMode (B111) + scope-drift rule (B112). This closes out BL406 (Configurable Project-Rules Enforcement) entirely — all 6 phases shipped v9.0.11–v9.0.17. **Active work:** the v10.0.0 self-build arc — see [§ Roadmap](#roadmap-self-build-arc--v1000-locked-2026-10-10); BL407 (PRD Git Workflow) is next in Stage 1, plan written 2026-10-10 (`docs/plans/2026-10-10-prd-git-workflow.md`, 7 phases, not started) — found and filed **B114** (`PRD.ClusterProfile` dispatch never resolves) while planning it, scoped as the plan's own Phase 0. Plans folder refactored 2026-10-10: 11 completed plan docs archived to `historical-plans/`, BL381 closed as shipped, and unscheduled work called out in the Roadmap's "Not yet placed" list.
+Latest release: **v9.0.18** (2026-10-10). fix(autonomous): BL407 Phase 0 — `PRD.ClusterProfile` dispatch made functional (B114 fixed: synthetic never-resolving session ID + unwired container task execution). **Active work:** the v10.0.0 self-build arc — see [§ Roadmap](#roadmap-self-build-arc--v1000-locked-2026-10-10); BL407 (PRD Git Workflow, `docs/plans/2026-10-10-prd-git-workflow.md`) continues with Phase 1 (local git-worktree isolation) next. Plans folder refactored 2026-10-10: 11 completed plan docs archived to `historical-plans/`, BL381 closed as shipped, and unscheduled work called out in the Roadmap's "Not yet placed" list.
 
 Previous: **v9.0.7** (2026-10-09). fix(daemon): `datawatch restart`/`stop`/`start` now detect and delegate to an active/enabled `datawatch.service` systemd --user unit instead of raw PID signaling + self-daemonizing; the daemon now falls back to the dedicated `~/.datawatch/tmux` socket when `TMUX_TMPDIR` is unset at boot; `ResumeMonitors` self-heals a `StateFailed` session back to `StateRunning` at boot when its tmux pane is actually still alive. Full history for every release between this and the v8.39.1 entry below is in `CHANGELOG.md` (this section was 8 days / ~400 versions stale until this backlog refactor — see the "Gotcha" note in AGENT.md's Project Tracking Rule: this header is meant to be refreshed every release, not just major ones).
 
@@ -174,7 +174,7 @@ Previous: **v8.25.3** (2026-09-12). feat(observer): nvidia-smi and tegrastats GP
 
  | Bucket | Count | Notes |
 |---|---|---|
-| Open bugs | 1 | B111/B112 — fixed by BL406 Phase 5, v9.0.17, 2026-10-10. B113 — fixed + live-verified by BL406 Phase 0, 2026-10-10. **B114** (`PRD.ClusterProfile` dispatch never resolves) — found 2026-10-10 while planning BL407, scoped as BL407's own Phase 0, not yet fixed |
+| Open bugs | 0 | B111/B112 — fixed by BL406 Phase 5, v9.0.17. B113 — fixed by BL406 Phase 0. B114 (`PRD.ClusterProfile` dispatch never resolves) — fixed by BL407 Phase 0, v9.0.18, 2026-10-10. None open |
 | Open features | 7 | BL241 Matrix (design interview needed); BL365 + BL408 + BL395 security remediation track (roadmap Stage 3 #7); BL390 Phase 2/3 (folded into BL405 Phase 8a); BL393 nested tags (excluded until authorized); BL394 + BL392 (substantially done, residue cross-repo). BL389 shipped v9.0.0; BL381 shipped v8.28.0/v8.28.2 |
 | Active backlog | 0 | BL387 complete (v8.31–33.0 ✅) |
 | Pending backlog | 6 | BL402, BL403, BL404, BL405, BL407 (v10.0.0 roadmap; BL406 shipped v9.0.17) + BL398 Phase 2; BL400 deferred (open questions). BL335 shipped v8.62.x via BL397 Phase 4 |
@@ -469,7 +469,7 @@ else is in `historical-plans/`):
 | Plan doc | BL | Roadmap slot |
 |---|---|---|
 | `2026-10-10-configurable-project-rules-enforcement.md` | BL406 (+B111/B112/B113) | Stage 1 #1 — **done**, all 6 phases shipped (v9.0.11–v9.0.17) |
-| `2026-10-10-prd-git-workflow.md` | BL407 (+B114) | Stage 1 #2 — planned, not started |
+| `2026-10-10-prd-git-workflow.md` | BL407 (+B114) | Stage 1 #2 — in progress, Phase 0 done |
 | _(no plan doc yet)_ | BL404 | Stage 2 #3 |
 | `2026-10-09-plugin-extension-surfaces.md` | BL403 | Stage 3 #4 |
 | `2026-10-09-gh204-result-panel.md` | BL402 (GH#204) | Stage 3 #5 |
@@ -722,9 +722,18 @@ _2026-05-02 operator-filed items promoted directly to BL218–BL221. 2026-05-03 
 > its session-binding mechanism (`SetAgentBinding`) is a manual operator
 > action on a pre-existing local session, never something the
 > `/api/agents` spawn path or the autonomous executor does
-> automatically. **Scoped as BL407 Phase 0**, not deferred — any PRD
-> task dispatched via `ClusterProfile` today cannot reach a terminal
-> state at all, with or without git.
+> automatically. **Fixed in BL407 Phase 0 (v9.0.18, shipped
+> 2026-10-10)**: `autonomousSpawn`'s cluster branch registers a real
+> virtual `session.Session` (`agents.VirtualSessionFullID`, mirroring
+> the existing council-virtual pattern); `agents.Manager.Spawn` mints
+> a per-agent result-report token (the bootstrap token is single-use,
+> already burned by completion time); new pre-auth
+> `POST /api/agents/report` lets the worker report its outcome with
+> that token, which flips the virtual session to a terminal state
+> directly (no polling bridge). The worker now actually runs `Task` as
+> a local one-shot session once it's cloned its repo, using
+> Backend/Effort/Model/PermissionMode threaded through from the
+> original dispatch request. No longer open.
 
 _(Otherwise no open bugs as of the 2026-10-09/10 backlog refactor —
 everything previously listed here was already closed and has been moved
