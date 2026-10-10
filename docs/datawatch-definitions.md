@@ -1373,6 +1373,16 @@ reading it. Independent of the per-story approval gate
 (`per_story_approval`); a PRD can use either, both, or neither. See
 "Guided Mode and the Per-Task Approval Gate" in `docs/operations.md`.
 
+**PRD git worktree** — an isolated `git worktree` + branch
+(`automaton/<prd-id>-<slug>`) a PRD runs in instead of bare in the
+daemon's own checkout, created automatically at `Run()` when
+`autonomous.worktree_base_repo` is configured and the PRD has no
+explicit `project_dir`/`project_profile`/`cluster_profile` (BL407
+Phase 1, v9.0.19). Shares the base repo's `.git` object store —
+cheap, filesystem/git-level isolation only, not process/network
+isolation (that's `cluster_profile` dispatch's job). See "PRD
+Git-Worktree Isolation" in `docs/operations.md`.
+
 ---
 
 ## Core feature reference matrix

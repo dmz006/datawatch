@@ -1967,6 +1967,35 @@ before approving any task to check it.
 
 ---
 
+## PRD Git-Worktree Isolation (BL407 Phase 1)
+
+By default, a PRD with no explicit `project_dir`/`project_profile`/
+`cluster_profile` runs directly in whatever directory the daemon
+process itself happens to be in — fine for an operator typing
+commands, risky for an autonomous loop about to run unattended against
+a real backlog (uncommitted/in-progress work in that directory is
+exposed to every task's worker).
+
+Setting `autonomous.worktree_base_repo` to a real git repo path (e.g.
+this checkout, for self-build/dogfooding work) changes that default:
+every future PRD meeting the condition above gets its own `git
+worktree` under `autonomous.worktree_dir` (default
+`~/.datawatch/prd-worktrees/<prd-id>/`), checked out on its own branch
+(`automaton/<prd-id>-<slug>`) sharing the base repo's `.git` object
+store — cheap, and isolated at the filesystem/git level. This is
+automatic once configured, not a per-PRD opt-in: an operator who sets
+this once gets the safety default for every PRD going forward without
+having to remember to ask for it each time. A PRD that already sets an
+explicit `project_dir` is left alone (explicit always wins).
+
+The worktree is created once, at first `Run()`, and is idempotent
+across a daemon restart mid-run. What happens to it when the PRD
+finishes (keep it, delete it, push + open a PR) is Phase 2's job — not
+yet built as of this phase; today the worktree just accumulates. See
+`docs/plans/2026-10-10-prd-git-workflow.md`.
+
+---
+
 ## Terminal Performance
 
 ### xterm.js load time

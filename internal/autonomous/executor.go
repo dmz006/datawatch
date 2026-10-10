@@ -130,6 +130,32 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 	isFirstRun := prd.Status == PRDApproved || prd.Status == PRDActive
 	prd.Status = PRDRunning
 	m.mu.Unlock()
+	// BL407 Phase 1 — a PRD with no explicit ProjectDir/ProjectProfile/
+	// ClusterProfile never has to run bare in the daemon's own
+	// checkout: when the operator has configured WorktreeBaseRepo,
+	// create (or, on a resumed run, reuse — EnsureWorktree is
+	// idempotent) an isolated git worktree and point this PRD at it.
+	// Self-gating on ProjectDir being empty rather than isFirstRun:
+	// once a worktree is created, ProjectDir is persisted non-empty
+	// below, so a later resume naturally skips this without a
+	// separate "already did this" flag. Must run before
+	// EnsureIgnoredPatterns/cross-seed below, both of which read
+	// prd.ProjectDir.
+	if prd.ProjectDir == "" && prd.ProjectProfile == "" && prd.ClusterProfile == "" {
+		m.mu.Lock()
+		baseRepo := m.cfg.WorktreeBaseRepo
+		worktreeDir := m.cfg.WorktreeDir
+		m.mu.Unlock()
+		if baseRepo != "" {
+			path, branch, werr := EnsureWorktree(prd, baseRepo, worktreeDir)
+			if werr != nil {
+				return fmt.Errorf("prd %q worktree setup: %w", prdID, werr)
+			}
+			prd.ProjectDir = path
+			prd.Git.Branch = branch
+			log.Printf("[autonomous] prd=%s worktree created at %s (branch=%s)", prdID, path, branch)
+		}
+	}
 	// 2026-10-07 — gitignore datawatch's own PRD scratch artifacts
 	// (.decompose-output-*.json, CHECKPOINT.md) as defense-in-depth for
 	// any window before relocateCheckpoint/decomposeFnSession's own

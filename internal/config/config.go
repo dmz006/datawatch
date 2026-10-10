@@ -2007,6 +2007,12 @@ type AutonomousConfig struct {
 	// action can reference, for gaps this repo's own PRD can't close
 	// alone (e.g. a parity gap needing a companion-app issue).
 	UpstreamRepos []UpstreamRepoConfig `yaml:"upstream_repos,omitempty" json:"upstream_repos,omitempty"`
+
+	// BL407 Phase 1 — local git-worktree isolation. Empty (default) =
+	// feature off, fully backward compatible. See
+	// docs/plans/2026-10-10-prd-git-workflow.md.
+	WorktreeBaseRepo string `yaml:"worktree_base_repo,omitempty" json:"worktree_base_repo,omitempty"`
+	WorktreeDir      string `yaml:"worktree_dir,omitempty" json:"worktree_dir,omitempty"`
 }
 
 // ScanConfig — BL221 Phase 3 runtime config, mirrors

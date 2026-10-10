@@ -983,6 +983,20 @@ autonomous:
   # reference (e.g. a parity gap this repo's own PRD can't close alone).
   upstream_repos: [] # [{name: "app", owner_repo: "org/repo"}, ...]
 
+  # ── BL407 Phase 1 — local git-worktree isolation ──
+  # Empty (default) = feature off, fully backward compatible: a PRD
+  # with no explicit project_dir/project_profile/cluster_profile runs
+  # the same way it always has. Set worktree_base_repo to the repo a
+  # PRD's isolated worktree should be created from (e.g. this
+  # checkout, for self-build/dogfooding work) and every future PRD
+  # that doesn't explicitly set one of those three fields gets its own
+  # git worktree + branch under worktree_dir automatically — it never
+  # runs bare in worktree_base_repo's own checkout. Worktrees are
+  # removed on a PRD that completes + opens a PR (BL407 Phase 2); kept
+  # on a failed/blocked/cancelled PRD for operator inspection.
+  worktree_base_repo: ""
+  worktree_dir: "" # default ~/.datawatch/prd-worktrees when empty
+
 # ── Orchestrator (BL117 — v4.0.0) ──
 # PRD-DAG orchestrator with guardrail sub-agents. Composes BL24
 # autonomous PRDs into a graph; each PRD is attested by configured

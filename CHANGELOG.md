@@ -5,6 +5,34 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.19 — feat(autonomous): BL407 Phase 1 — PRD.Git config + local git-worktree isolation
+
+### Added
+- New `PRD.Git` struct (`GitWorkflow`): `Provider`/`URL`/`BaseBranch`/
+  `Branch`/`AutoPR`/`PRURL`. Only `Branch` is populated this phase
+  (by worktree creation); `AutoPR`/`PRURL` are wired in Phase 2.
+- New `autonomous.worktree_base_repo`/`worktree_dir` config (daemon-
+  wide, empty by default — fully backward compatible). When
+  `worktree_base_repo` is set, any PRD with no explicit
+  `project_dir`/`project_profile`/`cluster_profile` gets an isolated
+  git worktree + branch (`automaton/<prd-id>-<slug>`) created
+  automatically at `Run()` time, shared `.git` object store with the
+  base repo — it never has to run bare in that repo's own checkout.
+  Idempotent across a daemon restart mid-run (reuses the existing
+  worktree/branch rather than erroring or creating a second one).
+  `PRD.Git.BaseBranch` optionally overrides the branch point;
+  otherwise resolves the base repo's current default branch.
+- Full config parity with zero new MCP/CLI/comm code (same precedent
+  as BL406 Phase 0's `rules_file`): `worktree_base_repo`/
+  `worktree_dir` round-trip through the existing generic
+  `PUT /api/config` → `applyConfigPatch` → `autonomous.API.SetConfig`
+  merge-patch path, same as every other `autonomous.*` config key.
+- New `internal/autonomous/worktree.go` (`EnsureWorktree`,
+  `branchNameFor`) — no new git abstraction, just `git worktree add`
+  shelled directly (mirrors the one existing example of a real
+  branch-create+push+PR flow in this codebase,
+  `cmd/datawatch/main.go`'s `openTestingTrackerPR`).
+
 ## v9.0.18 — fix(autonomous): BL407 Phase 0 — PRD.ClusterProfile dispatch never resolves (B114)
 
 ### Fixed

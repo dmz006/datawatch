@@ -126,6 +126,14 @@ type PRD struct {
 	// be set; ProjectDir is still honored when profiles are empty.
 	ProjectProfile string `json:"project_profile,omitempty"`
 	ClusterProfile string `json:"cluster_profile,omitempty"`
+	// Git (BL407 Phase 1) — branch-per-PRD + auto-PR workflow state.
+	// When ProjectDir/ProjectProfile/ClusterProfile are all empty and
+	// the daemon has autonomous.Config.WorktreeBaseRepo configured,
+	// Run() creates a git worktree for this PRD and populates
+	// ProjectDir + Git.Branch automatically — the PRD never has to run
+	// directly in the base repo's own checkout. See
+	// docs/plans/2026-10-10-prd-git-workflow.md.
+	Git GitWorkflow `json:"git,omitempty"`
 	// Phase 3 (v5.26.60) — explicit planning profile distinct
 	// from the default execution profile. Empty falls back to the
 	// global autonomous.planning_backend config knob (BL304). The
@@ -265,6 +273,23 @@ type PRD struct {
 	ReadDirs      []string `json:"read_dirs,omitempty"`
 	WriteDirs     []string `json:"write_dirs,omitempty"`
 	ScopeWarnings []string `json:"scope_warnings,omitempty"`
+}
+
+// GitWorkflow (BL407) is a PRD's branch-per-PRD + auto-PR workflow
+// state. Provider/URL resolve from PRD.ProjectProfile's GitSpec when
+// set, else from the worktree's own `origin` remote (the self-build/
+// dogfooding case, where a PRD has no ProjectProfile at all).
+// BaseBranch is an optional operator override; empty means "the base
+// repo's current default branch" (resolved at worktree-creation
+// time, not stored until then). Branch and PRURL are populated by the
+// executor/completion hook — not operator-set fields.
+type GitWorkflow struct {
+	Provider   string `json:"provider,omitempty"`
+	URL        string `json:"url,omitempty"`
+	BaseBranch string `json:"base_branch,omitempty"`
+	Branch     string `json:"branch,omitempty"`
+	AutoPR     bool   `json:"auto_pr,omitempty"`
+	PRURL      string `json:"pr_url,omitempty"`
 }
 
 // MemorySeedConfig (BL386 Phase 1 + BL387 Phase 2b) controls warm-start seeding at task spawn.

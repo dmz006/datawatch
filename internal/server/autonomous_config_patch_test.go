@@ -80,6 +80,22 @@ func TestApplyConfigPatch_BL406ProjectRulesFields(t *testing.T) {
 	}
 }
 
+// BL407 Phase 1 — verify worktree_base_repo/worktree_dir round-trip
+// through applyConfigPatch, same precedent as BL406's rules_file etc.
+func TestApplyConfigPatch_BL407WorktreeFields(t *testing.T) {
+	cfg := &config.Config{}
+
+	applyConfigPatch(cfg, map[string]interface{}{"autonomous.worktree_base_repo": "/home/op/myrepo"})
+	if cfg.Autonomous.WorktreeBaseRepo != "/home/op/myrepo" {
+		t.Fatalf("worktree_base_repo: got %q, want /home/op/myrepo", cfg.Autonomous.WorktreeBaseRepo)
+	}
+
+	applyConfigPatch(cfg, map[string]interface{}{"autonomous.worktree_dir": "/home/op/.datawatch/wt"})
+	if cfg.Autonomous.WorktreeDir != "/home/op/.datawatch/wt" {
+		t.Fatalf("worktree_dir: got %q, want /home/op/.datawatch/wt", cfg.Autonomous.WorktreeDir)
+	}
+}
+
 func TestSplitCSV(t *testing.T) {
 	cases := []struct {
 		in   string

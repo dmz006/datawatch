@@ -132,6 +132,16 @@ type Config struct {
 	// action can reference.
 	UpstreamRepos []scan.UpstreamRepo `json:"upstream_repos,omitempty"`
 
+	// BL407 Phase 1 — WorktreeBaseRepo is the git repo a PRD's
+	// isolated worktree is created from (e.g. this checkout, for
+	// self-build work). Empty = feature off, fully backward
+	// compatible: a PRD with no explicit ProjectDir/ProjectProfile/
+	// ClusterProfile runs the same way it always has. WorktreeDir is
+	// where worktrees are created (default ~/.datawatch/prd-worktrees
+	// when empty). See docs/plans/2026-10-10-prd-git-workflow.md.
+	WorktreeBaseRepo string `json:"worktree_base_repo,omitempty"`
+	WorktreeDir      string `json:"worktree_dir,omitempty"`
+
 	// BL303 S2 — default skills automatically assigned to every new Automaton.
 	DefaultSkills []string `json:"default_skills,omitempty"`
 

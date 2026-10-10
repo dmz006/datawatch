@@ -187,7 +187,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "9.0.18"
+var Version = "9.0.19"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -5493,6 +5493,9 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"rules_file":     s.cfg.Autonomous.RulesFile,
 			"context_file":   s.cfg.Autonomous.ContextFile,
 			"upstream_repos": s.cfg.Autonomous.UpstreamRepos,
+			// BL407 Phase 1 — local git-worktree isolation config.
+			"worktree_base_repo": s.cfg.Autonomous.WorktreeBaseRepo,
+			"worktree_dir":       s.cfg.Autonomous.WorktreeDir,
 			"scan": map[string]interface{}{
 				"enabled":              s.cfg.Autonomous.Scan.Enabled,
 				"sast_enabled":         s.cfg.Autonomous.Scan.SASTEnabled,
@@ -6723,6 +6726,11 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			cfg.Autonomous.RulesFile = toString(v)
 		case "autonomous.context_file":
 			cfg.Autonomous.ContextFile = toString(v)
+		// BL407 Phase 1 — local git-worktree isolation config.
+		case "autonomous.worktree_base_repo":
+			cfg.Autonomous.WorktreeBaseRepo = toString(v)
+		case "autonomous.worktree_dir":
+			cfg.Autonomous.WorktreeDir = toString(v)
 		case "autonomous.upstream_repos":
 			if arr, ok := v.([]any); ok {
 				repos := make([]config.UpstreamRepoConfig, 0, len(arr))

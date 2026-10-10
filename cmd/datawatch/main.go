@@ -113,7 +113,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "9.0.18"
+var Version = "9.0.19"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -4086,6 +4086,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			RulesFile:     acfgIn.RulesFile,
 			ContextFile:   acfgIn.ContextFile,
 			UpstreamRepos: upstreamReposFromYAML(acfgIn.UpstreamRepos),
+			// BL407 Phase 1 — local git-worktree isolation config bridge.
+			WorktreeBaseRepo: acfgIn.WorktreeBaseRepo,
+			WorktreeDir:      acfgIn.WorktreeDir,
 		}
 		// BL191 Q4 defaults — preserve the autonomouspkg defaults when
 		// the operator hasn't explicitly configured these.

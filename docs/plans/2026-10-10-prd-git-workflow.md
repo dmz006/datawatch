@@ -2,7 +2,7 @@
 
 - **Date**: 2026-10-10
 - **Version at planning**: v9.0.17
-- **Status**: In progress — Phase 0 done (v9.0.18, fixes B114), Phase 1 next
+- **Status**: In progress — Phase 0 done (v9.0.18, fixes B114), Phase 1 done (v9.0.19), Phase 2 next
 
 ## Context
 
@@ -233,23 +233,41 @@ problem is bigger than "add git wiring":
   resolve at all."
 
 ### Phase 1 — `PRD.Git` config + local worktree isolation
-**Status: Not started.**
-- [ ] New `PRD.Git` struct (`internal/autonomous/models.go`):
-  `{Provider, URL, BaseBranch, Branch, AutoPR, PRURL}` — `Provider`/`URL`
-  resolved from `PRD.ProjectProfile`'s `GitSpec` when set, else
-  auto-detected from the worktree's own `origin` remote.
-- [ ] New `autonomous.Config.WorktreeBaseRepo`/`WorktreeDir` (Decision 2).
-- [ ] New `internal/autonomous/worktree.go`: `EnsureWorktree(prd *PRD, cfg
-  Config) (path string, err error)` — `git worktree add -b <branch>
-  <path> <base>` under `WorktreeDir`, idempotent (if the worktree
-  already exists for this PRD, reuse it rather than erroring).
-- [ ] Wire into the PRD run-start transition (`Manager.Run` or wherever a
-  PRD moves to `PRDRunning`): when the gating in Decision 2 applies,
-  call `EnsureWorktree`, persist the path onto `PRD.ProjectDir` and the
-  branch onto `PRD.Git.Branch`.
-- [ ] No executor.go changes needed beyond this — every task spawn already
-  honors `PRD.ProjectDir`.
-- [ ] **Phase Completion Checklist**.
+**Status: Done (v9.0.19, shipped 2026-10-10).**
+- [x] New `PRD.Git` struct (`GitWorkflow`,
+  `internal/autonomous/models.go`): `{Provider, URL, BaseBranch, Branch,
+  AutoPR, PRURL}`. Only `Branch` is populated this phase (by worktree
+  creation) — `Provider`/`URL` auto-detection and `AutoPR`/`PRURL` wait
+  for Phase 2, where they're actually consumed.
+- [x] New `autonomous.Config.WorktreeBaseRepo`/`WorktreeDir`, mirrored
+  into `config.AutonomousConfig` + the `amgrCfg` startup bridge
+  (`cmd/datawatch/main.go`) + a new `applyConfigPatch` case pair, same
+  as BL406 Phase 0's `rules_file`/`context_file` — traced each of
+  REST/MCP (`config_set`)/CLI (`config set`)/comm (`configure`) to
+  confirm they all proxy through the same generic `PUT /api/config`
+  dot-path mechanism rather than assuming the precedent still held.
+- [x] New `internal/autonomous/worktree.go`: `EnsureWorktree(prd *PRD,
+  baseRepo, worktreeDir string) (path, branch string, err error)` —
+  narrower signature than planned (two strings instead of the whole
+  `Config`) for testability; `git worktree add -b <branch> <path>
+  <base>`, idempotent (a PRD with `Git.Branch` already set and a live
+  worktree at the expected path is a no-op reuse).
+- [x] Wired into `Manager.Run`'s first-run setup (`executor.go`), right
+  after the `PRDRunning` transition and before `EnsureIgnoredPatterns`/
+  cross-seed (both read `prd.ProjectDir`). Self-gated on
+  `ProjectDir == "" && ProjectProfile == "" && ClusterProfile == ""`
+  rather than `isFirstRun` — once a worktree is created `ProjectDir`
+  is persisted non-empty, so a resumed run naturally skips this
+  without a separate "already did this" flag.
+- [x] No executor.go changes needed beyond the hook above — every task
+  spawn already honors `PRD.ProjectDir`.
+- [x] **Phase Completion Checklist**: 12 new tests (8 unit against a
+  real scratch git repo + 3 `Manager.Run` integration tests + 1 REST
+  config-patch test), full `go test ./...` green, `go vet ./...`
+  clean, `gosec` zero new findings, `gofmt` clean on every new file.
+  `docs/config-reference.yaml` documents the two new daemon config
+  fields. No Mobile-Parity issue needed — no new PWA surface this
+  phase (that's Phase 5's job, together with `PRD.Git.AutoPR`).
 
 ### Phase 2 — PRD-completion push + PR (local-worktree mode)
 **Status: Not started.**
