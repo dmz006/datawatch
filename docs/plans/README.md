@@ -575,7 +575,7 @@ local-model (Ollama) read-only code review of the high-risk files. Findings regi
 plan (`SEC-###`) for later GH-issue conversion on operator request.
 
 **Plan doc:** [`2026-08-28-security-assessment-core.md`](2026-08-28-security-assessment-core.md)
-**Status:** In progress — Phase 0 ✅ (inventory + sandbox harness) · Phase 1 ✅ (gosec/govulncheck/trivy/gitleaks + local-model review; findings registered, SEC-001…024 with gaps). **Phase 2's "authn/authz sandbox tests" is superseded, not pending** (corrected 2026-10-10, reviewed while prioritizing the BL403/404/405/406/407 arc): the 2026-09-22 resumed walkthrough (`docs/plans/historical-plans/2026-09-22-security-remediation-activation.md` §7) already decided every one of SEC-001–025 explicitly, re-validated against v8.39.16, and BL395 (below) confirmed all decisions still hold and added the F-2 isolation design on top. **Remediation (v8.39.15):** SEC-004 fixed; SEC-021's XSS half fixed (file-service root-fallback half deferred, see SEC-021 row in the walkthrough). Everything else SEC-001–025 is a *decided, not-yet-implemented* item — see BL395 for the real master implementation order (Design **A → C → B → D**), not a design gap. Full writeup: `docs/plans/2026-10-03-bl394-security-findings-review.md` §7.
+**Status:** In progress — Phase 0 ✅ (inventory + sandbox harness) · Phase 1 ✅ (gosec/govulncheck/trivy/gitleaks + local-model review; findings registered, SEC-001…024 with gaps). **Phase 2's "authn/authz sandbox tests" is superseded, not pending** (corrected 2026-10-10, reviewed while prioritizing the BL403/404/405/406/407 arc): the 2026-09-22 resumed walkthrough (`docs/plans/historical-plans/2026-09-22-security-remediation-activation.md` §7) already decided every one of SEC-001–025 explicitly, re-validated against v8.39.16, and BL395 (below) confirmed all decisions still hold and added the F-2 isolation design on top. **Remediation (v8.39.15):** SEC-004 fixed; SEC-021's XSS half fixed (file-service root-fallback half deferred, see SEC-021 row in the walkthrough). Everything else SEC-001–025 is a *decided, not-yet-implemented* item — see BL395 for the real master implementation order (Design **A → C → B → D**), not a design gap. Full writeup: `docs/plans/historical-plans/2026-10-03-bl394-security-findings-review.md` §7.
 
 #### BL408 — Hostile-LLM assessment: prompt injection, overreach, escape (filed 2026-08-28)
 
@@ -618,7 +618,7 @@ the token being the full, unscoped admin credential at all, shared with HLLM-002
 is a full-admin principal" finding — is NOT fixed**, deliberately: per-session scoped
 credentials is a real design project (cascades HLLM-004/005/007/008 per the root-cause note
 above), not something to rush ahead of a release. HLLM-002 and its 6 downstream HIGH findings
-remain fully open. Full writeup: `docs/plans/2026-10-03-bl394-security-findings-review.md` §7.
+remain fully open. Full writeup: `docs/plans/historical-plans/2026-10-03-bl394-security-findings-review.md` §7.
 
 #### BL395 — F-2 LLM-session worker isolation + resumed security-remediation walkthrough (filed 2026-10-04)
 
@@ -905,7 +905,7 @@ SEC-021 (docs-viewer stored XSS via unsanitized `marked.parse()`), and
 HLLM-001's file-permission exposure (admin token in a world-readable
 `.mcp.json`). Full writeup: plan doc's new §7.
 
-**Plan doc:** [`2026-10-03-bl394-security-findings-review.md`](2026-10-03-bl394-security-findings-review.md)
+**Plan doc:** [`2026-10-03-bl394-security-findings-review.md`](historical-plans/2026-10-03-bl394-security-findings-review.md)
 **Status:** 84 false positives/accepted-risk dismissed on CodeQL, plus 3 more in v8.39.15 (87 total). 14 confirmed-real findings fixed across BL394/BL365/Hostile-LLM (push.go SSRF v8.39.3; council/skills path traversal v8.39.4; webhook image-read v8.39.5; cliPrompt secret echo v8.39.6; prototype pollution v8.39.8; reflected XSS v8.39.9; evals/layers_recursive query-param traversal + app.js escJsAttr + channel.js stack-trace + workflow permissions, all v8.39.10; api_smoke_progress.go path traversal + capability split, v8.39.11; proxy.go same-origin risk, v8.39.12 + its iframe-embed follow-up, v8.39.13; GitHub webhook HMAC + docs-viewer XSS sanitization + .mcp.json permissions, v8.39.15). The §2 Dependabot recommendation is also done (v8.39.11). 1 corrected from a mischaracterization and hardened as defense-in-depth rather than closing a live gap (email CRLF, v8.39.7). Deliberately deferred, documented, not silently dropped: `/api/health`'s cosmetic 401-when-proxied gap (§6a); the file-service root-fallback half of SEC-021 (§7); SEC-001/002/003/006/007/008's default-posture questions and HLLM-002's per-session-credential-scoping redesign (both real, both explicitly out of "quick fix" scope — see BL365/Hostile-LLM entries above); the §3g SQL-`LIMIT` memory-growth question. This review's remaining "needs review, not fully checked" item (`datawatch-app`'s own 11 CodeQL findings, handed off as `datawatch-app`#208) stays open and un-triaged here.
 
 ---
@@ -935,7 +935,7 @@ MCP/CLI/comm-channel/PWA surfaces, and four genuinely open implementation
 questions (tag deletion semantics, parent-tag browse inheritance, suggested-
 tag auto-create) flagged for the operator rather than silently decided.
 
-**Plan doc:** [`2026-10-03-bl393-automata-tags.md`](2026-10-03-bl393-automata-tags.md)
+**Plan doc:** [`2026-10-03-bl393-automata-tags.md`](historical-plans/2026-10-03-bl393-automata-tags.md)
 **Status:** plan only — no code written, no settings changed. Not yet authorized for implementation.
 
 ---
@@ -1017,7 +1017,7 @@ autobuild fails: the Xcode project is generated at build time by
 `xcodegen`, not committed) — not implemented directly, since getting it
 green needs real CI iteration against this repo's Xcode toolchain.
 
-**Plan doc:** [`2026-10-03-cross-repo-github-hardening.md`](2026-10-03-cross-repo-github-hardening.md) (§7 CodeQL follow-up, §8 Phase 1, §9 Phase 2, §10 datawatch CODEOWNERS + both filed issues)
+**Plan doc:** [`2026-10-03-cross-repo-github-hardening.md`](historical-plans/2026-10-03-cross-repo-github-hardening.md) (§7 CodeQL follow-up, §8 Phase 1, §9 Phase 2, §10 datawatch CODEOWNERS + both filed issues)
 **Status:** everything within direct reach is done — all three phases from §4, plus `datawatch`'s own CODEOWNERS gap. The two remaining items are real cross-repo implementation work, now tracked as `datawatch-app`#206 (dependency-review-action) and #207 (Swift CodeQL).
 
 ---

@@ -1377,7 +1377,7 @@ The sandbox origin's own CSP names your main dashboard's origin in
 to reach it, so it works the same over localhost, a LAN IP, or a
 Tailscale name) rather than `'self'` — it is only ever meant to be
 embedded by your own daemon, never anyone else. See
-`docs/plans/2026-10-03-bl394-security-findings-review.md` §6 for the
+`docs/plans/historical-plans/2026-10-03-bl394-security-findings-review.md` §6 for the
 full design writeup, including why this needed a second origin rather
 than CSP or iframe sandboxing alone.
 
@@ -1395,7 +1395,7 @@ small, known, cosmetic gap: the embedded view's own staleness check
 unauthenticated on the main origin but the proxy path requires auth for
 its whole surface — harmless, just means that one version-mismatch
 reload guard doesn't fire for a proxied view. See
-`docs/plans/2026-10-03-bl394-security-findings-review.md` §6a for the
+`docs/plans/historical-plans/2026-10-03-bl394-security-findings-review.md` §6a for the
 full writeup, including four more bugs (a missing CSP `frame-src`, the
 token-passing gaps above, and a pre-existing `Accept-Encoding` bug that
 silently corrupted every proxied script) found only by actually driving
