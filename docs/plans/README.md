@@ -438,7 +438,27 @@ _2026-05-02 operator-filed items promoted directly to BL218–BL221. 2026-05-03 
 
 ## Open Bugs
 
-_(No open bugs as of the 2026-10-09/10 backlog refactor — everything previously listed here was already closed and has been moved to the Completed Bugs table. Historical: B22 fixed in v2.4.3 · B23/24 in v2.4.4 · B25 in v2.4.5 · B31 in v3.0.1 · B30 in v3.1.0 — see Completed section.)_
+> **B111** — `PRD.GuidedMode` is a dead flag (found 2026-10-10 while
+> grounding the BL405 single-thread-workflow design against existing
+> executor primitives). Full REST/MCP/CLI/comm plumbing exists to *set*
+> it (`autonomous_prd_set_guided_mode`, `set_guided_mode` REST action,
+> `queue guided-mode` comm verb) and it persists correctly on `PRD`
+> (`internal/autonomous/models.go:184`), but **nothing in
+> `internal/autonomous/executor.go` or anywhere else ever reads it** —
+> grep for `GuidedMode` outside `manager.go`/`api.go`/the MCP-CLI-REST
+> plumbing files returns zero hits. AGENT.md's own Decomposer
+> Scope-Drift Rule (BL384) documents it as load-bearing: *"Guided mode
+> pauses before each task runs and requires operator approval, giving a
+> checkpoint before scope drift executes"* — step 1 of BL384's own
+> mitigation checklist. Any PRD run with `guided_mode: true` today,
+> including ones following BL384's own documented procedure, gets no
+> pause at all. Not fixed; not yet prioritized against BL405/BL403/BL404.
+
+_(Otherwise no open bugs as of the 2026-10-09/10 backlog refactor —
+everything previously listed here was already closed and has been moved
+to the Completed Bugs table. Historical: B22 fixed in v2.4.3 · B23/24 in
+v2.4.4 · B25 in v2.4.5 · B31 in v3.0.1 · B30 in v3.1.0 — see Completed
+section.)_
 
 ## Open Features
 
