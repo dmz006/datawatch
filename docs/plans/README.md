@@ -374,6 +374,48 @@ established. Not started; blocked on Stage 2.**
    tracker IDs ARE expected and useful," not a gap to close. Needs real
    tooling care (e.g. `gopls rename`, not blind `sed`) given the
    codebase's size — no plan doc written yet.
+9. **BL410** — Failure Observability & Conditional Auto-Retry (filed
+   2026-10-10, operator-raised while reviewing BL407 Phase 0). Every
+   PRD-lifecycle failure point — task execution, guardrail/gate
+   verdicts, story rollups, `autonomous_prd_decompose` itself — should
+   log a structured reason with evidence (not a bare string), stay
+   queryable/trackable over time, and support auto-retry policy
+   conditioned on failure *type* (not just a fixed count), with an eye
+   toward skills improving from observed failure patterns. Existing
+   partial infrastructure to build on, not replace: `Task.Error` (bare
+   string, `internal/autonomous/models.go:432`),
+   `GuardrailVerdict{Outcome,Severity,Summary,Issues}` (:507),
+   `VerificationResult{OK,Severity,Summary,Issues,DiffSHA}` (:518), the
+   generic `Decision{At,Kind,Actor,Note}` log every PRD already keeps,
+   and a fixed-count retry knob (`Config.AutoFixRetries`,
+   `Task.RetryCount`). Also found live while scoping this: `Learning`
+   (`models.go:552`, `{ID,TaskID,PRDID,Category,Text,CreatedAt}`) and
+   the `autonomous_learnings`/`memory_learnings` read-side tooling
+   exist, but **nothing in the codebase ever constructs a `Learning`**
+   (grep confirms zero non-test writers) — dead code in the same shape
+   as B111/B112, and exactly the mechanism this ask wants revived: a
+   structured place to record "why did this fail" that accumulates
+   over time for skills/future decomposition to consult. No plan doc
+   yet — needs a design pass (failure-reason taxonomy, where auto-retry
+   policy lives, how it surfaces to skills) before queueing a position.
+10. **BL411** — Pre-v10.0.0 Dead Code Audit (filed 2026-10-10, same
+   conversation as BL410). This session alone found four instances of
+   "fully-plumbed but never actually consulted" code in
+   `internal/autonomous`: B111 (`GuidedMode` bool, fixed), B112
+   (scope-drift rule, fixed), `Learning` above (unused), and
+   `Story.ExecutionProfile` (`models.go:391` — settable via
+   `SetStoryProfile` but never read when `executor.go` builds a task's
+   `SpawnRequest`; only `PRD.ProjectProfile` is consulted, found while
+   researching BL407). Scope: a systematic sweep for this exact pattern
+   (exported field/type with full write-side plumbing — REST/MCP/CLI/
+   comm/PWA — and zero or near-zero read-side consultation) across the
+   whole codebase, not just `internal/autonomous`. Natural timing
+   pairing with **BL409** (both are whole-repo hygiene sweeps best run
+   late, once everything else in the arc has landed) but a separate
+   number — different pattern (naming vs. liveness), raised separately.
+   `Story.ExecutionProfile` itself is a concrete, already-scoped fix
+   that doesn't need the full systematic sweep designed first — worth
+   landing standalone whenever reached. No plan doc written yet.
 
 **Outside the queue, handled separately, not blocking Stage 3:**
 - ~~**BL381**~~ — status-verified 2026-10-10: shipped v8.28.0 + v8.28.2
