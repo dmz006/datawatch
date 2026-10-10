@@ -34,7 +34,11 @@ import (
 
 // aiderUsageLinesRead tracks, per session FullID, how many pane-log
 // lines have already been scanned for a "Tokens:" report -- same
-// never-double-count rationale as claudeUsageLinesRead.
+// never-double-count rationale as claudeUsageLinesRead. Same-process
+// cache only (v9.0.8): the authoritative checkpoint is
+// Session.UsageLinesRead, persisted to disk, so a daemon restart
+// resumes from there instead of re-counting from line 0. See that
+// field's doc comment in store.go for the incident this fixed.
 var aiderUsageLinesRead sync.Map // FullID -> int
 
 // aiderTokensRe matches aider's own per-turn usage line, tolerating the
@@ -60,10 +64,11 @@ func parseAiderTokenCount(s string) (int, bool) {
 // trackAiderUsage polls sess's own tmux pane log every tick and reports
 // any newly-appeared "Tokens:" lines since the last tick via reportFn.
 // Best-effort, same never-hard-fail design as trackClaudeCodeUsage.
-func trackAiderUsage(ctx context.Context, fullID, logFile string, tick time.Duration, reportFn func(sessID string, tokensIn, tokensOut int)) {
+func trackAiderUsage(ctx context.Context, fullID, logFile string, initialLinesRead int, tick time.Duration, reportFn func(sessID string, tokensIn, tokensOut, linesRead int)) {
 	if logFile == "" || reportFn == nil {
 		return
 	}
+	aiderUsageLinesRead.Store(fullID, initialLinesRead)
 	defer aiderUsageLinesRead.Delete(fullID)
 
 	ticker := time.NewTicker(tick)
@@ -78,7 +83,7 @@ func trackAiderUsage(ctx context.Context, fullID, logFile string, tick time.Dura
 	}
 }
 
-func scanAiderUsageOnce(logFile, fullID string, reportFn func(sessID string, tokensIn, tokensOut int)) {
+func scanAiderUsageOnce(logFile, fullID string, reportFn func(sessID string, tokensIn, tokensOut, linesRead int)) {
 	f, err := os.Open(logFile) // #nosec G304 -- path is this daemon's own session record, not external input
 	if err != nil {
 		return
@@ -113,8 +118,6 @@ func scanAiderUsageOnce(logFile, fullID string, reportFn func(sessID string, tok
 	}
 	if lineNum > alreadyRead {
 		aiderUsageLinesRead.Store(fullID, lineNum)
-	}
-	if sumIn > 0 || sumOut > 0 {
-		reportFn(fullID, sumIn, sumOut)
+		reportFn(fullID, sumIn, sumOut, lineNum)
 	}
 }

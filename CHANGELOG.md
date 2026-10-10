@@ -5,6 +5,37 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.8 — fix: usage-tracker restart amplification (claude-code/opencode/goose/aider cost totals)
+
+### Fixed
+- Found live, 2026-10-09: `cost_summary` reported **4.3B output tokens /
+  $64,532.70** for `claude-code` — not plausible. Root cause: the
+  per-backend usage trackers (`claude_usage.go`, `aider_usage.go`
+  — line-count based; `opencode_usage.go`, `goose_usage.go` —
+  cumulative-last-total based) kept their "how much have I already
+  counted" checkpoint **only in an in-memory `sync.Map`**, never
+  persisted. Every daemon restart reset that checkpoint to zero, so the
+  next scan tick re-read/re-diffed each session's **entire** historical
+  usage from scratch and reported it again — `AddUsage` is additive, so
+  this got added on top of the already-persisted total. A long-lived
+  session that survived N restarts had its real usage multiplied by
+  roughly N+1.
+- Fixed by persisting the checkpoint on the session record itself
+  (`UsageLinesRead`, `UsageLastIn`, `UsageLastOut`) and seeding each
+  tracker from it at goroutine start, via two new combined save methods
+  (`AddUsageLinesRead`, `AddUsageLastTotals`) so the token delta and the
+  new checkpoint always land in the same save.
+- **Self-heal for already-corrupted totals**: a session with reported
+  usage but no persisted checkpoint can only be a pre-fix casualty of
+  this exact bug (impossible under the fixed code, which always
+  persists a checkpoint on its first tick) — such sessions have their
+  stored totals discarded right before their tracker restarts, so the
+  very next scan recomputes the correct absolute total fresh from the
+  real source (transcript/export) instead of compounding further.
+  Scoped to currently-active sessions only; a terminal/historical
+  session's totals (if wrong) are a known, documented limitation rather
+  than guessed at.
+
 ## v9.0.7 — fix: restart/stop fight systemd, tmux calls miss TMUX_TMPDIR, boot can't self-heal a false-failed session
 
 ### Fixed

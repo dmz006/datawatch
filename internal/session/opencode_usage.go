@@ -31,6 +31,11 @@ var opencodeSessionIDs sync.Map // FullID -> string
 // opencodeLastTotals tracks the last cumulative input/output token
 // totals reported for a session, since opencode's own `export` output
 // reports lifetime-cumulative totals (info.tokens), not per-turn deltas.
+// Same-process cache only (v9.0.8): the authoritative checkpoint is
+// Session.UsageLastIn/UsageLastOut, persisted to disk, so a daemon
+// restart resumes the delta from there instead of diffing against zero
+// (and re-adding the session's whole lifetime total). See that field's
+// doc comment in store.go for the incident this fixed.
 var opencodeLastTotals sync.Map // FullID -> [2]int (in, out)
 
 // opencodeResolveBinary mirrors opencode.resolveBinary. Reimplemented
@@ -114,10 +119,11 @@ func resolveOpenCodeSessionID(ctx context.Context, binary, projectDir string, cr
 // and reports the delta since the last tick via reportFn. Best-effort:
 // a resolution failure or export error just means no usage is reported
 // this tick, matching trackClaudeCodeUsage's own never-hard-fail design.
-func trackOpenCodeUsage(ctx context.Context, fullID, projectDir string, createdAt time.Time, tick time.Duration, reportFn func(sessID string, tokensIn, tokensOut int)) {
+func trackOpenCodeUsage(ctx context.Context, fullID, projectDir string, createdAt time.Time, initialLastIn, initialLastOut int, tick time.Duration, reportFn func(sessID string, tokensIn, tokensOut, curIn, curOut int)) {
 	if reportFn == nil {
 		return
 	}
+	opencodeLastTotals.Store(fullID, [2]int{initialLastIn, initialLastOut})
 	defer opencodeSessionIDs.Delete(fullID)
 	defer opencodeLastTotals.Delete(fullID)
 
@@ -134,7 +140,7 @@ func trackOpenCodeUsage(ctx context.Context, fullID, projectDir string, createdA
 	}
 }
 
-func scanOpenCodeUsageOnce(ctx context.Context, binary, fullID, projectDir string, createdAt time.Time, reportFn func(sessID string, tokensIn, tokensOut int)) {
+func scanOpenCodeUsageOnce(ctx context.Context, binary, fullID, projectDir string, createdAt time.Time, reportFn func(sessID string, tokensIn, tokensOut, curIn, curOut int)) {
 	sesID, ok := opencodeSessionIDs.Load(fullID)
 	if !ok {
 		id := resolveOpenCodeSessionID(ctx, binary, projectDir, createdAt)
@@ -168,7 +174,7 @@ func scanOpenCodeUsageOnce(ctx context.Context, binary, fullID, projectDir strin
 	}
 	deltaIn, deltaOut := curIn-lastIn, curOut-lastOut
 	opencodeLastTotals.Store(fullID, [2]int{curIn, curOut})
-	if deltaIn > 0 || deltaOut > 0 {
-		reportFn(fullID, deltaIn, deltaOut)
+	if curIn != lastIn || curOut != lastOut {
+		reportFn(fullID, max(deltaIn, 0), max(deltaOut, 0), curIn, curOut)
 	}
 }

@@ -150,6 +150,28 @@ type Session struct {
 	TokensOut  int     `json:"tokens_out,omitempty"`
 	EstCostUSD float64 `json:"est_cost_usd,omitempty"`
 
+	// v9.0.8 — usage-tracker checkpoints, persisted so a daemon restart
+	// doesn't re-report a session's entire historical usage on top of
+	// what's already in TokensIn/TokensOut above. Before this field
+	// existed, the "how much have I already counted" state lived only
+	// in an in-memory sync.Map (claude_usage.go/aider_usage.go's
+	// *UsageLinesRead, opencode_usage.go/goose_usage.go's *LastTotals) —
+	// a fresh process meant a fresh, empty map, so the very next scan
+	// tick re-read/re-diffed from zero and re-added the session's WHOLE
+	// lifetime usage on top of the already-persisted total. A session
+	// that lived through N restarts had its real usage multiplied by
+	// roughly N+1. Found live: a claude-code session reporting 4.3B
+	// output tokens / $64,532 that had never plausibly spent that much.
+	// UsageLinesRead is used by claude-code (JSONL transcript lines) and
+	// aider (tmux pane-log lines) — mutually exclusive per session via
+	// BackendFamily, safe to share one field. UsageLastIn/UsageLastOut
+	// are used by opencode and goose (each poll a lifetime-cumulative
+	// total, not a per-tick delta) — also mutually exclusive, safe to
+	// share.
+	UsageLinesRead int `json:"usage_lines_read,omitempty"`
+	UsageLastIn    int `json:"usage_last_in,omitempty"`
+	UsageLastOut   int `json:"usage_last_out,omitempty"`
+
 	// Effort (BL41) is an operator-supplied hint about thoroughness.
 	// One of "quick", "normal", "thorough". Empty defaults to
 	// session.default_effort (config). Backends that recognise the

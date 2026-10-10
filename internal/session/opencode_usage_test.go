@@ -73,7 +73,7 @@ func TestScanOpenCodeUsageOnce_SumsDeltaAcrossTicks(t *testing.T) {
 	})
 
 	var gotIn, gotOut, calls int
-	report := func(_ string, tokensIn, tokensOut int) {
+	report := func(_ string, tokensIn, tokensOut, curIn, curOut int) {
 		calls++
 		gotIn += tokensIn
 		gotOut += tokensOut
@@ -110,7 +110,7 @@ func TestTrackOpenCodeUsage_StopsOnContextCancel(t *testing.T) {
 	done := make(chan struct{})
 	const sessID = "sess-opencode-cancel-test"
 	go func() {
-		trackOpenCodeUsage(ctx, sessID, "/some/project", time.Now(), 5*time.Millisecond, func(string, int, int) {})
+		trackOpenCodeUsage(ctx, sessID, "/some/project", time.Now(), 0, 0, 5*time.Millisecond, func(string, int, int, int, int) {})
 		close(done)
 	}()
 	cancel()
@@ -132,7 +132,7 @@ func TestTrackOpenCodeUsage_NilReportFnIsNoop(t *testing.T) {
 	defer cancel()
 	done := make(chan struct{})
 	go func() {
-		trackOpenCodeUsage(ctx, "sess-opencode-nil-test", "/some/project", time.Now(), time.Millisecond, nil)
+		trackOpenCodeUsage(ctx, "sess-opencode-nil-test", "/some/project", time.Now(), 0, 0, time.Millisecond, nil)
 		close(done)
 	}()
 	select {

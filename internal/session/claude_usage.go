@@ -30,7 +30,12 @@ import (
 // claudeUsageLinesRead tracks, per session FullID, how many JSONL lines
 // have already been counted toward that session's TokensIn/TokensOut --
 // a transcript only ever grows, so re-reading from the start every tick
-// and re-summing everything would double-count every prior turn.
+// and re-summing everything would double-count every prior turn. This
+// in-memory map is only a same-process cache now (v9.0.8): the
+// authoritative checkpoint is Session.UsageLinesRead, persisted to disk,
+// so a daemon restart resumes from there instead of re-counting (and
+// re-adding on top of the already-persisted total) from line 0. See
+// that field's doc comment in store.go for the incident this fixed.
 var claudeUsageLinesRead sync.Map // FullID -> int
 
 // claudeSessionUUID reproduces claudecode.deriveSessionUUID (UUID v5,
@@ -106,11 +111,12 @@ type claudeUsageEntry struct {
 // never a hard failure, since the status quo this replaces is "always
 // zero" and silently staying there is strictly better than crashing
 // the session monitor over a usage-reporting nicety.
-func trackClaudeCodeUsage(ctx context.Context, fullID, projectDir string, tick time.Duration, reportFn func(sessID string, tokensIn, tokensOut int)) {
+func trackClaudeCodeUsage(ctx context.Context, fullID, projectDir string, initialLinesRead int, tick time.Duration, reportFn func(sessID string, tokensIn, tokensOut, linesRead int)) {
 	path := claudeTranscriptPath(projectDir, fullID)
 	if path == "" || reportFn == nil {
 		return
 	}
+	claudeUsageLinesRead.Store(fullID, initialLinesRead)
 	defer claudeUsageLinesRead.Delete(fullID)
 
 	ticker := time.NewTicker(tick)
@@ -125,7 +131,7 @@ func trackClaudeCodeUsage(ctx context.Context, fullID, projectDir string, tick t
 	}
 }
 
-func scanClaudeUsageOnce(path, fullID string, reportFn func(sessID string, tokensIn, tokensOut int)) {
+func scanClaudeUsageOnce(path, fullID string, reportFn func(sessID string, tokensIn, tokensOut, linesRead int)) {
 	f, err := os.Open(path) // #nosec G304 -- path is derived from this daemon's own session record, not external input
 	if err != nil {
 		return // transcript not written yet, or path guess was wrong -- try again next tick
@@ -158,8 +164,13 @@ func scanClaudeUsageOnce(path, fullID string, reportFn func(sessID string, token
 	}
 	if lineNum > alreadyRead {
 		claudeUsageLinesRead.Store(fullID, lineNum)
-	}
-	if sumIn > 0 || sumOut > 0 {
-		reportFn(fullID, sumIn, sumOut)
+		// Persist the new checkpoint even when this tick found no usage
+		// (sumIn/sumOut both 0 -- e.g. a tool-only turn) so the
+		// already-scanned lines aren't re-scanned after a restart.
+		if sumIn > 0 || sumOut > 0 {
+			reportFn(fullID, sumIn, sumOut, lineNum)
+		} else {
+			reportFn(fullID, 0, 0, lineNum)
+		}
 	}
 }

@@ -5336,14 +5336,29 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 		}
 }
 
+	// v9.0.8 — self-heal usage totals accrued under the pre-fix tracker
+	// (see Session.UsageLinesRead's doc comment in store.go for the
+	// restart-amplification incident). Only the 4 backends below ever
+	// run a usage tracker, so only they can carry this corruption.
+	// Resetting the stored totals right here, before the (now-fixed)
+	// tracker goroutine starts, means its own first scan recomputes the
+	// correct absolute total fresh from the real source and persists an
+	// honest checkpoint from this point on -- reusing the exact same
+	// tested scan logic rather than a separate one-off recompute script
+	// that could race the live Store's own writes to sessions.json.
+	switch sess.BackendFamily {
+	case "claude-code", "opencode", "opencode-prompt", "goose", "aider":
+		m.resetPreFixUsageIfCorrupted(sess)
+	}
+
 	// B98 — claude-code's own JSONL transcript (not this pane log) is
 	// where real per-turn token usage lives; poll it on the same
 	// lifecycle as this function's own monitoring (started together,
 	// stopped together via ctx) so TokensIn/TokensOut/EstCostUSD
 	// actually populate instead of staying at zero forever.
 	if sess.BackendFamily == "claude-code" {
-		go trackClaudeCodeUsage(ctx, sess.FullID, sess.ProjectDir, 10*time.Second, func(sessID string, tokensIn, tokensOut int) {
-			_ = m.AddUsage(sessID, tokensIn, tokensOut, CostRate{})
+		go trackClaudeCodeUsage(ctx, sess.FullID, sess.ProjectDir, sess.UsageLinesRead, 10*time.Second, func(sessID string, tokensIn, tokensOut, linesRead int) {
+			_ = m.AddUsageLinesRead(sessID, tokensIn, tokensOut, linesRead)
 		})
 	}
 
@@ -5351,18 +5366,18 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 	// goose (see opencode_usage.go / goose_usage.go for each backend's
 	// own discovery mechanism).
 	if sess.BackendFamily == "opencode" || sess.BackendFamily == "opencode-prompt" {
-		go trackOpenCodeUsage(ctx, sess.FullID, sess.ProjectDir, sess.CreatedAt, 10*time.Second, func(sessID string, tokensIn, tokensOut int) {
-			_ = m.AddUsage(sessID, tokensIn, tokensOut, CostRate{})
+		go trackOpenCodeUsage(ctx, sess.FullID, sess.ProjectDir, sess.CreatedAt, sess.UsageLastIn, sess.UsageLastOut, 10*time.Second, func(sessID string, tokensIn, tokensOut, curIn, curOut int) {
+			_ = m.AddUsageLastTotals(sessID, tokensIn, tokensOut, curIn, curOut)
 		})
 	}
 	if sess.BackendFamily == "goose" {
-		go trackGooseUsage(ctx, sess.FullID, sess.Name, 10*time.Second, func(sessID string, tokensIn, tokensOut int) {
-			_ = m.AddUsage(sessID, tokensIn, tokensOut, CostRate{})
+		go trackGooseUsage(ctx, sess.FullID, sess.Name, sess.UsageLastIn, sess.UsageLastOut, 10*time.Second, func(sessID string, tokensIn, tokensOut, curIn, curOut int) {
+			_ = m.AddUsageLastTotals(sessID, tokensIn, tokensOut, curIn, curOut)
 		})
 	}
 	if sess.BackendFamily == "aider" {
-		go trackAiderUsage(ctx, sess.FullID, sess.LogFile, 10*time.Second, func(sessID string, tokensIn, tokensOut int) {
-			_ = m.AddUsage(sessID, tokensIn, tokensOut, CostRate{})
+		go trackAiderUsage(ctx, sess.FullID, sess.LogFile, sess.UsageLinesRead, 10*time.Second, func(sessID string, tokensIn, tokensOut, linesRead int) {
+			_ = m.AddUsageLinesRead(sessID, tokensIn, tokensOut, linesRead)
 		})
 	}
 

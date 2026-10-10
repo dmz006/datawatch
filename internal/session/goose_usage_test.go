@@ -34,7 +34,7 @@ func TestScanGooseUsageOnce_SumsDeltaAcrossTicks(t *testing.T) {
 	t.Cleanup(func() { gooseLastTotals.Delete(sessID) })
 
 	var gotIn, gotOut, calls int
-	report := func(_ string, tokensIn, tokensOut int) {
+	report := func(_ string, tokensIn, tokensOut, curIn, curOut int) {
 		calls++
 		gotIn += tokensIn
 		gotOut += tokensOut
@@ -68,7 +68,7 @@ func TestTrackGooseUsage_EmptyNameIsNoop(t *testing.T) {
 	called := false
 	done := make(chan struct{})
 	go func() {
-		trackGooseUsage(ctx, "sess-goose-empty-name-test", "", time.Millisecond, func(string, int, int) { called = true })
+		trackGooseUsage(ctx, "sess-goose-empty-name-test", "", 0, 0, time.Millisecond, func(string, int, int, int, int) { called = true })
 		close(done)
 	}()
 	select {
@@ -86,7 +86,7 @@ func TestTrackGooseUsage_StopsOnContextCancel(t *testing.T) {
 	done := make(chan struct{})
 	const sessID = "sess-goose-cancel-test"
 	go func() {
-		trackGooseUsage(ctx, sessID, "dw-cancel-test", 5*time.Millisecond, func(string, int, int) {})
+		trackGooseUsage(ctx, sessID, "dw-cancel-test", 0, 0, 5*time.Millisecond, func(string, int, int, int, int) {})
 		close(done)
 	}()
 	cancel()

@@ -81,7 +81,7 @@ func TestScanAiderUsageOnce_SumsOnlyNewLines(t *testing.T) {
 	t.Cleanup(func() { aiderUsageLinesRead.Delete(sessID) })
 
 	var gotIn, gotOut, calls int
-	report := func(_ string, tokensIn, tokensOut int) {
+	report := func(_ string, tokensIn, tokensOut, linesRead int) {
 		calls++
 		gotIn += tokensIn
 		gotOut += tokensOut
@@ -118,7 +118,7 @@ func TestScanAiderUsageOnce_SumsOnlyNewLines(t *testing.T) {
 
 func TestScanAiderUsageOnce_MissingFileIsNoop(t *testing.T) {
 	called := false
-	scanAiderUsageOnce(filepath.Join(t.TempDir(), "does-not-exist.log"), "sess-aider-missing-test", func(string, int, int) { called = true })
+	scanAiderUsageOnce(filepath.Join(t.TempDir(), "does-not-exist.log"), "sess-aider-missing-test", func(string, int, int, int) { called = true })
 	if called {
 		t.Error("a missing log file must not call report")
 	}
@@ -144,7 +144,7 @@ func TestScanAiderUsageOnce_StripsANSIBeforeMatching(t *testing.T) {
 	const sessID = "sess-aider-ansi-test"
 	t.Cleanup(func() { aiderUsageLinesRead.Delete(sessID) })
 	var gotIn, gotOut int
-	scanAiderUsageOnce(path, sessID, func(_ string, tokensIn, tokensOut int) {
+	scanAiderUsageOnce(path, sessID, func(_ string, tokensIn, tokensOut, linesRead int) {
 		gotIn, gotOut = tokensIn, tokensOut
 	})
 	if gotIn != 610 || gotOut != 146 {

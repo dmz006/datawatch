@@ -88,6 +88,59 @@ func SummaryFor(sessions []*Session) CostSummary {
 // AddUsage updates a session's running token + cost counters using
 // the rate for sess.BackendFamily (or override if non-empty).
 func (m *Manager) AddUsage(sessID string, tokensIn, tokensOut int, override CostRate) error {
+	return m.addUsage(sessID, tokensIn, tokensOut, override, nil)
+}
+
+// AddUsageLinesRead is AddUsage plus persisting the usage-tracker's new
+// "lines already counted" checkpoint in the same save, so a daemon
+// restart resumes from here instead of re-counting from line 0 (see
+// Session.UsageLinesRead's doc comment in store.go). Used by
+// claude-code and aider.
+func (m *Manager) AddUsageLinesRead(sessID string, tokensIn, tokensOut, linesRead int) error {
+	return m.addUsage(sessID, tokensIn, tokensOut, CostRate{}, func(sess *Session) {
+		sess.UsageLinesRead = linesRead
+	})
+}
+
+// AddUsageLastTotals is AddUsage plus persisting the usage-tracker's new
+// "last cumulative total seen" checkpoint in the same save, so a daemon
+// restart resumes the delta from here instead of diffing against zero
+// (see Session.UsageLastIn/UsageLastOut's doc comment in store.go).
+// Used by opencode and goose, whose own export commands report a
+// lifetime-cumulative total rather than a per-tick delta.
+func (m *Manager) AddUsageLastTotals(sessID string, tokensIn, tokensOut, curIn, curOut int) error {
+	return m.addUsage(sessID, tokensIn, tokensOut, CostRate{}, func(sess *Session) {
+		sess.UsageLastIn = curIn
+		sess.UsageLastOut = curOut
+	})
+}
+
+// resetPreFixUsageIfCorrupted discards sess's stored TokensIn/TokensOut/
+// EstCostUSD when they can only have come from the pre-v9.0.8 tracker
+// bug: real usage was reported at some point (TokensIn or TokensOut is
+// non-zero) but no checkpoint was ever persisted (UsageLinesRead and
+// UsageLastIn/Out are all still zero) -- impossible for a session whose
+// tracker ran under the fixed code, which always persists a checkpoint
+// on its very first tick. A session with no usage ever reported, or one
+// already carrying a real checkpoint, is left untouched. Scoped to
+// currently-active sessions only (called right before their tracker
+// goroutine (re)starts) -- a terminal/historical session never reaches
+// this code path again, so its stored totals (if any are wrong) are
+// left as a known, documented limitation rather than guessed at.
+func (m *Manager) resetPreFixUsageIfCorrupted(sess *Session) {
+	if sess.UsageLinesRead != 0 || sess.UsageLastIn != 0 || sess.UsageLastOut != 0 {
+		return
+	}
+	if sess.TokensIn == 0 && sess.TokensOut == 0 {
+		return
+	}
+	sess.TokensIn = 0
+	sess.TokensOut = 0
+	sess.EstCostUSD = 0
+	_ = m.SaveSession(sess)
+}
+
+func (m *Manager) addUsage(sessID string, tokensIn, tokensOut int, override CostRate, setTracker func(*Session)) error {
 	sess, ok := m.GetSession(sessID)
 	if !ok {
 		// fall back to short-id resolver
@@ -106,6 +159,9 @@ func (m *Manager) AddUsage(sessID string, tokensIn, tokensOut int, override Cost
 	sess.TokensIn += tokensIn
 	sess.TokensOut += tokensOut
 	sess.EstCostUSD += EstimateCost(rate, tokensIn, tokensOut)
+	if setTracker != nil {
+		setTracker(sess)
+	}
 	return m.SaveSession(sess)
 }
 

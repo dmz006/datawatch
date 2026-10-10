@@ -89,7 +89,7 @@ func TestScanClaudeUsageOnce_SumsOnlyNewAssistantLines(t *testing.T) {
 
 	var gotIn, gotOut int
 	calls := 0
-	report := func(sessID string, tokensIn, tokensOut int) {
+	report := func(sessID string, tokensIn, tokensOut, linesRead int) {
 		calls++
 		gotIn += tokensIn
 		gotOut += tokensOut
@@ -124,7 +124,7 @@ func TestScanClaudeUsageOnce_SumsOnlyNewAssistantLines(t *testing.T) {
 
 func TestScanClaudeUsageOnce_MissingFileIsNoop(t *testing.T) {
 	called := false
-	scanClaudeUsageOnce(filepath.Join(t.TempDir(), "does-not-exist.jsonl"), "sess-missing-test", func(string, int, int) { called = true })
+	scanClaudeUsageOnce(filepath.Join(t.TempDir(), "does-not-exist.jsonl"), "sess-missing-test", func(string, int, int, int) { called = true })
 	if called {
 		t.Error("a missing transcript file must not call report")
 	}
@@ -159,7 +159,7 @@ func TestScanClaudeUsageOnce_CacheTokensNotCounted(t *testing.T) {
 	const sessID = "sess-cache-test"
 	t.Cleanup(func() { claudeUsageLinesRead.Delete(sessID) })
 	var gotIn, gotOut int
-	scanClaudeUsageOnce(path, sessID, func(sessID string, tokensIn, tokensOut int) {
+	scanClaudeUsageOnce(path, sessID, func(sessID string, tokensIn, tokensOut, linesRead int) {
 		gotIn, gotOut = tokensIn, tokensOut
 	})
 	if gotIn != 2 || gotOut != 136 {
@@ -173,7 +173,7 @@ func TestTrackClaudeCodeUsage_StopsOnContextCancel(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
 	go func() {
-		trackClaudeCodeUsage(ctx, "sess-cancel-test", "/some/project", 5*time.Millisecond, func(string, int, int) {})
+		trackClaudeCodeUsage(ctx, "sess-cancel-test", "/some/project", 0, 5*time.Millisecond, func(string, int, int, int) {})
 		close(done)
 	}()
 	cancel()
@@ -193,7 +193,7 @@ func TestTrackClaudeCodeUsage_EmptyProjectDirIsNoop(t *testing.T) {
 	called := false
 	done := make(chan struct{})
 	go func() {
-		trackClaudeCodeUsage(ctx, "sess-1", "", time.Millisecond, func(string, int, int) { called = true })
+		trackClaudeCodeUsage(ctx, "sess-1", "", 0, time.Millisecond, func(string, int, int, int) { called = true })
 		close(done)
 	}()
 	// Should return immediately (empty path) rather than looping.
