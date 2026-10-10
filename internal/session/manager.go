@@ -4264,8 +4264,33 @@ func (m *Manager) ResumeMonitors(ctx context.Context) {
 		if sess.Hostname != m.hostname {
 			continue
 		}
+		recovering := false
 		if sess.State != StateRunning && sess.State != StateWaitingInput && sess.State != StateRateLimited {
-			continue
+			// v9.0.7: self-heal a session stranded StateFailed by a bad
+			// boot (e.g. a stale/unset TMUX_TMPDIR made SessionExists
+			// report a false negative for a daemon started outside
+			// systemd — see runRestart's delegateToSystemd comment in
+			// cmd/datawatch) when its tmux pane is actually still alive.
+			// Found live: 3 genuinely-running sessions were left marked
+			// StateFailed, invisible to this function (which only
+			// considered Running/WaitingInput/RateLimited), until an
+			// operator hand-edited sessions.json while the daemon was
+			// stopped. A pane that's still alive after this exact boot is
+			// strong evidence the session never actually died.
+			//
+			// Deliberately NOT extended to StateKilled or StateComplete:
+			// both are set by legitimate, unrelated code paths (explicit
+			// operator kill — KillSession even kills the tmux pane itself
+			// — and normal completion detection) that have nothing to do
+			// with a tmux-liveness false negative. Resurrecting those
+			// because a pane happens to still exist would override real
+			// intent instead of undoing a boot-time glitch.
+			if sess.State == StateFailed &&
+				sess.TmuxSession != "" && m.tmux.SessionExists(sess.TmuxSession) {
+				recovering = true
+			} else {
+				continue
+			}
 		}
 		// Subprocess/virtual sessions (schedule type=spawn, council, agent, etc.)
 		// have no TmuxSession — a tmux liveness check against "" always
@@ -4302,8 +4327,11 @@ func (m *Manager) ResumeMonitors(ctx context.Context) {
 			m.triggerSummarize(sess.FullID, 200)
 			continue
 		}
-		// Check if tmux session still exists (retry once to handle transient failures)
-		if !m.tmux.SessionExists(sess.TmuxSession) {
+		// Check if tmux session still exists (retry once to handle transient
+		// failures). Skipped when recovering: SessionExists was just
+		// confirmed true above, and re-checking only risks a flaky second
+		// read undoing the recovery we already decided on.
+		if !recovering && !m.tmux.SessionExists(sess.TmuxSession) {
 			time.Sleep(500 * time.Millisecond)
 			if m.tmux.SessionExists(sess.TmuxSession) {
 				goto resumeSession // tmux recovered
@@ -4321,6 +4349,14 @@ func (m *Manager) ResumeMonitors(ctx context.Context) {
 		}
 
 	resumeSession:
+		if recovering {
+			oldState := sess.State
+			sess.State = StateRunning
+			fmt.Printf("[resume] recovered session %s: %s -> running — tmux pane %q is still alive after boot\n", sess.FullID, oldState, sess.TmuxSession)
+			if m.onStateChange != nil {
+				m.onStateChange(sess, oldState)
+			}
+		}
 		// BL263 / v6.11.9 — re-establish the tmux pipe-pane bridge.
 		// Operator: "When the server has restarted last few times i could
 		// not connect to the session again, I've had to stop and restart

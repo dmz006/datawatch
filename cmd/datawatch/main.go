@@ -113,7 +113,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "9.0.6"
+var Version = "9.0.7"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -612,12 +612,27 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			fmt.Println("[warn] --secure with daemon mode requires interactive password entry.")
 			fmt.Println("       Use --foreground to run in the terminal with an encrypted config.")
 		}
+		if systemdUnitEnabled(systemdUnitName) {
+			return delegateToSystemd("start", systemdUnitName)
+		}
 		return daemonize()
 	}
 
 	// B23: capture full stack traces and concurrent-map crashes to a file
 	// so silent daemon deaths leave a forensic trail.
 	installCrashLog()
+
+	// v9.0.7: a daemon started without inheriting datawatch.env's
+	// TMUX_TMPDIR (e.g. the old daemonize() path from `datawatch restart`,
+	// before this release's systemd delegation) would have every tmux
+	// call in internal/session/tmux.go — all bare exec.Command("tmux",
+	// ...), relying entirely on inherited env — silently hit tmux's
+	// default (no-server) socket instead of the one every live session's
+	// pane actually lives on. Found live on this host: ResumeMonitors
+	// then marked 3 genuinely-alive sessions StateFailed.
+	if d := ensureTmuxTmpdirEnv(); d != "" {
+		fmt.Printf("[tmux] TMUX_TMPDIR was unset — using dedicated socket %s\n", d)
+	}
 
 	// F10 S3.4 — worker self-registration. When the spawn driver
 	// injected DATAWATCH_BOOTSTRAP_{URL,TOKEN} + DATAWATCH_AGENT_ID
@@ -7948,6 +7963,99 @@ func ensureChannelExtracted(cfg *config.Config) error {
 
 // ---- stop command ---------------------------------------------------------
 
+// ensureTmuxTmpdirEnv sets TMUX_TMPDIR from the dedicated tmux socket
+// (session.TmuxSocketDir()) when it isn't already in this process's
+// environment, so the daemon's own tmux calls resolve against the right
+// server. Returns the socket dir it set, or "" if nothing needed changing
+// (TMUX_TMPDIR already set, or no dedicated socket exists).
+func ensureTmuxTmpdirEnv() string {
+	if os.Getenv("TMUX_TMPDIR") != "" {
+		return ""
+	}
+	d := session.TmuxSocketDir()
+	if d == "" {
+		return ""
+	}
+	_ = os.Setenv("TMUX_TMPDIR", d)
+	return d
+}
+
+// systemdUnitName is the user-unit this binary expects to be managed by
+// when installed via the standard systemd --user setup.
+const systemdUnitName = "datawatch.service"
+
+// systemdMainPID returns the MainPID systemd --user reports for unit and
+// whether the unit is currently active. Returns (0, false) if systemd isn't
+// managing it (not installed, not running under a systemd --user session,
+// `systemctl` missing, etc.) — callers treat that as "fall back to raw PID
+// signaling / self-daemonize," the pre-v9.0.7 behavior.
+func systemdMainPID(unit string) (pid int, active bool) {
+	// No --value: `systemctl show` does NOT preserve the --property list's
+	// order in its output (confirmed live: asking for "MainPID,ActiveState"
+	// printed ActiveState's value first) — --value would have made this
+	// silently always return (0, false), so the delegation below would
+	// never have fired at all. key=value lines parsed by key are order-
+	// independent; see parseSystemdShowMainPID.
+	out, err := exec.Command("systemctl", "--user", "show", unit, "--property=MainPID,ActiveState").Output()
+	if err != nil {
+		return 0, false
+	}
+	return parseSystemdShowMainPID(out)
+}
+
+// parseSystemdShowMainPID parses `systemctl show --property=MainPID,ActiveState`
+// output (without --value) by key, not position — see systemdMainPID's
+// comment for why position can't be trusted.
+func parseSystemdShowMainPID(out []byte) (pid int, active bool) {
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		k, v, ok := strings.Cut(line, "=")
+		if !ok {
+			continue
+		}
+		switch k {
+		case "MainPID":
+			pid, _ = strconv.Atoi(strings.TrimSpace(v))
+		case "ActiveState":
+			active = strings.TrimSpace(v) == "active"
+		}
+	}
+	return pid, active
+}
+
+// systemdUnitEnabled reports whether unit is enabled to start at login.
+// `datawatch start` (no --foreground) uses this to decide whether a manual
+// start should go through systemctl instead of self-daemonizing outside
+// systemd's management (losing the unit's EnvironmentFile and cgroup).
+func systemdUnitEnabled(unit string) bool {
+	out, err := exec.Command("systemctl", "--user", "is-enabled", unit).Output()
+	if err != nil {
+		return false
+	}
+	return strings.TrimSpace(string(out)) == "enabled"
+}
+
+// delegateToSystemd runs `systemctl --user <action> <unit>` in place of the
+// raw-PID start/stop/restart path.
+//
+// v9.0.7 (2026-10-09): found live on this host — `datawatch restart` SIGTERM'd
+// the systemd-managed daemon (which exited 0, so Restart=on-failure never
+// fired, leaving the unit inactive(dead)) and then self-daemonized a
+// replacement in the operator's terminal cgroup, outside systemd. That
+// replacement never inherited datawatch.env, so TMUX_TMPDIR wasn't set, its
+// tmux calls hit the wrong (default, no-server) socket, and ResumeMonitors
+// marked 3 genuinely-alive sessions StateFailed. Delegating to systemctl
+// keeps the unit's own bookkeeping (ActiveState, cgroup, env) in sync with
+// the process's real lifecycle instead of fighting it from the CLI.
+func delegateToSystemd(action, unit string) error {
+	fmt.Printf("%s (systemd --user) is managing this daemon — delegating to `systemctl --user %s %s`...\n", unit, action, unit)
+	out, err := exec.Command("systemctl", "--user", action, unit).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("systemctl --user %s %s: %w\n%s", action, unit, err, out)
+	}
+	fmt.Printf("systemctl --user %s %s: done\n", action, unit)
+	return nil
+}
+
 func newStopCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "stop",
@@ -7986,6 +8094,11 @@ func runStop(cmd *cobra.Command, _ []string) error {
 		_ = runSessionStopAll(cfg) // best-effort
 	}
 
+	if mainPID, active := systemdMainPID(systemdUnitName); active && mainPID == pid {
+		_ = os.Remove(pidPath)
+		return delegateToSystemd("stop", systemdUnitName)
+	}
+
 	if err := proc.Signal(syscall.SIGTERM); err != nil {
 		_ = os.Remove(pidPath)
 		return fmt.Errorf("send SIGTERM to PID %d: %w (process may have already exited)", pid, err)
@@ -8015,6 +8128,10 @@ func runRestart(_ *cobra.Command, _ []string) error {
 	if data, err := os.ReadFile(pidPath); err == nil {
 		var pid int
 		if _, scanErr := fmt.Sscanf(strings.TrimSpace(string(data)), "%d", &pid); scanErr == nil && pid > 0 {
+			if mainPID, active := systemdMainPID(systemdUnitName); active && mainPID == pid {
+				_ = os.Remove(pidPath)
+				return delegateToSystemd("restart", systemdUnitName)
+			}
 			if proc, procErr := os.FindProcess(pid); procErr == nil {
 				fmt.Printf("Stopping datawatch (PID %d)...\n", pid)
 				_ = proc.Signal(syscall.SIGTERM)

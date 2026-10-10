@@ -5,6 +5,32 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.7 — fix: restart/stop fight systemd, tmux calls miss TMUX_TMPDIR, boot can't self-heal a false-failed session
+
+### Fixed
+- Real incident, 2026-10-09: `datawatch restart` on this host SIGTERM'd the
+  systemd-managed daemon (which exited 0, so `Restart=on-failure` never
+  fired, leaving the unit `inactive(dead)`), then self-daemonized a
+  replacement in the operator's terminal cgroup, outside systemd. That
+  replacement never inherited `datawatch.env`, so `TMUX_TMPDIR` was unset;
+  every tmux call (`internal/session/tmux.go`'s bare `exec.Command("tmux",
+  ...)` calls) hit the wrong default socket, and `ResumeMonitors` marked 3
+  genuinely-alive sessions `StateFailed` — recoverable only by an operator
+  hand-editing `sessions.json` while the daemon was stopped. Three fixes:
+  - `datawatch start`/`stop`/`restart` now detect an active/enabled
+    `datawatch.service` systemd --user unit and delegate to `systemctl
+    --user <action> datawatch.service` instead of raw PID signaling +
+    self-daemonizing, so the unit's own bookkeeping stays in sync with the
+    process's real lifecycle.
+  - The daemon now sets `TMUX_TMPDIR` from the dedicated
+    `~/.datawatch/tmux` socket at startup when it's unset, before any
+    session/tmux code runs — covers any path that reaches the daemon
+    without inheriting `datawatch.env`, not just the restart path above.
+  - `ResumeMonitors` now also recovers a `StateFailed` session back to
+    `StateRunning` at boot when its tmux pane is actually still alive
+    (scoped to `StateFailed` only — `StateKilled`/`StateComplete` are set
+    by legitimate, unrelated paths and must stay untouched).
+
 ## v9.0.6 — fix: datawatch-channel sibling binary silently never updated
 
 ### Fixed
