@@ -40,7 +40,7 @@ single source of truth.
 
 ## Current state — 2026-10-10
 
-Latest release: **v9.0.17** (2026-10-10). feat(autonomous): BL406 Phase 5 — real GuidedMode (B111) + scope-drift rule (B112). This closes out BL406 (Configurable Project-Rules Enforcement) entirely — all 6 phases shipped v9.0.11–v9.0.17. **Active work:** the v10.0.0 self-build arc — see [§ Roadmap](#roadmap-self-build-arc--v1000-locked-2026-10-10); BL407 (PRD Git Workflow) is next in Stage 1. Plans folder refactored 2026-10-10: 11 completed plan docs archived to `historical-plans/`, BL381 closed as shipped, and unscheduled work called out in the Roadmap's "Not yet placed" list.
+Latest release: **v9.0.17** (2026-10-10). feat(autonomous): BL406 Phase 5 — real GuidedMode (B111) + scope-drift rule (B112). This closes out BL406 (Configurable Project-Rules Enforcement) entirely — all 6 phases shipped v9.0.11–v9.0.17. **Active work:** the v10.0.0 self-build arc — see [§ Roadmap](#roadmap-self-build-arc--v1000-locked-2026-10-10); BL407 (PRD Git Workflow) is next in Stage 1, plan written 2026-10-10 (`docs/plans/2026-10-10-prd-git-workflow.md`, 7 phases, not started) — found and filed **B114** (`PRD.ClusterProfile` dispatch never resolves) while planning it, scoped as the plan's own Phase 0. Plans folder refactored 2026-10-10: 11 completed plan docs archived to `historical-plans/`, BL381 closed as shipped, and unscheduled work called out in the Roadmap's "Not yet placed" list.
 
 Previous: **v9.0.7** (2026-10-09). fix(daemon): `datawatch restart`/`stop`/`start` now detect and delegate to an active/enabled `datawatch.service` systemd --user unit instead of raw PID signaling + self-daemonizing; the daemon now falls back to the dedicated `~/.datawatch/tmux` socket when `TMUX_TMPDIR` is unset at boot; `ResumeMonitors` self-heals a `StateFailed` session back to `StateRunning` at boot when its tmux pane is actually still alive. Full history for every release between this and the v8.39.1 entry below is in `CHANGELOG.md` (this section was 8 days / ~400 versions stale until this backlog refactor — see the "Gotcha" note in AGENT.md's Project Tracking Rule: this header is meant to be refreshed every release, not just major ones).
 
@@ -174,10 +174,10 @@ Previous: **v8.25.3** (2026-09-12). feat(observer): nvidia-smi and tegrastats GP
 
  | Bucket | Count | Notes |
 |---|---|---|
-| Open bugs | 0 | B111 (dead `GuidedMode`), B112 (dead scope-drift rule) — fixed by BL406 Phase 5, v9.0.17, 2026-10-10. B113 (scan config never persisted/wired) — fixed + live-verified by BL406 Phase 0, 2026-10-10. None open |
+| Open bugs | 1 | B111/B112 — fixed by BL406 Phase 5, v9.0.17, 2026-10-10. B113 — fixed + live-verified by BL406 Phase 0, 2026-10-10. **B114** (`PRD.ClusterProfile` dispatch never resolves) — found 2026-10-10 while planning BL407, scoped as BL407's own Phase 0, not yet fixed |
 | Open features | 7 | BL241 Matrix (design interview needed); BL365 + BL408 + BL395 security remediation track (roadmap Stage 3 #7); BL390 Phase 2/3 (folded into BL405 Phase 8a); BL393 nested tags (excluded until authorized); BL394 + BL392 (substantially done, residue cross-repo). BL389 shipped v9.0.0; BL381 shipped v8.28.0/v8.28.2 |
 | Active backlog | 0 | BL387 complete (v8.31–33.0 ✅) |
-| Pending backlog | 7 | BL402, BL403, BL404, BL405, BL406, BL407 (v10.0.0 roadmap) + BL398 Phase 2; BL400 deferred (open questions). BL335 shipped v8.62.x via BL397 Phase 4 |
+| Pending backlog | 6 | BL402, BL403, BL404, BL405, BL407 (v10.0.0 roadmap; BL406 shipped v9.0.17) + BL398 Phase 2; BL400 deferred (open questions). BL335 shipped v8.62.x via BL397 Phase 4 |
 | Active (in-progress) | 0 | — |
 | Deferred | 0 | — |
 | Awaiting operator action | 0 | — |
@@ -427,7 +427,7 @@ else is in `historical-plans/`):
 | Plan doc | BL | Roadmap slot |
 |---|---|---|
 | `2026-10-10-configurable-project-rules-enforcement.md` | BL406 (+B111/B112/B113) | Stage 1 #1 — **done**, all 6 phases shipped (v9.0.11–v9.0.17) |
-| _(no plan doc yet)_ | BL407 | Stage 1 #2 |
+| `2026-10-10-prd-git-workflow.md` | BL407 (+B114) | Stage 1 #2 — planned, not started |
 | _(no plan doc yet)_ | BL404 | Stage 2 #3 |
 | `2026-10-09-plugin-extension-surfaces.md` | BL403 | Stage 3 #4 |
 | `2026-10-09-gh204-result-panel.md` | BL402 (GH#204) | Stage 3 #5 |
@@ -453,8 +453,8 @@ of every plan in this arc (BL406, BL407, BL403, BL402, BL405, BL398,
 and the security track) must satisfy AGENT.md's Phase Completion
 Checklist (Planning Rules §5, added 2026-10-10) — not just functional
 code + unit tests, but the full documentation/Mobile-Parity/version-
-bump checklist. BL406 and BL405's plans already carry an explicit
-cross-reference per phase; BL407 and BL404 (no plan docs written yet)
+bump checklist. BL406, BL405, and BL407's plans already carry an
+explicit cross-reference per phase; BL404 (no plan doc written yet)
 must include it from the start when written. This is also the
 mechanism a PRD — human or Claude-driven — uses to know a phase is
 actually done vs. what's still missing, per the operator's own framing.
@@ -662,6 +662,27 @@ _2026-05-02 operator-filed items promoted directly to BL218–BL221. 2026-05-03 
 > diverge in the first place. Full suite green (3369 Go tests, 83
 > packages; 182 JS tests). No longer open — safe to move to Completed
 > Bugs at the next backlog refactor pass.
+
+> **B114** — `PRD.ClusterProfile` dispatch is not functionally wired,
+> independent of git (found 2026-10-10 while planning BL407). The
+> `autonomousSpawn` closure's cluster branch
+> (`cmd/datawatch/main.go:4452-4480`) returns
+> `SpawnResult{SessionID: "agent:" + out.ID}` — a synthetic string never
+> registered in `session.Manager` — so the executor's own verify loop
+> polls `mgr.GetSession(task.SessionID)` for an ID that can never
+> resolve; it spins until context cancellation rather than ever
+> completing or failing. Separately, `docker_driver.go:178-179`'s own
+> comment confirms task execution *inside* the container isn't wired
+> yet either ("Task, for now, is visible to the worker via env...
+> Actually invoking the task lives in the session start flow (Sprint
+> 6+)"). `PostSessionPRHook` has never been exercised end-to-end against
+> a real docker/k8s spawn in production — only against test mocks — and
+> its session-binding mechanism (`SetAgentBinding`) is a manual operator
+> action on a pre-existing local session, never something the
+> `/api/agents` spawn path or the autonomous executor does
+> automatically. **Scoped as BL407 Phase 0**, not deferred — any PRD
+> task dispatched via `ClusterProfile` today cannot reach a terminal
+> state at all, with or without git.
 
 _(Otherwise no open bugs as of the 2026-10-09/10 backlog refactor —
 everything previously listed here was already closed and has been moved
@@ -1180,55 +1201,24 @@ per-PRD council-profile override field (the Automata-page entry point).
 > avoids the bootstrapping problem of using a not-yet-built safety net to
 > build itself.
 
-> **BL407** — PRD Git Workflow: branch-per-PRD + auto-PR on completion
-> (filed 2026-10-10, found while discussing how a PRD-driven backlog
-> run should produce trackable, reviewable git history instead of
-> committing directly to whatever branch is checked out).
-> `internal/autonomous` has zero branch-creation logic today —
-> `AutoGitCommit` just commits on the current branch. A real, working
-> push+PR mechanism already exists (`internal/agents/post_session.go`'s
-> `PostSessionPRHook`, using `git.Provider.OpenPR` via `gh`) but it's
-> wired only to the separate `agent_spawn` subsystem's "Project Profile"
-> (`Git.AutoPR`) — `PRD` has no `Git` field at all. Scope: give `PRD` its
-> own `Git` config, create a branch at PRD start, commit each task to
-> that branch, open one PR per PRD at completion (not one per task) by
-> extending `PostSessionPRHook`'s pattern to PRD-completion events rather
-> than building a second mechanism. Plan doc not yet written — full
-> design when this item is reached in the queue (see recommended order
-> above), not blocking BL406.
->
-> **Design notes captured 2026-10-10, not yet built (operator-raised
-> while scoping BL406 Phase 2):**
-> - **Isolation**: a PRD should never run directly in this repo's own
->   checkout (`/home/dmz/workspace/datawatch` — where all of BL406's
->   own direct, hand-driven implementation work happens). Two modes,
->   both worth building: (a) **local git worktree**
->   (`~/.datawatch/prd-worktrees/<prd-id>/`, own branch off `main`,
->   shares this repo's `.git` object store — cheap, filesystem/git-level
->   isolation only) for the common case; (b) **container dispatch**
->   (reuses the already-real, already-wired `PRD.ClusterProfile` path,
->   `internal/autonomous/executor.go:716`) for anything needing the
->   stronger isolation BL395/F-2 is hardening (separate process/
->   filesystem/network namespace, eventually scoped credentials).
-> - **Centralization isn't a shared directory, it's the git remote**:
->   regardless of mode, a PRD's actual code changes get centralized by
->   pushing the branch + opening a PR on completion (the
->   `PostSessionPRHook` extension above) — not by syncing files back to
->   a local directory on the daemon host. This resolves cleanly for
->   container mode specifically: the working tree disappears with the
->   container, but nothing is lost because the push already happened.
->   PRD/session *metadata* (title, status, decisions, story/task tree,
->   telemetry) is separately already centralized today, in the
->   autonomous `Store` — unaffected by either mode, not something BL407
->   needs to solve.
-> - **Interim session output/telemetry during the run is a separate,
->   confirmed gap** — see `docs/plans/2026-10-04-f2-session-worker-isolation.md`
->   §11's new entry (F-2's concern, not BL407's, but BL407's own plan
->   should cross-reference it: a worktree-mode PRD has the same
->   "what if the session dies mid-run" question, just without the
->   container angle). Operator decision: want both push (primary —
->   durable copy independent of the worker surviving) and pull (kept as
->   an on-demand fallback outside the push cycle) — not designed yet.
+> **BL407** — PRD Git Workflow: branch-per-PRD + auto-PR on completion.
+> Full plan: `docs/plans/2026-10-10-prd-git-workflow.md` (written
+> 2026-10-10, 7 phases 0-6, not started). Two rounds of live
+> investigation while planning found the problem is bigger than "add
+> git wiring": `PRD.ClusterProfile` dispatch isn't functionally wired
+> today independent of git (synthetic session ID that never resolves in
+> the verify loop, container task-invocation still a TODO) — filed as
+> **B114** (see Open Bugs), fixed as the plan's own Phase 0 rather than
+> deferred, per operator decision to build both local-worktree and
+> container-dispatch git modes in this arc together. Local git worktree
+> (`~/.datawatch/prd-worktrees/<prd-id>/`) is the isolation mechanism for
+> self-build/dogfooding work; container dispatch reuses the
+> already-isolated `ClusterProfile` path. One PR per PRD at completion
+> (not one per task), reusing `git.Provider.OpenPR` and
+> `session.ProjectGit`'s existing per-task commit mechanism — no new
+> git abstraction. Interim session telemetry during a run
+> (`docs/plans/2026-10-04-f2-session-worker-isolation.md` §11) is
+> cross-referenced, explicitly out of scope.
 
 > **BL405** — LLM Enhancements: role-aware scheduling, federated
 > capacity, council-as-reusable-profile, usage/cost tracking (filed
