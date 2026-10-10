@@ -68,6 +68,16 @@ const (
 	RuleTypeConsistency RuleType = "consistency" // two files' values must match
 	RuleTypePresence    RuleType = "presence"    // a file/pattern must exist
 	RuleTypeParity      RuleType = "parity"      // built-in parity-surface inheritance check
+	// RuleTypeScopeDrift (BL406 Phase 5 / B112, AGENT.md's BL384
+	// mitigation #3) is built in, like RuleTypeParity — no pattern
+	// needed. Flags a task spec containing code-creation language when
+	// the parent PRD spec itself signals doc-only/no-code-changes work.
+	// Not shipped as a DefaultConfig() default (unlike parity-
+	// inheritance): a normal, non-doc-only PRD saying "Implement X" is
+	// expected, not drift, so defaulting this on would false-positive
+	// on the common case. See docs/config-reference.yaml for the
+	// opt-in example.
+	RuleTypeScopeDrift RuleType = "scope_drift"
 )
 
 // RuleGranularity is when a rule is checked.

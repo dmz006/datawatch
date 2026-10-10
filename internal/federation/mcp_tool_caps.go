@@ -45,6 +45,7 @@ var MCPToolCap = map[string]string{
 	"autonomous_prd_add_story":                     CapAutonomousWrite,
 	"autonomous_prd_add_task":                      CapAutonomousWrite,
 	"autonomous_prd_approve":                       CapAutonomousWrite,
+	"autonomous_prd_approve_task":                  CapAutonomousWrite,
 	"autonomous_prd_cancel":                        CapAutonomousWrite,
 	"autonomous_prd_cancel_story":                  CapAutonomousWrite,
 	"autonomous_prd_cancel_task":                   CapAutonomousWrite,

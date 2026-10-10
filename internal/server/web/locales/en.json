@@ -968,6 +968,7 @@
   "prd_requeue_task_label": "Re-run",
   "prd_task_requeue_ok": "Task re-queued.",
   "prd_task_requeue_fail": "Re-queue failed",
+  "prd_task_approve": "Approve this task",
   "prd_cancel_task": "Cancel this task",
   "prd_cancel_task_confirm": "Cancel this task?",
   "prd_cancel_task_ok": "Task cancelled.",

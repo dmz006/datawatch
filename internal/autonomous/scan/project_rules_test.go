@@ -221,6 +221,68 @@ func TestProjectRulesScanner_ParityRule_MultipleStories_OnlyFlagsTheDriftedOne(t
 	}
 }
 
+// --- BL406 Phase 5 / B112 — scope-drift rule ---
+
+func scopeDriftRule() ProjectRule {
+	return ProjectRule{ID: "scope-drift", Name: "Task spec must not contain code-creation language in a doc-only PRD",
+		Type: RuleTypeScopeDrift, Granularity: GranularityTask}
+}
+
+func TestProjectRulesScanner_ScopeDriftRule_NoPRDContext(t *testing.T) {
+	dir := t.TempDir()
+	findings := ProjectRulesScanner{Rules: []ProjectRule{scopeDriftRule()}}.mustScan(t, dir)
+	if len(findings) != 1 || findings[0].Severity != SeverityInfo {
+		t.Fatalf("expected one informative (not warning/error) finding when no PRDContext supplied, got %+v", findings)
+	}
+}
+
+func TestProjectRulesScanner_ScopeDriftRule_NonDocOnlyPRD_NeverFires(t *testing.T) {
+	// A normal PRD with no doc-only constraint saying "Implement X" is
+	// expected work, not drift -- the rule must stay silent here.
+	dir := t.TempDir()
+	ctx := &PRDParityContext{
+		PRDSpecText: "Add a new /api/widgets endpoint and its handler.",
+		Tasks:       []TaskScopeInfo{{ID: "t1", Title: "Add handler", Spec: "Implement the widgets handler in internal/server/widgets.go"}},
+	}
+	findings := ProjectRulesScanner{Rules: []ProjectRule{scopeDriftRule()}, PRDContext: ctx}.mustScan(t, dir)
+	if len(findings) != 0 {
+		t.Fatalf("expected no findings for a non-doc-only PRD, got %+v", findings)
+	}
+}
+
+// TestProjectRulesScanner_ScopeDriftRule_DocOnlyPRD_CodeTaskFlagged is the
+// plan's own required regression test, matching AGENT.md's BL384 example
+// almost verbatim: a "documentation only" PRD whose decomposed task spec
+// nonetheless says "Implement ..." must fail the scan.
+func TestProjectRulesScanner_ScopeDriftRule_DocOnlyPRD_CodeTaskFlagged(t *testing.T) {
+	dir := t.TempDir()
+	ctx := &PRDParityContext{
+		PRDSpecText: "Documentation only -- do not write code. Update the README's install section.",
+		Tasks: []TaskScopeInfo{
+			{ID: "t1", Title: "Update README", Spec: "Update README.md's install section with the new flag."},
+			{ID: "t2", Title: "Drifted task", Spec: "Implement a new validation function and create .go files for it."},
+		},
+	}
+	findings := ProjectRulesScanner{Rules: []ProjectRule{scopeDriftRule()}, PRDContext: ctx}.mustScan(t, dir)
+	if len(findings) != 1 || findings[0].File != "t2" {
+		t.Fatalf("expected exactly 1 finding naming the drifted task t2, got %+v", findings)
+	}
+}
+
+func TestProjectRulesScanner_ScopeDriftRule_DocOnlyPRD_AllTasksClean_Passes(t *testing.T) {
+	dir := t.TempDir()
+	ctx := &PRDParityContext{
+		PRDSpecText: "Doc-only: update docs/operations.md, no code changes.",
+		Tasks: []TaskScopeInfo{
+			{ID: "t1", Title: "Update operations doc", Spec: "Add a new section to docs/operations.md describing the feature."},
+		},
+	}
+	findings := ProjectRulesScanner{Rules: []ProjectRule{scopeDriftRule()}, PRDContext: ctx}.mustScan(t, dir)
+	if len(findings) != 0 {
+		t.Fatalf("expected no findings when every task spec stays doc-only, got %+v", findings)
+	}
+}
+
 func TestSurfacesMentionedIn_RESTWordBoundary(t *testing.T) {
 	// "arrest"/"interest" must not false-positive on the REST surface.
 	got := surfacesMentionedIn("the officer made an arrest; this is of interest")

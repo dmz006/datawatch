@@ -2,7 +2,7 @@
 
 - **Date**: 2026-10-10
 - **Version at planning**: v9.0.10
-- **Status**: In progress — Phase 0 done (v9.0.11), Phase 1 done (v9.0.12, real rule engine), Phase 2 done (v9.0.13, first built-in rule), Phase 3 done (v9.0.14, rules fire automatically), Phase 4 done (v9.0.15, upstream issue-filing); Phase 5 next (final phase)
+- **Status**: **Done** — Phase 0 done (v9.0.11), Phase 1 done (v9.0.12, real rule engine), Phase 2 done (v9.0.13, first built-in rule), Phase 3 done (v9.0.14, rules fire automatically), Phase 4 done (v9.0.15, upstream issue-filing), Phase 5 done (v9.0.17, real GuidedMode + scope-drift rule — B111/B112 closed). All 6 phases shipped.
 
 ## Context
 
@@ -469,34 +469,66 @@ start, not after the fact):
   plan's status line updated.
 
 ### Phase 5 — Fix B111 and B112 for real
-**Status: Not started.**
-- [ ] `PRD.GuidedMode bool` → `PRD.GuidedModeSource string` (one of
-  `operator`/`council`/`guardrail_auto`; empty = feature off, preserving
-  today's no-op for existing PRDs with `guided_mode: true` persisted
-  under the old shape — migrate on read, don't break existing records).
-- [ ] `operator` source: executor actually pauses before each task and
-  waits for an approval call (the original BL384 intent — the part that
-  was never built).
-- [ ] `council` source: executor pauses and dispatches to a
-  `CouncilProfile` (BL405 Phase 8) for a consensus go/no-go instead of a
-  human.
-- [ ] `guardrail_auto` source: executor continues automatically when
-  quality gates + this plan's rule checks pass; on failure, retries or
-  resets with the failure fed back into the task's context as new
-  information (not a blind retry).
-- [ ] REST/MCP/CLI/comm/PWA parity for the source selector (extends the
-  existing `set_guided_mode` surfaces, doesn't add new ones).
-- [ ] B112: scope-drift re-implemented as a first-class Phase 1 rule
-  (content/keyword type, task-granularity) — remove its prose-only
-  status in AGENT.md once the real rule exists; cross-reference instead.
-- [ ] Regression test: a task spec containing "Implement ..."/"Write
-  code for ..." under a doc-only PRD is caught by the new rule.
-- [ ] Update B111/B112's entries in `docs/plans/README.md` from "fixed
-  as part of BL406 Phase 5" to a real shipped-version note once this
-  phase ships.
-- [ ] **Phase Completion Checklist** (AGENT.md Planning Rules §5, full
-  list — this phase definitely needs the Mobile-Parity check: a new
-  guided-mode source selector is a real PWA affordance change).
+**Status: Done (v9.0.17, shipped 2026-10-10).**
+- [x] `PRD.GuidedMode bool` kept for JSON back-compat; new
+  `PRD.GuidedModeSource string` (`operator`/`council`/`guardrail_auto`;
+  empty = feature off) is the one the executor actually reads.
+  `migrateGuidedMode` maps an existing PRD's `guided_mode: true` to
+  `GuidedModeSource: "operator"` at store-load time; `SetPRDGuidedMode`
+  applies the same mapping live, so no existing record is broken and no
+  surface needed a wire-format change (see scope note below).
+- [x] `operator` source: `Manager.Approve` transitions every pending task
+  to `TaskAwaitingApproval`; `flattenTasks` skips gated tasks;
+  `Manager.ApproveTask` (mirrors `ApproveStory`) transitions one back to
+  pending — the original BL384 intent, now actually built.
+- [x] `council` source: **scoped down from the original plan.** Rather
+  than building executor dispatch to a `CouncilProfile` that doesn't
+  exist yet (BL405 Phase 8 hasn't shipped), `resolveGuidedModeSource`
+  falls `council` back to `operator` with a logged reason — honest and
+  non-silent, not a faked consensus mechanism. Revisit once BL405 Phase
+  8 ships a real `CouncilProfile`.
+- [x] `guardrail_auto` source: **scoped down.** Confirmed behaviorally
+  identical to leaving `GuidedModeSource` empty (quality gates + project
+  rules already run unconditionally today) — declared as a real,
+  selectable constant for operators who want to say so explicitly, not
+  new executor behavior. No retry-with-fed-back-failure logic was built;
+  that's a separate, unscoped feature if ever wanted, not part of
+  "making the documented gate real."
+- [x] REST/MCP/CLI/comm/PWA parity: **no source-selector param added** —
+  decided against extending `set_guided_mode`'s wire format to accept an
+  explicit `guided_mode_source`, since 2 of its 3 values have no
+  behavioral difference from the two already-reachable states
+  (`operator` via the existing bool, or off). Adding a 3-way picker for
+  unreachable states would be premature UI; all 5 existing surfaces
+  (REST, MCP tool, CLI, comm, PWA checkbox) are fully functional for the
+  one source that does something today. `approve_task` (the new
+  per-task capability) got full new-surface parity instead: REST
+  (`POST .../approve_task`), MCP (`autonomous_prd_approve_task`), comm
+  (`autonomous approve-task <prd-id> <task-id>`), PWA (Approve button +
+  ⏸ glyph on a gated task row). Mobile-Parity issue:
+  `dmz006/datawatch-app#248`.
+- [x] B112: scope-drift re-implemented as a first-class built-in rule —
+  new `RuleTypeScopeDrift` (`scope_drift`), same shape as Phase 2's
+  `RuleTypeParity` (built-in, no pattern, needs `PRDParityContext`).
+  **Not** added to `scan.DefaultConfig()`'s default rule list, unlike
+  parity-inheritance — a normal non-doc-only PRD saying "Implement X" is
+  expected work, not drift; shipped instead as a documented opt-in
+  example in `docs/config-reference.yaml`, cross-referenced from
+  AGENT.md's BL384 section (prose-only status removed).
+- [x] Regression test: `TestProjectRulesScanner_ScopeDriftRule_DocOnlyPRD_CodeTaskFlagged`
+  — a task spec containing "Implement ..." under a doc-only PRD is
+  caught; a sibling test confirms a non-doc-only PRD never fires.
+- [x] Updated B111/B112's entries in `docs/plans/README.md` from "fixed
+  as part of BL406 Phase 5" to the real v9.0.17 shipped-version note.
+- [x] **Phase Completion Checklist** applied: unit tests (12 new in
+  `internal/autonomous/guided_mode_test.go`, 4 new in
+  `internal/autonomous/scan/project_rules_test.go`), full `go test ./...`
+  and `node --test` green, CHANGELOG/config-reference.yaml/AGENT.md/
+  this plan doc updated, Mobile-Parity issue filed (#248, since
+  `approve_task` is a real new PWA affordance — the source selector that
+  would have needed one was deliberately not built, see above),
+  Localization Rule (5 locale bundles + `prd_task_approve` key), version
+  bump to v9.0.17.
 
 ## Parity surface
 
@@ -506,7 +538,8 @@ start, not after the fact):
 | Project rule CRUD (Phase 1) | new `/api/autonomous/scan/rules*` | new `scan_rule_*` tools | n/a (complex object, PWA/REST, same precedent as other structured-definition objects) | n/a | n/a (runtime store) | rule builder UI | reporting-only |
 | Granularity hooks (Phase 3) | reporting via scan results | reporting via `autonomous_prd_scan_results` | n/a | n/a | n/a | scan results per task/story/PRD | reporting-only |
 | Upstream issue filing (Phase 4) | `/api/autonomous/scan/upstream*` | new tool | n/a | n/a | `autonomous.upstream_repos` | upstream-repo config UI | reporting-only |
-| GuidedMode pluggable source (Phase 5) | `set_guided_mode` extension (source param) | same MCP tool, extended | same CLI cmd, extended | same comm verb, extended | n/a (runtime PRD state) | guided-mode source picker | reporting-only |
+| GuidedMode real behavior (Phase 5) | `set_guided_mode` (unchanged wire format, now functional) | same MCP tool (unchanged) | same CLI cmd (unchanged) | same comm verb (unchanged) | n/a (runtime PRD state) | existing checkbox (unchanged, now functional) | reporting-only |
+| Per-task approval gate (Phase 5) | new `POST .../approve_task` | new `autonomous_prd_approve_task` | n/a | new `autonomous approve-task <prd-id> <task-id>` | n/a (runtime PRD state) | new Approve button + ⏸ glyph on gated task row | reporting-only, #248 filed |
 
 ## Reuse-and-Expand audit
 
@@ -557,8 +590,18 @@ start, not after the fact):
   `internal/autonomous/scan/project_rules.go` — Phases 1-3.
 - `internal/config/config.go` (`AutonomousConfig` new fields) — Phase 0.
 - `internal/git/github.go` (`CreateIssue`) — Phase 4.
-- `internal/autonomous/manager.go`, `internal/autonomous/executor.go`
-  (`GuidedMode` real behavior) — Phase 5.
-- `internal/server/autonomous.go`, `internal/mcp/bl221_scan.go`,
-  `cmd/datawatch/cli_autonomous.go`, `internal/router/sx2_parity.go`,
-  `internal/server/web/app.js` — parity surface, all phases.
+- `internal/autonomous/manager.go`, `internal/autonomous/executor.go`,
+  new `internal/autonomous/guided_mode.go`,
+  `internal/autonomous/models.go` (`GuidedModeSource`, `TaskAwaitingApproval`) —
+  Phase 5.
+- `internal/autonomous/guided_mode_test.go` (new),
+  `internal/autonomous/scan/project_rules_test.go` (scope-drift cases) —
+  Phase 5 tests.
+- `internal/server/autonomous.go`, `internal/mcp/autonomous.go`,
+  `internal/mcp/server.go`, `internal/router/sx2_parity.go`,
+  `internal/federation/mcp_tool_caps.go`,
+  `internal/server/web/app.js`/`locales/*.json` — `approve_task` parity
+  surface, Phase 5.
+- `internal/server/autonomous.go`, `cmd/datawatch/cli_autonomous.go`,
+  `internal/router/sx2_parity.go`, `internal/server/web/app.js` — parity
+  surface, all other phases.

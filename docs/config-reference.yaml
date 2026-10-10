@@ -940,7 +940,7 @@ autonomous:
     fix_loop_enabled: false # auto-create a fix child-PRD on scan failure
     fix_loop_max_retries: 0
     # BL406 — the fourth, operator-defined scan category. Each entry:
-    # {id, name, type: content|consistency|presence|parity,
+    # {id, name, type: content|consistency|presence|parity|scope_drift,
     #  granularity: task_complete|story_complete|prd_complete,
     #  pattern, severity, action: ""|file_upstream_issue, upstream_target}.
     # Full-replace via PUT, not a merge — omit the key entirely to leave
@@ -956,6 +956,20 @@ autonomous:
         type: parity
         granularity: story_complete
         severity: warning
+      # BL406 Phase 5 / B112, AGENT.md's BL384 mitigation #3 — opt-in,
+      # NOT shipped on by default like parity-inheritance above. Flags
+      # a task spec containing code-creation language ("Implement ...",
+      # "Write code for ...", "Create .go files ...") whenever the
+      # parent PRD spec itself declares doc-only/no-code-changes work.
+      # Deliberately conditional on that PRD-level signal — a normal
+      # PRD with no such constraint saying "Implement X" is expected
+      # work, not drift, so defaulting this rule on would false-positive
+      # on the common case. Uncomment to opt in for doc-only PRDs:
+      # - id: scope-drift
+      #   name: "Task spec must not contain code-creation language in a doc-only PRD"
+      #   type: scope_drift
+      #   granularity: task_complete
+      #   severity: warning
 
   # ── BL406 — project-rules enforcement ──
   # rules_file/context_file are operator-configured paths, never

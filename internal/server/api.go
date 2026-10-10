@@ -187,7 +187,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "9.0.16"
+var Version = "9.0.17"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -639,6 +639,8 @@ type AutonomousAPI interface {
 	SetStoryProfile(prdID, storyID, profile, actor string) (any, error)
 	ApproveStory(prdID, storyID, actor string) (any, error)
 	RejectStory(prdID, storyID, actor, reason string) (any, error)
+	// BL406 Phase 5 — per-task approval gate (GuidedModeSource="operator").
+	ApproveTask(prdID, taskID, actor string) (any, error)
 	// Phase 4 (v5.26.64) — file association.
 	SetStoryFiles(prdID, storyID string, files []string, actor string) (any, error)
 	SetTaskFiles(prdID, taskID string, files []string, actor string) (any, error)

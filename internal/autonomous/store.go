@@ -580,6 +580,7 @@ func (s *Store) load() error {
 			return err
 		}
 		p.Status = NormalizePRDStatus(p.Status)
+		migrateGuidedMode(&p) // BL406 Phase 5 — B111's real fix
 		s.prds[p.ID] = &p
 		// rebuild story/task indexes
 		for i := range p.Story {

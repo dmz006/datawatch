@@ -1925,6 +1925,48 @@ you don't fully trust.
 
 ---
 
+## Guided Mode and the Per-Task Approval Gate
+
+Setting `guided_mode: true` on a PRD (`POST .../set_guided_mode`, the PRD
+Settings checkbox, or the New-Automaton wizard checkbox) pauses the
+executor before every task and waits for an explicit approval before it
+runs — `POST .../approve_task` (REST), `autonomous_prd_approve_task`
+(MCP), `autonomous approve-task <prd-id> <task-id>` (comm), or the
+Approve button on a task row showing the ⏸ glyph in the PWA. A gated
+task sits in `awaiting_approval` status and is skipped by the run loop
+until approved; approving one task does not auto-approve the rest. This
+is independent of the existing per-story approval gate
+(`per_story_approval`) — a PRD can use either, both, or neither.
+
+Before v9.0.17 this checkbox had no effect at all (tracked as B111): the
+set-side plumbing existed across every surface, but nothing in the
+executor ever read the flag. It is useful specifically as a checkpoint
+against decomposer scope drift — see AGENT.md's "Decomposer Scope-Drift
+Rule" (BL384) for when to reach for it, and the `scope_drift` project
+rule below for an automated detector covering the same failure mode.
+
+Internally, the flag is now `GuidedModeSource` (`""` off, `operator`
+real today, `council`/`guardrail_auto` declared but not yet
+differentiated — `council` falls back to `operator` with a logged
+reason until BL405 Phase 8 ships a real council-consensus mechanism).
+The boolean wire format (`guided_mode: true/false`) is unchanged on
+every surface; there is no separate "source" field to set.
+
+### `scope_drift` project rule (opt-in, B112)
+
+A built-in `scope_drift` entry in `autonomous.scan.project_rules` flags
+a task spec containing code-creation language ("Implement ...", "Write
+code for ...", "Create .go files ...") whenever the parent PRD's own
+spec declares doc-only/no-code-changes work. Unlike the
+parity-inheritance rule, this is **not** enabled by default — a normal
+PRD with no such constraint saying "Implement X" is expected work, not
+drift, so defaulting it on would false-positive constantly. See
+`docs/config-reference.yaml`'s `scan.project_rules` for the commented-out
+example to copy in; run `autonomous_prd_scan` after decomposition and
+before approving any task to check it.
+
+---
+
 ## Terminal Performance
 
 ### xterm.js load time

@@ -539,6 +539,15 @@ func (a *API) ApproveStory(prdID, storyID, actor string) (any, error) {
 	}
 	return out, err
 }
+
+// ApproveTask (BL406 Phase 5) — same shape as ApproveStory, one level down.
+func (a *API) ApproveTask(prdID, taskID, actor string) (any, error) {
+	out, err := a.M.ApproveTask(prdID, taskID, actor)
+	if err == nil {
+		a.M.EmitPRDUpdate(prdID)
+	}
+	return out, err
+}
 func (a *API) RejectStory(prdID, storyID, actor, reason string) (any, error) {
 	out, err := a.M.RejectStory(prdID, storyID, actor, reason)
 	if err == nil {

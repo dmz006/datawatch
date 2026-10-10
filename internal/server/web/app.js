@@ -11686,6 +11686,17 @@ function _prdStoryApprove(prdID, storyID) {
 }
 window._prdStoryApprove = _prdStoryApprove;
 
+// BL406 Phase 5 — per-task approval gate (guided_mode_source="operator").
+function _prdTaskApprove(prdID, taskID) {
+  apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/approve_task', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ task_id: taskID, actor: 'operator' }),
+  })
+    .then(() => { showToast('Task approved', 'success', 1500); _refreshAutomataOrPRD(); })
+    .catch(err => showToast('Approve failed: ' + String(err), 'error', 3000));
+}
+window._prdTaskApprove = _prdTaskApprove;
+
 function _prdStoryReject(prdID, storyID) {
   const reason = prompt('Reject reason (required):');
   if (!reason || !reason.trim()) return;
@@ -11810,7 +11821,7 @@ function renderTask(prd, story, task, editable) {
   state._prdTaskExpanded = state._prdTaskExpanded || {};
   // Default expansion: active/running tasks open so progress is visible without a click.
   if (!(taskID in state._prdTaskExpanded)) {
-    const activeTaskStatuses = ['running','in_progress','verifying','running_tests','waiting_capacity','blocked','failed'];
+    const activeTaskStatuses = ['running','in_progress','verifying','running_tests','waiting_capacity','blocked','failed','awaiting_approval'];
     state._prdTaskExpanded[taskID] = activeTaskStatuses.includes(task.status || '');
   }
   const isExpanded = !!state._prdTaskExpanded[taskID];
@@ -11859,6 +11870,13 @@ function renderTask(prd, story, task, editable) {
   const canRetry = (task.status === 'failed' || task.status === 'blocked') && (prd.status === 'running' || prd.status === 'blocked' || prd.status === 'cancelled');
   const canCancelTask = ['pending','in_progress','running','verifying','running_tests','waiting_capacity'].includes(task.status||'') && prd.status === 'running';
   const canRequeue   = (task.status === 'completed' || task.status === 'cancelled') && (prd.status === 'running' || prd.status === 'cancelled');
+  // BL406 Phase 5 — per-task approval gate (guided_mode_source="operator").
+  const canApproveTask = task.status === 'awaiting_approval' && ['approved','active','running'].includes(prd.status || '');
+  const approveTaskBtn = canApproveTask
+    ? `<span class="prd-story-ar-group" onclick="event.stopPropagation()">
+         <button class="prd-story-ar-btn approve" onclick="_prdTaskApprove(${escHtml(JSON.stringify(prd.id))},${escHtml(JSON.stringify(task.id))})" title="${t('prd_task_approve')||'Approve this task'}">&#10003; ${t('action_approve')||'Approve'}</button>
+       </span>`
+    : '';
   const retryBtn = canRetry
     ? `<button class="prd-task-retry-btn" onclick="event.stopPropagation();prdResetTask(${escHtml(JSON.stringify(prd.id))},${escHtml(JSON.stringify(task.id))})" title="${t('prd_task_retry')||'Reset task and retry'}">&#8635; ${t('action_retry')||'Retry'}</button>`
     : '';
@@ -11870,7 +11888,7 @@ function renderTask(prd, story, task, editable) {
     : '';
 
   // Status glyph for the collapsed header row.
-  const statusGlyph = ({completed: '✓', failed: '✗', running: '▶', pending: '○', verifying: '⟳', running_tests: '🧪', blocked: '⛔', waiting_capacity: '⏳'})[task.status] || '';
+  const statusGlyph = ({completed: '✓', failed: '✗', running: '▶', pending: '○', verifying: '⟳', running_tests: '🧪', blocked: '⛔', waiting_capacity: '⏳', awaiting_approval: '⏸'})[task.status] || '';
   const _waitTitle = task.status === 'waiting_capacity'
     ? (t('prd_task_waiting_capacity')||'Waiting for capacity') + (task.wait_reason ? ': ' + task.wait_reason : '')
     : '';
@@ -11934,7 +11952,7 @@ function renderTask(prd, story, task, editable) {
       <strong class="prd-task-title">${escHtml(task.title || '')}</strong>
       ${llmBadge}${spawnBadge}${childLink}${verdicts}${sessionLink}
       <span class="prd-task-header-spacer"></span>
-      ${retryBtn}${requeueBtn}${cancelTaskBtn}${editIcons}
+      ${approveTaskBtn}${retryBtn}${requeueBtn}${cancelTaskBtn}${editIcons}
     </div>
     ${expandedBody}
   </div>`;

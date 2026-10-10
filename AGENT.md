@@ -723,8 +723,13 @@ PRD's intended scope.
 
 1. **Use guided mode for any doc-only or constrained PRD:**
    `rtk curl -s -X POST http://localhost:8080/api/autonomous/prds/<id>/set_guided_mode -d '{"guided_mode":true}'`
-   Guided mode pauses before each task runs and requires operator approval, giving
-   a checkpoint before scope drift executes.
+   Guided mode pauses before each task runs and requires operator approval
+   (`POST .../approve_task`) before it runs — a real checkpoint since BL406 Phase 5
+   (v9.0.17). Before that, this flag had full REST/MCP/CLI/comm set-side plumbing
+   back to BL221 (v6.2.0) but nothing in the executor ever read it — confirmed dead
+   code and tracked as B111; fixed for real via `PRD.GuidedModeSource` (see
+   `internal/autonomous/guided_mode.go`). The checklist and endpoint below are
+   unchanged — only the underlying behavior is now real.
 
 2. **Patch each task spec before approving it:**
    After decomposition but before approving each task, edit the task spec to add an
@@ -736,16 +741,22 @@ PRD's intended scope.
    Use: `autonomous_prd_edit_task` or the PWA task-spec editor.
 
 3. **PRD scan rule — scope drift detector:**
-   The scan config includes a `scope-drift` rule that flags task specs containing
-   code-creation language when the PRD spec indicates documentation or doc-only work.
-    Run `autonomous_prd_scan` after decomposition and before any task approval.
+   A built-in `scope_drift` project-rule type (BL406 Phase 5, v9.0.17 — fixes B112,
+   previously documented here but never implemented) flags a task spec containing
+   code-creation language when the PRD spec itself indicates documentation or
+   doc-only work. Not enabled by default (unlike the parity-inheritance rule below)
+   because a normal, non-doc-only PRD saying "Implement X" is expected work, not
+   drift — opt in per the example in `docs/config-reference.yaml`'s
+   `scan.project_rules`, then run `autonomous_prd_scan` after decomposition and
+   before any task approval.
 
     **Parity inheritance:** decomposed PRD stories MUST inherit the parent plan's
     `Parity surface` list. Each story spec carries the same full surface set
     (`REST`, `MCP`, `CLI`, `comm channel`, `YAML/config`, `PWA`, `Android`,
     `iPhone/iOS`) and the same per-surface include/exclude-with-reason entries as its
     parent plan. A story that narrows or drops a surface without a stated reason is a
-    scope drift and fails the scan.
+    scope drift and fails the scan. (This one — `type: parity` — ships on by default;
+    see BL406 Phase 2.)
 
 **Root cause:** These models have strong "helpful agent" priors that override
 instruction-following for negative constraints. A constraint like "documentation

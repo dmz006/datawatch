@@ -5,6 +5,53 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.17 — feat(autonomous): BL406 Phase 5 — real GuidedMode (B111) + scope-drift rule (B112)
+
+### Added
+- **B111 fixed for real.** `GuidedMode` (BL221 v6.2.0) had full
+  REST/MCP/CLI/comm set-side plumbing but nothing ever read it —
+  confirmed dead code this session. New `PRD.GuidedModeSource` string
+  (`""` off, `operator` pause-before-each-task, `council` declared but
+  falls back to `operator` with a logged reason since BL405 Phase 8's
+  `CouncilProfile` doesn't exist yet, `guardrail_auto` behaviorally
+  identical to off — a real, explicit, named choice) is the one that
+  actually gates execution now. `migrateGuidedMode` maps an existing
+  PRD's `guided_mode:true` to `GuidedModeSource:"operator"` at
+  store-load time; `SetPRDGuidedMode` applies the same mapping live, so
+  every existing surface (REST `set_guided_mode`, the MCP tool, the CLI
+  command, the comm command, the PWA checkbox in PRD Settings and the
+  New-Automaton wizard) is functional with zero wire-format changes.
+- New per-task approval gate mirroring the existing per-story one:
+  `TaskAwaitingApproval` status, `Task.Approved`/`ApprovedBy`/
+  `ApprovedAt`/`RejectedReason`, `Manager.ApproveTask` (mirrors
+  `ApproveStory`), `flattenTasks` skips gated tasks until approved.
+  `Manager.Approve` transitions every pending task to
+  `awaiting_approval` up front when `GuidedModeSource` resolves to
+  `operator` — independent of `PerStoryApproval`; a PRD can use either,
+  both, or neither gate. Full surface: `POST
+  /api/autonomous/prds/{id}/approve_task` (REST), `autonomous_prd_approve_task`
+  (MCP), `autonomous approve-task <prd-id> <task-id>` (comm), PWA
+  Approve button + ⏸ status glyph on a gated task row.
+- **B112 fixed.** AGENT.md's BL384 mitigation #3 ("PRD scan rule —
+  scope drift detector") was documented but never implemented — also
+  confirmed dead this session. New built-in `scope_drift` project-rule
+  type (`internal/autonomous/scan/project_rules.go`): flags a task spec
+  containing code-creation language (`Implement`, `Write code for`,
+  `Create .go/.ts/.js/... files`) when the parent PRD spec itself
+  declares doc-only/no-code-changes work. Like the Phase 2
+  parity-inheritance rule, this is a candidate detector, not a semantic
+  judge — intentionally **not** added to `scan.DefaultConfig()`'s
+  default rule list (unlike parity-inheritance): a normal, non-doc-only
+  PRD saying "Implement X" is expected work, not drift, so defaulting
+  this on would false-positive on the common case. Documented as a
+  ready-to-opt-in example in `docs/config-reference.yaml` and
+  referenced from AGENT.md's BL384 section instead.
+- No new PWA surface for authoring `scan.project_rules` entries exists
+  (operators already edit the YAML/REST config directly, same as every
+  other rule type) — the new `scope_drift` type needed no PWA work.
+  The per-task approval gate's Approve button is new PWA UI; Mobile-
+  Parity issue filed (datawatch-app#248).
+
 ## v9.0.16 — feat: notify_exclude — general per-channel notification opt-out
 
 ### Added

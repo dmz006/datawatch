@@ -888,6 +888,7 @@
   "prd_remove_task_fail": "Remove failed",
   "prd_cancel_story_fail": "Cancel failed",
   "prd_cancel_story_ok": "Story cancelled.",
+  "prd_task_approve": "Approuver cette tâche",
   "prd_cancel_task": "Cancel this task",
   "prd_cancel_task_confirm": "Cancel this task?",
   "prd_cancel_task_fail": "Cancel failed",

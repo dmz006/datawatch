@@ -541,6 +541,26 @@ func (s *Server) handleAutonomousPRDCancelTask(_ context.Context, req mcpsdk.Cal
 	return textOK(string(out)), nil
 }
 
+func (s *Server) toolAutonomousPRDApproveTask() mcpsdk.Tool {
+	return mcpsdk.NewTool("autonomous_prd_approve_task",
+		mcpsdk.WithDescription("BL406 Phase 5 — approve an individual task gated by guided_mode_source=\"operator\" so the executor runs it. Only meaningful for a task currently in awaiting_approval status."),
+		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
+		mcpsdk.WithString("task_id", mcpsdk.Required(), mcpsdk.Description("Task ID to approve")),
+	)
+}
+func (s *Server) handleAutonomousPRDApproveTask(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	id := req.GetString("id", "")
+	body, _ := json.Marshal(map[string]string{
+		"task_id": req.GetString("task_id", ""),
+		"actor":   "operator",
+	})
+	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/approve_task", body)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
 func (s *Server) toolAutonomousPRDInstantiate() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_prd_instantiate",
 		mcpsdk.WithDescription("BL191 — instantiate a template PRD with caller-supplied vars; returns a fresh executable PRD."),

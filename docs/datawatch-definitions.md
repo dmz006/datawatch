@@ -1339,22 +1339,39 @@ orchestrator's `GET /api/orchestrator/verdicts` flat verdict log.
 category (alongside the built-in SAST/secrets/dependency scanners),
 configured under `autonomous.scan.project_rules` and evaluated by
 `autonomous_prd_scan` / `POST /api/autonomous/prds/{id}/scan` like any
-other scanner. Four types: `content` (a regex must/must-not match
+other scanner. Five types: `content` (a regex must/must-not match
 within matching files), `consistency` (two files must agree on a
 value — e.g. "these two files' version strings must match"),
-`presence` (a file/pattern must exist), and `parity` (built-in, checks
+`presence` (a file/pattern must exist), `parity` (built-in, checks
 a story's declared parity surface against its parent plan's — ships
 default-enabled once BL406 Phase 2 landed, the only rule any operator
-gets without configuring one). Each rule also names a `granularity`
+gets without configuring one), and `scope_drift` (built-in, BL406
+Phase 5 / B112 — flags a task spec with code-creation language when
+the parent PRD spec itself declares doc-only/no-code-changes work;
+unlike `parity`, **not** default-enabled — a normal non-doc-only PRD
+saying "Implement X" is expected work, not drift, so this needs an
+explicit opt-in per the example in `docs/config-reference.yaml`). Each
+rule also names a `granularity`
 (`task_complete` / `story_complete` / `prd_complete` — which
 completion checkpoint it's meant to run at; the checkpoints themselves
 land in BL406 Phase 3) and an optional `action` (`file_upstream_issue`,
-for gaps this repo's own PRD can't close alone). The parity rule is
-deliberately a candidate detector, not a final verdict — "was there a
-stated exclusion reason" is the `rules_grader_enabled` LLM judgment
-call's job, the same grading pipeline every other scanner's findings
-already go through, not a second mechanism. See
+for gaps this repo's own PRD can't close alone). The parity and
+scope_drift rules are both deliberately candidate detectors, not a
+final verdict — "was there a stated exclusion reason"/"is this really
+drift" is the `rules_grader_enabled` LLM judgment call's job, the same
+grading pipeline every other scanner's findings already go through,
+not a second mechanism. See
 `docs/plans/2026-10-10-configurable-project-rules-enforcement.md`.
+
+**Guided mode** — per-PRD setting (`guided_mode: true`,
+`PRD.GuidedModeSource` internally) that pauses the executor before
+every task and waits for an explicit `approve_task` call before it
+runs. Declared since BL221 (v6.2.0) but never actually implemented
+until BL406 Phase 5 (v9.0.17, fixes **B111**) — the set-side plumbing
+existed across every surface for years with no executor code ever
+reading it. Independent of the per-story approval gate
+(`per_story_approval`); a PRD can use either, both, or neither. See
+"Guided Mode and the Per-Task Approval Gate" in `docs/operations.md`.
 
 ---
 

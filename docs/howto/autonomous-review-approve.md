@@ -267,6 +267,52 @@ session's **Status** tab where you can see the live task tree, guardrail
 verdicts, and the last 5 hook events before any failure — all the
 information you need to make an informed Approve or Reject decision.
 
+## Guided mode: per-task approval (v9.0.17+)
+
+Per-story approve/reject above gates whole stories. Guided mode gates
+individual **tasks** instead — useful when you want to review each
+task's spec right before it runs, not just each story up front.
+
+1. Turn it on for the Automaton:
+   ```sh
+   curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
+     -H "Content-Type: application/json" -d '{"guided_mode":true}' \
+     $BASE/api/autonomous/prds/$PRD_ID/set_guided_mode
+   ```
+   Or the PWA: Automaton → Settings → "Guided Mode" checkbox. Or on
+   creation: the New-Automaton wizard's "Guided Mode" checkbox.
+2. Approve the Automaton as usual (`.../approve`). Every pending task
+   immediately lands in `awaiting_approval` instead of `pending`.
+3. In the PWA, a gated task row shows a ⏸ glyph and a bright green
+   "✓ Approve" button. Click it to let that one task run. Approving one
+   task does **not** auto-approve the rest — each is reviewed
+   individually.
+4. CLI / comm / MCP equivalents:
+   ```sh
+   # CLI
+   datawatch autonomous approve-task $PRD_ID $TASK_ID
+   ```
+   ```
+   # Comm channel
+   You: autonomous approve-task abc123 task-1a
+   Bot: autonomous approve-task  {...}
+   ```
+   MCP tool: `autonomous_prd_approve_task` (args: `id`, `task_id`).
+5. REST equivalent:
+   ```sh
+   curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{"task_id":"'"$TASK_ID"'"}' \
+     $BASE/api/autonomous/prds/$PRD_ID/approve_task
+   ```
+
+Independent of per-story approval — a PRD can use either, both, or
+neither. See "Guided Mode and the Per-Task Approval Gate" in
+[`../operations.md`](../operations.md) for the full writeup, including
+the `scope_drift` project rule that pairs with it as an automated
+detector for the same failure mode (a decomposer writing code tasks
+into a doc-only PRD).
+
 ## See also
 
 - [datawatch-definitions](../datawatch-definitions.md)

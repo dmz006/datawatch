@@ -43,7 +43,8 @@ type ProjectRulesScanner struct {
 	PRDContext *PRDParityContext
 }
 
-// PRDParityContext is the PRD/story data RuleTypeParity needs.
+// PRDParityContext is the PRD/story data RuleTypeParity (and, since
+// BL406 Phase 5, RuleTypeScopeDrift) needs.
 type PRDParityContext struct {
 	// ParentSurfaceText is the parent plan's own "## Parity surface"
 	// section, raw text — the set of canonical surface names
@@ -51,6 +52,14 @@ type PRDParityContext struct {
 	// what every story must inherit.
 	ParentSurfaceText string
 	Stories           []StoryParityInfo
+
+	// PRDSpecText (BL406 Phase 5 / B112) is the full parent PRD spec,
+	// raw text. RuleTypeScopeDrift checks it for a doc-only/no-code
+	// signal before checking any task.
+	PRDSpecText string
+	// Tasks (BL406 Phase 5 / B112) flattens every story's tasks.
+	// RuleTypeScopeDrift checks each task's own spec text independently.
+	Tasks []TaskScopeInfo
 }
 
 // StoryParityInfo is the subset of autonomous.Story the parity rule
@@ -59,6 +68,14 @@ type StoryParityInfo struct {
 	ID          string
 	Title       string
 	Description string
+}
+
+// TaskScopeInfo is the subset of autonomous.Task the scope-drift rule
+// reads.
+type TaskScopeInfo struct {
+	ID    string
+	Title string
+	Spec  string
 }
 
 // NewProjectRulesScanner returns a new project-rules scanner bound to
@@ -87,6 +104,8 @@ func (s ProjectRulesScanner) Scan(dir string) ([]Finding, error) {
 			findings = append(findings, scanPresenceRule(dir, r, sev)...)
 		case RuleTypeParity:
 			findings = append(findings, scanParityRule(s.PRDContext, r, sev)...)
+		case RuleTypeScopeDrift:
+			findings = append(findings, scanScopeDriftRule(s.PRDContext, r, sev)...)
 		default:
 			findings = append(findings, brokenRuleFinding(r, "unknown rule type %q"))
 		}
@@ -303,6 +322,49 @@ func scanParityRule(ctx *PRDParityContext, r ProjectRule, sev Severity) []Findin
 						"story text, or this is scope drift",
 				})
 			}
+		}
+	}
+	return findings
+}
+
+// docOnlySignals are phrases in a PRD's own spec that declare the work
+// doc-only / no-code-changes. Matches AGENT.md's BL384 example phrasing
+// ("documentation only — do not write code") plus common variants.
+var docOnlySignals = regexp.MustCompile(`(?i)\b(documentation[\s-]only|docs?[\s-]only|no\s+code\s+changes?|do\s+not\s+write\s+code|doc[\s-]only)\b`)
+
+// codeCreationSignals are phrases in a task spec that indicate the
+// decomposer generated code-writing work — AGENT.md's own observed
+// examples ("Implement ...", "Write code for ...", "Create .go files
+// ...") plus the other common source-file extensions.
+var codeCreationSignals = regexp.MustCompile(`(?i)\b(implement\b|write\s+code\b|create\s+(a\s+)?(function|class|method)\b|\.(go|ts|tsx|js|jsx|py|rs|java|rb|c|cpp)\s+files?\b)`)
+
+// scanScopeDriftRule (BL406 Phase 5 / B112, AGENT.md's BL384 mitigation
+// #3) flags a task spec containing code-creation language when the
+// parent PRD spec itself declares doc-only/no-code-changes work. Like
+// RuleTypeParity, this is a candidate detector — regex-level, not a
+// semantic judge of intent — so a true positive still benefits from
+// scan.Config.RulesGraderEnabled's LLM pass over the raw findings.
+// Deliberately conditional on the PRD's own doc-only signal: a normal
+// PRD with no such constraint saying "Implement X" is expected work,
+// not drift, so this never fires unless the PRD itself declared the
+// restriction the task spec then violates.
+func scanScopeDriftRule(ctx *PRDParityContext, r ProjectRule, sev Severity) []Finding {
+	if ctx == nil {
+		return []Finding{{Scanner: "project-rules", Severity: SeverityInfo, RuleID: r.ID,
+			Message: r.Name + ": scope-drift rule needs PRD/task context, not supplied for this scan (e.g. a bare-directory scan outside any PRD) — skipped, not evaluated"}}
+	}
+	if !docOnlySignals.MatchString(ctx.PRDSpecText) {
+		return nil
+	}
+	var findings []Finding
+	for _, task := range ctx.Tasks {
+		if codeCreationSignals.MatchString(task.Spec) {
+			findings = append(findings, Finding{
+				Scanner: "project-rules", File: task.ID, Severity: sev, RuleID: r.ID,
+				Message: r.Name + ": task \"" + task.Title + "\" (" + task.ID +
+					") spec contains code-creation language, but the parent PRD spec " +
+					"declares doc-only/no-code-changes work — likely decomposer scope drift",
+			})
 		}
 	}
 	return findings

@@ -792,6 +792,37 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		}
 		s.audit(r.Context(), "approve_story", "automaton", id, map[string]any{"story_id": req.StoryID}) // GH#201 Phase 4
 		writeJSONOK(w, updated)
+	case "approve_task":
+		// BL406 Phase 5 — per-task approval (GuidedModeSource="operator").
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+			return
+		}
+		var req struct {
+			TaskID string `json:"task_id"`
+			Actor  string `json:"actor"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if req.TaskID == "" {
+			http.Error(w, "task_id required", http.StatusBadRequest)
+			return
+		}
+		if req.Actor == "" {
+			req.Actor = "operator"
+		}
+		updated, err := s.autonomousMgr.ApproveTask(id, req.TaskID, req.Actor)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		s.audit(r.Context(), "approve_task", "automaton", id, map[string]any{"task_id": req.TaskID})
+		writeJSONOK(w, updated)
 	case "reject_story":
 		// Phase 3 (v5.26.60) — per-story rejection (sets blocked + reason).
 		if r.Method != http.MethodPost {

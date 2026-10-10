@@ -905,6 +905,13 @@ func flattenTasks(prd *PRD) []*Task {
 			continue
 		}
 		for j := range prd.Story[i].Tasks {
+			// BL406 Phase 5 — same skip, at task granularity: a task
+			// gated on GuidedModeSource=="operator" approval is
+			// re-entered when ApproveTask transitions it back to
+			// pending (see ApproveTask).
+			if prd.Story[i].Tasks[j].Status == TaskAwaitingApproval {
+				continue
+			}
 			out = append(out, &prd.Story[i].Tasks[j])
 		}
 	}

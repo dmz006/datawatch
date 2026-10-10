@@ -64,6 +64,9 @@ func (f *fakeOrchAutonomous) SetStoryProfile(string, string, string, string) (an
 func (f *fakeOrchAutonomous) ApproveStory(string, string, string) (any, error) {
 	return nil, nil
 }
+func (f *fakeOrchAutonomous) ApproveTask(string, string, string) (any, error) {
+	return nil, nil
+}
 func (f *fakeOrchAutonomous) RejectStory(string, string, string, string) (any, error) {
 	return nil, nil
 }

@@ -296,6 +296,15 @@ type Manager struct {
 	// the real git.Resolve" — see fireUpstreamIssueActions.
 	gitProviderFn func(kind string) git.Provider
 
+	// BL406 Phase 5 — nil until BL405 Phase 8 wires real CouncilProfile
+	// support; resolveGuidedModeSource falls "council" back to
+	// "operator" while this is nil, rather than silently skipping the
+	// gate. Signature intentionally loose (consensus decision as a
+	// bool + free-form note) since the real CouncilProfile type
+	// doesn't exist yet — this is a placeholder seam, not a finished
+	// contract.
+	councilApprovalFn func(ctx context.Context, prd *PRD, t *Task) (approved bool, note string, err error)
+
 	// BL221 (v6.2.0) Phase 4 — type registry
 	typesMu sync.Mutex
 	types   []AutomatonType
@@ -1038,6 +1047,24 @@ func (m *Manager) Approve(prdID, actor, note string) (*PRD, error) {
 			if prd.Story[si].Status == "" || prd.Story[si].Status == StoryPending {
 				prd.Story[si].Status = StoryAwaitingApproval
 				prd.Story[si].UpdatedAt = now
+			}
+		}
+	}
+	// BL406 Phase 5 — same shape, at task granularity: when
+	// GuidedModeSource resolves to "operator" (the original BL384
+	// intent, now actually built — or "council" falling back since
+	// BL405 Phase 8 doesn't exist yet), transition every pending task
+	// to awaiting_approval so the runner skips them until the operator
+	// approves each via ApproveTask. Independent of PerStoryApproval —
+	// a PRD can use either, both, or neither gate.
+	if m.resolveGuidedModeSource(prd) == GuidedModeOperator {
+		for si := range prd.Story {
+			for ti := range prd.Story[si].Tasks {
+				t := &prd.Story[si].Tasks[ti]
+				if t.Status == "" || t.Status == TaskPending {
+					t.Status = TaskAwaitingApproval
+					t.UpdatedAt = now
+				}
 			}
 		}
 	}
@@ -1805,6 +1832,60 @@ func (m *Manager) ApproveStory(prdID, storyID, actor string) (*PRD, error) {
 	prd.Decisions = append(prd.Decisions, Decision{
 		At: now, Kind: "approve_story", Actor: actor,
 		Note: fmt.Sprintf("story=%s", storyID),
+	})
+	if err := m.store.SavePRD(prd); err != nil {
+		return nil, err
+	}
+	updated, _ := m.store.GetPRD(prdID)
+	return updated, nil
+}
+
+// ApproveTask (BL406 Phase 5 — B111's real fix) — operator approves an
+// individual task for execution. Only meaningful when
+// GuidedModeSource resolves to "operator"; same shape as ApproveStory.
+// Sets Task.Approved=true, ApprovedBy, ApprovedAt; records a
+// kind=approve_task decision. Allowed when the PRD itself is approved
+// or running (same precondition as ApproveStory — the task-level gate
+// runs after the PRD-level gate, never before it).
+func (m *Manager) ApproveTask(prdID, taskID, actor string) (*PRD, error) {
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return nil, fmt.Errorf("prd %q not found", prdID)
+	}
+	if prd.Status != PRDApproved && prd.Status != PRDActive && prd.Status != PRDRunning {
+		return nil, fmt.Errorf("prd %q status %q does not accept per-task approval; PRD must be approved or running first", prdID, prd.Status)
+	}
+	now := time.Now()
+	found := false
+	for si := range prd.Story {
+		for ti := range prd.Story[si].Tasks {
+			t := &prd.Story[si].Tasks[ti]
+			if t.ID == taskID {
+				t.Approved = true
+				t.ApprovedBy = actor
+				t.ApprovedAt = &now
+				t.RejectedReason = ""
+				// Transition awaiting_approval → pending so the runner
+				// picks it up. Other states left alone.
+				if t.Status == TaskAwaitingApproval {
+					t.Status = TaskPending
+				}
+				t.UpdatedAt = now
+				found = true
+				break
+			}
+		}
+		if found {
+			break
+		}
+	}
+	if !found {
+		return nil, fmt.Errorf("task %q not found in prd %q", taskID, prdID)
+	}
+	prd.UpdatedAt = now
+	prd.Decisions = append(prd.Decisions, Decision{
+		At: now, Kind: "approve_task", Actor: actor,
+		Note: fmt.Sprintf("task=%s", taskID),
 	})
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
@@ -2707,6 +2788,17 @@ func (m *Manager) SetPRDGuidedMode(prdID string, guided bool) error {
 		return fmt.Errorf("prd %q not found", prdID)
 	}
 	prd.GuidedMode = guided
+	// BL406 Phase 5 — B111's real fix. migrateGuidedMode applies this same
+	// rule at store-load time; applying it live here too means toggling
+	// the checkbox actually gates tasks immediately, not only after the
+	// next daemon restart reloads the PRD from disk.
+	if guided {
+		if prd.GuidedModeSource == "" {
+			prd.GuidedModeSource = GuidedModeOperator
+		}
+	} else {
+		prd.GuidedModeSource = ""
+	}
 	prd.UpdatedAt = time.Now()
 	return m.store.SavePRD(prd)
 }

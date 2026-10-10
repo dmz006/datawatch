@@ -27,12 +27,18 @@ func buildPRDParityContext(prd *PRD) *scan.PRDParityContext {
 		return nil
 	}
 	stories := make([]scan.StoryParityInfo, 0, len(prd.Story))
+	var tasks []scan.TaskScopeInfo
 	for _, st := range prd.Story {
 		stories = append(stories, scan.StoryParityInfo{ID: st.ID, Title: st.Title, Description: st.Description})
+		for _, tk := range st.Tasks {
+			tasks = append(tasks, scan.TaskScopeInfo{ID: tk.ID, Title: tk.Title, Spec: tk.Spec})
+		}
 	}
 	return &scan.PRDParityContext{
 		ParentSurfaceText: extractMarkdownSection(prd.Spec, "Parity surface"),
 		Stories:           stories,
+		PRDSpecText:       prd.Spec,
+		Tasks:             tasks,
 	}
 }
 

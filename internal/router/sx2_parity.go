@@ -926,6 +926,20 @@ func (r *Router) handleAutonomous(cmd Command) {
 		}
 		r.reply("autonomous cancel-task", prettyJSON(out))
 
+	// BL406 Phase 5 — per-task approval gate (guided_mode_source="operator").
+	case "approve-task", "approve_task":
+		if len(args) < 3 {
+			r.reply("autonomous approve-task failed", "usage: autonomous approve-task <prd-id> <task-id>")
+			return
+		}
+		raw, _ := json.Marshal(map[string]string{"task_id": args[2], "actor": "operator"})
+		out, err := r.commJSON(http.MethodPost, "/api/autonomous/prds/"+args[1]+"/approve_task", string(raw))
+		if err != nil {
+			r.reply("autonomous approve-task failed", err.Error())
+			return
+		}
+		r.reply("autonomous approve-task", prettyJSON(out))
+
 	case "reset-to-draft", "reset_to_draft":
 		if len(args) < 2 {
 			r.reply("autonomous reset-to-draft failed", "usage: autonomous reset-to-draft <prd-id>")

@@ -87,6 +87,12 @@ const (
 	// TaskWaitingCapacity: admitted by the executor but waiting for a capacity
 	// lease (host / node / LLM slot). Not a failure and not a retry.
 	TaskWaitingCapacity TaskStatus = "waiting_capacity"
+	// TaskAwaitingApproval (BL406 Phase 5 — B111's real fix): set when
+	// PRD.GuidedModeSource is "operator" and the task would otherwise
+	// be ready to launch. The executor's flattenTasks skips tasks in
+	// this state (same mechanism StoryAwaitingApproval already uses at
+	// story granularity); ApproveTask transitions it back to pending.
+	TaskAwaitingApproval TaskStatus = "awaiting_approval"
 )
 
 // Effort mirrors session.EffortLevels (BL41) but kept separate so
@@ -177,12 +183,32 @@ type PRD struct {
 	// BL221 (v6.2.0) Phase 4 — type extensibility, Guided Mode, skills.
 	// Type is a well-known or operator-registered automaton type identifier
 	// (e.g., "software", "research", "operational", "personal").
-	// GuidedMode enables step-by-step operator checkpoints during decomposition.
 	// Skills is the list of skill IDs assigned to this automaton; passed to
 	// spawn requests so workers can load the appropriate skill context.
-	Type        string   `json:"type,omitempty"`
-	GuidedMode  bool     `json:"guided_mode,omitempty"`
-	Skills      []string `json:"skills,omitempty"`
+	Type   string   `json:"type,omitempty"`
+	Skills []string `json:"skills,omitempty"`
+
+	// GuidedMode (BL221 v6.2.0) was originally documented as pausing
+	// before each task — confirmed never implemented (B111, found
+	// 2026-10-10: full set-side REST/MCP/CLI/comm plumbing existed, but
+	// nothing anywhere ever read the flag). Kept for JSON backward
+	// compatibility with existing persisted PRDs; no longer the real
+	// field. GuidedModeSource (BL406 Phase 5) is the real one: ""
+	// (guided mode off), "operator" (pause before each task, waits for
+	// ApproveTask — the original intent, now actually built),
+	// "council" (pause and dispatch to a CouncilProfile for a
+	// consensus go/no-go — not yet implemented, BL405 Phase 8 is the
+	// dependency; falls back to "operator" with a logged reason rather
+	// than silently skipping the gate), "guardrail_auto" (continue
+	// automatically whenever quality gates + project rules already
+	// pass — behaviorally identical to leaving this empty; declared
+	// explicitly for operators who want to say so on purpose, not new
+	// executor behavior). Migrated on read: an existing PRD with
+	// guided_mode:true and an empty GuidedModeSource is treated as
+	// "operator" (see migrateGuidedMode) — never silently drops an
+	// operator's prior intent, even though it never actually worked.
+	GuidedMode       bool   `json:"guided_mode,omitempty"`
+	GuidedModeSource string `json:"guided_mode_source,omitempty"`
 
 	// BL303 S2 — per-Automaton guardrail overrides.
 	// GuardrailProfile names a profile; PerTask/PerStoryGuardrails are explicit
@@ -458,6 +484,14 @@ type Task struct {
 	// Populated when Config.PerTaskGuardrails is non-empty; one entry
 	// per guardrail named in that list. Block on any block outcome.
 	Verdicts []GuardrailVerdict `json:"verdicts,omitempty"`
+
+	// BL406 Phase 5 — per-task operator approval gate, same shape as
+	// Story's Approved/ApprovedBy/ApprovedAt/RejectedReason. Only
+	// meaningful when PRD.GuidedModeSource is "operator".
+	Approved       bool       `json:"approved,omitempty"`
+	ApprovedBy     string     `json:"approved_by,omitempty"`
+	ApprovedAt     *time.Time `json:"approved_at,omitempty"`
+	RejectedReason string     `json:"rejected_reason,omitempty"`
 
 	// Phase 4 (v5.26.64) — file association. FilesPlanned is
 	// LLM-extracted at decompose time (operator-editable). FilesTouched
