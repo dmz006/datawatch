@@ -126,6 +126,21 @@ func DefaultConfig() Config {
 		SecretsEnabled: true,
 		DepsEnabled:    true,
 		FailOnSeverity: SeverityError,
+		// BL406 Phase 2 — the first built-in project rule, on by
+		// default once the engine exists (Phase 1). Warning, not
+		// error: it's a candidate detector (did the story mention this
+		// surface at all), not a final verdict on "was there a stated
+		// reason" — that nuance is RulesGraderEnabled's job, same
+		// grading pipeline every other scanner's findings already go
+		// through. Operators can remove or override it like any other
+		// configured rule.
+		ProjectRules: []ProjectRule{{
+			ID:          "parity-inheritance",
+			Name:        "Story must inherit the parent plan's Parity surface",
+			Type:        RuleTypeParity,
+			Granularity: GranularityStory,
+			Severity:    SeverityWarning,
+		}},
 	}
 }
 

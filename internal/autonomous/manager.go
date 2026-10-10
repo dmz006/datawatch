@@ -2578,7 +2578,7 @@ func (m *Manager) RunScan(prdID string) (*scan.Result, error) {
 	// whenever there are rules configured, independent of the three
 	// boolean toggles above (project rules aren't security scanners).
 	if len(sc.ProjectRules) > 0 {
-		scanners = append(scanners, scan.NewProjectRulesScanner(sc.ProjectRules))
+		scanners = append(scanners, scan.NewProjectRulesScanner(sc.ProjectRules, buildPRDParityContext(prd)))
 	}
 
 	gradeFn := grader

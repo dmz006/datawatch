@@ -5,6 +5,32 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.13 — feat(autonomous): BL406 Phase 2 — parity-inheritance rule (first built-in)
+
+### Added
+- `RuleTypeParity` is now real: every surface named in a PRD's own
+  "## Parity surface" section (parsed from `prd.Spec`) must be inherited
+  by every decomposed story's description, per AGENT.md's Decomposer
+  Scope-Drift Rule prose ("stories MUST inherit the parent plan's Parity
+  surface list... a story that narrows or drops a surface without a
+  stated reason is a scope drift"). A missing surface produces a
+  candidate finding (warning, not error) naming the drifted story — the
+  existing `rules_grader_enabled` LLM pipeline (already wired since
+  BL221 Phase 3) makes the "was there actually a stated reason" judgment
+  call, reusing the grading mechanism every other scanner already goes
+  through rather than building a second one.
+- Ships default-enabled: `scan.DefaultConfig()` now includes one
+  built-in rule (the parity check above) — the only rule any operator
+  gets without configuring one.
+- `ProjectRulesScanner` gained an optional `PRDContext` (PRD/story data
+  the parity check needs — `internal/autonomous` translates its own
+  `PRD`/`Story` types into the scan package's generic
+  `PRDParityContext`/`StoryParityInfo`, same "mirror, don't import"
+  pattern as every other config bridge in this codebase, since `scan`
+  can't import `autonomous` without a cycle). A scan run without PRD
+  context (e.g. a bare-directory scan) reports that explicitly at
+  `SeverityInfo`, not a crash or a silent skip.
+
 ## v9.0.12 — feat(autonomous): BL406 Phase 1 — project-rules scan engine (real, functional)
 
 ### Added

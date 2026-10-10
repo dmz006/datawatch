@@ -12,7 +12,10 @@
 //     either file doesn't match, or if the two captured values differ.
 //   - RuleTypePresence:    "<glob>" — a finding fires if no file in dir
 //     matches <glob>.
-//   - RuleTypeParity:      no pattern — built in, implemented in Phase 2.
+//   - RuleTypeParity:      no pattern — built in (BL406 Phase 2). Needs
+//     PRDContext (below); produces an informative finding, not a crash
+//     or a silent skip, when run without it (e.g. a bare directory scan
+//     outside any PRD).
 //
 // A malformed rule (bad pattern syntax, wrong field count) produces one
 // Finding reporting the rule itself as broken, at SeverityWarning,
@@ -30,12 +33,40 @@ import (
 // category against a project directory.
 type ProjectRulesScanner struct {
 	Rules []ProjectRule
+	// PRDContext (BL406 Phase 2) supplies the PRD/story data the
+	// built-in parity rule type needs — this package can't import
+	// internal/autonomous's PRD/Story types directly (would create an
+	// import cycle, since autonomous already imports scan), so the
+	// caller translates. nil when scanning outside a PRD context; the
+	// parity rule type then reports that explicitly rather than
+	// silently producing nothing.
+	PRDContext *PRDParityContext
+}
+
+// PRDParityContext is the PRD/story data RuleTypeParity needs.
+type PRDParityContext struct {
+	// ParentSurfaceText is the parent plan's own "## Parity surface"
+	// section, raw text — the set of canonical surface names
+	// (RST/MCP/CLI/comm/YAML/PWA/Android/iPhone) mentioned within it is
+	// what every story must inherit.
+	ParentSurfaceText string
+	Stories           []StoryParityInfo
+}
+
+// StoryParityInfo is the subset of autonomous.Story the parity rule
+// reads.
+type StoryParityInfo struct {
+	ID          string
+	Title       string
+	Description string
 }
 
 // NewProjectRulesScanner returns a new project-rules scanner bound to
 // the given rule set (typically cfg.ProjectRules at scan time).
-func NewProjectRulesScanner(rules []ProjectRule) Scanner {
-	return ProjectRulesScanner{Rules: rules}
+// prdCtx is nil for scans outside a PRD context; only the parity rule
+// type consults it.
+func NewProjectRulesScanner(rules []ProjectRule, prdCtx *PRDParityContext) Scanner {
+	return ProjectRulesScanner{Rules: rules, PRDContext: prdCtx}
 }
 
 func (ProjectRulesScanner) Name() string { return "project-rules" }
@@ -55,7 +86,7 @@ func (s ProjectRulesScanner) Scan(dir string) ([]Finding, error) {
 		case RuleTypePresence:
 			findings = append(findings, scanPresenceRule(dir, r, sev)...)
 		case RuleTypeParity:
-			// Phase 2 — built-in, not data-driven; no-op here.
+			findings = append(findings, scanParityRule(s.PRDContext, r, sev)...)
 		default:
 			findings = append(findings, brokenRuleFinding(r, "unknown rule type %q"))
 		}
@@ -203,4 +234,76 @@ func scanPresenceRule(dir string, r ProjectRule, sev Severity) []Finding {
 	}
 	return []Finding{{Scanner: "project-rules", Severity: sev, RuleID: r.ID,
 		Message: r.Name + ": no file matched required pattern " + glob}}
+}
+
+// canonicalSurfaces matches AGENT.md's Mobile-Parity Rule's own full
+// parity-surface set: REST, MCP, CLI, comm channel, YAML/config, PWA,
+// Android, iPhone/iOS. Word-bounded, case-insensitive — "REST" in
+// particular would false-positive on "arrest"/"interest" without \b.
+var canonicalSurfaces = []struct {
+	name string
+	re   *regexp.Regexp
+}{
+	{"REST", regexp.MustCompile(`(?i)\bREST\b`)},
+	{"MCP", regexp.MustCompile(`(?i)\bMCP\b`)},
+	{"CLI", regexp.MustCompile(`(?i)\bCLI\b`)},
+	{"comm channel", regexp.MustCompile(`(?i)\bcomm[\s-]?channel\b`)},
+	{"YAML/config", regexp.MustCompile(`(?i)\bYAML\b|\bconfig\.yaml\b`)},
+	{"PWA", regexp.MustCompile(`(?i)\bPWA\b`)},
+	{"Android", regexp.MustCompile(`(?i)\bAndroid\b`)},
+	{"iPhone", regexp.MustCompile(`(?i)\biPhone\b|\biOS\b`)},
+}
+
+// surfacesMentionedIn returns which canonical parity surfaces appear
+// anywhere in text, in AGENT.md's own canonical order.
+func surfacesMentionedIn(text string) []string {
+	var found []string
+	for _, c := range canonicalSurfaces {
+		if c.re.MatchString(text) {
+			found = append(found, c.name)
+		}
+	}
+	return found
+}
+
+// scanParityRule (BL406 Phase 2) is the first built-in, non-data-driven
+// rule type: every surface named in the parent plan's own "## Parity
+// surface" section must be inherited by every decomposed story. This
+// check is deliberately a *candidate detector*, not a full semantic
+// judge of "was there a stated reason" — AGENT.md's own text requires
+// "without a stated reason" for a true scope-drift verdict, which this
+// regex-level check cannot verify on its own. It reuses the existing
+// scan.Config.RulesGraderEnabled + GraderFn pipeline (already wired
+// into scan.Run since BL221 Phase 3) for that judgment call, the same
+// way every other scanner's findings get graded — not a second,
+// parallel LLM-grading mechanism.
+func scanParityRule(ctx *PRDParityContext, r ProjectRule, sev Severity) []Finding {
+	if ctx == nil {
+		return []Finding{{Scanner: "project-rules", Severity: SeverityInfo, RuleID: r.ID,
+			Message: r.Name + ": parity rule needs PRD/story context, not supplied for this scan (e.g. a bare-directory scan outside any PRD) — skipped, not evaluated"}}
+	}
+	parentSurfaces := surfacesMentionedIn(ctx.ParentSurfaceText)
+	if len(parentSurfaces) == 0 {
+		return []Finding{{Scanner: "project-rules", Severity: SeverityInfo, RuleID: r.ID,
+			Message: r.Name + ": parent plan has no parseable Parity surface section to inherit from"}}
+	}
+	var findings []Finding
+	for _, story := range ctx.Stories {
+		storySet := map[string]bool{}
+		for _, s := range surfacesMentionedIn(story.Description) {
+			storySet[s] = true
+		}
+		for _, want := range parentSurfaces {
+			if !storySet[want] {
+				findings = append(findings, Finding{
+					Scanner: "project-rules", File: story.ID, Severity: sev, RuleID: r.ID,
+					Message: r.Name + ": story \"" + story.Title + "\" (" + story.ID +
+						") doesn't mention the \"" + want + "\" surface the parent plan's Parity " +
+						"surface section names — either a stated exclusion reason belongs in the " +
+						"story text, or this is scope drift",
+				})
+			}
+		}
+	}
+	return findings
 }

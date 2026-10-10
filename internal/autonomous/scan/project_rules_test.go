@@ -118,14 +118,9 @@ func TestProjectRulesScanner_MalformedRuleDoesNotCrash(t *testing.T) {
 	}
 }
 
-func TestProjectRulesScanner_ParityType_NoOpInPhase1(t *testing.T) {
-	dir := t.TempDir()
-	rule := ProjectRule{ID: "r4", Name: "parity-inheritance", Type: RuleTypeParity}
-	findings := ProjectRulesScanner{Rules: []ProjectRule{rule}}.mustScan(t, dir)
-	if len(findings) != 0 {
-		t.Fatalf("parity rule type is Phase 2's job; expected no-op in Phase 1, got %+v", findings)
-	}
-}
+// Superseded by TestProjectRulesScanner_ParityRule_NoPRDContext below —
+// RuleTypeParity was a Phase 1 no-op; Phase 2 made it real. Kept history
+// in the commit message, not as a stale duplicate test.
 
 func TestProjectRulesScanner_DefaultSeverity(t *testing.T) {
 	dir := t.TempDir()
@@ -145,4 +140,106 @@ func (s ProjectRulesScanner) mustScan(t *testing.T, dir string) []Finding {
 		t.Fatalf("Scan returned an error: %v", err)
 	}
 	return findings
+}
+
+// --- BL406 Phase 2 — parity-inheritance rule (first built-in) ---
+
+func parityRule() ProjectRule {
+	return ProjectRule{ID: "parity-inheritance", Name: "Story must inherit the parent plan's Parity surface",
+		Type: RuleTypeParity, Granularity: GranularityStory}
+}
+
+func TestProjectRulesScanner_ParityRule_NoPRDContext(t *testing.T) {
+	dir := t.TempDir()
+	findings := ProjectRulesScanner{Rules: []ProjectRule{parityRule()}}.mustScan(t, dir)
+	if len(findings) != 1 || findings[0].Severity != SeverityInfo {
+		t.Fatalf("expected one informative (not warning/error) finding when no PRDContext supplied, got %+v", findings)
+	}
+}
+
+func TestProjectRulesScanner_ParityRule_NoParseableParentSection(t *testing.T) {
+	dir := t.TempDir()
+	ctx := &PRDParityContext{ParentSurfaceText: "no surfaces named here"}
+	findings := ProjectRulesScanner{Rules: []ProjectRule{parityRule()}, PRDContext: ctx}.mustScan(t, dir)
+	if len(findings) != 1 || findings[0].Severity != SeverityInfo {
+		t.Fatalf("expected one informative finding when parent section has nothing to inherit, got %+v", findings)
+	}
+}
+
+func TestProjectRulesScanner_ParityRule_StoryInheritsEverything_Passes(t *testing.T) {
+	dir := t.TempDir()
+	ctx := &PRDParityContext{
+		ParentSurfaceText: "REST, MCP, CLI, comm channel, YAML/config, PWA, Android, iPhone all touched.",
+		Stories: []StoryParityInfo{
+			{ID: "s1", Title: "Story One",
+				Description: "Touches REST, MCP, CLI, comm channel, YAML/config, PWA, Android, iPhone, same as the parent plan."},
+		},
+	}
+	findings := ProjectRulesScanner{Rules: []ProjectRule{parityRule()}, PRDContext: ctx}.mustScan(t, dir)
+	if len(findings) != 0 {
+		t.Fatalf("expected no findings when the story mentions every inherited surface, got %+v", findings)
+	}
+}
+
+// TestProjectRulesScanner_ParityRule_DroppedSurface_Fails is the plan's
+// own required regression test: "a story that narrows or drops a
+// surface with no stated reason must fail the scan."
+func TestProjectRulesScanner_ParityRule_DroppedSurface_Fails(t *testing.T) {
+	dir := t.TempDir()
+	ctx := &PRDParityContext{
+		ParentSurfaceText: "REST, MCP, CLI, comm channel, YAML/config, PWA, Android, iPhone all touched.",
+		Stories: []StoryParityInfo{
+			// Dropped PWA, Android, iPhone entirely -- no mention, no
+			// stated exclusion reason anywhere in the text.
+			{ID: "s2", Title: "Story Two (drifted)",
+				Description: "Touches REST, MCP, CLI, comm channel, YAML/config."},
+		},
+	}
+	findings := ProjectRulesScanner{Rules: []ProjectRule{parityRule()}, PRDContext: ctx}.mustScan(t, dir)
+	if len(findings) != 3 {
+		t.Fatalf("expected 3 findings (PWA, Android, iPhone each dropped), got %d: %+v", len(findings), findings)
+	}
+	for _, f := range findings {
+		if f.RuleID != "parity-inheritance" || f.File != "s2" {
+			t.Fatalf("finding doesn't name the drifted story: %+v", f)
+		}
+	}
+}
+
+func TestProjectRulesScanner_ParityRule_MultipleStories_OnlyFlagsTheDriftedOne(t *testing.T) {
+	dir := t.TempDir()
+	ctx := &PRDParityContext{
+		ParentSurfaceText: "REST, PWA all touched.",
+		Stories: []StoryParityInfo{
+			{ID: "ok", Title: "Compliant story", Description: "Touches REST and PWA."},
+			{ID: "bad", Title: "Drifted story", Description: "Touches REST only."},
+		},
+	}
+	findings := ProjectRulesScanner{Rules: []ProjectRule{parityRule()}, PRDContext: ctx}.mustScan(t, dir)
+	if len(findings) != 1 || findings[0].File != "bad" {
+		t.Fatalf("expected exactly 1 finding naming the drifted story, got %+v", findings)
+	}
+}
+
+func TestSurfacesMentionedIn_RESTWordBoundary(t *testing.T) {
+	// "arrest"/"interest" must not false-positive on the REST surface.
+	got := surfacesMentionedIn("the officer made an arrest; this is of interest")
+	for _, s := range got {
+		if s == "REST" {
+			t.Fatalf("REST false-positived on a substring match: %v", got)
+		}
+	}
+	got = surfacesMentionedIn("the REST API and the iOS app")
+	foundREST, foundiPhone := false, false
+	for _, s := range got {
+		if s == "REST" {
+			foundREST = true
+		}
+		if s == "iPhone" {
+			foundiPhone = true
+		}
+	}
+	if !foundREST || !foundiPhone {
+		t.Fatalf("expected REST and iPhone(iOS alias) to be found: %v", got)
+	}
 }

@@ -2,7 +2,7 @@
 
 - **Date**: 2026-10-10
 - **Version at planning**: v9.0.10
-- **Status**: In progress — Phase 0 done (v9.0.11), Phase 1 done (v9.0.12, real rule engine); Phase 2 next
+- **Status**: In progress — Phase 0 done (v9.0.11), Phase 1 done (v9.0.12, real rule engine), Phase 2 done (v9.0.13, first built-in rule); Phase 3 next
 
 ## Context
 
@@ -316,21 +316,52 @@ start, not after the fact):
   today. This plan's status line updated.
 
 ### Phase 2 — Parity-inheritance rule (first built-in)
-**Status: Not started.**
-- [ ] Rule ships default-enabled once Phase 1 exists.
-- [ ] Checks a story's Parity surface section against its parent plan's
-  surface list + per-surface exclusion reasons, per AGENT.md's existing
-  prose (quoted in Confirmed findings above).
-- [ ] Regression test: a story that narrows/drops a surface with no
-  stated reason must fail the scan.
-- [ ] **Phase Completion Checklist** (AGENT.md Planning Rules §5, full
-  list — see Phase 0/1's worked examples above). The
-  `docs/datawatch-definitions.md` "Project rule" entry already shipped
-  in Phase 1 (corrected from this note's original guess that Phase 2
-  would be the trigger point — Phase 1's engine was already real/usable
-  on its own). Still worth considering a `docs/flow/*.md` diagram
-  (rule → finding → action) once this phase's built-in rule exists as
-  a second concrete example of the mechanism.
+**Status: Done.** Shipped v9.0.13.
+- [x] Rule ships default-enabled: `scan.DefaultConfig()` now includes
+  the `parity-inheritance` rule — the only rule any operator gets
+  without configuring one.
+- [x] Checks a story's Parity surface section against its parent
+  plan's surface list, per AGENT.md's existing prose. Implemented as a
+  **candidate detector** (a missing surface → a warning-severity
+  finding), not a full semantic judge of "was there a stated reason" —
+  that nuance deliberately reuses the existing `rules_grader_enabled`
+  LLM pipeline (already wired since BL221 Phase 3) rather than trying
+  to regex-parse "stated reason," which isn't realistically
+  deterministic. `internal/autonomous/bl406_parity_context.go` (new)
+  translates `PRD.Spec`/`PRD.Story` into the scan package's generic
+  `PRDParityContext`/`StoryParityInfo` (can't import PRD/Story types
+  directly — import cycle — same "mirror, don't import" pattern as
+  every other config bridge in this codebase). `ProjectRulesScanner`
+  gained an optional `PRDContext` field, consulted only by this rule
+  type; a scan without it reports that explicitly (`SeverityInfo`), not
+  a crash or silent skip.
+- [x] Regression test: `TestProjectRulesScanner_ParityRule_DroppedSurface_Fails`
+  — a story that drops 3 surfaces (PWA/Android/iPhone) with no stated
+  reason produces exactly 3 findings, each naming the drifted story.
+  Plus: a fully-compliant story passes clean, a multi-story case
+  confirms only the actually-drifted story gets flagged, and a
+  dedicated `REST`-word-boundary test guards against false-positiving
+  on "arrest"/"interest" (14 new tests total across
+  `project_rules_test.go` and the new `bl406_parity_context_test.go`).
+- [x] **Phase Completion Checklist**: `go test`/`node --test` green
+  (3387 Go tests, up from 3376; 182 JS unchanged). `CHANGELOG.md`
+  v9.0.13 entry added. `docs/config-reference.yaml` updated — the
+  `project_rules` example now shows the real default rule instead of
+  an empty list. `docs/operations.md`/`README.md`/doc index — N/A,
+  same reasoning as Phase 0/1 (no deployment/security change, no new
+  REST/PWA surface). `docs/testing-tracker.md` entry added. No leaked
+  tracker IDs (checked finding messages and the glossary update — plain
+  English). **Mobile-Parity Rule**: N/A, confirmed — same `Finding`
+  struct shape as every other scanner, no contract change. Localization
+  Rule: N/A, no new `t('key')` usage. Version bumped (`9.0.12` →
+  `9.0.13`). **Conditional docs**: updated (not re-added) the
+  `docs/datawatch-definitions.md` "Project rule" entry to note the
+  parity rule ships default-enabled. Considered a `docs/flow/*.md`
+  diagram (rule → finding → action) as a second concrete example;
+  deferred — the glossary entry plus this plan's own worked examples
+  cover the mechanism adequately for now, and a diagram with only one
+  real built-in rule to show wouldn't earn its keep yet. This plan's
+  status line updated.
 
 ### Phase 3 — Multi-granularity wiring
 **Status: Not started.**

@@ -931,8 +931,18 @@ autonomous:
     #  granularity: task_complete|story_complete|prd_complete,
     #  pattern, severity, action: ""|file_upstream_issue, upstream_target}.
     # Full-replace via PUT, not a merge — omit the key entirely to leave
-    # the existing list untouched.
-    project_rules: []
+    # the existing list untouched. Default (shown here) is one built-in
+    # rule, shipped on by default once the engine existed (BL406 Phase
+    # 2): a story must inherit its parent plan's declared Parity
+    # surface — a candidate detector (warning, not error), since "was
+    # there a stated reason" for a narrowed surface needs the
+    # rules_grader_enabled LLM judgment call below, not a regex alone.
+    project_rules:
+      - id: parity-inheritance
+        name: "Story must inherit the parent plan's Parity surface"
+        type: parity
+        granularity: story_complete
+        severity: warning
 
   # ── BL406 — project-rules enforcement ──
   # rules_file/context_file are operator-configured paths, never
