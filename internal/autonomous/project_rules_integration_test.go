@@ -1,8 +1,12 @@
 package autonomous
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/dmz006/datawatch/internal/autonomous/scan"
 )
 
 func TestExtractMarkdownSection(t *testing.T) {
@@ -86,5 +90,134 @@ func TestBuildPRDParityContext(t *testing.T) {
 func TestBuildPRDParityContext_Nil(t *testing.T) {
 	if buildPRDParityContext(nil) != nil {
 		t.Fatal("expected nil context for nil PRD")
+	}
+}
+
+// --- BL406 Phase 3 — multi-granularity wiring ---
+
+func newGranularityTestManager(t *testing.T, dir string) (*Manager, *PRD) {
+	t.Helper()
+	cfg := DefaultConfig()
+	cfg.Scan.ProjectRules = []scan.ProjectRule{
+		{ID: "task-rule", Name: "task-level check", Type: scan.RuleTypePresence,
+			Granularity: scan.GranularityTask, Severity: scan.SeverityError, Pattern: "nonexistent-task.md"},
+		{ID: "story-rule", Name: "story-level check", Type: scan.RuleTypePresence,
+			Granularity: scan.GranularityStory, Severity: scan.SeverityError, Pattern: "nonexistent-story.md"},
+		{ID: "prd-rule", Name: "prd-level check", Type: scan.RuleTypePresence,
+			Granularity: scan.GranularityPRD, Severity: scan.SeverityError, Pattern: "nonexistent-prd.md"},
+	}
+	m, err := NewManager(t.TempDir(), cfg, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prd := &PRD{ID: "prd1", ProjectDir: dir, Spec: "## Parity surface\n\nREST only.\n",
+		Story: []Story{{ID: "s1", Title: "Story One", Description: "Touches REST."}}}
+	if err := m.store.SavePRD(prd); err != nil {
+		t.Fatal(err)
+	}
+	return m, prd
+}
+
+func TestInvokeScanGuardrail_ProjectRules_TaskGranularity_OnlyFiresTaskRule(t *testing.T) {
+	dir := t.TempDir()
+	m, prd := newGranularityTestManager(t, dir)
+	entry := GuardrailEntry{Name: "project-rules-scan", Type: "scan", ScanType: "project-rules"}
+	inv := GuardrailInvocation{PRDID: prd.ID, Level: "task", UnitID: "s1t1", ProjectDir: dir}
+
+	v, err := m.invokeScanGuardrail(entry, inv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v.Outcome != "block" {
+		t.Fatalf("expected the task-granularity rule to fire (block), got outcome=%q summary=%q", v.Outcome, v.Summary)
+	}
+}
+
+func TestInvokeScanGuardrail_ProjectRules_StoryGranularity_OnlyFiresStoryRule(t *testing.T) {
+	dir := t.TempDir()
+	m, prd := newGranularityTestManager(t, dir)
+	entry := GuardrailEntry{Name: "project-rules-scan", Type: "scan", ScanType: "project-rules"}
+	inv := GuardrailInvocation{PRDID: prd.ID, Level: "story", UnitID: "s1", ProjectDir: dir}
+
+	v, err := m.invokeScanGuardrail(entry, inv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v.Outcome != "block" {
+		t.Fatalf("expected the story-granularity rule to fire (block), got outcome=%q summary=%q", v.Outcome, v.Summary)
+	}
+}
+
+func TestInvokeScanGuardrail_ProjectRules_TaskLevel_DoesNotFireStoryOrPRDRule(t *testing.T) {
+	// Only the task-rule's own pattern ("nonexistent-task.md") should be
+	// checked at task granularity; story/prd rules target different
+	// (also-missing) filenames, so if they fired too the finding count
+	// (and thus the block reason) would differ. invokeScanGuardrail only
+	// returns a verdict, not the raw finding count, so assert indirectly:
+	// create the task-rule's target file so ONLY it would pass, and
+	// confirm the outcome flips to pass -- proving no other granularity's
+	// (still-missing) rule is contributing a finding.
+	dir := t.TempDir()
+	m, prd := newGranularityTestManager(t, dir)
+	if err := os.WriteFile(filepath.Join(dir, "nonexistent-task.md"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	entry := GuardrailEntry{Name: "project-rules-scan", Type: "scan", ScanType: "project-rules"}
+	inv := GuardrailInvocation{PRDID: prd.ID, Level: "task", UnitID: "s1t1", ProjectDir: dir}
+
+	v, err := m.invokeScanGuardrail(entry, inv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v.Outcome != "pass" {
+		t.Fatalf("expected pass once the task-rule's own target exists (proving story/prd rules aren't also being checked at task granularity), got outcome=%q summary=%q", v.Outcome, v.Summary)
+	}
+}
+
+func TestRunPRDCompletionProjectRulesCheck_PRDGranularity_Blocks(t *testing.T) {
+	dir := t.TempDir()
+	m, prd := newGranularityTestManager(t, dir)
+
+	blocked, err := m.runPRDCompletionProjectRulesCheck(prd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !blocked {
+		t.Fatal("expected the prd-granularity rule's missing file to block PRD completion")
+	}
+	if len(prd.Decisions) != 1 || prd.Decisions[0].Kind != "project_rules_block" {
+		t.Fatalf("expected a project_rules_block decision recorded, got %+v", prd.Decisions)
+	}
+
+	// Satisfy it and confirm it stops blocking.
+	if err := os.WriteFile(filepath.Join(dir, "nonexistent-prd.md"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	blocked, err = m.runPRDCompletionProjectRulesCheck(prd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if blocked {
+		t.Fatal("expected PRD completion to no longer be blocked once the prd-rule's target exists")
+	}
+}
+
+func TestRunPRDCompletionProjectRulesCheck_NoOpWhenNoPRDGranularityRules(t *testing.T) {
+	dir := t.TempDir()
+	cfg := DefaultConfig()
+	cfg.Scan.ProjectRules = []scan.ProjectRule{
+		{ID: "task-only", Type: scan.RuleTypePresence, Granularity: scan.GranularityTask, Pattern: "nope.md"},
+	}
+	m, err := NewManager(t.TempDir(), cfg, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prd := &PRD{ID: "prd2", ProjectDir: dir}
+	blocked, err := m.runPRDCompletionProjectRulesCheck(prd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if blocked {
+		t.Fatal("expected no-op (not blocked) when no rule is declared at prd_complete granularity")
 	}
 }

@@ -5,6 +5,35 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.14 — feat(autonomous): BL406 Phase 3 — multi-granularity wiring (rules fire automatically)
+
+### Added
+- Project rules now actually fire at the completion checkpoints their
+  `granularity` declares, not just on-demand via `autonomous_prd_scan`.
+  Task and story levels ride the existing `PerTaskGuardrails`/
+  `PerStoryGuardrails` lists for free — a new built-in guardrail entry,
+  `project-rules-scan`, dispatches through the same `invokeScanGuardrail`
+  path `sast-scan`/`secrets-scan`/`deps-scan` already use, filtered to
+  the invocation's own granularity (`FilterRulesByGranularity`) so a
+  task-level check never also fires story/PRD-level rules. PRD
+  completion has no equivalent guardrail list (there's no
+  `PerPRDGuardrails` — see below), so it's a direct, self-gating call
+  (`runPRDCompletionProjectRulesCheck`, zero cost when no rule is
+  declared at `prd_complete`) wired right before the existing
+  `PRDCompleted` rollup; a blocking finding now flips the PRD to the
+  already-existing `PRDBlocked` status (same one task/story guardrail
+  blocks already use) instead of completing, with a `project_rules_block`
+  decision recorded for visibility.
+- PWA: the session quick-command "Guardrails" dropdown gained
+  `project-rules-scan` alongside the 3 existing built-ins (the global
+  `per_task_guardrails`/`per_story_guardrails` config fields were
+  already free-text, so they needed no change — only this one hardcoded
+  dropdown list was missing it).
+- Deliberately did **not** add a generic `PerPRDGuardrails` config list
+  (which would let any guardrail type, not just project-rules, run at
+  PRD completion) — out of scope for "wire project rules into their
+  declared granularities," which doesn't need it.
+
 ## v9.0.13 — feat(autonomous): BL406 Phase 2 — parity-inheritance rule (first built-in)
 
 ### Added

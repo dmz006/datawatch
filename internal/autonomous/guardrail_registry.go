@@ -44,6 +44,17 @@ func (m *Manager) initGuardrailLibrary() {
 			Type:        "scan",
 			ScanType:    "deps",
 		},
+		{
+			// BL406 Phase 3 — operator adds this name to per_task_guardrails/
+			// per_story_guardrails to get project-rules checks at that
+			// granularity; the PRD level has no equivalent list (see
+			// runPRDCompletionProjectRulesCheck) since it's the one
+			// granularity with no separate per-level opt-in today.
+			Name:        "project-rules-scan",
+			Description: "Operator-defined project rules (content/consistency/presence/parity) filtered to this guardrail's granularity",
+			Type:        "scan",
+			ScanType:    "project-rules",
+		},
 	}
 }
 
@@ -126,6 +137,21 @@ func (m *Manager) invokeScanGuardrail(entry GuardrailEntry, inv GuardrailInvocat
 	}
 	if sc.DepsEnabled {
 		scanners = append(scanners, scan.NewDepsScanner())
+	}
+	// BL406 Phase 3 — the fourth scan category rides this same
+	// dispatch; the only difference is it needs rules filtered to the
+	// invocation's own granularity (inv.Level + "_complete") so a
+	// task-level guardrail doesn't also fire story/PRD-level rules,
+	// and PRD/story context for the parity rule type.
+	if entry.ScanType == "project-rules" {
+		gran := scan.RuleGranularity(inv.Level + "_complete")
+		if filtered := scan.FilterRulesByGranularity(sc.ProjectRules, gran); len(filtered) > 0 {
+			var prdCtx *scan.PRDParityContext
+			if prd, ok := m.store.GetPRD(inv.PRDID); ok {
+				prdCtx = buildPRDParityContext(prd)
+			}
+			scanners = append(scanners, scan.NewProjectRulesScanner(filtered, prdCtx))
+		}
 	}
 
 	result := scan.Run(inv.ProjectDir, sc, scanners, nil)

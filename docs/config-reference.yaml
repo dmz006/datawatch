@@ -880,11 +880,15 @@ autonomous:
   auto_approve_children: true
   # BL191 Q6 (v5.10.0) — guardrails at story + task level. Empty list =
   # disabled at that level; PRD-level guardrails stay with the BL117
-  # orchestrator. Names match the orchestrator surface: rules, security,
-  # release-readiness, docs-diagrams-architecture. A `block` outcome
+  # orchestrator. Names: the 4 built-in scan guardrails (sast-scan,
+  # secrets-scan, deps-scan, project-rules-scan — the last one runs
+  # scan.project_rules filtered to this level's own granularity, BL406
+  # Phase 3) plus the orchestrator-surface names (rules, security,
+  # release-readiness, docs-diagrams-architecture). A `block` outcome
   # halts the parent PRD with status=blocked for operator review; the
-  # guardrail prompt + parsing is the same `/api/ask` loopback the BL25
-  # verifier uses (verification_backend / verification_effort apply).
+  # non-scan guardrail prompt + parsing is the same `/api/ask` loopback
+  # the BL25 verifier uses (verification_backend / verification_effort
+  # apply).
   per_task_guardrails: []
   per_story_guardrails: []
   # BL367 — default quality gate config applied to every PRD that does not

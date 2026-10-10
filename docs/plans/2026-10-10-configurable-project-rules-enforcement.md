@@ -2,7 +2,7 @@
 
 - **Date**: 2026-10-10
 - **Version at planning**: v9.0.10
-- **Status**: In progress — Phase 0 done (v9.0.11), Phase 1 done (v9.0.12, real rule engine), Phase 2 done (v9.0.13, first built-in rule); Phase 3 next
+- **Status**: In progress — Phase 0 done (v9.0.11), Phase 1 done (v9.0.12, real rule engine), Phase 2 done (v9.0.13, first built-in rule), Phase 3 done (v9.0.14, rules fire automatically); Phase 4 next
 
 ## Context
 
@@ -364,16 +364,65 @@ start, not after the fact):
   status line updated.
 
 ### Phase 3 — Multi-granularity wiring
-**Status: Not started.**
-- [ ] New executor hook at task-complete.
-- [ ] New executor hook at story-complete.
-- [ ] New executor hook at PRD-complete.
-- [ ] Each hook runs only rules declared at its granularity (not every
-  rule at every hook).
-- [ ] Tests: a task-granularity rule fires at task-complete and not at
-  story/PRD-complete, and vice versa for the other granularities.
-- [ ] **Phase Completion Checklist** (AGENT.md Planning Rules §5, full
-  list — see Phase 0's worked example above).
+**Status: Done.** Shipped v9.0.14.
+- [x] Task-complete and story-complete checkpoints: **reused the
+  existing guardrail hooks** (`runPerTaskGuardrails`/
+  `runPerStoryGuardrails`, already firing at exactly those points)
+  rather than building new executor hooks — a new built-in guardrail
+  entry, `project-rules-scan` (`guardrail_registry.go`), dispatches
+  through the same `invokeScanGuardrail` path `sast-scan`/
+  `secrets-scan`/`deps-scan` already use. An operator opts in the same
+  way as any other guardrail: add `project-rules-scan` to
+  `per_task_guardrails`/`per_story_guardrails` (already free-text
+  fields — no PWA/config change needed for that surface).
+- [x] PRD-complete checkpoint: **new**, since no `PerPRDGuardrails`
+  list exists (deliberately — PRD-level checks are the BL117
+  orchestrator's territory per `docs/config-reference.yaml`'s own
+  existing comment, and building a second generic list wasn't needed
+  for what this phase actually required). `runPRDCompletionProjectRulesCheck`
+  is a direct, self-gating call wired right before the existing
+  `PRDCompleted` rollup in `executor.go` — zero cost when no rule is
+  declared at `prd_complete`; a blocking finding flips the PRD to the
+  already-existing `PRDBlocked` status and records a
+  `project_rules_block` `Decision`.
+- [x] Each hook runs only rules declared at its granularity:
+  `scan.FilterRulesByGranularity(rules, inv.Level + "_complete")` at
+  task/story; `GranularityPRD` at PRD-complete — not every rule at
+  every hook.
+- [x] Tests: `TestInvokeScanGuardrail_ProjectRules_TaskGranularity_OnlyFiresTaskRule`
+  / `..._StoryGranularity_OnlyFiresStoryRule` confirm each level fires
+  its own rule; `..._TaskLevel_DoesNotFireStoryOrPRDRule` proves the
+  negative (satisfying only the task-rule's target flips the verdict to
+  pass, proving story/PRD rules targeting different, still-missing
+  files aren't also being evaluated at task granularity);
+  `TestRunPRDCompletionProjectRulesCheck_PRDGranularity_Blocks` +
+  `..._NoOpWhenNoPRDGranularityRules` cover the PRD checkpoint (5 new
+  tests total, `internal/autonomous/project_rules_integration_test.go`).
+- [x] **Phase Completion Checklist**: `go test`/`node --test` green
+  (3392 Go tests, up from 3387; 182 JS unchanged except the dropdown
+  addition below, confirmed no regression). `CHANGELOG.md` v9.0.14
+  entry added. `docs/config-reference.yaml` — corrected a pre-existing
+  stale comment (it didn't even list the 3 already-existing built-in
+  scan guardrails) while adding `project-rules-scan` to the real name
+  list. `docs/operations.md`/doc index — N/A, no deployment/security
+  change, no new doc files. `README.md` — N/A, still an internal
+  quality-gate mechanism, not a new operator command/interface.
+  `docs/testing-tracker.md` entry added. No leaked tracker IDs.
+  **Mobile-Parity Rule**: triggered and closed — the session
+  quick-command "Guardrails" dropdown (`app.js`) had a hardcoded
+  3-item list missing the new guardrail name; added
+  `project-rules-scan` as a 4th option (no new locale string — the
+  option text is the raw guardrail name, never `t()`-wrapped).
+  Localization Rule: N/A per the above. Version bumped (`9.0.13` →
+  `9.0.14`). This plan's status line updated.
+- [x] **Naming correction (operator-raised mid-phase, not originally
+  planned)**: this phase's own new file was initially named
+  `bl406_parity_context.go` — renamed to `project_rules_integration.go`
+  per the new AGENT.md Code Quality Rule (files/functions named for
+  what they do, never for the tracker ID that created them). Filed
+  **BL409** to audit the rest of the codebase's pre-existing
+  BL/GH-prefixed files later, placed last in the v10.0.0 Stage 3 queue
+  — not retroactively fixed as a side effect of this phase.
 
 ### Phase 4 — Upstream issue-filing action
 **Status: Not started.**

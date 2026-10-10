@@ -539,6 +539,17 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 	if allDone {
 		if anyFailed {
 			prd.Status = PRDFailed
+		} else if blocked, err := m.runPRDCompletionProjectRulesCheck(prd); err != nil {
+			return err
+		} else if blocked {
+			// BL406 Phase 3 — third completion checkpoint. No separate
+			// PerPRDGuardrails list (unlike task/story): a prd_complete
+			// project rule firing is itself the signal, same PRDBlocked
+			// status the task/story guardrail "block" outcome already
+			// uses above.
+			prd.Status = PRDBlocked
+			_ = m.store.SavePRD(prd)
+			return nil
 		} else {
 			prd.Status = PRDCompleted
 			// BL387 Phase 3 — fire auto-report asynchronously on completion.

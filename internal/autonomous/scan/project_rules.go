@@ -307,3 +307,17 @@ func scanParityRule(ctx *PRDParityContext, r ProjectRule, sev Severity) []Findin
 	}
 	return findings
 }
+
+// FilterRulesByGranularity (BL406 Phase 3) returns only the rules
+// declared at g, preserving order. Used at each completion checkpoint
+// (task/story/PRD) so a task-level rule doesn't also fire at story or
+// PRD completion, and vice versa.
+func FilterRulesByGranularity(rules []ProjectRule, g RuleGranularity) []ProjectRule {
+	var out []ProjectRule
+	for _, r := range rules {
+		if r.Granularity == g {
+			out = append(out, r)
+		}
+	}
+	return out
+}

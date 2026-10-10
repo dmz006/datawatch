@@ -5971,7 +5971,7 @@ function loadSavedCmdsQuick(sessionId) {
       }
       // BL303 S3 T14 — guardrail section: run built-in guardrail on session project dir.
       optHtml += '<optgroup label="Guardrails">';
-      optHtml += ['sast-scan', 'secrets-scan', 'deps-scan'].map(g =>
+      optHtml += ['sast-scan', 'secrets-scan', 'deps-scan', 'project-rules-scan'].map(g =>
         `<option value="__guardrail__${g}">▶ ${g}</option>`).join('');
       optHtml += '</optgroup>';
       optHtml += '<optgroup label=""><option value="__custom__">Custom…</option></optgroup>';
