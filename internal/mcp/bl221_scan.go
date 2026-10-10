@@ -6,6 +6,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	mcpsdk "github.com/mark3labs/mcp-go/mcp"
@@ -38,6 +39,11 @@ func (s *Server) toolAutonomousScanConfigSet() mcpsdk.Tool {
 		mcpsdk.WithString("fail_on_severity", mcpsdk.Description("Minimum severity to fail scan: info|warning|error|critical (default error)")),
 		mcpsdk.WithNumber("max_findings", mcpsdk.Description("Cap on findings returned per scan (0 = unlimited)")),
 		mcpsdk.WithNumber("fix_loop_max_retries", mcpsdk.Description("Max retries for the fix loop (default 0)")),
+		mcpsdk.WithString("project_rules", mcpsdk.Description(
+			`BL406 — JSON array, full-replace (omit to leave existing rules untouched). `+
+				`Each entry: {"id","name","type":"content|consistency|presence|parity",`+
+				`"granularity":"task_complete|story_complete|prd_complete","pattern","severity",`+
+				`"action":"|file_upstream_issue","upstream_target"}.`)),
 	)
 }
 func (s *Server) handleAutonomousScanConfigSet(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
@@ -54,6 +60,13 @@ func (s *Server) handleAutonomousScanConfigSet(_ context.Context, req mcpsdk.Cal
 		if v := req.GetFloat(k, -1); v >= 0 {
 			body[k] = int(v)
 		}
+	}
+	if v := req.GetString("project_rules", ""); v != "" {
+		var rules []any
+		if err := json.Unmarshal([]byte(v), &rules); err != nil {
+			return nil, fmt.Errorf("project_rules: invalid JSON array: %w", err)
+		}
+		body["project_rules"] = rules
 	}
 	rawBody, _ := json.Marshal(body)
 	out, err := s.proxyJSON(http.MethodPut, "/api/autonomous/scan/config", rawBody)

@@ -27832,6 +27832,23 @@ function loadAutomataSettingsPanel() {
           <div class="settings-label">Auto-fix retries</div>
           <input type="number" min="0" value="${ac.auto_fix_retries||0}" style="width:80px;font-size:12px;" class="form-input"
             onchange="saveGeneralField('autonomous.auto_fix_retries',+this.value)">
+        </div>
+        <!-- BL406 — project-rules enforcement: operator-configured paths, never hardcoded. -->
+        <div class="settings-row" style="justify-content:space-between;">
+          <div class="settings-label" title="${escHtml(t('autonomous_rules_file_hint')||'This project\'s prescriptive rules file (its AGENT.md equivalent). Default: AGENT.md')}">Rules file</div>
+          <input type="text" placeholder="AGENT.md" value="${escHtml(ac.rules_file||'')}" style="width:160px;font-size:12px;" class="form-input"
+            onchange="saveGeneralField('autonomous.rules_file',this.value)">
+        </div>
+        <div class="settings-row" style="justify-content:space-between;">
+          <div class="settings-label" title="${escHtml(t('autonomous_context_file_hint')||'This project\'s descriptive state-of-the-project doc. Optional — leave blank if you don\'t have one.')}">Context file</div>
+          <input type="text" placeholder="CONTEXT.md" value="${escHtml(ac.context_file||'')}" style="width:160px;font-size:12px;" class="form-input"
+            onchange="saveGeneralField('autonomous.context_file',this.value)">
+        </div>
+        <div class="settings-row" style="justify-content:space-between;align-items:flex-start;">
+          <div class="settings-label" title="${escHtml(t('autonomous_upstream_repos_hint')||'Named upstream repos a project-rule can file an issue into. JSON array: [{\"name\":\"app\",\"owner_repo\":\"org/repo\"}]')}">Upstream repos (JSON)</div>
+          <textarea rows="2" style="width:220px;font-size:11px;font-family:monospace;" class="form-input"
+            onchange="try{saveGeneralField('autonomous.upstream_repos',JSON.parse(this.value||'[]'))}catch(e){showToast('Invalid JSON: '+e.message,'error')}"
+          >${escHtml(JSON.stringify(ac.upstream_repos||[]))}</textarea>
         </div>`;
     }).catch(e => {
       if (aEl) aEl.innerHTML = `<em style="color:var(--text2);">${escHtml(_fedMsg(e, 'not available'))}</em>`;

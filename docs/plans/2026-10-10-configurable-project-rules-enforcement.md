@@ -169,15 +169,22 @@ item is not done, regardless of what's been committed elsewhere.
   path stays the dedicated `/api/autonomous/scan/config` endpoint
   (already fixed for persistence above), not duplicated into the
   generic patch.
-- [ ] MCP: `autonomous_scan_config_get/set` extended with the new fields;
-  new `scan_rule_list/get/create/update/delete` tools.
-- [ ] CLI: `datawatch config set autonomous.rules_file <path>` etc. work
-  (generic config-set path — confirm no special-casing needed).
-- [ ] Comm: `configure autonomous.rules_file=...` works (same generic
-  path check as CLI).
-- [ ] PWA: Settings → Automate scan-config card gains the new fields +
-  a rule-list sub-view (full CRUD can land in Phase 1 alongside the real
-  engine; Phase 0 just needs the config fields visible/settable).
+- [x] MCP: `rules_file`/`context_file`/`upstream_repos` already fully
+  work via the existing generic `config_set` tool (dot-path →
+  `PUT /api/config`, tries raw-JSON then quoted-string — zero new code
+  needed). `autonomous_scan_config_set` extended with a `project_rules`
+  JSON-array string param (full-replace, same semantics as the REST
+  body key).
+- [x] CLI: `datawatch config set autonomous.rules_file <path>` etc.
+  confirmed already generic (same raw-then-quoted dot-path pattern as
+  MCP's `config_set`, same `PUT /api/config` target) — zero new code.
+- [x] Comm: `configure autonomous.rules_file=...` confirmed already
+  generic (`handleConfigure` has no per-key allowlist) — zero new code.
+- [x] PWA: Settings → Automate autonomous-config panel gains Rules
+  file / Context file (text inputs) and Upstream repos (JSON textarea)
+  rows, using the existing `saveGeneralField` → `PUT /api/config` path.
+  Full rule-list CRUD UI deferred to Phase 1 (needs the real engine to
+  exist first). 182/182 existing `node --test` JS tests still pass.
 - [x] Unit tests: `TestApplyConfigPatch_BL406ProjectRulesFields`
   (REST round-trip), `TestScanConfigIsUnset`/
   `TestScanConfigFromYAML_PreservesExplicitDisable`/
