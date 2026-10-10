@@ -941,13 +941,32 @@ instead of one global config; (3) wire a council profile into the PRD verifier g
 real, working alternative to the existing single-LLM `/api/ask` verification path, plus a
 per-PRD council-profile override field (the Automata-page entry point).
 
-**Plan doc:** [`2026-09-30-council-llm-model-assignment.md`](2026-09-30-council-llm-model-assignment.md)
-**Status:** Phase 1 done, shipped v8.38.0. Phase 2 (named council profiles) and Phase 3 (wire `backend: "council"` into real PRD verify-gate execution) planned.
+**Plan doc:** [`historical-plans/2026-09-30-council-llm-model-assignment.md`](historical-plans/2026-09-30-council-llm-model-assignment.md)
+**Status:** Phase 1 done, shipped v8.38.0. Phase 2 (named council profiles) and Phase 3 (wire `backend: "council"` into real PRD verify-gate execution) planned — **now Phase 8 sub-phase 8a of BL405** (see below); implement as designed here, don't re-decide. BL405 adds a true pipeline-handoff engagement mode (8b) and extends profile selection beyond the verify-gate (8c, needs explicit operator go-ahead — revisits this plan's own "not in scope: council as execution backend" line).
 
 ---
 
 
 ## Pending backlog
+
+> **BL405** — LLM Enhancements: role-aware scheduling, federated
+> capacity, council-as-reusable-profile, usage/cost tracking (filed
+> 2026-10-10, iterated from `llm-research/docs/07-datawatch-
+> improvements.md`'s Part A/B proposals through live design discussion).
+> Plan: `docs/plans/2026-10-10-llm-enhancements.md`. 11 phases (0-10), not
+> started. Absorbs/supersedes B3 (node/model dashboards → new top-level
+> Scheduler surface) and B5 (model scorecard → a `CouncilProfile` fanning
+> one prompt across backends); B1's session-level aggregate is already
+> fixed (B109) — this plan builds the richer per-call record. Phase 8
+> implements BL390 Phase 2/3 (named council profiles, never started) and
+> extends it; Phase 8c needs explicit operator go-ahead since it revisits
+> BL390 Phase 3's own "not in scope" line. Also clarifies a session
+> memory: the broader PWA/all-surfaces multi-hop architecture pass is
+> still correctly deferred/unscheduled, but
+> `internal/federation/hopchain.go` (GH#201 Phase 2, 2026-10-09) already
+> ships a narrow, nesting-aware hop-chain for LLM-proxy attribution — so
+> Phase 7 here (giving capacity/scheduling a federation presence) rides
+> existing plumbing rather than building multi-hop from scratch.
 
 > **BL404** — `imap_mcp` messaging channel has zero REST/MCP/CLI/comm/
 > PWA config exposure (filed 2026-10-10, found while fixing the B110
