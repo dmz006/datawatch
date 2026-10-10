@@ -1968,6 +1968,82 @@ type AutonomousConfig struct {
 	// No JSON omitempty on either — see AutoApproveChildren's comment above.
 	InjectionGuard   bool `yaml:"injection_guard,omitempty" json:"injection_guard"`
 	BlockOnInjection bool `yaml:"block_on_injection,omitempty" json:"block_on_injection"`
+
+	// BL406 Phase 0 — scan sub-config, YAML-persisted (fixes B113: this
+	// previously had no YAML field at all, so the daemon-startup bridge
+	// in cmd/datawatch/main.go couldn't carry an operator's scan
+	// settings across a restart, and the package's own all-on default
+	// was never actually reached).
+	Scan ScanConfig `yaml:"scan,omitempty" json:"scan,omitempty"`
+
+	// BL406 — path to this project's prescriptive rules file (its
+	// AGENT.md equivalent), read by the decomposer and the new
+	// project-rules scanner. Relative to the PRD's project_dir. Empty
+	// default "AGENT.md" is applied at read time, not stored, so an
+	// operator without one isn't forced to create it.
+	RulesFile string `yaml:"rules_file,omitempty" json:"rules_file,omitempty"`
+	// ContextFile — path to this project's descriptive "state of the
+	// project" doc (this repo's own DATAWATCH-CONTEXT.md is one example
+	// of the convention; the name is never hardcoded). Explicitly
+	// optional — not every project has one. Default "CONTEXT.md" is
+	// applied at read time only when the file actually exists; an
+	// operator with a differently-named file sets this instead of
+	// renaming their file to match.
+	ContextFile string `yaml:"context_file,omitempty" json:"context_file,omitempty"`
+	// UpstreamRepos — named targets a project-rules "file_upstream_issue"
+	// action can reference, for gaps this repo's own PRD can't close
+	// alone (e.g. a parity gap needing a companion-app issue).
+	UpstreamRepos []UpstreamRepoConfig `yaml:"upstream_repos,omitempty" json:"upstream_repos,omitempty"`
+}
+
+// ScanConfig — BL221 Phase 3 runtime config, mirrors
+// internal/autonomous/scan.Config but lives in the top-level config
+// struct for YAML round-trip without an import cycle (same pattern as
+// QualityGateConfig above).
+type ScanConfig struct {
+	Enabled            bool   `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+	SASTEnabled        bool   `yaml:"sast_enabled,omitempty" json:"sast_enabled,omitempty"`
+	SecretsEnabled     bool   `yaml:"secrets_enabled,omitempty" json:"secrets_enabled,omitempty"`
+	DepsEnabled        bool   `yaml:"deps_enabled,omitempty" json:"deps_enabled,omitempty"`
+	FailOnSeverity     string `yaml:"fail_on_severity,omitempty" json:"fail_on_severity,omitempty"`
+	MaxFindings        int    `yaml:"max_findings,omitempty" json:"max_findings,omitempty"`
+	RulesGraderEnabled bool   `yaml:"rules_grader_enabled,omitempty" json:"rules_grader_enabled,omitempty"`
+	FixLoopEnabled     bool   `yaml:"fix_loop_enabled,omitempty" json:"fix_loop_enabled,omitempty"`
+	FixLoopMaxRetries  int    `yaml:"fix_loop_max_retries,omitempty" json:"fix_loop_max_retries,omitempty"`
+
+	// BL406 Phase 0/1 — the new fourth scan category. Data-driven,
+	// operator-defined rules; mirrors internal/autonomous/scan.ProjectRule.
+	ProjectRules []ProjectRuleConfig `yaml:"project_rules,omitempty" json:"project_rules,omitempty"`
+}
+
+// ProjectRuleConfig — BL406, mirrors scan.ProjectRule. One operator-
+// defined rule for the project-rules scan category.
+type ProjectRuleConfig struct {
+	ID          string `yaml:"id" json:"id"`
+	Name        string `yaml:"name" json:"name"`
+	// Type is one of: content | consistency | presence | parity.
+	Type string `yaml:"type" json:"type"`
+	// Granularity is one of: task_complete | story_complete | prd_complete.
+	Granularity string `yaml:"granularity" json:"granularity"`
+	// Pattern is the type-specific check — a regex for "content", a
+	// pair of file paths for "consistency", a file/glob for "presence".
+	// Unused for "parity" (built in, no pattern needed).
+	Pattern string `yaml:"pattern,omitempty" json:"pattern,omitempty"`
+	// Severity is one of: warning | error | critical (scan.Severity's
+	// string values). "info" is valid but never fails a scan.
+	Severity string `yaml:"severity,omitempty" json:"severity,omitempty"`
+	// Action is one of: "" (finding only) | file_upstream_issue.
+	Action string `yaml:"action,omitempty" json:"action,omitempty"`
+	// UpstreamTarget names an UpstreamRepoConfig.Name — required when
+	// Action is file_upstream_issue.
+	UpstreamTarget string `yaml:"upstream_target,omitempty" json:"upstream_target,omitempty"`
+}
+
+// UpstreamRepoConfig — BL406. A named GitHub repo a project-rules
+// "file_upstream_issue" action can file into.
+type UpstreamRepoConfig struct {
+	Name      string `yaml:"name" json:"name"`
+	OwnerRepo string `yaml:"owner_repo" json:"owner_repo"` // e.g. "dmz006/datawatch-app"
 }
 
 // OrchestratorConfig (BL117) — mirrors internal/orchestrator.Config;

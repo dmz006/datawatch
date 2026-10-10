@@ -2,7 +2,7 @@
 
 - **Date**: 2026-10-10
 - **Version at planning**: v9.0.10
-- **Status**: Planned — not started
+- **Status**: In progress — Phase 0 started (config scaffolding types added)
 
 ## Context
 
@@ -128,67 +128,117 @@ invents.
 
 ## Phases
 
+Each phase lists concrete, checkable items. Check items off as they land
+— don't batch the checking to the end — and update the phase's status
+line + this doc's own top-level Status/shipped-version note as each
+phase ships, per AGENT.md's Planning Rule. A phase with any unchecked
+item is not done, regardless of what's been committed elsewhere.
+
 ### Phase 0 — Config scaffolding
-- **Fix B113 first**: give `internal/config.AutonomousConfig` a real
-  `Scan scan.Config`-mirroring field (the existing
-  `config.AutonomousConfig` → `autonomous.Config` bridge at
-  `cmd/datawatch/main.go:3961` copies every other field by hand; add
-  `Scan` to that copy), and change startup construction to start from
-  `autonomouspkg.DefaultConfig()` with fields overridden rather than a
-  bare struct literal, so `scan.DefaultConfig()`'s intended all-on
-  default is actually reached. Persist `SetScanConfig` writes back to
-  the YAML-facing config, not just in-memory.
-- `autonomous.rules_file`, `autonomous.context_file`,
-  `autonomous.upstream_repos[]` — new `AutonomousConfig` fields, added
-  to the same copy bridge.
-- New `scan.ProjectRule{ID, Name, Type, Granularity, Pattern/Check,
-  Severity, Action}` type + CRUD store (same shape discipline as alert
-  rules' `Condition`/`Action`, reused conceptually).
-- Full Configuration Accessibility Rule pass: YAML, REST
-  (`GET/PUT /api/config`), MCP, CLI, comm, PWA (Settings → Automate,
-  alongside the existing scan-config card).
+**Status: In progress.**
+- [x] Fix B113: new `ScanConfig`/`ProjectRuleConfig`/`UpstreamRepoConfig`
+  mirror types added to `internal/config/config.go` (mirrors
+  `scan.Config`, no import cycle — same pattern as `QualityGateConfig`).
+  `AutonomousConfig` gained `Scan ScanConfig`, `RulesFile string`,
+  `ContextFile string`, `UpstreamRepos []UpstreamRepoConfig`.
+- [ ] Wire `cmd/datawatch/main.go:3961`'s `amgrCfg` construction to copy
+  `acfgIn.Scan` → `amgrCfg.Scan` (converting the mirror type to the real
+  `scan.Config`/`scan.ProjectRule`), and change the construction to
+  start from `autonomouspkg.DefaultConfig()` with fields overridden so
+  `scan.DefaultConfig()`'s all-on intent is actually reached at startup
+  (closes B113's startup-defaults half).
+- [ ] Persist `SetScanConfig` REST writes back into the YAML-facing
+  config (not just in-memory `Manager.cfg`) — closes B113's
+  restart-survives-a-write half.
+- [ ] New `scan.ProjectRule{ID, Name, Type, Granularity, Pattern,
+  Severity, Action, UpstreamTarget}` real type in
+  `internal/autonomous/scan` (the config-layer mirror above already
+  exists; this is the runtime type it converts into) + CRUD store.
+- [ ] REST: `GET/PUT /api/config` round-trips the new fields.
+- [ ] MCP: `autonomous_scan_config_get/set` extended with the new fields;
+  new `scan_rule_list/get/create/update/delete` tools.
+- [ ] CLI: `datawatch config set autonomous.rules_file <path>` etc. work
+  (generic config-set path — confirm no special-casing needed).
+- [ ] Comm: `configure autonomous.rules_file=...` works (same generic
+  path check as CLI).
+- [ ] PWA: Settings → Automate scan-config card gains the new fields +
+  a rule-list sub-view (full CRUD can land in Phase 1 alongside the real
+  engine; Phase 0 just needs the config fields visible/settable).
+- [ ] Unit tests: config round-trip (YAML → struct → YAML), the
+  `amgrCfg` copy bridge includes `Scan`, `SetScanConfig` persists.
+- [ ] Live smoke: set a scan config value via REST, restart the daemon,
+  confirm it survived (the literal B113 regression test).
 
 ### Phase 1 — Rule engine core
-- `ProjectRulesScanner` implementing the existing `Scanner` interface;
-  registered alongside `sast`/`secrets`/`deps` in `scan.Run`'s scanner
-  list — no new orchestration path.
-- Content/keyword, cross-file-consistency, and presence-check rule types
-  implemented and tested against this repo's own `AGENT.md` rules as the
-  first real dogfood case (e.g. a rule encoding "Version sync both files,"
-  already a standing `feedback_version_sync` session-memory lesson).
+**Status: Not started.**
+- [ ] `ProjectRulesScanner` implementing the existing `Scanner`
+  interface; registered alongside `sast`/`secrets`/`deps` in
+  `scan.Run`'s scanner list — no new orchestration path.
+- [ ] Content/keyword rule type implemented + tested.
+- [ ] Cross-file-consistency rule type implemented + tested.
+- [ ] Presence-check rule type implemented + tested.
+- [ ] Dogfood: encode this repo's own "version sync both files" lesson
+  (`feedback_version_sync` session memory) as a real cross-file-
+  consistency rule; confirm it actually catches a deliberately
+  introduced mismatch.
+- [ ] Unit tests: one passing + one deliberately-failing fixture per
+  rule type.
 
 ### Phase 2 — Parity-inheritance rule (first built-in)
-- Ships as a default-enabled `project-rules` entry once Phase 1 exists:
-  checks a story's Parity surface section against its parent plan's
-  surface list and per-surface exclusion reasons, per AGENT.md's own
-  prose (quoted above) — closing the gap between what the rule already
-  says and what code has ever checked.
+**Status: Not started.**
+- [ ] Rule ships default-enabled once Phase 1 exists.
+- [ ] Checks a story's Parity surface section against its parent plan's
+  surface list + per-surface exclusion reasons, per AGENT.md's existing
+  prose (quoted in Confirmed findings above).
+- [ ] Regression test: a story that narrows/drops a surface with no
+  stated reason must fail the scan.
 
 ### Phase 3 — Multi-granularity wiring
-- New executor hook points at task-complete, story-complete, and
-  PRD-complete (today, scanning is PRD-wide and on-demand via
-  `autonomous_prd_scan`, never automatically wired to a completion
-  event) — each hook runs only the rules declared at its granularity.
+**Status: Not started.**
+- [ ] New executor hook at task-complete.
+- [ ] New executor hook at story-complete.
+- [ ] New executor hook at PRD-complete.
+- [ ] Each hook runs only rules declared at its granularity (not every
+  rule at every hook).
+- [ ] Tests: a task-granularity rule fires at task-complete and not at
+  story/PRD-complete, and vice versa for the other granularities.
 
 ### Phase 4 — Upstream issue-filing action
-- `GitHub.CreateIssue(ctx, opts IssueOptions) (string, error)` — sibling
-  to the existing `OpenPR`, same `run(ctx, args...)` → `gh issue create`
-  pattern.
-- `file_upstream_issue` action wired to Phase 1's rule engine, resolving
-  its target against `autonomous.upstream_repos`.
+**Status: Not started.**
+- [ ] `GitHub.CreateIssue(ctx, opts IssueOptions) (string, error)` —
+  sibling to the existing `OpenPR`, same `run(ctx, args...)` → `gh issue
+  create` pattern.
+- [ ] `file_upstream_issue` action wired to Phase 1's rule engine,
+  resolving its target against `autonomous.upstream_repos`.
+- [ ] Test: a firing rule with `Action: file_upstream_issue` calls
+  `CreateIssue` with the right repo/title/body (fake `GitHub.Provider`).
 
 ### Phase 5 — Fix B111 and B112 for real
-- **B111 (GuidedMode)**: redesigned as a pluggable gate *source*, not a
-  blanket pre-task pause — `operator` (pause for a human, the original
-  intent), `council` (pause for a `CouncilProfile` consensus decision
-  instead — ties directly to BL405 Phase 8's council profiles),
-  `guardrail_auto` (continue automatically when this plan's quality
-  gates + rule checks pass; retry or reset-with-new-context when they
-  fail). This is the mechanism BL405's "only stop for a real decision"
-  workflow actually needs.
-- **B112 (scope-drift)**: re-implemented as a first-class Phase 1 rule
-  (content/keyword type, task-granularity) instead of staying
-  prose-only in AGENT.md.
+**Status: Not started.**
+- [ ] `PRD.GuidedMode bool` → `PRD.GuidedModeSource string` (one of
+  `operator`/`council`/`guardrail_auto`; empty = feature off, preserving
+  today's no-op for existing PRDs with `guided_mode: true` persisted
+  under the old shape — migrate on read, don't break existing records).
+- [ ] `operator` source: executor actually pauses before each task and
+  waits for an approval call (the original BL384 intent — the part that
+  was never built).
+- [ ] `council` source: executor pauses and dispatches to a
+  `CouncilProfile` (BL405 Phase 8) for a consensus go/no-go instead of a
+  human.
+- [ ] `guardrail_auto` source: executor continues automatically when
+  quality gates + this plan's rule checks pass; on failure, retries or
+  resets with the failure fed back into the task's context as new
+  information (not a blind retry).
+- [ ] REST/MCP/CLI/comm/PWA parity for the source selector (extends the
+  existing `set_guided_mode` surfaces, doesn't add new ones).
+- [ ] B112: scope-drift re-implemented as a first-class Phase 1 rule
+  (content/keyword type, task-granularity) — remove its prose-only
+  status in AGENT.md once the real rule exists; cross-reference instead.
+- [ ] Regression test: a task spec containing "Implement ..."/"Write
+  code for ..." under a doc-only PRD is caught by the new rule.
+- [ ] Update B111/B112's entries in `docs/plans/README.md` from "fixed
+  as part of BL406 Phase 5" to a real shipped-version note once this
+  phase ships.
 
 ## Parity surface
 
