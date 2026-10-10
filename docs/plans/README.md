@@ -1167,6 +1167,39 @@ per-PRD council-profile override field (the Automata-page entry point).
 > than building a second mechanism. Plan doc not yet written — full
 > design when this item is reached in the queue (see recommended order
 > above), not blocking BL406.
+>
+> **Design notes captured 2026-10-10, not yet built (operator-raised
+> while scoping BL406 Phase 2):**
+> - **Isolation**: a PRD should never run directly in this repo's own
+>   checkout (`/home/dmz/workspace/datawatch` — where all of BL406's
+>   own direct, hand-driven implementation work happens). Two modes,
+>   both worth building: (a) **local git worktree**
+>   (`~/.datawatch/prd-worktrees/<prd-id>/`, own branch off `main`,
+>   shares this repo's `.git` object store — cheap, filesystem/git-level
+>   isolation only) for the common case; (b) **container dispatch**
+>   (reuses the already-real, already-wired `PRD.ClusterProfile` path,
+>   `internal/autonomous/executor.go:716`) for anything needing the
+>   stronger isolation BL395/F-2 is hardening (separate process/
+>   filesystem/network namespace, eventually scoped credentials).
+> - **Centralization isn't a shared directory, it's the git remote**:
+>   regardless of mode, a PRD's actual code changes get centralized by
+>   pushing the branch + opening a PR on completion (the
+>   `PostSessionPRHook` extension above) — not by syncing files back to
+>   a local directory on the daemon host. This resolves cleanly for
+>   container mode specifically: the working tree disappears with the
+>   container, but nothing is lost because the push already happened.
+>   PRD/session *metadata* (title, status, decisions, story/task tree,
+>   telemetry) is separately already centralized today, in the
+>   autonomous `Store` — unaffected by either mode, not something BL407
+>   needs to solve.
+> - **Interim session output/telemetry during the run is a separate,
+>   confirmed gap** — see `docs/plans/2026-10-04-f2-session-worker-isolation.md`
+>   §11's new entry (F-2's concern, not BL407's, but BL407's own plan
+>   should cross-reference it: a worktree-mode PRD has the same
+>   "what if the session dies mid-run" question, just without the
+>   container angle). Operator decision: want both push (primary —
+>   durable copy independent of the worker surviving) and pull (kept as
+>   an on-demand fallback outside the push cycle) — not designed yet.
 
 > **BL405** — LLM Enhancements: role-aware scheduling, federated
 > capacity, council-as-reusable-profile, usage/cost tracking (filed

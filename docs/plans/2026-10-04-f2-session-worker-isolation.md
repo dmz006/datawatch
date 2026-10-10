@@ -138,3 +138,26 @@ gVisor and Kata workers are still ordinary pods from the CNI's perspective, so a
 - The Docker-side per-worker bridge + firewall rules (§7) is the one piece of real new infrastructure here, not a straightforward flag addition — expect it to need its own short follow-up note once implementation starts, per §7's own flag.
 - CLI/comm-channel parity for `ClusterProfile` as a whole (§9) is a pre-existing gap worth its own backlog item if the operator wants it closed generally, independent of F-2.
 - Android/iOS native profile-editor support (§9) depends on what the `datawatch-app` team reports back on the filed issue.
+- **Session output/telemetry is pull-only for container/cluster-dispatched
+  sessions, confirmed 2026-10-10 while designing BL406/BL407's PRD-worktree
+  work** — `forwardSessionToAgent` (`internal/server/api.go:1726`) proxies
+  every output request live to the remote worker; nothing accumulates a
+  durable copy on the orchestrating daemon. An abrupt container death
+  (OOM, node eviction, network partition, a hard `cancel_task`, host
+  reboot) before a clean session-end loses the entire transcript/
+  telemetry history with no forensic record — and, separately, breaks any
+  future checkpoint-based resume (the GuidedMode `guardrail_auto`/
+  `council` sources BL406 Phase 5 will add need *something* to resume
+  from). Operator decision (2026-10-10): want **both** — push as the
+  primary durability mechanism (container streams output/telemetry back
+  to the orchestrating daemon as events happen, independent of whether
+  the container survives), with the existing pull path
+  (`TailOutput`/`forwardSessionToAgent`) kept as an on-demand fallback
+  outside the push cycle — same push-primary/poll-fallback shape this
+  project already uses elsewhere (the session-list SSE+polling pattern).
+  Not designed or built yet. This is an F-2 concern (container-worker
+  hardening), separate from BL407's git-completion story (branch push +
+  PR on PRD completion already covers the *final* diff; this is about
+  *interim* visibility during the run) — but BL407's own plan should
+  cross-reference it, since a worktree-mode PRD has the same "what if the
+  session dies mid-run" question, just without the container angle.
