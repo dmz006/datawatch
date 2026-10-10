@@ -333,16 +333,23 @@ Stage 1.**
 established. Not started; blocked on Stage 2.**
 4. **BL403** — Plugin Extension Surfaces. Before BL405: its Phase 3/4
    widget `Kind` taxonomy is what BL405 Phase 10 consumes.
-5. **BL405** — LLM Enhancements. Phase 8c needs explicit operator
+5. **BL402** — GH#204 result panel for scheduled jobs/integrations.
+   5 phases, zero open design questions, placed right after BL403 since
+   its new "opt-in dashboard card" is a natural second user of BL403's
+   generic widget `Kind` taxonomy once it exists.
+6. **BL405** — LLM Enhancements. Phase 8c needs explicit operator
    go-ahead before that specific sub-phase runs (already flagged in the
    plan) — rest is clear to queue.
-6. **Security remediation track** (BL365 + BL408 + BL395, one coherent
+7. **Security remediation track** (BL365 + BL408 + BL395, one coherent
    program, not three separate items — see BL395's entry for the full
-   **Design A → C → B → D** order). Fully decided, zero open design
-   questions (confirmed 2026-10-10 against the 2026-09-22 walkthrough
-   log) — implementation only. Placed after BL403/BL405 so this large,
-   already-fully-sequenced body of work isn't interleaved against their
-   phases.
+   **Design A → C → B → D** order), plus **BL398** (`.trivyignore` CVE
+   review's one remaining real piece — a per-entry reachability trace
+   for the ~69 CAVEATed suppressions, not part of the formal SEC-###/
+   HLLM-### track but thematically paired here). Fully decided, zero
+   open design questions (confirmed 2026-10-10 against the 2026-09-22
+   walkthrough log) — implementation only. Placed after BL403/BL402/
+   BL405 so this large, already-fully-sequenced body of work isn't
+   interleaved against their phases.
 
 **Outside the queue, handled separately, not blocking Stage 3:**
 - **BL381** — status-verify only (likely already shipped per BL390's
@@ -351,6 +358,19 @@ established. Not started; blocked on Stage 2.**
   for implementation.
 - **BL241** (Matrix) — stays excluded pending its own design interview
   (10 unanswered decision points).
+- **BL400** (Alerts: conditions, filtering, SIEM parity) — design-
+  options doc only, explicitly deferred; 3 unanswered questions (where
+  filtering logic should live, whether alerts get their own CEF mirror
+  or feed the existing audit pipeline, whether a dedupe/rate-limit
+  window is worth adding) before it can be queued.
+- **BL394** (Dependabot/CodeQL review) — substantially done; residue is
+  deliberately-accepted security postures (not bugs), a `§3g` SQL-LIMIT
+  question, and a `datawatch-app`#208 handoff already tracked there —
+  no in-repo implementation work left to queue.
+- **BL392** (cross-repo GitHub hardening audit) — substantially done;
+  residue is two cross-repo issues already filed
+  (`datawatch-app`#206/#207) — no in-repo implementation work left to
+  queue, follow-up lives in the other repo.
 
 **Sequencing mechanism**: BL357's existing role-based work queue
 (`queue push/claim/complete/fail`) — one queue item per Stage-3 PRD, a
