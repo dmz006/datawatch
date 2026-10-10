@@ -5,6 +5,32 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.16 — feat: notify_exclude — general per-channel notification opt-out
+
+### Added
+- New top-level `notify_exclude` config field (string array) — names
+  comm-channel backends (`signal`, `telegram`, `discord`, `slack`,
+  `matrix`, `imap_mcp`, `ntfy`, `email`, `webhook`, `github_webhook`) to
+  skip when broadcasting the session-lifecycle bundled notification
+  (task started/waiting/completed/failed). A listed channel still
+  handles inbound commands normally — this only suppresses the
+  outbound notification broadcast. Checked fresh on every send, so a
+  live config change applies without a restart. Full parity: generic
+  `PUT /api/config`/`config_set`/CLI/comm already covered it with zero
+  new code (same pattern as BL406 Phase 0's `rules_file`); PWA gained a
+  new Settings → Comms → Notifications card.
+- Operator-reported: unexpected `imap_mcp` (email) notifications once
+  B110's outbound-recipient fix let traffic through for the first
+  time — this had always been broadcast to every configured comm
+  channel identically, `imap_mcp`'s delivery had just always bounced
+  before. New `docs/operations.md` section explains the always-
+  broadcast-to-every-channel default plainly, since it's easy to miss
+  that a channel enabled for one purpose (e.g. inbound commands) also
+  gets this broadcast with no separate category toggle.
+- New `cmd/datawatch/notify_exclude.go` — pure, unit-testable
+  `notifyExcludeSet`/`isNotifyExcluded` helpers (named descriptively,
+  not tracker-ID-prefixed, per the naming rule added this session).
+
 ## v9.0.15 — feat(autonomous): BL406 Phase 4 — upstream issue-filing action
 
 ### Added

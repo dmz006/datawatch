@@ -85,6 +85,11 @@ type Router struct {
 // can proxy through the REST API.
 func (r *Router) SetWebPort(port int) { r.webPort = port }
 
+// BackendName returns the underlying backend's own Name() (e.g.
+// "signal", "imap_mcp") — used by the notify_exclude config to filter
+// which routers receive outbound notification broadcasts.
+func (r *Router) BackendName() string { return r.backend.Name() }
+
 // SetPluginRegistry (BL244) wires the plugin registry so plugin-declared
 // comm commands are dispatched before the implicit-send fallback.
 func (r *Router) SetPluginRegistry(reg PluginRegistry) { r.pluginReg = reg }

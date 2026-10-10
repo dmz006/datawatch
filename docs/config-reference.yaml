@@ -4,6 +4,15 @@
 hostname: ralfthewise
 # Root directory for sessions.json, logs/, and state files.
 data_dir: /var/lib/datawatch
+# Found 2026-10-10 -- general opt-out across every comm channel for the
+# outbound session-lifecycle notification broadcast (task started/
+# waiting/completed/failed). Names each backend's own identifier:
+# signal, telegram, discord, slack, matrix, imap_mcp, ntfy, email,
+# webhook, github_webhook. A listed channel still handles inbound
+# commands normally -- this only skips the notification broadcast.
+# Empty (default) excludes nothing, the behavior every channel has
+# always had.
+notify_exclude: []
 
 # ── Session Management ──
 # Controls session creation, LLM defaults, and project git integration.

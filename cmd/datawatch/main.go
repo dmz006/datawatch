@@ -113,7 +113,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "9.0.15"
+var Version = "9.0.16"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -6729,6 +6729,29 @@ Return STRICT JSON:
 									_ = mgr.SaveSession(s)
 								}
 							}
+							// notify_exclude (found 2026-10-10, operator-reported
+							// unexpected imap_mcp emails once B110's bounce fix
+							// let them through for the first time) — general
+							// opt-out across every comm channel, checked fresh
+							// on every send so a live config change takes effect
+							// without a restart. Inbound commands on an excluded
+							// channel are unaffected; this only skips the
+							// outbound notification-bundle broadcast below. Set-
+							// building and matching live in notify_exclude.go so
+							// they're unit-testable without constructing a real
+							// *router.Router.
+							excludeSet := notifyExcludeSet(cfg.NotifyExclude)
+							notifyRouters := routers
+							if excludeSet != nil {
+								notifyRouters = make([]*router.Router, 0, len(routers))
+								for _, r := range routers {
+									if !isNotifyExcluded(excludeSet, r.BackendName()) {
+										notifyRouters = append(notifyRouters, r)
+									}
+								}
+							}
+							notifyNtfy := ntfyBackend != nil && !isNotifyExcluded(excludeSet, "ntfy")
+							notifyEmail := emailBackend != nil && !isNotifyExcluded(excludeSet, "email")
 							// Send with buttons for waiting_input, plain threaded otherwise
 							if isWaiting {
 								buttons := []messaging.Button{
@@ -6736,28 +6759,28 @@ Return STRICT JSON:
 									{Label: "Reject", Value: fmt.Sprintf("send %s: no", flushSess.ID), Style: "danger"},
 									{Label: "Enter", Value: fmt.Sprintf("send %s: ", flushSess.ID), Style: ""},
 								}
-								for _, r := range routers {
+								for _, r := range notifyRouters {
 									r.SendWithButtons(msg, fullID, buttons, getThread, setThread)
 								}
 							} else if isTerminal {
 								// Upload output on completion
 								if raw, err := mgr.TailOutput(flushSess.FullID, 50); err == nil && raw != "" {
-									for _, r := range routers {
+									for _, r := range notifyRouters {
 										r.SendFileInThread(flushSess.ID+"_output.txt", raw, fullID, getThread)
 									}
 								}
-								for _, r := range routers {
+								for _, r := range notifyRouters {
 									r.SendThreaded(msg, fullID, getThread, setThread)
 								}
 							} else {
-								for _, r := range routers {
+								for _, r := range notifyRouters {
 									r.SendThreaded(msg, fullID, getThread, setThread)
 								}
 							}
-							if ntfyBackend != nil {
+							if notifyNtfy {
 								ntfyBackend.Send(cfg.Ntfy.Topic, msg) //nolint:errcheck
 							}
-							if emailBackend != nil {
+							if notifyEmail {
 								emailBackend.Send(cfg.Email.To, msg) //nolint:errcheck
 							}
 						}

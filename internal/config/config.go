@@ -332,6 +332,19 @@ type Config struct {
 	// DataDir is where sessions, logs, and state are stored.
 	DataDir string `yaml:"data_dir"`
 
+	// NotifyExclude (found 2026-10-10, operator-reported: email
+	// notifications they hadn't expected once the imap_mcp outbound
+	// bounce bug, B110, was fixed) names comm-channel backends
+	// (matching each backend's own Name(), e.g. "imap_mcp", "signal",
+	// "ntfy", "email") to skip when broadcasting session-lifecycle
+	// bundled notifications. Every configured channel still receives
+	// everything else (inbound commands still work, this only
+	// suppresses the outbound notification-bundle broadcast); empty
+	// (default) excludes nothing, preserving the existing behavior
+	// exactly. General across every comm channel, not per-backend —
+	// one list, not N new config fields.
+	NotifyExclude []string `yaml:"notify_exclude,omitempty" json:"notify_exclude,omitempty"`
+
 	// Detection holds global patterns for prompt/completion/rate-limit detection.
 	// Per-LLM overrides can be set in each backend's detection field.
 	Detection DetectionConfig `yaml:"detection,omitempty"`

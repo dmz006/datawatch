@@ -1871,6 +1871,35 @@ autonomous:
 
 ---
 
+## Notification Routing Across Comm Channels
+
+Every comm channel you enable (Signal, Telegram, Discord, Slack, Matrix,
+`imap_mcp`, ntfy, email, generic webhook) receives the **same**
+session-lifecycle notification broadcast by default — task started,
+waiting for input, completed, or failed. This has always been true;
+what's easy to miss is that it applies identically to every channel,
+including ones you enabled for a different reason (e.g. `imap_mcp` for
+inbound email commands) — if the channel is enabled, it gets the
+broadcast too, with no separate per-category toggle.
+
+```yaml
+notify_exclude:
+  - imap_mcp   # stays enabled for inbound commands, opted out of the broadcast
+  - ntfy
+```
+
+Found 2026-10-10: an operator was surprised by `imap_mcp` emails that, it
+turned out, had always been sent — they'd simply always bounced before a
+separate outbound-recipient bug (B110) was fixed, so this was the first
+time that channel's share of the existing broadcast actually arrived.
+`notify_exclude` (Settings → Comms → Notifications in the PWA) lets you
+keep a channel enabled for whatever else you use it for while opting it
+out of this specific broadcast — inbound commands on an excluded channel
+are unaffected. Checked fresh on every send, so a config change applies
+without a restart.
+
+---
+
 ## Autonomous External GitHub Actions
 
 Two autonomous-PRD mechanisms call out to GitHub on the operator's own

@@ -13576,6 +13576,16 @@ const COMMS_CONFIG_FIELDS = [
     { key: 'mcp.tls_cert', label: 'TLS cert path', type: 'text' },
     { key: 'mcp.tls_key', label: 'TLS key path', type: 'text' },
   ]},
+  { id: 'notify', section: 'Notifications', docs: 'operations.md', fields: [
+    // Found 2026-10-10 — operator-reported unexpected emails once the
+    // imap_mcp outbound-bounce bug (B110) was fixed and notifications
+    // that were always being sent started actually arriving. General
+    // across every comm channel (matches each backend's own Name():
+    // signal, telegram, discord, slack, matrix, imap_mcp, ntfy, email,
+    // webhook, github_webhook) -- one list, not a toggle per channel.
+    { key: 'notify_exclude', label: 'Exclude from notifications', type: 'text',
+      placeholder: 'imap_mcp, ntfy', csv: true },
+  ]},
 ];
 
 const GENERAL_CONFIG_FIELDS = [

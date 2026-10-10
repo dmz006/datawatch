@@ -187,7 +187,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "9.0.15"
+var Version = "9.0.16"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -5141,7 +5141,8 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 		return "***"
 	}
 	out := map[string]interface{}{
-		"hostname": s.cfg.Hostname,
+		"hostname":       s.cfg.Hostname,
+		"notify_exclude": s.cfg.NotifyExclude,
 		"server": map[string]interface{}{
 			"enabled":                s.cfg.Server.Enabled,
 			"host":                   s.cfg.Server.Host,
@@ -5790,6 +5791,12 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		case "server.token", "mcp.token":
 			skipped = append(skipped, k)
 			continue
+		case "notify_exclude":
+			if arr, ok := toStringArray(v); ok {
+				cfg.NotifyExclude = arr
+			} else if s, ok := v.(string); ok {
+				cfg.NotifyExclude = splitCSV(s)
+			}
 		case "telegram.enabled":
 			cfg.Telegram.Enabled = toBool(v)
 		case "discord.enabled":
