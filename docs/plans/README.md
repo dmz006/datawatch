@@ -514,15 +514,18 @@ local-model (Ollama) read-only code review of the high-risk files. Findings regi
 plan (`SEC-###`) for later GH-issue conversion on operator request.
 
 **Plan doc:** [`2026-08-28-security-assessment-core.md`](2026-08-28-security-assessment-core.md)
-**Status:** In progress — Phase 0 ✅ (inventory + sandbox harness) · Phase 1 ✅ (gosec/govulncheck/trivy/gitleaks + local-model review; findings registered, SEC-001…024 with gaps) · Phase 2 next (authn/authz sandbox tests). **Remediation (v8.39.15):** SEC-004 (GitHub webhook had zero HMAC verification despite a configured secret) fixed. SEC-021 (docs-viewer stored XSS via unsanitized `marked.parse()`) — XSS consequence fixed (DOMPurify); the file-service root-fallback half that lets an authenticated caller write into the operator's own project dir is a separate, deliberately deferred default-behavior question, not fixed. SEC-001/002/003/006/007/008 (empty-token-means-open-by-default and its downstream effects) remain open — the plan's own threat model already treats this as an accepted operator choice for loopback/Tailscale-only deployments, not a bug to patch. Full writeup: `docs/plans/2026-10-03-bl394-security-findings-review.md` §7.
+**Status:** In progress — Phase 0 ✅ (inventory + sandbox harness) · Phase 1 ✅ (gosec/govulncheck/trivy/gitleaks + local-model review; findings registered, SEC-001…024 with gaps). **Phase 2's "authn/authz sandbox tests" is superseded, not pending** (corrected 2026-10-10, reviewed while prioritizing the BL403/404/405/406/407 arc): the 2026-09-22 resumed walkthrough (`docs/plans/historical-plans/2026-09-22-security-remediation-activation.md` §7) already decided every one of SEC-001–025 explicitly, re-validated against v8.39.16, and BL395 (below) confirmed all decisions still hold and added the F-2 isolation design on top. **Remediation (v8.39.15):** SEC-004 fixed; SEC-021's XSS half fixed (file-service root-fallback half deferred, see SEC-021 row in the walkthrough). Everything else SEC-001–025 is a *decided, not-yet-implemented* item — see BL395 for the real master implementation order (Design **A → C → B → D**), not a design gap. Full writeup: `docs/plans/2026-10-03-bl394-security-findings-review.md` §7.
 
-#### Hostile-LLM assessment: prompt injection, overreach, escape (filed 2026-08-28)
+#### BL408 — Hostile-LLM assessment: prompt injection, overreach, escape (filed 2026-08-28)
 
-> ⚠️ **Tracking-ID collision (operator resolve):** this entry was labeled `BL366` on
-> filing, but **`BL366` is already** "Autonomous verifier: git-diff grounding" (the
-> BL367/verifier line, closed v8.16.0). Per the "never reuse BL numbers" rule this entry
-> needs its own number (next free = **BL369 → recheck; use the next unused**). Re-labeled
-> `BL366-hllm` here pending renumber.
+> Tracking-ID collision resolved 2026-10-10 (found while reviewing the security
+> backlog for the BL403/404/405/406/407 prioritization pass): this entry was
+> labeled `BL366` on filing, but `BL366` was already taken ("Autonomous verifier:
+> git-diff grounding," closed v8.16.0). Re-labeled `BL366-hllm` pending renumber at
+> the time; the renumber was never completed, and its own suggested fallback
+> (`BL369`) was *also* already taken by then ("Prompt injection hardening in
+> autonomous executor," v8.18.0) — this collision sat unresolved for over a month.
+> Assigned its real, permanent number now: **BL408**.
 
 Assessment-only companion to BL365, treating datawatch-spawned LLM sessions as potentially
 hostile/compromised. Three classes: T1 prompt-injection data exfiltration (secrets, memory,
