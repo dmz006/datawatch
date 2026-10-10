@@ -65,6 +65,16 @@ invents.
   build/test/release commands) — a different kind of document from
   AGENT.md's prescriptive rules, and the operator notes not every project
   has one.
+- **B113** (found starting Phase 0 implementation): `scan.Config` has
+  zero YAML persistence and is never wired at daemon startup —
+  `cmd/datawatch/main.go:3961`'s `amgrCfg := autonomouspkg.Config{...}`
+  literal never sets `Scan:`, so it's always the zero-value (all
+  scanners disabled) regardless of `autonomous.DefaultConfig()`'s stated
+  intent. `SetScanConfig` is only ever called from the REST handler, so
+  any operator-enabled scan config is pure in-memory state, silently
+  lost on restart. This must be fixed as part of Phase 0, not after it —
+  the new fields below ride the same wiring and would inherit the same
+  bug otherwise.
 - AGENT.md's Decomposer Scope-Drift Rule section already states the
   parity-inheritance requirement in prose: *"decomposed PRD stories MUST
   inherit the parent plan's Parity surface list. Each story spec carries
@@ -119,8 +129,18 @@ invents.
 ## Phases
 
 ### Phase 0 — Config scaffolding
+- **Fix B113 first**: give `internal/config.AutonomousConfig` a real
+  `Scan scan.Config`-mirroring field (the existing
+  `config.AutonomousConfig` → `autonomous.Config` bridge at
+  `cmd/datawatch/main.go:3961` copies every other field by hand; add
+  `Scan` to that copy), and change startup construction to start from
+  `autonomouspkg.DefaultConfig()` with fields overridden rather than a
+  bare struct literal, so `scan.DefaultConfig()`'s intended all-on
+  default is actually reached. Persist `SetScanConfig` writes back to
+  the YAML-facing config, not just in-memory.
 - `autonomous.rules_file`, `autonomous.context_file`,
-  `autonomous.upstream_repos[]` — new `AutonomousConfig` fields.
+  `autonomous.upstream_repos[]` — new `AutonomousConfig` fields, added
+  to the same copy bridge.
 - New `scan.ProjectRule{ID, Name, Type, Granularity, Pattern/Check,
   Severity, Action}` type + CRUD store (same shape discipline as alert
   rules' `Condition`/`Action`, reused conceptually).

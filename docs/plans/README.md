@@ -527,6 +527,27 @@ _2026-05-02 operator-filed items promoted directly to BL218–BL221. 2026-05-03 
 > Phase 5**, re-implemented as a first-class content/keyword rule in the
 > new rule engine rather than staying prose-only.
 
+> **B113** — `internal/autonomous`'s scan config (`scan.Config` —
+> SAST/secrets/deps toggles) has **zero YAML persistence and is never
+> wired at daemon startup** (found 2026-10-10 while starting BL406 Phase
+> 0, tracing how to add new fields to this same struct).
+> `cmd/datawatch/main.go:3961`'s `amgrCfg := autonomouspkg.Config{...}`
+> struct literal never sets `Scan:` — it's always the Go zero-value
+> (`scan.Config{}`, every scanner **disabled**), contradicting
+> `autonomous.DefaultConfig()`'s own stated intent (`Scan:
+> scan.DefaultConfig()`, every scanner **enabled**) — that default is
+> never actually reached at startup because `amgrCfg` is built as a bare
+> literal, not from `DefaultConfig()` with overrides. `SetScanConfig` is
+> only ever called from one place, the REST handler
+> (`internal/server/autonomous.go:2021`) — purely in-memory; an operator
+> who explicitly enables scanning via the API loses it on the next daemon
+> restart, silently, with no error. `internal/config.AutonomousConfig`
+> (the YAML-facing mirror struct) has no `Scan` field at all — only an
+> unrelated, similarly-named `SecurityScan bool` (a different, older,
+> single-flag toggle). **Fixed as part of BL406 Phase 0**, since the new
+> `RulesFile`/`ContextFile`/`UpstreamRepos`/`ProjectRules` fields ride
+> the exact same wiring and would inherit the identical bug otherwise.
+
 _(Otherwise no open bugs as of the 2026-10-09/10 backlog refactor —
 everything previously listed here was already closed and has been moved
 to the Completed Bugs table. Historical: B22 fixed in v2.4.3 · B23/24 in
