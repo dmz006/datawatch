@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/dmz006/datawatch/internal/autonomous/scan"
+	"github.com/dmz006/datawatch/internal/git"
 	"github.com/dmz006/datawatch/internal/metrics"
 	"github.com/dmz006/datawatch/internal/pipeline"
 )
@@ -288,6 +289,12 @@ type Manager struct {
 	graderFn     scan.GraderFn
 	ruleEditorFn scan.RuleEditorFn
 	scanResults  sync.Map // prdID → *scan.Result
+
+	// BL406 Phase 4 — injectable so tests can fake the GitHub call
+	// without shelling out to the real `gh` binary (that layer already
+	// has its own direct unit tests in internal/git). nil means "use
+	// the real git.Resolve" — see fireUpstreamIssueActions.
+	gitProviderFn func(kind string) git.Provider
 
 	// BL221 (v6.2.0) Phase 4 — type registry
 	typesMu sync.Mutex
@@ -2589,6 +2596,7 @@ func (m *Manager) RunScan(prdID string) (*scan.Result, error) {
 	r := scan.Run(prd.ProjectDir, sc, scanners, gradeFn)
 	r.PRDID = prdID
 	m.scanResults.Store(prdID, &r)
+	m.fireUpstreamIssueActions(sc.ProjectRules, r.Findings)
 	return &r, nil
 }
 

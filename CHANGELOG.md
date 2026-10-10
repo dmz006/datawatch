@@ -5,6 +5,27 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.15 — feat(autonomous): BL406 Phase 4 — upstream issue-filing action
+
+### Added
+- `git.Provider` gained `CreateIssue` — a sibling to the existing
+  `OpenPR` (same `gh`-CLI shell-out pattern, same URL-extraction
+  convention), implemented on `GitHub`, stubbed on `GitLab` and the
+  unknown-kind fallback.
+- `file_upstream_issue` is now a real rule action: when a project
+  rule's finding fires, its `UpstreamTarget` is resolved against
+  `autonomous.upstream_repos` and a GitHub issue is filed via the same
+  provider the F10 `agent_spawn` subsystem's `PostSessionPRHook`
+  already uses for auto-PR — not a second GitHub client. Best-effort
+  throughout (a filing failure is logged, never blocks the scan); at
+  most one issue per rule per scan run even if that rule produced
+  multiple findings.
+- `docs/operations.md` gained a new section documenting both this and
+  the pre-existing (previously undocumented) auto-PR-on-completion
+  behavior — both call out to GitHub on the operator's own `gh`
+  credentials without a per-call confirmation step, worth knowing
+  about before enabling either.
+
 ## v9.0.14 — feat(autonomous): BL406 Phase 3 — multi-granularity wiring (rules fire automatically)
 
 ### Added

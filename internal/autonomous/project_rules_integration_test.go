@@ -1,12 +1,14 @@
 package autonomous
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/dmz006/datawatch/internal/autonomous/scan"
+	"github.com/dmz006/datawatch/internal/git"
 )
 
 func TestExtractMarkdownSection(t *testing.T) {
@@ -219,5 +221,102 @@ func TestRunPRDCompletionProjectRulesCheck_NoOpWhenNoPRDGranularityRules(t *test
 	}
 	if blocked {
 		t.Fatal("expected no-op (not blocked) when no rule is declared at prd_complete granularity")
+	}
+}
+
+// --- BL406 Phase 4 — upstream issue-filing action ---
+
+type fakeIssueProvider struct {
+	git.GitLab // embed the stub for every method this test doesn't care about
+	calls      []git.IssueOptions
+}
+
+func (f *fakeIssueProvider) CreateIssue(_ context.Context, opts git.IssueOptions) (string, error) {
+	f.calls = append(f.calls, opts)
+	return "https://github.com/" + opts.Repo + "/issues/1", nil
+}
+
+func TestFireUpstreamIssueActions_CallsCreateIssueWithRightRepoTitleBody(t *testing.T) {
+	m, err := NewManager(t.TempDir(), DefaultConfig(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fake := &fakeIssueProvider{}
+	m.gitProviderFn = func(string) git.Provider { return fake }
+	m.cfg.UpstreamRepos = []scan.UpstreamRepo{{Name: "app", OwnerRepo: "dmz006/datawatch-app"}}
+
+	rule := scan.ProjectRule{ID: "r1", Name: "parity gap", Action: scan.ActionFileUpstreamIssue, UpstreamTarget: "app"}
+	finding := scan.Finding{Scanner: "project-rules", RuleID: "r1", Message: "story X dropped the Android surface"}
+
+	m.fireUpstreamIssueActions([]scan.ProjectRule{rule}, []scan.Finding{finding})
+
+	if len(fake.calls) != 1 {
+		t.Fatalf("expected exactly 1 CreateIssue call, got %d", len(fake.calls))
+	}
+	got := fake.calls[0]
+	if got.Repo != "dmz006/datawatch-app" {
+		t.Errorf("Repo = %q, want dmz006/datawatch-app", got.Repo)
+	}
+	if got.Title != "project rule: parity gap" {
+		t.Errorf("Title = %q", got.Title)
+	}
+	if got.Body != "story X dropped the Android surface" {
+		t.Errorf("Body = %q", got.Body)
+	}
+}
+
+func TestFireUpstreamIssueActions_SkipsRulesWithoutTheAction(t *testing.T) {
+	m, err := NewManager(t.TempDir(), DefaultConfig(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fake := &fakeIssueProvider{}
+	m.gitProviderFn = func(string) git.Provider { return fake }
+
+	rule := scan.ProjectRule{ID: "r1", Name: "no action here"} // Action left empty
+	finding := scan.Finding{Scanner: "project-rules", RuleID: "r1", Message: "x"}
+	m.fireUpstreamIssueActions([]scan.ProjectRule{rule}, []scan.Finding{finding})
+
+	if len(fake.calls) != 0 {
+		t.Fatalf("expected no CreateIssue calls for a rule with no file_upstream_issue action, got %d", len(fake.calls))
+	}
+}
+
+func TestFireUpstreamIssueActions_UnknownTargetLogsAndSkips(t *testing.T) {
+	m, err := NewManager(t.TempDir(), DefaultConfig(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fake := &fakeIssueProvider{}
+	m.gitProviderFn = func(string) git.Provider { return fake }
+	// No upstream_repos configured at all.
+
+	rule := scan.ProjectRule{ID: "r1", Name: "x", Action: scan.ActionFileUpstreamIssue, UpstreamTarget: "nonexistent"}
+	finding := scan.Finding{Scanner: "project-rules", RuleID: "r1", Message: "x"}
+	m.fireUpstreamIssueActions([]scan.ProjectRule{rule}, []scan.Finding{finding})
+
+	if len(fake.calls) != 0 {
+		t.Fatalf("expected no CreateIssue call when UpstreamTarget doesn't resolve, got %d", len(fake.calls))
+	}
+}
+
+func TestFireUpstreamIssueActions_OnlyOnePerRuleAcrossMultipleFindings(t *testing.T) {
+	m, err := NewManager(t.TempDir(), DefaultConfig(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fake := &fakeIssueProvider{}
+	m.gitProviderFn = func(string) git.Provider { return fake }
+	m.cfg.UpstreamRepos = []scan.UpstreamRepo{{Name: "app", OwnerRepo: "dmz006/datawatch-app"}}
+
+	rule := scan.ProjectRule{ID: "r1", Name: "x", Action: scan.ActionFileUpstreamIssue, UpstreamTarget: "app"}
+	findings := []scan.Finding{
+		{Scanner: "project-rules", RuleID: "r1", Message: "first"},
+		{Scanner: "project-rules", RuleID: "r1", Message: "second"},
+	}
+	m.fireUpstreamIssueActions([]scan.ProjectRule{rule}, findings)
+
+	if len(fake.calls) != 1 {
+		t.Fatalf("expected exactly 1 CreateIssue call for 2 findings on the same rule, got %d", len(fake.calls))
 	}
 }

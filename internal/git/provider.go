@@ -45,10 +45,19 @@ type PROptions struct {
 	Body       string
 }
 
+// IssueOptions captures the fields needed to file an issue (BL406
+// Phase 4 — a project rule's file_upstream_issue action, for a gap a
+// repo's own PRD can't close alone).
+type IssueOptions struct {
+	Repo  string // "owner/repo" for github; "group/project" for gitlab
+	Title string
+	Body  string
+}
+
 // Provider abstracts a forge. Concrete implementations:
 //
-//   GitHub.Kind()  → "github"
-//   GitLab.Kind()  → "gitlab"
+//	GitHub.Kind()  → "github"
+//	GitLab.Kind()  → "gitlab"
 //
 // The interface is intentionally narrow — the F10 lifecycle only
 // needs token mint/revoke and PR open. Cross-provider feature parity
@@ -74,6 +83,10 @@ type Provider interface {
 	// BaseBranch (or the repo's default branch). Returns the public
 	// URL of the resulting PR.
 	OpenPR(ctx context.Context, opts PROptions) (string, error)
+
+	// CreateIssue files an issue in opts.Repo. Returns the public URL
+	// of the resulting issue.
+	CreateIssue(ctx context.Context, opts IssueOptions) (string, error)
 }
 
 // Resolve returns the Provider implementation matching kind. Unknown
@@ -99,7 +112,10 @@ func (s *stubProvider) Kind() string { return s.kind }
 func (s *stubProvider) MintToken(_ context.Context, _ string, _ time.Duration) (*MintedToken, error) {
 	return nil, ErrNotImplemented
 }
-func (s *stubProvider) RevokeToken(_ context.Context, _ string) error  { return ErrNotImplemented }
+func (s *stubProvider) RevokeToken(_ context.Context, _ string) error { return ErrNotImplemented }
 func (s *stubProvider) OpenPR(_ context.Context, _ PROptions) (string, error) {
+	return "", ErrNotImplemented
+}
+func (s *stubProvider) CreateIssue(_ context.Context, _ IssueOptions) (string, error) {
 	return "", ErrNotImplemented
 }

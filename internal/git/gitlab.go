@@ -36,3 +36,8 @@ func (*GitLab) RevokeToken(_ context.Context, _ string) error { return ErrNotImp
 func (*GitLab) OpenPR(_ context.Context, _ PROptions) (string, error) {
 	return "", ErrNotImplemented
 }
+
+// CreateIssue is a stub — returns ErrNotImplemented.
+func (*GitLab) CreateIssue(_ context.Context, _ IssueOptions) (string, error) {
+	return "", ErrNotImplemented
+}

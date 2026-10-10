@@ -1871,6 +1871,31 @@ autonomous:
 
 ---
 
+## Autonomous External GitHub Actions
+
+Two autonomous-PRD mechanisms call out to GitHub on the operator's own
+`gh` credentials, without an explicit per-call confirmation step — worth
+knowing both exist before enabling them:
+
+- **Auto-PR on completion** — when a `ProjectProfile`'s `Git.AutoPR` is
+  set, a worker session's branch is pushed and a PR opened automatically
+  when its session ends (`internal/agents/post_session.go`).
+- **`file_upstream_issue` project rule action** (BL406 Phase 4) — a
+  configured `autonomous.scan.project_rules` entry with
+  `action: file_upstream_issue` files a real issue in the repo named by
+  its `upstream_target` (resolved against `autonomous.upstream_repos`)
+  whenever that rule's finding fires — at task, story, or PRD
+  completion, per the rule's own `granularity`.
+
+Both use the same `gh`-CLI-backed provider (`internal/git`), so they
+need `gh auth login` already run on the daemon host — the same
+credential the operator uses interactively. Neither mechanism asks for
+confirmation before acting; review a project rule's `action` field (or
+a profile's `Git.AutoPR`) before enabling it on a PRD whose task specs
+you don't fully trust.
+
+---
+
 ## Terminal Performance
 
 ### xterm.js load time

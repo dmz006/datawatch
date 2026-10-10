@@ -143,18 +143,20 @@ func (m *Manager) invokeScanGuardrail(entry GuardrailEntry, inv GuardrailInvocat
 	// invocation's own granularity (inv.Level + "_complete") so a
 	// task-level guardrail doesn't also fire story/PRD-level rules,
 	// and PRD/story context for the parity rule type.
+	var projectRules []scan.ProjectRule
 	if entry.ScanType == "project-rules" {
 		gran := scan.RuleGranularity(inv.Level + "_complete")
-		if filtered := scan.FilterRulesByGranularity(sc.ProjectRules, gran); len(filtered) > 0 {
+		if projectRules = scan.FilterRulesByGranularity(sc.ProjectRules, gran); len(projectRules) > 0 {
 			var prdCtx *scan.PRDParityContext
 			if prd, ok := m.store.GetPRD(inv.PRDID); ok {
 				prdCtx = buildPRDParityContext(prd)
 			}
-			scanners = append(scanners, scan.NewProjectRulesScanner(filtered, prdCtx))
+			scanners = append(scanners, scan.NewProjectRulesScanner(projectRules, prdCtx))
 		}
 	}
 
 	result := scan.Run(inv.ProjectDir, sc, scanners, nil)
+	m.fireUpstreamIssueActions(projectRules, result.Findings)
 
 	outcome := "pass"
 	if !result.Pass {

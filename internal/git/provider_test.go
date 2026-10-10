@@ -15,9 +15,10 @@ import (
 
 // newFakeGH writes a tiny shell script named "gh" into a tempdir
 // that:
-//   * records every invocation to invocations.log
-//   * routes by joined argv: output.<key> emits to stdout
-//   * exits with code in exitcode.<key> if present
+//   - records every invocation to invocations.log
+//   - routes by joined argv: output.<key> emits to stdout
+//   - exits with code in exitcode.<key> if present
+//
 // The "key" is the full args, dot-joined, e.g. "auth.token" or
 // "pr.create".
 func newFakeGH(t *testing.T) string {
@@ -259,5 +260,77 @@ func TestGitHub_OpenPR_GhFailure(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "already exists") {
 		t.Errorf("error missing gh stderr: %v", err)
+	}
+}
+
+// BL406 Phase 4 — CreateIssue is OpenPR's sibling; same test shape.
+
+func TestGitHub_CreateIssue_Success(t *testing.T) {
+	dir := newFakeGH(t)
+	prev := os.Getenv("PATH")
+	t.Setenv("PATH", dir+":"+prev)
+	_ = os.WriteFile(filepath.Join(dir, "output.issue.create"),
+		[]byte("Creating issue in owner/repo\nhttps://github.com/owner/repo/issues/7\n"), 0644)
+
+	g := NewGitHub()
+	url, err := g.CreateIssue(context.Background(), IssueOptions{
+		Repo:  "owner/repo",
+		Title: "parity gap",
+		Body:  "found a gap",
+	})
+	if err != nil {
+		t.Fatalf("CreateIssue: %v", err)
+	}
+	if url != "https://github.com/owner/repo/issues/7" {
+		t.Errorf("url=%q", url)
+	}
+	log, _ := os.ReadFile(filepath.Join(dir, "invocations.log"))
+	for _, want := range []string{"issue create", "--repo owner/repo", "--title parity gap"} {
+		if !strings.Contains(string(log), want) {
+			t.Errorf("log missing %q:\n%s", want, log)
+		}
+	}
+}
+
+func TestGitHub_CreateIssue_RequiredArgs(t *testing.T) {
+	g := NewGitHub()
+	cases := []struct {
+		name string
+		opts IssueOptions
+	}{
+		{"missing repo", IssueOptions{Title: "x"}},
+		{"missing title", IssueOptions{Repo: "o/r"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if _, err := g.CreateIssue(context.Background(), c.opts); err == nil {
+				t.Error("expected validation error")
+			}
+		})
+	}
+}
+
+func TestGitHub_CreateIssue_GhFailure(t *testing.T) {
+	dir := newFakeGH(t)
+	prev := os.Getenv("PATH")
+	t.Setenv("PATH", dir+":"+prev)
+	_ = os.WriteFile(filepath.Join(dir, "exitcode.issue.create"), []byte("1"), 0644)
+	_ = os.WriteFile(filepath.Join(dir, "output.issue.create"),
+		[]byte("error: could not create issue: HTTP 403"), 0644)
+
+	g := NewGitHub()
+	_, err := g.CreateIssue(context.Background(), IssueOptions{Repo: "o/r", Title: "x"})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "HTTP 403") {
+		t.Errorf("error missing gh stderr: %v", err)
+	}
+}
+
+func TestGitLab_CreateIssue_Stub(t *testing.T) {
+	_, err := NewGitLab().CreateIssue(context.Background(), IssueOptions{Repo: "g/p", Title: "x"})
+	if err != ErrNotImplemented {
+		t.Errorf("err=%v want ErrNotImplemented", err)
 	}
 }

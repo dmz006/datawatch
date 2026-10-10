@@ -112,6 +112,34 @@ func (g *GitHub) OpenPR(ctx context.Context, opts PROptions) (string, error) {
 	return strings.TrimSpace(out), nil
 }
 
+// CreateIssue shells out to `gh issue create`. Sibling to OpenPR —
+// same flag-based title/body passing so neither gets clobbered by
+// gh's editor, same URL-extraction convention.
+func (g *GitHub) CreateIssue(ctx context.Context, opts IssueOptions) (string, error) {
+	if opts.Repo == "" {
+		return "", fmt.Errorf("CreateIssue: Repo required")
+	}
+	if opts.Title == "" {
+		return "", fmt.Errorf("CreateIssue: Title required")
+	}
+	args := []string{
+		"issue", "create",
+		"--repo", opts.Repo,
+		"--title", opts.Title,
+		"--body", opts.Body,
+	}
+	out, err := g.run(ctx, args...)
+	if err != nil {
+		return "", fmt.Errorf("gh issue create: %w\n%s", err, strings.TrimSpace(out))
+	}
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		if strings.HasPrefix(line, "https://") {
+			return line, nil
+		}
+	}
+	return strings.TrimSpace(out), nil
+}
+
 // run is gh exec with a 30s cap; combined stdout+stderr returned.
 func (g *GitHub) run(ctx context.Context, args ...string) (string, error) {
 	bin := g.Bin

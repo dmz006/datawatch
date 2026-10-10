@@ -2,7 +2,7 @@
 
 - **Date**: 2026-10-10
 - **Version at planning**: v9.0.10
-- **Status**: In progress — Phase 0 done (v9.0.11), Phase 1 done (v9.0.12, real rule engine), Phase 2 done (v9.0.13, first built-in rule), Phase 3 done (v9.0.14, rules fire automatically); Phase 4 next
+- **Status**: In progress — Phase 0 done (v9.0.11), Phase 1 done (v9.0.12, real rule engine), Phase 2 done (v9.0.13, first built-in rule), Phase 3 done (v9.0.14, rules fire automatically), Phase 4 done (v9.0.15, upstream issue-filing); Phase 5 next (final phase)
 
 ## Context
 
@@ -425,16 +425,48 @@ start, not after the fact):
   — not retroactively fixed as a side effect of this phase.
 
 ### Phase 4 — Upstream issue-filing action
-**Status: Not started.**
-- [ ] `GitHub.CreateIssue(ctx, opts IssueOptions) (string, error)` —
+**Status: Done.** Shipped v9.0.15.
+- [x] `GitHub.CreateIssue(ctx, opts IssueOptions) (string, error)` —
   sibling to the existing `OpenPR`, same `run(ctx, args...)` → `gh issue
-  create` pattern.
-- [ ] `file_upstream_issue` action wired to Phase 1's rule engine,
-  resolving its target against `autonomous.upstream_repos`.
-- [ ] Test: a firing rule with `Action: file_upstream_issue` calls
-  `CreateIssue` with the right repo/title/body (fake `GitHub.Provider`).
-- [ ] **Phase Completion Checklist** (AGENT.md Planning Rules §5, full
-  list — see Phase 0's worked example above).
+  create` pattern, same URL-extraction convention. Added to the
+  `Provider` interface (`GitLab` and the unknown-kind stub both gained
+  `ErrNotImplemented` implementations to keep satisfying it).
+- [x] `file_upstream_issue` action wired to the rule engine via a new
+  `Manager.fireUpstreamIssueActions(rules, findings)`, called from all
+  3 places that run `ProjectRulesScanner` (the main on-demand PRD scan,
+  `invokeScanGuardrail`'s task/story dispatch, and
+  `runPRDCompletionProjectRulesCheck`) — resolves each firing rule's
+  `UpstreamTarget` against `autonomous.upstream_repos`, reuses the same
+  `git.Provider` the F10 `agent_spawn` subsystem's `PostSessionPRHook`
+  already calls for auto-PR (not a second GitHub client). Best-effort:
+  a filing failure is logged, never blocks the scan; at most one issue
+  filed per rule per call even across multiple findings on that rule.
+- [x] Test: `TestFireUpstreamIssueActions_CallsCreateIssueWithRightRepoTitleBody`
+  confirms the exact repo/title/body via a fake `git.Provider` (new
+  `Manager.gitProviderFn` injection seam, test-only — defaults to the
+  real `git.Resolve` in production). Plus: a rule with no action is
+  skipped, an unresolvable target logs and skips, and multiple findings
+  on one rule only file one issue (4 tests in
+  `project_rules_integration_test.go`). 6 more tests in
+  `internal/git/provider_test.go` cover `CreateIssue` itself
+  (success/required-args/gh-failure, mirroring `OpenPR`'s existing
+  tests, plus the `GitLab` stub).
+- [x] **Phase Completion Checklist**: `go test`/`node --test` green
+  (3402 Go tests, up from 3398; 182 JS unchanged). `CHANGELOG.md`
+  v9.0.15 entry added. `docs/config-reference.yaml` — no new field
+  (`action`/`upstream_target` were already documented in Phase 0; this
+  phase made them functional, not new). `docs/operations.md` — **new
+  section added** (not N/A this time): this phase calls out to GitHub
+  on the operator's own credentials without a per-call confirmation
+  step, which is exactly the kind of security/trust-boundary behavior
+  that rule asks for — folded in the pre-existing (previously
+  undocumented) auto-PR-on-completion behavior at the same time, since
+  both are the same category of concern. `README.md`/doc index — N/A.
+  `docs/testing-tracker.md` entry added. No leaked tracker IDs.
+  **Mobile-Parity Rule**: N/A, confirmed — no new REST/PWA surface
+  (existing config fields became functional, nothing new to expose).
+  Localization Rule: N/A. Version bumped (`9.0.14` → `9.0.15`). This
+  plan's status line updated.
 
 ### Phase 5 — Fix B111 and B112 for real
 **Status: Not started.**
