@@ -302,6 +302,67 @@ v8.0.0 shipped 2026-05-19 — major release closing BL316 (CBAC package + federa
 
 v6.6.0 shipped 2026-05-04 — minor cut closing BL252 (PWA i18n full coverage across 7 phases) and BL246 (Automata UX overhaul — 4-tab detail view, persistent header toolbar exposing every PRD API verb, split Edit Spec + Settings modals, hidden-by-default per-card checkboxes with Select-mode toggle). Also collects BL247/BL249/BL250 from the v6.5.x patch series. v6.5.0 (2026-05-04) landed BL243 Phase 1 (Tailscale sidecar + headscale client + 7-surface parity); Phases 2+3 followed in v6.5.1+v6.5.2+v6.5.3. BL251 (agent auth/settings injection) shipped v6.5.4. BL241 Matrix still needs design interview before implementation. BL253 closed via v6.5.1 (eBPF setup false-positive, GH#37).
 
+## Roadmap: self-build arc → v10.0.0 (locked 2026-10-10)
+
+Decided through iterative design discussion 2026-10-10, starting from
+BL405's single-thread backlog-execution idea and expanding into using
+datawatch's own PRD/Automata engine to work through its own backlog.
+**This is the authoritative execution order** — individual BL entries
+below carry the design detail; this section carries the sequencing.
+Update this section's stage markers as each stage completes; don't let
+it go stale the way BL365's "Phase 2 next" line did (corrected
+2026-10-10, see BL365 below).
+
+**Stage 1 — build traditionally (not via PRD; bootstrapping constraint,
+not a preference). Not started.**
+1. **BL406** — Configurable Project-Rules Enforcement. First, because
+   everything after it benefits from being checked by it.
+2. **BL407** — PRD Git Workflow (branch-per-PRD + auto-PR on
+   completion). Second; independent of BL406, no reason to parallelize
+   given the one-thread-at-a-time constraint.
+
+**Stage 2 — one small, low-risk item, run for real through the new
+PRD-driven path as a deliberate shakedown. Not started; blocked on
+Stage 1.**
+3. **BL404** — imap_mcp parity gaps. Smallest, most self-contained real
+   item left; whatever BL406/BL407 need tuning on gets found here
+   cheaply, per the operator's "real-world testing to validate/tune"
+   instruction, before trusting the workflow with something bigger.
+
+**Stage 3 — full backlog, PRD-driven, one item at a time, confidence
+established. Not started; blocked on Stage 2.**
+4. **BL403** — Plugin Extension Surfaces. Before BL405: its Phase 3/4
+   widget `Kind` taxonomy is what BL405 Phase 10 consumes.
+5. **BL405** — LLM Enhancements. Phase 8c needs explicit operator
+   go-ahead before that specific sub-phase runs (already flagged in the
+   plan) — rest is clear to queue.
+6. **Security remediation track** (BL365 + BL408 + BL395, one coherent
+   program, not three separate items — see BL395's entry for the full
+   **Design A → C → B → D** order). Fully decided, zero open design
+   questions (confirmed 2026-10-10 against the 2026-09-22 walkthrough
+   log) — implementation only. Placed after BL403/BL405 so this large,
+   already-fully-sequenced body of work isn't interleaved against their
+   phases.
+
+**Outside the queue, handled separately, not blocking Stage 3:**
+- **BL381** — status-verify only (likely already shipped per BL390's
+  own cross-reference); a direct check, not a PRD slot.
+- **BL393** (nested tags) — stays excluded until explicitly authorized
+  for implementation.
+- **BL241** (Matrix) — stays excluded pending its own design interview
+  (10 unanswered decision points).
+
+**Sequencing mechanism**: BL357's existing role-based work queue
+(`queue push/claim/complete/fail`) — one queue item per Stage-3 PRD, a
+single claimer works through them one at a time, only claims the next
+after the current PRD's quality gates *and* BL406's new project-rules
+gate pass. No new global-concurrency mechanism.
+
+**Release cadence**: interim work ships as ordinary patch/minor versions
+as each PRD completes (mirroring how v9.0.0 absorbed the prior
+security-refresh work); the major cut to **v10.0.0** happens once Stage
+3's queue is empty.
+
 ## Unclassified
 
 _(empty — drop new operator-filed items here; the backlog refactor each release pulls them into BL### entries below.)_
