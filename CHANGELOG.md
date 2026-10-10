@@ -5,6 +5,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.9 — docs: README current-release line was stale since v9.0.1, backlog B109 filed for v9.0.8
+
+### Changed
+- `README.md`'s "Current release" line still said v9.0.0 across the
+  entire v9.0.1–v9.0.8 patch chain — missed on every one of those
+  releases (AGENT.md's A5 check: "README.md current-release line
+  updated... every commit/push, no exceptions"). Corrected, with a
+  one-paragraph summary of what the patch chain actually fixed.
+- Filed `B109` in `docs/plans/README.md`'s Completed Bugs table for
+  v9.0.8's usage-tracker restart-amplification fix — the Error-Filing
+  Rule calls for a backlog entry even when a bug is already fixed, not
+  just while it's open; this one was shipped without one.
+
 ## v9.0.8 — fix: usage-tracker restart amplification (claude-code/opencode/goose/aider cost totals)
 
 ### Fixed

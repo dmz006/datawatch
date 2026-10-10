@@ -57,7 +57,16 @@ Browse the catalog in-app (Settings → Skills → Registry) or on GitHub. To co
 
 ## Current release
 
-**Current release: v9.0.0 (2026-10-09) — Memory Lifecycle Complete.** The
+**Current release: v9.0.8 (2026-10-09).** v9.0.1–v9.0.8 are a patch
+chain fixing issues found while verifying the v9.0.0 major release
+itself: a Dockerfile `GO_VERSION` drift that silently dropped 7 of 9
+container images, a `datawatch-channel` sibling-binary self-update gap,
+`datawatch restart`/`stop`/`start` not delegating to systemd, and a
+usage-tracker restart-amplification bug that could multiply a
+long-lived session's reported cost with every daemon restart. None of
+these change v9.0.0's actual feature set, described below.
+
+**v9.0.0 — Memory Lifecycle Complete.** The
 first major version since the memory-scope/lifecycle work landed:
 per-session and shared memory scopes, seeding/harvest/archive across
 PRDs, and Automata memory-stats reporting are now considered stable,
