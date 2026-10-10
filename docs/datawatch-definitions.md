@@ -1333,6 +1333,21 @@ event that carries `guardrail_verdicts[]` — they represent the most
 recent check results, not a cumulative log. Also appears in the
 orchestrator's `GET /api/orchestrator/verdicts` flat verdict log.
 
+**Project rule** — an operator-defined check in the fourth scan
+category (alongside the built-in SAST/secrets/dependency scanners),
+configured under `autonomous.scan.project_rules` and evaluated by
+`autonomous_prd_scan` / `POST /api/autonomous/prds/{id}/scan` like any
+other scanner. Four types: `content` (a regex must/must-not match
+within matching files), `consistency` (two files must agree on a
+value — e.g. "these two files' version strings must match"),
+`presence` (a file/pattern must exist), and `parity` (built-in,
+checks a story's declared parity surface against its parent plan's).
+Each rule also names a `granularity` (`task_complete` /
+`story_complete` / `prd_complete` — which completion checkpoint it's
+meant to run at; the checkpoints themselves land in BL406 Phase 3) and
+an optional `action` (`file_upstream_issue`, for gaps this repo's own
+PRD can't close alone). See `docs/plans/2026-10-10-configurable-project-rules-enforcement.md`.
+
 ---
 
 ## Core feature reference matrix

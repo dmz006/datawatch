@@ -2,7 +2,7 @@
 
 - **Date**: 2026-10-10
 - **Version at planning**: v9.0.10
-- **Status**: In progress — Phase 0 done (config scaffolding, B113 fixed and live-verified); Phase 1 next
+- **Status**: In progress — Phase 0 done (v9.0.11), Phase 1 done (v9.0.12, real rule engine); Phase 2 next
 
 ## Context
 
@@ -267,27 +267,53 @@ start, not after the fact):
   diagram (rule → finding → action, at task/story/PRD-complete) belong.
 
 ### Phase 1 — Rule engine core
-**Status: Not started.**
-- [ ] `ProjectRulesScanner` implementing the existing `Scanner`
-  interface; registered alongside `sast`/`secrets`/`deps` in
-  `scan.Run`'s scanner list — no new orchestration path.
-- [ ] Content/keyword rule type implemented + tested.
-- [ ] Cross-file-consistency rule type implemented + tested.
-- [ ] Presence-check rule type implemented + tested.
-- [ ] Dogfood: encode this repo's own "version sync both files" lesson
-  (`feedback_version_sync` session memory) as a real cross-file-
-  consistency rule; confirm it actually catches a deliberately
-  introduced mismatch.
-- [ ] Unit tests: one passing + one deliberately-failing fixture per
-  rule type.
-- [ ] **Phase Completion Checklist** (AGENT.md Planning Rules §5, full
-  list) — `go test`/`node --test` green; `CHANGELOG.md`;
-  `docs/config-reference.yaml` if any new field; `docs/operations.md`/
-  `README.md`/doc index if applicable or marked N/A with reason;
-  `docs/testing-tracker.md` entry; no leaked tracker IDs; Mobile-Parity
-  Rule checked (this phase has no PWA surface of its own, but confirm);
-  Localization Rule if any new string; version bump; this plan's status
-  line updated.
+**Status: Done.** Shipped v9.0.12.
+- [x] `ProjectRulesScanner` (`internal/autonomous/scan/project_rules.go`)
+  implementing the existing `Scanner` interface; registered alongside
+  `sast`/`secrets`/`deps` in `internal/autonomous/manager.go`'s PRD
+  scan path (fires whenever `len(sc.ProjectRules) > 0`, independent of
+  the three boolean toggles — project rules aren't security scanners)
+  — no new orchestration path. Deliberately left
+  `guardrail_registry.go`'s separate single-scanner guardrail path
+  untouched — extending it is Phase 3's job (multi-granularity
+  checkpoints), not this phase's.
+- [x] Content rule type (`"<glob>|<regex>"`) implemented + tested.
+- [x] Consistency rule type (`"<fileA>|<fileB>|<regex-with-1-group>"`)
+  implemented + tested, including the "pattern not found in either
+  file" case.
+- [x] Presence rule type (`"<glob>"`) implemented + tested.
+- [x] A malformed rule (bad pattern syntax, wrong field count, unknown
+  type) produces one self-reporting finding rather than crashing the
+  scan — tested for all 5 ways a rule can be malformed.
+- [x] Dogfood: encoded this repo's own "version sync both files" lesson
+  (`feedback_version_sync` session memory) as a real consistency rule;
+  confirmed via a scratch test against a live copy of this repo's
+  actual `cmd/datawatch/main.go`/`internal/server/api.go` — 0 findings
+  synced, 1 finding after a deliberate mismatch (scratch test deleted
+  after manual verification, not part of the committed suite, since
+  pointing a permanent unit test at this repo's own live files would be
+  fragile against future refactors).
+- [x] Unit tests: 7 in `internal/autonomous/scan/project_rules_test.go`
+  — one passing + one deliberately-failing fixture per rule type, plus
+  the malformed-rule and `parity`-no-op cases.
+- [x] **Phase Completion Checklist**: `go test`/`node --test` green
+  (3376 Go tests, up from 3369; 182 JS unchanged — no PWA surface this
+  phase). `CHANGELOG.md` v9.0.12 entry added. `docs/config-reference.yaml`
+  — no new field (Phase 0 already documented `project_rules`'s shape);
+  N/A. `docs/operations.md`/`README.md`/doc index — N/A, same reasoning
+  as Phase 0 (still no PWA/REST-visible behavior change — rules run via
+  the existing `autonomous_prd_scan` on-demand path, not a new surface).
+  `docs/testing-tracker.md` entry added. No leaked tracker IDs (checked
+  the new glossary entry and all finding messages — plain English
+  throughout). **Mobile-Parity Rule**: N/A, confirmed — no REST contract
+  change, no PWA affordance; `autonomous_prd_scan`'s response shape is
+  unchanged (same `Finding` struct, just a 4th possible `Scanner` value).
+  Localization Rule: N/A, no new `t('key')` usage. Version bumped
+  (`9.0.11` → `9.0.12`). **Conditional docs**: added the
+  `docs/datawatch-definitions.md` "Project rule" glossary entry —
+  judged this phase (not Phase 2) the point the concept becomes real
+  for an operator, since a rule can be written and actually evaluated
+  today. This plan's status line updated.
 
 ### Phase 2 — Parity-inheritance rule (first built-in)
 **Status: Not started.**
@@ -298,11 +324,13 @@ start, not after the fact):
 - [ ] Regression test: a story that narrows/drops a surface with no
   stated reason must fail the scan.
 - [ ] **Phase Completion Checklist** (AGENT.md Planning Rules §5, full
-  list — see Phase 0's worked example above). **This is where the
-  conditional docs item stops being N/A**: "project rules" becomes a
-  real, user-facing concept here (the first real rule actually runs) —
-  add a `docs/datawatch-definitions.md` entry and consider a
-  `docs/flow/*.md` diagram (rule → finding → action) now, not later.
+  list — see Phase 0/1's worked examples above). The
+  `docs/datawatch-definitions.md` "Project rule" entry already shipped
+  in Phase 1 (corrected from this note's original guess that Phase 2
+  would be the trigger point — Phase 1's engine was already real/usable
+  on its own). Still worth considering a `docs/flow/*.md` diagram
+  (rule → finding → action) once this phase's built-in rule exists as
+  a second concrete example of the mechanism.
 
 ### Phase 3 — Multi-granularity wiring
 **Status: Not started.**

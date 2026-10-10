@@ -5,6 +5,31 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.12 — feat(autonomous): BL406 Phase 1 — project-rules scan engine (real, functional)
+
+### Added
+- `ProjectRulesScanner` — the fourth scan category now actually evaluates
+  operator-defined rules (previously config scaffolding only, Phase 0).
+  Registered alongside `sast`/`secrets`/`deps` in the existing scan
+  orchestration (`internal/autonomous/manager.go`'s PRD scan path) — no new
+  orchestration mechanism.
+- Three rule types implemented: `content` (regex match within matching
+  files — generalizes the original scope-drift ask), `consistency` (two
+  files must agree on a value extracted by a shared regex capture group —
+  e.g. two files' version strings must match), `presence` (a file/pattern
+  must exist). `parity` is declared but intentionally a no-op until BL406
+  Phase 2 builds it.
+- A malformed rule (bad pattern syntax, wrong field count) produces one
+  finding reporting the rule itself as broken, rather than crashing the
+  scan or silently doing nothing.
+- Dogfooded this project's own "version sync both files" lesson as a real
+  rule, confirmed against a live copy of this repo's actual
+  `cmd/datawatch/main.go`/`internal/server/api.go`: 0 findings when
+  synced, 1 clear finding against a deliberately-introduced mismatch.
+- New glossary entry in `docs/datawatch-definitions.md` ("Project rule") —
+  this is the phase where the concept becomes real/usable for an operator,
+  not just configurable.
+
 ## v9.0.11 — feat(autonomous): BL406 Phase 0 — configurable project-rules enforcement scaffolding
 
 ### Added

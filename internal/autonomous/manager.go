@@ -2574,6 +2574,12 @@ func (m *Manager) RunScan(prdID string) (*scan.Result, error) {
 	if sc.DepsEnabled {
 		scanners = append(scanners, scan.NewDepsScanner())
 	}
+	// BL406 Phase 1 — the fourth, data-driven scan category. Runs
+	// whenever there are rules configured, independent of the three
+	// boolean toggles above (project rules aren't security scanners).
+	if len(sc.ProjectRules) > 0 {
+		scanners = append(scanners, scan.NewProjectRulesScanner(sc.ProjectRules))
+	}
 
 	gradeFn := grader
 	if !sc.RulesGraderEnabled {
