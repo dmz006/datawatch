@@ -2,7 +2,7 @@
 
 - **Date**: 2026-10-10
 - **Version at planning**: v9.0.10
-- **Status**: In progress — Phase 0 started (config scaffolding types added)
+- **Status**: In progress — Phase 0 done (config scaffolding, B113 fixed and live-verified); Phase 1 next
 
 ## Context
 
@@ -135,7 +135,8 @@ phase ships, per AGENT.md's Planning Rule. A phase with any unchecked
 item is not done, regardless of what's been committed elsewhere.
 
 ### Phase 0 — Config scaffolding
-**Status: In progress.**
+**Status: Done.** Shipped on `main` 2026-10-10 (pre-v9.0.10 patch chain,
+not yet tagged).
 - [x] Fix B113: new `ScanConfig`/`ProjectRuleConfig`/`UpstreamRepoConfig`
   mirror types added to `internal/config/config.go` (mirrors
   `scan.Config`, no import cycle — same pattern as `QualityGateConfig`).
@@ -193,9 +194,28 @@ item is not done, regardless of what's been committed elsewhere.
   — the B113 regression case specifically: an explicit disable must
   never be silently re-enabled). Full repo test suite green (3369
   tests, 83 packages).
-- [ ] Live smoke: set a scan config value via REST, restart the daemon,
-  confirm it survived (the literal B113 regression test, live not just
-  unit).
+- [x] Live smoke: real sandbox daemon (own data dir, port 18091),
+  confirmed cold start reaches the all-on default on BOTH
+  `/api/autonomous/scan/config` and the generic `/api/config` mirror
+  (they'd diverged in an earlier version of this fix — see below), PUT
+  a change (disable SAST + add a project rule), confirmed it landed in
+  the YAML file, `kill -9` + real process restart, confirmed both
+  survived exactly as set. **This caught a real bug before it shipped**:
+  the PUT handler's first version re-derived the new value from the
+  raw request body and mutated `s.cfg.Autonomous.Scan` directly — but
+  that's a SEPARATE copy from the Manager's own config, which never
+  received the startup default (only `amgrCfg.Scan`, inside
+  `cmd/datawatch/main.go`, did). Saving that still-zero-valued copy
+  with only the one touched field set produced a YAML block missing
+  every other field (including the true defaults) to `omitempty`.
+  Fixed two places: (1) the PUT handler now round-trips through JSON
+  from `GetScanConfig()` (the Manager's own current, correctly-
+  defaulted value — the single source of truth) instead of re-deriving
+  a second copy from the request; (2) `cmd/datawatch/main.go`'s startup
+  default-fallback now syncs the defaulted value back onto
+  `cfg.Autonomous.Scan` too, so the two copies can't diverge even
+  before any PUT ever happens. Full suite re-confirmed green after the
+  fix (3369 Go tests, 83 packages).
 
 ### Phase 1 — Rule engine core
 **Status: Not started.**

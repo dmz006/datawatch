@@ -4022,6 +4022,17 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		// silent re-enabling of anything they explicitly turned off.
 		if scanConfigIsUnset(acfgIn.Scan) {
 			amgrCfg.Scan = scanpkg.DefaultConfig()
+			// Sync the now-defaulted value back onto cfg.Autonomous.Scan
+			// (acfgIn was a value copy of cfg.Autonomous, so mutating it
+			// alone never reaches cfg) — otherwise cfg (which becomes
+			// s.cfg for the HTTP server) would disagree with the
+			// Manager about scan config from the moment the daemon
+			// starts, which internal/server/autonomous.go's generic
+			// GET /api/config "scan" mirror reads directly. Found live
+			// smoke-testing B113's fix.
+			if b, err := json.Marshal(amgrCfg.Scan); err == nil {
+				_ = json.Unmarshal(b, &cfg.Autonomous.Scan)
+			}
 		}
 		if amgrCfg.PollIntervalSeconds == 0 {
 			amgrCfg.PollIntervalSeconds = 30

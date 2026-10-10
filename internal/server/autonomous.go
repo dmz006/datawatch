@@ -2025,78 +2025,30 @@ func (s *Server) handleAutonomousScanConfig(w http.ResponseWriter, r *http.Reque
 		}
 		// B113 — persist to the YAML-facing config too, not just the
 		// in-memory Manager.cfg, so a scan-config write survives a
-		// daemon restart. Applies the same body keys SetScanConfig
-		// just applied in-memory, directly onto the config mirror
-		// struct (internal/server deliberately doesn't import
-		// internal/autonomous/scan — same decoupling the AutonomousAPI
-		// interface's any-typed methods already use).
+		// daemon restart.
+		//
+		// Live-smoke caught a real bug in an earlier version of this
+		// fix: re-deriving the new value from the raw request body and
+		// mutating s.cfg.Autonomous.Scan's fields one at a time looked
+		// right, but s.cfg.Autonomous.Scan is a SEPARATE copy from the
+		// Manager's own config — it never received
+		// scan.DefaultConfig()'s all-on startup fallback
+		// (cmd/datawatch/main.go's scanConfigIsUnset check only
+		// defaults the Manager's copy). Mutating only the one touched
+		// field on that still-zero-valued copy, then saving it,
+		// produced a YAML block with just that field and every other
+		// (including the should-be-true defaults) silently dropped by
+		// `omitempty`. Round-tripping through JSON from the Manager's
+		// own now-current, already-correctly-defaulted config (the
+		// single source of truth) instead of re-deriving a second copy
+		// from the request guarantees they can't diverge again.
 		if s.cfg != nil {
-			sc := &s.cfg.Autonomous.Scan
-			if v, ok := body["enabled"].(bool); ok {
-				sc.Enabled = v
-			}
-			if v, ok := body["sast_enabled"].(bool); ok {
-				sc.SASTEnabled = v
-			}
-			if v, ok := body["secrets_enabled"].(bool); ok {
-				sc.SecretsEnabled = v
-			}
-			if v, ok := body["deps_enabled"].(bool); ok {
-				sc.DepsEnabled = v
-			}
-			if v, ok := body["rules_grader_enabled"].(bool); ok {
-				sc.RulesGraderEnabled = v
-			}
-			if v, ok := body["fix_loop_enabled"].(bool); ok {
-				sc.FixLoopEnabled = v
-			}
-			if v, ok := body["fail_on_severity"].(string); ok {
-				sc.FailOnSeverity = v
-			}
-			if v, ok := body["max_findings"].(float64); ok {
-				sc.MaxFindings = int(v)
-			}
-			if v, ok := body["fix_loop_max_retries"].(float64); ok {
-				sc.FixLoopMaxRetries = int(v)
-			}
-			if raw, ok := body["project_rules"].([]any); ok {
-				rules := make([]config.ProjectRuleConfig, 0, len(raw))
-				for _, item := range raw {
-					m, ok := item.(map[string]any)
-					if !ok {
-						continue
-					}
-					r := config.ProjectRuleConfig{}
-					if v, ok := m["id"].(string); ok {
-						r.ID = v
-					}
-					if v, ok := m["name"].(string); ok {
-						r.Name = v
-					}
-					if v, ok := m["type"].(string); ok {
-						r.Type = v
-					}
-					if v, ok := m["granularity"].(string); ok {
-						r.Granularity = v
-					}
-					if v, ok := m["pattern"].(string); ok {
-						r.Pattern = v
-					}
-					if v, ok := m["severity"].(string); ok {
-						r.Severity = v
-					}
-					if v, ok := m["action"].(string); ok {
-						r.Action = v
-					}
-					if v, ok := m["upstream_target"].(string); ok {
-						r.UpstreamTarget = v
-					}
-					rules = append(rules, r)
+			if b, err := json.Marshal(s.autonomousMgr.GetScanConfig()); err == nil {
+				if err := json.Unmarshal(b, &s.cfg.Autonomous.Scan); err != nil {
+					log.Printf("[scan-config] WARNING: could not sync YAML-facing config, will not survive a restart: %v", err)
+				} else if err := s.saveConfig(); err != nil {
+					log.Printf("[scan-config] WARNING: in-memory update applied but YAML save failed, will not survive a restart: %v", err)
 				}
-				sc.ProjectRules = rules
-			}
-			if err := s.saveConfig(); err != nil {
-				log.Printf("[scan-config] WARNING: in-memory update applied but YAML save failed, will not survive a restart: %v", err)
 			}
 		}
 		s.audit(r.Context(), "update", "autonomous_scan_config", "", nil) // GH#201 Phase 4

@@ -40,7 +40,7 @@ single source of truth.
 
 ## Current state — 2026-10-10
 
-Latest release: **v9.0.10** (2026-10-10). fix: `imap_mcp` outbound mail was addressed to the literal string `"imap_mcp"` and bounced. v9.0.8 fixed usage-tracker restart amplification of backend cost totals; v9.0.9 corrected the stale README current-release line. **Active work:** the v10.0.0 self-build arc — see [§ Roadmap](#roadmap-self-build-arc--v1000-locked-2026-10-10); BL406 Phase 0 is in progress (B113 fixed in-tree). Plans folder refactored 2026-10-10: 11 completed plan docs archived to `historical-plans/`, BL381 closed as shipped, and unscheduled work called out in the Roadmap's "Not yet placed" list.
+Latest release: **v9.0.10** (2026-10-10). fix: `imap_mcp` outbound mail was addressed to the literal string `"imap_mcp"` and bounced. v9.0.8 fixed usage-tracker restart amplification of backend cost totals; v9.0.9 corrected the stale README current-release line. **Active work:** the v10.0.0 self-build arc — see [§ Roadmap](#roadmap-self-build-arc--v1000-locked-2026-10-10); BL406 Phase 0 is done (B113 fixed, live-verified via a real sandbox-daemon restart test — see B113's entry below), Phase 1 next. Plans folder refactored 2026-10-10: 11 completed plan docs archived to `historical-plans/`, BL381 closed as shipped, and unscheduled work called out in the Roadmap's "Not yet placed" list.
 
 Previous: **v9.0.7** (2026-10-09). fix(daemon): `datawatch restart`/`stop`/`start` now detect and delegate to an active/enabled `datawatch.service` systemd --user unit instead of raw PID signaling + self-daemonizing; the daemon now falls back to the dedicated `~/.datawatch/tmux` socket when `TMUX_TMPDIR` is unset at boot; `ResumeMonitors` self-heals a `StateFailed` session back to `StateRunning` at boot when its tmux pane is actually still alive. Full history for every release between this and the v8.39.1 entry below is in `CHANGELOG.md` (this section was 8 days / ~400 versions stale until this backlog refactor — see the "Gotcha" note in AGENT.md's Project Tracking Rule: this header is meant to be refreshed every release, not just major ones).
 
@@ -174,7 +174,7 @@ Previous: **v8.25.3** (2026-09-12). feat(observer): nvidia-smi and tegrastats GP
 
  | Bucket | Count | Notes |
 |---|---|---|
-| Open bugs | 3 | B111 (dead `GuidedMode`), B112 (dead scope-drift rule) — both fixed by BL406 Phase 5; B113 (scan config never persisted/wired) — fixed in-tree by BL406 Phase 0, live smoke pending |
+| Open bugs | 2 | B111 (dead `GuidedMode`), B112 (dead scope-drift rule) — both fixed by BL406 Phase 5. B113 (scan config never persisted/wired) — fixed + live-verified by BL406 Phase 0, 2026-10-10; no longer open |
 | Open features | 7 | BL241 Matrix (design interview needed); BL365 + BL408 + BL395 security remediation track (roadmap Stage 3 #7); BL390 Phase 2/3 (folded into BL405 Phase 8a); BL393 nested tags (excluded until authorized); BL394 + BL392 (substantially done, residue cross-repo). BL389 shipped v9.0.0; BL381 shipped v8.28.0/v8.28.2 |
 | Active backlog | 0 | BL387 complete (v8.31–33.0 ✅) |
 | Pending backlog | 7 | BL402, BL403, BL404, BL405, BL406, BL407 (v10.0.0 roadmap) + BL398 Phase 2; BL400 deferred (open questions). BL335 shipped v8.62.x via BL397 Phase 4 |
@@ -404,7 +404,7 @@ else is in `historical-plans/`):
 
 | Plan doc | BL | Roadmap slot |
 |---|---|---|
-| `2026-10-10-configurable-project-rules-enforcement.md` | BL406 (+B111/B112/B113) | Stage 1 #1 — in progress |
+| `2026-10-10-configurable-project-rules-enforcement.md` | BL406 (+B111/B112/B113) | Stage 1 #1 — in progress, Phase 0 done |
 | _(no plan doc yet)_ | BL407 | Stage 1 #2 |
 | _(no plan doc yet)_ | BL404 | Stage 2 #3 |
 | `2026-10-09-plugin-extension-surfaces.md` | BL403 | Stage 3 #4 |
@@ -607,9 +607,21 @@ _2026-05-02 operator-filed items promoted directly to BL218–BL221. 2026-05-03 
 > restart, silently, with no error. `internal/config.AutonomousConfig`
 > (the YAML-facing mirror struct) has no `Scan` field at all — only an
 > unrelated, similarly-named `SecurityScan bool` (a different, older,
-> single-flag toggle). **Fixed as part of BL406 Phase 0**, since the new
-> `RulesFile`/`ContextFile`/`UpstreamRepos`/`ProjectRules` fields ride
-> the exact same wiring and would inherit the identical bug otherwise.
+> single-flag toggle). **Fixed as part of BL406 Phase 0 (shipped
+> 2026-10-10, live-verified)**, since the new `RulesFile`/`ContextFile`/
+> `UpstreamRepos`/`ProjectRules` fields ride the exact same wiring and
+> would have inherited the identical bug otherwise. Live smoke (real
+> sandbox daemon, `kill -9` + process restart) caught a **second** real
+> bug before it shipped: the first version of the PUT-handler fix mutated
+> `s.cfg.Autonomous.Scan` directly from the request body, but that's a
+> separate copy from the Manager's own config and never received the
+> startup default — saving it produced a YAML block missing every
+> untouched field to `omitempty`. Fixed by round-tripping through JSON
+> from the Manager's own current config instead, and by syncing the
+> startup default onto `cfg.Autonomous.Scan` too so the two copies can't
+> diverge in the first place. Full suite green (3369 Go tests, 83
+> packages; 182 JS tests). No longer open — safe to move to Completed
+> Bugs at the next backlog refactor pass.
 
 _(Otherwise no open bugs as of the 2026-10-09/10 backlog refactor —
 everything previously listed here was already closed and has been moved
