@@ -452,7 +452,19 @@ _2026-05-02 operator-filed items promoted directly to BL218–BL221. 2026-05-03 
 > checkpoint before scope drift executes"* — step 1 of BL384's own
 > mitigation checklist. Any PRD run with `guided_mode: true` today,
 > including ones following BL384's own documented procedure, gets no
-> pause at all. Not fixed; not yet prioritized against BL405/BL403/BL404.
+> pause at all. **Fixed as part of BL406 Phase 5** (pluggable gate
+> source — operator/council/guardrail_auto), not as a standalone patch.
+
+> **B112** — AGENT.md's BL384 "PRD scan rule — scope drift detector" is
+> also dead (found 2026-10-10, same investigation as B111).
+> `internal/autonomous/scan/scan.go` is a real, working scan framework,
+> but its only three `Scanner` implementations (`sast.go`, `secrets.go`,
+> `deps.go`) are security-only — zero hits anywhere for `scope-drift`/
+> `ScopeDrift`. BL384's mitigation stack is now confirmed 2-for-3 dead
+> (B111 + this); only its mitigation #2 (manually patching each task spec
+> before approval) has ever actually worked. **Fixed as part of BL406
+> Phase 5**, re-implemented as a first-class content/keyword rule in the
+> new rule engine rather than staying prose-only.
 
 _(Otherwise no open bugs as of the 2026-10-09/10 backlog refactor —
 everything previously listed here was already closed and has been moved
@@ -968,6 +980,39 @@ per-PRD council-profile override field (the Automata-page entry point).
 
 
 ## Pending backlog
+
+> **BL406** — Configurable Project-Rules Enforcement: a fourth,
+> data-driven scan category (`project-rules`, alongside sast/secrets/
+> deps) that checks task/story/PRD content against operator-configured
+> project rules — parity-surface inheritance, version-sync, CHANGELOG
+> presence, and upstream-issue filing — plus real fixes for B111/B112
+> (filed 2026-10-10, found while grounding BL405's single-thread
+> backlog-execution workflow design). Plan:
+> `docs/plans/2026-10-10-configurable-project-rules-enforcement.md`. 6
+> phases, not started. Designed to generalize past this repo: rules/
+> context-file paths and upstream-repo targets are operator-configured,
+> never hardcoded. Recommended as the **first** thing built in the
+> BL403/404/405/406/407 arc — everything after it benefits from being
+> checked by it, and building it via today's manual process (not PRD)
+> avoids the bootstrapping problem of using a not-yet-built safety net to
+> build itself.
+
+> **BL407** — PRD Git Workflow: branch-per-PRD + auto-PR on completion
+> (filed 2026-10-10, found while discussing how a PRD-driven backlog
+> run should produce trackable, reviewable git history instead of
+> committing directly to whatever branch is checked out).
+> `internal/autonomous` has zero branch-creation logic today —
+> `AutoGitCommit` just commits on the current branch. A real, working
+> push+PR mechanism already exists (`internal/agents/post_session.go`'s
+> `PostSessionPRHook`, using `git.Provider.OpenPR` via `gh`) but it's
+> wired only to the separate `agent_spawn` subsystem's "Project Profile"
+> (`Git.AutoPR`) — `PRD` has no `Git` field at all. Scope: give `PRD` its
+> own `Git` config, create a branch at PRD start, commit each task to
+> that branch, open one PR per PRD at completion (not one per task) by
+> extending `PostSessionPRHook`'s pattern to PRD-completion events rather
+> than building a second mechanism. Plan doc not yet written — full
+> design when this item is reached in the queue (see recommended order
+> above), not blocking BL406.
 
 > **BL405** — LLM Enhancements: role-aware scheduling, federated
 > capacity, council-as-reusable-profile, usage/cost tracking (filed
