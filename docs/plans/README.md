@@ -352,6 +352,28 @@ established. Not started; blocked on Stage 2.**
    walkthrough log) — implementation only. Placed after BL403/BL402/
    BL405 so this large, already-fully-sequenced body of work isn't
    interleaved against their phases.
+8. **BL409** — File/function naming audit across all of datawatch
+   (filed 2026-10-10, operator-raised after catching this session's own
+   `bl406_*.go` filenames — a pattern confirmed pervasive and
+   pre-existing across the whole codebase: `bl221_scan.go`,
+   `bl369_injection_test.go`, `gh201_phase2_hopchain_test.go`, and many
+   more). New AGENT.md Code Quality Rule (added 2026-10-10): name
+   files/functions/types for what they do, never for the tracker ID
+   that created them — IDs get collided/renumbered/reused (see this
+   session's own B89–B97 and BL366/BL369 findings) and tell a future
+   reader nothing. **Deliberately placed last in Stage 3**, after
+   BL403/BL402/BL405/the security track: this is a cross-cutting rename
+   sweep touching source files across the whole repo, so it benefits
+   from everything else having already landed (less churn to re-audit,
+   lower risk of colliding with in-flight phase work). **Scope, to
+   settle when this item is reached, not now**: rename only source
+   files/Go identifiers (functions/types) — explicitly does NOT touch
+   `CHANGELOG.md`, `docs/plans/README.md`'s historical BL entries, or
+   `docs/testing-tracker.md`'s past entries, all three of which are the
+   existing rule's own named "reference/archaeology material where
+   tracker IDs ARE expected and useful," not a gap to close. Needs real
+   tooling care (e.g. `gopls rename`, not blind `sed`) given the
+   codebase's size — no plan doc written yet.
 
 **Outside the queue, handled separately, not blocking Stage 3:**
 - ~~**BL381**~~ — status-verified 2026-10-10: shipped v8.28.0 + v8.28.2
