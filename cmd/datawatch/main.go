@@ -113,7 +113,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "9.0.9"
+var Version = "9.0.10"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -2950,7 +2950,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 
 	// imap-mcp email command channel
 	if cfg.ImapMcp.Enabled && cfg.ImapMcp.URL != "" {
-		imapMcpB := imapmcp.New(cfg.ImapMcp.URL, cfg.ImapMcp.Account, cfg.ImapMcp.SubjectPrefix)
+		imapMcpB := imapmcp.New(cfg.ImapMcp.URL, cfg.ImapMcp.Account, cfg.ImapMcp.SubjectPrefix, cfg.ImapMcp.To)
 		// GH#203 — set now in case Token is a literal (no secrets store
 		// configured at all); re-applied below, after ResolveConfig runs,
 		// for the ${secret:...}-reference case.

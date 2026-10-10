@@ -1328,6 +1328,14 @@ type ImapMcpConfig struct {
 	// and "send" scopes on the imap-mcp side. Empty = no Authorization
 	// header sent (imap-mcp <= 0.5.2, or auth disabled there).
 	Token string `yaml:"token,omitempty"`
+	// To (found live 2026-10-10) is the fixed outbound recipient
+	// address. Without it, every outbound send was addressed to the
+	// literal string "imap_mcp" (the generic comm Router's groupID
+	// label for this channel, which has no real meaning for email) and
+	// SMTP correctly bounced it as 5.1.1 user unknown. Required for any
+	// outbound reply/notification to actually deliver; empty leaves the
+	// pre-fix bounce-prone behavior unchanged rather than hard-failing.
+	To string `yaml:"to,omitempty"`
 }
 
 // GitHubWebhookConfig holds GitHub webhook listener configuration.

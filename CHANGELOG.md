@@ -5,6 +5,29 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.10 — fix: imap_mcp outbound mail bounced — sent to the literal string "imap_mcp"
+
+### Fixed
+- Relayed live by a peer session, 2026-10-10: the `imap_mcp` email
+  channel bounced outbound mail 5 times in ~2 hours (`5.1.1 user
+  unknown`). Root cause: the generic comm-channel Router sends every
+  outbound message as `b.Send(r.groupID, text)` — correct for
+  Signal/Telegram/Discord/etc., where `groupID` really is the one
+  destination to reply to, but for `imap_mcp` `groupID` is just the
+  literal label `"imap_mcp"` (email has no "group" concept), so every
+  send was addressed to that literal string.
+- Fixed with a new `imap_mcp.to` config field; `imapmcp.Backend.Send`
+  now uses it to override whatever recipient it's called with.
+  Deliberately **not** fixed by repointing `groupID` at the real
+  address instead — `groupID` also drives *inbound* message matching
+  (a mismatch is silently dropped), and an inbound event's `GroupID`
+  comes from imap-mcp's own account identifier, never an email address.
+  Doing that would have traded a loud bounce for a silent, harder-to-
+  notice inbound-command failure.
+- `imap_mcp.to` is YAML-only for now, matching this channel's existing
+  (pre-existing, not introduced here) lack of REST/MCP/CLI/comm/PWA
+  config exposure — tracked as its own follow-up, `BL404`.
+
 ## v9.0.9 — docs: README current-release line was stale since v9.0.1, backlog B109 filed for v9.0.8
 
 ### Changed

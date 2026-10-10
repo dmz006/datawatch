@@ -949,6 +949,19 @@ per-PRD council-profile override field (the Automata-page entry point).
 
 ## Pending backlog
 
+> **BL404** — `imap_mcp` messaging channel has zero REST/MCP/CLI/comm/
+> PWA config exposure (filed 2026-10-10, found while fixing the B110
+> outbound-bounce bug). The entire `imap_mcp.*` config block
+> (`enabled`/`url`/`account`/`subject_prefix`/`token`, now also `to`)
+> is YAML-only — `applyConfigPatch` (`internal/server/api.go`) has zero
+> `imap_mcp.*` cases, so it's unreachable via `PUT /api/config`/
+> `config_set`/`configure`/PWA Settings, violating the Configuration
+> Accessibility Rule's "every config channel" bar. Also:
+> `docs/messaging-backends.md` has no `imap_mcp` section at all. Not
+> fixed as part of B110 — that was a focused bounce-bug fix, not a
+> retroactive full-parity pass for a block that's been exposed this way
+> since BL340 (v8.9.23). Not started.
+
 > **BL403** — Plugin Extension Surfaces: dashboard/session widgets,
 > service-kind plugins with optional lifecycle supervision, federation
 > & audit (operator-directed 2026-10-09, starting from "can imap-mcp
@@ -1625,6 +1638,7 @@ Per-item plans live in [`2026-04-11-backlog-plans.md`](2026-04-11-backlog-plans.
 | B95 | Decomposer-produced stories could persist with `status="running"` (a valid `PRDStatus` but not a valid `StoryStatus`) when the LLM's decompose JSON included that value verbatim, permanently stalling the story since the executor's transition guard never fires for a non-pending initial state. `SetStories` now forces every freshly-set story to `StoryPending` regardless of LLM output. ⚠️ ID collision — see note above; this is a different bug than the 4 other B95/B95(cont.) rows above, which cover the cost/token-accounting bug (B98). | v8.33.20 |
 | B96 | `config.DefaultConfig()` left `Autonomous.AutoFixRetries` at the Go zero value (0) instead of the intended default of 1, so verifier parse failures (a transient "unparseable response", not a real quality failure) were never retried and immediately cascaded to `PRDFailed`. Fixed by setting the correct default. ⚠️ ID collision — see note above. | v8.33.22 |
 | B97 | `ResetTask` refused to resume a PRD stuck in `PRDFailed` after one task failed, requiring a destructive `reset_to_draft` (discarding all completed work) to recover. Fixed: `ResetTask` now also accepts `PRDFailed` and auto-restores `PRDRunning` so the executor picks the PRD back up without requiring a second operator step. ⚠️ ID collision — see note above. | v8.33.23 |
+| B110 | `imap_mcp` outbound email bounced 5× in ~2h (SMTP 5.1.1 user unknown), relayed via `imap-mcp-79`. Root cause: the generic comm-channel Router always sends as `b.Send(r.groupID, text)`; for `imap_mcp`, `groupID` is just the literal label `"imap_mcp"` passed at `newRouter()` construction (there is no "group" concept for email), so every outbound send was addressed to that literal string. Fixed with a new `imap_mcp.to` config field the `Backend` uses to override whatever recipient it's called with — deliberately NOT fixed by repointing `groupID` itself, since `groupID` also drives *inbound* message matching (`router.go`'s `handleMessage`: `if msg.GroupID != r.groupID { return }`), and an inbound SSE event's `GroupID` comes from imap-mcp's own account identifier, not an email address; repointing it would have silently broken inbound matching while fixing the bounce. | v9.0.10 |
 | B109 | `cost_summary` reported 4.3B output tokens / $64,532.70 for `claude-code` — not plausible. Root cause: the 4 usage trackers (claude-code/aider line-count based, opencode/goose cumulative-total based) kept their "already counted" checkpoint only in an in-memory `sync.Map`, never persisted; every daemon restart reset it to zero, so the next scan re-read/re-diffed each session's entire historical usage and re-added it on top of the already-persisted total via `AddUsage` (additive) — a session surviving N restarts had its real usage multiplied by roughly N+1. Fixed by persisting the checkpoint on the session record (`UsageLinesRead`/`UsageLastIn`/`UsageLastOut`) and seeding each tracker from it; a `resetPreFixUsageIfCorrupted` self-heal discards a session's stored totals when it shows usage with no checkpoint at all (a signature impossible under the fixed code), so its tracker's own next scan recomputes the true total fresh instead of being manually patched. First use of **B109** — this fix is also what surfaced the B89-B97 collision noted above; new bugs must use B109 or higher going forward, this number included, never B89-108 again. | v9.0.8 |
 
 ### Features & Backlog Completed

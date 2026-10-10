@@ -16,6 +16,7 @@
 //	  account: ""             # empty = imap-mcp default account
 //	  subject_prefix: "datawatch"
 //	  token: "${secret:imap_mcp_token_datawatch}"  # GH#203, imap-mcp >= 0.5.3
+//	  to: "operator@example.com"  # outbound recipient; see To's doc comment on Backend
 package imapmcp
 
 import (
@@ -107,14 +108,44 @@ type Backend struct {
 	url           string
 	account       string // imap-mcp account name (empty = default)
 	subjectPrefix string
-	httpClient    *http.Client
+	// to is the fixed outbound recipient (imap_mcp.to in config.yaml).
+	//
+	// Found live, 2026-10-10: this backend is wired into the generic
+	// comm-channel Router the same way Signal/Telegram/Discord/etc. are
+	// (cmd/datawatch/main.go's newRouter(hostname, groupID, backend)),
+	// and the Router sends every outbound message as
+	// b.Send(r.groupID, text) -- correct for those backends, where
+	// groupID really is the one destination group/channel/number to
+	// reply to. For imap_mcp, groupID is just the literal label
+	// "imap_mcp" (there is no "group" concept for email), so every
+	// outbound send was addressed to the literal string "imap_mcp" --
+	// SMTP correctly bounced it as 5.1.1 user unknown. Email has no
+	// router-level destination to reuse, so this field exists
+	// specifically to override whatever recipient argument Send
+	// receives.
+	//
+	// Deliberately NOT routed through router.go's groupID instead:
+	// groupID also drives *inbound* message matching
+	// (handleMessage: "if msg.GroupID != r.groupID { ... return }"),
+	// and an inbound SSE event's GroupID is set from imap-mcp's own
+	// account identifier (handleSSELine: GroupID: cmd.Account), not an
+	// email address. Repointing groupID at the recipient address would
+	// have fixed the bounce while silently breaking inbound command
+	// matching instead -- trading one bug for a worse, less visible
+	// one. Keeping outbound overridden here and inbound matching
+	// completely untouched avoids that trade entirely.
+	to         string
+	httpClient *http.Client
 }
 
 // New creates a new imap-mcp backend.
 // url is the imap-mcp API base URL (e.g. "http://localhost:8765").
 // account is the imap-mcp account to use; empty = use imap-mcp default.
 // subjectPrefix is prepended to reply subjects; empty defaults to "datawatch".
-func New(url, account, subjectPrefix string) *Backend {
+// to is the fixed outbound recipient (see Backend.to's doc comment);
+// empty falls back to whatever recipient Send is called with, matching
+// the pre-fix behavior.
+func New(url, account, subjectPrefix, to string) *Backend {
 	if subjectPrefix == "" {
 		subjectPrefix = "datawatch"
 	}
@@ -122,6 +153,7 @@ func New(url, account, subjectPrefix string) *Backend {
 		url:           strings.TrimRight(url, "/"),
 		account:       account,
 		subjectPrefix: subjectPrefix,
+		to:            to,
 		httpClient:    &http.Client{Timeout: 30 * time.Second},
 	}
 }
@@ -178,14 +210,20 @@ func (b *Backend) Link(_ string, _ func(string)) error { return nil }
 func (b *Backend) Close() error { return nil }
 
 // Send sends a plain-text reply via imap-mcp's REST send endpoint.
-// recipient is the To address; message is the plain-text body.
+// recipient is the To address the caller (the generic comm Router)
+// supplied; message is the plain-text body. If b.to is configured, it
+// overrides recipient -- see Backend.to's doc comment for why.
 func (b *Backend) Send(recipient, message string) error {
+	to := recipient
+	if b.to != "" {
+		to = b.to
+	}
 	account := b.account
 	if account == "" {
 		account = "_default"
 	}
 	payload := map[string]string{
-		"to":      recipient,
+		"to":      to,
 		"subject": b.subjectPrefix + " response",
 		"body":    message,
 	}

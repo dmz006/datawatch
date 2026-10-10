@@ -16,7 +16,7 @@ import (
 )
 
 func TestBackendName(t *testing.T) {
-	b := New("http://localhost:8765", "", "")
+	b := New("http://localhost:8765", "", "", "")
 	if b.Name() != "imap_mcp" {
 		t.Fatalf("Name() = %q, want %q", b.Name(), "imap_mcp")
 	}
@@ -37,7 +37,7 @@ func TestSend(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	b := New(srv.URL, "personal", "test")
+	b := New(srv.URL, "personal", "test", "")
 	if err := b.Send("user@example.com", "hello world"); err != nil {
 		t.Fatalf("Send() error: %v", err)
 	}
@@ -52,13 +52,60 @@ func TestSend(t *testing.T) {
 	}
 }
 
+// TestSend_ConfiguredToOverridesRouterGroupID is the regression test for
+// the bounce incident: the generic comm Router always calls
+// Send(r.groupID, text), and for this backend r.groupID is just the
+// literal label "imap_mcp" (not a real address) -- confirmed live,
+// 2026-10-10, as the cause of repeated SMTP 5.1.1 bounces. When
+// imap_mcp.to is configured, it must win regardless of what recipient
+// Send is called with.
+func TestSend_ConfiguredToOverridesRouterGroupID(t *testing.T) {
+	var gotBody map[string]string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&gotBody)
+		writeJSON(w, map[string]string{"status": "sent"})
+	}))
+	defer srv.Close()
+
+	b := New(srv.URL, "", "test", "operator@example.com")
+	// "imap_mcp" here stands in for the literal groupID label the
+	// Router actually passes -- the whole point is that it must be
+	// ignored in favor of the configured address.
+	if err := b.Send("imap_mcp", "status update"); err != nil {
+		t.Fatalf("Send() error: %v", err)
+	}
+	if gotBody["to"] != "operator@example.com" {
+		t.Errorf("to = %q, want operator@example.com (configured To must override the passed recipient)", gotBody["to"])
+	}
+}
+
+// TestSend_EmptyToFallsBackToPassedRecipient confirms the pre-fix
+// behavior is preserved when imap_mcp.to is left unset, rather than the
+// fix silently dropping messages or hard-failing on a missing config.
+func TestSend_EmptyToFallsBackToPassedRecipient(t *testing.T) {
+	var gotBody map[string]string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewDecoder(r.Body).Decode(&gotBody)
+		writeJSON(w, map[string]string{"status": "sent"})
+	}))
+	defer srv.Close()
+
+	b := New(srv.URL, "", "test", "")
+	if err := b.Send("whatever-was-passed", "hi"); err != nil {
+		t.Fatalf("Send() error: %v", err)
+	}
+	if gotBody["to"] != "whatever-was-passed" {
+		t.Errorf("to = %q, want whatever-was-passed (no To configured -- fall back to the passed recipient)", gotBody["to"])
+	}
+}
+
 func TestSendError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "smtp error", http.StatusBadGateway)
 	}))
 	defer srv.Close()
 
-	b := New(srv.URL, "", "")
+	b := New(srv.URL, "", "", "")
 	err := b.Send("u@e.com", "hi")
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -91,7 +138,7 @@ func TestSubscribeInboundCommand(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	b := New(srv.URL, "personal", "")
+	b := New(srv.URL, "personal", "", "")
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -141,7 +188,7 @@ func TestSubscribeIgnoresNonCommand(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	b := New(srv.URL, "", "")
+	b := New(srv.URL, "", "", "")
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
 
@@ -153,7 +200,7 @@ func TestSubscribeIgnoresNonCommand(t *testing.T) {
 }
 
 func TestHandleSSELine(t *testing.T) {
-	b := New("http://localhost:8765", "", "datawatch")
+	b := New("http://localhost:8765", "", "datawatch", "")
 
 	t.Run("valid inbound.command", func(t *testing.T) {
 		cmd := verifiedCommand{Account: "acct", From: "a@b.com"}
@@ -213,7 +260,7 @@ func TestSend_SendsAuthHeader(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	b := New(srv.URL, "", "")
+	b := New(srv.URL, "", "", "")
 	if err := b.Send("u@e.com", "hi"); err != nil {
 		t.Fatalf("Send() error: %v", err)
 	}
@@ -233,7 +280,7 @@ func TestSelfID_SendsAuthHeader(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	b := New(srv.URL, "", "")
+	b := New(srv.URL, "", "", "")
 	if got := b.SelfID(); got == "" {
 		t.Fatal("SelfID() returned empty, expected a resolved address")
 	}
@@ -253,7 +300,7 @@ func TestStream_SendsAuthHeader(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	b := New(srv.URL, "", "")
+	b := New(srv.URL, "", "", "")
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	_ = b.stream(ctx, func(messaging.Message) {})
@@ -275,7 +322,7 @@ func TestSend_NoTokenConfigured_NoAuthHeader(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	b := New(srv.URL, "", "")
+	b := New(srv.URL, "", "", "")
 	if err := b.Send("u@e.com", "hi"); err != nil {
 		t.Fatalf("Send() error: %v", err)
 	}
@@ -292,7 +339,7 @@ func TestSend_401IsReportedAsAuthError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	b := New(srv.URL, "", "")
+	b := New(srv.URL, "", "", "")
 	err := b.Send("u@e.com", "hi")
 	if err == nil {
 		t.Fatal("expected error, got nil")
@@ -316,7 +363,7 @@ func TestStream_403ReturnsAuthError(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	b := New(srv.URL, "", "")
+	b := New(srv.URL, "", "", "")
 	err := b.stream(context.Background(), func(messaging.Message) {})
 	var authErr *authError
 	if !errors.As(err, &authErr) {
@@ -339,7 +386,7 @@ func TestSubscribe_AuthErrorDoesNotHotLoop(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	b := New(srv.URL, "", "")
+	b := New(srv.URL, "", "", "")
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
 	b.Subscribe(ctx, func(messaging.Message) {}) //nolint:errcheck

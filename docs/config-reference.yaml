@@ -285,6 +285,11 @@ imap_mcp:
   # scopes on the imap-mcp side. Empty = no Authorization header sent
   # (fine against imap-mcp <= 0.5.2, or with auth disabled there).
   token: ""
+  # Outbound recipient address. Required for any reply/notification to
+  # actually deliver -- without it, the generic comm-channel router
+  # addresses outbound sends to its own internal channel label
+  # ("imap_mcp"), not a real address, which SMTP correctly bounces.
+  to: ""
 matrix:
   # Enable Matrix homeserver
   enabled: false
