@@ -259,6 +259,12 @@ start, not after the fact):
   already-undocumented tool. Worth its own backlog item if a full
   `docs/mcp.md` audit is ever prioritized — not filed as one yet.
 - [x] This plan doc's own phase-status line updated to reflect reality.
+- [x] Conditional docs (`docs/datawatch-definitions.md`, `docs/flow/*.md`,
+  `docs/howto/*.md`) — **N/A**: this phase introduces no new operator-
+  facing concept or data flow yet, just inert config fields nothing
+  reads. Revisit at Phase 1-2, where "project rules" becomes a real,
+  usable thing — that's where a definitions entry and likely a flow
+  diagram (rule → finding → action, at task/story/PRD-complete) belong.
 
 ### Phase 1 — Rule engine core
 **Status: Not started.**
@@ -292,7 +298,11 @@ start, not after the fact):
 - [ ] Regression test: a story that narrows/drops a surface with no
   stated reason must fail the scan.
 - [ ] **Phase Completion Checklist** (AGENT.md Planning Rules §5, full
-  list — see Phase 0's worked example above).
+  list — see Phase 0's worked example above). **This is where the
+  conditional docs item stops being N/A**: "project rules" becomes a
+  real, user-facing concept here (the first real rule actually runs) —
+  add a `docs/datawatch-definitions.md` entry and consider a
+  `docs/flow/*.md` diagram (rule → finding → action) now, not later.
 
 ### Phase 3 — Multi-granularity wiring
 **Status: Not started.**

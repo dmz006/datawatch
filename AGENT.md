@@ -151,6 +151,13 @@ N/A with a one-line reason (never silently skipped):
   `docs/operations.md`, `README.md`, the doc index in `README.md`/`docs/README.md`,
   `docs/testing-tracker.md`, no leaked tracker IDs, this plan's own `Parity surface`
   section still accurate.
+- [ ] **Conditional docs** — `docs/datawatch-definitions.md` (glossary/user-manual
+  entry) and `docs/flow/*.md` (architecture/data-flow diagram) if this phase
+  introduces a genuinely new operator-facing concept or data flow;
+  `docs/howto/*.md` if it introduces a new user-followable workflow. These are
+  N/A for config-scaffolding-only phases that don't do anything yet (e.g. BL406
+  Phase 0) — don't force one into existence prematurely, but don't skip it once
+  the phase that makes the concept real actually ships.
 - [ ] **Mobile-Parity Rule** — if this phase changed anything operator-visible on the
   PWA (layout, behavior, API contract, affordances, defaults) or any REST/WS contract
   mobile clients parse: a `datawatch-app` issue was filed or an existing one was
