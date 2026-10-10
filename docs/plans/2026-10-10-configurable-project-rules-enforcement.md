@@ -162,7 +162,13 @@ item is not done, regardless of what's been committed elsewhere.
   `SetScanConfig`'s body parsing as a full-replace (not merge) list —
   CRUD store is Phase 1's job (needs the real engine to act on rules
   the store holds; this phase only needed the type + round-trip).
-- [ ] REST: `GET/PUT /api/config` round-trips the new fields.
+- [x] REST: `GET/PUT /api/config` round-trips `rules_file`/
+  `context_file`/`upstream_repos` (new `applyConfigPatch` cases +
+  `handleGetConfig` map entries). `scan` is GET-exposed read-only,
+  matching the existing `default_quality_gates` precedent — its write
+  path stays the dedicated `/api/autonomous/scan/config` endpoint
+  (already fixed for persistence above), not duplicated into the
+  generic patch.
 - [ ] MCP: `autonomous_scan_config_get/set` extended with the new fields;
   new `scan_rule_list/get/create/update/delete` tools.
 - [ ] CLI: `datawatch config set autonomous.rules_file <path>` etc. work
@@ -172,10 +178,17 @@ item is not done, regardless of what's been committed elsewhere.
 - [ ] PWA: Settings → Automate scan-config card gains the new fields +
   a rule-list sub-view (full CRUD can land in Phase 1 alongside the real
   engine; Phase 0 just needs the config fields visible/settable).
-- [ ] Unit tests: config round-trip (YAML → struct → YAML), the
-  `amgrCfg` copy bridge includes `Scan`, `SetScanConfig` persists.
+- [x] Unit tests: `TestApplyConfigPatch_BL406ProjectRulesFields`
+  (REST round-trip), `TestScanConfigIsUnset`/
+  `TestScanConfigFromYAML_PreservesExplicitDisable`/
+  `TestScanConfigFromYAML_ProjectRulesConvert`/
+  `TestUpstreamReposFromYAML` (`cmd/datawatch/bl406_scan_bridge_test.go`
+  — the B113 regression case specifically: an explicit disable must
+  never be silently re-enabled). Full repo test suite green (3369
+  tests, 83 packages).
 - [ ] Live smoke: set a scan config value via REST, restart the daemon,
-  confirm it survived (the literal B113 regression test).
+  confirm it survived (the literal B113 regression test, live not just
+  unit).
 
 ### Phase 1 — Rule engine core
 **Status: Not started.**

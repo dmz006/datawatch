@@ -5482,6 +5482,26 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			// BL369 — prompt injection guard.
 			"injection_guard":    s.cfg.Autonomous.InjectionGuard,
 			"block_on_injection": s.cfg.Autonomous.BlockOnInjection,
+			// BL406 — project-rules enforcement config. "scan" is
+			// read-only here (richer write path is the dedicated
+			// GET/PUT /api/autonomous/scan/config, same split as
+			// default_quality_gates above being GET-visible with its
+			// own PUT cases).
+			"rules_file":     s.cfg.Autonomous.RulesFile,
+			"context_file":   s.cfg.Autonomous.ContextFile,
+			"upstream_repos": s.cfg.Autonomous.UpstreamRepos,
+			"scan": map[string]interface{}{
+				"enabled":              s.cfg.Autonomous.Scan.Enabled,
+				"sast_enabled":         s.cfg.Autonomous.Scan.SASTEnabled,
+				"secrets_enabled":      s.cfg.Autonomous.Scan.SecretsEnabled,
+				"deps_enabled":         s.cfg.Autonomous.Scan.DepsEnabled,
+				"fail_on_severity":     s.cfg.Autonomous.Scan.FailOnSeverity,
+				"max_findings":         s.cfg.Autonomous.Scan.MaxFindings,
+				"rules_grader_enabled": s.cfg.Autonomous.Scan.RulesGraderEnabled,
+				"fix_loop_enabled":     s.cfg.Autonomous.Scan.FixLoopEnabled,
+				"fix_loop_max_retries": s.cfg.Autonomous.Scan.FixLoopMaxRetries,
+				"project_rules":        s.cfg.Autonomous.Scan.ProjectRules,
+			},
 		},
 		"plugins": map[string]interface{}{
 			"enabled":    s.cfg.Plugins.Enabled,
@@ -6688,6 +6708,26 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 				cfg.Autonomous.PerStoryGuardrails = arr
 			} else if s, ok := v.(string); ok {
 				cfg.Autonomous.PerStoryGuardrails = splitCSV(s)
+			}
+		// BL406 — project-rules enforcement config.
+		case "autonomous.rules_file":
+			cfg.Autonomous.RulesFile = toString(v)
+		case "autonomous.context_file":
+			cfg.Autonomous.ContextFile = toString(v)
+		case "autonomous.upstream_repos":
+			if arr, ok := v.([]any); ok {
+				repos := make([]config.UpstreamRepoConfig, 0, len(arr))
+				for _, item := range arr {
+					m, ok := item.(map[string]any)
+					if !ok {
+						continue
+					}
+					repos = append(repos, config.UpstreamRepoConfig{
+						Name:      toString(m["name"]),
+						OwnerRepo: toString(m["owner_repo"]),
+					})
+				}
+				cfg.Autonomous.UpstreamRepos = repos
 			}
 		// BL367 — default quality gate config for all PRDs.
 		case "autonomous.default_quality_gates.enabled":

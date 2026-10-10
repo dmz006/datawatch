@@ -52,6 +52,34 @@ func TestApplyConfigPatch_AutonomousRecursionAndGuardrails(t *testing.T) {
 	}
 }
 
+// BL406 — verify rules_file/context_file/upstream_repos round-trip
+// through applyConfigPatch (confirming them in AGENT.md's
+// Configuration Accessibility Rule REST surface, not just the YAML
+// struct tags).
+func TestApplyConfigPatch_BL406ProjectRulesFields(t *testing.T) {
+	cfg := &config.Config{}
+
+	applyConfigPatch(cfg, map[string]interface{}{"autonomous.rules_file": "AGENT.md"})
+	if cfg.Autonomous.RulesFile != "AGENT.md" {
+		t.Fatalf("rules_file: got %q, want AGENT.md", cfg.Autonomous.RulesFile)
+	}
+
+	applyConfigPatch(cfg, map[string]interface{}{"autonomous.context_file": "DATAWATCH-CONTEXT.md"})
+	if cfg.Autonomous.ContextFile != "DATAWATCH-CONTEXT.md" {
+		t.Fatalf("context_file: got %q, want DATAWATCH-CONTEXT.md", cfg.Autonomous.ContextFile)
+	}
+
+	applyConfigPatch(cfg, map[string]interface{}{
+		"autonomous.upstream_repos": []interface{}{
+			map[string]interface{}{"name": "app", "owner_repo": "dmz006/datawatch-app"},
+		},
+	})
+	repos := cfg.Autonomous.UpstreamRepos
+	if len(repos) != 1 || repos[0].Name != "app" || repos[0].OwnerRepo != "dmz006/datawatch-app" {
+		t.Fatalf("upstream_repos: got %+v", repos)
+	}
+}
+
 func TestSplitCSV(t *testing.T) {
 	cases := []struct {
 		in   string
