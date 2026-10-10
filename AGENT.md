@@ -36,6 +36,21 @@ This ensures rules are not forgotten over long sessions as context compresses.
 - Do not remove existing API endpoints or change their signatures without a major version bump.
 - All new config fields must have a corresponding entry in `docs/implementation.md`.
 - All code should have as close to 100% code coverage for testing and tests should not be skeletons but functionally, where possible, fully testing the code
+- **Name files, functions, and types for what they do, never for the tracker ID that
+  created them.** `project_rules.go`, not `bl406_project_rules.go`; `rotateAPIToken`,
+  not `fixSEC016`. A tracker ID (BL###/B###/GH###/SEC-###/HLLM-###) is a pointer into
+  `docs/plans/README.md`'s history, not an identifier — IDs get collided, renumbered,
+  and reused (see the B89–B97 and BL366/BL369 collisions found during the 2026-10-09/10
+  backlog refactor), so baking one into a name just imports that fragility into the
+  codebase itself, and it tells a future reader nothing about what the code does.
+  **Tracker IDs belong in comments and commit messages, not identifiers** — a
+  `// BL406 Phase 1 —` comment line at the top of a file or function is exactly the
+  right place for the cross-reference; the file/function name itself should not need
+  one. **Corrected 2026-10-10**: this had already drifted badly before the rule
+  existed (`bl221_scan.go`, `bl369_injection_test.go`, `gh201_phase2_hopchain_test.go`,
+  and many more) — those pre-existing files are not being renamed retroactively as a
+  side effect of adding this rule (that's its own disruptive, out-of-scope cleanup),
+  but every new file/function/type from this point forward follows it.
 
 ## Testing Tracker Rules
 
