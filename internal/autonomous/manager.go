@@ -119,6 +119,18 @@ type Config struct {
 	// BL221 (v6.2.0) Phase 3 — scan framework config.
 	Scan scan.Config `json:"scan,omitempty"`
 
+	// BL406 — path to this project's prescriptive rules file (its
+	// AGENT.md equivalent). Relative to a PRD's project_dir. Empty =
+	// "AGENT.md" applied at read time, never stored as a default.
+	RulesFile string `json:"rules_file,omitempty"`
+	// ContextFile — path to this project's descriptive "state of the
+	// project" doc. Explicitly optional. Empty = "CONTEXT.md" applied
+	// at read time only when that file actually exists.
+	ContextFile string `json:"context_file,omitempty"`
+	// UpstreamRepos — named targets a project-rules file_upstream_issue
+	// action can reference.
+	UpstreamRepos []scan.UpstreamRepo `json:"upstream_repos,omitempty"`
+
 	// BL303 S2 — default skills automatically assigned to every new Automaton.
 	DefaultSkills []string `json:"default_skills,omitempty"`
 

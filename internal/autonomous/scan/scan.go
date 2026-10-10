@@ -54,6 +54,67 @@ type Config struct {
 	RulesGraderEnabled bool     `json:"rules_grader_enabled,omitempty"`
 	FixLoopEnabled     bool     `json:"fix_loop_enabled,omitempty"`
 	FixLoopMaxRetries  int      `json:"fix_loop_max_retries,omitempty"`
+
+	// ProjectRules (BL406) — the fourth, operator-defined scan category.
+	// Consumed by ProjectRulesScanner (project_rules.go).
+	ProjectRules []ProjectRule `json:"project_rules,omitempty"`
+}
+
+// RuleType is a project-rules rule's check kind.
+type RuleType string
+
+const (
+	RuleTypeContent     RuleType = "content"     // keyword/regex match
+	RuleTypeConsistency RuleType = "consistency" // two files' values must match
+	RuleTypePresence    RuleType = "presence"    // a file/pattern must exist
+	RuleTypeParity      RuleType = "parity"      // built-in parity-surface inheritance check
+)
+
+// RuleGranularity is when a rule is checked.
+type RuleGranularity string
+
+const (
+	GranularityTask  RuleGranularity = "task_complete"
+	GranularityStory RuleGranularity = "story_complete"
+	GranularityPRD   RuleGranularity = "prd_complete"
+)
+
+// RuleAction is what happens when a rule's finding fires, beyond
+// recording it (every finding is recorded regardless).
+type RuleAction string
+
+const (
+	ActionNone              RuleAction = ""
+	ActionFileUpstreamIssue RuleAction = "file_upstream_issue"
+)
+
+// ProjectRule (BL406) is one operator-defined rule for the
+// project-rules scan category — data-driven, not one Go function per
+// rule like the other three scanner categories.
+type ProjectRule struct {
+	ID          string          `json:"id"`
+	Name        string          `json:"name"`
+	Type        RuleType        `json:"type"`
+	Granularity RuleGranularity `json:"granularity"`
+	// Pattern is type-specific: a regex for RuleTypeContent; two
+	// pipe-separated file paths for RuleTypeConsistency
+	// ("fileA.go|fileB.go"); a glob for RuleTypePresence. Unused for
+	// RuleTypeParity (built in, no pattern needed).
+	Pattern string `json:"pattern,omitempty"`
+	// Severity defaults to SeverityWarning when empty.
+	Severity Severity `json:"severity,omitempty"`
+	// Action fires in addition to recording the finding.
+	Action RuleAction `json:"action,omitempty"`
+	// UpstreamTarget names a configured upstream repo — required when
+	// Action is ActionFileUpstreamIssue.
+	UpstreamTarget string `json:"upstream_target,omitempty"`
+}
+
+// UpstreamRepo (BL406) is a named GitHub repo a project-rules
+// file_upstream_issue action can file into.
+type UpstreamRepo struct {
+	Name      string `json:"name"`
+	OwnerRepo string `json:"owner_repo"` // e.g. "dmz006/datawatch-app"
 }
 
 // DefaultConfig returns safe defaults (all scanners on, LLM grader off

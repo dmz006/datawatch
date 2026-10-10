@@ -141,19 +141,27 @@ item is not done, regardless of what's been committed elsewhere.
   `scan.Config`, no import cycle — same pattern as `QualityGateConfig`).
   `AutonomousConfig` gained `Scan ScanConfig`, `RulesFile string`,
   `ContextFile string`, `UpstreamRepos []UpstreamRepoConfig`.
-- [ ] Wire `cmd/datawatch/main.go:3961`'s `amgrCfg` construction to copy
-  `acfgIn.Scan` → `amgrCfg.Scan` (converting the mirror type to the real
-  `scan.Config`/`scan.ProjectRule`), and change the construction to
-  start from `autonomouspkg.DefaultConfig()` with fields overridden so
-  `scan.DefaultConfig()`'s all-on intent is actually reached at startup
-  (closes B113's startup-defaults half).
-- [ ] Persist `SetScanConfig` REST writes back into the YAML-facing
-  config (not just in-memory `Manager.cfg`) — closes B113's
-  restart-survives-a-write half.
-- [ ] New `scan.ProjectRule{ID, Name, Type, Granularity, Pattern,
-  Severity, Action, UpstreamTarget}` real type in
-  `internal/autonomous/scan` (the config-layer mirror above already
-  exists; this is the runtime type it converts into) + CRUD store.
+- [x] Wire `cmd/datawatch/main.go`'s `amgrCfg` construction to copy
+  `acfgIn.Scan`/`RulesFile`/`ContextFile`/`UpstreamRepos` (new
+  `scanConfigFromYAML`/`upstreamReposFromYAML` helpers at end of
+  main.go), and added `scanConfigIsUnset` so `scan.DefaultConfig()`'s
+  all-on intent is reached when the operator has never touched any
+  scan knob, while any single explicitly-set field (including an
+  explicit disable) is preserved exactly — closes B113's
+  startup-defaults half.
+- [x] Persist `SetScanConfig` REST writes back into the YAML-facing
+  config (`internal/server/autonomous.go`'s PUT handler now mirrors the
+  same body-key parsing onto `s.cfg.Autonomous.Scan` and calls
+  `s.saveConfig()`) — closes B113's restart-survives-a-write half.
+  Logs a warning (doesn't fail the request) if the YAML save errors, so
+  the in-memory change still takes effect even if persistence hiccups.
+- [x] New `scan.ProjectRule{ID, Name, Type, Granularity, Pattern,
+  Severity, Action, UpstreamTarget}` real type (+ `RuleType`/
+  `RuleGranularity`/`RuleAction`/`UpstreamRepo`) in
+  `internal/autonomous/scan/scan.go`. `project_rules` added to
+  `SetScanConfig`'s body parsing as a full-replace (not merge) list —
+  CRUD store is Phase 1's job (needs the real engine to act on rules
+  the store holds; this phase only needed the type + round-trip).
 - [ ] REST: `GET/PUT /api/config` round-trips the new fields.
 - [ ] MCP: `autonomous_scan_config_get/set` extended with the new fields;
   new `scan_rule_list/get/create/update/delete` tools.

@@ -789,6 +789,48 @@ func (a *API) SetScanConfig(body map[string]any) error {
 	if v, ok := body["fix_loop_max_retries"].(float64); ok {
 		sc.FixLoopMaxRetries = int(v)
 	}
+	// BL406 — project_rules is a full-replace, not a merge: an
+	// operator managing rules via a dedicated CRUD surface (Phase 1)
+	// should never have this generic config-patch endpoint silently
+	// resurrect a deleted rule. Omitting the key entirely leaves the
+	// existing list untouched (same semantics as every other field
+	// above, which only overwrites when present).
+	if raw, ok := body["project_rules"].([]any); ok {
+		rules := make([]scanPkg.ProjectRule, 0, len(raw))
+		for _, item := range raw {
+			m, ok := item.(map[string]any)
+			if !ok {
+				continue
+			}
+			r := scanPkg.ProjectRule{}
+			if v, ok := m["id"].(string); ok {
+				r.ID = v
+			}
+			if v, ok := m["name"].(string); ok {
+				r.Name = v
+			}
+			if v, ok := m["type"].(string); ok {
+				r.Type = scanPkg.RuleType(v)
+			}
+			if v, ok := m["granularity"].(string); ok {
+				r.Granularity = scanPkg.RuleGranularity(v)
+			}
+			if v, ok := m["pattern"].(string); ok {
+				r.Pattern = v
+			}
+			if v, ok := m["severity"].(string); ok {
+				r.Severity = scanPkg.Severity(v)
+			}
+			if v, ok := m["action"].(string); ok {
+				r.Action = scanPkg.RuleAction(v)
+			}
+			if v, ok := m["upstream_target"].(string); ok {
+				r.UpstreamTarget = v
+			}
+			rules = append(rules, r)
+		}
+		sc.ProjectRules = rules
+	}
 	a.M.SetScanConfig(sc)
 	return nil
 }

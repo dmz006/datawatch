@@ -19,6 +19,7 @@ package server
 import (
 	"encoding/json"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -2021,6 +2022,82 @@ func (s *Server) handleAutonomousScanConfig(w http.ResponseWriter, r *http.Reque
 		if err := s.autonomousMgr.SetScanConfig(body); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
+		}
+		// B113 — persist to the YAML-facing config too, not just the
+		// in-memory Manager.cfg, so a scan-config write survives a
+		// daemon restart. Applies the same body keys SetScanConfig
+		// just applied in-memory, directly onto the config mirror
+		// struct (internal/server deliberately doesn't import
+		// internal/autonomous/scan — same decoupling the AutonomousAPI
+		// interface's any-typed methods already use).
+		if s.cfg != nil {
+			sc := &s.cfg.Autonomous.Scan
+			if v, ok := body["enabled"].(bool); ok {
+				sc.Enabled = v
+			}
+			if v, ok := body["sast_enabled"].(bool); ok {
+				sc.SASTEnabled = v
+			}
+			if v, ok := body["secrets_enabled"].(bool); ok {
+				sc.SecretsEnabled = v
+			}
+			if v, ok := body["deps_enabled"].(bool); ok {
+				sc.DepsEnabled = v
+			}
+			if v, ok := body["rules_grader_enabled"].(bool); ok {
+				sc.RulesGraderEnabled = v
+			}
+			if v, ok := body["fix_loop_enabled"].(bool); ok {
+				sc.FixLoopEnabled = v
+			}
+			if v, ok := body["fail_on_severity"].(string); ok {
+				sc.FailOnSeverity = v
+			}
+			if v, ok := body["max_findings"].(float64); ok {
+				sc.MaxFindings = int(v)
+			}
+			if v, ok := body["fix_loop_max_retries"].(float64); ok {
+				sc.FixLoopMaxRetries = int(v)
+			}
+			if raw, ok := body["project_rules"].([]any); ok {
+				rules := make([]config.ProjectRuleConfig, 0, len(raw))
+				for _, item := range raw {
+					m, ok := item.(map[string]any)
+					if !ok {
+						continue
+					}
+					r := config.ProjectRuleConfig{}
+					if v, ok := m["id"].(string); ok {
+						r.ID = v
+					}
+					if v, ok := m["name"].(string); ok {
+						r.Name = v
+					}
+					if v, ok := m["type"].(string); ok {
+						r.Type = v
+					}
+					if v, ok := m["granularity"].(string); ok {
+						r.Granularity = v
+					}
+					if v, ok := m["pattern"].(string); ok {
+						r.Pattern = v
+					}
+					if v, ok := m["severity"].(string); ok {
+						r.Severity = v
+					}
+					if v, ok := m["action"].(string); ok {
+						r.Action = v
+					}
+					if v, ok := m["upstream_target"].(string); ok {
+						r.UpstreamTarget = v
+					}
+					rules = append(rules, r)
+				}
+				sc.ProjectRules = rules
+			}
+			if err := s.saveConfig(); err != nil {
+				log.Printf("[scan-config] WARNING: in-memory update applied but YAML save failed, will not survive a restart: %v", err)
+			}
 		}
 		s.audit(r.Context(), "update", "autonomous_scan_config", "", nil) // GH#201 Phase 4
 		writeJSONOK(w, s.autonomousMgr.GetScanConfig())

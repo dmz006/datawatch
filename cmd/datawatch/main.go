@@ -3997,6 +3997,13 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			// BL369 — prompt injection guard config bridge.
 			InjectionGuard:   acfgIn.InjectionGuard,
 			BlockOnInjection: acfgIn.BlockOnInjection,
+			// BL406 — project-rules config bridge (fixes B113: Scan was
+			// never copied here at all, so it was always the Go
+			// zero-value regardless of scan.DefaultConfig()'s intent).
+			Scan:          scanConfigFromYAML(acfgIn.Scan),
+			RulesFile:     acfgIn.RulesFile,
+			ContextFile:   acfgIn.ContextFile,
+			UpstreamRepos: upstreamReposFromYAML(acfgIn.UpstreamRepos),
 		}
 		// BL191 Q4 defaults — preserve the autonomouspkg defaults when
 		// the operator hasn't explicitly configured these.
@@ -4006,6 +4013,15 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			d := autonomouspkg.DefaultConfig()
 			amgrCfg.MaxRecursionDepth = d.MaxRecursionDepth
 			amgrCfg.AutoApproveChildren = d.AutoApproveChildren
+		}
+		// B113 — scan.DefaultConfig()'s all-on intent was never reached
+		// because amgrCfg was always built as a bare literal. An
+		// operator who has never touched any scan knob (nor added a
+		// project rule) gets the package default; anyone who has
+		// touched even one knob keeps exactly what they set, no
+		// silent re-enabling of anything they explicitly turned off.
+		if scanConfigIsUnset(acfgIn.Scan) {
+			amgrCfg.Scan = scanpkg.DefaultConfig()
 		}
 		if amgrCfg.PollIntervalSeconds == 0 {
 			amgrCfg.PollIntervalSeconds = 30
@@ -16314,4 +16330,59 @@ func touchedInExtraWriteDirs(prd *autonomouspkg.PRD, since time.Time) []string {
 		}
 	}
 	return out
+}
+
+// BL406 — config bridge helpers between config.AutonomousConfig's
+// YAML-facing mirror types and the real internal/autonomous/scan
+// types. config/config.go deliberately doesn't import internal/
+// autonomous/scan (same "mirror, don't import" pattern as every other
+// AutonomousConfig sub-struct), so the conversion lives here where
+// both packages are already imported.
+
+func scanConfigFromYAML(c config.ScanConfig) scanpkg.Config {
+	rules := make([]scanpkg.ProjectRule, 0, len(c.ProjectRules))
+	for _, r := range c.ProjectRules {
+		rules = append(rules, scanpkg.ProjectRule{
+			ID:             r.ID,
+			Name:           r.Name,
+			Type:           scanpkg.RuleType(r.Type),
+			Granularity:    scanpkg.RuleGranularity(r.Granularity),
+			Pattern:        r.Pattern,
+			Severity:       scanpkg.Severity(r.Severity),
+			Action:         scanpkg.RuleAction(r.Action),
+			UpstreamTarget: r.UpstreamTarget,
+		})
+	}
+	return scanpkg.Config{
+		Enabled:            c.Enabled,
+		SASTEnabled:        c.SASTEnabled,
+		SecretsEnabled:     c.SecretsEnabled,
+		DepsEnabled:        c.DepsEnabled,
+		FailOnSeverity:     scanpkg.Severity(c.FailOnSeverity),
+		MaxFindings:        c.MaxFindings,
+		RulesGraderEnabled: c.RulesGraderEnabled,
+		FixLoopEnabled:     c.FixLoopEnabled,
+		FixLoopMaxRetries:  c.FixLoopMaxRetries,
+		ProjectRules:       rules,
+	}
+}
+
+func upstreamReposFromYAML(cfgRepos []config.UpstreamRepoConfig) []scanpkg.UpstreamRepo {
+	out := make([]scanpkg.UpstreamRepo, 0, len(cfgRepos))
+	for _, r := range cfgRepos {
+		out = append(out, scanpkg.UpstreamRepo{Name: r.Name, OwnerRepo: r.OwnerRepo})
+	}
+	return out
+}
+
+// scanConfigIsUnset reports whether the operator has never touched any
+// scan knob at all (every field at its Go zero value) — the only case
+// in which falling back to scanpkg.DefaultConfig() is correct. Any
+// single explicitly-set field (including explicitly disabling
+// something) must be preserved exactly, never silently overridden.
+func scanConfigIsUnset(c config.ScanConfig) bool {
+	return !c.Enabled && !c.SASTEnabled && !c.SecretsEnabled && !c.DepsEnabled &&
+		c.FailOnSeverity == "" && c.MaxFindings == 0 &&
+		!c.RulesGraderEnabled && !c.FixLoopEnabled && c.FixLoopMaxRetries == 0 &&
+		len(c.ProjectRules) == 0
 }
