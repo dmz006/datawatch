@@ -5,6 +5,39 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.20 — feat(autonomous): BL407 Phase 2 — PRD-completion push + PR (worktree mode)
+
+### Added
+- A worktree-mode PRD (Phase 1) with `Git.AutoPR: true` now pushes its
+  branch and opens a real PR when it reaches `PRDCompleted` — one PR
+  per PRD, not one per task (the key difference from
+  `internal/agents`' existing `PostSessionPRHook`, which triggers per
+  session). Reuses `git.Provider.OpenPR` directly; no new GitHub
+  client. `Git.PRURL` is persisted on the PRD and a `git_pr_opened`
+  Decision is recorded. On success, the worktree is removed
+  (`git worktree remove --force`) — the branch + PR are now the
+  durable record. A push or PR failure is logged, recorded as a
+  `git_pr_failed` Decision, and leaves the worktree in place for
+  operator inspection; it never fails the PRD run itself.
+- Runs synchronously within `Run()`, not as a background goroutine
+  (unlike the neighboring memory-report hook) — found a real
+  `go test -race` data race during implementation from mutating the
+  shared, unsynchronized `*PRD` after `Run()` had already returned to
+  its own caller; git push + `gh pr create` are fast, bounded calls
+  (unlike unbounded LLM report generation), so there was no reason to
+  accept that risk here. (The project's CI doesn't gate on `-race` —
+  confirmed the same pre-existing pattern already exists elsewhere in
+  this file — but no reason to add a fresh instance when the fix was
+  this cheap.)
+- **Fixed a second, independent gap found during this phase's own
+  integration testing**: a worktree-mode PRD's task sessions now force
+  `auto_git_commit: true` regardless of this daemon's
+  `session.auto_git_commit` default — without this, a daemon with that
+  default off (true on this very deployment) would silently produce
+  an empty or near-empty PR, since nothing had ever actually been
+  committed onto the branch. New `SpawnRequest.ForceAutoGitCommit`
+  field, set whenever `PRD.Git.Branch != ""`.
+
 ## v9.0.19 — feat(autonomous): BL407 Phase 1 — PRD.Git config + local git-worktree isolation
 
 ### Added

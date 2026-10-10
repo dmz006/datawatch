@@ -113,7 +113,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "9.0.19"
+var Version = "9.0.20"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -4608,7 +4608,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				return autonomouspkg.SpawnResult{SessionID: "agent:" + out.ID}, nil
 			}
 			// local session path
-			body, _ := json.Marshal(map[string]any{
+			sessionBody := map[string]any{
 				"task":            spec,
 				"project_dir":     req.ProjectDir,
 				"project_profile": req.ProjectProfile,
@@ -4622,7 +4622,15 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				"prd_id":          req.PRDID,
 				"task_id":         req.TaskID,
 				"story_id":        req.StoryID, // BL385 Phase 4 — memory scope routing
-			})
+			}
+			// BL407 Phase 2 — a worktree-mode PRD needs real commits on
+			// its branch regardless of this daemon's session.auto_git_commit
+			// default; only ever forces true, never forces false (an
+			// operator who wants commits elsewhere keeps getting them).
+			if req.ForceAutoGitCommit {
+				sessionBody["auto_git_commit"] = true
+			}
+			body, _ := json.Marshal(sessionBody)
 			httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
 				loopbackBaseURL(cfg)+"/api/sessions/start",
 				bytes.NewReader(body))

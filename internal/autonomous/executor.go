@@ -52,6 +52,14 @@ type SpawnRequest struct {
 	// running the task. Either or both can be empty.
 	ProjectProfile string
 	ClusterProfile string
+	// ForceAutoGitCommit (BL407 Phase 2) — true when ProjectDir is a
+	// PRD-owned git worktree (PRD.Git.Branch set). The worktree's
+	// whole purpose is producing a reviewable branch for Phase 2's
+	// push+PR, which needs real commits regardless of whatever this
+	// daemon's session.auto_git_commit default happens to be set to —
+	// an operator who turned off auto-commit globally still wants a
+	// worktree-mode PRD's branch to actually contain its work.
+	ForceAutoGitCommit bool
 	// BL244 — plugin session injection. Non-empty when a plugin declares
 	// session_injection for the PRD's type; prepended to the task spec
 	// by the SpawnFn so plugin context arrives in the worker session.
@@ -604,6 +612,21 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 					}
 				}()
 			}
+			// BL407 Phase 2 — push + open a PR for worktree-mode PRDs
+			// with AutoPR on. Deliberately synchronous, unlike the
+			// report goroutine above: git push + gh pr create are fast,
+			// bounded network calls (unlike unbounded LLM report
+			// generation), and Run() already blocks synchronously on
+			// slower work in this same function (the quality-gate test
+			// run above). Running it here, not in a goroutine, also
+			// avoids a real data race a background goroutine would
+			// introduce: *PRD is an unsynchronized shared pointer once
+			// a caller holds it (see the race-conditions note at the
+			// top of this function), so mutating it after Run() has
+			// already returned to its own caller is unsafe against
+			// anything else reading the same PRD concurrently (e.g. a
+			// REST GET while a background goroutine is still writing).
+			m.handleWorktreeCompletion(prd)
 		}
 	}
 	return m.store.SavePRD(prd)
@@ -751,6 +774,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				RetryHint:      hint,
 				ProjectProfile: prd.ProjectProfile, // v5.26.19
 				ClusterProfile: prd.ClusterProfile, // v5.26.19
+				ForceAutoGitCommit: prd.Git.Branch != "", // BL407 Phase 2
 				ContextPrepend: contextPrepend,      // BL244
 				LSPLanguage:    lspLang,
 				MemorySeed:     prd.MemorySeed,     // BL386 Phase 1

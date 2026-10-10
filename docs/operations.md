@@ -1967,7 +1967,7 @@ before approving any task to check it.
 
 ---
 
-## PRD Git-Worktree Isolation (BL407 Phase 1)
+## PRD Git-Worktree Isolation + Completion PR (BL407 Phases 1-2)
 
 By default, a PRD with no explicit `project_dir`/`project_profile`/
 `cluster_profile` runs directly in whatever directory the daemon
@@ -1986,12 +1986,24 @@ store — cheap, and isolated at the filesystem/git level. This is
 automatic once configured, not a per-PRD opt-in: an operator who sets
 this once gets the safety default for every PRD going forward without
 having to remember to ask for it each time. A PRD that already sets an
-explicit `project_dir` is left alone (explicit always wins).
+explicit `project_dir` is left alone (explicit always wins). Task
+sessions in a worktree-mode PRD always commit (forced on, regardless
+of this daemon's own `session.auto_git_commit` default) — the whole
+point of the branch is to be reviewable, which breaks silently if
+nothing ever gets committed onto it.
 
 The worktree is created once, at first `Run()`, and is idempotent
-across a daemon restart mid-run. What happens to it when the PRD
-finishes (keep it, delete it, push + open a PR) is Phase 2's job — not
-yet built as of this phase; today the worktree just accumulates. See
+across a daemon restart mid-run. Setting `PRD.Git.AutoPR` to `true`
+(per-PRD, defaults false) makes a successfully-completed worktree-mode
+PRD push its branch and open a real PR automatically — one PR per PRD,
+not one per task — then remove the local worktree directory (the
+branch + PR are the durable record now, not the local checkout). A
+push or PR failure is logged and recorded on the PRD (check its
+Decisions) but never fails the run; the worktree is left in place for
+inspection whenever that happens, and whenever `AutoPR` is left false.
+This is the same category of unconfirmed GitHub action as "Autonomous
+External GitHub Actions" above — review before enabling on a PRD whose
+task specs you don't fully trust. See
 `docs/plans/2026-10-10-prd-git-workflow.md`.
 
 ---

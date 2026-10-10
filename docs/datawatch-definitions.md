@@ -1380,8 +1380,11 @@ daemon's own checkout, created automatically at `Run()` when
 explicit `project_dir`/`project_profile`/`cluster_profile` (BL407
 Phase 1, v9.0.19). Shares the base repo's `.git` object store —
 cheap, filesystem/git-level isolation only, not process/network
-isolation (that's `cluster_profile` dispatch's job). See "PRD
-Git-Worktree Isolation" in `docs/operations.md`.
+isolation (that's `cluster_profile` dispatch's job). With
+`PRD.Git.AutoPR: true`, a successfully-completed worktree-mode PRD
+pushes the branch and opens a real PR (one per PRD, not per task),
+then removes the local worktree (BL407 Phase 2, v9.0.20). See "PRD
+Git-Worktree Isolation + Completion PR" in `docs/operations.md`.
 
 ---
 

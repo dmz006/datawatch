@@ -40,7 +40,7 @@ single source of truth.
 
 ## Current state — 2026-10-10
 
-Latest release: **v9.0.19** (2026-10-10). feat(autonomous): BL407 Phase 1 — `PRD.Git` config + local git-worktree isolation. A PRD with no explicit `project_dir`/`project_profile`/`cluster_profile` now gets its own git worktree + branch automatically once `autonomous.worktree_base_repo` is configured, instead of running bare in that repo's own checkout. **Active work:** the v10.0.0 self-build arc — see [§ Roadmap](#roadmap-self-build-arc--v1000-locked-2026-10-10); BL407 (`docs/plans/2026-10-10-prd-git-workflow.md`) continues with Phase 2 (PRD-completion push + PR, local-worktree mode) next. Plans folder refactored 2026-10-10: 11 completed plan docs archived to `historical-plans/`, BL381 closed as shipped, and unscheduled work called out in the Roadmap's "Not yet placed" list.
+Latest release: **v9.0.20** (2026-10-10). feat(autonomous): BL407 Phase 2 — PRD-completion push + PR for worktree mode. A worktree-mode PRD with `Git.AutoPR:true` now pushes its branch and opens a real PR on completion (one per PRD, not per task), then cleans up the worktree. Found and fixed two real gaps mid-implementation: a genuine `go test -race` data race (fixed by running the hook synchronously rather than as a background goroutine), and `git worktree remove` refusing to delete a worktree with uncommitted changes — the expected case whenever `session.auto_git_commit` is off, which it is on this deployment (fixed with `--force` plus forcing `auto_git_commit:true` for worktree-mode task sessions specifically). **Active work:** the v10.0.0 self-build arc — see [§ Roadmap](#roadmap-self-build-arc--v1000-locked-2026-10-10); BL407 (`docs/plans/2026-10-10-prd-git-workflow.md`) continues with Phase 3 (cluster-mode git: worker-side commit/push + completion callback) next. Plans folder refactored 2026-10-10: 11 completed plan docs archived to `historical-plans/`, BL381 closed as shipped, and unscheduled work called out in the Roadmap's "Not yet placed" list.
 
 Previous: **v9.0.7** (2026-10-09). fix(daemon): `datawatch restart`/`stop`/`start` now detect and delegate to an active/enabled `datawatch.service` systemd --user unit instead of raw PID signaling + self-daemonizing; the daemon now falls back to the dedicated `~/.datawatch/tmux` socket when `TMUX_TMPDIR` is unset at boot; `ResumeMonitors` self-heals a `StateFailed` session back to `StateRunning` at boot when its tmux pane is actually still alive. Full history for every release between this and the v8.39.1 entry below is in `CHANGELOG.md` (this section was 8 days / ~400 versions stale until this backlog refactor — see the "Gotcha" note in AGENT.md's Project Tracking Rule: this header is meant to be refreshed every release, not just major ones).
 
@@ -469,7 +469,7 @@ else is in `historical-plans/`):
 | Plan doc | BL | Roadmap slot |
 |---|---|---|
 | `2026-10-10-configurable-project-rules-enforcement.md` | BL406 (+B111/B112/B113) | Stage 1 #1 — **done**, all 6 phases shipped (v9.0.11–v9.0.17) |
-| `2026-10-10-prd-git-workflow.md` | BL407 (+B114) | Stage 1 #2 — in progress, Phases 0-1 done |
+| `2026-10-10-prd-git-workflow.md` | BL407 (+B114) | Stage 1 #2 — in progress, Phases 0-2 done |
 | _(no plan doc yet)_ | BL404 | Stage 2 #3 |
 | `2026-10-09-plugin-extension-surfaces.md` | BL403 | Stage 3 #4 |
 | `2026-10-09-gh204-result-panel.md` | BL402 (GH#204) | Stage 3 #5 |

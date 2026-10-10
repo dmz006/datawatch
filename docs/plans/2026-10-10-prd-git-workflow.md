@@ -2,7 +2,7 @@
 
 - **Date**: 2026-10-10
 - **Version at planning**: v9.0.17
-- **Status**: In progress — Phase 0 done (v9.0.18, fixes B114), Phase 1 done (v9.0.19), Phase 2 next
+- **Status**: In progress — Phase 0 done (v9.0.18, fixes B114), Phase 1 done (v9.0.19), Phase 2 done (v9.0.20), Phase 3 next
 
 ## Context
 
@@ -270,22 +270,55 @@ problem is bigger than "add git wiring":
   phase (that's Phase 5's job, together with `PRD.Git.AutoPR`).
 
 ### Phase 2 — PRD-completion push + PR (local-worktree mode)
-**Status: Not started.**
-- [ ] New completion hook in `internal/autonomous` (manager.go, wherever a
-  PRD lands in `PRDCompleted`/`PRDFailed`/`PRDBlocked`): when
-  `PRD.Git.AutoPR` is true and the PRD ran in worktree mode, push the
-  branch (new small helper mirroring `openTestingTrackerPR`'s
-  `runGitCmd(dir, "push", "-u", "origin", branch)`, not a new
+**Status: Done (v9.0.20, shipped 2026-10-10).**
+- [x] New completion hook, `Manager.handleWorktreeCompletion`
+  (`internal/autonomous/git_completion.go`), called from the
+  `PRDCompleted` rollup branch in `executor.go`: when `PRD.Git.AutoPR`
+  is true and the PRD ran in worktree mode (`Git.Branch != ""`), push
+  the branch (`runGitIn`, the same small helper Phase 1 added — no new
   abstraction) then call `git.Provider.OpenPR` with the PRD's
-  title/spec as PR title/body. Persist the returned URL onto
-  `PRD.Git.PRURL`; record a `Decision` (same shape as every other
-  PRD-lifecycle event).
-- [ ] Worktree cleanup per Decision 5.
-- [ ] Regression test: a completed PRD with `AutoPR:true` in worktree mode
-  produces a real local branch + a `git.Provider.OpenPR` call (fake
-  provider in tests, mirroring `internal/git/provider_test.go`'s
-  existing fake-`gh`-failure-path shape) with the right head/base/title.
-- [ ] **Phase Completion Checklist**.
+  title/spec as PR title/body, reusing the existing `gitProviderFn`
+  test seam from BL406 Phase 4. Persists `PRD.Git.PRURL`; records a
+  `git_pr_opened` Decision on success, `git_pr_failed` on either the
+  push or the PR-open failing (best-effort throughout — never fails
+  `Run()` itself, same shape as `PostSessionPRHook`/
+  `fireUpstreamIssueActions`).
+- [x] **Deviation from plan, found via `go test -race` mid-implementation**:
+  originally wired as a background goroutine (mirroring the
+  neighboring memory-report hook). That introduced a real data race —
+  mutating the shared, unsynchronized `*PRD` pointer after `Run()` had
+  already returned to its own caller. Fixed by making the hook run
+  synchronously inside `Run()` instead: git push + `gh pr create` are
+  fast, bounded network calls (unlike the report hook's unbounded LLM
+  generation), and `Run()` already blocks synchronously on slower work
+  earlier in the same function (the quality-gate baseline test run).
+- [x] Worktree cleanup per Decision 5 — `git worktree remove --force`
+  (the `--force` wasn't in the original plan; added after a real
+  "contains modified or untracked files" failure surfaced in testing,
+  see the next item).
+- [x] **Second deviation, also found via integration testing**: a
+  worktree-mode PRD's task sessions now force
+  `auto_git_commit: true` (new `SpawnRequest.ForceAutoGitCommit`,
+  threaded into `autonomousSpawn`'s local-session body in
+  `cmd/datawatch/main.go`) regardless of this daemon's
+  `session.auto_git_commit` default — without it, a daemon with that
+  default off (true on this deployment) would silently produce an
+  empty or near-empty PR, since nothing had ever been committed onto
+  the branch in the first place. This wasn't in the original plan
+  bullets; found because the integration test's `git worktree remove`
+  failed with real uncommitted content, tracing back to the commit
+  mechanism never having fired.
+- [x] Regression tests: 7 unit (`git_completion_test.go`, against a
+  real bare-remote + base-repo + worktree fixture) + 3 integration
+  (`git_completion_run_test.go`, through `Manager.Run` end-to-end,
+  including the `ForceAutoGitCommit` gating).
+- [x] **Phase Completion Checklist**: full `go test ./...` green,
+  `go vet ./...` clean, `gosec` zero new findings, `gofmt` clean,
+  `go test -race` run specifically on this phase's new tests to verify
+  the fix actually closed the race (confirmed the same race pattern
+  is pre-existing elsewhere in `executor.go`, out of scope to fix
+  broadly — the project's CI doesn't gate on `-race` either).
+  CHANGELOG + testing-tracker + this plan updated.
 
 ### Phase 3 — Cluster-mode git: worker-side commit/push + completion callback
 **Status: Not started.** Depends on Phase 0.
@@ -411,7 +444,11 @@ Phase 0 (real dispatch).
 
 - `internal/autonomous/models.go` (`PRD.Git`), new
   `internal/autonomous/worktree.go` — Phase 1.
-- `internal/autonomous/manager.go` (completion hook) — Phase 2.
+- New `internal/autonomous/git_completion.go` (`handleWorktreeCompletion`,
+  `repoFromGitURL`), `internal/autonomous/executor.go` (synchronous call
+  site in the `PRDCompleted` rollup, `SpawnRequest.ForceAutoGitCommit`),
+  `cmd/datawatch/main.go` (`auto_git_commit` threading in
+  `autonomousSpawn`'s local-session body) — Phase 2.
 - `internal/agents/spawn.go` (`AgentResult.Branch`/`CommitSHA`),
   `internal/agents/worker_clone.go` (branch-create mode),
   `internal/agents/docker_driver.go` (Phase 0's task-invocation fix) —
