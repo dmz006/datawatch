@@ -28,7 +28,7 @@ of work once investigated:
 - Part B's B1 ("per-call usage records") and B5 ("model scorecard") both
   turned out to depend on data/mechanisms this plan builds anyway (B1 is
   the Scheduler/cost dashboards' data feed; B5 is implementable directly
-  on top of the Council Definitions this plan adds).
+  on top of the Council Profiles this plan builds on from BL390).
 - Proposal 6 (council configurable options — the operator's own unresolved
   note in the source doc) turned out to be a much larger, genuinely useful
   extension once the existing council/persona/backend machinery was
@@ -486,7 +486,7 @@ What each new piece reuses rather than invents, per decision:
   council tests for the sequential-topology mode; cost tests for the flat
   GPU-hour computation).
 - `node --test internal/server/web/*.test.js` for every new PWA
-  surface (Scheduler, Workload Roles card, Council Definitions CRUD,
+  surface (Scheduler, Workload Roles card, Council Profiles CRUD,
   play-well dialog) — existing escaping/XSS-guard pattern applies to any
   new `innerHTML` assembly.
 - Federation-Parity Rule checklist: every new `fedCap`-guarded endpoint
@@ -498,9 +498,9 @@ What each new piece reuses rather than invents, per decision:
   above — most new surfaces are reporting-only on mobile).
 - Localization Rule: 5 locale bundles + `mustHave` update for any new
   high-visibility string (Scheduler nav label, Workload Roles card,
-  play-well dialog text, Council Definitions UI).
+  play-well dialog text, Council Profiles UI).
 - Testing Tracker entries for every new REST endpoint (`/api/scheduler*`,
-  `/api/council/definitions*`, capacity/ledger extensions).
+  `/api/council/profiles*`, capacity/ledger extensions).
 - Live-verification requirement (this session's own established standard
   for capability/security-adjacent surfaces): do not mark Scheduler,
   federated capacity, or preemption "done" on unit tests alone — smoke
