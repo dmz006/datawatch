@@ -107,6 +107,8 @@ type BootstrapGit struct {
 	Branch   string `json:"branch,omitempty"`
 	Token    string `json:"token,omitempty"`
 	Provider string `json:"provider,omitempty"`
+	// CreateBranch (BL407 Phase 4) mirrors server.BootstrapGit.CreateBranch.
+	CreateBranch bool `json:"create_branch,omitempty"`
 }
 
 // BootstrapMemory mirrors server.BootstrapMemory (F10 S6.2 — memory

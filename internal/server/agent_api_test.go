@@ -213,6 +213,66 @@ func TestBootstrap_HappyPath(t *testing.T) {
 	}
 }
 
+// BL407 Phase 4 — an explicit per-spawn Branch (distinct from the
+// Project Profile's own static default, "" in this fixture) must
+// reach resp.Git.Branch with CreateBranch=true, so CloneOnBootstrap
+// knows to create it fresh rather than check out a nonexistent
+// upstream branch.
+func TestBootstrap_DeliversGitCreateBranchForExplicitBranch(t *testing.T) {
+	s, m := agentServerFixture(t)
+	a, err := m.Spawn(context.Background(), agents.SpawnRequest{
+		ProjectProfile: "p", ClusterProfile: "c", Task: "echo hi",
+		Branch: "automaton/abc12345-fixture",
+	})
+	if err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+	token := m.BootstrapTokenForTest(a.ID)
+	body := map[string]string{"agent_id": a.ID, "token": token}
+	b, _ := json.Marshal(body)
+	rr := httptest.NewRecorder()
+	s.handleAgentBootstrap(rr, httptest.NewRequest(http.MethodPost,
+		"/api/agents/bootstrap", strings.NewReader(string(b))))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("bootstrap status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var resp BootstrapResponse
+	_ = json.NewDecoder(rr.Body).Decode(&resp)
+	if resp.Git.Branch != "automaton/abc12345-fixture" {
+		t.Errorf("Git.Branch=%q want automaton/abc12345-fixture", resp.Git.Branch)
+	}
+	if !resp.Git.CreateBranch {
+		t.Error("Git.CreateBranch=false, want true for a branch that differs from the profile's own default")
+	}
+}
+
+// Backward compat: a spawn with no explicit Branch (every pre-Phase-4
+// caller) must still get CreateBranch=false and Git.Branch equal to
+// the profile's own static default, exactly as before this phase.
+func TestBootstrap_NoExplicitBranch_NoCreateBranch(t *testing.T) {
+	s, m := agentServerFixture(t)
+	a, err := m.Spawn(context.Background(), agents.SpawnRequest{
+		ProjectProfile: "p", ClusterProfile: "c", Task: "echo hi",
+	})
+	if err != nil {
+		t.Fatalf("spawn: %v", err)
+	}
+	token := m.BootstrapTokenForTest(a.ID)
+	body := map[string]string{"agent_id": a.ID, "token": token}
+	b, _ := json.Marshal(body)
+	rr := httptest.NewRecorder()
+	s.handleAgentBootstrap(rr, httptest.NewRequest(http.MethodPost,
+		"/api/agents/bootstrap", strings.NewReader(string(b))))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("bootstrap status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var resp BootstrapResponse
+	_ = json.NewDecoder(rr.Body).Decode(&resp)
+	if resp.Git.CreateBranch {
+		t.Error("Git.CreateBranch=true, want false when no explicit branch was requested")
+	}
+}
+
 // F10 S6.2 — when the project profile selects a memory federation
 // mode, bootstrap response carries the mode + namespace.
 func TestBootstrap_DeliversMemoryBundle(t *testing.T) {

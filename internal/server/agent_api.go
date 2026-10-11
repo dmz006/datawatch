@@ -328,6 +328,16 @@ type BootstrapGit struct {
 	Branch   string `json:"branch,omitempty"`
 	Token    string `json:"token,omitempty"`
 	Provider string `json:"provider,omitempty"`
+	// CreateBranch (BL407 Phase 4) — true when Branch is a new,
+	// not-yet-pushed PRD-owned branch the worker must create locally
+	// (git checkout -b) after an ordinary clone, rather than an
+	// existing branch it can check out directly with `git clone
+	// --branch`. Set whenever the dispatching Agent's own Branch
+	// (agents.Agent.Branch, F10 S7.3's per-spawn workspace-lock field)
+	// differs from the Project Profile's static default branch — the
+	// same signal autonomous.branchNameFor's caller uses to ask for a
+	// dedicated branch in the first place.
+	CreateBranch bool `json:"create_branch,omitempty"`
 }
 
 // BootstrapMemory is the memory federation bundle (F10 S6.2).
@@ -437,11 +447,29 @@ func (s *Server) handleAgentBootstrap(w http.ResponseWriter, r *http.Request) {
 	// never logged, never re-served via /api/agents.
 	if proj := s.agentMgr.GetProjectFor(agent.ID); proj != nil {
 		if proj.Git.URL != "" {
+			// BL407 Phase 4 — agent.Branch (not proj.Git.Branch
+			// directly) is the per-spawn branch: it already defaults
+			// to proj.Git.Branch when the spawn request left Branch
+			// empty (agents.Manager.Spawn), so this is a no-op change
+			// for every pre-Phase-4 caller. A caller that set an
+			// explicit, different branch (autonomous's cluster
+			// dispatch, via branchNameFor) gets it threaded through to
+			// the actual git clone for the first time — previously
+			// agent.Branch only drove the workspace-lock/container-
+			// label bookkeeping and was silently dropped here.
+			branch := agent.Branch
+			if branch == "" {
+				branch = proj.Git.Branch
+			}
 			resp.Git = BootstrapGit{
 				URL:      proj.Git.URL,
-				Branch:   proj.Git.Branch,
+				Branch:   branch,
 				Provider: proj.Git.Provider,
 				Token:    s.agentMgr.GetGitTokenFor(agent.ID),
+				// A branch that differs from the profile's own static
+				// default doesn't exist upstream yet — the worker
+				// must create it locally rather than check it out.
+				CreateBranch: branch != "" && branch != proj.Git.Branch,
 			}
 		}
 		// F10 S6.2 — memory federation bundle. Tells the worker

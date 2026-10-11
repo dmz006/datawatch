@@ -113,7 +113,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "9.0.21"
+var Version = "9.0.22"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -4566,6 +4566,15 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					"effort":          mapEffortToSession(req.Effort),
 					"permission_mode": req.PermissionMode,
 					"model":           req.Model,
+					// BL407 Phase 4 — the PRD's own dedicated branch
+					// name (set in Manager.Run, same idempotent
+					// assignment worktree mode's EnsureWorktree does).
+					// agents.SpawnRequest.Branch already existed for
+					// F10 S7.3's workspace lock; this is the first
+					// caller to also give it a real, per-PRD value
+					// rather than leaving it to default to the
+					// Project Profile's shared static branch.
+					"branch": req.Branch,
 				})
 				agentReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
 					loopbackBaseURL(cfg)+"/api/agents",

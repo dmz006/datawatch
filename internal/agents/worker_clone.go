@@ -45,14 +45,40 @@ func CloneOnBootstrap(ctx context.Context, resp *BootstrapResponse, workspaceRoo
 	target := filepath.Join(workspaceRoot, repoName)
 
 	// Skip if already cloned (worker restarted, repo persists in
-	// emptyDir / PVC). Pull instead to refresh.
+	// emptyDir / PVC). Pull instead to refresh — but first make sure
+	// we're actually on the branch the bootstrap response wants
+	// (BL407 Phase 4): a worker restart after this same branch was
+	// already created locally in a prior run should check it out
+	// again, not silently keep pulling whatever branch happened to be
+	// checked out at the time.
 	if st, err := os.Stat(filepath.Join(target, ".git")); err == nil && st.IsDir() {
+		if resp.Git.CreateBranch && resp.Git.Branch != "" {
+			if cur, cerr := gitOutputText(ctx, target, "rev-parse", "--abbrev-ref", "HEAD"); cerr != nil || cur != resp.Git.Branch {
+				if serr := runGit(ctx, target, "checkout", resp.Git.Branch); serr != nil {
+					// Branch doesn't exist locally either (e.g. the
+					// prior run never got this far) — create it.
+					if cerr2 := runGit(ctx, target, "checkout", "-b", resp.Git.Branch); cerr2 != nil {
+						return "", fmt.Errorf("checkout branch %q on resumed clone: %w", resp.Git.Branch, cerr2)
+					}
+				}
+			}
+			// This branch is local-only until PushOnCompletion pushes
+			// it (that's the whole point of CreateBranch) — it has no
+			// upstream to pull from, and `git pull --ff-only` would
+			// hard-fail with "no tracking information" every time.
+			return target, nil
+		}
 		return target, runGit(ctx, target, "pull", "--ff-only")
 	}
 
 	cloneURL := injectTokenIntoURL(resp.Git.URL, resp.Git.Token)
 	args := []string{"clone"}
-	if resp.Git.Branch != "" {
+	// BL407 Phase 4 — CreateBranch means Branch doesn't exist
+	// upstream yet (it's a new, not-yet-pushed PRD-owned branch): a
+	// `git clone --branch <it>` would fail outright with "remote
+	// branch not found". Clone the repo's own default branch instead,
+	// then create the new one locally right after.
+	if resp.Git.Branch != "" && !resp.Git.CreateBranch {
 		args = append(args, "--branch", resp.Git.Branch)
 	}
 	args = append(args, cloneURL, target)
@@ -61,6 +87,12 @@ func CloneOnBootstrap(ctx context.Context, resp *BootstrapResponse, workspaceRoo
 		// Wipe the partial clone so a retry doesn't trip on it.
 		_ = os.RemoveAll(target)
 		return "", fmt.Errorf("git clone: %w", err)
+	}
+	if resp.Git.CreateBranch && resp.Git.Branch != "" {
+		if err := runGit(ctx, target, "checkout", "-b", resp.Git.Branch); err != nil {
+			_ = os.RemoveAll(target)
+			return "", fmt.Errorf("create branch %q after clone: %w", resp.Git.Branch, err)
+		}
 	}
 	// Don't persist the credential URL — set the canonical remote
 	// without the token now that .git/config exists.

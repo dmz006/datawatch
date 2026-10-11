@@ -129,6 +129,63 @@ func TestCloneOnBootstrap_LocalGitRoundTrip(t *testing.T) {
 	}
 }
 
+// BL407 Phase 4 — CreateBranch=true clones the repo's own default
+// branch (never --branch <not-yet-existing-name>, which would fail
+// outright) then creates the new branch locally.
+func TestCloneOnBootstrap_CreateBranchFresh(t *testing.T) {
+	if err := runGit(context.Background(), "", "--version"); err != nil {
+		t.Skip("git not installed; skipping clone roundtrip")
+	}
+	root := t.TempDir()
+	srcRepo := filepath.Join(root, "src-repo")
+	if err := os.MkdirAll(srcRepo, 0755); err != nil {
+		t.Fatal(err)
+	}
+	mustGit(t, srcRepo, "init", "-b", "main")
+	mustGit(t, srcRepo, "config", "user.email", "smoke@test")
+	mustGit(t, srcRepo, "config", "user.name", "Smoke")
+	if err := os.WriteFile(filepath.Join(srcRepo, "README.md"), []byte("hello"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	mustGit(t, srcRepo, "add", "README.md")
+	mustGit(t, srcRepo, "commit", "-m", "init")
+
+	workspace := filepath.Join(root, "workspace")
+	resp := &BootstrapResponse{Git: BootstrapGit{URL: srcRepo, Branch: "automaton/abc12345-fixture", CreateBranch: true}}
+	target, err := CloneOnBootstrap(context.Background(), resp, workspace)
+	if err != nil {
+		t.Fatalf("Clone: %v", err)
+	}
+	cur, err := gitOutputText(context.Background(), target, "rev-parse", "--abbrev-ref", "HEAD")
+	if err != nil {
+		t.Fatalf("rev-parse HEAD: %v", err)
+	}
+	if cur != "automaton/abc12345-fixture" {
+		t.Errorf("current branch=%q want automaton/abc12345-fixture", cur)
+	}
+	if _, err := os.Stat(filepath.Join(target, "README.md")); err != nil {
+		t.Errorf("expected README.md in clone: %v", err)
+	}
+
+	// Simulated worker restart (same target dir, same CreateBranch
+	// request): must land back on that same branch, not re-create a
+	// duplicate or error out on "branch already exists".
+	target2, err := CloneOnBootstrap(context.Background(), resp, workspace)
+	if err != nil {
+		t.Fatalf("resumed clone: %v", err)
+	}
+	if target2 != target {
+		t.Errorf("target2=%q want %q", target2, target)
+	}
+	cur2, err := gitOutputText(context.Background(), target2, "rev-parse", "--abbrev-ref", "HEAD")
+	if err != nil {
+		t.Fatalf("rev-parse HEAD (resumed): %v", err)
+	}
+	if cur2 != "automaton/abc12345-fixture" {
+		t.Errorf("resumed current branch=%q want automaton/abc12345-fixture", cur2)
+	}
+}
+
 // PushOnCompletion is a no-op (no error, empty branch/sha) whenever
 // there's nothing to push back to — no dir, nil resp, or a resp with
 // no Git.URL (worker was never git-bootstrapped).

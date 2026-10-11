@@ -2,7 +2,7 @@
 
 - **Date**: 2026-10-10
 - **Version at planning**: v9.0.17
-- **Status**: In progress — Phase 0 done (v9.0.18, fixes B114), Phase 1 done (v9.0.19), Phase 2 done (v9.0.20), Phase 3 done (v9.0.21), Phase 4 next
+- **Status**: In progress — Phase 0 done (v9.0.18, fixes B114), Phase 1 done (v9.0.19), Phase 2 done (v9.0.20), Phase 3 done (v9.0.21), Phase 4 done (v9.0.22), Phase 5 next
 
 ## Context
 
@@ -381,16 +381,74 @@ problem is bigger than "add git wiring":
   silently skipped" rule.
 
 ### Phase 4 — Branch creation parity for cluster mode
-**Status: Not started.** Depends on Phase 1 (branch-naming helper) and
-Phase 0 (real dispatch).
-- [ ] Extend `CloneOnBootstrap` (`internal/agents/worker_clone.go`) with a
-  "create new branch" mode: `git clone && git checkout -b <branch>`
-  instead of `--branch <existing>`, using the same `branchNameFor`
-  helper from Phase 1 so local and cluster modes never diverge on
-  naming. The bootstrap response needs to carry the new branch name
-  (already has a `Git` sub-struct per the existing `BootstrapResponse`
-  shape — add the field, don't restructure it).
-- [ ] **Phase Completion Checklist**.
+**Status: Done (v9.0.22).** Depended on Phase 1 (branch-naming helper)
+and Phase 0 (real dispatch).
+- [x] `Manager.Run` assigns `prd.Git.Branch = branchNameFor(prd)` for a
+  cluster-dispatched PRD (`prd.ClusterProfile != "" && prd.Git.Branch
+  == ""`), the idempotent cluster-mode counterpart right next to
+  Phase 1's worktree-mode `EnsureWorktree` call.
+- [x] New `SpawnRequest.Branch` (`internal/autonomous/executor.go`)
+  threads `prd.Git.Branch` down to the `SpawnFn`; `autonomousSpawn`
+  (`cmd/datawatch/main.go`) forwards it as `"branch"` in the
+  `/api/agents` POST body — the pre-existing `agents.SpawnRequest.Branch`
+  field (F10 S7.3's workspace-lock field) was the first caller to ever
+  give it a real, per-PRD value.
+- [x] **Found and fixed, not just planned**: `handleAgentBootstrap`
+  (`internal/server/agent_api.go`) built the worker's git bundle from
+  `proj.Git.Branch` directly, silently dropping the per-spawn
+  `agent.Branch` override that already existed — the F10 S7.3 field
+  never actually reached a real `git clone` before this phase. Fixed:
+  `resp.Git.Branch` now reads `agent.Branch` (falls back to
+  `proj.Git.Branch` when unset — zero behavior change for every
+  pre-Phase-4 caller).
+- [x] New `BootstrapGit.CreateBranch` (mirrored into
+  `internal/agents/client.go` per this codebase's "mirror server.*,
+  don't import" convention) — true when the branch differs from the
+  profile's own static default. `CloneOnBootstrap` clones the
+  default branch + `git checkout -b <branch>` instead of `--branch
+  <branch>` (which would fail outright against a branch that was
+  never pushed); a resumed worker checks the branch back out and
+  deliberately skips `git pull` (no upstream to pull from until
+  Phase 3's `PushOnCompletion` pushes it — found live while testing,
+  `git pull --ff-only` hard-fails with "no tracking information"
+  against a local-only branch).
+- [x] **Found and fixed a real concurrency bug this phase's own design
+  would otherwise have introduced**: every task on one PRD now
+  requests the *same* branch (Decision 8 — one PR per PRD), but the
+  executor's bounded concurrent-task pool (BL370) can dispatch a
+  second cluster task before the first's agent reaches a terminal
+  state — `agents.Manager`'s F10 S7.3 workspace lock (built for two
+  *unrelated* colliding agents) would reject that outright as a hard
+  task failure. Fixed by extending the existing capacity-wait retry
+  wrapper (`capacityRetrySpawn`) with a new `IsWorkspaceLockError` —
+  retried exactly like a capacity-full wait, not bypassed, since two
+  containers racing pushes to the same branch is a real hazard the
+  lock exists to prevent.
+- [x] Regression tests: 2 new (`internal/server/agent_api_test.go`:
+  explicit-branch → `CreateBranch:true`, no-explicit-branch →
+  unaffected `CreateBranch:false`) + 1 new
+  (`internal/agents/worker_clone_test.go`:
+  `TestCloneOnBootstrap_CreateBranchFresh`, a real local-git round
+  trip proving clone-default+checkout-b, then a simulated worker
+  restart landing back on the same branch without erroring) + 2 new
+  (`internal/autonomous/cluster_branch_test.go`: `Run()` assigns +
+  threads the branch, and idempotency across a simulated resume) + 2
+  new (`internal/autonomous/capacity_test.go`:
+  `TestCapacity_WorkspaceLockErrorIsWaitNotFailure`,
+  `TestIsWorkspaceLockError`).
+- [x] **Phase Completion Checklist**: full `go test ./...` green,
+  `go vet ./...` clean, `gosec -severity high -confidence medium`
+  zero new findings on any touched file, `gofmt` clean on every
+  new/touched file except pre-existing cascading-struct-literal drift
+  confirmed via `git stash` diffing (same files flagged dirty before
+  and after my edit: `client.go`, `worker_clone_test.go`,
+  `agent_api.go`, `agent_api_test.go`, `executor.go`,
+  `capacity_test.go`). **`node --test internal/server/web/*.test.js`:
+  N/A** — zero `internal/server/web/` files touched (confirmed via
+  `git status` on this phase's own diff). No new operator-facing
+  REST/MCP/CLI/comm/PWA surface — no Mobile-Parity issue needed, no
+  localization keys added. Version bumped to v9.0.22 in both files.
+  CHANGELOG + testing-tracker + this plan updated.
 
 ### Phase 5 — Config/parity surface
 **Status: Not started.**
@@ -508,8 +566,18 @@ Phase 0 (real dispatch).
   `handleWorktreeCompletion`'s new `ClusterProfile` guard),
   `internal/autonomous/executor.go` (rollup calls
   `handleClusterCompletion` alongside `handleWorktreeCompletion`) —
-  Phase 3. `internal/agents/worker_clone.go` (branch-create mode for
-  `CloneOnBootstrap`) — Phase 4, not yet done.
+  Phase 3.
+- `internal/autonomous/executor.go` (`SpawnRequest.Branch`,
+  cluster-mode branch assignment in `Run()`), new
+  `internal/autonomous/cluster_branch_test.go`,
+  `internal/agents/worker_clone.go` (`CreateBranch` clone/checkout-b
+  mode for `CloneOnBootstrap`), `internal/agents/client.go`
+  (`BootstrapGit.CreateBranch` mirror), `internal/server/agent_api.go`
+  (`BootstrapGit.CreateBranch`, `handleAgentBootstrap` reading
+  `agent.Branch` instead of `proj.Git.Branch`),
+  `internal/autonomous/capacity.go` (`IsWorkspaceLockError`,
+  `capacityRetrySpawn` extended), `cmd/datawatch/main.go`
+  (`autonomousSpawn` forwards `req.Branch`) — Phase 4.
 - `cmd/datawatch/main.go` (`autonomousSpawn`'s cluster branch,
   verify-loop fix) — Phase 0.
 - `internal/server/web/app.js`, `internal/server/web/locales/*.json` —

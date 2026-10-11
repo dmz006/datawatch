@@ -5,6 +5,62 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.22 — feat(autonomous): BL407 Phase 4 — branch creation parity for cluster mode
+
+### Added
+- Cluster-dispatched PRDs now get their own dedicated branch, the same
+  way worktree mode has since Phase 1 — closing Phase 3's known
+  limitation (every task on a cluster PRD landing on whatever branch
+  the Project Profile's `GitSpec.Branch` happened to name).
+  `Manager.Run` assigns `prd.Git.Branch = branchNameFor(prd)` for a
+  cluster-dispatched PRD the same idempotent way Phase 1's
+  `EnsureWorktree` does for worktree mode (only while `Git.Branch` is
+  still empty, so a resumed run never regenerates a second name).
+- Found live while wiring this through: `agents.SpawnRequest.Branch`
+  (F10 S7.3's own per-spawn workspace-lock field) already existed and
+  was already threaded onto `Agent.Branch` at spawn time, but
+  `handleAgentBootstrap` built the worker's git bundle from
+  `proj.Git.Branch` directly, silently dropping it — the per-spawn
+  branch never actually reached the worker's own `git clone`. Fixed:
+  `resp.Git.Branch` now comes from `agent.Branch` (which already
+  falls back to `proj.Git.Branch` when unset, so every pre-Phase-4
+  caller is unaffected).
+- New `BootstrapGit.CreateBranch` — true whenever the branch being
+  sent differs from the Project Profile's own static default,
+  meaning it doesn't exist upstream yet. `CloneOnBootstrap`
+  (`internal/agents/worker_clone.go`) now clones the repo's own
+  default branch and runs `git checkout -b <branch>` locally instead
+  of the `--branch <branch>` existing-branch form, which would have
+  failed outright with "remote branch not found" against a branch
+  that was never pushed. A resumed worker (same clone persists across
+  a container restart) checks the branch back out rather than
+  re-cloning, and deliberately skips `git pull` for a `CreateBranch`
+  branch — it's local-only until `PushOnCompletion` (Phase 3) pushes
+  it, so there's no upstream to pull from.
+- **Found and fixed a real concurrency bug this phase would otherwise
+  have introduced**: every cluster task on one PRD now requests the
+  *same* branch (one PR per PRD, Decision 8) — the executor's own
+  bounded concurrent-task pool (BL370) can dispatch a second one
+  before the first's agent reaches a terminal state, which
+  `agents.Manager`'s F10 S7.3 workspace lock (designed for two
+  *unrelated* agents colliding by coincidence) would otherwise reject
+  outright as a hard task failure. New `IsWorkspaceLockError` +
+  `capacityRetrySpawn` extended to retry on it exactly like a
+  capacity-full wait (reusing the existing wait/retry loop and
+  `capacity_wait_timeout_seconds` budget, not a new mechanism) —
+  correct fix, since two containers racing pushes to the same branch
+  is a real hazard the lock exists to prevent; the right behavior is
+  to wait for the sibling task's agent to finish, not bypass the lock.
+- No new operator-facing REST/MCP/CLI/comm/PWA surface — this phase is
+  entirely parent/worker plumbing (the same `agents.SpawnRequest.Branch`
+  field already existed; this is the first caller to give it a real,
+  per-PRD value). No Mobile-Parity issue needed.
+- Known, accepted cosmetic quirk: a task retried for a workspace-lock
+  wait shows `TaskWaitingCapacity`/`waiting_capacity` the same as a
+  real GPU-capacity wait — reusing the existing status/wait-reason
+  surface rather than adding a new enum value for what is, from the
+  operator's perspective, the same kind of "wait for a slot" state.
+
 ## v9.0.21 — feat(autonomous): BL407 Phase 3 — cluster-mode git (worker-side commit/push + completion callback)
 
 ### Added

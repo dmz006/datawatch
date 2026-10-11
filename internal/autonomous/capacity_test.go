@@ -139,6 +139,52 @@ func TestCapacity_SessionCapErrorIsWaitNotFailure(t *testing.T) {
 	}
 }
 
+// BL407 Phase 4 — a workspace-lock collision (two of the same PRD's
+// own cluster-dispatched tasks briefly sharing one Phase-4-assigned
+// branch) must be retried like a capacity wait, not surfaced as a
+// hard task failure.
+func TestCapacity_WorkspaceLockErrorIsWaitNotFailure(t *testing.T) {
+	m, api, _, verify := apiFixture(t)
+	prd := newPRDWithTasks(t, m, 1)
+	var mu sync.Mutex
+	calls := 0
+	old := capRetryPause
+	capRetryPause = 10 * time.Millisecond
+	defer func() { capRetryPause = old }()
+	spawn := func(_ context.Context, r SpawnRequest) (SpawnResult, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		calls++
+		if calls < 3 {
+			return SpawnResult{}, fmt.Errorf(`workspace lock: agent a1 already owns project "p" branch "automaton/x" (state=running)`)
+		}
+		return SpawnResult{SessionID: "s"}, nil
+	}
+	got := runToTerminal(t, m, api, prd.ID, spawn, verify)
+	if got.Status != PRDCompleted || calls != 3 {
+		t.Fatalf("workspace-lock rejection must be retried: status=%s calls=%d", got.Status, calls)
+	}
+	if got.Story[0].Tasks[0].RetryCount != 0 {
+		t.Fatal("waiting must not consume auto-fix retries")
+	}
+}
+
+func TestIsWorkspaceLockError(t *testing.T) {
+	cases := []struct {
+		err  error
+		want bool
+	}{
+		{nil, false},
+		{fmt.Errorf("some other error"), false},
+		{fmt.Errorf(`workspace lock: agent a1 already owns project "p" branch "b" (state=running)`), true},
+	}
+	for _, c := range cases {
+		if got := IsWorkspaceLockError(c.err); got != c.want {
+			t.Errorf("IsWorkspaceLockError(%v) = %v, want %v", c.err, got, c.want)
+		}
+	}
+}
+
 func TestCapacity_LeaseReleasedAfterTask(t *testing.T) {
 	m, api, led := capFixture(t, 1)
 	prd := newPRDWithTasks(t, m, 2)

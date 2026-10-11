@@ -1388,8 +1388,12 @@ then removes the local worktree (BL407 Phase 2, v9.0.20). A
 worktree at all — the dispatched worker commits and pushes its own
 branch itself (using its bootstrap-minted git token), reports it back
 on completion, and the parent opens the PR from that branch directly
-(BL407 Phase 3, v9.0.21). See "PRD Git-Worktree Isolation + Completion
-PR" in `docs/operations.md`.
+(BL407 Phase 3, v9.0.21). As of BL407 Phase 4 (v9.0.22), that worker
+creates and checks out the PRD's own dedicated `automaton/<prd-id>-<slug>`
+branch fresh (instead of landing on whatever branch the dispatching
+Project Profile names), closing the one gap between cluster mode and
+worktree mode's own branch handling. See "PRD Git-Worktree Isolation +
+Completion PR" in `docs/operations.md`.
 
 ---
 

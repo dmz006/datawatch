@@ -1967,7 +1967,7 @@ before approving any task to check it.
 
 ---
 
-## PRD Git-Worktree Isolation + Completion PR (BL407 Phases 1-3)
+## PRD Git-Worktree Isolation + Completion PR (BL407 Phases 1-4)
 
 By default, a PRD with no explicit `project_dir`/`project_profile`/
 `cluster_profile` runs directly in whatever directory the daemon
@@ -2016,14 +2016,17 @@ reported branch — it never attempts a local push for cluster-dispatched
 work. Everything else (review-before-enabling, non-fatal on failure,
 Decision-logged) is identical to worktree mode.
 
-One current limitation: unlike worktree mode's per-PRD
-`automaton/<prd-id>-<slug>` branch, cluster mode has no dedicated-branch
-creation yet — a cluster worker pushes to whatever branch its
-dispatching Project Profile's `git.branch` names (or that repo's
-default branch, if unset). Until that's added, set an explicit,
-dedicated branch on the Project Profile before enabling `AutoPR` on a
-cluster-dispatched PRD, the same way you would for any other automated
-push you don't want landing on `main`.
+As of Phase 4, cluster mode gets the same dedicated per-PRD
+`automaton/<prd-id>-<slug>` branch worktree mode always has — the
+dispatching worker clones the Project Profile's repo on its own
+default branch, then creates the PRD's branch locally (`git checkout
+-b`) rather than landing on whatever branch the Project Profile's
+`git.branch` names. Two or more tasks on the same cluster-dispatched
+PRD requesting that same branch concurrently is expected (one PR per
+PRD) and handled by waiting, not failing: a second task's dispatch
+waits for the first task's agent to finish before it gets its turn —
+shown as the task's normal capacity-wait state — rather than being
+rejected outright.
 
 ---
 

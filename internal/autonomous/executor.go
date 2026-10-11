@@ -60,6 +60,15 @@ type SpawnRequest struct {
 	// an operator who turned off auto-commit globally still wants a
 	// worktree-mode PRD's branch to actually contain its work.
 	ForceAutoGitCommit bool
+	// Branch (BL407 Phase 4) — PRD.Git.Branch, threaded through so a
+	// cluster-dispatched SpawnFn can forward it as agents.SpawnRequest.Branch.
+	// The worker then creates/checks out this exact branch (worktree
+	// mode's own branch, mirrored into cluster mode) instead of
+	// silently landing on whatever branch its Project Profile's
+	// GitSpec names. Empty for a PRD that never reaches either Phase
+	// 1's EnsureWorktree or this phase's cluster-mode counterpart
+	// (e.g. AutoPR-less PRDs with an explicit ProjectDir).
+	Branch string
 	// BL244 — plugin session injection. Non-empty when a plugin declares
 	// session_injection for the PRD's type; prepended to the task spec
 	// by the SpawnFn so plugin context arrives in the worker session.
@@ -163,6 +172,22 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 			prd.Git.Branch = branch
 			log.Printf("[autonomous] prd=%s worktree created at %s (branch=%s)", prdID, path, branch)
 		}
+	}
+	// BL407 Phase 4 — cluster-dispatched counterpart to the worktree
+	// branch above. No local worktree to create here (the worker's
+	// own container does the real clone — Phase 3), but the PRD still
+	// needs its own dedicated branch name decided up front, by the
+	// parent, before the first dispatch: SpawnFn threads it through
+	// as agents.SpawnRequest.Branch, and the worker creates it fresh
+	// on first clone (worker_clone.go's CreateBranch path) instead of
+	// landing on the Project Profile's shared static default branch —
+	// closing the Phase 3 limitation (every cluster task on one PRD
+	// landing on the same shared branch). Idempotent the same way the
+	// worktree branch is: only fires while Git.Branch is still empty,
+	// so a resumed run never regenerates a second name.
+	if prd.ClusterProfile != "" && prd.Git.Branch == "" {
+		prd.Git.Branch = branchNameFor(prd)
+		log.Printf("[autonomous] prd=%s cluster-mode branch assigned: %s", prdID, prd.Git.Branch)
 	}
 	// 2026-10-07 — gitignore datawatch's own PRD scratch artifacts
 	// (.decompose-output-*.json, CHECKPOINT.md) as defense-in-depth for
@@ -780,6 +805,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				ProjectProfile: prd.ProjectProfile, // v5.26.19
 				ClusterProfile: prd.ClusterProfile, // v5.26.19
 				ForceAutoGitCommit: prd.Git.Branch != "", // BL407 Phase 2
+				Branch:         prd.Git.Branch,     // BL407 Phase 4
 				ContextPrepend: contextPrepend,      // BL244
 				LSPLanguage:    lspLang,
 				MemorySeed:     prd.MemorySeed,     // BL386 Phase 1
