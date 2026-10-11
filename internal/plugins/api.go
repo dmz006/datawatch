@@ -16,11 +16,37 @@ type API struct{ R *Registry }
 // NewAPI is a convenience constructor.
 func NewAPI(r *Registry) *API { return &API{R: r} }
 
+// pluginView is the JSON shape of a plugin: the plugin itself plus, when a
+// managed-service supervisor exists for it, a service status object.
+// Plugins without a supervisor encode exactly as before.
+type pluginView struct {
+	*Plugin
+	Service *serviceView `json:"service,omitempty"`
+}
+
+// serviceView is the operator-facing subset of ServiceStatus.
+type serviceView struct {
+	State     ServiceState `json:"state"`
+	PID       int          `json:"pid,omitempty"`
+	Restarts  int          `json:"restarts"`
+	LastError string       `json:"last_error,omitempty"`
+}
+
+func (a *API) view(p *Plugin) any {
+	st, ok := a.R.ServiceStatus(p.Name)
+	if !ok {
+		return p
+	}
+	return pluginView{Plugin: p, Service: &serviceView{
+		State: st.State, PID: st.PID, Restarts: st.Restarts, LastError: st.LastError,
+	}}
+}
+
 func (a *API) List() []any {
 	src := a.R.List()
 	out := make([]any, len(src))
 	for i, p := range src {
-		out[i] = p
+		out[i] = a.view(p)
 	}
 	return out
 }
@@ -30,7 +56,7 @@ func (a *API) Get(name string) (any, bool) {
 	if !ok {
 		return nil, false
 	}
-	return p, true
+	return a.view(p), true
 }
 
 func (a *API) Reload() error { return a.R.Discover() }

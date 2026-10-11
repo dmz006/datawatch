@@ -255,6 +255,14 @@ func (s *ServiceSupervisor) Status() ServiceStatus {
 	}
 }
 
+// active reports whether the supervision loop is running (started and not
+// yet stopped or given up).
+func (s *ServiceSupervisor) active() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.running
+}
+
 // Output returns the tail of the child's combined stdout/stderr.
 func (s *ServiceSupervisor) Output() string { return s.output.String() }
 

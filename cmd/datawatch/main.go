@@ -5489,6 +5489,7 @@ Return ONLY a unified diff or markdown code block showing the proposed AGENT.md 
 			Dir:       expandHome(cfg.Plugins.Dir),
 			TimeoutMs: cfg.Plugins.TimeoutMs,
 			Disabled:  cfg.Plugins.Disabled,
+			Managed:   cfg.Plugins.Managed,
 		}
 		if pcfg.Dir == "" {
 			pcfg.Dir = filepath.Join(expandHome(cfg.DataDir), "plugins")

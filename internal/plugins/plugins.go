@@ -377,6 +377,11 @@ type Config struct {
 	Dir       string   `yaml:"dir,omitempty" json:"dir,omitempty"`
 	TimeoutMs int      `yaml:"timeout_ms,omitempty" json:"timeout_ms,omitempty"`
 	Disabled  []string `yaml:"disabled,omitempty" json:"disabled,omitempty"`
+	// Managed names the kind: service plugins the operator allows datawatch
+	// to start/stop. Absent = never managed. A name only takes effect when
+	// the plugin's author-declared lifecycle.supported_modes includes
+	// "managed" — the opt-in can never exceed what the author declared.
+	Managed []string `yaml:"managed,omitempty" json:"managed,omitempty"`
 }
 
 // DefaultConfig — plugins disabled, conservative timeout.
@@ -390,12 +395,28 @@ type Registry struct {
 	cfg          Config
 	byName       map[string]*Plugin
 	secretsStore secrets.Store // BL242 Phase 5b — set once at startup via SetSecretsStore
+
+	// Manifest v3 managed services (see registry_services.go). managed is
+	// the runtime operator opt-in set, seeded from cfg.Managed and changed
+	// by SetManaged; unlike Plugin.Enabled it survives a rediscover so a
+	// hot-reload never drops a running service's opt-in. supervisors holds
+	// one ServiceSupervisor per currently eligible managed plugin. started
+	// is set by StartManaged; until then nothing is ever spawned.
+	managed        map[string]bool
+	supervisors    map[string]*ServiceSupervisor
+	serviceEventFn func(ServiceEvent)
+	started        bool
 }
 
 // NewRegistry scans cfg.Dir and returns a registry. A nil return is
 // never produced — an empty registry is fine.
 func NewRegistry(cfg Config) (*Registry, error) {
-	r := &Registry{cfg: cfg, byName: map[string]*Plugin{}}
+	r := &Registry{
+		cfg:         cfg,
+		byName:      map[string]*Plugin{},
+		managed:     nameSet(cfg.Managed),
+		supervisors: map[string]*ServiceSupervisor{},
+	}
 	if !cfg.Enabled || strings.TrimSpace(cfg.Dir) == "" {
 		return r, nil
 	}
@@ -407,6 +428,7 @@ func (r *Registry) SetConfig(cfg Config) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.cfg = cfg
+	r.managed = nameSet(cfg.Managed)
 }
 
 // SetSecretsStore wires the centralized secrets store so plugins can receive
@@ -418,9 +440,21 @@ func (r *Registry) SetSecretsStore(st secrets.Store) {
 }
 
 // Discover rescans the configured directory. Safe to call repeatedly.
+// Running managed services are not orphaned: supervisors whose plugin is
+// still present and eligible keep running, removed or now-ineligible ones
+// are stopped, and newly eligible ones are started once StartManaged has
+// been called.
 func (r *Registry) Discover() error {
 	r.mu.Lock()
-	defer r.mu.Unlock()
+	err := r.discoverLocked()
+	start, stop := r.reconcileServicesLocked(false)
+	r.mu.Unlock()
+	r.applyServiceChanges(context.Background(), start, stop)
+	return err
+}
+
+// discoverLocked rebuilds byName from the plugin directory; caller holds r.mu.
+func (r *Registry) discoverLocked() error {
 	r.byName = map[string]*Plugin{}
 	if !r.cfg.Enabled || strings.TrimSpace(r.cfg.Dir) == "" {
 		return nil
@@ -487,15 +521,20 @@ func (r *Registry) Get(name string) (*Plugin, bool) {
 }
 
 // SetEnabled toggles enabled/disabled state for a named plugin.
-// Returns false if the plugin doesn't exist.
+// Returns false if the plugin doesn't exist. Disabling a managed service
+// plugin stops its supervisor; enabling an eligible one starts it once
+// StartManaged has been called.
 func (r *Registry) SetEnabled(name string, on bool) bool {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	p, ok := r.byName[name]
 	if !ok {
+		r.mu.Unlock()
 		return false
 	}
 	p.Enabled = on
+	start, stop := r.reconcileServicesLocked(false)
+	r.mu.Unlock()
+	r.applyServiceChanges(context.Background(), start, stop)
 	return true
 }
 
@@ -677,6 +716,15 @@ func (r *Registry) ContextForPRDType(prdType string) string {
 		}
 	}
 	return ""
+}
+
+// nameSet builds a lookup set from a list of plugin names.
+func nameSet(names []string) map[string]bool {
+	set := make(map[string]bool, len(names))
+	for _, n := range names {
+		set[n] = true
+	}
+	return set
 }
 
 // isDisabled reports whether name appears in the operator's disabled list.
