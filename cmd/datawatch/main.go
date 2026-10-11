@@ -5510,6 +5510,25 @@ Return ONLY a unified diff or markdown code block showing the proposed AGENT.md 
 			if err := reg.Watch(context.Background()); err != nil {
 				fmt.Fprintf(os.Stderr, "[warn] plugin watcher: %v\n", err)
 			}
+			// Managed service-kind plugins: audit + log every lifecycle
+			// event, then start the supervisors. Nothing is spawned unless
+			// plugins.enabled is on and a plugin is both enabled and opted
+			// in (plugins.managed or the enable API's managed flag).
+			reg.SetServiceEventFn(func(ev pluginspkg.ServiceEvent) {
+				fmt.Printf("[plugins] %s plugin=%s details=%v\n", ev.Action, ev.Plugin, ev.Details)
+				httpServer.AuditPluginService(ev.Plugin, ev.Action, ev.Details)
+			})
+			reg.StartManaged(ctx)
+			// Deferred so it runs on every return from runStart — signal
+			// shutdown (ctx cancelled) and normal exit alike — reaping the
+			// supervised children before the process exits.
+			defer func() {
+				stopCtx, stopCancel := context.WithTimeout(context.Background(), 30*time.Second)
+				defer stopCancel()
+				if err := reg.StopAll(stopCtx); err != nil {
+					fmt.Fprintf(os.Stderr, "[warn] stop managed plugin services: %v\n", err)
+				}
+			}()
 			// BL244 — wire plugin comm commands into every running router
 			// and plugin session injection into the autonomous manager.
 			for _, r := range routers {
