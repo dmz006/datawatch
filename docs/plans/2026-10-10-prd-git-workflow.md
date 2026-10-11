@@ -372,7 +372,13 @@ problem is bigger than "add git wiring":
   `cmd/datawatch/main.go` fixed; all other flagged files confirmed
   pre-existing drift via `git stash` same as prior phases), `go test
   -race` on this phase's new tests. CHANGELOG + testing-tracker + this
-  plan updated.
+  plan updated. **`node --test internal/server/web/*.test.js`: N/A** —
+  this phase touched zero PWA/JS files (confirmed: `git show --stat`
+  on the v9.0.21 commit has no `internal/server/web/` entries), so
+  there's nothing for that suite to exercise. Found missing/not called
+  out explicitly at the time (flagged live 2026-10-10, same day) —
+  logged here per AGENT.md's "N/A with a one-line reason, never
+  silently skipped" rule.
 
 ### Phase 4 — Branch creation parity for cluster mode
 **Status: Not started.** Depends on Phase 1 (branch-naming helper) and

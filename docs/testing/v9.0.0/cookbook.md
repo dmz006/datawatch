@@ -181,3 +181,51 @@ bash scripts/run-tests.sh --group=b104-status-parity-v9
 bash scripts/run-tests.sh --group=b105-filter-badges-v9
 bash scripts/run-tests.sh --group=b106-file-viewer-v9
 ```
+
+---
+
+## B115 backfill — BL406 + BL407, v9.0.3–v9.0.21 (2026-10-10)
+
+**B115**: zero e2e stories existed for any of the 21 releases between
+the v9.0.0 tag (2026-10-09) and v9.0.21 (2026-10-10) — confirmed via
+`git log --diff-filter=A -- scripts/test-stories/` (last story file
+added was TS-786, 2026-10-08, before the tag) and a full-text grep of
+every existing story for `BL406`/`BL407`/the v9.0.1-21 version strings
+(zero matches). See `docs/plans/README.md`'s Open/Completed Bugs
+section for the full writeup. This section backfills the subset that's
+safely REST-testable without a live LLM, a real GitHub write, or a real
+docker/k8s cluster spin-up; the "Known gaps" table below documents what
+still has zero e2e coverage and why, rather than leaving that implicit.
+
+| TS# | Description | Release | Status | Notes |
+|---|---|---|---|---|
+| TS-787 | BL406 Phase 0: `rules_file`/`context_file`/`upstream_repos` round-trip via PUT/GET /api/config | v9.0.11 | ✅ pass | — |
+| TS-788 | BL406 Phase 1: ProjectRulesScanner `content` rule fires a real finding against a file on disk | v9.0.12 | ✅ pass | mutates+restores global scan config |
+| TS-789 | BL406 Phase 2: default parity-inheritance rule flags a story that drops a named surface | v9.0.13 | ✅ pass | conflict:llm — needs one real decompose to reach `needs_review` |
+| TS-790 | BL406 Phase 3: `project-rules-scan` present in the PWA Guardrails dropdown | v9.0.14 | ✅ pass | static check |
+| TS-791 | v9.0.3: `loadAboutOrphanedTmux` uses `apiFetch`, not a bare `fetch()` (federation-aware) | v9.0.3 | ✅ pass | static check |
+| TS-792 | BL406 Phase 5 (B111): `set_guided_mode` live-applies `guided_mode_source` | v9.0.17 | ✅ pass | — |
+| TS-793 | BL406 Phase 5 (B112): opt-in `scope_drift` rule flags a code-creation task under a doc-only PRD | v9.0.17 | ✅ pass | conflict:llm + conflict:selfconfig |
+| TS-794 | v9.0.16: `notify_exclude` round-trip via PUT/GET /api/config | v9.0.16 | ✅ pass | — |
+| TS-795 | B113: `sast_enabled` round-trips via GET/PUT /api/autonomous/scan/config | v9.0.11 | ✅ pass | restart-persistence half already verified live at ship time, not repeated here |
+
+Verified together, serial lane, against a real sandbox daemon
+(`bash scripts/run-tests.sh --stories=TS-787,TS-788,TS-789,TS-790,TS-791,TS-792,TS-793,TS-794,TS-795 --serial`):
+9 passed, 0 failed, 0 skipped.
+
+### Known gaps — deliberately not backfilled
+
+| Release | Gap | Why deferred |
+|---|---|---|
+| v9.0.15 (BL406 Phase 4) | upstream issue-filing action (`file_upstream_issue`) | would file a real GitHub issue against a real repo if run automatically — same class of risk this suite never takes for the pre-existing auto-PR-on-completion behavior either |
+| v9.0.18 (BL407 Phase 0 / B114) | cluster-dispatch reaches a terminal state instead of hanging — the actual bug class B114 fixed | needs a real worker container image this harness doesn't have yet (docker *is* available on this host, but no datawatch worker image exists to pull/build for it) — filed as its own follow-up, not silently skipped |
+| v9.0.19–21 (BL407 Phases 1-3) | local git-worktree isolation, completion push+PR, cluster-mode git | `PRD.Git.AutoPR`/`BaseBranch` have no REST/MCP/CLI/PWA exposure yet — that's this same plan's own Phase 5. Covered today only at the Go unit/integration level (`internal/autonomous/*_test.go`, real bare-remote git round trips) |
+| v9.0.7 / v9.0.8 | boot self-heal of a `StateFailed` session; usage-tracker checkpoint surviving a restart | both require restarting the shared sandbox daemon mid-suite, which would affect every other concurrently-running story — same deferral precedent as this cookbook's existing "boot-resume on real daemon" conflict:llm item above |
+| v9.0.10 | `imap_mcp.to` config field | YAML-only, no REST/MCP/CLI/comm/PWA exposure (tracked separately as `BL404`) — nothing for an e2e story to call |
+| v9.0.1, v9.0.2, v9.0.4, v9.0.5, v9.0.6, v9.0.9 | container build pin, Dockerfile GO_VERSION drift check, Android-beta docs wording, CVE suppression, `datawatch-channel` release archive fix, README staleness | build/release/CI/docs-only — no REST/MCP/CLI/PWA surface exists to e2e-test; v9.0.1/v9.0.2 already have their own CI-level regression gate (`scripts/check-dockerfile-go-versions.sh`, wired into `ci.yaml`/`release.yaml`) |
+
+### Run commands (B115 backfill)
+
+```bash
+bash scripts/run-tests.sh --stories=TS-787,TS-788,TS-789,TS-790,TS-791,TS-792,TS-793,TS-794,TS-795
+```

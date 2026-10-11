@@ -174,7 +174,7 @@ Previous: **v8.25.3** (2026-09-12). feat(observer): nvidia-smi and tegrastats GP
 
  | Bucket | Count | Notes |
 |---|---|---|
-| Open bugs | 0 | B111/B112 — fixed by BL406 Phase 5, v9.0.17. B113 — fixed by BL406 Phase 0. B114 (`PRD.ClusterProfile` dispatch never resolves) — fixed by BL407 Phase 0, v9.0.18, 2026-10-10. None open |
+| Open bugs | 0 | B111/B112 — fixed by BL406 Phase 5, v9.0.17. B113 — fixed by BL406 Phase 0. B114 (`PRD.ClusterProfile` dispatch never resolves) — fixed by BL407 Phase 0, v9.0.18. B115 (zero e2e cookbook coverage added since the v9.0.0 tag) — fixed by backfilling TS-787-TS-795, 2026-10-10. None open |
 | Open features | 7 | BL241 Matrix (design interview needed); BL365 + BL408 + BL395 security remediation track (roadmap Stage 3 #7); BL390 Phase 2/3 (folded into BL405 Phase 8a); BL393 nested tags (excluded until authorized); BL394 + BL392 (substantially done, residue cross-repo). BL389 shipped v9.0.0; BL381 shipped v8.28.0/v8.28.2 |
 | Active backlog | 0 | BL387 complete (v8.31–33.0 ✅) |
 | Pending backlog | 6 | BL402, BL403, BL404, BL405, BL407 (v10.0.0 roadmap; BL406 shipped v9.0.17) + BL398 Phase 2; BL400 deferred (open questions). BL335 shipped v8.62.x via BL397 Phase 4 |
@@ -734,6 +734,40 @@ _2026-05-02 operator-filed items promoted directly to BL218–BL221. 2026-05-03 
 > a local one-shot session once it's cloned its repo, using
 > Backend/Effort/Model/PermissionMode threaded through from the
 > original dispatch request. No longer open.
+
+> **B115** — zero `docs/testing/v9.0.0/cookbook.md` (TS-###) e2e stories
+> were added for any of the 21 releases between the v9.0.0 tag
+> (2026-10-09) and v9.0.21 (2026-10-10) — confirmed by `git log
+> --diff-filter=A -- scripts/test-stories/` showing the last story file
+> (TS-786) was added 2026-10-08, before the tag, and a grep of all 692
+> story scripts for `BL406`/`BL407`/`B11[0-4]`/the v9.0.1-21 version
+> strings returning zero matches. The per-phase AGENT.md checklist's own
+> "unit tests + live/smoke test + go test ./... green" bar was met on
+> every one of those releases, but none of them got the deeper,
+> REST-driven regression coverage this cookbook is for — a real
+> systemic gap, not any one phase's individual oversight. Fixed by
+> backfilling 9 new stories (TS-787–TS-795) for the subset that's
+> safely REST-testable without a live LLM/real GitHub write/real
+> docker-cluster spin-up: BL406 Phases 0/1/2/3/5 (config round-trips,
+> the ProjectRulesScanner content rule, the default parity-inheritance
+> rule, the PWA guardrail dropdown, the opt-in scope_drift rule,
+> `set_guided_mode`'s live B111 fix), v9.0.3's federation-aware PWA
+> orphan card, v9.0.16's `notify_exclude`, and B113's scan-config
+> round-trip. Two (parity-inheritance, scope_drift) turned out to need
+> `conflict:llm` after all — a fresh PRD's `add_story`/`add_task` are
+> rejected while status is `draft`, and the only REST-reachable way to
+> `needs_review` is a real decompose; found live while writing them,
+> fixed by decomposing for real just to cross that gate and then using
+> our own controlled story/task text for the actual assertion.
+> Explicitly NOT backfilled, documented instead in
+> `docs/testing/v9.0.0/cookbook.md`'s own gaps table: BL406 Phase 4
+> (upstream issue-filing — would file a real GitHub issue against a
+> real repo if run automatically), BL407 Phase 0 (real cluster-dispatch
+> terminal-state regression — needs a built worker container image,
+> infra this harness doesn't have yet), BL407 Phases 1-3 (PRD.Git
+> fields aren't REST/MCP/CLI-exposed at all yet — that's Phase 5's own
+> job), and the handful of pure build/release/docs/YAML-only v9.0.x
+> patches that have no REST surface to test. No longer open.
 
 _(Otherwise no open bugs as of the 2026-10-09/10 backlog refactor —
 everything previously listed here was already closed and has been moved
