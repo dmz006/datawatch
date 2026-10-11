@@ -1306,6 +1306,26 @@ func (s *Server) ServeStdio(ctx context.Context) error {
 	return server.NewStdioServer(s.srv).Listen(ctx, os.Stdin, os.Stdout)
 }
 
+// sseBaseURL returns the base URL the SSE server advertises to clients in
+// its "endpoint" event (the URL clients POST messages to). When
+// mcp.public_url is set it wins, with any trailing slash trimmed, so a
+// server bound to localhost behind a TLS-terminating reverse proxy
+// (Tailscale serve, Caddy, nginx) tells remote clients the proxy's
+// address instead of its own bind address. When it is empty the URL is
+// built from the first mcp.sse_host entry, the SSE port, and the TLS
+// setting, which is the historical behavior (unchanged).
+func sseBaseURL(cfg *config.MCPConfig) string {
+	if pub := strings.TrimRight(strings.TrimSpace(cfg.PublicURL), "/"); pub != "" {
+		return pub
+	}
+	host := strings.TrimSpace(strings.Split(cfg.SSEHost, ",")[0])
+	scheme := "http"
+	if cfg.TLSEnabled {
+		scheme = "https"
+	}
+	return fmt.Sprintf("%s://%s:%d", scheme, host, cfg.SSEPort)
+}
+
 // ServeSSE starts an HTTP/SSE MCP server for remote AI clients.
 // The SSEHost field supports comma-separated addresses for multi-interface binding.
 // Blocks until ctx is cancelled.
@@ -1315,13 +1335,10 @@ func (s *Server) ServeSSE(ctx context.Context) error {
 		hosts = []string{"127.0.0.1"}
 	}
 
-	// Use first host for the base URL (SSE server needs one canonical URL)
-	firstAddr := fmt.Sprintf("%s:%d", strings.TrimSpace(hosts[0]), s.cfg.SSEPort)
-	scheme := "http"
-	if s.cfg.TLSEnabled {
-		scheme = "https"
+	baseURL := sseBaseURL(s.cfg)
+	if strings.TrimSpace(s.cfg.PublicURL) != "" {
+		fmt.Printf("datawatch MCP SSE server advertising public URL %s to clients\n", baseURL)
 	}
-	baseURL := fmt.Sprintf("%s://%s", scheme, firstAddr)
 
 	sseSrv := server.NewSSEServer(s.srv, server.WithBaseURL(baseURL))
 

@@ -13622,6 +13622,7 @@ const COMMS_CONFIG_FIELDS = [
     { key: 'mcp.sse_enabled', label: 'SSE enabled (HTTP)', type: 'toggle' },
     { key: 'mcp.sse_host', label: 'SSE bind interface', type: 'interface_select' },
     { key: 'mcp.sse_port', label: 'SSE port', type: 'number' },
+    { key: 'mcp.public_url', label: 'SSE public URL (reverse proxy)', labelKey: 'settings_mcp_public_url', type: 'text', placeholder: 'https://host.example.ts.net:8081' },
     { key: 'mcp.tls_enabled', label: 'TLS enabled', type: 'toggle' },
     { key: 'mcp.tls_auto_generate', label: 'TLS auto-generate cert', type: 'toggle' },
     { key: 'mcp.tls_cert', label: 'TLS cert path', type: 'text' },
@@ -14878,7 +14879,7 @@ function summarizerModelHint(modelName) {
 const RESTART_FIELDS = new Set([
   'server.host', 'server.port', 'server.tls', 'server.tls_auto_generate', 'server.tls_cert', 'server.tls_key',
   'acme.enabled', 'acme.endpoint', 'acme.domains', 'acme.method', 'acme.dns01.provider', 'acme.dns01.token_secret', 'acme.dns01.zone_id', // BL397 — Manager starts/stops only at daemon boot
-  'mcp.enabled', 'mcp.sse_enabled', 'mcp.sse_host', 'mcp.sse_port', 'mcp.tls_enabled',
+  'mcp.enabled', 'mcp.sse_enabled', 'mcp.sse_host', 'mcp.sse_port', 'mcp.public_url', 'mcp.tls_enabled',
   'dns_channel.enabled', 'dns_channel.listen', 'dns_channel.domain',
 ]);
 

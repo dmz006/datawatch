@@ -1085,6 +1085,7 @@ mcp:
   sse_enabled: false       # enable HTTP/SSE transport for remote clients
   sse_host: "0.0.0.0"     # SSE server bind address (default: 0.0.0.0)
   sse_port: 8081           # SSE server port (default: 8081)
+  public_url: ""           # public base URL advertised to clients when behind a reverse proxy (empty = bind address)
   token: ""                # bearer token for SSE connections (strongly recommended)
   tls_enabled: false       # enable TLS for SSE server
   tls_auto_generate: true  # auto-generate self-signed cert (default: true when tls_enabled)

@@ -225,6 +225,12 @@ mcp:
   sse_host: 127.0.0.1
   # SSE listen port
   sse_port: 8081
+  # Public base URL advertised to SSE clients in the "endpoint" event.
+  # Set this when the SSE server is bound to localhost behind a
+  # TLS-terminating reverse proxy (Tailscale serve, Caddy, nginx), e.g.
+  # "https://host.tailnet.ts.net:8081". Trailing slash is ignored.
+  # Empty = advertise <scheme>://<first sse_host>:<sse_port> (GH#207).
+  public_url: ""
   # Bearer token for SSE connections. Empty falls back to server.token
   # (SEC-002) — MCP SSE is open only when BOTH this and server.token
   # are empty.

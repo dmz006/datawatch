@@ -1594,6 +1594,7 @@
   "prd_settings_priority_label": "Capacity queue priority (higher runs first)",
   "prd_settings_priority_hint": "Used when tasks wait for free capacity.",
   "settings_reserved_interactive": "Slots reserved for interactive sessions",
+  "settings_mcp_public_url": "SSE public URL (reverse proxy)",
   "settings_session_capacity_wait": "Interactive session capacity wait (sec)",
   "settings_capacity_enabled": "Capacity-aware admission (wait for free slots instead of failing)",
   "settings_capacity_wait_timeout": "Capacity wait timeout (sec, 0=4h)",

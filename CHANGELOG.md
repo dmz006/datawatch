@@ -5,6 +5,26 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+- MCP SSE server advertised its bind address to clients, so behind a
+  TLS-terminating reverse proxy (Tailscale serve, Caddy, nginx) remote
+  clients were told to POST to `http://127.0.0.1:8081/message` and every
+  tool call failed (GH#207). New config key `mcp.public_url` (mirrors
+  `server.public_url`): when set, its value (trailing slash trimmed) is
+  the base URL in the SSE `endpoint` event instead of
+  `<scheme>://<first sse_host>:<sse_port>`. Empty keeps the old behavior.
+  Wired through YAML (`config.go`, config template,
+  `docs/config-reference.yaml`), `GET`/`PUT /api/config`, the PWA
+  Settings MCP Server card (restart-required field, new locale key
+  `settings_mcp_public_url` in all 5 bundles with the English value as a
+  placeholder), the comm-channel `configure` key list, and the hot-reload
+  restart-required list. Docs: `docs/implementation.md`, `docs/mcp.md`,
+  `docs/operations.md`. Base-URL computation factored into
+  `sseBaseURL()` in `internal/mcp/server.go` with table tests plus an
+  end-to-end test that reads the real `endpoint` event from the SSE
+  handler. Reuse audit: extends the existing `server.public_url`
+  pattern; no new primitive.
+
 ## v9.0.30 — fix(autonomous): B121 revised — point to rules/context files instead of inlining their content
 
 ### Fixed

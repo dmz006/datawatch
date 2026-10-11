@@ -63,6 +63,7 @@ func GenerateAnnotatedConfig(cfg *Config) string {
 	fieldi(&b, "sse_enabled", cfg.MCP.SSEEnabled, "Enable HTTP/SSE transport for remote AI clients")
 	fieldi(&b, "sse_host", cfg.MCP.SSEHost, "SSE bind interface (127.0.0.1 for local, 0.0.0.0 for remote)")
 	fieldi(&b, "sse_port", cfg.MCP.SSEPort, "SSE listen port")
+	fieldi(&b, "public_url", cfg.MCP.PublicURL, "Public base URL advertised to SSE clients when behind a reverse proxy (empty = bind address)")
 	fieldi(&b, "token", cfg.MCP.Token, "Bearer token for SSE connections (empty = no auth)")
 	fieldi(&b, "tls_enabled", cfg.MCP.TLSEnabled, "Enable TLS for SSE server")
 	fieldi(&b, "tls_auto_generate", cfg.MCP.TLSAutoGenerate, "Auto-generate self-signed cert")

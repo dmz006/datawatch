@@ -158,6 +158,7 @@ func TestSave_RoundTrip(t *testing.T) {
 	cfg.Session.MaxSessions = 3
 	cfg.Server.Port = 9090
 	cfg.Server.PublicURL = "https://datawatch.example.com" // F10 S4.2
+	cfg.MCP.PublicURL = "https://host.tailnet.ts.net:8081" // GH#207
 
 	if err := Save(cfg, path); err != nil {
 		t.Fatalf("Save: %v", err)
@@ -182,6 +183,9 @@ func TestSave_RoundTrip(t *testing.T) {
 	}
 	if loaded.Server.PublicURL != cfg.Server.PublicURL {
 		t.Errorf("Server.PublicURL: got %q, want %q", loaded.Server.PublicURL, cfg.Server.PublicURL)
+	}
+	if loaded.MCP.PublicURL != cfg.MCP.PublicURL {
+		t.Errorf("MCP.PublicURL: got %q, want %q", loaded.MCP.PublicURL, cfg.MCP.PublicURL)
 	}
 }
 

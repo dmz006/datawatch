@@ -1526,6 +1526,16 @@ type MCPConfig struct {
 	SSEHost string `yaml:"sse_host"`
 	SSEPort int    `yaml:"sse_port"`
 
+	// PublicURL is the externally-reachable base URL of the SSE server,
+	// for example "https://host.tailnet.ts.net:8081". When set, it is the
+	// base URL advertised to clients in the SSE "endpoint" event instead
+	// of the bind address, which is required when the SSE server is bound
+	// to localhost behind a TLS-terminating reverse proxy (Tailscale
+	// serve, Caddy, nginx). A trailing slash is ignored. Empty keeps the
+	// default of <scheme>://<first sse_host>:<sse_port>. Mirrors
+	// Server.PublicURL. GH#207.
+	PublicURL string `yaml:"public_url,omitempty"`
+
 	// Token is a bearer token required for SSE connections.
 	// Remote AI clients must pass "Authorization: Bearer <token>".
 	Token string `yaml:"token"`

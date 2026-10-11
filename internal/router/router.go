@@ -849,7 +849,7 @@ func (r *Router) handleConfigure(cmd Command) {
 		return
 	}
 	if text == "list" {
-		r.send(fmt.Sprintf("[%s] Configurable keys (use configure <key>=<value>):\n  session.llm_backend, session.max_sessions, session.input_idle_timeout\n  session.console_cols, session.console_rows, session.auto_git_commit\n  ollama.enabled, ollama.host, ollama.model\n  opencode.enabled, opencode.binary\n  web_search.enabled, web_search.url, web_search.engine, web_search.num_results\n  detection.prompt_debounce, detection.notify_cooldown, detection.alert_settle, detection.alert_repeat\n  autonomous.capacity_enabled, autonomous.capacity_wait_timeout_seconds, autonomous.capacity_gpu_util_pct\n  session.reserved_interactive\n  server.host, server.port, server.tls\n  mcp.sse_host, mcp.sse_port", r.hostname))
+		r.send(fmt.Sprintf("[%s] Configurable keys (use configure <key>=<value>):\n  session.llm_backend, session.max_sessions, session.input_idle_timeout\n  session.console_cols, session.console_rows, session.auto_git_commit\n  ollama.enabled, ollama.host, ollama.model\n  opencode.enabled, opencode.binary\n  web_search.enabled, web_search.url, web_search.engine, web_search.num_results\n  detection.prompt_debounce, detection.notify_cooldown, detection.alert_settle, detection.alert_repeat\n  autonomous.capacity_enabled, autonomous.capacity_wait_timeout_seconds, autonomous.capacity_gpu_util_pct\n  session.reserved_interactive\n  server.host, server.port, server.tls\n  mcp.sse_host, mcp.sse_port, mcp.public_url", r.hostname))
 		return
 	}
 	eqIdx := strings.Index(text, "=")

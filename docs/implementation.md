@@ -636,6 +636,7 @@ All fields in `~/.datawatch/config.yaml`:
 | `servers[].url` | string | — | Base URL of the remote server (e.g. `http://203.0.113.10:8080`) |
 | `servers[].token` | string | — | Bearer token for the remote server |
 | `servers[].enabled` | bool | `true` | Whether this remote server is active |
+| `mcp.public_url` | string | `""` | Public base URL the MCP SSE server advertises to clients in its `endpoint` event (for example `https://host.tailnet.ts.net:8081`). Set it when `mcp.sse_host` is bound to localhost behind a TLS-terminating reverse proxy. Trailing slash is ignored. Empty advertises `<scheme>://<first sse_host>:<sse_port>`. Restart required. |
 | `mcp.max_retries` | int | `3` | Number of automatic retries when a per-session MCP channel server fails to start or loses connection |
 | `goose.enabled` | bool | `false` | Enable the goose/goose-prompt LLM backend |
 | `goose.binary` | string | `goose` | Path to the goose binary (absolute or PATH-relative) |

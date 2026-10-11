@@ -5298,6 +5298,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"sse_enabled":       s.cfg.MCP.SSEEnabled,
 			"sse_host":          s.cfg.MCP.SSEHost,
 			"sse_port":          s.cfg.MCP.SSEPort,
+			"public_url":        s.cfg.MCP.PublicURL,
 			"token":             mask(s.cfg.MCP.Token),
 			"tls_enabled":       s.cfg.MCP.TLSEnabled,
 			"tls_auto_generate": s.cfg.MCP.TLSAutoGenerate,
@@ -6158,6 +6159,8 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			if n, ok := toInt(v); ok {
 				cfg.MCP.SSEPort = n
 			}
+		case "mcp.public_url":
+			cfg.MCP.PublicURL = strings.TrimRight(strings.TrimSpace(toString(v)), "/")
 		case "mcp.sse_enabled":
 			cfg.MCP.SSEEnabled = toBool(v)
 		case "mcp.tls_enabled":
