@@ -1344,9 +1344,9 @@ within matching files), `consistency` (two files must agree on a
 value — e.g. "these two files' version strings must match"),
 `presence` (a file/pattern must exist), `parity` (built-in, checks
 a story's declared parity surface against its parent plan's — ships
-default-enabled as of v9.0.17, the only rule any operator
-gets without configuring one), and `scope_drift` (built-in, v9.0.17 —
-flags a task spec with code-creation language when
+default-enabled once BL406 Phase 2 landed, the only rule any operator
+gets without configuring one), and `scope_drift` (built-in, BL406
+Phase 5 / B112 — flags a task spec with code-creation language when
 the parent PRD spec itself declares doc-only/no-code-changes work;
 unlike `parity`, **not** default-enabled — a normal non-doc-only PRD
 saying "Implement X" is expected work, not drift, so this needs an
@@ -1354,7 +1354,7 @@ explicit opt-in per the example in `docs/config-reference.yaml`). Each
 rule also names a `granularity`
 (`task_complete` / `story_complete` / `prd_complete` — which
 completion checkpoint it's meant to run at; the checkpoints themselves
-landed in v9.0.17) and an optional `action` (`file_upstream_issue`,
+land in BL406 Phase 3) and an optional `action` (`file_upstream_issue`,
 for gaps this repo's own PRD can't close alone). The parity and
 scope_drift rules are both deliberately candidate detectors, not a
 final verdict — "was there a stated exclusion reason"/"is this really
@@ -1366,8 +1366,8 @@ not a second mechanism. See
 **Guided mode** — per-PRD setting (`guided_mode: true`,
 `PRD.GuidedModeSource` internally) that pauses the executor before
 every task and waits for an explicit `approve_task` call before it
-runs. Declared since v6.2.0 but never actually implemented
-until v9.0.17 — the set-side plumbing
+runs. Declared since BL221 (v6.2.0) but never actually implemented
+until BL406 Phase 5 (v9.0.17, fixes **B111**) — the set-side plumbing
 existed across every surface for years with no executor code ever
 reading it. Independent of the per-story approval gate
 (`per_story_approval`); a PRD can use either, both, or neither. See
@@ -1377,17 +1377,18 @@ reading it. Independent of the per-story approval gate
 (`automaton/<prd-id>-<slug>`) a PRD runs in instead of bare in the
 daemon's own checkout, created automatically at `Run()` when
 `autonomous.worktree_base_repo` is configured and the PRD has no
-explicit `project_dir`/`project_profile`/`cluster_profile` (v9.0.19). Shares the base repo's `.git` object store —
+explicit `project_dir`/`project_profile`/`cluster_profile` (BL407
+Phase 1, v9.0.19). Shares the base repo's `.git` object store —
 cheap, filesystem/git-level isolation only, not process/network
 isolation (that's `cluster_profile` dispatch's job). With
 `PRD.Git.AutoPR: true`, a successfully-completed worktree-mode PRD
 pushes the branch and opens a real PR (one per PRD, not per task),
-then removes the local worktree (v9.0.20). A
+then removes the local worktree (BL407 Phase 2, v9.0.20). A
 `cluster_profile` PRD gets the equivalent `Git.AutoPR` behavior with no
 worktree at all — the dispatched worker commits and pushes its own
 branch itself (using its bootstrap-minted git token), reports it back
 on completion, and the parent opens the PR from that branch directly
-(v9.0.21). As of v9.0.22, that worker
+(BL407 Phase 3, v9.0.21). As of BL407 Phase 4 (v9.0.22), that worker
 creates and checks out the PRD's own dedicated `automaton/<prd-id>-<slug>`
 branch fresh (instead of landing on whatever branch the dispatching
 Project Profile names), closing the one gap between cluster mode and

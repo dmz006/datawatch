@@ -383,3 +383,31 @@ CVE-2026-19445
 # --entrypoint /bin/sh --network none) to find every real linker to libexpat1,
 # then traced each caller's actual invocation path
 CVE-2026-77214
+
+# libgnutls30 -- CVE-2026-88647, CVE-2026-88648
+# severity: high; images: agent-base and everything built from it (agent-claude,
+# agent-opencode, agent-aider, agent-gemini, agent-goose, parent-full)
+# Information disclosure via hostname verification bypass / cross-domain
+# certificate restriction bypass via incomplete X.509 validation, in Debian's
+# libgnutls30 3.7.9-2+deb12u7. No fixed version listed by Debian for bookworm
+# as of 2026-10-09. Found by v9.0.3's release scan (new since v9.0.1/v9.0.2's
+# scans -- not a drift of our own pinning, a new upstream disclosure).
+# Re-check for a Debian backport each cycle.
+CVE-2026-88647
+CVE-2026-88648
+
+# gh (GitHub CLI, installed via `install_packages gh`) -- CVE-2026-78667,
+# CVE-2026-78669, CVE-2026-97031
+# severity: high; images: agent-base and everything built from it (agent-claude,
+# agent-opencode, agent-aider, agent-gemini, agent-goose, parent-full)
+# These are Go stdlib (net/http, crypto/tls) and golang.org/x/net DoS CVEs
+# (HTTP/2 SETTINGS flood, crafted Range headers, ECH outer-extension abuse)
+# baked into the gh v2.102.0 binary itself -- gh is pulled as a prebuilt apt
+# package, not compiled from source here, so our own Dockerfile.agent-base
+# GO_VERSION pin (see check-dockerfile-go-versions.sh) has no effect on it.
+# Confirmed v2.102.0 (released 2026-09-30) is cli/cli's latest release as of
+# 2026-10-09 -- upstream hasn't cut a build against patched Go/x-net yet.
+# Re-check each cycle for a newer gh release.
+CVE-2026-78667
+CVE-2026-78669
+CVE-2026-97031
