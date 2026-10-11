@@ -188,7 +188,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "9.0.28"
+var Version = "9.0.29"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -5225,6 +5225,14 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"topic":      s.cfg.Ntfy.Topic,
 			"token":      mask(s.cfg.Ntfy.Token),
 		},
+		"imap_mcp": map[string]interface{}{
+			"enabled":        s.cfg.ImapMcp.Enabled,
+			"url":            s.cfg.ImapMcp.URL,
+			"account":        s.cfg.ImapMcp.Account,
+			"subject_prefix": s.cfg.ImapMcp.SubjectPrefix,
+			"to":             s.cfg.ImapMcp.To,
+			"token":          mask(s.cfg.ImapMcp.Token),
+		},
 		"email": map[string]interface{}{
 			"enabled":  s.cfg.Email.Enabled,
 			"host":     s.cfg.Email.Host,
@@ -5894,6 +5902,23 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		case "ntfy.token":
 			if s := toString(v); s != "" {
 				cfg.Ntfy.Token = s
+			}
+		// BL404 — imap_mcp config parity.
+		case "imap_mcp.enabled":
+			cfg.ImapMcp.Enabled = toBool(v)
+		case "imap_mcp.url":
+			cfg.ImapMcp.URL = toString(v)
+		case "imap_mcp.account":
+			cfg.ImapMcp.Account = toString(v)
+		case "imap_mcp.subject_prefix":
+			cfg.ImapMcp.SubjectPrefix = toString(v)
+		case "imap_mcp.to":
+			cfg.ImapMcp.To = toString(v)
+		case "imap_mcp.token":
+			// Ignore empty and the GET redaction placeholder so a client
+			// echoing back the masked value never clobbers the real token.
+			if s := toString(v); s != "" && s != "***" {
+				cfg.ImapMcp.Token = s
 			}
 		case "email.enabled":
 			cfg.Email.Enabled = toBool(v)

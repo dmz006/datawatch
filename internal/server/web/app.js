@@ -15430,6 +15430,7 @@ function isBackendConfigured(svc, s) {
     matrix: ['access_token'], ntfy: ['topic'], email: ['host', 'username'],
     twilio: ['account_sid', 'from_number'], github_webhook: ['secret'],
     webhook: ['addr'], dns_channel: ['domain', 'secret'],
+    imap_mcp: ['url'],
   };
   const fields = credFields[svc] || [];
   if (fields.length === 0) return true; // always considered configured
@@ -15443,7 +15444,7 @@ function loadConfigStatus() {
   // reflected a selected remote server's own comm-backend config.
   apiFetch('/api/config')
     .then(cfg => {
-      const services = ['telegram', 'discord', 'slack', 'matrix', 'ntfy', 'email', 'twilio', 'github_webhook', 'webhook', 'dns_channel'];
+      const services = ['telegram', 'discord', 'slack', 'matrix', 'ntfy', 'email', 'twilio', 'github_webhook', 'webhook', 'dns_channel', 'imap_mcp'];
       el.innerHTML = services.map(svc => {
         const s = cfg[svc] || {};
         const on = s.enabled;
@@ -15542,6 +15543,11 @@ const BACKEND_FIELDS = {
   webhook:        [{ key:'addr', label:'Listen Address', type:'text', placeholder:'127.0.0.1:9002' }, { key:'token', label:'Token (optional)', type:'password' }],
   signal:         [{ key:'group_id', label:'Group ID (base64)', type:'text' }, { key:'config_dir', label:'signal-cli config dir', type:'text' }, { key:'device_name', label:'Device name', type:'text' }],
   dns_channel:    [{ key:'mode', label:'Mode', type:'text', placeholder:'server' }, { key:'domain', label:'Domain', type:'text', placeholder:'ctl.example.com' }, { key:'listen', label:'Listen (server)', type:'text', placeholder:':53' }, { key:'upstream', label:'Upstream (client)', type:'text', placeholder:'8.8.8.8:53' }, { key:'secret', label:'Shared Secret', type:'password' }, { key:'ttl', label:'TTL (seconds)', type:'number', placeholder:'0' }, { key:'max_response_size', label:'Max Response Size', type:'number', placeholder:'512' }, { key:'poll_interval', label:'Poll Interval', type:'text', placeholder:'5s' }, { key:'rate_limit', label:'Rate limit (per IP/min)', type:'number', placeholder:'30' }],
+  // BL404 (operator-reported): imap-mcp channel had no PWA surface even
+  // though GET/PUT /api/config carry imap_mcp.*. Token is a password field
+  // and, like every other secret here, is never prefilled -- the server
+  // masks it as "***" and saveBackendConfig skips empty values.
+  imap_mcp:       [{ key:'url', label:'imap-mcp API URL', type:'text', placeholder:'http://localhost:8765' }, { key:'account', label:'Account (empty = default)', type:'text' }, { key:'to', label:'Outbound recipient address', type:'text', placeholder:'you@example.com' }, { key:'subject_prefix', label:'Subject prefix', type:'text', placeholder:'datawatch' }, { key:'token', label:'Bearer token', type:'password', placeholder:'${secret:imap_mcp_token}' }],
 };
 
 function openBackendSetup(service) {
@@ -26638,7 +26644,7 @@ window.renderObserverView = renderObserverView;
 function loadCommBackendsStatus() {
   const el = document.getElementById('commBackendsStatus');
   if (!el) return;
-  const services = ['telegram', 'discord', 'slack', 'matrix', 'ntfy', 'email', 'twilio', 'github_webhook', 'webhook', 'dns_channel'];
+  const services = ['telegram', 'discord', 'slack', 'matrix', 'ntfy', 'email', 'twilio', 'github_webhook', 'webhook', 'dns_channel', 'imap_mcp'];
   // Settings-tab federation pass (2026-10-08): was raw, non-proxy-aware.
   apiFetch('/api/config')
     .then(cfg => {

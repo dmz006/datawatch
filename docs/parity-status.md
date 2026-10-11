@@ -35,6 +35,7 @@ Legend:
 | Settings — Messaging backends | ✅ | ✅ | ✅ |
 | Settings — Audit & Access Log (v8.74.0) | ✅ | ❌ (tracked: app#241) | ❌ (tracked: app#241) |
 | Settings — Cross-Session Communication Rule (v8.79.0) | ✅ | ❌ (tracked: app#241) | ❌ (tracked: app#241) |
+| Settings — Comms: imap-mcp channel config (BL404) | ✅ | ❌ (tracked: [app#250](https://github.com/dmz006/datawatch-app/issues/250)) | ❌ (tracked: [app#250](https://github.com/dmz006/datawatch-app/issues/250)) |
 | Push notifications (FCM) | ✅ | ✅ | N/A |
 | Push notifications (APNs) | N/A | N/A | ✅ v8.62.x — server-side dispatch shipped (BL397 Phase 4 / BL335); **unit-tested only, not live-verified against real Apple servers** (no Apple Developer account/Auth Key/TestFlight device token available in this environment) |
 | Alert list + mark read | ✅ | ✅ | ✅ |

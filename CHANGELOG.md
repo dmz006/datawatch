@@ -5,6 +5,36 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.29 — feat(server): BL404 — imap_mcp messaging channel config parity
+
+### Added
+- The `imap_mcp.*` config block (`enabled`/`url`/`account`/`subject_prefix`/
+  `token`/`to`) was YAML-only since BL340 (v8.9.23) — `applyConfigPatch`
+  had zero `imap_mcp.*` cases, so none of these six fields were reachable
+  via `PUT /api/config`, the generic `config_set` MCP tool, the CLI
+  `config set` command, or the comm-channel `configure` verb, violating
+  the Configuration Accessibility Rule's "every config channel" bar.
+- Added `imap_mcp.*` cases to `applyConfigPatch` (mirroring the existing
+  `ntfy.token` precedent: writing `""` or the masked `"***"` placeholder
+  leaves an existing token unchanged, so a client echoing back a masked
+  `GET` response never clobbers the real secret ref) and a matching
+  `imap_mcp` section on `GET /api/config` (token always masked as
+  `"***"`).
+- PWA: new **imap mcp** card under Settings → Comms, reusing the existing
+  declarative `BACKEND_FIELDS` renderer (token is a password field, never
+  shown in plaintext). Mobile-Parity issue filed:
+  [`datawatch-app`#250](https://github.com/dmz006/datawatch-app/issues/250).
+- Documented the full config surface (YAML/REST/PWA/CLI/comm/MCP) in a
+  new `## imap-mcp (email)` section of `docs/messaging-backends.md`,
+  including the operator caveat that `token` accepts a `${secret:name}`
+  reference and must never be stored in `config.yaml` as plaintext.
+- No runtime/dispatch behavior changed — this closes the configuration-
+  accessibility gap only.
+- New tests: `internal/server/applyconfigpatch_imap_mcp_test.go` (all
+  six keys, token preservation on `""`/`"***"`, `GET /api/config` masking)
+  and `internal/server/web/app-imap-mcp-settings.test.js` (`BACKEND_FIELDS`
+  shape, both backend-list arrays).
+
 ## v9.0.28 — fix(autonomous): B121 — rules_file/context_file had full config plumbing, zero consumers
 
 ### Fixed
