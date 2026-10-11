@@ -67,6 +67,71 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   the secrets-store `${secret:NAME}` reference pattern via an exported
   `secrets.IsRef` built from the same regex, and extends the existing
   `scripts/check-plugin-manifests.sh` rather than adding a new checker.
+## v9.0.30 — fix(autonomous): B121 revised — point to rules/context files instead of inlining their content
+
+### Fixed
+- B121's decomposer fix (v9.0.28) inlined the full content of
+  `AGENT.md`/`DATAWATCH-CONTEXT.md` (~160KB combined on this repo)
+  into every session-based decompose prompt. Operator-raised same day:
+  a session-based decompose backend (claude-code, opencode, ...) is
+  already running *in* the PRD's own `project_dir` with real
+  file-reading tools — there's no need to pre-digest the files into
+  the prompt at all. Inlining was also the direct trigger for B122's
+  tmux chunked-paste corruption (confirmed live: even with B122's
+  timing fix, a ~26-chunk payload from a second large prompt still
+  corrupted claude-code's input rendering and never submitted) — B122
+  alone wasn't sufficient; the payload itself needed to shrink, not
+  just the timing around sending it.
+- `internal/autonomous/rules_context.go` now emits a short pointer
+  ("Before planning, read AGENT.md and DATAWATCH-CONTEXT.md at the
+  root of your working directory...") instead of reading and
+  inlining either file. A headless/ask-based backend (no file-reading
+  tools) simply can't act on the pointer — harmless, inert text, not
+  a regression from the inlining version for that case. Confirmed:
+  decompose also already reuses the exact same one-shot session
+  delivery path (`POST /api/sessions/start`, `one_shot: true`) every
+  other one-shot task uses — this wasn't a bespoke decompose code
+  path, so the fix only needed to shrink what decompose sends, not
+  change how anything gets delivered.
+- Rewrote `internal/autonomous/rules_context_test.go` for the new
+  pointer-only behavior (content-inlining assertions no longer apply).
+  B122's tmux timing fix (`internal/session/tmux.go`) stays — it's
+  still a real, independently valid fix for the shared chunked-paste
+  delivery path any large one-shot task could hit.
+
+## v9.0.29 — fix(session): B122 — large tmux send-keys payloads corrupted TUI input, Enter never registered
+
+### Fixed
+- `SendKeysWithSettle` (`internal/session/tmux.go`) chunks a payload
+  over ~8KB into multiple `tmux send-keys -l` calls (tmux itself
+  rejects a single call above ~16KB), with a flat 10ms pause between
+  chunks and a flat 120ms settle before the trailing `Enter`. That
+  timing was only ever exercised by small payloads (a PRD decompose
+  prompt was a few KB at most) until today's B121 fix started
+  injecting full `AGENT.md`/`DATAWATCH-CONTEXT.md` content into every
+  decompose call — a ~160KB prompt, ~20 chunks. Found live: the
+  receiving TUI (claude-code, ink-based) couldn't reconcile 20
+  back-to-back chunk writes that close together, corrupted its own
+  input-line rendering (observed: ~13 unexpanded `[Pasted text #N]`
+  placeholders stuck on the input line), and the trailing `Enter`
+  landed on a terminal state that wasn't actually ready to treat it
+  as "submit" — the session sat forever instead of running. This
+  exact chunking path had **zero prior test coverage**: every
+  existing `SendKeysWithSettle` test uses a payload under one chunk.
+- Fixed by scaling both delays with the payload's real chunk count:
+  `interChunkDelay` 10ms → 30ms, and a new `settleForChunks` helper
+  adds 60ms per extra chunk beyond the first to the trailing settle
+  before `Enter` (capped at 2s so a pathological payload can't stall
+  session startup indefinitely). A single-chunk payload — the
+  overwhelming common case, every send before today — is completely
+  unaffected: `settleForChunks` returns the caller's own `settle`
+  unchanged whenever there's 0 or 1 chunks.
+- 7 new tests in new `internal/session/tmux_large_payload_test.go`,
+  including an exact reproduction of the real failure's scale (a
+  ~161KB / 20-chunk payload).
+- Found live while kicking off BL403 Phase 1 as a real PRD immediately
+  after B121 shipped — the first decompose call large enough to
+  exercise this path at all.
 
 ## v9.0.28 — fix(autonomous): B121 — rules_file/context_file had full config plumbing, zero consumers
 

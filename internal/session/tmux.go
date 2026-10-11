@@ -149,12 +149,50 @@ func (t *TmuxManager) SendKeys(session, keys string) error {
 // settle <= 0 is clamped to defaultSendSettle so the two-step pattern
 // always runs; the previous "fall back to single-call" branch caused
 // the B34 extra-Enter regression against modern TUIs.
+// interChunkDelay is the pause between consecutive send-keys -l chunk
+// calls for a multi-chunk payload. Found live 2026-10-11: a ~160KB
+// decompose prompt (BL406's rules_file/context_file content, never
+// this large before that fix) split into ~20 chunks at the old flat
+// 10ms spacing corrupted claude-code's own input rendering (its
+// bracketed-paste coalescing couldn't keep up with 20 back-to-back
+// writes that close together) and the trailing Enter landed on a
+// terminal state that wasn't actually ready to accept it as "submit" —
+// the session sat forever showing ~13 unexpanded "[Pasted text #N]"
+// placeholders on the input line instead of running. This chunking
+// path had zero prior test coverage (every existing SendKeysWithSettle
+// test uses a payload under one chunk).
+const interChunkDelay = 30 * time.Millisecond
+
+// maxTrailingSettle caps how long settleForChunks will ever wait, so a
+// pathologically large payload doesn't stall session startup for an
+// unreasonable amount of real time.
+const maxTrailingSettle = 2 * time.Second
+
+// settleForChunks scales the pre-Enter settle with how many chunks were
+// actually sent: each additional chunk is one more burst of input the
+// receiving TUI has to finish reconciling before a bare Enter can be
+// trusted to mean "submit" rather than "still mid-paste." A single-chunk
+// payload (the common case — every send before today's large rules/
+// context injection) is untouched: it still gets exactly `settle`.
+func settleForChunks(settle time.Duration, numChunks int) time.Duration {
+	if numChunks <= 1 {
+		return settle
+	}
+	extra := time.Duration(numChunks-1) * 60 * time.Millisecond
+	total := settle + extra
+	if total > maxTrailingSettle {
+		return maxTrailingSettle
+	}
+	return total
+}
+
 func (t *TmuxManager) SendKeysWithSettle(session, keys string, settle time.Duration) error {
 	if settle <= 0 {
 		settle = defaultSendSettle
 	}
 	keys = trimTrailingNewlines(keys)
 	// Chunk large inputs: tmux rejects send-keys -l arguments above ~16 KB.
+	numChunks := (len(keys) + tmuxSendChunk - 1) / tmuxSendChunk
 	for len(keys) > 0 {
 		chunk := keys
 		if len(chunk) > tmuxSendChunk {
@@ -165,10 +203,10 @@ func (t *TmuxManager) SendKeysWithSettle(session, keys string, settle time.Durat
 			return err
 		}
 		if len(keys) > 0 {
-			time.Sleep(10 * time.Millisecond)
+			time.Sleep(interChunkDelay)
 		}
 	}
-	time.Sleep(settle)
+	time.Sleep(settleForChunks(settle, numChunks))
 	return exec.Command("tmux", "send-keys", "-t", session, "Enter").Run()
 }
 

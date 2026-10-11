@@ -40,14 +40,14 @@ import (
 	"github.com/dmz006/datawatch/internal/llm/backends/opencode"
 	"github.com/dmz006/datawatch/internal/llm/backends/openwebui"
 	"github.com/dmz006/datawatch/internal/memory"
-	"github.com/dmz006/datawatch/internal/metrics"
 	"github.com/dmz006/datawatch/internal/messaging"
+	"github.com/dmz006/datawatch/internal/metrics"
 	"github.com/dmz006/datawatch/internal/profile"
 	"github.com/dmz006/datawatch/internal/proxy"
 	"github.com/dmz006/datawatch/internal/router"
 	"github.com/dmz006/datawatch/internal/rtk"
-	"github.com/dmz006/datawatch/internal/server/multiserver"
 	"github.com/dmz006/datawatch/internal/secrets"
+	"github.com/dmz006/datawatch/internal/server/multiserver"
 	"github.com/dmz006/datawatch/internal/session"
 	"github.com/dmz006/datawatch/internal/stats"
 	"github.com/dmz006/datawatch/internal/tooling"
@@ -251,9 +251,9 @@ type Server struct {
 	auditLog *audit.Log
 
 	// GH#201 — HTTP access / WS lifecycle / auth-failure log.
-	accessLog               *audit.Log
-	accessLogEventCount     int64 // atomic
-	accessLogAuthFailCount  int64 // atomic
+	accessLog              *audit.Log
+	accessLogEventCount    int64 // atomic
+	accessLogAuthFailCount int64 // atomic
 
 	// BL242 — centralized secrets store.
 	secretsStore secretsStore

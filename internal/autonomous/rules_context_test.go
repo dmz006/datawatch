@@ -1,6 +1,14 @@
 // BL406 — found live 2026-10-11: the plan's own promise that "the
 // decomposer... reads whichever path is configured" was never
 // implemented despite all 6 phases being marked Done.
+//
+// Revised same day (B122): points to the files instead of inlining
+// their content (operator-raised: a session-based decompose backend
+// has real file-reading tools of its own in prd.ProjectDir already —
+// inlining ~160KB of AGENT.md/DATAWATCH-CONTEXT.md content into the
+// prompt is what triggered the tmux chunked-paste bug in the first
+// place, and pointing to the files eliminates that at the root
+// instead of just tuning timing around it).
 
 package autonomous
 
@@ -18,34 +26,59 @@ func TestRulesContextSuffix_EmptyProjectDir(t *testing.T) {
 	}
 }
 
-func TestRulesContextSuffix_DefaultFilenames(t *testing.T) {
+func TestRulesContextSuffix_PointsToDefaultFilenameWithoutInliningContent(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "AGENT.md"), []byte("rule: do not break the build"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "AGENT.md"), []byte("MARKER: do not break the build"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	m := &Manager{cfg: Config{}}
 	got := m.rulesContextSuffix(&PRD{ProjectDir: dir})
-	if !strings.Contains(got, "do not break the build") {
-		t.Fatalf("expected AGENT.md content in suffix, got %q", got)
-	}
 	if !strings.Contains(got, "AGENT.md") {
-		t.Errorf("expected the suffix to name the file it came from, got %q", got)
+		t.Fatalf("expected a pointer naming AGENT.md, got %q", got)
+	}
+	if strings.Contains(got, "MARKER: do not break the build") {
+		t.Fatalf("must NOT inline the file's content (that's the B122 bug) — got %q", got)
+	}
+	if len(got) > 500 {
+		t.Errorf("pointer-style suffix should be tiny, got %d bytes", len(got))
 	}
 }
 
-func TestRulesContextSuffix_NoContextFileIsFine(t *testing.T) {
+func TestRulesContextSuffix_NoFileNoSuffix(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "AGENT.md"), []byte("rule content"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	// No CONTEXT.md written — must not error or panic, just omit it.
+	// Nothing written — neither AGENT.md nor CONTEXT.md exists.
 	m := &Manager{cfg: Config{}}
 	got := m.rulesContextSuffix(&PRD{ProjectDir: dir})
-	if strings.Contains(got, "Project context") {
-		t.Errorf("must not claim a context section when no context file exists, got %q", got)
+	if got != "" {
+		t.Errorf("no rules/context file present: want empty suffix, got %q", got)
 	}
-	if !strings.Contains(got, "rule content") {
-		t.Errorf("rules file content missing, got %q", got)
+}
+
+func TestRulesContextSuffix_MentionsBothWhenBothExist(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "AGENT.md"), []byte("rules"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "CONTEXT.md"), []byte("context"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	m := &Manager{cfg: Config{}}
+	got := m.rulesContextSuffix(&PRD{ProjectDir: dir})
+	if !strings.Contains(got, "AGENT.md") || !strings.Contains(got, "CONTEXT.md") {
+		t.Errorf("expected both filenames mentioned, got %q", got)
+	}
+}
+
+func TestRulesContextSuffix_OnlyMentionsFilesThatActuallyExist(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "AGENT.md"), []byte("rules"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// No CONTEXT.md written.
+	m := &Manager{cfg: Config{}}
+	got := m.rulesContextSuffix(&PRD{ProjectDir: dir})
+	if strings.Contains(got, "CONTEXT.md") {
+		t.Errorf("must not mention a context file that doesn't exist, got %q", got)
 	}
 }
 
@@ -59,28 +92,28 @@ func TestRulesContextSuffix_CustomFilenames(t *testing.T) {
 	}
 	m := &Manager{cfg: Config{RulesFile: "CUSTOM-RULES.md", ContextFile: "DATAWATCH-CONTEXT.md"}}
 	got := m.rulesContextSuffix(&PRD{ProjectDir: dir})
-	if !strings.Contains(got, "custom rule text") {
-		t.Errorf("custom rules file not read, got %q", got)
+	if !strings.Contains(got, "CUSTOM-RULES.md") {
+		t.Errorf("custom rules filename not pointed to, got %q", got)
 	}
-	if !strings.Contains(got, "project state text") {
-		t.Errorf("custom context file not read, got %q", got)
+	if !strings.Contains(got, "DATAWATCH-CONTEXT.md") {
+		t.Errorf("custom context filename not pointed to, got %q", got)
 	}
 }
 
-func TestRulesContextSuffix_CapsOversizedFile(t *testing.T) {
+func TestRulesContextSuffix_HugeFileStillProducesTinySuffix(t *testing.T) {
 	dir := t.TempDir()
-	big := strings.Repeat("x", rulesContextMaxBytesPerFile+1000)
+	big := strings.Repeat("x", 200*1024) // this repo's real AGENT.md is ~115KB
 	if err := os.WriteFile(filepath.Join(dir, "AGENT.md"), []byte(big), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	m := &Manager{cfg: Config{}}
 	got := m.rulesContextSuffix(&PRD{ProjectDir: dir})
-	if len(got) > rulesContextMaxBytesPerFile+200 {
-		t.Errorf("oversized rules file was not capped: suffix length %d", len(got))
+	if len(got) > 500 {
+		t.Errorf("a 200KB rules file must still produce a tiny pointer-style suffix (the whole point of B122's fix), got %d bytes", len(got))
 	}
 }
 
-func TestDecompose_InjectsRulesFileContentIntoPrompt(t *testing.T) {
+func TestDecompose_PromptPointsToRulesFileWithoutInliningContent(t *testing.T) {
 	baseRepo := scratchGitRepo(t)
 	worktreeDir := t.TempDir()
 
@@ -106,22 +139,24 @@ func TestDecompose_InjectsRulesFileContentIntoPrompt(t *testing.T) {
 		t.Fatalf("Decompose: %v", err)
 	}
 	prd, _ = m.Store().GetPRD(prd.ID)
-
-	// scratchGitRepo doesn't seed an AGENT.md, so the worktree genuinely
-	// has none -- confirm the absence case doesn't break decompose, then
-	// seed one and decompose again to confirm presence actually reaches
-	// the prompt.
-	if strings.Contains(capturedPrompt, "Project rules") {
-		t.Fatalf("no AGENT.md exists yet; prompt should not claim one, got %q", capturedPrompt)
+	if strings.Contains(capturedPrompt, "AGENT.md") {
+		t.Fatalf("no AGENT.md exists yet; prompt should not point to one, got %q", capturedPrompt)
 	}
 
-	if err := os.WriteFile(filepath.Join(prd.ProjectDir, "AGENT.md"), []byte("MARKER: never break the build"), 0o644); err != nil {
+	seeded := strings.Repeat("y", 50*1024)
+	if err := os.WriteFile(filepath.Join(prd.ProjectDir, "AGENT.md"), []byte(seeded), 0o644); err != nil {
 		t.Fatalf("seed AGENT.md: %v", err)
 	}
 	if _, err := m.Decompose(prd.ID); err != nil {
 		t.Fatalf("second Decompose: %v", err)
 	}
-	if !strings.Contains(capturedPrompt, "MARKER: never break the build") {
-		t.Fatalf("AGENT.md content did not reach the decompose prompt, got %q", capturedPrompt)
+	if !strings.Contains(capturedPrompt, "AGENT.md") {
+		t.Fatalf("prompt should point to AGENT.md once it exists, got %q", capturedPrompt)
+	}
+	if strings.Contains(capturedPrompt, seeded) {
+		t.Fatalf("prompt must NOT inline the 50KB file content — that's the exact B122 bug")
+	}
+	if len(capturedPrompt) > 5000 {
+		t.Errorf("prompt should stay small even with a large AGENT.md present, got %d bytes", len(capturedPrompt))
 	}
 }
