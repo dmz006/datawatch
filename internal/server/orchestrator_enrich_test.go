@@ -145,6 +145,11 @@ func (f *fakeOrchAutonomous) SetPRDContinueOnStoryFailure(string, bool) (any, er
 	return nil, nil
 }
 
+// BL407 Phase 5 — per-PRD Git.AutoPR/BaseBranch stub.
+func (f *fakeOrchAutonomous) SetPRDGit(string, bool, string) (any, error) {
+	return nil, nil
+}
+
 // BL386 — per-PRD memory lifecycle config stubs.
 func (f *fakeOrchAutonomous) SetMemorySeed(string, bool, int, []string, []string, string) (any, error) {
 	return nil, nil

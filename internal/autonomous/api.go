@@ -952,6 +952,16 @@ func (a *API) SetPRDContinueOnStoryFailure(prdID string, continueOnFailure bool)
 	return prd, nil
 }
 
+// SetPRDGit (BL407 Phase 5) sets the per-PRD Git.AutoPR/BaseBranch overrides.
+func (a *API) SetPRDGit(prdID string, autoPR bool, baseBranch string) (any, error) {
+	prd, err := a.M.SetPRDGit(prdID, autoPR, baseBranch)
+	if err != nil {
+		return nil, err
+	}
+	a.M.EmitPRDUpdate(prdID)
+	return prd, nil
+}
+
 // ── BL303 S2 — guardrail library + profiles + per-Automaton override ──────
 
 func (a *API) GuardrailLibrary() []any {

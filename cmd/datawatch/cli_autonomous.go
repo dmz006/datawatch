@@ -44,6 +44,7 @@ Subcommands:
   prd-remove-task <id>            Remove one task from a story without re-running decompose
   prd-set-type <id> <type>        Set automaton type (BL221 Phase 4)
   prd-set-guided-mode <id> on|off Enable/disable Guided Mode (BL221 Phase 4)
+  prd-set-git <id> on|off         Set AutoPR (+--base-branch override) for a PRD (BL407 Phase 5)
   prd-set-skills <id> <csv>       Assign skills to PRD (BL221 Phase 4)
   prd-scan <id>                   Trigger security scan (BL221 Phase 3)
   prd-scan-result <id>            Get latest scan result (BL221 Phase 3)
@@ -100,6 +101,7 @@ Subcommands:
 		// BL221 Phase 4 — type registry, Guided Mode, skills.
 		newAutonomousPRDSetTypeCmd(),
 		newAutonomousPRDSetGuidedModeCmd(),
+		newAutonomousPRDSetGitCmd(),
 		newAutonomousPRDSetSkillsCmd(),
 		newAutonomousTypesListCmd(),
 		newAutonomousTypeRegisterCmd(),
@@ -645,6 +647,22 @@ func newAutonomousPRDSetGuidedModeCmd() *cobra.Command {
 			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/set_guided_mode", body)
 		},
 	}
+}
+
+func newAutonomousPRDSetGitCmd() *cobra.Command {
+	var baseBranch string
+	cmd := &cobra.Command{
+		Use:   "prd-set-git <id> <on|off>",
+		Short: "Set AutoPR (push+open a PR on completion) and base-branch override for a PRD (BL407)",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(_ *cobra.Command, args []string) error {
+			autoPR := args[1] == "on" || args[1] == "true" || args[1] == "1"
+			body, _ := json.Marshal(map[string]any{"auto_pr": autoPR, "base_branch": baseBranch})
+			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/set_git", body)
+		},
+	}
+	cmd.Flags().StringVar(&baseBranch, "base-branch", "", "PR base branch override (empty = repo's own default branch)")
+	return cmd
 }
 
 func newAutonomousPRDSetSkillsCmd() *cobra.Command {

@@ -1481,6 +1481,31 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		s.audit(r.Context(), "set_continue_on_story_failure", "automaton", id, map[string]any{"continue_on_story_failure": req.ContinueOnStoryFailure}) // GH#201 Phase 4
 		writeJSONOK(w, updated)
 
+	// BL407 Phase 5 — per-PRD Git.AutoPR/BaseBranch overrides.
+	case "set_git":
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+			return
+		}
+		var req struct {
+			AutoPR     bool   `json:"auto_pr"`
+			BaseBranch string `json:"base_branch"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		updated, err := s.autonomousMgr.SetPRDGit(id, req.AutoPR, req.BaseBranch)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		s.audit(r.Context(), "set_git", "automaton", id, map[string]any{"auto_pr": req.AutoPR, "base_branch": req.BaseBranch}) // GH#201 Phase 4
+		writeJSONOK(w, updated)
+
 	// BL386 Phase 1 — per-PRD warm-start memory seed config.
 	case "set_memory_seed":
 		if r.Method != http.MethodPost {

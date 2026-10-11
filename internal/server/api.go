@@ -187,7 +187,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "9.0.22"
+var Version = "9.0.23"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -724,6 +724,7 @@ type AutonomousAPI interface {
 	// Per-PRD override for whether a story failure halts the PRD (default)
 	// or the executor continues into later, independent stories.
 	SetPRDContinueOnStoryFailure(prdID string, continueOnFailure bool) (any, error)
+	SetPRDGit(prdID string, autoPR bool, baseBranch string) (any, error)
 
 	// BL303 S2 — guardrail library + profiles + per-Automaton override.
 	GuardrailLibrary() []any
@@ -5496,6 +5497,8 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			// BL407 Phase 1 — local git-worktree isolation config.
 			"worktree_base_repo": s.cfg.Autonomous.WorktreeBaseRepo,
 			"worktree_dir":       s.cfg.Autonomous.WorktreeDir,
+			// BL407 Phase 5 — daemon-wide default for a new PRD's Git.AutoPR.
+			"default_auto_pr": s.cfg.Autonomous.DefaultAutoPR,
 			"scan": map[string]interface{}{
 				"enabled":              s.cfg.Autonomous.Scan.Enabled,
 				"sast_enabled":         s.cfg.Autonomous.Scan.SASTEnabled,
@@ -6700,6 +6703,12 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// into later, independent stories. Per-PRD override via
 			// POST .../set_continue_on_story_failure takes precedence.
 			cfg.Autonomous.ContinueOnStoryFailure = toBool(v)
+		case "autonomous.default_auto_pr":
+			// BL407 Phase 5 -- daemon-wide default for a new PRD's
+			// Git.AutoPR, applied once at creation time. Per-PRD
+			// override via POST .../set_git takes precedence after
+			// that (this is NOT resolved at use-time).
+			cfg.Autonomous.DefaultAutoPR = toBool(v)
 		// v5.17.0 — BL191 Q4 (recursion) + Q6 (guardrails) config
 		// surface. Pre-v5.17.0 these keys silently no-op'd through
 		// the PUT /api/config path because the case wasn't here.

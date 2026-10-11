@@ -13246,6 +13246,13 @@ function openPRDSettingsModal(prdID) {
         skills:               (prd.skills || []).join(', '),
         guided_mode:          !!prd.guided_mode,
         continue_on_story_failure: !!prd.continue_on_story_failure,
+        // BL407 Phase 5 — Git.AutoPR/BaseBranch are operator-settable;
+        // branch/pr_url are runtime state the executor owns, shown
+        // read-only below once set.
+        git_auto_pr:          !!(prd.git && prd.git.auto_pr),
+        git_base_branch:      (prd.git && prd.git.base_branch) || '',
+        git_branch:           (prd.git && prd.git.branch) || '',
+        git_pr_url:           (prd.git && prd.git.pr_url) || '',
         max_concurrent_tasks: prd.max_concurrent_tasks || 0,
         priority:             prd.priority || 0,
         read_dirs:            (prd.read_dirs || []).join(', '),
@@ -13335,6 +13342,21 @@ function openPRDSettingsModal(prdID) {
               <input type="checkbox" id="prdSettingsContinueOnStoryFailure" ${cur.continue_on_story_failure?'checked':''}>
               <span>${escHtml(t('prd_settings_continue_on_story_failure_label')||'Continue past a failed story instead of halting (default: halt for re-edit/rerun)')}</span>
             </label>
+            <!-- BL407 Phase 5 — Git section: AutoPR + base-branch override
+                 are operator-settable; branch/PR link are read-only
+                 runtime state, shown only once the executor has set them. -->
+            <div class="wizard-field" style="margin-top:4px;padding-top:8px;border-top:1px solid var(--border);">
+              <label class="wizard-label">${escHtml(t('prd_settings_git_section_label')||'Git')}</label>
+              <label class="wizard-checkbox-row">
+                <input type="checkbox" id="prdSettingsGitAutoPR" ${cur.git_auto_pr?'checked':''}>
+                <span>${escHtml(t('prd_settings_git_auto_pr_label')||'Auto-PR — push the branch and open a PR automatically on completion')}</span>
+              </label>
+              <div style="font-size:10px;color:var(--text2);margin:2px 0 6px;">${escHtml(t('prd_settings_git_auto_pr_hint')||'Review before enabling on an automaton whose task specs you don’t fully trust — this calls out to GitHub on your own gh credentials with no per-call confirmation.')}</div>
+              <label class="wizard-label">${escHtml(t('prd_settings_git_base_branch_label')||'Base branch override (empty = repo’s own default branch)')}</label>
+              <input type="text" id="prdSettingsGitBaseBranch" class="form-input" value="${escHtml(cur.git_base_branch)}" placeholder="main" />
+              ${cur.git_branch ? `<div style="font-size:10px;color:var(--text2);margin-top:6px;">${escHtml(t('prd_settings_git_branch_label')||'Branch')}: <code>${escHtml(cur.git_branch)}</code></div>` : ''}
+              ${cur.git_pr_url ? `<div style="font-size:10px;margin-top:2px;">${escHtml(t('prd_settings_git_pr_label')||'PR')}: <a href="${escHtml(cur.git_pr_url)}" target="_blank" rel="noopener">${escHtml(cur.git_pr_url)}</a></div>` : ''}
+            </div>
             <div style="display:flex;gap:6px;justify-content:flex-end;margin-top:6px;padding-top:8px;border-top:1px solid var(--border);">
               <button type="button" class="btn-secondary" onclick="_prdCloseModal()">${escHtml(t('btn_cancel')||'Cancel')}</button>
               <button type="submit" class="btn-secondary" style="background:var(--accent2);color:#fff;">${escHtml(t('btn_save')||'Save')}</button>
@@ -13386,6 +13408,17 @@ function openPRDSettingsModal(prdID) {
             calls.push(apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/set_continue_on_story_failure', {
               method: 'POST', headers: {'Content-Type':'application/json'},
               body: JSON.stringify({ continue_on_story_failure: newContinueOnStoryFailure }),
+            }));
+          }
+          // BL407 Phase 5 — set_git takes both fields unconditionally
+          // (no partial-merge on the server side), so send both
+          // whenever either one changed.
+          const newGitAutoPR = !!document.getElementById('prdSettingsGitAutoPR').checked;
+          const newGitBaseBranch = (document.getElementById('prdSettingsGitBaseBranch').value || '').trim();
+          if (newGitAutoPR !== cur.git_auto_pr || newGitBaseBranch !== cur.git_base_branch) {
+            calls.push(apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/set_git', {
+              method: 'POST', headers: {'Content-Type':'application/json'},
+              body: JSON.stringify({ auto_pr: newGitAutoPR, base_branch: newGitBaseBranch }),
             }));
           }
           if (newConcurrency !== cur.max_concurrent_tasks) {

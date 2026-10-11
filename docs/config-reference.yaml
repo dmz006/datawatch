@@ -997,6 +997,15 @@ autonomous:
   worktree_base_repo: ""
   worktree_dir: "" # default ~/.datawatch/prd-worktrees when empty
 
+  # ── BL407 Phase 5 — daemon-wide AutoPR default ──
+  # false (default) = every new PRD still starts with Git.AutoPR off,
+  # the same explicit per-PRD opt-in as before this phase. Set true to
+  # have every future PRD start with AutoPR already on (applied once,
+  # at creation time); an operator can always override it afterward on
+  # a specific PRD via the autonomous_prd_set_git tool / POST
+  # .../set_git / PWA PRD Settings' Git section.
+  default_auto_pr: false
+
 # ── Orchestrator (BL117 — v4.0.0) ──
 # PRD-DAG orchestrator with guardrail sub-agents. Composes BL24
 # autonomous PRDs into a graph; each PRD is attested by configured

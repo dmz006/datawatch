@@ -141,6 +141,16 @@ type Config struct {
 	// when empty). See docs/plans/2026-10-10-prd-git-workflow.md.
 	WorktreeBaseRepo string `json:"worktree_base_repo,omitempty"`
 	WorktreeDir      string `json:"worktree_dir,omitempty"`
+	// BL407 Phase 5 — daemon-wide default for a new PRD's Git.AutoPR.
+	// Applied once, at CreatePRD time (not resolved at use-time the
+	// way DefaultQualityGates/ContinueOnStoryFailure are) — Git.AutoPR
+	// is a plain bool with no pointer/override indirection, so a
+	// resolve-at-use-time default couldn't distinguish "operator
+	// explicitly turned it back off on this PRD" from "never set"; a
+	// one-time default at creation avoids that ambiguity entirely and
+	// leaves the field as the PRD's own real, inspectable, freely
+	// overridable value from then on (via the new set_git action).
+	DefaultAutoPR bool `json:"default_auto_pr,omitempty"`
 
 	// BL303 S2 — default skills automatically assigned to every new Automaton.
 	DefaultSkills []string `json:"default_skills,omitempty"`
@@ -810,6 +820,15 @@ func (m *Manager) CreatePRD(spec, projectDir, backend, model string, effort Effo
 	m.mu.Unlock()
 	if len(defaults) > 0 {
 		prd.Skills = defaults
+		_ = m.store.SavePRD(prd)
+	}
+	// BL407 Phase 5 — apply the daemon-wide AutoPR default at creation
+	// time, same shape as DefaultSkills above.
+	m.mu.Lock()
+	defaultAutoPR := m.cfg.DefaultAutoPR
+	m.mu.Unlock()
+	if defaultAutoPR && !prd.Git.AutoPR {
+		prd.Git.AutoPR = true
 		_ = m.store.SavePRD(prd)
 	}
 	return prd, nil
@@ -2849,6 +2868,24 @@ func (m *Manager) SetPRDContinueOnStoryFailure(prdID string, continueOnFailure b
 		return nil, fmt.Errorf("prd %q not found", prdID)
 	}
 	prd.ContinueOnStoryFailure = &continueOnFailure
+	prd.UpdatedAt = time.Now()
+	return prd, m.store.SavePRD(prd)
+}
+
+// SetPRDGit (BL407 Phase 5) sets the per-PRD Git.AutoPR/BaseBranch
+// overrides. Both fields are set unconditionally on every call (same
+// shape as SetPRDGuardrails' multi-field replace) — a caller wanting
+// to change only one of the two reads the current PRD first, same as
+// every other multi-field setter in this file. Branch/URL/Provider/
+// PRURL are read-only here: they're runtime state the executor and
+// git-completion hooks own, not operator-settable config.
+func (m *Manager) SetPRDGit(prdID string, autoPR bool, baseBranch string) (*PRD, error) {
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return nil, fmt.Errorf("prd %q not found", prdID)
+	}
+	prd.Git.AutoPR = autoPR
+	prd.Git.BaseBranch = baseBranch
 	prd.UpdatedAt = time.Now()
 	return prd, m.store.SavePRD(prd)
 }

@@ -2,7 +2,7 @@
 
 - **Date**: 2026-10-10
 - **Version at planning**: v9.0.17
-- **Status**: In progress — Phase 0 done (v9.0.18, fixes B114), Phase 1 done (v9.0.19), Phase 2 done (v9.0.20), Phase 3 done (v9.0.21), Phase 4 done (v9.0.22), Phase 5 next
+- **Status**: In progress — Phase 0 done (v9.0.18, fixes B114), Phase 1 done (v9.0.19), Phase 2 done (v9.0.20), Phase 3 done (v9.0.21), Phase 4 done (v9.0.22), Phase 5 done (v9.0.23), Phase 6 next
 
 ## Context
 
@@ -451,19 +451,72 @@ and Phase 0 (real dispatch).
   CHANGELOG + testing-tracker + this plan updated.
 
 ### Phase 5 — Config/parity surface
-**Status: Not started.**
-- [ ] `PRD.Git.AutoPR`/`BaseBranch` settable via existing structural-edit
-  patterns (`autonomous_prd_edit_*` MCP tools, REST, CLI, comm, PWA) —
-  mirrors how `PRD.GuidedModeSource`/`PerStoryApproval` etc. are already
-  exposed, not a new mechanism.
-- [ ] `autonomous.Config.WorktreeBaseRepo`/`WorktreeDir`/`DefaultAutoPR` via
-  the existing `GET/PUT /api/config` + `autonomous_config_set` pattern
-  (same as BL406 Phase 0's `rules_file`/`context_file`).
-- [ ] PWA: PRD Settings card gains the `Git` section (AutoPR checkbox, base
-  branch field, read-only branch/PR-URL display once set) — Mobile-
-  Parity issue filed per AGENT.md's rule, same as BL406 Phase 5's
-  `approve_task` (`datawatch-app#248`).
-- [ ] **Phase Completion Checklist**.
+**Status: Done (v9.0.23).**
+- [x] New `Manager.SetPRDGit(prdID, autoPR, baseBranch)` sets both
+  `PRD.Git.AutoPR`/`BaseBranch` unconditionally on every call (full
+  replace, same shape as `SetPRDGuardrails` — no partial-merge
+  mechanism needed). Full surface: `POST
+  /api/autonomous/prds/{id}/set_git` (REST), `autonomous_prd_set_git`
+  (MCP), `prd-set-git <id> on|off [--base-branch]` (CLI). Comm-channel
+  parity intentionally NOT added — this whole class of single-field
+  PRD setters (`set_guided_mode`, `set_type`, `set_skills`,
+  `set_continue_on_story_failure`, `set_memory_seed`) has never had
+  comm-channel coverage in this codebase; adding it only for `set_git`
+  would be inventing new symmetry beyond what the plan actually asked
+  to mirror ("mirrors how `PRD.GuidedModeSource`/`PerStoryApproval`
+  etc. are already exposed"), not closing a Phase-5-introduced gap.
+- [x] New `autonomous.Config.DefaultAutoPR` (+ YAML-facing
+  `config.AutonomousConfig.DefaultAutoPR` mirror + daemon-startup
+  bridge in `cmd/datawatch/main.go`) — applied once at `CreatePRD`
+  time, not resolved at use-time the way `DefaultQualityGates`/
+  `ContinueOnStoryFailure` are (see Decision below). Confirmed
+  `WorktreeBaseRepo`/`WorktreeDir` (Phase 1) and
+  `RulesFile`/`ContextFile`/`UpstreamRepos` (BL406 Phase 0) were
+  already fully `GET/PUT /api/config` + `GET/PUT /api/autonomous/config`
+  round-trippable with zero new code — not re-plumbed, just verified.
+  New `autonomous_config_set` MCP param for `default_auto_pr`.
+- [x] **Deviation from plan, decided while implementing**: `DefaultAutoPR`
+  is applied once at PRD-creation time rather than resolved at
+  use-time (the `DefaultQualityGates`/`ContinueOnStoryFailure`
+  pattern). `PRD.Git.AutoPR` is a plain `bool`, not a pointer — a
+  resolve-at-use-time default couldn't distinguish "operator
+  explicitly set this PRD's AutoPR back to false" from "never
+  touched," so it would have made explicit opt-out impossible once a
+  daemon-wide default was on. A one-time default at creation avoids
+  the ambiguity entirely and leaves the field as the PRD's own real,
+  freely overridable value from then on.
+- [x] PWA: PRD Settings card gained the `Git` section (AutoPR checkbox,
+  base branch field, read-only branch/PR-link display once set).
+  Mobile-Parity issue filed: `datawatch-app#249` (same shape as BL406
+  Phase 5's `approve_task`, `datawatch-app#248`).
+- [x] **Found and fixed, not just planned**: the new MCP tool needed
+  its own `federation.MCPToolCap` entry (`internal/federation/mcp_tool_caps.go`)
+  or `POST /api/mcp/call` would 404 it as "unknown tool" despite being
+  registered and reachable over stdio/SSE — caught by this repo's own
+  `TestEveryUnconditionallyRegisteredToolHasAnMCPToolCapEntry` guard,
+  not found by inspection. The REST handler's `AutonomousAPI` interface
+  needed the new method added, which in turn needed a trivial stub on
+  the shared `fakeOrchAutonomous` test double (5 other test files'
+  fakes embed it and inherited the method for free) — same "one stub,
+  many embedders" shape BL406 Phase 5's `ApproveTask` stub hit.
+- [x] **Found and fixed live, PWA/locale**: the Git section's hint text
+  first said "PRD" and left "automaton" untranslated in the 4
+  non-English bundles — caught by `TestLocales_PRDNeverUserFacing`/
+  `TestLocales_AutomatonNeverUntranslatedOrMistranslated` before this
+  shipped.
+- [x] Regression tests: 4 new in new
+  `internal/autonomous/git_config_surface_test.go` (`SetPRDGit` sets +
+  fully replaces both fields, not-found error case, `DefaultAutoPR`
+  applied at creation, no-default leaves `AutoPR` false).
+- [x] **Phase Completion Checklist**: full `go test ./...` green (83
+  packages), `node --test internal/server/web/*.test.js` 182/182
+  green, `go vet ./...` clean, `gosec -severity high -confidence
+  medium` zero new findings on any touched file, `gofmt` clean on
+  every new/touched file (one genuine misalignment of my own in
+  `internal/mcp/server.go`'s inline-comment column, fixed; everything
+  else flagged confirmed pre-existing via `git stash` diffing).
+  Version bumped to v9.0.23. CHANGELOG + `docs/config-reference.yaml`
+  + testing-tracker + this plan updated.
 
 ### Phase 6 — Docs + closure
 **Status: Not started.**
@@ -580,7 +633,22 @@ and Phase 0 (real dispatch).
   (`autonomousSpawn` forwards `req.Branch`) — Phase 4.
 - `cmd/datawatch/main.go` (`autonomousSpawn`'s cluster branch,
   verify-loop fix) — Phase 0.
-- `internal/server/web/app.js`, `internal/server/web/locales/*.json` —
-  Phase 5.
+- `internal/autonomous/manager.go` (`SetPRDGit`, `Config.DefaultAutoPR`,
+  `CreatePRD`'s default application), `internal/autonomous/api.go`
+  (`API.SetPRDGit`), new `internal/autonomous/git_config_surface_test.go`,
+  `internal/server/autonomous.go` (`set_git` REST action),
+  `internal/server/api.go` (`AutonomousAPI.SetPRDGit`, generic
+  `/api/config` GET/PUT surface for `default_auto_pr`),
+  `internal/server/orchestrator_enrich_test.go` (`fakeOrchAutonomous`
+  stub), `internal/config/config.go` (YAML-facing
+  `AutonomousConfig.DefaultAutoPR` mirror), `cmd/datawatch/main.go`
+  (daemon-startup config bridge), `internal/mcp/bl221_types.go`
+  (`autonomous_prd_set_git` tool), `internal/mcp/autonomous.go`
+  (`autonomous_config_set`'s new `default_auto_pr` param),
+  `internal/mcp/server.go` (tool registration),
+  `internal/federation/mcp_tool_caps.go` (`MCPToolCap` entry),
+  `cmd/datawatch/cli_autonomous.go` (`prd-set-git` CLI command),
+  `internal/server/web/app.js`, `internal/server/web/locales/*.json`
+  (PRD Settings Git section) — Phase 5.
 - `docs/operations.md`, `docs/config-reference.yaml`,
   `docs/plans/README.md` (B114 entry) — Phase 6.

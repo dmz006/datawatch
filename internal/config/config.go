@@ -2013,6 +2013,13 @@ type AutonomousConfig struct {
 	// docs/plans/2026-10-10-prd-git-workflow.md.
 	WorktreeBaseRepo string `yaml:"worktree_base_repo,omitempty" json:"worktree_base_repo,omitempty"`
 	WorktreeDir      string `yaml:"worktree_dir,omitempty" json:"worktree_dir,omitempty"`
+
+	// BL407 Phase 5 — daemon-wide default for a new PRD's Git.AutoPR
+	// (push + open a PR automatically on completion), applied once at
+	// PRD creation time. Per-PRD override via POST .../set_git takes
+	// precedence after that. Default false (explicit opt-in), same as
+	// the per-PRD field itself.
+	DefaultAutoPR bool `yaml:"default_auto_pr,omitempty" json:"default_auto_pr,omitempty"`
 }
 
 // ScanConfig — BL221 Phase 3 runtime config, mirrors

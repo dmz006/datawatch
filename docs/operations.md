@@ -1967,7 +1967,7 @@ before approving any task to check it.
 
 ---
 
-## PRD Git-Worktree Isolation + Completion PR (BL407 Phases 1-4)
+## PRD Git-Worktree Isolation + Completion PR (BL407 Phases 1-5)
 
 By default, a PRD with no explicit `project_dir`/`project_profile`/
 `cluster_profile` runs directly in whatever directory the daemon
@@ -1993,8 +1993,10 @@ point of the branch is to be reviewable, which breaks silently if
 nothing ever gets committed onto it.
 
 The worktree is created once, at first `Run()`, and is idempotent
-across a daemon restart mid-run. Setting `PRD.Git.AutoPR` to `true`
-(per-PRD, defaults false) makes a successfully-completed worktree-mode
+across a daemon restart mid-run. Setting `PRD.Git.AutoPR` to `true` (per-PRD, defaults false — or set
+`autonomous.default_auto_pr: true` to start every future PRD with it
+already on; see `docs/config-reference.yaml`) makes a
+successfully-completed worktree-mode
 PRD push its branch and open a real PR automatically — one PR per PRD,
 not one per task — then remove the local worktree directory (the
 branch + PR are the durable record now, not the local checkout). A
@@ -2003,8 +2005,11 @@ Decisions) but never fails the run; the worktree is left in place for
 inspection whenever that happens, and whenever `AutoPR` is left false.
 This is the same category of unconfirmed GitHub action as "Autonomous
 External GitHub Actions" above — review before enabling on a PRD whose
-task specs you don't fully trust. See
-`docs/plans/2026-10-10-prd-git-workflow.md`.
+task specs you don't fully trust. Set it (or the base-branch override)
+on an existing PRD via `POST /api/autonomous/prds/{id}/set_git`, the
+`autonomous_prd_set_git` MCP tool, `datawatch autonomous prd-set-git
+<id> on|off [--base-branch <name>]`, or the PWA's PRD Settings → Git
+section. See `docs/plans/2026-10-10-prd-git-workflow.md`.
 
 A `cluster_profile` PRD gets the same `Git.AutoPR` behavior, but the
 mechanics differ: there's no local worktree for the parent to push

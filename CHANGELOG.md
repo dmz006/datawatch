@@ -5,6 +5,57 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.23 — feat(autonomous): BL407 Phase 5 — config/parity surface
+
+### Added
+- `PRD.Git.AutoPR`/`BaseBranch` are now operator-settable: new
+  `set_git` structural-edit action (`POST
+  /api/autonomous/prds/{id}/set_git`), `Manager.SetPRDGit`, MCP
+  `autonomous_prd_set_git`, CLI `prd-set-git <id> on|off
+  [--base-branch]`, and a new **Git** section on the PWA's PRD
+  Settings modal (AutoPR checkbox, base-branch text field, read-only
+  branch/PR-link display once the executor has set them). Both
+  fields are replaced unconditionally on every call — same shape as
+  every other multi-field PRD setter in this codebase (e.g.
+  `set_guardrails`), not a new partial-merge mechanism. Mobile-Parity
+  issue filed: `datawatch-app#249`.
+- New daemon-wide `autonomous.default_auto_pr` config (default
+  `false`) — a new PRD's `Git.AutoPR` starts pre-set to this value at
+  creation time rather than being resolved at use-time the way
+  `default_quality_gates`/`continue_on_story_failure` are: `AutoPR` is
+  a plain `bool` with no pointer/override indirection, so a
+  resolve-at-use-time default couldn't distinguish "operator
+  explicitly turned it back off on this PRD" from "never set"; a
+  one-time default at creation sidesteps that ambiguity and leaves
+  the field as the PRD's own real, freely overridable value from then
+  on. Already round-trips through `GET/PUT /api/config` and
+  `GET/PUT /api/autonomous/config` with zero new generic-merge code —
+  only the explicit per-key cases both endpoints already enumerate
+  needed a new entry, plus a new `autonomous_config_set` MCP param and
+  the YAML-facing `config.AutonomousConfig` mirror + daemon-startup
+  bridge.
+- `autonomous.worktree_base_repo`/`worktree_dir` (Phase 1) and
+  `rules_file`/`context_file`/`upstream_repos` (BL406 Phase 0) were
+  already fully REST/MCP/CLI-round-trippable with zero new code —
+  confirmed, not re-plumbed, closing out the rest of this phase's
+  config-surface scope.
+- Found live while wiring the REST handler: `s.autonomousMgr`'s
+  `AutonomousAPI` interface (`internal/server/api.go`) needed the new
+  `SetPRDGit` method added, which in turn needed a trivial stub added
+  to the shared `fakeOrchAutonomous` test double — 5 other test files'
+  fakes embed it and inherited the method for free, the same "one
+  stub, many embedders" shape BL406 Phase 5's `ApproveTask` stub hit.
+  Also found live: the new MCP tool needed its own
+  `federation.MCPToolCap` entry or `POST /api/mcp/call` would 404 it
+  as "unknown tool" despite being properly registered and reachable
+  over stdio/SSE — caught by this repo's own
+  `TestEveryUnconditionallyRegisteredToolHasAnMCPToolCapEntry` guard.
+- PWA locale note: the new Git section's hint text originally said
+  "PRD" and left the word "automaton" untranslated in the 4 non-English
+  bundles — both caught live by this repo's own
+  `TestLocales_PRDNeverUserFacing`/`TestLocales_AutomatonNeverUntranslatedOrMistranslated`
+  guards before this shipped, not after.
+
 ## v9.0.22 — feat(autonomous): BL407 Phase 4 — branch creation parity for cluster mode
 
 ### Added

@@ -71,6 +71,7 @@ var MCPToolCap = map[string]string{
 	"autonomous_prd_scan_results":                  CapAutonomousRead,
 	"autonomous_prd_scan_rules":                    CapAutonomousRead,
 	"autonomous_prd_set_continue_on_story_failure": CapAutonomousWrite,
+	"autonomous_prd_set_git":                       CapAutonomousWrite, // BL407 Phase 5
 	"autonomous_prd_set_guided_mode":               CapAutonomousWrite,
 	"autonomous_prd_set_llm":                       CapAutonomousWrite,
 	"autonomous_prd_set_memory_harvest":            CapAutonomousWrite,
