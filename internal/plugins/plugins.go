@@ -15,6 +15,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -36,10 +37,37 @@ import (
 type Hook string
 
 const (
-	HookPreSessionStart      Hook = "pre_session_start"
-	HookPostSessionOutput    Hook = "post_session_output"
-	HookPostSessionComplete  Hook = "post_session_complete"
-	HookOnAlert              Hook = "on_alert"
+	HookPreSessionStart     Hook = "pre_session_start"
+	HookPostSessionOutput   Hook = "post_session_output"
+	HookPostSessionComplete Hook = "post_session_complete"
+	HookOnAlert             Hook = "on_alert"
+)
+
+// Manifest v3 (BL403 Phase 1) — plugin kinds.
+const (
+	// KindAutomation is today's oneshot/hook subprocess model. A manifest
+	// with no kind: field is a v2.1 automation manifest, behavior unchanged.
+	KindAutomation = "automation"
+	// KindService is a persistent external process/server datawatch
+	// attaches to as a client over its Connection.
+	KindService = "service"
+)
+
+// Manifest v3 — service-plugin lifecycle modes an author may declare.
+const (
+	// LifecycleAttachOnly: datawatch only connects to an already-running
+	// standalone instance; it never starts or stops it.
+	LifecycleAttachOnly = "attach_only"
+	// LifecycleManaged: datawatch supervises the same standalone binary as
+	// a child process (start / health-check / restart / stop).
+	LifecycleManaged = "managed"
+)
+
+// Manifest v3 — restart policies for a managed service plugin.
+const (
+	RestartOnFailure = "on-failure"
+	RestartAlways    = "always"
+	RestartNever     = "never"
 )
 
 // CommCommand declares a comm-channel verb this plugin wants to handle.
@@ -91,7 +119,9 @@ type Manifest struct {
 	Entry       string   `yaml:"entry" json:"entry"`
 	Hooks       []string `yaml:"hooks" json:"hooks"`
 	TimeoutMs   int      `yaml:"timeout_ms,omitempty" json:"timeout_ms,omitempty"`
-	Mode        string   `yaml:"mode,omitempty" json:"mode,omitempty"` // "oneshot" (default) | "long-lived"
+	// Deprecated: ignored; retained for one release for manifest
+	// compatibility - use kind instead.
+	Mode string `yaml:"mode,omitempty" json:"mode,omitempty"`
 
 	// v2.1 extensions (BL244) — optional sections; omitted from manifests
 	// that don't need them. Daemon tolerates unknown fields for forward compat.
@@ -125,6 +155,155 @@ type Manifest struct {
 	//     - event: on_error
 	//       prompt: "Plugin {{.Name}} failed: {{.Error}}. Diagnose and suggest remediation."
 	SamplingTriggers []PluginSamplingTrigger `yaml:"sampling_triggers,omitempty" json:"sampling_triggers,omitempty"`
+
+	// Manifest v3 (BL403 Phase 1) — plugin kind plus the service-plugin
+	// connection/lifecycle split. Kind is "automation" (default when absent —
+	// a v2.1 manifest, unchanged behavior) or "service". A service plugin
+	// always declares Connection, which alone is enough for datawatch to
+	// attach to a standalone instance; Lifecycle is optional and, when
+	// present, lets datawatch supervise that same binary. Service plugins are
+	// never invoked as subprocess hooks. Lifecycle is rejected on automation
+	// manifests.
+	Kind       string            `yaml:"kind,omitempty" json:"kind,omitempty"`
+	Connection *PluginConnection `yaml:"connection,omitempty" json:"connection,omitempty"`
+	Lifecycle  *PluginLifecycle  `yaml:"lifecycle,omitempty" json:"lifecycle,omitempty"`
+}
+
+// PluginConnection is how datawatch reaches a service-kind plugin as a
+// client. Required for kind: service. Manifest v3.
+type PluginConnection struct {
+	// BaseURL is the absolute http(s) URL of the running service.
+	BaseURL string `yaml:"base_url" json:"base_url"`
+	// Auth is the optional credential datawatch presents to the service.
+	Auth *PluginAuth `yaml:"auth,omitempty" json:"auth,omitempty"`
+	// HealthPath is an optional path (relative to BaseURL) used for health
+	// probing in both lifecycle modes (attach_only and managed). Probing
+	// itself lands in a later phase; Phase 1 only carries the field.
+	HealthPath string `yaml:"health_path,omitempty" json:"health_path,omitempty"`
+}
+
+// PluginAuth is the credential block of a PluginConnection. Manifest v3.
+type PluginAuth struct {
+	// Type is the auth scheme. Only "bearer" is supported; empty means bearer.
+	Type string `yaml:"type,omitempty" json:"type,omitempty"`
+	// Token must be exactly one ${secret:name} reference per the
+	// Secrets-Store Rule — never a literal credential. Validation checks
+	// the reference shape only; the secret is resolved at use time.
+	Token string `yaml:"token" json:"token"`
+}
+
+// PluginLifecycle declares how datawatch may run a service-kind plugin.
+// Optional even for kind: service (absent == attach-only by construction).
+// Manifest v3.
+type PluginLifecycle struct {
+	// SupportedModes is author-declared: the subset of "attach_only" and
+	// "managed" this plugin was built for. It constrains the operator's
+	// later install-time choice — the operator can never pick a mode the
+	// author did not declare.
+	SupportedModes []string `yaml:"supported_modes" json:"supported_modes"`
+	// Entry is the executable to launch (relative to the plugin dir or
+	// absolute). Only meaningful — and then required — when SupportedModes
+	// contains "managed".
+	Entry string `yaml:"entry,omitempty" json:"entry,omitempty"`
+	// Args are passed to Entry. Only meaningful when "managed" is supported.
+	Args []string `yaml:"args,omitempty" json:"args,omitempty"`
+	// RestartPolicy is "on-failure", "always" or "never" (empty = default,
+	// decided by the supervisor phase).
+	RestartPolicy string `yaml:"restart_policy,omitempty" json:"restart_policy,omitempty"`
+	// StopTimeoutMs is the grace period before a managed child is killed on
+	// stop. Zero means the supervisor default.
+	StopTimeoutMs int `yaml:"stop_timeout_ms,omitempty" json:"stop_timeout_ms,omitempty"`
+}
+
+// Normalize applies manifest defaults in place: Kind is trimmed and
+// lower-cased, and an absent Kind becomes KindAutomation (v2.1 manifests).
+func (m *Manifest) Normalize() {
+	m.Kind = strings.ToLower(strings.TrimSpace(m.Kind))
+	if m.Kind == "" {
+		m.Kind = KindAutomation
+	}
+}
+
+// Validate reports every problem with the manifest as one joined error, or
+// nil. Call Normalize first. Automation manifests keep their pre-v3
+// requirements (name only); the v3 checks apply to kind/connection/lifecycle.
+func (m Manifest) Validate() error {
+	var errs []error
+	if strings.TrimSpace(m.Name) == "" {
+		errs = append(errs, errors.New("name is required"))
+	}
+	switch m.Kind {
+	case KindAutomation:
+		if m.Lifecycle != nil {
+			errs = append(errs, errors.New("lifecycle is only allowed when kind is service"))
+		}
+	case KindService:
+		errs = append(errs, validateConnection(m.Connection)...)
+		if m.Lifecycle != nil {
+			errs = append(errs, validateLifecycle(m.Lifecycle)...)
+		}
+	default:
+		errs = append(errs, fmt.Errorf("kind %q is invalid: must be %q or %q", m.Kind, KindAutomation, KindService))
+	}
+	return errors.Join(errs...)
+}
+
+func validateConnection(c *PluginConnection) []error {
+	if c == nil {
+		return []error{errors.New("connection is required when kind is service")}
+	}
+	var errs []error
+	if strings.TrimSpace(c.BaseURL) == "" {
+		errs = append(errs, errors.New("connection.base_url is required"))
+	} else if u, err := url.Parse(c.BaseURL); err != nil {
+		errs = append(errs, fmt.Errorf("connection.base_url: %w", err))
+	} else if (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		errs = append(errs, fmt.Errorf("connection.base_url %q must be an absolute http or https URL", c.BaseURL))
+	}
+	if a := c.Auth; a != nil {
+		if t := strings.ToLower(strings.TrimSpace(a.Type)); t != "" && t != "bearer" {
+			errs = append(errs, fmt.Errorf("connection.auth.type %q is unsupported: only \"bearer\"", a.Type))
+		}
+		if strings.TrimSpace(a.Token) == "" {
+			errs = append(errs, errors.New("connection.auth.token is required"))
+		} else if !secrets.IsRef(a.Token) {
+			// Never echo the value — it may be a literal credential.
+			errs = append(errs, errors.New("connection.auth.token must be a single ${secret:name} reference, not a literal credential"))
+		}
+	}
+	return errs
+}
+
+func validateLifecycle(l *PluginLifecycle) []error {
+	var errs []error
+	if len(l.SupportedModes) == 0 {
+		errs = append(errs, errors.New("lifecycle.supported_modes must not be empty"))
+	}
+	seen := map[string]bool{}
+	for _, mode := range l.SupportedModes {
+		switch mode {
+		case LifecycleAttachOnly, LifecycleManaged:
+		default:
+			errs = append(errs, fmt.Errorf("lifecycle.supported_modes: %q is invalid: must be %q or %q", mode, LifecycleAttachOnly, LifecycleManaged))
+			continue
+		}
+		if seen[mode] {
+			errs = append(errs, fmt.Errorf("lifecycle.supported_modes: %q listed more than once", mode))
+		}
+		seen[mode] = true
+	}
+	if seen[LifecycleManaged] && strings.TrimSpace(l.Entry) == "" {
+		errs = append(errs, errors.New("lifecycle.entry is required when supported_modes contains managed"))
+	}
+	switch l.RestartPolicy {
+	case "", RestartOnFailure, RestartAlways, RestartNever:
+	default:
+		errs = append(errs, fmt.Errorf("lifecycle.restart_policy %q is invalid: must be %q, %q or %q", l.RestartPolicy, RestartOnFailure, RestartAlways, RestartNever))
+	}
+	if l.StopTimeoutMs < 0 {
+		errs = append(errs, errors.New("lifecycle.stop_timeout_ms must be >= 0"))
+	}
+	return errs
 }
 
 // PluginSamplingTrigger declares a lifecycle event that triggers MCP sampling.
@@ -141,8 +320,8 @@ type PluginSamplingTrigger struct {
 // PluginDocs declares the docs the plugin contributes to docs_search /
 // docs_list_howtos. Per BL274 design Q9: files: required, howtos: optional.
 type PluginDocs struct {
-	Files  []string         `yaml:"files,omitempty" json:"files,omitempty"`
-	Howtos []PluginHowto    `yaml:"howtos,omitempty" json:"howtos,omitempty"`
+	Files  []string      `yaml:"files,omitempty" json:"files,omitempty"`
+	Howtos []PluginHowto `yaml:"howtos,omitempty" json:"howtos,omitempty"`
 }
 
 // PluginHowto is one optional howto declaration in the plugin manifest.
@@ -155,8 +334,8 @@ type PluginHowto struct {
 // Plugin is a loaded manifest with its invocation stats.
 type Plugin struct {
 	Manifest
-	Dir          string    `json:"dir"`             // absolute path containing manifest.yaml
-	Entry        string    `json:"resolved_entry"`  // absolute path to executable
+	Dir          string    `json:"dir"`            // absolute path containing manifest.yaml
+	Entry        string    `json:"resolved_entry"` // absolute path to executable
 	Enabled      bool      `json:"enabled"`
 	LastInvokeAt time.Time `json:"last_invoke_at,omitempty"`
 	LastError    string    `json:"last_error,omitempty"`
@@ -267,7 +446,9 @@ func (r *Registry) Discover() error {
 		if err := yaml.Unmarshal(data, &m); err != nil {
 			continue
 		}
-		if m.Name == "" {
+		m.Normalize()
+		if err := m.Validate(); err != nil {
+			fmt.Fprintf(os.Stderr, "[plugins] skip %s: invalid manifest: %v\n", manPath, err)
 			continue
 		}
 		entryPath := m.Entry
@@ -325,6 +506,9 @@ func (r *Registry) Invoke(ctx context.Context, name string, hook Hook, req Reque
 	p, ok := r.Get(name)
 	if !ok {
 		return Response{}, fmt.Errorf("plugin %q not found", name)
+	}
+	if p.Kind == KindService {
+		return Response{}, fmt.Errorf("plugin %q is kind %q and cannot be invoked as a subprocess hook", name, KindService)
 	}
 	if !p.Enabled {
 		return Response{Action: "pass"}, nil
@@ -506,7 +690,12 @@ func isDisabled(list []string, name string) bool {
 	return false
 }
 
+// pluginDeclares reports whether p subscribes to hook. Service-kind plugins
+// never do — they are not subprocess hooks.
 func pluginDeclares(p *Plugin, hook Hook) bool {
+	if p.Kind == KindService {
+		return false
+	}
 	h := string(hook)
 	for _, x := range p.Hooks {
 		if x == h {
@@ -597,8 +786,9 @@ func (r *Registry) Install(sourceDir string) error {
 	if err := yaml.Unmarshal(manData, &m); err != nil {
 		return fmt.Errorf("parse manifest: %w", err)
 	}
-	if m.Name == "" {
-		return fmt.Errorf("manifest in %s has no name field", sourceDir)
+	m.Normalize()
+	if err := m.Validate(); err != nil {
+		return fmt.Errorf("invalid manifest: %w", err)
 	}
 	destDir := filepath.Join(dir, m.Name)
 	if err := os.MkdirAll(dir, 0755); err != nil {

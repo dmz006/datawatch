@@ -1477,6 +1477,31 @@ A plugin manifest MAY declare a `docs:` block. When present:
 - Every listed file MUST exist relative to the plugin dir.
 - `docs.howtos:` is optional; if present, every entry's `file:` must also exist.
 
+Every manifest MUST also have a valid manifest v3 shape (mirrors
+`Manifest.Validate` in `internal/plugins/plugins.go`):
+- `kind:` absent/empty means `automation` (a v2.1 manifest, unchanged);
+  when present it MUST be `automation` or `service` (case-insensitive).
+- `kind: service` REQUIRES a `connection:` block whose `base_url:` is an
+  absolute `http://` or `https://` URL.
+- When `connection.auth:` is set, `auth.type:` (if given) MUST be
+  `bearer` and `auth.token:` MUST be exactly one `${secret:NAME}`
+  reference — never a literal credential (Secrets-Store Rule). Only the
+  reference shape is checked; the secret is never looked up and the
+  token is never printed.
+- `lifecycle:` is ONLY allowed on `kind: service` manifests. Its
+  `supported_modes:` MUST be non-empty, contain only `attach_only` /
+  `managed`, and list no mode twice; `managed` REQUIRES
+  `lifecycle.entry:`; `restart_policy:` MUST be `on-failure`, `always`
+  or `never` (or empty); `stop_timeout_ms:` MUST be a non-negative
+  integer.
+- Unknown keys are ignored (forward compatible). The deprecated `mode:`
+  field is ignored.
+- Set `PLUGIN_MANIFEST_ROOTS` (colon-separated dirs) to scan exactly
+  those dirs instead of `examples/plugins/` + `~/.datawatch/plugins/`;
+  `internal/plugins` tests run the script this way against positive and
+  negative fixtures in `internal/plugins/testdata/`, so a drift between
+  the script and the Go validator fails `go test`.
+
 **Enforced by:** `scripts/check-plugin-manifests.sh` (wired into
 `scripts/release-smoke.sh`). Failing the check blocks the release.
 

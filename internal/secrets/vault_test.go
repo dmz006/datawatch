@@ -129,12 +129,12 @@ func nextID(n int) string { return string(rune('a' + (n % 26))) }
 func TestVaultStore_NewVaultStore_Validations(t *testing.T) {
 	cases := map[string]struct {
 		address, authMethod, token, layout string
-		wantErr string
+		wantErr                            string
 	}{
-		"missing address":   {"", "token", "x", "flat", "address is required"},
-		"unsupported auth":  {"https://v", "approle", "x", "flat", "BL281"},
-		"missing token":     {"https://v", "token", "", "flat", "token is required"},
-		"bad path layout":   {"https://v", "token", "x", "weird", "path_layout"},
+		"missing address":  {"", "token", "x", "flat", "address is required"},
+		"unsupported auth": {"https://v", "approle", "x", "flat", "BL281"},
+		"missing token":    {"https://v", "token", "", "flat", "token is required"},
+		"bad path layout":  {"https://v", "token", "x", "weird", "path_layout"},
 	}
 	for name, c := range cases {
 		t.Run(name, func(t *testing.T) {

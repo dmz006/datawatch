@@ -1,0 +1,16 @@
+name: unknown-keys
+kind: service
+future_top_level: true
+future_block:
+  nested: value
+connection:
+  base_url: https://example.test
+  future_conn_key: 1
+  auth:
+    token: ${secret:x}
+    future_auth_key: abc
+lifecycle:
+  supported_modes: [attach_only, managed]
+  entry: ./svc
+  future_lifecycle_key:
+    deeper: yes

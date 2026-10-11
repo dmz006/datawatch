@@ -1,0 +1,10 @@
+name: service-attach-only
+kind: service
+connection:
+  base_url: "http://127.0.0.1:9100"  # local standalone instance
+  auth:
+    type: bearer
+    token: ${secret:x}
+  health_path: /healthz
+lifecycle:
+  supported_modes: [attach_only]

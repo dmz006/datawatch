@@ -26,7 +26,7 @@ func (m *mockStore) Get(name string) (Secret, error) {
 func (m *mockStore) Set(name, value string, tags []string, desc string, scopes []string) error {
 	return nil
 }
-func (m *mockStore) Delete(name string) error                                  { return nil }
+func (m *mockStore) Delete(name string) error { return nil }
 func (m *mockStore) Exists(name string) (bool, error) {
 	_, ok := m.data[name]
 	return ok, nil
@@ -234,5 +234,26 @@ func TestResolveConfig_NoRef(t *testing.T) {
 	}
 	if cfg.X != "no refs here" {
 		t.Error("no-ref string was mutated")
+	}
+}
+
+func TestIsRef(t *testing.T) {
+	cases := map[string]bool{
+		"${secret:imap-mcp_token}": true,
+		"${secret:a.b-c_D9}":       true,
+		"":                         false,
+		"literal-token":            false,
+		"${secret:}":               false,
+		"${secret:bad name}":       false,
+		"Bearer ${secret:tok}":     false,
+		"${secret:tok} ":           false,
+		"${secret:a}${secret:b}":   false,
+		"${secret:a/b}":            false,
+		"$secret:tok":              false,
+	}
+	for in, want := range cases {
+		if got := IsRef(in); got != want {
+			t.Errorf("IsRef(%q) = %v, want %v", in, got, want)
+		}
 	}
 }

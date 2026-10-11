@@ -1109,6 +1109,10 @@ tailscale:
 # manifest.yaml + executable entry. Line-oriented JSON-RPC over stdio.
 # Security: plugins run with daemon privileges — install only reviewed
 # plugins. See docs/api/plugins.md.
+# Manifest v3 fields (kind: automation|service, connection, lifecycle;
+# v9.0.31) live in each plugin's manifest.yaml, not here — see
+# docs/api/plugins.md "Manifest" + "Service-kind plugins". No new daemon
+# config keys were added for them.
 plugins:
   # Opt-in switch. When false every /api/plugins/* returns 503 and
   # discovery is skipped.

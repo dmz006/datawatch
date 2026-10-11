@@ -32,7 +32,10 @@ func newPasswordPipe(password string) *passwordReader {
 	return &passwordReader{s: password + "\n" + password + "\n"}
 }
 
-type passwordReader struct{ s string; pos int }
+type passwordReader struct {
+	s   string
+	pos int
+}
 
 func (p *passwordReader) Read(b []byte) (int, error) {
 	if p.pos >= len(p.s) {

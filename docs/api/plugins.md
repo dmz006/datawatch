@@ -174,12 +174,77 @@ curl -sk -X POST \
 | Field | Required | Description |
 |---|---|---|
 | `name`        | yes | Unique plugin name |
-| `entry`       | yes | Executable path; relative paths are resolved against the plugin dir |
-| `hooks`       | yes | List of hook names this plugin registers for |
+| `entry`       | yes (automation) | Executable path; relative paths are resolved against the plugin dir |
+| `hooks`       | yes (automation) | List of hook names this plugin registers for |
 | `description` | no  | Human-readable one-liner |
 | `version`     | no  | Freeform version string |
 | `timeout_ms`  | no  | Per-invocation timeout (overrides global `plugins.timeout_ms`) |
-| `mode`        | no  | `oneshot` (default) — fork-per-call |
+| `mode`        | no  | **Deprecated, ignored** (since v9.0.31). Parsed for one more release so existing manifests still load, then removed. Use `kind` instead. |
+| `kind`        | no  | `automation` (default when absent — fork-per-call hook subprocess, the v2.1 behavior) or `service` (a persistent external process datawatch talks to as a client). Case-insensitive. Manifest v3, v9.0.31. |
+| `connection`  | yes when `kind: service` | How datawatch reaches a service-kind plugin. See the `connection.*` rows. |
+| `connection.base_url`    | yes when `kind: service` | Absolute `http://` or `https://` URL of the running service. |
+| `connection.auth.type`   | no  | Auth scheme. Only `bearer` is supported; empty means `bearer`. |
+| `connection.auth.token`  | yes when `connection.auth` is set | Exactly one `${secret:NAME}` reference — never a literal credential. Only the reference shape is validated; the secret is resolved at use time. |
+| `connection.health_path` | no  | Path (relative to `base_url`) for health probing in either lifecycle mode. |
+| `lifecycle`   | no  | Only allowed when `kind: service` (rejected on automation manifests). Absent means attach-only. See the `lifecycle.*` rows. |
+| `lifecycle.supported_modes` | yes when `lifecycle` is set | Non-empty list of `attach_only` and/or `managed`, no duplicates. Author-declared: the operator's later mode choice is limited to what is listed here. |
+| `lifecycle.entry`           | yes when `managed` is listed | Executable to launch for managed mode (relative to the plugin dir, or absolute). |
+| `lifecycle.args`            | no  | Arguments passed to `lifecycle.entry` (managed mode only). |
+| `lifecycle.restart_policy`  | no  | `on-failure`, `always` or `never`. Empty = supervisor default. |
+| `lifecycle.stop_timeout_ms` | no  | Grace period before a managed process is killed on stop. Must be `>= 0`; `0` = supervisor default. |
+
+Unknown keys are ignored, so a manifest written for a newer daemon
+still loads on an older one. A manifest that fails validation is
+skipped at discovery (logged to stderr) and rejected by
+`POST /api/plugins/install`.
+
+### Service-kind plugins (manifest v3)
+
+Added in v9.0.31. A `kind: service` plugin is a long-running process
+or server that datawatch connects to as a client, instead of a
+subprocess it forks per hook call. The plugin stays a standalone
+program: it must work on its own, without datawatch. The `connection`
+block is what datawatch needs to attach to it. The optional
+`lifecycle` block says whether datawatch may also start and supervise
+that same binary.
+
+```yaml
+name: mail-service
+description: Mail triage service exposed to datawatch.
+version: 1.4.0
+kind: service
+connection:
+  base_url: http://127.0.0.1:8765
+  health_path: /healthz
+  auth:
+    type: bearer
+    token: ${secret:mail-service-token}   # secrets-store ref, never a literal
+lifecycle:
+  supported_modes: [attach_only, managed]
+  entry: bin/mail-service                 # required because managed is listed
+  args: ["--listen", "127.0.0.1:8765"]
+  restart_policy: on-failure
+  stop_timeout_ms: 5000
+```
+
+- **`attach_only`**: datawatch only connects to an instance that is
+  already running. It never starts or stops it.
+- **`managed`**: datawatch starts the same binary as a child process,
+  health-checks it, restarts it per `restart_policy`, and stops it.
+- The plugin author declares which modes the plugin supports. The
+  operator can only choose from what the author listed.
+- Service-kind plugins are **never invoked as hooks**. Any `hooks:`
+  list on a service manifest is ignored, and `POST /api/plugins/{name}/test`
+  returns an error for them.
+
+**What ships in v9.0.31 (and what does not).** datawatch parses and
+validates service-kind manifests: discovery, install, and
+`scripts/check-plugin-manifests.sh` all apply the rules in the table
+above, and `GET /api/plugins` / `GET /api/plugins/{name}` return the
+`kind`, `connection` and `lifecycle` fields. datawatch does **not**
+yet attach to, start, supervise or health-probe service plugins.
+Neither `attach_only` nor `managed` does anything at runtime yet; that
+support arrives in a later release.
 
 ### Hooks (v1 set)
 
@@ -244,7 +309,10 @@ hooks: [post_session_output]
 ## Not in v1
 
 Deferred to later patches:
-- Long-lived stdio mode with persistent per-plugin subprocess.
+- Long-lived plugins — now declared with `kind: service` (manifest v3,
+  v9.0.31; see [Service-kind plugins](#service-kind-plugins-manifest-v3)).
+  Manifests are parsed and validated; attaching to and supervising
+  the running service is still deferred to a later release.
 - Per-plugin container sandboxing (BL117 territory).
 - Hot reload via filesystem watcher (SIGHUP + `POST
   /api/plugins/reload` is enough for v1).

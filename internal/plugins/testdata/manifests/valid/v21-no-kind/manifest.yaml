@@ -1,0 +1,8 @@
+# v2.1 automation manifest: no kind: field, behavior unchanged.
+name: v21-no-kind
+description: Plain automation plugin
+entry: ./run.sh
+hooks:
+  - post_session_output
+  - on_alert
+timeout_ms: 2000

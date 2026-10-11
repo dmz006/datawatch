@@ -1,0 +1,4 @@
+name: service-no-base-url
+kind: service
+connection:
+  health_path: /healthz
