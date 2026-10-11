@@ -1123,6 +1123,11 @@ plugins:
   timeout_ms: 2000
   # Names to skip at discovery (manifests parsed but Enabled=false).
   disabled: []
+  # kind: service plugins datawatch may start, health-check, restart and
+  # stop (managed mode, v9.0.32). Only honoured when the plugin's manifest
+  # lists `managed` in lifecycle.supported_modes. Empty = never managed.
+  # See docs/api/plugins.md.
+  managed: []
 
 # ── Council Mode (v6.11.0 / v7.0.0) ──
 # Multi-persona structured debate orchestrator. All fields configurable at

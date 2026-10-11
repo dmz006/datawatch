@@ -75,6 +75,7 @@ plugins:
   dir:         ~/.datawatch/plugins      # discovery root
   timeout_ms:  2000                      # per-invocation budget
   disabled:    []                        # names to skip at discovery
+  managed:     []                        # service plugins datawatch may supervise (v9.0.32)
 ```
 
 ---
@@ -85,7 +86,7 @@ plugins:
 GET    /api/plugins                     list discovered plugins
 POST   /api/plugins/reload              rescan dir
 GET    /api/plugins/{name}              manifest + invocation stats
-POST   /api/plugins/{name}/enable
+POST   /api/plugins/{name}/enable       optional body: {"managed": bool}
 POST   /api/plugins/{name}/disable
 POST   /api/plugins/{name}/test         body: {hook, payload}
 ```
@@ -237,14 +238,121 @@ lifecycle:
   list on a service manifest is ignored, and `POST /api/plugins/{name}/test`
   returns an error for them.
 
-**What ships in v9.0.31 (and what does not).** datawatch parses and
-validates service-kind manifests: discovery, install, and
-`scripts/check-plugin-manifests.sh` all apply the rules in the table
-above, and `GET /api/plugins` / `GET /api/plugins/{name}` return the
-`kind`, `connection` and `lifecycle` fields. datawatch does **not**
-yet attach to, start, supervise or health-probe service plugins.
-Neither `attach_only` nor `managed` does anything at runtime yet; that
-support arrives in a later release.
+**What ships when.** v9.0.31 added parsing and validation of
+service-kind manifests (discovery, install,
+`scripts/check-plugin-manifests.sh`, and the `kind` / `connection` /
+`lifecycle` fields in `GET /api/plugins`). v9.0.32 adds the runtime
+for `managed` mode, described below. `attach_only` still does nothing
+at runtime: datawatch does not yet connect to or health-probe an
+attach-only service.
+
+#### Managed mode at runtime (v9.0.32)
+
+datawatch supervises a service plugin only when **all** of these hold:
+
+1. `kind: service` and the author lists `managed` in
+   `lifecycle.supported_modes` (the ceiling: an operator cannot force
+   a mode the author did not declare);
+2. the operator has opted the plugin in (see below);
+3. the plugin is enabled, and `plugins.enabled` is on.
+
+Anything else (automation plugins, attach-only plugins, plugins not
+opted in) is never started, stopped or probed. Nothing is spawned
+until the daemon has finished starting its plugin subsystem.
+
+**Opting in.** Persistently, in `~/.datawatch/config.yaml`:
+
+```yaml
+plugins:
+  enabled: true
+  managed:
+    - mail-service        # names of service plugins datawatch may supervise
+```
+
+At runtime over REST (in memory, like enable/disable; add the name to
+`plugins.managed` to keep it across restarts):
+
+```bash
+curl -sk -X POST \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"managed": true}' \
+  "$BASE/api/plugins/mail-service/enable"
+```
+
+`{"managed": false}` opts out (and stops the service); an empty body
+leaves the opt-in unchanged. The endpoint returns `400` when the
+plugin does not declare `managed` support or the body is malformed,
+and `404` when the plugin is unknown. Over MCP, `plugin_enable` takes
+the same optional boolean: `plugin_enable(name="mail-service",
+managed=true)`; the body is sent only when `managed` is given.
+
+**Lifecycle.**
+
+- **Start** — at daemon boot, and whenever a plugin becomes eligible
+  later (enabled, opted in, or newly found by `POST /api/plugins/reload`
+  or the dir watcher). `lifecycle.entry` runs with `lifecycle.args` in
+  the plugin dir as a child process in its own process group. Env is
+  built the same way as for hook plugins, so `${secret:NAME}` env
+  values work.
+- **Health** — with `connection.health_path` set, datawatch GETs
+  `base_url` + `health_path` every 5s, sending the resolved
+  `connection.auth` bearer token when configured. The first 2xx marks
+  the service `healthy`. A health failure is either no 2xx within 30s
+  of launch, or 3 consecutive failed probes after the service was
+  healthy (it shows as `unhealthy` in between). On a health failure the
+  child is stopped and the restart policy decides what happens next.
+  Without a `health_path`, a process still running 30s after launch is
+  treated as healthy.
+- **Restart** — per `lifecycle.restart_policy`:
+
+  | Policy | Non-zero exit / signal / health failure | Clean exit 0 |
+  |---|---|---|
+  | `on-failure` (default) | restart | stop (state `stopped`) |
+  | `always` | restart | restart |
+  | `never` | no restart (state `crashed`) | no restart (state `stopped`) |
+
+  Restarts back off exponentially: 1s, 2s, 4s, … capped at 30s.
+- **Give-up** — after 5 restarts in a row without a stable run (the
+  6th consecutive failure), datawatch stops supervising and leaves the
+  service in state `failed`. A run that stays healthy for 60s resets
+  the failure count. To try again, disable and re-enable the plugin
+  (or restart the daemon).
+- **Stop** — disabling the plugin, opting it out, removing it from the
+  plugin dir, and daemon shutdown all stop the service: SIGTERM to the
+  process group, then SIGKILL if it is still running after
+  `lifecycle.stop_timeout_ms` (default 10s). datawatch waits for the
+  child to be reaped. On shutdown all managed services stop
+  concurrently, bounded at 30s overall. A hot-reload of the plugin dir
+  never orphans a running child.
+
+**Status.** `GET /api/plugins` and `GET /api/plugins/{name}` add a
+`service` object to any plugin that currently has a supervisor
+(plugins without one are unchanged):
+
+```json
+"service": {
+  "state": "healthy",
+  "pid": 41237,
+  "restarts": 1,
+  "last_error": "process exited: exit status 2"
+}
+```
+
+`state` is one of `stopped`, `starting`, `healthy`, `unhealthy`,
+`crashed`, `restarting`, `failed`, `stopping`. `pid` and
+`last_error` are omitted when empty.
+
+**Audit events.** Every lifecycle transition is written to the audit
+log with actor `daemon`, resource type `plugin` and the plugin name,
+and also printed to the daemon log:
+
+| Action | When | Details |
+|---|---|---|
+| `plugin_service_start` | a child process is launched (first start and each restart) | `pid`, `restarts` |
+| `plugin_service_restart` | a run ended and the policy will restart it | `restarts`, `backoff_ms`, `exit_code`, `error`, `health_fail` |
+| `plugin_service_health_fail` | startup deadline missed or probe-failure threshold reached | `reason` (`startup_deadline` / `probe_failures`), `error`, `url` |
+| `plugin_service_stop` | requested stop, a run the policy won't restart, or give-up | `reason` (`requested` / `exited` / `max_restarts`), plus `state`, `exit_code`, `error`, `consecutive_failures` when not requested |
 
 ### Hooks (v1 set)
 
