@@ -2,7 +2,7 @@
 
 - **Date**: 2026-10-10
 - **Version at planning**: v9.0.17
-- **Status**: In progress — Phase 0 done (v9.0.18, fixes B114), Phase 1 done (v9.0.19), Phase 2 done (v9.0.20), Phase 3 done (v9.0.21), Phase 4 done (v9.0.22), Phase 5 done (v9.0.23), Phase 6 next
+- **Status**: Done — Phase 0 done (v9.0.18, fixes B114), Phase 1 done (v9.0.19), Phase 2 done (v9.0.20), Phase 3 done (v9.0.21), Phase 4 done (v9.0.22), Phase 5 done (v9.0.23), Phase 6 done (docs-only, no version bump per the "docs-only commits skip version bump" rule — latest shipped code remains v9.0.23). All 7 phases (0-6) complete; BL407 closed.
 
 ## Context
 
@@ -519,23 +519,34 @@ and Phase 0 (real dispatch).
   + testing-tracker + this plan updated.
 
 ### Phase 6 — Docs + closure
-**Status: Not started.**
-- [ ] `docs/operations.md`: new section alongside "Autonomous External
-  GitHub Actions" (same caution framing — this is a third unconfirmed-
-  GitHub-action mechanism, document it next to the other two, not as an
-  unrelated new heading).
-- [ ] `docs/config-reference.yaml`, `docs/testing-tracker.md`, CHANGELOG,
-  version bump.
-- [ ] `docs/plans/README.md`: close out the BL407 entry; file the Phase 0
-  fix as its own named bug (next number after B113, i.e. **B114** —
-  "`PRD.ClusterProfile` dispatch never resolves: synthetic session ID +
-  unwired container task execution") so it's traceable independent of
-  this plan's git-workflow framing, same way B111/B112 were tracked
-  alongside BL406 Phase 5.
-- [ ] Cross-reference `docs/plans/2026-10-04-f2-session-worker-isolation.md`
-  §11 from both this plan and the operations.md section (Context
-  item 4) — explicitly note interim telemetry remains unsolved, not
-  silently implied as covered by the completion-time push.
+**Status: Done (docs-only, no version bump).**
+- [x] `docs/operations.md`'s "PRD Git-Worktree Isolation + Completion PR
+  (BL407 Phases 1-5)" section was already written incrementally across
+  Phases 1-5 (correct placement: immediately after "Autonomous External
+  GitHub Actions", same caution framing, third unconfirmed-GitHub-action
+  mechanism documented next to the other two). This phase: retitled it
+  "(BL407, all phases)" and added a closing cross-reference paragraph to
+  `2026-10-04-f2-session-worker-isolation.md` §11 (interim session
+  telemetry during a run remains a separate, unsolved F-2 concern — the
+  completion-time push/PR this doc describes is the *final* diff only).
+- [x] `docs/config-reference.yaml`, `docs/testing-tracker.md`: already
+  fully updated per-phase (Phases 0-5 each added their own row/fields as
+  they shipped) — confirmed complete, nothing left for this phase to
+  add. CHANGELOG: same — each phase already has its own `## v9.0.1x`
+  entry; no new entry for Phase 6 itself, consistent with the "docs-only
+  commits get no versioned CHANGELOG entry" rule. No version bump (docs
+  + plan-doc closure only, no `api.go`/`main.go` touch).
+- [x] `docs/plans/README.md`: BL407 entry closed out — Roadmap's Stage 1
+  marked done, the plan-index table row updated to "shipped", the
+  long-form BL407 paragraph given a closing sentence, "Pending backlog"
+  count decremented, "Latest release"/"Active work" line updated to name
+  Stage 2 (BL404) as what's next. B114 was already filed (see Open Bugs)
+  when Phase 0 shipped (v9.0.18) — nothing further needed here.
+- [x] Cross-referenced `docs/plans/2026-10-04-f2-session-worker-isolation.md`
+  §11 from both this plan (this Phase 6 section, above) and the
+  `docs/operations.md` section's new closing paragraph — both now
+  explicitly state interim telemetry remains unsolved, not silently
+  implied as covered by the completion-time push.
 
 ## Parity surface
 

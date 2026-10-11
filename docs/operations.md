@@ -1967,7 +1967,7 @@ before approving any task to check it.
 
 ---
 
-## PRD Git-Worktree Isolation + Completion PR (BL407 Phases 1-5)
+## PRD Git-Worktree Isolation + Completion PR (BL407, all phases)
 
 By default, a PRD with no explicit `project_dir`/`project_profile`/
 `cluster_profile` runs directly in whatever directory the daemon
@@ -2032,6 +2032,18 @@ PRD) and handled by waiting, not failing: a second task's dispatch
 waits for the first task's agent to finish before it gets its turn —
 shown as the task's normal capacity-wait state — rather than being
 rejected outright.
+
+**Out of scope, named so it isn't lost**: everything above covers the
+*final* diff — the branch push + PR at PRD completion. It does not
+cover interim session output/telemetry durability *during* a run for a
+container/cluster-dispatched PRD — that path is still pull-only today
+(`forwardSessionToAgent` live-proxies every output request; nothing
+durable accumulates on the orchestrating daemon), so an abrupt
+container death before a clean session-end loses the transcript with
+no forensic record. That's a separate, not-yet-designed F-2
+container-hardening concern — see
+`docs/plans/2026-10-04-f2-session-worker-isolation.md` §11 for the
+operator's push-primary/poll-fallback direction for it.
 
 ---
 

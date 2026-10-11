@@ -161,3 +161,9 @@ gVisor and Kata workers are still ordinary pods from the CNI's perspective, so a
   *interim* visibility during the run) — but BL407's own plan should
   cross-reference it, since a worktree-mode PRD has the same "what if the
   session dies mid-run" question, just without the container angle.
+
+  **Update, BL407 closed 2026-10-11**: cross-referenced from both
+  `docs/plans/2026-10-10-prd-git-workflow.md` (Phase 6) and
+  `docs/operations.md`'s "PRD Git-Worktree Isolation + Completion PR"
+  section — both now explicitly state this item remains open and
+  unsolved. Still not designed or built; still an F-2 item.

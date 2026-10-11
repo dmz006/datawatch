@@ -40,7 +40,7 @@ single source of truth.
 
 ## Current state — 2026-10-10
 
-Latest release: **v9.0.23** (2026-10-11). feat(autonomous): BL407 Phase 5 — config/parity surface. `PRD.Git.AutoPR`/`BaseBranch` are now operator-settable after PRD creation (new `set_git` REST action, `autonomous_prd_set_git` MCP tool, `prd-set-git` CLI command, and a new Git section on the PWA's PRD Settings modal — Mobile-Parity issue `datawatch-app#249`), and a new daemon-wide `autonomous.default_auto_pr` config starts every future PRD's `Git.AutoPR` pre-set (applied once at creation time, not resolved at use-time, since `AutoPR` is a plain bool with no pointer override — a resolve-at-use-time default couldn't tell "operator explicitly turned it back off" from "never touched"). `WorktreeBaseRepo`/`WorktreeDir`/`RulesFile`/`ContextFile`/`UpstreamRepos` were confirmed already fully config-round-trippable with zero new code. Caught two real gaps live while shipping it: the new MCP tool needed its own `federation.MCPToolCap` entry or it 404s from `POST /api/mcp/call` despite being properly registered, and the new PWA hint text first said "PRD" and left "automaton" untranslated in 4 locale bundles — both caught by this repo's own guard tests before shipping. **Active work:** the v10.0.0 self-build arc — see [§ Roadmap](#roadmap-self-build-arc--v1000-locked-2026-10-10); BL407 (`docs/plans/2026-10-10-prd-git-workflow.md`) continues with Phase 6 (docs + closure) next. Plans folder refactored 2026-10-10: 11 completed plan docs archived to `historical-plans/`, BL381 closed as shipped, and unscheduled work called out in the Roadmap's "Not yet placed" list.
+Latest release: **v9.0.23** (2026-10-11). feat(autonomous): BL407 Phase 5 — config/parity surface. `PRD.Git.AutoPR`/`BaseBranch` are now operator-settable after PRD creation (new `set_git` REST action, `autonomous_prd_set_git` MCP tool, `prd-set-git` CLI command, and a new Git section on the PWA's PRD Settings modal — Mobile-Parity issue `datawatch-app#249`), and a new daemon-wide `autonomous.default_auto_pr` config starts every future PRD's `Git.AutoPR` pre-set (applied once at creation time, not resolved at use-time, since `AutoPR` is a plain bool with no pointer override — a resolve-at-use-time default couldn't tell "operator explicitly turned it back off" from "never touched"). `WorktreeBaseRepo`/`WorktreeDir`/`RulesFile`/`ContextFile`/`UpstreamRepos` were confirmed already fully config-round-trippable with zero new code. Caught two real gaps live while shipping it: the new MCP tool needed its own `federation.MCPToolCap` entry or it 404s from `POST /api/mcp/call` despite being properly registered, and the new PWA hint text first said "PRD" and left "automaton" untranslated in 4 locale bundles — both caught by this repo's own guard tests before shipping. **Active work:** the v10.0.0 self-build arc — see [§ Roadmap](#roadmap-self-build-arc--v1000-locked-2026-10-10); BL407 (`docs/plans/2026-10-10-prd-git-workflow.md`) closed 2026-10-11 (Phase 6, docs-only closure, no version bump — all 7 phases shipped, latest v9.0.23). Stage 1 of the roadmap is now complete; **Stage 2 — BL404** (imap_mcp parity gaps, the deliberate shakedown run through the new PRD-driven path) is next. Plans folder refactored 2026-10-10: 11 completed plan docs archived to `historical-plans/`, BL381 closed as shipped, and unscheduled work called out in the Roadmap's "Not yet placed" list.
 
 Previous: **v9.0.7** (2026-10-09). fix(daemon): `datawatch restart`/`stop`/`start` now detect and delegate to an active/enabled `datawatch.service` systemd --user unit instead of raw PID signaling + self-daemonizing; the daemon now falls back to the dedicated `~/.datawatch/tmux` socket when `TMUX_TMPDIR` is unset at boot; `ResumeMonitors` self-heals a `StateFailed` session back to `StateRunning` at boot when its tmux pane is actually still alive. Full history for every release between this and the v8.39.1 entry below is in `CHANGELOG.md` (this section was 8 days / ~400 versions stale until this backlog refactor — see the "Gotcha" note in AGENT.md's Project Tracking Rule: this header is meant to be refreshed every release, not just major ones).
 
@@ -177,7 +177,7 @@ Previous: **v8.25.3** (2026-09-12). feat(observer): nvidia-smi and tegrastats GP
 | Open bugs | 0 | B111/B112 — fixed by BL406 Phase 5, v9.0.17. B113 — fixed by BL406 Phase 0. B114 (`PRD.ClusterProfile` dispatch never resolves) — fixed by BL407 Phase 0, v9.0.18. B115 (zero e2e cookbook coverage added since the v9.0.0 tag) — fixed by backfilling TS-787-TS-795, 2026-10-10. None open |
 | Open features | 7 | BL241 Matrix (design interview needed); BL365 + BL408 + BL395 security remediation track (roadmap Stage 3 #7); BL390 Phase 2/3 (folded into BL405 Phase 8a); BL393 nested tags (excluded until authorized); BL394 + BL392 (substantially done, residue cross-repo). BL389 shipped v9.0.0; BL381 shipped v8.28.0/v8.28.2 |
 | Active backlog | 0 | BL387 complete (v8.31–33.0 ✅) |
-| Pending backlog | 6 | BL402, BL403, BL404, BL405, BL407 (v10.0.0 roadmap; BL406 shipped v9.0.17) + BL398 Phase 2; BL400 deferred (open questions). BL335 shipped v8.62.x via BL397 Phase 4 |
+| Pending backlog | 5 | BL402, BL403, BL404, BL405 (v10.0.0 roadmap; BL406 shipped v9.0.17, BL407 shipped v9.0.23) + BL398 Phase 2; BL400 deferred (open questions). BL335 shipped v8.62.x via BL397 Phase 4 |
 | Active (in-progress) | 0 | — |
 | Deferred | 0 | — |
 | Awaiting operator action | 0 | — |
@@ -316,16 +316,17 @@ it go stale the way BL365's "Phase 2 next" line did (corrected
 2026-10-10, see BL365 below).
 
 **Stage 1 — build traditionally (not via PRD; bootstrapping constraint,
-not a preference). Not started.**
+not a preference). Done — both items shipped.**
 1. **BL406** — Configurable Project-Rules Enforcement. First, because
-   everything after it benefits from being checked by it.
+   everything after it benefits from being checked by it. Shipped
+   v9.0.17.
 2. **BL407** — PRD Git Workflow (branch-per-PRD + auto-PR on
    completion). Second; independent of BL406, no reason to parallelize
-   given the one-thread-at-a-time constraint.
+   given the one-thread-at-a-time constraint. Shipped v9.0.23 (Phase 6
+   docs closure, 2026-10-11, is docs-only — no version bump).
 
 **Stage 2 — one small, low-risk item, run for real through the new
-PRD-driven path as a deliberate shakedown. Not started; blocked on
-Stage 1.**
+PRD-driven path as a deliberate shakedown. Next up — Stage 1 complete.**
 3. **BL404** — imap_mcp parity gaps. Smallest, most self-contained real
    item left; whatever BL406/BL407 need tuning on gets found here
    cheaply, per the operator's "real-world testing to validate/tune"
@@ -469,7 +470,7 @@ else is in `historical-plans/`):
 | Plan doc | BL | Roadmap slot |
 |---|---|---|
 | `2026-10-10-configurable-project-rules-enforcement.md` | BL406 (+B111/B112/B113) | Stage 1 #1 — **done**, all 6 phases shipped (v9.0.11–v9.0.17) |
-| `2026-10-10-prd-git-workflow.md` | BL407 (+B114) | Stage 1 #2 — in progress, Phases 0-5 done |
+| `2026-10-10-prd-git-workflow.md` | BL407 (+B114) | Stage 1 #2 — shipped v9.0.23 (Phases 0-6 all done) |
 | _(no plan doc yet)_ | BL404 | Stage 2 #3 |
 | `2026-10-09-plugin-extension-surfaces.md` | BL403 | Stage 3 #4 |
 | `2026-10-09-gh204-result-panel.md` | BL402 (GH#204) | Stage 3 #5 |
@@ -1303,7 +1304,9 @@ per-PRD council-profile override field (the Automata-page entry point).
 > `session.ProjectGit`'s existing per-task commit mechanism — no new
 > git abstraction. Interim session telemetry during a run
 > (`docs/plans/2026-10-04-f2-session-worker-isolation.md` §11) is
-> cross-referenced, explicitly out of scope.
+> cross-referenced, explicitly out of scope. **Closed 2026-10-11**: all
+> 7 phases (0-6) shipped, latest v9.0.23 (Phase 6 was docs-only closure,
+> no version bump); Stage 1 of the self-build roadmap is now complete.
 
 > **BL405** — LLM Enhancements: role-aware scheduling, federated
 > capacity, council-as-reusable-profile, usage/cost tracking (filed
