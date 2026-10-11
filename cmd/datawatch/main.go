@@ -113,7 +113,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "9.0.20"
+var Version = "9.0.21"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -626,12 +626,20 @@ func (a brokerAdapter) RevokeForWorker(ctx context.Context, workerID string) err
 // success," not "cluster dispatch has the same stall-detection the
 // local path has."
 func runWorkerBootstrapTask(mgr *session.Manager, env agentspkg.BootstrapEnv, boot *agentspkg.BootstrapResponse, projectDir string) {
+	// BL407 Phase 3 — force the commit the same way Phase 2's
+	// ForceAutoGitCommit does for local worktree-mode tasks: this
+	// worker's whole reason for existing is to push its own commits
+	// back (PushOnCompletion below), so leaving this daemon's own
+	// session.auto_git_commit default (false) in effect would mean
+	// there's never anything to push.
+	forceCommit := true
 	opts := &session.StartOptions{
 		Backend:        boot.Backend,
 		Effort:         boot.Effort,
 		Model:          boot.Model,
 		PermissionMode: boot.PermissionMode,
 		OneShot:        true,
+		AutoGitCommit:  &forceCommit,
 	}
 	result := &agentspkg.AgentResult{Status: "ok"}
 	sess, err := mgr.Start(context.Background(), boot.Task, "", projectDir, opts)
@@ -661,6 +669,18 @@ func runWorkerBootstrapTask(mgr *session.Manager, env agentspkg.BootstrapEnv, bo
 			}
 		}
 		tick.Stop()
+	}
+	// BL407 Phase 3 — push whatever got committed, win or lose: a
+	// failed task's partial progress is still worth preserving for
+	// operator inspection via the (unopened, in that case — see
+	// handleClusterGitCompletion) branch, and PushOnCompletion itself
+	// is a no-op when there's nothing new to push.
+	if branch, sha, perr := agentspkg.PushOnCompletion(context.Background(), projectDir, boot); perr != nil {
+		fmt.Fprintf(os.Stderr, "[worker] push on completion: %v\n", perr)
+		result.Summary += " (git push failed: " + perr.Error() + ")"
+	} else if branch != "" {
+		result.Branch = branch
+		result.CommitSHA = sha
 	}
 	reportCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -4761,9 +4781,44 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					}
 				}
 				// Best-effort kill so the tmux pane doesn't linger.
-				if s, ok := mgr.GetSession(task.SessionID); ok &&
-					s.State != session.StateKilled {
-					_ = mgr.Kill(task.SessionID)
+				if s, ok := mgr.GetSession(task.SessionID); ok {
+					// BL407 Phase 3 — a cluster-dispatched task's commits
+					// never exist on the parent (the worker pushed them
+					// itself via agentspkg.PushOnCompletion, using its own
+					// bootstrap-minted token). Record the branch it
+					// reported so the PRD-completion rollup below can open
+					// a PR against it — there is no local git push for
+					// this path, unlike handleWorktreeCompletion's.
+					if s.AgentID != "" {
+						if agent := agentMgr.Get(s.AgentID); agent != nil && agent.Result != nil {
+							if agent.Result.Branch != "" && prd.Git.Branch == "" {
+								prd.Git.Branch = agent.Result.Branch
+								// Same resolution handleAgentBootstrap used to
+								// build this worker's own BootstrapGit — the
+								// PRD-completion rollup needs it to know
+								// which repo to open a PR against, since
+								// cluster mode (unlike worktree mode) has no
+								// local clone of its own to read an origin
+								// remote from.
+								if proj := agentMgr.GetProjectFor(s.AgentID); proj != nil && proj.Git.URL != "" {
+									prd.Git.URL = proj.Git.URL
+									prd.Git.Provider = proj.Git.Provider
+									if prd.Git.BaseBranch == "" {
+										prd.Git.BaseBranch = proj.Git.Branch
+									}
+								}
+							}
+							if agent.Result.CommitSHA != "" {
+								prd.Decisions = append(prd.Decisions, autonomouspkg.Decision{
+									At: time.Now(), Kind: "git_worker_pushed", Actor: "autonomous",
+									Note: fmt.Sprintf("task=%s branch=%s sha=%s", task.ID, agent.Result.Branch, agent.Result.CommitSHA),
+								})
+							}
+						}
+					}
+					if s.State != session.StateKilled {
+						_ = mgr.Kill(task.SessionID)
+					}
 				}
 				if stallErr != nil {
 					return autonomouspkg.VerificationResult{}, stallErr

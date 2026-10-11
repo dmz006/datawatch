@@ -1383,8 +1383,13 @@ cheap, filesystem/git-level isolation only, not process/network
 isolation (that's `cluster_profile` dispatch's job). With
 `PRD.Git.AutoPR: true`, a successfully-completed worktree-mode PRD
 pushes the branch and opens a real PR (one per PRD, not per task),
-then removes the local worktree (BL407 Phase 2, v9.0.20). See "PRD
-Git-Worktree Isolation + Completion PR" in `docs/operations.md`.
+then removes the local worktree (BL407 Phase 2, v9.0.20). A
+`cluster_profile` PRD gets the equivalent `Git.AutoPR` behavior with no
+worktree at all — the dispatched worker commits and pushes its own
+branch itself (using its bootstrap-minted git token), reports it back
+on completion, and the parent opens the PR from that branch directly
+(BL407 Phase 3, v9.0.21). See "PRD Git-Worktree Isolation + Completion
+PR" in `docs/operations.md`.
 
 ---
 

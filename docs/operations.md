@@ -1967,7 +1967,7 @@ before approving any task to check it.
 
 ---
 
-## PRD Git-Worktree Isolation + Completion PR (BL407 Phases 1-2)
+## PRD Git-Worktree Isolation + Completion PR (BL407 Phases 1-3)
 
 By default, a PRD with no explicit `project_dir`/`project_profile`/
 `cluster_profile` runs directly in whatever directory the daemon
@@ -2005,6 +2005,25 @@ This is the same category of unconfirmed GitHub action as "Autonomous
 External GitHub Actions" above — review before enabling on a PRD whose
 task specs you don't fully trust. See
 `docs/plans/2026-10-10-prd-git-workflow.md`.
+
+A `cluster_profile` PRD gets the same `Git.AutoPR` behavior, but the
+mechanics differ: there's no local worktree for the parent to push
+from (the worker runs in its own container/pod), so the **worker**
+commits and pushes its own branch itself, using the same git token the
+parent minted it to clone with, then reports the branch + commit SHA
+back on completion. The parent only ever opens the PR from that
+reported branch — it never attempts a local push for cluster-dispatched
+work. Everything else (review-before-enabling, non-fatal on failure,
+Decision-logged) is identical to worktree mode.
+
+One current limitation: unlike worktree mode's per-PRD
+`automaton/<prd-id>-<slug>` branch, cluster mode has no dedicated-branch
+creation yet — a cluster worker pushes to whatever branch its
+dispatching Project Profile's `git.branch` names (or that repo's
+default branch, if unset). Until that's added, set an explicit,
+dedicated branch on the Project Profile before enabling `AutoPR` on a
+cluster-dispatched PRD, the same way you would for any other automated
+push you don't want landing on `main`.
 
 ---
 

@@ -47,6 +47,12 @@ func repoFromGitURL(url string) string {
 // anywhere in between leaves it in place for operator inspection,
 // rather than risk deleting the only copy of unpushed work.
 func (m *Manager) handleWorktreeCompletion(prd *PRD) {
+	if prd.ClusterProfile != "" {
+		// Cluster-dispatched PRDs never created a local worktree
+		// (EnsureWorktree's gating requires ClusterProfile == "") —
+		// handleClusterCompletion handles their PR instead.
+		return
+	}
 	if prd.Git.Branch == "" || !prd.Git.AutoPR {
 		return
 	}
@@ -67,46 +73,11 @@ func (m *Manager) handleWorktreeCompletion(prd *PRD) {
 		m.recordGitCompletionFailure(prd, "pushed, but could not resolve the origin remote URL to open a PR")
 		return
 	}
-	provider := strings.TrimSpace(prd.Git.Provider)
-	if provider == "" {
-		provider = "github"
-	}
 
-	resolve := m.gitProviderFn
-	if resolve == nil {
-		resolve = git.Resolve
-	}
-	title := prd.Title
-	if title == "" {
-		title = "Automaton " + prd.ID
-	}
-	body := fmt.Sprintf(
-		"Automated PR opened by datawatch on PRD completion.\n\n"+
-			"- prd_id: `%s`\n- branch: `%s`\n\n%s",
-		prd.ID, prd.Git.Branch, prd.Spec)
-	prURL, err := resolve(provider).OpenPR(context.Background(), git.PROptions{
-		Repo:       repoFromGitURL(url),
-		HeadBranch: prd.Git.Branch,
-		BaseBranch: prd.Git.BaseBranch,
-		Title:      title,
-		Body:       body,
-	})
-	if err != nil {
-		log.Printf("[autonomous] prd=%s open PR failed: %v", prd.ID, err)
+	if _, err := m.openCompletionPR(prd, url, ""); err != nil {
 		m.recordGitCompletionFailure(prd, "pushed, but open PR failed: "+err.Error())
 		return
 	}
-
-	prd.Git.PRURL = prURL
-	prd.Git.URL = url
-	if prd.Git.Provider == "" {
-		prd.Git.Provider = provider
-	}
-	prd.Decisions = append(prd.Decisions, Decision{At: time.Now(), Kind: "git_pr_opened", Actor: "autonomous", Note: prURL})
-	if serr := m.store.SavePRD(prd); serr != nil {
-		log.Printf("[autonomous] prd=%s save after PR open: %v", prd.ID, serr)
-	}
-	log.Printf("[autonomous] prd=%s opened PR %s", prd.ID, prURL)
 
 	// The worktree directory no longer exists on disk after this;
 	// ProjectDir is deliberately left as a historical record of where
@@ -120,6 +91,84 @@ func (m *Manager) handleWorktreeCompletion(prd *PRD) {
 	if out, werr := runGitIn(prd.ProjectDir, "worktree", "remove", "--force", prd.ProjectDir); werr != nil {
 		log.Printf("[autonomous] prd=%s worktree remove failed (non-fatal, left for inspection): %v\n%s", prd.ID, werr, out)
 	}
+}
+
+// handleClusterCompletion (BL407 Phase 3) is handleWorktreeCompletion's
+// counterpart for cluster-dispatched PRDs. There is no local push and
+// no worktree to clean up here: the worker committed and pushed its
+// own branch directly (agents.PushOnCompletion, using the bootstrap-
+// minted token the parent never sees), reporting the branch name back
+// via AgentResult. cmd/datawatch/main.go's autonomousVerify closure
+// records that branch (plus Git.URL/Provider/BaseBranch, resolved from
+// the dispatching ProjectProfile the same way the worker's own
+// bootstrap response was built) onto prd.Git as soon as it's known —
+// by the time a PRD reaches PRDCompleted, this is just "open the PR".
+func (m *Manager) handleClusterCompletion(prd *PRD) {
+	if prd.ClusterProfile == "" {
+		return
+	}
+	if prd.Git.Branch == "" || !prd.Git.AutoPR {
+		return
+	}
+	url := strings.TrimSpace(prd.Git.URL)
+	if url == "" {
+		log.Printf("[autonomous] prd=%s cluster worker reported branch %q but no git URL was resolvable — cannot open PR", prd.ID, prd.Git.Branch)
+		m.recordGitCompletionFailure(prd, "worker pushed "+prd.Git.Branch+", but no git URL was resolvable (dispatching project profile has no Git.URL?) to open a PR")
+		return
+	}
+	if _, err := m.openCompletionPR(prd, url, "worker already pushed its own commits for this branch; the parent never had a local copy."); err != nil {
+		m.recordGitCompletionFailure(prd, "worker pushed "+prd.Git.Branch+", but open PR failed: "+err.Error())
+	}
+}
+
+// openCompletionPR is the part handleWorktreeCompletion and
+// handleClusterCompletion share: resolve the provider, open the PR,
+// and record the outcome onto prd (PRURL/URL/Provider + a Decision).
+// Callers are responsible for the push (or lack of one) that precedes
+// this and for logging/recording their own push-side failures —
+// openCompletionPR only ever fails at the "open PR" step itself.
+func (m *Manager) openCompletionPR(prd *PRD, url, bodyNote string) (string, error) {
+	provider := strings.TrimSpace(prd.Git.Provider)
+	if provider == "" {
+		provider = "github"
+	}
+	resolve := m.gitProviderFn
+	if resolve == nil {
+		resolve = git.Resolve
+	}
+	title := prd.Title
+	if title == "" {
+		title = "Automaton " + prd.ID
+	}
+	body := fmt.Sprintf("Automated PR opened by datawatch on PRD completion.\n\n"+
+		"- prd_id: `%s`\n- branch: `%s`\n", prd.ID, prd.Git.Branch)
+	if bodyNote != "" {
+		body += "- note: " + bodyNote + "\n"
+	}
+	body += "\n" + prd.Spec
+	prURL, err := resolve(provider).OpenPR(context.Background(), git.PROptions{
+		Repo:       repoFromGitURL(url),
+		HeadBranch: prd.Git.Branch,
+		BaseBranch: prd.Git.BaseBranch,
+		Title:      title,
+		Body:       body,
+	})
+	if err != nil {
+		log.Printf("[autonomous] prd=%s open PR failed: %v", prd.ID, err)
+		return "", err
+	}
+
+	prd.Git.PRURL = prURL
+	prd.Git.URL = url
+	if prd.Git.Provider == "" {
+		prd.Git.Provider = provider
+	}
+	prd.Decisions = append(prd.Decisions, Decision{At: time.Now(), Kind: "git_pr_opened", Actor: "autonomous", Note: prURL})
+	if serr := m.store.SavePRD(prd); serr != nil {
+		log.Printf("[autonomous] prd=%s save after PR open: %v", prd.ID, serr)
+	}
+	log.Printf("[autonomous] prd=%s opened PR %s", prd.ID, prURL)
+	return prURL, nil
 }
 
 func (m *Manager) recordGitCompletionFailure(prd *PRD, note string) {

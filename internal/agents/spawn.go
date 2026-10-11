@@ -153,6 +153,14 @@ type AgentResult struct {
 	Summary    string                 `json:"summary,omitempty"`
 	Artifacts  map[string]interface{} `json:"artifacts,omitempty"`
 	ReportedAt time.Time              `json:"reported_at"`
+	// Branch + CommitSHA (BL407 Phase 3) — set by the worker after it
+	// pushes its own commits back to the bootstrap repo
+	// (agents.PushOnCompletion), using the git token it already has
+	// from bootstrap. The parent never has a local copy of these
+	// commits, so it opens the completion PR from Branch directly
+	// rather than pushing anything itself.
+	Branch    string `json:"branch,omitempty"`
+	CommitSHA string `json:"commit_sha,omitempty"`
 }
 
 // SpawnRequest is the canonical input to Manager.Spawn.

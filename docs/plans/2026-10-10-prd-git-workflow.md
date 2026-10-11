@@ -2,7 +2,7 @@
 
 - **Date**: 2026-10-10
 - **Version at planning**: v9.0.17
-- **Status**: In progress — Phase 0 done (v9.0.18, fixes B114), Phase 1 done (v9.0.19), Phase 2 done (v9.0.20), Phase 3 next
+- **Status**: In progress — Phase 0 done (v9.0.18, fixes B114), Phase 1 done (v9.0.19), Phase 2 done (v9.0.20), Phase 3 done (v9.0.21), Phase 4 next
 
 ## Context
 
@@ -321,18 +321,58 @@ problem is bigger than "add git wiring":
   CHANGELOG + testing-tracker + this plan updated.
 
 ### Phase 3 — Cluster-mode git: worker-side commit/push + completion callback
-**Status: Not started.** Depends on Phase 0.
-- [ ] Extend `AgentResult` (`internal/agents/spawn.go:143-148`) with
+**Status: Done (v9.0.21).** Depended on Phase 0.
+- [x] Extended `AgentResult` (`internal/agents/spawn.go`) with
   `Branch string`/`CommitSHA string`.
-- [ ] Worker-side (wherever Phase 0 wires task invocation): after the task
-  completes, `git add -A && git commit` (same message shape as
-  `ProjectGit.PostSessionCommit`) then `git push` using the
-  bootstrap-minted token already available to the worker, then include
-  the branch/SHA in its result report.
-- [ ] Parent-side: on `PRDCompleted` for a cluster-dispatched PRD, call
-  `git.Provider.OpenPR` using the reported branch — no local
-  `PushBranch` call for this path (Decision 7).
-- [ ] **Phase Completion Checklist**.
+- [x] Worker-side: new `agents.PushOnCompletion` (`worker_clone.go`) —
+  resolves the worker's current branch + HEAD SHA, pushes using the
+  same bootstrap-minted token `CloneOnBootstrap` used to clone. Called
+  from `runWorkerBootstrapTask` (`cmd/datawatch/main.go`) after the
+  task session reaches a terminal state, win or lose (a failed task's
+  partial progress is still worth preserving for inspection).
+  Commit itself reuses `session.ProjectGit.PostSessionCommit` as
+  planned (Decision 4) — no new commit logic — but needed a push to
+  force it on: `runWorkerBootstrapTask` now always sets
+  `StartOptions.AutoGitCommit: true` for the worker's one-shot task
+  session, same rationale as Phase 2's `ForceAutoGitCommit` (this
+  daemon's own `session.auto_git_commit` default is `false`).
+- [x] Parent-side: `autonomousVerify` (`cmd/datawatch/main.go`) records
+  the reported branch (plus `Git.URL`/`Provider`/`BaseBranch`, resolved
+  from the dispatching Project Profile's `GitSpec`) onto `prd.Git` as
+  soon as a cluster-dispatched task reports it. New
+  `Manager.handleClusterCompletion` (`git_completion.go`) fires at the
+  same `PRDCompleted` rollup as Phase 2's `handleWorktreeCompletion`
+  and calls `git.Provider.OpenPR` using that branch — no local push
+  for this path (Decision 7), confirmed via a shared `openCompletionPR`
+  helper both completion paths now call.
+- [x] **Deviation from plan, found while implementing**:
+  `handleWorktreeCompletion` had no guard against ever being reached
+  by a cluster-dispatched PRD before this phase (its `Git.Branch` was
+  never set for one). Now that `autonomousVerify` sets it for cluster
+  mode too, `handleWorktreeCompletion` needed an explicit
+  `prd.ClusterProfile != ""` early-return — without it, PRD completion
+  would have run `git push`/`git worktree remove` against an empty
+  `ProjectDir`.
+- [x] **Known, accepted limitation, scoped to Phase 4**: nothing yet
+  creates a dedicated branch for cluster-mode tasks (Phase 1's
+  `EnsureWorktree` has no cluster-mode counterpart). Until Phase 4
+  extends `CloneOnBootstrap` with a create-new-branch mode, a cluster
+  worker pushes to whatever branch the dispatching Project Profile's
+  `GitSpec.Branch` names (or that repo's default branch if unset) —
+  documented in the CHANGELOG as an operator caveat for today.
+- [x] Regression tests: 2 (`internal/agents/worker_clone_test.go`,
+  `PushOnCompletion` against a real bare-remote round trip) + 6
+  (`internal/autonomous/cluster_completion_test.go`,
+  `handleClusterCompletion`'s guards/success/failure paths plus
+  `handleWorktreeCompletion`'s new cluster-mode no-op).
+- [x] **Phase Completion Checklist**: full `go test ./...` green
+  (3462+ passed), `go vet ./...` clean, `gosec -severity high
+  -confidence medium` zero new findings, `gofmt` clean on every new/
+  touched file (one genuine misalignment of my own in
+  `cmd/datawatch/main.go` fixed; all other flagged files confirmed
+  pre-existing drift via `git stash` same as prior phases), `go test
+  -race` on this phase's new tests. CHANGELOG + testing-tracker + this
+  plan updated.
 
 ### Phase 4 — Branch creation parity for cluster mode
 **Status: Not started.** Depends on Phase 1 (branch-naming helper) and
@@ -450,9 +490,20 @@ Phase 0 (real dispatch).
   `cmd/datawatch/main.go` (`auto_git_commit` threading in
   `autonomousSpawn`'s local-session body) — Phase 2.
 - `internal/agents/spawn.go` (`AgentResult.Branch`/`CommitSHA`),
-  `internal/agents/worker_clone.go` (branch-create mode),
   `internal/agents/docker_driver.go` (Phase 0's task-invocation fix) —
-  Phases 0, 3, 4.
+  Phases 0, 3.
+- `internal/agents/worker_clone.go` (`PushOnCompletion`,
+  `gitOutputText`), `cmd/datawatch/main.go` (`runWorkerBootstrapTask`'s
+  forced `auto_git_commit` + push call, `autonomousVerify`'s branch/URL
+  capture onto `prd.Git`), new
+  `internal/autonomous/cluster_completion_test.go`,
+  `internal/autonomous/git_completion.go`
+  (`handleClusterCompletion`, shared `openCompletionPR` helper,
+  `handleWorktreeCompletion`'s new `ClusterProfile` guard),
+  `internal/autonomous/executor.go` (rollup calls
+  `handleClusterCompletion` alongside `handleWorktreeCompletion`) —
+  Phase 3. `internal/agents/worker_clone.go` (branch-create mode for
+  `CloneOnBootstrap`) — Phase 4, not yet done.
 - `cmd/datawatch/main.go` (`autonomousSpawn`'s cluster branch,
   verify-loop fix) — Phase 0.
 - `internal/server/web/app.js`, `internal/server/web/locales/*.json` —

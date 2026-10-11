@@ -5,6 +5,55 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.21 — feat(autonomous): BL407 Phase 3 — cluster-mode git (worker-side commit/push + completion callback)
+
+### Added
+- A cluster-dispatched PRD (`PRD.ClusterProfile` set, now functional
+  since Phase 0) with `Git.AutoPR: true` gets the same completion PR
+  worktree-mode PRDs do (Phase 2) — but the push itself happens on the
+  **worker**, not the parent: the parent never has a local copy of a
+  cluster worker's commits (there's no worktree for it — it's a
+  separate container/pod), so there was nothing for it to push even in
+  principle.
+- New `agents.PushOnCompletion(ctx, dir, resp)`: after a worker's task
+  session finishes, commits whatever changed (forced via the worker's
+  one-shot session now always setting `auto_git_commit: true`, same
+  rationale as Phase 2's `ForceAutoGitCommit` — this daemon's own
+  `session.auto_git_commit` default is `false`) and pushes it back
+  using the same bootstrap-minted git token `CloneOnBootstrap` already
+  used to clone (the worker's only remaining credential by completion
+  time — the one-shot `DATAWATCH_BOOTSTRAP_TOKEN` is already burned).
+  Returns the branch + HEAD SHA; both ride back to the parent on the
+  existing `AgentResult` (two new fields: `Branch`, `CommitSHA`) via
+  the Phase 0 result-token-authenticated report callback — no new
+  endpoint needed.
+- Parent-side: `autonomousVerify` records the reported branch (plus
+  `Git.URL`/`Provider`/`BaseBranch`, resolved from the dispatching
+  Project Profile's `GitSpec` the same way the worker's own bootstrap
+  response was built) onto `PRD.Git` as soon as a cluster-dispatched
+  task reports it. New `Manager.handleClusterCompletion` — the
+  cluster-mode counterpart to Phase 2's `handleWorktreeCompletion` —
+  fires at the same `PRDCompleted` rollup point and opens the PR from
+  that branch directly. No local push, no worktree to clean up; it
+  shares `handleWorktreeCompletion`'s PR-opening logic via a new
+  `openCompletionPR` helper rather than duplicating the
+  provider-resolve/title/body/Decision-recording shape.
+- `handleWorktreeCompletion` now explicitly no-ops for cluster-
+  dispatched PRDs (`ClusterProfile != ""`) — before this phase it had
+  no way to be reached for one at all (`Git.Branch` was never set on a
+  cluster PRD), but now that `autonomousVerify` can set it, the guard
+  keeps it from running `git push`/`git worktree remove` against an
+  empty `ProjectDir`.
+- **Known, accepted limitation of this phase** (scoped out per the
+  plan — Phase 4 covers it): nothing yet creates a *dedicated* branch
+  for cluster-mode tasks the way Phase 1's `EnsureWorktree` does for
+  worktree mode. Until Phase 4 extends `CloneOnBootstrap` with a
+  create-new-branch mode, a cluster worker pushes to whatever branch
+  it was cloned onto — the dispatching Project Profile's configured
+  branch (or that repo's default branch if unset). Operators using
+  cluster dispatch with `Git.AutoPR` today should set an explicit,
+  dedicated branch on the Project Profile until Phase 4 ships.
+
 ## v9.0.20 — feat(autonomous): BL407 Phase 2 — PRD-completion push + PR (worktree mode)
 
 ### Added

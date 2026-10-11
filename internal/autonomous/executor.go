@@ -627,6 +627,11 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 			// anything else reading the same PRD concurrently (e.g. a
 			// REST GET while a background goroutine is still writing).
 			m.handleWorktreeCompletion(prd)
+			// BL407 Phase 3 — cluster-dispatched counterpart. Also
+			// synchronous and for the same reason: fast, bounded
+			// (open-PR only, no local push) network calls, run before
+			// anything else can observe *prd concurrently.
+			m.handleClusterCompletion(prd)
 		}
 	}
 	return m.store.SavePRD(prd)

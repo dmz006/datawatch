@@ -72,6 +72,50 @@ func CloneOnBootstrap(ctx context.Context, resp *BootstrapResponse, workspaceRoo
 	return target, nil
 }
 
+// PushOnCompletion (BL407 Phase 3) pushes a cluster-dispatched worker's
+// own commits back to the bootstrap repo once its task finishes, using
+// the same bootstrap-minted token CloneOnBootstrap used to clone (the
+// worker's only credential by this point — the one-shot
+// DATAWATCH_BOOTSTRAP_TOKEN is already burned). Returns the branch
+// pushed and HEAD's commit SHA so the caller can report them in
+// AgentResult; the parent opens the completion PR from that branch
+// directly — it never has a local copy of these commits to push
+// itself. No-op (empty strings, nil error) when the worker was never
+// git-bootstrapped (resp.Git.URL == "").
+func PushOnCompletion(ctx context.Context, dir string, resp *BootstrapResponse) (branch, sha string, err error) {
+	if resp == nil || resp.Git.URL == "" || dir == "" {
+		return "", "", nil
+	}
+	branch, err = gitOutputText(ctx, dir, "rev-parse", "--abbrev-ref", "HEAD")
+	if err != nil {
+		return "", "", fmt.Errorf("resolve current branch: %w", err)
+	}
+	sha, err = gitOutputText(ctx, dir, "rev-parse", "HEAD")
+	if err != nil {
+		return "", "", fmt.Errorf("resolve HEAD: %w", err)
+	}
+	pushURL := injectTokenIntoURL(resp.Git.URL, resp.Git.Token)
+	if perr := runGit(ctx, dir, "push", pushURL, "HEAD:refs/heads/"+branch); perr != nil {
+		return "", "", fmt.Errorf("git push: %w", perr)
+	}
+	return branch, sha, nil
+}
+
+// gitOutputText runs a read-only git command and returns trimmed
+// stdout. Shorter timeout than runGit's 5min — these are local,
+// near-instant lookups (rev-parse), not network operations.
+func gitOutputText(ctx context.Context, dir string, args ...string) (string, error) {
+	callCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(callCtx, "git", args...)
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
 // repoNameFromURL extracts a sensible directory name for the cloned
 // repo. Handles GitHub HTTPS + SSH forms; falls back to "repo".
 func repoNameFromURL(u string) string {
