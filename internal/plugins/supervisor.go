@@ -99,7 +99,8 @@ type ServiceStatus struct {
 // process that is still running StartupGrace after launch is treated as
 // healthy.
 //
-// Restarts: "never" gives up on any unexpected exit; "on-failure"
+// Restarts: "never" never restarts — a failed run ends in StateCrashed,
+// a clean exit 0 in StateStopped; "on-failure"
 // (the default) restarts after a non-zero exit, a signal or a health
 // failure and treats a clean exit 0 as an intentional stop; "always"
 // restarts after any exit. Restarts back off exponentially
@@ -431,10 +432,13 @@ func (s *ServiceSupervisor) afterExit(res attemptResult) (backoff time.Duration,
 	restart := s.shouldRestart(res)
 	giveUp := restart && s.failures > s.MaxRestarts
 	if !restart || giveUp {
-		if !res.failed && s.restartPolicy == RestartOnFailure {
-			s.state = StateStopped // on-failure: a clean exit is intentional
-		} else {
-			s.state = StateFailed
+		switch {
+		case giveUp:
+			s.state = StateFailed // restart budget exhausted
+		case !res.failed:
+			s.state = StateStopped // a clean exit is intentional
+		default:
+			s.state = StateCrashed // policy forbids a restart; terminal
 		}
 		state, failures := s.state, s.failures
 		s.mu.Unlock()
