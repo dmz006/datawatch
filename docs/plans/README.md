@@ -364,20 +364,25 @@ established. In progress — starting with BL403.**
 4. **BL403** — Plugin Extension Surfaces. Before BL405: its Phase 3/4
    widget `Kind` taxonomy is what BL405 Phase 10 consumes. **Phases 1
    and 2 shipped** (v9.0.31–33, PRs #206/#213) — Phase 2's merge is
-   what surfaced BL416 below; Phase 3 onward is paused until BL416's
-   Phase 0 (AGENT.md fix) and ideally the rest lands, so Phase 3+
-   doesn't repeat the same gap.
+   what surfaced BL416 below. **Unpaused 2026-10-12** — BL416 Phases
+   0-4 shipped, so Phase 3+ resumes next with the real gate in place.
 5. **BL416** — Tooled, Deterministic PRD Guardrails (filed 2026-10-12,
    plan: `docs/plans/2026-10-12-tooled-deterministic-guardrails.md`).
-   **Inserted here, ahead of BL403 Phase 3 and BL402**, deliberately
-   out of the order it would otherwise land in as a freshly-filed
-   item: this is process-integrity work (closes the exact gap that let
-   BL403 Phase 2 ship a real lint violation through a `completed` PRD
-   — see the plan's Context), and every PRD run before it ships
-   carries the identical blind spot. Phase 0 (a one-line AGENT.md
-   Section A addition) ships independently and immediately; the rest
-   doesn't block on or duplicate BL405's compute-pool work (Decision
-   6 in the plan) — BL405 keeps its position below unchanged.
+   **Phases 0-4 shipped same day** (v9.0.34–39, PRs #214/#216/#217/
+   #218/#219): AGENT.md `make lint` gate; schema-only
+   `VerificationScript`/`GuardrailBackend`/`GuardrailModel`/
+   `FilesGenerated` fields; decompose now instructs tooled planning
+   sessions to write real per-task verification scripts (Reuse-and-
+   Expand checked against `scripts/` + rules files first, ecosystem-
+   convention fallback with none); guardrails now actually execute
+   that script once per unit — a clean pass never calls an LLM, a
+   failure's judgment is grounded in the real captured output, not a
+   guess — and honor per-task/automaton guardrail backend/model
+   overrides; full REST/MCP/CLI/comm parity for the new overrides,
+   PWA shows planned/touched/generated files as three distinct
+   groups, Mobile-Parity issue filed (`datawatch-app#251`). Phase 5
+   (pure docs/cross-reference work) is the only piece left, lower
+   priority, deferred — not blocking Stage 3's return to BL403.
 6. **BL402** — GH#204 result panel for scheduled jobs/integrations.
    5 phases, zero open design questions, placed right after BL403 since
    its new "opt-in dashboard card" is a natural second user of BL403's
@@ -572,6 +577,24 @@ established. In progress — starting with BL403.**
     **Deferred to after v10.0.0** — needs either a GitHub support
     ticket or someone willing to bisect the Actions-token-vs-PAT
     discrepancy directly; not worth more self-build time right now.
+16. **BL417** — `internal/autonomous`'s test suite has recurring,
+    CI-load-only flakiness (filed 2026-10-12, found across BL416
+    Phases 1-4's own PRs). Three *different* test names failed on
+    required CI's full `go test ./...` this session alone —
+    `TestExecutor_CancelledDependencyFailsDependent`,
+    `TestRun_OpensPRAfterWorktreePRDCompletesWithAutoPR` (both already
+    fixed: a too-tight deadline bumped, a real git-push race from
+    reusing a pre-seeded fixture remote), and
+    `TestExecutorResume_DoubleRunSafe` (not yet investigated past
+    confirming it passes 10/10 in isolation locally, same as the other
+    two always have). Pattern: never reproduces locally, no matter the
+    `-count`; only shows up under CI's full-suite parallel load.
+    **Deferred, not blocking Stage 3** — each occurrence so far has
+    been resolved by a rerun; worth a dedicated pass (audit the
+    package for shared global state / excessive goroutine contention
+    under default `-parallel`, or just reduce CI's parallelism for
+    this package) rather than continuing to whack-a-mole individual
+    test names as they turn up.
 
 **Outside the queue, handled separately, not blocking Stage 3:**
 - ~~**BL381**~~ — status-verified 2026-10-10: shipped v8.28.0 + v8.28.2
