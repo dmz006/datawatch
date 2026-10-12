@@ -5,6 +5,50 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.37 — feat(autonomous): decompose asks tooled planners to write per-task verification scripts
+
+### Changed
+- When an automaton has a project directory (session-based, tooled
+  planning backends), the decompose prompt now ends with a
+  "Verification scripts" section instructing the planning session to
+  write real, repo-specific executable verification scripts for each
+  task (or story, when a story-level check fits better):
+  - **Reuse-and-Expand first:** run a real `ls scripts/` and inspect
+    the candidates, and check the configured rules and context files
+    (`autonomous.rules_file` / `autonomous.context_file`, default
+    `AGENT.md` / `CONTEXT.md`) for commands that already cover the
+    check, before writing anything new.
+  - Write each script to `.datawatch/verify/<slug>.sh`, make it
+    executable, and record its path in that unit's
+    `verification_script` and `files_generated` in the JSON plan.
+  - **Ecosystem-convention fallback:** when neither the rules file nor
+    the context file exists, detect the conventions actually present
+    (Makefile lint/test targets, `package.json` scripts,
+    `pyproject.toml`, `go.mod` + standard Go tooling, etc.) and script
+    from those rather than skipping verification.
+  - Script bodies are written to disk by the session's own tools and
+    never inlined in the response; the added prompt text is static
+    and does not grow with repo size.
+- Headless / ask-compatible decompose backends (no project directory)
+  are unaffected — their prompt is unchanged and `quality_gates`
+  remains their only mechanical check.
+- **This changes what decompose tells the planning session to do; it
+  does NOT yet change guardrail execution.** A verification script
+  written by the planner is recorded on the task/story but is inert —
+  nothing runs it until a later release wires guardrails to execute
+  it. No REST/MCP/CLI/chat/PWA surface or config key changes.
+
+### Tests
+- New `internal/autonomous/verification_script_prompt_test.go`:
+  empty project directory yields no suffix; the suffix carries the
+  reuse, write, JSON-path and fallback instructions; custom rules /
+  context filenames are honoured; suffix size is invariant to repo
+  contents; both `Decompose()` and the streaming decompose path append
+  it alongside the existing rules pointer; and an end-to-end
+  `Decompose()` round-trip proves a task's and story's
+  `verification_script` from the planner's JSON survives plan parsing
+  onto the stored task and story.
+
 ## v9.0.36 — feat(autonomous): schema-only guardrail routing / verification-script / file-provenance fields
 
 ### Added
