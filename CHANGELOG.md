@@ -5,6 +5,72 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.39 — feat(autonomous): guardrail LLM overrides settable per automaton / per task; verification + file provenance visible
+
+### Added
+- Guardrail judge backend/model overrides are now settable per
+  automaton and per task through the **existing** LLM-override
+  surfaces — no new endpoint or tool:
+  - REST: optional `guardrail_backend` / `guardrail_model` keys on
+    `POST /api/autonomous/prds/{id}/set_llm` (automaton) and
+    `POST /api/autonomous/prds/{id}/set_task_llm` (task, with
+    `task_id`).
+  - MCP: the same optional params on `autonomous_prd_set_llm` /
+    `autonomous_prd_set_task_llm`.
+  - CLI: `--guardrail-backend` / `--guardrail-model` on
+    `prd-set-llm` / `prd-set-task-llm`.
+  - Chat/comm: `guardrail_backend=` / `guardrail_model=` tokens on
+    `autonomous set-llm` / `set-task-llm`.
+  - Semantics: a key left **out** leaves that override unchanged; a
+    key sent as `""` **clears** it (falls back task → automaton →
+    global `autonomous.verification_backend` / `verification_model`).
+    A body with only guardrail keys leaves the worker
+    `backend` / `effort` / `model` untouched. An unknown
+    `guardrail_backend` (not a configured LLM) is rejected with 400.
+- The verification script, generated-file and touched-file fields are
+  now viewable on automaton reads (`GET /api/autonomous/prds/{id}`,
+  MCP `autonomous_prd_get`): task `verification_script` /
+  `files_generated` / `files_touched` and story `verification_script`
+  / `files_generated`, plus automaton and task `guardrail_backend` /
+  `guardrail_model`. These provenance fields are read-only.
+- PWA: Automata task rows and story cards now show **planned**
+  (`files`), **touched** (`files_touched`) and **generated**
+  (`files_generated` + the verification script path) files as three
+  distinct groups, on both the running (read-only) and the
+  needs-review (editable) story card.
+
+### Fixed
+- Help text for the new guardrail override (CLI flag, MCP params) and
+  the API / MCP / operations docs named the wrong global fallback
+  (`orchestrator.guardrail_backend`); they now name the setting the
+  automaton guardrail path actually uses,
+  `autonomous.verification_backend` / `verification_model`.
+
+### Mobile parity
+- Filed datawatch-app #251 covering the new Task/Story/PRD fields,
+  the absent-vs-empty `set_llm` / `set_task_llm` keys, the three-way
+  planned/touched/generated display, and translations for the three
+  new locale keys.
+
+### Tests
+- REST handler tests (`internal/server`): unknown guardrail
+  backend → 400, known → 200; guardrail-only bodies skip the worker
+  LLM setter, legacy-only bodies skip the guardrail setter, mixed
+  bodies call both; `set_task_llm` still requires `task_id`.
+- Manager setter tests (`internal/autonomous`): automaton
+  and task overrides persist and log a decision; omitted leaves
+  unchanged and `""` clears; status locks; unknown task; setting the
+  worker task LLM leaves guardrail overrides intact.
+- `internal/mcp/guardrail_set_llm_test.go`,
+  `cmd/datawatch/guardrail_set_llm_test.go`,
+  `internal/router/guardrail_set_llm_test.go`: MCP, CLI and chat send
+  only the guardrail keys given, never blank legacy keys on a
+  guardrail-only call, and leave legacy calls byte-unchanged.
+- `internal/server/web/app-file-provenance.test.js`: planned / touched
+  / generated rendered as distinct rows; script shown without
+  generated files; row omitted when empty; paths escaped; story cards
+  in both states.
+
 ## v9.0.38 — feat(autonomous): guardrails run the unit's verification script before LLM judgment
 
 ### Changed

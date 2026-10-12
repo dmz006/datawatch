@@ -79,7 +79,7 @@ A body that carries any worker-LLM key keeps the existing
 overwrite-all behaviour for those keys.
 
 Resolution order: task `guardrail_backend` → Automaton
-`guardrail_backend` → global `orchestrator.guardrail_backend`.
+`guardrail_backend` → global `autonomous.verification_backend` / `verification_model`.
 
 ```bash
 # guardrail-only: leaves the worker LLM untouched

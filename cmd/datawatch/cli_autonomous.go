@@ -529,7 +529,7 @@ func newAutonomousPRDSetTaskLLMCmd() *cobra.Command {
 // addGuardrailLLMFlags (BL416) registers --guardrail-backend /
 // --guardrail-model on prd-set-llm and prd-set-task-llm.
 func addGuardrailLLMFlags(cmd *cobra.Command, backend, model *string) {
-	cmd.Flags().StringVar(backend, "guardrail-backend", "", "guardrail/verification judge LLM override; inherits task -> automaton -> global orchestrator.guardrail_backend; empty = clear, omit = unchanged")
+	cmd.Flags().StringVar(backend, "guardrail-backend", "", "guardrail/verification judge LLM override; inherits task -> automaton -> global autonomous.verification_backend; empty = clear, omit = unchanged")
 	cmd.Flags().StringVar(model, "guardrail-model", "", "guardrail/verification judge model override; empty = clear, omit = unchanged")
 }
 

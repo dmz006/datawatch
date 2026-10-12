@@ -676,8 +676,8 @@ func (s *Server) handleAutonomousPRDSetTaskLLM(_ context.Context, req mcpsdk.Cal
 }
 
 const (
-	guardrailBackendParamDesc = "Guardrail/verification judge LLM override (any configured LLM name). Inherits task -> automaton -> global orchestrator.guardrail_backend. Empty = clear; omit to leave unchanged."
-	guardrailModelParamDesc   = "Guardrail/verification judge model override. Inherits task -> automaton -> global orchestrator.guardrail_backend's model. Empty = clear; omit to leave unchanged."
+	guardrailBackendParamDesc = "Guardrail/verification judge LLM override (any configured LLM name). Inherits task -> automaton -> global autonomous.verification_backend. Empty = clear; omit to leave unchanged."
+	guardrailModelParamDesc   = "Guardrail/verification judge model override. Inherits task -> automaton -> global autonomous.verification_model. Empty = clear; omit to leave unchanged."
 )
 
 // guardrailLLMBody (BL416) builds the set_llm / set_task_llm proxy body

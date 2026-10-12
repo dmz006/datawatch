@@ -1847,7 +1847,7 @@ curl -sX POST http://localhost:7433/api/autonomous/prds/<id>/set_llm \
 **Guardrail judge LLM** — `guardrail_backend` / `guardrail_model` choose
 the LLM that judges guardrail/verification results, per Automaton
 (`set_llm`) or per task (`set_task_llm`). Resolution: task →
-Automaton → global `orchestrator.guardrail_backend`. These two keys are
+Automaton → global `autonomous.verification_backend` / `verification_model`. These two keys are
 presence-aware: leave a key out to keep the current value, send `""`
 to clear it. Setting only guardrail keys does not change the worker
 `backend` / `effort` / `model` / `decomposition_profile`.
