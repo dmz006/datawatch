@@ -1267,11 +1267,52 @@ _2026-05-02 operator-filed items promoted directly to BL218–BL221. 2026-05-03 
 > `autonomous.*` fields read via `amgrCfg.*` the same way, not just the
 > two touched here — worth a dedicated audit, not a point fix. Open.
 
-_(B125 above is the only open bug as of 2026-10-12. Everything else
-listed in this section going back to the 2026-10-09/10 backlog refactor
-has been closed and moved to the Completed Bugs table. Historical: B22
-fixed in v2.4.3 · B23/24 in v2.4.4 · B25 in v2.4.5 · B31 in v3.0.1 · B30
-in v3.1.0 — see Completed section.)_
+> **B124 root cause, found validating the three fixes above (v9.0.44)**:
+> even with `verification_backend=claude-code` correctly live (B125
+> worked around with a restart) and `verification_backends` correctly
+> empty (v9.0.42/43), a real verify call still used `ollama` — confirmed
+> live: `"verifier: ask call failed: LLM unavailable: ollama HTTP 404:
+> model 'qwen3.8:27b' not found"`. Root cause: `resolveAskBackend`
+> (`cmd/datawatch/main.go`) was written for its one original caller
+> (`decomposeFn`'s ask-only path, which only checks whether an error
+> came back) and deliberately returned `("", "", err)` — empty kind —
+> for a non-ask-compatible backend like `claude-code`. Both the verify
+> and guardrail call sites discard that error, so all they ever
+> actually received was an empty string; `isInferenceSessionKind("")`
+> is always false, so `needsSessionJudgment` always concluded "no
+> session needed," regardless of what was actually configured — with
+> no error and no log line, for the entire time B124 was "shipped."
+> Also explains why v9.0.41's own validation looked plausible at first:
+> nothing about this failure mode is visible without reading the real
+> error text closely. Fixed: `resolveAskBackend` now returns the real
+> resolved kind alongside the error — extracted to a package-level
+> `resolveAskCompatibleKind` specifically so this contract is
+> independently testable (the inline closure never was, which is
+> exactly why a unit test using an idealized fake resolver passed while
+> the real closure's bug shipped anyway). No longer open.
+
+> **B126** — found as a side effect debugging B124's root cause, NOT
+> fixed, reported per standing instruction: a task's `AutoFixRetries`
+> retry can end up with `PreTaskSHA` equal to its OWN prior attempt's
+> commit SHA, rather than the commit that existed before any attempt
+> started. When that happens, `taskProducedNoOutput`'s diff check
+> (`git diff PreTaskSHA..HEAD`) is empty by construction even though
+> the task's deliverable genuinely exists and was correctly committed —
+> the verifier reports "no changes detected... task produced no
+> output" on a task that did real, correct work, and the PRD fails.
+> Reproduced live twice during B124 validation (throwaway PRDs
+> `2732a375` and `f583fcde`): in both cases the worktree's git log
+> showed the expected file correctly committed, yet `pre_task_sha` on
+> the task record equaled that exact commit. Root cause not yet
+> isolated (likely in whatever resets `PreTaskSHA` for a retry attempt)
+> — worth a dedicated investigation, not a point fix guessed at under
+> time pressure. Open.
+
+_(B125 and B126 above are the only open bugs as of 2026-10-12.
+Everything else listed in this section going back to the 2026-10-09/10
+backlog refactor has been closed and moved to the Completed Bugs table.
+Historical: B22 fixed in v2.4.3 · B23/24 in v2.4.4 · B25 in v2.4.5 · B31
+in v3.0.1 · B30 in v3.1.0 — see Completed section.)_
 
 ## Open Features
 
