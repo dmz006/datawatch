@@ -5,6 +5,34 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.36 — feat(autonomous): schema-only guardrail routing / verification-script / file-provenance fields
+
+### Added
+- New optional automaton fields, all omitted from JSON when empty:
+  - `verification_script` on tasks and stories — the path of a
+    deterministic check script a later verification step will run.
+  - `guardrail_backend` / `guardrail_model` on tasks and on the
+    automaton itself — per-task or per-automaton override of which
+    LLM backend/model runs guardrail review, independent of the
+    task's own execution backend/model.
+  - `files_generated` on tasks and stories — files produced by the
+    verification step itself, recorded separately from the files the
+    task's work changed.
+- Guardrail backend/model resolution order (internal helper, not yet
+  called): task override → automaton override → the existing global
+  `autonomous.verification_backend` / `verification_model` config (no
+  new config key). As with execution backend/model resolution, the
+  model is taken from the same level the backend was found at, so a
+  stale model is never paired with a different backend.
+- **These are schema-only additions and are inert until the later
+  verification-script and guardrail-execution work lands.** Nothing
+  reads or writes them at runtime yet, no REST/MCP/CLI/chat/PWA
+  surface exposes them, nothing operator-visible changes, and existing
+  automata serialize identically — none of the new keys appear when
+  unset, and saved automata load and re-save with every existing
+  field unchanged (covered by new zero-value/omitempty and legacy
+  JSON round-trip tests).
+
 ## v9.0.35 — test(plugins): close BL403's smoke-coverage gap; first example plugins
 
 ### Added

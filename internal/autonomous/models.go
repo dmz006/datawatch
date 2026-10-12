@@ -144,6 +144,13 @@ type PRD struct {
 	Backend    string    `json:"backend,omitempty"`     // PRD-level worker LLM (default for tasks; tasks override per-task)
 	Effort     Effort    `json:"effort,omitempty"`
 	Model      string    `json:"model,omitempty"`       // BL203 (v5.4.0) — PRD-level model name (e.g., "claude-3-5-sonnet"); tasks may override
+	// BL416 Phase 1 — PRD-level guardrail LLM override. Empty = inherit
+	// the global autonomous verification_backend/verification_model
+	// (existing config; no new global key). Tasks may override via
+	// Task.GuardrailBackend/GuardrailModel. Schema-only today: not yet
+	// used for guardrail routing.
+	GuardrailBackend string `json:"guardrail_backend,omitempty"`
+	GuardrailModel   string `json:"guardrail_model,omitempty"`
 	// LSPLanguage (v8.7.1) — language server preset for OpenCode-backed workers.
 	// Applies to all tasks unless overridden at the task level.
 	LSPLanguage string `json:"lsp_language,omitempty"`
@@ -430,7 +437,32 @@ type Story struct {
 	// LLM-extracted at decompose time (the decomposer prompt asks
 	// for `files: [...]` per story); operator can edit via the
 	// story-edit modal. Empty when the decomposer omitted them.
-	FilesPlanned []string `json:"files,omitempty"`
+	//
+	// BL416 Phase 1 (Decision 9) — file provenance. A story carries two
+	// of the three categories (real-diff files live on its Tasks):
+	//   (a) FilesPlanned (json "files") — planning intent from
+	//       decompose; operator-editable; may not match what was
+	//       actually changed.
+	//   (b) FilesTouched — Task-only; see Task's doc comment. The
+	//       story-level view is the union of its tasks' FilesTouched.
+	//   (c) FilesGenerated — files produced by the verification step
+	//       itself (e.g. the story's VerificationScript under
+	//       .datawatch/verify/), recorded separately so they are never
+	//       confused with the story's real work.
+	// The shape is parallel arrays rather than a tagged struct so the
+	// existing `files` / `files_touched` JSON wire shape stays unchanged
+	// for existing clients. A future writer of VerificationScript must
+	// append the script path to FilesGenerated.
+	FilesPlanned   []string `json:"files,omitempty"`
+	FilesGenerated []string `json:"files_generated,omitempty"`
+
+	// BL416 Phase 1 (Decision 4) — story-level verification script:
+	// relative path under PRD.ProjectDir to an executable script
+	// (planned location `.datawatch/verify/<story-id>.sh`) that a
+	// future decompose pass writes for session-based backends. Empty =
+	// none; the legacy judgment-only guardrail behavior is the
+	// fallback. Inert today: nothing writes or reads it yet.
+	VerificationScript string `json:"verification_script,omitempty"`
 }
 
 // Task is a single unit of work — runs as a session under
@@ -461,6 +493,13 @@ type Task struct {
 	Backend       string     `json:"backend,omitempty"`
 	Effort        Effort     `json:"effort,omitempty"`
 	Model         string     `json:"model,omitempty"`
+	// BL416 Phase 1 — per-task guardrail LLM override — empty = inherit
+	// PRD.GuardrailBackend/GuardrailModel, then the global autonomous
+	// verification_backend/verification_model. Resolved by
+	// resolveGuardrailBackendModel (executor.go; mirrors
+	// resolveTaskBackendModel's chain); not yet used for routing.
+	GuardrailBackend string `json:"guardrail_backend,omitempty"`
+	GuardrailModel   string `json:"guardrail_model,omitempty"`
 	// LSPLanguage (v8.7.1) — per-task override; inherits PRD.LSPLanguage when empty.
 	LSPLanguage string `json:"lsp_language,omitempty"`
 	// PermissionMode (v5.27.5) — claude-code --permission-mode for
@@ -522,8 +561,37 @@ type Task struct {
 	// LLM-extracted at decompose time (operator-editable). FilesTouched
 	// is populated post-spawn from the worker session's git diff
 	// --name-only. Both are advisory — empty doesn't block execution.
-	FilesPlanned []string `json:"files,omitempty"`
-	FilesTouched []string `json:"files_touched,omitempty"`
+	//
+	// BL416 Phase 1 (Decision 9) — file provenance. Three distinct
+	// categories, never merged into one list:
+	//   (a) FilesPlanned (json "files") — planning intent from
+	//       decompose; operator-editable; may not match what was
+	//       actually changed.
+	//   (b) FilesTouched — the real, git-diff-derived files the task's
+	//       work modified, populated by Manager.RecordTaskFilesTouched.
+	//       Semantics unchanged; must NEVER include verification-script
+	//       files.
+	//   (c) FilesGenerated — files produced by the verification step
+	//       itself (e.g. the VerificationScript file under
+	//       .datawatch/verify/), recorded separately so they are never
+	//       confused with the task's real work.
+	// The shape is parallel arrays rather than a tagged struct so the
+	// existing `files` / `files_touched` JSON wire shape stays unchanged
+	// for existing clients. A future writer of VerificationScript must
+	// append the script path to FilesGenerated, and a future
+	// FilesTouched population must exclude any path present in
+	// FilesGenerated.
+	FilesPlanned   []string `json:"files,omitempty"`
+	FilesTouched   []string `json:"files_touched,omitempty"`
+	FilesGenerated []string `json:"files_generated,omitempty"`
+
+	// BL416 Phase 1 (Decision 4) — relative path under PRD.ProjectDir
+	// to an executable verification script (planned location
+	// `.datawatch/verify/<task-id>.sh`) that a future decompose pass
+	// writes for session-based backends. Empty = none; the legacy
+	// judgment-only guardrail behavior is the fallback. Inert today:
+	// nothing writes or reads it yet.
+	VerificationScript string `json:"verification_script,omitempty"`
 }
 
 // GuardrailVerdict (BL191 Q6, v5.10.0) is one guardrail's pass/warn/block
