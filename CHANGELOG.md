@@ -5,6 +5,32 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.43 — fix(autonomous): B124 second follow-up — a cleared `verification_backends` now actually survives a restart
+
+### Fixed
+- **A cleared `verification_backends` silently reverted on the next
+  daemon restart.** Found live validating v9.0.42's own fix: the MCP
+  tool handler correctly sent the explicit empty array, and
+  `GET /api/autonomous/config` correctly showed it cleared — but
+  `handleAutonomousConfig`'s own PUT handler (`internal/server/autonomous.go`)
+  re-syncs the persisted config by `json.Marshal`ing the manager's live
+  config and `json.Unmarshal`ing the result onto the server's own
+  `config.AutonomousConfig` before saving to `config.yaml`. `omitempty`
+  on `VerificationBackends` elided the field from that intermediate
+  marshal whenever it was empty, so the unmarshal step left the
+  server's copy — and therefore the saved file — holding its previous,
+  stale value. The very next restart reloaded that stale value back
+  into the running daemon, undoing the clear. This is the exact same
+  class of bug this file's own `Enabled` field was already fixed for
+  (GH#180) — `Enabled` has no `omitempty` for precisely this reason;
+  `VerificationBackends` never got the same treatment. Fixed: removed
+  `omitempty` from `VerificationBackends` on both
+  `config.AutonomousConfig` and `autonomous.Config` — new regression
+  test (`TestHandleAutonomousConfig_PUT_ClearsVerificationBackendsToServerConfig`)
+  using the real `autonomous.Config` type (the existing GH#180 test
+  fixture used a plain `map[string]any` fake, which has no `omitempty`
+  tags at all and could never have caught this).
+
 ## v9.0.42 — fix(mcp): B124 follow-up — `verification_backends` can actually be cleared
 
 ### Fixed

@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/session"
 )
@@ -115,5 +116,81 @@ func TestHandleAutonomousConfig_PUT_SyncsEnabledFalseToServerConfig(t *testing.T
 	}
 	if srv.cfg.Autonomous.Enabled {
 		t.Fatal("s.cfg.Autonomous.Enabled should have been synced to false")
+	}
+}
+
+// B124 follow-up — fakeAutonomousConfigStore's Config() returns a plain
+// map[string]any, which has no `omitempty` struct tags at all, so it
+// never exercised the real bug: maps always include every key they
+// hold, structurally, regardless of whether a real omitempty-tagged
+// struct would elide it from a marshal. This fake wraps the REAL
+// autonomous.Config (the type the real daemon actually returns from
+// Manager.Config()) so the omitempty tag on VerificationBackends is
+// genuinely in play, the same way it is in production.
+type fakeRealAutonomousConfigStore struct {
+	fakeOrchAutonomous
+	cfg autonomous.Config
+}
+
+func (f *fakeRealAutonomousConfigStore) Config() any { return f.cfg }
+
+func (f *fakeRealAutonomousConfigStore) SetConfig(v any) error {
+	raw, ok := v.(json.RawMessage)
+	if !ok {
+		b, err := json.Marshal(v)
+		if err != nil {
+			return err
+		}
+		raw = b
+	}
+	// Merge onto the current value — same partial-update contract the
+	// real autonomous.API.SetConfig documents (v8.36.9).
+	return json.Unmarshal(raw, &f.cfg)
+}
+
+// TestHandleAutonomousConfig_PUT_ClearsVerificationBackendsToServerConfig
+// is the real regression test for the bug this fix addresses: an
+// operator explicitly clearing autonomous.verification_backends back to
+// empty must survive handleAutonomousConfig's own marshal(manager
+// config)+unmarshal(onto s.cfg.Autonomous) round-trip and the
+// subsequent persist to config.yaml — not silently revert on the next
+// daemon boot because `omitempty` elided the empty slice from that
+// internal marshal step.
+func TestHandleAutonomousConfig_PUT_ClearsVerificationBackendsToServerConfig(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.yaml")
+	sm, err := session.NewManager("h", dir, "echo", 30*time.Second)
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	hub := NewHub()
+	cfg := &config.Config{}
+	srv := NewServer(hub, sm, "h", "", nil, cfg, cfgPath)
+	store := &fakeRealAutonomousConfigStore{
+		cfg: autonomous.Config{VerificationBackends: []string{"ollama-a", "ollama-b"}},
+	}
+	srv.SetAutonomousAPI(store)
+	srv.cfg.Autonomous.VerificationBackends = []string{"ollama-a", "ollama-b"}
+
+	req := httptest.NewRequest(http.MethodPut, "/api/autonomous/config", strings.NewReader(`{"verification_backends":[]}`))
+	w := httptest.NewRecorder()
+	srv.handleAutonomousConfig(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("PUT: status %d body: %s", w.Code, w.Body.String())
+	}
+
+	if len(store.cfg.VerificationBackends) != 0 {
+		t.Fatalf("manager's own config.VerificationBackends = %v, want cleared", store.cfg.VerificationBackends)
+	}
+	if len(srv.cfg.Autonomous.VerificationBackends) != 0 {
+		t.Fatalf("s.cfg.Autonomous.VerificationBackends = %v, want cleared — this is the field a daemon restart reloads from disk", srv.cfg.Autonomous.VerificationBackends)
+	}
+
+	saved, err := config.Load(cfgPath)
+	if err != nil {
+		t.Fatalf("reload saved config: %v", err)
+	}
+	if len(saved.Autonomous.VerificationBackends) != 0 {
+		t.Fatalf("config.yaml on disk still has verification_backends=%v after an explicit clear — a daemon restart would silently revert the operator's change", saved.Autonomous.VerificationBackends)
 	}
 }

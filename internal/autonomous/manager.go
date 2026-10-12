@@ -69,7 +69,14 @@ type Config struct {
 	// comment. Ordered list of LLM registry names to load-balance
 	// verifier/guardrail capacity across; empty = single-backend
 	// behavior via VerificationBackend/PRD backend/"ollama" fallback.
-	VerificationBackends []string `json:"verification_backends,omitempty"`
+	//
+	// B124 follow-up — no `omitempty`, deliberately: see
+	// config.AutonomousConfig.VerificationBackends's doc comment.
+	// internal/server/autonomous.go's handleAutonomousConfig marshals
+	// THIS struct and unmarshals the result onto config.AutonomousConfig
+	// before persisting — omitempty here would elide an explicit clear
+	// from that marshal, silently reverting it on the next load.
+	VerificationBackends []string `json:"verification_backends"`
 	StaleTaskSeconds     int    `json:"stale_task_seconds,omitempty"`
 	AutoFixRetries       int    `json:"auto_fix_retries,omitempty"`
 	// VerifierDiffMaxBytes caps the git diff injected into the verifier
