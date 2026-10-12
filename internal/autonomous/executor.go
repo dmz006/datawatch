@@ -1207,9 +1207,15 @@ func statusOrUnknown(p *PRD) PRDStatus {
 // "secrets-scan", "deps-scan") are dispatched to invokeScanGuardrail instead
 // of GuardrailFn; other names fall through to GuardrailFn. Both paths are
 // silent no-ops when neither is available.
+//
+// BL416 Phase 3: the task's VerificationScript (if any) runs once before
+// the loop; a clean exit 0 replaces every non-scan GuardrailFn call with a
+// deterministic pass verdict, otherwise its real output rides inv into the
+// judgment call. Resolved GuardrailBackend/GuardrailModel always ride inv.
 func (m *Manager) runPerTaskGuardrails(ctx context.Context, prd *PRD, t *Task) (bool, error) {
 	m.mu.Lock()
 	fn := m.guardrail
+	globalBackend, globalModel := m.cfg.VerificationBackend, m.cfg.VerificationModel
 	m.mu.Unlock()
 
 	guardrails := m.resolveGuardrails(prd, "task")
@@ -1226,12 +1232,16 @@ func (m *Manager) runPerTaskGuardrails(ctx context.Context, prd *PRD, t *Task) (
 		ProjectDir: prd.ProjectDir,
 		OwnerPeer:  prd.OwnerPeer, // BL369 Layer 3 — federation trust boundary
 	}
+	inv.GuardrailBackend, inv.GuardrailModel = resolveGuardrailBackendModel(t, prd, globalBackend, globalModel)
+	scriptPassed := prepareScriptEvidence(&inv, t.VerificationScript, prd.ProjectDir)
 	for _, g := range guardrails {
 		inv.Guardrail = g
 		var v GuardrailVerdict
 		var err error
 		if entry, ok := m.lookupGuardrailEntry(g); ok && entry.Type == "scan" {
 			v, err = m.invokeScanGuardrail(entry, inv)
+		} else if scriptPassed {
+			v = scriptPassVerdict(t.VerificationScript) // BL416 P3: no LLM call on a clean deterministic pass
 		} else if fn != nil {
 			v, err = fn(ctx, inv)
 		} else {
@@ -1257,6 +1267,7 @@ func (m *Manager) runPerTaskGuardrails(ctx context.Context, prd *PRD, t *Task) (
 func (m *Manager) runPerStoryGuardrails(ctx context.Context, prd *PRD, s *Story) (bool, error) {
 	m.mu.Lock()
 	fn := m.guardrail
+	globalBackend, globalModel := m.cfg.VerificationBackend, m.cfg.VerificationModel
 	m.mu.Unlock()
 
 	guardrails := m.resolveGuardrails(prd, "story")
@@ -1273,12 +1284,18 @@ func (m *Manager) runPerStoryGuardrails(ctx context.Context, prd *PRD, s *Story)
 		ProjectDir: prd.ProjectDir,
 		OwnerPeer:  prd.OwnerPeer, // BL369 Layer 3 — federation trust boundary
 	}
+	// No story-level guardrail routing exists, so an empty Task makes
+	// resolution fall through to PRD → global.
+	inv.GuardrailBackend, inv.GuardrailModel = resolveGuardrailBackendModel(&Task{}, prd, globalBackend, globalModel)
+	scriptPassed := prepareScriptEvidence(&inv, s.VerificationScript, prd.ProjectDir)
 	for _, g := range guardrails {
 		inv.Guardrail = g
 		var v GuardrailVerdict
 		var err error
 		if entry, ok := m.lookupGuardrailEntry(g); ok && entry.Type == "scan" {
 			v, err = m.invokeScanGuardrail(entry, inv)
+		} else if scriptPassed {
+			v = scriptPassVerdict(s.VerificationScript) // BL416 P3: no LLM call on a clean deterministic pass
 		} else if fn != nil {
 			v, err = fn(ctx, inv)
 		} else {
@@ -1297,6 +1314,43 @@ func (m *Manager) runPerStoryGuardrails(ctx context.Context, prd *PRD, s *Story)
 		}
 	}
 	return blocked, nil
+}
+
+// prepareScriptEvidence (BL416 Phase 3) runs the unit's VerificationScript
+// ONCE, before any guardrail is invoked, and records its real result on
+// inv so every judgment call sees the same evidence. Returns true only
+// when the script ran and exited 0. An invocation failure (unsafe path,
+// bash missing) is recorded as a failed run — never an auto-pass. An
+// empty script leaves inv untouched (pre-BL416 behavior).
+func prepareScriptEvidence(inv *GuardrailInvocation, script, projectDir string) (scriptPassed bool) {
+	if script == "" {
+		return false
+	}
+	output, exitCode, err := runVerificationScript(script, projectDir)
+	inv.ScriptRan = true
+	inv.ScriptExitCode = exitCode
+	inv.ScriptOutput = output
+	if err != nil {
+		if inv.ScriptExitCode == 0 {
+			inv.ScriptExitCode = -1
+		}
+		inv.ScriptOutput = "verification script could not be run: " + err.Error()
+		if output != "" {
+			inv.ScriptOutput += "\n" + output
+		}
+		return false
+	}
+	return exitCode == 0
+}
+
+// scriptPassVerdict is the deterministic verdict recorded in place of a
+// GuardrailFn call when the unit's verification script exited 0.
+func scriptPassVerdict(script string) GuardrailVerdict {
+	return GuardrailVerdict{
+		Outcome:  "pass",
+		Severity: "info",
+		Summary:  fmt.Sprintf("verification script %s passed (exit 0)", script),
+	}
 }
 
 // isTaskTerminal returns true for states from which a task will not
@@ -1417,7 +1471,7 @@ func resolveTaskBackendModel(t *Task, story *Story, prd *PRD, fallbackBackend st
 // and the ask-compatible check remain the caller's responsibility,
 // exactly as main.go's autonomousGuardrail closure does today.
 //
-// Not yet wired into the guardrail call path (a later phase).
+// Used by runPerTaskGuardrails/runPerStoryGuardrails (BL416 Phase 3).
 func resolveGuardrailBackendModel(t *Task, prd *PRD, globalBackend, globalModel string) (backend, model string) {
 	backend, model = t.GuardrailBackend, t.GuardrailModel
 	switch {
