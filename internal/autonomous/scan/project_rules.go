@@ -216,7 +216,7 @@ func extractFirstMatch(dir, relPath string, re *regexp.Regexp) (string, bool) {
 		return "", false
 	}
 	m := re.FindStringSubmatch(string(data))
-	if m == nil || len(m) < 2 {
+	if len(m) < 2 {
 		return "", false
 	}
 	return m[1], true
