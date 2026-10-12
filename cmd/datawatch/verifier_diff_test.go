@@ -520,6 +520,38 @@ func TestResolveVerifierBackendModel_SessionOnlyBackendWithProjectDirUsesSession
 	}
 }
 
+// TestResolveVerifierBackendModel_SessionIgnoresAskCompatibleConfiguredModel
+// (B124 follow-up, v9.0.45) — found live: an explicitly configured
+// verification_model is an ask-compatible model name (e.g. an Ollama
+// model), and must NEVER be applied to a session call just because it's
+// set. A real claude-code verify session rejected "qwen3.8:27b" outright
+// ("There's an issue with the selected model...") and hung until the
+// session timeout. The session path must use the backend's own
+// registry-default model instead.
+func TestResolveVerifierBackendModel_SessionIgnoresAskCompatibleConfiguredModel(t *testing.T) {
+	resolve, compatible := fakeAskResolver(
+		map[string]string{"claude-code": "claude-code", "ollama": "ollama"},
+		map[string]string{"claude-code": "opus", "ollama": "qwen3:1.7b"},
+	)
+	// cfgModel ("qwen3.8:27b") is explicitly configured — an ask-only
+	// model name that happens to be non-empty, the exact condition that
+	// triggered the live bug.
+	backend, kind, model, useSession := resolveVerifierBackendModel(
+		"claude-code", "qwen3.8:27b", "", "", "/work/prd-123", resolve, compatible, fakeIsSessionKind)
+	if !useSession {
+		t.Fatal("a session-only kind with a real project dir must route to a session")
+	}
+	if backend != "claude-code" || kind != "claude-code" {
+		t.Fatalf("got backend=%q kind=%q, want claude-code preserved", backend, kind)
+	}
+	if model == "qwen3.8:27b" {
+		t.Fatal("verifyModel is the ask-compatible configured model — this is exactly the bug: a real claude-code session would reject this model name")
+	}
+	if model != "opus" {
+		t.Fatalf("model = %q, want the session backend's own registry-default model %q", model, "opus")
+	}
+}
+
 // TestResolveVerifierBackendModel_ExplicitConfigWins verifies an explicitly
 // configured verification_backend/model always takes priority over the
 // PRD's own backend/model.

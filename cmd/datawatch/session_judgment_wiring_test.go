@@ -32,12 +32,16 @@ func TestB124_AutonomousGuardrail_RoutesThroughSessionWhenNeeded(t *testing.T) {
 		want string
 	}{
 		{"checks needsSessionJudgment before downgrading", "if needsSessionJudgment(gkind, req.ProjectDir, isInferenceSessionKind) {"},
-		{"spawns a real session", "runOneShotJSONSession(cfg, req.PRDID, req.ProjectDir, gbackend, guardrailModel,"},
+		{"spawns a real session", "runOneShotJSONSession(cfg, req.PRDID, req.ProjectDir, gbackend, sessionModel,"},
 		{"reuses the same judgment prompt", "sessionJudgmentTask(prompt, req.ProjectDir, outputFile)"},
 		// The old unconditional downgrade must still exist as the
 		// no-project-dir fallback, just gated behind the session check
 		// now rather than applying unconditionally.
 		{"still has the ollama fallback for the no-project-dir case", `gkind = "ollama"`},
+		// B124 follow-up (v9.0.45) — the session path must never carry
+		// the flat ask-compatible VerificationModel default through to
+		// a session call; only a genuine per-unit override may.
+		{"session model comes from the per-unit override, not the merged ask-model fallback", "sessionModel := req.GuardrailModel"},
 	}
 	for _, c := range checks {
 		if !contains(src, c.want) {
