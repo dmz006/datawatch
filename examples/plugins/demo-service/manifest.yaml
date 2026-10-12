@@ -1,0 +1,28 @@
+# Example plugin — service kind with a managed lifecycle (manifest v3,
+# BL403 Phases 1-2).
+#
+# Reference for the full service-plugin shape: a `connection` block
+# (always required for kind: service — alone it's enough for an
+# operator to run this standalone and have datawatch attach as a
+# client, same as imap-mcp's own design intent) plus an optional
+# `lifecycle` block declaring which supervision modes this plugin's
+# author actually built and tested (never both unless both are real).
+#
+# Port 8765 here is an illustrative placeholder for a standalone run
+# (`python3 server.py 8765`) — scripts/release-smoke.sh does NOT point
+# plugins.dir at this directory directly; it copies this fixture into
+# an isolated per-run temp directory with a freshly allocated port
+# substituted, so parallel smoke runs never collide on this port.
+kind: service
+name: demo-service
+description: "Reference service-kind plugin: a managed subprocess with a real /healthz endpoint."
+version: "1.0.0"
+connection:
+  base_url: "http://127.0.0.1:8765"
+  health_path: /healthz
+lifecycle:
+  supported_modes: [attach_only, managed]
+  entry: server.py
+  args: ["8765"]
+  restart_policy: on-failure
+  stop_timeout_ms: 5000

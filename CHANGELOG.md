@@ -5,6 +5,42 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.35 — test(plugins): close BL403's smoke-coverage gap; first example plugins
+
+### Added
+- `examples/plugins/hello-automation/` — reference automation-kind
+  plugin (manifest + `entry.py`), the first real example plugin this
+  repo has ever shipped. `check-plugin-manifests.sh`'s own default
+  scan root (`examples/plugins`) assumed this directory existed; it
+  never did.
+- `examples/plugins/demo-service/` — reference service-kind plugin
+  declaring `lifecycle.managed`, backed by a real minimal Python HTTP
+  server (`server.py`, stdlib only) with a real `/healthz` endpoint.
+- `scripts/release-smoke.sh` S67/S68 — both BL403 phases now have real
+  smoke coverage against a running daemon, not just unit tests: S67
+  confirms manifest v3 (`kind`/`connection`/`lifecycle`) surfaces
+  correctly over the real `GET /api/plugins` endpoint; S68 drives the
+  full managed-lifecycle loop end-to-end — `POST .../enable
+  {"managed":true}` → polls for `service.state == "healthy"` → confirms
+  the reported PID is a real running process → hits the real
+  `/healthz` directly (not just self-reported) → `POST .../disable` →
+  confirms the process is actually gone → confirms real
+  `plugin_service_start`/`_stop` audit entries via `GET /api/audit`.
+  Each smoke run gets its own isolated copy of the fixtures with a
+  freshly allocated port substituted in, so parallel runs never
+  collide on `demo-service`'s port.
+
+### Fixed
+- `docs/testing-tracker.md`: both BL403 phases had several rows marked
+  `Validated: No` ("not checked against a running daemon") — flipped
+  to `Yes` with the real smoke evidence above, not just unit-test
+  coverage as before.
+
+### Reuse audit
+- Smoke fixture isolation reuses the existing `free_port`/per-run
+  `TEST_DATA_DIR` pattern already used for `SMOKE_PORT`/`SMOKE_TLS_PORT`
+  — no new isolation mechanism.
+
 ## v9.0.34 — fix(docs): AGENT.md lint gate + stale context refresh (BL416 Phase 0)
 
 ### Fixed

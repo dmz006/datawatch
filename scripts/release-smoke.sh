@@ -97,7 +97,24 @@ memory:
   enabled: true
   backend: sqlite
   embedder: ""
+plugins:
+  enabled: true
+  dir: ${TEST_DATA_DIR}/plugins
 YAML
+
+# --- plugin fixtures (BL403) -------------------------------------------------
+# Copy the repo's reference examples into this run's isolated plugin dir
+# rather than pointing plugins.dir at examples/plugins directly -- the
+# demo-service fixture starts a real subprocess bound to a real port
+# (BL403 Phase 2's managed lifecycle), so each parallel smoke run needs
+# its own freshly-allocated port, not the illustrative placeholder
+# committed in the example manifest.
+PLUGINS_SMOKE_DIR="${TEST_DATA_DIR}/plugins"
+mkdir -p "$PLUGINS_SMOKE_DIR"
+cp -r "$REPO_DIR/examples/plugins/hello-automation" "$PLUGINS_SMOKE_DIR/"
+cp -r "$REPO_DIR/examples/plugins/demo-service" "$PLUGINS_SMOKE_DIR/"
+DEMO_SERVICE_PORT="$(free_port)"
+sed -i "s/8765/${DEMO_SERVICE_PORT}/g" "$PLUGINS_SMOKE_DIR/demo-service/manifest.yaml"
 
 # Find the datawatch binary (prefer freshly built binary in repo root).
 _DW_BIN="${DATAWATCH_BIN:-}"
@@ -3384,6 +3401,105 @@ else
   else
     ok "S66 — access-log entries never contain a raw token value"
   fi
+fi
+
+# ---------------------------------------------------------------------------
+H "67. BL403 Phase 1 — plugin discovery surfaces manifest v3 kind/connection/lifecycle"
+AUTO_JSON=$(curl "${curl_args[@]}" -H "Authorization: Bearer $TOK" "$BASE/api/plugins/hello-automation" 2>/dev/null || echo "")
+if echo "$AUTO_JSON" | grep -q '"name":"hello-automation"'; then
+  ok "S67 — automation-kind example plugin discovered"
+else
+  ko "S67 — hello-automation not found via GET /api/plugins/hello-automation: ${AUTO_JSON:0:300}"
+fi
+if echo "$AUTO_JSON" | grep -q '"kind":"service"'; then
+  ko "S67 — hello-automation must default to automation kind, not service"
+else
+  ok "S67 — hello-automation has no kind (v2.1 default: automation), unchanged behavior"
+fi
+
+SVC_JSON=$(curl "${curl_args[@]}" -H "Authorization: Bearer $TOK" "$BASE/api/plugins/demo-service" 2>/dev/null || echo "")
+if echo "$SVC_JSON" | grep -q '"kind":"service"'; then
+  ok "S67 — demo-service example plugin discovered as kind: service"
+else
+  ko "S67 — demo-service not discovered with kind:service: ${SVC_JSON:0:300}"
+fi
+if echo "$SVC_JSON" | grep -q "\"base_url\":\"http://127.0.0.1:${DEMO_SERVICE_PORT}\""; then
+  ok "S67 — demo-service connection.base_url surfaced correctly via REST"
+else
+  ko "S67 — demo-service connection.base_url missing/wrong: ${SVC_JSON:0:300}"
+fi
+if echo "$SVC_JSON" | grep -q '"managed"'; then
+  ok "S67 — demo-service lifecycle.supported_modes includes managed"
+else
+  ko "S67 — demo-service lifecycle.supported_modes missing managed: ${SVC_JSON:0:300}"
+fi
+
+# ---------------------------------------------------------------------------
+H "68. BL403 Phase 2 — managed service-plugin lifecycle (start/health/stop) end-to-end"
+curl "${curl_args[@]}" -X POST -H "Authorization: Bearer $TOK" -H "Content-Type: application/json" \
+  -d '{"managed":true}' "$BASE/api/plugins/demo-service/enable" >/dev/null 2>&1
+
+_svc_state=""
+for _i in $(seq 1 20); do
+  SVC_JSON=$(curl "${curl_args[@]}" -H "Authorization: Bearer $TOK" "$BASE/api/plugins/demo-service" 2>/dev/null || echo "")
+  _svc_state=$(echo "$SVC_JSON" | python3 -c 'import json,sys
+try:
+    print(json.load(sys.stdin).get("service",{}).get("state",""))
+except Exception:
+    print("")' 2>/dev/null || echo "")
+  [[ "$_svc_state" == "healthy" ]] && break
+  sleep 1
+done
+if [[ "$_svc_state" == "healthy" ]]; then
+  ok "S68 — demo-service reaches state=healthy after enable {managed:true}"
+else
+  ko "S68 — demo-service never reached healthy (last state: '$_svc_state'): ${SVC_JSON:0:300}"
+fi
+
+DEMO_PID=$(echo "$SVC_JSON" | python3 -c 'import json,sys
+try:
+    print(json.load(sys.stdin).get("service",{}).get("pid",0))
+except Exception:
+    print(0)' 2>/dev/null || echo 0)
+if [[ "$DEMO_PID" -gt 0 ]] && kill -0 "$DEMO_PID" 2>/dev/null; then
+  ok "S68 — demo-service's supervised PID ($DEMO_PID) is a real, running process"
+else
+  ko "S68 — demo-service's reported PID ($DEMO_PID) is not a live process"
+fi
+
+HEALTHZ_CODE=$(curl -sk --max-time 3 -o /dev/null -w '%{http_code}' "http://127.0.0.1:${DEMO_SERVICE_PORT}/healthz" 2>/dev/null || echo "000")
+if [[ "$HEALTHZ_CODE" == "200" ]]; then
+  ok "S68 — demo-service's real /healthz endpoint answers 200 directly (not just self-reported)"
+else
+  ko "S68 — demo-service's real /healthz returned $HEALTHZ_CODE, expected 200"
+fi
+
+curl "${curl_args[@]}" -X POST -H "Authorization: Bearer $TOK" "$BASE/api/plugins/demo-service/disable" >/dev/null 2>&1
+_stopped=0
+for _i in $(seq 1 20); do
+  if [[ -n "$DEMO_PID" ]] && [[ "$DEMO_PID" -gt 0 ]] && ! kill -0 "$DEMO_PID" 2>/dev/null; then
+    _stopped=1
+    break
+  fi
+  sleep 1
+done
+if [[ "$_stopped" == "1" ]]; then
+  ok "S68 — demo-service's process is actually gone after disable (graceful stop + reap)"
+else
+  ko "S68 — demo-service's PID ($DEMO_PID) is still alive after disable"
+fi
+
+AUDIT_START=$(curl "${curl_args[@]}" -H "Authorization: Bearer $TOK" "$BASE/api/audit?action=plugin_service_start&limit=10" 2>/dev/null || echo "")
+AUDIT_STOP=$(curl "${curl_args[@]}" -H "Authorization: Bearer $TOK" "$BASE/api/audit?action=plugin_service_stop&limit=10" 2>/dev/null || echo "")
+if echo "$AUDIT_START" | grep -q '"demo-service"'; then
+  ok "S68 — plugin_service_start audit entry recorded for demo-service"
+else
+  ko "S68 — no plugin_service_start audit entry found for demo-service: ${AUDIT_START:0:300}"
+fi
+if echo "$AUDIT_STOP" | grep -q '"demo-service"'; then
+  ok "S68 — plugin_service_stop audit entry recorded for demo-service"
+else
+  ko "S68 — no plugin_service_stop audit entry found for demo-service: ${AUDIT_STOP:0:300}"
 fi
 
 # ---------------------------------------------------------------------------
