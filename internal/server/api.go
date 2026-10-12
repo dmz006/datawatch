@@ -42,6 +42,7 @@ import (
 	"github.com/dmz006/datawatch/internal/memory"
 	"github.com/dmz006/datawatch/internal/messaging"
 	"github.com/dmz006/datawatch/internal/metrics"
+	"github.com/dmz006/datawatch/internal/plugins"
 	"github.com/dmz006/datawatch/internal/profile"
 	"github.com/dmz006/datawatch/internal/proxy"
 	"github.com/dmz006/datawatch/internal/router"
@@ -417,6 +418,12 @@ type Server struct {
 	// Wired from main.go; nil when plugins.enabled=false. Handlers
 	// return 503 in that case.
 	pluginsAPI PluginsAPI
+
+	// BL403 — plugin widget values. All three are nil until main.go
+	// wires them; /api/plugins/{name}/widgets* return 503 in that case.
+	pluginWidgetSrc PluginWidgetSource
+	widgetStore     *plugins.WidgetStore
+	pluginTokens    PluginTokensAPI
 
 	// BL117 — PRD-DAG orchestrator (Sprint S8, v4.0.0). Wired from
 	// main.go; nil when orchestrator.enabled=false. Handlers return

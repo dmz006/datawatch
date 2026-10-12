@@ -40,6 +40,11 @@ const (
 // widget leaves interval_seconds unset (0).
 const DefaultWidgetPullInterval = 30 * time.Second
 
+// ReservedWidgetTokenID is not a valid widget id: POST
+// /api/plugins/{name}/widgets/token mints the plugin's push token, so a
+// widget with this id could never be pushed to.
+const ReservedWidgetTokenID = "token"
+
 // Widget is one entry of a manifest's widgets: block.
 type Widget struct {
 	// ID is unique within the manifest; it addresses the widget in the
@@ -102,6 +107,8 @@ func validateWidgets(pluginKind string, widgets []Widget) []error {
 		}
 		if strings.TrimSpace(w.ID) == "" {
 			bad("id is required")
+		} else if w.ID == ReservedWidgetTokenID {
+			bad("id %q is reserved (POST /api/plugins/{name}/widgets/%s mints the push token)", w.ID, ReservedWidgetTokenID)
 		} else if first, dup := seen[w.ID]; dup {
 			bad("id duplicates widgets[%d]", first)
 		} else {

@@ -52,6 +52,8 @@ func TestWidgets_ValidateErrors(t *testing.T) {
 		{"bad data_mode", auto("  - {id: ok, surface: dashboard, kind: list, data_mode: push}\n" +
 			"  - {id: inbox, surface: dashboard, kind: list, data_mode: poll}\n"),
 			[]string{`widgets[1] (id "inbox"): data_mode "poll" is invalid: must be "push" or "pull"`}},
+		{"reserved token id", auto("  - {id: token, surface: dashboard, kind: list, data_mode: push}\n"),
+			[]string{`widgets[0] (id "token"): id "token" is reserved`}},
 		{"pull without pull_path", auto("  - {id: w, surface: dashboard, kind: list, data_mode: pull}\n"),
 			[]string{`widgets[0] (id "w"): pull_path is required`}},
 		{"service pull without pull_path", svc("  - {id: w, surface: dashboard, kind: list, data_mode: pull}\n"),

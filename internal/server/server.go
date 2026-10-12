@@ -37,6 +37,7 @@ import (
 	"github.com/dmz006/datawatch/internal/memory"
 	"github.com/dmz006/datawatch/internal/messaging"
 	"github.com/dmz006/datawatch/internal/metrics"
+	"github.com/dmz006/datawatch/internal/plugins"
 	"github.com/dmz006/datawatch/internal/profile"
 	"github.com/dmz006/datawatch/internal/proxy"
 	"github.com/dmz006/datawatch/internal/server/multiserver"
@@ -1081,6 +1082,13 @@ func (s *HTTPServer) SetAlertRulesAPI(api AlertRulesAPI) {
 // Nil disables /api/plugins/* (handlers return 503).
 func (s *HTTPServer) SetPluginsAPI(api PluginsAPI) {
 	s.api.SetPluginsAPI(api)
+}
+
+// SetPluginWidgets (BL403) wires plugin widget values: manifest lookup,
+// value store and push-token registry. Any nil argument disables
+// /api/plugins/{name}/widgets* (handlers return 503).
+func (s *HTTPServer) SetPluginWidgets(src PluginWidgetSource, store *plugins.WidgetStore, tokens PluginTokensAPI) {
+	s.api.SetPluginWidgets(src, store, tokens)
 }
 
 // AuditPluginService records a managed plugin service lifecycle event in
