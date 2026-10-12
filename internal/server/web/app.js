@@ -11601,6 +11601,9 @@ function renderStory(prd, story) {
        </div>`
     : '';
 
+  // Story-level verification output (read-only data on every card state).
+  const filesGeneratedRow = _renderFilesGeneratedRow(story.files_generated, story.verification_script, _storyProjDir, 'prd-story-generated-row', 'prd-story-generated-label');
+
   const desc = story.description
     ? `<div class="prd-story-desc">${escHtml(story.description)}</div>`
     : '';
@@ -11619,6 +11622,7 @@ function renderStory(prd, story) {
       ${filesPlannedRow}
       ${story.rejected_reason ? `<div class="prd-story-rejected">rejected: ${escHtml(story.rejected_reason)}</div>` : ''}
       ${readOnlyExtras}
+      ${filesGeneratedRow}
       ${tasks ? `<div class="prd-story-tasks">${tasks}</div>` : ''}
       ${editable ? `<button class="prd-story-add-task-btn" onclick="event.stopPropagation();openPRDAddTaskModal(${escHtml(JSON.stringify(prd.id))},${escHtml(JSON.stringify(story.id))})">+ ${escHtml(t('prd_add_task_btn')||'Add task')}</button>` : ''}
     </div>
@@ -11645,14 +11649,15 @@ function _renderStoryReadOnlyExtras(story) {
   const touched = [];
   const seenT = new Set();
   for (const t of tasks) {
+    const gen = _filesGeneratedSet(t);
     for (const f of (t.files_touched || [])) {
-      if (!seenT.has(f)) { seenT.add(f); touched.push(f); }
+      if (!seenT.has(f) && !gen.has(f)) { seenT.add(f); touched.push(f); }
     }
   }
   const cappedTouched = touched.slice(0, 12);
   const touchedRow = cappedTouched.length
     ? `<div class="prd-story-touched-row">
-         <span class="prd-story-touched-label">&#9989; Touched:</span>
+         <span class="prd-story-touched-label">&#9989; ${escHtml(t('prd_files_touched_label')||'Touched:')}</span>
          ${cappedTouched.map(f => _fileChip(f)).join('')}
          ${touched.length > cappedTouched.length ? `<span class="prd-story-touched-more">+${touched.length - cappedTouched.length} more</span>` : ''}
        </div>`
@@ -11812,6 +11817,31 @@ window.openPRDSetStoryProfileModal = openPRDSetStoryProfileModal;
 // state._prdTaskExpanded across re-renders so the WS push doesn't lose
 // the operator's spot. The `editable` param is passed in from
 // renderStory so the gate is computed once per story, not per task.
+// Set of a task/story's verification-produced paths (files_generated plus
+// verification_script), used to keep them out of the touched rows.
+function _filesGeneratedSet(item) {
+  const set = new Set((item && item.files_generated) || []);
+  if (item && item.verification_script) set.add(item.verification_script);
+  return set;
+}
+
+// Read-only "Generated (verification):" row shared by the task body and
+// the story card. Paths are repo-relative, so they get the same
+// project_dir prefix as planned files. The verification script is listed
+// first and tagged; it renders even when files_generated is empty.
+function _renderFilesGeneratedRow(files, verificationScript, projDir, rowClass, labelClass) {
+  const others = (files || []).filter(f => f && f !== verificationScript);
+  if (!verificationScript && !others.length) return '';
+  const chip = f => _fileChip(projDir ? projDir + '/' + f : f);
+  const scriptChip = verificationScript
+    ? `${chip(verificationScript)}<span class="prd-verification-script-tag">${escHtml(t('prd_verification_script_label')||'verification script')}</span>`
+    : '';
+  return `<div class="${rowClass}">
+         <span class="${labelClass}">${escHtml(t('prd_files_generated_label')||'Generated (verification):')}</span>
+         ${scriptChip}${others.map(chip).join('')}
+       </div>`;
+}
+
 function renderTask(prd, story, task, editable) {
   // editable is now passed from caller; fall back when called standalone.
   if (typeof editable === 'undefined') {
@@ -11900,8 +11930,15 @@ function renderTask(prd, story, task, editable) {
   // Expanded body: always rendered in DOM (hidden when collapsed) so
   // _prdToggleTask can flip state with a pure DOM operation rather than
   // re-rendering the whole PRD detail view.
+  // Three provenance lists, three distinct rows: planned (decomposer
+  // intent), touched (worker session's actual changes) and generated
+  // (verification-step output, e.g. .datawatch/verify/<id>.sh). Touched
+  // is filtered against generated so a verification artifact never shows
+  // up as worker output even if an older record mixed them.
+  const _taskGenSet = _filesGeneratedSet(task);
+  const taskTouched = (task.files_touched || []).filter(f => !_taskGenSet.has(f));
   const hasTaskFiles = task.files && task.files.length;
-  const hasTaskTouched = task.files_touched && task.files_touched.length;
+  const hasTaskTouched = taskTouched.length;
   const _projDir = (prd && prd.project_dir) ? prd.project_dir : '';
   const filesP = hasTaskFiles
     ? `<div class="prd-task-files">
@@ -11917,10 +11954,11 @@ function renderTask(prd, story, task, editable) {
       : '');
   const filesT = hasTaskTouched
     ? `<div class="prd-task-touched">
-         <span class="prd-task-touched-label">Output files:</span>
-         ${task.files_touched.map(f => _fileChip(f)).join('')}
+         <span class="prd-task-touched-label">${escHtml(t('prd_files_touched_label')||'Touched:')}</span>
+         ${taskTouched.map(f => _fileChip(f)).join('')}
        </div>`
     : '';
+  const filesG = _renderFilesGeneratedRow(task.files_generated, task.verification_script, _projDir, 'prd-task-generated', 'prd-task-generated-label');
   // v8.23.0 — error + verification details in expanded view.
   const errRow = task.error
     ? `<div class="prd-task-error"><span class="prd-task-error-label">&#9888; ${t('prd_task_error')||'Error'}:</span> ${escHtml(task.error)}</div>`
@@ -11941,7 +11979,9 @@ function renderTask(prd, story, task, editable) {
     ${task.spec ? `<div class="prd-task-spec">${escHtml(task.spec)}</div>` : ''}
     ${task.status === 'waiting_capacity' ? `<div class="prd-task-wait-reason">&#9203; ${escHtml(t('prd_task_waiting_capacity')||'Waiting for capacity')}${task.wait_reason ? ': ' + escHtml(task.wait_reason) : ''}</div>` : ''}
     ${errRow}${verifRow}
+    ${filesP}
     ${filesT}
+    ${filesG}
   </div>`;
 
   return `<div class="prd-task-row${isExpanded ? ' expanded' : ''}" data-task-id="${escHtml(taskID)}">

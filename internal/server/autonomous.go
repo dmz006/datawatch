@@ -17,6 +17,7 @@
 package server
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
 	"log"
@@ -1169,11 +1170,20 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			DecompositionProfile string `json:"decomposition_profile"`
 			DecompositionModel   string `json:"decomposition_model"`
 			Actor                string `json:"actor"`
+			// BL416 — presence-aware: absent = leave unchanged, "" = clear.
+			GuardrailBackend *string `json:"guardrail_backend"`
+			GuardrailModel   *string `json:"guardrail_model"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
 			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
 			return
 		}
+		if err := json.NewDecoder(bytes.NewReader(body)).Decode(&req); err != nil {
+			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		hasGuardrail, hasLegacy := guardrailLLMKeys(body, "backend", "effort", "model", "decomposition_profile", "decomposition_model")
 		if req.Actor == "" {
 			req.Actor = "operator"
 		}
@@ -1192,12 +1202,30 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		updated, err := s.autonomousMgr.SetPRDLLM(id, req.Backend, req.Effort, req.Model, req.DecompositionProfile, req.DecompositionModel, req.Actor)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+		if !s.validGuardrailBackend(w, req.GuardrailBackend) {
 			return
 		}
-		s.audit(r.Context(), "set_llm", "automaton", id, map[string]any{"backend": req.Backend, "model": req.Model}) // GH#201 Phase 4
+		// BL416 — a guardrail-only body must not clear the worker LLM, so
+		// the legacy (overwrite-all) setter only runs when a legacy key is
+		// present or no guardrail key is.
+		var updated any
+		if hasLegacy || !hasGuardrail {
+			updated, err = s.autonomousMgr.SetPRDLLM(id, req.Backend, req.Effort, req.Model, req.DecompositionProfile, req.DecompositionModel, req.Actor)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+		}
+		if hasGuardrail {
+			updated, err = s.autonomousMgr.SetPRDGuardrailLLM(id, req.GuardrailBackend, req.GuardrailModel, req.Actor)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+		}
+		detail := map[string]any{"backend": req.Backend, "model": req.Model}
+		addGuardrailAuditDetail(detail, req.GuardrailBackend, req.GuardrailModel)
+		s.audit(r.Context(), "set_llm", "automaton", id, detail) // GH#201 Phase 4
 		writeJSONOK(w, updated)
 	// BL381 — per-story worker LLM override.
 	case "set_story_llm":
@@ -1254,11 +1282,20 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			Effort  string `json:"effort"`
 			Model   string `json:"model"`
 			Actor   string `json:"actor"`
+			// BL416 — presence-aware: absent = leave unchanged, "" = clear.
+			GuardrailBackend *string `json:"guardrail_backend"`
+			GuardrailModel   *string `json:"guardrail_model"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
 			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
 			return
 		}
+		if err := json.NewDecoder(bytes.NewReader(body)).Decode(&req); err != nil {
+			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		hasGuardrail, hasLegacy := guardrailLLMKeys(body, "backend", "effort", "model")
 		if req.TaskID == "" {
 			http.Error(w, "task_id required", http.StatusBadRequest)
 			return
@@ -1273,12 +1310,28 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		updated, err := s.autonomousMgr.SetTaskLLM(id, req.TaskID, req.Backend, req.Effort, req.Model, req.Actor)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+		if !s.validGuardrailBackend(w, req.GuardrailBackend) {
 			return
 		}
-		s.audit(r.Context(), "set_task_llm", "automaton", id, map[string]any{"task_id": req.TaskID, "backend": req.Backend}) // GH#201 Phase 4
+		// BL416 — see set_llm: guardrail-only bodies skip the legacy setter.
+		var updated any
+		if hasLegacy || !hasGuardrail {
+			updated, err = s.autonomousMgr.SetTaskLLM(id, req.TaskID, req.Backend, req.Effort, req.Model, req.Actor)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+		}
+		if hasGuardrail {
+			updated, err = s.autonomousMgr.SetTaskGuardrailLLM(id, req.TaskID, req.GuardrailBackend, req.GuardrailModel, req.Actor)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+		}
+		detail := map[string]any{"task_id": req.TaskID, "backend": req.Backend}
+		addGuardrailAuditDetail(detail, req.GuardrailBackend, req.GuardrailModel)
+		s.audit(r.Context(), "set_task_llm", "automaton", id, detail) // GH#201 Phase 4
 		writeJSONOK(w, updated)
 	case "profiles":
 		// v5.26.20 — post-create profile attachment for PRDs that
@@ -2243,6 +2296,50 @@ func (s *Server) handleAutonomousGuardrailProfiles(w http.ResponseWriter, r *htt
 
 // writeJSONOK writes a 200 JSON body. (writeJSON is taken by
 // profile_api.go with a different signature.)
+// guardrailLLMKeys (BL416) reports whether a set_llm / set_task_llm
+// body carries any guardrail_backend / guardrail_model key, and whether
+// it carries any of the given legacy worker-LLM keys. Presence, not
+// value, matters: legacy setters overwrite every field, so a body that
+// only names guardrail keys must not reach them.
+func guardrailLLMKeys(body []byte, legacyKeys ...string) (hasGuardrail, hasLegacy bool) {
+	var present map[string]json.RawMessage
+	_ = json.NewDecoder(bytes.NewReader(body)).Decode(&present)
+	_, gb := present["guardrail_backend"]
+	_, gm := present["guardrail_model"]
+	for _, k := range legacyKeys {
+		if _, ok := present[k]; ok {
+			hasLegacy = true
+			break
+		}
+	}
+	return gb || gm, hasLegacy
+}
+
+// validGuardrailBackend (BL416) validates a non-empty guardrail_backend
+// against the inference registry (BL308 pattern), writing a 400 and
+// returning false when it is unknown.
+func (s *Server) validGuardrailBackend(w http.ResponseWriter, backend *string) bool {
+	if backend == nil || *backend == "" || s.inferenceReg == nil {
+		return true
+	}
+	if _, err := s.inferenceReg.Get(*backend); err != nil {
+		http.Error(w, "unknown guardrail LLM "+strconv.Quote(*backend)+" — check /api/llms for valid names", http.StatusBadRequest)
+		return false
+	}
+	return true
+}
+
+// addGuardrailAuditDetail (BL416) adds the guardrail override fields
+// that were present in the request to an audit detail map.
+func addGuardrailAuditDetail(detail map[string]any, backend, model *string) {
+	if backend != nil {
+		detail["guardrail_backend"] = *backend
+	}
+	if model != nil {
+		detail["guardrail_model"] = *model
+	}
+}
+
 func writeJSONOK(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(v)

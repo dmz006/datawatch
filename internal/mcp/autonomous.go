@@ -595,6 +595,8 @@ func (s *Server) toolAutonomousPRDSetLLM() mcpsdk.Tool {
 		mcpsdk.WithString("effort", mcpsdk.Description("low / medium / high / max / quick / normal / thorough")),
 		mcpsdk.WithString("model", mcpsdk.Description("specific model name (e.g. qwen3.8:27b)")),
 		mcpsdk.WithString("decomposition_profile", mcpsdk.Description("Planning/decompose backend — any configured LLM name (opencode/claude-code = session with full codebase access; ollama/openwebui = headless); empty = use global autonomous.planning_backend")),
+		mcpsdk.WithString("guardrail_backend", mcpsdk.Description(guardrailBackendParamDesc)),
+		mcpsdk.WithString("guardrail_model", mcpsdk.Description(guardrailModelParamDesc)),
 	)
 }
 func (s *Server) handleAutonomousPRDSetLLM(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
@@ -606,6 +608,9 @@ func (s *Server) handleAutonomousPRDSetLLM(_ context.Context, req mcpsdk.CallToo
 		"decomposition_profile": req.GetString("decomposition_profile", ""),
 		"actor":                 "operator",
 	})
+	if gb := guardrailLLMBody(req, map[string]string{"actor": "operator"}, "backend", "effort", "model", "decomposition_profile"); gb != nil {
+		body = gb
+	}
 	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/set_llm", body)
 	if err != nil {
 		return nil, err
@@ -647,6 +652,8 @@ func (s *Server) toolAutonomousPRDSetTaskLLM() mcpsdk.Tool {
 		mcpsdk.WithString("backend", mcpsdk.Description("LLM backend name; empty = inherit PRD then global")),
 		mcpsdk.WithString("effort", mcpsdk.Description("effort level; empty = inherit")),
 		mcpsdk.WithString("model", mcpsdk.Description("specific model name; empty = backend default")),
+		mcpsdk.WithString("guardrail_backend", mcpsdk.Description(guardrailBackendParamDesc)),
+		mcpsdk.WithString("guardrail_model", mcpsdk.Description(guardrailModelParamDesc)),
 	)
 }
 func (s *Server) handleAutonomousPRDSetTaskLLM(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
@@ -658,11 +665,52 @@ func (s *Server) handleAutonomousPRDSetTaskLLM(_ context.Context, req mcpsdk.Cal
 		"model":   req.GetString("model", ""),
 		"actor":   "operator",
 	})
+	if gb := guardrailLLMBody(req, map[string]string{"task_id": req.GetString("task_id", ""), "actor": "operator"}, "backend", "effort", "model"); gb != nil {
+		body = gb
+	}
 	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/set_task_llm", body)
 	if err != nil {
 		return nil, err
 	}
 	return textOK(string(out)), nil
+}
+
+const (
+	guardrailBackendParamDesc = "Guardrail/verification judge LLM override (any configured LLM name). Inherits task -> automaton -> global autonomous.verification_backend. Empty = clear; omit to leave unchanged."
+	guardrailModelParamDesc   = "Guardrail/verification judge model override. Inherits task -> automaton -> global autonomous.verification_model. Empty = clear; omit to leave unchanged."
+)
+
+// guardrailLLMBody (BL416) builds the set_llm / set_task_llm proxy body
+// when the caller supplied guardrail_backend and/or guardrail_model.
+// Only keys present in the arguments are forwarded, so "" clears and an
+// absent key leaves the field unchanged. When no legacy key was supplied
+// the legacy keys are omitted so the REST guardrail-only path runs and
+// the worker LLM is not overwritten. Returns nil when no guardrail key
+// was supplied — the caller keeps its legacy body.
+func guardrailLLMBody(req mcpsdk.CallToolRequest, base map[string]string, legacyKeys ...string) []byte {
+	args := req.GetArguments()
+	body := map[string]string{}
+	for _, k := range []string{"guardrail_backend", "guardrail_model"} {
+		if _, ok := args[k]; ok {
+			body[k] = req.GetString(k, "")
+		}
+	}
+	if len(body) == 0 {
+		return nil
+	}
+	for k, v := range base {
+		body[k] = v
+	}
+	for _, k := range legacyKeys {
+		if _, ok := args[k]; ok {
+			for _, lk := range legacyKeys {
+				body[lk] = req.GetString(lk, "")
+			}
+			break
+		}
+	}
+	out, _ := json.Marshal(body)
+	return out
 }
 
 // ----- autonomous_learnings --------------------------------------------------

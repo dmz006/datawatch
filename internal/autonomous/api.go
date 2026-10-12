@@ -623,6 +623,23 @@ func (a *API) SetPRDLLM(prdID, backend, effort, model, decompositionProfile, dec
 	return out, err
 }
 
+
+// BL416 — presence-aware guardrail judge LLM overrides at PRD + task level.
+func (a *API) SetPRDGuardrailLLM(prdID string, backend, model *string, actor string) (any, error) {
+	out, err := a.M.SetPRDGuardrailLLM(prdID, backend, model, actor)
+	if err == nil {
+		a.M.EmitPRDUpdate(prdID)
+	}
+	return out, err
+}
+func (a *API) SetTaskGuardrailLLM(prdID, taskID string, backend, model *string, actor string) (any, error) {
+	out, err := a.M.SetTaskGuardrailLLM(prdID, taskID, backend, model, actor)
+	if err == nil {
+		a.M.EmitPRDUpdate(prdID)
+	}
+	return out, err
+}
+
 // SetMemorySeed (BL386 Phase 1 + BL387 Phase 2b) updates the PRD's warm-start seed config.
 func (a *API) SetMemorySeed(prdID string, enabled bool, maxPerScope int, roleFilter []string, fromPRDs []string, actor string) (any, error) {
 	cfg := MemorySeedConfig{Enabled: enabled, MaxPerScope: maxPerScope, RoleFilter: roleFilter, FromPRDs: fromPRDs}

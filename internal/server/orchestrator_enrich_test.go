@@ -94,6 +94,14 @@ func (f *fakeOrchAutonomous) SetStoryLLM(string, string, string, string, string,
 	return nil, nil
 }
 
+// BL416 — guardrail LLM override stubs.
+func (f *fakeOrchAutonomous) SetPRDGuardrailLLM(string, *string, *string, string) (any, error) {
+	return nil, nil
+}
+func (f *fakeOrchAutonomous) SetTaskGuardrailLLM(string, string, *string, *string, string) (any, error) {
+	return nil, nil
+}
+
 // BL191 Q4 (v5.9.0) — child PRD list stub.
 func (f *fakeOrchAutonomous) ListChildPRDs(string) []any { return nil }
 

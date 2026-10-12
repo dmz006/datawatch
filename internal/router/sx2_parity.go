@@ -72,6 +72,25 @@ func (r *Router) commJSON(method, path, jsonBody string) (string, error) {
 	return string(body), nil
 }
 
+// extractGuardrailLLMTokens (BL416) pulls guardrail_backend=<v> /
+// guardrail_model=<v> tokens out of set-llm / set-task-llm args so the
+// remaining positional parsing is unchanged. Only tokens that appear are
+// returned, so "guardrail_model=" clears and an absent token leaves the
+// field unchanged.
+func extractGuardrailLLMTokens(args []string) ([]string, map[string]string) {
+	rest := make([]string, 0, len(args))
+	guardrail := map[string]string{}
+	for _, a := range args {
+		k, v, ok := strings.Cut(a, "=")
+		if ok && (k == "guardrail_backend" || k == "guardrail_model") {
+			guardrail[k] = v
+			continue
+		}
+		rest = append(rest, a)
+	}
+	return rest, guardrail
+}
+
 // reply sends a tagged response back through the messaging backend.
 func (r *Router) reply(label, body string) {
 	if body == "" {
@@ -283,7 +302,7 @@ func prettyJSON(body string) string {
 // `prd` is accepted as a shorter alias for `autonomous`.
 func (r *Router) handleAutonomous(cmd Command) {
 	args := strings.Fields(strings.TrimSpace(cmd.Text))
-	help := "usage: autonomous {status|list|config-get|config-set key=value [k2=v2 ...]|get <id>|decompose <id>|approve <id>|reject <id> [reason]|request-revision <id> [note]|edit-task <prd> <task> <new-spec>|set-llm <prd> <backend> [effort] [model]|set-task-llm <prd> <task> <backend> [effort] [model]|instantiate <template> [k=v,k=v]|run <id>|cancel <id>|cancel-story <prd> <story> [reason]|cancel-task <prd> <task> [reason]|reset-to-draft <id>|set-quality-gates <prd> [enabled=bool] [test_command=cmd] [timeout=N] [block_on_regression=bool]|scan-results <id>|learnings|children <id>|create <spec>|scan <id>|scan-fix <id>|scan-rules <id>|scan-config [get|set k=v]|types|type-register <id> <label> [description=...] [color=#hex]|set-type <id> <type>|guided-mode <id> on|off|set-skills <id> <skill1,skill2>|templates|template-get <id>|template-create <title> <spec>|template-update <id> <title> <spec>|template-delete <id>|template-instantiate <id> [dir] [k=v,k=v]|template-clone <prd-id> [desc]}"
+	help := "usage: autonomous {status|list|config-get|config-set key=value [k2=v2 ...]|get <id>|decompose <id>|approve <id>|reject <id> [reason]|request-revision <id> [note]|edit-task <prd> <task> <new-spec>|set-llm <prd> <backend> [effort] [model] [guardrail_backend=X] [guardrail_model=Y]|set-task-llm <prd> <task> <backend> [effort] [model] [guardrail_backend=X] [guardrail_model=Y]|instantiate <template> [k=v,k=v]|run <id>|cancel <id>|cancel-story <prd> <story> [reason]|cancel-task <prd> <task> [reason]|reset-to-draft <id>|set-quality-gates <prd> [enabled=bool] [test_command=cmd] [timeout=N] [block_on_regression=bool]|scan-results <id>|learnings|children <id>|create <spec>|scan <id>|scan-fix <id>|scan-rules <id>|scan-config [get|set k=v]|types|type-register <id> <label> [description=...] [color=#hex]|set-type <id> <type>|guided-mode <id> on|off|set-skills <id> <skill1,skill2>|templates|template-get <id>|template-create <title> <spec>|template-update <id> <title> <spec>|template-delete <id>|template-instantiate <id> [dir] [k=v,k=v]|template-clone <prd-id> [desc]}"
 	if len(args) == 0 {
 		r.reply("autonomous", help)
 		return
@@ -537,11 +556,18 @@ func (r *Router) handleAutonomous(cmd Command) {
 		}
 		r.reply("autonomous remove-task", prettyJSON(out))
 	case "set-llm", "set_llm":
-		if len(args) < 3 {
-			r.reply("autonomous set-llm failed", "usage: autonomous set-llm <prd-id> <backend> [effort] [model]")
+		args, guardrail := extractGuardrailLLMTokens(args)
+		if len(args) < 2 || (len(args) < 3 && len(guardrail) == 0) {
+			r.reply("autonomous set-llm failed", "usage: autonomous set-llm <prd-id> <backend> [effort] [model] [guardrail_backend=X] [guardrail_model=Y]  |  autonomous set-llm <prd-id> guardrail_backend=X [guardrail_model=Y]")
 			return
 		}
-		body := map[string]string{"backend": args[2], "actor": "operator"}
+		body := map[string]string{"actor": "operator"}
+		for k, v := range guardrail {
+			body[k] = v
+		}
+		if len(args) >= 3 {
+			body["backend"] = args[2]
+		}
 		if len(args) >= 4 {
 			body["effort"] = args[3]
 		}
@@ -575,11 +601,18 @@ func (r *Router) handleAutonomous(cmd Command) {
 		}
 		r.reply("autonomous set-story-llm", prettyJSON(out))
 	case "set-task-llm", "set_task_llm":
-		if len(args) < 4 {
-			r.reply("autonomous set-task-llm failed", "usage: autonomous set-task-llm <prd-id> <task-id> <backend> [effort] [model]")
+		args, guardrail := extractGuardrailLLMTokens(args)
+		if len(args) < 3 || (len(args) < 4 && len(guardrail) == 0) {
+			r.reply("autonomous set-task-llm failed", "usage: autonomous set-task-llm <prd-id> <task-id> <backend> [effort] [model] [guardrail_backend=X] [guardrail_model=Y]  |  autonomous set-task-llm <prd-id> <task-id> guardrail_backend=X [guardrail_model=Y]")
 			return
 		}
-		body := map[string]string{"task_id": args[2], "backend": args[3], "actor": "operator"}
+		body := map[string]string{"task_id": args[2], "actor": "operator"}
+		for k, v := range guardrail {
+			body[k] = v
+		}
+		if len(args) >= 4 {
+			body["backend"] = args[3]
+		}
 		if len(args) >= 5 {
 			body["effort"] = args[4]
 		}

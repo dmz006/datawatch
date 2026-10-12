@@ -2238,6 +2238,53 @@ func (m *Manager) SetTaskLLM(prdID, taskID, backend, effort, model, actor string
 	return updated, nil
 }
 
+// SetTaskGuardrailLLM (BL416) overrides the backend/model used for a
+// task's per-task guardrail judge. Presence-aware: a nil pointer leaves
+// that field unchanged; a pointer to "" clears it so resolution falls
+// back to the PRD-level then global guardrail_backend/guardrail_model.
+// Same lock rule as SetTaskLLM.
+func (m *Manager) SetTaskGuardrailLLM(prdID, taskID string, backend, model *string, actor string) (*PRD, error) {
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return nil, fmt.Errorf("prd %q not found", prdID)
+	}
+	if prd.Status != PRDNeedsReview && prd.Status != PRDRevisionsAsked && prd.Status != PRDCancelled {
+		return nil, fmt.Errorf("prd %q status %q is locked; only needs_review / revisions_asked / cancelled accept LLM overrides", prdID, prd.Status)
+	}
+	var task *Task
+	for si := range prd.Story {
+		for ti := range prd.Story[si].Tasks {
+			if prd.Story[si].Tasks[ti].ID == taskID {
+				task = &prd.Story[si].Tasks[ti]
+				break
+			}
+		}
+		if task != nil {
+			break
+		}
+	}
+	if task == nil {
+		return nil, fmt.Errorf("task %q not found in prd %q", taskID, prdID)
+	}
+	if backend != nil {
+		task.GuardrailBackend = *backend
+	}
+	if model != nil {
+		task.GuardrailModel = *model
+	}
+	task.UpdatedAt = time.Now()
+	prd.UpdatedAt = time.Now()
+	prd.Decisions = append(prd.Decisions, Decision{
+		At: time.Now(), Kind: "set_task_guardrail_llm", Actor: actor,
+		Note: fmt.Sprintf("task=%s guardrail_backend=%s guardrail_model=%s", taskID, task.GuardrailBackend, task.GuardrailModel),
+	})
+	if err := m.store.SavePRD(prd); err != nil {
+		return nil, err
+	}
+	updated, _ := m.store.GetPRD(prdID)
+	return updated, nil
+}
+
 // SetPRDLLM (BL203, v5.4.0) overrides the PRD-level worker LLM defaults
 // (backend / effort / model). Only allowed pre-Run. Tasks without
 // per-task overrides will inherit these.
@@ -2380,6 +2427,37 @@ func (m *Manager) SetPRDLLM(prdID, backend, effort, model, decompositionProfile,
 	prd.Decisions = append(prd.Decisions, Decision{
 		At: time.Now(), Kind: "set_prd_llm", Actor: actor,
 		Note: note,
+	})
+	if err := m.store.SavePRD(prd); err != nil {
+		return nil, err
+	}
+	updated, _ := m.store.GetPRD(prdID)
+	return updated, nil
+}
+
+// SetPRDGuardrailLLM (BL416) overrides the PRD-level backend/model used
+// by the per-task / per-story guardrail judges. Presence-aware: a nil
+// pointer leaves that field unchanged; a pointer to "" clears it so
+// resolution falls back to the global guardrail_backend/guardrail_model.
+// Same lock rule as SetPRDLLM.
+func (m *Manager) SetPRDGuardrailLLM(prdID string, backend, model *string, actor string) (*PRD, error) {
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return nil, fmt.Errorf("prd %q not found", prdID)
+	}
+	if prd.Status == PRDRunning || prd.Status == PRDCompleted {
+		return nil, fmt.Errorf("prd %q status %q is locked; PRD LLM overrides only apply pre-Run", prdID, prd.Status)
+	}
+	if backend != nil {
+		prd.GuardrailBackend = *backend
+	}
+	if model != nil {
+		prd.GuardrailModel = *model
+	}
+	prd.UpdatedAt = time.Now()
+	prd.Decisions = append(prd.Decisions, Decision{
+		At: time.Now(), Kind: "set_prd_guardrail_llm", Actor: actor,
+		Note: fmt.Sprintf("guardrail_backend=%s guardrail_model=%s", prd.GuardrailBackend, prd.GuardrailModel),
 	})
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err

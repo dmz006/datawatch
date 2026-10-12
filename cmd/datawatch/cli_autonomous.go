@@ -467,13 +467,14 @@ func newAutonomousPRDRemoveTaskCmd() *cobra.Command {
 }
 
 func newAutonomousPRDSetLLMCmd() *cobra.Command {
-	var backend, effort, model, decompositionProfile string
+	var backend, effort, model, decompositionProfile, guardrailBackend, guardrailModel string
 	cmd := &cobra.Command{
 		Use:   "prd-set-llm <id>",
-		Short: "Set the PRD-level worker LLM (backend / effort / model / decomposition-profile). Tasks inherit unless overridden.",
+		Short: "Set the PRD-level worker LLM (backend / effort / model / decomposition-profile) and/or guardrail judge LLM. Tasks inherit unless overridden.",
 		Args:  cobra.ExactArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
-			body, _ := json.Marshal(map[string]string{"backend": backend, "effort": effort, "model": model, "decomposition_profile": decompositionProfile, "actor": "operator"})
+		RunE: func(cmd *cobra.Command, args []string) error {
+			legacy := map[string]string{"backend": backend, "effort": effort, "model": model, "decomposition_profile": decompositionProfile}
+			body, _ := json.Marshal(setLLMCLIBody(cmd, legacy, map[string]string{"actor": "operator"}, guardrailBackend, guardrailModel, "backend", "effort", "model", "decomposition-profile"))
 			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/set_llm", body)
 		},
 	}
@@ -481,6 +482,7 @@ func newAutonomousPRDSetLLMCmd() *cobra.Command {
 	cmd.Flags().StringVar(&effort, "effort", "", "effort level (low / medium / high / max / quick / normal / thorough) — empty = inherit")
 	cmd.Flags().StringVar(&model, "model", "", "specific model name (e.g. qwen3.8:27b) — empty = backend default")
 	cmd.Flags().StringVar(&decompositionProfile, "decomposition-profile", "", "LLM backend for planning/decompose (any configured LLM — opencode/claude-code get full codebase tool access; ollama/openwebui use headless planning) — empty = use global autonomous.planning_backend")
+	addGuardrailLLMFlags(cmd, &guardrailBackend, &guardrailModel)
 	return cmd
 }
 
@@ -504,13 +506,14 @@ func newAutonomousPRDSetStoryLLMCmd() *cobra.Command {
 }
 
 func newAutonomousPRDSetTaskLLMCmd() *cobra.Command {
-	var taskID, backend, effort, model string
+	var taskID, backend, effort, model, guardrailBackend, guardrailModel string
 	cmd := &cobra.Command{
-		Use:   "prd-set-task-llm <prd-id> --task <task-id> [--backend B --effort E --model M]",
-		Short: "Override the worker LLM for one task. Empty value clears the override (falls back to PRD then global).",
+		Use:   "prd-set-task-llm <prd-id> --task <task-id> [--backend B --effort E --model M] [--guardrail-backend GB --guardrail-model GM]",
+		Short: "Override the worker LLM and/or guardrail judge LLM for one task. Empty value clears the override (falls back to PRD then global).",
 		Args:  cobra.ExactArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
-			body, _ := json.Marshal(map[string]string{"task_id": taskID, "backend": backend, "effort": effort, "model": model, "actor": "operator"})
+		RunE: func(cmd *cobra.Command, args []string) error {
+			legacy := map[string]string{"backend": backend, "effort": effort, "model": model}
+			body, _ := json.Marshal(setLLMCLIBody(cmd, legacy, map[string]string{"task_id": taskID, "actor": "operator"}, guardrailBackend, guardrailModel, "backend", "effort", "model"))
 			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/set_task_llm", body)
 		},
 	}
@@ -518,8 +521,49 @@ func newAutonomousPRDSetTaskLLMCmd() *cobra.Command {
 	cmd.Flags().StringVar(&backend, "backend", "", "task-specific LLM backend; empty = inherit PRD then global")
 	cmd.Flags().StringVar(&effort, "effort", "", "effort level for this task; empty = inherit")
 	cmd.Flags().StringVar(&model, "model", "", "specific model name for this task; empty = backend default")
+	addGuardrailLLMFlags(cmd, &guardrailBackend, &guardrailModel)
 	_ = cmd.MarkFlagRequired("task")
 	return cmd
+}
+
+// addGuardrailLLMFlags (BL416) registers --guardrail-backend /
+// --guardrail-model on prd-set-llm and prd-set-task-llm.
+func addGuardrailLLMFlags(cmd *cobra.Command, backend, model *string) {
+	cmd.Flags().StringVar(backend, "guardrail-backend", "", "guardrail/verification judge LLM override; inherits task -> automaton -> global autonomous.verification_backend; empty = clear, omit = unchanged")
+	cmd.Flags().StringVar(model, "guardrail-model", "", "guardrail/verification judge model override; empty = clear, omit = unchanged")
+}
+
+// setLLMCLIBody (BL416) builds a set_llm / set_task_llm body. Guardrail
+// keys are sent only when their flag was set ("" clears). When only
+// guardrail flags were set the legacy keys are omitted so the REST
+// guardrail-only path runs; otherwise the legacy keys are sent as before.
+func setLLMCLIBody(cmd *cobra.Command, legacy, base map[string]string, guardrailBackend, guardrailModel string, legacyFlags ...string) map[string]string {
+	body := map[string]string{}
+	for k, v := range base {
+		body[k] = v
+	}
+	hasGuardrail := false
+	if cmd.Flags().Changed("guardrail-backend") {
+		body["guardrail_backend"] = guardrailBackend
+		hasGuardrail = true
+	}
+	if cmd.Flags().Changed("guardrail-model") {
+		body["guardrail_model"] = guardrailModel
+		hasGuardrail = true
+	}
+	hasLegacy := false
+	for _, f := range legacyFlags {
+		if cmd.Flags().Changed(f) {
+			hasLegacy = true
+			break
+		}
+	}
+	if hasLegacy || !hasGuardrail {
+		for k, v := range legacy {
+			body[k] = v
+		}
+	}
+	return body
 }
 
 func newAutonomousPRDInstantiateCmd() *cobra.Command {

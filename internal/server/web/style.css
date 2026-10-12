@@ -1673,6 +1673,21 @@ body {
   color: var(--text2);
   font-size: 10px;
 }
+/* Verification-step output (files_generated + verification_script) —
+   amber label so it reads distinctly from planned (grey) and touched (green). */
+.prd-story-generated-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin: 4px 0;
+  font-size: 11px;
+}
+.prd-story-generated-label {
+  color: var(--warning);
+  font-weight: 600;
+  margin-right: 2px;
+}
 .prd-story-session-row {
   margin: 4px 0;
   font-size: 11px;
@@ -1840,6 +1855,25 @@ body {
   color: var(--success);
   font-weight: 600;
   margin-right: 2px;
+}
+.prd-task-generated {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin: 4px 0;
+}
+.prd-task-generated-label {
+  color: var(--warning);
+  font-weight: 600;
+  margin-right: 2px;
+}
+.prd-verification-script-tag {
+  color: var(--warning);
+  border: 1px solid var(--warning);
+  border-radius: 3px;
+  padding: 0 4px;
+  font-size: 10px;
 }
 .prd-task-file-chip {
   background: rgba(96,165,250,0.08);
