@@ -587,7 +587,7 @@ established. In progress — starting with BL403.**
     discrepancy directly; not worth more self-build time right now.
 16. **BL417** — `internal/autonomous`'s test suite has recurring,
     CI-load-only flakiness (filed 2026-10-12, found across BL416
-    Phases 1-4's own PRs). *Five* different test names have now failed
+    Phases 1-4's own PRs). *Six* different test names have now failed
     on required CI's full `go test ./...` this session —
     `TestExecutor_CancelledDependencyFailsDependent`,
     `TestRun_OpensPRAfterWorktreePRDCompletesWithAutoPR` (both already
@@ -595,10 +595,13 @@ established. In progress — starting with BL403.**
     reusing a pre-seeded fixture remote), `TestExecutorResume_DoubleRunSafe`,
     `TestExecutor_WorkerStallRespectsRetryBudget` (PR #222 — a
     pre-existing fixture PRD's record leaking state into a shared-ID
-    collision, same package, same symptom), and `TestCheckScript_Fixtures/valid`
+    collision, same package, same symptom), `TestCheckScript_Fixtures/valid`
     (PR #227, `internal/plugins` — exit 141/SIGPIPE, a broken shell
     pipe under CI resource contention, same CI-load pattern in a
-    different package) — none yet investigated past confirming a
+    different package), and `TestScope_ExecutorBlocksOutOfScopeTaskWithoutSpawning`
+    (PR #230, `internal/autonomous` — "PRD did not reach a terminal
+    state"; reproduced 5/5 locally at 0.07s each, only fails under
+    CI's full-suite load) — none yet investigated past confirming a
     rerun always passes. Pattern: never reproduces locally, no matter
     the `-count`; only shows up under CI's full-suite parallel load.
     **Deferred, not blocking Stage 3** — each occurrence so far has
