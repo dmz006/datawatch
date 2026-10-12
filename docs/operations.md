@@ -1844,6 +1844,37 @@ curl -sX POST http://localhost:7433/api/autonomous/prds/<id>/set_llm \
   -d '{"backend":"opencode","decomposition_profile":"opencode","effort":"thorough"}'
 ```
 
+**Guardrail judge LLM** — `guardrail_backend` / `guardrail_model` choose
+the LLM that judges guardrail/verification results, per Automaton
+(`set_llm`) or per task (`set_task_llm`). Resolution: task →
+Automaton → global `orchestrator.guardrail_backend`. These two keys are
+presence-aware: leave a key out to keep the current value, send `""`
+to clear it. Setting only guardrail keys does not change the worker
+`backend` / `effort` / `model` / `decomposition_profile`.
+
+```
+# MCP
+autonomous_prd_set_llm(id="<prd-id>", guardrail_backend="ollama", guardrail_model="qwen3.8:27b")
+autonomous_prd_set_task_llm(id="<prd-id>", task_id="<task-id>", guardrail_backend="")   # clear
+
+# CLI
+datawatch autonomous prd-set-llm <id> --guardrail-backend ollama --guardrail-model qwen3.8:27b
+datawatch autonomous prd-set-task-llm <id> --task <task-id> --guardrail-model ""
+
+# Comm channel
+autonomous set-llm <id> guardrail_backend=ollama guardrail_model=qwen3.8:27b
+autonomous set-task-llm <id> <task-id> guardrail_backend=ollama
+
+# REST
+curl -sX POST http://localhost:7433/api/autonomous/prds/<id>/set_llm \
+  -H "Content-Type: application/json" \
+  -d '{"guardrail_backend":"ollama","guardrail_model":"qwen3.8:27b"}'
+```
+
+`verification_script`, `files_generated` and `files_touched` are
+filled in by the system and are read-only; view them with
+`autonomous_prd_get` / `prd-get` / `autonomous get`.
+
 **Typical setup for opencode-based PRDs:**
 
 1. Configure a global planning backend in `config.yaml` (`autonomous.planning_backend: opencode`)

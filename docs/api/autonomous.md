@@ -42,8 +42,8 @@ POST   /api/autonomous/prds/{id}/reject    operator rejects the plan; body: {act
 POST   /api/autonomous/prds/{id}/request_revision  ask for a re-plan; body: {actor, note}                            [v5.2.0  / BL191 Q1]
 POST   /api/autonomous/prds/{id}/edit_task per-task spec edit on needs_review/revisions_asked; body: {task_id, …}    [v5.2.0  / BL191 Q1]
 POST   /api/autonomous/prds/{id}/instantiate  template instantiation; body: {vars{}, actor}                          [v5.2.0  / BL191 Q2]
-POST   /api/autonomous/prds/{id}/set_llm   PRD-level worker LLM override                                             [v5.4.0  / BL203]
-POST   /api/autonomous/prds/{id}/set_task_llm  per-task LLM override                                                 [v5.4.0  / BL203]
+POST   /api/autonomous/prds/{id}/set_llm   PRD-level worker LLM override; body: {backend, effort, model, decomposition_profile, [guardrail_backend], [guardrail_model], actor}   [v5.4.0  / BL203]
+POST   /api/autonomous/prds/{id}/set_task_llm  per-task LLM override; body: {task_id, backend, effort, model, [guardrail_backend], [guardrail_model], actor}             [v5.4.0  / BL203]
 POST   /api/autonomous/prds/{id}/set_dirs  directory scope; body: {write_dirs[], read_dirs[]} (absolute paths)
 POST   /api/autonomous/prds/{id}/run       kick the executor for this PRD
 GET    /api/autonomous/prds/{id}/children  list child PRDs spawned via SpawnPRD                                      [v5.9.0  / BL191 Q4]
@@ -62,6 +62,41 @@ PUT    /api/autonomous/prds/{id}/guardrails        set per-Automaton override; b
 
 When `autonomous.enabled` is false, every endpoint returns
 `503 autonomous disabled`.
+
+### Guardrail judge LLM override (`set_llm` / `set_task_llm`)
+
+`guardrail_backend` / `guardrail_model` pick the LLM that judges the
+guardrail/verification step for an Automaton or a single task. They
+are presence-aware, unlike the worker-LLM keys:
+
+- **absent** — the field is left unchanged
+- **`""`** — the override is cleared (falls back to the next level)
+- **a value** — sets the override (`guardrail_backend` must be a configured LLM name; unknown names return 400)
+
+A body that carries **only** guardrail keys (plus `task_id` / `actor`)
+does not touch `backend` / `effort` / `model` / `decomposition_profile`.
+A body that carries any worker-LLM key keeps the existing
+overwrite-all behaviour for those keys.
+
+Resolution order: task `guardrail_backend` → Automaton
+`guardrail_backend` → global `orchestrator.guardrail_backend`.
+
+```bash
+# guardrail-only: leaves the worker LLM untouched
+curl -sX POST http://localhost:7433/api/autonomous/prds/<id>/set_llm \
+  -H "Content-Type: application/json" \
+  -d '{"guardrail_backend":"ollama","guardrail_model":"qwen3.8:27b"}'
+
+# clear a task's guardrail model override only
+curl -sX POST http://localhost:7433/api/autonomous/prds/<id>/set_task_llm \
+  -H "Content-Type: application/json" \
+  -d '{"task_id":"<task-id>","guardrail_model":""}'
+```
+
+`verification_script`, `files_generated` and `files_touched` are
+system-populated and read-only — they appear in
+`GET /api/autonomous/prds/{id}` (and the MCP / CLI / comm `get`
+surfaces, which pass the same JSON through) but have no setter.
 
 ---
 
@@ -98,6 +133,8 @@ datawatch autonomous prd-get <id>
 datawatch autonomous prd-plan <id>        # canonical (prd-decompose is a back-compat alias)
 datawatch autonomous prd-run <id>
 datawatch autonomous prd-cancel <id>
+datawatch autonomous prd-set-llm <id> --guardrail-backend ollama --guardrail-model qwen3.8:27b
+datawatch autonomous prd-set-task-llm <id> --task <task-id> --guardrail-backend ""   # clear
 datawatch autonomous learnings
 ```
 
@@ -141,7 +178,14 @@ rest GET /api/autonomous/status
 rest POST /api/autonomous/prds {"spec":"add pagination","project_dir":"/srv/app"}
 rest POST /api/autonomous/prds/abcd1234/plan
 rest POST /api/autonomous/prds/abcd1234/run
+autonomous set-llm abcd1234 guardrail_backend=ollama guardrail_model=qwen3.8:27b
+autonomous set-task-llm abcd1234 t1 claude-code high guardrail_backend=ollama
 ```
+
+`guardrail_backend=` / `guardrail_model=` tokens can be appended to
+`autonomous set-llm` / `set-task-llm`; when they are the only settings
+given, no backend positional is needed and the worker LLM is left
+unchanged. `guardrail_model=` with no value clears the override.
 
 The reply is the JSON response from the daemon, pretty-printed when
 short.
