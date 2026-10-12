@@ -59,6 +59,15 @@ func (a *API) Get(name string) (any, bool) {
 	return a.view(p), true
 }
 
+// Widgets returns the widgets plugin name declares in its manifest (BL403).
+func (a *API) Widgets(name string) ([]Widget, bool) {
+	p, ok := a.R.Get(name)
+	if !ok {
+		return nil, false
+	}
+	return append([]Widget(nil), p.Widgets...), true
+}
+
 func (a *API) Reload() error { return a.R.Discover() }
 
 func (a *API) SetEnabled(name string, on bool) bool {

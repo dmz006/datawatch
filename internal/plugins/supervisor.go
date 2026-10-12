@@ -217,15 +217,29 @@ func NewServiceSupervisor(p *Plugin, store secrets.Store) (*ServiceSupervisor, e
 		if c.HealthPath != "" {
 			s.healthURL = strings.TrimRight(c.BaseURL, "/") + "/" + strings.TrimLeft(c.HealthPath, "/")
 		}
-		if c.Auth != nil && c.Auth.Token != "" && store != nil {
-			tok, err := secrets.ResolveRefAs(c.Auth.Token, store, secrets.CallerCtx{Type: "plugin", Name: p.Name})
-			if err != nil {
-				return nil, fmt.Errorf("plugin %q connection.auth.token: %w", p.Name, err)
-			}
-			s.authHeader = "Bearer " + tok
+		h, err := resolveConnectionAuthHeader(p, store)
+		if err != nil {
+			return nil, err
 		}
+		s.authHeader = h
 	}
 	return s, nil
+}
+
+// resolveConnectionAuthHeader returns the Authorization header value for
+// p's connection.auth ("Bearer <token>", with ${secret:...} refs resolved
+// as the plugin), or "" when no auth is configured or store is nil. Shared
+// by the service supervisor's health probe and the widget pull scheduler.
+func resolveConnectionAuthHeader(p *Plugin, store secrets.Store) (string, error) {
+	c := p.Connection
+	if c == nil || c.Auth == nil || c.Auth.Token == "" || store == nil {
+		return "", nil
+	}
+	tok, err := secrets.ResolveRefAs(c.Auth.Token, store, secrets.CallerCtx{Type: "plugin", Name: p.Name})
+	if err != nil {
+		return "", fmt.Errorf("plugin %q connection.auth.token: %w", p.Name, err)
+	}
+	return "Bearer " + tok, nil
 }
 
 // Name returns the supervised plugin's name.

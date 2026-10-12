@@ -7,6 +7,7 @@
 //   POST   /api/plugins/{name}/enable      optional body: {managed: bool}
 //   POST   /api/plugins/{name}/disable
 //   POST   /api/plugins/{name}/test        body: {hook, payload}
+//   /api/plugins/{name}/widgets/...         BL403, see plugin_widgets.go
 
 package server
 
@@ -192,6 +193,10 @@ func (s *Server) handlePlugins(w http.ResponseWriter, r *http.Request) {
 	action := ""
 	if len(parts) == 2 {
 		action = parts[1]
+	}
+	if action == "widgets" || strings.HasPrefix(action, "widgets/") {
+		s.handlePluginWidgets(w, r, name, strings.TrimPrefix(strings.TrimPrefix(action, "widgets"), "/"))
+		return
 	}
 	switch action {
 	case "":

@@ -41,6 +41,20 @@ const (
 	HookPostSessionOutput   Hook = "post_session_output"
 	HookPostSessionComplete Hook = "post_session_complete"
 	HookOnAlert             Hook = "on_alert"
+	// HookStatusPoll is a oneshot hook the daemon invokes on a widget's
+	// interval to fetch a pull-mode widget's value for kind: automation
+	// plugins (see WidgetScheduler). Contract:
+	//
+	//   - request: {"hook":"status_poll","payload":{"widget_id":…,
+	//     "pull_path":…,"surface":…,"kind":…}} — pull_path lets a plugin
+	//     with several pull widgets tell them apart.
+	//   - response: the widget value is fields.data when present, otherwise
+	//     the whole fields object; it is stored as JSON (at most
+	//     MaxWidgetPayloadBytes).
+	//   - a non-empty error, a missing fields object, a timeout or a
+	//     non-zero exit is a failed pull: the error is recorded and the
+	//     widget keeps its previous value.
+	HookStatusPoll Hook = "status_poll"
 )
 
 // Manifest v3 (BL403 Phase 1) — plugin kinds.
@@ -167,6 +181,13 @@ type Manifest struct {
 	Kind       string            `yaml:"kind,omitempty" json:"kind,omitempty"`
 	Connection *PluginConnection `yaml:"connection,omitempty" json:"connection,omitempty"`
 	Lifecycle  *PluginLifecycle  `yaml:"lifecycle,omitempty" json:"lifecycle,omitempty"`
+
+	// Widgets (BL403) declares PWA dashboard/session widgets. Both kinds may
+	// declare widgets. Pull-mode data for automation plugins comes from the
+	// status_poll hook; pull-mode data for service plugins comes from
+	// GET <connection.base_url><pull_path>. Push-mode data is POSTed by the
+	// plugin to /api/plugins/{name}/widgets/{widget_id}. See widgets.go.
+	Widgets []Widget `yaml:"widgets,omitempty" json:"widgets,omitempty"`
 }
 
 // PluginConnection is how datawatch reaches a service-kind plugin as a
@@ -245,6 +266,7 @@ func (m Manifest) Validate() error {
 	default:
 		errs = append(errs, fmt.Errorf("kind %q is invalid: must be %q or %q", m.Kind, KindAutomation, KindService))
 	}
+	errs = append(errs, validateWidgets(m.Kind, m.Widgets)...)
 	return errors.Join(errs...)
 }
 
@@ -406,6 +428,10 @@ type Registry struct {
 	supervisors    map[string]*ServiceSupervisor
 	serviceEventFn func(ServiceEvent)
 	started        bool
+
+	// changeFn is called after every rediscover and enable/disable toggle,
+	// outside r.mu (see SetChangeFn).
+	changeFn func()
 }
 
 // NewRegistry scans cfg.Dir and returns a registry. A nil return is
@@ -450,7 +476,27 @@ func (r *Registry) Discover() error {
 	start, stop := r.reconcileServicesLocked(false)
 	r.mu.Unlock()
 	r.applyServiceChanges(context.Background(), start, stop)
+	r.notifyChange()
 	return err
+}
+
+// SetChangeFn sets a hook called after every Discover (hot-reload, the
+// reload API, Install) and SetEnabled, so dependents such as the widget
+// scheduler can follow the plugin set. fn runs outside the registry lock
+// and may call back into the registry.
+func (r *Registry) SetChangeFn(fn func()) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.changeFn = fn
+}
+
+func (r *Registry) notifyChange() {
+	r.mu.Lock()
+	fn := r.changeFn
+	r.mu.Unlock()
+	if fn != nil {
+		fn()
+	}
 }
 
 // discoverLocked rebuilds byName from the plugin directory; caller holds r.mu.
@@ -535,6 +581,7 @@ func (r *Registry) SetEnabled(name string, on bool) bool {
 	start, stop := r.reconcileServicesLocked(false)
 	r.mu.Unlock()
 	r.applyServiceChanges(context.Background(), start, stop)
+	r.notifyChange()
 	return true
 }
 

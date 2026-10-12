@@ -1071,6 +1071,92 @@ paths:
                 hook: {type: string}
                 payload: {type: object}
       responses: {"200": {description: OK}, "400": {description: Bad Request}}
+  # Plugin widgets (BL403). "token" is a reserved widget id: manifests may
+  # not declare it, so the token path never collides with {widget_id}.
+  /api/plugins/{name}/widgets:
+    get:
+      summary: List a plugin's declared widgets merged with their latest values
+      description: Operator auth. Each entry is the manifest widget plus `value` (a WidgetValue, or null before any value arrived).
+      operationId: pluginWidgetsList
+      tags: [Plugins]
+      parameters: [{name: name, in: path, required: true, schema: {type: string}}]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  plugin: {type: string}
+                  widgets: {type: array, items: {$ref: '#/components/schemas/PluginWidgetView'}}
+        "404": {description: Unknown plugin}
+        "503": {description: Plugin widgets not wired}
+  /api/plugins/{name}/widgets/token:
+    post:
+      summary: Mint (or rotate) the plugin's widget push token
+      description: |
+        Operator auth. The plugin must exist. The plaintext token is returned
+        once; only its bcrypt hash is stored (<data_dir>/plugins/widget_tokens.json).
+        Calling again rotates the token and invalidates the previous one.
+      operationId: pluginWidgetTokenMint
+      tags: [Plugins]
+      parameters: [{name: name, in: path, required: true, schema: {type: string}}]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: {type: string}
+        "404": {description: Unknown plugin}
+  /api/plugins/{name}/widgets/{widget_id}:
+    parameters:
+      - {name: name, in: path, required: true, schema: {type: string}}
+      - {name: widget_id, in: path, required: true, schema: {type: string}}
+    get:
+      summary: One declared widget with its latest value
+      description: Operator auth.
+      operationId: pluginWidgetGet
+      tags: [Plugins]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PluginWidgetView'}
+        "404": {description: Unknown plugin, or widget not declared by the plugin}
+    post:
+      summary: Push a value for a push-mode widget
+      description: |
+        Authenticated with the plugin's own push token (`Authorization: Bearer <token>`
+        from POST /api/plugins/{name}/widgets/token), not the operator token. The
+        request body is the widget value itself: any JSON document, stored as-is
+        (no {"data": ...} envelope), up to 65536 bytes.
+      operationId: pluginWidgetPush
+      tags: [Plugins]
+      security: [{BearerToken: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {description: Any JSON value}
+      responses:
+        "200":
+          description: Stored
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  updated_at: {type: string, format: date-time}
+        "400": {description: Body is not valid JSON}
+        "401": {description: Missing, malformed or wrong push token}
+        "404": {description: Unknown plugin, or widget not declared by the plugin}
+        "409": {description: Widget is pull-mode; push is not accepted}
+        "413": {description: Body over 65536 bytes}
 
   # ─── PRD-DAG orchestrator (BL117, v4.0.0) ──────────────────────
   /api/orchestrator/config:
@@ -2517,6 +2603,26 @@ components:
             example: "unauthorized"
 
   schemas:
+    PluginWidgetView:
+      type: object
+      description: A manifest widget plus its latest stored value.
+      properties:
+        id: {type: string}
+        surface: {type: string, enum: [dashboard, session]}
+        kind: {type: string, enum: [stat_tile, table, list, sparkline, status_badge, markdown]}
+        data_mode: {type: string, enum: [push, pull]}
+        pull_path: {type: string}
+        interval_seconds: {type: integer}
+        value:
+          nullable: true
+          type: object
+          properties:
+            plugin: {type: string}
+            widget_id: {type: string}
+            data: {description: The widget value as pushed or pulled}
+            updated_at: {type: string, format: date-time}
+            source: {type: string, enum: [push, pull]}
+            error: {type: string, description: Last pull error; data keeps the previous value}
     ChannelDiagnostics:
       type: object
       properties:

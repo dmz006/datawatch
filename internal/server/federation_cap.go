@@ -46,6 +46,10 @@ const (
 	// VerifyLastHop — logged as a flag, never trusted, never rejected
 	// (see fedAuthMiddleware's peer branch).
 	hopChainInvalidKey
+	// pluginPushKey (BL403) holds the plugin name a request authenticated
+	// as via that plugin's widget push token. Set only by
+	// fedAuthMiddleware's narrow push-route fallback below.
+	pluginPushKey
 )
 
 // peerFromContext returns the federated peer from the request context,
@@ -293,6 +297,18 @@ func (s *Server) fedAuthMiddleware(next http.Handler) http.Handler {
 				next.ServeHTTP(w, r2)
 				return
 			}
+		}
+		// BL403: a plugin's widget push token -- accepted only for POST
+		// /api/plugins/{name}/widgets/{widget_id} with the EXACT plugin
+		// the token was minted for, so a plugin process authenticates
+		// with its own token and never holds the operator token.
+		if name, ok := s.verifyPluginPushToken(r, tok); ok {
+			ctx := context.WithValue(r.Context(), pluginPushKey, name)
+			ctx = federation.ContextWithPrincipal(ctx, "plugin:"+name)
+			r2 := r.WithContext(ctx)
+			s.logAccess(r2, http.StatusOK, "plugin:"+name)
+			next.ServeHTTP(w, r2)
+			return
 		}
 		s.logAccess(r, http.StatusUnauthorized, "unauthenticated")
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
