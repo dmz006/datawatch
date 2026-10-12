@@ -43,7 +43,17 @@ const (
 	HookOnAlert             Hook = "on_alert"
 	// HookStatusPoll is a oneshot hook the daemon invokes on a widget's
 	// interval to fetch a pull-mode widget's value for kind: automation
-	// plugins. The widget's pull_path is carried in the request payload.
+	// plugins (see WidgetScheduler). Contract:
+	//
+	//   - request: {"hook":"status_poll","payload":{"widget_id":…,
+	//     "pull_path":…,"surface":…,"kind":…}} — pull_path lets a plugin
+	//     with several pull widgets tell them apart.
+	//   - response: the widget value is fields.data when present, otherwise
+	//     the whole fields object; it is stored as JSON (at most
+	//     MaxWidgetPayloadBytes).
+	//   - a non-empty error, a missing fields object, a timeout or a
+	//     non-zero exit is a failed pull: the error is recorded and the
+	//     widget keeps its previous value.
 	HookStatusPoll Hook = "status_poll"
 )
 
