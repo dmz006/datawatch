@@ -43,16 +43,7 @@ func (m *Manager) rulesContextSuffix(prd *PRD) string {
 	if prd.ProjectDir == "" {
 		return ""
 	}
-	m.mu.Lock()
-	rulesFile := m.cfg.RulesFile
-	contextFile := m.cfg.ContextFile
-	m.mu.Unlock()
-	if rulesFile == "" {
-		rulesFile = "AGENT.md"
-	}
-	if contextFile == "" {
-		contextFile = "CONTEXT.md"
-	}
+	rulesFile, contextFile := m.rulesContextFilenames()
 	var names []string
 	if fileExists(filepath.Join(prd.ProjectDir, rulesFile)) {
 		names = append(names, rulesFile)
@@ -71,6 +62,24 @@ func (m *Manager) rulesContextSuffix(prd *PRD) string {
 		" at the root of your working directory — they define this" +
 		" project's development/testing/documentation rules and" +
 		" current state. Follow them when decomposing this PRD."
+}
+
+// rulesContextFilenames returns the configured RulesFile and
+// ContextFile names, defaulting to "AGENT.md" / "CONTEXT.md". Shared
+// by rulesContextSuffix and verificationScriptSuffix (BL416 Phase 2)
+// so both point the planning session at the same files.
+func (m *Manager) rulesContextFilenames() (rulesFile, contextFile string) {
+	m.mu.Lock()
+	rulesFile = m.cfg.RulesFile
+	contextFile = m.cfg.ContextFile
+	m.mu.Unlock()
+	if rulesFile == "" {
+		rulesFile = "AGENT.md"
+	}
+	if contextFile == "" {
+		contextFile = "CONTEXT.md"
+	}
+	return rulesFile, contextFile
 }
 
 func fileExists(path string) bool {
