@@ -208,6 +208,8 @@ Research + decision capture. Done, this file is the artifact.
 
 ### Phase 3 — Widget data model & transport
 
+- **Status**: Done — shipped in v9.0.40 (schema and transport only; nothing renders widgets until Phase 4). Mobile-Parity: N/A for this phase. No PWA file changed, and the API changes are additive (new widget endpoints, plus a `widgets` field on plugins that declare one in `GET /api/plugins`) and read by no client yet. The `datawatch-app` issue is owed with Phase 4.
+
 - New `Widget` declaration (lives in the plugin manifest, both kinds can
   declare widgets — an `automation` plugin's widget data comes from a
   new oneshot hook, e.g. `status_poll`, fitting `Invoke()` exactly as-is;

@@ -5,6 +5,84 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.40 — feat(plugins): plugin widgets — manifest block, push/pull transport, latest-value store
+
+### Added
+- **Plugin widgets (schema and transport only).** A plugin manifest may
+  now declare a `widgets:` list. Both `kind: automation` and
+  `kind: service` plugins can declare widgets. Each widget has:
+  - `id`: unique within the manifest. `token` is reserved.
+  - `surface`: `dashboard` or `session`.
+  - `kind`: one of the six renderer kinds `stat_tile`, `table`, `list`,
+    `sparkline`, `status_badge`, `markdown`.
+  - `data_mode`: chosen **per widget**, `push` or `pull`.
+  - `pull_path`: required for pull widgets, must be empty for push
+    widgets, and must start with `/` on service plugins.
+  - `interval_seconds`: pull widgets only. `0`/unset means the 30s
+    default; negative values are rejected.
+  Invalid widget blocks fail manifest validation like any other manifest
+  error: the plugin is skipped at discovery and rejected at install.
+- **Pull data sourcing.** The daemon pulls each enabled plugin's pull
+  widgets on their own interval, one isolated worker per widget, so a
+  slow or hung pull only delays that widget. A tick that arrives while
+  the previous pull is still running is skipped, not queued.
+  - `kind: automation`: through a new oneshot `status_poll` hook, using
+    the normal hook invocation (same subprocess, `timeout_ms`, env and
+    secrets handling as every other hook). The request payload carries
+    `widget_id`, `pull_path`, `surface` and `kind`. The value is
+    `fields.data` in the response, or the whole `fields` object when
+    there is no `data` key.
+  - `kind: service`: `GET <connection.base_url><pull_path>`, sending the
+    connection's resolved `${secret:…}` bearer token when
+    `connection.auth` is set. The JSON response body is stored as-is.
+  - A failed pull (error response, non-2xx, timeout, invalid or
+    oversized JSON) records the error on the widget and keeps its
+    previous value.
+- **Push endpoint.** `POST /api/plugins/{name}/widgets/{widget_id}`
+  stores the request body (any JSON document, at most 64 KiB) as the
+  widget's latest value. It authenticates with a **plugin-scoped push
+  token**, not the operator token. The token is minted, or rotated, by
+  `POST /api/plugins/{name}/widgets/token` (operator auth) and is
+  returned only once. Only a bcrypt hash is kept, in
+  `<data_dir>/plugins/widget_tokens.json`. A token works only on that
+  plugin's push route, and the operator token is not accepted there. Responses: `200 {"updated_at": …}`; `400` invalid
+  JSON; `401` missing/wrong token; `404` unknown plugin or undeclared
+  widget; `409` push to a pull-mode widget; `413` payload over 64 KiB.
+- **Read endpoints** (operator auth): `GET /api/plugins/{name}/widgets`
+  (every declared widget plus its latest value) and
+  `GET /api/plugins/{name}/widgets/{widget_id}` (one widget). `value` is
+  `null` until data arrives. When it is set, it carries `data`,
+  `updated_at`, `source` (`push`/`pull`) and the last pull `error`.
+- **Latest-value storage.** One latest value per (plugin, widget) is kept
+  in memory and snapshotted to `<data_dir>/plugins/widgets.json` every
+  60s when something changed, plus once more on shutdown. Widgets keep
+  their last value across a daemon restart.
+- **Not in this release:** nothing renders widgets yet. There is no
+  PWA, mobile, MCP, CLI or comm-channel widget surface; the generic
+  PWA renderer is a later phase. Widget endpoints return `503` when
+  `plugins.enabled` is off.
+
+### Mobile parity
+- N/A. No PWA file changed and nothing operator-visible changed in the
+  PWA. The API changes are additive: the new widget endpoints, plus a
+  `widgets` field on plugins that declare one in `GET /api/plugins` /
+  `GET /api/plugins/{name}`. No PWA or mobile client reads them yet. A `datawatch-app` issue is due with the phase that
+  adds widget rendering.
+
+### Reuse audit
+- Pull for automation plugins reuses the existing hook invocation
+  path. Service pulls reuse the connection bearer-auth resolution from
+  managed-service health probes. The push-token registry copies the
+  observer-peer token shape (random 32 bytes, base64url, bcrypt at
+  rest, tmp+rename at 0600) but is a separate registry: a plugin is
+  not a federation peer and must not appear in the peer views.
+
+### Tests
+- Manifest validation, store snapshot and restart, scheduler interval
+  and hung-pull isolation, push endpoint accept, reject and auth, and
+  the token registry. See the "Plugin widgets data model and transport
+  — v9.0.40" section of `docs/testing-tracker.md`.
+
 ## v9.0.39 — feat(autonomous): guardrail LLM overrides settable per automaton / per task; verification + file provenance visible
 
 ### Added
