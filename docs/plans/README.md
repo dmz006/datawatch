@@ -362,10 +362,16 @@ PR open pending operator merge.**
 **Stage 3 — full backlog, PRD-driven, one item at a time, confidence
 established. In progress — starting with BL403.**
 4. **BL403** — Plugin Extension Surfaces. Before BL405: its Phase 3/4
-   widget `Kind` taxonomy is what BL405 Phase 10 consumes. **Phases 1
-   and 2 shipped** (v9.0.31–33, PRs #206/#213) — Phase 2's merge is
-   what surfaced BL416 below. **Unpaused 2026-10-12** — BL416 Phases
-   0-4 shipped, so Phase 3+ resumes next with the real gate in place.
+   widget `Kind` taxonomy is what BL405 Phase 10 consumes. **Phases 1,
+   2 and 3 shipped** (v9.0.31–40, PRs #206/#213/#221). Phase 2's merge
+   is what surfaced BL416 below. Phase 3 (widget manifest schema,
+   per-widget pull scheduler with hung-pull isolation, plugin-scoped
+   push auth + endpoint, disk-snapshotted latest-value store) shipped
+   2026-10-12 — see B123 above for a verifier-reliability finding
+   surfaced reviewing this phase's own run (no code defect; the
+   implementation was correct). **Next: Phase 4** (generic PWA widget
+   renderer) — first operator-visible surface of this plan, so give
+   its decompose output an extra look before approving.
 5. **BL416** — Tooled, Deterministic PRD Guardrails (filed 2026-10-12,
    plan: `docs/plans/2026-10-12-tooled-deterministic-guardrails.md`).
    **Phases 0-4 shipped same day** (v9.0.34–39, PRs #214/#216/#217/
@@ -650,7 +656,7 @@ else is in `historical-plans/`):
 | `2026-10-10-configurable-project-rules-enforcement.md` | BL406 (+B111/B112/B113) | Stage 1 #1 — **done**, all 6 phases shipped (v9.0.11–v9.0.17) |
 | `2026-10-10-prd-git-workflow.md` | BL407 (+B114) | Stage 1 #2 — shipped v9.0.23 (Phases 0-6 all done) |
 | _(no plan doc yet — ran directly as a PRD)_ | BL404 | Stage 2 #3 — done, PR `datawatch#205` open pending merge |
-| `2026-10-09-plugin-extension-surfaces.md` | BL403 | Stage 3 #4 — in progress; Phase 1 (manifest v3 parse/validate) shipped v9.0.31, Phase 2 next |
+| `2026-10-09-plugin-extension-surfaces.md` | BL403 | Stage 3 #4 — in progress; Phases 1-3 shipped (v9.0.31–40), Phase 4 (PWA renderer) next |
 | `2026-10-09-gh204-result-panel.md` | BL402 (GH#204) | Stage 3 #5 |
 | `2026-10-10-llm-enhancements.md` | BL405 (absorbs BL390 P2/P3) | Stage 3 #6 |
 | `2026-10-04-f2-session-worker-isolation.md` | BL395 (security track) | Stage 3 #7 |
@@ -1102,6 +1108,35 @@ _2026-05-02 operator-filed items promoted directly to BL218–BL221. 2026-05-03 
 > case before today — is completely unaffected. 7 new tests in new
 > `internal/session/tmux_large_payload_test.go`, including an exact
 > reproduction of the real failure's scale. No longer open.
+
+> **B123** — local-model verifier gave an incorrect completeness
+> critique despite marking the task `ok: true`. Found live reviewing
+> BL403 Phase 3's own PRD run (task 95cad9cf, the pull scheduler,
+> `internal/plugins/widget_scheduler.go`): the verification record said
+> `"ok":true` but listed issues — "The Reconcile method is incomplete
+> and missing critical logic", "intervalFor function implementation is
+> missing", "Worker management and tickers are partially implemented",
+> "Test coverage for interval respect and hung pulls is incomplete".
+> Independently read the real diff: `Reconcile()` is fully implemented
+> (stop/start workers by key, `sameAs` diff against the desired set);
+> there is no function literally named `intervalFor` but there IS an
+> `s.intervalFor` field used exactly as the task spec asked for (a test
+> override hook for sub-second intervals) — the verifier apparently
+> expected a free function by that name and didn't recognize the field
+> form; `widget_scheduler_test.go` has all 6 required test properties
+> plus 4 extra (10 test functions total), including
+> `TestWidgetScheduler_IntervalRespected` and
+> `TestWidgetScheduler_HungPullIsolation` by name. This PRD's
+> `verification_backend` is `ollama-datawatch` (a small local model) —
+> the autonomous config's own comment elsewhere in this doc already
+> notes guardrail/verifier judgment quality varies by backend size.
+> Nothing was fixed in the code (it was already correct); this is a
+> process finding about verifier reliability, not a code defect — filed
+> per the operator's standing instruction to report PRD/process defects
+> rather than silently patch them. Open: worth a dedicated look at
+> whether `verification_backend` should default to a stronger model, or
+> whether the guardrail prompt should be tightened so a model naming
+> specific missing symbols is told to grep for them first.
 
 _(Otherwise no open bugs as of the 2026-10-09/10 backlog refactor —
 everything previously listed here was already closed and has been moved
