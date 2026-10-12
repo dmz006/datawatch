@@ -9,6 +9,31 @@ Do not mark **Validated=Yes** based solely on unit tests.
 
 ---
 
+## Managed service-kind plugin supervision (`plugins.managed`, enable `{"managed":true}`) — v9.0.32
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| `ServiceSupervisor` (`internal/plugins/supervisor.go`) — start → healthy, healthy → crashed on exit, `on-failure` restart vs clean-exit stop, `always` restarts after exit 0, `never` does not restart, health never passing gives up after MaxRestarts with every child reaped, probe failures after healthy, graceful stop within `stop_timeout_ms`, SIGTERM-ignoring child force-killed, Stop idempotent, missing entry / cancelled ctx, constructor validation, backoff, output tail | **Yes** (`internal/plugins/supervisor_test.go`, 16 tests driving a real helper binary `internal/plugins/testdata/svchelper`, not a mocked `os/exec`) | **Yes** | `go test -race -count=3 ./internal/plugins/` green when added; full `go test ./...` green for this release | Real child processes + real HTTP health endpoint inside `go test`; not yet run with a real third-party service plugin |
+| `Registry` managed set (`SetManaged`, `StartManaged`, `StopAll`, `ServiceStatus`, reconcile on Discover/`SetEnabled`) — automation and attach-only plugins never started, not-opted-in never started, nothing spawned before `StartManaged`, stop on disable, opt-in/out at runtime, rediscover keeps running children / stops removed / starts new, `StopAll` reaps all, one failed start does not block others | **Yes** (`TestRegistry_Managed_*`, `TestRegistry_SetManaged`, `TestRegistry_StopAll`, `TestRegistry_StartManaged_FailureDoesNotBlockOthers` in `internal/plugins/plugins_test.go`) | **Yes** | Temp-dir plugin roots + helper binary inside `go test` | — |
+| `POST /api/plugins/{name}/enable` optional body `{"managed": bool}` (**contract change: new request body**) — empty body unchanged, `true` opts in before enabling, `false` opts out, body without `managed` unchanged, `400` when managed not declared, `404` unknown plugin, `400` malformed body, disable ignores body | **Yes** (`TestPluginEnable_*`, `TestPluginDisable_IgnoresBody` in `internal/server/plugins_managed_test.go`) | No | `httptest` against the server handler with a fake `PluginsAPI` | Not yet exercised against a running daemon |
+| `GET /api/plugins` / `GET /api/plugins/{name}` `service` status object (`state`, `pid`, `restarts`, `last_error`) on supervised plugins (**contract change, additive**) | **Yes** (Registry-level `ServiceStatus` covered by the `TestRegistry_Managed_*` tests; JSON view in `internal/plugins/api.go`) | No | Struct-level only; no HTTP-level test asserts the `service` object | Plugins without a supervisor encode exactly as before |
+| Audit actions `plugin_service_start` / `_stop` / `_restart` / `_health_fail` (actor `daemon`) | **Yes** (`TestAuditPluginService_WritesEntry`, `TestAuditPluginService_NilLogIsNoop`) | No | Writes through the real audit log in a temp dir | Daemon wiring in `cmd/datawatch/main.go` (`SetServiceEventFn` → log + audit, `StartManaged`, deferred `StopAll` 30s) is covered by build only |
+| MCP `plugin_enable` `managed` arg | **Yes** (`TestPluginEnable_NoManagedSendsNoBody`, `TestPluginEnable_ManagedSendsBody`, `TestPluginEnable_ToolDeclaresManagedArg` in `internal/mcp/plugins_test.go`) | No | Proxy body captured by a test server | Body sent only when the arg is supplied |
+
+**Manual verification steps (live, not yet performed):**
+1. Install a service plugin whose manifest lists `managed` in `lifecycle.supported_modes`, with `connection.health_path` and `restart_policy: on-failure`.
+2. Set `plugins.enabled: true` and `plugins.managed: [<name>]`; restart the daemon (`systemctl --user restart datawatch`). Expect `GET /api/plugins/<name>` → `service.state` `starting` then `healthy`, and an audit `plugin_service_start`.
+3. `kill -9` the child PID. Expect `plugin_service_restart`, a new `pid`, `restarts` incremented, state back to `healthy`.
+4. Make the health endpoint return 500 (or block it). Expect `unhealthy`, then `plugin_service_health_fail` after 3 probes and a restart.
+5. Make the child exit non-zero on every start. Expect state `failed` and `plugin_service_stop` with `reason: max_restarts` after 6 consecutive failures.
+6. `POST /api/plugins/<name>/disable`. Expect `plugin_service_stop` `reason: requested` and the process group gone within `stop_timeout_ms`.
+7. Re-enable with `{"managed": true}`, then stop the daemon. Expect the child reaped before the daemon exits.
+8. Negative: `POST /api/plugins/<attach-only-plugin>/enable` with `{"managed": true}` → `400`.
+
+**Mobile parity:** No PWA change. The plugin JSON (`service` object) and the enable request body are API contract changes, so the Mobile-Parity Rule applies and a `datawatch-app` issue/comment is required; not filed from this automated run — flagged for the operator (see CHANGELOG v9.0.32).
+
+**Configuration accessibility:** YAML (`plugins.managed`), REST (enable body, runtime) and MCP (`plugin_enable` `managed`) covered. CLI flag, comm-channel command (beyond the generic `rest` passthrough), PWA control and generic config-set support for `plugins.managed` deferred to the operator UI phase.
+
 ## CVE-2026-77214 (libexpat1) — new finding triaged under the GH#197 standard
 
 Added in v8.73.35. Found live by manually re-triggering `image-refresh.yaml`

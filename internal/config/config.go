@@ -2223,6 +2223,10 @@ type PluginsConfig struct {
 	TimeoutMs int `yaml:"timeout_ms,omitempty" json:"timeout_ms,omitempty"`
 	// Disabled is the list of plugin names to skip at discovery.
 	Disabled []string `yaml:"disabled,omitempty" json:"disabled,omitempty"`
+	// Managed names the kind:service plugins the operator allows datawatch
+	// to start/stop; absent = never managed. Only honoured for plugins whose
+	// manifest lifecycle.supported_modes declares "managed".
+	Managed []string `yaml:"managed,omitempty" json:"managed,omitempty"`
 }
 
 // UpdateConfig controls automatic self-update behaviour.

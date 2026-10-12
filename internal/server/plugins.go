@@ -4,7 +4,7 @@
 //   GET    /api/plugins                    list discovered + status
 //   POST   /api/plugins/reload             rescan dir
 //   GET    /api/plugins/{name}             one plugin
-//   POST   /api/plugins/{name}/enable
+//   POST   /api/plugins/{name}/enable      optional body: {managed: bool}
 //   POST   /api/plugins/{name}/disable
 //   POST   /api/plugins/{name}/test        body: {hook, payload}
 
@@ -13,7 +13,9 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"net/http"
 	"os"
@@ -34,12 +36,31 @@ type PluginsAPI interface {
 	Get(name string) (any, bool)
 	Reload() error
 	SetEnabled(name string, on bool) bool
+	// SetManaged sets the operator opt-in for datawatch to supervise the
+	// plugin's service. False when the plugin is unknown or does not
+	// declare the managed lifecycle mode.
+	SetManaged(name string, on bool) bool
 	Test(ctx context.Context, name, hook string, payload map[string]any) (any, error)
 	Install(sourceDir string) error
 }
 
 // SetPluginsAPI — called from main.go.
 func (s *Server) SetPluginsAPI(p PluginsAPI) { s.pluginsAPI = p }
+
+// pluginServiceActor is the audit actor for managed plugin service
+// events: the supervisor, not a request, originates them.
+const pluginServiceActor = "daemon"
+
+// AuditPluginService records a managed plugin service lifecycle event
+// (plugin_service_start / _stop / _restart / _health_fail) in the audit
+// log. details is copied, never mutated.
+func (s *Server) AuditPluginService(plugin, action string, details map[string]any) {
+	d := make(map[string]any, len(details)+2)
+	for k, v := range details {
+		d[k] = v
+	}
+	s.auditAs(pluginServiceActor, action, "plugin", plugin, d)
+}
 
 func (s *Server) handlePlugins(w http.ResponseWriter, r *http.Request) {
 	rest := strings.TrimPrefix(r.URL.Path, "/api/plugins")
@@ -195,6 +216,9 @@ func (s *Server) handlePlugins(w http.ResponseWriter, r *http.Request) {
 		if !s.fedCap(w, r, federation.CapConfigWrite) {
 			return
 		}
+		if action == "enable" && !s.applyPluginManaged(w, r, name) {
+			return
+		}
 		if !s.pluginsAPI.SetEnabled(name, action == "enable") {
 			http.Error(w, "not found", http.StatusNotFound)
 			return
@@ -229,6 +253,31 @@ func (s *Server) handlePlugins(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "unknown action: "+action, http.StatusBadRequest)
 	}
+}
+
+// applyPluginManaged handles the optional enable body {"managed": bool}.
+// An empty body leaves the managed opt-in untouched. It writes the error
+// response and returns false when the request must not proceed.
+func (s *Server) applyPluginManaged(w http.ResponseWriter, r *http.Request, name string) bool {
+	var req struct {
+		Managed *bool `json:"managed"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+		http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+		return false
+	}
+	if req.Managed == nil {
+		return true
+	}
+	if _, ok := s.pluginsAPI.Get(name); !ok {
+		http.Error(w, "not found", http.StatusNotFound)
+		return false
+	}
+	if !s.pluginsAPI.SetManaged(name, *req.Managed) {
+		http.Error(w, "plugin "+name+" does not declare managed lifecycle support", http.StatusBadRequest)
+		return false
+	}
+	return true
 }
 
 // listNativePlugins computes a serialisable list of native subsystem

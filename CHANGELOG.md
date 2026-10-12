@@ -5,6 +5,105 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.33 — feat(plugins): supervised lifecycle for managed service-kind plugins
+
+### Added
+- datawatch can now start, health-check, restart and stop a
+  `kind: service` plugin as a child process ("managed" mode). This is
+  **opt-in on both sides**: the plugin author must list `managed` in
+  `lifecycle.supported_modes` (the ceiling), **and** the operator must
+  opt the plugin in — persistently with the new `plugins.managed` config
+  list, or at runtime with `POST /api/plugins/{name}/enable` and body
+  `{"managed": true}` (MCP: `plugin_enable` with `managed: true`). The
+  plugin must also be enabled and `plugins.enabled` must be on. An
+  opt-in for a plugin that does not declare `managed` is rejected
+  (`400`), never forced.
+- **Start:** an eligible plugin is started at daemon boot and whenever it
+  becomes eligible later (enabled, opted in, or newly discovered on
+  reload). `lifecycle.entry` runs with `lifecycle.args` as a plain child
+  process in its own process group, with the same env handling as hook
+  plugins (`${secret:NAME}` env values work).
+- **Health:** when `connection.health_path` is set, datawatch GETs
+  `base_url` + `health_path` every 5s (sending the resolved
+  `connection.auth` bearer token if configured). The first 2xx marks the
+  service healthy. No 2xx within 30s of launch, or 3 consecutive failed
+  probes after it was healthy, is a health failure: the child is stopped
+  and the failure goes through the restart policy. Without a
+  `health_path`, a process still running 30s after launch counts as
+  healthy.
+- **Restart** per `lifecycle.restart_policy`: `on-failure` (default)
+  restarts after a non-zero exit, a signal or a health failure, and
+  treats a clean exit 0 as an intentional stop; `always` restarts after
+  any exit; `never` never restarts. Restarts back off exponentially
+  (1s doubling, capped at 30s). **Bounded give-up:** after 5 restarts
+  in a row without a stable run (the 6th consecutive failure),
+  supervision stops and the service is left in state `failed`. A run that stays healthy for 60s
+  resets the failure count.
+- **Stop:** disabling the plugin, opting it out (`{"managed": false}`)
+  and daemon shutdown all stop the service gracefully — SIGTERM to the
+  process group, wait up to `lifecycle.stop_timeout_ms` (default 10s),
+  then SIGKILL — and wait for the child to be reaped. On shutdown all
+  managed services are stopped concurrently (bounded at 30s overall).
+  A hot-reload of the plugin dir never orphans a running child.
+- Four new audit actions, written with actor `daemon`:
+  `plugin_service_start`, `plugin_service_stop`,
+  `plugin_service_restart`, `plugin_service_health_fail`. The same
+  events are also printed to the daemon log.
+- Config: `plugins.managed` — list of plugin names the operator allows
+  datawatch to supervise. Absent/empty means nothing is ever managed.
+
+### Changed
+- `GET /api/plugins` and `GET /api/plugins/{name}` include a `service`
+  object (`state`, `pid`, `restarts`, `last_error`) on plugins that
+  currently have a supervisor. `state` is one of `stopped`, `starting`,
+  `healthy`, `unhealthy`, `crashed`, `restarting`, `failed`,
+  `stopping`. Additive only; every other plugin encodes exactly as
+  before.
+- `POST /api/plugins/{name}/enable` accepts an optional JSON body
+  `{"managed": bool}`. An empty body behaves exactly as before. `400`
+  when the plugin does not declare managed support or the body is
+  malformed, `404` when the plugin is unknown.
+- MCP `plugin_enable` gains an optional boolean `managed` argument; it
+  sends a body only when the argument is supplied.
+
+### Unchanged
+- Automation-kind plugins (hooks) behave exactly as before.
+- Service plugins that only declare `attach_only`, or that are not
+  opted in, are never started, stopped or probed by datawatch.
+
+### Configuration accessibility
+- YAML (`plugins.managed`), REST (enable body) and MCP (`plugin_enable`
+  `managed`) are covered. The REST/MCP opt-in is runtime-only (like
+  enable/disable); `plugins.managed` in config is the persistent source.
+- Deferred to later phases: CLI (`datawatch plugins enable` has no
+  managed flag yet), comm channel (reachable today only through the
+  generic `rest` passthrough), PWA (no plugin settings UI for this yet),
+  and `plugins.managed` via the generic config-set path (not yet in
+  `applyConfigPatch`). Reason: this release ships the runtime
+  supervisor and its minimum operator controls; the remaining surfaces
+  land with the operator UI phase.
+
+### Mobile parity
+- No PWA change. Decision: the rule's API-contract clause **does**
+  apply — the plugin JSON gains an additive `service` object and the
+  enable endpoint accepts a new request body, both of which mobile
+  clients parse/send. A `datawatch-app` issue (or a comment on the
+  plan's mobile tracking issue, still not filed — see v9.0.31) is
+  required; it was not filed from this automated run and is flagged
+  for the operator to file.
+
+### Reuse audit
+- Reuse audit — what existing primitive does this extend? The
+  supervisor reuses the agent orchestrator / docker driver pattern from
+  `internal/agents`: a typed state string (as `NodeState`), a single
+  reconcile loop driven by a context plus poll ticker (as
+  `Orchestrator.runNode`), and graceful-then-force termination (as
+  `DockerDriver.Terminate`). No driver code is called. Registry-level
+  management extends the existing `plugins.Registry` and its
+  `Disabled`/`SetEnabled` toggle pattern; child env reuses
+  `resolvePluginEnv`; audit reuses the server audit path. No new
+  registry or persistence layer.
+
 ## v9.0.32 — feat(plugins): plugin manifest v3 — `kind` / `connection` / `lifecycle`
 
 ### Added

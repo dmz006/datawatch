@@ -1083,6 +1083,13 @@ func (s *HTTPServer) SetPluginsAPI(api PluginsAPI) {
 	s.api.SetPluginsAPI(api)
 }
 
+// AuditPluginService records a managed plugin service lifecycle event in
+// the audit log. The daemon passes it to the plugin registry's service
+// event sink.
+func (s *HTTPServer) AuditPluginService(plugin, action string, details map[string]any) {
+	s.api.AuditPluginService(plugin, action, details)
+}
+
 // SetOrchestratorAPI (BL117) wires the PRD-DAG orchestrator for REST
 // endpoints. Nil disables /api/orchestrator/*.
 func (s *HTTPServer) SetOrchestratorAPI(api OrchestratorAPI) {

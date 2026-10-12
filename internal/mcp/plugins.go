@@ -57,11 +57,18 @@ func (s *Server) toolPluginEnable() mcpsdk.Tool {
 	return mcpsdk.NewTool("plugin_enable",
 		mcpsdk.WithDescription("BL33 — enable a named plugin."),
 		mcpsdk.WithString("name", mcpsdk.Required(), mcpsdk.Description("Plugin name")),
+		mcpsdk.WithBoolean("managed", mcpsdk.Description("Optional: opt in (true) or out (false) of datawatch supervising the plugin's service. Only for plugins that declare managed lifecycle support; omit to leave the opt-in unchanged.")),
 	)
 }
 func (s *Server) handlePluginEnable(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	name := req.GetString("name", "")
-	out, err := s.proxyJSON(http.MethodPost, "/api/plugins/"+name+"/enable", nil)
+	var body any
+	if args := req.GetArguments(); args != nil {
+		if _, ok := args["managed"]; ok {
+			body = map[string]any{"managed": req.GetBool("managed", false)}
+		}
+	}
+	out, err := s.proxyJSON(http.MethodPost, "/api/plugins/"+name+"/enable", body)
 	if err != nil {
 		return nil, err
 	}

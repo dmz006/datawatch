@@ -444,11 +444,20 @@ func (s *Server) audit(ctx context.Context, action, resourceType, resourceID str
 	if s.auditLog == nil {
 		return
 	}
+	s.auditAs(s.auditActor(ctx), action, resourceType, resourceID, details)
+}
+
+// auditAs is audit with an explicit actor, for events the daemon itself
+// originates (no request context to derive the actor from).
+func (s *Server) auditAs(actor, action, resourceType, resourceID string, details map[string]any) {
+	if s.auditLog == nil {
+		return
+	}
 	d := details
 	if d == nil {
 		d = map[string]any{}
 	}
 	d["resource_type"] = resourceType
 	d["resource_id"] = resourceID
-	_ = s.auditLog.Write(audit.Entry{Action: action, Actor: s.auditActor(ctx), Details: d})
+	_ = s.auditLog.Write(audit.Entry{Action: action, Actor: actor, Details: d})
 }
