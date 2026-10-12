@@ -1284,6 +1284,7 @@ Every release tag must include a smoke-pass note. PRs that add new operator-faci
 | A9 | `node --check internal/server/web/app.js` passes | `node-check: ok` |
 | A10 | `make build` clean (NOT `go build` — runs `make sync-docs` first so embedded PWA docs match binary) | `make-build: ok` |
 | A11 | CI runner check after push: `gh run list --limit 20` — every failure investigated; security failures escalated to operator rather than deleted | `ci: clean` or `ci: <runID> fixed` |
+| A12 | `make lint` clean (`golangci-lint run ./...` — the exact invocation CI's required `test + lint` check runs; `go test` alone does not catch errcheck/staticcheck-class issues) | `lint: clean` or `lint: <N> findings fixed` |
 
 ---
 

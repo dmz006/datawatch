@@ -5,6 +5,34 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.34 — fix(docs): AGENT.md lint gate + stale context refresh (BL416 Phase 0)
+
+### Fixed
+- AGENT.md's Section A (every-commit, no-exceptions checklist) never
+  required `golangci-lint`/`make lint` — only `go test ./...`. A task
+  could pass every automated gate and still ship a lint-only defect
+  (found live: BL403 Phase 2's `supervisor.go` errcheck violation,
+  which shipped through a `completed` PRD and had to be patched by
+  hand). Added A12: `make lint` clean, same invocation CI's required
+  `test + lint` check already runs.
+- `DATAWATCH-CONTEXT.md`'s hand-maintained "Scripts Inventory" table
+  was stale (documented 19 of ~30 real scripts in `scripts/`) —
+  replaced with a pointer to the live directory instead of a list that
+  drifts. "Recent Context" was stuck at v8.19.8 (5 months and a major
+  version behind) — refreshed to v9.0.17-33 and added a "Known gaps"
+  section documenting the guardrail/verifier judgment-only limitation
+  for future readers.
+- Filed `docs/plans/2026-10-12-tooled-deterministic-guardrails.md`
+  (BL416) — the real, non-Go-specific fix: decompose-generated
+  deterministic verification scripts + mechanical guardrail execution.
+  This release ships only the immediate, independent Phase 0 piece
+  above; the rest is planned, not yet built.
+
+### Reuse audit
+- Extends the existing Section A table and `make lint`/
+  `golangci-lint` Makefile target (already wired for CI) rather than
+  adding a new checking mechanism.
+
 ## v9.0.33 — feat(plugins): supervised lifecycle for managed service-kind plugins
 
 ### Added
