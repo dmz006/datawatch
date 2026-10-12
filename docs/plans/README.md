@@ -362,15 +362,30 @@ PR open pending operator merge.**
 **Stage 3 — full backlog, PRD-driven, one item at a time, confidence
 established. In progress — starting with BL403.**
 4. **BL403** — Plugin Extension Surfaces. Before BL405: its Phase 3/4
-   widget `Kind` taxonomy is what BL405 Phase 10 consumes.
-5. **BL402** — GH#204 result panel for scheduled jobs/integrations.
+   widget `Kind` taxonomy is what BL405 Phase 10 consumes. **Phases 1
+   and 2 shipped** (v9.0.31–33, PRs #206/#213) — Phase 2's merge is
+   what surfaced BL416 below; Phase 3 onward is paused until BL416's
+   Phase 0 (AGENT.md fix) and ideally the rest lands, so Phase 3+
+   doesn't repeat the same gap.
+5. **BL416** — Tooled, Deterministic PRD Guardrails (filed 2026-10-12,
+   plan: `docs/plans/2026-10-12-tooled-deterministic-guardrails.md`).
+   **Inserted here, ahead of BL403 Phase 3 and BL402**, deliberately
+   out of the order it would otherwise land in as a freshly-filed
+   item: this is process-integrity work (closes the exact gap that let
+   BL403 Phase 2 ship a real lint violation through a `completed` PRD
+   — see the plan's Context), and every PRD run before it ships
+   carries the identical blind spot. Phase 0 (a one-line AGENT.md
+   Section A addition) ships independently and immediately; the rest
+   doesn't block on or duplicate BL405's compute-pool work (Decision
+   6 in the plan) — BL405 keeps its position below unchanged.
+6. **BL402** — GH#204 result panel for scheduled jobs/integrations.
    5 phases, zero open design questions, placed right after BL403 since
    its new "opt-in dashboard card" is a natural second user of BL403's
    generic widget `Kind` taxonomy once it exists.
-6. **BL405** — LLM Enhancements. Phase 8c needs explicit operator
+7. **BL405** — LLM Enhancements. Phase 8c needs explicit operator
    go-ahead before that specific sub-phase runs (already flagged in the
    plan) — rest is clear to queue.
-7. **Security remediation track** (BL365 + BL408 + BL395, one coherent
+8. **Security remediation track** (BL365 + BL408 + BL395, one coherent
    program, not three separate items — see BL395's entry for the full
    **Design A → C → B → D** order), plus **BL398** (`.trivyignore` CVE
    review's one remaining real piece — a per-entry reachability trace
@@ -380,7 +395,7 @@ established. In progress — starting with BL403.**
    walkthrough log) — implementation only. Placed after BL403/BL402/
    BL405 so this large, already-fully-sequenced body of work isn't
    interleaved against their phases.
-8. **BL409** — File/function naming audit across all of datawatch
+9. **BL409** — File/function naming audit across all of datawatch
    (filed 2026-10-10, operator-raised after catching this session's own
    `bl406_*.go` filenames — a pattern confirmed pervasive and
    pre-existing across the whole codebase: `bl221_scan.go`,
@@ -402,7 +417,7 @@ established. In progress — starting with BL403.**
    tracker IDs ARE expected and useful," not a gap to close. Needs real
    tooling care (e.g. `gopls rename`, not blind `sed`) given the
    codebase's size — no plan doc written yet.
-9. **BL410** — Failure Observability & Conditional Auto-Retry (filed
+10. **BL410** — Failure Observability & Conditional Auto-Retry (filed
    2026-10-10, operator-raised while reviewing BL407 Phase 0). Every
    PRD-lifecycle failure point — task execution, guardrail/gate
    verdicts, story rollups, `autonomous_prd_decompose` itself — should
@@ -426,7 +441,7 @@ established. In progress — starting with BL403.**
    over time for skills/future decomposition to consult. No plan doc
    yet — needs a design pass (failure-reason taxonomy, where auto-retry
    policy lives, how it surfaces to skills) before queueing a position.
-10. **BL411** — Pre-v10.0.0 Dead Code Audit (filed 2026-10-10, same
+11. **BL411** — Pre-v10.0.0 Dead Code Audit (filed 2026-10-10, same
    conversation as BL410). This session alone found four instances of
    "fully-plumbed but never actually consulted" code in
    `internal/autonomous`: B111 (`GuidedMode` bool, fixed), B112
@@ -444,7 +459,7 @@ established. In progress — starting with BL403.**
    `Story.ExecutionProfile` itself is a concrete, already-scoped fix
    that doesn't need the full systematic sweep designed first — worth
    landing standalone whenever reached. No plan doc written yet.
-11. **BL412** — Self-Config/Self-Modify Permission-Gate Generalization
+12. **BL412** — Self-Config/Self-Modify Permission-Gate Generalization
    (filed 2026-10-11, operator direction after `mcp.allow_self_config`
    — the BL110/v2.4.5 gate meant to control whether an in-process AI
    can tune its own daemon config — turned out to only guard one
@@ -461,7 +476,7 @@ established. In progress — starting with BL403.**
    doc yet; needs a design pass (inventory every mutation-capable
    surface, pick one consistent gating mechanism, decide the default)
    before queueing a position in the roadmap.
-12. **BL413** — Diff-Aware Project-Rules (structured Phase-Completion-
+13. **BL413** — Diff-Aware Project-Rules (structured Phase-Completion-
    Checklist enforcement for autonomous PRD runs) (filed 2026-10-11,
    operator challenge: "we agreed nothing ships without passing all
    rule checklists — is that actually enforced for autonomous runs?").
@@ -497,7 +512,7 @@ established. In progress — starting with BL403.**
    `Decompose()`/`DecomposeStreaming()`. BL413 is the *scanner* half
    of that same original promise — a genuinely new rule-type design,
    correctly deferred rather than improvised.
-13. **BL414** — PRD-Decision Cost Rollup + Token Usage Observability &
+14. **BL414** — PRD-Decision Cost Rollup + Token Usage Observability &
    Guardrails (filed 2026-10-11, operator-raised reviewing BL403/BL404's
    real runs: "should I see token spend on PRD decisions history?").
    Found live: `autonomous.Decision.CostUSD`
@@ -531,7 +546,7 @@ established. In progress — starting with BL403.**
    operator discussion pass (same shape as BL412/BL413) before a plan
    doc gets written: which of BL405's phases already cover this vs.
    what's genuinely a new gap.
-14. **BL415** — `dependency-review` required check can't pass under the
+15. **BL415** — `dependency-review` required check can't pass under the
     Actions-generated `GITHUB_TOKEN` (filed 2026-10-11, found while
     merging PR #206/#212/#213). Symptom: `actions/dependency-review-
     action` fails instantly with "Dependency review is not supported on

@@ -486,27 +486,30 @@ rtk go test ./...
 
 ## Scripts Inventory (`scripts/`)
 
-| Script | Purpose |
-|---|---|
-| `release-smoke.sh` | Main smoke test — 55 sections, `H "N. title"` pattern; run before every minor/major |
-| `release-smoke-secure.sh` | Security-focused smoke (authenticated paths) |
-| `release-smoke-stdio-mcp.sh` | MCP stdio channel smoke |
-| `release-smoke-wakeup.sh` | Memory wake-up stack smoke |
-| `pre-sprint-rules.sh` | Prints the per-sprint checklist table from AGENT.md |
-| `sprint-audit.sh` | Audit helper — checks current commit message for required tokens |
-| `check-curated-howtos.sh` | BL274: every curated howto's exec_steps must reference live MCP tools |
-| `check-howto-coverage.sh` | BL274: every howto must be curated or in LLM-only allowlist |
-| `check-plugin-manifests.sh` | Plugin manifest validation (docs.files existence) |
-| `check-docs-sync.sh` | Verifies `internal/server/web/docs/` matches `docs/` |
-| `check-no-internal-refs.sh` | Greps operator-facing UI/API surfaces (locales, openapi, PWA, howtos, README, definitions doc) for B/BL/F tracker IDs — CHANGELOG/plans/config-reference are intentionally exempt |
-| `check-version-bump.sh` | Fails if the version is reused from its base ref without a real bump (2026-10-07) |
-| `delete-past-minor-assets.sh` | Asset retention cleanup (run post-GH-release) |
-| `delete-past-minor-containers.sh` | GHCR container retention cleanup |
-| `container-upgrade.sh` | Base image upgrade helper |
-| `sync-docs-to-webfs.sh` | Manual trigger for sync-docs (also run by Makefile) |
-| `howto-seed-fixtures.sh` | Seeds howto test fixtures |
-| `run-tests.sh` | Full test suite runner with coverage |
-| `tidy-plans.sh` | Plans/ hygiene helper |
+**Do not trust a hand-copied list here — it drifts.** This exact table
+went stale (2026-10-12 audit: documented 19 of ~30 real scripts,
+missing `gen_trivyignore.py`, `check_accepted_risks.py`,
+`compute_stale_risks.py`, `apply_stale_risk_removal.py`,
+`accepted_risks_daily_watch.py`, `dismissed_alerts_watch.py`,
+`check-dockerfile-go-versions.sh`, and others — found while designing
+BL416's decompose-generated verification scripts, which need an
+accurate Reuse-and-Expand check against what already exists). Before
+writing a new script or test/lint/security command, check what's
+already there instead of trusting this file's memory of it:
+
+```bash
+ls scripts/                      # what exists
+head -15 scripts/<name>          # most scripts explain their own purpose in a header comment
+grep -l "<keyword>" scripts/*.sh scripts/*.py  # search by what it does
+```
+
+Broad categories that live there: release smoke (`release-smoke*.sh`),
+pre-release checks (`check-*.sh` — manifests, docs-sync, no-internal-refs,
+version-bump, howto-coverage), security/CVE maintenance
+(`gen_trivyignore.py`, `*accepted_risks*.py`, `dismissed_alerts_watch.py`),
+release hygiene (`delete-past-minor-*`, `container-upgrade.sh`,
+`tidy-plans.sh`), and test infrastructure (`run-tests.sh`,
+`howto-seed-fixtures.sh`, `test-matrix-*`).
 
 ---
 
@@ -565,23 +568,27 @@ kg_add "BL96" "depends_on" "federation"
 
 ---
 
-## Recent Context (v8.14.0 → v8.19.8)
+## Recent Context (v9.0.17 → v9.0.33)
+
+**v8.14.0 → v8.19.8 history archived** — this section went 5 months and
+a full major-version bump (v8→v9) stale before being refreshed
+2026-10-12. For anything before v9.0.17, read `CHANGELOG.md` directly
+rather than trusting a summary here; this table itself will go stale
+again, so prefer `git log --oneline -- CHANGELOG.md | head` for truly
+current state over either table.
 
 | Version | Feature |
 |---|---|
-| **v8.19.8** | `fix(pwa)`: "What's it doing?" JSON-parse crash on no-new-output — `handleSessionCurrentStatus` 204→200+`{no_change:true}`; `apiFetch` 204/205→null guard; 5 locale bundles + datawatch-app#160 |
-| **v8.19.5–7** | Path traversal guard in `expandImageTags`; errcheck fixes; 7 Trivy CVE suppressions |
-| **v8.19.3–4** | `expandImageTags()` — vision injection in REST + WebSocket `send_input`; 8 unit tests |
-| **v8.19.2** | PWA session-list select-all scoped to filtered visible sessions |
-| **v8.19.0** | `feat(pwa)`: image attachment + camera capture (📎/📷 buttons); `POST /api/files` multipart; `GET /api/files/meta` |
-| **v8.18.0** | `feat(autonomous)`: Prompt Injection Hardening — `ScanForInjection` (11+ patterns), `CheckInjectionGuard`, data-boundary tags in all 3 LLM call sites, security preamble in verifier/guardrail prompts |
-| **v8.17.0** | `feat(autonomous)`: PRD Quality Gates — `SetPRDQualityGates`, `resolveQualityGates`, `Task.QualityGateResult`, `go build .` as gate command |
-| **v8.16.0** | `feat(autonomous)`: Verifier Git-Diff Grounding — verifier receives actual diff, not just spec |
-| **v8.15.0** | `feat(vision)`: Vision Input System — `internal/vision/`, `vision_describe` MCP tool, `expandImageTags` foundation |
-| **v8.14.0** | BL363 testing gap closure for Goose backend |
-| **v8.13.36–39** | Goose backend (4-task delivery) — `internal/llm/backends/goose/` |
-| **v8.13.34–35** | OpenCode: remote compute-node Ollama model picker fix; alternate-screen detection |
-| **v8.13.21–33** | CI/security: ZAP stability, goreleaser retry, Trivy CVE suppressions, release.yaml reliability |
+| **v9.0.33** | `feat(plugins)`: BL403 Phase 2 — supervised lifecycle (start/health/restart/stop) for `kind: service` plugins declaring `lifecycle.managed`; opt-in via `plugins.managed` config or `POST /api/plugins/{name}/enable {"managed":true}` |
+| **v9.0.31–32** | `feat(plugins)`: BL403 Phase 1 — manifest v3 (`kind`/`connection`/`lifecycle` fields), `scripts/check-plugin-manifests.sh` v3 checks |
+| **v9.0.24–30** | BL404 shakedown of the new PRD git workflow found/fixed B116–B122: config-write propagation clobbering live-only bool defaults, worktree-mode PRD creation/decompose gaps, orphan-worktree cleanup, `execution_backend` config surface, zero-value clear-to-zero never reaching the live manager, `rules_file`/`context_file` having config plumbing but zero consumers (fixed by pointing sessions at the files instead of inlining them — inlining had itself caused a tmux chunked-paste corruption bug, B122) |
+| **v9.0.17–23** | `feat(autonomous)`: BL406 Configurable Project-Rules Enforcement (scan rule types: content/consistency/presence/parity/scope_drift) + BL407 PRD Git Workflow (branch-per-PRD worktrees, auto-PR on completion) — the mechanism this file's own "Loading DATAWATCH-CONTEXT.md" section assumes is now real, not aspirational |
+
+### Known gaps as of 2026-10-12 (read before assuming a mechanism is wired up)
+
+- **Guardrails and the per-task LLM verifier are judgment-only, not tool-executing.** They read a task's title/spec text (or a diff summary) and guess; neither runs a real command. The only mechanism that actually executes anything is `quality_gates.test_command` (a single, non-shell command — no `&&` chaining support, confirmed broken twice this session when someone tried).
+- **AGENT.md's Section A (every-commit, no-exceptions checklist) never required `golangci-lint`/`make lint`** before 2026-10-12, only `go test ./...`. A task could pass every automated gate and still ship a lint violation (found live: BL403 Phase 2's `supervisor.go`). If you're reading this after that date, check whether BL416 (decompose-generated deterministic verification scripts + mechanical guardrail execution) has landed — it's the real fix, not a bigger checklist.
+- **This file and AGENT.md's own "Rules Index" line-number table both drift** and need a periodic manual pass — line numbers in that table are known stale as of this audit (~300 lines off on the per-sprint checklist entry alone). Grep for the rule's name, don't trust the line number.
 
 ### Security Assessment Context
 
