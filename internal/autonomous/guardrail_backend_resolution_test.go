@@ -7,6 +7,13 @@
 // less-specific level never leaks onto a backend it wasn't configured
 // for. The guardrail fields are independent of the execution
 // Backend/Model fields.
+//
+// Fixed live 2026-10-12 (BL418 live validation of the first real,
+// non-ask-compatible guardrail call this config ever made): when
+// nothing is set at the task/PRD guardrail level, BACKEND still falls
+// through to the global default, but MODEL does not — see
+// resolveGuardrailBackendModel's own doc comment and the "NothingSet"
+// test below for why.
 
 package autonomous
 
@@ -51,14 +58,28 @@ func TestResolveGuardrailBackendModel_PRDOverridePairsItsOwnModelAndBeatsGlobal(
 	}
 }
 
-func TestResolveGuardrailBackendModel_NothingSetFallsThroughToGlobal(t *testing.T) {
+func TestResolveGuardrailBackendModel_NothingSet_BackendFallsThroughButNotModel(t *testing.T) {
+	// Found live 2026-10-12 (BL418 live validation): the old version of
+	// this test asserted model=="llama3" here, which is exactly the bug
+	// — a flat ask-only global model baked into the return value reached
+	// a B124 session-routed guardrail call, which treats any non-empty
+	// GuardrailModel as a genuine per-unit override and sends it
+	// straight to a real tool-using session. A real claude-code session
+	// rejected "qwen3.8:27b" outright and hung for its full timeout.
+	// Backend has no equivalent ambiguity (same value either way), so
+	// it still falls through; model must not, so each caller's own
+	// fallback (ask-path global, or session-path registry-default) is
+	// free to apply the right one for its own routing decision.
 	prd := &PRD{}
 	task := &Task{}
 
 	backend, model := resolveGuardrailBackendModel(task, prd, "ollama", "llama3")
 
-	if backend != "ollama" || model != "llama3" {
-		t.Errorf("got backend=%q model=%q, want ollama/llama3", backend, model)
+	if backend != "ollama" {
+		t.Errorf("backend = %q, want ollama (global fallback)", backend)
+	}
+	if model != "" {
+		t.Errorf("model = %q, want empty — global model must not leak into a session-routed guardrail call", model)
 	}
 }
 
@@ -82,7 +103,10 @@ func TestResolveGuardrailBackendModel_IndependentOfExecutionBackendModel(t *test
 
 	backend, model := resolveGuardrailBackendModel(task, prd, "ollama", "llama3")
 
-	if backend != "ollama" || model != "llama3" {
-		t.Errorf("got backend=%q model=%q, want ollama/llama3 (execution Backend/Model must not affect guardrail routing)", backend, model)
+	if backend != "ollama" {
+		t.Errorf("backend = %q, want ollama (global fallback; execution Backend/Model must not affect guardrail routing)", backend)
+	}
+	if model != "" {
+		t.Errorf("model = %q, want empty (no guardrail-level override set anywhere; execution Backend/Model must not affect guardrail routing)", model)
 	}
 }

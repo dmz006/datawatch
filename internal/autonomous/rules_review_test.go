@@ -207,13 +207,22 @@ func TestRunPRDCompletionRulesReview_ResolvesBackendFromPRDThenGlobal(t *testing
 		t.Errorf("want the PRD's own override, got backend=%q model=%q", captured.GuardrailBackend, captured.GuardrailModel)
 	}
 
-	// No PRD override — falls back to global.
+	// No PRD override — backend falls back to global, but model does
+	// NOT (fixed live 2026-10-12, BL418's own first live validation: a
+	// flat ask-only global VerificationModel reaching this field was
+	// trusted by the B124 session-routing closure as a genuine
+	// per-unit override and sent straight to a real tool-using
+	// session, which rejected it and hung for its full timeout — the
+	// same bug class B124 already fixed for verify).
 	prd2 := &PRD{ID: "p2", ProjectDir: dir, PerPRDGuardrails: []string{"rules-review"}}
 	if _, err := m.runPRDCompletionRulesReview(context.Background(), prd2); err != nil {
 		t.Fatal(err)
 	}
-	if captured.GuardrailBackend != "global-backend" || captured.GuardrailModel != "global-model" {
-		t.Errorf("want the global default, got backend=%q model=%q", captured.GuardrailBackend, captured.GuardrailModel)
+	if captured.GuardrailBackend != "global-backend" {
+		t.Errorf("want the global backend default, got backend=%q", captured.GuardrailBackend)
+	}
+	if captured.GuardrailModel != "" {
+		t.Errorf("want empty model (must not leak the global ask-only model into a session-routed call), got %q", captured.GuardrailModel)
 	}
 }
 
