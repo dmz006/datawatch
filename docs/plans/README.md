@@ -587,22 +587,48 @@ established. In progress — starting with BL403.**
     discrepancy directly; not worth more self-build time right now.
 16. **BL417** — `internal/autonomous`'s test suite has recurring,
     CI-load-only flakiness (filed 2026-10-12, found across BL416
-    Phases 1-4's own PRs). Three *different* test names failed on
-    required CI's full `go test ./...` this session alone —
+    Phases 1-4's own PRs). *Five* different test names have now failed
+    on required CI's full `go test ./...` this session —
     `TestExecutor_CancelledDependencyFailsDependent`,
     `TestRun_OpensPRAfterWorktreePRDCompletesWithAutoPR` (both already
     fixed: a too-tight deadline bumped, a real git-push race from
-    reusing a pre-seeded fixture remote), and
-    `TestExecutorResume_DoubleRunSafe` (not yet investigated past
-    confirming it passes 10/10 in isolation locally, same as the other
-    two always have). Pattern: never reproduces locally, no matter the
-    `-count`; only shows up under CI's full-suite parallel load.
+    reusing a pre-seeded fixture remote), `TestExecutorResume_DoubleRunSafe`,
+    `TestExecutor_WorkerStallRespectsRetryBudget` (PR #222 — a
+    pre-existing fixture PRD's record leaking state into a shared-ID
+    collision, same package, same symptom), and `TestCheckScript_Fixtures/valid`
+    (PR #227, `internal/plugins` — exit 141/SIGPIPE, a broken shell
+    pipe under CI resource contention, same CI-load pattern in a
+    different package) — none yet investigated past confirming a
+    rerun always passes. Pattern: never reproduces locally, no matter
+    the `-count`; only shows up under CI's full-suite parallel load.
     **Deferred, not blocking Stage 3** — each occurrence so far has
-    been resolved by a rerun; worth a dedicated pass (audit the
-    package for shared global state / excessive goroutine contention
-    under default `-parallel`, or just reduce CI's parallelism for
-    this package) rather than continuing to whack-a-mole individual
-    test names as they turn up.
+    been resolved by a rerun; worth a dedicated pass (audit for shared
+    global state / excessive goroutine contention under default
+    `-parallel`, or just reduce CI's parallelism for these packages)
+    rather than continuing to whack-a-mole individual test names as
+    they turn up.
+17. **BL418** — PRD-completion rules review (judgment, not scripted).
+    Filed and shipped same day, 2026-10-12, v9.0.47. Found auditing a
+    completed Automaton (BL403 Phase 4) by hand: several process-
+    compliance items (version collision, backlog tracker never
+    updated, stale README release line, missing CHANGELOG subsection)
+    had silently never happened, and nothing in the pipeline would
+    ever have caught any of it — guardrails only judge a unit against
+    its own narrow spec; the existing deterministic `prd_complete`
+    project-rules scan only matches a short list of hand-written regex
+    rules. Operator-directed design correction mid-discussion: build
+    this as a judgment review reusing the existing tool-capable
+    guardrail mechanism (B124) and the existing rules-file pointer
+    (`rulesContextSuffix`, generalized to completion time), NOT as a
+    scripted checklist — a scripted check would hardcode this
+    project's own specific rules, which breaks for any other
+    operator's repo and rule set. See `internal/autonomous/rules_review.go`'s
+    own doc comment for the full design. 10 new tests; `rtk go test ./...`
+    3817 passed, `make lint` 0 issues, `gosec` 0 new findings. **Mobile-Parity:
+    N/A** — a real, small follow-up noted in CHANGELOG: the PWA's
+    existing verdict/blocked-count aggregation doesn't include the new
+    PRD-level `Verdicts` field yet, not fixed since nothing asked for
+    it to render yet.
 
 **Outside the queue, handled separately, not blocking Stage 3:**
 - ~~**BL381**~~ — status-verified 2026-10-10: shipped v8.28.0 + v8.28.2

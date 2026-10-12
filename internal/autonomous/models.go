@@ -177,6 +177,24 @@ type PRD struct {
 	// BL191 Q3 — append-only per-PRD audit timeline.
 	Decisions []Decision `json:"decisions,omitempty"`
 
+	// PRD-completion rules review (B124 extension, 2026-10-12) —
+	// judgment verdicts at the whole-PRD level, same shape Story/Task
+	// already carry for their own guardrails (see Story.Verdicts' doc
+	// comment). Populated by runPRDCompletionRulesReview: a tool-using
+	// session reads this project's own configured rules file
+	// (default AGENT.md/CONTEXT.md) and checks the PRD's real changes
+	// against it — not a fixed checklist of specific items, since
+	// every project's rules file is different; the LLM decides what's
+	// relevant to what actually changed. Deliberately NOT scripted
+	// (operator decision, 2026-10-12): a deterministic check would
+	// have to hardcode this project's own rule content, which breaks
+	// for any other operator's repo and rule set. The existing
+	// deterministic prd_complete project-rules scan
+	// (runPRDCompletionProjectRulesCheck) stays for the few items that
+	// ARE safely pattern-matchable (e.g. version-string equality);
+	// this is the judgment-based complement for everything else.
+	Verdicts []GuardrailVerdict `json:"verdicts,omitempty"`
+
 	// BL191 Q2 — template flag + variable schema. When IsTemplate is
 	// true the PRD is a reusable shape rather than an executable plan;
 	// instantiating with POST /api/autonomous/prds/{id}/instantiate
