@@ -275,6 +275,19 @@ type GuardrailInvocation struct {
 	// originated from a remote federation peer (PRD.OwnerPeer). The
 	// guardrail prompt includes an untrusted-origin notice when set.
 	OwnerPeer string
+	// BL416 Phase 3 — tooled deterministic guardrails. ScriptRan is true
+	// only when the unit's VerificationScript was actually attempted;
+	// ScriptExitCode/ScriptOutput carry its real result (output is
+	// combined stdout+stderr, capped by truncateScriptOutput) so the
+	// judgment call is grounded in real output, not a guess.
+	// GuardrailBackend/GuardrailModel are ALREADY-RESOLVED values from
+	// resolveGuardrailBackendModel — callers never pass raw task/PRD
+	// override fields here.
+	ScriptRan        bool
+	ScriptExitCode   int
+	ScriptOutput     string
+	GuardrailBackend string
+	GuardrailModel   string
 }
 
 // AutomatonType (BL221 v6.2.0 Phase 4) is a registered automaton type.
