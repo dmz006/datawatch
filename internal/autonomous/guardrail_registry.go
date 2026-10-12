@@ -55,6 +55,19 @@ func (m *Manager) initGuardrailLibrary() {
 			Type:        "scan",
 			ScanType:    "project-rules",
 		},
+		{
+			// BL418 — operator adds this name to per_prd_guardrails (or a
+			// profile applied at the PRD level) to enable the holistic,
+			// judgment-based rules review at PRD completion. Not a scan
+			// type: it is dispatched by runPRDCompletionRulesReview
+			// directly via GuardrailFn, reusing the same tool-capable
+			// session routing as any other non-scan guardrail. Listed
+			// here purely so it's discoverable (guardrail_library_list)
+			// and selectable the same way the scan guardrails are.
+			Name:        "rules-review",
+			Description: "Judgment review of this automaton's real diff against the project's own rules/context file (AGENT.md-style) — not a fixed checklist",
+			Type:        "judgment",
+		},
 	}
 }
 
@@ -94,13 +107,17 @@ func (m *Manager) lookupGuardrailEntry(name string) (GuardrailEntry, bool) {
 }
 
 // resolveGuardrails returns the effective guardrail names for prd at level
-// ("task" or "story"). Priority: per-PRD explicit > named profile > global Config.
+// ("task", "story", or "prd" — BL418). Priority: per-PRD explicit > named
+// profile > global Config.
 func (m *Manager) resolveGuardrails(prd *PRD, level string) []string {
 	if level == "task" && len(prd.PerTaskGuardrails) > 0 {
 		return append([]string{}, prd.PerTaskGuardrails...)
 	}
 	if level == "story" && len(prd.PerStoryGuardrails) > 0 {
 		return append([]string{}, prd.PerStoryGuardrails...)
+	}
+	if level == "prd" && len(prd.PerPRDGuardrails) > 0 {
+		return append([]string{}, prd.PerPRDGuardrails...)
 	}
 	if prd.GuardrailProfile != "" {
 		if p, ok := m.store.GetGuardrailProfile(prd.GuardrailProfile); ok {
@@ -109,10 +126,14 @@ func (m *Manager) resolveGuardrails(prd *PRD, level string) []string {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if level == "task" {
+	switch level {
+	case "task":
 		return append([]string{}, m.cfg.PerTaskGuardrails...)
+	case "story":
+		return append([]string{}, m.cfg.PerStoryGuardrails...)
+	default:
+		return append([]string{}, m.cfg.PerPRDGuardrails...)
 	}
-	return append([]string{}, m.cfg.PerStoryGuardrails...)
 }
 
 // invokeScanGuardrail runs the targeted scanner(s) for a scan-type guardrail.

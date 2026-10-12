@@ -1019,8 +1019,8 @@ func (a *API) GetGuardrailProfile(id string) (any, bool) {
 	return p, true
 }
 
-func (a *API) SetPRDGuardrails(prdID, profile string, perTask, perStory []string) (any, error) {
-	prd, err := a.M.SetPRDGuardrails(prdID, profile, perTask, perStory)
+func (a *API) SetPRDGuardrails(prdID, profile string, perTask, perStory, perPRD []string) (any, error) {
+	prd, err := a.M.SetPRDGuardrails(prdID, profile, perTask, perStory, perPRD)
 	if err != nil {
 		return nil, err
 	}

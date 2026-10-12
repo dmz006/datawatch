@@ -26,12 +26,22 @@
 // that reuses both — pointing the existing guardrail mechanism at
 // the rules file the exact same way, but for a holistic judgment
 // review instead of a fixed checklist.
+//
+// Follow-up (2026-10-12, same day): shipped unconditionally-on
+// whenever a rules/context file exists -- every OTHER guardrail in
+// this codebase (task/story-level) is operator-configured via an
+// explicit opt-in list, and this one wasn't. Fixed by giving it the
+// identical resolveGuardrails("prd") precedence
+// (PRD.PerPRDGuardrails > GuardrailProfile > Config.PerPRDGuardrails,
+// all empty-by-default) and gating on "rules-review" appearing in
+// that resolved list -- see runPRDCompletionRulesReview's first line.
 package autonomous
 
 import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"time"
 )
 
@@ -86,11 +96,17 @@ func (m *Manager) rulesReviewSuffix(prd *PRD) string {
 // that isn't in the scan catalog, so it falls through to the ordinary
 // LLM-judgment path like any other non-scan guardrail name would.
 //
-// Skipped entirely (not an error) when: no GuardrailFn is wired (e.g.
-// in tests that never call SetGuardrail), or rulesReviewSuffix finds no
+// Skipped entirely (not an error) when: "rules-review" is not in the
+// resolved PRD-level guardrail list (operator opt-in — see
+// resolveGuardrails and Config.PerPRDGuardrails/PRD.PerPRDGuardrails,
+// BL418 configurability follow-up), no GuardrailFn is wired (e.g. in
+// tests that never call SetGuardrail), or rulesReviewSuffix finds no
 // rules/context file to check against (headless PRD, or a repo with
 // neither file configured nor present — nothing to review).
 func (m *Manager) runPRDCompletionRulesReview(ctx context.Context, prd *PRD) (blocked bool, err error) {
+	if !slices.Contains(m.resolveGuardrails(prd, "prd"), "rules-review") {
+		return false, nil
+	}
 	m.mu.Lock()
 	fn := m.guardrail
 	globalBackend, globalModel := m.cfg.VerificationBackend, m.cfg.VerificationModel

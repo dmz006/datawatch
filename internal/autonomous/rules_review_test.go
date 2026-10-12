@@ -60,13 +60,37 @@ func TestRulesReviewSuffix_CustomFilenames(t *testing.T) {
 	}
 }
 
+func TestRunPRDCompletionRulesReview_NotEnabledIsNoOp(t *testing.T) {
+	// BL418 configurability follow-up: a rules file exists and a
+	// GuardrailFn is wired, but "rules-review" was never opted into
+	// anywhere (PRD, profile, or global Config) — must stay a no-op.
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "AGENT.md"), []byte("rules"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	called := false
+	m := &Manager{cfg: Config{}}
+	m.SetGuardrail(func(ctx context.Context, req GuardrailInvocation) (GuardrailVerdict, error) {
+		called = true
+		return GuardrailVerdict{Outcome: "pass"}, nil
+	})
+	prd := &PRD{ID: "p1", ProjectDir: dir}
+	blocked, err := m.runPRDCompletionRulesReview(context.Background(), prd)
+	if err != nil || blocked {
+		t.Fatalf("blocked=%v err=%v, want false/nil when rules-review isn't opted in", blocked, err)
+	}
+	if called {
+		t.Error("GuardrailFn should never be called when rules-review isn't in the resolved PRD-level guardrail list")
+	}
+}
+
 func TestRunPRDCompletionRulesReview_NoGuardrailFnWiredIsNoOp(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "AGENT.md"), []byte("rules"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	m := &Manager{cfg: Config{}}
-	prd := &PRD{ID: "p1", ProjectDir: dir}
+	prd := &PRD{ID: "p1", ProjectDir: dir, PerPRDGuardrails: []string{"rules-review"}}
 	blocked, err := m.runPRDCompletionRulesReview(context.Background(), prd)
 	if err != nil || blocked {
 		t.Fatalf("blocked=%v err=%v, want false/nil when no GuardrailFn is wired", blocked, err)
@@ -84,7 +108,7 @@ func TestRunPRDCompletionRulesReview_NoRulesFileIsNoOp(t *testing.T) {
 		called = true
 		return GuardrailVerdict{Outcome: "pass"}, nil
 	})
-	prd := &PRD{ID: "p1", ProjectDir: dir}
+	prd := &PRD{ID: "p1", ProjectDir: dir, PerPRDGuardrails: []string{"rules-review"}}
 	blocked, err := m.runPRDCompletionRulesReview(context.Background(), prd)
 	if err != nil || blocked {
 		t.Fatalf("blocked=%v err=%v, want false/nil when there's no rules file to check against", blocked, err)
@@ -105,7 +129,7 @@ func TestRunPRDCompletionRulesReview_PassDoesNotBlock(t *testing.T) {
 		captured = req
 		return GuardrailVerdict{Outcome: "pass", Summary: "looks fine"}, nil
 	})
-	prd := &PRD{ID: "p1", Title: "Add a feature", Spec: "do the thing", ProjectDir: dir}
+	prd := &PRD{ID: "p1", Title: "Add a feature", Spec: "do the thing", ProjectDir: dir, PerPRDGuardrails: []string{"rules-review"}}
 	blocked, err := m.runPRDCompletionRulesReview(context.Background(), prd)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -133,7 +157,7 @@ func TestRunPRDCompletionRulesReview_BlockOutcomeBlocks(t *testing.T) {
 	m.SetGuardrail(func(ctx context.Context, req GuardrailInvocation) (GuardrailVerdict, error) {
 		return GuardrailVerdict{Outcome: "block", Severity: "high", Summary: "version collides with a shipped release"}, nil
 	})
-	prd := &PRD{ID: "p1", ProjectDir: dir}
+	prd := &PRD{ID: "p1", ProjectDir: dir, PerPRDGuardrails: []string{"rules-review"}}
 	blocked, err := m.runPRDCompletionRulesReview(context.Background(), prd)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -155,7 +179,7 @@ func TestRunPRDCompletionRulesReview_FnErrorPropagates(t *testing.T) {
 	m.SetGuardrail(func(ctx context.Context, req GuardrailInvocation) (GuardrailVerdict, error) {
 		return GuardrailVerdict{}, errFakeGuardrail
 	})
-	prd := &PRD{ID: "p1", ProjectDir: dir}
+	prd := &PRD{ID: "p1", ProjectDir: dir, PerPRDGuardrails: []string{"rules-review"}}
 	_, err := m.runPRDCompletionRulesReview(context.Background(), prd)
 	if err == nil {
 		t.Fatal("want the GuardrailFn's error to propagate")
@@ -175,7 +199,7 @@ func TestRunPRDCompletionRulesReview_ResolvesBackendFromPRDThenGlobal(t *testing
 	})
 
 	// PRD override wins over global.
-	prd := &PRD{ID: "p1", ProjectDir: dir, GuardrailBackend: "prd-backend", GuardrailModel: "prd-model"}
+	prd := &PRD{ID: "p1", ProjectDir: dir, GuardrailBackend: "prd-backend", GuardrailModel: "prd-model", PerPRDGuardrails: []string{"rules-review"}}
 	if _, err := m.runPRDCompletionRulesReview(context.Background(), prd); err != nil {
 		t.Fatal(err)
 	}
@@ -184,7 +208,7 @@ func TestRunPRDCompletionRulesReview_ResolvesBackendFromPRDThenGlobal(t *testing
 	}
 
 	// No PRD override — falls back to global.
-	prd2 := &PRD{ID: "p2", ProjectDir: dir}
+	prd2 := &PRD{ID: "p2", ProjectDir: dir, PerPRDGuardrails: []string{"rules-review"}}
 	if _, err := m.runPRDCompletionRulesReview(context.Background(), prd2); err != nil {
 		t.Fatal(err)
 	}

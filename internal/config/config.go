@@ -1968,6 +1968,10 @@ type AutonomousConfig struct {
 	PerTaskGuardrails  []string `yaml:"per_task_guardrails,omitempty" json:"per_task_guardrails,omitempty"`
 	PerStoryGuardrails []string `yaml:"per_story_guardrails,omitempty" json:"per_story_guardrails,omitempty"`
 
+	// BL418 — daemon-wide default for the "prd" level (PRD-completion
+	// rules review opt-in). Empty = disabled, same as the two above.
+	PerPRDGuardrails []string `yaml:"per_prd_guardrails,omitempty" json:"per_prd_guardrails,omitempty"`
+
 	// Phase 3 (v5.26.61) — per-story approval gate. Default false
 	// (preserves the v5.26.x behavior where PRD approval auto-
 	// approves every story). When true, PRD approval transitions

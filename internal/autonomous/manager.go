@@ -109,6 +109,13 @@ type Config struct {
 	PerTaskGuardrails  []string `json:"per_task_guardrails,omitempty"`
 	PerStoryGuardrails []string `json:"per_story_guardrails,omitempty"`
 
+	// BL418 — daemon-wide default for the "prd" level (PRD-completion
+	// rules review). Same off-by-default, explicit-opt-in shape as the
+	// two lists above: empty means runPRDCompletionRulesReview never
+	// fires, even when a rules/context file exists. An operator adds
+	// "rules-review" here (or to PRD.PerPRDGuardrails) to turn it on.
+	PerPRDGuardrails []string `json:"per_prd_guardrails,omitempty"`
+
 	// Phase 3 (v5.26.61) — per-story approval gate. When true, PRD-
 	// level approval transitions every story to "awaiting_approval"
 	// and the runner skips those until the operator approves each.
@@ -3104,8 +3111,9 @@ func (m *Manager) SetPRDQualityGates(prdID string, enabled bool, testCommand str
 	return prd, m.store.SavePRD(prd)
 }
 
-// SetPRDGuardrails (BL303 S2 T06) sets per-Automaton guardrail overrides.
-func (m *Manager) SetPRDGuardrails(prdID, profile string, perTask, perStory []string) (*PRD, error) {
+// SetPRDGuardrails (BL303 S2 T06; BL418 adds perPRD) sets per-Automaton
+// guardrail overrides.
+func (m *Manager) SetPRDGuardrails(prdID, profile string, perTask, perStory, perPRD []string) (*PRD, error) {
 	prd, ok := m.store.GetPRD(prdID)
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
@@ -3113,6 +3121,7 @@ func (m *Manager) SetPRDGuardrails(prdID, profile string, perTask, perStory []st
 	prd.GuardrailProfile = profile
 	prd.PerTaskGuardrails = perTask
 	prd.PerStoryGuardrails = perStory
+	prd.PerPRDGuardrails = perPRD
 	prd.UpdatedAt = time.Now()
 	return prd, m.store.SavePRD(prd)
 }

@@ -5,10 +5,13 @@ Automaton execution.
 
 ## Resolution chain
 
+Resolved independently per level — task, story, and prd (PRD
+completion, BL418):
+
 ```
 per-Automaton explicit fields
-  PerTaskGuardrails / PerStoryGuardrails
-        │ non-empty?
+  PerTaskGuardrails / PerStoryGuardrails / PerPRDGuardrails
+        │ non-empty (for this level)?
         ▼ yes → use explicit list
         │ no
         ▼
@@ -17,8 +20,12 @@ per-Automaton explicit fields
         │ no
         ▼
   Global Config
-  (autonomous.per_task_guardrails / per_story_guardrails)
+  (autonomous.per_task_guardrails / per_story_guardrails / per_prd_guardrails)
 ```
+
+All three lists are empty by default — a level with no entries never
+invokes a guardrail, even if a rules/context file or scan config
+exists.
 
 ## Per-task execution
 
@@ -44,6 +51,31 @@ for each name:
   │   yes → mark task failed; pause Automaton
   │   no  → continue
 ```
+
+## PRD-completion guardrail (`rules-review`, BL418)
+
+```
+PRD rolls up to completed
+      │
+      ▼
+runPRDCompletionProjectRulesCheck (deterministic scan, unchanged)
+      │
+      ▼
+runPRDCompletionRulesReview
+      │ "rules-review" in resolveGuardrails(prd, "prd")?
+      │   no  → no-op
+      │   yes → rules/context file present in ProjectDir?
+      │           no  → no-op
+      │           yes → fn(ctx, inv)  (same GuardrailFn as task/story,
+      │                  judgment review of the real diff, not a scan)
+      ▼
+verdict appended to prd.Verdicts; outcome=="block" → PRDBlocked
+```
+
+Unlike the per-task/per-story loop, this runs once, at PRD completion,
+for a single named guardrail (`"rules-review"`) rather than iterating
+a list of scan/skill guardrails — there is currently exactly one
+guardrail defined at this level.
 
 ## Verdict outcomes
 

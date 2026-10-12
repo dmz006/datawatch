@@ -24,7 +24,8 @@ guardrails all live in the same registry.
 > **Pre-conditions**: Guardrail scans (the `autonomous_prd_scan` exec step) require at least one Automaton (PRD) to exist. Running a scan without existing Automata returns empty results. See [`autonomous-planning.md`](autonomous-planning.md) for creating Automata before using guardrail profiles or running scans.
 
 A guardrail is a named gate that runs at a specified point in an
-Automaton's execution (per-task or per-story) and returns a verdict:
+Automaton's execution (per-task, per-story, or at PRD completion) and
+returns a verdict:
 
 | Verdict | Meaning |
 |---------|---------|
@@ -39,19 +40,25 @@ Automaton's execution (per-task or per-story) and returns a verdict:
 | `sast-scan` | scan | Static analysis (Semgrep / CodeQL) |
 | `secrets-scan` | scan | Secret / credential exposure |
 | `deps-scan` | scan | Dependency vulnerabilities |
+| `project-rules-scan` | scan | Operator-defined project rules (content/consistency/presence/parity), filtered to the granularity it's attached at |
+| `rules-review` | judgment | PRD-completion only. A holistic review of the automaton's real diff against whatever rules/context file you've configured — not a fixed checklist, so it only fires when added to the PRD-level list below |
 
 Skills can also declare additional guardrails via their manifest.
 
 ## Priority resolution
 
 For each Automaton the effective guardrail list is resolved in priority
-order:
+order, independently at each of three levels — task, story, and prd
+(PRD completion):
 
 1. **Explicit per-Automaton override** (`per_task_guardrails` /
-   `per_story_guardrails` set directly on the Automaton)
+   `per_story_guardrails` / `per_prd_guardrails` set directly on the
+   Automaton)
 2. **Named profile** assigned to the Automaton (`guardrail_profile`)
 3. **Global config** (`autonomous.per_task_guardrails` /
-   `autonomous.per_story_guardrails`)
+   `autonomous.per_story_guardrails` / `autonomous.per_prd_guardrails`)
+
+All three lists are empty by default — nothing runs until you opt in.
 
 ## Managing guardrail profiles
 
@@ -115,7 +122,7 @@ guardrail_profile_create      → create a profile (name + guardrails_json)
 guardrail_profile_get         → get one profile by id
 guardrail_profile_update      → update name / description / guardrails
 guardrail_profile_delete      → delete by id
-per_automaton_guardrails_set  → set per-Automaton override
+per_automaton_guardrails_set  → set per-Automaton override (per_task_guardrails_json / per_story_guardrails_json / per_prd_guardrails_json)
 ```
 
 ### Comm channel
@@ -156,6 +163,8 @@ autonomous:
     - secrets-scan
   per_story_guardrails:
     - deps-scan
+  per_prd_guardrails:
+    - rules-review
 ```
 
 Per-Automaton override stored in the Automaton record (set via any
@@ -167,10 +176,11 @@ surface above).
 # Assign a named profile (overrides global; explicit fields beat profile).
 datawatch guardrail automaton set <automaton-id> --profile security-strict
 
-# Explicit per-task list (beats the named profile).
+# Explicit per-task/per-story/per-prd lists (beats the named profile).
 datawatch guardrail automaton set <automaton-id> \
   --per-task sast-scan,secrets-scan \
-  --per-story deps-scan
+  --per-story deps-scan \
+  --per-prd rules-review
 ```
 
 ## Skill-contributed guardrails

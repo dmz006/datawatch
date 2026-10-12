@@ -148,19 +148,22 @@ func (s *Server) toolPerAutomatonGuardrailsSet() mcpsdk.Tool {
 		mcpsdk.WithString("guardrail_profile", mcpsdk.Description("Named profile to apply (optional).")),
 		mcpsdk.WithString("per_task_guardrails_json", mcpsdk.Description(`Explicit per-task guardrail list as JSON array (beats profile), e.g. ["sast-scan"]`)),
 		mcpsdk.WithString("per_story_guardrails_json", mcpsdk.Description(`Explicit per-story guardrail list as JSON array (beats profile), e.g. ["deps-scan"]`)),
+		mcpsdk.WithString("per_prd_guardrails_json", mcpsdk.Description(`Explicit PRD-level guardrail list as JSON array (beats profile), e.g. ["rules-review"] — BL418`)),
 	)
 }
 
 func (s *Server) handlePerAutomatonGuardrailsSet(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	id := req.GetString("id", "")
 	profile := req.GetString("guardrail_profile", "")
-	var perTask, perStory []string
+	var perTask, perStory, perPRD []string
 	_ = json.Unmarshal([]byte(req.GetString("per_task_guardrails_json", "[]")), &perTask)
 	_ = json.Unmarshal([]byte(req.GetString("per_story_guardrails_json", "[]")), &perStory)
+	_ = json.Unmarshal([]byte(req.GetString("per_prd_guardrails_json", "[]")), &perPRD)
 	body := map[string]any{
 		"guardrail_profile":    profile,
 		"per_task_guardrails":  perTask,
 		"per_story_guardrails": perStory,
+		"per_prd_guardrails":   perPRD,
 	}
 	data, err := s.proxyJSON(http.MethodPut, "/api/autonomous/prds/"+id+"/guardrails", body)
 	if err != nil {

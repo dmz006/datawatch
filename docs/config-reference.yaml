@@ -900,6 +900,12 @@ autonomous:
   # apply).
   per_task_guardrails: []
   per_story_guardrails: []
+  # BL418 — PRD-completion rules review opt-in. Empty (default) means
+  # runPRDCompletionRulesReview never fires, even when a rules/context
+  # file exists. Add "rules-review" here (or to a PRD's own
+  # per_prd_guardrails) to turn it on: a judgment review of the PRD's
+  # real diff against whatever rules_file/context_file is configured.
+  per_prd_guardrails: []
   # BL367 — default quality gate config applied to every PRD that does not
   # set its own quality_gates at creation time. When enabled, a test
   # baseline is captured before the first task runs, and tests are re-run

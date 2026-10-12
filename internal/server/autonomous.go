@@ -1719,12 +1719,13 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			GuardrailProfile   string   `json:"guardrail_profile"`
 			PerTaskGuardrails  []string `json:"per_task_guardrails"`
 			PerStoryGuardrails []string `json:"per_story_guardrails"`
+			PerPRDGuardrails   []string `json:"per_prd_guardrails"` // BL418
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
 			return
 		}
-		updated, err := s.autonomousMgr.SetPRDGuardrails(id, req.GuardrailProfile, req.PerTaskGuardrails, req.PerStoryGuardrails)
+		updated, err := s.autonomousMgr.SetPRDGuardrails(id, req.GuardrailProfile, req.PerTaskGuardrails, req.PerStoryGuardrails, req.PerPRDGuardrails)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return

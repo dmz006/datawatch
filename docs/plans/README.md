@@ -630,6 +630,20 @@ established. In progress — starting with BL403.**
     PRD-level `Verdicts` field yet, not fixed since nothing asked for
     it to render yet.
 
+    **Configurability follow-up, same day, v9.0.48**: shipped
+    unconditionally-on in v9.0.47 — flagged live immediately ("these
+    validation tools should be selectable and configurable by the
+    operator"), since every other guardrail in this codebase is
+    operator opt-in. Fixed by extending `resolveGuardrails` with a
+    third `"prd"` level and gating `runPRDCompletionRulesReview` on
+    `"rules-review"` appearing in it — new `Config.PerPRDGuardrails`/
+    `PRD.PerPRDGuardrails`, off by default, same precedence chain
+    (explicit > profile > global) as `PerTaskGuardrails`/
+    `PerStoryGuardrails`. Full REST/MCP/config/comm parity mirrored
+    from those two fields exactly. Still owes a genuine live-PRD
+    validation run (opt in on a real PRD, confirm the review actually
+    fires and records a verdict) — not yet performed as of v9.0.48.
+
 **Outside the queue, handled separately, not blocking Stage 3:**
 - ~~**BL381**~~ — status-verified 2026-10-10: shipped v8.28.0 + v8.28.2
   (PWA picker). Moved to Completed. No slot needed.

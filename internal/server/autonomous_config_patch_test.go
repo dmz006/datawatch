@@ -50,6 +50,21 @@ func TestApplyConfigPatch_AutonomousRecursionAndGuardrails(t *testing.T) {
 	if got := cfg.Autonomous.PerStoryGuardrails; len(got) != 0 {
 		t.Fatalf("empty csv should clear: got %v", got)
 	}
+
+	// BL418 — per_prd_guardrails (PRD-completion rules review opt-in)
+	// round-trips the same two shapes as its task/story siblings.
+	applyConfigPatch(cfg, map[string]interface{}{
+		"autonomous.per_prd_guardrails": []interface{}{"rules-review"},
+	})
+	if got := cfg.Autonomous.PerPRDGuardrails; len(got) != 1 || got[0] != "rules-review" {
+		t.Fatalf("per_prd_guardrails (array): got %v, want [rules-review]", got)
+	}
+	applyConfigPatch(cfg, map[string]interface{}{
+		"autonomous.per_prd_guardrails": "",
+	})
+	if got := cfg.Autonomous.PerPRDGuardrails; len(got) != 0 {
+		t.Fatalf("per_prd_guardrails empty csv should clear: got %v", got)
+	}
 }
 
 // BL406 — verify rules_file/context_file/upstream_repos round-trip
