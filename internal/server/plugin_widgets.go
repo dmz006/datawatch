@@ -2,10 +2,13 @@
 //
 // Endpoints (dispatched from handlePlugins):
 //
-//	POST /api/plugins/{name}/widgets/token        mint/rotate the plugin's push token (operator auth)
+//	POST /api/plugins/{name}/widgets/token        mint/rotate the plugin's push token (operator auth; peers need plugin:write)
 //	POST /api/plugins/{name}/widgets/{widget_id}  push a value (plugin push token)
-//	GET  /api/plugins/{name}/widgets              declared widgets + latest values (operator auth)
-//	GET  /api/plugins/{name}/widgets/{widget_id}  one widget + latest value (operator auth)
+//	GET  /api/plugins/{name}/widgets              declared widgets + latest values (operator auth; peers need plugin:read)
+//	GET  /api/plugins/{name}/widgets/{widget_id}  one widget + latest value (operator auth; peers need plugin:read)
+//
+// Federation caps: widget data is gated on plugin:read / plugin:write, not
+// the config:* caps that gate the plugin lifecycle routes in plugins.go.
 //
 // Push auth: `Authorization: Bearer <token>` where the token was minted by
 // the token endpoint for the same plugin. fedAuthMiddleware accepts such a
@@ -127,7 +130,7 @@ func (s *Server) handlePluginWidgets(w http.ResponseWriter, r *http.Request, nam
 // handlePluginWidgetToken mints (or rotates) the plugin's push token and
 // returns it once.
 func (s *Server) handlePluginWidgetToken(w http.ResponseWriter, r *http.Request, name string) {
-	if !s.fedCap(w, r, federation.CapConfigWrite) {
+	if !s.fedCap(w, r, federation.CapPluginWrite) {
 		return
 	}
 	if _, ok := s.pluginWidgetSrc.Widgets(name); !ok {
@@ -224,7 +227,7 @@ func (s *Server) widgetView(name string, wd plugins.Widget) pluginWidgetView {
 }
 
 func (s *Server) handlePluginWidgetList(w http.ResponseWriter, r *http.Request, name string) {
-	if !s.fedCap(w, r, federation.CapConfigRead) {
+	if !s.fedCap(w, r, federation.CapPluginRead) {
 		return
 	}
 	widgets, ok := s.pluginWidgetSrc.Widgets(name)
@@ -240,7 +243,7 @@ func (s *Server) handlePluginWidgetList(w http.ResponseWriter, r *http.Request, 
 }
 
 func (s *Server) handlePluginWidgetGet(w http.ResponseWriter, r *http.Request, name, widgetID string) {
-	if !s.fedCap(w, r, federation.CapConfigRead) {
+	if !s.fedCap(w, r, federation.CapPluginRead) {
 		return
 	}
 	widgets, ok := s.pluginWidgetSrc.Widgets(name)
