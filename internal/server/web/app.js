@@ -18630,6 +18630,10 @@ const _dash = {
   _smokeData: null,        // last /api/smoke/progress payload
   _smokeFetching: false,
   _smokePollMs: 2500,      // fast poll during active run
+  // BL403 Phase 4 — plugin widget cards
+  _pluginWidgets: {},      // 'server|cardId' → {view, fetchedAt, err, inFlight}
+  _pluginList: null,       // {server, plugins, fetchedAt, err} from /api/plugins
+  _pluginListInFlight: false,
 };
 
 // alpha.31 #272 — sort rank for active-first ordering. Lower = sooner.
@@ -25134,6 +25138,7 @@ function _dashLoop(ts) {
     _dashRenderGuardrails();
     _dashRenderMemoryScope();
     _dashRenderWebSearchUsage();
+    _dashRenderPluginWidgets();
     _dashRenderSmoke();
   }
 
@@ -25572,6 +25577,28 @@ const SPAN_CYCLE = [2, 3, 4, 6, 8, 12];
 const ROW_CYCLE  = [1, 2];
 
 function _dashCardHTML(entry) {
+  // BL403 Phase 4 — plugin widget card. Plugin/widget ids are plugin-author
+  // controlled, so every interpolation is escaped (escJsAttr inside the
+  // single-quoted JS strings of the inline handlers).
+  const pw = _pwParseCardId(entry.id);
+  if (pw) {
+    const cs = Math.floor(Number(entry.cs)) || 3;
+    const rs = Math.floor(Number(entry.rs)) || 1;
+    const jsId = escJsAttr(entry.id);
+    return `<div class="dboard-card" data-cs="${cs}" data-rs="${rs}" data-card-id="${escHtml(entry.id)}" draggable="true"
+    ondragstart="window._dashDragStart(event)" ondragover="window._dashDragOver(event)"
+    ondrop="window._dashDrop(event)" ondragleave="window._dashDragLeave(event)"
+    ondragend="window._dashDragEnd(event)">
+    <div class="dboard-card-hdr">
+      <span class="dboard-card-drag">⣿</span>
+      <span class="dboard-card-title">🧩 ${escHtml(pw.widget)} <span style="color:var(--text2);font-weight:400;">${escHtml(pw.plugin)}</span></span>
+      <span class="dboard-card-span" onclick="window._dashCycleSpan('${jsId}')" title="Width (click to cycle)">${cs}w</span>
+      <span class="dboard-card-span" onclick="window._dashCycleRows('${jsId}')" title="Height (click to toggle 1/2 rows)">${rs}h</span>
+      <button class="dboard-card-rm" onclick="window._dashRemoveCard('${jsId}')" title="Remove">×</button>
+    </div>
+    <div class="dboard-card-body"><div class="dboard-plugin-widget" data-plugin-card="${escHtml(entry.id)}" style="height:100%;overflow-y:auto;padding:6px 8px;font-size:11px;">${_pwEmptyState('loading')}</div></div>
+  </div>`;
+  }
   const def = DASH_CARD_DEFS.find(d => d.id === entry.id);
   if (!def) return '';
   const cs = entry.cs || def.defaultCs;
@@ -25625,6 +25652,7 @@ function _dashBuildGrid(layout) {
   _dashRenderGuardrails();
   _dashRenderMemoryScope();
   _dashRenderWebSearchUsage();
+  _dashRenderPluginWidgets();
   _drawGantt();
   _dashForceStep();
   _drawConstellation();
@@ -25671,20 +25699,184 @@ window._dashShowAddPanel = function() {
       <span>${def.icon}</span><span>${escHtml(def.label)}</span>
     </div>`;
   }
-  html += `</div></div>`;
+  html += `</div><div id="dashAddPluginSection"></div></div>`;
   const old = document.getElementById('dashAddPanel');
   if (old) old.remove();
   document.body.insertAdjacentHTML('beforeend', html);
+  // BL403 Phase 4 — plugin widgets are appended once /api/plugins resolves;
+  // on failure, or with none, the panel just keeps the built-in cards.
+  apiFetch('/api/plugins').then(d => {
+    const sec = document.getElementById('dashAddPluginSection');
+    if (!sec) return;
+    sec.innerHTML = _dashAddPanelPluginHTML(d && d.plugins, existing);
+  }).catch(e => { console.debug('plugin list for add-card panel failed', e); });
 };
+
+// _dashAddPanelPluginHTML renders the Add Card panel's plugin widget
+// section: every enabled plugin's dashboard-surface widgets. '' when none.
+function _dashAddPanelPluginHTML(plugins, existing) {
+  if (!Array.isArray(plugins)) return '';
+  let items = '';
+  for (const p of plugins) {
+    if (!p || typeof p !== 'object' || p.enabled !== true || typeof p.name !== 'string' || !p.name) continue;
+    if (!Array.isArray(p.widgets)) continue;
+    for (const w of p.widgets) {
+      if (!w || typeof w !== 'object' || w.surface !== 'dashboard' || typeof w.id !== 'string' || !w.id) continue;
+      const cardId = _pwCardId(p.name, w.id);
+      if (!_pwParseCardId(cardId)) continue;
+      const used = (existing || []).includes(cardId);
+      const jsId = escJsAttr(cardId);
+      items += `<div class="dboard-add-item${used ? ' dboard-add-used' : ''}"${used ? '' : ` onclick="window._dashAddCard('${jsId}');document.getElementById('dashAddPanel').remove();"`}>
+      <span>🧩</span><span>${escHtml(p.name)} · ${escHtml(w.id)}</span>
+    </div>`;
+    }
+  }
+  if (!items) return '';
+  return `<div style="font-weight:700;font-size:12px;color:var(--text);margin:10px 0 6px;">${escHtml(t('dash_plugin_widgets_heading') || 'Plugin widgets')}</div>
+    <div class="dboard-add-grid">${items}</div>`;
+}
 
 window._dashAddCard = function(cardId) {
   if (!_dash._editing) return;
+  if (_pwParseCardId(cardId)) {
+    _dash._layout = _dash._layout || [];
+    if (_dash._layout.some(c => c.id === cardId)) return;
+    _dash._layout.push({ id: cardId, cs: 3 });
+    _dashBuildGrid(_dash._layout);
+    return;
+  }
   const def = DASH_CARD_DEFS.find(d => d.id === cardId);
   if (!def) return;
   _dash._layout = _dash._layout || [];
   _dash._layout.push({ id: cardId, cs: def.defaultCs });
   _dashBuildGrid(_dash._layout);
 };
+
+// ── BL403 Phase 4 — plugin widget cards: fetch + render ─────────────────────
+// Each [data-plugin-card] element in the grid renders from a per-card cache
+// (keyed by active server + card id) refreshed every max(10s, interval_seconds
+// || 30s). The widget read endpoints don't check enabled, so a cached
+// /api/plugins list (≤30s old) decides availability. Every failure path
+// lands on the 'unavailable' empty state; nothing here may throw into the
+// render tick.
+
+const _DASH_PW_MIN_REFRESH_MS = 10000;
+const _DASH_PW_DEFAULT_REFRESH_MS = 30000;
+const _DASH_PW_LIST_TTL_MS = 30000;
+
+function _dashPluginServerKey() {
+  return String((typeof state !== 'undefined' && state && state.activeServer) || '');
+}
+
+function _dashRefreshPluginList() {
+  const srv = _dashPluginServerKey();
+  const pl = _dash._pluginList;
+  if (_dash._pluginListInFlight) return;
+  if (pl && pl.server === srv && Date.now() - pl.fetchedAt < _DASH_PW_LIST_TTL_MS) return;
+  _dash._pluginListInFlight = true;
+  let p;
+  try {
+    p = apiFetch('/api/plugins');
+  } catch (e) {
+    p = Promise.reject(e);
+  }
+  Promise.resolve(p).then(d => {
+    _dash._pluginList = { server: srv, plugins: (d && Array.isArray(d.plugins)) ? d.plugins : [], fetchedAt: Date.now(), err: null };
+  }, e => {
+    _dash._pluginList = { server: srv, plugins: [], fetchedAt: Date.now(), err: String((e && e.message) || e || 'error') };
+  }).finally(() => { _dash._pluginListInFlight = false; });
+}
+
+function _dashFetchPluginWidget(key, ref) {
+  const cache = _dash._pluginWidgets;
+  const entry = cache[key] || (cache[key] = { view: null, fetchedAt: 0, err: null, inFlight: false });
+  if (entry.inFlight) return;
+  entry.inFlight = true;
+  let p;
+  try {
+    p = apiFetch('/api/plugins/' + encodeURIComponent(ref.plugin) + '/widgets/' + encodeURIComponent(ref.widget));
+  } catch (e) {
+    p = Promise.reject(e);
+  }
+  Promise.resolve(p).then(view => {
+    entry.view = (view && typeof view === 'object') ? view : null;
+    entry.err = entry.view ? null : 'empty response';
+  }, e => {
+    entry.err = String((e && e.message) || e || 'error');
+  }).finally(() => {
+    entry.fetchedAt = Date.now();
+    entry.inFlight = false;
+  });
+}
+
+function _dashPluginWidgetStale(entry) {
+  if (!entry) return true;
+  const secs = entry.view && Number(entry.view.interval_seconds);
+  const ms = Math.max(_DASH_PW_MIN_REFRESH_MS, (secs > 0 ? secs * 1000 : _DASH_PW_DEFAULT_REFRESH_MS));
+  return Date.now() - entry.fetchedAt >= ms;
+}
+
+// _dashPluginWidgetPaint writes html/view into el only when its render key
+// changed (or the element is fresh from a grid rebuild).
+function _dashPluginWidgetPaint(el, renderKey, view, emptyKind) {
+  if (el._dashPwKey === renderKey) return;
+  el._dashPwKey = renderKey;
+  if (view) _pwRenderInto(el, view);
+  else el.innerHTML = _pwEmptyState(emptyKind);
+}
+
+function _dashRenderPluginWidgetCard(el) {
+  const id = el.getAttribute('data-plugin-card');
+  const ref = _pwParseCardId(id);
+  if (!ref) { _dashPluginWidgetPaint(el, 'unavailable', null, 'unavailable'); return; }
+  const srv = _dashPluginServerKey();
+  const pl = _dash._pluginList;
+  const listReady = pl && pl.server === srv;
+  if (listReady) {
+    const plugin = pl.err ? null : pl.plugins.find(p => p && p.name === ref.plugin);
+    if (!plugin || plugin.enabled === false) {
+      _dashPluginWidgetPaint(el, 'unavailable', null, 'unavailable');
+      return;
+    }
+  }
+  const key = srv + '|' + id;
+  const entry = _dash._pluginWidgets[key];
+  if (_dashPluginWidgetStale(entry)) _dashFetchPluginWidget(key, ref);
+  if (!listReady || !entry || (!entry.view && !entry.err)) {
+    _dashPluginWidgetPaint(el, 'loading', null, 'loading');
+    return;
+  }
+  const view = entry.view;
+  if (entry.err || !view || view.surface !== 'dashboard') {
+    _dashPluginWidgetPaint(el, 'unavailable', null, 'unavailable');
+    return;
+  }
+  const v = view.value;
+  const renderKey = 'v|' + String(view.kind) + '|' +
+    (v && typeof v === 'object' ? String(v.updated_at) + '|' + String(v.error || '') : 'null');
+  _dashPluginWidgetPaint(el, renderKey, view, null);
+}
+
+function _dashRenderPluginWidgets() {
+  try {
+    const grid = document.getElementById('dashCardGrid');
+    if (!grid || typeof grid.querySelectorAll !== 'function') return;
+    const els = grid.querySelectorAll('[data-plugin-card]');
+    if (!els || !els.length) return;
+    if (!_dash._pluginWidgets) _dash._pluginWidgets = {};
+    _dashRefreshPluginList();
+    for (const el of Array.from(els)) {
+      try {
+        _dashRenderPluginWidgetCard(el);
+      } catch (e) {
+        console.debug('plugin widget card render failed', e);
+        try { el._dashPwKey = 'unavailable'; el.innerHTML = _pwEmptyState('unavailable'); } catch (_) {}
+      }
+    }
+  } catch (e) {
+    console.debug('plugin widget cards render failed', e);
+  }
+}
 
 let _dashDragSrcId = null;
 
