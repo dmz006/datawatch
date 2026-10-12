@@ -3458,6 +3458,7 @@ function renderSessionDetail(sessionId) {
       <div id="sessionSchedules" class="session-schedules" style="display:none;"></div>
       <!-- v5.28.5 (datawatch#34) — per-session process stats panel -->
       <div id="statsPanel" class="session-stats-panel" style="display:none;"></div>
+      <div id="sessionPluginWidgets" class="session-plugin-widgets" style="display:none;"></div>
       ${connBanner}
       ${rateLimitBanner}
       ${outputAreaHtml}
@@ -3632,6 +3633,7 @@ function renderSessionDetail(sessionId) {
   }
   loadSessionSchedules(sessionId);
   loadSessionStats(sessionId);
+  refreshSessionPluginWidgets();
   // GATE alpha.36 (operator 2026-05-10): eager-fetch the status board on
   // mount so the Status tab badge dot reflects state immediately —
   // previously only populated when the operator clicked into the tab.
@@ -4151,6 +4153,9 @@ function loadSessionStats(sessionId) {
 
   let _statsInFlight = false;
   const fetchStats = () => {
+    // Rides the stats tick but is independent of the stats fetch, so a
+    // failing /api/stats doesn't stop plugin widget refresh.
+    refreshSessionPluginWidgets();
     if (_statsInFlight) return;
     _statsInFlight = true;
     apiFetch('/api/stats')
@@ -4217,6 +4222,115 @@ function loadSessionStats(sessionId) {
   fetchStats(); // immediate fetch
   window._sessionStatsInterval = setInterval(fetchStats, 5000); // poll every 5s
   el._statsInterval = window._sessionStatsInterval; // keep for legacy cleanup paths
+}
+
+// BL403 — session-surface plugin widgets. Widgets are global (operator
+// decision 2026-10-12): the same widget renders identically in every
+// session's detail view, so results are cached per server in
+// window._sessionPluginWidgetCache and painted instantly on session switch.
+// Refresh rides the session stats tick (no interval of its own), guarded by
+// an in-flight flag and a 10s throttle. Nothing here may throw.
+const _SESSION_PW_MIN_REFRESH_MS = 10000;
+
+function _sessionPluginWidgetEntry() {
+  const srv = String((typeof state !== 'undefined' && state && state.activeServer) || '');
+  const all = window._sessionPluginWidgetCache || (window._sessionPluginWidgetCache = {});
+  return all[srv] || (all[srv] = { items: null, fetchedAt: 0, inFlight: false });
+}
+
+// _sessionPluginWidgetsPaint renders the cached items into the fixed
+// #sessionPluginWidgets container. Tiles are keyed by data-plugin-widget so
+// a refresh updates bodies in place; a body is re-rendered only when its
+// render key (kind + updated_at + error) changes.
+function _sessionPluginWidgetsPaint(entry) {
+  try {
+    const box = document.getElementById('sessionPluginWidgets');
+    if (!box) return;
+    const items = entry && entry.items;
+    if (!items || !items.length) {
+      box.style.display = 'none';
+      box.innerHTML = '';
+      return;
+    }
+    const existing = {};
+    for (const ch of Array.from(box.children || [])) {
+      const k = ch && typeof ch.getAttribute === 'function' ? ch.getAttribute('data-plugin-widget') : null;
+      if (k) existing[k] = ch;
+    }
+    const keep = new Set();
+    for (const it of items) {
+      const key = _pwCardId(it.plugin, it.id);
+      keep.add(key);
+      let tile = existing[key];
+      if (!tile) {
+        tile = document.createElement('div');
+        tile.className = 'session-plugin-widget';
+        tile.setAttribute('data-plugin-widget', key);
+        tile.innerHTML = `<div class="session-plugin-widget-head">🧩 ${escHtml(it.id)} <span class="session-plugin-widget-plugin">${escHtml(it.plugin)}</span></div>
+          <div class="session-plugin-widget-body">${_pwEmptyState('loading')}</div>`;
+      }
+      // appendChild moves an existing tile, so DOM order follows items.
+      box.appendChild(tile);
+      const body = (typeof tile.querySelector === 'function' && tile.querySelector('.session-plugin-widget-body')) || tile;
+      const v = it.view && it.view.value;
+      const renderKey = it.err ? 'unavailable'
+        : 'v|' + String(it.view.kind) + '|' + (v && typeof v === 'object' ? String(v.updated_at) + '|' + String(v.error || '') : 'null');
+      if (body._spwKey !== renderKey) {
+        body._spwKey = renderKey;
+        if (it.err) body.innerHTML = _pwEmptyState('unavailable');
+        else _pwRenderInto(body, it.view);
+      }
+    }
+    for (const k of Object.keys(existing)) {
+      if (!keep.has(k)) { try { box.removeChild(existing[k]); } catch (_) {} }
+    }
+    box.style.display = '';
+  } catch (e) {
+    console.debug('session plugin widgets paint failed', e);
+  }
+}
+
+function _sessionPluginWidgetsFetch(entry) {
+  const call = (p) => { try { return Promise.resolve(apiFetch(p)); } catch (e) { return Promise.reject(e); } };
+  return call('/api/plugins').then(d => {
+    const plugins = (d && Array.isArray(d.plugins)) ? d.plugins : [];
+    const groups = [];
+    for (const p of plugins) {
+      if (!p || typeof p.name !== 'string' || p.enabled === false || !Array.isArray(p.widgets)) continue;
+      const ids = p.widgets.filter(w => w && w.surface === 'session' && typeof w.id === 'string').map(w => w.id);
+      if (ids.length) groups.push({ plugin: p.name, ids });
+    }
+    // One request per plugin; a failed request marks only that plugin's tiles unavailable.
+    return Promise.all(groups.map(g =>
+      call('/api/plugins/' + encodeURIComponent(g.plugin) + '/widgets').then(r => {
+        const views = {};
+        for (const v of ((r && Array.isArray(r.widgets)) ? r.widgets : [])) {
+          if (v && typeof v === 'object' && v.surface === 'session' && typeof v.id === 'string') views[v.id] = v;
+        }
+        return g.ids.map(id => ({ plugin: g.plugin, id, view: views[id] || null, err: !views[id] }));
+      }, () => g.ids.map(id => ({ plugin: g.plugin, id, view: null, err: true })))
+    )).then(lists => { entry.items = [].concat(...lists); });
+  }, () => { entry.items = []; });
+}
+
+function refreshSessionPluginWidgets() {
+  try {
+    if (!document.getElementById('sessionPluginWidgets')) return;
+    const entry = _sessionPluginWidgetEntry();
+    _sessionPluginWidgetsPaint(entry);
+    if (entry.inFlight || Date.now() - entry.fetchedAt < _SESSION_PW_MIN_REFRESH_MS) return;
+    entry.inFlight = true;
+    entry.fetchedAt = Date.now();
+    _sessionPluginWidgetsFetch(entry)
+      .catch(e => { console.debug('session plugin widgets refresh failed', e); entry.items = []; })
+      .finally(() => {
+        entry.inFlight = false;
+        // Only paint if the active server is still this entry's server.
+        if (_sessionPluginWidgetEntry() === entry) _sessionPluginWidgetsPaint(entry);
+      });
+  } catch (e) {
+    console.debug('session plugin widgets refresh failed', e);
+  }
 }
 
 function loadSessionSchedules(sessionId) {
