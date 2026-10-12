@@ -1205,7 +1205,29 @@ _2026-05-02 operator-filed items promoted directly to BL218–BL221. 2026-05-03 
 > passed) and `make lint` (0 issues) both green; `gosec` reinstalled to
 > match the local Go toolchain (the same stale-binary class of problem
 > noted earlier this session for `golangci-lint`) and re-run scoped to
-> every touched package — 0 new findings. No longer open.
+> every touched package — 0 new findings.
+> **Follow-up found immediately on deploy (v9.0.42)**: after rebuilding
+> and reinstalling the daemon for real — a separate discovery made
+> deploying this very fix: the running `systemctl` service had been
+> stuck on a stale v9.0.30 binary from the day before, silently
+> predating BL416 Phase 2 (v9.0.37) entirely, for the whole time this
+> session believed it was testing "live" decompose/verify behavior.
+> Both root causes above are still correct and were confirmed by
+> reading source, not by trusting that stale "live" evidence — but it
+> means the earlier claim of having confirmed them live needed this
+> correction, made to the operator at the time — and configuring
+> `autonomous.verification_backend=claude-code` for real still didn't
+> route a verify call through a session: `autonomous.
+> verification_backends` (the capacity-candidate list, still
+> `["ollama-johnnyjohnny","ollama-datawatch"]`) is tried first and
+> matched before the single `verification_backend` is ever consulted,
+> and attempting to clear it had no effect. Root cause:
+> `handleAutonomousConfigSet` (`internal/mcp/autonomous.go`) only
+> included `verification_backends` in its PUT body when
+> `len(arr) > 0`, so an explicit empty array and "didn't mention it"
+> were indistinguishable and the clear silently never happened. Fixed
+> v9.0.42: presence-aware, matching this same handler's existing
+> pattern for bool fields. No longer open.
 
 _(Otherwise no open bugs as of the 2026-10-09/10 backlog refactor —
 everything previously listed here was already closed and has been moved

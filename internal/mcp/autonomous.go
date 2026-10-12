@@ -102,8 +102,18 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 			body[k] = v
 		}
 	}
-	if arr := req.GetStringSlice("verification_backends", nil); len(arr) > 0 {
-		body["verification_backends"] = arr
+	// B124 — presence-aware, not len()>0: an operator explicitly clearing
+	// this list back to empty (e.g. to stop it silently overriding
+	// verification_backend with an ask-compatible fallback) must be able
+	// to express that. len(arr)>0 dropped the key from the PUT body
+	// entirely for an empty array, so "clear it" was indistinguishable
+	// from "didn't mention it" and never took effect — found live
+	// debugging why configuring verification_backend to a tool-capable
+	// backend still silently used an ollama candidate from this list.
+	if args := req.GetArguments(); args != nil {
+		if _, ok := args["verification_backends"]; ok {
+			body["verification_backends"] = req.GetStringSlice("verification_backends", nil)
+		}
 	}
 	// BL367 — default quality gates nested under default_quality_gates.
 	qg := map[string]any{}

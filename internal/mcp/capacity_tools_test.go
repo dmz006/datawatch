@@ -91,3 +91,50 @@ func TestAutonomousConfigSet_CapacityFields(t *testing.T) {
 		t.Fatalf("body=%v", got)
 	}
 }
+
+// B124 — verification_backends must be sent whenever the caller
+// explicitly mentions it, including an empty array to clear a
+// previously-set list. The old len(arr)>0 check dropped the key from
+// the PUT body entirely for an empty array, so "clear it" was
+// indistinguishable from "didn't mention it" and never took effect —
+// the list kept silently overriding an explicitly configured
+// verification_backend with an ask-compatible fallback candidate.
+func TestAutonomousConfigSet_VerificationBackendsClearable(t *testing.T) {
+	var got map[string]any
+	s := capacityTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(b, &got)
+		_, _ = w.Write([]byte(`{}`))
+	})
+
+	// Explicit empty array — must be present and empty in the body.
+	got = nil
+	if _, err := s.handleAutonomousConfigSet(context.Background(), callReq(map[string]any{"verification_backends": []any{}})); err != nil {
+		t.Fatal(err)
+	}
+	arr, ok := got["verification_backends"]
+	if !ok {
+		t.Fatalf("verification_backends missing from body entirely for an explicit empty array: %v", got)
+	}
+	if s, ok := arr.([]any); !ok || len(s) != 0 {
+		t.Fatalf("verification_backends = %v, want an empty array (present, length 0)", arr)
+	}
+
+	// Non-empty array still passes through unchanged.
+	got = nil
+	if _, err := s.handleAutonomousConfigSet(context.Background(), callReq(map[string]any{"verification_backends": []any{"ollama"}})); err != nil {
+		t.Fatal(err)
+	}
+	if arr, ok := got["verification_backends"].([]any); !ok || len(arr) != 1 || arr[0] != "ollama" {
+		t.Fatalf("verification_backends = %v, want [\"ollama\"]", got["verification_backends"])
+	}
+
+	// Not mentioning the field at all must not add it to the body.
+	got = nil
+	if _, err := s.handleAutonomousConfigSet(context.Background(), callReq(map[string]any{"capacity_enabled": true})); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := got["verification_backends"]; ok {
+		t.Fatalf("verification_backends present when the caller never mentioned it: %v", got)
+	}
+}

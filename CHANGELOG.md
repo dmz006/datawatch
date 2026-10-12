@@ -5,6 +5,26 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.42 — fix(mcp): B124 follow-up — `verification_backends` can actually be cleared
+
+### Fixed
+- **`autonomous_config_set`'s `verification_backends` could never be
+  cleared back to empty.** Found live immediately after shipping v9.0.41:
+  configuring `verification_backend` to a tool-capable backend still
+  silently used an `ollama` candidate from the (non-empty)
+  `verification_backends` capacity-candidate list instead — that list is
+  tried first, before the single `verification_backend` is ever
+  consulted. Attempting to clear it (`verification_backends: []`) had no
+  effect because the MCP tool handler only included the field in its PUT
+  body when `len(arr) > 0`, so an explicit empty array and "didn't
+  mention it" were indistinguishable and the field was silently dropped
+  before it ever reached the (correct) merge logic underneath. Fixed:
+  the field is now included whenever the caller explicitly provides it,
+  empty or not — new test
+  (`TestAutonomousConfigSet_VerificationBackendsClearable`) in
+  `internal/mcp/capacity_tools_test.go` covering the clear, non-empty,
+  and not-mentioned cases.
+
 ## v9.0.41 — fix(autonomous): B124 — PRD verifier/guardrail now actually gets tool access; decompose schema/kick-back fix
 
 ### Fixed
