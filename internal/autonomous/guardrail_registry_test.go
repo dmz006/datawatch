@@ -109,7 +109,7 @@ func TestSetPRDGuardrails_ExplicitFields(t *testing.T) {
 	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
 	prd, _ := m.CreatePRD("spec", "/p", "claude", "", EffortNormal)
 
-	updated, err := m.SetPRDGuardrails(prd.ID, "", []string{"sast-scan"}, []string{"deps-scan"})
+	updated, err := m.SetPRDGuardrails(prd.ID, "", []string{"sast-scan"}, []string{"deps-scan"}, []string{"rules-review"})
 	if err != nil {
 		t.Fatalf("SetPRDGuardrails: %v", err)
 	}
@@ -119,13 +119,16 @@ func TestSetPRDGuardrails_ExplicitFields(t *testing.T) {
 	if len(updated.PerStoryGuardrails) != 1 || updated.PerStoryGuardrails[0] != "deps-scan" {
 		t.Errorf("per_story_guardrails wrong: %v", updated.PerStoryGuardrails)
 	}
+	if len(updated.PerPRDGuardrails) != 1 || updated.PerPRDGuardrails[0] != "rules-review" { // BL418
+		t.Errorf("per_prd_guardrails wrong: %v", updated.PerPRDGuardrails)
+	}
 }
 
 func TestSetPRDGuardrails_NamedProfile(t *testing.T) {
 	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
 	prd, _ := m.CreatePRD("spec", "/p", "claude", "", EffortNormal)
 
-	updated, err := m.SetPRDGuardrails(prd.ID, "strict-profile", nil, nil)
+	updated, err := m.SetPRDGuardrails(prd.ID, "strict-profile", nil, nil, nil)
 	if err != nil {
 		t.Fatalf("SetPRDGuardrails: %v", err)
 	}
@@ -136,7 +139,7 @@ func TestSetPRDGuardrails_NamedProfile(t *testing.T) {
 
 func TestSetPRDGuardrails_NotFound(t *testing.T) {
 	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
-	_, err := m.SetPRDGuardrails("nope", "", nil, nil)
+	_, err := m.SetPRDGuardrails("nope", "", nil, nil, nil)
 	if err == nil {
 		t.Fatal("expected error for missing PRD")
 	}
@@ -193,6 +196,37 @@ func TestResolveGuardrails_GlobalFallback(t *testing.T) {
 	result := m.resolveGuardrails(prd, "task")
 	if len(result) != 1 || result[0] != "global-g" {
 		t.Errorf("should fall back to global, got: %v", result)
+	}
+}
+
+// BL418 — same explicit > profile > global precedence, extended to the
+// "prd" level (PRD-completion rules review opt-in).
+func TestResolveGuardrails_PRDLevel_ExplicitBeatsProfileBeatsGlobal(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.PerPRDGuardrails = []string{"global-g"}
+	m, _ := NewManager(t.TempDir(), cfg, nil)
+
+	p, _ := m.CreateGuardrailProfile("p", "", []string{"profile-g"})
+
+	prd, _ := m.CreatePRD("spec", "/p", "claude", "", EffortNormal)
+	prd.GuardrailProfile = p.ID
+	_ = m.Store().SavePRD(prd)
+	prd, _ = m.Store().GetPRD(prd.ID)
+
+	if result := m.resolveGuardrails(prd, "prd"); len(result) != 1 || result[0] != "profile-g" {
+		t.Errorf("profile should beat global at the prd level, got: %v", result)
+	}
+
+	prd.PerPRDGuardrails = []string{"explicit-g"}
+	_ = m.Store().SavePRD(prd)
+	prd, _ = m.Store().GetPRD(prd.ID)
+	if result := m.resolveGuardrails(prd, "prd"); len(result) != 1 || result[0] != "explicit-g" {
+		t.Errorf("explicit should beat profile+global at the prd level, got: %v", result)
+	}
+
+	prd2, _ := m.CreatePRD("spec2", "/p", "claude", "", EffortNormal)
+	if result := m.resolveGuardrails(prd2, "prd"); len(result) != 1 || result[0] != "global-g" {
+		t.Errorf("should fall back to global at the prd level, got: %v", result)
 	}
 }
 

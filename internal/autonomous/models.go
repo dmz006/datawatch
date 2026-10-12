@@ -249,6 +249,10 @@ type PRD struct {
 	GuardrailProfile    string   `json:"guardrail_profile,omitempty"`
 	PerTaskGuardrails   []string `json:"per_task_guardrails,omitempty"`
 	PerStoryGuardrails  []string `json:"per_story_guardrails,omitempty"`
+	// BL418 — per-Automaton override for the "prd" level (PRD-completion
+	// rules review). Same explicit > profile > global Config precedence
+	// as the task/story lists above.
+	PerPRDGuardrails []string `json:"per_prd_guardrails,omitempty"`
 
 	// BL331 — federation peer that originated this PRD via channel routing.
 	OwnerPeer string `json:"owner_peer,omitempty"`

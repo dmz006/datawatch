@@ -5,6 +5,67 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.48 — fix(autonomous): BL418 — make the PRD-completion rules review operator-configurable
+
+### Fixed
+- **BL418's rules review (v9.0.47) shipped unconditionally-on**
+  whenever a rules/context file exists in a PRD's project directory —
+  every other guardrail in this codebase (task/story-level) is
+  operator opt-in via an explicit list, and this one wasn't. Flagged
+  live immediately after v9.0.47 shipped: "these validation tools
+  should be selectable and configurable by the operator."
+- `runPRDCompletionRulesReview` now gates on `"rules-review"`
+  appearing in the PRD's resolved `"prd"`-level guardrail list before
+  doing anything else — same `resolveGuardrails` precedence chain
+  (explicit per-PRD list > named profile > daemon-wide default) its
+  task/story siblings already use, extended with a third level
+  instead of a parallel mechanism. Off by default, same as the
+  task/story lists.
+
+### Added
+- New `Config.PerPRDGuardrails []string` (daemon-wide default) and
+  `PRD.PerPRDGuardrails []string` (per-Automaton override) — the
+  `"prd"`-level siblings of the existing `PerTaskGuardrails`/
+  `PerStoryGuardrails`.
+- `resolveGuardrails(prd, "prd")` — same function, same precedence,
+  one more level.
+- `"rules-review"` registered in the guardrail library
+  (`GuardrailLibrary`/`guardrail_library_list`) so it's discoverable
+  and selectable the same way `sast-scan`/`secrets-scan`/`deps-scan`/
+  `project-rules-scan` already are. Not a scan type — still dispatched
+  by `runPRDCompletionRulesReview` directly via `GuardrailFn`.
+- Parity: `per_automaton_guardrails_set` MCP tool gains
+  `per_prd_guardrails_json`; `PUT /api/autonomous/prds/{id}/guardrails`
+  gains `per_prd_guardrails`; `autonomous.per_prd_guardrails` config
+  key (YAML/REST/PWA generic config list/comm `config-set`), mirroring
+  `autonomous.per_task_guardrails`/`per_story_guardrails` exactly at
+  every one of those surfaces.
+
+### Reuse audit
+- Zero new mechanism: extended the existing `resolveGuardrails`
+  function with a third level instead of writing a parallel resolver;
+  extended the existing `SetPRDGuardrails`/`per_automaton_guardrails_set`
+  plumbing with a third parameter instead of a new setter/tool.
+
+### Tests
+- `TestResolveGuardrails_PRDLevel_ExplicitBeatsProfileBeatsGlobal` —
+  same three-way precedence test as the task-level original, run
+  against the new `"prd"` level.
+- `TestRunPRDCompletionRulesReview_NotEnabledIsNoOp` — rules file
+  present + `GuardrailFn` wired + `"rules-review"` never opted in ⇒
+  no-op (the gap this release closes). Every existing
+  `TestRunPRDCompletionRulesReview_*` test updated to opt in via
+  `PRD.PerPRDGuardrails`, since the review is no longer on by default.
+- `TestSetPRDGuardrails_ExplicitFields` extended to cover the new
+  third field. `TestApplyConfigPatch_*` extended with the array and
+  CSV-clear shapes for `autonomous.per_prd_guardrails`.
+
+### Mobile parity
+- `autonomous.per_prd_guardrails` rides the PWA's existing generic
+  autonomous-config field list (same mechanism as its task/story
+  siblings) — no new PWA code needed, consistent with how those two
+  fields are already surfaced.
+
 ## v9.0.47 — feat(autonomous): BL418 — PRD-completion rules review (judgment, not scripted)
 
 ### Added

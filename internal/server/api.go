@@ -189,7 +189,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "9.0.47"
+var Version = "9.0.48"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -744,7 +744,7 @@ type AutonomousAPI interface {
 	DeleteGuardrailProfile(id string) error
 	ListGuardrailProfiles() []any
 	GetGuardrailProfile(id string) (any, bool)
-	SetPRDGuardrails(prdID, profile string, perTask, perStory []string) (any, error)
+	SetPRDGuardrails(prdID, profile string, perTask, perStory, perPRD []string) (any, error)
 
 	// BL303 S3 T15 — on-demand guardrail invocation for a session.
 	// Runs the named guardrail against projectDir; result is appended to the
@@ -6814,6 +6814,12 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 				cfg.Autonomous.PerStoryGuardrails = arr
 			} else if s, ok := v.(string); ok {
 				cfg.Autonomous.PerStoryGuardrails = splitCSV(s)
+			}
+		case "autonomous.per_prd_guardrails": // BL418
+			if arr, ok := toStringArray(v); ok {
+				cfg.Autonomous.PerPRDGuardrails = arr
+			} else if s, ok := v.(string); ok {
+				cfg.Autonomous.PerPRDGuardrails = splitCSV(s)
 			}
 		// BL406 — project-rules enforcement config.
 		case "autonomous.rules_file":

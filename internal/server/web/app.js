@@ -13890,6 +13890,8 @@ const GENERAL_CONFIG_FIELDS = [
     // guardrail names (rules, security, release-readiness, docs-diagrams-architecture).
     { key: 'autonomous.per_task_guardrails', label: 'Per-task guardrails', type: 'text', placeholder: 'rules, security', csv: true },
     { key: 'autonomous.per_story_guardrails', label: 'Per-story guardrails', type: 'text', placeholder: 'release-readiness', csv: true },
+    // BL418 — PRD-completion rules review opt-in (off by default).
+    { key: 'autonomous.per_prd_guardrails', label: 'Per-automaton (PRD) guardrails', type: 'text', placeholder: 'rules-review', csv: true },
     // Phase 3 (v5.26.62) — per-story approval gate. When ON, PRD
     // approval transitions every story to "awaiting_approval" and
     // the runner skips those until the operator approves each
