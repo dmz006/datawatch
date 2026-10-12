@@ -240,6 +240,19 @@ Research + decision capture. Done, this file is the artifact.
 
 ### Phase 4 — Generic widget renderer (PWA)
 
+- **Status**: Done — shipped in v9.0.41. Mobile-Parity: tracked in
+  datawatch-app#252 (https://github.com/dmz006/datawatch-app/issues/252).
+  Both open questions below were resolved by the operator on
+  2026-10-12:
+  - **Dashboard integration — resolved: per-widget grid entries.** Each
+    plugin widget is its own entry in the dashboard layout array, id
+    `plugin:<plugin-name>:<widget-id>`, added from Add Card and
+    movable/resizable/removable like any card. The single fixed
+    "Plugin Widgets" card alternative was not taken.
+  - **Session widgets — resolved: global.** A session widget shows the
+    same plugin-wide value in every session's detail view; it is not
+    keyed by session id.
+
 - New generic render functions, one per `Kind`: `stat_tile`, `table`,
   `list`, `sparkline`, `status_badge` — small, pure functions (data in,
   safe HTML out, same `escHtml` discipline every other card already

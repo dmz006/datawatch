@@ -5,6 +5,87 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.46 — feat(pwa): generic plugin widget renderer — dashboard cards and session detail
+
+### Added
+- **Plugin widgets now render in the PWA.** This is the first
+  operator-visible surface for plugin widgets; v9.0.40 shipped only the
+  manifest schema, transport and storage. One generic renderer per
+  widget `kind`:
+  - `stat_tile`: value, optional unit, label and detail.
+  - `table`: one header cell per column, one row per entry (array rows
+    or rows keyed by column name).
+  - `list`: one entry per item, with an optional detail line.
+  - `sparkline`: an inline SVG line of the numeric points, with an
+    optional label and current value.
+  - `status_badge`: `ok` / `warn` / `error` / `unknown`; any other
+    status shows as `unknown`.
+  - `markdown`: goes through the dashboard's existing markdown
+    renderer, which sanitizes the output.
+  Every plugin-supplied string is HTML-escaped (and escaped for inline
+  handlers where it lands in one), so markup in widget data shows as
+  literal text. A value that does not match its kind's shape shows the
+  quiet "No data yet" state. A failed latest pull keeps the previous
+  data and adds a small ⚠ marker whose tooltip shows the error.
+- **Dashboard widgets are dashboard cards.** Each enabled plugin's
+  `surface: dashboard` widgets are listed in the dashboard's **Add
+  Card** panel under "Plugin widgets". An added widget is its own card:
+  it can be moved, resized and removed like any built-in card, and it
+  is saved with the dashboard layout. The card refreshes on the
+  widget's `interval_seconds` (minimum 10s) and repaints only when the
+  value changes.
+- **Session widgets in session detail.** `surface: session` widgets
+  render below the stats panel in every session's detail view and
+  refresh with the session stats poll. A widget has one value, so every
+  session shows the same data. The container stays hidden when no
+  enabled plugin declares a session widget.
+- **Quiet unavailable state.** A widget whose plugin is disabled, whose
+  plugin or widget no longer exists, or whose fetch fails (network
+  error, `404`, `503`) shows "Widget unavailable" instead of an error.
+  A disabled plugin's widgets are never fetched, even though the read
+  endpoints would still return their stored value.
+- **Per-kind value shapes** are now documented in `docs/api/plugins.md`
+  ("Widget value shapes"), together with the size caps the renderer
+  applies.
+- New locale keys `dash_plugin_widgets_heading`,
+  `plugin_widget_loading`, `plugin_widget_no_data` and
+  `plugin_widget_unavailable` in all 5 bundles (en, de, es, fr, ja).
+
+### Design decisions (operator-confirmed 2026-10-12)
+- **One dashboard card per widget.** Each plugin widget is its own
+  entry in the dashboard layout (`plugin:<plugin>:<widget-id>`), so the
+  existing add, remove, drag and resize controls work on it unchanged.
+  A single fixed "Plugin widgets" card holding every plugin's tiles was
+  considered and not chosen, because it could not be sized, placed or
+  removed per widget.
+- **Session widgets are global.** A `surface: session` widget shows the
+  same plugin-wide value in every session's detail view; it is not
+  scoped to one session. Per-session widget values are not part of
+  this release.
+
+### Mobile parity
+- Tracked in [datawatch-app#252](https://github.com/dmz006/datawatch-app/issues/252)
+  (render plugin widgets on the dashboard and in session detail).
+  No API change in this release; the mobile apps can build on the
+  v9.0.40 read endpoints and the value shapes in `docs/api/plugins.md`.
+
+### Reuse audit
+- The generic renderer dispatches on `widget.kind` into small pure
+  functions reusing this codebase's existing card markup idiom
+  (`_dashRenderGuardrails`/`_dashRenderMemoryScope`'s CSS-var + `escHtml`
+  pattern) rather than inventing new styling. `markdown` reuses the
+  dashboard's existing markdown renderer verbatim. The dashboard
+  integration is a single new `plugin:` id-prefix branch inside the
+  existing `_dashCardHTML`/`_dashBuildGrid` dispatch — the existing
+  add/remove/drag/resize/persist-layout code paths are untouched, not
+  duplicated.
+
+### Tests
+- Per-kind render, XSS escaping, empty/unavailable states, the
+  `plugin:` card branch, the Add Card panel, session-detail container
+  and locale keys. See the "Plugin widget renderer (PWA) — v9.0.46"
+  section of `docs/testing-tracker.md`.
+
 ## v9.0.45 — fix(autonomous): B124 final follow-up — session calls no longer get a nonsense model
 
 ### Fixed
