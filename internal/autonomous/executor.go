@@ -603,6 +603,17 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 			prd.Status = PRDBlocked
 			_ = m.store.SavePRD(prd)
 			return nil
+		} else if blocked, err := m.runPRDCompletionRulesReview(ctx, prd); err != nil {
+			return err
+		} else if blocked {
+			// B124 extension — the judgment-based sibling of the
+			// deterministic check just above. Same PRDBlocked signal;
+			// see rules_review.go's own doc comment for why this is a
+			// judgment review against whatever rules file the operator
+			// configured, not a second hardcoded checklist.
+			prd.Status = PRDBlocked
+			_ = m.store.SavePRD(prd)
+			return nil
 		} else {
 			prd.Status = PRDCompleted
 			// BL387 Phase 3 — fire auto-report asynchronously on completion.

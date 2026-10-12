@@ -5,6 +5,73 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.47 — feat(autonomous): BL418 — PRD-completion rules review (judgment, not scripted)
+
+### Added
+- **A new completion-time check reviews a finished Automaton against
+  whatever rules file the operator has configured** (default
+  `AGENT.md`/`CONTEXT.md`), using the same tool-capable guardrail
+  session the B124 fix chain just made actually work. Found live
+  auditing a completed Automaton by hand: several process-compliance
+  items (a version collision with an already-shipped release, a
+  backlog tracker never updated, a stale README release line, a
+  missing CHANGELOG subsection) had silently never happened, and
+  nothing in the pipeline — not the per-task/per-story guardrails
+  (which only ever judge a unit against its own narrow spec), not the
+  existing deterministic `prd_complete` project-rules scan (which only
+  matches a short list of hand-written regex rules) — would ever have
+  caught any of it.
+- **Deliberately a judgment review, not a scripted checklist.** A
+  scripted check would have to hardcode this project's own specific
+  rules, which breaks for any other operator's repo and rule set (or
+  one with no rules file at all). Instead: reuses the exact same
+  rules-file pointer `rulesContextSuffix` already gives a tooled
+  PRD's *planning* session, generically, for the *completion* review —
+  the session reads whatever rules/context file actually exists in its
+  own project directory, with its own real tools, and checks the
+  PRD's actual changes against them. Skipped entirely when no rules
+  file is configured/present, or the PRD never had real project/tool
+  access to begin with (same gate `rulesContextSuffix` already uses).
+- Reuses the existing per-task/per-story `GuardrailFn` mechanism as-is
+  — `"rules-review"` is simply a new guardrail name that isn't in the
+  scan catalog, so it falls through to the ordinary LLM-judgment path
+  (and the B124 session-routing fix) like any other non-scan guardrail
+  name. No new backend-selection, no new session-spawn mechanism.
+- New `PRD.Verdicts []GuardrailVerdict` field (same shape Story/Task
+  already carry for their own guardrails) records the review's
+  verdict. A `block` outcome halts the PRD the same way the
+  deterministic project-rules check already can
+  (`runPRDCompletionProjectRulesCheck`, unchanged) — this is its
+  judgment-based sibling, not a replacement.
+
+### Reuse audit
+- `rulesReviewSuffix` mirrors `rulesContextSuffix`'s exact file-
+  detection gate, with review-appropriate prose instead of planning-
+  appropriate prose. `runPRDCompletionRulesReview` mirrors
+  `runPerStoryGuardrails`'s exact `GuardrailInvocation` construction
+  and `resolveGuardrailBackendModel(&Task{}, prd, ...)` PRD→global
+  backend-resolution call. Zero new session-spawn, backend-resolution
+  or prompt-wrapping code — every piece already existed from BL191/
+  BL416/B124.
+
+### Tests
+- `rulesReviewSuffix`: empty-ProjectDir, no-file-present, custom
+  filenames, judgment-framing-present — pure function tests.
+- `runPRDCompletionRulesReview`: no-GuardrailFn-wired no-op, no-rules-
+  file no-op, pass doesn't block, block outcome blocks, `GuardrailFn`
+  error propagates, PRD-then-global backend resolution. 10 new tests
+  in `internal/autonomous/rules_review_test.go`.
+
+### Mobile parity
+- N/A for this release — internal daemon-side PRD-completion logic
+  only, no new REST/MCP/CLI/comm/PWA surface. Checked, not assumed:
+  the PWA's existing per-PRD verdict/blocked-count aggregation
+  (`app.js`) sums `story.verdicts`/`task.verdicts` but does not yet
+  include this new PRD-level `verdicts` field, so a `block` outcome
+  here won't show up in that count — noted as a real, small follow-up
+  for whichever surface eventually renders it, not fixed in this
+  release since nothing was asked to render it yet.
+
 ## v9.0.46 — feat(pwa): generic plugin widget renderer — dashboard cards and session detail
 
 ### Added
