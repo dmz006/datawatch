@@ -5,6 +5,54 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.38 — feat(autonomous): guardrails run the unit's verification script before LLM judgment
+
+### Changed
+- Per-task and per-story guardrails now run the task's or story's
+  verification script (when decompose wrote one under
+  `.datawatch/verify/`) **once per unit, before** falling back to LLM
+  judgment:
+  - **Clean pass (exit 0):** every configured non-scan guardrail for
+    that unit records a deterministic `pass` verdict
+    ("verification script … passed (exit 0)") and **no LLM is called**.
+  - **Failure (non-zero exit):** the guardrail judgment call now
+    receives the script's real captured output (stdout + stderr, last
+    8KB kept behind a truncation note) and its exit code, inside the
+    existing untrusted-data tags, and is told to treat a non-zero exit
+    as evidence of failure — the verdict is grounded in real output
+    instead of guessed from the spec text.
+  - A script that cannot be run at all (path outside the automaton's
+    project directory, absolute path, bash unavailable) is reported to
+    the judge as a failed run — it is never an automatic pass.
+  - The script runs with `bash`, with the automaton's project directory
+    as its working directory; its path must resolve inside that
+    directory or it is rejected before anything executes.
+- Per-task and per-automaton `guardrail_backend` / `guardrail_model`
+  overrides are now honored by the guardrail judgment call
+  (task → automaton → global `autonomous.verification_backend` /
+  `verification_model`). Story-level guardrails use the automaton →
+  global order.
+- Unchanged: scan-type guardrails (e.g. secrets / dependency scans)
+  still always run as before; tasks and stories with no verification
+  script behave exactly as in previous releases (same prompt, same
+  backend selection when no override is set). No new REST/MCP/CLI/
+  chat/PWA surface or config key.
+
+### Tests
+- `internal/autonomous/verification_script_exec_test.go`: exit-0 and
+  non-zero exit capture, missing script, unsafe-path rejection without
+  execution, output truncation, working directory.
+- `internal/autonomous/guardrails_test.go`: clean script pass skips
+  the LLM for task and story guardrails; failing script output reaches
+  the judge; an unrunnable script never auto-passes; no-script
+  backward compatibility; scan guardrails still run after a script
+  pass; the script runs exactly once per unit; resolved backend/model
+  reach the invocation.
+- `cmd/datawatch/autonomous_guardrail_prompt_test.go`: the no-script
+  prompt is byte-identical to the previous prompt; script output and
+  exit code appear inside the untrusted-data block and cannot close
+  it early; resolved backend/model override the global setting.
+
 ## v9.0.37 — feat(autonomous): decompose asks tooled planners to write per-task verification scripts
 
 ### Changed

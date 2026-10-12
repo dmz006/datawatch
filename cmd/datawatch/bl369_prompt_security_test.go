@@ -61,8 +61,17 @@ func TestBL369_AutonomousVerify_SecurityPreamble(t *testing.T) {
 
 // TestBL369_AutonomousGuardrail_SecurityPreamble checks that autonomousGuardrail
 // wraps UnitTitle and UnitSpec in <user_data> tags with a SECURITY NOTE preamble.
+// BL416 Phase 3 moved the prompt into buildAutonomousGuardrailPrompt
+// (autonomous_guardrail_prompt.go); main.go must still route through it.
 func TestBL369_AutonomousGuardrail_SecurityPreamble(t *testing.T) {
-	src := readMainGo(t)
+	if !contains(readMainGo(t), "prompt := buildAutonomousGuardrailPrompt(req)") {
+		t.Errorf("autonomousGuardrail: main.go no longer builds its prompt via buildAutonomousGuardrailPrompt")
+	}
+	data, err := os.ReadFile("autonomous_guardrail_prompt.go")
+	if err != nil {
+		t.Fatalf("cannot read autonomous_guardrail_prompt.go: %v", err)
+	}
+	src := string(data)
 
 	checks := []struct {
 		name string
@@ -74,7 +83,7 @@ func TestBL369_AutonomousGuardrail_SecurityPreamble(t *testing.T) {
 	}
 	for _, c := range checks {
 		if !contains(src, c.want) {
-			t.Errorf("autonomousGuardrail: missing %q in main.go", c.name)
+			t.Errorf("autonomousGuardrail: missing %q in autonomous_guardrail_prompt.go", c.name)
 		}
 	}
 }
