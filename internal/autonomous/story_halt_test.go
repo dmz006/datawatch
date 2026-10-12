@@ -19,6 +19,12 @@ import (
 // is observed, plus a longer deadline for headroom on a loaded CI runner
 // (this test exercises two sequential task executions across a
 // dependency chain, more wall-clock than a single-task test).
+//
+// 2026-10-12 — 15s still wasn't enough: TestExecutor_CancelledDependency-
+// FailsDependent reproduced the exact same timeout twice in a row on CI
+// (two different PRs, ~15.0-15.1s each time, 0.07s locally every time) —
+// a real contention-driven slowdown under `go test ./...` running every
+// package in parallel, not flakiness. Bumped to 30s for more headroom.
 func runToTerminalOrBlocked(t *testing.T, m *Manager, api *API, id string, spawn SpawnFn, verify VerifyFn) *PRD {
 	t.Helper()
 	prd, _ := m.Store().GetPRD(id)
@@ -28,7 +34,7 @@ func runToTerminalOrBlocked(t *testing.T, m *Manager, api *API, id string, spawn
 	if err := api.Run(id); err != nil {
 		t.Fatal(err)
 	}
-	deadline := time.Now().Add(15 * time.Second)
+	deadline := time.Now().Add(30 * time.Second)
 	for time.Now().Before(deadline) {
 		got, _ := m.Store().GetPRD(id)
 		if got.Status == PRDCompleted || got.Status == PRDFailed || got.Status == PRDBlocked {
