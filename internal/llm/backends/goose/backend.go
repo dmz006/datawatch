@@ -81,6 +81,7 @@ func resolveBinary(binary string) string {
 func (b *Backend) Name() string                  { return "goose" }
 func (b *Backend) SupportsInteractiveInput() bool { return true }
 func (b *Backend) PromptRequired() bool           { return false }
+func (b *Backend) HasToolAccess() bool            { return true }
 
 // SetSessionName stores the name used to start or resume a named Goose session.
 func (b *Backend) SetSessionName(name string) {
@@ -231,6 +232,7 @@ func NewPrompt(binary string) llm.Backend {
 func (b *PromptBackend) Name() string                  { return "goose-prompt" }
 func (b *PromptBackend) SupportsInteractiveInput() bool { return false }
 func (b *PromptBackend) PromptRequired() bool           { return true }
+func (b *PromptBackend) HasToolAccess() bool            { return true }
 
 func (b *PromptBackend) SetProvider(p string)            { b.provider = p }
 func (b *PromptBackend) SetModel(m string)               { b.model = m }

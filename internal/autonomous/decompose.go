@@ -106,12 +106,16 @@ The JSON must follow this schema exactly:
       "description": "<one-paragraph description>",
       "files": ["<repo-relative path>", "..."],
       "depends_on": [],
+      "verification_script": "<repo-relative path to an executable verification script you wrote, or empty string — see the Verification scripts section below>",
+      "files_generated": ["<repo-relative path>", "..."],
       "tasks": [
         {
           "title": "<task title>",
           "spec": "<concrete instructions for one worker session — include file paths and context from your exploration>",
           "files": ["<repo-relative path>", "..."],
-          "depends_on": []
+          "depends_on": [],
+          "verification_script": "<repo-relative path to an executable verification script you wrote, or empty string — see the Verification scripts section below>",
+          "files_generated": ["<repo-relative path>", "..."]
         }
       ]
     }
@@ -122,6 +126,12 @@ Rules:
 - depends_on lists either story or task titles that must complete first.
 - Each task spec must be self-contained — the worker won't see other tasks.
 - Aim for 1-3 stories per PRD, 1-5 tasks per story. Prefer fewer, well-scoped tasks.
+- verification_script / files_generated (B124/BL416): these two fields are
+  part of this schema, not optional extras — fill them in per any
+  "Verification scripts" instructions appended below. An empty string for
+  verification_script is only correct for a unit with no applicable
+  check (e.g. a pure-research story producing no files); every unit that
+  touches real files should have one.
 - Write ONLY raw JSON to the file — no markdown fences, no explanatory prose.
 
 Feature request:

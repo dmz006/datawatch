@@ -1133,10 +1133,79 @@ _2026-05-02 operator-filed items promoted directly to BL218–BL221. 2026-05-03 
 > Nothing was fixed in the code (it was already correct); this is a
 > process finding about verifier reliability, not a code defect — filed
 > per the operator's standing instruction to report PRD/process defects
-> rather than silently patch them. Open: worth a dedicated look at
-> whether `verification_backend` should default to a stronger model, or
-> whether the guardrail prompt should be tightened so a model naming
-> specific missing symbols is told to grep for them first.
+> rather than silently patch them. The "should verification_backend
+> default to a stronger model" question this closed with is answered,
+> in part, by **B124** below: pointing verification at a stronger model
+> is necessary but not sufficient on its own — see B124 for why the
+> verifier never had real tool access regardless of which model backed
+> it, and operator direction (2026-10-12) to configure `claude-code` as
+> the verifier now that it can actually use tools.
+
+> **B124** — the PRD verifier and per-task/per-story guardrail never
+> actually had tool access, for ANY configured backend — found while
+> investigating B123 and operator-raised ("the verifier should be able
+> to also run tools so it needs to be either opencode or goose or
+> claude[-code]"). Root cause had two independent layers, both found
+> live 2026-10-12:
+> 1. Decompose never actually produced a `verification_script` for any
+>    task — confirmed by checking both PRDs that had run since BL416
+>    Phase 2 shipped (BL403 Phase 3, 6 tasks; BL403 Phase 4, 10 tasks):
+>    zero out of 16 ever got one. Root cause: `PlanningPromptSession`
+>    (`internal/autonomous/decompose.go`) told the model its JSON "must
+>    follow this schema exactly" while that very schema never listed
+>    `verification_script`/`files_generated` — the BL416 instruction
+>    asking for them was appended afterward, inside what reads as the
+>    "Feature request" section, directly contradicting the "exactly"
+>    contract shown first. `TestDecompose_VerificationScriptRoundTrips`
+>    (BL416 Phase 2's own test) faked the LLM response entirely, so it
+>    proved only that the PARSER can read the field — never that the
+>    real production template asks for it consistently, which is
+>    exactly why this shipped uncaught.
+> 2. Independent of (1): even a perfectly compliant decompose response
+>    was being judged by a verifier/guardrail with no tool access at
+>    all, for any backend name. Both `autonomousVerify` and
+>    `autonomousGuardrail` (`cmd/datawatch/main.go`) were hardwired
+>    through `/api/ask`, which has adapters only for `claude` (cloud
+>    API), `ollama` and `openwebui` — all text-only. Pointing
+>    `verification_backend` at `claude-code`/`opencode`/`goose` didn't
+>    error (confirmed one such attempt silently no-op'd, zero live
+>    damage) but any real attempt would have resolved to
+>    `inferenceDisp.Call`'s "no adapter for kind" error — the backend
+>    name was never actually reachable via this path. The pre-existing
+>    stopgap (`resolveVerifierBackendModel`'s own doc comment:
+>    "session-only kinds ... fall through to the ollama default") was
+>    already explicit that this was a known, deliberate limitation —
+>    just never followed up with the real fix.
+> **Fixed v9.0.41**: (1) `PlanningPromptSession`'s schema now lists both
+> fields on the story and task examples; a new kick-back gate
+> (`validateVerificationScriptCoverage`,
+> `internal/autonomous/verification_script_coverage.go`) rejects a
+> decompose response outright (rolls the PRD back to `draft`, same as a
+> parse error) when it plans real files but names zero scripts, for any
+> tooled PRD. (2) Both `autonomousVerify` and `autonomousGuardrail` now
+> spawn a real one-shot tool-using session
+> (`cmd/datawatch/session_judgment.go`'s `runOneShotJSONSession`,
+> extracted from decompose's own proven session-spawn mechanism) when
+> the resolved backend has real tool access and a project directory
+> exists to run it in — same judgment prompt, real file/build/test
+> access instead of text alone. Tool-access detection is fully
+> data-driven, per operator direction ("it shouldn't be hard-coded...
+> tie to a definition..."): a new `llm.ToolCapable` interface
+> (`internal/llm/backend.go`) lets any backend declare
+> `HasToolAccess() bool`; claude-code, opencode (all 3 variants), goose
+> (both variants), aider, gemini and shell all implement it; ollama/
+> openwebui do not. Whichever LLM is configured for
+> `autonomous.verification_backend` (daemon-wide, or any per-PRD/
+> per-task/per-story override) is checked against this interface at the
+> moment it resolves — adding a future tool-capable backend needs no
+> change to this routing logic, only `HasToolAccess() bool { return
+> true }` on the new backend. 15 new/updated tests across
+> `internal/autonomous` and `cmd/datawatch` (see
+> `docs/testing-tracker.md`'s B124 section); `go test ./...` (3801
+> passed) and `make lint` (0 issues) both green; `gosec` reinstalled to
+> match the local Go toolchain (the same stale-binary class of problem
+> noted earlier this session for `golangci-lint`) and re-run scoped to
+> every touched package — 0 new findings. No longer open.
 
 _(Otherwise no open bugs as of the 2026-10-09/10 backlog refactor —
 everything previously listed here was already closed and has been moved

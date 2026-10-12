@@ -24,6 +24,7 @@ func New(binary string) llm.Backend {
 
 func (b *Backend) Name() string                  { return "aider" }
 func (b *Backend) SupportsInteractiveInput() bool { return false }
+func (b *Backend) HasToolAccess() bool            { return true }
 func (b *Backend) Version() string {
 	out, err := exec.Command(b.binary, "--version").Output()
 	if err != nil {

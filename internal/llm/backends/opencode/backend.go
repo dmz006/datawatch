@@ -50,6 +50,7 @@ func resolveBinary(binary string) string {
 func (b *Backend) Name() string                  { return "opencode" }
 func (b *Backend) SupportsInteractiveInput() bool { return false }
 func (b *Backend) PromptRequired() bool           { return false }
+func (b *Backend) HasToolAccess() bool            { return true }
 
 // PromptBackend runs opencode in single-prompt mode (-p). Always requires a task.
 type PromptBackend struct{ binary string }
@@ -65,6 +66,7 @@ func NewPrompt(binary string) llm.Backend {
 func (b *PromptBackend) Name() string                  { return "opencode-prompt" }
 func (b *PromptBackend) SupportsInteractiveInput() bool { return false }
 func (b *PromptBackend) PromptRequired() bool           { return true }
+func (b *PromptBackend) HasToolAccess() bool            { return true }
 func (b *PromptBackend) Version() string {
 	out, err := exec.Command(b.binary, "--version").Output()
 	if err != nil { return "" }

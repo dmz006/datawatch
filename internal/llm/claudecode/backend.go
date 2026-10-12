@@ -76,6 +76,7 @@ func (b *Backend) SetChrome(enabled bool) { b.chrome = &enabled }
 
 func (b *Backend) Name() string                  { return "claude-code" }
 func (b *Backend) SupportsInteractiveInput() bool { return true }
+func (b *Backend) HasToolAccess() bool            { return true }
 
 // SetSessionName sets a display name for the Claude session (--name flag).
 func (b *Backend) SetSessionName(name string) { b.sessionName = name }

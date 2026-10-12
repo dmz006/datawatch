@@ -113,7 +113,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "9.0.40"
+var Version = "9.0.41"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -4197,168 +4197,25 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			// daemon restart mid-decompose still finds the in-progress file intact.
 			specHash := sha256.Sum256([]byte(req.Spec))
 			outputFile := filepath.Join(req.ProjectDir, ".decompose-output-"+hex.EncodeToString(specHash[:8])+".json")
-			// 2026-10-07 — the worker session can only WRITE inside
-			// req.ProjectDir (its tool access is sandboxed there), but
-			// datawatch's own code reads this file exactly once and
-			// nothing else ever needs it from project_dir again. Relocate
-			// to a durable, PRD-scoped home under the data directory
-			// instead of leaving it in the shared project repo (operator-
-			// reported 2026-10-07: polluted git status, never cleaned up,
-			// and nothing stopped two PRDs sharing a project_dir from
-			// treading on each other's scratch state). See
-			// internal/autonomous/scratch.go.
-			scratchDir, scratchErr := autonomouspkg.ScratchDir(expandHome(cfg.DataDir), req.PRDID)
-			if scratchErr != nil {
-				fmt.Printf("[decompose-session] scratch dir for prd=%s: %v\n", req.PRDID, scratchErr)
-			}
-			relocate := func() (string, bool) {
-				return autonomouspkg.RelocateProjectFile(req.ProjectDir, filepath.Base(outputFile), scratchDir, "decompose-output.json")
-			}
-			// Restart-recovery: reuse output written by a previous run of the same spec.
-			if existingContent, ok := relocate(); ok {
-				fmt.Printf("[decompose-session] reusing prior output file %s (%d bytes)\n", outputFile, len(existingContent))
-				return existingContent, nil
-			}
-			_ = os.Remove(outputFile) // clear stale/empty output from an incomplete prior attempt
-
 			sessionTask := fmt.Sprintf(autonomouspkg.PlanningPromptSession, req.ScopeBlock, outputFile, req.Spec)
-
-			body, _ := json.Marshal(map[string]any{
-				"task":        sessionTask,
-				"project_dir": req.ProjectDir,
-				"backend":     backend,
-				"model":       req.Model,
-				"name":        "autonomous:decompose",
-				"one_shot":    true,
-				"prd_id":      req.PRDID,
-			})
 
 			timeout := 60 * time.Minute
 			if req.TimeoutSeconds > 0 {
 				timeout = time.Duration(req.TimeoutSeconds) * time.Second
 			}
-			ctx, cancel := context.WithTimeout(context.Background(), timeout)
-			defer cancel()
-
-			// A full session cap is a wait, not a failure: retry until a slot
-			// frees or the planning timeout expires.
-			var rb []byte
-			for {
-				httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
-					loopbackBaseURL(cfg)+"/api/sessions/start",
-					bytes.NewReader(body))
-				if err != nil {
-					return "", err
-				}
-				httpReq.Header.Set("Content-Type", "application/json")
-				if cfg.Server.Token != "" {
-					httpReq.Header.Set("Authorization", "Bearer "+cfg.Server.Token)
-				}
-				resp, err := http.DefaultClient.Do(httpReq)
-				if err != nil {
-					return "", fmt.Errorf("decompose session start: %w", err)
-				}
-				rb, _ = io.ReadAll(resp.Body)
-				resp.Body.Close() //nolint:errcheck
-				if resp.StatusCode == http.StatusOK {
-					break
-				}
-				if !strings.Contains(string(rb), "max sessions") {
-					return "", fmt.Errorf("decompose session start: %s — %s", resp.Status, string(rb))
-				}
-				fmt.Printf("[decompose-session] waiting for a free session slot: %s\n", strings.TrimSpace(string(rb)))
-				select {
-				case <-ctx.Done():
-					return "", fmt.Errorf("decompose session start: %w while waiting for capacity", ctx.Err())
-				case <-time.After(15 * time.Second):
-				}
-			}
-			var startOut struct {
-				ID string `json:"id"`
-			}
-			_ = json.Unmarshal(rb, &startOut)
-			if startOut.ID == "" {
-				return "", fmt.Errorf("decompose session start: no id in response: %s", string(rb))
-			}
-			fmt.Printf("[decompose-session] spawned %s (backend=%s, output=%s)\n", startOut.ID, backend, outputFile)
-
-			// Best-effort: kill the session when this function returns (handles
-			// TUI sessions that land in waiting_input after writing the output).
-			sessionID := startOut.ID
-			defer func() {
-				killCtx, killCancel := context.WithTimeout(context.Background(), 5*time.Second)
-				defer killCancel()
-				killBody, _ := json.Marshal(map[string]string{"id": sessionID})
-				killReq, err := http.NewRequestWithContext(killCtx, http.MethodPost,
-					loopbackBaseURL(cfg)+"/api/sessions/kill", bytes.NewReader(killBody))
-				if err != nil {
-					return
-				}
-				killReq.Header.Set("Content-Type", "application/json")
-				if cfg.Server.Token != "" {
-					killReq.Header.Set("Authorization", "Bearer "+cfg.Server.Token)
-				}
-				if r, err := http.DefaultClient.Do(killReq); err == nil {
-					_ = r.Body.Close()
-				}
-				fmt.Printf("[decompose-session] killed %s\n", sessionID)
-			}()
-
-			// Poll for session completion.
-			tick := time.NewTicker(3 * time.Second)
-			defer tick.Stop()
-			for {
-				select {
-				case <-ctx.Done():
-					return "", fmt.Errorf("decompose session %s timed out after %v", startOut.ID, timeout)
-				case <-tick.C:
-					pollReq, err := http.NewRequestWithContext(ctx, http.MethodGet,
-						loopbackBaseURL(cfg)+"/api/sessions/"+startOut.ID, nil)
-					if err != nil {
-						continue
-					}
-					if cfg.Server.Token != "" {
-						pollReq.Header.Set("Authorization", "Bearer "+cfg.Server.Token)
-					}
-					pollResp, err := http.DefaultClient.Do(pollReq)
-					if err != nil {
-						continue
-					}
-					pollBody, _ := io.ReadAll(pollResp.Body)
-					pollResp.Body.Close() //nolint:errcheck
-
-					var s struct {
-						State string `json:"state"`
-					}
-					if err := json.Unmarshal(pollBody, &s); err != nil {
-						continue
-					}
-					// Output-file-first: whenever the file exists and has content,
-					// treat the decompose as done regardless of session state.
-					// This handles sessions that write the file then transition
-					// to an unexpected terminal state (failed/killed) or stall
-					// in running/waiting_input without completing normally.
-					if content, ok := relocate(); ok {
-						fmt.Printf("[decompose-session] %s state=%q, output file ready (%d bytes) — treating as complete\n", startOut.ID, s.State, len(content))
-						return content, nil
-					}
-					switch s.State {
-					case "complete":
-						// Output file check above should have caught this; if not,
-						// the session completed but didn't write the file.
-						return "", fmt.Errorf("decompose session %s completed but output file %s not found", startOut.ID, outputFile)
-					case "failed", "killed", "cancelled":
-						// Give the output file one last chance: the LLM may have
-						// written it in the same instant the session was killed.
-						time.Sleep(3 * time.Second)
-						if content, ok := relocate(); ok {
-							fmt.Printf("[decompose-session] %s state=%q, output file appeared after kill (%d bytes)\n", startOut.ID, s.State, len(content))
-							return content, nil
-						}
-						return "", fmt.Errorf("decompose session %s ended with state %q and no output file", startOut.ID, s.State)
-					}
-				}
-			}
+			// 2026-10-07 — the worker session can only WRITE inside
+			// req.ProjectDir (its tool access is sandboxed there), but
+			// datawatch's own code reads this file exactly once and
+			// nothing else ever needs it from project_dir again.
+			// runOneShotJSONSession relocates it to a durable,
+			// PRD-scoped home under the data directory instead of
+			// leaving it in the shared project repo (operator-reported
+			// 2026-10-07: polluted git status, never cleaned up, and
+			// nothing stopped two PRDs sharing a project_dir from
+			// treading on each other's scratch state). See
+			// internal/autonomous/scratch.go.
+			return runOneShotJSONSession(cfg, req.PRDID, req.ProjectDir, backend, req.Model,
+				"autonomous:decompose", sessionTask, outputFile, "decompose-output.json", timeout)
 		}
 		decomposeFn := func(req autonomouspkg.DecomposeRequest) (string, error) {
 			// Per-PRD decomposition_profile takes priority over global planning_backend.
@@ -5057,6 +4914,7 @@ Verify whether the diff plausibly implements the spec. Reply with STRICT JSON on
 			// default's normal, potentially hours-long wait. See
 			// resolveVerifierCandidates' doc comment for why.
 			var vbackend, vkind, verifyModel string
+			var useSession bool
 			var release func()
 			if len(amgrCfg.VerificationBackends) > 0 && verifierCapacityTryAdmit != nil {
 				for _, c := range resolveVerifierCandidates(amgrCfg.VerificationBackends, resolveAskBackend, askCompatible) {
@@ -5067,9 +4925,9 @@ Verify whether the diff plausibly implements the spec. Reply with STRICT JSON on
 				}
 			}
 			if release == nil {
-				vbackend, vkind, verifyModel = resolveVerifierBackendModel(
+				vbackend, vkind, verifyModel, useSession = resolveVerifierBackendModel(
 					amgrCfg.VerificationBackend, amgrCfg.VerificationModel,
-					prd.Backend, prd.Model, resolveAskBackend, askCompatible)
+					prd.Backend, prd.Model, prd.ProjectDir, resolveAskBackend, askCompatible, isInferenceSessionKind)
 				if verifierCapacityAdmit != nil {
 					r, aerr := verifierCapacityAdmit(ctx, vbackend, verifyModel, "verify:"+task.ID, prd.ID)
 					if aerr != nil {
@@ -5084,6 +4942,33 @@ Verify whether the diff plausibly implements the spec. Reply with STRICT JSON on
 			}
 			if release != nil {
 				defer release()
+			}
+			// B124 — vkind has no /api/ask adapter but is a real
+			// tool-using backend and prd.ProjectDir exists to run it in:
+			// spawn a real one-shot session instead of silently
+			// downgrading to ollama (what this call used to do). Reuses
+			// the exact same judgment prompt text built above — only
+			// delivery/capture changes.
+			if useSession {
+				specHash := sha256.Sum256([]byte(task.ID + "|" + prompt))
+				outputFile := filepath.Join(prd.ProjectDir, ".verify-output-"+hex.EncodeToString(specHash[:8])+".json")
+				sessionTask := sessionJudgmentTask(prompt, prd.ProjectDir, outputFile)
+				content, serr := runOneShotJSONSession(cfg, prd.ID, prd.ProjectDir, vbackend, verifyModel,
+					"autonomous:verify:"+task.ID, sessionTask, outputFile, "verify-"+task.ID+".json", 10*time.Minute)
+				if serr != nil {
+					return autonomouspkg.VerificationResult{
+						OK: false, Severity: "medium",
+						Summary:    "verifier(session): " + serr.Error(),
+						VerifiedAt: time.Now(),
+					}, nil
+				}
+				vr := autonomouspkg.VerificationResult{
+					OK: false, Severity: "medium", Summary: "verifier(session): unparseable response",
+					VerifiedAt: time.Now(),
+				}
+				_ = json.Unmarshal([]byte(extractJSON(content)), &vr)
+				vr.VerifiedAt = time.Now()
+				return vr, nil
 			}
 			askBody := map[string]any{
 				"question": prompt,
@@ -5145,6 +5030,37 @@ Verify whether the diff plausibly implements the spec. Reply with STRICT JSON on
 			gbackend, guardrailModel := guardrailBackendModel(req, amgrCfg.VerificationBackend, amgrCfg.VerificationModel)
 			gkind, gmodel, _ := resolveAskBackend(gbackend)
 			if !askCompatible(gkind) {
+				// B124 — a real tool-using backend with somewhere to run
+				// it: spawn a one-shot session instead of silently
+				// downgrading to ollama (what this used to do
+				// unconditionally). No project_dir (headless PRD) still
+				// downgrades — there's nowhere to spawn into.
+				if needsSessionJudgment(gkind, req.ProjectDir, isInferenceSessionKind) {
+					if guardrailModel == "" {
+						guardrailModel = gmodel
+					}
+					specHash := sha256.Sum256([]byte(req.UnitID + "|" + req.Guardrail + "|" + prompt))
+					outputFile := filepath.Join(req.ProjectDir, ".guardrail-output-"+hex.EncodeToString(specHash[:8])+".json")
+					sessionTask := sessionJudgmentTask(prompt, req.ProjectDir, outputFile)
+					content, serr := runOneShotJSONSession(cfg, req.PRDID, req.ProjectDir, gbackend, guardrailModel,
+						"autonomous:guardrail:"+req.UnitID, sessionTask, outputFile,
+						"guardrail-"+req.UnitID+"-"+req.Guardrail+".json", 10*time.Minute)
+					if serr != nil {
+						return autonomouspkg.GuardrailVerdict{
+							Outcome: "block", Severity: "medium",
+							Summary:   "guardrail(session): " + serr.Error(),
+							VerdictAt: time.Now(),
+						}, nil
+					}
+					gv := autonomouspkg.GuardrailVerdict{
+						Outcome: "block", Severity: "medium",
+						Summary:   "guardrail(session): unparseable response — cannot verify compliance",
+						VerdictAt: time.Now(),
+					}
+					_ = json.Unmarshal([]byte(extractJSON(content)), &gv)
+					gv.VerdictAt = time.Now()
+					return gv, nil
+				}
 				gkind = "ollama"
 			}
 			if guardrailModel == "" {
