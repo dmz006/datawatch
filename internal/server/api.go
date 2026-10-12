@@ -658,6 +658,9 @@ type AutonomousAPI interface {
 	SetPRDLLM(prdID, backend, effort, model, decompositionProfile, decompositionModel, actor string) (any, error)
 	SetStoryLLM(prdID, storyID, backend, effort, model, actor string) (any, error)
 	SetTaskLLM(prdID, taskID, backend, effort, model, actor string) (any, error)
+	// BL416 — guardrail judge LLM overrides. nil = leave unchanged, "" = clear.
+	SetPRDGuardrailLLM(prdID string, backend, model *string, actor string) (any, error)
+	SetTaskGuardrailLLM(prdID, taskID string, backend, model *string, actor string) (any, error)
 
 	// BL386 Phase 1 + BL387 Phase 2b — per-PRD warm-start seed config.
 	SetMemorySeed(prdID string, enabled bool, maxPerScope int, roleFilter []string, fromPRDs []string, actor string) (any, error)
