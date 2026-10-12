@@ -363,15 +363,17 @@ PR open pending operator merge.**
 established. In progress — starting with BL403.**
 4. **BL403** — Plugin Extension Surfaces. Before BL405: its Phase 3/4
    widget `Kind` taxonomy is what BL405 Phase 10 consumes. **Phases 1,
-   2 and 3 shipped** (v9.0.31–40, PRs #206/#213/#221). Phase 2's merge
-   is what surfaced BL416 below. Phase 3 (widget manifest schema,
+   2, 3 and 4 shipped** (v9.0.31–46, PRs #206/#213/#221/#228). Phase 2's
+   merge is what surfaced BL416 below. Phase 3 (widget manifest schema,
    per-widget pull scheduler with hung-pull isolation, plugin-scoped
    push auth + endpoint, disk-snapshotted latest-value store) shipped
    2026-10-12 — see B123 above for a verifier-reliability finding
    surfaced reviewing this phase's own run (no code defect; the
-   implementation was correct). **Next: Phase 4** (generic PWA widget
-   renderer) — first operator-visible surface of this plan, so give
-   its decompose output an extra look before approving.
+   implementation was correct). Phase 4 (generic PWA widget renderer —
+   dashboard cards + session detail, first operator-visible surface of
+   this plan) shipped 2026-10-12, PR #228, `datawatch-app#252` filed
+   for Mobile-Parity. **Next: Phase 5** (federation capability gating
+   for widget read/write).
 5. **BL416** — Tooled, Deterministic PRD Guardrails (filed 2026-10-12,
    plan: `docs/plans/2026-10-12-tooled-deterministic-guardrails.md`).
    **Phases 0-4 shipped same day** (v9.0.34–39, PRs #214/#216/#217/
@@ -656,7 +658,7 @@ else is in `historical-plans/`):
 | `2026-10-10-configurable-project-rules-enforcement.md` | BL406 (+B111/B112/B113) | Stage 1 #1 — **done**, all 6 phases shipped (v9.0.11–v9.0.17) |
 | `2026-10-10-prd-git-workflow.md` | BL407 (+B114) | Stage 1 #2 — shipped v9.0.23 (Phases 0-6 all done) |
 | _(no plan doc yet — ran directly as a PRD)_ | BL404 | Stage 2 #3 — done, PR `datawatch#205` open pending merge |
-| `2026-10-09-plugin-extension-surfaces.md` | BL403 | Stage 3 #4 — in progress; Phases 1-3 shipped (v9.0.31–40), Phase 4 (PWA renderer) next |
+| `2026-10-09-plugin-extension-surfaces.md` | BL403 | Stage 3 #4 — in progress; Phases 1-4 shipped (v9.0.31–46), Phase 5 (federation capability gating) next |
 | `2026-10-09-gh204-result-panel.md` | BL402 (GH#204) | Stage 3 #5 |
 | `2026-10-10-llm-enhancements.md` | BL405 (absorbs BL390 P2/P3) | Stage 3 #6 |
 | `2026-10-04-f2-session-worker-isolation.md` | BL395 (security track) | Stage 3 #7 |

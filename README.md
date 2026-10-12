@@ -7,7 +7,7 @@
 [![License: Polyform NC](https://img.shields.io/badge/license-Polyform%20NC%201.0-blue)](LICENSE)
 [![Go version](https://img.shields.io/badge/go-1.24%2B-00ADD8)](https://go.dev)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20macOS%20%7C%20WSL2-lightgrey)](docs/setup.md)
-[![Release](https://img.shields.io/badge/release-v8.73.2-success)](CHANGELOG.md)
+[![Release](https://img.shields.io/badge/release-v9.0.46-success)](CHANGELOG.md)
 
 `datawatch` is a single-binary control plane that runs, remembers, plans, attests, and **debates** AI work — local sessions, ephemeral container workers, persistent memory, and the messaging fabric that ties them together — under one operator with one set of lifecycle, audit, and security guarantees.
 
@@ -57,14 +57,15 @@ Browse the catalog in-app (Settings → Skills → Registry) or on GitHub. To co
 
 ## Current release
 
-**Current release: v9.0.8 (2026-10-09).** v9.0.1–v9.0.8 are a patch
-chain fixing issues found while verifying the v9.0.0 major release
-itself: a Dockerfile `GO_VERSION` drift that silently dropped 7 of 9
-container images, a `datawatch-channel` sibling-binary self-update gap,
-`datawatch restart`/`stop`/`start` not delegating to systemd, and a
-usage-tracker restart-amplification bug that could multiply a
-long-lived session's reported cost with every daemon restart. None of
-these change v9.0.0's actual feature set, described below.
+**Current release: v9.0.46 (2026-10-12).** v9.0.9–v9.0.46 are a patch
+chain on top of the v9.0.0 major release: a plugin extension framework
+(manifest-declared widgets, now rendering live on the dashboard and in
+session detail — plugins can push or pull their own stat tiles,
+tables, lists, sparklines, status badges and markdown cards), and a
+pass of fixes to Automata's own verification and guardrail checks so a
+configured tool-capable backend actually gets real file/tool access
+instead of silently falling back to a plain text-only check. None of these change v9.0.0's actual feature set,
+described below.
 
 **v9.0.0 — Memory Lifecycle Complete.** The
 first major version since the memory-scope/lifecycle work landed:

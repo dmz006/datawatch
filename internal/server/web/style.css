@@ -3037,6 +3037,47 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
   padding: 8px 10px;
 }
 
+/* Session-surface plugin widgets: compact tiles under the stats panel. */
+.session-plugin-widgets {
+  background: rgba(59,130,246,0.04);
+  border-bottom: 1px solid var(--border);
+  padding: 8px 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.session-plugin-widget {
+  flex: 1 1 180px;
+  min-width: 0;
+  max-width: 100%;
+  max-height: 180px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 11px;
+}
+
+.session-plugin-widget-head {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-plugin-widget-plugin {
+  font-weight: 400;
+  color: var(--text2);
+}
+
+@media (max-width: 480px) {
+  .session-plugin-widget { flex-basis: 100%; }
+}
+
 .session-stats-bar {
   display: flex;
   gap: 12px;
