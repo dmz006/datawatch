@@ -33,8 +33,8 @@ func TestHopChain_TamperDetection(t *testing.T) {
 		t.Fatalf("SignHop: %v", err)
 	}
 	cases := []struct {
-		name  string
-		mut   func(e HopEntry) HopEntry
+		name string
+		mut  func(e HopEntry) HopEntry
 	}{
 		{"actor", func(e HopEntry) HopEntry { e.Actor = "attacker"; return e }},
 		{"daemon", func(e HopEntry) HopEntry { e.Daemon = "evil-daemon"; return e }},
