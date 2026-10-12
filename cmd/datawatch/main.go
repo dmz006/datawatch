@@ -113,7 +113,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "9.0.44"
+var Version = "9.0.45"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -5022,13 +5022,26 @@ Verify whether the diff plausibly implements the spec. Reply with STRICT JSON on
 				// unconditionally). No project_dir (headless PRD) still
 				// downgrades — there's nowhere to spawn into.
 				if needsSessionJudgment(gkind, req.ProjectDir, isInferenceSessionKind) {
-					if guardrailModel == "" {
-						guardrailModel = gmodel
+					// B124 follow-up (v9.0.45) — guardrailModel may hold
+					// the flat ask-compatible VerificationModel default
+					// (guardrailBackendModel's own fallback when
+					// req.GuardrailModel is empty), which must never be
+					// applied to a session call — found live, the
+					// identical bug fixed in resolveVerifierBackendModel
+					// for verify: a real claude-code session rejected an
+					// Ollama model name outright and hung until the
+					// session timeout. Only a genuine per-unit override
+					// (req.GuardrailModel) carries through; otherwise
+					// prefer the session backend's own registry-default
+					// model (gmodel).
+					sessionModel := req.GuardrailModel
+					if sessionModel == "" {
+						sessionModel = gmodel
 					}
 					specHash := sha256.Sum256([]byte(req.UnitID + "|" + req.Guardrail + "|" + prompt))
 					outputFile := filepath.Join(req.ProjectDir, ".guardrail-output-"+hex.EncodeToString(specHash[:8])+".json")
 					sessionTask := sessionJudgmentTask(prompt, req.ProjectDir, outputFile)
-					content, serr := runOneShotJSONSession(cfg, req.PRDID, req.ProjectDir, gbackend, guardrailModel,
+					content, serr := runOneShotJSONSession(cfg, req.PRDID, req.ProjectDir, gbackend, sessionModel,
 						"autonomous:guardrail:"+req.UnitID, sessionTask, outputFile,
 						"guardrail-"+req.UnitID+"-"+req.Guardrail+".json", 10*time.Minute)
 					if serr != nil {

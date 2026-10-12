@@ -5,6 +5,29 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.45 — fix(autonomous): B124 final follow-up — session calls no longer get a nonsense model
+
+### Fixed
+- **A session-routed verify/guardrail call could carry the flat,
+  ask-compatible `verification_model` straight into a real
+  `claude-code` session, which rejected it outright.** Found live
+  confirming v9.0.44's fix actually worked end to end: the session
+  spawn logged correctly (`[autonomous:verify:...] spawned ...
+  backend=claude-code`), but the session itself got stuck for the
+  entire 10-minute timeout — its pane showed *"There's an issue with
+  the selected model (qwen3.8:27b). It may not exist or you may not
+  have access to it."* `resolveVerifierBackendModel` (verify) and the
+  guardrail session branch (`cmd/datawatch/main.go`) both applied
+  `verification_model`/the merged guardrail-model fallback
+  unconditionally, even though that value is only meaningful for an
+  ask-compatible (Ollama/OpenWebUI) call — never for a real
+  session backend. Fixed: a session call now ignores that flat
+  ask-only default and uses the session backend's own registry-default
+  model instead (a genuine per-unit `GuardrailModel` override still
+  carries through for guardrail). New regression test
+  (`TestResolveVerifierBackendModel_SessionIgnoresAskCompatibleConfiguredModel`)
+  reproduces the exact live failure and confirms the fix.
+
 ## v9.0.44 — fix(autonomous): B124 root cause — verify/guardrail now actually routes to a session
 
 ### Fixed

@@ -228,6 +228,24 @@ func resolveVerifierBackendModel(
 			vkind, vmodel, _ = resolveAskBackend(vbackend)
 		}
 	}
+	// B124 follow-up (v9.0.45) — cfgModel (VerificationModel) is an
+	// ask-compatible model name (e.g. an Ollama model like
+	// "qwen3.8:27b") and must never be applied to a session-based call:
+	// found live, a real claude-code verify session rejected it outright
+	// ("There's an issue with the selected model (qwen3.8:27b)...") and
+	// hung until the session timeout killed it. A session call instead
+	// prefers the PRD's own model when one is explicitly configured
+	// there (it's at least a model the PRD's own backend understands),
+	// otherwise the backend's own registry-default model (vmodel, e.g.
+	// claude-code's configured "opus").
+	if useSession {
+		if usingPRDBackend && prdModel != "" {
+			verifyModel = prdModel
+		} else {
+			verifyModel = vmodel
+		}
+		return vbackend, vkind, verifyModel, useSession
+	}
 	verifyModel = cfgModel
 	if verifyModel == "" {
 		if usingPRDBackend && prdModel != "" {

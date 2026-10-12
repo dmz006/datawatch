@@ -1289,7 +1289,25 @@ _2026-05-02 operator-filed items promoted directly to BL218–BL221. 2026-05-03 
 > `resolveAskCompatibleKind` specifically so this contract is
 > independently testable (the inline closure never was, which is
 > exactly why a unit test using an idealized fake resolver passed while
-> the real closure's bug shipped anyway). No longer open.
+> the real closure's bug shipped anyway).
+> **Final follow-up, found live confirming the fix actually worked
+> end to end (v9.0.45)**: the spawn itself now logged correctly
+> (`[autonomous:verify:...] spawned ... backend=claude-code`), proving
+> the routing fix worked — but the spawned session hung for its full
+> 10-minute timeout. Its pane: *"There's an issue with the selected
+> model (qwen3.8:27b). It may not exist or you may not have access to
+> it."* Caught only because the operator flagged the session was
+> taking unusually long and told the assistant to check it directly —
+> a real process on the self-check discipline this session otherwise
+> tried to hold itself to: "a session spawned" was wrongly treated as
+> "the fix is confirmed working" without checking that session's own
+> live output first. Root cause: `verification_model`/the merged
+> guardrail-model fallback is an ask-compatible (Ollama/OpenWebUI)
+> model name, applied unconditionally even for a session call where
+> it's meaningless. Fixed: a session call now uses the session
+> backend's own registry-default model instead (a genuine per-unit
+> `GuardrailModel` override for guardrail still carries through). New
+> regression test reproduces the exact live failure. No longer open.
 
 > **B126** — found as a side effect debugging B124's root cause, NOT
 > fixed, reported per standing instruction: a task's `AutoFixRetries`
