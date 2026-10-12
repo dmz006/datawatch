@@ -612,7 +612,7 @@ else is in `historical-plans/`):
 | `2026-10-10-configurable-project-rules-enforcement.md` | BL406 (+B111/B112/B113) | Stage 1 #1 — **done**, all 6 phases shipped (v9.0.11–v9.0.17) |
 | `2026-10-10-prd-git-workflow.md` | BL407 (+B114) | Stage 1 #2 — shipped v9.0.23 (Phases 0-6 all done) |
 | _(no plan doc yet — ran directly as a PRD)_ | BL404 | Stage 2 #3 — done, PR `datawatch#205` open pending merge |
-| `2026-10-09-plugin-extension-surfaces.md` | BL403 | Stage 3 #4 — in progress, Phase 1 next |
+| `2026-10-09-plugin-extension-surfaces.md` | BL403 | Stage 3 #4 — in progress; Phase 1 (manifest v3 parse/validate) shipped v9.0.31, Phase 2 next |
 | `2026-10-09-gh204-result-panel.md` | BL402 (GH#204) | Stage 3 #5 |
 | `2026-10-10-llm-enhancements.md` | BL405 (absorbs BL390 P2/P3) | Stage 3 #6 |
 | `2026-10-04-f2-session-worker-isolation.md` | BL395 (security track) | Stage 3 #7 |

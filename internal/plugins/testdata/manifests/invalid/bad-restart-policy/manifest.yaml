@@ -1,0 +1,7 @@
+name: bad-restart-policy
+kind: service
+connection:
+  base_url: http://127.0.0.1:9100
+lifecycle:
+  supported_modes: [attach_only]
+  restart_policy: sometimes

@@ -42,21 +42,21 @@ import (
 // VaultStore implements Store against a HashiCorp Vault / OpenBao server
 // using the KV v2 secret engine.
 type VaultStore struct {
-	address     string
-	namespace   string
-	token       string
-	kvMount     string
-	pathPrefix  string
-	pathLayout  string // "flat" | "tag_aware"
-	httpClient  *http.Client
-	timeout     time.Duration
+	address    string
+	namespace  string
+	token      string
+	kvMount    string
+	pathPrefix string
+	pathLayout string // "flat" | "tag_aware"
+	httpClient *http.Client
+	timeout    time.Duration
 
 	// LastError + LastSuccess support the Status surface (PWA card +
 	// nav health badge). Updated on every operation; race-safe enough
 	// for status-display purposes (single-writer in practice).
-	lastError    string
-	lastSuccess  time.Time
-	lastReqID    string
+	lastError   string
+	lastSuccess time.Time
+	lastReqID   string
 }
 
 // NewVaultStore builds a VaultStore from a VaultConfig-equivalent set of
@@ -261,15 +261,15 @@ func (s *VaultStore) recordErr(msg string) {
 // VaultStatus is the operator-facing health summary for the Settings →
 // Secrets Manager card and the nav health badge.
 type VaultStatus struct {
-	Reachable    bool      `json:"reachable"`
-	Address      string    `json:"address"`
-	Namespace    string    `json:"namespace,omitempty"`
-	KVMount      string    `json:"kv_mount"`
-	PathPrefix   string    `json:"path_prefix,omitempty"`
-	PathLayout   string    `json:"path_layout"`
-	LastSuccess  time.Time `json:"last_success,omitempty"`
-	LastError    string    `json:"last_error,omitempty"`
-	LastRequestID string   `json:"last_request_id,omitempty"`
+	Reachable     bool      `json:"reachable"`
+	Address       string    `json:"address"`
+	Namespace     string    `json:"namespace,omitempty"`
+	KVMount       string    `json:"kv_mount"`
+	PathPrefix    string    `json:"path_prefix,omitempty"`
+	PathLayout    string    `json:"path_layout"`
+	LastSuccess   time.Time `json:"last_success,omitempty"`
+	LastError     string    `json:"last_error,omitempty"`
+	LastRequestID string    `json:"last_request_id,omitempty"`
 }
 
 // Status returns a snapshot of Vault connectivity. Used by the PWA card
@@ -508,4 +508,3 @@ func (s *VaultStore) Exists(name string) (bool, error) {
 	}
 	return false, err
 }
-

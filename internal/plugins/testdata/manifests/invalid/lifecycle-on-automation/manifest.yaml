@@ -1,0 +1,6 @@
+name: lifecycle-on-automation
+entry: ./run.sh
+hooks:
+  - on_alert
+lifecycle:
+  supported_modes: [attach_only]

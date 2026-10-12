@@ -1,0 +1,4 @@
+name: service-no-lifecycle
+kind: service
+connection:
+  base_url: http://service.example.internal:8080

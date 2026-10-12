@@ -1,0 +1,7 @@
+name: malformed-secret-ref
+kind: service
+connection:
+  base_url: http://127.0.0.1:9100
+  auth:
+    type: bearer
+    token: ${secret:bad name}

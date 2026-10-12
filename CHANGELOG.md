@@ -5,6 +5,68 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.32 — feat(plugins): plugin manifest v3 — `kind` / `connection` / `lifecycle`
+
+### Added
+- Plugin manifests gain three optional top-level fields (manifest v3):
+  - `kind` — `automation` (default when absent, so every existing
+    manifest loads unchanged) or `service`, a persistent external
+    process datawatch talks to as a client. Case-insensitive.
+  - `connection` — required for `kind: service`: `base_url` (absolute
+    http/https URL), optional `auth` (`type: bearer`, `token` must be a
+    single `${secret:NAME}` reference — never a literal; only the
+    reference shape is checked and the value is never printed), and
+    optional `health_path`.
+  - `lifecycle` — optional, service-kind only (rejected on automation
+    manifests): author-declared `supported_modes` (`attach_only` and/or
+    `managed`), `entry` (required when `managed` is listed), `args`,
+    `restart_policy` (`on-failure` | `always` | `never`) and
+    `stop_timeout_ms` (>= 0).
+- Plugin discovery skips (and logs) any manifest that fails these
+  checks; `POST /api/plugins/install` rejects it with
+  `invalid manifest: …`.
+- `scripts/check-plugin-manifests.sh` now validates the same v3 shape
+  alongside the existing `docs:` checks, and honors
+  `PLUGIN_MANIFEST_ROOTS` (colon-separated dirs) to scan exactly those
+  dirs. `go test ./internal/plugins/` runs the script against positive
+  and negative fixtures and asserts the script and the Go validator
+  agree on every fixture.
+- Docs: `docs/api/plugins.md` manifest table + new "Service-kind
+  plugins (manifest v3)" section with a full example;
+  `docs/config-reference.yaml` points there (no new daemon config keys).
+
+### Changed
+- `GET /api/plugins` and `GET /api/plugins/{name}` now include `kind`
+  on every plugin (`"automation"` for existing plugins) and
+  `connection` / `lifecycle` on service-kind plugins. Additive only —
+  no field removed or renamed.
+- Service-kind plugins are never invoked as hooks: hook fan-out skips
+  them and `POST /api/plugins/{name}/test` returns an error for them.
+
+### Deprecated
+- The manifest `mode` field is ignored. It is still parsed for one more
+  release so manifests that set it keep loading; use `kind` instead.
+
+### Not yet
+- This release only parses and validates service-kind manifests.
+  datawatch does not yet attach to, start, supervise or health-probe
+  service plugins — neither `attach_only` nor `managed` does anything
+  at runtime yet. That arrives in a later release.
+
+### Mobile parity
+- No PWA change. The plugin JSON returned by `/api/plugins` gains
+  additive fields. The plan's mobile tracking issue (to be filed in
+  `datawatch-app` when the plan was approved) does not exist yet — a
+  search of `datawatch-app` issues for "plugin" finds only closed,
+  unrelated issues — so nothing was commented on and no new issue was
+  opened here; flagged for the operator to file.
+
+### Reuse audit
+- Extends the existing plugin Manifest v2.1 struct (new fields on the
+  same `Manifest` type, not a parallel "integration" concept), reuses
+  the secrets-store `${secret:NAME}` reference pattern via an exported
+  `secrets.IsRef` built from the same regex, and extends the existing
+  `scripts/check-plugin-manifests.sh` rather than adding a new checker.
 ## v9.0.31 — fix(docs,security): pre-existing CI gate failures (internal-ref leak + stale trivyignore)
 
 ### Fixed

@@ -15,8 +15,23 @@ import (
 	"strings"
 )
 
-// secretRefRe matches ${secret:name} tokens. Name chars: alphanumeric, _, -, .
-var secretRefRe = regexp.MustCompile(`\$\{secret:([a-zA-Z0-9_.\-]+)\}`)
+// secretRefPattern is the ${secret:name} token shape. Name chars:
+// alphanumeric, _, -, .
+const secretRefPattern = `\$\{secret:([a-zA-Z0-9_.\-]+)\}` // #nosec G101 -- regex for ref syntax, not a credential
+
+// secretRefRe matches ${secret:name} tokens anywhere in a string.
+var secretRefRe = regexp.MustCompile(secretRefPattern)
+
+// secretRefExactRe matches a string that is exactly one ${secret:name} token.
+var secretRefExactRe = regexp.MustCompile(`^` + secretRefPattern + `$`)
+
+// IsRef reports whether s is exactly one well-formed ${secret:name}
+// reference with nothing before or after it. It checks shape only — the
+// secret is not looked up. Used by manifest validation to enforce the
+// Secrets-Store Rule (credential fields must be refs, never literals).
+func IsRef(s string) bool {
+	return secretRefExactRe.MatchString(s)
+}
 
 // ResolveRef replaces all ${secret:name} tokens in s with values from store.
 // Missing secrets are returned as errors; the original token is left in the

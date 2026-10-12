@@ -1477,6 +1477,31 @@ A plugin manifest MAY declare a `docs:` block. When present:
 - Every listed file MUST exist relative to the plugin dir.
 - `docs.howtos:` is optional; if present, every entry's `file:` must also exist.
 
+Every manifest MUST also have a valid manifest v3 shape (mirrors
+`Manifest.Validate` in `internal/plugins/plugins.go`):
+- `kind:` absent/empty means `automation` (a v2.1 manifest, unchanged);
+  when present it MUST be `automation` or `service` (case-insensitive).
+- `kind: service` REQUIRES a `connection:` block whose `base_url:` is an
+  absolute `http://` or `https://` URL.
+- When `connection.auth:` is set, `auth.type:` (if given) MUST be
+  `bearer` and `auth.token:` MUST be exactly one `${secret:NAME}`
+  reference — never a literal credential (Secrets-Store Rule). Only the
+  reference shape is checked; the secret is never looked up and the
+  token is never printed.
+- `lifecycle:` is ONLY allowed on `kind: service` manifests. Its
+  `supported_modes:` MUST be non-empty, contain only `attach_only` /
+  `managed`, and list no mode twice; `managed` REQUIRES
+  `lifecycle.entry:`; `restart_policy:` MUST be `on-failure`, `always`
+  or `never` (or empty); `stop_timeout_ms:` MUST be a non-negative
+  integer.
+- Unknown keys are ignored (forward compatible). The deprecated `mode:`
+  field is ignored.
+- Set `PLUGIN_MANIFEST_ROOTS` (colon-separated dirs) to scan exactly
+  those dirs instead of `examples/plugins/` + `~/.datawatch/plugins/`;
+  `internal/plugins` tests run the script this way against positive and
+  negative fixtures in `internal/plugins/testdata/`, so a drift between
+  the script and the Go validator fails `go test`.
+
 **Enforced by:** `scripts/check-plugin-manifests.sh` (wired into
 `scripts/release-smoke.sh`). Failing the check blocks the release.
 
@@ -2077,3 +2102,49 @@ memory_recall "recent work this codebase"
 - Build, test, and release procedures
 - Known patterns and gotchas to avoid
 - Directory structure and key files
+
+<!-- cross-session-communication-rule -->
+# Cross-Session Communication Rule (datawatch)
+
+A future session reading this may be on a different host or in a
+different container than the session that wrote it. Claude Code's own
+native session-to-session messaging (SendMessage/ListAgents) only
+works between sessions sharing one Claude Code install on one
+machine, and it is not recorded anywhere datawatch's own audit trail
+can see. For anything that should be audited, or anything that might
+need to reach a session on another host, use datawatch's own tools
+instead — they are federation-aware and every write lands in
+`audit.log`.
+
+## Use datawatch's tools for
+
+- **Durable facts, decisions, or context another session should
+  inherit** — `memory_remember` to save, `memory_recall` to retrieve.
+- **A running conversation between two or more sessions, including
+  ones on other hosts** — `memory_discussion_write`/
+  `memory_discussion_recall` (synced to the discussion's registered
+  peers automatically); `discussion_subscribe` to get new entries
+  pushed to you instead of polling.
+- **Replying to the session that spawned you** — `reply_to_parent`,
+  not a raw SendMessage back up the chain.
+- **Handing a finished task's findings to the next task in the same
+  story** — `memory_handoff`.
+
+## Available tools
+
+| Tool | Purpose |
+|------|---------|
+| `memory_discussion_write` | Write to a shared, cross-host discussion scope |
+| `memory_discussion_recall` | Read a discussion scope, optionally by semantic query |
+| `discussion_subscribe` | Get new discussion entries pushed to this session |
+| `reply_to_parent` | Reply to the session that spawned this one |
+| `memory_handoff` | Pass a task-completion summary to the next task in the story |
+
+## When native cross-session messaging is still fine
+
+Ephemeral, same-host coordination that nobody needs to audit or
+retrieve later — e.g. "is session X still running?" — doesn't need to
+go through datawatch. The rule is about anything durable, auditable,
+or that might cross a host boundary, not every message between
+sessions.
+<!-- /cross-session-communication-rule -->
