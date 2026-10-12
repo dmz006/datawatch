@@ -6,6 +6,15 @@
 # Fails the PR on:
 #   - any HIGH severity vulnerability in a newly-added/upgraded dep
 #   - license incompatibility (deny-list configured below)
+#
+# Re-pinned to v5.0.0 (was a stale SHA that no longer resolves to any
+# commit in actions/dependency-review-action -- `gh api
+# repos/actions/dependency-review-action/commits/<old-sha>` returns
+# "No commit found"). The dangling pin made every PR's required
+# `review` check fail instantly with a misleading "Dependency graph is
+# not enabled" error; confirmed via the API that Dependency Graph +
+# Advanced Security are both genuinely on for this public repo
+# (GitHub: "Advanced security is always available for public repos").
 
 name: dependency-review
 
@@ -22,7 +31,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
-      - uses: actions/dependency-review-action@e7aeea1772ec01da74cafda11c5caa463520ca59  # v3
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294  # v5.0.0
         with:
           fail-on-severity: high
           # License deny-list: copyleft incompatibilities with the

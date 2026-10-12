@@ -105,7 +105,7 @@ jobs:
 
       # ── Pass 1: PWA baseline (passive spider + analyse) ──────────
       - name: ZAP PWA baseline scan
-        uses: zaproxy/action-baseline@6c5a007541891231cd9e0ddec25d4f25c59c9874  # v0.15.0
+        uses: zaproxy/action-baseline@41aee98ebc7cf2802c3beae4e7d4336413a21e43  # v0.9.0 (newest tag that still resolves; v0.15.0 pin was dangling)
         with:
           target: "http://${{ inputs.target_host || 'localhost:8080' }}/"
           cmd_options: '-a -j -m 5'
@@ -126,7 +126,7 @@ jobs:
 
       # ── Pass 2: API scan against the OpenAPI spec ────────────────
       - name: ZAP API scan (OpenAPI-driven)
-        uses: zaproxy/action-api-scan@bd24b11e76da11ab60302c8ae87f091cbb11f034  # v0.10.0
+        uses: zaproxy/action-api-scan@77dfa9a647bb0f583e39d4df8531634d6ddd8df4  # v0.9.0 (newest tag that still resolves; v0.10.0 pin was dangling)
         with:
           # action-api-scan v0.11+: target IS the spec file/URL (api_definition removed).
           # The daemon's server URL comes from the spec's servers[] block (localhost:8080).
@@ -183,7 +183,7 @@ jobs:
       #            don't get masked by the bigger PWA surface) ─────
       - name: ZAP diagrams.html baseline scan
         continue-on-error: true  # advisory; runtime errors (daemon crash, docker) don't block CI
-        uses: zaproxy/action-baseline@6c5a007541891231cd9e0ddec25d4f25c59c9874  # v0.15.0
+        uses: zaproxy/action-baseline@41aee98ebc7cf2802c3beae4e7d4336413a21e43  # v0.9.0 (newest tag that still resolves; v0.15.0 pin was dangling)
         with:
           target: "http://${{ inputs.target_host || 'localhost:8080' }}/diagrams.html"
           cmd_options: '-a -j -m 3'
@@ -205,7 +205,7 @@ jobs:
       # ephemeral test daemon.
       - name: ZAP PWA full active scan
         continue-on-error: true  # advisory; runtime errors don't block CI
-        uses: zaproxy/action-full-scan@d479641f7e99facb91d7738171b3448e3f3c7bba  # v0.10.0
+        uses: zaproxy/action-full-scan@bdd21ad4090d552d299261226c553efbc216f5ee  # v0.9.0 (newest tag that still resolves; v0.10.0 pin was dangling)
         with:
           target: "http://${{ inputs.target_host || 'localhost:8080' }}/"
           cmd_options: '-a -j -m 10'
@@ -224,7 +224,7 @@ jobs:
       # types — fewer false positives on JSON-typed bodies.
       - name: ZAP API full active scan
         continue-on-error: true  # advisory; runtime errors don't block CI
-        uses: zaproxy/action-api-scan@bd24b11e76da11ab60302c8ae87f091cbb11f034  # v0.10.0
+        uses: zaproxy/action-api-scan@77dfa9a647bb0f583e39d4df8531634d6ddd8df4  # v0.9.0 (newest tag that still resolves; v0.10.0 pin was dangling)
         with:
           target: 'docs/api/openapi.yaml'
           format: openapi

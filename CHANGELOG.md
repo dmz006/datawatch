@@ -5,7 +5,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-## v9.0.32 — feat(plugins): supervised lifecycle for managed service-kind plugins
+## v9.0.33 — feat(plugins): supervised lifecycle for managed service-kind plugins
 
 ### Added
 - datawatch can now start, health-check, restart and stop a
@@ -104,7 +104,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   `resolvePluginEnv`; audit reuses the server audit path. No new
   registry or persistence layer.
 
-## v9.0.31 — feat(plugins): plugin manifest v3 — `kind` / `connection` / `lifecycle`
+## v9.0.32 — feat(plugins): plugin manifest v3 — `kind` / `connection` / `lifecycle`
 
 ### Added
 - Plugin manifests gain three optional top-level fields (manifest v3):
@@ -166,6 +166,20 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   the secrets-store `${secret:NAME}` reference pattern via an exported
   `secrets.IsRef` built from the same regex, and extends the existing
   `scripts/check-plugin-manifests.sh` rather than adding a new checker.
+## v9.0.31 — fix(docs,security): pre-existing CI gate failures (internal-ref leak + stale trivyignore)
+
+### Fixed
+- `docs/datawatch-definitions.md` leaked internal tracker IDs (BL406,
+  BL407, B111, B112) into a user-facing glossary doc, failing
+  `check-no-internal-refs.sh`. Replaced each with the version string
+  already given alongside it.
+- `.trivyignore` had 5 stale CVE suppressions (libgnutls30, gh CLI) no
+  longer present in `security/accepted-risks.yml`, failing the
+  security-registry sync check. Regenerated via
+  `scripts/gen_trivyignore.py`.
+- Found while merging an unrelated PR that happened to run the same
+  required checks — not caused by that PR's own content.
+
 ## v9.0.30 — fix(autonomous): B121 revised — point to rules/context files instead of inlining their content
 
 ### Fixed
