@@ -1911,7 +1911,18 @@ type AutonomousConfig struct {
 	// in multi-backend mode, since forcing one model across
 	// heterogeneous nodes isn't safe. Empty = single-backend behavior
 	// exactly as before (VerificationBackend / PRD backend / "ollama").
-	VerificationBackends []string `yaml:"verification_backends,omitempty" json:"verification_backends,omitempty"`
+	//
+	// B124 follow-up (2026-10-12) — no `omitempty`, deliberately, same
+	// reason this file's Enabled field has none (see handleAutonomousConfig
+	// in internal/server/autonomous.go): that handler round-trips the
+	// manager's live config through json.Marshal + json.Unmarshal onto
+	// this struct before persisting. omitempty on a slice elides it from
+	// the marshal entirely when empty, so unmarshal then leaves this
+	// field's PREVIOUS value untouched — an operator's explicit "clear
+	// this list back to empty" silently never reached the saved
+	// config.yaml, found live immediately after fixing the MCP tool
+	// handler's own instance of the identical bug.
+	VerificationBackends []string `yaml:"verification_backends" json:"verification_backends"`
 	// PlanningTimeoutSeconds overrides the effort-scaled LLM call timeout
 	// during PRD decomposition. 0 = use effort-scaled defaults
 	// (120s quick, 300s normal, 900s high/max). Raise for slow Ollama.

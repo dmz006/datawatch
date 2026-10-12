@@ -1227,13 +1227,51 @@ _2026-05-02 operator-filed items promoted directly to BL218–BL221. 2026-05-03 
 > `len(arr) > 0`, so an explicit empty array and "didn't mention it"
 > were indistinguishable and the clear silently never happened. Fixed
 > v9.0.42: presence-aware, matching this same handler's existing
-> pattern for bool fields. No longer open.
+> pattern for bool fields.
+> **Second follow-up found immediately validating v9.0.42 (v9.0.43)**:
+> the clear still didn't survive a restart — `handleAutonomousConfig`'s
+> own PUT handler re-syncs the persisted config via
+> `json.Marshal(manager config)` + `json.Unmarshal(onto
+> config.AutonomousConfig)`, and `omitempty` elided the empty slice
+> from that intermediate marshal, so the unmarshal left the saved
+> `config.yaml` holding its previous value — reverted on the very next
+> boot. Same class of bug `Enabled` was already fixed for (GH#180,
+> `Enabled` has no `omitempty` for exactly this reason);
+> `VerificationBackends` never got the same treatment. Fixed: removed
+> `omitempty` from `VerificationBackends` on both structs; new
+> regression test using the real `autonomous.Config` type (the
+> existing GH#180 test fixture's fake `Config()` returns a plain
+> `map[string]any`, which has no `omitempty` tags at all and could
+> never have caught this class of bug). No longer open.
 
-_(Otherwise no open bugs as of the 2026-10-09/10 backlog refactor —
-everything previously listed here was already closed and has been moved
-to the Completed Bugs table. Historical: B22 fixed in v2.4.3 · B23/24 in
-v2.4.4 · B25 in v2.4.5 · B31 in v3.0.1 · B30 in v3.1.0 — see Completed
-section.)_
+> **B125** — `amgrCfg` (the config the `autonomousVerify`/
+> `autonomousGuardrail` closures actually read — `cmd/datawatch/main.go`)
+> is built ONCE at daemon boot from the loaded YAML and never refreshed.
+> `autonomous_config_set` correctly updates the `Manager`'s own live
+> config (so `GET /api/autonomous/config` reflects a change immediately)
+> and correctly persists it to disk (once B124's two follow-ups above
+> were fixed) — but the already-running verify/guardrail closures keep
+> reading the stale snapshot captured at process start, so a runtime
+> config change to `verification_backend`/`verification_backends`/
+> `verification_model`/etc. has NO EFFECT until the daemon is fully
+> restarted. Found live validating B124 end-to-end: configuring
+> `verification_backend=claude-code` had no observable effect on a real
+> verify call until a restart, even after both the MCP and
+> handleAutonomousConfig bugs above were fixed. **Not fixed** — this is
+> a real architectural limitation (every closure in the giant `main()`
+> setup function that captures `amgrCfg` by value would need to read
+> live from `amgr.Config()` on every call instead, a change that
+> touches a large swath of `cmd/datawatch/main.go`, not a one-line fix)
+> and is reported per the operator's standing instruction rather than
+> silently patched under time pressure. Likely affects other
+> `autonomous.*` fields read via `amgrCfg.*` the same way, not just the
+> two touched here — worth a dedicated audit, not a point fix. Open.
+
+_(B125 above is the only open bug as of 2026-10-12. Everything else
+listed in this section going back to the 2026-10-09/10 backlog refactor
+has been closed and moved to the Completed Bugs table. Historical: B22
+fixed in v2.4.3 · B23/24 in v2.4.4 · B25 in v2.4.5 · B31 in v3.0.1 · B30
+in v3.1.0 — see Completed section.)_
 
 ## Open Features
 
