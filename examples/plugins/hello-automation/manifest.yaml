@@ -1,0 +1,16 @@
+# Example plugin — automation kind (the default, v2.1-era model).
+#
+# Minimal, real, runnable reference for the hook/subprocess contract:
+# datawatch writes one JSON `Request` line to the entry's stdin per
+# invocation and reads one JSON `Response` line from stdout. See
+# `internal/plugins/plugins.go`'s `Request`/`Response` types for the
+# full field list — this plugin only uses the subset it needs.
+#
+# No `kind:` field — automation is the default, unchanged since v2.1.
+name: hello-automation
+description: "Reference automation-kind plugin: echoes a greeting on post_session_complete."
+version: "1.0.0"
+entry: entry.py
+hooks:
+  - post_session_complete
+timeout_ms: 5000
