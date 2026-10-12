@@ -372,10 +372,22 @@ plugin can mix both.
 
 **What ships when.** v9.0.40 ships the data model and transport:
 manifest validation, pulling, the push endpoint, push tokens, storage
-and the read endpoints below. **Nothing renders widgets yet.** The PWA
-renderer, and widget surfaces in the mobile apps, MCP, CLI and comm
-channels, come in a later release. Until then, the read endpoints are
-the only way to see a widget's value.
+and the read endpoints below. The release after v9.0.40 adds the PWA
+renderer:
+
+- **Dashboard widgets** (`surface: dashboard`) are added one at a time
+  from the dashboard's **Add Card** panel. Once added, a widget card
+  can be moved, resized and removed like any other card.
+- **Session widgets** (`surface: session`) appear in every session's
+  detail view. A widget has one value, so it shows the same data no
+  matter which session is open.
+- Widgets of a **disabled** plugin show as unavailable. The read
+  endpoints still return their stored value, but the PWA does not
+  display it.
+
+MCP, CLI, comm-channel and mobile-app widget surfaces come in a later
+release. On those surfaces, the read endpoints are the only way to
+see a widget's value.
 
 #### Manifest `widgets:` fields
 
@@ -390,8 +402,47 @@ the only way to see a widget's value.
 
 An invalid `widgets:` block fails validation like any other manifest
 error: the plugin is skipped at discovery and rejected by
-`POST /api/plugins/install`. Widget values are free-form JSON for now.
-The shape each `kind` expects will be defined with the renderer.
+`POST /api/plugins/install`.
+
+#### Widget value shapes
+
+The daemon stores whatever JSON a plugin sends (up to 64 KiB) without
+checking it against the widget's `kind`. The PWA reads the `data`
+field of the value and expects this shape for each `kind`:
+
+| `kind` | Expected `data` | Example |
+|---|---|---|
+| `stat_tile`    | `{value: number\|string, label?: string, unit?: string, detail?: string}` | `{"value": 42, "label": "queued jobs"}` |
+| `table`        | `{columns: [string], rows: [[cell, ...]]}`. A cell is a string, number, boolean or `null`. A row can also be an object keyed by column name. | `{"columns": ["job", "state"], "rows": [["#812", "passed"], {"job": "#811", "state": "failed"}]}` |
+| `list`         | `{items: [string \| {text: string, detail?: string}]}` | `{"items": ["#812 passed", {"text": "#811 failed", "detail": "lint"}]}` |
+| `sparkline`    | `{points: [number], label?: string, value?: number\|string}`. Points that are not finite numbers are dropped. | `{"points": [3, 5, 4, 8], "label": "builds/hour", "value": 8}` |
+| `status_badge` | `{status: "ok"\|"warn"\|"error"\|"unknown", label?: string, detail?: string}`. Any other `status` shows as `unknown`. Without a `label`, the badge shows the status name. | `{"status": "warn", "label": "disk 85%"}` |
+| `markdown`     | `{text: string}`, or a bare JSON string. | `{"text": "**3** builds queued"}` |
+
+How the PWA handles values:
+
+- **Mismatched values render as empty.** If `data` does not match its
+  kind's shape (wrong type, missing required field, nothing usable
+  left), the widget shows its quiet "No data yet" state. It never
+  shows an error and never breaks the dashboard. The same goes for a
+  widget that has no value yet.
+- **Strings are always text.** Every plugin-supplied string is
+  HTML-escaped before display, so markup in `data` shows as literal
+  text. Nested objects or arrays in a table cell or list field show
+  as blank. The one exception is `markdown`: its text goes through
+  the dashboard's existing markdown renderer, which sanitizes the
+  resulting HTML.
+- **Pull errors.** When the latest pull failed, the value carries an
+  `error`. The widget keeps showing the previous data and adds a small
+  ⚠ marker whose tooltip shows the error.
+- **Size caps.** The renderer shows at most 50 table rows, 20 table
+  columns, 50 list items and the most recent 500 sparkline points.
+  When rows or items are cut, the widget shows a `+N` line with the
+  number left out. Long strings are shortened with `…` and the full
+  text is kept in a tooltip: a stat or sparkline value at 24
+  characters, a unit at 16, a label at 40, a `detail` at 120, a table
+  header at 28,
+  a table cell at 40, and a list item's text and detail at 60 and 80.
 
 #### Pull mode
 
