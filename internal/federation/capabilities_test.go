@@ -118,6 +118,7 @@ func TestFullControl_HasAll(t *testing.T) {
 		// these were added.
 		federation.CapQueueRead, federation.CapQueueWrite,
 		federation.CapResultsList, federation.CapResultsRead, federation.CapResultsWrite,
+		federation.CapPluginRead, federation.CapPluginWrite,
 	}
 	for _, c := range must {
 		if !has[c] {
@@ -186,5 +187,20 @@ func TestListBuiltinGroups(t *testing.T) {
 	}
 	if !found {
 		t.Error("expected 'federation-peer' in builtin group list")
+	}
+}
+
+// TestPluginCaps_NotInDefaultPresets: plugin:read / plugin:write must be
+// granted explicitly — no built-in group other than full-control carries them.
+func TestPluginCaps_NotInDefaultPresets(t *testing.T) {
+	for _, g := range federation.ListBuiltinGroups() {
+		if g.Name == "full-control" {
+			continue
+		}
+		for _, c := range federation.Resolve([]string{g.Name}, nil) {
+			if c == federation.CapPluginRead || c == federation.CapPluginWrite {
+				t.Errorf("builtin group %q should NOT include %s", g.Name, c)
+			}
+		}
 	}
 }

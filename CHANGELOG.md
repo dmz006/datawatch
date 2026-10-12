@@ -5,6 +5,65 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.50 — feat(federation): plugin:read / plugin:write capabilities for plugin widget data
+
+BL403 Phase 5 (federation capability gating,
+`docs/plans/2026-10-09-plugin-extension-surfaces.md`).
+
+### Changed — behaviour change for federation peers
+- `GET /api/plugins/{name}/widgets` and
+  `GET /api/plugins/{name}/widgets/{widget_id}` now require
+  `plugin:read`, and `POST /api/plugins/{name}/widgets/token` now
+  requires `plugin:write`, instead of `config:read` / `config:write`.
+  **A federation peer that could read widget data (or mint a widget
+  push token) through `config:read` / `config:write` now gets `403`
+  until `plugin:read` / `plugin:write` is granted explicitly**, via a
+  custom capability group. Peers in `full-control` are unaffected (both
+  new caps are in its `allCaps` list). The operator token (PWA, mobile
+  client, CLI) and per-session scoped credentials are unaffected —
+  the former is unrestricted, and the latter's `session-default` grant
+  never carried `config:*` either.
+- Unchanged: the plugin lifecycle routes in `internal/server/plugins.go`
+  (list/get/enable/disable/test/reload/install) still gate on
+  `config:read` / `config:write`; the plugin push-token auth on
+  `POST /api/plugins/{name}/widgets/{widget_id}` is unchanged.
+
+### Added
+- `federation.CapPluginRead` (`plugin:read`) and
+  `federation.CapPluginWrite` (`plugin:write`) in
+  `internal/federation/capabilities.go`. Deliberately in no built-in
+  preset other than `full-control` (least privilege — an operator
+  grants them on purpose).
+- `internal/federation/mcp_tool_caps.go` is not touched: there are no
+  MCP widget tools yet. The existing `plugin_*` MCP tools are lifecycle
+  tools and keep their `config:*` entries.
+
+### Parity
+- REST: yes (the three widget endpoints above). MCP / CLI / comm: no
+  widget surface exists yet — deferred to the plan's full-parity phase,
+  which will add the matching `mcp_tool_caps` entries. PWA: uses the
+  operator token, so it is not federation-gated and sees no change.
+- **Mobile-Parity: N/A** — `git diff` of `internal/server/web` is empty
+  (no operator-visible PWA change), and `datawatch-app` authenticates
+  with the operator bearer token (`server.token`, per
+  `docs/api/mobile-surface.md`), not as a federation peer, so
+  `fedCap` never restricts it.
+
+### Reuse audit
+- Zero new mechanism: extends the existing federation CBAC `fedCap`
+  primitive with two new capability constants; endpoints swap the
+  capability they pass to the same call.
+
+### Tests
+- `TestPluginWidgetsFedCap` (`internal/server/plugin_widgets_fedcap_test.go`)
+  — read-only, config-only, plugin:read, plugin:write, full-control
+  peers and the admin token against all three widget endpoints.
+- `TestPluginLifecycleFedCapUnchanged` — lifecycle routes still accept
+  a config-only peer and reject a plugin-only peer.
+- `TestPluginCaps_NotInDefaultPresets`
+  (`internal/federation/capabilities_test.go`) — no built-in group
+  except `full-control` carries either cap.
+
 ## v9.0.49 — fix(autonomous): resolveGuardrailBackendModel must not leak the flat global model into a session-routed guardrail call
 
 ### Fixed
