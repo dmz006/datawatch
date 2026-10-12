@@ -940,6 +940,18 @@ func (m *Manager) Decompose(prdID string) (*PRD, error) {
 		_ = m.store.SavePRD(prd)
 		return nil, err
 	}
+	// B124 — kick back a tooled plan that skipped verification scripts
+	// entirely despite planning real file changes (see this function's
+	// own doc comment). Same rollback shape as the parse-error case
+	// just above: Decompose() is a lower-level call used directly by
+	// tests and any caller that wants a non-streaming result, so this
+	// check must live here too, not only in decomposeStreamingCore.
+	if verr := validateVerificationScriptCoverage(prd.ProjectDir, stories); verr != nil {
+		prd.Status = PRDDraft
+		prd.UpdatedAt = time.Now()
+		_ = m.store.SavePRD(prd)
+		return nil, verr
+	}
 	if title != "" {
 		prd.Title = title
 	}
@@ -1063,6 +1075,16 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (*PRD, 
 		prd.UpdatedAt = time.Now()
 		_ = m.store.SavePRD(prd)
 		return nil, err
+	}
+	// B124 — see Decompose()'s identical call for the full explanation;
+	// decomposeStreamingCore is a drifted duplicate of Decompose() by
+	// design history, kept in sync here too rather than risk a third
+	// hand-copied gate.
+	if verr := validateVerificationScriptCoverage(prd.ProjectDir, stories); verr != nil {
+		prd.Status = PRDDraft
+		prd.UpdatedAt = time.Now()
+		_ = m.store.SavePRD(prd)
+		return nil, verr
 	}
 	if title != "" {
 		prd.Title = title

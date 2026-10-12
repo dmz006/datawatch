@@ -174,27 +174,40 @@ func resolveVerifierCandidates(backends []string, resolveAskBackend func(raw str
 	return out
 }
 
-// resolveVerifierBackendModel decides which backend+model the verifier's
-// /api/ask call should use. v8.36.0 — previously this always fell back to a
-// hardcoded "ollama" (and whatever model that resolved to daemon-wide) when
-// verification_backend/model were unconfigured, ignoring the PRD's own
-// backend entirely — so a Claude-backed PRD's work still got judged by
-// whatever the global Ollama default happened to be (often a small model
-// picked for other purposes). Default to the PRD's own backend/model
-// instead when unconfigured — but only take effect when that backend
-// resolves to an ask-compatible kind (ollama/openwebui, or a
-// directly-configured Claude API entry): session-only kinds (claude-code,
-// opencode, ...) have no single-shot ask adapter and can never serve this
-// call regardless of whose backend it is (see inference.IsSessionBackendKind),
-// so those fall through to the "ollama" default exactly as before this change.
+// resolveVerifierBackendModel decides which backend+model the verifier
+// should use, and whether that call needs a real tool-using session
+// instead of a text-only /api/ask call. v8.36.0 — previously this always
+// fell back to a hardcoded "ollama" (and whatever model that resolved to
+// daemon-wide) when verification_backend/model were unconfigured,
+// ignoring the PRD's own backend entirely — so a Claude-backed PRD's work
+// still got judged by whatever the global Ollama default happened to be
+// (often a small model picked for other purposes). Default to the PRD's
+// own backend/model instead when unconfigured.
 //
-// resolveAskBackend and askCompatible are passed in rather than closed over
-// so this decision logic is a pure, independently testable function.
+// B124 (2026-10-12) — found live debugging why BL416's verifier never got
+// real tool access: this function's own doc comment used to say
+// session-only kinds (claude-code, opencode-acp, ...) "can never serve
+// this call" and fall through to "ollama" — true for a bare /api/ask
+// call, since those kinds have no inference-dispatcher adapter, but it
+// turned a configured tool-capable backend into a silent downgrade to
+// whatever ollama happened to be, with no warning anywhere. When the
+// resolved kind is session-only AND there is a real projectDir to spawn
+// into, useSession=true instead of downgrading — the caller routes that
+// case through runOneShotJSONSession (a real one-shot tool-using session)
+// rather than /api/ask. A session-only kind with no projectDir (a
+// headless PRD, no worktree) has nowhere to spawn into and still
+// downgrades to ollama, same as before this change — but see the
+// "no project_dir" case's logged warning at the call site.
+//
+// resolveAskBackend, askCompatible and isSessionKind are passed in rather
+// than closed over so this decision logic is a pure, independently
+// testable function.
 func resolveVerifierBackendModel(
-	cfgBackend, cfgModel, prdBackend, prdModel string,
+	cfgBackend, cfgModel, prdBackend, prdModel, projectDir string,
 	resolveAskBackend func(raw string) (kind, model string, err error),
 	askCompatible func(kind string) bool,
-) (vbackend, vkind, verifyModel string) {
+	isSessionKind func(kind string) bool,
+) (vbackend, vkind, verifyModel string, useSession bool) {
 	usingPRDBackend := false
 	vbackend = cfgBackend
 	if vbackend == "" {
@@ -207,9 +220,13 @@ func resolveVerifierBackendModel(
 	var vmodel string
 	vkind, vmodel, _ = resolveAskBackend(vbackend)
 	if !askCompatible(vkind) {
-		vbackend = "ollama"
-		usingPRDBackend = false
-		vkind, vmodel, _ = resolveAskBackend(vbackend)
+		if needsSessionJudgment(vkind, projectDir, isSessionKind) {
+			useSession = true
+		} else {
+			vbackend = "ollama"
+			usingPRDBackend = false
+			vkind, vmodel, _ = resolveAskBackend(vbackend)
+		}
 	}
 	verifyModel = cfgModel
 	if verifyModel == "" {
@@ -219,7 +236,7 @@ func resolveVerifierBackendModel(
 			verifyModel = vmodel
 		}
 	}
-	return vbackend, vkind, verifyModel
+	return vbackend, vkind, verifyModel, useSession
 }
 
 // gitWorkingTreeDiffSince returns the diff of UNCOMMITTED changes to tracked

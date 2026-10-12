@@ -1,0 +1,235 @@
+// B124 — the verify/guardrail judgment pipeline was pointed at
+// tool-capable backends (claude-code/opencode/goose) but never actually
+// gave them tool access: resolveVerifierBackendModel's own doc comment
+// documents the pre-existing stopgap ("session-only kinds ... fall
+// through to the ollama default") as deliberate, but no one ever built
+// the session-based path decompose already proved. These tests cover
+// the new shared mechanism (runOneShotJSONSession, extracted from
+// decomposeFnSession) and the decision function that routes to it.
+package main
+
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/dmz006/datawatch/internal/config"
+	"github.com/dmz006/datawatch/internal/llm"
+	"github.com/dmz006/datawatch/internal/llm/backends/aider"
+	"github.com/dmz006/datawatch/internal/llm/backends/gemini"
+	"github.com/dmz006/datawatch/internal/llm/backends/opencode"
+	"github.com/dmz006/datawatch/internal/llm/backends/shell"
+)
+
+// registerAllLLMBackendsOnce mirrors main()'s unconditional backend
+// registration (cmd/datawatch/main.go, "Always register configured
+// backends regardless of Enabled flag") so isInferenceSessionKind tests
+// see the same registry a real daemon would have. claude-code and goose
+// self-register via their packages' own init(), which already ran by
+// the time any test runs; the rest only register from inside main()'s
+// setup, which these tests never call.
+var registerAllLLMBackendsOnce sync.Once
+
+func registerAllLLMBackendsForTest() {
+	registerAllLLMBackendsOnce.Do(func() {
+		llm.Register(aider.New(""))
+		llm.Register(gemini.New(""))
+		llm.Register(opencode.New(""))
+		llm.Register(opencode.NewPrompt(""))
+		llm.Register(opencode.NewACPWithTimeouts("", 0, 0, 0))
+		llm.Register(shell.New(""))
+	})
+}
+
+func TestNeedsSessionJudgment(t *testing.T) {
+	isSession := func(k string) bool { return k == "claude-code" || k == "opencode" }
+	cases := []struct {
+		name       string
+		kind       string
+		projectDir string
+		want       bool
+	}{
+		{"session-kind with project dir", "claude-code", "/tmp/worktree", true},
+		{"session-kind without project dir falls back", "claude-code", "", false},
+		{"ask-compatible kind never needs a session", "ollama", "/tmp/worktree", false},
+		{"ask-compatible kind without project dir", "ollama", "", false},
+		{"unknown kind without project dir", "mystery", "", false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := needsSessionJudgment(c.kind, c.projectDir, isSession); got != c.want {
+				t.Errorf("needsSessionJudgment(%q, %q) = %v, want %v", c.kind, c.projectDir, got, c.want)
+			}
+		})
+	}
+}
+
+func TestIsInferenceSessionKind(t *testing.T) {
+	registerAllLLMBackendsForTest()
+	cases := map[string]bool{
+		"claude-code":     true,
+		"opencode-acp":    true,
+		"opencode-prompt": true,
+		"goose":           true,
+		"aider":           true,
+		"gemini":          true,
+		"shell":           true,
+		"opencode":        true, // the real opencode CLI tmux backend — a tool-using agent
+		"ollama":          false,
+		"openwebui":       false,
+		"claude":          false, // cloud API kind, ask-compatible via its own adapter
+		"unregistered-mystery-backend": false,
+	}
+	for kind, want := range cases {
+		if got := isInferenceSessionKind(kind); got != want {
+			t.Errorf("isInferenceSessionKind(%q) = %v, want %v", kind, got, want)
+		}
+	}
+}
+
+func TestSessionJudgmentTask_WrapsPromptWithFileInstruction(t *testing.T) {
+	task := sessionJudgmentTask("REPLY WITH JSON: {\"ok\":true}", "/work/proj", "/work/proj/.verify-abc.json")
+	if !strings.Contains(task, "REPLY WITH JSON: {\"ok\":true}") {
+		t.Error("session task dropped the original judgment prompt")
+	}
+	if !strings.Contains(task, "/work/proj") {
+		t.Error("session task doesn't tell the session its own project dir")
+	}
+	if !strings.Contains(task, "/work/proj/.verify-abc.json") {
+		t.Error("session task doesn't name the output file to write")
+	}
+	if !strings.Contains(strings.ToLower(task), "do not reply with the json directly") {
+		t.Error("session task doesn't redirect the model away from an inline chat reply")
+	}
+}
+
+// fakeSessionServer builds an httptest server standing in for the
+// daemon's own /api/sessions/{start,kill,:id} endpoints, letting
+// runOneShotJSONSession's spawn/poll/kill contract be tested without a
+// real session.Manager. writeOutputOnPoll, when true, writes
+// outputPath with outputContent the first time the poll endpoint is
+// hit, simulating a session that finishes between two ticks.
+func fakeSessionServer(t *testing.T, state string, outputPath, outputContent string, writeOnPoll bool) (*httptest.Server, *int) {
+	t.Helper()
+	polls := 0
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/sessions/start", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{"id": "sess-test-1"})
+	})
+	mux.HandleFunc("/api/sessions/sess-test-1", func(w http.ResponseWriter, r *http.Request) {
+		polls++
+		if writeOnPoll && polls == 1 {
+			_ = os.WriteFile(outputPath, []byte(outputContent), 0o600)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{"state": state})
+	})
+	mux.HandleFunc("/api/sessions/kill", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	return srv, &polls
+}
+
+// withFakeLoopback points loopbackBaseURL at srv for the duration of
+// the test, restoring the real value on cleanup — same serverURL
+// override convention daemon_api_url_test.go already uses.
+func withFakeLoopback(t *testing.T, srv *httptest.Server) {
+	t.Helper()
+	origURL := serverURL
+	t.Cleanup(func() { serverURL = origURL })
+	serverURL = srv.URL
+}
+
+func TestRunOneShotJSONSession_SpawnPollRelocate(t *testing.T) {
+	projectDir := t.TempDir()
+	dataDir := t.TempDir()
+	outputFile := filepath.Join(projectDir, ".test-output-abc.json")
+	const want = `{"ok":true,"severity":"info","summary":"looks good"}`
+
+	srv, polls := fakeSessionServer(t, "running", outputFile, want, true)
+	withFakeLoopback(t, srv)
+
+	cfg := &config.Config{}
+	cfg.DataDir = dataDir
+
+	got, err := runOneShotJSONSession(cfg, "prd-1", projectDir, "claude-code", "sonnet",
+		"autonomous:test", "do the thing, write JSON to "+outputFile, outputFile, "test-output.json",
+		10*time.Second)
+	if err != nil {
+		t.Fatalf("runOneShotJSONSession: %v", err)
+	}
+	if got != want {
+		t.Errorf("content = %q, want %q", got, want)
+	}
+	if *polls == 0 {
+		t.Error("expected at least one poll of the session before the output file was found")
+	}
+	// Relocated out of projectDir — the worker's own directory must not
+	// keep a copy (B124 follows the same relocation contract decompose
+	// already used; see scratch.go).
+	if _, statErr := os.Stat(outputFile); !os.IsNotExist(statErr) {
+		t.Errorf("output file %s should have been relocated out of projectDir", outputFile)
+	}
+	if _, statErr := os.Stat(filepath.Join(dataDir, "autonomous", "scratch", "prd-1", "test-output.json")); statErr != nil {
+		t.Errorf("expected relocated copy under scratch dir: %v", statErr)
+	}
+}
+
+func TestRunOneShotJSONSession_ReusesExistingOutputOnRestart(t *testing.T) {
+	projectDir := t.TempDir()
+	dataDir := t.TempDir()
+	outputFile := filepath.Join(projectDir, ".test-output-restart.json")
+	const want = `{"ok":true,"severity":"info","summary":"from a prior attempt"}`
+	if err := os.WriteFile(outputFile, []byte(want), 0o600); err != nil {
+		t.Fatalf("seed output file: %v", err)
+	}
+
+	// No /api/sessions/start handler registered — a session spawn here
+	// would fail the test with a connection/404 error, proving restart
+	// recovery short-circuits before ever spawning.
+	srv := httptest.NewServer(http.NewServeMux())
+	t.Cleanup(srv.Close)
+	withFakeLoopback(t, srv)
+
+	cfg := &config.Config{}
+	cfg.DataDir = dataDir
+
+	got, err := runOneShotJSONSession(cfg, "prd-2", projectDir, "claude-code", "",
+		"autonomous:test", "unused", outputFile, "test-output-restart.json", 10*time.Second)
+	if err != nil {
+		t.Fatalf("runOneShotJSONSession: %v", err)
+	}
+	if got != want {
+		t.Errorf("content = %q, want %q", got, want)
+	}
+}
+
+func TestRunOneShotJSONSession_FailedStateWithNoOutputIsAnError(t *testing.T) {
+	projectDir := t.TempDir()
+	dataDir := t.TempDir()
+	outputFile := filepath.Join(projectDir, ".test-output-failed.json")
+
+	srv, _ := fakeSessionServer(t, "failed", outputFile, "", false)
+	withFakeLoopback(t, srv)
+
+	cfg := &config.Config{}
+	cfg.DataDir = dataDir
+
+	_, err := runOneShotJSONSession(cfg, "prd-3", projectDir, "claude-code", "",
+		"autonomous:test", "unused", outputFile, "test-output-failed.json", 10*time.Second)
+	if err == nil {
+		t.Fatal("expected an error when the session ends failed with no output file")
+	}
+	if !strings.Contains(err.Error(), "ended with state") {
+		t.Errorf("error = %v, want it to name the terminal state", err)
+	}
+}

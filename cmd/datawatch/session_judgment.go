@@ -1,0 +1,234 @@
+package main
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
+	"time"
+
+	autonomouspkg "github.com/dmz006/datawatch/internal/autonomous"
+	"github.com/dmz006/datawatch/internal/config"
+	"github.com/dmz006/datawatch/internal/llm"
+)
+
+// needsSessionJudgment (B124 — filed debugging why BL416's verifier never
+// got real tool access despite being pointed at a tool-capable backend)
+// reports whether a verify/guardrail call for the resolved backend kind
+// should run as a real one-shot tool-using session instead of a
+// text-only /api/ask call. True only when the kind has no ask adapter
+// (inference.IsSessionBackendKind — claude-code, opencode, goose, aider,
+// gemini, shell) AND there is a real project directory to run it in: a
+// session-only kind with no project_dir (a headless PRD, no worktree)
+// has nowhere to spawn into and must still fall back to the text-only
+// path, same as before this change.
+//
+// kind and isSessionKind are passed in rather than closed over so this
+// decision is a pure, independently testable function — same rationale
+// resolveVerifierBackendModel's own doc comment already gives.
+func needsSessionJudgment(kind, projectDir string, isSessionKind func(string) bool) bool {
+	return projectDir != "" && isSessionKind(kind)
+}
+
+// isInferenceSessionKind reports whether kind names a backend with real
+// tool/file access — fully data-driven off llm.ToolCapable (see that
+// interface's doc comment for why this replaced a hand-maintained
+// switch of kind-name literals, B124). Any kind not registered in the
+// llm package at all (ask-compatible chat kinds like ollama/openwebui,
+// or the cloud "claude" API kind) is never tool-capable by definition —
+// they have no llm.Backend entry to query.
+func isInferenceSessionKind(kind string) bool {
+	b, err := llm.Get(kind)
+	if err != nil {
+		return false
+	}
+	tc, ok := b.(llm.ToolCapable)
+	return ok && tc.HasToolAccess()
+}
+
+// sessionJudgmentTask (B124) wraps an existing /api/ask-style judgment
+// prompt — one that already ends in an inline "reply with JSON" request
+// — for delivery to a one-shot tool-using session instead: tells the
+// session it has real file/tool access in projectDir and to write that
+// same JSON to outputFile rather than reply inline. The judgment prompt
+// text itself (what to verify, the diff, the security preamble) is
+// reused byte-for-byte from the existing /api/ask path — only the
+// delivery and result-capture mechanism changes.
+func sessionJudgmentTask(prompt, projectDir, outputFile string) string {
+	return prompt + "\n\n" +
+		"You are running as a one-shot coding session inside " + projectDir +
+		" with real file and tool access — use it. Read the files the diff" +
+		" touched, and run the project's own build/lint/test commands if" +
+		" that would ground your verdict, before deciding. Do not take the" +
+		" diff's or spec's own claims at face value when you can check them.\n\n" +
+		"Do NOT reply with the JSON directly — this is not a chat. Instead" +
+		" write EXACTLY that JSON object (no markdown fences, no extra" +
+		" prose, no explanation) to this file:\n" + outputFile
+}
+
+// runOneShotJSONSession (B124) spawns a one-shot coding session to carry
+// out sessionTask — which must itself instruct the session to write its
+// JSON result to outputFile — and returns that file's content once
+// ready. Extracted from decomposeFnSession (Option B, v8.21.0), which
+// proved this exact spawn / poll-output-file-first / kill-on-return
+// shape for decompose; this generalizes it so the verify/guardrail
+// session path (see needsSessionJudgment) can reuse it rather than
+// duplicate it.
+//
+// scratchRelocateName is the stable basename this session's output is
+// relocated to under the PRD's scratch dir (see
+// autonomouspkg.RelocateProjectFile/ScratchDir) once written — callers
+// MUST use a name unique to their own call site (e.g.
+// "decompose-output.json", "verify-<taskID>.json") so concurrent
+// sessions for the same PRD never collide on the same relocated file.
+func runOneShotJSONSession(cfg *config.Config, prdID, projectDir, backend, model, sessionName, sessionTask, outputFile, scratchRelocateName string, timeout time.Duration) (string, error) {
+	scratchDir, scratchErr := autonomouspkg.ScratchDir(expandHome(cfg.DataDir), prdID)
+	if scratchErr != nil {
+		fmt.Printf("[%s] scratch dir for prd=%s: %v\n", sessionName, prdID, scratchErr)
+	}
+	relocate := func() (string, bool) {
+		return autonomouspkg.RelocateProjectFile(projectDir, filepath.Base(outputFile), scratchDir, scratchRelocateName)
+	}
+	// Restart-recovery: reuse output written by a previous attempt of
+	// the exact same call (same outputFile name, derived by the caller
+	// from its own content hash).
+	if existingContent, ok := relocate(); ok {
+		fmt.Printf("[%s] reusing prior output file %s (%d bytes)\n", sessionName, outputFile, len(existingContent))
+		return existingContent, nil
+	}
+	_ = os.Remove(outputFile) // clear stale/empty output from an incomplete prior attempt
+
+	body, _ := json.Marshal(map[string]any{
+		"task":        sessionTask,
+		"project_dir": projectDir,
+		"backend":     backend,
+		"model":       model,
+		"name":        sessionName,
+		"one_shot":    true,
+		"prd_id":      prdID,
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	// A full session cap is a wait, not a failure: retry until a slot
+	// frees or the timeout expires.
+	var rb []byte
+	for {
+		httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
+			loopbackBaseURL(cfg)+"/api/sessions/start",
+			bytes.NewReader(body))
+		if err != nil {
+			return "", err
+		}
+		httpReq.Header.Set("Content-Type", "application/json")
+		if cfg.Server.Token != "" {
+			httpReq.Header.Set("Authorization", "Bearer "+cfg.Server.Token)
+		}
+		resp, err := http.DefaultClient.Do(httpReq)
+		if err != nil {
+			return "", fmt.Errorf("%s session start: %w", sessionName, err)
+		}
+		rb, _ = io.ReadAll(resp.Body)
+		resp.Body.Close() //nolint:errcheck
+		if resp.StatusCode == http.StatusOK {
+			break
+		}
+		if !strings.Contains(string(rb), "max sessions") {
+			return "", fmt.Errorf("%s session start: %s — %s", sessionName, resp.Status, string(rb))
+		}
+		fmt.Printf("[%s] waiting for a free session slot: %s\n", sessionName, strings.TrimSpace(string(rb)))
+		select {
+		case <-ctx.Done():
+			return "", fmt.Errorf("%s session start: %w while waiting for capacity", sessionName, ctx.Err())
+		case <-time.After(15 * time.Second):
+		}
+	}
+	var startOut struct {
+		ID string `json:"id"`
+	}
+	_ = json.Unmarshal(rb, &startOut)
+	if startOut.ID == "" {
+		return "", fmt.Errorf("%s session start: no id in response: %s", sessionName, string(rb))
+	}
+	fmt.Printf("[%s] spawned %s (backend=%s, output=%s)\n", sessionName, startOut.ID, backend, outputFile)
+
+	// Best-effort: kill the session when this function returns (handles
+	// TUI sessions that land in waiting_input after writing the output).
+	sessionID := startOut.ID
+	defer func() {
+		killCtx, killCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer killCancel()
+		killBody, _ := json.Marshal(map[string]string{"id": sessionID})
+		killReq, err := http.NewRequestWithContext(killCtx, http.MethodPost,
+			loopbackBaseURL(cfg)+"/api/sessions/kill", bytes.NewReader(killBody))
+		if err != nil {
+			return
+		}
+		killReq.Header.Set("Content-Type", "application/json")
+		if cfg.Server.Token != "" {
+			killReq.Header.Set("Authorization", "Bearer "+cfg.Server.Token)
+		}
+		if r, err := http.DefaultClient.Do(killReq); err == nil {
+			_ = r.Body.Close()
+		}
+		fmt.Printf("[%s] killed %s\n", sessionName, sessionID)
+	}()
+
+	// Poll for session completion.
+	tick := time.NewTicker(3 * time.Second)
+	defer tick.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return "", fmt.Errorf("%s session %s timed out after %v", sessionName, startOut.ID, timeout)
+		case <-tick.C:
+			pollReq, err := http.NewRequestWithContext(ctx, http.MethodGet,
+				loopbackBaseURL(cfg)+"/api/sessions/"+startOut.ID, nil)
+			if err != nil {
+				continue
+			}
+			if cfg.Server.Token != "" {
+				pollReq.Header.Set("Authorization", "Bearer "+cfg.Server.Token)
+			}
+			pollResp, err := http.DefaultClient.Do(pollReq)
+			if err != nil {
+				continue
+			}
+			pollBody, _ := io.ReadAll(pollResp.Body)
+			pollResp.Body.Close() //nolint:errcheck
+
+			var s struct {
+				State string `json:"state"`
+			}
+			if err := json.Unmarshal(pollBody, &s); err != nil {
+				continue
+			}
+			// Output-file-first: whenever the file exists and has
+			// content, treat the call as done regardless of session
+			// state — see decomposeFnSession's identical reasoning.
+			if content, ok := relocate(); ok {
+				fmt.Printf("[%s] %s state=%q, output file ready (%d bytes) — treating as complete\n", sessionName, startOut.ID, s.State, len(content))
+				return content, nil
+			}
+			switch s.State {
+			case "complete":
+				return "", fmt.Errorf("%s session %s completed but output file %s not found", sessionName, startOut.ID, outputFile)
+			case "failed", "killed", "cancelled":
+				// Give the output file one last chance: the session may
+				// have written it in the same instant it was killed.
+				time.Sleep(3 * time.Second)
+				if content, ok := relocate(); ok {
+					fmt.Printf("[%s] %s state=%q, output file appeared after kill (%d bytes)\n", sessionName, startOut.ID, s.State, len(content))
+					return content, nil
+				}
+				return "", fmt.Errorf("%s session %s ended with state %q and no output file", sessionName, startOut.ID, s.State)
+			}
+		}
+	}
+}

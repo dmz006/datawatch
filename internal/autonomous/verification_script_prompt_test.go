@@ -195,3 +195,133 @@ func TestDecompose_BothCallSitesAppendVerificationScriptSuffix(t *testing.T) {
 		t.Errorf("DecomposeStreaming prompt lost the rules pointer")
 	}
 }
+
+// B124 — the schema contradiction itself. PlanningPromptSession told the
+// model its JSON "must follow this schema exactly" while that very
+// schema omitted verification_script/files_generated — the suffix
+// asking for them was appended later, inside what reads as the
+// "Feature request" section, directly contradicting the "exactly"
+// contract shown first. TestDecompose_VerificationScriptRoundTrips
+// (above) faked the LLM response entirely, so it could never catch
+// this: it proved the PARSER can read the field, never that the real
+// production prompt template asks for it consistently. This test reads
+// the literal schema text itself.
+func TestPlanningPromptSession_SchemaIncludesVerificationScriptFields(t *testing.T) {
+	for _, field := range []string{`"verification_script"`, `"files_generated"`} {
+		if !strings.Contains(PlanningPromptSession, field) {
+			t.Errorf("PlanningPromptSession's JSON schema block is missing %s — a model told to follow this schema %q will never include a field the schema itself never lists",
+				field, "exactly")
+		}
+	}
+	// Must appear on BOTH the story and task example objects, not just
+	// one — a decompose can put a sensible check at either granularity.
+	if n := strings.Count(PlanningPromptSession, `"verification_script"`); n < 2 {
+		t.Errorf("PlanningPromptSession lists verification_script %d times, want at least 2 (story and task examples)", n)
+	}
+}
+
+// B124 — the kick-back gate itself. A tooled (ProjectDir-bearing) PRD
+// whose decompose response plans real file changes but names a
+// verification script nowhere must be rejected, not silently land in
+// needs_review with a plan nothing will ever mechanically check. This
+// is the exact failure mode found live: PlanningPromptSession's own
+// schema never listed verification_script, so a real tooled session
+// correctly produced zero of them across 16 tasks.
+const planRespFilesNoScript = `{"title":"T","stories":[{"title":"S","files":["a.go"],"tasks":[{"title":"Task 1","spec":"do it","files":["a.go"]}]}]}`
+const planRespFilesWithScript = `{"title":"T","stories":[{"title":"S","files":["a.go"],"tasks":[{"title":"Task 1","spec":"do it","files":["a.go"],"verification_script":".datawatch/verify/task-1.sh"}]}]}`
+const planRespNoFilesNoScript = `{"title":"T","stories":[{"title":"S","tasks":[{"title":"Task 1","spec":"research only"}]}]}`
+
+func newTooledManagerForScriptCoverageTest(t *testing.T, resp string) (*Manager, *PRD) {
+	t.Helper()
+	baseRepo := scratchGitRepo(t)
+	worktreeDir := t.TempDir()
+	fakeFn := func(req DecomposeRequest) (string, error) { return resp, nil }
+
+	cfg := DefaultConfig()
+	cfg.WorktreeBaseRepo = baseRepo
+	cfg.WorktreeDir = worktreeDir
+	m, err := NewManager(t.TempDir(), cfg, fakeFn)
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	prd, err := m.CreatePRD("spec", "", "", "", "")
+	if err != nil {
+		t.Fatalf("CreatePRD: %v", err)
+	}
+	return m, prd
+}
+
+func TestDecompose_RejectsZeroScriptsWhenFilesArePlanned(t *testing.T) {
+	m, prd := newTooledManagerForScriptCoverageTest(t, planRespFilesNoScript)
+	_, err := m.Decompose(prd.ID)
+	if err == nil {
+		t.Fatal("want an error when the plan touches files but names zero verification scripts")
+	}
+	if !strings.Contains(err.Error(), "zero verification_script") {
+		t.Errorf("error = %v, want it to name the real problem", err)
+	}
+	got, ok := m.Store().GetPRD(prd.ID)
+	if !ok {
+		t.Fatal("PRD vanished")
+	}
+	if got.Status != PRDDraft {
+		t.Errorf("status = %q, want rolled back to draft so the operator can retry", got.Status)
+	}
+}
+
+func TestDecompose_AcceptsAtLeastOneScriptAcrossTheWholePlan(t *testing.T) {
+	m, prd := newTooledManagerForScriptCoverageTest(t, planRespFilesWithScript)
+	if _, err := m.Decompose(prd.ID); err != nil {
+		t.Fatalf("Decompose: %v", err)
+	}
+	got, ok := m.Store().GetPRD(prd.ID)
+	if !ok {
+		t.Fatal("PRD vanished")
+	}
+	if got.Status != PRDNeedsReview {
+		t.Errorf("status = %q, want needs_review (a plan with at least one script must not be rejected)", got.Status)
+	}
+}
+
+func TestDecompose_NoFilesPlannedIsExemptFromTheGate(t *testing.T) {
+	m, prd := newTooledManagerForScriptCoverageTest(t, planRespNoFilesNoScript)
+	if _, err := m.Decompose(prd.ID); err != nil {
+		t.Fatalf("Decompose: %v (a plan with no files planned anywhere, e.g. pure research, must not be held to this bar)", err)
+	}
+}
+
+func TestDecompose_HeadlessPRDIsExemptFromTheGate(t *testing.T) {
+	// No WorktreeBaseRepo configured — ProjectDir stays empty, the same
+	// gate verificationScriptSuffix itself uses, so a headless/ask-only
+	// backend (never asked for scripts) is never held to this bar.
+	fakeFn := func(req DecomposeRequest) (string, error) { return planRespFilesNoScript, nil }
+	m, err := NewManager(t.TempDir(), DefaultConfig(), fakeFn)
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	prd, err := m.CreatePRD("spec", "", "", "", "")
+	if err != nil {
+		t.Fatalf("CreatePRD: %v", err)
+	}
+	if prd.ProjectDir != "" {
+		t.Fatalf("test setup: expected an empty ProjectDir, got %q", prd.ProjectDir)
+	}
+	if _, err := m.Decompose(prd.ID); err != nil {
+		t.Fatalf("Decompose: %v (a headless PRD must not be held to the script-coverage bar)", err)
+	}
+}
+
+func TestDecomposeStreaming_RejectsZeroScriptsWhenFilesArePlanned(t *testing.T) {
+	m, prd := newTooledManagerForScriptCoverageTest(t, planRespFilesNoScript)
+	_, err := m.DecomposeStreaming(prd.ID, nil)
+	if err == nil {
+		t.Fatal("want an error when the plan touches files but names zero verification scripts")
+	}
+	got, ok := m.Store().GetPRD(prd.ID)
+	if !ok {
+		t.Fatal("PRD vanished")
+	}
+	if got.Status != PRDDraft {
+		t.Errorf("status = %q, want rolled back to draft so the operator can retry", got.Status)
+	}
+}

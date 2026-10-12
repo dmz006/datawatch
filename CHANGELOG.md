@@ -5,6 +5,59 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.41 — fix(autonomous): B124 — PRD verifier/guardrail now actually gets tool access; decompose schema/kick-back fix
+
+### Fixed
+- **Decompose never actually produced verification scripts (BL416's own
+  promise).** The production JSON schema shown to a tooled decompose
+  session (`PlanningPromptSession`) said "must follow this schema
+  exactly" while never listing `verification_script`/`files_generated`
+  — the instruction asking for them was appended afterward, contradicting
+  the schema shown first. Both fields are now part of the schema itself,
+  on both the story and task example objects. A new kick-back gate
+  (`validateVerificationScriptCoverage`) rejects a decompose response
+  outright — rolling the PRD back to `draft`, the same as an unparseable
+  response — when it plans real file changes but names a verification
+  script nowhere, for any PRD with a real project directory. A PRD with
+  no files planned anywhere (pure research) or no project directory
+  (headless/ask-only backend) is exempt, matching the same scope the
+  script-writing instruction itself already used.
+- **The PRD verifier and per-task/per-story guardrail never actually got
+  tool access, for any backend.** Both were hardwired through `/api/ask`
+  (text-only, no file/tool access): a tool-capable backend
+  (claude-code, opencode, goose, aider, gemini, shell) had no adapter
+  there, so pointing verification at one silently downgraded to the
+  `ollama` default with no warning. Both now spawn a real one-shot
+  tool-using session (the same mechanism decompose's own session-based
+  path already used) whenever the resolved backend has real tool access
+  and a project directory exists to run it in — the session gets the
+  exact same judgment prompt, with real file/build/test access to
+  ground its verdict instead of judging from text alone.
+- **Tool-access detection is now fully data-driven, not a hardcoded
+  backend-name list.** A new `llm.ToolCapable` optional interface lets
+  any backend declare `HasToolAccess() bool` — claude-code, opencode
+  (all three variants), goose (both variants), aider, gemini and shell
+  all implement it. Whichever LLM an operator configures for
+  `autonomous.verification_backend` (or a per-PRD/per-task/per-story
+  override) is checked against this interface at the moment it's
+  resolved — a future backend becomes eligible as a tool-capable
+  verifier purely by implementing the interface, with nothing else to
+  keep in sync.
+
+### Added
+- `internal/llm.ToolCapable` interface (`internal/llm/backend.go`).
+- `cmd/datawatch/session_judgment.go`: `runOneShotJSONSession` (shared
+  spawn/poll/relocate helper, extracted from the decompose session
+  path so verify/guardrail reuse it rather than duplicate it),
+  `needsSessionJudgment`, `sessionJudgmentTask`.
+- `internal/autonomous/verification_script_coverage.go`:
+  `validateVerificationScriptCoverage`, wired into both `Decompose()`
+  and `decomposeStreamingCore()`.
+
+Filed as **B124** — see `docs/plans/README.md` for the full
+investigation (found live auditing two real PRD runs that completed
+with zero verification scripts despite BL416's own design intent).
+
 ## v9.0.40 — feat(plugins): plugin widgets — manifest block, push/pull transport, latest-value store
 
 ### Added

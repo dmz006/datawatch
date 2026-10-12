@@ -113,6 +113,7 @@ func NewACPWithTimeouts(binary string, startupTimeout, healthInterval, messageTi
 
 func (b *ACPBackend) Name() string                  { return "opencode-acp" }
 func (b *ACPBackend) SupportsInteractiveInput() bool { return true }
+func (b *ACPBackend) HasToolAccess() bool            { return true }
 
 func (b *ACPBackend) Version() string {
 	out, err := exec.Command(b.binary, "--version").Output()

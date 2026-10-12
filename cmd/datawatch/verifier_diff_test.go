@@ -450,6 +450,12 @@ func fakeAskResolver(namedKinds map[string]string, namedModels map[string]string
 	return resolve, compatible
 }
 
+// fakeIsSessionKind stands in for isInferenceSessionKind in
+// resolveVerifierBackendModel tests: "claude-code" is the only kind
+// these tests treat as session-only, matching the real
+// inference.IsSessionBackendKind's classification of that kind.
+func fakeIsSessionKind(kind string) bool { return kind == "claude-code" }
+
 // TestResolveVerifierBackendModel_DefaultsToPRDBackend covers the v8.36.0
 // fix: an unconfigured verification_backend/model must default to the
 // PRD's own ask-compatible backend/model, not a hardcoded "ollama" ignoring
@@ -459,28 +465,58 @@ func TestResolveVerifierBackendModel_DefaultsToPRDBackend(t *testing.T) {
 		map[string]string{"ollama-datawatch": "ollama", "ollama": "ollama"},
 		map[string]string{"ollama-datawatch": "qwen3.8:27b", "ollama": "qwen3:1.7b"},
 	)
-	backend, kind, model := resolveVerifierBackendModel("", "", "ollama-datawatch", "qwen3.8:27b", resolve, compatible)
+	backend, kind, model, useSession := resolveVerifierBackendModel("", "", "ollama-datawatch", "qwen3.8:27b", "", resolve, compatible, fakeIsSessionKind)
 	if backend != "ollama-datawatch" || kind != "ollama" || model != "qwen3.8:27b" {
 		t.Fatalf("got backend=%q kind=%q model=%q, want the PRD's own ollama-datawatch/qwen3.8:27b", backend, kind, model)
 	}
+	if useSession {
+		t.Fatal("ask-compatible kind should never request session routing")
+	}
 }
 
-// TestResolveVerifierBackendModel_SessionOnlyBackendFallsBackToOllama covers
-// the real architectural limit: a claude-code (session-only) PRD backend has
-// no single-shot ask adapter, so it must fall back to the global "ollama"
-// default exactly as before this change — not silently pass "claude-code"
-// through to /api/ask, which would just fail differently.
-func TestResolveVerifierBackendModel_SessionOnlyBackendFallsBackToOllama(t *testing.T) {
+// TestResolveVerifierBackendModel_SessionOnlyBackendNoProjectDirFallsBackToOllama
+// covers a headless PRD (no ProjectDir — nothing to spawn a session into):
+// a claude-code (session-only) PRD backend has no single-shot ask adapter
+// and nowhere to run a real session, so it must fall back to the global
+// "ollama" default exactly as before B124 — not silently pass "claude-code"
+// through to /api/ask (which would just fail differently), and not request
+// session routing with no directory to run in.
+func TestResolveVerifierBackendModel_SessionOnlyBackendNoProjectDirFallsBackToOllama(t *testing.T) {
 	resolve, compatible := fakeAskResolver(
 		map[string]string{"claude-code": "claude-code", "ollama": "ollama"},
 		map[string]string{"ollama": "qwen3:1.7b"},
 	)
-	backend, kind, model := resolveVerifierBackendModel("", "", "claude-code", "claude-sonnet-5", resolve, compatible)
+	backend, kind, model, useSession := resolveVerifierBackendModel("", "", "claude-code", "claude-sonnet-5", "", resolve, compatible, fakeIsSessionKind)
 	if backend != "ollama" || kind != "ollama" {
-		t.Fatalf("got backend=%q kind=%q, want fallback to ollama (claude-code has no single-shot ask adapter)", backend, kind)
+		t.Fatalf("got backend=%q kind=%q, want fallback to ollama (claude-code has no single-shot ask adapter and no project dir to spawn into)", backend, kind)
 	}
 	if model != "qwen3:1.7b" {
 		t.Fatalf("model = %q, want ollama's own default (qwen3.8:27b would be a stale pairing from the discarded claude-code backend)", model)
+	}
+	if useSession {
+		t.Fatal("no project dir means nowhere to spawn a session — useSession must be false")
+	}
+}
+
+// TestResolveVerifierBackendModel_SessionOnlyBackendWithProjectDirUsesSession
+// (B124) is the fix: a claude-code PRD backend WITH a real project
+// directory to run in must route to a real tool-using session instead of
+// silently downgrading to ollama — the whole reason BL416's verifier never
+// actually got tool access despite being pointed at claude-code.
+func TestResolveVerifierBackendModel_SessionOnlyBackendWithProjectDirUsesSession(t *testing.T) {
+	resolve, compatible := fakeAskResolver(
+		map[string]string{"claude-code": "claude-code", "ollama": "ollama"},
+		map[string]string{"ollama": "qwen3:1.7b"},
+	)
+	backend, kind, model, useSession := resolveVerifierBackendModel("", "", "claude-code", "claude-sonnet-5", "/work/prd-123", resolve, compatible, fakeIsSessionKind)
+	if !useSession {
+		t.Fatal("a session-only kind with a real project dir must route to a session, not downgrade to ollama")
+	}
+	if backend != "claude-code" || kind != "claude-code" {
+		t.Fatalf("got backend=%q kind=%q, want the real claude-code backend preserved for the session path", backend, kind)
+	}
+	if model != "claude-sonnet-5" {
+		t.Fatalf("model = %q, want the PRD's own claude-sonnet-5 preserved", model)
 	}
 }
 
@@ -492,7 +528,7 @@ func TestResolveVerifierBackendModel_ExplicitConfigWins(t *testing.T) {
 		map[string]string{"ollama-strong": "ollama", "ollama-datawatch": "ollama"},
 		map[string]string{"ollama-strong": "gpt-oss:120b"},
 	)
-	backend, _, model := resolveVerifierBackendModel("ollama-strong", "gpt-oss:120b", "ollama-datawatch", "qwen3.8:27b", resolve, compatible)
+	backend, _, model, _ := resolveVerifierBackendModel("ollama-strong", "gpt-oss:120b", "ollama-datawatch", "qwen3.8:27b", "", resolve, compatible, fakeIsSessionKind)
 	if backend != "ollama-strong" || model != "gpt-oss:120b" {
 		t.Fatalf("got backend=%q model=%q, want the explicitly configured verification_backend/model to win", backend, model)
 	}
@@ -503,9 +539,12 @@ func TestResolveVerifierBackendModel_ExplicitConfigWins(t *testing.T) {
 // "ollama" — the pre-existing default, unaffected by this change.
 func TestResolveVerifierBackendModel_NoPRDBackendFallsBackToOllama(t *testing.T) {
 	resolve, compatible := fakeAskResolver(map[string]string{"ollama": "ollama"}, map[string]string{"ollama": "qwen3:1.7b"})
-	backend, kind, model := resolveVerifierBackendModel("", "", "", "", resolve, compatible)
+	backend, kind, model, useSession := resolveVerifierBackendModel("", "", "", "", "", resolve, compatible, fakeIsSessionKind)
 	if backend != "ollama" || kind != "ollama" || model != "qwen3:1.7b" {
 		t.Fatalf("got backend=%q kind=%q model=%q, want the ollama default", backend, kind, model)
+	}
+	if useSession {
+		t.Fatal("empty backend defaulting to ollama should never request session routing")
 	}
 }
 
