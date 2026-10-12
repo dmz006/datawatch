@@ -25219,6 +25219,283 @@ function _dashLoop(ts) {
   _dash.rafId = requestAnimationFrame(_dashLoop);
 }
 
+// ── BL403 Phase 4 — Plugin widget renderers ─────────────────────────────────
+// Pure HTML-string renderers for plugin-declared widgets (manifest
+// `widgets:` block, v9.0.40 backend: internal/plugins/widgets.go and
+// internal/server/plugin_widgets.go). A widget value arrives as a
+// pluginWidgetView from GET /api/plugins/{name}/widgets[/{widget_id}]:
+//   {id, surface, kind, data_mode, pull_path, interval_seconds,
+//    value: null | {plugin, widget_id, data, updated_at, source, error?}}
+// `value.data` is free-form JSON written by a third-party plugin, so it is
+// UNTRUSTED: every string goes through escHtml, every number through
+// Number()/isFinite, colors/icons come from fixed whitelists only, and
+// every renderer catches its own errors and falls back to the quiet
+// empty state instead of throwing into the dashboard loop.
+//
+// Per-kind data contract (value.data):
+//   stat_tile    {value: number|string, label?, unit?, detail?}
+//   table        {columns: [string], rows: [[cell...]] | [{col: cell}]}
+//                cells: string|number|boolean|null
+//   list         {items: [string | {text, detail?}]}
+//   sparkline    {points: [number], label?, value?: number|string}
+//   status_badge {status: 'ok'|'warn'|'error'|'unknown', label?, detail?}
+//   markdown     {text: string} or a bare JSON string
+//
+// Nothing here is wired into the dashboard or session view yet; callers
+// use _pwRenderInto(el, view) as the single entry point. Card ids for
+// the dashboard grid use the form 'plugin:<plugin-name>:<widget-id>'
+// (_pwCardId / _pwParseCardId).
+
+const _PW_MAX_ROWS = 50;
+const _PW_MAX_COLS = 20;
+const _PW_MAX_ITEMS = 50;
+const _PW_MAX_POINTS = 500;
+const _PW_MAX_TITLE = 500;
+
+// _pwCell coerces a scalar to display text; anything else becomes ''.
+function _pwCell(v) {
+  if (v === null || v === undefined) return '';
+  if (typeof v === 'string') return v;
+  if (typeof v === 'number') return isFinite(v) ? String(v) : '';
+  if (typeof v === 'boolean') return v ? 'true' : 'false';
+  return '';
+}
+
+// _pwTrunc returns escaped text cut to max chars, with the (capped) full
+// text in a title attribute when cut — same idiom as the guardrails card.
+function _pwTrunc(s, max) {
+  s = _pwCell(s);
+  if (s.length <= max) return escHtml(s);
+  return `<span title="${escHtml(s.slice(0, _PW_MAX_TITLE))}">${escHtml(s.slice(0, max - 1) + '…')}</span>`;
+}
+
+function _pwEmptyState(kind) {
+  let msg;
+  if (kind === 'loading') msg = t('plugin_widget_loading') || 'Loading…';
+  else if (kind === 'unavailable') msg = t('plugin_widget_unavailable') || 'Widget unavailable';
+  else msg = t('plugin_widget_no_data') || 'No data yet';
+  return `<div style="color:var(--text2);font-size:10px;padding:4px 0;">${escHtml(msg)}</div>`;
+}
+
+function _pwRenderStatTile(data) {
+  try {
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return _pwEmptyState('nodata');
+    const v = data.value;
+    let shown;
+    if (typeof v === 'number') {
+      if (!isFinite(v)) return _pwEmptyState('nodata');
+      shown = String(Number(v));
+    } else if (typeof v === 'string' && v !== '') {
+      shown = v;
+    } else {
+      return _pwEmptyState('nodata');
+    }
+    let html = `<div style="display:flex;align-items:baseline;gap:6px;margin-bottom:2px;">
+    <span style="font-size:16px;font-weight:700;color:var(--text);">${_pwTrunc(shown, 24)}</span>`;
+    if (typeof data.unit === 'string' && data.unit) html += `<span style="font-size:9px;color:var(--text2);">${_pwTrunc(data.unit, 16)}</span>`;
+    html += `</div>`;
+    if (typeof data.label === 'string' && data.label) {
+      html += `<div style="font-size:9px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_pwTrunc(data.label, 40)}</div>`;
+    }
+    if (typeof data.detail === 'string' && data.detail) {
+      html += `<div style="font-size:9px;color:var(--text2);margin-top:2px;">${_pwTrunc(data.detail, 120)}</div>`;
+    }
+    return html;
+  } catch (_) {
+    return _pwEmptyState('nodata');
+  }
+}
+
+function _pwRenderTable(data) {
+  try {
+    if (!data || typeof data !== 'object' || !Array.isArray(data.columns) || !Array.isArray(data.rows)) return _pwEmptyState('nodata');
+    const cols = data.columns.slice(0, _PW_MAX_COLS).map(c => _pwCell(c));
+    if (!cols.length) return _pwEmptyState('nodata');
+    const rows = [];
+    for (const r of data.rows.slice(0, _PW_MAX_ROWS)) {
+      if (Array.isArray(r)) rows.push(cols.map((_, i) => _pwCell(r[i])));
+      else if (r && typeof r === 'object') rows.push(cols.map(c => (Object.prototype.hasOwnProperty.call(r, c) ? _pwCell(r[c]) : '')));
+    }
+    if (!rows.length) return _pwEmptyState('nodata');
+    const cellStyle = 'padding:2px 6px 2px 0;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+    let html = `<div style="overflow-x:auto;"><table style="border-collapse:collapse;width:100%;font-size:10px;color:var(--text);">
+    <thead><tr>`;
+    for (const c of cols) html += `<th style="${cellStyle}text-align:left;font-size:9px;font-weight:600;color:var(--text2);border-bottom:1px solid var(--border);">${_pwTrunc(c, 28)}</th>`;
+    html += `</tr></thead><tbody>`;
+    for (const r of rows) {
+      html += `<tr>`;
+      for (const cell of r) html += `<td style="${cellStyle}border-bottom:1px solid var(--border);">${_pwTrunc(cell, 40)}</td>`;
+      html += `</tr>`;
+    }
+    html += `</tbody></table></div>`;
+    if (data.rows.length > _PW_MAX_ROWS) {
+      html += `<div style="font-size:9px;color:var(--text2);margin-top:2px;">+${Number(data.rows.length - _PW_MAX_ROWS)}</div>`;
+    }
+    return html;
+  } catch (_) {
+    return _pwEmptyState('nodata');
+  }
+}
+
+function _pwRenderList(data) {
+  try {
+    if (!data || typeof data !== 'object' || !Array.isArray(data.items)) return _pwEmptyState('nodata');
+    let html = '';
+    let n = 0;
+    for (const it of data.items.slice(0, _PW_MAX_ITEMS)) {
+      let text = '', detail = '';
+      if (typeof it === 'string' || typeof it === 'number') text = _pwCell(it);
+      else if (it && typeof it === 'object') { text = _pwCell(it.text); detail = _pwCell(it.detail); }
+      if (!text) continue;
+      n++;
+      html += `<div style="margin-bottom:4px;">
+      <div style="font-size:10px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_pwTrunc(text, 60)}</div>`;
+      if (detail) html += `<div style="font-size:9px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_pwTrunc(detail, 80)}</div>`;
+      html += `</div>`;
+    }
+    if (!n) return _pwEmptyState('nodata');
+    if (data.items.length > _PW_MAX_ITEMS) {
+      html += `<div style="font-size:9px;color:var(--text2);">+${Number(data.items.length - _PW_MAX_ITEMS)}</div>`;
+    }
+    return html;
+  } catch (_) {
+    return _pwEmptyState('nodata');
+  }
+}
+
+// Inline-SVG polyline. Only finite numbers reach the markup, and every
+// coordinate is a toFixed() number, so nothing plugin-supplied lands in
+// an SVG attribute. Keeps the most recent _PW_MAX_POINTS points.
+function _pwRenderSparkline(data) {
+  try {
+    if (!data || typeof data !== 'object' || !Array.isArray(data.points)) return _pwEmptyState('nodata');
+    let pts = data.points.filter(p => typeof p === 'number' && isFinite(p));
+    if (pts.length > _PW_MAX_POINTS) pts = pts.slice(pts.length - _PW_MAX_POINTS);
+    if (!pts.length) return _pwEmptyState('nodata');
+    if (pts.length === 1) pts = [pts[0], pts[0]];
+    const W = 140, H = 28, PAD = 2;
+    let min = Math.min(...pts), max = Math.max(...pts);
+    if (max === min) { min -= 1; max += 1; }
+    const xs = (W - PAD * 2) / (pts.length - 1);
+    const coords = pts.map((p, i) => {
+      const x = PAD + i * xs;
+      const y = PAD + (H - PAD * 2) * (1 - (p - min) / (max - min));
+      return `${x.toFixed(2)},${y.toFixed(2)}`;
+    }).join(' ');
+    let html = '';
+    const hasValue = (typeof data.value === 'number' && isFinite(data.value)) || (typeof data.value === 'string' && data.value !== '');
+    const hasLabel = typeof data.label === 'string' && data.label !== '';
+    if (hasValue || hasLabel) {
+      html += `<div style="display:flex;align-items:baseline;gap:6px;margin-bottom:2px;">`;
+      if (hasValue) html += `<span style="font-size:16px;font-weight:700;color:var(--text);">${_pwTrunc(typeof data.value === 'number' ? String(Number(data.value)) : data.value, 24)}</span>`;
+      if (hasLabel) html += `<span style="font-size:9px;color:var(--text2);">${_pwTrunc(data.label, 40)}</span>`;
+      html += `</div>`;
+    }
+    html += `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="width:100%;height:${H}px;display:block;"><polyline fill="none" stroke="var(--accent,#6366f1)" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" points="${coords}"/></svg>`;
+    return html;
+  } catch (_) {
+    return _pwEmptyState('nodata');
+  }
+}
+
+// Status → presentation. The plugin's status string is only ever used
+// as a lookup key here; it is never interpolated into style/class.
+const _PW_STATUS = {
+  ok:      { color: 'var(--success,#10b981)', icon: '✓', fb: 'OK' },
+  warn:    { color: 'var(--warning,#f59e0b)', icon: '⚠', fb: 'Warning' },
+  error:   { color: 'var(--error,#ef4444)',   icon: '⛔', fb: 'Error' },
+  unknown: { color: 'var(--text2)',           icon: '?', fb: 'Unknown' },
+};
+
+function _pwRenderStatusBadge(data) {
+  try {
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return _pwEmptyState('nodata');
+    const key = (typeof data.status === 'string' && Object.prototype.hasOwnProperty.call(_PW_STATUS, data.status)) ? data.status : 'unknown';
+    const s = _PW_STATUS[key];
+    const label = (typeof data.label === 'string' && data.label) ? data.label : s.fb;
+    let html = `<div style="display:flex;align-items:center;gap:6px;">
+    <span style="color:${s.color};font-size:14px;font-weight:700;">${s.icon}</span>
+    <span style="color:${s.color};font-size:11px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_pwTrunc(label, 40)}</span>
+  </div>`;
+    if (typeof data.detail === 'string' && data.detail) {
+      html += `<div style="font-size:9px;color:var(--text2);margin-top:2px;">${_pwTrunc(data.detail, 120)}</div>`;
+    }
+    return html;
+  } catch (_) {
+    return _pwEmptyState('nodata');
+  }
+}
+
+const _PW_TEMPLATED = {
+  stat_tile: _pwRenderStatTile,
+  table: _pwRenderTable,
+  list: _pwRenderList,
+  sparkline: _pwRenderSparkline,
+  status_badge: _pwRenderStatusBadge,
+};
+
+// _pwRenderInto is the single dispatcher: render a pluginWidgetView into
+// el. Markdown goes through the existing sanitizing _renderMarkdownFileInto
+// (marked + DOMPurify), lazy-loading those libs first if needed; a
+// per-element sequence number drops a stale async markdown render that
+// finishes after a newer value was already rendered into the same el.
+function _pwRenderInto(el, view) {
+  if (!el) return;
+  try {
+    const seq = (el._pwSeq = (el._pwSeq || 0) + 1);
+    const value = view && view.value;
+    if (!value || typeof value !== 'object' || value.data === undefined || value.data === null) {
+      el.innerHTML = _pwEmptyState('nodata');
+      return;
+    }
+    const errHint = (value.error && typeof value.error === 'string')
+      ? `<div style="text-align:right;font-size:9px;line-height:1;margin-top:2px;"><span style="color:var(--warning,#f59e0b);cursor:help;" title="${escHtml(value.error.slice(0, _PW_MAX_TITLE))}">⚠</span></div>`
+      : '';
+    const kind = view.kind;
+    if (kind === 'markdown') {
+      const d = value.data;
+      const text = typeof d === 'string' ? d : (d && typeof d === 'object' && typeof d.text === 'string' ? d.text : '');
+      if (!text) { el.innerHTML = _pwEmptyState('nodata') + errHint; return; }
+      const render = () => {
+        if (el._pwSeq !== seq) return;
+        _renderMarkdownFileInto(el, text);
+        // insertAdjacentHTML, not innerHTML +=, so pending mermaid slots stay attached.
+        if (errHint && typeof el.insertAdjacentHTML === 'function') el.insertAdjacentHTML('beforeend', errHint);
+      };
+      if (typeof marked !== 'undefined' && typeof DOMPurify !== 'undefined') {
+        render();
+      } else {
+        el.innerHTML = _pwEmptyState('loading');
+        window._ensureMarkdownLibs().then(render).catch(e => {
+          console.debug('plugin widget markdown render failed', e);
+          if (el._pwSeq === seq) el.innerHTML = _pwEmptyState('unavailable');
+        });
+      }
+      return;
+    }
+    const fn = Object.prototype.hasOwnProperty.call(_PW_TEMPLATED, kind) ? _PW_TEMPLATED[kind] : null;
+    if (!fn) { el.innerHTML = _pwEmptyState('unavailable'); return; }
+    el.innerHTML = fn(value.data) + errHint;
+  } catch (e) {
+    console.debug('plugin widget render failed', e);
+    try { el.innerHTML = _pwEmptyState('unavailable'); } catch (_) {}
+  }
+}
+
+// Dashboard card id for a plugin widget: 'plugin:<plugin-name>:<widget-id>'.
+// The plugin name cannot contain ':', the widget id may.
+function _pwCardId(plugin, widget) {
+  return 'plugin:' + String(plugin) + ':' + String(widget);
+}
+
+function _pwParseCardId(id) {
+  if (typeof id !== 'string' || id.indexOf('plugin:') !== 0) return null;
+  const rest = id.slice('plugin:'.length);
+  const i = rest.indexOf(':');
+  if (i <= 0 || i === rest.length - 1) return null;
+  return { plugin: rest.slice(0, i), widget: rest.slice(i + 1) };
+}
+
 // ── BL303 S5 — Dashboard Card Grid ───────────────────────────────────────────
 
 const DASH_CARD_DEFS = [
