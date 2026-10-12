@@ -291,6 +291,8 @@ Research + decision capture. Done, this file is the artifact.
 
 ### Phase 5 — Federation capability gating
 
+- **Status**: shipped v9.0.50 (REST widget endpoints gated; MCP/CLI/comm
+  widget surfaces and their `mcp_tool_caps` entries arrive with Phase 7).
 - `internal/federation/capabilities.go`: add `CapPluginRead =
   "plugin:read"`, `CapPluginWrite = "plugin:write"` to the relevant
   const block + `allCaps`. Per the least-privilege precedent (operator
