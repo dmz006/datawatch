@@ -439,6 +439,9 @@ func TestManifest_UnknownNestedKeysTolerated(t *testing.T) {
 kind: service
 widgets:
   - id: inbox
+    surface: dashboard
+    kind: stat_tile
+    data_mode: push
     size: large
 connection:
   base_url: https://127.0.0.1:8090

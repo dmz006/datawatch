@@ -41,6 +41,10 @@ const (
 	HookPostSessionOutput   Hook = "post_session_output"
 	HookPostSessionComplete Hook = "post_session_complete"
 	HookOnAlert             Hook = "on_alert"
+	// HookStatusPoll is a oneshot hook the daemon invokes on a widget's
+	// interval to fetch a pull-mode widget's value for kind: automation
+	// plugins. The widget's pull_path is carried in the request payload.
+	HookStatusPoll Hook = "status_poll"
 )
 
 // Manifest v3 (BL403 Phase 1) — plugin kinds.
@@ -167,6 +171,13 @@ type Manifest struct {
 	Kind       string            `yaml:"kind,omitempty" json:"kind,omitempty"`
 	Connection *PluginConnection `yaml:"connection,omitempty" json:"connection,omitempty"`
 	Lifecycle  *PluginLifecycle  `yaml:"lifecycle,omitempty" json:"lifecycle,omitempty"`
+
+	// Widgets (BL403) declares PWA dashboard/session widgets. Both kinds may
+	// declare widgets. Pull-mode data for automation plugins comes from the
+	// status_poll hook; pull-mode data for service plugins comes from
+	// GET <connection.base_url><pull_path>. Push-mode data is POSTed by the
+	// plugin to /api/plugins/{name}/widgets/{widget_id}. See widgets.go.
+	Widgets []Widget `yaml:"widgets,omitempty" json:"widgets,omitempty"`
 }
 
 // PluginConnection is how datawatch reaches a service-kind plugin as a
@@ -245,6 +256,7 @@ func (m Manifest) Validate() error {
 	default:
 		errs = append(errs, fmt.Errorf("kind %q is invalid: must be %q or %q", m.Kind, KindAutomation, KindService))
 	}
+	errs = append(errs, validateWidgets(m.Kind, m.Widgets)...)
 	return errors.Join(errs...)
 }
 
