@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/dmz006/datawatch/internal/config"
+	"github.com/dmz006/datawatch/internal/inference"
 	"github.com/dmz006/datawatch/internal/llm"
 	"github.com/dmz006/datawatch/internal/llm/backends/aider"
 	"github.com/dmz006/datawatch/internal/llm/backends/gemini"
@@ -45,6 +46,58 @@ func registerAllLLMBackendsForTest() {
 		llm.Register(opencode.NewACPWithTimeouts("", 0, 0, 0))
 		llm.Register(shell.New(""))
 	})
+}
+
+// B124 — the actual root cause of why nothing above ever fired live:
+// resolveAskCompatibleKind must return the REAL resolved kind even when
+// that kind isn't ask-compatible (the whole point of needsSessionJudgment
+// needing it), not "" the way the original inline closure did. A fake
+// resolver that always returns the real kind (like fakeAskResolver in
+// verifier_diff_test.go) would never have caught this — this test
+// exercises the real function against a real *inference.Registry.
+func TestResolveAskCompatibleKind_ReturnsRealKindEvenWhenNotAskCompatible(t *testing.T) {
+	reg := inference.NewRegistry()
+	if err := reg.Add(&inference.LLM{Name: "claude-code", Kind: inference.KindClaudeCode}); err != nil {
+		t.Fatalf("reg.Add: %v", err)
+	}
+	askCompatible := func(k string) bool { return k == "ollama" || k == "openwebui" }
+
+	kind, _, err := resolveAskCompatibleKind(reg, "claude-code", askCompatible)
+	if err == nil {
+		t.Fatal("want an error for a non-ask-compatible kind")
+	}
+	if kind != "claude-code" {
+		t.Fatalf("kind = %q, want the real resolved kind %q even on the error path — this is exactly the bug that made every verify/guardrail call configured for a tool-capable backend silently fall through to ollama with no error and no log line", kind, "claude-code")
+	}
+}
+
+func TestResolveAskCompatibleKind_AskCompatiblePassesThrough(t *testing.T) {
+	reg := inference.NewRegistry()
+	if err := reg.Add(&inference.LLM{Name: "ollama-datawatch", Kind: inference.KindOllama, Model: "qwen3:1.7b"}); err != nil {
+		t.Fatalf("reg.Add: %v", err)
+	}
+	askCompatible := func(k string) bool { return k == "ollama" || k == "openwebui" }
+
+	kind, model, err := resolveAskCompatibleKind(reg, "ollama-datawatch", askCompatible)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if kind != "ollama" || model != "qwen3:1.7b" {
+		t.Fatalf("kind=%q model=%q, want ollama/qwen3:1.7b", kind, model)
+	}
+}
+
+func TestResolveAskCompatibleKind_UnregisteredNamePassesThroughAsBareKind(t *testing.T) {
+	reg := inference.NewRegistry()
+	askCompatible := func(k string) bool { return k == "ollama" || k == "openwebui" }
+
+	kind, model, err := resolveAskCompatibleKind(reg, "ollama", askCompatible)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if kind != "ollama" || model != "" {
+		t.Fatalf("kind=%q model=%q, want the bare string passed through", kind, model)
+	}
 }
 
 func TestNeedsSessionJudgment(t *testing.T) {

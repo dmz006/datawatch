@@ -113,7 +113,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "9.0.43"
+var Version = "9.0.44"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -4166,22 +4166,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		// routes correctly. claude-code kind returns an explicit error rather
 		// than silently falling back.
 		askCompatible := func(b string) bool { return b == "ollama" || b == "openwebui" }
-		// resolveAskBackend maps a raw backend string to (askKind, model, err).
-		// If the string is a named LLM in the registry, its kind is returned.
-		// If the kind is not ask-compatible, an error is returned.
 		resolveAskBackend := func(raw string) (kind, model string, err error) {
-			if autonomousInferenceReg != nil {
-				if llm, regErr := autonomousInferenceReg.Get(raw); regErr == nil && !llm.Disabled {
-					kind = string(llm.Kind)
-					model = llm.Model
-					if !askCompatible(kind) {
-						return "", "", fmt.Errorf("planning backend %q has kind %q which does not support headless planning via /api/ask; use an ollama or openwebui LLM for planning", raw, kind)
-					}
-					return kind, model, nil
-				}
-			}
-			// Raw adapter type string (not in named registry).
-			return raw, "", nil
+			return resolveAskCompatibleKind(autonomousInferenceReg, raw, askCompatible)
 		}
 		// decomposeFnSession spawns a one-shot coding session (claude-code,
 		// opencode, goose, …) to decompose a PRD. The session reads the

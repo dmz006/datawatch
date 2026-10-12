@@ -5,6 +5,44 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.44 — fix(autonomous): B124 root cause — verify/guardrail now actually routes to a session
+
+### Fixed
+- **The actual reason nothing in B124 (v9.0.41–43) ever fired live.**
+  Found live validating the previous three fixes end to end:
+  `resolveAskBackend` (`cmd/datawatch/main.go`) — the function
+  `needsSessionJudgment`'s routing decision depends on to learn a
+  backend's real kind — was written for its one original caller
+  (`decomposeFn`'s ask-only path), which only ever checks whether an
+  error came back. On a non-ask-compatible kind (`claude-code`,
+  `opencode`, ...) it deliberately returned `("", "", err)` — empty
+  kind. Both the verify and guardrail call sites discard that error
+  (`_ = err`), so all they ever actually received back was an empty
+  string. `isInferenceSessionKind("")` is always false, so
+  `needsSessionJudgment` always concluded "no session needed" and
+  every verify/guardrail call for a backend explicitly configured as
+  tool-capable silently fell through to the old `ollama` default —
+  with no error, no log line, and no observable difference from before
+  B124 shipped at all. Confirmed live: a real verify call against
+  `verification_backend: claude-code` produced
+  `"ollama HTTP 404: model 'qwen3.8:27b' not found"` — the exact
+  signature of the old, unfixed path.
+
+  Fixed: `resolveAskBackend` now returns the real resolved kind
+  alongside the error — every existing caller already either checks
+  the error explicitly (unaffected) or discards it (now gets what it
+  actually needed). Extracted the closure to a package-level
+  `resolveAskCompatibleKind` (real `*inference.Registry` + injected
+  `askCompatible`), specifically so this exact contract is
+  independently testable going forward — the inline closure version
+  never was, which is the root reason a unit test using an idealized
+  fake resolver (one that happened to always return the real kind,
+  matching the intended-but-never-implemented contract) passed while
+  the real closure's bug shipped anyway. 3 new tests prove the real
+  function's behavior on the ask-compatible, not-ask-compatible, and
+  unregistered-name paths; confirmed to fail without the fix and pass
+  with it.
+
 ## v9.0.43 — fix(autonomous): B124 second follow-up — a cleared `verification_backends` now actually survives a restart
 
 ### Fixed

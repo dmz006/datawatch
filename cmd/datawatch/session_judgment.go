@@ -14,8 +14,51 @@ import (
 
 	autonomouspkg "github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/config"
+	"github.com/dmz006/datawatch/internal/inference"
 	"github.com/dmz006/datawatch/internal/llm"
 )
+
+// resolveAskCompatibleKind maps a raw backend string to (askKind, model,
+// err): if raw is a named LLM in the registry, its kind is returned,
+// otherwise raw itself is returned as the kind. If the resolved kind is
+// not ask-compatible, an error is returned — but kind is still the REAL
+// resolved kind, never "", so a caller that needs to know what it
+// actually was can still see it even on the error path.
+//
+// B124 (2026-10-12) — found live: this function was a closure inline in
+// decomposeFn's setup, originally returning ("", "", err) on the
+// not-ask-compatible branch, which was fine for its one original
+// caller (decomposeFn, which only ever checks err). When verify/
+// guardrail routing (needsSessionJudgment) started reusing this same
+// closure to learn whether a configured backend had real tool access,
+// discarding err (as both call sites already did) silently turned into
+// "the kind was always empty," which made isInferenceSessionKind("")
+// always false — so every verify/guardrail call configured for a
+// tool-capable backend silently fell through to the old ollama
+// default, with no error and no log line, for the entire time this bug
+// was live. Returning the real kind alongside the error fixes every
+// existing caller's actual need (decomposeFn and resolveVerifierCandidates
+// both already check err explicitly) while finally giving
+// needsSessionJudgment what it always needed. Extracted to a package-
+// level function, with reg and askCompatible passed in rather than
+// closed over, specifically so this exact contract is independently
+// testable — the inline closure version never was, which is why a unit
+// test using an idealized fake (one that happened to always return the
+// real kind) passed while the real closure's bug shipped anyway.
+func resolveAskCompatibleKind(reg *inference.Registry, raw string, askCompatible func(string) bool) (kind, model string, err error) {
+	if reg != nil {
+		if llm, regErr := reg.Get(raw); regErr == nil && !llm.Disabled {
+			kind = string(llm.Kind)
+			model = llm.Model
+			if !askCompatible(kind) {
+				return kind, model, fmt.Errorf("backend %q has kind %q which does not support headless calls via /api/ask", raw, kind)
+			}
+			return kind, model, nil
+		}
+	}
+	// Raw adapter type string (not in named registry).
+	return raw, "", nil
+}
 
 // needsSessionJudgment (B124 — filed debugging why BL416's verifier never
 // got real tool access despite being pointed at a tool-capable backend)
