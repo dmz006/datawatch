@@ -1399,3 +1399,44 @@ func resolveTaskBackendModel(t *Task, story *Story, prd *PRD, fallbackBackend st
 	}
 	return backend, model
 }
+
+// resolveGuardrailBackendModel resolves a task's effective guardrail
+// backend and model (BL416 Phase 1, most-specific wins: task → PRD →
+// global; there is no story level for guardrail routing).
+//
+// Same v8.37.2 rule as resolveTaskBackendModel: model is resolved from
+// the SAME level backend was found at, never cascading past a level
+// that overrides backend, so a stale model is never paired with an
+// incompatible backend. The guardrail fields are independent of the
+// task's execution Backend/Model.
+//
+// globalBackend/globalModel are the EXISTING autonomous
+// verification_backend/verification_model config
+// (Config.VerificationBackend / Config.VerificationModel in manager.go)
+// — no new global config key. The empty-global case ("ollama" default)
+// and the ask-compatible check remain the caller's responsibility,
+// exactly as main.go's autonomousGuardrail closure does today.
+//
+// Not yet wired into the guardrail call path (a later phase).
+func resolveGuardrailBackendModel(t *Task, prd *PRD, globalBackend, globalModel string) (backend, model string) {
+	backend, model = t.GuardrailBackend, t.GuardrailModel
+	switch {
+	case backend != "":
+		// task-level guardrail backend override: model is the task's
+		// own (possibly empty = that backend's default).
+	case prd.GuardrailBackend != "":
+		backend = prd.GuardrailBackend
+		if model == "" {
+			model = prd.GuardrailModel
+		}
+	default:
+		backend = globalBackend
+		if model == "" {
+			model = prd.GuardrailModel
+		}
+		if model == "" {
+			model = globalModel
+		}
+	}
+	return backend, model
+}
