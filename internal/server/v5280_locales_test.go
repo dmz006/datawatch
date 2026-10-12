@@ -136,6 +136,11 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		// v8.39.0 BL391 — web search provider registry settings card + usage stats.
 		"websearch_providers_title",
 		"stats_web_search",
+		// v9.0.41 — plugin widget renderer (dashboard section + tile states).
+		"dash_plugin_widgets_heading",
+		"plugin_widget_unavailable",
+		"plugin_widget_no_data",
+		"plugin_widget_loading",
 	}
 	for _, lang := range requiredLocales {
 		bundle := loadLocaleBundle(t, lang)
