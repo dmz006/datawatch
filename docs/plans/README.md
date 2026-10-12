@@ -1371,6 +1371,25 @@ _2026-05-02 operator-filed items promoted directly to BL218–BL221. 2026-05-03 
 > — worth a dedicated investigation, not a point fix guessed at under
 > time pressure. Open.
 
+> **B127** — found live via BL418's own first real validation run
+> (PRD `7fe31a99`, BL403 Phase 5, 2026-10-12): `resolveGuardrailBackendModel`
+> (BL416 Phase 1) baked the flat ask-only `autonomous.verification_model`
+> into its returned model whenever no task/PRD guardrail override
+> existed, contradicting its own doc comment ("the empty-global case...
+> remains the caller's responsibility"). Every guardrail call site
+> assigns this straight onto `GuardrailInvocation.GuardrailModel`, and
+> B124's session-routing closure trusts any non-empty value there as a
+> genuine per-unit override — exactly the bug class B124 already fixed
+> for verify (`resolveVerifierBackendModel`), left unfixed for
+> guardrails because nothing had exercised a non-ask-compatible
+> backend + empty task/PRD override + non-empty global model in
+> production until `rules-review`'s first live fire did. Real PRD hit
+> it directly: a claude-code guardrail session rejected `qwen3.8:27b`
+> outright and hung for its full 10-minute timeout, blocking the PRD.
+> Fixed v9.0.49: removed the global-model fallback from
+> `resolveGuardrailBackendModel`'s default branch; backend still falls
+> through to global, model does not. No longer open.
+
 _(B125 and B126 above are the only open bugs as of 2026-10-12.
 Everything else listed in this section going back to the 2026-10-09/10
 backlog refactor has been closed and moved to the Completed Bugs table.

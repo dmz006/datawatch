@@ -1499,9 +1499,23 @@ func resolveGuardrailBackendModel(t *Task, prd *PRD, globalBackend, globalModel 
 		if model == "" {
 			model = prd.GuardrailModel
 		}
-		if model == "" {
-			model = globalModel
-		}
+		// No globalModel fallback here — found live (2026-10-12, BL418
+		// live validation): this function's own doc comment above
+		// already says the empty-global case is the caller's
+		// responsibility, but this branch baked it in anyway. A B124
+		// session-routed guardrail call (main.go's autonomousGuardrail
+		// closure) treats a non-empty GuardrailInvocation.GuardrailModel
+		// as a genuine per-unit override and sends it straight to a
+		// real tool-using session; the flat ask-only VerificationModel
+		// (e.g. an Ollama model name) baked in here reached that path
+		// with nothing configured anywhere, and a real claude-code
+		// session rejected it outright and hung for its full 10-minute
+		// timeout — the exact bug class B124 already fixed in
+		// resolveVerifierBackendModel for verify, unfixed here for
+		// guardrails. Leaving model empty lets each path apply its own
+		// correct fallback: the ask path's guardrailBackendModel still
+		// falls through to globalModel itself; the session path falls
+		// through to the backend's own registry-default model instead.
 	}
 	return backend, model
 }

@@ -5,6 +5,64 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.49 — fix(autonomous): resolveGuardrailBackendModel must not leak the flat global model into a session-routed guardrail call
+
+### Fixed
+- **Found live, same day, on the first real PRD run after v9.0.48 turned
+  `rules-review` on**: `runPRDCompletionRulesReview` fired correctly
+  (confirming BL418's operator-configurability fix works end to end),
+  but the spawned guardrail session hung for its full 10-minute timeout
+  and the PRD landed `blocked` with `"guardrail(session):
+  autonomous:guardrail:<id> session <id> timed out after 10m0s"`. The
+  session log showed why: `There's an issue with the selected model
+  (qwen3.8:27b). It may not exist or you may not have access to it.` —
+  a real claude-code session rejected an Ollama model name outright and
+  sat retrying forever.
+- **Root cause**: `resolveGuardrailBackendModel` (BL416 Phase 1) baked
+  the flat, ask-only `autonomous.verification_model` config value into
+  its returned `model` whenever no task/PRD-level guardrail override
+  existed — contradicting its own doc comment, which already said "the
+  empty-global case... remains the caller's responsibility." Every
+  guardrail call site (`runPerTaskGuardrails`, `runPerStoryGuardrails`,
+  and the new `runPRDCompletionRulesReview`) assigns this return value
+  straight onto `GuardrailInvocation.GuardrailModel`, and B124's
+  session-routing closure in `cmd/datawatch/main.go` treats any
+  non-empty `GuardrailModel` as a genuine per-unit override, sending it
+  straight to a real tool-using session — exactly the bug class B124
+  already fixed for the verify path (`resolveVerifierBackendModel`),
+  left unfixed here because nothing had ever exercised a non-ask-
+  compatible backend with a configured-but-empty task/PRD guardrail
+  override and a non-empty global model, until `rules-review`'s first
+  live run did.
+- Removed the global-model fallback from `resolveGuardrailBackendModel`'s
+  `default` branch. Backend still falls through to the global default
+  (no ambiguity there — same value either way); model now stays empty
+  when nothing is set at the task/PRD level, letting each consumer
+  apply the fallback appropriate to its own routing: the ask path's
+  `guardrailBackendModel` still falls through to the global model
+  itself; the session path falls through to the backend's own
+  registry-default model instead.
+
+### Reuse audit
+- No new mechanism — ports the exact separation
+  `resolveVerifierBackendModel` already established for the verify path
+  (explicit override OR backend registry default, never the flat
+  ask-only global model, when session-routed) onto the one sibling
+  function that never got the equivalent fix.
+
+### Tests
+- `TestResolveGuardrailBackendModel_NothingSet_BackendFallsThroughButNotModel`
+  (renamed and re-asserted from the old, bug-encoding
+  `..._NothingSetFallsThroughToGlobal`) and
+  `..._IndependentOfExecutionBackendModel` updated to expect an empty
+  model, not the global value. `TestGuardrailInvocation_BackendResolution`'s
+  "no overrides" subtest and
+  `TestRunPRDCompletionRulesReview_ResolvesBackendFromPRDThenGlobal`'s
+  global-fallback case updated the same way.
+
+### Mobile parity
+- N/A — daemon-internal backend/model resolution only, no new surface.
+
 ## v9.0.48 — fix(autonomous): BL418 — make the PRD-completion rules review operator-configurable
 
 ### Fixed

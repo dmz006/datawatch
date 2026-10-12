@@ -482,7 +482,13 @@ func TestGuardrailInvocation_BackendResolution(t *testing.T) {
 		}
 	})
 
-	t.Run("no overrides uses global", func(t *testing.T) {
+	t.Run("no overrides uses global backend but not global model", func(t *testing.T) {
+		// Fixed live 2026-10-12 (BL418 live validation): model used to
+		// fall through to the flat ask-only global VerificationModel
+		// here too, which a B124 session-routed guardrail call then
+		// trusted as a genuine per-unit override and sent straight to
+		// a real tool-using session — the exact bug already fixed for
+		// verify in resolveVerifierBackendModel, unfixed here until now.
 		m, prd, rec := newM(t, []string{"rules"}, []string{"rules"})
 		if _, err := m.runPerTaskGuardrails(context.Background(), prd, &Task{ID: "t1"}); err != nil {
 			t.Fatal(err)
@@ -494,8 +500,11 @@ func TestGuardrailInvocation_BackendResolution(t *testing.T) {
 			t.Fatalf("fn calls = %d, want 2", len(rec.invs))
 		}
 		for i, inv := range rec.invs {
-			if inv.GuardrailBackend != "ollama" || inv.GuardrailModel != "global-model" {
-				t.Fatalf("inv %d routing = %q/%q", i, inv.GuardrailBackend, inv.GuardrailModel)
+			if inv.GuardrailBackend != "ollama" {
+				t.Fatalf("inv %d backend = %q, want ollama (global fallback)", i, inv.GuardrailBackend)
+			}
+			if inv.GuardrailModel != "" {
+				t.Fatalf("inv %d model = %q, want empty — global model must not leak into a session-routed guardrail call", i, inv.GuardrailModel)
 			}
 		}
 	})
