@@ -63,6 +63,36 @@ func TestRegistry_Discover_FindsManifests(t *testing.T) {
 	}
 }
 
+// SetChangeFn fires after a rediscover and an enable toggle, and the hook
+// may call back into the registry (the lock is not held).
+func TestRegistry_SetChangeFn(t *testing.T) {
+	root := t.TempDir()
+	makePlugin(t, root, "filter",
+		"#!/bin/sh\nread line\necho '{\"action\":\"pass\"}'\n",
+		[]string{"post_session_output"})
+	r, err := NewRegistry(Config{Enabled: true, Dir: root})
+	if err != nil {
+		t.Fatalf("NewRegistry: %v", err)
+	}
+	calls := 0
+	r.SetChangeFn(func() {
+		calls++
+		_ = r.List()
+	})
+	if err := r.Discover(); err != nil {
+		t.Fatalf("Discover: %v", err)
+	}
+	if !r.SetEnabled("filter", false) {
+		t.Fatal("SetEnabled: plugin not found")
+	}
+	if r.SetEnabled("missing", true) {
+		t.Fatal("SetEnabled on unknown plugin reported success")
+	}
+	if calls != 2 {
+		t.Fatalf("change hook calls = %d, want 2", calls)
+	}
+}
+
 func TestRegistry_Discover_SkipsNonPluginDirs(t *testing.T) {
 	root := t.TempDir()
 	_ = os.MkdirAll(filepath.Join(root, "not-a-plugin"), 0755)

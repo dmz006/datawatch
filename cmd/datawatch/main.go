@@ -5521,6 +5521,55 @@ Return ONLY a unified diff or markdown code block showing the proposed AGENT.md 
 			if autonomousMgrRef != nil {
 				autonomousMgrRef.SetContextFn(reg.ContextForPRDType)
 			}
+			// BL403 — plugin widgets: value store (periodic JSON snapshot),
+			// push-token registry and the pull scheduler. Only when plugins
+			// are enabled; otherwise the widget endpoints stay 503.
+			if cfg.Plugins.Enabled {
+				dataDir := expandHome(cfg.DataDir)
+				widgetStore, wsErr := pluginspkg.NewWidgetStore(dataDir)
+				if wsErr != nil {
+					fmt.Fprintf(os.Stderr, "[warn] plugin widget store: %v\n", wsErr)
+				}
+				widgetTokens, wtErr := pluginspkg.NewPluginTokenRegistry(dataDir)
+				if wtErr != nil {
+					fmt.Fprintf(os.Stderr, "[warn] plugin widget tokens: %v\n", wtErr)
+				}
+				if wsErr == nil && wtErr == nil {
+					httpServer.SetPluginWidgets(pluginspkg.NewAPI(reg), widgetStore, widgetTokens)
+					// Own context so the deferred shutdown can stop the
+					// widget goroutines and wait for the final snapshot
+					// before the outer cancel() (which runs after this
+					// defer) would.
+					widgetCtx, widgetCancel := context.WithCancel(ctx)
+					storeDone := make(chan struct{})
+					schedDone := make(chan struct{})
+					scheduler := pluginspkg.NewWidgetScheduler(reg, widgetStore, secretsStore)
+					go func() {
+						defer close(storeDone)
+						widgetStore.Run(widgetCtx, pluginspkg.DefaultWidgetSnapshotInterval)
+					}()
+					go func() {
+						defer close(schedDone)
+						scheduler.Run(widgetCtx)
+					}()
+					// Pull goroutines follow hot-reloads, /api/plugins/reload
+					// and enable/disable toggles; the scheduler's periodic
+					// reconcile is the fallback.
+					reg.SetChangeFn(scheduler.Reconcile)
+					defer func() {
+						widgetCancel()
+						timeout := time.After(10 * time.Second)
+						for _, done := range []chan struct{}{schedDone, storeDone} {
+							select {
+							case <-done:
+							case <-timeout:
+								fmt.Fprintf(os.Stderr, "[warn] plugin widgets: shutdown timed out before final snapshot\n")
+								return
+							}
+						}
+					}()
+				}
+			}
 		}
 		// S14b — per-pod alert rules + observer-driven autoscaling.
 		// obsCollectorRef is populated later (in the observer block) so the

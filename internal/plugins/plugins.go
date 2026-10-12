@@ -428,6 +428,10 @@ type Registry struct {
 	supervisors    map[string]*ServiceSupervisor
 	serviceEventFn func(ServiceEvent)
 	started        bool
+
+	// changeFn is called after every rediscover and enable/disable toggle,
+	// outside r.mu (see SetChangeFn).
+	changeFn func()
 }
 
 // NewRegistry scans cfg.Dir and returns a registry. A nil return is
@@ -472,7 +476,27 @@ func (r *Registry) Discover() error {
 	start, stop := r.reconcileServicesLocked(false)
 	r.mu.Unlock()
 	r.applyServiceChanges(context.Background(), start, stop)
+	r.notifyChange()
 	return err
+}
+
+// SetChangeFn sets a hook called after every Discover (hot-reload, the
+// reload API, Install) and SetEnabled, so dependents such as the widget
+// scheduler can follow the plugin set. fn runs outside the registry lock
+// and may call back into the registry.
+func (r *Registry) SetChangeFn(fn func()) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.changeFn = fn
+}
+
+func (r *Registry) notifyChange() {
+	r.mu.Lock()
+	fn := r.changeFn
+	r.mu.Unlock()
+	if fn != nil {
+		fn()
+	}
 }
 
 // discoverLocked rebuilds byName from the plugin directory; caller holds r.mu.
@@ -557,6 +581,7 @@ func (r *Registry) SetEnabled(name string, on bool) bool {
 	start, stop := r.reconcileServicesLocked(false)
 	r.mu.Unlock()
 	r.applyServiceChanges(context.Background(), start, stop)
+	r.notifyChange()
 	return true
 }
 
