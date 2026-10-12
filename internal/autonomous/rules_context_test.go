@@ -139,7 +139,10 @@ func TestDecompose_PromptPointsToRulesFileWithoutInliningContent(t *testing.T) {
 		t.Fatalf("Decompose: %v", err)
 	}
 	prd, _ = m.Store().GetPRD(prd.ID)
-	if strings.Contains(capturedPrompt, "AGENT.md") {
+	// Checks the rules-pointer header, not a bare "AGENT.md": BL416
+	// Phase 2's static verification-script suffix always names the
+	// configured rules file, present or not.
+	if strings.Contains(capturedPrompt, "--- Project rules ---") {
 		t.Fatalf("no AGENT.md exists yet; prompt should not point to one, got %q", capturedPrompt)
 	}
 
@@ -150,7 +153,7 @@ func TestDecompose_PromptPointsToRulesFileWithoutInliningContent(t *testing.T) {
 	if _, err := m.Decompose(prd.ID); err != nil {
 		t.Fatalf("second Decompose: %v", err)
 	}
-	if !strings.Contains(capturedPrompt, "AGENT.md") {
+	if !strings.Contains(capturedPrompt, "--- Project rules ---\nBefore planning, read AGENT.md") {
 		t.Fatalf("prompt should point to AGENT.md once it exists, got %q", capturedPrompt)
 	}
 	if strings.Contains(capturedPrompt, seeded) {
