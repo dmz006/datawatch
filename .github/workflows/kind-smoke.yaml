@@ -90,23 +90,33 @@ jobs:
           # 5-min budget — chart wait already covers Pod-Ready, this
           # only catches the gap between Ready and the daemon's own
           # listener accepting traffic.
-          kubectl port-forward svc/dw-smoke-datawatch 18443:8443 >/tmp/pf.log 2>&1 &
+          #
+          # Target the plain-http service port (8080, always rendered
+          # by templates/service.yaml), not the https port (8443) --
+          # the chart's tls.enabled defaults to false and this helm
+          # install never overrides it, so the Service template's
+          # `{{- if .Values.tls.enabled }}` block never renders an
+          # https/8443 port at all. Forwarding to a port the Service
+          # doesn't have caused this job to time out waiting on a
+          # connection that could never succeed (found while root-
+          # causing a run that failed on every recent PR).
+          kubectl port-forward svc/dw-smoke-datawatch 18080:8080 >/tmp/pf.log 2>&1 &
           PF_PID=$!
           echo "PF_PID=$PF_PID" >> "$GITHUB_ENV"
           sleep 3
           for i in $(seq 1 60); do
-            if curl -sk https://localhost:18443/api/health 2>/dev/null | grep -q '"status":"ok"'; then
+            if curl -s http://localhost:18080/api/health 2>/dev/null | grep -q '"status":"ok"'; then
               echo "daemon ready after ${i}s"; break
             fi
             sleep 1
           done
-          curl -sk https://localhost:18443/api/health | head -c 300
+          curl -s http://localhost:18080/api/health | head -c 300
           echo
 
       - name: Run release-smoke.sh against the in-kind daemon
         run: |
           set -euxo pipefail
-          DW_BASE=https://localhost:18443 bash scripts/release-smoke.sh
+          DW_BASE=http://localhost:18080 bash scripts/release-smoke.sh
 
       - name: Tail Pod logs on failure
         if: failure()

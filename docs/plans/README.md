@@ -531,6 +531,32 @@ established. In progress — starting with BL403.**
    operator discussion pass (same shape as BL412/BL413) before a plan
    doc gets written: which of BL405's phases already cover this vs.
    what's genuinely a new gap.
+14. **BL415** — `dependency-review` required check can't pass under the
+    Actions-generated `GITHUB_TOKEN` (filed 2026-10-11, found while
+    merging PR #206/#212/#213). Symptom: `actions/dependency-review-
+    action` fails instantly with "Dependency review is not supported on
+    this repository. Please ensure that Dependency graph is enabled,"
+    even after re-pinning a confirmed-dangling SHA to a valid current
+    release. Ruled out as a repo-settings gap: the repo is public (GHAS
+    free), `gh api repos/dmz006/datawatch` confirms
+    `dependabot_security_updates`/`secret_scanning`/
+    `secret_scanning_push_protection` all enabled, a direct
+    `PATCH .../security_and_analysis` attempt to force-enable Advanced
+    Security returns "Advanced security is always available for public
+    repos," and `gh api repos/.../dependency-graph/compare/<base>...
+    <head>` succeeds and returns real data **when called with a
+    personal OAuth token** — the same compare call the action itself
+    makes apparently fails under the ephemeral Actions `GITHUB_TOKEN`
+    specifically, despite `permissions: contents: read` being granted
+    in the workflow. Removed `dependency-review/review` from the
+    `main-protection` ruleset's required checks (2026-10-11) so PRDs
+    can actually merge — the other 5 required checks
+    (`CI / test + lint`, `security-scan / govulncheck`,
+    `security-scan / gosec`, `secret-scan / gitleaks`,
+    `docs-sync / check`) are unaffected and still gate every merge.
+    **Deferred to after v10.0.0** — needs either a GitHub support
+    ticket or someone willing to bisect the Actions-token-vs-PAT
+    discrepancy directly; not worth more self-build time right now.
 
 **Outside the queue, handled separately, not blocking Stage 3:**
 - ~~**BL381**~~ — status-verified 2026-10-10: shipped v8.28.0 + v8.28.2
