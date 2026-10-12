@@ -8,16 +8,32 @@ package autonomous
 import (
 	"context"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"testing"
 
 	"github.com/dmz006/datawatch/internal/git"
 )
 
 func TestRun_OpensPRAfterWorktreePRDCompletesWithAutoPR(t *testing.T) {
-	// gitCompletionFixture gives us a bare remote repo; its own base
-	// repo/worktree aren't needed here -- Manager.Run creates its own
-	// worktree against a fresh base repo wired to the same remote.
-	_, _, bareRemote := gitCompletionFixture(t)
+	// Deliberately NOT using gitCompletionFixture here: it pushes its
+	// own independent commit history (via its own internal
+	// scratchGitRepo call) to a bare remote's main before returning.
+	// This test then used to create a SECOND, unrelated scratchGitRepo
+	// and push IT to that same already-seeded remote/main -- the two
+	// histories only "merge" without conflict when both commits land
+	// in the same wall-clock second (git commit timestamps have 1s
+	// resolution, so identical tree+author+committer+message+parent
+	// hashes identically) -- true locally almost always, but a real,
+	// reproducible "fetch first" rejection under CI's slower/loaded
+	// runner once the two calls straddle a second boundary. Found live
+	// (BL403 Phase 2's merge): failed CI 3 times running the full
+	// suite, passed 8/8 locally in isolation every time. Fix: this
+	// test gets its own freshly-created, never-pre-seeded bare remote.
+	bareRemote := filepath.Join(t.TempDir(), "remote.git")
+	if out, err := exec.Command("git", "init", "--bare", "-q", "-b", "main", bareRemote).CombinedOutput(); err != nil {
+		t.Fatalf("git init --bare: %v\n%s", err, out)
+	}
 
 	baseRepo := scratchGitRepo(t)
 	run := func(args ...string) {
