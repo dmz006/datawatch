@@ -284,3 +284,285 @@ test('_pwCardId round-trips through _pwParseCardId', () => {
   assert.equal(id, 'plugin:imap-mcp:enrich:status');
   assert.deepEqual({ ...call(sandbox, '_pwParseCardId', id) }, { plugin: 'imap-mcp', widget: 'enrich:status' });
 });
+
+// ── (6) integration: dashboard + session wiring ─────────────────────────────
+// These drive the real render entry points (_dashCardHTML,
+// _dashRenderPluginWidgets, refreshSessionPluginWidgets) end to end against
+// a stubbed apiFetch, with _pwRenderInto optionally swapped for a spy, and
+// fail on any unhandled rejection raised while they run.
+
+const flush = async (n = 6) => { for (let i = 0; i < n; i++) await new Promise(r => setImmediate(r)); };
+
+// Fake grid/card/container elements, wired into the sandbox's
+// getElementById via buildSandbox's byId (testutil stays unmodified).
+function fakeCard(id) {
+  const el = fakeEl();
+  el.getAttribute = (n) => (n === 'data-plugin-card' ? id : null);
+  return el;
+}
+
+function fakeBox() {
+  const el = fakeEl();
+  el.style = {};
+  el.children = [];
+  el.appendChild = (c) => { if (!el.children.includes(c)) el.children.push(c); return c; };
+  el.removeChild = (c) => { el.children = el.children.filter(x => x !== c); return c; };
+  return el;
+}
+
+function fakeTile() {
+  const attrs = {};
+  const el = fakeEl();
+  el.setAttribute = (k, v) => { attrs[k] = String(v); };
+  el.getAttribute = (k) => (k in attrs ? attrs[k] : null);
+  el.querySelector = (sel) => (sel === '.session-plugin-widget-body' ? (el._body || (el._body = fakeEl())) : null);
+  return el;
+}
+
+// routes: path → value | (() => Promise). Unrouted paths reject.
+function integration({ cards = [], session = false } = {}) {
+  const els = cards.map(fakeCard);
+  const byId = { dashCardGrid: { querySelectorAll: (sel) => (sel === '[data-plugin-card]' ? els : []) } };
+  if (session) byId.sessionPluginWidgets = fakeBox();
+  const sb = buildSandbox({ byId });
+  sb.document.createElement = () => fakeTile();
+  vm.createContext(sb);
+  loadScript(APP_JS, sb);
+  const calls = [];
+  sb.__routes = {};
+  sb.__apiFetch = (p) => {
+    calls.push(p);
+    const r = sb.__routes[p];
+    if (typeof r === 'function') return r();
+    if (r === undefined) return Promise.reject(new Error('unrouted ' + p));
+    return Promise.resolve(JSON.parse(JSON.stringify(r)));
+  };
+  vm.runInContext('apiFetch = (...a) => __apiFetch(...a);', sb);
+  const spyCalls = [];
+  const spy = () => {
+    sb.__spy = (el, view) => { spyCalls.push({ el, view }); el.innerHTML = 'SPY'; };
+    vm.runInContext('_pwRenderInto = (el, view) => __spy(el, view);', sb);
+  };
+  const run = (code) => vm.runInContext(code, sb);
+  return { sb, els, byId, calls, spy, spyCalls, run };
+}
+
+// Collects unhandled rejections for the duration of fn.
+async function noUnhandled(fn) {
+  const seen = [];
+  const onRej = (e) => seen.push(e);
+  process.on('unhandledRejection', onRej);
+  try {
+    await fn();
+    await flush();
+  } finally {
+    process.off('unhandledRejection', onRej);
+  }
+  assert.deepEqual(seen, [], 'no unhandled rejection');
+}
+
+const QUEUE_VIEW = { id: 'queue-depth', surface: 'dashboard', kind: 'stat_tile', data_mode: 'push', interval_seconds: 0,
+  value: { plugin: 'demo', widget_id: 'queue-depth', data: { value: 42, label: 'queued' }, updated_at: '2026-10-12T00:00:00Z', source: 'push' } };
+const QUEUE_CARD = 'plugin:demo:queue-depth';
+const QUEUE_URL = '/api/plugins/demo/widgets/queue-depth';
+const DEMO_LIST = { plugins: [{ name: 'demo', enabled: true, widgets: [{ id: 'queue-depth', surface: 'dashboard', kind: 'stat_tile' }] }] };
+
+test('integration: _dashCardHTML plugin id builds a card shell without DASH_CARD_DEFS', () => {
+  const { run } = integration();
+  // Count lookups against DASH_CARD_DEFS while rendering.
+  run(`globalThis.__defLookups = 0; const __f = DASH_CARD_DEFS.find;
+       DASH_CARD_DEFS.find = function (...a) { globalThis.__defLookups++; return __f.apply(this, a); };`);
+  assert.equal(run(`DASH_CARD_DEFS.some(d => d.id === '${QUEUE_CARD}' || d.id === 'queue-depth')`), false);
+
+  const html = run(`_dashCardHTML({ id: '${QUEUE_CARD}', cs: 3 })`);
+  assert.ok(html.startsWith('<div class="dboard-card"'), html.slice(0, 60));
+  assert.ok(html.includes(`data-card-id="${QUEUE_CARD}"`));
+  assert.ok(html.includes('data-cs="3"'));
+  assert.ok(html.includes(`data-plugin-card="${QUEUE_CARD}"`));
+  assert.ok(html.includes(UNAVAILABLE.replace('plugin_widget_unavailable', 'plugin_widget_loading')), 'loading body');
+  assert.equal(run('__defLookups'), 0, 'plugin ids never consult DASH_CARD_DEFS');
+
+  assert.equal(run(`_dashCardHTML({ id: 'nope' })`), '');
+  assert.equal(run('__defLookups'), 1, 'non-plugin ids still go through DASH_CARD_DEFS');
+});
+
+test('integration: built-in guardrails card keeps its structure', () => {
+  const { run } = integration();
+  const html = run(`_dashCardHTML({ id: 'guardrails', cs: 3, rs: 1 })`);
+  const body = run(`DASH_CARD_DEFS.find(d => d.id === 'guardrails').body()`);
+  assert.ok(html.startsWith('<div class="dboard-card"'));
+  assert.ok(html.includes('data-card-id="guardrails"') && html.includes('data-cs="3"') && html.includes('data-rs="1"'));
+  assert.ok(html.includes('<span class="dboard-card-title">🛡 Guardrails</span>'));
+  for (const fn of ['_dashCycleSpan', '_dashCycleRows', '_dashRemoveCard']) {
+    assert.ok(html.includes(`window.${fn}('guardrails')`), fn);
+  }
+  assert.ok(html.includes(`<div class="dboard-card-body">${body}</div>`));
+  assert.ok(!html.includes('data-plugin-card') && !html.includes('🧩'));
+});
+
+test('integration: _dashRenderPluginWidgets dispatches the view to _pwRenderInto', async () => {
+  await noUnhandled(async () => {
+    const { sb, els, calls, spy, spyCalls, run } = integration({ cards: [QUEUE_CARD] });
+    spy();
+    sb.__routes['/api/plugins'] = DEMO_LIST;
+    sb.__routes[QUEUE_URL] = QUEUE_VIEW;
+    run('_dashRenderPluginWidgets()');
+    await flush();
+    run('_dashRenderPluginWidgets()');
+    assert.ok(calls.includes('/api/plugins') && calls.includes(QUEUE_URL), calls.join(','));
+    assert.equal(spyCalls.length, 1);
+    assert.equal(spyCalls[0].el, els[0]);
+    const v = spyCalls[0].view;
+    assert.equal(v.id, 'queue-depth');
+    assert.equal(v.kind, 'stat_tile');
+    assert.equal(v.value.data.value, 42);
+    assert.equal(v.value.data.label, 'queued');
+    assert.equal(els[0].innerHTML, 'SPY');
+  });
+});
+
+test('integration: real _pwRenderInto paints the stat tile into the card', async () => {
+  await noUnhandled(async () => {
+    const { sb, els, run } = integration({ cards: [QUEUE_CARD] });
+    sb.__routes['/api/plugins'] = DEMO_LIST;
+    sb.__routes[QUEUE_URL] = QUEUE_VIEW;
+    run('_dashRenderPluginWidgets()');
+    await flush();
+    run('_dashRenderPluginWidgets()');
+    assert.ok(els[0].innerHTML.includes('42') && els[0].innerHTML.includes('queued'), els[0].innerHTML);
+  });
+});
+
+const err503 = () => Object.assign(new Error('HTTP 503: plugins subsystem disabled'), { status: 503 });
+const err404 = () => Object.assign(new Error('HTTP 404: widget not declared'), { status: 404 });
+
+for (const [label, routes] of [
+  ['every request rejects', { '/api/plugins': () => Promise.reject(new Error('network down')), [QUEUE_URL]: () => Promise.reject(new Error('network down')) }],
+  ['widget endpoint rejects', { '/api/plugins': DEMO_LIST, [QUEUE_URL]: () => Promise.reject(new Error('boom')) }],
+  ['widget endpoint 404', { '/api/plugins': DEMO_LIST, [QUEUE_URL]: () => Promise.reject(err404()) }],
+  ['widget endpoint 503', { '/api/plugins': DEMO_LIST, [QUEUE_URL]: () => Promise.reject(err503()) }],
+  ['plugin list 503', { '/api/plugins': () => Promise.reject(err503()), [QUEUE_URL]: QUEUE_VIEW }],
+]) {
+  test(`integration: fetch failure (${label}) → quiet unavailable state`, async () => {
+    await noUnhandled(async () => {
+      const { sb, els, spy, spyCalls, run } = integration({ cards: [QUEUE_CARD] });
+      spy();
+      Object.assign(sb.__routes, routes);
+      assert.doesNotThrow(() => run('_dashRenderPluginWidgets()'));
+      await flush();
+      assert.doesNotThrow(() => run('_dashRenderPluginWidgets()'));
+      assert.equal(els[0].innerHTML, UNAVAILABLE);
+      assert.equal(spyCalls.length, 0, 'renderer never called with a failed view');
+    });
+  });
+}
+
+test('integration: disabled plugin → unavailable, widget endpoint never called', async () => {
+  await noUnhandled(async () => {
+    const { sb, els, calls, spy, spyCalls, run } = integration({ cards: [QUEUE_CARD] });
+    spy();
+    sb.__routes['/api/plugins'] = { plugins: [{ name: 'demo', enabled: false, widgets: DEMO_LIST.plugins[0].widgets }] };
+    sb.__routes[QUEUE_URL] = QUEUE_VIEW;
+    // Plugin list resolved first (as on any render tick after the first).
+    run('_dashRefreshPluginList()');
+    await flush();
+    run('_dashRenderPluginWidgets()');
+    await flush();
+    run('_dashRenderPluginWidgets()');
+    assert.deepEqual(calls, ['/api/plugins']);
+    assert.equal(els[0].innerHTML, UNAVAILABLE);
+    assert.equal(spyCalls.length, 0);
+  });
+});
+
+test('integration: disabled plugin on a cold cache still ends unavailable', async () => {
+  await noUnhandled(async () => {
+    const { sb, els, spyCalls, spy, run } = integration({ cards: [QUEUE_CARD] });
+    spy();
+    sb.__routes['/api/plugins'] = { plugins: [{ name: 'demo', enabled: false, widgets: DEMO_LIST.plugins[0].widgets }] };
+    sb.__routes[QUEUE_URL] = QUEUE_VIEW;
+    run('_dashRenderPluginWidgets()');
+    await flush();
+    run('_dashRenderPluginWidgets()');
+    assert.equal(els[0].innerHTML, UNAVAILABLE);
+    assert.equal(spyCalls.length, 0);
+  });
+});
+
+test('integration: disabled plugin on the session surface → no widget fetch, hidden', async () => {
+  await noUnhandled(async () => {
+    const { sb, byId, calls, spy, spyCalls, run } = integration({ session: true });
+    spy();
+    sb.__routes['/api/plugins'] = { plugins: [{ name: 'demo', enabled: false, widgets: [{ id: 'q', surface: 'session', kind: 'stat_tile' }] }] };
+    run('refreshSessionPluginWidgets()');
+    await flush();
+    assert.deepEqual(calls, ['/api/plugins']);
+    assert.equal(byId.sessionPluginWidgets.style.display, 'none');
+    assert.equal(spyCalls.length, 0);
+  });
+});
+
+// Decodes an attribute value the way the HTML parser does before the
+// handler is compiled as JS.
+function htmlDecode(s) {
+  return s.replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+}
+
+test('integration: malicious card ids stay inert in onclick handlers and markup', () => {
+  const { run } = integration();
+  const evil = "plugin:x');alert(1);//:w";
+  run(`globalThis.__evil = ${JSON.stringify(evil)};`);
+  const html = run('_dashCardHTML({ id: __evil })');
+  assert.ok(html.length > 0);
+  assert.ok(!html.includes("');alert(1)"), 'no raw quote breakout');
+  const handlers = [...html.matchAll(/onclick="([^"]*)"/g)].map(m => htmlDecode(m[1]));
+  assert.equal(handlers.length, 3);
+  for (const h of handlers) {
+    // After HTML decoding, each handler is exactly one call with ONE
+    // string literal argument that evaluates back to the original id.
+    const m = h.match(/^window\.(_dash\w+)\(('(?:[^'\\]|\\.)*')\)$/);
+    assert.ok(m, `single-call handler: ${h}`);
+    assert.equal(vm.runInNewContext(m[2]), evil);
+  }
+
+  const img = 'plugin:demo:<img src=x onerror=alert(1)>';
+  run(`globalThis.__img = ${JSON.stringify(img)};`);
+  const html2 = run('_dashCardHTML({ id: __img })');
+  assert.ok(html2.length > 0);
+  assert.ok(!html2.includes('<img'), 'no raw <img');
+  assert.ok(html2.includes('&lt;img'), 'escaped form present');
+  for (const m of html2.matchAll(/onclick="([^"]*)"/g)) assert.ok(!m[1].includes('<'), m[1]);
+});
+
+test('integration: session container renders a session widget via _pwRenderInto and stays visible', async () => {
+  await noUnhandled(async () => {
+    const { sb, byId, calls, spy, spyCalls, run } = integration({ session: true });
+    spy();
+    sb.__routes['/api/plugins'] = { plugins: [{ name: 'demo', enabled: true, widgets: [{ id: 'q', surface: 'session', kind: 'stat_tile' }] }] };
+    const v = Object.assign({}, QUEUE_VIEW, { id: 'q', surface: 'session' });
+    sb.__routes['/api/plugins/demo/widgets'] = { plugin: 'demo', widgets: [v] };
+    run('refreshSessionPluginWidgets()');
+    await flush();
+    assert.deepEqual(calls, ['/api/plugins', '/api/plugins/demo/widgets']);
+    const box = byId.sessionPluginWidgets;
+    assert.equal(box.style.display, '');
+    assert.equal(box.children.length, 1);
+    assert.equal(spyCalls.length, 1);
+    assert.equal(spyCalls[0].el, box.children[0]._body);
+    assert.equal(spyCalls[0].view.id, 'q');
+    assert.equal(spyCalls[0].view.value.data.value, 42);
+  });
+});
+
+test('integration: session container with no session widgets stays display:none', async () => {
+  await noUnhandled(async () => {
+    const { sb, byId, spy, spyCalls, run } = integration({ session: true });
+    spy();
+    sb.__routes['/api/plugins'] = DEMO_LIST; // dashboard-surface only
+    run('refreshSessionPluginWidgets()');
+    await flush();
+    assert.equal(byId.sessionPluginWidgets.style.display, 'none');
+    assert.equal(byId.sessionPluginWidgets.children.length, 0);
+    assert.equal(spyCalls.length, 0);
+  });
+});
