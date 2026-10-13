@@ -57,14 +57,18 @@ Browse the catalog in-app (Settings → Skills → Registry) or on GitHub. To co
 
 ## Current release
 
-**Current release: v9.0.46 (2026-10-12).** v9.0.9–v9.0.46 are a patch
+**Current release: v9.0.62 (2026-10-13).** v9.0.9–v9.0.62 are a patch
 chain on top of the v9.0.0 major release: a plugin extension framework
 (manifest-declared widgets, now rendering live on the dashboard and in
 session detail — plugins can push or pull their own stat tiles,
 tables, lists, sparklines, status badges and markdown cards), and a
 pass of fixes to Automata's own verification and guardrail checks so a
 configured tool-capable backend actually gets real file/tool access
-instead of silently falling back to a plain text-only check. None of these change v9.0.0's actual feature set,
+instead of silently falling back to a plain text-only check. v9.0.62
+lets a blocked Automaton's failed task be edited and retried in place,
+stops the scope check from blocking specs that merely name an installed
+system tool, and makes cancel/delete report exactly which sessions it
+stopped. None of these change v9.0.0's actual feature set,
 described below.
 
 **v9.0.0 — Memory Lifecycle Complete.** The

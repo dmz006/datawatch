@@ -5,6 +5,55 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.62 — fix(autonomous): recover a blocked task in place — editable spec while blocked, system-binary-aware scope lint, named killed sessions (BL421)
+
+### Fixed
+- **A blocked task's spec can now be edited while its automaton is
+  blocked.** `EditTaskSpec` (REST `POST /api/autonomous/prds/{id}/edit_task`,
+  MCP `autonomous_prd_edit_task`, PWA task spec-edit button) now accepts
+  a `blocked` automaton in addition to `needs_review` / `revisions_asked`
+  / `cancelled`. While blocked, only a `failed` or `blocked` task may be
+  edited; editing any other task returns a clear error. The intended
+  recovery is now edit → `reset_task` → the task re-spawns with the new
+  spec, with no cancel → `reset_to_draft` → re-decompose round trip that
+  would regenerate the whole story/task tree. **Completed task specs stay
+  immutable** in every automaton status. Structural edits (add/remove
+  story or task) remain locked while blocked.
+- **Scope linter ignores prose mentions of system binaries.** A task spec
+  that merely names an installed tool directly inside a read-only
+  executable directory (`/bin`, `/sbin`, `/usr/bin`, `/usr/sbin`,
+  `/usr/local/bin`, `/opt/homebrew/bin`) — e.g. "fall back to
+  `/usr/bin/time -v`" — is no longer treated as an out-of-scope read claim
+  that blocks the task on spawn. A write verb (write, create, rm, mv, cp,
+  install, tee, `>`, …) in the few words before the path still flags it.
+  True out-of-scope paths are still flagged: `/etc/passwd`, deeper paths
+  under a bin dir (`/usr/bin/x/y`), siblings such as `/usr/lib/...`, and
+  any planned file under a bin dir.
+- **Planning prompts steer away from literal system-binary paths.** Both
+  built-in decompose prompts now tell the planner to refer to system
+  tools by command name (resolved at runtime via `command -v` / `$PATH`,
+  with a fallback) and to keep any absolute path in a task spec inside the
+  automaton's allowed directories. A configured
+  `autonomous.planning_prompt` override is untouched.
+
+### Added
+- **Cancel/delete names the sessions it killed.** `DELETE
+  /api/autonomous/prds/{id}` (cancel, and `?hard=true` delete) and MCP
+  `autonomous_prd_cancel` now return `killed_session_ids` — every
+  non-empty session ID a kill was attempted on, always a JSON array — in
+  both the response and the audit record. The existing `killed_sessions`
+  count is unchanged. A `kill_errors` map is added only when a kill fails.
+  Additive; existing clients are unaffected.
+
+Reuse audit — extends EditTaskSpec / LintTaskScope / the existing DELETE
+handler; no new endpoints, config keys or MCP tools.
+
+### Testing
+`go test -count=1 ./...`, `make lint`, targeted smoke
+(`SMOKE_ONLY=7b,7ai,18,56`), plus a live pre-fix reproduction and
+post-fix recovery on the production daemon — recorded in
+`docs/testing.md` under "v9.0.62".
+
 ## v9.0.61 — fix(ci): kind-smoke's actual last failure — Complete is a valid outcome, not just WaitingInput (BL419)
 
 ### Fixed

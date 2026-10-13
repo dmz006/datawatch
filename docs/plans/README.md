@@ -883,7 +883,8 @@ established. In progress — starting with BL403.**
     OOM. Uses `claude-code` for decompose/execution/verification per
     the operator's explicit instruction for dev PRDs.
 20. **BL421** — PRD lifecycle can't recover a blocked/cancelled task's
-    spec without a full re-decompose (filed 2026-10-13, same day).
+    spec without a full re-decompose (filed + shipped 2026-10-13, same
+    day — **shipped v9.0.62**).
     Not roadmap work — surfaced live while trying to fix BL420's own
     reproduction-harness task, which `decompose` had written with a
     literal `/usr/bin/time` path in its spec prose; the scope-linter
@@ -917,6 +918,18 @@ established. In progress — starting with BL403.**
     itself is paused (not abandoned — task 1's `tracker.go` fix
     already shipped/committed; task 2's spec is already corrected and
     waiting) until this ships and the daemon's redeployed.
+
+    **Shipped, v9.0.62** (all four scope items): (1) `EditTaskSpec`
+    accepts a `blocked` PRD for its failed/blocked task only, completed
+    task specs immutable in every status — edit -> `reset_task` -> rerun
+    verified live; (2) scope linter skips names directly inside
+    `/bin`,`/sbin`,`/usr/bin`,`/usr/sbin`,`/usr/local/bin`,
+    `/opt/homebrew/bin` unless a write verb precedes them (`/etc/passwd`
+    etc. still flagged); (3) both planning prompts steer to command
+    names via `$PATH`/`command -v`; (4) cancel/delete returns additive
+    `killed_session_ids`. Note: a single-story PRD whose only task fails
+    rolls up to `failed`, not `blocked`, and `failed` still isn't an
+    editable status — out of this item's scope, not changed.
 21. **BL422** — Per-task Claude model/effort tiering for dev-PRD cost
     (filed 2026-10-13, same day, prep only — NOT started). Not
     roadmap work — surfaced from an operator question while running

@@ -786,3 +786,117 @@ operator-pass items above complete.
 | **Root cause** | `_prdToggleTask` called `_refreshAutomataOrPRD` → `loadAutomataPanel`, which re-renders the list panel (not visible in detail view). The detail DOM (`automataDetailBody`) was not touched. |
 | **Fix** | Added `_automataDetailId` check in `_prdToggleTask`: when non-null (detail view is open), call `renderPRDDetailView(_automataDetailId)` directly. |
 | **Result** | PASS — verified by code review. Operator UI validation required: open an automaton, go to Stories tab, click ▶ on a task — must expand immediately without navigating away. |
+
+---
+
+## v9.0.62 — Automata blocked-task recovery fixes (2026-10-13)
+
+All live checks below ran against the production daemon
+(`https://localhost:8443`) using disposable automata created only for
+this test and hard-deleted afterwards. Abbreviations: `B=https://localhost:8443/api/autonomous/prds`,
+`J='content-type: application/json'`. Output trimmed to the relevant fields.
+
+### T1 — Pre-fix reproduction: edit_task rejected on a blocked automaton (v9.0.61)
+
+| Field | Details |
+|-------|---------|
+| **Description** | A task whose spec merely names an installed binary (`/usr/bin/time`) is blocked by the pre-spawn scope lint; the automaton halts `blocked`, and the operator cannot correct that one task's spec in place. |
+| **Steps** | On v9.0.61: create a 2-story disposable automaton (story 1 task spec: `Read-only: if GNU time is missing, fall back to /usr/bin/time -v true and print its output. Do not modify any files.`; story 2: a read-only `git log` task), `decompose`, `approve`, `run`, then `edit_task` on the failed task. |
+| **Expected (pre-fix bug)** | Task fails with a scope error, automaton `blocked`, `edit_task` rejected. |
+| **Actual** | Reproduced — see output below. Also: a single-story variant (668b6d3a) rolled up to `failed` (not `blocked`), and the v9.0.61 `DELETE` response carried only `killed_sessions`, no IDs. |
+| **Result** | PASS (bug reproduced) |
+
+```
+$ curl -sk $B/2b65248a        # after decompose
+needs_review ["task 'Run GNU time fallback': spec references /usr/bin/time outside the allowed directories"]
+$ curl -sk -XPOST $B/2b65248a/approve -H "$J" -d '{"actor":"bl421-repro"}'; curl -sk -XPOST $B/2b65248a/run
+{"id":"2b65248a","status":"running"}
+$ curl -sk $B/2b65248a        # 15s later
+blocked
+6e9bbc48 failed  scope: task 'Run GNU time fallback': spec references /usr/bin/time outside the allowed directories (edit the task or widen the PRD read/write dirs)
+6e9bc1e0 (pending)
+$ curl -sk -XPOST $B/2b65248a/edit_task -H "$J" -d '{"task_id":"6e9bbc48","new_spec":"Read-only: run the time command (resolved via PATH ...)"}'
+prd "2b65248a" status "blocked" is locked; only needs_review / revisions_asked / cancelled accept task edits
+$ curl -sk -XDELETE "$B/90b51793?hard=true"     # v9.0.61 response shape
+{"id":"90b51793","killed_sessions":0,"memory_strategy":"","status":"deleted"}
+```
+
+### T2 — Post-fix: edit accepted on blocked automaton → reset_task → task spawns with the new spec (v9.0.62)
+
+| Field | Details |
+|-------|---------|
+| **Description** | After `make install` + `systemctl --user restart datawatch` (same automaton 2b65248a, still `blocked` across the restart), the failed task's spec can be patched in place and retried; a pending sibling cannot be edited while blocked. |
+| **Steps** | `edit_task` on pending task 6e9bc1e0 (expect reject); `edit_task` on failed task 6e9bbc48 (expect accept); `reset_task` 6e9bbc48; inspect the spawned session's task prompt. |
+| **Expected** | Pending edit rejected; failed edit accepted; reset re-runs the task with the new spec and no scope error. |
+| **Actual** | As expected. Session `f0ad` spawned with the edited spec (the only remaining `/usr/bin/time` text in its prompt is the retry hint quoting the previous error). The rerun was later failed by the verifier with `no changes detected (diff empty and no new files)` — expected for a deliberately read-only disposable task, unrelated to this fix. |
+| **Result** | PASS |
+
+```
+$ curl -sk -XPOST $B/2b65248a/edit_task -H "$J" -d '{"task_id":"6e9bc1e0","new_spec":"x"}'
+task "6e9bc1e0" status "pending" cannot be edited while prd "2b65248a" is blocked; only failed or blocked tasks can be patched in place
+$ curl -sk -XPOST $B/2b65248a/edit_task -H "$J" -d '{"task_id":"6e9bbc48","new_spec":"Read-only: run the time command (resolved via PATH, e.g. command -v time) on true and print its output. Do not modify any files."}'
+blocked
+6e9bbc48 failed 'Read-only: run the time command (resolved via PATH, e.g. command -v time) on true and print its output. Do not modify any files.'
+$ curl -sk -XPOST $B/2b65248a/reset_task -H "$J" -d '{"task_id":"6e9bbc48","actor":"bl421-verify"}'
+running
+$ curl -sk $B/2b65248a
+running
+6e9bbc48 verifying f0ad
+```
+
+### T3 — Completed task specs stay immutable
+
+| Field | Details |
+|-------|---------|
+| **Description** | A completed task's spec cannot be edited in any automaton status, including blocked. |
+| **Steps** | `go test -count=1 -run 'BlockedTaskEdit' -v ./internal/autonomous/` (drives a PRD to `blocked` through the real executor with a completed sibling). Not exercised live: the disposable live task never reached `completed` (read-only task, verifier rejects an empty diff). |
+| **Expected** | `task "<id>" is completed; completed task specs are immutable`; completed sibling never re-spawned after edit → reset. |
+| **Actual** | `--- PASS: TestBlockedTaskEdit_CompletedTaskImmutable`, `--- PASS: TestBlockedTaskEdit_EditThenResetRecoversWithoutRerunningCompleted`, `--- PASS: TestBlockedTaskEdit_PendingSiblingRejectedWhileBlocked`, `--- PASS: TestBlockedTaskEdit_ReproEditAcceptedOnBlockedPRD`, `--- PASS: TestBlockedTaskEdit_EditPersistsAndLeavesCompletedSiblingAlone` |
+| **Result** | PASS |
+
+### T4 — Scope linter regression cases
+
+| Field | Details |
+|-------|---------|
+| **Description** | (a) Prose mention of a binary directly inside `/bin`, `/sbin`, `/usr/bin`, `/usr/sbin`, `/usr/local/bin`, `/opt/homebrew/bin` is not flagged; (b) genuine out-of-scope paths are still flagged: `/etc/passwd`, a write-verb target such as `write the report to /usr/bin/report.txt`, deeper `/usr/bin/x/y`, sibling `/usr/lib/libfoo.so`, and any planned file under a bin dir. |
+| **Steps** | `go test -count=1 -run 'TestScope_Lint' -v ./internal/autonomous/`; live: T5 decompose. |
+| **Expected** | (a) zero problems; (b) exactly one problem naming the path. |
+| **Actual** | `--- PASS: TestScope_LintIgnoresProseMentionsOfSystemBinaries`, `--- PASS: TestScope_LintStillFlagsNonBinaryAndWriteVerbPaths`, `--- PASS: TestScope_LintStillFlagsPlannedFileUnderBinDir`, `--- PASS: TestScope_LintFlagsOutOfScopePaths`. |
+| **Result** | PASS |
+
+### T5 — Live: PATH-resolved `time` spec no longer scope-blocks; cancel response names killed sessions
+
+| Field | Details |
+|-------|---------|
+| **Description** | A fresh disposable automaton whose spec names the `time` command resolved via PATH decomposes with no scope warnings and spawns; cancelling it returns `killed_session_ids`; hard delete then removes it. |
+| **Steps** | create dc93204e → `decompose` → `approve` → `run` → wait for session → `DELETE` (cancel) → `DELETE ?hard=true`. Also hard-deleted 2b65248a. |
+| **Expected** | `scope_warnings` empty; task spawns; cancel response contains `killed_session_ids` with exactly that automaton's session; `killed_sessions` unchanged; no unrelated session touched. |
+| **Actual** | As expected. The new planning prompt produced a spec using `type -P time` / `command -v time` (no literal binary path). Killed session `fa73` was `autonomous:Measure and print peak memory of true`; tmux session count unchanged (5) before/after the daemon restart and the cancel. The 2b65248a delete exercised `kill_errors` live (its last session had already exited). |
+| **Result** | PASS |
+
+```
+$ curl -sk $B/dc93204e        # after decompose
+needs_review scope_warnings= None
+5ef90296 "This is a disposable, read-only check: ... Resolve the external time command at runtime via PATH (e.g. `type -P time` or `command -v time` ...) ..."
+$ curl -sk -XPOST $B/dc93204e/approve ...; curl -sk -XPOST $B/dc93204e/run
+{"id":"dc93204e","status":"running"}
+5ef90296 verifying fa73
+$ curl -sk -XDELETE $B/dc93204e
+{"id":"dc93204e","killed_session_ids":["fa73"],"killed_sessions":1,"status":"cancelled"}
+$ curl -sk -XDELETE "$B/dc93204e?hard=true"
+{"id":"dc93204e","killed_session_ids":[],"killed_sessions":0,"memory_strategy":"","status":"deleted"}
+$ curl -sk -XDELETE "$B/2b65248a?hard=true"
+{"id":"2b65248a","kill_errors":{"de39":"session de39 not found"},"killed_session_ids":["de39"],"killed_sessions":1,"memory_strategy":"","status":"deleted"}
+```
+
+### Gates + deploy
+
+| Check | Result |
+|-------|--------|
+| `go test -count=1 ./...` | PASS (69 packages ok, 0 FAIL) |
+| `make lint` | PASS (`0 issues.`) |
+| `node --check internal/server/web/app.js` | PASS |
+| `bash scripts/check-no-internal-refs.sh` | PASS |
+| `make build` | PASS (`bin/datawatch` → `datawatch v9.0.62`) |
+| Targeted smoke `DATAWATCH_BIN=$PWD/bin/datawatch SMOKE_ONLY=6,7,18,56 ./scripts/release-smoke.sh` (isolated sandbox daemon) | 94 passed, 0 failed, 21 skipped. Note: the smoke sandbox config does not enable `autonomous`, so sections 6/7*/18/56 report SKIP ("autonomous disabled") — Automata coverage for this release comes from the unit tests and live checks above. |
+| Deploy | `make install` → `systemctl --user restart datawatch` → `is-active`: `active`; `datawatch version`: `datawatch v9.0.62`; `/api/health`: `"version":"9.0.62"` |
