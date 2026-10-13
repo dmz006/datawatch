@@ -1156,6 +1156,8 @@ func (r *Router) handleMessage(msg messaging.Message) {
 		r.handleTelemetryCmd(cmd)
 	case CmdGuardrail: // BL303 S2
 		r.handleGuardrailCmd(cmd)
+	case CmdRetry: // BL410 Phase 1 remediation
+		r.handleRetryCmd(cmd)
 	case CmdMCPRes: // BL302 S1
 		r.handleMCPResCmd(cmd)
 	case CmdServer: // BL312 S1

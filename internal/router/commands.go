@@ -293,6 +293,15 @@ const (
 	//   "guardrail automaton set <id> [...]"          → per-Automaton override
 	CmdGuardrail CommandType = "guardrail"
 
+	// BL410 Phase 1 remediation — retry profile + per-Automaton
+	// retry-policy management over chat, mirroring CmdGuardrail.
+	//   "retry profile list"                          → list profiles
+	//   "retry profile create <name> [infra=4,...]"   → create profile
+	//   "retry profile get <id>"                      → get profile
+	//   "retry profile delete <id>"                   → delete profile
+	//   "retry automaton set <id> [...]"              → per-Automaton override
+	CmdRetry CommandType = "retry"
+
 	// BL302 S1 — MCP resources over chat.
 	//   "mcp resources"          → list resources
 	//   "mcp read <uri>"         → read resource by URI
@@ -707,6 +716,13 @@ func Parse(text string) Command {
 			rest = strings.TrimSpace(text[10:])
 		}
 		return Command{Type: CmdGuardrail, Text: rest}
+
+	case lower == "retry" || strings.HasPrefix(lower, "retry "):
+		rest := ""
+		if strings.HasPrefix(lower, "retry ") {
+			rest = strings.TrimSpace(text[6:])
+		}
+		return Command{Type: CmdRetry, Text: rest}
 
 	// BL302 S1 — MCP resources over chat.
 	case lower == "mcp" || strings.HasPrefix(lower, "mcp "):

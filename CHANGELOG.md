@@ -5,6 +5,67 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.54 — fix(autonomous): BL410 remediation — retry-policy CLI + comm-channel parity
+
+### Added
+- **`datawatch retry profile list/create/get/update/delete`** and
+  **`datawatch retry automaton set <prd-id>`** — the retry-policy
+  surfaces introduced across BL410 Phases 1-3 (`RetryProfile` CRUD,
+  per-Automaton `retry_profile`/`retry_policy`/`retry_ceiling_total`/
+  `content_auto_fix_enabled`/`auto_fix_skip_approval` overrides) had
+  REST/MCP/PWA parity from Phase 1 but no CLI at all — found during a
+  full parity audit of the feature after it was declared shipped.
+  `cmd/datawatch/cli_retry.go` mirrors `cli_guardrail.go`'s exact
+  shape and reuses its REST helpers verbatim.
+- **`retry profile list/get/create/delete`** and **`retry automaton
+  set`** comm-channel verbs (`internal/router/retry_profiles.go`),
+  mirroring `guardrails.go`'s `guardrail profile`/`guardrail
+  automaton set` verbs — same gap, same fix shape, the comm-channel
+  sibling of the CLI gap above.
+
+### Fixed
+- Retracted an earlier in-session claim that `docs/howto/guardrail-library.md`'s
+  documented `datawatch guardrail profile ...` CLI commands were
+  fictional. They are real; the investigation that produced that
+  claim used a flat `grep` pattern that doesn't account for Cobra's
+  nested command tree (`guardrail` → `profile` → `create`, each with
+  its own short `Use:` string, not one combined string). Verified via
+  `--help` output and direct source read before writing this entry.
+
+### Reuse audit
+Zero new mechanisms: both files reuse existing REST helpers
+(`guardrailAPIGet/Post/Put/Delete` in cli_retry.go, `commGet`/
+`commJSON` in retry_profiles.go) and existing endpoints
+(`/api/autonomous/retry_profiles`, `/api/autonomous/prds/{id}/set_retry_policy`)
+verbatim — no new server-side surface, pure client-parity fix.
+
+### Testing
+11 new comm-channel parity tests (`internal/router/retry_profiles_test.go`),
+mirroring `peers_test.go`'s `fakeParentSrv`/`HandleTestMessage`
+pattern. CLI verified live against the running daemon: created,
+listed, and deleted a real `RetryProfile` via the new `retry profile`
+subcommands.
+
+### Known gaps carried forward (BL410, still open)
+- `Manager.Decompose`'s own infra/scope retry was never wired —
+  `PRD.LastDecomposeFailure` exists but nothing populates or reads it;
+  a decompose failure still rolls straight back to `PRDDraft`.
+- `Task.FailureReason`/`Story.FailureReason` fields exist but are
+  never populated — `recordFailureLearning` has the same data in
+  scope at every call site and could set them, but doesn't yet.
+- `docs/howto/retry-policy.md` documents the wrong CLI command shape
+  (`datawatch retry-profile ...` instead of the real `datawatch retry
+  profile ...` shipped here) and never mentions Phase 2 (content
+  auto-fix) or Phase 3 (Learning writer) — needs a full rewrite.
+- `docs/flow/guardrail-flow.md` has zero mentions of retry/escalation/
+  content-auto-fix/Learning despite 3 releases of real behavior
+  change layered on top of the flow it documents.
+- Zero smoke/E2E coverage for BL410's retry/auto-fix/Learning
+  behavior — only Go-level unit/integration tests exist.
+- No `datawatch-app` (mobile) tracking issue filed yet for the
+  `RetryProfile`/content-auto-fix/Learning surfaces, despite the
+  established Mobile-Parity Rule precedent (BL403 Phase 8).
+
 ## v9.0.53 — feat(autonomous): BL410 Phase 3 — Learning writer revival
 
 ### Added
