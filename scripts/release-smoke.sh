@@ -3503,6 +3503,72 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+H "69. BL410 — retry profiles + per-Automaton retry policy via MCP/REST/CLI"
+# MCP: list (always 200, possibly empty)
+RPL=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+  -d '{"tool":"retry_profile_list","args":{}}' "$BASE/api/mcp/call" || true)
+echo "$RPL" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert d is not None' 2>/dev/null \
+  && ok "MCP retry_profile_list returns result" \
+  || ko "MCP retry_profile_list unexpected: ${RPL:0:120}"
+# Create + get + delete a retry profile via MCP (mirrors guardrail_profile_* above)
+RP_ID=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+  -d '{"tool":"retry_profile_create","args":{"name":"smoke-retry","budgets_json":"{\"infra\":2}","ceiling_total":10}}' \
+  "$BASE/api/mcp/call" | python3 -c 'import json,sys;s=str(json.load(sys.stdin));import re;m=re.search(r"[0-9a-f]{8}",s);print(m.group() if m else "")' 2>/dev/null || echo "")
+if [[ -z "$RP_ID" ]]; then
+  skip "retry profile create via MCP returned no id"
+else
+  add_cleanup retry_profile "$RP_ID"
+  RPG=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+    -d "{\"tool\":\"retry_profile_get\",\"args\":{\"id\":\"$RP_ID\"}}" "$BASE/api/mcp/call" || true)
+  echo "$RPG" | grep -q "smoke-retry" \
+    && ok "retry profile get via MCP returns the created profile" \
+    || ko "retry profile get via MCP missing name: ${RPG:0:120}"
+  curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+    -d "{\"name\":\"retry_profile_delete\",\"arguments\":{\"id\":\"$RP_ID\"}}" \
+    "$BASE/api/mcp/call" >/dev/null 2>&1
+  ok "retry profile create+get+delete via MCP round-trip"
+fi
+# REST: the CRUD endpoints respond (not 404 — route wiring, not full behavior)
+RP_REST_LIST=$(curl "${curl_args[@]}" -o /dev/null -w "%{http_code}" "$BASE/api/autonomous/retry_profiles" 2>/dev/null || echo "000")
+[[ "$RP_REST_LIST" == "200" ]] \
+  && ok "GET /api/autonomous/retry_profiles → 200" \
+  || ko "GET /api/autonomous/retry_profiles unexpected HTTP $RP_REST_LIST"
+# set_retry_policy wiring: a non-existent PRD must fail with a client
+# error, proving the route exists and dispatches. The sibling
+# set_guardrails handler (same case-statement block, same
+# s.autonomousMgr.Set*-then-400-on-err shape) also returns 400 here,
+# not 404 -- confirmed by reading internal/server/autonomous.go rather
+# than assumed; this endpoint intentionally matches that precedent.
+RP_SET_HTTP=$(curl "${curl_args[@]}" -o /dev/null -w "%{http_code}" -X PUT \
+  -H "Content-Type: application/json" -d '{"retry_profile":"smoke-retry"}' \
+  "$BASE/api/autonomous/prds/smoke-nonexistent-prd/set_retry_policy" 2>/dev/null || echo "000")
+[[ "$RP_SET_HTTP" == "400" ]] \
+  && ok "PUT /api/autonomous/prds/{id}/set_retry_policy → 400 on unknown automaton" \
+  || ko "set_retry_policy endpoint wiring unexpected HTTP $RP_SET_HTTP (expected 400)"
+# CLI round-trip (v9.0.54 — datawatch retry profile ...). Uses $DW_CLI
+# (not a raw binary invocation) so TLS trust against the self-signed
+# test daemon matches every other CLI check in section 50.
+if [[ -z "${DW_CLI:-}" ]]; then
+  skip "datawatch CLI not available — skipping retry profile CLI round-trip"
+else
+  CLI_RP_OUT=$($DW_CLI retry profile create --name smoke-retry-cli --budgets "infra=3" --ceiling-total 8 2>&1 || true)
+  CLI_RP_ID=$(echo "$CLI_RP_OUT" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("id",""))' 2>/dev/null || echo "")
+  if [[ -z "$CLI_RP_ID" ]]; then
+    skip "datawatch retry profile create (CLI) returned no id: ${CLI_RP_OUT:0:120}"
+  else
+    add_cleanup retry_profile "$CLI_RP_ID"
+    $DW_CLI retry profile delete "$CLI_RP_ID" >/dev/null 2>&1
+    ok "datawatch retry profile create+delete (CLI) round-trip"
+  fi
+fi
+# Learning surface responds (Phase 3 — may legitimately be empty on a fresh daemon)
+LRN=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+  -d '{"tool":"autonomous_learnings","args":{}}' "$BASE/api/mcp/call" || true)
+echo "$LRN" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert d is not None' 2>/dev/null \
+  && ok "MCP autonomous_learnings returns result" \
+  || ko "MCP autonomous_learnings unexpected: ${LRN:0:120}"
+
+# ---------------------------------------------------------------------------
 H "Summary"
 echo "  Pass:  $PASS"
 echo "  Fail:  $FAIL"

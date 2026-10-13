@@ -5,7 +5,37 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-## v9.0.55 — docs(autonomous): BL410 remediation — retry-policy docs + architecture flow
+## v9.0.56 — test(autonomous): BL410 remediation — release-smoke coverage for retry profiles
+
+### Added
+- New `release-smoke.sh` section 69: MCP `retry_profile_list/create/get/delete`
+  round-trip, REST `GET /api/autonomous/retry_profiles` wiring check,
+  `PUT /api/autonomous/prds/{id}/set_retry_policy` wiring check (unknown
+  Automaton → 400, matching the sibling `set_guardrails` handler's own
+  error-handling shape — confirmed by reading `internal/server/autonomous.go`,
+  not assumed), CLI `datawatch retry profile create/delete` round-trip
+  via `$DW_CLI`, and an `autonomous_learnings` reachability check. This
+  was BL410's largest remaining gap — zero smoke/E2E coverage of any
+  kind for the retry/auto-fix/Learning behavior shipped across
+  v9.0.50–v9.0.54.
+
+### Fixed (found by running the new section against a real isolated test daemon)
+- First draft asserted `set_retry_policy` returns 404 on an unknown
+  Automaton; the real, correct behavior (matching its sibling
+  `set_guardrails` handler) is 400. Fixed the assertion, not the handler.
+- First draft invoked the CLI as a raw `datawatch --url $BASE ...`
+  call, which fails TLS verification against the smoke daemon's
+  self-signed cert. Fixed to use the existing `$DW_CLI` variable
+  (already correctly configured), matching every other CLI check in
+  section 50.
+
+### Still not covered
+A full behavioral E2E test (a real PRD driven through an actual
+infra-retry escalation, a content-auto-fix synthesis, and a genuine
+budget-exhaustion Learning write) is not in release-smoke.sh — this
+release adds wiring/round-trip coverage for the profile/policy CRUD
+surfaces, not an end-to-end proof of the retry logic itself. That
+would need a dedicated `TS-###` E2E story; not scoped here.
 
 ### Added
 - `docs/howto/retry-policy.md`: new CLI section (the CLI didn't exist
