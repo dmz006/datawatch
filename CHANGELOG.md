@@ -5,6 +5,53 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.57 — fix(autonomous): BL410 remediation — Decompose retry wiring + FailureReason population
+
+### Added
+- **`Manager.Decompose`/`decomposeStreamingCore` now retry on an
+  `infra`/`scope`-classified failure** instead of rolling straight
+  back to `PRDDraft` on the very first attempt — closing the original
+  finding: "why was manager.decompose not wired in?" New shared
+  helper `retryDecomposeFailure` (`internal/autonomous/retry_policy.go`)
+  used by both functions (a long-standing drifted-duplicate pair),
+  bounded by the same `infra`/`scope` budgets every other BL410
+  mechanism uses. The failed attempt's own error is fed into the next
+  attempt's prompt ("Your previous attempt failed: ...") via
+  `PRD.LastDecomposeFailure` — a single-use hint with the same
+  lifecycle as `Task.PriorAttemptHint` — cleared on success. `scope`'s
+  default budget of 0 preserves today's "no retry" behavior for a
+  verification-script-coverage violation (an unchanged spec reproduces
+  the identical violation).
+- **`Task.FailureReason`/`Story.FailureReason` are now populated** at
+  every point `recordFailureLearning` already fires: task-exhaustion
+  (`executeOne`'s final `TaskFailed`), a task-level content-category
+  guardrail block past its auto-fix budget, and a story-level block
+  past its own. Both fields existed since Phase 1 but nothing ever set
+  them (flagged live: "what about task.failurereason/
+  story.failurereason?"). Additive alongside the existing `Task.Error`
+  — same data, now structured (category/detail/source/retryable/
+  occurred_at) instead of a bare string. New shared `orContentCategory`
+  helper applies the existing "empty category means content" rule in
+  one place, used by both `recordFailureLearning` and every new
+  `FailureReason` assignment.
+
+### Testing
+8 new tests: 4 for Decompose retry (`bl410_remediation_decompose_retry_test.go`
+— retry-then-succeed with hint verification, budget exhaustion +
+Learning write, scope's zero-retry default, `decomposeStreamingCore`
+parity) and 4 for FailureReason population
+(`bl410_remediation_failurereason_test.go` — task guardrail block,
+story guardrail block, verification-failure exhaustion, and a
+transient failure that self-heals leaving the field nil). Full repo
+suite: 3865+ pass, 0 fail.
+
+### Still open (named, not silently dropped)
+A dedicated `TS-###` behavioral E2E story — a real PRD driven through
+an actual infra-retry escalation, content-fix synthesis, and genuine
+budget-exhaustion Learning write, end to end — is not built. The
+smoke coverage shipped in v9.0.56 is wiring/round-trip coverage for
+the CRUD surfaces, not that.
+
 ## v9.0.56 — test(autonomous): BL410 remediation — release-smoke coverage for retry profiles
 
 ### Added

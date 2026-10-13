@@ -984,32 +984,57 @@ func (m *Manager) Decompose(prdID string) (*PRD, error) {
 	if planModel == "" {
 		planModel = prd.Model
 	}
-	raw, err := m.decompose(DecomposeRequest{Spec: prompt, Backend: backend, Effort: effort, Model: planModel, ProjectDir: prd.ProjectDir, ScopeBlock: ScopeBlock(prd), PRDID: prd.ID, TimeoutSeconds: m.cfg.PlanningTimeoutSeconds})
-	if err != nil {
-		// Roll back to draft so the operator can re-trigger.
-		prd.Status = PRDDraft
-		prd.UpdatedAt = time.Now()
-		_ = m.store.SavePRD(prd)
-		return nil, fmt.Errorf("LLM plan: %w", err)
-	}
-	title, stories, err := ParsePlanning(raw)
-	if err != nil {
-		prd.Status = PRDDraft
-		prd.UpdatedAt = time.Now()
-		_ = m.store.SavePRD(prd)
-		return nil, err
-	}
-	// B124 — kick back a tooled plan that skipped verification scripts
-	// entirely despite planning real file changes (see this function's
-	// own doc comment). Same rollback shape as the parse-error case
-	// just above: Decompose() is a lower-level call used directly by
-	// tests and any caller that wants a non-streaming result, so this
-	// check must live here too, not only in decomposeStreamingCore.
-	if verr := validateVerificationScriptCoverage(prd.ProjectDir, stories); verr != nil {
-		prd.Status = PRDDraft
-		prd.UpdatedAt = time.Now()
-		_ = m.store.SavePRD(prd)
-		return nil, verr
+	// BL410 remediation (2026-10-13) — bounded, hint-fed retry for an
+	// infra/scope-classified decompose failure, instead of immediately
+	// rolling back to PRDDraft on the very first failure. See
+	// retryDecomposeFailure's doc comment for the full rationale; see
+	// decomposeStreamingCore's identical loop for the twin copy this
+	// drifted-duplicate pair requires.
+	var raw, title string
+	var stories []Story
+	for {
+		attemptPrompt := prompt
+		if prd.LastDecomposeFailure != nil {
+			attemptPrompt += fmt.Sprintf("\n\nYour previous attempt failed: %s\nFix this in your next response.", prd.LastDecomposeFailure.Detail)
+		}
+		r, derr := m.decompose(DecomposeRequest{Spec: attemptPrompt, Backend: backend, Effort: effort, Model: planModel, ProjectDir: prd.ProjectDir, ScopeBlock: ScopeBlock(prd), PRDID: prd.ID, TimeoutSeconds: m.cfg.PlanningTimeoutSeconds})
+		if derr != nil {
+			if m.retryDecomposeFailure(prd, "infra", "decompose-llm", derr.Error()) {
+				continue
+			}
+			prd.Status = PRDDraft
+			prd.UpdatedAt = time.Now()
+			_ = m.store.SavePRD(prd)
+			return nil, fmt.Errorf("LLM plan: %w", derr)
+		}
+		t, s, perr := ParsePlanning(r)
+		if perr != nil {
+			if m.retryDecomposeFailure(prd, "infra", "decompose-parse", perr.Error()) {
+				continue
+			}
+			prd.Status = PRDDraft
+			prd.UpdatedAt = time.Now()
+			_ = m.store.SavePRD(prd)
+			return nil, perr
+		}
+		// B124 — kick back a tooled plan that skipped verification
+		// scripts entirely despite planning real file changes (see this
+		// function's own doc comment). Decompose() is a lower-level
+		// call used directly by tests and any caller that wants a
+		// non-streaming result, so this check must live here too, not
+		// only in decomposeStreamingCore.
+		if verr := validateVerificationScriptCoverage(prd.ProjectDir, s); verr != nil {
+			if m.retryDecomposeFailure(prd, "scope", "verification-script-coverage", verr.Error()) {
+				continue
+			}
+			prd.Status = PRDDraft
+			prd.UpdatedAt = time.Now()
+			_ = m.store.SavePRD(prd)
+			return nil, verr
+		}
+		raw, title, stories = r, t, s
+		prd.LastDecomposeFailure = nil // success — clear the single-use hint
+		break
 	}
 	if title != "" {
 		prd.Title = title
@@ -1121,29 +1146,53 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (*PRD, 
 	if planModel2 == "" {
 		planModel2 = prd.Model
 	}
-	raw, err := m.decompose(DecomposeRequest{Spec: prompt, Backend: backend, Effort: effort, Model: planModel2, ProjectDir: prd.ProjectDir, ScopeBlock: ScopeBlock(prd), PRDID: prd.ID, TimeoutSeconds: m.cfg.PlanningTimeoutSeconds})
-	if err != nil {
-		prd.Status = PRDDraft
-		prd.UpdatedAt = time.Now()
-		_ = m.store.SavePRD(prd)
-		return nil, fmt.Errorf("LLM plan: %w", err)
-	}
-	title, stories, err := ParsePlanning(raw)
-	if err != nil {
-		prd.Status = PRDDraft
-		prd.UpdatedAt = time.Now()
-		_ = m.store.SavePRD(prd)
-		return nil, err
-	}
-	// B124 — see Decompose()'s identical call for the full explanation;
-	// decomposeStreamingCore is a drifted duplicate of Decompose() by
-	// design history, kept in sync here too rather than risk a third
-	// hand-copied gate.
-	if verr := validateVerificationScriptCoverage(prd.ProjectDir, stories); verr != nil {
-		prd.Status = PRDDraft
-		prd.UpdatedAt = time.Now()
-		_ = m.store.SavePRD(prd)
-		return nil, verr
+	// BL410 remediation (2026-10-13) — see Decompose()'s identical loop
+	// for the full explanation; retryDecomposeFailure is the shared
+	// helper both copies of this drifted-duplicate pair call, so the
+	// retry logic itself exists in exactly one place.
+	var raw, title string
+	var stories []Story
+	for {
+		attemptPrompt := prompt
+		if prd.LastDecomposeFailure != nil {
+			attemptPrompt += fmt.Sprintf("\n\nYour previous attempt failed: %s\nFix this in your next response.", prd.LastDecomposeFailure.Detail)
+		}
+		r, derr := m.decompose(DecomposeRequest{Spec: attemptPrompt, Backend: backend, Effort: effort, Model: planModel2, ProjectDir: prd.ProjectDir, ScopeBlock: ScopeBlock(prd), PRDID: prd.ID, TimeoutSeconds: m.cfg.PlanningTimeoutSeconds})
+		if derr != nil {
+			if m.retryDecomposeFailure(prd, "infra", "decompose-llm", derr.Error()) {
+				continue
+			}
+			prd.Status = PRDDraft
+			prd.UpdatedAt = time.Now()
+			_ = m.store.SavePRD(prd)
+			return nil, fmt.Errorf("LLM plan: %w", derr)
+		}
+		t, s, perr := ParsePlanning(r)
+		if perr != nil {
+			if m.retryDecomposeFailure(prd, "infra", "decompose-parse", perr.Error()) {
+				continue
+			}
+			prd.Status = PRDDraft
+			prd.UpdatedAt = time.Now()
+			_ = m.store.SavePRD(prd)
+			return nil, perr
+		}
+		// B124 — see Decompose()'s identical call for the full
+		// explanation; decomposeStreamingCore is a drifted duplicate of
+		// Decompose() by design history, kept in sync here too rather
+		// than risk a third hand-copied gate.
+		if verr := validateVerificationScriptCoverage(prd.ProjectDir, s); verr != nil {
+			if m.retryDecomposeFailure(prd, "scope", "verification-script-coverage", verr.Error()) {
+				continue
+			}
+			prd.Status = PRDDraft
+			prd.UpdatedAt = time.Now()
+			_ = m.store.SavePRD(prd)
+			return nil, verr
+		}
+		raw, title, stories = r, t, s
+		prd.LastDecomposeFailure = nil // success — clear the single-use hint
+		break
 	}
 	if title != "" {
 		prd.Title = title

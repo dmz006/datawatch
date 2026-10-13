@@ -1002,6 +1002,15 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 	// here, not on every retry attempt — a transient failure that
 	// self-healed on a later attempt never reaches this line.
 	m.recordFailureLearning(prd, t.ID, lastFailureCategory, hint)
+	// BL410 remediation (2026-10-13) — Task.FailureReason existed since
+	// Phase 1 but was never populated (flagged live: "what about
+	// task.failurereason/story.failurereason?"). Same data
+	// recordFailureLearning already has, structured instead of a bare
+	// string, additive alongside the existing t.Error.
+	t.FailureReason = &FailureReason{
+		Category: orContentCategory(lastFailureCategory), Detail: hint,
+		Source: "task-exhausted", Retryable: false, OccurredAt: time.Now(),
+	}
 	// No more attempts coming — sweep any leftover CHECKPOINT.md too.
 	m.relocateCheckpoint(prd, t)
 	if err := m.store.SaveTask(t); err != nil {
@@ -1341,6 +1350,11 @@ func (m *Manager) runPerTaskGuardrails(ctx context.Context, prd *PRD, t *Task) (
 			}
 			blocked = true
 			m.recordFailureLearning(prd, t.ID, v.Category, contentFixHint(v)) // BL410 Phase 3
+			// BL410 remediation (2026-10-13)
+			t.FailureReason = &FailureReason{
+				Category: orContentCategory(v.Category), Detail: contentFixHint(v),
+				Source: "guardrail-task-block", Retryable: false, OccurredAt: time.Now(),
+			}
 		}
 	}
 	return blocked, contentHint, nil
@@ -1426,6 +1440,11 @@ func (m *Manager) runPerStoryGuardrails(ctx context.Context, prd *PRD, s *Story)
 			}
 			blocked = true
 			m.recordFailureLearning(prd, s.ID, v.Category, contentFixHint(v)) // BL410 Phase 3
+			// BL410 remediation (2026-10-13)
+			s.FailureReason = &FailureReason{
+				Category: orContentCategory(v.Category), Detail: contentFixHint(v),
+				Source: "guardrail-story-block", Retryable: false, OccurredAt: time.Now(),
+			}
 		}
 	}
 	return blocked, contentFixVerdict, nil

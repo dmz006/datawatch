@@ -548,11 +548,23 @@ established. In progress — starting with BL403.**
    zero mentions of any of this despite three releases of real
    behavior layered on the flow it documents. Mobile-parity tracking
    issue filed per the Mobile-Parity Rule (datawatch-app#256).
-   **Still open, genuinely not yet built**: the Decompose-retry gap,
-   `Task.FailureReason`/`Story.FailureReason` population, and — the
-   largest remaining gap — zero smoke/E2E coverage for any of BL410's
-   retry/auto-fix/Learning behavior (Go-level unit/integration tests
-   only).
+   `release-smoke.sh` section 69 added — MCP/REST/CLI wiring coverage
+   for `RetryProfile` CRUD + per-Automaton retry policy, closing what
+   had been the largest remaining gap (zero smoke/E2E coverage of any
+   kind). `Manager.Decompose`/`decomposeStreamingCore` wired to
+   `retryDecomposeFailure` — the planning LLM call, `ParsePlanning`,
+   and `validateVerificationScriptCoverage` now retry with the prior
+   failure fed back as a hint (same single-use lifecycle as
+   `Task.PriorAttemptHint`) before rolling back to `PRDDraft`, bounded
+   by the same `infra`/`scope` budgets as everything else — closing
+   the original "why was manager.decompose not wired in?" finding.
+   `Task.FailureReason`/`Story.FailureReason` now populated at every
+   point `recordFailureLearning` already fires (same data, structured
+   instead of a bare string, additive alongside `Task.Error`).
+   **Still open**: a dedicated `TS-###` behavioral E2E story (a real
+   PRD driven through an actual infra-retry escalation, content-fix
+   synthesis, and genuine budget-exhaustion Learning write end to
+   end) — the smoke coverage above is wiring/round-trip, not that.
 11. **BL411** — Pre-v10.0.0 Dead Code Audit (filed 2026-10-10, same
    conversation as BL410). This session alone found four instances of
    "fully-plumbed but never actually consulted" code in

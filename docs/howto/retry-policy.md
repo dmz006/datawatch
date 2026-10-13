@@ -90,6 +90,21 @@ Same shape as guardrail resolution ([guardrail-library.md](guardrail-library.md)
   entirely and runs unattended; when false, it enters
   `awaiting_approval` exactly like normal decompose output. Once it
   completes, the PRD-completion check re-fires automatically.
+- **`infra`/`scope`, during decompose itself** (the planning LLM call
+  failing, its response failing to parse, or a tooled plan skipping a
+  required verification script): the SAME retry budget and categories
+  apply here too — decompose is not a separate mechanism. The failed
+  attempt's own error text is fed into the next attempt's prompt
+  ("Your previous attempt failed: ..."), the same single-use-hint
+  lifecycle a task's `RetryHint` already uses. The Automaton stays
+  visibly `planning` while this happens; only a genuinely exhausted
+  decompose attempt rolls it back to `draft` for an operator to
+  revise. `scope`'s default budget of 0 means a verification-script
+  violation still fails on the first attempt by default — an
+  unchanged spec reproduces the identical violation, so retrying it
+  automatically wouldn't help — but `content`-category reasoning
+  never applies to decompose at all: there is no judgment verdict at
+  this stage, only a mechanism succeeding or failing.
 
 ## When a retry budget is finally exhausted
 
