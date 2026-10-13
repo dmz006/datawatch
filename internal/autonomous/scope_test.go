@@ -39,6 +39,43 @@ func TestScope_LintFlagsOutOfScopePaths(t *testing.T) {
 	}
 }
 
+func TestScope_LintIgnoresProseMentionsOfSystemBinaries(t *testing.T) {
+	prd := &PRD{ProjectDir: "/w/proj"}
+	for _, spec := range []string{
+		"If GNU time is missing, fall back to /usr/bin/time -v to measure peak RSS",
+		"run the check with /bin/sh -c 'make test'",
+		"call /usr/local/bin/foo on the output",
+		"on macOS use /opt/homebrew/bin/gtime instead",
+	} {
+		if p := LintTaskScope(prd, "t", spec, nil); len(p) != 0 {
+			t.Fatalf("binary mention flagged for %q: %v", spec, p)
+		}
+	}
+}
+
+func TestScope_LintStillFlagsNonBinaryAndWriteVerbPaths(t *testing.T) {
+	prd := &PRD{ProjectDir: "/w/proj"}
+	for spec, path := range map[string]string{
+		"Read /etc/passwd and copy it into docs/x.md":   "/etc/passwd",
+		"write the report to /usr/bin/report.txt":       "/usr/bin/report.txt",
+		"run /usr/bin/x/y against the build":            "/usr/bin/x/y",
+		"link against /usr/lib/libfoo.so for the probe": "/usr/lib/libfoo.so",
+	} {
+		p := LintTaskScope(prd, "t", spec, nil)
+		if len(p) != 1 || !strings.Contains(p[0], path) {
+			t.Fatalf("want 1 problem mentioning %s for %q, got %v", path, spec, p)
+		}
+	}
+}
+
+func TestScope_LintStillFlagsPlannedFileUnderBinDir(t *testing.T) {
+	prd := &PRD{ProjectDir: "/w/proj"}
+	p := LintTaskScope(prd, "t", "x", []string{"/usr/bin/time"})
+	if len(p) != 1 || !strings.Contains(p[0], "outside the writable directories") {
+		t.Fatalf("planned file under /usr/bin must be flagged: %v", p)
+	}
+}
+
 func TestScope_PlanningPromptCarriesBoundary(t *testing.T) {
 	prd := &PRD{ProjectDir: "/w/proj", ReadDirs: []string{"/w/ref"}}
 	got := fmt.Sprintf(PlanningPromptSession, ScopeBlock(prd), "/w/proj/.out.json", "spec")
@@ -122,6 +159,24 @@ func TestScope_ExecutorBlocksOutOfScopeTaskWithoutSpawning(t *testing.T) {
 	}
 	if got.Story[0].Status != StoryFailed {
 		t.Fatalf("story with failed task must be failed, got %s", got.Story[0].Status)
+	}
+}
+
+func TestScope_ExecutorSpawnsTaskNamingSystemBinary(t *testing.T) {
+	m, api, _, verify := apiFixture(t)
+	prd, _ := m.CreatePRD("s", "/w/proj", "opencode", "", EffortNormal)
+	_ = m.Store().SetStories(prd.ID, []Story{{Title: "S", Tasks: []Task{{Title: "T", Spec: "If GNU time is missing, fall back to /usr/bin/time -v to measure peak RSS"}}}})
+	spawned := 0
+	spawn := func(context.Context, SpawnRequest) (SpawnResult, error) {
+		spawned++
+		return SpawnResult{SessionID: "x"}, nil
+	}
+	got := runToTerminal(t, m, api, prd.ID, spawn, verify)
+	if spawned != 1 {
+		t.Fatalf("task naming a system binary spawned %d sessions, want 1", spawned)
+	}
+	if got.Status != PRDCompleted || got.Story[0].Status != StoryCompleted {
+		t.Fatalf("want completed, got %s / %s", got.Status, got.Story[0].Status)
 	}
 }
 

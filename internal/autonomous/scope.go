@@ -91,6 +91,36 @@ var absPathRe = regexp.MustCompile(`(?:^|[\s"'` + "`" + `(])(/[A-Za-z0-9_.-]+/[^
 
 var fsRoots = map[string]bool{"home": true, "etc": true, "var": true, "usr": true, "opt": true, "tmp": true, "root": true, "mnt": true, "srv": true}
 
+// execDirs are read-only executable directories. A spec that names a binary
+// directly inside one (e.g. /usr/bin/time) is invoking a tool, not claiming
+// file access, so the spec-text lint skips it unless a write verb precedes it
+// (BL421).
+var execDirs = map[string]bool{
+	"/bin": true, "/sbin": true,
+	"/usr/bin": true, "/usr/sbin": true,
+	"/usr/local/bin":    true,
+	"/opt/homebrew/bin": true,
+}
+
+// writeVerbRe matches words that turn a following path into a write target.
+var writeVerbRe = regexp.MustCompile(`(?i)(?:^|[^A-Za-z])(?:write|writes|writing|create|creates|overwrite|overwrites|modify|modifies|edit|edits|delete|deletes|remove|removes|rm|mv|cp|install|installs|chmod|chown|tee|truncate)(?:$|[^A-Za-z])|>`)
+
+// writeWindowWords is how many words before a path are checked for a write verb.
+const writeWindowWords = 4
+
+// isBinaryMention reports whether p names an executable directly inside an
+// execDir and the text just before it (pre) carries no write verb.
+func isBinaryMention(p, pre string) bool {
+	if !execDirs[filepath.Dir(filepath.Clean(p))] {
+		return false
+	}
+	words := strings.Fields(pre)
+	if len(words) > writeWindowWords {
+		words = words[len(words)-writeWindowWords:]
+	}
+	return !writeVerbRe.MatchString(strings.Join(words, " "))
+}
+
 func firstSegment(p string) string {
 	p = strings.TrimPrefix(p, "/")
 	if i := strings.Index(p, "/"); i >= 0 {
@@ -101,6 +131,13 @@ func firstSegment(p string) string {
 
 // LintTaskScope returns human-readable problems with a task spec/file list
 // that reference paths outside the PRD's declared directories.
+//
+// Planned files are write claims and are always checked against the writable
+// directories. Spec prose is checked against the readable directories, except
+// that merely naming a system binary (a path directly inside an execDirs
+// entry, e.g. "fall back to /usr/bin/time -v") is not an access claim and is
+// skipped, unless a write verb in the few words before it makes it a write
+// target (BL421).
 func LintTaskScope(prd *PRD, label, spec string, files []string) []string {
 	read := EffectiveReadDirs(prd)
 	write := EffectiveWriteDirs(prd)
@@ -115,9 +152,12 @@ func LintTaskScope(prd *PRD, label, spec string, files []string) []string {
 			out = append(out, fmt.Sprintf("%s: planned file %s escapes the project directory", label, f))
 		}
 	}
-	for _, m := range absPathRe.FindAllStringSubmatch(spec, -1) {
-		p := strings.TrimRight(m[1], ".")
+	for _, m := range absPathRe.FindAllStringSubmatchIndex(spec, -1) {
+		p := strings.TrimRight(spec[m[2]:m[3]], ".")
 		if seg := firstSegment(p); !fsRoots[seg] && seg != firstSegment(prd.ProjectDir) {
+			continue
+		}
+		if isBinaryMention(p, spec[:m[2]]) {
 			continue
 		}
 		if !PathInDirs(p, read) {
