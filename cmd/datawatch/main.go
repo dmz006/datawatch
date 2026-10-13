@@ -113,7 +113,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "9.0.53"
+var Version = "9.0.54"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -351,6 +351,7 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newMemoryCmd(),        // v7.0.0 S5 — scope-hierarchy memory
 		newMarketplaceCmd(),   // alpha.33 #244 — Ollama marketplace
 		newGuardrailCmd(),     // BL303 S2 — guardrail library + profiles
+		newRetryCmd(),         // BL410 Phase 1 — retry profiles + per-Automaton policy
 		newDashboardCmd(),     // #57/#58 — dashboard card layout CRUD
 		newSmokeCmd(),         // #54 — smoke-run cross-instance forwarding
 		newFilterCmd(),        // top-level filter command
