@@ -1028,6 +1028,46 @@ func (a *API) SetPRDGuardrails(prdID, profile string, perTask, perStory, perPRD 
 	return prd, nil
 }
 
+// BL410 Phase 1 — retry profiles + per-Automaton retry-policy override.
+
+func (a *API) CreateRetryProfile(name, description string, budgets map[string]int, ceilingTotal, infraRetryEscalateAfter int, contentAutoFixEnabled, autoFixSkipApproval *bool) (any, error) {
+	return a.M.CreateRetryProfile(name, description, budgets, ceilingTotal, infraRetryEscalateAfter, contentAutoFixEnabled, autoFixSkipApproval)
+}
+
+func (a *API) UpdateRetryProfile(id, name, description string, budgets map[string]int, ceilingTotal, infraRetryEscalateAfter int, contentAutoFixEnabled, autoFixSkipApproval *bool) (any, error) {
+	return a.M.UpdateRetryProfile(id, name, description, budgets, ceilingTotal, infraRetryEscalateAfter, contentAutoFixEnabled, autoFixSkipApproval)
+}
+
+func (a *API) DeleteRetryProfile(id string) error {
+	return a.M.DeleteRetryProfile(id)
+}
+
+func (a *API) ListRetryProfiles() []any {
+	src := a.M.ListRetryProfiles()
+	out := make([]any, len(src))
+	for i, p := range src {
+		out[i] = p
+	}
+	return out
+}
+
+func (a *API) GetRetryProfile(id string) (any, bool) {
+	p, ok := a.M.GetRetryProfile(id)
+	if !ok {
+		return nil, false
+	}
+	return p, true
+}
+
+func (a *API) SetPRDRetryPolicy(prdID, profile string, policy map[string]int, ceilingTotal int, contentAutoFixEnabled, autoFixSkipApproval *bool) (any, error) {
+	prd, err := a.M.SetPRDRetryPolicy(prdID, profile, policy, ceilingTotal, contentAutoFixEnabled, autoFixSkipApproval)
+	if err != nil {
+		return nil, err
+	}
+	a.M.EmitPRDUpdate(prdID)
+	return prd, nil
+}
+
 // InvokeGuardrailByName (BL303 S3 T15) — on-demand invocation.
 func (a *API) InvokeGuardrailByName(name, projectDir string) (any, error) {
 	verdict, err := a.M.InvokeGuardrailByName(name, projectDir)

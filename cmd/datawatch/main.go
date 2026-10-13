@@ -113,7 +113,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "9.0.50"
+var Version = "9.0.51"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -4060,6 +4060,13 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		// LLM call honors the operator's session.llm_backend / routing
 		// rules / cost rates without re-deriving here.
 		acfgIn := cfg.Autonomous
+		// BL410 Phase 1 — copy, not alias, so later runtime mutation of
+		// one config's map (e.g. a PRD-level retry-budget consumer)
+		// never leaks into the other.
+		retryPolicyBridge := make(map[string]int, len(acfgIn.RetryPolicy))
+		for k, v := range acfgIn.RetryPolicy {
+			retryPolicyBridge[k] = v
+		}
 		amgrCfg := autonomouspkg.Config{
 			Enabled:                    acfgIn.Enabled,
 			PollIntervalSeconds:        acfgIn.PollIntervalSeconds,
@@ -4089,6 +4096,13 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			PerTaskGuardrails:   append([]string(nil), acfgIn.PerTaskGuardrails...),
 			PerStoryGuardrails:  append([]string(nil), acfgIn.PerStoryGuardrails...),
 			PerPRDGuardrails:    append([]string(nil), acfgIn.PerPRDGuardrails...), // BL418
+
+			// BL410 Phase 1 — retry-policy bridge.
+			RetryPolicy:             retryPolicyBridge,
+			RetryCeilingTotal:       acfgIn.RetryCeilingTotal,
+			InfraRetryEscalateAfter: acfgIn.InfraRetryEscalateAfter,
+			ContentAutoFixEnabled:   acfgIn.ContentAutoFixEnabled,
+			AutoFixSkipApproval:     acfgIn.AutoFixSkipApproval,
 
 			PerStoryApproval:       acfgIn.PerStoryApproval, // Phase 3 (v5.26.61)
 			ContinueOnStoryFailure: acfgIn.ContinueOnStoryFailure,

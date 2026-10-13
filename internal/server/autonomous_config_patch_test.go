@@ -65,6 +65,38 @@ func TestApplyConfigPatch_AutonomousRecursionAndGuardrails(t *testing.T) {
 	if got := cfg.Autonomous.PerPRDGuardrails; len(got) != 0 {
 		t.Fatalf("per_prd_guardrails empty csv should clear: got %v", got)
 	}
+
+	// BL410 Phase 1 — retry-policy config.
+	applyConfigPatch(cfg, map[string]interface{}{
+		"autonomous.retry_policy":               map[string]interface{}{"infra": float64(4), "scope": float64(0)},
+		"autonomous.retry_ceiling_total":        float64(5),
+		"autonomous.infra_retry_escalate_after": float64(2),
+		"autonomous.content_auto_fix_enabled":   true,
+		"autonomous.auto_fix_skip_approval":     true,
+	})
+	if got := cfg.Autonomous.RetryPolicy; got["infra"] != 4 || got["scope"] != 0 {
+		t.Fatalf("retry_policy: got %v, want infra=4 scope=0", got)
+	}
+	if cfg.Autonomous.RetryCeilingTotal != 5 {
+		t.Fatalf("retry_ceiling_total: got %d, want 5", cfg.Autonomous.RetryCeilingTotal)
+	}
+	if cfg.Autonomous.InfraRetryEscalateAfter != 2 {
+		t.Fatalf("infra_retry_escalate_after: got %d, want 2", cfg.Autonomous.InfraRetryEscalateAfter)
+	}
+	if !cfg.Autonomous.ContentAutoFixEnabled {
+		t.Fatal("content_auto_fix_enabled: got false, want true")
+	}
+	if !cfg.Autonomous.AutoFixSkipApproval {
+		t.Fatal("auto_fix_skip_approval: got false, want true")
+	}
+	// Explicit clear-to-false must take effect (no omitempty elision).
+	applyConfigPatch(cfg, map[string]interface{}{
+		"autonomous.content_auto_fix_enabled": false,
+		"autonomous.auto_fix_skip_approval":   false,
+	})
+	if cfg.Autonomous.ContentAutoFixEnabled || cfg.Autonomous.AutoFixSkipApproval {
+		t.Fatal("explicit clear-to-false must take effect, not be silently elided")
+	}
 }
 
 // BL406 — verify rules_file/context_file/upstream_repos round-trip

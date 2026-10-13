@@ -189,7 +189,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "9.0.50"
+var Version = "9.0.51"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -745,6 +745,14 @@ type AutonomousAPI interface {
 	ListGuardrailProfiles() []any
 	GetGuardrailProfile(id string) (any, bool)
 	SetPRDGuardrails(prdID, profile string, perTask, perStory, perPRD []string) (any, error)
+
+	// BL410 Phase 1 — retry profiles + per-Automaton retry-policy override.
+	CreateRetryProfile(name, description string, budgets map[string]int, ceilingTotal, infraRetryEscalateAfter int, contentAutoFixEnabled, autoFixSkipApproval *bool) (any, error)
+	UpdateRetryProfile(id, name, description string, budgets map[string]int, ceilingTotal, infraRetryEscalateAfter int, contentAutoFixEnabled, autoFixSkipApproval *bool) (any, error)
+	DeleteRetryProfile(id string) error
+	ListRetryProfiles() []any
+	GetRetryProfile(id string) (any, bool)
+	SetPRDRetryPolicy(prdID, profile string, policy map[string]int, ceilingTotal int, contentAutoFixEnabled, autoFixSkipApproval *bool) (any, error)
 
 	// BL303 S3 T15 — on-demand guardrail invocation for a session.
 	// Runs the named guardrail against projectDir; result is appended to the
@@ -6821,6 +6829,29 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			} else if s, ok := v.(string); ok {
 				cfg.Autonomous.PerPRDGuardrails = splitCSV(s)
 			}
+		// BL410 Phase 1 — retry-policy config.
+		case "autonomous.retry_policy":
+			if obj, ok := v.(map[string]any); ok {
+				m := make(map[string]int, len(obj))
+				for k, raw := range obj {
+					if n, ok := toInt(raw); ok {
+						m[k] = n
+					}
+				}
+				cfg.Autonomous.RetryPolicy = m
+			}
+		case "autonomous.retry_ceiling_total":
+			if n, ok := toInt(v); ok {
+				cfg.Autonomous.RetryCeilingTotal = n
+			}
+		case "autonomous.infra_retry_escalate_after":
+			if n, ok := toInt(v); ok {
+				cfg.Autonomous.InfraRetryEscalateAfter = n
+			}
+		case "autonomous.content_auto_fix_enabled":
+			cfg.Autonomous.ContentAutoFixEnabled = toBool(v)
+		case "autonomous.auto_fix_skip_approval":
+			cfg.Autonomous.AutoFixSkipApproval = toBool(v)
 		// BL406 — project-rules enforcement config.
 		case "autonomous.rules_file":
 			cfg.Autonomous.RulesFile = toString(v)

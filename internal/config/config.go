@@ -1972,6 +1972,28 @@ type AutonomousConfig struct {
 	// rules review opt-in). Empty = disabled, same as the two above.
 	PerPRDGuardrails []string `yaml:"per_prd_guardrails,omitempty" json:"per_prd_guardrails,omitempty"`
 
+	// BL410 Phase 1 — per-category retry budgets. "content"/"policy"
+	// fall back to AutoFixRetries above when absent (backward-compat
+	// anchor). "infra"'s default (4) and "scope"'s (0) are seeded by
+	// DefaultConfig, not hardcoded in the resolver.
+	RetryPolicy map[string]int `yaml:"retry_policy,omitempty" json:"retry_policy,omitempty"`
+	// RetryCeilingTotal caps auto-retries summed across every category
+	// for one PRD's whole lifecycle (default 5 — a normal release PRD
+	// failing more than ~5 times means the spec needs updating or
+	// datawatch itself is broken, not a problem one more attempt
+	// fixes). PRD.RetryCeilingTotal or a named RetryProfile can raise
+	// this for genuinely iterative work (e.g. CVE test-and-fix PRDs).
+	RetryCeilingTotal int `yaml:"retry_ceiling_total,omitempty" json:"retry_ceiling_total,omitempty"`
+	// InfraRetryEscalateAfter — retries that keep the exact original
+	// backend/model config before an infra-category retry falls back
+	// to the global default (default 2).
+	InfraRetryEscalateAfter int `yaml:"infra_retry_escalate_after,omitempty" json:"infra_retry_escalate_after,omitempty"`
+	// ContentAutoFixEnabled/AutoFixSkipApproval have no omitempty —
+	// see AutoApproveChildren's comment below for why a bool config
+	// field needs the explicit-clear discipline. Defaults: both true.
+	ContentAutoFixEnabled bool `yaml:"content_auto_fix_enabled" json:"content_auto_fix_enabled"`
+	AutoFixSkipApproval   bool `yaml:"auto_fix_skip_approval" json:"auto_fix_skip_approval"`
+
 	// Phase 3 (v5.26.61) — per-story approval gate. Default false
 	// (preserves the v5.26.x behavior where PRD approval auto-
 	// approves every story). When true, PRD approval transitions
@@ -2476,7 +2498,16 @@ func DefaultConfig() *Config {
 			OllamaChunkTimeoutSec:  1200,
 			OllamaHeaderTimeoutSec: 900,
 		},
-		Autonomous:    AutonomousConfig{AutoFixRetries: 1},
+		Autonomous: AutonomousConfig{
+			AutoFixRetries: 1,
+			// BL410 Phase 1 — see AutonomousConfig.RetryPolicy's doc
+			// comment for why "content"/"policy" are absent here.
+			RetryPolicy:             map[string]int{"infra": 4, "scope": 0},
+			RetryCeilingTotal:       5,
+			InfraRetryEscalateAfter: 2,
+			ContentAutoFixEnabled:   true,
+			AutoFixSkipApproval:     true,
+		},
 		Ntfy:          NtfyConfig{ServerURL: "https://ntfy.sh"},
 		Email:         EmailConfig{Port: 587},
 		ImapMcp:       ImapMcpConfig{SubjectPrefix: "datawatch"},

@@ -1254,7 +1254,12 @@ func (m *Manager) runPerTaskGuardrails(ctx context.Context, prd *PRD, t *Task) (
 		} else if scriptPassed {
 			v = scriptPassVerdict(t.VerificationScript) // BL416 P3: no LLM call on a clean deterministic pass
 		} else if fn != nil {
-			v, err = fn(ctx, inv)
+			// BL410 Phase 1 — bounded, escalating auto-retry for an
+			// infra-category block (the guardrail session itself
+			// failed, no real judgment ran). A content/scope/policy
+			// block, or infra once the budget is exhausted, falls
+			// through unchanged to the TaskBlocked handling below.
+			v, err = m.runGuardrailWithInfraRetry(ctx, prd, inv, fn)
 		} else {
 			continue // silent no-op: scan not in lib + no GuardrailFn
 		}
@@ -1308,7 +1313,8 @@ func (m *Manager) runPerStoryGuardrails(ctx context.Context, prd *PRD, s *Story)
 		} else if scriptPassed {
 			v = scriptPassVerdict(s.VerificationScript) // BL416 P3: no LLM call on a clean deterministic pass
 		} else if fn != nil {
-			v, err = fn(ctx, inv)
+			// BL410 Phase 1 — see runPerTaskGuardrails' identical comment.
+			v, err = m.runGuardrailWithInfraRetry(ctx, prd, inv, fn)
 		} else {
 			continue // silent no-op
 		}

@@ -134,7 +134,14 @@ func (m *Manager) runPRDCompletionRulesReview(ctx context.Context, prd *PRD) (bl
 	// identical to runPerStoryGuardrails' own reuse of the same helper.
 	inv.GuardrailBackend, inv.GuardrailModel = resolveGuardrailBackendModel(&Task{}, prd, globalBackend, globalModel)
 
-	v, ferr := fn(ctx, inv)
+	// BL410 Phase 1 — bounded, escalating auto-retry for an infra-
+	// category block (the guardrail session itself failed — this is
+	// exactly the incident that triggered BL410: a 10-minute session
+	// timeout required manual operator intervention, indistinguishable
+	// from a genuine AGENT.md finding). A content block — a real
+	// judgment, like rules-review's own post-fix `warn` — falls
+	// through unchanged to the PRDBlocked handling below.
+	v, ferr := m.runGuardrailWithInfraRetry(ctx, prd, inv, fn)
 	if ferr != nil {
 		return false, fmt.Errorf("rules review for prd %s: %w", prd.ID, ferr)
 	}

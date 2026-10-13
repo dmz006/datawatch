@@ -140,6 +140,18 @@ func (f *fakeOrchAutonomous) DeleteGuardrailProfile(string) error               
 func (f *fakeOrchAutonomous) ListGuardrailProfiles() []any                                                      { return nil }
 func (f *fakeOrchAutonomous) GetGuardrailProfile(string) (any, bool)                                            { return nil, false }
 func (f *fakeOrchAutonomous) SetPRDGuardrails(string, string, []string, []string, []string) (any, error)        { return nil, nil }
+func (f *fakeOrchAutonomous) CreateRetryProfile(string, string, map[string]int, int, int, *bool, *bool) (any, error) {
+	return nil, nil
+}
+func (f *fakeOrchAutonomous) UpdateRetryProfile(string, string, string, map[string]int, int, int, *bool, *bool) (any, error) {
+	return nil, nil
+}
+func (f *fakeOrchAutonomous) DeleteRetryProfile(string) error  { return nil }
+func (f *fakeOrchAutonomous) ListRetryProfiles() []any         { return nil }
+func (f *fakeOrchAutonomous) GetRetryProfile(string) (any, bool) { return nil, false }
+func (f *fakeOrchAutonomous) SetPRDRetryPolicy(string, string, map[string]int, int, *bool, *bool) (any, error) {
+	return nil, nil
+}
 
 // BL303 S3 T15 — on-demand guardrail invocation stub.
 func (f *fakeOrchAutonomous) InvokeGuardrailByName(string, string) (any, error) { return nil, nil }
