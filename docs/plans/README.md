@@ -882,6 +882,41 @@ established. In progress — starting with BL403.**
     outside the daemon's own cgroup so a retry can't repeat today's
     OOM. Uses `claude-code` for decompose/execution/verification per
     the operator's explicit instruction for dev PRDs.
+20. **BL421** — PRD lifecycle can't recover a blocked/cancelled task's
+    spec without a full re-decompose (filed 2026-10-13, same day).
+    Not roadmap work — surfaced live while trying to fix BL420's own
+    reproduction-harness task, which `decompose` had written with a
+    literal `/usr/bin/time` path in its spec prose; the scope-linter
+    flags any absolute-path-looking string against the PRD's allowed
+    dirs regardless of whether it's a real read/write claim or just a
+    prose mention of an already-installed system binary, so the task
+    blocked immediately on spawn. `autonomous_prd_edit_task` only
+    accepts PRD status `needs_review`/`revisions_asked`/`cancelled`,
+    and the only path back from `blocked` is `cancel` ->
+    `reset_to_draft` -> `decompose`, which (per its own tool
+    description) regenerates the whole story/task tree — risking the
+    bookkeeping record of already-completed sibling tasks, even though
+    the actual code commit is safe in git regardless. Also confirmed
+    `autonomous_prd_cancel` silently killed one ephemeral session
+    (`killed_sessions:1`, no ID given) — verified directly it wasn't
+    `ab22`/`9245`/`ddeb` before proceeding, but the response should
+    name what it killed rather than make the operator verify by hand.
+    Scope for the fix: (1) allow `autonomous_prd_edit_task` from
+    `blocked` status too, so a blocked task's spec can be corrected
+    and `reset_task`'d in place with no cancel/decompose round trip;
+    (2) teach the scope-linter to distinguish "this task needs to
+    read/write under `/x/y`" from "this task invokes the already-
+    installed binary at `/x/y`" — at minimum whitelist standard system
+    bin dirs (`/usr/bin`, `/bin`, `/usr/local/bin`) for read/execute
+    references; (3) update decompose's own prompt/guidance to never
+    hardcode an absolute system-binary path in a task spec — reference
+    commands by name, resolved via `$PATH`/`command -v`; (4)
+    `autonomous_prd_cancel`'s response should name the killed session
+    ID(s), not just a count. Uses `claude-code` for decompose/
+    execution/verification per the standing dev-PRD directive. BL420
+    itself is paused (not abandoned — task 1's `tracker.go` fix
+    already shipped/committed; task 2's spec is already corrected and
+    waiting) until this ships and the daemon's redeployed.
 
 **Outside the queue, handled separately, not blocking Stage 3:**
 - ~~**BL381**~~ — status-verified 2026-10-10: shipped v8.28.0 + v8.28.2
