@@ -18,6 +18,37 @@
 #   SMOKE_PORT=19080 SMOKE_TLS_PORT=19443 bash ...        # override ports (normally auto-assigned)
 #   KEEP_TEST_DIR=1 bash scripts/release-smoke.sh         # keep data dir on exit
 #
+# External-daemon mode (2026-10-13) — when you want this script's
+# FUNCTIONAL checks run against a daemon you already have running
+# (a CI-deployed kind/k8s instance, a persistent dev daemon, a remote
+# sandbox) instead of spinning up a fresh isolated one:
+#   DW_BASE=http://localhost:18080 bash scripts/release-smoke.sh
+#   DW_BASE=https://sandbox.example:8443 DW_BASE_TOKEN=xyz bash ...
+#
+# DW_BASE must be a full base URL (scheme://host:port, no trailing
+# slash). When set: no local datawatch binary is required, no daemon
+# is started or killed, and no test-config.yaml/data dir is created
+# for a daemon (TEST_DATA_DIR is still created for this script's own
+# scratch files, e.g. eval suite fixtures). DW_BASE_TOKEN is optional
+# (empty = no Authorization header, matching the external daemon's
+# own auth config). Checks that depend on controlling the DAEMON'S
+# OWN config/fixtures from the outside (BL403 Phase 1/2's plugin
+# discovery/lifecycle sections, which assume this script's own
+# PLUGINS_SMOKE_DIR fixture is the daemon's configured plugins.dir)
+# are skipped in this mode, not failed — everything else runs
+# identically against any already-running daemon. Every other
+# functional section already degrades to SKIP when ITS subsystem is
+# disabled in the target daemon's config (autonomous/memory/etc.),
+# which is the same graceful-degradation this mode relies on.
+#
+# This is the sibling mechanism to scripts/run-tests.sh's own
+# existing --no-daemon + TEST_BASE override (see that script's own
+# header) — same idea, independent implementation, because the two
+# scripts' daemon-lifecycle code predates this generalization and
+# nothing else in either script depends on the two sharing one
+# variable name. See docs/howto/testing-against-a-running-daemon.md
+# for the full reference (both mechanisms, side by side).
+#
 # Returns 0 on success, non-zero on first failure.
 
 set -uo pipefail
@@ -70,19 +101,54 @@ free_port() {
   python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); p=s.getsockname()[1]; s.close(); print(p)'
 }
 
-# --- isolated test daemon ----------------------------------------------------
+# --- isolated test daemon (or an external one — see DW_BASE above) ----------
 # Each run gets a unique 6-char hex ID so parallel runs don't collide.
 RUN_ID="$(openssl rand -hex 3)"
 TEST_WORK_DIR="$REPO_PARENT/datawatch-smoke-${RUN_ID}"
 TEST_DATA_DIR="$TEST_WORK_DIR/.datawatch-test-$$"
-mkdir -p "$TEST_DATA_DIR"
+mkdir -p "$TEST_DATA_DIR" # scratch dir for this script's own fixtures either way
 
-SMOKE_PORT="${SMOKE_PORT:-$(free_port)}"
-SMOKE_TLS_PORT="${SMOKE_TLS_PORT:-$(free_port)}"
+EXTERNAL_DAEMON=0
+PLUGINS_SMOKE_DIR=""
+DEMO_SERVICE_PORT=""
 
-# Write a minimal config for the test daemon.
-TEST_CONFIG="$TEST_WORK_DIR/test-config.yaml"
-cat > "$TEST_CONFIG" <<YAML
+if [[ -n "${DW_BASE:-}" ]]; then
+  EXTERNAL_DAEMON=1
+  BASE="$DW_BASE"
+  TOK="${DW_BASE_TOKEN:-}"
+  _DW_BIN="${DATAWATCH_BIN:-}"
+  if [[ -z "$_DW_BIN" ]]; then
+    [[ -x "$REPO_DIR/datawatch" ]] && _DW_BIN="$REPO_DIR/datawatch" || _DW_BIN="$(command -v datawatch || true)"
+  fi
+  # CLI checks are optional in this mode (no local binary required) --
+  # section 50's own "datawatch CLI not available" skip path already
+  # handles DW_CLI being unset.
+  if [[ -n "$_DW_BIN" ]]; then
+    DW_CLI="$_DW_BIN -u $BASE"
+    export DATAWATCH_TOKEN="$TOK" # -u/--url mode reads this env var, not --config
+    # Every REST/MCP check in this script already uses curl -sk
+    # (skip-verify) unconditionally, regardless of mode -- so default
+    # the CLI's own -u-mode TLS trust to match that same posture rather
+    # than make the common case (a self-signed test/sandbox/kind-cluster
+    # daemon) silently fail every CLI check. Explicit override: set
+    # DW_BASE_INSECURE=0 yourself before invoking this script if your
+    # external daemon has a real, CA-trusted cert and you want the CLI
+    # checks to actually verify it.
+    export DW_BASE_INSECURE="${DW_BASE_INSECURE:-1}"
+  else
+    DW_CLI=""
+  fi
+  echo "Smoke run ID  : $RUN_ID (external-daemon mode)"
+  echo "Test daemon   : $BASE"
+  echo "Binary        : ${_DW_BIN:-<none — CLI checks will skip>}"
+  echo ""
+else
+  SMOKE_PORT="${SMOKE_PORT:-$(free_port)}"
+  SMOKE_TLS_PORT="${SMOKE_TLS_PORT:-$(free_port)}"
+
+  # Write a minimal config for the test daemon.
+  TEST_CONFIG="$TEST_WORK_DIR/test-config.yaml"
+  cat > "$TEST_CONFIG" <<YAML
 data_dir: ${TEST_DATA_DIR}
 hostname: dw-smoke-test
 server:
@@ -102,60 +168,61 @@ plugins:
   dir: ${TEST_DATA_DIR}/plugins
 YAML
 
-# --- plugin fixtures (BL403) -------------------------------------------------
-# Copy the repo's reference examples into this run's isolated plugin dir
-# rather than pointing plugins.dir at examples/plugins directly -- the
-# demo-service fixture starts a real subprocess bound to a real port
-# (BL403 Phase 2's managed lifecycle), so each parallel smoke run needs
-# its own freshly-allocated port, not the illustrative placeholder
-# committed in the example manifest.
-PLUGINS_SMOKE_DIR="${TEST_DATA_DIR}/plugins"
-mkdir -p "$PLUGINS_SMOKE_DIR"
-cp -r "$REPO_DIR/examples/plugins/hello-automation" "$PLUGINS_SMOKE_DIR/"
-cp -r "$REPO_DIR/examples/plugins/demo-service" "$PLUGINS_SMOKE_DIR/"
-DEMO_SERVICE_PORT="$(free_port)"
-sed -i "s/8765/${DEMO_SERVICE_PORT}/g" "$PLUGINS_SMOKE_DIR/demo-service/manifest.yaml"
+  # --- plugin fixtures (BL403) -----------------------------------------------
+  # Copy the repo's reference examples into this run's isolated plugin dir
+  # rather than pointing plugins.dir at examples/plugins directly -- the
+  # demo-service fixture starts a real subprocess bound to a real port
+  # (BL403 Phase 2's managed lifecycle), so each parallel smoke run needs
+  # its own freshly-allocated port, not the illustrative placeholder
+  # committed in the example manifest.
+  PLUGINS_SMOKE_DIR="${TEST_DATA_DIR}/plugins"
+  mkdir -p "$PLUGINS_SMOKE_DIR"
+  cp -r "$REPO_DIR/examples/plugins/hello-automation" "$PLUGINS_SMOKE_DIR/"
+  cp -r "$REPO_DIR/examples/plugins/demo-service" "$PLUGINS_SMOKE_DIR/"
+  DEMO_SERVICE_PORT="$(free_port)"
+  sed -i "s/8765/${DEMO_SERVICE_PORT}/g" "$PLUGINS_SMOKE_DIR/demo-service/manifest.yaml"
 
-# Find the datawatch binary (prefer freshly built binary in repo root).
-_DW_BIN="${DATAWATCH_BIN:-}"
-if [[ -z "$_DW_BIN" ]]; then
-  [[ -x "$REPO_DIR/datawatch" ]] && _DW_BIN="$REPO_DIR/datawatch" || _DW_BIN="$(command -v datawatch)"
+  # Find the datawatch binary (prefer freshly built binary in repo root).
+  _DW_BIN="${DATAWATCH_BIN:-}"
+  if [[ -z "$_DW_BIN" ]]; then
+    [[ -x "$REPO_DIR/datawatch" ]] && _DW_BIN="$REPO_DIR/datawatch" || _DW_BIN="$(command -v datawatch)"
+  fi
+  [[ -z "$_DW_BIN" ]] && { echo "ERROR: datawatch binary not found. Build first or set DATAWATCH_BIN=<path>" >&2; exit 1; }
+
+  echo "Smoke run ID : $RUN_ID"
+  echo "Test data dir: $TEST_DATA_DIR"
+  echo "Test daemon  : https://127.0.0.1:${SMOKE_TLS_PORT}"
+  echo "Binary       : $_DW_BIN"
+  echo ""
+
+  # Start the test daemon in the background.
+  "$_DW_BIN" --config "$TEST_CONFIG" start --foreground \
+    >"$TEST_WORK_DIR/daemon.log" 2>&1 &
+  TEST_DAEMON_PID=$!
+
+  # Wait up to 30 s for the daemon to answer health.
+  echo "Waiting for test daemon..."
+  _ready=0
+  for _i in $(seq 1 30); do
+    curl -sk --max-time 2 "https://127.0.0.1:${SMOKE_TLS_PORT}/api/health" >/dev/null 2>&1 && { _ready=1; break; }
+    sleep 1
+  done
+  if [[ $_ready -eq 0 ]]; then
+    echo "ERROR: test daemon did not start within 30 s. Log:" >&2
+    tail -30 "$TEST_WORK_DIR/daemon.log" >&2
+    kill "$TEST_DAEMON_PID" 2>/dev/null || true
+    rm -rf "$TEST_WORK_DIR"
+    exit 1
+  fi
+  echo "Test daemon ready."
+  echo ""
+
+  BASE="https://127.0.0.1:${SMOKE_TLS_PORT}"
+  TOK=""   # test daemon starts with no auth token
+  # CLI commands use -u + --config so the TLS cert path and token are read from
+  # the smoke daemon's config (not from ~/.datawatch which points at production).
+  DW_CLI="$_DW_BIN --config $TEST_CONFIG -u $BASE"
 fi
-[[ -z "$_DW_BIN" ]] && { echo "ERROR: datawatch binary not found. Build first or set DATAWATCH_BIN=<path>" >&2; exit 1; }
-
-echo "Smoke run ID : $RUN_ID"
-echo "Test data dir: $TEST_DATA_DIR"
-echo "Test daemon  : https://127.0.0.1:${SMOKE_TLS_PORT}"
-echo "Binary       : $_DW_BIN"
-echo ""
-
-# Start the test daemon in the background.
-"$_DW_BIN" --config "$TEST_CONFIG" start --foreground \
-  >"$TEST_WORK_DIR/daemon.log" 2>&1 &
-TEST_DAEMON_PID=$!
-
-# Wait up to 30 s for the daemon to answer health.
-echo "Waiting for test daemon..."
-_ready=0
-for _i in $(seq 1 30); do
-  curl -sk --max-time 2 "https://127.0.0.1:${SMOKE_TLS_PORT}/api/health" >/dev/null 2>&1 && { _ready=1; break; }
-  sleep 1
-done
-if [[ $_ready -eq 0 ]]; then
-  echo "ERROR: test daemon did not start within 30 s. Log:" >&2
-  tail -30 "$TEST_WORK_DIR/daemon.log" >&2
-  kill "$TEST_DAEMON_PID" 2>/dev/null || true
-  rm -rf "$TEST_WORK_DIR"
-  exit 1
-fi
-echo "Test daemon ready."
-echo ""
-
-BASE="https://127.0.0.1:${SMOKE_TLS_PORT}"
-TOK=""   # test daemon starts with no auth token
-# CLI commands use -u + --config so the TLS cert path and token are read from
-# the smoke daemon's config (not from ~/.datawatch which points at production).
-DW_CLI="$_DW_BIN --config $TEST_CONFIG -u $BASE"
 
 TMPD=$(mktemp -d)
 
@@ -1935,6 +2002,9 @@ H "15. v6.10.0 BL259 P1 — Evals framework: list suites + grader smoke"
 EV_GET=$(curl "${curl_args[@]}" -o /dev/null -w "%{http_code}" "$BASE/api/evals/suites" 2>/dev/null || echo "000")
 if [[ "$EV_GET" != "200" ]]; then
   skip "evals disabled or endpoint unreachable (HTTP $EV_GET)"
+elif [[ "$EXTERNAL_DAEMON" == "1" ]]; then
+  ok "evals suites endpoint reachable"
+  skip "evals run smoke: external-daemon mode (DW_BASE) — this check drops a fixture suite file into the DAEMON's own data dir via the filesystem, which only works when this script and the daemon share one filesystem (not guaranteed for an external/remote/in-cluster target)"
 else
   ok "evals suites endpoint reachable"
   # Drop a tiny capability suite in the smoke daemon's data dir, run it, expect pass.
@@ -3405,6 +3475,9 @@ fi
 
 # ---------------------------------------------------------------------------
 H "67. BL403 Phase 1 — plugin discovery surfaces manifest v3 kind/connection/lifecycle"
+if [[ "$EXTERNAL_DAEMON" == "1" ]]; then
+  skip "S67 — external-daemon mode (DW_BASE): this script doesn't control the target daemon's plugins.dir, so the hello-automation/demo-service fixtures this check depends on may not be loaded there"
+else
 AUTO_JSON=$(curl "${curl_args[@]}" -H "Authorization: Bearer $TOK" "$BASE/api/plugins/hello-automation" 2>/dev/null || echo "")
 if echo "$AUTO_JSON" | grep -q '"name":"hello-automation"'; then
   ok "S67 — automation-kind example plugin discovered"
@@ -3433,9 +3506,13 @@ if echo "$SVC_JSON" | grep -q '"managed"'; then
 else
   ko "S67 — demo-service lifecycle.supported_modes missing managed: ${SVC_JSON:0:300}"
 fi
+fi
 
 # ---------------------------------------------------------------------------
 H "68. BL403 Phase 2 — managed service-plugin lifecycle (start/health/stop) end-to-end"
+if [[ "$EXTERNAL_DAEMON" == "1" ]]; then
+  skip "S68 — external-daemon mode (DW_BASE): see S67's identical reason"
+else
 curl "${curl_args[@]}" -X POST -H "Authorization: Bearer $TOK" -H "Content-Type: application/json" \
   -d '{"managed":true}' "$BASE/api/plugins/demo-service/enable" >/dev/null 2>&1
 
@@ -3500,6 +3577,7 @@ if echo "$AUDIT_STOP" | grep -q '"demo-service"'; then
   ok "S68 — plugin_service_stop audit entry recorded for demo-service"
 else
   ko "S68 — no plugin_service_stop audit entry found for demo-service: ${AUDIT_STOP:0:300}"
+fi
 fi
 
 # ---------------------------------------------------------------------------

@@ -5,6 +5,62 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.58 — fix(ci): kind-smoke doc-sync + real external-daemon mode for release-smoke.sh
+
+### Fixed
+- **`kind-smoke` CI job** was failing on every PR regardless of content,
+  for two separate, now-fixed reasons:
+  1. `release-smoke.sh`'s own static-lint section requires
+     `internal/server/web/docs/` (gitignored) to be in sync with
+     `docs/`, but `kind-smoke.yaml` never ran the sync step on the
+     host checkout (only `ci.yaml` did). Added a `sync-docs` step
+     right after checkout.
+  2. Once that was fixed, a second, deeper bug surfaced: `DW_BASE`
+     (the env var `kind-smoke.yaml` sets, intending to point
+     `release-smoke.sh` at the daemon already running inside the kind
+     cluster) was dead configuration — `release-smoke.sh` always
+     spun up its own separate, local daemon and ignored it entirely.
+     The job never actually tested the in-kind-deployed daemon.
+
+### Added
+- **Real external-daemon mode for `release-smoke.sh`**: `DW_BASE=<url>`
+  (plus optional `DW_BASE_TOKEN` / `DW_BASE_INSECURE`) now runs every
+  functional check against an already-running daemon instead of
+  starting a fresh isolated one. No local binary required; no daemon
+  started or killed. The two checks that need to drop a fixture file
+  where the *daemon* reads it from local disk (managed-plugin
+  discovery/lifecycle, the evals-suite smoke check) report `SKIP`
+  with an explicit reason in this mode rather than a false `FAIL` —
+  everything else (every REST/MCP check, every CLI round-trip) runs
+  identically against any daemon, local or external.
+- **`daemonClient()` (`cmd/datawatch/cli_sx_parity.go`) learns
+  `DW_BASE_INSECURE`**: when `-u`/`--url` points at a daemon other
+  than the one the local config describes, trusting the local
+  config's own TLS cert would be wrong (not just ineffective) — it
+  belongs to a different daemon. `DW_BASE_INSECURE` opts the CLI's
+  `-u`-mode calls into skipping verification for that known external
+  target; normal production CLI use (no `-u`) is completely
+  unaffected. Defaults on inside `release-smoke.sh`'s external-daemon
+  mode (matching every other check in that script, which already
+  uses `curl -sk` unconditionally) with an explicit opt-out.
+- **New howto**: `docs/howto/testing-against-a-running-daemon.md`
+  documents both this new mechanism and `run-tests.sh`'s pre-existing,
+  independent `--no-daemon`/`TEST_BASE`/`TEST_BASE_HTTP`/`TEST_TOKEN`
+  equivalent (which existed before this release but had never been
+  written up anywhere) — cross-linked from `daemon-operations.md` and
+  `AGENT.md`'s smoke-testing section, and listed in the howto index
+  (which was also missing a `retry-policy.md` entry from v9.0.55,
+  fixed in the same pass).
+
+### Testing
+Reproduced the root cause of both `kind-smoke` bugs locally before
+fixing: emptied the doc mirror to confirm the sync-check fails/passes
+correctly around the fix; started a real standalone daemon and ran
+`release-smoke.sh` against it via `DW_BASE` before AND after the
+`DW_BASE_INSECURE`/fixture-skip fixes (13 failures → 0). Full default-
+mode regression run unaffected (203 pass/0 fail/35 skip, unchanged).
+`go test ./...`: 3865 pass.
+
 ## v9.0.57 — fix(autonomous): BL410 remediation — Decompose retry wiring + FailureReason population
 
 ### Added

@@ -261,5 +261,6 @@ channels:  # see comm-channels.md
 - [datawatch-definitions](../datawatch-definitions.md)
 - [howto/setup-and-install](setup-and-install.md)
 - [howto/federated-observer](federated-observer.md)
+- [howto/testing-against-a-running-daemon](testing-against-a-running-daemon.md) — run the functional/E2E test scripts against a daemon you already have running, instead of a fresh throwaway one
 - [architecture-overview](../architecture-overview.md)
 - [operations](../operations.md)

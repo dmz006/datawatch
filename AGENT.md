@@ -1247,7 +1247,9 @@ When in doubt, run smoke. Cost is low; coverage is the point. The autonomous dec
 
 **Always run smoke on an isolated sandbox daemon — NEVER against the production instance.** `release-smoke.sh` starts its own fresh test daemon with a temporary data directory and random port; it never touches the production daemon or its data. Do not point the smoke script at the production instance by overriding `DATAWATCH_BIN`, `SMOKE_PORT`, or `SMOKE_TLS_PORT` to match the production daemon. If an ad-hoc targeted check is needed against a live system, use a dedicated secondary sandbox instance (e.g. a second daemon started with a separate `--config` and `--data-dir`), never `~/.datawatch`.
 
-Run `./scripts/release-smoke.sh` (no `BASE` override). The script exercises:
+**External-daemon mode (2026-10-13):** `DW_BASE=<url>` (plus optional `DW_BASE_TOKEN` / `DW_BASE_INSECURE`) runs smoke's functional checks against an already-running daemon instead of starting a fresh one — the sanctioned way to do the "ad-hoc targeted check against a live system" case above, and what the `kind-smoke` CI job uses to actually exercise the in-cluster-deployed daemon rather than a throwaway local one. `DW_BASE` must point at a dedicated sandbox/test/CI-deployed instance — the same never-against-production rule applies to it as to every other override on this line. Full reference: [`docs/howto/testing-against-a-running-daemon.md`](docs/howto/testing-against-a-running-daemon.md) (covers `run-tests.sh`'s equivalent `--no-daemon`/`TEST_BASE` mechanism too).
+
+Run `./scripts/release-smoke.sh` (no `DW_BASE` override, for the default isolated-daemon mode). The script exercises:
 
 - `/api/health` + version
 - `/api/backends` shape
