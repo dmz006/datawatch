@@ -834,8 +834,54 @@ established. In progress — starting with BL403.**
     ever needing `WaitingInput`. Accepted `complete` as a pass
     alongside `waiting_input` — reaching any real terminal state
     (not stuck forever in `Running`) is itself proof the watcher
-    works. **`kind-smoke` is now expected fully green** on the next
-    CI run; not yet confirmed as of this entry (watching).
+    works. **Confirmed**: PR #241 landed fully green (15/15 checks,
+    including `kind-smoke` and `review`), merged into `main`
+    (`fedef963`), production daemon redeployed to v9.0.61 via
+    `make install` (the plain `go build` in the repo root does not
+    touch the installed binary systemd actually runs — caught live
+    when a first `restart` silently kept serving the stale v9.0.53).
+
+19. **BL420** — session-tracker git repo growth OOM-kills the whole
+    daemon (filed + mitigated 2026-10-13, same day). Not roadmap work
+    — surfaced while starting the first PRD-driven dev session under
+    the new "build the backlog in PRDs" operating model: the daemon
+    OOM-killed itself twice in ~90 minutes (`systemd`: "107.4G memory
+    peak" / "106.9G memory peak", `Failed with result 'oom-kill'`,
+    restart counter climbing — a crash loop, since each restart
+    re-triggers the same commit on the same bloated repo). Root cause,
+    confirmed live: `internal/session/tracker.go`'s commit path
+    (`git add -A` then `git commit --allow-empty` on every tracked
+    session event, ~line 598-609) has no exclusion for `output.log`
+    (the live, ever-growing claude-code output stream) and no repo-
+    size management at init (~line 32-42). For a long-lived session
+    this produces many large loose blobs; git's default auto-gc
+    threshold eventually trips mid-commit, and the resulting
+    `git repack -d -l` -> `git pack-objects --all --reflog
+    --unpacked --incremental` has to delta-compress those blobs — an
+    operation whose memory cost scales with blob size and isn't
+    capped by default, consuming all available RAM+swap and OOM-
+    killing the entire `datawatch.service` cgroup (confirmed via
+    `/proc/<pid>/cgroup`), not just the git subprocess. Worst offender:
+    `~/.datawatch/sessions/johnnyjohnny-ab22/` at 30GB/.git (3488
+    commits) — a long-lived session never cleaned up; also found
+    `johnnyjohnny-9245` (this session) at 8.7GB and `johnnyjohnny-ddeb`
+    at 815MB, out of 322 session repos total, all with git's implicit
+    default gc threshold still in effect.
+    **Immediate stopgap applied directly** (the daemon needed to
+    survive long enough to run the real fix as a PRD): killed the
+    runaway `pack-objects`/`repack` tree, confirmed no leaked temp
+    pack file, set `gc.auto=0` across all 322 session repos (non-
+    destructive — stops the implicit re-trigger, doesn't touch
+    history), and dropped `autonomous.max_parallel_tasks` to 1 per
+    the operator's new single-task-at-a-time constraint.
+    **Real fix tracked as a dev PRD** (first one run under the new
+    "all datawatch dev work goes through PRDs" directive — see
+    `feedback_dev_work_via_prds` in memory): stop tracking/rotate
+    `output.log` out of the commit path, bound any future repo
+    maintenance by memory, and shrink the existing bloated repos
+    outside the daemon's own cgroup so a retry can't repeat today's
+    OOM. Uses `claude-code` for decompose/execution/verification per
+    the operator's explicit instruction for dev PRDs.
 
 **Outside the queue, handled separately, not blocking Stage 3:**
 - ~~**BL381**~~ — status-verified 2026-10-10: shipped v8.28.0 + v8.28.2
