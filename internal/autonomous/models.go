@@ -626,6 +626,17 @@ type GuardrailVerdict struct {
 	Summary   string    `json:"summary"`
 	Issues    []string  `json:"issues,omitempty"`
 	VerdictAt time.Time `json:"verdict_at"`
+	// Category (BL410 Phase 0) classifies WHY a non-pass outcome happened:
+	// "infra" (the judging mechanism itself failed — session timeout/
+	// crash/unparseable response — never reached a real judgment) vs
+	// "content" (a real judgment ran and found a real issue). Empty
+	// means "content" — the pre-BL410 implicit behavior, since every
+	// verdict before this field existed came from a completed judgment.
+	// See FailureReason's doc comment for the full taxonomy. Found live
+	// 2026-10-12: a session timeout and a genuine AGENT.md violation both
+	// produced an indistinguishable block outcome, so a timeout required
+	// the same manual operator intervention as a real compliance finding.
+	Category string `json:"category,omitempty"`
 }
 
 // VerificationResult is BL25 output. Severity levels match
@@ -638,6 +649,9 @@ type VerificationResult struct {
 	DiffSHA    string    `json:"diff_sha,omitempty"` // git rev-parse HEAD post-task
 	VerifiedAt time.Time `json:"verified_at"`
 	VerifierID string    `json:"verifier_id,omitempty"` // session ID of the verifier worker
+	// Category (BL410 Phase 0) — see GuardrailVerdict.Category's doc
+	// comment; same taxonomy, same empty-means-"content" default.
+	Category string `json:"category,omitempty"`
 }
 
 // Learning is a post-task insight extracted by the loop and saved
