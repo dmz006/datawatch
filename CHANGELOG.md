@@ -5,6 +5,85 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.59 — fix(ci): kind-smoke fully working + production docs-index build bug
+
+### Fixed
+- **`daemonClient()` regression from v9.0.58, caught before it shipped
+  further**: gating external-daemon TLS trust on `serverURL != ""`
+  alone broke the script's own default local-daemon mode, since
+  `release-smoke.sh`'s local `DW_CLI` has always passed both `--config`
+  and `-u` together. Fixed by gating on `cfgPath == ""` specifically —
+  only skip the config-based cert trust when there's genuinely no
+  local config describing the target. Caught by re-running the full
+  suite rather than assuming the prior fix was safe (12 CLI checks
+  failed); both modes re-verified clean after the fix.
+- **`release-smoke-wakeup.sh` conflated skip with fail**: a memory-
+  disabled daemon's probe correctly returned "skip" (exit 2) per
+  probe, but the caller's `probe ... || failed=1` treated any
+  non-zero return as a failure, always exiting 1. Tracks skip and
+  fail separately now; all-skip exits 2, any real failure still
+  exits 1.
+- **`release-smoke.sh`'s mempalace section (sweep_stale/spellcheck/
+  extract_facts) had no memory-enabled gate at all**, unlike its
+  sibling section just above — hard-FAILed the first time it ever ran
+  against a daemon with memory disabled by default (every prior run
+  only ever hit the local test daemon's own always-on config). Now
+  gated on the same `$MEM_OK` check.
+- **Every production container image built from `Dockerfile.agent-base`
+  has shipped with an empty docs-search index** (`docs_search`/
+  `docs_list_howtos` always returned nothing) since
+  `internal/docsindex/embedded.go`'s `//go:embed` target
+  (`assets/docs-bm25-index.json`) was only ever stubbed with a
+  throwaway `{}` placeholder at build time, and `docs/` was excluded
+  from the Docker build context entirely via `.dockerignore`. Fixed:
+  `docs/` un-ignored (≈22MB, negligible build-context cost), builder
+  stage now runs the real `make sync-docs docs-index` (installing
+  `rsync`, not present in the base `golang` image, to support it).
+  Verified with an actual `docker build` + extracted binary: 3399
+  chunks / 186 paths indexed; `docs_list_howtos` now returns 59 real
+  refs where it previously returned 0.
+- **`run-tests.sh`'s own documented external-daemon mechanism didn't
+  work**: this release's own first-draft howto doc (see v9.0.58)
+  claimed `--no-daemon` + a pre-set `TEST_BASE` pointed the E2E runner
+  at an arbitrary already-running daemon. Testing it live (at operator
+  direction, after asking "did you actually test this with an E2E
+  test") proved that wrong: `TEST_PORT`/`TEST_TLS_PORT` are only
+  honored by the script's port-picker when the given port is
+  currently *free* — never true for an already-running daemon — so
+  `TEST_BASE` got silently recomputed and the run failed against
+  nothing.
+
+### Added
+- **Real external-daemon mode for `run-tests.sh`**, mirroring
+  `release-smoke.sh`'s mechanism exactly: `DW_BASE`/`DW_BASE_TOKEN`/
+  `DW_BASE_INSECURE`. One shared mechanism across both scripts now,
+  not two. `--no-daemon` on its own still means what it always meant
+  (skip this run's own daemon-start step, for resuming a daemon this
+  *same* harness already started) — it was never a general external-
+  daemon override and the doc now says so correctly.
+- Filed as **BL419** in `docs/plans/README.md` — this work was never
+  on the v10.0.0 roadmap; it grew from a direct operator question
+  about PR-notification noise into a multi-bug fix once actually
+  tested, and is tracked for the record rather than left as
+  untracked work hiding in commit messages.
+
+### Still open
+An `opencode-acp` session state-detection timeout surfaced in the
+real kind-deployed environment (works fine against a local daemon) —
+not yet root-caused; likely an environment/chart-config gap, not a
+script bug. Not blocking this fix from shipping.
+
+### Testing
+Every fix in this release was verified against a real daemon (never
+assumed from reading code): 4 separate standalone daemons spun up
+across this release's fix cycle (memory-enabled, memory-disabled,
+token-authed, Docker-built-binary), each exercised via direct `curl`/
+CLI calls and/or a full `release-smoke.sh`/`run-tests.sh` run. Final
+state: default-mode smoke 203 pass/0 fail/35 skip; external-mode
+smoke 191 pass/0 fail/38 skip; `go test ./...` 3865 pass; a real
+`docker build` of the builder stage confirmed the index-generation
+fix end-to-end.
+
 ## v9.0.58 — fix(ci): kind-smoke doc-sync + real external-daemon mode for release-smoke.sh
 
 ### Fixed

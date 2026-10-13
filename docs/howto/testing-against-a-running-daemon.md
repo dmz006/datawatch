@@ -55,42 +55,47 @@ this mode, not a false `FAIL`. Everything else — every REST/MCP
 check, every CLI round-trip — runs identically against any
 already-running daemon, local or external.
 
-## `run-tests.sh`: `--no-daemon` / `TEST_BASE` / `TEST_BASE_HTTP` / `TEST_TOKEN`
-
-The E2E story runner has had its own, independent version of this
-same capability since before this doc existed — documented here for
-the first time per an operator request that both mechanisms be
-discoverable, not just the new one.
+## `run-tests.sh`: `DW_BASE` / `DW_BASE_TOKEN` / `DW_BASE_INSECURE`
 
 ```sh
-# Skip auto-starting a daemon; run E2E stories against one you already
-# have up.
-TEST_BASE=https://127.0.0.1:18443 TEST_TOKEN=your-bearer-token \
-  bash scripts/run-tests.sh --no-daemon --story=TS-042
+# Run E2E stories against a daemon you already have running, instead
+# of starting a fresh one.
+DW_BASE=https://127.0.0.1:18443 DW_BASE_TOKEN=your-bearer-token \
+  bash scripts/run-tests.sh --story=TS-042
 ```
 
-| Variable | Required | Meaning |
-|---|---|---|
-| `--no-daemon` (flag) | to enable this mode | Skip the script's own daemon-start step entirely. |
-| `TEST_BASE` | yes, with `--no-daemon` | HTTPS base URL of the already-running daemon the stories will target. |
-| `TEST_BASE_HTTP` | no | The matching plain-HTTP base URL, for stories that specifically test the HTTP listener/redirect behavior. |
-| `TEST_TOKEN` | no | Bearer token for that daemon. Defaults to `dw-test-token-12345` (the fixed token `run-tests.sh`'s own normally-self-started daemon always uses) when unset — override it to match whatever token the external daemon actually requires. |
+Same three variables and the same meaning as `release-smoke.sh`'s
+above — this is one mechanism, not two. `--no-daemon` on its own still
+works too (it means "skip the script's own daemon-start step," full
+stop) but on its own it does **not** give you a way to point at an
+arbitrary external daemon — it only reuses one on the exact ports
+`TEST_PORT`/`TEST_TLS_PORT` would otherwise have picked, which is only
+useful for resuming a daemon this *same* harness already started
+earlier in the run (see `DATAWATCH_TEST_ID=... --resume-from=...` in
+the script's own header). Pointing at a daemon on arbitrary ports —
+anything you didn't start with `run-tests.sh` itself — needs `DW_BASE`.
 
-Without `--no-daemon`, `run-tests.sh` always computes `TEST_BASE`/
-`TEST_BASE_HTTP` itself from freshly-allocated ports and starts its
-own daemon — unaffected by any of this.
+**Corrected 2026-10-13, same day this doc was first written:** an
+earlier version of this section documented `--no-daemon` + `TEST_BASE`
+as a general external-daemon override. That was wrong, and the only
+reason it's not still wrong in this doc is that it got tested, not
+just read from the script: `TEST_PORT`/`TEST_TLS_PORT` are only
+honored by the script's own port-picker when the given port is
+currently *free* — which an already-running daemon's port never is —
+so a pre-set `TEST_BASE` got silently recomputed and ignored, and the
+run failed against nothing. `DW_BASE` was added to `run-tests.sh`
+afterward, mirroring `release-smoke.sh`'s real, working mechanism
+instead, and re-verified against a real external daemon before this
+section was rewritten.
 
-## Why two different mechanisms, not one shared variable name
+## Why one mechanism now, not two
 
-`release-smoke.sh`'s `DW_BASE` and `run-tests.sh`'s `TEST_BASE` solve
-the identical problem independently, because each script's own
-daemon-lifecycle code predates this generalization and nothing else
-in either script depends on the two sharing one name. If you're
-writing a *new* script or app that needs this same "point me at a
-daemon I already have" capability, either naming convention is a
-reasonable precedent to follow — prefer whichever this doc's sibling
-script already uses for the closest-matching case, and document the
-new variable here too.
+Both scripts' daemon-lifecycle code predates this capability and each
+had its own (in `run-tests.sh`'s case, non-functional) attempt at it.
+`DW_BASE`/`DW_BASE_TOKEN`/`DW_BASE_INSECURE` is now the one shared
+mechanism both use, so a new script or app that needs the same
+"point me at a daemon I already have" capability should use the same
+three names rather than inventing a fourth variant.
 
 ## For other agents and integrations
 

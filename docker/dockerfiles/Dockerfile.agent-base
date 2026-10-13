@@ -44,9 +44,25 @@ COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod \
     go mod download
 COPY . .
-# Satisfy //go:embed in internal/docsindex — generate stub if not already present.
-RUN mkdir -p internal/docsindex/assets && \
-    [ -f internal/docsindex/assets/docs-bm25-index.json ] || echo '{}' > internal/docsindex/assets/docs-bm25-index.json
+# Build the REAL embedded docs search index (internal/docsindex/embedded.go
+# //go:embeds assets/docs-bm25-index.json, not the docs/ mirror directly).
+#
+# 2026-10-13 — found live running release-smoke.sh in external-daemon
+# mode against a real deployed chart for the first time ever:
+# docs_search/docs_list_howtos returned zero results. This line
+# previously only stubbed a throwaway `{}` placeholder (to satisfy the
+# go:embed directive so the build compiles) and never generated the
+# real index — meaning EVERY production image built from this
+# Dockerfile has always shipped with an empty docs corpus, not just
+# the kind-smoke test daemon. `make docs-index` depends on `sync-docs`
+# (plain rsync, not in the base golang image — installed below) to
+# first populate internal/server/web/docs/ from docs/, then runs
+# `go run ./cmd/docs-index-gen` to build the real index.
+RUN apt-get update -qq && apt-get install -y -qq --no-install-recommends rsync \
+    && rm -rf /var/lib/apt/lists/*
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    make sync-docs docs-index
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH \

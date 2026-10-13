@@ -1445,6 +1445,16 @@ else
 fi
 
 H "7t. v6.0 mempalace surfaces — sweep_stale + spellcheck + extract_facts"
+# 2026-10-13 — found running release-smoke.sh in external-daemon mode
+# against a real kind-deployed chart for the first time ever: this
+# section had no memory-enabled gate at all (unlike section 7f's
+# identical surface, just above), so it hard-FAILed the first time it
+# ran against a daemon whose chart defaults leave memory disabled —
+# every prior run only ever hit the local test daemon's own
+# always-memory-enabled TEST_CONFIG. Same $MEM_OK gate 7f already uses.
+if [[ "$MEM_OK" != "yes" ]]; then
+  skip "memory subsystem not enabled — skipping mempalace surfaces (sweep_stale/spellcheck/extract_facts)"
+else
 SWEEP=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
   -d '{"older_than_days":90,"dry_run":true}' "$BASE/api/memory/sweep_stale")
 if echo "$SWEEP" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert "candidates" in d and "dry_run" in d' 2>/dev/null; then
@@ -1465,6 +1475,7 @@ if echo "$EXTRACT" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert d
   ok "extract_facts returned triples"
 else
   ko "extract_facts failed: $EXTRACT"
+fi
 fi
 
 H "7u. v5.27.2 surfaces — subsystem reload + claude_auto_accept_disclaimer config round-trip"

@@ -61,18 +61,24 @@ func daemonURL() string {
 // failed with x509: unknown authority.
 //
 // 2026-10-13 — when -u/--url (serverURL) points at a DIFFERENT daemon
-// than the local config's own (e.g. scripts/release-smoke.sh's
+// than the one --config describes (e.g. scripts/release-smoke.sh's
 // external-daemon mode, DW_BASE, or any script targeting a remote/
 // sandbox/kind-cluster daemon), the local config's cert belongs to the
 // WRONG daemon — loading and trusting it would be incorrect, not just
 // ineffective, since it doesn't match what -u is actually talking to.
 // DW_BASE_INSECURE opts into skipping verification for that known
-// external target; normal production CLI use (no -u) is unaffected.
+// external target. Gated on `cfgPath == ""` specifically, not just
+// `serverURL != ""`: scripts/release-smoke.sh's own LOCAL-daemon mode
+// passes BOTH --config AND -u together (-u only overrides the target
+// port; --config is still that same daemon's real config) and must
+// keep using the normal cert-trust path below — regressed this once
+// already by checking serverURL alone, caught by a real smoke run
+// (12 CLI checks failed) before it shipped.
 func daemonClient() *http.Client {
 	c := &http.Client{Timeout: 60 * time.Second}
-	if serverURL != "" {
+	if serverURL != "" && cfgPath == "" {
 		if dwBaseInsecure() {
-			c.Transport = &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true, MinVersion: tls.VersionTLS13}} // #nosec G402 -- operator opted in via DW_BASE_INSECURE for a known external/test daemon (-u mode)
+			c.Transport = &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true, MinVersion: tls.VersionTLS13}} // #nosec G402 -- operator opted in via DW_BASE_INSECURE for a known external/test daemon (-u mode, no local --config)
 		}
 		return c
 	}

@@ -28,11 +28,20 @@ coverage.html
 
 # CI / external tooling not needed at build time
 .github/
-docs/
 charts/
 README.md
 CHANGELOG.md
 LICENSE
+# NOTE (2026-10-13): docs/ used to be excluded here too, which meant
+# Dockerfile.agent-base's `make sync-docs docs-index` step (needed to
+# populate internal/docsindex's REAL //go:embed search index, not
+# just satisfy the embed directive with a stub) could never see
+# docs/ at all -- rsync failed with "No such file or directory".
+# Every production image built from this Dockerfile shipped with an
+# empty docs_search/docs_list_howtos corpus until this was found live
+# running release-smoke.sh against a real deployed chart. docs/ is
+# ~22MB (negligible build-context cost) and is now required at build
+# time -- do not re-add it here.
 
 # Local datawatch runtime state if anyone ever drops it here
 .datawatch/
