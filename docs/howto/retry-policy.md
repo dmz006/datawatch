@@ -62,12 +62,74 @@ Same shape as guardrail resolution ([guardrail-library.md](guardrail-library.md)
 2. **Named retry profile** assigned to the Automaton (`retry_profile`)
 3. **Global config** (`autonomous.retry_policy`)
 
+## What happens on a retry
+
+- **`infra`**: the exact same guardrail/verifier call is retried, with
+  no changes — see "Default behavior" above for how many times and
+  with which backend/model.
+- **`content`, at task or story level**: the block's own findings
+  (`GuardrailVerdict.Issues`) are fed back as a hint, and the existing
+  unit (task or story) is respawned with that hint — the same
+  mechanism task verification already uses for `RetryHint`, not a new
+  one.
+- **`content`, at PRD-completion level** (e.g. `rules-review`, the
+  deterministic project-rules check): there's no single task to
+  respawn, so a new story + task are synthesized and appended **to
+  the same Automaton** — never a new one — with a spec built directly
+  from the verdict's findings. When `auto_fix_skip_approval` is true
+  (the default), this synthesized work bypasses per-story approval
+  entirely and runs unattended; when false, it enters
+  `awaiting_approval` exactly like normal decompose output. Once it
+  completes, the PRD-completion check re-fires automatically.
+
+## When a retry budget is finally exhausted
+
+A failure that genuinely never gets fixed — not one that self-heals
+on a later retry — writes a `Learning` entry recording the category
+and the detail of what kept failing. Retrieve these the same way you'd
+retrieve any other learning:
+
+```
+autonomous_learnings id=<automaton-id>
+memory_learnings
+```
+
+A transient failure that succeeds on a later retry writes nothing —
+only genuine exhaustion is recorded, so this stays a signal, not noise.
+
 ## Managing retry profiles
 
 A retry profile is a named, reusable policy — not just budget numbers,
 but behavior: the ceiling, the infra escalation threshold, whether
 content auto-fix is enabled, and whether synthesized corrective work
 skips approval.
+
+### CLI
+
+```sh
+# List profiles.
+datawatch retry profile list
+
+# Create.
+datawatch retry profile create --name cve-work \
+  --description "many iterations expected" \
+  --budgets "infra=10,content=10" --ceiling-total 30
+
+# Get one profile.
+datawatch retry profile get <id>
+
+# Update a profile.
+datawatch retry profile update <id> --budgets "infra=5" --ceiling-total 20
+
+# Delete a profile.
+datawatch retry profile delete <id>
+
+# Assign a profile (or explicit overrides) to an Automaton.
+datawatch retry automaton set <automaton-id> --profile cve-work
+datawatch retry automaton set <automaton-id> \
+  --policy "infra=4,content=1" --ceiling-total 10 \
+  --content-auto-fix=true --auto-fix-skip-approval=true
+```
 
 ### REST
 
@@ -101,6 +163,25 @@ retry_profile_delete               → delete by id
 per_automaton_retry_policy_set     → set per-Automaton override
 ```
 
+### Comm channel
+
+```
+You: retry profile list
+Bot: [{"id":"a1b2","name":"cve-work","budgets":{"infra":10,"content":10},"ceiling_total":30}]
+
+You: retry profile create cve-work infra=10,content=10 ceiling=30
+Bot: {"id":"a1b2","name":"cve-work","budgets":{"infra":10,"content":10},"ceiling_total":30}
+
+You: retry profile get a1b2
+Bot: {"id":"a1b2","name":"cve-work",...}
+
+You: retry profile delete a1b2
+Bot: deleted
+
+You: retry automaton set <id> profile=cve-work policy=infra=4 ceiling=10
+Bot: {"id":"<id>","retry_profile":"cve-work","retry_policy":{"infra":4},"retry_ceiling_total":10}
+```
+
 ### PWA
 
 Settings → **Automate** → **Retry Profiles** — lists all profiles with
@@ -122,17 +203,8 @@ autonomous:
 ```
 
 Per-Automaton override stored in the Automaton record (set via any
-surface above).
-
-## Assigning a profile to an Automaton
-
-```sh
-# Assign a named profile (overrides global; explicit fields beat profile).
-```
-
-```
-per_automaton_retry_policy_set id=<automaton-id> retry_profile=cve-work
-```
+surface above — see the CLI section for the explicit-vs-profile
+precedence rule in practice).
 
 ## See also
 

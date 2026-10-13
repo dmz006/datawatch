@@ -48,7 +48,7 @@ for each name:
       │
       ▼
   verdict.Outcome == "block"?
-  │   yes → mark task failed; pause Automaton
+  │   yes → see "Retry, escalation, and content auto-fix" below
   │   no  → continue
 ```
 
@@ -69,13 +69,59 @@ runPRDCompletionRulesReview
       │           yes → fn(ctx, inv)  (same GuardrailFn as task/story,
       │                  judgment review of the real diff, not a scan)
       ▼
-verdict appended to prd.Verdicts; outcome=="block" → PRDBlocked
+verdict appended to prd.Verdicts; outcome=="block" → see "Retry,
+escalation, and content auto-fix" below (PRDBlocked only on genuine
+exhaustion, not on the first block)
 ```
 
 Unlike the per-task/per-story loop, this runs once, at PRD completion,
 for a single named guardrail (`"rules-review"`) rather than iterating
 a list of scan/skill guardrails — there is currently exactly one
 guardrail defined at this level.
+
+## Retry, escalation, and content auto-fix
+
+Every `block` verdict (at task, story, or PRD-completion level) carries
+a `Category` — see [howto/retry-policy.md](../howto/retry-policy.md)
+for the full taxonomy and default budgets. A block does not pause the
+Automaton immediately; it goes through this sequence first:
+
+```
+block verdict (Category: infra | content | scope | policy)
+      │
+      ▼
+  Category == "infra"?
+      │ yes → runGuardrailWithInfraRetry: retry the identical call,
+      │       keeping the original backend/model for
+      │       resolveInfraEscalateAfter(prd) attempts (default 2),
+      │       then fall back to the global default backend/model —
+      │       bounded by retryBudgetRemaining(prd, "infra")
+      │ no
+      ▼
+  Category == "content" (default/empty) and
+  resolveContentAutoFixEnabled(prd) and budget remains?
+      │ yes, task/story level → respawn the same unit with the
+      │       verdict's Issues fed back as a RetryHint (same
+      │       mechanism as a normal verification-failure retry)
+      │ yes, PRD-completion level (no single unit to respawn) →
+      │       synthesizeCorrectiveWork appends a new story+task to
+      │       the SAME Automaton (never a new one), spec built from
+      │       the verdict's findings; skips per-story approval when
+      │       auto_fix_skip_approval is true (default); once it
+      │       completes, the PRD-completion check re-fires
+      │ no (scope/policy, or budget exhausted)
+      ▼
+  recordFailureLearning(prd, unitID, category, detail)
+      → writes one Learning row (fires once, only on genuine
+        exhaustion — never on a retry that still has budget left)
+      ▼
+  TaskBlocked / story block / PRDBlocked — operator action required
+```
+
+The retry ceiling (`resolveRetryCeiling`, default 5 — see
+retry-policy.md) bounds total retries across every category for one
+Automaton's whole lifecycle, independent of any single category's own
+budget.
 
 ## Verdict outcomes
 
@@ -125,5 +171,6 @@ comm verb.
 ## See also
 
 - [howto/guardrail-library.md](../howto/guardrail-library.md)
+- [howto/retry-policy.md](../howto/retry-policy.md) — categories, budgets, content auto-fix, Learning
 - [telemetry-flow.md](telemetry-flow.md)
 - [api/autonomous.md](../api/autonomous.md)
