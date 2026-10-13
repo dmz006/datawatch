@@ -86,6 +86,23 @@ func TestScope_PlanningPromptCarriesBoundary(t *testing.T) {
 	}
 }
 
+func TestScope_PlanningPromptsSteerAwayFromSystemBinaryPaths(t *testing.T) {
+	prompts := map[string]string{
+		"PlanningPrompt":        fmt.Sprintf(PlanningPrompt, "spec"),
+		"PlanningPromptSession": fmt.Sprintf(PlanningPromptSession, "scope", "/w/proj/.out.json", "spec"),
+	}
+	for name, got := range prompts {
+		for _, want := range []string{"system binar", "command -v"} {
+			if !strings.Contains(got, want) {
+				t.Errorf("%s missing %q", name, want)
+			}
+		}
+		if strings.Contains(got, "%!") {
+			t.Errorf("%s has a formatting error: %q", name, got)
+		}
+	}
+}
+
 func TestScope_SetPRDDirsValidatesAndRelints(t *testing.T) {
 	m, _, _, _ := apiFixture(t)
 	prd, _ := m.CreatePRD("s", "/w/proj", "opencode", "", EffortNormal)

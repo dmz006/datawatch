@@ -61,6 +61,12 @@ Rules:
   task is expected to touch. Include both code and docs/test files.
   Empty array is valid when paths are unknown ahead of time. Do NOT
   invent paths that obviously can't exist.
+- Never write a literal absolute path to a system binary (e.g. /usr/bin/foo
+  or /bin/bar) in a task spec. Refer to standard system tools by command
+  name only (e.g. "the time command") and have the task resolve them at
+  runtime via "command -v <name>" / $PATH, with a graceful fallback if
+  unavailable. Any literal absolute path in a spec must be one the task
+  will actually read or write under the PRD's allowed directories.
 - Do not include markdown fences. Return raw JSON only.
 
 Feature request:
@@ -132,6 +138,12 @@ Rules:
   verification_script is only correct for a unit with no applicable
   check (e.g. a pure-research story producing no files); every unit that
   touches real files should have one.
+- Never write a literal absolute path to a system binary (e.g. /usr/bin/foo
+  or /bin/bar) in a task spec. Refer to standard system tools by command
+  name only (e.g. "the time command") and have the task resolve them at
+  runtime via "command -v <name>" / $PATH, with a graceful fallback if
+  unavailable. Any literal absolute path in a spec must be one the task
+  will actually read or write under the directories above.
 - Write ONLY raw JSON to the file — no markdown fences, no explanatory prose.
 
 Feature request:
