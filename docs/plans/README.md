@@ -451,9 +451,32 @@ established. In progress — starting with BL403.**
    (grep confirms zero non-test writers) — dead code in the same shape
    as B111/B112, and exactly the mechanism this ask wants revived: a
    structured place to record "why did this fail" that accumulates
-   over time for skills/future decomposition to consult. No plan doc
-   yet — needs a design pass (failure-reason taxonomy, where auto-retry
-   policy lives, how it surfaces to skills) before queueing a position.
+   over time for skills/future decomposition to consult.
+
+   **Designed and scoped 2026-10-12**, triggered by BL418's own live
+   validation incident (a guardrail session timeout and a genuine
+   AGENT.md finding both produced an identical `GuardrailVerdict{Outcome:"block"}`,
+   requiring the same manual operator intervention). Plan:
+   `/home/dmz/.claude/plans/staged-orbiting-forest.md` (local plan file,
+   not yet moved to `docs/plans/`). Every architectural decision
+   (4-category taxonomy, content auto-fix in scope not deferred, retry
+   always happens in place on the same PRD — never a new PRD, 3-tier
+   `RetryProfile` precedence controlling both numbers and behavior,
+   infra-retry escalation after 2 same-config attempts, a deliberately
+   low global retry ceiling of 5 with per-PRD/profile override for
+   genuinely iterative work like CVE remediation, configurable
+   auto-fix-skips-approval defaulting to skip) was asked of and answered
+   by the operator directly, not picked by the planner.
+
+   **Phase 0 shipped v9.0.50** — `FailureReason` type + `Category`
+   field on `GuardrailVerdict`/`VerificationResult`, stamped `"infra"`
+   at every known mechanism-failed-before-judgment-ran collapse point
+   in `autonomousGuardrail`/`autonomousVerify` (`cmd/datawatch/main.go`).
+   Pure observability, zero behavior change. **Next: Phase 1** (bounded,
+   escalating infra auto-retry at every guardrail-block site) and
+   **Phase 2** (content auto-fix — synthesizing corrective task/story
+   work from a guardrail's own `Issues`, appended to the same PRD) —
+   see the plan file for the full phase breakdown.
 11. **BL411** — Pre-v10.0.0 Dead Code Audit (filed 2026-10-10, same
    conversation as BL410). This session alone found four instances of
    "fully-plumbed but never actually consulted" code in

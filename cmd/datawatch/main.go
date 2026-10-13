@@ -113,7 +113,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "9.0.49"
+var Version = "9.0.50"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -4084,11 +4084,11 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			// but the YAML + REST + PWA path didn't until now; pre-
 			// v5.17.0 daemons silently no-op'd `datawatch config set
 			// autonomous.max_recursion_depth …`.
-			MaxRecursionDepth:      acfgIn.MaxRecursionDepth,
-			AutoApproveChildren:    acfgIn.AutoApproveChildren,
-			PerTaskGuardrails:      append([]string(nil), acfgIn.PerTaskGuardrails...),
-			PerStoryGuardrails:     append([]string(nil), acfgIn.PerStoryGuardrails...),
-			PerPRDGuardrails:       append([]string(nil), acfgIn.PerPRDGuardrails...), // BL418
+			MaxRecursionDepth:   acfgIn.MaxRecursionDepth,
+			AutoApproveChildren: acfgIn.AutoApproveChildren,
+			PerTaskGuardrails:   append([]string(nil), acfgIn.PerTaskGuardrails...),
+			PerStoryGuardrails:  append([]string(nil), acfgIn.PerStoryGuardrails...),
+			PerPRDGuardrails:    append([]string(nil), acfgIn.PerPRDGuardrails...), // BL418
 
 			PerStoryApproval:       acfgIn.PerStoryApproval, // Phase 3 (v5.26.61)
 			ContinueOnStoryFailure: acfgIn.ContinueOnStoryFailure,
@@ -4689,10 +4689,13 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				diffOut, diffErr := exec.CommandContext(ctx, "git", "-C", prd.ProjectDir,
 					"diff", task.PreTaskSHA+"..HEAD").Output()
 				if diffErr != nil {
+					// BL410 Phase 0 — the git command itself failed; no
+					// judgment ever ran on real content.
 					return autonomouspkg.VerificationResult{
 						OK: false, Severity: "medium",
 						Summary:    fmt.Sprintf("verifier: git diff failed: %v", diffErr),
 						VerifiedAt: time.Now(),
+						Category:   "infra",
 					}, nil
 				}
 				// Same evidence as diffOut, names only — feeds FilesTouched below.
@@ -4919,10 +4922,13 @@ Verify whether the diff plausibly implements the spec. Reply with STRICT JSON on
 				if verifierCapacityAdmit != nil {
 					r, aerr := verifierCapacityAdmit(ctx, vbackend, verifyModel, "verify:"+task.ID, prd.ID)
 					if aerr != nil {
+						// BL410 Phase 0 — resource contention/admission
+						// failure, not a content judgment.
 						return autonomouspkg.VerificationResult{
 							OK: false, Severity: "medium",
 							Summary:    "verifier: capacity: " + aerr.Error(),
 							VerifiedAt: time.Now(),
+							Category:   "infra",
 						}, nil
 					}
 					release = r
@@ -4944,17 +4950,23 @@ Verify whether the diff plausibly implements the spec. Reply with STRICT JSON on
 				content, serr := runOneShotJSONSession(cfg, prd.ID, prd.ProjectDir, vbackend, verifyModel,
 					"autonomous:verify:"+task.ID, sessionTask, outputFile, "verify-"+task.ID+".json", 10*time.Minute)
 				if serr != nil {
+					// BL410 Phase 0 — the session itself failed; see the
+					// identical fix in autonomousGuardrail's closure above.
 					return autonomouspkg.VerificationResult{
 						OK: false, Severity: "medium",
 						Summary:    "verifier(session): " + serr.Error(),
 						VerifiedAt: time.Now(),
+						Category:   "infra",
 					}, nil
 				}
 				vr := autonomouspkg.VerificationResult{
 					OK: false, Severity: "medium", Summary: "verifier(session): unparseable response",
 					VerifiedAt: time.Now(),
+					Category:   "infra", // default pessimistic; cleared below on a successful parse
 				}
-				_ = json.Unmarshal([]byte(extractJSON(content)), &vr)
+				if uerr := json.Unmarshal([]byte(extractJSON(content)), &vr); uerr == nil {
+					vr.Category = "" // a real judgment parsed — content, not infra
+				}
 				vr.VerifiedAt = time.Now()
 				return vr, nil
 			}
@@ -4986,10 +4998,13 @@ Verify whether the diff plausibly implements the spec. Reply with STRICT JSON on
 			defer resp.Body.Close() //nolint:errcheck
 			rb, _ := io.ReadAll(resp.Body)
 			if reason, failed := askFailureReason(resp.StatusCode, rb); failed {
+				// BL410 Phase 0 — the /api/ask call itself failed; no
+				// judgment ever ran.
 				return autonomouspkg.VerificationResult{
 					OK: false, Severity: "medium",
 					Summary:    "verifier: ask call failed: " + reason,
 					VerifiedAt: time.Now(),
+					Category:   "infra",
 				}, nil
 			}
 			var ask struct {
@@ -5002,8 +5017,11 @@ Verify whether the diff plausibly implements the spec. Reply with STRICT JSON on
 			vr := autonomouspkg.VerificationResult{
 				OK: false, Severity: "medium", Summary: "verifier: unparseable response",
 				VerifiedAt: time.Now(),
+				Category:   "infra", // default pessimistic; cleared below on a successful parse
 			}
-			_ = json.Unmarshal([]byte(extractJSON(ask.Answer)), &vr)
+			if uerr := json.Unmarshal([]byte(extractJSON(ask.Answer)), &vr); uerr == nil {
+				vr.Category = "" // a real judgment parsed — content, not infra
+			}
 			vr.VerifiedAt = time.Now()
 			return vr, nil
 		}
@@ -5047,18 +5065,27 @@ Verify whether the diff plausibly implements the spec. Reply with STRICT JSON on
 						"autonomous:guardrail:"+req.UnitID, sessionTask, outputFile,
 						"guardrail-"+req.UnitID+"-"+req.Guardrail+".json", 10*time.Minute)
 					if serr != nil {
+						// BL410 Phase 0 — the SESSION itself failed (timeout,
+						// crash); no judgment ever ran. "infra", not a real
+						// content finding. See FailureReason's doc comment —
+						// this is the exact collapse that made B127's 10-minute
+						// timeout indistinguishable from a genuine block.
 						return autonomouspkg.GuardrailVerdict{
 							Outcome: "block", Severity: "medium",
 							Summary:   "guardrail(session): " + serr.Error(),
 							VerdictAt: time.Now(),
+							Category:  "infra",
 						}, nil
 					}
 					gv := autonomouspkg.GuardrailVerdict{
 						Outcome: "block", Severity: "medium",
 						Summary:   "guardrail(session): unparseable response — cannot verify compliance",
 						VerdictAt: time.Now(),
+						Category:  "infra", // default pessimistic; cleared below on a successful parse
 					}
-					_ = json.Unmarshal([]byte(extractJSON(content)), &gv)
+					if uerr := json.Unmarshal([]byte(extractJSON(content)), &gv); uerr == nil {
+						gv.Category = "" // a real judgment parsed — content, not infra
+					}
 					gv.VerdictAt = time.Now()
 					return gv, nil
 				}
@@ -5095,10 +5122,13 @@ Verify whether the diff plausibly implements the spec. Reply with STRICT JSON on
 			defer resp.Body.Close() //nolint:errcheck
 			rb, _ := io.ReadAll(resp.Body)
 			if reason, failed := askFailureReason(resp.StatusCode, rb); failed {
+				// BL410 Phase 0 — the /api/ask call itself failed; no
+				// judgment ever ran.
 				return autonomouspkg.GuardrailVerdict{
 					Outcome: "block", Severity: "medium",
 					Summary:   "guardrail: ask call failed: " + reason,
 					VerdictAt: time.Now(),
+					Category:  "infra",
 				}, nil
 			}
 			var ask struct {
@@ -5111,8 +5141,11 @@ Verify whether the diff plausibly implements the spec. Reply with STRICT JSON on
 				Outcome: "block", Severity: "medium",
 				Summary:   "guardrail: unparseable LLM response — cannot verify compliance",
 				VerdictAt: time.Now(),
+				Category:  "infra", // default pessimistic; cleared below on a successful parse
 			}
-			_ = json.Unmarshal([]byte(extractJSON(ask.Answer)), &gv)
+			if uerr := json.Unmarshal([]byte(extractJSON(ask.Answer)), &gv); uerr == nil {
+				gv.Category = "" // a real judgment parsed — content, not infra
+			}
 			gv.VerdictAt = time.Now()
 			return gv, nil
 		}

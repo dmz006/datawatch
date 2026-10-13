@@ -5,6 +5,53 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.50 — feat(autonomous): BL410 Phase 0 — structured failure classification (infra vs. content)
+
+### Added
+- **New `FailureReason` type** (`internal/autonomous/failure_reason.go`) and
+  a four-category taxonomy — `infra` / `content` / `scope` / `policy` —
+  classifying *why* a PRD-lifecycle operation failed, not just *that* it
+  failed. Filed as BL410 2026-10-10, designed and scoped 2026-10-12 after a
+  real live incident: a guardrail session timeout (B127) and a genuine
+  AGENT.md compliance finding both produced an identical
+  `GuardrailVerdict{Outcome:"block"}`, with no way to tell which had
+  happened without reading the summary text.
+- `GuardrailVerdict.Category` and `VerificationResult.Category` — additive
+  fields, empty defaults to `"content"` (today's implicit behavior for
+  anything already on disk). Stamped `"infra"` at every known
+  mechanism-failed-before-any-judgment-ran collapse point:
+  `autonomousGuardrail`'s session-error and unparseable-response branches,
+  `autonomousGuardrail`'s ask-call-failed and unparseable-response branches,
+  and `autonomousVerify`'s git-diff-failed, capacity-admission-failed,
+  session-error, session-unparseable, ask-call-failed, and
+  ask-unparseable-response branches (`cmd/datawatch/main.go`). A real,
+  successfully-parsed judgment always ends up `Category` empty
+  (`"content"`), even when the default pessimistic literal it unmarshals
+  into started out stamped `"infra"`.
+- This is pure observability — **zero behavior change**. No retry wiring,
+  no new config, nothing consults `Category` yet. Phase 1 (bounded,
+  escalating infra auto-retry) and Phase 2 (content auto-fix, synthesizing
+  corrective work from a guardrail's own `Issues`) build on this
+  foundation in follow-up releases.
+
+### Reuse audit
+- Extends the existing `GuardrailVerdict`/`VerificationResult` structs with
+  one additive field each, mirroring the BL418 precedent ("add a field,
+  never restructure") rather than introducing a parallel result type.
+
+### Tests
+- Source-inspection tests (`cmd/datawatch/bl410_failure_classification_test.go`),
+  matching the established convention for `main()`-closure logic that
+  can't be unit-tested directly (`bl369_prompt_security_test.go`,
+  `session_judgment_wiring_test.go`): one test per classification site,
+  10 total, confirming the exact stamp (and, for the two unparseable-
+  response branches, the "default pessimistic, clear on successful parse"
+  discipline).
+
+### Mobile parity
+- N/A — daemon-internal classification only, no new REST/MCP/CLI/comm/PWA
+  surface in this phase.
+
 ## v9.0.49 — fix(autonomous): resolveGuardrailBackendModel must not leak the flat global model into a session-routed guardrail call
 
 ### Fixed
