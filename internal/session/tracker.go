@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/dmz006/datawatch/internal/secfile"
@@ -17,6 +18,8 @@ type Tracker struct {
 	sessionDir string // e.g. ~/.datawatch/sessions/hal9000-a3f2
 	session    *Session
 	encKey     []byte // optional: encrypts tracker files when set (secure_tracking: full)
+
+	hygieneOnce sync.Once // guards ensureRepoHygiene (once per Tracker instance)
 }
 
 // NewTracker creates and initializes the session tracking folder.
@@ -40,6 +43,9 @@ func NewTracker(dataDir string, sess *Session) (*Tracker, error) {
 	// Configure git identity for the repo (local only)
 	_ = t.git("config", "user.email", "datawatch@localhost")
 	_ = t.git("config", "user.name", "datawatch")
+
+	// Disable auto-gc and keep output.log out of history before the first commit.
+	t.hygieneOnce.Do(t.ensureRepoHygiene)
 
 	// Write initial files
 	if err := t.writeInitialFiles(); err != nil {
@@ -495,14 +501,15 @@ func (t *Tracker) renderReadme() string {
 | File | Description |
 |------|-------------|
 | task.md | Original task description |
-| output.log | Full claude-code output (live) |
+| output.log | Full claude-code output (live; kept on disk, NOT committed to git history) |
 | conversation.md | Human-readable Q&A history |
 | timeline.md | Timestamped event log |
 | session.json | Machine-readable session state |
 
 ## Git History
 
-All state changes, inputs, and outputs are tracked as git commits.
+All state changes, inputs, and conversation updates are tracked as git commits.
+Live output (output.log) is intentionally excluded from history to keep the repo small.
 View with: `+"`git log --oneline`"+`
 `,
 		t.session.FullID,
@@ -594,7 +601,66 @@ func (t *Tracker) git(args ...string) error {
 	return nil
 }
 
+// outputLogExcludes are the live-output paths that must never be committed.
+var outputLogExcludes = []string{"output.log", "output.log.enc", "output.log.pipe", "*.pipe"}
+
+// ensureRepoHygiene makes the tracker repo safe to commit to from inside the
+// daemon. Idempotent; callers go through hygieneOnce.
+//
+// BL420 — on 2026-10-13 git's implicit auto-gc (triggered by `git commit`)
+// spawned a ~108GB pack-objects inside the datawatch.service cgroup while
+// repacking unbounded output.log blobs, and the OOM killer took down the
+// whole daemon. So: auto-gc is disabled, any explicit gc is memory-bounded,
+// and output.log (read only from disk, never from history) is untracked.
+func (t *Tracker) ensureRepoHygiene() {
+	for _, kv := range [][2]string{
+		{"gc.auto", "0"},
+		{"gc.autoDetach", "false"},
+		{"pack.windowMemory", "64m"},
+		{"pack.threads", "1"},
+		{"core.bigFileThreshold", "16m"},
+	} {
+		_ = t.git("config", kv[0], kv[1])
+	}
+
+	// Exclude live output via .git/info/exclude so tracked contents don't change.
+	excludePath := filepath.Join(t.sessionDir, ".git", "info", "exclude")
+	existing, _ := os.ReadFile(excludePath)
+	have := map[string]bool{}
+	for _, line := range strings.Split(string(existing), "\n") {
+		have[strings.TrimSpace(line)] = true
+	}
+	var missing strings.Builder
+	for _, pat := range outputLogExcludes {
+		if !have[pat] {
+			missing.WriteString(pat + "\n")
+		}
+	}
+	if missing.Len() > 0 {
+		if err := os.MkdirAll(filepath.Dir(excludePath), 0755); err == nil {
+			prefix := ""
+			if len(existing) > 0 && !strings.HasSuffix(string(existing), "\n") {
+				prefix = "\n"
+			}
+			if f, err := os.OpenFile(excludePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644); err == nil {
+				_, _ = f.WriteString(prefix + missing.String())
+				_ = f.Close()
+			}
+		}
+	}
+
+	// Pre-fix repos tracked output.log; drop it from the index (file stays on disk).
+	cmd := exec.Command("git", "ls-files", "--", "output.log", "output.log.enc")
+	cmd.Dir = t.sessionDir
+	if out, err := cmd.Output(); err == nil && len(strings.TrimSpace(string(out))) > 0 {
+		_ = t.git("rm", "--cached", "--ignore-unmatch", "-q", "--", "output.log", "output.log.enc")
+	}
+}
+
 func (t *Tracker) commitAll(message string) error {
+	// Resumed trackers get their repo fixed up on first commit.
+	t.hygieneOnce.Do(t.ensureRepoHygiene)
+
 	// Stage all changes
 	if err := t.git("add", "-A"); err != nil {
 		return err
