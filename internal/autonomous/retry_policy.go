@@ -186,10 +186,7 @@ func (m *Manager) recordFailureLearning(prd *PRD, unitID, category, detail strin
 	if m.store == nil { // bare &Manager{} test fixtures never call NewManager
 		return
 	}
-	cat := category
-	if cat == "" {
-		cat = "content"
-	}
+	cat := orContentCategory(category)
 	if err := m.store.AddLearning(Learning{
 		TaskID:   unitID,
 		PRDID:    prd.ID,
@@ -198,6 +195,50 @@ func (m *Manager) recordFailureLearning(prd *PRD, unitID, category, detail strin
 	}); err != nil {
 		log.Printf("[autonomous] recordFailureLearning: prd=%s unit=%s: %v", prd.ID, unitID, err)
 	}
+}
+
+// retryDecomposeFailure (BL410 remediation, 2026-10-13) closes the gap
+// flagged live — "why was manager.decompose not wired in?" —
+// PRD.LastDecomposeFailure existed since Phase 1 but nothing ever set
+// or consulted it; every decompose failure rolled straight back to
+// PRDDraft regardless of category or budget. Shared by Decompose() and
+// decomposeStreamingCore() (a long-standing drifted-duplicate pair —
+// see their own comments) so the retry logic exists in exactly one
+// place rather than risking a third hand-copied gate.
+//
+// Records the failure as prd.LastDecomposeFailure — a single-use hint
+// the caller appends into the NEXT attempt's prompt, mirroring
+// Task.PriorAttemptHint's lifecycle — and reports whether budget
+// remains for another attempt. Budget consumption and the hint are
+// persisted immediately so a daemon restart mid-retry loses neither.
+// A false return means the caller is about to roll back to PRDDraft;
+// recordFailureLearning fires here, at that exact moment, matching
+// every other "genuinely exhausted" Learning write in this package.
+func (m *Manager) retryDecomposeFailure(prd *PRD, category, source, detail string) bool {
+	reason := &FailureReason{Category: category, Detail: detail, Source: source, OccurredAt: time.Now()}
+	if m.retryBudgetRemaining(prd, category) {
+		_ = m.consumeRetryBudget(prd, category)
+		reason.Retryable = true
+		prd.LastDecomposeFailure = reason
+		m.recordAutoRetryDecision(prd, prd.ID, category, prd.RetryCountsByCategory[category], false)
+		_ = m.store.SavePRD(prd)
+		return true
+	}
+	reason.Retryable = false
+	prd.LastDecomposeFailure = reason
+	m.recordFailureLearning(prd, prd.ID, category, detail)
+	return false
+}
+
+// orContentCategory applies FailureReason's "empty means content"
+// convention — shared by recordFailureLearning and every
+// Task.FailureReason/Story.FailureReason assignment (BL410 remediation,
+// 2026-10-13) so the rule lives in exactly one place.
+func orContentCategory(category string) string {
+	if category == "" {
+		return "content"
+	}
+	return category
 }
 
 // runGuardrailWithInfraRetry (BL410 Phase 1) wraps a single guardrail
