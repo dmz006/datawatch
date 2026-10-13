@@ -5,6 +5,40 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.60 — fix(ci): kind-smoke's last remaining failure — opencode-acp availability false-fail (BL419)
+
+### Fixed
+- **`state_engine_check`'s opencode-acp check false-FAILed on an image
+  that never had opencode installed by design**. `Dockerfile.agent-base`
+  deliberately ships with no LLM agent binary at all — `/api/sessions/start`
+  still returns a real session id regardless (nothing at that layer
+  checks binary availability before creating the tmux pane), so the
+  check's existing "unavailable / start failed" skip path never
+  triggered; the pane's command just failed to exec and the watcher
+  correctly never saw a real waiting-for-input prompt, reported as a
+  "watcher regression?" against an environment that structurally
+  could never pass it. Now probes `/api/backends`' own `available`
+  flag (backed by a real `<binary> --version` check) before
+  attempting the session at all, mapping `opencode-acp` (an ACP
+  session-protocol mode, not a separately registered backend) to its
+  underlying `opencode` binary entry. This was `kind-smoke`'s exact
+  last remaining failure after v9.0.59 — real CI went from 150 pass/
+  **1** fail/49 skip to this fix.
+
+### Testing
+Verified the positive case (opencode available) still passes
+identically (default-mode smoke: 203 pass/0 fail/35 skip, unchanged).
+Could not locally simulate the true negative case (binary genuinely
+absent) — this host resolves `opencode` via an absolute path in its
+registered LLM config, not a live `PATH` lookup, so removing
+`opencode`'s directory from `PATH` had no effect; confirmed this is a
+property of this host's config, not a flaw in the fix, by reading the
+`/api/backends` response shape and the `available` field's real
+source (`b.Version()`) directly. The real `kind-smoke` CI run against
+`Dockerfile.agent-base` (which genuinely has no opencode binary) is
+the only environment that can truly exercise the negative path — that
+run is the actual verification for this fix.
+
 ## v9.0.59 — fix(ci): kind-smoke fully working + production docs-index build bug
 
 ### Fixed

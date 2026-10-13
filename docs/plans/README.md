@@ -809,11 +809,20 @@ established. In progress — starting with BL403.**
     New howto `docs/howto/testing-against-a-running-daemon.md`
     documents the one shared `DW_BASE` mechanism both scripts now use,
     including an explicit correction of its own first-draft inaccuracy
-    about `run-tests.sh`. **Still open**: an `opencode-acp` session
-    state-detection timeout surfaced in the real kind-deployed
-    environment (works fine against a local daemon) — not yet
-    root-caused, likely an environment/chart-config gap rather than a
-    script bug; not blocking the rest of this fix from shipping.
+    about `run-tests.sh`.
+
+    **Root-caused and fixed, v9.0.60**: the `opencode-acp` state-
+    detection timeout was root-caused — `Dockerfile.agent-base`
+    deliberately ships with no LLM agent binary at all (by design),
+    so `/api/sessions/start` still returned a real session id (the
+    daemon doesn't check binary availability before creating the
+    tmux pane), the pane's command failed to exec, and the watcher
+    correctly never saw a real prompt — reported as a false "watcher
+    regression?" against an environment that structurally could never
+    pass it. Fixed by probing `/api/backends`' own `available` flag
+    before attempting the session. This was `kind-smoke`'s exact last
+    remaining failure (150 pass/1 fail/49 skip on the real CI run
+    right before this fix).
 
 **Outside the queue, handled separately, not blocking Stage 3:**
 - ~~**BL381**~~ — status-verified 2026-10-10: shipped v8.28.0 + v8.28.2

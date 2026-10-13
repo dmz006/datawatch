@@ -2103,6 +2103,43 @@ H "17. v6.11.26 BL266 — running/waiting state engine (gap watcher)"
 # real-world combo.
 state_engine_check() {
   local backend="$1" name="smoke-state-engine-$1"
+  # 2026-10-13 — found running release-smoke.sh against a real
+  # kind-deployed agent-base image for the first time: that image
+  # deliberately ships with NO LLM agent binary at all (by design —
+  # see Dockerfile.agent-base's own header), so /api/sessions/start
+  # still returns a real session id (nothing stops the daemon
+  # launching a tmux pane and running the configured command), but the
+  # command inside immediately fails to exec, the pane never reaches
+  # a real waiting-for-input prompt, and the watcher correctly never
+  # flips state — this was being reported as a false "watcher
+  # regression?" FAIL on an environment that was never going to have
+  # this backend to begin with. The existing "unavailable / start
+  # failed" skip below only covered a failed START call, not a
+  # started-but-binary-missing session. Check /api/backends' own
+  # available flag (backed by a real `<binary> --version` probe)
+  # first and skip with the same message the start-failure path uses.
+  # /api/backends' "llm" array lists the underlying CLI binary
+  # ("opencode"), not each of its session-protocol modes
+  # ("opencode-acp" is the ACP mode of that same binary, not a
+  # separately registered backend) — map the mode name to its binary
+  # for this lookup.
+  local probe_backend="$backend"
+  [[ "$backend" == "opencode-acp" ]] && probe_backend="opencode"
+  local avail
+  avail=$(curl "${curl_args[@]}" "$BASE/api/backends" 2>/dev/null | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+for b in d.get('llm', []):
+    if b.get('name')=='$probe_backend':
+        print('yes' if b.get('available') else 'no')
+        break
+else:
+    print('unknown')
+" 2>/dev/null || echo "unknown")
+  if [[ "$avail" == "no" ]]; then
+    skip "state-engine[$backend]: backend unavailable / start failed"
+    return
+  fi
   local payload="{\"task\":\"smoke-state-engine: idle session for BL266 gap watcher check\",\"llm_backend\":\"$backend\",\"project_dir\":\"/tmp\",\"name\":\"$name\"}"
   local resp sid state
   resp=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" -d "$payload" "$BASE/api/sessions/start" 2>/dev/null)
