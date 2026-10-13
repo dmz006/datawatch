@@ -284,13 +284,31 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			// (since hard-delete cascades into descendants we lose the
 			// session_id pointers afterwards) and best-effort kill each
 			// session via the same path /api/sessions/kill uses.
+			//
+			// The response + audit name every session ID a kill was
+			// attempted on (killed_session_ids, always an array) so an
+			// operator can verify no unrelated session was stopped.
+			// killed_sessions keeps its original len(sessionIDs) value
+			// for existing clients.
 			sessionIDs := s.autonomousMgr.SessionIDsForPRD(id)
+			killedIDs := []string{}
+			killErrs := map[string]string{}
 			killSessions := func() {
 				if s.manager == nil { return }
 				for _, sid := range sessionIDs {
 					if sid == "" { continue }
-					_ = s.manager.Kill(sid) //nolint:errcheck — best-effort
+					killedIDs = append(killedIDs, sid)
+					if err := s.manager.Kill(sid); err != nil { // best-effort
+						killErrs[sid] = err.Error()
+					}
 				}
+			}
+			withKillDetail := func(m map[string]any) map[string]any {
+				m["killed_session_ids"] = killedIDs
+				if len(killErrs) > 0 {
+					m["kill_errors"] = killErrs
+				}
+				return m
 			}
 			if r.URL.Query().Get("hard") == "true" {
 				// BL386 Phase 3 — optional memory_strategy before hard-delete.
@@ -348,8 +366,8 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 				killSessions()
-				s.audit(r.Context(), "delete", "automaton", id, map[string]any{"hard": true, "memory_strategy": memStrat, "killed_sessions": len(sessionIDs)}) // GH#201 Phase 4
-				writeJSONOK(w, map[string]any{"status": "deleted", "id": id, "killed_sessions": len(sessionIDs), "memory_strategy": memStrat})
+				s.audit(r.Context(), "delete", "automaton", id, withKillDetail(map[string]any{"hard": true, "memory_strategy": memStrat, "killed_sessions": len(sessionIDs)})) // GH#201 Phase 4
+				writeJSONOK(w, withKillDetail(map[string]any{"status": "deleted", "id": id, "killed_sessions": len(sessionIDs), "memory_strategy": memStrat}))
 				return
 			}
 			if err := s.autonomousMgr.Cancel(id); err != nil {
@@ -357,8 +375,8 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			killSessions()
-			s.audit(r.Context(), "cancel", "automaton", id, map[string]any{"killed_sessions": len(sessionIDs)}) // GH#201 Phase 4
-			writeJSONOK(w, map[string]any{"status": "cancelled", "id": id, "killed_sessions": len(sessionIDs)})
+			s.audit(r.Context(), "cancel", "automaton", id, withKillDetail(map[string]any{"killed_sessions": len(sessionIDs)})) // GH#201 Phase 4
+			writeJSONOK(w, withKillDetail(map[string]any{"status": "cancelled", "id": id, "killed_sessions": len(sessionIDs)}))
 		case http.MethodPatch:
 			if !s.fedCap(w, r, federation.CapAutonomousWrite) {
 				return

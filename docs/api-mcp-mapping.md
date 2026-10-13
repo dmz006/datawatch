@@ -111,7 +111,7 @@ documenting coverage gaps and the reasoning behind them.
 | `GET /api/autonomous/prds` | `autonomous_prd_list` | Complete | |
 | `POST /api/autonomous/prds` | `autonomous_prd_create` | Complete | |
 | `GET /api/autonomous/prds/{id}` | `autonomous_prd_get` | Complete | |
-| `DELETE /api/autonomous/prds/{id}` | `autonomous_prd_cancel` | Complete | |
+| `DELETE /api/autonomous/prds/{id}` | `autonomous_prd_cancel` | Complete | response names killed sessions: `killed_sessions` (count) + `killed_session_ids` (array) |
 | `POST /api/autonomous/prds/{id}/decompose` | `autonomous_prd_decompose` | Complete | |
 | `POST /api/autonomous/prds/{id}/set_priority` | `autonomous_prd_set_priority` | Complete | capacity-queue priority; higher runs first |
 | `GET /api/capacity` | `capacity_status` | Complete | admission ledger: pools, leases, wait queue |

@@ -875,9 +875,29 @@ paths:
       responses: {"200": {description: OK}, "404": {description: Not found}}
     delete:
       summary: Cancel + archive a PRD
+      description: |
+        Bare DELETE cancels the PRD; `?hard=true` permanently deletes it
+        (plus spawned child PRDs). Either way the PRD's worker sessions are
+        killed (best-effort) and the response names them so an operator can
+        verify no unrelated session was stopped.
       operationId: autonomousPRDCancel
       tags: [Autonomous]
-      responses: {"200": {description: OK}}
+      parameters:
+        - {name: hard, in: query, required: false, schema: {type: boolean}, description: "true = permanent delete instead of cancel"}
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: {type: string}
+                  status: {type: string, enum: [cancelled, deleted]}
+                  killed_sessions: {type: integer, description: "Number of session slots recorded on the PRD's tasks (may include empty slots)"}
+                  killed_session_ids: {type: array, items: {type: string}, description: "Session IDs a kill was attempted on; always an array, [] when none"}
+                  kill_errors: {type: object, additionalProperties: {type: string}, description: "Present only when a kill failed; session ID -> error"}
+                  memory_strategy: {type: string, description: "Hard delete only: keep | purge | archive"}
   /api/autonomous/prds/{id}/decompose:
     post:
       summary: Run LLM decomposition for a PRD
