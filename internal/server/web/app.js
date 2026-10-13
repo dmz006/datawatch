@@ -11676,7 +11676,10 @@ function renderStory(prd, story) {
   const llmEditFn = `openPRDSetStoryLLMModal(${JSON.stringify(prd.id)},${JSON.stringify(story.id)},${JSON.stringify(story.backend || '')},${JSON.stringify(String(story.effort || ''))},${JSON.stringify(story.model || '')})`;
   // Operator-requested: structural edits (add/remove a story or task)
   // without re-running decompose. Only offered while editable — the same
-  // gate the manager enforces server-side (needs_review/revisions_asked).
+  // gate the manager enforces server-side (needs_review/revisions_asked/
+  // cancelled). Task *spec* edits are wider: EditTaskSpec also accepts a
+  // blocked PRD for a failed/blocked task (BL421) and never a completed
+  // task — renderTask computes that separately as specEditable.
   const removeStoryFn = `prdRemoveStory(${JSON.stringify(prd.id)},${JSON.stringify(story.id)},${JSON.stringify(story.title || '')})`;
   const editIcons = editable
     ? `<span class="prd-story-edit-group" onclick="event.stopPropagation()">
@@ -11989,13 +11992,24 @@ function renderTask(prd, story, task, editable) {
   // decompose. Distinct from the cancel/retry buttons below, which act on
   // a task that's already running/queued rather than deleting it.
   const removeTaskFn = `prdRemoveTask(${JSON.stringify(prd.id)},${JSON.stringify(story.id)},${JSON.stringify(task.id)},${JSON.stringify(task.title || '')})`;
+  // BL421 — mirrors EditTaskSpec's server-side gate: a completed task's
+  // spec is immutable, and on a blocked PRD only the stuck failed/blocked
+  // task may be patched in place (then retried via the Retry button)
+  // without opening the structural edits, which stay locked while blocked.
+  const specEditable = (task.status !== 'completed') &&
+    (editable || (prd.status === 'blocked' && (task.status === 'failed' || task.status === 'blocked')));
+  const specEditBtn = specEditable
+    ? `<button class="prd-story-edit-icon" onclick="${escHtml(editFn)}"      title="Edit spec + LLM">&#9998;</button>`
+    : '';
   const editIcons = editable
     ? `<span class="prd-task-edit-group" onclick="event.stopPropagation()">
-         <button class="prd-story-edit-icon" onclick="${escHtml(editFn)}"      title="Edit spec + LLM">&#9998;</button>
+         ${specEditBtn}
          <button class="prd-story-edit-icon" onclick="${escHtml(filesEditFn)}" title="Edit planned files">&#128193;</button>
          <button class="prd-story-edit-icon prd-story-remove-icon" onclick="${escHtml(removeTaskFn)}" title="Remove this task">&#128465;</button>
        </span>`
-    : '';
+    : (specEditable
+      ? `<span class="prd-task-edit-group" onclick="event.stopPropagation()">${specEditBtn}</span>`
+      : '');
 
   // Inline badges visible whether collapsed or expanded.
   const llmBadge = (task.backend || task.effort || task.model)

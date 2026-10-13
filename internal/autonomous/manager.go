@@ -1509,8 +1509,16 @@ func (m *Manager) EditPRDFields(id, title, spec, actor string) (*PRD, error) {
 }
 
 // EditTaskSpec lets the operator rewrite an LLM-decomposed task's spec
-// before approving the PRD. Only allowed in needs_review or
-// revisions_asked. Records a Decision so the timeline shows the edit.
+// before approving the PRD (needs_review / revisions_asked), after
+// cancelling it (cancelled), or — BL421 — in place while the PRD is
+// blocked, so a stuck task (e.g. one the pre-spawn scope lint rejected)
+// can be corrected and then retried via ResetTask without
+// cancel -> reset_to_draft -> re-decompose regenerating the whole tree.
+// While blocked, only a failed or blocked task may be edited: the point is
+// to patch the one stuck task, not to replan its pending siblings. A
+// completed task's spec is immutable in every PRD status, since it is the
+// record of work already done. Records a Decision so the timeline shows
+// the edit.
 func (m *Manager) EditTaskSpec(prdID, taskID, newSpec, actor string) (*PRD, error) {
 	if err := m.checkInjectionGuard("task spec edit", newSpec); err != nil {
 		return nil, err
@@ -1519,13 +1527,23 @@ func (m *Manager) EditTaskSpec(prdID, taskID, newSpec, actor string) (*PRD, erro
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
 	}
-	if prd.Status != PRDNeedsReview && prd.Status != PRDRevisionsAsked && prd.Status != PRDCancelled {
-		return nil, fmt.Errorf("prd %q status %q is locked; only needs_review / revisions_asked / cancelled accept task edits", prdID, prd.Status)
+	if prd.Status != PRDNeedsReview && prd.Status != PRDRevisionsAsked && prd.Status != PRDCancelled && prd.Status != PRDBlocked {
+		return nil, fmt.Errorf("prd %q status %q is locked; only needs_review / revisions_asked / cancelled / blocked accept task edits", prdID, prd.Status)
 	}
 	found := false
 	for si := range prd.Story {
 		for ti := range prd.Story[si].Tasks {
 			if prd.Story[si].Tasks[ti].ID == taskID {
+				ts := prd.Story[si].Tasks[ti].Status
+				if ts == TaskCompleted {
+					return nil, fmt.Errorf("task %q is completed; completed task specs are immutable", taskID)
+				}
+				if prd.Status == PRDBlocked && ts != TaskFailed && ts != TaskBlocked {
+					if ts == "" {
+						ts = TaskPending
+					}
+					return nil, fmt.Errorf("task %q status %q cannot be edited while prd %q is blocked; only failed or blocked tasks can be patched in place", taskID, ts, prdID)
+				}
 				prd.Story[si].Tasks[ti].Spec = newSpec
 				prd.Story[si].Tasks[ti].UpdatedAt = time.Now()
 				found = true

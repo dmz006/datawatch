@@ -339,7 +339,7 @@ func (s *Server) handleAutonomousPRDRequestRevision(_ context.Context, req mcpsd
 
 func (s *Server) toolAutonomousPRDEditTask() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_prd_edit_task",
-		mcpsdk.WithDescription("BL191 — rewrite a task's spec before approving."),
+		mcpsdk.WithDescription("BL191 — rewrite a task's spec before approving (needs_review / revisions_asked) or after cancelling. BL421: also works on a blocked PRD for the failed/blocked task that halted it — edit, then autonomous_prd_reset_task to retry without re-decomposing. Completed tasks are immutable in every status."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
 		mcpsdk.WithString("task_id", mcpsdk.Required(), mcpsdk.Description("Task ID to rewrite")),
 		mcpsdk.WithString("new_spec", mcpsdk.Required(), mcpsdk.Description("New spec text")),

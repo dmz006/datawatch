@@ -258,7 +258,7 @@ shape.
 Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
 
 - **`autonomous_prd_children`** (v5.9.0, BL191 Q4) — list child PRDs spawned from a parent's `Task.SpawnPRD` shortcuts.
-- **`autonomous_prd_edit_task`** (v5.9.0+) — edit task `spec` / `backend` / `effort` / `model` while a PRD is in `needs_review` or `revisions_asked`.
+- **`autonomous_prd_edit_task`** (v5.9.0+) — edit a task's `spec` while a PRD is in `needs_review`, `revisions_asked`, `cancelled`, or `blocked` (per-task `backend` / `effort` / `model` go through `autonomous_prd_set_task_llm`). On a `blocked` PRD only the `failed`/`blocked` task that halted it can be edited, and a `completed` task's spec is immutable in every status. Recovery flow for a stuck task: `autonomous_prd_edit_task` to fix the spec, then `autonomous_prd_reset_task` to retry it — completed sibling tasks are left untouched, no re-decompose needed.
 - **`autonomous_prd_edit_story`** — rewrite a story's `title`/`description` while a PRD is in `needs_review` or `revisions_asked`.
 - **`autonomous_prd_add_story`** / **`autonomous_prd_remove_story`** — add a new, empty story, or remove a story (and its tasks), without re-running decompose. Only allowed pre-approval.
 - **`autonomous_prd_add_task`** / **`autonomous_prd_remove_task`** — add a new task to an existing story, or remove one, without re-running decompose. Only allowed pre-approval. `remove_task` is distinct from `autonomous_prd_cancel_task`, which stops a running/queued task without deleting it from the PRD.

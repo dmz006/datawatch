@@ -634,7 +634,8 @@ type AutonomousAPI interface {
 	CancelStory(prdID, storyID, actor, reason string) (any, error)
 	CancelTask(prdID, taskID, actor, reason string) (any, error)
 	// v5.26.32 — story title + description edit (parallels
-	// EditTaskSpec; same gate: needs_review / revisions_asked).
+	// EditTaskSpec; gate: needs_review / revisions_asked — EditTaskSpec
+	// additionally accepts a blocked PRD for a failed/blocked task, BL421).
 	EditStory(prdID, storyID, newTitle, newDescription, actor string) (any, error)
 
 	// Structural edits — add/remove a story or task without re-decomposing.
