@@ -733,6 +733,13 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 		t.PriorAttemptHint = ""
 		_ = m.store.SaveTask(t)
 	}
+	// BL410 Phase 3 — tracks the most recent failure's category across
+	// every retryable branch in the loop below (stall, quality-gate
+	// regression, content-hint retry, a genuine vr.OK==false), so the
+	// Learning entry recorded on final exhaustion reflects what
+	// actually just happened, not a stale/zero-value vr left over from
+	// a branch that never touched it.
+	lastFailureCategory := ""
 	defer m.releaseCapacity(t.ID)
 	spawn = m.capacityRetrySpawn(t, spawn)
 	for attempt := 0; attempt <= retries; attempt++ {
@@ -877,6 +884,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 					// A stall (SSE, or no log output past stale_task_seconds) is a
 					// retryable verification failure, not a fatal error — it consumes
 					// the same auto_fix_retries budget as a normal failed verification.
+					lastFailureCategory = "infra" // BL410 Phase 3
 					hint = err.Error()
 					if cp := m.relocateCheckpoint(prd, t); cp != "" {
 						hint += "\n\nCheckpoint from the previous attempt (context only):\n" + cp
@@ -906,6 +914,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 					metrics.QualityGatePassTotal.Inc()
 				}
 				if cmp.Regression && qgCfg.BlockOnRegression {
+					lastFailureCategory = "policy" // BL410 Phase 3
 					t.Status = TaskFailed
 					t.Error = "quality_gate_regression: " + cmp.Summary
 					_ = m.store.SaveTask(t)
@@ -940,6 +949,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				// runPerTaskGuardrails: retry the SAME task via this
 				// same loop, exactly like a failed verification or
 				// quality-gate regression already does above.
+				lastFailureCategory = "" // BL410 Phase 3 — content
 				hint = contentHint
 				t.Error = hint
 				_ = m.store.SaveTask(t)
@@ -976,6 +986,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				}
 			}
 		}
+		lastFailureCategory = vr.Category // BL410 Phase 3
 		hint = vr.Summary
 		if len(vr.Issues) > 0 {
 			hint += "\nIssues:\n- " + joinLines(vr.Issues)
@@ -986,6 +997,11 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 	}
 	t.Status = TaskFailed
 	t.Error = "verification failed after retries"
+	// BL410 Phase 3 — Learning writer revival: record the final,
+	// budget-exhausted failure for future pattern analysis. Fires once,
+	// here, not on every retry attempt — a transient failure that
+	// self-healed on a later attempt never reaches this line.
+	m.recordFailureLearning(prd, t.ID, lastFailureCategory, hint)
 	// No more attempts coming — sweep any leftover CHECKPOINT.md too.
 	m.relocateCheckpoint(prd, t)
 	if err := m.store.SaveTask(t); err != nil {
@@ -1324,6 +1340,7 @@ func (m *Manager) runPerTaskGuardrails(ctx context.Context, prd *PRD, t *Task) (
 				continue
 			}
 			blocked = true
+			m.recordFailureLearning(prd, t.ID, v.Category, contentFixHint(v)) // BL410 Phase 3
 		}
 	}
 	return blocked, contentHint, nil
@@ -1408,6 +1425,7 @@ func (m *Manager) runPerStoryGuardrails(ctx context.Context, prd *PRD, s *Story)
 				continue
 			}
 			blocked = true
+			m.recordFailureLearning(prd, s.ID, v.Category, contentFixHint(v)) // BL410 Phase 3
 		}
 	}
 	return blocked, contentFixVerdict, nil

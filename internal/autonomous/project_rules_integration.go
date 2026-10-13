@@ -97,6 +97,19 @@ func (m *Manager) runPRDCompletionProjectRulesCheck(prd *PRD) (bool, error) {
 			At: time.Now(), Kind: "project_rules_block", Actor: "autonomous",
 			Note: fmt.Sprintf("%d finding(s) at or above fail_on_severity blocked PRD completion", len(result.Findings)),
 		})
+		// BL410 Phase 3 — a deterministic scan hit is always a real
+		// finding (content), never an infra failure: scan.Run's own
+		// Error branch above already returns separately for a genuine
+		// execution failure, so reaching here means the scan ran to
+		// completion and found something real. No auto-fix offered
+		// for this check (Phase 2 scope: only guardrail-verdict-
+		// producing call sites get it), but the failure is still worth
+		// recording for future pattern analysis.
+		var issues []string
+		for _, f := range result.Findings {
+			issues = append(issues, fmt.Sprintf("[%s] %s: %s", f.RuleID, f.File, f.Message))
+		}
+		m.recordFailureLearning(prd, prd.ID, "content", fmt.Sprintf("%d project-rules finding(s):\n- %s", len(result.Findings), strings.Join(issues, "\n- ")))
 	}
 	m.fireUpstreamIssueActions(filtered, result.Findings)
 	return !result.Pass, nil
