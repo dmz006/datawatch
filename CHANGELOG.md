@@ -5,6 +5,61 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.53 — feat(autonomous): BL410 Phase 3 — Learning writer revival
+
+### Added
+- **`store.AddLearning` finally has a caller.** Flagged by BL411 as
+  fully plumbed on the read side (`autonomous_learnings`/
+  `memory_learnings` MCP tools) with zero non-test writers anywhere in
+  the codebase — the exact dead code BL410 was filed to revive ("an
+  eye toward skills improving from observed failure patterns").
+- New `recordFailureLearning(prd, unitID, category, detail)` writes
+  one `Learning` row, called from every genuinely exhausted failure
+  point: `executeOne`'s final `TaskFailed` (after the attempt loop
+  exhausts, whatever the last failure actually was — a stall, a
+  quality-gate regression, a content-category guardrail retry, or a
+  real verification failure), the task/story-level `TaskBlocked`/
+  story-block branches, `runPRDCompletionRulesReview`'s exhausted
+  block, and `runPRDCompletionProjectRulesCheck`'s deterministic
+  finding.
+- Fires **once, on exhaustion — not on every attempt.** A transient
+  failure that self-heals on a later retry (Phase 1/2's whole point)
+  writes zero rows; only a failure that genuinely never got fixed
+  leaves a durable record. Best-effort: a write failure is logged,
+  never propagated, matching every other side-write in this package
+  (memory seed/harvest/report).
+- A new loop-scoped `lastFailureCategory` in `executeOne` tracks
+  *which* failure category was actually last in play across every
+  retryable branch (stall → `"infra"`, quality-gate regression →
+  `"policy"`, content-hint retry → `""`/content, a real verification
+  failure → `vr.Category`) — fixes a real correctness gap found while
+  wiring this: relying on `vr` directly at the exhaustion point would
+  have silently mislabeled a stall/regression-caused exhaustion as
+  content, since those paths `continue` without ever touching `vr`.
+
+### Reuse audit
+- Zero new store schema — `Learning`'s shape and `store.AddLearning`
+  already existed untouched; this phase is purely "find the dead
+  writer, call it from the right places."
+
+### Tests
+- `internal/autonomous/bl410_phase3_learning_test.go` — 3 tests: a
+  task exhausting its budget writes exactly one row; a task that
+  succeeds on retry writes zero; a PRD-level `rules-review` exhaustion
+  writes a row with `TaskID == PRDID` (the PRD-wide-finding
+  convention).
+- Full `go test ./...` green, fresh; `golangci-lint` 0 issues;
+  `scripts/check-no-internal-refs.sh` PASS. Caught and fixed a real
+  nil-pointer panic while adding this: `recordFailureLearning` now
+  guards `m.store == nil` (several existing tests construct a bare
+  `&Manager{cfg: ...}` fixture without `NewManager`, which never
+  touched `m.store` before this phase).
+
+### Mobile parity
+- N/A — `autonomous_learnings`/`memory_learnings` read tooling already
+  existed and is already exposed; this phase only makes it return real
+  data.
+
 ## v9.0.52 — feat(autonomous): BL410 Phase 2 — content auto-fix (synthesized corrective work, same PRD)
 
 ### Added

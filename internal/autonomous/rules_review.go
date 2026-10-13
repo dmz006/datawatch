@@ -168,5 +168,6 @@ func (m *Manager) runPRDCompletionRulesReview(ctx context.Context, prd *PRD) (bl
 		m.recordAutoRetryDecision(prd, prd.ID, "content", prd.RetryCountsByCategory["content"], false)
 		return false, &vCopy, nil
 	}
+	m.recordFailureLearning(prd, prd.ID, v.Category, contentFixHint(v)) // BL410 Phase 3
 	return true, nil, nil
 }

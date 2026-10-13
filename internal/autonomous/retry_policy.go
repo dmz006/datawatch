@@ -12,6 +12,7 @@ package autonomous
 import (
 	"context"
 	"fmt"
+	"log"
 	"time"
 )
 
@@ -166,6 +167,37 @@ func (m *Manager) recordAutoRetryDecision(prd *PRD, unitID, category string, att
 		At: time.Now(), Kind: "auto_retry", Actor: "autonomous",
 		Note: note, FailureCategory: category,
 	})
+}
+
+// recordFailureLearning (BL410 Phase 3) writes one Learning row via
+// the already-existing store.AddLearning — the exact dead-code writer
+// BL411 flagged as fully plumbed on the read side
+// (autonomous_learnings/memory_learnings) and never called anywhere.
+// Fires once a unit's retry budget is fully exhausted, not on every
+// attempt, so a transient failure that self-heals on a later retry
+// produces zero noise — only a genuinely unresolved failure leaves a
+// durable record for future pattern analysis (BL410's own "eye toward
+// skills improving from observed failure patterns" clause). category
+// may be empty (meaning "content" per FailureReason's taxonomy); best
+// effort — a write failure is logged, never propagated, matching
+// every other best-effort side-write in this package (memory seed/
+// harvest/report).
+func (m *Manager) recordFailureLearning(prd *PRD, unitID, category, detail string) {
+	if m.store == nil { // bare &Manager{} test fixtures never call NewManager
+		return
+	}
+	cat := category
+	if cat == "" {
+		cat = "content"
+	}
+	if err := m.store.AddLearning(Learning{
+		TaskID:   unitID,
+		PRDID:    prd.ID,
+		Category: cat,
+		Text:     fmt.Sprintf("[%s] %s", cat, detail),
+	}); err != nil {
+		log.Printf("[autonomous] recordFailureLearning: prd=%s unit=%s: %v", prd.ID, unitID, err)
+	}
 }
 
 // runGuardrailWithInfraRetry (BL410 Phase 1) wraps a single guardrail

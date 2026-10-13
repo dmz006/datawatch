@@ -503,14 +503,34 @@ established. In progress — starting with BL403.**
    through the existing `StoryAwaitingApproval` gate). No new config/
    REST/MCP/PWA surface — reuses Phase 1's fields verbatim.
 
-   **Known gaps, carried forward honestly, not silently dropped**:
-   `Manager.Decompose`'s own infra/scope retry was scoped into Phase 1
-   originally but never wired (`PRD.LastDecomposeFailure` exists,
-   nothing uses it); `Task.FailureReason`/`Story.FailureReason` remain
-   unpopulated (the same info already lives in `Verdicts`); no
-   dedicated test for `AutoFixSkipApproval=false`'s end-to-end path.
-   **Next: Phase 3** (Learning writer revival — `store.AddLearning`
-   already exists, nothing calls it yet).
+   **Phase 3 shipped v9.0.53 — BL410's last planned phase.** New
+   `recordFailureLearning` finally calls `store.AddLearning` (the exact
+   dead code BL411 flagged — fully plumbed read side via
+   `autonomous_learnings`/`memory_learnings`, zero writers anywhere).
+   Fires once, only when a unit's retry budget is genuinely exhausted
+   — not on every attempt, so a transient failure that self-heals
+   writes zero rows. Hooked at every terminal-failure point: `executeOne`'s
+   final `TaskFailed`, task/story `TaskBlocked`/block, both PRD-level
+   completion checks. Found and fixed two real bugs while wiring this:
+   (1) a new `lastFailureCategory` tracker was needed because relying
+   on `vr` directly at the exhaustion point would have silently
+   mislabeled a stall/quality-gate-regression-caused exhaustion as
+   content (those paths `continue` without ever touching `vr`); (2) a
+   nil-pointer panic in several pre-existing tests that construct a
+   bare `&Manager{}` without `NewManager`, fixed with an `m.store ==
+   nil` guard. No new config/REST/MCP/PWA surface.
+
+   **Known gaps, carried forward across all three phases, not silently
+   dropped**: `Manager.Decompose`'s own infra/scope retry was scoped
+   into Phase 1 originally but never wired (`PRD.LastDecomposeFailure`
+   exists, nothing uses it); `Task.FailureReason`/`Story.FailureReason`
+   remain unpopulated (the same info already lives in `Verdicts`); no
+   dedicated test for `AutoFixSkipApproval=false`'s end-to-end path or
+   for a stall-specifically-causing-exhaustion Learning row's
+   `Category`. **BL410 is now fully shipped per its approved design**
+   (Phases 0-3); any further work (the decompose-retry gap, a
+   dedicated `RetryProfile` PWA create/edit form beyond the current
+   list+delete card) is a new, separate decision, not an open phase.
 11. **BL411** — Pre-v10.0.0 Dead Code Audit (filed 2026-10-10, same
    conversation as BL410). This session alone found four instances of
    "fully-plumbed but never actually consulted" code in
