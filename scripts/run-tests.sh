@@ -23,6 +23,17 @@
 # Keep working dir even on success (for debugging):
 #   KEEP_TEST_DIR=1 bash scripts/run-tests.sh
 #
+# External-daemon mode (2026-10-13) — run stories against a daemon you
+# already have running (a sandbox, a CI-deployed kind/k8s instance, a
+# persistent dev daemon) instead of starting a fresh one. Mirrors
+# scripts/release-smoke.sh's identical mechanism — same three
+# variables, same meaning. See docs/howto/testing-against-a-running-daemon.md.
+#   DW_BASE=https://127.0.0.1:18443 DW_BASE_TOKEN=your-token \
+#     bash scripts/run-tests.sh --story=TS-042
+# NOT the same as plain --no-daemon: that only reuses a daemon this
+# SAME harness already started on TEST_PORT/TEST_TLS_PORT (for
+# resuming mid-run); it has no way to target arbitrary ports.
+#
 # Parallel workers: stories tagged "parallel:ok" run concurrently; others run
 # serially. Worker count adapts to CPU/memory load. Override with --workers=N
 # or force --serial to disable all concurrency.
@@ -443,8 +454,32 @@ export DATAWATCH_COOKBOOK="$REPO_DIR/docs/testing/master-cookbook.md"
 export TEST_RUN_HASH="$$"
 export DATAWATCH_TEST_DATA="$TEST_DIR/.datawatch-test-${TEST_RUN_HASH}"
 
+if [[ -n "${DW_BASE:-}" ]]; then
+  # External-daemon mode (2026-10-13) — same mechanism and variable
+  # names as scripts/release-smoke.sh's own DW_BASE (see
+  # docs/howto/testing-against-a-running-daemon.md). Found live:
+  # TEST_PORT/TEST_TLS_PORT alone do NOT support this — _fresh_port
+  # below only honors a pre-set port when it's currently FREE, which
+  # an already-running daemon's port never is, so a naive
+  # TEST_TLS_PORT=<port-in-use> silently got overridden to a random
+  # free port instead and the run failed against nothing. DW_BASE
+  # bypasses port allocation for TEST_BASE/TEST_BASE_HTTP entirely
+  # instead of fighting that logic.
+  export TEST_BASE="$DW_BASE"
+  export TEST_BASE_HTTP="${DW_BASE_HTTP:-$DW_BASE}"
+  export TEST_TOKEN="${DW_BASE_TOKEN:-dw-test-token-12345}"
+  export DW_BASE_INSECURE="${DW_BASE_INSECURE:-1}" # see release-smoke.sh's identical default + rationale
+  NO_DAEMON=1
+  echo "External-daemon mode: TEST_BASE=$TEST_BASE"
+fi
+
 # Pick free ports — if an env var is set but the port is already occupied by
 # another process (e.g. leftover from a previous run), pick a fresh one.
+# Skipped entirely in DW_BASE mode above (TEST_BASE/TEST_BASE_HTTP are
+# already set and nothing here should overwrite them), but every OTHER
+# fixture port (MCP, DNS, docker-sim, ntfy, webhook) still needs a real
+# value for story code that reads it, so only guard the two daemon-facing
+# ports.
 _port_free() {
   ! ss -tlnH "sport = :$1" 2>/dev/null | grep -q . 2>/dev/null
 }
@@ -452,8 +487,10 @@ _fresh_port() {
   local p="${1:-}"
   if [[ -n "$p" ]] && _port_free "$p"; then echo "$p"; else free_port; fi
 }
-export TEST_PORT="$(_fresh_port "${TEST_PORT:-}")"
-export TEST_TLS_PORT="$(_fresh_port "${TEST_TLS_PORT:-}")"
+if [[ -z "${DW_BASE:-}" ]]; then
+  export TEST_PORT="$(_fresh_port "${TEST_PORT:-}")"
+  export TEST_TLS_PORT="$(_fresh_port "${TEST_TLS_PORT:-}")"
+fi
 export TEST_MCP_PORT="$(_fresh_port "${TEST_MCP_PORT:-}")"
 export TEST_DNS_PORT="$(_fresh_port "${TEST_DNS_PORT:-}")"
 export DOCKER_SIM_HTTP="$(_fresh_port "${DOCKER_SIM_HTTP:-}")"
@@ -468,9 +505,11 @@ export TEST_NTFY_TOPIC="dw-e2e-${RUN_ID}"
 export DOCKER_SIM_DATA="/tmp/dw-docker-sim-${RUN_ID}"
 export TEST_WEBHOOK_PORT="$(_fresh_port "${TEST_WEBHOOK_PORT:-}")"
 export TEST_DATA="${TEST_DATA:-${DATAWATCH_TEST_DATA}}"
-export TEST_BASE="https://127.0.0.1:$TEST_TLS_PORT"
-export TEST_BASE_HTTP="http://127.0.0.1:$TEST_PORT"
-export TEST_TOKEN="${TEST_TOKEN:-dw-test-token-12345}"
+if [[ -z "${DW_BASE:-}" ]]; then
+  export TEST_BASE="https://127.0.0.1:$TEST_TLS_PORT"
+  export TEST_BASE_HTTP="http://127.0.0.1:$TEST_PORT"
+  export TEST_TOKEN="${TEST_TOKEN:-dw-test-token-12345}"
+fi
 
 echo "Run ID  : $RUN_ID"
 echo "Work dir: $TEST_DIR"
@@ -678,7 +717,11 @@ fi
 prepare_k8s_image
 
 # --- daemon startup ---------------------------------------------------------
-if [[ $NO_DAEMON -eq 0 ]]; then
+# DW_BASE checked directly here (not just via NO_DAEMON) since the
+# flag-parsing block above unconditionally sets NO_DAEMON=0 AFTER the
+# DW_BASE branch already ran and set NO_DAEMON=1 -- relying on
+# assignment order alone would silently clobber it.
+if [[ $NO_DAEMON -eq 0 && -z "${DW_BASE:-}" ]]; then
   if curl -skf "https://127.0.0.1:$TEST_TLS_PORT/api/health" > /dev/null 2>&1 || \
      curl -sf "http://127.0.0.1:$TEST_PORT/api/health" > /dev/null 2>&1; then
     echo "Using existing daemon at $TEST_BASE"

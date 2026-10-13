@@ -59,8 +59,29 @@ func daemonURL() string {
 // Fix BL: "datawatch should trust its own cert" (operator 2026-05-07) —
 // before this, every CLI subcommand against an HTTPS-enabled daemon
 // failed with x509: unknown authority.
+//
+// 2026-10-13 — when -u/--url (serverURL) points at a DIFFERENT daemon
+// than the one --config describes (e.g. scripts/release-smoke.sh's
+// external-daemon mode, DW_BASE, or any script targeting a remote/
+// sandbox/kind-cluster daemon), the local config's cert belongs to the
+// WRONG daemon — loading and trusting it would be incorrect, not just
+// ineffective, since it doesn't match what -u is actually talking to.
+// DW_BASE_INSECURE opts into skipping verification for that known
+// external target. Gated on `cfgPath == ""` specifically, not just
+// `serverURL != ""`: scripts/release-smoke.sh's own LOCAL-daemon mode
+// passes BOTH --config AND -u together (-u only overrides the target
+// port; --config is still that same daemon's real config) and must
+// keep using the normal cert-trust path below — regressed this once
+// already by checking serverURL alone, caught by a real smoke run
+// (12 CLI checks failed) before it shipped.
 func daemonClient() *http.Client {
 	c := &http.Client{Timeout: 60 * time.Second}
+	if serverURL != "" && cfgPath == "" {
+		if dwBaseInsecure() {
+			c.Transport = &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true, MinVersion: tls.VersionTLS13}} // #nosec G402 -- operator opted in via DW_BASE_INSECURE for a known external/test daemon (-u mode, no local --config)
+		}
+		return c
+	}
 	cfg, err := loadConfigSecure()
 	if err != nil || cfg == nil || !cfg.Server.TLSEnabled {
 		return c
@@ -96,6 +117,21 @@ func daemonClient() *http.Client {
 		MinVersion: tls.VersionTLS13,
 	}}
 	return c
+}
+
+// dwBaseInsecure reports whether DW_BASE_INSECURE opts the CLI's -u/
+// --url mode into skipping TLS verification for the target daemon.
+// 2026-10-13 — the sibling of scripts/release-smoke.sh's DW_BASE/
+// DW_BASE_TOKEN: when pointing the CLI at an external daemon (a
+// sandbox, a kind/k8s-deployed instance, any -u target whose cert the
+// local config can't vouch for), this is the one explicit opt-in that
+// skips verification — default false (secure by default; a caller
+// that doesn't set it gets a real TLS error on a cert mismatch, not a
+// silent downgrade). Documented in
+// docs/howto/testing-against-a-running-daemon.md.
+func dwBaseInsecure() bool {
+	v := strings.ToLower(strings.TrimSpace(os.Getenv("DW_BASE_INSECURE")))
+	return v != "" && v != "0" && v != "false"
 }
 
 // daemonToken returns the Bearer token to use for daemon API calls.

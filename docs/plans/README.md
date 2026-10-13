@@ -758,6 +758,85 @@ established. In progress — starting with BL403.**
     validation run (opt in on a real PRD, confirm the review actually
     fires and records a verdict) — not yet performed as of v9.0.48.
 
+18. **BL419** — `kind-smoke` CI job was silently testing nothing +
+    production docs-index build bug (filed + shipped 2026-10-13, same
+    day). Not roadmap work — surfaced directly from an operator
+    question ("why am I getting so many PR failure notices") about
+    this session's own BL410 remediation PRs, then expanded
+    considerably once actually tested rather than assumed fixed. Root
+    causes, each confirmed live before being called fixed:
+    1. `kind-smoke.yaml` never ran `make sync-docs` on the host
+       checkout before invoking `release-smoke.sh`, so its own
+       static-lint section failed on every PR regardless of content —
+       fixed with a `sync-docs` step mirroring `ci.yaml`'s identical one.
+    2. Once that was fixed, `DW_BASE` — the env var the job sets
+       intending to point `release-smoke.sh` at the daemon already
+       running inside the kind cluster — turned out to be dead
+       configuration the script never read; it always spun up its own
+       separate local daemon, so the job never actually exercised the
+       deployed chart/image at all. Built real external-daemon mode
+       into `release-smoke.sh` (`DW_BASE`/`DW_BASE_TOKEN`/
+       `DW_BASE_INSECURE`), then — at the operator's explicit direction
+       after asking "did you actually test with an E2E test, not just
+       smoke" — the identical mechanism into `run-tests.sh`, replacing
+       an operator-facing doc section this session had itself just
+       written inaccurately (claimed `--no-daemon`/`TEST_BASE` already
+       supported this; testing it live proved it didn't — `TEST_PORT`/
+       `TEST_TLS_PORT` are only honored when the given port is
+       currently free, which an already-running daemon's never is).
+    3. Fixing the CLI's TLS trust for external-daemon mode
+       (`daemonClient()`, `DW_BASE_INSECURE`) initially regressed the
+       script's own default local-daemon mode (12 CLI checks failed) —
+       caught by re-running the full suite rather than assuming the
+       fix was safe; corrected by gating on `cfgPath == ""` specifically
+       instead of `serverURL != ""` alone.
+    4. Running real external-daemon-mode smoke for the first time ever
+       surfaced two genuine, previously-latent bugs no prior run could
+       have hit (every prior run only ever exercised a local test
+       daemon with memory hardcoded on): a hard `FAIL` where a memory-
+       disabled daemon should `SKIP` (`release-smoke.sh`'s mempalace
+       section, `release-smoke-wakeup.sh`'s skip/fail conflation), and
+       — the most consequential finding — **every production container
+       image built from `Dockerfile.agent-base` has shipped with an
+       empty docs-search index**, because the Dockerfile only ever
+       stubbed a `{}` placeholder to satisfy the `//go:embed` directive
+       and `docs/` was excluded from the build context entirely via
+       `.dockerignore`. Fixed (`make sync-docs docs-index` for real,
+       `docs/` un-ignored) and verified with an actual `docker build` +
+       extracted binary: 3399 chunks / 186 paths indexed, 59 real howto
+       refs returned via `docs_list_howtos` where it previously
+       returned 0.
+    New howto `docs/howto/testing-against-a-running-daemon.md`
+    documents the one shared `DW_BASE` mechanism both scripts now use,
+    including an explicit correction of its own first-draft inaccuracy
+    about `run-tests.sh`.
+
+    **Root-caused and fixed, v9.0.60**: the `opencode-acp` state-
+    detection timeout was root-caused — `Dockerfile.agent-base`
+    deliberately ships with no LLM agent binary at all (by design),
+    so `/api/sessions/start` still returned a real session id (the
+    daemon doesn't check binary availability before creating the
+    tmux pane), the pane's command failed to exec, and the watcher
+    correctly never saw a real prompt — reported as a false "watcher
+    regression?" against an environment that structurally could never
+    pass it. Fixed by probing `/api/backends`' own `available` flag
+    before attempting the session. This was `kind-smoke`'s exact last
+    remaining failure (150 pass/1 fail/49 skip on the real CI run
+    right before this fix).
+
+    **Actually root-caused, v9.0.61**: the v9.0.60 fix correctly let
+    the check run (opencode genuinely is available there), which
+    surfaced the REAL remaining issue: `state=complete after 40s`,
+    not the `state=running` symptom this check guards against. The
+    idle task legitimately completed outright (`Running → Complete`
+    directly, by design — confirmed via
+    `TestBL266_ACP_SessionCompletedTransitionsToComplete`) without
+    ever needing `WaitingInput`. Accepted `complete` as a pass
+    alongside `waiting_input` — reaching any real terminal state
+    (not stuck forever in `Running`) is itself proof the watcher
+    works. **`kind-smoke` is now expected fully green** on the next
+    CI run; not yet confirmed as of this entry (watching).
+
 **Outside the queue, handled separately, not blocking Stage 3:**
 - ~~**BL381**~~ — status-verified 2026-10-10: shipped v8.28.0 + v8.28.2
   (PWA picker). Moved to Completed. No slot needed.

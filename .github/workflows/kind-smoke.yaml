@@ -38,6 +38,20 @@ jobs:
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
 
+      # 2026-10-13 — this job's own "Run release-smoke.sh" step runs on
+      # the HOST checkout (not inside the built container), and
+      # release-smoke.sh's own static-lint section fails if
+      # internal/server/web/docs/ (the synced doc mirror, gitignored)
+      # is missing or stale. Dockerfile.agent-base only ever writes a
+      # throwaway `{}` placeholder for the BM25 index so `go build`
+      # compiles inside the image — it never runs the real sync, so
+      # this job failed on every PR regardless of content. `sync-docs`
+      # alone (not `docs-index`, which needs `go run` — this runner has
+      # no Go toolchain, unlike ci.yaml's) is a pure rsync and is all
+      # release-smoke.sh's bash/python static checks actually consult.
+      - name: sync-docs (host checkout, for release-smoke.sh's static checks)
+        run: make sync-docs
+
       - name: Install kind + kubectl + helm
         run: |
           set -euxo pipefail

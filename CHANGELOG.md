@@ -5,6 +5,199 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.61 — fix(ci): kind-smoke's actual last failure — Complete is a valid outcome, not just WaitingInput (BL419)
+
+### Fixed
+- v9.0.60's availability-gate fix correctly let the check run (opencode
+  genuinely is available in that environment); the real CI run then
+  surfaced a *different* failure: `state=complete after 40s`, not the
+  `state=running` symptom this check actually guards against. The
+  idle test task legitimately went straight `Running → Complete` (no
+  further input needed) without ever passing through `WaitingInput` —
+  confirmed as correct, intentional behavior, not a bug, by
+  `internal/session/bl266_state_engine_test.go`'s own
+  `TestBL266_ACP_SessionCompletedTransitionsToComplete` (a
+  `session.completed`/`message.completed` ACP event transitions
+  straight to `Complete` by design). The regression this check exists
+  to catch (BL266's "no prompt → Running" reverter bug) is a session
+  stuck forever in `Running` — reaching *any* real terminal/waiting
+  state, `Complete` included, is itself proof the watcher isn't
+  stuck. `state_engine_check` now accepts `complete` as a pass
+  alongside `waiting_input`.
+
+### Testing
+Verified the still-common `waiting_input` case keeps working
+identically (default-mode smoke: 203 pass/0 fail/35 skip, unchanged).
+
+## v9.0.60 — fix(ci): kind-smoke's last remaining failure — opencode-acp availability false-fail (BL419)
+
+### Fixed
+- **`state_engine_check`'s opencode-acp check false-FAILed on an image
+  that never had opencode installed by design**. `Dockerfile.agent-base`
+  deliberately ships with no LLM agent binary at all — `/api/sessions/start`
+  still returns a real session id regardless (nothing at that layer
+  checks binary availability before creating the tmux pane), so the
+  check's existing "unavailable / start failed" skip path never
+  triggered; the pane's command just failed to exec and the watcher
+  correctly never saw a real waiting-for-input prompt, reported as a
+  "watcher regression?" against an environment that structurally
+  could never pass it. Now probes `/api/backends`' own `available`
+  flag (backed by a real `<binary> --version` check) before
+  attempting the session at all, mapping `opencode-acp` (an ACP
+  session-protocol mode, not a separately registered backend) to its
+  underlying `opencode` binary entry. This was `kind-smoke`'s exact
+  last remaining failure after v9.0.59 — real CI went from 150 pass/
+  **1** fail/49 skip to this fix.
+
+### Testing
+Verified the positive case (opencode available) still passes
+identically (default-mode smoke: 203 pass/0 fail/35 skip, unchanged).
+Could not locally simulate the true negative case (binary genuinely
+absent) — this host resolves `opencode` via an absolute path in its
+registered LLM config, not a live `PATH` lookup, so removing
+`opencode`'s directory from `PATH` had no effect; confirmed this is a
+property of this host's config, not a flaw in the fix, by reading the
+`/api/backends` response shape and the `available` field's real
+source (`b.Version()`) directly. The real `kind-smoke` CI run against
+`Dockerfile.agent-base` (which genuinely has no opencode binary) is
+the only environment that can truly exercise the negative path — that
+run is the actual verification for this fix.
+
+## v9.0.59 — fix(ci): kind-smoke fully working + production docs-index build bug
+
+### Fixed
+- **`daemonClient()` regression from v9.0.58, caught before it shipped
+  further**: gating external-daemon TLS trust on `serverURL != ""`
+  alone broke the script's own default local-daemon mode, since
+  `release-smoke.sh`'s local `DW_CLI` has always passed both `--config`
+  and `-u` together. Fixed by gating on `cfgPath == ""` specifically —
+  only skip the config-based cert trust when there's genuinely no
+  local config describing the target. Caught by re-running the full
+  suite rather than assuming the prior fix was safe (12 CLI checks
+  failed); both modes re-verified clean after the fix.
+- **`release-smoke-wakeup.sh` conflated skip with fail**: a memory-
+  disabled daemon's probe correctly returned "skip" (exit 2) per
+  probe, but the caller's `probe ... || failed=1` treated any
+  non-zero return as a failure, always exiting 1. Tracks skip and
+  fail separately now; all-skip exits 2, any real failure still
+  exits 1.
+- **`release-smoke.sh`'s mempalace section (sweep_stale/spellcheck/
+  extract_facts) had no memory-enabled gate at all**, unlike its
+  sibling section just above — hard-FAILed the first time it ever ran
+  against a daemon with memory disabled by default (every prior run
+  only ever hit the local test daemon's own always-on config). Now
+  gated on the same `$MEM_OK` check.
+- **Every production container image built from `Dockerfile.agent-base`
+  has shipped with an empty docs-search index** (`docs_search`/
+  `docs_list_howtos` always returned nothing) since
+  `internal/docsindex/embedded.go`'s `//go:embed` target
+  (`assets/docs-bm25-index.json`) was only ever stubbed with a
+  throwaway `{}` placeholder at build time, and `docs/` was excluded
+  from the Docker build context entirely via `.dockerignore`. Fixed:
+  `docs/` un-ignored (≈22MB, negligible build-context cost), builder
+  stage now runs the real `make sync-docs docs-index` (installing
+  `rsync`, not present in the base `golang` image, to support it).
+  Verified with an actual `docker build` + extracted binary: 3399
+  chunks / 186 paths indexed; `docs_list_howtos` now returns 59 real
+  refs where it previously returned 0.
+- **`run-tests.sh`'s own documented external-daemon mechanism didn't
+  work**: this release's own first-draft howto doc (see v9.0.58)
+  claimed `--no-daemon` + a pre-set `TEST_BASE` pointed the E2E runner
+  at an arbitrary already-running daemon. Testing it live (at operator
+  direction, after asking "did you actually test this with an E2E
+  test") proved that wrong: `TEST_PORT`/`TEST_TLS_PORT` are only
+  honored by the script's port-picker when the given port is
+  currently *free* — never true for an already-running daemon — so
+  `TEST_BASE` got silently recomputed and the run failed against
+  nothing.
+
+### Added
+- **Real external-daemon mode for `run-tests.sh`**, mirroring
+  `release-smoke.sh`'s mechanism exactly: `DW_BASE`/`DW_BASE_TOKEN`/
+  `DW_BASE_INSECURE`. One shared mechanism across both scripts now,
+  not two. `--no-daemon` on its own still means what it always meant
+  (skip this run's own daemon-start step, for resuming a daemon this
+  *same* harness already started) — it was never a general external-
+  daemon override and the doc now says so correctly.
+- Filed as **BL419** in `docs/plans/README.md` — this work was never
+  on the v10.0.0 roadmap; it grew from a direct operator question
+  about PR-notification noise into a multi-bug fix once actually
+  tested, and is tracked for the record rather than left as
+  untracked work hiding in commit messages.
+
+### Still open
+An `opencode-acp` session state-detection timeout surfaced in the
+real kind-deployed environment (works fine against a local daemon) —
+not yet root-caused; likely an environment/chart-config gap, not a
+script bug. Not blocking this fix from shipping.
+
+### Testing
+Every fix in this release was verified against a real daemon (never
+assumed from reading code): 4 separate standalone daemons spun up
+across this release's fix cycle (memory-enabled, memory-disabled,
+token-authed, Docker-built-binary), each exercised via direct `curl`/
+CLI calls and/or a full `release-smoke.sh`/`run-tests.sh` run. Final
+state: default-mode smoke 203 pass/0 fail/35 skip; external-mode
+smoke 191 pass/0 fail/38 skip; `go test ./...` 3865 pass; a real
+`docker build` of the builder stage confirmed the index-generation
+fix end-to-end.
+
+## v9.0.58 — fix(ci): kind-smoke doc-sync + real external-daemon mode for release-smoke.sh
+
+### Fixed
+- **`kind-smoke` CI job** was failing on every PR regardless of content,
+  for two separate, now-fixed reasons:
+  1. `release-smoke.sh`'s own static-lint section requires
+     `internal/server/web/docs/` (gitignored) to be in sync with
+     `docs/`, but `kind-smoke.yaml` never ran the sync step on the
+     host checkout (only `ci.yaml` did). Added a `sync-docs` step
+     right after checkout.
+  2. Once that was fixed, a second, deeper bug surfaced: `DW_BASE`
+     (the env var `kind-smoke.yaml` sets, intending to point
+     `release-smoke.sh` at the daemon already running inside the kind
+     cluster) was dead configuration — `release-smoke.sh` always
+     spun up its own separate, local daemon and ignored it entirely.
+     The job never actually tested the in-kind-deployed daemon.
+
+### Added
+- **Real external-daemon mode for `release-smoke.sh`**: `DW_BASE=<url>`
+  (plus optional `DW_BASE_TOKEN` / `DW_BASE_INSECURE`) now runs every
+  functional check against an already-running daemon instead of
+  starting a fresh isolated one. No local binary required; no daemon
+  started or killed. The two checks that need to drop a fixture file
+  where the *daemon* reads it from local disk (managed-plugin
+  discovery/lifecycle, the evals-suite smoke check) report `SKIP`
+  with an explicit reason in this mode rather than a false `FAIL` —
+  everything else (every REST/MCP check, every CLI round-trip) runs
+  identically against any daemon, local or external.
+- **`daemonClient()` (`cmd/datawatch/cli_sx_parity.go`) learns
+  `DW_BASE_INSECURE`**: when `-u`/`--url` points at a daemon other
+  than the one the local config describes, trusting the local
+  config's own TLS cert would be wrong (not just ineffective) — it
+  belongs to a different daemon. `DW_BASE_INSECURE` opts the CLI's
+  `-u`-mode calls into skipping verification for that known external
+  target; normal production CLI use (no `-u`) is completely
+  unaffected. Defaults on inside `release-smoke.sh`'s external-daemon
+  mode (matching every other check in that script, which already
+  uses `curl -sk` unconditionally) with an explicit opt-out.
+- **New howto**: `docs/howto/testing-against-a-running-daemon.md`
+  documents both this new mechanism and `run-tests.sh`'s pre-existing,
+  independent `--no-daemon`/`TEST_BASE`/`TEST_BASE_HTTP`/`TEST_TOKEN`
+  equivalent (which existed before this release but had never been
+  written up anywhere) — cross-linked from `daemon-operations.md` and
+  `AGENT.md`'s smoke-testing section, and listed in the howto index
+  (which was also missing a `retry-policy.md` entry from v9.0.55,
+  fixed in the same pass).
+
+### Testing
+Reproduced the root cause of both `kind-smoke` bugs locally before
+fixing: emptied the doc mirror to confirm the sync-check fails/passes
+correctly around the fix; started a real standalone daemon and ran
+`release-smoke.sh` against it via `DW_BASE` before AND after the
+`DW_BASE_INSECURE`/fixture-skip fixes (13 failures → 0). Full default-
+mode regression run unaffected (203 pass/0 fail/35 skip, unchanged).
+`go test ./...`: 3865 pass.
+
 ## v9.0.57 — fix(autonomous): BL410 remediation — Decompose retry wiring + FailureReason population
 
 ### Added
