@@ -5,6 +5,29 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.55 — docs(autonomous): BL410 remediation — retry-policy docs + architecture flow
+
+### Added
+- `docs/howto/retry-policy.md`: new CLI section (the CLI didn't exist
+  until v9.0.54), new Comm channel section, and new "What happens on
+  a retry" / "When a retry budget is finally exhausted" sections
+  documenting Phase 2 (content auto-fix: task/story respawn-with-hint
+  vs. PRD-level `synthesizeCorrectiveWork`) and Phase 3 (Learning
+  writer) — previously undocumented entirely.
+- `docs/flow/guardrail-flow.md`: new "Retry, escalation, and content
+  auto-fix" section; both block-outcome branches in the existing
+  per-task and PRD-completion flow diagrams now point at it instead
+  of going straight to "mark task failed."
+- `docs/plans/README.md`: BL410's roadmap entry records the full
+  2026-10-13 remediation pass (this release + v9.0.54's CLI/comm
+  parity + the `datawatch-app` mobile-parity tracking issue).
+
+### Why a version bump for a docs-only change
+`scripts/check-version-bump.sh` only exempts `docs/plans/`, test
+files, and CI/lint config from the reuse check — `docs/howto/` and
+`docs/flow/` are real user-facing documentation and bump like any
+other change.
+
 ## v9.0.54 — fix(autonomous): BL410 remediation — retry-policy CLI + comm-channel parity
 
 ### Added
