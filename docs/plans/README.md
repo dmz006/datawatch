@@ -485,11 +485,32 @@ established. In progress — starting with BL403.**
    Profiles card. Caught and fixed one real bug while wiring this: the
    originally-proposed infra budget (2) equaled the escalation
    threshold (2), making escalation structurally unreachable — raised
-   the default to 4. Content auto-fix (Phase 2 — synthesizing
-   corrective task/story work from a guardrail's own `Issues`, appended
-   to the same PRD, never a new one) remains unbuilt:
-   `ContentAutoFixEnabled`/`AutoFixSkipApproval` resolve functions exist
-   and are tested, but nothing calls them yet. **Next: Phase 2.**
+   the default to 4.
+
+   **Phase 2 shipped v9.0.52** — content auto-fix. Task-level: a
+   content-category block now retries the SAME task via its existing
+   `executeOne` attempt loop, fed in through the existing `RetryHint`
+   field — zero new spawn machinery. Story/PRD-level: no single task
+   owns a story-wide or PRD-wide finding, so a new
+   `synthesizeCorrectiveWork` helper appends corrective work (a new
+   task into the same story, or a new story+task) built from the
+   verdict's own `Issues` — always onto the SAME `PRD.ID`, never a new
+   one, per the operator's explicit "it should retry itself" decision
+   — then `Run()` recurses to execute it and re-reach the same
+   completion check, fully unattended. Both paths bounded by Phase 1's
+   own `content`-category budget/ceiling. `resolveAutoFixSkipApproval`
+   now does real work (default: skip approval entirely; off routes
+   through the existing `StoryAwaitingApproval` gate). No new config/
+   REST/MCP/PWA surface — reuses Phase 1's fields verbatim.
+
+   **Known gaps, carried forward honestly, not silently dropped**:
+   `Manager.Decompose`'s own infra/scope retry was scoped into Phase 1
+   originally but never wired (`PRD.LastDecomposeFailure` exists,
+   nothing uses it); `Task.FailureReason`/`Story.FailureReason` remain
+   unpopulated (the same info already lives in `Verdicts`); no
+   dedicated test for `AutoFixSkipApproval=false`'s end-to-end path.
+   **Next: Phase 3** (Learning writer revival — `store.AddLearning`
+   already exists, nothing calls it yet).
 11. **BL411** — Pre-v10.0.0 Dead Code Audit (filed 2026-10-10, same
    conversation as BL410). This session alone found four instances of
    "fully-plumbed but never actually consulted" code in

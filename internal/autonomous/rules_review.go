@@ -103,20 +103,26 @@ func (m *Manager) rulesReviewSuffix(prd *PRD) string {
 // tests that never call SetGuardrail), or rulesReviewSuffix finds no
 // rules/context file to check against (headless PRD, or a repo with
 // neither file configured nor present — nothing to review).
-func (m *Manager) runPRDCompletionRulesReview(ctx context.Context, prd *PRD) (blocked bool, err error) {
+//
+// Returns (blocked, contentFixVerdict, err) — see runPerStoryGuardrails'
+// identical doc comment for contentFixVerdict's meaning (BL410 Phase 2):
+// there is no single task/story a PRD-wide finding belongs to, so a
+// content-category block eligible for auto-fix is handed back for the
+// caller to synthesizeCorrectiveWork from, rather than retried here.
+func (m *Manager) runPRDCompletionRulesReview(ctx context.Context, prd *PRD) (blocked bool, contentFixVerdict *GuardrailVerdict, err error) {
 	if !slices.Contains(m.resolveGuardrails(prd, "prd"), "rules-review") {
-		return false, nil
+		return false, nil, nil
 	}
 	m.mu.Lock()
 	fn := m.guardrail
 	globalBackend, globalModel := m.cfg.VerificationBackend, m.cfg.VerificationModel
 	m.mu.Unlock()
 	if fn == nil {
-		return false, nil
+		return false, nil, nil
 	}
 	suffix := m.rulesReviewSuffix(prd)
 	if suffix == "" {
-		return false, nil
+		return false, nil, nil
 	}
 
 	inv := GuardrailInvocation{
@@ -143,12 +149,24 @@ func (m *Manager) runPRDCompletionRulesReview(ctx context.Context, prd *PRD) (bl
 	// through unchanged to the PRDBlocked handling below.
 	v, ferr := m.runGuardrailWithInfraRetry(ctx, prd, inv, fn)
 	if ferr != nil {
-		return false, fmt.Errorf("rules review for prd %s: %w", prd.ID, ferr)
+		return false, nil, fmt.Errorf("rules review for prd %s: %w", prd.ID, ferr)
 	}
 	if v.VerdictAt.IsZero() {
 		v.VerdictAt = time.Now()
 	}
 	v.Guardrail = "rules-review"
 	prd.Verdicts = append(prd.Verdicts, v)
-	return v.Outcome == "block", nil
+	if v.Outcome != "block" {
+		return false, nil, nil
+	}
+	// BL410 Phase 2 — a content-category block (a real judgment, like
+	// rules-review's own post-B127-fix `warn`/`block`) gets one
+	// auto-fix attempt when enabled and budget remains.
+	if v.Category == "" && m.resolveContentAutoFixEnabled(prd) && m.retryBudgetRemaining(prd, "content") {
+		_ = m.consumeRetryBudget(prd, "content")
+		vCopy := v
+		m.recordAutoRetryDecision(prd, prd.ID, "content", prd.RetryCountsByCategory["content"], false)
+		return false, &vCopy, nil
+	}
+	return true, nil, nil
 }

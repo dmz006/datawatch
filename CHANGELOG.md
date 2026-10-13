@@ -5,6 +5,95 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.52 — feat(autonomous): BL410 Phase 2 — content auto-fix (synthesized corrective work, same PRD)
+
+### Added
+- **A content-category guardrail block now gets one auto-fix attempt
+  before requiring a human** — direct answer to the operator's own
+  framing: "if a test fails it should retry with the failure and
+  correct it, I shouldn't have to get involved when the solution was
+  already known from the failed test." Two mechanisms depending on
+  whether an existing unit can be re-spawned:
+  - **Task-level**: `runPerTaskGuardrails` now returns a `contentHint`
+    alongside `blocked`. `executeOne` feeds it into
+    `SpawnRequest.RetryHint` and retries the SAME task through its
+    existing attempt loop — the exact mechanism a failed verification
+    or quality-gate regression already uses, now also reachable from a
+    content-category guardrail block.
+  - **Story/PRD-level**: no single task owns a story-wide or PRD-wide
+    finding, so `runPerStoryGuardrails`/`runPRDCompletionRulesReview`
+    hand back the blocking verdict instead, and a new
+    `synthesizeCorrectiveWork` helper appends a new task (into the same
+    story, for the story-level case) or a new story+task (PRD-level) —
+    **always on the same `PRD.ID`, never a new PRD**, per the
+    operator's explicit "it should retry itself" decision — built
+    directly from the verdict's own `Issues`. `Run()` is then called
+    again, recursively, within the same call stack: it re-flattens
+    tasks (now including the new one), executes it, and re-reaches the
+    exact same completion check once it's done — fully unattended, no
+    background scheduler or second operator action involved.
+- Both paths are bounded by the `content` category's own budget +
+  ceiling (already built in Phase 1): a block that doesn't actually
+  get fixed exhausts the budget and falls through to today's
+  `TaskBlocked`/story-block/`PRDBlocked`, unchanged.
+- `resolveAutoFixSkipApproval` now does real work: a synthesized story
+  bypasses `PerStoryApproval` by default (the operator's "work auto the
+  default" decision); turning it off makes the synthesized story enter
+  `StoryAwaitingApproval` exactly like normal decompose output — no new
+  approval mechanism.
+
+### Fixed / Updated
+- `TestPerStoryGuardrails_Block_HaltsPRD` updated: its fake guardrail's
+  verdict has no `Category` (empty = `"content"`), and content auto-fix
+  is now enabled by default, so a persistently-blocking guardrail
+  produces 2 verdicts (one auto-fix attempt, then the real block)
+  before `PRDBlocked`, not 1. New
+  `TestPerStoryGuardrails_Block_ContentAutoFixDisabled_SingleAttempt`
+  preserves explicit coverage of the pre-Phase-2, auto-fix-off,
+  single-verdict case.
+
+### Reuse audit
+- Task-level retry rides the *existing* `executeOne` attempt loop and
+  `RetryHint` field verbatim — zero new spawn/retry machinery.
+- `synthesizeCorrectiveWork` calls `store.AddStory`/`store.AddTask`
+  as-is — the exact mechanism an operator already uses to manually add
+  work, now pointed at a guardrail's findings instead of an operator's
+  own words. The synthesized story's approval gating reuses
+  `StoryAwaitingApproval`/`PerStoryApproval` verbatim, no new state.
+- The story-level synthesis deliberately targets the SAME story (not a
+  new one) so the existing `storyAllTasksDone` gate naturally re-fires
+  once the fix lands — no new "re-check" signal needed.
+
+### Known gaps (named, not silently dropped)
+- `Manager.Decompose`'s own infra/scope-classified failures (the LLM
+  call itself failing, or an unparseable plan) were scoped into Phase 1
+  originally but never actually wired — `PRD.LastDecomposeFailure`
+  exists but nothing retries decompose yet. Carried forward, not
+  forgotten.
+- `Task.FailureReason`/`Story.FailureReason` (added in Phase 1) remain
+  unpopulated — `Task.Verdicts`/`Story.Verdicts` already carry the same
+  `Category`/`Issues`/`Summary` information per-guardrail, so this is a
+  real but low-priority duplication gap, not a missing capability.
+- The Learning writer (Phase 3) still doesn't exist — nothing records
+  an exhausted-budget failure for future pattern analysis yet.
+
+### Tests
+- `internal/autonomous/bl410_phase2_content_autofix_test.go` — 3
+  integration tests through the real `Run()` flow (not just the
+  resolve functions): task-level retry-with-hint-then-pass (asserts
+  the actual `SpawnRequest.RetryHint` the second attempt received),
+  task-level budget exhaustion still blocking, and PRD-level synthesis
+  proving the PRD's own ID never changes and the synthesized story
+  completes before the PRD does.
+- Full `go test ./...` green, fresh; `golangci-lint` 0 issues;
+  `scripts/check-no-internal-refs.sh` PASS.
+
+### Mobile parity
+- N/A — no new config surface this phase (reuses Phase 1's
+  `ContentAutoFixEnabled`/`AutoFixSkipApproval` fields, which already
+  have full REST/MCP/YAML/PWA parity; Phase 2 only makes them
+  functionally meaningful).
+
 ## v9.0.51 — feat(autonomous): BL410 Phase 1 — bounded, escalating infra auto-retry (no auto-fix content yet)
 
 ### Added
