@@ -531,6 +531,28 @@ established. In progress — starting with BL403.**
    (Phases 0-3); any further work (the decompose-retry gap, a
    dedicated `RetryProfile` PWA create/edit form beyond the current
    list+delete card) is a new, separate decision, not an open phase.
+
+   **Remediation pass, 2026-10-13** (after an operator audit found the
+   "fully shipped" claim above was incomplete): `RetryProfile` CRUD and
+   per-Automaton retry-policy overrides had REST/MCP/PWA parity from
+   Phase 1 but no CLI and no comm-channel verbs — fixed (`datawatch
+   retry profile ...` / `datawatch retry automaton set ...` in
+   `cmd/datawatch/cli_retry.go`, mirroring `cli_guardrail.go`; `retry
+   profile ...` / `retry automaton set` comm verbs in
+   `internal/router/retry_profiles.go`, mirroring `guardrails.go`).
+   `docs/howto/retry-policy.md` rewritten with the real CLI/comm
+   sections plus "What happens on a retry" (Phase 2 mechanics) and
+   "When a retry budget is finally exhausted" (Phase 3 Learning
+   writer), both previously undocumented. `docs/flow/guardrail-flow.md`
+   gained a "Retry, escalation, and content auto-fix" section — it had
+   zero mentions of any of this despite three releases of real
+   behavior layered on the flow it documents. Mobile-parity tracking
+   issue filed per the Mobile-Parity Rule (datawatch-app#256).
+   **Still open, genuinely not yet built**: the Decompose-retry gap,
+   `Task.FailureReason`/`Story.FailureReason` population, and — the
+   largest remaining gap — zero smoke/E2E coverage for any of BL410's
+   retry/auto-fix/Learning behavior (Go-level unit/integration tests
+   only).
 11. **BL411** — Pre-v10.0.0 Dead Code Audit (filed 2026-10-10, same
    conversation as BL410). This session alone found four instances of
    "fully-plumbed but never actually consulted" code in
