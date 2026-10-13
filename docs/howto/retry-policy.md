@@ -2,6 +2,15 @@
 docs:
   index: true
   topics: [retry, autonomous, automata, guardrails]
+exec_params:
+  - {name: automaton_id, required: true, description: "Automaton ID to inspect current retry-policy settings for"}
+exec_steps:
+  - tool: retry_profile_list
+    description: List all named retry profiles
+    args: {}
+  - tool: autonomous_prd_get
+    description: Retrieve the Automaton's current retry-policy fields (retry_profile, retry_policy, retry_ceiling_total, content_auto_fix_enabled, auto_fix_skip_approval)
+    args: {id: "{{params.automaton_id}}"}
 ---
 # How-to: Retry Policy
 
