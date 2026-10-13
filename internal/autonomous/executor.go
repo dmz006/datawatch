@@ -562,12 +562,24 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 		if !storyAllTasksDone(s) {
 			continue
 		}
-		if blocked, err := m.runPerStoryGuardrails(ctx, prd, s); err != nil {
+		if blocked, contentFixVerdict, err := m.runPerStoryGuardrails(ctx, prd, s); err != nil {
 			return err
 		} else if blocked {
 			prd.Status = PRDBlocked
 			_ = m.store.SavePRD(prd)
 			return nil
+		} else if contentFixVerdict != nil {
+			// BL410 Phase 2 — synthesize corrective work into THIS
+			// story, then recurse: Run() re-flattens tasks (now
+			// including the new one), executes it, and re-checks this
+			// same per-story guardrail once it completes. Fully
+			// unattended, bounded by the content budget/ceiling already
+			// consumed inside runPerStoryGuardrails.
+			if _, _, serr := m.synthesizeCorrectiveWork(prd, *contentFixVerdict, s.ID); serr != nil {
+				return serr
+			}
+			_ = m.store.SavePRD(prd)
+			return m.Run(ctx, prd.ID, spawn, verify)
 		}
 	}
 	// Roll up PRD status: completed/failed once every task is in a terminal state.
@@ -603,7 +615,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 			prd.Status = PRDBlocked
 			_ = m.store.SavePRD(prd)
 			return nil
-		} else if blocked, err := m.runPRDCompletionRulesReview(ctx, prd); err != nil {
+		} else if blocked, contentFixVerdict, err := m.runPRDCompletionRulesReview(ctx, prd); err != nil {
 			return err
 		} else if blocked {
 			// B124 extension — the judgment-based sibling of the
@@ -614,6 +626,17 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 			prd.Status = PRDBlocked
 			_ = m.store.SavePRD(prd)
 			return nil
+		} else if contentFixVerdict != nil {
+			// BL410 Phase 2 — no single task/story owns a PRD-wide
+			// rules-review finding: synthesize a new, standalone
+			// corrective story+task on this SAME PRD, then recurse.
+			// Run() re-flattens tasks, executes the new one, and
+			// re-reaches this exact completion check once it's done.
+			if _, _, serr := m.synthesizeCorrectiveWork(prd, *contentFixVerdict, ""); serr != nil {
+				return serr
+			}
+			_ = m.store.SavePRD(prd)
+			return m.Run(ctx, prd.ID, spawn, verify)
 		} else {
 			prd.Status = PRDCompleted
 			// BL387 Phase 3 — fire auto-report asynchronously on completion.
@@ -906,11 +929,21 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			// BL191 Q6 (v5.10.0) — fire per-task guardrails before
 			// declaring the task done. A `block` verdict marks the task
 			// blocked + halts the PRD walk via the executor return.
-			if blocked, err := m.runPerTaskGuardrails(ctx, prd, t); err != nil {
+			if blocked, contentHint, err := m.runPerTaskGuardrails(ctx, prd, t); err != nil {
 				return err
 			} else if blocked {
 				t.Status = TaskBlocked
 				return m.store.SaveTask(t)
+			} else if contentHint != "" {
+				// BL410 Phase 2 — a content-category guardrail block,
+				// auto-fix enabled, budget already consumed inside
+				// runPerTaskGuardrails: retry the SAME task via this
+				// same loop, exactly like a failed verification or
+				// quality-gate regression already does above.
+				hint = contentHint
+				t.Error = hint
+				_ = m.store.SaveTask(t)
+				continue
 			}
 			// BL386 Phase 2 — harvest session-local memories after task completes.
 			if t.SessionID != "" && prd.MemoryHarvest.Enabled {
@@ -1223,7 +1256,15 @@ func statusOrUnknown(p *PRD) PRDStatus {
 // the loop; a clean exit 0 replaces every non-scan GuardrailFn call with a
 // deterministic pass verdict, otherwise its real output rides inv into the
 // judgment call. Resolved GuardrailBackend/GuardrailModel always ride inv.
-func (m *Manager) runPerTaskGuardrails(ctx context.Context, prd *PRD, t *Task) (bool, error) {
+// runPerTaskGuardrails returns (blocked, contentHint, err). contentHint
+// is non-empty only when a content-category block occurred, content
+// auto-fix is enabled, and budget remains (BL410 Phase 2) — the caller
+// (executeOne) should retry the SAME task with contentHint fed in as a
+// RetryHint, the exact mechanism a failed verification already uses,
+// rather than marking the task blocked. blocked always takes priority
+// over a non-empty contentHint (a genuine non-retryable block from one
+// guardrail must not be masked by another guardrail's retryable one).
+func (m *Manager) runPerTaskGuardrails(ctx context.Context, prd *PRD, t *Task) (blocked bool, contentHint string, err error) {
 	m.mu.Lock()
 	fn := m.guardrail
 	globalBackend, globalModel := m.cfg.VerificationBackend, m.cfg.VerificationModel
@@ -1231,9 +1272,8 @@ func (m *Manager) runPerTaskGuardrails(ctx context.Context, prd *PRD, t *Task) (
 
 	guardrails := m.resolveGuardrails(prd, "task")
 	if len(guardrails) == 0 {
-		return false, nil
+		return false, "", nil
 	}
-	blocked := false
 	inv := GuardrailInvocation{
 		PRDID:      prd.ID,
 		Level:      "task",
@@ -1248,9 +1288,9 @@ func (m *Manager) runPerTaskGuardrails(ctx context.Context, prd *PRD, t *Task) (
 	for _, g := range guardrails {
 		inv.Guardrail = g
 		var v GuardrailVerdict
-		var err error
+		var verr error
 		if entry, ok := m.lookupGuardrailEntry(g); ok && entry.Type == "scan" {
-			v, err = m.invokeScanGuardrail(entry, inv)
+			v, verr = m.invokeScanGuardrail(entry, inv)
 		} else if scriptPassed {
 			v = scriptPassVerdict(t.VerificationScript) // BL416 P3: no LLM call on a clean deterministic pass
 		} else if fn != nil {
@@ -1259,12 +1299,12 @@ func (m *Manager) runPerTaskGuardrails(ctx context.Context, prd *PRD, t *Task) (
 			// failed, no real judgment ran). A content/scope/policy
 			// block, or infra once the budget is exhausted, falls
 			// through unchanged to the TaskBlocked handling below.
-			v, err = m.runGuardrailWithInfraRetry(ctx, prd, inv, fn)
+			v, verr = m.runGuardrailWithInfraRetry(ctx, prd, inv, fn)
 		} else {
 			continue // silent no-op: scan not in lib + no GuardrailFn
 		}
-		if err != nil {
-			return false, fmt.Errorf("guardrail %s on task %s: %w", g, t.ID, err)
+		if verr != nil {
+			return false, "", fmt.Errorf("guardrail %s on task %s: %w", g, t.ID, verr)
 		}
 		if v.VerdictAt.IsZero() {
 			v.VerdictAt = time.Now()
@@ -1272,15 +1312,45 @@ func (m *Manager) runPerTaskGuardrails(ctx context.Context, prd *PRD, t *Task) (
 		v.Guardrail = g
 		t.Verdicts = append(t.Verdicts, v)
 		if v.Outcome == "block" {
+			// BL410 Phase 2 — a content-category block (a real judgment,
+			// not an exhausted infra retry) gets one auto-fix attempt
+			// when enabled and budget remains: retry the SAME task with
+			// the guardrail's own findings as a hint, exactly the
+			// mechanism a failed verification already uses.
+			if v.Category == "" && m.resolveContentAutoFixEnabled(prd) && m.retryBudgetRemaining(prd, "content") {
+				_ = m.consumeRetryBudget(prd, "content")
+				contentHint = contentFixHint(v)
+				m.recordAutoRetryDecision(prd, t.ID, "content", prd.RetryCountsByCategory["content"], false)
+				continue
+			}
 			blocked = true
 		}
 	}
-	return blocked, nil
+	return blocked, contentHint, nil
+}
+
+// contentFixHint (BL410 Phase 2) builds the retry hint text fed into
+// SpawnRequest.RetryHint from a content-category guardrail verdict's
+// own findings — the same hint shape a failed verification already
+// produces, just sourced from a guardrail instead.
+func contentFixHint(v GuardrailVerdict) string {
+	findings := v.Summary
+	if len(v.Issues) > 0 {
+		findings = "- " + strings.Join(v.Issues, "\n- ")
+	}
+	return fmt.Sprintf("The %q guardrail found a real problem with your previous attempt:\n\n%s\n\nFix these issues, re-run the project's own build/lint/test commands yourself, and recommit.", v.Guardrail, findings)
 }
 
 // runPerStoryGuardrails (BL191 Q6, v5.10.0; BL303 S2) — same shape as the
 // per-task variant but for a Story. See runPerTaskGuardrails for BL303 notes.
-func (m *Manager) runPerStoryGuardrails(ctx context.Context, prd *PRD, s *Story) (bool, error) {
+//
+// Returns (blocked, contentFixVerdict, err). Unlike the task-level
+// variant, a story has no single unit to respawn with a hint — a
+// content-category block eligible for auto-fix (BL410 Phase 2) is
+// returned via contentFixVerdict instead, for the caller to synthesize
+// corrective work from (synthesizeCorrectiveWork) and recurse into
+// Run() again, rather than being retried in-loop here.
+func (m *Manager) runPerStoryGuardrails(ctx context.Context, prd *PRD, s *Story) (blocked bool, contentFixVerdict *GuardrailVerdict, err error) {
 	m.mu.Lock()
 	fn := m.guardrail
 	globalBackend, globalModel := m.cfg.VerificationBackend, m.cfg.VerificationModel
@@ -1288,9 +1358,8 @@ func (m *Manager) runPerStoryGuardrails(ctx context.Context, prd *PRD, s *Story)
 
 	guardrails := m.resolveGuardrails(prd, "story")
 	if len(guardrails) == 0 {
-		return false, nil
+		return false, nil, nil
 	}
-	blocked := false
 	inv := GuardrailInvocation{
 		PRDID:      prd.ID,
 		Level:      "story",
@@ -1307,19 +1376,19 @@ func (m *Manager) runPerStoryGuardrails(ctx context.Context, prd *PRD, s *Story)
 	for _, g := range guardrails {
 		inv.Guardrail = g
 		var v GuardrailVerdict
-		var err error
+		var verr error
 		if entry, ok := m.lookupGuardrailEntry(g); ok && entry.Type == "scan" {
-			v, err = m.invokeScanGuardrail(entry, inv)
+			v, verr = m.invokeScanGuardrail(entry, inv)
 		} else if scriptPassed {
 			v = scriptPassVerdict(s.VerificationScript) // BL416 P3: no LLM call on a clean deterministic pass
 		} else if fn != nil {
 			// BL410 Phase 1 — see runPerTaskGuardrails' identical comment.
-			v, err = m.runGuardrailWithInfraRetry(ctx, prd, inv, fn)
+			v, verr = m.runGuardrailWithInfraRetry(ctx, prd, inv, fn)
 		} else {
 			continue // silent no-op
 		}
-		if err != nil {
-			return false, fmt.Errorf("guardrail %s on story %s: %w", g, s.ID, err)
+		if verr != nil {
+			return false, nil, fmt.Errorf("guardrail %s on story %s: %w", g, s.ID, verr)
 		}
 		if v.VerdictAt.IsZero() {
 			v.VerdictAt = time.Now()
@@ -1327,10 +1396,21 @@ func (m *Manager) runPerStoryGuardrails(ctx context.Context, prd *PRD, s *Story)
 		v.Guardrail = g
 		s.Verdicts = append(s.Verdicts, v)
 		if v.Outcome == "block" {
+			// BL410 Phase 2 — same content-auto-fix eligibility check as
+			// runPerTaskGuardrails, but hands the verdict back for the
+			// caller to synthesize a new task into this story from,
+			// since there's no single existing unit to respawn here.
+			if v.Category == "" && m.resolveContentAutoFixEnabled(prd) && m.retryBudgetRemaining(prd, "content") {
+				_ = m.consumeRetryBudget(prd, "content")
+				vCopy := v
+				contentFixVerdict = &vCopy
+				m.recordAutoRetryDecision(prd, s.ID, "content", prd.RetryCountsByCategory["content"], false)
+				continue
+			}
 			blocked = true
 		}
 	}
-	return blocked, nil
+	return blocked, contentFixVerdict, nil
 }
 
 // prepareScriptEvidence (BL416 Phase 3) runs the unit's VerificationScript

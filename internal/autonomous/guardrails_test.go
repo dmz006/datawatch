@@ -175,6 +175,46 @@ func TestPerStoryGuardrails_Block_HaltsPRD(t *testing.T) {
 	if prd.Status != PRDBlocked {
 		t.Fatalf("status = %s, want blocked", prd.Status)
 	}
+	// BL410 Phase 2 — fakeGuardrailBlocking's verdict has no Category
+	// (empty = "content"), and content auto-fix is enabled by default:
+	// one auto-fix attempt synthesizes a corrective task into this
+	// same story, which also blocks (the fake always blocks), so the
+	// content budget (AutoFixRetries=1) is exhausted on the SECOND
+	// invocation — two verdicts recorded before the real, final block.
+	// TestPerStoryGuardrails_Block_ContentAutoFixDisabled_SingleAttempt
+	// covers the pre-Phase-2 single-verdict case explicitly.
+	if len(prd.Story[0].Verdicts) != 2 {
+		t.Fatalf("want 2 verdicts (one auto-fix attempt, then the real block), got %+v", prd.Story[0].Verdicts)
+	}
+	for i, v := range prd.Story[0].Verdicts {
+		if v.Outcome != "block" {
+			t.Fatalf("verdict %d outcome = %q, want block: %+v", i, v.Outcome, v)
+		}
+	}
+}
+
+func TestPerStoryGuardrails_Block_ContentAutoFixDisabled_SingleAttempt(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.PerStoryGuardrails = []string{"release-readiness"}
+	cfg.ContentAutoFixEnabled = false // BL410 Phase 2 — explicit opt-out
+	m, _ := NewManager(t.TempDir(), cfg, fakeDecompose)
+	m.SetGuardrail(fakeGuardrailBlocking)
+
+	prd, _ := m.CreatePRD("spec", "/p", "claude", "", EffortNormal)
+	_ = m.Store().SetStories(prd.ID, []Story{{
+		Title: "S",
+		Tasks: []Task{{Title: "T", Spec: "do"}},
+	}})
+	prd, _ = m.Store().GetPRD(prd.ID)
+	prd.Status = PRDApproved
+	_ = m.Store().SavePRD(prd)
+
+	_ = m.Run(context.Background(), prd.ID, fakeSpawn, fakeVerify)
+	prd, _ = m.Store().GetPRD(prd.ID)
+
+	if prd.Status != PRDBlocked {
+		t.Fatalf("status = %s, want blocked", prd.Status)
+	}
 	if len(prd.Story[0].Verdicts) != 1 || prd.Story[0].Verdicts[0].Outcome != "block" {
 		t.Fatalf("story verdict missing or wrong outcome: %+v", prd.Story[0].Verdicts)
 	}
@@ -253,7 +293,7 @@ func TestPerTaskGuardrails_ScriptPass_NoLLMCall(t *testing.T) {
 	script := writeVerifyScript(t, dir, "t1.sh", "echo ok\nexit 0\n")
 	tk := &Task{ID: "t1", Title: "T", Spec: "do", VerificationScript: script}
 
-	blocked, err := m.runPerTaskGuardrails(context.Background(), prd, tk)
+	blocked, _, err := m.runPerTaskGuardrails(context.Background(), prd, tk)
 	if err != nil || blocked {
 		t.Fatalf("blocked=%v err=%v", blocked, err)
 	}
@@ -280,7 +320,7 @@ func TestPerStoryGuardrails_ScriptPass_NoLLMCall(t *testing.T) {
 	script := writeVerifyScript(t, dir, "s1.sh", "exit 0\n")
 	st := &Story{ID: "s1", Title: "S", Description: "story", VerificationScript: script}
 
-	blocked, err := m.runPerStoryGuardrails(context.Background(), prd, st)
+	blocked, _, err := m.runPerStoryGuardrails(context.Background(), prd, st)
 	if err != nil || blocked {
 		t.Fatalf("blocked=%v err=%v", blocked, err)
 	}
@@ -299,7 +339,7 @@ func TestPerTaskGuardrails_ScriptPass_NoFnWired_StillRecordsVerdict(t *testing.T
 	script := writeVerifyScript(t, dir, "t1.sh", "exit 0\n")
 	tk := &Task{ID: "t1", Title: "T", VerificationScript: script}
 
-	if _, err := m.runPerTaskGuardrails(context.Background(), prd, tk); err != nil {
+	if _, _, err := m.runPerTaskGuardrails(context.Background(), prd, tk); err != nil {
 		t.Fatal(err)
 	}
 	if len(tk.Verdicts) != 1 || tk.Verdicts[0].Outcome != "pass" {
@@ -325,7 +365,7 @@ func TestPerTaskGuardrails_ScriptFail_FeedsJudgment(t *testing.T) {
 	script := writeVerifyScript(t, dir, "t1.sh", "echo MARKER-TEST-FAILED-42\nexit 1\n")
 	tk := &Task{ID: "t1", Title: "T", Spec: "do", VerificationScript: script}
 
-	blocked, err := m.runPerTaskGuardrails(context.Background(), prd, tk)
+	blocked, _, err := m.runPerTaskGuardrails(context.Background(), prd, tk)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -355,7 +395,7 @@ func TestPerStoryGuardrails_ScriptFail_FeedsJudgment(t *testing.T) {
 	script := writeVerifyScript(t, dir, "s1.sh", "echo STORY-BROKE\nexit 1\n")
 	st := &Story{ID: "s1", Title: "S", VerificationScript: script}
 
-	if _, err := m.runPerStoryGuardrails(context.Background(), prd, st); err != nil {
+	if _, _, err := m.runPerStoryGuardrails(context.Background(), prd, st); err != nil {
 		t.Fatal(err)
 	}
 	if len(rec.invs) != 1 || !rec.invs[0].ScriptRan || rec.invs[0].ScriptExitCode != 1 ||
@@ -373,7 +413,7 @@ func TestPerTaskGuardrails_ScriptUnrunnable_NeverAutoPass(t *testing.T) {
 	m.SetGuardrail(rec.fn)
 	tk := &Task{ID: "t1", Title: "T", VerificationScript: "../escape.sh"}
 
-	if _, err := m.runPerTaskGuardrails(context.Background(), prd, tk); err != nil {
+	if _, _, err := m.runPerTaskGuardrails(context.Background(), prd, tk); err != nil {
 		t.Fatal(err)
 	}
 	if len(rec.invs) != 1 {
@@ -391,7 +431,7 @@ func TestPerTaskGuardrails_NoScript_BackwardCompat(t *testing.T) {
 	m.SetGuardrail(rec.fn)
 	tk := &Task{ID: "t1", Title: "T", Spec: "do the thing"}
 
-	if _, err := m.runPerTaskGuardrails(context.Background(), prd, tk); err != nil {
+	if _, _, err := m.runPerTaskGuardrails(context.Background(), prd, tk); err != nil {
 		t.Fatal(err)
 	}
 	if len(rec.invs) != 2 {
@@ -433,7 +473,7 @@ func TestPerTaskGuardrails_ScriptPass_ScanStillRuns(t *testing.T) {
 	}
 	tk := &Task{ID: "t1", Title: "T", VerificationScript: script}
 
-	if _, err := m.runPerTaskGuardrails(context.Background(), prd, tk); err != nil {
+	if _, _, err := m.runPerTaskGuardrails(context.Background(), prd, tk); err != nil {
 		t.Fatal(err)
 	}
 	if len(tk.Verdicts) != 2 {
@@ -462,7 +502,7 @@ func TestGuardrailInvocation_BackendResolution(t *testing.T) {
 	t.Run("task override wins", func(t *testing.T) {
 		m, prd, rec := newM(t, []string{"rules"}, nil)
 		tk := &Task{ID: "t1", GuardrailBackend: "openrouter", GuardrailModel: "x"}
-		if _, err := m.runPerTaskGuardrails(context.Background(), prd, tk); err != nil {
+		if _, _, err := m.runPerTaskGuardrails(context.Background(), prd, tk); err != nil {
 			t.Fatal(err)
 		}
 		if len(rec.invs) != 1 || rec.invs[0].GuardrailBackend != "openrouter" || rec.invs[0].GuardrailModel != "x" {
@@ -474,7 +514,7 @@ func TestGuardrailInvocation_BackendResolution(t *testing.T) {
 		m, prd, rec := newM(t, nil, []string{"rules"})
 		prd.GuardrailBackend = "anthropic"
 		prd.GuardrailModel = "prd-model"
-		if _, err := m.runPerStoryGuardrails(context.Background(), prd, &Story{ID: "s1"}); err != nil {
+		if _, _, err := m.runPerStoryGuardrails(context.Background(), prd, &Story{ID: "s1"}); err != nil {
 			t.Fatal(err)
 		}
 		if len(rec.invs) != 1 || rec.invs[0].GuardrailBackend != "anthropic" || rec.invs[0].GuardrailModel != "prd-model" {
@@ -490,10 +530,10 @@ func TestGuardrailInvocation_BackendResolution(t *testing.T) {
 		// a real tool-using session — the exact bug already fixed for
 		// verify in resolveVerifierBackendModel, unfixed here until now.
 		m, prd, rec := newM(t, []string{"rules"}, []string{"rules"})
-		if _, err := m.runPerTaskGuardrails(context.Background(), prd, &Task{ID: "t1"}); err != nil {
+		if _, _, err := m.runPerTaskGuardrails(context.Background(), prd, &Task{ID: "t1"}); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := m.runPerStoryGuardrails(context.Background(), prd, &Story{ID: "s1"}); err != nil {
+		if _, _, err := m.runPerStoryGuardrails(context.Background(), prd, &Story{ID: "s1"}); err != nil {
 			t.Fatal(err)
 		}
 		if len(rec.invs) != 2 {
@@ -518,7 +558,7 @@ func TestPerTaskGuardrails_ScriptRunsOncePerUnit(t *testing.T) {
 	script := writeVerifyScript(t, dir, "t1.sh", "echo run >> counter.txt\nexit 1\n")
 	tk := &Task{ID: "t1", VerificationScript: script}
 
-	if _, err := m.runPerTaskGuardrails(context.Background(), prd, tk); err != nil {
+	if _, _, err := m.runPerTaskGuardrails(context.Background(), prd, tk); err != nil {
 		t.Fatal(err)
 	}
 	data, err := os.ReadFile(filepath.Join(dir, "counter.txt"))

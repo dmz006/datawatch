@@ -203,3 +203,71 @@ func (m *Manager) runGuardrailWithInfraRetry(ctx context.Context, prd *PRD, inv 
 		_ = m.store.SavePRD(prd)
 	}
 }
+
+// synthesizeCorrectiveWork (BL410 Phase 2) appends new corrective work
+// to the SAME PRD — never a new PRD, per the operator's explicit
+// "I don't want a new prd on retry, it should retry itself" decision —
+// built directly from a content-category guardrail verdict's own
+// findings. Reuses store.AddStory/AddTask as-is: the exact mechanism
+// an operator already uses to manually add work, now pointed at
+// content a guardrail (not an operator) supplied.
+//
+// targetStoryID, when non-empty (the story-level caller), appends the
+// new task to THAT existing story instead of creating a new one — so
+// the story's own storyAllTasksDone gate naturally goes false again
+// until the fix lands, then re-fires the same per-story guardrail
+// check once it completes. The PRD-level caller passes "" (no single
+// story owns a PRD-wide finding), creating a standalone new story.
+func (m *Manager) synthesizeCorrectiveWork(prd *PRD, verdict GuardrailVerdict, targetStoryID string) (*Story, *Task, error) {
+	attempt := prd.RetryCountsByCategory["content"]
+	title := fmt.Sprintf("Auto-fix: %s findings (attempt %d)", verdict.Guardrail, attempt)
+	spec := contentFixHint(verdict)
+
+	var storyID string
+	if targetStoryID != "" {
+		storyID = targetStoryID
+	} else {
+		story, err := m.store.AddStory(prd.ID, title, spec)
+		if err != nil {
+			return nil, nil, err
+		}
+		storyID = story.ID
+	}
+	task, err := m.store.AddTask(prd.ID, storyID, title, spec)
+	if err != nil {
+		return nil, nil, err
+	}
+	// Decision 8 — skip-approval is the default: force the new story
+	// runnable regardless of the daemon-wide per_story_approval gate.
+	// When the operator has explicitly turned skip-approval off, the
+	// new story (if one was created above) waits for approval exactly
+	// like normal decompose output — same StoryAwaitingApproval gate
+	// (manager.go's own post-decompose transition), no new mechanism.
+	m.mu.Lock()
+	perStoryApproval := m.cfg.PerStoryApproval
+	m.mu.Unlock()
+	if targetStoryID == "" && !m.resolveAutoFixSkipApproval(prd) && perStoryApproval {
+		fresh, ok := m.store.GetPRD(prd.ID)
+		if ok {
+			for i := range fresh.Story {
+				if fresh.Story[i].ID == storyID {
+					fresh.Story[i].Status = StoryAwaitingApproval
+				}
+			}
+			if err := m.store.SavePRD(fresh); err != nil {
+				return nil, nil, err
+			}
+			*prd = *fresh
+		}
+	}
+	story, _ := m.store.GetPRD(prd.ID)
+	var createdStory *Story
+	if story != nil {
+		for i := range story.Story {
+			if story.Story[i].ID == storyID {
+				createdStory = &story.Story[i]
+			}
+		}
+	}
+	return createdStory, task, nil
+}
