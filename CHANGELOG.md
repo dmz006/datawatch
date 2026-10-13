@@ -5,6 +5,30 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.61 — fix(ci): kind-smoke's actual last failure — Complete is a valid outcome, not just WaitingInput (BL419)
+
+### Fixed
+- v9.0.60's availability-gate fix correctly let the check run (opencode
+  genuinely is available in that environment); the real CI run then
+  surfaced a *different* failure: `state=complete after 40s`, not the
+  `state=running` symptom this check actually guards against. The
+  idle test task legitimately went straight `Running → Complete` (no
+  further input needed) without ever passing through `WaitingInput` —
+  confirmed as correct, intentional behavior, not a bug, by
+  `internal/session/bl266_state_engine_test.go`'s own
+  `TestBL266_ACP_SessionCompletedTransitionsToComplete` (a
+  `session.completed`/`message.completed` ACP event transitions
+  straight to `Complete` by design). The regression this check exists
+  to catch (BL266's "no prompt → Running" reverter bug) is a session
+  stuck forever in `Running` — reaching *any* real terminal/waiting
+  state, `Complete` included, is itself proof the watcher isn't
+  stuck. `state_engine_check` now accepts `complete` as a pass
+  alongside `waiting_input`.
+
+### Testing
+Verified the still-common `waiting_input` case keeps working
+identically (default-mode smoke: 203 pass/0 fail/35 skip, unchanged).
+
 ## v9.0.60 — fix(ci): kind-smoke's last remaining failure — opencode-acp availability false-fail (BL419)
 
 ### Fixed

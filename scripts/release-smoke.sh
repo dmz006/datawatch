@@ -2152,6 +2152,20 @@ else:
   ok "state-engine[$backend]: session started ($sid)"
   # Poll up to 40 s — covers LLM init time + 15 s gap. Watcher ticks
   # every 1 s so granularity is fine.
+  #
+  # 2026-10-13 — found running against a real kind-deployed daemon:
+  # this backend's idle task can legitimately go straight
+  # Running → Complete (no further input needed), never passing
+  # through WaitingInput at all — confirmed correct, intentional
+  # behavior by internal/session/bl266_state_engine_test.go's own
+  # TestBL266_ACP_SessionCompletedTransitionsToComplete (a
+  # "session.completed"/"message.completed" ACP event transitions
+  # straight to Complete by design). The regression this check
+  # actually guards against (BL266's own "no prompt → Running"
+  # reverter bug) is a session stuck forever in Running — reaching
+  # ANY real terminal/waiting state, Complete included, is itself
+  # proof the watcher isn't stuck, so Complete is accepted as a pass
+  # here too, not just WaitingInput.
   local i flipped=0
   for i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
     sleep 2
@@ -2162,8 +2176,8 @@ for s in (ss or []):
     if s.get('full_id')=='$sid':
         print(s.get('state',''))
         break" 2>/dev/null || echo "")
-    if [[ "$state" == "waiting_input" ]]; then
-      ok "state-engine[$backend]: flipped Running → WaitingInput within $((i*2))s (watcher OK)"
+    if [[ "$state" == "waiting_input" || "$state" == "complete" ]]; then
+      ok "state-engine[$backend]: flipped Running → $state within $((i*2))s (watcher OK)"
       flipped=1
       break
     fi

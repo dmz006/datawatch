@@ -824,6 +824,19 @@ established. In progress — starting with BL403.**
     remaining failure (150 pass/1 fail/49 skip on the real CI run
     right before this fix).
 
+    **Actually root-caused, v9.0.61**: the v9.0.60 fix correctly let
+    the check run (opencode genuinely is available there), which
+    surfaced the REAL remaining issue: `state=complete after 40s`,
+    not the `state=running` symptom this check guards against. The
+    idle task legitimately completed outright (`Running → Complete`
+    directly, by design — confirmed via
+    `TestBL266_ACP_SessionCompletedTransitionsToComplete`) without
+    ever needing `WaitingInput`. Accepted `complete` as a pass
+    alongside `waiting_input` — reaching any real terminal state
+    (not stuck forever in `Running`) is itself proof the watcher
+    works. **`kind-smoke` is now expected fully green** on the next
+    CI run; not yet confirmed as of this entry (watching).
+
 **Outside the queue, handled separately, not blocking Stage 3:**
 - ~~**BL381**~~ — status-verified 2026-10-10: shipped v8.28.0 + v8.28.2
   (PWA picker). Moved to Completed. No slot needed.
