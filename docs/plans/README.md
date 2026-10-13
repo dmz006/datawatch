@@ -917,6 +917,32 @@ established. In progress — starting with BL403.**
     itself is paused (not abandoned — task 1's `tracker.go` fix
     already shipped/committed; task 2's spec is already corrected and
     waiting) until this ships and the daemon's redeployed.
+21. **BL422** — Per-task Claude model/effort tiering for dev-PRD cost
+    (filed 2026-10-13, same day, prep only — NOT started). Not
+    roadmap work — surfaced from an operator question while running
+    BL420: every dev PRD under the "all dev work via PRDs" directive
+    currently pins `claude-code` at a single model/effort for
+    decompose, every task's execution, and verification alike, even
+    though task difficulty within one PRD varies a lot (e.g. BL420's
+    task 1 — reading/understanding a concurrency-sensitive Go file
+    and writing a correct fix — versus task 2, a mostly-mechanical
+    shell script). `autonomous_prd_set_task_llm`/`_set_story_llm`
+    already exist for per-unit overrides; this PRD is just the actual
+    test harness + results, not a new mechanism. Goal: build a small,
+    repeatable eval PRD that runs a fixed set of representative task
+    types (read-heavy/analysis, mostly-mechanical scripting,
+    doc-only edits, verification/review) at a few Claude model/effort
+    tiers (e.g. Sonnet-normal vs. Haiku-normal vs. Haiku-low), records
+    pass/fail + wall time + cost for each, and reports where a cheaper
+    tier is safe to default to for dev-PRD work vs. where Sonnet
+    should stay required. Explicitly scoped to Claude model tiers
+    only for now — **not** a Claude-vs-open-model comparison. A
+    separate future rerun comparing against Qwen/other open models via
+    the existing Ollama/OpenWebUI backends is a known follow-up the
+    operator wants eventually, but is out of scope here; note it as a
+    forward pointer only, don't build it now. **Explicitly NOT
+    approved or run yet** — prep only, decompose + review, hold for a
+    later go-ahead.
 
 **Outside the queue, handled separately, not blocking Stage 3:**
 - ~~**BL381**~~ — status-verified 2026-10-10: shipped v8.28.0 + v8.28.2
