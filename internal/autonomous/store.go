@@ -26,6 +26,8 @@ type Store struct {
 	learnings []Learning
 	// BL303 S2 — guardrail profiles
 	profiles map[string]*GuardrailProfile
+	// BL410 Phase 1 — retry profiles
+	retryProfiles map[string]*RetryProfile
 }
 
 // NewStore opens (or creates) the JSONL files under dir/autonomous/.
@@ -35,11 +37,12 @@ func NewStore(dataDir string) (*Store, error) {
 		return nil, fmt.Errorf("mkdir %s: %w", root, err)
 	}
 	s := &Store{
-		dir:      root,
-		prds:     map[string]*PRD{},
-		stories:  map[string]*Story{},
-		tasks:    map[string]*Task{},
-		profiles: map[string]*GuardrailProfile{},
+		dir:           root,
+		prds:          map[string]*PRD{},
+		stories:       map[string]*Story{},
+		tasks:         map[string]*Task{},
+		profiles:      map[string]*GuardrailProfile{},
+		retryProfiles: map[string]*RetryProfile{},
 	}
 	if err := s.load(); err != nil {
 		return nil, err
@@ -573,6 +576,51 @@ func (s *Store) DeleteGuardrailProfile(id string) error {
 	return s.persist()
 }
 
+// SaveRetryProfile upserts a profile (BL410 Phase 1).
+func (s *Store) SaveRetryProfile(p *RetryProfile) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.retryProfiles[p.ID] = p
+	return s.persist()
+}
+
+// GetRetryProfile returns a profile by ID (BL410 Phase 1).
+func (s *Store) GetRetryProfile(id string) (*RetryProfile, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p, ok := s.retryProfiles[id]
+	return p, ok
+}
+
+// ListRetryProfiles returns all profiles newest-first (BL410 Phase 1).
+func (s *Store) ListRetryProfiles() []*RetryProfile {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]*RetryProfile, 0, len(s.retryProfiles))
+	for _, p := range s.retryProfiles {
+		out = append(out, p)
+	}
+	for i := 0; i < len(out)-1; i++ {
+		for j := i + 1; j < len(out); j++ {
+			if out[j].CreatedAt.After(out[i].CreatedAt) {
+				out[i], out[j] = out[j], out[i]
+			}
+		}
+	}
+	return out
+}
+
+// DeleteRetryProfile removes a profile by ID (BL410 Phase 1).
+func (s *Store) DeleteRetryProfile(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.retryProfiles[id]; !ok {
+		return fmt.Errorf("retry profile %q not found", id)
+	}
+	delete(s.retryProfiles, id)
+	return s.persist()
+}
+
 func (s *Store) load() error {
 	if err := loadJSONL(filepath.Join(s.dir, "prds.jsonl"), func(line []byte) error {
 		var p PRD
@@ -614,6 +662,16 @@ func (s *Store) load() error {
 	}); err != nil {
 		return err
 	}
+	if err := loadJSONL(filepath.Join(s.dir, "retry_profiles.jsonl"), func(line []byte) error {
+		var p RetryProfile
+		if err := json.Unmarshal(line, &p); err != nil {
+			return err
+		}
+		s.retryProfiles[p.ID] = &p
+		return nil
+	}); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -639,8 +697,18 @@ func (s *Store) persist() error {
 	}); err != nil {
 		return err
 	}
-	return writeJSONL(filepath.Join(s.dir, "guardrail_profiles.jsonl"), len(s.profiles), func(emit func(any) error) error {
+	if err := writeJSONL(filepath.Join(s.dir, "guardrail_profiles.jsonl"), len(s.profiles), func(emit func(any) error) error {
 		for _, p := range s.profiles {
+			if err := emit(p); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	return writeJSONL(filepath.Join(s.dir, "retry_profiles.jsonl"), len(s.retryProfiles), func(emit func(any) error) error {
+		for _, p := range s.retryProfiles {
 			if err := emit(p); err != nil {
 				return err
 			}

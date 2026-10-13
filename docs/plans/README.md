@@ -472,11 +472,24 @@ established. In progress — starting with BL403.**
    field on `GuardrailVerdict`/`VerificationResult`, stamped `"infra"`
    at every known mechanism-failed-before-judgment-ran collapse point
    in `autonomousGuardrail`/`autonomousVerify` (`cmd/datawatch/main.go`).
-   Pure observability, zero behavior change. **Next: Phase 1** (bounded,
-   escalating infra auto-retry at every guardrail-block site) and
-   **Phase 2** (content auto-fix — synthesizing corrective task/story
-   work from a guardrail's own `Issues`, appended to the same PRD) —
-   see the plan file for the full phase breakdown.
+   Pure observability, zero behavior change.
+
+   **Phase 1 shipped v9.0.51** — bounded, escalating `infra`-category
+   auto-retry wired into `runPerTaskGuardrails`/`runPerStoryGuardrails`/
+   `runPRDCompletionRulesReview` via a new `runGuardrailWithInfraRetry`
+   wrapper; 3-tier retry-policy resolution (explicit PRD > named
+   `RetryProfile` > global `Config`, mirroring `resolveGuardrails`
+   exactly); full `RetryProfile` CRUD (REST/MCP, mirrors
+   `GuardrailProfile`) and per-Automaton override
+   (`set_retry_policy`/`per_automaton_retry_policy_set`); new PWA Retry
+   Profiles card. Caught and fixed one real bug while wiring this: the
+   originally-proposed infra budget (2) equaled the escalation
+   threshold (2), making escalation structurally unreachable — raised
+   the default to 4. Content auto-fix (Phase 2 — synthesizing
+   corrective task/story work from a guardrail's own `Issues`, appended
+   to the same PRD, never a new one) remains unbuilt:
+   `ContentAutoFixEnabled`/`AutoFixSkipApproval` resolve functions exist
+   and are tested, but nothing calls them yet. **Next: Phase 2.**
 11. **BL411** — Pre-v10.0.0 Dead Code Audit (filed 2026-10-10, same
    conversation as BL410). This session alone found four instances of
    "fully-plumbed but never actually consulted" code in

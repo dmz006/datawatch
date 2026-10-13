@@ -583,6 +583,13 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolPerAutomatonGuardrailsSet(), tracked(s.handlePerAutomatonGuardrailsSet))
 	mcpSrv.AddTool(s.toolSessionGuardrailRun(), tracked(s.handleSessionGuardrailRun))         // BL303 S3 T15
 	mcpSrv.AddTool(s.toolSessionGuardrailApprove(), tracked(s.handleSessionGuardrailApprove)) // GH#153
+	// BL410 Phase 1 — retry profiles + per-Automaton retry policy.
+	mcpSrv.AddTool(s.toolRetryProfileList(), tracked(s.handleRetryProfileList))
+	mcpSrv.AddTool(s.toolRetryProfileCreate(), tracked(s.handleRetryProfileCreate))
+	mcpSrv.AddTool(s.toolRetryProfileGet(), tracked(s.handleRetryProfileGet))
+	mcpSrv.AddTool(s.toolRetryProfileUpdate(), tracked(s.handleRetryProfileUpdate))
+	mcpSrv.AddTool(s.toolRetryProfileDelete(), tracked(s.handleRetryProfileDelete))
+	mcpSrv.AddTool(s.toolPerAutomatonRetryPolicySet(), tracked(s.handlePerAutomatonRetryPolicySet))
 	// BL221 (v6.2.0) Phase 5 — template store CRUD tools.
 	mcpSrv.AddTool(s.toolAutonomousTemplateList(), tracked(s.handleAutonomousTemplateList))
 	mcpSrv.AddTool(s.toolAutonomousTemplateCreate(), tracked(s.handleAutonomousTemplateCreate))
@@ -1252,6 +1259,13 @@ func (s *Server) ToolDocs() []ToolDoc {
 		{s.toolPerAutomatonGuardrailsSet, "per_automaton_guardrails_set"},
 		{s.toolSessionGuardrailRun, "session_guardrail_run"},
 		{s.toolSessionGuardrailApprove, "session_guardrail_approve"},
+		// BL410 Phase 1 — retry profiles + per-Automaton retry policy.
+		{s.toolRetryProfileList, "retry_profile_list"},
+		{s.toolRetryProfileCreate, "retry_profile_create"},
+		{s.toolRetryProfileGet, "retry_profile_get"},
+		{s.toolRetryProfileUpdate, "retry_profile_update"},
+		{s.toolRetryProfileDelete, "retry_profile_delete"},
+		{s.toolPerAutomatonRetryPolicySet, "per_automaton_retry_policy_set"},
 		// BL349 — self-session discovery
 		{s.toolGetMySessionID, "get_my_session_id"},
 		// BL350 — orphan lineage listing

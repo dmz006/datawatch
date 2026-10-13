@@ -1733,6 +1733,34 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		s.audit(r.Context(), "set_guardrails", "automaton", id, map[string]any{"guardrail_profile": req.GuardrailProfile}) // GH#201 Phase 4
 		writeJSONOK(w, updated)
 
+	// BL410 Phase 1 — per-Automaton retry-policy override.
+	case "set_retry_policy":
+		if r.Method != http.MethodPut {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+			return
+		}
+		var req struct {
+			RetryProfile          string         `json:"retry_profile"`
+			RetryPolicy           map[string]int `json:"retry_policy"`
+			RetryCeilingTotal     int            `json:"retry_ceiling_total"`
+			ContentAutoFixEnabled *bool          `json:"content_auto_fix_enabled"`
+			AutoFixSkipApproval   *bool          `json:"auto_fix_skip_approval"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		updated, err := s.autonomousMgr.SetPRDRetryPolicy(id, req.RetryProfile, req.RetryPolicy, req.RetryCeilingTotal, req.ContentAutoFixEnabled, req.AutoFixSkipApproval)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		s.audit(r.Context(), "set_retry_policy", "automaton", id, map[string]any{"retry_profile": req.RetryProfile})
+		writeJSONOK(w, updated)
+
 	// BL221 (v6.2.0) Phase 3 — scan actions
 	case "scan":
 		switch r.Method {
@@ -2289,6 +2317,100 @@ func (s *Server) handleAutonomousGuardrailProfiles(w http.ResponseWriter, r *htt
 			return
 		}
 		s.audit(r.Context(), "delete", "guardrail_profile", id, nil) // GH#201 Phase 4
+		w.WriteHeader(http.StatusNoContent)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// handleAutonomousRetryProfiles — BL410 Phase 1, mirrors
+// handleAutonomousGuardrailProfiles exactly.
+//
+//	GET    /api/autonomous/retry_profiles        — list
+//	POST   /api/autonomous/retry_profiles        — create
+//	GET    /api/autonomous/retry_profiles/{id}   — get
+//	PUT    /api/autonomous/retry_profiles/{id}   — update
+//	DELETE /api/autonomous/retry_profiles/{id}   — delete
+func (s *Server) handleAutonomousRetryProfiles(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		if !s.fedCap(w, r, federation.CapAutonomousRead) {
+			return
+		}
+	} else {
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+			return
+		}
+	}
+	if s.autonomousMgr == nil {
+		http.Error(w, "autonomous disabled", http.StatusServiceUnavailable)
+		return
+	}
+	rest := strings.TrimPrefix(r.URL.Path, "/api/autonomous/retry_profiles")
+	rest = strings.Trim(rest, "/")
+	id := rest
+
+	type retryProfileReq struct {
+		Name                    string         `json:"name"`
+		Description             string         `json:"description"`
+		Budgets                 map[string]int `json:"budgets"`
+		CeilingTotal            int            `json:"ceiling_total"`
+		InfraRetryEscalateAfter int            `json:"infra_retry_escalate_after"`
+		ContentAutoFixEnabled   *bool          `json:"content_auto_fix_enabled"`
+		AutoFixSkipApproval     *bool          `json:"auto_fix_skip_approval"`
+	}
+
+	if id == "" {
+		switch r.Method {
+		case http.MethodGet:
+			writeJSONOK(w, s.autonomousMgr.ListRetryProfiles())
+		case http.MethodPost:
+			var req retryProfileReq
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+				return
+			}
+			p, err := s.autonomousMgr.CreateRetryProfile(req.Name, req.Description, req.Budgets, req.CeilingTotal, req.InfraRetryEscalateAfter, req.ContentAutoFixEnabled, req.AutoFixSkipApproval)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			s.audit(r.Context(), "create", "retry_profile", req.Name, nil)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(p)
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		p, ok := s.autonomousMgr.GetRetryProfile(id)
+		if !ok {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		writeJSONOK(w, p)
+	case http.MethodPut:
+		var req retryProfileReq
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		p, err := s.autonomousMgr.UpdateRetryProfile(id, req.Name, req.Description, req.Budgets, req.CeilingTotal, req.InfraRetryEscalateAfter, req.ContentAutoFixEnabled, req.AutoFixSkipApproval)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		s.audit(r.Context(), "update", "retry_profile", id, nil)
+		writeJSONOK(w, p)
+	case http.MethodDelete:
+		if err := s.autonomousMgr.DeleteRetryProfile(id); err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		s.audit(r.Context(), "delete", "retry_profile", id, nil)
 		w.WriteHeader(http.StatusNoContent)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

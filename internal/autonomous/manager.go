@@ -79,6 +79,38 @@ type Config struct {
 	VerificationBackends []string `json:"verification_backends"`
 	StaleTaskSeconds     int    `json:"stale_task_seconds,omitempty"`
 	AutoFixRetries       int    `json:"auto_fix_retries,omitempty"`
+
+	// BL410 Phase 1 — per-category retry budgets (daemon-wide default;
+	// PRD.RetryPolicy > named RetryProfile > this). Keys: "infra",
+	// "content", "scope", "policy" (see FailureReason's doc comment for
+	// the taxonomy). "content"/"policy" fall back to AutoFixRetries
+	// above when absent from this map — the backward-compat anchor, so
+	// a PRD that never touches this feature gets byte-for-byte today's
+	// retry count. "infra"'s real default (2) and "scope"'s (0) are
+	// seeded here by DefaultConfig, not hardcoded in the resolver.
+	RetryPolicy map[string]int `json:"retry_policy,omitempty"`
+	// RetryCeilingTotal caps auto-retries summed across every category
+	// and unit for one PRD's whole lifecycle (default 5 — per the
+	// operator's own framing: a normal release PRD failing more than
+	// ~5 times means the spec needs updating or datawatch itself is
+	// broken, not a problem one more attempt fixes). PRD.RetryCeilingTotal
+	// or a named RetryProfile can raise this for genuinely iterative
+	// work (the operator's example: a CVE test-and-fix PRD).
+	RetryCeilingTotal int `json:"retry_ceiling_total,omitempty"`
+	// InfraRetryEscalateAfter — how many retries keep the EXACT
+	// original backend/model config before an infra-category retry
+	// falls back to the global default (default 2, per the operator's
+	// "retry appropriately, more than 1x before falling back").
+	InfraRetryEscalateAfter int `json:"infra_retry_escalate_after,omitempty"`
+	// ContentAutoFixEnabled/AutoFixSkipApproval have no omitempty — see
+	// AutoApproveChildren's comment below for why a bool here needs
+	// the explicit-clear discipline (an operator writing false must
+	// not silently no-op on the next config round-trip). Defaults:
+	// both true (content auto-fix on, synthesized corrective work
+	// skips PRD.PerStoryApproval) — the operator's own "work auto the
+	// default" answer.
+	ContentAutoFixEnabled bool `json:"content_auto_fix_enabled"`
+	AutoFixSkipApproval   bool `json:"auto_fix_skip_approval"`
 	// VerifierDiffMaxBytes caps the git diff injected into the verifier
 	// prompt for evidence grounding (BL366). 0 = 8192.
 	VerifierDiffMaxBytes int    `json:"verifier_diff_max_bytes,omitempty"`
@@ -216,6 +248,19 @@ func DefaultConfig() Config {
 		MaxRecursionDepth:   5,
 		AutoApproveChildren: true,
 		Scan:                scan.DefaultConfig(),
+		// BL410 Phase 1 — see Config.RetryPolicy's doc comment for why
+		// "content"/"policy" are deliberately absent here (they fall
+		// back to AutoFixRetries above). infra's budget (4) must stay
+		// greater than InfraRetryEscalateAfter (2) below — otherwise
+		// the per-category budget always exhausts at attempt 3, the
+		// exact attempt escalation first becomes eligible at, and
+		// escalation would be structurally unreachable under defaults
+		// (caught by TestRunGuardrailWithInfraRetry_IncidentReproduction).
+		RetryPolicy:             map[string]int{"infra": 4, "scope": 0},
+		RetryCeilingTotal:       5,
+		InfraRetryEscalateAfter: 2,
+		ContentAutoFixEnabled:   true,
+		AutoFixSkipApproval:     true,
 	}
 }
 
@@ -3165,6 +3210,76 @@ func (m *Manager) DeleteGuardrailProfile(id string) error {
 // ListGuardrailProfiles (BL303 S2 T05) returns all profiles.
 func (m *Manager) ListGuardrailProfiles() []*GuardrailProfile {
 	return m.store.ListGuardrailProfiles()
+}
+
+// CreateRetryProfile (BL410 Phase 1) creates a new retry profile.
+func (m *Manager) CreateRetryProfile(name, description string, budgets map[string]int, ceilingTotal, infraRetryEscalateAfter int, contentAutoFixEnabled, autoFixSkipApproval *bool) (*RetryProfile, error) {
+	if name == "" {
+		return nil, fmt.Errorf("profile name is required")
+	}
+	p := &RetryProfile{
+		ID:                      newProfileID(),
+		Name:                    name,
+		Description:             description,
+		Budgets:                 budgets,
+		CeilingTotal:            ceilingTotal,
+		InfraRetryEscalateAfter: infraRetryEscalateAfter,
+		ContentAutoFixEnabled:   contentAutoFixEnabled,
+		AutoFixSkipApproval:     autoFixSkipApproval,
+		CreatedAt:               time.Now(),
+		UpdatedAt:               time.Now(),
+	}
+	return p, m.store.SaveRetryProfile(p)
+}
+
+// UpdateRetryProfile (BL410 Phase 1) updates an existing retry profile.
+func (m *Manager) UpdateRetryProfile(id, name, description string, budgets map[string]int, ceilingTotal, infraRetryEscalateAfter int, contentAutoFixEnabled, autoFixSkipApproval *bool) (*RetryProfile, error) {
+	p, ok := m.store.GetRetryProfile(id)
+	if !ok {
+		return nil, fmt.Errorf("retry profile %q not found", id)
+	}
+	if name != "" {
+		p.Name = name
+	}
+	p.Description = description
+	p.Budgets = budgets
+	p.CeilingTotal = ceilingTotal
+	p.InfraRetryEscalateAfter = infraRetryEscalateAfter
+	p.ContentAutoFixEnabled = contentAutoFixEnabled
+	p.AutoFixSkipApproval = autoFixSkipApproval
+	p.UpdatedAt = time.Now()
+	return p, m.store.SaveRetryProfile(p)
+}
+
+// DeleteRetryProfile (BL410 Phase 1) removes a retry profile.
+func (m *Manager) DeleteRetryProfile(id string) error {
+	return m.store.DeleteRetryProfile(id)
+}
+
+// ListRetryProfiles (BL410 Phase 1) returns all retry profiles.
+func (m *Manager) ListRetryProfiles() []*RetryProfile {
+	return m.store.ListRetryProfiles()
+}
+
+// GetRetryProfile (BL410 Phase 1) returns one retry profile by id.
+func (m *Manager) GetRetryProfile(id string) (*RetryProfile, bool) {
+	return m.store.GetRetryProfile(id)
+}
+
+// SetPRDRetryPolicy (BL410 Phase 1) sets per-Automaton retry-policy
+// overrides, mirroring SetPRDGuardrails' shape exactly.
+func (m *Manager) SetPRDRetryPolicy(prdID, profile string, policy map[string]int, ceilingTotal int, contentAutoFixEnabled, autoFixSkipApproval *bool) (*PRD, error) {
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return nil, fmt.Errorf("prd %q not found", prdID)
+	}
+	prd.RetryProfile = profile
+	prd.RetryPolicy = policy
+	prd.RetryCeilingTotal = ceilingTotal
+	prd.ContentAutoFixEnabled = contentAutoFixEnabled
+	prd.AutoFixSkipApproval = autoFixSkipApproval
+	prd.UpdatedAt = time.Now()
+	return prd, m.store.SavePRD(prd)
 }
 
 // GetGuardrailProfile (BL303 S2 T05) returns one profile by ID.

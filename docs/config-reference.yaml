@@ -906,6 +906,27 @@ autonomous:
   # per_prd_guardrails) to turn it on: a judgment review of the PRD's
   # real diff against whatever rules_file/context_file is configured.
   per_prd_guardrails: []
+  # BL410 Phase 1 — per-category retry budgets. "content"/"policy" fall
+  # back to auto_fix_retries above when absent (backward-compat anchor).
+  # Keys: infra, content, scope, policy. Defaults seeded by the daemon
+  # when unset: infra=4, scope=0.
+  retry_policy: {}
+  # Total auto-retries summed across every category, for one PRD's
+  # whole lifecycle (default 5 — a normal release PRD failing more
+  # than ~5 times means the spec needs updating or datawatch itself is
+  # broken). Raise per-PRD or via a retry_profile for genuinely
+  # iterative work (e.g. a CVE test-and-fix PRD).
+  retry_ceiling_total: 0
+  # Same-config infra retries before falling back to the global
+  # backend/model default (default 2).
+  infra_retry_escalate_after: 0
+  # Whether a content-category guardrail block (a real judgment, e.g.
+  # rules-review finding a real issue) gets auto-corrective retry.
+  # Default true.
+  content_auto_fix_enabled: true
+  # Whether synthesized corrective work bypasses per-story approval.
+  # Default true (fully unattended).
+  auto_fix_skip_approval: true
   # BL367 — default quality gate config applied to every PRD that does not
   # set its own quality_gates at creation time. When enabled, a test
   # baseline is captured before the first task runs, and tests are re-run

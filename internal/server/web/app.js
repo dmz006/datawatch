@@ -7450,6 +7450,7 @@ const DOCS_LINKS_BY_KEY = {
   automata_autonomous: 'api/autonomous.md#configuration',
   guardrail_library_list: 'howto/guardrail-library.md#built-in-guardrails',
   automata_guardrail_profiles: 'howto/guardrail-library.md#managing-guardrail-profiles',
+  automata_retry_profiles: 'howto/retry-policy.md#managing-retry-profiles',
   gc_autonomous: 'howto/autonomous-planning.md',
   automata_skills: 'howto/skills-sync.md',
   automata_type_registry: DOCS_DEFINITIONS + '#settings-automate',
@@ -7676,6 +7677,7 @@ const _cardOrder = {
     'gc_pipeline': 70,
     'automata_scan': 80,
     'automata_guardrail_profiles': 85,
+    'automata_retry_profiles': 87,
     'automata_skills': 90,
     // Templates (pre-lifecycle reusable definitions)
     'gc_projectprofiles': 200,
@@ -8798,6 +8800,14 @@ function renderSettingsView() {
           </div>
         </div>
 
+        <!-- BL410 Phase 1 — Retry Profiles section -->
+        <div class="settings-section" data-group="automata" style="${stab!=='automata'?'display:none':''}">
+          ${settingsSectionHeader('automata_retry_profiles', t('retry_profile_title') || 'Retry Profiles')}
+          <div id="settings-sec-automata_retry_profiles" style="${secContent('automata_retry_profiles')}">
+            <div id="automataRetryProfilesPanel" style="color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div>
+          </div>
+        </div>
+
         <!-- BL255 v6.7.0 — Skill Registries (full CRUD + connect/browse/sync/unsync) -->
         <div class="settings-section" data-group="automata" style="${stab!=='automata'?'display:none':''}">
           ${settingsSectionHeader('automata_skills', t('skills_section_title') || 'Skill Registries')}
@@ -8819,6 +8829,7 @@ function renderSettingsView() {
 
   loadSkillsPanel();
   if (typeof loadGuardrailProfilesPanel === 'function') loadGuardrailProfilesPanel(); // BL303 S2
+  if (typeof loadRetryProfilesPanel === 'function') loadRetryProfilesPanel(); // BL410 Phase 1
   if (typeof loadIdentityPanel === 'function') loadIdentityPanel(); // BL257 P1 v6.8.0
   if (typeof loadAlgorithmPanel === 'function') loadAlgorithmPanel(); // BL258 v6.9.0
   if (typeof loadEvalsPanel === 'function') loadEvalsPanel(); // BL259 P1 v6.10.0
@@ -13892,6 +13903,14 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.per_story_guardrails', label: 'Per-story guardrails', type: 'text', placeholder: 'release-readiness', csv: true },
     // BL418 — PRD-completion rules review opt-in (off by default).
     { key: 'autonomous.per_prd_guardrails', label: 'Per-automaton (PRD) guardrails', type: 'text', placeholder: 'rules-review', csv: true },
+    // BL410 Phase 1 — retry policy. retry_policy itself is a per-category
+    // map (infra/content/scope/policy); edited via the Retry Profiles
+    // card and the per-Automaton retry-policy setter, not this generic
+    // text field, so only the scalar knobs are listed here.
+    { key: 'autonomous.retry_ceiling_total', label: 'Retry ceiling (total, per PRD)', type: 'number', placeholder: '5' },
+    { key: 'autonomous.infra_retry_escalate_after', label: 'Infra retry: same-config attempts before escalating', type: 'number', placeholder: '2' },
+    { key: 'autonomous.content_auto_fix_enabled', label: 'Content auto-fix enabled', type: 'toggle' },
+    { key: 'autonomous.auto_fix_skip_approval', label: 'Auto-fix work skips approval', type: 'toggle' },
     // Phase 3 (v5.26.62) — per-story approval gate. When ON, PRD
     // approval transitions every story to "awaiting_approval" and
     // the runner skips those until the operator approves each
@@ -28694,6 +28713,72 @@ function guardrailProfileDelete(id) {
   }).catch(e => showError('Delete profile failed: ' + e));
 }
 window.guardrailProfileDelete = guardrailProfileDelete;
+
+// ── BL410 Phase 1 — Retry Profiles panel (mirrors Guardrail Profiles above) ──
+
+function loadRetryProfilesPanel() {
+  const panel = document.getElementById('automataRetryProfilesPanel');
+  if (!panel) return;
+  panel.innerHTML = `<div style="padding:6px 12px;color:var(--text2);">${loadingEyeBlock()}</div>`;
+  apiFetch('/api/autonomous/retry_profiles').then(profiles => {
+    const addBtn = `<button class="btn-primary" style="font-size:12px;padding:4px 10px;" onclick="retryProfileOpenCreate()">${escHtml(t('retry_profile_create')||'New Profile')}</button>`;
+    if (!profiles || profiles.length === 0) {
+      panel.innerHTML = `<div style="padding:6px 12px;"><div style="text-align:center;padding:16px 8px;color:var(--text2);font-size:12px;">
+        ${escHtml(t('retry_profile_empty')||'No profiles yet')}
+        <div style="margin-top:10px;">${addBtn}</div>
+      </div></div>`;
+      return;
+    }
+    const rows = profiles.map(p => {
+      const budgets = Object.entries(p.budgets||{}).map(([k,v]) => `<span style="background:var(--card-bg);border:1px solid var(--border);border-radius:4px;font-size:10px;padding:1px 5px;margin-right:3px;">${escHtml(k)}=${escHtml(String(v))}</span>`).join('');
+      const idJ = escHtml(JSON.stringify(p.id));
+      return `<div style="display:flex;align-items:center;gap:8px;padding:6px 12px;border-bottom:1px solid var(--border);font-size:12px;">
+        <div style="flex:1;min-width:0;">
+          <div style="font-weight:600;">${escHtml(p.name)}</div>
+          ${p.description ? `<div style="color:var(--text2);font-size:11px;">${escHtml(p.description)}</div>` : ''}
+          <div style="margin-top:3px;">${budgets||'<span style="color:var(--text2);font-size:11px;">(no budgets)</span>'}
+            ${p.ceiling_total ? `<span style="color:var(--text2);font-size:11px;margin-left:4px;">ceiling=${escHtml(String(p.ceiling_total))}</span>` : ''}
+          </div>
+        </div>
+        <button class="btn-secondary" style="font-size:11px;padding:2px 8px;" onclick="retryProfileDelete(${idJ})">&times;</button>
+      </div>`;
+    }).join('');
+    panel.innerHTML = `<div style="padding:6px 0;">${rows}</div>
+      <div style="padding:6px 12px;">${addBtn}</div>`;
+  }).catch(e => {
+    panel.innerHTML = `<div style="padding:6px 12px;color:var(--error);font-size:12px;">${escHtml(_fedMsg(e, 'Failed to load retry profiles'))}</div>`;
+  });
+}
+window.loadRetryProfilesPanel = loadRetryProfilesPanel;
+
+function retryProfileOpenCreate() {
+  const name = prompt(t('retry_profile_name')||'Profile name');
+  if (!name) return;
+  const csv = prompt(t('retry_profile_budgets')||'Budgets, e.g. infra=4,content=1,scope=0,policy=1', '');
+  const budgets = {};
+  (csv||'').split(',').forEach(pair => {
+    const [k, v] = pair.split('=').map(s => (s||'').trim());
+    if (k && v && !isNaN(Number(v))) budgets[k] = Number(v);
+  });
+  const ceilingStr = prompt(t('retry_profile_ceiling')||'Ceiling total (0 = inherit global)', '0');
+  const ceiling_total = parseInt(ceilingStr, 10) || 0;
+  apiFetch('/api/autonomous/retry_profiles', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({name, budgets, ceiling_total})
+  }).then(() => {
+    loadRetryProfilesPanel();
+  }).catch(e => showError('Create profile failed: ' + e));
+}
+window.retryProfileOpenCreate = retryProfileOpenCreate;
+
+function retryProfileDelete(id) {
+  if (!confirm(t('retry_profile_delete_confirm')||'Delete this retry profile?')) return;
+  apiFetch('/api/autonomous/retry_profiles/' + id, {method: 'DELETE'}).then(() => {
+    loadRetryProfilesPanel();
+  }).catch(e => showError('Delete profile failed: ' + e));
+}
+window.retryProfileDelete = retryProfileDelete;
 
 // ── BL255 v6.7.0 — Skill Registries panel (Settings → Automata) ──────────
 

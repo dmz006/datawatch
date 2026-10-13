@@ -58,6 +58,10 @@ type Decision struct {
 	VerdictOutcome string   `json:"verdict_outcome,omitempty"` // pass | warn | block | n/a
 	Actor         string    `json:"actor,omitempty"`           // operator | autonomous | verifier
 	Note          string    `json:"note,omitempty"`            // free-form: what was edited, why rejected, etc.
+	// FailureCategory (BL410 Phase 1) mirrors FailureReason.Category —
+	// visible inline in this append-only log without opening a nested
+	// Verdict/Verification struct.
+	FailureCategory string `json:"failure_category,omitempty"`
 }
 
 type StoryStatus string
@@ -254,6 +258,25 @@ type PRD struct {
 	// as the task/story lists above.
 	PerPRDGuardrails []string `json:"per_prd_guardrails,omitempty"`
 
+	// BL410 Phase 1 — per-Automaton retry-policy overrides. Priority:
+	// explicit RetryPolicy > named RetryProfile > global Config,
+	// mirroring the guardrail precedence above exactly (resolveRetryPolicy).
+	RetryProfile      string         `json:"retry_profile,omitempty"`
+	RetryPolicy       map[string]int `json:"retry_policy,omitempty"`
+	RetryCeilingTotal int            `json:"retry_ceiling_total,omitempty"`
+	// RetryCountsByCategory is the running consumption this PRD has
+	// already spent, checked against resolveRetryCeiling before any
+	// further auto-retry anywhere in the PRD's lifecycle.
+	RetryCountsByCategory map[string]int `json:"retry_counts_by_category,omitempty"`
+	// ContentAutoFixEnabled/AutoFixSkipApproval override the global
+	// Config/RetryProfile default for just this PRD. nil = inherit.
+	ContentAutoFixEnabled *bool `json:"content_auto_fix_enabled,omitempty"`
+	AutoFixSkipApproval   *bool `json:"auto_fix_skip_approval,omitempty"`
+	// LastDecomposeFailure is a single-use hint seeded into the next
+	// Decompose retry's prompt, mirroring Task.PriorAttemptHint's exact
+	// lifecycle (set before a retry, consumed-and-cleared on use).
+	LastDecomposeFailure *FailureReason `json:"last_decompose_failure,omitempty"`
+
 	// BL331 — federation peer that originated this PRD via channel routing.
 	OwnerPeer string `json:"owner_peer,omitempty"`
 
@@ -436,6 +459,12 @@ type Story struct {
 	// per guardrail named in that list. Block on any block outcome.
 	Verdicts []GuardrailVerdict `json:"verdicts,omitempty"`
 
+	// FailureReason (BL410 Phase 1) — structured, categorized detail
+	// for the story's last failed/blocked guardrail outcome. Story has
+	// no Error-equivalent bare-string field today; this is genuinely
+	// new, not additive-alongside-an-existing-field like Task's.
+	FailureReason *FailureReason `json:"failure_reason,omitempty"`
+
 	// Phase 3 (v5.26.60) — per-story execution profile override +
 	// per-story approval gate. ExecutionProfile empty = inherit
 	// PRD.ProjectProfile (the new "default execution profile" role).
@@ -511,6 +540,10 @@ type Task struct {
 	Error         string     `json:"error,omitempty"`
 	Verification  *VerificationResult `json:"verification,omitempty"`
 	RetryCount    int        `json:"retry_count,omitempty"`
+	// FailureReason (BL410 Phase 1) — structured, categorized detail
+	// alongside Error (a bare string, left untouched for existing
+	// readers). Set on the task's last failed/blocked attempt.
+	FailureReason *FailureReason `json:"failure_reason,omitempty"`
 	// Per-task LLM overrides — empty = inherit from PRD then global.
 	Backend       string     `json:"backend,omitempty"`
 	Effort        Effort     `json:"effort,omitempty"`
@@ -676,6 +709,33 @@ type GuardrailProfile struct {
 	Guardrails  []string  `json:"guardrails"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+// RetryProfile (BL410 Phase 1) is a named, reusable retry policy — the
+// resolveRetryPolicy precedence's middle tier (explicit PRD.RetryPolicy
+// > named RetryProfile > global Config), mirroring GuardrailProfile's
+// shape and CRUD. Per the operator's explicit decision, a profile
+// controls both the per-category budget numbers AND behavior (whether
+// content auto-fix is enabled at all, the infra escalation threshold,
+// the ceiling) — not just counts.
+type RetryProfile struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	// Budgets maps category ("infra"|"content"|"scope"|"policy") to
+	// its retry count. A category absent here falls through to global
+	// Config (same content/policy→AutoFixRetries fallback applies).
+	Budgets                map[string]int `json:"budgets,omitempty"`
+	CeilingTotal            int            `json:"ceiling_total,omitempty"`
+	InfraRetryEscalateAfter int            `json:"infra_retry_escalate_after,omitempty"`
+	// ContentAutoFixEnabled/AutoFixSkipApproval use pointers so a
+	// profile can explicitly express "disabled" rather than merely
+	// "not set" — the same explicit-clear discipline the Config-level
+	// bools next to these need (see Config.ContentAutoFixEnabled).
+	ContentAutoFixEnabled *bool     `json:"content_auto_fix_enabled,omitempty"`
+	AutoFixSkipApproval   *bool     `json:"auto_fix_skip_approval,omitempty"`
+	CreatedAt             time.Time `json:"created_at"`
+	UpdatedAt             time.Time `json:"updated_at"`
 }
 
 type Learning struct {

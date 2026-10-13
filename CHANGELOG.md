@@ -5,6 +5,102 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.51 — feat(autonomous): BL410 Phase 1 — bounded, escalating infra auto-retry (no auto-fix content yet)
+
+### Added
+- **Infra-category guardrail blocks now auto-retry instead of requiring
+  manual operator intervention** — the direct fix for the incident that
+  motivated BL410: a guardrail session timeout used to leave a PRD
+  `PRDBlocked` forever, indistinguishable from a real compliance finding,
+  until an operator noticed and ran `reset_task(force=true)`. Now,
+  `runGuardrailWithInfraRetry` wraps every guardrail call (task, story,
+  and PRD-level `rules-review`): an `infra`-category block retries
+  automatically, keeping the exact original backend/model config for the
+  first 2 retries, then falling back to the global default for any
+  further retries — mirroring the same "never retry with a config that
+  just failed" discipline `resolveGuardrailBackendModel`/
+  `resolveVerifierBackendModel` already apply to a first attempt. A
+  `content`/`scope`/`policy` block, or an exhausted `infra` budget,
+  falls through unchanged to today's `TaskBlocked`/story-block/`PRDBlocked`.
+- **3-tier retry-policy resolution** (`resolveRetryPolicy`/
+  `resolveRetryCeiling`/`resolveInfraEscalateAfter`/
+  `resolveContentAutoFixEnabled`/`resolveAutoFixSkipApproval`), mirroring
+  `resolveGuardrails`' exact precedence shape: explicit PRD override >
+  named `RetryProfile` > global `Config` default. `content`/`policy`
+  fall back to the existing `AutoFixRetries` when unset anywhere — the
+  backward-compat anchor, so a PRD that never touches this feature gets
+  byte-for-byte today's retry count.
+- New `RetryProfile` type + full CRUD (store, manager, REST
+  `/api/autonomous/retry_profiles`, MCP `retry_profile_list/create/get/
+  update/delete`), mirroring `GuardrailProfile`'s shape exactly. A
+  profile controls both numbers (per-category budgets, ceiling, infra
+  escalation threshold) and behavior (content auto-fix enabled, auto-fix
+  skip-approval) — not just counts, per explicit operator decision.
+- Per-Automaton override: `PRD.RetryProfile`/`RetryPolicy`/
+  `RetryCeilingTotal`/`ContentAutoFixEnabled`/`AutoFixSkipApproval`, set
+  via `PUT /api/autonomous/prds/{id}/set_retry_policy` or the new MCP
+  tool `per_automaton_retry_policy_set`, mirroring `SetPRDGuardrails`/
+  `per_automaton_guardrails_set` exactly.
+- New daemon-wide config: `autonomous.retry_policy` (map), `retry_ceiling_total`
+  (default **5** — a normal release PRD failing more than ~5 times means
+  the spec needs updating or datawatch itself is broken, not a problem
+  one more attempt fixes; raise per-PRD/profile for genuinely iterative
+  work like CVE remediation), `infra_retry_escalate_after` (default
+  **2**), `content_auto_fix_enabled`/`auto_fix_skip_approval` (default
+  **true** — unattended by default, per explicit operator decision).
+  Full REST/MCP/YAML/PWA parity; `docs/howto/retry-policy.md` new how-to.
+- **Every architectural decision in this release** (4-category taxonomy,
+  content auto-fix in scope for a later phase not deferred forever, retry
+  always happens in place on the same PRD, 3-tier profile precedence
+  controlling behavior not just numbers, the specific escalation/ceiling
+  defaults) was asked of and answered by the operator directly during
+  BL410's design — not picked by the implementer.
+
+### Fixed
+- Found and fixed while wiring this: the originally-proposed infra retry
+  budget (2) equaled the escalation threshold (2), making escalation
+  structurally unreachable — the per-category budget always exhausted
+  at the exact attempt escalation first becomes eligible for. Raised the
+  default infra budget to 4 (caught by
+  `TestRunGuardrailWithInfraRetry_IncidentReproduction`).
+
+### Reuse audit
+- `runGuardrailWithInfraRetry` wraps the *existing* `GuardrailFn`
+  indirection at all three call sites — zero new session-spawn or
+  backend-resolution machinery, only a retry loop around the same call.
+- `RetryProfile`'s CRUD store methods, REST handler, and MCP tools are
+  line-for-line mirrors of `GuardrailProfile`'s.
+- Audit trail for an auto-retry rides the existing per-PRD `Decision`
+  log (already universally exposed via REST/MCP/PWA) rather than a new
+  mechanism — the executor loop has no HTTP request/actor context to
+  route through `internal/audit`'s CEF system, which is the server
+  layer's own audit trail for operator-triggered actions, not a fit here.
+
+### Tests
+- `internal/autonomous/retry_policy_test.go` — 10 tests: 3-tier
+  precedence, the content/policy→`AutoFixRetries` fallback, ceiling
+  defaults/overrides, escalation default, the incident-reproduction
+  scenario (zero operator action), backend escalation after threshold, a
+  content block never auto-retrying, and `RetryProfile` CRUD.
+- Full `go test ./...` green, fresh; `golangci-lint` 0 issues;
+  `scripts/check-no-internal-refs.sh` PASS (caught and fixed one leak —
+  the how-to doc named "BL410" in prose before the fix); `node --test
+  internal/server/web/*.test.js` 249 passed.
+
+### Mobile parity
+- New config fields ride the PWA's existing generic autonomous-config
+  field list; new **Retry Profiles** card mirrors the existing Guardrail
+  Profiles card exactly. `datawatch-app` tracking issue still owed for
+  the native-client side (BL403 Phase 8 pattern) — not filed in this
+  release; flagging rather than silently treating as covered.
+
+### Out of scope (this release)
+- Content-category auto-fix (synthesizing new corrective task/story work
+  from a guardrail's `Issues`) — core scope for BL410 overall per
+  operator decision, but not built in this phase. `ContentAutoFixEnabled`/
+  `AutoFixSkipApproval` resolve functions exist and are tested; nothing
+  calls them yet.
+
 ## v9.0.50 — feat(autonomous): BL410 Phase 0 — structured failure classification (infra vs. content)
 
 ### Added
