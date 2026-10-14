@@ -78,6 +78,16 @@ The testing tracker (`docs/testing-tracker.md`) must include **two levels of val
 - Types: `feat`, `fix`, `docs`, `chore`, `refactor`, `test`
 - Do not squash history. Each commit should be meaningful and reversible.
 - Do not force-push to `main`.
+- **Stage only the files this commit is actually about — never `git add -A`/`git add .` as a
+  reflex.** Autonomous PRD tasks run directly against the live project tree (not an isolated
+  worktree) unless worktree mode is explicitly configured, so another task, or an operator editing
+  files by hand, can legitimately have unrelated changes sitting in the working tree at the same
+  time. `git add -A` sweeps those in and commits them under this commit's unrelated message —
+  found live 2026-10-13, when a release task's `git add -A` (following this file's own release-
+  checklist example below) silently absorbed an operator's concurrent, unrelated doc edit. Run
+  `git status` first and stage the specific files this task's own spec says it touches
+  (`git add path/to/file1 path/to/file2 ...`); treat any OTHER modified/untracked file you see
+  there as someone else's in-progress work, not yours to add or revert.
 
 ## Versioning
 
@@ -823,7 +833,9 @@ Checklist (verify before bumping the version):
 #    internal/server/api.go:  var Version = "X.Y.Z"
 
 # 2. Commit, tag, push
-git add -A && git commit -m "release: vX.Y.Z — description"
+# Stage only this release's own files (see Git Discipline above) — check
+# `git status` first; do not use `git add -A` reflexively.
+git add <the files this release actually changed> && git commit -m "release: vX.Y.Z — description"
 git tag -a vX.Y.Z -m "vX.Y.Z"
 git push && git push --tags
 
