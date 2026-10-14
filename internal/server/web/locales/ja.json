@@ -1576,6 +1576,8 @@
   "prd_settings_priority_hint": "Used when tasks wait for free capacity.",
   "settings_reserved_interactive": "Slots reserved for interactive sessions",
   "settings_session_capacity_wait": "Interactive session capacity wait (sec)",
+  "settings_session_summary_terminal_limit": "セッション概要: 保持する終了済みセッション数 (0 = すべて)",
+  "settings_session_summary_text_chars": "セッション概要: テキストの長さ (文字数)",
   "settings_capacity_enabled": "Capacity-aware admission (wait for free slots instead of failing)",
   "settings_capacity_wait_timeout": "Capacity wait timeout (sec, 0=4h)",
   "settings_ci_watch_timeout": "CI watch timeout (sec, 0=25m)",

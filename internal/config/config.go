@@ -1431,6 +1431,19 @@ type ServerConfig struct {
 	// RecentSessionMinutes controls how long completed sessions show in the active list (default 5).
 	RecentSessionMinutes int `yaml:"recent_session_minutes"`
 
+	// SessionSummaryTerminalLimit caps how many terminal (complete, failed,
+	// killed) sessions GET /api/sessions?view=summary returns, newest by
+	// updated_at first; non-terminal sessions are never dropped. 0 = no cap.
+	// Default: 50. Retention decision: the unfiltered GET /api/sessions list
+	// is intentionally NOT capped so existing clients keep working; this
+	// limit applies only to view=summary.
+	SessionSummaryTerminalLimit int `yaml:"session_summary_terminal_limit"`
+
+	// SessionSummaryTextChars is the character (rune) length that
+	// GET /api/sessions?view=summary truncates task, prompt_context,
+	// last_response and last_summary_long to. Default: 200, minimum 20.
+	SessionSummaryTextChars int `yaml:"session_summary_text_chars"`
+
 	// SuppressActiveToasts hides toast notifications for the currently viewed session
 	// (e.g. state change toasts while you're watching the output). Default: true.
 	SuppressActiveToasts bool `yaml:"suppress_active_toasts"`
@@ -2479,7 +2492,10 @@ func DefaultConfig() *Config {
 			TLSPort:              8443,
 			TLSAutoGenerate:      true,
 			RecentSessionMinutes: 5,
-			SuppressActiveToasts: true,
+			// BL432 — compact session-list view defaults.
+			SessionSummaryTerminalLimit: 50,
+			SessionSummaryTextChars:     200,
+			SuppressActiveToasts:        true,
 			ProxySandboxPort:     8444,
 		},
 		MCP: MCPConfig{

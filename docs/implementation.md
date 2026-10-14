@@ -653,6 +653,8 @@ All fields in `~/.datawatch/config.yaml`:
 | `server.tls_key` | string | `""` | Path to TLS key PEM file. Leave empty for plain HTTP |
 | `server.tls_enabled` | bool | `false` | Enable TLS. Use with `tls_auto_generate=true` or explicit cert/key paths |
 | `server.tls_auto_generate` | bool | `false` | Auto-generate a self-signed certificate at `~/.datawatch/tls/server/` on start |
+| `server.session_summary_terminal_limit` | int | `50` | Maximum number of terminal (complete / failed / killed) sessions returned by `GET /api/sessions?view=summary`, newest by `updated_at` first. Non-terminal sessions are never dropped. `0` = no cap. Only applies to `view=summary`; see "Session list views" below |
+| `server.session_summary_text_chars` | int | `200` | Characters (runes) kept of `task`, `prompt_context`, `last_response` and `last_summary_long` in `GET /api/sessions?view=summary`. Minimum `20` |
 | `servers[].name` | string | — | Short identifier for a remote datawatch server (used with `--server` flag) |
 | `servers[].url` | string | — | Base URL of the remote server (e.g. `http://203.0.113.10:8080`) |
 | `servers[].token` | string | — | Bearer token for the remote server |
@@ -684,6 +686,38 @@ All fields in `~/.datawatch/config.yaml`:
 | `imap_mcp.token` | string | `""` | Bearer token imap-mcp ≥ 0.5.3 requires on every request except `GET /api/health`. Accepts a `${secret:name}` reference. Needs `read` + `send` scopes. |
 | `plugins.managed` | []string | `[]` | Names of `kind: service` plugins the operator allows datawatch to start/stop as supervised child processes. Absent = never managed. Only honoured when the plugin's manifest `lifecycle.supported_modes` declares `managed` and the plugin is enabled. |
 | `cross_session.enabled` | bool | `true` | Inject the Cross-Session Communication Rule into spawned claude-code sessions' `CLAUDE.md` — steers the LLM toward datawatch's own audited memory/discussion/reply tools instead of Claude Code's native cross-session messaging. |
+
+### Session list views
+
+`GET /api/sessions` accepts three optional query parameters. Without any
+of them the response is exactly what it has always been.
+
+- `view=summary` — same JSON array of session objects (including
+  `scheduled_count` when schedules are enabled), but the long text
+  fields `task`, `prompt_context`, `last_response` and
+  `last_summary_long` are cut to `server.session_summary_text_chars`
+  characters with a trailing `…`. Each cut record gets a
+  `truncated_fields` array naming the fields that were shortened.
+  Terminal sessions (complete, failed, killed) are capped to the newest
+  `server.session_summary_terminal_limit` by `updated_at`; when any are
+  dropped the response carries `X-Datawatch-Sessions-Omitted: <n>`. Any
+  other `view` value returns 400.
+- `since=<RFC3339 | unix seconds>` — only sessions whose `updated_at` is
+  strictly after the given time. Unparseable values return 400.
+- `states=active` — only non-terminal sessions (running, waiting_input,
+  rate_limited). A comma list of explicit state names is also accepted,
+  e.g. `states=complete,failed`; unknown names return 400.
+
+`since` and `states` also work without `view=summary` (full records).
+`tree=1` and `orphaned=1` take precedence and ignore all three. Fetch
+the full record for one session with `GET /api/sessions/{id}`.
+
+**Retention decision:** the unfiltered list is intentionally not capped,
+so existing clients keep working unchanged. Retention applies only to
+`view=summary`. Clients should check for the `sessions.view_summary`
+entry in the `capabilities` array of `GET /api/info` before using these
+parameters. Both limits are read from the live config on each request,
+so a `PUT /api/config` change applies without a restart.
 
 ### Dependencies
 

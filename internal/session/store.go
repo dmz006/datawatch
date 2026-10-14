@@ -29,6 +29,22 @@ const (
 	StateRateLimited  State = "rate_limited"
 )
 
+// IsTerminal reports whether the session has finished for good: complete,
+// failed or killed. This is the same set RestartSession accepts. A
+// rate_limited session is paused, not finished, so it is not terminal.
+func (s State) IsTerminal() bool {
+	switch s {
+	case StateComplete, StateFailed, StateKilled:
+		return true
+	}
+	return false
+}
+
+// KnownStates lists every session lifecycle state.
+func KnownStates() []State {
+	return []State{StateRunning, StateWaitingInput, StateComplete, StateFailed, StateKilled, StateRateLimited}
+}
+
 // Session holds metadata about a single claude-code session.
 type Session struct {
 	ID          string    `json:"id"`           // 4-char hex

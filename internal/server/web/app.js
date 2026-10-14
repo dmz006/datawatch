@@ -13905,6 +13905,8 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'session.console_cols', label: 'Default console width (cols)', type: 'number', placeholder: '80' },
     { key: 'session.console_rows', label: 'Default console height (rows)', type: 'number', placeholder: '24' },
     { key: 'server.recent_session_minutes', label: 'Recent session visibility (min)', type: 'number' },
+    { key: 'server.session_summary_terminal_limit', label: 'Session summary: ended sessions kept (0 = all)', labelKey: 'settings_session_summary_terminal_limit', type: 'number', placeholder: '50' },
+    { key: 'server.session_summary_text_chars', label: 'Session summary: text length (chars)', labelKey: 'settings_session_summary_text_chars', type: 'number', placeholder: '200' },
     { key: 'session.auto_git_init', label: 'Auto git init', type: 'toggle' },
     { key: 'session.auto_git_commit', label: 'Auto git commit', type: 'toggle' },
     { key: 'session.kill_sessions_on_exit', label: 'Kill sessions on exit', type: 'toggle' },

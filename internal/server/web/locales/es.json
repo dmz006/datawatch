@@ -1576,6 +1576,8 @@
   "prd_settings_priority_hint": "Used when tasks wait for free capacity.",
   "settings_reserved_interactive": "Slots reserved for interactive sessions",
   "settings_session_capacity_wait": "Interactive session capacity wait (sec)",
+  "settings_session_summary_terminal_limit": "Resumen de sesiones: sesiones finalizadas conservadas (0 = todas)",
+  "settings_session_summary_text_chars": "Resumen de sesiones: longitud del texto (caracteres)",
   "settings_capacity_enabled": "Capacity-aware admission (wait for free slots instead of failing)",
   "settings_capacity_wait_timeout": "Capacity wait timeout (sec, 0=4h)",
   "settings_ci_watch_timeout": "CI watch timeout (sec, 0=25m)",

@@ -189,7 +189,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "9.0.75"
+var Version = "9.0.76"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -1659,6 +1659,13 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 	}
 	sessions := s.manager.ListSessionsFiltered(filter)
 
+	// BL432 — ?view=summary / ?since= / ?states= (session_list_view.go).
+	listOpts, err := parseSessionListOptions(q)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 
 	// BL350 — ?orphaned=1 returns only sessions whose parent_id no longer exists.
@@ -1680,6 +1687,13 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 	// BL347 — ?tree=1 returns the lineage tree instead of a flat list.
 	if q.Get("tree") == "1" {
 		_ = json.NewEncoder(w).Encode(buildSessionTree(sessions))
+		return
+	}
+
+	// view / since / states apply to the flat list only; without them the
+	// legacy response below is emitted unchanged.
+	if listOpts.active() {
+		s.writeSessionListView(w, sessions, listOpts)
 		return
 	}
 
@@ -2499,6 +2513,7 @@ func (s *Server) handleInfo(w http.ResponseWriter, r *http.Request) {
 		"available_backends": s.availableBackends,
 		"session_count":      len(sessions),
 		"whisper_configured": s.transcriber != nil,
+		"capabilities":       s.apiCapabilities(),
 	})
 }
 
@@ -5186,6 +5201,8 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"proxy_sandbox_port":     s.proxySandboxPortFor(""),
 			"auto_restart_on_config": s.cfg.Server.AutoRestartOnConfig,
 			"recent_session_minutes": s.cfg.Server.RecentSessionMinutes,
+			"session_summary_terminal_limit": s.cfg.Server.SessionSummaryTerminalLimit,
+			"session_summary_text_chars":     s.cfg.Server.SessionSummaryTextChars,
 			"suppress_active_toasts": s.cfg.Server.SuppressActiveToasts,
 		},
 		// BL397 — native ACME subsystem.
@@ -6127,6 +6144,19 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		case "server.recent_session_minutes":
 			if n, ok := toInt(v); ok {
 				cfg.Server.RecentSessionMinutes = n
+			}
+		case "server.session_summary_terminal_limit":
+			// 0 = no cap; negative values are ignored.
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Server.SessionSummaryTerminalLimit = n
+			}
+		case "server.session_summary_text_chars":
+			// Values below the minimum are clamped up to it.
+			if n, ok := toInt(v); ok {
+				if n < minSessionSummaryTextChars {
+					n = minSessionSummaryTextChars
+				}
+				cfg.Server.SessionSummaryTextChars = n
 			}
 		case "server.suppress_active_toasts":
 			cfg.Server.SuppressActiveToasts = toBool(v)

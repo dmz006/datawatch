@@ -53,6 +53,8 @@ func GenerateAnnotatedConfig(cfg *Config) string {
 	fieldi(&b, "tls_key", cfg.Server.TLSKey, "Path to TLS private key PEM file")
 	fieldi(&b, "channel_port", cfg.Server.ChannelPort, "Per-session MCP channel port (0 = random)")
 	fieldi(&b, "recent_session_minutes", cfg.Server.RecentSessionMinutes, "How long completed sessions show in active list (minutes)")
+	fieldi(&b, "session_summary_terminal_limit", cfg.Server.SessionSummaryTerminalLimit, "Max terminal sessions returned by GET /api/sessions?view=summary, newest first (0 = no cap; the unfiltered list is never capped)")
+	fieldi(&b, "session_summary_text_chars", cfg.Server.SessionSummaryTextChars, "Characters kept of task/prompt/response text in GET /api/sessions?view=summary (min 20)")
 	fieldi(&b, "auto_restart_on_config", cfg.Server.AutoRestartOnConfig, "Auto-restart daemon when config is saved via web UI")
 	fieldi(&b, "suppress_active_toasts", cfg.Server.SuppressActiveToasts, "Hide toast notifications for the currently viewed session")
 	b.WriteString("\n")

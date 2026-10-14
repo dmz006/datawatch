@@ -5,6 +5,37 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.76 — feat(server): compact session list — `GET /api/sessions?view=summary`, `since=`, `states=`
+
+### Added
+- **A much smaller session list for clients that only need an overview.**
+  On a busy daemon `GET /api/sessions` could return several megabytes,
+  most of it the full task text of every session. The new
+  `?view=summary` keeps the same JSON shape but cuts `task`,
+  `prompt_context`, `last_response` and `last_summary_long` to a short
+  preview ending in `…`, and lists the cut fields in a new
+  `truncated_fields` array on each record. It also keeps only the newest
+  ended (complete, failed, killed) sessions; running, waiting and
+  rate-limited sessions are always included. When ended sessions are
+  left out, the response header `X-Datawatch-Sessions-Omitted` gives the
+  count. An unknown `view` value returns 400.
+- **`?since=`** (RFC3339 or unix seconds) returns only sessions updated
+  after that time, so clients can poll for changes. **`?states=active`**
+  returns only sessions that haven't ended; a comma list of state names
+  such as `states=complete,failed` also works.
+- **Two new settings** under `server:`, editable in Settings → General,
+  `datawatch config set`, MCP `config_set` and the `configure` chat
+  command, and applied without a restart:
+  `session_summary_terminal_limit` (default 50, 0 = no cap) and
+  `session_summary_text_chars` (default 200, minimum 20).
+- **`GET /api/info` now returns a `capabilities` list.** Clients can
+  check it for `sessions.view_summary` before using the new parameters.
+
+### Unchanged
+- `GET /api/sessions` without these parameters, `?tree=1`, `?orphaned=1`
+  and `GET /api/sessions/{id}` return exactly what they did before. The
+  full list is deliberately not capped so existing clients keep working.
+
 ## v9.0.75 — feat(autonomous): foreign-file-drift detection — flag a task whose commit swept in someone else's uncommitted work
 
 ### Added

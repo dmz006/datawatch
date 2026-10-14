@@ -209,6 +209,10 @@ server:
 # per-session port registrations and live bridge /health probe results.
   # How long completed sessions show in active list (minutes)
   recent_session_minutes: 5
+  # Max terminal sessions returned by GET /api/sessions?view=summary, newest first (0 = no cap; the unfiltered list is never capped)
+  session_summary_terminal_limit: 50
+  # Characters kept of task/prompt/response text in GET /api/sessions?view=summary (min 20)
+  session_summary_text_chars: 200
   # Auto-restart daemon when config is saved via web UI
   auto_restart_on_config: false
   # Hide toast notifications for the currently viewed session
