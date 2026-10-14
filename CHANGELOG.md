@@ -5,6 +5,82 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.75 — feat(autonomous): foreign-file-drift detection — flag a task whose commit swept in someone else's uncommitted work
+
+### Added
+- **An Automaton task can no longer silently commit somebody else's
+  uncommitted work.** In direct mode (no worktree), a task commits in
+  the same project tree that you, another session or another
+  Automaton may be editing. A worker that ran `git add -A` or
+  `git commit -a` there could sweep an unrelated, half-finished edit
+  into its own commit, under its own commit message. Verification
+  didn't notice, because the diff was real content, just not this
+  task's content. The new foreign-file-drift check flags it.
+- **What it detects.** Before each direct-mode worker session starts,
+  the executor records every tracked file with uncommitted changes
+  (staged or unstaged) and every untracked file. After the session and
+  its verifier finish, it lists every file touched by the task's
+  commits since the pre-task SHA. A file is reported when all three
+  are true: a task commit touched it, it was already modified, staged
+  or untracked before the task started, and it is **not** in the
+  task's planned `files`. Planned files are never flagged, and neither
+  are files the task itself newly edited. The check is a plain
+  comparison of git file lists with no LLM call, and it never reverts,
+  resets, amends, un-stages or rewrites anything.
+- **Warn-only by default.** A finding is recorded and the task
+  completes normally.
+- **`block_on_file_drift` escalates a finding to a block.** When it is
+  on, the task is set to **Blocked** with error
+  `foreign_file_drift: <files>` and the Automaton stops walking its
+  tasks so you can look. It resolves in the usual guardrail order:
+  - per Automaton — `per_automaton_guardrails_set` with
+    `block_on_file_drift: true` (REST
+    `PUT /api/autonomous/prds/{id}/guardrails`, CLI
+    `guardrail automaton set --block-on-file-drift`);
+  - via a guardrail profile — `guardrail_profile_create` /
+    `guardrail_profile_update` (REST
+    `/api/autonomous/guardrail_profiles`, CLI
+    `guardrail profile create|update --block-on-file-drift`);
+  - globally — `autonomous.block_on_file_drift` (default `false`; YAML,
+    `autonomous_config_set`, `PUT /api/config`, CLI `config set`, comm
+    `configure`, PWA Settings → Automate → **Block on file drift**).
+- **Where findings appear.**
+  - Each task in `autonomous_prd_get` / `GET /api/autonomous/prds/{id}`
+    carries a `foreign_file_drift` list of the swept-in files.
+  - The Automaton's decision timeline gets a `file_drift_detected`
+    entry.
+  - The audit log gets an `autonomous_file_drift_detected` event with
+    `prd_id`, `task_id` and `files` (query it with `audit_query` or
+    `GET /api/audit`).
+  - The PWA Automaton detail view shows a warning chip on the task,
+    and the task's expanded view lists the files under **Foreign file
+    drift**.
+- **Worktree mode is a no-op.** Automata that run on their own branch
+  and worktree (auto-PR) start every task in a clean tree, so the
+  check is skipped and makes no git calls. It is also skipped when an
+  Automaton has no project directory or its pre-task SHA can't be read.
+
+Reuse audit — extends the executor's existing pre-task SHA /
+untracked-file capture with the dirty tracked files, and judges
+findings against the task's existing `files` scope boundary; the
+strict toggle reuses the existing guardrail precedence (Automaton >
+guardrail profile > global) and setters. No new REST route.
+
+### Out of scope
+- No automatic repair: nothing is reverted, reset, amended or
+  un-staged, and git history is never rewritten.
+- No attribution of who (which session or person) made a drifted
+  edit.
+- Files the daemon itself writes into a direct-mode project directory
+  before the worker starts (session tooling, verify scripts) are
+  pre-existing untracked files too, so a broad `git add -A` reports
+  them as drift; excluding them is not part of this release.
+- No change to how workers stage files or to AGENT.md's git-discipline
+  guidance (already fixed separately).
+- Worktree / auto-PR Automata are not checked (see above).
+
+How-to: [docs/howto/file-drift-guardrail.md](docs/howto/file-drift-guardrail.md).
+
 ## v9.0.74 — fix(autonomous): task effort reaches claude-code's real `--effort` flag
 
 ### Fixed

@@ -1052,20 +1052,44 @@ established. In progress — starting with BL403.**
 24. **BL425** — Structural guardrail: detect a task's own commit
     sweeping in files that were already dirty/untracked in the project
     tree before that task's worker session started (filed 2026-10-13,
-    prep only — NOT started). Not roadmap work — found live running
-    BL423 in direct (non-worktree) mode in the same tree an operator
-    was hand-editing: a release task's `git add -A` silently absorbed
-    an unrelated concurrent doc edit into its own commit. AGENT.md's
-    own git-discipline guidance was already fixed directly (no more
-    `git add -A` example); this item is the code-level backstop —
-    widen the executor's existing pre-task `PreTaskSHA`/
-    `PreTaskUntrackedFiles` capture with a new `PreTaskDirtyFiles`,
-    then after a task's commit(s) land, flag any file that was already
-    dirty/untracked beforehand, ended up in the commit, and was never
-    in that task's own `FilesPlanned` — a new `Task.ForeignFileDrift`
-    field, warn-only by default, no automatic git history surgery ever.
-    **Queued behind BL422** per operator priority (the model-tiering
-    eval's results "impact everything going forward").
+    shipped 2026-10-14 — **shipped v9.0.75**). Not roadmap work — found
+    live on 2026-10-13 running BL423 in direct (non-worktree) mode in
+    the same tree an operator was hand-editing: the Automaton's
+    `git add -A` swept an unrelated uncommitted `docs/plans/README.md`
+    edit into its own commit, under its own message, and verification
+    passed because the diff was real content. The guidance fix shipped
+    separately and directly in AGENT.md (Git Discipline: stage only the
+    task's own files with targeted `git add <path>`, no more
+    `git add -A` example); this item is the code-level backstop.
+    **Shipped, v9.0.75** (implemented across the post-v9.0.74 commits,
+    released in v9.0.75): the executor's existing pre-task
+    `PreTaskSHA`/`PreTaskUntrackedFiles` capture is widened with
+    `PreTaskDirtyFiles` (staged + unstaged tracked changes); after the
+    worker session and its verifier finish, a deterministic, no-LLM
+    check (`internal/autonomous/file_drift.go`) flags every file that a
+    commit in `<pre-task SHA>..HEAD` touched, that was already
+    dirty/untracked beforehand, and that is not in the task's planned
+    `files`. Findings land in `Task.ForeignFileDrift`
+    (`foreign_file_drift` on the API record), a `file_drift_detected`
+    decision, an `autonomous_file_drift_detected` audit event and a PWA
+    warning chip on the task. Warn-only by default; opt-in
+    `block_on_file_drift` (Automaton > guardrail profile > global
+    `autonomous.block_on_file_drift`) sets the task Blocked with
+    `foreign_file_drift: <files>`. Full config parity (REST, MCP, CLI,
+    comm `configure`, PWA, YAML); worktree-mode Automata are a
+    deliberate no-op (zero git calls); howto
+    `docs/howto/file-drift-guardrail.md`; release-smoke section 72.
+    **Verification evidence:**
+    `docs/plans/2026-10-14-file-drift-live-verification.md` (live
+    warn-only, strict and worktree runs against the real daemon) plus
+    `internal/autonomous/file_drift_test.go`.
+    **Out of scope** (explicitly not done here): any automatic git
+    surgery (no revert/reset/amend/un-stage, never a history rewrite);
+    attributing a drifted file to the session or person that edited
+    it; excluding the daemon's own tooling files written into a
+    direct-mode project directory (they are reported as drift today);
+    changing how workers invoke `git add`; checking worktree/auto-PR
+    Automata.
 25. **BL426** — the blocking `containers / agent-base` Trivy scan fails
     in every Release run since v9.0.62 (filed + shipped 2026-10-13, same
     day — **shipped v9.0.65**). Not roadmap work — the container finding

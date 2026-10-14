@@ -3779,6 +3779,33 @@ print(t.get('$1',''))" 2>/dev/null
 fi
 
 # ---------------------------------------------------------------------------
+H "72. foreign-file-drift check — block_on_file_drift GET/PUT round-trip (v9.0.75)"
+# The drift check itself needs a real worker commit (covered by
+# internal/autonomous/file_drift_test.go and the live verification doc);
+# this section verifies the strict-mode knob round-trips through
+# GET / PUT /api/config, then restores the original value.
+FD_BEFORE=$(curl "${curl_args[@]}" "$BASE/api/config" | python3 -c \
+  'import json,sys;d=json.load(sys.stdin);print(str(d.get("autonomous",{}).get("block_on_file_drift","missing")).lower())' 2>/dev/null)
+if [[ "$FD_BEFORE" != "true" && "$FD_BEFORE" != "false" ]]; then
+  ko "autonomous.block_on_file_drift missing from /api/config (got '$FD_BEFORE')"
+else
+  ok "GET /api/config exposes autonomous.block_on_file_drift=$FD_BEFORE"
+  if [[ "$FD_BEFORE" == "true" ]]; then FD_NEXT="false"; else FD_NEXT="true"; fi
+  curl "${curl_args[@]}" -X PUT -H "Content-Type: application/json" \
+    -d "$(printf '{"autonomous.block_on_file_drift":%s}' "$FD_NEXT")" "$BASE/api/config" >/dev/null
+  FD_AFTER=$(curl "${curl_args[@]}" "$BASE/api/config" | python3 -c \
+    'import json,sys;d=json.load(sys.stdin);print(str(d.get("autonomous",{}).get("block_on_file_drift","missing")).lower())' 2>/dev/null)
+  if [[ "$FD_AFTER" == "$FD_NEXT" ]]; then
+    ok "PUT /api/config flipped autonomous.block_on_file_drift to $FD_NEXT"
+  else
+    ko "autonomous.block_on_file_drift round-trip failed (was $FD_BEFORE → wanted $FD_NEXT → got $FD_AFTER)"
+  fi
+  # Restore original value (failing this leaks state across runs).
+  curl "${curl_args[@]}" -X PUT -H "Content-Type: application/json" \
+    -d "$(printf '{"autonomous.block_on_file_drift":%s}' "$FD_BEFORE")" "$BASE/api/config" >/dev/null
+fi
+
+# ---------------------------------------------------------------------------
 H "Summary"
 echo "  Pass:  $PASS"
 echo "  Fail:  $FAIL"

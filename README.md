@@ -57,7 +57,7 @@ Browse the catalog in-app (Settings → Skills → Registry) or on GitHub. To co
 
 ## Current release
 
-**Current release: v9.0.74 (2026-10-14).** v9.0.9–v9.0.74 are a patch
+**Current release: v9.0.75 (2026-10-14).** v9.0.9–v9.0.75 are a patch
 chain on top of the v9.0.0 major release: a plugin extension framework
 (manifest-declared widgets, now rendering live on the dashboard and in
 session detail — plugins can push or pull their own stat tiles,
@@ -83,7 +83,13 @@ or a whole Automaton, overriding the global verifier (task > story >
 Automaton > global), from REST, MCP, the CLI, chat and the PWA. Each
 verification result records which backend, model and level judged it
 — see
-[autonomous-planning.md](docs/howto/autonomous-planning.md). None of
+[autonomous-planning.md](docs/howto/autonomous-planning.md). v9.0.74
+makes an autonomous claude-code task actually run at the effort level
+you chose. v9.0.75 flags an Automaton task whose commit swept in
+somebody else's uncommitted work (a file that was already modified or
+untracked before the task started and was never in its planned files).
+It warns by default and can be set to block — see
+[file-drift-guardrail.md](docs/howto/file-drift-guardrail.md). None of
 these change v9.0.0's actual feature set, described below.
 
 **v9.0.0 — Memory Lifecycle Complete.** The
