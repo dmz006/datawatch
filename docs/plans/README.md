@@ -1273,7 +1273,7 @@ daemon).
 | # | Item | Status | Why here |
 |---|---|---|---|
 | 1 | **BL432** — mobile/PWA payload optimization | Shipped v9.0.82 | Triaged 2026-10-14 from GH#242; unrelated bugfix, ran first because it was ready first. |
-| 2 | **BL433** — PWA performance audit | Queued | Companion to BL432 (GH#243), audit-only. |
+| 2 | **BL433** — PWA performance audit | In progress — code inventory committed ([2026-10-14-pwa-performance-audit.md](2026-10-14-pwa-performance-audit.md)); Method + Measurements next | Companion to BL432 (GH#243), audit-only. |
 | 3 | **BL434** — full-screen eye splash + input-draft preservation fix | Queued (re-decomposing) | PWA visual + a real data-loss bug on the same reload sites. |
 | 4 | **BL435** — unmodified-retry executor fix | Queued | Generalizes a one-off task-spec workaround used to recover BL431 into a real fix for every datawatch install. |
 | 5 | **BL431** (`c187962a`) — Automation design doc | One task left (self-registration) | Design doc itself is done and committed; only its own backlog-registration task remains. |
@@ -1329,7 +1329,7 @@ resource. BL431 gains a matching forward pointer and open question.
   `server.ws_session_list_default: delta` avoids it today, which the
   PWA does not support yet (see BL433).
 - **BL433** — PWA refresh/connection performance audit under load
-  (GH#243), companion to BL432. **Open.** Same method as the app audit
+  (GH#243), companion to BL432. **Open — code inventory done:** [2026-10-14-pwa-performance-audit.md](2026-10-14-pwa-performance-audit.md) (`needs_review`). Same method as the app audit
   (read-only proxy, idle-per-tab bytes/min). Once the audit lands, the
   PWA may adopt the same opt-ins BL432 shipped — `hello` with
   `session_list: delta` / `session_view: summary` /
