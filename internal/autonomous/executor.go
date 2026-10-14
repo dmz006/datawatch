@@ -637,6 +637,32 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 			}
 			_ = m.store.SavePRD(prd)
 			return m.Run(ctx, prd.ID, spawn, verify)
+		} else if blocked, contentFixVerdict, err := m.runPRDCompletionCIWatch(ctx, prd); err != nil {
+			return err
+		} else if blocked {
+			// ci-watch — the local checks above passed, but the CI run
+			// for the commit this automaton itself pushed did not, and
+			// the judge (against the operator's own rules file) or an
+			// exhausted infra budget says so. Same PRDBlocked signal.
+			// Push-mechanism-agnostic: it only acts when the final HEAD
+			// already reached the remote (direct-push release tasks,
+			// cluster pushes). Worktree/auto-PR automata push below,
+			// inside the PRDCompleted branch (handleWorktreeCompletion),
+			// so for them HEAD is usually unpushed here and ci-watch
+			// records a skip — see ci_watch.go's header.
+			prd.Status = PRDBlocked
+			_ = m.store.SavePRD(prd)
+			return nil
+		} else if contentFixVerdict != nil {
+			// Same as rules-review: a fixable CI failure gets standalone
+			// corrective work on this SAME PRD, then Run() recurses and
+			// re-reaches this completion check (which watches the new
+			// commit's CI once the fix is pushed).
+			if _, _, serr := m.synthesizeCorrectiveWork(prd, *contentFixVerdict, ""); serr != nil {
+				return serr
+			}
+			_ = m.store.SavePRD(prd)
+			return m.Run(ctx, prd.ID, spawn, verify)
 		} else {
 			prd.Status = PRDCompleted
 			// BL387 Phase 3 — fire auto-report asynchronously on completion.

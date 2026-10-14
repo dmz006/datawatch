@@ -5097,10 +5097,10 @@ Verify whether the diff plausibly implements the spec. Reply with STRICT JSON on
 						Outcome: "block", Severity: "medium",
 						Summary:   "guardrail(session): unparseable response — cannot verify compliance",
 						VerdictAt: time.Now(),
-						Category:  "infra", // default pessimistic; cleared below on a successful parse
+						Category:  "infra", // default pessimistic; a successful parse replaces it (judgedGuardrailCategory: "policy" or "")
 					}
 					if uerr := json.Unmarshal([]byte(extractJSON(content)), &gv); uerr == nil {
-						gv.Category = "" // a real judgment parsed — content, not infra
+						gv.Category = judgedGuardrailCategory(gv.Category)
 					}
 					gv.VerdictAt = time.Now()
 					return gv, nil
@@ -5157,10 +5157,10 @@ Verify whether the diff plausibly implements the spec. Reply with STRICT JSON on
 				Outcome: "block", Severity: "medium",
 				Summary:   "guardrail: unparseable LLM response — cannot verify compliance",
 				VerdictAt: time.Now(),
-				Category:  "infra", // default pessimistic; cleared below on a successful parse
+				Category:  "infra", // default pessimistic; a successful parse replaces it (judgedGuardrailCategory: "policy" or "")
 			}
 			if uerr := json.Unmarshal([]byte(extractJSON(ask.Answer)), &gv); uerr == nil {
-				gv.Category = "" // a real judgment parsed — content, not infra
+				gv.Category = judgedGuardrailCategory(gv.Category)
 			}
 			gv.VerdictAt = time.Now()
 			return gv, nil

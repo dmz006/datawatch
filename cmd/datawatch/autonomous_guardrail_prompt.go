@@ -53,6 +53,21 @@ Reply with STRICT JSON:
 		guardTrustNotice, req.Guardrail, req.Level, req.UnitTitle, req.UnitSpec, scriptSection)
 }
 
+// judgedGuardrailCategory returns the Category for a guardrail verdict
+// whose JSON parsed successfully, given whatever "category" the parse
+// left behind (the pessimistic "infra" default when the judge omitted
+// it). A parsed reply is a real judgment, so it is never "infra" — the
+// judge must not be able to self-report its own mechanism failing.
+// "policy" is the one category a judge may set: it means a project rule
+// requires operator sign-off (ci-watch and rules-review ask for it), so
+// the finding is never auto-fixed. Anything else is "" (content).
+func judgedGuardrailCategory(parsed string) string {
+	if parsed == "policy" {
+		return "policy"
+	}
+	return ""
+}
+
 // guardrailBackendModel picks the backend and model for a guardrail call
 // before resolveAskBackend runs. Already-resolved per-unit values on req
 // win; otherwise the flat autonomous config applies, with "ollama" as the

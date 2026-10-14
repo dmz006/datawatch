@@ -397,6 +397,18 @@ type Manager struct {
 	// the real git.Resolve" — see fireUpstreamIssueActions.
 	gitProviderFn func(kind string) git.Provider
 
+	// ci-watch completion guardrail seams (see ci_watch.go). Guarded by
+	// mu like guardrail. nil/zero means "use the real implementation":
+	// ciGitFn → defaultCIGit, ciRunsFn → defaultCIRuns, ciRerunFn →
+	// defaultCIRerun, ciPollInterval → 30s, ciFollowUpDelay → the
+	// ci-watch timeout (ciWatchTimeout). Injectable so tests never shell
+	// out to the real git/gh binaries or wait real minutes.
+	ciGitFn         func(ctx context.Context, projectDir string) (headSHA, originURL string, pushed bool, err error)
+	ciRunsFn        func(ctx context.Context, ownerRepo, sha string) ([]CIWatchRun, error)
+	ciRerunFn       func(ctx context.Context, ownerRepo string, runID int64) error
+	ciPollInterval  time.Duration
+	ciFollowUpDelay time.Duration
+
 	// BL406 Phase 5 — nil until BL405 Phase 8 wires real CouncilProfile
 	// support; resolveGuidedModeSource falls "council" back to
 	// "operator" while this is nil, rather than silently skipping the

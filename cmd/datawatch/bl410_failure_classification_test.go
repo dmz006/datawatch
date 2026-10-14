@@ -22,12 +22,12 @@ func TestBL410_GuardrailSessionError_StampedInfra(t *testing.T) {
 
 func TestBL410_GuardrailSessionUnparseable_DefaultsInfraClearsOnParse(t *testing.T) {
 	src := readMainGo(t)
-	if !contains(src, `Category:  "infra", // default pessimistic; cleared below on a successful parse
+	if !contains(src, `Category:  "infra", // default pessimistic; a successful parse replaces it (judgedGuardrailCategory: "policy" or "")
 					}
 					if uerr := json.Unmarshal([]byte(extractJSON(content)), &gv); uerr == nil {
-						gv.Category = "" // a real judgment parsed — content, not infra
+						gv.Category = judgedGuardrailCategory(gv.Category)
 					}`) {
-		t.Error("autonomousGuardrail: session-unparseable branch must default Category to \"infra\" and clear it only on a successful parse")
+		t.Error("autonomousGuardrail: session-unparseable branch must default Category to \"infra\" and replace it only on a successful parse")
 	}
 }
 
@@ -42,12 +42,12 @@ func TestBL410_GuardrailAskCallFailed_StampedInfra(t *testing.T) {
 
 func TestBL410_GuardrailAskUnparseable_DefaultsInfraClearsOnParse(t *testing.T) {
 	src := readMainGo(t)
-	if !contains(src, `Category:  "infra", // default pessimistic; cleared below on a successful parse
+	if !contains(src, `Category:  "infra", // default pessimistic; a successful parse replaces it (judgedGuardrailCategory: "policy" or "")
 			}
 			if uerr := json.Unmarshal([]byte(extractJSON(ask.Answer)), &gv); uerr == nil {
-				gv.Category = "" // a real judgment parsed — content, not infra
+				gv.Category = judgedGuardrailCategory(gv.Category)
 			}`) {
-		t.Error("autonomousGuardrail: ask-unparseable branch must default Category to \"infra\" and clear it only on a successful parse")
+		t.Error("autonomousGuardrail: ask-unparseable branch must default Category to \"infra\" and replace it only on a successful parse")
 	}
 }
 
@@ -85,7 +85,7 @@ func TestBL410_VerifierSessionUnparseable_DefaultsInfraClearsOnParse(t *testing.
 				if uerr := json.Unmarshal([]byte(extractJSON(content)), &vr); uerr == nil {
 					vr.Category = "" // a real judgment parsed — content, not infra
 				}`) {
-		t.Error("autonomousVerify: session-unparseable branch must default Category to \"infra\" and clear it only on a successful parse")
+		t.Error("autonomousVerify: session-unparseable branch must default Category to \"infra\" and replace it only on a successful parse")
 	}
 }
 
@@ -105,6 +105,25 @@ func TestBL410_VerifierAskUnparseable_DefaultsInfraClearsOnParse(t *testing.T) {
 			if uerr := json.Unmarshal([]byte(extractJSON(ask.Answer)), &vr); uerr == nil {
 				vr.Category = "" // a real judgment parsed — content, not infra
 			}`) {
-		t.Error("autonomousVerify: ask-unparseable branch must default Category to \"infra\" and clear it only on a successful parse")
+		t.Error("autonomousVerify: ask-unparseable branch must default Category to \"infra\" and replace it only on a successful parse")
+	}
+}
+
+// A successfully parsed guardrail verdict is a real judgment: it may
+// report "policy" (a project rule requires operator sign-off), but
+// never "infra", and anything else collapses to "" (content).
+func TestJudgedGuardrailCategory(t *testing.T) {
+	cases := map[string]string{
+		"infra":   "", // pessimistic default left by an omitted category, or a self-reported infra
+		"":        "",
+		"policy":  "policy",
+		"content": "",
+		"scope":   "",
+		"Policy":  "",
+	}
+	for in, want := range cases {
+		if got := judgedGuardrailCategory(in); got != want {
+			t.Errorf("judgedGuardrailCategory(%q) = %q, want %q", in, got, want)
+		}
 	}
 }

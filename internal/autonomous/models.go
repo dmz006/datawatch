@@ -788,7 +788,7 @@ type LoopStatus struct {
 // ci-watch completion guardrail (off unless "ci-watch" is listed as a
 // PRD-level guardrail).
 type CIWatchResult struct {
-	// Status: skipped | pass | pending | failed_policy | failed_content | failed_infra | error
+	// Status: skipped | pass | warn | pending | failed_policy | failed_content | failed_infra | error
 	Status string `json:"status"`
 	// SHA is the pushed commit whose CI runs were watched.
 	SHA string `json:"sha,omitempty"`

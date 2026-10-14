@@ -56,6 +56,30 @@ import (
 // runPRDCompletionRulesReview) — exactly like rulesContextSuffix's own
 // behavior for decompose.
 func (m *Manager) rulesReviewSuffix(prd *PRD) string {
+	list := m.presentRulesContextFiles(prd)
+	if list == "" {
+		return ""
+	}
+	return "Read " + list + " at the root of your working directory yourself," +
+		" using your own tools — they define this project's development," +
+		" testing and documentation rules. Then check the REAL changes this" +
+		" automaton actually made (run your own git log / git diff against" +
+		" the branch this worktree started from — do not assume; look) against" +
+		" those rules. This is a judgment review, not a fixed checklist: some" +
+		" rules will apply and some won't, and only you can tell which, since" +
+		" you can see what actually changed and what the rules actually say." +
+		" Report every rule you find violated or skipped, not just the" +
+		" first one you notice. A clean pass is a real possibility — do not" +
+		" invent an issue just to have something to report."
+}
+
+// presentRulesContextFiles returns whichever of the configured rules/
+// context files (m.rulesContextFilenames) actually exist at the root of
+// prd.ProjectDir, joined for prose ("AGENT.md" or "AGENT.md and
+// CONTEXT.md"), or "" when ProjectDir is empty or neither exists.
+// Shared by rulesReviewSuffix and ciWatchSuffix so both completion-time
+// judgments point at exactly the same files.
+func (m *Manager) presentRulesContextFiles(prd *PRD) string {
 	if prd.ProjectDir == "" {
 		return ""
 	}
@@ -70,21 +94,10 @@ func (m *Manager) rulesReviewSuffix(prd *PRD) string {
 	if len(names) == 0 {
 		return ""
 	}
-	list := names[0]
 	if len(names) > 1 {
-		list = names[0] + " and " + names[1]
+		return names[0] + " and " + names[1]
 	}
-	return "Read " + list + " at the root of your working directory yourself," +
-		" using your own tools — they define this project's development," +
-		" testing and documentation rules. Then check the REAL changes this" +
-		" automaton actually made (run your own git log / git diff against" +
-		" the branch this worktree started from — do not assume; look) against" +
-		" those rules. This is a judgment review, not a fixed checklist: some" +
-		" rules will apply and some won't, and only you can tell which, since" +
-		" you can see what actually changed and what the rules actually say." +
-		" Report every rule you find violated or skipped, not just the" +
-		" first one you notice. A clean pass is a real possibility — do not" +
-		" invent an issue just to have something to report."
+	return names[0]
 }
 
 // runPRDCompletionRulesReview fires once, right before a PRD rolls up
