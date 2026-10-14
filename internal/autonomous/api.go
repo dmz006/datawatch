@@ -104,7 +104,9 @@ func (a *API) resumeRunningPRDs() {
 			// decomposeFnSession was running. The goroutine is gone; reset to
 			// draft so the operator can re-trigger decompose.
 			prd.Status = PRDDraft
-			_ = a.M.store.SavePRD(prd)
+			if a.M.store.SavePRD(prd) == nil {
+				a.M.emitPRDStatus(prd, status, nil, nil)
+			}
 			a.M.killOrphanDecomposeSessions(prd.ID)
 			fmt.Printf("[autonomous] boot-resume: prd=%s was planning on restart, reset to draft\n", prd.ID)
 		case PRDRunning:
@@ -296,10 +298,12 @@ func (a *API) Run(id string) error {
 	if prd.Status != PRDApproved && prd.Status != PRDActive && prd.Status != PRDRunning {
 		return fmt.Errorf("prd %q status %q is not runnable; call /approve first", id, prd.Status)
 	}
+	old := prd.Status
 	prd.Status = PRDRunning
 	if err := a.M.Store().SavePRD(prd); err != nil {
 		return err
 	}
+	a.M.emitPRDStatus(prd, old, nil, nil)
 	a.M.EmitPRDUpdate(id)
 	if a.spawnFn == nil || a.verify == nil {
 		return nil // executors not configured — status-only mode
@@ -336,8 +340,11 @@ func (a *API) Run(id string) error {
 				// If cancelled by operator, leave status as cancelled.
 				// Otherwise revert to PRDApproved so they can retry.
 				if p.Status != PRDCancelled {
+					old := p.Status
 					p.Status = PRDApproved
-					_ = a.M.Store().SavePRD(p)
+					if a.M.Store().SavePRD(p) == nil {
+						a.M.emitPRDStatus(p, old, nil, nil)
+					}
 				}
 			}
 		}
@@ -396,6 +403,7 @@ func (a *API) Cancel(id string) error {
 	}
 	a.cancelRun(id)          // v5.26.16 — stop the executor goroutine first
 	a.M.killPRDSessions(prd) // kill any task sessions still running
+	old := prd.Status
 	prd.Status = PRDCancelled
 	// Unlike CancelStory/CancelTask, this whole-PRD cancel previously left
 	// no trace in prd.Decisions — an operator (or a future session) had no
@@ -405,6 +413,7 @@ func (a *API) Cancel(id string) error {
 	if err := a.M.Store().SavePRD(prd); err != nil {
 		return err
 	}
+	a.M.emitPRDStatus(prd, old, lastDecision(prd, "cancel"), nil)
 	a.M.EmitPRDUpdate(id)
 	return nil
 }

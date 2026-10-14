@@ -809,6 +809,7 @@ func (m *Manager) resetKilledTasksForResume(prd *PRD) bool {
 			s.Status = StoryPending
 		}
 	}
+	old := prd.Status
 	prd.Status = PRDRunning
 	prd.UpdatedAt = now
 	prd.Decisions = append(prd.Decisions, Decision{
@@ -821,6 +822,7 @@ func (m *Manager) resetKilledTasksForResume(prd *PRD) bool {
 		log.Printf("[autonomous] boot-resume: save prd=%s: %v", prd.ID, err)
 		return false
 	}
+	m.emitPRDStatus(prd, old, lastDecision(prd, "boot_resume_recovery"), nil)
 	return true
 }
 
@@ -1014,9 +1016,12 @@ func (m *Manager) Decompose(prdID string) (*PRD, error) {
 	}
 	// Mark in-flight so the operator can see it from /api/autonomous/prds/{id}.
 	// Also persists the worktree assignment above in the same write.
+	planOld := prd.Status
 	prd.Status = PRDPlanning
 	prd.UpdatedAt = time.Now()
-	_ = m.store.SavePRD(prd)
+	if m.store.SavePRD(prd) == nil {
+		m.emitPRDStatus(prd, planOld, nil, nil)
+	}
 
 	// BL387 Phase 2a — enrich decomposer prompt with prior context from project-shared.
 	prompt := fmt.Sprintf(PlanningPrompt, prd.Spec)
@@ -1059,9 +1064,12 @@ func (m *Manager) Decompose(prdID string) (*PRD, error) {
 			if m.retryDecomposeFailure(prd, "infra", "decompose-llm", derr.Error()) {
 				continue
 			}
+			old := prd.Status
 			prd.Status = PRDDraft
 			prd.UpdatedAt = time.Now()
-			_ = m.store.SavePRD(prd)
+			if m.store.SavePRD(prd) == nil {
+				m.emitPRDStatus(prd, old, nil, nil)
+			}
 			return nil, fmt.Errorf("LLM plan: %w", derr)
 		}
 		t, s, perr := ParsePlanning(r)
@@ -1069,9 +1077,12 @@ func (m *Manager) Decompose(prdID string) (*PRD, error) {
 			if m.retryDecomposeFailure(prd, "infra", "decompose-parse", perr.Error()) {
 				continue
 			}
+			old := prd.Status
 			prd.Status = PRDDraft
 			prd.UpdatedAt = time.Now()
-			_ = m.store.SavePRD(prd)
+			if m.store.SavePRD(prd) == nil {
+				m.emitPRDStatus(prd, old, nil, nil)
+			}
 			return nil, perr
 		}
 		// B124 — kick back a tooled plan that skipped verification
@@ -1084,9 +1095,12 @@ func (m *Manager) Decompose(prdID string) (*PRD, error) {
 			if m.retryDecomposeFailure(prd, "scope", "verification-script-coverage", verr.Error()) {
 				continue
 			}
+			old := prd.Status
 			prd.Status = PRDDraft
 			prd.UpdatedAt = time.Now()
-			_ = m.store.SavePRD(prd)
+			if m.store.SavePRD(prd) == nil {
+				m.emitPRDStatus(prd, old, nil, nil)
+			}
 			return nil, verr
 		}
 		raw, title, stories = r, t, s
@@ -1099,6 +1113,7 @@ func (m *Manager) Decompose(prdID string) (*PRD, error) {
 	// BL191 Q1: operator review/approve gate. Status lands in needs_review
 	// rather than active/running. Approve / Reject / RequestRevision are
 	// the explicit transitions out.
+	reviewOld := prd.Status
 	prd.Status = PRDNeedsReview
 	prd.Decisions = append(prd.Decisions, Decision{
 		At:            time.Now(),
@@ -1115,6 +1130,7 @@ func (m *Manager) Decompose(prdID string) (*PRD, error) {
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
 	}
+	m.emitPRDStatus(prd, reviewOld, lastDecision(prd, "decompose"), nil)
 	updated, _ := m.store.GetPRD(prdID)
 	return updated, nil
 }
@@ -1169,9 +1185,12 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (*PRD, 
 		effort = Effort(m.cfg.PlanningEffort)
 	}
 	// Mark in-flight. Also persists the worktree assignment above.
+	planOld := prd.Status
 	prd.Status = PRDPlanning
 	prd.UpdatedAt = time.Now()
-	_ = m.store.SavePRD(prd)
+	if m.store.SavePRD(prd) == nil {
+		m.emitPRDStatus(prd, planOld, nil, nil)
+	}
 
 	// BL387 Phase 2a — enrich decomposer prompt with prior context from project-shared.
 	prompt := fmt.Sprintf(PlanningPrompt, prd.Spec)
@@ -1219,9 +1238,12 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (*PRD, 
 			if m.retryDecomposeFailure(prd, "infra", "decompose-llm", derr.Error()) {
 				continue
 			}
+			old := prd.Status
 			prd.Status = PRDDraft
 			prd.UpdatedAt = time.Now()
-			_ = m.store.SavePRD(prd)
+			if m.store.SavePRD(prd) == nil {
+				m.emitPRDStatus(prd, old, nil, nil)
+			}
 			return nil, fmt.Errorf("LLM plan: %w", derr)
 		}
 		t, s, perr := ParsePlanning(r)
@@ -1229,9 +1251,12 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (*PRD, 
 			if m.retryDecomposeFailure(prd, "infra", "decompose-parse", perr.Error()) {
 				continue
 			}
+			old := prd.Status
 			prd.Status = PRDDraft
 			prd.UpdatedAt = time.Now()
-			_ = m.store.SavePRD(prd)
+			if m.store.SavePRD(prd) == nil {
+				m.emitPRDStatus(prd, old, nil, nil)
+			}
 			return nil, perr
 		}
 		// B124 — see Decompose()'s identical call for the full
@@ -1242,9 +1267,12 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (*PRD, 
 			if m.retryDecomposeFailure(prd, "scope", "verification-script-coverage", verr.Error()) {
 				continue
 			}
+			old := prd.Status
 			prd.Status = PRDDraft
 			prd.UpdatedAt = time.Now()
-			_ = m.store.SavePRD(prd)
+			if m.store.SavePRD(prd) == nil {
+				m.emitPRDStatus(prd, old, nil, nil)
+			}
 			return nil, verr
 		}
 		raw, title, stories = r, t, s
@@ -1254,6 +1282,7 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (*PRD, 
 	if title != "" {
 		prd.Title = title
 	}
+	reviewOld := prd.Status
 	prd.Status = PRDNeedsReview
 	prd.Decisions = append(prd.Decisions, Decision{
 		At:            time.Now(),
@@ -1270,6 +1299,7 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (*PRD, 
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
 	}
+	m.emitPRDStatus(prd, reviewOld, lastDecision(prd, "decompose"), nil)
 	updated, _ := m.store.GetPRD(prdID)
 	// Yield stories via callback after persisting.
 	if cb != nil {
@@ -1291,7 +1321,10 @@ func (m *Manager) Approve(prdID, actor, note string) (*PRD, error) {
 		return nil, fmt.Errorf("prd %q status %q is not approvable", prdID, prd.Status)
 	}
 	now := time.Now()
+	old := prd.Status
 	prd.Status = PRDApproved
+	// BL427 — fired after the save below.
+	emitApproved := func() { m.emitPRDStatus(prd, old, lastDecision(prd, "approve"), nil) }
 	prd.ApprovedBy = actor
 	prd.ApprovedAt = &now
 	prd.UpdatedAt = now
@@ -1330,6 +1363,7 @@ func (m *Manager) Approve(prdID, actor, note string) (*PRD, error) {
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
 	}
+	emitApproved()
 	updated, _ := m.store.GetPRD(prdID)
 	return updated, nil
 }
@@ -1345,6 +1379,7 @@ func (m *Manager) Reject(prdID, actor, reason string) (*PRD, error) {
 		return nil, fmt.Errorf("prd %q already completed; nothing to reject", prdID)
 	}
 	now := time.Now()
+	old := prd.Status
 	prd.Status = PRDRejected
 	prd.RejectionReason = reason
 	prd.UpdatedAt = now
@@ -1352,6 +1387,7 @@ func (m *Manager) Reject(prdID, actor, reason string) (*PRD, error) {
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
 	}
+	m.emitPRDStatus(prd, old, lastDecision(prd, "reject"), nil)
 	// A rejected PRD never ran (or, if it was running, the operator
 	// has still declared it dead) — clean up any decompose-time
 	// worktree now rather than leave it orphaned until someone
@@ -1374,6 +1410,7 @@ func (m *Manager) RequestRevision(prdID, actor, note string) (*PRD, error) {
 		return nil, fmt.Errorf("prd %q status %q does not accept revisions", prdID, prd.Status)
 	}
 	now := time.Now()
+	old := prd.Status
 	prd.Status = PRDRevisionsAsked
 	prd.RevisionsRequested++
 	prd.UpdatedAt = now
@@ -1381,6 +1418,7 @@ func (m *Manager) RequestRevision(prdID, actor, note string) (*PRD, error) {
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
 	}
+	m.emitPRDStatus(prd, old, lastDecision(prd, "request_revision"), nil)
 	updated, _ := m.store.GetPRD(prdID)
 	return updated, nil
 }
@@ -1401,6 +1439,7 @@ func (m *Manager) ResetToDraft(id, actor string) (*PRD, error) {
 		return nil, fmt.Errorf("prd %q is archived and cannot be reset", id)
 	}
 	now := time.Now()
+	old := prd.Status
 	prd.Status = PRDDraft
 	prd.Story = nil
 	prd.ApprovedBy = ""
@@ -1414,6 +1453,7 @@ func (m *Manager) ResetToDraft(id, actor string) (*PRD, error) {
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
 	}
+	m.emitPRDStatus(prd, old, lastDecision(prd, "reset_to_draft"), nil)
 	updated, _ := m.store.GetPRD(id)
 	return updated, nil
 }
@@ -1436,12 +1476,14 @@ func (m *Manager) Archive(id string) (*PRD, error) {
 		return prd, nil // idempotent
 	}
 	now := time.Now()
+	old := prd.Status
 	prd.Status = PRDArchived
 	prd.UpdatedAt = now
 	prd.Decisions = append(prd.Decisions, Decision{At: now, Kind: "archive", Actor: "operator"})
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
 	}
+	m.emitPRDStatus(prd, old, lastDecision(prd, "archive"), nil)
 	// Universal orphan-cleanup backstop: by the time a PRD reaches
 	// Archive, the operator has said "done with this forever" —
 	// whatever Decision 5's "keep for inspection" grace period on a
@@ -1756,6 +1798,7 @@ func (m *Manager) ResetTask(prdID, taskID, actor string, force bool) (*PRD, erro
 	// the status alone isn't enough; the operator (or PWA) must call Run
 	// again (boot-resume does this automatically on the next restart, but
 	// that's not required for it to take effect).
+	resetOld := prd.Status
 	if prd.Status == PRDFailed || prd.Status == PRDBlocked || prd.Status == PRDCancelled || prd.Status == PRDCompleted {
 		prd.Status = PRDRunning
 	}
@@ -1768,6 +1811,9 @@ func (m *Manager) ResetTask(prdID, taskID, actor string, force bool) (*PRD, erro
 	prd.Decisions = append(prd.Decisions, Decision{At: now, Kind: kind, Actor: actor, Note: note})
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
+	}
+	if prd.Status != resetOld {
+		m.emitPRDStatus(prd, resetOld, lastDecision(prd, kind), nil)
 	}
 	updated, _ := m.store.GetPRD(prdID)
 	return updated, nil
@@ -2557,12 +2603,14 @@ func (m *Manager) Pause(prdID, actor string) (*PRD, error) {
 	if prd.Status != PRDRunning {
 		return nil, fmt.Errorf("prd %q status %q is not running; only a running PRD can be paused", prdID, prd.Status)
 	}
+	old := prd.Status
 	prd.Status = PRDPaused
 	prd.UpdatedAt = time.Now()
 	prd.Decisions = append(prd.Decisions, Decision{At: time.Now(), Kind: "pause", Actor: actor})
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
 	}
+	m.emitPRDStatus(prd, old, lastDecision(prd, "pause"), nil)
 	updated, _ := m.store.GetPRD(prdID)
 	return updated, nil
 }
@@ -2579,12 +2627,14 @@ func (m *Manager) Resume(prdID, actor string) (*PRD, error) {
 	if prd.Status != PRDPaused {
 		return nil, fmt.Errorf("prd %q status %q is not paused; nothing to resume", prdID, prd.Status)
 	}
+	old := prd.Status
 	prd.Status = PRDRunning
 	prd.UpdatedAt = time.Now()
 	prd.Decisions = append(prd.Decisions, Decision{At: time.Now(), Kind: "resume", Actor: actor})
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
 	}
+	m.emitPRDStatus(prd, old, lastDecision(prd, "resume"), nil)
 	updated, _ := m.store.GetPRD(prdID)
 	return updated, nil
 }
@@ -2889,6 +2939,10 @@ func (m *Manager) InstantiateTemplate(templateID string, vars map[string]string,
 	})
 	if err := m.store.SavePRD(newPRD); err != nil {
 		return nil, err
+	}
+	if newPRD.Status == PRDNeedsReview {
+		// Freshly created PRD: no prior status, so OldStatus is empty.
+		m.emitPRDStatus(newPRD, "", lastDecision(newPRD, "template_instantiate"), nil)
 	}
 	updated, _ := m.store.GetPRD(newPRD.ID)
 	return updated, nil

@@ -155,8 +155,12 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 	// BL387 Phase 2b — cross-PRD seeding at first run.
 	// Only fires when PRD is transitioning from approved (not a resume from Running).
 	isFirstRun := prd.Status == PRDApproved || prd.Status == PRDActive
+	runOld := prd.Status
 	prd.Status = PRDRunning
 	m.mu.Unlock()
+	// BL427 — the running event fires only once the "run" Decision
+	// below is saved; an early return (worktree setup) emits nothing.
+	emitRunning := func() { m.emitPRDStatus(prd, runOld, lastDecision(prd, "run"), nil) }
 	// BL407 Phase 1 — a PRD with no explicit ProjectDir/ProjectProfile/
 	// ClusterProfile never has to run bare in the daemon's own
 	// checkout: when the operator has configured WorktreeBaseRepo,
@@ -209,6 +213,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 	if err := m.store.SavePRD(prd); err != nil {
 		return err
 	}
+	emitRunning()
 	if isFirstRun && prd.MemorySeed.Enabled && len(prd.MemorySeed.FromPRDs) > 0 {
 		m.mu.Lock()
 		crossSeedFn := m.memoryCrossSeedFn
@@ -324,8 +329,11 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 					// per-task guardrail block verdict, halt the walk so the
 					// operator can review before more tasks run.
 					if lt.Status == TaskBlocked {
+						old := latest.Status
 						latest.Status = PRDBlocked
-						_ = m.store.SavePRD(latest)
+						if m.store.SavePRD(latest) == nil {
+							m.emitPRDStatus(latest, old, nil, lastBlockVerdict(lt.Verdicts))
+						}
 						return nil
 					}
 				}
@@ -337,8 +345,11 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 					// barreling ahead into later, independent stories unattended.
 					// Opt out per-PRD or globally via ContinueOnStoryFailure.
 					if s.Status == StoryFailed && !m.resolveContinueOnStoryFailure(latest) && anyNonTerminalTasksRemain(latest) {
+						old := latest.Status
 						latest.Status = PRDBlocked
-						_ = m.store.SavePRD(latest)
+						if m.store.SavePRD(latest) == nil {
+							m.emitPRDStatus(latest, old, nil, nil)
+						}
 						return nil
 					}
 					_ = m.store.SavePRD(latest)
@@ -529,8 +540,11 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 							failedIDs[r.tid] = true
 						}
 						if lt.Status == TaskBlocked {
+							old := latest.Status
 							latest.Status = PRDBlocked
-							_ = m.store.SavePRD(latest)
+							if m.store.SavePRD(latest) == nil {
+								m.emitPRDStatus(latest, old, nil, lastBlockVerdict(lt.Verdicts))
+							}
 							// Drain remaining goroutines.
 							for len(inFlight) > 0 {
 								dr := <-results
@@ -543,8 +557,11 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 					if s := lookupStoryByTaskID(latest, r.tid); s != nil && storyAllTasksDone(s) {
 						s.Status = storyRollupStatus(s)
 						if s.Status == StoryFailed && !m.resolveContinueOnStoryFailure(latest) && anyNonTerminalTasksRemain(latest) {
+							old := latest.Status
 							latest.Status = PRDBlocked
-							_ = m.store.SavePRD(latest)
+							if m.store.SavePRD(latest) == nil {
+								m.emitPRDStatus(latest, old, nil, nil)
+							}
 							// Drain remaining goroutines already in flight — they were
 							// launched before this failure was known, so let them
 							// finish, but launch() below is skipped so nothing new starts.
@@ -575,8 +592,11 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 		if blocked, contentFixVerdict, err := m.runPerStoryGuardrails(ctx, prd, s); err != nil {
 			return err
 		} else if blocked {
+			old := prd.Status
 			prd.Status = PRDBlocked
-			_ = m.store.SavePRD(prd)
+			if m.store.SavePRD(prd) == nil {
+				m.emitPRDStatus(prd, old, nil, lastBlockVerdict(s.Verdicts))
+			}
 			return nil
 		} else if contentFixVerdict != nil {
 			// BL410 Phase 2 — synthesize corrective work into THIS
@@ -602,6 +622,10 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 	// failure — only an actual TaskFailed should mark the PRD failed.
 	allDone := true
 	anyFailed := false
+	// BL427 — set when the roll-up below lands in PRDCompleted; fired
+	// after the final save so subscribers see the completion side
+	// effects (worktree PR, cluster PR) already persisted.
+	var emitCompleted func()
 	for _, s := range prd.Story {
 		for _, t := range s.Tasks {
 			if !isTaskTerminal(t.Status) {
@@ -613,7 +637,13 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 	}
 	if allDone {
 		if anyFailed {
+			old := prd.Status
 			prd.Status = PRDFailed
+			if err := m.store.SavePRD(prd); err != nil {
+				return err
+			}
+			m.emitPRDStatus(prd, old, nil, nil)
+			return nil
 		} else if blocked, err := m.runPRDCompletionProjectRulesCheck(prd); err != nil {
 			return err
 		} else if blocked {
@@ -622,8 +652,11 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 			// project rule firing is itself the signal, same PRDBlocked
 			// status the task/story guardrail "block" outcome already
 			// uses above.
+			old := prd.Status
 			prd.Status = PRDBlocked
-			_ = m.store.SavePRD(prd)
+			if m.store.SavePRD(prd) == nil {
+				m.emitPRDStatus(prd, old, lastDecision(prd, "project_rules_block"), nil)
+			}
 			return nil
 		} else if blocked, contentFixVerdict, err := m.runPRDCompletionRulesReview(ctx, prd); err != nil {
 			return err
@@ -633,8 +666,11 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 			// see rules_review.go's own doc comment for why this is a
 			// judgment review against whatever rules file the operator
 			// configured, not a second hardcoded checklist.
+			old := prd.Status
 			prd.Status = PRDBlocked
-			_ = m.store.SavePRD(prd)
+			if m.store.SavePRD(prd) == nil {
+				m.emitPRDStatus(prd, old, nil, lastBlockVerdict(prd.Verdicts))
+			}
 			return nil
 		} else if contentFixVerdict != nil {
 			// BL410 Phase 2 — no single task/story owns a PRD-wide
@@ -660,8 +696,11 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 			// inside the PRDCompleted branch (handleWorktreeCompletion),
 			// so for them HEAD is usually unpushed here and ci-watch
 			// records a skip — see ci_watch.go's header.
+			old := prd.Status
 			prd.Status = PRDBlocked
-			_ = m.store.SavePRD(prd)
+			if m.store.SavePRD(prd) == nil {
+				m.emitPRDStatus(prd, old, nil, lastBlockVerdict(prd.Verdicts))
+			}
 			return nil
 		} else if contentFixVerdict != nil {
 			// Same as rules-review: a fixable CI failure gets standalone
@@ -674,7 +713,9 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 			_ = m.store.SavePRD(prd)
 			return m.Run(ctx, prd.ID, spawn, verify)
 		} else {
+			completedOld := prd.Status
 			prd.Status = PRDCompleted
+			emitCompleted = func() { m.emitPRDStatus(prd, completedOld, nil, nil) }
 			// BL387 Phase 3 — fire auto-report asynchronously on completion.
 			m.mu.Lock()
 			reportFn := m.memoryReportFn
@@ -723,7 +764,13 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 			m.handleClusterCompletion(prd)
 		}
 	}
-	return m.store.SavePRD(prd)
+	if err := m.store.SavePRD(prd); err != nil {
+		return err
+	}
+	if emitCompleted != nil {
+		emitCompleted()
+	}
+	return nil
 }
 
 // relocateCheckpoint reads CHECKPOINT.md from the project_dir if the just-

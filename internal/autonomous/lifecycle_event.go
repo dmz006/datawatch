@@ -315,3 +315,57 @@ func newLifecycleEventID() string {
 	}
 	return hex.EncodeToString(b[:])
 }
+
+// emitPRDStatus publishes a PRD-level status-change event for prd,
+// which has just been saved with its new status. Call it only after
+// the store save succeeded. dec is the Decision the same code path
+// appended (nil when none), v the blocking guardrail verdict (nil when
+// none); both are copied so later mutation of prd can't leak into a
+// subscriber.
+func (m *Manager) emitPRDStatus(prd *PRD, old PRDStatus, dec *Decision, v *GuardrailVerdict) {
+	if m == nil || prd == nil {
+		return
+	}
+	ev := LifecycleEvent{
+		Kind:        PRDStatusKind(prd.Status),
+		Level:       LevelPRD,
+		PRDID:       prd.ID,
+		ParentPRDID: prd.ParentPRDID,
+		OldStatus:   string(old),
+		NewStatus:   string(prd.Status),
+	}
+	if dec != nil {
+		d := *dec
+		ev.Decision = &d
+	}
+	if v != nil {
+		vc := *v
+		vc.Issues = append([]string(nil), v.Issues...)
+		ev.Verdict = &vc
+	}
+	m.emit(ev)
+}
+
+// lastDecision returns a pointer to the most recent Decision of kind on
+// prd, or nil. Used to attach the Decision a write site just appended.
+func lastDecision(prd *PRD, kind string) *Decision {
+	if prd == nil {
+		return nil
+	}
+	for i := len(prd.Decisions) - 1; i >= 0; i-- {
+		if prd.Decisions[i].Kind == kind {
+			return &prd.Decisions[i]
+		}
+	}
+	return nil
+}
+
+// lastBlockVerdict returns the most recent "block" verdict in vs, or nil.
+func lastBlockVerdict(vs []GuardrailVerdict) *GuardrailVerdict {
+	for i := len(vs) - 1; i >= 0; i-- {
+		if vs[i].Outcome == "block" {
+			return &vs[i]
+		}
+	}
+	return nil
+}
