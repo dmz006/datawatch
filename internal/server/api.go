@@ -189,7 +189,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "9.0.68"
+var Version = "9.0.69"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -669,6 +669,11 @@ type AutonomousAPI interface {
 	// BL416 — guardrail judge LLM overrides. nil = leave unchanged, "" = clear.
 	SetPRDGuardrailLLM(prdID string, backend, model *string, actor string) (any, error)
 	SetTaskGuardrailLLM(prdID, taskID string, backend, model *string, actor string) (any, error)
+	// Per-unit verification (judge) LLM overrides. nil = leave unchanged,
+	// "" = clear. Precedence task > story > Automaton > global config.
+	SetTaskVerificationLLM(prdID, taskID string, backend, model, effort *string, actor string) (any, error)
+	SetStoryVerificationLLM(prdID, storyID string, backend, model, effort *string, actor string) (any, error)
+	SetPRDVerificationLLM(prdID string, backend, model, effort *string, actor string) (any, error)
 
 	// BL386 Phase 1 + BL387 Phase 2b — per-PRD warm-start seed config.
 	SetMemorySeed(prdID string, enabled bool, maxPerScope int, roleFilter []string, fromPRDs []string, actor string) (any, error)

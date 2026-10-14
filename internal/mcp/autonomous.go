@@ -748,6 +748,87 @@ func guardrailLLMBody(req mcpsdk.CallToolRequest, base map[string]string, legacy
 	return out
 }
 
+// ----- per-unit verification LLM overrides ----------------------------------
+
+const (
+	verificationBackendParamDesc = "LLM that judges (verifies) the work — any configured LLM name. Precedence: task > story > Automaton > global autonomous verification_backend. Empty string = clear (inherit the next level); omit to leave unchanged."
+	verificationModelParamDesc   = "Specific model for the verifier. Empty string = clear (inherit); omit to leave unchanged."
+	verificationEffortParamDesc  = "Effort level for the verifier (resolves independently of backend/model). Empty string = clear (inherit); omit to leave unchanged."
+)
+
+func (s *Server) toolAutonomousPRDSetTaskVerificationLLM() mcpsdk.Tool {
+	return mcpsdk.NewTool("autonomous_prd_set_task_verification_llm",
+		mcpsdk.WithDescription("Override which LLM judges (verifies) one task's work. Precedence: task > story > Automaton > global autonomous verification_backend. Only the fields you pass change; an empty string clears that field."),
+		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("Automaton ID")),
+		mcpsdk.WithString("task_id", mcpsdk.Required(), mcpsdk.Description("Task ID")),
+		mcpsdk.WithString("verification_backend", mcpsdk.Description(verificationBackendParamDesc)),
+		mcpsdk.WithString("verification_model", mcpsdk.Description(verificationModelParamDesc)),
+		mcpsdk.WithString("verification_effort", mcpsdk.Description(verificationEffortParamDesc)),
+		mcpsdk.WithString("actor", mcpsdk.Description("Who made the change (default operator)")),
+	)
+}
+func (s *Server) handleAutonomousPRDSetTaskVerificationLLM(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	return s.proxyVerificationLLM(req, "set_task_verification_llm", "task_id")
+}
+
+func (s *Server) toolAutonomousPRDSetStoryVerificationLLM() mcpsdk.Tool {
+	return mcpsdk.NewTool("autonomous_prd_set_story_verification_llm",
+		mcpsdk.WithDescription("Override which LLM judges (verifies) the work of every task in one story (a task-level override still wins). Precedence: task > story > Automaton > global autonomous verification_backend. Only the fields you pass change; an empty string clears that field."),
+		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("Automaton ID")),
+		mcpsdk.WithString("story_id", mcpsdk.Required(), mcpsdk.Description("Story ID")),
+		mcpsdk.WithString("verification_backend", mcpsdk.Description(verificationBackendParamDesc)),
+		mcpsdk.WithString("verification_model", mcpsdk.Description(verificationModelParamDesc)),
+		mcpsdk.WithString("verification_effort", mcpsdk.Description(verificationEffortParamDesc)),
+		mcpsdk.WithString("actor", mcpsdk.Description("Who made the change (default operator)")),
+	)
+}
+func (s *Server) handleAutonomousPRDSetStoryVerificationLLM(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	return s.proxyVerificationLLM(req, "set_story_verification_llm", "story_id")
+}
+
+func (s *Server) toolAutonomousPRDSetVerificationLLM() mcpsdk.Tool {
+	return mcpsdk.NewTool("autonomous_prd_set_verification_llm",
+		mcpsdk.WithDescription("Override which LLM judges (verifies) the work of a whole Automaton (story- and task-level overrides still win). Precedence: task > story > Automaton > global autonomous verification_backend. Only the fields you pass change; an empty string clears that field."),
+		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("Automaton ID")),
+		mcpsdk.WithString("verification_backend", mcpsdk.Description(verificationBackendParamDesc)),
+		mcpsdk.WithString("verification_model", mcpsdk.Description(verificationModelParamDesc)),
+		mcpsdk.WithString("verification_effort", mcpsdk.Description(verificationEffortParamDesc)),
+		mcpsdk.WithString("actor", mcpsdk.Description("Who made the change (default operator)")),
+	)
+}
+func (s *Server) handleAutonomousPRDSetVerificationLLM(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	return s.proxyVerificationLLM(req, "set_verification_llm", "")
+}
+
+// proxyVerificationLLM POSTs a verification LLM override to the REST
+// action. Only the keys the caller actually supplied are forwarded, so
+// an absent key leaves the field unchanged and "" clears it.
+func (s *Server) proxyVerificationLLM(req mcpsdk.CallToolRequest, action, unitKey string) (*mcpsdk.CallToolResult, error) {
+	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+req.GetString("id", "")+"/"+action, verificationLLMBody(req, unitKey))
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
+func verificationLLMBody(req mcpsdk.CallToolRequest, unitKey string) []byte {
+	args := req.GetArguments()
+	body := map[string]string{"actor": req.GetString("actor", "operator")}
+	if body["actor"] == "" {
+		body["actor"] = "operator"
+	}
+	if unitKey != "" {
+		body[unitKey] = req.GetString(unitKey, "")
+	}
+	for _, k := range []string{"verification_backend", "verification_model", "verification_effort"} {
+		if _, ok := args[k]; ok {
+			body[k] = req.GetString(k, "")
+		}
+	}
+	out, _ := json.Marshal(body)
+	return out
+}
+
 // ----- autonomous_learnings --------------------------------------------------
 
 func (s *Server) toolAutonomousLearnings() mcpsdk.Tool {

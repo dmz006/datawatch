@@ -1351,6 +1351,74 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		addGuardrailAuditDetail(detail, req.GuardrailBackend, req.GuardrailModel)
 		s.audit(r.Context(), "set_task_llm", "automaton", id, detail) // GH#201 Phase 4
 		writeJSONOK(w, updated)
+	// Per-unit verification (judge) LLM overrides. Precedence:
+	// task > story > Automaton > global autonomous verification_*.
+	case "set_task_verification_llm", "set_story_verification_llm", "set_verification_llm":
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+			return
+		}
+		// Presence-aware: absent = leave unchanged, "" = clear.
+		var req struct {
+			TaskID              string  `json:"task_id"`
+			StoryID             string  `json:"story_id"`
+			VerificationBackend *string `json:"verification_backend"`
+			VerificationModel   *string `json:"verification_model"`
+			VerificationEffort  *string `json:"verification_effort"`
+			Actor               string  `json:"actor"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if action == "set_task_verification_llm" && req.TaskID == "" {
+			http.Error(w, "task_id required", http.StatusBadRequest)
+			return
+		}
+		if action == "set_story_verification_llm" && req.StoryID == "" {
+			http.Error(w, "story_id required", http.StatusBadRequest)
+			return
+		}
+		if req.Actor == "" {
+			req.Actor = "operator"
+		}
+		if b := req.VerificationBackend; b != nil && *b != "" && s.inferenceReg != nil {
+			if _, err := s.inferenceReg.Get(*b); err != nil {
+				http.Error(w, "unknown LLM "+strconv.Quote(*b)+" — check /api/llms for valid names", http.StatusBadRequest)
+				return
+			}
+		}
+		var updated any
+		var err error
+		detail := map[string]any{}
+		switch action {
+		case "set_task_verification_llm":
+			updated, err = s.autonomousMgr.SetTaskVerificationLLM(id, req.TaskID, req.VerificationBackend, req.VerificationModel, req.VerificationEffort, req.Actor)
+			detail["task_id"] = req.TaskID
+		case "set_story_verification_llm":
+			updated, err = s.autonomousMgr.SetStoryVerificationLLM(id, req.StoryID, req.VerificationBackend, req.VerificationModel, req.VerificationEffort, req.Actor)
+			detail["story_id"] = req.StoryID
+		default:
+			updated, err = s.autonomousMgr.SetPRDVerificationLLM(id, req.VerificationBackend, req.VerificationModel, req.VerificationEffort, req.Actor)
+		}
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		for k, v := range map[string]*string{
+			"verification_backend": req.VerificationBackend,
+			"verification_model":   req.VerificationModel,
+			"verification_effort":  req.VerificationEffort,
+		} {
+			if v != nil {
+				detail[k] = *v
+			}
+		}
+		s.audit(r.Context(), action, "automaton", id, detail)
+		writeJSONOK(w, updated)
 	case "profiles":
 		// v5.26.20 — post-create profile attachment for PRDs that
 		// were created via project_dir but later need to be tied to

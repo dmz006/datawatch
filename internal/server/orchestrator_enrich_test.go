@@ -102,6 +102,17 @@ func (f *fakeOrchAutonomous) SetTaskGuardrailLLM(string, string, *string, *strin
 	return nil, nil
 }
 
+// Verification LLM override stubs.
+func (f *fakeOrchAutonomous) SetTaskVerificationLLM(string, string, *string, *string, *string, string) (any, error) {
+	return nil, nil
+}
+func (f *fakeOrchAutonomous) SetStoryVerificationLLM(string, string, *string, *string, *string, string) (any, error) {
+	return nil, nil
+}
+func (f *fakeOrchAutonomous) SetPRDVerificationLLM(string, *string, *string, *string, string) (any, error) {
+	return nil, nil
+}
+
 // BL191 Q4 (v5.9.0) — child PRD list stub.
 func (f *fakeOrchAutonomous) ListChildPRDs(string) []any { return nil }
 

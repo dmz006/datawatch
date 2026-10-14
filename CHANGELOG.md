@@ -5,6 +5,22 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.69 — feat(autonomous): REST + MCP surface for per-unit verification LLM overrides
+
+### Added
+- **Set which LLM verifies a task, story or whole Automaton.** New REST
+  actions `POST /api/autonomous/prds/{id}/set_task_verification_llm`,
+  `/set_story_verification_llm` and `/set_verification_llm`, plus MCP
+  tools `autonomous_prd_set_task_verification_llm`,
+  `autonomous_prd_set_story_verification_llm` and
+  `autonomous_prd_set_verification_llm`. Each accepts
+  `verification_backend` / `verification_model` / `verification_effort`;
+  only the fields sent change and an empty string clears one.
+  Precedence: task > story > Automaton > global autonomous
+  `verification_backend`. Unknown backends are rejected with 400, the
+  actions require the autonomous-write federation capability, and every
+  change is audited.
+
 ## v9.0.68 — feat(autonomous): verifier honors per-task / per-story / per-Automaton verification LLM overrides
 
 ### Changed

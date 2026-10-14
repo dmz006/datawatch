@@ -551,6 +551,9 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutonomousPRDSetLLM(), tracked(s.handleAutonomousPRDSetLLM))
 	mcpSrv.AddTool(s.toolAutonomousPRDSetStoryLLM(), tracked(s.handleAutonomousPRDSetStoryLLM))
 	mcpSrv.AddTool(s.toolAutonomousPRDSetTaskLLM(), tracked(s.handleAutonomousPRDSetTaskLLM))
+	mcpSrv.AddTool(s.toolAutonomousPRDSetVerificationLLM(), tracked(s.handleAutonomousPRDSetVerificationLLM))
+	mcpSrv.AddTool(s.toolAutonomousPRDSetStoryVerificationLLM(), tracked(s.handleAutonomousPRDSetStoryVerificationLLM))
+	mcpSrv.AddTool(s.toolAutonomousPRDSetTaskVerificationLLM(), tracked(s.handleAutonomousPRDSetTaskVerificationLLM))
 	mcpSrv.AddTool(s.toolAutonomousLearnings(), tracked(s.handleAutonomousLearnings))
 	mcpSrv.AddTool(s.toolAutonomousPRDChildren(), tracked(s.handleAutonomousPRDChildren))
 	// BL221 (v6.2.0) Phase 3 — scan framework tools.
