@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -646,5 +647,52 @@ func TestDefaultConfig_CIWatchTimeoutSeconds(t *testing.T) {
 	}
 	if len(cfg.Autonomous.PerPRDGuardrails) != 0 {
 		t.Errorf("PerPRDGuardrails should default empty (ci-watch off), got %v", cfg.Autonomous.PerPRDGuardrails)
+	}
+}
+
+func TestDefaultConfig_BlockOnFileDriftFalse(t *testing.T) {
+	if DefaultConfig().Autonomous.BlockOnFileDrift {
+		t.Error("Autonomous.BlockOnFileDrift should default false (opt-in strict drift enforcement)")
+	}
+}
+
+func TestBlockOnFileDrift_YAMLRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("autonomous:\n  block_on_file_drift: true\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !cfg.Autonomous.BlockOnFileDrift {
+		t.Fatal("block_on_file_drift: true in YAML did not load")
+	}
+	out := filepath.Join(t.TempDir(), "saved.yaml")
+	if err := Save(cfg, out); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	raw, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), "block_on_file_drift: true") {
+		t.Errorf("saved YAML lacks block_on_file_drift: true:\n%s", raw)
+	}
+	cfg2, err := Load(out)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if !cfg2.Autonomous.BlockOnFileDrift {
+		t.Error("block_on_file_drift did not survive Save/Load round-trip")
+	}
+	// Explicit false must also round-trip (no omitempty).
+	cfg2.Autonomous.BlockOnFileDrift = false
+	if err := Save(cfg2, out); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ = os.ReadFile(out)
+	if !strings.Contains(string(raw), "block_on_file_drift: false") {
+		t.Errorf("explicit false should be written, got:\n%s", raw)
 	}
 }

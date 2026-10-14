@@ -745,12 +745,12 @@ type AutonomousAPI interface {
 
 	// BL303 S2 — guardrail library + profiles + per-Automaton override.
 	GuardrailLibrary() []any
-	CreateGuardrailProfile(name, description string, guardrails []string) (any, error)
-	UpdateGuardrailProfile(id, name, description string, guardrails []string) (any, error)
+	CreateGuardrailProfile(name, description string, guardrails []string, blockOnFileDrift *bool) (any, error)
+	UpdateGuardrailProfile(id, name, description string, guardrails []string, blockOnFileDrift *bool) (any, error)
 	DeleteGuardrailProfile(id string) error
 	ListGuardrailProfiles() []any
 	GetGuardrailProfile(id string) (any, bool)
-	SetPRDGuardrails(prdID, profile string, perTask, perStory, perPRD []string) (any, error)
+	SetPRDGuardrails(prdID, profile string, perTask, perStory, perPRD []string, blockOnFileDrift *bool) (any, error)
 
 	// BL410 Phase 1 — retry profiles + per-Automaton retry-policy override.
 	CreateRetryProfile(name, description string, budgets map[string]int, ceilingTotal, infraRetryEscalateAfter int, contentAutoFixEnabled, autoFixSkipApproval *bool) (any, error)
@@ -6864,6 +6864,8 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			cfg.Autonomous.ContentAutoFixEnabled = toBool(v)
 		case "autonomous.auto_fix_skip_approval":
 			cfg.Autonomous.AutoFixSkipApproval = toBool(v)
+		case "autonomous.block_on_file_drift":
+			cfg.Autonomous.BlockOnFileDrift = toBool(v)
 		// BL406 — project-rules enforcement config.
 		case "autonomous.rules_file":
 			cfg.Autonomous.RulesFile = toString(v)

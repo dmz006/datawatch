@@ -44,7 +44,7 @@ func TestGuardrailProfileCRUD(t *testing.T) {
 	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
 
 	// Create.
-	p, err := m.CreateGuardrailProfile("strict", "All scans", []string{"sast-scan", "secrets-scan"})
+	p, err := m.CreateGuardrailProfile("strict", "All scans", []string{"sast-scan", "secrets-scan"}, nil)
 	if err != nil {
 		t.Fatalf("CreateGuardrailProfile: %v", err)
 	}
@@ -68,7 +68,7 @@ func TestGuardrailProfileCRUD(t *testing.T) {
 	}
 
 	// Update.
-	updated, err := m.UpdateGuardrailProfile(p.ID, "medium", "One scan", []string{"sast-scan"})
+	updated, err := m.UpdateGuardrailProfile(p.ID, "medium", "One scan", []string{"sast-scan"}, nil)
 	if err != nil {
 		t.Fatalf("UpdateGuardrailProfile: %v", err)
 	}
@@ -90,7 +90,7 @@ func TestGuardrailProfileCRUD(t *testing.T) {
 
 func TestUpdateGuardrailProfile_NotFound(t *testing.T) {
 	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
-	_, err := m.UpdateGuardrailProfile("nope", "x", "", nil)
+	_, err := m.UpdateGuardrailProfile("nope", "x", "", nil, nil)
 	if err == nil {
 		t.Fatal("expected error for unknown profile ID")
 	}
@@ -109,7 +109,7 @@ func TestSetPRDGuardrails_ExplicitFields(t *testing.T) {
 	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
 	prd, _ := m.CreatePRD("spec", "/p", "claude", "", EffortNormal)
 
-	updated, err := m.SetPRDGuardrails(prd.ID, "", []string{"sast-scan"}, []string{"deps-scan"}, []string{"rules-review"})
+	updated, err := m.SetPRDGuardrails(prd.ID, "", []string{"sast-scan"}, []string{"deps-scan"}, []string{"rules-review"}, nil)
 	if err != nil {
 		t.Fatalf("SetPRDGuardrails: %v", err)
 	}
@@ -128,7 +128,7 @@ func TestSetPRDGuardrails_NamedProfile(t *testing.T) {
 	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
 	prd, _ := m.CreatePRD("spec", "/p", "claude", "", EffortNormal)
 
-	updated, err := m.SetPRDGuardrails(prd.ID, "strict-profile", nil, nil, nil)
+	updated, err := m.SetPRDGuardrails(prd.ID, "strict-profile", nil, nil, nil, nil)
 	if err != nil {
 		t.Fatalf("SetPRDGuardrails: %v", err)
 	}
@@ -139,7 +139,7 @@ func TestSetPRDGuardrails_NamedProfile(t *testing.T) {
 
 func TestSetPRDGuardrails_NotFound(t *testing.T) {
 	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
-	_, err := m.SetPRDGuardrails("nope", "", nil, nil, nil)
+	_, err := m.SetPRDGuardrails("nope", "", nil, nil, nil, nil)
 	if err == nil {
 		t.Fatal("expected error for missing PRD")
 	}
@@ -153,7 +153,7 @@ func TestResolveGuardrails_ExplicitBeatsProfile(t *testing.T) {
 	m, _ := NewManager(t.TempDir(), cfg, nil)
 
 	// Create a profile.
-	p, _ := m.CreateGuardrailProfile("p", "", []string{"profile-g"})
+	p, _ := m.CreateGuardrailProfile("p", "", []string{"profile-g"}, nil)
 
 	// PRD with explicit + profile.
 	prd, _ := m.CreatePRD("spec", "/p", "claude", "", EffortNormal)
@@ -173,7 +173,7 @@ func TestResolveGuardrails_ProfileBeatsGlobal(t *testing.T) {
 	cfg.PerTaskGuardrails = []string{"global-g"}
 	m, _ := NewManager(t.TempDir(), cfg, nil)
 
-	p, _ := m.CreateGuardrailProfile("p", "", []string{"profile-g"})
+	p, _ := m.CreateGuardrailProfile("p", "", []string{"profile-g"}, nil)
 
 	prd, _ := m.CreatePRD("spec", "/p", "claude", "", EffortNormal)
 	prd.GuardrailProfile = p.ID
@@ -206,7 +206,7 @@ func TestResolveGuardrails_PRDLevel_ExplicitBeatsProfileBeatsGlobal(t *testing.T
 	cfg.PerPRDGuardrails = []string{"global-g"}
 	m, _ := NewManager(t.TempDir(), cfg, nil)
 
-	p, _ := m.CreateGuardrailProfile("p", "", []string{"profile-g"})
+	p, _ := m.CreateGuardrailProfile("p", "", []string{"profile-g"}, nil)
 
 	prd, _ := m.CreatePRD("spec", "/p", "claude", "", EffortNormal)
 	prd.GuardrailProfile = p.ID
@@ -236,7 +236,7 @@ func TestGuardrailProfilePersistence(t *testing.T) {
 	dir := t.TempDir()
 	m, _ := NewManager(dir, DefaultConfig(), nil)
 
-	p, _ := m.CreateGuardrailProfile("saved", "persist test", []string{"sast-scan"})
+	p, _ := m.CreateGuardrailProfile("saved", "persist test", []string{"sast-scan"}, nil)
 
 	// Reload from disk.
 	m2, _ := NewManager(dir, DefaultConfig(), nil)

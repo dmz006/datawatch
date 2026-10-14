@@ -2000,6 +2000,12 @@ type AutonomousConfig struct {
 	// field needs the explicit-clear discipline. Defaults: both true.
 	ContentAutoFixEnabled bool `yaml:"content_auto_fix_enabled" json:"content_auto_fix_enabled"`
 	AutoFixSkipApproval   bool `yaml:"auto_fix_skip_approval" json:"auto_fix_skip_approval"`
+	// BlockOnFileDrift opts into strict foreign-file-drift enforcement:
+	// a task that modified tracked files outside its own scope is
+	// blocked instead of merely flagged. Default false. Overridable per
+	// guardrail profile and per Automaton. No omitempty, same
+	// explicit-clear reason as ContentAutoFixEnabled above.
+	BlockOnFileDrift bool `yaml:"block_on_file_drift" json:"block_on_file_drift"`
 
 	// Phase 3 (v5.26.61) — per-story approval gate. Default false
 	// (preserves the v5.26.x behavior where PRD approval auto-
@@ -2095,8 +2101,8 @@ type ScanConfig struct {
 // ProjectRuleConfig — BL406, mirrors scan.ProjectRule. One operator-
 // defined rule for the project-rules scan category.
 type ProjectRuleConfig struct {
-	ID          string `yaml:"id" json:"id"`
-	Name        string `yaml:"name" json:"name"`
+	ID   string `yaml:"id" json:"id"`
+	Name string `yaml:"name" json:"name"`
 	// Type is one of: content | consistency | presence | parity.
 	Type string `yaml:"type" json:"type"`
 	// Granularity is one of: task_complete | story_complete | prd_complete.
@@ -2515,6 +2521,7 @@ func DefaultConfig() *Config {
 			CIWatchTimeoutSeconds:   1500,
 			ContentAutoFixEnabled:   true,
 			AutoFixSkipApproval:     true,
+			BlockOnFileDrift:        false, // opt-in strict drift enforcement
 		},
 		Ntfy:          NtfyConfig{ServerURL: "https://ntfy.sh"},
 		Email:         EmailConfig{Port: 587},

@@ -148,3 +148,22 @@ func sortedUnion(lists ...[]string) []string {
 	sort.Strings(out)
 	return out
 }
+
+// resolveBlockOnFileDrift reports whether detected foreign-file drift
+// should block the task (strict enforcement) rather than merely be
+// flagged. Priority: explicit PRD override > named GuardrailProfile >
+// global Config (default false — opt-in), the same 3-tier shape as
+// resolveContentAutoFixEnabled and resolveGuardrails.
+func (m *Manager) resolveBlockOnFileDrift(prd *PRD) bool {
+	if prd.BlockOnFileDrift != nil {
+		return *prd.BlockOnFileDrift
+	}
+	if prd.GuardrailProfile != "" {
+		if p, ok := m.store.GetGuardrailProfile(prd.GuardrailProfile); ok && p.BlockOnFileDrift != nil {
+			return *p.BlockOnFileDrift
+		}
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.cfg.BlockOnFileDrift
+}

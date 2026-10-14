@@ -4,9 +4,9 @@
 package autonomous
 
 import (
-	"github.com/dmz006/datawatch/internal/capacity"
 	"context"
 	"fmt"
+	"github.com/dmz006/datawatch/internal/capacity"
 	"log"
 	"strings"
 	"sync"
@@ -41,9 +41,9 @@ func trimDecisions(ds []Decision) []Decision {
 // JSON tags use snake_case so REST + YAML payloads can be applied
 // directly via SetConfig.
 type Config struct {
-	Enabled              bool   `json:"enabled"`
-	PollIntervalSeconds  int    `json:"poll_interval_seconds,omitempty"`
-	MaxParallelTasks     int    `json:"max_parallel_tasks,omitempty"`
+	Enabled             bool `json:"enabled"`
+	PollIntervalSeconds int  `json:"poll_interval_seconds,omitempty"`
+	MaxParallelTasks    int  `json:"max_parallel_tasks,omitempty"`
 	// BL304: renamed from DecompositionBackend; JSON key updated to planning_backend.
 	// Old key "decomposition_backend" still accepted via SetConfig migration.
 	PlanningBackend     string `json:"planning_backend,omitempty"`
@@ -63,8 +63,8 @@ type Config struct {
 	// used during PRD decomposition (default: 120s quick/low, 300s normal,
 	// 900s high/max). Set to 0 to use the effort-scaled defaults.
 	// Exposed as autonomous.planning_timeout_seconds in config.
-	PlanningTimeoutSeconds int `json:"planning_timeout_seconds,omitempty"`
-	VerificationModel    string `json:"verification_model,omitempty"`
+	PlanningTimeoutSeconds int    `json:"planning_timeout_seconds,omitempty"`
+	VerificationModel      string `json:"verification_model,omitempty"`
 	// VerificationBackends (v8.36.9) — see config.AutonomousConfig's doc
 	// comment. Ordered list of LLM registry names to load-balance
 	// verifier/guardrail capacity across; empty = single-backend
@@ -77,8 +77,8 @@ type Config struct {
 	// before persisting — omitempty here would elide an explicit clear
 	// from that marshal, silently reverting it on the next load.
 	VerificationBackends []string `json:"verification_backends"`
-	StaleTaskSeconds     int    `json:"stale_task_seconds,omitempty"`
-	AutoFixRetries       int    `json:"auto_fix_retries,omitempty"`
+	StaleTaskSeconds     int      `json:"stale_task_seconds,omitempty"`
+	AutoFixRetries       int      `json:"auto_fix_retries,omitempty"`
 
 	// BL410 Phase 1 — per-category retry budgets (daemon-wide default;
 	// PRD.RetryPolicy > named RetryProfile > this). Keys: "infra",
@@ -111,10 +111,17 @@ type Config struct {
 	// default" answer.
 	ContentAutoFixEnabled bool `json:"content_auto_fix_enabled"`
 	AutoFixSkipApproval   bool `json:"auto_fix_skip_approval"`
+	// BlockOnFileDrift — strict foreign-file-drift enforcement: when
+	// true, a task whose run modified tracked files outside its own
+	// scope is blocked instead of merely flagged. No omitempty for the
+	// same explicit-clear reason as ContentAutoFixEnabled above.
+	// Default false (opt-in); overridable per GuardrailProfile and per
+	// PRD (resolveBlockOnFileDrift).
+	BlockOnFileDrift bool `json:"block_on_file_drift"`
 	// VerifierDiffMaxBytes caps the git diff injected into the verifier
 	// prompt for evidence grounding (BL366). 0 = 8192.
-	VerifierDiffMaxBytes int    `json:"verifier_diff_max_bytes,omitempty"`
-	SecurityScan         bool   `json:"security_scan,omitempty"`
+	VerifierDiffMaxBytes int  `json:"verifier_diff_max_bytes,omitempty"`
+	SecurityScan         bool `json:"security_scan,omitempty"`
 
 	// BL191 Q4 (v5.9.0) — recursive child-PRD knobs. MaxRecursionDepth
 	// caps the parent→child PRD chain length (default 5; 0 disables
@@ -269,6 +276,7 @@ func DefaultConfig() Config {
 		RetryCeilingTotal:       5,
 		InfraRetryEscalateAfter: 2,
 		ContentAutoFixEnabled:   true,
+		BlockOnFileDrift:        false, // opt-in strict drift enforcement
 		AutoFixSkipApproval:     true,
 	}
 }
@@ -377,8 +385,8 @@ var builtinTypes = []AutomatonType{
 
 // Manager is the public façade for the autonomous package.
 type Manager struct {
-	mu        sync.Mutex
-	cfg       Config
+	mu          sync.Mutex
+	cfg         Config
 	store       *Store
 	dataDir     string         // 2026-10-07 — root for ScratchDir (PRD scratch artifacts), same root Store itself was opened under
 	templates   *TemplateStore // BL221 (v6.2.0) — dedicated template store
@@ -3400,8 +3408,9 @@ func (m *Manager) SetPRDQualityGates(prdID string, enabled bool, testCommand str
 }
 
 // SetPRDGuardrails (BL303 S2 T06; BL418 adds perPRD) sets per-Automaton
-// guardrail overrides.
-func (m *Manager) SetPRDGuardrails(prdID, profile string, perTask, perStory, perPRD []string) (*PRD, error) {
+// guardrail overrides. blockOnFileDrift is assigned as-is like the
+// other overrides here (nil = inherit profile/global).
+func (m *Manager) SetPRDGuardrails(prdID, profile string, perTask, perStory, perPRD []string, blockOnFileDrift *bool) (*PRD, error) {
 	prd, ok := m.store.GetPRD(prdID)
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
@@ -3410,28 +3419,31 @@ func (m *Manager) SetPRDGuardrails(prdID, profile string, perTask, perStory, per
 	prd.PerTaskGuardrails = perTask
 	prd.PerStoryGuardrails = perStory
 	prd.PerPRDGuardrails = perPRD
+	prd.BlockOnFileDrift = blockOnFileDrift
 	prd.UpdatedAt = time.Now()
 	return prd, m.store.SavePRD(prd)
 }
 
 // CreateGuardrailProfile (BL303 S2 T05) creates a new guardrail profile.
-func (m *Manager) CreateGuardrailProfile(name, description string, guardrails []string) (*GuardrailProfile, error) {
+func (m *Manager) CreateGuardrailProfile(name, description string, guardrails []string, blockOnFileDrift *bool) (*GuardrailProfile, error) {
 	if name == "" {
 		return nil, fmt.Errorf("profile name is required")
 	}
 	p := &GuardrailProfile{
-		ID:          newProfileID(),
-		Name:        name,
-		Description: description,
-		Guardrails:  guardrails,
-		CreatedAt:   time.Now(),
-		UpdatedAt:   time.Now(),
+		ID:               newProfileID(),
+		Name:             name,
+		Description:      description,
+		Guardrails:       guardrails,
+		BlockOnFileDrift: blockOnFileDrift,
+		CreatedAt:        time.Now(),
+		UpdatedAt:        time.Now(),
 	}
 	return p, m.store.SaveGuardrailProfile(p)
 }
 
 // UpdateGuardrailProfile (BL303 S2 T05) updates an existing profile.
-func (m *Manager) UpdateGuardrailProfile(id, name, description string, guardrails []string) (*GuardrailProfile, error) {
+// A nil blockOnFileDrift leaves the profile's current value unchanged.
+func (m *Manager) UpdateGuardrailProfile(id, name, description string, guardrails []string, blockOnFileDrift *bool) (*GuardrailProfile, error) {
 	p, ok := m.store.GetGuardrailProfile(id)
 	if !ok {
 		return nil, fmt.Errorf("guardrail profile %q not found", id)
@@ -3441,6 +3453,9 @@ func (m *Manager) UpdateGuardrailProfile(id, name, description string, guardrail
 	}
 	p.Description = description
 	p.Guardrails = guardrails
+	if blockOnFileDrift != nil {
+		p.BlockOnFileDrift = blockOnFileDrift
+	}
 	p.UpdatedAt = time.Now()
 	return p, m.store.SaveGuardrailProfile(p)
 }

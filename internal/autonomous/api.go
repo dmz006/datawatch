@@ -623,7 +623,6 @@ func (a *API) SetPRDLLM(prdID, backend, effort, model, decompositionProfile, dec
 	return out, err
 }
 
-
 // BL416 — presence-aware guardrail judge LLM overrides at PRD + task level.
 func (a *API) SetPRDGuardrailLLM(prdID string, backend, model *string, actor string) (any, error) {
 	out, err := a.M.SetPRDGuardrailLLM(prdID, backend, model, actor)
@@ -639,7 +638,6 @@ func (a *API) SetTaskGuardrailLLM(prdID, taskID string, backend, model *string, 
 	}
 	return out, err
 }
-
 
 // Presence-aware verifier LLM overrides at task, story and Automaton level.
 func (a *API) SetTaskVerificationLLM(prdID, taskID string, backend, model, effort *string, actor string) (any, error) {
@@ -663,6 +661,7 @@ func (a *API) SetPRDVerificationLLM(prdID string, backend, model, effort *string
 	}
 	return out, err
 }
+
 // SetMemorySeed (BL386 Phase 1 + BL387 Phase 2b) updates the PRD's warm-start seed config.
 func (a *API) SetMemorySeed(prdID string, enabled bool, maxPerScope int, roleFilter []string, fromPRDs []string, actor string) (any, error) {
 	cfg := MemorySeedConfig{Enabled: enabled, MaxPerScope: maxPerScope, RoleFilter: roleFilter, FromPRDs: fromPRDs}
@@ -1013,12 +1012,12 @@ func (a *API) GuardrailLibrary() []any {
 	return out
 }
 
-func (a *API) CreateGuardrailProfile(name, description string, guardrails []string) (any, error) {
-	return a.M.CreateGuardrailProfile(name, description, guardrails)
+func (a *API) CreateGuardrailProfile(name, description string, guardrails []string, blockOnFileDrift *bool) (any, error) {
+	return a.M.CreateGuardrailProfile(name, description, guardrails, blockOnFileDrift)
 }
 
-func (a *API) UpdateGuardrailProfile(id, name, description string, guardrails []string) (any, error) {
-	return a.M.UpdateGuardrailProfile(id, name, description, guardrails)
+func (a *API) UpdateGuardrailProfile(id, name, description string, guardrails []string, blockOnFileDrift *bool) (any, error) {
+	return a.M.UpdateGuardrailProfile(id, name, description, guardrails, blockOnFileDrift)
 }
 
 func (a *API) DeleteGuardrailProfile(id string) error {
@@ -1042,8 +1041,8 @@ func (a *API) GetGuardrailProfile(id string) (any, bool) {
 	return p, true
 }
 
-func (a *API) SetPRDGuardrails(prdID, profile string, perTask, perStory, perPRD []string) (any, error) {
-	prd, err := a.M.SetPRDGuardrails(prdID, profile, perTask, perStory, perPRD)
+func (a *API) SetPRDGuardrails(prdID, profile string, perTask, perStory, perPRD []string, blockOnFileDrift *bool) (any, error) {
+	prd, err := a.M.SetPRDGuardrails(prdID, profile, perTask, perStory, perPRD, blockOnFileDrift)
 	if err != nil {
 		return nil, err
 	}

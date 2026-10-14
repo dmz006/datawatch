@@ -18,26 +18,26 @@ type fakeOrchAutonomous struct {
 	prdSessions map[string][]string
 }
 
-func (f *fakeOrchAutonomous) Config() any                         { return nil }
-func (f *fakeOrchAutonomous) SetConfig(any) error                 { return nil }
-func (f *fakeOrchAutonomous) Status() any                         { return nil }
+func (f *fakeOrchAutonomous) Config() any         { return nil }
+func (f *fakeOrchAutonomous) SetConfig(any) error { return nil }
+func (f *fakeOrchAutonomous) Status() any         { return nil }
 func (f *fakeOrchAutonomous) CreatePRD(string, string, string, string, string) (any, error) {
 	return nil, nil
 }
-func (f *fakeOrchAutonomous) GetPRD(string) (any, bool)            { return nil, false }
-func (f *fakeOrchAutonomous) ListPRDs() []any                      { return nil }
-func (f *fakeOrchAutonomous) Decompose(string) (any, error)        { return nil, nil }
-func (f *fakeOrchAutonomous) Run(string) error                     { return nil }
-func (f *fakeOrchAutonomous) Cancel(string) error                  { return nil }
-func (f *fakeOrchAutonomous) ListLearnings() []any                 { return nil }
+func (f *fakeOrchAutonomous) GetPRD(string) (any, bool)     { return nil, false }
+func (f *fakeOrchAutonomous) ListPRDs() []any               { return nil }
+func (f *fakeOrchAutonomous) Decompose(string) (any, error) { return nil, nil }
+func (f *fakeOrchAutonomous) Run(string) error              { return nil }
+func (f *fakeOrchAutonomous) Cancel(string) error           { return nil }
+func (f *fakeOrchAutonomous) ListLearnings() []any          { return nil }
 func (f *fakeOrchAutonomous) SessionIDsForPRD(prdID string) []string {
 	return f.prdSessions[prdID]
 }
 
 // BL191 (v5.2.0) — review/approve gate stubs so the fake satisfies the
 // expanded AutonomousAPI interface.
-func (f *fakeOrchAutonomous) ResetToDraft(string, string) (any, error)           { return nil, nil }
-func (f *fakeOrchAutonomous) Archive(string) (any, error)                        { return nil, nil }
+func (f *fakeOrchAutonomous) ResetToDraft(string, string) (any, error)            { return nil, nil }
+func (f *fakeOrchAutonomous) Archive(string) (any, error)                         { return nil, nil }
 func (f *fakeOrchAutonomous) Approve(string, string, string) (any, error)         { return nil, nil }
 func (f *fakeOrchAutonomous) Reject(string, string, string) (any, error)          { return nil, nil }
 func (f *fakeOrchAutonomous) RequestRevision(string, string, string) (any, error) { return nil, nil }
@@ -46,10 +46,12 @@ func (f *fakeOrchAutonomous) EditTaskSpec(string, string, string, string) (any, 
 }
 func (f *fakeOrchAutonomous) ResetTask(string, string, string, bool) (any, error) { return nil, nil }
 func (f *fakeOrchAutonomous) RepairDependsOn(string, string) (any, error)         { return nil, nil }
-func (f *fakeOrchAutonomous) CancelStory(string, string, string, string) (any, error) { return nil, nil }
-func (f *fakeOrchAutonomous) CancelTask(string, string, string, string) (any, error)  { return nil, nil }
-func (f *fakeOrchAutonomous) AddStory(string, string, string, string) (any, error)      { return nil, nil }
-func (f *fakeOrchAutonomous) RemoveStory(string, string, string) (any, error)           { return nil, nil }
+func (f *fakeOrchAutonomous) CancelStory(string, string, string, string) (any, error) {
+	return nil, nil
+}
+func (f *fakeOrchAutonomous) CancelTask(string, string, string, string) (any, error) { return nil, nil }
+func (f *fakeOrchAutonomous) AddStory(string, string, string, string) (any, error)   { return nil, nil }
+func (f *fakeOrchAutonomous) RemoveStory(string, string, string) (any, error)        { return nil, nil }
 func (f *fakeOrchAutonomous) AddTask(string, string, string, string, string) (any, error) {
 	return nil, nil
 }
@@ -117,48 +119,64 @@ func (f *fakeOrchAutonomous) SetPRDVerificationLLM(string, *string, *string, *st
 func (f *fakeOrchAutonomous) ListChildPRDs(string) []any { return nil }
 
 // v5.19.0 — full CRUD stubs.
-func (f *fakeOrchAutonomous) DeletePRD(string) error                            { return nil }
-func (f *fakeOrchAutonomous) EditPRDFields(string, string, string, string) (any, error) { return nil, nil }
+func (f *fakeOrchAutonomous) DeletePRD(string) error { return nil }
+func (f *fakeOrchAutonomous) EditPRDFields(string, string, string, string) (any, error) {
+	return nil, nil
+}
 
 // v5.26.19 — F10 profile attachment stub.
 func (f *fakeOrchAutonomous) SetPRDProfiles(string, string, string) error { return nil }
 
 // BL221 (v6.2.0) — TemplateStore CRUD stubs.
-func (f *fakeOrchAutonomous) ListTemplates() []any                                              { return nil }
-func (f *fakeOrchAutonomous) CreateTemplate(string, string, string, string, []string) (any, error) { return nil, nil }
-func (f *fakeOrchAutonomous) GetTemplate(string) (any, bool)                                    { return nil, false }
-func (f *fakeOrchAutonomous) UpdateTemplate(string, string, string, string, string, []string) (any, error) { return nil, nil }
-func (f *fakeOrchAutonomous) DeleteTemplate(string) error                                       { return nil }
-func (f *fakeOrchAutonomous) CloneToTemplate(string, string, string) (any, error)               { return nil, nil }
-func (f *fakeOrchAutonomous) InstantiateFromTemplateStore(string, map[string]string, string, string, string) (any, error) { return nil, nil }
-func (f *fakeOrchAutonomous) RunScan(string) (any, error)             { return nil, nil }
-func (f *fakeOrchAutonomous) GetScanResult(string) (any, bool)        { return nil, false }
-func (f *fakeOrchAutonomous) GetScanConfig() any                      { return nil }
-func (f *fakeOrchAutonomous) SetScanConfig(map[string]any) error      { return nil }
-func (f *fakeOrchAutonomous) CreateFixPRD(string) (any, error)        { return nil, nil }
-func (f *fakeOrchAutonomous) ProposeRuleEdits(string) (any, error)    { return nil, nil }
-func (f *fakeOrchAutonomous) ListAutomatonTypes() []any               { return nil }
-func (f *fakeOrchAutonomous) RegisterAutomatonType(string, string, string, string) (any, error) { return nil, nil }
-func (f *fakeOrchAutonomous) SetPRDType(string, string) (any, error)  { return nil, nil }
+func (f *fakeOrchAutonomous) ListTemplates() []any { return nil }
+func (f *fakeOrchAutonomous) CreateTemplate(string, string, string, string, []string) (any, error) {
+	return nil, nil
+}
+func (f *fakeOrchAutonomous) GetTemplate(string) (any, bool) { return nil, false }
+func (f *fakeOrchAutonomous) UpdateTemplate(string, string, string, string, string, []string) (any, error) {
+	return nil, nil
+}
+func (f *fakeOrchAutonomous) DeleteTemplate(string) error                         { return nil }
+func (f *fakeOrchAutonomous) CloneToTemplate(string, string, string) (any, error) { return nil, nil }
+func (f *fakeOrchAutonomous) InstantiateFromTemplateStore(string, map[string]string, string, string, string) (any, error) {
+	return nil, nil
+}
+func (f *fakeOrchAutonomous) RunScan(string) (any, error)          { return nil, nil }
+func (f *fakeOrchAutonomous) GetScanResult(string) (any, bool)     { return nil, false }
+func (f *fakeOrchAutonomous) GetScanConfig() any                   { return nil }
+func (f *fakeOrchAutonomous) SetScanConfig(map[string]any) error   { return nil }
+func (f *fakeOrchAutonomous) CreateFixPRD(string) (any, error)     { return nil, nil }
+func (f *fakeOrchAutonomous) ProposeRuleEdits(string) (any, error) { return nil, nil }
+func (f *fakeOrchAutonomous) ListAutomatonTypes() []any            { return nil }
+func (f *fakeOrchAutonomous) RegisterAutomatonType(string, string, string, string) (any, error) {
+	return nil, nil
+}
+func (f *fakeOrchAutonomous) SetPRDType(string, string) (any, error)     { return nil, nil }
 func (f *fakeOrchAutonomous) SetPRDGuidedMode(string, bool) (any, error) { return nil, nil }
 func (f *fakeOrchAutonomous) SetPRDSkills(string, []string) (any, error) { return nil, nil }
 
 // BL303 S2 — guardrail library + profile stubs.
-func (f *fakeOrchAutonomous) GuardrailLibrary() []any                                                           { return nil }
-func (f *fakeOrchAutonomous) CreateGuardrailProfile(string, string, []string) (any, error)                      { return nil, nil }
-func (f *fakeOrchAutonomous) UpdateGuardrailProfile(string, string, string, []string) (any, error)              { return nil, nil }
-func (f *fakeOrchAutonomous) DeleteGuardrailProfile(string) error                                               { return nil }
-func (f *fakeOrchAutonomous) ListGuardrailProfiles() []any                                                      { return nil }
-func (f *fakeOrchAutonomous) GetGuardrailProfile(string) (any, bool)                                            { return nil, false }
-func (f *fakeOrchAutonomous) SetPRDGuardrails(string, string, []string, []string, []string) (any, error)        { return nil, nil }
+func (f *fakeOrchAutonomous) GuardrailLibrary() []any { return nil }
+func (f *fakeOrchAutonomous) CreateGuardrailProfile(string, string, []string, *bool) (any, error) {
+	return nil, nil
+}
+func (f *fakeOrchAutonomous) UpdateGuardrailProfile(string, string, string, []string, *bool) (any, error) {
+	return nil, nil
+}
+func (f *fakeOrchAutonomous) DeleteGuardrailProfile(string) error    { return nil }
+func (f *fakeOrchAutonomous) ListGuardrailProfiles() []any           { return nil }
+func (f *fakeOrchAutonomous) GetGuardrailProfile(string) (any, bool) { return nil, false }
+func (f *fakeOrchAutonomous) SetPRDGuardrails(string, string, []string, []string, []string, *bool) (any, error) {
+	return nil, nil
+}
 func (f *fakeOrchAutonomous) CreateRetryProfile(string, string, map[string]int, int, int, *bool, *bool) (any, error) {
 	return nil, nil
 }
 func (f *fakeOrchAutonomous) UpdateRetryProfile(string, string, string, map[string]int, int, int, *bool, *bool) (any, error) {
 	return nil, nil
 }
-func (f *fakeOrchAutonomous) DeleteRetryProfile(string) error  { return nil }
-func (f *fakeOrchAutonomous) ListRetryProfiles() []any         { return nil }
+func (f *fakeOrchAutonomous) DeleteRetryProfile(string) error    { return nil }
+func (f *fakeOrchAutonomous) ListRetryProfiles() []any           { return nil }
 func (f *fakeOrchAutonomous) GetRetryProfile(string) (any, bool) { return nil, false }
 func (f *fakeOrchAutonomous) SetPRDRetryPolicy(string, string, map[string]int, int, *bool, *bool) (any, error) {
 	return nil, nil
@@ -202,9 +220,9 @@ func (f *fakeOrchAutonomous) DecomposeStreaming(string, func(int, int, any)) (an
 }
 
 // BL370 — per-PRD concurrency stub.
-func (f *fakeOrchAutonomous) SetPRDConcurrency(string, int) (any, error) { return nil, nil }
+func (f *fakeOrchAutonomous) SetPRDConcurrency(string, int) (any, error)         { return nil, nil }
 func (f *fakeOrchAutonomous) SetPRDDirs(string, []string, []string) (any, error) { return nil, nil }
-func (f *fakeOrchAutonomous) SetPRDPriority(string, int) (any, error) { return nil, nil }
+func (f *fakeOrchAutonomous) SetPRDPriority(string, int) (any, error)            { return nil, nil }
 
 // fakeObserverForEnrich satisfies the bits of ObserverAPI the
 // enrichment touches. EnvelopeSummary is the only meaningful method.
@@ -215,13 +233,13 @@ type fakeObserverForEnrich struct {
 	}
 }
 
-func (f *fakeObserverForEnrich) Config() any                            { return nil }
-func (f *fakeObserverForEnrich) SetConfig(any) error                    { return nil }
-func (f *fakeObserverForEnrich) Stats() any                             { return nil }
-func (f *fakeObserverForEnrich) Envelopes() any                         { return nil }
-func (f *fakeObserverForEnrich) EnvelopeTree(string) any                { return nil }
-func (f *fakeObserverForEnrich) Start(context.Context)                  {}
-func (f *fakeObserverForEnrich) Stop()                                  {}
+func (f *fakeObserverForEnrich) Config() any             { return nil }
+func (f *fakeObserverForEnrich) SetConfig(any) error     { return nil }
+func (f *fakeObserverForEnrich) Stats() any              { return nil }
+func (f *fakeObserverForEnrich) Envelopes() any          { return nil }
+func (f *fakeObserverForEnrich) EnvelopeTree(string) any { return nil }
+func (f *fakeObserverForEnrich) Start(context.Context)   {}
+func (f *fakeObserverForEnrich) Stop()                   {}
 func (f *fakeObserverForEnrich) EnvelopeSummary(id string) (float64, uint64, bool) {
 	if v, ok := f.envs[id]; ok {
 		return v.cpu, v.rss, true
@@ -239,7 +257,7 @@ func (f *fakePeerRegForEnrich) Register(string, string, string, map[string]any) 
 	return "", nil
 }
 func (f *fakePeerRegForEnrich) Verify(string, string) (*observer.PeerEntry, error) { return nil, nil }
-func (f *fakePeerRegForEnrich) RecordPush(string, *observer.StatsResponse) error    { return nil }
+func (f *fakePeerRegForEnrich) RecordPush(string, *observer.StatsResponse) error   { return nil }
 func (f *fakePeerRegForEnrich) Get(name string) (observer.PeerEntry, bool) {
 	for _, p := range f.peers {
 		if p.Name == name {

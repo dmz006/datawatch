@@ -4105,6 +4105,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			CIWatchTimeoutSeconds:   acfgIn.CIWatchTimeoutSeconds,
 			ContentAutoFixEnabled:   acfgIn.ContentAutoFixEnabled,
 			AutoFixSkipApproval:     acfgIn.AutoFixSkipApproval,
+			BlockOnFileDrift:        acfgIn.BlockOnFileDrift,
 
 			PerStoryApproval:       acfgIn.PerStoryApproval, // Phase 3 (v5.26.61)
 			ContinueOnStoryFailure: acfgIn.ContinueOnStoryFailure,

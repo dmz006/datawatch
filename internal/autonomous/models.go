@@ -282,6 +282,10 @@ type PRD struct {
 	// Config/RetryProfile default for just this PRD. nil = inherit.
 	ContentAutoFixEnabled *bool `json:"content_auto_fix_enabled,omitempty"`
 	AutoFixSkipApproval   *bool `json:"auto_fix_skip_approval,omitempty"`
+	// BlockOnFileDrift opts this Automaton into strict foreign-file-drift
+	// enforcement, overriding the GuardrailProfile/global Config default
+	// (resolveBlockOnFileDrift). nil = inherit.
+	BlockOnFileDrift *bool `json:"block_on_file_drift,omitempty"`
 	// LastDecomposeFailure is a single-use hint seeded into the next
 	// Decompose retry's prompt, mirroring Task.PriorAttemptHint's exact
 	// lifecycle (set before a retry, consumed-and-cleared on use).
@@ -753,12 +757,16 @@ type GuardrailEntry struct {
 // GuardrailProfile (BL303 S2) is a named collection of guardrails that can
 // be assigned to an Automaton or used as a global default.
 type GuardrailProfile struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
-	Description string    `json:"description,omitempty"`
-	Guardrails  []string  `json:"guardrails"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID          string   `json:"id"`
+	Name        string   `json:"name"`
+	Description string   `json:"description,omitempty"`
+	Guardrails  []string `json:"guardrails"`
+	// BlockOnFileDrift uses a pointer so a profile can explicitly
+	// express "disabled" rather than merely "not set" (nil = fall
+	// through to global Config.BlockOnFileDrift).
+	BlockOnFileDrift *bool     `json:"block_on_file_drift,omitempty"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
 }
 
 // RetryProfile (BL410 Phase 1) is a named, reusable retry policy — the

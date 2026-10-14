@@ -187,7 +187,9 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			// Extract ID for any post-create mutations.
 			var prdID string
 			{
-				var idH struct{ ID string `json:"id"` }
+				var idH struct {
+					ID string `json:"id"`
+				}
 				if b, mErr := json.Marshal(prd); mErr == nil {
 					_ = json.Unmarshal(b, &idH)
 				}
@@ -294,9 +296,13 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			killedIDs := []string{}
 			killErrs := map[string]string{}
 			killSessions := func() {
-				if s.manager == nil { return }
+				if s.manager == nil {
+					return
+				}
 				for _, sid := range sessionIDs {
-					if sid == "" { continue }
+					if sid == "" {
+						continue
+					}
 					killedIDs = append(killedIDs, sid)
 					if err := s.manager.Kill(sid); err != nil { // best-effort
 						killErrs[sid] = err.Error()
@@ -1806,17 +1812,18 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			PerTaskGuardrails  []string `json:"per_task_guardrails"`
 			PerStoryGuardrails []string `json:"per_story_guardrails"`
 			PerPRDGuardrails   []string `json:"per_prd_guardrails"` // BL418
+			BlockOnFileDrift   *bool    `json:"block_on_file_drift"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
 			return
 		}
-		updated, err := s.autonomousMgr.SetPRDGuardrails(id, req.GuardrailProfile, req.PerTaskGuardrails, req.PerStoryGuardrails, req.PerPRDGuardrails)
+		updated, err := s.autonomousMgr.SetPRDGuardrails(id, req.GuardrailProfile, req.PerTaskGuardrails, req.PerStoryGuardrails, req.PerPRDGuardrails, req.BlockOnFileDrift)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		s.audit(r.Context(), "set_guardrails", "automaton", id, map[string]any{"guardrail_profile": req.GuardrailProfile}) // GH#201 Phase 4
+		s.audit(r.Context(), "set_guardrails", "automaton", id, map[string]any{"guardrail_profile": req.GuardrailProfile, "block_on_file_drift": req.BlockOnFileDrift}) // GH#201 Phase 4
 		writeJSONOK(w, updated)
 
 	// BL410 Phase 1 — per-Automaton retry-policy override.
@@ -1965,9 +1972,9 @@ func (s *Server) handlePRDMemoryReport(w http.ResponseWriter, r *http.Request, p
 	}
 
 	type scopeResult struct {
-		Scope     string          `json:"scope"`
-		ScopeID   string          `json:"scope_id,omitempty"`
-		Memories  []memory.Memory `json:"memories"`
+		Scope    string          `json:"scope"`
+		ScopeID  string          `json:"scope_id,omitempty"`
+		Memories []memory.Memory `json:"memories"`
 	}
 	var results []scopeResult
 	seen := map[string]bool{} // deduplicate by content
@@ -2349,15 +2356,16 @@ func (s *Server) handleAutonomousGuardrailProfiles(w http.ResponseWriter, r *htt
 			writeJSONOK(w, s.autonomousMgr.ListGuardrailProfiles())
 		case http.MethodPost:
 			var req struct {
-				Name        string   `json:"name"`
-				Description string   `json:"description"`
-				Guardrails  []string `json:"guardrails"`
+				Name             string   `json:"name"`
+				Description      string   `json:"description"`
+				Guardrails       []string `json:"guardrails"`
+				BlockOnFileDrift *bool    `json:"block_on_file_drift"`
 			}
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 				http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
 				return
 			}
-			p, err := s.autonomousMgr.CreateGuardrailProfile(req.Name, req.Description, req.Guardrails)
+			p, err := s.autonomousMgr.CreateGuardrailProfile(req.Name, req.Description, req.Guardrails, req.BlockOnFileDrift)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
@@ -2382,15 +2390,16 @@ func (s *Server) handleAutonomousGuardrailProfiles(w http.ResponseWriter, r *htt
 		writeJSONOK(w, p)
 	case http.MethodPut:
 		var req struct {
-			Name        string   `json:"name"`
-			Description string   `json:"description"`
-			Guardrails  []string `json:"guardrails"`
+			Name             string   `json:"name"`
+			Description      string   `json:"description"`
+			Guardrails       []string `json:"guardrails"`
+			BlockOnFileDrift *bool    `json:"block_on_file_drift"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
 			return
 		}
-		p, err := s.autonomousMgr.UpdateGuardrailProfile(id, req.Name, req.Description, req.Guardrails)
+		p, err := s.autonomousMgr.UpdateGuardrailProfile(id, req.Name, req.Description, req.Guardrails, req.BlockOnFileDrift)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
