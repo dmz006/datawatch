@@ -13917,7 +13917,7 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.per_task_guardrails', label: 'Per-task guardrails', type: 'text', placeholder: 'rules, security', csv: true },
     { key: 'autonomous.per_story_guardrails', label: 'Per-story guardrails', type: 'text', placeholder: 'release-readiness', csv: true },
     // BL418 — PRD-completion rules review opt-in (off by default).
-    { key: 'autonomous.per_prd_guardrails', label: 'Per-automaton (PRD) guardrails', type: 'text', placeholder: 'rules-review', csv: true },
+    { key: 'autonomous.per_prd_guardrails', label: 'Automaton completion guardrails', type: 'text', placeholder: 'rules-review, ci-watch', csv: true },
     // BL410 Phase 1 — retry policy. retry_policy itself is a per-category
     // map (infra/content/scope/policy); edited via the Retry Profiles
     // card and the per-Automaton retry-policy setter, not this generic
@@ -20358,6 +20358,28 @@ function renderDetailVerdicts(prd) {
   </div>`;
 }
 
+// Automaton's own record of whether CI passed for the commit it pushed
+// (ci-watch completion guardrail). Absent when ci-watch never ran.
+function renderDetailCIWatch(prd) {
+  const cw = prd.ci_watch;
+  if (!cw || !cw.status) return '';
+  const st = cw.status;
+  const cls = st === 'pass' ? 'prd-verdict-pass' : st.startsWith('failed_') || st === 'error' ? 'prd-verdict-block' : 'prd-verdict-warn';
+  const icon = st === 'pass' ? '✓' : cls === 'prd-verdict-block' ? '✗' : '⚠';
+  const sha = cw.sha ? ` <code style="font-size:10px;">${escHtml(String(cw.sha).slice(0, 8))}</code>` : '';
+  const runs = (cw.runs || []).map(r => {
+    const label = escHtml((r.name || ('#' + r.id)) + ': ' + (r.conclusion || r.status || '?'));
+    const safeURL = /^https:\/\//.test(r.url || '') ? r.url : '';
+    return safeURL ? `<a href="${escHtml(safeURL)}" target="_blank" rel="noopener noreferrer">${label}</a>` : `<span>${label}</span>`;
+  }).join(' &middot; ');
+  return `<div style="margin:10px 0;">
+    <div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:4px;">${escHtml(t('automata_detail_ci_watch') || 'CI watch')}</div>
+    <div class="prd-verdict-row"><span class="prd-verdict-badge ${cls}">${escHtml(st)} ${icon}</span>${sha}</div>
+    ${cw.summary ? `<div style="font-size:11px;color:var(--text2);margin-top:4px;">${escHtml(cw.summary)}</div>` : ''}
+    ${runs ? `<div style="font-size:10px;margin-top:4px;">${runs}</div>` : ''}
+  </div>`;
+}
+
 function renderDetailDecisions(prd) {
   const decisions = prd.decisions || prd.Decisions || [];
   if (decisions.length === 0) return '';
@@ -21367,6 +21389,7 @@ function _renderDetailOverview(prd) {
       <div class="automata-progress-wrap"><div class="${pctFill}" style="width:${pct}%;"></div></div>
     </div>` : ''}
     ${renderDetailVerdicts(prd)}
+    ${renderDetailCIWatch(prd)}
     ${prd.spec ? `<details style="margin-top:12px;"><summary style="cursor:pointer;font-size:12px;font-weight:600;color:var(--text2);">${escHtml(t('prd_view_spec')||'View spec')}</summary>
       <pre style="font-size:11px;background:var(--bg2);padding:8px;border-radius:4px;white-space:pre-wrap;margin-top:6px;max-height:300px;overflow:auto;">${escHtml(prd.spec)}</pre>
     </details>` : ''}

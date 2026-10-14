@@ -121,6 +121,7 @@
   "automata_detail_title": "Titre",
   "automata_detail_type": "Type",
   "automata_detail_verdicts": "Verdicts des garde-fous",
+  "automata_detail_ci_watch": "Surveillance CI",
   "automata_empty_active": "Aucun automate actif. Lancez-en un avec ⚡.",
   "automata_empty_history": "Aucun automate terminé.",
   "automata_empty_templates": "Aucun modèle pour l'instant.",

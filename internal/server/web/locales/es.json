@@ -121,6 +121,7 @@
   "automata_detail_title": "Título",
   "automata_detail_type": "Tipo",
   "automata_detail_verdicts": "Veredictos de guardrails",
+  "automata_detail_ci_watch": "Vigilancia de CI",
   "automata_empty_active": "No hay autómatas activos. Lanza uno con ⚡.",
   "automata_empty_history": "No hay autómatas completados.",
   "automata_empty_templates": "Aún no hay plantillas.",

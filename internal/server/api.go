@@ -5492,6 +5492,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"capacity_wait_timeout_seconds": s.cfg.Autonomous.CapacityWaitTimeoutSeconds,
 			"capacity_gpu_util_pct":         s.cfg.Autonomous.CapacityGPUUtilPct,
 			"ci_watch_timeout_seconds":      s.cfg.Autonomous.CIWatchTimeoutSeconds,
+			"per_prd_guardrails":            s.cfg.Autonomous.PerPRDGuardrails, // rules-review, ci-watch
 			"stale_task_seconds":            s.cfg.Autonomous.StaleTaskSeconds,
 			"auto_fix_retries":              s.cfg.Autonomous.AutoFixRetries,
 			"verifier_diff_max_bytes":       s.cfg.Autonomous.VerifierDiffMaxBytes,

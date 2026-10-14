@@ -31,7 +31,8 @@ func (s *Server) handleAutonomousStatus(_ context.Context, _ mcpsdk.CallToolRequ
 
 func (s *Server) toolAutonomousConfigGet() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_config_get",
-		mcpsdk.WithDescription("BL24 — read current autonomous config (poll interval, max parallel, backends, retries)."),
+		mcpsdk.WithDescription("Read the current autonomous (Automata) config: poll interval, max parallel tasks, backends, retries, capacity limits, guardrail lists and timeouts. "+
+			"Automaton-level (per_prd_guardrails) guardrails accept \"rules-review\" and \"ci-watch\"; both are off unless listed. \"ci-watch\" makes an automaton, when it completes, wait (up to ci_watch_timeout_seconds, default 1500) for the CI runs of the commit it pushed; if any run failed, the configured LLM judges the failure against the project's rules file. It is skipped when nothing was pushed or the origin remote is not GitHub."),
 	)
 }
 func (s *Server) handleAutonomousConfigGet(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
@@ -44,7 +45,8 @@ func (s *Server) handleAutonomousConfigGet(_ context.Context, _ mcpsdk.CallToolR
 
 func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_config_set",
-		mcpsdk.WithDescription("BL24 — update autonomous config. v8.36.9: merges onto the current config, so a partial body (e.g. just enabled) only changes the fields given and leaves the rest untouched."),
+		mcpsdk.WithDescription("Update the autonomous (Automata) config. Merges onto the current config, so a partial body (e.g. just enabled) only changes the fields given and leaves the rest untouched. "+
+			"Automaton-level (per_prd_guardrails) guardrails accept \"rules-review\" and \"ci-watch\"; both are off unless listed. \"ci-watch\" makes an automaton, when it completes, wait (up to ci_watch_timeout_seconds, default 1500) for the CI runs of the commit it pushed; if any run failed, the configured LLM judges the failure against the project's rules file. It is skipped when nothing was pushed or the origin remote is not GitHub."),
 		mcpsdk.WithBoolean("enabled", mcpsdk.Description("Toggle autonomous loop on/off")),
 		mcpsdk.WithNumber("poll_interval_seconds", mcpsdk.Description("Background loop tick (default 30)")),
 		mcpsdk.WithNumber("max_parallel_tasks", mcpsdk.Description("Per-PRD worker cap (default 3)")),
@@ -65,7 +67,8 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithNumber("planning_timeout_seconds", mcpsdk.Description("Override effort-scaled decompose timeout (0 = default: 5 min normal, 15 min high/max, 2 min quick/low)")),
 		mcpsdk.WithBoolean("capacity_enabled", mcpsdk.Description("Capacity-aware admission: tasks wait for a free host/node/LLM slot instead of failing (default true)")),
 		mcpsdk.WithNumber("capacity_wait_timeout_seconds", mcpsdk.Description("Maximum seconds a task waits for capacity (default 14400)")),
-		mcpsdk.WithNumber("ci_watch_timeout_seconds", mcpsdk.Description("Maximum seconds the ci-watch completion guardrail waits for the CI runs of an automaton's own pushed commit (default 1500)")),
+		mcpsdk.WithNumber("ci_watch_timeout_seconds", mcpsdk.Description("Maximum seconds the ci-watch completion guardrail waits for the CI runs of an automaton's own pushed commit (default 1500). Runs still unfinished at the deadline leave the automaton complete with ci_watch.status \"pending\".")),
+		mcpsdk.WithArray("per_prd_guardrails", mcpsdk.Description("Daemon-wide default guardrails run once when an automaton completes. Accepts \"rules-review\" (judge the automaton's diff against the project's rules file) and \"ci-watch\" (wait for and judge the CI runs of the commit it pushed). Empty list (the default) turns both off; an automaton's own list or guardrail profile overrides this."), mcpsdk.WithStringItems()),
 		mcpsdk.WithBoolean("continue_on_story_failure", mcpsdk.Description("Daemon-wide default: false (halt) stops a PRD as soon as any story fails instead of continuing into later, independent stories; true restores the old continue-regardless behavior. Per-PRD override takes precedence.")),
 		mcpsdk.WithBoolean("default_auto_pr", mcpsdk.Description("BL407 Phase 5 — daemon-wide default for a new PRD's Git.AutoPR (push+open a PR on completion). Applied once at PRD creation; the per-PRD autonomous_prd_set_git tool overrides it after that. Default false.")),
 	)
@@ -156,6 +159,11 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 		body["ci_watch_timeout_seconds"] = int(v)
 	}
 	if args := req.GetArguments(); args != nil {
+		// Presence-aware like verification_backends: an explicit empty
+		// list must be able to turn every completion guardrail back off.
+		if _, ok := args["per_prd_guardrails"]; ok {
+			body["per_prd_guardrails"] = req.GetStringSlice("per_prd_guardrails", []string{})
+		}
 		if _, ok := args["continue_on_story_failure"]; ok {
 			body["continue_on_story_failure"] = req.GetBool("continue_on_story_failure", false)
 		}
@@ -212,7 +220,16 @@ func (s *Server) handleAutonomousPRDCreate(_ context.Context, req mcpsdk.CallToo
 
 func (s *Server) toolAutonomousPRDGet() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_prd_get",
-		mcpsdk.WithDescription("BL24 — fetch one PRD with its story+task tree."),
+		mcpsdk.WithDescription("Fetch one automaton with its story+task tree. "+
+			"When the ci-watch completion guardrail ran, the response includes ci_watch {status, sha, repo, runs[], summary, issues, checked_at}. "+
+			"status: skipped = nothing to watch (HEAD not pushed yet, origin not GitHub, not a git repository, or the gh CLI is missing; summary says which); "+
+			"pass = every CI run for the pushed commit succeeded; "+
+			"pending = runs were still unfinished when ci_watch_timeout_seconds elapsed, so CI is unconfirmed; "+
+			"failed_policy = a run failed and the project's own rules say an operator must decide; nothing is auto-fixed; "+
+			"failed_content = a run failed with a fixable finding; a corrective task may have been appended automatically; "+
+			"failed_infra = runs were cancelled, timed out or never started and the infra retry budget is spent; "+
+			"warn = the judge flagged a non-blocking concern; error = the judge itself could not run. "+
+			"runs[] gives each CI run's id, name, status, conclusion and url; issues lists the specific problems found."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
 	)
 }

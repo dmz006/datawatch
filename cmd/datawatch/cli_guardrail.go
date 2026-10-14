@@ -123,16 +123,17 @@ func newGuardrailAutomatonCmd() *cobra.Command {
 		Short: "Per-Automaton guardrail override",
 	}
 
-	var profile, perTaskCSV, perStoryCSV string
+	var profile, perTaskCSV, perStoryCSV, perPRDCSV string
 	setCmd := &cobra.Command{
 		Use:   "set <prd-id>",
-		Short: "Set per-Automaton guardrail overrides (profile / per-task / per-story)",
+		Short: "Set per-Automaton guardrail overrides (profile / per-task / per-story / completion)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			body := map[string]any{
 				"guardrail_profile":    profile,
 				"per_task_guardrails":  csvToSlice(perTaskCSV),
 				"per_story_guardrails": csvToSlice(perStoryCSV),
+				"per_prd_guardrails":   csvToSlice(perPRDCSV),
 			}
 			return guardrailAPIPut("/api/autonomous/prds/"+args[0]+"/guardrails", body)
 		},
@@ -140,6 +141,7 @@ func newGuardrailAutomatonCmd() *cobra.Command {
 	setCmd.Flags().StringVar(&profile, "profile", "", "Named guardrail profile")
 	setCmd.Flags().StringVar(&perTaskCSV, "per-task", "", "Per-task guardrails (comma-separated; beats profile)")
 	setCmd.Flags().StringVar(&perStoryCSV, "per-story", "", "Per-story guardrails (comma-separated; beats profile)")
+	setCmd.Flags().StringVar(&perPRDCSV, "per-prd", "", "Guardrails run once when the Automaton completes (comma-separated: rules-review, ci-watch; beats profile)")
 
 	cmd.AddCommand(setCmd)
 	return cmd

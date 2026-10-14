@@ -140,6 +140,7 @@
   "automata_type_registry_section_desc": "Custom automaton types for Automata and sessions",
   "automata_type_registry_title": "Type Registry",
   "automata_detail_verdicts": "Guardrail verdicts",
+  "automata_detail_ci_watch": "CI watch",
   "automata_empty_active": "No automata. Launch one with ⚡.",
   "automata_empty_history": "No cancelled, rejected or archived automata.",
   "automata_empty_templates": "No templates yet.",

@@ -25,7 +25,7 @@ import (
 
 func (s *Server) toolGuardrailLibraryList() mcpsdk.Tool {
 	return mcpsdk.NewTool("guardrail_library_list",
-		mcpsdk.WithDescription("List all registered guardrails in the guardrail library (built-in scan guardrails + skill-contributed)."),
+		mcpsdk.WithDescription("List all registered guardrails in the guardrail library (built-in scan guardrails, judgment guardrails such as rules-review and ci-watch, and skill-contributed ones)."),
 	)
 }
 
@@ -57,7 +57,7 @@ func (s *Server) handleGuardrailProfileList(_ context.Context, _ mcpsdk.CallTool
 
 func (s *Server) toolGuardrailProfileCreate() mcpsdk.Tool {
 	return mcpsdk.NewTool("guardrail_profile_create",
-		mcpsdk.WithDescription("Create a new guardrail profile."),
+		mcpsdk.WithDescription("Create a new guardrail profile. Names can be task/story guardrails (e.g. sast-scan) or automaton-completion guardrails: rules-review (judge the diff against the project rules file) and ci-watch (wait for the CI runs of the commit the automaton pushed and judge any failure)."),
 		mcpsdk.WithString("name", mcpsdk.Required(), mcpsdk.Description("Profile name.")),
 		mcpsdk.WithString("description", mcpsdk.Description("Optional description.")),
 		mcpsdk.WithString("guardrails_json", mcpsdk.Description(`JSON array of guardrail names, e.g. ["sast-scan","secrets-scan"]`)),
@@ -99,7 +99,7 @@ func (s *Server) handleGuardrailProfileGet(_ context.Context, req mcpsdk.CallToo
 
 func (s *Server) toolGuardrailProfileUpdate() mcpsdk.Tool {
 	return mcpsdk.NewTool("guardrail_profile_update",
-		mcpsdk.WithDescription("Update a guardrail profile."),
+		mcpsdk.WithDescription("Update a guardrail profile. Names can be task/story guardrails (e.g. sast-scan) or automaton-completion guardrails: rules-review (judge the diff against the project rules file) and ci-watch (wait for the CI runs of the commit the automaton pushed and judge any failure)."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("Profile ID.")),
 		mcpsdk.WithString("name", mcpsdk.Description("New name (omit to keep existing).")),
 		mcpsdk.WithString("description", mcpsdk.Description("New description.")),
@@ -143,12 +143,12 @@ func (s *Server) handleGuardrailProfileDelete(_ context.Context, req mcpsdk.Call
 
 func (s *Server) toolPerAutomatonGuardrailsSet() mcpsdk.Tool {
 	return mcpsdk.NewTool("per_automaton_guardrails_set",
-		mcpsdk.WithDescription("Set per-Automaton guardrail overrides. Priority: explicit > named profile > global config."),
+		mcpsdk.WithDescription("Set per-Automaton guardrail overrides. Priority: explicit > named profile > global config. Completion-level (per_prd) guardrails are rules-review and ci-watch, both off unless listed."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("Automaton (PRD) ID.")),
 		mcpsdk.WithString("guardrail_profile", mcpsdk.Description("Named profile to apply (optional).")),
 		mcpsdk.WithString("per_task_guardrails_json", mcpsdk.Description(`Explicit per-task guardrail list as JSON array (beats profile), e.g. ["sast-scan"]`)),
 		mcpsdk.WithString("per_story_guardrails_json", mcpsdk.Description(`Explicit per-story guardrail list as JSON array (beats profile), e.g. ["deps-scan"]`)),
-		mcpsdk.WithString("per_prd_guardrails_json", mcpsdk.Description(`Explicit PRD-level guardrail list as JSON array (beats profile), e.g. ["rules-review"] — BL418`)),
+		mcpsdk.WithString("per_prd_guardrails_json", mcpsdk.Description(`Explicit automaton-completion guardrail list as JSON array (beats profile), e.g. ["rules-review","ci-watch"]. rules-review judges the automaton's diff against the project rules file; ci-watch waits (up to autonomous.ci_watch_timeout_seconds, default 1500) for the CI runs of the commit it pushed and has the configured LLM judge any failure against the rules file — skipped when nothing was pushed or origin is not GitHub.`)),
 	)
 }
 

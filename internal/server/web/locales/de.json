@@ -121,6 +121,7 @@
   "automata_detail_title": "Titel",
   "automata_detail_type": "Typ",
   "automata_detail_verdicts": "Guardrail-Urteile",
+  "automata_detail_ci_watch": "CI-Überwachung",
   "automata_empty_active": "Keine aktiven Automaten. Starten Sie einen mit ⚡.",
   "automata_empty_history": "Keine abgeschlossenen Automaten.",
   "automata_empty_templates": "Noch keine Vorlagen.",

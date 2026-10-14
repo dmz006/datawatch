@@ -138,3 +138,31 @@ func TestAutonomousConfigSet_VerificationBackendsClearable(t *testing.T) {
 		t.Fatalf("verification_backends present when the caller never mentioned it: %v", got)
 	}
 }
+
+func TestAutonomousConfigSet_CIWatchFields(t *testing.T) {
+	var got map[string]any
+	s := capacityTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(b, &got)
+		_, _ = w.Write([]byte(`{}`))
+	})
+	if _, err := s.handleAutonomousConfigSet(context.Background(), callReq(map[string]any{
+		"ci_watch_timeout_seconds": 1800,
+		"per_prd_guardrails":       []any{"rules-review", "ci-watch"},
+	})); err != nil {
+		t.Fatal(err)
+	}
+	if got["ci_watch_timeout_seconds"] != float64(1800) {
+		t.Fatalf("ci_watch_timeout_seconds not forwarded: %v", got)
+	}
+	if l, ok := got["per_prd_guardrails"].([]any); !ok || len(l) != 2 || l[1] != "ci-watch" {
+		t.Fatalf("per_prd_guardrails not forwarded: %v", got)
+	}
+	// Explicit empty list clears it (presence-aware, not len>0).
+	if _, err := s.handleAutonomousConfigSet(context.Background(), callReq(map[string]any{"per_prd_guardrails": []any{}})); err != nil {
+		t.Fatal(err)
+	}
+	if l, ok := got["per_prd_guardrails"].([]any); !ok || len(l) != 0 {
+		t.Fatalf("empty per_prd_guardrails must be forwarded to clear: %v", got)
+	}
+}

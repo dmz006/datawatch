@@ -121,6 +121,7 @@
   "automata_detail_title": "タイトル",
   "automata_detail_type": "タイプ",
   "automata_detail_verdicts": "ガードレール評価",
+  "automata_detail_ci_watch": "CI 監視",
   "automata_empty_active": "アクティブなオートマトンはありません。⚡で起動してください。",
   "automata_empty_history": "完了したオートマトンはありません。",
   "automata_empty_templates": "テンプレートがありません。",

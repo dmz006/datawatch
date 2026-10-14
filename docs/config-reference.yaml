@@ -905,6 +905,12 @@ autonomous:
   # file exists. Add "rules-review" here (or to a PRD's own
   # per_prd_guardrails) to turn it on: a judgment review of the PRD's
   # real diff against whatever rules_file/context_file is configured.
+  # Add "ci-watch" (opt-in the same way) to make an Automaton, at
+  # completion, wait up to ci_watch_timeout_seconds (below) for the CI
+  # runs of the commit it pushed; a failed run is judged by the
+  # configured LLM against the project's rules file. Skipped when
+  # nothing was pushed or origin is not a GitHub remote. Both names:
+  #   per_prd_guardrails: [rules-review, ci-watch]
   per_prd_guardrails: []
   # BL410 Phase 1 — per-category retry budgets. "content"/"policy" fall
   # back to auto_fix_retries above when absent (backward-compat anchor).
