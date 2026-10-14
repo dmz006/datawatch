@@ -358,6 +358,83 @@ The backend/model pair is already the ledger's key input
 dimension** for later per-model pools. The ledger request already carries
 `Model`.
 
+### 3c. Federation: shared compute nodes across peers
+
+Real evidence, read live 2026-10-14 from this host's own registries:
+
+- `compute_node_list` returns 4 nodes: `datawatch` (ollama), `datawatch-openai`
+  (openai-compat, 1× B200 GPU), `johnnyjohnny` (ollama, 1× RTX 5090), and
+  `verdict` (ollama, `127.0.0.1:11435`, `tags: ["docker", "verdict-model",
+  "imap-mcp", "shared-gpu-with-johnnyjohnny"]`).
+- That last tag is a **free-text string an operator typed by hand.** Nothing
+  in the capacity ledger (3b's `node:<name>` pools) reads it. `node:verdict`
+  and `node:johnnyjohnny` are enforced as two fully independent pools
+  (`capacity_status` tracks each `limit`/`held` separately) even though the
+  operator's own tag says they are the same physical GPU. Two tasks each
+  admitted "within limit" on their own node can still collide on hardware
+  that cannot run both.
+- `federation_peer_list` returns one peer (`ralfthewise`, `capabilities:
+  ["full-control"]`). Peer config has no field for "this peer's compute node
+  X is the same hardware as my compute node Y." Each daemon's `ComputeNode`
+  registry is local and opaque to every peer.
+
+This is the same gap at two scopes: within one daemon (the `verdict` /
+`johnnyjohnny` case today, worked around by an unread tag) and across
+federated peers (two daemons' registries pointing at the same box under
+different names/addresses, with neither aware the other exists).
+
+**Discovery mechanism — fingerprint reconciliation, not raw disclosure**
+(operator requirement 2026-10-14: peers must be able to tell whether they
+share a resource *without exchanging the resource's own identifying
+details*). For each compute node, each daemon computes a keyed hash
+(`HMAC-SHA256`, keyed by a per-peer-pair secret — reuse the existing
+federation auth material rather than invent a new secret channel) over the
+most stable self-identifying value the resource itself can expose: a GPU
+UUID where the node's driver exposes one (e.g. via an `nvidia-smi`-style
+query the compute node answers), falling back to a locally generated,
+disk-persisted node-instance ID when no hardware UUID is available. Critically,
+**this value must come from querying the node itself**, not from the
+daemon's own locally-configured name/address for it — two daemons pointing
+at the same physical Ollama install over a LAN IP and a Tailscale IP
+respectively would otherwise hash two different strings for one real node,
+and a mismatch there is a false negative, not a safe default. Periodically
+(piggybacking on the existing federation heartbeat/`federation_peer_test`
+cadence — no new polling loop), each daemon pushes its list of `{resource_type,
+local_name, hash}` tuples to each peer it is paired with for this purpose,
+over the existing authenticated federation transport. A peer comparing
+incoming hashes against its own sees a match only when the underlying
+resource is genuinely the same, without either side ever learning the
+other's raw GPU UUID, hostname, or address.
+
+**A hash match is a detected candidate, not an automatic merge.** It is
+surfaced to the operator (or an auto-accept policy, configurable) before the
+capacity ledger actually starts treating the two nodes as one combined pool.
+This mirrors BL428's existing stance ("explicit config over inference")
+while removing the toil of hand-typing `peer:node` pairs — the operator
+confirms a *discovered* pairing instead of composing one from scratch.
+Confirmed pairs are recorded as a structured field (replacing today's
+free-text tag), e.g. `ComputeNode.SharesHardwareWith []string`, entries being
+bare node names for an intra-daemon pairing (`"johnnyjohnny"`) or
+`peer:<node>` for a cross-federation one (`"ralfthewise:gpu-box-1"`). Once
+confirmed, the ledger computes `node:<name>` admission over the merged set,
+not each name independently.
+
+**Live coordination while sessions are actually running** (operator
+requirement 2026-10-14: a confirmed pairing needs more than a periodic
+fingerprint sync — the peers need to know about each other's *current* load
+on the shared resource). The fingerprint exchange above answers "is this
+shared," on a slow cadence; it is not the channel for "is it busy right
+now." For that, reuse BL427's event-dispatch mechanism (PRD `fe2e2110`) once
+implemented: a lease acquired/released on a confirmed-shared `node:<name>`
+pool fires a lightweight cross-daemon event to every peer sharing that node,
+so each side's own ledger reflects the other's current holders without
+polling. Until BL427 ships, the fallback is a synchronous pre-admission
+check over the existing federation peer HTTP path (same shape as
+`federation_peer_test`) — higher latency, no new dependency, and it must
+fail open (log and admit locally) rather than fail closed, so a peer being
+briefly unreachable never stalls local work indefinitely; that fail-open
+choice is an explicit trade-off, not a hidden default (see Open questions).
+
 ## 4. Usage-budget throttling
 
 ### 4a. Subscription allocation (Claude Pro/Max)
@@ -552,6 +629,63 @@ cost:
 
 The recommendation is (a)+(b) in the follow-up, with (c) as a stretch. See
 open question 3.
+
+### 4e. Federation: shared cloud/billing accounts across peers
+
+The subscription-allocation meter in 4a is **account-scoped, not
+daemon-scoped**: a Claude Pro/Max plan or an API key belongs to a person or
+org, not to one `datawatch` process. Two federated daemons (this host and
+`ralfthewise`, per `federation_peer_list`) can be configured with the
+**same** `claude-code` credentials — logged into the same account, or
+holding the same API key — in which case each daemon's own `backoff:claude-code`
+flag (4d) and `llm:claude-code` pool (3b) each track only their own half of
+a quota the two are actually splitting. A daemon well under its own
+`max_inflight` can still be the one that tips a shared 5-hour window over,
+because the other daemon's usage is invisible to it.
+
+**Same discovery mechanism as 3c, applied to accounts instead of hardware.**
+Raw credentials must never cross the federation link — an API key or a
+Claude Code session token is a secret, and a naive unsalted hash of a
+*low-entropy* value (a plan-tier name, a short PIN) would be brute-forceable
+offline even if only the hash is transmitted. The same `HMAC-SHA256`,
+keyed by a per-peer-pair secret, over a **high-entropy** stable identifier is
+safe here precisely because API keys and session tokens have enough entropy
+that offline guessing is infeasible even from a disclosed hash — the keyed
+HMAC is still the right default (defense in depth, and it scopes the hash to
+one specific peer pairing so it cannot be replayed against an unrelated
+third party). Where the backend exposes a stable, non-secret account
+identifier instead (to be confirmed per backend — e.g. whether `claude`'s
+local credential store exposes an account ID separately from the session
+token itself), prefer hashing that over the credential. **Do not hash
+anything whose entropy has not been checked first** — this is the one place
+in this mechanism where getting it wrong has a real security cost, unlike
+3c's hardware UUIDs, which are not meaningfully secret to begin with.
+
+As in 3c, a hash match is a **detected candidate surfaced for operator
+confirmation**, not a silent merge — a confirmed pairing is recorded as a
+`billing_group` string (operator-chosen label) on the LLM registry entry
+(`llm_list`'s `claude-code` record today; any future subscription-backed
+entry later), shared by every LLM entry — on this daemon or a confirmed peer
+— that the fingerprint exchange matched. Two entries sharing a non-empty
+`billing_group` are treated by 4d's reactive back-off as **one shared
+`backoff:<billing_group>` flag** instead of one `backoff:<backend>` flag per
+daemon.
+
+**Live coordination while sessions are running**, same requirement as 3c:
+the first daemon to see a real `StateRateLimited` signal on a
+`billing_group`-linked backend must tell every peer in that group *now*, not
+on the next slow fingerprint-sync tick. Reuse BL427's dispatcher once it
+ships (push); until then, a synchronous check at admission time (pull) with
+the same fail-open-but-logged default as 3c. Propagation is therefore
+eventually consistent, not transactional — a short window where one daemon
+has not yet heard the other hit the limit remains possible, and the design
+must say so rather than imply perfect coordination.
+
+**BL431 boundary, same shape as 4c's:** this doc defines the base mechanics
+(the fingerprint protocol, `SharesHardwareWith`, `billing_group`, and the
+cross-daemon lease/back-off propagation). BL431's Automation-level
+`BudgetPolicy` narrows these to a named batch of work and is designed there,
+not here.
 
 ## 5. Scope boundary
 
@@ -924,7 +1058,7 @@ thing example (iii) could not see.
 | CLI | Include | `datawatch config set autonomous.project_write_serialization …` and the other keys. `datawatch autonomous tree-lock status`. |
 | comm channel | Include | `configure <key>=<value>` for every new key. A status verb reply shows queued reasons and the active back-off. |
 | YAML/config | Include | New keys in `config.AutonomousConfig` and in the LLM registry entry, annotated in `docs/config-reference.yaml`. `max_parallel_tasks` deprecation documented. The missing `max_concurrent_tasks` YAML field is added. |
-| PWA | Include | Settings fields for the new keys; the `max_parallel_tasks` field removed (`app.js:13942`, `28648`). Task chips for queued reasons. Automata list distinguishes approved-not-running. Capacity panel shows locks and back-off. |
+| PWA | Include | Settings fields for the new keys; the `max_parallel_tasks` field removed (`app.js:13942`, `28648`). Task chips for queued reasons. Automata list distinguishes approved-not-running. Capacity panel shows locks and back-off, plus (3c/4e) a per-peer "resource fingerprint sync" toggle and a confirmation list of detected shared-node/billing-group matches awaiting operator accept/reject. |
 | Android | Include, via a `datawatch-app` issue per the Mobile-Parity Rule | Queued-reason display and new config fields mirror the PWA. The REST contract change (new task wait reasons) must be parsed. |
 | iPhone/iOS | Include, via the same `datawatch-app` issue | Same as Android. No iOS-specific behavior. |
 
@@ -968,3 +1102,25 @@ thing example (iii) could not see.
    the scratch probe `392b2603`) record the creating PRD/task as a parent,
    so they show up in `autonomous_prd_children` and the lock holder graph?
    Or is that BL431's concern?
+10. **Federation fingerprint-sync scope (3c/4e).** Should resource-fingerprint
+    exchange be on by default for every federated peer, or opt-in per peer
+    (this doc recommends opt-in — a peer with only `full-control` capability
+    today, like `ralfthewise`, is not automatically the right trust level for
+    resource fingerprinting, which is a separate decision from control
+    capability)?
+11. **Hash key material (3c/4e).** Should the per-peer-pair HMAC key reuse
+    existing federation auth/TLS material directly, or be a separately
+    exchanged pairing secret generated once at opt-in time? The latter is
+    more work but avoids coupling resource-fingerprinting security to
+    whatever the control-plane auth happens to be.
+12. **Auto-accept vs. always-confirm for a fingerprint match.** This doc
+    recommends surfacing every match for explicit operator confirmation
+    before the ledger treats two resources as one pool. Is there a safe
+    auto-accept case (e.g., only when both sides are on `full-control`
+    federation already), or should confirmation always be manual?
+13. **Fail-open vs. fail-closed on an unreachable billing-group/shared-node
+    peer at admission time (3c/4e).** This doc recommends fail-open (log and
+    admit locally) so a peer outage never stalls local work. An operator
+    managing a hard subscription ceiling may prefer fail-closed for the
+    billing-group case specifically, even if 3c's hardware case stays
+    fail-open. Should this be one shared setting or two independent ones?

@@ -713,6 +713,23 @@ week's allocation":
 - `{ceiling_type: dollar, ceiling_value: 40, window: automation, pacing: none, on_breach: pause}`, or
 - `{ceiling_type: allocation_pct, ceiling_value: 15, window: week, pacing: even}`.
 
+**Federation forward pointer (operator-raised 2026-10-14, added to BL428's
+doc §3c/§4e, not designed here).** BL428's global ceilings above assume one
+daemon's own view of its usage is the whole picture. It is not, when this
+daemon is federated with a peer that shares the same `claude-code` account
+(the same subscription or API key) or the same physical compute hardware
+under a different `compute_node` name — BL428 §4e/§3c design a keyed-hash
+fingerprint exchange so peers can detect this *without* exchanging the
+underlying secret or hardware identifier, confirmed by the operator, then
+coordinated live (lease/back-off propagation) while sessions are actually
+running. If BL428's `billing_group`/`SharesHardwareWith` linkage exists by
+the time this PRD's BudgetPolicy ships, the precedence chain above should
+read a federated peer's shared usage into the same `tightest-wins` ceiling
+check — a $40 Automation ceiling means $40 across every daemon drawing on
+that billing group, not $40 per daemon. This PRD does not design that
+read-through; it is named here so the follow-up implementation PRD does not
+have to rediscover the need for it.
+
 With `pacing: even`, the coordinator does not *start* the next member while
 spend-to-date exceeds `ceiling × elapsed_fraction(window)`. It waits and shows the
 reason, so a burst early in the week cannot eat the whole share. `none` spends
@@ -1217,3 +1234,9 @@ howto, and the `datawatch-app` issue where applicable.
 13. **Record `c187962a`'s title.** It says "BL430 — Automation…" while the backlog
     number is BL431. Should it be retitled, or left alone with this doc and the
     BL428 doc noting the collision?
+14. **Federation-aware BudgetPolicy (operator-raised 2026-10-14, see the
+    forward pointer above and BL428 §3c/§4e).** Once BL428's fingerprint-sync
+    confirms a federated peer shares a billing account or compute node,
+    should `BudgetPolicy`'s ceiling check read that peer's usage into the
+    same `tightest-wins` math by default, or stay per-daemon unless the
+    operator explicitly opts an Automation into federation-wide ceilings?
