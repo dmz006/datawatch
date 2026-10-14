@@ -1583,6 +1583,8 @@
   "settings_api_gzip": "API レスポンスを圧縮 (gzip)",
   "settings_api_gzip_min_bytes": "API 圧縮しきい値 (バイト)",
   "settings_capacity_enabled": "Capacity-aware admission (wait for free slots instead of failing)",
+  "settings_max_concurrent_tasks": "オートマトンあたりの最大同時タスク数（1 = 1 件ずつ）",
+  "settings_max_concurrent_tasks_hint": "デーモン全体の既定値です。オートマトン個別の設定が優先されます。",
   "settings_capacity_wait_timeout": "Capacity wait timeout (sec, 0=4h)",
   "settings_ci_watch_timeout": "CI watch timeout (sec, 0=25m)",
   "settings_block_on_file_drift": "ファイル混入時にブロック",

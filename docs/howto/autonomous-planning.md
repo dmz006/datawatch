@@ -72,7 +72,15 @@ autonomous:
   planning_backend: claude-code   # was "decomposition_backend" before v7.0
   planning_effort: high           # was "decomposition_effort"
   planning_model: ""              # was "decomposition_model" — empty = LLM default
+  max_concurrent_tasks: 1         # tasks of one Automaton run at once; 1 = sequential
 ```
+
+`max_concurrent_tasks` is the daemon-wide default for how many independent
+tasks of one Automaton run at the same time. An Automaton's own
+`max_concurrent_tasks` overrides it, and tasks of different Automata are not
+limited by it. The old `max_parallel_tasks` key is deprecated: it never had
+any effect, is accepted and ignored with a startup warning for one release,
+and will then be removed.
 
 The old keys (`decomposition_backend` / `decomposition_effort` /
 `decomposition_model`) are still accepted on read for backward

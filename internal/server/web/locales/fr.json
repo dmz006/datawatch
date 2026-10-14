@@ -1583,6 +1583,8 @@
   "settings_api_gzip": "Compresser les réponses de l'API (gzip)",
   "settings_api_gzip_min_bytes": "Seuil de compression de l'API (octets)",
   "settings_capacity_enabled": "Capacity-aware admission (wait for free slots instead of failing)",
+  "settings_max_concurrent_tasks": "Tâches simultanées max. par Automate (1 = une à la fois)",
+  "settings_max_concurrent_tasks_hint": "Valeur par défaut pour tout le daemon. Le réglage propre d'un Automate la remplace.",
   "settings_capacity_wait_timeout": "Capacity wait timeout (sec, 0=4h)",
   "settings_ci_watch_timeout": "CI watch timeout (sec, 0=25m)",
   "settings_block_on_file_drift": "Bloquer en cas de dérive de fichiers",

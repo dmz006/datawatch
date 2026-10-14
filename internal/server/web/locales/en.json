@@ -1624,6 +1624,8 @@
   "settings_api_gzip": "Compress API responses (gzip)",
   "settings_api_gzip_min_bytes": "API compression threshold (bytes)",
   "settings_capacity_enabled": "Capacity-aware admission (wait for free slots instead of failing)",
+  "settings_max_concurrent_tasks": "Max concurrent tasks per Automaton (1 = one at a time)",
+  "settings_max_concurrent_tasks_hint": "Daemon-wide default. An Automaton's own setting overrides it.",
   "settings_capacity_wait_timeout": "Capacity wait timeout (sec, 0=4h)",
   "settings_ci_watch_timeout": "CI watch timeout (sec, 0=25m)",
   "settings_block_on_file_drift": "Block on file drift",

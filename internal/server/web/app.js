@@ -13945,7 +13945,7 @@ const GENERAL_CONFIG_FIELDS = [
   { id: 'autonomous', section: 'Autonomous Automata planning', docs: 'howto/autonomous-planning.md', fields: [
     { key: 'autonomous.enabled', label: 'Enable autonomous loop', type: 'toggle' },
     { key: 'autonomous.poll_interval_seconds', label: 'Poll interval (sec)', type: 'number', placeholder: '30' },
-    { key: 'autonomous.max_parallel_tasks', label: 'Max parallel tasks', type: 'number', placeholder: '3' },
+    { key: 'autonomous.max_concurrent_tasks', label: 'Max concurrent tasks per Automaton (1 = one at a time)', labelKey: 'settings_max_concurrent_tasks', type: 'number', placeholder: '1' },
     { key: 'autonomous.capacity_enabled', label: 'Capacity-aware admission (wait for free slots instead of failing)', labelKey: 'settings_capacity_enabled', type: 'toggle' },
     { key: 'autonomous.capacity_wait_timeout_seconds', label: 'Capacity wait timeout (sec, 0=4h)', labelKey: 'settings_capacity_wait_timeout', type: 'number', placeholder: '14400' },
     { key: 'autonomous.ci_watch_timeout_seconds', label: 'CI watch timeout (sec, 0=25m)', labelKey: 'settings_ci_watch_timeout', type: 'number', placeholder: '1500' },
@@ -28650,9 +28650,9 @@ function loadAutomataSettingsPanel() {
             onchange="saveGeneralField('autonomous.poll_interval_seconds',+this.value)">
         </div>
         <div class="settings-row" style="justify-content:space-between;">
-          <div class="settings-label">Max parallel tasks</div>
-          <input type="number" min="1" value="${ac.max_parallel_tasks||3}" style="width:80px;font-size:12px;" class="form-input"
-            onchange="saveGeneralField('autonomous.max_parallel_tasks',+this.value)">
+          <div class="settings-label" title="${escHtml(t('settings_max_concurrent_tasks_hint')||'Daemon-wide default. An Automaton\'s own setting overrides it.')}">${escHtml(t('settings_max_concurrent_tasks')||'Max concurrent tasks per Automaton (1 = one at a time)')}</div>
+          <input type="number" min="1" value="${ac.max_concurrent_tasks||1}" style="width:80px;font-size:12px;" class="form-input"
+            onchange="saveGeneralField('autonomous.max_concurrent_tasks',+this.value)">
         </div>
         <div class="settings-row" style="justify-content:space-between;">
           <div class="settings-label">Auto-fix retries</div>

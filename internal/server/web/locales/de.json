@@ -1583,6 +1583,8 @@
   "settings_api_gzip": "API-Antworten komprimieren (gzip)",
   "settings_api_gzip_min_bytes": "API-Komprimierungsschwelle (Bytes)",
   "settings_capacity_enabled": "Capacity-aware admission (wait for free slots instead of failing)",
+  "settings_max_concurrent_tasks": "Max. gleichzeitige Aufgaben pro Automat (1 = nacheinander)",
+  "settings_max_concurrent_tasks_hint": "Daemon-weiter Standardwert. Die eigene Einstellung eines Automaten hat Vorrang.",
   "settings_capacity_wait_timeout": "Capacity wait timeout (sec, 0=4h)",
   "settings_ci_watch_timeout": "CI watch timeout (sec, 0=25m)",
   "settings_block_on_file_drift": "Bei fremden Dateiänderungen blockieren",

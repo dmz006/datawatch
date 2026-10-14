@@ -826,8 +826,13 @@ autonomous:
   enabled: false
   # Background loop tick in seconds.
   poll_interval_seconds: 30
-  # Per-PRD in-flight worker cap.
-  max_parallel_tasks: 3
+  # Daemon-wide default for how many independent tasks of one Automaton run
+  # at once. An Automaton's own max_concurrent_tasks overrides it. 1 = one
+  # task at a time (sequential). Tasks of different Automata are not limited
+  # by this key.
+  max_concurrent_tasks: 1
+  # max_parallel_tasks: DEPRECATED — never had any effect; accepted and ignored
+  # with a startup warning for one release, then removed. Use max_concurrent_tasks.
   # Capacity-aware admission: tasks wait for a free host / compute-node / LLM
   # slot (status waiting_capacity) instead of failing. Default true.
   # Per-node limit: compute node max_concurrent_sessions; per-LLM: max_inflight
