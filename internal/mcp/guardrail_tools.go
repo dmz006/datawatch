@@ -143,7 +143,7 @@ func (s *Server) handleGuardrailProfileDelete(_ context.Context, req mcpsdk.Call
 
 func (s *Server) toolPerAutomatonGuardrailsSet() mcpsdk.Tool {
 	return mcpsdk.NewTool("per_automaton_guardrails_set",
-		mcpsdk.WithDescription("Set per-Automaton guardrail overrides. Priority: explicit > named profile > global config. Completion-level (per_prd) guardrails are rules-review and ci-watch, both off unless listed."),
+		mcpsdk.WithDescription("Set per-Automaton guardrail overrides. Priority: explicit > named profile > global config. Completion-level (per_prd) guardrails are rules-review and ci-watch, both off unless listed. Each call replaces the profile and all three lists; an omitted one is cleared, so pass every value you want to keep (read the current ones with autonomous_prd_get). Set completion guardrails before the automaton completes; they run once at completion."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("Automaton (PRD) ID.")),
 		mcpsdk.WithString("guardrail_profile", mcpsdk.Description("Named profile to apply (optional).")),
 		mcpsdk.WithString("per_task_guardrails_json", mcpsdk.Description(`Explicit per-task guardrail list as JSON array (beats profile), e.g. ["sast-scan"]`)),

@@ -5,6 +5,27 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.64 — docs(mcp): ci-watch tool descriptions say how to resume a Blocked Automaton
+
+### Changed
+- **`autonomous_prd_get` now says what a blocked ci-watch result means
+  for the Automaton and how to resume it.** A no-source-access
+  discoverability check found that an assistant given only the MCP
+  tool descriptions could enable ci-watch correctly but could not say
+  how to get a Blocked Automaton moving again. The description now
+  states which `ci_watch.status` values leave the Automaton blocked
+  (`failed_policy`, `failed_infra`, and `failed_content` with no
+  corrective task) and gives the resume path: commit your decision,
+  then `autonomous_prd_reset_task` with `force: true` on the task that
+  pushed, then `autonomous_prd_run`. If you finished by hand, cancel
+  it or leave it as the record.
+- **`per_automaton_guardrails_set` and `autonomous_config_set`'s
+  `per_prd_guardrails` now say they replace, not merge.** Each
+  `per_automaton_guardrails_set` call replaces the profile and all
+  three lists, so an omitted one is cleared. The global list is
+  replaced whole, so read it first and include the entries you want to
+  keep. `docs/mcp.md` already said this; the tool descriptions did not.
+
 ## v9.0.63 — feat(autonomous): ci-watch completion guardrail — an Automaton waits for the CI of the commit it pushed
 
 ### Added
