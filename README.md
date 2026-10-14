@@ -57,7 +57,7 @@ Browse the catalog in-app (Settings → Skills → Registry) or on GitHub. To co
 
 ## Current release
 
-**Current release: v9.0.72 (2026-10-14).** v9.0.9–v9.0.72 are a patch
+**Current release: v9.0.73 (2026-10-14).** v9.0.9–v9.0.73 are a patch
 chain on top of the v9.0.0 major release: a plugin extension framework
 (manifest-declared widgets, now rendering live on the dashboard and in
 session detail — plugins can push or pull their own stat tiles,
@@ -78,7 +78,7 @@ clarifies the ci-watch MCP tool descriptions, and v9.0.65 fixes the
 agent container image's security scan by rebuilding its bundled GitHub
 CLI with a patched Go and `golang.org/x/net`. v9.0.66 stops one-shot
 claude-code workers from getting their task re-pasted on every channel
-heartbeat. v9.0.72 lets you choose which LLM verifies a task, a story
+heartbeat. v9.0.73 lets you choose which LLM verifies a task, a story
 or a whole Automaton, overriding the global verifier (task > story >
 Automaton > global), from REST, MCP, the CLI, chat and the PWA. Each
 verification result records which backend, model and level judged it

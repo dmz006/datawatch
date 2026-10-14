@@ -1,8 +1,8 @@
-# Verification LLM override — live end-to-end proof (v9.0.72)
+# Verification LLM override — live end-to-end proof (v9.0.73)
 
 Date: 2026-10-14. Feature: per-task, per-story and per-Automaton
-verification LLM override (v9.0.67–v9.0.72, consolidated in the
-v9.0.72 CHANGELOG entry).
+verification LLM override (v9.0.67–v9.0.73, consolidated in the
+v9.0.73 CHANGELOG entry).
 
 ## Result
 
@@ -18,11 +18,17 @@ RESULT=pass
 
 ## Deployed version
 
-- Built with `make build` → `bin/datawatch`: `datawatch v9.0.72`.
-- Installed to production with `make install`, then restarted with
-  `systemctl --user restart datawatch` (not `datawatch restart`).
-  `datawatch version` → `datawatch v9.0.72`; the running daemon's
-  `GET /api/health` → `"version":"9.0.72"` (previously v9.0.65).
+- Production: **`datawatch v9.0.73`**. It was built with `make install`
+  and restarted with `systemctl --user restart datawatch` (not
+  `datawatch restart`). `datawatch version` → `datawatch v9.0.73`; the
+  running daemon's `GET /api/health` → `"version":"9.0.73"`.
+- History: production was on v9.0.65, was first deployed at v9.0.72,
+  then went to v9.0.73. CI's version-bump check (against `HEAD^`)
+  requires the release-bookkeeping commit to carry its own patch number.
+  v9.0.73 differs from v9.0.72 only in the version string, the
+  CHANGELOG/README and this story, with no Go code change. So the
+  sandbox run below, done on the v9.0.72 build, exercises the same
+  code.
 
 ## Sandbox
 

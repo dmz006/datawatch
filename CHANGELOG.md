@@ -5,7 +5,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-## v9.0.72 — feat(automata): per-task, per-story and per-Automaton verification LLM override
+## v9.0.73 — feat(automata): per-task, per-story and per-Automaton verification LLM override
+
+Shipped across v9.0.67–v9.0.73; this entry consolidates those commits.
 
 ### Added
 - **Choose which LLM verifies a task, a story or a whole Automaton.**
