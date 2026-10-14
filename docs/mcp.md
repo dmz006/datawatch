@@ -239,7 +239,7 @@ shape.
 | Work Queue | `queue_push`, `queue_claim`, `queue_complete`, `queue_fail`, `queue_list` |
 | Discussion Subscribe | `discussion_subscribe`, `discussion_unsubscribe`, `discussion_subscriptions` |
 | Result Store | `result_put`, `result_get`, `result_list`, `result_delete` |
-| Autonomous PRDs | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_list/create/get/decompose/approve/reject/request_revision/edit_task/instantiate/run/cancel/set_llm/set_task_llm/children`, `autonomous_learnings`, `capacity_status` |
+| Autonomous PRDs | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_list/create/get/decompose/approve/reject/request_revision/edit_task/instantiate/run/cancel/set_llm/set_task_llm/set_task_verification_llm/set_story_verification_llm/set_verification_llm/children`, `autonomous_learnings`, `capacity_status` |
 | Orchestrator | `orchestrator_graph_create/plan/run/get/list/cancel`, `orchestrator_verdicts`, `orchestrator_config_get/set` |
 | Pipelines | `pipeline_start/list/status/cancel` |
 | Memory + KG | `memory_remember/recall/list/forget/export/import/reindex/stats/learnings`, `kg_add/query/timeline/stats/invalidate`, `research_sessions`, `get_prompt`, `copy_response` |
@@ -265,6 +265,25 @@ Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
 - **`autonomous_prd_cancel`** — cancel a PRD (proxies bare `DELETE /api/autonomous/prds/{id}`) and best-effort kill its worker sessions. Response: `id`, `status` (`"cancelled"`), `killed_sessions` (count of session slots recorded on the PRD's tasks), and `killed_session_ids` (array of the session IDs a kill was actually attempted on — always an array, `[]` when none). A `kill_errors` map (`{"<id>": "<error>"}`) is added only when a kill failed. Use `killed_session_ids` to verify no unrelated session was stopped.
 - **`autonomous_prd_set_llm`** (v5.4.0; v8.20.0 extended; v8.33.9 priority fix) — operator-pinned LLM override at the PRD level. Parameters: `backend` (task-execution backend — opencode, claude-code, goose, etc.), `effort`, `model`, and `decomposition_profile` (planning/decompose backend — any configured LLM; opencode/claude-code spawn a full session with codebase tool access, ollama/openwebui run headless; empty = use global `autonomous.planning_backend`). Per-PRD `decomposition_profile` takes priority over the global setting. Optional `guardrail_backend` / `guardrail_model` set the guardrail/verification judge LLM override; it inherits task → Automaton → global `autonomous.verification_backend` / `verification_model`. Only the guardrail params you pass are sent (omitted = unchanged, `""` = clear), and a call with only guardrail params leaves the worker LLM untouched.
 - **`autonomous_prd_set_task_llm`** (v5.4.0) — operator-pinned LLM override at the task level (overrides the PRD-level execution backend for that specific task). Accepts the same optional `guardrail_backend` / `guardrail_model` params with the same absent-vs-empty semantics, scoped to the one task.
+- **`autonomous_prd_set_task_verification_llm`** / **`autonomous_prd_set_story_verification_llm`** / **`autonomous_prd_set_verification_llm`** (v9.0.69) — pick which LLM *verifies* (judges) the work of one task, every task in one story, or a whole Automaton. Precedence, most specific wins: task → story → Automaton → global `autonomous.verification_backend` / `verification_model` / `verification_effort`. Backend and model come from the same level (a less specific level's model never leaks past a more specific backend override); effort resolves independently. A backend set at any of these levels also bypasses the global `autonomous.verification_backends` capacity pool; a model or effort set without a backend at any per-unit level leaves the verifier on the global path. Effort is applied when the verifier runs as a session. Accepted while the Automaton is `needs_review`, `revisions_asked` or `cancelled`. Each verification result records what actually ran as `verifier_backend` / `verifier_model` / `verifier_effort` / `verifier_source` (`task` | `story` | `prd` | `global` | `pool`) on the task's `verification` object in `autonomous_prd_get`.
+
+  | Parameter | Tools | Required | Description |
+  |---|---|---|---|
+  | `id` | all three | yes | Automaton ID |
+  | `task_id` | `..._set_task_verification_llm` | yes | Task to override |
+  | `story_id` | `..._set_story_verification_llm` | yes | Story to override (a task-level override still wins) |
+  | `verification_backend` | all three | no | Any configured LLM name (unknown → error). `""` clears (inherit the next level); omit to leave unchanged |
+  | `verification_model` | all three | no | Model for the verifier. `""` clears; omit = unchanged |
+  | `verification_effort` | all three | no | `low` / `medium` / `high` / `max` / `quick` / `normal` / `thorough`. `""` clears; omit = unchanged |
+  | `actor` | all three | no | Who made the change (default `operator`) |
+
+  ```
+  autonomous_prd_set_task_verification_llm(id="a1b2c3d4", task_id="t7", verification_backend="claude-code", verification_model="opus", verification_effort="high")
+  autonomous_prd_set_story_verification_llm(id="a1b2c3d4", story_id="s2", verification_backend="ollama", verification_model="qwen3:8b")
+  autonomous_prd_set_verification_llm(id="a1b2c3d4", verification_model="")   # clear the Automaton-level model only
+  ```
+
+  Returns the updated Automaton JSON. These overrides are separate from `guardrail_backend` / `guardrail_model` on `autonomous_prd_set_llm` / `autonomous_prd_set_task_llm`, which pick the guardrail judge.
 - **`autonomous_prd_instantiate`** (v5.x) — instantiate from a template PRD with variable substitution.
 - **`observer_envelopes_all_peers`** (v5.12.0, BL180 cross-host) — federation-aware envelope view; cross-peer caller attribution surfaces as `<peer>:<envelope-id>` rows on each matched server envelope.
 - **`session_bind_agent`** (v5.x) — bind a manual session to an existing agent record so observer/cost roll-ups attribute correctly.

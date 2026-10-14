@@ -1871,6 +1871,42 @@ curl -sX POST http://localhost:7433/api/autonomous/prds/<id>/set_llm \
   -d '{"guardrail_backend":"ollama","guardrail_model":"qwen3.8:27b"}'
 ```
 
+**Verification LLM** — `verification_backend` / `verification_model` /
+`verification_effort` choose the LLM that verifies a task's work, per
+task, per story or per Automaton. Resolution: task → story → Automaton
+→ global `autonomous.verification_backend` / `verification_model` /
+`verification_effort`; a backend set at any per-unit level bypasses the
+`autonomous.verification_backends` pool. Same presence rules: omit to
+keep, `""` to clear. The task's `verification` result records
+`verifier_backend` / `verifier_model` / `verifier_effort` /
+`verifier_source`. Full reference: [`api/autonomous.md`](api/autonomous.md).
+
+```
+# MCP
+autonomous_prd_set_task_verification_llm(id="<prd-id>", task_id="<task-id>", verification_backend="claude-code", verification_model="opus")
+autonomous_prd_set_story_verification_llm(id="<prd-id>", story_id="<story-id>", verification_backend="ollama")
+autonomous_prd_set_verification_llm(id="<prd-id>", verification_effort="")   # clear
+
+# CLI
+datawatch autonomous prd-set-task-verification-llm <id> --task <task-id> --backend claude-code --model opus
+datawatch autonomous prd-set-story-verification-llm <id> --story <story-id> --backend ollama
+datawatch autonomous prd-set-verification-llm <id> --effort ""
+
+# Comm channel
+autonomous set-task-verification-llm <id> <task-id> backend=claude-code model=opus
+autonomous set-story-verification-llm <id> <story-id> backend=ollama
+autonomous set-verification-llm <id> effort=
+
+# REST
+curl -sX POST http://localhost:7433/api/autonomous/prds/<id>/set_task_verification_llm \
+  -H "Content-Type: application/json" \
+  -d '{"task_id":"<task-id>","verification_backend":"claude-code","verification_model":"opus"}'
+```
+
+PWA: the task **Edit**, story **LLM** and Automaton **Set LLM** modals
+each have a *Verification LLM* row; the task's verification result
+shows **Judged by**.
+
 `verification_script`, `files_generated` and `files_touched` are
 filled in by the system and are read-only; view them with
 `autonomous_prd_get` / `prd-get` / `autonomous get`.

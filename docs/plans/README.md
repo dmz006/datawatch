@@ -1122,6 +1122,30 @@ established. In progress — starting with BL403.**
     `docs/plans/2026-10-14-cli-self-update-dialog-recovery.md` (root
     cause, call sites, pre-fix test run, live validation).
 
+27. **BL430** — per-task / per-story / per-Automaton verification LLM
+    override (filed 2026-10-14 — **shipped v9.0.72**). Split out of the
+    **BL428** concurrency/budget design pass (same as the self-update-
+    dialog fix, BL429) so it is ready before **BL422**'s model-tiering
+    eval results are applied to real dev Automata. BL422 keeps its own
+    transient global capture/set/restore mechanism for its own testing;
+    this is the clean per-unit mechanism for applying its results
+    afterward. New `verification_backend` / `verification_model` /
+    `verification_effort` on Task, Story and Automaton; precedence task
+    → story → Automaton → global `autonomous.verification_*`, and an
+    explicit per-unit backend bypasses the `verification_backends`
+    capacity pool. Each verification result records `verifier_backend`
+    / `verifier_model` / `verifier_effort` / `verifier_source`
+    (task|story|prd|global|pool). Surfaces: REST
+    `set_task_verification_llm` / `set_story_verification_llm` /
+    `set_verification_llm`, matching MCP tools, CLI
+    `prd-set-*-verification-llm`, comm verbs, PWA Verification LLM rows
+    (v9.0.67–v9.0.71; docs + release-smoke section 71 in v9.0.72).
+    **Pre-existing gap, left as-is:** the global
+    `autonomous.verification_effort` is still not consumed by the verify
+    path — only a per-unit effort reaches a session-routed verifier.
+    **Evidence:** `docs/plans/2026-10-14-verification-llm-override-live.md`
+    (live verification, written by the release task).
+
 **Outside the queue, handled separately, not blocking Stage 3:**
 - ~~**BL381**~~ — status-verified 2026-10-10: shipped v8.28.0 + v8.28.2
   (PWA picker). Moved to Completed. No slot needed.

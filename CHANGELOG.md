@@ -5,6 +5,26 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.72 — docs: per-task / per-story / per-Automaton verification LLM override
+
+### Documentation
+- **Verification LLM override documented on every surface.** `docs/mcp.md`
+  (parameter table + example for `autonomous_prd_set_task_verification_llm`,
+  `autonomous_prd_set_story_verification_llm`,
+  `autonomous_prd_set_verification_llm`), `docs/cursor-mcp.md`,
+  `docs/commands.md`, `docs/api/autonomous.md` (REST endpoints, body
+  shape, all-access-methods table) and `docs/operations.md`. The
+  `docs/howto/autonomous-planning.md` how-to gains "Choose the verifier
+  per task, story or Automaton": when to use a cheaper or stronger
+  verifier and how to read `verifier_source` on the task's verification
+  result. The config reference notes that per-unit overrides take
+  precedence over `autonomous.verification_*`.
+
+### Tests
+- `scripts/release-smoke.sh` section 71 sets and clears a task
+  verification override on a smoke-created Automaton via REST and
+  checks the round-trip in GET.
+
 ## v9.0.71 — feat(pwa): verification LLM override in the task, story and Automaton LLM modals
 
 ### Added

@@ -859,6 +859,7 @@ autonomous:
   # BL304: renamed from decomposition_effort; old key still accepted on read.
   planning_effort: "thorough"
   # BL41 effort hint for the verifier.
+  # Per-task / per-story / per-Automaton overrides (set_*_verification_llm) take precedence over verification_backend / verification_model / verification_effort.
   verification_effort: "normal"
   # 0 = inherit session.stale_timeout_seconds.
   stale_task_seconds: 0

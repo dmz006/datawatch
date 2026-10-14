@@ -871,6 +871,7 @@ PRD lifecycle — full CRUD parity with the REST + MCP surfaces.
 | `prd approve/reject/request-revision` | BL191 Q1 review/approve gate (v5.2.0) |
 | `prd children` | List child PRDs spawned via SpawnPRD (v5.9.0, BL191 Q4) |
 | `prd set-llm/set-task-llm` | Pin LLM backend/effort/model at PRD or task scope (v5.4.0, BL203) |
+| `prd-set-task-verification-llm <id> --task <task>` / `prd-set-story-verification-llm <id> --story <story>` / `prd-set-verification-llm <id>` | Pick the LLM that verifies one task / every task in a story / the whole Automaton. Flags `--backend` / `--model` / `--effort`; omitted flags are unchanged, `--backend ""` clears. Precedence task > story > Automaton > global `autonomous.verification_*` (v9.0.70) |
 
 ### `datawatch observer <subcommand>`
 

@@ -44,6 +44,9 @@ POST   /api/autonomous/prds/{id}/edit_task per-task spec edit on needs_review/re
 POST   /api/autonomous/prds/{id}/instantiate  template instantiation; body: {vars{}, actor}                          [v5.2.0  / BL191 Q2]
 POST   /api/autonomous/prds/{id}/set_llm   PRD-level worker LLM override; body: {backend, effort, model, decomposition_profile, [guardrail_backend], [guardrail_model], actor}   [v5.4.0  / BL203]
 POST   /api/autonomous/prds/{id}/set_task_llm  per-task LLM override; body: {task_id, backend, effort, model, [guardrail_backend], [guardrail_model], actor}             [v5.4.0  / BL203]
+POST   /api/autonomous/prds/{id}/set_task_verification_llm   per-task verifier LLM; body: {task_id, [verification_backend], [verification_model], [verification_effort], actor}   [v9.0.69]
+POST   /api/autonomous/prds/{id}/set_story_verification_llm  per-story verifier LLM; body: {story_id, [verification_backend], [verification_model], [verification_effort], actor} [v9.0.69]
+POST   /api/autonomous/prds/{id}/set_verification_llm        per-Automaton verifier LLM; body: {[verification_backend], [verification_model], [verification_effort], actor}       [v9.0.69]
 POST   /api/autonomous/prds/{id}/set_dirs  directory scope; body: {write_dirs[], read_dirs[]} (absolute paths)
 POST   /api/autonomous/prds/{id}/run       kick the executor for this PRD
 GET    /api/autonomous/prds/{id}/children  list child PRDs spawned via SpawnPRD                                      [v5.9.0  / BL191 Q4]
@@ -93,6 +96,60 @@ curl -sX POST http://localhost:7433/api/autonomous/prds/<id>/set_task_llm \
   -d '{"task_id":"<task-id>","guardrail_model":""}'
 ```
 
+### Verification LLM override (`set_task_verification_llm` / `set_story_verification_llm` / `set_verification_llm`)
+
+Pick the LLM that **verifies** (judges) a task's work, per task, per
+story or per Automaton. The values are stored on the Automaton itself
+(`verification_backend` / `verification_model` / `verification_effort`
+on the task, story or Automaton record), not in `config.yaml`.
+
+| Method | How |
+|--------|-----|
+| **YAML** | No per-unit config key — overrides live on the Automaton. The global fallback stays `autonomous.verification_backend` / `verification_model` / `verification_effort` in `~/.datawatch/config.yaml` |
+| **CLI** | `datawatch autonomous prd-set-task-verification-llm <id> --task <task-id> --backend B --model M --effort E` (also `prd-set-story-verification-llm --story`, `prd-set-verification-llm`) |
+| **Web UI** | Automaton detail → task **Edit**, story **LLM**, or Automaton **Set LLM** modal → *Verification LLM* row (Backend / Effort / Model). The task's verification result shows **Judged by** |
+| **REST** | `POST /api/autonomous/prds/{id}/set_task_verification_llm` (etc.), body below |
+| **MCP** | `autonomous_prd_set_task_verification_llm`, `autonomous_prd_set_story_verification_llm`, `autonomous_prd_set_verification_llm` |
+| **Comm channel** | `autonomous set-task-verification-llm <id> <task-id> backend=X model=Y effort=Z` (also `set-story-verification-llm <id> <story-id> …`, `set-verification-llm <id> …`) |
+
+Body keys are presence-aware like the guardrail keys: **absent** leaves
+the field unchanged, **`""`** clears it (inherit the next level), a
+value sets it. `task_id` / `story_id` are required on the task / story
+variants. `verification_backend` must be a configured LLM name (unknown
+→ 400); `verification_effort` must be one of `low`, `medium`, `high`,
+`max`, `quick`, `normal`, `thorough`. Overrides are accepted while the
+Automaton is `needs_review`, `revisions_asked` or `cancelled`. The
+response is the updated Automaton.
+
+Resolution: task → story → Automaton → global
+`autonomous.verification_backend` / `verification_model` /
+`verification_effort`. The model is taken from the same level the
+backend was found at; effort resolves independently. A backend set at
+any per-unit level bypasses the `autonomous.verification_backends`
+capacity pool. A model or effort set with no per-unit backend leaves
+the verifier on the global path. Effort is applied when the verifier
+runs as a session.
+
+Each verification records what actually ran on the task's
+`verification` object: `verifier_backend`, `verifier_model`,
+`verifier_effort` and `verifier_source` (`task`, `story`, `prd` for the
+Automaton level, `global`, or `pool`).
+
+```bash
+# a stronger verifier for one risky task
+curl -sX POST http://localhost:7433/api/autonomous/prds/<id>/set_task_verification_llm \
+  -H "Content-Type: application/json" \
+  -d '{"task_id":"<task-id>","verification_backend":"claude-code","verification_model":"opus","verification_effort":"high"}'
+
+# clear it again (inherit story → Automaton → global)
+curl -sX POST http://localhost:7433/api/autonomous/prds/<id>/set_task_verification_llm \
+  -H "Content-Type: application/json" \
+  -d '{"task_id":"<task-id>","verification_backend":"","verification_model":"","verification_effort":""}'
+```
+
+These are independent of `guardrail_backend` / `guardrail_model`
+above, which pick the guardrail judge.
+
 `verification_script`, `files_generated` and `files_touched` are
 system-populated and read-only — they appear in
 `GET /api/autonomous/prds/{id}` (and the MCP / CLI / comm `get`
@@ -113,7 +170,7 @@ autonomous:
   planning_backend:       ""          # empty = inherit session.llm_backend (BL304; old key decomposition_backend still accepted)
   verification_backend:   ""          # empty = inherit; set differently for cross-backend independence
   planning_effort:        "thorough"  # BL41 effort hint (BL304; old key decomposition_effort still accepted)
-  verification_effort:    "normal"
+  verification_effort:    "normal"    # per-task/story/Automaton overrides (set_*_verification_llm) take precedence
   stale_task_seconds:     0           # 0 = inherit session.stale_timeout_seconds
   auto_fix_retries:       1           # re-prompt count on verifier failure
   security_scan:          true        # nightwire-port .py scanner before commit
@@ -135,6 +192,9 @@ datawatch autonomous prd-run <id>
 datawatch autonomous prd-cancel <id>
 datawatch autonomous prd-set-llm <id> --guardrail-backend ollama --guardrail-model qwen3.8:27b
 datawatch autonomous prd-set-task-llm <id> --task <task-id> --guardrail-backend ""   # clear
+datawatch autonomous prd-set-task-verification-llm <id> --task <task-id> --backend claude-code --model opus --effort high
+datawatch autonomous prd-set-story-verification-llm <id> --story <story-id> --backend ollama --model qwen3:8b
+datawatch autonomous prd-set-verification-llm <id> --model ""   # clear the Automaton-level verifier model
 datawatch autonomous learnings
 ```
 
@@ -157,6 +217,7 @@ operator-facing AI can drive the autonomous loop end-to-end:
 | `autonomous_prd_run`        | kick executor |
 | `autonomous_prd_cancel`     | cancel + archive |
 | `autonomous_learnings`      | list learnings |
+| `autonomous_prd_set_task_verification_llm` / `_set_story_verification_llm` / `_set_verification_llm` | per-task / per-story / per-Automaton verifier LLM |
 
 Typical AI workflow:
 1. `autonomous_prd_create(spec="…", project_dir="…")` → `{id}`
@@ -180,6 +241,9 @@ rest POST /api/autonomous/prds/abcd1234/plan
 rest POST /api/autonomous/prds/abcd1234/run
 autonomous set-llm abcd1234 guardrail_backend=ollama guardrail_model=qwen3.8:27b
 autonomous set-task-llm abcd1234 t1 claude-code high guardrail_backend=ollama
+autonomous set-task-verification-llm abcd1234 t1 backend=claude-code model=opus effort=high
+autonomous set-story-verification-llm abcd1234 s1 backend=ollama model=qwen3:8b
+autonomous set-verification-llm abcd1234 model=
 ```
 
 `guardrail_backend=` / `guardrail_model=` tokens can be appended to

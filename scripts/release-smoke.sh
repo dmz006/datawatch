@@ -3723,6 +3723,62 @@ echo "$CIW_LIB" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert any(
   || ko "ci-watch not in GET /api/autonomous/guardrails: ${CIW_LIB:0:120}"
 
 # ---------------------------------------------------------------------------
+H "71. per-task verification LLM override — set + clear round-trip (v9.0.72)"
+# Smoke-created Automaton → cancel (soft) so structural edits and LLM
+# overrides are accepted → add a story + task → set a task verification
+# model/effort override → GET shows it → clear with "" → GET shows it
+# gone. Model/effort only: verification_backend is validated against the
+# configured LLM registry, which a bare smoke daemon may not have.
+VO_PRD=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+  -d '{"spec":"smoke probe — verification LLM override","project_dir":"/tmp","actor":"smoke"}' \
+  "$BASE/api/autonomous/prds" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("id",""))' 2>/dev/null || echo "")
+if [[ -z "$VO_PRD" ]]; then
+  skip "verification override: POST /api/autonomous/prds returned no id (autonomous subsystem may be off)"
+else
+  add_cleanup prd "$VO_PRD"
+  curl "${curl_args[@]}" -X DELETE "$BASE/api/autonomous/prds/$VO_PRD" >/dev/null 2>&1
+  VO_STORY=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+    -d '{"title":"smoke-verif-story","actor":"smoke"}' "$BASE/api/autonomous/prds/$VO_PRD/add_story" \
+    | python3 -c 'import json,sys;d=json.load(sys.stdin);print(next((s["id"] for s in d.get("stories") or [] if s.get("title")=="smoke-verif-story"),""))' 2>/dev/null || echo "")
+  VO_TASK=""
+  if [[ -n "$VO_STORY" ]]; then
+    VO_TASK=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+      -d "{\"story_id\":\"$VO_STORY\",\"title\":\"smoke-verif-task\",\"spec\":\"noop\",\"actor\":\"smoke\"}" \
+      "$BASE/api/autonomous/prds/$VO_PRD/add_task" \
+      | python3 -c 'import json,sys;d=json.load(sys.stdin);print(next((t["id"] for s in d.get("stories") or [] for t in s.get("tasks") or [] if t.get("title")=="smoke-verif-task"),""))' 2>/dev/null || echo "")
+  fi
+  if [[ -z "$VO_TASK" ]]; then
+    ko "verification override: could not add a story/task to cancelled Automaton $VO_PRD"
+  else
+    # vo_task_field <field> — print one field of the task from GET.
+    vo_task_field() {
+      curl "${curl_args[@]}" "$BASE/api/autonomous/prds/$VO_PRD" | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+t=next((t for s in d.get('stories') or [] for t in s.get('tasks') or [] if t.get('id')=='$VO_TASK'),{})
+print(t.get('$1',''))" 2>/dev/null
+    }
+    VO_SET=$(curl "${curl_args[@]}" -o /dev/null -w "%{http_code}" -X POST -H "Content-Type: application/json" \
+      -d "{\"task_id\":\"$VO_TASK\",\"verification_model\":\"smoke-verifier-model\",\"verification_effort\":\"low\",\"actor\":\"smoke\"}" \
+      "$BASE/api/autonomous/prds/$VO_PRD/set_task_verification_llm" 2>/dev/null || echo "000")
+    if [[ "$VO_SET" == "200" && "$(vo_task_field verification_model)" == "smoke-verifier-model" && "$(vo_task_field verification_effort)" == "low" ]]; then
+      ok "set_task_verification_llm: GET shows verification_model + verification_effort on the task"
+    else
+      ko "set_task_verification_llm set round-trip failed (HTTP $VO_SET, model='$(vo_task_field verification_model)', effort='$(vo_task_field verification_effort)')"
+    fi
+    VO_CLR=$(curl "${curl_args[@]}" -o /dev/null -w "%{http_code}" -X POST -H "Content-Type: application/json" \
+      -d "{\"task_id\":\"$VO_TASK\",\"verification_model\":\"\",\"verification_effort\":\"\",\"actor\":\"smoke\"}" \
+      "$BASE/api/autonomous/prds/$VO_PRD/set_task_verification_llm" 2>/dev/null || echo "000")
+    if [[ "$VO_CLR" == "200" && -z "$(vo_task_field verification_model)" && -z "$(vo_task_field verification_effort)" ]]; then
+      ok "set_task_verification_llm: \"\" clears the override (GET shows inherit)"
+    else
+      ko "set_task_verification_llm clear round-trip failed (HTTP $VO_CLR, model='$(vo_task_field verification_model)', effort='$(vo_task_field verification_effort)')"
+    fi
+  fi
+  curl "${curl_args[@]}" -X DELETE "$BASE/api/autonomous/prds/$VO_PRD?hard=true" >/dev/null 2>&1
+fi
+
+# ---------------------------------------------------------------------------
 H "Summary"
 echo "  Pass:  $PASS"
 echo "  Fail:  $FAIL"

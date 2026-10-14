@@ -258,6 +258,60 @@ guardrails:
 Edit the YAML directly between `plan` and `approve` to refine the
 spec without re-planning. (Use `decompose` alias if scripts require it.)
 
+## Choose the verifier per task, story or Automaton
+
+After a task runs, a verifier LLM judges the work. By default every
+task uses the global `autonomous.verification_backend` /
+`verification_model` / `verification_effort` (or the
+`verification_backends` pool). Since v9.0.67 you can override that per
+task, per story or per Automaton while the Automaton is in review
+(`needs_review` / `revisions_asked`) or cancelled.
+
+When to use it:
+
+- **Routine tasks** (docs, renames, test fixtures): point the story or
+  Automaton at a cheaper, faster verifier, such as a local Ollama model.
+- **Risky tasks** (auth, migrations, anything touching data): give the
+  one task a stronger verifier and higher effort.
+- **Independence:** use a different backend for verifying than for
+  doing the work.
+
+Most specific wins: task → story → Automaton → global. Set a
+**backend** at the level you want; a model or effort without any
+per-unit backend leaves the verifier on the global path. An explicit
+backend also skips the `verification_backends` pool. Send `""` (or an
+empty field in the PWA) to clear and inherit again.
+
+```bash
+# Stronger verifier for one risky task.
+datawatch autonomous prd-set-task-verification-llm <id> --task <task-id> \
+  --backend claude-code --model opus --effort high
+
+# Cheaper verifier for a routine story.
+datawatch autonomous prd-set-story-verification-llm <id> --story <story-id> \
+  --backend ollama --model qwen3:8b
+
+# Clear the task override.
+datawatch autonomous prd-set-task-verification-llm <id> --task <task-id> \
+  --backend "" --model "" --effort ""
+```
+
+PWA: task **Edit**, story **LLM** or Automaton **Set LLM** →
+*Verification LLM* row. MCP: `autonomous_prd_set_task_verification_llm`
+/ `_set_story_verification_llm` / `_set_verification_llm`. Chat:
+`autonomous set-task-verification-llm <id> <task-id> backend=claude-code model=opus`.
+REST: `POST /api/autonomous/prds/{id}/set_task_verification_llm`
+(see [`../api/autonomous.md`](../api/autonomous.md)).
+
+**Read which verifier actually ran.** After verification, the task's
+`verification` object in `datawatch autonomous prd-get <id>` (or
+`GET /api/autonomous/prds/{id}`) carries `verifier_backend`,
+`verifier_model`, `verifier_effort` and `verifier_source`. The source
+tells you where the choice came from: `task`, `story`, `prd` (the
+Automaton level), `global`, or `pool`. In the PWA the verification
+result shows a **Judged by** line. If you set an override and still see
+`global` or `pool`, check that a backend (not just a model) was set.
+
 ## Diagram
 
 ```
