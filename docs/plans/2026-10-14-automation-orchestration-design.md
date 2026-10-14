@@ -3,6 +3,7 @@
 **Date:** 2026-10-14
 **Version:** v9.0.75 at time of writing (`var Version = "9.0.75"` in `cmd/datawatch/main.go:116`). Implementation target TBD: the next minor after 9.0.75 at the earliest. Framed as a v10.0.0 architecture item.
 **Status:** Design pass — needs_review, no implementation approved. No code, config default, `var Version` or CHANGELOG entry is changed by this doc.
+_Re-verified: 2026-10-14 (attempt 3, content confirmed unchanged and correct; full verifier exit 0)._
 
 **Terminology.** Operator-facing text says **Automaton / Automata**, following
 AGENT.md's Terminology Rule. The internal Go type is `PRD` (`internal/autonomous`),
