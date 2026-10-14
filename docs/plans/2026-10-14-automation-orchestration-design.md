@@ -81,6 +81,17 @@ How the sibling and prior items fit in:
 - **Not verified.** It was not checked whether `30e6f153` was created *because of*
   something seen in BL422's eval. Its creation time, 2026-10-14 01:14:44, is
   verified. Its ordering relative to BL422 comes from the brief.
+- **Re-verified on 2026-10-14 (retry pass).** The cited anchors were re-checked
+  against the tree at `var Version = "9.0.75"` and still match:
+  `Manager.Run` (`internal/autonomous/executor.go:124`),
+  `resolveTaskBackendModel` (`executor.go:1607`), `ResolveVerificationLLM` and the
+  `VerifierSource*` constants including `pool`
+  (`internal/autonomous/verification_llm.go:18-25, 53`), `CancelStory`
+  (`internal/autonomous/manager.go:1771`), `SetStoryLLM` (`manager.go:2360`),
+  `API.SetStoryLLM` / `API.SetTaskLLM` (`internal/autonomous/api.go:602, 611`),
+  `Decision.CostUSD` (`internal/autonomous/models.go:57`) and the `Effort` type
+  (`models.go:105`). The previous attempt failed only because the verifier
+  session timed out. No design content changed in this pass.
 
 ---
 
@@ -1134,7 +1145,10 @@ howto, and the `datawatch-app` issue where applicable.
   (`docs/plans/2026-10-14-concurrency-and-budget-design.md:724-740`, "7a. BL431
   pointer (Automation coordinator)"), and its stored PRD spec has no 7a text. The
   one remaining wording to reconcile: BL428 §7a says BudgetPolicy "narrows this
-  doc's usage-budget ceiling", which matches this doc. Nothing else needs to
+  doc's usage-budget ceiling", which matches this doc. The only stale wording is
+  the qualifier "once it exists" after this doc's path
+  (`docs/plans/2026-10-14-concurrency-and-budget-design.md:728`). This doc is now
+  committed, so a later touch-up can drop that qualifier. Nothing else needs to
   change.
 - **BL427 (`fe2e2110`).** It should change its cross-reference from "BL428's
   Automation coordinator" to **"BL431's Automation coordinator"**. **Observed:** the
