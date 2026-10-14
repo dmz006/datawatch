@@ -143,7 +143,9 @@ func (w *apiGzipWriter) WriteHeader(code int) {
 	w.status = code
 	w.wroteHeader = true
 	if !w.mayCompress() {
-		w.commitPassthrough()
+		// Nothing is buffered before the first WriteHeader, so this only
+		// sends the status line and cannot fail on a write.
+		_ = w.commitPassthrough()
 	}
 }
 

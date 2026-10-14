@@ -298,7 +298,7 @@ func TestAPIGzip_SSENotCompressedAndFlushes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.Header.Get("Content-Encoding") != "" {
 		t.Fatalf("SSE compressed")
 	}
@@ -364,7 +364,7 @@ func TestAPIGzip_HijackPassesThrough(t *testing.T) {
 			t.Errorf("hijack: %v", err)
 			return
 		}
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 		_, _ = buf.WriteString("HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 8\r\nConnection: close\r\n\r\nhijacked")
 		_ = buf.Flush()
 	})
@@ -376,7 +376,7 @@ func TestAPIGzip_HijackPassesThrough(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	b, _ := io.ReadAll(resp.Body)
 	if string(b) != "hijacked" || resp.Header.Get("Content-Encoding") != "" {
 		t.Errorf("hijacked response altered: %q ce=%q", b, resp.Header.Get("Content-Encoding"))

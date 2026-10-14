@@ -57,7 +57,18 @@ Browse the catalog in-app (Settings → Skills → Registry) or on GitHub. To co
 
 ## Current release
 
-**Current release: v9.0.75 (2026-10-14).** v9.0.9–v9.0.75 are a patch
+**Current release: v9.0.82 (2026-10-14).** Smaller payloads for mobile
+and web clients on busy daemons, each one requested by the client: a compact session list
+(`GET /api/sessions?view=summary`), gzip for `/api/*` JSON, paged alerts
+with a cheap unread-count endpoint and an `alerts_read` WebSocket event,
+and a WebSocket `hello` handshake that switches a client to per-session
+delta updates and to terminal output only for the sessions it has open.
+`GET /api/info` now lists `capabilities` so clients can detect each
+feature, and six new `server.*` settings tune the limits and defaults.
+See the [low-bandwidth client flow](docs/api/mobile-surface.md#low-bandwidth-client-flow)
+and [v9.0.82](CHANGELOG.md).
+
+**v9.0.9–v9.0.75** are a patch
 chain on top of the v9.0.0 major release: a plugin extension framework
 (manifest-declared widgets, now rendering live on the dashboard and in
 session detail — plugins can push or pull their own stat tiles,

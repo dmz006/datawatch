@@ -40,7 +40,7 @@ single source of truth.
 
 ## Current state — 2026-10-13
 
-Latest release: **v9.0.66** (2026-10-14) on `main` — BL429, one-shot Claude Code tasks are delivered once instead of being re-pasted on every 60 s channel heartbeat, and the CLI's "Update installed · /restart to apply" footer is handled as benign (item 26 in the Roadmap queue). Previous: **v9.0.65** — BL426, the agent-base Trivy fix (item 25). v9.0.29–v9.0.64 history is in `CHANGELOG.md`.
+Latest release: **v9.0.82** (2026-10-14) on `main` — BL432 (GH#242), server payload optimization for mobile/PWA clients: compact session list (`view=summary`), gzip for `/api/*` JSON, alerts paging + `/api/alerts/count` + `alerts_read` WS event, WS `hello` with delta session list and subscribed-only output, `/api/info` capabilities, six new `server.*` settings (feature commits v9.0.76–v9.0.81). Companion: BL433 (GH#243, PWA audit). Previous: **v9.0.75** — BL425 foreign-file-drift detection; **v9.0.66** — BL429. v9.0.29–v9.0.74 history is in `CHANGELOG.md`.
 
 Previous: **v9.0.28** (2026-10-11) on `main`; **v9.0.29** open on `datawatch#205` pending operator merge (BL404, the Stage 2 shakedown of the new PRD-driven workflow — see the Roadmap section below for the full B116-B121/BL413 list of what that shakedown found and fixed). Previous: **v9.0.23**. feat(autonomous): BL407 Phase 5 — config/parity surface. `PRD.Git.AutoPR`/`BaseBranch` are now operator-settable after PRD creation (new `set_git` REST action, `autonomous_prd_set_git` MCP tool, `prd-set-git` CLI command, and a new Git section on the PWA's PRD Settings modal — Mobile-Parity issue `datawatch-app#249`), and a new daemon-wide `autonomous.default_auto_pr` config starts every future PRD's `Git.AutoPR` pre-set (applied once at creation time, not resolved at use-time, since `AutoPR` is a plain bool with no pointer override — a resolve-at-use-time default couldn't tell "operator explicitly turned it back off" from "never touched"). `WorktreeBaseRepo`/`WorktreeDir`/`RulesFile`/`ContextFile`/`UpstreamRepos` were confirmed already fully config-round-trippable with zero new code. Caught two real gaps live while shipping it: the new MCP tool needed its own `federation.MCPToolCap` entry or it 404s from `POST /api/mcp/call` despite being properly registered, and the new PWA hint text first said "PRD" and left "automaton" untranslated in 4 locale bundles — both caught by this repo's own guard tests before shipping. **Active work:** the v10.0.0 self-build arc — see [§ Roadmap](#roadmap-self-build-arc--v1000-locked-2026-10-10). Stage 1 (BL406+BL407) and Stage 2 (BL404, the real shakedown of the new PRD-driven workflow) are both done — see the Roadmap section for the full B116-B121/BL413 list the shakedown surfaced and fixed same-day. **Stage 3 — BL403** (Plugin Extension Surfaces, `docs/plans/2026-10-09-plugin-extension-surfaces.md`) is now in progress, run PRD-driven per the roadmap's own design, starting with Phase 1 (Plugin Manifest v3). Plans folder refactored 2026-10-10: 11 completed plan docs archived to `historical-plans/`, BL381 closed as shipped, and unscheduled work called out in the Roadmap's "Not yet placed" list.
 
@@ -1281,6 +1281,44 @@ unaffected by this addendum and stays explicitly sequenced last, right
 before the v10.0.0 cutover, per its own note above.
 
 **Outside the queue, handled separately, not blocking Stage 3:**
+- **BL432** — server payload optimization for mobile/PWA clients
+  (GH#242, filed + shipped 2026-10-14 — **✅ Closed in v9.0.82**;
+  feature commits v9.0.76–v9.0.81). The datawatch-app Android client,
+  profiled against a busy daemon (484 sessions, 500 alerts), moved
+  33–52 MB/min idle on the Sessions tab: 3 MB `GET /api/sessions` and
+  WS `sessions` frames (~7/min), 185 KB `/api/alerts` polled every 5 s,
+  ~1000 `output` frames/min with no terminal open, no gzip on API JSON.
+  **Shipped:** `GET /api/sessions?view=summary` (+ `since=`, `states=`,
+  ended-session cap, `X-Datawatch-Sessions-Omitted`); gzip middleware
+  for `/api/*` JSON; alerts `limit`/`unread`/`before` paging,
+  `GET /api/alerts/count`, `alerts_read` WS event; WS `hello` →
+  `hello_ack` with `session_list: delta` (`session_state` +
+  `session_removed`), `session_view: summary`, `output: subscribed` and
+  a new `unsubscribe` message; `/api/info` `capabilities`; new settings
+  `server.session_summary_terminal_limit`,
+  `server.session_summary_text_chars`, `server.api_gzip`,
+  `server.api_gzip_min_bytes`, `server.ws_session_list_default`,
+  `server.ws_output_scope_default` (full config parity); MCP/CLI
+  options; client flow in `docs/api/mobile-surface.md`. All opt-in —
+  defaults keep the old frames. Client adoption is tracked in
+  datawatch-app (Mobile-Parity). Evidence: `docs/testing.md`
+  "v9.0.82 — Server payload optimization for mobile clients".
+  **Follow-up found in live validation (not fixed — operator
+  decision):** the daemon still sends the full `sessions` frame
+  (3.55 MB on this daemon) on WebSocket connect, before it reads
+  `hello`, so a delta client pays it once per connect. Options: accept
+  the hello options as WS URL query params (`/ws?session_list=delta`),
+  or hold the on-connect list briefly for a `hello`. Only
+  `server.ws_session_list_default: delta` avoids it today, which the
+  PWA does not support yet (see BL433).
+- **BL433** — PWA refresh/connection performance audit under load
+  (GH#243), companion to BL432. **Open.** Same method as the app audit
+  (read-only proxy, idle-per-tab bytes/min). Once the audit lands, the
+  PWA may adopt the same opt-ins BL432 shipped — `hello` with
+  `session_list: delta` / `session_view: summary` /
+  `output: subscribed`, the summary list and alert counts — at which
+  point `server.ws_output_scope_default: subscribed` becomes safe to
+  recommend for web-only deployments.
 - ~~**BL381**~~ — status-verified 2026-10-10: shipped v8.28.0 + v8.28.2
   (PWA picker). Moved to Completed. No slot needed.
 - **BL393** (nested tags) — stays excluded until explicitly authorized
@@ -3458,6 +3496,7 @@ Per-item plans live in [`2026-04-11-backlog-plans.md`](2026-04-11-backlog-plans.
 | BL335 | APNs push notification support for iOS (GH#107/#158) — folded into BL397 Phase 4 rather than shipped standalone | v8.62.x |
 | BL399 | GH#201 access/audit logging completeness — 5 phases: HTTP/WS/auth-failure access log, federation-hop actor attribution (HMAC hop chain), `ParentAgentID` on chained agents, ~40-site state-changing-action sweep, `create_alert` REST+MCP | v8.78.1 |
 | BL401 | Cross-Session Communication Rule — CLAUDE.md policy injection steering spawned sessions toward datawatch's own audited memory/discussion tools instead of native cross-session messaging | v8.78.2 |
+| BL432 | Server payload optimization for mobile/PWA clients (GH#242) — compact session list, API gzip, alerts paging/count + `alerts_read`, WS `hello` delta list + subscribed output, `/api/info` capabilities | v9.0.76–v9.0.82 |
 | BL344 | Alert click navigates to session detail — "Go to session →" button | v8.10.3 |
 | BL346 | Push `session_state_changed` lifecycle events via `PublishToTopic` | v8.10.3 |
 | BL348 | PWA session tree view — "Tree" toggle in Sessions toolbar | v8.10.3 |

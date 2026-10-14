@@ -5,6 +5,80 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.82 — release: smaller payloads for mobile and web clients
+
+This release rolls up v9.0.76–v9.0.81. Everything is opt-in or additive.
+Clients that change nothing see the same responses and WebSocket frames
+as before, except that large `/api/*` JSON responses are now gzipped
+for clients that ask for it.
+
+### Added
+- **Compact session list.** `GET /api/sessions?view=summary` keeps the
+  same JSON shape but shortens `task`, `prompt_context`, `last_response`
+  and `last_summary_long` to a short preview, marks them in
+  `truncated_fields`, and keeps only the newest ended sessions (header
+  `X-Datawatch-Sessions-Omitted` gives the count left out). `since=`
+  and `states=` filter the list. On a busy daemon this takes the list
+  from megabytes to kilobytes. The full record is still available from
+  `GET /api/sessions/{id}`, and the plain list is never capped.
+- **gzip for API JSON.** `/api/*` responses over
+  `server.api_gzip_min_bytes` are sent with `Content-Encoding: gzip`
+  when the client sends `Accept-Encoding: gzip`. Live streams, file
+  downloads and proxy paths are never compressed.
+- **Alerts paging and counts.** `GET /api/alerts` takes `limit`,
+  `unread=1` and `before=<id>` and then returns `total`, `has_more` and
+  `next_before`. `GET /api/alerts/count` returns only
+  `{unread_count, total}` for badges. A new `alerts_read` WebSocket
+  message tells clients when alerts are marked read, so together with
+  the existing `alert` message a client can keep its badge in sync
+  without polling.
+- **WebSocket `hello` handshake.** With `{"session_list":"delta"}` a
+  client receives one `session_state` frame per changed session and
+  `session_removed` when one leaves the list, instead of the full
+  `sessions` list on every change. `"session_view":"summary"` makes
+  those frames compact. `{"output":"subscribed"}` limits terminal
+  output (`output`, `raw_output`, `pane_capture`, `chat_message`) to
+  sessions the client has subscribed to. The new `unsubscribe` message
+  stops a session's output and its screen capture. The daemon answers
+  with `hello_ack`.
+- **`GET /api/info` capabilities.** A `capabilities` array lets clients
+  detect each feature before using it: `sessions.view_summary`,
+  `api.gzip`, `alerts.paging`, `alerts.count`, `ws.alerts_read`,
+  `ws.hello`, `ws.session_list_delta`, `ws.session_view_summary`,
+  `ws.output_scoped`, `ws.unsubscribe`.
+- **New settings under `server:`**, all applied without a restart and
+  available in the config file, the web app's Settings,
+  `PUT /api/config`, `datawatch config set`, MCP `config_set` and the
+  chat `configure` command:
+  - `session_summary_terminal_limit` (default `50`, `0` = no cap)
+  - `session_summary_text_chars` (default `200`, minimum `20`)
+  - `api_gzip` (default `true`)
+  - `api_gzip_min_bytes` (default `1024`)
+  - `ws_session_list_default` (`full` or `delta`, default `full`)
+  - `ws_output_scope_default` (`all` or `subscribed`, default `all`)
+- **MCP and CLI.** `list_sessions` accepts `view`, `states` and `since`;
+  `get_alerts` accepts `unread_only` and `before`;
+  `datawatch session list --summary` and
+  `datawatch alerts --limit/--unread/--count` use the new endpoints.
+- **Docs.** A step-by-step low-bandwidth client flow, with fallbacks
+  for older daemons, is in `docs/api/mobile-surface.md`
+  ("Low-bandwidth client flow").
+
+### Reuse audit
+- The API gzip middleware reuses `gzipFileServer`'s `gzipPool` writer
+  pool instead of adding a second compressor.
+- Delta session updates reuse the existing `session_state` message
+  rather than a new frame type; only `session_removed` is new.
+- Output scoping reuses the per-client `subscribed` session map that
+  `subscribe` already maintained; `unsubscribe` clears the same map.
+- `alerts_read` sits next to the existing `alert` WebSocket event and is
+  broadcast from the same mark-read paths.
+
+### Unchanged
+- Defaults keep old behaviour: `ws_session_list_default: full` and
+  `ws_output_scope_default: all`. Keep them that way while the web app
+  is in use.
+
 ## v9.0.81 — feat(server): low-bandwidth list options in MCP and the CLI, plus client-flow docs
 
 ### Added

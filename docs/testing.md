@@ -935,3 +935,72 @@ incident.
 | `node --check internal/server/web/app.js` | PASS |
 | `make build` | PASS (`bin/datawatch` → `datawatch v9.0.66`) |
 | `make lint` | PASS (`0 issues.`) |
+
+## v9.0.82 — Server payload optimization for mobile clients (2026-10-14)
+
+Live checks ran against the local production daemon right after it was
+upgraded to v9.0.82 (`systemctl --user restart datawatch`), using
+**read-only** requests only (GETs and a WebSocket that sends nothing but
+`hello`). That daemon is the busy one the mobile profiling was done on:
+526 sessions, 500 alerts. The release smoke ran separately on its own
+sandbox daemon (see Gates). `B=https://localhost:8443`.
+
+### T1 — `GET /api/info` lists capabilities
+
+| Field | Details |
+|-------|---------|
+| **Steps** | `curl -sk $B/api/info` |
+| **Actual** | `version: 9.0.82`, `capabilities: ["sessions.view_summary","alerts.paging","alerts.count","ws.alerts_read","ws.hello","ws.session_list_delta","ws.session_view_summary","ws.output_scoped","ws.unsubscribe","api.gzip"]` |
+| **Result** | PASS |
+
+### T2 — `view=summary` size vs the full list
+
+| Field | Details |
+|-------|---------|
+| **Steps** | `curl -sk -o /dev/null -w '%{size_download}' $B/api/sessions` and the same with `?view=summary` (`-D -` for headers) |
+| **Actual** | Full: **3,586,404 bytes**, 526 sessions. Summary: **101,879 bytes**, 54 sessions (53 with `truncated_fields`), header `X-Datawatch-Sessions-Omitted: 472` (ended sessions beyond the default cap of 50). 35× smaller. |
+| **Result** | PASS |
+
+### T3 — gzip on `/api/*` JSON
+
+| Field | Details |
+|-------|---------|
+| **Steps** | `curl -sk -H 'Accept-Encoding: gzip' -D - -o /dev/null -w '%{size_download}' $B/api/sessions`; same for `?view=summary`; same for `/api/alerts/count` (33 bytes, under `api_gzip_min_bytes`) |
+| **Actual** | Full list: `Content-Encoding: gzip`, `Vary: Accept-Encoding`, **1,022,374 bytes** on the wire (from 3.59 MB). Summary list: `Content-Encoding: gzip`, **15,408 bytes**. Summary + gzip together: 3.59 MB → 15 KB (233×). `/api/alerts/count`: no `Content-Encoding`, 33 bytes. |
+| **Result** | PASS |
+
+### T4 — Alerts count and paging
+
+| Field | Details |
+|-------|---------|
+| **Steps** | `curl -sk $B/api/alerts/count`; `curl -sk $B/api/alerts` (size); `curl -sk "$B/api/alerts?limit=5&unread=1"`; `curl -sk "$B/api/alerts?limit=0"`; `curl -sk -w '%{http_code}' "$B/api/alerts?limit=5&before=nope"` |
+| **Actual** | Count: `{"total":500,"unread_count":500}` (33 bytes). Full list: 186,607 bytes. `limit=5&unread=1`: 5 alerts, `unread_count: 500`, `total: 500`, `has_more: true`, `next_before: "47876626"`, 1,819 bytes. `limit=0`: `{"alerts":[],"unread_count":500,"total":500,"has_more":true}`. Unknown `before`: **400**. |
+| **Result** | PASS |
+
+### T5 — WebSocket `hello` with delta session list and scoped output
+
+| Field | Details |
+|-------|---------|
+| **Steps** | Two Node 24 WebSocket clients on `wss://localhost:8443/ws` for 30 s each, side by side. Client A sends `{"type":"hello","data":{"session_list":"delta","session_view":"summary","output":"subscribed"}}` on open; client B sends nothing. Each counts frames and bytes by `type`. A third 4 s run logs frame order for a hello client. |
+| **Actual** | A got `hello_ack` `{"session_list":"delta","session_view":"summary","output":"subscribed","capabilities":["ws.hello","ws.session_list_delta","ws.session_view_summary","ws.output_scoped","ws.unsubscribe"]}`. Over 30 s, A: 19 `session_state` (34,833 bytes), **0 `output`**, 1 `pane_capture`, 1 `sessions` (the on-connect frame, see below). B: **2 `sessions` frames (7,103,447 bytes)**, 511 `output` (71,269 bytes), 310 `pane_capture` (1,243,100 bytes). Both got the same `stats`, `alert`, `needs_input` and `channel_ready` frames. |
+| **Result** | PASS for the delta stream and scoped output. |
+
+**Known limitation, not changed in this release.** The daemon sends the
+full `sessions` list as soon as a WebSocket connects, before it reads
+`hello`. The frame-order run showed `sessions` (3,551,724 bytes)
+arriving first and `hello_ack` second. The client flow doc already says
+frames before `hello_ack` can be ignored, but a hello client still
+downloads that frame once per connect. The one `pane_capture` client A
+received was also sent before `hello` was processed. Setting
+`server.ws_session_list_default: delta` removes the on-connect frame for
+every client, but the web app still expects it, so that is not the
+default. Recorded as a follow-up in the backlog.
+
+### Gates
+
+| `go test ./...` | PASS (4162 passed in 83 packages) |
+| `make lint` | PASS (`0 issues.`) after fixing 4 errcheck findings in the gzip middleware and its test file |
+| `node --check internal/server/web/app.js` | PASS |
+| `make build` | PASS (`bin/datawatch` → `datawatch v9.0.82`) |
+| `make install` + `systemctl --user restart datawatch` | PASS (`datawatch version` → `datawatch v9.0.82`; `/api/info` → `9.0.82`) |
+| `bash scripts/release-smoke.sh` (own isolated sandbox daemon, `TMUX` unset) | PASS — `== Summary ==` Pass: 217, Fail: 0, Skip: 35 (109 numbered sections; section 73 covers capabilities, the summary list, alert counts and API gzip) |
