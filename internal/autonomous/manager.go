@@ -394,6 +394,13 @@ type Manager struct {
 	guardrail   GuardrailFn
 	onPRDUpdate PRDUpdateFn
 
+	// BL427 — in-process lifecycle event dispatcher (lifecycle_event.go).
+	// Has its own lock; never guarded by mu. lifecycleHost is
+	// os.Hostname, cached once.
+	lifecycle     *lifecycleDispatcher
+	lifecycleHost string
+	lifecycleOnce sync.Once
+
 	// BL221 (v6.2.0) Phase 3 — scan framework
 	graderFn     scan.GraderFn
 	ruleEditorFn scan.RuleEditorFn
@@ -902,6 +909,7 @@ func NewManager(dataDir string, cfg Config, decompose DecomposeFn) (*Manager, er
 		types:     types,
 	}
 	m.initGuardrailLibrary() // BL303 S2
+	m.lifecycleBus()         // BL427 — create dispatcher + cache hostname
 	return m, nil
 }
 

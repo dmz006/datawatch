@@ -1,0 +1,317 @@
+// BL427 — Automaton lifecycle events (Phase 1: event type + in-process
+// dispatcher). Design: docs/plans/2026-10-13-prd-lifecycle-events.md.
+//
+// Events are emitted at the status-assignment write sites (via
+// Manager.emit), not tailed from the Decision log or Store.Save*, so
+// they carry old/new status and any coinciding Decision. Subscribers
+// are in-process callbacks; nothing here is persisted.
+
+package autonomous
+
+import (
+	"crypto/rand"
+	"encoding/hex"
+	"fmt"
+	"log"
+	"os"
+	"sync"
+	"sync/atomic"
+	"time"
+)
+
+// LifecycleLevel distinguishes Automaton-level from task-level events.
+type LifecycleLevel string
+
+const (
+	LevelPRD  LifecycleLevel = "prd"
+	LevelTask LifecycleLevel = "task"
+)
+
+// Event kinds. Status-change kinds are "<level>.<new_status>" and are
+// built with PRDStatusKind / TaskStatusKind; the constants below are
+// the non-status kinds.
+const (
+	// KindTaskSessionStarted fires when Task.SessionID is first set
+	// (worker session spawned).
+	KindTaskSessionStarted = "task.session_started"
+	// KindTaskSessionCleared fires when Task.SessionID is cleared
+	// (before a respawn or on reset).
+	KindTaskSessionCleared = "task.session_cleared"
+	// KindPRDUpdated is the generic "this PRD was persisted" notification
+	// (the WS refresh broadcast subscribes to it).
+	KindPRDUpdated = "prd.updated"
+)
+
+// PRDStatusKind returns the event kind for a PRD entering status s,
+// e.g. "prd.completed".
+func PRDStatusKind(s PRDStatus) string { return string(LevelPRD) + "." + string(s) }
+
+// TaskStatusKind returns the event kind for a task entering status s,
+// e.g. "task.verifying".
+func TaskStatusKind(s TaskStatus) string { return string(LevelTask) + "." + string(s) }
+
+// TerminalPRDKinds returns the PRD kinds that end a Run — the set an
+// Automation coordinator subscribes to as "terminal".
+func TerminalPRDKinds() []string {
+	return []string{
+		PRDStatusKind(PRDCompleted),
+		PRDStatusKind(PRDFailed),
+		PRDStatusKind(PRDBlocked),
+		PRDStatusKind(PRDCancelled),
+		PRDStatusKind(PRDRejected),
+	}
+}
+
+// LifecycleEvent is one Automaton or task lifecycle transition.
+type LifecycleEvent struct {
+	ID          string            `json:"id"`
+	At          time.Time         `json:"at"`
+	Kind        string            `json:"kind"`
+	Level       LifecycleLevel    `json:"level"`
+	PRDID       string            `json:"prd_id"`
+	ParentPRDID string            `json:"parent_prd_id,omitempty"`
+	StoryID     string            `json:"story_id,omitempty"`
+	TaskID      string            `json:"task_id,omitempty"`
+	OldStatus   string            `json:"old_status,omitempty"`
+	NewStatus   string            `json:"new_status,omitempty"`
+	SessionID   string            `json:"session_id,omitempty"`
+	Decision    *Decision         `json:"decision,omitempty"`
+	Verdict     *GuardrailVerdict `json:"verdict,omitempty"`
+	Host        string            `json:"host,omitempty"`
+}
+
+// LifecycleFilter selects events for a subscriber. An empty field is a
+// wildcard. Shape matches the design doc's future persisted
+// Subscription.Filter{Kinds, Level, PRDID, TaskID}.
+type LifecycleFilter struct {
+	Kinds  []string       `json:"kinds,omitempty"`
+	Level  LifecycleLevel `json:"level,omitempty"`
+	PRDID  string         `json:"prd_id,omitempty"`
+	TaskID string         `json:"task_id,omitempty"`
+}
+
+// Matches reports whether ev passes the filter.
+func (f LifecycleFilter) Matches(ev LifecycleEvent) bool {
+	if f.Level != "" && f.Level != ev.Level {
+		return false
+	}
+	if f.PRDID != "" && f.PRDID != ev.PRDID {
+		return false
+	}
+	if f.TaskID != "" && f.TaskID != ev.TaskID {
+		return false
+	}
+	if len(f.Kinds) > 0 {
+		for _, k := range f.Kinds {
+			if k == ev.Kind {
+				return true
+			}
+		}
+		return false
+	}
+	return true
+}
+
+const (
+	// lifecycleQueueSize is each subscriber's buffered queue depth.
+	lifecycleQueueSize = 256
+	// lifecycleDropWarnEvery rate-limits the per-subscriber drop warning.
+	lifecycleDropWarnEvery = 10 * time.Second
+)
+
+// lifecycleSub is one subscriber: its own queue and delivery goroutine.
+type lifecycleSub struct {
+	id       uint64
+	filter   LifecycleFilter
+	fn       func(LifecycleEvent)
+	ch       chan LifecycleEvent
+	stop     chan struct{}
+	closed   atomic.Bool
+	once     sync.Once
+	dropped  atomic.Uint64
+	lastWarn atomic.Int64 // unix nanos of last drop warning
+}
+
+// lifecycleDispatcher fans events out to subscribers. It has its own
+// mutex and never touches Manager.mu, so emit is safe while the caller
+// holds m.mu. publish never blocks.
+type lifecycleDispatcher struct {
+	mu     sync.RWMutex
+	subs   map[uint64]*lifecycleSub
+	nextID uint64
+	closed bool
+	wg     sync.WaitGroup
+}
+
+func newLifecycleDispatcher() *lifecycleDispatcher {
+	return &lifecycleDispatcher{subs: make(map[uint64]*lifecycleSub)}
+}
+
+// Subscribe registers fn for events matching filter. fn is called
+// serially, in publish order, on the subscriber's own goroutine. The
+// returned cancel is idempotent; after it returns no new event is
+// delivered (one already being handled may finish). cancel may be
+// called from inside fn.
+func (d *lifecycleDispatcher) Subscribe(filter LifecycleFilter, fn func(LifecycleEvent)) (cancel func()) {
+	if fn == nil {
+		return func() {}
+	}
+	s := &lifecycleSub{
+		filter: filter,
+		fn:     fn,
+		ch:     make(chan LifecycleEvent, lifecycleQueueSize),
+		stop:   make(chan struct{}),
+	}
+	d.mu.Lock()
+	if d.closed {
+		d.mu.Unlock()
+		return func() {}
+	}
+	d.nextID++
+	s.id = d.nextID
+	d.subs[s.id] = s
+	d.wg.Add(1)
+	d.mu.Unlock()
+
+	go d.run(s)
+	return func() { d.unsubscribe(s) }
+}
+
+func (d *lifecycleDispatcher) unsubscribe(s *lifecycleSub) {
+	s.once.Do(func() {
+		s.closed.Store(true)
+		d.mu.Lock()
+		delete(d.subs, s.id)
+		d.mu.Unlock()
+		close(s.stop)
+	})
+}
+
+func (d *lifecycleDispatcher) run(s *lifecycleSub) {
+	defer d.wg.Done()
+	for {
+		select {
+		case <-s.stop:
+			return
+		case ev := <-s.ch:
+			if s.closed.Load() {
+				return
+			}
+			s.deliver(ev)
+		}
+	}
+}
+
+func (s *lifecycleSub) deliver(ev LifecycleEvent) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("[autonomous] lifecycle subscriber %d panicked on %s (prd=%s): %v", s.id, ev.Kind, ev.PRDID, r)
+		}
+	}()
+	s.fn(ev)
+}
+
+// publish hands ev to every matching subscriber without blocking. A
+// subscriber whose queue is full loses this event (only that
+// subscriber); its dropped counter is bumped and a rate-limited
+// warning is logged.
+func (d *lifecycleDispatcher) publish(ev LifecycleEvent) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	for _, s := range d.subs {
+		if !s.filter.Matches(ev) {
+			continue
+		}
+		select {
+		case s.ch <- ev:
+		default:
+			n := s.dropped.Add(1)
+			now := time.Now().UnixNano()
+			last := s.lastWarn.Load()
+			if now-last >= int64(lifecycleDropWarnEvery) && s.lastWarn.CompareAndSwap(last, now) {
+				log.Printf("[autonomous] lifecycle subscriber %d queue full: dropped %s (prd=%s), %d dropped total", s.id, ev.Kind, ev.PRDID, n)
+			}
+		}
+	}
+}
+
+// Close cancels every subscriber and waits for their goroutines to
+// exit. Subscribe after Close is a no-op. Must not be called from
+// inside a subscriber callback.
+func (d *lifecycleDispatcher) Close() {
+	d.mu.Lock()
+	d.closed = true
+	subs := make([]*lifecycleSub, 0, len(d.subs))
+	for _, s := range d.subs {
+		subs = append(subs, s)
+	}
+	d.mu.Unlock()
+	for _, s := range subs {
+		d.unsubscribe(s)
+	}
+	d.wg.Wait()
+}
+
+// droppedTotal returns the total events dropped across live subscribers.
+func (d *lifecycleDispatcher) droppedTotal() uint64 {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+	var n uint64
+	for _, s := range d.subs {
+		n += s.dropped.Load()
+	}
+	return n
+}
+
+// lifecycleBus returns the Manager's dispatcher, creating it lazily so
+// a zero-value Manager (tests) works without NewManager.
+func (m *Manager) lifecycleBus() *lifecycleDispatcher {
+	m.lifecycleOnce.Do(func() {
+		if m.lifecycle == nil {
+			m.lifecycle = newLifecycleDispatcher()
+		}
+		if m.lifecycleHost == "" {
+			m.lifecycleHost, _ = os.Hostname()
+		}
+	})
+	return m.lifecycle
+}
+
+// Subscribe registers an in-process lifecycle event subscriber. See
+// lifecycleDispatcher.Subscribe for delivery guarantees.
+func (m *Manager) Subscribe(f LifecycleFilter, fn func(LifecycleEvent)) (cancel func()) {
+	if m == nil {
+		return func() {}
+	}
+	return m.lifecycleBus().Subscribe(f, fn)
+}
+
+var lifecycleSeq atomic.Uint64
+
+// emit stamps ev (ID, At, Host) and publishes it. It never takes m.mu
+// and never blocks, so it is safe at any write site, including while
+// the caller holds m.mu.
+func (m *Manager) emit(ev LifecycleEvent) {
+	if m == nil {
+		return
+	}
+	d := m.lifecycleBus()
+	if ev.ID == "" {
+		ev.ID = newLifecycleEventID()
+	}
+	if ev.At.IsZero() {
+		ev.At = time.Now()
+	}
+	if ev.Host == "" {
+		ev.Host = m.lifecycleHost
+	}
+	d.publish(ev)
+}
+
+func newLifecycleEventID() string {
+	var b [8]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return fmt.Sprintf("%x-%d", time.Now().UnixNano(), lifecycleSeq.Add(1))
+	}
+	return hex.EncodeToString(b[:])
+}
