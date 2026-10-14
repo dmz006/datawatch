@@ -152,7 +152,9 @@ func newDocsTrustCmd() *cobra.Command {
 		Use:   "remove <source>",
 		Short: "Untrust a source",
 		Args:  cobra.ExactArgs(1),
-		RunE:  func(_ *cobra.Command, args []string) error { return daemonJSON("DELETE", "/api/docs/trust/"+args[0], nil) },
+		RunE: func(_ *cobra.Command, args []string) error {
+			return daemonJSON("DELETE", "/api/docs/trust/"+args[0], nil)
+		},
 	})
 	cmd.AddCommand(&cobra.Command{
 		Use:   "pending",

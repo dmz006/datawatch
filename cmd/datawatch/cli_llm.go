@@ -93,8 +93,8 @@ func newLLMEnableCmd(enable bool) *cobra.Command {
 func newLLMAddCmd(update bool) *cobra.Command {
 	var (
 		kind, model, computeNodesCSV, apiKeyRef, tagsCSV string
-		timeoutSeconds, consoleCols, consoleRows          int
-		costInput, costOutput                             float64
+		timeoutSeconds, consoleCols, consoleRows         int
+		costInput, costOutput                            float64
 		binary, outputMode, inputMode                    string
 		autoGitInit, autoGitCommit                       bool
 		skipPerms, channelEnabled, autoAccept            bool

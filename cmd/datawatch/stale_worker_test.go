@@ -35,9 +35,9 @@ func TestStaleWorkerCheck_OldFileIsStale(t *testing.T) {
 
 func TestStaleWorkerCheck_ThresholdZeroDisabled(t *testing.T) {
 	f := filepath.Join(t.TempDir(), "output.log")
-	os.WriteFile(f, []byte("x"), 0o644)                        //nolint:errcheck
+	os.WriteFile(f, []byte("x"), 0o644) //nolint:errcheck
 	old := time.Now().Add(-2 * time.Hour)
-	os.Chtimes(f, old, old)                                    //nolint:errcheck
+	os.Chtimes(f, old, old) //nolint:errcheck
 	if stale, _, _ := staleWorkerCheck(f, 0, time.Now()); stale {
 		t.Fatal("threshold<=0 must disable the check")
 	}

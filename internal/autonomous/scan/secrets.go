@@ -76,10 +76,10 @@ var secretExts = map[string]bool{
 }
 
 var secretSkipFiles = map[string]bool{
-	"go.sum":           true,
+	"go.sum":            true,
 	"package-lock.json": true,
-	"yarn.lock":        true,
-	"pnpm-lock.yaml":   true,
+	"yarn.lock":         true,
+	"pnpm-lock.yaml":    true,
 }
 
 func (SecretsScanner) Scan(dir string) ([]Finding, error) {

@@ -146,13 +146,17 @@ func newComputeNodeCmd() *cobra.Command {
 		Use:   "health <name>",
 		Short: "Static + maintenance state for a ComputeNode",
 		Args:  cobra.ExactArgs(1),
-		RunE:  func(_ *cobra.Command, args []string) error { return daemonGet("/api/compute/nodes/" + args[0] + "/health") },
+		RunE: func(_ *cobra.Command, args []string) error {
+			return daemonGet("/api/compute/nodes/" + args[0] + "/health")
+		},
 	})
 	cmd.AddCommand(&cobra.Command{
 		Use:   "detail <name>",
 		Short: "On-demand pull from the Node's monitoring sidecar (--listen)",
 		Args:  cobra.ExactArgs(1),
-		RunE:  func(_ *cobra.Command, args []string) error { return daemonGet("/api/compute/nodes/" + args[0] + "/detail") },
+		RunE: func(_ *cobra.Command, args []string) error {
+			return daemonGet("/api/compute/nodes/" + args[0] + "/detail")
+		},
 	})
 	cmd.AddCommand(newComputeNodeAddCmd(false))
 	cmd.AddCommand(newComputeNodeAddCmd(true))
@@ -231,7 +235,9 @@ func newMarketplaceCmd() *cobra.Command {
 		Use:   "task <task_id>",
 		Short: "Poll a model-pull task by ID",
 		Args:  cobra.ExactArgs(1),
-		RunE:  func(_ *cobra.Command, args []string) error { return daemonGet("/api/marketplace/ollama/tasks/" + args[0]) },
+		RunE: func(_ *cobra.Command, args []string) error {
+			return daemonGet("/api/marketplace/ollama/tasks/" + args[0])
+		},
 	})
 	return cmd
 }

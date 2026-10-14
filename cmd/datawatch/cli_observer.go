@@ -112,9 +112,9 @@ Subcommands:
 			},
 		},
 		&cobra.Command{
-			Use: "register <name> [shape] [version]",
+			Use:   "register <name> [shape] [version]",
 			Short: "Mint a bearer token for a new federated peer",
-			Args: cobra.RangeArgs(1, 3),
+			Args:  cobra.RangeArgs(1, 3),
 			RunE: func(_ *cobra.Command, args []string) error {
 				body := map[string]any{"name": args[0]}
 				if len(args) >= 2 {

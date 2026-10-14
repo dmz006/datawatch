@@ -275,13 +275,15 @@ func pluralize(kind string) string {
 // profileCLIGet + Post + Put + Delete talk to the daemon at the address
 // from config.Server.Host:Port (falling back to 127.0.0.1:8080). Body
 // may be nil for methods that don't send one.
-func profileCLIGet(path string) ([]byte, error)    { return profileCLIDo("GET", path, nil) }
+func profileCLIGet(path string) ([]byte, error) { return profileCLIDo("GET", path, nil) }
 func profileCLIPost(path string, body []byte) ([]byte, error) {
 	return profileCLIDo("POST", path, body)
 }
-func profileCLIPut(path string, body []byte) ([]byte, error)   { return profileCLIDo("PUT", path, body) }
-func profileCLIPatch(path string, body []byte) ([]byte, error) { return profileCLIDo("PATCH", path, body) }
-func profileCLIDelete(path string) ([]byte, error)             { return profileCLIDo("DELETE", path, nil) }
+func profileCLIPut(path string, body []byte) ([]byte, error) { return profileCLIDo("PUT", path, body) }
+func profileCLIPatch(path string, body []byte) ([]byte, error) {
+	return profileCLIDo("PATCH", path, body)
+}
+func profileCLIDelete(path string) ([]byte, error) { return profileCLIDo("DELETE", path, nil) }
 
 func profileCLIDo(method, path string, body []byte) ([]byte, error) {
 	addr, token := daemonAddressForCLI()

@@ -66,8 +66,13 @@ func TestCapacity_WaitingTaskShowsStatusAndNeverFails(t *testing.T) {
 	m, api, led := capFixture(t, 1)
 	_ = led.Acquire(context.Background(), capacity.Request{Holder: "other-prd-task", PRDID: "other", Pools: []string{"node:n1"}}, time.Second, nil, nil)
 	spawned := int32(0)
-	spawn := func(_ context.Context, r SpawnRequest) (SpawnResult, error) { atomic.AddInt32(&spawned, 1); return SpawnResult{SessionID: "s"}, nil }
-	verify := func(context.Context, *PRD, *Task) (VerificationResult, error) { return VerificationResult{OK: true}, nil }
+	spawn := func(_ context.Context, r SpawnRequest) (SpawnResult, error) {
+		atomic.AddInt32(&spawned, 1)
+		return SpawnResult{SessionID: "s"}, nil
+	}
+	verify := func(context.Context, *PRD, *Task) (VerificationResult, error) {
+		return VerificationResult{OK: true}, nil
+	}
 	// SetExecutors kicks an async boot-resume scan; let it finish before the PRD exists.
 	api.SetExecutors(spawn, verify)
 	time.Sleep(100 * time.Millisecond)
@@ -188,8 +193,12 @@ func TestIsWorkspaceLockError(t *testing.T) {
 func TestCapacity_LeaseReleasedAfterTask(t *testing.T) {
 	m, api, led := capFixture(t, 1)
 	prd := newPRDWithTasks(t, m, 2)
-	spawn := func(_ context.Context, r SpawnRequest) (SpawnResult, error) { return SpawnResult{SessionID: "s-" + r.TaskID}, nil }
-	verify := func(context.Context, *PRD, *Task) (VerificationResult, error) { return VerificationResult{OK: true}, nil }
+	spawn := func(_ context.Context, r SpawnRequest) (SpawnResult, error) {
+		return SpawnResult{SessionID: "s-" + r.TaskID}, nil
+	}
+	verify := func(context.Context, *PRD, *Task) (VerificationResult, error) {
+		return VerificationResult{OK: true}, nil
+	}
 	runToTerminal(t, m, api, prd.ID, spawn, verify)
 	if len(led.Snapshot().Leases) != 0 {
 		t.Fatalf("leases leaked: %+v", led.Snapshot().Leases)
@@ -205,7 +214,9 @@ func TestCapacity_DisabledSkipsAdmission(t *testing.T) {
 	_ = led.Acquire(context.Background(), capacity.Request{Holder: "x", Pools: []string{"node:n1"}}, time.Second, nil, nil)
 	prd := newPRDWithTasks(t, m, 1)
 	spawn := func(_ context.Context, r SpawnRequest) (SpawnResult, error) { return SpawnResult{SessionID: "s"}, nil }
-	verify := func(context.Context, *PRD, *Task) (VerificationResult, error) { return VerificationResult{OK: true}, nil }
+	verify := func(context.Context, *PRD, *Task) (VerificationResult, error) {
+		return VerificationResult{OK: true}, nil
+	}
 	if got := runToTerminal(t, m, api, prd.ID, spawn, verify); got.Status != PRDCompleted {
 		t.Fatalf("admission disabled must not block: %s", got.Status)
 	}
@@ -215,7 +226,9 @@ func TestCapacity_CancelWhileWaitingRemovesFromQueueAndKeepsCancelled(t *testing
 	m, api, led := capFixture(t, 1)
 	_ = led.Acquire(context.Background(), capacity.Request{Holder: "holder", PRDID: "other", Pools: []string{"node:n1"}}, time.Second, nil, nil)
 	spawn := func(context.Context, SpawnRequest) (SpawnResult, error) { return SpawnResult{SessionID: "s"}, nil }
-	verify := func(context.Context, *PRD, *Task) (VerificationResult, error) { return VerificationResult{OK: true}, nil }
+	verify := func(context.Context, *PRD, *Task) (VerificationResult, error) {
+		return VerificationResult{OK: true}, nil
+	}
 	api.SetExecutors(spawn, verify)
 	time.Sleep(100 * time.Millisecond)
 	prd := newPRDWithTasks(t, m, 1)

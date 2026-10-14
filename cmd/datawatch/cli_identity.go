@@ -81,8 +81,8 @@ func runIdentityConfigure() error {
 	}
 
 	type field struct {
-		key   string
-		label string
+		key    string
+		label  string
 		isList bool
 	}
 	fields := []field{

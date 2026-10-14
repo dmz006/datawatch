@@ -73,17 +73,17 @@ func newAlertRulesGetCmd() *cobra.Command {
 
 func newAlertRulesAddCmd() *cobra.Command {
 	var (
-		metric          string
-		operator        string
-		threshold       float64
-		sourceFilter    string
-		window          int
-		actionKind      string
-		scaleTarget     string
-		scaleAmount     int
-		cooldown        int
-		description     string
-		enabled         bool
+		metric       string
+		operator     string
+		threshold    float64
+		sourceFilter string
+		window       int
+		actionKind   string
+		scaleTarget  string
+		scaleAmount  int
+		cooldown     int
+		description  string
+		enabled      bool
 	)
 	cmd := &cobra.Command{
 		Use:   "add <name>",

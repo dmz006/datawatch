@@ -166,7 +166,10 @@ func TestScope_ExecutorBlocksOutOfScopeTaskWithoutSpawning(t *testing.T) {
 	prd, _ := m.CreatePRD("s", "/w/proj", "opencode", "", EffortNormal)
 	_ = m.Store().SetStories(prd.ID, []Story{{Title: "S", Tasks: []Task{{Title: "T", Spec: "work in /home/dmz/workspace/datawatch"}}}})
 	spawned := 0
-	spawn := func(context.Context, SpawnRequest) (SpawnResult, error) { spawned++; return SpawnResult{SessionID: "x"}, nil }
+	spawn := func(context.Context, SpawnRequest) (SpawnResult, error) {
+		spawned++
+		return SpawnResult{SessionID: "x"}, nil
+	}
 	got := runToTerminal(t, m, api, prd.ID, spawn, verify)
 	if spawned != 0 {
 		t.Fatalf("out-of-scope task spawned %d sessions", spawned)
@@ -202,7 +205,10 @@ func TestScope_ExecutorPrependsScopeBlockToSpec(t *testing.T) {
 	prd, _ := m.CreatePRD("s", "/w/proj", "opencode", "", EffortNormal)
 	_ = m.Store().SetStories(prd.ID, []Story{{Title: "S", Tasks: []Task{{Title: "T", Spec: "write docs/x.md"}}}})
 	var spec string
-	spawn := func(_ context.Context, r SpawnRequest) (SpawnResult, error) { spec = r.Spec; return SpawnResult{SessionID: "x"}, nil }
+	spawn := func(_ context.Context, r SpawnRequest) (SpawnResult, error) {
+		spec = r.Spec
+		return SpawnResult{SessionID: "x"}, nil
+	}
 	got := runToTerminal(t, m, api, prd.ID, spawn, verify)
 	if got.Status != PRDCompleted || got.Story[0].Status != StoryCompleted {
 		t.Fatalf("want completed, got %s / %s", got.Status, got.Story[0].Status)

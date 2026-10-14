@@ -37,6 +37,7 @@ func newSecretsImportCmd() *cobra.Command {
 // newSecretsImportKubectlCmd imports kubectl context into secrets.
 //
 // Usage:
+//
 //	datawatch secrets import kubectl --context=testing
 //	datawatch secrets import kubectl --context=prod --name=k8s-prod-context
 func newSecretsImportKubectlCmd() *cobra.Command {
@@ -82,6 +83,7 @@ func newSecretsImportKubectlCmd() *cobra.Command {
 // newSecretsImportClaudeCmd imports Claude API key from environment.
 //
 // Usage:
+//
 //	export ANTHROPIC_API_KEY=sk-ant-...
 //	datawatch secrets import claude --from-env ANTHROPIC_API_KEY
 //	datawatch secrets import claude --from-env ANTHROPIC_API_KEY --name claude-prod-key
@@ -126,6 +128,7 @@ func newSecretsImportClaudeCmd() *cobra.Command {
 // newSecretsImportGithubCmd imports GitHub PAT from environment.
 //
 // Usage:
+//
 //	export GITHUB_TOKEN=ghp_...
 //	datawatch secrets import github --from-env GITHUB_TOKEN
 //	datawatch secrets import github --from-env GITHUB_TOKEN --name gh-org-token
@@ -170,6 +173,7 @@ func newSecretsImportGithubCmd() *cobra.Command {
 // newSecretsImportSSHCmd imports SSH public key from file.
 //
 // Usage:
+//
 //	datawatch secrets import ssh --key-path ~/.ssh/id_rsa.pub
 //	datawatch secrets import ssh --key-path ~/.ssh/id_ed25519.pub --name ssh-prod-pubkey
 func newSecretsImportSSHCmd() *cobra.Command {
@@ -227,6 +231,7 @@ func newSecretsImportSSHCmd() *cobra.Command {
 // OpenAI-compat LLM configured with api_key_ref: ${secret:openai-api-key}.
 //
 // Usage:
+//
 //	export OPENAI_API_KEY=sk-...
 //	datawatch secrets import openai --from-env OPENAI_API_KEY
 //	datawatch secrets import openai --from-env GROQ_API_KEY --name groq-api-key
@@ -279,6 +284,7 @@ by using --from-env with their respective env var and --name for a distinct key.
 // extending spawn env injection to include this secret.
 //
 // Usage:
+//
 //	export GEMINI_API_KEY=AIza...
 //	datawatch secrets import gemini --from-env GEMINI_API_KEY
 func newSecretsImportGeminiCmd() *cobra.Command {

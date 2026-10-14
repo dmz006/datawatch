@@ -126,17 +126,17 @@ func TestNeedsSessionJudgment(t *testing.T) {
 func TestIsInferenceSessionKind(t *testing.T) {
 	registerAllLLMBackendsForTest()
 	cases := map[string]bool{
-		"claude-code":     true,
-		"opencode-acp":    true,
-		"opencode-prompt": true,
-		"goose":           true,
-		"aider":           true,
-		"gemini":          true,
-		"shell":           true,
-		"opencode":        true, // the real opencode CLI tmux backend — a tool-using agent
-		"ollama":          false,
-		"openwebui":       false,
-		"claude":          false, // cloud API kind, ask-compatible via its own adapter
+		"claude-code":                  true,
+		"opencode-acp":                 true,
+		"opencode-prompt":              true,
+		"goose":                        true,
+		"aider":                        true,
+		"gemini":                       true,
+		"shell":                        true,
+		"opencode":                     true, // the real opencode CLI tmux backend — a tool-using agent
+		"ollama":                       false,
+		"openwebui":                    false,
+		"claude":                       false, // cloud API kind, ask-compatible via its own adapter
 		"unregistered-mystery-backend": false,
 	}
 	for kind, want := range cases {

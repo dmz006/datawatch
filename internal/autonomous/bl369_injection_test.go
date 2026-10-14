@@ -64,8 +64,8 @@ func TestBL369_ScanForInjection_CleanInputReturnsEmpty(t *testing.T) {
 func TestBL369_CheckInjectionGuard_WarnMode(t *testing.T) {
 	dir := t.TempDir()
 	mgr, _ := NewManager(dir, Config{
-		Enabled:        true,
-		InjectionGuard: true,
+		Enabled:          true,
+		InjectionGuard:   true,
 		BlockOnInjection: false,
 	}, nil)
 
