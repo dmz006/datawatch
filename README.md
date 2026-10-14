@@ -57,7 +57,7 @@ Browse the catalog in-app (Settings → Skills → Registry) or on GitHub. To co
 
 ## Current release
 
-**Current release: v9.0.63 (2026-10-13).** v9.0.9–v9.0.63 are a patch
+**Current release: v9.0.65 (2026-10-13).** v9.0.9–v9.0.65 are a patch
 chain on top of the v9.0.0 major release: a plugin extension framework
 (manifest-declared widgets, now rendering live on the dashboard and in
 session detail — plugins can push or pull their own stat tiles,
@@ -73,7 +73,10 @@ Automaton that pushed a commit waits for that commit's GitHub Actions
 runs before it counts as done, and a failing run either blocks it for
 an operator decision, gets a corrective task, or is re-run when CI
 itself broke — see
-[ci-watch-guardrail.md](docs/howto/ci-watch-guardrail.md). None of
+[ci-watch-guardrail.md](docs/howto/ci-watch-guardrail.md). v9.0.64
+clarifies the ci-watch MCP tool descriptions, and v9.0.65 fixes the
+agent container image's security scan by rebuilding its bundled GitHub
+CLI with a patched Go and `golang.org/x/net`. None of
 these change v9.0.0's actual feature set, described below.
 
 **v9.0.0 — Memory Lifecycle Complete.** The

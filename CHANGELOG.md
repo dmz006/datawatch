@@ -5,6 +5,41 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.65 — fix(containers): agent-base Trivy scan — the bundled GitHub CLI, not datawatch, carried the vulnerable Go stdlib and x/net
+
+### Fixed
+- **The blocking `containers / agent-base` Trivy scan passes again.**
+  It had failed in every Release run since v9.0.62 (runs 38484929685
+  and 38495887540) on four HIGH Go findings: Go stdlib v1.27.1
+  (CVE-2026-78667, CVE-2026-78669, CVE-2026-97031) and
+  `golang.org/x/net` v0.58.0 (CVE-2026-78669). All four were in the
+  `usr/bin/gh` target, the GitHub CLI installed from the cli.github.com
+  apt repo (gh 2.102.0). The datawatch and datawatch-channel binaries
+  had zero findings, and datawatch's own `go.mod` / Go version were never
+  involved: datawatch already builds with a fixed Go and x/net v0.60.0,
+  and the vulnerable stdlib in gh is newer than datawatch's own Go.
+- **gh is now built from source in the agent-base image.** No released
+  gh binary has the fixes yet (v2.102.0 is the newest release), so a
+  new `ghbuilder` stage builds the released v2.102.0 tag (its commit is
+  checked) with Go 1.27.2 and `golang.org/x/net` v0.60.0. The build fails
+  unless `go version -m` shows exactly those versions. The result is
+  copied to `/usr/bin/gh`; `gh --version` still reports 2.102.0, and the
+  cli.github.com apt repo is no longer added. The pins are explicit
+  `ARG`s at the top of `Dockerfile.agent-base`. Once a gh release ships
+  with the fixes, the image can go back to a pinned package install.
+
+### Security
+- **Three `openssh-client` findings accepted as risks.**
+  CVE-2026-106553, CVE-2026-106555 and CVE-2026-106583 (HIGH, in
+  openssh-client 1:9.2p1-2+deb12u10) have no fix in Debian bookworm:
+  Trivy reports them `fix_deferred`, and the Debian security tracker
+  marks them postponed for bookworm. openssh-client is only used by agent
+  tooling (git/gh) for outbound SSH to remotes the operator configured.
+  No sshd is installed or exposed, and none of it is reachable through
+  a datawatch REST or MCP API. They are recorded in
+  `security/accepted-risks.yml` and `.trivyignore` for the agent images
+  and expire 2026-11-12. They will be re-checked each release cycle.
+
 ## v9.0.64 — docs(mcp): ci-watch tool descriptions say how to resume a Blocked Automaton
 
 ### Changed

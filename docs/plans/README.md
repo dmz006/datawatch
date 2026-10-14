@@ -40,7 +40,7 @@ single source of truth.
 
 ## Current state — 2026-10-13
 
-Latest release: **v9.0.63** (2026-10-13) on `main` — BL423, the opt-in `ci-watch` completion guardrail (an Automaton waits for the CI of the commit it pushed; see item 22 in the Roadmap queue). v9.0.29–v9.0.62 history is in `CHANGELOG.md`.
+Latest release: **v9.0.65** (2026-10-13) on `main` — BL426, the agent-base Trivy fix (the bundled `gh` CLI is rebuilt with a fixed Go stdlib and `golang.org/x/net`, and three `openssh-client` `fix_deferred` CVEs are accepted as risks; see item 25 in the Roadmap queue). Previous: **v9.0.63** — BL423, the opt-in `ci-watch` completion guardrail (item 22). v9.0.29–v9.0.64 history is in `CHANGELOG.md`.
 
 Previous: **v9.0.28** (2026-10-11) on `main`; **v9.0.29** open on `datawatch#205` pending operator merge (BL404, the Stage 2 shakedown of the new PRD-driven workflow — see the Roadmap section below for the full B116-B121/BL413 list of what that shakedown found and fixed). Previous: **v9.0.23**. feat(autonomous): BL407 Phase 5 — config/parity surface. `PRD.Git.AutoPR`/`BaseBranch` are now operator-settable after PRD creation (new `set_git` REST action, `autonomous_prd_set_git` MCP tool, `prd-set-git` CLI command, and a new Git section on the PWA's PRD Settings modal — Mobile-Parity issue `datawatch-app#249`), and a new daemon-wide `autonomous.default_auto_pr` config starts every future PRD's `Git.AutoPR` pre-set (applied once at creation time, not resolved at use-time, since `AutoPR` is a plain bool with no pointer override — a resolve-at-use-time default couldn't tell "operator explicitly turned it back off" from "never touched"). `WorktreeBaseRepo`/`WorktreeDir`/`RulesFile`/`ContextFile`/`UpstreamRepos` were confirmed already fully config-round-trippable with zero new code. Caught two real gaps live while shipping it: the new MCP tool needed its own `federation.MCPToolCap` entry or it 404s from `POST /api/mcp/call` despite being properly registered, and the new PWA hint text first said "PRD" and left "automaton" untranslated in 4 locale bundles — both caught by this repo's own guard tests before shipping. **Active work:** the v10.0.0 self-build arc — see [§ Roadmap](#roadmap-self-build-arc--v1000-locked-2026-10-10). Stage 1 (BL406+BL407) and Stage 2 (BL404, the real shakedown of the new PRD-driven workflow) are both done — see the Roadmap section for the full B116-B121/BL413 list the shakedown surfaced and fixed same-day. **Stage 3 — BL403** (Plugin Extension Surfaces, `docs/plans/2026-10-09-plugin-extension-surfaces.md`) is now in progress, run PRD-driven per the roadmap's own design, starting with Phase 1 (Plugin Manifest v3). Plans folder refactored 2026-10-10: 11 completed plan docs archived to `historical-plans/`, BL381 closed as shipped, and unscheduled work called out in the Roadmap's "Not yet placed" list.
 
@@ -1066,6 +1066,33 @@ established. In progress — starting with BL403.**
     field, warn-only by default, no automatic git history surgery ever.
     **Queued behind BL422** per operator priority (the model-tiering
     eval's results "impact everything going forward").
+25. **BL426** — the blocking `containers / agent-base` Trivy scan fails
+    in every Release run since v9.0.62 (filed + shipped 2026-10-13, same
+    day — **shipped v9.0.65**). Not roadmap work — the container finding
+    BL423 explicitly left out of scope, failing in run 38484929685
+    (v9.0.62) and run 38495887540 (v9.0.63). Root cause: all four HIGH Go
+    findings (stdlib v1.27.1, `golang.org/x/net` v0.58.0) are in the
+    `/usr/bin/gh` gobinary Trivy target — the GitHub CLI from the
+    cli.github.com apt repo — not go.mod / `GO_VERSION` drift: the
+    datawatch binaries have 0 findings, and stdlib 1.27.1 is newer than
+    this repo's own Go, which builds with `GOTOOLCHAIN=local`.
+    **Shipped, v9.0.65:** no gh release newer than v2.102.0 exists, so a
+    new `ghbuilder` stage in `Dockerfile.agent-base` builds the released
+    v2.102.0 tag (commit-checked) on Go 1.27.2 with x/net v0.60.0, and a
+    `go version -m` guard fails the build on any other versions; the
+    three remaining `openssh-client` HIGH CVEs (CVE-2026-106553/106555/
+    106583, `fix_deferred`, postponed for bookworm) are accepted in
+    `security/accepted-risks.yml` + `.trivyignore`. Local Trivy 0.73.0:
+    `usr/bin/gh` 4 → 0. Also the first live real-content validation of
+    the ci-watch completion guardrail (BL423): it was enabled on this
+    Automaton via `per_automaton_guardrails_set` with
+    per_prd_guardrails `["ci-watch"]`, so this Automaton's own release
+    push is judged by the CI run it triggers.
+    **Verification evidence:**
+    `docs/plans/2026-10-14-bl426-agent-base-trivy.md` (Trivy Target
+    tables before/after, `go version -m`, fix options considered).
+    **Revert path:** once a cli/cli release ships with Go ≥ 1.27.2 and
+    x/net ≥ v0.60.0, go back to a pinned package install.
 
 **Outside the queue, handled separately, not blocking Stage 3:**
 - ~~**BL381**~~ — status-verified 2026-10-10: shipped v8.28.0 + v8.28.2
