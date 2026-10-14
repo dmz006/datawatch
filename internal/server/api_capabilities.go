@@ -40,11 +40,20 @@ const (
 	// capWSSessionViewSummary: hello accepts session_view=summary —
 	// compact session_state records.
 	capWSSessionViewSummary = "ws.session_view_summary"
+
+	// capWSOutputScoped: hello accepts output=subscribed — output,
+	// raw_output, pane_capture and chat_message frames only for the
+	// sessions the client subscribed to (see ws_output_scope.go).
+	capWSOutputScoped = "ws.output_scoped"
+
+	// capWSUnsubscribe: the WS stream accepts unsubscribe {session_id},
+	// which also stops that client's screen capture for the session.
+	capWSUnsubscribe = "ws.unsubscribe"
 )
 
 // wsCapabilities lists the WS protocol features, also echoed in hello_ack.
 func wsCapabilities() []string {
-	return []string{capWSHello, capWSSessionListDelta, capWSSessionViewSummary}
+	return []string{capWSHello, capWSSessionListDelta, capWSSessionViewSummary, capWSOutputScoped, capWSUnsubscribe}
 }
 
 // apiCapabilities returns the optional API features this daemon supports.

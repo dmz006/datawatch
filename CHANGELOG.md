@@ -5,6 +5,36 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.80 — feat(server): WebSocket output scoped to subscribed sessions, plus `unsubscribe`
+
+### Added
+- **WebSocket clients can receive terminal output only for the sessions
+  they open.** Every running session's output used to reach every
+  connected client — around 1000 frames a minute on a phone with no
+  terminal showing. A client can now send `hello` with
+  `{"output":"subscribed"}`: `output`, `raw_output`, `pane_capture` and
+  `chat_message` frames then arrive only for sessions it sent `subscribe`
+  for. Session lists, session state, needs-input prompts, alerts,
+  captured responses and other notifications are unaffected. `hello_ack`
+  now also reports the effective `output` mode.
+- **New `unsubscribe` message** `{"session_id": ...}`: stops output for
+  that session and stops the screen capture its `subscribe` started.
+  Previously a capture kept running until the client disconnected.
+  Full and short session IDs both work for `subscribe` and `unsubscribe`.
+- **New setting `server.ws_output_scope_default`** (`all` or
+  `subscribed`, default `all`): the output mode for clients that don't
+  choose one in `hello`. Available in the config file, Settings →
+  General, `PUT /api/config`, `datawatch config set`, MCP `config_set`
+  and the chat `configure` command; changes apply without a restart or
+  reconnect. Keep it at `all` while the web app is in use — it keeps
+  output for sessions you are not viewing.
+- `GET /api/info` lists `ws.output_scoped` and `ws.unsubscribe` in its
+  `capabilities` array.
+
+### Unchanged
+- Clients that don't opt in keep receiving every session's output, as
+  long as `server.ws_output_scope_default` stays `all`.
+
 ## v9.0.79 — feat(server): WebSocket `hello` handshake and delta session updates
 
 ### Added

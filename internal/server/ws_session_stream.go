@@ -70,12 +70,14 @@ const (
 type HelloData struct {
 	SessionList string `json:"session_list,omitempty"`
 	SessionView string `json:"session_view,omitempty"`
+	Output      string `json:"output,omitempty"` // "all" | "subscribed"; see ws_output_scope.go
 }
 
 // HelloAckData is the server → client hello_ack payload.
 type HelloAckData struct {
 	SessionList  string   `json:"session_list"`
 	SessionView  string   `json:"session_view"`
+	Output       string   `json:"output"`
 	Capabilities []string `json:"capabilities"`
 }
 
@@ -279,9 +281,12 @@ func (h *Hub) handleHello(c *client, raw json.RawMessage) {
 	if v := normalizeSessionViewMode(d.SessionView); v != "" {
 		c.sessionView = v
 	}
+	if v := normalizeOutputScope(d.Output); v != "" {
+		c.outputScope = v
+	}
 	c.mu.Unlock()
 	list, view := h.sessionModes(c)
-	ackRaw, _ := json.Marshal(HelloAckData{SessionList: list, SessionView: view, Capabilities: wsCapabilities()})
+	ackRaw, _ := json.Marshal(HelloAckData{SessionList: list, SessionView: view, Output: h.outputScope(c), Capabilities: wsCapabilities()})
 	c.safeSend(mustMarshal(WSMessage{Type: MsgHelloAck, Data: ackRaw, Timestamp: time.Now()}))
 }
 
@@ -307,5 +312,6 @@ func (s *Server) wsSummaryTextChars() int {
 func (s *Server) wireHubSessionStream() {
 	if s.hub != nil {
 		s.hub.setSessionStreamConfig(s.wsSessionListDefault, s.wsSummaryTextChars)
+		s.hub.outputScopeDefaultFn = s.wsOutputScopeDefault
 	}
 }

@@ -189,7 +189,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "9.0.79"
+var Version = "9.0.80"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -2211,6 +2211,12 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		case MsgHello:
 			// BL432 / GH#242 — negotiate session-list mode / view.
 			s.hub.handleHello(c, inMsg.Data)
+
+		case MsgUnsubscribe:
+			// BL432 / GH#242 — stop output delivery + this client's capture.
+			var d SubscribeData
+			json.Unmarshal(inMsg.Data, &d) //nolint:errcheck
+			c.unsubscribe(d.SessionID)
 
 		case MsgSubscribe:
 			var d SubscribeData
@@ -5213,6 +5219,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"session_summary_terminal_limit": s.cfg.Server.SessionSummaryTerminalLimit,
 			"session_summary_text_chars":     s.cfg.Server.SessionSummaryTextChars,
 			"ws_session_list_default":        s.wsSessionListDefault(),
+			"ws_output_scope_default":        s.wsOutputScopeDefault(),
 			"api_gzip":                       s.cfg.Server.APIGzip,
 			"api_gzip_min_bytes":             s.cfg.Server.APIGzipMinBytes,
 			"suppress_active_toasts":         s.cfg.Server.SuppressActiveToasts,
@@ -6174,6 +6181,11 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// Only "full" or "delta"; anything else is ignored.
 			if m := normalizeSessionListMode(strings.TrimSpace(strings.ToLower(toString(v)))); m != "" {
 				cfg.Server.WSSessionListDefault = m
+			}
+		case "server.ws_output_scope_default":
+			// Only "all" or "subscribed"; anything else is ignored.
+			if m := normalizeOutputScope(strings.TrimSpace(strings.ToLower(toString(v)))); m != "" {
+				cfg.Server.WSOutputScopeDefault = m
 			}
 		case "server.api_gzip":
 			cfg.Server.APIGzip = toBool(v)

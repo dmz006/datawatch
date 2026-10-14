@@ -1451,6 +1451,13 @@ type ServerConfig struct {
 	// REST). Default: "full". Read live at each session broadcast.
 	WSSessionListDefault string `yaml:"ws_session_list_default"`
 
+	// WSOutputScopeDefault is the WebSocket terminal-output mode for
+	// clients that do not choose one in hello: "all" (every session's
+	// output / raw_output / pane_capture / chat_message frames) or
+	// "subscribed" (only sessions the client subscribed to). Default:
+	// "all". Read live for every output frame.
+	WSOutputScopeDefault string `yaml:"ws_output_scope_default"`
+
 	// APIGzip compresses large JSON-ish /api/* responses with gzip when
 	// the client sends Accept-Encoding: gzip. Default: true. Read on every
 	// request, so a config change applies without a restart.
@@ -2513,6 +2520,7 @@ func DefaultConfig() *Config {
 			SessionSummaryTerminalLimit: 50,
 			SessionSummaryTextChars:     200,
 			WSSessionListDefault:        "full",
+			WSOutputScopeDefault:        "all",
 			// BL432 / GH#242 — /api/* gzip defaults.
 			APIGzip:              true,
 			APIGzipMinBytes:      1024,

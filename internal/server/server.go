@@ -1210,7 +1210,7 @@ func (s *HTTPServer) NotifyRawOutput(sessionID string, lines []string) {
 
 // NotifyPaneCapture broadcasts a clean pane capture for terminal-mode display
 func (s *HTTPServer) NotifyPaneCapture(sessionID string, lines []string) {
-	s.hub.Broadcast("pane_capture", OutputData{SessionID: sessionID, Lines: lines})
+	s.hub.BroadcastPaneCapture(sessionID, lines)
 }
 
 // NotifySessionAwareness broadcasts a session summary for cross-session awareness.

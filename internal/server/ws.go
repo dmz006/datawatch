@@ -43,11 +43,11 @@ const (
 	MsgCommand    MessageType = "command"     // raw command string (same as Signal)
 	MsgNewSession MessageType = "new_session" // {"task":"..."}
 	MsgSendInput  MessageType = "send_input"  // {"session_id":"...","text":"..."}
-	MsgSubscribe  MessageType = "subscribe"   // {"session_id":"..."} subscribe to output
+	MsgSubscribe  MessageType = "subscribe"   // {"session_id":"..."} subscribe to output; MsgUnsubscribe is in ws_output_scope.go
 	MsgResizeTerm MessageType = "resize_term" // {"session_id":"...","cols":N,"rows":N}
 	MsgStats      MessageType = "stats"       // system stats broadcast
 	MsgPing       MessageType = "ping"
-	MsgHello      MessageType = "hello" // BL432 / GH#242 — {"session_list":"full"|"delta","session_view":"full"|"summary"}; see ws_session_stream.go
+	MsgHello      MessageType = "hello" // BL432 / GH#242 — {"session_list":"full"|"delta","session_view":"full"|"summary","output":"all"|"subscribed"}; see ws_session_stream.go, ws_output_scope.go
 )
 
 // WSMessage is the envelope for all WebSocket messages
@@ -125,6 +125,9 @@ type client struct {
 	// then follows server.ws_session_list_default, sessionView is "full".
 	sessionList string
 	sessionView string
+	// outputScope is the hello "output" mode (see ws_output_scope.go); ""
+	// follows server.ws_output_scope_default.
+	outputScope string
 	mu          sync.Mutex
 }
 
@@ -172,6 +175,7 @@ type Hub struct {
 	// bare-hub tests, which then get the built-in defaults.
 	sessionListDefaultFn func() string
 	summaryTextCharsFn   func() int
+	outputScopeDefaultFn func() string
 }
 
 var upgrader = websocket.Upgrader{
@@ -284,9 +288,11 @@ func (h *Hub) broadcastRaw(payload []byte) {
 // SetVersion sets the daemon version included in sessions broadcasts.
 func (h *Hub) SetVersion(v string) { h.version = v }
 
-// BroadcastOutput sends new output lines for a session to subscribed clients
+// BroadcastOutput sends new output lines for a session to the clients that
+// want that session's output (all of them, unless a client opted in to
+// subscribed-only output — see ws_output_scope.go).
 func (h *Hub) BroadcastOutput(sessionID string, lines []string) {
-	h.Broadcast(MsgOutput, OutputData{SessionID: sessionID, Lines: lines})
+	h.broadcastTo(MsgOutput, OutputData{SessionID: sessionID, Lines: lines}, h.wantsSessionOutput(sessionID))
 }
 
 // BroadcastStats sends system stats to all clients
@@ -296,7 +302,7 @@ func (h *Hub) BroadcastStats(data interface{}) {
 
 // BroadcastRawOutput sends raw output (ANSI preserved) for xterm.js rendering
 func (h *Hub) BroadcastRawOutput(sessionID string, lines []string) {
-	h.Broadcast("raw_output", OutputData{SessionID: sessionID, Lines: lines})
+	h.broadcastTo("raw_output", OutputData{SessionID: sessionID, Lines: lines}, h.wantsSessionOutput(sessionID))
 }
 
 // BroadcastNeedsInput notifies clients that a session needs input
@@ -304,14 +310,16 @@ func (h *Hub) BroadcastNeedsInput(sessionID, prompt string) {
 	h.Broadcast(MsgNeedsInput, NeedsInputData{SessionID: sessionID, Prompt: prompt})
 }
 
-// BroadcastChatMessage sends a structured chat message for chat-mode sessions.
+// BroadcastChatMessage sends a structured chat message for chat-mode
+// sessions. Scoped like terminal output (see ws_output_scope.go).
 func (h *Hub) BroadcastChatMessage(sessionID, role, content string, streaming bool) {
-	h.Broadcast(MsgChatMessage, ChatMessageData{
+	h.broadcastTo(MsgChatMessage, ChatMessageData{
 		SessionID: sessionID, Role: role, Content: content, Streaming: streaming,
-	})
+	}, h.wantsSessionOutput(sessionID))
 }
 
-// BroadcastResponse sends a captured LLM response to all clients.
+// BroadcastResponse sends a captured LLM response to all clients; never
+// output-scoped (see ws_output_scope.go).
 func (h *Hub) BroadcastResponse(sessionID, response string) {
 	h.Broadcast(MsgResponse, map[string]string{"session_id": sessionID, "response": response})
 }

@@ -656,6 +656,7 @@ All fields in `~/.datawatch/config.yaml`:
 | `server.session_summary_terminal_limit` | int | `50` | Maximum number of terminal (complete / failed / killed) sessions returned by `GET /api/sessions?view=summary`, newest by `updated_at` first. Non-terminal sessions are never dropped. `0` = no cap. Only applies to `view=summary`; see "Session list views" below |
 | `server.session_summary_text_chars` | int | `200` | Characters (runes) kept of `task`, `prompt_context`, `last_response` and `last_summary_long` in `GET /api/sessions?view=summary`. Minimum `20` |
 | `server.ws_session_list_default` | string | `full` | WebSocket session-list mode for clients that never send `hello`: `full` (a `sessions` frame with the whole list on every change) or `delta` (only `session_state` / `session_removed` frames; no connect-time list — fetch it with `GET /api/sessions?view=summary`). Read live on every broadcast. See "WebSocket session updates" below |
+| `server.ws_output_scope_default` | string | `all` | WebSocket terminal-output mode for clients that do not send `output` in `hello`: `all` (every session's `output` / `raw_output` / `pane_capture` / `chat_message` frames) or `subscribed` (only sessions the client sent `subscribe` for). Read live for every frame. See "WebSocket output scoping" below |
 | `server.api_gzip` | bool | `true` | Gzip-compress `/api/*` responses for clients that send `Accept-Encoding: gzip`. See "API response compression" below |
 | `server.api_gzip_min_bytes` | int | `1024` | A `/api/*` response is compressed only once its body exceeds this many bytes; smaller bodies are sent unchanged. Minimum `0` |
 | `servers[].name` | string | — | Short identifier for a remote datawatch server (used with `--server` flag) |
@@ -754,6 +755,37 @@ Unknown `hello` keys are ignored and an unknown value leaves that mode
 unchanged. Clients that never send `hello` get
 `server.ws_session_list_default`. `GET /api/info` lists `ws.hello`,
 `ws.session_list_delta` and `ws.session_view_summary` in `capabilities`.
+
+### WebSocket output scoping
+
+By default every running session's terminal output reaches every
+WebSocket client, whether or not it has that session open. A client can
+opt in to output for only the sessions it subscribed to by adding
+`"output":"subscribed"` to `hello` (`hello_ack` echoes the effective
+`output` mode, `all` or `subscribed`):
+
+```json
+{"type":"hello","data":{"output":"subscribed"}}
+{"type":"subscribe","data":{"session_id":"myhost-a1b2"}}
+{"type":"unsubscribe","data":{"session_id":"myhost-a1b2"}}
+```
+
+- Scoped frames: `output`, `raw_output`, `pane_capture` and
+  `chat_message` (the chat-mode sessions' message stream).
+- Never scoped: `response` (one per completed turn), `session_state`,
+  `sessions`, `session_removed`, `needs_input`, `alert`, `alerts_read`,
+  `notification`, `channel_*` and every other control frame.
+- `subscribe` / `unsubscribe` accept the full or short session ID; either
+  form matches output for that session.
+- `unsubscribe` (any output mode) removes the subscription and stops the
+  screen capture the client's `subscribe` started. Before, captures ran
+  until the client disconnected.
+
+Clients that never send `output` get `server.ws_output_scope_default`
+(`all` unless configured). The PWA buffers output for sessions it is not
+viewing, so leave that at `all` while PWA clients are connected.
+`GET /api/info` lists `ws.output_scoped` and `ws.unsubscribe` in
+`capabilities`.
 
 ### API response compression
 

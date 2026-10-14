@@ -13908,6 +13908,7 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'server.session_summary_terminal_limit', label: 'Session summary: ended sessions kept (0 = all)', labelKey: 'settings_session_summary_terminal_limit', type: 'number', placeholder: '50' },
     { key: 'server.session_summary_text_chars', label: 'Session summary: text length (chars)', labelKey: 'settings_session_summary_text_chars', type: 'number', placeholder: '200' },
     { key: 'server.ws_session_list_default', label: 'Live session updates (clients without hello)', labelKey: 'settings_ws_session_list_default', type: 'select', options: ['full', 'delta'] },
+    { key: 'server.ws_output_scope_default', label: 'Live terminal output (clients without hello)', labelKey: 'settings_ws_output_scope_default', type: 'select', options: ['all', 'subscribed'] },
     { key: 'server.api_gzip', label: 'Compress API responses (gzip)', labelKey: 'settings_api_gzip', type: 'toggle' },
     { key: 'server.api_gzip_min_bytes', label: 'API compression threshold (bytes)', labelKey: 'settings_api_gzip_min_bytes', type: 'number', placeholder: '1024' },
     { key: 'session.auto_git_init', label: 'Auto git init', type: 'toggle' },
