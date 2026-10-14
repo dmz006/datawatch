@@ -4367,6 +4367,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			// newly created files that aren't yet tracked by git.
 			var preTaskSHA string
 			var preTaskUntrackedFiles []string
+			var preTaskDirtyFiles []string
 			if req.ProjectDir != "" {
 				// v8.36.7 — see ensureProjectDirOwnGitRepo's doc comment
 				// (verifier_diff.go): prevents a worker's `git add -A`
@@ -4386,6 +4387,12 @@ func runStart(cmd *cobra.Command, _ []string) error {
 							preTaskUntrackedFiles = append(preTaskUntrackedFiles, f)
 						}
 					}
+				}
+				// Foreign-file drift — tracked files already modified
+				// (unstaged or staged via git diff --cached) before the
+				// worker starts. Skipped for a PRD-owned worktree.
+				if !req.SkipDirtyCapture {
+					preTaskDirtyFiles = autonomouspkg.CapturePreTaskDirtyFiles(ctx, req.ProjectDir, nil)
 				}
 			}
 			// v5.26.19 — F10 cluster profile dispatch. When the PRD
@@ -4510,7 +4517,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				ID string `json:"id"`
 			}
 			_ = json.Unmarshal(rb, &out)
-			return autonomouspkg.SpawnResult{SessionID: out.ID, PreTaskSHA: preTaskSHA, PreTaskUntrackedFiles: preTaskUntrackedFiles}, nil
+			return autonomouspkg.SpawnResult{SessionID: out.ID, PreTaskSHA: preTaskSHA, PreTaskUntrackedFiles: preTaskUntrackedFiles, PreTaskDirtyFiles: preTaskDirtyFiles}, nil
 		}
 		// v4.0.1 — VerifyFn: uses /api/ask to attest the task spec
 		// against the session summary. verification_backend (empty =

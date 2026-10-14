@@ -17,21 +17,21 @@ import (
 type PRDStatus string
 
 const (
-	PRDDraft           PRDStatus = "draft"
-	PRDPlanning        PRDStatus = "planning"         // BL221 (v6.2.0) — Decompose call in flight; renamed from PRDDecomposing
-	PRDDecomposing               = PRDPlanning        // back-compat alias; old stored value "decomposing" normalized on load
-	PRDNeedsReview     PRDStatus = "needs_review"     // BL191 — decomposed; awaiting operator review/edit
-	PRDApproved        PRDStatus = "approved"         // BL191 — operator approved; Run is allowed
-	PRDRevisionsAsked  PRDStatus = "revisions_asked"  // BL191 — operator requested re-decomposition
-	PRDActive          PRDStatus = "active"           // legacy alias kept for back-compat with v5.1.x stores; new code uses PRDRunning
-	PRDRunning         PRDStatus = "running"          // BL191 — Run is in flight
-	PRDCompleted       PRDStatus = "completed"
-	PRDRejected        PRDStatus = "rejected"         // BL191 — operator rejected the decomposition; PRD is dead
-	PRDCancelled       PRDStatus = "cancelled"        // BL191 — operator cancelled an in-flight Run
-	PRDArchived        PRDStatus = "archived"
-	PRDBlocked         PRDStatus = "blocked"          // BL191 Q6 — a guardrail returned `block`; awaits operator action
-	PRDFailed          PRDStatus = "failed"           // one or more tasks failed after all retries; PRD did not complete
-	PRDPaused          PRDStatus = "paused"           // GH#172 D52 — operator paused an in-flight Run; in-progress tasks finish, no new ones dispatch
+	PRDDraft          PRDStatus = "draft"
+	PRDPlanning       PRDStatus = "planning"        // BL221 (v6.2.0) — Decompose call in flight; renamed from PRDDecomposing
+	PRDDecomposing              = PRDPlanning       // back-compat alias; old stored value "decomposing" normalized on load
+	PRDNeedsReview    PRDStatus = "needs_review"    // BL191 — decomposed; awaiting operator review/edit
+	PRDApproved       PRDStatus = "approved"        // BL191 — operator approved; Run is allowed
+	PRDRevisionsAsked PRDStatus = "revisions_asked" // BL191 — operator requested re-decomposition
+	PRDActive         PRDStatus = "active"          // legacy alias kept for back-compat with v5.1.x stores; new code uses PRDRunning
+	PRDRunning        PRDStatus = "running"         // BL191 — Run is in flight
+	PRDCompleted      PRDStatus = "completed"
+	PRDRejected       PRDStatus = "rejected"  // BL191 — operator rejected the decomposition; PRD is dead
+	PRDCancelled      PRDStatus = "cancelled" // BL191 — operator cancelled an in-flight Run
+	PRDArchived       PRDStatus = "archived"
+	PRDBlocked        PRDStatus = "blocked" // BL191 Q6 — a guardrail returned `block`; awaits operator action
+	PRDFailed         PRDStatus = "failed"  // one or more tasks failed after all retries; PRD did not complete
+	PRDPaused         PRDStatus = "paused"  // GH#172 D52 — operator paused an in-flight Run; in-progress tasks finish, no new ones dispatch
 )
 
 // NormalizePRDStatus maps legacy stored status values to current constants.
@@ -48,16 +48,16 @@ func NormalizePRDStatus(s PRDStatus) PRDStatus {
 // GET /api/autonomous/prds/{id}/decisions for the operator timeline,
 // and mirrored into the security-grade audit log for compliance.
 type Decision struct {
-	At            time.Time `json:"at"`
-	Kind          string    `json:"kind"`            // decompose | run | verify | approve | reject | request_revision | edit_task | template_instantiate | ci_watch
-	Backend       string    `json:"backend,omitempty"`
-	Model         string    `json:"model,omitempty"`
-	PromptChars   int       `json:"prompt_chars,omitempty"`
-	ResponseChars int       `json:"response_chars,omitempty"`
-	CostUSD       float64   `json:"cost_usd,omitempty"`
-	VerdictOutcome string   `json:"verdict_outcome,omitempty"` // pass | warn | block | n/a
-	Actor         string    `json:"actor,omitempty"`           // operator | autonomous | verifier
-	Note          string    `json:"note,omitempty"`            // free-form: what was edited, why rejected, etc.
+	At             time.Time `json:"at"`
+	Kind           string    `json:"kind"` // decompose | run | verify | approve | reject | request_revision | edit_task | template_instantiate | ci_watch
+	Backend        string    `json:"backend,omitempty"`
+	Model          string    `json:"model,omitempty"`
+	PromptChars    int       `json:"prompt_chars,omitempty"`
+	ResponseChars  int       `json:"response_chars,omitempty"`
+	CostUSD        float64   `json:"cost_usd,omitempty"`
+	VerdictOutcome string    `json:"verdict_outcome,omitempty"` // pass | warn | block | n/a
+	Actor          string    `json:"actor,omitempty"`           // operator | autonomous | verifier
+	Note           string    `json:"note,omitempty"`            // free-form: what was edited, why rejected, etc.
 	// FailureCategory (BL410 Phase 1) mirrors FailureReason.Category —
 	// visible inline in this append-only log without opening a nested
 	// Verdict/Verification struct.
@@ -67,13 +67,13 @@ type Decision struct {
 type StoryStatus string
 
 const (
-	StoryPending           StoryStatus = "pending"
-	StoryAwaitingApproval  StoryStatus = "awaiting_approval" // Phase 3 (v5.26.60)
-	StoryInProgress        StoryStatus = "in_progress"
-	StoryCompleted         StoryStatus = "completed"
-	StoryBlocked           StoryStatus = "blocked"
-	StoryFailed            StoryStatus = "failed"
-	StoryCancelled         StoryStatus = "cancelled" // BL382 — operator-cancelled via cancel_story
+	StoryPending          StoryStatus = "pending"
+	StoryAwaitingApproval StoryStatus = "awaiting_approval" // Phase 3 (v5.26.60)
+	StoryInProgress       StoryStatus = "in_progress"
+	StoryCompleted        StoryStatus = "completed"
+	StoryBlocked          StoryStatus = "blocked"
+	StoryFailed           StoryStatus = "failed"
+	StoryCancelled        StoryStatus = "cancelled" // BL382 — operator-cancelled via cancel_story
 )
 
 type TaskStatus string
@@ -116,10 +116,10 @@ const (
 
 // PRD is the operator-supplied feature description.
 type PRD struct {
-	ID         string    `json:"id"`           // 8-hex
-	Spec       string    `json:"spec"`         // raw operator input
-	Title      string    `json:"title,omitempty"`
-	ProjectDir string    `json:"project_dir"`
+	ID         string `json:"id"`   // 8-hex
+	Spec       string `json:"spec"` // raw operator input
+	Title      string `json:"title,omitempty"`
+	ProjectDir string `json:"project_dir"`
 	// v5.26.19 — operator-reported: "Prd should be based on directory or
 	// profile, should be able to check out repo and do work" + "Prd
 	// should also support using cluster profiles". When ProjectProfile
@@ -145,9 +145,9 @@ type PRD struct {
 	// execution profile* for stories that don't override.
 	DecompositionProfile string `json:"decomposition_profile,omitempty"`
 	DecompositionModel   string `json:"decomposition_model,omitempty"` // model override for the planning/decompose backend
-	Backend    string    `json:"backend,omitempty"`     // PRD-level worker LLM (default for tasks; tasks override per-task)
-	Effort     Effort    `json:"effort,omitempty"`
-	Model      string    `json:"model,omitempty"`       // BL203 (v5.4.0) — PRD-level model name (e.g., "claude-3-5-sonnet"); tasks may override
+	Backend              string `json:"backend,omitempty"`             // PRD-level worker LLM (default for tasks; tasks override per-task)
+	Effort               Effort `json:"effort,omitempty"`
+	Model                string `json:"model,omitempty"` // BL203 (v5.4.0) — PRD-level model name (e.g., "claude-3-5-sonnet"); tasks may override
 	// BL416 Phase 1 — PRD-level guardrail LLM override. Empty = inherit
 	// the global autonomous verification_backend/verification_model
 	// (existing config; no new global key). Tasks may override via
@@ -173,20 +173,20 @@ type PRD struct {
 	// Set to "plan" to make the whole PRD a design-only walk
 	// (claude won't write files); leave empty to use the session
 	// default. Per-task value takes precedence.
-	PermissionMode string `json:"permission_mode,omitempty"`
-	Status     PRDStatus `json:"status"`
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
-	Story      []Story   `json:"stories,omitempty"` // populated after Decompose
+	PermissionMode string    `json:"permission_mode,omitempty"`
+	Status         PRDStatus `json:"status"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
+	Story          []Story   `json:"stories,omitempty"` // populated after Decompose
 
 	// BL191 Q1 (v5.2.0) — review/approve gate. Manager.Run refuses
 	// unless Status == PRDApproved (or the legacy PRDActive for back-
 	// compat with pre-v5.2.0 stores). Operators transition via
 	// POST /api/autonomous/prds/{id}/{approve|reject|request_revision}.
-	ApprovedBy        string    `json:"approved_by,omitempty"`
-	ApprovedAt        *time.Time `json:"approved_at,omitempty"`
-	RejectionReason   string    `json:"rejection_reason,omitempty"`
-	RevisionsRequested int       `json:"revisions_requested,omitempty"` // count of request_revision calls
+	ApprovedBy         string     `json:"approved_by,omitempty"`
+	ApprovedAt         *time.Time `json:"approved_at,omitempty"`
+	RejectionReason    string     `json:"rejection_reason,omitempty"`
+	RevisionsRequested int        `json:"revisions_requested,omitempty"` // count of request_revision calls
 
 	// BL191 Q3 — append-only per-PRD audit timeline.
 	Decisions []Decision `json:"decisions,omitempty"`
@@ -214,9 +214,9 @@ type PRD struct {
 	// instantiating with POST /api/autonomous/prds/{id}/instantiate
 	// substitutes {{var}} markers in spec/title/task specs and stores
 	// a fresh executable PRD.
-	IsTemplate   bool                `json:"is_template,omitempty"`
-	TemplateVars []TemplateVar       `json:"template_vars,omitempty"`
-	TemplateOf   string              `json:"template_of,omitempty"` // ID of the source template; only set on instantiated PRDs
+	IsTemplate   bool          `json:"is_template,omitempty"`
+	TemplateVars []TemplateVar `json:"template_vars,omitempty"`
+	TemplateOf   string        `json:"template_of,omitempty"` // ID of the source template; only set on instantiated PRDs
 
 	// BL191 Q4 (v5.9.0) — recursion. ParentPRDID is the PRD whose task
 	// spawned this one. ParentTaskID is that specific task. Depth is
@@ -260,9 +260,9 @@ type PRD struct {
 	// BL303 S2 — per-Automaton guardrail overrides.
 	// GuardrailProfile names a profile; PerTask/PerStoryGuardrails are explicit
 	// overrides. Priority: explicit > profile > global Config.
-	GuardrailProfile    string   `json:"guardrail_profile,omitempty"`
-	PerTaskGuardrails   []string `json:"per_task_guardrails,omitempty"`
-	PerStoryGuardrails  []string `json:"per_story_guardrails,omitempty"`
+	GuardrailProfile   string   `json:"guardrail_profile,omitempty"`
+	PerTaskGuardrails  []string `json:"per_task_guardrails,omitempty"`
+	PerStoryGuardrails []string `json:"per_story_guardrails,omitempty"`
 	// BL418 — per-Automaton override for the "prd" level (PRD-completion
 	// rules review). Same explicit > profile > global Config precedence
 	// as the task/story lists above.
@@ -393,18 +393,18 @@ type TemplateVar struct {
 // placeholders. Distinct from is_template PRDs (which are executable
 // clones); Templates are first-class entities with their own store.
 type Template struct {
-	ID          string       `json:"id"`
-	Title       string       `json:"title"`
-	Description string       `json:"description,omitempty"`
-	Spec        string       `json:"spec"`
-	Type        string       `json:"type,omitempty"` // software | research | operational | personal
-	Tags        []string     `json:"tags,omitempty"`
+	ID          string        `json:"id"`
+	Title       string        `json:"title"`
+	Description string        `json:"description,omitempty"`
+	Spec        string        `json:"spec"`
+	Type        string        `json:"type,omitempty"` // software | research | operational | personal
+	Tags        []string      `json:"tags,omitempty"`
 	Vars        []TemplateVar `json:"vars,omitempty"`
-	IsBuiltin   bool         `json:"is_builtin,omitempty"`
-	CreatedAt   time.Time    `json:"created_at"`
-	UpdatedAt   time.Time    `json:"updated_at"`
-	LastUsedAt  *time.Time   `json:"last_used_at,omitempty"`
-	UseCount    int          `json:"use_count,omitempty"`
+	IsBuiltin   bool          `json:"is_builtin,omitempty"`
+	CreatedAt   time.Time     `json:"created_at"`
+	UpdatedAt   time.Time     `json:"updated_at"`
+	LastUsedAt  *time.Time    `json:"last_used_at,omitempty"`
+	UseCount    int           `json:"use_count,omitempty"`
 }
 
 // ExtractVars scans spec for {{var_name}} placeholders and returns
@@ -478,6 +478,13 @@ type Story struct {
 	// no Error-equivalent bare-string field today; this is genuinely
 	// new, not additive-alongside-an-existing-field like Task's.
 	FailureReason *FailureReason `json:"failure_reason,omitempty"`
+	// ForeignFileDrift — the exact files this task's own commit(s) swept
+	// in that were already dirty or untracked before its worker session
+	// started and are NOT in FilesPlanned (see DetectForeignFileDrift).
+	// Deliberately separate from FailureReason: this can fire on an
+	// otherwise-successful TaskCompleted task and must not make a clean
+	// completion read as a failure.
+	ForeignFileDrift []string `json:"foreign_file_drift,omitempty"`
 
 	// Phase 3 (v5.26.60) — per-story execution profile override +
 	// per-story approval gate. ExecutionProfile empty = inherit
@@ -543,32 +550,33 @@ type Story struct {
 // BL203 (v5.4.0) — flexible LLM selection at the task level. Backend /
 // Effort / Model fields override story-level defaults when set. Most-
 // specific wins:
-//   per-task → per-story (BL381) → per-PRD → per-stage (autonomous.{planning,verification}_backend) → global session.llm_backend
+//
+//	per-task → per-story (BL381) → per-PRD → per-stage (autonomous.{planning,verification}_backend) → global session.llm_backend
 type Task struct {
-	ID            string     `json:"id"`
-	StoryID       string     `json:"story_id"`
-	PRDID         string     `json:"prd_id"`
-	Title         string     `json:"title"`
-	Spec          string     `json:"spec"` // detailed task description for the worker
-	Status        TaskStatus `json:"status"`
-	DependsOn     []string   `json:"depends_on,omitempty"` // other Task IDs
-	SessionID     string     `json:"session_id,omitempty"` // datawatch session ID once running
-	WaitReason    string     `json:"wait_reason,omitempty"` // why the task is waiting_capacity
-	CreatedAt     time.Time  `json:"created_at"`
-	UpdatedAt     time.Time  `json:"updated_at"`
-	StartedAt     *time.Time `json:"started_at,omitempty"`
-	CompletedAt   *time.Time `json:"completed_at,omitempty"`
-	Error         string     `json:"error,omitempty"`
-	Verification  *VerificationResult `json:"verification,omitempty"`
-	RetryCount    int        `json:"retry_count,omitempty"`
+	ID           string              `json:"id"`
+	StoryID      string              `json:"story_id"`
+	PRDID        string              `json:"prd_id"`
+	Title        string              `json:"title"`
+	Spec         string              `json:"spec"` // detailed task description for the worker
+	Status       TaskStatus          `json:"status"`
+	DependsOn    []string            `json:"depends_on,omitempty"`  // other Task IDs
+	SessionID    string              `json:"session_id,omitempty"`  // datawatch session ID once running
+	WaitReason   string              `json:"wait_reason,omitempty"` // why the task is waiting_capacity
+	CreatedAt    time.Time           `json:"created_at"`
+	UpdatedAt    time.Time           `json:"updated_at"`
+	StartedAt    *time.Time          `json:"started_at,omitempty"`
+	CompletedAt  *time.Time          `json:"completed_at,omitempty"`
+	Error        string              `json:"error,omitempty"`
+	Verification *VerificationResult `json:"verification,omitempty"`
+	RetryCount   int                 `json:"retry_count,omitempty"`
 	// FailureReason (BL410 Phase 1) — structured, categorized detail
 	// alongside Error (a bare string, left untouched for existing
 	// readers). Set on the task's last failed/blocked attempt.
 	FailureReason *FailureReason `json:"failure_reason,omitempty"`
 	// Per-task LLM overrides — empty = inherit from PRD then global.
-	Backend       string     `json:"backend,omitempty"`
-	Effort        Effort     `json:"effort,omitempty"`
-	Model         string     `json:"model,omitempty"`
+	Backend string `json:"backend,omitempty"`
+	Effort  Effort `json:"effort,omitempty"`
+	Model   string `json:"model,omitempty"`
 	// BL416 Phase 1 — per-task guardrail LLM override — empty = inherit
 	// PRD.GuardrailBackend/GuardrailModel, then the global autonomous
 	// verification_backend/verification_model. Resolved by
@@ -609,6 +617,11 @@ type Task struct {
 	// captured alongside PreTaskSHA. Verifier uses this to detect newly created
 	// files that are not tracked by git (e.g. new documentation, new test fixtures).
 	PreTaskUntrackedFiles []string `json:"pre_task_untracked_files,omitempty"`
+	// Foreign-file drift — tracked files with unstaged OR staged-but-uncommitted
+	// modifications (git diff --name-only HEAD ∪ git diff --name-only --cached HEAD)
+	// captured alongside PreTaskSHA. Used by the foreign-file-drift check
+	// (DetectForeignFileDrift). Empty in worktree mode (nothing pre-dirty to protect).
+	PreTaskDirtyFiles []string `json:"pre_task_dirty_files,omitempty"`
 
 	// BL367 — quality gate result recorded after each task completes.
 	// Nil when quality gates are disabled for this PRD.
@@ -733,7 +746,7 @@ type VerificationResult struct {
 type GuardrailEntry struct {
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
-	Type        string `json:"type"`               // "scan" | "custom" | "skill"
+	Type        string `json:"type"`                // "scan" | "custom" | "skill"
 	ScanType    string `json:"scan_type,omitempty"` // "sast" | "secrets" | "deps" (scan entries only)
 }
 
@@ -762,7 +775,7 @@ type RetryProfile struct {
 	// Budgets maps category ("infra"|"content"|"scope"|"policy") to
 	// its retry count. A category absent here falls through to global
 	// Config (same content/policy→AutoFixRetries fallback applies).
-	Budgets                map[string]int `json:"budgets,omitempty"`
+	Budgets                 map[string]int `json:"budgets,omitempty"`
 	CeilingTotal            int            `json:"ceiling_total,omitempty"`
 	InfraRetryEscalateAfter int            `json:"infra_retry_escalate_after,omitempty"`
 	// ContentAutoFixEnabled/AutoFixSkipApproval use pointers so a
@@ -786,22 +799,22 @@ type Learning struct {
 
 // LoopStatus is the manager-loop snapshot.
 type LoopStatus struct {
-	Running       bool      `json:"running"`
-	ActivePRDs    int       `json:"active_prds"`
-	QueuedTasks   int       `json:"queued_tasks"`
-	RunningTasks  int       `json:"running_tasks"`
-	LastTickAt    time.Time `json:"last_tick_at,omitempty"`
-	StaleTasks    int       `json:"stale_tasks,omitempty"`
+	Running      bool      `json:"running"`
+	ActivePRDs   int       `json:"active_prds"`
+	QueuedTasks  int       `json:"queued_tasks"`
+	RunningTasks int       `json:"running_tasks"`
+	LastTickAt   time.Time `json:"last_tick_at,omitempty"`
+	StaleTasks   int       `json:"stale_tasks,omitempty"`
 
 	// v5.22.0 — observability fill-in for BL191 Q4 + Q6 (audit
 	// follow-up). Pre-v5.22.0 the LoopStatus carried no signal for
 	// the recursion/guardrail features shipped in v5.9.0/v5.10.0,
 	// breaking the AGENT.md § Monitoring & Observability rule
 	// ("every new feature MUST include monitoring support").
-	ChildPRDsTotal      int            `json:"child_prds_total,omitempty"`           // BL191 Q4: count of PRDs with non-empty ParentPRDID
-	MaxDepthSeen        int            `json:"max_depth_seen,omitempty"`             // BL191 Q4: max(PRD.Depth) across the store
-	VerdictCounts       map[string]int `json:"verdict_counts,omitempty"`             // BL191 Q6: outcome → count rollup ("pass" / "warn" / "block") across every Story.Verdicts + Task.Verdicts
-	BlockedPRDs         int            `json:"blocked_prds,omitempty"`               // BL191 Q6: count of PRDs in PRDBlocked status (guardrail block)
+	ChildPRDsTotal int            `json:"child_prds_total,omitempty"` // BL191 Q4: count of PRDs with non-empty ParentPRDID
+	MaxDepthSeen   int            `json:"max_depth_seen,omitempty"`   // BL191 Q4: max(PRD.Depth) across the store
+	VerdictCounts  map[string]int `json:"verdict_counts,omitempty"`   // BL191 Q6: outcome → count rollup ("pass" / "warn" / "block") across every Story.Verdicts + Task.Verdicts
+	BlockedPRDs    int            `json:"blocked_prds,omitempty"`     // BL191 Q6: count of PRDs in PRDBlocked status (guardrail block)
 
 	// BL367 — quality gate observability (surfaced via GET /api/autonomous/status + autonomous_status MCP).
 	QualityGateRuns        int `json:"quality_gate_runs,omitempty"`        // tasks with a non-nil QualityGateResult

@@ -44,7 +44,7 @@ type SpawnRequest struct {
 	// global cfg.Session.permission_mode default) by the executor before
 	// the SpawnFn fires.
 	PermissionMode string
-	RetryHint  string // populated on retry: prior verifier's findings
+	RetryHint      string // populated on retry: prior verifier's findings
 	// v5.26.19 — F10 profile dispatch. When ClusterProfile is set,
 	// SpawnFn dispatches the worker to the cluster (POST /api/agents)
 	// instead of a local tmux session. ProjectProfile alone causes the
@@ -79,13 +79,18 @@ type SpawnRequest struct {
 	// MemorySeed (BL386 Phase 1) — warm-start seeding config, copied from
 	// the PRD's MemorySeedConfig. Zero value = seeding disabled.
 	MemorySeed MemorySeedConfig
+	// SkipDirtyCapture — true when ProjectDir is a PRD-owned git
+	// worktree (PRD.Git.Branch set). A fresh per-Automaton worktree has
+	// no operator edits to protect, so the SpawnFn skips the pre-task
+	// dirty-file capture (CapturePreTaskDirtyFiles) for it.
+	SkipDirtyCapture bool
 }
 
 // SpawnResult is what SpawnFn returns. SessionID is the datawatch
 // session ID; Err is fatal (non-fatal failures should be encoded in
 // VerifyResult.OK=false from VerifyFn instead).
 type SpawnResult struct {
-	SessionID  string
+	SessionID string
 	// PreTaskSHA is the git HEAD SHA captured immediately before the worker
 	// session started. The verifier uses it to produce git diff grounding
 	// evidence (BL366). Empty when ProjectDir is not a git repo or when the
@@ -95,7 +100,12 @@ type SpawnResult struct {
 	// captured alongside PreTaskSHA. Used by the verifier to detect newly created
 	// files that are not yet tracked by git (v8.25.12).
 	PreTaskUntrackedFiles []string
-	Err        error
+	// PreTaskDirtyFiles is the list of tracked files with unstaged OR
+	// staged-but-uncommitted modifications (git diff --name-only HEAD ∪
+	// git diff --name-only --cached HEAD) captured alongside PreTaskSHA.
+	// Used by the foreign-file-drift check (DetectForeignFileDrift).
+	PreTaskDirtyFiles []string
+	Err               error
 }
 
 // SpawnFn is the indirection used by the executor to start a worker.
@@ -852,24 +862,25 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			}
 			var sr SpawnResult
 			sr, err = spawn(ctx, SpawnRequest{
-				TaskID:         t.ID,
-				StoryID:        t.StoryID,
-				PRDID:          t.PRDID,
-				Title:          t.Title,
-				Spec:           ScopeBlock(prd) + "\n" + t.Spec,
-				ProjectDir:     prd.ProjectDir,
-				Backend:        backend,
-				Effort:         effort,
-				Model:          model,
-				PermissionMode: permMode,
-				RetryHint:      hint,
-				ProjectProfile: prd.ProjectProfile, // v5.26.19
-				ClusterProfile: prd.ClusterProfile, // v5.26.19
+				TaskID:             t.ID,
+				StoryID:            t.StoryID,
+				PRDID:              t.PRDID,
+				Title:              t.Title,
+				Spec:               ScopeBlock(prd) + "\n" + t.Spec,
+				ProjectDir:         prd.ProjectDir,
+				Backend:            backend,
+				Effort:             effort,
+				Model:              model,
+				PermissionMode:     permMode,
+				RetryHint:          hint,
+				ProjectProfile:     prd.ProjectProfile,   // v5.26.19
+				ClusterProfile:     prd.ClusterProfile,   // v5.26.19
 				ForceAutoGitCommit: prd.Git.Branch != "", // BL407 Phase 2
-				Branch:         prd.Git.Branch,     // BL407 Phase 4
-				ContextPrepend: contextPrepend,      // BL244
-				LSPLanguage:    lspLang,
-				MemorySeed:     prd.MemorySeed,     // BL386 Phase 1
+				Branch:             prd.Git.Branch,       // BL407 Phase 4
+				ContextPrepend:     contextPrepend,       // BL244
+				LSPLanguage:        lspLang,
+				MemorySeed:         prd.MemorySeed,       // BL386 Phase 1
+				SkipDirtyCapture:   prd.Git.Branch != "", // worktree mode: nothing pre-dirty to protect
 			})
 			if err != nil {
 				if errors.Is(err, errCancelledWhileWaiting) {
@@ -893,8 +904,9 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 					}
 				}
 			}
-			t.PreTaskSHA = sr.PreTaskSHA                             // BL366: persisted for verifier diff grounding
-			t.PreTaskUntrackedFiles = sr.PreTaskUntrackedFiles       // v8.25.12: detect newly created untracked files
+			t.PreTaskSHA = sr.PreTaskSHA                       // BL366: persisted for verifier diff grounding
+			t.PreTaskUntrackedFiles = sr.PreTaskUntrackedFiles // v8.25.12: detect newly created untracked files
+			t.PreTaskDirtyFiles = sr.PreTaskDirtyFiles         // foreign-file-drift: tracked files already modified before the worker started
 			t.Status = TaskVerifying
 			_ = m.store.SaveTask(t)
 		}
