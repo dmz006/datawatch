@@ -5,6 +5,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.84 — docs: BL420 live remediation of the bloated session repos
+
+No code change. `scripts/shrink-session-repo.sh` was run on the three
+session repos that grew before v9.0.83, after the fixed daemon was
+deployed. Each run was in its own memory-capped `systemd-run --user`
+scope. ab22: 31 GB → 3.3 MB (peak 274 MiB), 9245: 8.7 GB → 2.1 MB (peak
+102 MiB), ddeb: 822 MB → 884 KB (peak 33 MiB). The daemon kept running
+the whole time with no restarts. A `--all-hygiene` sweep also set
+`gc.auto=0` on the 26 newer session repos that didn't have it yet. Evidence
+is in `docs/testing.md`.
+
 ## v9.0.83 — fix(session): keep output.log out of session-tracker git history and stop implicit auto-gc
 
 On 2026-10-13 the daemon was OOM-killed. Every session-tracking folder

@@ -1067,3 +1067,39 @@ fixed   |         2408 |               6028 |        n |                  0 |   
 | `gofmt -l` | No findings in the files this release touched. Go 1.27.2's gofmt flags about 140 untouched files repo-wide; that predates this change and is not a CI gate (`make lint` is). |
 | `make build` + `make install` | PASS (`datawatch v9.0.83`) |
 | Release smoke | Not run. This is a patch fix with no new endpoint or operator-facing API (AGENT.md Section C allows targeted or no smoke). Live deploy and observation are in T3. |
+
+## v9.0.84 — Session-tracker git growth: live remediation of the bloated repos (2026-10-14)
+
+Follow-up to v9.0.83. With the fixed daemon running (v9.0.83, `output.log`
+already untracked in each target), the three pre-fix session repos were
+shrunk with `scripts/shrink-session-repo.sh`. No code change.
+
+### T5 — Hygiene sweep on all session repos
+
+| Field | Details |
+|-------|---------|
+| **Steps** | `for g in ~/.datawatch/sessions/*/.git; do git -C ${g%/.git} config gc.auto; done \| sort \| uniq -c`, then `scripts/shrink-session-repo.sh --all-hygiene ~/.datawatch/sessions`, then the same loop again |
+| **Expected** | Every session repo ends with `gc.auto=0` and the `output.log` excludes. |
+| **Actual** | Before: 521 of 547 repos had `gc.auto=0` (the other 26 were newer repos with it unset). Sweep: `547 repo(s) configured, 0 skipped` in 12 s. After: 547 of 547 `gc.auto=0`. |
+| **Result** | PASS |
+
+### T6 — Shrink ddeb, ab22, 9245 (smallest first)
+
+| Field | Details |
+|-------|---------|
+| **Steps** | Prerequisite: `datawatch version` = `cmd/datawatch/main.go` (9.0.83), `systemctl --user is-active datawatch` = active, `git ls-files output.log` empty in each target, free disk 1.1 TB. For each repo: `du -sh .git`, `--dry-run`, then `--allow-active` (each was `waiting_input` but idle: last commit 6 h / 38 min / 68 min earlier, no `index.lock`). A 5 s sampler logged `systemctl --user show datawatch -p MemoryCurrent`, the shrink scope's `memory.current`/`memory.peak`, git RSS and `free -g` available, ready to kill only the scope if it went over 4 GB or available memory dropped below 8 GB. Afterwards: `du -sh .git`, `git fsck --no-progress`, `git log --all --oneline -- output.log \| wc -l`, `stat` of the working-tree `output.log`, `NRestarts`, `journalctl --user -u datawatch --since -1h \| grep -ci oom`. |
+| **Expected** | `.git` shrinks to history without `output.log`; fsck clean; 0 `output.log` commits; working-tree `output.log` unchanged; daemon unaffected. |
+| **Actual** | See the table below. Every run: script `OK`, `fsck` exit 0, `git log --all -- output.log` empty, timeline.md/conversation.md commit counts unchanged, working-tree `output.log` same size and inode (ddeb 29,454,368 B; ab22 504,425,422 B; 9245 260,108,841 B). The sampler never needed to abort. Daemon: MainPID 3008307 throughout, `NRestarts=0`, `MemoryCurrent` 623–649 MiB, 0 oom lines. Available host memory stayed at 94 GB. Disk used went from 622 GB to 583 GB. |
+| **Result** | PASS |
+
+```
+repo  | commits | .git before | .git after | output.log commits rewritten | scope memory.peak | run time
+------+---------+-------------+------------+------------------------------+-------------------+---------
+ddeb  |     660 |      822 MB |     884 KB |                          342 |          32.9 MiB |      7 s
+ab22  |    3642 |       31 GB |     3.3 MB |                         2239 |         274.3 MiB |     38 s
+9245  |    2121 |      8.7 GB |     2.1 MB |                         1421 |         102.1 MiB |     20 s
+```
+
+Tool: `git filter-branch` (`git filter-repo` is not installed), each run in its
+own `systemd-run --user` scope with `MemoryMax=4G`, `MemorySwapMax=0`, nice 19
+and idle I/O. The 2026-10-13 in-daemon repack peaked at about 108 GB on ab22.

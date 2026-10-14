@@ -888,8 +888,35 @@ established. In progress — starting with BL403.**
     **Shipped v9.0.83 (2026-10-14)**: tracker fix (`54954c5f`, in
     binaries since v9.0.62), shrink script, repro harness, docs; the
     live daemon was redeployed and observed (see `docs/testing.md`).
-    Running the shrink script on the existing bloated repos is still an
-    operator step.
+    **What the code fix does**: `output.log` / `.enc` / `.pipe` stay on
+    disk but untracked and in `.git/info/exclude` (legacy repos get
+    `git rm --cached` on first commit after restart), and tracker repos
+    set `gc.auto=0`, `gc.autoDetach=false`, `pack.windowMemory=64m`,
+    `pack.threads=1`, `core.bigFileThreshold=16m` at init and resume, so
+    a daemon commit can never start a repack.
+    **Repro harness** (`scripts/repro-tracker-git-growth.sh`, 120
+    commits × 512 KB): legacy `.git` 2.83 GB vs fixed 2.4 MB (~1,177×),
+    max commit RSS 65 MB vs 6 MB, auto-gc fired only in legacy —
+    `RESULT: PASS`.
+    **Live remediation done 2026-10-14 (v9.0.84)** with
+    `scripts/shrink-session-repo.sh --allow-active` (all three were
+    `waiting_input` but idle: no commit in the last 2 min, no
+    `index.lock`), each in its own `systemd-run --user` scope
+    (`MemoryMax=4G`, no swap), after a `--all-hygiene` sweep made
+    `gc.auto=0` + excludes durable on all 547 session repos:
+
+    | Repo | Commits | `.git` before | `.git` after | Peak memory (scope `memory.peak`) | Run time |
+    |------|---------|---------------|--------------|-----------------------------------|----------|
+    | `ddeb` | 660 | 822 MB | 884 KB | 32.9 MiB | 7 s |
+    | `ab22` | 3642 | 31 GB | 3.3 MB | 274.3 MiB | 38 s |
+    | `9245` | 2121 | 8.7 GB | 2.1 MB | 102.1 MiB | 20 s |
+
+    All three: `fsck` clean, 0 commits touch `output.log`, timeline.md /
+    conversation.md commit counts unchanged, working-tree `output.log`
+    same size and inode. Daemon untouched throughout (same MainPID,
+    `NRestarts=0`, memory 623–649 MiB, 0 OOM lines; host available
+    memory never below 94 GB). Disk used 622 GB → 583 GB.
+    **BL420 closed.**
 20. **BL421** — PRD lifecycle can't recover a blocked/cancelled task's
     spec without a full re-decompose (filed + shipped 2026-10-13, same
     day — **shipped v9.0.62**).
@@ -1282,7 +1309,7 @@ daemon).
 | 3 | **BL434** — full-screen eye splash + input-draft preservation fix | Queued (re-decomposing) | PWA visual + a real data-loss bug on the same reload sites. |
 | 4 | **BL435** — unmodified-retry executor fix | Queued | Generalizes a one-off task-spec workaround used to recover BL431 into a real fix for every datawatch install. |
 | 5 | **BL431** (`c187962a`) — Automation design doc | One task left (self-registration) | Design doc itself is done and committed; only its own backlog-registration task remains. |
-| 6 | **BL420** — session-tracker OOM fix | **Shipped v9.0.83** (tracker code in binaries since v9.0.62; v9.0.83 documents it, ships `scripts/shrink-session-repo.sh` + `scripts/repro-tracker-git-growth.sh`, redeployed + 15-min observation in `docs/testing.md`). Shrinking the already-bloated repos (ab22/9245/ddeb) with the script is a separate operator step. | **Operator-confirmed 2026-10-14 ~14:05: moved back ahead of BL427/428/431.** Not "regular work" under the operator's own ordering principle — it's crash-prevention for the daemon that is about to run the heaviest, most concurrent automated work yet (row 7). Doing the riskiest implementation stretch without this fix in place first is the wrong order. |
+| 6 | **BL420** — session-tracker OOM fix | **Shipped v9.0.83** (tracker code in binaries since v9.0.62; v9.0.83 documents it, ships `scripts/shrink-session-repo.sh` + `scripts/repro-tracker-git-growth.sh`, redeployed + 15-min observation in `docs/testing.md`). The bloated repos were shrunk with the script on 2026-10-14 (v9.0.84): ab22 31 GB → 3.3 MB, 9245 8.7 GB → 2.1 MB, ddeb 822 MB → 884 KB. | **Operator-confirmed 2026-10-14 ~14:05: moved back ahead of BL427/428/431.** Not "regular work" under the operator's own ordering principle — it's crash-prevention for the daemon that is about to run the heaviest, most concurrent automated work yet (row 7). Doing the riskiest implementation stretch without this fix in place first is the wrong order. |
 | 7 | **BL427 → BL428 → BL431 implementation** | Not started — design docs only | Optimize the Automaton/PRD execution system itself before more regular feature/bugfix work, so the rest of the roadmap runs through it rather than being hand-sequenced. Dependency order: event dispatch → concurrency/budget mechanics → Automation coordinator built on top of both. Known trade-off, noted not litigated: BL428 §4d / BL431 §6-§11's model-tier design cite BL422's results as an input, so that part proceeds on placeholder assumptions until BL422 runs afterward (row 8). |
 | 8 | **BL422** — Claude model/effort tiering eval | Queued, resumes after #7 | Its results get retrofitted into whatever BL428/431 implemented with placeholder tier defaults (see row 7's trade-off note). |
 | — | **BL436** — per-turn chunked session capture (replaces tmux-scrollback reliance) | Design doc done, `needs_review` | Filed 2026-10-14, not yet slotted into the numbered order above — docs-only, low collision risk, could run opportunistically. |
