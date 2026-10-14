@@ -671,7 +671,8 @@ established. In progress — starting with BL403.**
    right after BL405, not as a parallel/competing design — needs an
    operator discussion pass (same shape as BL412/BL413) before a plan
    doc gets written: which of BL405's phases already cover this vs.
-   what's genuinely a new gap.
+   what's genuinely a new gap. See also BL428 (item 29), which
+   recommends absorbing this item's budget-guardrail half.
 15. **BL415** — `dependency-review` required check can't pass under the
     Actions-generated `GITHUB_TOKEN` (filed 2026-10-11, found while
     merging PR #206/#212/#213). Symptom: `actions/dependency-review-
@@ -1089,7 +1090,7 @@ established. In progress — starting with BL403.**
     it; excluding the daemon's own tooling files written into a
     direct-mode project directory (they are reported as drift today);
     changing how workers invoke `git add`; checking worktree/auto-PR
-    Automata.
+    Automata. See also BL428 (item 29), the prevention-side tree lock.
 25. **BL426** — the blocking `containers / agent-base` Trivy scan fails
     in every Release run since v9.0.62 (filed + shipped 2026-10-13, same
     day — **shipped v9.0.65**). Not roadmap work — the container finding
@@ -1205,6 +1206,62 @@ established. In progress — starting with BL403.**
     [2026-10-13-prd-lifecycle-events.md](2026-10-13-prd-lifecycle-events.md)
     (event source, transitions + precedence, transports, noise control,
     phases, parity surface, operator open questions).
+
+29. **BL428** — Concurrency control & usage-budget design (design pass)
+   (filed 2026-10-13/14, operator-raised after a live incident).
+   **Status: design pass — needs operator review, no implementation
+   approved.** Found live: `autonomous.max_parallel_tasks: 1` on the
+   running daemon is dead config — `MaxParallelTasks` is plumbed through
+   YAML/REST/MCP/PWA but has zero executor consumers, and its "per-PRD
+   worker cap (default 3)" descriptions are false. The real knob,
+   `max_concurrent_tasks` (BL370), only bounds fan-out *within one PRD's
+   own run* (and its global default has no YAML field). Nothing gates
+   across PRDs: `API.Run` gives every PRD its own executor goroutine, and
+   the capacity ledger's `llm:claude-code` pool is unlimited because
+   `max_inflight` defaults to 0. Result on 2026-10-13: **BL423**
+   (`9f311580`) and **BL426** (`ff67e611`), plus a scratch probe PRD
+   created by BL423's own verification task, had 3 tasks `in_progress`
+   against one working tree at once — BL426's verifier saw BL423's
+   commits in its diff and BL426's release collided on a version number.
+   The doc designs **two separate mechanisms**, keyed differently: (3a) a
+   per-canonical-tree **write lock** for tree writers (task execution,
+   `verification_script`, `scan_fix`), with worktree-mode Automata keyed
+   on their own worktree; and (3b) **inference caps** reusing the existing
+   `llm:<name>`/`node:<name>` ledger pools (closing gaps: decompose not
+   admitted, verify lease stacking, long waits holding slots). Plus
+   **usage-budget throttling**: a `plan_tier`-derived `max_inflight`
+   default, a daemon-wide reactive back-off on a real `StateRateLimited`
+   signal (today nothing in `internal/autonomous` reacts to rate limits),
+   and a dollar-window `llm.<name>.budget` ceiling; and deprecates
+   `max_parallel_tasks` (deprecate and remove, not repurpose). Worked
+   example: BL426's final task was told to poll a Release run with a
+   ~90-minute bound and was killed as a stalled worker within about a
+   minute — an LLM session is the wrong vehicle for a long CI wait, so
+   IDLE-EXTERNAL-WAIT becomes its own resource class that releases its
+   inference slot and keeps the tree lock only while it holds unpushed
+   work. **Cross-references:** **BL414** — the doc recommends BL428
+   *absorbs* BL414's budget-guardrail half (ceilings, hard stops) and
+   BL414 narrows to cost observability and Decision `CostUSD` rollup,
+   rather than BL414 growing a second "allocation mode" (open question
+   1, operator to confirm). **BL422** — Claude only for now, but the
+   backend/model pair is a first-class key dimension everywhere, so
+   BL422's open-model forward pointer (Qwen etc. via Ollama/OpenWebUI)
+   slots in later as extra pool limits with no structural change.
+   **BL425** — BL425's foreign-file-drift check is the after-the-fact
+   *detector*; 3a is *prevention* between datawatch writers; the two are
+   complementary and neither replaces the other (humans editing the tree
+   remain detect-only). **BL427** — both are infrastructure design
+   passes on the PRD execution engine, but they share no mechanism (the
+   doc lists BL427's push notifications as out of scope). Recommendation
+   for the operator, not a decision: review the two docs together in one
+   sitting (they touch the same executor paths and both feed BL431), but
+   sequence their implementation independently as separate PRDs, in the
+   already-confirmed addendum order below (BL427 → BL428 → BL431), with
+   neither blocking the other's review. **Design doc:**
+   [2026-10-14-concurrency-and-budget-design.md](2026-10-14-concurrency-and-budget-design.md)
+   (resource classes, phase-level concurrency matrix, tree lock,
+   inference caps, usage budget, worked examples, config keys, 6 planned
+   implementation phases, parity surface, 9 operator open questions).
 
 **2026-10-14 sequencing addendum (operator-confirmed):** BL427 (Automaton
 lifecycle event notifications), BL428 (Concurrency control & usage-budget
