@@ -1266,19 +1266,62 @@ established. In progress — starting with BL403.**
 **2026-10-14 sequencing addendum (operator-confirmed):** BL427 (Automaton
 lifecycle event notifications), BL428 (Concurrency control & usage-budget
 design pass) and BL431 (Automation: multi-Automaton orchestration) are
-filed; BL427's design doc has landed and it is now item 28 above (awaiting
-operator review, sequenced after BL422's eval), while BL428 and BL431 are
-still mid design-pass and will self-register once their own docs land. Explicit operator decision: once all
-three design docs are reviewed and approved, their IMPLEMENTATION is pulled
-forward ahead of the remaining items in this queue, in dependency order
-BL427 → BL428 → BL431, rather than slotting in strictly by filing date.
-Rationale: once BL431's Automation coordinator is real, the rest of this
-roadmap's remaining items can be run through it as its own dogfood/debug
-cycle instead of being hand-sequenced one PRD at a time by an operator's
-chat session — the exact gap that caused a 5+ hour queue stall overnight on
-2026-10-13/14 with no daemon-side detection. BL424 (item 23 above) is
-unaffected by this addendum and stays explicitly sequenced last, right
-before the v10.0.0 cutover, per its own note above.
+filed; BL427's and BL428's design docs have both landed (completed), and
+BL431's design doc has also landed (docs/plans/2026-10-14-automation-orchestration-design.md,
+PRD `c187962a`) — only its own one-line backlog self-registration task
+remains. Explicit operator decision: once all three design docs are
+reviewed and approved, their IMPLEMENTATION is pulled forward ahead of the
+remaining items in this queue, in dependency order BL427 → BL428 → BL431,
+rather than slotting in strictly by filing date. Rationale: once BL431's
+Automation coordinator is real, the rest of this roadmap's remaining items
+can be run through it as its own dogfood/debug cycle instead of being
+hand-sequenced one PRD at a time by an operator's chat session — the exact
+gap that caused a 5+ hour queue stall overnight on 2026-10-13/14 with no
+daemon-side detection. BL424 (item 23 above) is unaffected by this addendum
+and stays explicitly sequenced last, right before the v10.0.0 cutover, per
+its own note above.
+
+**2026-10-14 second addendum (operator-confirmed): BL420 and BL422 are
+pulled forward ahead of the BL427 → BL428 → BL431 IMPLEMENTATION phase
+above** (which has not started — only the three design docs exist so far).
+Both were previously paused mid-run (cancelled, with their one failed
+task's spec already corrected and ready to resume) and are queued to resume
+in this order, once the in-flight BL432–435 chain below clears the tree:
+
+1. **BL420** (item 19 above, session-tracker git growth OOM-killing the
+   daemon) — a stability prerequisite. BL427/428/431's implementation phase
+   will add more automated, concurrent, multi-model work running against
+   this same daemon; fixing a known OOM-crash path first, rather than after,
+   is the safer order.
+2. **BL422** (item 21 above, Claude model/effort tiering eval) — its results
+   are a direct input to work that comes right after it: BL428 §4d's
+   `plan_tier`→`max_inflight` defaults name BL422 explicitly as the source
+   of "a suggested model tier for autonomous work," and BL431 §6/§11 (model
+   default resolution, decompose-tier open question) are designed to
+   consume BL422's findings once they exist. Running the eval before that
+   design is implemented means the implementation is grounded in real
+   tiering results instead of a placeholder guess.
+
+Both resumed via their already-corrected failed task, serialized one at a
+time (same collision discipline as the rest of this tree — see BL428 §3a).
+Neither blocks nor is blocked by the already-in-flight BL432–435 chain
+below, which was independently triaged the same day and is unrelated
+bugfix/feature work already mid-execution.
+
+**2026-10-14 third addendum: federation-aware shared-resource coordination**
+(operator-raised). BL428 gains §3c (shared compute nodes across federated
+peers — e.g. two daemons' `compute_node` registries pointing at the same
+physical GPU) and §4e (shared cloud/billing accounts across federated peers
+— e.g. two daemons configured with the same Claude subscription or API
+key), each via a keyed-hash fingerprint exchange that lets peers detect a
+shared resource without disclosing the underlying secret or hardware
+identifier, operator confirmation before any capacity pool is merged, and
+live cross-daemon lease/back-off propagation while sessions are actually
+running on a confirmed-shared resource. BL431 gains a matching forward
+pointer and open question so its BudgetPolicy follow-up PRD inherits this
+requirement instead of rediscovering it. This is additive to BL428/431's
+existing scope, not a reordering — no change to the implementation sequence
+above.
 
 **Outside the queue, handled separately, not blocking Stage 3:**
 - **BL432** — server payload optimization for mobile/PWA clients
