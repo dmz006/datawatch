@@ -22,8 +22,8 @@ import (
 // Entry is one line in the audit log.
 type Entry struct {
 	Timestamp time.Time      `json:"ts"`
-	Actor     string         `json:"actor"`           // who: "operator", "channel:signal", "mcp", "agent:<id>"
-	Action    string         `json:"action"`          // start, kill, send_input, rollback, configure, ...
+	Actor     string         `json:"actor"`  // who: "operator", "channel:signal", "mcp", "agent:<id>"
+	Action    string         `json:"action"` // start, kill, send_input, rollback, configure, ...
 	SessionID string         `json:"session_id,omitempty"`
 	Details   map[string]any `json:"details,omitempty"`
 }
