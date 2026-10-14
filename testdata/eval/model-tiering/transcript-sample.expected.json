@@ -1,0 +1,28 @@
+{
+  "rates": "rates.json",
+  "assistant_entries": 4,
+  "non_assistant_entries": 1,
+  "per_model": {
+    "opus": {
+      "input_tokens": 1280,
+      "output_tokens": 1650,
+      "cache_creation_input_tokens": 9500,
+      "cache_read_input_tokens": 16000,
+      "cost_usd": 0.08882
+    },
+    "haiku": {
+      "input_tokens": 400,
+      "output_tokens": 120,
+      "cache_creation_input_tokens": 0,
+      "cache_read_input_tokens": 0,
+      "cost_usd": 0.0001
+    }
+  },
+  "total": {
+    "input_tokens": 1680,
+    "output_tokens": 1770,
+    "cache_creation_input_tokens": 9500,
+    "cache_read_input_tokens": 16000,
+    "cost_usd": 0.08892
+  }
+}

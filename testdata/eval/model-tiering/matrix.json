@@ -1,0 +1,325 @@
+{
+  "task_types": [
+    {
+      "id": "analysis",
+      "title": "Exclude output.log from tracker git and set safe gc config",
+      "baseline_sha": "d2f30df2",
+      "spec": "specs/analysis.md",
+      "verify": "verify/analysis.sh",
+      "shape": "read internal/session/tracker.go + manager.go callers end-to-end; write an idiomatic concurrency-safe fix + new internal/session/tracker_test.go"
+    },
+    {
+      "id": "scripting",
+      "title": "Reproduction harness for tracker git growth",
+      "baseline_sha": "54954c5f",
+      "spec": "specs/scripting.md",
+      "verify": "verify/scripting.sh",
+      "shape": "mostly mechanical bash against a detailed CLI/behaviour spec"
+    },
+    {
+      "id": "docs",
+      "title": "Document the tracker output.log / gc change (docs only)",
+      "baseline_sha": "54954c5f",
+      "spec": "specs/docs.md",
+      "verify": "verify/docs.sh",
+      "shape": "CHANGELOG Unreleased entry + docs/session-tracking.md row/section edit; no code, no version bump, no tracker IDs"
+    },
+    {
+      "id": "review",
+      "title": "Review two candidate fixes for the tracker task",
+      "baseline_sha": "54954c5f",
+      "spec": "specs/review.md",
+      "verify": "verify/review.sh",
+      "shape": "verifier role: read spec + two diffs, write review-verdict.json pass/fail with reasons",
+      "cell_inputs": {
+        "review/candidate-pass.diff": "candidate-b.diff",
+        "review/candidate-fail.diff": "candidate-a.diff"
+      },
+      "cell_inputs_note": "driver copies the fixture diffs into the cell under these neutral names (see review/cell-names.json) so the file name cannot leak the verdict"
+    }
+  ],
+  "execution_tiers": [
+    {
+      "id": "opus-low",
+      "backend": "claude-code",
+      "model": "opus",
+      "effort": "low"
+    },
+    {
+      "id": "opus-medium",
+      "backend": "claude-code",
+      "model": "opus",
+      "effort": "medium"
+    },
+    {
+      "id": "opus-high",
+      "backend": "claude-code",
+      "model": "opus",
+      "effort": "high"
+    },
+    {
+      "id": "sonnet-low",
+      "backend": "claude-code",
+      "model": "sonnet",
+      "effort": "low"
+    },
+    {
+      "id": "sonnet-medium",
+      "backend": "claude-code",
+      "model": "sonnet",
+      "effort": "medium"
+    },
+    {
+      "id": "sonnet-high",
+      "backend": "claude-code",
+      "model": "sonnet",
+      "effort": "high"
+    },
+    {
+      "id": "haiku-low",
+      "backend": "claude-code",
+      "model": "haiku",
+      "effort": "low"
+    },
+    {
+      "id": "haiku-medium",
+      "backend": "claude-code",
+      "model": "haiku",
+      "effort": "medium"
+    },
+    {
+      "id": "haiku-high",
+      "backend": "claude-code",
+      "model": "haiku",
+      "effort": "high"
+    },
+    {
+      "id": "fable-low",
+      "backend": "claude-code",
+      "model": "fable",
+      "effort": "low"
+    },
+    {
+      "id": "fable-medium",
+      "backend": "claude-code",
+      "model": "fable",
+      "effort": "medium"
+    },
+    {
+      "id": "fable-high",
+      "backend": "claude-code",
+      "model": "fable",
+      "effort": "high"
+    },
+    {
+      "id": "default",
+      "backend": "claude-code",
+      "model": "opus",
+      "effort": null,
+      "note": "today's observed default: claude-code LLM registry model=opus, no --effort flag passed (claude CLI's own default effort applies)"
+    }
+  ],
+  "decompose_tiers": [
+    {
+      "id": "opus-low",
+      "backend": "claude-code",
+      "model": "opus",
+      "effort": "low"
+    },
+    {
+      "id": "opus-medium",
+      "backend": "claude-code",
+      "model": "opus",
+      "effort": "medium"
+    },
+    {
+      "id": "opus-high",
+      "backend": "claude-code",
+      "model": "opus",
+      "effort": "high"
+    },
+    {
+      "id": "sonnet-low",
+      "backend": "claude-code",
+      "model": "sonnet",
+      "effort": "low"
+    },
+    {
+      "id": "sonnet-medium",
+      "backend": "claude-code",
+      "model": "sonnet",
+      "effort": "medium"
+    },
+    {
+      "id": "sonnet-high",
+      "backend": "claude-code",
+      "model": "sonnet",
+      "effort": "high"
+    },
+    {
+      "id": "haiku-low",
+      "backend": "claude-code",
+      "model": "haiku",
+      "effort": "low"
+    },
+    {
+      "id": "haiku-medium",
+      "backend": "claude-code",
+      "model": "haiku",
+      "effort": "medium"
+    },
+    {
+      "id": "haiku-high",
+      "backend": "claude-code",
+      "model": "haiku",
+      "effort": "high"
+    },
+    {
+      "id": "fable-low",
+      "backend": "claude-code",
+      "model": "fable",
+      "effort": "low"
+    },
+    {
+      "id": "fable-medium",
+      "backend": "claude-code",
+      "model": "fable",
+      "effort": "medium"
+    },
+    {
+      "id": "fable-high",
+      "backend": "claude-code",
+      "model": "fable",
+      "effort": "high"
+    },
+    {
+      "id": "default",
+      "backend": "claude-code",
+      "model": "opus",
+      "effort": null,
+      "note": "today's observed default: claude-code LLM registry model=opus, no --effort flag passed (claude CLI's own default effort applies)"
+    }
+  ],
+  "decompose_fixture": {
+    "spec": "decompose/ground-truth-spec.md",
+    "ground_truth": "decompose/ground-truth-structure.json",
+    "rubric": "decompose/rubric.md"
+  },
+  "verification_tiers": null,
+  "verification_tiers_note": "not a fixture: exercised only by the driver/live-run tasks under a capture/restore guard on the global autonomous_config.verification_backend/verification_effort",
+  "valid_models": [
+    "opus",
+    "sonnet",
+    "haiku",
+    "fable"
+  ],
+  "valid_model_full_names": [
+    "claude-opus-5-5",
+    "claude-sonnet-5-5",
+    "claude-haiku-5-5",
+    "claude-fable-5-1"
+  ],
+  "valid_efforts": [
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max"
+  ],
+  "valid_source": "datawatch MCP claude_models + claude_efforts, read 2026-10-13 (source: hardcoded, refreshed each major release)",
+  "reps": 1,
+  "observed_default": {
+    "backend": "claude-code",
+    "model": "opus",
+    "effort": null,
+    "datawatch_effort_hint": "normal",
+    "planning_backend": "claude-code",
+    "execution_backend": "claude-code",
+    "verification_backend": "claude-code",
+    "verification_model": "qwen3.8:27b",
+    "source": "datawatch MCP llm_get claude-code (model=opus, default_effort=normal) + autonomous_config_get, read 2026-10-13",
+    "note": "datawatch's default_effort 'normal' is its own quick/normal/thorough hint and is NOT passed to claude as --effort; with no --effort flag the claude CLI's own default effort applies. Matches no grid tier exactly, hence the extra 'default' tier."
+  },
+  "tiers": [
+    {
+      "id": "opus-low",
+      "backend": "claude-code",
+      "model": "opus",
+      "effort": "low"
+    },
+    {
+      "id": "opus-medium",
+      "backend": "claude-code",
+      "model": "opus",
+      "effort": "medium"
+    },
+    {
+      "id": "opus-high",
+      "backend": "claude-code",
+      "model": "opus",
+      "effort": "high"
+    },
+    {
+      "id": "sonnet-low",
+      "backend": "claude-code",
+      "model": "sonnet",
+      "effort": "low"
+    },
+    {
+      "id": "sonnet-medium",
+      "backend": "claude-code",
+      "model": "sonnet",
+      "effort": "medium"
+    },
+    {
+      "id": "sonnet-high",
+      "backend": "claude-code",
+      "model": "sonnet",
+      "effort": "high"
+    },
+    {
+      "id": "haiku-low",
+      "backend": "claude-code",
+      "model": "haiku",
+      "effort": "low"
+    },
+    {
+      "id": "haiku-medium",
+      "backend": "claude-code",
+      "model": "haiku",
+      "effort": "medium"
+    },
+    {
+      "id": "haiku-high",
+      "backend": "claude-code",
+      "model": "haiku",
+      "effort": "high"
+    },
+    {
+      "id": "fable-low",
+      "backend": "claude-code",
+      "model": "fable",
+      "effort": "low"
+    },
+    {
+      "id": "fable-medium",
+      "backend": "claude-code",
+      "model": "fable",
+      "effort": "medium"
+    },
+    {
+      "id": "fable-high",
+      "backend": "claude-code",
+      "model": "fable",
+      "effort": "high"
+    },
+    {
+      "id": "default",
+      "backend": "claude-code",
+      "model": "opus",
+      "effort": null,
+      "note": "today's observed default: claude-code LLM registry model=opus, no --effort flag passed (claude CLI's own default effort applies)"
+    }
+  ],
+  "tiers_note": "legacy alias of execution_tiers, kept for the existing fixture verifier / driver that read .tiers[]"
+}

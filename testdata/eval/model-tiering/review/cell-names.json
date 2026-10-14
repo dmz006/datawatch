@@ -1,0 +1,4 @@
+{
+  "candidate-a.diff": "candidate-fail.diff",
+  "candidate-b.diff": "candidate-pass.diff"
+}

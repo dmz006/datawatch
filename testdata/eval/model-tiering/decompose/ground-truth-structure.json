@@ -1,0 +1,99 @@
+{
+  "source": {
+    "prd_id": "6f3e1f5d",
+    "read_via": "datawatch MCP autonomous_prd_get",
+    "read_at": "2026-10-13",
+    "decompose_backend": "claude-code",
+    "decompose_model": "(LLM registry default for claude-code: opus; no effort flag)",
+    "note": "Structural shape only (titles, counts, dependency edges, file lists). Full spec bodies are deliberately omitted. Story/task ids are the real ids from the record; scoring uses positions and edges, never ids."
+  },
+  "story_count": 2,
+  "task_count": 5,
+  "stories": [
+    {
+      "key": "S1",
+      "id": "ad0d4ad5",
+      "title": "Tracker stops committing output.log and disables implicit auto-gc",
+      "depends_on": [],
+      "task_count": 2,
+      "tasks": [
+        {
+          "key": "S1.T1",
+          "id": "ad0d5136",
+          "title": "Exclude output.log from tracker git and set safe gc config",
+          "depends_on": [],
+          "files": ["internal/session/tracker.go", "internal/session/tracker_test.go"]
+        },
+        {
+          "key": "S1.T2",
+          "id": "ad0d54f7",
+          "title": "Reproduction harness for tracker git growth",
+          "depends_on": [],
+          "files": ["scripts/repro-tracker-git-growth.sh"]
+        }
+      ]
+    },
+    {
+      "key": "S2",
+      "id": "ad0d5764",
+      "title": "Ship, deploy, and remediate bloated session repos",
+      "depends_on": ["S1"],
+      "task_count": 3,
+      "tasks": [
+        {
+          "key": "S2.T1",
+          "id": "ad0d5868",
+          "title": "Out-of-daemon memory-capped session repo shrink script",
+          "depends_on": [],
+          "files": ["scripts/shrink-session-repo.sh", "docs/session-tracking.md"]
+        },
+        {
+          "key": "S2.T2",
+          "id": "ad0d5981",
+          "title": "Release, deploy, and observe the tracker fix",
+          "depends_on": ["S2.T1"],
+          "files": ["cmd/datawatch/main.go", "internal/server/api.go", "CHANGELOG.md", "README.md", "docs/session-tracking.md", "docs/testing.md"]
+        },
+        {
+          "key": "S2.T3",
+          "id": "ad0d5a8f",
+          "title": "Remediate bloated live session repos and close BL420",
+          "depends_on": ["S2.T2"],
+          "files": ["docs/plans/README.md", "docs/testing.md", "CHANGELOG.md", "README.md", "cmd/datawatch/main.go", "internal/server/api.go"]
+        }
+      ]
+    }
+  ],
+  "dependency_edges": [
+    {"from": "S2", "to": "S1", "kind": "story"},
+    {"from": "S2.T2", "to": "S2.T1", "kind": "task"},
+    {"from": "S2.T3", "to": "S2.T2", "kind": "task"}
+  ],
+  "all_files": [
+    "CHANGELOG.md",
+    "README.md",
+    "cmd/datawatch/main.go",
+    "docs/plans/README.md",
+    "docs/session-tracking.md",
+    "docs/testing.md",
+    "internal/server/api.go",
+    "internal/session/tracker.go",
+    "internal/session/tracker_test.go",
+    "scripts/repro-tracker-git-growth.sh",
+    "scripts/shrink-session-repo.sh"
+  ],
+  "required_coverage": [
+    {"id": "code-fix", "rule": "some task lists internal/session/tracker.go in files"},
+    {"id": "regression-test", "rule": "some task lists a file matching internal/session/*_test.go"},
+    {"id": "repro", "rule": "some task's title or spec matches /repro|reproduc/i"},
+    {"id": "remediation", "rule": "some task's title or spec matches /remediat|shrink/i AND /bloated|ab22|9245|ddeb/i"},
+    {"id": "release", "rule": "some task lists both cmd/datawatch/main.go and internal/server/api.go AND CHANGELOG.md"},
+    {"id": "backlog-close", "rule": "some task lists docs/plans/README.md"},
+    {"id": "code-before-release", "rule": "the task(s) covering code-fix are ordered before (transitively depended on by) the task covering release"}
+  ],
+  "out_of_scope": [
+    {"id": "no-max-parallel-change", "rule": "no task spec instructs setting/changing autonomous.max_parallel_tasks (mentions are only allowed inside a 'do not change'/'leave it' clause); no task lists a datawatch config file in files"},
+    {"id": "no-rearchitecture", "rule": "no task lists files under internal/session/ other than tracker.go and *_test.go"},
+    {"id": "no-unrelated-perf", "rule": "every task's files are a subset of all_files UNION {scripts/*, docs/*, .datawatch/verify/*}"}
+  ]
+}
