@@ -1172,11 +1172,46 @@ established. In progress — starting with BL403.**
     `verifier_source` `task`, and its sibling recorded `global`.
     **Evidence:** `docs/plans/2026-10-14-verification-llm-override-live.md`.
 
+28. **BL427** — Automaton lifecycle event notifications (push, not poll)
+    (filed 2026-10-13 — **design pass written, awaiting operator review —
+    implementation NOT approved**). Not roadmap work — surfaced live on
+    2026-10-13/14: the operator had to hand-write a watch-and-inject script
+    to follow BL422's eval Automaton, and the BL431 overnight queue stall
+    went unnoticed for 5+ hours. **Gap, confirmed by direct code search:**
+    no outbound notification fires on any Automaton status transition
+    (blocked/completed/needs_review/failed, scope warnings, task-level
+    start/verify/complete). The `PRDCompleted`/`PRDFailed`/`PRDBlocked`
+    branches in `Manager.Run` only save and return; the one existing hook
+    (`SetOnPRDUpdate`) is a single-slot PWA WS refresh that the executor
+    itself never calls, and `Store.SaveTask` has no hook at all. Every
+    surface has to poll `autonomous_status`/`autonomous_prd_get`.
+    **Existing pieces to reuse:** the Decision log
+    (`internal/autonomous/models.go`) as the event vocabulary and audit
+    record; the messaging/webhook backends
+    (`internal/messaging/backends/webhook/backend.go`, inbound-only today,
+    so an outbound sink is new work) for external delivery; and the
+    `discussion_subscribe` push precedent
+    (`internal/mcp/bl358_discussion_subscribe.go`) for delivering to
+    subscribed AI sessions. **Ruled out:** `schedule_add` — purely
+    time/input-triggered, it would only move the polling loop to another
+    clock and has no notion of Automaton state; `alertrules` — scoped to
+    observer metrics (cpu/mem/gpu/rss/net) evaluated on a 30 s poll, no
+    Automaton awareness. **Sequencing:** after **BL422** (item 21, the
+    model/effort tiering eval) — BL422's results define the "recommended
+    tier" that a model-tiering notification event (tier-mismatch) would be
+    compared against, and feed v10 roadmap planning; that event kind is a
+    separate follow-up filed only once BL422 lands. BL422–BL426 are
+    unaffected. **Design doc:**
+    [2026-10-13-prd-lifecycle-events.md](2026-10-13-prd-lifecycle-events.md)
+    (event source, transitions + precedence, transports, noise control,
+    phases, parity surface, operator open questions).
+
 **2026-10-14 sequencing addendum (operator-confirmed):** BL427 (Automaton
 lifecycle event notifications), BL428 (Concurrency control & usage-budget
 design pass) and BL431 (Automation: multi-Automaton orchestration) are
-filed but not yet numbered above — each is still mid design-pass and will
-self-register once its own doc lands. Explicit operator decision: once all
+filed; BL427's design doc has landed and it is now item 28 above (awaiting
+operator review, sequenced after BL422's eval), while BL428 and BL431 are
+still mid design-pass and will self-register once their own docs land. Explicit operator decision: once all
 three design docs are reviewed and approved, their IMPLEMENTATION is pulled
 forward ahead of the remaining items in this queue, in dependency order
 BL427 → BL428 → BL431, rather than slotting in strictly by filing date.
