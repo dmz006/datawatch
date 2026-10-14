@@ -11673,7 +11673,7 @@ function renderStory(prd, story) {
   const editFn = `openPRDEditStoryModal(${JSON.stringify(prd.id)},${JSON.stringify(story.id)},${JSON.stringify(story.title || '')},${JSON.stringify(story.description || '')})`;
   const filesEditFn = `openPRDEditStoryFilesModal(${JSON.stringify(prd.id)},${JSON.stringify(story.id)},${JSON.stringify(story.files || [])})`;
   const profEditFn = `openPRDSetStoryProfileModal(${JSON.stringify(prd.id)},${JSON.stringify(story.id)},${JSON.stringify(story.execution_profile || '')})`;
-  const llmEditFn = `openPRDSetStoryLLMModal(${JSON.stringify(prd.id)},${JSON.stringify(story.id)},${JSON.stringify(story.backend || '')},${JSON.stringify(String(story.effort || ''))},${JSON.stringify(story.model || '')})`;
+  const llmEditFn = `openPRDSetStoryLLMModal(${JSON.stringify(prd.id)},${JSON.stringify(story.id)},${JSON.stringify(story.backend || '')},${JSON.stringify(String(story.effort || ''))},${JSON.stringify(story.model || '')},${JSON.stringify({verification_backend:story.verification_backend||'',verification_model:story.verification_model||'',verification_effort:String(story.verification_effort||'')})})`;
   // Operator-requested: structural edits (add/remove a story or task)
   // without re-running decompose. Only offered while editable — the same
   // gate the manager enforces server-side (needs_review/revisions_asked/
@@ -11986,7 +11986,7 @@ function renderTask(prd, story, task, editable) {
   const chevron = isExpanded ? '▾' : '▸'; // ▾ vs ▸
 
   // Edit affordances — distinct icons per 1(b).
-  const editFn = `openPRDEditTaskModal(${JSON.stringify(prd.id)},${JSON.stringify(task.id)},${JSON.stringify(task.spec || '')},${JSON.stringify(task.backend || '')},${JSON.stringify(String(task.effort || ''))},${JSON.stringify(task.model || '')})`;
+  const editFn = `openPRDEditTaskModal(${JSON.stringify(prd.id)},${JSON.stringify(task.id)},${JSON.stringify(task.spec || '')},${JSON.stringify(task.backend || '')},${JSON.stringify(String(task.effort || ''))},${JSON.stringify(task.model || '')},${JSON.stringify({verification_backend:task.verification_backend||'',verification_model:task.verification_model||'',verification_effort:String(task.verification_effort||'')})})`;
   const filesEditFn = `openPRDEditTaskFilesModal(${JSON.stringify(prd.id)},${JSON.stringify(task.id)},${JSON.stringify(task.files || [])})`;
   // Operator-requested: structural edit — remove a task without re-running
   // decompose. Distinct from the cancel/retry buttons below, which act on
@@ -12112,6 +12112,7 @@ function renderTask(prd, story, task, editable) {
       <span class="prd-task-verif-label">${vok ? '&#10003;' : '&#10007;'} ${t('prd_task_verification')||'Verification'}${vsev ? ' (' + escHtml(vsev) + ')' : ''}:</span>
       ${vsum ? `<span class="prd-task-verif-summary">${escHtml(vsum)}</span>` : ''}
       ${issues ? `<ul class="prd-task-verif-issues">${issues}</ul>` : ''}
+      ${task.verification.verifier_backend ? `<div style="font-size:10px;color:var(--text2);">${t('prd_verif_verifier_label')||'Judged by'}: ${escHtml(task.verification.verifier_backend)}${task.verification.verifier_model ? ' / ' + escHtml(task.verification.verifier_model) : ''}${task.verification.verifier_source ? ' (' + escHtml(task.verification.verifier_source === 'prd' ? (t('prd_verif_source_automaton')||'automaton') : task.verification.verifier_source) + ')' : ''}</div>` : ''}
     </div>`;
   }
   const expandedBody = `<div class="prd-task-expanded-body"${isExpanded ? '' : ' hidden'}>
@@ -12349,7 +12350,7 @@ function renderPRDActions(prd) {
   if (status === 'draft' || status === 'revisions_asked') btns.push(a('Plan', `prdAction(${idJ},'decompose','POST')`));
   // BL203 — Set LLM button is available pre-Run so the operator can pin a backend before approval.
   if (status !== 'running' && status !== 'completed') {
-    const cur = JSON.stringify({ backend: prd.backend || '', effort: String(prd.effort || ''), model: prd.model || '', decomposition_profile: prd.decomposition_profile || '', decomposition_model: prd.decomposition_model || '' });
+    const cur = JSON.stringify({ backend: prd.backend || '', effort: String(prd.effort || ''), model: prd.model || '', decomposition_profile: prd.decomposition_profile || '', decomposition_model: prd.decomposition_model || '', verification_backend: prd.verification_backend || '', verification_model: prd.verification_model || '', verification_effort: String(prd.verification_effort || '') });
     btns.push(a('LLM', `openPRDSetLLMModal(${idJ},${cur})`, ''));
     // GH#172 D75 — edit PRD permission_mode.
     btns.push(a(t('prd_action_permission')||'Permission', `openPRDSetPermissionModeModal(${idJ},${JSON.stringify(prd.permission_mode||'')})`, ''));
@@ -12774,7 +12775,7 @@ function renderLifecycleStrip(prd) {
   const cloneItem = `<button class="lifecycle-overflow-item" onclick="_lifecycleOverflowToggle(${idJ});openCloneToTemplateModal(${idJ})">Clone to Template…</button>`;
   const deleteItem = `<button class="lifecycle-overflow-item danger" onclick="_lifecycleOverflowToggle(${idJ});confirmPRDDelete(${idJ})">Delete</button>`;
   const llmItem = !isRunning && status !== 'completed'
-    ? `<button class="lifecycle-overflow-item" onclick="_lifecycleOverflowToggle(${idJ});openPRDSetLLMModal(${idJ},${escHtml(JSON.stringify({backend:prd.backend||'',effort:String(prd.effort||''),model:prd.model||'',decomposition_profile:prd.decomposition_profile||'',decomposition_model:prd.decomposition_model||''}))})">Set LLM…</button>`
+    ? `<button class="lifecycle-overflow-item" onclick="_lifecycleOverflowToggle(${idJ});openPRDSetLLMModal(${idJ},${escHtml(JSON.stringify({backend:prd.backend||'',effort:String(prd.effort||''),model:prd.model||'',decomposition_profile:prd.decomposition_profile||'',decomposition_model:prd.decomposition_model||'',verification_backend:prd.verification_backend||'',verification_model:prd.verification_model||'',verification_effort:String(prd.verification_effort||'')}))})">Set LLM…</button>`
     : '';
   // v6.13.1 (C2) — operator: "since the buttons are there (and on all
   // stages of automata) the '...' dropdown isn't needed. make sure no
@@ -13114,7 +13115,39 @@ window.ensureLLMModelLists = function() {
   });
 };
 
-function openPRDEditTaskModal(prdID, taskID, currentSpec, currentBackend, currentEffort, currentModel) {
+// Verification (judge) LLM sub-section shared by the task, story and
+// Automaton LLM modals. Same Backend/Effort/Model row as the execution
+// LLM grid; element ids are <prefix>Backend / <prefix>Effort /
+// <prefix>ModelWrap / <prefix>ModelInner. Empty values inherit
+// task → story → Automaton → global verification setting.
+function _prdVerifLLMSectionHTML(prefix, cur, hintKey, hintFallback) {
+  cur = cur || {};
+  return `<div style="margin-top:4px;padding-top:6px;border-top:1px solid var(--border);">
+        <div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:2px;">${t('prd_verif_llm_title')||'Verification LLM'}</div>
+        <div style="font-size:10px;color:var(--text2);margin-bottom:4px;">${t(hintKey)||hintFallback}</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">
+          <div><label style="font-size:11px;color:var(--text2);">${t('prd_new_backend_label')||'Backend'}</label>${renderBackendSelect(prefix + 'Backend', cur.verification_backend || '', `refreshLLMModelField('${prefix}ModelWrap','${prefix}ModelInner','${prefix}Backend','')`)}</div>
+          <div><label style="font-size:11px;color:var(--text2);">${t('prd_new_effort_label')||'Effort'}</label>${renderEffortSelect(prefix + 'Effort', String(cur.verification_effort || ''), '')}</div>
+          <div id="${prefix}ModelWrap" style="display:none;"><label style="font-size:11px;color:var(--text2);">${t('prd_new_model_label')||'Model (optional)'}</label><div id="${prefix}ModelInner"></div></div>
+        </div>
+      </div>`;
+}
+
+function _prdReadVerifLLM(prefix) {
+  const modelEl = document.getElementById(prefix + 'ModelInner')?.querySelector('input,select');
+  return {
+    verification_backend: document.getElementById(prefix + 'Backend').value,
+    verification_effort: document.getElementById(prefix + 'Effort').value,
+    verification_model: modelEl ? modelEl.value.trim() : '',
+  };
+}
+
+function _prdVerifLLMChanged(next, cur) {
+  cur = cur || {};
+  return ['verification_backend', 'verification_effort', 'verification_model'].some(k => next[k] !== String(cur[k] || ''));
+}
+
+function openPRDEditTaskModal(prdID, taskID, currentSpec, currentBackend, currentEffort, currentModel, currentVerif) {
   // v5.26.8 — populate the model dropdown as soon as the modal mounts,
   // and refresh it every time the operator switches backends.
   ensureLLMModelLists().then(() => {
@@ -13132,6 +13165,7 @@ function openPRDEditTaskModal(prdID, taskID, currentSpec, currentBackend, curren
         <div><label style="font-size:11px;color:var(--text2);">${t('prd_new_effort_label')||'Effort'}</label>${renderEffortSelect('prdEditEffort', currentEffort || '', '')}</div>
         <div id="prdEditModelWrap" style="display:none;"><label style="font-size:11px;color:var(--text2);">${t('prd_new_model_label')||'Model (optional)'}</label><div id="prdEditModelInner"></div></div>
       </div>
+      ${_prdVerifLLMSectionHTML('prdEditVerif', currentVerif, 'prd_verif_llm_hint', 'Which LLM judges this task\'s work — empty inherits story, then Automaton, then the global verification setting.')}
       <div style="display:flex;gap:6px;justify-content:flex-end;">
         <button type="button" class="btn-secondary" onclick="_prdCloseModal()">${t('btn_cancel')||'Cancel'}</button>
         <button type="submit" class="btn-secondary" style="background:var(--accent2);color:#fff;">${t('btn_save')||'Save'}</button>
@@ -13156,6 +13190,13 @@ function openPRDEditTaskModal(prdID, taskID, currentSpec, currentBackend, curren
         body: JSON.stringify({ task_id: taskID, backend, effort, model, actor: 'operator' }),
       }));
     }
+    const verif = _prdReadVerifLLM('prdEditVerif');
+    if (_prdVerifLLMChanged(verif, currentVerif)) {
+      calls.push(apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/set_task_verification_llm', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(Object.assign({ task_id: taskID, actor: 'operator' }, verif)),
+      }));
+    }
     if (calls.length === 0) { _prdCloseModal(); return; }
     Promise.all(calls)
       .then(() => { showToast('Task updated', 'success', 1500); _prdCloseModal(); _refreshAutomataOrPRD(); })
@@ -13164,6 +13205,7 @@ function openPRDEditTaskModal(prdID, taskID, currentSpec, currentBackend, curren
   // Populate the model dropdown for the current backend now that
   // the modal is mounted in the DOM.
   refreshLLMModelField('prdEditModelWrap', 'prdEditModelInner', 'prdEditBackend', currentModel || '');
+  refreshLLMModelField('prdEditVerifModelWrap', 'prdEditVerifModelInner', 'prdEditVerifBackend', (currentVerif || {}).verification_model || '');
   });
 }
 window.openPRDEditTaskModal = openPRDEditTaskModal;
@@ -13280,7 +13322,7 @@ window.openPRDAddTaskModal = openPRDAddTaskModal;
 // BL381 — per-story LLM override modal. Mirrors openPRDEditTaskModal's LLM
 // section; calls set_story_llm. Available in needs_review + revisions_asked
 // + cancelled (see renderStory's editable gate).
-function openPRDSetStoryLLMModal(prdID, storyID, currentBackend, currentEffort, currentModel) {
+function openPRDSetStoryLLMModal(prdID, storyID, currentBackend, currentEffort, currentModel, currentVerif) {
   ensureLLMModelLists().then(() => {
     _prdMountModal(`
     <div class="response-modal-header">
@@ -13295,6 +13337,7 @@ function openPRDSetStoryLLMModal(prdID, storyID, currentBackend, currentEffort, 
         <div><label style="font-size:11px;color:var(--text2);">${t('prd_new_effort_label')||'Effort'}</label>${renderEffortSelect('prdStoryLLMEffort', currentEffort || '', '')}</div>
         <div id="prdStoryLLMModelWrap" style="display:none;"><label style="font-size:11px;color:var(--text2);">${t('prd_new_model_label')||'Model (optional)'}</label><div id="prdStoryLLMModelInner"></div></div>
       </div>
+      ${_prdVerifLLMSectionHTML('prdStoryVerif', currentVerif, 'prd_verif_llm_story_hint', 'Which LLM judges this story\'s tasks — empty inherits the Automaton, then the global verification setting. Tasks with their own verification LLM keep it.')}
       <div style="display:flex;gap:6px;justify-content:flex-end;">
         <button type="button" class="btn-secondary" onclick="_prdCloseModal()">${t('btn_cancel')||'Cancel'}</button>
         <button type="submit" class="btn-secondary" style="background:var(--accent2);color:#fff;">${t('btn_save')||'Save'}</button>
@@ -13305,18 +13348,27 @@ function openPRDSetStoryLLMModal(prdID, storyID, currentBackend, currentEffort, 
     const effort = document.getElementById('prdStoryLLMEffort').value;
     const modelEl = document.getElementById('prdStoryLLMModelInner')?.querySelector('input,select');
     const model = modelEl ? modelEl.value.trim() : '';
-    if (backend === (currentBackend || '') && effort === (currentEffort || '') && model === (currentModel || '')) {
-      _prdCloseModal();
-      return;
+    const verif = _prdReadVerifLLM('prdStoryVerif');
+    const calls = [];
+    if (backend !== (currentBackend || '') || effort !== (currentEffort || '') || model !== (currentModel || '')) {
+      calls.push(apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/set_story_llm', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ story_id: storyID, backend, effort, model, actor: 'operator' }),
+      }));
     }
-    apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/set_story_llm', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ story_id: storyID, backend, effort, model, actor: 'operator' }),
-    })
+    if (_prdVerifLLMChanged(verif, currentVerif)) {
+      calls.push(apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/set_story_verification_llm', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(Object.assign({ story_id: storyID, actor: 'operator' }, verif)),
+      }));
+    }
+    if (calls.length === 0) { _prdCloseModal(); return; }
+    Promise.all(calls)
       .then(() => { showToast('Story LLM saved', 'success', 1500); _prdCloseModal(); _refreshAutomataOrPRD(); })
       .catch(err => showToast('Save failed: ' + String(err), 'error', 3000));
   });
   refreshLLMModelField('prdStoryLLMModelWrap', 'prdStoryLLMModelInner', 'prdStoryLLMBackend', currentModel || '');
+  refreshLLMModelField('prdStoryVerifModelWrap', 'prdStoryVerifModelInner', 'prdStoryVerifBackend', (currentVerif || {}).verification_model || '');
   });
 }
 window.openPRDSetStoryLLMModal = openPRDSetStoryLLMModal;
@@ -13349,6 +13401,7 @@ function openPRDSetLLMModal(prdID, current) {
           <div id="prdSetDecompModelWrap" style="display:none;"><label style="font-size:11px;color:var(--text2);">Planning model (optional)</label><div id="prdSetDecompModelInner"></div></div>
         </div>
       </div>
+      ${_prdVerifLLMSectionHTML('prdSetVerif', current, 'prd_verif_llm_automaton_hint', 'Which LLM judges this Automaton\'s tasks — empty inherits the global verification setting. Story and task verification LLMs take precedence.')}
       <div style="display:flex;gap:6px;justify-content:flex-end;">
         <button type="button" class="btn-secondary" onclick="_prdCloseModal()">${t('btn_cancel')||'Cancel'}</button>
         <button type="submit" class="btn-secondary" style="background:var(--accent2);color:#fff;">${t('btn_save')||'Save'}</button>
@@ -13365,15 +13418,24 @@ function openPRDSetLLMModal(prdID, current) {
       decomposition_model: decompModelEl ? decompModelEl.value.trim() : '',
       actor: 'operator',
     };
-    apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/set_llm', {
+    const calls = [apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/set_llm', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
-    }).then(() => { showToast('PRD LLM updated', 'success', 1500); _prdCloseModal(); _refreshAutomataOrPRD(); })
+    })];
+    const verif = _prdReadVerifLLM('prdSetVerif');
+    if (_prdVerifLLMChanged(verif, current)) {
+      calls.push(apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/set_verification_llm', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(Object.assign({ actor: 'operator' }, verif)),
+      }));
+    }
+    Promise.all(calls).then(() => { showToast('PRD LLM updated', 'success', 1500); _prdCloseModal(); _refreshAutomataOrPRD(); })
       .catch(err => showToast('Save failed: ' + String(err), 'error', 3000));
   });
   // Populate model dropdowns for the current backends now that the modal is mounted.
   refreshLLMModelField('prdSetModelWrap', 'prdSetModelInner', 'prdSetBackend', current.model || '');
   refreshLLMModelField('prdSetDecompModelWrap', 'prdSetDecompModelInner', 'prdSetDecompositionProfile', current.decomposition_model || '');
+  refreshLLMModelField('prdSetVerifModelWrap', 'prdSetVerifModelInner', 'prdSetVerifBackend', current.verification_model || '');
   });
 }
 window.openPRDSetLLMModal = openPRDSetLLMModal;

@@ -5,6 +5,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.71 — feat(pwa): verification LLM override in the task, story and Automaton LLM modals
+
+### Added
+- **Pick the verification LLM from the PWA.** The edit-task modal, the
+  story LLM modal and the Automaton "Set LLM" modal each gain a
+  Verification LLM row (Backend / Effort / Model) below the existing LLM
+  settings; saving only calls the verification endpoint when a value
+  changed. Empty inherits task > story > Automaton > global. Task
+  verification results now show a muted "Judged by" line with the
+  verifier backend, model and source. New locale keys in all five
+  bundles; Android parity tracked in datawatch-app#257.
+
 ## v9.0.70 — feat(autonomous): CLI + comm-channel commands for per-unit verification LLM overrides
 
 ### Added
