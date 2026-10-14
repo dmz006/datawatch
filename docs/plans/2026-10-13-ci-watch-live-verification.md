@@ -40,6 +40,7 @@ Release jobs: go test + lint, gosec baseline-diff, govulncheck, goreleaser, cont
 ## Live probe
 
 - 2026-10-13: ci-watch live probe commit pushed by an automaton.
+- 2026-10-13: ci-watch live probe commit pushed by an automaton (v9.0.65 re-run).
 
 ## Live verification against a real GitHub Actions run
 
