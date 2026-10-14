@@ -106,19 +106,25 @@ func (m *Manager) taskCancelled(id string) bool {
 }
 
 func (m *Manager) setWaiting(t *Task, reason string) {
+	old := t.Status
 	t.Status = TaskWaitingCapacity
 	t.WaitReason = reason
 	t.UpdatedAt = time.Now()
-	_ = m.store.SaveTask(t)
+	if m.store.SaveTask(t) == nil {
+		m.emitTaskStatus(nil, t, old, nil, nil)
+	}
 	m.EmitPRDUpdate(t.PRDID)
 }
 
 func (m *Manager) clearWaiting(t *Task) {
+	old := t.Status
 	if t.Status == TaskWaitingCapacity {
 		t.Status = TaskInProgress
 	}
 	t.WaitReason = ""
-	_ = m.store.SaveTask(t)
+	if m.store.SaveTask(t) == nil {
+		m.emitTaskStatus(nil, t, old, nil, nil)
+	}
 	m.EmitPRDUpdate(t.PRDID)
 }
 

@@ -296,13 +296,16 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 				}
 			}
 			if depFailed != "" {
+				oldStatus := t.Status
 				t.Status = TaskFailed
 				verb := "failed"
 				if dt := lookupTask(prd, depFailed); dt != nil && dt.Status == TaskCancelled {
 					verb = "was cancelled"
 				}
 				t.Error = "dependency " + depFailed + " " + verb
-				_ = m.store.SaveTask(t)
+				if m.store.SaveTask(t) == nil {
+					m.emitTaskStatus(prd, t, oldStatus, nil, nil)
+				}
 				failedIDs[tid] = true
 			} else {
 				// Mark the owning story in_progress when its first task begins.
@@ -311,9 +314,12 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 					_ = m.store.SavePRD(prd)
 				}
 				if err := m.executeOne(ctx, prd, t, spawn, verify, retries, qgCfg, qgBaseline); err != nil {
+					oldStatus := t.Status
 					t.Status = TaskFailed
 					t.Error = err.Error()
-					_ = m.store.SaveTask(t)
+					if m.store.SaveTask(t) == nil {
+						m.emitTaskStatus(prd, t, oldStatus, nil, nil)
+					}
 				}
 			}
 			// Re-read authoritative status: executeOne returns nil even after
@@ -426,9 +432,12 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 					}
 				}
 				if depFailed != "" {
+					oldStatus := t.Status
 					t.Status = TaskFailed
 					t.Error = "dependency " + depFailed + " failed"
-					_ = m.store.SaveTask(t)
+					if m.store.SaveTask(t) == nil {
+						m.emitTaskStatus(prd, t, oldStatus, nil, nil)
+					}
 					failedIDs[tid] = true
 					completedIDs[tid] = true
 					remaining--
@@ -483,9 +492,12 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 				return
 			}
 			if t := lookupTask(prd, dr.tid); t != nil && !isTaskTerminal(t.Status) {
+				oldStatus := t.Status
 				t.Status = TaskFailed
 				t.Error = dr.err.Error()
-				_ = m.store.SaveTask(t)
+				if m.store.SaveTask(t) == nil {
+					m.emitTaskStatus(prd, t, oldStatus, nil, nil)
+				}
 			}
 		}
 
@@ -511,9 +523,12 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 				remaining--
 				if r.err != nil {
 					if t := lookupTask(prd, r.tid); t != nil {
+						oldStatus := t.Status
 						t.Status = TaskFailed
 						t.Error = r.err.Error()
-						_ = m.store.SaveTask(t)
+						if m.store.SaveTask(t) == nil {
+							m.emitTaskStatus(prd, t, oldStatus, nil, nil)
+						}
 					}
 					failedIDs[r.tid] = true
 				}
@@ -852,6 +867,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			// session's tmux pane and backend process (opencode/claude) keep
 			// running as an orphan — wasting resources and confusing session
 			// tracking — while t.SessionID gets silently overwritten below.
+			oldStatus, oldSession := t.Status, t.SessionID
 			if t.SessionID != "" {
 				m.mu.Lock()
 				killerFn := m.sessionKillerFn
@@ -869,7 +885,10 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			t.StartedAt = &now
 			t.Status = TaskInProgress
 			t.RetryCount = attempt
-			_ = m.store.SaveTask(t)
+			if m.store.SaveTask(t) == nil {
+				m.emitTaskSession(prd, t, oldSession)
+				m.emitTaskStatus(prd, t, oldStatus, nil, nil)
+			}
 
 			// BL203 (v5.4.0) + BL381 — most-specific LLM override wins.
 			// per-task → per-story → per-PRD → cfg.ExecutionBackend → global session.llm_backend.
@@ -938,8 +957,12 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			if led := m.Capacity(); led != nil {
 				led.Bind(t.ID, sr.SessionID)
 			}
+			oldSession = t.SessionID
 			t.SessionID = sr.SessionID
-			_ = m.store.SaveTask(t) // persist SessionID immediately so killPRDSessions can reach it if daemon exits before TaskVerifying is saved
+			// persist SessionID immediately so killPRDSessions can reach it if daemon exits before TaskVerifying is saved
+			if m.store.SaveTask(t) == nil {
+				m.emitTaskSession(prd, t, oldSession)
+			}
 			// BL386 Phase 1 — warm-start seed after spawn, best-effort.
 			if sr.SessionID != "" && prd.MemorySeed.Enabled {
 				m.mu.Lock()
@@ -954,8 +977,11 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			t.PreTaskSHA = sr.PreTaskSHA                       // BL366: persisted for verifier diff grounding
 			t.PreTaskUntrackedFiles = sr.PreTaskUntrackedFiles // v8.25.12: detect newly created untracked files
 			t.PreTaskDirtyFiles = sr.PreTaskDirtyFiles         // foreign-file-drift: tracked files already modified before the worker started
+			oldStatus = t.Status
 			t.Status = TaskVerifying
-			_ = m.store.SaveTask(t)
+			if m.store.SaveTask(t) == nil {
+				m.emitTaskStatus(prd, t, oldStatus, nil, nil)
+			}
 		}
 
 		var vr VerificationResult
@@ -1006,9 +1032,12 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				}
 				if cmp.Regression && qgCfg.BlockOnRegression {
 					lastFailureCategory = "policy" // BL410 Phase 3
+					oldStatus := t.Status
 					t.Status = TaskFailed
 					t.Error = "quality_gate_regression: " + cmp.Summary
-					_ = m.store.SaveTask(t)
+					if m.store.SaveTask(t) == nil {
+						m.emitTaskStatus(prd, t, oldStatus, nil, nil)
+					}
 					// Fold regression summary into retry hint so the next attempt
 					// knows what broke.
 					hint = "quality gate regression: " + cmp.Summary
@@ -1021,6 +1050,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			}
 			done := time.Now()
 			t.CompletedAt = &done
+			preDoneStatus := t.Status
 			t.Status = TaskCompleted
 			// Sweep any leftover CHECKPOINT.md out of the shared
 			// project_dir now that the task is done — nothing will ever
@@ -1033,7 +1063,11 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				return err
 			} else if blocked {
 				t.Status = TaskBlocked
-				return m.store.SaveTask(t)
+				if err := m.store.SaveTask(t); err != nil {
+					return err
+				}
+				m.emitTaskStatus(prd, t, preDoneStatus, nil, lastBlockVerdict(t.Verdicts))
+				return nil
 			} else if contentHint != "" {
 				// BL410 Phase 2 — a content-category guardrail block,
 				// auto-fix enabled, budget already consumed inside
@@ -1060,6 +1094,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			if err := m.store.SaveTask(t); err != nil {
 				return err
 			}
+			m.emitTaskStatus(prd, t, preDoneStatus, nil, nil)
 			m.deleteTaskSession(t.SessionID)
 			return nil
 		}
@@ -1086,6 +1121,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			hint += "\n\nCheckpoint from the previous attempt (context only):\n" + cp
 		}
 	}
+	exhaustedOld := t.Status
 	t.Status = TaskFailed
 	t.Error = "verification failed after retries"
 	// BL410 Phase 3 — Learning writer revival: record the final,
@@ -1107,6 +1143,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 	if err := m.store.SaveTask(t); err != nil {
 		return err
 	}
+	m.emitTaskStatus(prd, t, exhaustedOld, nil, nil)
 	m.deleteTaskSession(t.SessionID)
 	return nil
 }
@@ -1247,22 +1284,35 @@ func joinLines(s []string) string {
 // Depth is capped by Config.MaxRecursionDepth; a parent at depth ==
 // MaxRecursionDepth refuses to spawn so a runaway can't tank the daemon.
 func (m *Manager) recurseChildPRD(ctx context.Context, parent *PRD, t *Task, spawn SpawnFn, verify VerifyFn, retries int) error {
+	// emitSaved persists t and, on success, emits its task-level
+	// status change from old.
+	emitSaved := func(old TaskStatus) error {
+		if err := m.store.SaveTask(t); err != nil {
+			return err
+		}
+		m.emitTaskStatus(parent, t, old, nil, nil)
+		return nil
+	}
+	var old TaskStatus
 	maxDepth := m.cfg.MaxRecursionDepth
 	if maxDepth <= 0 {
+		old = t.Status
 		t.Status = TaskFailed
 		t.Error = "recursion disabled (autonomous.max_recursion_depth=0); set spawn_prd=false or raise the limit"
-		return m.store.SaveTask(t)
+		return emitSaved(old)
 	}
 	if parent.Depth+1 > maxDepth {
+		old = t.Status
 		t.Status = TaskFailed
 		t.Error = fmt.Sprintf("recursion depth %d would exceed autonomous.max_recursion_depth=%d", parent.Depth+1, maxDepth)
-		return m.store.SaveTask(t)
+		return emitSaved(old)
 	}
 
 	now := time.Now()
 	t.StartedAt = &now
+	old = t.Status
 	t.Status = TaskInProgress
-	_ = m.store.SaveTask(t)
+	_ = emitSaved(old)
 
 	// Inherit LLM defaults from parent task → parent PRD; the child PRD
 	// can be re-decomposed with its own backend by the operator.
@@ -1282,13 +1332,15 @@ func (m *Manager) recurseChildPRD(ctx context.Context, parent *PRD, t *Task, spa
 	}
 	child, err := m.store.CreatePRDWithParent(t.Spec, parent.ProjectDir, backend, model, effort, parent.ID, t.ID, parent.Depth+1)
 	if err != nil {
+		old = t.Status
 		t.Status = TaskFailed
 		t.Error = "spawn child PRD: " + err.Error()
-		return m.store.SaveTask(t)
+		return emitSaved(old)
 	}
 	t.ChildPRDID = child.ID
+	old = t.Status
 	t.Status = TaskInProgress
-	_ = m.store.SaveTask(t)
+	_ = emitSaved(old)
 
 	// BL387 Phase 1b — inherit parent prd-shared memories into child so the
 	// child decomposer and tasks start with the parent's accumulated findings.
@@ -1308,29 +1360,33 @@ func (m *Manager) recurseChildPRD(ctx context.Context, parent *PRD, t *Task, spa
 	// otherwise hangs on operator review and recursion becomes useless;
 	// operators can flip it off for high-stakes pipelines.
 	if _, err := m.Decompose(child.ID); err != nil {
+		old = t.Status
 		t.Status = TaskFailed
 		t.Error = fmt.Sprintf("child PRD %s decompose: %v", child.ID, err)
-		return m.store.SaveTask(t)
+		return emitSaved(old)
 	}
 	if m.cfg.AutoApproveChildren {
 		if _, err := m.Approve(child.ID, "autonomous", fmt.Sprintf("auto-approve from parent task %s/%s", parent.ID, t.ID)); err != nil {
+			old = t.Status
 			t.Status = TaskFailed
 			t.Error = fmt.Sprintf("child PRD %s auto-approve: %v", child.ID, err)
-			return m.store.SaveTask(t)
+			return emitSaved(old)
 		}
 	} else {
 		// Operator-gated child: leave the child in needs_review and mark
 		// the parent task blocked. The operator approves the child via
 		// the usual /approve endpoint; the parent's loop tick re-checks
 		// child status and unblocks when the child reaches PRDCompleted.
+		old = t.Status
 		t.Status = TaskBlocked
 		t.Error = fmt.Sprintf("waiting for operator approval on child PRD %s", child.ID)
-		return m.store.SaveTask(t)
+		return emitSaved(old)
 	}
 	if err := m.Run(ctx, child.ID, spawn, verify); err != nil {
+		old = t.Status
 		t.Status = TaskFailed
 		t.Error = fmt.Sprintf("child PRD %s run: %v", child.ID, err)
-		return m.store.SaveTask(t)
+		return emitSaved(old)
 	}
 
 	// Roll up child outcome onto the parent task.
@@ -1338,17 +1394,19 @@ func (m *Manager) recurseChildPRD(ctx context.Context, parent *PRD, t *Task, spa
 	done := time.Now()
 	t.CompletedAt = &done
 	if updated == nil || updated.Status != PRDCompleted {
+		old = t.Status
 		t.Status = TaskFailed
 		t.Error = fmt.Sprintf("child PRD %s ended with status %s", child.ID, statusOrUnknown(updated))
-		return m.store.SaveTask(t)
+		return emitSaved(old)
 	}
+	old = t.Status
 	t.Status = TaskCompleted
 	t.Verification = &VerificationResult{
 		OK:         true,
 		Summary:    fmt.Sprintf("child PRD %s completed (%d stories)", child.ID, len(updated.Story)),
 		VerifiedAt: time.Now(),
 	}
-	return m.store.SaveTask(t)
+	return emitSaved(old)
 }
 
 func statusOrUnknown(p *PRD) PRDStatus {

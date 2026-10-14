@@ -369,3 +369,100 @@ func lastBlockVerdict(vs []GuardrailVerdict) *GuardrailVerdict {
 	}
 	return nil
 }
+
+// emitTaskStatus publishes a task-level status-change event for t,
+// which has just been saved with its new status. Call it only after
+// the store save succeeded. old is the status captured before the
+// assignment; nothing is emitted when it equals t.Status. prd supplies
+// PRD/parent IDs and may be nil (t.PRDID is used). dec / v are copied
+// as in emitPRDStatus.
+func (m *Manager) emitTaskStatus(prd *PRD, t *Task, old TaskStatus, dec *Decision, v *GuardrailVerdict) {
+	if m == nil || t == nil {
+		return
+	}
+	old, cur := normTaskStatus(old), normTaskStatus(t.Status)
+	if old == cur {
+		return
+	}
+	ev := newTaskEvent(prd, t)
+	ev.Kind = TaskStatusKind(cur)
+	ev.OldStatus = string(old)
+	ev.NewStatus = string(cur)
+	if dec != nil {
+		d := *dec
+		ev.Decision = &d
+	}
+	if v != nil {
+		vc := *v
+		vc.Issues = append([]string(nil), v.Issues...)
+		ev.Verdict = &vc
+	}
+	m.emit(ev)
+}
+
+// emitTaskSession publishes task.session_started when t.SessionID was
+// set (from oldSession, empty or a replaced session) or
+// task.session_cleared when it was reset to "". Call it only after the
+// save that persisted the new SessionID succeeded. For a cleared event
+// SessionID carries the session that was cleared.
+func (m *Manager) emitTaskSession(prd *PRD, t *Task, oldSession string) {
+	if m == nil || t == nil || oldSession == t.SessionID {
+		return
+	}
+	ev := newTaskEvent(prd, t)
+	ev.OldStatus = string(normTaskStatus(t.Status))
+	ev.NewStatus = ev.OldStatus
+	if t.SessionID == "" {
+		ev.Kind = KindTaskSessionCleared
+		ev.SessionID = oldSession
+	} else {
+		ev.Kind = KindTaskSessionStarted
+	}
+	m.emit(ev)
+}
+
+// normTaskStatus maps the zero status (a freshly decomposed or
+// ResetTask-cleared task, which the executor treats as pending) to
+// TaskPending so event kinds are never "task.".
+func normTaskStatus(s TaskStatus) TaskStatus {
+	if s == "" {
+		return TaskPending
+	}
+	return s
+}
+
+// newTaskEvent builds the identity fields shared by every task-level event.
+func newTaskEvent(prd *PRD, t *Task) LifecycleEvent {
+	ev := LifecycleEvent{
+		Level:     LevelTask,
+		PRDID:     t.PRDID,
+		StoryID:   t.StoryID,
+		TaskID:    t.ID,
+		SessionID: t.SessionID,
+	}
+	if prd != nil {
+		if prd.ID != "" {
+			ev.PRDID = prd.ID
+		}
+		ev.ParentPRDID = prd.ParentPRDID
+	}
+	return ev
+}
+
+// pendingTaskEvent is a task transition made in memory ahead of a
+// single later save (reset / cancel loops); flushed by
+// emitPendingTaskEvents once that save succeeds.
+type pendingTaskEvent struct {
+	t          *Task
+	oldStatus  TaskStatus
+	oldSession string
+}
+
+// emitPendingTaskEvents emits the status and session events for each
+// collected transition, in order.
+func (m *Manager) emitPendingTaskEvents(prd *PRD, evs []pendingTaskEvent, dec *Decision) {
+	for _, p := range evs {
+		m.emitTaskStatus(prd, p.t, p.oldStatus, dec, nil)
+		m.emitTaskSession(prd, p.t, p.oldSession)
+	}
+}

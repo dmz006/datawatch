@@ -729,9 +729,13 @@ func (m *Manager) resetInProgressTasksForResume(prd *PRD) {
 					log.Printf("[autonomous] boot-resume: kill orphaned session %s: %v", t.SessionID, err)
 				}
 			}
+			oldSession := t.SessionID
 			t.SessionID = ""
 			t.Status = TaskPending
-			_ = m.store.SaveTask(t)
+			if m.store.SaveTask(t) == nil {
+				m.emitTaskStatus(prd, t, prevStatus, nil, nil)
+				m.emitTaskSession(prd, t, oldSession)
+			}
 			log.Printf("[autonomous] boot-resume: reset task %s (was %s) for prd=%s", t.ID, prevStatus, prd.ID)
 		}
 	}
@@ -795,12 +799,16 @@ func (m *Manager) resetKilledTasksForResume(prd *PRD) bool {
 					log.Printf("[autonomous] boot-resume: kill orphaned session %s: %v", t.SessionID, err)
 				}
 			}
+			oldStatus, oldSession := t.Status, t.SessionID
 			t.Status = TaskPending
 			t.Error = ""
 			t.SessionID = ""
 			t.RetryCount = 0
 			t.UpdatedAt = now
-			_ = m.store.SaveTask(t)
+			if m.store.SaveTask(t) == nil {
+				m.emitTaskStatus(prd, t, oldStatus, nil, nil)
+				m.emitTaskSession(prd, t, oldSession)
+			}
 			log.Printf("[autonomous] boot-resume: reset killed task %s to pending for prd=%s", t.ID, prd.ID)
 		}
 		// Reset stories that are not completed back to pending.
@@ -1349,11 +1357,13 @@ func (m *Manager) Approve(prdID, actor, note string) (*PRD, error) {
 	// to awaiting_approval so the runner skips them until the operator
 	// approves each via ApproveTask. Independent of PerStoryApproval —
 	// a PRD can use either, both, or neither gate.
+	var gated []pendingTaskEvent
 	if m.resolveGuidedModeSource(prd) == GuidedModeOperator {
 		for si := range prd.Story {
 			for ti := range prd.Story[si].Tasks {
 				t := &prd.Story[si].Tasks[ti]
 				if t.Status == "" || t.Status == TaskPending {
+					gated = append(gated, pendingTaskEvent{t: t, oldStatus: t.Status, oldSession: t.SessionID})
 					t.Status = TaskAwaitingApproval
 					t.UpdatedAt = now
 				}
@@ -1364,6 +1374,7 @@ func (m *Manager) Approve(prdID, actor, note string) (*PRD, error) {
 		return nil, err
 	}
 	emitApproved()
+	m.emitPendingTaskEvents(prd, gated, nil)
 	updated, _ := m.store.GetPRD(prdID)
 	return updated, nil
 }
@@ -1714,6 +1725,7 @@ func (m *Manager) ResetTask(prdID, taskID, actor string, force bool) (*PRD, erro
 	}
 	found := false
 	foundSI := -1
+	emitReset := func(*Decision) {}
 	for si := range prd.Story {
 		for ti := range prd.Story[si].Tasks {
 			t := &prd.Story[si].Tasks[ti]
@@ -1756,9 +1768,12 @@ func (m *Manager) ResetTask(prdID, taskID, actor string, force bool) (*PRD, erro
 						strings.Join(hintParts, " ") +
 						" Check the project directory's current state (git log, existing files) before redoing work — the previous attempt may have already produced correct output that only failed for an unrelated reason (e.g. the verifier itself erroring). If so, fix the specific issues above (or reconfirm correctness) by editing and re-committing the actual required deliverable files themselves — verification only sees this run's own diff, so a checkpoint note or other side file alone will not satisfy it, even if the underlying content is already right."
 				}
+				resetEv := pendingTaskEvent{t: t, oldStatus: t.Status, oldSession: t.SessionID}
 				t.Status = ""
 				t.Error = ""
 				t.SessionID = ""
+				// BL427 — fired after the SavePRD below succeeds.
+				emitReset = func(dec *Decision) { m.emitPendingTaskEvents(prd, []pendingTaskEvent{resetEv}, dec) }
 				t.Verification = nil
 				t.RetryCount = 0
 				t.StartedAt = nil
@@ -1815,6 +1830,7 @@ func (m *Manager) ResetTask(prdID, taskID, actor string, force bool) (*PRD, erro
 	if prd.Status != resetOld {
 		m.emitPRDStatus(prd, resetOld, lastDecision(prd, kind), nil)
 	}
+	emitReset(lastDecision(prd, kind))
 	updated, _ := m.store.GetPRD(prdID)
 	return updated, nil
 }
@@ -1832,6 +1848,9 @@ func (m *Manager) CancelStory(prdID, storyID, actor, reason string) (*PRD, error
 	}
 	now := time.Now()
 	found := false
+	var cancelled []pendingTaskEvent
+	// BL427 — fired after the SavePRD below succeeds.
+	emitCancelled := func() { m.emitPendingTaskEvents(prd, cancelled, lastDecision(prd, "cancel_story")) }
 	for si := range prd.Story {
 		if prd.Story[si].ID == storyID {
 			if terminalStory[prd.Story[si].Status] {
@@ -1849,6 +1868,7 @@ func (m *Manager) CancelStory(prdID, storyID, actor, reason string) (*PRD, error
 					}
 				}
 				if t.Status != TaskCompleted && t.Status != TaskCancelled {
+					cancelled = append(cancelled, pendingTaskEvent{t: t, oldStatus: t.Status, oldSession: t.SessionID})
 					t.Status = TaskCancelled
 					t.UpdatedAt = now
 				}
@@ -1871,6 +1891,7 @@ func (m *Manager) CancelStory(prdID, storyID, actor, reason string) (*PRD, error
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
 	}
+	emitCancelled()
 	updated, _ := m.store.GetPRD(prdID)
 	return updated, nil
 }
@@ -1887,6 +1908,7 @@ func (m *Manager) CancelTask(prdID, taskID, actor, reason string) (*PRD, error) 
 	}
 	now := time.Now()
 	found := false
+	emitCancelled := func() {}
 	for si := range prd.Story {
 		for ti := range prd.Story[si].Tasks {
 			t := &prd.Story[si].Tasks[ti]
@@ -1905,8 +1927,11 @@ func (m *Manager) CancelTask(prdID, taskID, actor, reason string) (*PRD, error) 
 						}
 					}
 				}
+				oldStatus := t.Status
 				t.Status = TaskCancelled
 				t.UpdatedAt = now
+				// BL427 — fired after the SavePRD below succeeds.
+				emitCancelled = func() { m.emitTaskStatus(prd, t, oldStatus, lastDecision(prd, "cancel_task"), nil) }
 				found = true
 				break
 			}
@@ -1927,6 +1952,7 @@ func (m *Manager) CancelTask(prdID, taskID, actor, reason string) (*PRD, error) 
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
 	}
+	emitCancelled()
 	updated, _ := m.store.GetPRD(prdID)
 	return updated, nil
 }
@@ -2193,6 +2219,7 @@ func (m *Manager) ApproveTask(prdID, taskID, actor string) (*PRD, error) {
 	}
 	now := time.Now()
 	found := false
+	emitPending := func() {}
 	for si := range prd.Story {
 		for ti := range prd.Story[si].Tasks {
 			t := &prd.Story[si].Tasks[ti]
@@ -2205,6 +2232,8 @@ func (m *Manager) ApproveTask(prdID, taskID, actor string) (*PRD, error) {
 				// picks it up. Other states left alone.
 				if t.Status == TaskAwaitingApproval {
 					t.Status = TaskPending
+					// BL427 — fired after the SavePRD below succeeds.
+					emitPending = func() { m.emitTaskStatus(prd, t, TaskAwaitingApproval, lastDecision(prd, "approve_task"), nil) }
 				}
 				t.UpdatedAt = now
 				found = true
@@ -2226,6 +2255,7 @@ func (m *Manager) ApproveTask(prdID, taskID, actor string) (*PRD, error) {
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
 	}
+	emitPending()
 	updated, _ := m.store.GetPRD(prdID)
 	return updated, nil
 }
@@ -3090,6 +3120,7 @@ func (m *Manager) reconcileStuckTasks() {
 			continue
 		}
 		changed := false
+		var reset []pendingTaskEvent
 		for si := range prd.Story {
 			for ti := range prd.Story[si].Tasks {
 				t := &prd.Story[si].Tasks[ti]
@@ -3108,6 +3139,7 @@ func (m *Manager) reconcileStuckTasks() {
 				}
 				log.Printf("[autonomous] boot-reconcile: prd=%s task=%s status=%s session=%s → TaskPending (session gone on daemon restart)",
 					prd.ID, t.ID, t.Status, t.SessionID)
+				reset = append(reset, pendingTaskEvent{t: t, oldStatus: t.Status, oldSession: t.SessionID})
 				t.Status = TaskPending
 				t.Error = ""
 				t.SessionID = ""
@@ -3128,6 +3160,8 @@ func (m *Manager) reconcileStuckTasks() {
 		})
 		if err := m.store.SavePRD(prd); err != nil {
 			log.Printf("[autonomous] boot-reconcile: save prd=%s: %v", prd.ID, err)
+		} else {
+			m.emitPendingTaskEvents(prd, reset, lastDecision(prd, "boot_reconcile"))
 		}
 	}
 }
