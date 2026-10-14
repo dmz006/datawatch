@@ -671,6 +671,85 @@ Open question 3 asks the operator to confirm this.
 
 ---
 
+## Local-model decision assistant (optional, operator-raised 2026-10-14)
+
+Several of the decision points above, and a few elsewhere in this doc, share
+a shape: today's design resolves them with one hardcoded default, or by
+stopping and escalating to the operator, because the "right" answer needs
+*some* judgment but not necessarily a human's. The operator's framing: a
+configurable local open model (an existing `compute_node`/Ollama-style
+backend — cheap, fast, no cloud cost, available even when the operator
+isn't and even if a cloud API budget is exhausted) could make that judgment
+call instead, **except where there is a genuinely hard requirement on the
+operator** — which stays a hard stop, not something the assistant can
+override.
+
+This is named here as a cross-cutting **extensibility point**, not a fully
+specified mechanism — the data model below is sized to let it be wired in
+later without a rearchitect, which is deliberate: it does not need to be
+built now to be designed for.
+
+**Concrete hook points already named in this doc, all optional and
+independently enable-able:**
+
+1. **Empty-edge resolution** (open question 6). Today's default when
+   `OnBlocked`/`OnFailed` is empty is a flat stop-and-alert. An assistant
+   could read the blocked member's own failure/judgment evidence (the same
+   `FailureReason`/`GuardrailVerdict` shape BL410's plan already defines)
+   and recommend `skip_member` down a specific edge, `pause_automation`, or
+   "this genuinely needs the operator" — the last of which still escalates
+   exactly as today.
+2. **`skip_member` pre-screening.** Instead of an operator manually
+   deciding whether to bypass a stuck member, the assistant can pre-screen
+   and recommend (audited as `AddedBy: "assistant:<model>"`, never silently
+   auto-acting past a configured confidence threshold).
+3. **Mid-flight `insert_member` triage** (open question 8, "may an agent
+   insert members without operator approval"). The assistant is one
+   concrete answer to what kind of "agent" that question means — it can
+   recommend inserting a corrective member using the exact same
+   `AddedBy`/`AddedReason` audit fields already specified for a session/agent
+   insert, with the inserted Automaton still gated by its own normal
+   `approved` requirement before the coordinator runs it.
+4. **BudgetPolicy breach response** (open question 8's second half: pause
+   vs. block). A single hardcoded default can't account for "90% done and
+   $2 over" versus "10% done and already 3x over" — the assistant can read
+   the Automation's own progress/spend state and recommend which, still
+   bounded by the operator's own configured ceiling (it can only choose
+   between the already-allowed responses, never raise the ceiling itself).
+
+**What makes something a "hard requirement on the operator"** (not
+delegable to the assistant, ever, regardless of configuration): anything
+that destroys state or history (`cancel_in_flight: true`, `remove_member`
+of a started member — already structurally disallowed above), raising a
+`BudgetPolicy` ceiling, and any action a `guardrail profile`/quality gate
+has itself marked as requiring human sign-off. The assistant's scope is
+strictly "which already-allowed option to pick," never "whether to allow
+an otherwise-disallowed action."
+
+**Data model sizing for this (so it can be added later without a
+rewrite):** `AutomationMember` and `Automation` should carry an optional
+`DecisionAssistant` reference (empty = feature off, matching this doc's
+general "ceilings only narrow, features only opt in" pattern) naming a
+backend/model pair (reusing the existing LLM registry — no new backend
+concept), a confidence threshold below which it must escalate instead of
+deciding, and which of the four hook points above are enabled. Every
+assistant-made decision is a normal `Decision` entry with
+`actor: "assistant:<model>"`, so it reads identically to an operator or
+agent decision in history — no new audit shape.
+
+**Cross-reference BL437** (the recurring hardware-aware model/effort eval,
+filed 2026-10-14): once this is built, the assistant's own judgment quality
+at each hook point is exactly the kind of thing BL437's monthly sweep
+should be testing — "is this model/effort combination actually good at
+Automation-level triage decisions" is a real task shape, not just "is it
+good at writing code." Name it as a candidate BL437 task-shape category in
+that design doc, not duplicated here.
+
+This is intentionally not resolved into an implementation plan in this
+design pass — see Open questions, new item 15.
+
+---
+
 ## Cost / budget — BudgetPolicy
 
 ```go
@@ -1240,3 +1319,13 @@ howto, and the `datawatch-app` issue where applicable.
     should `BudgetPolicy`'s ceiling check read that peer's usage into the
     same `tightest-wins` math by default, or stay per-daemon unless the
     operator explicitly opts an Automation into federation-wide ceilings?
+15. **Local-model decision assistant (operator-raised 2026-10-14, see the
+    section above).** Is the four-hook-point scope (empty-edge resolution,
+    skip_member pre-screening, mid-flight insert triage, budget-breach
+    response) the right starting set, or should it be narrower for v1 (e.g.
+    empty-edge resolution only, since it's the one with the clearest
+    existing evidence shape via `FailureReason`)? Should a confidence
+    threshold below which it must escalate be a single global number, or
+    per-hook-point? Does this ship in BL431's own follow-up implementation
+    PRD, or as its own later PRD once the Automation coordinator exists to
+    attach it to?
