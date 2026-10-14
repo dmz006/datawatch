@@ -574,6 +574,75 @@ entries:
     validated_by: "claude-session"
     reason: "No fix available in Debian bookworm as of this migration; re-check each release cycle (BL398 Phase 1's live rescan baseline)."
 
+  - id: cve/CVE-2026-106553
+    kind: container
+    package: "openssh-client"
+    version: "1:9.2p1-2+deb12u10"
+    severity: high
+    images:
+      - agent-base
+      - agent-claude
+      - agent-opencode
+      - agent-gemini
+      - agent-aider
+      - agent-goose
+      - parent-full
+    impact:
+      traced: false
+      reachable: "unknown"
+      analysis: "openssh-client is used only by agent tooling (git/gh) for outbound SSH to operator-configured remotes; no sshd is installed or exposed, and it is not reachable via any datawatch REST/MCP API. CVE-2026-106553: In sshd in OpenSSH before 10.6, credentials can incorrectly persist after failure of a GSSAPIAuthentication authentication attempt."
+    first_added: "2026-10-13"
+    added: "2026-10-13"
+    expires: "2026-11-12"
+    validated_by: "claude-session"
+    reason: "No fix available in Debian bookworm (Trivy status fix_deferred); re-check each release cycle."
+
+  - id: cve/CVE-2026-106555
+    kind: container
+    package: "openssh-client"
+    version: "1:9.2p1-2+deb12u10"
+    severity: high
+    images:
+      - agent-base
+      - agent-claude
+      - agent-opencode
+      - agent-gemini
+      - agent-aider
+      - agent-goose
+      - parent-full
+    impact:
+      traced: false
+      reachable: "unknown"
+      analysis: "openssh-client is used only by agent tooling (git/gh) for outbound SSH to operator-configured remotes; no sshd is installed or exposed, and it is not reachable via any datawatch REST/MCP API. CVE-2026-106555: In sshd in OpenSSH before 10.6, GSSAPIAuthentication authentication state can incorrectly be persisted across authentication attempts."
+    first_added: "2026-10-13"
+    added: "2026-10-13"
+    expires: "2026-11-12"
+    validated_by: "claude-session"
+    reason: "No fix available in Debian bookworm (Trivy status fix_deferred); re-check each release cycle."
+
+  - id: cve/CVE-2026-106583
+    kind: container
+    package: "openssh-client"
+    version: "1:9.2p1-2+deb12u10"
+    severity: high
+    images:
+      - agent-base
+      - agent-claude
+      - agent-opencode
+      - agent-gemini
+      - agent-aider
+      - agent-goose
+      - parent-full
+    impact:
+      traced: false
+      reachable: "unknown"
+      analysis: "openssh-client is used only by agent tooling (git/gh) for outbound SSH to operator-configured remotes; no sshd is installed or exposed, and it is not reachable via any datawatch REST/MCP API. CVE-2026-106583: In ssh in OpenSSH before 10.6, a $ or \\ character can occur in a command-line username, leading to injection."
+    first_added: "2026-10-13"
+    added: "2026-10-13"
+    expires: "2026-11-12"
+    validated_by: "claude-session"
+    reason: "No fix available in Debian bookworm (Trivy status fix_deferred); re-check each release cycle."
+
   - id: cve/CVE-2026-58471
     kind: container
     package: "wget"

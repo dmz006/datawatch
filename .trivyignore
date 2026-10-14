@@ -181,6 +181,39 @@ CVE-2026-60002
 CVE-2026-59999
 CVE-2026-60000
 
+# openssh-client -- CVE-2026-106553
+# severity: high; images: agent-aider, agent-base, agent-claude, agent-gemini, agent-goose, agent-opencode, parent-full
+# openssh-client is used only by agent tooling (git/gh) for outbound SSH to
+# operator-configured remotes; no sshd is installed or exposed, and it is not
+# reachable via any datawatch REST/MCP API. CVE-2026-106553: In sshd in OpenSSH
+# before 10.6, credentials can incorrectly persist after failure of a
+# GSSAPIAuthentication authentication attempt.
+# No fix available in Debian bookworm (Trivy status fix_deferred); re-check each
+# release cycle.
+CVE-2026-106553
+
+# openssh-client -- CVE-2026-106555
+# severity: high; images: agent-aider, agent-base, agent-claude, agent-gemini, agent-goose, agent-opencode, parent-full
+# openssh-client is used only by agent tooling (git/gh) for outbound SSH to
+# operator-configured remotes; no sshd is installed or exposed, and it is not
+# reachable via any datawatch REST/MCP API. CVE-2026-106555: In sshd in OpenSSH
+# before 10.6, GSSAPIAuthentication authentication state can incorrectly be
+# persisted across authentication attempts.
+# No fix available in Debian bookworm (Trivy status fix_deferred); re-check each
+# release cycle.
+CVE-2026-106555
+
+# openssh-client -- CVE-2026-106583
+# severity: high; images: agent-aider, agent-base, agent-claude, agent-gemini, agent-goose, agent-opencode, parent-full
+# openssh-client is used only by agent tooling (git/gh) for outbound SSH to
+# operator-configured remotes; no sshd is installed or exposed, and it is not
+# reachable via any datawatch REST/MCP API. CVE-2026-106583: In ssh in OpenSSH
+# before 10.6, a $ or \ character can occur in a command-line username, leading
+# to injection.
+# No fix available in Debian bookworm (Trivy status fix_deferred); re-check each
+# release cycle.
+CVE-2026-106583
+
 # wget -- CVE-2026-58471, CVE-2026-58472
 # severity: high; images: agent-aider, agent-base, agent-gemini, parent-full
 # wget installed as a general download utility for agent use. Agent tooling
