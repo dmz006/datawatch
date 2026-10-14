@@ -9,6 +9,15 @@ Do not mark **Validated=Yes** based solely on unit tests.
 
 ---
 
+## Automata lifecycle events — in-process dispatcher, WS `prd_update` migrated onto it — v9.0.85
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| `LifecycleEvent` / `LifecycleFilter` / `Manager.Subscribe` (fan-out, filter, cancel, slow-subscriber isolation, overflow drops instead of blocking, panic recovery) | **Yes** (`internal/autonomous/lifecycle_event_test.go`) | N/A | `go test` | In-process only — no external surface to validate |
+| PRD-level emits at the status write sites (table-driven transitions, template instantiate, child carries parent ID, no event on a refused transition) | **Yes** (`internal/autonomous/lifecycle_emit_prd_test.go`) | **Yes** (draft/edit/cancel/delete) | Live WS run against the v9.0.85 production daemon (2026-10-14), see testing.md v9.0.85 | Approve/run/terminal statuses unit-tested only |
+| Task-level emits (status changes, `task.session_started` / `task.session_cleared`) | **Yes** (`internal/autonomous/lifecycle_emit_task_test.go`) | No | `go test` | Needs a running Automaton with worker sessions to observe live |
+| WS `prd_update` frame (`{prd_id, status}` / `{prd_id, deleted:true}`) via the `prd.updated` subscriber | **Yes** (`internal/autonomous/prd_update_broadcast_test.go`, `internal/server/prd_update_ws_frame_test.go`) | **Yes** (live) | Live Go WS client, 2026-10-14: 4 frames for create/edit/cancel/hard-delete of throwaway Automaton `fc36e56b`, shape unchanged | — |
+
 ## Low-bandwidth payloads — compact session list, alert paging/count, API gzip, WS hello/delta/scoped output, MCP + CLI options — v9.0.76–v9.0.81
 
 | Interface / Endpoint | Tested | Validated | Test Conditions | Notes |

@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-13 (investigation and writing finished 2026-10-14)
 **Version:** v9.0.75 (`var Version` in `cmd/datawatch/main.go` at time of writing)
-**Status:** Design pass — awaiting operator review (no implementation approved).
+**Status:** Phase 1 Done (v9.0.85, 2026-10-14). Phases 2–5 Planned.
 
 Terminology: this doc says **Automaton / Automata** in prose, per AGENT.md's
 terminology rule. The internal Go type is `PRD` (and identifiers such as
@@ -542,17 +542,28 @@ milliseconds. No polling, no scratchpad script, no 25 s race window.
 
 ---
 
-## Phases (proposed, not approved)
+## Phases
 
-Every phase below is **Planned**. Each phase's own checklist must include
+Phase 1 is **Done** (v9.0.85); Phases 2–5 are **Planned**. Each phase's own checklist must include
 AGENT.md's **Phase Completion Checklist** (functionality, unit tests, live
 smoke against a real daemon, full `go test ./...` + `node --test`, the
 8-item documentation checklist, conditional docs).
 
-1. **Phase 1 — Planned.** Event type, `emit` helper at every PRD-level and
+1. **Phase 1 — Done (v9.0.85).** Event type, `emit` helper at every PRD-level and
    task-level site tabulated above, multi-subscriber in-process dispatcher,
    and the existing WS broadcast migrated to be one subscriber. No new
-   external surface. *(Phase Completion Checklist applies.)*
+   external surface. *(Phase Completion Checklist applies.)* Shipped as
+   `internal/autonomous/lifecycle_event.go` (`LifecycleEvent`,
+   `LifecycleFilter`, `Manager.Subscribe`); `cmd/datawatch/main.go`
+   registers `BroadcastPRDUpdate` as a `prd.updated` subscriber. Checklist:
+   unit tests + full `go test ./...` / `node --test` green; live WS smoke
+   against the redeployed daemon recorded in `docs/testing.md` (v9.0.85);
+   CHANGELOG + README updated; `docs/config-reference.yaml` and
+   `docs/operations.md` N/A (no config keys, no operator procedure);
+   `docs/testing-tracker.md` row added; definitions/flow/howto N/A (no
+   operator-visible concept or workflow yet — the frame and the PWA are
+   unchanged); Mobile-Parity N/A (WS `prd_update` contract unchanged);
+   Localization N/A (no `app.js` change); version bumped to v9.0.85.
 2. **Phase 2 — Planned.** Built-in sinks: alert store, `PublishToTopic`,
    comm fan-out with per-Automaton coalescing; global default event-set
    config. *(Phase Completion Checklist applies.)*
@@ -635,8 +646,10 @@ smoke against a real daemon, full `go test ./...` + `node --test`, the
 
 ## Parity surface
 
-In this design phase **none** of the following is implemented, because the
-phase is design-only. Intent for the future implementation:
+Phase 1 (v9.0.85) adds **no** external surface: the dispatcher is
+in-process only, and the WS `MsgPRDUpdate` frame keeps its existing
+`{prd_id, status}` / `{prd_id, deleted:true}` shape (it is not yet enriched).
+**None** of the following is implemented yet. Intent for Phases 2–5:
 
 - **REST:** `GET/POST/DELETE /api/autonomous/subscriptions`;
   `GET /api/autonomous/events?since=<cursor>` (pending-events feed); WS

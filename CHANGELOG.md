@@ -5,6 +5,26 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.85 — feat(automata): internal lifecycle events for Automata
+
+Automata now publish internal lifecycle events through an in-process
+event dispatcher. An event fires whenever an Automaton or one of its
+tasks changes status (for example started, verifying, completed, failed,
+blocked, cancelled), when a task's worker session starts or is cleared,
+and whenever an Automaton is saved or deleted. Each event records the
+old and new status, the story/task it belongs to and, where one exists,
+the decision or guardrail verdict that caused it. Several parts of the
+daemon can listen at once.
+
+The PWA's live Automata refresh now runs on top of this dispatcher. The
+WebSocket `prd_update` message has the same shape as before
+(`{prd_id, status}`, or `{prd_id, deleted: true}`), so there is no
+visible change in the PWA or the mobile apps.
+
+This is groundwork for upcoming notifications. No new settings, API
+endpoints, MCP tools or CLI commands are added in this release. Live
+WebSocket check against the redeployed daemon is in `docs/testing.md`.
+
 ## v9.0.84 — docs: BL420 live remediation of the bloated session repos
 
 No code change. `scripts/shrink-session-repo.sh` was run on the three

@@ -1105,3 +1105,44 @@ own `systemd-run --user` scope with `MemoryMax=4G`, `MemorySwapMax=0`, nice 19
 and idle I/O. The 2026-10-13 in-daemon repack peaked at about 108 GB on ab22.
 
 _Confirmed 2026-10-14: PR #245 merged into main; remediation stands (ab22 5M, 9245 3M, ddeb 1M `.git`; verify script passes; daemon NRestarts=0)._
+
+## v9.0.85 — Automata lifecycle events: live WS `prd_update` check after the dispatcher migration (2026-10-14)
+
+The WS `prd_update` broadcast now runs as one subscriber (`prd.updated`) on
+the new in-process Automata lifecycle event dispatcher instead of the old
+single-slot hook. This run checks that the production daemon still sends the
+same frames, in the same shape, for each action.
+
+| Item | Value |
+|---|---|
+| **Daemon** | production, `https://127.0.0.1:8443`, installed with `make install`, restarted with `systemctl --user restart datawatch` |
+| **Version** | `datawatch version` → `datawatch v9.0.85` |
+| **WS client** | throwaway Go program (gorilla/websocket) under the ignored `.datawatch/smoke/`, dialed `wss://127.0.0.1:8443/ws`, sent `hello` (`session_list=delta`, `session_view=summary`, `output=subscribed`) and printed only `prd_update` frames |
+| **Throwaway Automaton** | `fc36e56b` (title `lifecycle-smoke-v9.0.85`) — hard-deleted at the end; `GET /api/autonomous/prds/fc36e56b` → 404 and no `*smoke*` Automaton left in the list |
+| **Result** | PASS — one frame per state change, same `{prd_id, status}` / `{prd_id, deleted:true}` shape as before |
+
+Commands (base `B=https://127.0.0.1:8443/api/autonomous/prds`):
+
+```
+curl -sk -X POST $B -d '{"spec":"throwaway smoke test ...","project_dir":".../.datawatch/smoke","title":"lifecycle-smoke-v9.0.85"}'  → 200, id fc36e56b, status draft
+curl -sk -X PATCH $B/fc36e56b -d '{"title":"lifecycle-smoke-v9.0.85-edited"}'                                                    → 200
+curl -sk -X POST  $B/fc36e56b/approve -d '{}'   → 400 `prd "fc36e56b" status "draft" is not approvable` (no state change)
+curl -sk -X POST  $B/fc36e56b/cancel            → 200 {"status":"cancelled"}
+curl -sk -X DELETE "$B/fc36e56b?hard=true"      → 200 {"status":"deleted","killed_sessions":0}
+```
+
+Frames received:
+
+```
+19:01:23.073 {"type":"prd_update","data":{"prd_id":"fc36e56b","status":"draft"}}       ← create
+19:01:25.106 {"type":"prd_update","data":{"prd_id":"fc36e56b","status":"draft"}}       ← edit (title)
+                                                                                         (approve refused: no save, no frame — same as before)
+19:01:29.133 {"type":"prd_update","data":{"prd_id":"fc36e56b","status":"cancelled"}}   ← cancel
+19:01:31.146 {"type":"prd_update","data":{"deleted":true,"prd_id":"fc36e56b"}}         ← hard delete
+```
+
+Not covered live: a successful approve, which needs the Automaton in
+`needs_review` (an LLM decompose run); that path, and the task-level and
+session-start events, are covered by the unit tests in
+`internal/autonomous/lifecycle_*_test.go`, `prd_update_broadcast_test.go` and
+`internal/server/prd_update_ws_frame_test.go`.

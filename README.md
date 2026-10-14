@@ -57,7 +57,13 @@ Browse the catalog in-app (Settings → Skills → Registry) or on GitHub. To co
 
 ## Current release
 
-**Current release: v9.0.84 (2026-10-14).** The three session repos that
+**Current release: v9.0.85 (2026-10-14).** Automata now publish internal
+lifecycle events (Automaton and task status changes, worker session start)
+through an in-process event dispatcher. The PWA's live Automata refresh now
+runs on top of it, with no visible change. This is groundwork for upcoming
+notifications.
+
+**v9.0.84** The three session repos that
 grew before v9.0.83 have been shrunk with `scripts/shrink-session-repo.sh`
 (31 GB → 3.3 MB for the largest). Evidence is in [Testing](docs/testing.md).
 
