@@ -155,6 +155,16 @@ type PRD struct {
 	// used for guardrail routing.
 	GuardrailBackend string `json:"guardrail_backend,omitempty"`
 	GuardrailModel   string `json:"guardrail_model,omitempty"`
+	// Automaton-level verifier LLM override. Precedence:
+	// task → story → Automaton (here) → global autonomous
+	// verification_backend/verification_model/verification_effort.
+	// Backend and model resolve from the same level (see
+	// ResolveVerificationLLM); effort resolves independently. Empty =
+	// inherit the global config. Independent of the worker
+	// Backend/Model and of GuardrailBackend/GuardrailModel.
+	VerificationBackend string `json:"verification_backend,omitempty"`
+	VerificationModel   string `json:"verification_model,omitempty"`
+	VerificationEffort  Effort `json:"verification_effort,omitempty"`
 	// LSPLanguage (v8.7.1) — language server preset for OpenCode-backed workers.
 	// Applies to all tasks unless overridden at the task level.
 	LSPLanguage string `json:"lsp_language,omitempty"`
@@ -487,6 +497,13 @@ type Story struct {
 	Backend string `json:"backend,omitempty"`
 	Effort  Effort `json:"effort,omitempty"`
 	Model   string `json:"model,omitempty"`
+	// Story-level verifier LLM override. Precedence: task → story
+	// (here) → Automaton → global autonomous verification_* config.
+	// Applies to every task in this story that has no task-level
+	// override. Empty = inherit. See ResolveVerificationLLM.
+	VerificationBackend string `json:"verification_backend,omitempty"`
+	VerificationModel   string `json:"verification_model,omitempty"`
+	VerificationEffort  Effort `json:"verification_effort,omitempty"`
 
 	// Phase 4 (v5.26.64) — file association. FilesPlanned is
 	// LLM-extracted at decompose time (the decomposer prompt asks
@@ -559,6 +576,13 @@ type Task struct {
 	// resolveTaskBackendModel's chain); not yet used for routing.
 	GuardrailBackend string `json:"guardrail_backend,omitempty"`
 	GuardrailModel   string `json:"guardrail_model,omitempty"`
+	// Per-task verifier LLM override — the most specific level.
+	// Precedence: task (here) → story → Automaton → global autonomous
+	// verification_backend/verification_model/verification_effort.
+	// Empty = inherit. See ResolveVerificationLLM.
+	VerificationBackend string `json:"verification_backend,omitempty"`
+	VerificationModel   string `json:"verification_model,omitempty"`
+	VerificationEffort  Effort `json:"verification_effort,omitempty"`
 	// LSPLanguage (v8.7.1) — per-task override; inherits PRD.LSPLanguage when empty.
 	LSPLanguage string `json:"lsp_language,omitempty"`
 	// PermissionMode (v5.27.5) — claude-code --permission-mode for
@@ -686,6 +710,15 @@ type VerificationResult struct {
 	DiffSHA    string    `json:"diff_sha,omitempty"` // git rev-parse HEAD post-task
 	VerifiedAt time.Time `json:"verified_at"`
 	VerifierID string    `json:"verifier_id,omitempty"` // session ID of the verifier worker
+	// What the verifier ACTUALLY ran with, recorded per verification.
+	// VerifierSource names where the backend came from: "task",
+	// "story", "prd" (the Automaton level) or "global" per
+	// ResolveVerificationLLM, or "pool" when the backend was picked
+	// from the global verification_backends capacity pool.
+	VerifierBackend string `json:"verifier_backend,omitempty"`
+	VerifierModel   string `json:"verifier_model,omitempty"`
+	VerifierEffort  string `json:"verifier_effort,omitempty"`
+	VerifierSource  string `json:"verifier_source,omitempty"`
 	// Category (BL410 Phase 0) — see GuardrailVerdict.Category's doc
 	// comment; same taxonomy, same empty-means-"content" default.
 	Category string `json:"category,omitempty"`

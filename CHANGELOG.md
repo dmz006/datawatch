@@ -5,6 +5,24 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.67 — feat(autonomous): per-task / per-story / per-Automaton verification LLM overrides
+
+### Added
+- **Verifier LLM override fields on tasks, stories and Automata.**
+  `verification_backend`, `verification_model` and
+  `verification_effort` can now be set per task, per story and per
+  Automaton, resolved task → story → Automaton → the global autonomous
+  `verification_*` config. Backend and model always come from the same
+  level, so a model is never paired with a backend from a different
+  level; effort resolves on its own. New presence-aware setters
+  (`SetTaskVerificationLLM`, `SetStoryVerificationLLM`,
+  `SetPRDVerificationLLM`) record a decision on the Automaton and are
+  accepted in needs_review / revisions_asked / cancelled. Verification
+  results gain `verifier_backend` / `verifier_model` /
+  `verifier_effort` / `verifier_source` to record what the verifier
+  actually used. The verify path itself still uses the global config;
+  wiring it to the new resolution lands in a follow-up commit.
+
 ## v9.0.66 — fix(session): one-shot claude-code tasks are delivered once, not re-pasted on every channel heartbeat
 
 ### Fixed

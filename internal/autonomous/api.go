@@ -640,6 +640,29 @@ func (a *API) SetTaskGuardrailLLM(prdID, taskID string, backend, model *string, 
 	return out, err
 }
 
+
+// Presence-aware verifier LLM overrides at task, story and Automaton level.
+func (a *API) SetTaskVerificationLLM(prdID, taskID string, backend, model, effort *string, actor string) (any, error) {
+	out, err := a.M.SetTaskVerificationLLM(prdID, taskID, backend, model, effort, actor)
+	if err == nil {
+		a.M.EmitPRDUpdate(prdID)
+	}
+	return out, err
+}
+func (a *API) SetStoryVerificationLLM(prdID, storyID string, backend, model, effort *string, actor string) (any, error) {
+	out, err := a.M.SetStoryVerificationLLM(prdID, storyID, backend, model, effort, actor)
+	if err == nil {
+		a.M.EmitPRDUpdate(prdID)
+	}
+	return out, err
+}
+func (a *API) SetPRDVerificationLLM(prdID string, backend, model, effort *string, actor string) (any, error) {
+	out, err := a.M.SetPRDVerificationLLM(prdID, backend, model, effort, actor)
+	if err == nil {
+		a.M.EmitPRDUpdate(prdID)
+	}
+	return out, err
+}
 // SetMemorySeed (BL386 Phase 1 + BL387 Phase 2b) updates the PRD's warm-start seed config.
 func (a *API) SetMemorySeed(prdID string, enabled bool, maxPerScope int, roleFilter []string, fromPRDs []string, actor string) (any, error) {
 	cfg := MemorySeedConfig{Enabled: enabled, MaxPerScope: maxPerScope, RoleFilter: roleFilter, FromPRDs: fromPRDs}

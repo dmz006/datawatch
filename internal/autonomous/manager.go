@@ -2635,6 +2635,158 @@ func (m *Manager) SetPRDGuardrailLLM(prdID string, backend, model *string, actor
 	return updated, nil
 }
 
+// validVerificationEffort reports whether e is empty (inherit) or one
+// of the Effort constants.
+func validVerificationEffort(e string) bool {
+	switch Effort(e) {
+	case "", EffortLow, EffortMedium, EffortHigh, EffortMax, EffortQuick, EffortNormal, EffortThorough:
+		return true
+	}
+	return false
+}
+
+// verificationLLMLocked applies SetTaskLLM's lock rule: verifier LLM
+// overrides are accepted only in needs_review / revisions_asked /
+// cancelled.
+func verificationLLMLocked(prd *PRD) error {
+	if prd.Status != PRDNeedsReview && prd.Status != PRDRevisionsAsked && prd.Status != PRDCancelled {
+		return fmt.Errorf("prd %q status %q is locked; only needs_review / revisions_asked / cancelled accept LLM overrides", prd.ID, prd.Status)
+	}
+	return nil
+}
+
+// applyVerificationLLM writes the presence-aware overrides onto the
+// three fields: a nil pointer leaves the field unchanged; a pointer to
+// "" clears it so resolution falls back to the next level.
+func applyVerificationLLM(dstBackend, dstModel *string, dstEffort *Effort, backend, model, effort *string) {
+	if backend != nil {
+		*dstBackend = *backend
+	}
+	if model != nil {
+		*dstModel = *model
+	}
+	if effort != nil {
+		*dstEffort = Effort(*effort)
+	}
+}
+
+// SetTaskVerificationLLM overrides the verifier backend/model/effort
+// for one task (most specific level; see ResolveVerificationLLM).
+// Presence-aware: a nil pointer leaves that field unchanged; a pointer
+// to "" clears it so resolution falls back to the story, then the
+// Automaton, then the global verification_* config. Same lock rule as
+// SetTaskLLM.
+func (m *Manager) SetTaskVerificationLLM(prdID, taskID string, backend, model, effort *string, actor string) (*PRD, error) {
+	if effort != nil && !validVerificationEffort(*effort) {
+		return nil, fmt.Errorf("invalid verification effort %q", *effort)
+	}
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return nil, fmt.Errorf("prd %q not found", prdID)
+	}
+	if err := verificationLLMLocked(prd); err != nil {
+		return nil, err
+	}
+	var task *Task
+	for si := range prd.Story {
+		for ti := range prd.Story[si].Tasks {
+			if prd.Story[si].Tasks[ti].ID == taskID {
+				task = &prd.Story[si].Tasks[ti]
+				break
+			}
+		}
+		if task != nil {
+			break
+		}
+	}
+	if task == nil {
+		return nil, fmt.Errorf("task %q not found in prd %q", taskID, prdID)
+	}
+	applyVerificationLLM(&task.VerificationBackend, &task.VerificationModel, &task.VerificationEffort, backend, model, effort)
+	task.UpdatedAt = time.Now()
+	prd.UpdatedAt = time.Now()
+	prd.Decisions = append(prd.Decisions, Decision{
+		At: time.Now(), Kind: "set_task_verification_llm", Actor: actor,
+		Note: fmt.Sprintf("task=%s verification_backend=%s verification_model=%s verification_effort=%s",
+			taskID, task.VerificationBackend, task.VerificationModel, task.VerificationEffort),
+	})
+	if err := m.store.SavePRD(prd); err != nil {
+		return nil, err
+	}
+	updated, _ := m.store.GetPRD(prdID)
+	return updated, nil
+}
+
+// SetStoryVerificationLLM overrides the verifier backend/model/effort
+// for every task in one story that has no task-level override.
+// Presence-aware like SetTaskVerificationLLM; "" falls back to the
+// Automaton then the global verification_* config. Same lock rule as
+// SetTaskLLM.
+func (m *Manager) SetStoryVerificationLLM(prdID, storyID string, backend, model, effort *string, actor string) (*PRD, error) {
+	if effort != nil && !validVerificationEffort(*effort) {
+		return nil, fmt.Errorf("invalid verification effort %q", *effort)
+	}
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return nil, fmt.Errorf("prd %q not found", prdID)
+	}
+	if err := verificationLLMLocked(prd); err != nil {
+		return nil, err
+	}
+	var story *Story
+	for i := range prd.Story {
+		if prd.Story[i].ID == storyID {
+			story = &prd.Story[i]
+			break
+		}
+	}
+	if story == nil {
+		return nil, fmt.Errorf("story %q not found in prd %q", storyID, prdID)
+	}
+	applyVerificationLLM(&story.VerificationBackend, &story.VerificationModel, &story.VerificationEffort, backend, model, effort)
+	story.UpdatedAt = time.Now()
+	prd.UpdatedAt = time.Now()
+	prd.Decisions = append(prd.Decisions, Decision{
+		At: time.Now(), Kind: "set_story_verification_llm", Actor: actor,
+		Note: fmt.Sprintf("story=%s verification_backend=%s verification_model=%s verification_effort=%s",
+			storyID, story.VerificationBackend, story.VerificationModel, story.VerificationEffort),
+	})
+	if err := m.store.SavePRD(prd); err != nil {
+		return nil, err
+	}
+	updated, _ := m.store.GetPRD(prdID)
+	return updated, nil
+}
+
+// SetPRDVerificationLLM overrides the Automaton-level verifier
+// backend/model/effort. Presence-aware like SetTaskVerificationLLM; ""
+// falls back to the global verification_* config. Same lock rule as
+// SetTaskLLM.
+func (m *Manager) SetPRDVerificationLLM(prdID string, backend, model, effort *string, actor string) (*PRD, error) {
+	if effort != nil && !validVerificationEffort(*effort) {
+		return nil, fmt.Errorf("invalid verification effort %q", *effort)
+	}
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return nil, fmt.Errorf("prd %q not found", prdID)
+	}
+	if err := verificationLLMLocked(prd); err != nil {
+		return nil, err
+	}
+	applyVerificationLLM(&prd.VerificationBackend, &prd.VerificationModel, &prd.VerificationEffort, backend, model, effort)
+	prd.UpdatedAt = time.Now()
+	prd.Decisions = append(prd.Decisions, Decision{
+		At: time.Now(), Kind: "set_prd_verification_llm", Actor: actor,
+		Note: fmt.Sprintf("verification_backend=%s verification_model=%s verification_effort=%s",
+			prd.VerificationBackend, prd.VerificationModel, prd.VerificationEffort),
+	})
+	if err := m.store.SavePRD(prd); err != nil {
+		return nil, err
+	}
+	updated, _ := m.store.GetPRD(prdID)
+	return updated, nil
+}
+
 // InstantiateTemplate (BL191 Q2) takes a template PRD + caller-supplied
 // vars and stores a fresh executable PRD with substitutions applied to
 // spec, title, and per-task spec strings. Required vars without a value
@@ -2674,6 +2826,9 @@ func (m *Manager) InstantiateTemplate(templateID string, vars map[string]string,
 	}
 	newPRD.Title = subst(tmpl.Title)
 	newPRD.TemplateOf = tmpl.ID
+	newPRD.VerificationBackend = tmpl.VerificationBackend
+	newPRD.VerificationModel = tmpl.VerificationModel
+	newPRD.VerificationEffort = tmpl.VerificationEffort
 	// Copy stories with substitutions applied to per-task specs.
 	for _, st := range tmpl.Story {
 		st2 := st
