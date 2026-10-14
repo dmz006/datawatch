@@ -82,3 +82,20 @@ func TestSetters_TypeAssertion(t *testing.T) {
 		t.Error("*Backend must implement SetEffort(string)")
 	}
 }
+
+func TestSetEffort_EmitsEffortFlag(t *testing.T) {
+	// Real path used by session.Manager.Start: StartOptions.ClaudeEffort
+	// → SetEffort → postFlagsStr → `--effort '<level>'` on the claude CLI.
+	b := &Backend{}
+	b.SetEffort("low")
+	if got := b.postFlagsStr(); !strings.Contains(got, "--effort 'low'") {
+		t.Errorf("missing --effort 'low' in %q", got)
+	}
+}
+
+func TestPostFlagsStr_NoEffortWhenUnset(t *testing.T) {
+	b := &Backend{model: "sonnet"}
+	if got := b.postFlagsStr(); strings.Contains(got, "--effort") {
+		t.Errorf("--effort must be absent when SetEffort was never called; got %q", got)
+	}
+}

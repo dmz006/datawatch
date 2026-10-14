@@ -1550,7 +1550,9 @@ type StartOptions struct {
 
 	// Effort (BL41) — operator-supplied thoroughness hint:
 	// "quick", "normal", "thorough". Empty falls through to
-	// session.default_effort config.
+	// session.default_effort config. Recorded on Session.Effort only;
+	// it does NOT reach claude's `--effort` flag — that is
+	// ClaudeEffort below.
 	Effort string
 
 	// v5.27.5 — claude-code per-session overrides forwarded to
@@ -1560,7 +1562,15 @@ type StartOptions struct {
 	// global cfg.Session.{PermissionMode,Model,…}.
 	PermissionMode string
 	Model          string
-	ClaudeEffort   string // separate from Effort (BL41 thoroughness) — this is claude's --effort enum
+
+	// ClaudeEffort is claude-code's real reasoning-effort level, emitted
+	// as `--effort <level>` on the claude CLI (low|medium|high|xhigh|max).
+	// Applied in Start only to backends implementing SetEffort(string);
+	// other backends silently ignore it. Empty = no --effort flag (claude
+	// uses its own default). This is NOT the BL41 thoroughness hint in
+	// Effort above — the two are independent and neither is derived from
+	// the other.
+	ClaudeEffort string
 
 	// EphemeralWorkspace (v5.26.26) — set by handleStartSession when
 	// it created ProjectDir via the project_profile clone path. Causes

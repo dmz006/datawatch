@@ -174,10 +174,10 @@ type Session struct {
 
 	// Effort (BL41) is an operator-supplied hint about thoroughness.
 	// One of "quick", "normal", "thorough". Empty defaults to
-	// session.default_effort (config). Backends that recognise the
-	// value (e.g. claude-code) can map it to invocation flags;
-	// others ignore it. Surfaces in REST + comm + MCP + UI for
-	// per-session triage.
+	// session.default_effort (config). It is metadata only: no backend
+	// maps it to invocation flags, and in particular it does NOT reach
+	// claude's `--effort` flag (see StartOptions.ClaudeEffort for that).
+	// Surfaces in REST + comm + MCP + UI for per-session triage.
 	Effort string `json:"effort,omitempty"`
 
 	// EphemeralWorkspace (v5.26.26) marks ProjectDir as daemon-owned —
