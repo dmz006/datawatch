@@ -106,11 +106,12 @@ documenting coverage gaps and the reasoning behind them.
 | API Endpoint | MCP Tool | Status | Notes |
 |-------------|----------|--------|-------|
 | `GET /api/autonomous/status` | `autonomous_status` | Complete | |
-| `GET /api/autonomous/config` | `autonomous_config_get` | Complete | |
-| `PUT /api/autonomous/config` | `autonomous_config_set` | Complete | |
+| `GET /api/autonomous/config` | `autonomous_config_get` | Complete | includes `per_prd_guardrails` (completion guardrails: `rules-review`, `ci-watch`; empty = off) and `ci_watch_timeout_seconds` (default 1500) — [howto](howto/ci-watch-guardrail.md) |
+| `PUT /api/autonomous/config` | `autonomous_config_set` | Complete | accepts `per_prd_guardrails` (e.g. `["rules-review","ci-watch"]`) and `ci_watch_timeout_seconds` — [howto](howto/ci-watch-guardrail.md) |
 | `GET /api/autonomous/prds` | `autonomous_prd_list` | Complete | |
 | `POST /api/autonomous/prds` | `autonomous_prd_create` | Complete | |
-| `GET /api/autonomous/prds/{id}` | `autonomous_prd_get` | Complete | |
+| `GET /api/autonomous/prds/{id}` | `autonomous_prd_get` | Complete | `ci_watch {status, sha, repo, runs[], summary, category, issues, checked_at}` when the `ci-watch` completion guardrail ran; status `skipped`/`pass`/`warn`/`pending`/`failed_policy`/`failed_content`/`failed_infra`/`error` — [howto](howto/ci-watch-guardrail.md) |
+| `PUT /api/autonomous/prds/{id}/guardrails` | `per_automaton_guardrails_set` | Complete | body `{guardrail_profile, per_task_guardrails[], per_story_guardrails[], per_prd_guardrails[]}` — replaces all four; `per_prd_guardrails` takes `rules-review` / `ci-watch` |
 | `DELETE /api/autonomous/prds/{id}` | `autonomous_prd_cancel` | Complete | response names killed sessions: `killed_sessions` (count) + `killed_session_ids` (array) |
 | `POST /api/autonomous/prds/{id}/decompose` | `autonomous_prd_decompose` | Complete | |
 | `POST /api/autonomous/prds/{id}/set_priority` | `autonomous_prd_set_priority` | Complete | capacity-queue priority; higher runs first |
