@@ -87,6 +87,9 @@ Subcommands:
 		newAutonomousPRDSetLLMCmd(),
 		newAutonomousPRDSetStoryLLMCmd(),
 		newAutonomousPRDSetTaskLLMCmd(),
+		newAutonomousPRDSetTaskVerificationLLMCmd(),
+		newAutonomousPRDSetStoryVerificationLLMCmd(),
+		newAutonomousPRDSetVerificationLLMCmd(),
 		newAutonomousLearningsCmd(),
 		newAutonomousPRDChildrenCmd(),
 		newAutonomousPRDDeleteCmd(),
@@ -524,6 +527,80 @@ func newAutonomousPRDSetTaskLLMCmd() *cobra.Command {
 	addGuardrailLLMFlags(cmd, &guardrailBackend, &guardrailModel)
 	_ = cmd.MarkFlagRequired("task")
 	return cmd
+}
+
+func newAutonomousPRDSetTaskVerificationLLMCmd() *cobra.Command {
+	var taskID string
+	cmd := &cobra.Command{
+		Use:   "prd-set-task-verification-llm <prd-id> --task <task-id> [--backend B --model M --effort E]",
+		Short: "Override the LLM that verifies one task of an Automaton. Precedence: task > story > Automaton > global verification_backend. Omitted flags are unchanged; an empty value clears.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			body, _ := json.Marshal(verificationLLMCLIBody(cmd, map[string]string{"task_id": taskID, "actor": "operator"}))
+			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/set_task_verification_llm", body)
+		},
+	}
+	cmd.Flags().StringVar(&taskID, "task", "", "task ID to override (required)")
+	addVerificationLLMFlags(cmd, "this task")
+	_ = cmd.MarkFlagRequired("task")
+	return cmd
+}
+
+func newAutonomousPRDSetStoryVerificationLLMCmd() *cobra.Command {
+	var storyID string
+	cmd := &cobra.Command{
+		Use:   "prd-set-story-verification-llm <prd-id> --story <story-id> [--backend B --model M --effort E]",
+		Short: "Override the LLM that verifies every task in one story of an Automaton. Precedence: task > story > Automaton > global verification_backend. Omitted flags are unchanged; an empty value clears.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			body, _ := json.Marshal(verificationLLMCLIBody(cmd, map[string]string{"story_id": storyID, "actor": "operator"}))
+			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/set_story_verification_llm", body)
+		},
+	}
+	cmd.Flags().StringVar(&storyID, "story", "", "story ID to override (required)")
+	addVerificationLLMFlags(cmd, "this story")
+	_ = cmd.MarkFlagRequired("story")
+	return cmd
+}
+
+func newAutonomousPRDSetVerificationLLMCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "prd-set-verification-llm <prd-id> [--backend B --model M --effort E]",
+		Short: "Override the LLM that verifies all tasks of an Automaton. Precedence: task > story > Automaton > global verification_backend. Omitted flags are unchanged; an empty value clears.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			body, _ := json.Marshal(verificationLLMCLIBody(cmd, map[string]string{"actor": "operator"}))
+			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/set_verification_llm", body)
+		},
+	}
+	addVerificationLLMFlags(cmd, "this Automaton")
+	return cmd
+}
+
+// addVerificationLLMFlags registers --backend / --model / --effort on the
+// prd-set-*-verification-llm commands. Values are read back via
+// cmd.Flags().GetString in verificationLLMCLIBody.
+func addVerificationLLMFlags(cmd *cobra.Command, scope string) {
+	cmd.Flags().String("backend", "", "verification LLM backend for "+scope+"; empty = clear, omit = unchanged")
+	cmd.Flags().String("model", "", "verification model for "+scope+"; empty = clear, omit = unchanged")
+	cmd.Flags().String("effort", "", "verification effort for "+scope+"; empty = clear, omit = unchanged")
+}
+
+// verificationLLMCLIBody builds a set_*_verification_llm body. A
+// verification_* key is sent only when its flag was set, so an unset flag
+// leaves the field unchanged and an explicit "" clears it.
+func verificationLLMCLIBody(cmd *cobra.Command, base map[string]string) map[string]string {
+	body := map[string]string{}
+	for k, v := range base {
+		body[k] = v
+	}
+	for _, f := range []string{"backend", "model", "effort"} {
+		if cmd.Flags().Changed(f) {
+			v, _ := cmd.Flags().GetString(f)
+			body["verification_"+f] = v
+		}
+	}
+	return body
 }
 
 // addGuardrailLLMFlags (BL416) registers --guardrail-backend /

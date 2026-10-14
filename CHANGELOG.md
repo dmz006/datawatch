@@ -5,6 +5,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.70 — feat(autonomous): CLI + comm-channel commands for per-unit verification LLM overrides
+
+### Added
+- **Set the verification LLM from the CLI and chat.** New CLI commands
+  `datawatch autonomous prd-set-task-verification-llm <id> --task <task>`,
+  `prd-set-story-verification-llm <id> --story <story>` and
+  `prd-set-verification-llm <id>`, each taking `--backend` / `--model` /
+  `--effort`; only flags you pass are changed and `--backend ""` clears.
+  Matching comm-channel verbs `autonomous set-task-verification-llm`,
+  `set-story-verification-llm` and `set-verification-llm` take
+  `backend=` / `model=` / `effort=` tokens (`key=` clears). Precedence:
+  task > story > Automaton > global `verification_backend`.
+
 ## v9.0.69 — feat(autonomous): REST + MCP surface for per-unit verification LLM overrides
 
 ### Added
