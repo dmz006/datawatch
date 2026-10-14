@@ -78,6 +78,25 @@ type LifecycleEvent struct {
 	Decision    *Decision         `json:"decision,omitempty"`
 	Verdict     *GuardrailVerdict `json:"verdict,omitempty"`
 	Host        string            `json:"host,omitempty"`
+	// Deleted is set only on KindPRDUpdated events for a PRD that no
+	// longer loads (deleted). The legacy WS prd_update frame carries
+	// {"deleted": true} in that case and NewStatus alone can't express
+	// it (an existing PRD may legitimately have an empty status).
+	Deleted bool `json:"deleted,omitempty"`
+}
+
+// PRDUpdatePayload maps a KindPRDUpdated event to the legacy WS
+// prd_update payload: {"prd_id", "status"} for an existing PRD or
+// {"prd_id", "deleted": true} for a deleted one. Byte-identical (after
+// json.Marshal) to what the pre-dispatcher main.go closure built.
+func PRDUpdatePayload(ev LifecycleEvent) map[string]any {
+	payload := map[string]any{"prd_id": ev.PRDID}
+	if ev.Deleted {
+		payload["deleted"] = true
+	} else {
+		payload["status"] = ev.NewStatus
+	}
+	return payload
 }
 
 // LifecycleFilter selects events for a subscriber. An empty field is a

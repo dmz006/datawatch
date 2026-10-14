@@ -385,14 +385,13 @@ var builtinTypes = []AutomatonType{
 
 // Manager is the public façade for the autonomous package.
 type Manager struct {
-	mu          sync.Mutex
-	cfg         Config
-	store       *Store
-	dataDir     string         // 2026-10-07 — root for ScratchDir (PRD scratch artifacts), same root Store itself was opened under
-	templates   *TemplateStore // BL221 (v6.2.0) — dedicated template store
-	decompose   DecomposeFn
-	guardrail   GuardrailFn
-	onPRDUpdate PRDUpdateFn
+	mu        sync.Mutex
+	cfg       Config
+	store     *Store
+	dataDir   string         // 2026-10-07 — root for ScratchDir (PRD scratch artifacts), same root Store itself was opened under
+	templates *TemplateStore // BL221 (v6.2.0) — dedicated template store
+	decompose DecomposeFn
+	guardrail GuardrailFn
 
 	// BL427 — in-process lifecycle event dispatcher (lifecycle_event.go).
 	// Has its own lock; never guarded by mu. lifecycleHost is
@@ -866,40 +865,29 @@ func (m *Manager) SetGuardrail(fn GuardrailFn) {
 	m.guardrail = fn
 }
 
-// PRDUpdateFn (v5.24.0) is fired on every successful PRD persist.
-// main.go wires this to a WS broadcast so the PWA Autonomous tab
-// auto-refreshes on PRD changes (operator-reported regression of the
-// pre-v5.24.0 manual-Refresh-button workflow). Empty PRD pointer
-// signals a deletion (id supplied separately for the broadcast).
-type PRDUpdateFn func(prdID string, prd *PRD)
-
-// SetOnPRDUpdate (v5.24.0) wires the WS broadcast indirection. Nil =
-// no broadcast (silent fallback to per-tab manual Refresh).
-func (m *Manager) SetOnPRDUpdate(fn PRDUpdateFn) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.onPRDUpdate = fn
-}
-
-// notifyPRDUpdate is the internal trampoline. Safe under the
-// manager's mu so callers don't need to release first.
-func (m *Manager) notifyPRDUpdate(prdID string, prd *PRD) {
-	m.mu.Lock()
-	fn := m.onPRDUpdate
-	m.mu.Unlock()
-	if fn != nil {
-		fn(prdID, prd)
-	}
-}
-
 // EmitPRDUpdate (v5.24.0) is the explicit broadcast trigger for
 // callers that wrote through Store.SavePRD directly and want the WS
 // broadcast to fire. The Manager's own mutator methods (Approve,
 // Reject, Decompose, etc.) call this after a successful save; the
 // `Store` layer is unaware of the WS path and stays decoupled.
+//
+// BL427 — publishes a KindPRDUpdated LifecycleEvent through the
+// lifecycle dispatcher (formerly a single-slot callback). A PRD that
+// no longer loads is reported with Deleted=true. main.go's WS adapter
+// subscribes to KindPRDUpdated and maps the event back to the legacy
+// frame with PRDUpdatePayload. Delivery is async per subscriber.
 func (m *Manager) EmitPRDUpdate(prdID string) {
-	prd, _ := m.store.GetPRD(prdID)
-	m.notifyPRDUpdate(prdID, prd)
+	if m == nil {
+		return
+	}
+	ev := LifecycleEvent{Kind: KindPRDUpdated, Level: LevelPRD, PRDID: prdID}
+	if prd, _ := m.store.GetPRD(prdID); prd != nil {
+		ev.NewStatus = string(prd.Status)
+		ev.ParentPRDID = prd.ParentPRDID
+	} else {
+		ev.Deleted = true
+	}
+	m.emit(ev)
 }
 
 // NewManager constructs the Manager and opens the store under dataDir.

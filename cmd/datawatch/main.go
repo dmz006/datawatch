@@ -5178,14 +5178,13 @@ Verify whether the diff plausibly implements the spec. Reply with STRICT JSON on
 			// v5.24.0 — broadcast a PRD update on every persist so the
 			// PWA Autonomous tab refreshes without manual reload.
 			// Operator-reported in v5.22.0 carry-over.
-			amgr.SetOnPRDUpdate(func(prdID string, prd *autonomouspkg.PRD) {
-				payload := map[string]any{"prd_id": prdID}
-				if prd != nil {
-					payload["status"] = string(prd.Status)
-				} else {
-					payload["deleted"] = true
-				}
-				httpServer.BroadcastPRDUpdate(payload)
+			// BL427 — the WS adapter is now a lifecycle dispatcher
+			// subscriber. It subscribes ONLY to prd.updated (fired by
+			// EmitPRDUpdate), not to the status-change kinds, so clients
+			// get exactly the same prd_update frames as before;
+			// enriching the WS payload is a later phase.
+			amgr.Subscribe(autonomouspkg.LifecycleFilter{Kinds: []string{autonomouspkg.KindPRDUpdated}}, func(ev autonomouspkg.LifecycleEvent) {
+				httpServer.BroadcastPRDUpdate(autonomouspkg.PRDUpdatePayload(ev))
 			})
 			wireCapacity(context.Background(), cfg, mgr, amgr, httpServer, func(title, body string) {
 				alertStore.AddSystem(alertspkg.LevelWarn, title, body)

@@ -733,8 +733,8 @@ func (a *API) DeletePRD(id string) error {
 	if err := a.M.DeletePRD(id); err != nil {
 		return err
 	}
-	// v5.24.0 — broadcast deletion as nil-PRD so PWA drops the row.
-	// notifyPRDUpdate handles the nil case gracefully.
+	// v5.24.0 — broadcast deletion so PWA drops the row. EmitPRDUpdate
+	// marks the event Deleted when the PRD no longer loads.
 	a.M.EmitPRDUpdate(id)
 	return nil
 }

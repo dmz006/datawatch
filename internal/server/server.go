@@ -1067,8 +1067,8 @@ func (s *HTTPServer) SetGitTokenMinter(m GitTokenMinter) {
 }
 
 // BroadcastPRDUpdate (v5.24.0) sends a `MsgPRDUpdate` WS message to
-// every connected client. main.go binds this to the autonomous
-// Manager's OnPRDUpdate callback so the PWA Autonomous tab reloads
+// every connected client. main.go binds this to a prd.updated
+// lifecycle subscriber on the autonomous Manager so the PWA Autonomous tab reloads
 // without manual Refresh on every persist (operator-reported v5.22.0).
 // Payload shape: `{prd_id, status?, deleted?}`.
 func (s *HTTPServer) BroadcastPRDUpdate(payload map[string]any) {
