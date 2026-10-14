@@ -5,6 +5,29 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.74 — fix(autonomous): task effort reaches claude-code's real `--effort` flag
+
+### Fixed
+- **Autonomous claude-code tasks now run at the effort you chose.**
+  A task's, story's or Automaton's effort (`low` / `medium` / `high` /
+  `max`, with the legacy `quick` / `normal` / `thorough` mapped to
+  `low` / `medium` / `high`) was only ever sent to the session as the
+  legacy thoroughness hint, which never reaches the claude CLI, so
+  autonomous claude-code sessions started with no `--effort` flag at
+  all. The executor now also sends `claude_effort` to
+  `/api/sessions/start` for local claude-code sessions, and claude is
+  launched with the matching `--effort`. An empty or unrecognised
+  effort sends nothing rather than guessing a level.
+- The legacy thoroughness value is still sent unchanged, so nothing
+  that reads it changes. Sessions on other backends are unaffected:
+  their request body is the same as before.
+- **Not covered yet:** tasks spawned on a cluster profile (container
+  workers) do not carry the effort level.
+- **Known limitation:** the claude-code backend is shared between
+  sessions, so an effort level stays applied to later claude-code
+  sessions that start without one of their own, until another session
+  sets a different level.
+
 ## v9.0.73 — feat(automata): per-task, per-story and per-Automaton verification LLM override
 
 Shipped across v9.0.67–v9.0.73; this entry consolidates those commits.
