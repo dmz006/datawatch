@@ -168,6 +168,22 @@ raises a 30-minute wait alert. Config: `autonomous.capacity_enabled`,
 pushed. It only applies when `ci-watch` is listed in `autonomous.per_prd_guardrails`
 (or an Automaton's own PRD-level guardrails); the list is empty by default.
 
+Foreign-file drift is checked for direct-mode (non-worktree) Automata only. The
+capture point is the worker spawn in `cmd/datawatch/main.go`: alongside the pre-task
+`HEAD` SHA and untracked files it calls `autonomous.CapturePreTaskDirtyFiles`
+(unstaged ∪ staged tracked files), skipped when the task runs in a PRD-owned worktree.
+The values ride back on the spawn result into `Task.PreTaskSHA` /
+`PreTaskUntrackedFiles` / `PreTaskDirtyFiles`. In `executeOne`, right after the
+verifier returns, `checkForeignFileDrift` (`internal/autonomous/file_drift.go`)
+unions the files of every commit in `<pre-task SHA>..HEAD` and flags those that were
+already dirty/untracked and are not in the task's `files`. A finding is stored on
+`Task.ForeignFileDrift`, appended as a `file_drift_detected` decision and emitted as
+the `autonomous_file_drift_detected` audit event. It is warn-only unless
+`autonomous.block_on_file_drift` (resolved Automaton > guardrail profile > global,
+default `false`) is on, in which case the task is blocked and the walk halts. It only
+runs read-only git commands and never rewrites history. See
+`docs/howto/file-drift-guardrail.md`.
+
 ### Message Routing
 
 The router (`internal/router`) is stateless. It:
