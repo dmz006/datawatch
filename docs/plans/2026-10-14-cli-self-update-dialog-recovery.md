@@ -312,6 +312,152 @@ passive footer and that sending either key would be unsafe.
 - Not done: the optional bridge `"heartbeat": true` flag, the TUI path's
   separate source label, and the open questions above.
 
+## Live validation
+
+Run 2026-10-14 04:58–05:05Z against a **sandbox** daemon built from
+`507c0ccb` (`make build` → `bin/datawatch`, `datawatch v9.0.66`). The
+production daemon was not touched. **Result: PASS** for once-only
+delivery and for the notice being handled with no keystroke, with two
+deviations from the expectations in the request, described below.
+
+### Two expectations that don't match the shipped fix
+
+- The request expected **one `[self-update] dismissed ...` line and a
+  key reaching the pane**. The shipped fix deliberately sends **no**
+  key (see *Dismiss key*), and its log line reads
+  `[self-update] CLI update notice on <id> — passive footer, no key sent, session left as-is`.
+  The live check therefore tests the shipped behaviour: the line is
+  logged and **zero** keys reach the pane. It does not test a dismiss
+  keystroke, because none exists.
+- The line is **not logged exactly once per session**. It is debounced
+  to once per 10 s and only fires when new output arrives or the
+  captured screen changes. That gave three lines per session over the
+  run: the first render, the pane redraw after the task was typed, and
+  the first scan after each sandbox daemon restart. A static pane logged
+  nothing more (01:01–01:03 local, through two heartbeats).
+
+### Setup
+
+Everything lived under `bin/sandbox-selfupdate/`, which is gitignored
+and was deleted afterwards. The sandbox had its own `--config` and its
+own `data_dir`. `datawatch start` has no `--data-dir` flag, so the data
+dir is set via `data_dir:` in the sandbox config, which is how
+`scripts/release-smoke.sh` does it. The sandbox also had its own
+`HOME`, its own `TMUX_TMPDIR`, and `TMUX` unset. Server:
+`127.0.0.1:57399`, plain HTTP, no token, `memory.enabled: false`.
+
+```sh
+env -u TMUX -u TMUX_PANE HOME=$SB/home TMUX_TMPDIR=$SB/tmux \
+  ./bin/datawatch --config $SB/config.yaml start --foreground --no-mcp
+```
+
+The first start inherited `TMUX` from the calling shell, which takes
+precedence over `TMUX_TMPDIR`. Its one session
+(`cs-dw-selfupdate-sandbox-94a1`) briefly landed on the operator's tmux
+server. It was killed by exact name within ~15 s, nothing else on that
+server was touched, and the sandbox was restarted from a clean data dir
+with `env -u TMUX`. Anyone repeating this from inside a datawatch
+session must unset `TMUX`.
+
+Two disposable one-shot sessions were used. Each pane renders
+`internal/session/testdata/claude_self_update_dialog.txt` and then
+blocks on `read`, appending every line that reaches the pane to a
+receive log:
+
+| Session | Backend | Pane program | Delivery path exercised |
+|---|---|---|---|
+| `2f09` | `claude-code`. The sandbox's `claude-code` LLM `binary` was pointed at a stand-in script: `claude mcp …` is a no-op, and an interactive launch prints the fixture and an idle `❯ ` | fake `claude` | `handleChannelReady` (the incident path) |
+| `8414` | `shell` (`shell_backend.script_path` = fixture script, idle `datawatch:fixture$ `) | fixture script | TUI one-shot path (`[tui-task]`) |
+
+There is no real channel bridge in the sandbox, so the bridge's 60 s
+`readyHeartbeat` was simulated with the same body it sends, posted on
+the same 60 s cadence. That gave three heartbeat posts, spanning two
+full intervals. The sandbox daemon was then restarted and a fourth post
+was sent.
+
+```sh
+for n in 1 2 3; do
+  curl -s -XPOST $B/api/channel/ready -H 'content-type: application/json' \
+    -d '{"session_id":"dw-selfupdate-sandbox-2f09","port":40999}'
+  sleep 60
+done
+# restart sandbox daemon, wait 20 s, POST once more
+```
+
+### Observed
+
+```
+05:00:57Z POST #1: {"session_id":"dw-selfupdate-sandbox-2f09","status":"ok"}
+05:01:57Z POST #2: {"session_id":"dw-selfupdate-sandbox-2f09","status":"already_delivered"}
+05:02:57Z POST #3: {"session_id":"dw-selfupdate-sandbox-2f09","status":"already_delivered"}
+05:03:41Z POST #4 (after restart): {"session_id":"dw-selfupdate-sandbox-2f09","status":"already_delivered"}
+
+$ cat -A claude-pane-received.log          # every line that reached 2f09's pane
+05:00:58Z^ISELFUPDATE-LIVE-VALIDATION claude-code one-shot task$
+
+daemon stdout:
+[channel] ready for session dw-selfupdate-sandbox-2f09 (channel_ready=true, port=40999)
+[channel] task delivered to dw-selfupdate-sandbox-2f09 via send_input
+[channel] ready for session dw-selfupdate-sandbox-2f09 (channel_ready=true, port=40999)
+[channel] task for dw-selfupdate-sandbox-2f09 already delivered — ready re-announce, not re-sending
+[channel] ready for session dw-selfupdate-sandbox-2f09 (channel_ready=true, port=40999)
+[channel] task for dw-selfupdate-sandbox-2f09 already delivered — ready re-announce, not re-sending
+[channel] ready for session dw-selfupdate-sandbox-2f09 (channel_ready=true, port=40999)   # after restart
+[channel] task for dw-selfupdate-sandbox-2f09 already delivered — ready re-announce, not re-sending
+
+data_dir/daemon-crash.log (log.Printf target):
+00:59:21 [self-update] CLI update notice on dw-selfupdate-sandbox-8414 — passive footer, no key sent, session left as-is
+01:00:25 [self-update] CLI update notice on dw-selfupdate-sandbox-2f09 — passive footer, no key sent, session left as-is
+01:00:28 [self-update] CLI update notice on dw-selfupdate-sandbox-8414 — ...   (after daemon restart)
+01:00:58 [self-update] CLI update notice on dw-selfupdate-sandbox-2f09 — ...   (pane redraw after task typed)
+01:03:24 [self-update] CLI update notice on dw-selfupdate-sandbox-2f09 — ...   (after daemon restart)
+01:03:24 [self-update] CLI update notice on dw-selfupdate-sandbox-8414 — ...   (after daemon restart)
+
+2f09 session record before restart: state=waiting_input channel_ready=true
+  task_delivered_at=2026-10-14T01:00:57.070898716-04:00
+2f09 final pane tail:
+  ────────────────────────────────────────
+  ❯ SELFUPDATE-LIVE-VALIDATION claude-code one-shot task
+  ❯
+```
+
+- **Once-only delivery: PASS.** Four ready posts, two of them spaced a
+  full heartbeat interval apart and one sent after a daemon restart,
+  produced exactly **one** task delivery. `task_delivered_at` was
+  persisted and survived the restart.
+- **Notice gets no keystroke: PASS.** Exactly one line reached 2f09's
+  pane over ~4 min, and it was the task itself, with no leading ESC
+  byte (`cat -A`) and no stray empty Enter lines. The footer stayed on
+  screen the whole time, and the session sat in `waiting_input`. It was
+  never classified as rate-limited or stalled.
+- **`[self-update]` line: logged, but not exactly once.** It appeared
+  three times for 2f09, as explained under *Two expectations that don't
+  match the shipped fix*.
+
+### Separate finding (not fixed here)
+
+The **TUI one-shot path** (`cmd/datawatch/main.go`, non-claude-code
+backends) re-delivered the shell session `8414`'s task after **every
+sandbox daemon restart**. The pane received the four-line task block
+three times: 04:59:28Z (first delivery), 05:00:33Z (after restart 1)
+and 05:03:29Z (after restart 2). Its once-only guard,
+`tuiTaskDelivered`, is an in-memory `sync.Map`, which is the same gap
+*Fix plan* item 1 called out for the channel path. That path never
+handles claude-code, so it was not the cause of the 348b/258d incident.
+It is reported here for the operator to decide on, and has not been
+fixed. One fix would be for the TUI path to use the same
+`ClaimTaskDelivery` record.
+
+### Cleanup
+
+Both sessions were killed and deleted through the sandbox API
+(`/api/sessions/kill`, `/api/sessions/delete` → `{"status":"ok"}`;
+`/api/sessions` → `[]`). The sandbox daemon was stopped by its own PID.
+Its private tmux server exited with no sessions left
+(`no server running on …/bin/sandbox-selfupdate/tmux/…`), and
+`bin/sandbox-selfupdate/` was removed. The operator's tmux session list
+afterwards contained no sandbox sessions.
+
 ## Open questions
 
 - 348b's timeline has no `input-sent` events even though its pane shows

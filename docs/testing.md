@@ -900,3 +900,38 @@ $ curl -sk -XDELETE "$B/2b65248a?hard=true"
 | `make build` | PASS (`bin/datawatch` → `datawatch v9.0.62`) |
 | Targeted smoke `DATAWATCH_BIN=$PWD/bin/datawatch SMOKE_ONLY=6,7,18,56 ./scripts/release-smoke.sh` (isolated sandbox daemon) | 94 passed, 0 failed, 21 skipped. Note: the smoke sandbox config does not enable `autonomous`, so sections 6/7*/18/56 report SKIP ("autonomous disabled") — Automata coverage for this release comes from the unit tests and live checks above. |
 | Deploy | `make install` → `systemctl --user restart datawatch` → `is-active`: `active`; `datawatch version`: `datawatch v9.0.62`; `/api/health`: `"version":"9.0.62"` |
+
+## v9.0.66 — One-shot task delivered once; CLI self-update footer handled as benign (2026-10-14)
+
+All live checks ran against a disposable **sandbox** daemon, never the
+production daemon. It had its own `--config`, its own `data_dir`, a
+throwaway `HOME`, a private `TMUX_TMPDIR` with `TMUX` unset, and
+`127.0.0.1:57399`. Full commands and output are in
+[plans/2026-10-14-cli-self-update-dialog-recovery.md](plans/2026-10-14-cli-self-update-dialog-recovery.md#live-validation).
+
+### T1 — Live: a one-shot session showing the self-update footer gets its task once and no keystroke
+
+| Field | Details |
+|-------|---------|
+| **Description** | A one-shot claude-code-family session whose pane shows Claude Code's `✔ Update installed · /restart to apply` footer (the captured fixture `internal/session/testdata/claude_self_update_dialog.txt`) receives its task exactly once across repeated channel-ready heartbeats and a daemon restart. The footer is logged as `[self-update]` and no key is sent for it. |
+| **Steps** | `make build`. Start the sandbox daemon. Point the sandbox's `claude-code` LLM `binary` at a stand-in script that prints the fixture, shows an idle `❯ ` and logs every line reaching the pane; restart the sandbox. `POST /api/sessions/start` `{"backend":"claude-code","one_shot":true,"task":"…"}` → session `2f09`. Simulate the bridge heartbeat with `POST /api/channel/ready {"session_id":…,"port":40999}` three times, 60 s apart (two full intervals). Restart the sandbox daemon and POST once more. Read the pane receive log, daemon stdout and `data_dir/daemon-crash.log`. Kill and delete the sessions, stop the sandbox, remove its directory. |
+| **Expected** | As written in the request: exactly one `[self-update] dismissed …` line, the dismiss key reaching the pane, zero repeated task deliveries. The shipped fix sends **no** key, because the footer is passive (plan doc *Dismiss key*). The checks that apply to the shipped fix are therefore: one task delivery; later POSTs answer `already_delivered`; zero keystrokes besides the task; `[self-update] … no key sent` logged. |
+| **Actual** | POST #1 `ok`, #2 `already_delivered`, #3 `already_delivered`, #4 (after restart) `already_delivered`. The pane received exactly one line, the task, with no ESC byte and no empty Enter lines. `task_delivered_at` was persisted and survived the restart. `[self-update] CLI update notice on dw-selfupdate-sandbox-2f09 — passive footer, no key sent, session left as-is` was logged **3 times**, not once: first render, the redraw after the task was typed, and the post-restart scan. It is debounced to 10 s and fires only on new output or screen changes; a static pane logged nothing more through two heartbeats. |
+| **Result** | PASS for once-only delivery and no keystroke. The "exactly one line" and "key reaches the pane" expectations do not apply to the shipped fix (see Expected/Actual). |
+
+**Separate finding, not fixed (operator decision).** A `shell`-backend
+one-shot session (`8414`) in the same sandbox had its task re-delivered
+by the TUI one-shot path (`[tui-task]`) after **each** sandbox daemon
+restart, three times in all. That path's once-only guard is in memory
+only. It never handles claude-code, so it is unrelated to the 348b/258d
+incident.
+
+### Gates
+
+| Check | Result |
+|-------|--------|
+| `bash scripts/check-no-internal-refs.sh` | PASS |
+| `go test -count=1 ./...` | PASS (69 packages ok, 0 FAIL) |
+| `node --check internal/server/web/app.js` | PASS |
+| `make build` | PASS (`bin/datawatch` → `datawatch v9.0.66`) |
+| `make lint` | PASS (`0 issues.`) |

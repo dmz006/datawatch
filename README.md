@@ -57,7 +57,7 @@ Browse the catalog in-app (Settings → Skills → Registry) or on GitHub. To co
 
 ## Current release
 
-**Current release: v9.0.65 (2026-10-13).** v9.0.9–v9.0.65 are a patch
+**Current release: v9.0.66 (2026-10-14).** v9.0.9–v9.0.66 are a patch
 chain on top of the v9.0.0 major release: a plugin extension framework
 (manifest-declared widgets, now rendering live on the dashboard and in
 session detail — plugins can push or pull their own stat tiles,

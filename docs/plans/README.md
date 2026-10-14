@@ -40,7 +40,7 @@ single source of truth.
 
 ## Current state — 2026-10-13
 
-Latest release: **v9.0.65** (2026-10-13) on `main` — BL426, the agent-base Trivy fix (the bundled `gh` CLI is rebuilt with a fixed Go stdlib and `golang.org/x/net`, and three `openssh-client` `fix_deferred` CVEs are accepted as risks; see item 25 in the Roadmap queue). Previous: **v9.0.63** — BL423, the opt-in `ci-watch` completion guardrail (item 22). v9.0.29–v9.0.64 history is in `CHANGELOG.md`.
+Latest release: **v9.0.66** (2026-10-14) on `main` — BL429, one-shot Claude Code tasks are delivered once instead of being re-pasted on every 60 s channel heartbeat, and the CLI's "Update installed · /restart to apply" footer is handled as benign (item 26 in the Roadmap queue). Previous: **v9.0.65** — BL426, the agent-base Trivy fix (item 25). v9.0.29–v9.0.64 history is in `CHANGELOG.md`.
 
 Previous: **v9.0.28** (2026-10-11) on `main`; **v9.0.29** open on `datawatch#205` pending operator merge (BL404, the Stage 2 shakedown of the new PRD-driven workflow — see the Roadmap section below for the full B116-B121/BL413 list of what that shakedown found and fixed). Previous: **v9.0.23**. feat(autonomous): BL407 Phase 5 — config/parity surface. `PRD.Git.AutoPR`/`BaseBranch` are now operator-settable after PRD creation (new `set_git` REST action, `autonomous_prd_set_git` MCP tool, `prd-set-git` CLI command, and a new Git section on the PWA's PRD Settings modal — Mobile-Parity issue `datawatch-app#249`), and a new daemon-wide `autonomous.default_auto_pr` config starts every future PRD's `Git.AutoPR` pre-set (applied once at creation time, not resolved at use-time, since `AutoPR` is a plain bool with no pointer override — a resolve-at-use-time default couldn't tell "operator explicitly turned it back off" from "never touched"). `WorktreeBaseRepo`/`WorktreeDir`/`RulesFile`/`ContextFile`/`UpstreamRepos` were confirmed already fully config-round-trippable with zero new code. Caught two real gaps live while shipping it: the new MCP tool needed its own `federation.MCPToolCap` entry or it 404s from `POST /api/mcp/call` despite being properly registered, and the new PWA hint text first said "PRD" and left "automaton" untranslated in 4 locale bundles — both caught by this repo's own guard tests before shipping. **Active work:** the v10.0.0 self-build arc — see [§ Roadmap](#roadmap-self-build-arc--v1000-locked-2026-10-10). Stage 1 (BL406+BL407) and Stage 2 (BL404, the real shakedown of the new PRD-driven workflow) are both done — see the Roadmap section for the full B116-B121/BL413 list the shakedown surfaced and fixed same-day. **Stage 3 — BL403** (Plugin Extension Surfaces, `docs/plans/2026-10-09-plugin-extension-surfaces.md`) is now in progress, run PRD-driven per the roadmap's own design, starting with Phase 1 (Plugin Manifest v3). Plans folder refactored 2026-10-10: 11 completed plan docs archived to `historical-plans/`, BL381 closed as shipped, and unscheduled work called out in the Roadmap's "Not yet placed" list.
 
@@ -1093,6 +1093,34 @@ established. In progress — starting with BL403.**
     tables before/after, `go version -m`, fix options considered).
     **Revert path:** once a cli/cli release ships with Go ≥ 1.27.2 and
     x/net ≥ v0.60.0, go back to a pinned package install.
+
+26. **BL429** — one-shot Claude Code sessions re-pasted their whole task
+    while the CLI's own self-update dialog ("✔ Update installed ·
+    /restart to apply") was showing (filed + shipped 2026-10-14 —
+    **shipped v9.0.66**). Split out of **BL428**, the broader
+    concurrency/budget design pass. Incident sessions **348b** (~80
+    `[Pasted text #N]` chips over ~40 min) and **258d** (timeline:
+    `source:channel-task` re-sent after every idle transition).
+    **Confirmed root cause:** the update notice was incidental. It is a
+    passive footer, not a modal. The channel bridge re-POSTs
+    `/api/channel/ready` every 60 s, and `handleChannelReady` re-typed a
+    OneShot session's full task on every heartbeat that found it idle in
+    `waiting_input`. Each re-delivery also re-armed the task-echo
+    completion suppression. **Shipped, v9.0.66:** delivery is claimed
+    once per session through a persisted `task_delivered_at`
+    (`ClaimTaskDelivery`; released on send failure or timeout, cleared
+    on `Restart`). The footer is recognised by `selfUpdatePatterns`,
+    logged as `[self-update]` (debounced), never classified as a prompt
+    or rate limit, and never sent a key. **Live-validated** on a sandbox
+    daemon: 4 ready POSTs (3 at the 60 s cadence and 1 after a daemon
+    restart) gave 1 delivery, and nothing but the task reached the pane.
+    **Open, operator decision:** the non-claude TUI one-shot path's
+    in-memory guard re-delivers after a daemon restart, which was seen
+    live on a shell-backend session. The optional bridge
+    `"heartbeat": true` flag and a separate TUI source label are not
+    done. **Evidence:**
+    `docs/plans/2026-10-14-cli-self-update-dialog-recovery.md` (root
+    cause, call sites, pre-fix test run, live validation).
 
 **Outside the queue, handled separately, not blocking Stage 3:**
 - ~~**BL381**~~ — status-verified 2026-10-10: shipped v8.28.0 + v8.28.2
