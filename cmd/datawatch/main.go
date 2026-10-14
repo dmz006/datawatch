@@ -113,7 +113,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "9.0.67"
+var Version = "9.0.68"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -4552,7 +4552,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		// v4.0.1 — VerifyFn: uses /api/ask to attest the task spec
 		// against the session summary. verification_backend (empty =
 		// inherit) gives cross-backend independence per BL25 design.
-		autonomousVerify := func(ctx context.Context, prd *autonomouspkg.PRD, task *autonomouspkg.Task) (autonomouspkg.VerificationResult, error) {
+		autonomousVerify := func(ctx context.Context, prd *autonomouspkg.PRD, task *autonomouspkg.Task) (vres autonomouspkg.VerificationResult, verr error) {
 			// v8.20.2 — wait for the spawned session to reach a terminal
 			// state before verifying. Previously verify fired immediately
 			// after spawn, so the verifier saw no git diff and the session
@@ -4920,21 +4920,38 @@ Verify whether the diff plausibly implements the spec. Reply with STRICT JSON on
 			// (non-blocking) before committing to the single-backend
 			// default's normal, potentially hours-long wait. See
 			// resolveVerifierCandidates' doc comment for why.
-			var vbackend, vkind, verifyModel string
-			var useSession bool
-			var release func()
-			if len(amgrCfg.VerificationBackends) > 0 && verifierCapacityTryAdmit != nil {
-				for _, c := range resolveVerifierCandidates(amgrCfg.VerificationBackends, resolveAskBackend, askCompatible) {
-					if r, ok := verifierCapacityTryAdmit(ctx, c.backend, c.model, "verify:"+task.ID, prd.ID); ok {
-						vbackend, vkind, verifyModel, release = c.backend, c.kind, c.model, r
-						break
-					}
+			// Per-task / story / Automaton verification overrides: an
+			// explicit override skips the verification_backends pool and
+			// goes through resolveVerifierBackendModel's safety logic as
+			// the configured backend/model; with no override (Source
+			// global) this is the same pool-then-default selection as
+			// before. Effort is applied only from an explicit override —
+			// the global verification_effort is still not consumed by
+			// verify (pre-existing gap, unchanged here).
+			resolvedVLLM := autonomouspkg.ResolveVerificationLLM(prd, task, amgrCfg)
+			explicitEffortCfg := amgrCfg
+			explicitEffortCfg.VerificationEffort = ""
+			var verifierTryAdmit func(backend, model string) (func(), bool)
+			if verifierCapacityTryAdmit != nil {
+				verifierTryAdmit = func(backend, model string) (func(), bool) {
+					return verifierCapacityTryAdmit(ctx, backend, model, "verify:"+task.ID, prd.ID)
 				}
 			}
+			vsel := selectVerifierLLM(verifierSelectInput{
+				Resolved:       resolvedVLLM,
+				ExplicitEffort: autonomouspkg.ResolveVerificationLLM(prd, task, explicitEffortCfg).Effort,
+				Pool:           amgrCfg.VerificationBackends,
+				GlobalBackend:  amgrCfg.VerificationBackend,
+				GlobalModel:    amgrCfg.VerificationModel,
+				PRDBackend:     prd.Backend,
+				PRDModel:       prd.Model,
+				ProjectDir:     prd.ProjectDir,
+			}, verifierTryAdmit, resolveAskBackend, askCompatible, isInferenceSessionKind)
+			vbackend, vkind, verifyModel, useSession := vsel.Backend, vsel.Kind, vsel.Model, vsel.UseSession
+			release := vsel.Release
+			// Every result returned from here on records which LLM judged it.
+			defer func() { vsel.stamp(&vres) }()
 			if release == nil {
-				vbackend, vkind, verifyModel, useSession = resolveVerifierBackendModel(
-					amgrCfg.VerificationBackend, amgrCfg.VerificationModel,
-					prd.Backend, prd.Model, prd.ProjectDir, resolveAskBackend, askCompatible, isInferenceSessionKind)
 				if verifierCapacityAdmit != nil {
 					r, aerr := verifierCapacityAdmit(ctx, vbackend, verifyModel, "verify:"+task.ID, prd.ID)
 					if aerr != nil {
@@ -4963,7 +4980,8 @@ Verify whether the diff plausibly implements the spec. Reply with STRICT JSON on
 				specHash := sha256.Sum256([]byte(task.ID + "|" + prompt))
 				outputFile := filepath.Join(prd.ProjectDir, ".verify-output-"+hex.EncodeToString(specHash[:8])+".json")
 				sessionTask := sessionJudgmentTask(prompt, prd.ProjectDir, outputFile)
-				content, serr := runOneShotJSONSession(cfg, prd.ID, prd.ProjectDir, vbackend, verifyModel,
+				content, serr := runOneShotJSONSessionWithEffort(cfg, prd.ID, prd.ProjectDir, vbackend, verifyModel,
+					mapEffortToSession(autonomouspkg.Effort(vsel.Effort)),
 					"autonomous:verify:"+task.ID, sessionTask, outputFile, "verify-"+task.ID+".json", 10*time.Minute)
 				if serr != nil {
 					// BL410 Phase 0 — the session itself failed; see the
@@ -4986,6 +5004,8 @@ Verify whether the diff plausibly implements the spec. Reply with STRICT JSON on
 				vr.VerifiedAt = time.Now()
 				return vr, nil
 			}
+			// /api/ask has no effort field — an override effort is only
+			// recorded (VerifierEffort) on this path, not applied.
 			askBody := map[string]any{
 				"question": prompt,
 				"backend":  vkind,

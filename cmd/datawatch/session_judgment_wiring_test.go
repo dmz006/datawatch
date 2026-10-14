@@ -12,10 +12,13 @@ func TestB124_AutonomousVerify_RoutesThroughSessionWhenNeeded(t *testing.T) {
 		name string
 		want string
 	}{
-		{"resolves useSession", "vbackend, vkind, verifyModel, useSession = resolveVerifierBackendModel("},
-		{"passes project dir + session-kind check", "prd.Backend, prd.Model, prd.ProjectDir, resolveAskBackend, askCompatible, isInferenceSessionKind)"},
+		// Selection (incl. resolveVerifierBackendModel's useSession
+		// decision) lives in selectVerifierLLM (verification_llm.go).
+		{"resolves useSession", "vbackend, vkind, verifyModel, useSession := vsel.Backend, vsel.Kind, vsel.Model, vsel.UseSession"},
+		{"passes project dir + session-kind check", "ProjectDir:     prd.ProjectDir,"},
+		{"passes session-kind check", "verifierTryAdmit, resolveAskBackend, askCompatible, isInferenceSessionKind)"},
 		{"branches on useSession", "if useSession {"},
-		{"spawns a real session", "runOneShotJSONSession(cfg, prd.ID, prd.ProjectDir, vbackend, verifyModel,"},
+		{"spawns a real session", "runOneShotJSONSessionWithEffort(cfg, prd.ID, prd.ProjectDir, vbackend, verifyModel,"},
 		{"reuses the same judgment prompt", "sessionJudgmentTask(prompt, prd.ProjectDir, outputFile)"},
 	}
 	for _, c := range checks {

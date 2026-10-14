@@ -208,6 +208,27 @@ func resolveVerifierBackendModel(
 	askCompatible func(kind string) bool,
 	isSessionKind func(kind string) bool,
 ) (vbackend, vkind, verifyModel string, useSession bool) {
+	return resolveVerifierBackendModelWithSessionModel(cfgBackend, cfgModel, prdBackend, prdModel, projectDir, "",
+		resolveAskBackend, askCompatible, isSessionKind)
+}
+
+// resolveVerifierBackendModelWithSessionModel is resolveVerifierBackendModel
+// plus one parameter, sessionModel: a model explicitly chosen FOR
+// cfgBackend at a per-unit level (a task / story / Automaton verification
+// override). The B124 follow-up below refuses to carry cfgModel into a
+// session call because the flat global VerificationModel is an
+// ask-compatible name that a session backend may reject — but a per-unit
+// override's model was picked together with its backend, so when the
+// call ends up session-routed on that backend it is the right model to
+// use. Empty sessionModel (the global path) is exactly
+// resolveVerifierBackendModel. It never applies when the backend was
+// downgraded to ollama (useSession is false then).
+func resolveVerifierBackendModelWithSessionModel(
+	cfgBackend, cfgModel, prdBackend, prdModel, projectDir, sessionModel string,
+	resolveAskBackend func(raw string) (kind, model string, err error),
+	askCompatible func(kind string) bool,
+	isSessionKind func(kind string) bool,
+) (vbackend, vkind, verifyModel string, useSession bool) {
 	usingPRDBackend := false
 	vbackend = cfgBackend
 	if vbackend == "" {
@@ -239,7 +260,9 @@ func resolveVerifierBackendModel(
 	// otherwise the backend's own registry-default model (vmodel, e.g.
 	// claude-code's configured "opus").
 	if useSession {
-		if usingPRDBackend && prdModel != "" {
+		if sessionModel != "" {
+			verifyModel = sessionModel
+		} else if usingPRDBackend && prdModel != "" {
 			verifyModel = prdModel
 		} else {
 			verifyModel = vmodel

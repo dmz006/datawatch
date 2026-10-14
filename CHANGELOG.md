@@ -5,6 +5,27 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.68 — feat(autonomous): verifier honors per-task / per-story / per-Automaton verification LLM overrides
+
+### Changed
+- **The autonomous verifier now runs on the resolved per-unit LLM.** An
+  explicit task, story or Automaton `verification_backend` /
+  `verification_model` now selects the verifier, skipping the
+  `verification_backends` capacity pool (an explicit choice beats
+  load-balancing) while keeping every existing safety check: the
+  ask-compatible check, routing session-only backends through a real
+  one-shot session when the Automaton has a project directory (using
+  the override's own model there), and the ollama fallback when it has
+  none. An explicit `verification_effort` override is applied to a
+  session-routed verify (`/api/ask` has no effort input, so it is only
+  recorded on that path). With no override, selection is unchanged:
+  pool first, then the global config / the Automaton's own backend.
+  Every verification result from the LLM-judgment stage now records
+  `verifier_backend` / `verifier_model` / `verifier_effort` /
+  `verifier_source` (`task`, `story`, `prd`, `global` or `pool`).
+- Known gap, unchanged: the global `verification_effort` is still not
+  consumed by the verify path.
+
 ## v9.0.67 — feat(autonomous): per-task / per-story / per-Automaton verification LLM overrides
 
 ### Added

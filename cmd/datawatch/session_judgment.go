@@ -130,6 +130,15 @@ func sessionJudgmentTask(prompt, projectDir, outputFile string) string {
 // "decompose-output.json", "verify-<taskID>.json") so concurrent
 // sessions for the same PRD never collide on the same relocated file.
 func runOneShotJSONSession(cfg *config.Config, prdID, projectDir, backend, model, sessionName, sessionTask, outputFile, scratchRelocateName string, timeout time.Duration) (string, error) {
+	return runOneShotJSONSessionWithEffort(cfg, prdID, projectDir, backend, model, "", sessionName, sessionTask, outputFile, scratchRelocateName, timeout)
+}
+
+// runOneShotJSONSessionWithEffort is runOneShotJSONSession plus the
+// session's effort (a /api/sessions/start effort value: quick / normal /
+// thorough). Empty effort omits the field, so the request body is
+// identical to runOneShotJSONSession's and the daemon's
+// session.default_effort applies.
+func runOneShotJSONSessionWithEffort(cfg *config.Config, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName string, timeout time.Duration) (string, error) {
 	scratchDir, scratchErr := autonomouspkg.ScratchDir(expandHome(cfg.DataDir), prdID)
 	if scratchErr != nil {
 		fmt.Printf("[%s] scratch dir for prd=%s: %v\n", sessionName, prdID, scratchErr)
@@ -146,7 +155,7 @@ func runOneShotJSONSession(cfg *config.Config, prdID, projectDir, backend, model
 	}
 	_ = os.Remove(outputFile) // clear stale/empty output from an incomplete prior attempt
 
-	body, _ := json.Marshal(map[string]any{
+	startReq := map[string]any{
 		"task":        sessionTask,
 		"project_dir": projectDir,
 		"backend":     backend,
@@ -154,7 +163,11 @@ func runOneShotJSONSession(cfg *config.Config, prdID, projectDir, backend, model
 		"name":        sessionName,
 		"one_shot":    true,
 		"prd_id":      prdID,
-	})
+	}
+	if effort != "" {
+		startReq["effort"] = effort
+	}
+	body, _ := json.Marshal(startReq)
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
