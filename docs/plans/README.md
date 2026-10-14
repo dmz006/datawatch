@@ -1148,6 +1148,22 @@ established. In progress — starting with BL403.**
     `verifier_source` `task`, and its sibling recorded `global`.
     **Evidence:** `docs/plans/2026-10-14-verification-llm-override-live.md`.
 
+**2026-10-14 sequencing addendum (operator-confirmed):** BL427 (Automaton
+lifecycle event notifications), BL428 (Concurrency control & usage-budget
+design pass) and BL431 (Automation: multi-Automaton orchestration) are
+filed but not yet numbered above — each is still mid design-pass and will
+self-register once its own doc lands. Explicit operator decision: once all
+three design docs are reviewed and approved, their IMPLEMENTATION is pulled
+forward ahead of the remaining items in this queue, in dependency order
+BL427 → BL428 → BL431, rather than slotting in strictly by filing date.
+Rationale: once BL431's Automation coordinator is real, the rest of this
+roadmap's remaining items can be run through it as its own dogfood/debug
+cycle instead of being hand-sequenced one PRD at a time by an operator's
+chat session — the exact gap that caused a 5+ hour queue stall overnight on
+2026-10-13/14 with no daemon-side detection. BL424 (item 23 above) is
+unaffected by this addendum and stays explicitly sequenced last, right
+before the v10.0.0 cutover, per its own note above.
+
 **Outside the queue, handled separately, not blocking Stage 3:**
 - ~~**BL381**~~ — status-verified 2026-10-10: shipped v8.28.0 + v8.28.2
   (PWA picker). Moved to Completed. No slot needed.
