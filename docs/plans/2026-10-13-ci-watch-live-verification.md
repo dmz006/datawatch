@@ -36,3 +36,7 @@ Release jobs: go test + lint, gosec baseline-diff, govulncheck, goreleaser, cont
 
    This is the same container-vulnerability class that prompted the ci-watch guardrail. Fixing it is explicitly out of scope for this release. The v9.0.62 Release run (https://github.com/dmz006/datawatch/actions/runs/38484929685) failed on the same agent-base job, so the failure predates this release.
 2. **attach stats-cluster tarball: upload step exhausted its retries.** Every attempt from 01:46Z to 02:10Z got `release not found` with API quota at 5000 (not rate-limited). The release itself had been published at 01:40Z, which rules out the step's "read-path lag" assumption. The step's lookup of the release looks broken, not slow. The four `datawatch-stats_9.0.63_*` goreleaser tarballs are attached. Only the `datawatch-stats-cluster-9.0.63-linux-amd64.tar.gz` container-image tarball is missing from the release. In v9.0.62 the same job succeeded within 30s.
+
+## Live probe
+
+- 2026-10-13: ci-watch live probe commit pushed by an automaton.
