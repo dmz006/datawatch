@@ -5161,6 +5161,13 @@ Verify whether the diff plausibly implements the spec. Reply with STRICT JSON on
 		} else {
 			autonomousMgrRef = amgr // BL244 — expose for plugin context wiring below
 			amgr.SetGuardrail(autonomousGuardrail)
+			// Foreign-file drift (and future autonomous audit events) →
+			// operator audit log, so they land in JSON-lines + CEF mirror.
+			if wiredAuditLog != nil {
+				amgr.SetAuditFn(func(a string, d map[string]any) {
+					_ = wiredAuditLog.Write(auditpkg.Entry{Timestamp: time.Now(), Actor: "autonomous", Action: a, Details: d})
+				})
+			}
 			// v5.26.19 — wire F10 profile resolver so SetPRDProfiles
 			// can validate that named project + cluster profiles
 			// actually exist before persisting them onto a PRD.

@@ -482,13 +482,6 @@ type Story struct {
 	// no Error-equivalent bare-string field today; this is genuinely
 	// new, not additive-alongside-an-existing-field like Task's.
 	FailureReason *FailureReason `json:"failure_reason,omitempty"`
-	// ForeignFileDrift — the exact files this task's own commit(s) swept
-	// in that were already dirty or untracked before its worker session
-	// started and are NOT in FilesPlanned (see DetectForeignFileDrift).
-	// Deliberately separate from FailureReason: this can fire on an
-	// otherwise-successful TaskCompleted task and must not make a clean
-	// completion read as a failure.
-	ForeignFileDrift []string `json:"foreign_file_drift,omitempty"`
 
 	// Phase 3 (v5.26.60) — per-story execution profile override +
 	// per-story approval gate. ExecutionProfile empty = inherit
@@ -626,6 +619,13 @@ type Task struct {
 	// captured alongside PreTaskSHA. Used by the foreign-file-drift check
 	// (DetectForeignFileDrift). Empty in worktree mode (nothing pre-dirty to protect).
 	PreTaskDirtyFiles []string `json:"pre_task_dirty_files,omitempty"`
+	// ForeignFileDrift — the sorted union (across retries) of the exact files this task's own commit(s) swept
+	// in that were already dirty or untracked before its worker session
+	// started and are NOT in FilesPlanned (see DetectForeignFileDrift).
+	// Deliberately separate from FailureReason: this can fire on an
+	// otherwise-successful TaskCompleted task and must not make a clean
+	// completion read as a failure.
+	ForeignFileDrift []string `json:"foreign_file_drift,omitempty"`
 
 	// BL367 — quality gate result recorded after each task completes.
 	// Nil when quality gates are disabled for this PRD.

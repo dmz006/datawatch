@@ -127,6 +127,8 @@ func cefSignature(action string) (int, string, int) {
 		return 24, "ConfigRollback", 6
 	case "schedule":
 		return 25, "ScheduleChange", 3
+	case "autonomous_file_drift_detected":
+		return 26, "AutonomousFileDriftDetected", 3
 	default:
 		return 0, "AuditEvent", 3
 	}

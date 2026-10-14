@@ -478,6 +478,17 @@ type Manager struct {
 	// Nil = harvest silently skipped.
 	memoryHarvestFn func(ctx context.Context, sessionID, prdID, storyID, projectDir string, cfg MemoryHarvestConfig) error
 
+	// auditFn — when set, called for audit-worthy autonomous events
+	// (today: autonomous_file_drift_detected). Wired from main.go to the
+	// operator audit log so the event lands in both JSON-lines and CEF.
+	// Guarded by mu. Nil = audit silently skipped.
+	auditFn func(action string, details map[string]any)
+
+	// driftGit — git runner for checkForeignFileDrift's committed-file
+	// lookup. nil means defaultDriftGitRunner; tests inject a counting
+	// fake.
+	driftGit driftGitRunner
+
 	// memoryVerifierFn (BL387 Phase 1a) — when set, called once per verification
 	// issue after verify() returns !OK. Writes the issue to prd-shared scope so
 	// retry tasks can seed from it. Nil = verifier writes silently skipped.
@@ -612,6 +623,15 @@ func (m *Manager) SetMemoryHarvestFn(fn func(ctx context.Context, sessionID, prd
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.memoryHarvestFn = fn
+}
+
+// SetAuditFn wires the audit-event callback used for autonomous events
+// that must reach the operator audit log (JSON-lines + CEF mirror),
+// e.g. autonomous_file_drift_detected. Nil disables (no-op; no error).
+func (m *Manager) SetAuditFn(fn func(action string, details map[string]any)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.auditFn = fn
 }
 
 // SetMemoryVerifierFn (BL387 Phase 1a) wires the verifier-finding write callback.

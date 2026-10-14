@@ -2,10 +2,12 @@ package autonomous
 
 import (
 	"context"
+	"log"
 	"os/exec"
 	"path"
 	"sort"
 	"strings"
+	"time"
 )
 
 // driftGitRunner runs one git command in dir and returns its stdout.
@@ -166,4 +168,60 @@ func (m *Manager) resolveBlockOnFileDrift(prd *PRD) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.cfg.BlockOnFileDrift
+}
+
+// checkForeignFileDrift runs the deterministic foreign-file-drift check
+// for one worker attempt of t, right after its verifier returns. It
+// compares the files committed since t.PreTaskSHA against the files
+// that were already dirty/untracked before the worker started and are
+// not in t.FilesPlanned. On a finding it records the files on
+// t.ForeignFileDrift (accumulated across retries), appends a
+// file_drift_detected Decision to the PRD, emits an audit event and
+// logs a warning. It returns true (task set to TaskBlocked) only when
+// resolveBlockOnFileDrift says strict enforcement is on; otherwise the
+// finding is warn-only and the task continues. It never reverts,
+// resets, amends, un-stages or otherwise modifies any file.
+func (m *Manager) checkForeignFileDrift(ctx context.Context, prd *PRD, t *Task) (blocked bool) {
+	// Worktree mode runs each task in an isolated tree (see
+	// ensureWorktreeIfConfigured) — nothing pre-dirty to protect.
+	if prd.Git.Branch != "" || prd.ProjectDir == "" || t.PreTaskSHA == "" {
+		return false
+	}
+	committed, err := CommittedFilesSince(ctx, prd.ProjectDir, t.PreTaskSHA, m.driftGit)
+	if err != nil {
+		log.Printf("[autonomous] %s/%s file-drift: git log since %s: %v", prd.ID, t.ID, t.PreTaskSHA, err)
+		return false
+	}
+	findings := DetectForeignFileDrift(t, t.PreTaskUntrackedFiles, t.PreTaskDirtyFiles, committed)
+	if len(findings) == 0 {
+		return false
+	}
+	t.ForeignFileDrift = sortedUnion(t.ForeignFileDrift, findings)
+	joined := strings.Join(findings, ", ")
+	prd.Decisions = append(prd.Decisions, Decision{
+		At: time.Now(), Kind: "file_drift_detected", Actor: "autonomous",
+		Note: "task " + t.ID + ": committed pre-existing uncommitted file(s) outside its planned files: " + joined,
+	})
+	if err := m.store.SavePRD(prd); err != nil {
+		log.Printf("[autonomous] %s/%s file-drift: save PRD: %v", prd.ID, t.ID, err)
+	}
+	m.mu.Lock()
+	auditFn := m.auditFn
+	m.mu.Unlock()
+	if auditFn != nil {
+		auditFn("autonomous_file_drift_detected", map[string]any{
+			"task_id": t.ID,
+			"prd_id":  prd.ID,
+			"files":   append([]string(nil), findings...),
+		})
+	}
+	log.Printf("[autonomous] WARNING %s/%s foreign file drift: task committed pre-existing uncommitted file(s) outside its planned files: %s", prd.ID, t.ID, joined)
+	if m.resolveBlockOnFileDrift(prd) {
+		t.Status = TaskBlocked
+		t.Error = "foreign_file_drift: " + joined
+		_ = m.store.SaveTask(t)
+		return true
+	}
+	_ = m.store.SaveTask(t)
+	return false
 }

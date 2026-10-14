@@ -937,6 +937,12 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			vr = VerificationResult{OK: true, Summary: "no verifier configured", VerifiedAt: time.Now()}
 		}
 		t.Verification = &vr
+		// Foreign-file drift: deterministic, once per worker attempt.
+		// Warn-only by default; a strict-mode block halts the walk the
+		// same way a per-task guardrail block does below.
+		if m.checkForeignFileDrift(ctx, prd, t) {
+			return m.store.SaveTask(t)
+		}
 		if vr.OK {
 			// BL367 — quality gate: run tests after verifier passes and
 			// check for regressions vs. the pre-PRD baseline.

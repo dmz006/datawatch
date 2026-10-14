@@ -7,7 +7,10 @@
 package audit
 
 import (
+	"bufio"
+	"encoding/json"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -65,6 +68,7 @@ func TestCEF_SignatureSeverityTriples(t *testing.T) {
 		{"configure", 23, "ConfigChange", 5},
 		{"rollback", 24, "ConfigRollback", 6},
 		{"schedule", 25, "ScheduleChange", 3},
+		{"autonomous_file_drift_detected", 26, "AutonomousFileDriftDetected", 3},
 		{"some_unmapped_future_action", 0, "AuditEvent", 3},
 	}
 	for _, c := range cases {
@@ -136,5 +140,92 @@ func TestCEF_EnableMirror_WritesAlongsideJSON(t *testing.T) {
 	}
 	if !strings.Contains(cefData, "SessionStart") {
 		t.Errorf(".cef mirror missing mapped signature name: %q", cefData)
+	}
+}
+
+// autonomous_file_drift_detected — emitted by the autonomous executor
+// via Manager.SetAuditFn when a task's commit swept in pre-existing
+// uncommitted files. JSON-lines round-trip of the files list.
+func TestAutonomousFileDriftDetected_JSONLinesRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	l, err := New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := []string{"docs/a=b.md", "line\nbreak.go", "x|y.txt"}
+	in := Entry{
+		Timestamp: time.Now().UTC().Truncate(time.Millisecond),
+		Actor:     "autonomous",
+		Action:    "autonomous_file_drift_detected",
+		Details:   map[string]any{"task_id": "t1", "prd_id": "p1", "files": files},
+	}
+	if err := l.Write(in); err != nil {
+		t.Fatal(err)
+	}
+	_ = l.Close()
+
+	f, err := os.Open(filepath.Join(dir, "audit.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = f.Close() }()
+	sc := bufio.NewScanner(f)
+	var lines []string
+	for sc.Scan() {
+		lines = append(lines, sc.Text())
+	}
+	if len(lines) != 1 {
+		t.Fatalf("want 1 JSON line, got %d: %q", len(lines), lines)
+	}
+	var out Entry
+	if err := json.Unmarshal([]byte(lines[0]), &out); err != nil {
+		t.Fatalf("line is not valid JSON: %v (%q)", err, lines[0])
+	}
+	if out.Action != in.Action || out.Actor != "autonomous" || !out.Timestamp.Equal(in.Timestamp) {
+		t.Fatalf("round-trip mismatch: %+v", out)
+	}
+	if out.Details["task_id"] != "t1" || out.Details["prd_id"] != "p1" {
+		t.Fatalf("ids lost: %+v", out.Details)
+	}
+	got, ok := out.Details["files"].([]any)
+	if !ok || len(got) != len(files) {
+		t.Fatalf("files lost: %#v", out.Details["files"])
+	}
+	for i, f := range files {
+		if got[i] != f {
+			t.Errorf("files[%d] = %v, want %q", i, got[i], f)
+		}
+	}
+}
+
+func TestAutonomousFileDriftDetected_CEF(t *testing.T) {
+	SetCEFVersionFn(func() string { return `9|0\1` })
+	defer SetCEFVersionFn(func() string { return "v?" })
+	line := FormatCEFLine(Entry{
+		Timestamp: time.Now(),
+		Actor:     "autonomous",
+		Action:    "autonomous_file_drift_detected",
+		Details: map[string]any{
+			"task_id": "t1",
+			"prd_id":  "p1",
+			"files":   []string{"a=b.go", "evil\nCEF:0|x|y.go"},
+		},
+	})
+	wantPrefix := `CEF:0|datawatch|datawatch|9\|0\\1|26|AutonomousFileDriftDetected|3|`
+	if !strings.HasPrefix(line, wantPrefix) {
+		t.Fatalf("line = %q, want prefix %q", line, wantPrefix)
+	}
+	if strings.ContainsAny(line, "\n\r") {
+		t.Fatalf("raw newline survived into CEF line: %q", line)
+	}
+	// Details sort as files, prd_id, task_id → cs3, cs4, cs5.
+	if !strings.Contains(line, `deviceCustomString3Label=files deviceCustomString3=[a\=b.go evil\nCEF:0|x|y.go]`) {
+		t.Errorf("files extension not correctly escaped: %q", line)
+	}
+	if !strings.Contains(line, "deviceCustomString4=p1") || !strings.Contains(line, "deviceCustomString5=t1") {
+		t.Errorf("prd_id/task_id missing: %q", line)
+	}
+	if !strings.Contains(line, "deviceCustomString1=autonomous_file_drift_detected") {
+		t.Errorf("action extension missing: %q", line)
 	}
 }
