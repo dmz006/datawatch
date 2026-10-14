@@ -5,6 +5,38 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.79 — feat(server): WebSocket `hello` handshake and delta session updates
+
+### Added
+- **WebSocket clients can ask for per-session updates instead of the
+  whole list.** Every session change used to send every connected client
+  a `sessions` frame with the complete list — several megabytes on a busy
+  daemon. A client can now send `hello` with
+  `{"session_list":"delta"}`: it then gets one `session_state` frame per
+  session that was added or changed, and a new `session_removed`
+  `{"session_id": ...}` frame when a session leaves the list, and never a
+  full `sessions` frame. Delta clients load the starting list with
+  `GET /api/sessions?view=summary` right after the handshake.
+- **`"session_view":"summary"`** in `hello` makes `session_state` carry
+  the same compact record as `GET /api/sessions?view=summary` (long text
+  fields shortened to `server.session_summary_text_chars`, plus
+  `truncated_fields`).
+- The daemon answers `hello` with **`hello_ack`**, echoing the modes in
+  effect and the WebSocket features it supports. Unknown `hello` keys are
+  ignored, so clients can send newer options to older daemons safely.
+- **New setting `server.ws_session_list_default`** (`full` or `delta`,
+  default `full`): the mode for clients that never send `hello`. With
+  `delta`, those clients also no longer get the full list on connect.
+  Available in the config file, Settings → General, `PUT /api/config`,
+  `datawatch config set`, MCP `config_set` and the chat `configure`
+  command; changes apply without a restart or reconnect.
+- `GET /api/info` lists `ws.hello`, `ws.session_list_delta` and
+  `ws.session_view_summary` in its `capabilities` array.
+
+### Unchanged
+- Clients that never send `hello` keep receiving exactly the frames they
+  did before, as long as `server.ws_session_list_default` stays `full`.
+
 ## v9.0.78 — feat(server): cheap alert polling (paging, count endpoint, read-sync over WebSocket)
 
 ### Added

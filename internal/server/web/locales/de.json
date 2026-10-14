@@ -1578,6 +1578,7 @@
   "settings_session_capacity_wait": "Interactive session capacity wait (sec)",
   "settings_session_summary_terminal_limit": "Sitzungsübersicht: behaltene beendete Sitzungen (0 = alle)",
   "settings_session_summary_text_chars": "Sitzungsübersicht: Textlänge (Zeichen)",
+  "settings_ws_session_list_default": "Live-Sitzungsupdates (Clients ohne hello)",
   "settings_api_gzip": "API-Antworten komprimieren (gzip)",
   "settings_api_gzip_min_bytes": "API-Komprimierungsschwelle (Bytes)",
   "settings_capacity_enabled": "Capacity-aware admission (wait for free slots instead of failing)",

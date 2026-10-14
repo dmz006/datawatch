@@ -213,6 +213,8 @@ server:
   session_summary_terminal_limit: 50
   # Characters kept of task/prompt/response text in GET /api/sessions?view=summary (min 20)
   session_summary_text_chars: 200
+  # WebSocket session updates for clients that send no hello: full (whole list) or delta (per-session changes only)
+  ws_session_list_default: full
   # Gzip-compress large JSON /api/* responses for clients that accept gzip
   api_gzip: true
   # Only compress /api/* responses larger than this many bytes (min 0)

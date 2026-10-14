@@ -28,7 +28,24 @@ const (
 	// capWSAlertsRead: the WS stream carries alerts_read messages after
 	// alerts are marked read.
 	capWSAlertsRead = "ws.alerts_read"
+
+	// capWSHello: the WS stream accepts a hello message and answers with
+	// hello_ack (see ws_session_stream.go).
+	capWSHello = "ws.hello"
+
+	// capWSSessionListDelta: hello accepts session_list=delta — per-session
+	// session_state / session_removed frames instead of the full list.
+	capWSSessionListDelta = "ws.session_list_delta"
+
+	// capWSSessionViewSummary: hello accepts session_view=summary —
+	// compact session_state records.
+	capWSSessionViewSummary = "ws.session_view_summary"
 )
+
+// wsCapabilities lists the WS protocol features, also echoed in hello_ack.
+func wsCapabilities() []string {
+	return []string{capWSHello, capWSSessionListDelta, capWSSessionViewSummary}
+}
 
 // apiCapabilities returns the optional API features this daemon supports.
 func (s *Server) apiCapabilities() []string {
@@ -38,6 +55,7 @@ func (s *Server) apiCapabilities() []string {
 		capAlertsCount,
 		capWSAlertsRead,
 	}
+	caps = append(caps, wsCapabilities()...)
 	if enabled, _ := s.apiGzipSettings(); enabled {
 		caps = append(caps, capAPIGzip)
 	}

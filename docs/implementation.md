@@ -655,6 +655,7 @@ All fields in `~/.datawatch/config.yaml`:
 | `server.tls_auto_generate` | bool | `false` | Auto-generate a self-signed certificate at `~/.datawatch/tls/server/` on start |
 | `server.session_summary_terminal_limit` | int | `50` | Maximum number of terminal (complete / failed / killed) sessions returned by `GET /api/sessions?view=summary`, newest by `updated_at` first. Non-terminal sessions are never dropped. `0` = no cap. Only applies to `view=summary`; see "Session list views" below |
 | `server.session_summary_text_chars` | int | `200` | Characters (runes) kept of `task`, `prompt_context`, `last_response` and `last_summary_long` in `GET /api/sessions?view=summary`. Minimum `20` |
+| `server.ws_session_list_default` | string | `full` | WebSocket session-list mode for clients that never send `hello`: `full` (a `sessions` frame with the whole list on every change) or `delta` (only `session_state` / `session_removed` frames; no connect-time list — fetch it with `GET /api/sessions?view=summary`). Read live on every broadcast. See "WebSocket session updates" below |
 | `server.api_gzip` | bool | `true` | Gzip-compress `/api/*` responses for clients that send `Accept-Encoding: gzip`. See "API response compression" below |
 | `server.api_gzip_min_bytes` | int | `1024` | A `/api/*` response is compressed only once its body exceeds this many bytes; smaller bodies are sent unchanged. Minimum `0` |
 | `servers[].name` | string | — | Short identifier for a remote datawatch server (used with `--server` flag) |
@@ -720,6 +721,39 @@ so existing clients keep working unchanged. Retention applies only to
 entry in the `capabilities` array of `GET /api/info` before using these
 parameters. Both limits are read from the live config on each request,
 so a `PUT /api/config` change applies without a restart.
+
+### WebSocket session updates
+
+By default every session change is sent to every WebSocket client as a
+`sessions` frame carrying the whole list. A client can ask for less by
+sending `hello` at any time after connecting:
+
+```json
+{"type":"hello","data":{"session_list":"delta","session_view":"summary"}}
+```
+
+The daemon answers with `hello_ack`, echoing the modes now in effect and
+the WebSocket capabilities it supports:
+
+```json
+{"type":"hello_ack","data":{"session_list":"delta","session_view":"summary","capabilities":["ws.hello","ws.session_list_delta","ws.session_view_summary"]}}
+```
+
+- `session_list: "full"` — the existing stream (whole-list `sessions`
+  frames plus per-change `session_state`).
+- `session_list: "delta"` — no `sessions` frames. Each session that is new
+  or changed gets one `session_state` `{session}` frame; each session that
+  leaves the list gets one `session_removed` `{session_id}` frame. Fetch
+  the starting list with `GET /api/sessions?view=summary` right after
+  `hello_ack` and apply the stream on top of it.
+- `session_view: "summary"` — `session_state` carries the same compact
+  record as `GET /api/sessions?view=summary` (long text fields cut to
+  `server.session_summary_text_chars`, with `truncated_fields`).
+
+Unknown `hello` keys are ignored and an unknown value leaves that mode
+unchanged. Clients that never send `hello` get
+`server.ws_session_list_default`. `GET /api/info` lists `ws.hello`,
+`ws.session_list_delta` and `ws.session_view_summary` in `capabilities`.
 
 ### API response compression
 

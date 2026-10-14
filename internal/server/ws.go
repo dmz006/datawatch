@@ -36,6 +36,8 @@ const (
 	MsgPRDUpdate      MessageType = "prd_update"      // v5.24.0 — autonomous PRD save broadcast {prd_id, status} so PWA Autonomous tab refreshes without manual reload
 	MsgHookUpdate     MessageType = "hook_update"     // BL303 S3 — session hook state changed {session_id, board} so Status tab refreshes in real-time
 	MsgAlertsRead     MessageType = "alerts_read"     // BL432 — alerts marked read {ids:[...]} or {all:true}, plus unread_count, so badges sync without polling
+	MsgSessionRemoved MessageType = "session_removed" // BL432 / GH#242 — delta session-list clients: {session_id} left the list
+	MsgHelloAck       MessageType = "hello_ack"       // BL432 / GH#242 — reply to hello with the effective modes + capabilities
 
 	// Client → Server
 	MsgCommand    MessageType = "command"     // raw command string (same as Signal)
@@ -45,6 +47,7 @@ const (
 	MsgResizeTerm MessageType = "resize_term" // {"session_id":"...","cols":N,"rows":N}
 	MsgStats      MessageType = "stats"       // system stats broadcast
 	MsgPing       MessageType = "ping"
+	MsgHello      MessageType = "hello" // BL432 / GH#242 — {"session_list":"full"|"delta","session_view":"full"|"summary"}; see ws_session_stream.go
 )
 
 // WSMessage is the envelope for all WebSocket messages
@@ -117,7 +120,12 @@ type client struct {
 	closed         bool                          // true after send channel is closed
 	subscribed     map[string]bool               // session IDs this client is subscribed to
 	captureCancels map[string]context.CancelFunc // per-session screen capture cancel funcs
-	mu             sync.Mutex
+	// sessionList / sessionView are the modes negotiated by hello (see
+	// ws_session_stream.go). "" means the client never chose: sessionList
+	// then follows server.ws_session_list_default, sessionView is "full".
+	sessionList string
+	sessionView string
+	mu          sync.Mutex
 }
 
 // safeSend sends a message to the client's send channel without panicking
@@ -135,15 +143,35 @@ func (c *client) safeSend(msg []byte) {
 	}
 }
 
+// hubMessage is one queued broadcast. want selects the receiving clients;
+// nil means every connected client (the behavior of plain Broadcast).
+// want runs on the Hub.Run goroutine while it holds h.mu, so it must not
+// take h.mu itself; locking the client's own mutex is fine.
+type hubMessage struct {
+	payload []byte
+	want    func(*client) bool
+}
+
 // Hub manages all WebSocket clients
 type Hub struct {
 	clients    map[*client]bool
-	broadcast  chan []byte
+	broadcast  chan hubMessage
 	register   chan *client
 	unregister chan *client
 	mu         sync.RWMutex
 	chanStats  *stats.ChannelCounters // optional channel stats tracker
 	version    string                 // daemon version, included in sessions message
+
+	// Delta session-list state (ws_session_stream.go). snapshot maps a
+	// session's FullID to the fingerprint last streamed; guarded by
+	// snapMu because BroadcastSessions runs on many goroutines.
+	snapMu   sync.Mutex
+	snapshot map[string]uint64
+
+	// Live-config hooks wired by NewServer before Run starts; nil in
+	// bare-hub tests, which then get the built-in defaults.
+	sessionListDefaultFn func() string
+	summaryTextCharsFn   func() int
 }
 
 var upgrader = websocket.Upgrader{
@@ -175,7 +203,7 @@ func wsCheckOrigin(r *http.Request) bool {
 func NewHub() *Hub {
 	return &Hub{
 		clients:    make(map[*client]bool),
-		broadcast:  make(chan []byte, 256),
+		broadcast:  make(chan hubMessage, 256),
 		register:   make(chan *client),
 		unregister: make(chan *client),
 	}
@@ -198,12 +226,17 @@ func (h *Hub) Run() {
 				close(c.send)
 			}
 			h.mu.Unlock()
-		case msg := <-h.broadcast:
-			h.mu.RLock()
+		case m := <-h.broadcast:
+			// Write lock: a slow client is deleted from h.clients below.
+			h.mu.Lock()
 			for c := range h.clients {
+				if m.want != nil && !m.want(c) {
+					continue
+				}
 				select {
-				case c.send <- msg:
+				case c.send <- m.payload:
 				default:
+					// Slow client (send buffer full): drop it.
 					c.mu.Lock()
 					c.closed = true
 					c.mu.Unlock()
@@ -211,13 +244,21 @@ func (h *Hub) Run() {
 					delete(h.clients, c)
 				}
 			}
-			h.mu.RUnlock()
+			h.mu.Unlock()
 		}
 	}
 }
 
 // Broadcast sends a message to all connected clients
 func (h *Hub) Broadcast(msgType MessageType, data interface{}) {
+	h.broadcastTo(msgType, data, nil)
+}
+
+// broadcastTo marshals one frame and queues it for the clients want
+// selects (nil = all). chanStats semantics are unchanged from before
+// per-client filtering existed: bytes are counted once per queued frame,
+// not once per receiving client.
+func (h *Hub) broadcastTo(msgType MessageType, data interface{}, want func(*client) bool) {
 	raw, err := json.Marshal(data)
 	if err != nil {
 		return
@@ -230,26 +271,14 @@ func (h *Hub) Broadcast(msgType MessageType, data interface{}) {
 	if h.chanStats != nil {
 		h.chanStats.RecordSent(len(payload))
 	}
-	h.broadcast <- payload
+	h.broadcast <- hubMessage{payload: payload, want: want}
 }
 
-// BroadcastSessions sends the full session list to all clients
-func (h *Hub) BroadcastSessions(sessions []*session.Session) {
-	h.Broadcast(MsgSessions, SessionsData{Sessions: sessions, Version: h.version})
-}
-
-// BroadcastSessionState (v8.37.0, GH#162) sends a single updated session to
-// all clients. MsgSessionState ("session_state") was defined in the
-// protocol enum from the start but never actually constructed or broadcast
-// anywhere — every session-list update went out as the full list via
-// BroadcastSessions, even when only one session changed. Strictly
-// additive: emitted alongside the existing full-list broadcast (see
-// HTTPServer.NotifyStateChange), not a replacement, so any client that
-// only understands "sessions" keeps working unchanged. A client that
-// wants smaller payloads (e.g. a mobile client on a metered connection)
-// can listen for this instead.
-func (h *Hub) BroadcastSessionState(sess *session.Session) {
-	h.Broadcast(MsgSessionState, SessionStateData{Session: sess})
+// broadcastRaw queues an already-encoded frame for every client without
+// touching chanStats, matching the channel-reply call sites that used to
+// write to h.broadcast directly.
+func (h *Hub) broadcastRaw(payload []byte) {
+	h.broadcast <- hubMessage{payload: payload}
 }
 
 // SetVersion sets the daemon version included in sessions broadcasts.

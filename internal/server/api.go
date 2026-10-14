@@ -189,7 +189,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "9.0.78"
+var Version = "9.0.79"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -803,6 +803,7 @@ func NewServer(hub *Hub, manager *session.Manager, hostname, token string, backe
 	// connects) doesn't grow the map unboundedly. Never stopped — lives
 	// for the server's process lifetime, same as the server itself.
 	s.nonces.startSweeper(nonceTTL, make(chan struct{}))
+	s.wireHubSessionStream() // BL432 / GH#242 — live ws_session_list_default + summary length
 	return s
 }
 
@@ -2075,12 +2076,16 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	// Send initial session list
-	sessions := s.manager.ListSessions()
-	raw, _ := json.Marshal(SessionsData{Sessions: sessions})
-	msg := WSMessage{Type: MsgSessions, Data: raw, Timestamp: time.Now()}
-	payload, _ := json.Marshal(msg)
-	c.safeSend(payload)
+	// Send initial session list — unless the configured default is the
+	// delta stream, whose clients fetch the list over REST instead (see
+	// ws_session_stream.go).
+	if s.wsSessionListDefault() != sessionListDelta {
+		sessions := s.manager.ListSessions()
+		raw, _ := json.Marshal(SessionsData{Sessions: sessions})
+		msg := WSMessage{Type: MsgSessions, Data: raw, Timestamp: time.Now()}
+		payload, _ := json.Marshal(msg)
+		c.safeSend(payload)
+	}
 
 	go c.writePump()
 
@@ -2202,6 +2207,10 @@ func (s *Server) handleWS(w http.ResponseWriter, r *http.Request) {
 				respPayload, _ := json.Marshal(resp)
 				c.safeSend(respPayload)
 			}
+
+		case MsgHello:
+			// BL432 / GH#242 — negotiate session-list mode / view.
+			s.hub.handleHello(c, inMsg.Data)
 
 		case MsgSubscribe:
 			var d SubscribeData
@@ -5203,6 +5212,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"recent_session_minutes":         s.cfg.Server.RecentSessionMinutes,
 			"session_summary_terminal_limit": s.cfg.Server.SessionSummaryTerminalLimit,
 			"session_summary_text_chars":     s.cfg.Server.SessionSummaryTextChars,
+			"ws_session_list_default":        s.wsSessionListDefault(),
 			"api_gzip":                       s.cfg.Server.APIGzip,
 			"api_gzip_min_bytes":             s.cfg.Server.APIGzipMinBytes,
 			"suppress_active_toasts":         s.cfg.Server.SuppressActiveToasts,
@@ -6159,6 +6169,11 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 					n = minSessionSummaryTextChars
 				}
 				cfg.Server.SessionSummaryTextChars = n
+			}
+		case "server.ws_session_list_default":
+			// Only "full" or "delta"; anything else is ignored.
+			if m := normalizeSessionListMode(strings.TrimSpace(strings.ToLower(toString(v)))); m != "" {
+				cfg.Server.WSSessionListDefault = m
 			}
 		case "server.api_gzip":
 			cfg.Server.APIGzip = toBool(v)
@@ -8306,7 +8321,7 @@ func (s *Server) BroadcastChannelReply(sessionID, text string) {
 	raw, _ := json.Marshal(replyData)
 	outMsg := WSMessage{Type: MsgChannelReply, Data: raw, Timestamp: time.Now()}
 	payload, _ := json.Marshal(outMsg)
-	s.hub.broadcast <- payload
+	s.hub.broadcastRaw(payload)
 }
 
 // handleChannelReply receives replies from claude (via the datawatch MCP channel server)
@@ -8342,7 +8357,7 @@ func (s *Server) handleChannelReply(w http.ResponseWriter, r *http.Request) {
 	raw, _ := json.Marshal(replyData)
 	outMsg := WSMessage{Type: MsgChannelReply, Data: raw, Timestamp: time.Now()}
 	payload, _ := json.Marshal(outMsg)
-	s.hub.broadcast <- payload
+	s.hub.broadcastRaw(payload)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"}) //nolint:errcheck
@@ -8375,7 +8390,7 @@ func (s *Server) handleChannelNotify(w http.ResponseWriter, r *http.Request) {
 	raw, _ := json.Marshal(notifyData)
 	outMsg := WSMessage{Type: MsgChannelNotify, Data: raw, Timestamp: time.Now()}
 	payload, _ := json.Marshal(outMsg)
-	s.hub.broadcast <- payload
+	s.hub.broadcastRaw(payload)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"}) //nolint:errcheck
@@ -8548,7 +8563,7 @@ func (s *Server) handleChannelReady(w http.ResponseWriter, r *http.Request) {
 		taskRaw, _ := json.Marshal(taskData)
 		taskMsg := WSMessage{Type: MsgChannelReply, Data: taskRaw, Timestamp: time.Now()}
 		taskPayload, _ := json.Marshal(taskMsg)
-		s.hub.broadcast <- taskPayload
+		s.hub.broadcastRaw(taskPayload)
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok", "session_id": targetSess.FullID}) //nolint:errcheck
 		return
 	}
@@ -8579,7 +8594,7 @@ func (s *Server) handleChannelReady(w http.ResponseWriter, r *http.Request) {
 	taskRaw, _ := json.Marshal(taskData)
 	taskMsg := WSMessage{Type: MsgChannelReply, Data: taskRaw, Timestamp: time.Now()}
 	taskPayload, _ := json.Marshal(taskMsg)
-	s.hub.broadcast <- taskPayload
+	s.hub.broadcastRaw(taskPayload)
 
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok", "session_id": targetSess.FullID}) //nolint:errcheck
 }
@@ -8655,7 +8670,7 @@ func (s *Server) handleChannelSend(w http.ResponseWriter, r *http.Request) {
 	raw, _ := json.Marshal(sendData)
 	outMsg := WSMessage{Type: MsgChannelReply, Data: raw, Timestamp: time.Now()}
 	outPayload, _ := json.Marshal(outMsg)
-	s.hub.broadcast <- outPayload
+	s.hub.broadcastRaw(outPayload)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"}) //nolint:errcheck

@@ -1444,6 +1444,13 @@ type ServerConfig struct {
 	// last_response and last_summary_long to. Default: 200, minimum 20.
 	SessionSummaryTextChars int `yaml:"session_summary_text_chars"`
 
+	// WSSessionListDefault is the WebSocket session-list mode for clients
+	// that never send a hello message: "full" (the whole list on every
+	// change) or "delta" (only per-session session_state /
+	// session_removed frames; the client fetches the initial list over
+	// REST). Default: "full". Read live at each session broadcast.
+	WSSessionListDefault string `yaml:"ws_session_list_default"`
+
 	// APIGzip compresses large JSON-ish /api/* responses with gzip when
 	// the client sends Accept-Encoding: gzip. Default: true. Read on every
 	// request, so a config change applies without a restart.
@@ -2505,6 +2512,7 @@ func DefaultConfig() *Config {
 			// BL432 — compact session-list view defaults.
 			SessionSummaryTerminalLimit: 50,
 			SessionSummaryTextChars:     200,
+			WSSessionListDefault:        "full",
 			// BL432 / GH#242 — /api/* gzip defaults.
 			APIGzip:              true,
 			APIGzipMinBytes:      1024,

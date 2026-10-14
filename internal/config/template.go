@@ -55,6 +55,7 @@ func GenerateAnnotatedConfig(cfg *Config) string {
 	fieldi(&b, "recent_session_minutes", cfg.Server.RecentSessionMinutes, "How long completed sessions show in active list (minutes)")
 	fieldi(&b, "session_summary_terminal_limit", cfg.Server.SessionSummaryTerminalLimit, "Max terminal sessions returned by GET /api/sessions?view=summary, newest first (0 = no cap; the unfiltered list is never capped)")
 	fieldi(&b, "session_summary_text_chars", cfg.Server.SessionSummaryTextChars, "Characters kept of task/prompt/response text in GET /api/sessions?view=summary (min 20)")
+	fieldi(&b, "ws_session_list_default", cfg.Server.WSSessionListDefault, "WebSocket session updates for clients that send no hello: full (whole list) or delta (per-session changes only)")
 	fieldi(&b, "api_gzip", cfg.Server.APIGzip, "Gzip-compress large JSON /api/* responses for clients that accept gzip")
 	fieldi(&b, "api_gzip_min_bytes", cfg.Server.APIGzipMinBytes, "Only compress /api/* responses larger than this many bytes (min 0)")
 	fieldi(&b, "auto_restart_on_config", cfg.Server.AutoRestartOnConfig, "Auto-restart daemon when config is saved via web UI")
