@@ -1036,6 +1036,36 @@ established. In progress — starting with BL403.**
     completion; building a new template system (templates can't carry
     guardrail settings today — see the verification doc's "Template
     fit" section).
+23. **BL424** — Comprehensive operator guide to integrating a repo with
+    the automated-PRD system end to end (filed 2026-10-13, prep only —
+    NOT started). Not roadmap work — broader than any one capability's
+    own how-to: covers the rules/context file convention, the full
+    guardrail catalog and precedence, quality gates/retry policy/failure
+    taxonomy, templates, task-spec/verification-script authoring, the
+    full PRD/Story/Task lifecycle and recovery paths, and an MCP-
+    discoverability spot-check (can a model learn and use all of this
+    from the tool schemas alone). **Explicitly sequenced last** —
+    deliberately held until after the rest of this roadmap (through
+    v10.0.0) and the in-flight model-tiering eval (BL422) and ci-watch
+    (BL423, shipped) land, so it documents the system's final shape
+    rather than a snapshot that goes stale with the next change.
+24. **BL425** — Structural guardrail: detect a task's own commit
+    sweeping in files that were already dirty/untracked in the project
+    tree before that task's worker session started (filed 2026-10-13,
+    prep only — NOT started). Not roadmap work — found live running
+    BL423 in direct (non-worktree) mode in the same tree an operator
+    was hand-editing: a release task's `git add -A` silently absorbed
+    an unrelated concurrent doc edit into its own commit. AGENT.md's
+    own git-discipline guidance was already fixed directly (no more
+    `git add -A` example); this item is the code-level backstop —
+    widen the executor's existing pre-task `PreTaskSHA`/
+    `PreTaskUntrackedFiles` capture with a new `PreTaskDirtyFiles`,
+    then after a task's commit(s) land, flag any file that was already
+    dirty/untracked beforehand, ended up in the commit, and was never
+    in that task's own `FilesPlanned` — a new `Task.ForeignFileDrift`
+    field, warn-only by default, no automatic git history surgery ever.
+    **Queued behind BL422** per operator priority (the model-tiering
+    eval's results "impact everything going forward").
 
 **Outside the queue, handled separately, not blocking Stage 3:**
 - ~~**BL381**~~ — status-verified 2026-10-10: shipped v8.28.0 + v8.28.2
