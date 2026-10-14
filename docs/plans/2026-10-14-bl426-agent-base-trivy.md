@@ -147,3 +147,22 @@ Shipped as **v9.0.65** on 2026-10-13. v9.0.64 was already used: `de9f79f8` had b
 - Release commit pushed to `origin/main`: `ac5ba0a363a7c0b5147962758acb110fd3a5bbe2` (`v9.0.65: agent-base Trivy fix - gh CLI Go stdlib/x-net + openssh accepted risks (BL426)`)
 - Annotated tag `v9.0.65` pushed. It triggers `.github/workflows/release.yaml`, whose agent-base scan is the final check.
 - Pre-push checks: `go test -count=1 ./...` 3903 passed; golangci-lint found no issues; `make build` ok; `check-no-internal-refs.sh` and `check-howto-coverage.sh` pass.
+
+## Release CI result (confirmed 2026-10-14)
+
+The PRD's own task for this (wait for the real Release run and record it) stalled
+in a one-shot session asking an interactive question while waiting on CI, and
+failed without ever recording the result — leaving this open until now.
+Confirmed directly:
+
+```
+$ git rev-list -n1 v9.0.65
+ac5ba0a363a7c0b5147962758acb110fd3a5bbe2
+$ gh run list --workflow release.yaml --commit ac5ba0a363a7c0b5147962758acb110fd3a5bbe2
+run 38503350068: conclusion=success, status=completed
+```
+
+`conclusion: success`. The real Release workflow run for this tag — including
+the `containers / agent-base` job and its Trivy scan — completed successfully.
+This closes BL426's one remaining open item: the fix and the v9.0.65 release
+are both genuinely shipped and CI-confirmed, not just locally verified.
