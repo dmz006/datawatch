@@ -254,10 +254,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 	m.mu.Lock()
 	globalConc := m.cfg.MaxConcurrentTasks
 	m.mu.Unlock()
-	concurrency := prd.MaxConcurrentTasks
-	if concurrency <= 0 {
-		concurrency = globalConc
-	}
+	concurrency := effectiveTaskConcurrency(prd.MaxConcurrentTasks, globalConc)
 	if concurrency <= 1 {
 		// Sequential path (default) — tasks run in dependency order.
 		// failedIDs tracks tasks that failed so dependents can be skipped.
@@ -1192,6 +1189,17 @@ func flattenTasks(prd *PRD) []*Task {
 
 // lookupTask finds a task by ID in the PRD tree (returns the live
 // pointer so SaveTask round-trips correctly).
+// effectiveTaskConcurrency resolves how many independent tasks of one
+// Automaton may run at once: the Automaton's own override wins when > 0,
+// otherwise the daemon-wide default applies. A result <= 1 means the
+// sequential path. Config.MaxParallelTasks is deliberately not an input.
+func effectiveTaskConcurrency(prdOverride, global int) int {
+	if prdOverride > 0 {
+		return prdOverride
+	}
+	return global
+}
+
 func lookupTask(prd *PRD, id string) *Task {
 	for i := range prd.Story {
 		for j := range prd.Story[i].Tasks {

@@ -313,6 +313,11 @@ type ProxyConfig struct {
 
 // Config holds all datawatch configuration.
 type Config struct {
+	// DeprecatedKeys lists the deprecated keys (dotted YAML paths) set in
+	// the loaded file, so the daemon can warn about them once at
+	// startup. Populated by Load/LoadSecure; never serialized.
+	DeprecatedKeys []string `yaml:"-" json:"-"`
+
 	// Signal configuration
 	Signal SignalConfig `yaml:"signal"`
 
@@ -1897,8 +1902,16 @@ type AutonomousConfig struct {
 	Enabled bool `yaml:"enabled" json:"enabled"`
 	// PollIntervalSeconds is the loop tick (default 30).
 	PollIntervalSeconds int `yaml:"poll_interval_seconds,omitempty" json:"poll_interval_seconds,omitempty"`
-	// MaxParallelTasks is the per-PRD in-flight worker cap (default 3).
+	// MaxParallelTasks is deprecated and read by nothing: it never
+	// limited anything. It is accepted and ignored for one release (a
+	// load-time warning + audit entry name the replacement), then
+	// removed. Use MaxConcurrentTasks instead.
 	MaxParallelTasks int `yaml:"max_parallel_tasks,omitempty" json:"max_parallel_tasks,omitempty"`
+	// MaxConcurrentTasks is the daemon-wide default for how many
+	// independent (no-dependency) tasks of one Automaton run at once.
+	// An Automaton's own max_concurrent_tasks overrides it. 1 =
+	// sequential (default).
+	MaxConcurrentTasks int `yaml:"max_concurrent_tasks,omitempty" json:"max_concurrent_tasks,omitempty"`
 	// PlanningBackend overrides session.llm_backend for the LLM
 	// planning call. Empty = inherit.
 	// BL304: renamed from DecompositionBackend; old key still accepted on read.
@@ -2557,7 +2570,8 @@ func DefaultConfig() *Config {
 			OllamaHeaderTimeoutSec: 900,
 		},
 		Autonomous: AutonomousConfig{
-			AutoFixRetries: 1,
+			AutoFixRetries:     1,
+			MaxConcurrentTasks: 1,
 			// BL410 Phase 1 — see AutonomousConfig.RetryPolicy's doc
 			// comment for why "content"/"policy" are absent here.
 			RetryPolicy:             map[string]int{"infra": 4, "scope": 0},
@@ -2942,6 +2956,9 @@ func applyDefaults(cfg *Config) {
 	if cfg.Autonomous.PlanningModel == "" && cfg.Autonomous.DecompositionModelLegacy != "" {
 		cfg.Autonomous.PlanningModel = cfg.Autonomous.DecompositionModelLegacy
 	}
+	if cfg.Autonomous.MaxConcurrentTasks <= 0 {
+		cfg.Autonomous.MaxConcurrentTasks = 1
+	}
 	// BL397 — native ACME subsystem defaults.
 	if cfg.Acme.Endpoint == "" {
 		cfg.Acme.Endpoint = "staging"
@@ -2962,6 +2979,17 @@ func applyDefaults(cfg *Config) {
 	// Server.TLSAutoGenerate: set only in DefaultConfig() for brand-new
 	// configs, not forced here for loaded ones (an omitted bool in an
 	// existing config.yaml is indistinguishable from an explicit false).
+}
+
+// detectDeprecatedKeys reports the deprecated keys the just-parsed YAML
+// set. It must run after yaml.Unmarshal and before applyDefaults so a
+// default can never be mistaken for an operator-set value.
+func detectDeprecatedKeys(cfg *Config) []string {
+	var keys []string
+	if cfg.Autonomous.MaxParallelTasks != 0 {
+		keys = append(keys, "autonomous.max_parallel_tasks")
+	}
+	return keys
 }
 
 // normalizeBooleanFields fixes YAML representation inconsistencies where
@@ -2997,6 +3025,7 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("parse config %s: %w", path, err)
 	}
 
+	cfg.DeprecatedKeys = detectDeprecatedKeys(cfg)
 	applyDefaults(cfg)
 	normalizeBooleanFields(cfg)
 	return cfg, nil
@@ -3027,6 +3056,7 @@ func LoadSecure(path string, password []byte) (*Config, error) {
 	if err := yaml.Unmarshal(data, cfg); err != nil {
 		return nil, fmt.Errorf("parse config %s: %w", path, err)
 	}
+	cfg.DeprecatedKeys = detectDeprecatedKeys(cfg)
 	applyDefaults(cfg)
 	normalizeBooleanFields(cfg)
 	return cfg, nil

@@ -69,6 +69,7 @@ func TestCEF_SignatureSeverityTriples(t *testing.T) {
 		{"rollback", 24, "ConfigRollback", 6},
 		{"schedule", 25, "ScheduleChange", 3},
 		{"autonomous_file_drift_detected", 26, "AutonomousFileDriftDetected", 3},
+		{"config_deprecated_key", 27, "ConfigDeprecatedKey", 2},
 		{"some_unmapped_future_action", 0, "AuditEvent", 3},
 	}
 	for _, c := range cases {

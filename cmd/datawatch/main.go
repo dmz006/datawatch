@@ -3647,6 +3647,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		} else {
 			fmt.Printf("[warn] audit log open failed: %v\n", err)
 		}
+		warnDeprecatedConfigKeys(cfg.DeprecatedKeys, wiredAuditLog)
 		// GH#201 — separate HTTP access / WS lifecycle / auth-failure log.
 		// Own file (access.log, not audit.log) since request volume is
 		// much higher than state-changing operator actions and shouldn't
@@ -4072,6 +4073,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			Enabled:                    acfgIn.Enabled,
 			PollIntervalSeconds:        acfgIn.PollIntervalSeconds,
 			MaxParallelTasks:           acfgIn.MaxParallelTasks,
+			MaxConcurrentTasks:         acfgIn.MaxConcurrentTasks,
 			PlanningBackend:            acfgIn.PlanningBackend,
 			VerificationBackend:        acfgIn.VerificationBackend,
 			ExecutionBackend:           acfgIn.ExecutionBackend,
@@ -4164,8 +4166,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		if amgrCfg.PollIntervalSeconds == 0 {
 			amgrCfg.PollIntervalSeconds = 30
 		}
-		if amgrCfg.MaxParallelTasks == 0 {
-			amgrCfg.MaxParallelTasks = 3
+		if amgrCfg.MaxConcurrentTasks <= 0 {
+			amgrCfg.MaxConcurrentTasks = 1
 		}
 		// decomposeFn — REST loopback to /api/ask.
 		//

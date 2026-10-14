@@ -43,7 +43,10 @@ func trimDecisions(ds []Decision) []Decision {
 type Config struct {
 	Enabled             bool `json:"enabled"`
 	PollIntervalSeconds int  `json:"poll_interval_seconds,omitempty"`
-	MaxParallelTasks    int  `json:"max_parallel_tasks,omitempty"`
+	// MaxParallelTasks is deprecated and has no effect: no executor code
+	// reads it. Kept for one release so old configs still load; use
+	// MaxConcurrentTasks.
+	MaxParallelTasks int `json:"max_parallel_tasks,omitempty"`
 	// BL304: renamed from DecompositionBackend; JSON key updated to planning_backend.
 	// Old key "decomposition_backend" still accepted via SetConfig migration.
 	PlanningBackend     string `json:"planning_backend,omitempty"`
@@ -258,7 +261,7 @@ func DefaultConfig() Config {
 	return Config{
 		Enabled:             false,
 		PollIntervalSeconds: 30,
-		MaxParallelTasks:    3,
+		MaxConcurrentTasks:  1,
 		AutoFixRetries:      1,
 		SecurityScan:        true,
 		MaxRecursionDepth:   5,
