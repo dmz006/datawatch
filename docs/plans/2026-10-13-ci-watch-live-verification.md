@@ -147,3 +147,81 @@ This is a config change made through the API, not a code default and not a hand-
 - A new template system, or making templates carry guardrail settings.
 - Changing how `workflow_run`-triggered runs attached to the Automaton's SHA are counted (observation above).
 - Changing `per_automaton_guardrails_set`'s replace-all semantics. Only its description was clarified.
+
+## Re-verification on v9.0.65
+
+Run 2026-10-13 22:53–23:07 local (2026-10-14 02:53–03:07Z) by an automated session, after the v9.0.65 release and daemon restart. Everything below was observed live against the running daemon and real GitHub Actions runs. Nothing is inferred from code or unit tests.
+
+### Deployed version
+
+`get_version` (MCP) → `Current version: 9.0.65`, which matches `var Version = "9.0.65"` in both `cmd/datawatch/main.go` and `internal/server/api.go` (HEAD `a55b48ae`). The binary is not stale. The update checker's "Latest version: 9.0.63" refers to the latest published GitHub release, not the running binary.
+
+### Config change
+
+`autonomous_config_get` already returned `"per_prd_guardrails":["rules-review","ci-watch"]`, left by the earlier operator change recorded above. The value was written again through the API with `autonomous_config_set {per_prd_guardrails: ["rules-review","ci-watch"]}`, which returned `{"status":"ok"}`. Reading it back gave `["rules-review","ci-watch"]` and `ci_watch_timeout_seconds: 1500`. No config file was edited.
+
+### Probe Automaton
+
+- **ID:** `392b2603` ("ci-watch guardrail live probe (v9.0.65)"). Its project directory is this repository. `autonomous_prd_set_llm` set execution, planning and guardrail to `claude-code`.
+- **Guardrails:** `per_automaton_guardrails_set {id: 392b2603, per_prd_guardrails_json: ["ci-watch"]}` was called before planning and approval. `rules-review` did not run for this Automaton.
+- **Plan:** one story (`13e8547d`) containing one task (`13e8599c`), which appends a bullet under `## Live probe`, stages only this file, commits, then `git pull --rebase` + `git push origin HEAD:main`. Approved 22:55:49, run 22:55:51. The task verifier passed at 22:57:35: one added line, docs-only, on origin/main.
+- **Pushed commit:** `b119466b802f5cfb421b19571194524ec6ef6105` ("docs(plans): ci-watch live probe line (v9.0.65)"), pushed 02:56:39Z.
+- **Final status:** `completed` at 23:00:41. ci-watch waited about 3 minutes. No `owasp-zap` run was attached to this SHA this time, so the wait was shorter than the earlier run's ~16 minutes.
+- **`ci_watch` (from `autonomous_prd_get`):**
+
+```json
+"ci_watch": {
+  "status": "pass",
+  "sha": "b119466b802f5cfb421b19571194524ec6ef6105",
+  "repo": "dmz006/datawatch",
+  "runs": [
+    {"id": 38503847965, "name": "Release CI Summary", "status": "completed", "conclusion": "success", "url": "https://github.com/dmz006/datawatch/actions/runs/38503847965"},
+    {"id": 38503824477, "name": "Release CI Summary", "status": "completed", "conclusion": "success", "url": "https://github.com/dmz006/datawatch/actions/runs/38503824477"},
+    {"id": 38503717326, "name": "Release CI Summary", "status": "completed", "conclusion": "success", "url": "https://github.com/dmz006/datawatch/actions/runs/38503717326"},
+    {"id": 38503700548, "name": "Release CI Summary", "status": "completed", "conclusion": "success", "url": "https://github.com/dmz006/datawatch/actions/runs/38503700548"},
+    {"id": 38503683244, "name": "secret-scan", "status": "completed", "conclusion": "success", "url": "https://github.com/dmz006/datawatch/actions/runs/38503683244"},
+    {"id": 38503682083, "name": "docs-sync", "status": "completed", "conclusion": "success", "url": "https://github.com/dmz006/datawatch/actions/runs/38503682083"},
+    {"id": 38503682076, "name": "security-scan", "status": "completed", "conclusion": "success", "url": "https://github.com/dmz006/datawatch/actions/runs/38503682076"},
+    {"id": 38503682073, "name": "Push on main", "status": "completed", "conclusion": "success", "url": "https://github.com/dmz006/datawatch/actions/runs/38503682073"}
+  ],
+  "summary": "all 8 CI run(s) passed",
+  "checked_at": "2026-10-13T23:00:41.306199141-04:00"
+}
+```
+
+- **Decision entry (kind `ci_watch`):** `{"at":"2026-10-13T23:00:41.306-04:00","kind":"ci_watch","verdict_outcome":"pass","actor":"autonomous","note":"status=pass sha=b119466b… runs=<the 8 URLs above> — all 8 CI run(s) passed"}`.
+- **Cross-check against GitHub:** at 23:06 local (6 minutes after the verdict), `gh run list --commit b119466b802f5cfb421b19571194524ec6ef6105 --json databaseId,name,conclusion,url` returned the same 8 run IDs, all `success`, and no others. Four were push-triggered (`docs-sync`, `secret-scan`, `security-scan`, and `Push on main`, which is dynamic). Four were `workflow_run`-triggered `Release CI Summary` runs. The latest of these finished at 03:00:33Z, 8 seconds before the verdict. At 22:58 local, two `Release CI Summary` runs were still `in_progress`, and ci-watch waited for them instead of passing early. The recorded outcome matches reality, so this is a real pass.
+
+### MCP discoverability spot-check (v9.0.65 descriptions)
+
+**Method:** a fresh sub-agent with no source access, told not to use any tools. It was given only the live descriptions of `autonomous_config_get`, `autonomous_config_set` (its `per_prd_guardrails` and `ci_watch_timeout_seconds` parameters), `autonomous_prd_get`, `guardrail_library_list` and `per_automaton_guardrails_set`, copied from the running 9.0.65 daemon's MCP tool listing. It also got a sample `autonomous_prd_get` response: `status: "blocked"`, `ci_watch.status: "failed_policy"`, a Release run failing on a HIGH CVE with no fix, and a project rule requiring an operator-approved accepted-risk entry.
+
+**Its answer, condensed:**
+
+- *One Automaton:* read the current profile and lists with `autonomous_prd_get` first, because each call replaces the profile and all three lists. Then call `per_automaton_guardrails_set(id, guardrail_profile=<existing>, per_prd_guardrails_json="[\"ci-watch\"]"` (plus `rules-review` if wanted), `per_story/per_task_guardrails_json=<existing>)` before completion. The explicit list beats the profile.
+- *Globally:* call `autonomous_config_get`, then `autonomous_config_set(per_prd_guardrails=[<existing>…, "ci-watch"])`, because the list is replaced, not merged. It noted the optional `ci_watch_timeout_seconds`, and that Automata with their own list or profile ignore the global default.
+- *Blocked result:* the push's CI passed, but Release failed on the CVE. The rules require an operator decision, so the result is `failed_policy`: nothing auto-fixed and the Automaton blocked. Next steps: open run 1002, decide (accepted-risk entry, remove the package, or wait), commit the decision, `autonomous_prd_reset_task(id, task_id="t-rel", force=true)`, then `autonomous_prd_run(id)`. If the work was finished by hand, leave the Automaton blocked or `autonomous_prd_cancel`. Unprompted, it warned that re-running a "bump, tag, push" task may clash with an existing tag.
+- *Gaps it listed:* parameter names of `reset_task`/`run`/`cancel`, which were not among the five tools it was given and which a real client sees in the full listing; whether `autonomous_prd_get` shows the profile and story/task lists; whether a global change affects running Automata; whether the decision commit must be pushed; where the accepted-risk entry goes (project-specific); re-running a tag task; re-running ci-watch alone; which judge LLM; the infra retry budget; notifications.
+
+**Assessment: correct.** All three questions were answered correctly and actionably from the descriptions alone, consistent with round 2 above. The listed gaps are either outside the five descriptions it was given, project-specific, or minor. None led it to a wrong action, so `internal/mcp/` was not changed, and no rebuild or restart was needed this round.
+
+### Howto coverage
+
+`scripts/check-howto-coverage.sh` → `✓ PASS: every howto under docs/howto/ has exec_steps or is LLM-only.` (exit 0). `scripts/check-no-internal-refs.sh` → `✓ PASS: no internal refs in user-facing surfaces.`
+
+### Closing summary (v9.0.65)
+
+- **Deployed version:** 9.0.65, matching `var Version` in `cmd/datawatch/main.go`. The v9.0.64 description fixes are now served by the running daemon, which closes the deployment gap noted in the 9.0.63 round.
+- **Config change:** `autonomous.per_prd_guardrails` = `["rules-review","ci-watch"]`, written via `autonomous_config_set` and confirmed by reading it back. It is an operator config change, not a code default.
+- **Probe Automaton `392b2603`:** explicit per-Automaton guardrails `["ci-watch"]`, claude-code throughout. It pushed `b119466b` to `origin/main`. ci-watch waited for 8 real runs, two of which were still in progress when checked, then recorded `status: "pass"` with every run URL and a `ci_watch` decision. The Automaton ended **Completed**. `gh run list --commit <sha>` agrees: the same 8 runs, all success. The probe record is left in place as evidence.
+- **Real run URLs:** https://github.com/dmz006/datawatch/actions/runs/38503682083 (docs-sync), https://github.com/dmz006/datawatch/actions/runs/38503683244 (secret-scan), https://github.com/dmz006/datawatch/actions/runs/38503682076 (security-scan), https://github.com/dmz006/datawatch/actions/runs/38503682073 (Push on main), https://github.com/dmz006/datawatch/actions/runs/38503700548, https://github.com/dmz006/datawatch/actions/runs/38503717326, https://github.com/dmz006/datawatch/actions/runs/38503824477, https://github.com/dmz006/datawatch/actions/runs/38503847965 (Release CI Summary).
+- **Discoverability:** correct on the first round with the 9.0.65 descriptions. No description changes were needed.
+- **Template fit:** templates cannot enable ci-watch today without a new mechanism, so none was built. Pair an instantiated Automaton with `per_automaton_guardrails_set` (a guardrail profile or an explicit `per_prd_guardrails_json`) before it completes, or list `ci-watch` in the global `autonomous.per_prd_guardrails`. See "Template fit" above for the code-level reasons and the caveat that a profile applies at every level.
+
+#### Out of scope
+
+- Fixing the specific container vulnerabilities (openssh-client, `golang.org/x/net`, Go stdlib findings).
+- Non-GitHub CI providers.
+- Backfilling ci-watch onto existing Automata.
+- Independent or continuous CI polling outside an Automaton's completion.
+- A new template system, or making templates carry guardrail settings.
