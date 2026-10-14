@@ -4325,27 +4325,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		// autonomous Task becomes a real session.Manager session, so
 		// the existing F10 / session.Session / pipeline.Executor path
 		// runs unchanged underneath the autonomous executor.
-		// v5.26.11 — translate autonomous.Effort enum
-		// (low/medium/high/max) to session.EffortLevels enum
-		// (quick/normal/thorough) before POSTing to /api/sessions/start.
-		// /api/sessions/start rejects unknown values with "invalid
-		// effort: must be one of quick, normal, thorough" — every
-		// PRD with the default `low` effort tripped this and tasks
-		// went straight to TaskFailed without ever spawning a session.
-		// The autonomous Effort already lists the session-side aliases
-		// (quick/normal/thorough) so explicit operator picks pass
-		// through unchanged.
-		mapEffortToSession := func(e autonomouspkg.Effort) string {
-			switch e {
-			case autonomouspkg.EffortLow, autonomouspkg.EffortQuick:
-				return "quick"
-			case autonomouspkg.EffortMedium, autonomouspkg.EffortNormal:
-				return "normal"
-			case autonomouspkg.EffortHigh, autonomouspkg.EffortMax, autonomouspkg.EffortThorough:
-				return "thorough"
-			}
-			return "" // empty → daemon falls back to session.default_effort
-		}
+		// v5.26.11 — BL41 thoroughness mapping; see
+		// mapAutonomousEffortToSession (autonomous_effort.go).
+		mapEffortToSession := mapAutonomousEffortToSession
 		autonomousSpawn := func(ctx context.Context, req autonomouspkg.SpawnRequest) (autonomouspkg.SpawnResult, error) {
 			spec := req.Spec
 			if req.RetryHint != "" {
@@ -4427,7 +4409,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					// the task with the same settings the local-session
 					// path below already sends.
 					"backend":         req.Backend,
-					"effort":          mapEffortToSession(req.Effort),
+					"effort":          mapEffortToSession(req.Effort), // real claude_effort pass-through is local-session-only for now
 					"permission_mode": req.PermissionMode,
 					"model":           req.Model,
 					// BL407 Phase 4 — the PRD's own dedicated branch
@@ -4500,29 +4482,10 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				}
 				return autonomouspkg.SpawnResult{SessionID: "agent:" + out.ID}, nil
 			}
-			// local session path
-			sessionBody := map[string]any{
-				"task":            spec,
-				"project_dir":     req.ProjectDir,
-				"project_profile": req.ProjectProfile,
-				"backend":         req.Backend,
-				"name":            "autonomous:" + req.Title,
-				"effort":          mapEffortToSession(req.Effort),
-				"permission_mode": req.PermissionMode,
-				"model":           req.Model,
-				"lsp_language":    req.LSPLanguage,
-				"one_shot":        true,
-				"prd_id":          req.PRDID,
-				"task_id":         req.TaskID,
-				"story_id":        req.StoryID, // BL385 Phase 4 — memory scope routing
-			}
-			// BL407 Phase 2 — a worktree-mode PRD needs real commits on
-			// its branch regardless of this daemon's session.auto_git_commit
-			// default; only ever forces true, never forces false (an
-			// operator who wants commits elsewhere keeps getting them).
-			if req.ForceAutoGitCommit {
-				sessionBody["auto_git_commit"] = true
-			}
+			// local session path — body (incl. the gated claude_effort
+			// pass-through) built in buildAutonomousSessionBody
+			// (autonomous_effort.go).
+			sessionBody := buildAutonomousSessionBody(req, spec, cfg.Session.LLMBackend)
 			body, _ := json.Marshal(sessionBody)
 			httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
 				loopbackBaseURL(cfg)+"/api/sessions/start",
