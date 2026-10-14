@@ -229,3 +229,16 @@ Verified together, serial lane, against a real sandbox daemon
 ```bash
 bash scripts/run-tests.sh --stories=TS-787,TS-788,TS-789,TS-790,TS-791,TS-792,TS-793,TS-794,TS-795
 ```
+
+### Verification LLM override (v9.0.72)
+
+| TS# | Description | Release | Status | Notes |
+|---|---|---|---|---|
+| TS-796 | `set_task_verification_llm` on a real run: the overridden task records `verifier_backend` = override and `verifier_source` `task`; the sibling records `global`/`pool` | v9.0.72 | ✅ pass | conflict:llm — decomposes a file-free placeholder, then swaps in its own story + 2 tasks; executes on claude-code; registers the override LLM inline when testdata's `llms:` entry is not in the registry |
+
+Verified against a real sandbox daemon on 2026-10-14 (evidence:
+`docs/plans/2026-10-14-verification-llm-override-live.md`). Run it with:
+
+```bash
+bash scripts/run-tests.sh --story=TS-796
+```

@@ -1143,8 +1143,10 @@ established. In progress — starting with BL403.**
     **Pre-existing gap, left as-is:** the global
     `autonomous.verification_effort` is still not consumed by the verify
     path — only a per-unit effort reaches a session-routed verifier.
-    **Evidence:** `docs/plans/2026-10-14-verification-llm-override-live.md`
-    (live verification, written by the release task).
+    **Live-validated** on a sandbox daemon (E2E story TS-796): the
+    overridden task recorded `verifier_backend` `ollama-localhost` /
+    `verifier_source` `task`, and its sibling recorded `global`.
+    **Evidence:** `docs/plans/2026-10-14-verification-llm-override-live.md`.
 
 **Outside the queue, handled separately, not blocking Stage 3:**
 - ~~**BL381**~~ — status-verified 2026-10-10: shipped v8.28.0 + v8.28.2

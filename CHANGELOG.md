@@ -5,105 +5,92 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-## v9.0.72 — docs: per-task / per-story / per-Automaton verification LLM override
-
-### Documentation
-- **Verification LLM override documented on every surface.** `docs/mcp.md`
-  (parameter table + example for `autonomous_prd_set_task_verification_llm`,
-  `autonomous_prd_set_story_verification_llm`,
-  `autonomous_prd_set_verification_llm`), `docs/cursor-mcp.md`,
-  `docs/commands.md`, `docs/api/autonomous.md` (REST endpoints, body
-  shape, all-access-methods table) and `docs/operations.md`. The
-  `docs/howto/autonomous-planning.md` how-to gains "Choose the verifier
-  per task, story or Automaton": when to use a cheaper or stronger
-  verifier and how to read `verifier_source` on the task's verification
-  result. The config reference notes that per-unit overrides take
-  precedence over `autonomous.verification_*`.
-
-### Tests
-- `scripts/release-smoke.sh` section 71 sets and clears a task
-  verification override on a smoke-created Automaton via REST and
-  checks the round-trip in GET.
-
-## v9.0.71 — feat(pwa): verification LLM override in the task, story and Automaton LLM modals
+## v9.0.72 — feat(automata): per-task, per-story and per-Automaton verification LLM override
 
 ### Added
-- **Pick the verification LLM from the PWA.** The edit-task modal, the
-  story LLM modal and the Automaton "Set LLM" modal each gain a
-  Verification LLM row (Backend / Effort / Model) below the existing LLM
-  settings; saving only calls the verification endpoint when a value
-  changed. Empty inherits task > story > Automaton > global. Task
-  verification results now show a muted "Judged by" line with the
-  verifier backend, model and source. New locale keys in all five
-  bundles; Android parity tracked in datawatch-app#257.
-
-## v9.0.70 — feat(autonomous): CLI + comm-channel commands for per-unit verification LLM overrides
-
-### Added
-- **Set the verification LLM from the CLI and chat.** New CLI commands
-  `datawatch autonomous prd-set-task-verification-llm <id> --task <task>`,
-  `prd-set-story-verification-llm <id> --story <story>` and
-  `prd-set-verification-llm <id>`, each taking `--backend` / `--model` /
-  `--effort`; only flags you pass are changed and `--backend ""` clears.
-  Matching comm-channel verbs `autonomous set-task-verification-llm`,
-  `set-story-verification-llm` and `set-verification-llm` take
-  `backend=` / `model=` / `effort=` tokens (`key=` clears). Precedence:
-  task > story > Automaton > global `verification_backend`.
-
-## v9.0.69 — feat(autonomous): REST + MCP surface for per-unit verification LLM overrides
-
-### Added
-- **Set which LLM verifies a task, story or whole Automaton.** New REST
-  actions `POST /api/autonomous/prds/{id}/set_task_verification_llm`,
-  `/set_story_verification_llm` and `/set_verification_llm`, plus MCP
-  tools `autonomous_prd_set_task_verification_llm`,
-  `autonomous_prd_set_story_verification_llm` and
-  `autonomous_prd_set_verification_llm`. Each accepts
-  `verification_backend` / `verification_model` / `verification_effort`;
-  only the fields sent change and an empty string clears one.
-  Precedence: task > story > Automaton > global autonomous
-  `verification_backend`. Unknown backends are rejected with 400, the
-  actions require the autonomous-write federation capability, and every
-  change is audited.
-
-## v9.0.68 — feat(autonomous): verifier honors per-task / per-story / per-Automaton verification LLM overrides
-
-### Changed
-- **The autonomous verifier now runs on the resolved per-unit LLM.** An
-  explicit task, story or Automaton `verification_backend` /
-  `verification_model` now selects the verifier, skipping the
+- **Choose which LLM verifies a task, a story or a whole Automaton.**
+  Tasks, stories and Automata gain `verification_backend`,
+  `verification_model` and `verification_effort`. Leave them empty to
+  inherit; set them to judge cheap tasks with a small model, or
+  high-risk tasks with a stronger one, without changing the global
+  verifier.
+- **Precedence: task > story > Automaton > global** autonomous
+  `verification_*` config. Backend and model always come from the same
+  level, so a model is never paired with a backend from a different
+  level. Effort resolves on its own. An explicit override skips the
   `verification_backends` capacity pool (an explicit choice beats
-  load-balancing) while keeping every existing safety check: the
+  load-balancing) but keeps every existing safety check: the
   ask-compatible check, routing session-only backends through a real
   one-shot session when the Automaton has a project directory (using
   the override's own model there), and the ollama fallback when it has
-  none. An explicit `verification_effort` override is applied to a
-  session-routed verify (`/api/ask` has no effort input, so it is only
-  recorded on that path). With no override, selection is unchanged:
-  pool first, then the global config / the Automaton's own backend.
-  Every verification result from the LLM-judgment stage now records
-  `verifier_backend` / `verifier_model` / `verifier_effort` /
-  `verifier_source` (`task`, `story`, `prd`, `global` or `pool`).
-- Known gap, unchanged: the global `verification_effort` is still not
-  consumed by the verify path.
+  none. An explicit `verification_effort` is applied to a
+  session-routed verify. `/api/ask` has no effort input, so on that
+  path the effort is only recorded. With no override, selection is
+  unchanged: the pool first, then the global config, then the
+  Automaton's own backend.
+- **Setters on every surface.** Each one is presence-aware (only the
+  fields you send change, and an empty string clears one), records a
+  decision on the Automaton, and is accepted in needs_review,
+  revisions_asked and cancelled.
+  - REST: `POST /api/autonomous/prds/{id}/set_task_verification_llm`
+    (`task_id`), `/set_story_verification_llm` (`story_id`) and
+    `/set_verification_llm`, each taking `verification_backend` /
+    `verification_model` / `verification_effort`. Unknown backends are
+    rejected with 400, the actions require the autonomous-write
+    federation capability, and every change is audited.
+  - MCP: `autonomous_prd_set_task_verification_llm`,
+    `autonomous_prd_set_story_verification_llm`,
+    `autonomous_prd_set_verification_llm`.
+  - CLI: `datawatch autonomous prd-set-task-verification-llm <id> --task <task>`,
+    `prd-set-story-verification-llm <id> --story <story>` and
+    `prd-set-verification-llm <id>`, each with `--backend` / `--model` /
+    `--effort`. Only flags you pass change, and `--backend ""` clears.
+  - Comm channels: `autonomous set-task-verification-llm`,
+    `set-story-verification-llm` and `set-verification-llm` with
+    `backend=` / `model=` / `effort=` tokens (`key=` clears).
+  - PWA: the edit-task modal, the story LLM modal and the Automaton
+    "Set LLM" modal each gain a Verification LLM row (Backend / Effort /
+    Model). Saving only calls the verification endpoint when a value
+    changed. New locale keys in all five bundles; Android parity is
+    tracked in datawatch-app#257.
+- **The verifier records what it actually used.** Every verification
+  result from the LLM-judgment stage stores `verifier_backend`,
+  `verifier_model`, `verifier_effort` and `verifier_source` (`task`,
+  `story`, `prd`, `global` or `pool`). The PWA shows it as a muted
+  "Judged by" line under the task's verification result.
+- Documented in `docs/mcp.md`, `docs/cursor-mcp.md`,
+  `docs/commands.md`, `docs/api/autonomous.md`, `docs/operations.md`
+  and the "Choose the verifier per task, story or Automaton" section of
+  `docs/howto/autonomous-planning.md`.
 
-## v9.0.67 — feat(autonomous): per-task / per-story / per-Automaton verification LLM overrides
+### Tests
+- Unit coverage for resolution precedence, the presence-aware setters
+  and verifier selection, including skipping the pool on an explicit
+  override.
+- `scripts/release-smoke.sh` section 71 sets and clears a task
+  verification override on a smoke-created Automaton and checks the
+  round-trip in GET.
+- New E2E story TS-796 runs a real Automaton in a fresh git repo with
+  two tasks. One task gets a verification override that differs from
+  both the global verifier and the execution backend. The story
+  asserts from each task's own recorded verification result that the
+  override judged it (`verifier_source` `task`) and that the sibling
+  task fell back to `global` / `pool`.
 
-### Added
-- **Verifier LLM override fields on tasks, stories and Automata.**
-  `verification_backend`, `verification_model` and
-  `verification_effort` can now be set per task, per story and per
-  Automaton, resolved task → story → Automaton → the global autonomous
-  `verification_*` config. Backend and model always come from the same
-  level, so a model is never paired with a backend from a different
-  level; effort resolves on its own. New presence-aware setters
-  (`SetTaskVerificationLLM`, `SetStoryVerificationLLM`,
-  `SetPRDVerificationLLM`) record a decision on the Automaton and are
-  accepted in needs_review / revisions_asked / cancelled. Verification
-  results gain `verifier_backend` / `verifier_model` /
-  `verifier_effort` / `verifier_source` to record what the verifier
-  actually used. The verify path itself still uses the global config;
-  wiring it to the new resolution lands in a follow-up commit.
+### Notes
+- The global `verification_backend` / `verification_model` /
+  `verification_effort` defaults are unchanged. With no per-unit
+  override, verification behaves exactly as before.
+- Known gap, pre-existing and unchanged: the global
+  `verification_effort` is still not consumed by the verify path. Only
+  an explicit task, story or Automaton effort is applied.
+
+Reuse audit — extends the per-task execution LLM override pattern
+(task → story → Automaton → global resolution, `set_task_llm` /
+`set_story_llm` / `set_llm`) and the presence-aware guardrail-LLM
+setters (absent leaves a field unchanged, empty string clears it).
+Verifier selection reuses the existing `resolveVerifierBackendModel`
+safety logic and the `verification_backends` pool unchanged.
 
 ## v9.0.66 — fix(session): one-shot claude-code tasks are delivered once, not re-pasted on every channel heartbeat
 
