@@ -192,3 +192,50 @@ func TestAutonomousConfigSet_BlockOnFileDrift(t *testing.T) {
 		t.Fatalf("block_on_file_drift present when the caller never mentioned it: %v", got)
 	}
 }
+
+func TestAutonomousConfigSet_MaxConcurrentTasks(t *testing.T) {
+	var got map[string]any
+	s := capacityTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(b, &got)
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
+	})
+	if _, err := s.handleAutonomousConfigSet(context.Background(), callReq(map[string]any{"max_concurrent_tasks": 3})); err != nil {
+		t.Fatal(err)
+	}
+	if got["max_concurrent_tasks"] != float64(3) {
+		t.Fatalf("max_concurrent_tasks not forwarded: %v", got)
+	}
+	// Values below 1 are not forwarded.
+	got = nil
+	if _, err := s.handleAutonomousConfigSet(context.Background(), callReq(map[string]any{"max_concurrent_tasks": 0})); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := got["max_concurrent_tasks"]; ok {
+		t.Fatalf("max_concurrent_tasks=0 forwarded: %v", got)
+	}
+}
+
+func TestAutonomousConfigSet_MaxParallelTasksDeprecatedNoteReturned(t *testing.T) {
+	var got map[string]any
+	s := capacityTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(b, &got)
+		_, _ = w.Write([]byte(`{"status":"ok","deprecated_fields":{"max_parallel_tasks":"deprecated and ignored"}}`))
+	})
+	res, err := s.handleAutonomousConfigSet(context.Background(), callReq(map[string]any{"max_parallel_tasks": 7}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := got["max_parallel_tasks"]; !ok {
+		t.Fatalf("max_parallel_tasks must still be forwarded so the server can flag it: %v", got)
+	}
+	text := res.Content[0].(mcpsdk.TextContent).Text
+	if !strings.Contains(text, "deprecated_fields") {
+		t.Fatalf("tool result lacks the server's deprecated_fields note: %s", text)
+	}
+	desc, _ := json.Marshal(s.toolAutonomousConfigSet().InputSchema.Properties["max_parallel_tasks"])
+	if !strings.Contains(string(desc), "DEPRECATED") {
+		t.Fatalf("max_parallel_tasks description must say DEPRECATED: %s", desc)
+	}
+}

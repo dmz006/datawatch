@@ -18,6 +18,7 @@ func TestApplyConfigPatch_AutonomousPluginsOrchestrator(t *testing.T) {
 		"autonomous.enabled":               true,
 		"autonomous.poll_interval_seconds": float64(45),
 		"autonomous.max_parallel_tasks":    float64(5),
+		"autonomous.max_concurrent_tasks":  float64(3),
 		"autonomous.decomposition_backend": "claude-code",
 		"autonomous.verification_backend":  "ollama",
 		"autonomous.auto_fix_retries":      float64(2),
@@ -41,8 +42,12 @@ func TestApplyConfigPatch_AutonomousPluginsOrchestrator(t *testing.T) {
 	if cfg.Autonomous.PollIntervalSeconds != 45 {
 		t.Errorf("poll_interval_seconds = %d, want 45", cfg.Autonomous.PollIntervalSeconds)
 	}
-	if cfg.Autonomous.MaxParallelTasks != 5 {
-		t.Errorf("max_parallel_tasks = %d, want 5", cfg.Autonomous.MaxParallelTasks)
+	// max_parallel_tasks is deprecated: accepted but never stored.
+	if cfg.Autonomous.MaxParallelTasks != 0 {
+		t.Errorf("max_parallel_tasks = %d, want 0 (deprecated, ignored)", cfg.Autonomous.MaxParallelTasks)
+	}
+	if cfg.Autonomous.MaxConcurrentTasks != 3 {
+		t.Errorf("max_concurrent_tasks = %d, want 3", cfg.Autonomous.MaxConcurrentTasks)
 	}
 	// BL304: field renamed to PlanningBackend; old key "decomposition_backend" still accepted.
 	if cfg.Autonomous.PlanningBackend != "claude-code" {

@@ -166,7 +166,8 @@ every channel:
 autonomous:
   enabled:                false       # off by default; opt-in
   poll_interval_seconds:  30          # background loop tick
-  max_parallel_tasks:     3           # in-flight worker cap (per-PRD)
+  max_concurrent_tasks:   1           # daemon-wide default: independent tasks of one Automaton run at once (1 = sequential; an Automaton's own setting overrides)
+  # max_parallel_tasks is deprecated and ignored (it never had an effect); use max_concurrent_tasks
   planning_backend:       ""          # empty = inherit session.llm_backend (BL304; old key decomposition_backend still accepted)
   verification_backend:   ""          # empty = inherit; set differently for cross-backend independence
   planning_effort:        "thorough"  # BL41 effort hint (BL304; old key decomposition_effort still accepted)
@@ -183,7 +184,7 @@ autonomous:
 ```
 datawatch autonomous status
 datawatch autonomous config-get
-datawatch autonomous config-set '{"enabled":true,"max_parallel_tasks":4}'
+datawatch autonomous config-set '{"enabled":true,"max_concurrent_tasks":2}'   # merges; any deprecated_fields note goes to stderr
 datawatch autonomous prd-list
 datawatch autonomous prd-create "Add OAuth login with Google + GitHub"
 datawatch autonomous prd-get <id>
@@ -209,7 +210,7 @@ operator-facing AI can drive the autonomous loop end-to-end:
 |---|---|
 | `autonomous_status`         | loop snapshot |
 | `autonomous_config_get`     | read config |
-| `autonomous_config_set`     | replace config |
+| `autonomous_config_set`     | merge fields into config (incl. `max_concurrent_tasks`) |
 | `autonomous_prd_list`       | list all PRDs |
 | `autonomous_prd_create`     | create draft PRD |
 | `autonomous_prd_get`        | fetch one PRD with tree |

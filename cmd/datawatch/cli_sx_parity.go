@@ -170,8 +170,23 @@ func daemonGet(path string) error {
 	return nil
 }
 
-// daemonJSON sends method+body to <daemonURL><path>.
+// daemonJSON sends method+body to <daemonURL><path> and prints the response.
 func daemonJSON(method, path string, body any) error {
+	respBody, err := daemonJSONBody(method, path, body)
+	if err != nil {
+		return err
+	}
+	if len(respBody) > 0 {
+		prettyPrint(respBody)
+	} else {
+		fmt.Println("ok")
+	}
+	return nil
+}
+
+// daemonJSONBody sends method+body to <daemonURL><path> and returns the
+// raw 2xx response body without printing it.
+func daemonJSONBody(method, path string, body any) ([]byte, error) {
 	client := daemonClient()
 	var rdr io.Reader
 	if body != nil {
@@ -188,7 +203,7 @@ func daemonJSON(method, path string, body any) error {
 	}
 	req, err := http.NewRequest(method, daemonURL()+path, rdr)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if tok := daemonToken(); tok != "" {
@@ -196,19 +211,14 @@ func daemonJSON(method, path string, body any) error {
 	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("daemon not reachable: %w", err)
+		return nil, fmt.Errorf("daemon not reachable: %w", err)
 	}
 	defer resp.Body.Close() //nolint:errcheck
 	respBody, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode/100 != 2 {
-		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(respBody))
+		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(respBody))
 	}
-	if len(respBody) > 0 {
-		prettyPrint(respBody)
-	} else {
-		fmt.Println("ok")
-	}
-	return nil
+	return respBody, nil
 }
 
 // prettyPrint emits indented JSON when body parses as JSON, raw otherwise.

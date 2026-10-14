@@ -51,6 +51,19 @@ func (s *Server) handleAutonomousConfig(w http.ResponseWriter, r *http.Request) 
 			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
 			return
 		}
+		// max_parallel_tasks is deprecated and ignored: strip it before
+		// the merge so it is never stored, and tell the caller.
+		var deprecated map[string]string
+		var top map[string]json.RawMessage
+		if json.Unmarshal(body, &top) == nil {
+			if _, ok := top["max_parallel_tasks"]; ok {
+				delete(top, "max_parallel_tasks")
+				if b, err := json.Marshal(top); err == nil {
+					body = b
+				}
+				deprecated = map[string]string{"max_parallel_tasks": maxParallelTasksDeprecatedNote}
+			}
+		}
 		if err := s.autonomousMgr.SetConfig(body); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
@@ -75,7 +88,11 @@ func (s *Server) handleAutonomousConfig(w http.ResponseWriter, r *http.Request) 
 			}
 		}
 		s.audit(r.Context(), "update", "autonomous_config", "", nil) // GH#201 Phase 4
-		writeJSONOK(w, map[string]any{"status": "ok"})
+		resp := map[string]any{"status": "ok"}
+		if deprecated != nil {
+			resp["deprecated_fields"] = deprecated
+		}
+		writeJSONOK(w, resp)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}

@@ -5517,7 +5517,10 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 		"autonomous": map[string]interface{}{
 			"enabled":               s.cfg.Autonomous.Enabled,
 			"poll_interval_seconds": s.cfg.Autonomous.PollIntervalSeconds,
-			"max_parallel_tasks":    s.cfg.Autonomous.MaxParallelTasks,
+			"max_parallel_tasks":    s.cfg.Autonomous.MaxParallelTasks, // deprecated, ignored; removal deferred one release
+			// Daemon-wide default for how many independent tasks of one
+			// Automaton run at once (an Automaton's own setting overrides).
+			"max_concurrent_tasks": s.cfg.Autonomous.MaxConcurrentTasks,
 			// BL304: new key. Also emit legacy key for back-compat with old clients.
 			"planning_backend":      s.cfg.Autonomous.PlanningBackend,
 			"decomposition_backend": s.cfg.Autonomous.PlanningBackend,
@@ -5823,8 +5826,18 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 		resp["skipped"] = skipped
 		resp["skipped_reason"] = "use POST /api/auth/rotate-token to change the admin bearer token"
 	}
+	if _, ok := patch["autonomous.max_parallel_tasks"]; ok {
+		resp["deprecated_fields"] = map[string]string{
+			"autonomous.max_parallel_tasks": maxParallelTasksDeprecatedNote,
+		}
+	}
 	json.NewEncoder(w).Encode(resp) //nolint:errcheck
 }
+
+// maxParallelTasksDeprecatedNote is the deprecated_fields note returned by
+// PUT /api/config and PUT /api/autonomous/config when a caller still sends
+// max_parallel_tasks.
+const maxParallelTasksDeprecatedNote = "deprecated and ignored; use autonomous.max_concurrent_tasks"
 
 // applyLLMRegistryPatch applies config patch keys that now live in the LLM registry
 // (v7.0.0 clean move from SessionConfig). Upserts the claude-code entry.
@@ -6796,8 +6809,15 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 				cfg.Autonomous.PollIntervalSeconds = n
 			}
 		case "autonomous.max_parallel_tasks":
-			if n, ok := toInt(v); ok && n >= 0 {
-				cfg.Autonomous.MaxParallelTasks = n
+			// Deprecated: no executor code ever read it. Accepted and
+			// IGNORED (never stored) so existing clients don't error;
+			// handlePutConfig reports it under deprecated_fields. The
+			// key itself is removed one release later.
+		case "autonomous.max_concurrent_tasks":
+			// 1 = sequential; values below 1 are skipped (config load
+			// normalizes an unset value to 1 the same way).
+			if n, ok := toInt(v); ok && n >= 1 {
+				cfg.Autonomous.MaxConcurrentTasks = n
 			}
 		// BL304: accept both new planning_* and legacy decomposition_* keys.
 		case "autonomous.planning_backend", "autonomous.decomposition_backend":

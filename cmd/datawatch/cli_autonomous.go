@@ -23,7 +23,8 @@ each Task spawned as a worker session with independent verification.
 Subcommands:
   status                          Loop status (running, active PRDs, queued/running tasks)
   config-get                      Read current autonomous config
-  config-set <json>               Replace autonomous config (full body)
+  config-set <json>               Merge fields into autonomous config, e.g.
+                                  config-set '{"max_concurrent_tasks":2}'
   prd-list                        List all PRDs
   prd-create <spec>               Create a draft PRD (--type, --guided-mode, --skills)
   prd-get <id>                    Fetch one PRD with story+task tree
@@ -139,8 +140,17 @@ func newAutonomousConfigGetCmd() *cobra.Command {
 func newAutonomousConfigSetCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "config-set <json-or-@file>",
-		Short: "Replace autonomous config (full body)",
-		Args:  cobra.ExactArgs(1),
+		Short: "Merge fields into autonomous config",
+		Long: `Merge the given JSON fields onto the current autonomous config; fields
+not given are left unchanged.
+
+Example — let up to 2 independent tasks of one Automaton run at once
+(daemon-wide default; an Automaton's own setting overrides it; 1 = sequential):
+
+  datawatch autonomous config-set '{"max_concurrent_tasks":2}'
+
+max_parallel_tasks is deprecated and ignored; use max_concurrent_tasks.`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			raw := args[0]
 			if len(raw) > 1 && raw[0] == '@' {
@@ -154,8 +164,28 @@ func newAutonomousConfigSetCmd() *cobra.Command {
 			if err := json.Unmarshal([]byte(raw), &body); err != nil {
 				return fmt.Errorf("parse JSON: %w", err)
 			}
-			return daemonJSON(http.MethodPut, "/api/autonomous/config", body)
+			resp, err := daemonJSONBody(http.MethodPut, "/api/autonomous/config", body)
+			if err != nil {
+				return err
+			}
+			prettyPrint(resp)
+			printDeprecatedFields(resp)
+			return nil
 		},
+	}
+}
+
+// printDeprecatedFields writes any deprecated_fields note from a config
+// PUT response to stderr so a deprecated key never fails silently.
+func printDeprecatedFields(resp []byte) {
+	var r struct {
+		DeprecatedFields map[string]string `json:"deprecated_fields"`
+	}
+	if json.Unmarshal(resp, &r) != nil {
+		return
+	}
+	for k, note := range r.DeprecatedFields {
+		fmt.Fprintf(os.Stderr, "warning: %s: %s\n", k, note)
 	}
 }
 
