@@ -207,11 +207,11 @@ func (r *Router) handleAudit(cmd Command) {
 
 // handlePeers — BL172 (S11) chat parity for /api/observer/peers/*.
 //
-//   "peers"                       → list
-//   "peers <name>"                → detail
-//   "peers <name> stats"          → last snapshot
-//   "peers register <name> [shape] [version]"
-//   "peers delete <name>"
+//	"peers"                       → list
+//	"peers <name>"                → detail
+//	"peers <name> stats"          → last snapshot
+//	"peers register <name> [shape] [version]"
+//	"peers delete <name>"
 func (r *Router) handlePeers(cmd Command) {
 	args := strings.Fields(strings.TrimSpace(cmd.Text))
 	if len(args) == 0 {

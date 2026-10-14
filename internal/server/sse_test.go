@@ -164,7 +164,7 @@ type ctxBundle struct {
 }
 
 func (c ctxBundle) Deadline() (time.Time, bool) { return time.Time{}, false }
-func (c ctxBundle) Done() <-chan struct{}        { return c.stop }
+func (c ctxBundle) Done() <-chan struct{}       { return c.stop }
 func (c ctxBundle) Err() error {
 	select {
 	case <-c.stop:

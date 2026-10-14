@@ -27,14 +27,17 @@ import (
 // handleMigrationComputeKinds — v7.0.0-alpha.23 (Q1, Q2):
 //
 // GET  /api/migration/compute-kinds        → list ComputeNodes whose Kind
-//                                             is no longer supported (one of
-//                                             local/remote/ssh/docker/k8s/
-//                                             remote-proxy). Returns
-//                                             {nodes: [{name, current_kind,
-//                                             address}], supported_kinds: [...]}.
+//
+//	is no longer supported (one of
+//	local/remote/ssh/docker/k8s/
+//	remote-proxy). Returns
+//	{nodes: [{name, current_kind,
+//	address}], supported_kinds: [...]}.
+//
 // PUT  /api/migration/compute-kinds/<name> → body {"kind":"ollama"} —
-//                                             validates new kind is in
-//                                             supported set + persists.
+//
+//	validates new kind is in
+//	supported set + persists.
 func (s *Server) handleMigrationComputeKinds(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -49,9 +52,9 @@ func (s *Server) handleMigrationComputeKinds(w http.ResponseWriter, r *http.Requ
 		for _, n := range s.computeReg.List() {
 			if n.Kind.IsDeprecated() {
 				out = append(out, map[string]any{
-					"name":          n.Name,
-					"current_kind":  string(n.Kind),
-					"address":       n.Address,
+					"name":         n.Name,
+					"current_kind": string(n.Kind),
+					"address":      n.Address,
 				})
 			}
 		}
@@ -89,7 +92,9 @@ func (s *Server) handleMigrationComputeKindsUpdate(w http.ResponseWriter, r *htt
 		http.Error(w, "node name required", http.StatusBadRequest)
 		return
 	}
-	var body struct{ Kind string `json:"kind"` }
+	var body struct {
+		Kind string `json:"kind"`
+	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
 		return

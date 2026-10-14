@@ -161,11 +161,11 @@ func (s *Server) handleDocsListHowtos(w http.ResponseWriter, r *http.Request, rt
 
 // handleDocsApply implements the BL274 plan-then-execute flow (Q3c+Q3d).
 //
-//   mode=plan (default)       — return the resolved exec_steps + an approval_token.
-//   mode=execute risk_gate=false — run all remaining steps to completion in one call.
-//   mode=execute risk_gate=true  — run consecutive read_only steps then pause at the
-//                                  next mutating step. Issue a fresh continuation
-//                                  approval_token; operator calls execute again to advance.
+//	mode=plan (default)       — return the resolved exec_steps + an approval_token.
+//	mode=execute risk_gate=false — run all remaining steps to completion in one call.
+//	mode=execute risk_gate=true  — run consecutive read_only steps then pause at the
+//	                               next mutating step. Issue a fresh continuation
+//	                               approval_token; operator calls execute again to advance.
 //
 // Approval tokens are issued at plan time, single-use unless risk_gate=true
 // (then one token per "approval round"). 5-minute TTL. In-memory only; daemon
@@ -242,12 +242,12 @@ func (s *Server) docsApplyPlan(w http.ResponseWriter, r *http.Request, rt *docsi
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"howto_id":         howtoID,
-		"steps":            steps,
-		"provenance":       provenance,
-		"risk_gate":        riskGate,
-		"approval_token":   token,
-		"approval_ttl_sec": 300,
+		"howto_id":          howtoID,
+		"steps":             steps,
+		"provenance":        provenance,
+		"risk_gate":         riskGate,
+		"approval_token":    token,
+		"approval_ttl_sec":  300,
 		"approval_required": true,
 	})
 }

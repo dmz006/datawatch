@@ -64,9 +64,9 @@ func TestChannelRouting_PutAndGet(t *testing.T) {
 	rule := channelRoutingConfig{
 		Rules: []channelRoutingRule{
 			{
-				ChannelPattern:   "alerts-*",
-				PeerName:         "peer-alpha",
-				AutomataType:     "operational",
+				ChannelPattern:    "alerts-*",
+				PeerName:          "peer-alpha",
+				AutomataType:      "operational",
 				DefaultProjectDir: "/home/dmz/ops",
 			},
 		},

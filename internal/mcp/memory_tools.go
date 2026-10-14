@@ -63,8 +63,12 @@ func fetchOllamaStatsHTTP(host string) map[string]interface{} {
 		var names []string
 		for _, m := range models {
 			if mm, ok := m.(map[string]interface{}); ok {
-				if name, ok := mm["name"].(string); ok { names = append(names, name) }
-				if size, ok := mm["size"].(float64); ok { totalSize += size }
+				if name, ok := mm["name"].(string); ok {
+					names = append(names, name)
+				}
+				if size, ok := mm["size"].(float64); ok {
+					totalSize += size
+				}
 			}
 		}
 		result["models"] = names
@@ -83,8 +87,8 @@ func fetchOllamaStatsHTTP(host string) map[string]interface{} {
 			for _, m := range models {
 				if mm, ok := m.(map[string]interface{}); ok {
 					running = append(running, map[string]interface{}{
-						"name":     mm["name"],
-						"vram_gb":  fmt.Sprintf("%.1f", toFloat(mm["size_vram"])/(1024*1024*1024)),
+						"name":    mm["name"],
+						"vram_gb": fmt.Sprintf("%.1f", toFloat(mm["size_vram"])/(1024*1024*1024)),
 					})
 				}
 			}
@@ -96,7 +100,9 @@ func fetchOllamaStatsHTTP(host string) map[string]interface{} {
 }
 
 func toFloat(v interface{}) float64 {
-	if f, ok := v.(float64); ok { return f }
+	if f, ok := v.(float64); ok {
+		return f
+	}
 	return 0
 }
 
@@ -521,13 +527,17 @@ func (s *Server) handleResearchSessions(_ context.Context, req mcpsdk.CallToolRe
 				mm := m
 				content := ""
 				if c, ok := mm["content"].(string); ok {
-					if len(c) > 200 { c = c[:197] + "..." }
+					if len(c) > 200 {
+						c = c[:197] + "..."
+					}
 					content = c
 				}
 				role, _ := mm["role"].(string)
 				sid, _ := mm["session_id"].(string)
 				sim := 0.0
-				if s, ok := mm["similarity"].(float64); ok { sim = s }
+				if s, ok := mm["similarity"].(float64); ok {
+					sim = s
+				}
 				lines = append(lines, fmt.Sprintf("  [%.0f%%] %s: %s (session: %s)", sim*100, role, content, sid))
 			}
 			sections = append(sections, "## Memories\n"+joinLines(lines))
@@ -558,7 +568,9 @@ func (s *Server) handleResearchSessions(_ context.Context, req mcpsdk.CallToolRe
 	for _, sess := range sessions {
 		if sess.LastResponse != "" && strings.Contains(strings.ToLower(sess.LastResponse), queryLower) {
 			snippet := sess.LastResponse
-			if len(snippet) > 200 { snippet = snippet[:197] + "..." }
+			if len(snippet) > 200 {
+				snippet = snippet[:197] + "..."
+			}
 			sessionHits = append(sessionHits, fmt.Sprintf("  [%s] %s (%s): %s", sess.ID, sess.Task, sess.State, snippet))
 		}
 	}

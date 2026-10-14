@@ -23,7 +23,7 @@ type fakeSpawnDriver struct {
 	kind string
 }
 
-func (f *fakeSpawnDriver) Kind() string                                         { return f.kind }
+func (f *fakeSpawnDriver) Kind() string { return f.kind }
 func (f *fakeSpawnDriver) Spawn(_ context.Context, a *agents.Agent) error {
 	a.DriverInstance = "fake-" + a.ID
 	return nil
@@ -430,7 +430,7 @@ func TestBootstrap_WrongMethod_405(t *testing.T) {
 // agentSecretsStore is a minimal secrets.Store / secretsStore for
 // Phase 5c tests. Satisfies both interfaces simultaneously.
 type agentSecretsStore struct {
-	data   map[string]secrets.Secret
+	data map[string]secrets.Secret
 }
 
 func (m *agentSecretsStore) List() ([]secrets.Secret, error) {

@@ -153,10 +153,10 @@ func (s *Server) memoryBorrow(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) memorySeed(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		From       memory.ScopeRef `json:"from"`
-		To         memory.ScopeRef `json:"to"`
-		Filter     memory.SeedFilter `json:"filter"`
-		Limit      int              `json:"limit"`
+		From   memory.ScopeRef   `json:"from"`
+		To     memory.ScopeRef   `json:"to"`
+		Filter memory.SeedFilter `json:"filter"`
+		Limit  int               `json:"limit"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
@@ -175,17 +175,17 @@ func (s *Server) memorySeed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSONOK(w, map[string]any{
-		"copied":  n,
-		"from":    body.From,
-		"to":      body.To,
+		"copied": n,
+		"from":   body.From,
+		"to":     body.To,
 	})
 }
 
 func (s *Server) memoryPromote(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		MemoryID   int64           `json:"memory_id"`
-		From       memory.ScopeRef `json:"from"`
-		To         memory.ScopeRef `json:"to"`
+		MemoryID   int64             `json:"memory_id"`
+		From       memory.ScopeRef   `json:"from"`
+		To         memory.ScopeRef   `json:"to"`
 		Breadcrumb memory.Breadcrumb `json:"breadcrumb"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -261,8 +261,8 @@ func (s *Server) memoryScopesDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSONOK(w, map[string]any{
-		"deleted":   body.MemoryID,
-		"scope":     body.Scope,
+		"deleted": body.MemoryID,
+		"scope":   body.Scope,
 	})
 }
 
@@ -282,12 +282,12 @@ func (s *Server) memoryScopesDelete(w http.ResponseWriter, r *http.Request) {
 //	}
 func (s *Server) memoryArchiveImport(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		ProjectDir   string   `json:"project_dir"`
-		SourcePRDID  string   `json:"source_prd_id"`
-		TargetPRDID  string   `json:"target_prd_id"`
-		RoleFilter   []string `json:"role_filter"`
-		Max          int      `json:"max"`
-		DryRun       bool     `json:"dry_run"`
+		ProjectDir  string   `json:"project_dir"`
+		SourcePRDID string   `json:"source_prd_id"`
+		TargetPRDID string   `json:"target_prd_id"`
+		RoleFilter  []string `json:"role_filter"`
+		Max         int      `json:"max"`
+		DryRun      bool     `json:"dry_run"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
@@ -340,10 +340,10 @@ func (s *Server) memoryArchiveImport(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		writeJSONOK(w, map[string]any{
-			"dry_run":        true,
-			"would_seed":     count,
-			"source_prd_id":  body.SourcePRDID,
-			"target_prd_id":  body.TargetPRDID,
+			"dry_run":       true,
+			"would_seed":    count,
+			"source_prd_id": body.SourcePRDID,
+			"target_prd_id": body.TargetPRDID,
 		})
 		return
 	}
@@ -378,9 +378,9 @@ func (s *Server) memoryScopeInventory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSONOK(w, map[string]any{
-		"project":  projectDir,
-		"scopes":   entries,
-		"count":    len(entries),
+		"project": projectDir,
+		"scopes":  entries,
+		"count":   len(entries),
 	})
 }
 

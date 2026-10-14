@@ -126,4 +126,3 @@ func (s *Server) dispatchDiscussionEntry(discussionID, content string) {
 		}
 	}
 }
-

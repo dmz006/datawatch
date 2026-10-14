@@ -23,11 +23,11 @@ type AssistRequest struct {
 
 // AssistResponse mirrors AskResponse plus the resolved backend/model.
 type AssistResponse struct {
-	Backend     string `json:"backend"`
-	Model       string `json:"model,omitempty"`
-	Answer      string `json:"answer"`
-	DurationMs  int64  `json:"duration_ms"`
-	UsedAssist  bool   `json:"used_assist"`
+	Backend    string `json:"backend"`
+	Model      string `json:"model,omitempty"`
+	Answer     string `json:"answer"`
+	DurationMs int64  `json:"duration_ms"`
+	UsedAssist bool   `json:"used_assist"`
 }
 
 func (s *Server) handleAssist(w http.ResponseWriter, r *http.Request) {

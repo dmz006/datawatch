@@ -71,7 +71,7 @@ func TestBL331_ChannelRoutingConfigSet(t *testing.T) {
 			http.Error(w, "unexpected", 404)
 			return
 		}
-		json.NewDecoder(r.Body).Decode(&gotBody) //nolint:errcheck
+		json.NewDecoder(r.Body).Decode(&gotBody)                             //nolint:errcheck
 		json.NewEncoder(w).Encode(map[string]any{"rules": gotBody["rules"]}) //nolint:errcheck
 	}))
 	defer srv.Close()

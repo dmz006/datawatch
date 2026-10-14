@@ -82,13 +82,14 @@ func (s *Server) handleObserverEnvelopes(w http.ResponseWriter, r *http.Request)
 // GET /api/observer/envelopes/all-peers
 //
 // Returns:
-//   {
-//     "by_peer": {
-//       "local":      [Envelope, ...],
-//       "<peer-1>":   [Envelope, ...],
-//       ...
-//     }
-//   }
+//
+//	{
+//	  "by_peer": {
+//	    "local":      [Envelope, ...],
+//	    "<peer-1>":   [Envelope, ...],
+//	    ...
+//	  }
+//	}
 //
 // Each Envelope's Callers includes any cross-peer attributions: a
 // session on peer-A talking to ollama on peer-B will appear on

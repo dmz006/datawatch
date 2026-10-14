@@ -42,13 +42,15 @@ func (s *Server) SetTranscriber(t transcribeSurface) { s.transcriber = t }
 // handleVoiceTranscribe implements POST /api/voice/transcribe.
 //
 // Accepts multipart/form-data with fields:
-//   audio       required — opus/ogg/webm blob (mono, 16 kHz preferred)
-//   session_id  optional — if present the result auto-replies
-//   auto_exec   optional — "true"/"1" runs a recognized command
-//   ts_client   optional — unix_ms for latency telemetry
+//
+//	audio       required — opus/ogg/webm blob (mono, 16 kHz preferred)
+//	session_id  optional — if present the result auto-replies
+//	auto_exec   optional — "true"/"1" runs a recognized command
+//	ts_client   optional — unix_ms for latency telemetry
 //
 // Response (200):
-//   { transcript, confidence, action, session_id, latency_ms }
+//
+//	{ transcript, confidence, action, session_id, latency_ms }
 //
 // Confidence is whisper-impl-dependent — we surface a conservative
 // 1.0 placeholder; a future Whisper upgrade can populate it from
@@ -153,11 +155,11 @@ func (s *Server) handleVoiceTranscribe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := map[string]interface{}{
-		"transcript":   transcript,
-		"confidence":   1.0, // whisper CLI doesn't surface per-word; placeholder
-		"action":       action,
-		"session_id":   sessionID,
-		"latency_ms":   time.Since(start).Milliseconds(),
+		"transcript": transcript,
+		"confidence": 1.0, // whisper CLI doesn't surface per-word; placeholder
+		"action":     action,
+		"session_id": sessionID,
+		"latency_ms": time.Since(start).Milliseconds(),
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(resp)
@@ -225,8 +227,8 @@ func silentWAV1Sec() []byte {
 	buf = append(buf, 'R', 'I', 'F', 'F')
 	put32(uint32(36 + dataSize))
 	buf = append(buf, 'W', 'A', 'V', 'E', 'f', 'm', 't', ' ')
-	put32(16)               // fmt chunk size
-	put16(1)                // PCM
+	put32(16) // fmt chunk size
+	put16(1)  // PCM
 	put16(numChannels)
 	put32(sampleRate)
 	put32(byteRate)
@@ -254,4 +256,3 @@ func classifyVoiceAction(transcript string) string {
 	}
 	return "none"
 }
-

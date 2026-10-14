@@ -321,9 +321,9 @@ func (s *Server) handleDiscussionWrite(w http.ResponseWriter, r *http.Request, i
 	}
 
 	var body struct {
-		Content      string `json:"content"`
-		Summary      string `json:"summary"`
-		Role         string `json:"role"`
+		Content string `json:"content"`
+		Summary string `json:"summary"`
+		Role    string `json:"role"`
 		// T42b: loop-prevention fields set by peer syncs.
 		OriginPeer   string `json:"origin_peer,omitempty"`
 		OriginWALSeq int    `json:"origin_wal_seq,omitempty"`

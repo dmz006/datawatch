@@ -51,7 +51,7 @@ func TestHandleAgentAudit_HappyPath(t *testing.T) {
 		t.Fatalf("status=%d body=%s", rr.Code, rr.Body.String())
 	}
 	var body struct {
-		Path   string             `json:"path"`
+		Path   string              `json:"path"`
 		Events []agents.AuditEvent `json:"events"`
 	}
 	_ = json.NewDecoder(rr.Body).Decode(&body)

@@ -12,10 +12,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/dmz006/datawatch/internal/secfile"
 	"io"
 	"net/http"
 	"os"
-	"github.com/dmz006/datawatch/internal/secfile"
 	"path/filepath"
 	"sync"
 	"time"
@@ -54,12 +54,12 @@ var ErrBuiltin = errors.New("server is seeded from config and cannot be modified
 
 // Entry is a single remote datawatch instance in the registry.
 type Entry struct {
-	Name      string    `json:"name"`
-	URL       string    `json:"url"`
-	Token     string    `json:"token,omitempty"`
-	Label     string    `json:"label,omitempty"`
-	Enabled   bool      `json:"enabled"`
-	Builtin   bool      `json:"builtin,omitempty"` // seeded from YAML — read-only
+	Name    string `json:"name"`
+	URL     string `json:"url"`
+	Token   string `json:"token,omitempty"`
+	Label   string `json:"label,omitempty"`
+	Enabled bool   `json:"enabled"`
+	Builtin bool   `json:"builtin,omitempty"` // seeded from YAML — read-only
 	// BL316 — federation peer extensions.
 	// Federated marks entries added via /api/federation/peers (vs plain multi-server entries).
 	// AuthType is wire-ready for SPIFFE/SPIRE: "token" (default) | "spiffe".
@@ -75,8 +75,8 @@ type Entry struct {
 	// other peer keeps full verification). Default false. OK for a
 	// self-signed/local-dev peer on a trusted network; document the risk.
 	TLSSkipVerify bool      `json:"tls_skip_verify,omitempty"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 	// SEC-014 — populated only by Redacted(), never persisted or set from
 	// an inbound request body. TokenPrefix is the first 4 hex chars, enough
 	// for an operator to recognize which token is in use without being

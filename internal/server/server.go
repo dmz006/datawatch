@@ -26,7 +26,6 @@ import (
 	"github.com/dmz006/datawatch/internal/alerts"
 	"github.com/dmz006/datawatch/internal/apns"
 	"github.com/dmz006/datawatch/internal/audit"
-	"github.com/dmz006/datawatch/internal/secrets"
 	"github.com/dmz006/datawatch/internal/auth"
 	"github.com/dmz006/datawatch/internal/compute"
 	"github.com/dmz006/datawatch/internal/config"
@@ -40,6 +39,7 @@ import (
 	"github.com/dmz006/datawatch/internal/plugins"
 	"github.com/dmz006/datawatch/internal/profile"
 	"github.com/dmz006/datawatch/internal/proxy"
+	"github.com/dmz006/datawatch/internal/secrets"
 	"github.com/dmz006/datawatch/internal/server/multiserver"
 	"github.com/dmz006/datawatch/internal/session"
 	"github.com/dmz006/datawatch/internal/stats"
@@ -338,8 +338,8 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/cooldown", api.handleCooldown)                                     // BL30
 	apiMux.HandleFunc("/api/audit", api.handleAudit)                                           // BL9
 	apiMux.HandleFunc("/api/audit/access", api.handleAuditAccess)                              // GH#201
-	apiMux.HandleFunc("/api/secrets/service-tokens", api.handleSecretServiceTokens)             // GH#203 (list + mint)
-	apiMux.HandleFunc("/api/secrets/service-tokens/", api.handleSecretServiceTokens)            // GH#203 (revoke by name)
+	apiMux.HandleFunc("/api/secrets/service-tokens", api.handleSecretServiceTokens)            // GH#203 (list + mint)
+	apiMux.HandleFunc("/api/secrets/service-tokens/", api.handleSecretServiceTokens)           // GH#203 (revoke by name)
 	apiMux.HandleFunc("/api/secrets/", api.handleSecrets)                                      // BL242
 	apiMux.HandleFunc("/api/secrets", api.handleSecrets)                                       // BL242 (list + create)
 	apiMux.HandleFunc("/api/docs/", api.handleDocs)                                            // BL274 (v6.16.0)
@@ -453,7 +453,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/commands", api.handleCommands)
 	apiMux.HandleFunc("/api/filters", api.handleFilters)
 	apiMux.HandleFunc("/api/alerts/aggregated", api.handleAggregatedAlerts) // BL312 S5
-	apiMux.HandleFunc("/api/alerts/create", api.handleAlertCreate) // GH#201 Phase 5
+	apiMux.HandleFunc("/api/alerts/create", api.handleAlertCreate)          // GH#201 Phase 5
 	apiMux.HandleFunc("/api/alerts", api.handleAlerts)
 	apiMux.HandleFunc("/api/capacity", api.handleCapacity) // admission ledger: pools, holders, wait queue
 	apiMux.HandleFunc("/api/channel/reply", api.handleChannelReply)

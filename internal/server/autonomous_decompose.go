@@ -54,8 +54,8 @@ type decomposeJob struct {
 	mu       sync.RWMutex
 	prdID    string
 	status   decomposeJobStatus
-	progress int          // stories yielded so far
-	total    int          // total expected (0 = unknown until complete)
+	progress int // stories yielded so far
+	total    int // total expected (0 = unknown until complete)
 	stories  []decomposeStory
 	errMsg   string
 	events   []decomposeEvent // append-only replay log

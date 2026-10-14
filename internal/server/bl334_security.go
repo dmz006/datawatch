@@ -315,8 +315,14 @@ func secureWipe(path string) error {
 	}
 
 	passes := []func(int64) []byte{
-		func(n int64) []byte { return make([]byte, n) },           // zeros
-		func(n int64) []byte { b := make([]byte, n); for i := range b { b[i] = 0xFF }; return b }, // ones
+		func(n int64) []byte { return make([]byte, n) }, // zeros
+		func(n int64) []byte {
+			b := make([]byte, n)
+			for i := range b {
+				b[i] = 0xFF
+			}
+			return b
+		}, // ones
 		func(n int64) []byte {
 			b := make([]byte, n)
 			_, _ = io.ReadFull(rand.Reader, b)

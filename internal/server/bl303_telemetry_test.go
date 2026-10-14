@@ -178,9 +178,9 @@ func TestTelemetryScalarFields(t *testing.T) {
 	sid := "test-session"
 
 	s.record(sid, makeEv("PostToolUse", "Read", map[string]any{
-		"current_task":     "implement feature",
-		"file":             "main.go",
-		"progress":         float64(42),
+		"current_task":      "implement feature",
+		"file":              "main.go",
+		"progress":          float64(42),
 		"parent_session_id": "parent-abc",
 		"sprint": map[string]any{
 			"name": "Sprint 1",

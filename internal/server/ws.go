@@ -8,10 +8,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gorilla/websocket"
 	"github.com/dmz006/datawatch/internal/alerts"
 	"github.com/dmz006/datawatch/internal/session"
 	"github.com/dmz006/datawatch/internal/stats"
+	"github.com/gorilla/websocket"
 )
 
 // MessageType for WebSocket protocol
@@ -19,19 +19,19 @@ type MessageType string
 
 const (
 	// Server → Client
-	MsgSessions     MessageType = "sessions"      // full session list
-	MsgSessionState MessageType = "session_state" // one session updated
-	MsgOutput       MessageType = "output"        // new output lines
-	MsgNeedsInput   MessageType = "needs_input"   // session waiting for input
-	MsgNotification  MessageType = "notification"   // general text notification
-	MsgError         MessageType = "error"          // error message
-	MsgAlert         MessageType = "alert"          // system alert from filter engine
-	MsgChannelReply  MessageType = "channel_reply"  // reply from claude via MCP channel
-	MsgChannelNotify MessageType = "channel_notify" // notification from MCP channel (e.g. permission relay)
-	MsgChannelReady  MessageType = "channel_ready"  // MCP channel server connected and ready
-	MsgChatMessage   MessageType = "chat_message"   // structured chat message (OpenWebUI interactive)
-	MsgResponse      MessageType = "response"       // last LLM response captured (for /copy, alerts)
-	MsgSessionAware  MessageType = "session_aware"  // session awareness broadcast (BL76)
+	MsgSessions       MessageType = "sessions"        // full session list
+	MsgSessionState   MessageType = "session_state"   // one session updated
+	MsgOutput         MessageType = "output"          // new output lines
+	MsgNeedsInput     MessageType = "needs_input"     // session waiting for input
+	MsgNotification   MessageType = "notification"    // general text notification
+	MsgError          MessageType = "error"           // error message
+	MsgAlert          MessageType = "alert"           // system alert from filter engine
+	MsgChannelReply   MessageType = "channel_reply"   // reply from claude via MCP channel
+	MsgChannelNotify  MessageType = "channel_notify"  // notification from MCP channel (e.g. permission relay)
+	MsgChannelReady   MessageType = "channel_ready"   // MCP channel server connected and ready
+	MsgChatMessage    MessageType = "chat_message"    // structured chat message (OpenWebUI interactive)
+	MsgResponse       MessageType = "response"        // last LLM response captured (for /copy, alerts)
+	MsgSessionAware   MessageType = "session_aware"   // session awareness broadcast (BL76)
 	MsgUpdateProgress MessageType = "update_progress" // v4.0.6 — self-update download progress {version, downloaded, total, phase}
 	MsgPRDUpdate      MessageType = "prd_update"      // v5.24.0 — autonomous PRD save broadcast {prd_id, status} so PWA Autonomous tab refreshes without manual reload
 	MsgHookUpdate     MessageType = "hook_update"     // BL303 S3 — session hook state changed {session_id, board} so Status tab refreshes in real-time
@@ -77,7 +77,7 @@ type NeedsInputData struct {
 // ChatMessageData carries a structured chat message for chat-mode sessions.
 type ChatMessageData struct {
 	SessionID string `json:"session_id"`
-	Role      string `json:"role"`      // "user", "assistant", "system"
+	Role      string `json:"role"` // "user", "assistant", "system"
 	Content   string `json:"content"`
 	Streaming bool   `json:"streaming"` // true = partial chunk, false = complete message
 }
@@ -110,12 +110,12 @@ type SubscribeData struct {
 
 // client represents one WebSocket connection
 type client struct {
-	hub        *Hub
-	conn       *websocket.Conn
-	send       chan []byte
-	closed     bool                                  // true after send channel is closed
-	subscribed     map[string]bool                   // session IDs this client is subscribed to
-	captureCancels map[string]context.CancelFunc     // per-session screen capture cancel funcs
+	hub            *Hub
+	conn           *websocket.Conn
+	send           chan []byte
+	closed         bool                          // true after send channel is closed
+	subscribed     map[string]bool               // session IDs this client is subscribed to
+	captureCancels map[string]context.CancelFunc // per-session screen capture cancel funcs
 	mu             sync.Mutex
 }
 

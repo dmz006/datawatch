@@ -139,8 +139,8 @@ func TestGH201Phase5_CreateAlert_CapabilityEnforced(t *testing.T) {
 	capTest(t, s,
 		http.MethodPost, "/api/alerts/create", body,
 		s.handleAlertCreate,
-		http.StatusCreated,    // admin: unrestricted
-		http.StatusCreated,    // full-control: has every capability including the new one
-		http.StatusForbidden,  // read-only: CapAlertsRead/List only, never granted alerts:write
+		http.StatusCreated,   // admin: unrestricted
+		http.StatusCreated,   // full-control: has every capability including the new one
+		http.StatusForbidden, // read-only: CapAlertsRead/List only, never granted alerts:write
 	)
 }

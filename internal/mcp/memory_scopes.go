@@ -175,12 +175,12 @@ func (s *Server) handleMemoryArchiveImport(_ context.Context, req mcpsdk.CallToo
 		}
 	}
 	body, _ := json.Marshal(map[string]any{
-		"project_dir":    req.GetString("project", ""),
-		"source_prd_id":  req.GetString("source_prd_id", ""),
-		"target_prd_id":  req.GetString("target_prd_id", ""),
-		"role_filter":    roleFilter,
-		"max":            int(req.GetFloat("max", 0)),
-		"dry_run":        req.GetBool("dry_run", false),
+		"project_dir":   req.GetString("project", ""),
+		"source_prd_id": req.GetString("source_prd_id", ""),
+		"target_prd_id": req.GetString("target_prd_id", ""),
+		"role_filter":   roleFilter,
+		"max":           int(req.GetFloat("max", 0)),
+		"dry_run":       req.GetBool("dry_run", false),
 	})
 	out, err := s.proxyJSON("POST", "/api/memory/scopes/archive-import", body)
 	if err != nil {

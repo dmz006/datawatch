@@ -153,8 +153,8 @@ func TestBL354_MissingBothIDs(t *testing.T) {
 			args["text"] = "hi"
 			return invoke(t, s.handleSendInput, args)
 		},
-		"kill_session":    func(args map[string]any) string { return invoke(t, s.handleKillSession, args) },
-		"session_output":  func(args map[string]any) string { return invoke(t, s.handleSessionOutput, args) },
+		"kill_session":     func(args map[string]any) string { return invoke(t, s.handleKillSession, args) },
+		"session_output":   func(args map[string]any) string { return invoke(t, s.handleSessionOutput, args) },
 		"session_timeline": func(args map[string]any) string { return invoke(t, s.handleSessionTimeline, args) },
 		"session_children": func(args map[string]any) string { return invoke(t, s.handleSessionChildren, args) },
 	} {

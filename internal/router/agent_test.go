@@ -64,7 +64,7 @@ func TestParse_AgentCommands(t *testing.T) {
 // fakeAgentDriver registers as docker kind for router integration tests.
 type fakeAgentDriver struct{}
 
-func (fakeAgentDriver) Kind() string                                           { return "docker" }
+func (fakeAgentDriver) Kind() string { return "docker" }
 func (fakeAgentDriver) Spawn(_ context.Context, a *agents.Agent) error {
 	a.DriverInstance = "fake-" + a.ID
 	return nil

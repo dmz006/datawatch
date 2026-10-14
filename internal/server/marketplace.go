@@ -28,19 +28,19 @@ import (
 // MarketplaceCatalogEntry — one model in the embedded curated catalog.
 // Each entry can have multiple tag variants (e.g. llama3.1 → :8b / :70b).
 type MarketplaceCatalogEntry struct {
-	Name        string                  `json:"name"`         // e.g. "llama3.1"
-	Description string                  `json:"description"`  // short summary
+	Name        string                  `json:"name"`        // e.g. "llama3.1"
+	Description string                  `json:"description"` // short summary
 	License     string                  `json:"license,omitempty"`
 	URL         string                  `json:"url,omitempty"` // ollama.com/library/<name>
 	Tags        []MarketplaceCatalogTag `json:"tags"`
 }
 
 type MarketplaceCatalogTag struct {
-	Tag         string `json:"tag"`               // e.g. "8b", "70b", "8b-instruct-q4_K_M"
-	SizeGB      float64 `json:"size_gb"`          // disk size estimate
-	MinRAMGB    int    `json:"min_ram_gb"`        // estimated RAM floor for inference
-	MinVRAMGB   int    `json:"min_vram_gb,omitempty"` // estimated VRAM floor (0 = CPU-only ok)
-	Description string `json:"description,omitempty"`
+	Tag         string  `json:"tag"`                   // e.g. "8b", "70b", "8b-instruct-q4_K_M"
+	SizeGB      float64 `json:"size_gb"`               // disk size estimate
+	MinRAMGB    int     `json:"min_ram_gb"`            // estimated RAM floor for inference
+	MinVRAMGB   int     `json:"min_vram_gb,omitempty"` // estimated VRAM floor (0 = CPU-only ok)
+	Description string  `json:"description,omitempty"`
 }
 
 // embeddedOllamaCatalog — minimal curated list. Refresh from ollama.com
@@ -105,8 +105,8 @@ type PullTask struct {
 	ID         string    `json:"id"`
 	NodeName   string    `json:"node_name"`
 	Model      string    `json:"model"`
-	Status     string    `json:"status"`              // pending | in_progress | done | failed
-	Progress   float64   `json:"progress"`            // 0..1
+	Status     string    `json:"status"`   // pending | in_progress | done | failed
+	Progress   float64   `json:"progress"` // 0..1
 	BytesTotal int64     `json:"bytes_total,omitempty"`
 	BytesDone  int64     `json:"bytes_done,omitempty"`
 	Error      string    `json:"error,omitempty"`
@@ -162,9 +162,9 @@ func (s *Server) handleMarketplaceCatalog(w http.ResponseWriter, r *http.Request
 	// embedded catalog is the only source. Operator-confirmed in
 	// alpha.33 design Q2: hybrid with manual-only refresh.
 	writeJSONOK(w, map[string]any{
-		"catalog":      embeddedOllamaCatalog,
-		"source":       "embedded",
-		"refreshable":  false, // POST v7.0 #279 will flip this to true
+		"catalog":     embeddedOllamaCatalog,
+		"source":      "embedded",
+		"refreshable": false, // POST v7.0 #279 will flip this to true
 	})
 }
 
@@ -262,7 +262,7 @@ func (s *Server) handleComputeNodeModelDelete(w http.ResponseWriter, r *http.Req
 	req, _ := http.NewRequest(http.MethodDelete, strings.TrimRight(n.Address, "/")+"/api/delete", strings.NewReader(string(body)))
 	req.Header.Set("Content-Type", "application/json")
 	client := &http.Client{
-		Timeout: 30 * time.Second,
+		Timeout:   30 * time.Second,
 		Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}, // #nosec G402
 	}
 	resp, err := client.Do(req)
@@ -291,7 +291,7 @@ func runOllamaPull(taskID, addr, model string) {
 	}
 	req.Header.Set("Content-Type", "application/json")
 	client := &http.Client{
-		Timeout:   0, // pulls can be very long
+		Timeout:   0,                                                                       // pulls can be very long
 		Transport: &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}, // #nosec G402
 	}
 	resp, err := client.Do(req)

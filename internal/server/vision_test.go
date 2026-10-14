@@ -262,7 +262,7 @@ func TestVisionExtToMIME(t *testing.T) {
 		{".gif", "image/gif"},
 		{".webp", "image/webp"},
 		{".bmp", "image/jpeg"}, // unknown → fallback
-		{"", "image/jpeg"},    // empty → fallback
+		{"", "image/jpeg"},     // empty → fallback
 	}
 	for _, c := range cases {
 		got := extToMIME(c.ext)

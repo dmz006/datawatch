@@ -24,17 +24,17 @@ import (
 
 // FederationResponse mirrors the shape promised in issue #3.
 type FederationResponse struct {
-	Primary  []*session.Session             `json:"primary"`
-	Proxied  map[string][]*session.Session  `json:"proxied"`
-	Errors   map[string]string              `json:"errors,omitempty"`
+	Primary []*session.Session            `json:"primary"`
+	Proxied map[string][]*session.Session `json:"proxied"`
+	Errors  map[string]string             `json:"errors,omitempty"`
 }
 
 // handleFederationSessions implements the endpoint. Query params:
 //
-//   since=<unix_ms>           only return sessions with activity
-//                             newer than the supplied timestamp
-//   include=proxied           include proxied children (default true)
-//   states=<csv>              filter by state set ("running,waiting")
+//	since=<unix_ms>           only return sessions with activity
+//	                          newer than the supplied timestamp
+//	include=proxied           include proxied children (default true)
+//	states=<csv>              filter by state set ("running,waiting")
 //
 // Proxied calls run in parallel with a 10s per-server timeout; per-
 // server failures surface in `errors` without aborting the overall

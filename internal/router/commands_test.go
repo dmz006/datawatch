@@ -136,9 +136,10 @@ func TestParse_Kill(t *testing.T) {
 }
 
 // F10 sprint 3.6 — bind grammar:
-//   "bind <session> <agent>"   → bind
-//   "bind <session> -"         → unbind (explicit)
-//   "bind <session>"           → unbind (implicit, empty 2nd arg)
+//
+//	"bind <session> <agent>"   → bind
+//	"bind <session> -"         → unbind (explicit)
+//	"bind <session>"           → unbind (implicit, empty 2nd arg)
 func TestParse_Bind(t *testing.T) {
 	cases := []struct {
 		in      string
@@ -299,15 +300,15 @@ func TestParse_SessionUnknownVerb(t *testing.T) {
 
 func TestParse_BL353_ScheduleCancelByName(t *testing.T) {
 	tests := []struct {
-		input        string
-		wantType     CommandType
-		wantText     string
+		input         string
+		wantType      CommandType
+		wantText      string
 		wantSchedName string
 	}{
 		{
-			input:        "schedule cancel name=daily-health",
-			wantType:     CmdSchedule,
-			wantText:     "cancel daily-health",
+			input:         "schedule cancel name=daily-health",
+			wantType:      CmdSchedule,
+			wantText:      "cancel daily-health",
 			wantSchedName: "daily-health",
 		},
 		{
@@ -375,17 +376,17 @@ func TestTruncate(t *testing.T) {
 
 func TestParseScheduleSpawnParams(t *testing.T) {
 	tests := []struct {
-		input       string
-		wantTask    string
-		wantDir     string
-		wantBackend string
-		wantLLMRef  string
-		wantModel   string
-		wantEffort  string
-		wantCron    string
-		wantName    string
-		wantSessName string
-		wantOneShot bool
+		input         string
+		wantTask      string
+		wantDir       string
+		wantBackend   string
+		wantLLMRef    string
+		wantModel     string
+		wantEffort    string
+		wantCron      string
+		wantName      string
+		wantSessName  string
+		wantOneShot   bool
 		wantEphemeral bool
 	}{
 		{

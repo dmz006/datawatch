@@ -10,34 +10,34 @@ import (
 type CommandType string
 
 const (
-	CmdNew         CommandType = "new"
-	CmdList        CommandType = "list"
-	CmdStatus      CommandType = "status"
-	CmdSend        CommandType = "send"
-	CmdKill        CommandType = "kill"
-	CmdTail        CommandType = "tail"
-	CmdAttach      CommandType = "attach"
-	CmdHistory     CommandType = "history"
-	CmdSetup       CommandType = "setup"
-	CmdVersion     CommandType = "version"
-	CmdUpdateCheck CommandType = "update"
-	CmdRestart     CommandType = "restart"
+	CmdNew           CommandType = "new"
+	CmdList          CommandType = "list"
+	CmdStatus        CommandType = "status"
+	CmdSend          CommandType = "send"
+	CmdKill          CommandType = "kill"
+	CmdTail          CommandType = "tail"
+	CmdAttach        CommandType = "attach"
+	CmdHistory       CommandType = "history"
+	CmdSetup         CommandType = "setup"
+	CmdVersion       CommandType = "version"
+	CmdUpdateCheck   CommandType = "update"
+	CmdRestart       CommandType = "restart"
 	CmdSchedule      CommandType = "schedule"
 	CmdScheduleSpawn CommandType = "schedule_spawn" // GH#128
-	CmdAlerts      CommandType = "alerts"
-	CmdStats       CommandType = "stats"
-	CmdCapacity    CommandType = "capacity"
-	CmdConfigure   CommandType = "configure"
-	CmdCopy        CommandType = "copy"
-	CmdPrompt      CommandType = "prompt"
-	CmdRemember    CommandType = "remember"
-	CmdRecall      CommandType = "recall"
-	CmdMemories    CommandType = "memories"
-	CmdForget      CommandType = "forget"
-	CmdLearnings   CommandType = "learnings"
-	CmdKG          CommandType = "kg"
-	CmdMemReindex  CommandType = "mem_reindex"
-	CmdResearch    CommandType = "research"
+	CmdAlerts        CommandType = "alerts"
+	CmdStats         CommandType = "stats"
+	CmdCapacity      CommandType = "capacity"
+	CmdConfigure     CommandType = "configure"
+	CmdCopy          CommandType = "copy"
+	CmdPrompt        CommandType = "prompt"
+	CmdRemember      CommandType = "remember"
+	CmdRecall        CommandType = "recall"
+	CmdMemories      CommandType = "memories"
+	CmdForget        CommandType = "forget"
+	CmdLearnings     CommandType = "learnings"
+	CmdKG            CommandType = "kg"
+	CmdMemReindex    CommandType = "mem_reindex"
+	CmdResearch      CommandType = "research"
 	// v5.27.0 — mempalace alignment surfaces over chat (parity rule).
 	//   "memory pin <id>"                — toggle pinned flag
 	//   "memory sweep"                   — dry-run similarity-stale eviction
@@ -45,52 +45,52 @@ const (
 	//   "memory spellcheck <text>"       — return suggestions
 	//   "memory extract <text>"          — return SVO triples
 	//   "memory schema"                  — schema_version table value
-	CmdMemPin      CommandType = "mem_pin"
-	CmdMemSweep    CommandType = "mem_sweep"
-	CmdMemSpell    CommandType = "mem_spell"
-	CmdMemExtract  CommandType = "mem_extract"
-	CmdMemSchema   CommandType = "mem_schema"
+	CmdMemPin     CommandType = "mem_pin"
+	CmdMemSweep   CommandType = "mem_sweep"
+	CmdMemSpell   CommandType = "mem_spell"
+	CmdMemExtract CommandType = "mem_extract"
+	CmdMemSchema  CommandType = "mem_schema"
 	// v5.27.2 — operator-asked subsystem reload over chat. Mirrors
 	// the new POST /api/reload?subsystem=<name> + the CLI/MCP
 	// surfaces. Empty subsystem = full config reload.
-	CmdReload       CommandType = "reload"
+	CmdReload CommandType = "reload"
 	// v5.27.10 (BL216) — channel bridge introspection over chat:
 	//   "channel info" — daemon's resolved bridge kind/path + stale .mcp.json
-	CmdChannelInfo        CommandType = "channel_info"
+	CmdChannelInfo CommandType = "channel_info"
 	// BL362 — channel bridge diagnostics over chat:
 	//   "channel diagnostics" — per-session ports, live /health probes, hints
 	CmdChannelDiagnostics CommandType = "channel_diagnostics"
-	CmdPipeline    CommandType = "pipeline"
-	CmdHelp        CommandType = "help"
+	CmdPipeline           CommandType = "pipeline"
+	CmdHelp               CommandType = "help"
 	// F10 sprint 2: read-only profile access over chat. Create/update/
 	// delete deliberately NOT exposed here — too risky for a chat channel
 	// to mint profiles; those stay on the API/MCP/CLI/UI paths.
-	CmdProfile     CommandType = "profile"
+	CmdProfile CommandType = "profile"
 	// F10 sprint 3: agent operations over chat. Spawn + list + show +
 	// logs + kill all exposed — a typo here is recoverable (kill the
 	// wrong agent, try again), unlike accidentally editing a profile.
-	CmdAgent       CommandType = "agent"
+	CmdAgent CommandType = "agent"
 	// F10 sprint 3.6: bind a session to a parent-spawned worker so
 	// reads forward through the agent reverse proxy. Pass agent_id
 	// of "" to unbind (we represent that on the wire as a literal
 	// "-" or empty 2nd token; both accepted by the parser).
-	CmdBind        CommandType = "bind"
+	CmdBind CommandType = "bind"
 	// BL93/BL94: orphan session reconciler + import.
 	//   "session reconcile"        — dry-run list of orphans
 	//   "session reconcile apply"  — import every orphan
 	//   "session import <id-or-dir>" — import a single dir
-	CmdSession     CommandType = "session"
+	CmdSession CommandType = "session"
 
 	// Sprint Sx2 (v3.7.3) — comm-channel parity for v3.5–v3.7 REST
 	// endpoints. The `rest` command pipes any HTTP verb+path through
 	// the local loopback so every REST surface is reachable from chat.
 	// Convenience shortcuts (cost / cooldown / audit / stale) pipe
 	// through the same dispatcher with curated paths.
-	CmdRest        CommandType = "rest"
-	CmdCost        CommandType = "cost"
-	CmdCooldown    CommandType = "cooldown"
-	CmdStale       CommandType = "stale"
-	CmdAudit       CommandType = "audit"
+	CmdRest     CommandType = "rest"
+	CmdCost     CommandType = "cost"
+	CmdCooldown CommandType = "cooldown"
+	CmdStale    CommandType = "stale"
+	CmdAudit    CommandType = "audit"
 
 	// BL172 (S11) — federated observer peers. List + show + register +
 	// delete a Shape B / C peer over chat. Mirror of the
@@ -101,7 +101,7 @@ const (
 	//   "peers <name> stats"          — last snapshot
 	//   "peers register <name>[ shape] [version]"
 	//   "peers delete <name>"
-	CmdPeers       CommandType = "peers"
+	CmdPeers CommandType = "peers"
 
 	// BL197 (v4.9.2) — autonomous PRD lifecycle over chat. Mirror of
 	// the /api/autonomous/prds/* REST surface so operators can run
@@ -115,7 +115,7 @@ const (
 	//   "autonomous learnings"
 	//   "autonomous create <spec…>"
 	// "prd" is also accepted as a shorter alias.
-	CmdAutonomous  CommandType = "autonomous"
+	CmdAutonomous CommandType = "autonomous"
 
 	// BL220-G4 — orchestrator graph lifecycle over chat.
 	//   "orchestrator"               → list graphs
@@ -359,22 +359,22 @@ const (
 
 // AgentVerb values set on a CmdAgent command.
 const (
-	AgentVerbSpawn  = "spawn"
-	AgentVerbList   = "list"
-	AgentVerbShow   = "show"
-	AgentVerbLogs   = "logs"
-	AgentVerbKill   = "kill"
-	AgentVerbAudit  = "audit" // BL107
+	AgentVerbSpawn = "spawn"
+	AgentVerbList  = "list"
+	AgentVerbShow  = "show"
+	AgentVerbLogs  = "logs"
+	AgentVerbKill  = "kill"
+	AgentVerbAudit = "audit" // BL107
 )
 
 // ProfileKind / ProfileVerb values set on a CmdProfile command.
 const (
-	ProfileKindProject          = "project"
-	ProfileKindCluster          = "cluster"
-	ProfileVerbList             = "list"
-	ProfileVerbShow             = "show"
-	ProfileVerbSmoke            = "smoke"
-	ProfileVerbAgentSettings    = "agent-settings" // BL251
+	ProfileKindProject       = "project"
+	ProfileKindCluster       = "cluster"
+	ProfileVerbList          = "list"
+	ProfileVerbShow          = "show"
+	ProfileVerbSmoke         = "smoke"
+	ProfileVerbAgentSettings = "agent-settings" // BL251
 )
 
 // Command is a parsed Signal message.
@@ -422,11 +422,11 @@ type Command struct {
 	BindAgentID string // empty means unbind
 
 	// BL93/BL94 — CmdSession fields.
-	SessionVerb           string // "reconcile" | "import" | "summarize" | "restart" | "guardrail-approve"
-	SessionArg            string // for reconcile: "apply" | ""; for import: the dir/id; for summarize: the session id; for guardrail-approve: session id
-	SessionRestartTask    string // BL359 — optional task override for "session restart"
-	SessionGuardrailName  string // GH#153 — guardrail name for "session guardrail-approve"
-	SessionGuardrailNote  string // GH#153 — optional operator note for "session guardrail-approve"
+	SessionVerb          string // "reconcile" | "import" | "summarize" | "restart" | "guardrail-approve"
+	SessionArg           string // for reconcile: "apply" | ""; for import: the dir/id; for summarize: the session id; for guardrail-approve: session id
+	SessionRestartTask   string // BL359 — optional task override for "session restart"
+	SessionGuardrailName string // GH#153 — guardrail name for "session guardrail-approve"
+	SessionGuardrailNote string // GH#153 — optional operator note for "session guardrail-approve"
 
 	// Sprint Sx2 — CmdRest fields.
 	//   Method:  GET | POST | PUT | DELETE
@@ -469,18 +469,18 @@ type Command struct {
 	ExitHookCooldown      int    // for add: cooldown seconds
 
 	// BL357 — CmdQueue fields.
-	QueueVerb        string // "push" | "claim" | "complete" | "fail" | "list"
-	QueueRole        string // for push/claim/list: role filter/target
-	QueueID          string // for complete/fail: item id
-	QueuePayload     string // for push: JSON payload string
-	QueueClaimedBy   string // for claim: session identifier
-	QueueLeaseSeconds int   // for claim: lease duration
-	QueueResult      string // for complete: JSON result string
-	QueueError       string // for fail: error message
-	QueueState       string // for list: state filter
+	QueueVerb         string // "push" | "claim" | "complete" | "fail" | "list"
+	QueueRole         string // for push/claim/list: role filter/target
+	QueueID           string // for complete/fail: item id
+	QueuePayload      string // for push: JSON payload string
+	QueueClaimedBy    string // for claim: session identifier
+	QueueLeaseSeconds int    // for claim: lease duration
+	QueueResult       string // for complete: JSON result string
+	QueueError        string // for fail: error message
+	QueueState        string // for list: state filter
 
 	// BL358 — CmdDiscussionSub fields.
-	DiscussionSubVerb        string // "subscribe" | "unsubscribe" | "list"
+	DiscussionSubVerb         string // "subscribe" | "unsubscribe" | "list"
 	DiscussionSubDiscussionID string // for subscribe/unsubscribe: discussion scope ID
 	DiscussionSubSessionName  string // for subscribe/unsubscribe: session name
 
@@ -494,12 +494,12 @@ type Command struct {
 
 // SessionVerb values.
 const (
-	SessionVerbReconcile       = "reconcile"
-	SessionVerbImport          = "import"
-	SessionVerbSummarize       = "summarize"
-	SessionVerbSelf            = "self"              // BL349
-	SessionVerbOrphaned        = "orphaned"          // BL350
-	SessionVerbRestart         = "restart"           // BL359
+	SessionVerbReconcile        = "reconcile"
+	SessionVerbImport           = "import"
+	SessionVerbSummarize        = "summarize"
+	SessionVerbSelf             = "self"              // BL349
+	SessionVerbOrphaned         = "orphaned"          // BL350
+	SessionVerbRestart          = "restart"           // BL359
 	SessionVerbGuardrailApprove = "guardrail-approve" // GH#153
 )
 
@@ -1159,12 +1159,16 @@ func Parse(text string) Command {
 
 	case strings.HasPrefix(lower, "research:") || strings.HasPrefix(lower, "research "):
 		rest := strings.TrimSpace(text[9:])
-		if strings.HasPrefix(lower, "research ") { rest = strings.TrimSpace(text[9:]) }
+		if strings.HasPrefix(lower, "research ") {
+			rest = strings.TrimSpace(text[9:])
+		}
 		return Command{Type: CmdResearch, Text: rest}
 
 	case strings.HasPrefix(lower, "pipeline:") || strings.HasPrefix(lower, "pipeline "):
 		sep := 9
-		if strings.HasPrefix(lower, "pipeline ") { sep = 9 }
+		if strings.HasPrefix(lower, "pipeline ") {
+			sep = 9
+		}
 		return Command{Type: CmdPipeline, Text: strings.TrimSpace(text[sep:])}
 
 	case lower == "help":
@@ -1458,12 +1462,13 @@ func Parse(text string) Command {
 
 // parseExitHookCommand parses an exit_hook command.
 // Formats:
-//   exit_hook list
-//   exit_hook add name=<n> action=restart [cooldown=<sec>]
-//   exit_hook add name=<n> action=notify notify_session=<s> [message=<m>]
-//   exit_hook delete id=<id>
-//   exit_hook enable id=<id>
-//   exit_hook disable id=<id>
+//
+//	exit_hook list
+//	exit_hook add name=<n> action=restart [cooldown=<sec>]
+//	exit_hook add name=<n> action=notify notify_session=<s> [message=<m>]
+//	exit_hook delete id=<id>
+//	exit_hook enable id=<id>
+//	exit_hook disable id=<id>
 func parseExitHookCommand(text string) Command {
 	parts := strings.Fields(text)
 	if len(parts) < 2 {

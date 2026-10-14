@@ -370,7 +370,9 @@ func TestGH201Phase4_Device_RegisterAndDelete_Audited_NeverLeaksToken(t *testing
 	if w.Code != http.StatusOK {
 		t.Fatalf("register: %d %s", w.Code, w.Body.String())
 	}
-	var resp struct{ DeviceID string `json:"device_id"` }
+	var resp struct {
+		DeviceID string `json:"device_id"`
+	}
 	_ = json.Unmarshal(w.Body.Bytes(), &resp)
 	if resp.DeviceID == "" {
 		t.Fatal("no device_id returned")

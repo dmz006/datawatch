@@ -49,10 +49,10 @@ func newCurrentStatusServer(t *testing.T, initialLog string, startOffset int64) 
 		t.Fatalf("NewManager: %v", err)
 	}
 	sess := &session.Session{
-		ID:              "ab01",
-		FullID:          "h-ab01",
-		LogFile:         logPath,
-		State:           session.StateRunning,
+		ID:               "ab01",
+		FullID:           "h-ab01",
+		LogFile:          logPath,
+		State:            session.StateRunning,
 		SummaryLogOffset: startOffset,
 	}
 	if err := sm.SaveSession(sess); err != nil {

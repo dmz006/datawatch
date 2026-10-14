@@ -246,11 +246,11 @@ func (s *Server) handleLLMTest(w http.ResponseWriter, r *http.Request, name stri
 	}
 	s.auditLLM(name, "llm_test")
 	writeJSONOK(w, map[string]any{
-		"text":         resp.Text,
-		"used_node":    resp.UsedNode,
-		"used_model":   resp.UsedModel,
-		"backend":      resp.Backend,
-		"duration_ms":  resp.DurationMs,
+		"text":        resp.Text,
+		"used_node":   resp.UsedNode,
+		"used_model":  resp.UsedModel,
+		"backend":     resp.Backend,
+		"duration_ms": resp.DurationMs,
 	})
 }
 

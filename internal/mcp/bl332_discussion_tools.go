@@ -242,4 +242,3 @@ func (s *Server) handleDiscussionParticipants(_ context.Context, req mcpsdk.Call
 	}
 	return textOK(string(out)), nil
 }
-

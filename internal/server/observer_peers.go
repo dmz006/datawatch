@@ -283,10 +283,10 @@ func (s *Server) handlePeerPush(w http.ResponseWriter, r *http.Request, name str
 		return
 	}
 	var body struct {
-		Shape    string                   `json:"shape"`
-		PeerName string                   `json:"peer_name"`
-		Snapshot *observer.StatsResponse  `json:"snapshot"`
-		Chain    []string                 `json:"chain,omitempty"`
+		Shape    string                  `json:"shape"`
+		PeerName string                  `json:"peer_name"`
+		Snapshot *observer.StatsResponse `json:"snapshot"`
+		Chain    []string                `json:"chain,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)

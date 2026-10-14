@@ -111,4 +111,3 @@ func (r *Router) handleExitHookSetEnabled(cmd Command, enabled bool) {
 	}
 	r.send(fmt.Sprintf("[exit_hook] hook %s %s.", cmd.ExitHookID, state))
 }
-

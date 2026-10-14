@@ -33,8 +33,8 @@ import (
 // publish without importing internal types.
 type PushEvent struct {
 	ID       string         `json:"id"`
-	Time     int64          `json:"time"`     // unix seconds (ntfy-compat)
-	Event    string         `json:"event"`    // "message" | "open" | "keepalive"
+	Time     int64          `json:"time"`  // unix seconds (ntfy-compat)
+	Event    string         `json:"event"` // "message" | "open" | "keepalive"
 	Topic    string         `json:"topic"`
 	Title    string         `json:"title,omitempty"`
 	Message  string         `json:"message"`
@@ -59,19 +59,19 @@ type pushKeys struct {
 
 // pushRegistration — UnifiedPush mobile-app endpoint registration.
 type pushRegistration struct {
-	ID           string     `json:"id"`
-	Endpoint     string     `json:"endpoint"`
-	ClientID     string     `json:"client_id,omitempty"`
-	Token        string     `json:"token,omitempty"` // bearer for the endpoint POST
-	Keys         *pushKeys  `json:"keys,omitempty"`  // BL330: P256DH/Auth for web-push encryption
-	RegisteredAt time.Time  `json:"registered_at"`
+	ID           string    `json:"id"`
+	Endpoint     string    `json:"endpoint"`
+	ClientID     string    `json:"client_id,omitempty"`
+	Token        string    `json:"token,omitempty"` // bearer for the endpoint POST
+	Keys         *pushKeys `json:"keys,omitempty"`  // BL330: P256DH/Auth for web-push encryption
+	RegisteredAt time.Time `json:"registered_at"`
 }
 
 type pushHub struct {
 	mu          sync.RWMutex
 	subscribers map[string]map[string]*pushClient // topic → clientID → client
-	registered  []pushRegistration                 // mobile push endpoints
-	pushCfg     config.PushConfig                  // BL394 -- kept live via setPushConfig
+	registered  []pushRegistration                // mobile push endpoints
+	pushCfg     config.PushConfig                 // BL394 -- kept live via setPushConfig
 }
 
 var globalPushHub = &pushHub{subscribers: map[string]map[string]*pushClient{}}

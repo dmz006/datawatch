@@ -177,10 +177,10 @@ func (d *SamplingDispatcher) Sample(ctx context.Context, req SamplingRequest) (*
 	}
 
 	res := &SamplingResult{
-		Trigger:    req.Trigger,
-		Content:    content,
-		LatencyMs:  latency,
-		Timestamp:  time.Now(),
+		Trigger:   req.Trigger,
+		Content:   content,
+		LatencyMs: latency,
+		Timestamp: time.Now(),
 	}
 	if raw != nil {
 		res.Model = raw.Model

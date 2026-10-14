@@ -9,7 +9,6 @@ import (
 	"github.com/dmz006/datawatch/internal/federation"
 )
 
-
 func (s *Server) dashLayoutPath() string {
 	home, _ := os.UserHomeDir()
 	return filepath.Join(home, ".datawatch", "dashboard-layout.json")

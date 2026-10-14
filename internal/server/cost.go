@@ -38,11 +38,11 @@ func (s *Server) handleCostSummary(w http.ResponseWriter, r *http.Request) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"session_id":    sess.ID,
-			"backend":       sess.BackendFamily,
-			"tokens_in":     sess.TokensIn,
-			"tokens_out":    sess.TokensOut,
-			"est_cost_usd":  sess.EstCostUSD,
+			"session_id":   sess.ID,
+			"backend":      sess.BackendFamily,
+			"tokens_in":    sess.TokensIn,
+			"tokens_out":   sess.TokensOut,
+			"est_cost_usd": sess.EstCostUSD,
 		})
 		return
 	}
@@ -54,8 +54,8 @@ func (s *Server) handleCostSummary(w http.ResponseWriter, r *http.Request) {
 
 // handleCostRates exposes per-backend rates for read + override.
 //
-//   GET /api/cost/rates                  current effective rates
-//   PUT /api/cost/rates                  body: {"rates": {backend: {in_per_k, out_per_k}}}
+//	GET /api/cost/rates                  current effective rates
+//	PUT /api/cost/rates                  body: {"rates": {backend: {in_per_k, out_per_k}}}
 func (s *Server) handleCostRates(w http.ResponseWriter, r *http.Request) {
 	if s.manager == nil {
 		http.Error(w, "manager not available", http.StatusServiceUnavailable)

@@ -125,9 +125,9 @@ func TestTS701_GetPRD_StoriesHaveStatusField(t *testing.T) {
 // through the API response without mutation or omission.
 func TestTS702_GetPRD_StoryStatusValues(t *testing.T) {
 	cases := []struct {
-		name           string
-		story1Status   string
-		story2Status   string
+		name         string
+		story1Status string
+		story2Status string
 	}{
 		{"both completed", "completed", "completed"},
 		{"one in_progress one completed", "in_progress", "completed"},

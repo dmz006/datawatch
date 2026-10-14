@@ -248,8 +248,8 @@ func (r *Router) handleComputeCmd(cmd Command) {
 func parseKVPairs(s string) map[string]any {
 	out := map[string]any{}
 	cap := map[string]any{}
-	dn := map[string]any{}  // docker-network sub-config
-	dp := map[string]any{}  // datawatch-proxy sub-config
+	dn := map[string]any{} // docker-network sub-config
+	dp := map[string]any{} // datawatch-proxy sub-config
 	for _, kv := range strings.Fields(s) {
 		eq := strings.IndexRune(kv, '=')
 		if eq < 0 {

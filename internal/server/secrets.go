@@ -208,8 +208,8 @@ func (s *Server) handleSecretServiceTokens(w http.ResponseWriter, r *http.Reques
 		}
 		if s.auditLog != nil {
 			_ = s.auditLog.Write(audit.Entry{
-				Actor:  "operator",
-				Action: "service_token_mint",
+				Actor:   "operator",
+				Action:  "service_token_mint",
 				Details: map[string]any{"resource_type": "service_token", "resource_id": body.Name},
 			})
 		}
@@ -226,8 +226,8 @@ func (s *Server) handleSecretServiceTokens(w http.ResponseWriter, r *http.Reques
 		}
 		if s.auditLog != nil {
 			_ = s.auditLog.Write(audit.Entry{
-				Actor:  "operator",
-				Action: "service_token_revoke",
+				Actor:   "operator",
+				Action:  "service_token_revoke",
 				Details: map[string]any{"resource_type": "service_token", "resource_id": name},
 			})
 		}

@@ -242,4 +242,3 @@ func (s *Server) handleDocsTrustDismiss(_ context.Context, req mcpsdk.CallToolRe
 	}
 	return textOK(string(out)), nil
 }
-

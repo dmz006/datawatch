@@ -87,9 +87,9 @@ func TestMCPFedAuth_UnknownToken_Rejected(t *testing.T) {
 
 func TestMCPFedAuth_FedPeerToken_PassThrough(t *testing.T) {
 	peer := &multiserver.Entry{
-		Name:      "peer-a",
-		Token:     "peer-token",
-		Federated: true,
+		Name:         "peer-a",
+		Token:        "peer-token",
+		Federated:    true,
 		Capabilities: []string{federation.CapSessionsList},
 	}
 	store := newFakeStore(peer)

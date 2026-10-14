@@ -94,8 +94,8 @@ func (s *Server) handleCommProxySend(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"status":   "sent",
-		"channel":  channel,
-		"backend":  backend.Name(),
+		"status":  "sent",
+		"channel": channel,
+		"backend": backend.Name(),
 	})
 }

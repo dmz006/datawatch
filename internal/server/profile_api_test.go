@@ -54,10 +54,10 @@ func TestProjectProfiles_CreateListDelete(t *testing.T) {
 
 	// Create
 	body := jsonBody(t, &profile.ProjectProfile{
-		Name: "foo",
-		Git:  profile.GitSpec{URL: "https://github.com/x/y"},
+		Name:      "foo",
+		Git:       profile.GitSpec{URL: "https://github.com/x/y"},
 		ImagePair: profile.ImagePair{Agent: "agent-claude"},
-		Memory: profile.MemorySpec{Mode: profile.MemorySyncBack},
+		Memory:    profile.MemorySpec{Mode: profile.MemorySyncBack},
 	})
 	rr = httptest.NewRecorder()
 	s.handleProjectProfiles(rr, httptest.NewRequest(http.MethodPost, "/api/profiles/projects", body))
@@ -147,7 +147,7 @@ func TestProjectProfiles_Update_ForcesNameFromURL(t *testing.T) {
 	})
 
 	body := jsonBody(t, &profile.ProjectProfile{
-		Name:        "hacker",       // attempt to rename via body
+		Name:        "hacker", // attempt to rename via body
 		Description: "via update",
 		Git:         profile.GitSpec{URL: "https://github.com/x/y"},
 		ImagePair:   profile.ImagePair{Agent: "agent-claude"},

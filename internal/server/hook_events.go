@@ -39,11 +39,11 @@ import (
 
 // SessionHookEvent — one event from a session's hook script.
 type SessionHookEvent struct {
-	SessionID  string                 `json:"session_id"`
-	Event      string                 `json:"event"`
-	Tool       string                 `json:"tool,omitempty"`
-	Timestamp  time.Time              `json:"ts"`
-	Payload    map[string]any         `json:"payload,omitempty"` // arbitrary hook data
+	SessionID string         `json:"session_id"`
+	Event     string         `json:"event"`
+	Tool      string         `json:"tool,omitempty"`
+	Timestamp time.Time      `json:"ts"`
+	Payload   map[string]any `json:"payload,omitempty"` // arbitrary hook data
 }
 
 // TelemetryTask — one task entry from the tasks[] array in a hook payload.
@@ -89,17 +89,17 @@ type SessionTelemetry struct {
 // Cards: current focus + Automata tree + tests + closed-tasks + council +
 // skills + tracker + git.
 type SessionStatusBoard struct {
-	SessionID    string             `json:"session_id"`
-	State        string             `json:"state"`      // derived: running | waiting | idle | unknown
-	CurrentFocus map[string]any     `json:"current_focus,omitempty"`
-	Sprint       map[string]any     `json:"sprint,omitempty"`
-	Tests        map[string]any     `json:"tests,omitempty"`
-	Git          map[string]any     `json:"git,omitempty"`
-	LastEvent    *SessionHookEvent  `json:"last_event,omitempty"`
-	IdleSince    *time.Time         `json:"idle_since,omitempty"`
-	HookHealth   string             `json:"hook_health"` // alive | stale | missing
-	Telemetry    *SessionTelemetry  `json:"telemetry,omitempty"`
-	UpdatedAt    time.Time          `json:"updated_at"`
+	SessionID    string            `json:"session_id"`
+	State        string            `json:"state"` // derived: running | waiting | idle | unknown
+	CurrentFocus map[string]any    `json:"current_focus,omitempty"`
+	Sprint       map[string]any    `json:"sprint,omitempty"`
+	Tests        map[string]any    `json:"tests,omitempty"`
+	Git          map[string]any    `json:"git,omitempty"`
+	LastEvent    *SessionHookEvent `json:"last_event,omitempty"`
+	IdleSince    *time.Time        `json:"idle_since,omitempty"`
+	HookHealth   string            `json:"hook_health"` // alive | stale | missing
+	Telemetry    *SessionTelemetry `json:"telemetry,omitempty"`
+	UpdatedAt    time.Time         `json:"updated_at"`
 }
 
 // hookEventStore — in-memory per-session hook state. Latest payload
@@ -119,6 +119,7 @@ var globalHookStore = &hookEventStore{
 
 const hookHistoryMax = 50
 const failedBufMax = 5
+
 // hookStaleAfter — alpha.36 GATE (operator 2026-05-10): bumped from 30s
 // to 5 min. The 30s threshold was too aggressive for real-world tool
 // cadence — a long Thinking turn (no PostToolUse) trivially exceeds 30s

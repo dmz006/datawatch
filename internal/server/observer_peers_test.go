@@ -15,11 +15,11 @@ import (
 // fakePeerRegistry is an in-memory PeerRegistryAPI implementation used
 // by the handler tests so we don't pull bcrypt into the path.
 type fakePeerRegistry struct {
-	peers       map[string]string                    // name → token
-	hostInfos   map[string]map[string]any
-	versions    map[string]string
-	lastPayload map[string]*observer.StatsResponse
-	pushes      map[string]int
+	peers        map[string]string // name → token
+	hostInfos    map[string]map[string]any
+	versions     map[string]string
+	lastPayload  map[string]*observer.StatsResponse
+	pushes       map[string]int
 	failRegister bool
 }
 

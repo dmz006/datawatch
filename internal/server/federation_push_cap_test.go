@@ -107,9 +107,9 @@ func TestFedPush_RegisterListRequiresCommRead(t *testing.T) {
 	pushCapTest(t, s,
 		http.MethodGet, "/api/push/register", nil,
 		s.handlePushRegister,
-		http.StatusOK, // admin: 200
-		http.StatusOK, // full: 200
-		http.StatusOK, // ro: has comm:read → 200
+		http.StatusOK,        // admin: 200
+		http.StatusOK,        // full: 200
+		http.StatusOK,        // ro: has comm:read → 200
 		http.StatusForbidden, // monitor: lacks comm:read → 403
 	)
 }
@@ -181,9 +181,9 @@ func TestFedDecompose_AsyncRequiresAutonomousWrite(t *testing.T) {
 	}
 
 	run("admin-token", http.StatusServiceUnavailable, "admin") // autonomousMgr nil → 503
-	run("ptok-full", http.StatusServiceUnavailable, "full")   // has cap, mgr nil → 503
-	run("ptok-ro", http.StatusForbidden, "read-only")         // lacks autonomous:write → 403
-	run("ptok-mon", http.StatusForbidden, "monitor")          // lacks autonomous:write → 403
+	run("ptok-full", http.StatusServiceUnavailable, "full")    // has cap, mgr nil → 503
+	run("ptok-ro", http.StatusForbidden, "read-only")          // lacks autonomous:write → 403
+	run("ptok-mon", http.StatusForbidden, "monitor")           // lacks autonomous:write → 403
 }
 
 // TestFedDecompose_StatusRequiresAutonomousRead — GET .../decompose/status
@@ -209,4 +209,3 @@ func TestFedDecompose_StatusRequiresAutonomousRead(t *testing.T) {
 	run("ptok-ro", http.StatusServiceUnavailable, "read-only") // has autonomous:read → 503 (mgr nil)
 	run("ptok-mon", http.StatusForbidden, "monitor")           // lacks autonomous:read → 403
 }
-

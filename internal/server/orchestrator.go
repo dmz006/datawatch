@@ -121,7 +121,9 @@ func (s *Server) handleOrchestratorGraphs(w http.ResponseWriter, r *http.Request
 				// the adapter returns a *Graph — but the REST layer only
 				// knows `any`, so we fish out via marshalling.
 				b, _ := json.Marshal(g)
-				var tmp struct{ ID string `json:"id"` }
+				var tmp struct {
+					ID string `json:"id"`
+				}
 				_ = json.Unmarshal(b, &tmp)
 				if tmp.ID != "" {
 					planned, err := s.orchestratorAPI.PlanGraph(tmp.ID, req.Deps)

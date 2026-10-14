@@ -15,13 +15,13 @@ import (
 
 // fakeBackend records what Send was called with.
 type fakeBackend struct {
-	name      string
-	gotRecip  string
-	gotMsg    string
-	sendErr   error
+	name     string
+	gotRecip string
+	gotMsg   string
+	sendErr  error
 }
 
-func (f *fakeBackend) Name() string                                { return f.name }
+func (f *fakeBackend) Name() string { return f.name }
 func (f *fakeBackend) Send(recip, msg string) error {
 	f.gotRecip = recip
 	f.gotMsg = msg

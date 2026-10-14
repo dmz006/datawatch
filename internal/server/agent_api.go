@@ -281,10 +281,10 @@ type BootstrapRequest struct {
 // sprints will stuff more into this: memory conn (S6), worker
 // identity cert (S7).
 type BootstrapResponse struct {
-	AgentID        string            `json:"agent_id"`
-	ProjectProfile string            `json:"project_profile"`
-	ClusterProfile string            `json:"cluster_profile"`
-	Task           string            `json:"task,omitempty"`
+	AgentID        string `json:"agent_id"`
+	ProjectProfile string `json:"project_profile"`
+	ClusterProfile string `json:"cluster_profile"`
+	Task           string `json:"task,omitempty"`
 	// Git carries the parent-minted short-lived token + repo coords
 	// the worker uses for clone + push (F10 S5.3). Token is empty
 	// for read-only / no-token-broker setups.

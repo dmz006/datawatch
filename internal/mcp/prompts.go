@@ -33,9 +33,9 @@ import (
 
 // promptDescriptor holds a prompt's metadata for REST export.
 type promptDescriptor struct {
-	Name        string           `json:"name"`
-	Description string           `json:"description"`
-	Arguments   []promptArgDesc  `json:"arguments,omitempty"`
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	Arguments   []promptArgDesc `json:"arguments,omitempty"`
 }
 
 // promptArgDesc is a compact prompt argument descriptor for REST export.

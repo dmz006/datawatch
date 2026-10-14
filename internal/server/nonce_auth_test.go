@@ -73,7 +73,9 @@ func TestNonceAwarePath_EndToEnd(t *testing.T) {
 	mintReq.Header.Set("Authorization", "Bearer admin-token")
 	mintRR := httptest.NewRecorder()
 	s.fedAuthMiddleware(http.HandlerFunc(s.handleAuthNonce)).ServeHTTP(mintRR, mintReq)
-	var minted struct{ Nonce string `json:"nonce"` }
+	var minted struct {
+		Nonce string `json:"nonce"`
+	}
 	if err := json.NewDecoder(mintRR.Body).Decode(&minted); err != nil {
 		t.Fatalf("decode mint response: %v", err)
 	}

@@ -48,7 +48,7 @@ func TestBL220_ConfigSection_ExtractsSection(t *testing.T) {
 		}
 		json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
 			"detection": map[string]any{
-				"prompt_debounce":  3,
+				"prompt_debounce": 3,
 				"notify_cooldown": 15,
 			},
 			"other": "noise",
@@ -157,7 +157,7 @@ func TestBL220_DetectionConfigSet_PatchesCorrectKeys(t *testing.T) {
 	var captured map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPut && r.URL.Path == "/api/config" {
-			json.NewDecoder(r.Body).Decode(&captured) //nolint:errcheck
+			json.NewDecoder(r.Body).Decode(&captured)                    //nolint:errcheck
 			json.NewEncoder(w).Encode(map[string]string{"status": "ok"}) //nolint:errcheck
 			return
 		}
@@ -172,7 +172,7 @@ func TestBL220_DetectionConfigSet_PatchesCorrectKeys(t *testing.T) {
 
 	req := mcpsdk.CallToolRequest{}
 	req.Params.Arguments = map[string]any{
-		"prompt_debounce":  float64(5),
+		"prompt_debounce": float64(5),
 		"notify_cooldown": float64(30),
 	}
 
@@ -197,7 +197,7 @@ func TestBL220_ProxyConfigSet_PatchesCorrectKeys(t *testing.T) {
 	var captured map[string]any
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPut && r.URL.Path == "/api/config" {
-			json.NewDecoder(r.Body).Decode(&captured) //nolint:errcheck
+			json.NewDecoder(r.Body).Decode(&captured)                    //nolint:errcheck
 			json.NewEncoder(w).Encode(map[string]string{"status": "ok"}) //nolint:errcheck
 			return
 		}

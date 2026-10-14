@@ -27,14 +27,14 @@ import (
 
 // ProjectSummary is the wire-format response.
 type ProjectSummary struct {
-	Dir            string             `json:"dir"`
-	IsGitRepo      bool               `json:"is_git_repo"`
-	Branch         string             `json:"branch,omitempty"`
-	UncommittedCount int              `json:"uncommitted_count,omitempty"`
-	RecentCommits  []ProjectCommit    `json:"recent_commits,omitempty"`
-	Sessions       []ProjectSessionRef `json:"sessions,omitempty"`
-	Stats          ProjectStats       `json:"stats"`
-	GeneratedAt    time.Time          `json:"generated_at"`
+	Dir              string              `json:"dir"`
+	IsGitRepo        bool                `json:"is_git_repo"`
+	Branch           string              `json:"branch,omitempty"`
+	UncommittedCount int                 `json:"uncommitted_count,omitempty"`
+	RecentCommits    []ProjectCommit     `json:"recent_commits,omitempty"`
+	Sessions         []ProjectSessionRef `json:"sessions,omitempty"`
+	Stats            ProjectStats        `json:"stats"`
+	GeneratedAt      time.Time           `json:"generated_at"`
 }
 
 // ProjectCommit summarises one git log entry.
@@ -47,11 +47,11 @@ type ProjectCommit struct {
 
 // ProjectSessionRef is a compact session-list row scoped to this project.
 type ProjectSessionRef struct {
-	ID        string    `json:"id"`
-	Task      string    `json:"task"`
-	State     string    `json:"state"`
-	UpdatedAt time.Time `json:"updated_at"`
-	DiffSummary string  `json:"diff_summary,omitempty"`
+	ID          string    `json:"id"`
+	Task        string    `json:"task"`
+	State       string    `json:"state"`
+	UpdatedAt   time.Time `json:"updated_at"`
+	DiffSummary string    `json:"diff_summary,omitempty"`
 }
 
 // ProjectStats is roll-ups across sessions for this project.

@@ -82,30 +82,30 @@ func (s *Server) handleComputeNodes(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
 			return
 		}
-			// Validate before probing so field errors return 400, not 502.
-			// Validate before probing so field errors return 400, not 502.
-			if verr := n.Validate(); verr != nil {
-				http.Error(w, verr.Error(), http.StatusBadRequest)
+		// Validate before probing so field errors return 400, not 502.
+		// Validate before probing so field errors return 400, not 502.
+		if verr := n.Validate(); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
+		// v7.0.0-alpha.19 #245 Q3 — operator-spec’d save-time probe for
+		// all kinds. Bypass with ?probe=skip for emergency saves (e.g.
+		// when the operator KNOWS the node is currently unreachable but
+		// wants to persist the entry).
+		if r.URL.Query().Get("probe") != "skip" {
+			probeTimeout := 15 * time.Second
+			if n.Routing == compute.RoutingDockerNetwork && n.RoutingDockerNetwork != nil && n.RoutingDockerNetwork.AutoStart {
+				probeTimeout = 30 * time.Second
+			}
+			pctx, cancel := context.WithTimeout(r.Context(), probeTimeout)
+			defer cancel()
+			if perr := compute.Probe(pctx, &n, s.clusterLookup()); perr != nil {
+				http.Error(w, "probe failed (use ?probe=skip to save anyway): "+perr.Error(), http.StatusBadGateway)
 				return
 			}
-			// v7.0.0-alpha.19 #245 Q3 — operator-spec’d save-time probe for
-			// all kinds. Bypass with ?probe=skip for emergency saves (e.g.
-			// when the operator KNOWS the node is currently unreachable but
-			// wants to persist the entry).
-			if r.URL.Query().Get("probe") != "skip" {
-				probeTimeout := 15 * time.Second
-				if n.Routing == compute.RoutingDockerNetwork && n.RoutingDockerNetwork != nil && n.RoutingDockerNetwork.AutoStart {
-					probeTimeout = 30 * time.Second
-				}
-				pctx, cancel := context.WithTimeout(r.Context(), probeTimeout)
-				defer cancel()
-				if perr := compute.Probe(pctx, &n, s.clusterLookup()); perr != nil {
-					http.Error(w, "probe failed (use ?probe=skip to save anyway): "+perr.Error(), http.StatusBadGateway)
-					return
-				}
-			}
-			code := http.StatusBadRequest
-			if err := s.computeReg.Add(&n); err != nil {
+		}
+		code := http.StatusBadRequest
+		if err := s.computeReg.Add(&n); err != nil {
 			if err == compute.ErrConflict {
 				code = http.StatusConflict
 			}
@@ -123,7 +123,9 @@ func (s *Server) handleComputeNodes(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		name := strings.TrimSuffix(rest, "/enabled")
-		var body struct{ Enabled bool `json:"enabled"` }
+		var body struct {
+			Enabled bool `json:"enabled"`
+		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
 			return
@@ -156,7 +158,9 @@ func (s *Server) handleComputeNodes(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		name := strings.TrimSuffix(rest, "/observer-peer")
-		var body struct{ Peer string `json:"peer"` }
+		var body struct {
+			Peer string `json:"peer"`
+		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
 			return
@@ -327,13 +331,13 @@ func (s *Server) handleComputeNodeHealth(w http.ResponseWriter, _ *http.Request,
 		return
 	}
 	out := map[string]any{
-		"name":              n.Name,
-		"kind":              n.Kind,
-		"in_maintenance":    n.InMaintenance(time.Now().UTC()),
-		"declared_capacity": n.DeclaredCapacity,
+		"name":                n.Name,
+		"kind":                n.Kind,
+		"in_maintenance":      n.InMaintenance(time.Now().UTC()),
+		"declared_capacity":   n.DeclaredCapacity,
 		"scheduling_priority": n.SchedulingPriority,
-		"address":           n.Address,
-		"auto_created":      n.AutoCreated,
+		"address":             n.Address,
+		"auto_created":        n.AutoCreated,
 	}
 	writeJSONOK(w, out)
 }
@@ -380,11 +384,11 @@ func (s *Server) handleComputeNodeDetail(w http.ResponseWriter, r *http.Request,
 			lc := &compute.DockerLifecycle{}
 			running, containerID, _ := lc.Status(r.Context(), n)
 			writeJSONOK(w, map[string]any{
-				"container_running":  running,
-				"container_id":       containerID,
-				"image":              n.RoutingDockerNetwork.Image,
-				"network_name":       n.RoutingDockerNetwork.NetworkName,
-				"container_name":     n.RoutingDockerNetwork.ContainerName,
+				"container_running": running,
+				"container_id":      containerID,
+				"image":             n.RoutingDockerNetwork.Image,
+				"network_name":      n.RoutingDockerNetwork.NetworkName,
+				"container_name":    n.RoutingDockerNetwork.ContainerName,
 			})
 			return
 		}
@@ -407,7 +411,7 @@ func (s *Server) handleComputeNodeDetail(w http.ResponseWriter, r *http.Request,
 		http.Error(w, fmt.Sprintf("stub unreachable: %v", err), http.StatusBadGateway)
 		return
 	}
-	defer resp.Body.Close() //nolint:errcheck
+	defer resp.Body.Close()                                 //nolint:errcheck
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20)) // cap at 1MB
 	if resp.StatusCode != http.StatusOK {
 		http.Error(w, fmt.Sprintf("stub HTTP %d: %s", resp.StatusCode, string(body)), http.StatusBadGateway)

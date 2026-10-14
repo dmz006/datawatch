@@ -17,7 +17,7 @@ import (
 // ---- minimal in-memory secretsStore for these tests -------------------------
 
 type providerTestStore struct {
-	data map[string]secrets.Secret
+	data   map[string]secrets.Secret
 	setErr error
 }
 

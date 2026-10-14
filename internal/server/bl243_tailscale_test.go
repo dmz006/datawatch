@@ -15,10 +15,10 @@ import (
 
 // mockTailscaleClient implements tailscaleClient for tests.
 type mockTailscaleClient struct {
-	status    *tailscale.StatusResponse
-	nodes     []tailscale.NodeInfo
-	pushErr   error
-	authKey   *tailscale.PreAuthKeyResult
+	status     *tailscale.StatusResponse
+	nodes      []tailscale.NodeInfo
+	pushErr    error
+	authKey    *tailscale.PreAuthKeyResult
 	authKeyErr error
 }
 

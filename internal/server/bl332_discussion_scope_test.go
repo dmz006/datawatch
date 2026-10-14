@@ -97,12 +97,15 @@ func (b *fakeDiscussionBackend) Prune(olderThan time.Duration) (int64, error)   
 func (b *fakeDiscussionBackend) PruneByRole(role string, olderThan time.Duration) (int64, error) {
 	return 0, nil
 }
-func (b *fakeDiscussionBackend) Stats() memory.MemoryStats                        { return memory.MemoryStats{} }
-func (b *fakeDiscussionBackend) DistinctProjects() ([]string, error)              { return nil, nil }
-func (b *fakeDiscussionBackend) ListWings() (map[string]int, error)               { return nil, nil }
-func (b *fakeDiscussionBackend) ListRooms(wing string) ([]string, error)          { return nil, nil }
-func (b *fakeDiscussionBackend) FindTunnels() (map[string][]string, error)        { return nil, nil }
-func (b *fakeDiscussionBackend) ListForReindex() ([]struct{ ID int64; Content string }, error) {
+func (b *fakeDiscussionBackend) Stats() memory.MemoryStats                 { return memory.MemoryStats{} }
+func (b *fakeDiscussionBackend) DistinctProjects() ([]string, error)       { return nil, nil }
+func (b *fakeDiscussionBackend) ListWings() (map[string]int, error)        { return nil, nil }
+func (b *fakeDiscussionBackend) ListRooms(wing string) ([]string, error)   { return nil, nil }
+func (b *fakeDiscussionBackend) FindTunnels() (map[string][]string, error) { return nil, nil }
+func (b *fakeDiscussionBackend) ListForReindex() ([]struct {
+	ID      int64
+	Content string
+}, error) {
 	return nil, nil
 }
 func (b *fakeDiscussionBackend) UpdateEmbedding(id int64, embedding []float32) error { return nil }

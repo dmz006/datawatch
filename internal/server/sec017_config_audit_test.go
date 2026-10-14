@@ -137,7 +137,7 @@ func TestIsSensitiveConfigKey(t *testing.T) {
 		"twilio.auth_token": true,
 		"server.host":       false,
 		"server.port":       false,
-		"detection.enabled":  false,
+		"detection.enabled": false,
 	}
 	for key, want := range cases {
 		if got := isSensitiveConfigKey(key); got != want {

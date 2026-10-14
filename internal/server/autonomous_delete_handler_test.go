@@ -23,10 +23,10 @@ import (
 type spyAutonomous struct {
 	fakeOrchAutonomous
 
-	cancelCalls    []string
-	deleteCalls    []string
-	cancelErr      error
-	deleteErr      error
+	cancelCalls []string
+	deleteCalls []string
+	cancelErr   error
+	deleteErr   error
 }
 
 func (s *spyAutonomous) Cancel(id string) error {
@@ -37,6 +37,7 @@ func (s *spyAutonomous) DeletePRD(id string) error {
 	s.deleteCalls = append(s.deleteCalls, id)
 	return s.deleteErr
 }
+
 // Override SessionIDsForPRD so the kill-sessions hook is a no-op (no
 // manager wired in this test).
 func (s *spyAutonomous) SessionIDsForPRD(string) []string { return nil }

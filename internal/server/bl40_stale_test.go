@@ -26,12 +26,12 @@ func TestBL40_Stale_FindsOldRunningSession(t *testing.T) {
 	s := bl90Server(t)
 	_ = s.manager.SaveSession(&session.Session{
 		ID: "old", FullID: "testhost-old", Hostname: "testhost",
-		State: session.StateRunning,
+		State:     session.StateRunning,
 		UpdatedAt: time.Now().Add(-2 * time.Hour),
 	})
 	_ = s.manager.SaveSession(&session.Session{
 		ID: "fresh", FullID: "testhost-fresh", Hostname: "testhost",
-		State: session.StateRunning,
+		State:     session.StateRunning,
 		UpdatedAt: time.Now(),
 	})
 	req := httptest.NewRequest(http.MethodGet, "/api/sessions/stale?seconds=3600", nil)

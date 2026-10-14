@@ -35,7 +35,7 @@ import (
 type SSEHub struct {
 	mu   sync.RWMutex
 	subs map[string]map[*sseClient]struct{} // topic -> set of clients
-	ids  sync.Map                            // topic -> *atomic.Int64
+	ids  sync.Map                           // topic -> *atomic.Int64
 }
 
 // NewSSEHub returns an empty hub.

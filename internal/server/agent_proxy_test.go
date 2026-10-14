@@ -235,4 +235,3 @@ func TestAgentProxy_WebSocket_Bidirectional(t *testing.T) {
 		t.Errorf("got %q want echo:hi", string(got))
 	}
 }
-

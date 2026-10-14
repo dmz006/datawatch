@@ -24,9 +24,9 @@ import (
 // channelRoutingRule describes how a channel identity pattern maps to a
 // federation peer and optional automata configuration.
 type channelRoutingRule struct {
-	ChannelPattern   string `json:"channel_pattern"`
-	PeerName         string `json:"peer_name"`
-	AutomataType     string `json:"automata_type,omitempty"`
+	ChannelPattern    string `json:"channel_pattern"`
+	PeerName          string `json:"peer_name"`
+	AutomataType      string `json:"automata_type,omitempty"`
 	DefaultProjectDir string `json:"default_project_dir,omitempty"`
 }
 

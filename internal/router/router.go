@@ -31,37 +31,37 @@ type PluginRegistry interface {
 // Router dispatches incoming messages to the session manager
 // and formats responses back to the messaging backend.
 type Router struct {
-	hostname    string
-	groupID     string
-	backend     messaging.Backend
-	manager     *session.Manager
-	tailLines   int
-	wizardMgr   *wizard.Manager
+	hostname      string
+	groupID       string
+	backend       messaging.Backend
+	manager       *session.Manager
+	tailLines     int
+	wizardMgr     *wizard.Manager
 	schedStore    *session.ScheduleStore
 	exitHookStore *session.ExitHookStore // BL356
 	alertStore    *alerts.Store
-	cmdLib      *session.CmdLibrary
+	cmdLib        *session.CmdLibrary
 	// F10 sprint 2: read-only profile access over chat channels.
 	projectStore *profile.ProjectStore
 	clusterStore *profile.ClusterStore
 	// F10 sprint 3: agent manager for "agent …" commands.
 	agentMgr *agents.Manager
 	// BL107 — wired via SetAgentAuditPath; consumed by agentAudit.
-	agentAuditPath string
-	agentAuditCEF  bool
-	version     string
-	checkUpdate func() string // optional func that returns latest version string
-	restartFn   func()        // optional func to restart the daemon
-	reloadFn    func(subsystem string) (string, error) // v5.27.2 — subsystem hot-reload
-	channelInfoFn        func() string // v5.27.10 — channel bridge introspection
-	channelDiagnosticsFn func() string // BL362 — per-session bridge diagnostics
-	statsFn     func() string // optional func returning system stats summary
-	capacityFn  func() string // optional func returning the capacity ledger summary
-	configureFn func(key, value string) error // optional func to set a config value
-	chanTracker  *stats.ChannelCounters      // per-channel message counters
-	transcriber  transcribe.Transcriber      // optional voice-to-text transcriber
-	visioner     Visioner                   // optional image-to-text describer (BL368)
-	remote       *proxy.RemoteDispatcher     // optional remote server dispatcher
+	agentAuditPath       string
+	agentAuditCEF        bool
+	version              string
+	checkUpdate          func() string                          // optional func that returns latest version string
+	restartFn            func()                                 // optional func to restart the daemon
+	reloadFn             func(subsystem string) (string, error) // v5.27.2 — subsystem hot-reload
+	channelInfoFn        func() string                          // v5.27.10 — channel bridge introspection
+	channelDiagnosticsFn func() string                          // BL362 — per-session bridge diagnostics
+	statsFn              func() string                          // optional func returning system stats summary
+	capacityFn           func() string                          // optional func returning the capacity ledger summary
+	configureFn          func(key, value string) error          // optional func to set a config value
+	chanTracker          *stats.ChannelCounters                 // per-channel message counters
+	transcriber          transcribe.Transcriber                 // optional voice-to-text transcriber
+	visioner             Visioner                               // optional image-to-text describer (BL368)
+	remote               *proxy.RemoteDispatcher                // optional remote server dispatcher
 
 	// Memory system — optional, nil when memory is disabled
 	memoryRetriever MemoryRetriever
@@ -244,17 +244,17 @@ type MemoryStats struct {
 
 // Memory mirrors memory.Memory for the router interface.
 type Memory struct {
-	ID         int64   `json:"id"`
-	SessionID  string  `json:"session_id,omitempty"`
-	ProjectDir string  `json:"project_dir"`
-	Content    string  `json:"content"`
-	Summary    string  `json:"summary,omitempty"`
-	Role       string  `json:"role"`
-	Wing       string  `json:"wing,omitempty"`
-	Room       string  `json:"room,omitempty"`
-	Hall       string  `json:"hall,omitempty"`
+	ID         int64       `json:"id"`
+	SessionID  string      `json:"session_id,omitempty"`
+	ProjectDir string      `json:"project_dir"`
+	Content    string      `json:"content"`
+	Summary    string      `json:"summary,omitempty"`
+	Role       string      `json:"role"`
+	Wing       string      `json:"wing,omitempty"`
+	Room       string      `json:"room,omitempty"`
+	Hall       string      `json:"hall,omitempty"`
 	CreatedAt  interface{} `json:"created_at"`
-	Similarity float64 `json:"similarity,omitempty"`
+	Similarity float64     `json:"similarity,omitempty"`
 }
 
 // KnowledgeGraphAPI is the interface for KG operations from the router.
@@ -496,7 +496,9 @@ func (r *Router) handleResearch(cmd Command) {
 		var lines []string
 		for _, m := range results {
 			content := m.Content
-			if len(content) > 150 { content = content[:147] + "..." }
+			if len(content) > 150 {
+				content = content[:147] + "..."
+			}
 			content = strings.ReplaceAll(content, "\n", " ")
 			lines = append(lines, fmt.Sprintf("  [%.0f%%] %s: %s", m.Similarity*100, m.Role, content))
 		}
@@ -522,7 +524,9 @@ func (r *Router) handleResearch(cmd Command) {
 	for _, sess := range sessions {
 		if sess.LastResponse != "" && strings.Contains(strings.ToLower(sess.LastResponse), queryLower) {
 			snippet := sess.LastResponse
-			if len(snippet) > 150 { snippet = snippet[:147] + "..." }
+			if len(snippet) > 150 {
+				snippet = snippet[:147] + "..."
+			}
 			hits = append(hits, fmt.Sprintf("  [%s] %s: %s", sess.ID, sess.Task, snippet))
 		}
 	}
@@ -1702,8 +1706,12 @@ func (r *Router) handleList(filter string) {
 		fmt.Fprintf(&sb, "[%s] Sessions (%d):\n", r.hostname, len(mine))
 		for i, s := range mine {
 			name := s.Name
-			if name == "" { name = truncate(s.Task, 40) }
-			if name == "" { name = "(no task)" }
+			if name == "" {
+				name = truncate(s.Task, 40)
+			}
+			if name == "" {
+				name = "(no task)"
+			}
 			fmt.Fprintf(&sb, "  [%s] %s | %s | %s | %s",
 				s.ID, s.State, s.BackendFamily, s.UpdatedAt.Format("15:04"), name)
 			if s.State == session.StateWaitingInput {
@@ -1752,8 +1760,12 @@ func (r *Router) handleList(filter string) {
 			fmt.Fprintf(&sb, "[%s] Sessions (%d):\n", serverName, len(filtered))
 			for i, s := range filtered {
 				name := s.Name
-				if name == "" { name = truncate(s.Task, 40) }
-				if name == "" { name = "(no task)" }
+				if name == "" {
+					name = truncate(s.Task, 40)
+				}
+				if name == "" {
+					name = "(no task)"
+				}
 				fmt.Fprintf(&sb, "  [%s] %s | %s | %s | %s",
 					s.ID, s.State, s.BackendFamily, s.UpdatedAt.Format("15:04"), name)
 				if s.State == session.StateWaitingInput {
@@ -1769,7 +1781,9 @@ func (r *Router) handleList(filter string) {
 
 	if sb.Len() == 0 {
 		label := "sessions"
-		if filter != "" { label = filter + " sessions" }
+		if filter != "" {
+			label = filter + " sessions"
+		}
 		r.send(fmt.Sprintf("[%s] No %s.", r.hostname, label))
 		return
 	}
@@ -2073,12 +2087,12 @@ type captureBackend struct {
 	capture func(string)
 }
 
-func (b *captureBackend) Name() string                                              { return b.name }
-func (b *captureBackend) Send(_, message string) error                              { b.capture(message); return nil }
+func (b *captureBackend) Name() string                                                 { return b.name }
+func (b *captureBackend) Send(_, message string) error                                 { b.capture(message); return nil }
 func (b *captureBackend) Subscribe(_ context.Context, _ func(messaging.Message)) error { return nil }
-func (b *captureBackend) Link(_ string, _ func(string)) error                       { return nil }
-func (b *captureBackend) SelfID() string                                            { return "test" }
-func (b *captureBackend) Close() error                                              { return nil }
+func (b *captureBackend) Link(_ string, _ func(string)) error                          { return nil }
+func (b *captureBackend) SelfID() string                                               { return "test" }
+func (b *captureBackend) Close() error                                                 { return nil }
 
 // tryRemoteCommand checks if a session exists on a remote server and forwards
 // the command. Returns true if the command was forwarded (caller should return).

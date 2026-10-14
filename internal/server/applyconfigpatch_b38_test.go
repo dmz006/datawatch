@@ -88,8 +88,8 @@ func TestApplyConfigPatch_UnknownKeyLogsButDoesNotPanic(t *testing.T) {
 	cfg := &config.Config{}
 	// Should not panic; unknown key is logged to stderr and ignored.
 	applyConfigPatch(cfg, map[string]interface{}{
-		"totally.made.up.key":   "whatever",
-		"autonomous.enabled":    true,
+		"totally.made.up.key": "whatever",
+		"autonomous.enabled":  true,
 	})
 	if !cfg.Autonomous.Enabled {
 		t.Errorf("known key in same patch should still land alongside unknown one")
@@ -111,8 +111,8 @@ func TestApplyConfigPatch_SessionQuickCommands(t *testing.T) {
 				"category": "navigation",
 			},
 			map[string]interface{}{
-				"label":    "Custom Project Cmd",
-				"value":    "./build.sh\n",
+				"label": "Custom Project Cmd",
+				"value": "./build.sh\n",
 			},
 		},
 	}

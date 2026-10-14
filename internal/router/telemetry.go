@@ -30,10 +30,10 @@ func (r *Router) handleTelemetryGet(id string) {
 		return
 	}
 	var tel struct {
-		CurrentTask       string  `json:"current_task"`
-		Tool              string  `json:"tool"`
-		Progress          float64 `json:"progress"`
-		Tasks             []struct {
+		CurrentTask string  `json:"current_task"`
+		Tool        string  `json:"tool"`
+		Progress    float64 `json:"progress"`
+		Tasks       []struct {
 			ID         string `json:"id"`
 			Title      string `json:"title"`
 			Status     string `json:"status"`

@@ -70,11 +70,11 @@ func TestApplyConfigPatch_ObserverPointerBools(t *testing.T) {
 func TestApplyConfigPatch_ObserverFederation(t *testing.T) {
 	cfg := &config.Config{}
 	applyConfigPatch(cfg, map[string]interface{}{
-		"observer.federation.parent_url":             "https://root.example:8443",
-		"observer.federation.peer_name":              "edge-2",
-		"observer.federation.push_interval_seconds":  15,
-		"observer.federation.token_path":             "/etc/dw/fed.token",
-		"observer.federation.insecure":               true,
+		"observer.federation.parent_url":            "https://root.example:8443",
+		"observer.federation.peer_name":             "edge-2",
+		"observer.federation.push_interval_seconds": 15,
+		"observer.federation.token_path":            "/etc/dw/fed.token",
+		"observer.federation.insecure":              true,
 	})
 
 	if cfg.Observer.Federation.ParentURL != "https://root.example:8443" {
@@ -97,10 +97,10 @@ func TestApplyConfigPatch_ObserverFederation(t *testing.T) {
 func TestApplyConfigPatch_ObserverPeers(t *testing.T) {
 	cfg := &config.Config{}
 	applyConfigPatch(cfg, map[string]interface{}{
-		"observer.peers.allow_register":               true,
-		"observer.peers.token_ttl_rotation_grace_s":   90,
-		"observer.peers.push_interval_seconds":        7,
-		"observer.peers.listen_addr":                  ":9001",
+		"observer.peers.allow_register":             true,
+		"observer.peers.token_ttl_rotation_grace_s": 90,
+		"observer.peers.push_interval_seconds":      7,
+		"observer.peers.listen_addr":                ":9001",
 	})
 
 	if !cfg.Observer.Peers.AllowRegister {
