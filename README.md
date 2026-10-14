@@ -57,7 +57,11 @@ Browse the catalog in-app (Settings → Skills → Registry) or on GitHub. To co
 
 ## Current release
 
-**Current release: v9.0.83 (2026-10-14).** Session-tracking folders no
+**Current release: v9.0.84 (2026-10-14).** The three session repos that
+grew before v9.0.83 have been shrunk with `scripts/shrink-session-repo.sh`
+(31 GB → 3.3 MB for the largest). Evidence is in [Testing](docs/testing.md).
+
+**v9.0.83** Session-tracking folders no
 longer keep the live `output.log` in their git history, and the daemon
 turns off git's automatic garbage collection in those repos, so a large
 session repo can no longer trigger a repack that exhausts host memory
