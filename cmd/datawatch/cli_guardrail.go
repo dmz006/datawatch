@@ -56,6 +56,7 @@ func newGuardrailProfileCmd() *cobra.Command {
 		Short: "Manage guardrail profiles",
 	}
 	var name, description, guardrailsCSV string
+	var blockOnFileDrift bool
 
 	listCmd := &cobra.Command{
 		Use:   "list",
@@ -71,12 +72,16 @@ func newGuardrailProfileCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			guardrails := csvToSlice(guardrailsCSV)
 			body := map[string]any{"name": name, "description": description, "guardrails": guardrails}
+			if cmd.Flags().Changed("block-on-file-drift") {
+				body["block_on_file_drift"] = blockOnFileDrift
+			}
 			return guardrailAPIPost("/api/autonomous/guardrail_profiles", body)
 		},
 	}
 	createCmd.Flags().StringVar(&name, "name", "", "Profile name (required)")
 	createCmd.Flags().StringVar(&description, "description", "", "Optional description")
 	createCmd.Flags().StringVar(&guardrailsCSV, "guardrails", "", "Comma-separated guardrail names")
+	createCmd.Flags().BoolVar(&blockOnFileDrift, "block-on-file-drift", false, "Block a task whose commit swept in files that were already uncommitted before it started (omit to inherit autonomous.block_on_file_drift)")
 	_ = createCmd.MarkFlagRequired("name")
 
 	getCmd := &cobra.Command{
@@ -95,12 +100,16 @@ func newGuardrailProfileCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			guardrails := csvToSlice(guardrailsCSV)
 			body := map[string]any{"name": name, "description": description, "guardrails": guardrails}
+			if cmd.Flags().Changed("block-on-file-drift") {
+				body["block_on_file_drift"] = blockOnFileDrift
+			}
 			return guardrailAPIPut("/api/autonomous/guardrail_profiles/"+args[0], body)
 		},
 	}
 	updateCmd.Flags().StringVar(&name, "name", "", "New profile name")
 	updateCmd.Flags().StringVar(&description, "description", "", "New description")
 	updateCmd.Flags().StringVar(&guardrailsCSV, "guardrails", "", "New guardrail list (comma-separated)")
+	updateCmd.Flags().BoolVar(&blockOnFileDrift, "block-on-file-drift", false, "Block a task whose commit swept in files that were already uncommitted before it started (omit to leave unchanged)")
 
 	deleteCmd := &cobra.Command{
 		Use:   "delete <id>",
@@ -124,6 +133,7 @@ func newGuardrailAutomatonCmd() *cobra.Command {
 	}
 
 	var profile, perTaskCSV, perStoryCSV, perPRDCSV string
+	var blockOnFileDrift bool
 	setCmd := &cobra.Command{
 		Use:   "set <prd-id>",
 		Short: "Set per-Automaton guardrail overrides (profile / per-task / per-story / completion)",
@@ -135,6 +145,9 @@ func newGuardrailAutomatonCmd() *cobra.Command {
 				"per_story_guardrails": csvToSlice(perStoryCSV),
 				"per_prd_guardrails":   csvToSlice(perPRDCSV),
 			}
+			if cmd.Flags().Changed("block-on-file-drift") {
+				body["block_on_file_drift"] = blockOnFileDrift
+			}
 			return guardrailAPIPut("/api/autonomous/prds/"+args[0]+"/guardrails", body)
 		},
 	}
@@ -142,6 +155,7 @@ func newGuardrailAutomatonCmd() *cobra.Command {
 	setCmd.Flags().StringVar(&perTaskCSV, "per-task", "", "Per-task guardrails (comma-separated; beats profile)")
 	setCmd.Flags().StringVar(&perStoryCSV, "per-story", "", "Per-story guardrails (comma-separated; beats profile)")
 	setCmd.Flags().StringVar(&perPRDCSV, "per-prd", "", "Guardrails run once when the Automaton completes (comma-separated: rules-review, ci-watch; beats profile)")
+	setCmd.Flags().BoolVar(&blockOnFileDrift, "block-on-file-drift", false, "Block a task whose commit swept in files that were already uncommitted before it started (beats profile; omit to inherit)")
 
 	cmd.AddCommand(setCmd)
 	return cmd

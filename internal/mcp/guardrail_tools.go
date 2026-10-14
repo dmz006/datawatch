@@ -61,6 +61,7 @@ func (s *Server) toolGuardrailProfileCreate() mcpsdk.Tool {
 		mcpsdk.WithString("name", mcpsdk.Required(), mcpsdk.Description("Profile name.")),
 		mcpsdk.WithString("description", mcpsdk.Description("Optional description.")),
 		mcpsdk.WithString("guardrails_json", mcpsdk.Description(`JSON array of guardrail names, e.g. ["sast-scan","secrets-scan"]`)),
+		mcpsdk.WithBoolean("block_on_file_drift", mcpsdk.Description("Optional foreign-file-drift enforcement for automata using this profile: true blocks a task whose own commit swept in files that were already uncommitted before it started and were not in its planned files; false keeps it warn-only. Omit to inherit the daemon-wide autonomous.block_on_file_drift.")),
 	)
 }
 
@@ -70,6 +71,7 @@ func (s *Server) handleGuardrailProfileCreate(_ context.Context, req mcpsdk.Call
 	var guardrails []string
 	_ = json.Unmarshal([]byte(req.GetString("guardrails_json", "[]")), &guardrails)
 	body := map[string]any{"name": name, "description": desc, "guardrails": guardrails}
+	addBlockOnFileDrift(req, body)
 	data, err := s.proxyJSON(http.MethodPost, "/api/autonomous/guardrail_profiles", body)
 	if err != nil {
 		return mcpsdk.NewToolResultText("error: " + err.Error()), nil
@@ -104,6 +106,7 @@ func (s *Server) toolGuardrailProfileUpdate() mcpsdk.Tool {
 		mcpsdk.WithString("name", mcpsdk.Description("New name (omit to keep existing).")),
 		mcpsdk.WithString("description", mcpsdk.Description("New description.")),
 		mcpsdk.WithString("guardrails_json", mcpsdk.Description(`New guardrail list as JSON array, e.g. ["sast-scan","deps-scan"]`)),
+		mcpsdk.WithBoolean("block_on_file_drift", mcpsdk.Description("Optional foreign-file-drift enforcement for automata using this profile: true blocks a task whose own commit swept in files that were already uncommitted before it started and were not in its planned files; false keeps it warn-only. Omit to leave the profile's current value unchanged.")),
 	)
 }
 
@@ -114,6 +117,7 @@ func (s *Server) handleGuardrailProfileUpdate(_ context.Context, req mcpsdk.Call
 	var guardrails []string
 	_ = json.Unmarshal([]byte(req.GetString("guardrails_json", "[]")), &guardrails)
 	body := map[string]any{"name": name, "description": desc, "guardrails": guardrails}
+	addBlockOnFileDrift(req, body)
 	data, err := s.proxyJSON(http.MethodPut, "/api/autonomous/guardrail_profiles/"+id, body)
 	if err != nil {
 		return mcpsdk.NewToolResultText("error: " + err.Error()), nil
@@ -149,6 +153,7 @@ func (s *Server) toolPerAutomatonGuardrailsSet() mcpsdk.Tool {
 		mcpsdk.WithString("per_task_guardrails_json", mcpsdk.Description(`Explicit per-task guardrail list as JSON array (beats profile), e.g. ["sast-scan"]`)),
 		mcpsdk.WithString("per_story_guardrails_json", mcpsdk.Description(`Explicit per-story guardrail list as JSON array (beats profile), e.g. ["deps-scan"]`)),
 		mcpsdk.WithString("per_prd_guardrails_json", mcpsdk.Description(`Explicit automaton-completion guardrail list as JSON array (beats profile), e.g. ["rules-review","ci-watch"]. rules-review judges the automaton's diff against the project rules file; ci-watch waits (up to autonomous.ci_watch_timeout_seconds, default 1500) for the CI runs of the commit it pushed and has the configured LLM judge any failure against the rules file — skipped when nothing was pushed or origin is not GitHub.`)),
+		mcpsdk.WithBoolean("block_on_file_drift", mcpsdk.Description("Optional explicit foreign-file-drift enforcement for this automaton (beats profile and global): true blocks a task whose own commit swept in files that were already uncommitted before it started and were not in its planned files; false keeps it warn-only. Like the lists, omitting it clears the override back to inherit. Worktree-mode automata are never checked.")),
 	)
 }
 
@@ -165,11 +170,23 @@ func (s *Server) handlePerAutomatonGuardrailsSet(_ context.Context, req mcpsdk.C
 		"per_story_guardrails": perStory,
 		"per_prd_guardrails":   perPRD,
 	}
+	addBlockOnFileDrift(req, body)
 	data, err := s.proxyJSON(http.MethodPut, "/api/autonomous/prds/"+id+"/guardrails", body)
 	if err != nil {
 		return mcpsdk.NewToolResultText("error: " + err.Error()), nil
 	}
 	return mcpsdk.NewToolResultText(string(data)), nil
+}
+
+// addBlockOnFileDrift forwards block_on_file_drift only when the caller
+// passed it, so an absent argument stays nil (inherit / unchanged) in
+// the REST body instead of being sent as false.
+func addBlockOnFileDrift(req mcpsdk.CallToolRequest, body map[string]any) {
+	if args := req.GetArguments(); args != nil {
+		if _, ok := args["block_on_file_drift"]; ok {
+			body["block_on_file_drift"] = req.GetBool("block_on_file_drift", false)
+		}
+	}
 }
 
 // ── session_guardrail_run (BL303 S3 T15) ─────────────────────────────────

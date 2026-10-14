@@ -12119,6 +12119,7 @@ function renderTask(prd, story, task, editable) {
     ${task.spec ? `<div class="prd-task-spec">${escHtml(task.spec)}</div>` : ''}
     ${task.status === 'waiting_capacity' ? `<div class="prd-task-wait-reason">&#9203; ${escHtml(t('prd_task_waiting_capacity')||'Waiting for capacity')}${task.wait_reason ? ': ' + escHtml(task.wait_reason) : ''}</div>` : ''}
     ${errRow}${verifRow}
+    ${renderTaskFileDrift(task)}
     ${filesP}
     ${filesT}
     ${filesG}
@@ -12130,7 +12131,7 @@ function renderTask(prd, story, task, editable) {
       ${statusGlyphSpan}
       <code class="prd-task-id">${escHtml(taskID)}</code>
       <strong class="prd-task-title">${escHtml(task.title || '')}</strong>
-      ${llmBadge}${spawnBadge}${childLink}${verdicts}${sessionLink}
+      ${llmBadge}${spawnBadge}${childLink}${verdicts}${sessionLink}${(task.foreign_file_drift || []).length ? `<span class="prd-verdict-badge prd-verdict-warn" title="${escHtml(t('automata_task_foreign_file_drift') || 'Foreign file drift')}">&#9888; ${task.foreign_file_drift.length}</span>` : ''}
       <span class="prd-task-header-spacer"></span>
       ${approveTaskBtn}${retryBtn}${requeueBtn}${cancelTaskBtn}${editIcons}
     </div>
@@ -13988,6 +13989,9 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.infra_retry_escalate_after', label: 'Infra retry: same-config attempts before escalating', type: 'number', placeholder: '2' },
     { key: 'autonomous.content_auto_fix_enabled', label: 'Content auto-fix enabled', type: 'toggle' },
     { key: 'autonomous.auto_fix_skip_approval', label: 'Auto-fix work skips approval', type: 'toggle' },
+    // Foreign-file drift: off = warn-only; on = a task whose commit swept in
+    // pre-existing uncommitted files it didn't plan is blocked.
+    { key: 'autonomous.block_on_file_drift', label: 'Block on file drift', labelKey: 'settings_block_on_file_drift', type: 'toggle' },
     // Phase 3 (v5.26.62) — per-story approval gate. When ON, PRD
     // approval transitions every story to "awaiting_approval" and
     // the runner skips those until the operator approves each
@@ -20369,7 +20373,7 @@ function renderDetailStoriesTree(prd) {
         <span class="prd-task-title">${escHtml(t.title || t.Title || '(task ' + (ti+1) + ')')}</span>
         <span class="prd-task-status">${escHtml(sts)}</span>
         ${sessionLink}${childPRD}
-      </div>`;
+      </div>${renderTaskFileDrift(t)}`;
     }).join('');
     const verdicts = renderVerdicts(st.verdicts);
     // B99: same effective-status override as _renderStatusGraphs — if any task is
@@ -20418,6 +20422,17 @@ function renderDetailVerdicts(prd) {
     <div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:4px;">${escHtml(t('automata_detail_verdicts'))}</div>
     <div class="prd-verdict-row">${badges}</div>
   </div>`;
+}
+
+// Per-task foreign-file drift: files the task's own commit swept in that
+// were already uncommitted before it started and weren't in its planned
+// files. Warn-only unless block_on_file_drift is on. Empty when none.
+function renderTaskFileDrift(task) {
+  const drift = (task && task.foreign_file_drift) || [];
+  if (!drift.length) return '';
+  const label = t('automata_task_foreign_file_drift') || 'Foreign file drift';
+  return `<div class="prd-task-error" style="border-color:var(--warning,#d90);"><span class="prd-verdict-badge prd-verdict-warn">&#9888; ${escHtml(label)} (${drift.length})</span>
+    <ul style="margin:4px 0 0 16px;font-size:11px;">${drift.map(f => `<li><code>${escHtml(f)}</code></li>`).join('')}</ul></div>`;
 }
 
 // Automaton's own record of whether CI passed for the commit it pushed

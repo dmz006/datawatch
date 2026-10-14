@@ -166,3 +166,29 @@ func TestAutonomousConfigSet_CIWatchFields(t *testing.T) {
 		t.Fatalf("empty per_prd_guardrails must be forwarded to clear: %v", got)
 	}
 }
+
+func TestAutonomousConfigSet_BlockOnFileDrift(t *testing.T) {
+	var got map[string]any
+	s := capacityTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(b, &got)
+		_, _ = w.Write([]byte(`{}`))
+	})
+	for _, want := range []bool{true, false} {
+		got = nil
+		if _, err := s.handleAutonomousConfigSet(context.Background(), callReq(map[string]any{"block_on_file_drift": want})); err != nil {
+			t.Fatal(err)
+		}
+		if v, ok := got["block_on_file_drift"]; !ok || v != want {
+			t.Fatalf("block_on_file_drift=%v not forwarded: %v", want, got)
+		}
+	}
+	// Not mentioning the field at all must not add it to the body.
+	got = nil
+	if _, err := s.handleAutonomousConfigSet(context.Background(), callReq(map[string]any{"capacity_enabled": true})); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := got["block_on_file_drift"]; ok {
+		t.Fatalf("block_on_file_drift present when the caller never mentioned it: %v", got)
+	}
+}

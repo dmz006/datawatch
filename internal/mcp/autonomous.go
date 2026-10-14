@@ -32,7 +32,8 @@ func (s *Server) handleAutonomousStatus(_ context.Context, _ mcpsdk.CallToolRequ
 func (s *Server) toolAutonomousConfigGet() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_config_get",
 		mcpsdk.WithDescription("Read the current autonomous (Automata) config: poll interval, max parallel tasks, backends, retries, capacity limits, guardrail lists and timeouts. "+
-			"Automaton-level (per_prd_guardrails) guardrails accept \"rules-review\" and \"ci-watch\"; both are off unless listed. \"ci-watch\" makes an automaton, when it completes, wait (up to ci_watch_timeout_seconds, default 1500) for the CI runs of the commit it pushed; if any run failed, the configured LLM judges the failure against the project's rules file. It is skipped when nothing was pushed or the origin remote is not GitHub."),
+			"Automaton-level (per_prd_guardrails) guardrails accept \"rules-review\" and \"ci-watch\"; both are off unless listed. \"ci-watch\" makes an automaton, when it completes, wait (up to ci_watch_timeout_seconds, default 1500) for the CI runs of the commit it pushed; if any run failed, the configured LLM judges the failure against the project's rules file. It is skipped when nothing was pushed or the origin remote is not GitHub. "+
+			"block_on_file_drift (default false) controls foreign-file drift: when false a task whose commit swept in files that were already uncommitted before it started is only flagged (warn-only); when true that task is blocked instead. An automaton's own setting or its guardrail profile overrides it; worktree-mode automata are never checked."),
 	)
 }
 func (s *Server) handleAutonomousConfigGet(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
@@ -70,6 +71,7 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithNumber("ci_watch_timeout_seconds", mcpsdk.Description("Maximum seconds the ci-watch completion guardrail waits for the CI runs of an automaton's own pushed commit (default 1500). Runs still unfinished at the deadline leave the automaton complete with ci_watch.status \"pending\".")),
 		mcpsdk.WithArray("per_prd_guardrails", mcpsdk.Description("Daemon-wide default guardrails run once when an automaton completes. Accepts \"rules-review\" (judge the automaton's diff against the project's rules file) and \"ci-watch\" (wait for and judge the CI runs of the commit it pushed). Empty list (the default) turns both off; an automaton's own list or guardrail profile overrides this. The value replaces the whole list, so read it with autonomous_config_get first and include the entries you want to keep."), mcpsdk.WithStringItems()),
 		mcpsdk.WithBoolean("continue_on_story_failure", mcpsdk.Description("Daemon-wide default: false (halt) stops a PRD as soon as any story fails instead of continuing into later, independent stories; true restores the old continue-regardless behavior. Per-PRD override takes precedence.")),
+		mcpsdk.WithBoolean("block_on_file_drift", mcpsdk.Description("Daemon-wide default for foreign-file-drift enforcement. false (the default) only flags a task whose own commit swept in files that were already uncommitted before it started and were not in its planned files (warn-only, recorded as task foreign_file_drift and a file_drift_detected decision); true blocks that task instead. An automaton's own setting or its guardrail profile overrides this; worktree-mode automata are never checked.")),
 		mcpsdk.WithBoolean("default_auto_pr", mcpsdk.Description("BL407 Phase 5 — daemon-wide default for a new PRD's Git.AutoPR (push+open a PR on completion). Applied once at PRD creation; the per-PRD autonomous_prd_set_git tool overrides it after that. Default false.")),
 	)
 }
@@ -170,6 +172,9 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 		if _, ok := args["default_auto_pr"]; ok {
 			body["default_auto_pr"] = req.GetBool("default_auto_pr", false)
 		}
+		if _, ok := args["block_on_file_drift"]; ok {
+			body["block_on_file_drift"] = req.GetBool("block_on_file_drift", false)
+		}
 	}
 	out, err := s.proxyJSON(http.MethodPut, "/api/autonomous/config", body)
 	if err != nil {
@@ -233,7 +238,10 @@ func (s *Server) toolAutonomousPRDGet() mcpsdk.Tool {
 			"The automaton's own status is blocked after failed_policy, failed_infra, or failed_content with no corrective task; completed otherwise. "+
 			"To resume a blocked automaton: commit your decision (fix, upgrade, or accepted-risk entry) to the repo first, "+
 			"then autonomous_prd_reset_task with force=true on the task that pushed, then autonomous_prd_run; "+
-			"ci-watch then watches the new commit's CI. If you finished the work by hand, leave it blocked as the record or autonomous_prd_cancel it."),
+			"ci-watch then watches the new commit's CI. If you finished the work by hand, leave it blocked as the record or autonomous_prd_cancel it. "+
+			"Each task may carry foreign_file_drift: a list of files the task's own commit swept in that were already uncommitted before the task started and were not in its planned files. "+
+			"This is warn-only (the task still completes) unless block_on_file_drift is on for the automaton, its guardrail profile, or the daemon, in which case the task is blocked; worktree-mode automata are never checked. "+
+			"Each finding is also recorded in the decision log with kind file_drift_detected."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
 	)
 }

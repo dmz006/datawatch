@@ -938,6 +938,15 @@ autonomous:
   # Whether synthesized corrective work bypasses per-story approval.
   # Default true (fully unattended).
   auto_fix_skip_approval: true
+  # Foreign-file drift: after a task commits, files its own commit swept
+  # in that were already uncommitted before the task started (and were
+  # not in its planned files) are recorded on the task as
+  # foreign_file_drift plus a file_drift_detected decision. Default
+  # false = warn-only (the task still completes); true turns a finding
+  # into a blocked task. An Automaton's own setting or its guardrail
+  # profile overrides this. Worktree-mode Automata are never checked
+  # (their worktree starts clean).
+  block_on_file_drift: false
   # BL367 — default quality gate config applied to every PRD that does not
   # set its own quality_gates at creation time. When enabled, a test
   # baseline is captured before the first task runs, and tests are re-run
