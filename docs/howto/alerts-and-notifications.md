@@ -149,6 +149,21 @@ curl -sk -H "Authorization: Bearer $TOKEN" "$BASE/api/alerts?source=system"
 curl -sk -H "Authorization: Bearer $TOKEN" \
   "$BASE/api/alerts?source=<session_id>"
 
+# Page through alerts (newest first), 20 at a time.
+curl -sk -H "Authorization: Bearer $TOKEN" "$BASE/api/alerts?limit=20"
+#  → {"alerts": [...], "unread_count": 2, "total": 140,
+#     "has_more": true, "next_before": "<alert_id>"}
+# Next (older) page: pass next_before back as before.
+curl -sk -H "Authorization: Bearer $TOKEN" \
+  "$BASE/api/alerts?limit=20&before=<alert_id>"
+
+# Only unread alerts.
+curl -sk -H "Authorization: Bearer $TOKEN" "$BASE/api/alerts?unread=1&limit=20"
+
+# Just the counts — cheap enough for a badge poll.
+curl -sk -H "Authorization: Bearer $TOKEN" "$BASE/api/alerts/count"
+#  → {"unread_count": 2, "total": 140}
+
 # Mark one alert read.
 curl -sk -X POST -H "Authorization: Bearer $TOKEN" \
   -H "Content-Type: application/json" \
@@ -334,7 +349,10 @@ tool, and Settings > Detection timing in the PWA.
     ├─ alerts.json          (persistent store, survives restart)
     │
     ├─ GET  /api/alerts        → list + unread_count
-    ├─ POST /api/alerts        → mark read (id or all:true)
+    │                            (limit/unread/before → one page + total/has_more/next_before)
+    ├─ GET  /api/alerts/count  → {unread_count, total} only
+    ├─ POST /api/alerts        → mark read (id or all:true);
+    │                            WS clients get an alerts_read message
     ├─ POST /api/alerts/create → raise a new alert (external monitor/webhook)
     │
     ├─ MCP  get_alerts         → same list, MCP clients

@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"sync"
@@ -236,4 +237,84 @@ func (s *Store) MarkAllRead() {
 		a.Read = true
 	}
 	s.save() //nolint:errcheck
+}
+
+// ErrUnknownCursor is returned by Page when PageOptions.BeforeID names an
+// alert that is not in the store (never existed, or already rotated out).
+var ErrUnknownCursor = errors.New("unknown alert cursor")
+
+// PageOptions selects one page of alerts for Page.
+type PageOptions struct {
+	// Limit caps the number of returned alerts. Negative means no cap;
+	// 0 returns no alerts (has_more still reports whether any match).
+	Limit int
+	// UnreadOnly skips alerts already marked read.
+	UnreadOnly bool
+	// BeforeID returns only alerts strictly older than this alert ID
+	// (the next_before cursor of the previous page).
+	BeforeID string
+	// Source / SessionID filter on the matching Alert fields when non-empty.
+	Source    string
+	SessionID string
+}
+
+// Page returns one page of alerts in List's newest-first order, plus whether
+// more matching alerts exist past the page. Returns ErrUnknownCursor when
+// BeforeID is set but not found.
+func (s *Store) Page(opts PageOptions) ([]*Alert, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	start := len(s.alerts) - 1
+	if opts.BeforeID != "" {
+		idx := -1
+		for i, a := range s.alerts {
+			if a.ID == opts.BeforeID {
+				idx = i
+				break
+			}
+		}
+		if idx < 0 {
+			return nil, false, ErrUnknownCursor
+		}
+		start = idx - 1
+	}
+	out := []*Alert{}
+	for i := start; i >= 0; i-- {
+		a := s.alerts[i]
+		if opts.UnreadOnly && a.Read {
+			continue
+		}
+		if opts.Source != "" && a.Source != opts.Source {
+			continue
+		}
+		if opts.SessionID != "" && a.SessionID != opts.SessionID {
+			continue
+		}
+		if opts.Limit >= 0 && len(out) >= opts.Limit {
+			return out, true, nil
+		}
+		cp := *a
+		out = append(out, &cp)
+	}
+	return out, false, nil
+}
+
+// Count returns the total number of stored alerts.
+func (s *Store) Count() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.alerts)
+}
+
+// CountBySource returns the number of stored alerts with the given source.
+func (s *Store) CountBySource(source string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n := 0
+	for _, a := range s.alerts {
+		if a.Source == source {
+			n++
+		}
+	}
+	return n
 }

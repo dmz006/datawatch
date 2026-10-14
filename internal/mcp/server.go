@@ -34,6 +34,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -1613,6 +1614,12 @@ func (s *Server) toolGetAlerts() mcpsdk.Tool {
 		mcpsdk.WithString("source",
 			mcpsdk.Description("Filter alerts by source (e.g. 'system' for pipeline/plugin/ebpf failures)"),
 		),
+		mcpsdk.WithBoolean("unread_only",
+			mcpsdk.Description("Only return unread alerts (optional)"),
+		),
+		mcpsdk.WithString("before",
+			mcpsdk.Description("Only return alerts older than this alert ID — pass the 'next page' ID from a previous call (optional)"),
+		),
 	)
 }
 
@@ -2527,24 +2534,24 @@ func (s *Server) handleGetAlerts(_ context.Context, req mcpsdk.CallToolRequest) 
 	if limit <= 0 {
 		limit = 10
 	}
-	filterSess := req.GetString("session_id", "")
-	filterSrc := req.GetString("source", "")
-
-	var all []*alerts.Alert
-	if filterSrc != "" {
-		all = s.alertStore.ListBySource(filterSrc)
-	} else {
-		all = s.alertStore.List()
+	// BL432 / GH#242 — page through the store instead of filtering the
+	// full list, same options as GET /api/alerts?limit=&unread=&before=.
+	page, hasMore, err := s.alertStore.Page(alerts.PageOptions{
+		Limit:      limit,
+		UnreadOnly: req.GetBool("unread_only", false),
+		BeforeID:   req.GetString("before", ""),
+		Source:     req.GetString("source", ""),
+		SessionID:  req.GetString("session_id", ""),
+	})
+	if errors.Is(err, alerts.ErrUnknownCursor) {
+		return mcpsdk.NewToolResultError("unknown alert id in before"), nil
+	}
+	if err != nil {
+		return mcpsdk.NewToolResultError(err.Error()), nil
 	}
 	var sb strings.Builder
 	count := 0
-	for _, a := range all {
-		if filterSess != "" && a.SessionID != filterSess {
-			continue
-		}
-		if count >= limit {
-			break
-		}
+	for _, a := range page {
 		readMark := ""
 		if !a.Read {
 			readMark = " [unread]"
@@ -2571,6 +2578,9 @@ func (s *Server) handleGetAlerts(_ context.Context, req mcpsdk.CallToolRequest) 
 	}
 	if count == 0 {
 		return mcpsdk.NewToolResultText("No alerts."), nil
+	}
+	if hasMore {
+		fmt.Fprintf(&sb, "More alerts available — call again with before=%s\n", page[len(page)-1].ID)
 	}
 	return mcpsdk.NewToolResultText(sb.String()), nil
 }

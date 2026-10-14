@@ -5,6 +5,30 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.78 — feat(server): cheap alert polling (paging, count endpoint, read-sync over WebSocket)
+
+### Added
+- **`GET /api/alerts` can return one page instead of every alert.** Add
+  `limit=<n>` (n >= 0), `unread=1` and/or `before=<alert id>` (combinable
+  with the existing `source=`) to get alerts newest-first, one page at a
+  time. The paged response also carries `total`, `has_more` and
+  `next_before` — pass `next_before` back as `before` for the next, older
+  page. `limit=0` returns no alerts, only the counts. An unknown `before`
+  ID returns 400. Requests without any of these parameters get exactly the
+  same response as before.
+- **New `GET /api/alerts/count`** returns just `{unread_count, total}` —
+  a few bytes for an unread badge instead of the full alert list.
+- **New WebSocket message `alerts_read`**, sent whenever alerts are marked
+  read: `{"ids": [...], "unread_count": N}` for one alert or
+  `{"all": true, "unread_count": 0}` for mark-all. Together with the
+  existing `alert` message, clients can keep their alert badge in sync
+  without polling.
+- The MCP `get_alerts` tool accepts `unread_only` and `before` alongside
+  `limit`, and tells the caller which ID to pass as `before` when more
+  alerts are available.
+- `GET /api/info` lists `alerts.paging`, `alerts.count` and
+  `ws.alerts_read` in its `capabilities` array.
+
 ## v9.0.77 — feat(server): gzip compression for `/api/*` JSON responses
 
 ### Added

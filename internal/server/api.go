@@ -189,7 +189,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "9.0.77"
+var Version = "9.0.78"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -8117,6 +8117,10 @@ func (s *Server) handleAlerts(w http.ResponseWriter, r *http.Request) {
 		if !s.fedCap(w, r, federation.CapAlertsList) {
 			return
 		}
+		if alertsPagingRequested(r) {
+			s.serveAlertsPage(w, r)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		type alertsResponse struct {
 			Alerts      []*alerts.Alert `json:"alerts"`
@@ -8156,6 +8160,7 @@ func (s *Server) handleAlerts(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "id or all required", http.StatusBadRequest)
 			return
 		}
+		s.broadcastAlertsRead(body.ID, body.All)
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "ok"}) //nolint:errcheck
 	default:

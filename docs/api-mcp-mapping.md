@@ -97,7 +97,8 @@ documenting coverage gaps and the reasoning behind them.
 
 | API Endpoint | MCP Tool | Status | Notes |
 |-------------|----------|--------|-------|
-| `GET /api/alerts` | `get_alerts` | Complete | |
+| `GET /api/alerts` | `get_alerts` | Complete | `limit`/`unread`/`before` paging maps to the tool's `limit`/`unread_only`/`before` |
+| `GET /api/alerts/count` | — | Not in MCP | Badge counts `{unread_count, total}` for polling clients; MCP clients use `get_alerts` |
 | `POST /api/alerts` (mark read) | `mark_alert_read` | Complete | |
 | `POST /api/alerts/create` | `create_alert` | Complete | GH#201 Phase 5 — raises a new system alert (`CapAlertsWrite`, not granted to any built-in group by default) |
 

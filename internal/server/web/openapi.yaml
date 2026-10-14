@@ -740,9 +740,44 @@ paths:
   /api/alerts:
     get:
       summary: List alerts
-      description: Returns all system alerts and the count of unread alerts.
+      description: |
+        Returns system alerts (newest first) and the count of unread alerts.
+
+        Without `limit`, `unread` or `before` the response is the full list
+        with `alerts` and `unread_count` only. Supplying any of them returns
+        one page and adds `total`, `has_more` and `next_before`; pass
+        `next_before` back as `before` to fetch the next (older) page.
+        Clients can detect support via the `alerts.paging` entry in
+        `/api/info` `capabilities`.
       operationId: listAlerts
       tags: [Alerts]
+      parameters:
+        - name: source
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Only return alerts with this source (e.g. `system`).
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+          description: Maximum alerts to return. `0` returns no alerts, only the counts.
+        - name: unread
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ["1", "0", "true", "false"]
+          description: "`1` returns only unread alerts."
+        - name: before
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Return only alerts older than this alert ID (the previous page's `next_before`). Unknown IDs return 400.
       responses:
         "200":
           description: Alerts list with unread count
@@ -758,6 +793,17 @@ paths:
                   unread_count:
                     type: integer
                     description: Number of unread alerts
+                  total:
+                    type: integer
+                    description: Paged form only — total stored alerts (matching `source` when set).
+                  has_more:
+                    type: boolean
+                    description: Paged form only — more matching alerts exist past this page.
+                  next_before:
+                    type: string
+                    description: Paged form only — ID of the last returned alert; omitted when `has_more` is false.
+        "400":
+          description: Invalid `limit`/`unread` value or unknown `before` alert ID
         "401":
           $ref: "#/components/responses/Unauthorized"
     post:
@@ -786,6 +832,31 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
+  /api/alerts/count:
+    get:
+      summary: Alert counts
+      description: |
+        Returns only the unread and total alert counts — a cheap badge poll.
+        Advertised as `alerts.count` in `/api/info` `capabilities`.
+      operationId: countAlerts
+      tags: [Alerts]
+      responses:
+        "200":
+          description: Alert counts
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  unread_count:
+                    type: integer
+                  total:
+                    type: integer
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Federation peer lacks the alerts-list capability
+
   /ws:
     get:
       summary: WebSocket connection
@@ -802,6 +873,7 @@ paths:
         | `needs_input` | Session is waiting for user input |
         | `notification` | General text notification |
         | `alert` | New system alert pushed to Web UI clients |
+        | `alerts_read` | Alerts were marked read: `{"ids": ["..."], "unread_count": N}` or `{"all": true, "unread_count": 0}` |
 
         ### Client to Server messages
 
