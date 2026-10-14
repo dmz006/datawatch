@@ -155,3 +155,53 @@ find ~/.datawatch/sessions -maxdepth 1 -mtime +30 -type d
 # Archive or remove
 datawatch session purge --older-than 30d
 ```
+
+### Shrinking a bloated session repo
+
+Session folders created before `output.log` was excluded from git history can grow
+to many gigabytes, because every commit stored a full copy of the growing log. Do not
+run `git gc` or `git repack` on one of these repos from inside the daemon, and do not
+run them by hand either. On 2026-10-13 a repack of such a repo used over 100GB of
+memory and the OOM killer took down the whole datawatch service.
+
+Use `scripts/shrink-session-repo.sh` instead. It deletes `output.log` and
+`output.log.enc` from the repo's git **history** only. The on-disk `output.log` is
+moved aside during the rewrite and then put back, and the script verifies that its
+size and inode are unchanged. The heavy git steps (history rewrite, `gc --prune=now`,
+`fsck`) run in a transient `systemd-run --user` scope with `MemoryMax=4G` and
+`MemorySwapMax=0`, at nice 19 and idle I/O priority. If they overrun, only that scope is
+killed, never `datawatch.service`. The script prints the scope's peak memory. Without a
+systemd user manager it falls back to `nice`/`ionice` plus `ulimit -v`.
+
+When to run it: when `du -sh ~/.datawatch/sessions/*/.git` shows a session repo far
+larger than its text files. Run it on completed sessions. It refuses a session whose
+`session.json` state is `running`/`waiting_input`, a repo that committed within the
+last 2 minutes, and a repo with a `.git/index.lock`.
+
+```bash
+# See what would happen (changes nothing)
+scripts/shrink-session-repo.sh --dry-run ~/.datawatch/sessions/<session-dir>
+
+# Shrink one or more session repos
+scripts/shrink-session-repo.sh ~/.datawatch/sessions/<dir1> ~/.datawatch/sessions/<dir2>
+
+# Cheap, non-destructive sweep: apply only the git hygiene settings
+# (gc.auto=0, bounded pack memory, output.log in .git/info/exclude) to every session repo
+scripts/shrink-session-repo.sh --all-hygiene ~/.datawatch/sessions
+```
+
+Options and environment:
+
+| Setting | Effect |
+|---------|--------|
+| `--allow-active` | Rewrite even if the session looks active. `.git/index.lock` is still re-checked just before rewriting. |
+| `SHRINK_MEMORY_MAX=8G` | Raise the memory cap. If the scope is killed, the script says so, restores `output.log`, and leaves history intact, so you can retry with a higher cap. |
+| `SHRINK_FILTER_TOOL=filter-branch` | Force `git filter-branch` even if `git-filter-repo` is installed (the default is filter-repo when available). |
+| `SHRINK_NO_SCOPE=1` | Skip `systemd-run` and use the `ulimit -v` fallback. |
+
+The rewrite changes commit hashes in the session repo, so anything that recorded a
+session-repo commit hash (not the project repo's) will no longer resolve. History of
+`timeline.md` and `conversation.md` is kept: the script checks that their commit counts
+are unchanged. If a run is interrupted hard (e.g. `kill -9`), the live file is left in
+`<session-dir>/.git/shrink-backup/`. The script refuses to run again until you move it
+back.
