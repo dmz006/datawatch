@@ -1004,3 +1004,66 @@ default. Recorded as a follow-up in the backlog.
 | `make build` | PASS (`bin/datawatch` → `datawatch v9.0.82`) |
 | `make install` + `systemctl --user restart datawatch` | PASS (`datawatch version` → `datawatch v9.0.82`; `/api/info` → `9.0.82`) |
 | `bash scripts/release-smoke.sh` (own isolated sandbox daemon, `TMUX` unset) | PASS — `== Summary ==` Pass: 217, Fail: 0, Skip: 35 (109 numbered sections; section 73 covers capabilities, the summary list, alert counts and API gzip) |
+
+## v9.0.83 — Session-tracker git growth: output.log out of history, no implicit auto-gc (2026-10-14)
+
+Fixes the 2026-10-13 daemon OOM. Each session-tracking repo committed its
+growing `output.log` on every state change, and git's automatic gc then
+repacked those blobs inside the daemon's cgroup. Now `output.log` (and
+`.enc`/`.pipe`) stays on disk, untracked. Tracker repos get `gc.auto=0`,
+`gc.autoDetach=false`, `pack.windowMemory=64m`, `pack.threads=1` and
+`core.bigFileThreshold=16m` at init and on resume.
+
+### T1 — Unit tests (`internal/session`)
+
+| Field | Details |
+|-------|---------|
+| **Steps** | `go test -count=1 -run Tracker -v ./internal/session/` |
+| **Expected** | New repos get the gc/pack caps; `output.log` is never committed; a resumed legacy repo with `output.log` tracked gets it untracked (file kept on disk). |
+| **Actual** | `--- PASS: TestNewTracker_SetsSafeGCConfig`, `--- PASS: TestTracker_OutputLogNotCommitted`, `--- PASS: TestResumeTracker_UntracksLegacyOutputLog`; `ok internal/session 0.119s` |
+| **Result** | PASS |
+
+### T2 — Reproduction harness, legacy vs fixed setup
+
+| Field | Details |
+|-------|---------|
+| **Steps** | `scripts/repro-tracker-git-growth.sh --workdir bin/repro-scratch --commits 120 --chunk-kb 512 --go` (scratch dir, removed afterwards) |
+| **Expected** | Legacy setup grows roughly quadratically and commits `output.log` every time; fixed setup stays small and never commits it. |
+| **Actual** | See the table below. `.git` is 2.83 GB for legacy vs 2.4 MB for fixed (about 1,177× smaller) with the same 62 MB `output.log`. Max commit RSS is 65 MB vs 6 MB. Auto-gc fired in legacy and not in fixed. `go test: pass`, `RESULT: PASS`, 76 s. |
+| **Result** | PASS |
+
+```
+mode    | .git size KB |  max commit RSS KB |  auto-gc | output.log commits |  loose | packs |  output.log KB
+--------+--------------+--------------------+----------+------------------+--------+-------+---------------
+legacy  |      2834020 |              66776 |        y |                120 |    392 |     1 |          62248
+fixed   |         2408 |               6028 |        n |                  0 |    360 |     0 |          62248
+```
+
+### T3 — Live daemon redeploy and 23-minute observation
+
+| Field | Details |
+|-------|---------|
+| **Steps** | `make build` → `make install`; `datawatch version` checked before the restart; `systemctl --user restart datawatch` at 15:21:18. Then every 3 min: `systemctl --user show datawatch -p MainPID -p NRestarts -p MemoryCurrent -p MemoryPeak` and `journalctl --user -u datawatch --since '2026-10-14 15:21:18' \| grep -ciE 'oom\|killed'`. |
+| **Expected** | Same PID throughout, `NRestarts=0`, no OOM/killed lines, memory flat. |
+| **Actual** | `datawatch version` and `/api/info` both `9.0.83`. 8 samples from 15:21:34 to 15:44:06: MainPID 3008307 throughout, `NRestarts=0`, `MemoryCurrent` 631–669 MB (no upward trend), `MemoryPeak` 1.19 GB (set during startup, unchanged after), **0** oom/killed lines in every sample. |
+| **Result** | PASS |
+
+### T4 — Spot-check live session repos (read-only)
+
+| Field | Details |
+|-------|---------|
+| **Steps** | For long-lived `<host>-9245` and for every repo that committed after the restart: `git ls-files output.log output.log.enc`, `git config gc.auto`, `git config gc.autoDetach`, `git config pack.windowMemory`, and `git log -- output.log` |
+| **Expected** | Nothing tracked; `gc.auto=0`, `gc.autoDetach=false`, `pack.windowMemory=64m`; `output.log` still on disk. |
+| **Actual** | `<host>-9245`: `ls-files output.log` is empty and `gc.auto=0`. Its last commit was 15:07:59, before the restart, from the v9.0.62+ tracker that was already untracking it; it was waiting for input and made no new commit during the window. Its `.git` is still 8.7 GB of pre-fix history, so `scripts/shrink-session-repo.sh` is a separate operator step. Repos that committed after the restart, `<host>-26ea` (15:22:52 "input sent") and `<host>-7c28` (15:22:16 "killed"): `ls-files` is empty, `gc.auto=0`, `autoDetach=false`, `winmem=64m`, 0 commits ever touched `output.log`, `.git` 452 KB / 500 KB, and `output.log` is present on disk. |
+| **Result** | PASS |
+
+### Gates
+
+| Gate | Result |
+|------|--------|
+| `go test ./...` | PASS (69 packages `ok`, exit 0) |
+| `make lint` | PASS (`0 issues.`) |
+| `node --check internal/server/web/app.js` | PASS |
+| `gofmt -l` | No findings in the files this release touched. Go 1.27.2's gofmt flags about 140 untouched files repo-wide; that predates this change and is not a CI gate (`make lint` is). |
+| `make build` + `make install` | PASS (`datawatch v9.0.83`) |
+| Release smoke | Not run. This is a patch fix with no new endpoint or operator-facing API (AGENT.md Section C allows targeted or no smoke). Live deploy and observation are in T3. |

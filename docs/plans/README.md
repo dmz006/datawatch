@@ -885,6 +885,11 @@ established. In progress — starting with BL403.**
     outside the daemon's own cgroup so a retry can't repeat today's
     OOM. Uses `claude-code` for decompose/execution/verification per
     the operator's explicit instruction for dev PRDs.
+    **Shipped v9.0.83 (2026-10-14)**: tracker fix (`54954c5f`, in
+    binaries since v9.0.62), shrink script, repro harness, docs; the
+    live daemon was redeployed and observed (see `docs/testing.md`).
+    Running the shrink script on the existing bloated repos is still an
+    operator step.
 20. **BL421** — PRD lifecycle can't recover a blocked/cancelled task's
     spec without a full re-decompose (filed + shipped 2026-10-13, same
     day — **shipped v9.0.62**).
@@ -1277,7 +1282,7 @@ daemon).
 | 3 | **BL434** — full-screen eye splash + input-draft preservation fix | Queued (re-decomposing) | PWA visual + a real data-loss bug on the same reload sites. |
 | 4 | **BL435** — unmodified-retry executor fix | Queued | Generalizes a one-off task-spec workaround used to recover BL431 into a real fix for every datawatch install. |
 | 5 | **BL431** (`c187962a`) — Automation design doc | One task left (self-registration) | Design doc itself is done and committed; only its own backlog-registration task remains. |
-| 6 | **BL420** — session-tracker OOM fix | Queued, resumes after #5 | **Operator-confirmed 2026-10-14 ~14:05: moved back ahead of BL427/428/431.** Not "regular work" under the operator's own ordering principle — it's crash-prevention for the daemon that is about to run the heaviest, most concurrent automated work yet (row 7). Doing the riskiest implementation stretch without this fix in place first is the wrong order. |
+| 6 | **BL420** — session-tracker OOM fix | **Shipped v9.0.83** (tracker code in binaries since v9.0.62; v9.0.83 documents it, ships `scripts/shrink-session-repo.sh` + `scripts/repro-tracker-git-growth.sh`, redeployed + 15-min observation in `docs/testing.md`). Shrinking the already-bloated repos (ab22/9245/ddeb) with the script is a separate operator step. | **Operator-confirmed 2026-10-14 ~14:05: moved back ahead of BL427/428/431.** Not "regular work" under the operator's own ordering principle — it's crash-prevention for the daemon that is about to run the heaviest, most concurrent automated work yet (row 7). Doing the riskiest implementation stretch without this fix in place first is the wrong order. |
 | 7 | **BL427 → BL428 → BL431 implementation** | Not started — design docs only | Optimize the Automaton/PRD execution system itself before more regular feature/bugfix work, so the rest of the roadmap runs through it rather than being hand-sequenced. Dependency order: event dispatch → concurrency/budget mechanics → Automation coordinator built on top of both. Known trade-off, noted not litigated: BL428 §4d / BL431 §6-§11's model-tier design cite BL422's results as an input, so that part proceeds on placeholder assumptions until BL422 runs afterward (row 8). |
 | 8 | **BL422** — Claude model/effort tiering eval | Queued, resumes after #7 | Its results get retrofitted into whatever BL428/431 implemented with placeholder tier defaults (see row 7's trade-off note). |
 | — | **BL436** — per-turn chunked session capture (replaces tmux-scrollback reliance) | Design doc done, `needs_review` | Filed 2026-10-14, not yet slotted into the numbered order above — docs-only, low collision risk, could run opportunistically. |

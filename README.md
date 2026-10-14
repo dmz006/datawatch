@@ -57,7 +57,15 @@ Browse the catalog in-app (Settings → Skills → Registry) or on GitHub. To co
 
 ## Current release
 
-**Current release: v9.0.82 (2026-10-14).** Smaller payloads for mobile
+**Current release: v9.0.83 (2026-10-14).** Session-tracking folders no
+longer keep the live `output.log` in their git history, and the daemon
+turns off git's automatic garbage collection in those repos, so a large
+session repo can no longer trigger a repack that exhausts host memory
+and takes the daemon down. `scripts/shrink-session-repo.sh` shrinks repos
+that grew before the fix. See [Session Tracking](docs/session-tracking.md#repository-size--maintenance)
+and [v9.0.83](CHANGELOG.md).
+
+**v9.0.82** brought smaller payloads for mobile
 and web clients on busy daemons, each one requested by the client: a compact session list
 (`GET /api/sessions?view=summary`), gzip for `/api/*` JSON, paged alerts
 with a cheap unread-count endpoint and an `alerts_read` WebSocket event,

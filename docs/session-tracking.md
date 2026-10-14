@@ -18,7 +18,7 @@ Example: `~/.datawatch/sessions/hal9000-a3f2/`
 | `.git/` | Git repository — every event is a commit |
 | `README.md` | Auto-updated session overview (task, status, timestamps, tmux name) |
 | `task.md` | Original task description and any amendments |
-| `output.log` | Full raw claude-code output, streamed live by tmux pipe-pane |
+| `output.log` | Full raw claude-code output, streamed live by tmux pipe-pane. Kept on disk only: it is listed in `.git/info/exclude` and is **not** committed to the folder's git history (nor are `output.log.enc` / `output.log.pipe`). |
 | `conversation.md` | Human-readable history of prompts received and inputs sent |
 | `timeline.md` | Append-only timestamped event log |
 | `session.json` | Machine-readable session state snapshot |
@@ -155,6 +155,37 @@ find ~/.datawatch/sessions -maxdepth 1 -mtime +30 -type d
 # Archive or remove
 datawatch session purge --older-than 30d
 ```
+
+### Repository size & maintenance
+
+Each session folder's git repo only records the small text files (`task.md`,
+`timeline.md`, `conversation.md`, `session.json`, `README.md`, guardrail files).
+The live `output.log` (and `output.log.enc` / `output.log.pipe`) stays on disk and is
+never committed. Repos created before this change had `output.log` tracked; the
+daemon untracks it automatically (`git rm --cached`, the file itself is kept) on the
+first commit it makes to that repo after a restart.
+
+When the daemon creates or resumes a session repo it also sets these git options on it:
+
+| Option | Value | Why |
+|--------|-------|-----|
+| `gc.auto` | `0` | Turns off git's implicit auto-gc. Without this, an ordinary `git commit` made by the daemon can start a full repack in the background. |
+| `gc.autoDetach` | `false` | If a gc does run, it does not detach and keep running unseen. |
+| `pack.windowMemory` | `64m` | Caps the delta-search memory per pack thread. |
+| `pack.threads` | `1` | One pack thread, so the cap above is the total. |
+| `core.bigFileThreshold` | `16m` | Files over 16MB are stored without delta compression, which is where repack memory goes. |
+
+Why this matters: the daemon makes these commits from inside its own process and
+systemd cgroup. Any git work they trigger counts against the daemon's memory, so an
+implicit auto-gc on a large repo can exhaust host memory and the OOM killer then takes
+down the whole daemon, not just that git process. With auto-gc off, session repos are
+never repacked by the daemon. They stay small because `output.log` is no longer in
+history.
+
+Repos that grew large before this change keep their old history until you shrink them.
+Use `scripts/shrink-session-repo.sh` (below), which runs outside the daemon under a
+memory cap. `scripts/repro-tracker-git-growth.sh` reproduces the growth in a scratch
+directory and prints a size table, before and after the fix.
 
 ### Shrinking a bloated session repo
 
