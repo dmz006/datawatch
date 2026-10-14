@@ -1263,7 +1263,7 @@ established. In progress — starting with BL403.**
    inference caps, usage budget, worked examples, config keys, 6 planned
    implementation phases, parity surface, 9 operator open questions).
 
-**Active execution order (operator-confirmed, last updated 2026-10-14 ~13:56;
+**Active execution order (operator-confirmed, last updated 2026-10-14 ~14:00;
 supersedes the three separate dated addenda this replaced — this is now the
 single place to look, not prose scattered across several paragraphs).**
 Items run one at a time against this tree (no cross-PRD write
@@ -1277,9 +1277,9 @@ watcher scripts, not by the daemon).
 | 3 | **BL434** — full-screen eye splash + input-draft preservation fix | Queued (re-decomposing) | PWA visual + a real data-loss bug on the same reload sites. |
 | 4 | **BL435** — unmodified-retry executor fix | Queued | Generalizes a one-off task-spec workaround used to recover BL431 into a real fix for every datawatch install. |
 | 5 | **BL431** (`c187962a`) — Automation design doc | One task left (self-registration) | Design doc itself is done and committed; only its own backlog-registration task remains. |
-| 6 | **BL420** — session-tracker OOM fix | Queued, resumes after #5 | Stability prerequisite before adding more automated concurrent work (item 8 below). |
-| 7 | **BL422** — Claude model/effort tiering eval | Queued, resumes after #6 | Its results are a named input to BL428 §4d's `plan_tier` defaults and BL431 §6/§11's model-tier design — run it before implementing what consumes it. |
-| 8 | **BL427 → BL428 → BL431 implementation** | Not started — design docs only | Dependency order confirmed: event dispatch → concurrency/budget mechanics → Automation coordinator built on top of both. |
+| 6 | **BL427 → BL428 → BL431 implementation** | Not started — design docs only | **Operator-confirmed 2026-10-14 ~14:00: moved ahead of BL420/BL422** — optimize the Automaton/PRD execution system itself before more regular feature/bugfix work, so the rest of the roadmap runs through it rather than being hand-sequenced. Dependency order: event dispatch → concurrency/budget mechanics → Automation coordinator built on top of both. Known trade-off, noted not litigated: BL428 §4d / BL431 §6-§11's model-tier design cite BL422's results as an input, so that part proceeds on placeholder assumptions until BL422 runs afterward. |
+| 7 | **BL420** — session-tracker OOM fix | Queued, resumes after #6 | Still a real stability gap; now sequenced after the orchestration work instead of before it. |
+| 8 | **BL422** — Claude model/effort tiering eval | Queued, resumes after #7 | Its results will need to retrofit into whatever BL428/431 implemented with placeholder tier defaults (see row 6's trade-off note). |
 | — | **BL436** — per-turn chunked session capture (replaces tmux-scrollback reliance) | Design doc done, `needs_review` | Filed 2026-10-14, not yet slotted into the numbered order above — docs-only, low collision risk, could run opportunistically. |
 | — | **BL437** — recurring hardware-aware model/effort eval | Decomposing | Filed 2026-10-14 (pre-v10.0.0 priority, operator-named), generalizes BL422 into an ongoing monthly sweep; not yet slotted into the numbered order above. |
 
