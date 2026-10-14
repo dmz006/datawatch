@@ -1,0 +1,970 @@
+# BL428 — Concurrency control & usage-budget design
+
+**Date:** 2026-10-14
+**Version:** v9.0.75 at time of writing (`var Version` in `cmd/datawatch/main.go`); implementation target TBD / next minor
+**Status:** Design pass — needs_review (no implementation approved; no code, config default or version changed by this doc)
+
+Terminology note: operator-facing text says **Automaton/Automata**; the code
+and this plan say **PRD** for the same object (`internal/autonomous`). The
+multi-Automaton orchestration object designed in BL431 is called an
+**Automation** (capital A). The Automation design-pass PRD was created in the
+daemon under the title "BL430 — Automation…" (record `c187962a`), but the
+backlog number is **BL431**. BL430 is the verification-LLM override that
+already shipped in v9.0.72 (PRD `4d0ad909`). They are different items.
+
+## Scope
+
+**In scope:** a design for two separate concurrency-safety mechanisms and a
+usage-budget throttle for the autonomous executor, grounded in what the code
+does today:
+
+- `internal/autonomous/manager.go`, `internal/autonomous/executor.go`,
+  `internal/autonomous/api.go`: the executor goroutine for each PRD, per-PRD
+  task fan-out, and the dead `max_parallel_tasks` knob.
+- `internal/autonomous/capacity.go`, `internal/capacity/ledger.go`,
+  `cmd/datawatch/capacity_wiring.go`: the existing admission ledger. This is
+  the proposed home for the inference cap.
+- `internal/autonomous/ci_watch.go`, `internal/autonomous/rules_review.go`,
+  `internal/autonomous/guardrail_registry.go`,
+  `internal/autonomous/verification_script_exec.go`: what each phase reads
+  and writes.
+- `internal/session/manager.go`, `internal/session/cooldown.go`,
+  `internal/session/tracker.go`, `internal/session/state_engine.go`: how
+  rate limits are detected today and what reacts to them.
+- `internal/config/config.go`, `internal/server/api.go`,
+  `internal/mcp/autonomous.go`, `internal/server/web/app.js`: config-surface
+  plumbing.
+
+**Out of scope:** any code. The Automation coordinator (BL431). Lifecycle
+push notifications (BL427). Multi-backend budget logic (see the Scope
+boundary section). Cost-observability dashboards (BL405 Phases 4/6/10,
+BL414's observability half).
+
+## 1. Terminology and resource classes
+
+### Unit of execution: the task, not the story
+
+An **Automaton (PRD)** contains **stories**, and each story contains
+**tasks** (`internal/autonomous/models.go`). The executor's unit of work is
+the **task**. `Manager.Run` flattens every story into one task list
+(`flattenTasks(prd)` then `topoSort(tasks)`, `internal/autonomous/executor.go`
+~235). It then calls `executeOne` once per task. `executeOne` spawns exactly
+**one worker session per task attempt** (`spawn(ctx, SpawnRequest{TaskID: …})`,
+executor.go ~861).
+
+Stories do no execution of their own. They are used for:
+
+- grouping,
+- status roll-up (`StoryInProgress` is set when a story's first task starts,
+  executor.go ~300),
+- per-story guardrails (`runPerStoryGuardrails`, executor.go ~574), and
+- `depends_on` ordering between stories.
+
+**Granularity: the operator's original "story" framing maps to the task.**
+Wherever the operator said "two stories running at once", the code-level
+meaning is two **tasks**, each holding its own worker session. Every
+mechanism in this doc admits, locks and throttles per task, not per story.
+
+### Resource classes
+
+| Class | What it is | Who draws it today |
+|---|---|---|
+| **ACTIVE-INFERENCE slot** | A live LLM worker or judge session that is generating tokens or waiting on the model. Bounded by Claude account usage, or by GPU/VRAM on a compute node. | Task worker sessions, decompose sessions, verifier/guardrail judge calls, and council calls. |
+| **PROJECT-TREE WRITE lock** | Exclusive right to change the working tree and git index/refs of one canonical `project_dir`. | Task workers (edit, `git add`, `git commit`, push), `verification_script` side effects, `scan_fix`, and operator hand edits. **Not modeled at all today.** |
+| **IDLE-EXTERNAL-WAIT** | Waiting on something outside datawatch (CI on GitHub, a release run) with no inference running. | `ci-watch` polling `gh run list` (`ci_watch.go` `pollCIRuns`). Also a task worker told to "wait for CI", which today holds a full inference slot while doing so (see worked example ii). |
+| **USAGE-BUDGET draw** | Consumption of a time-windowed allowance: a Claude subscription's rolling 5-hour and weekly windows, or a self-imposed $/day/week/month ceiling on API billing. | Every phase that calls an LLM. Concurrency does not create usage, but it spends a fixed bucket faster. |
+
+## 2. Phase-level concurrency matrix
+
+Phases:
+
+- **D** — decompose/planning.
+- **T** — task execution.
+- **V** — verification: the verifier diff plus the `verification_script`.
+- **RR** — rules-review (PRD-completion guardrail).
+- **CW** — ci-watch (PRD-completion guardrail).
+- **S** — scan: the `scan` guardrails and `autonomous_prd_scan`.
+- **M** — operator manual edits.
+
+Evidence for each phase:
+
+- **D** reads the tree. Its only designed write is the content-addressed
+  `.decompose-output-<sha256(spec)[:8]>.json` in `project_dir`
+  (`cmd/datawatch/main.go` ~4204), which `runOneShotJSONSession` moves into
+  PRD-scoped storage (`internal/autonomous/scratch.go`). Because the filename
+  is a hash of the spec, two PRDs never share an output file.
+- **T** edits files, then runs `git add`/`git commit`, and sometimes push.
+  This is the only phase designed to write the tree.
+- **V** runs `git diff` over `pre_task_sha..HEAD` and runs the unit's
+  `verification_script` inside `project_dir`
+  (`runVerificationScript(script, projectDir)`,
+  `internal/autonomous/verification_script_exec.go:32`, called from
+  `prepareScriptEvidence`, executor.go ~1503). Scripts routinely run
+  `go build`/`go test`/`docker build`, which write build artifacts, caches
+  and test fixtures. These writes are write-ish side effects, not edits to
+  the work itself.
+- **RR** is an LLM judge over the PRD diff plus the rules file
+  (`rules_review.go` `runPRDCompletionRulesReview`). It is read-only by
+  design. A `contentFixVerdict` does not write: it synthesizes a new **task**
+  (`synthesizeCorrectiveWork`, executor.go ~629), and that task is then a T.
+- **CW** reads `HEAD` and the origin URL from `project_dir`
+  (`defaultCIGit(ctx, projectDir)`, `ci_watch.go:133`), then polls
+  `gh run list --commit <sha>` (`ci_watch.go:162`). It never writes the tree
+  and never calls `admit()`, so it holds **no capacity lease** while
+  polling. Only its failure-judge step (`ciWatchJudge` →
+  `runGuardrailWithInfraRetry`) uses inference.
+- **S** runs `scan.Run(projectDir, …)`
+  (`guardrail_registry.go:155` `invokeScanGuardrail`;
+  `manager.go:3155` `RunScan`) with deterministic SAST, secrets, deps and
+  project-rules scanners. It reads the tree only. `scan_fix` writes, and is
+  classed with T.
+- **M** writes anything, any time. Nothing in datawatch can see it before
+  it happens.
+
+All verdicts below assume the **same canonical `project_dir`** unless the row
+says otherwise. Two phases on **different** `project_dir`s are always safe to
+overlap for the tree; they still compete for inference and usage budget
+(mechanisms 3b and 4), which this table does not cover.
+
+| Pair | Verdict | Read/write evidence |
+|---|---|---|
+| D × D | safe to overlap | Both only read. Output files are content-addressed per spec hash (main.go ~4204), so they cannot collide. |
+| D × T | depends on whether T is mid-write | D reads while T writes. D cannot corrupt T, but D may plan against a half-edited tree or a commit that is about to land, so the plan can be stale. Acceptable when D's PRD runs later anyway. Unsafe for D's plan quality if both PRDs touch the same files. |
+| D × V | depends on V's script side effects | D reads, and V's script may leave build output or caches in the tree. Harmless unless those artifacts are untracked and D's prompt reads them. |
+| D × RR | safe to overlap | Both read only. |
+| D × CW | safe to overlap | CW reads HEAD and calls GitHub; D reads files. |
+| D × S | safe to overlap | Both read only. |
+| D × M | depends on whether M is mid-edit | Same as D × T. Planning against an operator's uncommitted edit is a stale-read risk, not a corruption risk. |
+| T × T, same project_dir | **unsafe** | Both edit the same tree and contend on `.git/index.lock`. Each one's `pre_task_sha..HEAD` range includes the other's commits. Live evidence: BL425's incident, where a task's `git add -A` swept an unrelated edit, and BL426 task `18bc04c1`, whose `files_touched` lists BL423's `internal/mcp/autonomous.go`, `internal/mcp/guardrail_tools.go`, `CHANGELOG.md` and others, because BL423's commits landed in the same tree during its window. |
+| T × T, different project_dir | safe to overlap | Disjoint trees and disjoint git repos, or a worktree (see 3a). Shares only inference and budget. |
+| T × V | **unsafe** (same tree, different PRDs); depends on the diff range for the same PRD | V's diff is `pre_task_sha..HEAD`, so a concurrent T's commits get judged as this task's work. Live evidence: BL426 task `18bc04c1`'s own verifier wrote "the supplied diff also includes CHANGELOG/main.go v9.0.64 … from earlier commits". V's script may build or test against a tree T is changing. Within one PRD, the sequential path never overlaps them. |
+| T × RR | depends on whether T belongs to the same PRD | RR judges the PRD's full diff. Another PRD's T committing mid-review pollutes that diff. RR only runs after all of its own PRD's tasks are terminal (executor.go ~613). |
+| T × CW | depends on who moves HEAD | CW resolves `HEAD` of `project_dir` (`ci_watch.go:133`). If another PRD's T commits or pushes in the same tree, CW watches **that** PRD's commit and credits or blames the wrong Automaton. |
+| T × S | depends on whether a scan finding is judged against a half-written tree | S reads only, but a scan of a tree mid-edit can report transient findings, or miss findings in work not yet written. |
+| T × M | **unsafe** | This is BL425's incident: an operator was hand-editing the tree where a direct-mode task ran `git add -A`. BL425 (`file_drift.go`, v9.0.75) **detects** this after the fact; it does not prevent it. |
+| V × V | depends on the scripts | Two judge reads are safe. Two scripts that both `go build` or `docker build` in the same tree can race on shared outputs. |
+| V × RR | safe to overlap | Both judge-read. RR runs only after V for the same PRD finishes. |
+| V × CW | safe to overlap | CW does not write. V's script does not move HEAD. |
+| V × S | safe to overlap | Both read; a script's build output may appear in a scan as untracked noise. |
+| V × M | depends on M | A script run against an operator's in-progress edit gives evidence that does not describe the task. |
+| RR × RR | safe to overlap | Read-only judges. Each holds an inference slot. |
+| RR × CW | safe to overlap | Sequential within one PRD (executor.go ~628 → ~650). Across PRDs both are read-only. |
+| RR × S | safe to overlap | Read-only. |
+| RR × M | depends on M | Same as V × M: the judgment describes a tree that is still changing. |
+| CW × CW | safe to overlap | Two PRDs polling GitHub. Wrong-commit attribution only happens if they share a tree and HEAD moves, which is the T × CW case. |
+| CW × S | safe to overlap | Neither writes. |
+| CW × M | depends on whether M commits or pushes | An operator commit in the tree moves HEAD under CW. |
+| S × S | safe to overlap | Deterministic readers. |
+| S × M | safe to overlap (findings may be stale) | Reads only. |
+| M × M | out of datawatch's scope | Not observable. |
+
+The pattern: **every unsafe or depends-on cell involves a tree writer (T,
+V's script, M) or a HEAD reader (CW, V's diff, RR's diff) in the same
+`project_dir`.** No cell is unsafe for any reason other than the shared tree.
+That is why mechanism 3a is keyed by tree and is separate from the inference
+cap.
+
+## 3. Two separate mechanisms
+
+### What gates concurrency today (the evidence)
+
+- **`max_parallel_tasks` / `MaxParallelTasks` is dead config.** A repo-wide
+  grep finds it in seven places, and every one is plumbing:
+  - `internal/autonomous/manager.go:46`: the field.
+  - `manager.go:261`: default 3.
+  - `internal/config/config.go:1863-1864`: commented "per-PRD in-flight
+    worker cap (default 3)".
+  - `internal/server/api.go:5484`: GET.
+  - `internal/server/api.go:6729-6731`: PUT.
+  - `cmd/datawatch/main.go:4074` and `4167-4168`: bridge and default.
+  - `internal/mcp/autonomous.go:53` and `85`: described as "Per-PRD worker
+    cap (default 3)".
+  - `internal/server/web/app.js:13942` and `28648-28649`: PWA field.
+
+  **No executor code reads it.** Its own descriptions in MCP, config.go and
+  the PWA are false. The live daemon has `autonomous.max_parallel_tasks: 1`,
+  and that setting changes nothing.
+- **`MaxConcurrentTasks` (BL370) is the real knob, but it is per-PRD only.**
+  `executor.go:248-256` resolves the limit as follows: per-PRD
+  `prd.MaxConcurrentTasks` wins; otherwise the global `m.cfg.MaxConcurrentTasks`
+  applies; `<= 1` means sequential. The limit bounds fan-out **within one
+  PRD's own `Run`**.
+
+  The global field also has a gap: `config.AutonomousConfig` has **no**
+  `MaxConcurrentTasks` field (zero hits in `internal/config/config.go`), and
+  the `amgrCfg` literal in `cmd/datawatch/main.go` (~4072) does not set it. So
+  the global default cannot be set from YAML and always starts at 0
+  (sequential). The per-PRD override has a full surface:
+  `SetPRDConcurrency` (`manager.go:3332`), REST at
+  `internal/server/autonomous.go:1522-1543`, and the PWA at `app.js:13498`.
+- **Nothing gates across PRDs.** `API.Run` (`internal/autonomous/api.go`
+  ~305-345) starts one `go func(){ a.M.Run(ctx, id, …) }()` per PRD ID. Its
+  only guard is the `runCancels[id]` dedupe, which stops the **same** PRD
+  from getting two executor goroutines. Two different PRDs (or ten) each get
+  their own goroutine, and each walks its own tasks with no shared lock.
+  Approving a PRD does not start it: the `approve` REST case
+  (`internal/server/autonomous.go` ~473-479) calls `Manager.Approve` and
+  returns. `run` is a separate action.
+- **The capacity ledger exists, and it gates inference-ish slots, not
+  trees.** `executeOne` calls `m.admit(ctx, prd, t, backend, model)`
+  (executor.go ~854) before every spawn, and releases with
+  `defer m.releaseCapacity(t.ID)` (executor.go ~779). The lease is therefore
+  held across spawn, the worker run, **and** verify, until `executeOne`
+  returns. `admit` (`internal/autonomous/capacity.go` ~125) acquires the
+  pools returned by `CapacityKeysFn(backend, model)`. In
+  `cmd/datawatch/capacity_wiring.go:83-96` those pools are:
+  - `host`, limited to `session.max_sessions − reserved_interactive`, which
+    is 10 − 1 = 9 on the live daemon. Untracked interactive and
+    `autonomous:decompose` sessions are added through the `External` callback
+    (capacity_wiring.go:55-66).
+  - `llm:<registry name>`, limited by the LLM's `max_inflight`
+    (`internal/inference/llm.go:124-126`, "caps autonomous sessions in flight
+    on this LLM across all PRDs (0 = unlimited)").
+  - `node:<first compute node>`, limited by the node's
+    `max_concurrent_sessions` (`internal/compute/node.go:230-232`), plus
+    optional GPU-utilisation backpressure.
+
+  The verifier takes a **second** lease on the same pools as holder
+  `verify:<task>` (`verifierCapacityAdmit`, `cmd/datawatch/main.go` ~4927),
+  and council does the same. Waiting is visible as `TaskWaitingCapacity`,
+  bounded by `capacity_wait_timeout_seconds` (default
+  `defaultCapacityWait` = 4h, capacity.go:26). A full session cap is retried
+  every `capRetryPause` (15s) by `capacityRetrySpawn`. `ErrWorkerStalled`
+  (capacity.go:25) keeps a stall inside the retry budget.
+  `EnsureClaudeCode` (`internal/inference/store.go:173`) guarantees a
+  `claude-code` registry entry, so **an `llm:claude-code` pool already
+  exists and already applies across all PRDs**. It is unlimited only because
+  `max_inflight` defaults to 0.
+- **The ledger cannot host a tree lock as-is.** Its pools are counters (N
+  holders up to `Limit`). It has no notion of "this holder has uncommitted
+  work". Its lease lifetime is tied to one `executeOne` call. Locks must
+  instead be keyed by a canonical path and must outlive one task, for
+  example across an IDLE-EXTERNAL-WAIT with unpushed work. A `Limit: 1` pool
+  named `tree:<canonical path>` could *represent* the lock, and that is the
+  recommended representation for visibility (it appears in
+  `capacity_status`). But acquisition and release need their own rules,
+  covered in 3a.
+
+### 3a. Project-tree write serialization (prevention)
+
+**Key:** the canonical project tree.
+`filepath.EvalSymlinks(filepath.Clean(prd.ProjectDir))`, then the
+`git rev-parse --show-toplevel` of that path, so that `/home/dmz/workspace/datawatch`,
+a symlink to it, and a subdirectory of it all map to the same key.
+
+**Worktree mode (BL407).** A PRD with `Git.Branch` set runs in its own
+`git worktree` under `~/.datawatch/prd-worktrees/<id>`
+(`internal/autonomous/worktree.go:44-46`) on its own branch
+(`branchNameFor`, worktree.go:23). Its checkout and index are separate, so
+for the purposes of this lock it is a **distinct tree**: its key is the
+worktree path and it does not serialize against the main checkout. It does
+still share the repository's object store and `refs/`:
+
+- Concurrent `git commit` in two worktrees is safe, because git's ref
+  updates are atomic and lock-file guarded per ref.
+- Two worktrees on the same branch is impossible, because git refuses it.
+- `git gc`/`prune`, and pushes that touch shared remote-tracking refs, are
+  the residual shared state. They are short and git's own locking covers
+  them.
+
+**Recommendation:** worktree PRDs take only a *shared* lock on the main
+repository key, a reader-style lock that blocks nothing but is visible. They
+take an *exclusive* lock on their own worktree key. Repo-wide maintenance,
+such as orphan-worktree cleanup (B118), takes the main key exclusively. BL407
+Phase 4's existing agents-side workspace lock (`IsWorkspaceLockError`,
+capacity.go ~185) already does the cluster-dispatch equivalent for one
+`(project_profile, branch)` pair. 3a is the local-tree counterpart and should
+reuse that wording and the same retry-as-wait behavior.
+
+**Who must hold the exclusive lock:**
+
+- T: from spawn until the task's commit, and push if any, has landed, or
+  the task ends.
+- V: while its `verification_script` runs, because the script writes build
+  output. A pure-diff verifier with no script does not need it.
+- `scan_fix` and synthesized corrective work, because these are T.
+
+**What is not gated:** D, RR, CW, S and the verifier's judge read are never
+gated by the exclusive lock. They are readers. The depends-on cells in
+section 2 are stale-read risks, which this design accepts, and CW's
+HEAD-attribution risk is addressed separately below.
+
+**CW HEAD attribution.** Fix this at the source rather than with the lock.
+Record the SHA the PRD's own last task produced (the executor already has
+`pre_task_sha`, and can record a `post_task_sha`), and have CW watch that SHA
+instead of reading `HEAD` at completion time. This is called out because the
+lock alone cannot fix it: CW runs after the PRD's writers are done, when the
+lock is free for other PRDs.
+
+**Operator manual edits cannot be enforced.** Datawatch does not see an
+operator's editor. The design is:
+
+- **(i)** An advisory lock file, `.datawatch/tree.lock`, in the canonical
+  tree, git-ignored, holding the holder's PRD/task ID and start time. It is
+  written on acquire and removed on release. Operators and their own chat
+  sessions can check it, and a CLI `datawatch autonomous tree-lock status`
+  prints it. Nothing stops a human from ignoring it.
+- **(ii)** A PRD-level and global option to *refuse to start* a task when
+  the tree is already dirty with files outside the task's plan. This uses the
+  same pre-task dirty capture that BL425 widened (`PreTaskDirtyFiles`), but
+  applied at admission instead of after the fact.
+- **(iii)** BL425's foreign-file-drift check stays as the after-the-fact
+  detector.
+
+**3a prevents collisions between datawatch writers; BL425 detects what 3a
+cannot prevent (humans, and anything outside datawatch).** These two are
+complementary and neither replaces the other.
+
+**Config:** `autonomous.project_write_serialization: per_project_dir | off`.
+Global, with a per-PRD override; default `per_project_dir`. See 7b.
+
+### 3b. Backend / compute inference-load cap
+
+There are two different limits:
+
+- A **Claude** inference limit is an **account-usage** limit, shared by
+  every session on one subscription or API key, wherever it runs.
+- An **Ollama/OpenWebUI** inference limit is a **hardware** limit: GPU and
+  VRAM per `compute_node`.
+
+These need **separate knobs, not one integer.** Ten parallel tasks across
+three different repos on a Max-tier Claude account may be fine for the
+trees and wrong for the weekly window. Two tasks on one 24 GB GPU may be
+wrong for VRAM and irrelevant to any account.
+
+**Do not invent a new mechanism; reuse the ledger pools that already
+exist:**
+
+- **Per backend:** `llm:<name>` with the existing registry field
+  `max_inflight`. It is already enforced by the ledger across all PRDs and
+  already has registry surfaces. The missing piece is a **default**: today
+  it is 0, meaning unlimited, for `claude-code` too. Section 4d proposes
+  deriving the default from a plan tier.
+- **Per compute node:** `node:<name>` with the existing
+  `max_concurrent_sessions` plus `capacity_gpu_util_pct` backpressure. These
+  are already right for Ollama.
+- **Gaps to close in the ledger:**
+  - Decompose sessions are only counted into `host` via `External`. They
+    never acquire `llm:`/`node:`, so a decompose can exceed `max_inflight`.
+    It should `admit` like a task.
+  - The verifier's second lease means one task in verification counts
+    twice against `host`/`llm:`. Decide whether the verify lease should
+    *replace* the task lease while the worker is idle (recommended:
+    task-lease → verify-lease hand-off) rather than stack on it.
+  - IDLE-EXTERNAL-WAIT must release the `llm:`/`node:` leases (section 6.ii).
+
+The backend/model pair is already the ledger's key input
+(`CapacityKeysFn(backend, model)`), so the **model is a first-class
+dimension** for later per-model pools. The ledger request already carries
+`Model`.
+
+## 4. Usage-budget throttling
+
+### 4a. Subscription allocation (Claude Pro/Max)
+
+- Opaque and enforced by Anthropic. It has rolling windows, which the
+  scraped wording calls a "5-hour limit" plus a "weekly limit". **Remaining
+  quota cannot be queried.** Nothing in this codebase reads it, and the only
+  signal is the CLI's own prose once a threshold is hit.
+- Concurrency does not create extra usage. It **spends a fixed bucket
+  faster**: three parallel tasks reach a 5-hour cap roughly three times
+  sooner, and then **all** of them stall together.
+- Plan tiers differ several-fold, so **no single safe default concurrency
+  exists**. A default that is comfortable on one tier will exhaust a lower
+  tier overnight.
+
+### 4b. API / dollar billing
+
+Self-imposed day/week/month ceilings **are computable**:
+
+- Per-session `EstCostUSD` is live and accurate for claude-code. B98 changed
+  it to scrape the real transcript, and `internal/session/cost.go` sums it at
+  ~77-82.
+- Rates come from `session.cost_rates` (BL6) via the
+  `cost_summary`/`cost_usage`/`cost_rates` surfaces.
+- The gap is the rollup to a PRD (BL414: `Decision.CostUSD` has zero
+  writers) and to a time window.
+
+### 4c. The shared concept, and BL414
+
+Both models are the same thing: **a time-windowed usage ceiling, configured
+per operator, that concurrency must not blow through early.**
+
+- For subscription allocation, the meter is invisible and the limit is
+  discovered by hitting it.
+- For dollar billing, the meter is computable and the limit is chosen by the
+  operator.
+
+This is **not** BL414's framing. BL414 (docs/plans/README.md item 14) is
+about *observability and minimizing total cost*: Decision rollup, dashboards,
+and "token guardrails (budget ceilings, alerts, maybe hard stops)". Its own
+text says it is "not yet designed" and must be scoped against BL405. BL405
+(`docs/plans/2026-10-10-llm-enhancements.md`, Status "Planned — not started")
+already plans the relevant pieces:
+
+- **Phase 2:** an optional **rate-ceiling dimension per ledger pool**
+  ("requests/tokens over a rolling window, alongside the existing
+  concurrency `Limit`").
+- **Phase 4:** per-call usage records.
+- **Phase 9:** alert metrics `cost_burn_rate` / `token_budget_remaining`.
+
+**Recommendation (one choice): BL428 absorbs BL414's budget-guardrail half.
+BL414 keeps observability.** This doc supersedes "token guardrails / budget
+ceilings / hard stops" in BL414's text. BL414 narrows to the Decision
+`CostUSD` rollup, reporting and dashboards. The reasons:
+
+1. A ceiling only does anything at an **admission point**, and this doc
+   creates that point (the executor's `admit` and the dispatch gate in 4d).
+   Designing ceilings in BL414 would need a second admission path or would
+   depend on this one anyway.
+2. One concept with two meters (allocation-reactive and dollar-computed)
+   behind one admission check is simpler than two features that each almost
+   cover it.
+3. BL414 is undesigned, so absorbing its guardrail half costs no rework.
+   Making BL414 grow a second "allocation mode" would force a cost-reporting
+   feature to own dispatch throttling, which it has no code path for.
+4. BL405 Phase 2's rate-ceiling pools are the natural *storage and
+   enforcement* for the dollar meter: a `budget:<backend>` pool with a
+   windowed ceiling. The follow-up PRD should implement that slice of BL405
+   Phase 2, scoped to cost/usage, or land it first, rather than duplicate
+   it. See open question 2.
+
+**BL431 boundary:** BL431's Automation-level **BudgetPolicy** (a per-Automation
+scoping of these same ceilings) is designed in BL431, not here. This doc
+defines the base mechanics, meaning the ceiling, the meters, the admission
+check and the backoff. BL431 scopes them to a named batch of work.
+
+### 4d. Proactive and reactive mechanisms
+
+**Proactive: account-tier configuration.** Add a registry field on the LLM
+entry: `plan_tier: unset | pro | max_5x | max_20x | api` on `claude-code`,
+and on any future subscription-type backend. When `max_inflight` is unset,
+the tier supplies its default, plus an optional suggested model tier for
+autonomous work (feeding BL422's results via the BL430 per-unit verification
+override and the existing per-task/story LLM overrides).
+
+- **Feasibility:** high. It is a static lookup feeding an existing ledger
+  limit.
+- **Caveat:** the tier→number table is operator policy, not something
+  Anthropic publishes. The default for `unset` should stay
+  conservative (`1`). The table must be overridable, and its values belong
+  in open question 4.
+
+**Reactive: daemon-wide back-off on a real rate-limit signal.** This is what
+the code actually surfaces today:
+
+- **Detection is screen-scraping.** `processOutputLine` in
+  `internal/session/manager.go` (~6105-6125) lower-cases each output line
+  shorter than 2048 characters and substring-matches it against
+  `effectiveRateLimitPatterns()` (manager.go:222). That function returns the
+  operator's `detection.rate_limit_patterns` if set, else the built-in
+  `rateLimitPatterns` (manager.go:131-168).
+- **That list is real, maintained prior art, not dead code.** Its comments
+  record being patched as Claude's wording drifted:
+  - v5.27.4's "5-hour limit reached" / "weekly limit reached",
+  - BL240/v6.2.0's "claude usage limit" / "plan limit",
+  - BL262/v6.11.3's "out of extra usage".
+
+  `internal/session/ratelimit_parser_test.go` pins real prose formats,
+  for example "You're out of extra usage · resets 11:50am
+  (America/New_York)" (~121-150).
+- **On a match, the reaction is to that one session only, and only from
+  `StateRunning`:**
+  - Set `StateRateLimited`.
+  - Parse `RateLimitResetAt` with `parseRateLimitResetTime`
+    (manager.go:5262).
+  - `tracker.RecordRateLimit(resetAt)` (`internal/session/tracker.go:150`).
+  - Auto-send `1`+Enter for "stop and wait".
+  - Schedule a resume message at the reset time, or now + 60 minutes
+    (manager.go ~6155-6166).
+  - Fire `onRateLimitFallback` if a profile fallback chain is configured
+    (`cmd/datawatch/main.go` ~1668).
+
+  `StateRateLimited` is also a sticky state in
+  `internal/session/state_engine.go` (~99).
+- **There is no automatic global reaction.** The BL30 global cooldown
+  (`internal/session/cooldown.go`, `ErrGlobalCooldown`) is only ever set by
+  `SetGlobalCooldown`, which is called only from the manual REST/MCP handler
+  `internal/server/cooldown.go:54` (`cooldown_set`). `Start` refuses new
+  sessions only when that cooldown is active **and**
+  `session.rate_limit_global_pause` is on (manager.go ~1656). The config
+  comment ("hitting a rate limit … pauses new session creation",
+  `config.go:1706-1709`) promises more than the code does: nothing calls
+  `SetGlobalCooldown` on detection.
+- **The autonomous executor does not react at all.** `internal/autonomous`
+  has zero references to rate limits. A task whose worker goes
+  `RateLimited` sits there holding its capacity lease. The one-shot wait
+  loop's stall check keys on `waiting_input`, not `rate_limited`
+  (main.go ~4592). Every **other** PRD's goroutine keeps spawning new
+  claude-code tasks onto the same exhausted account. Each of those hits the
+  same wall, and each costs a spawn and a wasted attempt. If an operator had
+  set the cooldown by hand with the pause flag on, `Start` would return
+  `ErrGlobalCooldown`. Because `IsCapacityError` only matches "max sessions"
+  (capacity.go:178), that would likely surface as a spawn **failure**, not a
+  wait. The follow-up must confirm this and fix it.
+- **Not observable:** remaining subscription quota, how close the account
+  is to the cap (the "Approaching usage limit" warning is the only early
+  signal and is scraped the same way), and usage drawn by Claude sessions
+  outside datawatch on the same account.
+
+**Reactive design.** On the first `StateRateLimited` transition of any
+session whose backend family is `claude-code`:
+
+1. Mark `backoff:claude-code` with `until = RateLimitResetAt`, or a
+   configured fallback when the reset time cannot be parsed.
+2. Make the autonomous dispatch gate (in `admit`, before spawn) treat that
+   as a **wait** (`TaskWaitingCapacity`, reason "usage limit — resets at
+   …"), not a failure.
+3. Do not affect sessions already running; they get their own
+   per-session handling.
+4. Audit the event.
+5. Clear automatically at `until`, or manually via `cooldown_clear`.
+
+Feasibility is high: the signal, the reset time and the wait state all exist
+today. The work is wiring an `onStateChange` subscriber to a backend-scoped
+flag that `admit` checks. The flag is keyed by backend so that a future
+Ollama or API backend is unaffected.
+
+**Pattern-drift risk (open item).** This doc did **not** verify the scraped
+strings against today's live Claude Code CLI output; doing so requires
+triggering a real limit. A pattern list that silently stops matching turns
+the reactive mechanism off with no error. Shipped prior art shows that
+misrecognized CLI states are a real and recurring class of bug: BL429
+(v9.0.66, commit `507c0ccb`, PRD `c5774d3f` completed 2026-10-14) added
+`selfUpdatePatterns` (manager.go ~205) so the "✔ Update installed ·
+/restart to apply" footer is recognised as a benign passive notice. It is
+never treated as a prompt or a rate limit and never sent a key. The
+investigation, `docs/plans/2026-10-14-cli-self-update-dialog-recovery.md`,
+found the real cause of the re-paste was the channel-ready heartbeat
+re-delivering the task, not the footer. That fix is shipped and is not an
+open gap.
+
+The design should include **some** drift guard. The options, in increasing
+cost:
+
+- **(a)** A documented manual recheck cadence, with
+  `detection.rate_limit_patterns_verified_at` recorded in config.
+- **(b)** A staleness flag surfaced in `autonomous_status`/`get_stats` when
+  `claude --version` has changed since that timestamp.
+- **(c)** A periodic self-test that feeds captured real dialog fixtures,
+  like the BL429 `testdata/claude_self_update_dialog.txt`, through the live
+  matcher.
+
+The recommendation is (a)+(b) in the follow-up, with (c) as a stretch. See
+open question 3.
+
+## 5. Scope boundary
+
+- **Claude only for now.** The reactive back-off, the tier defaults and the
+  allocation meter are designed and built for `claude-code` only.
+- **The backend/model pair is a first-class key dimension everywhere.**
+  This applies to `llm:<name>`, `node:<name>` and `backoff:<backend>`, and to
+  budget pools keyed `budget:<backend>[:<model>]`. BL422's forward pointer
+  ("a separate future rerun comparing against Qwen/other open models via the
+  existing Ollama/OpenWebUI backends") therefore slots in by adding pool
+  limits for those backends, with no structural change.
+- **No multi-backend logic in this pass.** That excludes failover between
+  Claude and an open model when the budget runs out, cross-backend budget
+  pooling, and translating dollars to GPU-hours. BL405 Phases 3, 5 and 7
+  own those.
+
+## 6. Worked examples
+
+### (i) BL423 `9f311580` and BL426 `ff67e611` running at once, with three concurrent tasks
+
+**Facts** (from the daemon's own PRD records, read live 2026-10-14):
+
+- BL423 `9f311580` ("ci-watch: completion guardrail…"), project_dir
+  `/home/dmz/workspace/datawatch`, direct mode (`git: {}`).
+  - Approved 20:52:31 (all times are local, -04:00, 2026-10-13).
+  - Ran its 7 tasks sequentially from 20:53 onward.
+  - A `boot_reconcile` decision at 22:53:15 and a `run` at 22:53:17
+    resumed it after a daemon restart.
+  - Final task `6e3cf717`, "Live end-to-end ci-watch run…", ran
+    22:53:17-23:08:42 on session `f42f`.
+- BL426 `ff67e611`, same project_dir, direct mode.
+  - Approved 22:27:16, **while BL423 was still running.**
+  - Its release task `18bc0bcc` ran 22:47:50-22:59:12 on session `e913`.
+  - Its `run` decision was also re-issued at 22:53:17.
+- Scratch probe `392b2603` ("ci-watch guardrail live probe (v9.0.65)"), same
+  project_dir.
+  - Created 22:54:09 by BL423's live-E2E verification task.
+  - Created through the ordinary create API, so `parent_prd_id` is empty and
+    `autonomous_prd_children 9f311580` returns `[]`. That makes it invisible
+    as a child.
+  - Its task `13e8599c` ran 22:55:51-22:57:35 on session `b9c4`.
+- **From 22:55:51 to 22:57:35, three tasks from three PRDs were
+  `in_progress` against one working tree.** The live config at that time was
+  `autonomous.max_parallel_tasks: 1`, with no global
+  `max_concurrent_tasks`, `capacity_enabled: true`, `session.max_sessions:
+  10` and `reserved_interactive: 1`.
+
+**Which code allowed each:**
+
+1. Each PRD got its own executor goroutine from `API.Run`
+   (`internal/autonomous/api.go` ~305-345). The `runCancels[id]` dedupe is
+   per ID, so three IDs gave three goroutines.
+2. Within each PRD, `executor.go:248-256` resolved concurrency to 0 or 1,
+   which is sequential, so each PRD had one task in flight. That was
+   correct per PRD, and it never consults any other PRD.
+3. `max_parallel_tasks: 1` was read by nothing. It is dead config.
+4. Each `executeOne` → `admit` acquired `host`, limit 9, holding about 3,
+   and `llm:claude-code`, whose `max_inflight` is 0 (unlimited). All were
+   granted instantly.
+5. No tree lock exists, so nothing considered that the three shared
+   `/home/dmz/workspace/datawatch`.
+
+**Consequences visible in the records:**
+
+- BL426 task `18bc04c1`'s `files_touched` includes BL423's files.
+- Its verifier flagged that the diff included other commits.
+- BL426's release found v9.0.64 already consumed in both `var Version`
+  strings and shipped v9.0.65. That is version-number collision between
+  concurrent release work in one tree.
+
+**Operator/process gap:** the second PRD was approved and run while the first
+was active, and the first PRD's own verification task spawned a third PRD in
+the same tree. Even if the operator had intended serialization, **nothing in
+the daemon would have stopped it**: no setting exists that expresses "one
+writer per tree", and the one setting that sounds like it is dead.
+
+### (ii) BL426's final task stalling during a planned ~90-minute CI wait
+
+**Facts:**
+
+- BL426 task `18bc0cee`, "Record the real Release CI outcome…", told its
+  worker to poll the Release run with a 90-minute bound.
+- It started 23:01:13 and ended `failed` at 23:02:20, with `retry_count: 1`
+  and failure category `infra`.
+- The error was the one-shot stall message from `cmd/datawatch/main.go`
+  ~4601: "worker stopped and asked an interactive question … worker
+  stalled", wrapping `ErrWorkerStalled`.
+- Its own checkpoint read "Now: waiting for run 38503350068 (90 min bound…)".
+
+**Mechanism:** for `claude-code` one-shots, the wait loop kills a session
+that sits in `waiting_input` for about 3 ticks, roughly 9 seconds
+(`waitingInputTick`, main.go ~4592). A worker that ends its turn to wait on
+CI looks exactly like that. Both attempts died within about a minute, long
+before the planned 90-minute wait.
+
+The structural problem is not that the stall detector is too strict. **An
+LLM session is the wrong vehicle for a long external wait:**
+
+- While waiting it held a task lease on `host` and `llm:claude-code` (the
+  deferred release at executor.go ~779), consuming an ACTIVE-INFERENCE
+  slot.
+- If its loop had kept generating tokens, it would also have drawn USAGE
+  BUDGET for no work.
+
+`ci-watch` (`ci_watch.go`) is the counter-example. It polls `gh run list`
+from daemon code with no session and no `admit()`. When it times out, it
+completes the PRD as `pending` and runs one background follow-up
+(`ciWatchFollowUp`).
+
+**Decision:** IDLE-EXTERNAL-WAIT is a distinct resource class.
+
+- **It must not hold an ACTIVE-INFERENCE slot or draw usage budget.**
+  Waits run daemon-side as in ci-watch, or a task can end with a typed
+  "await external" result that releases its `llm:`/`node:` leases and is
+  re-admitted when the condition resolves.
+- **It keeps the PROJECT-TREE WRITE lock only while the tree holds that PRD's
+  uncommitted changes or commits not yet pushed.** That is: `git status`
+  dirty with its files, or its HEAD not reachable from a remote-tracking
+  ref, which is the same reachability test `defaultCIGit` already uses.
+
+**Justification:** if the work is committed and pushed, another PRD writing
+the tree cannot corrupt it, and holding the lock for 90 minutes would block
+the tree for nothing. If the work is unpushed, another writer could
+interleave commits on the same branch, or run `git add -A` and sweep the
+unpushed changes in (the BL425 failure mode), so the lock must be held.
+
+For `18bc0cee` specifically, the release push was already done by
+`18bc0bcc`, so the wait should have held no lock. Its later docs-only commit
+should re-acquire the lock as a new short T.
+
+### (iii) The overnight queue stall, 2026-10-14
+
+**What happened, from the daemon records and the operator's account:**
+
+- During the night, a batch of related PRDs was being advanced one at a time
+  **by an operator's interactive LLM chat session, not by datawatch.** That
+  session drafted a bash polling script to advance the queue, said it would
+  launch it, and **did not.**
+- Queue advancement stopped. The operator-observed stall window is
+  02:23-07:37.
+- In the records:
+  - PRD `4d0ad909` (verification LLM override) completed its last task at
+    02:35:02.
+  - PRD `180a01a0` (foreign-file drift) had been **approved since 00:33:14**
+    and was ready the whole time. Its first task did not start until
+    07:49:30.
+  - PRD `30e6f153` (task effort → `--effort`), created 01:14:44, was not
+    approved until 07:37:58 and started at 07:38:00.
+- **For over five hours an approved PRD sat idle, and nothing in datawatch
+  noticed:**
+  - Approve does not run (`internal/server/autonomous.go` ~473-479).
+  - No daemon object knows that PRD B should follow PRD A.
+  - No notification fires on completion (BL427's confirmed gap).
+
+**Why it belongs in this doc:** the operator was hand-sequencing those PRDs
+because the daemon gives no safe way to let them overlap. Example (i) shows
+what happens when they do overlap: three writers in one tree, an
+unattributed child PRD and a version collision. With nothing on the server
+side to rely on, serialization lived in a chat session, and that failed
+silently. The mechanics here, a per-tree write lock plus inference and
+budget caps with visible queued/waiting state, are what make it **safe** for
+a daemon-side coordinator to start the next PRD without a human. They are
+also what would have made "approved but not running" visible as a queued
+state with a reason.
+
+**The orchestration fix itself is BL431, not this doc.**
+
+## Recommendation
+
+### 7a. BL431 pointer (Automation coordinator)
+
+The daemon-native multi-PRD orchestration object is designed in its own
+dedicated PRD, **BL431**
+(`docs/plans/2026-10-14-automation-orchestration-design.md`, once it exists).
+The "Automation" covers ordered or graph-shaped groups of Automata,
+auto-advance, cost policy, multi-model policy, dynamic mid-flight editing and
+a PWA surface.
+
+**This doc is the foundation BL431 builds on.** An Automation member's task
+execution must respect this doc's per-`project_dir` write serialization (3a)
+and its per-backend / per-compute-node inference caps (3b), exactly like any
+other PRD. No special-casing is needed, because **an Automation member is an
+ordinary PRD as far as sections 1-6 are concerned.** BL431's Automation-level
+BudgetPolicy (see 4c) narrows this doc's usage-budget ceiling (section 4) to
+a named batch of work. This doc therefore does not need its own separate
+per-batch concept.
+
+### 7b. Fate of `max_parallel_tasks`, and the full key list
+
+**Decision: deprecate and remove `autonomous.max_parallel_tasks`. Do not
+repurpose it.**
+
+The name sounds like a cross-PRD limit, and its documented default of 3 is
+wrong for every real meaning. Mapping its value onto any new axis would
+silently change behavior on daemons that set it expecting nothing: the live
+daemon has `1`, which would become a real limit overnight.
+
+Migration:
+
+- On config load, if the key is present, log a one-time warning naming the
+  replacement keys, and record an audit entry.
+- `PUT /api/config` and MCP `autonomous_config_set` accept and ignore it for
+  one minor release, returning a `deprecated` note.
+- Then remove it from:
+  - `manager.go:46`/`261`,
+  - `config.go:1863-1864`,
+  - `api.go:5484`/`6729`,
+  - `main.go:4074`/`4167-4168`,
+  - `internal/mcp/autonomous.go:53`/`85`,
+  - `app.js:13942`/`28648`.
+
+New and changed config keys:
+
+| Key | Scope | Default | Notes |
+|---|---|---|---|
+| `autonomous.project_write_serialization` | global + per-PRD override | `per_project_dir` | `per_project_dir \| off`. Key = canonical tree (3a). Worktree PRDs key on their worktree. |
+| `autonomous.refuse_dirty_tree_start` | global + per-PRD override | `false` | Admission-time companion to BL425 (3a ii). |
+| `autonomous.max_concurrent_tasks` | global (**new YAML plumbing**) + existing per-PRD | `1` | Existing BL370 knob. Fix the missing `config.AutonomousConfig` field and the main.go bridge. Fan-out *within* one PRD is still bounded by 3a when tasks share a tree. |
+| `llm.<name>.max_inflight` (existing) | per-backend | 0, or the tier-derived value when `plan_tier` is set | Existing ledger pool `llm:<name>`, already cross-PRD. |
+| `llm.<name>.plan_tier` (new) | per-backend | `unset` (→ conservative `1` for subscription kinds) | `pro \| max_5x \| max_20x \| api \| unset`. Proactive defaults (4d). |
+| `compute_nodes.<name>.max_concurrent_sessions` (existing) | per-compute_node | unchanged | Existing `node:` pool. |
+| `autonomous.capacity_gpu_util_pct` (existing) | global | unchanged | Existing node backpressure. |
+| `autonomous.usage_backoff` (new) | global, keyed per backend at runtime | `pause_backend` | `pause_backend \| off`. Reactive back-off (4d). |
+| `autonomous.usage_backoff_fallback_minutes` (new) | global | `60` | Used when the reset time cannot be parsed. Matches today's per-session fallback (manager.go ~6157). |
+| `llm.<name>.budget` (new) | per-backend (model optional) | unset | `{window: day\|week\|month, ceiling_usd: N}` for API billing (4b). Enforced as a BL405-Phase-2-style windowed pool `budget:<backend>`. |
+| `autonomous.idle_wait_releases_inference` (new) | global | `true` | IDLE-EXTERNAL-WAIT releases `llm:`/`node:` leases (6.ii). |
+| `detection.rate_limit_patterns_verified_at` (new) | global | unset | Pattern-drift guard (4d). |
+
+## Phases
+
+These are the phases of the **follow-up implementation PRD**. All are
+**Planned**, not approved. Every phase carries AGENT.md's Phase Completion
+Checklist, and none is done until that checklist is.
+
+1. **Phase 1 — Dead-knob removal plus the global `max_concurrent_tasks`
+   plumbing.** Deprecation warning and accept-and-ignore for
+   `max_parallel_tasks`; correct the descriptions; add
+   `autonomous.max_concurrent_tasks` to YAML, REST, MCP, CLI, comm and PWA.
+   Status: Planned.
+2. **Phase 2 — Project-tree write lock (3a).** Canonical key resolution,
+   worktree keying, `tree:<key>` representation in ledger status, the
+   advisory lock file, the `refuse_dirty_tree_start` check, and CW watching
+   the PRD's own recorded SHA. Status: Planned.
+3. **Phase 3 — Inference-cap gap closure (3b).**
+   - Decompose admits on `llm:`/`node:`.
+   - Hand off the task lease to the verify lease instead of stacking them.
+   - IDLE-EXTERNAL-WAIT lease release with an "await external" task result.
+   - `plan_tier`-derived `max_inflight` defaults.
+
+   Status: Planned.
+4. **Phase 4 — Reactive usage back-off (4d).** Backend-scoped back-off flag
+   set from `StateRateLimited`; `admit` waits on it; `ErrGlobalCooldown` is
+   classified as a wait; the pattern-drift guard is (a)+(b). Status: Planned.
+5. **Phase 5 — Dollar-window budget (4b/4c).** `llm.<name>.budget` enforced
+   as a windowed ledger pool, coordinated with BL405 Phase 2. Status:
+   Planned.
+6. **Phase 6 — Visibility, audit and parity close-out.** `autonomous_status`
+   shows queued-vs-running with a reason; PWA; `datawatch-app` issue; howto;
+   release-smoke section. Status: Planned.
+
+## Follow-up implementation PRD — what to build
+
+This is the **mechanics-level** implementation PRD. BL431's own
+implementation PRD (the Automation coordinator) is a separate, later PRD that
+builds on this one's config keys and admission points. Its build list is not
+repeated here; only the dependency is named.
+
+### Data model
+
+- `autonomous.Task`:
+  - `PostTaskSHA string` (the SHA its own work produced, so CW watches the
+    right commit).
+  - `WaitReason` already exists (`setWaiting`, capacity.go ~107). Extend its
+    reason vocabulary with `tree_lock`, `usage_backoff`, `budget` and
+    `await_external`.
+  - New `TaskAwaitingExternal` status, or a sub-reason under
+    `TaskWaitingCapacity` (decide in Phase 3).
+- `autonomous.PRD`: `ProjectWriteSerialization *string` and
+  `RefuseDirtyTreeStart *bool` overrides, persisted in the existing PRD store
+  like the other per-PRD pointer overrides.
+- `capacity.Ledger`:
+  - Exclusive/shared lock pools `tree:<canonical>` with holder = PRD+task,
+    able to outlive one `executeOne` while `await_external` holds unpushed
+    work.
+  - A backend back-off map `backoff:<backend>` with `until` and `reason`.
+  - Windowed-ceiling `budget:<backend>` pools (shared with BL405 Phase 2).
+  - All in-memory, rebuilt on boot from `in_progress` tasks, the same way
+    `Reap` reconciles leases today (capacity_wiring.go ~186).
+- `inference.LLM`: `PlanTier string`, `Budget *BudgetWindow`.
+- `config.AutonomousConfig`: the new keys from 7b, plus the missing
+  `MaxConcurrentTasks`.
+
+### Executor admission points
+
+- `executeOne` → `admit` (executor.go ~854). The order is:
+  1. back-off check;
+  2. budget check;
+  3. `tree:` lock;
+  4. the existing `host`/`llm:`/`node:` pools.
+
+  All four are all-or-nothing, as `Request.Pools` already is.
+- Verify: hand off from the task lease to `verify:<task>`, and take the
+  `tree:` lock only while a `verification_script` runs.
+- Decompose (main.go ~4196): admit on `llm:`/`node:`, with no tree lock.
+- `synthesizeCorrectiveWork` and `scan_fix` go through the same T admission.
+- The `StateRateLimited` → `backoff:<backend>` subscriber chains into the
+  existing state-change hook (`SetStateChangeHandler` →
+  `onStateChange`, `internal/session/manager.go:899-900`), which is
+  single-slot, so it must chain rather than replace. It is wired in
+  `cmd/datawatch/main.go`.
+
+### Surfaces (per AGENT.md's Configuration Accessibility Rule)
+
+- `handleGetConfig` / `handlePutConfig` in `internal/server/api.go`.
+- `autonomous_config_get`/`_set` and a new `autonomous_tree_locks` status
+  tool, plus the existing `capacity_status`, which gains `tree:`, `backoff:`
+  and `budget:` pools.
+- `datawatch config set …` and `datawatch autonomous tree-lock status`.
+- Comm `configure autonomous.project_write_serialization=…`.
+- PWA `GENERAL_CONFIG_FIELDS`/`LLM_CONFIG_FIELDS`, and registry LLM-edit
+  fields for `plan_tier`/`budget`.
+- A `datawatch-app` issue for Android and iOS.
+
+### Audit logging
+
+New audit events:
+
+- `autonomous_tree_lock_acquire` / `_wait` / `_release`, each with key,
+  holder and wait duration.
+- `autonomous_usage_backoff_set` / `_cleared`, with backend, reset time and
+  the source session.
+- `autonomous_budget_ceiling_wait`.
+- `autonomous_idle_wait_release`.
+- `config_deprecated_key` (`max_parallel_tasks`).
+
+### Status visibility
+
+`autonomous_status` and `autonomous_prd_get` show, per task, `running` versus
+`queued` with its reason (for example "waiting for tree lock held by PRD
+X/task Y since …", or "Claude usage limit — resets 11:50"). Per PRD, they show
+`approved (not running)` as distinct from `running`. That distinction is the
+thing example (iii) could not see.
+
+### Tests
+
+- **Unit:**
+  - canonical key resolution (symlink, subdirectory, worktree);
+  - lock exclusivity and shared/exclusive semantics;
+  - lock retained across `await_external` only while work is unpushed;
+  - back-off set and clear from a fake `StateRateLimited` transition;
+  - `ErrGlobalCooldown` classified as a wait;
+  - the deprecated-key warning;
+  - `max_concurrent_tasks` YAML round-trip.
+- **E2E story ideas:**
+  - two direct-mode PRDs on one sandbox tree, where the second's task shows
+    `waiting: tree_lock` until the first commits;
+  - two PRDs on different trees run in parallel;
+  - a worktree PRD alongside a direct PRD;
+  - an injected `DATAWATCH_RATE_LIMITED:` line from one worker pauses
+    dispatch for every PRD on `claude-code` and resumes at the reset time;
+  - a CI-await task releasing its inference slot while keeping the tree lock
+    over unpushed work.
+
+## Parity surface
+
+| Surface | Include / exclude | What |
+|---|---|---|
+| REST | Include | `GET/PUT /api/config` for every new key. `max_parallel_tasks` accepted-and-ignored with a deprecation note. Lock/back-off/budget state in `GET /api/capacity`, plus queued reasons in autonomous PRD JSON. |
+| MCP | Include | `autonomous_config_get`/`_set` with corrected descriptions (remove the false "Per-PRD worker cap (default 3)"). `capacity_status` gains `tree:`/`backoff:`/`budget:` pools. New read-only `autonomous_tree_locks`. `llm_update` gains `plan_tier`/`budget`. |
+| CLI | Include | `datawatch config set autonomous.project_write_serialization …` and the other keys. `datawatch autonomous tree-lock status`. |
+| comm channel | Include | `configure <key>=<value>` for every new key. A status verb reply shows queued reasons and the active back-off. |
+| YAML/config | Include | New keys in `config.AutonomousConfig` and in the LLM registry entry, annotated in `docs/config-reference.yaml`. `max_parallel_tasks` deprecation documented. The missing `max_concurrent_tasks` YAML field is added. |
+| PWA | Include | Settings fields for the new keys; the `max_parallel_tasks` field removed (`app.js:13942`, `28648`). Task chips for queued reasons. Automata list distinguishes approved-not-running. Capacity panel shows locks and back-off. |
+| Android | Include, via a `datawatch-app` issue per the Mobile-Parity Rule | Queued-reason display and new config fields mirror the PWA. The REST contract change (new task wait reasons) must be parsed. |
+| iPhone/iOS | Include, via the same `datawatch-app` issue | Same as Android. No iOS-specific behavior. |
+
+## Open questions
+
+1. **BL414: absorb, or grow a second mode?** This doc recommends that BL428
+   absorbs BL414's budget-guardrail half (ceilings, hard stops) and that
+   BL414 narrows to cost observability and Decision rollup (4c). Does the
+   operator confirm this, and should BL414's backlog text be edited to say
+   so?
+2. **BL405 Phase 2 overlap.** Should the windowed-ceiling ledger dimension be
+   built inside this doc's follow-up PRD (Phase 5) as the first slice of
+   BL405 Phase 2, or should Phase 5 wait for BL405 Phase 2?
+3. **Pattern-list drift guard.** Do the screen-scraped pattern lists
+   (`rateLimitPatterns`, and by extension `selfUpdatePatterns` and the
+   prompt patterns) need a staleness-check mechanism of their own? This doc
+   recommends a manual recheck cadence plus a `claude --version`-change
+   staleness flag, with a fixture self-test as a stretch (4d). Is that
+   enough, or should the self-test be required?
+4. **Tier defaults.** What `max_inflight` value should each `plan_tier` map
+   to for `claude-code` (`pro`, `max_5x`, `max_20x`, `api`)? Is `1` the
+   right conservative default for `unset`?
+5. **Default for `project_write_serialization`.** Should `per_project_dir`
+   be on by default, which changes today's behavior by serializing
+   same-tree PRDs, or opt-in for one release?
+6. **Shared lock for worktree PRDs on the main repo key.** Is a
+   visible-but-non-blocking shared lock wanted, or should worktree PRDs be
+   fully independent of the main checkout?
+7. **Back-off reach.** Should the reactive back-off also refuse *interactive*
+   claude-code session starts (which effectively turns on BL30's
+   `rate_limit_global_pause` automatically), or gate autonomous dispatch
+   only?
+8. **Sequencing with BL431.** Should this doc's follow-up implementation PRD
+   land before BL431's Automation-coordinator implementation PRD? BL431's
+   BudgetPolicy and its per-member execution depend on these mechanics
+   existing first. Cross-reference BL431's own open questions on this
+   sequencing. This doc does not decide it. The 2026-10-14 operator addendum
+   in `docs/plans/README.md` already orders implementation
+   BL427 → BL428 → BL431.
+9. **Child-PRD attribution.** Should PRDs created by a running task (like
+   the scratch probe `392b2603`) record the creating PRD/task as a parent,
+   so they show up in `autonomous_prd_children` and the lock holder graph?
+   Or is that BL431's concern?
