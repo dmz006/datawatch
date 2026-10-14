@@ -189,7 +189,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "9.0.76"
+var Version = "9.0.77"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -5187,23 +5187,25 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 		"hostname":       s.cfg.Hostname,
 		"notify_exclude": s.cfg.NotifyExclude,
 		"server": map[string]interface{}{
-			"enabled":                s.cfg.Server.Enabled,
-			"host":                   s.cfg.Server.Host,
-			"port":                   s.cfg.Server.Port,
-			"public_url":             s.cfg.Server.PublicURL,
-			"token":                  mask(s.cfg.Server.Token),
-			"tls":                    s.cfg.Server.TLSEnabled,
-			"tls_auto_generate":      s.cfg.Server.TLSAutoGenerate,
-			"tls_cert":               s.cfg.Server.TLSCert,
-			"tls_key":                s.cfg.Server.TLSKey,
-			"channel_port":           s.cfg.Server.ChannelPort,
-			"tls_port":               s.cfg.Server.TLSPort,
-			"proxy_sandbox_port":     s.proxySandboxPortFor(""),
-			"auto_restart_on_config": s.cfg.Server.AutoRestartOnConfig,
-			"recent_session_minutes": s.cfg.Server.RecentSessionMinutes,
+			"enabled":                        s.cfg.Server.Enabled,
+			"host":                           s.cfg.Server.Host,
+			"port":                           s.cfg.Server.Port,
+			"public_url":                     s.cfg.Server.PublicURL,
+			"token":                          mask(s.cfg.Server.Token),
+			"tls":                            s.cfg.Server.TLSEnabled,
+			"tls_auto_generate":              s.cfg.Server.TLSAutoGenerate,
+			"tls_cert":                       s.cfg.Server.TLSCert,
+			"tls_key":                        s.cfg.Server.TLSKey,
+			"channel_port":                   s.cfg.Server.ChannelPort,
+			"tls_port":                       s.cfg.Server.TLSPort,
+			"proxy_sandbox_port":             s.proxySandboxPortFor(""),
+			"auto_restart_on_config":         s.cfg.Server.AutoRestartOnConfig,
+			"recent_session_minutes":         s.cfg.Server.RecentSessionMinutes,
 			"session_summary_terminal_limit": s.cfg.Server.SessionSummaryTerminalLimit,
 			"session_summary_text_chars":     s.cfg.Server.SessionSummaryTextChars,
-			"suppress_active_toasts": s.cfg.Server.SuppressActiveToasts,
+			"api_gzip":                       s.cfg.Server.APIGzip,
+			"api_gzip_min_bytes":             s.cfg.Server.APIGzipMinBytes,
+			"suppress_active_toasts":         s.cfg.Server.SuppressActiveToasts,
 		},
 		// BL397 — native ACME subsystem.
 		"acme": map[string]interface{}{
@@ -6157,6 +6159,16 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 					n = minSessionSummaryTextChars
 				}
 				cfg.Server.SessionSummaryTextChars = n
+			}
+		case "server.api_gzip":
+			cfg.Server.APIGzip = toBool(v)
+		case "server.api_gzip_min_bytes":
+			// Negative values are clamped to 0 (compress any non-empty body).
+			if n, ok := toInt(v); ok {
+				if n < 0 {
+					n = 0
+				}
+				cfg.Server.APIGzipMinBytes = n
 			}
 		case "server.suppress_active_toasts":
 			cfg.Server.SuppressActiveToasts = toBool(v)

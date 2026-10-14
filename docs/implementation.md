@@ -655,6 +655,8 @@ All fields in `~/.datawatch/config.yaml`:
 | `server.tls_auto_generate` | bool | `false` | Auto-generate a self-signed certificate at `~/.datawatch/tls/server/` on start |
 | `server.session_summary_terminal_limit` | int | `50` | Maximum number of terminal (complete / failed / killed) sessions returned by `GET /api/sessions?view=summary`, newest by `updated_at` first. Non-terminal sessions are never dropped. `0` = no cap. Only applies to `view=summary`; see "Session list views" below |
 | `server.session_summary_text_chars` | int | `200` | Characters (runes) kept of `task`, `prompt_context`, `last_response` and `last_summary_long` in `GET /api/sessions?view=summary`. Minimum `20` |
+| `server.api_gzip` | bool | `true` | Gzip-compress `/api/*` responses for clients that send `Accept-Encoding: gzip`. See "API response compression" below |
+| `server.api_gzip_min_bytes` | int | `1024` | A `/api/*` response is compressed only once its body exceeds this many bytes; smaller bodies are sent unchanged. Minimum `0` |
 | `servers[].name` | string | — | Short identifier for a remote datawatch server (used with `--server` flag) |
 | `servers[].url` | string | — | Base URL of the remote server (e.g. `http://203.0.113.10:8080`) |
 | `servers[].token` | string | — | Bearer token for the remote server |
@@ -718,6 +720,31 @@ so existing clients keep working unchanged. Retention applies only to
 entry in the `capabilities` array of `GET /api/info` before using these
 parameters. Both limits are read from the live config on each request,
 so a `PUT /api/config` change applies without a restart.
+
+### API response compression
+
+When `server.api_gzip` is on (the default), every `/api/*` response
+carries `Vary: Accept-Encoding`, and a response is sent with
+`Content-Encoding: gzip` (and no `Content-Length`) when all of these
+hold:
+
+- the request sends `Accept-Encoding: gzip` and is not `HEAD`;
+- the body grows past `server.api_gzip_min_bytes` bytes — the daemon
+  buffers up to that many bytes first, so small responses go out
+  byte-for-byte unchanged with their original headers;
+- the `Content-Type` is `application/json`, `application/*+json`,
+  `text/plain` or YAML.
+
+Never compressed: WebSocket upgrades and other connection takeovers,
+`text/event-stream` streams, a response flushed before reaching the
+threshold (it is committed uncompressed so streaming is not delayed),
+`204`/`206`/`304`, responses that already set `Content-Encoding` or
+`Content-Disposition`, `/api/files/download`, and the `/api/proxy/...`
+forwarding paths (a peer's body is passed through as received; Go's
+HTTP client already decodes a peer's own gzip transparently). Both
+settings are read on each request. Clients can look for `api.gzip` in
+the `capabilities` array of `GET /api/info`; it is listed only while
+`server.api_gzip` is on.
 
 ### Dependencies
 

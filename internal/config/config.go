@@ -1444,6 +1444,16 @@ type ServerConfig struct {
 	// last_response and last_summary_long to. Default: 200, minimum 20.
 	SessionSummaryTextChars int `yaml:"session_summary_text_chars"`
 
+	// APIGzip compresses large JSON-ish /api/* responses with gzip when
+	// the client sends Accept-Encoding: gzip. Default: true. Read on every
+	// request, so a config change applies without a restart.
+	APIGzip bool `yaml:"api_gzip"`
+
+	// APIGzipMinBytes is the response size (bytes) a /api/* body must
+	// exceed before it is compressed; smaller bodies are sent unchanged.
+	// Default: 1024, minimum 0.
+	APIGzipMinBytes int `yaml:"api_gzip_min_bytes"`
+
 	// SuppressActiveToasts hides toast notifications for the currently viewed session
 	// (e.g. state change toasts while you're watching the output). Default: true.
 	SuppressActiveToasts bool `yaml:"suppress_active_toasts"`
@@ -2495,7 +2505,10 @@ func DefaultConfig() *Config {
 			// BL432 — compact session-list view defaults.
 			SessionSummaryTerminalLimit: 50,
 			SessionSummaryTextChars:     200,
-			SuppressActiveToasts:        true,
+			// BL432 / GH#242 — /api/* gzip defaults.
+			APIGzip:              true,
+			APIGzipMinBytes:      1024,
+			SuppressActiveToasts: true,
 			ProxySandboxPort:     8444,
 		},
 		MCP: MCPConfig{

@@ -5,6 +5,30 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.77 — feat(server): gzip compression for `/api/*` JSON responses
+
+### Added
+- **API responses are now compressed.** Large JSON responses from
+  `/api/*` (for example a multi-megabyte `GET /api/sessions`) are sent
+  with `Content-Encoding: gzip` when the client sends
+  `Accept-Encoding: gzip`, which browsers and the Go, Android and iOS
+  HTTP stacks do automatically. Only bodies larger than
+  `server.api_gzip_min_bytes` (default 1024 bytes) with a JSON, plain
+  text or YAML content type are compressed; smaller responses are
+  unchanged. Every `/api/*` response now carries
+  `Vary: Accept-Encoding`.
+- Live streams (Server-Sent Events, WebSocket upgrades), file downloads
+  and the `/api/proxy/...` forwarding paths are never compressed, and a
+  proxied peer that compresses its own responses is still decoded
+  correctly.
+- New settings `server.api_gzip` (default `true`) and
+  `server.api_gzip_min_bytes` (default `1024`, minimum `0`), available in
+  the config file, Settings → Sessions, `PUT /api/config`,
+  `datawatch config set`, MCP `config_set` and the chat `configure`
+  command. Changes apply immediately, without a restart.
+- `GET /api/info` lists `api.gzip` in its `capabilities` array while
+  compression is enabled.
+
 ## v9.0.76 — feat(server): compact session list — `GET /api/sessions?view=summary`, `since=`, `states=`
 
 ### Added

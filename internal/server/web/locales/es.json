@@ -1578,6 +1578,8 @@
   "settings_session_capacity_wait": "Interactive session capacity wait (sec)",
   "settings_session_summary_terminal_limit": "Resumen de sesiones: sesiones finalizadas conservadas (0 = todas)",
   "settings_session_summary_text_chars": "Resumen de sesiones: longitud del texto (caracteres)",
+  "settings_api_gzip": "Comprimir respuestas de la API (gzip)",
+  "settings_api_gzip_min_bytes": "Umbral de compresión de la API (bytes)",
   "settings_capacity_enabled": "Capacity-aware admission (wait for free slots instead of failing)",
   "settings_capacity_wait_timeout": "Capacity wait timeout (sec, 0=4h)",
   "settings_ci_watch_timeout": "CI watch timeout (sec, 0=25m)",

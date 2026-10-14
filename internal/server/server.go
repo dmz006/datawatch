@@ -653,7 +653,9 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	})
 
 	// Apply auth middleware to API routes
-	mux.Handle("/api/", api.fedAuthMiddleware(apiMux))
+	// BL432 / GH#242 — apiGzipMiddleware compresses large JSON-ish
+	// responses (server.api_gzip / server.api_gzip_min_bytes, read live).
+	mux.Handle("/api/", api.fedAuthMiddleware(api.apiGzipMiddleware(apiMux)))
 	mux.Handle("/ws", api.fedAuthMiddleware(http.HandlerFunc(api.handleWS)))
 
 	// Remote PWA proxy: /remote/{server}/... BL394 (docs/plans/2026-10-03-
@@ -1561,7 +1563,7 @@ func cacheControlMiddleware(next http.Handler) http.Handler {
 // from level 9 isn't worth the extra CPU on small text payloads.
 func gzipFileServer(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+		if !acceptsGzip(r) {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -1580,9 +1582,8 @@ func gzipFileServer(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		gz := gzipPool.Get().(*gzip.Writer)
-		defer gzipPool.Put(gz)
-		gz.Reset(w)
+		gz := acquireGzipWriter(w)
+		defer releaseGzipWriter(gz)
 		defer gz.Close() //nolint:errcheck
 		w.Header().Set("Content-Encoding", "gzip")
 		w.Header().Set("Vary", "Accept-Encoding")
@@ -1595,6 +1596,27 @@ func gzipFileServer(next http.Handler) http.Handler {
 
 var gzipPool = sync.Pool{
 	New: func() any { return gzip.NewWriter(io.Discard) },
+}
+
+// acceptsGzip reports whether the request advertises gzip support.
+// Shared by gzipFileServer and apiGzipMiddleware.
+func acceptsGzip(r *http.Request) bool {
+	return strings.Contains(r.Header.Get("Accept-Encoding"), "gzip")
+}
+
+// acquireGzipWriter takes a pooled gzip writer and points it at dst.
+func acquireGzipWriter(dst io.Writer) *gzip.Writer {
+	gz := gzipPool.Get().(*gzip.Writer)
+	gz.Reset(dst)
+	return gz
+}
+
+// releaseGzipWriter detaches gz from its destination (so the pool never
+// pins a finished ResponseWriter) and returns it to the pool. The caller
+// must have already called Close if the stream was meant to be finished.
+func releaseGzipWriter(gz *gzip.Writer) {
+	gz.Reset(io.Discard)
+	gzipPool.Put(gz)
 }
 
 type gzipResponseWriter struct {

@@ -12,11 +12,20 @@ const (
 	// capSessionsViewSummary: GET /api/sessions accepts view=summary,
 	// since= and states= (see session_list_view.go).
 	capSessionsViewSummary = "sessions.view_summary"
+
+	// capAPIGzip: large JSON /api/* responses are gzip-compressed for
+	// clients sending Accept-Encoding: gzip (see api_gzip.go). Listed
+	// only while server.api_gzip is on.
+	capAPIGzip = "api.gzip"
 )
 
 // apiCapabilities returns the optional API features this daemon supports.
 func (s *Server) apiCapabilities() []string {
-	return []string{
+	caps := []string{
 		capSessionsViewSummary,
 	}
+	if enabled, _ := s.apiGzipSettings(); enabled {
+		caps = append(caps, capAPIGzip)
+	}
+	return caps
 }
