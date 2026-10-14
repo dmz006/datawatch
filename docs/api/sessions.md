@@ -31,7 +31,7 @@ out from this transition.
 
 | Endpoint | Purpose |
 |---|---|
-| `GET /api/sessions` | List sessions (active + recent). Filter via `?state=`, `?backend=`, `?project=`. |
+| `GET /api/sessions` | List sessions (active + recent). Filter via `?name=`, `?state=`, `?backend=`, `?alive=`; compact list via `?view=summary`, narrow with `?since=` / `?states=` — see [Compact session list](#compact-session-list-viewsummary). |
 | `POST /api/sessions/start` | Start a new session. Body: `{task, project_dir, backend, name?, template?, effort?}`. |
 | `GET /api/output?id=&n=` | Last N output lines. |
 | `POST /api/command` | Send raw input to a session's tmux pane. |
@@ -47,6 +47,58 @@ out from this transition.
 | `POST /api/sessions/bind` | Bind a session to an ephemeral worker / agent. |
 | `GET /api/sessions/response` | Last `response` event content for one session (used by the PWA "view last response" modal). |
 | `GET /api/sessions/{id}/telemetry` | Structured telemetry for a session (tasks, guardrail verdicts, sprint, progress). |
+
+#### Compact session list (`view=summary`)
+
+A busy daemon's full session list can reach several megabytes, almost
+all of it long free text. `GET /api/sessions` takes three optional
+query parameters for clients that only render a list:
+
+| Parameter | Effect |
+|---|---|
+| `view=summary` | Same JSON array, but `task`, `prompt_context`, `last_response` and `last_summary_long` are cut to `server.session_summary_text_chars` characters (default 200, minimum 20) ending in `…`. Each record that was cut gets `truncated_fields`, e.g. `["task","last_response"]`. Terminal sessions (complete, failed, killed) are capped to the newest `server.session_summary_terminal_limit` (default 50, `0` = no cap) by `updated_at`; running, waiting and rate-limited sessions are never dropped. Any other `view` value returns 400. |
+| `since=<time>` | Only sessions whose `updated_at` is after the given time. RFC3339 (`2026-10-14T12:00:00Z`) or unix seconds. Unparseable values return 400. |
+| `states=<list>` | Comma list of states to include, e.g. `running,waiting_input`. `active` expands to every non-terminal state. Unknown or empty lists return 400. |
+
+`since` and `states` also work without `view=summary` and then return
+full records. They combine with `name`, `state`, `backend` and `alive`.
+`tree=1` and `orphaned=1` take precedence and ignore all three.
+
+**Omitted header.** When the terminal cap drops sessions, the response
+carries `X-Datawatch-Sessions-Omitted: <n>`. The header is absent when
+nothing was dropped.
+
+**Full record.** A truncated record is for display only. Fetch
+`GET /api/sessions/{id}` for the untruncated session.
+
+**Retention decision.** The unfiltered list (no `view`, `since` or
+`states`) is never capped or truncated, so existing clients keep
+working unchanged. Retention and truncation apply only to
+`view=summary`. Check for `sessions.view_summary` in the
+`capabilities` array of `GET /api/info` before using these parameters;
+an older daemon ignores them and returns the full list.
+
+Both limits are read from the live config on every request, so a
+change made through any of these takes effect without a restart:
+
+| Setting | YAML (`server:`) | CLI | Web UI | REST | Chat |
+|---|---|---|---|---|---|
+| Ended sessions kept | `session_summary_terminal_limit: 50` | `datawatch config set server.session_summary_terminal_limit 50` | Settings → General → Sessions → *Session summary: ended sessions kept* | `PUT /api/config {"server.session_summary_terminal_limit": 50}` | `configure server.session_summary_terminal_limit=50` |
+| Text length | `session_summary_text_chars: 200` | `datawatch config set server.session_summary_text_chars 200` | Settings → General → Sessions → *Session summary: text length (chars)* | `PUT /api/config {"server.session_summary_text_chars": 200}` | `configure server.session_summary_text_chars=200` |
+
+```bash
+# Running and waiting sessions only, compact records
+curl -sk -H "Authorization: Bearer $TOKEN" \
+  "$BASE/api/sessions?view=summary&states=active"
+
+# What changed in the last five minutes
+curl -sk -H "Authorization: Bearer $TOKEN" \
+  "$BASE/api/sessions?view=summary&since=$(( $(date +%s) - 300 ))"
+```
+
+The same compact record is what WebSocket clients receive in
+`session_state` after negotiating `session_view: summary` — see
+[mobile-surface.md](mobile-surface.md#low-bandwidth-client-flow).
 
 #### GET /api/sessions/{id}/telemetry
 
@@ -107,11 +159,18 @@ need to compute or send them.
 `session_bind_agent`, `session_state`, `telemetry_get`,
 `telemetry_list` — see [`docs/api-mcp-mapping.md`](../api-mcp-mapping.md).
 
+`list_sessions` accepts `view` (`full` by default, or `summary`),
+`states` and `since` with the same meaning as the REST parameters
+above; any of them makes it return the REST JSON array, plus a note
+when the summary cap omitted sessions.
+
 ### CLI
 
 ```bash
 datawatch session start --task "fix the auth tests" --project /home/me/work/auth
 datawatch session list
+datawatch session list --summary --states active      # compact JSON, running/waiting only
+datawatch session list --since 2026-10-14T12:00:00Z    # sessions updated since a time
 datawatch session output <id>
 datawatch session send <id> "approve"
 datawatch session kill <id>

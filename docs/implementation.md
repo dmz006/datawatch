@@ -527,6 +527,16 @@ All messages use a common envelope:
 | `needs_input` | Session enters `waiting_input` | `{"session_id": "a3f2", "prompt": "Do you want to continue? [y/N]"}` |
 | `notification` | General informational message | `{"message": "Session a3f2 killed."}` |
 | `error` | Command or protocol error | `{"message": "Session not found: zz99"}` |
+| `hello_ack` | Reply to `hello` | `{"session_list": "delta", "session_view": "summary", "output": "subscribed", "capabilities": ["ws.hello", ...]}` — the modes now in effect |
+| `session_removed` | A session left the list (`session_list=delta` clients only) | `{"session_id": "myhost-a3f2"}` |
+| `alert` | A new system alert | `<Alert>` — `{"id": "...", "level": "warn", "title": "...", "body": "...", "read": false, ...}` |
+| `alerts_read` | Alerts were marked read on any client | `{"ids": ["..."], "unread_count": 2}` or `{"all": true, "unread_count": 0}` |
+
+With `session_view=summary`, `session_state` carries the compact
+`GET /api/sessions?view=summary` record instead of the full session.
+With `output=subscribed`, `output`, `raw_output`, `pane_capture` and
+`chat_message` arrive only for subscribed sessions. See "WebSocket
+session updates" and "WebSocket output scoping" below.
 
 **Example — sessions message on connect:**
 ```json
@@ -569,7 +579,9 @@ All messages use a common envelope:
 | `command` | Raw command string (same syntax as Signal) | `{"text": "list"}` |
 | `new_session` | Start a new session | `{"task": "build a REST API"}` |
 | `send_input` | Send input to a waiting session | `{"session_id": "a3f2", "text": "y"}` |
-| `subscribe` | Subscribe to output lines for a session | `{"session_id": "a3f2"}` |
+| `subscribe` | Subscribe to output lines for a session (full or short ID) | `{"session_id": "a3f2"}` |
+| `unsubscribe` | Stop output for a session and stop the screen capture `subscribe` started | `{"session_id": "a3f2"}` |
+| `hello` | Negotiate lighter streams; every key optional | `{"session_list": "delta", "session_view": "summary", "output": "subscribed"}` |
 | `ping` | Keepalive (server replies with pong) | `{}` |
 
 **Example — subscribe to session output:**

@@ -134,6 +134,128 @@ When the mobile app needs to check whether a new endpoint exists
 (e.g. `/api/cost` was added in v3.7.0), check `version >= "3.7.0"`
 before calling. The daemon returns 404 for unknown paths.
 
+For optional behavior on an existing endpoint (query parameters,
+WebSocket modes, compression), prefer the `capabilities` array in
+`GET /api/info` over version comparisons — see
+[Low-bandwidth client flow](#low-bandwidth-client-flow).
+
+---
+
+## Low-bandwidth client flow
+
+A phone that only shows a session list should not download every
+session's full record and every terminal's output. The daemon offers a
+lighter path for each of the heavy streams. Use each one only when
+`GET /api/info` advertises it, so the same client keeps working against
+an older daemon.
+
+### 1. Check capabilities
+
+```
+GET /api/info
+→ { "version": "...", "capabilities": ["sessions.view_summary", "alerts.paging",
+     "alerts.count", "ws.alerts_read", "ws.hello", "ws.session_list_delta",
+     "ws.session_view_summary", "ws.output_scoped", "ws.unsubscribe", "api.gzip"], ... }
+```
+
+Treat a missing `capabilities` array as an empty one. Capability strings
+are never renamed; new features add new strings.
+
+### 2. Send `Accept-Encoding: gzip` on every request
+
+With `server.api_gzip` on (the default; advertised as `api.gzip`), any
+`/api/*` JSON response larger than `server.api_gzip_min_bytes` (default
+1024 bytes) comes back with `Content-Encoding: gzip`. OkHttp and
+URLSession add the header and decompress transparently; a hand-built
+client must check `Content-Encoding` before parsing. Small responses
+are never compressed.
+
+### 3. Open the WebSocket and send `hello`
+
+```json
+{"type":"hello","data":{"session_list":"delta","session_view":"summary","output":"subscribed"}}
+```
+
+The daemon answers with the modes now in effect:
+
+```json
+{"type":"hello_ack","data":{"session_list":"delta","session_view":"summary","output":"subscribed","capabilities":["ws.hello","ws.session_list_delta","ws.session_view_summary","ws.output_scoped","ws.unsubscribe"]}}
+```
+
+- `session_list: delta` — no whole-list `sessions` frames. Each new or
+  changed session arrives as one `session_state` `{"session": {...}}`;
+  each removed session as one `session_removed` `{"session_id": "..."}`.
+- `session_view: summary` — `session_state` carries the compact record
+  (long text fields truncated, `truncated_fields` lists which).
+- `output: subscribed` — `output`, `raw_output`, `pane_capture` and
+  `chat_message` frames arrive only for sessions you `subscribe` to.
+
+Send only the keys you want; each is independent. Frames that arrive
+before `hello_ack` can be ignored.
+
+### 4. Load the initial list over REST
+
+Right after `hello_ack`:
+
+```
+GET /api/sessions?view=summary
+```
+
+This returns the compact list: long text fields cut to
+`server.session_summary_text_chars` characters, and only the newest
+`server.session_summary_terminal_limit` ended sessions (the response
+header `X-Datawatch-Sessions-Omitted` says how many older ones were
+left out). Add `states=active` for running/waiting sessions only, or
+`since=<RFC3339|unix>` to fetch only what changed after a reconnect.
+Fetch `GET /api/sessions/{id}` when the user opens a session and needs
+the full record. Contract: [sessions.md](sessions.md#compact-session-list-viewsummary).
+
+### 5. Apply the stream
+
+- `session_state` → replace (or insert) the session keyed by `full_id`.
+- `session_removed` → drop that session.
+- On reconnect, send `hello` again and refetch with `since=` set to the
+  last `updated_at` you saw (or refetch the whole summary list).
+
+### 6. Subscribe only while a terminal is open
+
+```json
+{"type":"subscribe","data":{"session_id":"myhost-a1b2"}}
+{"type":"unsubscribe","data":{"session_id":"myhost-a1b2"}}
+```
+
+Send `subscribe` when the session's terminal view opens and
+`unsubscribe` when it closes. `unsubscribe` also stops the screen
+capture the subscription started. Full and short session IDs both work.
+
+### 7. Alerts without polling
+
+- Badge: `GET /api/alerts/count` → `{"unread_count": N, "total": M}`
+  once at start-up.
+- Updates: the `alert` WS event carries each new alert; `alerts_read`
+  (`{"ids": [...], "unread_count": N}` or `{"all": true,
+  "unread_count": 0}`) arrives whenever alerts are marked read on any
+  client. Update the badge from these instead of polling.
+- List screen: `GET /api/alerts?limit=20` (add `unread=1` for unread
+  only) and page with `before=<next_before>` while `has_more` is true.
+
+### Fallback on an older daemon
+
+| Capability missing | Do this instead |
+|---|---|
+| `sessions.view_summary` | `GET /api/sessions` (full list; the params are ignored by older daemons, so check before relying on truncation or the omitted header). |
+| `ws.hello` | Do not send `hello`; expect the full `sessions` frame on connect and on every change. |
+| `ws.session_list_delta` / `ws.session_view_summary` | Keep handling `sessions` frames and full `session_state` records. `hello_ack` echoes what was actually applied, so trust it over what you asked for. |
+| `ws.output_scoped` | Expect output for every session; drop frames for sessions you have not opened. |
+| `ws.unsubscribe` | Skip `unsubscribe`; the subscription ends when the socket closes. |
+| `alerts.count` / `alerts.paging` | `GET /api/alerts` and count unread client-side. |
+| `ws.alerts_read` | Refetch the badge after your own mark-read calls; changes from other clients appear on the next refresh. |
+| `api.gzip` | Nothing to change — the header is harmless; responses are just uncompressed. |
+
+Operators can tune these defaults (`server.ws_session_list_default`,
+`server.ws_output_scope_default`, the summary limits and the gzip
+threshold) — see [operations.md](../operations.md#payload-settings-for-low-bandwidth-clients).
+
 ---
 
 ## OpenAPI / schema

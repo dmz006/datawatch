@@ -5,6 +5,40 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.81 — feat(server): low-bandwidth list options in MCP and the CLI, plus client-flow docs
+
+### Added
+- **MCP `list_sessions` accepts `view`, `states` and `since`.** `view`
+  is `full` by default, so existing agents see no change. With
+  `view: "summary"`, `states` (e.g. `active` or `running,failed`) or
+  `since` (RFC3339 or unix seconds), the tool returns the same JSON array
+  as `GET /api/sessions` with those parameters, and adds a note when the
+  summary view left out older finished sessions. `name`, `state`,
+  `backend` and `alive` still apply; `orphaned` cannot be combined with
+  the new parameters.
+- **`datawatch session list --summary --states <list> --since <time>`**
+  prints the compact session list from `GET /api/sessions?view=summary`.
+- **`datawatch alerts --limit N --unread --count`.** `--limit` and
+  `--unread` fetch one page of alerts and show "N of M alerts" with a
+  hint when older ones exist; `--limit 0` shows only the counts.
+  `--count` prints just the unread and total counts from
+  `GET /api/alerts/count`. Plain `datawatch alerts` is unchanged.
+- **Documentation for low-bandwidth clients:** the compact session list
+  contract (truncation, `truncated_fields`, the ended-session cap and the
+  `X-Datawatch-Sessions-Omitted` header, `since` / `states`) in the
+  sessions API reference; a step-by-step mobile client flow (check
+  `/api/info` capabilities, `hello`, summary list, subscribe/unsubscribe,
+  alert events instead of polling, gzip) with fallbacks for older
+  daemons; the full WebSocket message tables; OpenAPI entries for the new
+  parameters, header, `capabilities` field and compression; and a
+  settings table showing every way to change the six payload settings.
+- The release smoke test now checks `/api/info` capabilities, the
+  summary list, alert counts and API gzip against a live daemon.
+
+### Notes
+- The unfiltered session list is still never capped or truncated; only
+  `view=summary` applies the cap.
+
 ## v9.0.80 — feat(server): WebSocket output scoped to subscribed sessions, plus `unsubscribe`
 
 ### Added

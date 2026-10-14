@@ -12,6 +12,15 @@ info:
     ## Network Access
     The API is designed to be accessed over Tailscale (encrypted overlay network).
     TLS is optional — Tailscale provides transport encryption.
+
+    ## Response compression
+    `/api/*` responses carry `Vary: Accept-Encoding`. With
+    `server.api_gzip` on (default), a JSON / text / YAML response larger
+    than `server.api_gzip_min_bytes` (default 1024) is sent with
+    `Content-Encoding: gzip` when the request sends
+    `Accept-Encoding: gzip`. Streams, WebSocket upgrades, file downloads
+    and `/api/proxy/` paths are never compressed. Advertised as `api.gzip`
+    in `/api/info` `capabilities`.
   version: 0.4.0
   license:
     name: Polyform Noncommercial 1.0.0
@@ -67,15 +76,64 @@ paths:
           schema:
             type: string
             enum: ["true", "false"]
+        - name: view
+          in: query
+          required: false
+          description: |
+            `summary` returns the compact list: `task`, `prompt_context`,
+            `last_response` and `last_summary_long` are cut to
+            `server.session_summary_text_chars` characters (ending in `…`)
+            and named in each record's `truncated_fields`; only the newest
+            `server.session_summary_terminal_limit` terminal sessions
+            (complete / failed / killed) are kept, and
+            `X-Datawatch-Sessions-Omitted` reports how many were dropped.
+            Without `view`, `since` or `states` the response is the
+            unchanged, uncapped full list. Advertised as
+            `sessions.view_summary` in `/api/info` `capabilities`.
+          schema:
+            type: string
+            enum: [summary]
+        - name: since
+          in: query
+          required: false
+          description: Only sessions whose `updated_at` is after this time (RFC3339 or unix seconds).
+          schema:
+            type: string
+            example: "2026-10-14T12:00:00Z"
+        - name: states
+          in: query
+          required: false
+          description: Comma list of states to include. `active` expands to every non-terminal state.
+          schema:
+            type: string
+            example: "active"
       responses:
         "200":
           description: Array of sessions
+          headers:
+            X-Datawatch-Sessions-Omitted:
+              description: "`view=summary` only — number of older terminal sessions dropped by the cap. Absent when nothing was dropped."
+              schema:
+                type: integer
           content:
             application/json:
               schema:
                 type: array
                 items:
-                  $ref: "#/components/schemas/Session"
+                  allOf:
+                    - $ref: "#/components/schemas/Session"
+                    - type: object
+                      properties:
+                        scheduled_count:
+                          type: integer
+                          description: Pending schedules for the session (when schedules are enabled).
+                        truncated_fields:
+                          type: array
+                          items:
+                            type: string
+                          description: "`view=summary` only — fields that were cut. Fetch `/api/sessions/{id}` for the full record."
+        "400":
+          description: Unknown `view`, unparseable `since`, or unknown/empty `states`.
         "401":
           $ref: "#/components/responses/Unauthorized"
 
@@ -874,6 +932,8 @@ paths:
         | `notification` | General text notification |
         | `alert` | New system alert pushed to Web UI clients |
         | `alerts_read` | Alerts were marked read: `{"ids": ["..."], "unread_count": N}` or `{"all": true, "unread_count": 0}` |
+        | `hello_ack` | Reply to `hello`: `{"session_list": "full"\|"delta", "session_view": "full"\|"summary", "output": "all"\|"subscribed", "capabilities": [...]}` — the modes now in effect |
+        | `session_removed` | `session_list=delta` clients only: `{"session_id": "..."}` — a session left the list |
 
         ### Client to Server messages
 
@@ -882,8 +942,24 @@ paths:
         | `command` | `{"text": "new: my task"}` — any command string |
         | `new_session` | `{"task": "...", "name": "...", "project_dir": "...", "backend": "..."}` |
         | `send_input` | `{"session_id": "a3f2", "text": "yes"}` |
-        | `subscribe` | `{"session_id": "a3f2"}` — stream output for session |
+        | `subscribe` | `{"session_id": "a3f2"}` — stream output for session (full or short ID) |
+        | `unsubscribe` | `{"session_id": "a3f2"}` — stop output for the session and stop the screen capture `subscribe` started |
+        | `hello` | `{"session_list": "delta", "session_view": "summary", "output": "subscribed"}` — negotiate a lighter stream; every key optional, unknown keys/values ignored |
         | `ping` | keepalive |
+
+        ### Lighter streams (`hello`)
+
+        - `session_list: delta` — no `sessions` frames; one `session_state`
+          per new or changed session and one `session_removed` per removed
+          session. Fetch the starting list with
+          `GET /api/sessions?view=summary` after `hello_ack`.
+        - `session_view: summary` — `session_state` carries the compact
+          `view=summary` record (with `truncated_fields`).
+        - `output: subscribed` — `output`, `raw_output`, `pane_capture`
+          and `chat_message` frames only for subscribed sessions.
+
+        Clients that never send `hello` get `server.ws_session_list_default`
+        and `server.ws_output_scope_default` (`full` / `all` by default).
 
         All messages are JSON-wrapped in `{"type":"...", "data":{...}, "ts":"..."}`.
       operationId: connectWebSocket
@@ -2766,6 +2842,20 @@ components:
               type: string
             port:
               type: integer
+        capabilities:
+          type: array
+          description: |
+            Optional API features this daemon supports. Check for an entry
+            before using the feature; an older daemon omits the array or
+            the entry. Strings are never renamed once shipped.
+            `sessions.view_summary`, `alerts.paging`, `alerts.count`,
+            `ws.alerts_read`, `ws.hello`, `ws.session_list_delta`,
+            `ws.session_view_summary`, `ws.output_scoped`,
+            `ws.unsubscribe`, and `api.gzip` (only while `server.api_gzip`
+            is on).
+          items:
+            type: string
+          example: ["sessions.view_summary", "alerts.paging", "alerts.count", "ws.hello", "api.gzip"]
 
     ScheduledCommand:
       type: object

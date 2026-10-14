@@ -113,7 +113,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "9.0.80"
+var Version = "9.0.81"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -8618,7 +8618,6 @@ func newAlertsCmd() *cobra.Command {
 
 			markID, _ := cmd.Flags().GetString("mark-read")
 			markAll, _ := cmd.Flags().GetBool("mark-all-read")
-			systemOnly, _ := cmd.Flags().GetBool("system")
 
 			// Mark read operations
 			if markAll || markID != "" {
@@ -8645,11 +8644,20 @@ func newAlertsCmd() *cobra.Command {
 				return nil
 			}
 
-			// List alerts
-			if systemOnly {
-				baseURL += "?source=system"
+			if count, _ := cmd.Flags().GetBool("count"); count {
+				return printAlertsCount(baseURL)
 			}
-			resp, err := http.Get(baseURL)
+
+			// List alerts
+			q, err := alertsListQuery(cmd)
+			if err != nil {
+				return err
+			}
+			listURL := baseURL
+			if len(q) > 0 {
+				listURL += "?" + q.Encode()
+			}
+			resp, err := http.Get(listURL)
 			if err != nil {
 				return fmt.Errorf("daemon not reachable: %w", err)
 			}
@@ -8662,16 +8670,27 @@ func newAlertsCmd() *cobra.Command {
 					CreatedAt string `json:"created_at"`
 					Read      bool   `json:"read"`
 				} `json:"alerts"`
-				UnreadCount int `json:"unread_count"`
+				UnreadCount int    `json:"unread_count"`
+				Total       int    `json:"total"`
+				HasMore     bool   `json:"has_more"`
+				NextBefore  string `json:"next_before"`
+			}
+			if resp.StatusCode != http.StatusOK {
+				b, _ := io.ReadAll(resp.Body)
+				return fmt.Errorf("list alerts failed: HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
 			}
 			if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
 				return fmt.Errorf("decode alerts: %w", err)
 			}
 			if len(data.Alerts) == 0 {
-				fmt.Println("No alerts.")
+				fmt.Printf("No alerts shown (%d unread).\n", data.UnreadCount)
 				return nil
 			}
-			fmt.Printf("%d alerts (%d unread):\n\n", len(data.Alerts), data.UnreadCount)
+			if data.Total > 0 {
+				fmt.Printf("%d of %d alerts (%d unread):\n\n", len(data.Alerts), data.Total, data.UnreadCount)
+			} else {
+				fmt.Printf("%d alerts (%d unread):\n\n", len(data.Alerts), data.UnreadCount)
+			}
 			for _, a := range data.Alerts {
 				marker := " "
 				if !a.Read {
@@ -8687,9 +8706,15 @@ func newAlertsCmd() *cobra.Command {
 				}
 				fmt.Printf(" %s [%s] %s — %s\n", marker, a.Level, ts, msg)
 			}
+			if data.HasMore {
+				fmt.Printf("\nMore alerts are older than %s.\n", data.NextBefore)
+			}
 			return nil
 		},
 	}
+	cmd.Flags().Int("limit", 0, "Show at most this many alerts (newest first); 0 returns only the counts")
+	cmd.Flags().Bool("unread", false, "Show only unread alerts")
+	cmd.Flags().Bool("count", false, "Print only the unread and total alert counts")
 	cmd.Flags().String("mark-read", "", "Mark a specific alert as read by ID")
 	cmd.Flags().Bool("mark-all-read", false, "Mark all alerts as read")
 	cmd.Flags().Bool("system", false, "Show only system-level alerts (pipeline/plugin/ebpf failures)")
@@ -9437,34 +9462,12 @@ func newSessionCmd() *cobra.Command {
 				return daemonGet("/api/sessions/aggregated")
 			}
 
-			// BL361 — structured filters.
-			nameFilter, _ := cmd.Flags().GetString("name")
-			stateFilter, _ := cmd.Flags().GetString("state")
-			backendFilter, _ := cmd.Flags().GetString("backend")
-			aliveFilter, _ := cmd.Flags().GetString("alive")
+			// BL361 — structured filters; BL432 — summary view / states / since.
 			jsonOutput, _ := cmd.Flags().GetBool("json")
 
 			// If any filter is set or json output requested, use API path.
-			hasFilter := nameFilter != "" || stateFilter != "" || backendFilter != "" || aliveFilter != ""
-			if hasFilter || jsonOutput {
-				apiURL := "/api/sessions"
-				params := []string{}
-				if nameFilter != "" {
-					params = append(params, "name="+nameFilter)
-				}
-				if stateFilter != "" {
-					params = append(params, "state="+stateFilter)
-				}
-				if backendFilter != "" {
-					params = append(params, "backend="+backendFilter)
-				}
-				if aliveFilter != "" {
-					params = append(params, "alive="+aliveFilter)
-				}
-				if len(params) > 0 {
-					apiURL += "?" + strings.Join(params, "&")
-				}
-				return daemonGet(apiURL)
+			if q := sessionListQuery(cmd); len(q) > 0 || jsonOutput {
+				return daemonGet(sessionsPath(q))
 			}
 
 			cfg, err := loadConfig()
@@ -9481,6 +9484,9 @@ func newSessionCmd() *cobra.Command {
 	sessionListCmd.Flags().String("backend", "", "BL361 — filter by backend family (e.g. opencode, claudecode)")
 	sessionListCmd.Flags().String("alive", "", "BL361 — filter by claude_alive: true or false")
 	sessionListCmd.Flags().Bool("json", false, "BL361 — output structured JSON array")
+	sessionListCmd.Flags().Bool("summary", false, "compact JSON list: long text fields truncated, only the newest finished sessions kept")
+	sessionListCmd.Flags().String("states", "", "comma list of states to include (e.g. running,waiting_input); 'active' = every non-finished state")
+	sessionListCmd.Flags().String("since", "", "only sessions updated after this time (RFC3339 or unix seconds)")
 	sessionCmd.AddCommand(sessionListCmd)
 
 	// session new "task description"

@@ -1427,6 +1427,15 @@ func (s *Server) toolListSessions() mcpsdk.Tool {
 		mcpsdk.WithString("format",
 			mcpsdk.Description("BL361 — output format: text (default) or json. json returns a structured JSON array."),
 		),
+		mcpsdk.WithString("view",
+			mcpsdk.Description("full (default) or summary. summary returns the compact REST list: long text fields cut to a configured length (named in each record's truncated_fields) and only the newest terminal sessions kept. Always JSON."),
+		),
+		mcpsdk.WithString("states",
+			mcpsdk.Description("Comma list of states to include (e.g. running,waiting_input); 'active' means every non-terminal state. Always JSON."),
+		),
+		mcpsdk.WithString("since",
+			mcpsdk.Description("Only sessions updated after this time (RFC3339 or unix seconds). Always JSON."),
+		),
 	)
 }
 
@@ -1793,6 +1802,13 @@ func (s *Server) toolScheduleCancel() mcpsdk.Tool {
 // ---- handlers ---------------------------------------------------------------
 
 func (s *Server) handleListSessions(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	// BL432 — view / states / since go through the REST list view.
+	if q, ok, errMsg := listSessionsViewQuery(req); errMsg != "" {
+		return mcpsdk.NewToolResultText(errMsg), nil
+	} else if ok {
+		return s.listSessionsViaREST(q)
+	}
+
 	// BL361 — structured filter params.
 	filter := session.SessionFilter{
 		Name:    req.GetString("name", ""),

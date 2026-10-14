@@ -3806,6 +3806,85 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+H "73. Low-bandwidth payloads — capabilities, summary list, alert counts, API gzip (v9.0.81)"
+# Read-only checks plus one temporary config change (api_gzip /
+# api_gzip_min_bytes), restored at the end of the section. Creates no
+# sessions, alerts or other entities, so nothing needs add_cleanup.
+CAPS_OK=$(curl "${curl_args[@]}" "$BASE/api/info" | python3 -c \
+  'import json,sys;d=json.load(sys.stdin);c=d.get("capabilities");print("yes" if isinstance(c,list) and "sessions.view_summary" in c else "no:%r"%(c,))' 2>/dev/null)
+if [[ "$CAPS_OK" == "yes" ]]; then
+  ok "GET /api/info capabilities includes sessions.view_summary"
+else
+  ko "GET /api/info capabilities missing sessions.view_summary ($CAPS_OK)"
+fi
+
+SUM_CODE=$(curl "${curl_args[@]}" -o "$TMPD/sess_summary.json" -w '%{http_code}' "$BASE/api/sessions?view=summary")
+SUM_SHAPE=$(python3 -c 'import json,sys;d=json.load(open(sys.argv[1]));print("array" if isinstance(d,list) else type(d).__name__)' "$TMPD/sess_summary.json" 2>/dev/null)
+if [[ "$SUM_CODE" == "200" && "$SUM_SHAPE" == "array" ]]; then
+  ok "GET /api/sessions?view=summary → 200 JSON array"
+else
+  ko "GET /api/sessions?view=summary → HTTP $SUM_CODE, shape '$SUM_SHAPE'"
+fi
+BAD_VIEW=$(curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' "$BASE/api/sessions?view=bogus")
+if [[ "$BAD_VIEW" == "400" ]]; then
+  ok "GET /api/sessions?view=bogus → 400"
+else
+  ko "GET /api/sessions?view=bogus → HTTP $BAD_VIEW (want 400)"
+fi
+
+AL_OK=$(curl "${curl_args[@]}" "$BASE/api/alerts?limit=0" | python3 -c \
+  'import json,sys;d=json.load(sys.stdin);print("yes" if d.get("alerts")==[] and isinstance(d.get("unread_count"),int) and isinstance(d.get("total"),int) else "no:%r"%(d,))' 2>/dev/null)
+if [[ "$AL_OK" == "yes" ]]; then
+  ok "GET /api/alerts?limit=0 → empty alerts with unread_count + total"
+else
+  ko "GET /api/alerts?limit=0 unexpected: ${AL_OK:0:200}"
+fi
+AC_OK=$(curl "${curl_args[@]}" "$BASE/api/alerts/count" | python3 -c \
+  'import json,sys;d=json.load(sys.stdin);print("yes" if isinstance(d.get("unread_count"),int) else "no:%r"%(d,))' 2>/dev/null)
+if [[ "$AC_OK" == "yes" ]]; then
+  ok "GET /api/alerts/count → unread_count"
+else
+  ko "GET /api/alerts/count unexpected: ${AC_OK:0:200}"
+fi
+
+# gzip: force compression on for any non-empty body, then restore.
+GZ_BEFORE=$(curl "${curl_args[@]}" "$BASE/api/config" | python3 -c \
+  'import json,sys;s=json.load(sys.stdin).get("server",{});print("%s %s"%(str(s.get("api_gzip","missing")).lower(),s.get("api_gzip_min_bytes","missing")))' 2>/dev/null)
+read -r GZ_ON_BEFORE GZ_MIN_BEFORE <<< "$GZ_BEFORE"
+if [[ "$GZ_ON_BEFORE" != "true" && "$GZ_ON_BEFORE" != "false" ]] || ! [[ "$GZ_MIN_BEFORE" =~ ^[0-9]+$ ]]; then
+  ko "server.api_gzip / api_gzip_min_bytes missing from /api/config (got '$GZ_BEFORE')"
+else
+  curl "${curl_args[@]}" -X PUT -H "Content-Type: application/json" \
+    -d '{"server.api_gzip":true,"server.api_gzip_min_bytes":0}' "$BASE/api/config" >/dev/null
+  GZ_HDRS=$(curl "${curl_args[@]}" -H "Accept-Encoding: gzip" -D - -o "$TMPD/info.gz" "$BASE/api/info" | tr -d '\r')
+  if echo "$GZ_HDRS" | grep -qi '^content-encoding: *gzip'; then
+    if gzip -dc "$TMPD/info.gz" 2>/dev/null | python3 -c 'import json,sys;json.load(sys.stdin)' 2>/dev/null; then
+      ok "Accept-Encoding: gzip → Content-Encoding: gzip on /api/info, body decompresses to JSON"
+    else
+      ko "/api/info gzip body did not decompress to JSON"
+    fi
+  else
+    ko "Accept-Encoding: gzip on /api/info returned no Content-Encoding: gzip"
+  fi
+  PLAIN_HDRS=$(curl "${curl_args[@]}" -D - -o /dev/null "$BASE/api/info" | tr -d '\r')
+  if echo "$PLAIN_HDRS" | grep -qi '^content-encoding: *gzip'; then
+    ko "/api/info gzipped without Accept-Encoding: gzip"
+  else
+    ok "/api/info uncompressed without Accept-Encoding: gzip"
+  fi
+  # Restore original values (failing this leaks state across runs).
+  curl "${curl_args[@]}" -X PUT -H "Content-Type: application/json" \
+    -d "$(printf '{"server.api_gzip":%s,"server.api_gzip_min_bytes":%s}' "$GZ_ON_BEFORE" "$GZ_MIN_BEFORE")" "$BASE/api/config" >/dev/null
+  GZ_AFTER=$(curl "${curl_args[@]}" "$BASE/api/config" | python3 -c \
+    'import json,sys;s=json.load(sys.stdin).get("server",{});print("%s %s"%(str(s.get("api_gzip","missing")).lower(),s.get("api_gzip_min_bytes","missing")))' 2>/dev/null)
+  if [[ "$GZ_AFTER" == "$GZ_BEFORE" ]]; then
+    ok "server.api_gzip settings restored ($GZ_AFTER)"
+  else
+    ko "server.api_gzip settings not restored (was '$GZ_BEFORE', now '$GZ_AFTER')"
+  fi
+fi
+
+# ---------------------------------------------------------------------------
 H "Summary"
 echo "  Pass:  $PASS"
 echo "  Fail:  $FAIL"

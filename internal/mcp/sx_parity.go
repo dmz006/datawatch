@@ -36,8 +36,15 @@ var httpProxy = &http.Client{
 // proxyGet calls GET http://127.0.0.1:<webPort>/<path>?<query> and
 // returns the response body (or an error on non-2xx).
 func (s *Server) proxyGet(path string, q url.Values) ([]byte, error) {
+	body, _, err := s.proxyGetWithHeaders(path, q)
+	return body, err
+}
+
+// proxyGetWithHeaders is proxyGet that also returns the response headers,
+// for endpoints that report metadata in a header.
+func (s *Server) proxyGetWithHeaders(path string, q url.Values) ([]byte, http.Header, error) {
 	if s.webPort == 0 {
-		return nil, fmt.Errorf("REST loopback unavailable (web server disabled)")
+		return nil, nil, fmt.Errorf("REST loopback unavailable (web server disabled)")
 	}
 	u := fmt.Sprintf("http://127.0.0.1:%d%s", s.webPort, path)
 	if len(q) > 0 {
@@ -45,21 +52,21 @@ func (s *Server) proxyGet(path string, q url.Values) ([]byte, error) {
 	}
 	req, err := http.NewRequest("GET", u, nil)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if s.token != "" {
 		req.Header.Set("Authorization", "Bearer "+s.token)
 	}
 	resp, err := httpProxy.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer resp.Body.Close() //nolint:errcheck
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode/100 != 2 {
-		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(body))
+		return nil, resp.Header, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(body))
 	}
-	return body, nil
+	return body, resp.Header, nil
 }
 
 // proxyJSON sends method+body to the loopback and returns the body.

@@ -9,6 +9,33 @@ Do not mark **Validated=Yes** based solely on unit tests.
 
 ---
 
+## Low-bandwidth payloads — compact session list, alert paging/count, API gzip, WS hello/delta/scoped output, MCP + CLI options — v9.0.76–v9.0.81
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| `GET /api/info` `capabilities` array (`sessions.view_summary`, `alerts.*`, `ws.*`, `api.gzip` only while gzip is on) | **Yes** (capability assertions in `session_list_view_test.go`, `alerts_paging_test.go`, `api_gzip_test.go`, `ws_session_stream_test.go`, `ws_output_scope_test.go`) | **Yes** | `scripts/release-smoke.sh` S73 against an isolated smoke daemon (2026-10-14): array present and contains `sessions.view_summary` | — |
+| `GET /api/sessions?view=summary` / `since=` / `states=`, `truncated_fields`, `X-Datawatch-Sessions-Omitted`, 400 on bad params, unfiltered list unchanged | **Yes** (`internal/server/session_list_view_test.go`) | **Yes** (200 array + 400 on unknown view) | S73 (2026-10-14): `view=summary` → 200 JSON array; `view=bogus` → 400 | Truncation and the omitted header are unit-tested only — the smoke daemon has no long-text or >50 ended sessions |
+| `GET /api/alerts?limit=&unread=&before=` paged form | **Yes** (`internal/server/alerts_paging_test.go`) | **Yes** (`limit=0`) | S73 (2026-10-14): `limit=0` → `alerts: []` with integer `unread_count` + `total` | `before` cursor paging unit-tested only |
+| `GET /api/alerts/count` | **Yes** (`alerts_paging_test.go`) | **Yes** | S73 (2026-10-14): integer `unread_count` | — |
+| `/api/*` gzip (`server.api_gzip`, `server.api_gzip_min_bytes`) | **Yes** (`internal/server/api_gzip_test.go`) | **Yes** | S73 (2026-10-14): threshold lowered to 0 via `PUT /api/config`; `Accept-Encoding: gzip` → `Content-Encoding: gzip`, body gunzips to JSON; no header → uncompressed; both settings restored | Live round-trip of both keys through `PUT /api/config` |
+| WS `hello` / `hello_ack`, `session_list=delta` (`session_state` / `session_removed`), `session_view=summary` | **Yes** (`internal/server/ws_session_stream_test.go`) | No | Hub-level tests with real WS connections inside `go test` | No live WS client run yet |
+| WS `output=subscribed` scoping, `unsubscribe` (stops screen capture) | **Yes** (`internal/server/ws_output_scope_test.go`) | No | Hub-level tests inside `go test` | No live WS client run yet |
+| WS `alerts_read` broadcast on mark-read | **Yes** (`alerts_paging_test.go`) | No | `go test` | — |
+| Config keys `server.session_summary_terminal_limit`, `server.session_summary_text_chars`, `server.ws_session_list_default`, `server.ws_output_scope_default`, `server.api_gzip`, `server.api_gzip_min_bytes` via `applyConfigPatch` (shared by REST, CLI `config set`, MCP `config_set`, comm `configure`) | **Yes** (applyConfigPatch round-trips in the five test files above) | **Yes** (gzip keys only) | S73 (2026-10-14) | Other four keys unit-tested only |
+| MCP `list_sessions` `view` / `states` / `since` (forwarded to REST; omitted-count note; `orphaned` combination rejected; legacy path unchanged without the params) | **Yes** (`internal/mcp/list_sessions_view_test.go`, 8 tests) | No | `httptest` loopback stands in for the daemon | Not exercised against a live daemon |
+| MCP `get_alerts` `limit` / `unread_only` / `before` | **Yes** (`internal/mcp/get_alerts_paging_test.go`) | No | In-process alert store | Already present before v9.0.81 |
+| CLI `datawatch session list --summary --states --since` | **Yes** (`cmd/datawatch/cli_list_views_test.go`) | No | Fake daemon (`httptest`) records the request query | Not run against a live daemon |
+| CLI `datawatch alerts --limit --unread --count` (legacy request unchanged without flags; `--limit 0` sent; negative rejected; count endpoint + HTTP error) | **Yes** (`cmd/datawatch/cli_list_views_test.go`) | No | Fake daemon (`httptest`) | Not run against a live daemon |
+
+**Manual verification steps (live, not yet performed):**
+1. Connect a WS client, send `{"type":"hello","data":{"session_list":"delta","session_view":"summary","output":"subscribed"}}`; expect `hello_ack` echoing all three modes.
+2. Start a session; expect a compact `session_state` and no `sessions` frame. Kill and delete it; expect `session_removed`.
+3. Without `subscribe`, expect no `output`/`pane_capture` for the session; after `subscribe` they arrive; after `unsubscribe` they stop.
+4. Mark an alert read from another client; expect `alerts_read` with the new `unread_count`.
+5. `datawatch session list --summary --states active` and `datawatch alerts --count` against a sandbox daemon.
+
+**Mobile parity:** documented in `docs/api/mobile-surface.md` ("Low-bandwidth client flow"); client adoption is tracked on the `datawatch-app` side.
+
 ## Managed service-kind plugin supervision (`plugins.managed`, enable `{"managed":true}`) — v9.0.32
 
 | Interface / Endpoint | Tested | Validated | Test Conditions | Notes |

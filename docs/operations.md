@@ -788,6 +788,50 @@ curl http://localhost:8080/api/info
 curl http://localhost:8080/api/sessions | jq '.[] | {id,state,task}'
 ```
 
+`?view=summary` returns a compact list (long text fields truncated,
+only the newest ended sessions kept); `?states=active` and
+`?since=<RFC3339|unix>` narrow it further. See
+[api/sessions.md](api/sessions.md#compact-session-list-viewsummary).
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" \
+  "http://localhost:8080/api/sessions?view=summary&states=active" | jq '.[] | {id,state,task}'
+```
+
+### Payload settings for low-bandwidth clients
+
+These `server.*` settings tune the compact session list, the WebSocket
+streams and API compression used by phones and other low-bandwidth
+clients. Every one is read from the live config, so a change applies
+without a restart (WebSocket defaults apply without a reconnect). The
+recommended client flow is in
+[api/mobile-surface.md](api/mobile-surface.md#low-bandwidth-client-flow).
+
+| Key | Default | Meaning |
+|---|---|---|
+| `server.session_summary_terminal_limit` | `50` | Ended (complete / failed / killed) sessions kept by `GET /api/sessions?view=summary`, newest first; `0` = no cap. The unfiltered list is never capped. |
+| `server.session_summary_text_chars` | `200` | Characters kept of `task`, `prompt_context`, `last_response` and `last_summary_long` in the summary view and in summary `session_state` frames (minimum 20). |
+| `server.ws_session_list_default` | `full` | WebSocket session-list mode for clients that send no `hello`: `full` or `delta`. |
+| `server.ws_output_scope_default` | `all` | WebSocket terminal-output mode for clients that send no `output` in `hello`: `all` or `subscribed`. Keep `all` while the web app is in use. |
+| `server.api_gzip` | `true` | Gzip `/api/*` JSON responses for clients sending `Accept-Encoding: gzip`. |
+| `server.api_gzip_min_bytes` | `1024` | Only bodies larger than this are compressed. |
+
+Each key is reachable through all five configuration methods:
+
+| Key | YAML (`server:` block) | CLI | Web UI (Settings → General → Sessions) | REST | Chat |
+|---|---|---|---|---|---|
+| `server.session_summary_terminal_limit` | `session_summary_terminal_limit: 50` | `datawatch config set server.session_summary_terminal_limit 50` | *Session summary: ended sessions kept (0 = all)* | `PUT /api/config` `{"server.session_summary_terminal_limit": 50}` | `configure server.session_summary_terminal_limit=50` |
+| `server.session_summary_text_chars` | `session_summary_text_chars: 200` | `datawatch config set server.session_summary_text_chars 200` | *Session summary: text length (chars)* | `PUT /api/config` `{"server.session_summary_text_chars": 200}` | `configure server.session_summary_text_chars=200` |
+| `server.ws_session_list_default` | `ws_session_list_default: full` | `datawatch config set server.ws_session_list_default delta` | *Live session updates (clients without hello)* | `PUT /api/config` `{"server.ws_session_list_default": "delta"}` | `configure server.ws_session_list_default=delta` |
+| `server.ws_output_scope_default` | `ws_output_scope_default: all` | `datawatch config set server.ws_output_scope_default subscribed` | *Live terminal output (clients without hello)* | `PUT /api/config` `{"server.ws_output_scope_default": "subscribed"}` | `configure server.ws_output_scope_default=subscribed` |
+| `server.api_gzip` | `api_gzip: true` | `datawatch config set server.api_gzip false` | *Compress API responses (gzip)* | `PUT /api/config` `{"server.api_gzip": false}` | `configure server.api_gzip=false` |
+| `server.api_gzip_min_bytes` | `api_gzip_min_bytes: 1024` | `datawatch config set server.api_gzip_min_bytes 4096` | *API compression threshold (bytes)* | `PUT /api/config` `{"server.api_gzip_min_bytes": 4096}` | `configure server.api_gzip_min_bytes=4096` |
+
+MCP agents can use `config_set` with the same keys. `GET /api/info`
+lists what the daemon supports in its `capabilities` array (for example
+`sessions.view_summary`, `alerts.count`, `ws.hello`, and `api.gzip`
+while compression is on).
+
 ### Session output via API
 
 ```bash

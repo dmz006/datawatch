@@ -299,7 +299,7 @@ The WebSocket protocol uses typed JSON envelopes:
 { "type": "sessions", "data": { "sessions": [...] }, "ts": "2026-03-25T..." }
 ```
 
-All server-to-client messages broadcast to every connected client. The PWA subscribes to a specific session via `{ "type": "subscribe", "data": { "session_id": "..." } }` to receive output lines for that session.
+By default every server-to-client message is broadcast to every connected client. The PWA subscribes to a specific session via `{ "type": "subscribe", "data": { "session_id": "..." } }` to receive output lines for that session. A client can send `hello` to receive per-session deltas instead of whole-list `sessions` frames, compact session records, and terminal output only for the sessions it subscribed to (`unsubscribe` ends one) — see [api/mobile-surface.md](api/mobile-surface.md#low-bandwidth-client-flow).
 
 See [docs/pwa-setup.md](pwa-setup.md) for deployment and usage instructions.
 

@@ -9,7 +9,7 @@ documenting coverage gaps and the reasoning behind them.
 
 | API Endpoint | MCP Tool | Status | Notes |
 |-------------|----------|--------|-------|
-| `GET /api/sessions` | `list_sessions` | Complete | |
+| `GET /api/sessions` | `list_sessions` | Complete | `name`/`state`/`backend`/`alive` filters match the REST params. `view` (`full` default, or `summary`), `states` and `since` map to the REST `view`/`states`/`since` params; using any of them returns the REST JSON array, plus a text note with the `X-Datawatch-Sessions-Omitted` count when the summary cap dropped sessions. Not combinable with `orphaned`. |
 | `POST /api/sessions/start` | `start_session` | Complete | |
 | `GET /api/output?id=&n=` | `session_output` | Complete | |
 | `GET /api/sessions/timeline` | `session_timeline` | Complete | |
