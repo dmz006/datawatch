@@ -930,32 +930,50 @@ established. In progress — starting with BL403.**
     `killed_session_ids`. Note: a single-story PRD whose only task fails
     rolls up to `failed`, not `blocked`, and `failed` still isn't an
     editable status — out of this item's scope, not changed.
-21. **BL422** — Per-task Claude model/effort tiering for dev-PRD cost
-    (filed 2026-10-13, same day, prep only — NOT started). Not
-    roadmap work — surfaced from an operator question while running
-    BL420: every dev PRD under the "all dev work via PRDs" directive
-    currently pins `claude-code` at a single model/effort for
-    decompose, every task's execution, and verification alike, even
-    though task difficulty within one PRD varies a lot (e.g. BL420's
-    task 1 — reading/understanding a concurrency-sensitive Go file
-    and writing a correct fix — versus task 2, a mostly-mechanical
-    shell script). `autonomous_prd_set_task_llm`/`_set_story_llm`
-    already exist for per-unit overrides; this PRD is just the actual
-    test harness + results, not a new mechanism. Goal: build a small,
-    repeatable eval PRD that runs a fixed set of representative task
-    types (read-heavy/analysis, mostly-mechanical scripting,
-    doc-only edits, verification/review) at a few Claude model/effort
-    tiers (e.g. Sonnet-normal vs. Haiku-normal vs. Haiku-low), records
-    pass/fail + wall time + cost for each, and reports where a cheaper
-    tier is safe to default to for dev-PRD work vs. where Sonnet
-    should stay required. Explicitly scoped to Claude model tiers
-    only for now — **not** a Claude-vs-open-model comparison. A
-    separate future rerun comparing against Qwen/other open models via
-    the existing Ollama/OpenWebUI backends is a known follow-up the
-    operator wants eventually, but is out of scope here; note it as a
-    forward pointer only, don't build it now. **Explicitly NOT
-    approved or run yet** — prep only, decompose + review, hold for a
-    later go-ahead.
+21. **BL422** — Claude model/effort tiering eval for dev-PRD cost,
+    covering all three LLM touchpoints (filed 2026-10-13, expanded same
+    day after operator review, prep only — NOT started). Not roadmap
+    work — surfaced from an operator question while running BL420:
+    every dev PRD under the "all dev work via PRDs" directive currently
+    pins `claude-code` at a single model/effort for decompose, every
+    task's execution, and verification alike, even though task
+    difficulty within one PRD varies a lot (e.g. BL420's task 1 —
+    reading/understanding a concurrency-sensitive Go file and writing a
+    correct fix — versus task 2, a mostly-mechanical shell script).
+    `autonomous_prd_set_task_llm`/`_set_story_llm`/`_set_llm` already
+    exist for per-unit execution/decompose overrides; this PRD is just
+    the actual test harness + results, not a new mechanism — except for
+    verification, which has **no** per-task/per-PRD override today
+    (`autonomous_config_set`'s `verification_backend`/`verification_effort`
+    are global-only), so that touchpoint's test deliberately exercises a
+    transient, guarded global-config flip rather than a real override.
+    Goal: build a small, repeatable eval PRD that tests all **three**
+    LLM touchpoints a dev PRD uses — execution, decompose/planning, and
+    verification — across a full model/effort grid: 4 Claude models
+    (opus, sonnet, haiku, fable) × 3 effort levels (low, medium, high;
+    xhigh/max deliberately excluded to bound scope) = 12 tiers.
+    Execution and decompose each run the full 12-tier grid (execution
+    against 4 representative task types — read-heavy/analysis,
+    mostly-mechanical scripting, doc-only edits, verification/review —
+    using BL420's real fixed commits as fixtures; decompose scored
+    against BL420's own real spec/structure as ground truth via an
+    objective rubric, cheap since it never executes a task).
+    Verification runs only a deliberately reduced tier set (e.g.
+    `default,haiku-low,opus-high`), via a strict capture → set → run-one
+    → restore → independently-reverify pattern guarded by bash traps
+    (EXIT/ERR/INT) so a crash mid-run can never leave global config
+    changed — the only part of this PRD permitted to touch live global
+    config, and only transiently/reversibly. Records pass/fail + wall
+    time + cost per tier per touchpoint, and reports — separately for
+    each touchpoint — where a cheaper tier is safe to default to for
+    dev-PRD work vs. where Sonnet (or higher) should stay required.
+    Explicitly scoped to Claude model tiers only for now — **not** a
+    Claude-vs-open-model comparison. A separate future rerun comparing
+    against Qwen/other open models via the existing Ollama/OpenWebUI
+    backends is a known follow-up the operator wants eventually, but is
+    out of scope here; note it as a forward pointer only, don't build it
+    now. **Explicitly NOT approved or run yet** — prep only, decompose +
+    review, hold for a later go-ahead.
 
 **Outside the queue, handled separately, not blocking Stage 3:**
 - ~~**BL381**~~ — status-verified 2026-10-10: shipped v8.28.0 + v8.28.2
