@@ -189,7 +189,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "9.0.65"
+var Version = "9.0.66"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -8432,6 +8432,25 @@ func (s *Server) handleChannelReady(w http.ResponseWriter, r *http.Request) {
 	//                message, runs the work, and emits DATAWATCH_COMPLETE per the
 	//                session CLAUDE.md ("When done: output DATAWATCH_COMPLETE: ...").
 	if targetSess.OneShot {
+		// Deliver a OneShot task at most once per session. The channel
+		// bridge re-POSTs ready every 60 s (readyHeartbeat, so a restarted
+		// daemon re-learns its port); without this claim every heartbeat
+		// that found the session idle at ❯ re-pasted the whole task
+		// (sessions 348b/258d, 2026-10-14: ~80 "[Pasted text #N]" chips).
+		// The claim is persisted on the session so it also holds across
+		// daemon restarts. ChannelReady/ChannelPort healing above still
+		// runs on every heartbeat.
+		//
+		// Deliberately NOT gated on Claude Code's "Update installed ·
+		// /restart to apply" footer: it is a passive notice that stays
+		// on screen until the CLI restarts and does not block input, so
+		// waiting for it to clear would strand a fresh session's task.
+		// See docs/plans/2026-10-14-cli-self-update-dialog-recovery.md.
+		if !s.manager.ClaimTaskDelivery(targetSess.FullID) {
+			fmt.Printf("[channel] task for %s already delivered — ready re-announce, not re-sending\n", targetSess.FullID)
+			json.NewEncoder(w).Encode(map[string]string{"session_id": targetSess.FullID, "status": "already_delivered"}) //nolint:errcheck
+			return
+		}
 		var input string
 		if strings.HasPrefix(targetSess.Task, "!") {
 			input = targetSess.Task + `; echo "DATAWATCH_COMPLETE: shell task done"`
@@ -8450,6 +8469,7 @@ func (s *Server) handleChannelReady(w http.ResponseWriter, r *http.Request) {
 					if sess, ok := s.manager.GetSession(sessID); ok && sess.State == session.StateWaitingInput {
 						if err := s.manager.SendInput(sessID, input, "channel-task"); err != nil {
 							fmt.Printf("[channel] task send_input for %s: %v\n", sessID, err)
+							s.manager.ReleaseTaskDelivery(sessID)
 						} else {
 							fmt.Printf("[channel] task delivered to %s via send_input\n", sessID)
 							// Record delivery time so processOutputLine can suppress
@@ -8461,6 +8481,7 @@ func (s *Server) handleChannelReady(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			fmt.Printf("[channel] task timeout waiting for main prompt on %s\n", sessID)
+			s.manager.ReleaseTaskDelivery(sessID)
 		}()
 		// Broadcast task delivery to WS clients for the channel tab
 		s.recordChannelHistory(targetSess.FullID, targetSess.Task, "outgoing")

@@ -5,6 +5,26 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.66 — fix(session): one-shot claude-code tasks are delivered once, not re-pasted on every channel heartbeat
+
+### Fixed
+- **One-shot claude-code workers no longer get their task re-pasted
+  about once a minute.** The channel bridge re-announces
+  `POST /api/channel/ready` every 60 s so a restarted daemon re-learns
+  its port. `handleChannelReady` re-typed the whole task every time one
+  of those heartbeats found the session idle at `❯` (348b ended up with
+  about 80 `[Pasted text #N]` chips). Delivery is now claimed once per
+  session through a persisted `task_delivered_at` field, so it also
+  holds across daemon restarts. A failed or timed-out send releases the
+  claim, and `Restart` clears it so a relaunched session gets its task
+  again. Heartbeat healing of `channel_ready` / `channel_port` is
+  unchanged.
+- **Claude Code's "✔ Update installed · /restart to apply" footer is
+  recognised as benign.** It is never classified as a prompt or a rate
+  limit, and it is never sent a key: it is a passive notice, so Enter or
+  Esc would only hit the input box. A sighting is logged as
+  `[self-update]` (debounced per session) and counts as activity.
+
 ## v9.0.65 — fix(containers): agent-base Trivy scan — the bundled GitHub CLI, not datawatch, carried the vulnerable Go stdlib and x/net
 
 ### Fixed

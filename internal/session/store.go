@@ -213,6 +213,15 @@ type Session struct {
 	// self-terminates after the task is done.
 	OneShot bool `json:"one_shot,omitempty"`
 
+	// TaskDeliveredAt — when Task was first typed into a OneShot session by
+	// handleChannelReady. Set once, before the send (cleared again only if
+	// the send fails), so the channel bridge's 60 s ready heartbeat can
+	// never re-paste the task. Persisted, not in-memory: the heartbeat
+	// exists precisely to survive daemon restarts, and an in-memory guard
+	// would re-paste once after every restart (sessions 348b/258d,
+	// 2026-10-14). Nil = not delivered yet.
+	TaskDeliveredAt *time.Time `json:"task_delivered_at,omitempty"`
+
 	// PRDID, TaskID, and StoryID link this session to the autonomous executor
 	// that spawned it. Set by the autonomousSpawn function in main.go so the
 	// PWA detail view can filter sessions by PRD and display the active task.

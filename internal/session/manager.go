@@ -191,6 +191,23 @@ var inputNeededPatterns = []string{
 	"DATAWATCH_NEEDS_INPUT:",
 }
 
+// Claude Code self-update notice. v9.0.66 — found live 2026-10-14 on
+// one-shot workers 348b/258d: after an auto-update the CLI shows
+// "✔ Update installed · /restart to apply" as one segment of its footer
+// row (wording captured verbatim in testdata/claude_self_update_dialog.txt,
+// matching public CLI issue reports). It is a passive notice, not a modal:
+// it takes no focus and the CLI keeps working, so it must never be read as
+// a prompt, a rate limit, or a stall, and no key is sent for it (Enter
+// would submit the input box, Esc would interrupt a running turn). Matched
+// case-insensitively as substrings, like rateLimitPatterns. Each entry
+// carries the update-specific wording; the generic "Enter to confirm" /
+// "Esc to cancel" footer belongs to other dialogs and is NOT used here.
+var selfUpdatePatterns = []string{
+	"Update installed · /restart to apply",
+	"Update installed · Restart to apply",
+	"Update installed - /restart to apply", // ASCII fallback for the middle dot
+}
+
 // MCP failure detection pattern — triggers auto-retry via /mcp command
 var mcpFailedPattern = "MCP server failed"
 
@@ -221,6 +238,70 @@ func (m *Manager) effectiveInputNeededPatterns() []string {
 		return m.detection.InputNeededPatterns
 	}
 	return inputNeededPatterns
+}
+
+// effectiveSelfUpdatePatterns mirrors the other effective*Patterns
+// accessors. There is deliberately no detection config override: the
+// notice only ever leads to "do nothing, keep going", so there is nothing
+// for an operator to tune.
+func (m *Manager) effectiveSelfUpdatePatterns() []string {
+	return selfUpdatePatterns
+}
+
+// matchesSelfUpdateDialog reports whether line carries Claude Code's
+// "Update installed · /restart to apply" notice.
+func (m *Manager) matchesSelfUpdateDialog(line string) bool {
+	lower := strings.ToLower(line)
+	for _, pat := range m.effectiveSelfUpdatePatterns() {
+		if strings.Contains(lower, strings.ToLower(pat)) {
+			return true
+		}
+	}
+	return false
+}
+
+// selfUpdateNoteDebounce bounds how often one session's update notice is
+// logged and counted as activity — the TUI redraws its footer constantly.
+const selfUpdateNoteDebounce = 10 * time.Second
+
+// noteSelfUpdateDialog handles a sighting of the CLI's self-update notice.
+// The investigation (docs/plans/2026-10-14-cli-self-update-dialog-recovery.md)
+// confirmed the notice is a passive footer that needs no keystroke, so the
+// recovery is: log it once per debounce window and refresh the session's
+// activity timestamp (without changing state) so nothing reads the notice
+// as a stall. Returns true when the sighting was handled, false when it
+// fell inside the debounce window.
+func (m *Manager) noteSelfUpdateDialog(fullID string) bool {
+	m.mu.Lock()
+	if m.selfUpdateNotedAt == nil {
+		m.selfUpdateNotedAt = make(map[string]time.Time)
+	}
+	if last, ok := m.selfUpdateNotedAt[fullID]; ok && time.Since(last) < selfUpdateNoteDebounce {
+		m.mu.Unlock()
+		return false
+	}
+	m.selfUpdateNotedAt[fullID] = time.Now()
+	m.mu.Unlock()
+
+	log.Printf("[self-update] CLI update notice on %s — passive footer, no key sent, session left as-is", fullID)
+	if m.store != nil {
+		if sess, ok := m.store.Get(fullID); ok {
+			sess.LastChannelEventAt = time.Now()
+			_ = m.store.Save(sess)
+		}
+	}
+	return true
+}
+
+// noteSelfUpdateInLines scans lines for the self-update notice and handles
+// it (see noteSelfUpdateDialog). Used by the screen-capture scan.
+func (m *Manager) noteSelfUpdateInLines(fullID string, lines []string) {
+	for i := len(lines) - 1; i >= 0; i-- {
+		if m.matchesSelfUpdateDialog(lines[i]) {
+			m.noteSelfUpdateDialog(fullID)
+			return
+		}
+	}
 }
 
 // promptPatterns detects when an LLM is waiting for user input (used in idle detection).
@@ -294,6 +375,11 @@ type Manager struct {
 	// contain the pattern verbatim as instruction) does not trigger a false
 	// positive before the LLM has had time to process and respond.
 	taskDeliveredAt map[string]time.Time
+
+	// selfUpdateNotedAt debounces handling of Claude Code's passive
+	// "Update installed · /restart to apply" footer per session (see
+	// noteSelfUpdateDialog). Guarded by mu.
+	selfUpdateNotedAt map[string]time.Time
 
 	// inputSentAt records when the send_input call that typed the task
 	// actually completed (keys sent + Enter pressed). Used to suppress
@@ -502,6 +588,7 @@ func NewManager(hostname, dataDir, llmBin string, idleTimeout time.Duration, enc
 		mcpRetryCounts:   make(map[string]int),
 		restartedAt:      make(map[string]time.Time),
 		taskDeliveredAt:  make(map[string]time.Time),
+		selfUpdateNotedAt: make(map[string]time.Time),
 		inputSentAt:      make(map[string]time.Time),
 		encKey:           key,
 		promptFirstSeen:   make(map[string]time.Time),
@@ -2159,6 +2246,10 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 					stripped := StripANSI(stateCapture)
 					capLines := strings.Split(stripped, "\n")
 
+					// Recognise the CLI's passive self-update footer before
+					// prompt classification (matchPromptInLines also skips it).
+					m.noteSelfUpdateInLines(fullID, capLines)
+
 					// Check for prompt patterns in last 10 non-empty lines
 					matchedLine, promptCtx := m.matchPromptInLines(capLines, 10)
 					if matchedLine != "" {
@@ -2777,6 +2868,52 @@ func (m *Manager) MarkTaskDelivered(fullID string) {
 	m.mu.Unlock()
 }
 
+// TaskDelivered reports whether fullID's task has already been typed into
+// the session — either recorded on the persisted session (TaskDeliveredAt)
+// or, for sessions created before that field existed, in this process's
+// taskDeliveredAt map.
+func (m *Manager) TaskDelivered(fullID string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if sess, ok := m.store.Get(fullID); ok && sess.TaskDeliveredAt != nil {
+		return true
+	}
+	_, ok := m.taskDeliveredAt[fullID]
+	return ok
+}
+
+// ClaimTaskDelivery atomically marks fullID's task as delivered and
+// reports whether this caller won the claim. Only the winner may type the
+// task; every later caller (e.g. the channel bridge's ready heartbeat, also
+// after a daemon restart since the mark is persisted) gets false. A caller
+// whose send then fails must call ReleaseTaskDelivery.
+func (m *Manager) ClaimTaskDelivery(fullID string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	sess, ok := m.store.Get(fullID)
+	if !ok {
+		return false
+	}
+	if _, inMem := m.taskDeliveredAt[fullID]; inMem || sess.TaskDeliveredAt != nil {
+		return false
+	}
+	now := time.Now()
+	sess.TaskDeliveredAt = &now
+	_ = m.store.Save(sess)
+	return true
+}
+
+// ReleaseTaskDelivery undoes a ClaimTaskDelivery whose send failed, so a
+// later ready may try again.
+func (m *Manager) ReleaseTaskDelivery(fullID string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if sess, ok := m.store.Get(fullID); ok && sess.TaskDeliveredAt != nil {
+		sess.TaskDeliveredAt = nil
+		_ = m.store.Save(sess)
+	}
+}
+
 // MarkInputSent records when the send_input call that delivered the task
 // actually completed (all keys sent + Enter pressed). Used to suppress the
 // brief needs-input flash that opencode shows between "Enter pressed" and
@@ -3280,6 +3417,12 @@ func (m *Manager) Restart(ctx context.Context, fullID string) (*Session, error) 
 	sess.LastPrompt = ""
 	sess.PromptContext = ""
 	sess.RateLimitResetAt = nil
+	// A relaunched process starts with an empty input box, so its (possibly
+	// overridden) task must be deliverable again by the next channel ready.
+	sess.TaskDeliveredAt = nil
+	m.mu.Lock()
+	delete(m.taskDeliveredAt, sess.FullID)
+	m.mu.Unlock()
 
 	// Create tmux session
 	cols, rows := sess.ConsoleCols, sess.ConsoleRows
@@ -4673,6 +4816,10 @@ func (m *Manager) matchPromptInLines(lines []string, n int) (matched string, con
 			continue
 		}
 		count++
+		// The self-update footer is never a prompt, whatever shares its row.
+		if m.matchesSelfUpdateDialog(l) {
+			continue
+		}
 		for _, pat := range m.effectivePromptPatterns() {
 			match := false
 			trimPat := strings.TrimRight(pat, " ")
@@ -5777,6 +5924,13 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 	// New output arrived — reset prompt debounce timer (the LLM is still producing output)
 	m.resetPromptDebounce(sess.FullID)
 
+	// Claude Code's self-update footer is recognised before rate-limit or
+	// prompt classification so it is only ever treated as benign activity.
+	isSelfUpdateNotice := m.matchesSelfUpdateDialog(line)
+	if isSelfUpdateNotice {
+		m.noteSelfUpdateDialog(sess.FullID)
+	}
+
 	// For structured channel backends (MCP/ACP), keep ACP-specific status detection
 	// but skip generic terminal prompt patterns.
 	if m.hasStructuredChannel(sess) {
@@ -6199,7 +6353,7 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 
 	// Immediate prompt detection: check if this line matches a prompt pattern.
 	trimmedLine := strings.TrimSpace(line)
-	if trimmedLine != "" {
+	if trimmedLine != "" && !isSelfUpdateNotice {
 		for _, pat := range m.effectivePromptPatterns() {
 			if len(pat) <= 3 {
 				if strings.HasSuffix(trimmedLine, pat) {

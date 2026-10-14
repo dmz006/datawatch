@@ -241,6 +241,77 @@ example `tui-task`) so timelines can tell them apart.
    *Call site*), and only call `MarkTaskDelivered` on the first, real
    delivery, so completion suppression is not re-armed.
 
+## Pre-fix test run
+
+The regression tests were written first and run against the unmodified
+code at v9.0.65. `internal/server/channel_ready_redelivery_test.go`
+fails on the first heartbeat after delivery: the task is sent a second
+time into a session that already had it. The fresh-session case passes,
+which shows first-time delivery worked.
+
+```
+$ go test -count=1 ./internal/server/ -run 'TestHandleChannelReady_(HeartbeatNeverRepastes|FreshOneShot)' -v
+=== RUN   TestHandleChannelReady_HeartbeatNeverRepastesOneShotTask
+[channel] ready for session testhost-258d (channel_ready=true, port=40000)
+[channel] task delivered to testhost-258d via send_input
+[channel] ready for session testhost-258d (channel_ready=true, port=40000)
+[channel] task delivered to testhost-258d via send_input
+    channel_ready_redelivery_test.go:142: heartbeat #1: task sent 2 times total, want 1 — task re-pasted into a session that already had it
+--- FAIL: TestHandleChannelReady_HeartbeatNeverRepastesOneShotTask (2.01s)
+=== RUN   TestHandleChannelReady_FreshOneShotStillGetsTaskOnce
+[channel] ready for session testhost-f00d (channel_ready=true, port=40000)
+[channel] task delivered to testhost-f00d via send_input
+--- PASS: TestHandleChannelReady_FreshOneShotStillGetsTaskOnce (1.00s)
+FAIL
+FAIL	github.com/dmz006/datawatch/internal/server	3.013s
+FAIL
+```
+
+`internal/session/self_update_dialog_test.go` does not compile against
+the unmodified code. The notice recognition (`selfUpdatePatterns`,
+`matchesSelfUpdateDialog`, `noteSelfUpdateDialog`) and the once-only
+delivery record (`ClaimTaskDelivery`/`TaskDelivered`) did not exist yet:
+
+```
+$ go test -count=1 ./internal/session/ -run 'SelfUpdate|TaskDelivery_Claimed'
+# github.com/dmz006/datawatch/internal/session [github.com/dmz006/datawatch/internal/session.test]
+internal/session/self_update_dialog_test.go:65:9: m.matchesSelfUpdateDialog undefined (type *Manager has no field or method matchesSelfUpdateDialog)
+internal/session/self_update_dialog_test.go:102:8: m.matchesSelfUpdateDialog undefined (type *Manager has no field or method matchesSelfUpdateDialog)
+internal/session/self_update_dialog_test.go:175:18: mgr.selfUpdateNotedAt undefined (type *Manager has no field or method selfUpdateNotedAt)
+internal/session/self_update_dialog_test.go:186:10: mgr.noteSelfUpdateDialog undefined (type *Manager has no field or method noteSelfUpdateDialog)
+internal/session/self_update_dialog_test.go:192:10: mgr.noteSelfUpdateDialog undefined (type *Manager has no field or method noteSelfUpdateDialog)
+internal/session/self_update_dialog_test.go:200:10: mgr.noteSelfUpdateDialog undefined (type *Manager has no field or method noteSelfUpdateDialog)
+internal/session/self_update_dialog_test.go:233:18: mgr.selfUpdateNotedAt undefined (type *Manager has no field or method selfUpdateNotedAt)
+internal/session/self_update_dialog_test.go:249:9: mgr.TaskDelivered undefined (type *Manager has no field or method TaskDelivered)
+internal/session/self_update_dialog_test.go:252:10: mgr.ClaimTaskDelivery undefined (type *Manager has no field or method ClaimTaskDelivery)
+internal/session/self_update_dialog_test.go:255:9: mgr.ClaimTaskDelivery undefined (type *Manager has no field or method ClaimTaskDelivery)
+internal/session/self_update_dialog_test.go:255:9: too many errors
+FAIL	github.com/dmz006/datawatch/internal/session [build failed]
+FAIL
+```
+
+The session tests assert **zero** keystrokes for the notice, not "one
+dismiss key". *Dismiss key* above establishes that the notice is a
+passive footer and that sending either key would be unsafe.
+
+## Outcome (v9.0.66)
+
+- `handleChannelReady` claims delivery once per session via the
+  persisted `Session.TaskDeliveredAt` (`Manager.ClaimTaskDelivery`). A
+  failed or timed-out send releases the claim, and `Restart` clears it.
+  `MarkTaskDelivered` now only runs on the single real delivery, so
+  completion suppression is no longer re-armed.
+- Delivery is **not** held back while the update footer is on screen.
+  The footer stays until the CLI restarts and does not block input, so
+  gating on it would strand a fresh session's task.
+- The update notice is matched by `selfUpdatePatterns` in
+  `processOutputLine`, in the screen-capture scan, and in
+  `matchPromptInLines` (skipped). It is logged as `[self-update]`, at
+  most once per 10 s per session, and refreshes `LastChannelEventAt`
+  without changing state. No key is sent.
+- Not done: the optional bridge `"heartbeat": true` flag, the TUI path's
+  separate source label, and the open questions above.
+
 ## Open questions
 
 - 348b's timeline has no `input-sent` events even though its pane shows
