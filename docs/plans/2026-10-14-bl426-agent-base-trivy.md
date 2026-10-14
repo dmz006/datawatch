@@ -138,3 +138,12 @@ Its `gh --version` step was also run by hand (output above). The CI agent-base s
 3. openssh-client 1:9.2p1-2+deb12u10: CVE-2026-106583 (HIGH, fix_deferred)
 
 There are no other HIGH/CRITICAL findings in any target. The openssh-client package is unchanged, as instructed, and those CVEs are handled by a separate BL426 task. Until that lands, the blocking agent-base scan will still fail on these three. The gh findings were not suppressed in `security/accepted-risks.yml` or `.trivyignore`.
+
+## Release
+
+Shipped as **v9.0.65** on 2026-10-13. v9.0.64 was already used: `de9f79f8` had bumped both `var Version`s and added a `## v9.0.64` CHANGELOG entry, but it was never tagged. That makes the "no version bump" note in the Scope line above apply only to the fix commits themselves.
+
+- Fix commits: `1e21a973` (gh from source), `a869d2e4` (openssh-client accepted risks)
+- Release commit pushed to `origin/main`: `ac5ba0a363a7c0b5147962758acb110fd3a5bbe2` (`v9.0.65: agent-base Trivy fix - gh CLI Go stdlib/x-net + openssh accepted risks (BL426)`)
+- Annotated tag `v9.0.65` pushed. It triggers `.github/workflows/release.yaml`, whose agent-base scan is the final check.
+- Pre-push checks: `go test -count=1 ./...` 3903 passed; golangci-lint found no issues; `make build` ok; `check-no-internal-refs.sh` and `check-howto-coverage.sh` pass.
