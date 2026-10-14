@@ -38,9 +38,11 @@ If you find a rule that applies to operating behavior duplicated in this file,
 move it to AGENT.md and replace it with a cross-reference. AGENT.md is the
 single source of truth.
 
-## Current state — 2026-10-10
+## Current state — 2026-10-13
 
-Latest release: **v9.0.28** (2026-10-11) on `main`; **v9.0.29** open on `datawatch#205` pending operator merge (BL404, the Stage 2 shakedown of the new PRD-driven workflow — see the Roadmap section below for the full B116-B121/BL413 list of what that shakedown found and fixed). Previous: **v9.0.23**. feat(autonomous): BL407 Phase 5 — config/parity surface. `PRD.Git.AutoPR`/`BaseBranch` are now operator-settable after PRD creation (new `set_git` REST action, `autonomous_prd_set_git` MCP tool, `prd-set-git` CLI command, and a new Git section on the PWA's PRD Settings modal — Mobile-Parity issue `datawatch-app#249`), and a new daemon-wide `autonomous.default_auto_pr` config starts every future PRD's `Git.AutoPR` pre-set (applied once at creation time, not resolved at use-time, since `AutoPR` is a plain bool with no pointer override — a resolve-at-use-time default couldn't tell "operator explicitly turned it back off" from "never touched"). `WorktreeBaseRepo`/`WorktreeDir`/`RulesFile`/`ContextFile`/`UpstreamRepos` were confirmed already fully config-round-trippable with zero new code. Caught two real gaps live while shipping it: the new MCP tool needed its own `federation.MCPToolCap` entry or it 404s from `POST /api/mcp/call` despite being properly registered, and the new PWA hint text first said "PRD" and left "automaton" untranslated in 4 locale bundles — both caught by this repo's own guard tests before shipping. **Active work:** the v10.0.0 self-build arc — see [§ Roadmap](#roadmap-self-build-arc--v1000-locked-2026-10-10). Stage 1 (BL406+BL407) and Stage 2 (BL404, the real shakedown of the new PRD-driven workflow) are both done — see the Roadmap section for the full B116-B121/BL413 list the shakedown surfaced and fixed same-day. **Stage 3 — BL403** (Plugin Extension Surfaces, `docs/plans/2026-10-09-plugin-extension-surfaces.md`) is now in progress, run PRD-driven per the roadmap's own design, starting with Phase 1 (Plugin Manifest v3). Plans folder refactored 2026-10-10: 11 completed plan docs archived to `historical-plans/`, BL381 closed as shipped, and unscheduled work called out in the Roadmap's "Not yet placed" list.
+Latest release: **v9.0.63** (2026-10-13) on `main` — BL423, the opt-in `ci-watch` completion guardrail (an Automaton waits for the CI of the commit it pushed; see item 22 in the Roadmap queue). v9.0.29–v9.0.62 history is in `CHANGELOG.md`.
+
+Previous: **v9.0.28** (2026-10-11) on `main`; **v9.0.29** open on `datawatch#205` pending operator merge (BL404, the Stage 2 shakedown of the new PRD-driven workflow — see the Roadmap section below for the full B116-B121/BL413 list of what that shakedown found and fixed). Previous: **v9.0.23**. feat(autonomous): BL407 Phase 5 — config/parity surface. `PRD.Git.AutoPR`/`BaseBranch` are now operator-settable after PRD creation (new `set_git` REST action, `autonomous_prd_set_git` MCP tool, `prd-set-git` CLI command, and a new Git section on the PWA's PRD Settings modal — Mobile-Parity issue `datawatch-app#249`), and a new daemon-wide `autonomous.default_auto_pr` config starts every future PRD's `Git.AutoPR` pre-set (applied once at creation time, not resolved at use-time, since `AutoPR` is a plain bool with no pointer override — a resolve-at-use-time default couldn't tell "operator explicitly turned it back off" from "never touched"). `WorktreeBaseRepo`/`WorktreeDir`/`RulesFile`/`ContextFile`/`UpstreamRepos` were confirmed already fully config-round-trippable with zero new code. Caught two real gaps live while shipping it: the new MCP tool needed its own `federation.MCPToolCap` entry or it 404s from `POST /api/mcp/call` despite being properly registered, and the new PWA hint text first said "PRD" and left "automaton" untranslated in 4 locale bundles — both caught by this repo's own guard tests before shipping. **Active work:** the v10.0.0 self-build arc — see [§ Roadmap](#roadmap-self-build-arc--v1000-locked-2026-10-10). Stage 1 (BL406+BL407) and Stage 2 (BL404, the real shakedown of the new PRD-driven workflow) are both done — see the Roadmap section for the full B116-B121/BL413 list the shakedown surfaced and fixed same-day. **Stage 3 — BL403** (Plugin Extension Surfaces, `docs/plans/2026-10-09-plugin-extension-surfaces.md`) is now in progress, run PRD-driven per the roadmap's own design, starting with Phase 1 (Plugin Manifest v3). Plans folder refactored 2026-10-10: 11 completed plan docs archived to `historical-plans/`, BL381 closed as shipped, and unscheduled work called out in the Roadmap's "Not yet placed" list.
 
 Previous: **v9.0.7** (2026-10-09). fix(daemon): `datawatch restart`/`stop`/`start` now detect and delegate to an active/enabled `datawatch.service` systemd --user unit instead of raw PID signaling + self-daemonizing; the daemon now falls back to the dedicated `~/.datawatch/tmux` socket when `TMUX_TMPDIR` is unset at boot; `ResumeMonitors` self-heals a `StateFailed` session back to `StateRunning` at boot when its tmux pane is actually still alive. Full history for every release between this and the v8.39.1 entry below is in `CHANGELOG.md` (this section was 8 days / ~400 versions stale until this backlog refactor — see the "Gotcha" note in AGENT.md's Project Tracking Rule: this header is meant to be refreshed every release, not just major ones).
 
@@ -930,6 +932,21 @@ established. In progress — starting with BL403.**
     `killed_session_ids`. Note: a single-story PRD whose only task fails
     rolls up to `failed`, not `blocked`, and `failed` still isn't an
     editable status — out of this item's scope, not changed.
+
+    **Known residual gap, found live 2026-10-13 running BL422's own
+    spec-edit (not yet fixed in code):** the scope-linter's binary-
+    mention whitelist (shipped item (2) above) only skips a path naming
+    a *specific binary inside* an exec dir (e.g. `/usr/bin/time`) — it
+    does not skip a bare mention of the exec *directory itself* with no
+    filename after it (e.g. "don't hardcode `/usr/bin` or `/bin`
+    paths"), which is exactly how item (3)'s own new guidance tends to
+    get phrased. Worked around in BL422's task spec by rewriting the
+    sentence to drop the literal path entirely rather than fixing
+    `isBinaryMention` itself. BL421 is already shipped/closed, so this
+    isn't being reopened for it — tracked here so it isn't lost, to be
+    picked up as a small follow-up (a one-line widening of
+    `isBinaryMention` in `internal/autonomous/scope.go`) whenever that
+    file is next touched, or on its own if it starts recurring.
 21. **BL422** — Claude model/effort tiering eval for dev-PRD cost,
     covering all three LLM touchpoints (filed 2026-10-13, expanded same
     day after operator review, prep only — NOT started). Not roadmap
@@ -974,6 +991,51 @@ established. In progress — starting with BL403.**
     out of scope here; note it as a forward pointer only, don't build it
     now. **Explicitly NOT approved or run yet** — prep only, decompose +
     review, hold for a later go-ahead.
+22. **BL423** — an Automaton reports `completed` while the CI run for
+    the commit it pushed is failing (filed + shipped 2026-10-13, same
+    day — **shipped v9.0.63**). Not roadmap work — found live right
+    after BL421: the v9.0.62 release work rolled up to `completed`, and
+    only afterwards did the tag's own `Release` workflow
+    (run 38484929685, https://github.com/dmz006/datawatch/actions/runs/38484929685)
+    fail in `containers / agent-base` on container vulnerability /
+    `golang.org/x/net` / Go stdlib scan findings. Nothing in the
+    Automaton noticed; the operator had to find the red run by hand.
+    Root cause: both completion checks (the deterministic project-rules
+    check and BL418's `rules-review`) only judge the local diff — no
+    completion path ever looks at the remote CI result for the commit
+    the Automaton itself pushed, so "completed" meant "local work
+    finished", not "CI agreed".
+    **Shipped, v9.0.63:** new opt-in `ci-watch` PRD-level guardrail
+    (`internal/autonomous/ci_watch.go`), resolved through the existing
+    `per_prd_guardrails` precedence (PRD list > guardrail profile >
+    global), runs after `rules-review` in the completion rollup. If the
+    final HEAD is on a github.com origin's remote-tracking ref and `gh`
+    is on `$PATH`, it polls that commit's runs up to
+    `autonomous.ci_watch_timeout_seconds` (default 1500); otherwise it
+    records `skipped`. All green → `pass`; CI-machinery failures
+    (cancelled/timed_out/startup_failure/stale) → re-run via the infra
+    retry budget, then `failed_infra`; real failures → judged by the
+    existing `GuardrailFn` against the project's rules/context file and
+    the real logs, mapped like `rules-review` (`policy` →
+    `failed_policy` + Blocked, never auto-fixed; content →
+    `failed_content` + BL410 Phase 2 corrective work on the same PRD);
+    timeout → `pending`, Automaton completes, one follow-up re-check.
+    Every outcome sets `PRD.CIWatch` (`ci_watch` on the API record) and
+    appends a `ci_watch` decision; PWA detail card; full config parity
+    for the timeout key; howto `docs/howto/ci-watch-guardrail.md`.
+    Known limitation: worktree/auto-PR Automata push after completion,
+    so ci-watch skips them (documented, push path unchanged).
+    **Verification evidence:**
+    `docs/plans/2026-10-13-ci-watch-live-verification.md` (template-fit
+    finding, release record) plus `internal/autonomous/ci_watch_test.go`.
+    **Out of scope** (explicitly not done here): fixing the specific
+    container vulnerability / `golang.org/x/net` / Go stdlib findings
+    that triggered this (security/dependency failures stay operator
+    decisions); non-GitHub CI providers; backfilling `ci_watch` onto
+    existing Automata; CI watching independent of an Automaton's
+    completion; building a new template system (templates can't carry
+    guardrail settings today — see the verification doc's "Template
+    fit" section).
 
 **Outside the queue, handled separately, not blocking Stage 3:**
 - ~~**BL381**~~ — status-verified 2026-10-10: shipped v8.28.0 + v8.28.2

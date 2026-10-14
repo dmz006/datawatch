@@ -3709,6 +3709,20 @@ echo "$LRN" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert d is not
   || ko "MCP autonomous_learnings unexpected: ${LRN:0:120}"
 
 # ---------------------------------------------------------------------------
+H "70. ci-watch completion guardrail — config key + library entry (v9.0.63)"
+# /api/config's autonomous block always carries the key (0 = use the
+# 1500s default); /api/autonomous/config omits it while unset
+# (omitempty), so read the config snapshot here.
+CIW_CFG=$(curl "${curl_args[@]}" "$BASE/api/config" || true)
+echo "$CIW_CFG" | python3 -c 'import json,sys;d=json.load(sys.stdin);a=d.get("autonomous",{});assert "ci_watch_timeout_seconds" in a and isinstance(a["ci_watch_timeout_seconds"],int)' 2>/dev/null \
+  && ok "GET /api/config autonomous.ci_watch_timeout_seconds present" \
+  || ko "autonomous.ci_watch_timeout_seconds missing from /api/config: ${CIW_CFG:0:120}"
+CIW_LIB=$(curl "${curl_args[@]}" "$BASE/api/autonomous/guardrails" || true)
+echo "$CIW_LIB" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert any(g.get("name")=="ci-watch" for g in d)' 2>/dev/null \
+  && ok "guardrail library includes ci-watch" \
+  || ko "ci-watch not in GET /api/autonomous/guardrails: ${CIW_LIB:0:120}"
+
+# ---------------------------------------------------------------------------
 H "Summary"
 echo "  Pass:  $PASS"
 echo "  Fail:  $FAIL"

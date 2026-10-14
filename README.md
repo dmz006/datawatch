@@ -57,7 +57,7 @@ Browse the catalog in-app (Settings → Skills → Registry) or on GitHub. To co
 
 ## Current release
 
-**Current release: v9.0.62 (2026-10-13).** v9.0.9–v9.0.62 are a patch
+**Current release: v9.0.63 (2026-10-13).** v9.0.9–v9.0.63 are a patch
 chain on top of the v9.0.0 major release: a plugin extension framework
 (manifest-declared widgets, now rendering live on the dashboard and in
 session detail — plugins can push or pull their own stat tiles,
@@ -68,8 +68,13 @@ instead of silently falling back to a plain text-only check. v9.0.62
 lets a blocked Automaton's failed task be edited and retried in place,
 stops the scope check from blocking specs that merely name an installed
 system tool, and makes cancel/delete report exactly which sessions it
-stopped. None of these change v9.0.0's actual feature set,
-described below.
+stopped. v9.0.63 adds an opt-in **ci-watch** completion check: an
+Automaton that pushed a commit waits for that commit's GitHub Actions
+runs before it counts as done, and a failing run either blocks it for
+an operator decision, gets a corrective task, or is re-run when CI
+itself broke — see
+[ci-watch-guardrail.md](docs/howto/ci-watch-guardrail.md). None of
+these change v9.0.0's actual feature set, described below.
 
 **v9.0.0 — Memory Lifecycle Complete.** The
 first major version since the memory-scope/lifecycle work landed:

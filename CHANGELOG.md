@@ -5,6 +5,68 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.63 — feat(autonomous): ci-watch completion guardrail — an Automaton waits for the CI of the commit it pushed
+
+### Added
+- **An Automaton no longer reports completed while CI for its own push
+  is failing.** Before this, "completed" only meant the local work
+  finished: tasks ran, verification passed, and the completion checks
+  were happy with the local diff. An Automaton whose last task pushed a
+  release commit could show **completed** while the GitHub Actions run
+  for that exact commit failed minutes later, and nothing noticed. The
+  new opt-in `ci-watch` completion guardrail closes that gap: when the
+  Automaton finishes and its final commit is already on a GitHub
+  remote, it waits for that commit's workflow runs before the
+  Automaton is called done.
+- **Turning it on.** `ci-watch` is off unless listed, alongside
+  `rules-review`, and resolves in the usual guardrail order:
+  - per Automaton — `per_automaton_guardrails_set` with
+    `per_prd_guardrails_json: ["ci-watch"]` (REST
+    `PUT /api/autonomous/prds/{id}/guardrails`, CLI, PWA);
+  - via a guardrail profile that lists `ci-watch`;
+  - globally — `autonomous.per_prd_guardrails: ["ci-watch"]` (YAML,
+    `autonomous_config_set`, `PUT /api/config`, CLI `config set`,
+    comm `configure`, PWA Settings → Automate).
+- **`autonomous.ci_watch_timeout_seconds`** (default **1500**, 25
+  minutes; `0` = default) bounds the wait. Runs still unfinished at the
+  deadline never hold the Automaton hostage: it completes as `pending`,
+  and one follow-up check records how CI ended.
+- **Where to read the result.** `autonomous_prd_get` /
+  `GET /api/autonomous/prds/{id}` now includes a `ci_watch` object
+  (`status`, `sha`, `repo`, `runs[]` with run URLs, `summary`,
+  `checked_at`). Each outcome is also written to the Automaton's
+  decision timeline, and the PWA Automaton detail view shows a
+  **CI watch** card.
+- **Outcomes when a run fails.** An LLM judge reads the project's own
+  rules file (e.g. `AGENT.md`) and the real failure logs:
+  - **policy** (`failed_policy`) — the rules say an operator decides
+    (for example dependency or vulnerability findings); the Automaton
+    is **Blocked** and nothing is fixed automatically;
+  - **content** (`failed_content`) — a genuine, fixable problem in the
+    Automaton's own work; a corrective task is added to the same
+    Automaton (content auto-fix, on by default) and the new commit's CI
+    is watched in turn, or the Automaton is Blocked when auto-fix is off
+    or out of budget;
+  - **infra** (`failed_infra`) — runs cancelled, timed out or never
+    started are re-run automatically within the Automaton's infra retry
+    budget, then Blocked once that budget is spent.
+  Other statuses: `pass`, `warn` (judge flagged it non-blocking),
+  `skipped` (nothing pushed, origin not GitHub, `gh` not on `$PATH`, or
+  not a git repo) and `error` (no judge configured; not blocking).
+
+### Known limitation
+- **Worktree / auto-PR Automata are skipped.** They push their branch
+  and open the PR *after* completion, so when ci-watch runs their final
+  commit isn't on the remote yet and it records `skipped`. Review their
+  CI as the pull request's own checks.
+
+Reuse audit — extends the existing completion rules-review guardrail
+(same judge, rules file and `per_prd_guardrails` precedence), the
+infra/content/policy failure taxonomy, and the existing retry and
+content auto-fix budgets; no new REST route.
+
+How-to: [docs/howto/ci-watch-guardrail.md](docs/howto/ci-watch-guardrail.md).
+
 ## v9.0.62 — fix(autonomous): recover a blocked task in place — editable spec while blocked, system-binary-aware scope lint, named killed sessions (BL421)
 
 ### Fixed
