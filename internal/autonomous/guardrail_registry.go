@@ -68,6 +68,19 @@ func (m *Manager) initGuardrailLibrary() {
 			Description: "Judgment review of this automaton's real diff against the project's own rules/context file (AGENT.md-style) — not a fixed checklist",
 			Type:        "judgment",
 		},
+		{
+			// Operator adds this name to per_prd_guardrails (or a profile
+			// applied at the PRD level) to wait for the CI runs of this
+			// automaton's own pushed commit at PRD completion. Not a scan
+			// type: it is dispatched directly by runPRDCompletionCIWatch.
+			// Listed here purely so it's discoverable
+			// (guardrail_library_list) and selectable the same way the
+			// scan guardrails are. Off by default — the resolved
+			// PRD-level guardrail list stays empty unless opted in.
+			Name:        "ci-watch",
+			Description: "After this automaton's own commit reaches the remote, waits for that commit's CI runs and, on failure, judges the failure against the project's own rules/context file — not a fixed checklist",
+			Type:        "judgment",
+		},
 	}
 }
 

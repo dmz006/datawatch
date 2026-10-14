@@ -49,7 +49,7 @@ func NormalizePRDStatus(s PRDStatus) PRDStatus {
 // and mirrored into the security-grade audit log for compliance.
 type Decision struct {
 	At            time.Time `json:"at"`
-	Kind          string    `json:"kind"`            // decompose | run | verify | approve | reject | request_revision | edit_task | template_instantiate
+	Kind          string    `json:"kind"`            // decompose | run | verify | approve | reject | request_revision | edit_task | template_instantiate | ci_watch
 	Backend       string    `json:"backend,omitempty"`
 	Model         string    `json:"model,omitempty"`
 	PromptChars   int       `json:"prompt_chars,omitempty"`
@@ -276,6 +276,10 @@ type PRD struct {
 	// Decompose retry's prompt, mirroring Task.PriorAttemptHint's exact
 	// lifecycle (set before a retry, consumed-and-cleared on use).
 	LastDecomposeFailure *FailureReason `json:"last_decompose_failure,omitempty"`
+	// CIWatch is this automaton's own record of whether CI actually
+	// passed for the commit it pushed, written by the ci-watch
+	// completion guardrail. nil = ci-watch never ran for this PRD.
+	CIWatch *CIWatchResult `json:"ci_watch,omitempty"`
 
 	// BL331 — federation peer that originated this PRD via channel routing.
 	OwnerPeer string `json:"owner_peer,omitempty"`
@@ -776,4 +780,39 @@ type LoopStatus struct {
 	StoriesCancelled int64 `json:"stories_cancelled,omitempty"`
 	TasksCancelled   int64 `json:"tasks_cancelled,omitempty"`
 	TasksRequeued    int64 `json:"tasks_requeued,omitempty"`
+}
+
+// CIWatchResult is an automaton's own record of whether the CI runs for
+// the commit it pushed actually passed — so "done" means the remote
+// build agreed, not just that the local work finished. Written by the
+// ci-watch completion guardrail (off unless "ci-watch" is listed as a
+// PRD-level guardrail).
+type CIWatchResult struct {
+	// Status: skipped | pass | pending | failed_policy | failed_content | failed_infra | error
+	Status string `json:"status"`
+	// SHA is the pushed commit whose CI runs were watched.
+	SHA string `json:"sha,omitempty"`
+	// Repo is the remote repository (owner/name) the runs belong to.
+	Repo string `json:"repo,omitempty"`
+	// Runs are the individual CI runs observed for SHA.
+	Runs []CIWatchRun `json:"runs,omitempty"`
+	// Summary is a short operator-readable outcome.
+	Summary string `json:"summary,omitempty"`
+	// Category is the failure category judged against the project's own
+	// rules/context file when a run failed.
+	Category string `json:"category,omitempty"`
+	// Issues lists the specific problems found in the failed runs.
+	Issues []string `json:"issues,omitempty"`
+	// CheckedAt is when this result was recorded.
+	CheckedAt time.Time `json:"checked_at"`
+}
+
+// CIWatchRun is one CI run seen for the commit an automaton pushed —
+// part of the automaton's own record of whether its CI actually passed.
+type CIWatchRun struct {
+	ID         int64  `json:"id"`
+	Name       string `json:"name"`
+	Status     string `json:"status"`
+	Conclusion string `json:"conclusion,omitempty"`
+	URL        string `json:"url,omitempty"`
 }

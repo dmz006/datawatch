@@ -920,6 +920,10 @@ autonomous:
   # Same-config infra retries before falling back to the global
   # backend/model default (default 2).
   infra_retry_escalate_after: 0
+  # Longest the optional ci-watch completion guardrail (add "ci-watch"
+  # to per_prd_guardrails) waits for the CI runs of the commit an
+  # Automaton pushed (seconds). Default 1500 (25 minutes).
+  ci_watch_timeout_seconds: 1500
   # Whether a content-category guardrail block (a real judgment, e.g.
   # rules-review finding a real issue) gets auto-corrective retry.
   # Default true.

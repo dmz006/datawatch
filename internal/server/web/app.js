@@ -13879,6 +13879,7 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.max_parallel_tasks', label: 'Max parallel tasks', type: 'number', placeholder: '3' },
     { key: 'autonomous.capacity_enabled', label: 'Capacity-aware admission (wait for free slots instead of failing)', labelKey: 'settings_capacity_enabled', type: 'toggle' },
     { key: 'autonomous.capacity_wait_timeout_seconds', label: 'Capacity wait timeout (sec, 0=4h)', labelKey: 'settings_capacity_wait_timeout', type: 'number', placeholder: '14400' },
+    { key: 'autonomous.ci_watch_timeout_seconds', label: 'CI watch timeout (sec, 0=25m)', labelKey: 'settings_ci_watch_timeout', type: 'number', placeholder: '1500' },
     { key: 'autonomous.capacity_gpu_util_pct', label: 'Hold tasks while node GPU is above (% util, 0=off)', labelKey: 'settings_capacity_gpu_util', type: 'number', placeholder: '0' },
     // v5.26.16 — operator-reported: backend fields should be the
     // same dropdown as the New PRD modal (enabled+available, no

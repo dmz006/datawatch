@@ -146,6 +146,9 @@ type Config struct {
 	// two lists above: empty means runPRDCompletionRulesReview never
 	// fires, even when a rules/context file exists. An operator adds
 	// "rules-review" here (or to PRD.PerPRDGuardrails) to turn it on.
+	// "ci-watch" is the other valid PRD-level name: it waits for the
+	// CI runs of this automaton's own pushed commit (see
+	// CIWatchTimeoutSeconds) and is equally off unless listed.
 	PerPRDGuardrails []string `json:"per_prd_guardrails,omitempty"`
 
 	// Phase 3 (v5.26.61) — per-story approval gate. When true, PRD-
@@ -235,6 +238,12 @@ type Config struct {
 	CapacityEnabled *bool `json:"capacity_enabled,omitempty"`
 	// CapacityWaitTimeoutSeconds bounds a capacity wait (default 14400).
 	CapacityWaitTimeoutSeconds int `json:"capacity_wait_timeout_seconds,omitempty"`
+	// CIWatchTimeoutSeconds bounds how long the ci-watch completion guardrail waits for this automaton's own pushed commit's CI runs to finish (default 1500).
+	// Default rationale: this repo's own tag Release workflow took ~18
+	// minutes on the most recent real run (gh run list) and ordinary
+	// push workflows 1-11 minutes, so 25 minutes covers the slowest real
+	// run with headroom. 0 = use the default (see ciWatchTimeout).
+	CIWatchTimeoutSeconds int `json:"ci_watch_timeout_seconds,omitempty"`
 }
 
 // DefaultConfig returns sane defaults — autonomous OFF until operator opts in.

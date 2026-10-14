@@ -1970,6 +1970,7 @@ type AutonomousConfig struct {
 
 	// BL418 — daemon-wide default for the "prd" level (PRD-completion
 	// rules review opt-in). Empty = disabled, same as the two above.
+	// Valid names: "rules-review", "ci-watch".
 	PerPRDGuardrails []string `yaml:"per_prd_guardrails,omitempty" json:"per_prd_guardrails,omitempty"`
 
 	// BL410 Phase 1 — per-category retry budgets. "content"/"policy"
@@ -1988,6 +1989,12 @@ type AutonomousConfig struct {
 	// backend/model config before an infra-category retry falls back
 	// to the global default (default 2).
 	InfraRetryEscalateAfter int `yaml:"infra_retry_escalate_after,omitempty" json:"infra_retry_escalate_after,omitempty"`
+	// CIWatchTimeoutSeconds bounds how long the ci-watch completion
+	// guardrail (enabled by adding "ci-watch" to per_prd_guardrails)
+	// waits for the CI runs of the commit an automaton pushed before
+	// giving up (default 1500 = 25 minutes: the slowest real release
+	// workflow run here took ~18 minutes, ordinary push workflows 1-11).
+	CIWatchTimeoutSeconds int `yaml:"ci_watch_timeout_seconds,omitempty" json:"ci_watch_timeout_seconds,omitempty"`
 	// ContentAutoFixEnabled/AutoFixSkipApproval have no omitempty —
 	// see AutoApproveChildren's comment below for why a bool config
 	// field needs the explicit-clear discipline. Defaults: both true.
@@ -2505,6 +2512,7 @@ func DefaultConfig() *Config {
 			RetryPolicy:             map[string]int{"infra": 4, "scope": 0},
 			RetryCeilingTotal:       5,
 			InfraRetryEscalateAfter: 2,
+			CIWatchTimeoutSeconds:   1500,
 			ContentAutoFixEnabled:   true,
 			AutoFixSkipApproval:     true,
 		},

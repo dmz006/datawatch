@@ -638,3 +638,13 @@ func TestAutonomousConfig_FalseBoolsMarshalExplicitly(t *testing.T) {
 		}
 	}
 }
+
+func TestDefaultConfig_CIWatchTimeoutSeconds(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.Autonomous.CIWatchTimeoutSeconds != 1500 {
+		t.Errorf("Autonomous.CIWatchTimeoutSeconds = %d, want 1500", cfg.Autonomous.CIWatchTimeoutSeconds)
+	}
+	if len(cfg.Autonomous.PerPRDGuardrails) != 0 {
+		t.Errorf("PerPRDGuardrails should default empty (ci-watch off), got %v", cfg.Autonomous.PerPRDGuardrails)
+	}
+}

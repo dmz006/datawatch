@@ -26,6 +26,11 @@ var ErrWorkerStalled = errors.New("worker stalled")
 
 const defaultCapacityWait = 4 * time.Hour
 
+// defaultCIWatchWait is the ci-watch completion guardrail's wait bound
+// when Config.CIWatchTimeoutSeconds is unset — see that field's comment
+// for the rationale behind 25 minutes.
+const defaultCIWatchWait = 1500 * time.Second
+
 // capRetryPause is the pause between session-cap retries (var for tests).
 var capRetryPause = 15 * time.Second
 
@@ -80,6 +85,17 @@ func (m *Manager) capacityWait() time.Duration {
 		return time.Duration(m.cfg.CapacityWaitTimeoutSeconds) * time.Second
 	}
 	return defaultCapacityWait
+}
+
+// ciWatchTimeout bounds how long the ci-watch completion guardrail waits
+// for this automaton's own pushed commit's CI runs (mirrors capacityWait).
+func (m *Manager) ciWatchTimeout() time.Duration {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.cfg.CIWatchTimeoutSeconds > 0 {
+		return time.Duration(m.cfg.CIWatchTimeoutSeconds) * time.Second
+	}
+	return defaultCIWatchWait
 }
 
 func (m *Manager) taskCancelled(id string) bool {

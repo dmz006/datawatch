@@ -4102,6 +4102,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			RetryPolicy:             retryPolicyBridge,
 			RetryCeilingTotal:       acfgIn.RetryCeilingTotal,
 			InfraRetryEscalateAfter: acfgIn.InfraRetryEscalateAfter,
+			CIWatchTimeoutSeconds:   acfgIn.CIWatchTimeoutSeconds,
 			ContentAutoFixEnabled:   acfgIn.ContentAutoFixEnabled,
 			AutoFixSkipApproval:     acfgIn.AutoFixSkipApproval,
 

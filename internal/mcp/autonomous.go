@@ -65,6 +65,7 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithNumber("planning_timeout_seconds", mcpsdk.Description("Override effort-scaled decompose timeout (0 = default: 5 min normal, 15 min high/max, 2 min quick/low)")),
 		mcpsdk.WithBoolean("capacity_enabled", mcpsdk.Description("Capacity-aware admission: tasks wait for a free host/node/LLM slot instead of failing (default true)")),
 		mcpsdk.WithNumber("capacity_wait_timeout_seconds", mcpsdk.Description("Maximum seconds a task waits for capacity (default 14400)")),
+		mcpsdk.WithNumber("ci_watch_timeout_seconds", mcpsdk.Description("Maximum seconds the ci-watch completion guardrail waits for the CI runs of an automaton's own pushed commit (default 1500)")),
 		mcpsdk.WithBoolean("continue_on_story_failure", mcpsdk.Description("Daemon-wide default: false (halt) stops a PRD as soon as any story fails instead of continuing into later, independent stories; true restores the old continue-regardless behavior. Per-PRD override takes precedence.")),
 		mcpsdk.WithBoolean("default_auto_pr", mcpsdk.Description("BL407 Phase 5 — daemon-wide default for a new PRD's Git.AutoPR (push+open a PR on completion). Applied once at PRD creation; the per-PRD autonomous_prd_set_git tool overrides it after that. Default false.")),
 	)
@@ -150,6 +151,9 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 	}
 	if v := req.GetFloat("capacity_wait_timeout_seconds", -1); v >= 0 {
 		body["capacity_wait_timeout_seconds"] = int(v)
+	}
+	if v := req.GetFloat("ci_watch_timeout_seconds", -1); v >= 0 {
+		body["ci_watch_timeout_seconds"] = int(v)
 	}
 	if args := req.GetArguments(); args != nil {
 		if _, ok := args["continue_on_story_failure"]; ok {

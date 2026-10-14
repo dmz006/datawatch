@@ -5491,6 +5491,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"capacity_enabled":              s.cfg.Autonomous.CapacityEnabled == nil || *s.cfg.Autonomous.CapacityEnabled,
 			"capacity_wait_timeout_seconds": s.cfg.Autonomous.CapacityWaitTimeoutSeconds,
 			"capacity_gpu_util_pct":         s.cfg.Autonomous.CapacityGPUUtilPct,
+			"ci_watch_timeout_seconds":      s.cfg.Autonomous.CIWatchTimeoutSeconds,
 			"stale_task_seconds":            s.cfg.Autonomous.StaleTaskSeconds,
 			"auto_fix_retries":              s.cfg.Autonomous.AutoFixRetries,
 			"verifier_diff_max_bytes":       s.cfg.Autonomous.VerifierDiffMaxBytes,
@@ -6758,6 +6759,10 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		case "autonomous.capacity_wait_timeout_seconds":
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.Autonomous.CapacityWaitTimeoutSeconds = n
+			}
+		case "autonomous.ci_watch_timeout_seconds":
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Autonomous.CIWatchTimeoutSeconds = n
 			}
 		case "autonomous.capacity_gpu_util_pct":
 			if n, ok := toInt(v); ok && n >= 0 && n <= 100 {

@@ -163,6 +163,11 @@ raises a 30-minute wait alert. Config: `autonomous.capacity_enabled`,
 `autonomous.capacity_wait_timeout_seconds`, `autonomous.capacity_gpu_util_pct`,
 `session.reserved_interactive`. See `docs/howto/automata-capacity.md`.
 
+`autonomous.ci_watch_timeout_seconds` (default 1500) bounds how long the optional
+`ci-watch` completion guardrail waits for the CI runs of the commit an Automaton
+pushed. It only applies when `ci-watch` is listed in `autonomous.per_prd_guardrails`
+(or an Automaton's own PRD-level guardrails); the list is empty by default.
+
 ### Message Routing
 
 The router (`internal/router`) is stateless. It:
