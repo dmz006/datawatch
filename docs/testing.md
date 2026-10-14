@@ -1103,3 +1103,5 @@ ab22  |    3642 |       31 GB |     3.3 MB |                         2239 |     
 Tool: `git filter-branch` (`git filter-repo` is not installed), each run in its
 own `systemd-run --user` scope with `MemoryMax=4G`, `MemorySwapMax=0`, nice 19
 and idle I/O. The 2026-10-13 in-daemon repack peaked at about 108 GB on ab22.
+
+_Confirmed 2026-10-14: PR #245 merged into main; remediation stands (ab22 5M, 9245 3M, ddeb 1M `.git`; verify script passes; daemon NRestarts=0)._
