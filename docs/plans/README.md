@@ -885,6 +885,11 @@ established. In progress — starting with BL403.**
     outside the daemon's own cgroup so a retry can't repeat today's
     OOM. Uses `claude-code` for decompose/execution/verification per
     the operator's explicit instruction for dev PRDs.
+    **Shipped v9.0.83 (2026-10-14)**: tracker fix (`54954c5f`, in
+    binaries since v9.0.62), shrink script, repro harness, docs; the
+    live daemon was redeployed and observed (see `docs/testing.md`).
+    Running the shrink script on the existing bloated repos is still an
+    operator step.
 20. **BL421** — PRD lifecycle can't recover a blocked/cancelled task's
     spec without a full re-decompose (filed + shipped 2026-10-13, same
     day — **shipped v9.0.62**).
@@ -1263,22 +1268,39 @@ established. In progress — starting with BL403.**
    inference caps, usage budget, worked examples, config keys, 6 planned
    implementation phases, parity surface, 9 operator open questions).
 
-**2026-10-14 sequencing addendum (operator-confirmed):** BL427 (Automaton
-lifecycle event notifications), BL428 (Concurrency control & usage-budget
-design pass) and BL431 (Automation: multi-Automaton orchestration) are
-filed; BL427's design doc has landed and it is now item 28 above (awaiting
-operator review, sequenced after BL422's eval), while BL428 and BL431 are
-still mid design-pass and will self-register once their own docs land. Explicit operator decision: once all
-three design docs are reviewed and approved, their IMPLEMENTATION is pulled
-forward ahead of the remaining items in this queue, in dependency order
-BL427 → BL428 → BL431, rather than slotting in strictly by filing date.
-Rationale: once BL431's Automation coordinator is real, the rest of this
-roadmap's remaining items can be run through it as its own dogfood/debug
-cycle instead of being hand-sequenced one PRD at a time by an operator's
-chat session — the exact gap that caused a 5+ hour queue stall overnight on
-2026-10-13/14 with no daemon-side detection. BL424 (item 23 above) is
-unaffected by this addendum and stays explicitly sequenced last, right
-before the v10.0.0 cutover, per its own note above.
+**Active execution order (operator-confirmed, last updated 2026-10-14 ~14:05;
+ordered by feature dependency, not filing date or chronology — supersedes
+the three separate dated addenda this replaced).** Items run one at a time
+against this tree (no cross-PRD write serialization exists yet — BL428
+§3a — so this order is enforced by hand/by watcher scripts, not by the
+daemon).
+
+| # | Item | Status | Why here |
+|---|---|---|---|
+| 1 | **BL432** — mobile/PWA payload optimization | Shipped v9.0.82 | Triaged 2026-10-14 from GH#242; unrelated bugfix, ran first because it was ready first. |
+| 2 | **BL433** — PWA performance audit | In progress — code inventory committed ([2026-10-14-pwa-performance-audit.md](2026-10-14-pwa-performance-audit.md)); Method + Measurements next | Companion to BL432 (GH#243), audit-only. |
+| 3 | **BL434** — full-screen eye splash + input-draft preservation fix | Queued (re-decomposing) | PWA visual + a real data-loss bug on the same reload sites. |
+| 4 | **BL435** — unmodified-retry executor fix | Queued | Generalizes a one-off task-spec workaround used to recover BL431 into a real fix for every datawatch install. |
+| 5 | **BL431** (`c187962a`) — Automation design doc | One task left (self-registration) | Design doc itself is done and committed; only its own backlog-registration task remains. |
+| 6 | **BL420** — session-tracker OOM fix | **Shipped v9.0.83** (tracker code in binaries since v9.0.62; v9.0.83 documents it, ships `scripts/shrink-session-repo.sh` + `scripts/repro-tracker-git-growth.sh`, redeployed + 15-min observation in `docs/testing.md`). Shrinking the already-bloated repos (ab22/9245/ddeb) with the script is a separate operator step. | **Operator-confirmed 2026-10-14 ~14:05: moved back ahead of BL427/428/431.** Not "regular work" under the operator's own ordering principle — it's crash-prevention for the daemon that is about to run the heaviest, most concurrent automated work yet (row 7). Doing the riskiest implementation stretch without this fix in place first is the wrong order. |
+| 7 | **BL427 → BL428 → BL431 implementation** | Not started — design docs only | Optimize the Automaton/PRD execution system itself before more regular feature/bugfix work, so the rest of the roadmap runs through it rather than being hand-sequenced. Dependency order: event dispatch → concurrency/budget mechanics → Automation coordinator built on top of both. Known trade-off, noted not litigated: BL428 §4d / BL431 §6-§11's model-tier design cite BL422's results as an input, so that part proceeds on placeholder assumptions until BL422 runs afterward (row 8). |
+| 8 | **BL422** — Claude model/effort tiering eval | Queued, resumes after #7 | Its results get retrofitted into whatever BL428/431 implemented with placeholder tier defaults (see row 7's trade-off note). |
+| — | **BL436** — per-turn chunked session capture (replaces tmux-scrollback reliance) | Design doc done, `needs_review` | Filed 2026-10-14, not yet slotted into the numbered order above — docs-only, low collision risk, could run opportunistically. |
+| — | **BL437** — recurring hardware-aware model/effort eval | Decomposing | Filed 2026-10-14 (pre-v10.0.0 priority, operator-named), generalizes BL422 into an ongoing monthly sweep; not yet slotted into the numbered order above. |
+
+BL424 (item 23 above) is explicitly excluded from this table and stays
+sequenced last, right before the v10.0.0 cutover, per its own note above —
+unaffected by anything in this table.
+
+**Federation-aware shared-resource coordination** (operator-raised
+2026-10-14, additive to BL428/431's existing scope, not a reordering): BL428
+gains §3c (shared compute nodes across federated peers) and §4e (shared
+cloud/billing accounts across federated peers), each via a keyed-hash
+fingerprint exchange — peers detect a shared resource without disclosing
+the underlying secret or hardware identifier, an operator confirms before
+any capacity pool is merged, and a live cross-daemon lease/back-off
+mechanism coordinates while sessions actually run on a confirmed-shared
+resource. BL431 gains a matching forward pointer and open question.
 
 **Outside the queue, handled separately, not blocking Stage 3:**
 - **BL432** — server payload optimization for mobile/PWA clients
@@ -1312,7 +1334,7 @@ before the v10.0.0 cutover, per its own note above.
   `server.ws_session_list_default: delta` avoids it today, which the
   PWA does not support yet (see BL433).
 - **BL433** — PWA refresh/connection performance audit under load
-  (GH#243), companion to BL432. **Open.** Same method as the app audit
+  (GH#243), companion to BL432. **Open — code inventory done:** [2026-10-14-pwa-performance-audit.md](2026-10-14-pwa-performance-audit.md) (`needs_review`). Same method as the app audit
   (read-only proxy, idle-per-tab bytes/min). Once the audit lands, the
   PWA may adopt the same opt-ins BL432 shipped — `hello` with
   `session_list: delta` / `session_view: summary` /

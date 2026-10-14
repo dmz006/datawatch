@@ -5,6 +5,53 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.83 — fix(session): keep output.log out of session-tracker git history and stop implicit auto-gc
+
+On 2026-10-13 the daemon was OOM-killed. Every session-tracking folder
+committed its growing `output.log` on each state change, so each commit
+stored another full copy of the log and the repos grew without bound.
+An ordinary `git commit` from the daemon then started git's automatic
+gc, whose repack ran inside the daemon's own systemd cgroup, used over
+100GB of memory, and the OOM killer stopped the whole service.
+
+The tracker change was already in the daemon binary from v9.0.62 but was
+not listed in a release entry. This entry documents it and ships the
+two operator scripts below.
+
+### Fixed
+- **`output.log` is no longer committed to the session-tracker repo.**
+  `output.log`, `output.log.enc` and `output.log.pipe` stay on disk,
+  untracked, and are listed in the repo's `.git/info/exclude`. Everything
+  that reads session output already read the file on disk, never git
+  history, so nothing visible changes. Existing repos are fixed
+  automatically: on the first commit after a restart the daemon runs
+  `git rm --cached` on `output.log` (the file itself is kept).
+- **Tracker repos no longer run git's automatic gc.** At repo creation
+  and on resume the daemon sets `gc.auto=0`, `gc.autoDetach=false`,
+  `pack.windowMemory=64m`, `pack.threads=1` and
+  `core.bigFileThreshold=16m`, so a daemon commit cannot start a repack
+  and any explicit gc has bounded memory.
+
+### Added
+- **`scripts/shrink-session-repo.sh`** removes `output.log` from the
+  history of session repos that grew before the fix. It runs outside the
+  daemon in a `systemd-run --user` scope (`MemoryMax=4G`, no swap, nice
+  19, idle I/O), puts the live `output.log` back and checks it is
+  unchanged. It refuses active sessions. `--dry-run` previews the
+  changes and `--all-hygiene` only applies the git settings above to
+  every session repo.
+- **`scripts/repro-tracker-git-growth.sh`** reproduces the growth in a
+  scratch directory, with the old and the new repo setup side by side,
+  and prints a size table plus `RESULT: PASS/FAIL`.
+- `docs/session-tracking.md` has a new "Repository size & maintenance"
+  section.
+
+### Reuse audit
+- Extends the existing `Tracker`/`commitAll` primitive in
+  `internal/session/tracker.go`. Repo hygiene runs once for each tracker,
+  either when the repo is created or on its first commit after a resume,
+  and adds no new background job or config knob.
+
 ## v9.0.82 — release: smaller payloads for mobile and web clients
 
 This release rolls up v9.0.76–v9.0.81. Everything is opt-in or additive.

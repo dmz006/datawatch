@@ -18,7 +18,7 @@ Example: `~/.datawatch/sessions/hal9000-a3f2/`
 | `.git/` | Git repository — every event is a commit |
 | `README.md` | Auto-updated session overview (task, status, timestamps, tmux name) |
 | `task.md` | Original task description and any amendments |
-| `output.log` | Full raw claude-code output, streamed live by tmux pipe-pane |
+| `output.log` | Full raw claude-code output, streamed live by tmux pipe-pane. Kept on disk only: it is listed in `.git/info/exclude` and is **not** committed to the folder's git history (nor are `output.log.enc` / `output.log.pipe`). |
 | `conversation.md` | Human-readable history of prompts received and inputs sent |
 | `timeline.md` | Append-only timestamped event log |
 | `session.json` | Machine-readable session state snapshot |
@@ -155,3 +155,84 @@ find ~/.datawatch/sessions -maxdepth 1 -mtime +30 -type d
 # Archive or remove
 datawatch session purge --older-than 30d
 ```
+
+### Repository size & maintenance
+
+Each session folder's git repo only records the small text files (`task.md`,
+`timeline.md`, `conversation.md`, `session.json`, `README.md`, guardrail files).
+The live `output.log` (and `output.log.enc` / `output.log.pipe`) stays on disk and is
+never committed. Repos created before this change had `output.log` tracked; the
+daemon untracks it automatically (`git rm --cached`, the file itself is kept) on the
+first commit it makes to that repo after a restart.
+
+When the daemon creates or resumes a session repo it also sets these git options on it:
+
+| Option | Value | Why |
+|--------|-------|-----|
+| `gc.auto` | `0` | Turns off git's implicit auto-gc. Without this, an ordinary `git commit` made by the daemon can start a full repack in the background. |
+| `gc.autoDetach` | `false` | If a gc does run, it does not detach and keep running unseen. |
+| `pack.windowMemory` | `64m` | Caps the delta-search memory per pack thread. |
+| `pack.threads` | `1` | One pack thread, so the cap above is the total. |
+| `core.bigFileThreshold` | `16m` | Files over 16MB are stored without delta compression, which is where repack memory goes. |
+
+Why this matters: the daemon makes these commits from inside its own process and
+systemd cgroup. Any git work they trigger counts against the daemon's memory, so an
+implicit auto-gc on a large repo can exhaust host memory and the OOM killer then takes
+down the whole daemon, not just that git process. With auto-gc off, session repos are
+never repacked by the daemon. They stay small because `output.log` is no longer in
+history.
+
+Repos that grew large before this change keep their old history until you shrink them.
+Use `scripts/shrink-session-repo.sh` (below), which runs outside the daemon under a
+memory cap. `scripts/repro-tracker-git-growth.sh` reproduces the growth in a scratch
+directory and prints a size table, before and after the fix.
+
+### Shrinking a bloated session repo
+
+Session folders created before `output.log` was excluded from git history can grow
+to many gigabytes, because every commit stored a full copy of the growing log. Do not
+run `git gc` or `git repack` on one of these repos from inside the daemon, and do not
+run them by hand either. On 2026-10-13 a repack of such a repo used over 100GB of
+memory and the OOM killer took down the whole datawatch service.
+
+Use `scripts/shrink-session-repo.sh` instead. It deletes `output.log` and
+`output.log.enc` from the repo's git **history** only. The on-disk `output.log` is
+moved aside during the rewrite and then put back, and the script verifies that its
+size and inode are unchanged. The heavy git steps (history rewrite, `gc --prune=now`,
+`fsck`) run in a transient `systemd-run --user` scope with `MemoryMax=4G` and
+`MemorySwapMax=0`, at nice 19 and idle I/O priority. If they overrun, only that scope is
+killed, never `datawatch.service`. The script prints the scope's peak memory. Without a
+systemd user manager it falls back to `nice`/`ionice` plus `ulimit -v`.
+
+When to run it: when `du -sh ~/.datawatch/sessions/*/.git` shows a session repo far
+larger than its text files. Run it on completed sessions. It refuses a session whose
+`session.json` state is `running`/`waiting_input`, a repo that committed within the
+last 2 minutes, and a repo with a `.git/index.lock`.
+
+```bash
+# See what would happen (changes nothing)
+scripts/shrink-session-repo.sh --dry-run ~/.datawatch/sessions/<session-dir>
+
+# Shrink one or more session repos
+scripts/shrink-session-repo.sh ~/.datawatch/sessions/<dir1> ~/.datawatch/sessions/<dir2>
+
+# Cheap, non-destructive sweep: apply only the git hygiene settings
+# (gc.auto=0, bounded pack memory, output.log in .git/info/exclude) to every session repo
+scripts/shrink-session-repo.sh --all-hygiene ~/.datawatch/sessions
+```
+
+Options and environment:
+
+| Setting | Effect |
+|---------|--------|
+| `--allow-active` | Rewrite even if the session looks active. `.git/index.lock` is still re-checked just before rewriting. |
+| `SHRINK_MEMORY_MAX=8G` | Raise the memory cap. If the scope is killed, the script says so, restores `output.log`, and leaves history intact, so you can retry with a higher cap. |
+| `SHRINK_FILTER_TOOL=filter-branch` | Force `git filter-branch` even if `git-filter-repo` is installed (the default is filter-repo when available). |
+| `SHRINK_NO_SCOPE=1` | Skip `systemd-run` and use the `ulimit -v` fallback. |
+
+The rewrite changes commit hashes in the session repo, so anything that recorded a
+session-repo commit hash (not the project repo's) will no longer resolve. History of
+`timeline.md` and `conversation.md` is kept: the script checks that their commit counts
+are unchanged. If a run is interrupted hard (e.g. `kill -9`), the live file is left in
+`<session-dir>/.git/shrink-backup/`. The script refuses to run again until you move it
+back.
