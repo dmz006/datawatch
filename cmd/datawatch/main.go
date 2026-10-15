@@ -113,7 +113,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "9.1.4"
+var Version = "9.1.5"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -4363,6 +4363,12 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				"2. If the memory_remember MCP tool is available, call it:\n" +
 				"   memory_remember(\"task checkpoint\", \"<title>: done=<X>, now=<Y>, remaining=<Z>\")\n" +
 				"These checkpoints let work resume from the last save point if this session is reset.\n" +
+				"A checkpoint is a SAVE, not a STOP: immediately after writing one, continue working " +
+				"on the next step in the SAME turn — do not end your turn or wait for a response. " +
+				"No one is watching this session to resume it after a pause; if you stop here, the task " +
+				"stalls and fails. Keep going until the task is fully done and you emit DATAWATCH_COMPLETE. " +
+				"Before your final commit, make sure CHECKPOINT.md is not staged or committed — it is " +
+				"scratch state for this run, not part of the deliverable.\n" +
 				"---"
 			// BL366 — capture git HEAD SHA before the worker runs so the
 			// verifier can diff the actual change. Failure is non-fatal.

@@ -208,6 +208,24 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 		if _, err := tooling.EnsureIgnoredPatterns(prd.ProjectDir, []string{".decompose-output-*.json", "CHECKPOINT.md"}); err != nil {
 			log.Printf("[autonomous] EnsureIgnoredPatterns for %s: %v", prd.ProjectDir, err)
 		}
+		// 2026-10-15 — BL449 incident: a task with its own ProjectDir
+		// override (BL447; e.g. a matrix cell with its own isolated git
+		// repo) never got this .gitignore entry, because it was only
+		// ever written into prd.ProjectDir. CHECKPOINT.md then leaked
+		// into real worker commits. Same per-task directory, once each.
+		seen := map[string]bool{prd.ProjectDir: true}
+		for si := range prd.Story {
+			for ti := range prd.Story[si].Tasks {
+				dir := ResolveTaskProjectDir(prd, &prd.Story[si].Tasks[ti])
+				if dir == "" || seen[dir] {
+					continue
+				}
+				seen[dir] = true
+				if _, err := tooling.EnsureIgnoredPatterns(dir, []string{".decompose-output-*.json", "CHECKPOINT.md"}); err != nil {
+					log.Printf("[autonomous] EnsureIgnoredPatterns for task dir %s: %v", dir, err)
+				}
+			}
+		}
 	}
 	prd.Decisions = append(prd.Decisions, Decision{At: time.Now(), Kind: "run", Actor: "autonomous"})
 	if err := m.store.SavePRD(prd); err != nil {

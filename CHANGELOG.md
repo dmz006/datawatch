@@ -5,6 +5,25 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.1.5 — fix(autonomous): checkpoint protocol was causing one-shot tasks to stall mid-task
+
+**Claude-tiering matrix finding (34/52 cells failed the same way).** The
+CHECKPOINT PROTOCOL instruction appended to every one-shot task spec
+(v8.25.6) told workers to write progress to `CHECKPOINT.md` periodically,
+but never said explicitly that writing a checkpoint is not a stopping
+point — many workers, across every model/effort tier, wrote one checkpoint
+and then ended their turn without finishing, classified by the executor as
+`ErrWorkerStalled` ("worker stalled"). The instruction now states plainly
+that a checkpoint is a save, not a stop, and that the worker must continue
+in the same turn until `DATAWATCH_COMPLETE`.
+Separately, 4 of those 34 failures were caused by `CHECKPOINT.md` itself
+leaking into a worker's real commit: `EnsureIgnoredPatterns` only ever
+wrote the `.gitignore` entry into `PRD.ProjectDir`, never into a task's own
+`ProjectDir` override (BL447) — so an isolated matrix cell's own git repo,
+a separate repo from the PRD's, never got the ignore rule. `executor.go`'s
+`Run()` now also applies it to every distinct per-task directory on first
+run.
+
 ## v9.1.4 — fix(sessions): handleStartSession normalizes opencode model for Ollama nodes
 
 **BL449 open-model matrix finding, part 2.** v9.1.3 fixed the `llm_test`
