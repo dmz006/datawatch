@@ -148,7 +148,7 @@ func (m *Manager) consumeRetryBudget(prd *PRD, category string) error {
 		prd.RetryCountsByCategory = map[string]int{}
 	}
 	prd.RetryCountsByCategory[category]++
-	return m.store.SavePRD(prd)
+	return m.savePRDOwn(prd)
 }
 
 // recordAutoRetryDecision appends the audit trail for one unattended
@@ -273,7 +273,7 @@ func (m *Manager) runGuardrailWithInfraRetry(ctx context.Context, prd *PRD, inv 
 			inv.GuardrailModel = ""
 		}
 		m.recordAutoRetryDecision(prd, inv.UnitID, "infra", attempt, escalated)
-		_ = m.store.SavePRD(prd)
+		_ = m.savePRDOwn(prd)
 	}
 }
 

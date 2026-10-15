@@ -5,6 +5,21 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.1.1 — fix(autonomous): stale completion-rollup can overwrite concurrent reset
+
+**BL451.** On 2026-10-15 a `reset_task` landed while the PRD-completion
+ci-watch check was in flight; ten seconds later the rollup wrote
+`completed` over the reset, discarding it. The rollup now commits every
+terminal status (failed, the three blocked paths, completed) through
+`Store.CommitPRDIfRev`. The commit only applies if the PRD revision is
+unchanged apart from the rollup's own saves, the status is still the one
+it saw, and every task is still terminal, all checked under the store
+lock. A stale commit sets nothing. Instead it records a
+`rollup_aborted_stale` decision and leaves the concurrent writer's state
+in place. Completion side effects (auto-report, worktree/cluster PR) and
+status events now fire only after the commit succeeds. Corrective-work
+recursion is skipped if the PRD was reset or cancelled meanwhile.
+
 ## v9.1.0 — feat(autonomous): per-task project dir override on every surface
 
 **BL447.** The per-task `project_dir` override (task → Automaton; empty

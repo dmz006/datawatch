@@ -638,10 +638,6 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 	// failure — only an actual TaskFailed should mark the PRD failed.
 	allDone := true
 	anyFailed := false
-	// BL427 — set when the roll-up below lands in PRDCompleted; fired
-	// after the final save so subscribers see the completion side
-	// effects (worktree PR, cluster PR) already persisted.
-	var emitCompleted func()
 	for _, s := range prd.Story {
 		for _, t := range s.Tasks {
 			if !isTaskTerminal(t.Status) {
@@ -651,141 +647,162 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 			}
 		}
 	}
-	if allDone {
-		if anyFailed {
-			old := prd.Status
-			prd.Status = PRDFailed
-			if err := m.store.SavePRD(prd); err != nil {
-				return err
-			}
-			m.emitPRDStatus(prd, old, nil, nil)
-			return nil
-		} else if blocked, err := m.runPRDCompletionProjectRulesCheck(prd); err != nil {
-			return err
-		} else if blocked {
-			// BL406 Phase 3 — third completion checkpoint. No separate
-			// PerPRDGuardrails list (unlike task/story): a prd_complete
-			// project rule firing is itself the signal, same PRDBlocked
-			// status the task/story guardrail "block" outcome already
-			// uses above.
-			old := prd.Status
-			prd.Status = PRDBlocked
-			if m.store.SavePRD(prd) == nil {
-				m.emitPRDStatus(prd, old, lastDecision(prd, "project_rules_block"), nil)
-			}
-			return nil
-		} else if blocked, contentFixVerdict, err := m.runPRDCompletionRulesReview(ctx, prd); err != nil {
-			return err
-		} else if blocked {
-			// B124 extension — the judgment-based sibling of the
-			// deterministic check just above. Same PRDBlocked signal;
-			// see rules_review.go's own doc comment for why this is a
-			// judgment review against whatever rules file the operator
-			// configured, not a second hardcoded checklist.
-			old := prd.Status
-			prd.Status = PRDBlocked
-			if m.store.SavePRD(prd) == nil {
-				m.emitPRDStatus(prd, old, nil, lastBlockVerdict(prd.Verdicts))
-			}
-			return nil
-		} else if contentFixVerdict != nil {
-			// BL410 Phase 2 — no single task/story owns a PRD-wide
-			// rules-review finding: synthesize a new, standalone
-			// corrective story+task on this SAME PRD, then recurse.
-			// Run() re-flattens tasks, executes the new one, and
-			// re-reaches this exact completion check once it's done.
-			if _, _, serr := m.synthesizeCorrectiveWork(prd, *contentFixVerdict, ""); serr != nil {
-				return serr
-			}
-			_ = m.store.SavePRD(prd)
-			return m.Run(ctx, prd.ID, spawn, verify)
-		} else if blocked, contentFixVerdict, err := m.runPRDCompletionCIWatch(ctx, prd); err != nil {
-			return err
-		} else if blocked {
-			// ci-watch — the local checks above passed, but the CI run
-			// for the commit this automaton itself pushed did not, and
-			// the judge (against the operator's own rules file) or an
-			// exhausted infra budget says so. Same PRDBlocked signal.
-			// Push-mechanism-agnostic: it only acts when the final HEAD
-			// already reached the remote (direct-push release tasks,
-			// cluster pushes). Worktree/auto-PR automata push below,
-			// inside the PRDCompleted branch (handleWorktreeCompletion),
-			// so for them HEAD is usually unpushed here and ci-watch
-			// records a skip — see ci_watch.go's header.
-			old := prd.Status
-			prd.Status = PRDBlocked
-			if m.store.SavePRD(prd) == nil {
-				m.emitPRDStatus(prd, old, nil, lastBlockVerdict(prd.Verdicts))
-			}
-			return nil
-		} else if contentFixVerdict != nil {
-			// Same as rules-review: a fixable CI failure gets standalone
-			// corrective work on this SAME PRD, then Run() recurses and
-			// re-reaches this completion check (which watches the new
-			// commit's CI once the fix is pushed).
-			if _, _, serr := m.synthesizeCorrectiveWork(prd, *contentFixVerdict, ""); serr != nil {
-				return serr
-			}
-			_ = m.store.SavePRD(prd)
-			return m.Run(ctx, prd.ID, spawn, verify)
-		} else {
-			completedOld := prd.Status
-			prd.Status = PRDCompleted
-			emitCompleted = func() { m.emitPRDStatus(prd, completedOld, nil, nil) }
-			// BL387 Phase 3 — fire auto-report asynchronously on completion.
-			m.mu.Lock()
-			reportFn := m.memoryReportFn
-			m.mu.Unlock()
-			if reportFn != nil && prd.MemorySeed.Enabled {
-				prdID := prd.ID
-				projectDir := prd.ProjectDir
-				go func() { // #nosec G118 -- background report after PRD completion; request context already done
-					report, rerr := reportFn(context.Background(), prdID, projectDir)
-					if rerr != nil {
-						log.Printf("[autonomous] memory-report: prd=%s: %v", prdID, rerr)
-						return
-					}
-					if report == "" {
-						return
-					}
-					if p, ok := m.store.GetPRD(prdID); ok {
-						now := time.Now().UTC()
-						p.MemoryReport = report
-						p.MemoryReportAt = &now
-						if serr := m.store.SavePRD(p); serr != nil {
-							log.Printf("[autonomous] memory-report save: prd=%s: %v", prdID, serr)
-						}
-					}
-				}()
-			}
-			// BL407 Phase 2 — push + open a PR for worktree-mode PRDs
-			// with AutoPR on. Deliberately synchronous, unlike the
-			// report goroutine above: git push + gh pr create are fast,
-			// bounded network calls (unlike unbounded LLM report
-			// generation), and Run() already blocks synchronously on
-			// slower work in this same function (the quality-gate test
-			// run above). Running it here, not in a goroutine, also
-			// avoids a real data race a background goroutine would
-			// introduce: *PRD is an unsynchronized shared pointer once
-			// a caller holds it (see the race-conditions note at the
-			// top of this function), so mutating it after Run() has
-			// already returned to its own caller is unsafe against
-			// anything else reading the same PRD concurrently (e.g. a
-			// REST GET while a background goroutine is still writing).
-			m.handleWorktreeCompletion(prd)
-			// BL407 Phase 3 — cluster-dispatched counterpart. Also
-			// synchronous and for the same reason: fast, bounded
-			// (open-PR only, no local push) network calls, run before
-			// anything else can observe *prd concurrently.
-			m.handleClusterCompletion(prd)
-		}
+	if !allDone {
+		return m.store.SavePRD(prd)
 	}
+	// BL451 — every terminal assignment below goes through
+	// commitRollupStatus, which commits only if nobody else wrote the PRD
+	// since this pass observed it (Rev, minus the guardrail helpers' own
+	// saves) and every task is still terminal under the store lock. The
+	// 2026-10-15 incident: reset_task landed while ci-watch was in flight
+	// and this rollup then overwrote it with PRDCompleted.
+	observed := prd.Status
+	baseRev, _ := m.store.PRDRev(prd.ID)
+	baseOwn := m.rollupOwnSaves(prd.ID)
+	expectedRev := func() int { return baseRev + m.rollupOwnSaves(prd.ID) - baseOwn }
+	stillRunning := func() bool {
+		cur, ok := m.store.GetPRD(prd.ID)
+		return ok && cur.Status == observed && prdAllTasksTerminal(cur)
+	}
+	if anyFailed {
+		old, ok := m.commitRollupStatus(prd, observed, expectedRev(), PRDFailed, "failed")
+		if ok {
+			m.emitPRDStatus(prd, old, nil, nil)
+		}
+		return nil
+	}
+	if blocked, err := m.runPRDCompletionProjectRulesCheck(prd); err != nil {
+		return err
+	} else if blocked {
+		// BL406 Phase 3 — third completion checkpoint. No separate
+		// PerPRDGuardrails list (unlike task/story): a prd_complete
+		// project rule firing is itself the signal, same PRDBlocked
+		// status the task/story guardrail "block" outcome already
+		// uses above.
+		if old, ok := m.commitRollupStatus(prd, observed, expectedRev(), PRDBlocked, "project_rules_block"); ok {
+			m.emitPRDStatus(prd, old, lastDecision(prd, "project_rules_block"), nil)
+		}
+		return nil
+	}
+	if blocked, contentFixVerdict, err := m.runPRDCompletionRulesReview(ctx, prd); err != nil {
+		return err
+	} else if blocked {
+		// B124 extension — the judgment-based sibling of the
+		// deterministic check just above. Same PRDBlocked signal;
+		// see rules_review.go's own doc comment for why this is a
+		// judgment review against whatever rules file the operator
+		// configured, not a second hardcoded checklist.
+		if old, ok := m.commitRollupStatus(prd, observed, expectedRev(), PRDBlocked, "rules_review_block"); ok {
+			m.emitPRDStatus(prd, old, nil, lastBlockVerdict(prd.Verdicts))
+		}
+		return nil
+	} else if contentFixVerdict != nil {
+		// BL410 Phase 2 — no single task/story owns a PRD-wide
+		// rules-review finding: synthesize a new, standalone
+		// corrective story+task on this SAME PRD, then recurse.
+		// Run() re-flattens tasks, executes the new one, and
+		// re-reaches this exact completion check once it's done.
+		// BL451 — skip if a concurrent reset/cancel moved the PRD.
+		if !stillRunning() {
+			m.recordRollupAborted(prd.ID, "corrective_work(rules_review)")
+			return nil
+		}
+		if _, _, serr := m.synthesizeCorrectiveWork(prd, *contentFixVerdict, ""); serr != nil {
+			return serr
+		}
+		_ = m.store.SavePRD(prd)
+		return m.Run(ctx, prd.ID, spawn, verify)
+	}
+	if blocked, contentFixVerdict, err := m.runPRDCompletionCIWatch(ctx, prd); err != nil {
+		return err
+	} else if blocked {
+		// ci-watch — the local checks above passed, but the CI run
+		// for the commit this automaton itself pushed did not, and
+		// the judge (against the operator's own rules file) or an
+		// exhausted infra budget says so. Same PRDBlocked signal.
+		// Push-mechanism-agnostic: it only acts when the final HEAD
+		// already reached the remote (direct-push release tasks,
+		// cluster pushes). Worktree/auto-PR automata push below,
+		// inside the PRDCompleted branch (handleWorktreeCompletion),
+		// so for them HEAD is usually unpushed here and ci-watch
+		// records a skip — see ci_watch.go's header.
+		if old, ok := m.commitRollupStatus(prd, observed, expectedRev(), PRDBlocked, "ci_watch_block"); ok {
+			m.emitPRDStatus(prd, old, nil, lastBlockVerdict(prd.Verdicts))
+		}
+		return nil
+	} else if contentFixVerdict != nil {
+		// Same as rules-review: a fixable CI failure gets standalone
+		// corrective work on this SAME PRD, then Run() recurses and
+		// re-reaches this completion check (which watches the new
+		// commit's CI once the fix is pushed).
+		if !stillRunning() {
+			m.recordRollupAborted(prd.ID, "corrective_work(ci_watch)")
+			return nil
+		}
+		if _, _, serr := m.synthesizeCorrectiveWork(prd, *contentFixVerdict, ""); serr != nil {
+			return serr
+		}
+		_ = m.store.SavePRD(prd)
+		return m.Run(ctx, prd.ID, spawn, verify)
+	}
+	// BL451 — commit PRDCompleted first; completion side effects only
+	// run once the status actually landed.
+	completedOld, ok := m.commitRollupStatus(prd, observed, expectedRev(), PRDCompleted, "completed")
+	if !ok {
+		return nil
+	}
+	// BL387 Phase 3 — fire auto-report asynchronously on completion.
+	m.mu.Lock()
+	reportFn := m.memoryReportFn
+	m.mu.Unlock()
+	if reportFn != nil && prd.MemorySeed.Enabled {
+		prdID := prd.ID
+		projectDir := prd.ProjectDir
+		go func() { // #nosec G118 -- background report after PRD completion; request context already done
+			report, rerr := reportFn(context.Background(), prdID, projectDir)
+			if rerr != nil {
+				log.Printf("[autonomous] memory-report: prd=%s: %v", prdID, rerr)
+				return
+			}
+			if report == "" {
+				return
+			}
+			if p, ok := m.store.GetPRD(prdID); ok {
+				now := time.Now().UTC()
+				p.MemoryReport = report
+				p.MemoryReportAt = &now
+				if serr := m.store.SavePRD(p); serr != nil {
+					log.Printf("[autonomous] memory-report save: prd=%s: %v", prdID, serr)
+				}
+			}
+		}()
+	}
+	// BL407 Phase 2 — push + open a PR for worktree-mode PRDs
+	// with AutoPR on. Deliberately synchronous, unlike the
+	// report goroutine above: git push + gh pr create are fast,
+	// bounded network calls (unlike unbounded LLM report
+	// generation), and Run() already blocks synchronously on
+	// slower work in this same function (the quality-gate test
+	// run above). Running it here, not in a goroutine, also
+	// avoids a real data race a background goroutine would
+	// introduce: *PRD is an unsynchronized shared pointer once
+	// a caller holds it (see the race-conditions note at the
+	// top of this function), so mutating it after Run() has
+	// already returned to its own caller is unsafe against
+	// anything else reading the same PRD concurrently (e.g. a
+	// REST GET while a background goroutine is still writing).
+	m.handleWorktreeCompletion(prd)
+	// BL407 Phase 3 — cluster-dispatched counterpart. Also
+	// synchronous and for the same reason: fast, bounded
+	// (open-PR only, no local push) network calls, run before
+	// anything else can observe *prd concurrently.
+	m.handleClusterCompletion(prd)
 	if err := m.store.SavePRD(prd); err != nil {
 		return err
 	}
-	if emitCompleted != nil {
-		emitCompleted()
-	}
+	// BL427 — fired after the final save so subscribers see the
+	// completion side effects (worktree PR, cluster PR) already persisted.
+	m.emitPRDStatus(prd, completedOld, nil, nil)
 	return nil
 }
 
@@ -1814,4 +1831,82 @@ func resolveGuardrailBackendModel(t *Task, prd *PRD, globalBackend, globalModel 
 		// through to the backend's own registry-default model instead.
 	}
 	return backend, model
+}
+
+// prdAllTasksTerminal reports whether every task in every story of p is
+// in a terminal state.
+func prdAllTasksTerminal(p *PRD) bool {
+	for _, s := range p.Story {
+		for _, t := range s.Tasks {
+			if !isTaskTerminal(t.Status) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// commitRollupStatus (BL451) commits the completion-rollup status via
+// Store.CommitPRDIfRev: only if the PRD's Rev is still expectedRev, its
+// status is still observed and every task is still terminal — all
+// re-checked under the store lock. On a stale commit nothing is set, a
+// rollup_aborted_stale decision is recorded and ok=false is returned:
+// the concurrent writer (reset_task, cancel, another Run) is
+// authoritative.
+func (m *Manager) commitRollupStatus(prd *PRD, observed PRDStatus, expectedRev int, status PRDStatus, reason string) (old PRDStatus, ok bool) {
+	err := m.store.CommitPRDIfRev(prd.ID, expectedRev, func(p *PRD) bool {
+		if p.Status != observed || !prdAllTasksTerminal(p) {
+			return false
+		}
+		old = p.Status
+		p.Status = status
+		return true
+	})
+	if err == nil {
+		return old, true
+	}
+	if errors.Is(err, ErrPRDStale) {
+		m.recordRollupAborted(prd.ID, fmt.Sprintf("%s -> %s", reason, status))
+	} else {
+		log.Printf("[autonomous] rollup commit: prd=%s: %v", prd.ID, err)
+	}
+	return "", false
+}
+
+// recordRollupAborted appends a rollup_aborted_stale decision to the
+// freshly-read PRD. It never touches Status, so saving it cannot undo
+// the concurrent write that made the rollup stale.
+func (m *Manager) recordRollupAborted(prdID, note string) {
+	log.Printf("[autonomous] prd=%s rollup aborted (stale): %s", prdID, note)
+	p, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return
+	}
+	p.Decisions = append(p.Decisions, Decision{At: time.Now(), Kind: "rollup_aborted_stale", Actor: "autonomous", Note: note})
+	if err := m.store.SavePRD(p); err != nil {
+		log.Printf("[autonomous] rollup_aborted_stale save: prd=%s: %v", prdID, err)
+	}
+}
+
+// rollupOwnSaves (BL451) returns how many PRD saves the completion
+// guardrail helpers have made for prdID (see noteOwnSave), so the
+// rollup can tell its own Rev bumps from a concurrent writer's.
+func (m *Manager) rollupOwnSaves(prdID string) int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.ownSaves[prdID]
+}
+
+// savePRDOwn saves prd and counts it as an executor-owned write.
+func (m *Manager) savePRDOwn(prd *PRD) error {
+	err := m.store.SavePRD(prd)
+	if err == nil {
+		m.mu.Lock()
+		if m.ownSaves == nil {
+			m.ownSaves = map[string]int{}
+		}
+		m.ownSaves[prd.ID]++
+		m.mu.Unlock()
+	}
+	return err
 }

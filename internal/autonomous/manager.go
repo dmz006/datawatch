@@ -396,6 +396,10 @@ type Manager struct {
 	decompose DecomposeFn
 	guardrail GuardrailFn
 
+	// BL451 — per-PRD count of executor-owned saves (savePRDOwn), so the
+	// completion rollup can discount its own Rev bumps. Guarded by mu.
+	ownSaves map[string]int
+
 	// BL427 — in-process lifecycle event dispatcher (lifecycle_event.go).
 	// Has its own lock; never guarded by mu. lifecycleHost is
 	// os.Hostname, cached once.
