@@ -1121,6 +1121,7 @@ established. In progress — starting with BL403.**
     autonomous PRD task execution through goose/aider — needs a real
     task spawned through the autonomous system itself, not a manual
     probe, to close out.
+    **Forward pointer:** **BL437** (item 31) extends this eval into a recurring, hardware-aware monthly sweep.
 22. **BL423** — an Automaton reports `completed` while the CI run for
     the commit it pushed is failing (filed + shipped 2026-10-13, same
     day — **shipped v9.0.63**). Not roadmap work — found live right
@@ -1405,6 +1406,7 @@ established. In progress — starting with BL403.**
    (resource classes, phase-level concurrency matrix, tree lock,
    inference caps, usage budget, worked examples, config keys, 6 planned
    implementation phases, parity surface, 9 operator open questions).
+   **Forward pointer:** the §3b/§3c/§4d/§4e cost and capacity bounds also apply to **BL437**'s recurring model-eval sweep (item 31).
 
 30. **BL440** — Status-tab session detail for Automaton task sessions
    (filed + **✅ closed 2026-10-14, shipped v9.0.87**). The session
@@ -1444,6 +1446,25 @@ established. In progress — starting with BL403.**
      with no backlog item; `session.hook_script_dir` is dead config to
      clean up later.
 
+31. **BL437** — Recurring, hardware-aware LLM model/effort evaluation (design pass)
+   (filed 2026-10-14, operator-named, pre-v10.0.0 priority). **Status: Queued**;
+   design doc done (`needs_review`), no implementation started. The design pass
+   answers six asks: (1) model discovery beyond `llm_list`, so candidates are
+   found rather than only what is already registered; (2) hardware-aware results,
+   so advice is conditioned on the measured hardware class; (3) a monthly recurring
+   trigger rather than an event trigger, with defined failure behavior; (4) all
+   models and all efforts, swept as a matrix rather than a full cross product;
+   (5) goose and datawatch-default as backends under test alongside claude-code;
+   (6) results feeding **BL428**'s `plan_tier` defaults and **BL431**'s model
+   defaults, with operator confirmation as the recommended default rather than
+   auto-apply. **Cross-references:** **BL422** (item 21) — generalizes its fixtures
+   and driver rather than replacing them. **BL259** (eval framework) — the design
+   recommends migrating onto it; its `llm_rubric` grader always fails today, so
+   grading stays deterministic until BL259's LLM-grading follow-up lands. **BL428**
+   (item 29) — cost and capacity bounds in §3b/§3c/§4e and tier defaults in §4d.
+   **BL431** — sections 6 and 11. **Design doc:**
+   [2026-10-14-recurring-model-eval-design.md](2026-10-14-recurring-model-eval-design.md).
+
 **Active execution order (operator-confirmed, last updated 2026-10-14 ~14:05;
 ordered by feature dependency, not filing date or chronology — supersedes
 the three separate dated addenda this replaced).** Items run one at a time
@@ -1462,7 +1483,7 @@ daemon).
 | 7 | **BL427 → BL428 → BL431 implementation** | BL427 Phase 1 (event type + in-process dispatcher, WS `prd_update` migrated onto it) shipped in v9.0.85; BL428 Phase 1 (`max_parallel_tasks` deprecation + global `max_concurrent_tasks`) shipped in v9.0.86; BL427 Phases 2–5, BL428 Phases 2–6 and BL431 not started | Optimize the Automaton/PRD execution system itself before more regular feature/bugfix work, so the rest of the roadmap runs through it rather than being hand-sequenced. Dependency order: event dispatch → concurrency/budget mechanics → Automation coordinator built on top of both. Known trade-off, noted not litigated: BL428 §4d / BL431 §6-§11's model-tier design cite BL422's results as an input, so that part proceeds on placeholder assumptions until BL422 runs afterward (row 8). |
 | 8 | **BL422** — Claude model/effort tiering eval | Queued, resumes after #7 | Its results get retrofitted into whatever BL428/431 implemented with placeholder tier defaults (see row 7's trade-off note). |
 | — | **BL436** — per-turn chunked session capture (replaces tmux-scrollback reliance) | Design doc done, `needs_review` | Filed 2026-10-14, not yet slotted into the numbered order above — docs-only, low collision risk, could run opportunistically. |
-| — | **BL437** — recurring hardware-aware model/effort eval | Decomposing | Filed 2026-10-14 (pre-v10.0.0 priority, operator-named), generalizes BL422 into an ongoing monthly sweep; not yet slotted into the numbered order above. |
+| — | **BL437** — recurring hardware-aware model/effort eval ([design doc](2026-10-14-recurring-model-eval-design.md)) | Queued, pre-v10.0.0 priority (operator-named 2026-10-14) | Generalizes BL422 into a recurring monthly sweep over all models, efforts and hardware classes. Sequenced after BL422's results are available (row 8), so it is not slotted into the numbered order above yet. |
 | — | **BL440** — Status-tab session detail for Automaton task sessions | **Shipped v9.0.87** (follow-ups (a)–(h) open in item 30) | Surfaced live 2026-10-14 while watching Automaton task sessions; display-only, ran outside the numbered order. |
 
 BL424 (item 23 above) is explicitly excluded from this table and stays
