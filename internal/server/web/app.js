@@ -4565,7 +4565,10 @@ function renderSessionStats(sessionId) {
       let env = envelopes.find(e => e.kind === 'session' && e.id === 'session:' + sessionId);
       let labelHint = t('session_stats_process_title') || 'Process Stats';
       if (!env && sess && sess.backend_family) {
-        env = envelopes.find(e => e.kind === 'backend' && (e.id === 'backend:' + sess.backend_family || e.id === 'backend:' + sess.backend_family + '-docker'));
+        // Observer signature names differ from backend families
+        // (claude-code runs as the `claude` signature).
+        const sig = sess.backend_family === 'claude-code' ? 'claude' : sess.backend_family;
+        env = envelopes.find(e => e.kind === 'backend' && (e.id === 'backend:' + sig || e.id === 'backend:' + sig + '-docker'));
         if (env) labelHint = (t('session_stats_backend_title') || 'Backend Stats') + ' — ' + env.label;
       }
       renderSessionStatsInner(area, env, labelHint, sessionId, sess, cnDetail);
@@ -4660,7 +4663,7 @@ function renderSessionStatsInner(area, env, titleLabel, sessionId, sess, cnDetai
   } else {
     const backend = sess && sess.backend_family ? sess.backend_family : '(unknown)';
     hostBody = `<div style="color:var(--text2);font-size:12px;line-height:1.5;">
-      ${escHtml(t('session_stats_no_envelope_body')||'No process envelope yet — observer plugin off, or process tree not attributed. Backend: '+backend)}
+      ${escHtml(t('session_stats_no_envelope_body')||'No process envelope yet — observer plugin off, session has no tmux pane or is not running, or process tree not attributed. Backend: '+backend)}
     </div>`;
   }
 
@@ -4741,7 +4744,7 @@ function renderSessionStatsInner(area, env, titleLabel, sessionId, sess, cnDetai
   if (sess && sess.llm_ref) {
     llmCard = card(t('stats_card_llm')||'LLM', `
       ${row(t('stats_field_ref')||'LLM ref', sess.llm_ref)}
-      <div style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('stats_llm_more_soon')||'Token rate / latency / model state coming POST v7.0 (#276 Grafana sprint).')}</div>
+      <div style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('stats_llm_more_soon')||'Token rate / latency / model state are not built yet')}</div>
       <div style="margin-top:6px;"><a onclick="navigate('compute')" style="color:var(--accent2);cursor:pointer;text-decoration:underline;font-size:11px;">${escHtml(t('stats_open_llm')||'Open LLM →')}</a></div>
     `);
   }
