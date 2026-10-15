@@ -97,7 +97,7 @@ These do not block the sequence above.
 | BL444 MCP SSE listener retries bind at boot | not started |
 | BL445 Review and merge external MCP `public_url` PR (GH#208) | not started |
 | BL446 Federation as a sibling-agent mail transport | not started |
-| BL453 Can open models decompose PRDs? (research) | not started (PRD `d2f87f0c`, draft) |
+| BL453 Can open models decompose PRDs? (research) | not started (PRD `ffa337ed`, draft; now also covers execution-scope, from BL427 Phase 2's live failure) |
 
 ## Excluded from v10.0.0
 
