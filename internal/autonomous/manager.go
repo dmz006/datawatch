@@ -1696,6 +1696,29 @@ func (m *Manager) RepairDependsOn(prdID, actor string) (*PRD, error) {
 // Clears status, error, session_id, verification, and retry_count.
 // ResetTask resets a failed/blocked task to pending for retry.
 // BL382: force=true also requeues completed or cancelled tasks.
+// recoverPendingTask reopens a terminal PRD whose target task is already
+// pending (BL451). The task is left untouched; the containing story is
+// reopened if terminal and the PRD returns to PRDRunning.
+func (m *Manager) recoverPendingTask(prd *PRD, si int, taskID, actor string) (*PRD, error) {
+	s := &prd.Story[si]
+	if s.Status == StoryCompleted || s.Status == StoryFailed || s.Status == StoryCancelled {
+		s.Status = StoryPending
+	}
+	old := prd.Status
+	now := time.Now()
+	prd.Status = PRDRunning
+	prd.UpdatedAt = now
+	kind := "recover_pending_task"
+	prd.Decisions = append(prd.Decisions, Decision{At: now, Kind: kind, Actor: actor,
+		Note: fmt.Sprintf("task=%s already pending; prd reopened from %s (force=true recovery)", taskID, old)})
+	if err := m.store.SavePRD(prd); err != nil {
+		return nil, err
+	}
+	m.emitPRDStatus(prd, old, lastDecision(prd, kind), nil)
+	updated, _ := m.store.GetPRD(prd.ID)
+	return updated, nil
+}
+
 func (m *Manager) ResetTask(prdID, taskID, actor string, force bool) (*PRD, error) {
 	prd, ok := m.store.GetPRD(prdID)
 	if !ok {
@@ -1717,6 +1740,24 @@ func (m *Manager) ResetTask(prdID, taskID, actor string, force bool) (*PRD, erro
 	// failed/blocked tasks to reset in the first place).
 	if prd.Status != PRDRunning && prd.Status != PRDFailed && prd.Status != PRDBlocked && prd.Status != PRDCancelled && prd.Status != PRDCompleted {
 		return nil, fmt.Errorf("prd %q status %q is not recoverable; reset_task requires PRDRunning, PRDFailed, PRDBlocked, PRDCancelled, or PRDCompleted", prdID, prd.Status)
+	}
+	// BL451 recovery: a terminal PRD holding an already-pending task (a
+	// force reset flipped the task, then a stale rollup overwrote the PRD
+	// status) has no other way back — approve/run refuse a completed PRD.
+	// With force=true, leave the task pending and just reopen the PRD.
+	if prd.Status != PRDRunning {
+		for si := range prd.Story {
+			for ti := range prd.Story[si].Tasks {
+				t := &prd.Story[si].Tasks[ti]
+				if t.ID != taskID || (t.Status != "" && t.Status != TaskPending) {
+					continue
+				}
+				if !force {
+					return nil, fmt.Errorf("task %q is already pending but prd %q is %q; use force=true to reopen the PRD (recover from a stale rollup)", taskID, prdID, prd.Status)
+				}
+				return m.recoverPendingTask(prd, si, taskID, actor)
+			}
+		}
 	}
 	found := false
 	foundSI := -1

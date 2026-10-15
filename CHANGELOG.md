@@ -5,6 +5,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.1.2 — fix(autonomous): reset_task recovers a terminal PRD with a pending task
+
+**BL451 follow-up.** The v9.1.1 rollup race could leave PRD 9e7bad8e with
+status `completed` and one task already `pending`, and nothing could recover
+it. `reset_task` with `force=true` on an already-pending task in a
+completed/failed/blocked/cancelled PRD now reopens the PRD to `running`. The
+task stays pending, a terminal containing story is reopened, and a
+`recover_pending_task` decision records the actor and prior status. Without
+`force` it still errors, and the message now points at `force=true`. Plan:
+`docs/plans/2026-10-15-bl451-rollup-race.md`.
+
 ## v9.1.1 — fix(autonomous): stale completion-rollup can overwrite concurrent reset
 
 **BL451.** On 2026-10-15 a `reset_task` landed while the PRD-completion
