@@ -1,40 +1,395 @@
 {
-  "run_id": "20261015-r5",
+  "run_id": "20261015-r6",
   "preflight": [
     {
       "role": "cpu",
       "llm": "opencode-johnnyjohnny-cpu",
       "expected_model": "qwen3:1.7b",
-      "used_model": null,
-      "ok": false,
-      "error": "POST /api/llms/opencode-johnnyjohnny-cpu/test: HTTP 502: compute node \"johnnyjohnny-cpu\": ollama HTTP 404: {\"error\":\"model 'ollama/qwen3:1.7b' not found\"}"
+      "used_model": "qwen3:1.7b",
+      "ok": true,
+      "error": null
     },
     {
       "role": "fast",
       "llm": "opencode-johnnyjohnny-fast",
       "expected_model": "granite4.2:8b",
-      "used_model": null,
-      "ok": false,
-      "error": "POST /api/llms/opencode-johnnyjohnny-fast/test: HTTP 502: compute node \"johnnyjohnny\": ollama HTTP 404: {\"error\":\"model 'ollama/granite4.2:8b' not found\"}"
+      "used_model": "granite4.2:8b",
+      "ok": true,
+      "error": null
     },
     {
       "role": "mid",
       "llm": "opencode-johnnyjohnny-gpu",
       "expected_model": "granite4.2:30b",
-      "used_model": null,
-      "ok": false,
-      "error": "POST /api/llms/opencode-johnnyjohnny-gpu/test: HTTP 502: compute node \"johnnyjohnny\": ollama HTTP 404: {\"error\":\"model 'ollama/granite4.2:30b' not found\"}"
+      "used_model": "granite4.2:30b",
+      "ok": true,
+      "error": null
     },
     {
       "role": "decompose-validate",
       "llm": "opencode-datawatch-gpu",
       "expected_model": "gpt-oss:120b",
-      "used_model": null,
-      "ok": false,
-      "error": "POST /api/llms/opencode-datawatch-gpu/test: HTTP 502: compute node \"datawatch\": ollama HTTP 404: {\"error\":\"model 'ollama/gpt-oss:120b' not found\"}"
+      "used_model": "gpt-oss:120b",
+      "ok": true,
+      "error": null
     }
   ],
-  "preflight_passed": false,
-  "prd_id": null,
-  "cells": []
+  "preflight_passed": true,
+  "prd_id": "4199b08c",
+  "cells": [
+    {
+      "role": "cpu",
+      "llm": "opencode-johnnyjohnny-cpu",
+      "task_type": "analysis",
+      "expected_model": "qwen3:1.7b",
+      "used_model": "qwen3:1.7b",
+      "model_identity": "ok",
+      "self_reported_model": null,
+      "verification_integrity": "suspect",
+      "resolved_dir": null,
+      "task_project_dir": "/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r6/cpu-analysis",
+      "artifact_check": {
+        "cell_repo_head": "9b7911a8f529a6d08a78db3dbd8648c64a5ff827",
+        "new_commits": 0,
+        "verify_exit": 1,
+        "verify_log": ".datawatch/eval/open-model-matrix/20261015-r6/verify-logs/cpu-analysis.log"
+      },
+      "model_result": null,
+      "task_status": "failed",
+      "session_id": "849b",
+      "notes": "used_model source: post-run llm_test (no per-session model exposed); resolved_dir source: none; no new commit beyond baseline in cell repo"
+    },
+    {
+      "role": "cpu",
+      "llm": "opencode-johnnyjohnny-cpu",
+      "task_type": "scripting",
+      "expected_model": "qwen3:1.7b",
+      "used_model": "qwen3:1.7b",
+      "model_identity": "ok",
+      "self_reported_model": null,
+      "verification_integrity": "suspect",
+      "resolved_dir": null,
+      "task_project_dir": "/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r6/cpu-scripting",
+      "artifact_check": {
+        "cell_repo_head": "09c937751960e5defecd19b43260f3ec272d1f8c",
+        "new_commits": 0,
+        "verify_exit": 1,
+        "verify_log": ".datawatch/eval/open-model-matrix/20261015-r6/verify-logs/cpu-scripting.log"
+      },
+      "model_result": null,
+      "task_status": "failed",
+      "session_id": "dc60",
+      "notes": "used_model source: post-run llm_test (no per-session model exposed); resolved_dir source: none; no new commit beyond baseline in cell repo"
+    },
+    {
+      "role": "cpu",
+      "llm": "opencode-johnnyjohnny-cpu",
+      "task_type": "docs",
+      "expected_model": "qwen3:1.7b",
+      "used_model": "qwen3:1.7b",
+      "model_identity": "ok",
+      "self_reported_model": null,
+      "verification_integrity": "suspect",
+      "resolved_dir": null,
+      "task_project_dir": "/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r6/cpu-docs",
+      "artifact_check": {
+        "cell_repo_head": "202390990f042b50795304e2cf57a785353d7f60",
+        "new_commits": 0,
+        "verify_exit": 1,
+        "verify_log": ".datawatch/eval/open-model-matrix/20261015-r6/verify-logs/cpu-docs.log"
+      },
+      "model_result": null,
+      "task_status": "failed",
+      "session_id": "4d01",
+      "notes": "used_model source: post-run llm_test (no per-session model exposed); resolved_dir source: none; no new commit beyond baseline in cell repo"
+    },
+    {
+      "role": "cpu",
+      "llm": "opencode-johnnyjohnny-cpu",
+      "task_type": "review",
+      "expected_model": "qwen3:1.7b",
+      "used_model": "qwen3:1.7b",
+      "model_identity": "ok",
+      "self_reported_model": null,
+      "verification_integrity": "suspect",
+      "resolved_dir": null,
+      "task_project_dir": "/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r6/cpu-review",
+      "artifact_check": {
+        "cell_repo_head": "fca7c5aa6afcde5b3fbb624d92a4d78b8773bedd",
+        "new_commits": 0,
+        "verify_exit": 1,
+        "verify_log": ".datawatch/eval/open-model-matrix/20261015-r6/verify-logs/cpu-review.log"
+      },
+      "model_result": null,
+      "task_status": "failed",
+      "session_id": "c7d0",
+      "notes": "used_model source: post-run llm_test (no per-session model exposed); resolved_dir source: none; no new commit beyond baseline in cell repo"
+    },
+    {
+      "role": "fast",
+      "llm": "opencode-johnnyjohnny-fast",
+      "task_type": "analysis",
+      "expected_model": "granite4.2:8b",
+      "used_model": "granite4.2:8b",
+      "model_identity": "ok",
+      "self_reported_model": null,
+      "verification_integrity": "suspect",
+      "resolved_dir": null,
+      "task_project_dir": "/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r6/fast-analysis",
+      "artifact_check": {
+        "cell_repo_head": "31537d9e35a5e5221517f61d259162e6b196a9a1",
+        "new_commits": 0,
+        "verify_exit": 1,
+        "verify_log": ".datawatch/eval/open-model-matrix/20261015-r6/verify-logs/fast-analysis.log"
+      },
+      "model_result": null,
+      "task_status": "failed",
+      "session_id": "6e11",
+      "notes": "used_model source: post-run llm_test (no per-session model exposed); resolved_dir source: none; no new commit beyond baseline in cell repo"
+    },
+    {
+      "role": "fast",
+      "llm": "opencode-johnnyjohnny-fast",
+      "task_type": "scripting",
+      "expected_model": "granite4.2:8b",
+      "used_model": "granite4.2:8b",
+      "model_identity": "ok",
+      "self_reported_model": null,
+      "verification_integrity": "suspect",
+      "resolved_dir": null,
+      "task_project_dir": "/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r6/fast-scripting",
+      "artifact_check": {
+        "cell_repo_head": "aa59cfe890486e19af2c9e0b78bede45a8b05b8c",
+        "new_commits": 0,
+        "verify_exit": 1,
+        "verify_log": ".datawatch/eval/open-model-matrix/20261015-r6/verify-logs/fast-scripting.log"
+      },
+      "model_result": null,
+      "task_status": "failed",
+      "session_id": "7cb2",
+      "notes": "used_model source: post-run llm_test (no per-session model exposed); resolved_dir source: none; no new commit beyond baseline in cell repo"
+    },
+    {
+      "role": "fast",
+      "llm": "opencode-johnnyjohnny-fast",
+      "task_type": "docs",
+      "expected_model": "granite4.2:8b",
+      "used_model": "granite4.2:8b",
+      "model_identity": "ok",
+      "self_reported_model": null,
+      "verification_integrity": "suspect",
+      "resolved_dir": null,
+      "task_project_dir": "/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r6/fast-docs",
+      "artifact_check": {
+        "cell_repo_head": "aa59cfe890486e19af2c9e0b78bede45a8b05b8c",
+        "new_commits": 0,
+        "verify_exit": 1,
+        "verify_log": ".datawatch/eval/open-model-matrix/20261015-r6/verify-logs/fast-docs.log"
+      },
+      "model_result": null,
+      "task_status": "failed",
+      "session_id": "870e",
+      "notes": "used_model source: post-run llm_test (no per-session model exposed); resolved_dir source: none; no new commit beyond baseline in cell repo"
+    },
+    {
+      "role": "fast",
+      "llm": "opencode-johnnyjohnny-fast",
+      "task_type": "review",
+      "expected_model": "granite4.2:8b",
+      "used_model": "granite4.2:8b",
+      "model_identity": "ok",
+      "self_reported_model": null,
+      "verification_integrity": "ok",
+      "resolved_dir": "/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r6/fast-review",
+      "task_project_dir": "/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r6/fast-review",
+      "artifact_check": {
+        "cell_repo_head": "8d4074ca06f3b8d90ee29d932129790435967e03",
+        "new_commits": 0,
+        "verify_exit": 1,
+        "verify_log": ".datawatch/eval/open-model-matrix/20261015-r6/verify-logs/fast-review.log"
+      },
+      "model_result": "fail",
+      "task_status": "failed",
+      "session_id": "ecb1",
+      "notes": "used_model source: session_record.model; resolved_dir source: worker session project_dir; no new commit beyond baseline in cell repo"
+    },
+    {
+      "role": "mid",
+      "llm": "opencode-johnnyjohnny-gpu",
+      "task_type": "analysis",
+      "expected_model": "granite4.2:30b",
+      "used_model": "granite4.2:30b",
+      "model_identity": "ok",
+      "self_reported_model": null,
+      "verification_integrity": "suspect",
+      "resolved_dir": null,
+      "task_project_dir": "/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r6/mid-analysis",
+      "artifact_check": {
+        "cell_repo_head": "d9062f494116a350911380814f5983f20338ec9f",
+        "new_commits": 0,
+        "verify_exit": 1,
+        "verify_log": ".datawatch/eval/open-model-matrix/20261015-r6/verify-logs/mid-analysis.log"
+      },
+      "model_result": null,
+      "task_status": "failed",
+      "session_id": "2cc9",
+      "notes": "used_model source: post-run llm_test (no per-session model exposed); resolved_dir source: none; no new commit beyond baseline in cell repo"
+    },
+    {
+      "role": "mid",
+      "llm": "opencode-johnnyjohnny-gpu",
+      "task_type": "scripting",
+      "expected_model": "granite4.2:30b",
+      "used_model": "granite4.2:30b",
+      "model_identity": "ok",
+      "self_reported_model": null,
+      "verification_integrity": "suspect",
+      "resolved_dir": null,
+      "task_project_dir": "/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r6/mid-scripting",
+      "artifact_check": {
+        "cell_repo_head": "e6067cedaf512a0e69a0a41e48ec4cbbadc2ebab",
+        "new_commits": 0,
+        "verify_exit": 1,
+        "verify_log": ".datawatch/eval/open-model-matrix/20261015-r6/verify-logs/mid-scripting.log"
+      },
+      "model_result": null,
+      "task_status": "failed",
+      "session_id": "a42d",
+      "notes": "used_model source: post-run llm_test (no per-session model exposed); resolved_dir source: none; no new commit beyond baseline in cell repo"
+    },
+    {
+      "role": "mid",
+      "llm": "opencode-johnnyjohnny-gpu",
+      "task_type": "docs",
+      "expected_model": "granite4.2:30b",
+      "used_model": "granite4.2:30b",
+      "model_identity": "ok",
+      "self_reported_model": null,
+      "verification_integrity": "suspect",
+      "resolved_dir": null,
+      "task_project_dir": "/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r6/mid-docs",
+      "artifact_check": {
+        "cell_repo_head": "0efeb15aec3224b264043077c5b4ac8240bd6321",
+        "new_commits": 0,
+        "verify_exit": 1,
+        "verify_log": ".datawatch/eval/open-model-matrix/20261015-r6/verify-logs/mid-docs.log"
+      },
+      "model_result": null,
+      "task_status": "failed",
+      "session_id": "cead",
+      "notes": "used_model source: post-run llm_test (no per-session model exposed); resolved_dir source: none; no new commit beyond baseline in cell repo"
+    },
+    {
+      "role": "mid",
+      "llm": "opencode-johnnyjohnny-gpu",
+      "task_type": "review",
+      "expected_model": "granite4.2:30b",
+      "used_model": "granite4.2:30b",
+      "model_identity": "ok",
+      "self_reported_model": null,
+      "verification_integrity": "suspect",
+      "resolved_dir": null,
+      "task_project_dir": "/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r6/mid-review",
+      "artifact_check": {
+        "cell_repo_head": "a0f93fbdafd6f17dc17324a2a1d2bca4ad08ea97",
+        "new_commits": 0,
+        "verify_exit": 1,
+        "verify_log": ".datawatch/eval/open-model-matrix/20261015-r6/verify-logs/mid-review.log"
+      },
+      "model_result": null,
+      "task_status": "failed",
+      "session_id": "19df",
+      "notes": "used_model source: post-run llm_test (no per-session model exposed); resolved_dir source: none; no new commit beyond baseline in cell repo"
+    },
+    {
+      "role": "decompose-validate",
+      "llm": "opencode-datawatch-gpu",
+      "task_type": "analysis",
+      "expected_model": "gpt-oss:120b",
+      "used_model": "gpt-oss:120b",
+      "model_identity": "ok",
+      "self_reported_model": null,
+      "verification_integrity": "ok",
+      "resolved_dir": "/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r6/decompose-validate-analysis",
+      "task_project_dir": "/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r6/decompose-validate-analysis",
+      "artifact_check": {
+        "cell_repo_head": "45b2c8ac26792d79711addfa38d82e7df2fe7735",
+        "new_commits": 0,
+        "verify_exit": 1,
+        "verify_log": ".datawatch/eval/open-model-matrix/20261015-r6/verify-logs/decompose-validate-analysis.log"
+      },
+      "model_result": "fail",
+      "task_status": "failed",
+      "session_id": "5343",
+      "notes": "used_model source: session_record.model; resolved_dir source: worker session project_dir; no new commit beyond baseline in cell repo"
+    },
+    {
+      "role": "decompose-validate",
+      "llm": "opencode-datawatch-gpu",
+      "task_type": "scripting",
+      "expected_model": "gpt-oss:120b",
+      "used_model": "gpt-oss:120b",
+      "model_identity": "ok",
+      "self_reported_model": null,
+      "verification_integrity": "ok",
+      "resolved_dir": "/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r6/decompose-validate-scripting",
+      "task_project_dir": "/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r6/decompose-validate-scripting",
+      "artifact_check": {
+        "cell_repo_head": "52a8b93a2c90d23d6bc8a13ff2a8b8b4d2a4b847",
+        "new_commits": 0,
+        "verify_exit": 1,
+        "verify_log": ".datawatch/eval/open-model-matrix/20261015-r6/verify-logs/decompose-validate-scripting.log"
+      },
+      "model_result": "fail",
+      "task_status": "failed",
+      "session_id": "884d",
+      "notes": "used_model source: session_record.model; resolved_dir source: worker session project_dir; no new commit beyond baseline in cell repo"
+    },
+    {
+      "role": "decompose-validate",
+      "llm": "opencode-datawatch-gpu",
+      "task_type": "docs",
+      "expected_model": "gpt-oss:120b",
+      "used_model": "gpt-oss:120b",
+      "model_identity": "ok",
+      "self_reported_model": null,
+      "verification_integrity": "suspect",
+      "resolved_dir": null,
+      "task_project_dir": "/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r6/decompose-validate-docs",
+      "artifact_check": {
+        "cell_repo_head": "78e1020f8da6879bdaba16639ec8bc3d2ec8f3e8",
+        "new_commits": 0,
+        "verify_exit": 1,
+        "verify_log": ".datawatch/eval/open-model-matrix/20261015-r6/verify-logs/decompose-validate-docs.log"
+      },
+      "model_result": null,
+      "task_status": "failed",
+      "session_id": "3847",
+      "notes": "used_model source: post-run llm_test (no per-session model exposed); resolved_dir source: none; no new commit beyond baseline in cell repo"
+    },
+    {
+      "role": "decompose-validate",
+      "llm": "opencode-datawatch-gpu",
+      "task_type": "review",
+      "expected_model": "gpt-oss:120b",
+      "used_model": "gpt-oss:120b",
+      "model_identity": "ok",
+      "self_reported_model": null,
+      "verification_integrity": "suspect",
+      "resolved_dir": null,
+      "task_project_dir": "/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r6/decompose-validate-review",
+      "artifact_check": {
+        "cell_repo_head": "1e201dc952f786cb73b9b37d3a3946425582c7e7",
+        "new_commits": 0,
+        "verify_exit": 1,
+        "verify_log": ".datawatch/eval/open-model-matrix/20261015-r6/verify-logs/decompose-validate-review.log"
+      },
+      "model_result": null,
+      "task_status": "failed",
+      "session_id": "4d11",
+      "notes": "used_model source: post-run llm_test (no per-session model exposed); resolved_dir source: none; no new commit beyond baseline in cell repo"
+    }
+  ],
+  "run_verdict": "invalid-infrastructure",
+  "run_notes": "All 16 worker sessions died ~3s after launch with opencode 'ProviderModelNotFoundError: Model not found' (no ollama provider block in the per-cell opencode.json because the task model was pinned bare, without the ollama/ prefix). No cell did any model work (new_commits=0 everywhere). The 3 cells scored model_result=fail are infrastructure failures, not model failures, and must not be counted against granite4.2:8b or gpt-oss:120b. The 13 suspect cells are a collect-time artifact: their worker sessions had already been evicted from /api/sessions so resolved_dir could not be read."
 }
