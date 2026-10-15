@@ -1096,6 +1096,31 @@ established. In progress — starting with BL403.**
     autonomous-task session-spawn path for `goose`/`aider` (separate from
     this ask-adapter fix) actually works end-to-end — needs a live task
     run through one of them to confirm, not yet done.
+
+    **Live goose probe run 2026-10-14** (manual `start_session`, not the
+    real autonomous one-shot path — see caveat below): confirms the
+    mechanics genuinely work. A real `goose session` launched against
+    `ollama qwen3:1.7b`, read a file, ran real shell commands, and
+    committed to its own git repo. Two real friction points found along
+    the way, not blocking: (a) a transient `.git/index.lock` race on the
+    first commit attempt (self-resolved on retry — cause not isolated,
+    possibly goose's own background indexing colliding with its explicit
+    shell-run git commands); (b) goose auto-added its own init files
+    (`.mcp.json`, a skills dir) into the task's working directory and
+    staged them, worth a hygiene check later. The smallest model
+    (`qwen3:1.7b`) did not retry on its own after the git error — it
+    explained the problem correctly in prose but only wrote
+    `DATAWATCH_COMPLETE` into a todo-list item instead of outputting it,
+    needing one explicit nudge to actually finish. **Caveat, not yet
+    closed**: `start_session` is an interactive launch, not
+    `OneShot=true` — the session's state stayed `waiting_input` even
+    after the real `DATAWATCH_COMPLETE:` line was printed, confirming
+    the automatic one-shot task-delivery-and-completion-detection path
+    (`isTUITask` in `cmd/datawatch/main.go`) was never actually exercised
+    by this probe. That's the one piece still unconfirmed for real
+    autonomous PRD task execution through goose/aider — needs a real
+    task spawned through the autonomous system itself, not a manual
+    probe, to close out.
 22. **BL423** — an Automaton reports `completed` while the CI run for
     the commit it pushed is failing (filed + shipped 2026-10-13, same
     day — **shipped v9.0.63**). Not roadmap work — found live right
