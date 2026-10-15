@@ -5,6 +5,20 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.1.6 — fix(compute): self-peer monitoring fallback ignored loopback ComputeNodes by name
+
+**Operator-reported live, 2026-10-15**: the PWA session "Status" tab showed
+"no monitored compute node" for a session on `johnnyjohnny-cpu` (a CPU-only
+logical ComputeNode at `http://127.0.0.1:11436`, same machine as the daemon
+itself), and the PRD page's usage panel was silently missing the same data
+for the same reason. `handleComputeNodeDetail`'s self-peer fallback only
+matched when the ComputeNode's name/ObserverPeer equaled the daemon's own
+hostname — `johnnyjohnny-cpu` never did, despite its address being
+unambiguously local. New `isLoopbackAddress` checks the node's actual
+Address (127.0.0.0/8, ::1, "localhost") instead of relying on naming
+convention, so any ComputeNode pointing at the local machine gets live
+self-peer stats regardless of what it's named.
+
 ## v9.1.5 — fix(autonomous): checkpoint protocol was causing one-shot tasks to stall mid-task
 
 **Claude-tiering matrix finding (34/52 cells failed the same way).** The

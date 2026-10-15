@@ -18,7 +18,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -26,6 +28,31 @@ import (
 	"github.com/dmz006/datawatch/internal/compute"
 	"github.com/dmz006/datawatch/internal/federation"
 )
+
+// isLoopbackAddress reports whether a ComputeNode's Address (a bare
+// host:port or a full http(s):// URL) points at this same machine —
+// 127.0.0.0/8, ::1, or the literal host "localhost". Unlike comparing
+// the node's NAME to the daemon's hostname, this is independent of
+// naming convention: a CPU-only logical partition of the local host
+// (e.g. "johnnyjohnny-cpu" at http://127.0.0.1:11436) is still this
+// machine even though its name doesn't say so.
+func isLoopbackAddress(addr string) bool {
+	if addr == "" {
+		return false
+	}
+	host := addr
+	if u, err := url.Parse(addr); err == nil && u.Host != "" {
+		host = u.Host
+	}
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
 
 // SetComputeRegistry wires the runtime *compute.Registry into the
 // server. Called from cmd/datawatch/main.go after registry init.
@@ -373,7 +400,14 @@ func (s *Server) handleComputeNodeDetail(w http.ResponseWriter, r *http.Request,
 		// Self-peer fallback: when the bound peer is the local daemon and the
 		// local observer is running, serve live stats directly (the self-peer
 		// never pushes snapshots — it's always live).
-		if s.observerAPI != nil && peerName == s.hostname {
+		// 2026-10-15 — operator-reported: a ComputeNode whose Address is a
+		// loopback (e.g. "johnnyjohnny-cpu" at http://127.0.0.1:11436, a
+		// CPU-only logical partition of the same physical host) never
+		// matched peerName == s.hostname, because nothing about its NAME
+		// says it's local — only its address does. That node always 503'd
+		// even though it's unambiguously this machine. isLoopbackAddress
+		// checks the actual address, independent of naming convention.
+		if s.observerAPI != nil && (peerName == s.hostname || isLoopbackAddress(n.Address)) {
 			s.handleObserverStats(w, r)
 			return
 		}
