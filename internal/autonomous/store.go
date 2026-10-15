@@ -8,6 +8,7 @@ package autonomous
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -200,8 +201,49 @@ func (s *Store) SavePRD(p *PRD) error {
 	defer s.mu.Unlock()
 	p.UpdatedAt = time.Now()
 	p.Decisions = trimDecisions(p.Decisions)
+	p.Rev++
 	s.prds[p.ID] = p
 	return s.persist()
+}
+
+// ErrPRDStale (BL451) is returned by CommitPRDIfRev when the PRD's Rev
+// moved since the caller read it, or when mutate declined the change.
+var ErrPRDStale = errors.New("prd modified concurrently")
+
+// CommitPRDIfRev (BL451) applies mutate to the stored PRD and persists
+// it only if p.Rev still equals expectedRev, holding s.mu throughout.
+// If mutate returns false nothing is persisted and ErrPRDStale is
+// returned, letting callers re-validate invariants under the lock.
+// GetPRD returns the shared stored pointer, so mutate must be the only
+// place the guarded change is applied.
+func (s *Store) CommitPRDIfRev(id string, expectedRev int, mutate func(p *PRD) bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p, ok := s.prds[id]
+	if !ok {
+		return fmt.Errorf("prd %q not found", id)
+	}
+	if p.Rev != expectedRev {
+		return ErrPRDStale
+	}
+	if !mutate(p) {
+		return ErrPRDStale
+	}
+	p.UpdatedAt = time.Now()
+	p.Decisions = trimDecisions(p.Decisions)
+	p.Rev++
+	return s.persist()
+}
+
+// PRDRev (BL451) returns the PRD's current revision under the lock.
+func (s *Store) PRDRev(id string) (int, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p, ok := s.prds[id]
+	if !ok {
+		return 0, false
+	}
+	return p.Rev, true
 }
 
 // GetPRD by ID; returns false on miss.

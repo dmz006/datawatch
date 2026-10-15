@@ -177,7 +177,11 @@ type PRD struct {
 	Status         PRDStatus `json:"status"`
 	CreatedAt      time.Time `json:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at"`
-	Story          []Story   `json:"stories,omitempty"` // populated after Decompose
+	// BL451 — optimistic-concurrency revision, bumped by Store.SavePRD
+	// (and Store.CommitPRDIfRev) on every save. 0 for PRDs persisted
+	// before BL451; load tolerates the missing field.
+	Rev   int     `json:"rev,omitempty"`
+	Story []Story `json:"stories,omitempty"` // populated after Decompose
 
 	// BL191 Q1 (v5.2.0) — review/approve gate. Manager.Run refuses
 	// unless Status == PRDApproved (or the legacy PRDActive for back-
