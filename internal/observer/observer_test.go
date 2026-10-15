@@ -72,13 +72,13 @@ func TestClassify_SystemFallback(t *testing.T) {
 }
 
 func TestExtractContainerID_DockerV2(t *testing.T) {
-	id64 := "abc1234567890123456789012345678901234567890123456789012345678901"  // 64 chars
-	id2  := "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef" // 64 chars
+	id64 := "abc1234567890123456789012345678901234567890123456789012345678901" // 64 chars
+	id2 := "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"  // 64 chars
 	cases := map[string]string{
-		"0::/docker/" + id64:                                            id64,
-		"0::/system.slice/docker-" + id2 + ".scope":                      id2,
-		"0::/":                                                          "",
-		"0::/system.slice/systemd.service":                               "",
+		"0::/docker/" + id64:                        id64,
+		"0::/system.slice/docker-" + id2 + ".scope": id2,
+		"0::/":                             "",
+		"0::/system.slice/systemd.service": "",
 	}
 	for in, want := range cases {
 		if got := extractContainerID(in); got != want {
@@ -163,4 +163,46 @@ func TestAPI_SetConfigRoundTrip(t *testing.T) {
 
 func startsWith(s, p string) bool {
 	return len(s) >= len(p) && s[:len(p)] == p
+}
+
+func TestSyncSessionRoots_ReplacesAndDropsEnded(t *testing.T) {
+	defer SyncSessionRoots(nil)
+	SyncSessionRoots([]SessionRoot{
+		{FullID: "host-aaaa", Label: "a", RootPID: 100},
+		{FullID: "host-bbbb", Label: "b", RootPID: 200},
+		{FullID: "", RootPID: 300},        // no id — skipped
+		{FullID: "host-cccc", RootPID: 0}, // no pane pid — skipped
+	})
+	got := map[string]int{}
+	for _, r := range sessionRootsSnapshot() {
+		got[r.FullID] = r.RootPID
+	}
+	if len(got) != 2 || got["host-aaaa"] != 100 || got["host-bbbb"] != 200 {
+		t.Fatalf("after first sync got %v", got)
+	}
+
+	// host-aaaa ended; host-bbbb's pane was re-created.
+	SyncSessionRoots([]SessionRoot{{FullID: "host-bbbb", Label: "b", RootPID: 250}})
+	snap := sessionRootsSnapshot()
+	if len(snap) != 1 || snap[0].FullID != "host-bbbb" || snap[0].RootPID != 250 {
+		t.Fatalf("after second sync got %+v", snap)
+	}
+
+	recs := []ProcRecord{
+		{PID: 250, PPID: 1, Comm: "bash"},
+		{PID: 251, PPID: 250, Comm: "claude", Cmdline: "claude"},
+		{PID: 100, PPID: 1, Comm: "bash"},
+	}
+	_, assign := classify(recs, EnvelopesCfg{SessionAttribution: true})
+	if assign[251] != "session:host-bbbb" {
+		t.Errorf("pid 251 should be session:host-bbbb, got %q", assign[251])
+	}
+	if a, ok := assign[100]; ok && a == "session:host-aaaa" {
+		t.Errorf("ended session host-aaaa must not be attributed")
+	}
+
+	SyncSessionRoots(nil)
+	if n := len(sessionRootsSnapshot()); n != 0 {
+		t.Errorf("empty sync should clear roots, have %d", n)
+	}
 }

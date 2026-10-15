@@ -6182,6 +6182,11 @@ Return STRICT JSON:
 		}
 		statsCollector.SetSessionStatsFunc(func() []statspkg.SessionStat {
 			var stats []statspkg.SessionStat
+			// Observer session attribution: the pane PIDs resolved
+			// below root each session's `session:<full_id>` envelope.
+			// Synced as a whole so ended sessions drop out.
+			var obsRoots []observerpkg.SessionRoot
+			defer func() { observerpkg.SyncSessionRoots(obsRoots) }()
 			for _, sess := range mgr.ListSessions() {
 				if sess.State != session.StateRunning && sess.State != session.StateWaitingInput && sess.State != session.StateRateLimited {
 					continue
@@ -6197,6 +6202,12 @@ Return STRICT JSON:
 				if err == nil {
 					pidStr := strings.TrimSpace(string(out))
 					if pid, e := fmt.Sscanf(pidStr, "%d", &st.PanePID); pid == 1 && e == nil {
+						// Subprocess / agent-virtual sessions have no pane;
+						// an empty -t resolves some other pane, so never
+						// root an envelope there.
+						if sess.TmuxSession != "" {
+							obsRoots = append(obsRoots, observerpkg.SessionRoot{FullID: sess.FullID, Label: sess.Name, RootPID: st.PanePID})
+						}
 						// Read RSS from /proc
 						statData, _ := os.ReadFile(fmt.Sprintf("/proc/%d/statm", st.PanePID))
 						if len(statData) > 0 {

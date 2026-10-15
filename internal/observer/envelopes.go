@@ -33,8 +33,8 @@ import (
 // SessionRoot is one entry in the session-attribution map: the
 // tmux-pane PID that roots a session's process subtree.
 type SessionRoot struct {
-	FullID string
-	Label  string
+	FullID  string
+	Label   string
 	RootPID int
 }
 
@@ -45,8 +45,9 @@ type rootMap struct {
 
 var gRoots = &rootMap{data: map[string]SessionRoot{}}
 
-// RegisterSessionRoot is called by session.Manager when a session
-// starts so the observer knows which PID to root its envelope at.
+// RegisterSessionRoot records which PID roots a session's envelope.
+// The daemon keeps the map current via SyncSessionRoots each stats
+// tick; this single-entry form is kept for callers and tests.
 // Safe to call multiple times with the same full_id — last write
 // wins (re-attach after restart).
 func RegisterSessionRoot(fullID, label string, rootPID int) {
@@ -60,6 +61,25 @@ func UnregisterSessionRoot(fullID string) {
 	gRoots.mu.Lock()
 	defer gRoots.mu.Unlock()
 	delete(gRoots.data, fullID)
+}
+
+// SyncSessionRoots replaces the whole roots map with `roots` in one
+// step: entries for sessions that are no longer listed are dropped,
+// and entries with an empty FullID or a non-positive RootPID are
+// skipped. The daemon calls it every stats tick with the pane PIDs of
+// its live tmux sessions, so attribution follows session start/end
+// without separate hooks in session.Manager.
+func SyncSessionRoots(roots []SessionRoot) {
+	next := make(map[string]SessionRoot, len(roots))
+	for _, r := range roots {
+		if r.FullID == "" || r.RootPID <= 0 {
+			continue
+		}
+		next[r.FullID] = r
+	}
+	gRoots.mu.Lock()
+	defer gRoots.mu.Unlock()
+	gRoots.data = next
 }
 
 // sessionRootsSnapshot returns a defensive copy.
@@ -180,7 +200,7 @@ func classify(recs []ProcRecord, cfg EnvelopesCfg) ([]Envelope, map[int]string) 
 
 	// Roll up per envelope.
 	type rollup struct {
-		env     Envelope
+		env      Envelope
 		firstPID int
 	}
 	grouped := map[string]*rollup{}
