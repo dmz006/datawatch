@@ -14,9 +14,9 @@
 #   2. Files matching `RELEASE-NOTES-vMAJOR.MINOR.PATCH*.md` whose
 #      MAJOR.MINOR doesn't match the current minor (read from
 #      cmd/datawatch/main.go's `var Version`) → docs/plans/historical-releasenotes/
-#   3. README.md and any other unclassified files are listed but NOT
-#      moved (manual review). Operator rule: "review anything else in
-#      that folder to see if it can be similarly archived to keep the
+#   3. README.md, HISTORY.md, and any other unclassified files are listed
+#      but NOT moved (manual review). Operator rule: "review anything else
+#      in that folder to see if it can be similarly archived to keep the
 #      folder clean".
 #
 # Usage:
@@ -75,8 +75,8 @@ for f in "$PLANS_DIR"/*.md; do
   [ -f "$f" ] || continue
   base=$(basename "$f")
 
-  # README + anything in the historical/ subdirs is never touched here.
-  if [ "$base" = "README.md" ]; then
+  # README + HISTORY + anything in the historical/ subdirs is never touched here.
+  if [ "$base" = "README.md" ] || [ "$base" = "HISTORY.md" ]; then
     continue
   fi
 

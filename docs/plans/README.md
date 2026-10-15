@@ -10,6 +10,21 @@ Shipped work is summarized in [HISTORY.md](HISTORY.md). Status below was
 checked against the live PRD registry on 2026-10-15. Each row links to its
 design doc where one exists.
 
+## Rules
+
+All operating rules live in [`AGENT.md`](../../AGENT.md) — this file holds
+project-tracking data only. If an operating rule ends up duplicated here,
+move it to AGENT.md and leave a cross-reference instead.
+
+**Folder hygiene** (operator-directed 2026-05-05): `docs/plans/` only holds
+dated plan docs (`YYYY-MM-DD-*.md`) ≤ 7 days old and release notes for the
+current minor version line. Everything older auto-archives to
+`historical-plans/` / `historical-releasenotes/`, enforced by
+`scripts/tidy-plans.sh`. `scripts/release-smoke.sh` runs
+`tidy-plans.sh --check` first and **aborts the release** if the folder
+needs tidying — run `scripts/tidy-plans.sh` (no flags) to do the moves,
+then commit before re-running smoke.
+
 ## Active order
 
 Items run in this order, one at a time against this tree, until the write lock
@@ -56,7 +71,7 @@ advances it without hand sequencing.
 | 21 | [BL437](2026-10-14-recurring-model-eval-design.md) Recurring hardware-aware model and effort eval | blocked (PRD `fea73c82` failed; design done) | 10, 11 |
 | 22 | BL414 PRD cost rollup and token usage guardrails | not started (needs scoping against BL405) | BL405 |
 | 23 | [BL405](2026-10-10-llm-enhancements.md) LLM enhancements, phases 0-10 | not started (design complete) | 6 |
-| 24 | Security remediation: BL365, BL395, BL408, BL398 ([BL398 detail](2026-10-08-bl398-trivyignore-cve-review.md)) | not started (no PRDs yet) | - |
+| 24 | Security remediation: BL365, BL395, BL408, BL398 ([BL398 detail](historical-plans/2026-10-08-bl398-trivyignore-cve-review.md)) | not started (no PRDs yet) | - |
 | 25 | BL412 Self-config permission-gate generalization | not started (needs design) | - |
 | 26 | BL413 Diff-aware project-rules enforcement | not started (needs design) | - |
 | 27 | BL411 Pre-v10.0.0 dead-code audit | not started | 20-26 |
