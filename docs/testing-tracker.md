@@ -9,6 +9,15 @@ Do not mark **Validated=Yes** based solely on unit tests.
 
 ---
 
+## `llm_test` on a session-backend kind returns a clear error — v9.0.88
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| `POST /api/llms/<name>/test` on `claude-code`/`opencode`*/`aider`/`goose` (session-backend kinds) | **Yes** (`internal/server/bl443_llm_test_session_backend_test.go`) | No | `go test` | Needs the daemon rebuilt/restarted to validate live against the real `goose-johnnyjohnny`/`aider-johnnyjohnny` registry entries created 2026-10-14 |
+| `POST /api/llms/<name>/test` on a real adapter kind (`ollama`) — regression check that the new guard doesn't swallow it | **Yes** (same file) | No | `go test` | — |
+
+---
+
 ## Automata lifecycle events — in-process dispatcher, WS `prd_update` migrated onto it — v9.0.85
 
 | Interface / Endpoint | Tested | Validated | Test Conditions | Notes |

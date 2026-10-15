@@ -5,6 +5,22 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.88 — fix(server): clear error for llm_test on a session-backend kind
+
+**BL443.** `llm_test` (`POST /api/llms/<name>/test`) on a session-backend
+kind (`claude-code`, `opencode`/`opencode-acp`/`opencode-prompt`, `aider`,
+`goose`, `gemini`, `shell`) now returns a clear `400` explaining that the
+kind runs in a real coding-agent session with no request/response
+ask-adapter, instead of falling through to `dispatcher.Call` and
+surfacing a generic `no adapter for kind "X"` `502` that read like a
+missing feature. Found live registering `goose`/`aider` as eval drivers
+for BL437: both are intentionally in this bucket (`#46`,
+`inference.IsSessionBackendKind`) — there was nothing to implement, the
+error message was just misleading. Also found and filed separately (not
+fixed here, needs its own reproduction): `llm_add` on the literal name
+`goose` returns `409 llm already exists` despite `llm_list`/`llm_get`
+showing no such entry.
+
 ## v9.0.87 — feat(pwa): session Status tab shows Automaton task detail
 
 **Status tab for Automaton task sessions.** Opening a session that is

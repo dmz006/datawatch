@@ -14,6 +14,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -230,6 +231,16 @@ func (s *Server) handleLLMTest(w http.ResponseWriter, r *http.Request, name stri
 	llm, err := s.inferenceReg.Get(name)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	// BL443 — session-backend kinds (claude-code, opencode*, aider, goose,
+	// gemini, shell) run in a tmux session and have no request/response
+	// inference adapter by design (#46, see IsSessionBackendKind) — they
+	// are not chat-completion APIs. Without this check, dispatcher.Call
+	// falls through to a generic "no adapter for kind X" 502 that reads
+	// like a missing feature rather than an intentional limitation.
+	if inference.IsSessionBackendKind(llm.Kind) {
+		http.Error(w, fmt.Sprintf("%q is a session-backend kind (%s) — it runs in a real coding-agent session, not a direct request/response call, so there is no ask/probe adapter to test here. Verify it by running a real task through it instead.", name, llm.Kind), http.StatusBadRequest)
 		return
 	}
 	timeout := inference.ResolveTimeout(llm)
