@@ -1633,6 +1633,55 @@ PRD (`recover_pending_task`). **Shipped v9.1.1 (race fix) and v9.1.2
    **BL431** — sections 6 and 11. **Design doc:**
    [2026-10-14-recurring-model-eval-design.md](2026-10-14-recurring-model-eval-design.md).
 
+32. **BL452** — Logprob-classification guardrail backend (design pass)
+   (filed 2026-10-15, operator-named, pre-v10.0.0 priority). Real finding
+   from **BL449**'s open-model matrix: every open-model guardrail/verifier
+   attempt tonight failed on completion reliability (qwen3:8b as verifier
+   completed but didn't write its structured output file; multiple workers
+   did real work but never emitted a parseable final verdict) — the same
+   underlying pattern as the workers' own "did the work, never committed"
+   failures (see BL449's own findings). Operator-surfaced alternative
+   design: pose guardrail/verifier decisions as closed multiple-choice
+   questions and classify by **first-token log-probability** instead of
+   having the model generate and parse a verdict — "valid by construction"
+   (the answer is always one of the allowed letters; no parse failure is
+   possible), one forward pass with reasoning disabled, and a real,
+   calibratable confidence score (`(K·p-1)/(K-1)`) to threshold
+   auto-accept / accept-but-mark / human-review routing. **Validated live
+   tonight, not just a document**: built `llama.cpp`'s `llama-server` from
+   official source (CPU-only, no third-party binaries — see the Swift-model
+   supply-chain finding below for why that mattered) against a small
+   official Qwen3 GGUF, and confirmed end-to-end: `chat_template_kwargs:
+   {"enable_thinking": false}` reliably suppresses Qwen3's `<think>` mode
+   down to a single direct-letter token, and the OpenAI-compatible
+   `/v1/chat/completions` endpoint returns real `logprobs`/`top_logprobs`
+   data. **Confirmed blocker for Ollama specifically**: tested Ollama's
+   native `/api/generate` and its own `/v1/chat/completions` with
+   `logprobs`/`top_logprobs` requested on both — neither returns a
+   logprobs field at all, silently accepting and ignoring the parameters.
+   Datawatch's `openai-compat` ComputeNode kind already speaks exactly the
+   protocol a `llama-server` instance needs, so the real implementation
+   work is registering one as a ComputeNode and wiring the guardrail path
+   to use it for closed-form (yes/no, pass/fail, A/B candidate) decisions
+   specifically — not a replacement for the generative worker path, which
+   still needs full codebase tool access. **Scope for the design pass**:
+   (1) which guardrail/verifier decisions in today's flow are genuinely
+   closed-form and could move to this pattern vs. which need open-ended
+   judgment; (2) ComputeNode/LLM-registry shape for a llama.cpp-server
+   backend (new kind, or reuse `openai-compat` as-is); (3) the rotation/
+   bias-cancellation and calibration machinery the technique needs
+   (2 rotations for binary questions, confidence thresholds fit on
+   held-out data) — not just the happy-path single call proven tonight;
+   (4) model sourcing discipline — **only pull from a model's own verified
+   publisher namespace**, never the dozens of unofficial third-party
+   re-upload/quant repos a popular model name attracts (found live
+   tonight searching for a different candidate, `ukisai/Swift-1.5-
+   Qwen3.8-27B`: 100+ near-identical repos from anonymous accounts, many
+   labeled "uncensored"/"abliterated", using nonstandard invented quant
+   names — a real supply-chain risk for weights wired into an agent with
+   file-write and git-commit access, not just a quality concern). No plan
+   doc written yet; this entry is the design-pass trigger.
+
 **Active execution order (operator-confirmed, last updated 2026-10-14 ~14:05;
 ordered by feature dependency, not filing date or chronology — supersedes
 the three separate dated addenda this replaced).** Items run one at a time
