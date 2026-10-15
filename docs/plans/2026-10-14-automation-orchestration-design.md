@@ -1088,6 +1088,80 @@ The BL117 Settings → Orchestrator sub-tab is retired along with BL117 (see
 
 ---
 
+## Observability: Dashboard and Observer integration (operator-raised 2026-10-14)
+
+A live retrospective pulled 2026-10-14 (story/task counts, files touched,
+wall-clock time per task, cost per session) across today's own PRDs turned
+up real, immediately-useful numbers (e.g. release/doc tasks run 2-3x longer
+than pure code tasks; files-touched tracks scope better than task count)
+and, as a direct side effect of just looking, surfaced two silently-dropped
+PRDs (BL433 blocked 6 hours, BL431 itself cancelled with one task left)
+that nothing had flagged. The operator's own conclusion: this is exactly
+dashboard material, and it should not live only in a new Automation tab —
+it should extend the **existing** Dashboard and Observer systems, which
+already have a real, extensible mechanism for this, not be a fourth
+parallel thing.
+
+**Existing extensibility, confirmed by reading the code, not assumed:**
+- **Dashboard**: `internal/server/api_dashboard_cards.go`'s `dashCard{ID,
+  CS, RS, System}` layout (`GET/POST/PUT/DELETE /api/dashboard/cards`) is
+  already a generic, ID-keyed card registry — `defaultDashCards()` lists
+  `tree`, `orbital`, `events`, `sparklines`, `gantt`, `heatmap`,
+  `guardrails`, `ekg`, `smoke`, `memory-scope`. A new card is adding one ID
+  to this list plus a PWA renderer for it — the same shape `memory-scope`
+  used for BL387 Phase 3. No new card-layout mechanism is needed.
+- **Observer**: `internal/observer/types.go`'s `Envelope{ID, Kind, Label,
+  CPUPct, RSSBytes, GPUPct, GPUMemBytes, ...}` already rolls up resource
+  usage by `EnvelopeKind` (`session | backend | container | system`). It
+  has no `automation` kind and does not need one: an Automation's resource
+  cost is the **sum of its member tasks' existing `session:<id>` envelopes**
+  — a client-side or server-side rollup over data the observer already
+  collects, not a new attribution mechanism inside the observer itself.
+
+**Three surfaces, one shared data source — not three parallel
+implementations:**
+1. **A new Dashboard card**, e.g. `automation-summary` (or
+   `automation-pipeline` for a compact per-Automation strip), added to
+   `defaultDashCards()`. Shows the same retrospective numbers pulled live
+   today: tasks/stories/files/time/cost per Automation, and per-member
+   status. Pulls from the same task/story/PRD/Decision/`cost_summary`
+   fields named in BL440's "already-available data" map (see
+   docs/plans/2026-10-14-status-tab-session-detail-gap.md once it lands) —
+   reuse that data path, don't build a second one.
+2. **Observer rollup by Automation.** Given an Automation's member PRD
+   IDs → their tasks' `SessionID`s → the matching `session:<id>` envelopes
+   already in `/api/observer/envelopes`, sum CPU/RSS/GPU per Automation.
+   This can be computed entirely from existing data (Automation membership
+   + existing envelope IDs); it does not require teaching the observer
+   itself about Automations. Surfaces as an optional grouping/filter on the
+   existing Observer tab, not a new tab.
+3. **BL431's own Automation tab** (the pipeline-strip detail view,
+   described above under `## PWA`) embeds the SAME summary component the
+   Dashboard card uses — stats bar above or beside the pipeline strip, not
+   a separately-built view. One component, rendered in three places
+   (Dashboard card, Observer rollup panel, Automation detail page).
+
+**What this explicitly does NOT require:** a new `EnvelopeKind`, a new
+dashboard-layout mechanism, or a second data-aggregation path. Every
+number named above already exists somewhere in the daemon today (tasks,
+decisions, verification results, session envelopes, cost summaries) — this
+section is about wiring three presentation surfaces to data that already
+exists, mirroring BL440's own "wire existing data before building new
+collection" approach for the session Status tab.
+
+**Staleness/alerting as a side benefit.** The BL433/BL431 drops found live
+today were only caught because an operator happened to ask for a
+retrospective. A dashboard card surfacing "last touched" / "idle duration"
+per Automation and per ungrouped-but-stuck PRD would have caught both
+automatically — this is a concrete, low-cost argument for building the
+dashboard card early rather than treating it as cosmetic. Cross-reference
+BL427 (event dispatch could push a staleness alert instead of requiring a
+dashboard poll, once its later phases ship) and the existing
+`autonomous_status`/`get_stats`/`datawatch stale` surfaces already used
+manually this session for exactly this kind of check.
+
+---
+
 ## Parity surface
 
 None of these is implemented in this design phase. Every surface follows AGENT.md's
@@ -1329,3 +1403,13 @@ howto, and the `datawatch-app` issue where applicable.
     per-hook-point? Does this ship in BL431's own follow-up implementation
     PRD, or as its own later PRD once the Automation coordinator exists to
     attach it to?
+16. **Dashboard/Observer integration (operator-raised 2026-10-14, see the
+    section above).** Should the `automation-summary` dashboard card and
+    the Observer per-Automation rollup ship as part of BL431's own
+    follow-up implementation PRD (Phase 1, alongside the CRUD surfaces,
+    since both read-only views need no more than the data model to exist),
+    or as a separate later PRD once an Automation actually has members to
+    show? Should staleness/idle-duration alerting on the dashboard card be
+    in scope for v1 given it would have caught today's two silently-dropped
+    PRDs, or is that premature before BL427's event dispatch can push the
+    alert instead of requiring a poll?
