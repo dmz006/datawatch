@@ -333,3 +333,86 @@ Parity surface (inherit into every plan/story note):
 - **Android + iPhone/iOS:** excluded from this PRD's code. The PWA change is
   visible to the operator, though, so a datawatch-app parity issue is required
   under the AGENT.md Mobile-Parity Rule.
+
+## Resolution
+
+Date: 2026-10-14. Acted on by a follow-on Automaton fix task.
+
+| Item | Outcome | Where |
+|---|---|---|
+| Observer session attribution | **Fixed** | `22382029` — see below |
+| Stats tab backend fallback / copy | **Fixed** | `98e233a9` — see below |
+| Hook payload (`sprint` / `tests` / `git` / `current_task`) | **Deferred, no code change** | see below |
+| Council / Skills / Tracker / closed-task summaries | **Confirmed not yet built** | out of scope |
+| LLM token rate / latency / model state | **Confirmed not yet built**; copy corrected | out of scope |
+| Live feed via lifecycle events | **Not needed for this gap** | see below |
+
+**Observer attribution: fixed (`22382029`).** The cause in Q3 was bounded
+and confirmed: `RegisterSessionRoot` had no production caller.
+`internal/observer/envelopes.go` gains `SyncSessionRoots`, which replaces
+the roots map in one step and skips entries with an empty id or no PID.
+`cmd/datawatch/main.go` calls it from the session stats callback, which
+already resolves `#{pane_pid}` for every running / waiting-input /
+rate-limited session. Ended sessions drop out on the next tick. Sessions
+with no tmux session name (subprocess, agent-virtual) are never rooted,
+because `tmux list-panes -t ""` resolves an unrelated pane. Automaton
+claude-code tasks are tmux one-shots, so they now get a
+`session:<full_id>` envelope like interactive sessions. The observer's
+process-tree walk is unchanged. Unit test:
+`TestSyncSessionRoots_ReplacesAndDropsEnded` (`internal/observer/observer_test.go`).
+The config `*bool` was confirmed not to be a cause (Q3), so it was not
+touched.
+
+Still open, recorded rather than guessed at:
+
+- Subprocess sessions could be rooted at `exec.Cmd.Process.Pid`. That
+  needs the PID plumbed out of `runSubprocess`; not done.
+- Live output showed no host `backend:claude` envelope (only
+  `backend:claude-docker`), so host claude processes may not match the
+  `claude` signature. Not investigated; with session roots registered,
+  the session envelope no longer depends on it.
+- Needs a live check after the daemon runs the new binary:
+  `observer_envelopes` should list `kind: session` entries for running
+  tmux sessions.
+
+**Stats tab fallback and copy: fixed (`98e233a9`).**
+
+- `app.js` maps `backend_family` `claude-code` to the observer's `claude`
+  signature for the backend-envelope fallback.
+- `stats_llm_more_soon` now reads "Token rate / latency / model state are
+  not built yet" in all five locales (EN placeholder in de/es/fr/ja). The
+  `app.js` fallback literal no longer cites an issue number or version.
+- `session_stats_no_envelope_body` was incomplete per Q3: it now also
+  names "the session has no tmux pane (subprocess or agent sessions) or
+  is not running" as a cause. All five locales carry the EN text as a
+  placeholder; the app.js fallback literal matches.
+
+**Hook payload: deferred, no code change.** Q1 shows `.claude/sprint/state.json`
+is written by nothing, so `sprint` / `tests` / `git` / `current_task` are
+aspirational for every session type. Q2 shows Automaton claude-code tasks
+already take the same `hookinstaller.Install` path as interactive
+sessions, so there is no autonomous-only call-site gap to fix. Per the
+recommendation, no hook-side generator was built. The daemon-side
+`automaton` block (`9ccd6983`, `ab319bf8`) is the primary source for
+Automaton sessions. The narrower follow-ups in Recommendation 3 still
+stand and need the operator first: (a) why `Install` isn't taking effect
+on this host (`session.auto_install_hooks`, `[hookinstall]` log lines);
+(b) whether `$TOOL_NAME` is empty under current Claude Code; and the
+"hooks alive" header overstating hook installation.
+
+**Council / Skills / Tracker / closed-task summaries: confirmed not yet
+built** (Q4). No backlog item builds them. Building them is out of scope.
+
+**LLM token rate / latency / model state: confirmed not yet built** (Q4).
+Only the stale copy was corrected. Recommendation: surface the per-session
+`tokens_in` / `tokens_out` / `est_cost_usd` that already exist before
+building rate or latency metrics.
+
+**Live feed via lifecycle events: not needed for this gap** (Q5). Both
+sub-tabs poll every 5s and receive `hook_update` / `prd_update` pushes.
+Optional later improvement: re-fetch the Status tab on a `prd_update`
+whose PRD id matches `sess.prd_id`. BL427's external-delivery phases are
+out of scope.
+
+Status stays `needs_review`: the hook-payload items and the unbuilt cards
+remain open.
