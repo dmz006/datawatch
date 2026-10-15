@@ -1,5 +1,5 @@
 {
-  "run_id": "20261015-r6",
+  "run_id": "20261015-r8",
   "preflight": [
     {
       "role": "cpu",
@@ -35,7 +35,7 @@
     }
   ],
   "preflight_passed": true,
-  "prd_id": "4199b08c",
+  "prd_id": "d07570dd",
   "cells": [
     {
       "role": "cpu",
@@ -47,16 +47,16 @@
       "self_reported_model": null,
       "verification_integrity": "suspect",
       "resolved_dir": null,
-      "task_project_dir": ".datawatch/eval/open-model-matrix/20261015-r6/cpu-analysis",
+      "task_project_dir": ".datawatch/eval/open-model-matrix/20261015-r8/cpu-analysis",
       "artifact_check": {
-        "cell_repo_head": "9b7911a8f529a6d08a78db3dbd8648c64a5ff827",
+        "cell_repo_head": "cbd360f7029d85d3d1b3216ee18aa94b7d80b875",
         "new_commits": 0,
         "verify_exit": 1,
-        "verify_log": ".datawatch/eval/open-model-matrix/20261015-r6/verify-logs/cpu-analysis.log"
+        "verify_log": ".datawatch/eval/open-model-matrix/20261015-r8/verify-logs/cpu-analysis.log"
       },
       "model_result": null,
       "task_status": "failed",
-      "session_id": "849b",
+      "session_id": "4814",
       "notes": "used_model source: post-run llm_test (no per-session model exposed); resolved_dir source: none; no new commit beyond baseline in cell repo"
     },
     {
@@ -69,16 +69,16 @@
       "self_reported_model": null,
       "verification_integrity": "suspect",
       "resolved_dir": null,
-      "task_project_dir": ".datawatch/eval/open-model-matrix/20261015-r6/cpu-scripting",
+      "task_project_dir": ".datawatch/eval/open-model-matrix/20261015-r8/cpu-scripting",
       "artifact_check": {
-        "cell_repo_head": "09c937751960e5defecd19b43260f3ec272d1f8c",
+        "cell_repo_head": "39d92df3ffdbb2eaabb9c3b5586d31fc9a0c91bd",
         "new_commits": 0,
         "verify_exit": 1,
-        "verify_log": ".datawatch/eval/open-model-matrix/20261015-r6/verify-logs/cpu-scripting.log"
+        "verify_log": ".datawatch/eval/open-model-matrix/20261015-r8/verify-logs/cpu-scripting.log"
       },
       "model_result": null,
       "task_status": "failed",
-      "session_id": "dc60",
+      "session_id": "977e",
       "notes": "used_model source: post-run llm_test (no per-session model exposed); resolved_dir source: none; no new commit beyond baseline in cell repo"
     },
     {
@@ -88,19 +88,19 @@
       "expected_model": "qwen3:1.7b",
       "used_model": "qwen3:1.7b",
       "model_identity": "ok",
-      "self_reported_model": null,
+      "self_reported_model": "dmz_model",
       "verification_integrity": "suspect",
       "resolved_dir": null,
-      "task_project_dir": ".datawatch/eval/open-model-matrix/20261015-r6/cpu-docs",
+      "task_project_dir": ".datawatch/eval/open-model-matrix/20261015-r8/cpu-docs",
       "artifact_check": {
-        "cell_repo_head": "202390990f042b50795304e2cf57a785353d7f60",
+        "cell_repo_head": "27a3f05f9fe2d5b2a579f2d3fe6f32040c037aa9",
         "new_commits": 0,
         "verify_exit": 1,
-        "verify_log": ".datawatch/eval/open-model-matrix/20261015-r6/verify-logs/cpu-docs.log"
+        "verify_log": ".datawatch/eval/open-model-matrix/20261015-r8/verify-logs/cpu-docs.log"
       },
       "model_result": null,
       "task_status": "failed",
-      "session_id": "4d01",
+      "session_id": "fbb9",
       "notes": "used_model source: post-run llm_test (no per-session model exposed); resolved_dir source: none; no new commit beyond baseline in cell repo"
     },
     {
@@ -110,19 +110,19 @@
       "expected_model": "qwen3:1.7b",
       "used_model": "qwen3:1.7b",
       "model_identity": "ok",
-      "self_reported_model": null,
+      "self_reported_model": "model-name",
       "verification_integrity": "suspect",
       "resolved_dir": null,
-      "task_project_dir": ".datawatch/eval/open-model-matrix/20261015-r6/cpu-review",
+      "task_project_dir": ".datawatch/eval/open-model-matrix/20261015-r8/cpu-review",
       "artifact_check": {
-        "cell_repo_head": "fca7c5aa6afcde5b3fbb624d92a4d78b8773bedd",
+        "cell_repo_head": "5880636ebc96f53f13e331af9aaf41ced0f11152",
         "new_commits": 0,
         "verify_exit": 1,
-        "verify_log": ".datawatch/eval/open-model-matrix/20261015-r6/verify-logs/cpu-review.log"
+        "verify_log": ".datawatch/eval/open-model-matrix/20261015-r8/verify-logs/cpu-review.log"
       },
       "model_result": null,
       "task_status": "failed",
-      "session_id": "c7d0",
+      "session_id": "3471",
       "notes": "used_model source: post-run llm_test (no per-session model exposed); resolved_dir source: none; no new commit beyond baseline in cell repo"
     },
     {
@@ -130,21 +130,21 @@
       "llm": "opencode-node-a-fast",
       "task_type": "analysis",
       "expected_model": "granite4.2:8b",
-      "used_model": "granite4.2:8b",
-      "model_identity": "ok",
+      "used_model": null,
+      "model_identity": "unknown",
       "self_reported_model": null,
       "verification_integrity": "suspect",
       "resolved_dir": null,
-      "task_project_dir": ".datawatch/eval/open-model-matrix/20261015-r6/fast-analysis",
+      "task_project_dir": ".datawatch/eval/open-model-matrix/20261015-r8/fast-analysis",
       "artifact_check": {
-        "cell_repo_head": "31537d9e35a5e5221517f61d259162e6b196a9a1",
+        "cell_repo_head": "78ba1e16b8daef53f322c6f4df1aaf66970263d7",
         "new_commits": 0,
         "verify_exit": 1,
-        "verify_log": ".datawatch/eval/open-model-matrix/20261015-r6/verify-logs/fast-analysis.log"
+        "verify_log": ".datawatch/eval/open-model-matrix/20261015-r8/verify-logs/fast-analysis.log"
       },
       "model_result": null,
       "task_status": "failed",
-      "session_id": "6e11",
+      "session_id": "21d3",
       "notes": "used_model source: post-run llm_test (no per-session model exposed); resolved_dir source: none; no new commit beyond baseline in cell repo"
     },
     {
@@ -152,21 +152,21 @@
       "llm": "opencode-node-a-fast",
       "task_type": "scripting",
       "expected_model": "granite4.2:8b",
-      "used_model": "granite4.2:8b",
-      "model_identity": "ok",
+      "used_model": null,
+      "model_identity": "unknown",
       "self_reported_model": null,
       "verification_integrity": "suspect",
       "resolved_dir": null,
-      "task_project_dir": ".datawatch/eval/open-model-matrix/20261015-r6/fast-scripting",
+      "task_project_dir": ".datawatch/eval/open-model-matrix/20261015-r8/fast-scripting",
       "artifact_check": {
-        "cell_repo_head": "aa59cfe890486e19af2c9e0b78bede45a8b05b8c",
+        "cell_repo_head": "f7fafa570eaabf6bbecb4110cb1dde80117aa60a",
         "new_commits": 0,
         "verify_exit": 1,
-        "verify_log": ".datawatch/eval/open-model-matrix/20261015-r6/verify-logs/fast-scripting.log"
+        "verify_log": ".datawatch/eval/open-model-matrix/20261015-r8/verify-logs/fast-scripting.log"
       },
       "model_result": null,
       "task_status": "failed",
-      "session_id": "7cb2",
+      "session_id": "1427",
       "notes": "used_model source: post-run llm_test (no per-session model exposed); resolved_dir source: none; no new commit beyond baseline in cell repo"
     },
     {
@@ -174,21 +174,21 @@
       "llm": "opencode-node-a-fast",
       "task_type": "docs",
       "expected_model": "granite4.2:8b",
-      "used_model": "granite4.2:8b",
-      "model_identity": "ok",
+      "used_model": null,
+      "model_identity": "unknown",
       "self_reported_model": null,
       "verification_integrity": "suspect",
       "resolved_dir": null,
-      "task_project_dir": ".datawatch/eval/open-model-matrix/20261015-r6/fast-docs",
+      "task_project_dir": ".datawatch/eval/open-model-matrix/20261015-r8/fast-docs",
       "artifact_check": {
-        "cell_repo_head": "aa59cfe890486e19af2c9e0b78bede45a8b05b8c",
+        "cell_repo_head": "4c589050c7acc7a5333cfd57b3d8537b710616bf",
         "new_commits": 0,
         "verify_exit": 1,
-        "verify_log": ".datawatch/eval/open-model-matrix/20261015-r6/verify-logs/fast-docs.log"
+        "verify_log": ".datawatch/eval/open-model-matrix/20261015-r8/verify-logs/fast-docs.log"
       },
       "model_result": null,
       "task_status": "failed",
-      "session_id": "870e",
+      "session_id": "c974",
       "notes": "used_model source: post-run llm_test (no per-session model exposed); resolved_dir source: none; no new commit beyond baseline in cell repo"
     },
     {
@@ -196,22 +196,22 @@
       "llm": "opencode-node-a-fast",
       "task_type": "review",
       "expected_model": "granite4.2:8b",
-      "used_model": "granite4.2:8b",
-      "model_identity": "ok",
+      "used_model": null,
+      "model_identity": "unknown",
       "self_reported_model": null,
-      "verification_integrity": "ok",
-      "resolved_dir": ".datawatch/eval/open-model-matrix/20261015-r6/fast-review",
-      "task_project_dir": ".datawatch/eval/open-model-matrix/20261015-r6/fast-review",
+      "verification_integrity": "suspect",
+      "resolved_dir": null,
+      "task_project_dir": ".datawatch/eval/open-model-matrix/20261015-r8/fast-review",
       "artifact_check": {
-        "cell_repo_head": "8d4074ca06f3b8d90ee29d932129790435967e03",
+        "cell_repo_head": "7598d9bceceb609f6875adad07e9e163c93eddd6",
         "new_commits": 0,
         "verify_exit": 1,
-        "verify_log": ".datawatch/eval/open-model-matrix/20261015-r6/verify-logs/fast-review.log"
+        "verify_log": ".datawatch/eval/open-model-matrix/20261015-r8/verify-logs/fast-review.log"
       },
-      "model_result": "fail",
+      "model_result": null,
       "task_status": "failed",
-      "session_id": "ecb1",
-      "notes": "used_model source: session_record.model; resolved_dir source: worker session project_dir; no new commit beyond baseline in cell repo"
+      "session_id": "2344",
+      "notes": "used_model source: post-run llm_test (no per-session model exposed); resolved_dir source: none; no new commit beyond baseline in cell repo"
     },
     {
       "role": "mid",
@@ -223,16 +223,16 @@
       "self_reported_model": null,
       "verification_integrity": "suspect",
       "resolved_dir": null,
-      "task_project_dir": ".datawatch/eval/open-model-matrix/20261015-r6/mid-analysis",
+      "task_project_dir": ".datawatch/eval/open-model-matrix/20261015-r8/mid-analysis",
       "artifact_check": {
-        "cell_repo_head": "d9062f494116a350911380814f5983f20338ec9f",
+        "cell_repo_head": "6ceda38c79dc2860165030800bef03af1e2204b0",
         "new_commits": 0,
         "verify_exit": 1,
-        "verify_log": ".datawatch/eval/open-model-matrix/20261015-r6/verify-logs/mid-analysis.log"
+        "verify_log": ".datawatch/eval/open-model-matrix/20261015-r8/verify-logs/mid-analysis.log"
       },
       "model_result": null,
       "task_status": "failed",
-      "session_id": "2cc9",
+      "session_id": "7321",
       "notes": "used_model source: post-run llm_test (no per-session model exposed); resolved_dir source: none; no new commit beyond baseline in cell repo"
     },
     {
@@ -245,16 +245,16 @@
       "self_reported_model": null,
       "verification_integrity": "suspect",
       "resolved_dir": null,
-      "task_project_dir": ".datawatch/eval/open-model-matrix/20261015-r6/mid-scripting",
+      "task_project_dir": ".datawatch/eval/open-model-matrix/20261015-r8/mid-scripting",
       "artifact_check": {
-        "cell_repo_head": "e6067cedaf512a0e69a0a41e48ec4cbbadc2ebab",
+        "cell_repo_head": "7e93d068132f9f6fb0050ebf0ebaf15822242c74",
         "new_commits": 0,
         "verify_exit": 1,
-        "verify_log": ".datawatch/eval/open-model-matrix/20261015-r6/verify-logs/mid-scripting.log"
+        "verify_log": ".datawatch/eval/open-model-matrix/20261015-r8/verify-logs/mid-scripting.log"
       },
       "model_result": null,
       "task_status": "failed",
-      "session_id": "a42d",
+      "session_id": "0b4e",
       "notes": "used_model source: post-run llm_test (no per-session model exposed); resolved_dir source: none; no new commit beyond baseline in cell repo"
     },
     {
@@ -267,16 +267,16 @@
       "self_reported_model": null,
       "verification_integrity": "suspect",
       "resolved_dir": null,
-      "task_project_dir": ".datawatch/eval/open-model-matrix/20261015-r6/mid-docs",
+      "task_project_dir": ".datawatch/eval/open-model-matrix/20261015-r8/mid-docs",
       "artifact_check": {
-        "cell_repo_head": "0efeb15aec3224b264043077c5b4ac8240bd6321",
+        "cell_repo_head": "50ff7bfab20cc8c2d26ca76a82b8dc3d5e7cfea1",
         "new_commits": 0,
         "verify_exit": 1,
-        "verify_log": ".datawatch/eval/open-model-matrix/20261015-r6/verify-logs/mid-docs.log"
+        "verify_log": ".datawatch/eval/open-model-matrix/20261015-r8/verify-logs/mid-docs.log"
       },
       "model_result": null,
       "task_status": "failed",
-      "session_id": "cead",
+      "session_id": "5671",
       "notes": "used_model source: post-run llm_test (no per-session model exposed); resolved_dir source: none; no new commit beyond baseline in cell repo"
     },
     {
@@ -289,16 +289,16 @@
       "self_reported_model": null,
       "verification_integrity": "suspect",
       "resolved_dir": null,
-      "task_project_dir": ".datawatch/eval/open-model-matrix/20261015-r6/mid-review",
+      "task_project_dir": ".datawatch/eval/open-model-matrix/20261015-r8/mid-review",
       "artifact_check": {
-        "cell_repo_head": "a0f93fbdafd6f17dc17324a2a1d2bca4ad08ea97",
+        "cell_repo_head": "2310eb062c30846c63c910f4197f55df84b75e98",
         "new_commits": 0,
         "verify_exit": 1,
-        "verify_log": ".datawatch/eval/open-model-matrix/20261015-r6/verify-logs/mid-review.log"
+        "verify_log": ".datawatch/eval/open-model-matrix/20261015-r8/verify-logs/mid-review.log"
       },
       "model_result": null,
       "task_status": "failed",
-      "session_id": "19df",
+      "session_id": "a3c2",
       "notes": "used_model source: post-run llm_test (no per-session model exposed); resolved_dir source: none; no new commit beyond baseline in cell repo"
     },
     {
@@ -308,20 +308,20 @@
       "expected_model": "gpt-oss:120b",
       "used_model": "gpt-oss:120b",
       "model_identity": "ok",
-      "self_reported_model": null,
-      "verification_integrity": "ok",
-      "resolved_dir": ".datawatch/eval/open-model-matrix/20261015-r6/decompose-validate-analysis",
-      "task_project_dir": ".datawatch/eval/open-model-matrix/20261015-r6/decompose-validate-analysis",
+      "self_reported_model": "gpt-oss:120b",
+      "verification_integrity": "suspect",
+      "resolved_dir": null,
+      "task_project_dir": ".datawatch/eval/open-model-matrix/20261015-r8/decompose-validate-analysis",
       "artifact_check": {
-        "cell_repo_head": "45b2c8ac26792d79711addfa38d82e7df2fe7735",
+        "cell_repo_head": "2371b49754881428fd7c596c242940bb338edb30",
         "new_commits": 0,
-        "verify_exit": 1,
-        "verify_log": ".datawatch/eval/open-model-matrix/20261015-r6/verify-logs/decompose-validate-analysis.log"
+        "verify_exit": 2,
+        "verify_log": ".datawatch/eval/open-model-matrix/20261015-r8/verify-logs/decompose-validate-analysis.log"
       },
-      "model_result": "fail",
+      "model_result": null,
       "task_status": "failed",
-      "session_id": "5343",
-      "notes": "used_model source: session_record.model; resolved_dir source: worker session project_dir; no new commit beyond baseline in cell repo"
+      "session_id": "7d61",
+      "notes": "used_model source: post-run llm_test (no per-session model exposed); resolved_dir source: none; no new commit beyond baseline in cell repo"
     },
     {
       "role": "decompose-validate",
@@ -330,20 +330,20 @@
       "expected_model": "gpt-oss:120b",
       "used_model": "gpt-oss:120b",
       "model_identity": "ok",
-      "self_reported_model": null,
-      "verification_integrity": "ok",
-      "resolved_dir": ".datawatch/eval/open-model-matrix/20261015-r6/decompose-validate-scripting",
-      "task_project_dir": ".datawatch/eval/open-model-matrix/20261015-r6/decompose-validate-scripting",
+      "self_reported_model": "gpt-oss:120b",
+      "verification_integrity": "suspect",
+      "resolved_dir": null,
+      "task_project_dir": ".datawatch/eval/open-model-matrix/20261015-r8/decompose-validate-scripting",
       "artifact_check": {
-        "cell_repo_head": "52a8b93a2c90d23d6bc8a13ff2a8b8b4d2a4b847",
+        "cell_repo_head": "6908c952ab88ed7affcf8d0cb9d8409cec11a317",
         "new_commits": 0,
         "verify_exit": 1,
-        "verify_log": ".datawatch/eval/open-model-matrix/20261015-r6/verify-logs/decompose-validate-scripting.log"
+        "verify_log": ".datawatch/eval/open-model-matrix/20261015-r8/verify-logs/decompose-validate-scripting.log"
       },
-      "model_result": "fail",
+      "model_result": null,
       "task_status": "failed",
-      "session_id": "884d",
-      "notes": "used_model source: session_record.model; resolved_dir source: worker session project_dir; no new commit beyond baseline in cell repo"
+      "session_id": "9179",
+      "notes": "used_model source: post-run llm_test (no per-session model exposed); resolved_dir source: none; no new commit beyond baseline in cell repo"
     },
     {
       "role": "decompose-validate",
@@ -352,19 +352,19 @@
       "expected_model": "gpt-oss:120b",
       "used_model": "gpt-oss:120b",
       "model_identity": "ok",
-      "self_reported_model": null,
+      "self_reported_model": "gpt-oss:120b",
       "verification_integrity": "suspect",
       "resolved_dir": null,
-      "task_project_dir": ".datawatch/eval/open-model-matrix/20261015-r6/decompose-validate-docs",
+      "task_project_dir": ".datawatch/eval/open-model-matrix/20261015-r8/decompose-validate-docs",
       "artifact_check": {
-        "cell_repo_head": "78e1020f8da6879bdaba16639ec8bc3d2ec8f3e8",
+        "cell_repo_head": "1b811d525da4e69ebe8923e5b4e79cbdfd92906e",
         "new_commits": 0,
         "verify_exit": 1,
-        "verify_log": ".datawatch/eval/open-model-matrix/20261015-r6/verify-logs/decompose-validate-docs.log"
+        "verify_log": ".datawatch/eval/open-model-matrix/20261015-r8/verify-logs/decompose-validate-docs.log"
       },
       "model_result": null,
       "task_status": "failed",
-      "session_id": "3847",
+      "session_id": "be03",
       "notes": "used_model source: post-run llm_test (no per-session model exposed); resolved_dir source: none; no new commit beyond baseline in cell repo"
     },
     {
@@ -374,22 +374,20 @@
       "expected_model": "gpt-oss:120b",
       "used_model": "gpt-oss:120b",
       "model_identity": "ok",
-      "self_reported_model": null,
+      "self_reported_model": "gpt-oss:120b",
       "verification_integrity": "suspect",
       "resolved_dir": null,
-      "task_project_dir": ".datawatch/eval/open-model-matrix/20261015-r6/decompose-validate-review",
+      "task_project_dir": ".datawatch/eval/open-model-matrix/20261015-r8/decompose-validate-review",
       "artifact_check": {
-        "cell_repo_head": "1e201dc952f786cb73b9b37d3a3946425582c7e7",
-        "new_commits": 0,
+        "cell_repo_head": "745dac65d8fe10e219b99a0dd0f2ec656b19fd56",
+        "new_commits": 1,
         "verify_exit": 1,
-        "verify_log": ".datawatch/eval/open-model-matrix/20261015-r6/verify-logs/decompose-validate-review.log"
+        "verify_log": ".datawatch/eval/open-model-matrix/20261015-r8/verify-logs/decompose-validate-review.log"
       },
       "model_result": null,
       "task_status": "failed",
-      "session_id": "4d11",
-      "notes": "used_model source: post-run llm_test (no per-session model exposed); resolved_dir source: none; no new commit beyond baseline in cell repo"
+      "session_id": "162a",
+      "notes": "used_model source: post-run llm_test (no per-session model exposed); resolved_dir source: none"
     }
-  ],
-  "run_verdict": "invalid-infrastructure",
-  "run_notes": "All 16 worker sessions died ~3s after launch with opencode 'ProviderModelNotFoundError: Model not found' (no ollama provider block in the per-cell opencode.json because the task model was pinned bare, without the ollama/ prefix). No cell did any model work (new_commits=0 everywhere). The 3 cells scored model_result=fail are infrastructure failures, not model failures, and must not be counted against granite4.2:8b or gpt-oss:120b. The 13 suspect cells are a collect-time artifact: their worker sessions had already been evicted from /api/sessions so resolved_dir could not be read."
+  ]
 }
