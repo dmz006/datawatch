@@ -182,7 +182,7 @@ class Client:
                 self.ctx.verify_mode = ssl.CERT_NONE
         self.timeout = timeout
 
-    def request(self, method, path, body=None, ok_statuses=(200, 201, 202)):
+    def request(self, method, path, body=None, ok_statuses=(200, 201, 202), timeout=None):
         if path.split("?")[0].rstrip("/") == _CONFIG_PATH and method != "GET" and not _CONFIG_WRITE_ARMED:
             raise EvalError(f"refusing {method} {_CONFIG_PATH}: global config writes are only allowed inside verify-tier-* subcommands")
         url = self.base + path
@@ -195,7 +195,7 @@ class Client:
             headers["Authorization"] = "Bearer " + self.token
         req = urllib.request.Request(url, data=data, method=method, headers=headers)
         try:
-            with urllib.request.urlopen(req, timeout=self.timeout, context=self.ctx) as resp:
+            with urllib.request.urlopen(req, timeout=timeout if timeout is not None else self.timeout, context=self.ctx) as resp:
                 raw = resp.read()
                 status = resp.status
         except urllib.error.HTTPError as e:
@@ -212,11 +212,11 @@ class Client:
         except json.JSONDecodeError:
             return {"_raw": raw.decode(errors="replace")}
 
-    def get(self, path):
-        return self.request("GET", path)
+    def get(self, path, timeout=None):
+        return self.request("GET", path, timeout=timeout)
 
-    def post(self, path, body=None):
-        return self.request("POST", path, body if body is not None else {})
+    def post(self, path, body=None, timeout=None):
+        return self.request("POST", path, body if body is not None else {}, timeout=timeout)
 
 
 # --- autonomous PRD helpers (never touch global config) ---------------------

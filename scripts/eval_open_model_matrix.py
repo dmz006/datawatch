@@ -150,8 +150,15 @@ def classify_result(identity, integrity, verify_exit):
 # preflight
 # --------------------------------------------------------------------------
 
+# Cold-load on the shared GPU node can outlast the Client's default 60s read
+# timeout (observed 3 consecutive preflight runs 2026-10-15, a different role
+# timing out each time, not a broken model) — give this specific call more
+# headroom than other, already-warm API calls get.
+PREFLIGHT_TEST_TIMEOUT_S = 240
+
+
 def llm_test(c, name):
-    return c.post(f"/api/llms/{name}/test", {"prompt": PREFLIGHT_PROMPT})
+    return c.post(f"/api/llms/{name}/test", {"prompt": PREFLIGHT_PROMPT}, timeout=PREFLIGHT_TEST_TIMEOUT_S)
 
 
 def render_preflight_table(rows):
