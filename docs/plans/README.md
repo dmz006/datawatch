@@ -1203,6 +1203,59 @@ first (not implementation) explicitly building on BL357/BL358 rather
 than inventing a parallel messaging layer, deferred to post-v10.0.0 given
 its size — do not let this compete with the v10.0.0 arc's own sequencing.
 No plan doc yet.
+
+**Tracker note (2026-10-15):** BL447–BL450 were filed and run as
+autonomous PRDs but never registered in this tracker. The gap was found
+while debugging BL451. The entries below were reconstructed from git
+history, CHANGELOG.md and plan docs. Anything the repo doesn't record is
+marked as unconfirmed.
+
+**BL447**: per-task `ProjectDir` override plus `set_task_project_dir`.
+A task can name its own project directory, which takes precedence over
+the Automaton's; an empty value inherits the Automaton's. Write dirs are
+scoped to the task, per-task sites are rewired to the resolved task
+directory, and the setter is exposed on REST, MCP, CLI, comm channels and
+the PWA (filed 2026-10-14). **Shipped v9.1.0.** Commits `2e7934d8`,
+`025f6b4e`, `32ae4b6b`. No dedicated plan doc. See CHANGELOG v9.1.0.
+
+**BL448**: unconfirmed. No commit, CHANGELOG entry or plan doc in the
+repo references BL448. It was filed as an autonomous PRD (see tracker
+note), but its scope and status cannot be confirmed from the repo. Fill
+this in from the PRD record.
+
+**BL449**: open-model eval matrix. A 16-cell matrix of open models run
+through the Automaton system, reusing the model-tiering fixtures. It
+includes a driver script (`scripts/eval_open_model_matrix.py`:
+preflight/setup/create-prd/run/collect/report/self-test/cleanup) and
+fixtures in `testdata/eval/open-model-matrix/` (filed 2026-10-15).
+Commits `3acd24c1`, `ce9d7b94`, `bfafeb30`. The first run report
+(`docs/testing/runs/2026-10-15-open-model-matrix/results.md`) records a
+failed preflight (`gpt-oss:120b` timed out). **Blocked:** the PRD
+(`9e7bad8e`) is dead-ended at PRDCompleted with one task still pending,
+because the BL451 rollup race overwrote a concurrent `reset_task`. For
+the unstick runbook, see
+[2026-10-15-bl451-rollup-race.md](2026-10-15-bl451-rollup-race.md)
+("Unsticking BL449"). It needs v9.1.2+ and `reset_task force=true`.
+
+**BL450**: unconfirmed. No commit, CHANGELOG entry or plan doc in the
+repo references BL450. It was filed as an autonomous PRD (see tracker
+note), but its scope and status cannot be confirmed from the repo.
+
+**BL451**: completion-rollup lost-update race. A `reset_task` landed
+while the PRD-completion ci-watch check was in flight. About ten seconds
+later the rollup wrote `completed` over the reset and discarded it,
+leaving BL449's PRD terminal with a pending task (filed + fixed
+2026-10-15). Fix: add a `PRD.Rev` optimistic-concurrency field and
+`Store.CommitPRDIfRev`. Every terminal rollup status now commits only if
+the revision is unchanged, the status is still the one the rollup saw,
+and all tasks are still terminal, all checked under the store lock. A
+stale commit records `rollup_aborted_stale` and changes nothing.
+Completion side effects fire only after the commit succeeds. Follow-up:
+`reset_task force=true` on a pending task in a terminal PRD reopens the
+PRD (`recover_pending_task`). **Shipped v9.1.1 (race fix) and v9.1.2
+(recovery).** Phase 3, unsticking BL449 live, is an operator step that is
+still planned. Commits `fd7bccbb`, `9b76fb4d`, `8d5c20ab`. Plan:
+[2026-10-15-bl451-rollup-race.md](2026-10-15-bl451-rollup-race.md).
 22. **BL423** — an Automaton reports `completed` while the CI run for
     the commit it pushed is failing (filed + shipped 2026-10-13, same
     day — **shipped v9.0.63**). Not roadmap work — found live right
@@ -1566,6 +1619,11 @@ daemon).
 | — | **BL436** — per-turn chunked session capture (replaces tmux-scrollback reliance) | Design doc done, `needs_review` | Filed 2026-10-14, not yet slotted into the numbered order above — docs-only, low collision risk, could run opportunistically. |
 | — | **BL437** — recurring hardware-aware model/effort eval ([design doc](2026-10-14-recurring-model-eval-design.md)) | Queued, pre-v10.0.0 priority (operator-named 2026-10-14) | Generalizes BL422 into a recurring monthly sweep over all models, efforts and hardware classes. Sequenced after BL422's results are available (row 8), so it is not slotted into the numbered order above yet. |
 | — | **BL440** — Status-tab session detail for Automaton task sessions | **Shipped v9.0.87** (follow-ups (a)–(h) open in item 30) | Surfaced live 2026-10-14 while watching Automaton task sessions; display-only, ran outside the numbered order. |
+| — | **BL447**: per-task `ProjectDir` override / `set_task_project_dir` | **Shipped v9.1.0** | Autonomous PRD; missed the tracker, registered 2026-10-15. |
+| — | **BL448**: scope unconfirmed in repo | Unconfirmed | Autonomous PRD; missed the tracker, and the repo doesn't record its scope. |
+| — | **BL449**: open-model eval matrix | **Blocked**: PRD `9e7bad8e` dead-ended at completed by the BL451 race | Unstick runbook in [2026-10-15-bl451-rollup-race.md](2026-10-15-bl451-rollup-race.md). |
+| — | **BL450**: scope unconfirmed in repo | Unconfirmed | Autonomous PRD; missed the tracker, and the repo doesn't record its scope. |
+| — | **BL451**: completion-rollup lost-update race (`PRD.Rev`) | **Shipped v9.1.1 + v9.1.2** (live unstick of BL449 pending) | Found live while running BL449. |
 
 BL424 (item 23 above) is explicitly excluded from this table and stays
 sequenced last, right before the v10.0.0 cutover, per its own note above —
