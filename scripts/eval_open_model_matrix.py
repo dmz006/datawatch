@@ -319,7 +319,22 @@ def cmd_create_prd(a):
     pid = prd["id"]
     st["eval_prd_id"] = pid
     save_state(m, a.run_id, st)
-    log(f"created scratch Automaton {pid}; decomposing placeholder")
+    # Operator-reported 2026-10-15: this whole matrix is meant to be
+    # Claude-free, but decompose (planning) and the per-task guardrail
+    # verifier both silently defaulted to the global claude-code setting
+    # — only the 16 cells' own workers were ever actually local. Pin both
+    # to a local model before decomposing. decompose needs real codebase
+    # tool access (headless ollama/openwebui can't explore the repo), so
+    # it uses the matrix's own largest, most-exercised role; the verifier
+    # is a cheap/quick confirmation only (the real pass/fail signal is the
+    # deterministic verify script), so it uses the cheap fast role.
+    decompose_llm = next(r["llm"] for r in m["roles"] if r["role"] == "decompose-validate")
+    guardrail_llm = next(r["llm"] for r in m["roles"] if r["role"] == "fast")
+    guardrail_model = next(r["model"] for r in m["roles"] if r["role"] == "fast")
+    prd_action(c, pid, "set_llm", {"decomposition_profile": decompose_llm, "actor": ACTOR})
+    prd_action(c, pid, "set_verification_llm", {"verification_backend": guardrail_llm,
+                                                "verification_model": guardrail_model, "actor": ACTOR})
+    log(f"created scratch Automaton {pid}; decomposing placeholder (planning={decompose_llm}, guardrail={guardrail_llm}/{guardrail_model})")
     prd_action(c, pid, "decompose")
     prd = prd_wait_planned(c, pid, a.decompose_timeout)
     if prd.get("status") != "needs_review":
