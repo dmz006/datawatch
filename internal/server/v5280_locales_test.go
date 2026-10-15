@@ -75,6 +75,7 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 	// (untranslated nav tab); guard explicitly.
 	mustHave := []string{
 		"prd_scope_warnings_title",
+		"status_card_activity",
 		"capacity_card_title",
 		"nav_sessions",
 		"nav_autonomous",

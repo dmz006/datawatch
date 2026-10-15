@@ -4848,43 +4848,159 @@ function renderSessionStatusBoardInner(area, board, sessionId) {
     return `<span style="color:var(--text2);font-size:11px;cursor:pointer;" title="${escHtml(t('status_hooks_missing_tip')||'No hook events received yet. For non-claude-code backends or unhooked sessions this is expected. Click to re-poll.')}" onclick="${refetch}">●</span> ${escHtml(t('status_hooks_missing')||'no hooks installed')}${docsLink(hooksDoc, t('common_setup')||'Set up')}`;
   })();
 
-  // Current focus card
+  // Automaton detail (server-built from the PRD/story/task this session
+  // runs) — fills the cards below whenever hook payloads don't.
+  const auto = board.automaton || null;
+  const muted = (s) => `<em style="color:var(--text2);">${escHtml(s)}</em>`;
+  const fmtTs = (v) => v ? new Date(v).toLocaleString('en-GB', { hour12: false }) : '';
+  const statusColor = (s) => {
+    const v = String(s || '').toLowerCase();
+    if (['completed', 'approved', 'done', 'passed'].includes(v)) return 'var(--success,#10b981)';
+    if (['failed', 'rejected', 'cancelled', 'blocked', 'error'].includes(v)) return 'var(--error)';
+    if (['waiting', 'needs_review', 'paused', 'pending', 'queued'].includes(v)) return 'var(--warning,#f59e0b)';
+    return 'var(--accent2,#60a5fa)';
+  };
+  const chip = (text, color) => `<span style="display:inline-block;font-size:10px;font-weight:700;padding:1px 6px;border-radius:8px;border:1px solid ${color};color:${color};">${escHtml(text)}</span>`;
+  const kvRow = (label, valueHtml) => `<div style="display:flex;gap:6px;font-size:12px;"><span style="color:var(--text2);min-width:90px;">${escHtml(label)}</span><span style="flex:1;min-width:0;word-break:break-word;">${valueHtml}</span></div>`;
+  const fileList = (label, files, color) => {
+    const list = Array.isArray(files) ? files : [];
+    const style = color ? `color:${color};` : '';
+    if (!list.length) return `<div style="font-size:12px;${style}">${escHtml(label)}: 0</div>`;
+    return `<details style="font-size:12px;${style}"><summary style="cursor:pointer;">${escHtml(label)}: ${list.length}</summary>
+      <ul style="margin:4px 0 0 0;padding-left:18px;font-size:11px;">${list.map(f => `<li><code>${escHtml(f)}</code></li>`).join('')}</ul>
+    </details>`;
+  };
+  // Hook-provided values of any shape, rendered as text (never raw JSON).
+  const fmtVal = (v) => {
+    if (v === null || v === undefined || v === '') return '—';
+    if (Array.isArray(v)) return v.map(fmtVal).join(', ');
+    if (typeof v === 'object') return Object.entries(v).map(([k, x]) => k + ': ' + fmtVal(x)).join('; ');
+    return String(v);
+  };
+
+  // Current focus card — hook focus first, Automaton task title otherwise.
   const lastEvent = board.last_event;
+  const hookFocus = (board.current_focus && board.current_focus.task) || (lastEvent && lastEvent.payload && lastEvent.payload.current_task) || '';
   let focusBody = '';
-  if (lastEvent) {
-    const ts = new Date(lastEvent.ts).toLocaleString('en-GB', { hour12: false });
-    const focusText = board.current_focus && board.current_focus.task || (lastEvent.payload && lastEvent.payload.current_task) || '—';
+  if (lastEvent || auto) {
+    const focusText = hookFocus || (auto && auto.task_title) || '—';
     const isMultiLine = focusText.includes('\n');
+    const autoCrumb = (!hookFocus && auto) ? [auto.prd_title, auto.story_title].filter(Boolean).map(escHtml).join(' / ') : '';
+    const specBlock = (!hookFocus && auto && auto.task_spec)
+      ? `<details style="font-size:12px;"><summary style="cursor:pointer;color:var(--text2);">${escHtml(t('status_task_spec')||'Task spec')}${auto.task_spec_truncated ? ' ' + escHtml(t('status_truncated')||'(truncated)') : ''}</summary>
+          <pre style="background:var(--bg);padding:8px;border-radius:4px;font-size:12px;overflow:auto;max-height:220px;white-space:pre-wrap;word-break:break-word;margin:4px 0 0 0;">${escHtml(auto.task_spec)}</pre>
+        </details>`
+      : '';
     focusBody = `
       <div style="display:flex;flex-direction:column;gap:4px;font-size:13px;">
+        ${autoCrumb ? `<div style="font-size:11px;color:var(--text2);">${autoCrumb}</div>` : ''}
         ${isMultiLine
           ? `<pre style="background:var(--bg);padding:8px;border-radius:4px;font-size:12px;overflow:auto;max-height:220px;white-space:pre-wrap;word-break:break-word;margin:0;">${escHtml(focusText)}</pre>`
           : `<div><strong>${escHtml(t('status_current_focus')||'Current focus')}:</strong> ${escHtml(focusText)}</div>`}
-        <div style="font-size:11px;color:var(--text2);">last ${escHtml(lastEvent.event)}${lastEvent.tool ? ' · ' + escHtml(lastEvent.tool) : ''} · ${escHtml(ts)}</div>
+        ${specBlock}
+        ${lastEvent ? `<div style="font-size:11px;color:var(--text2);">last ${escHtml(lastEvent.event)}${lastEvent.tool ? ' · ' + escHtml(lastEvent.tool) : ''} · ${escHtml(fmtTs(lastEvent.ts))}</div>` : ''}
         ${board.idle_since ? `<div style="font-size:11px;color:var(--warning,#f59e0b);">idle since ${escHtml(new Date(board.idle_since).toLocaleTimeString('en-GB', {hour12:false}))}</div>` : ''}
       </div>`;
   } else {
     focusBody = `<em style="color:var(--text2);">${escHtml(t('status_no_events_yet')||'No hook events received yet.')} ${docsLink(hooksDoc, t('common_setup')||'Set up')}</em>`;
   }
 
-  // Sprint / PRD tree card
-  let sprintBody = `<em style="color:var(--text2);">${escHtml(t('status_no_sprint')||'no sprint data — hook payload sprint=… expected')}</em>`;
-  if (board.sprint) {
-    sprintBody = `<pre style="background:var(--bg);padding:8px;border-radius:4px;font-size:11px;overflow:auto;max-height:200px;">${escHtml(JSON.stringify(board.sprint, null, 2))}</pre>`;
+  // Sprint / Automata card — structured Automaton detail; any extra
+  // hook-provided sprint keys render as a key/value list.
+  const knownSprintKeys = auto ? ['sprint_id', 'prd_id', 'title', 'status', 'automata', 'task_id', 'task_title', 'story_title'] : [];
+  const extraSprint = board.sprint && typeof board.sprint === 'object'
+    ? Object.entries(board.sprint).filter(([k]) => !knownSprintKeys.includes(k))
+    : [];
+  const extraSprintHtml = extraSprint.length
+    ? `<div style="display:flex;flex-direction:column;gap:2px;${auto ? 'margin-top:8px;padding-top:8px;border-top:1px solid var(--border);' : ''}">${extraSprint.map(([k, v]) => kvRow(k, escHtml(fmtVal(v)))).join('')}</div>`
+    : '';
+  let sprintBody = muted(t('status_no_sprint')||'no sprint data — hook payload sprint=… expected');
+  if (auto) {
+    const titleText = auto.prd_title || auto.prd_id;
+    const titleLink = auto.prd_id
+      ? `<a href="#" style="color:var(--accent2,#60a5fa);text-decoration:none;font-weight:600;" title="${escHtml(t('status_open_automaton_tip')||'Open in Automata')}" onclick="event.stopPropagation();event.preventDefault();_statusOpenAutomaton(${escHtml(JSON.stringify(auto.prd_id))})">${escHtml(titleText)} ↗</a>`
+      : `<span style="font-weight:600;">${escHtml(titleText || '—')}</span>`;
+    const rows = [];
+    if (auto.story_title || auto.story_id) rows.push(kvRow(t('status_automaton_story')||'Story', escHtml(auto.story_title || auto.story_id)));
+    if (auto.task_title || auto.task_id) rows.push(kvRow(t('status_automaton_task')||'Task', escHtml(auto.task_title || auto.task_id)));
+    if (auto.task_status) rows.push(kvRow(t('status_task_status')||'Task status', chip(auto.task_status, statusColor(auto.task_status))));
+    if (auto.wait_reason) rows.push(kvRow(t('status_wait_reason')||'Waiting on', `<span style="color:var(--warning,#f59e0b);">${escHtml(auto.wait_reason)}</span>`));
+    if (auto.retry_count) rows.push(kvRow(t('status_retry_count')||'Retries', escHtml(auto.retry_count)));
+    if (auto.started_at) rows.push(kvRow(t('status_started_at')||'Started', escHtml(fmtTs(auto.started_at))));
+    if (auto.completed_at) rows.push(kvRow(t('status_completed_at')||'Completed', escHtml(fmtTs(auto.completed_at))));
+    if (auto.error) rows.push(kvRow(t('status_error_label')||'Error', `<span style="color:var(--error);">${escHtml(auto.error)}</span>`));
+    sprintBody = `
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;font-size:13px;">
+        ${titleLink}${auto.prd_status ? chip(auto.prd_status, statusColor(auto.prd_status)) : ''}
+      </div>
+      <div style="display:flex;flex-direction:column;gap:2px;">${rows.join('')}</div>
+      ${extraSprintHtml}`;
+  } else if (board.sprint) {
+    sprintBody = extraSprintHtml || muted('—');
   }
-  // Tests card
-  let testsBody = `<em style="color:var(--text2);">${escHtml(t('status_no_tests')||'no test signal yet — hook payload tests=… expected')}</em>`;
+
+  // Tests card — hook tests first, Automaton verifier verdict otherwise.
+  let testsBody = muted(t('status_no_tests')||'no test signal yet — hook payload tests=… expected');
   if (board.tests) {
     const ts = board.tests;
     const passColor = (ts.fail || 0) > 0 ? 'var(--error)' : 'var(--success,#10b981)';
     testsBody = `<div style="font-size:13px;"><span style="color:${passColor};font-weight:700;">${escHtml(ts.pass||0)} pass</span> · <span style="color:var(--error);">${escHtml(ts.fail||0)} fail</span>${ts.skip ? ' · <span style="color:var(--text2);">' + escHtml(ts.skip) + ' skip</span>' : ''}</div>`;
+  } else if (auto && auto.verification) {
+    const v = auto.verification;
+    const okColor = v.ok ? 'var(--success,#10b981)' : 'var(--error)';
+    const issues = Array.isArray(v.issues) ? v.issues : [];
+    const shown = issues.slice(0, 5);
+    const verifier = [v.verifier_backend, v.verifier_model].filter(Boolean).join(' / ');
+    testsBody = `
+      <div style="display:flex;flex-direction:column;gap:4px;font-size:13px;">
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+          ${chip(v.ok ? (t('status_verify_pass')||'passed') : (t('status_verify_fail')||'failed'), okColor)}
+          ${v.severity ? `<span style="font-size:11px;color:var(--text2);">${escHtml(v.severity)}</span>` : ''}
+        </div>
+        ${v.summary ? `<div style="font-size:12px;">${escHtml(v.summary)}</div>` : ''}
+        ${shown.length ? `<ul style="margin:0;padding-left:18px;font-size:12px;">${shown.map(i => `<li>${escHtml(i)}</li>`).join('')}${issues.length > shown.length ? `<li style="color:var(--text2);list-style:none;">+${issues.length - shown.length} ${escHtml(t('status_more')||'more')}</li>` : ''}</ul>` : ''}
+        ${(verifier || v.verifier_source) ? `<div style="font-size:11px;color:var(--text2);">${escHtml(t('status_verifier_label')||'Verifier')}: ${escHtml(verifier || '—')}${v.verifier_source ? ' (' + escHtml(v.verifier_source) + ')' : ''}</div>` : ''}
+      </div>`;
+  } else if (auto) {
+    testsBody = muted(t('status_not_verified_yet')||'not verified yet');
   }
-  // Git card
-  let gitBody = `<em style="color:var(--text2);">${escHtml(t('status_no_git')||'no git state — hook payload git=… expected')}</em>`;
+
+  // Git card — hook git first, Automaton file association otherwise.
+  let gitBody = muted(t('status_no_git')||'no git state — hook payload git=… expected');
   if (board.git) {
     const g = board.git;
     gitBody = `<div style="font-size:13px;">branch: <code>${escHtml(g.branch||'—')}</code>${g.dirty ? ' · <span style="color:var(--warning,#f59e0b);">dirty</span>' : ''}</div>`;
+  } else if (auto && auto.git) {
+    const g = auto.git;
+    const drift = Array.isArray(g.foreign_file_drift) ? g.foreign_file_drift : [];
+    gitBody = `
+      <div style="display:flex;flex-direction:column;gap:4px;font-size:13px;">
+        ${g.pre_task_sha ? kvRow(t('status_pre_task_sha')||'Base commit', `<code>${escHtml(String(g.pre_task_sha).slice(0, 8))}</code>`) : ''}
+        ${fileList(t('status_files_planned')||'Files planned', g.files_planned)}
+        ${fileList(t('status_files_touched')||'Files touched', g.files_touched)}
+        ${drift.length ? fileList(t('status_foreign_drift')||'Changed outside this task', drift, 'var(--warning,#f59e0b)') : ''}
+      </div>`;
+  } else if (auto) {
+    gitBody = muted(t('status_no_file_activity')||'no file activity recorded yet');
   }
+
+  // Activity card — Automaton decision log, newest first.
+  const decisions = auto && Array.isArray(auto.decisions) ? auto.decisions.slice().reverse() : [];
+  const activityCard = decisions.length
+    ? card(t('status_card_activity')||'Activity', `<div style="display:flex;flex-direction:column;gap:4px;">${decisions.map(d => `
+        <div style="font-size:12px;display:flex;gap:6px;flex-wrap:wrap;">
+          <span style="color:var(--text2);font-size:11px;">${escHtml(fmtTs(d.at))}</span>
+          <strong>${escHtml(d.kind || '?')}</strong>
+          ${d.verdict_outcome ? chip(d.verdict_outcome, statusColor(d.verdict_outcome)) : ''}
+          <span style="flex-basis:100%;min-width:0;word-break:break-word;">${escHtml(d.actor ? d.actor + (d.note ? ': ' : '') : '')}${escHtml(d.note || '')}</span>
+        </div>`).join('')}</div>`)
+    : '';
+
+  // Cost card — session tokens and estimated cost.
+  const cost = auto && auto.cost;
+  const costCard = cost
+    ? card(t('status_card_cost')||'Cost', `<div style="font-size:13px;">${escHtml(Number(cost.tokens_in||0).toLocaleString())} ${escHtml(t('status_tokens_in')||'tokens in')} · ${escHtml(Number(cost.tokens_out||0).toLocaleString())} ${escHtml(t('status_tokens_out')||'tokens out')} · <strong>$${escHtml(Number(cost.est_cost_usd||0).toFixed(4))}</strong> ${escHtml(t('status_est_cost')||'est.')}</div>`)
+    : '';
 
   // BL303 S3 — LiveTaskTree + breadcrumb + verdicts + progress + parent link.
   const telemetry = board.telemetry || null;
@@ -4893,11 +5009,10 @@ function renderSessionStatusBoardInner(area, board, sessionId) {
   const breadcrumb = renderSprintBreadcrumb(board.sprint || (telemetry && telemetry.sprint));
   const progressBar = renderProgressBar(telemetry);
   const taskTree = renderLiveTaskTree(telemetry, sessionType);
-  const taskTreeCard = taskTree
-    ? card(t('status_card_tasks') || 'Live Task Tree', breadcrumb + progressBar + taskTree)
-    : (board.sprint && !board.telemetry)
-      ? card(t('status_card_sprint') || 'Sprint / Automata', breadcrumb + sprintBody)
-      : card(t('status_card_sprint') || 'Sprint / Automata', breadcrumb + sprintBody);
+  const taskTreeCard = taskTree ? card(t('status_card_tasks') || 'Live Task Tree', breadcrumb + progressBar + taskTree) : '';
+  const sprintCard = (!taskTree || auto)
+    ? card(t('status_card_sprint') || 'Sprint / Automata', (auto ? '' : breadcrumb) + sprintBody)
+    : '';
 
   area.innerHTML = `
     ${parentLink}
@@ -4905,12 +5020,24 @@ function renderSessionStatusBoardInner(area, board, sessionId) {
       <span style="font-size:11px;color:var(--text2);">${hookHealthBadge}</span>
     </div>
     ${card(t('status_card_focus')||'Current focus', focusBody)}
+    ${sprintCard}
     ${taskTreeCard}
     ${card(t('status_card_tests')||'Tests', testsBody)}
     ${card(t('status_card_git')||'Git', gitBody)}
-    <div style="font-size:11px;color:var(--text2);text-align:center;padding:8px;">${escHtml(t('status_followup_note')||'Council / Skills / Tracker / closed-task summaries appear once hook payloads include those fields.')}</div>
+    ${activityCard}
+    ${costCard}
+    <div style="font-size:11px;color:var(--text2);text-align:center;padding:8px;">${escHtml(t('status_followup_note')||'Council, Skills and Tracker summaries are not available on this tab yet.')}</div>
   `;
 }
+
+// Open an Automaton's detail view from the session Status tab.
+function _statusOpenAutomaton(prdId) {
+  if (!prdId) return;
+  navigate('autonomous');
+  // Give the automata view a moment to mount before opening the detail.
+  setTimeout(() => { if (typeof renderPRDDetailView === 'function') renderPRDDetailView(prdId); }, 80);
+}
+window._statusOpenAutomaton = _statusOpenAutomaton;
 
 function updateSessionStatusBadge(board) {
   // BL303 S3 T01 — inline header badge: hook health dot + session state.
