@@ -953,6 +953,39 @@ established. In progress — starting with BL403.**
     itself is paused (not abandoned — task 1's `tracker.go` fix
     already shipped/committed; task 2's spec is already corrected and
     waiting) until this ships and the daemon's redeployed.
+21. **BL441** — PRD-completion content-auto-fix never fires; PRD sits
+    silently `running` forever (filed 2026-10-14, live incident on PRD
+    `5d599cef`/BL440). Confirmed via daemon logs, not inferred: a
+    `rules-review` guardrail session (`659e`) finished at 21:20:32 with
+    a genuine `content`-category block (real issues: version-bump
+    discipline violated across a multi-commit feature, missing commit
+    tokens, Section C release-smoke/gosec/dep-audit skipped, a
+    live-smoke gap for new REST/PWA surface). From that point on,
+    nothing happened — no `synthesizeCorrectiveWork` call, no new
+    story/task appended, no transition to `blocked`, no retry. All of
+    BL440's real tasks were already `completed`; the PRD just sat at
+    `status: running` indefinitely with zero active sessions. Operator
+    caught it live and asked for the matching code fix to be tracked,
+    not just worked around by hand. Per BL410 Phases 0-3 (shipped,
+    `docs/plans/README.md`'s own BL410 entry above), a PRD-level
+    content-category block is exactly the case `synthesizeCorrectiveWork`
+    was built for — task-level content auto-fix reuses the existing
+    `RetryHint` loop and is a different code path, not confirmed broken
+    by this incident; the gap looks specific to the PRD-completion
+    rollup path (`runPRDCompletionRulesReview`/
+    `runPRDCompletionProjectRulesCheck` in `internal/autonomous`). Scope
+    for the fix (not yet designed): (1) reproduce directly — a fake
+    PRD-completion guardrail returning a `content` block with real
+    `Issues`, assert `synthesizeCorrectiveWork` is actually invoked; (2)
+    if the call site is simply missing, wire it in following BL410's
+    own design; (3) regardless of root cause, add a watchdog/timeout so
+    a PRD can never again sit silently `running` with zero active
+    tasks/sessions indefinitely — either auto-retry the completion
+    check after N minutes or transition to `blocked` so the operator
+    (or BL431's future decision-assistant) sees it needs attention.
+    Explicitly named by the operator as a live worked example for
+    BL431's decision-assistant hook points — see that item's "Local-
+    model decision assistant" section.
 
     **Shipped, v9.0.62** (all four scope items): (1) `EditTaskSpec`
     accepts a `blocked` PRD for its failed/blocked task only, completed
