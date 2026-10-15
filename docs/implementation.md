@@ -184,6 +184,26 @@ default `false`) is on, in which case the task is blocked and the walk halts. It
 runs read-only git commands and never rewrites history. See
 `docs/howto/file-drift-guardrail.md`.
 
+### Per-task project directory (Automata)
+
+`autonomous.Task.ProjectDir` (JSON `project_dir`) overrides the
+Automaton's `PRD.ProjectDir` for one task. `ResolveTaskProjectDir(prd,
+task)` returns the task value when it is set and the PRD value when it
+is empty, so the precedence is task → Automaton and an empty value
+inherits. Every per-task check calls the resolver: diff capture, scope
+(task-scoped write dirs), file drift, quality gates and the verifier.
+`Manager.SetTaskProjectDir` validates the path (it must be absolute, must
+not be a filesystem root or system directory, and must be inside the
+Automaton's write dirs when those are set) and applies the same lock rule as
+`SetTaskLLM`. An empty dir clears the override.
+
+Surfaces: REST `POST /api/autonomous/prds/{id}/set_task_project_dir`
+(`{task_id, project_dir}`), MCP `autonomous_prd_set_task_project_dir`,
+CLI `datawatch autonomous prd-set-task-project-dir <prd> <task> [dir]`,
+comm verb `autonomous set-task-project-dir`, and the PWA task edit
+modal's **Project dir override** field (shown on the task card as a
+`dir:` badge).
+
 ### Message Routing
 
 The router (`internal/router`) is stateless. It:

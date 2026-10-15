@@ -5,6 +5,26 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.1.0 — feat(autonomous): per-task project dir override on every surface
+
+**BL447.** The per-task `project_dir` override (task → Automaton; empty
+inherits) can now be set from every surface:
+
+- **REST:** `POST /api/autonomous/prds/{id}/set_task_project_dir` with
+  `{task_id, project_dir}`. Sending `""` clears the override.
+  Validation errors and unknown tasks return `400`.
+- **MCP:** `autonomous_prd_set_task_project_dir`, gated by
+  `CapAutonomousWrite` for federation.
+- **CLI:** `datawatch autonomous prd-set-task-project-dir <prd> <task> [dir]`.
+  Leaving out `dir` clears the override.
+- **Comm:** `autonomous set-task-project-dir <prd> <task> [dir]`.
+- **PWA:** a **Project dir override** field in the task edit modal, and
+  a `dir:` badge on the task card when the override is set.
+
+Diff capture, scope, file drift, quality gates and the verifier all
+follow the override. Documented in `docs/api/autonomous.md` and
+`docs/implementation.md`.
+
 ## v9.0.88 — fix(server): clear error for llm_test on a session-backend kind
 
 **BL443.** `llm_test` (`POST /api/llms/<name>/test`) on a session-backend

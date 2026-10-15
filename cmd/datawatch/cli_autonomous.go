@@ -88,6 +88,7 @@ Subcommands:
 		newAutonomousPRDSetLLMCmd(),
 		newAutonomousPRDSetStoryLLMCmd(),
 		newAutonomousPRDSetTaskLLMCmd(),
+		newAutonomousPRDSetTaskProjectDirCmd(),
 		newAutonomousPRDSetTaskVerificationLLMCmd(),
 		newAutonomousPRDSetStoryVerificationLLMCmd(),
 		newAutonomousPRDSetVerificationLLMCmd(),
@@ -557,6 +558,22 @@ func newAutonomousPRDSetTaskLLMCmd() *cobra.Command {
 	addGuardrailLLMFlags(cmd, &guardrailBackend, &guardrailModel)
 	_ = cmd.MarkFlagRequired("task")
 	return cmd
+}
+
+func newAutonomousPRDSetTaskProjectDirCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "prd-set-task-project-dir <prd-id> <task-id> [dir]",
+		Short: "Override the project directory for one task (task > Automaton). Omitting dir clears the override (inherits the Automaton's project_dir).",
+		Args:  cobra.RangeArgs(2, 3),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			dir := ""
+			if len(args) == 3 {
+				dir = args[2]
+			}
+			body, _ := json.Marshal(map[string]string{"task_id": args[1], "project_dir": dir, "actor": "operator"})
+			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/set_task_project_dir", body)
+		},
+	}
 }
 
 func newAutonomousPRDSetTaskVerificationLLMCmd() *cobra.Command {

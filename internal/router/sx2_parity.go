@@ -302,7 +302,7 @@ func prettyJSON(body string) string {
 // `prd` is accepted as a shorter alias for `autonomous`.
 func (r *Router) handleAutonomous(cmd Command) {
 	args := strings.Fields(strings.TrimSpace(cmd.Text))
-	help := "usage: autonomous {status|list|config-get|config-set key=value [k2=v2 ...]|get <id>|decompose <id>|approve <id>|reject <id> [reason]|request-revision <id> [note]|edit-task <prd> <task> <new-spec>|set-llm <prd> <backend> [effort] [model] [guardrail_backend=X] [guardrail_model=Y]|set-task-llm <prd> <task> <backend> [effort] [model] [guardrail_backend=X] [guardrail_model=Y]|set-task-verification-llm <prd> <task> [backend=X] [model=Y] [effort=Z]|set-story-verification-llm <prd> <story> [backend=X] [model=Y] [effort=Z]|set-verification-llm <prd> [backend=X] [model=Y] [effort=Z]|instantiate <template> [k=v,k=v]|run <id>|cancel <id>|cancel-story <prd> <story> [reason]|cancel-task <prd> <task> [reason]|reset-to-draft <id>|set-quality-gates <prd> [enabled=bool] [test_command=cmd] [timeout=N] [block_on_regression=bool]|scan-results <id>|learnings|children <id>|create <spec>|scan <id>|scan-fix <id>|scan-rules <id>|scan-config [get|set k=v]|types|type-register <id> <label> [description=...] [color=#hex]|set-type <id> <type>|guided-mode <id> on|off|set-skills <id> <skill1,skill2>|templates|template-get <id>|template-create <title> <spec>|template-update <id> <title> <spec>|template-delete <id>|template-instantiate <id> [dir] [k=v,k=v]|template-clone <prd-id> [desc]}"
+	help := "usage: autonomous {status|list|config-get|config-set key=value [k2=v2 ...]|get <id>|decompose <id>|approve <id>|reject <id> [reason]|request-revision <id> [note]|edit-task <prd> <task> <new-spec>|set-llm <prd> <backend> [effort] [model] [guardrail_backend=X] [guardrail_model=Y]|set-task-llm <prd> <task> <backend> [effort] [model] [guardrail_backend=X] [guardrail_model=Y]|set-task-project-dir <prd> <task> [dir]|set-task-verification-llm <prd> <task> [backend=X] [model=Y] [effort=Z]|set-story-verification-llm <prd> <story> [backend=X] [model=Y] [effort=Z]|set-verification-llm <prd> [backend=X] [model=Y] [effort=Z]|instantiate <template> [k=v,k=v]|run <id>|cancel <id>|cancel-story <prd> <story> [reason]|cancel-task <prd> <task> [reason]|reset-to-draft <id>|set-quality-gates <prd> [enabled=bool] [test_command=cmd] [timeout=N] [block_on_regression=bool]|scan-results <id>|learnings|children <id>|create <spec>|scan <id>|scan-fix <id>|scan-rules <id>|scan-config [get|set k=v]|types|type-register <id> <label> [description=...] [color=#hex]|set-type <id> <type>|guided-mode <id> on|off|set-skills <id> <skill1,skill2>|templates|template-get <id>|template-create <title> <spec>|template-update <id> <title> <spec>|template-delete <id>|template-instantiate <id> [dir] [k=v,k=v]|template-clone <prd-id> [desc]}"
 	if len(args) == 0 {
 		r.reply("autonomous", help)
 		return
@@ -627,6 +627,22 @@ func (r *Router) handleAutonomous(cmd Command) {
 			return
 		}
 		r.reply("autonomous set-task-llm", prettyJSON(out))
+	case "set-task-project-dir", "set_task_project_dir":
+		if len(args) < 3 {
+			r.reply("autonomous set-task-project-dir failed", "usage: autonomous set-task-project-dir <prd-id> <task-id> [dir]  (omit dir to clear)")
+			return
+		}
+		body := map[string]string{"task_id": args[2], "project_dir": "", "actor": "operator"}
+		if len(args) >= 4 {
+			body["project_dir"] = strings.Join(args[3:], " ")
+		}
+		raw, _ := json.Marshal(body)
+		out, err := r.commJSON(http.MethodPost, "/api/autonomous/prds/"+args[1]+"/set_task_project_dir", string(raw))
+		if err != nil {
+			r.reply("autonomous set-task-project-dir failed", err.Error())
+			return
+		}
+		r.reply("autonomous set-task-project-dir", prettyJSON(out))
 	case "set-task-verification-llm", "set_task_verification_llm",
 		"set-story-verification-llm", "set_story_verification_llm",
 		"set-verification-llm", "set_verification_llm":

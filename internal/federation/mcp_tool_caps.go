@@ -81,6 +81,7 @@ var MCPToolCap = map[string]string{
 	"autonomous_prd_set_skills":                    CapAutonomousWrite,
 	"autonomous_prd_set_story_llm":                 CapAutonomousWrite,
 	"autonomous_prd_set_task_llm":                  CapAutonomousWrite,
+	"autonomous_prd_set_task_project_dir":          CapAutonomousWrite,
 	"autonomous_prd_set_task_verification_llm":     CapAutonomousWrite,
 	"autonomous_prd_set_story_verification_llm":    CapAutonomousWrite,
 	"autonomous_prd_set_verification_llm":          CapAutonomousWrite,

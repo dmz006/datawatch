@@ -12116,7 +12116,7 @@ function renderTask(prd, story, task, editable) {
   const chevron = isExpanded ? '▾' : '▸'; // ▾ vs ▸
 
   // Edit affordances — distinct icons per 1(b).
-  const editFn = `openPRDEditTaskModal(${JSON.stringify(prd.id)},${JSON.stringify(task.id)},${JSON.stringify(task.spec || '')},${JSON.stringify(task.backend || '')},${JSON.stringify(String(task.effort || ''))},${JSON.stringify(task.model || '')},${JSON.stringify({verification_backend:task.verification_backend||'',verification_model:task.verification_model||'',verification_effort:String(task.verification_effort||'')})})`;
+  const editFn = `openPRDEditTaskModal(${JSON.stringify(prd.id)},${JSON.stringify(task.id)},${JSON.stringify(task.spec || '')},${JSON.stringify(task.backend || '')},${JSON.stringify(String(task.effort || ''))},${JSON.stringify(task.model || '')},${JSON.stringify({verification_backend:task.verification_backend||'',verification_model:task.verification_model||'',verification_effort:String(task.verification_effort||'')})},${JSON.stringify(task.project_dir || '')})`;
   const filesEditFn = `openPRDEditTaskFilesModal(${JSON.stringify(prd.id)},${JSON.stringify(task.id)},${JSON.stringify(task.files || [])})`;
   // Operator-requested: structural edit — remove a task without re-running
   // decompose. Distinct from the cancel/retry buttons below, which act on
@@ -12144,6 +12144,10 @@ function renderTask(prd, story, task, editable) {
   // Inline badges visible whether collapsed or expanded.
   const llmBadge = (task.backend || task.effort || task.model)
     ? `<span class="prd-task-llm-badge">LLM: ${escHtml(task.backend || 'inherit')}${task.effort ? ' / ' + escHtml(String(task.effort)) : ''}${task.model ? ' / ' + escHtml(task.model) : ''}</span>`
+    : '';
+  // BL447 — per-task project dir override badge.
+  const projDirBadge = task.project_dir
+    ? `<span class="prd-task-llm-badge prd-task-projdir-badge" title="${escHtml(t('prd_task_projdir_badge_title')||'Per-task project dir override')}">dir: ${escHtml(task.project_dir)}</span>`
     : '';
   const spawnBadge = task.spawn_prd
     ? `<span class="prd-task-spawn-badge" title="this task spec is a child automaton spec; executor will Plan + Approve + Run">&#8627; spawn</span>`
@@ -12261,7 +12265,7 @@ function renderTask(prd, story, task, editable) {
       ${statusGlyphSpan}
       <code class="prd-task-id">${escHtml(taskID)}</code>
       <strong class="prd-task-title">${escHtml(task.title || '')}</strong>
-      ${llmBadge}${spawnBadge}${childLink}${verdicts}${sessionLink}${(task.foreign_file_drift || []).length ? `<span class="prd-verdict-badge prd-verdict-warn" title="${escHtml(t('automata_task_foreign_file_drift') || 'Foreign file drift')}">&#9888; ${task.foreign_file_drift.length}</span>` : ''}
+      ${llmBadge}${projDirBadge}${spawnBadge}${childLink}${verdicts}${sessionLink}${(task.foreign_file_drift || []).length ? `<span class="prd-verdict-badge prd-verdict-warn" title="${escHtml(t('automata_task_foreign_file_drift') || 'Foreign file drift')}">&#9888; ${task.foreign_file_drift.length}</span>` : ''}
       <span class="prd-task-header-spacer"></span>
       ${approveTaskBtn}${retryBtn}${requeueBtn}${cancelTaskBtn}${editIcons}
     </div>
@@ -13278,7 +13282,17 @@ function _prdVerifLLMChanged(next, cur) {
   return ['verification_backend', 'verification_effort', 'verification_model'].some(k => next[k] !== String(cur[k] || ''));
 }
 
-function openPRDEditTaskModal(prdID, taskID, currentSpec, currentBackend, currentEffort, currentModel, currentVerif) {
+// BL447 — per-task project dir override field. Empty inherits the
+// Automaton's project_dir; every per-task check follows the override.
+function _prdTaskProjectDirFieldHTML(currentProjectDir) {
+  return `<div>
+        <label style="font-size:11px;color:var(--text2);">${t('prd_task_projdir_label')||'Project dir override'}</label>
+        <input type="text" id="prdEditProjectDir" class="form-input" value="${escHtml(currentProjectDir || '')}" placeholder="${escHtml(t('prd_task_projdir_placeholder')||'inherits Automaton dir')}" />
+        <div style="font-size:10px;color:var(--text2);">${escHtml(currentProjectDir ? currentProjectDir : (t('prd_task_projdir_placeholder')||'inherits Automaton dir'))}</div>
+      </div>`;
+}
+
+function openPRDEditTaskModal(prdID, taskID, currentSpec, currentBackend, currentEffort, currentModel, currentVerif, currentProjectDir) {
   // v5.26.8 — populate the model dropdown as soon as the modal mounts,
   // and refresh it every time the operator switches backends.
   ensureLLMModelLists().then(() => {
@@ -13296,6 +13310,7 @@ function openPRDEditTaskModal(prdID, taskID, currentSpec, currentBackend, curren
         <div><label style="font-size:11px;color:var(--text2);">${t('prd_new_effort_label')||'Effort'}</label>${renderEffortSelect('prdEditEffort', currentEffort || '', '')}</div>
         <div id="prdEditModelWrap" style="display:none;"><label style="font-size:11px;color:var(--text2);">${t('prd_new_model_label')||'Model (optional)'}</label><div id="prdEditModelInner"></div></div>
       </div>
+      ${_prdTaskProjectDirFieldHTML(currentProjectDir)}
       ${_prdVerifLLMSectionHTML('prdEditVerif', currentVerif, 'prd_verif_llm_hint', 'Which LLM judges this task\'s work — empty inherits story, then Automaton, then the global verification setting.')}
       <div style="display:flex;gap:6px;justify-content:flex-end;">
         <button type="button" class="btn-secondary" onclick="_prdCloseModal()">${t('btn_cancel')||'Cancel'}</button>
@@ -13319,6 +13334,13 @@ function openPRDEditTaskModal(prdID, taskID, currentSpec, currentBackend, curren
       calls.push(apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/set_task_llm', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ task_id: taskID, backend, effort, model, actor: 'operator' }),
+      }));
+    }
+    const projectDir = (document.getElementById('prdEditProjectDir') || {}).value;
+    if (projectDir !== undefined && projectDir.trim() !== (currentProjectDir || '')) {
+      calls.push(apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/set_task_project_dir', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ task_id: taskID, project_dir: projectDir.trim(), actor: 'operator' }),
       }));
     }
     const verif = _prdReadVerifLLM('prdEditVerif');

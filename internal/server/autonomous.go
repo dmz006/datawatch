@@ -1374,6 +1374,38 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		addGuardrailAuditDetail(detail, req.GuardrailBackend, req.GuardrailModel)
 		s.audit(r.Context(), "set_task_llm", "automaton", id, detail) // GH#201 Phase 4
 		writeJSONOK(w, updated)
+	// BL447 — per-task ProjectDir override (task > PRD; empty inherits).
+	case "set_task_project_dir":
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+			return
+		}
+		var req struct {
+			TaskID     string `json:"task_id"`
+			ProjectDir string `json:"project_dir"`
+			Actor      string `json:"actor"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if req.TaskID == "" {
+			http.Error(w, "task_id required", http.StatusBadRequest)
+			return
+		}
+		if req.Actor == "" {
+			req.Actor = "operator"
+		}
+		updated, err := s.autonomousMgr.SetTaskProjectDir(id, req.TaskID, req.ProjectDir, req.Actor)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		s.audit(r.Context(), "set_task_project_dir", "automaton", id, map[string]any{"task_id": req.TaskID, "project_dir": req.ProjectDir})
+		writeJSONOK(w, updated)
 	// Per-unit verification (judge) LLM overrides. Precedence:
 	// task > story > Automaton > global autonomous verification_*.
 	case "set_task_verification_llm", "set_story_verification_llm", "set_verification_llm":

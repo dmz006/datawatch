@@ -189,7 +189,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "9.0.88"
+var Version = "9.1.0"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -666,6 +666,8 @@ type AutonomousAPI interface {
 	SetPRDLLM(prdID, backend, effort, model, decompositionProfile, decompositionModel, actor string) (any, error)
 	SetStoryLLM(prdID, storyID, backend, effort, model, actor string) (any, error)
 	SetTaskLLM(prdID, taskID, backend, effort, model, actor string) (any, error)
+	// BL447 — per-task ProjectDir override. Empty dir clears (inherit PRD dir).
+	SetTaskProjectDir(prdID, taskID, dir, actor string) (any, error)
 	// BL416 — guardrail judge LLM overrides. nil = leave unchanged, "" = clear.
 	SetPRDGuardrailLLM(prdID string, backend, model *string, actor string) (any, error)
 	SetTaskGuardrailLLM(prdID, taskID string, backend, model *string, actor string) (any, error)

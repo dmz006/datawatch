@@ -722,6 +722,28 @@ func (s *Server) handleAutonomousPRDSetTaskLLM(_ context.Context, req mcpsdk.Cal
 	return textOK(string(out)), nil
 }
 
+func (s *Server) toolAutonomousPRDSetTaskProjectDir() mcpsdk.Tool {
+	return mcpsdk.NewTool("autonomous_prd_set_task_project_dir",
+		mcpsdk.WithDescription("BL447 — override the project directory for a single task (task > Automaton). Diff capture, scope, file drift, quality gates and the verifier all follow it. Empty string = clear (inherits the Automaton's project_dir)."),
+		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
+		mcpsdk.WithString("task_id", mcpsdk.Required(), mcpsdk.Description("Task ID")),
+		mcpsdk.WithString("project_dir", mcpsdk.Description("absolute directory; empty = inherit the Automaton's project_dir")),
+	)
+}
+func (s *Server) handleAutonomousPRDSetTaskProjectDir(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	id := req.GetString("id", "")
+	body, _ := json.Marshal(map[string]string{
+		"task_id":     req.GetString("task_id", ""),
+		"project_dir": req.GetString("project_dir", ""),
+		"actor":       "operator",
+	})
+	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/set_task_project_dir", body)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
 const (
 	guardrailBackendParamDesc = "Guardrail/verification judge LLM override (any configured LLM name). Inherits task -> automaton -> global autonomous.verification_backend. Empty = clear; omit to leave unchanged."
 	guardrailModelParamDesc   = "Guardrail/verification judge model override. Inherits task -> automaton -> global autonomous.verification_model. Empty = clear; omit to leave unchanged."

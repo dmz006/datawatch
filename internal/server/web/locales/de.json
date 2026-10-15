@@ -1735,5 +1735,8 @@
   "status_no_file_activity": "no file activity recorded yet",
   "status_tokens_in": "tokens in",
   "status_tokens_out": "tokens out",
-  "status_est_cost": "est."
+  "status_est_cost": "est.",
+  "prd_task_projdir_label": "Projektverzeichnis-Überschreibung",
+  "prd_task_projdir_placeholder": "erbt Verzeichnis des Automaten",
+  "prd_task_projdir_badge_title": "Projektverzeichnis-Überschreibung pro Aufgabe"
 }

@@ -552,6 +552,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutonomousPRDSetLLM(), tracked(s.handleAutonomousPRDSetLLM))
 	mcpSrv.AddTool(s.toolAutonomousPRDSetStoryLLM(), tracked(s.handleAutonomousPRDSetStoryLLM))
 	mcpSrv.AddTool(s.toolAutonomousPRDSetTaskLLM(), tracked(s.handleAutonomousPRDSetTaskLLM))
+	mcpSrv.AddTool(s.toolAutonomousPRDSetTaskProjectDir(), tracked(s.handleAutonomousPRDSetTaskProjectDir))
 	mcpSrv.AddTool(s.toolAutonomousPRDSetVerificationLLM(), tracked(s.handleAutonomousPRDSetVerificationLLM))
 	mcpSrv.AddTool(s.toolAutonomousPRDSetStoryVerificationLLM(), tracked(s.handleAutonomousPRDSetStoryVerificationLLM))
 	mcpSrv.AddTool(s.toolAutonomousPRDSetTaskVerificationLLM(), tracked(s.handleAutonomousPRDSetTaskVerificationLLM))

@@ -92,6 +92,9 @@ func (f *fakeOrchAutonomous) SetPRDLLM(string, string, string, string, string, s
 func (f *fakeOrchAutonomous) SetTaskLLM(string, string, string, string, string, string) (any, error) {
 	return nil, nil
 }
+func (f *fakeOrchAutonomous) SetTaskProjectDir(string, string, string, string) (any, error) {
+	return nil, nil
+}
 func (f *fakeOrchAutonomous) SetStoryLLM(string, string, string, string, string, string) (any, error) {
 	return nil, nil
 }
