@@ -113,7 +113,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "9.1.7"
+var Version = "9.1.8"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -4369,6 +4369,27 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				"stalls and fails. Keep going until the task is fully done and you emit DATAWATCH_COMPLETE. " +
 				"Before your final commit, make sure CHECKPOINT.md is not staged or committed — it is " +
 				"scratch state for this run, not part of the deliverable.\n" +
+				"---\n\n" +
+				// 2026-10-15 — operator-reported: real, substantial work (file
+				// edits, new files, passing tests) was repeatedly found on disk
+				// after a one-shot task ended, with NO commit — the worker wrote
+				// a confident prose summary of what it did ("tracker.go modified,
+				// tracker_test.go added, all tests pass...") and emitted
+				// DATAWATCH_COMPLETE without ever running git commit. A verbal
+				// summary of finished work is not the same as finishing it, and
+				// the instruction to commit (stated once, in the task's own
+				// ground rules, possibly a long way above by the time the model
+				// is wrapping up) wasn't surviving to the actual end of the turn.
+				// This check is placed as the LAST thing before completion for
+				// exactly that reason — it's the last thing the model reads
+				// before deciding it's done.
+				"---\n" +
+				"BEFORE YOU FINISH — do this check now, not as a description of having done it:\n" +
+				"If this task's spec asked you to commit your work, run `git log --oneline -1` (and " +
+				"`git status --short`) in your working directory RIGHT NOW. If there is no new commit " +
+				"beyond the baseline, or there are uncommitted changes, your task is NOT done — writing " +
+				"a summary of what you changed is not the same as committing it. Stage and commit now, " +
+				"THEN emit DATAWATCH_COMPLETE. Only emit DATAWATCH_COMPLETE after this check passes.\n" +
 				"---"
 			// BL366 — capture git HEAD SHA before the worker runs so the
 			// verifier can diff the actual change. Failure is non-fatal.

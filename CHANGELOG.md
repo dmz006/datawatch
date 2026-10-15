@@ -5,6 +5,33 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.1.8 — fix(sessions/opencode): hidden task text in panes, and work done but never committed
+
+**Two findings from tonight's open-model matrix run.**
+
+1. **Operator-reported**: a session's PWA Tmux view showed screen after
+   screen of the task spec's own text with no visible sign of real work.
+   Root cause: opencode's `Launch`/`LaunchResume` embedded the entire task
+   spec inline in the command sent via `tmux send-keys` — the pty's own
+   terminal echo renders every character of a multi-KB spec back into the
+   pane before opencode's own output ever starts. The task text now goes
+   into a scratch file; the typed command reads it via `$(cat 'file')`,
+   so the pane shows a short command line and opencode's own output
+   almost immediately, with the exact same content delivered either way.
+
+2. **Found investigating the matrix's sweeping "no changes detected"
+   failures across every model, including the largest (gpt-oss:120b)**:
+   the worker sessions were doing real, substantial work — file edits,
+   new files, passing tests — then writing a confident prose summary of
+   what they did and emitting `DATAWATCH_COMPLETE` without ever running
+   `git commit`. The commit instruction lived once, in the task's own
+   ground rules, far above by the time the model wraps up; nothing
+   reinforced it at the actual decision point. Added a "BEFORE YOU
+   FINISH" check as the literal last thing in every one-shot task spec:
+   run `git log`/`git status` now and confirm a real commit exists before
+   emitting completion — a written summary is explicitly called out as
+   not the same as finishing.
+
 ## v9.1.7 — fix(compute): attaching a ComputeNode to the local self-peer always rejected
 
 v9.1.6 concluded the real fix for "no monitored compute node" is to set the

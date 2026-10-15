@@ -12,6 +12,37 @@ import (
 	"github.com/dmz006/datawatch/internal/llm"
 )
 
+// writeTaskFile writes task text to a scratch file instead of embedding it
+// inline in the shell command sent to the pane.
+//
+// 2026-10-15 — operator-reported: the PWA session view for an opencode
+// task showed screen after screen of the task spec's own text and no
+// visible sign of real work. Root cause: Launch/LaunchResume used to
+// build `opencode run '<entire task spec, verbatim>'` and deliver it via
+// `tmux send-keys`, which types the whole command into the pty — bash's
+// own terminal echo renders every character of a multi-KB task spec back
+// into the pane before opencode's own output ever starts. Writing the
+// text to a file and having the shell read it (`$(cat 'file')`) keeps
+// the *typed* line short — the terminal only has to echo a few dozen
+// characters — while opencode still receives the exact same content.
+func writeTaskFile(tmuxSession, task string) (string, error) {
+	f, err := os.CreateTemp("", "datawatch-opencode-task-"+strings.Map(func(r rune) rune {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			return r
+		}
+		return '-'
+	}, tmuxSession)+"-*.txt")
+	if err != nil {
+		return "", err
+	}
+	defer f.Close() //nolint:errcheck
+	if _, err := f.WriteString(task); err != nil {
+		os.Remove(f.Name()) //nolint:errcheck
+		return "", err
+	}
+	return f.Name(), nil
+}
+
 // Backend runs opencode in a tmux session.
 type Backend struct{ binary string }
 
@@ -78,15 +109,29 @@ func (b *PromptBackend) Launch(ctx context.Context, task, tmuxSession, projectDi
 		return fmt.Errorf("opencode-prompt requires a task (prompt mode)")
 	}
 	escapedDir := strings.ReplaceAll(projectDir, "'", `'\''`)
-	escaped := strings.ReplaceAll(task, "'", `'\''`)
 	// Use --format json piped through a Python one-liner to extract readable text.
 	// Default format writes directly to terminal with ANSI escape sequences that
 	// get cleared, making output invisible in pipe-pane capture.
+	// Task text goes through a scratch file, not inline — see
+	// writeTaskFile's doc comment (same fix as Backend.buildRunCmd). The
+	// cleanup (rm) has to happen AFTER the whole pipeline, not inside the
+	// message-argument position — splicing a ';' in there would
+	// prematurely terminate the 'opencode run | python3' pipe.
+	msgExpr := ""
+	cleanup := ""
+	if path, err := writeTaskFile(tmuxSession, task); err == nil {
+		escapedPath := strings.ReplaceAll(path, "'", `'\''`)
+		msgExpr = fmt.Sprintf("\"$(cat '%s')\"", escapedPath)
+		cleanup = fmt.Sprintf("rm -f '%s'; ", escapedPath)
+	} else {
+		escaped := strings.ReplaceAll(task, "'", `'\''`)
+		msgExpr = fmt.Sprintf("'%s'", escaped)
+	}
 	cmd := fmt.Sprintf(
-		`cd '%s' && echo '[opencode-prompt] starting…' && %s run --format json '%s' 2>/dev/null `+
+		`cd '%s' && echo '[opencode-prompt] starting…' && %s run --format json %s 2>/dev/null `+
 			`| python3 -c "import sys,json;[print(e['part']['text'],end='',flush=True) if e.get('type')=='text' else print('['+e['type']+']',flush=True) for line in sys.stdin for e in [json.loads(line)] if e.get('type') in ('text','step_start','step_finish','tool_call')]" `+
-			`; echo; sleep 1; echo 'DATAWATCH_COMPLETE: opencode done'`,
-		escapedDir, b.binary, escaped)
+			`; %secho; sleep 1; echo 'DATAWATCH_COMPLETE: opencode done'`,
+		escapedDir, b.binary, msgExpr, cleanup)
 	return exec.CommandContext(ctx, "tmux", "send-keys", "-t", tmuxSession, cmd, "Enter").Run()
 }
 func (b *Backend) Version() string {
@@ -96,19 +141,32 @@ func (b *Backend) Version() string {
 	}
 	return strings.TrimSpace(string(out))
 }
+// buildRunCmd builds the shell command to type into the tmux pane. When a
+// task is given, its text is written to a scratch file rather than
+// embedded inline — see writeTaskFile's doc comment for why — so the
+// *typed* line (and therefore the terminal's own echo of it) stays short
+// regardless of the task spec's real size. Falls back to the old inline
+// form only if the file write itself fails.
+func (b *Backend) buildRunCmd(escapedDir, task, tmuxSession string) string {
+	if task == "" {
+		return fmt.Sprintf("cd '%s' && %s", escapedDir, b.binary)
+	}
+	// Use non-interactive 'opencode run' mode when a task is provided (e.g. PRD
+	// worker sessions). TUI send-keys delivery fails on task text containing '('
+	// characters — opencode's eval treats the text as a shell command and errors.
+	if path, err := writeTaskFile(tmuxSession, task); err == nil {
+		escapedPath := strings.ReplaceAll(path, "'", `'\''`)
+		return fmt.Sprintf("cd '%s' && %s run \"$(cat '%s')\"; rm -f '%s'; echo 'DATAWATCH_COMPLETE: opencode done'",
+			escapedDir, b.binary, escapedPath, escapedPath)
+	}
+	escaped := strings.ReplaceAll(task, "'", `'\''`)
+	return fmt.Sprintf("cd '%s' && %s run '%s'; echo 'DATAWATCH_COMPLETE: opencode done'",
+		escapedDir, b.binary, escaped)
+}
+
 func (b *Backend) Launch(ctx context.Context, task, tmuxSession, projectDir, logFile string) error {
 	escapedDir := strings.ReplaceAll(projectDir, "'", `'\''`)
-	var cmd string
-	if task != "" {
-		// Use non-interactive 'opencode run' mode when a task is provided (e.g. PRD
-		// worker sessions). TUI send-keys delivery fails on task text containing '('
-		// characters — opencode's eval treats the text as a shell command and errors.
-		escaped := strings.ReplaceAll(task, "'", `'\''`)
-		cmd = fmt.Sprintf("cd '%s' && %s run '%s'; echo 'DATAWATCH_COMPLETE: opencode done'",
-			escapedDir, b.binary, escaped)
-	} else {
-		cmd = fmt.Sprintf("cd '%s' && %s", escapedDir, b.binary)
-	}
+	cmd := b.buildRunCmd(escapedDir, task, tmuxSession)
 	return exec.CommandContext(ctx, "tmux", "send-keys", "-t", tmuxSession, cmd, "Enter").Run()
 }
 
@@ -118,13 +176,6 @@ func (b *Backend) Launch(ctx context.Context, task, tmuxSession, projectDir, log
 // back to a fresh launch (no -s flag).
 func (b *Backend) LaunchResume(ctx context.Context, task, tmuxSession, projectDir, logFile, resumeID string) error {
 	escapedDir := strings.ReplaceAll(projectDir, "'", `'\''`)
-	var cmd string
-	if task != "" {
-		escaped := strings.ReplaceAll(task, "'", `'\''`)
-		cmd = fmt.Sprintf("cd '%s' && %s run '%s'; echo 'DATAWATCH_COMPLETE: opencode done'",
-			escapedDir, b.binary, escaped)
-	} else {
-		cmd = fmt.Sprintf("cd '%s' && %s", escapedDir, b.binary)
-	}
+	cmd := b.buildRunCmd(escapedDir, task, tmuxSession)
 	return exec.CommandContext(ctx, "tmux", "send-keys", "-t", tmuxSession, cmd, "Enter").Run()
 }
