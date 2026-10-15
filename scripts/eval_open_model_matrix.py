@@ -331,14 +331,18 @@ def cmd_create_prd(a):
     decompose_llm = next(r["llm"] for r in m["roles"] if r["role"] == "decompose-validate")
     guardrail_llm = next(r["llm"] for r in m["roles"] if r["role"] == "fast")
     guardrail_model = next(r["model"] for r in m["roles"] if r["role"] == "fast")
+    # set_llm (decomposition_profile) works pre-decompose (draft), but
+    # set_verification_llm requires needs_review/revisions_asked/cancelled
+    # — it has to wait until after decompose lands.
     prd_action(c, pid, "set_llm", {"decomposition_profile": decompose_llm, "actor": ACTOR})
-    prd_action(c, pid, "set_verification_llm", {"verification_backend": guardrail_llm,
-                                                "verification_model": guardrail_model, "actor": ACTOR})
-    log(f"created scratch Automaton {pid}; decomposing placeholder (planning={decompose_llm}, guardrail={guardrail_llm}/{guardrail_model})")
+    log(f"created scratch Automaton {pid}; decomposing placeholder (planning={decompose_llm})")
     prd_action(c, pid, "decompose")
     prd = prd_wait_planned(c, pid, a.decompose_timeout)
     if prd.get("status") != "needs_review":
         raise EvalError(f"placeholder decompose ended in {prd.get('status')!r}, expected needs_review")
+    prd_action(c, pid, "set_verification_llm", {"verification_backend": guardrail_llm,
+                                                "verification_model": guardrail_model, "actor": ACTOR})
+    log(f"guardrail pinned to {guardrail_llm}/{guardrail_model}")
     for s in prd.get("stories") or []:
         prd_action(c, pid, "remove_story", {"story_id": s["id"], "actor": ACTOR})
     prd_action(c, pid, "set_memory_seed", {"enabled": False, "actor": ACTOR})
