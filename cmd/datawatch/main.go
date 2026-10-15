@@ -4371,6 +4371,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			var preTaskSHA string
 			var preTaskUntrackedFiles []string
 			var preTaskDirtyFiles []string
+			// BL447: req.ProjectDir is the task's resolved dir (executor sets
+			// it via resolveTaskProjectDir), so SHA/untracked/dirty capture
+			// anchors to the override repo, never the PRD dir.
 			if req.ProjectDir != "" {
 				// v8.36.7 — see ensureProjectDirOwnGitRepo's doc comment
 				// (verifier_diff.go): prevents a worker's `git add -A`
@@ -4670,12 +4673,15 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					return autonomouspkg.VerificationResult{}, stallErr
 				}
 			}
+			// BL447: diff/evidence/judgment anchor to the task's resolved dir —
+			// the same dir SpawnRequest.ProjectDir captured PreTaskSHA in.
+			taskDir := autonomouspkg.ResolveTaskProjectDir(prd, task)
 			// BL366 — git-diff grounding: capture the worker's actual change.
 			// v8.25.9: when PreTaskSHA is set, an empty diff is a hard failure —
 			// the session made no changes, so the task cannot be verified as done.
 			diffSection := ""
-			if task.PreTaskSHA != "" && prd.ProjectDir != "" {
-				diffOut, diffErr := exec.CommandContext(ctx, "git", "-C", prd.ProjectDir,
+			if task.PreTaskSHA != "" && taskDir != "" {
+				diffOut, diffErr := exec.CommandContext(ctx, "git", "-C", taskDir,
 					"diff", task.PreTaskSHA+"..HEAD").Output()
 				if diffErr != nil {
 					// BL410 Phase 0 — the git command itself failed; no
@@ -4689,7 +4695,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				}
 				// Same evidence as diffOut, names only — feeds FilesTouched below.
 				var committedNames []string
-				if nameOut, nerr := exec.CommandContext(ctx, "git", "-C", prd.ProjectDir,
+				if nameOut, nerr := exec.CommandContext(ctx, "git", "-C", taskDir,
 					"diff", "--name-only", task.PreTaskSHA+"..HEAD").Output(); nerr == nil {
 					for _, f := range strings.Split(strings.TrimSpace(string(nameOut)), "\n") {
 						if f != "" {
@@ -4703,7 +4709,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				var workingDiffOut []byte
 				var workingNames []string
 				if task.StartedAt != nil {
-					workingDiffOut, workingNames, _ = gitWorkingTreeDiffSince(ctx, prd.ProjectDir, *task.StartedAt)
+					workingDiffOut, workingNames, _ = gitWorkingTreeDiffSince(ctx, taskDir, *task.StartedAt)
 				}
 				// v8.25.12 — detect newly created untracked files (e.g. new docs, test
 				// fixtures) that don't appear in git diff because they haven't been committed.
@@ -4713,7 +4719,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					preUntracked[f] = struct{}{}
 				}
 				var newUntrackedFiles []string
-				if curOut, err := exec.CommandContext(ctx, "git", "-C", prd.ProjectDir,
+				if curOut, err := exec.CommandContext(ctx, "git", "-C", taskDir,
 					"ls-files", "--others", "--exclude-standard").Output(); err == nil {
 					for _, f := range strings.Split(strings.TrimSpace(string(curOut)), "\n") {
 						if f != "" {
@@ -4732,7 +4738,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				const maxFileBytes = 8192
 				for _, tf := range task.FilesPlanned {
 					if _, preExisted := preUntracked[tf]; preExisted {
-						fullPath := filepath.Join(prd.ProjectDir, tf)
+						fullPath := filepath.Join(taskDir, tf)
 						data, readErr := os.ReadFile(fullPath)
 						if readErr == nil && len(data) > 0 {
 							content := string(data)
@@ -4834,11 +4840,11 @@ Pre-existing files written by task (not tracked by git):
 %s
 </overwritten_files>`, strings.Join(overwrittenFilesSections, "\n---\n"))
 				}
-			} else if prd.ProjectDir != "" && task.StartedAt != nil {
+			} else if taskDir != "" && task.StartedAt != nil {
 				// Non-git project dir (PreTaskSHA not set): use mtime to detect output files.
 				// TouchedFiles walks the dir and returns files whose mtime is after since.
-				projGit := session.NewProjectGit(prd.ProjectDir)
-				newFiles := append(projGit.TouchedFiles(*task.StartedAt), touchedInExtraWriteDirs(prd, *task.StartedAt)...)
+				projGit := session.NewProjectGit(taskDir)
+				newFiles := append(projGit.TouchedFiles(*task.StartedAt), touchedInExtraWriteDirs(prd, task, *task.StartedAt)...)
 				if len(newFiles) == 0 && len(task.FilesPlanned) > 0 {
 					// Task had planned output files but nothing was created/modified.
 					return autonomouspkg.VerificationResult{
@@ -4858,7 +4864,7 @@ Pre-existing files written by task (not tracked by git):
 				if autonomousMgrRef != nil && len(newFiles) > 0 {
 					var rel []string
 					for _, f := range newFiles {
-						if r, rerr := filepath.Rel(prd.ProjectDir, f); rerr == nil {
+						if r, rerr := filepath.Rel(taskDir, f); rerr == nil {
 							rel = append(rel, r)
 						}
 					}
@@ -4918,7 +4924,7 @@ Verify whether the diff plausibly implements the spec. Reply with STRICT JSON on
 				GlobalModel:    amgrCfg.VerificationModel,
 				PRDBackend:     prd.Backend,
 				PRDModel:       prd.Model,
-				ProjectDir:     prd.ProjectDir,
+				ProjectDir:     taskDir,
 			}, verifierTryAdmit, resolveAskBackend, askCompatible, isInferenceSessionKind)
 			vbackend, vkind, verifyModel, useSession := vsel.Backend, vsel.Kind, vsel.Model, vsel.UseSession
 			release := vsel.Release
@@ -4944,16 +4950,16 @@ Verify whether the diff plausibly implements the spec. Reply with STRICT JSON on
 				defer release()
 			}
 			// B124 — vkind has no /api/ask adapter but is a real
-			// tool-using backend and prd.ProjectDir exists to run it in:
+			// tool-using backend and taskDir exists to run it in:
 			// spawn a real one-shot session instead of silently
 			// downgrading to ollama (what this call used to do). Reuses
 			// the exact same judgment prompt text built above — only
 			// delivery/capture changes.
 			if useSession {
 				specHash := sha256.Sum256([]byte(task.ID + "|" + prompt))
-				outputFile := filepath.Join(prd.ProjectDir, ".verify-output-"+hex.EncodeToString(specHash[:8])+".json")
-				sessionTask := sessionJudgmentTask(prompt, prd.ProjectDir, outputFile)
-				content, serr := runOneShotJSONSessionWithEffort(cfg, prd.ID, prd.ProjectDir, vbackend, verifyModel,
+				outputFile := filepath.Join(taskDir, ".verify-output-"+hex.EncodeToString(specHash[:8])+".json")
+				sessionTask := sessionJudgmentTask(prompt, taskDir, outputFile)
+				content, serr := runOneShotJSONSessionWithEffort(cfg, prd.ID, taskDir, vbackend, verifyModel,
 					mapEffortToSession(autonomouspkg.Effort(vsel.Effort)),
 					"autonomous:verify:"+task.ID, sessionTask, outputFile, "verify-"+task.ID+".json", 10*time.Minute)
 				if serr != nil {
@@ -5417,7 +5423,7 @@ Return ONLY a unified diff or markdown code block showing the proposed AGENT.md 
 				// + non-git dirs (find-newer since session start).
 				files := projGit.TouchedFiles(sess.CreatedAt)
 				if prd, ok := amgr.Store().GetPRD(prdID); ok {
-					files = append(files, touchedInExtraWriteDirs(prd, sess.CreatedAt)...)
+					files = append(files, touchedInExtraWriteDirs(prd, nil, sess.CreatedAt)...)
 				}
 				if len(files) == 0 {
 					return
@@ -16584,12 +16590,14 @@ Always cite your sources. If a snippet is truncated, note that further detail
 is at the URL.
 `
 
-// touchedInExtraWriteDirs lists files changed since `since` in the PRD's
-// declared write dirs other than its project dir, as absolute paths.
-func touchedInExtraWriteDirs(prd *autonomouspkg.PRD, since time.Time) []string {
+// touchedInExtraWriteDirs lists files changed since `since` in the task's
+// effective write dirs other than its resolved project dir, as absolute
+// paths. A nil task means the PRD-level dirs.
+func touchedInExtraWriteDirs(prd *autonomouspkg.PRD, task *autonomouspkg.Task, since time.Time) []string {
 	var out []string
-	proj := filepath.Clean(prd.ProjectDir)
-	for _, d := range autonomouspkg.EffectiveWriteDirs(prd) {
+	// BL447: judge against the task's resolved dir and write dirs.
+	proj := filepath.Clean(autonomouspkg.ResolveTaskProjectDir(prd, task))
+	for _, d := range autonomouspkg.EffectiveTaskWriteDirs(prd, task) {
 		if d == proj {
 			continue
 		}

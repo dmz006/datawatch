@@ -4,9 +4,13 @@ package autonomous
 
 import (
 	"fmt"
+	"log"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/pipeline"
 )
 
 // ResolveTaskProjectDir returns the directory a task works and is verified
@@ -73,4 +77,69 @@ func (m *Manager) SetTaskProjectDir(prdID, taskID, dir, actor string) (*PRD, err
 	}
 	updated, _ := m.store.GetPRD(prdID)
 	return updated, nil
+}
+
+// runQualityGateTests is pipeline.RunTests; a var so tests can observe the
+// directory each quality-gate run happens in.
+var runQualityGateTests = pipeline.RunTests
+
+// qualityGateBaselines caches BL367 quality-gate baselines per directory
+// for one Run (BL447). The PRD-level baseline captured in prd.ProjectDir
+// only applies to tasks that resolve to that dir; any other resolved task
+// dir gets its own baseline captured lazily on first use. A nil receiver
+// (gates off) reports no baseline.
+type qualityGateBaselines struct {
+	mu      sync.Mutex
+	cfg     pipeline.QualityGateConfig
+	prdDir  string
+	byDir   map[string]pipeline.TestResult
+	enabled bool
+}
+
+func newQualityGateBaselines(cfg pipeline.QualityGateConfig, prdDir string, prdBaseline *pipeline.TestResult) *qualityGateBaselines {
+	b := &qualityGateBaselines{cfg: cfg, prdDir: prdDir, byDir: map[string]pipeline.TestResult{},
+		enabled: cfg.Enabled && cfg.TestCommand != ""}
+	if prdBaseline != nil {
+		b.byDir[prdDir] = *prdBaseline
+	}
+	return b
+}
+
+// forDir returns the baseline comparable with a test run in dir. For
+// prd.ProjectDir that is the pre-run baseline (absent when it was never
+// captured, preserving pre-BL447 behaviour); any other dir is captured
+// now and cached.
+func (b *qualityGateBaselines) forDir(dir string) (pipeline.TestResult, bool) {
+	if b == nil || !b.enabled || dir == "" {
+		return pipeline.TestResult{}, false
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if r, ok := b.byDir[dir]; ok {
+		return r, true
+	}
+	if dir == b.prdDir {
+		return pipeline.TestResult{}, false
+	}
+	r := runQualityGateTests(b.cfg.TestCommand, dir, b.cfg.Timeout)
+	log.Printf("[autonomous] quality-gate baseline for task dir %s: %d pass / %d fail", dir, r.PassCount, r.FailCount)
+	b.byDir[dir] = r
+	return r, true
+}
+
+// storyEvidenceDir is the directory story-level verification-script
+// evidence runs in. A story spans tasks, so it stays on prd.ProjectDir
+// unless every task in the story resolves to the same override dir — then
+// that shared dir is the only place the story's work exists (BL447).
+func storyEvidenceDir(prd *PRD, s *Story) string {
+	if s == nil || len(s.Tasks) == 0 {
+		return prd.ProjectDir
+	}
+	dir := ResolveTaskProjectDir(prd, &s.Tasks[0])
+	for i := 1; i < len(s.Tasks); i++ {
+		if ResolveTaskProjectDir(prd, &s.Tasks[i]) != dir {
+			return prd.ProjectDir
+		}
+	}
+	return dir
 }

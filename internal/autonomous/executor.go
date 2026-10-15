@@ -244,10 +244,14 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 	qgCfg := m.resolveQualityGates(prd)
 	var qgBaseline *pipeline.TestResult
 	if qgCfg.Enabled && qgCfg.TestCommand != "" && prd.ProjectDir != "" {
-		r := pipeline.RunTests(qgCfg.TestCommand, prd.ProjectDir, qgCfg.Timeout)
+		r := runQualityGateTests(qgCfg.TestCommand, prd.ProjectDir, qgCfg.Timeout)
 		qgBaseline = &r
 		log.Printf("[autonomous] %s quality-gate baseline: %d pass / %d fail", prdID, r.PassCount, r.FailCount)
 	}
+	// BL447: the PRD-level baseline is only comparable for tasks that run
+	// in prd.ProjectDir; tasks with another resolved dir get a lazily
+	// captured, per-dir baseline cached for the rest of this run.
+	qgBaselines := newQualityGateBaselines(qgCfg, prd.ProjectDir, qgBaseline)
 
 	// BL370 — resolve concurrency limit: per-PRD overrides global config.
 	// 0 or 1 = sequential (existing behaviour); > 1 = concurrent pool.
@@ -310,7 +314,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 					s.Status = StoryInProgress
 					_ = m.store.SavePRD(prd)
 				}
-				if err := m.executeOne(ctx, prd, t, spawn, verify, retries, qgCfg, qgBaseline); err != nil {
+				if err := m.executeOne(ctx, prd, t, spawn, verify, retries, qgCfg, qgBaselines); err != nil {
 					oldStatus := t.Status
 					t.Status = TaskFailed
 					t.Error = err.Error()
@@ -464,7 +468,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 				inFlight[tid] = true
 				capturedPRD := prd // goroutine captures the prd at launch time
 				go func(tid string, t *Task) {
-					err := m.executeOne(ctx, capturedPRD, t, spawn, verify, retries, qgCfg, qgBaseline)
+					err := m.executeOne(ctx, capturedPRD, t, spawn, verify, retries, qgCfg, qgBaselines)
 					results <- taskResult{tid, err}
 				}(tid, t)
 			}
@@ -798,7 +802,8 @@ func (m *Manager) relocateCheckpoint(prd *PRD, t *Task) string {
 		log.Printf("[autonomous] relocateCheckpoint: scratch dir for prd=%s: %v", prd.ID, err)
 		scratchDir = "" // still try the read+delete below; just skip archiving
 	}
-	content, ok := RelocateProjectFile(prd.ProjectDir, "CHECKPOINT.md", scratchDir, t.ID+".md")
+	// BL447: the worker wrote CHECKPOINT.md in its own (resolved) dir.
+	content, ok := RelocateProjectFile(m.resolveTaskProjectDir(prd, t), "CHECKPOINT.md", scratchDir, t.ID+".md")
 	if !ok {
 		return ""
 	}
@@ -813,7 +818,7 @@ func (m *Manager) relocateCheckpoint(prd *PRD, t *Task) string {
 // Run cycle the parent went through. Recursion depth is bounded by
 // Config.MaxRecursionDepth so a runaway decomposition can't tank the
 // daemon.
-func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn SpawnFn, verify VerifyFn, retries int, qgCfg pipeline.QualityGateConfig, qgBaseline *pipeline.TestResult) error {
+func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn SpawnFn, verify VerifyFn, retries int, qgCfg pipeline.QualityGateConfig, qgBaselines *qualityGateBaselines) error {
 	if t.SpawnPRD {
 		return m.recurseChildPRD(ctx, prd, t, spawn, verify, retries)
 	}
@@ -920,17 +925,21 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				}
 				return aerr
 			}
-			if problems := LintTaskScope(prd, "task '"+t.Title+"'", t.Spec, t.FilesPlanned); len(problems) > 0 {
+			// BL447: lint against the task's own resolved dir/write scope.
+			if problems := LintTaskScopeFor(prd, t, "task '"+t.Title+"'", t.Spec, t.FilesPlanned); len(problems) > 0 {
 				return fmt.Errorf("scope: %s (edit the task or widen the PRD read/write dirs)", strings.Join(problems, "; "))
 			}
+			// BL447: cwd, scope block and pre-task capture anchor to the
+			// task's resolved dir (override or PRD.ProjectDir).
+			taskDir := m.resolveTaskProjectDir(prd, t)
 			var sr SpawnResult
 			sr, err = spawn(ctx, SpawnRequest{
 				TaskID:             t.ID,
 				StoryID:            t.StoryID,
 				PRDID:              t.PRDID,
 				Title:              t.Title,
-				Spec:               ScopeBlock(prd) + "\n" + t.Spec,
-				ProjectDir:         prd.ProjectDir,
+				Spec:               TaskScopeBlock(prd, t) + "\n" + t.Spec,
+				ProjectDir:         taskDir,
 				Backend:            backend,
 				Effort:             effort,
 				Model:              model,
@@ -966,7 +975,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				seedFn := m.memorySeedFn
 				m.mu.Unlock()
 				if seedFn != nil {
-					if serr := seedFn(ctx, sr.SessionID, t.PRDID, t.StoryID, prd.ProjectDir, prd.MemorySeed); serr != nil {
+					if serr := seedFn(ctx, sr.SessionID, t.PRDID, t.StoryID, taskDir, prd.MemorySeed); serr != nil { // BL447
 						log.Printf("[autonomous] seed: session=%s: %v", sr.SessionID, serr)
 					}
 				}
@@ -1016,9 +1025,12 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 		if vr.OK {
 			// BL367 — quality gate: run tests after verifier passes and
 			// check for regressions vs. the pre-PRD baseline.
-			if qgCfg.Enabled && qgCfg.TestCommand != "" && qgBaseline != nil && prd.ProjectDir != "" {
-				current := pipeline.RunTests(qgCfg.TestCommand, prd.ProjectDir, qgCfg.Timeout)
-				cmp := pipeline.CompareResults(*qgBaseline, current)
+			// BL447: run in the task's resolved dir against a baseline
+			// captured in that same dir (qualityGateBaselines.forDir).
+			qgDir := m.resolveTaskProjectDir(prd, t)
+			if base, ok := qgBaselines.forDir(qgDir); ok {
+				current := runQualityGateTests(qgCfg.TestCommand, qgDir, qgCfg.Timeout)
+				cmp := pipeline.CompareResults(base, current)
 				t.QualityGateResult = &cmp
 				log.Printf("[autonomous] %s/%s quality-gate: %s", prd.ID, t.ID, cmp.Summary)
 				metrics.QualityGateRunsTotal.Inc()
@@ -1083,7 +1095,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				harvestFn := m.memoryHarvestFn
 				m.mu.Unlock()
 				if harvestFn != nil {
-					if herr := harvestFn(ctx, t.SessionID, t.PRDID, t.StoryID, prd.ProjectDir, prd.MemoryHarvest); herr != nil {
+					if herr := harvestFn(ctx, t.SessionID, t.PRDID, t.StoryID, m.resolveTaskProjectDir(prd, t), prd.MemoryHarvest); herr != nil { // BL447
 						log.Printf("[autonomous] harvest: session=%s: %v", t.SessionID, herr)
 					}
 				}
@@ -1102,8 +1114,9 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			verifierFn := m.memoryVerifierFn
 			m.mu.Unlock()
 			if verifierFn != nil {
+				// BL447: findings are filed under the task's resolved dir.
 				for _, issue := range vr.Issues {
-					if ferr := verifierFn(ctx, t.PRDID, prd.ProjectDir, "[verifier-finding] "+issue, "verifier-finding"); ferr != nil {
+					if ferr := verifierFn(ctx, t.PRDID, m.resolveTaskProjectDir(prd, t), "[verifier-finding] "+issue, "verifier-finding"); ferr != nil {
 						log.Printf("[autonomous] verifier memory: prd=%s: %v", t.PRDID, ferr)
 					}
 				}
@@ -1338,7 +1351,10 @@ func (m *Manager) recurseChildPRD(ctx context.Context, parent *PRD, t *Task, spa
 	if effort == "" {
 		effort = parent.Effort
 	}
-	child, err := m.store.CreatePRDWithParent(t.Spec, parent.ProjectDir, backend, model, effort, parent.ID, t.ID, parent.Depth+1)
+	// BL447: the child PRD does this task's work, so it runs in the task's
+	// resolved dir. (scopeSeedFn below stays on parent.ProjectDir: it reads
+	// the parent's prd-shared memories, which are keyed by that dir.)
+	child, err := m.store.CreatePRDWithParent(t.Spec, m.resolveTaskProjectDir(parent, t), backend, model, effort, parent.ID, t.ID, parent.Depth+1)
 	if err != nil {
 		old = t.Status
 		t.Status = TaskFailed
@@ -1462,11 +1478,11 @@ func (m *Manager) runPerTaskGuardrails(ctx context.Context, prd *PRD, t *Task) (
 		UnitID:     t.ID,
 		UnitTitle:  t.Title,
 		UnitSpec:   t.Spec,
-		ProjectDir: prd.ProjectDir,
-		OwnerPeer:  prd.OwnerPeer, // BL369 Layer 3 — federation trust boundary
+		ProjectDir: m.resolveTaskProjectDir(prd, t), // BL447: judge the task in its own dir
+		OwnerPeer:  prd.OwnerPeer,                   // BL369 Layer 3 — federation trust boundary
 	}
 	inv.GuardrailBackend, inv.GuardrailModel = resolveGuardrailBackendModel(t, prd, globalBackend, globalModel)
-	scriptPassed := prepareScriptEvidence(&inv, t.VerificationScript, prd.ProjectDir)
+	scriptPassed := prepareScriptEvidence(&inv, t.VerificationScript, inv.ProjectDir) // BL447
 	for _, g := range guardrails {
 		inv.Guardrail = g
 		var v GuardrailVerdict
@@ -1554,13 +1570,13 @@ func (m *Manager) runPerStoryGuardrails(ctx context.Context, prd *PRD, s *Story)
 		UnitID:     s.ID,
 		UnitTitle:  s.Title,
 		UnitSpec:   s.Description,
-		ProjectDir: prd.ProjectDir,
-		OwnerPeer:  prd.OwnerPeer, // BL369 Layer 3 — federation trust boundary
+		ProjectDir: storyEvidenceDir(prd, s), // BL447: see storyEvidenceDir
+		OwnerPeer:  prd.OwnerPeer,            // BL369 Layer 3 — federation trust boundary
 	}
 	// No story-level guardrail routing exists, so an empty Task makes
 	// resolution fall through to PRD → global.
 	inv.GuardrailBackend, inv.GuardrailModel = resolveGuardrailBackendModel(&Task{}, prd, globalBackend, globalModel)
-	scriptPassed := prepareScriptEvidence(&inv, s.VerificationScript, prd.ProjectDir)
+	scriptPassed := prepareScriptEvidence(&inv, s.VerificationScript, inv.ProjectDir) // BL447
 	for _, g := range guardrails {
 		inv.Guardrail = g
 		var v GuardrailVerdict

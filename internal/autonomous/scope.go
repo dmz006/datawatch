@@ -143,8 +143,17 @@ func firstSegment(p string) string {
 // skipped, unless a write verb in the few words before it makes it a write
 // target (BL421).
 func LintTaskScope(prd *PRD, label, spec string, files []string) []string {
-	read := EffectiveReadDirs(prd)
-	write := EffectiveWriteDirs(prd)
+	return lintScope(prd.ProjectDir, EffectiveReadDirs(prd), EffectiveWriteDirs(prd), label, spec, files)
+}
+
+// LintTaskScopeFor is LintTaskScope judged against the task's own resolved
+// project dir and task-effective read/write dirs. Identical to
+// LintTaskScope(prd, ...) when the task has no ProjectDir override. BL447.
+func LintTaskScopeFor(prd *PRD, t *Task, label, spec string, files []string) []string {
+	return lintScope(ResolveTaskProjectDir(prd, t), EffectiveTaskReadDirs(prd, t), EffectiveTaskWriteDirs(prd, t), label, spec, files)
+}
+
+func lintScope(projectDir string, read, write []string, label, spec string, files []string) []string {
 	var out []string
 	for _, f := range files {
 		switch {
@@ -158,7 +167,7 @@ func LintTaskScope(prd *PRD, label, spec string, files []string) []string {
 	}
 	for _, m := range absPathRe.FindAllStringSubmatchIndex(spec, -1) {
 		p := strings.TrimRight(spec[m[2]:m[3]], ".")
-		if seg := firstSegment(p); !fsRoots[seg] && seg != firstSegment(prd.ProjectDir) {
+		if seg := firstSegment(p); !fsRoots[seg] && seg != firstSegment(projectDir) {
 			continue
 		}
 		if isBinaryMention(p, spec[:m[2]]) {
@@ -177,7 +186,7 @@ func LintPlanScope(prd *PRD, stories []Story) []string {
 	for _, s := range stories {
 		out = append(out, LintTaskScope(prd, "story '"+s.Title+"'", s.Description, s.FilesPlanned)...)
 		for _, t := range s.Tasks {
-			out = append(out, LintTaskScope(prd, "task '"+t.Title+"'", t.Spec, t.FilesPlanned)...)
+			out = append(out, LintTaskScopeFor(prd, &t, "task '"+t.Title+"'", t.Spec, t.FilesPlanned)...) // BL447
 		}
 	}
 	return out

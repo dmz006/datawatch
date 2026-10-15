@@ -184,10 +184,13 @@ func (m *Manager) resolveBlockOnFileDrift(prd *PRD) bool {
 func (m *Manager) checkForeignFileDrift(ctx context.Context, prd *PRD, t *Task) (blocked bool) {
 	// Worktree mode runs each task in an isolated tree (see
 	// ensureWorktreeIfConfigured) — nothing pre-dirty to protect.
-	if prd.Git.Branch != "" || prd.ProjectDir == "" || t.PreTaskSHA == "" {
+	// BL447: PreTaskSHA was captured in the task's resolved dir, so the
+	// committed-files walk must run there too.
+	taskDir := m.resolveTaskProjectDir(prd, t)
+	if prd.Git.Branch != "" || taskDir == "" || t.PreTaskSHA == "" {
 		return false
 	}
-	committed, err := CommittedFilesSince(ctx, prd.ProjectDir, t.PreTaskSHA, m.driftGit)
+	committed, err := CommittedFilesSince(ctx, taskDir, t.PreTaskSHA, m.driftGit)
 	if err != nil {
 		log.Printf("[autonomous] %s/%s file-drift: git log since %s: %v", prd.ID, t.ID, t.PreTaskSHA, err)
 		return false
