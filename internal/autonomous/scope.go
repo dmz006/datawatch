@@ -65,11 +65,15 @@ func ValidateScopeDirs(dirs []string) error {
 
 // ScopeBlock renders the boundary contract shown to the planner and workers.
 func ScopeBlock(prd *PRD) string {
+	return renderScopeBlock(prd.ReadDirs, prd.ProjectDir, EffectiveWriteDirs(prd))
+}
+
+func renderScopeBlock(readDirs []string, projectDir string, writeDirs []string) string {
 	var b strings.Builder
 	b.WriteString("SCOPE (hard boundary):\n")
-	fmt.Fprintf(&b, "- Project directory: %s\n", prd.ProjectDir)
-	fmt.Fprintf(&b, "- You may WRITE only under: %s\n", strings.Join(EffectiveWriteDirs(prd), ", "))
-	if ro := onlyRead(prd); len(ro) > 0 {
+	fmt.Fprintf(&b, "- Project directory: %s\n", projectDir)
+	fmt.Fprintf(&b, "- You may WRITE only under: %s\n", strings.Join(writeDirs, ", "))
+	if ro := readOnlyDirs(readDirs, writeDirs); len(ro) > 0 {
 		fmt.Fprintf(&b, "- You may READ (never modify) under: %s\n", strings.Join(ro, ", "))
 	}
 	b.WriteString("- Do not read, write or list anything outside these directories.\n")
@@ -77,10 +81,10 @@ func ScopeBlock(prd *PRD) string {
 	return b.String()
 }
 
-func onlyRead(prd *PRD) []string {
+func readOnlyDirs(readDirs, writeDirs []string) []string {
 	var out []string
-	for _, d := range cleanDirs(prd.ReadDirs) {
-		if !PathInDirs(d, EffectiveWriteDirs(prd)) {
+	for _, d := range cleanDirs(readDirs) {
+		if !PathInDirs(d, writeDirs) {
 			out = append(out, d)
 		}
 	}
@@ -177,4 +181,47 @@ func LintPlanScope(prd *PRD, stories []Story) []string {
 		}
 	}
 	return out
+}
+
+// EffectiveTaskWriteDirs returns the directories a task's worker may modify.
+// Declared PRD WriteDirs always win; otherwise a task ProjectDir override
+// narrows/moves the write scope to that dir; otherwise it is exactly
+// EffectiveWriteDirs(prd). BL447.
+func EffectiveTaskWriteDirs(prd *PRD, t *Task) []string {
+	if len(prd.WriteDirs) > 0 {
+		return EffectiveWriteDirs(prd)
+	}
+	if dir := ResolveTaskProjectDir(prd, t); dir != "" && dir != prd.ProjectDir {
+		return cleanDirs([]string{dir})
+	}
+	return EffectiveWriteDirs(prd)
+}
+
+// EffectiveTaskReadDirs is EffectiveReadDirs with the task-effective write dirs.
+func EffectiveTaskReadDirs(prd *PRD, t *Task) []string {
+	return cleanDirs(append(append([]string{}, prd.ReadDirs...), EffectiveTaskWriteDirs(prd, t)...))
+}
+
+// TaskScopeBlock renders ScopeBlock for one task, using the task's resolved
+// project dir and task-effective write dirs. Identical to ScopeBlock(prd)
+// when the task has no ProjectDir override.
+func TaskScopeBlock(prd *PRD, t *Task) string {
+	return renderScopeBlock(prd.ReadDirs, ResolveTaskProjectDir(prd, t), EffectiveTaskWriteDirs(prd, t))
+}
+
+// ValidateTaskProjectDir checks a per-task ProjectDir override: it must be an
+// absolute path, not the filesystem root or a top-level system dir, and must
+// sit inside the PRD's declared WriteDirs when there are any.
+func ValidateTaskProjectDir(prd *PRD, dir string) error {
+	if err := ValidateScopeDirs([]string{dir}); err != nil {
+		return err
+	}
+	clean := filepath.Clean(strings.TrimSpace(dir))
+	if clean == "/" || (filepath.Dir(clean) == "/" && fsRoots[strings.TrimPrefix(clean, "/")]) {
+		return fmt.Errorf("directory %q is a filesystem root or system directory", dir)
+	}
+	if prd != nil && len(prd.WriteDirs) > 0 && !PathInDirs(clean, EffectiveWriteDirs(prd)) {
+		return fmt.Errorf("directory %q is outside the PRD write dirs %s", dir, strings.Join(EffectiveWriteDirs(prd), ", "))
+	}
+	return nil
 }

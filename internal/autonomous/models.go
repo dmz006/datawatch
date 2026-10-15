@@ -574,6 +574,11 @@ type Task struct {
 	Backend string `json:"backend,omitempty"`
 	Effort  Effort `json:"effort,omitempty"`
 	Model   string `json:"model,omitempty"`
+	// ProjectDir is an optional per-task working/verification directory.
+	// Empty inherits PRD.ProjectDir. Same task > PRD precedence as the
+	// per-task LLM overrides (Backend/Effort/Model above); resolved by
+	// ResolveTaskProjectDir. BL447.
+	ProjectDir string `json:"project_dir,omitempty"`
 	// BL416 Phase 1 — per-task guardrail LLM override — empty = inherit
 	// PRD.GuardrailBackend/GuardrailModel, then the global autonomous
 	// verification_backend/verification_model. Resolved by

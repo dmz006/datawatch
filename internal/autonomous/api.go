@@ -631,6 +631,13 @@ func (a *API) SetTaskLLM(prdID, taskID, backend, effort, model, actor string) (a
 	}
 	return out, err
 }
+func (a *API) SetTaskProjectDir(prdID, taskID, dir, actor string) (any, error) {
+	out, err := a.M.SetTaskProjectDir(prdID, taskID, dir, actor)
+	if err == nil {
+		a.M.EmitPRDUpdate(prdID)
+	}
+	return out, err
+}
 func (a *API) SetPRDLLM(prdID, backend, effort, model, decompositionProfile, decompositionModel, actor string) (any, error) {
 	out, err := a.M.SetPRDLLM(prdID, backend, effort, model, decompositionProfile, decompositionModel, actor)
 	if err == nil {
