@@ -1680,7 +1680,9 @@ PRD (`recover_pending_task`). **Shipped v9.1.1 (race fix) and v9.1.2
    labeled "uncensored"/"abliterated", using nonstandard invented quant
    names — a real supply-chain risk for weights wired into an agent with
    file-write and git-commit access, not just a quality concern). No plan
-   doc written yet; this entry is the design-pass trigger.
+   doc written yet; this entry is the design-pass trigger. **Automaton
+   `468db26e`** filed in `draft` (not yet decomposed/run — queued for
+   when this reaches the front of the pre-v10.0.0 order).
 
 **Active execution order (operator-confirmed, last updated 2026-10-14 ~14:05;
 ordered by feature dependency, not filing date or chronology — supersedes
