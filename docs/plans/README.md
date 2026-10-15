@@ -1684,35 +1684,77 @@ PRD (`recover_pending_task`). **Shipped v9.1.1 (race fix) and v9.1.2
    `468db26e`** filed in `draft` (not yet decomposed/run — queued for
    when this reaches the front of the pre-v10.0.0 order).
 
-**Active execution order (operator-confirmed, last updated 2026-10-14 ~14:05;
-ordered by feature dependency, not filing date or chronology — supersedes
-the three separate dated addenda this replaced).** Items run one at a time
-against this tree (no cross-PRD write serialization exists yet — BL428
-§3a — so this order is enforced by hand/by watcher scripts, not by the
-daemon).
+**Active execution order (operator-confirmed 2026-10-15, supersedes the
+2026-10-14 ~14:05 table below it replaces).** Full re-review triggered by
+the operator: the prior table only tracked items that already had a PRD,
+which silently buried BL441 (a live bug in BL410's own shipped retry
+mechanism), BL431's implementation (its only PRD was cancelled, not "one
+task left" as the prior table claimed), and two entire fully-designed,
+zero-open-question programs (BL405's 11 phases, the BL365+BL395+BL408+BL398
+security track) that had sat dormant since this table was first drawn up.
+Audited against real PRD records and CHANGELOG, not doc text alone.
+
+**Shape of this order:** Stage A fixes the execution engine's own
+reliability before more load goes through it. Stage B builds the
+Automaton/PRD execution engine itself (event dispatch → concurrency/budget
+mechanics → Automation coordinator). Stage C is "leverage it to build the
+rest" — once BL431 Phase 2 (the coordinator's auto-advance) ships, the
+remaining pre-v10.0.0 backlog is queued as an Automation and the daemon
+advances it on its own instead of being hand-sequenced. Items still run one
+at a time against this tree until BL428 Phase 2 (the write lock) ships —
+no cross-PRD write serialization exists before that — so Stage A and early
+Stage B are enforced by hand/by watcher process, not by the daemon.
 
 | # | Item | Status | Why here |
 |---|---|---|---|
-| 1 | **BL432** — mobile/PWA payload optimization | Shipped v9.0.82 | Triaged 2026-10-14 from GH#242; unrelated bugfix, ran first because it was ready first. |
-| 2 | **BL433** — PWA performance audit | In progress — code inventory committed ([2026-10-14-pwa-performance-audit.md](2026-10-14-pwa-performance-audit.md)); Method + Measurements next | Companion to BL432 (GH#243), audit-only. |
-| 3 | **BL434** — full-screen eye splash + input-draft preservation fix | Queued (re-decomposing) | PWA visual + a real data-loss bug on the same reload sites. |
-| 4 | **BL435** — unmodified-retry executor fix | Queued | Generalizes a one-off task-spec workaround used to recover BL431 into a real fix for every datawatch install. |
-| 5 | **BL431** (`c187962a`) — Automation design doc | One task left (self-registration) | Design doc itself is done and committed; only its own backlog-registration task remains. |
-| 6 | **BL420** — session-tracker OOM fix | **Shipped v9.0.83** (tracker code in binaries since v9.0.62; v9.0.83 documents it, ships `scripts/shrink-session-repo.sh` + `scripts/repro-tracker-git-growth.sh`, redeployed + 15-min observation in `docs/testing.md`). The bloated repos were shrunk with the script on 2026-10-14 (v9.0.84): ab22 31 GB → 3.3 MB, 9245 8.7 GB → 2.1 MB, ddeb 822 MB → 884 KB. | **Operator-confirmed 2026-10-14 ~14:05: moved back ahead of BL427/428/431.** Not "regular work" under the operator's own ordering principle — it's crash-prevention for the daemon that is about to run the heaviest, most concurrent automated work yet (row 7). Doing the riskiest implementation stretch without this fix in place first is the wrong order. |
-| 7 | **BL427 → BL428 → BL431 implementation** | BL427 Phase 1 (event type + in-process dispatcher, WS `prd_update` migrated onto it) shipped in v9.0.85; BL428 Phase 1 (`max_parallel_tasks` deprecation + global `max_concurrent_tasks`) shipped in v9.0.86; BL427 Phases 2–5, BL428 Phases 2–6 and BL431 not started | Optimize the Automaton/PRD execution system itself before more regular feature/bugfix work, so the rest of the roadmap runs through it rather than being hand-sequenced. Dependency order: event dispatch → concurrency/budget mechanics → Automation coordinator built on top of both. Known trade-off, noted not litigated: BL428 §4d / BL431 §6-§11's model-tier design cite BL422's results as an input, so that part proceeds on placeholder assumptions until BL422 runs afterward (row 8). |
-| 8 | **BL422** — Claude model/effort tiering eval | Queued, resumes after #7 | Its results get retrofitted into whatever BL428/431 implemented with placeholder tier defaults (see row 7's trade-off note). |
-| — | **BL436** — per-turn chunked session capture (replaces tmux-scrollback reliance) | Design doc done, `needs_review` | Filed 2026-10-14, not yet slotted into the numbered order above — docs-only, low collision risk, could run opportunistically. |
-| — | **BL437** — recurring hardware-aware model/effort eval ([design doc](2026-10-14-recurring-model-eval-design.md)) | Queued, pre-v10.0.0 priority (operator-named 2026-10-14) | Generalizes BL422 into a recurring monthly sweep over all models, efforts and hardware classes. Sequenced after BL422's results are available (row 8), so it is not slotted into the numbered order above yet. |
-| — | **BL440** — Status-tab session detail for Automaton task sessions | **Shipped v9.0.87** (follow-ups (a)–(h) open in item 30) | Surfaced live 2026-10-14 while watching Automaton task sessions; display-only, ran outside the numbered order. |
-| — | **BL447**: per-task `ProjectDir` override / `set_task_project_dir` | **Shipped v9.1.0** | Autonomous PRD; missed the tracker, registered 2026-10-15. |
-| — | **BL448**: scope unconfirmed in repo | Unconfirmed | Autonomous PRD; missed the tracker, and the repo doesn't record its scope. |
-| — | **BL449**: open-model eval matrix (BL437 S5) | **In progress**: PRD `9e7bad8e` running again after the BL451 unstick. v9.1.3 (ask-adapter `ollama/` strip) and v9.1.4 (session-start model normalisation) shipped. Runs r1–r8 produced no valid data: r6 was `invalid-infrastructure` (provider block missing for the bare model pin), and r8 on v9.1.4 was invalid for scoring (fast/mid workers die in 3–7 s; session records evicted before collect). | Plan: [2026-10-15-bl449-open-model-matrix.md](2026-10-15-bl449-open-model-matrix.md). Next: a valid run on v9.1.4+. |
-| — | **BL450**: scope unconfirmed in repo | Unconfirmed | Autonomous PRD; missed the tracker, and the repo doesn't record its scope. |
-| — | **BL451**: completion-rollup lost-update race (`PRD.Rev`) | **Shipped v9.1.1 + v9.1.2** (BL449 PRD unstuck, `running` again) | Found live while running BL449. |
+| 1 | **BL441** — PRD-completion content-auto-fix never fires | Not started | Fixes a confirmed-live silent-hang bug in BL410's own shipped retry mechanism before the volume of unattended PRD runs increases through the rest of this table. |
+| 2 | **BL452** — Logprob-classification guardrail backend (design pass) | PRD `468db26e` exists in `draft` | Cheap (design pass, no implementation), raises guardrail reliability for every PRD run that follows. |
+| 3 | **BL427 Phase 2** — built-in lifecycle-event sinks (alert store, `PublishToTopic`, comm fan-out + coalescing) | Not started (Phase 1 shipped v9.0.85) | First real external-visibility piece of the event dispatcher. |
+| 4 | **BL428 Phase 2** — project-tree write lock (3a) | Not started (Phase 1 shipped v9.0.86) | Directly prevents the BL423/BL426 collision incident that motivated this doc; unblocks true cross-PRD concurrency. |
+| 5 | **BL431 Phase 1** — Automation data model, store, validation, CRUD | Not started; prior PRD `c187962a` cancelled | First Automation-coordinator implementation PRD. |
+| 6 | **BL431 Phase 2** — Automation coordinator (auto-advance) | Not started | The actual unlock: a queued Automation advances on its own, closing the 2026-10-13/14 overnight-stall gap this whole design doc was written to fix. |
+| 7 | **BL427 Phase 3** — persisted subscriptions + REST/MCP/CLI/comm CRUD, session-push adapter | Not started | Operator/session visibility into the now-running coordinator. |
+| 8 | **BL428 Phase 3** — inference-cap gap closure (3b) | Not started | Closes decompose-not-admitted / verify-lease-stacking gaps before heavier concurrent load. |
+| 9 | **BL431 Phase 3** — control ops + mid-flight editing | Not started | Operator can pause/resume/insert/skip once the coordinator is live. |
+| 10 | **BL422** — Claude model/effort tiering eval | Resume — mixed PRD history (`4d0ad909`, `30e6f153` completed; `f6a38c29` failed) | Its real results feed row 11, which otherwise proceeds on placeholder tier defaults. |
+| 11 | **BL431 Phase 4** — model-tier defaults | Not started | Retrofits BL422's real results into `resolveTaskBackendModel`/`resolveVerificationLLM`. |
+| 12 | **BL428 Phase 4** — reactive usage back-off (4d) | Not started | |
+| 13 | **BL428 Phase 5** — dollar-window budget (4b/4c) | Not started | Coordinated with BL405 Phase 2. |
+| 14 | **BL431 Phase 5** — BudgetPolicy | Not started | Depends on row 13's ledger pools. |
+| 15 | **BL428 Phase 6** — visibility/audit/parity close-out | Not started | |
+| 16 | **BL431 Phase 6** — Automation PWA | Not started | |
+| 17 | **BL427 Phase 4** — pending-events MCP tool + PWA subscription UI | Not started | |
+| 18 | **BL431 Phase 7** — remaining parity, BL117 migration, close-out | Not started | |
+| 19 | **BL427 Phase 5** — webhook sink + federation forwarding | Not started | Closes out the engine chain. |
+| 20 | **BL402** — GH#204 scheduled-job/integration result panel | Not started, zero open design questions | Quick win, queued first in Stage C. |
+| 21 | **BL437** — recurring hardware-aware model/effort eval | Design doc done, `needs_review` | Generalizes BL422/row 10 into a recurring sweep. |
+| 22 | **BL414** — PRD cost rollup + token usage guardrails | Needs a design/scoping pass first | Explicitly sequenced alongside/right after BL405 (row 23) — scope against BL405's Phase 4/5/9/10 before writing a plan doc. |
+| 23 | **BL405** — LLM Enhancements (11 phases, 0–10) | Fully designed, every decision answered; essentially unshipped (one stray Phase 8 CHANGELOG mention) | Largest dormant fully-designed program; queued as an Automation once row 6 ships. |
+| 24 | **Security remediation track** (BL365 + BL395 + BL408 + BL398) | Fully decided, zero open design questions, implementation only; zero PRDs exist | Same shape as row 23 — ready, just never queued. |
+| 25 | **BL412** — self-config/self-modify permission-gate generalization | Needs a design pass first | |
+| 26 | **BL413** — diff-aware project-rules / checklist enforcement | Needs a design pass first | |
+| 27 | **BL411** — pre-v10.0.0 dead-code audit | Not started | Deliberately late — benefits from everything above having already landed. |
+| 28 | **BL409** — file/function naming audit | Not started | Deliberately last — same reasoning as row 27, explicitly placed after the security track in the original numbered list. |
+| 29 | **BL424** — operator integration guide | PRD `0e2ac398` exists, `approved`, held by its own instruction | Explicitly sequenced last, right before the v10.0.0 cutover — documents the finished system, not a work-in-progress one. |
 
-BL424 (item 23 above) is explicitly excluded from this table and stays
-sequenced last, right before the v10.0.0 cutover, per its own note above —
-unaffected by anything in this table.
+**Separate lane, opportunistic, non-blocking — not part of the sequence
+above:** **BL444** (MCP SSE listener bind-retry), **BL445** (review/merge
+GH#208, `mcp.public_url`), **BL446** (federation as sibling-agent mail
+transport) — all external/GH-issue triage, each independent of this
+table's dependency chain.
+
+**Excluded from v10.0.0 by prior explicit operator decision:** **BL415**
+(`dependency-review` GITHUB_TOKEN issue) — deferred to after v10.0.0, see
+its own entry above.
+
+**Already shipped, not re-listed here:** BL406, BL407, BL404, BL403,
+BL416, BL402's prerequisite BL417 (cancelled, superseded), BL418, BL419,
+BL420, BL421, BL423, BL425, BL426, BL429, BL430, BL410 (Phases 0–3 +
+remediation pass), BL427 Phase 1, BL428 Phase 1. Also outside this table,
+already shipped or independently tracked: BL432, BL433 (in progress,
+independent PWA-audit track), BL434, BL435, BL436, BL440, BL447, BL449
+(in progress), BL450, BL451, BL448 (scope unconfirmed — needs a tracker
+reconciliation pass whenever next touched, not blocking).
 
 **Federation-aware shared-resource coordination** (operator-raised
 2026-10-14, additive to BL428/431's existing scope, not a reordering): BL428
