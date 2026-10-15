@@ -66,7 +66,7 @@ cell dir and `verify-logs/`, both in the scratch run dir):
 |---|---|---|---|---|
 | cpu-analysis | ~45s | empty | no change | exit 1 |
 | cpu-scripting | ~6m | empty | 1 uncommitted file | exit 1 |
-| cpu-docs | ~50s | `dmz_model` (placeholder, not a model name) | no change | exit 1 (MODEL-IDENTITY.txt outside docs/) |
+| cpu-docs | ~50s | `<user>_model` (local username redacted; placeholder, not a model name) | no change | exit 1 (MODEL-IDENTITY.txt outside docs/) |
 | cpu-review | ~70s | `model-name` (placeholder) | no change | exit 1 |
 | fast-analysis | ~3s | absent | no change | exit 1 |
 | fast-scripting | ~4s | absent | no change | exit 1 |

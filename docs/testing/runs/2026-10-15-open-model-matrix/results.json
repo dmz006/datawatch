@@ -88,7 +88,7 @@
       "expected_model": "qwen3:1.7b",
       "used_model": "qwen3:1.7b",
       "model_identity": "ok",
-      "self_reported_model": "dmz_model",
+      "self_reported_model": "<user>_model",
       "verification_integrity": "suspect",
       "resolved_dir": null,
       "task_project_dir": ".datawatch/eval/open-model-matrix/20261015-r8/cpu-docs",

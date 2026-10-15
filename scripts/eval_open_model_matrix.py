@@ -21,6 +21,7 @@ eval_model_tiering.py (not modified).
 
 import argparse
 import datetime as _dt
+import getpass
 import json
 import os
 import re
@@ -82,7 +83,9 @@ def redact(obj, m, public):
     repo-relative, the local matrix's LLM names become the tracked placeholder
     names wherever they appear (whole names, per role), and `node` fields are
     mapped likewise. Node names are only swapped in `node` fields because a
-    host can share a name with ordinary words (e.g. the product name)."""
+    host can share a name with ordinary words (e.g. the product name).
+    Any remaining home-dir path becomes `~`, and the local username, standing
+    alone or as a prefix like `<user>_model` in model output, becomes `<user>`."""
     pub = {r["role"]: r for r in public["roles"]}
     llms, nodes = [], {}
     for r in m["roles"]:
@@ -93,6 +96,11 @@ def redact(obj, m, public):
             nodes[r["node"]] = p["node"]
     llms.sort(key=lambda x: -len(x[0]))
     root = os.path.realpath(REPO) + os.sep
+    home = os.path.expanduser("~").rstrip(os.sep)
+    try:
+        user = getpass.getuser()
+    except Exception:  # no passwd entry / env in some sandboxes
+        user = ""
 
     def fix(v, key=None):
         if isinstance(v, dict):
@@ -106,6 +114,10 @@ def redact(obj, m, public):
         v = v.replace(root, "").replace(REPO.rstrip(os.sep) + os.sep, "")
         for a, b in llms:
             v = re.sub(r"(?<![\w.-])" + re.escape(a) + r"(?![\w.-])", b, v)
+        if home and home != os.sep:
+            v = v.replace(home + os.sep, "~" + os.sep)
+        if len(user) >= 3:
+            v = re.sub(r"(?<![A-Za-z0-9])" + re.escape(user) + r"(?![A-Za-z0-9])", "<user>", v)
         return v
     return fix(obj)
 
@@ -641,6 +653,11 @@ def cmd_self_test(_a):
               "redact replaces whole llm names only; node names only in node fields")
         check(red["task_project_dir"] == os.path.join(".datawatch", "eval", "c"),
               "redact makes in-repo paths repo-relative")
+        u = getpass.getuser()
+        if len(u) >= 3:
+            out = redact({"m": f"{u}_model", "p": os.path.join(os.path.expanduser("~"), "x")}, local, public)
+            check(out["m"] == "<user>_model" and u not in out["p"],
+                  "redact scrubs the local username and home dir")
     if fails:
         log(f"SELF-TEST FAILED ({len(fails)})")
         return 1

@@ -1249,6 +1249,12 @@ overwriting the last:
   invalid-infrastructure`. The driver pinned the bare model, so
   `opencode.json` had no `provider.ollama` block. No cell did model work,
   which led to v9.1.4.
+- r8 `3382fcda` (Automaton `d07570dd`, on v9.1.4): preflight 4/4 OK, but
+  invalid for scoring. 16/16 cells are suspect because session records
+  were evicted before `collect`. fast/mid workers still died 3–7 s after
+  spawn. cpu ran and wrote placeholder identities. gpt-oss:120b ran but
+  passed no verifier. A false-positive file-drift block on
+  decompose-validate-review needed a `reset_task`.
 
 **Still open:**
 
@@ -1257,7 +1263,9 @@ overwriting the last:
 - the one-shot wrapper must not emit `DATAWATCH_COMPLETE` after a failed
   `opencode run`;
 - `collect` must resolve sessions by id;
-- a unit test for the v9.1.4 normalisation.
+- a unit test for the v9.1.4 normalisation;
+- the node-a fast/mid 3–7 s opencode deaths, which survive v9.1.4 (r8);
+- the file-drift guard must not block on spec-required commits (r8).
 
 Scope note: `b7f59ed6` (Claude-driver per-task ProjectDir) is a BL447
 follow-up from the same session, outside BL449's spec, and needs operator
@@ -1647,7 +1655,7 @@ daemon).
 | — | **BL440** — Status-tab session detail for Automaton task sessions | **Shipped v9.0.87** (follow-ups (a)–(h) open in item 30) | Surfaced live 2026-10-14 while watching Automaton task sessions; display-only, ran outside the numbered order. |
 | — | **BL447**: per-task `ProjectDir` override / `set_task_project_dir` | **Shipped v9.1.0** | Autonomous PRD; missed the tracker, registered 2026-10-15. |
 | — | **BL448**: scope unconfirmed in repo | Unconfirmed | Autonomous PRD; missed the tracker, and the repo doesn't record its scope. |
-| — | **BL449**: open-model eval matrix (BL437 S5) | **In progress**: PRD `9e7bad8e` running again after the BL451 unstick. v9.1.3 (ask-adapter `ollama/` strip) and v9.1.4 (session-start model normalisation) shipped. Runs r1–r6 produced no valid data: r6 was `invalid-infrastructure`, with the provider block missing for the bare model pin. | Plan: [2026-10-15-bl449-open-model-matrix.md](2026-10-15-bl449-open-model-matrix.md). Next: a valid run on v9.1.4+. |
+| — | **BL449**: open-model eval matrix (BL437 S5) | **In progress**: PRD `9e7bad8e` running again after the BL451 unstick. v9.1.3 (ask-adapter `ollama/` strip) and v9.1.4 (session-start model normalisation) shipped. Runs r1–r8 produced no valid data: r6 was `invalid-infrastructure` (provider block missing for the bare model pin), and r8 on v9.1.4 was invalid for scoring (fast/mid workers die in 3–7 s; session records evicted before collect). | Plan: [2026-10-15-bl449-open-model-matrix.md](2026-10-15-bl449-open-model-matrix.md). Next: a valid run on v9.1.4+. |
 | — | **BL450**: scope unconfirmed in repo | Unconfirmed | Autonomous PRD; missed the tracker, and the repo doesn't record its scope. |
 | — | **BL451**: completion-rollup lost-update race (`PRD.Rev`) | **Shipped v9.1.1 + v9.1.2** (BL449 PRD unstuck, `running` again) | Found live while running BL449. |
 

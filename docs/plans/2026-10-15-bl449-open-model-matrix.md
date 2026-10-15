@@ -63,6 +63,7 @@ helpers.
 | v9.1.3 (`f9eb5970`) | Ask-path adapter strips `ollama/` before calling Ollama. Table test `TestOpenCode_Infer_ModelPrefix` added afterwards. |
 | r6 (`78dfd70f`) | Preflight 4/4 OK, then `run_verdict = invalid-infrastructure`. All 16 workers hit `ProviderModelNotFoundError` because the driver pins the bare model name, so `opencode.json` got no `provider.ollama` block. No cell did any model work. |
 | v9.1.4 (`f0c80d2e`) | `handleStartSession` gates the Ollama-URL resolution on the compute node's kind, not the model prefix, and normalises the model to `ollama/<model>` for opencode backends. Not yet exercised by a matrix run. |
+| r8 (`3382fcda`, Automaton `d07570dd`) | Preflight 4/4 OK on v9.1.4, run invalid for scoring: 16/16 cells suspect. fast/mid workers (8 cells) died 3–7 s after spawn without writing `MODEL-IDENTITY.txt`, the r6 failure mode surviving v9.1.4. cpu (`qwen3:1.7b`) ran but wrote placeholder identities. decompose-validate (`gpt-oss:120b`) ran and self-reported correctly, but no cell passed its verifier. Session records were evicted before `collect`, so `resolved_dir` is unresolvable everywhere and `model_result` stays null. A false-positive file-drift block on decompose-validate-review (it committed the spec-required `review-verdict.json`) stalled the run until a `reset_task`. |
 | Remediation | Leak fixes: placeholder names in the tracked fixtures, a gitignored local matrix override, and `report` redaction. Also the adapter test, testing doc, tracker and plan refresh. |
 
 **Not yet done**
@@ -78,6 +79,17 @@ helpers.
   - `collect` must resolve worker sessions by id instead of the trimmed
     `/api/sessions` list.
 - A unit test for the v9.1.4 `handleStartSession` normalisation.
+- r8 follow-ups:
+  - find why node-a fast/mid opencode sessions die in 3–7 s even though
+    preflight `llm_test` passes (v9.1.4 did not fix it);
+  - the executor's file-drift guard must not block on files the task spec
+    requires the worker to commit.
+
+**Attribution note:** v9.1.4 (`f0c80d2e`, `internal/server/api.go`,
+`cmd/datawatch/main.go`, `CHANGELOG.md`) was committed by a parallel Claude
+session, not by the BL449 remediation session. It is in BL449's history
+because it fixes a BL449-found bug, but no BL449 remediation commit edits
+`internal/server/api.go`.
 
 ## Leak handling
 
@@ -86,8 +98,10 @@ The tracked `matrix.json` carries placeholder registry and node names
 `.datawatch/eval/open-model-matrix/matrix.local.json` (gitignored), or in a
 file named by `DATAWATCH_EVAL_OPEN_MATRIX`. Before `report` writes tracked
 results, it maps local LLM names to the placeholders per role, maps `node`
-fields the same way, and rewrites in-repo absolute paths as repo-relative.
-The self-test covers this.
+fields the same way, rewrites in-repo absolute paths as repo-relative,
+replaces any other home-dir path with `~`, and replaces the local username
+with `<user>` (r8 leaked it through a model's self-reported identity
+string). The self-test covers all of this.
 
 ## Parity surface
 
