@@ -1,393 +1,40 @@
 {
-  "run_id": "20261015-r4",
+  "run_id": "20261015-r5",
   "preflight": [
     {
       "role": "cpu",
       "llm": "opencode-johnnyjohnny-cpu",
       "expected_model": "qwen3:1.7b",
-      "used_model": "qwen3:1.7b",
-      "ok": true,
-      "error": null
+      "used_model": null,
+      "ok": false,
+      "error": "POST /api/llms/opencode-johnnyjohnny-cpu/test: HTTP 502: compute node \"johnnyjohnny-cpu\": ollama HTTP 404: {\"error\":\"model 'ollama/qwen3:1.7b' not found\"}"
     },
     {
       "role": "fast",
       "llm": "opencode-johnnyjohnny-fast",
       "expected_model": "granite4.2:8b",
-      "used_model": "granite4.2:8b",
-      "ok": true,
-      "error": null
+      "used_model": null,
+      "ok": false,
+      "error": "POST /api/llms/opencode-johnnyjohnny-fast/test: HTTP 502: compute node \"johnnyjohnny\": ollama HTTP 404: {\"error\":\"model 'ollama/granite4.2:8b' not found\"}"
     },
     {
       "role": "mid",
       "llm": "opencode-johnnyjohnny-gpu",
       "expected_model": "granite4.2:30b",
-      "used_model": "granite4.2:30b",
-      "ok": true,
-      "error": null
+      "used_model": null,
+      "ok": false,
+      "error": "POST /api/llms/opencode-johnnyjohnny-gpu/test: HTTP 502: compute node \"johnnyjohnny\": ollama HTTP 404: {\"error\":\"model 'ollama/granite4.2:30b' not found\"}"
     },
     {
       "role": "decompose-validate",
       "llm": "opencode-datawatch-gpu",
       "expected_model": "gpt-oss:120b",
-      "used_model": "gpt-oss:120b",
-      "ok": true,
-      "error": null
+      "used_model": null,
+      "ok": false,
+      "error": "POST /api/llms/opencode-datawatch-gpu/test: HTTP 502: compute node \"datawatch\": ollama HTTP 404: {\"error\":\"model 'ollama/gpt-oss:120b' not found\"}"
     }
   ],
-  "preflight_passed": true,
-  "prd_id": "09de0730",
-  "cells": [
-    {
-      "role": "cpu",
-      "llm": "opencode-johnnyjohnny-cpu",
-      "task_type": "analysis",
-      "expected_model": "qwen3:1.7b",
-      "used_model": "qwen3:1.7b",
-      "model_identity": "unknown",
-      "self_reported_model": null,
-      "verification_integrity": "suspect",
-      "resolved_dir": null,
-      "task_project_dir": "/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r4/cpu-analysis",
-      "artifact_check": {
-        "cell_repo_head": "05f8e34c41df14fd1f16e65d7dd372e7a8dce9e6",
-        "new_commits": 0,
-        "verify_exit": 1,
-        "verify_log": ".datawatch/eval/open-model-matrix/20261015-r4/verify-logs/cpu-analysis.log"
-      },
-      "model_result": null,
-      "task_status": "failed",
-      "session_id": "1096",
-      "notes": "used_model source: post-run llm_test (no per-session model exposed); resolved_dir source: none; no new commit beyond baseline in cell repo; OVERRIDE (manual review): worker never invoked a model \u2014 `opencode run` exited in ~3s with ProviderModelNotFoundError because the daemon-written opencode.json has bare \"model\": \"qwen3:1.7b\" (no `ollama/` provider prefix); identity unconfirmed, result discarded; suspect: resolved_dir=None (both worker sessions were killed/reaped within seconds, so no session project_dir was recorded) vs task_project_dir=/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r4/cpu-analysis; the cell dir itself was correct (opencode.json was written there)"
-    },
-    {
-      "role": "cpu",
-      "llm": "opencode-johnnyjohnny-cpu",
-      "task_type": "scripting",
-      "expected_model": "qwen3:1.7b",
-      "used_model": "qwen3:1.7b",
-      "model_identity": "unknown",
-      "self_reported_model": null,
-      "verification_integrity": "suspect",
-      "resolved_dir": null,
-      "task_project_dir": "/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r4/cpu-scripting",
-      "artifact_check": {
-        "cell_repo_head": "2928f5b1c74a75e3153aeb540c4033103caa6793",
-        "new_commits": 0,
-        "verify_exit": 1,
-        "verify_log": ".datawatch/eval/open-model-matrix/20261015-r4/verify-logs/cpu-scripting.log"
-      },
-      "model_result": null,
-      "task_status": "failed",
-      "session_id": "9669",
-      "notes": "used_model source: post-run llm_test (no per-session model exposed); resolved_dir source: none; no new commit beyond baseline in cell repo; OVERRIDE (manual review): worker never invoked a model \u2014 `opencode run` exited in ~3s with ProviderModelNotFoundError because the daemon-written opencode.json has bare \"model\": \"qwen3:1.7b\" (no `ollama/` provider prefix); identity unconfirmed, result discarded; suspect: resolved_dir=None (both worker sessions were killed/reaped within seconds, so no session project_dir was recorded) vs task_project_dir=/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r4/cpu-scripting; the cell dir itself was correct (opencode.json was written there)"
-    },
-    {
-      "role": "cpu",
-      "llm": "opencode-johnnyjohnny-cpu",
-      "task_type": "docs",
-      "expected_model": "qwen3:1.7b",
-      "used_model": "qwen3:1.7b",
-      "model_identity": "unknown",
-      "self_reported_model": null,
-      "verification_integrity": "suspect",
-      "resolved_dir": null,
-      "task_project_dir": "/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r4/cpu-docs",
-      "artifact_check": {
-        "cell_repo_head": "990a75b93cfb0ba6588a458e05bd339ab906584d",
-        "new_commits": 0,
-        "verify_exit": 1,
-        "verify_log": ".datawatch/eval/open-model-matrix/20261015-r4/verify-logs/cpu-docs.log"
-      },
-      "model_result": null,
-      "task_status": "failed",
-      "session_id": "9490",
-      "notes": "used_model source: post-run llm_test (no per-session model exposed); resolved_dir source: none; no new commit beyond baseline in cell repo; OVERRIDE (manual review): worker never invoked a model \u2014 `opencode run` exited in ~3s with ProviderModelNotFoundError because the daemon-written opencode.json has bare \"model\": \"qwen3:1.7b\" (no `ollama/` provider prefix); identity unconfirmed, result discarded; suspect: resolved_dir=None (both worker sessions were killed/reaped within seconds, so no session project_dir was recorded) vs task_project_dir=/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r4/cpu-docs; the cell dir itself was correct (opencode.json was written there)"
-    },
-    {
-      "role": "cpu",
-      "llm": "opencode-johnnyjohnny-cpu",
-      "task_type": "review",
-      "expected_model": "qwen3:1.7b",
-      "used_model": "qwen3:1.7b",
-      "model_identity": "unknown",
-      "self_reported_model": null,
-      "verification_integrity": "suspect",
-      "resolved_dir": null,
-      "task_project_dir": "/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r4/cpu-review",
-      "artifact_check": {
-        "cell_repo_head": "83c25a721febc24e17ed330b273662f7594dd2cd",
-        "new_commits": 0,
-        "verify_exit": 1,
-        "verify_log": ".datawatch/eval/open-model-matrix/20261015-r4/verify-logs/cpu-review.log"
-      },
-      "model_result": null,
-      "task_status": "failed",
-      "session_id": "e53b",
-      "notes": "used_model source: post-run llm_test (no per-session model exposed); resolved_dir source: none; no new commit beyond baseline in cell repo; OVERRIDE (manual review): worker never invoked a model \u2014 `opencode run` exited in ~3s with ProviderModelNotFoundError because the daemon-written opencode.json has bare \"model\": \"qwen3:1.7b\" (no `ollama/` provider prefix); identity unconfirmed, result discarded; suspect: resolved_dir=None (both worker sessions were killed/reaped within seconds, so no session project_dir was recorded) vs task_project_dir=/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r4/cpu-review; the cell dir itself was correct (opencode.json was written there)"
-    },
-    {
-      "role": "fast",
-      "llm": "opencode-johnnyjohnny-fast",
-      "task_type": "analysis",
-      "expected_model": "granite4.2:8b",
-      "used_model": "granite4.2:8b",
-      "model_identity": "unknown",
-      "self_reported_model": null,
-      "verification_integrity": "suspect",
-      "resolved_dir": null,
-      "task_project_dir": "/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r4/fast-analysis",
-      "artifact_check": {
-        "cell_repo_head": "3e465e33df78872e4798b1096b0a2183d48f8064",
-        "new_commits": 0,
-        "verify_exit": 1,
-        "verify_log": ".datawatch/eval/open-model-matrix/20261015-r4/verify-logs/fast-analysis.log"
-      },
-      "model_result": null,
-      "task_status": "failed",
-      "session_id": "1bb0",
-      "notes": "used_model source: post-run llm_test (no per-session model exposed); resolved_dir source: none; no new commit beyond baseline in cell repo; OVERRIDE (manual review): worker never invoked a model \u2014 `opencode run` exited in ~3s with ProviderModelNotFoundError because the daemon-written opencode.json has bare \"model\": \"granite4.2:8b\" (no `ollama/` provider prefix); identity unconfirmed, result discarded; suspect: resolved_dir=None (both worker sessions were killed/reaped within seconds, so no session project_dir was recorded) vs task_project_dir=/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r4/fast-analysis; the cell dir itself was correct (opencode.json was written there)"
-    },
-    {
-      "role": "fast",
-      "llm": "opencode-johnnyjohnny-fast",
-      "task_type": "scripting",
-      "expected_model": "granite4.2:8b",
-      "used_model": "granite4.2:8b",
-      "model_identity": "unknown",
-      "self_reported_model": null,
-      "verification_integrity": "suspect",
-      "resolved_dir": null,
-      "task_project_dir": "/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r4/fast-scripting",
-      "artifact_check": {
-        "cell_repo_head": "2b86391bce66651a9bcd7c4b25c1ad3d57a7b899",
-        "new_commits": 0,
-        "verify_exit": 1,
-        "verify_log": ".datawatch/eval/open-model-matrix/20261015-r4/verify-logs/fast-scripting.log"
-      },
-      "model_result": null,
-      "task_status": "failed",
-      "session_id": "34b3",
-      "notes": "used_model source: post-run llm_test (no per-session model exposed); resolved_dir source: none; no new commit beyond baseline in cell repo; OVERRIDE (manual review): worker never invoked a model \u2014 `opencode run` exited in ~3s with ProviderModelNotFoundError because the daemon-written opencode.json has bare \"model\": \"granite4.2:8b\" (no `ollama/` provider prefix); identity unconfirmed, result discarded; suspect: resolved_dir=None (both worker sessions were killed/reaped within seconds, so no session project_dir was recorded) vs task_project_dir=/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r4/fast-scripting; the cell dir itself was correct (opencode.json was written there)"
-    },
-    {
-      "role": "fast",
-      "llm": "opencode-johnnyjohnny-fast",
-      "task_type": "docs",
-      "expected_model": "granite4.2:8b",
-      "used_model": "granite4.2:8b",
-      "model_identity": "unknown",
-      "self_reported_model": null,
-      "verification_integrity": "suspect",
-      "resolved_dir": null,
-      "task_project_dir": "/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r4/fast-docs",
-      "artifact_check": {
-        "cell_repo_head": "2c40dfe7847d229eb383cd8262d564db4ef2c4d1",
-        "new_commits": 0,
-        "verify_exit": 1,
-        "verify_log": ".datawatch/eval/open-model-matrix/20261015-r4/verify-logs/fast-docs.log"
-      },
-      "model_result": null,
-      "task_status": "failed",
-      "session_id": "df74",
-      "notes": "used_model source: post-run llm_test (no per-session model exposed); resolved_dir source: none; no new commit beyond baseline in cell repo; OVERRIDE (manual review): worker never invoked a model \u2014 `opencode run` exited in ~3s with ProviderModelNotFoundError because the daemon-written opencode.json has bare \"model\": \"granite4.2:8b\" (no `ollama/` provider prefix); identity unconfirmed, result discarded; suspect: resolved_dir=None (both worker sessions were killed/reaped within seconds, so no session project_dir was recorded) vs task_project_dir=/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r4/fast-docs; the cell dir itself was correct (opencode.json was written there)"
-    },
-    {
-      "role": "fast",
-      "llm": "opencode-johnnyjohnny-fast",
-      "task_type": "review",
-      "expected_model": "granite4.2:8b",
-      "used_model": "granite4.2:8b",
-      "model_identity": "unknown",
-      "self_reported_model": null,
-      "verification_integrity": "suspect",
-      "resolved_dir": null,
-      "task_project_dir": "/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r4/fast-review",
-      "artifact_check": {
-        "cell_repo_head": "3dd1a83c09351e7fc792593a606e9e8696eac3c7",
-        "new_commits": 0,
-        "verify_exit": 1,
-        "verify_log": ".datawatch/eval/open-model-matrix/20261015-r4/verify-logs/fast-review.log"
-      },
-      "model_result": null,
-      "task_status": "failed",
-      "session_id": "c684",
-      "notes": "used_model source: post-run llm_test (no per-session model exposed); resolved_dir source: none; no new commit beyond baseline in cell repo; OVERRIDE (manual review): worker never invoked a model \u2014 `opencode run` exited in ~3s with ProviderModelNotFoundError because the daemon-written opencode.json has bare \"model\": \"granite4.2:8b\" (no `ollama/` provider prefix); identity unconfirmed, result discarded; suspect: resolved_dir=None (both worker sessions were killed/reaped within seconds, so no session project_dir was recorded) vs task_project_dir=/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r4/fast-review; the cell dir itself was correct (opencode.json was written there)"
-    },
-    {
-      "role": "mid",
-      "llm": "opencode-johnnyjohnny-gpu",
-      "task_type": "analysis",
-      "expected_model": "granite4.2:30b",
-      "used_model": "granite4.2:30b",
-      "model_identity": "unknown",
-      "self_reported_model": null,
-      "verification_integrity": "suspect",
-      "resolved_dir": null,
-      "task_project_dir": "/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r4/mid-analysis",
-      "artifact_check": {
-        "cell_repo_head": "10a062455fa217e95d3f19d82dc1022c1989e795",
-        "new_commits": 0,
-        "verify_exit": 1,
-        "verify_log": ".datawatch/eval/open-model-matrix/20261015-r4/verify-logs/mid-analysis.log"
-      },
-      "model_result": null,
-      "task_status": "failed",
-      "session_id": "f419",
-      "notes": "used_model source: post-run llm_test (no per-session model exposed); resolved_dir source: none; no new commit beyond baseline in cell repo; OVERRIDE (manual review): worker never invoked a model \u2014 `opencode run` exited in ~3s with ProviderModelNotFoundError because the daemon-written opencode.json has bare \"model\": \"granite4.2:30b\" (no `ollama/` provider prefix); identity unconfirmed, result discarded; suspect: resolved_dir=None (both worker sessions were killed/reaped within seconds, so no session project_dir was recorded) vs task_project_dir=/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r4/mid-analysis; the cell dir itself was correct (opencode.json was written there)"
-    },
-    {
-      "role": "mid",
-      "llm": "opencode-johnnyjohnny-gpu",
-      "task_type": "scripting",
-      "expected_model": "granite4.2:30b",
-      "used_model": "granite4.2:30b",
-      "model_identity": "unknown",
-      "self_reported_model": null,
-      "verification_integrity": "suspect",
-      "resolved_dir": "/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r4/mid-scripting",
-      "task_project_dir": "/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r4/mid-scripting",
-      "artifact_check": {
-        "cell_repo_head": "4a3dcab75ac7fc67b73915335b2d03308c1c3e9d",
-        "new_commits": 0,
-        "verify_exit": 1,
-        "verify_log": ".datawatch/eval/open-model-matrix/20261015-r4/verify-logs/mid-scripting.log"
-      },
-      "model_result": null,
-      "task_status": "failed",
-      "session_id": "af34",
-      "notes": "used_model source: session_record.model; resolved_dir source: worker session project_dir; no new commit beyond baseline in cell repo; OVERRIDE (manual review): worker never invoked a model \u2014 `opencode run` exited in ~3s with ProviderModelNotFoundError because the daemon-written opencode.json has bare \"model\": \"granite4.2:30b\" (no `ollama/` provider prefix); identity unconfirmed, result discarded; suspect: resolved_dir == task_project_dir (/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r4/mid-scripting), but the verifier ran against an untouched baseline (0 new commits) after a launch crash, so its exit 1 is not a model verdict; was result=fail before override"
-    },
-    {
-      "role": "mid",
-      "llm": "opencode-johnnyjohnny-gpu",
-      "task_type": "docs",
-      "expected_model": "granite4.2:30b",
-      "used_model": "granite4.2:30b",
-      "model_identity": "unknown",
-      "self_reported_model": null,
-      "verification_integrity": "suspect",
-      "resolved_dir": null,
-      "task_project_dir": "/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r4/mid-docs",
-      "artifact_check": {
-        "cell_repo_head": "33146dd3ad837f57ba0125bee48bb2f293e46475",
-        "new_commits": 0,
-        "verify_exit": 1,
-        "verify_log": ".datawatch/eval/open-model-matrix/20261015-r4/verify-logs/mid-docs.log"
-      },
-      "model_result": null,
-      "task_status": "failed",
-      "session_id": "eb35",
-      "notes": "used_model source: post-run llm_test (no per-session model exposed); resolved_dir source: none; no new commit beyond baseline in cell repo; OVERRIDE (manual review): worker never invoked a model \u2014 `opencode run` exited in ~3s with ProviderModelNotFoundError because the daemon-written opencode.json has bare \"model\": \"granite4.2:30b\" (no `ollama/` provider prefix); identity unconfirmed, result discarded; suspect: resolved_dir=None (both worker sessions were killed/reaped within seconds, so no session project_dir was recorded) vs task_project_dir=/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r4/mid-docs; the cell dir itself was correct (opencode.json was written there)"
-    },
-    {
-      "role": "mid",
-      "llm": "opencode-johnnyjohnny-gpu",
-      "task_type": "review",
-      "expected_model": "granite4.2:30b",
-      "used_model": "granite4.2:30b",
-      "model_identity": "unknown",
-      "self_reported_model": null,
-      "verification_integrity": "suspect",
-      "resolved_dir": null,
-      "task_project_dir": "/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r4/mid-review",
-      "artifact_check": {
-        "cell_repo_head": "869866dcab0c983910d9092c094a55469bd690b3",
-        "new_commits": 0,
-        "verify_exit": 1,
-        "verify_log": ".datawatch/eval/open-model-matrix/20261015-r4/verify-logs/mid-review.log"
-      },
-      "model_result": null,
-      "task_status": "failed",
-      "session_id": "2614",
-      "notes": "used_model source: post-run llm_test (no per-session model exposed); resolved_dir source: none; no new commit beyond baseline in cell repo; OVERRIDE (manual review): worker never invoked a model \u2014 `opencode run` exited in ~3s with ProviderModelNotFoundError because the daemon-written opencode.json has bare \"model\": \"granite4.2:30b\" (no `ollama/` provider prefix); identity unconfirmed, result discarded; suspect: resolved_dir=None (both worker sessions were killed/reaped within seconds, so no session project_dir was recorded) vs task_project_dir=/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r4/mid-review; the cell dir itself was correct (opencode.json was written there)"
-    },
-    {
-      "role": "decompose-validate",
-      "llm": "opencode-datawatch-gpu",
-      "task_type": "analysis",
-      "expected_model": "gpt-oss:120b",
-      "used_model": "gpt-oss:120b",
-      "model_identity": "unknown",
-      "self_reported_model": null,
-      "verification_integrity": "suspect",
-      "resolved_dir": null,
-      "task_project_dir": "/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r4/decompose-validate-analysis",
-      "artifact_check": {
-        "cell_repo_head": "ac9b569cc605f4bd657648443c2102488e3824d2",
-        "new_commits": 0,
-        "verify_exit": 1,
-        "verify_log": ".datawatch/eval/open-model-matrix/20261015-r4/verify-logs/decompose-validate-analysis.log"
-      },
-      "model_result": null,
-      "task_status": "failed",
-      "session_id": "10cf",
-      "notes": "used_model source: post-run llm_test (no per-session model exposed); resolved_dir source: none; no new commit beyond baseline in cell repo; OVERRIDE (manual review): worker never invoked a model \u2014 `opencode run` exited in ~3s with ProviderModelNotFoundError because the daemon-written opencode.json has bare \"model\": \"gpt-oss:120b\" (no `ollama/` provider prefix); identity unconfirmed, result discarded; suspect: resolved_dir=None (both worker sessions were killed/reaped within seconds, so no session project_dir was recorded) vs task_project_dir=/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r4/decompose-validate-analysis; the cell dir itself was correct (opencode.json was written there)"
-    },
-    {
-      "role": "decompose-validate",
-      "llm": "opencode-datawatch-gpu",
-      "task_type": "scripting",
-      "expected_model": "gpt-oss:120b",
-      "used_model": "gpt-oss:120b",
-      "model_identity": "unknown",
-      "self_reported_model": null,
-      "verification_integrity": "suspect",
-      "resolved_dir": null,
-      "task_project_dir": "/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r4/decompose-validate-scripting",
-      "artifact_check": {
-        "cell_repo_head": "2d86ac9bb337a2c66c55d9e1239c9ac197cb8ce9",
-        "new_commits": 0,
-        "verify_exit": 1,
-        "verify_log": ".datawatch/eval/open-model-matrix/20261015-r4/verify-logs/decompose-validate-scripting.log"
-      },
-      "model_result": null,
-      "task_status": "failed",
-      "session_id": "ba5b",
-      "notes": "used_model source: post-run llm_test (no per-session model exposed); resolved_dir source: none; no new commit beyond baseline in cell repo; OVERRIDE (manual review): worker never invoked a model \u2014 `opencode run` exited in ~3s with ProviderModelNotFoundError because the daemon-written opencode.json has bare \"model\": \"gpt-oss:120b\" (no `ollama/` provider prefix); identity unconfirmed, result discarded; suspect: resolved_dir=None (both worker sessions were killed/reaped within seconds, so no session project_dir was recorded) vs task_project_dir=/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r4/decompose-validate-scripting; the cell dir itself was correct (opencode.json was written there)"
-    },
-    {
-      "role": "decompose-validate",
-      "llm": "opencode-datawatch-gpu",
-      "task_type": "docs",
-      "expected_model": "gpt-oss:120b",
-      "used_model": "gpt-oss:120b",
-      "model_identity": "unknown",
-      "self_reported_model": null,
-      "verification_integrity": "suspect",
-      "resolved_dir": null,
-      "task_project_dir": "/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r4/decompose-validate-docs",
-      "artifact_check": {
-        "cell_repo_head": "078982c1a9c265e6c9d461d21baa235cd48740ad",
-        "new_commits": 0,
-        "verify_exit": 1,
-        "verify_log": ".datawatch/eval/open-model-matrix/20261015-r4/verify-logs/decompose-validate-docs.log"
-      },
-      "model_result": null,
-      "task_status": "failed",
-      "session_id": "14d2",
-      "notes": "used_model source: post-run llm_test (no per-session model exposed); resolved_dir source: none; no new commit beyond baseline in cell repo; OVERRIDE (manual review): worker never invoked a model \u2014 `opencode run` exited in ~3s with ProviderModelNotFoundError because the daemon-written opencode.json has bare \"model\": \"gpt-oss:120b\" (no `ollama/` provider prefix); identity unconfirmed, result discarded; suspect: resolved_dir=None (both worker sessions were killed/reaped within seconds, so no session project_dir was recorded) vs task_project_dir=/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r4/decompose-validate-docs; the cell dir itself was correct (opencode.json was written there)"
-    },
-    {
-      "role": "decompose-validate",
-      "llm": "opencode-datawatch-gpu",
-      "task_type": "review",
-      "expected_model": "gpt-oss:120b",
-      "used_model": "gpt-oss:120b",
-      "model_identity": "unknown",
-      "self_reported_model": null,
-      "verification_integrity": "suspect",
-      "resolved_dir": null,
-      "task_project_dir": "/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r4/decompose-validate-review",
-      "artifact_check": {
-        "cell_repo_head": "4b66a4dd9928506399e8fb9c930617230f4967b8",
-        "new_commits": 0,
-        "verify_exit": 1,
-        "verify_log": ".datawatch/eval/open-model-matrix/20261015-r4/verify-logs/decompose-validate-review.log"
-      },
-      "model_result": null,
-      "task_status": "failed",
-      "session_id": "877a",
-      "notes": "used_model source: post-run llm_test (no per-session model exposed); resolved_dir source: none; no new commit beyond baseline in cell repo; OVERRIDE (manual review): worker never invoked a model \u2014 `opencode run` exited in ~3s with ProviderModelNotFoundError because the daemon-written opencode.json has bare \"model\": \"gpt-oss:120b\" (no `ollama/` provider prefix); identity unconfirmed, result discarded; suspect: resolved_dir=None (both worker sessions were killed/reaped within seconds, so no session project_dir was recorded) vs task_project_dir=/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r4/decompose-validate-review; the cell dir itself was correct (opencode.json was written there)"
-    }
-  ]
+  "preflight_passed": false,
+  "prd_id": null,
+  "cells": []
 }
