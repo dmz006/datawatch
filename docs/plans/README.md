@@ -1121,6 +1121,34 @@ established. In progress — starting with BL403.**
     autonomous PRD task execution through goose/aider — needs a real
     task spawned through the autonomous system itself, not a manual
     probe, to close out.
+    **Critical finding 2026-10-14, changes BL437's viability for these two
+    drivers**: datawatch currently has **no real model-selection control**
+    over either backend. `goose`'s injection path exists
+    (`internal/session/manager.go:1972,3492`, `SetProvider`/`SetModel`
+    from `m.cfg.Goose.Provider`/`.Model`) but the **global** config it
+    reads from is empty/unset (`goose.model: "", goose.provider: ""`,
+    confirmed live via `config get goose`) — the injection is a no-op
+    today, so goose runs on whatever its own local
+    `~/.config/goose/config.yaml` happens to default to, independent of
+    datawatch. `aider` has **no injection code of any kind** anywhere in
+    `manager.go` — its only special-casing is a usage-tracking goroutine
+    (line 3536), nothing about model selection at all. Setting a `model`
+    field on the per-LLM registry entry (`goose-johnnyjohnny`/
+    `aider-johnnyjohnny`, via `llm_update`) does **not** feed this path —
+    confirmed by reading the actual injection code, which reads the
+    global `Goose` config block, not the per-registry-entry field. This
+    means BL437's test matrix cannot currently produce valid comparative
+    data for goose/aider cells specifically: a cell claiming to test
+    model X may actually run against whatever goose/aider's own local
+    config defaults to, regardless of the cell's own spec. **Scope for
+    the fix (not yet designed)**: (1) wire the global `goose.model`/
+    `.provider` config to actually be set per-task (likely via the same
+    per-task-LLM-override mechanism other backends use, not a single
+    global value, since different cells need different models); (2) add
+    equivalent model-selection injection for `aider` from scratch — it
+    has none today; (3) re-verify goose's injection path actually works
+    once wired, live, not assumed. **This blocks BL437's goose/aider rows
+    specifically until fixed — Claude-backend rows are unaffected.**
     **Forward pointer:** **BL437** (item 31) extends this eval into a recurring, hardware-aware monthly sweep.
 
 **BL444** — MCP SSE listener bind failure at boot is never retried and
