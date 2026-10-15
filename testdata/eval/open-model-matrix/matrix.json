@@ -1,0 +1,12 @@
+{
+  "roles": [
+    {"role": "cpu", "llm": "opencode-johnnyjohnny-cpu", "model": "qwen3:1.7b", "node": "johnnyjohnny-cpu"},
+    {"role": "fast", "llm": "opencode-johnnyjohnny-fast", "model": "granite4.2:8b", "node": "johnnyjohnny"},
+    {"role": "mid", "llm": "opencode-johnnyjohnny-gpu", "model": "granite4.2:30b", "node": "johnnyjohnny"},
+    {"role": "decompose-validate", "llm": "opencode-datawatch-gpu", "model": "gpt-oss:120b", "node": "datawatch"}
+  ],
+  "task_types": ["analysis", "scripting", "docs", "review"],
+  "fixtures_from": "testdata/eval/model-tiering",
+  "effort_axis": null,
+  "cell_root": ".datawatch/eval/open-model-matrix"
+}
