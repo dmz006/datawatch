@@ -1057,6 +1057,28 @@ established. In progress — starting with BL403.**
     out of scope here; note it as a forward pointer only, don't build it
     now. **Explicitly NOT approved or run yet** — prep only, decompose +
     review, hold for a later go-ahead.
+
+**BL443** — `goose`/`aider` are declared, recognized LLM registry kinds
+    (session-spawn code already special-cases both — `internal/session/
+    manager.go:5507,5530`) but have **no inference adapter implemented**:
+    `llm_test` on a freshly-registered `goose-johnnyjohnny`/
+    `aider-johnnyjohnny` entry fails with `no adapter for kind "goose"`/
+    `"aider"` (registered adapters today: ollama, openwebui, opencode,
+    claude, gemini-api, opencode-api — confirmed live 2026-10-14 while
+    setting up BL437's eval drivers). This blocks the lightweight
+    ask/verify/probe path for both backends; **not yet confirmed** whether
+    it also blocks real autonomous-task session execution (a separate,
+    already-existing TUI session-spawn code path) — that needs a live task
+    run to test, not yet done. Also found live: `llm_add` on the literal
+    name `goose` returns `HTTP 409 llm already exists`, but `llm_get`/
+    `llm_list` show no such entry anywhere (`llm_add goose-johnnyjohnny`
+    worked fine) — a real name-collision/stale-index bug, not reproduced
+    for `aider`. Scope for the fix (not yet designed): (1) implement a real
+    adapter for `goose`/`aider` kinds (or confirm their task-execution path
+    doesn't need one and narrow `llm_test`'s error to say so instead of a
+    bare 502); (2) reproduce and fix the `goose`-name 409-vs-404
+    inconsistency. Both are currently registered as `goose-johnnyjohnny`/
+    `aider-johnnyjohnny` (BL437/eval-driver tags) pending this fix.
 22. **BL423** — an Automaton reports `completed` while the CI run for
     the commit it pushed is failing (filed + shipped 2026-10-13, same
     day — **shipped v9.0.63**). Not roadmap work — found live right
