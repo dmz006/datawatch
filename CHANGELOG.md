@@ -5,6 +5,40 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.86 — feat(automata): daemon-wide max_concurrent_tasks; max_parallel_tasks deprecated
+
+**Behavior change.** `autonomous.max_concurrent_tasks` (how many
+independent tasks of one Automaton may run at the same time) can now be
+set daemon-wide from every surface: `config.yaml`, the PWA Settings page
+(General and the Autonomous card), `PUT /api/config` and
+`PUT /api/autonomous/config`, MCP `autonomous_config_set`, the comm
+channel `configure autonomous.max_concurrent_tasks=N`, and
+`datawatch autonomous config-set`. An Automaton without its own
+concurrency setting now follows that daemon-wide value. Before this
+release the daemon-wide value could never be set or saved, so every such
+Automaton ran its tasks one at a time. The default stays **1** (one at a
+time), so nothing changes until an operator raises it. An Automaton's own
+setting still overrides the daemon-wide value.
+
+**Deprecated: `autonomous.max_parallel_tasks`.** This key never had any
+effect: nothing in the daemon read it, and its old description ("per-PRD
+worker cap, default 3") was wrong. It is still accepted but ignored. When
+it is present in `config.yaml` the daemon logs a one-time warning at
+startup and records a `config_deprecated_key` audit entry. Writes that
+send it (`PUT /api/config`, `PUT /api/autonomous/config`, MCP, comm, CLI)
+succeed and return a `deprecated_fields` note naming the replacement. It
+will be removed in a later release. Delete it from your config and set
+`autonomous.max_concurrent_tasks` instead.
+
+Mobile apps: datawatch-app#261 tracks the new Settings field and the
+`deprecated_fields` response field for Android and iOS.
+
+Reuse audit — what existing primitive does this extend? The existing
+per-Automaton `max_concurrent_tasks` override (its executor resolution
+already fell back to a daemon-wide value that nothing could set) and the
+existing audit log (new `config_deprecated_key` action). No new
+mechanism.
+
 ## v9.0.85 — feat(automata): internal lifecycle events for Automata
 
 Automata now publish internal lifecycle events through an in-process

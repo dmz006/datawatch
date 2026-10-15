@@ -3885,6 +3885,45 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+H "74. daemon-wide max_concurrent_tasks round-trip + max_parallel_tasks deprecated (v9.0.86)"
+# max_concurrent_tasks round-trips through GET / PUT /api/config (restored
+# afterwards); the deprecated max_parallel_tasks is accepted (200) with a
+# deprecated_fields note and must not change max_concurrent_tasks.
+MCT_GET='import json,sys;d=json.load(sys.stdin);print(d.get("autonomous",{}).get("max_concurrent_tasks","missing"))'
+MCT_BEFORE=$(curl "${curl_args[@]}" "$BASE/api/config" | python3 -c "$MCT_GET" 2>/dev/null)
+if ! [[ "$MCT_BEFORE" =~ ^[0-9]+$ ]]; then
+  ko "autonomous.max_concurrent_tasks missing from /api/config (got '$MCT_BEFORE')"
+else
+  ok "GET /api/config exposes autonomous.max_concurrent_tasks=$MCT_BEFORE"
+  MCT_NEXT=$((MCT_BEFORE + 1))
+  curl "${curl_args[@]}" -X PUT -H "Content-Type: application/json" \
+    -d "$(printf '{"autonomous.max_concurrent_tasks":%s}' "$MCT_NEXT")" "$BASE/api/config" >/dev/null
+  MCT_AFTER=$(curl "${curl_args[@]}" "$BASE/api/config" | python3 -c "$MCT_GET" 2>/dev/null)
+  if [[ "$MCT_AFTER" == "$MCT_NEXT" ]]; then
+    ok "PUT /api/config set autonomous.max_concurrent_tasks to $MCT_NEXT"
+  else
+    ko "autonomous.max_concurrent_tasks round-trip failed (was $MCT_BEFORE → wanted $MCT_NEXT → got $MCT_AFTER)"
+  fi
+  # Restore original value (failing this leaks state across runs).
+  curl "${curl_args[@]}" -X PUT -H "Content-Type: application/json" \
+    -d "$(printf '{"autonomous.max_concurrent_tasks":%s}' "$MCT_BEFORE")" "$BASE/api/config" >/dev/null
+  MPT_RESP=$(curl "${curl_args[@]}" -X PUT -H "Content-Type: application/json" \
+    -d '{"autonomous.max_parallel_tasks":1}' "$BASE/api/config" -w "\n__HTTP_%{http_code}__")
+  if [[ "$MPT_RESP" == *"__HTTP_200__"* ]] && echo "${MPT_RESP%$'\n'__HTTP_*}" | python3 -c \
+      'import json,sys;d=json.load(sys.stdin);sys.exit(0 if "autonomous.max_parallel_tasks" in d.get("deprecated_fields",{}) else 1)' 2>/dev/null; then
+    ok "PUT autonomous.max_parallel_tasks → 200 with deprecated_fields"
+  else
+    ko "PUT autonomous.max_parallel_tasks did not return 200 + deprecated_fields: ${MPT_RESP:0:200}"
+  fi
+  MCT_FINAL=$(curl "${curl_args[@]}" "$BASE/api/config" | python3 -c "$MCT_GET" 2>/dev/null)
+  if [[ "$MCT_FINAL" == "$MCT_BEFORE" ]]; then
+    ok "autonomous.max_concurrent_tasks restored and unchanged by max_parallel_tasks ($MCT_FINAL)"
+  else
+    ko "autonomous.max_concurrent_tasks is $MCT_FINAL, expected $MCT_BEFORE"
+  fi
+fi
+
+# ---------------------------------------------------------------------------
 H "Summary"
 echo "  Pass:  $PASS"
 echo "  Fail:  $FAIL"

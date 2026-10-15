@@ -1246,8 +1246,17 @@ established. In progress — starting with BL403.**
 
 29. **BL428** — Concurrency control & usage-budget design (design pass)
    (filed 2026-10-13/14, operator-raised after a live incident).
-   **Status: design pass — needs operator review, no implementation
-   approved.** Found live: `autonomous.max_parallel_tasks: 1` on the
+   **Status: Phase 1 shipped in v9.0.86** (deprecation of
+   `max_parallel_tasks` — accepted-and-ignored with a startup warning,
+   `config_deprecated_key` audit entry and `deprecated_fields` note on
+   config writes — plus global `autonomous.max_concurrent_tasks`
+   plumbing across YAML/REST/MCP/comm/CLI/PWA; mobile parity
+   datawatch-app#261). **Phases 2–6 remain Planned**, each as a separate
+   follow-up Automaton: tree write lock, inference-cap gap closure,
+   reactive usage back-off, dollar-window budget, and the
+   visibility/audit/parity close-out. The final removal of
+   `max_parallel_tasks` from the code is deliberately deferred one
+   release. Original design-pass finding: `autonomous.max_parallel_tasks: 1` on the
    running daemon is dead config — `MaxParallelTasks` is plumbed through
    YAML/REST/MCP/PWA but has zero executor consumers, and its "per-PRD
    worker cap (default 3)" descriptions are false. The real knob,
@@ -1315,7 +1324,7 @@ daemon).
 | 4 | **BL435** — unmodified-retry executor fix | Queued | Generalizes a one-off task-spec workaround used to recover BL431 into a real fix for every datawatch install. |
 | 5 | **BL431** (`c187962a`) — Automation design doc | One task left (self-registration) | Design doc itself is done and committed; only its own backlog-registration task remains. |
 | 6 | **BL420** — session-tracker OOM fix | **Shipped v9.0.83** (tracker code in binaries since v9.0.62; v9.0.83 documents it, ships `scripts/shrink-session-repo.sh` + `scripts/repro-tracker-git-growth.sh`, redeployed + 15-min observation in `docs/testing.md`). The bloated repos were shrunk with the script on 2026-10-14 (v9.0.84): ab22 31 GB → 3.3 MB, 9245 8.7 GB → 2.1 MB, ddeb 822 MB → 884 KB. | **Operator-confirmed 2026-10-14 ~14:05: moved back ahead of BL427/428/431.** Not "regular work" under the operator's own ordering principle — it's crash-prevention for the daemon that is about to run the heaviest, most concurrent automated work yet (row 7). Doing the riskiest implementation stretch without this fix in place first is the wrong order. |
-| 7 | **BL427 → BL428 → BL431 implementation** | BL427 Phase 1 (event type + in-process dispatcher, WS `prd_update` migrated onto it) shipped in v9.0.85; BL427 Phases 2–5, BL428 and BL431 not started — design docs only | Optimize the Automaton/PRD execution system itself before more regular feature/bugfix work, so the rest of the roadmap runs through it rather than being hand-sequenced. Dependency order: event dispatch → concurrency/budget mechanics → Automation coordinator built on top of both. Known trade-off, noted not litigated: BL428 §4d / BL431 §6-§11's model-tier design cite BL422's results as an input, so that part proceeds on placeholder assumptions until BL422 runs afterward (row 8). |
+| 7 | **BL427 → BL428 → BL431 implementation** | BL427 Phase 1 (event type + in-process dispatcher, WS `prd_update` migrated onto it) shipped in v9.0.85; BL428 Phase 1 (`max_parallel_tasks` deprecation + global `max_concurrent_tasks`) shipped in v9.0.86; BL427 Phases 2–5, BL428 Phases 2–6 and BL431 not started | Optimize the Automaton/PRD execution system itself before more regular feature/bugfix work, so the rest of the roadmap runs through it rather than being hand-sequenced. Dependency order: event dispatch → concurrency/budget mechanics → Automation coordinator built on top of both. Known trade-off, noted not litigated: BL428 §4d / BL431 §6-§11's model-tier design cite BL422's results as an input, so that part proceeds on placeholder assumptions until BL422 runs afterward (row 8). |
 | 8 | **BL422** — Claude model/effort tiering eval | Queued, resumes after #7 | Its results get retrofitted into whatever BL428/431 implemented with placeholder tier defaults (see row 7's trade-off note). |
 | — | **BL436** — per-turn chunked session capture (replaces tmux-scrollback reliance) | Design doc done, `needs_review` | Filed 2026-10-14, not yet slotted into the numbered order above — docs-only, low collision risk, could run opportunistically. |
 | — | **BL437** — recurring hardware-aware model/effort eval | Decomposing | Filed 2026-10-14 (pre-v10.0.0 priority, operator-named), generalizes BL422 into an ongoing monthly sweep; not yet slotted into the numbered order above. |

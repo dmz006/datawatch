@@ -924,7 +924,7 @@ Checklist, and none is done until that checklist is.
    plumbing.** Deprecation warning and accept-and-ignore for
    `max_parallel_tasks`; correct the descriptions; add
    `autonomous.max_concurrent_tasks` to YAML, REST, MCP, CLI, comm and PWA.
-   Status: Planned.
+   Status: Done (v9.0.86) — max_parallel_tasks removal deferred one release.
 2. **Phase 2 — Project-tree write lock (3a).** Canonical key resolution,
    worktree keying, `tree:<key>` representation in ledger status, the
    advisory lock file, the `refuse_dirty_tree_start` check, and CW watching
@@ -1058,7 +1058,7 @@ thing example (iii) could not see.
 | CLI | Include | `datawatch config set autonomous.project_write_serialization …` and the other keys. `datawatch autonomous tree-lock status`. |
 | comm channel | Include | `configure <key>=<value>` for every new key. A status verb reply shows queued reasons and the active back-off. |
 | YAML/config | Include | New keys in `config.AutonomousConfig` and in the LLM registry entry, annotated in `docs/config-reference.yaml`. `max_parallel_tasks` deprecation documented. The missing `max_concurrent_tasks` YAML field is added. |
-| PWA | Include | Settings fields for the new keys; the `max_parallel_tasks` field removed (`app.js:13942`, `28648`). Task chips for queued reasons. Automata list distinguishes approved-not-running. Capacity panel shows locks and back-off, plus (3c/4e) a per-peer "resource fingerprint sync" toggle and a confirmation list of detected shared-node/billing-group matches awaiting operator accept/reject. |
+| PWA | Include | Settings fields for the new keys; the `max_parallel_tasks` field replaced by `max_concurrent_tasks` in Settings (General list and Autonomous card) in Phase 1 (v9.0.86); the PWA no longer edits `max_parallel_tasks`, while the server still accepts and ignores it until the deferred removal. Android/iOS mirror tracked in datawatch-app#261. Task chips for queued reasons. Automata list distinguishes approved-not-running. Capacity panel shows locks and back-off, plus (3c/4e) a per-peer "resource fingerprint sync" toggle and a confirmation list of detected shared-node/billing-group matches awaiting operator accept/reject. |
 | Android | Include, via a `datawatch-app` issue per the Mobile-Parity Rule | Queued-reason display and new config fields mirror the PWA. The REST contract change (new task wait reasons) must be parsed. |
 | iPhone/iOS | Include, via the same `datawatch-app` issue | Same as Android. No iOS-specific behavior. |
 

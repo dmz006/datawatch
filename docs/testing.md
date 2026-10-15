@@ -1146,3 +1146,29 @@ Not covered live: a successful approve, which needs the Automaton in
 session-start events, are covered by the unit tests in
 `internal/autonomous/lifecycle_*_test.go`, `prd_update_broadcast_test.go` and
 `internal/server/prd_update_ws_frame_test.go`.
+
+## v9.0.86 — daemon-wide `max_concurrent_tasks` + `max_parallel_tasks` deprecation: live check on the production daemon (2026-10-14)
+
+| Item | Value |
+|---|---|
+| **Daemon** | production, `https://127.0.0.1:8443` (no auth token configured), `make build` → `make install`, restarted with `systemctl --user restart datawatch` at 20:03:15; `is-active` → `active`; `/api/health` → `"version":"9.0.86"` |
+| **Live config** | `config.yaml` still has `autonomous.max_parallel_tasks: 1` (left in place on purpose for check (a)) |
+| **Result** | PASS (a)–(e) |
+
+| # | Check | Command | Output |
+|---|---|---|---|
+| a | One-time deprecation warning at startup | `journalctl --user -u datawatch --since '2026-10-14 20:03:15' \| grep -i deprecated` | exactly one line: `[warn] config: autonomous.max_parallel_tasks is deprecated and ignored; use autonomous.max_concurrent_tasks (removed in a future release)` |
+| a | Audit entry | MCP `audit_query` `action=config_deprecated_key` | `count: 1` — `{"ts":"2026-10-14T20:03:19.71-04:00","actor":"system","action":"config_deprecated_key","details":{"key":"autonomous.max_parallel_tasks","replacement":"autonomous.max_concurrent_tasks"}}` |
+| b | GET shows the new key | `curl -sk https://127.0.0.1:8443/api/config` → `.autonomous` | `max_concurrent_tasks=1` (`max_parallel_tasks=1` still listed, ignored) |
+| b | PUT at the current value round-trips | `curl -sk -X PUT -H 'Content-Type: application/json' -d '{"autonomous.max_concurrent_tasks":1}' https://127.0.0.1:8443/api/config` | `{"status":"ok"}` HTTP 200; GET still `max_concurrent_tasks=1` |
+| c | MCP | `autonomous_config_get` | `…"max_concurrent_tasks":1…` present |
+| d | Deprecated key accepted and ignored | `curl -sk -X PUT -H 'Content-Type: application/json' -d '{"autonomous.max_parallel_tasks":1}' https://127.0.0.1:8443/api/config` | HTTP 200 `{"deprecated_fields":{"autonomous.max_parallel_tasks":"deprecated and ignored; use autonomous.max_concurrent_tasks"},"status":"ok"}`; GET still `max_concurrent_tasks=1` |
+| e | CLI version | `datawatch version` | `datawatch v9.0.86` |
+
+Not done on production: a non-default value (2) round-trip. An Automaton
+was running, and raising the value would change how queued Automata run.
+That round-trip is covered by the unit tests
+(`TestMaxConcurrentTasks_PutConfigRoundTrip`,
+`TestAutonomousMaxConcurrentTasks_SetAndRoundTrip`) and by
+`scripts/release-smoke.sh` section 74, which runs against a sandbox daemon
+and restores the original value.

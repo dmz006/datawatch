@@ -57,7 +57,14 @@ Browse the catalog in-app (Settings → Skills → Registry) or on GitHub. To co
 
 ## Current release
 
-**Current release: v9.0.85 (2026-10-14).** Automata now publish internal
+**Current release: v9.0.86 (2026-10-14).** `autonomous.max_concurrent_tasks`
+can now be set daemon-wide (YAML, Settings, REST, MCP, comm, CLI), and an
+Automaton without its own setting follows it. The default stays 1 (one task
+at a time). `autonomous.max_parallel_tasks`, which never had any effect, is
+deprecated: still accepted but ignored, with a warning. It will be removed
+in a later release.
+
+**v9.0.85** Automata now publish internal
 lifecycle events (Automaton and task status changes, worker session start)
 through an in-process event dispatcher. The PWA's live Automata refresh now
 runs on top of it, with no visible change. This is groundwork for upcoming
