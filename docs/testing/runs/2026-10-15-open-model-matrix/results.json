@@ -1,5 +1,5 @@
 {
-  "run_id": "2026-10-15",
+  "run_id": "20261015-r3",
   "preflight": [
     {
       "role": "cpu",
@@ -21,17 +21,17 @@
       "role": "mid",
       "llm": "opencode-johnnyjohnny-gpu",
       "expected_model": "granite4.2:30b",
-      "used_model": "granite4.2:30b",
-      "ok": true,
-      "error": null
+      "used_model": null,
+      "ok": false,
+      "error": "POST https://127.0.0.1:8443/api/llms/opencode-johnnyjohnny-gpu/test: The read operation timed out"
     },
     {
       "role": "decompose-validate",
       "llm": "opencode-datawatch-gpu",
       "expected_model": "gpt-oss:120b",
-      "used_model": null,
-      "ok": false,
-      "error": "POST https://127.0.0.1:8443/api/llms/opencode-datawatch-gpu/test: The read operation timed out"
+      "used_model": "gpt-oss:120b",
+      "ok": true,
+      "error": null
     }
   ],
   "preflight_passed": false,
