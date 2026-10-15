@@ -175,7 +175,16 @@ func (s *Server) handleComputeNodes(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusNotFound)
 			return
 		}
-		if s.peerRegistry != nil {
+		// 2026-10-15 — operator-reported: a ComputeNode representing this
+		// same machine (e.g. a CPU-only logical partition) could never be
+		// attached to the local daemon's own self-peer, because the self
+		// peer is only ever synthesized for display (synthesizeSelfPeer)
+		// — it's never a real entry in s.peerRegistry, so this lookup
+		// always rejected it as "unknown". handleComputeNodeDetail's own
+		// self-peer fallback already treats body.Peer == s.hostname as
+		// always-valid (served live, no registration needed) — this check
+		// was inconsistent with that. Match it.
+		if s.peerRegistry != nil && body.Peer != s.hostname {
 			if _, ok := s.peerRegistry.Get(body.Peer); !ok {
 				http.Error(w, "unknown observer peer: "+body.Peer, http.StatusBadRequest)
 				return

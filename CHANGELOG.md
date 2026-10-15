@@ -5,6 +5,20 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.1.7 — fix(compute): attaching a ComputeNode to the local self-peer always rejected
+
+v9.1.6 concluded the real fix for "no monitored compute node" is to set the
+affected ComputeNode's `ObserverPeer` to the daemon's own hostname via the
+existing attach endpoint — but that endpoint itself always rejected it:
+`synthesizeSelfPeer` only ever builds the self row for peer *listings*, it's
+never a real entry in `s.peerRegistry`, so the attach handler's registry
+lookup always 400'd with "unknown observer peer" for exactly the self case.
+`handleComputeNodeDetail`'s own self-peer fallback already treats
+`peer == s.hostname` as always-valid without registration; the attach
+handler now matches that, so self-hostname bindings succeed while every
+other (including federated/remote) peer still requires real registration,
+unchanged.
+
 ## v9.1.6 — fix(compute): ComputeNodes representing this machine need ObserverPeer set
 
 **Operator-reported live, 2026-10-15**: the PWA session "Status" tab showed
