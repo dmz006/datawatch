@@ -68,15 +68,25 @@ advances it without hand sequencing.
 | # | Item | Status | Depends on |
 |---|---|---|---|
 | 20 | [BL402](2026-10-09-gh204-result-panel.md) Result panel for scheduled jobs and integrations | not started | - |
-| 21 | [BL437](2026-10-14-recurring-model-eval-design.md) Recurring hardware-aware model and effort eval | blocked (PRD `fea73c82` failed; design done) | 10, 11 |
-| 22 | BL414 PRD cost rollup and token usage guardrails | not started (needs scoping against BL405) | BL405 |
-| 23 | [BL405](2026-10-10-llm-enhancements.md) LLM enhancements, phases 0-10 | not started (design complete) | 6 |
-| 24 | Security remediation: BL365, BL395, BL408, BL398 ([BL398 detail](historical-plans/2026-10-08-bl398-trivyignore-cve-review.md)) | not started (no PRDs yet) | - |
-| 25 | BL412 Self-config permission-gate generalization | not started (needs design) | - |
-| 26 | BL413 Diff-aware project-rules enforcement | not started (needs design) | - |
-| 27 | BL411 Pre-v10.0.0 dead-code audit | not started | 20-26 |
-| 28 | BL409 File and function naming audit | not started | 27 |
-| 29 | BL424 Operator integration guide | not started (PRD `0e2ac398` approved, held to last) | 28 |
+| 21 | BL434 Splash animation on every full-screen refresh | approved, not started (PRD `88fdf815`) | - |
+| 22 | BL435 Retry with already-correct output must not fail on empty diff | approved, not started (PRD `191d0c95`) | - |
+| 23 | BL436 Per-turn chunked output capture (design) | approved, not started (PRD `01bcf5cb`) | - |
+| 24 | BL442 PWA service worker force-navigates controlled windows | needs review (PRD `39f7af28`) | - |
+| 25 | [BL433](2026-10-14-pwa-performance-audit.md) PWA performance audit under load | blocked (PRD `049f4713`) | - |
+| 26 | BL392 Cross-repo GitHub configuration hardening audit | mostly done | - |
+| 27 | BL443 goose and aider inference adapters | not started (clear error for `llm_test` shipped v9.0.88; adapters remain) | - |
+| 28 | BL448 Voice transcription times out on long recordings | draft (PRD `6bded76a`) | - |
+| 29 | BL450 Startup-dialog auto-dismiss for one-shot tasks | draft (PRD `8272882d`) | - |
+| 30 | BL393 Nested tags for Automata and PRDs | not started (previously held pending explicit authorization — operator folded it back into the queue 2026-10-15) | - |
+| 31 | [BL437](2026-10-14-recurring-model-eval-design.md) Recurring hardware-aware model and effort eval | blocked (PRD `fea73c82` failed; design done) | 10, 11 |
+| 32 | BL414 PRD cost rollup and token usage guardrails | not started (needs scoping against BL405) | BL405 |
+| 33 | [BL405](2026-10-10-llm-enhancements.md) LLM enhancements, phases 0-10 | not started (design complete) | 6 |
+| 34 | Security remediation: BL365, BL395, BL408, BL398 ([BL398 detail](historical-plans/2026-10-08-bl398-trivyignore-cve-review.md)) | not started (no PRDs yet) | - |
+| 35 | BL412 Self-config permission-gate generalization | not started (needs design) | - |
+| 36 | BL413 Diff-aware project-rules enforcement | not started (needs design) | - |
+| 37 | BL411 Pre-v10.0.0 dead-code audit | not started | 20-36 |
+| 38 | BL409 File and function naming audit | not started | 37 |
+| 39 | BL424 Operator integration guide | not started (PRD `0e2ac398` approved, held to last) | 38 |
 
 ## Separate lanes
 
@@ -100,19 +110,9 @@ are not lost.
 
 | Item | Status |
 |---|---|
-| [BL433](2026-10-14-pwa-performance-audit.md) PWA performance audit under load | blocked (PRD `049f4713`) |
-| BL434 Splash animation on every full-screen refresh | approved, not started (PRD `88fdf815`) |
-| BL435 Retry with already-correct output must not fail on empty diff | approved, not started (PRD `191d0c95`) |
-| BL436 Per-turn chunked output capture (design) | approved, not started (PRD `01bcf5cb`) |
 | BL438 Research: Hermes Agent | approved, not started (PRD `6952fceb`) |
 | BL439 Research: datawatch as infrastructure for Hermes Agent | approved, not started (PRD `2712d303`) |
-| BL442 PWA service worker force-navigates controlled windows | needs review (PRD `39f7af28`) |
-| BL443 goose and aider inference adapters | not started (a clear error for `llm_test` shipped in v9.0.88) |
-| BL448 Voice transcription times out on long recordings | draft (PRD `6bded76a`) |
-| BL450 Startup-dialog auto-dismiss for one-shot tasks | draft (PRD `8272882d`) |
 | [BL400](2026-10-09-alerts-conditions-and-filtering.md) Alerts: conditions, filtering, SIEM parity | deferred, open questions |
-| BL393 Nested tags for Automata and PRDs | deferred |
-| BL392 Cross-repo GitHub configuration hardening audit | mostly done |
 | BL241 Matrix.org communication channel | deferred, needs design interview |
 
 ## Design docs
