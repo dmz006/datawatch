@@ -1079,6 +1079,23 @@ established. In progress — starting with BL403.**
     bare 502); (2) reproduce and fix the `goose`-name 409-vs-404
     inconsistency. Both are currently registered as `goose-johnnyjohnny`/
     `aider-johnnyjohnny` (BL437/eval-driver tags) pending this fix.
+
+    **Item (1) shipped same day, v9.0.88.** Root cause turned out to be
+    exactly the misleading-message case named above, not a missing
+    adapter — `goose`/`aider`/`claude-code`/etc. are intentionally
+    session-backend kinds (#46) with no request/response ask path by
+    design; `llm_test` just didn't check that before falling through to
+    `dispatcher.Call`'s generic 502. Fixed in `handleLLMTest`
+    (`internal/server/inference.go`): now returns a clear `400` naming
+    the kind and explaining it has no ask/probe adapter by design,
+    pointing at running a real task as the actual verification path.
+    Tests: `internal/server/bl443_llm_test_session_backend_test.go`
+    (unit only — **not yet validated live** against a rebuilt/restarted
+    daemon). **Still open**: (2) the `goose`-name 409-vs-404 registry
+    inconsistency (not reproduced for `aider`), and whether the real
+    autonomous-task session-spawn path for `goose`/`aider` (separate from
+    this ask-adapter fix) actually works end-to-end — needs a live task
+    run through one of them to confirm, not yet done.
 22. **BL423** — an Automaton reports `completed` while the CI run for
     the commit it pushed is failing (filed + shipped 2026-10-13, same
     day — **shipped v9.0.63**). Not roadmap work — found live right
