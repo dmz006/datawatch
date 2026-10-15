@@ -1122,6 +1122,59 @@ established. In progress — starting with BL403.**
     task spawned through the autonomous system itself, not a manual
     probe, to close out.
     **Forward pointer:** **BL437** (item 31) extends this eval into a recurring, hardware-aware monthly sweep.
+
+**BL444** — MCP SSE listener bind failure at boot is never retried and
+invisible in `/api/health` (filed 2026-10-14, external, trusted tester
+Cairn-works, GH#210). If `mcp.sse_host` names an address not yet assigned
+when the daemon starts (e.g. a Tailscale IP before `tailscaled` is up
+after reboot), the SSE listener fails once, permanently, with no retry —
+confirmed live on a real instance (`bind: cannot assign requested
+address`). Checked for existing coverage first (operator asked to be
+sure before filing): no generic listen-retry helper exists anywhere in
+the codebase (the only "retry" config found, `mcp.max_retries`, is for
+per-session channel bridges — unrelated). Confirmed in code that
+`/api/health`'s `mcp` subsystem status (`internal/server/api.go:2440`)
+is a static wiring check (`mcpDocsFunc != nil`), blind to whether the
+listener actually bound — so this failure mode is real and currently
+invisible, exactly as reported. **Half of GH#210 (the "visible in
+health" part) overlaps with SEC-002's already-decided "per-listener auth
+flag in health/diagnose" — fold that half in there, not here.** This
+item is scoped to just the genuinely new half: retry the SSE bind with
+backoff (mirroring how the daemon already retries elsewhere), and surface
+a real bind-failure flag in `/api/health`'s `mcp` subsystem distinct from
+"disabled". No plan doc yet.
+
+**BL445** — review and merge GH#208 (external PR, Cairn-works), `fix(mcp):
+add mcp.public_url` (closes GH#207). Verified the premise is real, not
+duplicated: `internal/mcp/server.go` had zero references to any
+public-URL override before this PR, and the existing `server.public_url`
+field serves an unrelated purpose (K8s worker→parent callback
+resolution, not MCP SSE endpoint advertisement) — confirmed by reading
+its own doc comment and every call site. The MCP SSE server runs on a
+genuinely separate listener (`mcp.sse_host`/`sse_port`, own TLS flag),
+so it structurally needs its own override, not a reuse of
+`server.public_url`. PR mirrors the existing pattern exactly (235
+additions / 9 deletions across config, server, tests, all 5 PWA
+locales). No CI reported yet on the PR branch — run the full suite and a
+real reverse-proxy smoke test before merging, don't merge on diff-read
+alone.
+
+**BL446** — federation as a sibling-agent mail transport: read-back
+delivery receipts, change-wins per-seat read state, writer provenance,
+wake-on-arrival, per-seat paging of large stores, multi-aspect identity
+handoff (filed 2026-10-14, external, trusted tester Cairn-works, GH#211,
+large feature request — 6 distinct asks, the submitter's own identity-
+handoff half alone cites "13 principles, 12 implementation
+requirements"). Checked for existing coverage first: BL357 (durable
+role-based work queue) and BL358 (discussion push/subscribe) are real
+building blocks already shipped, but neither implements verified
+read-back receipts, change-wins merge semantics, or writer provenance —
+confirmed by reading both features' actual shipped scope. Genuine,
+substantial new design surface, not a duplicate. Scope: a design pass
+first (not implementation) explicitly building on BL357/BL358 rather
+than inventing a parallel messaging layer, deferred to post-v10.0.0 given
+its size — do not let this compete with the v10.0.0 arc's own sequencing.
+No plan doc yet.
 22. **BL423** — an Automaton reports `completed` while the CI run for
     the commit it pushed is failing (filed + shipped 2026-10-13, same
     day — **shipped v9.0.63**). Not roadmap work — found live right
@@ -2313,6 +2366,18 @@ plan (`SEC-###`) for later GH-issue conversion on operator request.
 
 **Plan doc:** [`2026-08-28-security-assessment-core.md`](2026-08-28-security-assessment-core.md)
 **Status:** In progress — Phase 0 ✅ (inventory + sandbox harness) · Phase 1 ✅ (gosec/govulncheck/trivy/gitleaks + local-model review; findings registered, SEC-001…024 with gaps). **Phase 2's "authn/authz sandbox tests" is superseded, not pending** (corrected 2026-10-10, reviewed while prioritizing the BL403/404/405/406/407 arc): the 2026-09-22 resumed walkthrough (`docs/plans/historical-plans/2026-09-22-security-remediation-activation.md` §7) already decided every one of SEC-001–025 explicitly, re-validated against v8.39.16, and BL395 (below) confirmed all decisions still hold and added the F-2 isolation design on top. **Remediation (v8.39.15):** SEC-004 fixed; SEC-021's XSS half fixed (file-service root-fallback half deferred, see SEC-021 row in the walkthrough). Everything else SEC-001–025 is a *decided, not-yet-implemented* item — see BL395 for the real master implementation order (Design **A → C → B → D**), not a design gap. Full writeup: `docs/plans/historical-plans/2026-10-03-bl394-security-findings-review.md` §7.
+
+**External confirmation, 2026-10-14 (GH#209, trusted tester Cairn-works):** live evidence
+on a real v9.0.10 instance that default `server.host: 0.0.0.0` + `server.token: ""`
+serves the full REST/WebSocket API — including the `shell` backend — unauthenticated
+to every interface, with zero warning anywhere. This does **not** reopen SEC-001 (which
+explicitly decided an empty token stays a legitimate operator choice — not re-litigated
+here) — it's real-world confirmation for exactly the remediation SEC-002 already
+proposed but never implemented: *"a startup warning and a per-listener auth flag in
+health/diagnose."* Treat GH#209 as the forcing function to actually implement that half
+of SEC-002 before/around the v10.0.0 line, not as a new finding. Operator response
+posted on the issue 2026-10-14: internal assessment already covers part of this,
+update to follow once remediated.
 
 #### BL408 — Hostile-LLM assessment: prompt injection, overreach, escape (filed 2026-08-28)
 
