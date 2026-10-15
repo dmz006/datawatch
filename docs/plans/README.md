@@ -1684,6 +1684,21 @@ PRD (`recover_pending_task`). **Shipped v9.1.1 (race fix) and v9.1.2
    `468db26e`** filed in `draft` (not yet decomposed/run — queued for
    when this reaches the front of the pre-v10.0.0 order).
 
+33. **BL453** — Research: can open models decompose effectively, and if
+    not today, what would make them able to? (design/research pass, no
+    implementation; filed 2026-10-15). Real findings from the same
+    night's BL441 open-model-decompose experiment: a headless `ollama`
+    backend produced zero tasks/zero `verification_script` values on a
+    tooled PRD (structural failure, not transient); switching to a
+    tool-capable `opencode` harness with the same model burned a full
+    1-hour timeout twice with zero completed output, apparently stuck in
+    the PRD spec's own "required reading" exploration. Operator decision
+    for now: Claude/sonnet decomposes, open models execute — this item is
+    the follow-up research into whether/how that can change. **Automaton
+    `d2f87f0c`** filed in `draft`. Parallel-track, Claude-only research —
+    does not block or get blocked by the Stage A/B/C sequence below, can
+    run opportunistically alongside it.
+
 **Active execution order (operator-confirmed 2026-10-15, supersedes the
 2026-10-14 ~14:05 table below it replaces).** Full re-review triggered by
 the operator: the prior table only tracked items that already had a PRD,
