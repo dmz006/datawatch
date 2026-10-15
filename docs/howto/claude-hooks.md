@@ -206,6 +206,46 @@ The board renders a card for each field present in the payload:
 
 Fields not present in the payload are omitted from the board.
 
+Nothing in datawatch writes `.claude/sprint/state.json` or computes
+`tests` / `git` for you. If your project wants those cards for an
+ordinary session, your own hook script or project tooling has to supply
+them.
+
+## Automaton task sessions — Status detail without hooks
+
+A session that runs an Automaton task gets its Status-tab detail from
+datawatch's own task data, so it does not depend on a hook script at all.
+`GET /api/sessions/<id>/status` returns an `automaton` object for these
+sessions, and the PWA renders it as:
+
+| Card | Filled from the task data |
+|---|---|
+| Current focus | task title, with the Automaton and story it belongs to and a collapsible task spec |
+| Automaton | Automaton title and status, story, task status, what the task is waiting on, retries, last error |
+| Tests | the verification result (passed / failed, severity, summary, issues) and the verifier backend and model |
+| Git | base commit, files planned, files touched, files changed outside the task |
+| Activity | the Automaton's most recent decisions, newest first |
+| Cost | tokens in / out and estimated cost for the session |
+
+**Hook payloads still win.** When a hook script does send
+`current_task`, `sprint`, `tests` or `git`, the board shows those values
+instead of the task data for that card. Cards with no hook value keep
+showing the task data. Sessions that are not running an Automaton task
+show only what hooks send.
+
+Automaton claude-code task sessions take the same hook auto-install path
+as interactive sessions, so the opt-out and pitfalls below apply to them
+too.
+
+Check it from the shell:
+
+```bash
+curl -sk -H "Authorization: Bearer $TOKEN" \
+  https://localhost:8443/api/sessions/<session-id>/status | jq .automaton
+```
+
+An empty result means the session is not running an Automaton task.
+
 ## Structured telemetry payload
 
 In addition to the status-board fields, hook payloads support a

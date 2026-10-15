@@ -5,6 +5,63 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.87 — feat(pwa): session Status tab shows Automaton task detail
+
+**Status tab for Automaton task sessions.** Opening a session that is
+running an Automaton task now shows what that task is doing, built from
+datawatch's own task data. No hook script or hook payload is needed.
+
+- **Current focus** shows the task title, with the Automaton and story it
+  belongs to and a collapsible task spec.
+- **Automaton card** replaces the raw JSON dump with a formatted card:
+  the Automaton title (links to its Automata view), status, story, task,
+  what the task is waiting on, retries and the last error.
+- **Tests** shows the verification result (passed / failed, severity,
+  summary, issues) and which verifier backend and model produced it.
+- **Git** shows the base commit, files planned, files touched and any
+  files changed outside the task.
+- New **Activity** card (the Automaton's recent decisions, newest first)
+  and **Cost** card (tokens in / out and estimated cost for the session).
+- When a hook script does send `current_task`, `sprint`, `tests` or `git`,
+  those values still take priority over the task data.
+
+`GET /api/sessions/{id}/status` gains an additive `automaton` object with
+these fields. Existing fields are unchanged; the legacy `sprint` object
+keeps its keys and adds `task_title` and `story_title`.
+
+**Stats tab now finds a process envelope for sessions.** The observer
+never attributed processes to individual sessions, because session roots
+were never registered. Running tmux sessions (interactive and Automaton
+task sessions) are now registered on every stats tick and dropped when
+they end, so the Stats tab gets a per-session envelope. When there is
+none, the claude-code backend fallback now matches the observer's
+`claude` signature. Subprocess and agent sessions have no tmux pane and
+still get no per-session envelope.
+
+**Copy fixes.** The Status footer no longer says Council / Skills /
+Tracker summaries will appear once hook payloads include them; it says
+they are not available yet. The Stats "no envelope" message lists the
+real causes, and the token rate / latency line no longer promises a past
+version. New strings are in all five locale bundles (de/es/fr/ja carry
+English placeholders for some).
+
+**Hooks: no change.** Nothing produces the hook script's `sprint` /
+`tests` / `git` fields today, for any session type, so no hook-side
+generator was added. Automaton task sessions take the same hook install
+path as interactive sessions. See `docs/howto/claude-hooks.md`.
+
+Mobile apps: datawatch-app#262 tracks the new Status-tab cards and
+locale keys for Android and iOS.
+
+Reuse audit — what existing primitive does this extend? The existing
+session status endpoint (`GET /api/sessions/{id}/status`, which already
+synthesized a `sprint` map from the session's Automaton) and the task
+fields already stored on each Automaton task (title, spec, status, wait
+reason, verification, planned/touched files, base commit, drift) plus the
+session's stored token/cost totals. The observer fix calls the existing
+session-root registry from the existing per-tick pane-PID loop. No new
+mechanism.
+
 ## v9.0.86 — feat(automata): daemon-wide max_concurrent_tasks; max_parallel_tasks deprecated
 
 **Behavior change.** `autonomous.max_concurrent_tasks` (how many

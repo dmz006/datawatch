@@ -57,7 +57,13 @@ Browse the catalog in-app (Settings → Skills → Registry) or on GitHub. To co
 
 ## Current release
 
-**Current release: v9.0.86 (2026-10-14).** `autonomous.max_concurrent_tasks`
+**Current release: v9.0.87 (2026-10-14).** The session Status tab now
+shows Automaton task detail (current focus, a formatted Automaton card,
+verification results, files and base commit, recent activity and cost)
+from datawatch's own task data, with no hook payload needed. The Stats tab
+now gets a per-session process envelope for running tmux sessions.
+
+**v9.0.86** `autonomous.max_concurrent_tasks`
 can now be set daemon-wide (YAML, Settings, REST, MCP, comm, CLI), and an
 Automaton without its own setting follows it. The default stays 1 (one task
 at a time). `autonomous.max_parallel_tasks`, which never had any effect, is

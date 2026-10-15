@@ -1309,6 +1309,44 @@ established. In progress — starting with BL403.**
    inference caps, usage budget, worked examples, config keys, 6 planned
    implementation phases, parity surface, 9 operator open questions).
 
+30. **BL440** — Status-tab session detail for Automaton task sessions
+   (filed + **✅ closed 2026-10-14, shipped v9.0.87**). The session
+   Status sub-tab showed "—" for Current focus, a raw JSON dump for the
+   Sprint card, and Tests/Git placeholders waiting on hook payload fields
+   that nothing produces; the Stats sub-tab never had a per-session
+   process envelope because `observer.RegisterSessionRoot` had no
+   production caller. **Shipped:** additive `automaton` block on
+   `GET /api/sessions/{id}/status` built from stored task fields
+   (`9ccd6983`); PWA Status cards — focus, formatted Automaton card,
+   verification as Tests, verifier identity, git/file state, Activity,
+   Cost (`ab319bf8`); observer session roots registered each stats tick
+   via `SyncSessionRoots` (`22382029`); Stats backend fallback
+   `claude-code → claude` and corrected copy (`98e233a9`). Mobile
+   parity: datawatch-app#262. **Evidence + resolution:**
+   [2026-10-14-status-tab-session-detail-gap.md](2026-10-14-status-tab-session-detail-gap.md).
+   **Deferred follow-ups (open, from the doc's Resolution section):**
+   - (a) Why hook auto-install isn't taking effect on this host — check
+     `session.auto_install_hooks` and `[hookinstall]` log lines before
+     any code change (operator first).
+   - (b) Confirm whether `$TOOL_NAME` is empty under current Claude Code;
+     if so the TodoWrite parse should read `tool_name` from stdin.
+   - (c) The "hooks alive" header overstates hook installation — it
+     should distinguish hook-script events from daemon-synthesized ones.
+   - (d) Subprocess sessions could be rooted at the subprocess PID
+     (needs the PID plumbed out of `runSubprocess`).
+   - (e) Host claude processes may not match the observer `claude`
+     signature (only `backend:claude-docker` seen live) — not
+     investigated.
+   - (f) Live check after the daemon runs v9.0.87: `observer_envelopes`
+     should list `kind: session` entries for running tmux sessions.
+   - (g) Surface per-session tokens/cost on the Stats tab before building
+     token rate / latency / model state (still unbuilt).
+   - (h) Optional: re-fetch the Status tab on a `prd_update` whose PRD id
+     matches the session's Automaton.
+   - Council / Skills / Tracker / closed-task summary cards remain unbuilt
+     with no backlog item; `session.hook_script_dir` is dead config to
+     clean up later.
+
 **Active execution order (operator-confirmed, last updated 2026-10-14 ~14:05;
 ordered by feature dependency, not filing date or chronology — supersedes
 the three separate dated addenda this replaced).** Items run one at a time
@@ -1328,6 +1366,7 @@ daemon).
 | 8 | **BL422** — Claude model/effort tiering eval | Queued, resumes after #7 | Its results get retrofitted into whatever BL428/431 implemented with placeholder tier defaults (see row 7's trade-off note). |
 | — | **BL436** — per-turn chunked session capture (replaces tmux-scrollback reliance) | Design doc done, `needs_review` | Filed 2026-10-14, not yet slotted into the numbered order above — docs-only, low collision risk, could run opportunistically. |
 | — | **BL437** — recurring hardware-aware model/effort eval | Decomposing | Filed 2026-10-14 (pre-v10.0.0 priority, operator-named), generalizes BL422 into an ongoing monthly sweep; not yet slotted into the numbered order above. |
+| — | **BL440** — Status-tab session detail for Automaton task sessions | **Shipped v9.0.87** (follow-ups (a)–(h) open in item 30) | Surfaced live 2026-10-14 while watching Automaton task sessions; display-only, ran outside the numbered order. |
 
 BL424 (item 23 above) is explicitly excluded from this table and stays
 sequenced last, right before the v10.0.0 cutover, per its own note above —
