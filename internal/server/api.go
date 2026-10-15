@@ -189,7 +189,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "9.1.3"
+var Version = "9.1.4"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -4454,16 +4454,30 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	// v8.7.1 — resolve Ollama URL from compute node for ollama/* model sessions.
-	// Stored on the session so the preLaunch hook can write it to opencode.json.
+	// v8.7.1 — resolve Ollama URL from compute node for opencode sessions
+	// backed by an Ollama-kind node.
+	// BL449 incident 2026-10-15: this used to gate purely on req.Model
+	// already carrying the "ollama/" prefix. A per-task model override
+	// (set_task_llm using the registry's bare fixture name, e.g.
+	// "qwen3:1.7b") never had that prefix, so this silently skipped —
+	// no Ollama URL, no provider block in opencode.json — and every
+	// worker session failed to launch with ProviderModelNotFoundError.
+	// Gate on the compute node's own Kind instead (known independent of
+	// how the caller spelled the model), and normalize req.Model so
+	// opencode.json always gets the form it requires, regardless of
+	// which spelling the task override used.
 	var resolvedOllamaURL string
-	if resolvedComputeNodeRef != "" && s.computeReg != nil && strings.HasPrefix(req.Model, "ollama/") {
-		if n, err := s.computeReg.Get(resolvedComputeNodeRef); err == nil && n != nil && n.Address != "" {
+	isOpenCodeBackend := req.Backend == string(inference.KindOpenCode) || req.Backend == string(inference.KindOpenCodeACP)
+	if resolvedComputeNodeRef != "" && s.computeReg != nil && isOpenCodeBackend {
+		if n, err := s.computeReg.Get(resolvedComputeNodeRef); err == nil && n != nil && n.Kind == compute.KindOllama && n.Address != "" {
 			addr := n.Address
 			if !strings.HasPrefix(addr, "http://") && !strings.HasPrefix(addr, "https://") {
 				addr = "http://" + addr
 			}
 			resolvedOllamaURL = addr
+			if req.Model != "" && !strings.HasPrefix(req.Model, "ollama/") {
+				req.Model = "ollama/" + req.Model
+			}
 		}
 	}
 	// BL5 — apply template defaults BEFORE per-request overrides.

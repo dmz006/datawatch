@@ -5,6 +5,24 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.1.4 — fix(sessions): handleStartSession normalizes opencode model for Ollama nodes
+
+**BL449 open-model matrix finding, part 2.** v9.1.3 fixed the `llm_test`
+ask-path; this fixes the real worker-session launch path. A per-task
+model override (`set_task_llm` using a registry's bare fixture name,
+e.g. `qwen3:1.7b`, rather than its canonical `ollama/qwen3:1.7b` form)
+reached `handleStartSession`'s Ollama-URL resolution, which gated purely
+on `req.Model` already carrying the `ollama/` prefix — a bare override
+silently skipped it, so the session got no Ollama provider block and no
+Ollama URL, and `opencode run` died in ~3s with `ProviderModelNotFoundError`
+before touching the model. The autonomous executor's `SpawnFn` is a real
+loopback to `POST /api/sessions/start` (this handler), so every
+opencode-kind task spawned with an unprefixed model override hit this.
+Gate on the compute node's own `Kind == compute.KindOllama` instead (known
+independent of model spelling), and normalize `req.Model` to the
+`ollama/` form before it reaches `opencode.json`, scoped to
+`opencode`/`opencode-acp` backends only.
+
 ## v9.1.3 — fix(inference): opencode adapter's ask-path never understood its own model prefix
 
 **BL449 open-model matrix finding.** The `opencode` LLM kind's ask adapter
