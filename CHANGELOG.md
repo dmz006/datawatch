@@ -5,6 +5,21 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.1.3 — fix(inference): opencode adapter's ask-path never understood its own model prefix
+
+**BL449 open-model matrix finding.** The `opencode` LLM kind's ask adapter
+(`internal/inference/adapters/opencode.go`) wraps the raw Ollama wire
+protocol and passed `LLM.Model` straight through unmodified. But a
+registry entry's `model` field is expected to carry the `ollama/<model>`
+provider prefix (per `store.go`'s own doc comment) so a real opencode CLI
+session can resolve it in `opencode.json` — and the raw Ollama API never
+understood that prefix, so every `llm_test`/ask call against an
+`opencode`-kind entry 404'd with `model 'ollama/<x>' not found`. The
+adapter now strips a leading `ollama/` before delegating to the inner
+Ollama adapter (no-op for entries without the prefix). Confirmed live:
+real opencode worker sessions already resolved the prefix correctly
+(separate code path, unaffected); only this ask-path adapter was broken.
+
 ## v9.1.2 — fix(autonomous): reset_task recovers a terminal PRD with a pending task
 
 **BL451 follow-up.** The v9.1.1 rollup race could leave PRD 9e7bad8e with
