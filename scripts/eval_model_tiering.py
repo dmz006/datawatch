@@ -908,6 +908,10 @@ def cmd_create_prd(a):
             tid = newt[0]["id"]
             prd_action(c, pid, "set_task_llm", {"task_id": tid, "backend": "claude-code", "model": cell["model"],
                                                 "effort": cell["effort"] or "", "actor": ACTOR})
+            # BL447 — give this task its own cell directory via the real
+            # Task.ProjectDir override, not prose alone (the prose-only
+            # scheme is what produced BL422's invalid diff-capture data).
+            prd_action(c, pid, "set_task_project_dir", {"task_id": tid, "project_dir": cdir_abs, "actor": ACTOR})
             st["cells"][cell["name"]].update({"task_id": tid, "story_id": sid})
             save_state(a.run_id, st)
             log(f"task {tid} <- {cell['name']}")
@@ -925,6 +929,9 @@ def cmd_create_prd(a):
         want = ("claude-code", cell["model"], cell["effort"] or "")
         if got != want:
             errs.append(f"{cell['name']}: got {got} want {want}")
+        want_dir = os.path.join(REPO, st["cells"][cell["name"]]["dir"])
+        if os.path.realpath(t.get("project_dir") or "") != os.path.realpath(want_dir):
+            errs.append(f"{cell['name']}: project_dir {t.get('project_dir')!r} != cell dir {want_dir!r}")
     if len(tasks) != len(cells):
         errs.append(f"PRD has {len(tasks)} tasks, expected exactly {len(cells)}")
     if prd.get("status") != "needs_review":
