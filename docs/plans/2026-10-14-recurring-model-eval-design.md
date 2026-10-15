@@ -376,6 +376,8 @@ Staged. Each stage is independently reviewable. None of this is implemented here
 
 **S5 — Matrix runner.** Implements the sweep shape (cells, reps, sentinel CPU subset, `verify/*.sh` grading). Excludes verdict node. Acceptance: a dry-run produces the cell list and counts; a 1-model run completes.
 
+> **Status: In Progress (BL449, 2026-10-15).** The first slice, a fixed 16-cell open-model matrix (4 opencode roles × 4 task types) with the three-verdict split, shipped as a driver and fixtures: `scripts/eval_open_model_matrix.py`, `testdata/eval/open-model-matrix/`. Daemon fixes found while running it shipped in **v9.1.3** (opencode ask adapter strips the `ollama/` prefix) and **v9.1.4** (session start normalises the opencode model for Ollama nodes). There is no valid run yet: r6 was `invalid-infrastructure`. Reps, the sentinel CPU subset and the dry-run acceptance are not done. Plan: [2026-10-15-bl449-open-model-matrix.md](2026-10-15-bl449-open-model-matrix.md).
+
 **S6 — Scheduler and template.** Create the `recurring-model-eval` autonomous template; wire `schedule_spawn` with the monthly cron. Verify `autonomous_template_*` parameter schemas first (not checked in this pass). Acceptance: a manually fired spawn instantiates the template PRD.
 
 **S7 — Rollup and advice.** Finding classification (`default_mismatch`, `model_weak`, `hardware_limit`, `class_unknown`), diff against current advice, proposed advice written with evidence. Acceptance: a sweep with a known-bad model yields `model_weak`, not `default_mismatch`.

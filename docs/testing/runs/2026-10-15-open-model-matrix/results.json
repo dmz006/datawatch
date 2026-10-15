@@ -3,7 +3,7 @@
   "preflight": [
     {
       "role": "cpu",
-      "llm": "opencode-johnnyjohnny-cpu",
+      "llm": "opencode-node-a-cpu",
       "expected_model": "qwen3:1.7b",
       "used_model": "qwen3:1.7b",
       "ok": true,
@@ -11,7 +11,7 @@
     },
     {
       "role": "fast",
-      "llm": "opencode-johnnyjohnny-fast",
+      "llm": "opencode-node-a-fast",
       "expected_model": "granite4.2:8b",
       "used_model": "granite4.2:8b",
       "ok": true,
@@ -19,7 +19,7 @@
     },
     {
       "role": "mid",
-      "llm": "opencode-johnnyjohnny-gpu",
+      "llm": "opencode-node-a-gpu",
       "expected_model": "granite4.2:30b",
       "used_model": "granite4.2:30b",
       "ok": true,
@@ -27,7 +27,7 @@
     },
     {
       "role": "decompose-validate",
-      "llm": "opencode-datawatch-gpu",
+      "llm": "opencode-node-b-gpu",
       "expected_model": "gpt-oss:120b",
       "used_model": "gpt-oss:120b",
       "ok": true,
@@ -39,7 +39,7 @@
   "cells": [
     {
       "role": "cpu",
-      "llm": "opencode-johnnyjohnny-cpu",
+      "llm": "opencode-node-a-cpu",
       "task_type": "analysis",
       "expected_model": "qwen3:1.7b",
       "used_model": "qwen3:1.7b",
@@ -47,7 +47,7 @@
       "self_reported_model": null,
       "verification_integrity": "suspect",
       "resolved_dir": null,
-      "task_project_dir": "/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r6/cpu-analysis",
+      "task_project_dir": ".datawatch/eval/open-model-matrix/20261015-r6/cpu-analysis",
       "artifact_check": {
         "cell_repo_head": "9b7911a8f529a6d08a78db3dbd8648c64a5ff827",
         "new_commits": 0,
@@ -61,7 +61,7 @@
     },
     {
       "role": "cpu",
-      "llm": "opencode-johnnyjohnny-cpu",
+      "llm": "opencode-node-a-cpu",
       "task_type": "scripting",
       "expected_model": "qwen3:1.7b",
       "used_model": "qwen3:1.7b",
@@ -69,7 +69,7 @@
       "self_reported_model": null,
       "verification_integrity": "suspect",
       "resolved_dir": null,
-      "task_project_dir": "/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r6/cpu-scripting",
+      "task_project_dir": ".datawatch/eval/open-model-matrix/20261015-r6/cpu-scripting",
       "artifact_check": {
         "cell_repo_head": "09c937751960e5defecd19b43260f3ec272d1f8c",
         "new_commits": 0,
@@ -83,7 +83,7 @@
     },
     {
       "role": "cpu",
-      "llm": "opencode-johnnyjohnny-cpu",
+      "llm": "opencode-node-a-cpu",
       "task_type": "docs",
       "expected_model": "qwen3:1.7b",
       "used_model": "qwen3:1.7b",
@@ -91,7 +91,7 @@
       "self_reported_model": null,
       "verification_integrity": "suspect",
       "resolved_dir": null,
-      "task_project_dir": "/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r6/cpu-docs",
+      "task_project_dir": ".datawatch/eval/open-model-matrix/20261015-r6/cpu-docs",
       "artifact_check": {
         "cell_repo_head": "202390990f042b50795304e2cf57a785353d7f60",
         "new_commits": 0,
@@ -105,7 +105,7 @@
     },
     {
       "role": "cpu",
-      "llm": "opencode-johnnyjohnny-cpu",
+      "llm": "opencode-node-a-cpu",
       "task_type": "review",
       "expected_model": "qwen3:1.7b",
       "used_model": "qwen3:1.7b",
@@ -113,7 +113,7 @@
       "self_reported_model": null,
       "verification_integrity": "suspect",
       "resolved_dir": null,
-      "task_project_dir": "/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r6/cpu-review",
+      "task_project_dir": ".datawatch/eval/open-model-matrix/20261015-r6/cpu-review",
       "artifact_check": {
         "cell_repo_head": "fca7c5aa6afcde5b3fbb624d92a4d78b8773bedd",
         "new_commits": 0,
@@ -127,7 +127,7 @@
     },
     {
       "role": "fast",
-      "llm": "opencode-johnnyjohnny-fast",
+      "llm": "opencode-node-a-fast",
       "task_type": "analysis",
       "expected_model": "granite4.2:8b",
       "used_model": "granite4.2:8b",
@@ -135,7 +135,7 @@
       "self_reported_model": null,
       "verification_integrity": "suspect",
       "resolved_dir": null,
-      "task_project_dir": "/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r6/fast-analysis",
+      "task_project_dir": ".datawatch/eval/open-model-matrix/20261015-r6/fast-analysis",
       "artifact_check": {
         "cell_repo_head": "31537d9e35a5e5221517f61d259162e6b196a9a1",
         "new_commits": 0,
@@ -149,7 +149,7 @@
     },
     {
       "role": "fast",
-      "llm": "opencode-johnnyjohnny-fast",
+      "llm": "opencode-node-a-fast",
       "task_type": "scripting",
       "expected_model": "granite4.2:8b",
       "used_model": "granite4.2:8b",
@@ -157,7 +157,7 @@
       "self_reported_model": null,
       "verification_integrity": "suspect",
       "resolved_dir": null,
-      "task_project_dir": "/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r6/fast-scripting",
+      "task_project_dir": ".datawatch/eval/open-model-matrix/20261015-r6/fast-scripting",
       "artifact_check": {
         "cell_repo_head": "aa59cfe890486e19af2c9e0b78bede45a8b05b8c",
         "new_commits": 0,
@@ -171,7 +171,7 @@
     },
     {
       "role": "fast",
-      "llm": "opencode-johnnyjohnny-fast",
+      "llm": "opencode-node-a-fast",
       "task_type": "docs",
       "expected_model": "granite4.2:8b",
       "used_model": "granite4.2:8b",
@@ -179,7 +179,7 @@
       "self_reported_model": null,
       "verification_integrity": "suspect",
       "resolved_dir": null,
-      "task_project_dir": "/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r6/fast-docs",
+      "task_project_dir": ".datawatch/eval/open-model-matrix/20261015-r6/fast-docs",
       "artifact_check": {
         "cell_repo_head": "aa59cfe890486e19af2c9e0b78bede45a8b05b8c",
         "new_commits": 0,
@@ -193,15 +193,15 @@
     },
     {
       "role": "fast",
-      "llm": "opencode-johnnyjohnny-fast",
+      "llm": "opencode-node-a-fast",
       "task_type": "review",
       "expected_model": "granite4.2:8b",
       "used_model": "granite4.2:8b",
       "model_identity": "ok",
       "self_reported_model": null,
       "verification_integrity": "ok",
-      "resolved_dir": "/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r6/fast-review",
-      "task_project_dir": "/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r6/fast-review",
+      "resolved_dir": ".datawatch/eval/open-model-matrix/20261015-r6/fast-review",
+      "task_project_dir": ".datawatch/eval/open-model-matrix/20261015-r6/fast-review",
       "artifact_check": {
         "cell_repo_head": "8d4074ca06f3b8d90ee29d932129790435967e03",
         "new_commits": 0,
@@ -215,7 +215,7 @@
     },
     {
       "role": "mid",
-      "llm": "opencode-johnnyjohnny-gpu",
+      "llm": "opencode-node-a-gpu",
       "task_type": "analysis",
       "expected_model": "granite4.2:30b",
       "used_model": "granite4.2:30b",
@@ -223,7 +223,7 @@
       "self_reported_model": null,
       "verification_integrity": "suspect",
       "resolved_dir": null,
-      "task_project_dir": "/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r6/mid-analysis",
+      "task_project_dir": ".datawatch/eval/open-model-matrix/20261015-r6/mid-analysis",
       "artifact_check": {
         "cell_repo_head": "d9062f494116a350911380814f5983f20338ec9f",
         "new_commits": 0,
@@ -237,7 +237,7 @@
     },
     {
       "role": "mid",
-      "llm": "opencode-johnnyjohnny-gpu",
+      "llm": "opencode-node-a-gpu",
       "task_type": "scripting",
       "expected_model": "granite4.2:30b",
       "used_model": "granite4.2:30b",
@@ -245,7 +245,7 @@
       "self_reported_model": null,
       "verification_integrity": "suspect",
       "resolved_dir": null,
-      "task_project_dir": "/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r6/mid-scripting",
+      "task_project_dir": ".datawatch/eval/open-model-matrix/20261015-r6/mid-scripting",
       "artifact_check": {
         "cell_repo_head": "e6067cedaf512a0e69a0a41e48ec4cbbadc2ebab",
         "new_commits": 0,
@@ -259,7 +259,7 @@
     },
     {
       "role": "mid",
-      "llm": "opencode-johnnyjohnny-gpu",
+      "llm": "opencode-node-a-gpu",
       "task_type": "docs",
       "expected_model": "granite4.2:30b",
       "used_model": "granite4.2:30b",
@@ -267,7 +267,7 @@
       "self_reported_model": null,
       "verification_integrity": "suspect",
       "resolved_dir": null,
-      "task_project_dir": "/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r6/mid-docs",
+      "task_project_dir": ".datawatch/eval/open-model-matrix/20261015-r6/mid-docs",
       "artifact_check": {
         "cell_repo_head": "0efeb15aec3224b264043077c5b4ac8240bd6321",
         "new_commits": 0,
@@ -281,7 +281,7 @@
     },
     {
       "role": "mid",
-      "llm": "opencode-johnnyjohnny-gpu",
+      "llm": "opencode-node-a-gpu",
       "task_type": "review",
       "expected_model": "granite4.2:30b",
       "used_model": "granite4.2:30b",
@@ -289,7 +289,7 @@
       "self_reported_model": null,
       "verification_integrity": "suspect",
       "resolved_dir": null,
-      "task_project_dir": "/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r6/mid-review",
+      "task_project_dir": ".datawatch/eval/open-model-matrix/20261015-r6/mid-review",
       "artifact_check": {
         "cell_repo_head": "a0f93fbdafd6f17dc17324a2a1d2bca4ad08ea97",
         "new_commits": 0,
@@ -303,15 +303,15 @@
     },
     {
       "role": "decompose-validate",
-      "llm": "opencode-datawatch-gpu",
+      "llm": "opencode-node-b-gpu",
       "task_type": "analysis",
       "expected_model": "gpt-oss:120b",
       "used_model": "gpt-oss:120b",
       "model_identity": "ok",
       "self_reported_model": null,
       "verification_integrity": "ok",
-      "resolved_dir": "/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r6/decompose-validate-analysis",
-      "task_project_dir": "/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r6/decompose-validate-analysis",
+      "resolved_dir": ".datawatch/eval/open-model-matrix/20261015-r6/decompose-validate-analysis",
+      "task_project_dir": ".datawatch/eval/open-model-matrix/20261015-r6/decompose-validate-analysis",
       "artifact_check": {
         "cell_repo_head": "45b2c8ac26792d79711addfa38d82e7df2fe7735",
         "new_commits": 0,
@@ -325,15 +325,15 @@
     },
     {
       "role": "decompose-validate",
-      "llm": "opencode-datawatch-gpu",
+      "llm": "opencode-node-b-gpu",
       "task_type": "scripting",
       "expected_model": "gpt-oss:120b",
       "used_model": "gpt-oss:120b",
       "model_identity": "ok",
       "self_reported_model": null,
       "verification_integrity": "ok",
-      "resolved_dir": "/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r6/decompose-validate-scripting",
-      "task_project_dir": "/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r6/decompose-validate-scripting",
+      "resolved_dir": ".datawatch/eval/open-model-matrix/20261015-r6/decompose-validate-scripting",
+      "task_project_dir": ".datawatch/eval/open-model-matrix/20261015-r6/decompose-validate-scripting",
       "artifact_check": {
         "cell_repo_head": "52a8b93a2c90d23d6bc8a13ff2a8b8b4d2a4b847",
         "new_commits": 0,
@@ -347,7 +347,7 @@
     },
     {
       "role": "decompose-validate",
-      "llm": "opencode-datawatch-gpu",
+      "llm": "opencode-node-b-gpu",
       "task_type": "docs",
       "expected_model": "gpt-oss:120b",
       "used_model": "gpt-oss:120b",
@@ -355,7 +355,7 @@
       "self_reported_model": null,
       "verification_integrity": "suspect",
       "resolved_dir": null,
-      "task_project_dir": "/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r6/decompose-validate-docs",
+      "task_project_dir": ".datawatch/eval/open-model-matrix/20261015-r6/decompose-validate-docs",
       "artifact_check": {
         "cell_repo_head": "78e1020f8da6879bdaba16639ec8bc3d2ec8f3e8",
         "new_commits": 0,
@@ -369,7 +369,7 @@
     },
     {
       "role": "decompose-validate",
-      "llm": "opencode-datawatch-gpu",
+      "llm": "opencode-node-b-gpu",
       "task_type": "review",
       "expected_model": "gpt-oss:120b",
       "used_model": "gpt-oss:120b",
@@ -377,7 +377,7 @@
       "self_reported_model": null,
       "verification_integrity": "suspect",
       "resolved_dir": null,
-      "task_project_dir": "/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r6/decompose-validate-review",
+      "task_project_dir": ".datawatch/eval/open-model-matrix/20261015-r6/decompose-validate-review",
       "artifact_check": {
         "cell_repo_head": "1e201dc952f786cb73b9b37d3a3946425582c7e7",
         "new_commits": 0,

@@ -57,7 +57,13 @@ Browse the catalog in-app (Settings → Skills → Registry) or on GitHub. To co
 
 ## Current release
 
-**Current release: v9.0.87 (2026-10-14).** The session Status tab now
+**Current release: v9.1.4 (2026-10-15).** opencode sessions on an Ollama
+compute node now start when the model is given without its `ollama/`
+prefix. The session gets the Ollama provider settings instead of exiting
+at launch. **v9.1.3** fixes `llm test` and ask calls for opencode LLM
+entries whose model carries the `ollama/` prefix (they returned 404).
+
+**v9.0.87** The session Status tab now
 shows Automaton task detail (current focus, a formatted Automaton card,
 verification results, files and base commit, recent activity and cost)
 from datawatch's own task data, with no hook payload needed. The Stats tab

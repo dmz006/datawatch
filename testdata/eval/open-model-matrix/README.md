@@ -9,12 +9,27 @@ task fixtures unchanged.
 
 4 roles × 4 task types = 16 cells, 1 rep each.
 
-| Role | LLM registry entry | Model | Node |
+| Role | LLM registry entry (placeholder) | Model | Node (placeholder) |
 |---|---|---|---|
-| cpu | `opencode-johnnyjohnny-cpu` | `qwen3:1.7b` | johnnyjohnny-cpu |
-| fast | `opencode-johnnyjohnny-fast` | `granite4.2:8b` | johnnyjohnny |
-| mid | `opencode-johnnyjohnny-gpu` | `granite4.2:30b` | johnnyjohnny |
-| decompose-validate | `opencode-datawatch-gpu` | `gpt-oss:120b` | datawatch |
+| cpu | `opencode-node-a-cpu` | `qwen3:1.7b` | node-a-cpu |
+| fast | `opencode-node-a-fast` | `granite4.2:8b` | node-a |
+| mid | `opencode-node-a-gpu` | `granite4.2:30b` | node-a |
+| decompose-validate | `opencode-node-b-gpu` | `gpt-oss:120b` | node-b |
+
+The LLM/node names above are placeholders. Your own registry entry and
+compute-node names go in a local matrix that is never committed:
+
+1. Copy `matrix.json` to `.datawatch/eval/open-model-matrix/matrix.local.json`
+   (gitignored), or anywhere and point `DATAWATCH_EVAL_OPEN_MATRIX` at it.
+2. Replace each role's `llm` and `node` with your names. Keep `role`,
+   `model`, `task_types`, `fixtures_from` and `cell_root` unchanged.
+
+The driver loads `$DATAWATCH_EVAL_OPEN_MATRIX`, then the local file, then this
+placeholder file. Run with only the placeholders and preflight fails, because
+the names do not resolve. `report` maps the local names back to these
+placeholders per role and makes in-repo paths repo-relative before it writes
+`docs/testing/runs/…`, so tracked results never carry private hostnames or
+home-dir paths.
 
 Task types: `analysis`, `scripting`, `docs`, `review`.
 
@@ -62,7 +77,7 @@ Mirrors the tiering eval's isolation (BL422):
 Every cell records three independent outcomes:
 
 1. **`model_identity`** — did the cell actually run on the role's model/node
-   (e.g. opencode/Ollama logs show `granite4.2:30b` on johnnyjohnny), or is it
+   (e.g. opencode/Ollama logs show `granite4.2:30b` on the mid role's node), or is it
    suspect / wrong-model (fallback, different model loaded, wrong node)?
 2. **`verification_integrity`** — did the verifier run cleanly against an
    untampered cell (cell isolated, verifier and fixtures unmodified, verifier

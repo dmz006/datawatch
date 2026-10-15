@@ -4,7 +4,9 @@ Run as `python3 -I scripts/eval_open_model_matrix.py <subcommand>`; normally
 via scripts/eval-open-model-matrix.sh. Stdlib only.
 
 Fixture:  testdata/eval/open-model-matrix/matrix.json (task specs/verifiers
-          reused from testdata/eval/model-tiering — fixtures_from)
+          reused from testdata/eval/model-tiering — fixtures_from). The tracked
+          file carries placeholder LLM/node names only; the operator's real
+          registry names live in a gitignored local matrix (see load_matrix).
 State:    <cell_root>/<run-id>/state.json (gitignored, under .datawatch/)
 Results:  docs/testing/runs/<YYYY-MM-DD>-open-model-matrix/results.{json,md}
 
@@ -21,6 +23,7 @@ import argparse
 import datetime as _dt
 import json
 import os
+import re
 import subprocess
 import sys
 
@@ -35,6 +38,10 @@ from eval_model_tiering import (  # noqa: E402
 
 REPO = emt.REPO
 MATRIX_REL = "testdata/eval/open-model-matrix/matrix.json"
+# Operator-local matrix with the real LLM registry / node names. Gitignored
+# (lives under .datawatch/), so private hostnames never land in tracked files.
+LOCAL_MATRIX_REL = ".datawatch/eval/open-model-matrix/matrix.local.json"
+MATRIX_ENV = "DATAWATCH_EVAL_OPEN_MATRIX"
 RUNS_REL = "docs/testing/runs"
 TITLE_PREFIX = "[eval] open-model-matrix"
 ACTOR = "eval-open-model-matrix"
@@ -46,11 +53,61 @@ PREFLIGHT_PROMPT = "Reply with the single word OK so we can verify reachability.
 # fixtures + state
 # --------------------------------------------------------------------------
 
-def load_matrix(path=None):
-    m = emt.load_json(path or os.path.join(REPO, MATRIX_REL))
+def matrix_path():
+    """$DATAWATCH_EVAL_OPEN_MATRIX, else the gitignored local matrix, else the
+    tracked placeholder matrix (whose names will not resolve on a real daemon)."""
+    env = os.environ.get(MATRIX_ENV)
+    if env:
+        return env
+    local = os.path.join(REPO, LOCAL_MATRIX_REL)
+    return local if os.path.exists(local) else os.path.join(REPO, MATRIX_REL)
+
+
+def _check_matrix(m):
     if len(m.get("roles", [])) != 4 or len(m.get("task_types", [])) != 4:
         raise EvalError("matrix.json must define exactly 4 roles and 4 task_types")
     return m
+
+
+def load_matrix(path=None):
+    return _check_matrix(emt.load_json(path or matrix_path()))
+
+
+def load_public_matrix():
+    return _check_matrix(emt.load_json(os.path.join(REPO, MATRIX_REL)))
+
+
+def redact(obj, m, public):
+    """Rewrite a results doc for a tracked file: absolute in-repo paths become
+    repo-relative, the local matrix's LLM names become the tracked placeholder
+    names wherever they appear (whole names, per role), and `node` fields are
+    mapped likewise. Node names are only swapped in `node` fields because a
+    host can share a name with ordinary words (e.g. the product name)."""
+    pub = {r["role"]: r for r in public["roles"]}
+    llms, nodes = [], {}
+    for r in m["roles"]:
+        p = pub.get(r["role"]) or {}
+        if r.get("llm") and p.get("llm") and r["llm"] != p["llm"]:
+            llms.append((r["llm"], p["llm"]))
+        if r.get("node") and p.get("node"):
+            nodes[r["node"]] = p["node"]
+    llms.sort(key=lambda x: -len(x[0]))
+    root = os.path.realpath(REPO) + os.sep
+
+    def fix(v, key=None):
+        if isinstance(v, dict):
+            return {k: fix(x, k) for k, x in v.items()}
+        if isinstance(v, list):
+            return [fix(x) for x in v]
+        if not isinstance(v, str):
+            return v
+        if key == "node" and v in nodes:
+            return nodes[v]
+        v = v.replace(root, "").replace(REPO.rstrip(os.sep) + os.sep, "")
+        for a, b in llms:
+            v = re.sub(r"(?<![\w.-])" + re.escape(a) + r"(?![\w.-])", b, v)
+        return v
+    return fix(obj)
 
 
 def fix_dir(m):
@@ -472,7 +529,7 @@ def render_md(doc, m):
 def cmd_report(a):
     m = load_matrix()
     st = load_state(m, a.run_id, required=True)
-    doc = build_results(st)
+    doc = redact(build_results(st), m, load_public_matrix())
     d = os.path.join(REPO, RUNS_REL, f"{st.get('run_date') or _dt.date.today().isoformat()}-open-model-matrix")
     os.makedirs(d, exist_ok=True)
     write_json_atomic(os.path.join(d, "results.json"), doc)
@@ -569,6 +626,21 @@ def cmd_self_test(_a):
         md = render_md(doc, m)
         check(all(s in md for s in ("## Preflight", "## Wrong model cells", "## Suspect integrity cells",
                                     "## Model results")), "report has all sections")
+
+        local = {**m, "roles": [{**r, "llm": f"opencode-host{i}-x", "node": f"host{i}"}
+                                for i, r in enumerate(m["roles"])]}
+        public = load_public_matrix()
+        raw = {"cells": [{"llm": "opencode-host0-x", "node": "host0",
+                          "notes": "opencode-host0-x on host0, not opencode-host0-xl",
+                          "task_project_dir": os.path.join(REPO, ".datawatch", "eval", "c")}]}
+        red = redact(raw, local, public)["cells"][0]
+        pl = public["roles"][0]["llm"]
+        check(red["llm"] == pl and red["node"] == public["roles"][0]["node"],
+              "redact maps local llm/node names to tracked placeholders")
+        check(red["notes"] == f"{pl} on host0, not opencode-host0-xl",
+              "redact replaces whole llm names only; node names only in node fields")
+        check(red["task_project_dir"] == os.path.join(".datawatch", "eval", "c"),
+              "redact makes in-repo paths repo-relative")
     if fails:
         log(f"SELF-TEST FAILED ({len(fails)})")
         return 1

@@ -1223,19 +1223,45 @@ repo references BL448. It was filed as an autonomous PRD (see tracker
 note), but its scope and status cannot be confirmed from the repo. Fill
 this in from the PRD record.
 
-**BL449**: open-model eval matrix. A 16-cell matrix of open models run
-through the Automaton system, reusing the model-tiering fixtures. It
-includes a driver script (`scripts/eval_open_model_matrix.py`:
+**BL449**: open-model eval matrix (BL437 S5). A 16-cell matrix of open
+models run through the Automaton system, reusing the model-tiering fixtures.
+It includes a driver script (`scripts/eval_open_model_matrix.py`:
 preflight/setup/create-prd/run/collect/report/self-test/cleanup) and
-fixtures in `testdata/eval/open-model-matrix/` (filed 2026-10-15).
-Commits `3acd24c1`, `ce9d7b94`, `bfafeb30`. The first run report
-(`docs/testing/runs/2026-10-15-open-model-matrix/results.md`) records a
-failed preflight (`gpt-oss:120b` timed out). **Blocked:** the PRD
-(`9e7bad8e`) is dead-ended at PRDCompleted with one task still pending,
-because the BL451 rollup race overwrote a concurrent `reset_task`. For
-the unstick runbook, see
-[2026-10-15-bl451-rollup-race.md](2026-10-15-bl451-rollup-race.md)
-("Unsticking BL449"). It needs v9.1.2+ and `reset_task force=true`.
+fixtures in `testdata/eval/open-model-matrix/` (filed 2026-10-15). Plan:
+[2026-10-15-bl449-open-model-matrix.md](2026-10-15-bl449-open-model-matrix.md).
+**In progress:** the PRD (`9e7bad8e`) was unstuck after the BL451 race and
+is `running` again. Commits: `3acd24c1`, `ce9d7b94` (fixtures + driver);
+`fe6ab76d` (preflight `llm_test` timeout raised to 240 s); **v9.1.3**
+`f9eb5970` (opencode ask adapter strips `ollama/`; table test added later);
+**v9.1.4** `f0c80d2e` (session start normalises the opencode model for
+Ollama nodes).
+
+Runs, all under `docs/testing/runs/2026-10-15-open-model-matrix/`, each
+overwriting the last:
+
+- r1 `bfafeb30`: preflight failed, `gpt-oss:120b` timeout.
+- r3 `84ab59e4`: preflight failed, `granite4.2:30b` cold-load timeout.
+- r4 `2c65e850`: preflight passed, but the run was invalid because every
+  opencode worker died with `ProviderModelNotFoundError`.
+- r5 `6cf10468`: preflight failed with an `ollama/` prefix 404, which led
+  to v9.1.3.
+- r6 `78dfd70f`: preflight 4/4 OK, but `run_verdict =
+  invalid-infrastructure`. The driver pinned the bare model, so
+  `opencode.json` had no `provider.ollama` block. No cell did model work,
+  which led to v9.1.4.
+
+**Still open:**
+
+- a valid run on v9.1.4+ (spec steps 3–5 have no valid data yet);
+- an opencode-path preflight;
+- the one-shot wrapper must not emit `DATAWATCH_COMPLETE` after a failed
+  `opencode run`;
+- `collect` must resolve sessions by id;
+- a unit test for the v9.1.4 normalisation.
+
+Scope note: `b7f59ed6` (Claude-driver per-task ProjectDir) is a BL447
+follow-up from the same session, outside BL449's spec, and needs operator
+acceptance. See the plan's "Scope notes".
 
 **BL450**: unconfirmed. No commit, CHANGELOG entry or plan doc in the
 repo references BL450. It was filed as an autonomous PRD (see tracker
@@ -1253,8 +1279,8 @@ stale commit records `rollup_aborted_stale` and changes nothing.
 Completion side effects fire only after the commit succeeds. Follow-up:
 `reset_task force=true` on a pending task in a terminal PRD reopens the
 PRD (`recover_pending_task`). **Shipped v9.1.1 (race fix) and v9.1.2
-(recovery).** Phase 3, unsticking BL449 live, is an operator step that is
-still planned. Commits `fd7bccbb`, `9b76fb4d`, `8d5c20ab`. Plan:
+(recovery).** Phase 3, unsticking BL449 live, is done: PRD `9e7bad8e` is
+`running` again. Commits `fd7bccbb`, `9b76fb4d`, `8d5c20ab`. Plan:
 [2026-10-15-bl451-rollup-race.md](2026-10-15-bl451-rollup-race.md).
 22. **BL423** — an Automaton reports `completed` while the CI run for
     the commit it pushed is failing (filed + shipped 2026-10-13, same
@@ -1621,9 +1647,9 @@ daemon).
 | — | **BL440** — Status-tab session detail for Automaton task sessions | **Shipped v9.0.87** (follow-ups (a)–(h) open in item 30) | Surfaced live 2026-10-14 while watching Automaton task sessions; display-only, ran outside the numbered order. |
 | — | **BL447**: per-task `ProjectDir` override / `set_task_project_dir` | **Shipped v9.1.0** | Autonomous PRD; missed the tracker, registered 2026-10-15. |
 | — | **BL448**: scope unconfirmed in repo | Unconfirmed | Autonomous PRD; missed the tracker, and the repo doesn't record its scope. |
-| — | **BL449**: open-model eval matrix | **Blocked**: PRD `9e7bad8e` dead-ended at completed by the BL451 race | Unstick runbook in [2026-10-15-bl451-rollup-race.md](2026-10-15-bl451-rollup-race.md). |
+| — | **BL449**: open-model eval matrix (BL437 S5) | **In progress**: PRD `9e7bad8e` running again after the BL451 unstick. v9.1.3 (ask-adapter `ollama/` strip) and v9.1.4 (session-start model normalisation) shipped. Runs r1–r6 produced no valid data: r6 was `invalid-infrastructure`, with the provider block missing for the bare model pin. | Plan: [2026-10-15-bl449-open-model-matrix.md](2026-10-15-bl449-open-model-matrix.md). Next: a valid run on v9.1.4+. |
 | — | **BL450**: scope unconfirmed in repo | Unconfirmed | Autonomous PRD; missed the tracker, and the repo doesn't record its scope. |
-| — | **BL451**: completion-rollup lost-update race (`PRD.Rev`) | **Shipped v9.1.1 + v9.1.2** (live unstick of BL449 pending) | Found live while running BL449. |
+| — | **BL451**: completion-rollup lost-update race (`PRD.Rev`) | **Shipped v9.1.1 + v9.1.2** (BL449 PRD unstuck, `running` again) | Found live while running BL449. |
 
 BL424 (item 23 above) is explicitly excluded from this table and stays
 sequenced last, right before the v10.0.0 cutover, per its own note above —

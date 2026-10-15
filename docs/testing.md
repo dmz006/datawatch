@@ -1172,3 +1172,36 @@ That round-trip is covered by the unit tests
 `TestAutonomousMaxConcurrentTasks_SetAndRoundTrip`) and by
 `scripts/release-smoke.sh` section 74, which runs against a sandbox daemon
 and restores the original value.
+
+## v9.1.3 — opencode ask adapter strips the `ollama/` model prefix (2026-10-15)
+
+Bug: `llm test` and ask calls against an `opencode`-kind LLM entry
+returned 404 (`model 'ollama/<x>' not found`). The entry's model carries
+opencode's `ollama/` provider prefix, and the adapter passed it unchanged to
+the raw Ollama `/api/generate` endpoint. Fix
+(`internal/inference/adapters/opencode.go`): strip a leading `ollama/` from
+the resolved model (the request override or `LLM.Model`) before calling
+Ollama. Entries without the prefix are unaffected.
+
+### T1 — Unit test (`internal/inference/adapters`)
+
+| Field | Details |
+|-------|---------|
+| **Steps** | `go test -count=1 -run TestOpenCode_Infer_ModelPrefix -v ./internal/inference/adapters/` |
+| **Expected** | For each case (prefixed `LLM.Model`, bare `LLM.Model`, prefixed request `ModelOverride`, bare request `ModelOverride`), the model on the wire to `/api/generate` and `UsedModel` are the bare name, the override wins over `LLM.Model`, and `Backend` is `opencode`. |
+| **Actual** | 4/4 subtests PASS. Mutation check: with the `TrimPrefix` removed, the two prefixed cases FAIL (`wire model = "ollama/qwen3:1.7b", want "qwen3:1.7b"`). Restored afterwards. |
+| **Result** | PASS |
+
+### T2 — Live `llm test` on the production daemon
+
+| Field | Details |
+|-------|---------|
+| **Steps** | `curl -sk https://127.0.0.1:8443/api/llms/<cpu-llm>` (the open-model matrix's cpu-role entry) to confirm `kind=opencode`, `model=ollama/qwen3:1.7b`. Then `curl -sk -X POST -H 'Content-Type: application/json' -d '{"prompt":"Reply with the single word OK so we can verify reachability."}' https://127.0.0.1:8443/api/llms/<cpu-llm>/test` |
+| **Expected** | HTTP 200, a model answer, `used_model` is the bare `qwen3:1.7b`. |
+| **Actual** | Daemon `9.1.4` (`/api/health`). HTTP 200 `{"backend":"opencode","duration_ms":3156,"text":"OK","used_model":"qwen3:1.7b","used_node":"<cpu-node>"}`. Before the fix, open-model matrix run r5 had all 4 roles fail with HTTP 502 wrapping the Ollama 404. On v9.1.3, run r6's preflight passed 4/4 (`docs/testing/runs/2026-10-15-open-model-matrix/results.md`). |
+| **Result** | PASS |
+
+Not covered here: the opencode **session** launch path with a bare model.
+r6 showed it failing (`ProviderModelNotFoundError`, no provider block in
+`opencode.json`). That is fixed separately in v9.1.4 and has no unit test
+yet.

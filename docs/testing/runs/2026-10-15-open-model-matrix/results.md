@@ -7,10 +7,10 @@ Preflight passed: **True**
 
 | role | llm | expected | used | ok |
 |---|---|---|---|---|
-| cpu | opencode-johnnyjohnny-cpu | qwen3:1.7b | qwen3:1.7b | yes |
-| fast | opencode-johnnyjohnny-fast | granite4.2:8b | granite4.2:8b | yes |
-| mid | opencode-johnnyjohnny-gpu | granite4.2:30b | granite4.2:30b | yes |
-| decompose-validate | opencode-datawatch-gpu | gpt-oss:120b | gpt-oss:120b | yes |
+| cpu | opencode-node-a-cpu | qwen3:1.7b | qwen3:1.7b | yes |
+| fast | opencode-node-a-fast | granite4.2:8b | granite4.2:8b | yes |
+| mid | opencode-node-a-gpu | granite4.2:30b | granite4.2:30b | yes |
+| decompose-validate | opencode-node-b-gpu | gpt-oss:120b | gpt-oss:120b | yes |
 
 ## Wrong model cells
 
@@ -18,19 +18,19 @@ None.
 
 ## Suspect integrity cells
 
-- cpu-analysis: task_project_dir `/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r6/cpu-analysis`, resolved `None`
-- cpu-scripting: task_project_dir `/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r6/cpu-scripting`, resolved `None`
-- cpu-docs: task_project_dir `/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r6/cpu-docs`, resolved `None`
-- cpu-review: task_project_dir `/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r6/cpu-review`, resolved `None`
-- fast-analysis: task_project_dir `/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r6/fast-analysis`, resolved `None`
-- fast-scripting: task_project_dir `/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r6/fast-scripting`, resolved `None`
-- fast-docs: task_project_dir `/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r6/fast-docs`, resolved `None`
-- mid-analysis: task_project_dir `/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r6/mid-analysis`, resolved `None`
-- mid-scripting: task_project_dir `/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r6/mid-scripting`, resolved `None`
-- mid-docs: task_project_dir `/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r6/mid-docs`, resolved `None`
-- mid-review: task_project_dir `/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r6/mid-review`, resolved `None`
-- decompose-validate-docs: task_project_dir `/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r6/decompose-validate-docs`, resolved `None`
-- decompose-validate-review: task_project_dir `/home/dmz/workspace/datawatch/.datawatch/eval/open-model-matrix/20261015-r6/decompose-validate-review`, resolved `None`
+- cpu-analysis: task_project_dir `.datawatch/eval/open-model-matrix/20261015-r6/cpu-analysis`, resolved `None`
+- cpu-scripting: task_project_dir `.datawatch/eval/open-model-matrix/20261015-r6/cpu-scripting`, resolved `None`
+- cpu-docs: task_project_dir `.datawatch/eval/open-model-matrix/20261015-r6/cpu-docs`, resolved `None`
+- cpu-review: task_project_dir `.datawatch/eval/open-model-matrix/20261015-r6/cpu-review`, resolved `None`
+- fast-analysis: task_project_dir `.datawatch/eval/open-model-matrix/20261015-r6/fast-analysis`, resolved `None`
+- fast-scripting: task_project_dir `.datawatch/eval/open-model-matrix/20261015-r6/fast-scripting`, resolved `None`
+- fast-docs: task_project_dir `.datawatch/eval/open-model-matrix/20261015-r6/fast-docs`, resolved `None`
+- mid-analysis: task_project_dir `.datawatch/eval/open-model-matrix/20261015-r6/mid-analysis`, resolved `None`
+- mid-scripting: task_project_dir `.datawatch/eval/open-model-matrix/20261015-r6/mid-scripting`, resolved `None`
+- mid-docs: task_project_dir `.datawatch/eval/open-model-matrix/20261015-r6/mid-docs`, resolved `None`
+- mid-review: task_project_dir `.datawatch/eval/open-model-matrix/20261015-r6/mid-review`, resolved `None`
+- decompose-validate-docs: task_project_dir `.datawatch/eval/open-model-matrix/20261015-r6/decompose-validate-docs`, resolved `None`
+- decompose-validate-review: task_project_dir `.datawatch/eval/open-model-matrix/20261015-r6/decompose-validate-review`, resolved `None`
 
 **Note on every suspect cell above.** `resolved_dir` is `None` (not a different
 directory): the worker session record was no longer in `/api/sessions` when
