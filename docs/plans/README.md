@@ -31,6 +31,14 @@ Items run in this order, one at a time against this tree, until the write lock
 (BL428 Phase 2) ships. Until then, sequencing is enforced by hand, not by the
 daemon.
 
+**Federation-aware shared-resource coordination** (additive scope inside
+BL428/BL431/BL405, not a separate item): detecting a shared compute node or
+billing account across federated peers via keyed-hash fingerprint exchange,
+operator confirmation before merging capacity pools, and live cross-daemon
+lease/back-off. Lands as BL428 §3c (row 8) and §4e (rows 12-13) in
+[concurrency-and-budget-design.md](2026-10-14-concurrency-and-budget-design.md),
+BL431's open question 14, and BL405 Phase 7.
+
 ### Stage A: execution engine reliability
 
 | # | Item | Status | Depends on |
@@ -44,7 +52,7 @@ daemon.
 |---|---|---|---|
 | 3 | [BL427 Phase 2](2026-10-13-prd-lifecycle-events.md) Built-in lifecycle-event sinks | in progress (PRD `5154c783`, awaiting review) | BL427 Phase 1 (shipped) |
 | 4 | [BL428 Phase 2](2026-10-14-concurrency-and-budget-design.md) Project-tree write lock | not started (PRD `29bd62a1`, draft) | BL428 Phase 1 (shipped) |
-| 5 | [BL431 Phase 1](2026-10-14-automation-orchestration-design.md) Automation data model, store and CRUD | not started (PRD `2e7ebad7`, draft) | - |
+| 5 | [BL431 Phase 1](2026-10-14-automation-orchestration-design.md) Automation data model, store and CRUD | in progress (PRD `b9bd3f99`, decomposing) | - |
 | 6 | [BL431 Phase 2](2026-10-14-automation-orchestration-design.md) Automation coordinator with auto-advance | not started | 3, 4, 5 |
 | 7 | [BL427 Phase 3](2026-10-13-prd-lifecycle-events.md) Persisted subscriptions and CRUD across surfaces | not started | 3 |
 | 8 | [BL428 Phase 3](2026-10-14-concurrency-and-budget-design.md) Inference-cap gap closure | not started | 4 |
