@@ -1322,6 +1322,53 @@ paths:
       responses: {"200": {description: OK}}
 
   # BL359 — restart session by ID (path-based)
+  /api/sessions/{id}/status:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}, description: "Full or short session ID"}
+    get:
+      summary: Session status board (hook state plus Automaton detail)
+      description: |
+        Latest hook-event state and derived board for the PWA Status tab.
+        For autonomous task sessions the response also carries an `automaton`
+        block built from the daemon's own PRD/story/task store, so it is
+        present even when the agent sends no hook payloads. The block is
+        omitted for sessions not linked to an autonomous task.
+        When no hook payload supplied `sprint`, a backward-compatible
+        `sprint` map is synthesized from the same data.
+        Requires `CapConfigRead` federation capability.
+      operationId: sessionStatus
+      tags: [Sessions]
+      responses:
+        "200":
+          description: Status board
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  session_id: {type: string}
+                  state: {type: string, description: "running | waiting | idle | unknown"}
+                  current_focus: {type: object, additionalProperties: true}
+                  sprint:
+                    type: object
+                    additionalProperties: true
+                    description: |
+                      Hook-supplied sprint state, or (autonomous sessions without a
+                      hook payload) a synthesized map with stable keys `sprint_id`,
+                      `title`, `status`, `automata`, `task_id`, `task_title`, `story_title`.
+                  tests: {type: object, additionalProperties: true}
+                  git: {type: object, additionalProperties: true}
+                  last_event: {type: object, additionalProperties: true}
+                  idle_since: {type: string, format: date-time}
+                  hook_health: {type: string, description: "alive | stale | missing"}
+                  telemetry: {type: object, additionalProperties: true}
+                  automaton: {$ref: "#/components/schemas/SessionAutomatonDetail"}
+                  updated_at: {type: string, format: date-time}
+        "400": {description: Session id required}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {description: Federation peer lacks CapConfigRead}
+        "405": {description: Method not allowed}
+
   /api/sessions/{id}/restart:
     parameters:
       - {name: id, in: path, required: true, schema: {type: string}}
@@ -2583,6 +2630,62 @@ components:
             example: "unauthorized"
 
   schemas:
+    SessionAutomatonDetail:
+      type: object
+      description: |
+        Autonomous task detail for a session, built from stored PRD/story/task
+        data. Omitted for non-autonomous sessions or when the PRD cannot be loaded.
+      required: [prd_id, cost]
+      properties:
+        prd_id: {type: string}
+        prd_title: {type: string}
+        prd_status: {type: string}
+        story_id: {type: string}
+        story_title: {type: string}
+        task_id: {type: string}
+        task_title: {type: string}
+        task_spec: {type: string, description: "Task spec, cut to 600 characters (ellipsis appended when cut)"}
+        task_spec_truncated: {type: boolean, description: "Present and true when task_spec was cut"}
+        task_status: {type: string}
+        wait_reason: {type: string}
+        started_at: {type: string, format: date-time}
+        completed_at: {type: string, format: date-time}
+        retry_count: {type: integer}
+        error: {type: string}
+        verification:
+          type: object
+          properties:
+            ok: {type: boolean}
+            severity: {type: string}
+            summary: {type: string}
+            issues: {type: array, items: {type: string}}
+            verifier_backend: {type: string}
+            verifier_model: {type: string}
+            verifier_source: {type: string, description: "task | story | prd | global | pool"}
+        git:
+          type: object
+          properties:
+            pre_task_sha: {type: string}
+            files_planned: {type: array, items: {type: string}, description: "Task files, or the story's planned files when the task has none"}
+            files_touched: {type: array, items: {type: string}}
+            foreign_file_drift: {type: array, items: {type: string}}
+        decisions:
+          type: array
+          description: Last 10 entries of the Automaton decision log
+          items:
+            type: object
+            properties:
+              at: {type: string, format: date-time}
+              kind: {type: string}
+              actor: {type: string}
+              note: {type: string}
+              verdict_outcome: {type: string}
+        cost:
+          type: object
+          properties:
+            tokens_in: {type: integer}
+            tokens_out: {type: integer}
+            est_cost_usd: {type: number}
     ChannelDiagnostics:
       type: object
       properties:

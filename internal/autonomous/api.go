@@ -233,6 +233,13 @@ func (a *API) GetPRD(id string) (any, bool) {
 	return p, true
 }
 
+// FindTaskBySessionID maps a datawatch session id to its (prd_id,
+// task_id). Used by the session status handler when the session record
+// carries no TaskID. Returns ("","") for non-autonomous sessions.
+func (a *API) FindTaskBySessionID(sessionID string) (prdID, taskID string) {
+	return a.M.FindTaskBySessionID(sessionID)
+}
+
 // SessionIDsForPRD walks the PRD's stories + tasks and returns every
 // non-empty Task.SessionID. Used by the orchestrator REST handler
 // (S13 follow-up) to join graph nodes against observer envelopes.

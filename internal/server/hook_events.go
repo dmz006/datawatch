@@ -99,7 +99,10 @@ type SessionStatusBoard struct {
 	IdleSince    *time.Time        `json:"idle_since,omitempty"`
 	HookHealth   string            `json:"hook_health"` // alive | stale | missing
 	Telemetry    *SessionTelemetry `json:"telemetry,omitempty"`
-	UpdatedAt    time.Time         `json:"updated_at"`
+	// Automaton — structured PRD/story/task detail for autonomous task
+	// sessions, built from daemon-side data (no hook payload needed).
+	Automaton *SessionAutomatonDetail `json:"automaton,omitempty"`
+	UpdatedAt time.Time               `json:"updated_at"`
 }
 
 // hookEventStore — in-memory per-session hook state. Latest payload
@@ -493,30 +496,20 @@ func (s *Server) handleSessionStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	board := globalHookStore.board(sid)
-	// v8.20.9 — if the session is a PRD task session and the board has no
-	// sprint data yet, synthesize sprint context from the PRD so the Status
-	// tab shows Automata info without requiring hook payloads from the agent.
-	if board.Sprint == nil && s.manager != nil && s.autonomousMgr != nil {
-		if sess, ok := s.manager.GetSession(sid); ok && sess.PRDID != "" {
-			if prdRaw, ok := s.autonomousMgr.GetPRD(sess.PRDID); ok {
-				if b, err := json.Marshal(prdRaw); err == nil {
-					var prdMap map[string]any
-					if json.Unmarshal(b, &prdMap) == nil {
-						sprint := map[string]any{
-							"sprint_id": sess.PRDID,
-							"title":     prdMap["title"],
-							"status":    prdMap["status"],
-							"automata":  prdMap["title"],
-						}
-						if sess.TaskID != "" {
-							sprint["task_id"] = sess.TaskID
-						}
-						// Make a copy of the board so we don't mutate the global store.
-						boardCopy := *board
-						boardCopy.Sprint = sprint
-						board = &boardCopy
-					}
+	// Autonomous task sessions get an `automaton` block built from the
+	// PRD/task store. v8.20.9 — when the agent sent no sprint payload, the
+	// legacy `sprint` map is synthesized from the same data so older
+	// mobile clients still show Automata info.
+	if s.manager != nil && s.autonomousMgr != nil {
+		if sess, ok := s.manager.GetSession(sid); ok {
+			if detail := s.buildSessionAutomatonDetail(sess); detail != nil {
+				// Copy so the global store isn't mutated.
+				boardCopy := *board
+				boardCopy.Automaton = detail
+				if boardCopy.Sprint == nil {
+					boardCopy.Sprint = legacySprintFromAutomaton(detail)
 				}
+				board = &boardCopy
 			}
 		}
 	}
