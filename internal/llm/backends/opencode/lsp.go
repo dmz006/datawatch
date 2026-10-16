@@ -14,12 +14,18 @@ type projectConfig struct {
 	LSP      map[string]lspEntry `json:"lsp,omitempty"`
 	Provider map[string]any      `json:"provider,omitempty"`
 	Agent    map[string]any      `json:"agent,omitempty"`
-	// Permissions (2026-10-15) — opencode's current (non-deprecated)
-	// per-tool permission field; "permission" (singular) and "tools" are
-	// both deprecated in opencode's own config schema. Deliberately NOT
-	// a deny-by-default allow-list — see ProjectConfigOpts.DenyTools'
-	// doc comment for why.
-	Permissions map[string]string `json:"permissions,omitempty"`
+	// Permission (2026-10-15, corrected same night) — opencode V2's
+	// config schema deprecates this singular key in favor of plural
+	// "permissions", but the INSTALLED binary actually in production use
+	// tonight is V1 (1.19.2 — see the CHANGELOG/memory note on why: V2
+	// restructured its REST API incompatibly with this codebase's ACP
+	// client and had to be reverted), and V1 hard-rejects the plural key
+	// with ConfigInvalidError ("V2 permissions are not supported by
+	// OpenCode V1"), breaking every opencode-acp session outright. Use
+	// the singular V1-correct key unless/until V2's REST API is actually
+	// supported by acpbackend.go. Deliberately NOT a deny-by-default
+	// allow-list — see ProjectConfigOpts.DenyTools' doc comment for why.
+	Permission map[string]string `json:"permission,omitempty"`
 }
 
 // lspEntry is one entry inside the "lsp" object of opencode.json.
@@ -134,11 +140,11 @@ func WriteProjectConfig(projectDir string, opts ProjectConfigOpts) error {
 	}
 
 	if len(opts.DenyTools) > 0 {
-		if existing.Permissions == nil {
-			existing.Permissions = make(map[string]string)
+		if existing.Permission == nil {
+			existing.Permission = make(map[string]string)
 		}
 		for _, tool := range opts.DenyTools {
-			existing.Permissions[tool] = "deny"
+			existing.Permission[tool] = "deny"
 		}
 	}
 

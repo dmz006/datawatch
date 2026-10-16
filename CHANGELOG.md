@@ -5,6 +5,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.1.13 — fix(opencode): tool-permission config matches the installed opencode version
+
+Last release (v9.1.12) wrote opencode.json's tool-permission block using
+the plural "permissions" key. That key only exists in opencode's newer,
+incompatible major version -- the version actually installed tonight is
+the older one (an upgrade to the newer version broke every opencode
+session outright with an unrelated API change and was reverted), and it
+hard-rejects the plural key, failing every opencode-acp session. Switched
+to the singular "permission" key the installed version actually
+recognizes.
+
 ## v9.1.12 — fix(autonomous): lighter task harness and tool scope for opencode backends
 
 A task dispatched to an opencode or opencode-acp backend now gets a much
