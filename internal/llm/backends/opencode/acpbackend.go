@@ -605,6 +605,36 @@ func streamEventsOnce(ctx context.Context, baseURL, logFile, tmuxSession string,
 						if OnChannelReply != nil && st.fullID != "" {
 							OnChannelReply(st.fullID, text)
 						}
+						// Root-caused live 2026-10-16: opencode never emits
+						// session.completed/message.completed for a one-shot
+						// session (see the case below and MarkACPEvent's own
+						// comment), so completion detection fell back entirely
+						// to "the model went idle N+1 times without a nudge
+						// landing new work" — treating nudge-exhaustion as a
+						// proxy for "done". When the model actually finished
+						// on an EARLY idle (before 3 nudges accumulate), every
+						// nudge after that is spurious: the model, already
+						// done, often answers it without emitting a new
+						// countable busy→idle cycle, so idleNudges never
+						// reaches the threshold and the session freezes with
+						// real, already-committed work and nothing left to
+						// drive it to a terminal state — confirmed against
+						// multiple live PRDs tonight (task record frozen for
+						// 10+ min with the committed diff already correct).
+						// The model is explicitly instructed (every autonomous
+						// task prompt) to emit this exact marker on its own
+						// final turn; checking for it here closes the gap
+						// directly from the authoritative source instead of
+						// inferring completion from nudge-count exhaustion.
+						for _, line := range strings.Split(text, "\n") {
+							if strings.HasPrefix(strings.TrimSpace(line), "DATAWATCH_COMPLETE:") {
+								if !completed && OnACPEvent != nil && st.fullID != "" {
+									OnACPEvent(st.fullID, "session.completed", "")
+								}
+								completed = true
+								break
+							}
+						}
 						pendingText.Reset()
 					}
 					writeLogLine(logFile, "[opencode-acp] done")

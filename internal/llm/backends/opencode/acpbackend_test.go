@@ -143,6 +143,69 @@ func TestStreamEventsOnce_SuppressesOnACPEventWhileNudging(t *testing.T) {
 	}
 }
 
+// 2026-10-16 — root-caused live against multiple real PRDs: opencode never
+// emits session.completed/message.completed for a one-shot session, so
+// completion relied entirely on "nudges exhausted" as a proxy for "done".
+// When the model actually finished on an early idle (before accumulating
+// maxIdleNudges), the nudge sent in response was often spurious and did not
+// produce a new countable busy→idle cycle, so idleNudges never reached the
+// threshold — the session froze forever with real, already-committed work
+// and no further SSE activity. This test confirms the fix: a step-finish
+// flush whose text contains the model's own DATAWATCH_COMPLETE marker
+// forwards session.completed immediately and suppresses any further nudge,
+// instead of waiting on nudge-count exhaustion.
+func TestStreamEventsOnce_DatawatchCompleteMarkerCompletesImmediately(t *testing.T) {
+	var forwardedTypes []string
+	var nudgeCount atomic.Int32
+	var mu sync.Mutex
+	origOnACPEvent := OnACPEvent
+	OnACPEvent = func(fullID, eventType, statusType string) {
+		mu.Lock()
+		defer mu.Unlock()
+		forwardedTypes = append(forwardedTypes, eventType)
+	}
+	defer func() { OnACPEvent = origOnACPEvent }()
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/event", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, `data: {"type":"message.part.updated","properties":{"part":{"type":"step-start"}}}`+"\n\n")
+		fmt.Fprint(w, `data: {"type":"message.part.delta","properties":{"field":"text","delta":"DATAWATCH_COMPLETE: did the thing"}}`+"\n\n")
+		fmt.Fprint(w, `data: {"type":"message.part.updated","properties":{"part":{"type":"step-finish"}}}`+"\n\n")
+		// A trailing idle after the marker must not trigger a nudge —
+		// completed is already true by the time this event arrives.
+		fmt.Fprint(w, sseIdleEvents(1))
+	})
+	mux.HandleFunc("/session/sess1/message", func(w http.ResponseWriter, r *http.Request) {
+		nudgeCount.Add(1)
+		w.WriteHeader(http.StatusOK)
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	st := &acpSessionState{baseURL: srv.URL, sessionID: "sess1", fullID: "full1"}
+	reconnect := streamEventsOnce(context.Background(), srv.URL, t.TempDir()+"/out.log", "cs-test", st)
+
+	if reconnect {
+		t.Errorf("expected reconnect=false once DATAWATCH_COMPLETE is seen, got true")
+	}
+	if got := nudgeCount.Load(); got != 0 {
+		t.Errorf("expected no nudge after the completion marker, got %d", got)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	found := false
+	for _, et := range forwardedTypes {
+		if et == "session.completed" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected session.completed to be forwarded once the marker is seen, got %v", forwardedTypes)
+	}
+}
+
 func TestStreamEventsOnce_NoNudgeAfterCompletion(t *testing.T) {
 	var messageCount atomic.Int32
 

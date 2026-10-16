@@ -5,6 +5,28 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.1.20 — fix(opencode): tasks that finished real work no longer freeze forever waiting on completion
+
+The real root cause behind a pattern that has been forcing manual
+intervention all night: opencode never sends the signal datawatch was
+waiting for to mark a task done. Datawatch's fallback was to treat "the
+model stopped responding to nudges" as a stand-in for "the model is
+done" -- but when the model had actually already finished its real work
+on an early idle, every nudge sent after that point was spurious, and
+the model's reply to a spurious nudge often didn't produce the kind of
+activity datawatch was counting, so the countdown never reached zero.
+The task's own commit was already correct and already on disk, but the
+session just sat there, frozen, with nothing left to drive it forward --
+confirmed directly against several real automation runs tonight.
+
+The fix goes straight to the source that was already there and ignored:
+every autonomous task is explicitly told to print "DATAWATCH_COMPLETE:"
+when it's actually done. Datawatch now watches for that line directly
+in the model's own response and marks the task complete the moment it
+appears, instead of waiting to run out of nudges first. The nudge
+mechanism itself is unchanged and still covers a model that genuinely
+never says it's done.
+
 ## v9.1.19 — fix(opencode): one slow health check no longer kills a live session
 
 Real root cause found live, using the debug logging added in v9.1.18: a
