@@ -342,8 +342,6 @@ func gitWorkingTreeDiffSince(ctx context.Context, projectDir string, since time.
 // sanity: if non-empty and not itself an ancestor of HEAD, return ok=false
 // (the commit the attempt was based on is gone, so none of its work on top
 // of it can be meaningful evidence either).
-//
-// Pure helper: not yet called from the verifier.
 func priorAttemptWorkLanded(ctx context.Context, dir, baseSHA string, commitSHAs []string) (diff []byte, names []string, ok bool) {
 	isAncestor := func(sha string) bool {
 		cmd := exec.CommandContext(ctx, "git", "-C", dir, "merge-base", "--is-ancestor", sha, "HEAD")
@@ -383,6 +381,22 @@ func priorAttemptWorkLanded(ctx context.Context, dir, baseSHA string, commitSHAs
 	}
 
 	return diff, names, len(diff) > 0
+}
+
+// resolveEmptyDiffWithPriorWork is the pure decision the verifier makes
+// when its per-attempt evidence bundle (committed diff, working-tree diff,
+// new untracked files, overwritten files) came back completely empty, i.e.
+// taskProducedNoOutput is about to fire. If this is a retry (at least one
+// attempt commit SHA recorded) AND priorAttemptWorkLanded confirmed one of
+// those shas is reachable from HEAD with a non-empty diff (an earlier
+// attempt already committed the real work and it is still in HEAD), the
+// empty diff is explained by the retry — fall through to normal
+// verification with the prior attempt's diff as evidence. In every other
+// case (first attempt, no attempt commits, or prior commits rolled back /
+// unreachable) it returns false and the verifier behaves exactly as before
+// (no-output failure, harness-crash check included).
+func resolveEmptyDiffWithPriorWork(perAttemptEmpty, hasAttemptCommitSHAs, priorWorkLanded bool) bool {
+	return perAttemptEmpty && hasAttemptCommitSHAs && priorWorkLanded
 }
 
 // taskProducedNoOutput reports whether none of the verifier's evidence

@@ -4800,6 +4800,38 @@ func runStart(cmd *cobra.Command, _ []string) error {
 						}
 					}
 				}
+				// Retry fallback: on a retry the per-attempt PreTaskSHA..HEAD
+				// window is empty BY CONSTRUCTION when an earlier attempt of the
+				// same task already committed the real work before this attempt's
+				// PreTaskSHA..HEAD window opens, so that window is empty by
+				// construction. Before declaring no output, recover the earlier
+				// attempt's committed diff via its recorded SHAs.
+				// Ordering guarantee: the wait loop above only leaves once the
+				// session is Complete/Failed/Killed, and the session package now
+				// guarantees a Completed session's final commit already happened
+				// before it reports Complete — so the moment the verifier reads its
+				// diff, every reachable prior-attempt commit is already in HEAD.
+				var retryNote string
+				if perAttemptEmpty := taskProducedNoOutput(diffOut, workingDiffOut, newUntrackedFiles, overwrittenFilesSections); perAttemptEmpty {
+					hasSHAs := len(task.AttemptCommitSHAs) > 0
+					var priorDiff []byte
+					var priorNames []string
+					priorOk := false
+					if hasSHAs {
+						priorDiff, priorNames, priorOk = priorAttemptWorkLanded(ctx, taskDir, task.BaseSHA, task.AttemptCommitSHAs)
+					}
+					if resolveEmptyDiffWithPriorWork(perAttemptEmpty, hasSHAs, priorOk) {
+						diffOut = priorDiff
+						retryNote = "NOTE: this is a retry; the work below was committed by an earlier attempt of this same task and is still in HEAD"
+						if autonomousMgrRef != nil {
+							if touched := dedupeFiles(priorNames); len(touched) > 0 {
+								if rerr := autonomousMgrRef.RecordTaskFilesTouched(task.PRDID, task.ID, touched); rerr != nil {
+									log.Printf("[autonomous] verifier: RecordTaskFilesTouched(%s/%s): %v", task.PRDID, task.ID, rerr)
+								}
+							}
+						}
+					}
+				}
 				if taskProducedNoOutput(diffOut, workingDiffOut, newUntrackedFiles, overwrittenFilesSections) {
 					// No committed or uncommitted tracked changes, no new untracked files,
 					// no overwritten pre-existing files — task produced nothing.
@@ -4879,6 +4911,11 @@ Pre-existing files written by task (not tracked by git):
 <overwritten_files>
 %s
 </overwritten_files>`, strings.Join(overwrittenFilesSections, "\n---\n"))
+				}
+				// Retry fallback above: tell the judge this diff is evidence from an
+				// earlier attempt of the same task, not from this attempt.
+				if retryNote != "" {
+					diffSection += "\n" + retryNote
 				}
 			} else if taskDir != "" && task.StartedAt != nil {
 				// Non-git project dir (PreTaskSHA not set): use mtime to detect output files.
