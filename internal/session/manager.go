@@ -2387,6 +2387,8 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 							// Shell prompt detected after opencode — session is done
 							if current.State == StateRunning || current.State == StateWaitingInput {
 								oldState := current.State
+								projGit := NewProjectGit(current.ProjectDir)
+								m.commitOnCompletion(current, projGit)
 								current.State = StateComplete
 								current.UpdatedAt = time.Now()
 								_ = m.store.Save(current)
@@ -2532,6 +2534,8 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 								}
 								return
 							}
+							projGit := NewProjectGit(current.ProjectDir)
+							m.commitOnCompletion(current, projGit)
 							current.State = StateComplete
 							current.UpdatedAt = time.Now()
 							_ = m.store.Save(current)
