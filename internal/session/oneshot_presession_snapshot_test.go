@@ -89,6 +89,31 @@ func TestStart_OneShotInitsNonRepoDirAndSnapshots(t *testing.T) {
 	}
 }
 
+func TestStart_OneShotInitsEvenWithAutoGitInitOff(t *testing.T) {
+	mgr, fake := newTestManagerWithFake(t)
+	mgr.SetAutoGit(false, false) // both manager auto-git settings off
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "work.txt"), []byte("untracked dirt\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	mgr.SetLLMBackend("test", func(_ context.Context, _, tmuxSession, projectDir, _ string) error {
+		if !NewProjectGit(projectDir).IsRepo() {
+			t.Errorf("project dir is not a git repo at launch; expected init")
+		}
+		if got := headSubject(t, projectDir); !strings.HasPrefix(got, "pre-session[") {
+			t.Errorf("HEAD at launch = %q, want a pre-session[ snapshot commit", got)
+		}
+		_ = fake.NewSessionWithSize(tmuxSession, 80, 24)
+		_ = fake.PipeOutput(tmuxSession, "/dev/null")
+		return nil
+	})
+
+	if _, err := mgr.Start(context.Background(), "do the work", "", dir, &StartOptions{OneShot: true}); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+}
+
 // Interactive (non-one-shot) sessions must not auto-commit in Start, even
 // with the manager auto-commit setting on.
 func TestStart_InteractiveDoesNotAutoCommit(t *testing.T) {

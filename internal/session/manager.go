@@ -1701,17 +1701,15 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		return nil, fmt.Errorf("create project dir: %w", err)
 	}
 
-	// Pre-session snapshot: only one-shot task sessions get the
-	// deterministic pre-session commit; interactive (non-one-shot)
-	// sessions no longer auto-commit in Start. Init-if-needed still
-	// honours the autoGitInit setting.
+	// Pre-session snapshot: one-shot task sessions always get a
+	// deterministic snapshot of the tree as of launch (init-ing the
+	// repo first if the dir is not yet one). This is the only place
+	// Start touches git; interactive (non-one-shot) sessions do not
+	// auto-commit here at all, regardless of manager-level auto-git
+	// settings or per-session overrides.
 	projGit := NewProjectGit(projectDir)
 	if opt != nil && opt.OneShot {
-		autoGitInit := m.autoGitInit
-		if opt.AutoGitInit != nil {
-			autoGitInit = *opt.AutoGitInit
-		}
-		if autoGitInit && !projGit.IsRepo() {
+		if !projGit.IsRepo() {
 			if err := projGit.Init(); err != nil {
 				fmt.Printf("[warn] git init %s: %v\n", projectDir, err)
 			}
