@@ -1704,6 +1704,15 @@ func (m *Manager) recoverPendingTask(prd *PRD, si int, taskID, actor string) (*P
 	if s.Status == StoryCompleted || s.Status == StoryFailed || s.Status == StoryCancelled {
 		s.Status = StoryPending
 	}
+	// Same start-over guarantee as ResetTask: a manual reset of an
+	// already-pending task must drop the per-task git anchors too.
+	for ti := range s.Tasks {
+		if s.Tasks[ti].ID == taskID {
+			s.Tasks[ti].BaseSHA = ""
+			s.Tasks[ti].AttemptCommitSHAs = nil
+			break
+		}
+	}
 	old := prd.Status
 	now := time.Now()
 	prd.Status = PRDRunning
@@ -1808,6 +1817,13 @@ func (m *Manager) ResetTask(prdID, taskID, actor string, force bool) (*PRD, erro
 				t.Status = ""
 				t.Error = ""
 				t.SessionID = ""
+				// A human reset means starting over: drop the per-task git
+				// anchors so the fresh attempt re-captures them at spawn.
+				// Automatic verifier retries never go through here — BaseSHA
+				// is written only when empty in the executor's spawn path,
+				// so in-loop retries keep the first attempt's anchor.
+				t.BaseSHA = ""
+				t.AttemptCommitSHAs = nil
 				// BL427 — fired after the SavePRD below succeeds.
 				emitReset = func(dec *Decision) { m.emitPendingTaskEvents(prd, []pendingTaskEvent{resetEv}, dec) }
 				t.Verification = nil
