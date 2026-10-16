@@ -97,29 +97,51 @@ advances it without hand sequencing.
 | 39 | BL411 Pre-v10.0.0 dead-code audit | not started | 21-38 |
 | 40 | BL409 File and function naming audit | not started | 39 |
 | 41 | BL424 Operator integration guide | not started (PRD `0e2ac398` approved, held to last) | 40 |
+| 42 | BL444 MCP SSE listener retries bind at boot (external bug report) | not started | - |
+| 43 | BL445 Review and merge external MCP `public_url` PR, GH#208 (external bug-fix) | not started | - |
 
-## Separate lanes
+## Opportunistic, non-blocking research
 
-These do not block the sequence above.
+Internal research — does not block Stage A/B/C, can run alongside it.
 
 | Item | Status |
 |---|---|
-| BL444 MCP SSE listener retries bind at boot | not started |
-| BL445 Review and merge external MCP `public_url` PR (GH#208) | not started |
-| BL446 Federation as a sibling-agent mail transport | not started |
-| BL453 Can open models decompose PRDs? (research) | not started (PRD `ffa337ed`, draft; now also covers execution-scope, from BL427 Phase 2's live failure) |
+| BL453 Can open models decompose PRDs? (research) | not started (PRD `19f9a693`, draft; covers decompose reliability, execution-scope, and a positive data point — 3 research PRDs fully open-model decomposed+executed successfully) |
 
 ## Excluded from v10.0.0
 
 - BL415 `dependency-review` required check. Deferred until after v10.0.0 by decision.
 
-## Open items outside the active order
+## v11.0.0 roadmap (separate lanes)
 
-These are not in the locked order. Their live status is recorded here so they
-are not lost.
+Not required for v10.0.0. Organized by lane rather than a single sequence —
+nothing here blocks anything in the active order above.
+
+**Research complete, proposals pending triage:**
 
 | Item | Status |
 |---|---|
+| BL457 Harness research: 20-builder survey + enhancement proposals (PRD `8baa807b`) | research complete (`docs/plans/harness-research/`); proposals (P1 span artifact, P4 eval sweep, P2 stall-ladder) pending v11.0.0 prioritization |
+| BL458 openrig.dev adoption plan (PRD `ef9dcac1`) | research complete (`docs/plans/2026-09-24-openrig-adoption-plan.md`); adoption plan pending v11.0.0 prioritization |
+| BL459 datawatch-community skills catalog (PRD `b92620f3`) | research complete (`docs/catalog/skills-catalog.md`); skill triage pending v11.0.0 prioritization |
+
+**LLM research reconciliation:**
+
+| Item | Status |
+|---|---|
+| BL460 Implement the unaddressed recommendations from the open-LLM research ([reconciliation doc](2026-10-15-llm-research-reconciliation.md)) | HOLD — file/decompose only, needs explicit operator go-ahead before running (touches live LLM routing used by every other active PRD) |
+
+**Community/personal-agent design (held for v11.0.0 planning):**
+
+| Item | Status |
+|---|---|
+| BL456 Personal agents with personality and decision-making, for a real community user | placeholder only — original attempt (PRD `51c531b6`) produced zero output; needs a real collaborative design session, not another autonomous pass |
+
+**Feature requests and deferred research:**
+
+| Item | Status |
+|---|---|
+| BL446 Federation as a sibling-agent mail transport (external feature request, not a bug) | not started |
 | BL438 Research: Hermes Agent | approved, not started (PRD `6952fceb`) |
 | BL439 Research: datawatch as infrastructure for Hermes Agent | approved, not started (PRD `2712d303`) |
 | [BL400](2026-10-09-alerts-conditions-and-filtering.md) Alerts: conditions, filtering, SIEM parity | deferred, open questions |
