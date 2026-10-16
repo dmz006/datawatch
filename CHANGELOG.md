@@ -5,6 +5,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.1.14 — fix(opencode): one-shot opencode sessions now get nudged forward instead of sitting idle forever
+
+Found live: every opencode (ACP mode) one-shot task that reached a natural
+pause point in its own turn just sat there — there was no human to send
+the next message, and nothing told it to keep going, so it waited until
+the underlying process eventually died on its own, several minutes later,
+with no useful work done. The session now sends up to 3 short
+"keep going" messages when this happens before letting the existing
+retry/exhaustion handling take over, so a model that paused instead of
+finishing gets a real chance to actually finish.
+
 ## v9.1.13 — fix(opencode): tool-permission config matches the installed opencode version
 
 Last release (v9.1.12) wrote opencode.json's tool-permission block using

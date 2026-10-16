@@ -22,10 +22,39 @@ import (
 
 // acpSessionState holds the per-session ACP state (port, opencode session ID).
 type acpSessionState struct {
-	baseURL  string
+	baseURL   string
 	sessionID string
-	fullID   string // datawatch session full_id (for channel reply routing)
+	fullID    string // datawatch session full_id (for channel reply routing)
+	// idleNudges (2026-10-16, root-caused live) counts how many times this
+	// session has been nudged forward after going idle without emitting
+	// DATAWATCH_COMPLETE. Persists across SSE reconnects within the same
+	// session's lifetime (unlike the per-connection state in
+	// streamEventsOnce) since a reconnect doesn't mean the model made
+	// progress. Guarded by mu since streamEvents' reconnect loop and the
+	// nudge send both touch it from goroutines.
+	mu         sync.Mutex
+	idleNudges int
 }
+
+// maxIdleNudges bounds how many times a one-shot ACP session gets told to
+// keep going after reaching session.idle without completing. Found live
+// 2026-10-16: every opencode-acp one-shot task that reached this point was
+// simply never told to continue — it sat waiting for a human message that
+// a one-shot pipeline never sends, until the underlying opencode server
+// eventually died on its own. A low bound, not an open-ended loop: if the
+// model is still idle after several real nudges, that's the existing
+// BL410 exhaustion/stall-detection path's job to handle, not this one's.
+const maxIdleNudges = 3
+
+// idleNudgeText is the message sent back into the session when it goes
+// idle without completing. Deliberately short and directive, matching
+// the lightweight-harness finding (autonomous_effort.go) that a small
+// model responds better to a terse, action-forcing instruction than a
+// long explanation.
+const idleNudgeText = "You stopped without finishing and without emitting DATAWATCH_COMPLETE. " +
+	"No human is available to continue this for you. Do not describe a plan — call a tool now " +
+	"(read a file, make the edit, run a command). If something is unclear, make the most " +
+	"reasonable judgment call yourself and keep going."
 
 // acpStateMap stores ACP state keyed by tmux session name so SendInput can POST
 // to the running opencode server instead of using tmux send-keys.
@@ -98,20 +127,26 @@ func NewACPWithTimeouts(binary string, startupTimeout, healthInterval, messageTi
 		binary = "opencode"
 	}
 	st := time.Duration(startupTimeout) * time.Second
-	if st <= 0 { st = 30 * time.Second }
+	if st <= 0 {
+		st = 30 * time.Second
+	}
 	hi := time.Duration(healthInterval) * time.Second
-	if hi <= 0 { hi = 5 * time.Second }
+	if hi <= 0 {
+		hi = 5 * time.Second
+	}
 	mt := time.Duration(messageTimeout) * time.Second
-	if mt <= 0 { mt = 30 * time.Second }
+	if mt <= 0 {
+		mt = 30 * time.Second
+	}
 	return &ACPBackend{
-		binary: resolveBinary(binary),
+		binary:         resolveBinary(binary),
 		startupTimeout: st,
 		healthInterval: hi,
 		messageTimeout: mt,
 	}
 }
 
-func (b *ACPBackend) Name() string                  { return "opencode-acp" }
+func (b *ACPBackend) Name() string                   { return "opencode-acp" }
 func (b *ACPBackend) SupportsInteractiveInput() bool { return true }
 func (b *ACPBackend) HasToolAccess() bool            { return true }
 
@@ -538,7 +573,27 @@ func streamEventsOnce(ctx context.Context, baseURL, logFile, tmuxSession string,
 			}
 		case "session.idle":
 			writeLogLine(logFile, "[opencode-acp] awaiting input")
-			emitACPChat(tmuxSession, "system", "Ready — send a message", false)
+			// Root-caused live 2026-10-16: a one-shot task has no human to
+			// send the next message, so without this the session just sat
+			// here until opencode's own server died on its own. Nudge it
+			// forward a bounded number of times instead.
+			if completed {
+				break
+			}
+			st.mu.Lock()
+			st.idleNudges++
+			n := st.idleNudges
+			st.mu.Unlock()
+			if n > maxIdleNudges {
+				writeLogLine(logFile, fmt.Sprintf("[opencode-acp] idle after %d nudges, giving up (exhaustion handling takes over)", maxIdleNudges))
+				emitACPChat(tmuxSession, "system", "Still idle after repeated nudges — stopping", false)
+				break
+			}
+			writeLogLine(logFile, fmt.Sprintf("[opencode-acp] idle without completing — sending continuation nudge %d/%d", n, maxIdleNudges))
+			emitACPChat(tmuxSession, "system", fmt.Sprintf("Nudging to continue (%d/%d)", n, maxIdleNudges), false)
+			if err := sendMessage(ctx, baseURL, st.sessionID, idleNudgeText); err != nil {
+				writeLogLine(logFile, fmt.Sprintf("[opencode-acp] continuation nudge failed: %v", err))
+			}
 		case "session.error":
 			var props struct {
 				Error string `json:"error"`
