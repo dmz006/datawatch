@@ -129,6 +129,7 @@ nothing here blocks anything in the active order above.
 |---|---|
 | BL457 Harness research: 20-builder survey + enhancement proposals (PRD `8baa807b`) | research complete (`docs/plans/harness-research/`); proposals (P1 span artifact, P4 eval sweep, P2 stall-ladder) pending v11.0.0 prioritization |
 | BL458 openrig.dev adoption plan (PRD `ef9dcac1`) | research complete (`docs/plans/2026-09-24-openrig-adoption-plan.md`); adoption plan pending v11.0.0 prioritization |
+| [BL466](2026-10-16-pi-opencode-evaluation.md) Evaluate switching from opencode to pi for open-model PRD execution | research + live smoke test complete (pi and omp both live-tested clean against real `qwen3.8:27b`); real pilot (full PRD A/B, backend integration) pending v11.0.0 prioritization |
 
 **LLM research reconciliation:**
 
