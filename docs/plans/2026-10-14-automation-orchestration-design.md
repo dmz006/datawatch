@@ -1413,3 +1413,43 @@ howto, and the `datawatch-app` issue where applicable.
     in scope for v1 given it would have caught today's two silently-dropped
     PRDs, or is that premature before BL427's event dispatch can push the
     alert instead of requiring a poll?
+17. **The coordinator as a real quality/regression gate, not just a status
+    poll (operator-raised 2026-10-15, live incident: two PRD tasks failed
+    and sat silently blocked for ~50 minutes before the operator noticed,
+    not the coordinator).** The advance decision (`onMemberTerminal`)
+    should not just check "did this member reach a terminal status" — it
+    should verify the terminal status is actually trustworthy before
+    treating it as ready to advance:
+    - **Test-coverage validation, not just a passing suite.** When a
+      member's work adds new functionality, does a test exist for it
+      specifically — not just "did `go test ./...` exit 0" (a new code
+      path with zero new tests can pass the existing suite trivially).
+      This is already an AGENT.md rule (the Phase Completion Checklist);
+      the gap is that nothing currently *enforces* it mechanically before
+      advancing. Candidate mechanism: reuse BL413's diff-aware
+      project-rules work (once it exists) rather than building a second
+      diff-coverage checker.
+    - **Regression coverage for cross-cutting surfaces specifically** —
+      comms, config, MCP, API, PWA. A change touching any of these needs
+      the relevant E2E/smoke/unit/functional suite to have actually run
+      and passed, not just the package-local unit tests. Which suites map
+      to which surfaces needs a concrete table (this doc does not define
+      one yet).
+    - **Alerting is not optional instrumentation — it's how the operator
+      finds out something needs them**, per the live incident above. The
+      coordinator's own idle/stall detection (open question 16) and this
+      gate are the same underlying need: don't let a bad terminal state
+      sit silent.
+    - **Dynamic reprioritization.** The Automation's own member order is
+      feature/precedence-driven (this doc's §"Dynamic mid-flight editing"
+      already covers insert/skip/reorder mechanically) — but should a
+      *bug report arriving mid-run* be able to automatically jump ahead of
+      the current queue position, or does that always require an explicit
+      operator `insert_member` call? If automatic, what's the trigger
+      (severity field? a dedicated "urgent" Automation lane?) and what
+      stops a bug-reprioritization loop from starving the original queue?
+    Open: does this gate live entirely in BL431's own coordinator, or does
+    it also need pieces from BL410 (retry/failure classification — already
+    exists), BL413 (diff-aware rules — not yet built), and a concrete
+    surface→test-suite mapping that doesn't exist anywhere today? Scoping
+    this precisely is itself real design work, not a one-line addition.

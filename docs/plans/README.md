@@ -46,28 +46,29 @@ BL431's open question 14, and BL405 Phase 7.
 | 1 | BL441 PRD-completion content auto-fix never fires | in progress (PRD `34bd5877`, running) | - |
 | 2 | BL452 "The V Method" — logprob-classification guardrail backend (design) | in progress (PRD `468db26e`, awaiting review) | - |
 | 3 | BL455 Fix B126: a retry can record the wrong pre-task SHA, producing a false "no output" failure on real, correctly-committed work | not started (PRD `6b99f00f`, draft) | - |
+| 4 | **BL462** A running PRD task's session must not be impacted by a daemon restart/update | not started (PRD `c96f2104`, draft) — **operator priority**, blocks safely updating the daemon during active work | - |
 
 ### Stage B: the Automaton execution engine
 
 | # | Item | Status | Depends on |
 |---|---|---|---|
-| 4 | [BL427 Phase 2](2026-10-13-prd-lifecycle-events.md) Built-in lifecycle-event sinks | in progress (PRD `5154c783`, awaiting review) | BL427 Phase 1 (shipped) |
-| 5 | [BL428 Phase 2](2026-10-14-concurrency-and-budget-design.md) Project-tree write lock | not started (PRD `29bd62a1`, draft) | BL428 Phase 1 (shipped) |
-| 6 | [BL431 Phase 1](2026-10-14-automation-orchestration-design.md) Automation data model, store and CRUD | in progress (PRD `b9bd3f99`, decomposing) | - |
-| 7 | [BL431 Phase 2](2026-10-14-automation-orchestration-design.md) Automation coordinator with auto-advance | not started | 4, 5, 6 |
-| 8 | [BL427 Phase 3](2026-10-13-prd-lifecycle-events.md) Persisted subscriptions and CRUD across surfaces | not started | 4 |
-| 9 | [BL428 Phase 3](2026-10-14-concurrency-and-budget-design.md) Inference-cap gap closure (includes §3c federation shared-compute-node detection) | not started | 5 |
-| 10 | [BL431 Phase 3](2026-10-14-automation-orchestration-design.md) Control operations and mid-flight editing | not started | 7 |
-| 11 | BL422 Claude model and effort tiering eval | blocked (PRD `f6a38c29` failed; resume needed) | - |
-| 12 | [BL431 Phase 4](2026-10-14-automation-orchestration-design.md) Model-tier defaults | not started | 11 |
-| 13 | [BL428 Phase 4](2026-10-14-concurrency-and-budget-design.md) Reactive usage back-off | not started | 9 |
-| 14 | [BL428 Phase 5](2026-10-14-concurrency-and-budget-design.md) Dollar-window budget (includes §4e federation shared-billing detection) | not started | 13 |
-| 15 | [BL431 Phase 5](2026-10-14-automation-orchestration-design.md) BudgetPolicy | not started | 14 |
-| 16 | [BL428 Phase 6](2026-10-14-concurrency-and-budget-design.md) Visibility, audit and parity close-out | not started | 14 |
-| 17 | [BL431 Phase 6](2026-10-14-automation-orchestration-design.md) Automation PWA | not started | 15 |
-| 18 | [BL427 Phase 4](2026-10-13-prd-lifecycle-events.md) Pending-events tool and PWA subscription UI | not started | 8 |
-| 19 | [BL431 Phase 7](2026-10-14-automation-orchestration-design.md) Remaining parity, migration and close-out | not started | 17 |
-| 20 | [BL427 Phase 5](2026-10-13-prd-lifecycle-events.md) Webhook sink and federation forwarding | not started | 18 |
+| 5 | [BL427 Phase 2](2026-10-13-prd-lifecycle-events.md) Built-in lifecycle-event sinks | in progress (PRD `5154c783`, awaiting review) | BL427 Phase 1 (shipped) |
+| 6 | [BL428 Phase 2](2026-10-14-concurrency-and-budget-design.md) Project-tree write lock | not started (PRD `29bd62a1`, draft) | BL428 Phase 1 (shipped) |
+| 7 | [BL431 Phase 1](2026-10-14-automation-orchestration-design.md) Automation data model, store and CRUD | blocked (PRD `b9bd3f99`; both tasks failed, same "no output" symptom as BL455 — pending that investigation) | - |
+| 8 | [BL431 Phase 2](2026-10-14-automation-orchestration-design.md) Automation coordinator with auto-advance (now also scoped as a real quality/regression gate — test-coverage validation, cross-cutting-surface regression checks, stall/idle alerting, dynamic reprioritization for urgent bugs; see design doc open question 17) | not started | 5, 6, 7 |
+| 9 | [BL427 Phase 3](2026-10-13-prd-lifecycle-events.md) Persisted subscriptions and CRUD across surfaces | not started | 5 |
+| 10 | [BL428 Phase 3](2026-10-14-concurrency-and-budget-design.md) Inference-cap gap closure (includes §3c federation shared-compute-node detection) | not started | 6 |
+| 11 | [BL431 Phase 3](2026-10-14-automation-orchestration-design.md) Control operations and mid-flight editing | not started | 8 |
+| 12 | BL422 Claude model and effort tiering eval | blocked (PRD `f6a38c29` failed; resume needed) | - |
+| 13 | [BL431 Phase 4](2026-10-14-automation-orchestration-design.md) Model-tier defaults | not started | 12 |
+| 14 | [BL428 Phase 4](2026-10-14-concurrency-and-budget-design.md) Reactive usage back-off | not started | 10 |
+| 15 | [BL428 Phase 5](2026-10-14-concurrency-and-budget-design.md) Dollar-window budget (includes §4e federation shared-billing detection) | not started | 14 |
+| 16 | [BL431 Phase 5](2026-10-14-automation-orchestration-design.md) BudgetPolicy | not started | 15 |
+| 17 | [BL428 Phase 6](2026-10-14-concurrency-and-budget-design.md) Visibility, audit and parity close-out | not started | 15 |
+| 18 | [BL431 Phase 6](2026-10-14-automation-orchestration-design.md) Automation PWA | not started | 16 |
+| 19 | [BL427 Phase 4](2026-10-13-prd-lifecycle-events.md) Pending-events tool and PWA subscription UI | not started | 9 |
+| 20 | [BL431 Phase 7](2026-10-14-automation-orchestration-design.md) Remaining parity, migration and close-out | not started | 18 |
+| 21 | [BL427 Phase 5](2026-10-13-prd-lifecycle-events.md) Webhook sink and federation forwarding | not started | 19 |
 
 ### Stage C: remaining backlog, queued as an Automation
 
@@ -76,30 +77,31 @@ advances it without hand sequencing.
 
 | # | Item | Status | Depends on |
 |---|---|---|---|
-| 21 | [BL402](2026-10-09-gh204-result-panel.md) Result panel for scheduled jobs and integrations | not started | - |
-| 22 | BL459 datawatch-community skills catalog — research complete, build the catalog's proposed skills | research complete (`docs/catalog/skills-catalog.md`, `skill-specs.md`); easy, high-benefit — pulled forward from v11.0.0 (PRD `275ae17c`, draft) | - |
-| 23 | BL434 Splash animation on every full-screen refresh | approved, not started (PRD `88fdf815`) | - |
-| 24 | BL435 Retry with already-correct output must not fail on empty diff | approved, not started (PRD `191d0c95`) | - |
-| 25 | BL436 Per-turn chunked output capture (design) | approved, not started (PRD `01bcf5cb`) | - |
-| 26 | BL442 PWA service worker force-navigates controlled windows | needs review (PRD `39f7af28`) | - |
-| 27 | [BL433](2026-10-14-pwa-performance-audit.md) PWA performance audit under load | blocked (PRD `049f4713`) | - |
-| 28 | BL392 Cross-repo GitHub configuration hardening audit | mostly done | - |
-| 29 | BL443 goose and aider inference adapters | not started (clear error for `llm_test` shipped v9.0.88; adapters remain) | - |
-| 30 | BL448 Voice transcription times out on long recordings | draft (PRD `6bded76a`) | - |
-| 31 | BL450 Startup-dialog auto-dismiss for one-shot tasks | draft (PRD `8272882d`) | - |
-| 32 | BL393 Nested tags for Automata and PRDs | not started (previously held pending explicit authorization — operator folded it back into the queue 2026-10-15) | - |
-| 33 | [BL437](2026-10-14-recurring-model-eval-design.md) Recurring hardware-aware model and effort eval | blocked (PRD `fea73c82` failed; design done) | 11, 12 |
-| 34 | BL414 PRD cost rollup and token usage guardrails | not started (needs scoping against BL405) | BL405 |
-| 35 | [BL405](2026-10-10-llm-enhancements.md) LLM enhancements, phases 0-10 | not started (design complete) | 7 |
-| 36 | Security remediation: BL365, BL395, BL408, BL398 ([BL398 detail](historical-plans/2026-10-08-bl398-trivyignore-cve-review.md); BL395's F-2 isolation detail: [2026-10-04-f2-session-worker-isolation.md](historical-plans/2026-10-04-f2-session-worker-isolation.md)) | **fully decided, zero open design questions — implementation only**; no PRDs yet. Real implementation order already set: Design A → C → B → D (per BL395's own master index) | - |
-| 37 | BL454 Fix B125: `autonomous.*` runtime config changes (verification_backend/model and likely others) have no effect until a full daemon restart | not started (PRD `70aa7fa5`, draft) | - |
-| 38 | BL412 Self-config permission-gate generalization | not started (needs design) | - |
-| 39 | BL413 Diff-aware project-rules enforcement | not started (needs design) | - |
-| 40 | BL411 Pre-v10.0.0 dead-code audit | not started | 21-39 |
-| 41 | BL409 File and function naming audit | not started | 40 |
-| 42 | BL424 Operator integration guide | not started (PRD `0e2ac398` approved, held to last) | 41 |
-| 43 | BL444 MCP SSE listener retries bind at boot (external bug report) | not started | - |
-| 44 | BL445 Review and merge external MCP `public_url` PR, GH#208 (external bug-fix) | not started | - |
+| 22 | [BL402](2026-10-09-gh204-result-panel.md) Result panel for scheduled jobs and integrations | not started | - |
+| 23 | BL459 datawatch-community skills catalog — research complete, build the catalog's proposed skills | research complete (`docs/catalog/skills-catalog.md`, `skill-specs.md`); easy, high-benefit — pulled forward from v11.0.0 (PRD `275ae17c`, draft) | - |
+| 24 | BL434 Splash animation on every full-screen refresh | approved, not started (PRD `88fdf815`) | - |
+| 25 | BL435 Retry with already-correct output must not fail on empty diff | approved, not started (PRD `191d0c95`) | - |
+| 26 | BL436 Per-turn chunked output capture (design) | approved, not started (PRD `01bcf5cb`) | - |
+| 27 | BL442 PWA service worker force-navigates controlled windows | needs review (PRD `39f7af28`) | - |
+| 28 | [BL433](2026-10-14-pwa-performance-audit.md) PWA performance audit under load | blocked (PRD `049f4713`) | - |
+| 29 | BL392 Cross-repo GitHub configuration hardening audit | mostly done | - |
+| 30 | BL443 goose and aider inference adapters | not started (clear error for `llm_test` shipped v9.0.88; adapters remain) | - |
+| 31 | BL448 Voice transcription times out on long recordings | draft (PRD `6bded76a`) | - |
+| 32 | BL450 Startup-dialog auto-dismiss for one-shot tasks | draft (PRD `8272882d`) | - |
+| 33 | BL393 Nested tags for Automata and PRDs | not started (previously held pending explicit authorization — operator folded it back into the queue 2026-10-15) | - |
+| 34 | BL461 Tag-based browsing + tile redesign for PRD/session lists at scale (design) | not started (PRD `c46f6df9`, draft) | 33 |
+| 35 | [BL437](2026-10-14-recurring-model-eval-design.md) Recurring hardware-aware model and effort eval | blocked (PRD `fea73c82` failed; design done) | 12, 13 |
+| 36 | BL414 PRD cost rollup and token usage guardrails | not started (needs scoping against BL405) | BL405 |
+| 37 | [BL405](2026-10-10-llm-enhancements.md) LLM enhancements, phases 0-10 | not started (design complete) | 8 |
+| 38 | Security remediation: BL365, BL395, BL408, BL398 ([BL398 detail](historical-plans/2026-10-08-bl398-trivyignore-cve-review.md); BL395's F-2 isolation detail: [2026-10-04-f2-session-worker-isolation.md](historical-plans/2026-10-04-f2-session-worker-isolation.md)) | **fully decided, zero open design questions — implementation only**; no PRDs yet. Real implementation order already set: Design A → C → B → D (per BL395's own master index) | - |
+| 39 | BL454 Fix B125: `autonomous.*` runtime config changes (verification_backend/model and likely others) have no effect until a full daemon restart | not started (PRD `70aa7fa5`, draft) | - |
+| 40 | BL412 Self-config permission-gate generalization | not started (needs design) | - |
+| 41 | BL413 Diff-aware project-rules enforcement | not started (needs design) | - |
+| 42 | BL411 Pre-v10.0.0 dead-code audit | not started | 22-41 |
+| 43 | BL409 File and function naming audit | not started | 42 |
+| 44 | BL424 Operator integration guide | not started (PRD `0e2ac398` approved, held to last) | 43 |
+| 45 | BL444 MCP SSE listener retries bind at boot (external bug report) | not started | - |
+| 46 | BL445 Review and merge external MCP `public_url` PR, GH#208 (external bug-fix) | not started | - |
 
 ## Opportunistic, non-blocking research
 
