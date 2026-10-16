@@ -196,20 +196,88 @@ Against a real `llama-server` (CPU first, then the GPU hosts): classification ac
 
 ---
 
+## Evaluation plan
+
+This section says how a future implementation PRD would decide whether the classifier is good enough to replace generate-and-parse verifiers for a given task type. It is a plan, not a result. No evaluation has run.
+
+**Baseline.** The generative path is the current verifier: a worker-model verdict in the strict JSON contract (`cmd/datawatch/main.go:4914`), parsed by the harness. The classifier is judged against that baseline on the same inputs, and against the objective verifier scripts (`verify/{analysis,scripting,docs,review}.sh`), which are the ground truth. A judge is never used to label its own evaluation data.
+
+**Evidence base: BL449 matrix.** The 4 roles × 4 task types, 16-cell open-model matrix in [2026-10-15-bl449-open-model-matrix.md](2026-10-15-bl449-open-model-matrix.md) is the only planned source of cell outputs. Its status matters for this plan:
+
+- No valid scored run exists yet. r8 recorded all 16 cells as suspect (fast/mid workers died in 3–7 s without writing `MODEL-IDENTITY.txt`; `model_result` is null). Every evaluation phase below that depends on BL449 is blocked until a valid run exists.
+- Only the `model_result` field (verifier pass/fail, counted only when `model_identity` and `verification_integrity` are both `ok`) is a usable label. The other two verdicts are gates on whether a cell counts at all.
+- The same discipline applies to the model-tiering fixtures (`testdata/eval/model-tiering/`, BL422) as a seed set. They hold one pass/fail pair today, so they cannot carry the evaluation alone.
+
+**Metrics.** Each metric is reported per model, per quantization, per task type, and per hardware class (GPU node vs. CPU-only). Reporting only an aggregate is not acceptable.
+
+| Dimension | Measure | How it is taken |
+|---|---|---|
+| Completion reliability | Share of decisions that produce a usable verdict without the `infra` block (no parse step on the classifier path; abstain and missing-logprob cases count against it) | Count of `Category: infra` blocks ÷ decisions, over N repetitions per cell. The generative path is measured the same way (parse failures and empty replies). |
+| Agreement with ground truth | Confusion matrix against the verifier script's pass/fail. Two rates are reported separately: false-pass (a defect let through, the costlier error) and false-block (a fine diff sent to review). | Each decision is joined to the verifier label for the same input. Hard negatives (diffs that look compliant but fail the script) are a required slice. |
+| Routing behaviour | Share of decisions in each route (auto-accept, accept-but-mark, human-review) and accuracy at each coverage level (3.5) | Read from the verdict audit fields (3.4). A classifier that routes everything to review is not a pass. |
+| Latency per decision | p50 and p95 wall time per verdict, including all K rotations (3.1) | Timed on the live node, not in a mock. K calls per verdict means latency scales with K; K is part of the reported configuration. |
+| Cost per decision | Local: node time and energy proxy (wall time × node concurrency). Comparison baseline: the generative verifier's token cost from `cost_usage` and `cost_rates`. | Local classifier runs draw on no Claude usage budget. Any Claude baseline run is bounded by the BL428 usage-budget and per-backend caps (see below). |
+| CPU-only feasibility | Whether p95 latency and resident memory fit a CPU-only node within the operator's latency budget | Run on a CPU-only node registered as in BL437 S3. The pass criterion is an operator-set threshold, fixed before the run. |
+
+**Phases.** Each phase is a planned item in the future implementation PRD. None has started.
+
+| # | Phase | Status | Depends on |
+|---|---|---|---|
+| E0 | Freeze labels and split. Build the fit/test split (≈60/40, 3.5) from valid BL449 cell outputs and BL422 fixtures; record the verifier label for each item. Fix the thresholds' evaluation protocol before any run. | Planned | valid BL449 run |
+| E1 | Completion reliability. Run the generative and classifier paths on the same inputs, N repetitions per cell, and record infra-block and parse-failure rates. | Planned | E0 |
+| E2 | Agreement with ground truth. Confusion matrix and false-pass / false-block rates per task type and per model. Fit thresholds on the fit set only; report the test set once. | Planned | E1 |
+| E3 | Latency and cost. p50/p95 per verdict on the GPU node, K rotations included; cost against the generative baseline. | Planned | E2 |
+| E4 | CPU-only feasibility. Same measurements on a CPU-only node. A model that fails the latency or memory threshold is recorded as unsuitable on that hardware class, not silently re-run on GPU. | Planned | E3, BL437 S3 |
+| E5 | Live validation (P6 in the phase table) against a real `llama-server`. This phase must run on a live daemon, as the phase table already requires. | Planned | E4 |
+
+**Cost and capacity bounds.** The evaluation follows the same caps the recurring model sweep uses ([BL437 cost and capacity bound](2026-10-14-recurring-model-eval-design.md#cost-and-capacity-bound-for-the-sweep)):
+
+- One in-flight evaluation cell per local node (§3b of [concurrency-and-budget-design.md](2026-10-14-concurrency-and-budget-design.md) `node:` pool), so no two cells share one GPU or CPU node.
+- Any Claude comparison runs use a sweep-scoped `llm:claude-code` cap, and check the §4e `backoff:` flag before the first Claude cell, as BL437 does. A set flag skips the Claude portion and records it; the local portion still runs.
+- Dollar spend for any Claude portion is an operator-set cap read from `cost_usage` and `cost_rates`. No default is proposed here; BL437 open question 3 applies by analogy.
+- Repetitions and cell counts are fixed in the implementation PRD before the first run, so the bound is known in advance.
+
+---
+
+## Out of scope
+
+This document is a design and evaluation pass. It mirrors the BL437 design pass: it proposes and does not build.
+
+- **Implementing the backend.** No Go or Python code, no `Capabilities` field, no probe, no inference `Kind` addition, no `verification_mode` wiring, no config keys written, no default changes, no node or model registration, no model pulls. Phases P0–P6 and E0–E5 are proposals for a later implementation PRD.
+- **Replacing the generative worker path.** The classifier is a verdict gate, not a worker. Workers keep their full codebase tool access (file edits, git, test runs, shell), which a single-token classifier cannot replace. The generative path remains the default and is unaffected by this design. The only change to it is the optional separate generative call for `summary` and `issues` in P3, which is also a proposal.
+- **Changing the verifier prompt's contract for generative verifiers.** The existing strict JSON contract stays in force for every verifier that is not explicitly set to `classify` mode.
+- **Model sourcing decisions.** The publisher allowlist, pinned revisions and hash checks (SCOPE item 4) are specified here. Choosing the allowlist members and registering any model are operator actions, not part of this design.
+- **Mobile implementation.** Capability parity is required (see Parity surface), but no Android or iOS change is made here.
+
 ## Parity surface
+
+Per AGENT.md rule 8, every surface is listed. Each row is marked either **touched in future implementation** or **intentionally excluded**, with a reason. No surface is intentionally excluded by this design, so each is listed as touched and the reason says how.
 
 | Surface | Decision | Reason |
 |---|---|---|
-| REST | Include | Node capability read/probe endpoint; `verification_mode` on the LLM; verdict score fields. |
-| MCP | Include | `compute_node_get/detail/health` expose capabilities; LLM tools accept the mode; `autonomous_prd_set_*verification_llm` unchanged but validate capability. |
-| CLI | Include | Same data via the existing node/LLM subcommands. |
-| comm channel | Include (read-only) | Capability and verdict score in node/verdict replies. |
-| YAML/config | Include | `verification_mode` and node capability declaration in `docs/config-reference.yaml`. |
-| PWA | Include | Capability badge on the node card; mode selector on the LLM editor; margin shown in verdict detail. |
-| Android | Proposal only | File a datawatch-app issue per the Mobile-Parity rule; no mobile change here. |
-| iPhone/iOS | Proposal only | Same. |
+| REST | Touched in future implementation | Node capability read/probe endpoint; `verification_mode` on the LLM; verdict score fields (`VerifierMode`, score vector, `c`, `s`, `R̄`, route). |
+| MCP | Touched in future implementation | `compute_node_get/detail/health` expose capabilities; LLM tools accept the mode; `autonomous_prd_set_*verification_llm` keep their signatures but validate capability at bind time. |
+| CLI | Touched in future implementation | Same node and LLM data through the existing subcommands. No new subcommand is proposed. |
+| comm channel | Touched in future implementation (read-only) | Capability and verdict score appear in node and verdict replies. No write path is added. |
+| YAML/config | Touched in future implementation | `verification_mode` on the LLM and the node capability declaration documented in `docs/config-reference.yaml`. The publisher allowlist and pinned revision keys (SCOPE item 4) are config too. |
+| PWA | Touched in future implementation | Capability badge on the node card; mode selector on the LLM editor; margin and route shown in verdict detail. |
+| Android | Touched in future implementation | Capability parity is required by the Mobile-Parity Rule, so the capability and verdict-score fields must be readable there. Idiomatic delivery is left to the Android client. A datawatch-app issue is filed when the implementation PRD is written, not in this pass. |
+| iPhone/iOS | Touched in future implementation | Same as Android. The SwiftUI client is under development, and the capability and verdict fields must be readable there. A datawatch-app issue is filed at implementation time. |
 
-## Open questions
+## Open questions and risks
+
+### Risks
+
+- **R1 — Confidently wrong on hard negatives.** A diff that looks compliant but fails the verifier can produce a high-confidence `pass`. The mitigation is the hard-negative slice in E2 and the spread and residual gates (3.2, 3.4). It is a reduction, not a guarantee.
+- **R2 — Small label counts.** The composition minimums (30 per label in fit, 15 in test, 3.5) may not be reachable from the BL449 matrix and BL422 fixtures. If they are not, the thresholds are not fitted and the design does not advance past E2.
+- **R3 — Evaluation blocked on BL449.** E0 needs a valid BL449 run, and r8 was invalid. Until one exists, no metric in this plan can be computed.
+- **R4 — Silent loss of logprobs.** A node that returns 200 without `logprobs` looks healthy. The capability probe (P1) and the loud-failure rule (3.7 item 3) are the controls, and P6 must exercise them on a live Ollama node.
+- **R5 — Calibration drift.** A change to model file, quantization, chat template, prompt, or node invalidates the fit (3.6). Calibration records must be re-created, not reused, and the re-calibration cost must be counted in E3.
+- **R6 — Prompt injection through reviewed content.** Mitigated as stated in 3.7 item 6; listed here so it is not dropped from the risk register.
+- **R7 — Supply chain of the judge.** Covered by SCOPE item 4 (publisher allowlist, pinned revision and hash). The 2026-10-15 hub finding in 4.2 is operator-reported and not verified in-repo.
+- **R8 — CPU-only latency.** K rotations multiply per-verdict latency. A model may pass E2 and fail E4. That outcome is a valid result and should be recorded as such.
+
+### Open questions
 
 1. **Where does `verification_mode` live** — on the `LLM` (recommended, keeps the six existing override fields untouched) or on each override level?
 2. **Plain `openai-compat` LLM `Kind`** vs. reusing `opencode-api`: confirm the inference-side addition.
@@ -219,6 +287,8 @@ Against a real `llama-server` (CPU first, then the GPU hosts): classification ac
 6. **Tokenizer coverage.** Per-model alias sets must be built and checked; which models are in the first supported set?
 7. **Option B trigger.** What concrete llama.cpp-only capability would justify a dedicated kind later?
 8. **Evidence provenance.** P0 should replace the unrecorded BL449 `qwen3:8b` and live-validation claims with fixtures; confirm who captures them.
+9. **Latency and memory thresholds.** E4 needs operator-set pass criteria, fixed before the run. Who sets them?
+10. **Evaluation sequencing.** Should E0–E4 wait for a valid BL449 run (R3), or should a separately labelled dev set be built from BL422 fixtures first?
 
 ## Checklist
 
@@ -226,6 +296,10 @@ Against a real `llama-server` (CPU first, then the GPU hosts): classification ac
 - [x] Scope, numbered Phases with Status, Parity surface
 - [x] Inventory table with file:line references (SCOPE item 1)
 - [x] Option A vs B with a recommendation (SCOPE item 2)
+- [x] Evaluation plan with Planned E-phases, cross-referenced to BL449 and BL437
+- [x] Out of scope section (backend implementation; generative worker path unaffected)
+- [x] Parity surface: all eight surfaces, each touched or excluded with a reason
+- [x] Open questions and risks
 - [x] No code, no config writes, no version bump, no pulls
 - [ ] Operator review (needs_review)
 
@@ -285,7 +359,7 @@ These sum to 1.000. Verdict = S1. Spread on S1 = 0.61 − 0.47 = 0.14. Confidenc
 
 Confidence is the rescaled winning probability:
 
-`c = (K·p − 1) / (K − 1)`
+`c = (K*p-1)/(K-1)`
 
 where `p = P(winner)` after aggregation. This maps the uniform prior `p = 1/K` to `c = 0` and a certain answer `p = 1` to `c = 1`, so the score reads the same for binary and K-way guardrails. If `p < 1/K` (possible only with a degenerate aggregate) it is clamped to 0 and routed to human review.
 
@@ -318,7 +392,7 @@ Mapping notes against the existing types in `internal/autonomous/models.go`:
 
 The thresholds are fitted, not chosen by intuition, and they are fitted per model + prompt + quantization combination (3.6 says what invalidates a fit).
 
-**Dev set (held out from the thresholds' own evaluation).**
+**Dev set (held-out from the thresholds' own evaluation).**
 
 - Split into a *fit* set (≈ 60%) used to choose thresholds and a *test* set (≈ 40%) used once to report metrics. The test set is never used to tune anything.
 - **Ground truth must not come from the classifier.** Labels come from objective sources:

@@ -44,7 +44,7 @@ BL431's open question 14, and BL405 Phase 7.
 | # | Item | Status | Depends on |
 |---|---|---|---|
 | 1 | BL441 PRD-completion content auto-fix never fires | in progress (PRD `34bd5877`, running) | - |
-| 2 | BL452 "The V Method" — logprob-classification guardrail backend (design) | running (PRD `468db26e`; main tree, docs-only — accepted collision risk alongside BL441 since BL428 Phase 2's write lock doesn't exist yet) | - |
+| 2 | [BL452](2026-10-15-logprob-classification-guardrail-design.md) "The V Method" — logprob-classification guardrail backend (design pass) | needs_review (design pass, docs-only; PRD `468db26e`; main tree — accepted collision risk alongside BL441 since BL428 Phase 2's write lock doesn't exist yet) | - |
 | 3 | BL455 Fix B126: a retry can record the wrong pre-task SHA, producing a false "no output" failure on real, correctly-committed work | in progress (PRD `2713dbb9`, decomposing; worktree-isolated, local GPU) | - |
 | 4 | **BL462** A running PRD task's session must not be impacted by a daemon restart/update | not started (PRD `c96f2104`, draft) — **operator priority**, blocks safely updating the daemon during active work | - |
 | 5 | **BL463** MCP connection reliability, session isolation clarity, error-mode parity with REST | not started (PRD `bf78e50a`, draft) — every spawned session depends on MCP as its primary interface | - |
@@ -161,7 +161,8 @@ The per-topic design documents live alongside this file, named
   [concurrency and budget](2026-10-14-concurrency-and-budget-design.md)
 - Model evaluation: [recurring model eval](2026-10-14-recurring-model-eval-design.md),
   [open-model matrix](2026-10-15-bl449-open-model-matrix.md)
-- Guardrails and rules: [tooled deterministic guardrails](2026-10-12-tooled-deterministic-guardrails.md),
+- Guardrails and rules: [logprob-classification guardrail (BL452)](2026-10-15-logprob-classification-guardrail-design.md),
+  [tooled deterministic guardrails](2026-10-12-tooled-deterministic-guardrails.md),
   [project-rules enforcement](2026-10-10-configurable-project-rules-enforcement.md)
 - Other: [LLM enhancements](2026-10-10-llm-enhancements.md),
   [plugin extension surfaces](2026-10-09-plugin-extension-surfaces.md),
