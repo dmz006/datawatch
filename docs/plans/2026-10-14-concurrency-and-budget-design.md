@@ -1124,3 +1124,21 @@ thing example (iii) could not see.
     managing a hard subscription ceiling may prefer fail-closed for the
     billing-group case specifically, even if 3c's hardware case stays
     fail-open. Should this be one shared setting or two independent ones?
+14. **The tree lock (3a) should assess real conflict, not just same-tree
+    exclusivity (operator-raised 2026-10-15, live judgment call this doc's
+    own 3a doesn't currently cover).** Live example: two PRDs both
+    targeting the main (non-worktree) tree — one doing real Go code changes
+    under `internal/autonomous/`, the other writing only to `docs/plans/`.
+    The operator's own call was to let the docs-only one proceed
+    concurrently rather than block it behind the first, reasoning from
+    actual file footprint rather than treating "same tree" as automatically
+    exclusive. 3a as currently scoped is a binary per-canonical-tree lock —
+    it does not have this nuance. Open: should 3a gain a lighter-weight
+    "declared file/path footprint, non-overlapping footprints admit
+    concurrently" mode alongside the exclusive lock, or is a binary lock
+    with an explicit operator (or BL431 coordinator) override the right
+    level of sophistication for v1, deferring smarter conflict detection to
+    a later phase? Whatever is decided here is what BL431's coordinator
+    (`onMemberTerminal`/advance logic) must consume faithfully — this
+    judgment call should not keep being made ad hoc by whoever is driving
+    PRDs by hand.

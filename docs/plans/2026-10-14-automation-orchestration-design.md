@@ -1453,3 +1453,13 @@ howto, and the `datawatch-app` issue where applicable.
     exists), BL413 (diff-aware rules — not yet built), and a concrete
     surface→test-suite mapping that doesn't exist anywhere today? Scoping
     this precisely is itself real design work, not a one-line addition.
+18. **Tree-conflict assessment is BL428 §3a's scope, not this doc's — the
+    coordinator just has to consume it faithfully (operator-raised
+    2026-10-15, see BL428's own open question 14 for the full write-up).**
+    Live judgment call made by hand while running PRDs tonight: a docs-only
+    PRD was allowed to run concurrently with a code-change PRD on the same
+    main tree, reasoned from actual file footprint rather than treating
+    "same tree" as automatically exclusive. Whatever BL428 §3a lands on
+    (binary lock vs. footprint-aware concurrent admission) is what
+    `onMemberTerminal`/the advance decision must respect — this doc should
+    not grow a second, competing conflict-assessment mechanism.
