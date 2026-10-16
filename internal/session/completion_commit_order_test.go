@@ -47,7 +47,7 @@ func TestCompletion_PostSessionCommitLandsBeforeStateIsVisibleAsComplete(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	mgr := &Manager{store: store, hostname: "testhost", autoGit: true}
+	mgr := &Manager{store: store, hostname: "testhost"}
 	sess := &Session{
 		ID: "abcd", FullID: "testhost-abcd", Hostname: "testhost",
 		State: StateRunning, OneShot: true, ProjectDir: dir,
@@ -126,7 +126,7 @@ func TestCompletion_CommitsEvenWhenAutoCommitConfigIsOff(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	mgr := &Manager{store: store, hostname: "testhost", autoGit: false}
+	mgr := &Manager{store: store, hostname: "testhost"}
 	sess := &Session{
 		ID: "efgh", FullID: "testhost-efgh", Hostname: "testhost",
 		State: StateRunning, OneShot: true, ProjectDir: dir,
@@ -147,9 +147,9 @@ func TestCompletion_CommitsEvenWhenAutoCommitConfigIsOff(t *testing.T) {
 		t.Fatalf("session should be Complete after the marker, got ok=%v state=%v", ok, got)
 	}
 
-	// Even with the auto-commit config OFF, the completion must land a commit.
+	// Even without an explicit auto-commit setting, the completion must land a commit.
 	after := countCommits()
 	if after <= before {
-		t.Fatalf("expected a completion commit even with autoGit=false, but commit count did not increase (before=%d after=%d)", before, after)
+		t.Fatalf("expected a completion commit, but commit count did not increase (before=%d after=%d)", before, after)
 	}
 }

@@ -1271,7 +1271,10 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		}
 	}
 
-	mgr.SetAutoGit(cfg.Session.AutoGitCommit, cfg.Session.AutoGitInit)
+	if cfg.Session.AutoGitCommit {
+		fmt.Fprintln(os.Stderr, "session.auto_git_commit is deprecated and ignored: task sessions are committed automatically")
+	}
+	mgr.SetAutoGitInit(cfg.Session.AutoGitInit)
 	mgr.SetSecureTracking(cfg.Session.SecureTracking)
 	mgr.SetWorkspaceRoot(cfg.Session.WorkspaceRoot)
 	mgr.BackfillOutputMode()

@@ -39,7 +39,7 @@ func newDirtyRepo(t *testing.T) string {
 // (the override is no longer consulted in Start).
 func TestStart_OneShotSnapshotsDirtyTreeWithAutoCommitOff(t *testing.T) {
 	mgr, fake := newTestManagerWithFake(t)
-	mgr.SetAutoGit(false, true) // manager auto-commit off
+	mgr.SetAutoGitInit(true)
 	dir := newDirtyRepo(t)
 
 	mgr.SetLLMBackend("test", func(_ context.Context, _, tmuxSession, projectDir, _ string) error {
@@ -66,7 +66,7 @@ func TestStart_OneShotSnapshotsDirtyTreeWithAutoCommitOff(t *testing.T) {
 // snapshot the dirty tree.
 func TestStart_OneShotInitsNonRepoDirAndSnapshots(t *testing.T) {
 	mgr, fake := newTestManagerWithFake(t)
-	mgr.SetAutoGit(false, true)
+	mgr.SetAutoGitInit(true)
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "work.txt"), []byte("untracked dirt\n"), 0644); err != nil {
 		t.Fatal(err)
@@ -91,7 +91,7 @@ func TestStart_OneShotInitsNonRepoDirAndSnapshots(t *testing.T) {
 
 func TestStart_OneShotInitsEvenWithAutoGitInitOff(t *testing.T) {
 	mgr, fake := newTestManagerWithFake(t)
-	mgr.SetAutoGit(false, false) // both manager auto-git settings off
+	mgr.SetAutoGitInit(false) // manager auto-git-init off
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "work.txt"), []byte("untracked dirt\n"), 0644); err != nil {
 		t.Fatal(err)
@@ -118,7 +118,7 @@ func TestStart_OneShotInitsEvenWithAutoGitInitOff(t *testing.T) {
 // with the manager auto-commit setting on.
 func TestStart_InteractiveDoesNotAutoCommit(t *testing.T) {
 	mgr, fake := newTestManagerWithFake(t)
-	mgr.SetAutoGit(true, true)
+	mgr.SetAutoGitInit(true)
 	dir := newDirtyRepo(t)
 
 	mgr.SetLLMBackend("test", func(_ context.Context, _, tmuxSession, projectDir, _ string) error {

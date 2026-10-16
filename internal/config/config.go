@@ -1727,7 +1727,9 @@ type SessionConfig struct {
 
 	// (resolver lives at the bottom of this struct, see ResolveProjectDir)
 
-	// AutoGitCommit enables automatic git commits before and after each session.
+	// AutoGitCommit is deprecated and ignored: task sessions are committed
+	// automatically now. The key is retained only so old config files with
+	// auto_git_commit still load without error.
 	AutoGitCommit bool `yaml:"auto_git_commit"`
 
 	// AutoGitInit initializes a git repo in the project dir if one doesn't exist.
@@ -2426,7 +2428,7 @@ type SessionTemplateEntry struct {
 	Profile       string            `yaml:"profile,omitempty" json:"profile,omitempty"`
 	Effort        string            `yaml:"effort,omitempty" json:"effort,omitempty"` // BL41
 	Env           map[string]string `yaml:"env,omitempty" json:"env,omitempty"`
-	AutoGitCommit *bool             `yaml:"auto_git_commit,omitempty" json:"auto_git_commit,omitempty"`
+	AutoGitCommit *bool             `yaml:"auto_git_commit,omitempty" json:"auto_git_commit,omitempty"` // deprecated/ignored: task sessions are committed automatically; retained for API compatibility
 	AutoGitInit   *bool             `yaml:"auto_git_init,omitempty" json:"auto_git_init,omitempty"`
 	Description   string            `yaml:"description,omitempty" json:"description,omitempty"`
 }

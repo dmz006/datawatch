@@ -354,7 +354,6 @@ type Manager struct {
 	store          *Store
 	tmux           TmuxAPI
 	idleTimeout    time.Duration
-	autoGit        bool   // whether to auto-commit project dir
 	autoGitInit    bool   // whether to git init project dir if needed
 	verbose        bool   // enable debug logging
 	mcpMaxRetries  int    // max MCP restart attempts per session (0 = disabled)
@@ -815,9 +814,11 @@ func (m *Manager) debugf(format string, args ...interface{}) {
 	}
 }
 
-// SetAutoGit configures automatic git commit behaviour for the project directory.
-func (m *Manager) SetAutoGit(autoGit, autoGitInit bool) {
-	m.autoGit = autoGit
+// SetAutoGitInit configures whether the project directory should be git
+// init'ed if it is not already a repo. Automatic commits themselves are
+// always on for task sessions; the auto_git_commit setting is deprecated
+// and ignored.
+func (m *Manager) SetAutoGitInit(autoGitInit bool) {
 	m.autoGitInit = autoGitInit
 }
 
@@ -1546,7 +1547,7 @@ type StartOptions struct {
 	LaunchFn      LaunchFunc        // override launch function (nil = use manager default)
 	BackendObj    llm.Backend       // override backend object (for Resumable dispatch)
 	ResumeID      string            // LLM session ID to resume (passed to Resumable backends)
-	AutoGitCommit *bool             // per-session override for auto git commit (nil = use manager default)
+	AutoGitCommit *bool             // deprecated/ignored: task sessions are committed automatically; retained for API compatibility
 	AutoGitInit   *bool             // per-session override for auto git init (nil = use manager default)
 	Env           map[string]string // environment variable overrides (for profile-based launches)
 
