@@ -20,16 +20,22 @@ const completionSummaryMaxLen = 200
 const completionBoxPrefixes = "┃│⎿●>-* \t"
 
 // ExtractCompletionSummary returns the last DATAWATCH_COMPLETE: summary found
-// in raw session output text. It strips ANSI escapes, scans lines from the
-// end toward the start, and trims whitespace and leading box/bullet runes
-// from each candidate before matching. Candidates that are empty or are the
+// in raw session output text. It strips ANSI escapes (treating bare \r as a
+// line boundary), scans lines from the end toward the start, and trims
+// whitespace and leading box/bullet runes from each candidate before
+// matching. Candidates that are empty or are the
 // instruction placeholder are skipped; the first accepted one is collapsed to
 // a single line and truncated to completionSummaryMaxLen characters.
 // Returns "" if no valid summary is found.
 func ExtractCompletionSummary(text string) string {
 	clean := StripANSI(text)
+	// Bare carriage returns (e.g. from in-line overdraw) also act as
+	// line boundaries.
+	clean = strings.ReplaceAll(clean, "\r", "\n")
 
-	for _, line := range strings.Split(clean, "\n") {
+	lines := strings.Split(clean, "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := lines[i]
 		line = strings.TrimSpace(line)
 		line = strings.TrimLeft(line, completionBoxPrefixes)
 		line = strings.TrimSpace(line)
