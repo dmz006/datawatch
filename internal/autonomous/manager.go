@@ -2054,7 +2054,7 @@ func (m *Manager) RemoveStory(prdID, storyID, actor string) (*PRD, error) {
 }
 
 // AddTask appends a new task to an existing story.
-func (m *Manager) AddTask(prdID, storyID, title, spec, actor string) (*PRD, error) {
+func (m *Manager) AddTask(prdID, storyID, title, spec, actor string, dependsOn []string) (*PRD, error) {
 	prd, ok := m.store.GetPRD(prdID)
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
@@ -2065,14 +2065,18 @@ func (m *Manager) AddTask(prdID, storyID, title, spec, actor string) (*PRD, erro
 	if strings.TrimSpace(title) == "" {
 		return nil, fmt.Errorf("title is required")
 	}
-	task, err := m.store.AddTask(prdID, storyID, title, spec)
+	task, err := m.store.AddTask(prdID, storyID, title, spec, dependsOn)
 	if err != nil {
 		return nil, err
 	}
 	prd, _ = m.store.GetPRD(prdID)
+	note := fmt.Sprintf("story=%s task=%s title=%q", storyID, task.ID, title)
+	if len(dependsOn) > 0 {
+		note += fmt.Sprintf(" depends_on=%v", dependsOn)
+	}
 	prd.Decisions = append(prd.Decisions, Decision{
 		At: time.Now(), Kind: "add_task", Actor: actor,
-		Note: fmt.Sprintf("story=%s task=%s title=%q", storyID, task.ID, title),
+		Note: note,
 	})
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err

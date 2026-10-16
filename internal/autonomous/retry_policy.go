@@ -306,7 +306,7 @@ func (m *Manager) synthesizeCorrectiveWork(prd *PRD, verdict GuardrailVerdict, t
 		}
 		storyID = story.ID
 	}
-	task, err := m.store.AddTask(prd.ID, storyID, title, spec)
+	task, err := m.store.AddTask(prd.ID, storyID, title, spec, nil)
 	if err != nil {
 		return nil, nil, err
 	}

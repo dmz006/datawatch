@@ -473,12 +473,25 @@ func (s *Store) RemoveStory(prdID, storyID string) error {
 }
 
 // AddTask appends a new task to an existing story.
-func (s *Store) AddTask(prdID, storyID, title, spec string) (*Task, error) {
+func (s *Store) AddTask(prdID, storyID, title, spec string, dependsOn []string) (*Task, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	prd, ok := s.prds[prdID]
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
+	}
+	if len(dependsOn) > 0 {
+		existing := map[string]bool{}
+		for _, st := range prd.Story {
+			for _, t := range st.Tasks {
+				existing[t.ID] = true
+			}
+		}
+		for _, dep := range dependsOn {
+			if !existing[dep] {
+				return nil, fmt.Errorf("depends_on task %q not found in prd %q", dep, prdID)
+			}
+		}
 	}
 	for i := range prd.Story {
 		if prd.Story[i].ID != storyID {
@@ -490,6 +503,7 @@ func (s *Store) AddTask(prdID, storyID, title, spec string) (*Task, error) {
 			PRDID:     prdID,
 			Title:     title,
 			Spec:      spec,
+			DependsOn: dependsOn,
 			CreatedAt: time.Now(),
 			UpdatedAt: time.Now(),
 		}

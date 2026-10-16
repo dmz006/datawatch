@@ -464,19 +464,24 @@ func newAutonomousPRDRemoveStoryCmd() *cobra.Command {
 }
 
 func newAutonomousPRDAddTaskCmd() *cobra.Command {
-	var storyID, title, spec string
+	var storyID, title, spec, dependsOnCSV string
 	cmd := &cobra.Command{
-		Use:   "prd-add-task <prd-id> --story <story-id> --title <t> [--spec <s>]",
+		Use:   "prd-add-task <prd-id> --story <story-id> --title <t> [--spec <s>] [--depends-on <task-id,...>]",
 		Short: "Add a new task to an existing story without re-running decompose",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
-			body, _ := json.Marshal(map[string]string{"story_id": storyID, "title": title, "spec": spec, "actor": "operator"})
-			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/add_task", body)
+			body := map[string]any{"story_id": storyID, "title": title, "spec": spec, "actor": "operator"}
+			if dependsOnCSV != "" {
+				body["depends_on"] = splitCSV(dependsOnCSV)
+			}
+			bodyJSON, _ := json.Marshal(body)
+			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/add_task", bodyJSON)
 		},
 	}
 	cmd.Flags().StringVar(&storyID, "story", "", "story ID to add the task to (required)")
 	cmd.Flags().StringVar(&title, "title", "", "task title (required)")
 	cmd.Flags().StringVar(&spec, "spec", "", "task spec — concrete instructions for the worker session")
+	cmd.Flags().StringVar(&dependsOnCSV, "depends-on", "", "comma-separated task IDs (within the same PRD) that must complete before this one becomes eligible")
 	_ = cmd.MarkFlagRequired("story")
 	_ = cmd.MarkFlagRequired("title")
 	return cmd

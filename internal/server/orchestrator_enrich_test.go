@@ -52,7 +52,7 @@ func (f *fakeOrchAutonomous) CancelStory(string, string, string, string) (any, e
 func (f *fakeOrchAutonomous) CancelTask(string, string, string, string) (any, error) { return nil, nil }
 func (f *fakeOrchAutonomous) AddStory(string, string, string, string) (any, error)   { return nil, nil }
 func (f *fakeOrchAutonomous) RemoveStory(string, string, string) (any, error)        { return nil, nil }
-func (f *fakeOrchAutonomous) AddTask(string, string, string, string, string) (any, error) {
+func (f *fakeOrchAutonomous) AddTask(string, string, string, string, string, []string) (any, error) {
 	return nil, nil
 }
 func (f *fakeOrchAutonomous) RemoveTask(string, string, string, string) (any, error) { return nil, nil }

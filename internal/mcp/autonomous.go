@@ -471,15 +471,17 @@ func (s *Server) toolAutonomousPRDAddTask() mcpsdk.Tool {
 		mcpsdk.WithString("story_id", mcpsdk.Required(), mcpsdk.Description("Story ID to add the task to")),
 		mcpsdk.WithString("title", mcpsdk.Required(), mcpsdk.Description("Task title")),
 		mcpsdk.WithString("spec", mcpsdk.Description("Task spec — concrete instructions for the worker session")),
+		mcpsdk.WithArray("depends_on", mcpsdk.Description("Task IDs (within the same PRD) that must complete before this one becomes eligible. Each must already exist."), mcpsdk.WithStringItems()),
 	)
 }
 func (s *Server) handleAutonomousPRDAddTask(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	id := req.GetString("id", "")
-	body, _ := json.Marshal(map[string]string{
-		"story_id": req.GetString("story_id", ""),
-		"title":    req.GetString("title", ""),
-		"spec":     req.GetString("spec", ""),
-		"actor":    "operator",
+	body, _ := json.Marshal(map[string]any{
+		"story_id":   req.GetString("story_id", ""),
+		"title":      req.GetString("title", ""),
+		"spec":       req.GetString("spec", ""),
+		"actor":      "operator",
+		"depends_on": req.GetStringSlice("depends_on", nil),
 	})
 	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/add_task", body)
 	if err != nil {

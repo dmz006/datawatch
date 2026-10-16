@@ -111,7 +111,7 @@ func TestAddTask_AppendsToStoryAndAudits(t *testing.T) {
 	_ = m.Store().SavePRD(prd)
 	storyID := prd.Story[0].ID
 
-	out, err := m.AddTask(prd.ID, storyID, "T2", "new task spec", "alice")
+	out, err := m.AddTask(prd.ID, storyID, "T2", "new task spec", "alice", nil)
 	if err != nil {
 		t.Fatalf("AddTask: %v", err)
 	}
@@ -148,7 +148,7 @@ func TestAddTask_StoryNotFound(t *testing.T) {
 	prd.Status = PRDNeedsReview
 	_ = m.Store().SavePRD(prd)
 
-	if _, err := m.AddTask(prd.ID, "does-not-exist", "T", "spec", "alice"); err == nil {
+	if _, err := m.AddTask(prd.ID, "does-not-exist", "T", "spec", "alice", nil); err == nil {
 		t.Fatal("expected error for nonexistent story ID")
 	}
 }
@@ -222,7 +222,7 @@ func TestStructuralEdits_WorkOnCancelledPRD(t *testing.T) {
 		t.Fatalf("task spec not updated: %+v", out.Story[0].Tasks[0])
 	}
 
-	out, err = m.AddTask(prd.ID, storyID, "T2", "spec", "alice")
+	out, err = m.AddTask(prd.ID, storyID, "T2", "spec", "alice", nil)
 	if err != nil {
 		t.Fatalf("AddTask should work on a cancelled PRD: %v", err)
 	}
@@ -244,7 +244,7 @@ func TestStructuralEdits_RefuseAfterApprove(t *testing.T) {
 	if _, err := m.RemoveStory(prd.ID, storyID, "alice"); err == nil {
 		t.Error("expected RemoveStory to refuse after approve")
 	}
-	if _, err := m.AddTask(prd.ID, storyID, "T2", "spec", "alice"); err == nil {
+	if _, err := m.AddTask(prd.ID, storyID, "T2", "spec", "alice", nil); err == nil {
 		t.Error("expected AddTask to refuse after approve")
 	}
 	if _, err := m.RemoveTask(prd.ID, storyID, taskID, "alice"); err == nil {

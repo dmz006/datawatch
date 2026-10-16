@@ -734,10 +734,11 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var req struct {
-			StoryID string `json:"story_id"`
-			Title   string `json:"title"`
-			Spec    string `json:"spec"`
-			Actor   string `json:"actor"`
+			StoryID    string   `json:"story_id"`
+			Title      string   `json:"title"`
+			Spec       string   `json:"spec"`
+			Actor      string   `json:"actor"`
+			DependsOn  []string `json:"depends_on,omitempty"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
@@ -750,7 +751,7 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		if req.Actor == "" {
 			req.Actor = "operator"
 		}
-		updated, err := s.autonomousMgr.AddTask(id, req.StoryID, req.Title, req.Spec, req.Actor)
+		updated, err := s.autonomousMgr.AddTask(id, req.StoryID, req.Title, req.Spec, req.Actor, req.DependsOn)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return

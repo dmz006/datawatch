@@ -525,8 +525,8 @@ func (a *API) RemoveStory(prdID, storyID, actor string) (any, error) {
 	}
 	return out, err
 }
-func (a *API) AddTask(prdID, storyID, title, spec, actor string) (any, error) {
-	out, err := a.M.AddTask(prdID, storyID, title, spec, actor)
+func (a *API) AddTask(prdID, storyID, title, spec, actor string, dependsOn []string) (any, error) {
+	out, err := a.M.AddTask(prdID, storyID, title, spec, actor, dependsOn)
 	if err == nil {
 		a.M.EmitPRDUpdate(prdID)
 	}

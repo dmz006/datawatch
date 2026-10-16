@@ -189,7 +189,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "9.1.23"
+var Version = "9.1.24"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -641,7 +641,7 @@ type AutonomousAPI interface {
 	// Structural edits — add/remove a story or task without re-decomposing.
 	AddStory(prdID, title, description, actor string) (any, error)
 	RemoveStory(prdID, storyID, actor string) (any, error)
-	AddTask(prdID, storyID, title, spec, actor string) (any, error)
+	AddTask(prdID, storyID, title, spec, actor string, dependsOn []string) (any, error)
 	RemoveTask(prdID, storyID, taskID, actor string) (any, error)
 
 	// Phase 3 (v5.26.60) — per-story execution profile + approval.

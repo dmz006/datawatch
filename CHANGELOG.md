@@ -5,6 +5,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.1.24 — feat(autonomous): `prd-add-task` can set `depends_on`
+
+Adding a task to an existing story (REST/MCP/CLI `add_task`/`prd-add-task`)
+had no way to make it wait on another task in the same PRD — the only
+way to insert ordered follow-up work was to remove and re-add every
+later task in the right order by hand. Found live while splitting an
+over-bundled task into smaller pieces mid-PRD: the two new tasks had no
+dependency relationship to the task that should run after them, so the
+executor reached them out of order. `AddTask` now accepts an optional
+`depends_on` (task IDs within the same PRD, each validated to already
+exist) at every layer — REST, MCP (`autonomous_prd_add_task`), and CLI
+(`prd-add-task --depends-on <id,...>`).
+
 ## v9.1.23 — fix(llm): `llm update` no longer silently resets kind/model/timeout
 
 Found live during the pi backend's first PRD pilot: `llm update <name>
