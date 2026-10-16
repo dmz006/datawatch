@@ -112,6 +112,7 @@ Internal research — does not block Stage A/B/C, can run alongside it.
 | Item | Status |
 |---|---|
 | BL453 Can open models decompose PRDs? (research) | not started (PRD `19f9a693`, draft; covers decompose reliability, execution-scope, and a positive data point — 3 research PRDs fully open-model decomposed+executed successfully) |
+| [BL465](2026-10-16-deterministic-git-commit-design.md) Move the primary git commit out of the worker's own tool loop (design) | needs_review (design only, no PRD yet) |
 
 ## Excluded from v10.0.0
 
