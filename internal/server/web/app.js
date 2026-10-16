@@ -244,6 +244,7 @@ function backendIcon(name) {
   if (n.includes('claude')) return '⚡';
   if (n.includes('opencode')) return '🔮';
   if (n.includes('aider')) return '🤖';
+  if (n.includes('pi')) return 'π';
   if (n.includes('goose')) return '🪿';
   if (n.includes('gemini')) return '✨';
   if (n.includes('ollama')) return '🦙';
@@ -2338,7 +2339,7 @@ function renderSessionsView() {
   const backendShort = {
     'claude-code': 'claude', 'opencode': 'oc', 'opencode-acp': 'acp',
     'opencode-prompt': 'oc-p', 'openwebui': 'owui', 'ollama': 'olla',
-    'aider': 'aider', 'goose': 'goose', 'gemini': 'gem', 'shell': 'sh',
+    'aider': 'aider', 'pi': 'pi', 'pi-prompt': 'pi-p', 'goose': 'goose', 'gemini': 'gem', 'shell': 'sh',
     'council-virtual': '🎭 Council', // GH#172 D64
   };
   const backendBadges = backendTypes.map(bt => {
@@ -6916,7 +6917,7 @@ function onSessLLMChange() {
   // per-persona, so it CAN have compute nodes and follows the standard
   // 2+ rule. Local-runtime kinds (ollama / openwebui) only show the
   // picker when 2+ nodes are pinned.
-  const SAAS_KINDS = new Set(['claude-code','gemini','aider','goose']);
+  const SAAS_KINDS = new Set(['claude-code','gemini','aider','goose','pi','pi-prompt']);
   if (SAAS_KINDS.has(llm && llm.kind) || nodes.length < 2) {
     setCompVisible(false);
     if (hint) { hint.style.display = 'none'; hint.textContent = ''; }
@@ -7058,6 +7059,8 @@ function backendSetupHint(name) {
     'opencode':    `Install opencode: <a href="https://opencode.ai" target="_blank" rel="noopener" style="color:var(--accent);">opencode.ai</a><br>Then run: <code>datawatch setup llm opencode</code>`,
     'opencode-acp':  `Install opencode with ACP support. See <a href="${docsBase}/backends.md" target="_blank" rel="noopener" style="color:var(--accent);">docs/backends.md</a>`,
     'aider':       `Install aider: <code>pip install aider-install && aider-install</code><br>Then run: <code>datawatch setup llm aider</code>`,
+    'pi':          `Install pi: <code>npm install -g @earendil-works/pi-coding-agent</code><br>Then run: <code>datawatch setup llm pi</code>`,
+    'pi-prompt':   `Install pi: <code>npm install -g @earendil-works/pi-coding-agent</code><br>Then run: <code>datawatch setup llm pi-prompt</code>`,
     'gemini':      `Install Gemini CLI: <code>npm install -g @google/gemini-cli</code><br>Then run: <code>datawatch setup llm gemini</code>`,
     'goose':       `Install Goose: see <a href="https://block.github.io/goose/docs/getting-started/installation" target="_blank" rel="noopener" style="color:var(--accent);">Goose docs</a><br>Then run: <code>datawatch setup llm goose</code>`,
     'openwebui':   `Configure Open WebUI URL and API key: <code>datawatch setup llm openwebui</code>`,
@@ -7658,6 +7661,8 @@ const DOCS_LLM_BACKENDS = {
   claude_code: 'llm-backends.md#claude-code-default',
   claudecode: 'llm-backends.md#claude-code-default',
   aider: 'llm-backends.md#aider',
+  pi: 'llm-backends.md#pi',
+  pi_prompt: 'llm-backends.md#pi',
   goose: 'llm-backends.md#goose',
   gemini: 'llm-backends.md#gemini-cli',
   opencode: 'llm-backends.md#opencode',
@@ -9847,7 +9852,7 @@ window._renderLLMEditPanel = function(existing) {
   const host = document.querySelector('.app') || document.body;
   const old = document.getElementById('llmAddPanel');
   if (old) old.remove();
-  const allKinds = ['ollama','openwebui','opencode','claude-code','opencode-acp','opencode-prompt','aider','goose','gemini','council','shell'];
+  const allKinds = ['ollama','openwebui','opencode','claude-code','opencode-acp','opencode-prompt','aider','pi','pi-prompt','goose','gemini','council','shell'];
   const kindOpts = allKinds.map(k => `<option value="${k}" ${k === (existing.kind||'') ? 'selected' : ''}>${k}</option>`).join('');
   const nodes = (window._computeNodesCache || []);
   const selectedNodes = new Set(existing.compute_nodes || []);
@@ -10047,10 +10052,10 @@ window._renderLLMEditPanel = function(existing) {
 };
 
 // SaaS kinds: hide compute nodes + auto-detect node name from kind.
-const _llmSaasKinds = new Set(['claude-code', 'aider', 'goose', 'gemini']);
-const _llmSaasNodeName = { 'claude-code': 'claude', 'aider': 'aider', 'goose': 'goose', 'gemini': 'gemini' };
+const _llmSaasKinds = new Set(['claude-code', 'aider', 'pi', 'pi-prompt', 'goose', 'gemini']);
+const _llmSaasNodeName = { 'claude-code': 'claude', 'aider': 'aider', 'pi': 'pi', 'pi-prompt': 'pi', 'goose': 'goose', 'gemini': 'gemini' };
 
-const _llmSessionBackendKinds = new Set(['claude-code','aider','goose','gemini','opencode','opencode-acp','opencode-prompt','shell']);
+const _llmSessionBackendKinds = new Set(['claude-code','aider','pi','pi-prompt','goose','gemini','opencode','opencode-acp','opencode-prompt','shell']);
 
 window._llmKindChanged = function() {
   const kind = (document.getElementById('llmEditKind') || {}).value || '';
@@ -15928,6 +15933,8 @@ const LLM_FIELDS = {
     { key:'claude_enabled', label:'Enabled', type:'checkbox', section:'session' },
   ],
   'aider':          [{ key:'binary', label:'Binary path', type:'text', placeholder:'aider' }, ...GIT_FIELDS, ...CONSOLE_SIZE_FIELDS],
+  'pi':             [{ key:'binary', label:'Binary path', type:'text', placeholder:'pi' }, { key:'model', label:'Model (provider/model, optional)', type:'text', placeholder:'ollama/qwen3.8:27b' }, ...GIT_FIELDS, ...CONSOLE_SIZE_FIELDS],
+  'pi-prompt':      [{ key:'binary', label:'Binary path', type:'text', placeholder:'pi' }, { key:'model', label:'Model (provider/model, optional)', type:'text', placeholder:'ollama/qwen3.8:27b' }, ...GIT_FIELDS, ...CONSOLE_SIZE_FIELDS],
   'goose':          [{ key:'binary', label:'Binary path', type:'text', placeholder:'goose' }, ...GIT_FIELDS, ...CONSOLE_SIZE_FIELDS],
   'gemini':         [{ key:'binary', label:'Binary path', type:'text', placeholder:'gemini' }, ...GIT_FIELDS, ...CONSOLE_SIZE_FIELDS],
   'ollama':         [{ key:'model', label:'Model', type:'ollama_model_select' }, { key:'host', label:'Host URL', type:'text', placeholder:'http://localhost:11434' }, ...GIT_FIELDS, ...CONSOLE_SIZE_FIELDS],
@@ -15940,7 +15947,7 @@ const LLM_FIELDS = {
 
 // Config section names in config.yaml for each LLM
 const LLM_CFG_SECTION = {
-  'claude-code':'session','aider':'aider','goose':'goose','gemini':'gemini','ollama':'ollama',
+  'claude-code':'session','aider':'aider','pi':'pi','pi-prompt':'pi_prompt','goose':'goose','gemini':'gemini','ollama':'ollama',
   'opencode':'opencode','opencode-acp':'opencode_acp','opencode-prompt':'opencode_prompt','openwebui':'openwebui','shell':'shell_backend'
 };
 

@@ -54,6 +54,8 @@ func RegisterAll(m *Manager) {
 	// LLM backends
 	m.Register(llmClaudeCodeDef())
 	m.Register(llmAiderDef())
+	m.Register(llmPiDef())
+	m.Register(llmPiPromptDef())
 	m.Register(llmGooseDef())
 	m.Register(llmGeminiDef())
 	m.Register(llmOpenCodeDef())
@@ -612,8 +614,6 @@ Type 'cancel' at any time to abort.`,
 	}
 }
 
-
-
 // ---- Remote Server ---------------------------------------------------------
 
 func serverDef() *Def {
@@ -730,6 +730,69 @@ Type 'cancel' at any time to abort.`,
 					cfg.Aider.Binary = "aider"
 				}
 				cfg.Aider.Enabled = !isNo(data["enable"])
+			})
+		},
+	}
+}
+
+func llmPiDef() *Def {
+	return &Def{
+		Service: "llm pi",
+		Intro: `pi LLM Setup (interactive)
+==========================
+pi is a minimal open-source coding agent harness (https://pi.dev).
+This configures the interactive variant ("pi"): a tmux TUI session that
+stays open for follow-up input after its first task. For one-shot,
+non-interactive execution see "llm pi-prompt" instead.
+Install: npm install -g @earendil-works/pi-coding-agent
+
+Type 'cancel' at any time to abort.`,
+		Steps: []Step{
+			{Key: "binary", Prompt: "pi binary path [default: pi]:", Optional: true},
+			{Key: "model", Prompt: "Model (provider/model, e.g. ollama/qwen3.8:27b) [optional]:", Optional: true},
+			{Key: "enable", Prompt: "Enable pi backend? (y/n) [default: y]:", Validate: yesNoValidator, Optional: true},
+		},
+		OnComplete: func(cfgPath string, data map[string]string) error {
+			return loadAndSave(cfgPath, func(cfg *config.Config) {
+				if b := data["binary"]; b != "" {
+					cfg.Pi.Binary = b
+				} else if cfg.Pi.Binary == "" {
+					cfg.Pi.Binary = "pi"
+				}
+				if m := data["model"]; m != "" {
+					cfg.Pi.Model = m
+				}
+				cfg.Pi.Enabled = !isNo(data["enable"])
+			})
+		},
+	}
+}
+
+func llmPiPromptDef() *Def {
+	return &Def{
+		Service: "llm pi-prompt",
+		Intro: `pi-prompt LLM Setup (one-shot)
+==============================
+Non-interactive variant of pi: runs ` + "`pi --print`" + ` as a single
+blocking call per task, same low-risk shape as aider. See "llm pi" for
+the interactive variant.
+Install: npm install -g @earendil-works/pi-coding-agent
+
+Type 'cancel' at any time to abort.`,
+		Steps: []Step{
+			{Key: "binary", Prompt: "pi binary path [default: inherit from 'pi' backend, else pi]:", Optional: true},
+			{Key: "model", Prompt: "Model (provider/model, e.g. ollama/qwen3.8:27b) [optional]:", Optional: true},
+			{Key: "enable", Prompt: "Enable pi-prompt backend? (y/n) [default: y]:", Validate: yesNoValidator, Optional: true},
+		},
+		OnComplete: func(cfgPath string, data map[string]string) error {
+			return loadAndSave(cfgPath, func(cfg *config.Config) {
+				if b := data["binary"]; b != "" {
+					cfg.PiPrompt.Binary = b
+				}
+				if m := data["model"]; m != "" {
+					cfg.PiPrompt.Model = m
+				}
+				cfg.PiPrompt.Enabled = !isNo(data["enable"])
 			})
 		},
 	}
