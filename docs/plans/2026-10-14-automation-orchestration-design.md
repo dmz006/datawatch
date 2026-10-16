@@ -1463,3 +1463,64 @@ howto, and the `datawatch-app` issue where applicable.
     (binary lock vs. footprint-aware concurrent admission) is what
     `onMemberTerminal`/the advance decision must respect — this doc should
     not grow a second, competing conflict-assessment mechanism.
+19. **Failure-triage decision tree + after-advance validation checklist
+    (operator-raised 2026-10-15, codifying live judgment calls made by hand
+    tonight rather than leaving them as folklore).** The interim manual
+    monitoring loop (a 5-minute operator-approved poll — see
+    `project_continuous_monitoring_stopgap` in Claude's memory) is already
+    making real triage decisions this coordinator needs to make
+    mechanically once it exists:
+    - **On a newly-failed/blocked task, before any auto-action**, pull the
+      task's own `FailureReason` and (when still available) the actual
+      session output — never trust the stored status string alone.
+      Classify with BL410's existing taxonomy (infra/content/scope/policy),
+      then branch:
+      - **infra** (the mechanism itself didn't finish — e.g. backend
+        unreachable): safe to auto-retry within BL410's existing
+        budget/escalation, no operator involvement needed.
+      - **content, matching a signature an open research/fix PRD is
+        already tracking** (worked example tonight: BL464's task failed
+        with "verifier: no changes detected ... task produced no output" —
+        the exact signature BL455 is already investigating, now a 3rd
+        confirmed occurrence after BL427 Phase 2 and BL431 Phase 1). Do
+        **not** retry blindly. Leave it blocked, record it as corroborating
+        evidence on the tracking PRD (a `Decision`/`Learning` cross-link,
+        not just a chat message), and auto-resume it only once the tracking
+        PRD ships its fix — mirroring what the manual loop did by hand for
+        all three PRDs tonight.
+      - **content, NOT a known tracked signature** (a genuinely new failure
+        shape): do not auto-fix silently either. Surface it immediately
+        (alert/dashboard, not a buried log line) and hold for an operator
+        or a higher-tier model's judgment — the coordinator should not
+        "fix itself" on a novel failure with no human or higher-tier model
+        in the loop, per the small-model-oversight finding already in
+        Claude's memory (`project_small_model_retry_needs_higher_oversight`).
+      - **scope** (the spec itself is structurally wrong): never retry the
+        identical spec; either auto-`request_revision` naming the specific
+        gap, or hold for an operator edit.
+    - **On a task/story/PRD reaching a terminal `completed` state, before
+      advancing past it**, run the same after-done checklist the operator
+      has been applying by hand all session (`feedback_approval_bar` in
+      Claude's memory): version-bump parity (`main.go` + `api.go` together),
+      a CHANGELOG entry in plain operator language with no leaked tracker
+      IDs, real tests for any new functionality (not just a passing
+      pre-existing suite), full parity surface for anything touching
+      comms/config/MCP/API/PWA (REST+MCP+CLI+comm+PWA, not REST alone),
+      docs cross-references updated, and the PRD's own roadmap entry
+      closed. Anything missing here is itself a content-category gap —
+      route it through BL410 Phase 2's existing corrective-work synthesis
+      rather than marking the PRD done and advancing past it.
+    - **Regression-suite cadence should be automatic, not operator-recalled.**
+      Trigger a scoped regression pass whenever a just-completed PRD
+      touched a cross-cutting surface (comms/config/MCP/API/PWA — the same
+      surface table open question 17 above already calls for), and
+      otherwise on a coarse periodic cadence (e.g. once per N completed
+      PRDs, or once per sustained idle window) so coverage doesn't depend
+      on a human remembering to kick it off.
+    - **Honest scope of the interim stopgap, until this ships**: the manual
+      5-minute wakeup loop approximates the failure-triage half (classify,
+      hold known signatures, flag idle GPUs) but does **not** currently
+      re-run the after-done checklist on a newly-`completed` PRD, nor
+      auto-trigger regression — those still require an operator or Claude
+      noticing in a live conversation turn. That gap is this open
+      question's direct motivation, not a hypothetical one.
