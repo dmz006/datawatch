@@ -134,17 +134,43 @@ func TestIsLightweightHarnessKind(t *testing.T) {
 
 func TestBuildLightweightOrFullHarnessBlock(t *testing.T) {
 	full := buildLightweightOrFullHarnessBlock(false)
-	if !strings.Contains(full, "CHECKPOINT PROTOCOL") || !strings.Contains(full, "BEFORE YOU FINISH") {
-		t.Errorf("full block missing expected sections: %s", full)
+	if !strings.Contains(full, "CHECKPOINT PROTOCOL") {
+		t.Errorf("full block missing CHECKPOINT PROTOCOL section: %s", full)
 	}
 	light := buildLightweightOrFullHarnessBlock(true)
 	if strings.Contains(light, "CHECKPOINT PROTOCOL") || strings.Contains(light, "BEFORE YOU FINISH") {
 		t.Errorf("lightweight block should not contain the long-form headings, got: %s", light)
+	}
+	if strings.Contains(full, "BEFORE YOU FINISH") {
+		t.Errorf("full block should no longer contain the removed self-check section, got: %s", full)
 	}
 	if !strings.Contains(light, "CHECKPOINT.md") {
 		t.Errorf("lightweight block should still mention CHECKPOINT.md, got: %s", light)
 	}
 	if len(light) >= len(full) {
 		t.Errorf("lightweight block (%d bytes) should be shorter than full block (%d bytes)", len(light), len(full))
+	}
+}
+
+func TestHarnessBlockCommitInstructions(t *testing.T) {
+	blocks := map[string]string{
+		"full":        buildLightweightOrFullHarnessBlock(false),
+		"lightweight": buildLightweightOrFullHarnessBlock(true),
+	}
+	for name, block := range blocks {
+		lower := strings.ToLower(block)
+		if !strings.Contains(lower, "do not run git") {
+			t.Errorf("%s block missing 'do not run git' instruction, got: %s", name, block)
+		}
+		if !strings.Contains(lower, "datawatch_complete: <one-line plain-text summary of what you did>") {
+			t.Errorf("%s block missing DATAWATCH_COMPLETE one-line summary instruction, got: %s", name, block)
+		}
+		// 'git commit' may only appear inside the negation "do not run git
+		// add or git commit", never as a command the worker should execute.
+		if strings.Contains(lower, "run `git") || strings.Contains(lower, "git log") ||
+			strings.Contains(lower, "git status") || strings.Contains(lower, "stage and commit") ||
+			strings.Contains(lower, "commit your work") {
+			t.Errorf("%s block still instructs the worker to run git commands, got: %s", name, block)
+		}
 	}
 }
