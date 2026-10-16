@@ -1701,18 +1701,17 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		return nil, fmt.Errorf("create project dir: %w", err)
 	}
 
-	// Handle project dir git (per-session overrides take precedence)
-	sessAutoGit := m.autoGit
-	sessAutoGitInit := m.autoGitInit
-	if opt != nil && opt.AutoGitCommit != nil {
-		sessAutoGit = *opt.AutoGitCommit
-	}
-	if opt != nil && opt.AutoGitInit != nil {
-		sessAutoGitInit = *opt.AutoGitInit
-	}
+	// Pre-session snapshot: only one-shot task sessions get the
+	// deterministic pre-session commit; interactive (non-one-shot)
+	// sessions no longer auto-commit in Start. Init-if-needed still
+	// honours the autoGitInit setting.
 	projGit := NewProjectGit(projectDir)
-	if sessAutoGit {
-		if sessAutoGitInit && !projGit.IsRepo() {
+	if opt != nil && opt.OneShot {
+		autoGitInit := m.autoGitInit
+		if opt.AutoGitInit != nil {
+			autoGitInit = *opt.AutoGitInit
+		}
+		if autoGitInit && !projGit.IsRepo() {
 			if err := projGit.Init(); err != nil {
 				fmt.Printf("[warn] git init %s: %v\n", projectDir, err)
 			}
@@ -2148,7 +2147,7 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 
 	// BL29 — record the pre-session checkpoint tag once the session
 	// ID exists. Best-effort; failure does not block start.
-	if sessAutoGit && projGit.IsRepo() {
+	if sess.OneShot && projGit.IsRepo() {
 		if err := projGit.TagCheckpoint("pre", sess.ID, task); err != nil {
 			fmt.Printf("[warn] pre-checkpoint tag: %v\n", err)
 		}
