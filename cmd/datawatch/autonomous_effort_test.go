@@ -242,3 +242,15 @@ func TestBuildAutonomousSessionBodyCarriesComputeNode(t *testing.T) {
 		t.Errorf("compute_node should be absent when no node was named, got %v", body["compute_node"])
 	}
 }
+
+func TestAutonomousTaskSessionName(t *testing.T) {
+	if got := autonomousTaskSessionName("t"); got != "autonomous:task:t" {
+		t.Errorf("autonomousTaskSessionName(\"t\") = %q, want %q", got, "autonomous:task:t")
+	}
+	if got := autonomousTaskSessionName(""); got != "autonomous:task:" {
+		t.Errorf("autonomousTaskSessionName(\"\") = %q, want %q", got, "autonomous:task:")
+	}
+	if autonomousTaskSessionPrefix != "autonomous:task:" {
+		t.Errorf("autonomousTaskSessionPrefix = %q, want %q", autonomousTaskSessionPrefix, "autonomous:task:")
+	}
+}
