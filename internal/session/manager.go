@@ -4322,6 +4322,9 @@ func (m *Manager) ReconnectBackends(reconnectFn func(sess *Session, bs *BackendS
 		// Verify tmux session still exists
 		if !m.tmux.SessionExists(sess.TmuxSession) {
 			m.debugf("reconnect: tmux session %s gone, marking complete", sess.TmuxSession)
+			// Commit the worker's work BEFORE the state is saved as Complete so
+			// no poller can observe Complete while changes are still uncommitted.
+			m.commitOnCompletion(sess, NewProjectGit(sess.ProjectDir))
 			sess.State = StateComplete
 			sess.UpdatedAt = time.Now()
 			_ = m.store.Save(sess)
@@ -5225,6 +5228,9 @@ func (m *Manager) reconcileSessions(ctx context.Context) {
 			}
 			m.debugf("reconcile: session %s marked running but tmux gone — marking complete", sess.FullID)
 			oldState := sess.State
+			// Commit the worker's work BEFORE the state is saved as Complete so
+			// no poller can observe Complete while changes are still uncommitted.
+			m.commitOnCompletion(sess, NewProjectGit(sess.ProjectDir))
 			sess.State = StateComplete
 			sess.ClaudeAlive = nil // BL355: clear stale probe when session terminates
 			sess.UpdatedAt = time.Now()
@@ -5790,6 +5796,11 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 						}
 						if completionFound && (current.State == StateRunning || current.State == StateWaitingInput) {
 							oldState := current.State
+							// Run the post-session commit/tag BEFORE the state is saved as
+							// Complete — see the identical comment on the sibling branch
+							// below; a poller must never observe Complete before the
+							// worker's changes are actually committed.
+							m.commitOnCompletion(current, projGit)
 							current.State = StateComplete
 							current.UpdatedAt = time.Now()
 							_ = m.store.Save(current)
@@ -6120,6 +6131,11 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 						}
 						return
 					}
+					// Run the post-session commit/tag BEFORE the state is saved as
+					// Complete — see the identical comment on the sibling branch
+					// below; a poller must never observe Complete before the
+					// worker's changes are actually committed.
+					m.commitOnCompletion(current, projGit)
 					current.State = StateComplete
 					current.UpdatedAt = time.Now()
 					_ = m.store.Save(current)
