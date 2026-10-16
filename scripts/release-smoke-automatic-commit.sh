@@ -173,6 +173,11 @@ ok "scratch git repo ready at $REPO_URL (1 baseline commit)"
 COMMIT_SUBJECT="created hello file"
 TASK="Create a single file named hello.txt in the repository root containing only the line 'hello'. If hello.txt already exists with exactly that content and the working tree is already clean, change nothing at all. Do not run any version-control git commands yourself — leave all committing to the daemon. When you are done, print exactly: DATAWATCH_COMPLETE: $COMMIT_SUBJECT"
 TIMEOUT="${SMOKE_TIMEOUT_SECONDS:-240}"
+# Enforce a usable minimum so the poll loop always runs at least once
+# (a sub-5s value would give `seq 1 0` and an instant spurious timeout).
+if (( TIMEOUT < 15 )); then
+  TIMEOUT=15
+fi
 
 start_session() { # $1 = name | echoes full session id (or empty)
   local name="$1" resp
