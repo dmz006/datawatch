@@ -5,6 +5,28 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.1.9 — fix(autonomous): opencode harness crashes were misfiled as task judgment, not retried
+
+A task executed by opencode can crash mid-run (e.g. an internal CLI error)
+while the wrapper script still reports success and the diff is empty. This
+previously looked identical to a model honestly producing no output and
+was filed as a content judgment — not retryable — so the task sat
+exhausted after one attempt instead of being retried as an infrastructure
+blip. Found live tonight: three separate task failures (one on a doc PRD's
+dependency, two on small code fixes) all showed the identical
+`Error: no user query found in messages` line in the session's own raw
+output, invisible to the stored status field.
+
+The verifier now checks a failed, diff-empty task's session output for a
+short list of known harness-crash signatures before classifying the
+failure. A match is filed as an infra-category failure (auto-retryable
+under the existing retry budget) instead of a content-category one
+(treated as a deliberate judgment, not retried). No change to any other
+verification path. Note: investigating this live also surfaced that the
+model itself can separately stall after planning without executing
+anything (a different, not-yet-fixed issue) — this fix addresses the
+harness-crash case specifically, not that one.
+
 ## v9.1.8 — fix(sessions/opencode): hidden task text in panes, and work done but never committed
 
 **Two findings from tonight's open-model matrix run.**

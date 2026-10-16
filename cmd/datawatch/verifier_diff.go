@@ -340,6 +340,52 @@ func taskProducedNoOutput(committedDiff, workingDiff []byte, newUntrackedFiles, 
 		len(newUntrackedFiles) == 0 && len(overwrittenFilesSections) == 0
 }
 
+// harnessCrashSignatures (2026-10-15, live incident) — lines an opencode
+// non-interactive `run` invocation can print to its own stdout, with exit
+// code 0, after the harness itself crashed mid-session rather than the
+// model judging anything. Confirmed live across 3 independent task
+// failures the same night (BL427 Phase 2, BL431 Phase 1, BL464) — all
+// three produced an empty diff, and all three session logs show the
+// model made real tool calls (Read/Grep) before this line appeared and
+// the wrapper script's unconditional completion echo fired right after.
+// Without this check, a harness crash is misclassified as Category
+// "content" ("the model tried and found nothing to do") instead of
+// "infra" ("the mechanism itself never finished its job") — see
+// FailureReason's doc comment for the taxonomy. Misclassifying it as
+// content means BL410's retry budget never kicks in, and the task is
+// held exhausted after one attempt instead of being retried as an infra
+// blip. Extend this list as new opencode/harness crash signatures are
+// confirmed live; do not add speculative entries.
+var harnessCrashSignatures = []string{
+	"no user query found in messages",
+}
+
+// detectHarnessCrash tails a task's session output looking for a known
+// harness-crash signature (see harnessCrashSignatures). Returns the
+// matched line, or "" if none is found or the output can't be read —
+// best-effort only, never fails verification on its own.
+func detectHarnessCrash(tailOutput func(sessionID string, n int) (string, error), sessionID string) string {
+	if tailOutput == nil || sessionID == "" {
+		return ""
+	}
+	out, err := tailOutput(sessionID, 400)
+	if err != nil || out == "" {
+		return ""
+	}
+	lower := strings.ToLower(out)
+	for _, sig := range harnessCrashSignatures {
+		if idx := strings.Index(lower, strings.ToLower(sig)); idx != -1 {
+			for _, line := range strings.Split(out, "\n") {
+				if strings.Contains(strings.ToLower(line), strings.ToLower(sig)) {
+					return strings.TrimSpace(line)
+				}
+			}
+			return sig
+		}
+	}
+	return ""
+}
+
 // dedupeFiles merges several file-path lists (the verifier's distinct
 // evidence sources — committed diff, working-tree diff, new untracked
 // files, overwritten pre-existing files) into one sorted, deduplicated

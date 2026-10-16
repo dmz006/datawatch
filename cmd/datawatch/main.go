@@ -113,7 +113,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "9.1.8"
+var Version = "9.1.9"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -4802,10 +4802,22 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				if taskProducedNoOutput(diffOut, workingDiffOut, newUntrackedFiles, overwrittenFilesSections) {
 					// No committed or uncommitted tracked changes, no new untracked files,
 					// no overwritten pre-existing files — task produced nothing.
+					// 2026-10-15 — before assuming the model judged there was nothing
+					// to do (Category "content"), check for a known harness-crash
+					// signature in the session's own output: a crash mid-run, not a
+					// judgment, is Category "infra" and should be auto-retryable
+					// under BL410 instead of exhausted after one attempt.
+					category := ""
+					summary := "verifier: no changes detected (diff empty and no new files); task produced no output"
+					if crashLine := detectHarnessCrash(mgr.TailOutput, task.SessionID); crashLine != "" {
+						category = "infra"
+						summary = "verifier: harness crashed mid-run (" + crashLine + "); diff empty — not a content judgment, retrying as infra"
+					}
 					return autonomouspkg.VerificationResult{
 						OK: false, Severity: "medium",
-						Summary:    "verifier: no changes detected (diff empty and no new files); task produced no output",
+						Summary:    summary,
 						VerifiedAt: time.Now(),
+						Category:   category,
 					}, nil
 				}
 				maxBytes := amgrCfg.VerifierDiffMaxBytes
