@@ -5607,6 +5607,12 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"worktree_dir":       s.cfg.Autonomous.WorktreeDir,
 			// BL407 Phase 5 — daemon-wide default for a new PRD's Git.AutoPR.
 			"default_auto_pr": s.cfg.Autonomous.DefaultAutoPR,
+			// Default event kinds the built-in lifecycle sinks subscribe to.
+			// Always emitted (even when empty) so the PWA settings card
+			// renders the field; the zero (nil) value is emitted as `[]`
+			// rather than null. The field itself has no omitempty for the
+			// same reason (see config.AutonomousNotifyConfig).
+			"notify": defaultEventsNotifySurface(s.cfg.Autonomous.Notify),
 			"scan": map[string]interface{}{
 				"enabled":              s.cfg.Autonomous.Scan.Enabled,
 				"sast_enabled":         s.cfg.Autonomous.Scan.SASTEnabled,
@@ -6915,6 +6921,16 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			} else if s, ok := v.(string); ok {
 				cfg.Autonomous.VerificationBackends = splitCSV(s)
 			}
+		case "autonomous.notify.default_events":
+			// Default event kinds the built-in lifecycle sinks subscribe to.
+			// Accept array or comma-separated string, same as
+			// verification_backends above; an empty array really clears it
+			// (no omitempty on the field, so the clear survives round-trip).
+			if arr, ok := toStringArray(v); ok {
+				cfg.Autonomous.Notify.DefaultEvents = arr
+			} else if s, ok := v.(string); ok {
+				cfg.Autonomous.Notify.DefaultEvents = splitCSV(s)
+			}
 		case "autonomous.planning_effort", "autonomous.decomposition_effort":
 			cfg.Autonomous.PlanningEffort = toString(v)
 		case "autonomous.verification_effort":
@@ -7491,6 +7507,20 @@ func splitCSV(s string) []string {
 		}
 	}
 	return out
+}
+
+// defaultEventsNotifySurface builds the autonomous.notify GET surface.
+// The key must ALWAYS be present (even for the zero value) so the PWA
+// settings card renders the field; a nil DefaultEvents slice is emitted
+// as an empty JSON array rather than null. The config field itself has
+// no omitempty for the same reason (see config.AutonomousNotifyConfig
+// and the B124 no-omitempty pattern).
+func defaultEventsNotifySurface(n config.AutonomousNotifyConfig) map[string]interface{} {
+	ev := n.DefaultEvents
+	if ev == nil {
+		ev = []string{}
+	}
+	return map[string]interface{}{"default_events": ev}
 }
 
 // ---- Proxy endpoint --------------------------------------------------------
