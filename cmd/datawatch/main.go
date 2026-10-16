@@ -113,7 +113,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "9.1.9"
+var Version = "9.1.10"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -1503,6 +1503,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					OllamaURL:        sess.OllamaURL,
 					ChunkTimeoutSec:  cfg.OpenCode.OllamaChunkTimeoutSec,
 					HeaderTimeoutSec: cfg.OpenCode.OllamaHeaderTimeoutSec,
+					BuildTemperature: cfg.OpenCode.BuildTemperature,
 				}
 				if sess.LSPLanguage != "" {
 					if srv, ok := cfg.LSP.Servers[sess.LSPLanguage]; ok {

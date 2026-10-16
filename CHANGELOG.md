@@ -5,6 +5,20 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.1.10 — add(opencode): optional build-agent temperature override
+
+`opencode.openCode.build_temperature` (YAML) writes `agent.build.temperature`
+into a session's `opencode.json`, overriding the sampling temperature used
+for the "build" (task-execution) agent. 0 (default) leaves the model's own
+default in effect; nothing changes unless an operator sets it. Added while
+investigating a live reliability issue where a local open model would
+state a one-line plan and then go idle without calling any tool. Tested
+live at 0.2: engagement was visibly better (the model produced a real
+multi-step TODO list instead of a single sentence) but a separate,
+already-tracked opencode harness crash still occurred independently of
+this setting — so this does not fix that crash, but is kept as a real,
+tested, additive knob that may still help overall agent engagement.
+
 ## v9.1.9 — fix(autonomous): opencode harness crashes were misfiled as task judgment, not retried
 
 A task executed by opencode can crash mid-run (e.g. an internal CLI error)

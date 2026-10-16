@@ -862,6 +862,16 @@ type OpenCodeConfig struct {
 	// (300s) is tight for the largest locally-hosted models. 0 = leave
 	// opencode's built-in default in effect.
 	OllamaHeaderTimeoutSec int `yaml:"ollama_header_timeout_sec,omitempty"`
+
+	// BuildTemperature (2026-10-15, live reliability investigation) —
+	// written into opencode.json's agent.build.temperature. Candidate fix
+	// for small open models stalling at "awaiting_input" without ever
+	// calling a tool, confirmed live on qwen3.8:27b at Ollama's default
+	// temperature=1.0 for this model. 0 = leave the model/opencode default
+	// in effect. Operator-set only for now (no REST/MCP/CLI surface yet —
+	// this is a live experiment, not a certified feature); set directly
+	// via a config-patch or this file while the hypothesis is tested.
+	BuildTemperature float64 `yaml:"build_temperature,omitempty"`
 }
 
 // OpenCodeACPConfig holds opencode ACP (headless server) backend configuration.

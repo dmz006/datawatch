@@ -13,6 +13,7 @@ type projectConfig struct {
 	Model    string              `json:"model,omitempty"`
 	LSP      map[string]lspEntry `json:"lsp,omitempty"`
 	Provider map[string]any      `json:"provider,omitempty"`
+	Agent    map[string]any      `json:"agent,omitempty"`
 }
 
 // lspEntry is one entry inside the "lsp" object of opencode.json.
@@ -54,6 +55,17 @@ type ProjectConfigOpts struct {
 	// Only used when Model starts with "ollama/".
 	ChunkTimeoutSec  int
 	HeaderTimeoutSec int
+
+	// BuildTemperature (2026-10-15, live reliability investigation) —
+	// overrides the "build" agent's sampling temperature via
+	// agent.build.temperature in opencode.json (schema:
+	// https://opencode.ai/config.json, $defs/AgentConfig.temperature,
+	// type number). 0 leaves opencode's/the model's own default in
+	// effect. Candidate fix for small open models (confirmed live:
+	// qwen3.8:27b) stating a one-line plan and then going idle at
+	// "awaiting_input" without ever calling a tool, at Ollama's default
+	// temperature=1.0 for this model — not yet proven, being tested live.
+	BuildTemperature float64
 }
 
 const defaultOllamaURL = "http://localhost:11434"
@@ -69,7 +81,7 @@ func WriteProjectConfig(projectDir string, opts ProjectConfigOpts) error {
 	if projectDir == "" {
 		return nil
 	}
-	if opts.Model == "" && len(opts.LSPServers) == 0 && opts.OllamaURL == "" {
+	if opts.Model == "" && len(opts.LSPServers) == 0 && opts.OllamaURL == "" && opts.BuildTemperature == 0 {
 		return nil
 	}
 
@@ -82,6 +94,18 @@ func WriteProjectConfig(projectDir string, opts ProjectConfigOpts) error {
 
 	if opts.Model != "" {
 		existing.Model = opts.Model
+	}
+
+	if opts.BuildTemperature != 0 {
+		if existing.Agent == nil {
+			existing.Agent = make(map[string]any)
+		}
+		build, _ := existing.Agent["build"].(map[string]any)
+		if build == nil {
+			build = make(map[string]any)
+		}
+		build["temperature"] = opts.BuildTemperature
+		existing.Agent["build"] = build
 	}
 
 	if len(opts.LSPServers) > 0 {
