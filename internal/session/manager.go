@@ -3803,6 +3803,38 @@ func (m *Manager) TailOutput(fullID string, n int) (string, error) {
 	return strings.Join(lines, "\n"), nil
 }
 
+// commitOnCompletion runs the session's completion-commit path: commit the
+// session's work with the worker's reported summary (extracted from its
+// final output), then record the diff and the post-session checkpoint tag.
+// It deliberately runs without any config-based gating — the caller decides
+// when to invoke it. It mutates current in place; the caller saves it.
+func (m *Manager) commitOnCompletion(current *Session, projGit *ProjectGit) {
+	if projGit == nil || !projGit.IsRepo() {
+		return
+	}
+
+	// Best-effort summary from the worker's recent output; a read failure
+	// just falls back to "" (CommitSessionWork falls back to the task).
+	summary := ""
+	if tail, err := m.TailOutput(current.FullID, 200); err == nil {
+		summary = ExtractCompletionSummary(tail)
+	}
+
+	if sha, err := projGit.CommitSessionWork(current.ID, current.Task, summary); err != nil {
+		fmt.Printf("[warn] completion commit: %v\n", err)
+	} else {
+		current.CommitSHA = sha
+		current.CompletionSummary = summary
+	}
+
+	if stat, _ := projGit.DiffStat(); !stat.IsZero() {
+		current.DiffSummary = stat.Summary
+	}
+	if err := projGit.TagCheckpoint("post", current.ID, current.Task); err != nil {
+		fmt.Printf("[warn] post-checkpoint tag: %v\n", err)
+	}
+}
+
 // UpdateSummaryOffset advances the SummaryLogOffset watermark for a session
 // after a successful current-status call so the next call is also a delta.
 func (m *Manager) UpdateSummaryOffset(fullID string, offset int64) {
