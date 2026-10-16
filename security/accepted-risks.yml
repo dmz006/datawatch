@@ -1415,23 +1415,6 @@ entries:
     validated_by: "claude-session"
     reason: "No fix available in Debian bookworm. NOT independently traced (self-admitted caveat) -- re-review should actually trace which TLS call path agent-gemini's code uses, the way CVE-2026-19445 was traced this session."
 
-  - id: cve/CVE-2026-93748
-    kind: container
-    package: "http-cache-semantics (npm)"
-    version: "4.2.0"
-    severity: high
-    images:
-      - agent-gemini
-    impact:
-      traced: false
-      reachable: "unknown"
-      analysis: "Information disclosure via the max-stale cache-control directive. Transitive dependency of @google/gemini-cli's own package.json. Whether any gemini-cli dependency path actually exercises max-stale-aware caching against attacker-influenced content (vs. just Google's own API responses) was not independently traced."
-    first_added: "2026-10-03"
-    added: "2026-10-03"
-    expires: "2026-11-02"
-    validated_by: "claude-session"
-    reason: "No newer published npm version exists as of this migration. NOT independently traced (self-admitted caveat). Unlike most entries here this is an actively maintained package, not a slow Debian backport -- check for a fix each cycle, not just on expiry."
-
   - id: cve/CVE-2026-19445
     kind: container
     package: "libpython3.11-minimal"
@@ -3471,3 +3454,4 @@ entries:
     validated_by: "claude-session"
     reason: >-
       false positive -- see impact.analysis for the full dismissal record
+
