@@ -6917,7 +6917,7 @@ function onSessLLMChange() {
   // per-persona, so it CAN have compute nodes and follows the standard
   // 2+ rule. Local-runtime kinds (ollama / openwebui) only show the
   // picker when 2+ nodes are pinned.
-  const SAAS_KINDS = new Set(['claude-code','gemini','aider','goose','pi','pi-prompt']);
+  const SAAS_KINDS = new Set(['claude-code','gemini','aider','goose']);
   if (SAAS_KINDS.has(llm && llm.kind) || nodes.length < 2) {
     setCompVisible(false);
     if (hint) { hint.style.display = 'none'; hint.textContent = ''; }
@@ -10052,8 +10052,8 @@ window._renderLLMEditPanel = function(existing) {
 };
 
 // SaaS kinds: hide compute nodes + auto-detect node name from kind.
-const _llmSaasKinds = new Set(['claude-code', 'aider', 'pi', 'pi-prompt', 'goose', 'gemini']);
-const _llmSaasNodeName = { 'claude-code': 'claude', 'aider': 'aider', 'pi': 'pi', 'pi-prompt': 'pi', 'goose': 'goose', 'gemini': 'gemini' };
+const _llmSaasKinds = new Set(['claude-code', 'aider', 'goose', 'gemini']);
+const _llmSaasNodeName = { 'claude-code': 'claude', 'aider': 'aider', 'goose': 'goose', 'gemini': 'gemini' };
 
 const _llmSessionBackendKinds = new Set(['claude-code','aider','pi','pi-prompt','goose','gemini','opencode','opencode-acp','opencode-prompt','shell']);
 
