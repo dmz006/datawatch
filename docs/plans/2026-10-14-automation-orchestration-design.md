@@ -785,6 +785,16 @@ which is exactly what produced every failure tonight. This reuses the same
 hook points; it just fires at dispatch and at retry-selection time instead
 of at an edge/skip/insert/budget decision point.
 
+**Not open-model-specific (operator-raised 2026-10-15).** Nothing about
+this fix is tied to local/open models — the mechanism (task atomicity,
+tool-scope trimming) applies to any smaller-tier executor, including a
+Claude haiku executor (the Sunday post-reset plan already in Claude's
+memory: adding haiku as a second parallel executor alongside qwen3.8:27b).
+The dispatch-time hook point above should key off executor *tier*, not
+backend family — "is this executor a smaller/cheaper model that benefits
+from a trimmed task" applies identically whether that executor is local
+opencode or Claude haiku.
+
 **Upstream of dispatch: decompose itself needs the same awareness, and
 existing queued PRDs are affected (operator-raised 2026-10-15).** The task
 granularity and task-spec text produced by decompose today assumes the
