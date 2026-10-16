@@ -59,6 +59,8 @@ const (
 	KindOpenCodeACP    Kind = "opencode-acp"
 	KindOpenCodePrompt Kind = "opencode-prompt"
 	KindAider          Kind = "aider"
+	KindPi             Kind = "pi"        // 2026-10-16 (BL466) — pi.dev coding agent harness, interactive mode
+	KindPiPrompt       Kind = "pi-prompt" // 2026-10-16 (BL466) — pi.dev, one-shot `pi --print` mode
 	KindGoose          Kind = "goose"
 	KindGemini         Kind = "gemini"
 	KindShell          Kind = "shell"
@@ -76,7 +78,7 @@ const (
 var AllKinds = []Kind{
 	KindOllama, KindOpenWebUI, KindOpenCode, KindClaude,
 	KindClaudeCode, KindOpenCodeACP, KindOpenCodePrompt,
-	KindAider, KindGoose, KindGemini, KindShell,
+	KindAider, KindPi, KindPiPrompt, KindGoose, KindGemini, KindShell,
 	KindGeminiAPI, KindOpenCodeAPI,
 }
 

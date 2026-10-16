@@ -358,6 +358,8 @@ type Config struct {
 	Ollama         OllamaConfig         `yaml:"ollama"`
 	OpenWebUI      OpenWebUIConfig      `yaml:"openwebui"`
 	Aider          AiderConfig          `yaml:"aider"`
+	Pi             PiConfig             `yaml:"pi"`
+	PiPrompt       PiPromptConfig       `yaml:"pi_prompt"`
 	Goose          GooseConfig          `yaml:"goose"`
 	Gemini         GeminiConfig         `yaml:"gemini"`
 	OpenCode       OpenCodeConfig       `yaml:"opencode"`
@@ -701,6 +703,36 @@ type OpenWebUIConfig struct {
 type AiderConfig struct {
 	Enabled     bool   `yaml:"enabled"`
 	Binary      string `yaml:"binary"`
+	ConsoleCols int    `yaml:"console_cols,omitempty"`
+	ConsoleRows int    `yaml:"console_rows,omitempty"`
+	OutputMode  string `yaml:"output_mode,omitempty"`
+	InputMode   string `yaml:"input_mode,omitempty"`
+}
+
+// PiConfig holds pi (https://pi.dev) LLM backend configuration. 2026-10-16 —
+// added as a lower-risk alternative to opencode-acp for open-model PRD
+// execution: pi runs as one blocking CLI call (`pi --print`) instead of a
+// long-lived server with an async completion signal, which sidesteps the
+// completion-detection bug class found live in opencode-acp the same night.
+// See docs/plans/2026-10-16-pi-opencode-evaluation.md (BL466).
+type PiConfig struct {
+	Enabled     bool   `yaml:"enabled"`
+	Binary      string `yaml:"binary"`
+	Model       string `yaml:"model,omitempty"` // e.g. "ollama/qwen3.8:27b"; empty uses pi's own default
+	ConsoleCols int    `yaml:"console_cols,omitempty"`
+	ConsoleRows int    `yaml:"console_rows,omitempty"`
+	OutputMode  string `yaml:"output_mode,omitempty"`
+	InputMode   string `yaml:"input_mode,omitempty"`
+}
+
+// PiPromptConfig holds pi-prompt (one-shot `pi --print`) LLM backend
+// configuration — the non-interactive counterpart to PiConfig, mirroring
+// the OpenCodeConfig/OpenCodePromptConfig split. Binary falls back to
+// PiConfig.Binary when empty (see cmd/datawatch/main.go registration).
+type PiPromptConfig struct {
+	Enabled     bool   `yaml:"enabled"`
+	Binary      string `yaml:"binary,omitempty"`
+	Model       string `yaml:"model,omitempty"`
 	ConsoleCols int    `yaml:"console_cols,omitempty"`
 	ConsoleRows int    `yaml:"console_rows,omitempty"`
 	OutputMode  string `yaml:"output_mode,omitempty"`

@@ -60,6 +60,7 @@ import (
 	"github.com/dmz006/datawatch/internal/inference/adapters"
 	"github.com/dmz006/datawatch/internal/llm"
 	"github.com/dmz006/datawatch/internal/llm/backends/aider"
+	pibackend "github.com/dmz006/datawatch/internal/llm/backends/pi"
 	"github.com/dmz006/datawatch/internal/llm/backends/gemini"
 	"github.com/dmz006/datawatch/internal/llm/backends/goose"
 	"github.com/dmz006/datawatch/internal/llm/backends/ollama"
@@ -980,6 +981,12 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	// appear in the dropdown and can be selected per-session. Enabled only
 	// controls whether the backend is used as the default (llm_backend).
 	llm.Register(aider.New(cfg.Aider.Binary))
+	llm.Register(pibackend.New(cfg.Pi.Binary))
+	piPromptBin := cfg.PiPrompt.Binary
+	if piPromptBin == "" {
+		piPromptBin = cfg.Pi.Binary
+	}
+	llm.Register(pibackend.NewPrompt(piPromptBin))
 	llm.Register(goose.New(cfg.Goose.Binary))
 	llm.Register(gemini.New(cfg.Gemini.Binary))
 	llm.Register(opencode.New(cfg.OpenCode.Binary))
@@ -3341,6 +3348,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					{Name: "opencode-acp", Kind: inference.KindOpenCodeACP, Address: cfg.OpenCodeACP.Binary},
 					{Name: "opencode-prompt", Kind: inference.KindOpenCodePrompt, Address: cfg.OpenCodePrompt.Binary},
 					{Name: "aider", Kind: inference.KindAider, Address: cfg.Aider.Binary},
+					{Name: "pi", Kind: inference.KindPi, Address: cfg.Pi.Binary},
+					{Name: "pi-prompt", Kind: inference.KindPiPrompt, Address: cfg.PiPrompt.Binary},
 					{Name: "goose", Kind: inference.KindGoose, Address: cfg.Goose.Binary},
 					{Name: "gemini", Kind: inference.KindGemini, Address: cfg.Gemini.Binary},
 					{Name: "shell", Kind: inference.KindShell, Address: cfg.Shell.ScriptPath},
@@ -9974,7 +9983,7 @@ func isAlertNoiseLine(line string) bool {
 			// Only filter known backend status tags, not arbitrary bracketed content
 			for _, prefix := range []string{
 				"opencode-acp", "opencode-prompt", "opencode", "openwebui",
-				"aider", "goose", "gemini", "ollama", "shell",
+				"aider", "pi", "pi-prompt", "goose", "gemini", "ollama", "shell",
 			} {
 				if tag == prefix {
 					return true
@@ -12389,6 +12398,16 @@ func newBackendCmd() *cobra.Command {
 			// Register backends from config (same as runStart)
 			if cfg.Aider.Enabled {
 				llm.Register(aider.New(cfg.Aider.Binary))
+			}
+			if cfg.Pi.Enabled {
+				llm.Register(pibackend.New(cfg.Pi.Binary))
+			}
+			if cfg.PiPrompt.Enabled {
+				piPromptBin := cfg.PiPrompt.Binary
+				if piPromptBin == "" {
+					piPromptBin = cfg.Pi.Binary
+				}
+				llm.Register(pibackend.NewPrompt(piPromptBin))
 			}
 			if cfg.Goose.Enabled {
 				llm.Register(goose.New(cfg.Goose.Binary))

@@ -819,6 +819,10 @@ func (s *Server) llmEnabled(name string) bool {
 		return s.cfg.Session.ClaudeEnabled
 	case "aider":
 		return s.cfg.Aider.Enabled
+	case "pi":
+		return s.cfg.Pi.Enabled
+	case "pi-prompt":
+		return s.cfg.PiPrompt.Enabled
 	case "goose":
 		return s.cfg.Goose.Enabled
 	case "gemini":
@@ -5468,6 +5472,24 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"output_mode":  s.cfg.Aider.OutputMode,
 			"input_mode":   s.cfg.Aider.InputMode,
 		},
+		"pi": map[string]interface{}{
+			"enabled":      s.cfg.Pi.Enabled,
+			"binary":       s.cfg.Pi.Binary,
+			"model":        s.cfg.Pi.Model,
+			"console_cols": s.cfg.Pi.ConsoleCols,
+			"console_rows": s.cfg.Pi.ConsoleRows,
+			"output_mode":  s.cfg.Pi.OutputMode,
+			"input_mode":   s.cfg.Pi.InputMode,
+		},
+		"pi_prompt": map[string]interface{}{
+			"enabled":      s.cfg.PiPrompt.Enabled,
+			"binary":       s.cfg.PiPrompt.Binary,
+			"model":        s.cfg.PiPrompt.Model,
+			"console_cols": s.cfg.PiPrompt.ConsoleCols,
+			"console_rows": s.cfg.PiPrompt.ConsoleRows,
+			"output_mode":  s.cfg.PiPrompt.OutputMode,
+			"input_mode":   s.cfg.PiPrompt.InputMode,
+		},
 		"goose": map[string]interface{}{
 			"enabled":         s.cfg.Goose.Enabled,
 			"binary":          s.cfg.Goose.Binary,
@@ -6558,6 +6580,22 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			if s := toString(v); s != "" {
 				cfg.Aider.Binary = s
 			}
+		case "pi.enabled":
+			cfg.Pi.Enabled = toBool(v)
+		case "pi.binary":
+			if s := toString(v); s != "" {
+				cfg.Pi.Binary = s
+			}
+		case "pi.model":
+			cfg.Pi.Model = toString(v)
+		case "pi_prompt.enabled":
+			cfg.PiPrompt.Enabled = toBool(v)
+		case "pi_prompt.binary":
+			if s := toString(v); s != "" {
+				cfg.PiPrompt.Binary = s
+			}
+		case "pi_prompt.model":
+			cfg.PiPrompt.Model = toString(v)
 		case "goose.enabled":
 			cfg.Goose.Enabled = toBool(v)
 		case "goose.binary":
@@ -6656,6 +6694,22 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			if n, ok := toInt(v); ok {
 				cfg.Aider.ConsoleRows = n
 			}
+		case "pi.console_cols":
+			if n, ok := toInt(v); ok {
+				cfg.Pi.ConsoleCols = n
+			}
+		case "pi.console_rows":
+			if n, ok := toInt(v); ok {
+				cfg.Pi.ConsoleRows = n
+			}
+		case "pi_prompt.console_cols":
+			if n, ok := toInt(v); ok {
+				cfg.PiPrompt.ConsoleCols = n
+			}
+		case "pi_prompt.console_rows":
+			if n, ok := toInt(v); ok {
+				cfg.PiPrompt.ConsoleRows = n
+			}
 		case "goose.console_cols":
 			if n, ok := toInt(v); ok {
 				cfg.Goose.ConsoleCols = n
@@ -6733,6 +6787,10 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			cfg.OpenWebUI.OutputMode = toString(v)
 		case "aider.output_mode":
 			cfg.Aider.OutputMode = toString(v)
+		case "pi.output_mode":
+			cfg.Pi.OutputMode = toString(v)
+		case "pi_prompt.output_mode":
+			cfg.PiPrompt.OutputMode = toString(v)
 		case "goose.output_mode":
 			cfg.Goose.OutputMode = toString(v)
 		case "gemini.output_mode":
@@ -6752,6 +6810,10 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			cfg.OpenWebUI.InputMode = toString(v)
 		case "aider.input_mode":
 			cfg.Aider.InputMode = toString(v)
+		case "pi.input_mode":
+			cfg.Pi.InputMode = toString(v)
+		case "pi_prompt.input_mode":
+			cfg.PiPrompt.InputMode = toString(v)
 		case "goose.input_mode":
 			cfg.Goose.InputMode = toString(v)
 		case "gemini.input_mode":
