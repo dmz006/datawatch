@@ -95,6 +95,33 @@ func TestStore_Save_Get_AgentID(t *testing.T) {
 	}
 }
 
+func TestStore_Save_Get_CommitAndCompletion(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "sessions.json")
+
+	s, _ := NewStore(path)
+	sess := makeTestSession("cp12", "myhost", StateComplete)
+	sess.CommitSHA = "abcdef0123456789abcdef0123456789abcdef01"
+	sess.CompletionSummary = "fixed the bug and verified with tests"
+	if err := s.Save(sess); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	// Reload from disk via a fresh Store to ensure both fields made it
+	// through JSON serialisation, not just the in-memory map.
+	s2, _ := NewStore(path)
+	got, ok := s2.Get("myhost-cp12")
+	if !ok {
+		t.Fatal("Get returned not found for persisted session")
+	}
+	if got.CommitSHA != sess.CommitSHA {
+		t.Errorf("CommitSHA = %q, want %q", got.CommitSHA, sess.CommitSHA)
+	}
+	if got.CompletionSummary != sess.CompletionSummary {
+		t.Errorf("CompletionSummary = %q, want %q", got.CompletionSummary, sess.CompletionSummary)
+	}
+}
+
 func TestStore_GetMissing(t *testing.T) {
 	dir := t.TempDir()
 	s, _ := NewStore(filepath.Join(dir, "sessions.json"))
@@ -150,9 +177,9 @@ func TestStore_List(t *testing.T) {
 	dir := t.TempDir()
 	s, _ := NewStore(filepath.Join(dir, "sessions.json"))
 
-	s.Save(makeTestSession("aa11", "host1", StateRunning)) //nolint:errcheck
+	s.Save(makeTestSession("aa11", "host1", StateRunning))  //nolint:errcheck
 	s.Save(makeTestSession("bb22", "host1", StateComplete)) //nolint:errcheck
-	s.Save(makeTestSession("cc33", "host2", StateKilled)) //nolint:errcheck
+	s.Save(makeTestSession("cc33", "host2", StateKilled))   //nolint:errcheck
 
 	list := s.List()
 	if len(list) != 3 {
@@ -198,7 +225,7 @@ func TestStore_Delete(t *testing.T) {
 	s, _ := NewStore(filepath.Join(dir, "sessions.json"))
 
 	s.Save(makeTestSession("ee55", "myhost", StateComplete)) //nolint:errcheck
-	s.Save(makeTestSession("ff66", "myhost", StateRunning)) //nolint:errcheck
+	s.Save(makeTestSession("ff66", "myhost", StateRunning))  //nolint:errcheck
 
 	if err := s.Delete("myhost-ee55"); err != nil {
 		t.Fatalf("Delete: %v", err)
@@ -231,7 +258,7 @@ func TestStore_Persistence(t *testing.T) {
 
 	// Write two sessions
 	s1, _ := NewStore(path)
-	s1.Save(makeTestSession("gg77", "myhost", StateRunning)) //nolint:errcheck
+	s1.Save(makeTestSession("gg77", "myhost", StateRunning))      //nolint:errcheck
 	s1.Save(makeTestSession("hh88", "myhost", StateWaitingInput)) //nolint:errcheck
 
 	// Reload from disk
@@ -266,8 +293,8 @@ func TestStore_PersistAfterDelete(t *testing.T) {
 
 	s1, _ := NewStore(path)
 	s1.Save(makeTestSession("ii99", "myhost", StateComplete)) //nolint:errcheck
-	s1.Save(makeTestSession("jj00", "myhost", StateKilled)) //nolint:errcheck
-	s1.Delete("myhost-ii99") //nolint:errcheck
+	s1.Save(makeTestSession("jj00", "myhost", StateKilled))   //nolint:errcheck
+	s1.Delete("myhost-ii99")                                  //nolint:errcheck
 
 	s2, _ := NewStore(path)
 	if len(s2.List()) != 1 {

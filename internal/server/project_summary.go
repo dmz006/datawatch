@@ -47,11 +47,13 @@ type ProjectCommit struct {
 
 // ProjectSessionRef is a compact session-list row scoped to this project.
 type ProjectSessionRef struct {
-	ID          string    `json:"id"`
-	Task        string    `json:"task"`
-	State       string    `json:"state"`
-	UpdatedAt   time.Time `json:"updated_at"`
-	DiffSummary string    `json:"diff_summary,omitempty"`
+	ID                string    `json:"id"`
+	Task              string    `json:"task"`
+	State             string    `json:"state"`
+	UpdatedAt         time.Time `json:"updated_at"`
+	DiffSummary       string    `json:"diff_summary,omitempty"`
+	CommitSHA         string    `json:"commit_sha,omitempty"`
+	CompletionSummary string    `json:"completion_summary,omitempty"`
 }
 
 // ProjectStats is roll-ups across sessions for this project.
@@ -144,6 +146,7 @@ func buildProjectSummary(s *Server, dir string) ProjectSummary {
 				out.Sessions = append(out.Sessions, ProjectSessionRef{
 					ID: sess.ID, Task: sess.Task, State: string(sess.State),
 					UpdatedAt: sess.UpdatedAt, DiffSummary: sess.DiffSummary,
+					CommitSHA: sess.CommitSHA, CompletionSummary: sess.CompletionSummary,
 				})
 			}
 		}
