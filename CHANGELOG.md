@@ -5,6 +5,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.1.15 — fix(opencode): the idle-nudge from v9.1.14 fires too late to win its own race
+
+v9.1.14's fix (nudge a one-shot opencode session forward instead of
+letting it sit idle) was reacting to the second of two near-identical
+"gone idle" signals opencode sends -- confirmed live, both nudge attempts
+failed (connection already closing, then already closed) because the
+underlying opencode process had already started exiting by the time the
+second signal arrived. The nudge now fires on the first signal instead,
+as early as possible, giving it a real chance to land before the process
+exits.
+
 ## v9.1.14 — fix(opencode): one-shot opencode sessions now get nudged forward instead of sitting idle forever
 
 Found live: every opencode (ACP mode) one-shot task that reached a natural

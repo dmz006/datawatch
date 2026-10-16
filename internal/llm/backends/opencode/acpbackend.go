@@ -569,31 +569,38 @@ func streamEventsOnce(ctx context.Context, baseURL, logFile, tmuxSession string,
 				case "idle":
 					writeLogLine(logFile, "[opencode-acp] ready")
 					emitACPChat(tmuxSession, "system", "Ready for next message", false)
+					// Root-caused live 2026-10-16, then timing-fixed same
+					// night: nudging on the LATER "session.idle" event lost
+					// the race against opencode's own server process
+					// exiting — observed live, both nudge attempts failed
+					// (EOF, then connection refused) because the server was
+					// already dying. "session.status: idle" (this case) is
+					// the earlier of the two signals opencode emits for the
+					// same state, so the nudge fires here instead, as early
+					// as possible. "session.idle" below only logs now — the
+					// nudge already happened here, firing it again there
+					// would double-send for the same idle period.
+					if completed {
+						break
+					}
+					st.mu.Lock()
+					st.idleNudges++
+					n := st.idleNudges
+					st.mu.Unlock()
+					if n > maxIdleNudges {
+						writeLogLine(logFile, fmt.Sprintf("[opencode-acp] idle after %d nudges, giving up (exhaustion handling takes over)", maxIdleNudges))
+						emitACPChat(tmuxSession, "system", "Still idle after repeated nudges — stopping", false)
+						break
+					}
+					writeLogLine(logFile, fmt.Sprintf("[opencode-acp] idle without completing — sending continuation nudge %d/%d", n, maxIdleNudges))
+					emitACPChat(tmuxSession, "system", fmt.Sprintf("Nudging to continue (%d/%d)", n, maxIdleNudges), false)
+					if err := sendMessage(ctx, baseURL, st.sessionID, idleNudgeText); err != nil {
+						writeLogLine(logFile, fmt.Sprintf("[opencode-acp] continuation nudge failed: %v", err))
+					}
 				}
 			}
 		case "session.idle":
 			writeLogLine(logFile, "[opencode-acp] awaiting input")
-			// Root-caused live 2026-10-16: a one-shot task has no human to
-			// send the next message, so without this the session just sat
-			// here until opencode's own server died on its own. Nudge it
-			// forward a bounded number of times instead.
-			if completed {
-				break
-			}
-			st.mu.Lock()
-			st.idleNudges++
-			n := st.idleNudges
-			st.mu.Unlock()
-			if n > maxIdleNudges {
-				writeLogLine(logFile, fmt.Sprintf("[opencode-acp] idle after %d nudges, giving up (exhaustion handling takes over)", maxIdleNudges))
-				emitACPChat(tmuxSession, "system", "Still idle after repeated nudges — stopping", false)
-				break
-			}
-			writeLogLine(logFile, fmt.Sprintf("[opencode-acp] idle without completing — sending continuation nudge %d/%d", n, maxIdleNudges))
-			emitACPChat(tmuxSession, "system", fmt.Sprintf("Nudging to continue (%d/%d)", n, maxIdleNudges), false)
-			if err := sendMessage(ctx, baseURL, st.sessionID, idleNudgeText); err != nil {
-				writeLogLine(logFile, fmt.Sprintf("[opencode-acp] continuation nudge failed: %v", err))
-			}
 		case "session.error":
 			var props struct {
 				Error string `json:"error"`

@@ -19,12 +19,15 @@ import (
 // session.idle, then stops and lets the existing exhaustion path take
 // over.
 
-// sseIdleEvents builds an SSE body with n repeated session.idle events,
-// one per "data:" line, matching the shape streamEventsOnce expects.
+// sseIdleEvents builds an SSE body with n repeated session.status:idle
+// events, one per "data:" line. This is the EARLIER of the two idle
+// signals opencode emits (the other, session.idle, fires slightly later
+// and is where the nudge trigger lived before a live timing fix found it
+// lost the race against opencode's own server process exiting).
 func sseIdleEvents(n int) string {
 	var b strings.Builder
 	for i := 0; i < n; i++ {
-		b.WriteString(`data: {"type":"session.idle","properties":{}}` + "\n\n")
+		b.WriteString(`data: {"type":"session.status","properties":{"status":{"type":"idle"}}}` + "\n\n")
 	}
 	return b.String()
 }
