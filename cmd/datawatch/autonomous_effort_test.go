@@ -1,6 +1,7 @@
 package main
 
 import (
+	"strings"
 	"testing"
 
 	autonomouspkg "github.com/dmz006/datawatch/internal/autonomous"
@@ -114,5 +115,37 @@ func TestBuildAutonomousSessionBody(t *testing.T) {
 	}
 	if body["auto_git_commit"] != true {
 		t.Errorf("auto_git_commit = %v, want true", body["auto_git_commit"])
+	}
+}
+
+func TestIsLightweightHarnessKind(t *testing.T) {
+	cases := map[string]bool{
+		"opencode":     true,
+		"opencode-acp": true,
+		"claude-code":  false,
+		"ollama":       false,
+		"":             false,
+	}
+	for kind, want := range cases {
+		if got := isLightweightHarnessKind(kind); got != want {
+			t.Errorf("isLightweightHarnessKind(%q) = %v, want %v", kind, got, want)
+		}
+	}
+}
+
+func TestBuildLightweightOrFullHarnessBlock(t *testing.T) {
+	full := buildLightweightOrFullHarnessBlock(false)
+	if !strings.Contains(full, "CHECKPOINT PROTOCOL") || !strings.Contains(full, "BEFORE YOU FINISH") {
+		t.Errorf("full block missing expected sections: %s", full)
+	}
+	light := buildLightweightOrFullHarnessBlock(true)
+	if strings.Contains(light, "CHECKPOINT PROTOCOL") || strings.Contains(light, "BEFORE YOU FINISH") {
+		t.Errorf("lightweight block should not contain the long-form headings, got: %s", light)
+	}
+	if !strings.Contains(light, "CHECKPOINT.md") {
+		t.Errorf("lightweight block should still mention CHECKPOINT.md, got: %s", light)
+	}
+	if len(light) >= len(full) {
+		t.Errorf("lightweight block (%d bytes) should be shorter than full block (%d bytes)", len(light), len(full))
 	}
 }

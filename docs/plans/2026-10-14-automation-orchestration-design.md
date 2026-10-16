@@ -774,6 +774,26 @@ genuinely need the standard scaffolding (long-running, needs mid-task
 checkpointing)?, and (b) which tools does this specific task's declared
 `files`/scope actually touch, so the dispatched `opencode.json` can trim
 `permission` to just those instead of always sending the full schema.
+**Refinement on (b), operator-raised 2026-10-15: decompose, not a
+hardcoded list, should be the source of which tools a task needs.** A
+hand-picked global allow/deny list risks blocking something a specific
+task genuinely needs (the real opencode tool set — confirmed against
+opencode's own config schema — is `read, edit, glob, grep, list, bash,
+task, external_directory, todowrite, question, webfetch, websearch, lsp,
+skill`; a naive guess missed `list` and `todowrite` when this was tried
+live tonight). Decompose already has full context on what a task is
+supposed to do — it should emit a per-task `tools_needed` list (or the
+inverse, `tools_not_needed`) as part of its normal planning output, which
+flows through to the dispatched `permissions` block. The interim ship
+tonight does NOT do this — it only denies the 2 tools that are safe to
+deny for *any* one-shot autonomous task regardless of content (`task`,
+since recursive sub-agent spawning is pure risk/redundant with datawatch's
+own orchestration; `external_directory`, which only reinforces the scope
+boundary already stated in every task prompt). Nothing else is touched.
+Decompose-emitted per-task tool lists are the real version of this hook
+point; the interim narrow deny-list is deliberately conservative until
+that exists.
+
 Then, symmetrically, **live stall detection should reroute, not blindly
 retry**: a session showing the "awaiting_input with zero tool calls"
 signature (or the harness-crash signature from BL410's classifier) should
@@ -1564,6 +1584,23 @@ howto, and the `datawatch-app` issue where applicable.
     (binary lock vs. footprint-aware concurrent admission) is what
     `onMemberTerminal`/the advance decision must respect — this doc should
     not grow a second, competing conflict-assessment mechanism.
+
+    **Update (operator-raised 2026-10-15, later same night): the simpler
+    fix may just be the right one.** Three separate real incidents
+    tonight — not hypothetical — had a PRD's own verification polluted by
+    unrelated commits/uncommitted changes landing on the same shared main
+    tree while it ran (BL452 twice, BL441 once). All three happened on
+    PRDs created before worktree-isolation became the default pattern
+    this session (omitting `project_dir` auto-isolates into
+    `~/.datawatch/prd-worktrees/<id>/`). Given real evidence now exists
+    that shared-tree concurrency causes real breakage, not just a
+    theoretical risk, BL428 §3a's footprint-aware concurrent-admission
+    design may be solving a harder problem than needed — defaulting every
+    PRD to worktree isolation unconditionally (never the main tree unless
+    explicitly opted in) is simpler and would have prevented all three
+    incidents outright. Worth weighing against footprint-aware admission
+    when BL428 §3a is actually decided, not assumed to need the more
+    complex mechanism.
 19. **Failure-triage decision tree + after-advance validation checklist
     (operator-raised 2026-10-15, codifying live judgment calls made by hand
     tonight rather than leaving them as folklore).** The interim manual

@@ -126,3 +126,62 @@ func buildAutonomousSessionBody(req autonomouspkg.SpawnRequest, spec, defaultBac
 	}
 	return sessionBody
 }
+
+// isLightweightHarnessKind (2026-10-15, live-validated) reports whether a
+// resolved backend kind is one where the heavy standard task harness
+// (CHECKPOINT PROTOCOL + BEFORE YOU FINISH, see buildLightweightOrFullHarnessBlock)
+// has been empirically shown to hurt rather than help. Confirmed live: a
+// task that stalled at "awaiting_input" with zero tool calls under the
+// full boilerplate completed the identical work correctly, end to end, in
+// about a minute, once the boilerplate was replaced with a one-line
+// equivalent. Scoped narrowly to the two backends this was actually
+// tested against — claude-code has shown no evidence the heavy harness
+// hurts it and keeps today's unchanged behavior.
+func isLightweightHarnessKind(kind string) bool {
+	return kind == "opencode" || kind == "opencode-acp"
+}
+
+// buildLightweightOrFullHarnessBlock returns the checkpoint+pre-completion
+// instructions appended to every one-shot task spec. The full block (long
+// form, unchanged from before this change) explains WHY each step matters;
+// the lightweight form keeps only the checkpoint directive, for backends
+// where the long form has been shown to consume enough of a small model's
+// attention to make it state a plan and then stop without ever calling a
+// tool. The lightweight form deliberately DROPS the "before you finish,
+// check your own commit" self-check (operator-raised 2026-10-15): it's
+// redundant harness weight, not new coverage — the verifier (taskProducedNoOutput
+// in verifier_diff.go) already catches an empty diff after the fact, and
+// the existing RetryHint mechanism already feeds that back as a revision
+// on the next attempt. Checking it twice (once in the prompt, once in the
+// verifier) costs attention for no extra safety on this path.
+func buildLightweightOrFullHarnessBlock(lightweight bool) string {
+	if lightweight {
+		return "\n\n---\n" +
+			"Checkpoint every 5-10 min: write CHECKPOINT.md (steps done/now/remaining). " +
+			"Then keep working immediately in the same turn — do not stop or wait. " +
+			"CHECKPOINT.md must not be committed. Commit your work when done.\n" +
+			"---"
+	}
+	return "\n\n---\n" +
+		"CHECKPOINT PROTOCOL (required every 5–10 minutes of work):\n" +
+		"1. Write/update CHECKPOINT.md in the working directory with:\n" +
+		"   - Timestamp, task title, steps completed, current step, steps remaining.\n" +
+		"2. If the memory_remember MCP tool is available, call it:\n" +
+		"   memory_remember(\"task checkpoint\", \"<title>: done=<X>, now=<Y>, remaining=<Z>\")\n" +
+		"These checkpoints let work resume from the last save point if this session is reset.\n" +
+		"A checkpoint is a SAVE, not a STOP: immediately after writing one, continue working " +
+		"on the next step in the SAME turn — do not end your turn or wait for a response. " +
+		"No one is watching this session to resume it after a pause; if you stop here, the task " +
+		"stalls and fails. Keep going until the task is fully done and you emit DATAWATCH_COMPLETE. " +
+		"Before your final commit, make sure CHECKPOINT.md is not staged or committed — it is " +
+		"scratch state for this run, not part of the deliverable.\n" +
+		"---\n\n" +
+		"---\n" +
+		"BEFORE YOU FINISH — do this check now, not as a description of having done it:\n" +
+		"If this task's spec asked you to commit your work, run `git log --oneline -1` (and " +
+		"`git status --short`) in your working directory RIGHT NOW. If there is no new commit " +
+		"beyond the baseline, or there are uncommitted changes, your task is NOT done — writing " +
+		"a summary of what you changed is not the same as committing it. Stage and commit now, " +
+		"THEN emit DATAWATCH_COMPLETE. Only emit DATAWATCH_COMPLETE after this check passes.\n" +
+		"---"
+}

@@ -14,6 +14,12 @@ type projectConfig struct {
 	LSP      map[string]lspEntry `json:"lsp,omitempty"`
 	Provider map[string]any      `json:"provider,omitempty"`
 	Agent    map[string]any      `json:"agent,omitempty"`
+	// Permissions (2026-10-15) — opencode's current (non-deprecated)
+	// per-tool permission field; "permission" (singular) and "tools" are
+	// both deprecated in opencode's own config schema. Deliberately NOT
+	// a deny-by-default allow-list — see ProjectConfigOpts.DenyTools'
+	// doc comment for why.
+	Permissions map[string]string `json:"permissions,omitempty"`
 }
 
 // lspEntry is one entry inside the "lsp" object of opencode.json.
@@ -66,6 +72,25 @@ type ProjectConfigOpts struct {
 	// "awaiting_input" without ever calling a tool, at Ollama's default
 	// temperature=1.0 for this model — not yet proven, being tested live.
 	BuildTemperature float64
+
+	// DenyTools (2026-10-15, live-validated) — writes opencode.json's
+	// current "permissions" field (NOT the deprecated singular
+	// "permission"/"tools" fields) with "deny" for each named tool, every
+	// other tool left completely untouched (opencode's own default
+	// applies). Deliberately NOT a deny-by-default allow-list: a
+	// hand-picked allow-list risks blocking a tool a specific task
+	// genuinely needs (confirmed live: an early manual test's allow-list
+	// missed "list" and "todowrite" from opencode's real tool set —
+	// read/edit/glob/grep/list/bash/task/external_directory/todowrite/
+	// question/webfetch/websearch/lsp/skill, per opencode's own config
+	// schema). Callers should only name tools that are safe to deny for
+	// ANY one-shot autonomous task regardless of content (e.g. "task" —
+	// recursive sub-agent spawning — and "external_directory" — escaping
+	// the stated scope boundary already in every task prompt), not an
+	// attempt at full per-task tool scoping (that's decompose-emitted
+	// per-task tool lists, a separate, not-yet-built design — see BL431's
+	// doc, "Local-model decision assistant" section).
+	DenyTools []string
 }
 
 const defaultOllamaURL = "http://localhost:11434"
@@ -81,7 +106,7 @@ func WriteProjectConfig(projectDir string, opts ProjectConfigOpts) error {
 	if projectDir == "" {
 		return nil
 	}
-	if opts.Model == "" && len(opts.LSPServers) == 0 && opts.OllamaURL == "" && opts.BuildTemperature == 0 {
+	if opts.Model == "" && len(opts.LSPServers) == 0 && opts.OllamaURL == "" && opts.BuildTemperature == 0 && len(opts.DenyTools) == 0 {
 		return nil
 	}
 
@@ -106,6 +131,15 @@ func WriteProjectConfig(projectDir string, opts ProjectConfigOpts) error {
 		}
 		build["temperature"] = opts.BuildTemperature
 		existing.Agent["build"] = build
+	}
+
+	if len(opts.DenyTools) > 0 {
+		if existing.Permissions == nil {
+			existing.Permissions = make(map[string]string)
+		}
+		for _, tool := range opts.DenyTools {
+			existing.Permissions[tool] = "deny"
+		}
 	}
 
 	if len(opts.LSPServers) > 0 {

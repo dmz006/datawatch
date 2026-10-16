@@ -5,6 +5,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.1.12 — fix(autonomous): lighter task harness and tool scope for opencode backends
+
+A task dispatched to an opencode or opencode-acp backend now gets a much
+shorter checkpoint/completion instruction than before, and opencode's
+sub-agent-spawning and outside-the-project-directory tools are denied by
+default. Found live: a local open model would state a one-line plan and
+then stop without ever calling a tool when given the full-length
+instructions; the same task completed correctly end to end once the
+instructions were shortened. claude-code tasks are unaffected — they keep
+the full-length instructions unchanged.
+
 ## v9.1.11 — fix(opencode): concurrent opencode tasks no longer share one background service
 
 opencode 2.x's `run` command defaults to routing through a single
