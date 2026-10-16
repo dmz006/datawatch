@@ -14035,6 +14035,12 @@ const COMMS_CONFIG_FIELDS = [
     // webhook, github_webhook) -- one list, not a toggle per channel.
     { key: 'notify_exclude', label: 'Exclude from notifications', type: 'text',
       placeholder: 'imap_mcp, ntfy', csv: true },
+    // PRD/task lifecycle event kinds the autonomous built-in sinks (alert
+    // store, topic push to `alerts` + `automaton-<id>`, comm fan-out)
+    // act on. Empty list (the default) = nothing new is sent; channels
+    // named in notify_exclude above still skip the comm fan-out.
+    { key: 'autonomous.notify.default_events', label: 'Lifecycle event sinks: kinds', type: 'text',
+      placeholder: 'prd.completed, task.failed' },
   ]},
 ];
 
@@ -14144,6 +14150,11 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.per_story_guardrails', label: 'Per-story guardrails', type: 'text', placeholder: 'release-readiness', csv: true },
     // BL418 — PRD-completion rules review opt-in (off by default).
     { key: 'autonomous.per_prd_guardrails', label: 'Automaton completion guardrails', type: 'text', placeholder: 'rules-review, ci-watch', csv: true },
+    // PRD/task lifecycle event kinds the built-in sinks (alert store,
+    // topic push, comm fan-out) act on. Empty list = nothing new is sent
+    // (current behavior, off by default); the global notify_exclude
+    // still applies to the comm fan-out.
+    { key: 'autonomous.notify.default_events', label: 'Lifecycle event sinks: kinds', type: 'text', placeholder: 'prd.completed, task.failed', csv: true },
     // BL410 Phase 1 — retry policy. retry_policy itself is a per-category
     // map (infra/content/scope/policy); edited via the Retry Profiles
     // card and the per-Automaton retry-policy setter, not this generic

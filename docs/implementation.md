@@ -711,6 +711,7 @@ All fields in `~/.datawatch/config.yaml`:
 | `autonomous.default_quality_gates.block_on_regression` | bool | `false` | When true, a task that introduces a test regression is marked failed and triggers an auto-fix retry cycle. |
 | `autonomous.injection_guard` | bool | `false` | Scan user-supplied PRD/task specs for prompt injection phrases at the API boundary on create and edit. Findings are always logged. |
 | `autonomous.block_on_injection` | bool | `false` | When true (requires `injection_guard: true`), requests containing injection phrases are rejected with HTTP 400 instead of warn-only. |
+| `autonomous.notify.default_events` | []string | `[]` | Lifecycle event kinds the built-in sinks (alert-store write, topic push to `alerts` + `automaton-<id>`, comm fan-out) act on. Empty list (the default) = nothing new is sent. The global `notify_exclude` still applies to the comm fan-out |
 | `web_search.enabled` | bool | `false` | Inject a `web_search` MCP tool into opencode and goose sessions via SearXNG. |
 | `web_search.provider` | string | `searxng` | Search provider. Only `"searxng"` is supported. |
 | `web_search.url` | string | `""` | Base URL of the SearXNG instance (required when enabled). |
@@ -843,6 +844,34 @@ HTTP client already decodes a peer's own gzip transparently). Both
 settings are read on each request. Clients can look for `api.gzip` in
 the `capabilities` array of `GET /api/info`; it is listed only while
 `server.api_gzip` is on.
+
+### Lifecycle event sinks (`autonomous.notify.default_events`)
+
+`autonomous.notify.default_events` is the list of PRD/task lifecycle event
+kinds (e.g. `prd.updated`, `prd.completed`, `prd.failed`,
+`task.session_started`, `task.completed`, `task.failed`) the built-in
+sinks act on. The daemon-wide list enables each kind only when it is
+explicitly present.
+
+**The default is off.** An empty list — the shipped default — means
+nothing new is sent and the daemon behaves exactly as it always has.
+Enabling a kind is always an explicit operator decision, per kind.
+
+The key is enforced at the autonomous sink installer + daemon wiring
+(`internal/autonomous`): each sink subscribes only to the lifecycle event
+kinds listed in `default_events`, and when one of those kinds fires the
+sinks
+
+- write an entry to the alert store (the PWA Alerts tab / `GET /api/alerts`);
+- push a notification to the `alerts` topic and the emitting Automaton's
+  own `automaton-<id>` topic;
+- fan out to comm channels, coalesced per Automaton so a burst of events
+  from one Automaton does not become a burst of messages.
+
+The global `notify_exclude` list (see the `notify_exclude` entry above)
+still applies to the comm fan-out: a channel named there skips the
+lifecycle message broadcast even when the event kind is enabled, and
+still handles inbound commands normally.
 
 ### Dependencies
 
