@@ -3,6 +3,8 @@
 package session
 
 import (
+	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -100,6 +102,180 @@ func TestProjectGit_PushBranch_ArgValidation(t *testing.T) {
 	g := NewProjectGit(t.TempDir())
 	if err := g.PushBranch("origin", "", "https://x/y", "tok"); err == nil {
 		t.Error("expected error for empty branch")
+	}
+}
+
+// ── CommitSessionWork ──────────────────────────────
+
+// newSessionWorkTestRepo creates a fresh git repo in a temp dir with
+// one initial commit and a ProjectGit bound to it.
+func newSessionWorkTestRepo(t *testing.T) (string, *ProjectGit) {
+	t.Helper()
+	dir := t.TempDir()
+	g := NewProjectGit(dir)
+	mustGit(t, dir, "init", "-b", "main")
+	mustGit(t, dir, "config", "user.email", "t@x")
+	mustGit(t, dir, "config", "user.name", "T")
+	mustGit(t, dir, "commit", "--allow-empty", "-m", "init")
+	return dir, g
+}
+
+func headCount(t *testing.T, dir string) int {
+	t.Helper()
+	n, err := gitOutput(dir, "rev-list", "--count", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var c int
+	if _, err := fmt.Sscanf(strings.TrimSpace(n), "%d", &c); err != nil {
+		t.Fatalf("parse count %q: %v", n, err)
+	}
+	return c
+}
+
+func headSubject(t *testing.T, dir string) string {
+	t.Helper()
+	s, err := gitOutput(dir, "log", "-1", "--format=%s")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.TrimSpace(s)
+}
+
+func TestCommitSessionWork_DirtyTree(t *testing.T) {
+	if !haveGit(t) {
+		t.Skip("git not on PATH")
+	}
+	dir, g := newSessionWorkTestRepo(t)
+	summary := "wrapped up the session work"
+	if err := os.WriteFile(filepath.Join(dir, "note.txt"), []byte("hello"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	before := headCount(t, dir)
+	sha, err := g.CommitSessionWork("sess1", "my task", summary)
+	if err != nil {
+		t.Fatalf("CommitSessionWork: %v", err)
+	}
+	if got := headCount(t, dir); got != before+1 {
+		t.Errorf("commits=%d want %d (exactly one new commit)", got, before+1)
+	}
+	head, err := gitOutput(dir, "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sha != strings.TrimSpace(head) {
+		t.Errorf("sha=%q want HEAD %q", sha, strings.TrimSpace(head))
+	}
+	if got := headSubject(t, dir); got != summary {
+		t.Errorf("subject=%q want %q", got, summary)
+	}
+}
+
+func TestCommitSessionWork_CleanTree(t *testing.T) {
+	if !haveGit(t) {
+		t.Skip("git not on PATH")
+	}
+	dir, g := newSessionWorkTestRepo(t)
+	before := headCount(t, dir)
+	sha, err := g.CommitSessionWork("sess1", "my task", "summary")
+	if err != nil {
+		t.Fatalf("CommitSessionWork: %v", err)
+	}
+	if sha != "" {
+		t.Errorf("sha=%q want empty for clean tree", sha)
+	}
+	if got := headCount(t, dir); got != before {
+		t.Errorf("commits=%d want %d (no new commit)", got, before)
+	}
+}
+
+func TestCommitSessionWork_EmptySummaryFallsBackToTask(t *testing.T) {
+	if !haveGit(t) {
+		t.Skip("git not on PATH")
+	}
+	dir, g := newSessionWorkTestRepo(t)
+	task := "refactor the login flow"
+	if err := os.WriteFile(filepath.Join(dir, "note.txt"), []byte("hello"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := g.CommitSessionWork("sess1", task, "   \n  "); err != nil {
+		t.Fatalf("CommitSessionWork: %v", err)
+	}
+	if got := headSubject(t, dir); !strings.Contains(got, task) {
+		t.Errorf("subject=%q want it to contain task text %q", got, task)
+	}
+}
+
+func TestCommitSessionWork_MultilineSummaryUsesFirstLine(t *testing.T) {
+	if !haveGit(t) {
+		t.Skip("git not on PATH")
+	}
+	dir, g := newSessionWorkTestRepo(t)
+	if err := os.WriteFile(filepath.Join(dir, "note.txt"), []byte("hello"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	firstLine := "first line only"
+	if _, err := g.CommitSessionWork("sess1", "task", firstLine+"\nsecond line\nthird line"); err != nil {
+		t.Fatalf("CommitSessionWork: %v", err)
+	}
+	if got := headSubject(t, dir); got != firstLine {
+		t.Errorf("subject=%q want %q", got, firstLine)
+	}
+}
+
+func TestCommitSessionWork_UntrackedFileCommitted(t *testing.T) {
+	if !haveGit(t) {
+		t.Skip("git not on PATH")
+	}
+	dir, g := newSessionWorkTestRepo(t)
+	path := filepath.Join(dir, "fresh", "brand_new.go")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("package x\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Confirm it really is untracked (no index entry).
+	out, err := gitOutput(dir, "ls-files")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out, "brand_new.go") {
+		t.Fatalf("setup failed: file listed as tracked: %s", out)
+	}
+	if _, err := g.CommitSessionWork("sess1", "task", "added fresh file"); err != nil {
+		t.Fatalf("CommitSessionWork: %v", err)
+	}
+	out, err = gitOutput(dir, "ls-files")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "brand_new.go") {
+		t.Errorf("untracked file not committed: tracked=%q", out)
+	}
+}
+
+func TestBuildCommitMessage(t *testing.T) {
+	// First line wins, trimmed.
+	if got := buildCommitMessage("  line one\nline two\n", "task"); got != "line one" {
+		t.Errorf("got %q", got)
+	}
+	// Capped at 200 chars.
+	long := strings.Repeat("a", 500)
+	if got := buildCommitMessage(long, "task"); len(got) != 200 {
+		t.Errorf("len=%d want 200", len(got))
+	}
+	// Fallback to task.
+	if got := buildCommitMessage("", "some task"); got != "task: some task" {
+		t.Errorf("got %q", got)
+	}
+	// Task truncated to 60 chars (+ "..." per truncateStr).
+	if got := buildCommitMessage("", strings.Repeat("b", 100)); len(got) != len("task: ")+63 {
+		t.Errorf("got %q (len %d)", got, len(got))
+	}
+	// Never empty.
+	if got := buildCommitMessage("", ""); got == "" {
+		t.Error("must never be empty")
 	}
 }
 
