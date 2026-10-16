@@ -235,9 +235,11 @@ func (b *ACPBackend) Launch(ctx context.Context, task, tmuxSession, projectDir, 
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				if _, err := http.Get(baseURL + "/session"); err != nil {
+				if resp, err := acpHTTPClient.Get(baseURL + "/session"); err != nil {
 					writeLogLine(logFile, "[opencode-acp] server gone")
 					return
+				} else {
+					_ = resp.Body.Close()
 				}
 			}
 		}
@@ -361,7 +363,7 @@ func waitForServer(ctx context.Context, baseURL string, timeout time.Duration) e
 			return ctx.Err()
 		default:
 		}
-		resp, err := http.Get(baseURL + "/session")
+		resp, err := acpHTTPClient.Get(baseURL + "/session")
 		if err == nil {
 			_ = resp.Body.Close()
 			return nil
@@ -369,6 +371,23 @@ func waitForServer(ctx context.Context, baseURL string, timeout time.Duration) e
 		time.Sleep(500 * time.Millisecond)
 	}
 	return fmt.Errorf("server did not become ready within %s", timeout)
+}
+
+// acpHTTPClient (2026-10-16, root-caused live via real session timestamps)
+// is used for every REST call to a session's opencode serve instance,
+// deliberately WITHOUT keep-alive. Each opencode-acp session gets its own
+// unique port — the first request to it is always a fresh connection,
+// but Go's http.DefaultClient pools and reuses that connection for later
+// requests to the same host:port. Confirmed live: nudge 1 (the first POST
+// after the SSE GET) always landed; nudge 2, sent ~80s later over the
+// pooled connection, always failed with EOF — the server-side idle
+// keep-alive had already closed its end by then, and the client only
+// discovers this when it tries to write on the stale connection. These
+// are one-shot, low-frequency calls to a short-lived per-task server;
+// there is no real cost to a fresh connection each time, and it removes
+// the whole class of stale-pooled-connection failures.
+var acpHTTPClient = &http.Client{
+	Transport: &http.Transport{DisableKeepAlives: true},
 }
 
 func createSession(ctx context.Context, baseURL, projectDir string) (string, error) {
@@ -381,7 +400,7 @@ func createSession(ctx context.Context, baseURL, projectDir string) (string, err
 		return "", err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := acpHTTPClient.Do(req)
 	if err != nil {
 		return "", err
 	}
@@ -410,7 +429,7 @@ func sendMessage(ctx context.Context, baseURL, sessionID, text string) error {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := acpHTTPClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -452,7 +471,7 @@ func streamEventsOnce(ctx context.Context, baseURL, logFile, tmuxSession string,
 		return ctx.Err() == nil
 	}
 	req.Header.Set("Accept", "text/event-stream")
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := acpHTTPClient.Do(req)
 	if err != nil {
 		if ctx.Err() != nil {
 			return false

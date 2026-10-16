@@ -5,6 +5,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.1.17 — fix(opencode): a stale reused connection broke the second message every time
+
+Real cause of the continuation nudge still failing after v9.1.14-16: the
+first message to a session always succeeds (it opens a fresh connection),
+but every later message was silently handed a pooled connection that the
+opencode server had already closed on its end after a short idle period
+-- a classic HTTP keep-alive reuse issue. The symptom was always an
+immediate "EOF" on the second message, confirmed by exact session
+timestamps. Every request to a session's opencode server now opens its
+own fresh connection instead of risking a stale pooled one -- these are
+infrequent, one-shot calls to a short-lived server, so there's no real
+cost to doing this every time.
+
 ## v9.1.16 — fix(opencode): stop tearing down a session the moment it's nudged to continue
 
 The real cause of v9.1.14/v9.1.15 still losing the race: the first time
