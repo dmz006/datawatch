@@ -98,64 +98,6 @@ func TestRun_OpensPRAfterWorktreePRDCompletesWithAutoPR(t *testing.T) {
 	}
 }
 
-// TestRun_ForcesAutoGitCommitForWorktreeModeOnly is the other half of
-// Phase 2's fix: a worktree-mode PRD's whole purpose (a reviewable
-// branch) breaks silently if the daemon's session.auto_git_commit
-// default happens to be off and nothing ever gets committed. Found
-// mid-implementation via a real "contains modified or untracked
-// files" git worktree remove failure in the integration test above.
-func TestRun_ForcesAutoGitCommitForWorktreeModeOnly(t *testing.T) {
-	baseRepo := scratchGitRepo(t)
-	cfg := DefaultConfig()
-	cfg.WorktreeBaseRepo = baseRepo
-	cfg.WorktreeDir = t.TempDir()
-	m, err := NewManager(t.TempDir(), cfg, nil)
-	if err != nil {
-		t.Fatalf("NewManager: %v", err)
-	}
-
-	prd, _ := m.CreatePRD("spec", "", "", "", "") // worktree mode
-	_ = m.Store().SetStories(prd.ID, []Story{{Title: "S", Tasks: []Task{{Title: "t", Spec: "do it"}}}})
-	prd, _ = m.Store().GetPRD(prd.ID)
-	prd.Status = PRDApproved
-	_ = m.Store().SavePRD(prd)
-
-	var gotForce bool
-	spawn := func(_ context.Context, req SpawnRequest) (SpawnResult, error) {
-		gotForce = req.ForceAutoGitCommit
-		return SpawnResult{SessionID: "s1"}, nil
-	}
-	verify := func(_ context.Context, _ *PRD, _ *Task) (VerificationResult, error) {
-		return VerificationResult{OK: true, Summary: "ok"}, nil
-	}
-	if err := m.Run(context.Background(), prd.ID, spawn, verify); err != nil {
-		t.Fatalf("Run: %v", err)
-	}
-	if !gotForce {
-		t.Error("ForceAutoGitCommit = false for a worktree-mode PRD, want true")
-	}
-
-	// Non-worktree PRD (explicit ProjectDir) must not force it.
-	explicit := t.TempDir()
-	prd2, _ := m.CreatePRD("spec", explicit, "", "", "")
-	_ = m.Store().SetStories(prd2.ID, []Story{{Title: "S", Tasks: []Task{{Title: "t", Spec: "do it"}}}})
-	prd2, _ = m.Store().GetPRD(prd2.ID)
-	prd2.Status = PRDApproved
-	_ = m.Store().SavePRD(prd2)
-
-	gotForce = true // reset to a sentinel that proves spawn2 actually ran
-	spawn2 := func(_ context.Context, req SpawnRequest) (SpawnResult, error) {
-		gotForce = req.ForceAutoGitCommit
-		return SpawnResult{SessionID: "s2"}, nil
-	}
-	if err := m.Run(context.Background(), prd2.ID, spawn2, verify); err != nil {
-		t.Fatalf("Run (prd2): %v", err)
-	}
-	if gotForce {
-		t.Error("ForceAutoGitCommit = true for an explicit-ProjectDir PRD, want false")
-	}
-}
-
 func TestRun_NoAutoPRLeavesWorktreeAndNeverCallsOpenPR(t *testing.T) {
 	baseRepo := scratchGitRepo(t)
 	cfg := DefaultConfig()

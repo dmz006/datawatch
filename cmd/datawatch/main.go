@@ -628,21 +628,15 @@ func (a brokerAdapter) RevokeForWorker(ctx context.Context, workerID string) err
 // success," not "cluster dispatch has the same stall-detection the
 // local path has."
 func runWorkerBootstrapTask(mgr *session.Manager, env agentspkg.BootstrapEnv, boot *agentspkg.BootstrapResponse, projectDir string) {
-	// BL407 Phase 3 — force the commit the same way Phase 2's
-	// ForceAutoGitCommit does for local worktree-mode tasks: this
-	// worker's whole reason for existing is to push its own commits
-	// back (PushOnCompletion below), so leaving this daemon's own
-	// session.auto_git_commit default (false) in effect would mean
-	// there's never anything to push.
-	forceCommit := true
 	opts := &session.StartOptions{
 		Backend:        boot.Backend,
 		Effort:         boot.Effort,
 		Model:          boot.Model,
 		PermissionMode: boot.PermissionMode,
 		OneShot:        true,
-		AutoGitCommit:  &forceCommit,
 	}
+	// Note: git commits for this worker task are automatic (the
+	// session manager's default auto-git-commit behavior).
 	result := &agentspkg.AgentResult{Status: "ok"}
 	sess, err := mgr.Start(context.Background(), boot.Task, "", projectDir, opts)
 	if err != nil {

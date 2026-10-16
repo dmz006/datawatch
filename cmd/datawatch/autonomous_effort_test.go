@@ -93,7 +93,7 @@ func TestBuildAutonomousSessionBody(t *testing.T) {
 		t.Errorf("unexpected base keys: %v", body)
 	}
 	if _, ok := body["auto_git_commit"]; ok {
-		t.Errorf("auto_git_commit set without ForceAutoGitCommit")
+		t.Errorf("auto_git_commit should not be set: %v", body["auto_git_commit"])
 	}
 
 	req.Backend = "opencode"
@@ -108,13 +108,12 @@ func TestBuildAutonomousSessionBody(t *testing.T) {
 	// Empty effort → no claude_effort key even on claude-code.
 	req.Backend = ""
 	req.Effort = ""
-	req.ForceAutoGitCommit = true
 	body = buildAutonomousSessionBody(req, "spec", "")
 	if _, ok := body["claude_effort"]; ok {
 		t.Errorf("empty effort produced claude_effort: %v", body["claude_effort"])
 	}
-	if body["auto_git_commit"] != true {
-		t.Errorf("auto_git_commit = %v, want true", body["auto_git_commit"])
+	if _, ok := body["auto_git_commit"]; ok {
+		t.Errorf("auto_git_commit should not be set: %v", body["auto_git_commit"])
 	}
 }
 

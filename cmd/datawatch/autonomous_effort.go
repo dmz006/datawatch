@@ -117,13 +117,6 @@ func buildAutonomousSessionBody(req autonomouspkg.SpawnRequest, spec, defaultBac
 			sessionBody["claude_effort"] = ce
 		}
 	}
-	// BL407 Phase 2 — a worktree-mode PRD needs real commits on
-	// its branch regardless of this daemon's session.auto_git_commit
-	// default; only ever forces true, never forces false (an
-	// operator who wants commits elsewhere keeps getting them).
-	if req.ForceAutoGitCommit {
-		sessionBody["auto_git_commit"] = true
-	}
 	return sessionBody
 }
 

@@ -52,14 +52,6 @@ type SpawnRequest struct {
 	// running the task. Either or both can be empty.
 	ProjectProfile string
 	ClusterProfile string
-	// ForceAutoGitCommit (BL407 Phase 2) — true when ProjectDir is a
-	// PRD-owned git worktree (PRD.Git.Branch set). The worktree's
-	// whole purpose is producing a reviewable branch for Phase 2's
-	// push+PR, which needs real commits regardless of whatever this
-	// daemon's session.auto_git_commit default happens to be set to —
-	// an operator who turned off auto-commit globally still wants a
-	// worktree-mode PRD's branch to actually contain its work.
-	ForceAutoGitCommit bool
 	// Branch (BL407 Phase 4) — PRD.Git.Branch, threaded through so a
 	// cluster-dispatched SpawnFn can forward it as agents.SpawnRequest.Branch.
 	// The worker then creates/checks out this exact branch (worktree
@@ -969,25 +961,24 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			taskDir := m.resolveTaskProjectDir(prd, t)
 			var sr SpawnResult
 			sr, err = spawn(ctx, SpawnRequest{
-				TaskID:             t.ID,
-				StoryID:            t.StoryID,
-				PRDID:              t.PRDID,
-				Title:              t.Title,
-				Spec:               TaskScopeBlock(prd, t) + "\n" + t.Spec,
-				ProjectDir:         taskDir,
-				Backend:            backend,
-				Effort:             effort,
-				Model:              model,
-				PermissionMode:     permMode,
-				RetryHint:          hint,
-				ProjectProfile:     prd.ProjectProfile,   // v5.26.19
-				ClusterProfile:     prd.ClusterProfile,   // v5.26.19
-				ForceAutoGitCommit: prd.Git.Branch != "", // BL407 Phase 2
-				Branch:             prd.Git.Branch,       // BL407 Phase 4
-				ContextPrepend:     contextPrepend,       // BL244
-				LSPLanguage:        lspLang,
-				MemorySeed:         prd.MemorySeed,       // BL386 Phase 1
-				SkipDirtyCapture:   prd.Git.Branch != "", // worktree mode: nothing pre-dirty to protect
+				TaskID:           t.ID,
+				StoryID:          t.StoryID,
+				PRDID:            t.PRDID,
+				Title:            t.Title,
+				Spec:             TaskScopeBlock(prd, t) + "\n" + t.Spec,
+				ProjectDir:       taskDir,
+				Backend:          backend,
+				Effort:           effort,
+				Model:            model,
+				PermissionMode:   permMode,
+				RetryHint:        hint,
+				ProjectProfile:   prd.ProjectProfile, // v5.26.19
+				ClusterProfile:   prd.ClusterProfile, // v5.26.19
+				Branch:           prd.Git.Branch,     // BL407 Phase 4
+				ContextPrepend:   contextPrepend,     // BL244
+				LSPLanguage:      lspLang,
+				MemorySeed:       prd.MemorySeed,       // BL386 Phase 1
+				SkipDirtyCapture: prd.Git.Branch != "", // worktree mode: nothing pre-dirty to protect
 			})
 			if err != nil {
 				if errors.Is(err, errCancelledWhileWaiting) {
