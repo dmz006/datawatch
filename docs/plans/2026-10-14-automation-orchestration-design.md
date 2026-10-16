@@ -745,6 +745,67 @@ Automation-level triage decisions" is a real task shape, not just "is it
 good at writing code." Name it as a candidate BL437 task-shape category in
 that design doc, not duplicated here.
 
+**A fifth hook point, with real evidence behind it (operator-raised and
+live-tested 2026-10-15): task dispatch itself, for small/local-model
+executors specifically.** Every "no output" failure investigated tonight
+(BL427 Phase 2, BL431 Phase 1, BL464, three separate tasks) used the same
+heavy standard task template — a multi-KB prompt carrying a full
+CHECKPOINT PROTOCOL block, a "BEFORE YOU FINISH" block, and (on retry) a
+prior-attempt-hint block, on top of the real instruction — plus opencode's
+full default tool schema. A live, isolated side-by-side test (same model,
+same real files, same real two-file edit task) showed this is not a minor
+tuning knob: the heavy template produced a one-line plan followed by an
+idle stall every time; a short, atomic, directive prompt (~700 bytes, no
+boilerplate) with the tool permission set trimmed to only what the task's
+own files/scope need (`permission` in opencode.json — deny-by-default,
+allow only read/write/edit/bash/grep/glob) completed the identical task
+correctly end-to-end — right line numbers, right edits, gofmt-clean,
+verified, committed, and even self-flagged an unrelated file the model's
+own `git add -A` had swept in — in about a minute, versus 90+ seconds just
+to go idle on the heavy template, or several minutes to stall out
+entirely. Speed and reliability moved together, not as a tradeoff — a
+smaller prompt is cheaper to process *and* keeps the model from losing
+the thread.
+
+This should be a fifth assistant hook point: **on dispatch to a
+small/local-model executor, decide the task's own shape** — (a) is this
+task atomic/small enough to warrant the stripped template, or does it
+genuinely need the standard scaffolding (long-running, needs mid-task
+checkpointing)?, and (b) which tools does this specific task's declared
+`files`/scope actually touch, so the dispatched `opencode.json` can trim
+`permission` to just those instead of always sending the full schema.
+Then, symmetrically, **live stall detection should reroute, not blindly
+retry**: a session showing the "awaiting_input with zero tool calls"
+signature (or the harness-crash signature from BL410's classifier) should
+have its *next* attempt dispatched with a corrected shape — smaller/more
+atomic prompt, trimmed tools, or escalated to a stronger model — rather
+than retried with the identical oversized template a 2nd or 3rd time,
+which is exactly what produced every failure tonight. This reuses the same
+`DecisionAssistant`/confidence-threshold/audit shape as the other four
+hook points; it just fires at dispatch and at retry-selection time instead
+of at an edge/skip/insert/budget decision point.
+
+**Upstream of dispatch: decompose itself needs the same awareness, and
+existing queued PRDs are affected (operator-raised 2026-10-15).** The task
+granularity and task-spec text produced by decompose today assumes the
+full standard template regardless of which executor will run it — a task
+planned for a small/local model gets the same multi-paragraph spec shape
+as one planned for Claude. Once this dispatch-time trimming exists, the
+better fix is upstream: when a PRD/story/task is known (or likely) to be
+routed to a small/local-model executor, decompose should plan *smaller,
+more atomic* tasks in the first place (one tool-call chain, one checkable
+outcome per task — matching the "atomic step" framing BL405/this doc's
+Model-tier defaults section already groups by role) rather than relying on
+dispatch-time trimming alone to rescue an oversized task. Concretely: every
+PRD/task currently queued or blocked on open-model execution (BL427 Phase
+2, BL431 Phase 1, BL464, and any others in the Stage A/C queue pinned to a
+local-GPU profile) was decomposed before this finding existed, under the
+old assumption — once dispatch-time trimming and/or decompose-time
+atomic-task planning actually ship, those PRDs are real candidates for
+re-decomposition, not just a retry with the same task boundaries. Do not
+re-decompose any of them proactively before that lands; this is a
+forward-looking note for when it does.
+
 This is intentionally not resolved into an implementation plan in this
 design pass — see Open questions, new item 15.
 
