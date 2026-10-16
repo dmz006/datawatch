@@ -7188,7 +7188,7 @@ Return STRICT JSON:
 				// which the pane-watcher sees before the LLM has run.
 				task := sess.Task
 				if sess.Name != "autonomous:decompose" {
-					task += "\n\nWhen you have fully completed this task, output the following line as your final response (plain text, not in a code block):\nDATAWATCH_COMPLETE: <one-sentence summary of what was done>"
+					task += "\n\nWhen you have fully completed this task, output the following line as your final response (plain text, not in a code block):\nDATAWATCH_COMPLETE: <one-sentence summary of what was done, used as the commit message>"
 				}
 				go func() {
 					// For opencode TUI sessions: wait until the interactive

@@ -2427,7 +2427,7 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 							continue
 						}
 						// Skip the literal instruction placeholder appended to every TUI task
-						// delivery: "DATAWATCH_COMPLETE: <one-sentence summary of what was done>".
+						// delivery: "DATAWATCH_COMPLETE: <one-sentence summary of what was done, used as the commit message>".
 						// The LLM's real completion never contains the literal angle-bracket
 						// placeholder text; this guards against the task-box remaining visible
 						// on screen indefinitely while the LLM processes.

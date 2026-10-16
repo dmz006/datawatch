@@ -1811,7 +1811,7 @@ func (m *Manager) ResetTask(prdID, taskID, actor string, force bool) (*PRD, erro
 					// not just a checkpoint note about them.
 					t.PriorAttemptHint = "This is a retry of a previous attempt on this task. " +
 						strings.Join(hintParts, " ") +
-						" Check the project directory's current state (git log, existing files) before redoing work — the previous attempt may have already produced correct output that only failed for an unrelated reason (e.g. the verifier itself erroring). If so, fix the specific issues above (or reconfirm correctness) by editing and re-committing the actual required deliverable files themselves — verification only sees this run's own diff, so a checkpoint note or other side file alone will not satisfy it, even if the underlying content is already right."
+						" Check the project directory's current state (git log, existing files) before redoing work — the previous attempt may have already produced correct output that only failed for an unrelated reason (e.g. the verifier itself erroring). If so, fix the specific issues above (or reconfirm correctness) by editing the actual required deliverable files themselves — do not run git add or git commit; your work is committed automatically when you finish. Verification only sees this run's own diff, so a checkpoint note or other side file alone will not satisfy it, even if the underlying content is already right."
 				}
 				resetEv := pendingTaskEvent{t: t, oldStatus: t.Status, oldSession: t.SessionID}
 				t.Status = ""

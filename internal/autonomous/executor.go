@@ -1571,7 +1571,7 @@ func contentFixHint(v GuardrailVerdict) string {
 	if len(v.Issues) > 0 {
 		findings = "- " + strings.Join(v.Issues, "\n- ")
 	}
-	return fmt.Sprintf("The %q guardrail found a real problem with your previous attempt:\n\n%s\n\nFix these issues, re-run the project's own build/lint/test commands yourself, and recommit.", v.Guardrail, findings)
+	return fmt.Sprintf("The %q guardrail found a real problem with your previous attempt:\n\n%s\n\nFix these issues and re-run the project's own build/lint/test commands yourself. Do not run git add or git commit — your work is committed automatically when you finish; finish with DATAWATCH_COMPLETE: <one-line summary of what you did>.", v.Guardrail, findings)
 }
 
 // runPerStoryGuardrails (BL191 Q6, v5.10.0; BL303 S2) — same shape as the

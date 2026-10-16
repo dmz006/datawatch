@@ -29,11 +29,9 @@
 
 This project directory is git-tracked. Follow these rules:
 
-- **Commit frequently** — after each logical unit of work (feature, fix, refactor).
-- Use conventional commit messages: `feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`
+- **Do not run `git add` or `git commit`** — your work is committed automatically by the harness when you finish.
 - Never force-push or rewrite history.
-- If you create new files, add them to git with `git add`.
-- Before finishing, run `git status` and commit any remaining changes.
+- When your task is fully complete, finish with `DATAWATCH_COMPLETE: <one-sentence summary of what was done, used as the commit message>`.
 
 ## Rate Limit Handling
 
