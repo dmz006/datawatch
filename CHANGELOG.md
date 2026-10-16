@@ -5,6 +5,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.1.19 — fix(opencode): one slow health check no longer kills a live session
+
+Real root cause found live, using the debug logging added in v9.1.18: a
+single slow or failed periodic health check was tearing a session down
+completely -- confirmed directly, a "thinking..." line from the model
+showed up in a session's own log AFTER it had already been declared
+dead. The model was still genuinely working; one health check blip was
+not proof otherwise. Now requires two health checks to fail in a row
+before giving up on a session, and logs the actual error each time
+instead of a bare "server gone" with no detail.
+
 ## v9.1.18 — add(opencode): full internal server logs for every opencode-acp session
 
 Diagnostic-only, no behavior change: every opencode session now runs with

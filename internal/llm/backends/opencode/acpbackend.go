@@ -236,8 +236,20 @@ func (b *ACPBackend) Launch(ctx context.Context, task, tmuxSession, projectDir, 
 		}
 
 		// Keep the goroutine alive until context cancelled or server dies.
+		//
+		// Root-caused live 2026-10-16: a SINGLE failed health check here
+		// was tearing the whole session down (this goroutine returning
+		// cancels bgCtx, which kills the SSE stream goroutine too) even
+		// while the model was genuinely still working — confirmed via a
+		// real "[opencode-acp] thinking..." line logged by the SSE
+		// goroutine AFTER this had already declared "server gone" in the
+		// same session. One slow/failed GET under load is not proof the
+		// server is actually dead. Now requires 2 CONSECUTIVE failures,
+		// and logs the real error instead of a bare "server gone" with
+		// no detail.
 		ticker := time.NewTicker(b.healthInterval)
 		defer ticker.Stop()
+		consecutiveFailures := 0
 		for {
 			select {
 			case <-bgCtx.Done():
@@ -245,12 +257,18 @@ func (b *ACPBackend) Launch(ctx context.Context, task, tmuxSession, projectDir, 
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				if resp, err := acpHTTPClient.Get(baseURL + "/session"); err != nil {
-					writeLogLine(logFile, "[opencode-acp] server gone")
-					return
-				} else {
-					_ = resp.Body.Close()
+				resp, err := acpHTTPClient.Get(baseURL + "/session")
+				if err != nil {
+					consecutiveFailures++
+					writeLogLine(logFile, fmt.Sprintf("[opencode-acp] health check failed (%d/2): %v", consecutiveFailures, err))
+					if consecutiveFailures >= 2 {
+						writeLogLine(logFile, "[opencode-acp] server gone")
+						return
+					}
+					continue
 				}
+				consecutiveFailures = 0
+				_ = resp.Body.Close()
 			}
 		}
 	}()
