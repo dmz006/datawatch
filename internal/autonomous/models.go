@@ -618,7 +618,19 @@ type Task struct {
 	// BL366 — git SHA captured before the worker session ran. Used by the
 	// verifier to produce a git diff of the worker's actual changes.
 	// Empty when the project has no git repo or the task is cluster-dispatched.
+	// Per-attempt: overwritten with the current attempt's HEAD on every
+	// (re)attempt; the per-task value lives in BaseSHA.
 	PreTaskSHA string `json:"pre_task_sha,omitempty"`
+	// BaseSHA — the git HEAD captured at the start of the task's FIRST
+	// attempt. Unlike PreTaskSHA (per-attempt, rewritten on every retry),
+	// BaseSHA is per-task and is never overwritten by retries: it always
+	// anchors the diff of the task's entire work against the state before
+	// it ever started.
+	BaseSHA string `json:"base_sha,omitempty"`
+	// AttemptCommitSHAs — the deterministic commit shas recorded for this
+	// task's finished attempts, in order (RecordAttemptCommit; duplicates
+	// and empty values are ignored).
+	AttemptCommitSHAs []string `json:"attempt_commit_shas,omitempty"`
 	// v8.25.12 — untracked file list (git ls-files --others --exclude-standard)
 	// captured alongside PreTaskSHA. Verifier uses this to detect newly created
 	// files that are not tracked by git (e.g. new documentation, new test fixtures).
@@ -701,6 +713,22 @@ type Task struct {
 	// judgment-only guardrail behavior is the fallback. Inert today:
 	// nothing writes or reads it yet.
 	VerificationScript string `json:"verification_script,omitempty"`
+}
+
+// RecordAttemptCommit appends the deterministic commit sha recorded for a
+// finished attempt of this task, in order. An empty sha is ignored, and a
+// sha already present is not appended again, so the list stays an
+// ordered, de-duplicated record of the task's finished attempts.
+func (t *Task) RecordAttemptCommit(sha string) {
+	if t == nil || sha == "" {
+		return
+	}
+	for _, existing := range t.AttemptCommitSHAs {
+		if existing == sha {
+			return
+		}
+	}
+	t.AttemptCommitSHAs = append(t.AttemptCommitSHAs, sha)
 }
 
 // GuardrailVerdict (BL191 Q6, v5.10.0) is one guardrail's pass/warn/block

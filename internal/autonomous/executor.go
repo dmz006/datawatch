@@ -1015,7 +1015,10 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 					}
 				}
 			}
-			t.PreTaskSHA = sr.PreTaskSHA                       // BL366: persisted for verifier diff grounding
+			t.PreTaskSHA = sr.PreTaskSHA // BL366: persisted for verifier diff grounding
+			if t.BaseSHA == "" && sr.PreTaskSHA != "" {
+				t.BaseSHA = sr.PreTaskSHA // per-task anchor: only the first attempt sets it; retries never overwrite
+			}
 			t.PreTaskUntrackedFiles = sr.PreTaskUntrackedFiles // v8.25.12: detect newly created untracked files
 			t.PreTaskDirtyFiles = sr.PreTaskDirtyFiles         // foreign-file-drift: tracked files already modified before the worker started
 			oldStatus = t.Status

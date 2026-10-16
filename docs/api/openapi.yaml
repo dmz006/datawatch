@@ -2854,6 +2854,8 @@ components:
           type: object
           properties:
             pre_task_sha: {type: string}
+            base_sha: {type: string, description: "Git HEAD captured at the start of the task's first attempt; never overwritten by retries (pre_task_sha is per-attempt)"}
+            attempt_commit_shas: {type: array, items: {type: string}, description: "Commit shas recorded for the task's finished attempts, in order"}
             files_planned: {type: array, items: {type: string}, description: "Task files, or the story's planned files when the task has none"}
             files_touched: {type: array, items: {type: string}}
             foreign_file_drift: {type: array, items: {type: string}}
