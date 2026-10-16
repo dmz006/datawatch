@@ -44,8 +44,8 @@ BL431's open question 14, and BL405 Phase 7.
 | # | Item | Status | Depends on |
 |---|---|---|---|
 | 1 | BL441 PRD-completion content auto-fix never fires | in progress (PRD `34bd5877`, running) | - |
-| 2 | BL452 "The V Method" — logprob-classification guardrail backend (design) | in progress (PRD `468db26e`, awaiting review) | - |
-| 3 | BL455 Fix B126: a retry can record the wrong pre-task SHA, producing a false "no output" failure on real, correctly-committed work | not started (PRD `6b99f00f`, draft) | - |
+| 2 | BL452 "The V Method" — logprob-classification guardrail backend (design) | running (PRD `468db26e`; main tree, docs-only — accepted collision risk alongside BL441 since BL428 Phase 2's write lock doesn't exist yet) | - |
+| 3 | BL455 Fix B126: a retry can record the wrong pre-task SHA, producing a false "no output" failure on real, correctly-committed work | in progress (PRD `2713dbb9`, decomposing; worktree-isolated, local GPU) | - |
 | 4 | **BL462** A running PRD task's session must not be impacted by a daemon restart/update | not started (PRD `c96f2104`, draft) — **operator priority**, blocks safely updating the daemon during active work | - |
 | 5 | **BL463** MCP connection reliability, session isolation clarity, error-mode parity with REST | not started (PRD `bf78e50a`, draft) — every spawned session depends on MCP as its primary interface | - |
 
