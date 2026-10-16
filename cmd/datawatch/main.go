@@ -5072,7 +5072,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					vsess := &session.Session{
 						ID:            out.ID[:min(8, len(out.ID))],
 						FullID:        fullID,
-						Name:          "autonomous:" + req.Title,
+						Name:          autonomousTaskSessionName(req.Title),
 						Task:          spec,
 						State:         session.StateRunning,
 						CreatedAt:     time.Now().UTC(),

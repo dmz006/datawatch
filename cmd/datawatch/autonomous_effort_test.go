@@ -89,7 +89,7 @@ func TestBuildAutonomousSessionBody(t *testing.T) {
 	if body["claude_effort"] != "low" {
 		t.Errorf("claude_effort = %v, want low", body["claude_effort"])
 	}
-	if body["task"] != "spec" || body["name"] != "autonomous:t" || body["one_shot"] != true {
+	if body["task"] != "spec" || body["name"] != "autonomous:task:t" || body["one_shot"] != true {
 		t.Errorf("unexpected base keys: %v", body)
 	}
 	if _, ok := body["auto_git_commit"]; ok {

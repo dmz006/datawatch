@@ -83,6 +83,27 @@ func autonomousClaudeEffortApplies(reqBackend, defaultBackend string) bool {
 	return b == "claude-code"
 }
 
+// Autonomous session names carry a kind prefix. Four kinds exist;
+// the first three live inline in main.go and are deliberately left
+// as is:
+//
+//   - "autonomous:decompose"                 — plan decomposition
+//   - "autonomous:verify:" + task.ID         — per-task verification
+//   - "autonomous:guardrail:" + req.UnitID   — per-unit guardrail (the
+//     previously undocumented fourth kind)
+//   - "autonomous:task:" + title             — task execution (this file,
+//     and the agent-virtual session in main.go)
+//
+// Only the task kind is built at two call sites, so it gets the helper
+// below.
+const autonomousTaskSessionPrefix = "autonomous:task:"
+
+// autonomousTaskSessionName returns the "task"-kind autonomous session
+// name: the kind prefix plus the task title.
+func autonomousTaskSessionName(title string) string {
+	return autonomousTaskSessionPrefix + title
+}
+
 // buildAutonomousSessionBody builds the /api/sessions/start request body
 // for autonomousSpawn's local-session path. spec is the fully decorated
 // task text; defaultBackend is cfg.Session.LLMBackend.
@@ -92,7 +113,7 @@ func buildAutonomousSessionBody(req autonomouspkg.SpawnRequest, spec, defaultBac
 		"project_dir":     req.ProjectDir,
 		"project_profile": req.ProjectProfile,
 		"backend":         req.Backend,
-		"name":            "autonomous:" + req.Title,
+		"name":            autonomousTaskSessionName(req.Title),
 		"effort":          mapAutonomousEffortToSession(req.Effort),
 		"permission_mode": req.PermissionMode,
 		"model":           req.Model,
