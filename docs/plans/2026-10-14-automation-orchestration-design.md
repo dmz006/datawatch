@@ -1662,3 +1662,94 @@ howto, and the `datawatch-app` issue where applicable.
       auto-trigger regression — those still require an operator or Claude
       noticing in a live conversation turn. That gap is this open
       question's direct motivation, not a hypothetical one.
+
+20. **A fourth `content` branch for Open Question 19's decision tree:
+    scope-too-broad, auto-split instead of blind-retry (operator-raised
+    2026-10-16, live incident on BL465's own pilot run).** Running BL465
+    itself through pi-prompt hit the exact failure shape this doc already
+    warns about: one task ("wire the deterministic commit into 9
+    `StateComplete` call sites, delete the old mechanism, and write a
+    final audit") produced a real but incomplete diff and a second task
+    ("write a bash smoke script and a Go test") produced none at all.
+    Both were manually diagnosed, by hand, as **one task bundling
+    multiple separable deliverables** — not wrong content, not a stall —
+    and fixed by hand-splitting into smaller tasks and re-inserting them
+    in the correct order. That hand process is exactly what Open Question
+    19's `content` branch is missing a case for: today it only
+    distinguishes "known tracked signature, wait" from "novel, escalate
+    to a human or higher-tier model." Neither fits "the spec itself asks
+    for too much in one unit" — that failure is self-correcting once
+    recognized, and recognizing it does not need a human.
+
+    **The concrete mechanism, composing the three pieces the operator
+    asked about directly:**
+    - **Decompose-time prevention (the "better decomposer" half) is the
+      first line of defense**, not a replacement for this. The atomic-
+      granularity default already discussed this session (a
+      `task_granularity: atomic | standard` config switch, not yet
+      built) means most PRDs never reach this failure at all. This open
+      question's mechanism exists for the remainder: a task that still
+      turns out too broad despite atomic decompose (decompose cannot be
+      perfect), or any PRD decomposed before the switch existed.
+    - **BL452 ("The V Method") is the classifier**, extended with one
+      more closed-form question beyond the ones already in its table
+      (verdict `ok`, `severity`, guardrail outcome): *"Does this task's
+      own spec describe one coherent code change, or does it bundle
+      multiple separable units (different files, languages, or
+      call-sites that could each be its own task)?"* Same shape as
+      BL452's existing rows — one forward pass, no free text to parse,
+      cheap enough to run on every `content`-category failure, not just
+      the ones already escalated to a human. Add it to BL452's own
+      table as a new row (see that doc).
+    - **BL410's `FailureReason` taxonomy gets one new signal**, set by
+      that classifier call when a `content` failure fires: a
+      `scope_too_broad` flag (or a fifth taxonomy value — BL452's own
+      doc decides the exact shape when it implements the row above).
+      This is additive to BL410's existing `infra | content | scope |
+      policy` categories, not a replacement for any of them.
+    - **The orchestrator's failure-triage tree (this question) gains the
+      branch**: `content + scope_too_broad` → do not blind-retry and do
+      not just escalate. Re-invoke decompose, scoped narrowly to *just
+      this one task's own spec* (not the whole PRD), asking it to split
+      into N atomic sub-tasks. Insert them **in place of the original
+      task**, chained by `depends_on` in the order decompose returns
+      them, and chain whatever already depended on the original task
+      onto the **last** inserted sub-task. Mark the original task
+      `skipped` with a cross-reference to its replacements (not
+      `failed` — it was correctly diagnosed, not wrong), audited the
+      same way `skip_member` already is at the Automation level.
+
+    **The mechanical blocker this exposed, now fixed (2026-10-16, v9.1.24):**
+    `AddTask` (REST `add_task`, MCP `autonomous_prd_add_task`, CLI
+    `prd-add-task`) had no way to set `depends_on` on a newly-inserted
+    task at all — the hand-fix above had to work around it twice tonight
+    by removing and re-adding every later task in array order. This is
+    now a real parameter at every layer (`internal/autonomous/store.go`'s
+    `AddTask`, validated against the PRD's existing task IDs), which is
+    the exact primitive the auto-split mechanism above needs to insert
+    replacement tasks correctly — it did not exist until tonight, and
+    without it this open question had no way to be implemented at all,
+    by a human or by the orchestrator.
+
+    **Scope note, same as the rest of this doc:** this is still
+    **intra-PRD** (routing within one PRD's own task graph), distinct
+    from the **inter-PRD** member-sequencing this doc's main body
+    designs. It is the first concrete resolution of the "intra-PRD
+    adjust-and-retest loop" named earlier (**Local-model decision
+    assistant**, the "Two distinct routing layers" passage) — narrower
+    than that passage's full scope (varying tools, hints, or model tier
+    per retry), but a real, buildable first slice of it: one failure
+    signature, one corrective action, reusing mechanisms (decompose,
+    `AddTask`+`depends_on`, BL452's classifier shape, BL410's taxonomy)
+    that already exist or are now unblocked.
+
+    **Not yet decided:** whether this ships as part of BL431's own
+    follow-up implementation PRD (same question Open Question 15 asks
+    about the decision-assistant hook points generally) or as its own
+    PRD once BL452's classifier row and the atomic-decompose switch
+    exist to build on. Given it only needs `AddTask`+`depends_on` (now
+    shipped) and a single new classifier question (small, additive to
+    BL452's existing design), it is a reasonable **first** MVP slice of
+    the decision-assistant concept — smaller in scope than any of the
+    four original hook points, and backed by two real incidents in one
+    night rather than a hypothetical.

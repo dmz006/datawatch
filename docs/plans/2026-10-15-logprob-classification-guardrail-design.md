@@ -53,8 +53,9 @@ The earlier version of this doc ruled Ollama out. That was correct for Ollama's 
 | 11 | `ci-watch` | `guardrail_registry.go:80`; `ci_watch.go:535` | Hybrid. Log reading stays generative. The final acceptability call is closed-form. |
 | 12 | Content-autofix eligibility | `rules_review.go:178` | Not an LLM decision. Consumes #9. Unchanged. |
 | 13 | Decompose, planning, worker code | `autonomous` decompose path | Generative. Out of scope. |
+| 14 | Task scope-breadth classification (operator-raised 2026-10-16, see BL431's Open Question 19 extension in its own doc) | A new call site, not yet built: fired on a `content`-category task-verification failure, before deciding whether to retry | Closed-form, two options: "A) one coherent change  B) bundles multiple separable units". Feeds a new `scope_too_broad` signal on `FailureReason` (BL410), which the Automation orchestrator's failure-triage tree (BL431) branches on to auto-split the task via a narrow re-decompose, instead of blind-retrying or escalating. Live motivation: two of BL465's own pilot tasks hit exactly this shape in one night. |
 
-Moving #4, #5, #7, #8, and the final gate of #11 covers the verdict bit of nearly every LLM-judged guardrail.
+Moving #4, #5, #7, #8, #14, and the final gate of #11 covers the verdict bit of nearly every LLM-judged guardrail plus the one retry-routing decision identified so far outside a guardrail.
 
 ## Design
 
@@ -76,6 +77,7 @@ Moving #4, #5, #7, #8, and the final gate of #11 covers the verdict bit of nearl
 - **P4 — Guardrail wiring.** Map per-task and per-story outcomes. Use the classifier only as the final gate for `rules-review` and `ci-watch`. Scan guardrails and scripted passes stay untouched.
 - **P5 — Surfaces and docs.** Parity surfaces, `docs/config-reference.yaml`, operations docs, and a how-to without tracker IDs.
 - **P6 — Live validation.** Run on a live daemon: the native path on an upgraded remote node, the generic path on `llama-server`, and a deliberate failure on a pre-0.35 node.
+- **P7 — Scope-breadth classifier (table row #14, added 2026-10-16).** Depends on P2 (classifier client) existing. Wire the "one unit / bundles multiple units" question into the `content`-category failure path, writing `FailureReason.ScopeTooBroad` (BL410, additive field — no code changes to BL410's existing categories). Does not depend on P3/P4 (task-verdict/guardrail wiring) — this is a separate call site, not a guardrail. The consumer (auto-split on this signal) lives in BL431's orchestrator doc, not here.
 
 **Evaluation (not yet run).** Measure, per model and task type: infra-block rate, false-pass and false-block rates against the verifier scripts (`testdata/eval/model-tiering/verify/*.sh`), and p50/p95 latency on GPU and CPU nodes. Use a fit/test split. BL449 has no valid scored run yet, so no metric can be computed.
 
