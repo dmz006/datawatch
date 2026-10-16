@@ -89,10 +89,10 @@ func TestCompletion_PostSessionCommitLandsBeforeStateIsVisibleAsComplete(t *test
 }
 
 // Regression: the completion path used to gate the git commit behind the
-// auto-commit config (m.autoGit). The commit must now happen for every
-// backend regardless of that setting, so a session that completes while the
-// auto-commit config is OFF still lands its own commit. Proven here with
-// autoGit=false: the worker's uncommitted change appears as a new commit.
+// auto-commit config. The commit must now happen for every backend
+// regardless of that setting (deprecated and ignored), so a session that
+// completes still lands its own commit. Proven here: the worker's
+// uncommitted change appears as a new commit.
 func TestCompletion_CommitsEvenWhenAutoCommitConfigIsOff(t *testing.T) {
 	dir := t.TempDir()
 	gitRunT(t, dir, "init", "-q")
