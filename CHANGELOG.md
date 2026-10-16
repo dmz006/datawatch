@@ -5,6 +5,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.1.22 — fix(pi): pi-prompt no longer types multi-KB task text inline
+
+Found during the first real pilot through datawatch's own session
+manager: `pi-prompt` typed the task text (wrapped with checkpoint/
+completion framing, so even a short task spec arrives as a multi-KB
+block) directly into the terminal. Any embedded newline in that block
+got submitted as a real Enter keypress mid-command, corrupting the shell
+command the moment it was typed. Both pi backends now deliver task text
+through a scratch file instead, same fix already used for the
+interactive `pi` backend and for opencode's own backend.
+
 ## v9.1.21 — feat(pi): add pi LLM backend — interactive + one-shot variants (BL466)
 
 Two new backends from [pi](https://pi.dev), a minimal open-source coding
