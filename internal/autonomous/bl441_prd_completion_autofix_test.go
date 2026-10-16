@@ -12,6 +12,7 @@
 //     synthesizeCorrectiveWork(prd, v, ""), appends a standalone story+task
 //     to the SAME PRD, and the recursive Run() executes it and re-runs the
 //     review (PRD ends completed, 2 stories, RetryCountsByCategory[content]=1).
+//
 // The same result held with PerStoryApproval=true, MaxConcurrentTasks=4,
 // tasks pre-completed (resume-style) and tasks executed inside Run, and with
 // a verdict carrying Severity+Issues. The daemon's real guardrail
