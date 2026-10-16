@@ -60,12 +60,12 @@ import (
 	"github.com/dmz006/datawatch/internal/inference/adapters"
 	"github.com/dmz006/datawatch/internal/llm"
 	"github.com/dmz006/datawatch/internal/llm/backends/aider"
-	pibackend "github.com/dmz006/datawatch/internal/llm/backends/pi"
 	"github.com/dmz006/datawatch/internal/llm/backends/gemini"
 	"github.com/dmz006/datawatch/internal/llm/backends/goose"
 	"github.com/dmz006/datawatch/internal/llm/backends/ollama"
 	"github.com/dmz006/datawatch/internal/llm/backends/opencode"
 	"github.com/dmz006/datawatch/internal/llm/backends/openwebui"
+	pibackend "github.com/dmz006/datawatch/internal/llm/backends/pi"
 	"github.com/dmz006/datawatch/internal/llm/backends/shell"
 	"github.com/dmz006/datawatch/internal/llm/claudecode"
 	"github.com/dmz006/datawatch/internal/mcp"
@@ -4686,6 +4686,15 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					}
 					if s.State != session.StateKilled {
 						_ = mgr.Kill(task.SessionID)
+					}
+					// Record the worker session's deterministic commit sha (if
+					// any) on the task's ordered, de-duplicated attempt record.
+					// Same best-effort posture as the RecordTaskFilesTouched
+					// call site below: never fails verification.
+					if s.CommitSHA != "" && autonomousMgrRef != nil {
+						if rerr := autonomousMgrRef.RecordTaskAttemptCommit(task.PRDID, task.ID, s.CommitSHA); rerr != nil {
+							log.Printf("[autonomous] verifier: RecordTaskAttemptCommit(%s/%s): %v", task.PRDID, task.ID, rerr)
+						}
 					}
 				}
 				if stallErr != nil {

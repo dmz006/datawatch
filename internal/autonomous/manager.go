@@ -2488,6 +2488,38 @@ func (m *Manager) RecordTaskFilesTouched(prdID, taskID string, files []string) e
 	return m.store.SavePRD(prd)
 }
 
+// RecordTaskAttemptCommit (v5.26.64 sibling of RecordTaskFilesTouched) —
+// daemon-internal hook fired by the autonomous verifier once the worker
+// session's deterministic commit sha is known. Appends it to the task's
+// ordered, de-duplicated AttemptCommitSHAs record (Task.RecordAttemptCommit
+// already ignores empty values and duplicates). No lock-after-approve gate
+// — this fires after the worker session ends.
+func (m *Manager) RecordTaskAttemptCommit(prdID, taskID, sha string) error {
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return fmt.Errorf("prd %q not found", prdID)
+	}
+	found := false
+	for si := range prd.Story {
+		for ti := range prd.Story[si].Tasks {
+			if prd.Story[si].Tasks[ti].ID == taskID {
+				prd.Story[si].Tasks[ti].RecordAttemptCommit(sha)
+				prd.Story[si].Tasks[ti].UpdatedAt = time.Now()
+				found = true
+				break
+			}
+		}
+		if found {
+			break
+		}
+	}
+	if !found {
+		return fmt.Errorf("task %q not found in prd %q", taskID, prdID)
+	}
+	prd.UpdatedAt = time.Now()
+	return m.store.SavePRD(prd)
+}
+
 // SetStoryLLM (BL381) lets the operator override a story's worker LLM
 // (backend / effort / model). All tasks in this story inherit these
 // values unless overridden at the task level. Empty string clears the
