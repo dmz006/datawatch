@@ -5,6 +5,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.1.18 — add(opencode): full internal server logs for every opencode-acp session
+
+Diagnostic-only, no behavior change: every opencode session now runs with
+verbose internal logging turned on, captured directly in the session's
+own output. This is needed to get a definitive answer on an intermittent
+failure where a session's second message sometimes fails -- the only
+diagnostic so far used a synthetic test that didn't reproduce the real
+conditions, so it couldn't explain what's actually happening during a
+real failure.
+
 ## v9.1.17 — fix(opencode): a stale reused connection broke the second message every time
 
 Real cause of the continuation nudge still failing after v9.1.14-16: the

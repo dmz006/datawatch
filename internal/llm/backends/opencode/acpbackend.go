@@ -170,7 +170,17 @@ func (b *ACPBackend) Launch(ctx context.Context, task, tmuxSession, projectDir, 
 	// Start opencode serve in the tmux session.
 	binary := strings.ReplaceAll(b.binary, "'", `'\''`)
 	projDir := strings.ReplaceAll(projectDir, "'", `'\''`)
-	serveCmd := fmt.Sprintf("cd '%s' && '%s' serve --port %d 2>&1", projDir, binary, port)
+	// --print-logs --log-level DEBUG (2026-10-16, live investigation) —
+	// opencode's own internal logs land directly in this session's
+	// output.log via the existing 2>&1 redirect, with zero extra
+	// plumbing. Needed to get a definitive root cause for the
+	// intermittent nudge-2/EOF failure from a REAL production dispatch —
+	// the only diagnostic so far used a synthetic test with opencode's
+	// own fast built-in model, which worked fine and proved nothing
+	// about the real Ollama/qwen3.8:27b path. Kept on permanently: it's
+	// diagnostic-only (no behavior change) and gives real visibility
+	// into every future opencode session for free.
+	serveCmd := fmt.Sprintf("cd '%s' && '%s' serve --port %d --print-logs --log-level DEBUG 2>&1", projDir, binary, port)
 	if err := exec.CommandContext(ctx, "tmux", "send-keys", "-t", tmuxSession, serveCmd, "Enter").Run(); err != nil {
 		return fmt.Errorf("start opencode serve in %s: %w", tmuxSession, err)
 	}
@@ -258,7 +268,17 @@ func (b *ACPBackend) LaunchResume(ctx context.Context, task, tmuxSession, projec
 
 	binary := strings.ReplaceAll(b.binary, "'", `'\''`)
 	projDir := strings.ReplaceAll(projectDir, "'", `'\''`)
-	serveCmd := fmt.Sprintf("cd '%s' && '%s' serve --port %d 2>&1", projDir, binary, port)
+	// --print-logs --log-level DEBUG (2026-10-16, live investigation) —
+	// opencode's own internal logs land directly in this session's
+	// output.log via the existing 2>&1 redirect, with zero extra
+	// plumbing. Needed to get a definitive root cause for the
+	// intermittent nudge-2/EOF failure from a REAL production dispatch —
+	// the only diagnostic so far used a synthetic test with opencode's
+	// own fast built-in model, which worked fine and proved nothing
+	// about the real Ollama/qwen3.8:27b path. Kept on permanently: it's
+	// diagnostic-only (no behavior change) and gives real visibility
+	// into every future opencode session for free.
+	serveCmd := fmt.Sprintf("cd '%s' && '%s' serve --port %d --print-logs --log-level DEBUG 2>&1", projDir, binary, port)
 	if err := exec.CommandContext(ctx, "tmux", "send-keys", "-t", tmuxSession, serveCmd, "Enter").Run(); err != nil {
 		return fmt.Errorf("start opencode serve in %s: %w", tmuxSession, err)
 	}
