@@ -570,6 +570,18 @@ type Task struct {
 	Error        string              `json:"error,omitempty"`
 	Verification *VerificationResult `json:"verification,omitempty"`
 	RetryCount   int                 `json:"retry_count,omitempty"`
+	// PriorAttemptCount (v9.2.1) — how many times this task has been reset
+	// and re-queued (ResetTask) for a fresh attempt. Unlike RetryCount
+	// (which ResetTask zeroes to start the next attempt's auto-retry budget
+	// at 0), this is a cumulative, monotonically-increasing count that is
+	// NEVER reset: ResetTask increments it and only ever resets RetryCount.
+	// The verifier uses it to tell a genuine retry ("this is a re-run of a
+	// task whose prior attempt may have already landed correct work") from a
+	// first attempt, so it can safely fall back to the task's own
+	// verification script when the retry produced no diff. JSON omitempty so
+	// the first attempt (0) is invisible on the wire; no existing client
+	// relied on its absence to mean something.
+	PriorAttemptCount int `json:"prior_attempt_count,omitempty"`
 	// FailureReason (BL410 Phase 1) — structured, categorized detail
 	// alongside Error (a bare string, left untouched for existing
 	// readers). Set on the task's last failed/blocked attempt.
@@ -776,6 +788,16 @@ type VerificationResult struct {
 	// Category (BL410 Phase 0) — see GuardrailVerdict.Category's doc
 	// comment; same taxonomy, same empty-means-"content" default.
 	Category string `json:"category,omitempty"`
+	// UnmodifiedRetry (v9.2.1) — true when this verification passed via the
+	// unmodified-retry escape hatch: the retry itself produced no diff or
+	// new files (taskProducedNoOutput), but the task is a retry and its own
+	// VerificationScript re-run against the already-committed deliverable
+	// passed. Records that the "empty diff" verdict was overridden by a
+	// deterministic script check rather than by the LLM judge, so the
+	// decision is auditable in the result itself. Absent (false) for
+	// every other verification path; omitempty keeps the wire shape
+	// unchanged for existing consumers.
+	UnmodifiedRetry bool `json:"unmodified_retry,omitempty"`
 }
 
 // Learning is a post-task insight extracted by the loop and saved

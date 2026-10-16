@@ -1828,6 +1828,17 @@ func (m *Manager) ResetTask(prdID, taskID, actor string, force bool) (*PRD, erro
 				emitReset = func(dec *Decision) { m.emitPendingTaskEvents(prd, []pendingTaskEvent{resetEv}, dec) }
 				t.Verification = nil
 				t.RetryCount = 0
+				// v9.2.1 — a manual (operator) reset is the strongest "this is a
+				// retry" signal: to reach this block the task already reached a
+				// terminal-ish status (failed/blocked, or completed/cancelled
+				// requeued via force), i.e. at least one prior attempt happened.
+				// RetryCount is zeroed for the next attempt's auto-retry budget,
+				// but PriorAttemptCount is cumulative and is what the verifier
+				// consults to know a retry's empty diff is legitimate (the prior
+				// attempt may have already landed correct work) rather than a
+				// genuine no-output. Auto in-loop retries don't go through
+				// ResetTask and leave this at 0 (see Task's field doc).
+				t.PriorAttemptCount++
 				t.StartedAt = nil
 				t.CompletedAt = nil
 				t.UpdatedAt = time.Now()
@@ -1885,6 +1896,35 @@ func (m *Manager) ResetTask(prdID, taskID, actor string, force bool) (*PRD, erro
 	emitReset(lastDecision(prd, kind))
 	updated, _ := m.store.GetPRD(prdID)
 	return updated, nil
+}
+
+// RecordUnmodifiedRetry (v9.2.1) records the audit trail for a retry that
+// passed verification via the unmodified-retry escape hatch — the retry
+// itself produced no diff, but the task's own VerificationScript re-run
+// against the already-committed deliverable passed, so the verifier
+// completed the task rather than failing it. Like recordAutoRetryDecision it
+// appends a single Decision to the PRD (the autonomous package's own
+// already-universally-exposed audit trail, surfaced via REST/MCP/PWA)
+// rather than inventing a new mechanism. Called from the cmd/datawatch
+// verifier only on the exact rare path it exists for, and only AFTER the
+// task has already been marked complete by the caller, so a lookup/save
+// failure there is a lost audit note, never a lost outcome — best-effort
+// callers log the returned error and move on. A prd that doesn't exist is
+// a hard error so the caller doesn't silently claim a record it never made.
+func (m *Manager) RecordUnmodifiedRetry(prdID, taskID, note string) error {
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return fmt.Errorf("prd %q not found", prdID)
+	}
+	now := time.Now()
+	prd.UpdatedAt = now
+	prd.Decisions = append(prd.Decisions, Decision{
+		At:    now,
+		Kind:  "unmodified_retry_completed",
+		Actor: "autonomous",
+		Note:  fmt.Sprintf("task=%s unmodified retry completed verification script passed (%s)", taskID, note),
+	})
+	return m.store.SavePRD(prd)
 }
 
 // CancelStory (BL382) — operator cancels a single story without cancelling the whole PRD.

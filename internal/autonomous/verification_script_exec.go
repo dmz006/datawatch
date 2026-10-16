@@ -25,6 +25,33 @@ import (
 // GuardrailInvocation.ScriptOutput.
 const maxVerificationScriptOutput = 8 * 1024
 
+// RunVerificationScript is the exported runner for a task/story
+// VerificationScript. It executes the same `bash <script>` under the same
+// trust boundary as the internal runVerificationScript (the absolute-path
+// rejection AND the "resolves inside projectDir" check are the real safety
+// net — filepath.Clean does NOT neutralize `../`), with identical output
+// and exit-code semantics:
+//   - script exit 0: ok=true, output=<truncated combined output>
+//   - script non-zero exit: ok=false, output=... , err=nil (a script's own
+//     non-zero exit is a legitimate verdict, not a runner failure)
+//   - unsafe path or failed to launch bash: ok=false, err!=nil (output may
+//     be empty)
+//
+// It exists so callers at the cmd/ layer (the autonomous verifier in
+// cmd/datawatch) can re-run a task's own deterministic verification script
+// at decision time — without re-implementing the exec/path-validation
+// pattern — instead of depending on the LLM judge to do it. The guardrail
+// evidence path (prepareScriptEvidence in executor.go) keeps using the same
+// internal function it always did; this is a thin exported wrapper, so there
+// is one implementation of the exec behavior in both places.
+func RunVerificationScript(scriptRelPath, projectDir string) (output string, ok bool, err error) {
+	output, exitCode, runErr := runVerificationScript(scriptRelPath, projectDir)
+	if runErr != nil {
+		return output, false, runErr
+	}
+	return output, exitCode == 0, nil
+}
+
 // runVerificationScript executes scriptRelPath (relative to projectDir)
 // with bash, cwd = projectDir. A script's own non-zero exit is reported
 // via exitCode with err == nil; err is non-nil (exitCode -1) only for an
