@@ -19,14 +19,22 @@
 // (cmd/datawatch judgedGuardrailCategory) also yields Category "" for a
 // parsed non-policy judgment, so the category mapping is not the cause.
 //
-// Therefore the live failure is in hypothesis (c) territory or live-only
-// wiring: the Run() goroutine that held the ~108s guardrail session was
-// gone (e.g. daemon restart mid-guardrail) and nothing re-fired the
-// rollup for a running PRD whose tasks were all terminal (BL451 later
-// added completed-recovery/rollup-race handling), or the daemon ran a
-// binary predating the PRD-level branch. This unit scope cannot tell
-// which; confirming needs the daemon log around the session timestamps.
-// This test stays as a regression guard for the PRD-level path.
+// Also ruled out by code reading (not by test): a guardrail error does
+// not leave the PRD running — API.Run reverts it to PRDApproved; and
+// boot-resume (api.go resumeRunningPRDs) calls Run() for every stored
+// PRDRunning PRD, so a daemon restart re-fires the rollup even when all
+// tasks are already terminal.
+//
+// DETERMINATION: (a) and (b) are false on current code; a reproducer
+// that FAILS on unmodified code does not exist, so this file is a
+// regression guard, not the requested failing repro. Of the three
+// hypotheses only (c)-style or live-only causes remain, and the repo
+// alone cannot choose between them: the incident PRD (5d599cef, 2026-10-14)
+// ran before BL451 (v9.1.1, 2026-10-15), whose commit-time stale-rollup
+// check changed this path, and possibly on a binary older than the
+// PRD-level branch's ci-watch rework (e736a623, 2026-10-13). Settling it
+// needs the daemon log for that run's guardrail session timestamps
+// (restart mid-guardrail vs. a block that took the Category!="" path).
 package autonomous
 
 import (
