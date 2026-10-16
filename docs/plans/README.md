@@ -104,6 +104,7 @@ advances it without hand sequencing.
 | 46 | BL424 Operator integration guide | not started (PRD `0e2ac398` approved, held to last) | 45 |
 | 47 | BL444 MCP SSE listener retries bind at boot (external bug report) | not started | - |
 | 48 | BL445 Review and merge external MCP `public_url` PR, GH#208 (external bug-fix) | not started | - |
+| 49 | BL468 pi backend echoes `DATAWATCH_COMPLETE` even when pi exits non-zero, so a failed pi run can look complete | not started (found 2026-10-16 while debugging decompose; not blocking now — pull up only if it recurs and holds up PRDs) | - |
 
 ## Opportunistic, non-blocking research
 
