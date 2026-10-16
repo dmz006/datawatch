@@ -816,6 +816,36 @@ re-decomposition, not just a retry with the same task boundaries. Do not
 re-decompose any of them proactively before that lands; this is a
 forward-looking note for when it does.
 
+**Two distinct routing layers, named explicitly so they don't get
+conflated (operator-raised 2026-10-15).** Everything in this section so
+far — dispatch-time trimming, stall-triggered reroute, decompose
+granularity — is **intra-PRD**: routing and retry/retest *within* one
+PRD's own stories/tasks, using that task's own verification feedback to
+adjust and loop before anything escalates further. This is a different
+layer from the rest of this document, which is about **inter-PRD**
+routing: the Automation coordinator deciding which *member* (a whole PRD)
+runs next, skips, gets inserted, or triggers a budget response. The two
+need to compose, not merge into one mechanism:
+- **Intra-PRD** (new scope, named here): a task/story that fails its own
+  verification should be able to enter a bounded "adjust and retest" loop
+  *inside* the same PRD — not just "retry the identical dispatch" (BL410's
+  existing flat retry-count budget) but genuinely vary the approach each
+  iteration (smaller sub-task, trimmed tools, a different hint derived
+  from the specific verification failure) before exhausting and only then
+  surfacing to the PRD/Automation level. The dispatch-time hook point
+  above is the first concrete piece of this; it should grow into a real
+  bounded loop construct, not stay a single reroute-on-retry.
+- **Inter-PRD** (already this doc's main scope): once a PRD itself reaches
+  a terminal state (including "intra-PRD loop exhausted"), the Automation
+  coordinator's existing hook points (empty-edge resolution, skip_member,
+  insert_member, budget response) decide what happens at the
+  whole-PRD-member level.
+A PRD that exhausts its own intra-PRD loop is exactly the signal the
+inter-PRD layer's empty-edge/skip_member hooks already consume today —
+no new signal shape needed at the boundary, just a clear scope line
+between "retry smarter inside this PRD" and "route around this PRD
+member."
+
 This is intentionally not resolved into an implementation plan in this
 design pass — see Open questions, new item 15.
 
