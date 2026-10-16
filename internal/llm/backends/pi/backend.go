@@ -199,20 +199,26 @@ func (b *PromptBackend) Version() string { return versionOf(b.binary) }
 // non-interactively (there is no human to answer an approval prompt in a
 // one-shot task).
 func (b *PromptBackend) Launch(ctx context.Context, task, tmuxSession, projectDir, logFile string) error {
-	cmd := buildLaunchCmd(b.binary, b.model, task, projectDir)
+	cmd := buildLaunchCmd(b.binary, b.model, task, projectDir, tmuxSession)
 	return exec.CommandContext(ctx, "tmux", "send-keys", "-t", tmuxSession, cmd, "Enter").Run()
 }
 
 // buildLaunchCmd builds the shell command string sent to tmux. Pulled out
 // of Launch so the quoting/flag logic is unit-testable without spawning a
-// real tmux session or the pi binary.
-func buildLaunchCmd(binary, model, task, projectDir string) string {
-	escapedTask := shellEscape(task)
+// real tmux session or the pi binary. Task text goes through a scratch
+// file, not inline — see taskArgExpr's doc comment: a multi-KB task spec
+// (the session manager wraps every task with checkpoint/completion
+// framing, so even a short task spec arrives here multi-KB) typed inline
+// via tmux send-keys has its embedded newlines submitted as literal Enter
+// keypresses mid-command, corrupting the shell command — confirmed live
+// 2026-10-16 ("These: command not found" mid-paste) before this fix.
+func buildLaunchCmd(binary, model, task, projectDir, tmuxSession string) string {
 	escapedDir := shellEscape(projectDir)
 	modelFlag := ""
 	if model != "" {
 		modelFlag = fmt.Sprintf("--model '%s' ", shellEscape(model))
 	}
-	return fmt.Sprintf("cd '%s' && %s --print --mode text --approve %s'%s'; echo 'DATAWATCH_COMPLETE: pi done'",
-		escapedDir, binary, modelFlag, escapedTask)
+	argExpr, cleanup := taskArgExpr(tmuxSession, task)
+	return fmt.Sprintf("cd '%s' && %s --print --mode text --approve %s%s; %secho 'DATAWATCH_COMPLETE: pi done'",
+		escapedDir, binary, modelFlag, argExpr, cleanup)
 }

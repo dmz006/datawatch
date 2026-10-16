@@ -11,11 +11,11 @@ import (
 // ---- PromptBackend (one-shot, --print) ----
 
 func TestBuildLaunchCmd_NoModel(t *testing.T) {
-	cmd := buildLaunchCmd("pi", "", "do the thing", "/home/dmz/work")
+	cmd := buildLaunchCmd("pi", "", "do the thing", "/home/dmz/work", "cs-abc")
 	if !strings.Contains(cmd, "cd '/home/dmz/work'") {
 		t.Errorf("missing cd into project dir, got: %s", cmd)
 	}
-	if !strings.Contains(cmd, "pi --print --mode text --approve 'do the thing'") {
+	if !strings.Contains(cmd, "pi --print --mode text --approve") {
 		t.Errorf("unexpected command shape, got: %s", cmd)
 	}
 	if strings.Contains(cmd, "--model") {
@@ -27,30 +27,46 @@ func TestBuildLaunchCmd_NoModel(t *testing.T) {
 }
 
 func TestBuildLaunchCmd_WithModel(t *testing.T) {
-	cmd := buildLaunchCmd("pi", "ollama/qwen3.8:27b", "task text", "/proj")
+	cmd := buildLaunchCmd("pi", "ollama/qwen3.8:27b", "task text", "/proj", "cs-abc")
 	if !strings.Contains(cmd, "--model 'ollama/qwen3.8:27b'") {
 		t.Errorf("expected --model flag with the set model, got: %s", cmd)
 	}
 }
 
-func TestBuildLaunchCmd_EscapesSingleQuotesInTask(t *testing.T) {
-	cmd := buildLaunchCmd("pi", "", "it's a test", "/proj")
-	if !strings.Contains(cmd, `it'\''s a test`) {
-		t.Errorf("expected single quote in task to be shell-escaped, got: %s", cmd)
+// TestBuildLaunchCmd_TaskGoesThroughScratchFile confirms the task text is
+// delivered via a scratch file ($(cat '...')), not typed inline — typing a
+// multi-KB task (the session manager wraps every task with checkpoint/
+// completion framing) inline via tmux send-keys submits any embedded
+// newline as a literal Enter keypress mid-command. Confirmed live
+// 2026-10-16 ("These: command not found" mid-paste) before this fix.
+func TestBuildLaunchCmd_TaskGoesThroughScratchFile(t *testing.T) {
+	cmd := buildLaunchCmd("pi", "", "it's a test\nwith a newline", "/proj", "cs-abc")
+	if !strings.Contains(cmd, `$(cat '`) {
+		t.Errorf("expected task text delivered via a scratch file, got: %s", cmd)
+	}
+	if strings.Contains(cmd, "with a newline") {
+		t.Errorf("task text must not appear inline in the command, got: %s", cmd)
 	}
 }
 
 func TestBuildLaunchCmd_EscapesSingleQuotesInProjectDir(t *testing.T) {
-	cmd := buildLaunchCmd("pi", "", "task", "/proj's/dir")
+	cmd := buildLaunchCmd("pi", "", "task", "/proj's/dir", "cs-abc")
 	if !strings.Contains(cmd, `/proj'\''s/dir`) {
 		t.Errorf("expected single quote in project dir to be shell-escaped, got: %s", cmd)
 	}
 }
 
 func TestBuildLaunchCmd_EscapesSingleQuotesInModel(t *testing.T) {
-	cmd := buildLaunchCmd("pi", "weird'model", "task", "/proj")
+	cmd := buildLaunchCmd("pi", "weird'model", "task", "/proj", "cs-abc")
 	if !strings.Contains(cmd, `weird'\''model`) {
 		t.Errorf("expected single quote in model to be shell-escaped, got: %s", cmd)
+	}
+}
+
+func TestBuildLaunchCmd_EmptyTaskOmitsArg(t *testing.T) {
+	cmd := buildLaunchCmd("pi", "", "", "/proj", "cs-abc")
+	if strings.Contains(cmd, "$(cat") {
+		t.Errorf("empty task must not reference a task file, got: %s", cmd)
 	}
 }
 
