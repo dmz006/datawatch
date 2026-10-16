@@ -58,9 +58,57 @@ func (g *ProjectGit) PostSessionCommit(sessionID, task string, state State) erro
 	return runGit(g.dir, "commit", "-m", msg)
 }
 
+// CommitSessionWork stages all changes and commits them with a
+// message built from the session summary (falling back to the task
+// title). Returns the new HEAD sha, or ("", nil) when there is
+// nothing to commit.
+func (g *ProjectGit) CommitSessionWork(sessionID, task, summary string) (string, error) {
+	if err := runGit(g.dir, "add", "-A"); err != nil {
+		return "", err
+	}
+	status, err := gitOutput(g.dir, "status", "--porcelain")
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(status) == "" {
+		return "", nil
+	}
+	if err := runGit(g.dir, "commit", "-m", buildCommitMessage(summary, task)); err != nil {
+		return "", err
+	}
+	sha, err := gitOutput(g.dir, "rev-parse", "HEAD")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(sha), nil
+}
+
+// buildCommitMessage builds the commit subject for
+// CommitSessionWork: summary trimmed, collapsed to its first line,
+// capped at 200 chars; if that is empty, falls back to
+// "task: <task>" (task truncated to 60 chars). Never empty.
+func buildCommitMessage(summary, task string) string {
+	msg := strings.TrimSpace(summary)
+	if i := strings.IndexByte(msg, '\n'); i >= 0 {
+		msg = strings.TrimSpace(msg[:i])
+	}
+	if len(msg) > 200 {
+		msg = msg[:200]
+	}
+	if msg == "" {
+		msg = "task: " + truncateStr(task, 60)
+	}
+	if strings.TrimSpace(msg) == "" {
+		msg = "session work"
+	}
+	return msg
+}
+
 // TagCheckpoint (BL29) creates an annotated tag at HEAD pointing at
 // the pre-/post-session state. Tag name pattern:
-//   datawatch-{kind}-{sessionID}    (kind: "pre" | "post")
+//
+//	datawatch-{kind}-{sessionID}    (kind: "pre" | "post")
+//
 // kind must be "pre" or "post". Idempotent — re-tagging is allowed
 // (uses git tag -f) so a session restart can update the marker.
 func (g *ProjectGit) TagCheckpoint(kind, sessionID, task string) error {

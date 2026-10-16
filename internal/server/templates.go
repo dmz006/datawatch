@@ -18,15 +18,17 @@ import (
 )
 
 type templateListItem struct {
-	Name          string            `json:"name"`
-	ProjectDir    string            `json:"project_dir,omitempty"`
-	Backend       string            `json:"backend,omitempty"`
-	Profile       string            `json:"profile,omitempty"`
-	Effort        string            `json:"effort,omitempty"`
-	Env           map[string]string `json:"env,omitempty"`
-	AutoGitCommit *bool             `json:"auto_git_commit,omitempty"`
-	AutoGitInit   *bool             `json:"auto_git_init,omitempty"`
-	Description   string            `json:"description,omitempty"`
+	Name       string            `json:"name"`
+	ProjectDir string            `json:"project_dir,omitempty"`
+	Backend    string            `json:"backend,omitempty"`
+	Profile    string            `json:"profile,omitempty"`
+	Effort     string            `json:"effort,omitempty"`
+	Env        map[string]string `json:"env,omitempty"`
+	// Deprecated and ignored: task sessions are committed automatically.
+	// Retained so existing templates keep loading and working.
+	AutoGitCommit *bool  `json:"auto_git_commit,omitempty"`
+	AutoGitInit   *bool  `json:"auto_git_init,omitempty"`
+	Description   string `json:"description,omitempty"`
 }
 
 func (s *Server) handleTemplates(w http.ResponseWriter, r *http.Request) {

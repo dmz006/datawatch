@@ -348,6 +348,32 @@ func TestRecordTaskFilesTouched_PostSpawnNoLock(t *testing.T) {
 	}
 }
 
+func TestRecordTaskAttemptCommit_PostSpawnNoLock(t *testing.T) {
+	// Daemon-internal hook fires after worker session ends — no
+	// lock-after-approve gate; duplicates are not appended again.
+	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
+	prd, _ := m.CreatePRD("spec", "/p", "", "", "")
+	_ = m.Store().SetStories(prd.ID, []Story{{Title: "S", Tasks: []Task{{Title: "T1"}}}})
+	prd, _ = m.Store().GetPRD(prd.ID)
+	prd.Status = PRDRunning
+	_ = m.Store().SavePRD(prd)
+	taskID := prd.Story[0].Tasks[0].ID
+
+	for _, sha := range []string{"aaa111", "bbb222", "aaa111"} {
+		if err := m.RecordTaskAttemptCommit(prd.ID, taskID, sha); err != nil {
+			t.Fatalf("RecordTaskAttemptCommit(%q): %v", sha, err)
+		}
+	}
+	out, _ := m.Store().GetPRD(prd.ID)
+	got := out.Story[0].Tasks[0].AttemptCommitSHAs
+	if len(got) != 2 || got[0] != "aaa111" || got[1] != "bbb222" {
+		t.Fatalf("AttemptCommitSHAs not recorded in order without duplicates: %v", got)
+	}
+	if err := m.RecordTaskAttemptCommit(prd.ID, "missing", "ccc333"); err == nil {
+		t.Fatal("expected error for unknown task")
+	}
+}
+
 func TestEditTaskSpec_RefusesAfterApprove(t *testing.T) {
 	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
 	prd, _ := m.CreatePRD("spec", "/p", "", "", "")

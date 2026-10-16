@@ -414,7 +414,7 @@ Session: %s | Task: %s
 
 ## Constraints
 - Work only within: %s
-- Commit changes to git frequently
+- Do not run git add or git commit — your work is committed automatically when you finish
 - If rate limited: output DATAWATCH_RATE_LIMITED: resets at <time>
 - If needing input: output DATAWATCH_NEEDS_INPUT: <question>
 - When done: output DATAWATCH_COMPLETE: <summary>

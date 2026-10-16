@@ -47,13 +47,13 @@ func KnownStates() []State {
 
 // Session holds metadata about a single claude-code session.
 type Session struct {
-	ID          string    `json:"id"`           // 4-char hex
-	FullID      string    `json:"full_id"`      // hostname-id
+	ID          string    `json:"id"`             // 4-char hex
+	FullID      string    `json:"full_id"`        // hostname-id
 	Name        string    `json:"name,omitempty"` // optional human-readable name
-	Task        string    `json:"task"`         // original task description
-	ProjectDir  string    `json:"project_dir"`  // working directory for claude-code
-	TmuxSession string    `json:"tmux_session"` // tmux session name
-	LogFile     string    `json:"log_file"`     // path to output log
+	Task        string    `json:"task"`           // original task description
+	ProjectDir  string    `json:"project_dir"`    // working directory for claude-code
+	TmuxSession string    `json:"tmux_session"`   // tmux session name
+	LogFile     string    `json:"log_file"`       // path to output log
 	State       State     `json:"state"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
@@ -88,19 +88,19 @@ type Session struct {
 	PromptContext string `json:"prompt_context,omitempty"`
 	// RateLimitResetAt is set when the session is in rate_limited state.
 	// The daemon will retry automatically after this time.
-	RateLimitResetAt *time.Time `json:"rate_limit_reset_at,omitempty"`
-	TrackingDir      string     `json:"tracking_dir"` // path to session git folder
-	ConsoleCols      int        `json:"console_cols,omitempty"` // tmux terminal width
-	ConsoleRows      int        `json:"console_rows,omitempty"` // tmux terminal height
-	InputCount       int        `json:"input_count,omitempty"`  // number of inputs/prompts sent
-	LastInput        string     `json:"last_input,omitempty"`   // last input sent (for alert logging, truncated)
-	OutputMode       string     `json:"output_mode,omitempty"`  // "terminal" or "log" — controls web display
-	InputMode        string     `json:"input_mode,omitempty"`   // "tmux" or "none" — controls input bar visibility
-	ChannelReady     bool       `json:"channel_ready,omitempty"` // true when MCP channel is connected
-	ChannelPort      int        `json:"channel_port,omitempty"`  // per-session MCP channel HTTP port
-	ThreadIDs        map[string]string `json:"thread_ids,omitempty"` // per-backend thread IDs for threaded messaging
-	Profile          string            `json:"profile,omitempty"`    // named profile used to launch this session
-	FallbackOf       string            `json:"fallback_of,omitempty"` // session ID this is a fallback for
+	RateLimitResetAt *time.Time        `json:"rate_limit_reset_at,omitempty"`
+	TrackingDir      string            `json:"tracking_dir"`            // path to session git folder
+	ConsoleCols      int               `json:"console_cols,omitempty"`  // tmux terminal width
+	ConsoleRows      int               `json:"console_rows,omitempty"`  // tmux terminal height
+	InputCount       int               `json:"input_count,omitempty"`   // number of inputs/prompts sent
+	LastInput        string            `json:"last_input,omitempty"`    // last input sent (for alert logging, truncated)
+	OutputMode       string            `json:"output_mode,omitempty"`   // "terminal" or "log" — controls web display
+	InputMode        string            `json:"input_mode,omitempty"`    // "tmux" or "none" — controls input bar visibility
+	ChannelReady     bool              `json:"channel_ready,omitempty"` // true when MCP channel is connected
+	ChannelPort      int               `json:"channel_port,omitempty"`  // per-session MCP channel HTTP port
+	ThreadIDs        map[string]string `json:"thread_ids,omitempty"`    // per-backend thread IDs for threaded messaging
+	Profile          string            `json:"profile,omitempty"`       // named profile used to launch this session
+	FallbackOf       string            `json:"fallback_of,omitempty"`   // session ID this is a fallback for
 	// LastResponse holds the short LLM summary (or raw tmux capture when no
 	// summarizer is configured), captured on running→waiting_input transitions.
 	// Used for /copy, push alerts, mobile notifications, and Android Auto.
@@ -157,6 +157,15 @@ type Session struct {
 	// when project_dir is a git repo. Empty when session.auto_git_commit
 	// is disabled or the project_dir is not a git repo.
 	DiffSummary string `json:"diff_summary,omitempty"`
+
+	// CommitSHA holds the sha of the deterministic commit made when the
+	// session signalled done (the post-session commit that DiffSummary
+	// describes). Empty when there was nothing to commit.
+	CommitSHA string `json:"commit_sha,omitempty"`
+
+	// CompletionSummary holds the one-line summary the worker gave when
+	// the session signalled done. Empty if the worker didn't provide one.
+	CompletionSummary string `json:"completion_summary,omitempty"`
 
 	// TokensIn / TokensOut / EstCostUSD (BL6) — running totals across
 	// a session. Updated by per-backend usage parsers (initially
@@ -319,8 +328,8 @@ func IsValidEffort(s string) bool {
 type Store struct {
 	mu       sync.RWMutex
 	path     string
-	lockPath string // advisory lock sidecar file (sessions.json.lock)
-	encKey   []byte // nil = no encryption
+	lockPath string              // advisory lock sidecar file (sessions.json.lock)
+	encKey   []byte              // nil = no encryption
 	sessions map[string]*Session // key: full ID
 }
 

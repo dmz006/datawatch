@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -46,7 +47,7 @@ func TestCompletion_PostSessionCommitLandsBeforeStateIsVisibleAsComplete(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	mgr := &Manager{store: store, hostname: "testhost", autoGit: true}
+	mgr := &Manager{store: store, hostname: "testhost"}
 	sess := &Session{
 		ID: "abcd", FullID: "testhost-abcd", Hostname: "testhost",
 		State: StateRunning, OneShot: true, ProjectDir: dir,
@@ -85,4 +86,70 @@ func TestCompletion_PostSessionCommitLandsBeforeStateIsVisibleAsComplete(t *test
 		t.Fatal("DiffSummary should be populated from the post-session commit")
 	}
 	t.Logf("HEAD commit: %s", logOut)
+}
+
+// Regression: the completion path used to gate the git commit behind the
+// auto-commit config. The commit must now happen for every backend
+// regardless of that setting (deprecated and ignored), so a session that
+// completes still lands its own commit. Proven here: the worker's
+// uncommitted change appears as a new commit.
+func TestCompletion_CommitsEvenWhenAutoCommitConfigIsOff(t *testing.T) {
+	dir := t.TempDir()
+	gitRunT(t, dir, "init", "-q")
+	gitRunT(t, dir, "config", "user.email", "t@t.test")
+	gitRunT(t, dir, "config", "user.name", "t")
+	if err := os.WriteFile(filepath.Join(dir, "target.md"), []byte("stub\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitRunT(t, dir, "add", "-A")
+	gitRunT(t, dir, "commit", "-q", "-m", "stub")
+
+	// The worker writes real content but leaves it uncommitted.
+	if err := os.WriteFile(filepath.Join(dir, "target.md"), []byte("stub\nreal content\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	countCommits := func() int {
+		out, err := exec.Command("git", "-C", dir, "rev-list", "--count", "HEAD").Output()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var n int
+		if _, err := fmt.Sscanf(string(out), "%d", &n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	before := countCommits()
+
+	store, err := NewStore(filepath.Join(t.TempDir(), "sessions.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mgr := &Manager{store: store, hostname: "testhost"}
+	sess := &Session{
+		ID: "efgh", FullID: "testhost-efgh", Hostname: "testhost",
+		State: StateRunning, OneShot: true, ProjectDir: dir,
+		CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}
+	if err := store.Save(sess); err != nil {
+		t.Fatal(err)
+	}
+	projGit := NewProjectGit(dir)
+
+	var lastOutputTime time.Time
+	var pendingLines []string
+	var lastPromptMatchTime time.Time
+	mgr.processOutputLine(context.Background(), sess, projGit, "DATAWATCH_COMPLETE: done", &lastOutputTime, &pendingLines, &lastPromptMatchTime, func() *Tracker { return nil })
+
+	got, ok := store.Get(sess.FullID)
+	if !ok || got.State != StateComplete {
+		t.Fatalf("session should be Complete after the marker, got ok=%v state=%v", ok, got)
+	}
+
+	// Even without an explicit auto-commit setting, the completion must land a commit.
+	after := countCommits()
+	if after <= before {
+		t.Fatalf("expected a completion commit, but commit count did not increase (before=%d after=%d)", before, after)
+	}
 }

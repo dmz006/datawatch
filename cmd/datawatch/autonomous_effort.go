@@ -117,19 +117,13 @@ func buildAutonomousSessionBody(req autonomouspkg.SpawnRequest, spec, defaultBac
 			sessionBody["claude_effort"] = ce
 		}
 	}
-	// BL407 Phase 2 — a worktree-mode PRD needs real commits on
-	// its branch regardless of this daemon's session.auto_git_commit
-	// default; only ever forces true, never forces false (an
-	// operator who wants commits elsewhere keeps getting them).
-	if req.ForceAutoGitCommit {
-		sessionBody["auto_git_commit"] = true
-	}
 	return sessionBody
 }
 
 // isLightweightHarnessKind (2026-10-15, live-validated) reports whether a
 // resolved backend kind is one where the heavy standard task harness
-// (CHECKPOINT PROTOCOL + BEFORE YOU FINISH, see buildLightweightOrFullHarnessBlock)
+// (CHECKPOINT PROTOCOL + completion/commit instructions,
+// see buildLightweightOrFullHarnessBlock)
 // has been empirically shown to hurt rather than help. Confirmed live: a
 // task that stalled at "awaiting_input" with zero tool calls under the
 // full boilerplate completed the identical work correctly, end to end, in
@@ -141,25 +135,29 @@ func isLightweightHarnessKind(kind string) bool {
 	return kind == "opencode" || kind == "opencode-acp"
 }
 
-// buildLightweightOrFullHarnessBlock returns the checkpoint+pre-completion
+// buildLightweightOrFullHarnessBlock returns the checkpoint+completion
 // instructions appended to every one-shot task spec. The full block (long
-// form, unchanged from before this change) explains WHY each step matters;
-// the lightweight form keeps only the checkpoint directive, for backends
+// form) explains WHY each step matters and gives the full protocol;
+// the lightweight form keeps only the essential directive, for backends
 // where the long form has been shown to consume enough of a small model's
 // attention to make it state a plan and then stop without ever calling a
-// tool. The lightweight form deliberately DROPS the "before you finish,
-// check your own commit" self-check (operator-raised 2026-10-15): it's
-// redundant harness weight, not new coverage — the verifier (taskProducedNoOutput
+// tool. Neither form asks the worker to commit its own work: commits are
+// made automatically when the worker finishes, and the one-line summary
+// on the DATAWATCH_COMPLETE line becomes the commit message. The old
+// "before you finish, check your own commit" self-check was deliberately
+// dropped (operator-raised 2026-10-15): it's redundant harness weight,
+// not new coverage — the verifier (taskProducedNoOutput
 // in verifier_diff.go) already catches an empty diff after the fact, and
 // the existing RetryHint mechanism already feeds that back as a revision
-// on the next attempt. Checking it twice (once in the prompt, once in the
-// verifier) costs attention for no extra safety on this path.
+// on the next attempt.
 func buildLightweightOrFullHarnessBlock(lightweight bool) string {
 	if lightweight {
 		return "\n\n---\n" +
 			"Checkpoint every 5-10 min: write CHECKPOINT.md (steps done/now/remaining). " +
 			"Then keep working immediately in the same turn — do not stop or wait. " +
-			"CHECKPOINT.md must not be committed. Commit your work when done.\n" +
+			"CHECKPOINT.md must not be committed. " +
+			"Do not run git add or git commit — your work is committed automatically when you finish. " +
+			"Finish with a line: DATAWATCH_COMPLETE: <one-line plain-text summary of what you did> — that summary becomes the commit message.\n" +
 			"---"
 	}
 	return "\n\n---\n" +
@@ -173,15 +171,9 @@ func buildLightweightOrFullHarnessBlock(lightweight bool) string {
 		"on the next step in the SAME turn — do not end your turn or wait for a response. " +
 		"No one is watching this session to resume it after a pause; if you stop here, the task " +
 		"stalls and fails. Keep going until the task is fully done and you emit DATAWATCH_COMPLETE. " +
-		"Before your final commit, make sure CHECKPOINT.md is not staged or committed — it is " +
-		"scratch state for this run, not part of the deliverable.\n" +
-		"---\n\n" +
-		"---\n" +
-		"BEFORE YOU FINISH — do this check now, not as a description of having done it:\n" +
-		"If this task's spec asked you to commit your work, run `git log --oneline -1` (and " +
-		"`git status --short`) in your working directory RIGHT NOW. If there is no new commit " +
-		"beyond the baseline, or there are uncommitted changes, your task is NOT done — writing " +
-		"a summary of what you changed is not the same as committing it. Stage and commit now, " +
-		"THEN emit DATAWATCH_COMPLETE. Only emit DATAWATCH_COMPLETE after this check passes.\n" +
+		"CHECKPOINT.md is scratch state and is excluded from the deliverable; do not run " +
+		"git add or git commit yourself — your work is committed automatically when you " +
+		"emit DATAWATCH_COMPLETE. " +
+		"Finish with a line: DATAWATCH_COMPLETE: <one-line plain-text summary of what you did> — that summary becomes the commit message.\n" +
 		"---"
 }

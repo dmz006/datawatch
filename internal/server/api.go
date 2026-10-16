@@ -4307,12 +4307,14 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Task          string `json:"task"`
-		ProjectDir    string `json:"project_dir"`
-		Backend       string `json:"backend"`
-		Name          string `json:"name"`
-		ResumeID      string `json:"resume_id"`
-		Profile       string `json:"profile"`
+		Task       string `json:"task"`
+		ProjectDir string `json:"project_dir"`
+		Backend    string `json:"backend"`
+		Name       string `json:"name"`
+		ResumeID   string `json:"resume_id"`
+		Profile    string `json:"profile"`
+		// Deprecated and ignored: task sessions are committed automatically.
+		// Retained so existing clients and templates keep working.
 		AutoGitCommit *bool  `json:"auto_git_commit,omitempty"`
 		AutoGitInit   *bool  `json:"auto_git_init,omitempty"`
 		Effort        string `json:"effort,omitempty"`   // BL41

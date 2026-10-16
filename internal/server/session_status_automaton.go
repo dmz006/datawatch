@@ -58,10 +58,12 @@ type SessionAutomatonVerification struct {
 
 // SessionAutomatonGit carries the task's git/file-association state.
 type SessionAutomatonGit struct {
-	PreTaskSHA       string   `json:"pre_task_sha,omitempty"`
-	FilesPlanned     []string `json:"files_planned,omitempty"`
-	FilesTouched     []string `json:"files_touched,omitempty"`
-	ForeignFileDrift []string `json:"foreign_file_drift,omitempty"`
+	PreTaskSHA        string   `json:"pre_task_sha,omitempty"`
+	BaseSHA           string   `json:"base_sha,omitempty"`
+	AttemptCommitSHAs []string `json:"attempt_commit_shas,omitempty"`
+	FilesPlanned      []string `json:"files_planned,omitempty"`
+	FilesTouched      []string `json:"files_touched,omitempty"`
+	ForeignFileDrift  []string `json:"foreign_file_drift,omitempty"`
 }
 
 // SessionAutomatonDecision is one entry of the PRD decision log.
@@ -100,22 +102,24 @@ type automatonStoryView struct {
 }
 
 type automatonTaskView struct {
-	ID               string                        `json:"id"`
-	StoryID          string                        `json:"story_id"`
-	Title            string                        `json:"title"`
-	Spec             string                        `json:"spec"`
-	Status           string                        `json:"status"`
-	SessionID        string                        `json:"session_id"`
-	WaitReason       string                        `json:"wait_reason"`
-	StartedAt        *time.Time                    `json:"started_at"`
-	CompletedAt      *time.Time                    `json:"completed_at"`
-	Error            string                        `json:"error"`
-	RetryCount       int                           `json:"retry_count"`
-	Verification     *SessionAutomatonVerification `json:"verification"`
-	PreTaskSHA       string                        `json:"pre_task_sha"`
-	FilesPlanned     []string                      `json:"files"`
-	FilesTouched     []string                      `json:"files_touched"`
-	ForeignFileDrift []string                      `json:"foreign_file_drift"`
+	ID                string                        `json:"id"`
+	StoryID           string                        `json:"story_id"`
+	Title             string                        `json:"title"`
+	Spec              string                        `json:"spec"`
+	Status            string                        `json:"status"`
+	SessionID         string                        `json:"session_id"`
+	WaitReason        string                        `json:"wait_reason"`
+	StartedAt         *time.Time                    `json:"started_at"`
+	CompletedAt       *time.Time                    `json:"completed_at"`
+	Error             string                        `json:"error"`
+	RetryCount        int                           `json:"retry_count"`
+	Verification      *SessionAutomatonVerification `json:"verification"`
+	PreTaskSHA        string                        `json:"pre_task_sha"`
+	BaseSHA           string                        `json:"base_sha"`
+	AttemptCommitSHAs []string                      `json:"attempt_commit_shas"`
+	FilesPlanned      []string                      `json:"files"`
+	FilesTouched      []string                      `json:"files_touched"`
+	ForeignFileDrift  []string                      `json:"foreign_file_drift"`
 }
 
 // taskBySessionFinder is the optional autonomous-manager capability used
@@ -194,12 +198,14 @@ func (s *Server) buildSessionAutomatonDetail(sess *session.Session) *SessionAuto
 		if len(planned) == 0 && story != nil {
 			planned = story.FilesPlanned
 		}
-		if task.PreTaskSHA != "" || len(planned) > 0 || len(task.FilesTouched) > 0 || len(task.ForeignFileDrift) > 0 {
+		if task.PreTaskSHA != "" || task.BaseSHA != "" || len(task.AttemptCommitSHAs) > 0 || len(planned) > 0 || len(task.FilesTouched) > 0 || len(task.ForeignFileDrift) > 0 {
 			d.Git = &SessionAutomatonGit{
-				PreTaskSHA:       task.PreTaskSHA,
-				FilesPlanned:     planned,
-				FilesTouched:     task.FilesTouched,
-				ForeignFileDrift: task.ForeignFileDrift,
+				PreTaskSHA:        task.PreTaskSHA,
+				BaseSHA:           task.BaseSHA,
+				AttemptCommitSHAs: task.AttemptCommitSHAs,
+				FilesPlanned:      planned,
+				FilesTouched:      task.FilesTouched,
+				ForeignFileDrift:  task.ForeignFileDrift,
 			}
 		}
 	}

@@ -60,12 +60,12 @@ import (
 	"github.com/dmz006/datawatch/internal/inference/adapters"
 	"github.com/dmz006/datawatch/internal/llm"
 	"github.com/dmz006/datawatch/internal/llm/backends/aider"
-	pibackend "github.com/dmz006/datawatch/internal/llm/backends/pi"
 	"github.com/dmz006/datawatch/internal/llm/backends/gemini"
 	"github.com/dmz006/datawatch/internal/llm/backends/goose"
 	"github.com/dmz006/datawatch/internal/llm/backends/ollama"
 	"github.com/dmz006/datawatch/internal/llm/backends/opencode"
 	"github.com/dmz006/datawatch/internal/llm/backends/openwebui"
+	pibackend "github.com/dmz006/datawatch/internal/llm/backends/pi"
 	"github.com/dmz006/datawatch/internal/llm/backends/shell"
 	"github.com/dmz006/datawatch/internal/llm/claudecode"
 	"github.com/dmz006/datawatch/internal/mcp"
@@ -628,21 +628,15 @@ func (a brokerAdapter) RevokeForWorker(ctx context.Context, workerID string) err
 // success," not "cluster dispatch has the same stall-detection the
 // local path has."
 func runWorkerBootstrapTask(mgr *session.Manager, env agentspkg.BootstrapEnv, boot *agentspkg.BootstrapResponse, projectDir string) {
-	// BL407 Phase 3 — force the commit the same way Phase 2's
-	// ForceAutoGitCommit does for local worktree-mode tasks: this
-	// worker's whole reason for existing is to push its own commits
-	// back (PushOnCompletion below), so leaving this daemon's own
-	// session.auto_git_commit default (false) in effect would mean
-	// there's never anything to push.
-	forceCommit := true
 	opts := &session.StartOptions{
 		Backend:        boot.Backend,
 		Effort:         boot.Effort,
 		Model:          boot.Model,
 		PermissionMode: boot.PermissionMode,
 		OneShot:        true,
-		AutoGitCommit:  &forceCommit,
 	}
+	// Note: git commits for this worker task are automatic (the
+	// session manager's default auto-git-commit behavior).
 	result := &agentspkg.AgentResult{Status: "ok"}
 	sess, err := mgr.Start(context.Background(), boot.Task, "", projectDir, opts)
 	if err != nil {
@@ -1277,7 +1271,10 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		}
 	}
 
-	mgr.SetAutoGit(cfg.Session.AutoGitCommit, cfg.Session.AutoGitInit)
+	if cfg.Session.AutoGitCommit {
+		fmt.Fprintln(os.Stderr, "session.auto_git_commit is deprecated and ignored: task sessions are committed automatically")
+	}
+	mgr.SetAutoGitInit(cfg.Session.AutoGitInit)
 	mgr.SetSecureTracking(cfg.Session.SecureTracking)
 	mgr.SetWorkspaceRoot(cfg.Session.WorkspaceRoot)
 	mgr.BackfillOutputMode()
@@ -4687,6 +4684,15 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					if s.State != session.StateKilled {
 						_ = mgr.Kill(task.SessionID)
 					}
+					// Record the worker session's deterministic commit sha (if
+					// any) on the task's ordered, de-duplicated attempt record.
+					// Same best-effort posture as the RecordTaskFilesTouched
+					// call site below: never fails verification.
+					if s.CommitSHA != "" && autonomousMgrRef != nil {
+						if rerr := autonomousMgrRef.RecordTaskAttemptCommit(task.PRDID, task.ID, s.CommitSHA); rerr != nil {
+							log.Printf("[autonomous] verifier: RecordTaskAttemptCommit(%s/%s): %v", task.PRDID, task.ID, rerr)
+						}
+					}
 				}
 				if stallErr != nil {
 					return autonomouspkg.VerificationResult{}, stallErr
@@ -4791,6 +4797,38 @@ func runStart(cmd *cobra.Command, _ []string) error {
 						}
 					}
 				}
+				// Retry fallback: on a retry the per-attempt PreTaskSHA..HEAD
+				// window is empty BY CONSTRUCTION when an earlier attempt of the
+				// same task already committed the real work before this attempt's
+				// PreTaskSHA..HEAD window opens, so that window is empty by
+				// construction. Before declaring no output, recover the earlier
+				// attempt's committed diff via its recorded SHAs.
+				// Ordering guarantee: the wait loop above only leaves once the
+				// session is Complete/Failed/Killed, and the session package now
+				// guarantees a Completed session's final commit already happened
+				// before it reports Complete — so the moment the verifier reads its
+				// diff, every reachable prior-attempt commit is already in HEAD.
+				var retryNote string
+				if perAttemptEmpty := taskProducedNoOutput(diffOut, workingDiffOut, newUntrackedFiles, overwrittenFilesSections); perAttemptEmpty {
+					hasSHAs := len(task.AttemptCommitSHAs) > 0
+					var priorDiff []byte
+					var priorNames []string
+					priorOk := false
+					if hasSHAs {
+						priorDiff, priorNames, priorOk = priorAttemptWorkLanded(ctx, taskDir, task.BaseSHA, task.AttemptCommitSHAs)
+					}
+					if resolveEmptyDiffWithPriorWork(perAttemptEmpty, hasSHAs, priorOk) {
+						diffOut = priorDiff
+						retryNote = "NOTE: this is a retry; the work below was committed by an earlier attempt of this same task and is still in HEAD"
+						if autonomousMgrRef != nil {
+							if touched := dedupeFiles(priorNames); len(touched) > 0 {
+								if rerr := autonomousMgrRef.RecordTaskFilesTouched(task.PRDID, task.ID, touched); rerr != nil {
+									log.Printf("[autonomous] verifier: RecordTaskFilesTouched(%s/%s): %v", task.PRDID, task.ID, rerr)
+								}
+							}
+						}
+					}
+				}
 				if taskProducedNoOutput(diffOut, workingDiffOut, newUntrackedFiles, overwrittenFilesSections) {
 					// No committed or uncommitted tracked changes, no new untracked files,
 					// no overwritten pre-existing files — task produced nothing.
@@ -4870,6 +4908,11 @@ Pre-existing files written by task (not tracked by git):
 <overwritten_files>
 %s
 </overwritten_files>`, strings.Join(overwrittenFilesSections, "\n---\n"))
+				}
+				// Retry fallback above: tell the judge this diff is evidence from an
+				// earlier attempt of the same task, not from this attempt.
+				if retryNote != "" {
+					diffSection += "\n" + retryNote
 				}
 			} else if taskDir != "" && task.StartedAt != nil {
 				// Non-git project dir (PreTaskSHA not set): use mtime to detect output files.
@@ -7145,7 +7188,7 @@ Return STRICT JSON:
 				// which the pane-watcher sees before the LLM has run.
 				task := sess.Task
 				if sess.Name != "autonomous:decompose" {
-					task += "\n\nWhen you have fully completed this task, output the following line as your final response (plain text, not in a code block):\nDATAWATCH_COMPLETE: <one-sentence summary of what was done>"
+					task += "\n\nWhen you have fully completed this task, output the following line as your final response (plain text, not in a code block):\nDATAWATCH_COMPLETE: <one-sentence summary of what was done, used as the commit message>"
 				}
 				go func() {
 					// For opencode TUI sessions: wait until the interactive

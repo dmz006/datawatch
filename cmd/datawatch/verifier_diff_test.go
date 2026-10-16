@@ -640,3 +640,189 @@ func TestDedupeFiles_AllEmptyReturnsNil(t *testing.T) {
 		t.Fatalf("got %v, want empty — RecordTaskFilesTouched's caller gates on len(touched) > 0 to avoid a pointless write", got)
 	}
 }
+
+func TestPriorAttemptWorkLanded_OneReachableCommit(t *testing.T) {
+	dir := t.TempDir()
+	gitInit(t, dir)
+	commitFile(t, dir, "base.md", "base")
+	baseSHA := gitHead(t, dir)
+	commitFile(t, dir, "feature.md", "prior work")
+	sha := gitHead(t, dir)
+
+	diff, names, ok := priorAttemptWorkLanded(context.Background(), dir, baseSHA, []string{sha})
+	if !ok {
+		t.Fatalf("ok = false, want true for a reachable prior commit")
+	}
+	if len(diff) == 0 {
+		t.Fatalf("diff empty, want the prior commit's patch")
+	}
+	if !strings.Contains(string(diff), "feature.md") {
+		t.Fatalf("diff %q does not mention feature.md", diff)
+	}
+	if len(names) != 1 || names[0] != "feature.md" {
+		t.Fatalf("names = %v, want [feature.md]", names)
+	}
+}
+
+func TestPriorAttemptWorkLanded_NoShas(t *testing.T) {
+	dir := t.TempDir()
+	gitInit(t, dir)
+	commitFile(t, dir, "base.md", "base")
+	baseSHA := gitHead(t, dir)
+
+	diff, names, ok := priorAttemptWorkLanded(context.Background(), dir, baseSHA, nil)
+	if ok {
+		t.Fatalf("ok = true, want false with no shas")
+	}
+	if len(diff) != 0 {
+		t.Fatalf("diff = %q, want empty", diff)
+	}
+	if len(names) != 0 {
+		t.Fatalf("names = %v, want empty", names)
+	}
+}
+
+func TestPriorAttemptWorkLanded_ResetAwayCommit(t *testing.T) {
+	dir := t.TempDir()
+	gitInit(t, dir)
+	commitFile(t, dir, "base.md", "base")
+	baseSHA := gitHead(t, dir)
+
+	// A commit on a branch that is then dropped: not an ancestor of HEAD.
+	if out, err := exec.Command("git", "-C", dir, "checkout", "-q", "-b", "detached-line").CombinedOutput(); err != nil {
+		t.Fatalf("checkout -b: %v: %s", err, out)
+	}
+	commitFile(t, dir, "lost.md", "work that got rolled back")
+	lostSHA := gitHead(t, dir)
+	if out, err := exec.Command("git", "-C", dir, "checkout", "-q", "--detach", baseSHA).CombinedOutput(); err != nil {
+		t.Fatalf("checkout main: %v: %s", err, out)
+	}
+	if out, err := exec.Command("git", "-C", dir, "branch", "-D", "detached-line").CombinedOutput(); err != nil {
+		t.Fatalf("branch -D: %v: %s", err, out)
+	}
+
+	diff, names, ok := priorAttemptWorkLanded(context.Background(), dir, baseSHA, []string{lostSHA})
+	if ok {
+		t.Fatalf("ok = true, want false for a commit reset away from HEAD (diff=%q names=%v)", diff, names)
+	}
+	if len(diff) != 0 {
+		t.Fatalf("diff = %q, want empty", diff)
+	}
+	if len(names) != 0 {
+		t.Fatalf("names = %v, want empty", names)
+	}
+
+	// Sanity: if baseSHA itself is not an ancestor of HEAD, refuse outright.
+	_, _, ok = priorAttemptWorkLanded(context.Background(), dir, lostSHA, []string{lostSHA})
+	if ok {
+		t.Fatalf("ok = true, want false when baseSHA is itself unreachable")
+	}
+}
+
+func TestPriorAttemptWorkLanded_TwoReachableCommits(t *testing.T) {
+	dir := t.TempDir()
+	gitInit(t, dir)
+	commitFile(t, dir, "base.md", "base")
+	baseSHA := gitHead(t, dir)
+	commitFile(t, dir, "first.md", "one")
+	firstSHA := gitHead(t, dir)
+	commitFile(t, dir, "second.md", "two")
+	secondSHA := gitHead(t, dir)
+
+	diff, names, ok := priorAttemptWorkLanded(context.Background(), dir, baseSHA, []string{firstSHA, secondSHA})
+	if !ok {
+		t.Fatalf("ok = false, want true (diff=%q)", diff)
+	}
+	if !strings.Contains(string(diff), "first.md") || !strings.Contains(string(diff), "second.md") {
+		t.Fatalf("diff missing a commit's patch: %q", diff)
+	}
+	if len(names) != 2 || names[0] != "first.md" || names[1] != "second.md" {
+		t.Fatalf("names = %v, want [first.md second.md] in order", names)
+	}
+
+	// Duplicate sha must not duplicate its file name.
+	_, names, ok = priorAttemptWorkLanded(context.Background(), dir, baseSHA, []string{firstSHA, firstSHA})
+	if !ok || len(names) != 1 || names[0] != "first.md" {
+		t.Fatalf("names = %v (ok=%v), want first.md listed exactly once for a duplicated sha", names, ok)
+	}
+}
+
+func TestResolveEmptyDiffWithPriorWork_DecisionTable(t *testing.T) {
+	cases := []struct {
+		name            string
+		perAttemptEmpty bool
+		hasAttemptSHAs  bool
+		priorWorkLanded bool
+		wantFallback    bool
+	}{
+		{"retry with a reachable prior commit: fall back, not no-output", true, true, true, true},
+		{"retry whose prior commit is unreachable: no fallback, still no-output", true, true, false, false},
+		{"first attempt with genuinely empty diff: no fallback, still no-output", true, false, true, false},
+		{"first attempt, no shas, nothing landed: no fallback", true, false, false, false},
+		{"evidence present: fallback never consulted", false, true, true, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := resolveEmptyDiffWithPriorWork(tc.perAttemptEmpty, tc.hasAttemptSHAs, tc.priorWorkLanded)
+			if got != tc.wantFallback {
+				t.Fatalf("resolveEmptyDiffWithPriorWork(%v, %v, %v) = %v, want %v",
+					tc.perAttemptEmpty, tc.hasAttemptSHAs, tc.priorWorkLanded, got, tc.wantFallback)
+			}
+		})
+	}
+}
+
+// TestResolveEmptyDiffWithPriorWork_Retries is the git-backed half of the
+// verifier's empty-diff decision: it drives priorAttemptWorkLanded with real
+// repos exactly as the verifier does, then runs the pure decision on the
+// result, so the three spec cases (reachable / unreachable / first attempt)
+// are covered end to end without standing up the whole verifier.
+func TestResolveEmptyDiffWithPriorWork_Retries(t *testing.T) {
+	dir := t.TempDir()
+	gitInit(t, dir)
+	commitFile(t, dir, "base.md", "base")
+	baseSHA := gitHead(t, dir)
+
+	// 1. Retry with a reachable prior commit -> not reported as no-output.
+	commitFile(t, dir, "work.md", "real work from the earlier attempt")
+	earlierSHA := gitHead(t, dir)
+	perAttemptEmpty := taskProducedNoOutput(nil, nil, nil, nil) // this attempt committed nothing
+	if !perAttemptEmpty {
+		t.Fatalf("test setup: wanted an empty per-attempt evidence bundle")
+	}
+	priorDiff, priorNames, priorOk := priorAttemptWorkLanded(context.Background(), dir, baseSHA, []string{earlierSHA})
+	if !priorOk {
+		t.Fatalf("priorAttemptWorkLanded ok = false for a reachable commit (diff=%q)", priorDiff)
+	}
+	if !resolveEmptyDiffWithPriorWork(perAttemptEmpty, len([]string{earlierSHA}) > 0, priorOk) {
+		t.Fatalf("retry with a reachable prior commit must fall back to the prior diff, not report no-output")
+	}
+	if len(priorDiff) == 0 || !strings.Contains(string(priorDiff), "work.md") {
+		t.Fatalf("prior diff must carry the reachable commit's patch for the verifier's evidence: %q", priorDiff)
+	}
+	if priorNames == nil || len(priorNames) == 0 {
+		t.Fatalf("prior names = %v, want the commit's changed files for RecordTaskFilesTouched", priorNames)
+	}
+
+	// 2. Retry whose prior commit is unreachable -> still no-output.
+	if out, err := exec.Command("git", "-C", dir, "reset", "--hard", baseSHA).CombinedOutput(); err != nil {
+		t.Fatalf("reset --hard: %v: %s", err, out)
+	}
+	_, _, priorOk = priorAttemptWorkLanded(context.Background(), dir, baseSHA, []string{earlierSHA})
+	if priorOk {
+		t.Fatalf("priorAttemptWorkLanded ok = true after the commit was reset away from HEAD")
+	}
+	perAttemptEmpty = taskProducedNoOutput(nil, nil, nil, nil)
+	if resolveEmptyDiffWithPriorWork(perAttemptEmpty, len([]string{earlierSHA}) > 0, priorOk) {
+		t.Fatalf("retry whose prior commit is unreachable must still be reported as no-output")
+	}
+
+	// 3. First attempt with a genuinely empty diff (no attempt commits) ->
+	//    still no-output, even though a reachable commit happens to exist.
+	if resolveEmptyDiffWithPriorWork(true, false, true) {
+		t.Fatalf("first attempt with an empty diff must still be reported as no-output")
+	}
+	if resolveEmptyDiffWithPriorWork(perAttemptEmpty, false, true) {
+		t.Fatalf("verifier must not consult prior-attempt work when AttemptCommitSHAs is empty")
+	}
+}

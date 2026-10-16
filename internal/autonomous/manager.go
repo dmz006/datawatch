@@ -1704,6 +1704,15 @@ func (m *Manager) recoverPendingTask(prd *PRD, si int, taskID, actor string) (*P
 	if s.Status == StoryCompleted || s.Status == StoryFailed || s.Status == StoryCancelled {
 		s.Status = StoryPending
 	}
+	// Same start-over guarantee as ResetTask: a manual reset of an
+	// already-pending task must drop the per-task git anchors too.
+	for ti := range s.Tasks {
+		if s.Tasks[ti].ID == taskID {
+			s.Tasks[ti].BaseSHA = ""
+			s.Tasks[ti].AttemptCommitSHAs = nil
+			break
+		}
+	}
 	old := prd.Status
 	now := time.Now()
 	prd.Status = PRDRunning
@@ -1802,12 +1811,19 @@ func (m *Manager) ResetTask(prdID, taskID, actor string, force bool) (*PRD, erro
 					// not just a checkpoint note about them.
 					t.PriorAttemptHint = "This is a retry of a previous attempt on this task. " +
 						strings.Join(hintParts, " ") +
-						" Check the project directory's current state (git log, existing files) before redoing work — the previous attempt may have already produced correct output that only failed for an unrelated reason (e.g. the verifier itself erroring). If so, fix the specific issues above (or reconfirm correctness) by editing and re-committing the actual required deliverable files themselves — verification only sees this run's own diff, so a checkpoint note or other side file alone will not satisfy it, even if the underlying content is already right."
+						" Check the project directory's current state (git log, existing files) before redoing work — the previous attempt may have already produced correct output that only failed for an unrelated reason (e.g. the verifier itself erroring). If so, fix the specific issues above (or reconfirm correctness) by editing the actual required deliverable files themselves — do not run git add or git commit; your work is committed automatically when you finish. Verification only sees this run's own diff, so a checkpoint note or other side file alone will not satisfy it, even if the underlying content is already right."
 				}
 				resetEv := pendingTaskEvent{t: t, oldStatus: t.Status, oldSession: t.SessionID}
 				t.Status = ""
 				t.Error = ""
 				t.SessionID = ""
+				// A human reset means starting over: drop the per-task git
+				// anchors so the fresh attempt re-captures them at spawn.
+				// Automatic verifier retries never go through here — BaseSHA
+				// is written only when empty in the executor's spawn path,
+				// so in-loop retries keep the first attempt's anchor.
+				t.BaseSHA = ""
+				t.AttemptCommitSHAs = nil
 				// BL427 — fired after the SavePRD below succeeds.
 				emitReset = func(dec *Decision) { m.emitPendingTaskEvents(prd, []pendingTaskEvent{resetEv}, dec) }
 				t.Verification = nil
@@ -2460,6 +2476,38 @@ func (m *Manager) RecordTaskFilesTouched(prdID, taskID string, files []string) e
 		for ti := range prd.Story[si].Tasks {
 			if prd.Story[si].Tasks[ti].ID == taskID {
 				prd.Story[si].Tasks[ti].FilesTouched = files
+				prd.Story[si].Tasks[ti].UpdatedAt = time.Now()
+				found = true
+				break
+			}
+		}
+		if found {
+			break
+		}
+	}
+	if !found {
+		return fmt.Errorf("task %q not found in prd %q", taskID, prdID)
+	}
+	prd.UpdatedAt = time.Now()
+	return m.store.SavePRD(prd)
+}
+
+// RecordTaskAttemptCommit (v5.26.64 sibling of RecordTaskFilesTouched) —
+// daemon-internal hook fired by the autonomous verifier once the worker
+// session's deterministic commit sha is known. Appends it to the task's
+// ordered, de-duplicated AttemptCommitSHAs record (Task.RecordAttemptCommit
+// already ignores empty values and duplicates). No lock-after-approve gate
+// — this fires after the worker session ends.
+func (m *Manager) RecordTaskAttemptCommit(prdID, taskID, sha string) error {
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return fmt.Errorf("prd %q not found", prdID)
+	}
+	found := false
+	for si := range prd.Story {
+		for ti := range prd.Story[si].Tasks {
+			if prd.Story[si].Tasks[ti].ID == taskID {
+				prd.Story[si].Tasks[ti].RecordAttemptCommit(sha)
 				prd.Story[si].Tasks[ti].UpdatedAt = time.Now()
 				found = true
 				break

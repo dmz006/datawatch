@@ -52,14 +52,6 @@ type SpawnRequest struct {
 	// running the task. Either or both can be empty.
 	ProjectProfile string
 	ClusterProfile string
-	// ForceAutoGitCommit (BL407 Phase 2) — true when ProjectDir is a
-	// PRD-owned git worktree (PRD.Git.Branch set). The worktree's
-	// whole purpose is producing a reviewable branch for Phase 2's
-	// push+PR, which needs real commits regardless of whatever this
-	// daemon's session.auto_git_commit default happens to be set to —
-	// an operator who turned off auto-commit globally still wants a
-	// worktree-mode PRD's branch to actually contain its work.
-	ForceAutoGitCommit bool
 	// Branch (BL407 Phase 4) — PRD.Git.Branch, threaded through so a
 	// cluster-dispatched SpawnFn can forward it as agents.SpawnRequest.Branch.
 	// The worker then creates/checks out this exact branch (worktree
@@ -969,25 +961,24 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			taskDir := m.resolveTaskProjectDir(prd, t)
 			var sr SpawnResult
 			sr, err = spawn(ctx, SpawnRequest{
-				TaskID:             t.ID,
-				StoryID:            t.StoryID,
-				PRDID:              t.PRDID,
-				Title:              t.Title,
-				Spec:               TaskScopeBlock(prd, t) + "\n" + t.Spec,
-				ProjectDir:         taskDir,
-				Backend:            backend,
-				Effort:             effort,
-				Model:              model,
-				PermissionMode:     permMode,
-				RetryHint:          hint,
-				ProjectProfile:     prd.ProjectProfile,   // v5.26.19
-				ClusterProfile:     prd.ClusterProfile,   // v5.26.19
-				ForceAutoGitCommit: prd.Git.Branch != "", // BL407 Phase 2
-				Branch:             prd.Git.Branch,       // BL407 Phase 4
-				ContextPrepend:     contextPrepend,       // BL244
-				LSPLanguage:        lspLang,
-				MemorySeed:         prd.MemorySeed,       // BL386 Phase 1
-				SkipDirtyCapture:   prd.Git.Branch != "", // worktree mode: nothing pre-dirty to protect
+				TaskID:           t.ID,
+				StoryID:          t.StoryID,
+				PRDID:            t.PRDID,
+				Title:            t.Title,
+				Spec:             TaskScopeBlock(prd, t) + "\n" + t.Spec,
+				ProjectDir:       taskDir,
+				Backend:          backend,
+				Effort:           effort,
+				Model:            model,
+				PermissionMode:   permMode,
+				RetryHint:        hint,
+				ProjectProfile:   prd.ProjectProfile, // v5.26.19
+				ClusterProfile:   prd.ClusterProfile, // v5.26.19
+				Branch:           prd.Git.Branch,     // BL407 Phase 4
+				ContextPrepend:   contextPrepend,     // BL244
+				LSPLanguage:      lspLang,
+				MemorySeed:       prd.MemorySeed,       // BL386 Phase 1
+				SkipDirtyCapture: prd.Git.Branch != "", // worktree mode: nothing pre-dirty to protect
 			})
 			if err != nil {
 				if errors.Is(err, errCancelledWhileWaiting) {
@@ -1015,7 +1006,10 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 					}
 				}
 			}
-			t.PreTaskSHA = sr.PreTaskSHA                       // BL366: persisted for verifier diff grounding
+			t.PreTaskSHA = sr.PreTaskSHA // BL366: persisted for verifier diff grounding
+			if t.BaseSHA == "" && sr.PreTaskSHA != "" {
+				t.BaseSHA = sr.PreTaskSHA // per-task anchor: only the first attempt sets it; retries never overwrite
+			}
 			t.PreTaskUntrackedFiles = sr.PreTaskUntrackedFiles // v8.25.12: detect newly created untracked files
 			t.PreTaskDirtyFiles = sr.PreTaskDirtyFiles         // foreign-file-drift: tracked files already modified before the worker started
 			oldStatus = t.Status
@@ -1577,7 +1571,7 @@ func contentFixHint(v GuardrailVerdict) string {
 	if len(v.Issues) > 0 {
 		findings = "- " + strings.Join(v.Issues, "\n- ")
 	}
-	return fmt.Sprintf("The %q guardrail found a real problem with your previous attempt:\n\n%s\n\nFix these issues, re-run the project's own build/lint/test commands yourself, and recommit.", v.Guardrail, findings)
+	return fmt.Sprintf("The %q guardrail found a real problem with your previous attempt:\n\n%s\n\nFix these issues and re-run the project's own build/lint/test commands yourself. Do not run git add or git commit — your work is committed automatically when you finish; finish with DATAWATCH_COMPLETE: <one-line summary of what you did>.", v.Guardrail, findings)
 }
 
 // runPerStoryGuardrails (BL191 Q6, v5.10.0; BL303 S2) — same shape as the
