@@ -640,3 +640,109 @@ func TestDedupeFiles_AllEmptyReturnsNil(t *testing.T) {
 		t.Fatalf("got %v, want empty — RecordTaskFilesTouched's caller gates on len(touched) > 0 to avoid a pointless write", got)
 	}
 }
+
+func TestPriorAttemptWorkLanded_OneReachableCommit(t *testing.T) {
+	dir := t.TempDir()
+	gitInit(t, dir)
+	commitFile(t, dir, "base.md", "base")
+	baseSHA := gitHead(t, dir)
+	commitFile(t, dir, "feature.md", "prior work")
+	sha := gitHead(t, dir)
+
+	diff, names, ok := priorAttemptWorkLanded(context.Background(), dir, baseSHA, []string{sha})
+	if !ok {
+		t.Fatalf("ok = false, want true for a reachable prior commit")
+	}
+	if len(diff) == 0 {
+		t.Fatalf("diff empty, want the prior commit's patch")
+	}
+	if !strings.Contains(string(diff), "feature.md") {
+		t.Fatalf("diff %q does not mention feature.md", diff)
+	}
+	if len(names) != 1 || names[0] != "feature.md" {
+		t.Fatalf("names = %v, want [feature.md]", names)
+	}
+}
+
+func TestPriorAttemptWorkLanded_NoShas(t *testing.T) {
+	dir := t.TempDir()
+	gitInit(t, dir)
+	commitFile(t, dir, "base.md", "base")
+	baseSHA := gitHead(t, dir)
+
+	diff, names, ok := priorAttemptWorkLanded(context.Background(), dir, baseSHA, nil)
+	if ok {
+		t.Fatalf("ok = true, want false with no shas")
+	}
+	if len(diff) != 0 {
+		t.Fatalf("diff = %q, want empty", diff)
+	}
+	if len(names) != 0 {
+		t.Fatalf("names = %v, want empty", names)
+	}
+}
+
+func TestPriorAttemptWorkLanded_ResetAwayCommit(t *testing.T) {
+	dir := t.TempDir()
+	gitInit(t, dir)
+	commitFile(t, dir, "base.md", "base")
+	baseSHA := gitHead(t, dir)
+
+	// A commit on a branch that is then dropped: not an ancestor of HEAD.
+	if out, err := exec.Command("git", "-C", dir, "checkout", "-q", "-b", "detached-line").CombinedOutput(); err != nil {
+		t.Fatalf("checkout -b: %v: %s", err, out)
+	}
+	commitFile(t, dir, "lost.md", "work that got rolled back")
+	lostSHA := gitHead(t, dir)
+	if out, err := exec.Command("git", "-C", dir, "checkout", "-q", "--detach", baseSHA).CombinedOutput(); err != nil {
+		t.Fatalf("checkout main: %v: %s", err, out)
+	}
+	if out, err := exec.Command("git", "-C", dir, "branch", "-D", "detached-line").CombinedOutput(); err != nil {
+		t.Fatalf("branch -D: %v: %s", err, out)
+	}
+
+	diff, names, ok := priorAttemptWorkLanded(context.Background(), dir, baseSHA, []string{lostSHA})
+	if ok {
+		t.Fatalf("ok = true, want false for a commit reset away from HEAD (diff=%q names=%v)", diff, names)
+	}
+	if len(diff) != 0 {
+		t.Fatalf("diff = %q, want empty", diff)
+	}
+	if len(names) != 0 {
+		t.Fatalf("names = %v, want empty", names)
+	}
+
+	// Sanity: if baseSHA itself is not an ancestor of HEAD, refuse outright.
+	_, _, ok = priorAttemptWorkLanded(context.Background(), dir, lostSHA, []string{lostSHA})
+	if ok {
+		t.Fatalf("ok = true, want false when baseSHA is itself unreachable")
+	}
+}
+
+func TestPriorAttemptWorkLanded_TwoReachableCommits(t *testing.T) {
+	dir := t.TempDir()
+	gitInit(t, dir)
+	commitFile(t, dir, "base.md", "base")
+	baseSHA := gitHead(t, dir)
+	commitFile(t, dir, "first.md", "one")
+	firstSHA := gitHead(t, dir)
+	commitFile(t, dir, "second.md", "two")
+	secondSHA := gitHead(t, dir)
+
+	diff, names, ok := priorAttemptWorkLanded(context.Background(), dir, baseSHA, []string{firstSHA, secondSHA})
+	if !ok {
+		t.Fatalf("ok = false, want true (diff=%q)", diff)
+	}
+	if !strings.Contains(string(diff), "first.md") || !strings.Contains(string(diff), "second.md") {
+		t.Fatalf("diff missing a commit's patch: %q", diff)
+	}
+	if len(names) != 2 || names[0] != "first.md" || names[1] != "second.md" {
+		t.Fatalf("names = %v, want [first.md second.md] in order", names)
+	}
+
+	// Duplicate sha must not duplicate its file name.
+	_, names, ok = priorAttemptWorkLanded(context.Background(), dir, baseSHA, []string{firstSHA, firstSHA})
+	if !ok || len(names) != 1 || names[0] != "first.md" {
+		t.Fatalf("names = %v (ok=%v), want first.md listed exactly once for a duplicated sha", names, ok)
+	}
+}

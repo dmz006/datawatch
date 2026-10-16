@@ -331,6 +331,60 @@ func gitWorkingTreeDiffSince(ctx context.Context, projectDir string, since time.
 	return diff, recent, err
 }
 
+// priorAttemptWorkLanded collects the committed diff produced by an earlier
+// attempt's commits (identified by SHA) that are still reachable from the
+// current HEAD. Each non-empty sha that is reachable (a merge-base ancestor
+// of HEAD) contributes its `git show` patch to diff, concatenated in the
+// given order, and its `git show --name-only` changed-file names to names
+// (deduped, empty lines dropped). Non-reachable shas — work that was rolled
+// back or rewritten away — are skipped entirely. ok is true when at least
+// one reachable sha produced a non-empty diff. baseSHA is accepted for
+// sanity: if non-empty and not itself an ancestor of HEAD, return ok=false
+// (the commit the attempt was based on is gone, so none of its work on top
+// of it can be meaningful evidence either).
+//
+// Pure helper: not yet called from the verifier.
+func priorAttemptWorkLanded(ctx context.Context, dir, baseSHA string, commitSHAs []string) (diff []byte, names []string, ok bool) {
+	isAncestor := func(sha string) bool {
+		cmd := exec.CommandContext(ctx, "git", "-C", dir, "merge-base", "--is-ancestor", sha, "HEAD")
+		return cmd.Run() == nil
+	}
+
+	if baseSHA != "" && !isAncestor(baseSHA) {
+		return nil, nil, false
+	}
+
+	seen := make(map[string]struct{})
+	for _, sha := range commitSHAs {
+		if sha == "" {
+			continue
+		}
+		if !isAncestor(sha) {
+			continue
+		}
+		d, err := exec.CommandContext(ctx, "git", "-C", dir, "show", "--format=", sha).Output()
+		if err == nil && len(d) > 0 {
+			diff = append(diff, d...)
+		}
+		n, err := exec.CommandContext(ctx, "git", "-C", dir, "show", "--format=", "--name-only", sha).Output()
+		if err == nil {
+			for _, name := range strings.Split(strings.TrimSpace(string(n)), "\n") {
+				name = strings.TrimSpace(name)
+				if name == "" {
+					continue
+				}
+				if _, dup := seen[name]; dup {
+					continue
+				}
+				seen[name] = struct{}{}
+				names = append(names, name)
+			}
+		}
+	}
+
+	return diff, names, len(diff) > 0
+}
+
 // taskProducedNoOutput reports whether none of the verifier's evidence
 // signals found anything: no committed diff, no uncommitted diff against a
 // tracked file made during this task's run, no new untracked file, and no
