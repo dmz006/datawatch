@@ -77,28 +77,29 @@ advances it without hand sequencing.
 | # | Item | Status | Depends on |
 |---|---|---|---|
 | 21 | [BL402](2026-10-09-gh204-result-panel.md) Result panel for scheduled jobs and integrations | not started | - |
-| 22 | BL434 Splash animation on every full-screen refresh | approved, not started (PRD `88fdf815`) | - |
-| 23 | BL435 Retry with already-correct output must not fail on empty diff | approved, not started (PRD `191d0c95`) | - |
-| 24 | BL436 Per-turn chunked output capture (design) | approved, not started (PRD `01bcf5cb`) | - |
-| 25 | BL442 PWA service worker force-navigates controlled windows | needs review (PRD `39f7af28`) | - |
-| 26 | [BL433](2026-10-14-pwa-performance-audit.md) PWA performance audit under load | blocked (PRD `049f4713`) | - |
-| 27 | BL392 Cross-repo GitHub configuration hardening audit | mostly done | - |
-| 28 | BL443 goose and aider inference adapters | not started (clear error for `llm_test` shipped v9.0.88; adapters remain) | - |
-| 29 | BL448 Voice transcription times out on long recordings | draft (PRD `6bded76a`) | - |
-| 30 | BL450 Startup-dialog auto-dismiss for one-shot tasks | draft (PRD `8272882d`) | - |
-| 31 | BL393 Nested tags for Automata and PRDs | not started (previously held pending explicit authorization — operator folded it back into the queue 2026-10-15) | - |
-| 32 | [BL437](2026-10-14-recurring-model-eval-design.md) Recurring hardware-aware model and effort eval | blocked (PRD `fea73c82` failed; design done) | 11, 12 |
-| 33 | BL414 PRD cost rollup and token usage guardrails | not started (needs scoping against BL405) | BL405 |
-| 34 | [BL405](2026-10-10-llm-enhancements.md) LLM enhancements, phases 0-10 | not started (design complete) | 7 |
-| 35 | Security remediation: BL365, BL395, BL408, BL398 ([BL398 detail](historical-plans/2026-10-08-bl398-trivyignore-cve-review.md); BL395's F-2 isolation detail: [2026-10-04-f2-session-worker-isolation.md](historical-plans/2026-10-04-f2-session-worker-isolation.md)) | **fully decided, zero open design questions — implementation only**; no PRDs yet. Real implementation order already set: Design A → C → B → D (per BL395's own master index) | - |
-| 36 | BL454 Fix B125: `autonomous.*` runtime config changes (verification_backend/model and likely others) have no effect until a full daemon restart | not started (PRD `70aa7fa5`, draft) | - |
-| 37 | BL412 Self-config permission-gate generalization | not started (needs design) | - |
-| 38 | BL413 Diff-aware project-rules enforcement | not started (needs design) | - |
-| 39 | BL411 Pre-v10.0.0 dead-code audit | not started | 21-38 |
-| 40 | BL409 File and function naming audit | not started | 39 |
-| 41 | BL424 Operator integration guide | not started (PRD `0e2ac398` approved, held to last) | 40 |
-| 42 | BL444 MCP SSE listener retries bind at boot (external bug report) | not started | - |
-| 43 | BL445 Review and merge external MCP `public_url` PR, GH#208 (external bug-fix) | not started | - |
+| 22 | BL459 datawatch-community skills catalog — research complete, build the catalog's proposed skills | research complete (`docs/catalog/skills-catalog.md`, `skill-specs.md`); easy, high-benefit — pulled forward from v11.0.0 (PRD `275ae17c`, draft) | - |
+| 23 | BL434 Splash animation on every full-screen refresh | approved, not started (PRD `88fdf815`) | - |
+| 24 | BL435 Retry with already-correct output must not fail on empty diff | approved, not started (PRD `191d0c95`) | - |
+| 25 | BL436 Per-turn chunked output capture (design) | approved, not started (PRD `01bcf5cb`) | - |
+| 26 | BL442 PWA service worker force-navigates controlled windows | needs review (PRD `39f7af28`) | - |
+| 27 | [BL433](2026-10-14-pwa-performance-audit.md) PWA performance audit under load | blocked (PRD `049f4713`) | - |
+| 28 | BL392 Cross-repo GitHub configuration hardening audit | mostly done | - |
+| 29 | BL443 goose and aider inference adapters | not started (clear error for `llm_test` shipped v9.0.88; adapters remain) | - |
+| 30 | BL448 Voice transcription times out on long recordings | draft (PRD `6bded76a`) | - |
+| 31 | BL450 Startup-dialog auto-dismiss for one-shot tasks | draft (PRD `8272882d`) | - |
+| 32 | BL393 Nested tags for Automata and PRDs | not started (previously held pending explicit authorization — operator folded it back into the queue 2026-10-15) | - |
+| 33 | [BL437](2026-10-14-recurring-model-eval-design.md) Recurring hardware-aware model and effort eval | blocked (PRD `fea73c82` failed; design done) | 11, 12 |
+| 34 | BL414 PRD cost rollup and token usage guardrails | not started (needs scoping against BL405) | BL405 |
+| 35 | [BL405](2026-10-10-llm-enhancements.md) LLM enhancements, phases 0-10 | not started (design complete) | 7 |
+| 36 | Security remediation: BL365, BL395, BL408, BL398 ([BL398 detail](historical-plans/2026-10-08-bl398-trivyignore-cve-review.md); BL395's F-2 isolation detail: [2026-10-04-f2-session-worker-isolation.md](historical-plans/2026-10-04-f2-session-worker-isolation.md)) | **fully decided, zero open design questions — implementation only**; no PRDs yet. Real implementation order already set: Design A → C → B → D (per BL395's own master index) | - |
+| 37 | BL454 Fix B125: `autonomous.*` runtime config changes (verification_backend/model and likely others) have no effect until a full daemon restart | not started (PRD `70aa7fa5`, draft) | - |
+| 38 | BL412 Self-config permission-gate generalization | not started (needs design) | - |
+| 39 | BL413 Diff-aware project-rules enforcement | not started (needs design) | - |
+| 40 | BL411 Pre-v10.0.0 dead-code audit | not started | 21-39 |
+| 41 | BL409 File and function naming audit | not started | 40 |
+| 42 | BL424 Operator integration guide | not started (PRD `0e2ac398` approved, held to last) | 41 |
+| 43 | BL444 MCP SSE listener retries bind at boot (external bug report) | not started | - |
+| 44 | BL445 Review and merge external MCP `public_url` PR, GH#208 (external bug-fix) | not started | - |
 
 ## Opportunistic, non-blocking research
 
@@ -123,7 +124,6 @@ nothing here blocks anything in the active order above.
 |---|---|
 | BL457 Harness research: 20-builder survey + enhancement proposals (PRD `8baa807b`) | research complete (`docs/plans/harness-research/`); proposals (P1 span artifact, P4 eval sweep, P2 stall-ladder) pending v11.0.0 prioritization |
 | BL458 openrig.dev adoption plan (PRD `ef9dcac1`) | research complete (`docs/plans/2026-09-24-openrig-adoption-plan.md`); adoption plan pending v11.0.0 prioritization |
-| BL459 datawatch-community skills catalog (PRD `b92620f3`) | research complete (`docs/catalog/skills-catalog.md`); skill triage pending v11.0.0 prioritization |
 
 **LLM research reconciliation:**
 
