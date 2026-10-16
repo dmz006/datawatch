@@ -23,8 +23,8 @@ import (
 
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/llm"
-	"github.com/dmz006/datawatch/internal/llm/backends/opencode"
 	"github.com/dmz006/datawatch/internal/llm/backends/ollama"
+	"github.com/dmz006/datawatch/internal/llm/backends/opencode"
 	"github.com/dmz006/datawatch/internal/llm/backends/openwebui"
 	"github.com/dmz006/datawatch/internal/secfile"
 	"github.com/fsnotify/fsnotify"
@@ -145,26 +145,26 @@ var rateLimitPatterns = []string{
 	// "Approaching usage limit" + "limit will reset at" patterns
 	// catch the WARN dialog (~80% of capacity) but not the actual
 	// HARD limit message that ends the session.
-	"limit reached",         // "5-hour limit reached", "Weekly limit reached"
-	"weekly usage limit",    // "Weekly usage limit reached"
-	"hit weekly limit",      // "Hit weekly limit"
-	"5-hour limit",          // 5-hour-window phrasing
-	"opus limit reached",    // model-specific limit phrasings
+	"limit reached",      // "5-hour limit reached", "Weekly limit reached"
+	"weekly usage limit", // "Weekly usage limit reached"
+	"hit weekly limit",   // "Hit weekly limit"
+	"5-hour limit",       // 5-hour-window phrasing
+	"opus limit reached", // model-specific limit phrasings
 	"sonnet limit reached",
 	// BL240 (v6.2.0) — additional patterns for missed dialogs observed 2026-05-03.
-	"claude usage limit",    // "Claude usage limits" header in newer dialogs
-	"you've exceeded",       // "You've exceeded your Claude plan"
-	"plan limit",            // "plan limit reached" variants
-	"resets at",             // "Resets at 2pm" — reset time announcement (also feeds parser)
-	"stop and wait",         // Part of the option text in some dialog formats
+	"claude usage limit",      // "Claude usage limits" header in newer dialogs
+	"you've exceeded",         // "You've exceeded your Claude plan"
+	"plan limit",              // "plan limit reached" variants
+	"resets at",               // "Resets at 2pm" — reset time announcement (also feeds parser)
+	"stop and wait",           // Part of the option text in some dialog formats
 	"wait for limit to reset", // Option 1 text — appears when dialog auto-wraps to next line
 	// BL262 (v6.11.3) — operator-reported 2026-05-05: "You're out of extra
 	// usage · resets 11:50am (America/New_York)". The "out of extra usage"
 	// phrasing isn't covered by any existing pattern; the existing
 	// parseClaudeClockTime "resets " marker handles the time-extraction
 	// half once the line is detected as rate-limited.
-	"out of extra usage",    // "You're out of extra usage · resets ..."
-	"you're out of",         // wider catch for "You're out of credits/quota/usage" phrasings
+	"out of extra usage", // "You're out of extra usage · resets ..."
+	"you're out of",      // wider catch for "You're out of credits/quota/usage" phrasings
 }
 
 // Completion detection patterns. All matched against the trimmed
@@ -343,12 +343,12 @@ type LaunchFunc func(ctx context.Context, task, tmuxSession, projectDir, logFile
 
 // Manager manages LLM coding sessions via tmux.
 type Manager struct {
-	hostname    string
-	dataDir     string
-	llmBin      string // fallback binary path (legacy; prefer launchFn)
-	llmBackend  string      // active backend name
-	launchFn    LaunchFunc  // active backend launch function
-	backendObj  llm.Backend // backend object for optional interface dispatch
+	hostname       string
+	dataDir        string
+	llmBin         string      // fallback binary path (legacy; prefer launchFn)
+	llmBackend     string      // active backend name
+	launchFn       LaunchFunc  // active backend launch function
+	backendObj     llm.Backend // backend object for optional interface dispatch
 	maxSessions    int
 	workspaceRoot  string // F10: container/PVC base for relative project_dirs
 	store          *Store
@@ -576,29 +576,29 @@ func NewManager(hostname, dataDir, llmBin string, idleTimeout time.Duration, enc
 	}
 
 	return &Manager{
-		hostname:       hostname,
-		dataDir:        dataDir,
-		llmBin:         llmBin,
-		llmBackend:     "claude-code",
-		maxSessions:    10,
-		store:          store,
-		tmux:           &TmuxManager{},
-		idleTimeout:    idleTimeout,
-		mcpMaxRetries:  5,
-		mcpRetryCounts:   make(map[string]int),
-		restartedAt:      make(map[string]time.Time),
-		taskDeliveredAt:  make(map[string]time.Time),
+		hostname:          hostname,
+		dataDir:           dataDir,
+		llmBin:            llmBin,
+		llmBackend:        "claude-code",
+		maxSessions:       10,
+		store:             store,
+		tmux:              &TmuxManager{},
+		idleTimeout:       idleTimeout,
+		mcpMaxRetries:     5,
+		mcpRetryCounts:    make(map[string]int),
+		restartedAt:       make(map[string]time.Time),
+		taskDeliveredAt:   make(map[string]time.Time),
 		selfUpdateNotedAt: make(map[string]time.Time),
-		inputSentAt:      make(map[string]time.Time),
-		encKey:           key,
+		inputSentAt:       make(map[string]time.Time),
+		encKey:            key,
 		promptFirstSeen:   make(map[string]time.Time),
 		promptLastNotify:  make(map[string]time.Time),
 		promptOscillation: make(map[string][]time.Time),
-		monitors:         make(map[string]context.CancelFunc),
-		trackers:         make(map[string]*Tracker),
-		summaries:        make(map[string]SessionSummary),
-		sendQueues:       make(map[string]*sessionSendQueue),
-		lastRawInputAt:   make(map[string]time.Time),
+		monitors:          make(map[string]context.CancelFunc),
+		trackers:          make(map[string]*Tracker),
+		summaries:         make(map[string]SessionSummary),
+		sendQueues:        make(map[string]*sessionSendQueue),
+		lastRawInputAt:    make(map[string]time.Time),
 	}, nil
 }
 
@@ -1186,7 +1186,9 @@ func isLabeledBorder(s string) bool {
 }
 
 // hasEmbeddedStatusTimer catches lines like
-//   `* Perambulating… (11m 42s · ↓ 22.2k tokens · thinking)`
+//
+//	`* Perambulating… (11m 42s · ↓ 22.2k tokens · thinking)`
+//
 // where the parenthesized timer fragment sits inside a longer line.
 // Signal: a digit immediately followed by `s `, `m `, or `ms` + a `·`
 // somewhere on the line. v5.26.31.
@@ -1539,14 +1541,14 @@ func (m *Manager) OutputHandler() func(*Session, string) {
 
 // StartOptions holds optional parameters for starting a session.
 type StartOptions struct {
-	Name       string     // optional human-readable name
-	Backend    string     // override LLM backend name (empty = use manager default)
-	LaunchFn   LaunchFunc // override launch function (nil = use manager default)
-	BackendObj llm.Backend // override backend object (for Resumable dispatch)
-	ResumeID   string     // LLM session ID to resume (passed to Resumable backends)
-	AutoGitCommit *bool   // per-session override for auto git commit (nil = use manager default)
-	AutoGitInit   *bool   // per-session override for auto git init (nil = use manager default)
-	Env        map[string]string // environment variable overrides (for profile-based launches)
+	Name          string            // optional human-readable name
+	Backend       string            // override LLM backend name (empty = use manager default)
+	LaunchFn      LaunchFunc        // override launch function (nil = use manager default)
+	BackendObj    llm.Backend       // override backend object (for Resumable dispatch)
+	ResumeID      string            // LLM session ID to resume (passed to Resumable backends)
+	AutoGitCommit *bool             // per-session override for auto git commit (nil = use manager default)
+	AutoGitInit   *bool             // per-session override for auto git init (nil = use manager default)
+	Env           map[string]string // environment variable overrides (for profile-based launches)
 
 	// Effort (BL41) — operator-supplied thoroughness hint:
 	// "quick", "normal", "thorough". Empty falls through to
@@ -1772,20 +1774,20 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 	}
 
 	sess := &Session{
-		ID:          id,
-		FullID:      fullID,
-		Name:        sessionName,
-		Task:        task,
-		ProjectDir:  projectDir,
-		TmuxSession: tmuxSession,
-		LogFile:     "", // will be set after tracker creation
-		State:       StateRunning,
-		CreatedAt:   time.Now(),
-		UpdatedAt:   time.Now(),
-		Hostname:    m.hostname,
-		GroupID:     groupID,
+		ID:            id,
+		FullID:        fullID,
+		Name:          sessionName,
+		Task:          task,
+		ProjectDir:    projectDir,
+		TmuxSession:   tmuxSession,
+		LogFile:       "", // will be set after tracker creation
+		State:         StateRunning,
+		CreatedAt:     time.Now(),
+		UpdatedAt:     time.Now(),
+		Hostname:      m.hostname,
+		GroupID:       groupID,
 		BackendFamily: backendName,
-		Effort:      m.resolveEffort(opt),
+		Effort:        m.resolveEffort(opt),
 	}
 	if opt != nil && opt.EphemeralWorkspace {
 		sess.EphemeralWorkspace = true
@@ -2118,9 +2120,9 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 			return nil, fmt.Errorf("launch LLM backend: %w", launchErr)
 		}
 		m.debugf("backend %q launched in tmux session %q", backendName, tmuxSession)
-			// Persist backend state for reconnect after daemon restart
-			m.saveBackendState(sess)
-		} else {
+		// Persist backend state for reconnect after daemon restart
+		m.saveBackendState(sess)
+	} else {
 		// Fallback: run LLM binary directly (legacy path, no configured backend)
 		llmCmd := fmt.Sprintf("cd %s && NO_COLOR=1 %s --add-dir %s %q", projectDir, m.llmBin, projectDir, launchTask)
 		if err := m.tmux.SendKeys(tmuxSession, llmCmd); err != nil {
@@ -2408,10 +2410,14 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 					// echoes (e.g. "echo 'DATAWATCH_COMPLETE: ...'").
 					completionDetected := false
 					visibleScanLimit := 5
-					if current.OneShot { visibleScanLimit = len(capLines) }
+					if current.OneShot {
+						visibleScanLimit = len(capLines)
+					}
 					for i, checked := len(capLines)-1, 0; i >= 0 && checked < visibleScanLimit; i-- {
 						l := strings.TrimSpace(capLines[i])
-						if l == "" { continue }
+						if l == "" {
+							continue
+						}
 						checked++
 						// Skip lines enclosed in TUI box-drawing borders (┃…┃ or │…│).
 						// opencode renders user messages (including the task text that
@@ -2433,14 +2439,21 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 							if matchesCompletionPattern(l, pat) {
 								lRunes := []rune(l)
 								lastR := ""
-								if len(lRunes) > 0 { lastR = string(lRunes[len(lRunes)-1]) }
-								lShort := l; if len(lShort) > 120 { lShort = lShort[:120] }
+								if len(lRunes) > 0 {
+									lastR = string(lRunes[len(lRunes)-1])
+								}
+								lShort := l
+								if len(lShort) > 120 {
+									lShort = lShort[:120]
+								}
 								m.debugf("StartScreenCapture: visible-scan match pat=%q line=%q (len=%d lastRune=%q) session=%s", pat, lShort, len(l), lastR, sess.FullID)
 								completionDetected = true
 								break
 							}
 						}
-						if completionDetected { break }
+						if completionDetected {
+							break
+						}
 					}
 					// v8.20.11 — for one-shot TUI sessions, the completion marker may
 					// have been pushed into the scrollback by a progress animation
@@ -2453,7 +2466,9 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 							sbLines := strings.Split(StripANSI(sb), "\n")
 							for i, checked := len(sbLines)-1, 0; i >= 0 && checked < 500; i-- {
 								l := strings.TrimSpace(sbLines[i])
-								if l == "" { continue }
+								if l == "" {
+									continue
+								}
 								checked++
 								// Same box-border guard as the visible scan above.
 								if strings.HasSuffix(l, "┃") || strings.HasSuffix(l, "│") {
@@ -2466,14 +2481,22 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 								for _, pat := range m.effectiveCompletionPatterns() {
 									if matchesCompletionPattern(l, pat) {
 										sbRunes := []rune(l)
-										sbLast := ""; if len(sbRunes) > 0 { sbLast = string(sbRunes[len(sbRunes)-1]) }
-										sbShort := l; if len(sbShort) > 120 { sbShort = sbShort[:120] }
+										sbLast := ""
+										if len(sbRunes) > 0 {
+											sbLast = string(sbRunes[len(sbRunes)-1])
+										}
+										sbShort := l
+										if len(sbShort) > 120 {
+											sbShort = sbShort[:120]
+										}
 										m.debugf("StartScreenCapture: scrollback-scan match pat=%q line=%q (len=%d lastRune=%q) session=%s", pat, sbShort, len(l), sbLast, sess.FullID)
 										completionDetected = true
 										break
 									}
 								}
-								if completionDetected { break }
+								if completionDetected {
+									break
+								}
 							}
 						}
 					}
@@ -5431,7 +5454,6 @@ func parseRelativeDuration(low, marker string) time.Time {
 	return time.Now().Add(d)
 }
 
-
 // parseClock extracts (hour, minute) from common clock formats.
 func parseClock(s string) (int, int, bool) {
 	low := strings.ToLower(s)
@@ -5523,7 +5545,7 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 				}
 			}
 		}
-}
+	}
 
 	// v9.0.8 — self-heal usage totals accrued under the pre-fix tracker
 	// (see Session.UsageLinesRead's doc comment in store.go for the
@@ -5695,10 +5717,14 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 						// the main pane-watcher site above).
 						completionFound := false
 						visibleScanLimitCh := 5
-						if current.OneShot { visibleScanLimitCh = len(capLines) }
+						if current.OneShot {
+							visibleScanLimitCh = len(capLines)
+						}
 						for ci, cc := len(capLines)-1, 0; ci >= 0 && cc < visibleScanLimitCh; ci-- {
 							cl := strings.TrimSpace(capLines[ci])
-							if cl == "" { continue }
+							if cl == "" {
+								continue
+							}
 							cc++
 							// Skip TUI box-bordered lines (user message renders) so that
 							// "DATAWATCH_COMPLETE:" appearing in the task text instruction
@@ -5712,7 +5738,9 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 									break
 								}
 							}
-							if completionFound { break }
+							if completionFound {
+								break
+							}
 						}
 						// v8.20.11 — scrollback fallback for one-shot sessions.
 						if !completionFound && current.OneShot {
@@ -5720,7 +5748,9 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 								sbLines := strings.Split(StripANSI(sb), "\n")
 								for ci, cc := len(sbLines)-1, 0; ci >= 0 && cc < 50; ci-- {
 									cl := strings.TrimSpace(sbLines[ci])
-									if cl == "" { continue }
+									if cl == "" {
+										continue
+									}
 									cc++
 									// Same box-border guard for scrollback.
 									if strings.HasSuffix(cl, "┃") || strings.HasSuffix(cl, "│") {
@@ -5732,7 +5762,9 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 											break
 										}
 									}
-									if completionFound { break }
+									if completionFound {
+										break
+									}
 								}
 							}
 						}
@@ -5789,43 +5821,43 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 				if time.Since(lastOutputTime) < 5*time.Second {
 					// Recent output — don't check for prompts yet
 				} else {
-				// Use fast timeout (3s) if a prompt pattern was recently matched,
-				// otherwise use the full configured idleTimeout.
-				effectiveTimeout := m.idleTimeout
-				if !lastPromptMatchTime.IsZero() && lastPromptMatchTime.After(lastOutputTime.Add(-time.Second)) {
-					effectiveTimeout = 3 * time.Second // was 1s — too aggressive for Claude Code
-				}
-				if time.Since(lastOutputTime) >= effectiveTimeout {
-					// Check if the last few lines look like a prompt
-					if len(pendingLines) > 0 {
-						lastLine := StripANSI(strings.TrimSpace(pendingLines[len(pendingLines)-1]))
-						m.debugf("idle check session=%s lastLine=%q", sess.FullID, lastLine)
-						isPrompt := false
-						for _, pat := range m.effectivePromptPatterns() {
-							// Short patterns ($ , # , > ) only match as suffix to avoid false positives
-							// on lines like "cd /path && opencode" that contain "$ " mid-line.
-							if len(pat) <= 3 {
-								if strings.HasSuffix(lastLine, pat) {
+					// Use fast timeout (3s) if a prompt pattern was recently matched,
+					// otherwise use the full configured idleTimeout.
+					effectiveTimeout := m.idleTimeout
+					if !lastPromptMatchTime.IsZero() && lastPromptMatchTime.After(lastOutputTime.Add(-time.Second)) {
+						effectiveTimeout = 3 * time.Second // was 1s — too aggressive for Claude Code
+					}
+					if time.Since(lastOutputTime) >= effectiveTimeout {
+						// Check if the last few lines look like a prompt
+						if len(pendingLines) > 0 {
+							lastLine := StripANSI(strings.TrimSpace(pendingLines[len(pendingLines)-1]))
+							m.debugf("idle check session=%s lastLine=%q", sess.FullID, lastLine)
+							isPrompt := false
+							for _, pat := range m.effectivePromptPatterns() {
+								// Short patterns ($ , # , > ) only match as suffix to avoid false positives
+								// on lines like "cd /path && opencode" that contain "$ " mid-line.
+								if len(pat) <= 3 {
+									if strings.HasSuffix(lastLine, pat) {
+										isPrompt = true
+										m.debugf("prompt detected via suffix %q", pat)
+										break
+									}
+								} else if strings.HasSuffix(lastLine, pat) || strings.Contains(lastLine, pat) {
 									isPrompt = true
-									m.debugf("prompt detected via suffix %q", pat)
+									m.debugf("prompt detected via pattern %q", pat)
 									break
 								}
-							} else if strings.HasSuffix(lastLine, pat) || strings.Contains(lastLine, pat) {
-								isPrompt = true
-								m.debugf("prompt detected via pattern %q", pat)
-								break
 							}
-						}
-						if isPrompt {
-							lastPromptMatchTime = time.Time{} // reset
-							prompt := lastLine
-							if m.tryTransitionToWaiting(sess.FullID, prompt, "", getTracker) {
-								pendingLines = nil
+							if isPrompt {
+								lastPromptMatchTime = time.Time{} // reset
+								prompt := lastLine
+								if m.tryTransitionToWaiting(sess.FullID, prompt, "", getTracker) {
+									pendingLines = nil
+								}
 							}
 						}
 					}
-				}
-			} // end else (velocity check passed)
+				} // end else (velocity check passed)
 			}
 		case <-livenessTicker.C:
 			// Check if tmux session is still alive (30s interval — avoids per-session subprocess
@@ -5844,25 +5876,9 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 						// that race produced spurious "no changes detected" verification
 						// failures against a file the worker had, in fact, just written and
 						// committed correctly.
-						var diffSummary string
-						if !m.hasStructuredChannel(sess) {
-							if m.autoGit && projGit.IsRepo() {
-								if err := projGit.PostSessionCommit(current.ID, current.Task, StateComplete); err != nil {
-									fmt.Printf("[warn] post-session commit: %v\n", err)
-								}
-								if stat, _ := projGit.DiffStat(); !stat.IsZero() {
-									diffSummary = stat.Summary
-								}
-								if err := projGit.TagCheckpoint("post", current.ID, current.Task); err != nil {
-									fmt.Printf("[warn] post-checkpoint tag: %v\n", err)
-								}
-							}
-						}
+						m.commitOnCompletion(current, projGit)
 						current.State = StateComplete
 						current.UpdatedAt = time.Now()
-						if diffSummary != "" {
-							current.DiffSummary = diffSummary
-						}
 						_ = m.store.Save(current)
 
 						if !m.hasStructuredChannel(sess) {
@@ -6011,7 +6027,9 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 						current.State = StateRunning
 						current.UpdatedAt = time.Now()
 						_ = m.store.Save(current)
-						if m.onStateChange != nil { m.onStateChange(current, oldState) }
+						if m.onStateChange != nil {
+							m.onStateChange(current, oldState)
+						}
 					}
 				}
 			}
@@ -6144,7 +6162,9 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 		isRateLimit = true
 	} else if len(line) < 2048 {
 		for _, pat := range m.effectiveRateLimitPatterns() {
-			if pat == "DATAWATCH_RATE_LIMITED:" { continue } // already checked above
+			if pat == "DATAWATCH_RATE_LIMITED:" {
+				continue
+			} // already checked above
 			if strings.Contains(lineLower, strings.ToLower(pat)) {
 				isRateLimit = true
 				break
@@ -6307,23 +6327,9 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 				// Complete — see the identical comment on the livenessTicker branch
 				// above; a poller must never observe Complete before the worker's
 				// changes are actually committed.
-				var diffSummary string
-				if m.autoGit && projGit.IsRepo() {
-					if err := projGit.PostSessionCommit(current.ID, current.Task, StateComplete); err != nil {
-						fmt.Printf("[warn] post-session commit: %v\n", err)
-					}
-					if stat, _ := projGit.DiffStat(); !stat.IsZero() {
-						diffSummary = stat.Summary
-					}
-					if err := projGit.TagCheckpoint("post", current.ID, current.Task); err != nil {
-						fmt.Printf("[warn] post-checkpoint tag: %v\n", err)
-					}
-				}
+				m.commitOnCompletion(current, projGit)
 				current.State = StateComplete
 				current.UpdatedAt = time.Now()
-				if diffSummary != "" {
-					current.DiffSummary = diffSummary
-				}
 				_ = m.store.Save(current)
 
 				tracker := getTracker()
