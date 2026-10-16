@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -53,6 +54,13 @@ func TestAutonomousNotifyConfigRoundTrip(t *testing.T) {
 	cfg.Autonomous.Notify.DefaultEvents = []string{}
 	if err := Save(cfg, p); err != nil {
 		t.Fatalf("Save explicit empty: %v", err)
+	}
+	raw, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatalf("read saved yaml: %v", err)
+	}
+	if !strings.Contains(string(raw), "default_events") {
+		t.Fatalf("explicit empty default_events elided from YAML — omitempty in effect")
 	}
 	again, err = Load(p)
 	if err != nil {
