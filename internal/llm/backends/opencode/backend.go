@@ -8,9 +8,30 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/dmz006/datawatch/internal/llm"
 )
+
+// standaloneFlagCache memoizes, per binary path, whether `<binary> run
+// --help` advertises --standalone — opencode 2.x's `run` defaults to a
+// shared per-machine background service unless told otherwise (2026-10-15
+// live investigation), but datawatch doesn't bundle opencode: an operator
+// may be on any version, including ones predating this flag, where `run`
+// was already private by default. A capability probe (not a hardcoded
+// version-number check) avoids guessing exactly which release introduced
+// it and degrades safely to the old behavior when the flag doesn't exist.
+var standaloneFlagCache sync.Map // binary string -> bool
+
+func supportsStandaloneFlag(binary string) bool {
+	if v, ok := standaloneFlagCache.Load(binary); ok {
+		return v.(bool)
+	}
+	out, _ := exec.Command(binary, "run", "--help").CombinedOutput() //nolint:errcheck
+	supported := strings.Contains(string(out), "--standalone")
+	standaloneFlagCache.Store(binary, supported)
+	return supported
+}
 
 // writeTaskFile writes task text to a scratch file instead of embedding it
 // inline in the shell command sent to the pane.
@@ -127,11 +148,19 @@ func (b *PromptBackend) Launch(ctx context.Context, task, tmuxSession, projectDi
 		escaped := strings.ReplaceAll(task, "'", `'\''`)
 		msgExpr = fmt.Sprintf("'%s'", escaped)
 	}
+	// --standalone — see buildRunCmd's doc comment: opencode 2.x's `run`
+	// otherwise shares one per-machine background service across
+	// concurrent invocations instead of giving each task its own server.
+	// Probed via supportsStandaloneFlag, not assumed.
+	standaloneFlag := ""
+	if supportsStandaloneFlag(b.binary) {
+		standaloneFlag = "--standalone "
+	}
 	cmd := fmt.Sprintf(
-		`cd '%s' && echo '[opencode-prompt] starting…' && %s run --format json %s 2>/dev/null `+
+		`cd '%s' && echo '[opencode-prompt] starting…' && %s run %s--format json %s 2>/dev/null `+
 			`| python3 -c "import sys,json;[print(e['part']['text'],end='',flush=True) if e.get('type')=='text' else print('['+e['type']+']',flush=True) for line in sys.stdin for e in [json.loads(line)] if e.get('type') in ('text','step_start','step_finish','tool_call')]" `+
 			`; %secho; sleep 1; echo 'DATAWATCH_COMPLETE: opencode done'`,
-		escapedDir, b.binary, msgExpr, cleanup)
+		escapedDir, b.binary, standaloneFlag, msgExpr, cleanup)
 	return exec.CommandContext(ctx, "tmux", "send-keys", "-t", tmuxSession, cmd, "Enter").Run()
 }
 func (b *Backend) Version() string {
@@ -154,14 +183,28 @@ func (b *Backend) buildRunCmd(escapedDir, task, tmuxSession string) string {
 	// Use non-interactive 'opencode run' mode when a task is provided (e.g. PRD
 	// worker sessions). TUI send-keys delivery fails on task text containing '('
 	// characters — opencode's eval treats the text as a shell command and errors.
+	// --standalone (2026-10-15, live investigation) — opencode 2.x's `run`
+	// defaults to routing through one shared per-machine background
+	// service (`opencode serve --service`) instead of a private server per
+	// invocation. Concurrent tasks would otherwise share that one process
+	// instead of being independent. --standalone restores one private
+	// server per task, matching this backend's actual isolation
+	// assumption. `opencode serve --port N` (the ACP backend) is already
+	// unaffected — serve always starts its own private server regardless.
+	// Probed, not assumed (see supportsStandaloneFlag): older opencode
+	// versions don't have this flag and were already private by default.
+	standaloneFlag := ""
+	if supportsStandaloneFlag(b.binary) {
+		standaloneFlag = "--standalone "
+	}
 	if path, err := writeTaskFile(tmuxSession, task); err == nil {
 		escapedPath := strings.ReplaceAll(path, "'", `'\''`)
-		return fmt.Sprintf("cd '%s' && %s run \"$(cat '%s')\"; rm -f '%s'; echo 'DATAWATCH_COMPLETE: opencode done'",
-			escapedDir, b.binary, escapedPath, escapedPath)
+		return fmt.Sprintf("cd '%s' && %s run %s\"$(cat '%s')\"; rm -f '%s'; echo 'DATAWATCH_COMPLETE: opencode done'",
+			escapedDir, b.binary, standaloneFlag, escapedPath, escapedPath)
 	}
 	escaped := strings.ReplaceAll(task, "'", `'\''`)
-	return fmt.Sprintf("cd '%s' && %s run '%s'; echo 'DATAWATCH_COMPLETE: opencode done'",
-		escapedDir, b.binary, escaped)
+	return fmt.Sprintf("cd '%s' && %s run %s'%s'; echo 'DATAWATCH_COMPLETE: opencode done'",
+		escapedDir, b.binary, standaloneFlag, escaped)
 }
 
 func (b *Backend) Launch(ctx context.Context, task, tmuxSession, projectDir, logFile string) error {

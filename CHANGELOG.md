@@ -5,6 +5,22 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.1.11 — fix(opencode): concurrent opencode tasks no longer share one background service
+
+opencode 2.x's `run` command defaults to routing through a single
+per-machine background service, instead of giving each invocation its own
+private server. That means two opencode tasks running at the same time
+could end up sharing state through that one process rather than being
+independent — found live tonight while investigating a different opencode
+reliability issue, and confirmed via opencode's own `--help` text. Both
+non-interactive `opencode run` call sites now pass `--standalone` when the
+installed opencode binary supports it, restoring one private server per
+task. The check is a live capability probe of the configured binary, not
+a hardcoded version number, so an operator on an older opencode without
+this flag is unaffected — `run` was already private by default for them.
+`opencode serve` (the ACP backend) was never affected; it always starts
+its own private server regardless of version.
+
 ## v9.1.10 — add(opencode): optional build-agent temperature override
 
 `opencode.openCode.build_temperature` (YAML) writes `agent.build.temperature`

@@ -38,15 +38,23 @@ func TestWriteTaskFile(t *testing.T) {
 // inline) and must still reference the real content via command
 // substitution, so opencode receives the exact same text it always did.
 func TestBuildRunCmd_KeepsTypedLineShort(t *testing.T) {
-	b := &Backend{binary: "opencode"}
+	// supportsStandaloneFlag shells out to the real binary; pre-seed the
+	// cache with a synthetic name so this test stays hermetic regardless
+	// of whether opencode is installed, or which version, on the machine
+	// running it (2026-10-15 — caught live: this test previously hardcoded
+	// "opencode run --standalone" unconditionally and would behave
+	// differently in CI, with no opencode on PATH, than on a dev machine
+	// with it installed).
+	standaloneFlagCache.Store("opencode-test-standalone", true)
+	b := &Backend{binary: "opencode-test-standalone"}
 	bigTask := strings.Repeat("this is a long task spec line.\n", 500) // ~16KB
 	cmd := b.buildRunCmd("/tmp/proj", bigTask, "johnnyjohnny-xyz1")
 
 	if len(cmd) > 2000 {
 		t.Errorf("typed command is %d bytes — expected the big task text to live in a file, not be embedded inline (len should stay small regardless of task size)", len(cmd))
 	}
-	if !strings.Contains(cmd, "opencode run \"$(cat '") {
-		t.Errorf("expected command substitution form, got: %s", cmd)
+	if !strings.Contains(cmd, "run --standalone \"$(cat '") {
+		t.Errorf("expected --standalone + command substitution form, got: %s", cmd)
 	}
 	if !strings.Contains(cmd, "rm -f '") {
 		t.Errorf("expected scratch file cleanup, got: %s", cmd)
@@ -62,5 +70,27 @@ func TestBuildRunCmd_EmptyTaskUnchanged(t *testing.T) {
 	want := "cd '/tmp/proj' && opencode"
 	if cmd != want {
 		t.Errorf("buildRunCmd empty task = %q, want %q", cmd, want)
+	}
+}
+
+// 2026-10-15 — an opencode version predating --standalone must not get the
+// flag injected: older `run` was already private by default (no shared
+// background service existed yet), and passing an unknown flag would be a
+// hard, loud failure instead of the graceful no-op this should be.
+func TestBuildRunCmd_NoStandaloneFlagWhenUnsupported(t *testing.T) {
+	standaloneFlagCache.Store("opencode-test-old", false)
+	b := &Backend{binary: "opencode-test-old"}
+	cmd := b.buildRunCmd("/tmp/proj", "a task", "johnnyjohnny-xyz2")
+	if strings.Contains(cmd, "--standalone") {
+		t.Errorf("binary without --standalone support must not get the flag, got: %s", cmd)
+	}
+	if !strings.Contains(cmd, "run \"$(cat '") {
+		t.Errorf("expected plain run + command substitution form, got: %s", cmd)
+	}
+}
+
+func TestSupportsStandaloneFlag_UnknownBinaryFailsClosed(t *testing.T) {
+	if supportsStandaloneFlag("opencode-test-does-not-exist-anywhere") {
+		t.Error("a binary that can't even be exec'd should be treated as not supporting --standalone, not panic or default true")
 	}
 }
