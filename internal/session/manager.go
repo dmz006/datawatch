@@ -2997,6 +2997,11 @@ func (m *Manager) subprocessFinish(sess *Session, runErr error) {
 	if runErr != nil {
 		current.State = StateFailed
 	} else {
+		// Run the deterministic completion-commit BEFORE the state is saved
+		// as Complete — same as every other real completion path; a poller
+		// must never observe Complete while the worker's changes are still
+		// uncommitted.
+		m.commitOnCompletion(current, NewProjectGit(current.ProjectDir))
 		current.State = StateComplete
 	}
 	current.UpdatedAt = time.Now()
