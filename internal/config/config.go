@@ -2170,6 +2170,30 @@ type AutonomousConfig struct {
 	// precedence after that. Default false (explicit opt-in), same as
 	// the per-PRD field itself.
 	DefaultAutoPR bool `yaml:"default_auto_pr,omitempty" json:"default_auto_pr,omitempty"`
+
+	// Notify — lifecycle-notification knobs for the built-in lifecycle
+	// sinks (comm fanout / alert paging).
+	Notify AutonomousNotifyConfig `yaml:"notify" json:"notify"`
+}
+
+// AutonomousNotifyConfig — autonomous.notify sub-config. DefaultEvents
+// is the global default set of lifecycle event kinds the built-in
+// lifecycle sinks subscribe to (see
+// internal/autonomous/lifecycle_event.go: KindPRDUpdated
+// "prd.updated", PRDStatusKind(prd.*) — e.g. "prd.completed",
+// "prd.failed" — KindTaskSessionStarted "task.session_started",
+// TaskStatusKind(task.*) — e.g. "task.completed", "task.failed").
+// An empty list means the built-in lifecycle sinks subscribe to
+// nothing, which is exactly the current behavior; an operator opts
+// in by listing the event kinds they want notified.
+// DefaultEvents has NO omitempty on either tag (the B124
+// no-omitempty pattern already used for the autonomous.* fields in
+// internal/server/api.go, see the comment block near api.go:5802):
+// an operator's explicit empty list must survive a YAML/JSON
+// round-trip and a PUT /api/config write instead of being elided on
+// marshal and leaving the previous value untouched on unmarshal.
+type AutonomousNotifyConfig struct {
+	DefaultEvents []string `yaml:"default_events" json:"default_events"`
 }
 
 // ScanConfig — BL221 Phase 3 runtime config, mirrors
@@ -2625,6 +2649,9 @@ func DefaultConfig() *Config {
 			ContentAutoFixEnabled:   true,
 			AutoFixSkipApproval:     true,
 			BlockOnFileDrift:        false, // opt-in strict drift enforcement
+			// Notify is left as the zero value on purpose: an empty
+			// DefaultEvents list means the built-in lifecycle sinks
+			// subscribe to nothing — zero config = zero behavior change.
 		},
 		Ntfy:          NtfyConfig{ServerURL: "https://ntfy.sh"},
 		Email:         EmailConfig{Port: 587},
