@@ -304,6 +304,81 @@ cd <project_dir> && GOOSE_CLI_THEME=plain GOOSE_PROVIDER=anthropic ... goose run
 
 ---
 
+## pi
+
+**Name:** `pi` (interactive) / `pi-prompt` (one-shot)
+
+[pi](https://pi.dev) ([earendil-works/pi](https://github.com/earendil-works/pi)) is a
+minimal open-source coding agent harness that calls provider SDKs (Anthropic,
+OpenAI, Google, Ollama, and more) directly rather than through a compatibility
+shim. Added 2026-10-16 (BL466) as a lower-risk alternative to opencode for
+open-model execution.
+
+### Prerequisites
+
+- pi installed: `npm install -g @earendil-works/pi-coding-agent`
+- At least one provider configured (e.g. via `pi auth`, or pointed at a local
+  Ollama endpoint — see pi's own `~/.pi/agent/models.json`)
+
+### Installation
+
+```bash
+npm install -g @earendil-works/pi-coding-agent
+
+# Verify
+pi --version
+```
+
+### Configuration
+
+```yaml
+session:
+  llm_backend: pi   # or pi-prompt for one-shot execution
+
+pi:
+  enabled: true
+  binary: pi                      # path to pi binary; default: "pi"
+  model: ollama/qwen3.8:27b       # optional "provider/model"; empty uses pi's own default
+
+pi_prompt:
+  enabled: true
+  binary: pi                      # defaults to pi.binary when empty
+  model: ollama/qwen3.8:27b       # optional, same form as pi.model
+```
+
+### How it runs
+
+```bash
+# Interactive mode (pi backend) — stays open after the first turn
+cd <project_dir> && pi --approve --session-id '<id>' '<task>'
+
+# One-shot mode (pi-prompt backend) — blocks until done, then exits
+cd <project_dir> && pi --print --mode text --approve '<task>'
+```
+
+### Notes
+
+- `pi` backend is interactive (real TUI, stays open for follow-up input);
+  `pi-prompt` is one-shot (`--print`), blocks until pi is genuinely done,
+  then exits — same low-risk, no-async-completion-signal shape as `aider`.
+- Session resume on the `pi` backend uses pi's own `--session-id`, which
+  both creates and resumes a session by an arbitrary caller-supplied ID —
+  unlike opencode's own ID format, no translation is needed between
+  datawatch's session IDs and pi's.
+- A third variant analogous to `opencode-acp` (pi's own `--mode rpc`) is
+  planned but not yet implemented — see
+  `docs/plans/2026-10-16-pi-opencode-evaluation.md` (BL466). Building it now
+  would reintroduce the exact async completion-detection race class fixed in
+  `opencode-acp` the same night this backend was added (v9.1.20).
+- Known upstream caveat: pi issue [#9216](https://github.com/earendil-works/pi/issues/9216)
+  describes Ollama + `qwen3.8:27b` stream-termination errors under heavy
+  tool use — confirmed on datawatch's own exact model/stack. Live-tested
+  tasks (3- and 4-tool-call chains, both one-shot and via a standalone
+  smoke test with a real git commit) completed cleanly; a full multi-task
+  PRD pilot under sustained heavy tool use has not yet been run.
+
+---
+
 ## Gemini CLI
 
 **Name:** `gemini`

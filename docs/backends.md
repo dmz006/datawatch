@@ -10,6 +10,7 @@ This document lists all supported LLM and messaging backends with their configur
 |---|---|---|---|
 | claude-code | `claude-code` | auto-enabled | Anthropic Claude Code CLI (default; supports interactive input) |
 | aider | `aider` | `aider` | aider (https://aider.chat) |
+| pi | `pi` / `pi-prompt` | `pi` / `pi_prompt` | pi (https://pi.dev), interactive and one-shot |
 | goose | `goose` | `goose` | Block's goose agent (https://github.com/block/goose) |
 | Gemini CLI | `gemini` | `gemini` | Google Gemini CLI |
 | opencode | `opencode` | `opencode` | opencode (https://github.com/sst/opencode) |

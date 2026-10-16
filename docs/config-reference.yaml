@@ -533,6 +533,28 @@ aider:
   console_cols: 0
   # Terminal height
   console_rows: 0
+pi:
+  # Enable pi backend (interactive mode)
+  enabled: false
+  # Path to pi binary
+  binary: pi
+  # Model as "provider/model" (e.g. ollama/qwen3.8:27b); empty uses pi's own default
+  model: ""
+  # Terminal width
+  console_cols: 0
+  # Terminal height
+  console_rows: 0
+pi_prompt:
+  # Enable pi-prompt backend (one-shot `pi --print` mode)
+  enabled: false
+  # Path to pi binary; defaults to pi.binary when empty
+  binary: ""
+  # Model as "provider/model"; empty uses pi.model or pi's own default
+  model: ""
+  # Terminal width
+  console_cols: 0
+  # Terminal height
+  console_rows: 0
 goose:
   # Enable goose backend
   enabled: false

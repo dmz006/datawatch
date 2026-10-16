@@ -113,6 +113,8 @@ Internal research — does not block Stage A/B/C, can run alongside it.
 |---|---|
 | BL453 Can open models decompose PRDs? (research) | not started (PRD `19f9a693`, draft; covers decompose reliability, execution-scope, and a positive data point — 3 research PRDs fully open-model decomposed+executed successfully) |
 | [BL465](2026-10-16-deterministic-git-commit-design.md) Move the primary git commit out of the worker's own tool loop (design) | needs_review (design only, no PRD yet) |
+| [BL466](2026-10-16-pi-opencode-evaluation.md) pi LLM backend for open-model PRD execution | **shipped v9.1.21** — full backend + config/CLI/PWA/comm parity built tonight (reprioritized from v11.0.0 research to active, per the "no claude-code PRD executors until Sunday" constraint); real multi-task PRD pilot through datawatch's own session manager still pending |
+| [BL467](2026-10-16-mcp-bridge-registration-race.md) MCP channel bridge registration is first-come, not owner-bound (design) | needs_review (design only, no PRD yet); not urgent, nothing currently broken |
 
 ## Excluded from v10.0.0
 
@@ -129,8 +131,6 @@ nothing here blocks anything in the active order above.
 |---|---|
 | BL457 Harness research: 20-builder survey + enhancement proposals (PRD `8baa807b`) | research complete (`docs/plans/harness-research/`); proposals (P1 span artifact, P4 eval sweep, P2 stall-ladder) pending v11.0.0 prioritization |
 | BL458 openrig.dev adoption plan (PRD `ef9dcac1`) | research complete (`docs/plans/2026-09-24-openrig-adoption-plan.md`); adoption plan pending v11.0.0 prioritization |
-| [BL466](2026-10-16-pi-opencode-evaluation.md) Evaluate switching from opencode to pi for open-model PRD execution | research + live smoke test complete (pi and omp both live-tested clean against real `qwen3.8:27b`); real pilot (full PRD A/B, backend integration) pending v11.0.0 prioritization |
-| [BL467](2026-10-16-mcp-bridge-registration-race.md) MCP channel bridge registration is first-come, not owner-bound | design note filed 2026-10-16; not urgent (nothing currently broken), fix direction undecided, pending v11.0.0 prioritization |
 
 **LLM research reconciliation:**
 

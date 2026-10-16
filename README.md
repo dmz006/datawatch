@@ -264,7 +264,7 @@ A manifest-driven **plugin framework** (hot-reload, declared comm verbs / CLI su
 
 ### Also included
 
-Multi-channel messaging (Signal, Telegram, Discord, Slack, Matrix, Twilio, webhooks, DNS, voice via Whisper) · pluggable LLM backends (claude-code, aider, goose, gemini, opencode, ollama, openwebui, shell) · Docker/Kubernetes container workers with PQC bootstrap · auto rate-limit recovery · eBPF per-process network monitoring + Prometheus `/metrics` · Tailscale mesh for the PWA and agent pods.
+Multi-channel messaging (Signal, Telegram, Discord, Slack, Matrix, Twilio, webhooks, DNS, voice via Whisper) · pluggable LLM backends (claude-code, aider, pi, goose, gemini, opencode, ollama, openwebui, shell) · Docker/Kubernetes container workers with PQC bootstrap · auto rate-limit recovery · eBPF per-process network monitoring + Prometheus `/metrics` · Tailscale mesh for the PWA and agent pods.
 
 See the [Documentation index](#documentation-index) below for everything else.
 

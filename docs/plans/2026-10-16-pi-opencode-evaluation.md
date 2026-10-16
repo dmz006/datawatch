@@ -1,7 +1,13 @@
 # BL466 — Evaluate switching from opencode to pi for open-model PRD execution
 
-**Status:** needs_review · **Date:** 2026-10-16 · **Tracker:** BL466
-**Scope:** v11.0.0 — not required for v10.0.0, no code changes here.
+**Status:** active, backend built and shipped (v9.1.21) · **Date:** 2026-10-16 · **Tracker:** BL466
+**Scope:** moved from "v11.0.0 research" to **active now** — a hard operator
+constraint ("no PRD task execution via claude-code until Sunday") made local-
+model execution via opencode or pi the only path to real PRD throughput, so
+getting pi running stopped being deferrable research and became tonight's
+priority. The deeper opencode reliability work (the still-open
+"no user query" bug, the 281-stale-session `opencode.db` lead) is what
+moved to v11.0.0 instead — see the corrected framing below.
 
 ## Why this is filed
 
@@ -66,7 +72,62 @@ out of the box, but needs its own ACP-protocol integration work (the
 `omp acp` stdio server mode, not yet tested) rather than the simpler
 `--print` CLI mode validated tonight.
 
+## What got built tonight (v9.1.21)
+
+Per the priority correction above, item 2 ("get pi running as an integrated
+datawatch backend") was done tonight, not deferred. Built as the simplest
+viable shape instead of the `acpbackend.go`-equivalent originally sketched —
+see "Architecture decision" below for why:
+
+- `internal/llm/backends/pi/` — two backends: `pi` (interactive TUI,
+  resumable via pi's own `--session-id`) and `pi-prompt` (one-shot, blocking
+  `pi --print`). 24 unit tests.
+- Full `Config`/`inference.Kind` wiring, REST `GET`/`PUT /api/config`
+  round-trip, comm channel (no new code needed — generic config-patch path),
+  CLI setup wizard (`datawatch setup llm pi` / `pi-prompt`), PWA (picker,
+  config form, install hints, docs links).
+- Docs: `docs/llm-backends.md#pi`, `docs/config-reference.yaml`,
+  `docs/backends.md`, `docs/testing-tracker.md`, `README.md`, `CHANGELOG.md`.
+
+### Architecture decision: blocking one-shot / plain TUI, not an ACP-equivalent
+
+The original sketch (item 2 above) called for an `acpbackend.go`-equivalent:
+async event-stream parsing, completion detection keyed off pi's own JSON
+terminal event. That's exactly the shape that produced tonight's two real
+opencode-acp bugs (a health-check race, v9.1.19; a completion-detection
+race, v9.1.20) — both async-signal races. Building the same shape for pi
+would start the new backend with the identical risk class already paid down
+twice tonight. Built instead: `pi-prompt` blocks on a single CLI call with
+unconditional shell-level completion-echo (no async signal to race against,
+same shape as `aider`'s backend), and `pi` runs pi's plain interactive TUI
+in tmux (same shape as `claude-code`/`goose` interactive sessions, whose
+completion detection is datawatch's existing generic pane-scan, not a
+backend-specific mechanism). A `pi --mode rpc` variant analogous to
+opencode-acp remains possible later (see "Not yet done" below) once there's
+a reason to accept that risk class again — not needed to get PRD execution
+working tonight.
+
+### Parity surface (AGENT.md plan requirement)
+
+| Surface | Status |
+|---|---|
+| YAML (`pi`, `pi_prompt`) | Done — `internal/config/config.go`, `docs/config-reference.yaml` |
+| REST (`GET`/`PUT /api/config`) | Done — `internal/server/api.go` |
+| MCP | No new tool needed — generic `llm_list`/`llm_get`/`backends_list`/`get_config` MCP tools already reflect any registered backend dynamically, same pattern as aider/goose (no backend-specific MCP tool exists for those either) |
+| Comm channel (`configure pi.binary=...`) | Done — no new code; routes through the existing `/api/config` PUT path (verified: `router.go`'s `configureFn` is a thin HTTP client over that same endpoint) |
+| CLI | Done — `datawatch setup llm pi` / `pi-prompt` wizard steps (`internal/wizard/defs.go`); generic `datawatch config set`/`session new --llm pi` already work via the registry, no backend-specific CLI code needed |
+| PWA | Done — backend icon, filter badge, New-LLM dropdown, config form (binary+model+console+git fields), docs link, SaaS-kind set (no compute-node picker, matches aider/goose), install hint |
+| Android / iPhone | No client-code change needed — both apps consume the generic backend-picker/config surfaces (REST `GET /api/config`, session-start backend selection) that already enumerate whatever backends the daemon has registered; neither app hardcodes a backend list. Reasoned exclusion, not an oversight — same as every other backend added without a native-app PR. |
+| Localization | No new user-facing string added — `pi`/`pi-prompt` are backend identifiers (like `aider`, `goose`), not translated UI copy; PWA labels reuse existing generic field labels ("Binary path", "Model", etc.) already covered by the existing locale keys. |
+
 ## Not yet done
 
-No code. No backend integration. No full-PRD pilot run. This is the
-research base for a future implementation PRD, not the PRD itself.
+No real pilot run yet: no full multi-task PRD executed end-to-end through
+the new `pi`/`pi-prompt` backend inside datawatch's own session manager (the
+live tool-use tests above were pi's own CLI run directly/standalone, not
+through datawatch). No A/B against opencode on the same parked PRD task. No
+RPC-protocol (`pi --mode rpc`) variant — see "Architecture decision" above
+for why that's deliberate, not an oversight. The 281-stale-session
+`opencode.db` lead and opencode's own "no user query" bug remain unfixed —
+moved to the v11.0.0 opencode-reliability track per the priority correction
+above.

@@ -232,6 +232,20 @@ Added in v8.13.36–v8.14.0. Backends: `goose` (interactive TUI), `goose-prompt`
 
 ---
 
+## pi Backend
+
+Added 2026-10-16 (BL466). Backends: `pi` (interactive TUI, resumable via
+`--session-id`), `pi-prompt` (one-shot `pi --print`).
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| `pi` interactive backend (`internal/llm/backends/pi/`) — command construction, `--session-id` create-if-missing resume, `Resumable`/`Nameable`/`ToolCapable` contracts | Yes | No | 24 unit tests in `internal/llm/backends/pi/backend_test.go`; cover `buildInteractiveCmd`, quoting/escaping, `SetSessionName`/`SetModel`, missing-binary `Version()` | No live `POST /api/sessions/start backend=pi` test performed yet through datawatch's own session manager. |
+| `pi-prompt` one-shot backend — `pi --print --mode text`, unconditional `DATAWATCH_COMPLETE:` echo | Yes | No | Same test suite; `buildLaunchCmd` covers model flag, quoting, completion marker | Same gap: not yet exercised through a real datawatch session. |
+| Config parity — `PiConfig`/`PiPromptConfig` (7 fields each) via YAML/REST/CLI/PWA | Yes (wired) | No | `go build`/`go test` pass across `internal/config`, `internal/server`, `cmd/datawatch`, `internal/wizard`, `internal/llm/backends/pi` (1326 tests total); REST GET/PUT round-trip wired in `internal/server/api.go`; `datawatch setup llm pi`/`pi-prompt` wizard steps added | No explicit REST round-trip unit test written for the new `pi.*`/`pi_prompt.*` keys specifically (structural wiring verified by build+existing suite only); no e2e story yet. Comm channel needs no new code — `configure pi.binary=...` already routes through the same `/api/config` PUT path. |
+| pi CLI itself, live, with real tool use (outside datawatch's session manager) | **Yes** | **Yes** | Two fork-run tests tonight (3- and 4-tool-call chains, `ollama/qwen3.8:27b`) both completed cleanly with real commits; a standalone smoke test (`/tmp/pi_smoke_test/`) produced a real commit `3ab61fd` | This validates `pi` the CLI directly, not datawatch's backend integration around it — see the row above for what's still outstanding. Known upstream caveat: pi issue #9216 (Ollama + qwen3.8:27b stream-termination under heavy tool use) not yet reproduced or ruled out in a full multi-task run. |
+
+---
+
 ## Vision Input System
 
 Added in the current release cycle. Backends: ollama, openai, openai\_compat.

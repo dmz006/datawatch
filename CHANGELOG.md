@@ -5,6 +5,24 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.1.21 — feat(pi): add pi LLM backend — interactive + one-shot variants (BL466)
+
+Two new backends from [pi](https://pi.dev), a minimal open-source coding
+agent harness: `pi` (interactive, a real TUI session that stays open for
+follow-up input, resumable via pi's own `--session-id`) and `pi-prompt`
+(one-shot, blocking `pi --print`, same low-risk completion-detection shape
+as `aider`). Full config parity — YAML (`pi`/`pi_prompt`), REST
+(`GET`/`PUT /api/config`), comm channel (`configure pi.binary=...`, routes
+through the existing config-patch path with no new code), CLI setup
+wizard (`datawatch setup llm pi` / `pi-prompt`), and PWA (backend picker,
+config form, install hints). Deliberately not built: an RPC-protocol
+variant analogous to `opencode-acp` (pi's own `--mode rpc`) — would
+reintroduce the exact async completion-detection race class fixed in
+`opencode-acp` earlier tonight (v9.1.20).
+
+See `docs/plans/2026-10-16-pi-opencode-evaluation.md` (BL466) for the
+research behind this and `docs/llm-backends.md#pi` for setup.
+
 ## v9.1.20 — fix(opencode): tasks that finished real work no longer freeze forever waiting on completion
 
 The real root cause behind a pattern that has been forcing manual
