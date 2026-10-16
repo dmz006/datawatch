@@ -5,6 +5,22 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.1.23 — fix(llm): `llm update` no longer silently resets kind/model/timeout
+
+Found live during the pi backend's first PRD pilot: `llm update <name>
+--compute-nodes ...` (without `--kind`) silently reset a real `pi`/
+`pi-prompt` LLM entry's `kind` back to `"ollama"` — the flag's own
+default — because `kind`, `model`, and `timeout_seconds` were sent on
+every `add`/`update` call unconditionally, unlike every other field on
+this command, which is only sent when the operator actually passed it.
+The server's own PUT handler already merges onto the existing entry
+correctly; the CLI was the only thing clobbering these three fields. An
+autonomous task picked up the corrupted entry and launched a plain
+Ollama chat session instead of pi. This bug affects every LLM kind's
+`update` command, not just pi — anyone who ran `llm update` without
+re-stating `--kind`/`--model`/`--timeout-seconds` had those fields reset
+too. `add` is unaffected (a brand-new entry still needs real defaults).
+
 ## v9.1.22 — fix(pi): pi-prompt no longer types multi-KB task text inline
 
 Found during the first real pilot through datawatch's own session

@@ -114,12 +114,28 @@ func newLLMAddCmd(update bool) *cobra.Command {
 		Use:   use,
 		Short: short,
 		Args:  cobra.ExactArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
-			body := map[string]any{
-				"name":            args[0],
-				"kind":            kind,
-				"model":           model,
-				"timeout_seconds": timeoutSeconds,
+		RunE: func(rcmd *cobra.Command, args []string) error {
+			body := map[string]any{"name": args[0]}
+			// kind/model/timeout_seconds get a sensible flag default
+			// ("ollama", "", 0) for `add`, where a brand-new entry needs
+			// some value for each — but that same default made every
+			// `update` call silently reset these three fields even when
+			// the operator never touched the flag, since unlike every
+			// other field here they were sent unconditionally rather
+			// than gated behind "non-empty". Found live 2026-10-16: `llm
+			// update <name> --compute-nodes ...` (no --kind passed)
+			// reset a real pi/pi-prompt entry's kind back to "ollama",
+			// silently launching the wrong backend for an autonomous
+			// task. For `update`, only send these three when the
+			// operator actually passed the flag.
+			if !update || rcmd.Flags().Changed("kind") {
+				body["kind"] = kind
+			}
+			if !update || rcmd.Flags().Changed("model") {
+				body["model"] = model
+			}
+			if !update || rcmd.Flags().Changed("timeout-seconds") {
+				body["timeout_seconds"] = timeoutSeconds
 			}
 			if apiKeyRef != "" {
 				body["api_key_ref"] = apiKeyRef
