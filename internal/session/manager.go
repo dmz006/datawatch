@@ -3839,6 +3839,20 @@ func (m *Manager) TailOutput(fullID string, n int) (string, error) {
 // It deliberately runs without any config-based gating — the caller decides
 // when to invoke it. It mutates current in place; the caller saves it.
 func (m *Manager) commitOnCompletion(current *Session, projGit *ProjectGit) {
+	// Hard guard, centralized here rather than trusted to every call
+	// site: the deterministic commit exists only for done-signalling
+	// one-shot task sessions. Found live 2026-10-16 — a long-running
+	// *interactive* session (OneShot=false) hit a transient
+	// completion-pattern false-positive on its own tmux pane and this
+	// function, missing this check, committed whatever was sitting in
+	// that session's working tree at that instant (including unrelated
+	// in-progress edits and pre-existing untracked files). No call site
+	// should ever reach here for a non-one-shot session, but relying on
+	// every one of them to get that right individually is exactly the
+	// kind of gap this regression came from.
+	if !current.OneShot {
+		return
+	}
 	if projGit == nil || !projGit.IsRepo() {
 		return
 	}

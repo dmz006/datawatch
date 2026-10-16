@@ -77,3 +77,56 @@ func TestCommitOnCompletion_CommitsWorkWithWorkerSummary(t *testing.T) {
 		t.Fatal("DiffSummary should be populated for a non-zero diff")
 	}
 }
+
+// commitOnCompletion must never commit for a non-one-shot (interactive)
+// session, regardless of what the caller's own completion heuristic
+// decided — the guard belongs here, not trusted to every StateComplete
+// call site individually. Found live 2026-10-16: a long-running
+// interactive session hit a transient completion-pattern false positive
+// and this function, missing this check, committed whatever was sitting
+// in that session's working tree at that instant.
+func TestCommitOnCompletion_NeverCommitsForInteractiveSession(t *testing.T) {
+	dir := t.TempDir()
+	gitRunT(t, dir, "init", "-q")
+	gitRunT(t, dir, "config", "user.email", "t@t.test")
+	gitRunT(t, dir, "config", "user.name", "t")
+	if err := os.WriteFile(filepath.Join(dir, "target.md"), []byte("stub\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitRunT(t, dir, "add", "-A")
+	gitRunT(t, dir, "commit", "-q", "-m", "stub")
+
+	// Something is sitting dirty in the tree when the false-positive
+	// completion fires — exactly the dangerous case.
+	if err := os.WriteFile(filepath.Join(dir, "target.md"), []byte("stub\nin-progress edit\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	store, err := NewStore(filepath.Join(t.TempDir(), "sessions.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mgr := &Manager{store: store, hostname: "testhost"}
+	sess := &Session{
+		ID: "ab22", FullID: "testhost-ab22", Hostname: "testhost",
+		State: StateRunning, OneShot: false, ProjectDir: dir,
+		Task:      "",
+		CreatedAt: time.Now(), UpdatedAt: time.Now(),
+	}
+	if err := store.Save(sess); err != nil {
+		t.Fatal(err)
+	}
+
+	mgr.commitOnCompletion(sess, NewProjectGit(dir))
+
+	out, err := exec.Command("git", "-C", dir, "status", "--porcelain").Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(string(out)) == "" {
+		t.Fatal("expected the dirty file to remain uncommitted for an interactive session")
+	}
+	if sess.CommitSHA != "" {
+		t.Fatalf("CommitSHA should stay empty for an interactive session, got %q", sess.CommitSHA)
+	}
+}

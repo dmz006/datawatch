@@ -2098,10 +2098,11 @@ automatic once configured, not a per-PRD opt-in: an operator who sets
 this once gets the safety default for every PRD going forward without
 having to remember to ask for it each time. A PRD that already sets an
 explicit `project_dir` is left alone (explicit always wins). Task
-sessions in a worktree-mode PRD always commit (forced on, regardless
-of this daemon's own `session.auto_git_commit` default) — the whole
-point of the branch is to be reviewable, which breaks silently if
-nothing ever gets committed onto it.
+sessions always commit automatically now, in every mode — the
+worktree case is no longer a special case (`session.auto_git_commit` is
+deprecated and ignored everywhere) — the whole point of the branch is
+to be reviewable, which breaks silently if nothing ever gets committed
+onto it.
 
 The worktree is created once, at first `Run()`, and is idempotent
 across a daemon restart mid-run. Setting `PRD.Git.AutoPR` to `true` (per-PRD, defaults false — or set

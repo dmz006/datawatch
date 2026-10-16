@@ -1,7 +1,19 @@
 # BL465 — Move the primary git commit out of the worker's own tool loop
 
-**Status:** needs_review · **Date:** 2026-10-16 · **Tracker:** BL465
-**Scope:** design only. No code changes.
+**Status:** shipped (v9.2.0) · **Date:** 2026-10-16 · **Tracker:** BL465
+**Scope:** design, then implemented the same day (PRD `137ed868`, pi-prompt pilot).
+
+## Decisions (resolved)
+
+All seven decisions below shipped as designed:
+
+1. **Commit timing** — the deterministic commit (`commitOnCompletion`) fires the moment the worker signals `DATAWATCH_COMPLETE`, before verification reads any diff.
+2. **Workers no longer commit** — every backend's completion instructions were rewritten to say the opposite of "commit your work": commits happen automatically, do not run `git commit`/`git add` yourself.
+3. **Commit message** — the worker's own one-line summary becomes the commit subject; falls back to the task title when no summary is found.
+4. **Applies to every backend** — not backend-specific; verified on pi-prompt specifically, the backend whose first real pilot run exposed the original bug.
+5. **One commit per task attempt** — an accepted, deliberate tradeoff, not a regression to fix later.
+6. **Unconditional default** — `session.auto_git_commit` is deprecated and ignored; `PostSessionCommit` (the old parallel mechanism) is deleted.
+7. **Verifier recognizes landed work** — a retry whose real work already landed in an earlier attempt is now recognized as done instead of failing as "produced no output."
 
 ## The problem
 

@@ -5,6 +5,23 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.2.0 — feat(session): task sessions are committed automatically, the moment they're done
+
+Task sessions are now committed automatically by datawatch itself the
+moment the worker says it's done, before verification looks at the
+result. The worker's own one-line summary becomes the commit message
+(the task title if there isn't one). Workers no longer run `git commit`
+themselves — this applies to every backend. Each task attempt produces
+one commit (an accepted tradeoff, replacing whatever smaller commits a
+worker used to make mid-task on its own). `session.auto_git_commit` is
+deprecated and ignored; it no longer changes behavior.
+
+A retried task whose real work already landed in an earlier attempt is
+now recognized as done instead of incorrectly failing as "produced no
+output" — this was a real, repeatable bug: a retry's own baseline
+naturally includes the prior attempt's already-correct commit, so its
+diff looked empty even though the work was genuinely finished.
+
 ## v9.1.24 — feat(autonomous): `prd-add-task` can set `depends_on`
 
 Adding a task to an existing story (REST/MCP/CLI `add_task`/`prd-add-task`)

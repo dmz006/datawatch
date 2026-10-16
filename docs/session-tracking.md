@@ -43,13 +43,14 @@ This gives you a full audit trail of every interaction.
 
 ## Project Directory Git Tracking
 
-When `auto_git_commit: true` (default), datawatch also manages commits in the
-**project directory** — the folder where claude-code is actually working:
-
-| Event | Commit message |
-|-------|---------------|
-| Session starts | `pre-session[a3f2]: refactor auth module` |
-| Session completes | `session[a3f2](complete): refactor auth module` |
+For a one-shot task session, datawatch snapshots the project directory
+before the worker starts and commits automatically the moment the worker
+signals it's done — before verification looks at the result. The
+worker's own one-line summary becomes the commit message (the task
+title if there isn't one); workers never run `git commit` themselves.
+This is unconditional for task sessions.
+`session.auto_git_commit` is **deprecated and ignored** — it no longer
+changes this behavior; it is kept only so old config files still load.
 
 This makes it trivial to see exactly what claude changed:
 
@@ -135,11 +136,13 @@ This file gives the LLM operating constraints for the session:
 ## Disabling Tracking
 
 The session folder is always created — it's how the daemon tracks state.
-To disable project directory git commits:
+`auto_git_commit` no longer has any effect; project-directory commits
+for a task session are unconditional and cannot be disabled.
+`auto_git_init` still controls whether datawatch initializes a git repo
+in the project directory if one doesn't exist:
 
 ```yaml
 session:
-  auto_git_commit: false
   auto_git_init: false
 ```
 
