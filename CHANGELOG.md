@@ -5,6 +5,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.1.16 — fix(opencode): stop tearing down a session the moment it's nudged to continue
+
+The real cause of v9.1.14/v9.1.15 still losing the race: the first time
+a one-shot opencode session went idle, it was immediately treated as
+"task finished" and torn down -- before the continuation nudge's own
+request could land, every time, regardless of which idle signal it
+reacted to. The session is no longer treated as finished while a
+continuation nudge is still being sent; only once nudges are actually
+exhausted does the existing finished-session handling apply, same as
+before this whole fix existed.
+
 ## v9.1.15 — fix(opencode): the idle-nudge from v9.1.14 fires too late to win its own race
 
 v9.1.14's fix (nudge a one-shot opencode session forward instead of

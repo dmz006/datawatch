@@ -99,6 +99,50 @@ func TestStreamEventsOnce_StopsNudgingAfterMax(t *testing.T) {
 	}
 }
 
+// 2026-10-16 — the real root cause: MarkACPEvent (internal/session)
+// treats the first idle-after-busy transition on a one-shot session as
+// task completion, which tears the session down before a nudge's HTTP
+// request can land. This test confirms OnACPEvent is NOT forwarded for
+// an idle event that is about to be nudged, and IS forwarded once nudges
+// are exhausted — the exact suppression streamEventsOnce now does.
+func TestStreamEventsOnce_SuppressesOnACPEventWhileNudging(t *testing.T) {
+	var forwardedTypes []string
+	var mu sync.Mutex
+	origOnACPEvent := OnACPEvent
+	OnACPEvent = func(fullID, eventType, statusType string) {
+		mu.Lock()
+		defer mu.Unlock()
+		forwardedTypes = append(forwardedTypes, eventType+":"+statusType)
+	}
+	defer func() { OnACPEvent = origOnACPEvent }()
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/event", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		// maxIdleNudges+1 idle events: the first maxIdleNudges should be
+		// suppressed (a nudge is sent for each), the last should be
+		// forwarded (nudges exhausted, manager needs to know).
+		fmt.Fprint(w, sseIdleEvents(maxIdleNudges+1))
+	})
+	mux.HandleFunc("/session/sess1/message", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+
+	st := &acpSessionState{baseURL: srv.URL, sessionID: "sess1", fullID: "full1"}
+	streamEventsOnce(context.Background(), srv.URL, t.TempDir()+"/out.log", "cs-test", st)
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(forwardedTypes) != 1 {
+		t.Fatalf("expected exactly 1 forwarded event (after nudges exhausted), got %d: %v", len(forwardedTypes), forwardedTypes)
+	}
+	if forwardedTypes[0] != "session.status:idle" {
+		t.Errorf("expected the forwarded event to be session.status:idle, got %q", forwardedTypes[0])
+	}
+}
+
 func TestStreamEventsOnce_NoNudgeAfterCompletion(t *testing.T) {
 	var messageCount atomic.Int32
 

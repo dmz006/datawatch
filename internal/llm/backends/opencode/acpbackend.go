@@ -497,7 +497,26 @@ func streamEventsOnce(ctx context.Context, baseURL, logFile, tmuxSession string,
 			_ = json.Unmarshal(evt.Properties, &sp)
 			statusType = sp.Status.Type
 		}
-		if OnACPEvent != nil && st.fullID != "" {
+		// Root-caused live 2026-10-16: forwarding every idle status to
+		// OnACPEvent unconditionally raced against the nudge mechanism
+		// below. The manager's MarkACPEvent treats the first
+		// idle-after-busy transition on a one-shot session as task
+		// completion (opencode never emits session.completed, so that's
+		// its only signal) — which tears the session down, synchronously,
+		// before the nudge's own HTTP POST a few lines below could land
+		// (confirmed live: every nudge attempt got EOF or connection
+		// refused, no matter which of the two idle-shaped SSE events it
+		// reacted to). Suppress forwarding THIS ONE event when a nudge is
+		// about to be sent instead — the manager only needs to know once
+		// nudges are actually exhausted, which is also the one case the
+		// nudge code below does NOT suppress.
+		suppressForNudge := false
+		if evt.Type == "session.status" && statusType == "idle" && !completed {
+			st.mu.Lock()
+			suppressForNudge = st.idleNudges < maxIdleNudges
+			st.mu.Unlock()
+		}
+		if !suppressForNudge && OnACPEvent != nil && st.fullID != "" {
 			OnACPEvent(st.fullID, evt.Type, statusType)
 		}
 		// Extract text content from message part events.
