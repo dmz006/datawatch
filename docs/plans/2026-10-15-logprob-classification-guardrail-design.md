@@ -200,7 +200,7 @@ Against a real `llama-server` (CPU first, then the GPU hosts): classification ac
 
 This section says how a future implementation PRD would decide whether the classifier is good enough to replace generate-and-parse verifiers for a given task type. It is a plan, not a result. No evaluation has run.
 
-**Baseline.** The generative path is the current verifier: a worker-model verdict in the strict JSON contract (`cmd/datawatch/main.go:4914`), parsed by the harness. The classifier is judged against that baseline on the same inputs, and against the objective verifier scripts (`verify/{analysis,scripting,docs,review}.sh`), which are the ground truth. A judge is never used to label its own evaluation data.
+**Baseline.** The generative path is the current verifier: a worker-model verdict in the strict JSON contract (`cmd/datawatch/main.go`, verifier prompt at line 4915 as of v9.1.8), parsed by the harness. The classifier is judged against that baseline on the same inputs, and against the objective verifier scripts (`testdata/eval/model-tiering/verify/{analysis,scripting,docs,review}.sh`), which are the ground truth. A judge is never used to label its own evaluation data.
 
 **Evidence base: BL449 matrix.** The 4 roles × 4 task types, 16-cell open-model matrix in [2026-10-15-bl449-open-model-matrix.md](2026-10-15-bl449-open-model-matrix.md) is the only planned source of cell outputs. Its status matters for this plan:
 
