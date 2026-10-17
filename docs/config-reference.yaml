@@ -866,6 +866,21 @@ autonomous:
   max_concurrent_tasks: 1
   # max_parallel_tasks: DEPRECATED — never had any effect; accepted and ignored
   # with a startup warning for one release, then removed. Use max_concurrent_tasks.
+  # BL428 §3a (docs/plans/2026-10-14-concurrency-and-budget-design.md) — how
+  # Automaton task writes that target the same project tree are serialized.
+  # "advisory" (default): the daemon enforces an exclusive per-canonical-tree
+  # lock at admission — tasks on the same tree queue, different trees run in
+  # parallel. "parallel": RESERVED but DISABLED — recognized and accepted
+  # until the real mechanism lands in the follow-up implementation PRD; the
+  # daemon still enforces the advisory lock and logs a startup warning.
+  # Any other value is a config error and the daemon refuses to start.
+  project_write_serialization: advisory
+  # BL428 §3a ii — admission-time companion: when true, task admission
+  # hard-fails (error naming the dirty file count and the options — commit
+  # or stash first, git clean, or set this back to false) if the PRD's
+  # project tree has uncommitted changes (git status --porcelain
+  # non-empty). Default false.
+  refuse_dirty_tree_start: false
   # Capacity-aware admission: tasks wait for a free host / compute-node / LLM
   # slot (status waiting_capacity) instead of failing. Default true.
   # Per-node limit: compute node max_concurrent_sessions; per-LLM: max_inflight

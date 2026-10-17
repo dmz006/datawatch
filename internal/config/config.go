@@ -1956,6 +1956,25 @@ type AutonomousConfig struct {
 	// An Automaton's own max_concurrent_tasks overrides it. 1 =
 	// sequential (default).
 	MaxConcurrentTasks int `yaml:"max_concurrent_tasks,omitempty" json:"max_concurrent_tasks,omitempty"`
+	// ProjectWriteSerialization (BL428 §3a —
+	// docs/plans/2026-10-14-concurrency-and-budget-design.md) selects
+	// how Automaton task writes that target the same project tree are
+	// serialized: "advisory" (default — the daemon enforces an
+	// exclusive per-canonical-tree lock at admission; tasks on the
+	// same tree queue) or "parallel" (reserved but DISABLED —
+	// recognized and accepted until the real mechanism lands in the
+	// follow-up implementation PRD; the daemon still enforces the lock
+	// and logs a startup warning when it is set). Other values are a
+	// config error and the daemon refuses to start.
+	ProjectWriteSerialization string `yaml:"project_write_serialization,omitempty" json:"project_write_serialization,omitempty"`
+	// RefuseDirtyTreeStart (BL428 §3a ii) makes the daemon hard-fail
+	// task admission when the PRD's project tree has uncommitted
+	// changes (git status --porcelain non-empty). Default false
+	// (zero-value bool; not forced in applyDefaults — an omitted
+	// bool in an existing config is indistinguishable from an
+	// explicit false, the same convention as Apply.UpdateMCPCert
+	// above).
+	RefuseDirtyTreeStart bool `yaml:"refuse_dirty_tree_start" json:"refuse_dirty_tree_start"`
 	// PlanningBackend overrides session.llm_backend for the LLM
 	// planning call. Empty = inherit.
 	// BL304: renamed from DecompositionBackend; old key still accepted on read.
@@ -3030,6 +3049,13 @@ func applyDefaults(cfg *Config) {
 	if cfg.Autonomous.MaxConcurrentTasks <= 0 {
 		cfg.Autonomous.MaxConcurrentTasks = 1
 	}
+	// BL428 §3a — autonomous.project_write_serialization defaults to
+	// "advisory"; "parallel" is reserved-but-disabled (recognized,
+	// still enforced advisory, startup warning). validateLoaded
+	// rejects any other value.
+	if cfg.Autonomous.ProjectWriteSerialization == "" {
+		cfg.Autonomous.ProjectWriteSerialization = autonomousProjectWriteSerializationAdvisory
+	}
 	// BL397 — native ACME subsystem defaults.
 	if cfg.Acme.Endpoint == "" {
 		cfg.Acme.Endpoint = "staging"
@@ -3050,6 +3076,27 @@ func applyDefaults(cfg *Config) {
 	// Server.TLSAutoGenerate: set only in DefaultConfig() for brand-new
 	// configs, not forced here for loaded ones (an omitted bool in an
 	// existing config.yaml is indistinguishable from an explicit false).
+}
+
+// Autonomous project-write serialization values (BL428 §3a —
+// docs/plans/2026-10-14-concurrency-and-budget-design.md).
+const (
+	autonomousProjectWriteSerializationAdvisory = "advisory"
+	// autonomousProjectWriteSerializationParallel is reserved but
+	// DISABLED: recognized at load time, still advisory in practice.
+	autonomousProjectWriteSerializationParallel = "parallel"
+)
+
+// validateLoaded rejects misconfigured values that applyDefaults left in
+// place. Run after applyDefaults in Load and LoadSecure.
+func validateLoaded(cfg *Config) error {
+	switch cfg.Autonomous.ProjectWriteSerialization {
+	case autonomousProjectWriteSerializationAdvisory, autonomousProjectWriteSerializationParallel:
+		return nil
+	}
+	return fmt.Errorf("autonomous.project_write_serialization: invalid value %q (valid values: %q, %q)",
+		cfg.Autonomous.ProjectWriteSerialization,
+		autonomousProjectWriteSerializationAdvisory, autonomousProjectWriteSerializationParallel)
 }
 
 // detectDeprecatedKeys reports the deprecated keys the just-parsed YAML
@@ -3098,6 +3145,9 @@ func Load(path string) (*Config, error) {
 
 	cfg.DeprecatedKeys = detectDeprecatedKeys(cfg)
 	applyDefaults(cfg)
+	if err := validateLoaded(cfg); err != nil {
+		return nil, err
+	}
 	normalizeBooleanFields(cfg)
 	return cfg, nil
 }
@@ -3129,6 +3179,9 @@ func LoadSecure(path string, password []byte) (*Config, error) {
 	}
 	cfg.DeprecatedKeys = detectDeprecatedKeys(cfg)
 	applyDefaults(cfg)
+	if err := validateLoaded(cfg); err != nil {
+		return nil, err
+	}
 	normalizeBooleanFields(cfg)
 	return cfg, nil
 }

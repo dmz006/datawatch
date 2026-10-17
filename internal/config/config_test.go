@@ -696,3 +696,108 @@ func TestBlockOnFileDrift_YAMLRoundTrip(t *testing.T) {
 		t.Errorf("explicit false should be written, got:\n%s", raw)
 	}
 }
+
+// BL428 §3a — autonomous.project_write_serialization /
+// autonomous.refuse_dirty_tree_start (config surface for
+// docs/plans/2026-10-14-concurrency-and-budget-design.md).
+
+func loadYAMLBody(t *testing.T, body string) *Config {
+	t.Helper()
+	p := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(p, []byte(body), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(p)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	return cfg
+}
+
+func TestProjectWriteSerialization_DefaultsToAdvisory(t *testing.T) {
+	cfg := loadYAMLBody(t, "autonomous:\n  enabled: true\n")
+	if cfg.Autonomous.ProjectWriteSerialization != "advisory" {
+		t.Fatalf("project_write_serialization = %q, want default %q",
+			cfg.Autonomous.ProjectWriteSerialization, "advisory")
+	}
+	if cfg.Autonomous.RefuseDirtyTreeStart {
+		t.Fatal("refuse_dirty_tree_start should default false")
+	}
+}
+
+func TestProjectWriteSerialization_YAMLParseAndRoundTrip(t *testing.T) {
+	cfg := loadYAMLBody(t, "autonomous:\n  project_write_serialization: parallel\n  refuse_dirty_tree_start: true\n")
+	if cfg.Autonomous.ProjectWriteSerialization != "parallel" {
+		t.Fatalf("project_write_serialization = %q, want %q",
+			cfg.Autonomous.ProjectWriteSerialization, "parallel")
+	}
+	if !cfg.Autonomous.RefuseDirtyTreeStart {
+		t.Fatal("refuse_dirty_tree_start: true in YAML did not load")
+	}
+	// "parallel" is reserved-but-disabled: accepted at load time.
+	if len(cfg.DeprecatedKeys) != 0 {
+		t.Fatalf("DeprecatedKeys = %v, want empty (neither key is deprecated)", cfg.DeprecatedKeys)
+	}
+	out := filepath.Join(t.TempDir(), "saved.yaml")
+	if err := Save(cfg, out); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	raw, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), "project_write_serialization: parallel") {
+		t.Errorf("saved YAML lacks project_write_serialization: parallel:\n%s", raw)
+	}
+	if !strings.Contains(string(raw), "refuse_dirty_tree_start: true") {
+		t.Errorf("saved YAML lacks refuse_dirty_tree_start: true:\n%s", raw)
+	}
+	again, err := Load(out)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if again.Autonomous.ProjectWriteSerialization != "parallel" || !again.Autonomous.RefuseDirtyTreeStart {
+		t.Fatalf("round trip lost values: %+v", again.Autonomous)
+	}
+}
+
+func TestProjectWriteSerialization_AdvisoryExplicit(t *testing.T) {
+	cfg := loadYAMLBody(t, "autonomous:\n  project_write_serialization: advisory\n")
+	if cfg.Autonomous.ProjectWriteSerialization != "advisory" {
+		t.Fatalf("project_write_serialization = %q, want %q",
+			cfg.Autonomous.ProjectWriteSerialization, "advisory")
+	}
+}
+
+func TestProjectWriteSerialization_InvalidValueRejected(t *testing.T) {
+	for _, bad := range []string{"serial", "ADVISORY", "per_project_dir", "off", " ", "advisory " + "\t"} {
+		p := filepath.Join(t.TempDir(), "config.yaml")
+		if err := os.WriteFile(p, []byte("autonomous:\n  project_write_serialization: '"+bad+"'\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := Load(p); err == nil {
+			t.Fatalf("Load accepted invalid project_write_serialization %q, want error", bad)
+		}
+	}
+}
+
+// Regression guard: the max_parallel_tasks deprecation detection must
+// keep working alongside the new BL428 §3a keys in the same struct.
+func TestDeprecatedKeys_MaxParallelTasksStillDetected(t *testing.T) {
+	cfg := loadYAMLBody(t, "autonomous:\n  max_parallel_tasks: 3\n  project_write_serialization: advisory\n  refuse_dirty_tree_start: true\n")
+	found := false
+	for _, k := range cfg.DeprecatedKeys {
+		if k == "autonomous.max_parallel_tasks" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("DeprecatedKeys = %v, want it to contain autonomous.max_parallel_tasks", cfg.DeprecatedKeys)
+	}
+	// The new keys must not be reported as deprecated.
+	for _, k := range cfg.DeprecatedKeys {
+		if k == "autonomous.project_write_serialization" || k == "autonomous.refuse_dirty_tree_start" {
+			t.Fatalf("DeprecatedKeys = %v — the new BL428 keys are not deprecated", cfg.DeprecatedKeys)
+		}
+	}
+}
