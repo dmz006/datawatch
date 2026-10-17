@@ -78,12 +78,18 @@ func gitCommonDir(repoRoot string) (string, error) {
 // linked worktree's common dir (<base>/.git) and a submodule
 // (<base>/.git/modules/<sub>) all map back to <base>. Falls back to
 // filepath.Dir for unusual layouts that carry no .git element (bare
-// repos, custom GIT_DIR).
+// repos, custom GIT_DIR). Absolute input stays absolute: dropping the
+// leading empty path element would otherwise yield a relative dir.
 func sharedBase(gitDir string) string {
+	abs := filepath.IsAbs(gitDir)
 	parts := strings.Split(filepath.ToSlash(gitDir), "/")
 	for i, part := range parts {
 		if part == ".git" {
-			return filepath.ToSlash(filepath.Join(parts[:i]...))
+			b := filepath.Join(parts[:i]...)
+			if abs && !filepath.IsAbs(b) {
+				b = "/" + filepath.Clean(b)
+			}
+			return filepath.ToSlash(b)
 		}
 	}
 	return filepath.Dir(gitDir)

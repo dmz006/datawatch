@@ -64,7 +64,7 @@ func TestTreeKeyMainCheckout(t *testing.T) {
 	}
 }
 
-func TestTreeKeyLinkedWorktreeSameBase(t *testing.T) {
+func TestTreeKeyLinkedWorktreeResolvesToBase(t *testing.T) {
 	repo := newTestRepo(t)
 	wt := addTestWorktree(t, repo, "wt")
 
@@ -95,7 +95,7 @@ func TestTreeKeyLinkedWorktreeSameBase(t *testing.T) {
 	}
 }
 
-func TestTreeKeySymlinkAndRelativeIdentical(t *testing.T) {
+func TestTreeKeySymlinkAndRelativeResolveIdentical(t *testing.T) {
 	repo := newTestRepo(t)
 	parent := filepath.Dir(repo)
 	ln := filepath.Join(parent, "ln-repo")
@@ -161,7 +161,7 @@ func TestTreeKeyWorktreeModePerWorktree(t *testing.T) {
 	}
 }
 
-func TestTreeKeyTwoWorktreesDifferent(t *testing.T) {
+func TestTreeKeyTwoWorktreesDiffer(t *testing.T) {
 	repo := newTestRepo(t)
 	wt1 := addTestWorktree(t, repo, "wt-1")
 	wt2 := addTestWorktree(t, repo, "wt-2")
@@ -182,7 +182,7 @@ func TestTreeKeyTwoWorktreesDifferent(t *testing.T) {
 	}
 }
 
-func TestTreeKeyNonGitFallback(t *testing.T) {
+func TestTreeKeyNonGitFallsBackToPath(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "plain", "proj")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
