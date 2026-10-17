@@ -262,6 +262,36 @@ func validateAutomation(a *Automation) error {
 	return nil
 }
 
+// validateAutomationOwnership enforces the cross-Automation rules for members
+// (design doc "Validation", "One active Automation per PRD"): a member PRD
+// must exist, must not be a template or a child Automaton (children are run
+// by their parent task), and must not already belong to another non-terminal
+// Automation. Terminal Automations (completed/cancelled) own nothing, and a
+// nil Automation is validated by the caller. lookupPRD reports whether the
+// PRD with that ID exists; ownerOf returns the ID of the non-terminal
+// Automation that currently owns the PRD, or "" if none does.
+func validateAutomationOwnership(a *Automation, lookupPRD func(id string) (*PRD, bool), ownerOf func(prdID string) string) error {
+	if a == nil || a.Status == AutomationCompleted || a.Status == AutomationCancelled {
+		return nil
+	}
+	for _, m := range a.Members {
+		prd, ok := lookupPRD(m.PRDID)
+		if !ok {
+			return fmt.Errorf("automation invalid: member prd %s not found", m.PRDID)
+		}
+		if prd.IsTemplate {
+			return fmt.Errorf("automation invalid: prd %s is a template and cannot be a member", m.PRDID)
+		}
+		if prd.ParentPRDID != "" {
+			return fmt.Errorf("automation invalid: prd %s is a child automaton (run by its parent task) and cannot be a member", m.PRDID)
+		}
+		if owner := ownerOf(m.PRDID); owner != "" && owner != a.ID {
+			return fmt.Errorf("automation invalid: prd %s already belongs to automation %s", m.PRDID, owner)
+		}
+	}
+	return nil
+}
+
 // validateBudgetPolicy checks one budget policy's fields; a nil policy is
 // valid (no override).
 func validateBudgetPolicy(p *BudgetPolicy) error {

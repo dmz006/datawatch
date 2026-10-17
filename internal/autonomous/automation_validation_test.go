@@ -164,6 +164,62 @@ func TestAutomationUnreachableSorted(t *testing.T) {
 	}
 }
 
+func TestValidateAutomationOwnership(t *testing.T) {
+	lookup := func(id string) (*PRD, bool) { return &PRD{ID: id}, id == "p1" || id == "p2" }
+	if err := validateAutomationOwnership(automaton(t), lookup, func(string) string { return "" }); err != nil {
+		t.Fatalf("no owners: %v", err)
+	}
+	// Terminal Automations own nothing, even when someone else claims the PRD.
+	for _, status := range []AutomationStatus{AutomationCompleted, AutomationCancelled} {
+		a := automaton(t)
+		a.Status = status
+		if err := validateAutomationOwnership(a, lookup, func(string) string { return "a9" }); err != nil {
+			t.Fatalf("terminal status %s: %v", status, err)
+		}
+	}
+	// A nil Automation owns nothing.
+	if err := validateAutomationOwnership(nil, lookup, func(string) string { return "a9" }); err != nil {
+		t.Fatalf("nil Automation: %v", err)
+	}
+	// A PRD owned by this Automation is its own, which is allowed.
+	if err := validateAutomationOwnership(automaton(t), lookup, func(id string) string {
+		if id == "p2" {
+			return "a1"
+		}
+		return ""
+	}); err != nil {
+		t.Fatalf("self ownership: %v", err)
+	}
+	a := automaton(t)
+	a.Members[0].PRDID = "px"
+	if err := validateAutomationOwnership(a, lookup, func(string) string { return "" }); err == nil || err.Error() != "automation invalid: member prd px not found" {
+		t.Fatalf("missing prd: got %v", err)
+	}
+	lookupT := func(id string) (*PRD, bool) {
+		p := &PRD{ID: id}
+		if id == "p1" {
+			p.IsTemplate = true
+		}
+		return p, true
+	}
+	if err := validateAutomationOwnership(automaton(t), lookupT, func(string) string { return "" }); err == nil || !strings.Contains(err.Error(), "is a template and cannot be a member") {
+		t.Fatalf("template prd: got %v", err)
+	}
+	lookupC := func(id string) (*PRD, bool) {
+		p := &PRD{ID: id}
+		if id == "p1" {
+			p.ParentPRDID = "pp"
+		}
+		return p, true
+	}
+	if err := validateAutomationOwnership(automaton(t), lookupC, func(string) string { return "" }); err == nil || !strings.Contains(err.Error(), "is a child automaton") {
+		t.Fatalf("child prd: got %v", err)
+	}
+	if err := validateAutomationOwnership(automaton(t), lookup, func(string) string { return "a9" }); err == nil || err.Error() != "automation invalid: prd p1 already belongs to automation a9" {
+		t.Fatalf("owned by another: got %v", err)
+	}
+}
+
 func TestValidateAutomationBudgetPolicy(t *testing.T) {
 	base := func() *BudgetPolicy {
 		return &BudgetPolicy{CeilingType: "dollar", CeilingValue: 10, Window: "automation", Pacing: "none", OnBreach: "pause"}
