@@ -53,27 +53,13 @@ const gitExecTimeout = 10 * time.Second
 // <base>/.git for a main checkout or linked worktree, or
 // <base>/.git/modules/<sub> for a submodule. It runs
 // `git -C <root> rev-parse --git-common-dir` and absolutizes the
-// output — git prints a path relative to CWD when run at the repo
-// root (".git") or from a subdir ("../.git"), and an absolute path
-// from elsewhere.
+// output — git prints a path relative to the repo root when run at
+// the root (".git") or from a subdir ("../.git"), and an absolute
+// path from elsewhere.
 func gitCommonDir(repoRoot string) (string, error) {
-	out, err := gitProbe(context.Background(), repoRoot, "rev-parse", "--git-common-dir")
+	dir, err := gitProbe(context.Background(), repoRoot, "rev-parse", "--git-common-dir")
 	if err != nil {
 		return "", err
-	}
-	// CombinedOutput interleaves stderr hints; the dir is the first
-	// usable line.
-	var dir string
-	for _, line := range strings.Split(out, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "fatal:") || strings.HasPrefix(line, "hint:") {
-			continue
-		}
-		dir = line
-		break
-	}
-	if dir == "" {
-		return "", fmt.Errorf("git rev-parse --git-common-dir in %s: empty output %q", repoRoot, out)
 	}
 	if !filepath.IsAbs(dir) {
 		dir = filepath.Join(repoRoot, dir)
@@ -81,16 +67,24 @@ func gitCommonDir(repoRoot string) (string, error) {
 	return absClean(dir), nil
 }
 
-// gitProbe runs one bounded git probe in dir and returns its output.
+// gitProbe runs one bounded git probe in dir and returns its stdout.
 // Wrapped separately (like runGitIn in worktree.go) with a deadline so
-// tree key resolution can't hang on a wedged index.
+// tree key resolution can't hang on a wedged index. Only stdout is
+// captured: on failure git writes its diagnostics to stderr, which
+// surfaces in the returned error instead of polluting the value.
 func gitProbe(ctx context.Context, dir string, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, gitExecTimeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "git", args...) // #nosec G204 -- fixed git subcommand; dir comes from operator-controlled config and PRD fields, same trust model as every other git shell-out in this codebase (e.g. runGitIn)
 	cmd.Dir = dir
-	out, err := cmd.CombinedOutput()
-	return string(out), err
+	out, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	if line := strings.TrimSpace(string(out)); line != "" {
+		return line, nil
+	}
+	return "", fmt.Errorf("git %s in %s: empty output", strings.Join(args, " "), dir)
 }
 
 // sharedBase returns the working-tree root that owns gitDir: the
