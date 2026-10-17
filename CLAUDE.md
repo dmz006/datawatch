@@ -150,3 +150,10 @@ rtk init --global       # Add RTK to ~/.claude/CLAUDE.md
 
 Overall average: **60-90% token reduction** on common development operations.
 <!-- /rtk-instructions -->
+
+## Supervisor sessions
+
+A session acting as PRD supervisor must read `docs/plans/2026-10-17-supervisor-rules-and-lessons.md`
+before its first action. It holds the full operator and supervisor rules and the lessons learned,
+including who decides what, how to validate a decompose, how to triage a failed task, and when a PRD
+is ready to advance.

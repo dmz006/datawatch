@@ -109,6 +109,7 @@ advances it without hand sequencing.
 | 51 | BL470 PRD commits stage only the task's declared `write_dirs`; a worktree-mode PRD scopes to its own worktree; a direct-mode PRD with no `write_dirs` does not auto-commit (operator-confirmed 2026-10-17) | not started | BL469 |
 | 52 | BL471 Worktree pruning: archive vs purge of finished worktrees | deferred to automation PRD planning, after 10.0.0 (arch/project/release) is done; do not build before then | BL469 |
 | 53 | BL472 Usage and cost calculator: model the session-local meter and the shared weekly ceiling from operator-reported snapshots (see [concurrency and budget](2026-10-14-concurrency-and-budget-design.md) section 4b) plus inferred token and cost rollups | not started | BL414 |
+| 54 | BL473 Build the Automation coordinator to the [supervisor rules and lessons](2026-10-17-supervisor-rules-and-lessons.md): plan-validation gate, failure triage, verifier self-check, tree admission, after-done checklist, registry-versus-README consistency, silent-state alerting | not started (rules documented 2026-10-17; belongs inside BL431 Phase 2) | 10 |
 
 ## Opportunistic, non-blocking research
 
@@ -164,6 +165,7 @@ nothing here blocks anything in the active order above.
 The per-topic design documents live alongside this file, named
 `2026-10-DD-<topic>.md`:
 
+- Operating rules: [supervisor rules and lessons learned](2026-10-17-supervisor-rules-and-lessons.md)
 - Engine and budget: [automation orchestration](2026-10-14-automation-orchestration-design.md),
   [lifecycle events](2026-10-13-prd-lifecycle-events.md),
   [concurrency and budget](2026-10-14-concurrency-and-budget-design.md)
