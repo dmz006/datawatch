@@ -7,7 +7,7 @@ engine instead of by hand. "Pre-v10.0.0" means the work that has to land first,
 in the order below, so that engine can be trusted with the rest.
 
 Shipped work is summarized in [HISTORY.md](HISTORY.md). Status below was
-checked against the live PRD registry on 2026-10-15. Each row links to its
+checked against the live PRD registry on 2026-10-17. Each row links to its
 design doc where one exists.
 
 ## Rules
@@ -43,19 +43,19 @@ BL431's open question 14, and BL405 Phase 7.
 
 | # | Item | Status | Depends on |
 |---|---|---|---|
-| 1 | BL441 PRD-completion content auto-fix never fires | in progress (PRD `34bd5877`, running) | - |
-| 2 | [BL452](2026-10-15-logprob-classification-guardrail-design.md) "The V Method" — classification-based guardrail verdicts via Ollama 0.35+ native decision endpoint or logprobs (design pass) | needs_review (design pass, docs-only; PRD `468db26e`; main tree — accepted collision risk alongside BL441 since BL428 Phase 2's write lock doesn't exist yet) | - |
-| 3 | BL455 Fix B126: a retry can record the wrong pre-task SHA, producing a false "no output" failure on real, correctly-committed work | in progress (PRD `2713dbb9`, decomposing; worktree-isolated, local GPU) | - |
+| 1 | BL441 PRD-completion content auto-fix never fires | blocked (PRD `34bd5877`) | - |
+| 2 | [BL452](2026-10-15-logprob-classification-guardrail-design.md) "The V Method" — classification-based guardrail verdicts via Ollama 0.35+ native decision endpoint or logprobs (design pass) | failed (design pass; PRD `468db26e`); needs a new PRD | - |
+| 3 | BL455 Fix B126: a retry can record the wrong pre-task SHA, producing a false "no output" failure on real, correctly-committed work | failed (PRD `2713dbb9`); retry PRD `6b99f00f` is in needs_review. This is the next critical-path item: BL431 Phase 1 (row 9) waits on it | - |
 | 4 | **BL462** A running PRD task's session must not be impacted by a daemon restart/update | not started (PRD `c96f2104`, draft) — **operator priority**, blocks safely updating the daemon during active work | - |
 | 5 | **BL463** MCP connection reliability, session isolation clarity, error-mode parity with REST | not started (PRD `bf78e50a`, draft) — every spawned session depends on MCP as its primary interface | - |
-| 6 | **BL464** Execute/build session names need a function prefix (`autonomous:task:` to match `autonomous:verify:`/`autonomous:decompose`) | not started (PRD `e303d88d`, draft) — small, real observability fix | - |
+| 6 | **BL464** Execute/build session names need a function prefix (`autonomous:task:` to match `autonomous:verify:`/`autonomous:decompose`) | not started (PRD `dc6c597b`, draft; the earlier `e303d88d` was cancelled) — small, real observability fix | - |
 
 ### Stage B: the Automaton execution engine
 
 | # | Item | Status | Depends on |
 |---|---|---|---|
-| 7 | [BL427 Phase 2](2026-10-13-prd-lifecycle-events.md) Built-in lifecycle-event sinks | in progress (PRD `5154c783`, awaiting review) | BL427 Phase 1 (shipped) |
-| 8 | [BL428 Phase 2](2026-10-14-concurrency-and-budget-design.md) Project-tree write lock | not started (PRD `29bd62a1`, draft) | BL428 Phase 1 (shipped) |
+| 7 | [BL427 Phase 2](2026-10-13-prd-lifecycle-events.md) Built-in lifecycle-event sinks | shipped in v9.3.0 (PRD `172bf30f`, completed; `5154c783` is a stale draft). Checklist gaps remain: testing-tracker row, operations docs, datawatch-app issue, live smoke | BL427 Phase 1 (shipped) |
+| 8 | [BL428 Phase 2](2026-10-14-concurrency-and-budget-design.md) Project-tree write lock | blocked (PRD `29bd62a1`; T2 blocked on a stale file-drift check). Config keys shipped v9.4.0 and the same-tree admission check shipped v9.5.0; lock acquire/release is not built | BL428 Phase 1 (shipped) |
 | 9 | [BL431 Phase 1](2026-10-14-automation-orchestration-design.md) Automation data model, store and CRUD | blocked (PRD `b9bd3f99`; both tasks failed, same "no output" symptom as BL455 — pending that investigation) | - |
 | 10 | [BL431 Phase 2](2026-10-14-automation-orchestration-design.md) Automation coordinator with auto-advance (now also scoped as a real quality/regression gate — test-coverage validation, cross-cutting-surface regression checks, stall/idle alerting, dynamic reprioritization for urgent bugs; see design doc open question 17) | not started | 7, 8, 9 |
 | 11 | [BL427 Phase 3](2026-10-13-prd-lifecycle-events.md) Persisted subscriptions and CRUD across surfaces | not started | 7 |
@@ -82,7 +82,7 @@ advances it without hand sequencing.
 | 24 | [BL402](2026-10-09-gh204-result-panel.md) Result panel for scheduled jobs and integrations | not started | - |
 | 25 | BL459 datawatch-community skills catalog — research complete, build the catalog's proposed skills | research complete (`docs/catalog/skills-catalog.md`, `skill-specs.md`); easy, high-benefit — pulled forward from v11.0.0 (PRD `275ae17c`, draft) | - |
 | 26 | BL434 Splash animation on every full-screen refresh | approved, not started (PRD `88fdf815`) | - |
-| 27 | BL435 Retry with already-correct output must not fail on empty diff | approved, not started (PRD `191d0c95`) | - |
+| 27 | BL435 Retry with already-correct output must not fail on empty diff | blocked (PRD `191d0c95`) | - |
 | 28 | BL436 Per-turn chunked output capture (design) | approved, not started (PRD `01bcf5cb`) | - |
 | 29 | BL442 PWA service worker force-navigates controlled windows | needs review (PRD `39f7af28`) | - |
 | 30 | [BL433](2026-10-14-pwa-performance-audit.md) PWA performance audit under load | blocked (PRD `049f4713`) | - |
