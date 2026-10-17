@@ -70,3 +70,9 @@ docs/testing/runs/2*/
 .hllm-sandbox/
 .sec-sandbox-bin/
 artifacts/
+
+# test and tooling debris that escaped into the repo root (2026-10-17)
+__pycache__/
+*.pyc
+/etc/
+/ts706-upload.txt

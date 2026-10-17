@@ -167,6 +167,11 @@ Recovery moves that have been needed in practice:
 - PRD commits stage only the task's declared `write_dirs`. A worktree-mode PRD scopes
   to its own worktree. A direct-mode PRD with no declared `write_dirs` does not
   auto-commit (BL470).
+- **Git is opt-in.** Not everything datawatch runs is development work. A script or scheduled
+  job (a mail-rules job, a report) must never get a `git init`, a snapshot or a commit. Only
+  PRD and development sessions, or a session that asks for it, use git (BL476). Since v9.2.0
+  every one-shot got git involvement and the opt-out was retired, which reached a script
+  running in the operator's home directory.
 - **Worktree mode is the default for every PRD.** Direct tree mode stays as an explicit
   opt-in, and only one running PRD may hold a direct tree. A recursive child PRD is
   exempt from its parent's hold (BL469).
