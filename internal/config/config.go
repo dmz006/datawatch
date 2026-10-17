@@ -1876,6 +1876,11 @@ type SessionConfig struct {
 	// "one_shot" field regardless of this setting.
 	OneShotSessions bool `yaml:"one_shot_sessions,omitempty"`
 
+	// SessionRetentionDays — how long a finished session's folder under
+	// <data_dir>/sessions/ is kept before it is deleted. The store record stays.
+	// 0 means the default of 30 days; set a value to change the window.
+	SessionRetentionDays int `yaml:"session_retention_days,omitempty"`
+
 	// ResponseSummarizer — when Enabled, the last captured session
 	// response is summarized via the referenced LLM before use in
 	// alerts and TTS auto-play.

@@ -503,6 +503,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/schedules", api.handleSchedules)
 	apiMux.HandleFunc("/api/stats", api.handleStats)
 	apiMux.HandleFunc("/api/stats/kill-orphans", api.handleKillOrphans)
+	apiMux.HandleFunc("/api/sessions/finished-oneshots", api.handleFinishedOneShots)
 	apiMux.HandleFunc("/api/rtk/discover", api.handleRTKDiscover)
 	// BL85 (v4.0.1) — RTK auto-update surface.
 	apiMux.HandleFunc("/api/rtk/version", api.handleRTKVersion)

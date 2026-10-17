@@ -1653,6 +1653,10 @@ type StartOptions struct {
 	// `git add -A`. nil/empty preserves the historical broad behavior
 	// (with a warning).
 	WriteScope []string
+	// ValidateCommands (validation gate): commands run in the project dir
+	// before a one-shot's completion commit. Required for auto-commit of
+	// one-shots started outside a PRD. See commitOnCompletion.
+	ValidateCommands []string
 }
 
 // Start creates a new AI coding session for the given task.
@@ -1724,7 +1728,9 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 				fmt.Printf("[warn] git init %s: %v\n", projectDir, err)
 			}
 		}
-		if projGit.IsRepo() {
+		// Validation gate: only PRD-owned one-shots snapshot-commit here. An
+		// ad-hoc one-shot must not commit operator work on its own.
+		if projGit.IsRepo() && opt.PRDID != "" {
 			if err := projGit.PreSessionCommit("", task, opt.WriteScope); err != nil {
 				fmt.Printf("[warn] pre-session commit: %v\n", err)
 			}
@@ -1840,6 +1846,9 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 	}
 	if opt != nil && len(opt.WriteScope) > 0 {
 		sess.WriteScope = opt.WriteScope
+	}
+	if opt != nil && len(opt.ValidateCommands) > 0 {
+		sess.ValidateCommands = opt.ValidateCommands
 	}
 
 	// Create the session tracker (git-tracked folder)
@@ -3867,6 +3876,37 @@ func (m *Manager) TailOutput(fullID string, n int) (string, error) {
 // final output), then record the diff and the post-session checkpoint tag.
 // It deliberately runs without any config-based gating — the caller decides
 // when to invoke it. It mutates current in place; the caller saves it.
+// validateOneShotTimeout bounds each declared validation command.
+const validateOneShotTimeout = 20 * time.Minute
+
+// validateOneShot runs an ad-hoc one-shot's declared validation commands in
+// its project dir, in order. It records the outcome on the session and
+// returns an error when the session must not commit. No commands declared
+// means unvalidated, and an unvalidated one-shot never commits.
+func (m *Manager) validateOneShot(current *Session) error {
+	if len(current.ValidateCommands) == 0 {
+		current.ValidationResult = "unvalidated: no validate commands declared"
+		return fmt.Errorf("no validate commands declared")
+	}
+	for _, c := range current.ValidateCommands {
+		ctx, cancel := context.WithTimeout(context.Background(), validateOneShotTimeout)
+		cmd := exec.CommandContext(ctx, "sh", "-c", c)
+		cmd.Dir = current.ProjectDir
+		out, err := cmd.CombinedOutput()
+		cancel()
+		if err != nil {
+			tail := string(out)
+			if len(tail) > 400 {
+				tail = tail[len(tail)-400:]
+			}
+			current.ValidationResult = fmt.Sprintf("failed: %s: %v", c, err)
+			return fmt.Errorf("validation %q failed: %v: %s", c, err, strings.TrimSpace(tail))
+		}
+	}
+	current.ValidationResult = "passed"
+	return nil
+}
+
 func (m *Manager) commitOnCompletion(current *Session, projGit *ProjectGit) {
 	// Hard guard, centralized here rather than trusted to every call
 	// site: the deterministic commit exists only for done-signalling
@@ -3884,6 +3924,16 @@ func (m *Manager) commitOnCompletion(current *Session, projGit *ProjectGit) {
 	}
 	if projGit == nil || !projGit.IsRepo() {
 		return
+	}
+
+	// Validation gate (one-shot rule): an ad-hoc one-shot (no PRD owner)
+	// commits only after its declared validation commands pass. A PRD task
+	// is gated by its own verifier before it reaches here.
+	if current.PRDID == "" {
+		if err := m.validateOneShot(current); err != nil {
+			fmt.Printf("[warn] one-shot %s not committed: %v\n", current.ID, err)
+			return
+		}
 	}
 
 	// Best-effort summary from the worker's recent output; a read failure

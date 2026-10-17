@@ -262,6 +262,15 @@ type Session struct {
 	// a warning, preserving pre-fix behavior for interactive sessions.
 	WriteScope []string `json:"write_scope,omitempty"`
 
+	// ValidateCommands: shell commands run in the project dir before a
+	// one-shot's completion commit. Any failure blocks the commit. Required
+	// for auto-commit of ad-hoc one-shots (sessions without a PRD).
+	ValidateCommands []string `json:"validate_commands,omitempty"`
+
+	// ValidationResult records the validation gate outcome: "passed",
+	// "failed: ..." or "unvalidated: ...". Empty = gate not reached.
+	ValidationResult string `json:"validation_result,omitempty"`
+
 	// Subprocess — when true, Task is executed directly as a child process
 	// via bash -c instead of through a Claude Code tmux session. Completion
 	// is signaled by exit code (0 = StateComplete, non-zero = StateFailed),

@@ -8839,6 +8839,14 @@ function renderSettingsView() {
             <div class="settings-label" style="width:100%;">${t('settings_orphaned_tmux')||'Orphaned tmux sessions'}</div>
             <div class="settings-value" id="aboutOrphanedTmux" style="width:100%;font-size:11px;color:var(--text2);">${t('settings_checking')||'Checking…'}</div>
           </div>
+          <!-- Finished one-shot sessions — ad-hoc one-shots whose command has
+               ended but that never reached complete. Clean-up closes them
+               through the same completion path, so the validation gate still
+               decides whether anything is committed. -->
+          <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:6px;">
+            <div class="settings-label" style="width:100%;">Finished one-shot sessions</div>
+            <div class="settings-value" id="aboutFinishedOneShots" style="width:100%;font-size:11px;color:var(--text2);">Checking…</div>
+          </div>
         </div>
 
         <!-- BL238 — Plugins sub-tab -->
@@ -11264,6 +11272,7 @@ function loadVersionInfo() {
   // BL183 follow-up (v5.2.0) — orphaned-tmux affordance moved here
   // from Settings → Monitor per operator.
   loadAboutOrphanedTmux();
+  loadAboutFinishedOneShots();
 }
 
 function loadAboutOrphanedTmux() {
@@ -11287,6 +11296,39 @@ function loadAboutOrphanedTmux() {
     .catch(() => { el.textContent = 'unavailable'; });
 }
 window.loadAboutOrphanedTmux = loadAboutOrphanedTmux;
+
+// Finished one-shot sessions (About page). Lists ad-hoc one-shots whose
+// command ended but which never reached complete, and closes them through the
+// same completion path (validation gate included). Uses apiFetch so a remote
+// federated server's list is the one shown.
+function loadAboutFinishedOneShots() {
+  const el = document.getElementById('aboutFinishedOneShots');
+  if (!el) return;
+  apiFetch('/api/sessions/finished-oneshots')
+    .then(data => {
+      const n = (data && data.count) || 0;
+      const label = n === 0
+        ? '<span style="color:var(--text2);">No finished one-shot sessions.</span>'
+        : `<span style="color:var(--text2);">${n} finished one-shot session${n === 1 ? '' : 's'} still open.</span>`;
+      const btn = `<button class="btn-secondary" style="font-size:11px;margin-top:4px;" ${n ? '' : 'disabled style="opacity:0.5;cursor:not-allowed;"'} onclick="cleanupFinishedOneShots()">Clean up finished one-shots${n ? ` (${n})` : ''}</button>`;
+      el.innerHTML = label + '<br>' + btn;
+    })
+    .catch(() => { el.textContent = 'unavailable'; });
+}
+window.loadAboutFinishedOneShots = loadAboutFinishedOneShots;
+
+function cleanupFinishedOneShots() {
+  showConfirmModal('Close finished one-shot sessions? Each runs the validation gate before any commit.', () => {
+    apiFetch('/api/sessions/finished-oneshots', { method: 'POST' })
+      .then(data => {
+        const n = ((data && data.reaped) || []).length;
+        showToast(`Closed ${n} finished one-shot session${n === 1 ? '' : 's'}`, 'success', 2000);
+        loadAboutFinishedOneShots();
+      })
+      .catch(() => showToast('Failed to clean up one-shots', 'error'));
+  });
+}
+window.cleanupFinishedOneShots = cleanupFinishedOneShots;
 
 // GH#172 D80 — MCP Tools summary card. Rebuilt per the datawatch-app
 // session's correction (operator decision D80a, 2026-10-04, is "add the

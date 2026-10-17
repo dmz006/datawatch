@@ -1748,6 +1748,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 
 	// Resume monitors for sessions that survived a previous daemon restart
 	mgr.ResumeMonitors(ctx)
+	mgr.StartOneShotReaper(ctx)
 
 	// v5.26.27 — sweep orphan project_profile clones under
 	// <data_dir>/workspaces/ left behind by a daemon crash or by-hand
@@ -9660,7 +9661,8 @@ func newSessionCmd() *cobra.Command {
 			parent, _ := cmd.Flags().GetString("parent")
 			killChildren, _ := cmd.Flags().GetBool("kill-children")
 			killChildrenRecursive, _ := cmd.Flags().GetBool("kill-children-recursive")
-			return runSessionNew(cfg, task, dir, name, backend, llm, compute, chrome, parent, killChildren, killChildrenRecursive)
+			validate, _ := cmd.Flags().GetStringArray("validate")
+			return runSessionNew(cfg, task, dir, name, backend, llm, compute, chrome, parent, killChildren, killChildrenRecursive, validate)
 		},
 	}
 	newCmd.Flags().StringP("dir", "d", "", "Project directory (default: current directory)")
@@ -9671,6 +9673,7 @@ func newSessionCmd() *cobra.Command {
 	newCmd.Flags().Bool("chrome", false, "Enable Claude Chrome integration (--chrome flag)")
 	newCmd.Flags().String("parent", "", "Full ID (hostname-hex) of the parent session that spawned this one (sets lineage).")
 	newCmd.Flags().Bool("kill-children", false, "When set, killing this session will also kill direct child sessions it spawns.")
+	newCmd.Flags().StringArray("validate", nil, "Shell command run in the project dir before a one-shot may commit (repeatable). Ad-hoc one-shots with no --validate never auto-commit.")
 	newCmd.Flags().Bool("kill-children-recursive", false, "When set, killing this session kills ALL descendants recursively (BL351). Supersedes --kill-children.")
 	sessionCmd.AddCommand(newCmd)
 
@@ -10323,7 +10326,7 @@ func runSessionList(cfg *config.Config) error {
 	return w.Flush()
 }
 
-func runSessionNew(cfg *config.Config, task, dir, name, backend, llm, compute string, chrome bool, parent string, killChildren, killChildrenRecursive bool) error {
+func runSessionNew(cfg *config.Config, task, dir, name, backend, llm, compute string, chrome bool, parent string, killChildren, killChildrenRecursive bool, validate []string) error {
 	// Try the structured HTTP API first
 	type startReq struct {
 		Task                  string `json:"task"`
@@ -10336,8 +10339,9 @@ func runSessionNew(cfg *config.Config, task, dir, name, backend, llm, compute st
 		ParentID              string `json:"parent_id,omitempty"`
 		KillChildren          bool   `json:"kill_children,omitempty"`
 		KillChildrenRecursive bool   `json:"kill_children_recursive,omitempty"`
+		ValidateCommands      []string `json:"validate_commands,omitempty"`
 	}
-	req := startReq{Task: task, ProjectDir: dir, Backend: backend, Name: name, LLM: llm, ComputeNode: compute, ParentID: parent, KillChildren: killChildren, KillChildrenRecursive: killChildrenRecursive}
+	req := startReq{Task: task, ProjectDir: dir, Backend: backend, Name: name, LLM: llm, ComputeNode: compute, ParentID: parent, KillChildren: killChildren, KillChildrenRecursive: killChildrenRecursive, ValidateCommands: validate}
 	if chrome {
 		t := true
 		req.Chrome = &t

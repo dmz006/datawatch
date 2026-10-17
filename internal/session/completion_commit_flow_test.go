@@ -47,7 +47,7 @@ func driveOneShotCompletion(t *testing.T, task, logBody, markerLine string) (ses
 	})
 
 	var err error
-	sess, err = mgr.Start(context.Background(), task, "", dir, &StartOptions{OneShot: true})
+	sess, err = mgr.Start(context.Background(), task, "", dir, &StartOptions{OneShot: true, ValidateCommands: []string{"true"}})
 	if err != nil {
 		t.Fatalf("Start: %v", err)
 	}

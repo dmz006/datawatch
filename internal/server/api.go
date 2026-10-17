@@ -4373,6 +4373,9 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		// directories instead of the whole tree. Empty = historical broad
 		// `git add -A` behavior (warns).
 		WriteScope []string `json:"write_scope,omitempty"`
+		// ValidateCommands (validation gate): run in the project dir before a
+		// one-shot may commit. Required to auto-commit an ad-hoc one-shot.
+		ValidateCommands []string `json:"validate_commands,omitempty"`
 		// BL386 Phase 1 — optional warm-start seeding at session creation.
 		// When from_scope is set, memories are copied from that scope into
 		// the new session's session-local scope after it starts.
@@ -4688,6 +4691,7 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		TaskID:                req.TaskID,
 		StoryID:               req.StoryID,
 		WriteScope:            req.WriteScope,
+		ValidateCommands:      req.ValidateCommands,
 	}
 	// Empty per-request overrides fall through to LLM registry (v7.0.0 clean move).
 	if opts.PermissionMode == "" && s.inferenceReg != nil {
@@ -7447,6 +7451,33 @@ func (s *Server) handleKillOrphans(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]int{"killed": killed}) //nolint:errcheck
+}
+
+// handleFinishedOneShots lists ad-hoc one-shot sessions whose command has
+// finished but that never reached complete (GET), or completes them (POST).
+// Settings → About → Finished one-shot sessions uses both.
+func (s *Server) handleFinishedOneShots(w http.ResponseWriter, r *http.Request) {
+	if s.manager == nil {
+		http.Error(w, "session manager not available", http.StatusServiceUnavailable)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	switch r.Method {
+	case http.MethodGet:
+		ids := []string{}
+		for _, sess := range s.manager.FinishedOneShots() {
+			ids = append(ids, sess.FullID)
+		}
+		json.NewEncoder(w).Encode(map[string]interface{}{"count": len(ids), "ids": ids}) //nolint:errcheck
+	case http.MethodPost:
+		if !s.fedCap(w, r, federation.CapSessionsKill) {
+			return
+		}
+		reaped := s.manager.ReapFinishedOneShots()
+		json.NewEncoder(w).Encode(map[string]interface{}{"reaped": reaped}) //nolint:errcheck
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
 }
 
 func toStringArray(v interface{}) ([]string, bool) {
