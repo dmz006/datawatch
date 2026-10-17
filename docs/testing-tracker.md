@@ -1472,5 +1472,26 @@ Added v9.2.0 (BL465). Task sessions are committed automatically the moment the w
 | One-shot session unconditionally snapshots a dirty tree before launch, regardless of `auto_git_commit` | **Yes** (`internal/session/oneshot_presession_snapshot_test.go`) | No | Fake launch | — |
 | Per-task baseline (`PreTaskSHA`) and per-attempt commit recording (`AttemptCommitSHAs`) on `Task` | **Yes** (`internal/autonomous/task_base_sha_test.go`, `task_attempt_commits_test.go`) | No | Store round-trip | — |
 | Verifier recognizes work landed by an earlier attempt instead of failing an empty-diff retry as "produced no output" | **Yes** (part of the v9.2.0 test set above; exercised live on BL465's own pilot — see note) | **Yes** (live, 2026-10-16) | — | Confirmed live: BL465's own release-chain tasks hit exactly this failure signature while running against the *pre-fix* daemon (the fix only existed in its own PRD worktree at the time); verified by hand that the flagged "no output" tasks had real, correct, already-committed work. |
-| `PostSessionCommit` and `ForceAutoGitCommit` removed; `session.auto_git_commit` deprecated and ignored | **Yes** (grep audit: zero remaining references outside deprecation comments) | No | — | — |
+| `ForceAutoGitCommit` removed; `session.auto_git_commit` deprecated and ignored. `PostSessionCommit` still exists in `internal/session/git.go` but has no production callers (dead code, to be removed) | **Yes** (grep audit: no remaining references to the flag outside deprecation comments) | No | — | — |
 | Live smoke: real task completes and commit lands automatically without the worker calling git; retried task whose work already landed is recognized as done | Yes (script written, `bash -n` clean: `scripts/release-smoke-automatic-commit.sh`) | **PENDING** — live run against a sandbox daemon not yet performed | — | Script explicitly skips with a clear message when no sandbox is configured. |
+
+## One-shot validation gate, finished-session cleanup, tree admission — v9.5.0
+
+Added v9.5.0. A hand-started one-shot commits only after its declared validation
+commands pass; finished one-shots are closed by a reaper and from Settings → About;
+finished session folders are pruned after a retention window; a second Automaton is
+refused on a tree another one is running on.
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| Validation gate: no commands means unvalidated, passing commands pass, any failing command blocks (`validateOneShot`) | **Yes** (`internal/session/oneshot_gate_test.go`) | No | Unit, no tmux | Live check on a real daemon is still pending |
+| Completion commits and pre-session snapshots for hand-started one-shots only happen with passing `--validate`; PRD-owned sessions unchanged | **Yes** (`manager_completion_commit_test.go`, `completion_commit_flow_test.go`, `oneshot_presession_snapshot_test.go` updated) | No | Temp git repos | — |
+| Completion commit is idempotent per session (`CommitSHA` guard) | Yes (covered by the completion-commit tests) | No | — | Added after review found the reaper and the watcher could both commit |
+| Reaper marker detection ignores the echoed command line (`oneShotCompletionMarker`) | **Yes** (`oneshot_gate_test.go`) | No | String check | The tmux scan itself is not unit-tested |
+| Scratch task file removal is limited to the closed session (`removeOneShotScratch`) | **Yes** (`oneshot_gate_test.go`) | No | `/tmp` files | — |
+| `session.session_retention_days` default 30 and override (`sessionRetentionDays`); folder pruning deletes only old finished sessions and keeps the record (`PruneSessionFolders`) | **Yes** (`oneshot_gate_test.go`) | No | Unit, temp data dir | — |
+| `GET`/`POST /api/sessions/finished-oneshots` and Settings → About control | **Yes** (`internal/server/finished_oneshots_test.go`: 503 with no manager, empty list, 405) | No | Handler unit tests | POST with a real stuck session is not covered; locale strings added in all 5 bundles |
+| `datawatch session new --validate` flag reaches the session as `validate_commands` | No (no CLI test) | No | — | — |
+| Same-tree admission: second running Automaton refused; different trees and finished holders admitted; a running parent does not block its child | **Yes** (`internal/autonomous/tree_admission_test.go`; recursion test restored) | No | Non-git temp dirs (key per directory) | Worktree-mode and git-repo keys are covered by the existing tree-key tests |
+| Live smoke: hand-started one-shot with a failing and a passing `--validate`; a stuck one-shot closed from About; two Automata on one tree | **PENDING** | **PENDING** | Needs the new binary installed on a daemon | Do before the next release tag |
+

@@ -2,8 +2,10 @@ package session
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dmz006/datawatch/internal/config"
 )
@@ -87,5 +89,43 @@ func TestRemoveOneShotScratch_RemovesOnlyThatSession(t *testing.T) {
 	}
 	if _, err := os.Stat(other); err != nil {
 		t.Fatal("another session's scratch file must not be touched")
+	}
+}
+
+// Retention deletes only finished sessions older than the window, and never a
+// live one. The store record is kept either way.
+func TestPruneSessionFolders_DeletesOnlyOldFinishedSessions(t *testing.T) {
+	mgr, _ := newTestManagerWithFake(t)
+	now := time.Now()
+	mk := func(id string, state State, age time.Duration) string {
+		sess := &Session{ID: id, FullID: "testhost-" + id, State: state, UpdatedAt: now.Add(-age)}
+		if err := mgr.store.Save(sess); err != nil {
+			t.Fatal(err)
+		}
+		dir := filepath.Join(mgr.dataDir, "sessions", sess.FullID)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		return dir
+	}
+	oldDone := mk("old1", StateComplete, 45*24*time.Hour)
+	newDone := mk("new1", StateComplete, 2*24*time.Hour)
+	oldLive := mk("live1", StateRunning, 90*24*time.Hour)
+
+	removed := mgr.PruneSessionFolders(now)
+
+	if len(removed) != 1 || removed[0] != "testhost-old1" {
+		t.Fatalf("removed = %v, want only testhost-old1", removed)
+	}
+	if _, err := os.Stat(oldDone); !os.IsNotExist(err) {
+		t.Fatal("old finished session folder should be deleted")
+	}
+	for name, dir := range map[string]string{"recent finished": newDone, "old but live": oldLive} {
+		if _, err := os.Stat(dir); err != nil {
+			t.Fatalf("%s session folder must be kept: %v", name, err)
+		}
+	}
+	if _, ok := mgr.store.Get("testhost-old1"); !ok {
+		t.Fatal("the store record must stay after its folder is pruned")
 	}
 }

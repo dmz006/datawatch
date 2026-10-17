@@ -3925,6 +3925,12 @@ func (m *Manager) commitOnCompletion(current *Session, projGit *ProjectGit) {
 	if projGit == nil || !projGit.IsRepo() {
 		return
 	}
+	// A session is committed at most once. The completion watcher and the
+	// one-shot reaper can both reach the same session; the second caller
+	// must not validate or commit again.
+	if current.CommitSHA != "" {
+		return
+	}
 
 	// Validation gate (one-shot rule): an ad-hoc one-shot (no PRD owner)
 	// commits only after its declared validation commands pass. A PRD task

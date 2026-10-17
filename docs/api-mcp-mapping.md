@@ -291,6 +291,8 @@ documenting coverage gaps and the reasoning behind them.
 | `GET /api/openwebui/models` | Model list for web UI dropdowns |
 | `GET /api/rtk/discover` | RTK optimization analysis |
 | `POST /api/stats/kill-orphans` | Kill orphaned tmux — operational |
+| `GET /api/sessions/finished-oneshots` | List finished one-shot sessions still open — operational (Settings → About) |
+| `POST /api/sessions/finished-oneshots` | Close finished one-shot sessions — operational (Settings → About) |
 | `GET /api/proxy/*` | Proxy forwarding — infrastructure |
 | `GET /api/sessions/aggregated` | Multi-server aggregation — proxy feature |
 

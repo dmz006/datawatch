@@ -153,6 +153,11 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 	}
 	// BL387 Phase 2b — cross-PRD seeding at first run.
 	// Only fires when PRD is transitioning from approved (not a resume from Running).
+	// BL469 — refuse to start while another running PRD holds this tree.
+	if err := m.admitTree(prd); err != nil {
+		m.mu.Unlock()
+		return err
+	}
 	isFirstRun := prd.Status == PRDApproved || prd.Status == PRDActive
 	runOld := prd.Status
 	prd.Status = PRDRunning
@@ -984,8 +989,8 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				Branch:           prd.Git.Branch,     // BL407 Phase 4
 				ContextPrepend:   contextPrepend,     // BL244
 				LSPLanguage:      lspLang,
-				MemorySeed:       prd.MemorySeed,       // BL386 Phase 1
-				SkipDirtyCapture: prd.Git.Branch != "", // worktree mode: nothing pre-dirty to protect
+				MemorySeed:       prd.MemorySeed,                 // BL386 Phase 1
+				SkipDirtyCapture: prd.Git.Branch != "",           // worktree mode: nothing pre-dirty to protect
 				WriteScope:       EffectiveTaskWriteDirs(prd, t), // auto-commit staging scope
 			})
 			if err != nil {

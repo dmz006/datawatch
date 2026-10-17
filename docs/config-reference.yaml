@@ -19,6 +19,9 @@ notify_exclude: []
 session:
   # Active LLM backend. Options: claude-code, aider, goose, gemini, opencode, opencode-acp, opencode-prompt, ollama, openwebui, shell
   llm_backend: claude-code
+  # How many days to keep a finished session's folder under <data_dir>/sessions/
+  # before it is deleted. The session record stays in the list. 0 or unset = 30.
+  session_retention_days: 30
   # Maximum concurrent active sessions (0 = unlimited)
   max_sessions: 10
   # Slots of max_sessions held back for operator sessions so autonomous work

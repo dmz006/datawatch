@@ -8844,8 +8844,8 @@ function renderSettingsView() {
                through the same completion path, so the validation gate still
                decides whether anything is committed. -->
           <div class="settings-row" style="flex-direction:column;align-items:flex-start;gap:6px;">
-            <div class="settings-label" style="width:100%;">Finished one-shot sessions</div>
-            <div class="settings-value" id="aboutFinishedOneShots" style="width:100%;font-size:11px;color:var(--text2);">Checking…</div>
+            <div class="settings-label" style="width:100%;">${t('settings_finished_oneshots')||'Finished one-shot sessions'}</div>
+            <div class="settings-value" id="aboutFinishedOneShots" style="width:100%;font-size:11px;color:var(--text2);">${t('settings_checking')||'Checking…'}</div>
           </div>
         </div>
 
@@ -11308,24 +11308,24 @@ function loadAboutFinishedOneShots() {
     .then(data => {
       const n = (data && data.count) || 0;
       const label = n === 0
-        ? '<span style="color:var(--text2);">No finished one-shot sessions.</span>'
-        : `<span style="color:var(--text2);">${n} finished one-shot session${n === 1 ? '' : 's'} still open.</span>`;
-      const btn = `<button class="btn-secondary" style="font-size:11px;margin-top:4px;" ${n ? '' : 'disabled style="opacity:0.5;cursor:not-allowed;"'} onclick="cleanupFinishedOneShots()">Clean up finished one-shots${n ? ` (${n})` : ''}</button>`;
+        ? `<span style="color:var(--text2);">${t('settings_finished_oneshots_none')||'No finished one-shot sessions.'}</span>`
+        : `<span style="color:var(--text2);">${n} ${t('settings_finished_oneshots_open')||'finished one-shot session(s) still open.'}</span>`;
+      const btn = `<button class="btn-secondary" style="font-size:11px;margin-top:4px;" ${n ? '' : 'disabled style="opacity:0.5;cursor:not-allowed;"'} onclick="cleanupFinishedOneShots()">${t('settings_finished_oneshots_cleanup')||'Clean up finished one-shots'}${n ? ` (${n})` : ''}</button>`;
       el.innerHTML = label + '<br>' + btn;
     })
-    .catch(() => { el.textContent = 'unavailable'; });
+    .catch(() => { el.textContent = t('settings_finished_oneshots_unavailable')||'unavailable'; });
 }
 window.loadAboutFinishedOneShots = loadAboutFinishedOneShots;
 
 function cleanupFinishedOneShots() {
-  showConfirmModal('Close finished one-shot sessions? Each runs the validation gate before any commit.', () => {
+  showConfirmModal(t('settings_finished_oneshots_confirm')||'Close finished one-shot sessions? Each runs the validation gate before any commit.', () => {
     apiFetch('/api/sessions/finished-oneshots', { method: 'POST' })
       .then(data => {
         const n = ((data && data.reaped) || []).length;
-        showToast(`Closed ${n} finished one-shot session${n === 1 ? '' : 's'}`, 'success', 2000);
+        showToast(`${n} ${t('settings_finished_oneshots_closed')||'finished one-shot session(s) closed'}`, 'success', 2000);
         loadAboutFinishedOneShots();
       })
-      .catch(() => showToast('Failed to clean up one-shots', 'error'));
+      .catch(() => showToast(t('settings_finished_oneshots_failed')||'Failed to clean up one-shots', 'error'));
   });
 }
 window.cleanupFinishedOneShots = cleanupFinishedOneShots;

@@ -85,9 +85,11 @@ func (m *Manager) ReapFinishedOneShots() []string {
 // zombie fix: a one-shot whose work has ended is closed even if its completion
 // watcher missed the marker.
 func (m *Manager) StartOneShotReaper(ctx context.Context) {
-	m.ReapFinishedOneShots()
-	m.PruneSessionFolders(time.Now())
 	go func() {
+		// The startup pass runs here, not inline: a reaped one-shot can run
+		// validation commands for minutes, and daemon boot must not wait on that.
+		m.ReapFinishedOneShots()
+		m.PruneSessionFolders(time.Now())
 		reap := time.NewTicker(oneShotReapInterval)
 		prune := time.NewTicker(oneShotPruneInterval)
 		defer reap.Stop()

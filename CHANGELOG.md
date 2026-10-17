@@ -5,6 +5,48 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.0 — feat(session): finished one-shot sessions close themselves, and a one-shot only commits what it validated
+
+**One-shot sessions no longer pile up.** When a one-shot session's command ends
+but the session never reached "complete", datawatch now closes it for you: at
+startup, then every minute. It runs the normal completion step, marks the session
+complete, closes its tmux pane and removes its leftover task file. Settings →
+About has a new **Finished one-shot sessions** control that lists any still open
+and cleans them up on demand.
+
+**One-shots only commit work that passed validation.** A one-shot you start by
+hand now commits automatically only if you give it validation commands, and only
+after they all pass:
+`datawatch session new "<task>" --validate "go build ./..." --validate "go test ./..."`.
+With no commands, or if one fails, nothing is committed and the result is recorded
+on the session. One-shots that belong to an Automaton are unchanged. A one-shot
+started by hand also no longer takes a "pre-session" snapshot commit of your tree.
+
+**Automatic commits stay inside the task's write directories.** Task sessions now
+stage only the directories the task is allowed to write, instead of the whole
+checkout, so one task can no longer sweep another session's unrelated edits into
+its commit.
+
+**Pi sessions use the model you configured.** A pi session started with no model
+named used pi's own default and could push your pinned model out of GPU memory.
+It now uses `pi.model` / `pi_prompt.model`.
+
+**Session folders are cleaned up after 30 days.** Folders of finished sessions are
+removed once they are older than `session.session_retention_days` (default 30).
+The session's record stays in the list.
+
+**Two Automata can no longer run on the same project tree.** Starting an Automaton
+while another one is running on the same checkout is refused with a message naming
+the one that holds it. An Automaton that was spawned by a running one is still
+allowed to run, and Automata in their own worktree do not collide.
+
+## v9.4.0 — config: tree write-lock settings
+
+Adds two settings under `autonomous` ahead of the project-tree write lock:
+`project_write_serialization` (`advisory` by default) and `refuse_dirty_tree_start`
+(off by default). They only validate and record the choice for now; the lock itself
+arrives in a later release. No behavior changes unless you set them.
+
 ## v9.3.0 — feat(autonomous): lifecycle-event notification sinks
 
 datawatch can now watch your Automaton/prd and task lifecycle events and

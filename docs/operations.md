@@ -1573,6 +1573,17 @@ No manual refresh needed — data streams via WebSocket every 5 seconds.
 
 **Messaging:** `stats` command returns a text summary (CPU, memory, disk, sessions, GPU).
 
+**Finished one-shot sessions:** a one-shot whose command has ended but whose session
+never reached complete is closed automatically at startup and every minute (it runs
+the normal completion step, closes its pane, removes its task file). Settings → About →
+*Finished one-shot sessions* lists any still open and cleans them up on demand
+(`GET`/`POST /api/sessions/finished-oneshots`). A one-shot started by hand commits only
+after its `--validate` commands pass. Finished session folders are deleted after
+`session.session_retention_days` (default 30).
+
+**Two Automata on one tree:** starting an Automaton is refused while another one is
+running on the same project tree. Run them one at a time, or give one its own worktree.
+
 **RTK Token Savings:** When `rtk.enabled: true` and RTK is installed, the stats dashboard
 includes token savings metrics: total commands compressed, total tokens saved, and average
 savings percentage. RTK auto-initializes hooks on supported backends (claude-code, gemini,

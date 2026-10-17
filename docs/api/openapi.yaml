@@ -2245,6 +2245,17 @@ paths:
   # /api/pipeline*. See docs/plans/2026-04-25-bl170-feature-completeness-audit.md.
 
   # Sessions sub-routes
+  /api/sessions/finished-oneshots:
+    get:
+      summary: List one-shot sessions whose command has ended but that never reached complete
+      operationId: sessionsFinishedOneShotsList
+      tags: [Sessions]
+      responses: {"200": {description: "{count, ids}"}}
+    post:
+      summary: Complete those sessions (runs the validation gate), close their panes and remove scratch files
+      operationId: sessionsFinishedOneShotsCleanup
+      tags: [Sessions]
+      responses: {"200": {description: "{reaped: [session ids]}"}}
   /api/sessions/aggregated:
     get:
       summary: Aggregated session view across federated peers
