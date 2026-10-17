@@ -1104,6 +1104,37 @@ func (a *API) GetRetryProfile(id string) (any, bool) {
 	return p, true
 }
 
+// Automation records (data model + CRUD only).
+
+func (a *API) CreateAutomation(in AutomationInput, actor string) (any, error) {
+	return a.M.CreateAutomation(in, actor)
+}
+
+func (a *API) UpdateAutomation(id string, expectedVersion int64, in AutomationInput, actor string) (any, error) {
+	return a.M.UpdateAutomation(id, expectedVersion, in, actor)
+}
+
+func (a *API) DeleteAutomation(id string) error {
+	return a.M.DeleteAutomation(id)
+}
+
+func (a *API) ListAutomations() []any {
+	src := a.M.ListAutomations()
+	out := make([]any, len(src))
+	for i, x := range src {
+		out[i] = x
+	}
+	return out
+}
+
+func (a *API) GetAutomation(id string) (any, bool) {
+	got, ok := a.M.GetAutomation(id)
+	if !ok {
+		return nil, false
+	}
+	return got, true
+}
+
 func (a *API) SetPRDRetryPolicy(prdID, profile string, policy map[string]int, ceilingTotal int, contentAutoFixEnabled, autoFixSkipApproval *bool) (any, error) {
 	prd, err := a.M.SetPRDRetryPolicy(prdID, profile, policy, ceilingTotal, contentAutoFixEnabled, autoFixSkipApproval)
 	if err != nil {

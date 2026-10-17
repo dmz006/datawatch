@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/observer"
 )
 
@@ -181,6 +182,16 @@ func (f *fakeOrchAutonomous) UpdateRetryProfile(string, string, string, map[stri
 func (f *fakeOrchAutonomous) DeleteRetryProfile(string) error    { return nil }
 func (f *fakeOrchAutonomous) ListRetryProfiles() []any           { return nil }
 func (f *fakeOrchAutonomous) GetRetryProfile(string) (any, bool) { return nil, false }
+
+func (f *fakeOrchAutonomous) CreateAutomation(autonomous.AutomationInput, string) (any, error) {
+	return nil, nil
+}
+func (f *fakeOrchAutonomous) UpdateAutomation(string, int64, autonomous.AutomationInput, string) (any, error) {
+	return nil, nil
+}
+func (f *fakeOrchAutonomous) DeleteAutomation(string) error    { return nil }
+func (f *fakeOrchAutonomous) ListAutomations() []any           { return nil }
+func (f *fakeOrchAutonomous) GetAutomation(string) (any, bool) { return nil, false }
 func (f *fakeOrchAutonomous) SetPRDRetryPolicy(string, string, map[string]int, int, *bool, *bool) (any, error) {
 	return nil, nil
 }

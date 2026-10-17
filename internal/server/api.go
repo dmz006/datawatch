@@ -29,6 +29,7 @@ import (
 	"github.com/dmz006/datawatch/internal/apns"
 	"github.com/dmz006/datawatch/internal/audit"
 	"github.com/dmz006/datawatch/internal/auth"
+	"github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/compute"
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/council"
@@ -761,6 +762,13 @@ type AutonomousAPI interface {
 	ListRetryProfiles() []any
 	GetRetryProfile(id string) (any, bool)
 	SetPRDRetryPolicy(prdID, profile string, policy map[string]int, ceilingTotal int, contentAutoFixEnabled, autoFixSkipApproval *bool) (any, error)
+
+	// Automation records (data model + CRUD only).
+	CreateAutomation(in autonomous.AutomationInput, actor string) (any, error)
+	UpdateAutomation(id string, expectedVersion int64, in autonomous.AutomationInput, actor string) (any, error)
+	DeleteAutomation(id string) error
+	ListAutomations() []any
+	GetAutomation(id string) (any, bool)
 
 	// BL303 S3 T15 — on-demand guardrail invocation for a session.
 	// Runs the named guardrail against projectDir; result is appended to the
