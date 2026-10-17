@@ -231,6 +231,9 @@ type PRD struct {
 	ParentTaskID string `json:"parent_task_id,omitempty"`
 	Depth        int    `json:"depth,omitempty"`
 
+	// AutomationID is the Automation this Automaton is currently a member of (empty = standalone). Maintained by the Automation store; nothing reads it for execution yet.
+	AutomationID string `json:"automation_id,omitempty"`
+
 	// BL221 (v6.2.0) Phase 4 — type extensibility, Guided Mode, skills.
 	// Type is a well-known or operator-registered automaton type identifier
 	// (e.g., "software", "research", "operational", "personal").
