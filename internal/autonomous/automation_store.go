@@ -7,9 +7,11 @@ package autonomous
 
 import (
 	"encoding/json"
+	"fmt"
 	"path/filepath"
 	"sort"
 	"sync"
+	"time"
 )
 
 // AutomationStore is the in-memory + JSONL-backed Automation store,
@@ -197,4 +199,183 @@ func (s *AutomationStore) persist() error {
 // already produces exactly 8 hex chars).
 func newAutomationID() string {
 	return newProfileID()
+}
+
+// notOwned returns a copy of s.owner for rollback on a failed persist; the
+// caller must hold s.mu. A fresh copy is required because the map itself is
+// mutated in place, so a bare alias would roll back to itself.
+func (s *AutomationStore) ownerSnapshot() map[string]string {
+	out := make(map[string]string, len(s.owner))
+	for k, v := range s.owner {
+		out[k] = v
+	}
+	return out
+}
+
+// Create inserts a new Automation in the draft state. Empty fields are
+// defaulted (ID, member IDs, AddedAt/AddedBy, entry member) before
+// validateAutomation and validateAutomationOwnership run; on success a deep
+// clone of the stored Automation is returned. A persist failure rolls the
+// in-memory change back and returns the persist error; validation errors
+// are returned as-is.
+func (s *AutomationStore) Create(a *Automation) (*Automation, error) {
+	if a == nil {
+		return nil, fmt.Errorf("automation invalid: nil Automation")
+	}
+	now := time.Now()
+	if a.ID == "" {
+		for {
+			id := newAutomationID()
+			s.mu.Lock()
+			used := s.automations[id] != nil
+			s.mu.Unlock()
+			if !used {
+				a.ID = id
+				break
+			}
+		}
+	}
+	for i := range a.Members {
+		m := &a.Members[i]
+		if m.ID == "" {
+			m.ID = newAutomationID()
+		}
+		if m.AddedAt.IsZero() {
+			m.AddedAt = now
+		}
+		if m.AddedBy == "" {
+			m.AddedBy = "operator"
+		}
+	}
+	a.Status = AutomationDraft
+	a.Version = 1
+	a.CreatedAt = now
+	a.UpdatedAt = now
+	if a.EntryMemberID == "" && len(a.Members) > 0 {
+		a.EntryMemberID = a.Members[0].ID
+	}
+	if err := validateAutomation(a); err != nil {
+		return nil, err
+	}
+	if err := validateAutomationOwnership(a, s.lookupPRD, s.OwnerOf); err != nil {
+		return nil, err
+	}
+	err := s.WithLock(a.ID, func() error {
+		clone := cloneAutomation(a)
+		s.mu.Lock()
+		snapshot := s.ownerSnapshot()
+		s.automations[a.ID] = clone
+		if a.Status != AutomationCompleted && a.Status != AutomationCancelled {
+			for _, m := range a.Members {
+				if m.PRDID != "" {
+					s.owner[m.PRDID] = a.ID
+				}
+			}
+		}
+		s.mu.Unlock()
+		if err := s.persist(); err != nil {
+			s.mu.Lock()
+			delete(s.automations, a.ID)
+			s.owner = snapshot
+			s.mu.Unlock()
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	out, _ := s.Get(a.ID)
+	return out, nil
+}
+
+// Update applies mutate to a copy of the Automation with id and stores the
+// result, bumping Version by one and refreshing UpdatedAt. When
+// expectedVersion is positive and differs from the current Version the call
+// fails with `409: version mismatch` and the store is left unchanged;
+// validateAutomation and validateAutomationOwnership re-run after the
+// mutation. A missing Automation is a 404.
+func (s *AutomationStore) Update(id string, expectedVersion int64, mutate func(*Automation) error) (*Automation, error) {
+	var out *Automation
+	err := s.WithLock(id, func() error {
+		s.mu.Lock()
+		existing, ok := s.automations[id]
+		if !ok {
+			s.mu.Unlock()
+			return fmt.Errorf("404: automation %s not found", id)
+		}
+		clone := cloneAutomation(existing)
+		s.mu.Unlock()
+
+		if expectedVersion > 0 && clone.Version != expectedVersion {
+			return fmt.Errorf("409: version mismatch: current version is %d", clone.Version)
+		}
+		if mutate != nil {
+			if err := mutate(clone); err != nil {
+				return err
+			}
+		}
+		clone.ID = id // the store's identity cannot be renamed through mutate
+		if err := validateAutomation(clone); err != nil {
+			return err
+		}
+		if err := validateAutomationOwnership(clone, s.lookupPRD, s.OwnerOf); err != nil {
+			return err
+		}
+		clone.Version = existing.Version + 1
+		clone.UpdatedAt = time.Now()
+
+		s.mu.Lock()
+		snapshot := s.ownerSnapshot()
+		s.automations[id] = clone
+		s.rebuildIndexLocked()
+		s.mu.Unlock()
+		if err := s.persist(); err != nil {
+			s.mu.Lock()
+			s.automations[id] = existing
+			s.owner = snapshot
+			s.mu.Unlock()
+			return err
+		}
+		out = cloneAutomation(clone)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// Delete removes the Automation with id. Only draft, completed and cancelled
+// Automations may be deleted — a non-deletable status is a 409. The owner
+// index drops the Automation's claims on persist success; a persist failure
+// rolls the removal back.
+func (s *AutomationStore) Delete(id string) error {
+	return s.WithLock(id, func() error {
+		s.mu.Lock()
+		a, ok := s.automations[id]
+		if !ok {
+			s.mu.Unlock()
+			return fmt.Errorf("404: automation %s not found", id)
+		}
+		switch a.Status {
+		case AutomationDraft, AutomationCompleted, AutomationCancelled:
+		default:
+			s.mu.Unlock()
+			return fmt.Errorf("409: automation is %s; only draft, completed or cancelled automations can be deleted", a.Status)
+		}
+		snapshot := s.ownerSnapshot()
+		delete(s.automations, id)
+		s.rebuildIndexLocked()
+		s.mu.Unlock()
+
+		if err := s.persist(); err != nil {
+			s.mu.Lock()
+			s.automations[id] = a
+			s.owner = snapshot
+			s.mu.Unlock()
+			return err
+		}
+		return nil
+	})
 }
