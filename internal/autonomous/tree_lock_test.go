@@ -129,6 +129,42 @@ func TestTreeKeySymlinkAndRelativeResolveIdentical(t *testing.T) {
 	}
 }
 
+// A direct-mode PRD whose project dir is a subdirectory of the checkout
+// must key identically to the checkout root — both write into the same
+// physical tree (design 3a: "a subdirectory of it all map to the same key").
+func TestTreeKeySubdirOfCheckoutSharesKey(t *testing.T) {
+	repo := newTestRepo(t)
+	sub := filepath.Join(repo, "sub", "dir")
+	if err := os.MkdirAll(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	keySub, rootSub, err := ResolveTreeKey(&PRD{ID: "a1", ProjectDir: sub}, nil)
+	if err != nil {
+		t.Fatalf("ResolveTreeKey(sub): %v", err)
+	}
+	keyRepo, _, err := ResolveTreeKey(&PRD{ID: "a2", ProjectDir: repo}, nil)
+	if err != nil {
+		t.Fatalf("ResolveTreeKey(repo): %v", err)
+	}
+	want := "tree:" + repo
+	if keySub != want {
+		t.Errorf("subdir key = %q; want %q", keySub, want)
+	}
+	if keySub != keyRepo {
+		t.Errorf("subdir key = %q; checkout key = %q; want equal", keySub, keyRepo)
+	}
+	// treeRoot stays the actual write root (the subdirectory), not the base.
+	if rootSub != sub {
+		t.Errorf("subdir treeRoot = %q; want %q", rootSub, sub)
+	}
+	// The lock file still lands on the shared base, discoverable from the
+	// main checkout.
+	if got := treeLockPath(keySub, rootSub); got != filepath.Join(repo, ".datawatch", "tree.lock") {
+		t.Errorf("subdir lock path = %q; want shared base lock", got)
+	}
+}
+
 func TestTreeKeyWorktreeModePerWorktree(t *testing.T) {
 	repo := newTestRepo(t)
 	wt := addTestWorktree(t, repo, "wt")
@@ -211,6 +247,12 @@ func TestTreeKeyNonGitFallsBackToPath(t *testing.T) {
 	}
 	if key == key2 {
 		t.Errorf("two plain dirs resolved to one key %q; want distinct", key)
+	}
+
+	// The non-git lock path is per write root, inside that dir's own
+	// .datawatch.
+	if got := treeLockPath(key, root); got != filepath.Join(dir, ".datawatch", "tree.lock") {
+		t.Errorf("non-git lock path = %q; want %q", got, filepath.Join(dir, ".datawatch", "tree.lock"))
 	}
 }
 

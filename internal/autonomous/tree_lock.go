@@ -17,9 +17,12 @@
 package autonomous
 
 import (
+	"context"
 	"fmt"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // treeKeyPrefix marks a key as a canonical project-tree key; the
@@ -41,6 +44,11 @@ func absClean(p string) string {
 	return filepath.Clean(ap)
 }
 
+// gitExecTimeout bounds a single git probe during key resolution: a wedged
+// index or a hung git process must be able to stall a task, never the whole
+// resolution of every PRD sharing the helper.
+const gitExecTimeout = 10 * time.Second
+
 // gitCommonDir resolves repoRoot's shared git common dir, e.g.
 // <base>/.git for a main checkout or linked worktree, or
 // <base>/.git/modules/<sub> for a submodule. It runs
@@ -49,7 +57,7 @@ func absClean(p string) string {
 // root (".git") or from a subdir ("../.git"), and an absolute path
 // from elsewhere.
 func gitCommonDir(repoRoot string) (string, error) {
-	out, err := runGitIn(repoRoot, "rev-parse", "--git-common-dir")
+	out, err := gitProbe(context.Background(), repoRoot, "rev-parse", "--git-common-dir")
 	if err != nil {
 		return "", err
 	}
@@ -71,6 +79,18 @@ func gitCommonDir(repoRoot string) (string, error) {
 		dir = filepath.Join(repoRoot, dir)
 	}
 	return absClean(dir), nil
+}
+
+// gitProbe runs one bounded git probe in dir and returns its output.
+// Wrapped separately (like runGitIn in worktree.go) with a deadline so
+// tree key resolution can't hang on a wedged index.
+func gitProbe(ctx context.Context, dir string, args ...string) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, gitExecTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "git", args...) // #nosec G204 -- fixed git subcommand; dir comes from operator-controlled config and PRD fields, same trust model as every other git shell-out in this codebase (e.g. runGitIn)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	return string(out), err
 }
 
 // sharedBase returns the working-tree root that owns gitDir: the
