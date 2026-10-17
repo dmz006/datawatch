@@ -367,19 +367,6 @@ CVE-2026-84782
 # code uses, the way CVE-2026-19445 was traced this session.
 CVE-2026-19553
 
-# http-cache-semantics (npm) -- CVE-2026-93748
-# severity: high; images: agent-gemini
-# Information disclosure via the max-stale cache-control directive. Transitive
-# dependency of @google/gemini-cli's own package.json. Whether any gemini-cli
-# dependency path actually exercises max-stale-aware caching against
-# attacker-influenced content (vs. just Google's own API responses) was not
-# independently traced.
-# No newer published npm version exists as of this migration. NOT independently
-# traced (self-admitted caveat). Unlike most entries here this is an actively
-# maintained package, not a slow Debian backport -- check for a fix each cycle,
-# not just on expiry.
-CVE-2026-93748
-
 # libpython3.11-minimal -- CVE-2026-19445
 # severity: high; images: agent-aider, agent-gemini
 # Use-after-free of a server-side SSLContext when sni_callback switches contexts
