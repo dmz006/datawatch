@@ -2660,6 +2660,9 @@ func (s *Server) handleAutomations(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, msg, code)
 				return
 			}
+			createdID, _ := automationIdentity(a)
+			s.audit(r.Context(), "automation_create", "automation", createdID,
+				map[string]any{"name": req.Name, "actor": req.Actor, "reason": req.Reason, "members": len(req.Members)})
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusCreated)
 			_ = json.NewEncoder(w).Encode(a)
@@ -2689,17 +2692,48 @@ func (s *Server) handleAutomations(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, msg, code)
 			return
 		}
+		updatedID, updatedVersion := automationIdentity(a)
+		s.audit(r.Context(), "automation_update", "automation", updatedID,
+			map[string]any{"actor": req.Actor, "reason": req.Reason, "version": updatedVersion})
 		writeJSONOK(w, a)
 	case http.MethodDelete:
+		var req struct {
+			Actor  string `json:"actor"`
+			Reason string `json:"reason"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		if req.Actor == "" {
+			req.Actor = "operator"
+		}
 		if err := s.autonomousMgr.DeleteAutomation(id); err != nil {
 			code, msg := automationErrStatus(err)
 			http.Error(w, msg, code)
 			return
 		}
+		s.audit(r.Context(), "automation_delete", "automation", id,
+			map[string]any{"actor": req.Actor, "reason": req.Reason})
 		w.WriteHeader(http.StatusNoContent)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// automationIdentity reads the ID and version out of the value returned
+// by the manager: the real manager returns *autonomous.Automation
+// directly, but the AutonomousAPI interface widens it to any and test
+// doubles may stand in with any JSON-serializable shape.
+func automationIdentity(a any) (id string, version int64) {
+	if auto, ok := a.(*autonomous.Automation); ok {
+		return auto.ID, auto.Version
+	}
+	var raw struct {
+		ID      string `json:"id"`
+		Version int64  `json:"version"`
+	}
+	if b, err := json.Marshal(a); err == nil {
+		_ = json.Unmarshal(b, &raw)
+	}
+	return raw.ID, raw.Version
 }
 
 // writeJSONOK writes a 200 JSON body. (writeJSON is taken by
