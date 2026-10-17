@@ -29,6 +29,11 @@ type AutomationStore struct {
 	// it (same rules as validateAutomationOwnership's ownerOf); guarded
 	// by s.mu and kept in sync via rebuildIndexLocked.
 	owner map[string]string
+	// locks is the per-Automation serialization for the coordinator's
+	// advance against concurrent edits (design doc "Edits racing an
+	// advance"): each Automation gets its own mutex, keyed by ID, so two
+	// different Automations never block each other. Guarded by s.mu.
+	locks map[string]*sync.Mutex
 }
 
 // NewAutomationStore opens (or creates) automations.jsonl under dir —
@@ -40,6 +45,7 @@ func NewAutomationStore(dir string, lookupPRD func(string) (*PRD, bool)) (*Autom
 		automations: map[string]*Automation{},
 		lookupPRD:   lookupPRD,
 		owner:       map[string]string{},
+		locks:       map[string]*sync.Mutex{},
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -81,6 +87,32 @@ func (s *AutomationStore) rebuildIndexLocked() {
 			s.owner[m.PRDID] = a.ID
 		}
 	}
+}
+
+// lockFor returns the per-Automation mutex for id, creating it on first
+// use under s.mu. Callers use it via WithLock; the s.mu hold is released
+// before the caller acts, so fn can freely call Get/List/OwnerOf.
+func (s *AutomationStore) lockFor(id string) *sync.Mutex {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	l, ok := s.locks[id]
+	if !ok {
+		l = &sync.Mutex{}
+		s.locks[id] = l
+	}
+	return l
+}
+
+// WithLock serializes fn under the per-Automation mutex for id, the shared
+// lock the future coordinator's advance and the edit operations (insert,
+// remove, reorder) take so a mid-flight edit and an advance cannot
+// interleave on the same cursor. s.mu is never held while fn runs, so
+// fn may call Get, List and OwnerOf. fn's error is returned unchanged.
+func (s *AutomationStore) WithLock(id string, fn func() error) error {
+	l := s.lockFor(id)
+	l.Lock()
+	defer l.Unlock()
+	return fn()
 }
 
 // OwnerOf returns the ID of the non-terminal Automation that currently
