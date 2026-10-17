@@ -1,6 +1,10 @@
 package autonomous
 
-import "time"
+import (
+	"fmt"
+	"strings"
+	"time"
+)
 
 // AutomationStatus is the lifecycle state of an Automation (see the
 // orchestration design doc, "Status lifecycle").
@@ -86,6 +90,103 @@ type AutomationMember struct {
 	EdgeTaken  string       `json:"edge_taken,omitempty"` // on_complete|on_blocked|on_failed|skip
 
 	BudgetPolicy *BudgetPolicy `json:"budget_policy,omitempty"` // explicit member override (narrows further)
+}
+
+// validateAutomation checks the structural invariants of an Automation.
+// Cycle and reachability checks (design doc "Validation") land in a later
+// layer, and PRD ownership is enforced by the store; this is the part that
+// must hold on every write.
+func validateAutomation(a *Automation) error {
+	if a == nil || strings.TrimSpace(a.Name) == "" {
+		return fmt.Errorf("automation invalid: nil Automation or blank name")
+	}
+	switch a.Status {
+	case AutomationDraft, AutomationActive, AutomationPaused,
+		AutomationCompleted, AutomationBlocked, AutomationCancelled:
+	default:
+		return fmt.Errorf("automation invalid: unknown status %q", a.Status)
+	}
+	memberIDs := make(map[string]struct{}, len(a.Members))
+	prdIDs := make(map[string]struct{}, len(a.Members))
+	for _, m := range a.Members {
+		if strings.TrimSpace(m.ID) == "" {
+			return fmt.Errorf("automation invalid: member with empty ID")
+		}
+		if strings.TrimSpace(m.PRDID) == "" {
+			return fmt.Errorf("automation invalid: member %s has empty PRDID", m.ID)
+		}
+		if _, dup := memberIDs[m.ID]; dup {
+			return fmt.Errorf("automation invalid: duplicate member ID %s", m.ID)
+		}
+		if _, dup := prdIDs[m.PRDID]; dup {
+			return fmt.Errorf("automation invalid: PRD %s is a member more than once", m.PRDID)
+		}
+		memberIDs[m.ID] = struct{}{}
+		prdIDs[m.PRDID] = struct{}{}
+	}
+	if len(a.Members) > 0 && a.EntryMemberID == "" {
+		return fmt.Errorf("automation invalid: has members but empty entry member ID")
+	}
+	if a.EntryMemberID != "" {
+		if _, found := memberIDs[a.EntryMemberID]; !found {
+			return fmt.Errorf("automation invalid: entry member %s is not a member", a.EntryMemberID)
+		}
+	}
+	for _, m := range a.Members {
+		for name, target := range map[string]string{
+			"on_complete": m.OnComplete,
+			"on_blocked":  m.OnBlocked,
+			"on_failed":   m.OnFailed,
+		} {
+			if target == "" {
+				continue
+			}
+			if target == m.ID {
+				return fmt.Errorf("automation invalid: member %s %s edge points to itself", m.ID, name)
+			}
+			if _, found := memberIDs[target]; !found {
+				return fmt.Errorf("automation invalid: member %s %s edge names unknown member %s", m.ID, name, target)
+			}
+		}
+	}
+	for _, m := range a.Members {
+		if err := validateBudgetPolicy(m.BudgetPolicy); err != nil {
+			return fmt.Errorf("automation invalid: member %s: %w", m.ID, err)
+		}
+	}
+	return validateBudgetPolicy(a.BudgetPolicy)
+}
+
+// validateBudgetPolicy checks one budget policy's fields; a nil policy is
+// valid (no override).
+func validateBudgetPolicy(p *BudgetPolicy) error {
+	if p == nil {
+		return nil
+	}
+	switch p.CeilingType {
+	case "dollar", "allocation_pct":
+	default:
+		return fmt.Errorf("automation invalid: budget ceiling type %q", p.CeilingType)
+	}
+	if p.CeilingValue <= 0 {
+		return fmt.Errorf("automation invalid: budget ceiling %v must be positive", p.CeilingValue)
+	}
+	switch p.Window {
+	case "automation", "day", "week", "month":
+	default:
+		return fmt.Errorf("automation invalid: budget window %q", p.Window)
+	}
+	switch p.Pacing {
+	case "", "none", "even":
+	default:
+		return fmt.Errorf("automation invalid: budget pacing %q", p.Pacing)
+	}
+	switch p.OnBreach {
+	case "", "pause", "block":
+	default:
+		return fmt.Errorf("automation invalid: budget on_breach %q", p.OnBreach)
+	}
+	return nil
 }
 
 // BudgetPolicy is a narrower cost ceiling scoped to an Automation or one of
