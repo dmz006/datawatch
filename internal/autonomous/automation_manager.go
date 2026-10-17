@@ -50,7 +50,14 @@ func (m *Manager) CreateAutomation(in AutomationInput, actor string) (*Automatio
 	for i := range a.Members {
 		a.Members[i].AddedBy = actor
 	}
-	return m.automations.Create(a)
+	a, err := m.automations.Create(a)
+	if err != nil {
+		return nil, err
+	}
+	if err := m.syncAutomationMembership(a.ID, nil, a.Members, false); err != nil {
+		return nil, err
+	}
+	return a, nil
 }
 
 // GetAutomation returns one Automation by id.
@@ -76,7 +83,9 @@ func (m *Manager) UpdateAutomation(id string, expectedVersion int64, in Automati
 	if actor == "" {
 		actor = "operator"
 	}
-	return m.automations.Update(id, expectedVersion, func(a *Automation) error {
+	var oldMembers []AutomationMember
+	a, err := m.automations.Update(id, expectedVersion, func(a *Automation) error {
+		oldMembers = append([]AutomationMember(nil), a.Members...)
 		stored, err := json.Marshal(a.Members)
 		if err != nil {
 			return err
@@ -145,10 +154,80 @@ func (m *Manager) UpdateAutomation(id string, expectedVersion int64, in Automati
 		a.Members = members
 		return nil
 	})
+	if err != nil {
+		return nil, err
+	}
+	if err := m.syncAutomationMembership(id, oldMembers, a.Members, false); err != nil {
+		return nil, err
+	}
+	return a, nil
 }
 
 // DeleteAutomation removes an Automation (the store enforces the
-// draft/completed/cancelled-only rule).
+// draft/completed/cancelled-only rule) and clears PRD.AutomationID on all
+// of its member PRDs.
 func (m *Manager) DeleteAutomation(id string) error {
-	return m.automations.Delete(id)
+	a, ok := m.automations.Get(id)
+	if !ok {
+		return fmt.Errorf("404: automation %s not found", id)
+	}
+	if err := m.automations.Delete(id); err != nil {
+		return err
+	}
+	return m.syncAutomationMembership(id, a.Members, nil, true)
+}
+
+// syncAutomationMembership keeps PRD.AutomationID in sync with an
+// Automation's membership set: every PRD newly in the set gets
+// AutomationID=automationID, and every PRD removed from the set — or all
+// members when the Automation is deleted or terminal — gets it cleared,
+// but only when it still equals automationID. Persisted like the other
+// PRD setters (GetPRD + SavePRD); nothing reads AutomationID for
+// execution yet.
+func (m *Manager) syncAutomationMembership(automationID string, oldMembers, newMembers []AutomationMember, terminal bool) error {
+	old := make(map[string]struct{}, len(oldMembers))
+	for _, mem := range oldMembers {
+		old[mem.PRDID] = struct{}{}
+	}
+	for _, mem := range newMembers {
+		if _, was := old[mem.PRDID]; was {
+			continue
+		}
+		prd, ok := m.store.GetPRD(mem.PRDID)
+		if !ok {
+			return fmt.Errorf("prd %q not found", mem.PRDID)
+		}
+		prd.AutomationID = automationID
+		if err := m.store.SavePRD(prd); err != nil {
+			return fmt.Errorf("prd %q: %w", mem.PRDID, err)
+		}
+	}
+	if len(old) == 0 {
+		return nil
+	}
+	if !terminal {
+		newSet := make(map[string]struct{}, len(newMembers))
+		for _, mem := range newMembers {
+			newSet[mem.PRDID] = struct{}{}
+		}
+		for prdID := range old {
+			if _, still := newSet[prdID]; still {
+				delete(old, prdID)
+			}
+		}
+	}
+	for prdID := range old {
+		prd, ok := m.store.GetPRD(prdID)
+		if !ok {
+			continue // the PRD itself is gone
+		}
+		if prd.AutomationID != automationID {
+			continue // already points elsewhere
+		}
+		prd.AutomationID = ""
+		if err := m.store.SavePRD(prd); err != nil {
+			return fmt.Errorf("prd %q: %w", prdID, err)
+		}
+	}
+	return nil
 }
