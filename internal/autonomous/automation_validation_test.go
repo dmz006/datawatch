@@ -98,6 +98,72 @@ func TestValidateAutomationEntryAndEdges(t *testing.T) {
 	}
 }
 
+func TestValidateAutomationCycleAndReachability(t *testing.T) {
+	// A straight line is valid, in any non-draft status.
+	a := automaton(t)
+	a.Status = AutomationActive
+	if err := validateAutomation(a); err != nil {
+		t.Fatalf("linear non-draft rejected: %v", err)
+	}
+
+	// OnComplete loop.
+	a = automaton(t)
+	a.Members[1].OnComplete = "m1"
+	err := validateAutomation(a)
+	if err == nil || !strings.Contains(err.Error(), "cycle detected via members [m1 m2]") {
+		t.Fatalf("on_complete loop: got %v", err)
+	}
+
+	// An OnFailed edge looping back to an earlier member counts too.
+	a = automaton(t)
+	a.Members[1].OnFailed = "m1"
+	if err = validateAutomation(a); err == nil || !strings.Contains(err.Error(), "cycle detected via members [m1 m2]") {
+		t.Fatalf("on_failed loop: got %v", err)
+	}
+
+	// Multi-member cycle.
+	a = automaton(t)
+	a.Members = append(a.Members, AutomationMember{ID: "m3", PRDID: "p3"})
+	a.Members[1].OnComplete = "m3"
+	a.Members[2].OnBlocked = "m1"
+	if err = validateAutomation(a); err == nil || !strings.Contains(err.Error(), "cycle detected via members [m1 m2 m3]") {
+		t.Fatalf("three-member loop: got %v", err)
+	}
+
+	// Unreachable member: rejected on non-draft, tolerated on draft.
+	a = automaton(t)
+	a.Status = AutomationActive
+	a.Members = append(a.Members, AutomationMember{ID: "m9", PRDID: "p9"})
+	if err = validateAutomation(a); err == nil || !strings.Contains(err.Error(), "members unreachable from entry [m9]") {
+		t.Fatalf("unreachable member: got %v", err)
+	}
+	a.Status = AutomationDraft
+	if err = validateAutomation(a); err != nil {
+		t.Fatalf("draft with unreachable member rejected: %v", err)
+	}
+
+	// Reachability follows all three edge kinds.
+	a = automaton(t)
+	a.Members[0].OnComplete = ""
+	a.Members[0].OnBlocked = "m2"
+	if err = validateAutomation(a); err != nil {
+		t.Fatalf("on_blocked reachability: got %v", err)
+	}
+
+	if got := automationUnreachable(a); len(got) != 0 {
+		t.Fatalf("automationUnreachable: got %v", got)
+	}
+}
+
+func TestAutomationUnreachableSorted(t *testing.T) {
+	a := automaton(t)
+	a.Members = append(a.Members, AutomationMember{ID: "zb", PRDID: "pz"}, AutomationMember{ID: "aa", PRDID: "pa"})
+	got := automationUnreachable(a)
+	if len(got) != 2 || got[0] != "aa" || got[1] != "zb" {
+		t.Fatalf("sorted unreachable: got %v", got)
+	}
+}
+
 func TestValidateAutomationBudgetPolicy(t *testing.T) {
 	base := func() *BudgetPolicy {
 		return &BudgetPolicy{CeilingType: "dollar", CeilingValue: 10, Window: "automation", Pacing: "none", OnBreach: "pause"}

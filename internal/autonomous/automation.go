@@ -2,6 +2,7 @@ package autonomous
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 )
@@ -92,10 +93,103 @@ type AutomationMember struct {
 	BudgetPolicy *BudgetPolicy `json:"budget_policy,omitempty"` // explicit member override (narrows further)
 }
 
-// validateAutomation checks the structural invariants of an Automation.
-// Cycle and reachability checks (design doc "Validation") land in a later
-// layer, and PRD ownership is enforced by the store; this is the part that
-// must hold on every write.
+// automationHasCycle reports whether the member graph reachable from the
+// entry member contains a cycle, following all three edge kinds
+// (OnComplete, OnBlocked, OnFailed). It is a three-colour DFS keyed by
+// member ID (white = unseen, grey = on the current path, black = explored);
+// a back-edge to a grey node is a cycle, and the member IDs on the cycle
+// path are returned for diagnostics. Edge order is fixed, so the result is
+// deterministic.
+func automationHasCycle(a *Automation) (bool, []string) {
+	byID := make(map[string]AutomationMember, len(a.Members))
+	for _, m := range a.Members {
+		byID[m.ID] = m
+	}
+
+	const (
+		white = iota // unseen
+		grey         // on the current DFS path
+		black        // fully explored
+	)
+	color := make(map[string]int, len(a.Members))
+	var path []string
+
+	var dfs func(id string) (bool, []string)
+	dfs = func(id string) (bool, []string) {
+		color[id] = grey
+		path = append(path, id)
+		m := byID[id]
+		for _, target := range []string{m.OnComplete, m.OnBlocked, m.OnFailed} {
+			if target == "" {
+				continue
+			}
+			switch color[target] {
+			case grey: // back-edge: the cycle is the path from target to id
+				i := 0
+				for i < len(path) && path[i] != target {
+					i++
+				}
+				return true, append([]string{}, path[i:]...)
+			case white:
+				if found, cycle := dfs(target); found {
+					return true, cycle
+				}
+			}
+		}
+		color[id] = black
+		path = path[:len(path)-1]
+		return false, nil
+	}
+
+	return dfs(a.EntryMemberID)
+}
+
+// automationUnreachable returns the IDs of members not reachable from the
+// entry member following any non-empty edge (OnComplete, OnBlocked or
+// OnFailed), sorted for determinism. Drafts may have unreachable members;
+// validateAutomation rejects them only on non-draft Automations, and callers
+// surface them as warnings on drafts.
+func automationUnreachable(a *Automation) []string {
+	if a.EntryMemberID == "" {
+		return nil
+	}
+	byID := make(map[string][]string, len(a.Members))
+	for _, m := range a.Members {
+		var targets []string
+		for _, t := range []string{m.OnComplete, m.OnBlocked, m.OnFailed} {
+			if t != "" {
+				targets = append(targets, t)
+			}
+		}
+		byID[m.ID] = targets
+	}
+
+	reached := map[string]bool{a.EntryMemberID: true}
+	stack := []string{a.EntryMemberID}
+	for len(stack) > 0 {
+		id := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		for _, next := range byID[id] {
+			if !reached[next] {
+				reached[next] = true
+				stack = append(stack, next)
+			}
+		}
+	}
+
+	var unreachable []string
+	for _, m := range a.Members {
+		if !reached[m.ID] {
+			unreachable = append(unreachable, m.ID)
+		}
+	}
+	sort.Strings(unreachable)
+	return unreachable
+}
+
+// validateAutomation checks the structural invariants of an Automation,
+// including the cycle and reachability checks (design doc "Validation"); PRD
+// ownership is enforced by the store.
 func validateAutomation(a *Automation) error {
 	if a == nil || strings.TrimSpace(a.Name) == "" {
 		return fmt.Errorf("automation invalid: nil Automation or blank name")
@@ -154,7 +248,18 @@ func validateAutomation(a *Automation) error {
 			return fmt.Errorf("automation invalid: member %s: %w", m.ID, err)
 		}
 	}
-	return validateBudgetPolicy(a.BudgetPolicy)
+	if err := validateBudgetPolicy(a.BudgetPolicy); err != nil {
+		return err
+	}
+	if len(a.Members) > 0 {
+		if _, cycle := automationHasCycle(a); cycle != nil {
+			return fmt.Errorf("automation invalid: cycle detected via members [%s]", strings.Join(cycle, " "))
+		}
+		if unreachable := automationUnreachable(a); len(unreachable) > 0 && a.Status != AutomationDraft {
+			return fmt.Errorf("automation invalid: members unreachable from entry [%s]", strings.Join(unreachable, " "))
+		}
+	}
+	return nil
 }
 
 // validateBudgetPolicy checks one budget policy's fields; a nil policy is
