@@ -5268,6 +5268,35 @@ Verify whether the diff plausibly implements the spec. Reply with STRICT JSON on
 			amgr.Subscribe(autonomouspkg.LifecycleFilter{Kinds: []string{autonomouspkg.KindPRDUpdated}}, func(ev autonomouspkg.LifecycleEvent) {
 				httpServer.BroadcastPRDUpdate(autonomouspkg.PRDUpdatePayload(ev))
 			})
+			// Built-in lifecycle-event sinks (alert store + topic push). They act
+			// on exactly the kinds the operator enabled via
+			// autonomous.notify.default_events; an empty list (the default) makes
+			// this a no-op, so the default behavior is unchanged.
+			_ = autonomouspkg.InstallLifecycleSinks(amgr, autonomouspkg.SinkConfig{
+				Kinds: cfg.Autonomous.Notify.DefaultEvents,
+				RecordAlert: func(level, title, body string) {
+					lv := alertspkg.LevelInfo
+					switch level {
+					case "warn":
+						lv = alertspkg.LevelWarn
+					case "error":
+						lv = alertspkg.LevelError
+					}
+					_ = alertStore.Add(lv, title, body, "")
+				},
+				PublishTopics: func(topics []string, title, message string) {
+					for _, t := range topics {
+						// One push per topic; ID/Time defaults are filled in by
+						// publishToTopic (dw-<unixnano> / unix seconds, Event
+						// "message") — same as the other in-process producers.
+						server.PublishToTopic(t, server.PushEvent{
+							Title:   title,
+							Message: message,
+							Tags:    []string{"lifecycle"},
+						})
+					}
+				},
+			})
 			wireCapacity(context.Background(), cfg, mgr, amgr, httpServer, func(title, body string) {
 				alertStore.AddSystem(alertspkg.LevelWarn, title, body)
 			})
