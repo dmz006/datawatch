@@ -1967,6 +1967,23 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		nb.SetSessionName(sess.Name)
 	}
 
+	// Pi family: fall back to the configured pi model when the session
+	// names none. Without this a one-shot `pi --print` launch uses pi's
+	// own default (a 27b model), which evicts the pinned 64k model on
+	// the GPU node. An explicit opt.Model below still overrides this.
+	if sm, ok := backendObj.(interface{ SetModel(string) }); ok {
+		switch backendName {
+		case "pi-prompt":
+			if mo := m.cfg.PiPrompt.Model; mo != "" {
+				sm.SetModel(mo)
+			}
+		case "pi":
+			if mo := m.cfg.Pi.Model; mo != "" {
+				sm.SetModel(mo)
+			}
+		}
+	}
+
 	// BL363 T2+T3 — inject Goose provider/model/apikey/channel into goose family backends.
 	switch backendName {
 	case "goose", "goose-prompt":
