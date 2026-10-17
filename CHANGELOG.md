@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.3.0 — feat(autonomous): lifecycle-event notification sinks
+
+datawatch can now watch your Automaton/prd and task lifecycle events and keep you posted as they happen, so you don't have to poll or watch logs. Enabling it is one key: set `autonomous.notify.default_events` (for example `prd.created, task.completed, task.failed` — the kinds of events you want to hear about); you can set it in config.yaml, in the Web UI, via the REST `/api/config` API, a comm `configure` message, or `datawatch config set`. For every enabled event, it will appear in `datawatch alerts` (and the alerts view in the Web UI), your installed PWA/mobile clients get a live update pushed on their topic, and a message is delivered to your configured comm channels. Messages to your channels are bundled per Automaton, so a burst of events within a few seconds arrives as one message instead of spam, and `notify_exclude` still silences what you block. This is all off by default — an empty (or unset) event list changes nothing, and existing behavior is otherwise unchanged.
+
 ## v9.2.0 — feat(session): task sessions are committed automatically, the moment they're done
 
 Task sessions are now committed automatically by datawatch itself the
