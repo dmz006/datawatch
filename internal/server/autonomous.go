@@ -25,6 +25,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/federation"
 	"github.com/dmz006/datawatch/internal/memory"
@@ -734,11 +735,11 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var req struct {
-			StoryID    string   `json:"story_id"`
-			Title      string   `json:"title"`
-			Spec       string   `json:"spec"`
-			Actor      string   `json:"actor"`
-			DependsOn  []string `json:"depends_on,omitempty"`
+			StoryID   string   `json:"story_id"`
+			Title     string   `json:"title"`
+			Spec      string   `json:"spec"`
+			Actor     string   `json:"actor"`
+			DependsOn []string `json:"depends_on,omitempty"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
@@ -2556,6 +2557,145 @@ func (s *Server) handleAutonomousRetryProfiles(w http.ResponseWriter, r *http.Re
 			return
 		}
 		s.audit(r.Context(), "delete", "retry_profile", id, nil)
+		w.WriteHeader(http.StatusNoContent)
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// automationReq is the wire body for creating or updating an automation:
+// the operator-mutable AutomationInput fields plus the CRUD envelope
+// (expected_version for update, actor and reason for provenance).
+type automationReq struct {
+	Name                string                        `json:"name"`
+	Description         string                        `json:"description"`
+	EntryMemberID       string                        `json:"entry_member_id"`
+	Members             []autonomous.AutomationMember `json:"members"`
+	BudgetPolicy        *autonomous.BudgetPolicy      `json:"budget_policy"`
+	ProjectDir          string                        `json:"project_dir"`
+	Backend             string                        `json:"backend"`
+	Model               string                        `json:"model"`
+	Effort              autonomous.Effort             `json:"effort"`
+	VerificationBackend string                        `json:"verification_backend"`
+	VerificationModel   string                        `json:"verification_model"`
+	VerificationEffort  autonomous.Effort             `json:"verification_effort"`
+	ExpectedVersion     int64                         `json:"expected_version"`
+	Actor               string                        `json:"actor"`
+	Reason              string                        `json:"reason"`
+}
+
+// automationInput lifts the wire fields of automationReq into
+// autonomous.AutomationInput.
+func automationInput(req automationReq) autonomous.AutomationInput {
+	return autonomous.AutomationInput{
+		Name:                req.Name,
+		Description:         req.Description,
+		EntryMemberID:       req.EntryMemberID,
+		Members:             req.Members,
+		BudgetPolicy:        req.BudgetPolicy,
+		ProjectDir:          req.ProjectDir,
+		Backend:             req.Backend,
+		Model:               req.Model,
+		Effort:              req.Effort,
+		VerificationBackend: req.VerificationBackend,
+		VerificationModel:   req.VerificationModel,
+		VerificationEffort:  req.VerificationEffort,
+	}
+}
+
+// automationErrStatus maps a manager error to an HTTP status and message:
+// a "409: " prefix is a Conflict (version or state mismatch), a "404: "
+// prefix a Not Found; anything else is a Bad Request. The prefix is
+// stripped from the message.
+func automationErrStatus(err error) (int, string) {
+	msg := err.Error()
+	switch {
+	case strings.HasPrefix(msg, "409: "):
+		return http.StatusConflict, strings.TrimPrefix(msg, "409: ")
+	case strings.HasPrefix(msg, "404: "):
+		return http.StatusNotFound, strings.TrimPrefix(msg, "404: ")
+	default:
+		return http.StatusBadRequest, msg
+	}
+}
+
+// handleAutomations — mirrors handleAutonomousRetryProfiles.
+//
+//	GET    /api/automations        — list
+//	POST   /api/automations        — create
+//	GET    /api/automations/{id}   — get
+//	PUT    /api/automations/{id}   — update
+//	DELETE /api/automations/{id}   — delete
+func (s *Server) handleAutomations(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		if !s.fedCap(w, r, federation.CapAutonomousRead) {
+			return
+		}
+	} else {
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+			return
+		}
+	}
+	if s.autonomousMgr == nil {
+		http.Error(w, "autonomous disabled", http.StatusServiceUnavailable)
+		return
+	}
+	rest := strings.TrimPrefix(r.URL.Path, "/api/automations")
+	rest = strings.Trim(rest, "/")
+	id := rest
+
+	if id == "" {
+		switch r.Method {
+		case http.MethodGet:
+			writeJSONOK(w, s.autonomousMgr.ListAutomations())
+		case http.MethodPost:
+			var req automationReq
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+				return
+			}
+			a, err := s.autonomousMgr.CreateAutomation(automationInput(req), req.Actor)
+			if err != nil {
+				code, msg := automationErrStatus(err)
+				http.Error(w, msg, code)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(a)
+		default:
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		}
+		return
+	}
+
+	switch r.Method {
+	case http.MethodGet:
+		a, ok := s.autonomousMgr.GetAutomation(id)
+		if !ok {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		writeJSONOK(w, a)
+	case http.MethodPut:
+		var req automationReq
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		a, err := s.autonomousMgr.UpdateAutomation(id, req.ExpectedVersion, automationInput(req), req.Actor)
+		if err != nil {
+			code, msg := automationErrStatus(err)
+			http.Error(w, msg, code)
+			return
+		}
+		writeJSONOK(w, a)
+	case http.MethodDelete:
+		if err := s.autonomousMgr.DeleteAutomation(id); err != nil {
+			code, msg := automationErrStatus(err)
+			http.Error(w, msg, code)
+			return
+		}
 		w.WriteHeader(http.StatusNoContent)
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
