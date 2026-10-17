@@ -399,6 +399,40 @@ func (s *Store) GetTask(id string) (*Task, bool) {
 	return t, ok
 }
 
+// TaskSnapshot returns a value copy of one task taken under the store
+// lock. Safe for concurrent readers: unlike GetTask's shared pointer,
+// whose fields the executor mutates (status/wait transitions) while a
+// run is in flight, the returned copy is decoupled from it. Callers
+// that inspect task fields while a Manager is running should use this.
+func (s *Store) TaskSnapshot(id string) (Task, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	t, ok := s.tasks[id]
+	if !ok {
+		return Task{}, false
+	}
+	return *t, true
+}
+
+// MutateTask applies f to one canonical task under the store lock and
+// persists the result. Status/wait mutations made this way are
+// synchronized with TaskSnapshot reads from other goroutines, unlike
+// direct field writes on GetTask's shared pointer (a pattern that is
+// race-unsafe the moment a concurrent reader — the API server polls
+// task state during runs — is involved).
+func (s *Store) MutateTask(id string, f func(*Task)) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	t, ok := s.tasks[id]
+	if !ok {
+		return false
+	}
+	f(t)
+	t.UpdatedAt = time.Now()
+	_ = s.persist()
+	return true
+}
+
 // reindexPRDLocked rebuilds the s.stories/s.tasks lookup maps for every
 // story/task currently in prd.Story. Callers must hold s.mu. Required after
 // any append/remove on prd.Story or a nested Tasks slice: Go's append can

@@ -531,3 +531,117 @@ func AcquireTreeLock(
 		}
 	}
 }
+
+// --- Executor wiring (BL428 §3a) --------------------------------------
+//
+// The acquireTreeWritersLock method is the Manager-level admission hook
+// Run's executeOne calls before a task touches its tree. It resolves the
+// per-(PRD, task) canonical tree, runs the refuse-dirty-tree gate, then
+// acquires the advisory file lock with the daemon's wait/cancel
+// conventions: visible as TaskWaitingCapacity with a "tree lock" wait
+// reason, bounded by the capacity wait timeout, interruptible on task
+// cancellation, holding the same lock for the rest of the task's run
+// (spawn, verify, retries) via the release closure it stores.
+
+// resolveRefuseDirtyTree returns the effective refuse-dirty-tree gate
+// for this PRD: the PRD-level override when set, else the daemon-wide
+// config default (false).
+func (m *Manager) resolveRefuseDirtyTree(prd *PRD) bool {
+	if prd != nil && prd.RefuseDirtyTreeStart != nil {
+		return *prd.RefuseDirtyTreeStart
+	}
+	m.mu.Lock()
+	v := m.cfg.RefuseDirtyTreeStart
+	m.mu.Unlock()
+	return v
+}
+
+// dirtyTreeRefused implements admitTree's dirty-tree check: when the
+// gate is on and the task's canonical tree has uncommitted changes
+// (git status --porcelain non-empty), it returns an error hard-blocking
+// the task. A tree where git can't report status (not a repo, git
+// missing) is passed through — the gate only reasons about dirt it can
+// observe.
+func (m *Manager) dirtyTreeRefused(ctx context.Context, prd *PRD, task *Task) error {
+	if !m.resolveRefuseDirtyTree(prd) {
+		return nil
+	}
+	_, treeRoot, err := ResolveTreeKey(prd, task)
+	if err != nil {
+		return nil // no resolvable tree — nothing to refuse on
+	}
+	out, err := gitProbe(ctx, treeRoot, "status", "--porcelain")
+	if err != nil {
+		return nil
+	}
+	dirt := strings.TrimSpace(out)
+	if dirt == "" {
+		return nil
+	}
+	snip := dirt
+	if i := strings.IndexByte(snip, '\n'); i > 0 {
+		snip = strings.TrimSpace(snip[:i])
+	}
+	if len(snip) > 64 {
+		snip = snip[:64] + "…"
+	}
+	return fmt.Errorf("refuse_dirty_tree_start: canonical tree %s has uncommitted changes (%s); commit or stash before starting a task on this tree", treeRoot, snip)
+}
+
+// acquireTreeWritersLock acquires the per-canonical-tree advisory write
+// lock for one task and returns its release closure. The caller (one
+// executeOne run) keeps the closure for the rest of the task's run
+// (spawn, verify, retries) and releases it through its own single
+// deferred call, so two concurrent tasks each own and release their own
+// acquisition. Waiting is visible through setWaiting with a
+// "tree lock: ..." reason; on success the wait state is cleared again.
+func (m *Manager) acquireTreeWritersLock(ctx context.Context, prd *PRD, task *Task) (func(), error) {
+	if gerr := m.dirtyTreeRefused(ctx, prd, task); gerr != nil {
+		return nil, gerr
+	}
+	key, treeRoot, err := ResolveTreeKey(prd, task)
+	if err != nil {
+		// No project dir to key on (e.g. cluster-dispatched PRDs run in
+		// the worker's own container, not on this host's tree): there is
+		// no local canonical tree to serialize or gate — nothing to lock.
+		return func() {}, nil
+	}
+	if st, serr := os.Stat(treeRoot); serr != nil || !st.IsDir() {
+		// The canonical tree is not (yet) present on disk — a task may
+		// create its project directory as part of the work, and there
+		// is nothing to serialize or gate on until it exists. Real
+		// operator project dirs exist before workers write to them, so
+		// this skip only affects not-yet-created trees (and test
+		// fakes); once the tree exists, every later admission re-checks
+		// the gate and the lock normally.
+		return func() {}, nil
+	}
+	waitCtx, cancel := context.WithTimeout(ctx, m.capacityWait())
+	defer cancel()
+	waited := false
+	release, err := AcquireTreeLock(waitCtx, key, treeRoot, task.ID, task.PRDID,
+		func(holderID string) (TaskStatus, bool) {
+			cur, ok := m.store.GetTask(holderID)
+			if !ok {
+				return "", false
+			}
+			return cur.Status, true
+		},
+		func(reason string) {
+			waited = true
+			m.setWaiting(task, "tree lock: "+reason)
+		},
+		func() bool { return m.taskCancelled(task.ID) },
+		capRetryPause,
+	)
+	if waited {
+		m.clearWaiting(task)
+	}
+	if err != nil {
+		if m.taskCancelled(task.ID) {
+			return nil, errCancelledWhileWaiting
+		}
+		return nil, err
+	}
+	return release, nil
+}

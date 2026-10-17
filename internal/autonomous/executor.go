@@ -880,6 +880,31 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 	// a branch that never touched it.
 	lastFailureCategory := ""
 	defer m.releaseCapacity(t.ID)
+	// BL428 §3a — per-canonical-tree advisory write lock. Admit order:
+	// capacity (m.admit, per attempt) → refuse-dirty-tree gate → tree
+	// lock → spawn. The lock is held across spawn, verify and the retry
+	// loop; the single deferred release below covers EVERY exit path of
+	// this goroutine (spawn error, verify failure, retry abandon,
+	// skipSpawn fall-through, quality-gate block, happy path). The
+	// closure is local to this executeOne run — concurrent tasks on the
+	// same PRD each own and release their own acquisition.
+	var treeRelease func()
+	defer func() {
+		if treeRelease != nil {
+			treeRelease()
+		}
+	}()
+	holdTree := func() error {
+		if treeRelease != nil {
+			return nil // already held for this executeOne (idempotent)
+		}
+		rel, terr := m.acquireTreeWritersLock(ctx, prd, t)
+		if terr != nil {
+			return terr
+		}
+		treeRelease = rel
+		return nil
+	}
 	spawn = m.capacityRetrySpawn(t, spawn)
 	for attempt := 0; attempt <= retries; attempt++ {
 		var err error
@@ -964,6 +989,16 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				}
 				return aerr
 			}
+			// BL428 §3a — tree lock after capacity, before spawn: a second
+			// writer on the same canonical tree waits here (visible as a
+			// waiting task with a "tree lock" reason), and is released by
+			// the deferred treeRelease on every exit path below.
+			if terr := holdTree(); terr != nil {
+				if errors.Is(terr, errCancelledWhileWaiting) {
+					return nil
+				}
+				return terr
+			}
 			// BL447: lint against the task's own resolved dir/write scope.
 			if problems := LintTaskScopeFor(prd, t, "task '"+t.Title+"'", t.Spec, t.FilesPlanned); len(problems) > 0 {
 				return fmt.Errorf("scope: %s (edit the task or widen the PRD read/write dirs)", strings.Join(problems, "; "))
@@ -1030,6 +1065,19 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			if m.store.SaveTask(t) == nil {
 				m.emitTaskStatus(prd, t, oldStatus, nil, nil)
 			}
+		}
+
+		// BL428 §3a — the skipSpawn fall-through (resumed live session after
+		// a daemon restart) verifies against this tree too, so hold the
+		// lock across it: the previous executeOne crashed with the lock held,
+		// and this task (same holder ID) re-claims its own record via the
+		// idempotent-path. No-op on the normal path, which already
+		// acquired the lock after m.admit above.
+		if terr := holdTree(); terr != nil {
+			if errors.Is(terr, errCancelledWhileWaiting) {
+				return nil
+			}
+			return terr
 		}
 
 		var vr VerificationResult

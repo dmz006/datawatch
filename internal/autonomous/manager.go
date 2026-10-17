@@ -233,6 +233,12 @@ type Config struct {
 	// independent (no-dependency) tasks up to the specified limit. Per-PRD
 	// MaxConcurrentTasks overrides this global default.
 	MaxConcurrentTasks int `json:"max_concurrent_tasks,omitempty"`
+	// BL428 §3a ii — refuse to admit a task onto a project tree that
+	// has uncommitted changes: the canonical tree's `git status
+	// --porcelain` is non-empty. Hard failure at admission (before the
+	// tree lock), never a retry. Default false; per-PRD override
+	// PRD.RefuseDirtyTreeStart.
+	RefuseDirtyTreeStart bool `json:"refuse_dirty_tree_start"`
 
 	// ContinueOnStoryFailure controls whether the executor keeps running
 	// later, independent stories after one story fails. Default false

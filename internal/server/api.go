@@ -7062,6 +7062,9 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			cfg.Autonomous.AutoFixSkipApproval = toBool(v)
 		case "autonomous.block_on_file_drift":
 			cfg.Autonomous.BlockOnFileDrift = toBool(v)
+		// BL428 §3a ii — refuse tasks on a dirty tree.
+		case "autonomous.refuse_dirty_tree_start":
+			cfg.Autonomous.RefuseDirtyTreeStart = toBool(v)
 		// BL406 — project-rules enforcement config.
 		case "autonomous.rules_file":
 			cfg.Autonomous.RulesFile = toString(v)

@@ -321,6 +321,11 @@ type PRD struct {
 	// fails rather than continuing into later, independent stories.
 	ContinueOnStoryFailure *bool `json:"continue_on_story_failure,omitempty"`
 
+	// BL428 §3a ii — refuse-dirty-tree override for this PRD's tasks.
+	// nil inherits the daemon-wide config.Autonomous.refuse_dirty_tree_start
+	// default (resolveRefuseDirtyTree).
+	RefuseDirtyTreeStart *bool `json:"refuse_dirty_tree_start,omitempty"`
+
 	// Priority orders this PRD's tasks in the capacity wait queue (higher
 	// first; default 0).
 	Priority int `json:"priority,omitempty"`

@@ -4125,6 +4125,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			ContentAutoFixEnabled:   acfgIn.ContentAutoFixEnabled,
 			AutoFixSkipApproval:     acfgIn.AutoFixSkipApproval,
 			BlockOnFileDrift:        acfgIn.BlockOnFileDrift,
+			RefuseDirtyTreeStart:    acfgIn.RefuseDirtyTreeStart, // BL428 §3a ii
 
 			PerStoryApproval:       acfgIn.PerStoryApproval, // Phase 3 (v5.26.61)
 			ContinueOnStoryFailure: acfgIn.ContinueOnStoryFailure,
