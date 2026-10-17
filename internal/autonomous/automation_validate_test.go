@@ -191,6 +191,99 @@ func TestAutomationValidate(t *testing.T) {
 	}
 }
 
+// TestAutomationValidateOwnership covers the cross-Automation membership
+// rules (design doc "Validation", "Concurrency between Automations").
+func TestAutomationValidateOwnership(t *testing.T) {
+	memberAutomation := func(prdIDs ...string) *Automation {
+		return newValidationAutomation("c1", AutomationActive,
+			validateMember("c1", prdIDs[0], "", "", ""))
+	}
+	tests := []struct {
+		name          string
+		prd           *PRD
+		owns          map[string]string
+		prdID         string
+		errorContains string
+	}{
+		{
+			name:          "PRD in two active Automations",
+			prd:           &PRD{ID: "prd-1"},
+			owns:          map[string]string{"prd-1": "other-automation"},
+			prdID:         "prd-1",
+			errorContains: "already belongs",
+		},
+		{
+			name:          "PRD owned by same Automation is update path",
+			prd:           &PRD{ID: "prd-1"},
+			owns:          map[string]string{"prd-1": "av1"},
+			prdID:         "prd-1",
+			errorContains: "",
+		},
+		{
+			name:          "child PRD is rejected",
+			prd:           &PRD{ID: "prd-1", ParentPRDID: "prd-parent"},
+			owns:          map[string]string{},
+			prdID:         "prd-1",
+			errorContains: "child",
+		},
+		{
+			name:          "template PRD is rejected",
+			prd:           &PRD{ID: "prd-1", IsTemplate: true},
+			owns:          map[string]string{},
+			prdID:         "prd-1",
+			errorContains: "template",
+		},
+		{
+			name:          "unknown PRD is rejected",
+			prd:           nil,
+			owns:          map[string]string{},
+			prdID:         "prd-missing",
+			errorContains: "not found",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			prdByID := map[string]*PRD{}
+			if tc.prd != nil {
+				prdByID[tc.prdID] = tc.prd
+			}
+			lookupPRD := func(id string) (*PRD, bool) {
+				prd, ok := prdByID[id]
+				return prd, ok
+			}
+			ownerOf := func(prdID string) string {
+				return tc.owns[prdID]
+			}
+			got := validateAutomationOwnership(memberAutomation(tc.prdID), lookupPRD, ownerOf)
+			if tc.errorContains == "" {
+				if got != nil {
+					t.Fatalf("expected no error, got %v", got)
+				}
+				return
+			}
+			if got == nil || !strings.Contains(got.Error(), tc.errorContains) {
+				t.Fatalf("expected error containing %q, got %v", tc.errorContains, got)
+			}
+		})
+	}
+	t.Run("terminal Automation owns nothing", func(t *testing.T) {
+		// A cancelled Automation is terminal, so it owns nothing even though
+		// ownerOf claims it holds every member PRD.
+		terminal := memberAutomation("prd-1", "prd-2")
+		terminal.ID = "terminal-automation"
+		terminal.Status = AutomationCancelled
+		lookupPRD := func(id string) (*PRD, bool) {
+			return &PRD{ID: id}, true
+		}
+		ownerOf := func(id string) string {
+			return "terminal-automation"
+		}
+		if got := validateAutomationOwnership(terminal, lookupPRD, ownerOf); got != nil {
+			t.Fatalf("terminal Automation rejected: %v", got)
+		}
+	})
+}
+
 func TestAutomationValidateBudgetPolicy(t *testing.T) {
 	good := &BudgetPolicy{CeilingType: "dollar", CeilingValue: 10, Window: "automation", Pacing: "none", OnBreach: "pause"}
 	with := func(mutate func(*BudgetPolicy)) *BudgetPolicy {
