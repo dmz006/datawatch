@@ -39,13 +39,18 @@ const (
 )
 
 // lifecycleSinkMessage picks the free-form detail worth surfacing for
-// ev (the guardrail verdict summary, else the coinciding decision
-// note), flattened to a single line and truncated. Empty when the
-// event carries neither.
+// ev (the guardrail verdict summary — or its issues when the summary
+// is empty, else the coinciding decision note), flattened to a single
+// line and truncated. Empty when the event carries none of them.
 func lifecycleSinkMessage(ev LifecycleEvent) string {
 	msg := ""
 	if ev.Verdict != nil {
 		msg = ev.Verdict.Summary
+		if msg == "" && len(ev.Verdict.Issues) > 0 {
+			// A verdict without a summary still names what it tripped
+			// on — surface that instead of an empty "(msg )".
+			msg = "guardrails: " + strings.Join(ev.Verdict.Issues, "; ")
+		}
 	}
 	if msg == "" && ev.Decision != nil {
 		msg = ev.Decision.Note
