@@ -47,6 +47,9 @@ type CommFanoutSink struct {
 	mu     sync.Mutex
 	lines  map[string][]string
 	timers map[string]*time.Timer
+	// stop is closed once by Close() to wake any pending flush
+	// waiters so no goroutine outlives the sink.
+	stop   chan struct{}
 	closed bool
 }
 
@@ -63,6 +66,7 @@ func NewCommFanoutSink(send func(text string), window time.Duration) *CommFanout
 		window: window,
 		lines:  make(map[string][]string),
 		timers: make(map[string]*time.Timer),
+		stop:   make(chan struct{}),
 	}
 }
 
@@ -71,11 +75,16 @@ func NewCommFanoutSink(send func(text string), window time.Duration) *CommFanout
 // per-Automaton timer. On fire: exactly one send() call whose text is
 // all accumulated lines joined by newlines under a single header line.
 //
-// Concurrency: every mutable state transition (append, timer reset,
-// bucket hand-off) happens under c.mu, so interleaved events for
-// different Automata can never lose or reorder lines. The send itself
-// runs OUTSIDE the lock so a slow/panicking transport cannot wedge
-// other buckets or deadlock a concurrent Handle.
+// Concurrency: every mutable state transition (append, timer reset)
+// happens under c.mu, so interleaved events for different Automata can
+// never lose or reorder lines. The flush itself is the timer
+// waiter: Handle() does NOT deliver — it only accumulates and (re)arms
+// the bucket's timer, and the dedicated goroutine for that timer fires
+// the flush only when the FULL quiet window elapses with no further
+// event for the same key. A later event in the window resets the
+// timer (Stop + new timer), so the "two same-PRD events in one
+// window => exactly ONE send" invariant does not depend on goroutine
+// scheduling: only the timer itself releases the flush.
 func (c *CommFanoutSink) Handle(ev LifecycleEvent) {
 	key := ev.PRDID
 	if key == "" {
@@ -89,33 +98,60 @@ func (c *CommFanoutSink) Handle(ev LifecycleEvent) {
 	}
 	c.lines[key] = append(c.lines[key], DescribeLifecycleEvent(ev))
 	if t := c.timers[key]; t != nil {
-		t.Stop() // reset: this event extends the quiet window
+		// This event extends the quiet window. Stop the pending timer
+		// and drain it if it already fired, so its stale waiter either
+		// gets unblocked or has nothing to wait on (it will see the
+		// newer timer in flushBucket's identity check and back off
+		// instead of double-delivering).
+		t.Stop()
+		select {
+		case <-t.C:
+		default:
+		}
 	}
 	c.timers[key] = time.NewTimer(c.window)
+	t := c.timers[key]
 	c.mu.Unlock()
 
-	go c.flushBucket(key)
+	go c.waitAndFlush(key, t)
 }
 
-// flushBucket delivers bucket key once it has been quiet for the
-// window. It is safe to race with Handle: the (bucket -> lines) pair is
-// handed off atomically under c.mu, and a later event simply starts a
-// fresh timer for the same key.
-func (c *CommFanoutSink) flushBucket(key string) {
+// waitAndFlush blocks until the timer t either fires (full quiet
+// window elapsed) or the sink is closed. Only on t firing does it
+// attempt delivery, and only if t is still bucket key's CURRENT timer
+// — otherwise a newer event already re-armed the bucket and owns its
+// own flush, so this stale waiter exits without sending (this is what
+// guarantees exactly one send per flushed bucket, regardless of
+// scheduler timing).
+func (c *CommFanoutSink) waitAndFlush(key string, t *time.Timer) {
+	select {
+	case <-t.C:
+		c.flushBucket(key, t)
+	case <-c.stop:
+		// Close() took ownership of the accumulated lines and
+		// flushes them itself; this waiter just exits.
+	}
+}
+
+// flushBucket delivers bucket key once: the (bucket -> lines) pair is
+// handed off atomically under c.mu, and the timer-identity check
+// rejects any stale waiter from a superseded timer.
+func (c *CommFanoutSink) flushBucket(key string, fired *time.Timer) {
 	c.mu.Lock()
 	var lines []string
+	if fired != c.timers[key] {
+		// Superseded by a newer event (or Close): NOT our flush.
+		c.mu.Unlock()
+		return
+	}
 	if l, ok := c.lines[key]; ok {
 		lines = l
 		delete(c.lines, key)
 	}
-	if t := c.timers[key]; t != nil {
-		t.Stop()
-		delete(c.timers, key)
-	}
-	closed := c.closed
+	delete(c.timers, key)
 	c.mu.Unlock()
 
-	if closed || lines == nil {
+	if lines == nil {
 		return
 	}
 	c.deliver(lines)
@@ -146,20 +182,30 @@ func commFanoutMessage(lines []string) string {
 	return b.String()
 }
 
-// Close stops coalescing: pending timers are stopped and every
-// accumulated bucket is flushed immediately as one message each, so no
-// matched event is dropped on shutdown and no timer goroutine outlives
-// the sink. Idempotent and panic-free (a panicking send hook is
-// recovered in deliver), so the installer's cancel can call it blindly.
+// Close stops coalescing: pending timers are stopped (their waiters
+// are woken via the stop channel), and every accumulated bucket is
+// flushed immediately as one message each — so no matched event is
+// dropped on shutdown and no flush waiter outlives the sink.
+// Idempotent and panic-free (a panicking send hook is recovered in
+// deliver), so the installer's cancel can call it blindly.
 func (c *CommFanoutSink) Close() {
 	c.mu.Lock()
+	if c.closed {
+		c.mu.Unlock()
+		return
+	}
 	lines := c.lines
 	c.lines = make(map[string][]string)
 	for _, t := range c.timers {
 		t.Stop()
+		select {
+		case <-t.C:
+		default:
+		}
 	}
 	c.timers = make(map[string]*time.Timer)
 	c.closed = true
+	close(c.stop) // wake every pending waitAndFlush
 	c.mu.Unlock()
 
 	for _, l := range lines {
