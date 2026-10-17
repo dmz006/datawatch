@@ -1707,6 +1707,10 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				Name:    sess.Name,
 				Env:     profile.Env,
 				OneShot: sess.OneShot, // inherit one-shot mode from the original session
+				// Inherit the write scope too, so the fallback session's
+				// automatic commit stays staged to the same directories
+				// (auto-commit leak fix) instead of widening to `git add -A`.
+				WriteScope: sess.WriteScope,
 			}
 			newSess, err := mgr.Start(context.Background(), sess.Task, "", sess.ProjectDir, opts)
 			if err != nil {

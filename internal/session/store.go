@@ -255,6 +255,13 @@ type Session struct {
 	TaskID  string `json:"task_id,omitempty"`
 	StoryID string `json:"story_id,omitempty"`
 
+	// WriteScope (auto-commit leak fix): the session's effective write
+	// directories (PRD.WriteDirs or task ProjectDir override). Automatic
+	// commits stage only files under these directories instead of the
+	// historical `git add -A`-of-everything. Empty = broad staging with
+	// a warning, preserving pre-fix behavior for interactive sessions.
+	WriteScope []string `json:"write_scope,omitempty"`
+
 	// Subprocess — when true, Task is executed directly as a child process
 	// via bash -c instead of through a Claude Code tmux session. Completion
 	// is signaled by exit code (0 = StateComplete, non-zero = StateFailed),

@@ -36,11 +36,78 @@ func (g *ProjectGit) Init() error {
 	return nil
 }
 
+// stageChanges stages changes for a session commit, scoped to the
+// session's write directories when scope is non-empty: only files at or
+// under one of those directories enter the index, so untracked or
+// unstaged files elsewhere in the same tree (another session's work,
+// operator scratch files) are never swept into the session's commit.
+//
+// Scope entries come from the PRD/task scope namespace. Entries outside
+// this repo's directory are skipped with a warning (other PRD write dirs
+// live in their own repos or on another host). An empty scope preserves
+// the historical behavior — git add -A — with a warning so broad staging
+// stays visible in the log.
+func (g *ProjectGit) stageChanges(scope []string) error {
+	if len(scope) > 0 {
+		absDir, err := filepath.Abs(g.dir)
+		if err != nil {
+			absDir = g.dir
+		}
+		var inside []string
+		for _, d := range scope {
+			dd, aerr := filepath.Abs(d)
+			if aerr != nil {
+				fmt.Printf("[datawatch] warning: bad write scope entry %q, skipping it\n", d)
+				continue
+			}
+			if dd != absDir && !strings.HasPrefix(dd, absDir+string(filepath.Separator)) {
+				fmt.Printf("[datawatch] warning: write scope dir %s is outside repo %s — not staged by this commit\n", dd, g.dir)
+				continue
+			}
+			if _, serr := os.Stat(dd); serr != nil {
+				fmt.Printf("[datawatch] warning: write scope dir %s does not exist — skipping it\n", dd)
+				continue
+			}
+			inside = append(inside, dd)
+		}
+		if len(inside) == 0 {
+			// Nothing in scope is inside this repo: leave the index as-is;
+			// the staged-empty check below skips the commit. Never fall back
+			// to add -A here — that would be the exact leak this function
+			// exists to close.
+			return nil
+		}
+		args := append([]string{"add", "--"}, inside...)
+		if err := runGit(g.dir, args...); err != nil {
+			return fmt.Errorf("git add %v: %v", inside, err)
+		}
+		return nil
+	}
+	fmt.Printf("[datawatch] warning: no write scope set for this session — staging ALL changes in %s (git add -A); untracked files elsewhere in the repo will be committed\n", g.dir)
+	if err := runGit(g.dir, "add", "-A"); err != nil {
+		return fmt.Errorf("git add -A: %v", err)
+	}
+	return nil
+}
+
+// stagedOnly reports whether the index holds any staged changes relative
+// to HEAD (staged additions of previously-untracked files count; pure
+// working-tree dirt that was intentionally NOT staged — i.e. out-of-scope
+// changes after a scoped stage — does not). This is the right empty-tree
+// guard after a scoped stage: "git status --porcelain" would see the
+// out-of-scope dirt and lead to a failed empty commit.
+func (g *ProjectGit) stagedOnly() bool {
+	return runGit(g.dir, "diff", "--cached", "--quiet") != nil
+}
+
 // PreSessionCommit creates a snapshot commit before the session starts.
-func (g *ProjectGit) PreSessionCommit(sessionID, task string) error {
-	_ = runGit(g.dir, "add", "-A")
-	status, _ := gitOutput(g.dir, "status", "--porcelain")
-	if strings.TrimSpace(status) == "" {
+// scope are the session's effective write directories; nil/empty falls
+// back to broad (unscoped) staging with a warning.
+func (g *ProjectGit) PreSessionCommit(sessionID, task string, scope []string) error {
+	if err := g.stageChanges(scope); err != nil {
+		return err
+	}
+	if !g.stagedOnly() {
 		return nil // nothing to commit
 	}
 	msg := fmt.Sprintf("pre-session[%s]: %s", sessionID, truncateStr(task, 60))
@@ -48,29 +115,33 @@ func (g *ProjectGit) PreSessionCommit(sessionID, task string) error {
 }
 
 // PostSessionCommit creates a final commit after the session ends.
-func (g *ProjectGit) PostSessionCommit(sessionID, task string, state State) error {
-	_ = runGit(g.dir, "add", "-A")
-	status, _ := gitOutput(g.dir, "status", "--porcelain")
-	if strings.TrimSpace(status) == "" {
+// scope are the session's effective write directories; nil/empty falls
+// back to broad (unscoped) staging with a warning.
+func (g *ProjectGit) PostSessionCommit(sessionID, task string, state State, scope []string) error {
+	if err := g.stageChanges(scope); err != nil {
+		return err
+	}
+	if !g.stagedOnly() {
 		return nil
 	}
 	msg := fmt.Sprintf("session[%s](%s): %s", sessionID, state, truncateStr(task, 60))
 	return runGit(g.dir, "commit", "-m", msg)
 }
 
-// CommitSessionWork stages all changes and commits them with a
-// message built from the session summary (falling back to the task
-// title). Returns the new HEAD sha, or ("", nil) when there is
-// nothing to commit.
-func (g *ProjectGit) CommitSessionWork(sessionID, task, summary string) (string, error) {
-	if err := runGit(g.dir, "add", "-A"); err != nil {
+// CommitSessionWork stages changes (scoped to the session's write
+// directories) and commits them with a message built from the session
+// summary (falling back to the task title). Returns the new HEAD sha,
+// or ("", nil) when there is nothing to commit.
+//
+// scope are the session's effective write directories (PRD.WriteDirs /
+// task ProjectDir override, resolved by the autonomous executor). Nil or
+// empty preserves the historical broad behavior: git add -A, with a
+// warning.
+func (g *ProjectGit) CommitSessionWork(sessionID, task, summary string, scope []string) (string, error) {
+	if err := g.stageChanges(scope); err != nil {
 		return "", err
 	}
-	status, err := gitOutput(g.dir, "status", "--porcelain")
-	if err != nil {
-		return "", err
-	}
-	if strings.TrimSpace(status) == "" {
+	if !g.stagedOnly() {
 		return "", nil
 	}
 	if err := runGit(g.dir, "commit", "-m", buildCommitMessage(summary, task)); err != nil {

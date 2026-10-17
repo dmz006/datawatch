@@ -76,6 +76,13 @@ type SpawnRequest struct {
 	// no operator edits to protect, so the SpawnFn skips the pre-task
 	// dirty-file capture (CapturePreTaskDirtyFiles) for it.
 	SkipDirtyCapture bool
+	// WriteScope (auto-commit leak fix) — the task's effective write
+	// directories (EffectiveTaskWriteDirs: task.ProjectDir override
+	// else PRD.WriteDirs). When non-empty, the local-session SpawnFn
+	// forwards them to the session manager so automatic commits stage
+	// only files under these directories instead of `git add -A` of the
+	// whole repo. Nil/empty = historical broad staging (warns).
+	WriteScope []string
 }
 
 // SpawnResult is what SpawnFn returns. SessionID is the datawatch
@@ -979,6 +986,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				LSPLanguage:      lspLang,
 				MemorySeed:       prd.MemorySeed,       // BL386 Phase 1
 				SkipDirtyCapture: prd.Git.Branch != "", // worktree mode: nothing pre-dirty to protect
+				WriteScope:       EffectiveTaskWriteDirs(prd, t), // auto-commit staging scope
 			})
 			if err != nil {
 				if errors.Is(err, errCancelledWhileWaiting) {

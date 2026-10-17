@@ -4368,6 +4368,11 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		PRDID   string `json:"prd_id,omitempty"`
 		TaskID  string `json:"task_id,omitempty"`
 		StoryID string `json:"story_id,omitempty"`
+		// WriteScope (auto-commit leak fix) — the session's effective write
+		// directories. Automatic commits stage only files under these
+		// directories instead of the whole tree. Empty = historical broad
+		// `git add -A` behavior (warns).
+		WriteScope []string `json:"write_scope,omitempty"`
 		// BL386 Phase 1 — optional warm-start seeding at session creation.
 		// When from_scope is set, memories are copied from that scope into
 		// the new session's session-local scope after it starts.
@@ -4682,6 +4687,7 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		PRDID:                 req.PRDID,
 		TaskID:                req.TaskID,
 		StoryID:               req.StoryID,
+		WriteScope:            req.WriteScope,
 	}
 	// Empty per-request overrides fall through to LLM registry (v7.0.0 clean move).
 	if opts.PermissionMode == "" && s.inferenceReg != nil {

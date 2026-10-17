@@ -1644,6 +1644,15 @@ type StartOptions struct {
 	PRDID   string
 	TaskID  string
 	StoryID string
+	// WriteScope (auto-commit leak fix) — the session's effective write
+	// directories (PRD.WriteDirs or the task's ProjectDir override,
+	// resolved by the autonomous executor via
+	// autonomous.EffectiveTaskWriteDirs). When non-empty, automatic
+	// commits (pre-session snapshot, completion commit) stage only files
+	// under these directories instead of sweeping the whole tree with
+	// `git add -A`. nil/empty preserves the historical broad behavior
+	// (with a warning).
+	WriteScope []string
 }
 
 // Start creates a new AI coding session for the given task.
@@ -1716,7 +1725,7 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 			}
 		}
 		if projGit.IsRepo() {
-			if err := projGit.PreSessionCommit("", task); err != nil {
+			if err := projGit.PreSessionCommit("", task, opt.WriteScope); err != nil {
 				fmt.Printf("[warn] pre-session commit: %v\n", err)
 			}
 		}
@@ -1828,6 +1837,9 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 	}
 	if opt != nil && opt.StoryID != "" {
 		sess.StoryID = opt.StoryID
+	}
+	if opt != nil && len(opt.WriteScope) > 0 {
+		sess.WriteScope = opt.WriteScope
 	}
 
 	// Create the session tracker (git-tracked folder)
@@ -3881,7 +3893,7 @@ func (m *Manager) commitOnCompletion(current *Session, projGit *ProjectGit) {
 		summary = ExtractCompletionSummary(tail)
 	}
 
-	if sha, err := projGit.CommitSessionWork(current.ID, current.Task, summary); err != nil {
+	if sha, err := projGit.CommitSessionWork(current.ID, current.Task, summary, current.WriteScope); err != nil {
 		fmt.Printf("[warn] completion commit: %v\n", err)
 	} else {
 		current.CommitSHA = sha

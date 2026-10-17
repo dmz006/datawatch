@@ -152,7 +152,7 @@ func TestCommitSessionWork_DirtyTree(t *testing.T) {
 		t.Fatal(err)
 	}
 	before := headCount(t, dir)
-	sha, err := g.CommitSessionWork("sess1", "my task", summary)
+	sha, err := g.CommitSessionWork("sess1", "my task", summary, nil)
 	if err != nil {
 		t.Fatalf("CommitSessionWork: %v", err)
 	}
@@ -177,7 +177,7 @@ func TestCommitSessionWork_CleanTree(t *testing.T) {
 	}
 	dir, g := newSessionWorkTestRepo(t)
 	before := headCount(t, dir)
-	sha, err := g.CommitSessionWork("sess1", "my task", "summary")
+	sha, err := g.CommitSessionWork("sess1", "my task", "summary", nil)
 	if err != nil {
 		t.Fatalf("CommitSessionWork: %v", err)
 	}
@@ -198,7 +198,7 @@ func TestCommitSessionWork_EmptySummaryFallsBackToTask(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "note.txt"), []byte("hello"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := g.CommitSessionWork("sess1", task, "   \n  "); err != nil {
+	if _, err := g.CommitSessionWork("sess1", task, "   \n  ", nil); err != nil {
 		t.Fatalf("CommitSessionWork: %v", err)
 	}
 	if got := headSubject(t, dir); !strings.Contains(got, task) {
@@ -215,7 +215,7 @@ func TestCommitSessionWork_MultilineSummaryUsesFirstLine(t *testing.T) {
 		t.Fatal(err)
 	}
 	firstLine := "first line only"
-	if _, err := g.CommitSessionWork("sess1", "task", firstLine+"\nsecond line\nthird line"); err != nil {
+	if _, err := g.CommitSessionWork("sess1", "task", firstLine+"\nsecond line\nthird line", nil); err != nil {
 		t.Fatalf("CommitSessionWork: %v", err)
 	}
 	if got := headSubject(t, dir); got != firstLine {
@@ -243,7 +243,7 @@ func TestCommitSessionWork_UntrackedFileCommitted(t *testing.T) {
 	if strings.Contains(out, "brand_new.go") {
 		t.Fatalf("setup failed: file listed as tracked: %s", out)
 	}
-	if _, err := g.CommitSessionWork("sess1", "task", "added fresh file"); err != nil {
+	if _, err := g.CommitSessionWork("sess1", "task", "added fresh file", nil); err != nil {
 		t.Fatalf("CommitSessionWork: %v", err)
 	}
 	out, err = gitOutput(dir, "ls-files")
