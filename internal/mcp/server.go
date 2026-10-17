@@ -595,6 +595,12 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolRetryProfileUpdate(), tracked(s.handleRetryProfileUpdate))
 	mcpSrv.AddTool(s.toolRetryProfileDelete(), tracked(s.handleRetryProfileDelete))
 	mcpSrv.AddTool(s.toolPerAutomatonRetryPolicySet(), tracked(s.handlePerAutomatonRetryPolicySet))
+	// Automation orchestration — automation CRUD tools.
+	mcpSrv.AddTool(s.toolAutomationList(), tracked(s.handleAutomationList))
+	mcpSrv.AddTool(s.toolAutomationGet(), tracked(s.handleAutomationGet))
+	mcpSrv.AddTool(s.toolAutomationCreate(), tracked(s.handleAutomationCreate))
+	mcpSrv.AddTool(s.toolAutomationUpdate(), tracked(s.handleAutomationUpdate))
+	mcpSrv.AddTool(s.toolAutomationDelete(), tracked(s.handleAutomationDelete))
 	// BL221 (v6.2.0) Phase 5 — template store CRUD tools.
 	mcpSrv.AddTool(s.toolAutonomousTemplateList(), tracked(s.handleAutonomousTemplateList))
 	mcpSrv.AddTool(s.toolAutonomousTemplateCreate(), tracked(s.handleAutonomousTemplateCreate))
@@ -1271,6 +1277,12 @@ func (s *Server) ToolDocs() []ToolDoc {
 		{s.toolRetryProfileUpdate, "retry_profile_update"},
 		{s.toolRetryProfileDelete, "retry_profile_delete"},
 		{s.toolPerAutomatonRetryPolicySet, "per_automaton_retry_policy_set"},
+		// Automation orchestration
+		{s.toolAutomationList, "automation_list"},
+		{s.toolAutomationGet, "automation_get"},
+		{s.toolAutomationCreate, "automation_create"},
+		{s.toolAutomationUpdate, "automation_update"},
+		{s.toolAutomationDelete, "automation_delete"},
 		// BL349 — self-session discovery
 		{s.toolGetMySessionID, "get_my_session_id"},
 		// BL350 — orphan lineage listing
