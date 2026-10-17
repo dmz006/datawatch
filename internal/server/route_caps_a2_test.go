@@ -185,6 +185,8 @@ func TestA2_PreviouslyUngatedRoutes_BarePeerGets403(t *testing.T) {
 		{"guardrails", http.MethodGet, "/api/autonomous/guardrails", s.handleAutonomousGuardrails},
 		{"guardrail_profiles list", http.MethodGet, "/api/autonomous/guardrail_profiles", s.handleAutonomousGuardrailProfiles},
 		{"guardrail_profiles create", http.MethodPost, "/api/autonomous/guardrail_profiles", s.handleAutonomousGuardrailProfiles},
+		{"automations list", http.MethodGet, "/api/automations", s.handleAutomations},
+		{"automations create", http.MethodPost, "/api/automations", s.handleAutomations},
 		{"discussion-subs list", http.MethodGet, "/api/discussion-subs", s.handleDiscussionSubs},
 		{"discussion-subs subscribe", http.MethodPost, "/api/discussion-subs", s.handleDiscussionSubs},
 		{"evals compat", http.MethodGet, "/api/evals/runs", s.handleEvalsCompat},
@@ -229,6 +231,7 @@ func TestA2_GrantedPeerPassesCapCheck(t *testing.T) {
 		Name: "a2-test-group",
 		Caps: []string{
 			federation.CapAutonomousRead,
+			federation.CapAutonomousWrite,
 			federation.CapQueueRead,
 			federation.CapResultsList,
 			federation.CapSecretsList,
@@ -253,6 +256,7 @@ func TestA2_GrantedPeerPassesCapCheck(t *testing.T) {
 		handler http.HandlerFunc
 	}{
 		{"guardrails (CapAutonomousRead)", "/api/autonomous/guardrails", s.handleAutonomousGuardrails},
+		{"automations list (CapAutonomousRead)", "/api/automations", s.handleAutomations},
 		{"queue list (CapQueueRead)", "/api/queue", s.handleQueue},
 		{"result-store list (CapResultsList)", "/api/result-store", s.handleResultStore},
 		{"opencode providers get (CapSecretsList)", "/api/opencode/providers", s.handleOpenCodeProviders},
@@ -268,5 +272,16 @@ func TestA2_GrantedPeerPassesCapCheck(t *testing.T) {
 					c.path, rr.Code, rr.Body.String())
 			}
 		})
+	}
+
+	// automations create (CapAutonomousWrite): the grant clears the cap
+	// check; the 503 from the nil test-fixture subsystem is expected.
+	req := httptest.NewRequest(http.MethodPost, "/api/automations", strings.NewReader("{}"))
+	req.Header.Set("Authorization", "Bearer peer-granted-token")
+	rr := httptest.NewRecorder()
+	s.fedAuthMiddleware(http.HandlerFunc(s.handleAutomations)).ServeHTTP(rr, req)
+	if rr.Code == http.StatusUnauthorized || rr.Code == http.StatusForbidden {
+		t.Errorf("POST /api/automations with CapAutonomousWrite should clear the cap check (got %d), body=%s",
+			rr.Code, rr.Body.String())
 	}
 }
