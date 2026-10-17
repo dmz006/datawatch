@@ -5268,10 +5268,14 @@ Verify whether the diff plausibly implements the spec. Reply with STRICT JSON on
 			amgr.Subscribe(autonomouspkg.LifecycleFilter{Kinds: []string{autonomouspkg.KindPRDUpdated}}, func(ev autonomouspkg.LifecycleEvent) {
 				httpServer.BroadcastPRDUpdate(autonomouspkg.PRDUpdatePayload(ev))
 			})
-			// Built-in lifecycle-event sinks (alert store + topic push). They act
-			// on exactly the kinds the operator enabled via
-			// autonomous.notify.default_events; an empty list (the default) makes
-			// this a no-op, so the default behavior is unchanged.
+			// Built-in lifecycle-event sinks (alert store + topic push) plus the
+			// comm fan-out. They act on exactly the kinds the operator enabled
+			// via autonomous.notify.default_events; an empty list (the default)
+			// makes this a no-op, so the default behavior is unchanged.
+			// InstallLifecycleSinks wraps the CommSink below in a comm fan-out
+			// sink (autonomouspkg.NewCommFanoutSink) that coalesces events
+			// within CommWindow — the same 5s quiet window as the remote-alert
+			// bundler above.
 			_ = autonomouspkg.InstallLifecycleSinks(amgr, autonomouspkg.SinkConfig{
 				Kinds: cfg.Autonomous.Notify.DefaultEvents,
 				RecordAlert: func(level, title, body string) {
@@ -5296,6 +5300,25 @@ Verify whether the diff plausibly implements the spec. Reply with STRICT JSON on
 						})
 					}
 				},
+				// Comm fan-out: deliver coalesced lifecycle text over the daemon
+			// notify pipeline (routers / ntfy / email), honouring notify_exclude
+			// exactly like the existing remote-alert bundler: fresh exclude set
+			// per send, live config change takes effect without a restart.
+				CommSink: func(text string) {
+					excludeSet := notifyExcludeSet(cfg.NotifyExclude)
+					for _, r := range routers {
+						if !isNotifyExcluded(excludeSet, r.BackendName()) {
+							r.SendDirect(text)
+						}
+					}
+					if ntfyBackend != nil && !isNotifyExcluded(excludeSet, "ntfy") {
+						ntfyBackend.Send(cfg.Ntfy.Topic, text) //nolint:errcheck
+					}
+					if emailBackend != nil && !isNotifyExcluded(excludeSet, "email") {
+						emailBackend.Send(cfg.Email.To, text) //nolint:errcheck
+					}
+				},
+				CommWindow: 5 * time.Second, // same quiet window as the remote-alert bundler
 			})
 			wireCapacity(context.Background(), cfg, mgr, amgr, httpServer, func(title, body string) {
 				alertStore.AddSystem(alertspkg.LevelWarn, title, body)
