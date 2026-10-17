@@ -4562,9 +4562,10 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				if staleThreshold <= 0 {
 					staleThreshold = time.Duration(cfg.Session.StaleTimeoutSeconds) * time.Second
 				}
-				var staleLogPath string
+				var staleLogPath, family string
 				if s, ok := mgr.GetSession(task.SessionID); ok {
 					staleLogPath = s.LogFile
+					family = s.BackendFamily
 				}
 			waitLoop:
 				for {
@@ -4635,7 +4636,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 									break waitLoop
 								}
 							}
-							if stale, since, serr := staleWorkerCheck(staleLogPath, staleThreshold, time.Now()); serr == nil && stale {
+							if stale, since, serr := staleWorkerCheck(staleLogPath, staleThreshold, time.Now()); staleWorkerAppliesTo(family) && serr == nil && stale {
 								log.Printf("[autonomous] worker stall detected in session %s task %s/%s (no output for %s); killing for retry",
 									task.SessionID, task.PRDID, task.ID, since.Round(time.Second))
 								_ = mgr.Kill(task.SessionID)

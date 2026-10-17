@@ -35,3 +35,12 @@ func staleWorkerCheck(logPath string, threshold time.Duration, now time.Time) (s
 	since = now.Sub(fi.ModTime())
 	return since > threshold, since, nil
 }
+
+// staleWorkerAppliesTo reports whether the log-mtime stall check applies to a
+// backend family. One-shot pi-prompt runs `pi --print`, which writes nothing
+// to the tmux log until it finishes, so the log-mtime check gives false stalls
+// for it; other backends keep the check. The empty family (session not yet
+// visible) keeps the check too.
+func staleWorkerAppliesTo(backendFamily string) bool {
+	return backendFamily != "pi-prompt"
+}

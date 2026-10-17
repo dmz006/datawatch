@@ -1753,3 +1753,32 @@ howto, and the `datawatch-app` issue where applicable.
     the decision-assistant concept — smaller in scope than any of the
     four original hook points, and backed by two real incidents in one
     night rather than a hypothetical.
+
+## Decisions log
+
+Operator decisions taken during overnight PRD supervision. Each entry
+records what was decided, why, and where the material now lives.
+
+### 2026-10-17 — row-8 leftover edits moved out of the repo
+
+- **Decision (operator):** move the uncommitted leftover edits from the
+  BL428 Phase 2 (PRD `29bd62a1`) worker run out of the repo to the
+  session scratchpad, and keep the work as future reference rather than
+  delete it.
+- **Why:** PRD `29bd62a1` never finished (blocked at T2, rev 14), so its
+  partial edits are not accepted work. Leaving them in the tree would
+  give the next worker unplanned partial code and risk tripping the
+  drift guard, and they would ship in any binary built from the tree.
+- **What moved:** `internal/autonomous/tree_lock.go`,
+  `internal/autonomous/tree_lock_test.go`,
+  `internal/autonomous/tmp_diag_test.go` and
+  `internal/autonomous/tmp_probe_test.go`. Also restored from git:
+  `internal/autonomous/tree_lock.go`, `tree_lock_test.go`, and the
+  `tmpdiag_test.go` deletion (back to HEAD).
+- **Where it now lives:** the scratchpad copy at
+  `/tmp/claude-1000/-home-dmz-workspace-datawatch/5c1a45be-08a2-4b3c-ad12-c59a5ae1ac86/scratchpad/row8-leftover/`.
+- **Unchanged:** the stale-worker fix (`cmd/datawatch/stale_worker.go`,
+  `cmd/datawatch/stale_worker_applies_test.go`, and the matching
+  `cmd/datawatch/main.go` change) stays in the working tree, uncommitted.
+- **Still held:** install, reset and run of PRD `29bd62a1` until the
+  operator gives the go-ahead.
