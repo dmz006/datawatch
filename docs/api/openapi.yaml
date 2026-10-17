@@ -1416,6 +1416,139 @@ paths:
       tags: [Orchestrator]
       responses: {"200": {description: OK}}
 
+  # ─── Automations — stored orchestration records over member Automata ────
+  #
+  # An Automation is a named graph of member Automata (PRDs), run one at a
+  # time by a single cursor. Each member names at most one next member per
+  # outcome (on_complete / on_blocked / on_failed); an empty edge ends the
+  # Automation in the status that outcome implies. For now these are stored
+  # records only — nothing on the server advances from one member Automaton
+  # to the next automatically.
+  /api/automations:
+    get:
+      summary: List Automations
+      description: All Automation records, one object each, in store order.
+      operationId: automationsList
+      tags: [Automations]
+      responses:
+        "200":
+          description: Array of Automations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Automation"
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "503": {description: "autonomous disabled"}
+    post:
+      summary: Create an Automation
+      description: |
+        Creates a new Automation in `draft` status at version 1. Members
+        reference existing Automata (PRDs) by `prd_id`; a member may belong
+        to at most one non-terminal Automation. The per-outcome edges must
+        form an acyclic graph rooted at `entry_member_id` (when
+        `entry_member_id` is omitted, the first member is the entry).
+        `actor` and `reason` are recorded in the audit log.
+      operationId: automationsCreate
+      tags: [Automations]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AutomationCreate"
+      responses:
+        "201":
+          description: Created Automation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Automation"
+        "400":
+          description: |
+            Validation failure: unknown member or edge target, a cycle in
+            the member graph, a member already owned by another Automation,
+            or a template/owned PRD enrolled as a member.
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "503": {description: "autonomous disabled"}
+  /api/automations/{id}:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}, description: "Automation ID (8-hex)"}
+    get:
+      summary: Get an Automation
+      operationId: automationsGet
+      tags: [Automations]
+      responses:
+        "200":
+          description: Automation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Automation"
+        "404": {description: Automation not found}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "503": {description: "autonomous disabled"}
+    put:
+      summary: Update an Automation
+      description: |
+        Replaces name, description, budget policy, execution and verification
+        defaults, `project_dir`, members and the entry member. A blank name
+        keeps the existing one. Members and the entry member may only
+        actually change while the Automation is a draft.
+        Optimistic concurrency: send the last `version` you saw as
+        `expected_version`; a stale value is rejected and the record is left
+        unchanged.
+      operationId: automationsUpdate
+      tags: [Automations]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AutomationUpdate"
+      responses:
+        "200":
+          description: Updated Automation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Automation"
+        "400": {description: "Validation failure (same rules as create)"}
+        "404": {description: Automation not found}
+        "409":
+          description: |
+            `expected_version` does not match the stored version, or the
+            member list / entry member is changing while the Automation is
+            not in draft.
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "503": {description: "autonomous disabled"}
+    delete:
+      summary: Delete an Automation
+      description: |
+        Removes the record and frees its members (their PRDs are no longer
+        reserved by an Automation). Only draft, completed or cancelled
+        Automations may be deleted; an intermediate status is a 409.
+        Optional body `{"actor": "...", "reason": "..."}` for the audit log;
+        actor defaults to "operator".
+      operationId: automationsDelete
+      tags: [Automations]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                actor: {type: string}
+                reason: {type: string}
+      responses:
+        "204": {description: Deleted}
+        "404": {description: Automation not found}
+        "409": {description: "The Automation is active, paused or blocked and cannot be deleted; complete or cancel it first"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "503": {description: "autonomous disabled"}
+
   # ─── Mobile-client parity endpoints (documented in v4.0.3) ────
   /api/backends/active:
     post:
@@ -3401,3 +3534,107 @@ components:
         updated_at:
           type: string
           format: date-time
+
+    Automation:
+      type: object
+      description: |
+        An Automation: a named graph of member Automata (PRDs) advanced by a
+        single cursor, one member at a time. For now a stored record only —
+        nothing on the server advances from one member to the next
+        automatically.
+      properties:
+        id: {type: string, description: "Automation ID (8-hex)"}
+        name: {type: string}
+        description: {type: string}
+        status: {type: string, enum: [draft, active, paused, completed, blocked, cancelled]}
+        entry_member_id: {type: string, description: "Member the Automation starts at"}
+        current_member_id: {type: string, description: "Member the cursor is on (while active)"}
+        members:
+          type: array
+          items:
+            $ref: "#/components/schemas/AutomationMember"
+        version: {type: integer, description: "Bumped on every write; send back as expected_version on update"}
+        budget_policy: {$ref: "#/components/schemas/BudgetPolicy"}
+        backend: {type: string, description: "Execution backend default for member runs"}
+        model: {type: string, description: "Execution model default for member runs"}
+        effort: {type: string, description: "Execution effort default for member runs"}
+        verification_backend: {type: string, description: "Verifier backend default for member runs"}
+        verification_model: {type: string, description: "Verifier model default for member runs"}
+        verification_effort: {type: string, description: "Verifier effort default for member runs"}
+        project_dir: {type: string, description: "Working tree member runs operate in (informational)"}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+        started_at: {type: string, format: date-time, nullable: true}
+        finished_at: {type: string, format: date-time, nullable: true}
+        idle_since: {type: string, format: date-time, nullable: true, description: "Set when a member finished and no next member started yet"}
+        decisions:
+          type: array
+          description: "Decision log entries; same shape as an Automaton's decision log"
+          items: {type: object}
+
+    AutomationMember:
+      type: object
+      description: "One member of an Automation: one member PRD plus one next member per outcome."
+      properties:
+        id: {type: string, description: "Stable member ID (8-hex, or operator-supplied)"}
+        prd_id: {type: string, description: "The member Automaton (PRD) ID"}
+        on_complete: {type: string, description: "Next member when this one completes; empty = the Automation completes"}
+        on_blocked: {type: string, description: "Next member when this one is blocked; empty = the Automation is blocked"}
+        on_failed: {type: string, description: "Next member when this one fails; empty = the Automation is blocked"}
+        added_at: {type: string, format: date-time}
+        added_by: {type: string, description: "Who enrolled it: operator (default) or an acting session/agent"}
+        added_reason: {type: string}
+        status: {type: string, enum: [pending, running, completed, blocked, failed, skipped, cancelled]}
+        started_at: {type: string, format: date-time, nullable: true}
+        finished_at: {type: string, format: date-time, nullable: true}
+        outcome: {type: string, description: "Automaton status observed when this member last finished"}
+        edge_taken: {type: string, description: "Edge followed at last finish: on_complete | on_blocked | on_failed | skip"}
+        budget_policy: {$ref: "#/components/schemas/BudgetPolicy"}
+      required: [id, prd_id, status]
+
+    BudgetPolicy:
+      type: object
+      description: |
+        A budget guard-rail, applied per Automation or per member: a ceiling
+        (dollar total, or a percentage of the window's allowance) and how it
+        is enforced — pacing governs how quickly the ceiling may be consumed
+        and on_breach what happens when it is hit.
+      properties:
+        ceiling_type: {type: string, enum: [dollar, allocation_pct]}
+        ceiling_value: {type: number, description: "Dollar limit, or percent of the window's allowance"}
+        window: {type: string, enum: [automation, day, week, month], description: "Scope the ceiling is measured over"}
+        pacing: {type: string, enum: [none, even], description: "How the ceiling is spent: up front, or spread evenly across the window"}
+        on_breach: {type: string, enum: [pause, block], description: "What happens when the ceiling is hit"}
+        backend: {type: string, description: "When set, the ceiling applies only to spend on this backend"}
+      required: [ceiling_type, ceiling_value, window, on_breach]
+
+    AutomationCreate:
+      type: object
+      description: Request body for POST /api/automations (create a draft Automation).
+      required: [members]
+      properties:
+        name: {type: string}
+        description: {type: string}
+        entry_member_id: {type: string, description: "Entry member ID; when omitted, the first members entry is the entry"}
+        members:
+          type: array
+          items:
+            $ref: "#/components/schemas/AutomationMember"
+        budget_policy: {$ref: "#/components/schemas/BudgetPolicy"}
+        project_dir: {type: string}
+        backend: {type: string}
+        model: {type: string}
+        effort: {type: string}
+        verification_backend: {type: string}
+        verification_model: {type: string}
+        verification_effort: {type: string}
+        actor: {type: string, description: "operator (default) or the acting session/agent; recorded in the audit log"}
+        reason: {type: string, description: "Why this Automation is being created; recorded in the audit log"}
+
+    AutomationUpdate:
+      allOf:
+        - $ref: "#/components/schemas/AutomationCreate"
+        - type: object
+          required: [expected_version]
+          properties:
+            expected_version: {type: integer, description: "The `version` you last observed; the write is rejected with 409 if it is stale"}

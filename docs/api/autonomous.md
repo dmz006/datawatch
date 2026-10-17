@@ -62,6 +62,13 @@ GET    /api/autonomous/guardrail_profiles/{id}     get one profile
 PUT    /api/autonomous/guardrail_profiles/{id}     update profile
 DELETE /api/autonomous/guardrail_profiles/{id}     delete profile
 PUT    /api/autonomous/prds/{id}/guardrails        set per-Automaton override; body: {guardrail_profile?, per_task_guardrails[], per_story_guardrails[]}
+
+# Automations — orchestration records (see the Automations section below)
+GET    /api/automations              list Automations
+POST   /api/automations              create (returns draft, version 1); body: {name, entry_member_id?, members[], budget_policy?, project_dir?, actor, reason}
+GET    /api/automations/{id}         get one
+PUT    /api/automations/{id}         update; body: create fields + expected_version (required)
+DELETE /api/automations/{id}         delete (draft/completed/cancelled only); body: {actor?, reason?}
 ```
 
 When `autonomous.enabled` is false, every endpoint returns
@@ -195,6 +202,72 @@ surfaces, which pass the same JSON through) but have no setter.
 
 ---
 
+## Automations (orchestration records)
+
+An **Automation** is a named group of member Automata (PRDs), linked
+into a graph where each member names at most one next member per
+outcome:
+
+| Member PRD outcome at finish | Edge followed |
+|---|---|
+| `completed` | `on_complete` member (empty = the Automation is `completed`) |
+| `blocked` | `on_blocked` member (empty = the Automation is `blocked`) |
+| `failed` | `on_failed` member (empty = the Automation is `blocked`) |
+
+One cursor per Automation: members run one at a time — sequential
+steps with conditional branches, no fan-out. Records persist under
+`<data_dir>/autonomous/` and survive daemon restarts.
+
+**Example — creating two members, the first handing off to the second
+on completion:**
+
+```json
+{
+  "name": "nightly sweep",
+  "actor": "operator",
+  "reason": "prune, then reindex if pruning succeeds",
+  "entry_member_id": "mprune",
+  "members": [
+    {"id": "mprune",   "prd_id": "a1b2c3d4", "on_complete": "mreindex"},
+    {"id": "mreindex", "prd_id": "e5f6a7b8"}
+  ]
+}
+```
+
+`mprune.on_complete` points at `mreindex`; `mreindex` has no
+`on_complete`, so when it finishes the Automation is terminal. Edges
+can only name members that exist, and the graph must stay acyclic —
+a loop is a 400. Member IDs are stable across edits and may be
+operator-supplied (the store generates them when absent).
+
+**Concurrency — `expected_version`**: every write bumps `version`.
+Send the last value you saw as `expected_version` in update bodies;
+a stale value is a 409 and the record is left unchanged. Members and
+the entry member may only actually change while an Automation is in
+`draft`; deleting an active/paused/blocked Automation is also a 409.
+
+**Error codes**
+
+| HTTP | Meaning |
+|------|---------|
+| 400 | validation: unknown member or edge target, cycle in the member graph, member PRD already owned by another Automation, or a template/owned PRD enrolled as a member |
+| 401 | missing token |
+| 404 | no Automation with that id |
+| 405 | wrong method (e.g. PATCH) |
+| 409 | `expected_version` stale; members/entry changed while not in draft; or delete of a non-deletable status |
+| 503 | the daemon runs with autonomous disabled |
+
+> **Stored records only, for now.** Creating an Automation stores its
+> definition, membership and any history — it does not kick anything
+> off, and nothing on the server advances from one member to the next
+> or starts the next Automaton automatically yet. Running a member
+> stays a normal run action on that PRD today.
+>
+> Full request/response schemas (`Automation`, `AutomationMember`,
+> `BudgetPolicy`) are in `openapi.yaml` next to this file.
+
+---
+
 ## Configuration
 
 Per the no-hard-coded-config rule, every knob is reachable from
@@ -304,6 +377,7 @@ Each PRD's full state is persisted as JSON-lines under
 ```
 prds.jsonl       — PRDs with embedded story + task trees
 learnings.jsonl  — extracted post-task learnings
+automations.jsonl — Automation records (member graphs + history)
 ```
 
 Files are rewritten in full on every change; small dataset assumption.
