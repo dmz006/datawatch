@@ -687,6 +687,29 @@ cross-daemon lease/back-off propagation). BL431's Automation-level
 `BudgetPolicy` narrows these to a named batch of work and is designed there,
 not here.
 
+### 4b. Operator-reported usage snapshots (calculator input)
+
+The subscription quota cannot be read programmatically (see 4a), so the
+usage calculator (BL472) runs on periodic operator-reported snapshots plus
+inferred token and cost rollups. This is the snapshot log it starts from.
+Record each new snapshot here, in this doc, not in any assistant memory.
+
+Two numbers must both be modelled: the session-local meter (percent of this
+session's own budget) and the shared weekly ceiling across all models. They
+can disagree sharply, and the shared ceiling is the real constraint.
+
+| When (local) | Reading | Note |
+|---|---|---|
+| 2026-10-14 ~16:02 | 81% weekly | |
+| 2026-10-16 (overnight session) | 87%, then 90%, then 91% | informational only |
+| 2026-10-16 ~16:3x | 97% used, operator estimate ~3 hours left | first time-remaining estimate; anchor for burn rate |
+| 2026-10-16 ~17:3x | 99% used; session meter at 15% with 2 hours left, all models at 99% | the two numbers disagreed; session stopped |
+| 2026-10-17 ~13:4x | usage ran out; operator bought $20 of extra usage to reach 2026-10-18 | purchase recorded as a snapshot event |
+
+Restricted window: while the weekly ceiling was exhausted, autonomous PRD
+decompose, run, verify and smoke used pi-prompt with ollama/qwen3.8-64k:27b
+only. The window runs until Sunday 2026-10-18.
+
 ## 5. Scope boundary
 
 - **Claude only for now.** The reactive back-off, the tier defaults and the

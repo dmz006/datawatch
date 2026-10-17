@@ -108,6 +108,7 @@ advances it without hand sequencing.
 | 50 | BL469 Worktree mode is the default for all PRDs and for the datawatch project; direct tree mode stays as an explicit opt-in; add a same-workdir admission check so two PRDs never run on one direct tree | not started (operator-approved 2026-10-17) | BL428 Phase 2 tree lock |
 | 51 | BL470 PRD commits stage only the task's declared `write_dirs`, with no whole-repo fallback (a PRD with no `write_dirs` does not auto-commit) | not started (operator-approved 2026-10-17) | BL428 Phase 2 |
 | 52 | BL471 Worktree pruning: archive vs purge of finished worktrees | deferred to automation PRD planning, after 10.0.0 (arch/project/release) is done; do not build before then | BL469 |
+| 53 | BL472 Usage and cost calculator: model the session-local meter and the shared weekly ceiling from operator-reported snapshots (see [concurrency and budget](2026-10-14-concurrency-and-budget-design.md) section 4b) plus inferred token and cost rollups | not started | BL414 |
 
 ## Opportunistic, non-blocking research
 
