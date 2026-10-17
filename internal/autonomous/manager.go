@@ -388,13 +388,14 @@ var builtinTypes = []AutomatonType{
 
 // Manager is the public façade for the autonomous package.
 type Manager struct {
-	mu        sync.Mutex
-	cfg       Config
-	store     *Store
-	dataDir   string         // 2026-10-07 — root for ScratchDir (PRD scratch artifacts), same root Store itself was opened under
-	templates *TemplateStore // BL221 (v6.2.0) — dedicated template store
-	decompose DecomposeFn
-	guardrail GuardrailFn
+	mu          sync.Mutex
+	cfg         Config
+	store       *Store
+	automations *AutomationStore
+	dataDir     string         // 2026-10-07 — root for ScratchDir (PRD scratch artifacts), same root Store itself was opened under
+	templates   *TemplateStore // BL221 (v6.2.0) — dedicated template store
+	decompose   DecomposeFn
+	guardrail   GuardrailFn
 
 	// BL451 — per-PRD count of executor-owned saves (savePRDOwn), so the
 	// completion rollup can discount its own Rev bumps. Guarded by mu.
@@ -903,15 +904,22 @@ func NewManager(dataDir string, cfg Config, decompose DecomposeFn) (*Manager, er
 	if err != nil {
 		return nil, err
 	}
+	automs, err := NewAutomationStore(st.dir, func(id string) (*PRD, bool) {
+		return st.GetPRD(id)
+	})
+	if err != nil {
+		return nil, err
+	}
 	types := make([]AutomatonType, len(builtinTypes))
 	copy(types, builtinTypes)
 	m := &Manager{
-		cfg:       cfg,
-		store:     st,
-		dataDir:   dataDir,
-		templates: newTemplateStore(dataDir),
-		decompose: decompose,
-		types:     types,
+		cfg:         cfg,
+		store:       st,
+		automations: automs,
+		dataDir:     dataDir,
+		templates:   newTemplateStore(dataDir),
+		decompose:   decompose,
+		types:       types,
 	}
 	m.initGuardrailLibrary() // BL303 S2
 	m.lifecycleBus()         // BL427 — create dispatcher + cache hostname
@@ -937,6 +945,9 @@ func (m *Manager) Config() Config {
 
 // Store exposes the underlying store (REST handlers and tests use it).
 func (m *Manager) Store() *Store { return m.store }
+
+// AutomationStore exposes the AutomationStore (REST handlers and tests).
+func (m *Manager) AutomationStore() *AutomationStore { return m.automations }
 
 // CreatePRD records a draft PRD without decomposing — call Decompose
 // next or pass to Run() which decomposes lazily.
