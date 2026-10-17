@@ -124,6 +124,16 @@ documenting coverage gaps and the reasoning behind them.
 | `POST /api/autonomous/prds/{id}/run` | `autonomous_prd_run` | Complete | |
 | `GET /api/autonomous/learnings` | `autonomous_learnings` | Complete | |
 
+### Automation records
+
+| API Endpoint | MCP Tool | Status | Notes |
+|-------------|----------|--------|-------|
+| `GET /api/automations` | `automation_list` | Complete | Data records only — no automatic advance yet |
+| `POST /api/automations` | `automation_create` | Complete | body `{name, description, entry_member_id, members[], budget_policy, project_dir, backend, model, effort, verification_*}` |
+| `GET /api/automations/{id}` | `automation_get` | Complete | |
+| `PUT /api/automations/{id}` | `automation_update` | Complete | optional `expected_version` — optimistic concurrency, `409` if the record moved since |
+| `DELETE /api/automations/{id}` | `automation_delete` | Complete | member Automatons are unaffected — the back-reference is cleared |
+
 ### Observer peers
 
 | API Endpoint | MCP Tool | Status | Notes |
@@ -321,11 +331,12 @@ documenting coverage gaps and the reasoning behind them.
 | Singleton operations | 7 | 7 | **100%** |
 | Voice + Channel | 2 | 0 | **0%** (file uploads + internal callbacks) |
 | Autonomous PRD planning | 10 | 10 | **100%** |
+| Automation records | 5 | 5 | **100%** (data records only — no automatic advance yet) |
 | Observer (unified stats + envelopes) | 4 | 4 | **100%** |
 | Plugin framework | 6 | 6 | **100%** |
 | PRD-DAG orchestrator | 9 | 9 | **100%** |
 | Infrastructure | 17 | 0 | **0%** (by design) |
-| **Total** | **132** | **102** | **77%** (100% of user-facing features that fit MCP's tool model) |
+| **Total** | **137** | **107** | **78%** (100% of user-facing features that fit MCP's tool model) |
 
 All user-facing features have MCP coverage. The 30 endpoints without MCP tools
 are infrastructure, operational, file-upload, or security-sensitive operations
