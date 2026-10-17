@@ -12,6 +12,7 @@ package autonomous
 import (
 	"fmt"
 	"strings"
+	"time"
 	"unicode/utf8"
 )
 
@@ -27,6 +28,14 @@ type SinkConfig struct {
 	// PublishTopics is called per matched event with the topics to
 	// push to (the daemon forwards each to the SSE/mobile bus).
 	PublishTopics func(topics []string, title, message string)
+	// CommSink and CommWindow are both optional; when CommSink is nil
+	// the comm fan-out is inactive. When set, matched events are NOT
+	// delivered immediately via the sinks above (which would flood the
+	// channel on an event burst) but accumulate per Automaton and are
+	// sent as ONE coalesced message per PRD after a quiet window;
+	// CommWindow <= 0 falls back to the package default (5s).
+	CommSink   func(text string)
+	CommWindow time.Duration
 }
 
 const (
@@ -118,10 +127,24 @@ func sinkLevel(ev LifecycleEvent) string {
 // dispatcher's isolation rather than layering a second recover here.
 func InstallLifecycleSinks(m *Manager, sc SinkConfig) (cancel func()) {
 	cancel = func() {}
-	if m == nil || len(sc.Kinds) == 0 || (sc.RecordAlert == nil && sc.PublishTopics == nil) {
+	if m == nil || len(sc.Kinds) == 0 || (sc.RecordAlert == nil && sc.PublishTopics == nil && sc.CommSink == nil) {
 		return cancel
 	}
-	return m.Subscribe(LifecycleFilter{Kinds: sc.Kinds}, func(ev LifecycleEvent) {
+	// One shared sink for the subscription's lifetime: coalescing only
+	// works if every matched event lands in the same accumulator (a
+	// per-event sink would have a 1-bucket window and defeat the point).
+	var comm *CommFanoutSink
+	if sc.CommSink != nil {
+		comm = NewCommFanoutSink(sc.CommSink, sc.CommWindow)
+	}
+	subCancel := m.Subscribe(LifecycleFilter{Kinds: sc.Kinds}, func(ev LifecycleEvent) {
+		// Comm fan-out active: this event COALESCES instead of sending
+		// immediately — it joins its Automaton's bucket and rides along
+		// in the next quiet-window flush.
+		if comm != nil {
+			comm.Handle(ev)
+			return
+		}
 		msg := DescribeLifecycleEvent(ev)
 		if sc.RecordAlert != nil {
 			sc.RecordAlert(sinkLevel(ev), ev.Kind, msg)
@@ -136,4 +159,15 @@ func InstallLifecycleSinks(m *Manager, sc SinkConfig) (cancel func()) {
 			sc.PublishTopics(topics, ev.Kind, msg)
 		}
 	})
+	cancel = func() {
+		subCancel()
+		if comm != nil {
+			// Close() is idempotent and panic-free (see comm_fanout.go):
+			// it stops the pending per-bucket timers (no leaked timer
+			// goroutines outlive the subscription) and flushes anything
+			// still accumulated so the shutdown does not drop events.
+			comm.Close()
+		}
+	}
+	return cancel
 }
