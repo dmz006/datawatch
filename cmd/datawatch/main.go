@@ -4837,6 +4837,11 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					// signature in the session's own output: a crash mid-run, not a
 					// judgment, is Category "infra" and should be auto-retryable
 					// under BL410 instead of exhausted after one attempt.
+					// Work already landed by an earlier attempt: if the task's own
+					// verification script passes, accept instead of no-output failure.
+					if alreadyLanded, ok := verdictForAlreadyLanded(task.VerificationScript, taskDir); ok {
+						return alreadyLanded, nil
+					}
 					category := ""
 					summary := "verifier: no changes detected (diff empty and no new files); task produced no output"
 					if crashLine := detectHarnessCrash(mgr.TailOutput, task.SessionID); crashLine != "" {
@@ -5301,9 +5306,9 @@ Verify whether the diff plausibly implements the spec. Reply with STRICT JSON on
 					}
 				},
 				// Comm fan-out: deliver coalesced lifecycle text over the daemon
-			// notify pipeline (routers / ntfy / email), honouring notify_exclude
-			// exactly like the existing remote-alert bundler: fresh exclude set
-			// per send, live config change takes effect without a restart.
+				// notify pipeline (routers / ntfy / email), honouring notify_exclude
+				// exactly like the existing remote-alert bundler: fresh exclude set
+				// per send, live config change takes effect without a restart.
 				CommSink: func(text string) {
 					excludeSet := notifyExcludeSet(cfg.NotifyExclude)
 					for _, r := range routers {
