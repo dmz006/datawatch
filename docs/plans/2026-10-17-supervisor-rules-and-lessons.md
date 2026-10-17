@@ -18,17 +18,31 @@ open questions 17 to 20) is where these rules become mechanical.
 
 ## 1. Who decides what
 
-- **The operator makes every design decision.** The supervisor stops and asks when a
-  choice is a design choice, when guidance is unclear, or when a finding is outside the
-  task. Unexpected findings are reported, not chased.
-- **The supervisor makes build and progression decisions** up to the point where the
-  Automation coordinator exists, then hands off to it. That covers what to run next
-  (the order in `docs/plans/README.md`), whether a decompose is good enough to approve,
-  whether a finished PRD is ready to advance past, and how to recover a stuck task.
-- **Commits.** The supervisor commits only validated work the operator has asked for.
-  An automatic snapshot or task commit is not approval of its contents.
-- **Resets.** A blocked task may be reset once after its cause is fixed, then run. A
-  second reset needs the operator's approval.
+- **The operator makes every design decision.** That means what the product does, any
+  behaviour change a user will see, defaults that affect users, the intent behind the
+  roadmap's order, escalation channels and thresholds, and anything that is a choice
+  between valid designs. The supervisor asks, with a recommendation, and waits.
+- **The supervisor decides and does the build and bug-fix work** up to the point where the
+  Automation coordinator exists, then hands off to it. That includes: fixing datawatch bugs
+  through qwen fix PRDs; approving a decompose that passes the section 4 checklist; running,
+  resetting and cancelling PRDs; recovering stuck tasks; repository hygiene (removing
+  tracked junk, refreshing roadmap statuses, release housekeeping); filing the parity
+  issues that the rules require; and committing work it has validated. It does not ask
+  permission for these.
+- **Escalate only for a design decision, or when a loop will not break.** A loop means the
+  same failure twice, then two sub-agent investigation passes that did not resolve it.
+  Escalate with what failed, what was tried and what is still broken. Do not ask about
+  work that is inside the supervisor's authority.
+- **Stop-and-report rule.** When something unexpected turns up outside the task at hand,
+  report it and carry on with the task. Fix it only if it is inside the supervisor's
+  authority and does not change the plan.
+- **Never touch the operator's own sessions or jobs.** Other sessions and unrelated jobs
+  (for example a mail-rules job) are not PRD work. If datawatch itself misbehaves around
+  them, that is a product bug to fix in datawatch, not a reason to change their setup.
+- **Commits.** The supervisor commits validated work it owns, staging an explicit list of
+  files. An automatic snapshot or task commit is not approval of its contents.
+- **Resets.** Reset a blocked task once after its cause is fixed, then run. If it fails
+  again with the same error, that is the loop rule above.
 
 ## 2. The supervisor's role
 
