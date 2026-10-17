@@ -18,10 +18,14 @@ package autonomous
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"log"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -169,4 +173,361 @@ func treeLockPath(key, treeRoot string) string {
 		dir = absClean(treeRoot)
 	}
 	return filepath.Join(dir, ".datawatch", "tree.lock")
+}
+
+// ── Advisory acquisition machinery (BL428 decision 3a, operator (i)) ──
+//
+// The lock is ADVISORY BY CONTRACT: it only protects against datawatch
+// writers that check it. A session (or operator, or any external tool)
+// that never looks at the file is not a bug this package fixes — BL425's
+// foreign-file-drift check is the after-the-fact detector for exactly
+// that (see the BL428 design's "Operator manual edits cannot be
+// enforced"). All operations here are unprivileged plain file ops on a
+// git-ignored path, and no other lock/file is held while the record is
+// read (NeverBlockOnRead): a slow reader only delays that one
+// acquisition, never another holder or a releaser.
+
+// LockRecord is the JSON payload of the advisory tree lock file
+// (.datawatch/tree.lock, git-ignored so a held lock never dirties
+// `git status`). It names the holder so an operator — or a reclaiming
+// acquirer — can tell whose lock it is looking at.
+type LockRecord struct {
+	HolderTaskID string `json:"holder_task_id"`
+	HolderPRDID  string `json:"holder_prd_id,omitempty"`
+	AcquiredAt   int64  `json:"acquired_at"` // unix seconds
+	PID          int    `json:"pid"`
+	Note         string `json:"note,omitempty"`
+}
+
+// defaultTreeLockPoll is the short default wait-loop poll interval;
+// production wiring passes a Manager-controlled value via AcquireTreeLock.
+const defaultTreeLockPoll = 5 * time.Second
+
+// maxStaleReclaimAttempts bounds consecutive best-effort delete attempts
+// against one stale lock before an acquirer falls through to the wait
+// loop (bounded per spec: a losing reclaim race degrades to waiting, it
+// never corrupts — a removal only ever targets a lock re-verified as
+// stale in the same pass).
+const maxStaleReclaimAttempts = 3
+
+// staleLockGrace gates reclaim of an unreadable or empty lock record.
+// AcquireTreeLock creates the file and only then writes the record
+// (documented window in AcquireTreeLock), so an empty record shortly
+// after creation is most likely a LIVE acquirer two steps in — deleting
+// it would let two holders coexist. Anything still empty after the grace
+// crashed in the window; its holder is unknown by definition, and
+// unknown holders are stale, so reclaim then is safe.
+const staleLockGrace = 30 * time.Second
+
+// lockRecordPayload renders rec as JSON with a trailing newline.
+func lockRecordPayload(rec LockRecord) []byte {
+	b, err := json.Marshal(rec)
+	if err != nil {
+		b = []byte(`{}`) // unmarshalable-fields-free struct; cannot happen
+	}
+	return append(b, '\n')
+}
+
+// writeLockRecord writes rec (JSON + trailing newline) to path: parent
+// dir mkdir'd 0755, file 0644. Overwrite-safe (idempotent re-acquire).
+func writeLockRecord(path string, rec LockRecord) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(path, lockRecordPayload(rec), 0o644)
+}
+
+// readLockRecord returns the current record at path, or an error when the
+// file is missing or not a parseable record.
+func readLockRecord(path string) (LockRecord, error) {
+	var rec LockRecord
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return rec, err
+	}
+	if err := json.Unmarshal(b, &rec); err != nil {
+		return rec, fmt.Errorf("tree lock %s: unreadable record: %w", path, err)
+	}
+	return rec, nil
+}
+
+// isTerminalTaskStatus reports whether a task in this state will never
+// release its lock itself — failed, cancelled and completed tasks end
+// rather than retry — so their lock is stale and reclaimable. Everything
+// else (pending, queued, in_progress, waiting_capacity, ...) is a live
+// or soon-live holder and must be waited on.
+func isTerminalTaskStatus(st TaskStatus) bool {
+	switch st {
+	case TaskFailed, TaskCancelled, TaskCompleted:
+		return true
+	}
+	return false
+}
+
+// treeLockStale decides whether the lock at path is held by a dead holder
+// and may be reclaimed:
+//   - unreadable record or empty holder_task_id (crash in the
+//     create→write window): stale only after staleLockGrace, so a live
+//     acquirer mid-write is never destroyed;
+//   - taskStatus hook nil, or holder not found in the store: UNKNOWN →
+//     stale;
+//   - holder in a TERMINAL state (failed/cancelled/completed): stale;
+//   - otherwise: live holder → NOT stale.
+func treeLockStale(path string, rec *LockRecord, readErr error, taskStatus func(string) (TaskStatus, bool)) bool {
+	if readErr != nil || rec == nil || rec.HolderTaskID == "" {
+		fi, serr := os.Stat(path)
+		if serr != nil { // gone in the meantime — the next create retry wins
+			return true
+		}
+		return time.Since(fi.ModTime()) > staleLockGrace
+	}
+	if taskStatus == nil {
+		return true
+	}
+	st, ok := taskStatus(rec.HolderTaskID)
+	if !ok {
+		return true // unknown holder
+	}
+	return isTerminalTaskStatus(st)
+}
+
+// interruptibleSleep sleeps d, returning false as soon as ctx cancels or
+// isCancelled() reports true. Checked in fine chunks so cancellation
+// during a long Manager-controlled poll is honored promptly.
+func interruptibleSleep(ctx context.Context, d time.Duration, isCancelled func() bool) bool {
+	cancelled := func() bool {
+		if ctx != nil && ctx.Err() != nil {
+			return true
+		}
+		return isCancelled != nil && isCancelled()
+	}
+	if ctx == nil || ctx.Done() == nil {
+		// No ctx to select on — pure polling loop.
+		remain := d
+		for remain > 0 {
+			if cancelled() {
+				return false
+			}
+			step := 100 * time.Millisecond
+			if remain < step {
+				step = remain
+			}
+			time.Sleep(step)
+			remain -= step
+		}
+		return true
+	}
+	const chunk = 100 * time.Millisecond
+	remain := d
+	for remain > 0 {
+		if cancelled() {
+			return false
+		}
+		step := chunk
+		if remain < step {
+			step = remain
+		}
+		select {
+		case <-time.After(step):
+			remain -= step
+		case <-ctx.Done():
+			return false
+		}
+	}
+	return true
+}
+
+// newTreeLockRelease returns release() for the lock at path held by
+// holder:
+//   - Holder-guarded: it deletes the file ONLY if the current record
+//     still names this holder — after a reclaim race a successor may
+//     hold it, and that fresh lock must survive our release.
+//   - Idempotent: the second and later calls are a silent no-op.
+//   - Never returns an error: read/delete failures are logged, because a
+//     release must never abort the task that is finishing.
+func newTreeLockRelease(path, holder string) func() {
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			rec, err := readLockRecord(path)
+			if err != nil {
+				if os.IsNotExist(err) {
+					return // already gone — nothing to do
+				}
+				log.Printf("tree lock: release %s: cannot read record: %v", path, err)
+				return
+			}
+			if rec.HolderTaskID != holder {
+				log.Printf("tree lock: release %s: refusing — now held by task %q, not %q", path, rec.HolderTaskID, holder)
+				return
+			}
+			if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+				log.Printf("tree lock: release %s: remove failed: %v", path, err)
+			}
+		})
+	}
+}
+
+// treeWaitReason is the human-readable reason waitHook receives while
+// blocked on a live holder.
+func treeWaitReason(key string, rec *LockRecord, readErr error) string {
+	if readErr != nil || rec == nil {
+		return fmt.Sprintf("tree lock: %s held by unknown holder (record unreadable)", key)
+	}
+	since := "unknown time"
+	if rec.AcquiredAt > 0 {
+		since = time.Unix(rec.AcquiredAt, 0).UTC().Format(time.RFC3339)
+	}
+	return fmt.Sprintf("tree lock: %s held by task %s (PRD %s) since %s", key, rec.HolderTaskID, rec.HolderPRDID, since)
+}
+
+// AcquireTreeLock acquires the advisory project-tree write lock for key
+// (see ResolveTreeKey) on behalf of holder (a task ID) running under
+// prdID, returning release() and nil. Semantics (BL428 3a, operator
+// option (i)):
+//
+//  1. TRY-ONCE-THEN-WAIT: the first attempt is an atomic
+//     O_CREATE|O_EXCL lock create, immediately followed by the record
+//     write. Documented window: between the two steps the file exists
+//     with an empty record. A concurrent acquirer reading it in that
+//     moment treats an unknown holder as stale-BUT-recent: treeLockStale
+//     refuses reclaim until staleLockGrace has elapsed, so the live
+//     writer's claim survives. An acquirer that crashes inside the window
+//     leaves an empty record that is reclaimed after the grace, so a
+//     holder-less file can never wedge the tree forever.
+//
+//  2. IDEMPOTENT RE-ACQUIRE: if the record already names holder, the
+//     lock is re-returned — no double-ownership, and the original
+//     acquired_at is preserved.
+//
+//  3. STALE RECLAIM: if the holder is UNKNOWN (taskStatus hook missing
+//     or not finding the task — a nil hook means every non-self holder
+//     is unknown) or its task is TERMINAL (failed/cancelled/completed),
+//     the file is best-effort deleted, a warning naming the dead holder
+//     is logged, and acquisition is retried. The retry is bounded: after
+//     maxStaleReclaimAttempts consecutive lost delete races the acquirer
+//     falls through to the wait loop instead of hammering.
+//
+//  4. WAIT: for a live, non-stale holder, waitHook (if set) is called
+//     with a human-readable reason, then the acquirer sleeps
+//     pollInterval (≤0 selects the ~5s default; production wiring passes
+//     the Manager-controlled value) and re-checks. Cancellation via ctx
+//     or isCancelled aborts with an error and NO release: a cancelling
+//     waiter never deletes another holder's lock.
+//
+// NeverBlockOnRead: no lock is held while the record is read, and all
+// file ops are unprivileged plain files. Adversarial behavior
+// (a session that never checks the lock) is explicitly out of scope by
+// design — BL425's drift detection covers it. On error, release is
+// nil and nothing is left for the caller to undo.
+func AcquireTreeLock(
+	ctx context.Context,
+	key, treeRoot string,
+	holder, prdID string,
+	taskStatus func(holderID string) (TaskStatus, bool),
+	waitHook func(reason string),
+	isCancelled func() bool,
+	pollInterval time.Duration,
+) (func(), error) {
+	if holder == "" {
+		return nil, fmt.Errorf("tree lock: empty holder task ID for key %q", key)
+	}
+	if pollInterval <= 0 {
+		pollInterval = defaultTreeLockPoll
+	}
+	path := treeLockPath(key, treeRoot)
+	rec := LockRecord{
+		HolderTaskID: holder,
+		HolderPRDID:  prdID,
+		AcquiredAt:   time.Now().Unix(),
+		PID:          os.Getpid(),
+	}
+
+	claim := func() error {
+		f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o644)
+		if err != nil {
+			return err
+		}
+		if _, werr := f.Write(lockRecordPayload(rec)); werr != nil {
+			_ = f.Close()
+			_ = os.Remove(path) // best effort — never leave our own record-less claim
+			return fmt.Errorf("tree lock: write record to %s: %w", path, werr)
+		}
+		if cerr := f.Close(); cerr != nil {
+			_ = os.Remove(path)
+			return fmt.Errorf("tree lock: close %s: %w", path, cerr)
+		}
+		return nil
+	}
+
+	reclaimCount := 0
+	for {
+		if ctx != nil && ctx.Err() != nil {
+			return nil, fmt.Errorf("tree lock: cancelled while waiting for %q", key)
+		}
+		if isCancelled != nil && isCancelled() {
+			return nil, fmt.Errorf("tree lock: cancelled while waiting for %q", key)
+		}
+
+		err := claim()
+		if err == nil {
+			log.Printf("tree lock: acquired %s holder task=%s prd=%s", path, holder, prdID)
+			return newTreeLockRelease(path, holder), nil
+		}
+		if !os.IsExist(err) {
+			// Not "already held" — most likely the lazily-created
+			// .datawatch dir (or a transient FS error). Mkdir the parent
+			// once, retry the claim, and give up if it still fails.
+			if merr := os.MkdirAll(filepath.Dir(path), 0o755); merr != nil {
+				return nil, fmt.Errorf("tree lock: %v", merr)
+			}
+			retryErr := claim()
+			if retryErr == nil {
+				log.Printf("tree lock: acquired %s holder task=%s prd=%s", path, holder, prdID)
+				return newTreeLockRelease(path, holder), nil
+			}
+			if !os.IsExist(retryErr) {
+				return nil, fmt.Errorf("tree lock: create %s: %w", path, retryErr)
+			}
+		}
+
+		// The lock exists (either already on first pass, or re-appearing
+		// after a lost reclaim race). NeverBlockOnRead: a plain read with
+		// nothing else held.
+		existing, rerr := readLockRecord(path)
+		if rerr == nil && existing.HolderTaskID == holder {
+			log.Printf("tree lock: re-acquired %s holder task=%s (idempotent)", path, holder)
+			return newTreeLockRelease(path, holder), nil
+		}
+
+		if treeLockStale(path, &existing, rerr, taskStatus) {
+			if rerr == nil {
+				log.Printf("tree lock: reclaiming stale lock %s — holder task %q (PRD %q) is unknown or terminal", path, existing.HolderTaskID, existing.HolderPRDID)
+			} else {
+				log.Printf("tree lock: reclaiming stale lock %s — record unreadable or empty (grace expired)", path)
+			}
+			derr := os.Remove(path) // best effort per spec
+			if derr == nil || os.IsNotExist(derr) {
+				if reclaimCount < maxStaleReclaimAttempts {
+					reclaimCount++
+					continue // immediate retry — the stale file is gone
+				}
+				// Lost the delete race maxStaleReclaimAttempts times
+				// running: fall through to the wait loop (bounded; no
+				// corruption — we only ever removed locks re-verified
+				// stale in the same pass).
+			} else {
+				log.Printf("tree lock: best-effort reclaim of %s failed: %v", path, derr)
+			}
+		}
+
+		// Live holder (or a bounded reclaim loop): notify, sleep, retry.
+		reason := treeWaitReason(key, &existing, rerr)
+		if waitHook != nil {
+			waitHook(reason)
+		}
+		if !interruptibleSleep(ctx, pollInterval, isCancelled) {
+			return nil, fmt.Errorf("tree lock: cancelled while waiting: %s", reason)
+		}
+	}
 }
