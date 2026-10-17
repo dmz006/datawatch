@@ -1753,3 +1753,40 @@ howto, and the `datawatch-app` issue where applicable.
     the decision-assistant concept — smaller in scope than any of the
     four original hook points, and backed by two real incidents in one
     night rather than a hypothetical.
+
+## Example rule: one-shot session lifecycle (validate before commit)
+
+Added 2026-10-17 after an ad-hoc one-shot pi session committed its own
+unvalidated work. This is an example rule for any datawatch user's
+automation, not a fixed policy: every value below is configurable.
+
+**Rule.** A one-shot session that changes code must pass validation
+before it may commit or complete. Validation failure restarts the
+session (bounded), and only a pass commits and completes it.
+
+**Lifecycle.**
+1. **Start.** The session declares its task, its write scope (paths it
+   may change), and one or more validation commands (for example
+   `go build ./...` and a targeted `go test`).
+2. **Work.** The session edits only inside its declared scope.
+3. **Validate.** Datawatch runs the declared validation commands in the
+   session's worktree, outside the worker's own shell. Results are
+   recorded on the session.
+4. **Pass.** Stage only the declared scope, commit with the session's
+   message, then mark the session complete and close its tmux pane.
+5. **Fail.** Restart the session with the failing output fed back as
+   input, up to `max_attempts`. After that, stop, leave the changes
+   uncommitted, and report. Never commit a failing tree.
+
+**Configurable (defaults shown).**
+- `validate_commands`: none by default, so a session with no commands
+  must say so explicitly and is reported as unvalidated.
+- `max_attempts`: 2.
+- `auto_commit`: false for one-shot sessions started outside a PRD. A
+  PRD task may auto-commit after its own verifier passes.
+- `write_scope`: required for any auto-commit; no scope means no commit.
+
+**Why.** The leak-fix one-shot (session `leak-fix-v3`) committed its
+work through datawatch's completion path without running validation,
+and a broken build went into history. Completion commits must be gated
+by validation, not by the session finishing.
