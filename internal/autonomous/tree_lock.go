@@ -578,6 +578,11 @@ func (m *Manager) dirtyTreeRefused(ctx context.Context, prd *PRD, task *Task) er
 	if dirt == "" {
 		return nil
 	}
+	n := len(strings.Split(dirt, "\n"))
+	unit := "entries"
+	if n == 1 {
+		unit = "entry"
+	}
 	snip := dirt
 	if i := strings.IndexByte(snip, '\n'); i > 0 {
 		snip = strings.TrimSpace(snip[:i])
@@ -585,7 +590,7 @@ func (m *Manager) dirtyTreeRefused(ctx context.Context, prd *PRD, task *Task) er
 	if len(snip) > 64 {
 		snip = snip[:64] + "…"
 	}
-	return fmt.Errorf("refuse_dirty_tree_start: canonical tree %s has uncommitted changes (%s); commit or stash before starting a task on this tree", treeRoot, snip)
+	return fmt.Errorf("refuse_dirty_tree_start: tree %s has %d uncommitted %s (%s); commit, stash, `git clean`, or set autonomous.refuse_dirty_tree_start: false", treeRoot, n, unit, snip)
 }
 
 // acquireTreeWritersLock acquires the per-canonical-tree advisory write

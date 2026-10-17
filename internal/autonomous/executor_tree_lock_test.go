@@ -434,8 +434,19 @@ func TestExecutorTreeLockDirtyTreeRefused(t *testing.T) {
 	if cur.Status != TaskFailed {
 		t.Errorf("task status = %q; want failed", cur.Status)
 	}
-	if !strings.Contains(strings.ToLower(cur.Error), "refuse_dirty_tree") {
-		t.Errorf("task error should carry the gate message, got: %q", cur.Error)
+	wantSubstrings := []string{
+		"refuse_dirty_tree_start", // gate identity, not a retry-able failure
+		"1 uncommitted entry",     // names the dirty entry count
+		"scratch.txt",             // names the offending entry
+		"commit, stash",           // actionable: commit or stash first
+		"git clean",               // actionable: clean untracked
+		"autonomous.refuse_dirty_tree_start: false", // actionable: the config escape hatch
+	}
+	got := strings.ToLower(cur.Error)
+	for _, want := range wantSubstrings {
+		if !strings.Contains(got, strings.ToLower(want)) {
+			t.Errorf("task error %q should contain %q", cur.Error, want)
+		}
 	}
 	path := lockPathFor(t, prd)
 	if _, statErr := os.Stat(path); !os.IsNotExist(statErr) {
