@@ -109,6 +109,13 @@ func (a *API) resumeRunningPRDs() {
 			}
 			a.M.killOrphanDecomposeSessions(prd.ID)
 			fmt.Printf("[autonomous] boot-resume: prd=%s was planning on restart, reset to draft\n", prd.ID)
+		case PRDCancelled:
+			// An operator-cancelled PRD must never be re-decomposed. A live
+			// planning session still linked to it is an orphan, so kill it.
+			// No status mutation: the PRD stays cancelled.
+			if n := a.M.killOrphanDecomposeSessions(prd.ID); n > 0 {
+				fmt.Printf("[autonomous] boot-resume: prd=%s is cancelled, killed %d orphan decompose session(s)\n", prd.ID, n)
+			}
 		case PRDRunning:
 			// A PRD can be legitimately Running because something else (an
 			// operator's Run() call, or a Run() started earlier in this same
@@ -140,6 +147,9 @@ func (a *API) resumeRunningPRDs() {
 			// session was most likely killed mid-run by a daemon SIGKILL.
 			// resetKilledTasksForResume resets tasks to pending and saves the
 			// PRD as PRDRunning; then Run re-launches the executor.
+			// Defensive: a failed PRD should have no planning session, but
+			// kill any that remain. Never decomposes and never mutates status here.
+			a.M.killOrphanDecomposeSessions(prd.ID)
 			fmt.Printf("[autonomous] boot-resume: prd=%s is PRDFailed, attempting recovery\n", prd.ID)
 			if a.M.resetKilledTasksForResume(prd) {
 				if err := a.Run(prd.ID); err != nil {
