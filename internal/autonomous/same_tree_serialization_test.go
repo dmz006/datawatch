@@ -1,40 +1,40 @@
 package autonomous
 
-// Same-tree regression tests for BL423/BL426/BL428 §3a: three PRDs
-// whose tasks all write one shared project tree must serialize their
-// writes, and the concurrent release version bumps they make must not
-// drop increments.
+// Same-tree serialization regression tests for BL428 §3a ("three PRDs,
+// one tree — 2026-10-13 incident, now serialized", design doc
+// docs/plans/2026-10-14-concurrency-and-budget-design.md) and its
+// E2E-shape successor: the 2026-10-13 incident, three PRDs whose tasks
+// all write one shared project tree, now serializing.
 //
-// Shape under test — the incident shape (three PRDs, one tree) as the
-// daemon supports it today: one manager, three PRDs on one shared
-// direct-mode checkout, all three Run concurrently. BL469 (admitTree)
-// refuses a PRD while another RUNNING PRD holds the same tree and
-// admits it against its own ancestors — so the three PRDs below form
-// one genealogy chain (root, child, grandchild), the supported
-// multi-PRD shape for a shared tree in one daemon. Their three tasks
-// still contend for the SAME canonical tree, and once all three Runs
-// are admitted the only mechanism that serializes them is the per-task
-// tree lock under test (executeOne → holdTree →
-// m.acquireTreeWritersLock, BL428 §3a): admitTree ran once per Run,
-// before the contention began, and the capacity ledger is off
-// (Config{}).
+// Shape under test — the incident as the daemon supports it: one
+// manager, one shared direct-mode git checkout, three approved PRDs all
+// Run concurrently through the real spawn seam (m.Run(prdID, spawn,
+// verify)). BL469 (admitTree) refuses a PRD while a non-ancestor
+// running PRD holds the same tree, so the three PRDs below form one
+// genealogy chain (root → child → grandchild), launched ancestor-first:
+// that is the supported multi-PRD shape for one shared tree in one
+// daemon. Once all three Runs are admitted, admitTree is no longer in
+// the path — the per-task tree lock under test (executeOne → holdTree →
+// m.acquireTreeWritersLock, BL428 §3a) is the only mechanism left
+// serializing the three writers (the capacity ledger is off: Config{}).
 //
-// These tests exercise the cross-PRD form that TestExecutorTreeLock*
-// (two tasks of ONE approved PRD) and TestAdmitTree* (admission
-// only) cover only partially: the lock is what keeps three
-// independently admitted runs from interleaving their writes.
+// Red/green (the acquire call in holdTree/executor.go is the unit
+// under test):
+//   TestSameTreeThreePRDsSerialize      — red: the three spawn windows
+//     overlap, the "commit only its own file" assertion catches
+//     sibling work dragged into a commit (git commit -a over a tree a
+//     sibling is writing), and the last-started task never shows a
+//     tree-lock wait. Green: strict pairwise order, exactly one wait
+//     episode, three clean one-file commits.
+//   TestSameTreeConcurrentReleaseBumpsDoNotCollide — red: all three
+//     read-modify-write bumps read the same version and write the same
+//     value (final 9.9.10, lost increments). Green: 9.9.10 → 9.9.11 →
+//     9.9.12, every increment lands.
 //
-// Red/green: with the holdTree wiring in executeOne removed, the three
-// spawns overlap (test 1's interval, waiting-episode and commit
-// assertions fail) and all three bumps read the same version (test
-// 2's final value is 9.9.10 — a lost increment — instead of 9.9.12).
-//
-// Note: task state is read with Store.TaskSnapshot (value copy under
-// the store lock) — the sanctioned concurrent-read API. Under -race,
-// these tests can surface pre-existing executor write-side races (e.g.
-// direct t.SessionID writes outside the store lock); those are
-// production bugs in the write path, not in this test, and predate
-// it (TestExecutorTreeLockSerializesSameTree hits the same).
+// Task state is read via Store.TaskSnapshot (value copy under the store
+// lock — the sanctioned concurrent-read API; the wait reason is one-
+// shot, cleared at the admit that follows, so it must be sampled while
+// it lasts, which is what the snapper does).
 
 import (
 	"context"
@@ -56,10 +56,10 @@ type runErrSameTree struct {
 	err error
 }
 
-// spawnSpan records the exclusive window a task's spawn held its claim
-// on the shared tree (start: entered spawn; end: spawn finished,
-// including its commit). Serialized PRDs must have pairwise-disjoint
-// spans.
+// spawnSpan records a task's exclusive window on the shared tree: from
+// entering its spawn (work + write + commit all inside — the shape of a
+// real worker session) to spawn returning. Serialized PRDs must have
+// pairwise-disjoint spans.
 type spawnSpan struct {
 	taskID string
 	start  time.Time
@@ -72,12 +72,12 @@ type treeTaskSnap struct {
 	reason string
 }
 
-// startTreeTaskSnapper polls (status, wait-reason) for every task ID at
-// ~1 ms until stop() is called, then returns the samples per task. Used
-// to observe the waiting episode BL428 §3a promises: a task blocked on a
-// shared tree shows status waiting_capacity with a "tree lock: ..."
-// reason. The wait reason is one-shot (cleared at the admit that
-// follows), so it must be sampled while it lasts.
+// startTreeTaskSnapper samples (status, wait-reason) for every task ID
+// while the PRDs run (1 ms ticks — the wait episode is ~40 ms of lock
+// handoff, wide enough to be caught), then returns the samples. The
+// last-started task must show a waiting episode with a "tree lock"
+// reason — the visibility BL428 §3a promises ("blocked on the tree
+// lock held by PRD X/task Y").
 func startTreeTaskSnapper(st *Store, taskIDs []string) func() map[string][]treeTaskSnap {
 	mu := sync.Mutex{}
 	samples := map[string][]treeTaskSnap{}
@@ -93,9 +93,9 @@ func startTreeTaskSnapper(st *Store, taskIDs []string) func() map[string][]treeT
 				return
 			case <-ticker.C:
 				for _, id := range taskIDs {
-					// TaskSnapshot: value copy under the store lock — a value-copy
-					// read safe against the executor's concurrent MutateTask status
-					// writes (GetTask's shared pointer is race-unsafe mid-run).
+					// TaskSnapshot: value copy under the store lock, safe
+					// against the executor's concurrent MutateTask status
+					// writes.
 					cur, ok := st.TaskSnapshot(id)
 					if !ok {
 						continue
@@ -120,14 +120,14 @@ func startTreeTaskSnapper(st *Store, taskIDs []string) func() map[string][]treeT
 	}
 }
 
-// runPRDsConcurrently launches one Run goroutine per PRD, in order,
-// staggering the launches by 10 ms — far smaller than the workers'
-// ~60 ms holds, so all three runs are in flight at the same time — to
-// keep the BL469 admit ordering deterministic (a PRD is admitted only
-// against its ancestors, which must already be running; the chain is
-// admitted ancestor-first). All three runs then contend for the same
-// tree lock. Fatals on any Run error (a tree-busy refusal here would
-// mean the BL469 admit chain itself is broken).
+// runPRDsConcurrently launches one Run goroutine per PRD, ancestor-
+// first with a 10 ms stagger — small enough that all three runs are in
+// flight at the same time (the workers' holds are ~60 ms), and large
+// enough to make BL469's chain admission order deterministic (a PRD is
+// admitted only against its ancestors, so the ancestor must be running
+// first). After admission, the lock under test — not admitTree — is
+// what decides interleaving. Fatals on any Run error (a tree-busy
+// refusal here would mean the BL469 admit chain itself is broken).
 func runPRDsConcurrently(t *testing.T, mgr *Manager, prdIDs []string, spawns []SpawnFn, verify VerifyFn) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -160,7 +160,7 @@ func runPRDsConcurrently(t *testing.T, mgr *Manager, prdIDs []string, spawns []S
 // tree in one daemon). Mirrors makeTreePRD plus CreatePRDWithParent.
 func newSameTreePRD(t *testing.T, st *Store, projectDir, parentID string, depth int) (*PRD, string) {
 	t.Helper()
-	prd, err := st.CreatePRDWithParent("same-tree serialize", projectDir, "claude-code", "", EffortNormal, parentID, "", depth)
+	prd, err := st.CreatePRDWithParent("tree lock regression", projectDir, "claude-code", "", EffortNormal, parentID, "", depth)
 	if err != nil {
 		t.Fatalf("CreatePRDWithParent: %v", err)
 	}
@@ -185,29 +185,42 @@ func newSameTreePRD(t *testing.T, st *Store, projectDir, parentID string, depth 
 	return prd, taskID
 }
 
-// writingSpawn returns a SpawnFn that behaves like the incident's
-// workers: it does work (60 ms — wide enough to overlap its siblings
-// when the tree lock is not held), writes its own file into the shared
-// repo, then commits everything dirty (`git add -A`, the way a real
-// session commits) under its own message.
+// seedTrackedFiles creates one tracked release file per PRD (initial
+// content "v0"), committed in one seed commit — the incident's shape:
+// each worker edits a file the project already tracks.
+func seedTrackedFiles(t *testing.T, repo string, files ...string) {
+	t.Helper()
+	for _, f := range files {
+		if err := os.WriteFile(filepath.Join(repo, f), []byte("v0\n"), 0o644); err != nil {
+			t.Fatalf("write %s: %v", f, err)
+		}
+		gitRun(t, repo, "add", f)
+	}
+	gitRun(t, repo, "commit", "-q", "-m", "seed release files")
+}
+
+// writingSpawn behaves like the incident's workers: it does work (~60
+// ms — wide enough to overlap its siblings when the tree lock is not
+// held), edits its own tracked file, then commits the working tree
+// (git commit -a, the way a real session commits) under its own
+// message. With three concurrent writers, git commit -a is exactly
+// what drags a sibling's half-written edit into the commit.
 func writingSpawn(repo, ownFile, commitMsg string, spans *[]spawnSpan, spansMu *sync.Mutex) SpawnFn {
 	return func(ctx context.Context, req SpawnRequest) (SpawnResult, error) {
 		start := time.Now()
-		time.Sleep(60 * time.Millisecond) // worker work held against the shared tree
+		time.Sleep(60 * time.Millisecond) // the worker's work, held against the shared tree
 		finish := func() {
 			spansMu.Lock()
 			*spans = append(*spans, spawnSpan{taskID: req.TaskID, start: start, end: time.Now()})
 			spansMu.Unlock()
 		}
 		defer finish()
-		if err := os.WriteFile(filepath.Join(repo, ownFile), []byte("work done by task "+req.TaskID+"\n"), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(repo, ownFile),
+			[]byte("work done by task "+req.TaskID+"\n"), 0o644); err != nil {
 			return SpawnResult{}, fmt.Errorf("write %s: %w", ownFile, err)
 		}
-		if out, err := exec.CommandContext(ctx, "git", "-C", repo, "add", "-A").CombinedOutput(); err != nil {
-			return SpawnResult{}, fmt.Errorf("git add -A: %v: %s", err, out)
-		}
-		if out, err := exec.CommandContext(ctx, "git", "-C", repo, "commit", "-q", "-m", commitMsg).CombinedOutput(); err != nil {
-			return SpawnResult{}, fmt.Errorf("git commit: %v: %s", err, out)
+		if out, err := exec.CommandContext(ctx, "git", "-C", repo, "commit", "-q", "-a", "-m", commitMsg).CombinedOutput(); err != nil {
+			return SpawnResult{}, fmt.Errorf("git commit -a: %v: %s", err, out)
 		}
 		return SpawnResult{SessionID: "sess-" + req.TaskID}, nil
 	}
@@ -216,6 +229,7 @@ func writingSpawn(repo, ownFile, commitMsg string, spans *[]spawnSpan, spansMu *
 func TestSameTreeThreePRDsSerialize(t *testing.T) {
 	fastTreeLockPolling(t)
 	repo := gitRepoWithDWSeed(t)
+	seedTrackedFiles(t, repo, "prd-1.txt", "prd-2.txt", "prd-3.txt")
 	baseOut, err := exec.Command("git", "-C", repo, "rev-parse", "HEAD").Output()
 	if err != nil {
 		t.Fatalf("rev-parse HEAD: %v", err)
@@ -238,11 +252,12 @@ func TestSameTreeThreePRDsSerialize(t *testing.T) {
 
 	var spansMu sync.Mutex
 	var spans []spawnSpan
-	spawn1 := writingSpawn(repo, "prd-1.txt", "prd-1: commit own file", &spans, &spansMu)
-	spawn2 := writingSpawn(repo, "prd-2.txt", "prd-2: commit own file", &spans, &spansMu)
-	spawn3 := writingSpawn(repo, "prd-3.txt", "prd-3: commit own file", &spans, &spansMu)
+	spawn1 := writingSpawn(repo, "prd-1.txt", "prd-1: release bump", &spans, &spansMu)
+	spawn2 := writingSpawn(repo, "prd-2.txt", "prd-2: release bump", &spans, &spansMu)
+	spawn3 := writingSpawn(repo, "prd-3.txt", "prd-3: release bump", &spans, &spansMu)
 
-	runPRDsConcurrently(t, mgr, []string{prd1.ID, prd2.ID, prd3.ID}, []SpawnFn{spawn1, spawn2, spawn3}, tlVerify)
+	runPRDsConcurrently(t, mgr, []string{prd1.ID, prd2.ID, prd3.ID},
+		[]SpawnFn{spawn1, spawn2, spawn3}, tlVerify)
 	snaps := stopSnooping()
 
 	spansMu.Lock()
@@ -256,13 +271,15 @@ func TestSameTreeThreePRDsSerialize(t *testing.T) {
 	// (1) Serialize: no two spawn windows overlap.
 	for i := 1; i < len(got); i++ {
 		if got[i].start.Before(got[i-1].end) {
-			t.Errorf("task %s's spawn overlapped task %s's (started %s, previous ended %s) — writers on the same tree interleaved",
-				got[i].taskID, got[i-1].taskID, got[i].start.Format("15:04:05.000000"), got[i-1].end.Format("15:04:05.000000"))
+			t.Errorf("task %s's spawn overlapped task %s's (started %s, previous ended %s) — two writers on the same tree interleaved",
+				got[i].taskID, got[i-1].taskID,
+				got[i].start.Format("15:04:05.000000"), got[i-1].end.Format("15:04:05.000000"))
 		}
 	}
 
 	// (2) Waiting episode: the PRD whose spawn started last must have
-	// shown a waiting episode blocked on the tree lock.
+	// shown a waiting episode blocked on the tree lock — the thing the
+	// operator could not see on 2026-10-13.
 	last := got[len(got)-1].taskID
 	var waitSaw bool
 	for _, s := range snaps[last] {
@@ -275,9 +292,9 @@ func TestSameTreeThreePRDsSerialize(t *testing.T) {
 		t.Errorf("last-started task %s never observed in waiting state with a tree-lock reason; samples: %+v", last, snaps[last])
 	}
 
-	// (3) Commit hygiene: exactly three commits on top of base, each
-	// touching only its own file (a `git add -A` while a sibling's work
-	// is uncommitted drags it in), and all three files in HEAD.
+	// (3) Commit hygiene: at least the three task commits, each one
+	// touching only its own file (a commit over a tree a sibling is
+	// writing drags it in), and all three files in HEAD.
 	logOut, err := exec.Command("git", "-C", repo, "log", base+"..HEAD", "--name-only", "--format=@@@%s").Output()
 	if err != nil {
 		t.Fatalf("git log: %v", err)
@@ -298,8 +315,7 @@ func TestSameTreeThreePRDsSerialize(t *testing.T) {
 		line = strings.TrimRight(line, "\r")
 		if strings.HasPrefix(line, "@@") {
 			flush()
-			c := commitBlock{msg: strings.TrimPrefix(line, "@@@")}
-			cur = &c
+			cur = &commitBlock{msg: strings.TrimPrefix(line, "@@@")}
 			continue
 		}
 		if line == "" || cur == nil {
@@ -308,22 +324,46 @@ func TestSameTreeThreePRDsSerialize(t *testing.T) {
 		cur.files = append(cur.files, line)
 	}
 	flush()
-	if len(blocks) != 3 {
-		t.Fatalf("expected exactly 3 commits on top of base, got %d: %+v", len(blocks), blocks)
+	if len(blocks) < 3 {
+		t.Fatalf("expected the 3 task commits on top of base, got %d: %+v", len(blocks), blocks)
 	}
-	wantFileByMsg := map[string]string{
-		"prd-1: commit own file": "prd-1.txt",
-		"prd-2: commit own file": "prd-2.txt",
-		"prd-3: commit own file": "prd-3.txt",
+	wantOwnFile := map[string]string{
+		"prd-1: release bump": "prd-1.txt",
+		"prd-2: release bump": "prd-2.txt",
+		"prd-3: release bump": "prd-3.txt",
 	}
+	type seenInfo struct {
+		count int
+		files []string
+	}
+	seen := map[string]seenInfo{}
 	for _, b := range blocks {
-		want, known := wantFileByMsg[b.msg]
-		if !known {
+		if _, known := wantOwnFile[b.msg]; !known {
 			t.Errorf("unexpected commit %q (files %v)", b.msg, b.files)
 			continue
 		}
-		if len(b.files) != 1 || b.files[0] != want {
-			t.Errorf("commit %q touched %v; want exactly [%s] — sibling work leaked into the commit", b.msg, b.files, want)
+		s := seen[b.msg]
+		s.count++
+		s.files = append(s.files, b.files...)
+		seen[b.msg] = s
+	}
+	for msg, own := range wantOwnFile {
+		s, ok := seen[msg]
+		if !ok {
+			t.Errorf("commit %q missing from base..HEAD", msg)
+			continue
+		}
+		if s.count != 1 {
+			t.Errorf("commit %q appears %d times: %+v", msg, s.count, s)
+			continue
+		}
+		for _, f := range s.files {
+			if f != own {
+				t.Errorf("commit %q touched %q; want only %q — sibling work leaked into the commit", msg, f, own)
+			}
+		}
+		if !contains(s.files, own) {
+			t.Errorf("commit %q does not touch %q; actual files: %v", msg, own, s.files)
 		}
 	}
 	lsOut, err := exec.Command("git", "-C", repo, "ls-tree", "--name-only", "HEAD").Output()
@@ -341,23 +381,32 @@ func TestSameTreeThreePRDsSerialize(t *testing.T) {
 	}
 }
 
+func contains(files []string, f string) bool {
+	for _, x := range files {
+		if x == f {
+			return true
+		}
+	}
+	return false
+}
+
 func TestSameTreeConcurrentReleaseBumpsDoNotCollide(t *testing.T) {
 	fastTreeLockPolling(t)
 	repo := gitRepoWithDWSeed(t)
 	mgr := newTreeLockExecutorManager(t, Config{})
 	st := mgr.Store()
 
-	// Task IDs are not needed by this test: the bump bookkeeping is keyed
-	// by SpawnRequest.TaskID inside the seams.
+	// Task IDs are unused here: the bump bookkeeping is keyed by
+	// SpawnRequest.TaskID inside the seams.
 	prd1, _ := newSameTreePRD(t, st, repo, "", 0)
 	prd2, _ := newSameTreePRD(t, st, repo, prd1.ID, 1)
 	prd3, _ := newSameTreePRD(t, st, repo, prd2.ID, 2)
 
 	// The shared "version" a release task bumps: a plain value with a
-	// wide read-then-write window (40 ms of work between read and write).
-	// The tree lock — the only thing all three PRDs hold in common — is
-	// what must serialize the read-modify-write; the value itself has
-	// no locking of its own.
+	// wide read-then-write window (40 ms of work between read and write,
+	// wider than any plausible unserialized handoff). The value has no
+	// locking of its own; the tree lock — the only thing all three PRDs
+	// hold in common — is what must serialize the read-modify-write.
 	var version atomic.Value
 	version.Store("9.9.9")
 	type bump struct{ read, write string }
@@ -384,7 +433,8 @@ func TestSameTreeConcurrentReleaseBumpsDoNotCollide(t *testing.T) {
 		}
 	}
 
-	runPRDsConcurrently(t, mgr, []string{prd1.ID, prd2.ID, prd3.ID}, []SpawnFn{bumpSpawn(), bumpSpawn(), bumpSpawn()}, tlVerify)
+	runPRDsConcurrently(t, mgr, []string{prd1.ID, prd2.ID, prd3.ID},
+		[]SpawnFn{bumpSpawn(), bumpSpawn(), bumpSpawn()}, tlVerify)
 
 	bumpMu.Lock()
 	defer bumpMu.Unlock()
