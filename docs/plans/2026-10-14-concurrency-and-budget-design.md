@@ -711,6 +711,7 @@ can disagree sharply, and the shared ceiling is the real constraint.
 | 2026-10-18 08:00 | weekly limit reset | back on the weekly percent limit, not credits; operator allows one Claude development thread on the backlog in addition to the two GPU threads; the Claude thread's usage is tracked as its own line, apart from supervision |
 | 2026-10-18 ~10:20 | 2% weekly, 8% session, session resets in 2h40m | about two hours of supervision plus the first Claude-lane fix PRDs (Haiku worker, Sonnet verifier); first data point for the Claude-lane line |
 | 2026-10-18 ~14:3x | 4% weekly | this Claude dev-lane session (BL449 pi-switch + BL472 mockup filing below); session stopped here on operator instruction, handed back to the supervisor |
+| 2026-10-18 ~17:00 | 5% weekly; session meter at 15%, session resets in about 50 minutes | operator-reported. One Claude builder thread plus two qwen GPU threads; operator decided to hold at one Claude thread (decision 2026-10-18 17:02) and revisit after a per-PRD cost is measured |
 
 Restricted window: while the weekly ceiling was exhausted, autonomous PRD
 decompose, run, verify and smoke used pi-prompt with ollama/qwen3.8-64k:27b
@@ -1287,3 +1288,21 @@ thing example (iii) could not see.
     (`onMemberTerminal`/advance logic) must consume faithfully — this
     judgment call should not keep being made ad hoc by whoever is driving
     PRDs by hand.
+
+### 4d. Verifier split (operator decision 2026-10-18)
+
+Decision: qwen is the worker on both GPU lanes and verifies routine tasks; Claude Sonnet
+verifies the live-smoke and final-gate tasks and any task qwen fails twice. This keeps the
+open models in the build (they find the harness defects) while the long, expensive smoke runs
+stop holding a GPU for hours. It is a policy setting, not a hard rule (see BL498 and the
+automation policy, BL483).
+
+Measured on 2026-10-18 (tasks completed that day, worker and verifier time together):
+Haiku worker with Sonnet verifier, 17 tasks, median 4.3 minutes, p90 6.5; qwen worker and
+verifier, 5 tasks, median 18.5 minutes, p90 54.6 (small sample, long smokes included).
+Verdict review (re-running each task's own verification script on the final branch state):
+no sign of a wrong qwen verdict among 33 BL431 tasks and 3 BL479 tasks; the failures were
+fragile scripts (a `tee | grep -q` pipe that exits 141) and two real gaps (embedded docs
+drift, a file that is unformatted on main). Open: the rate of wrong verdicts in the other
+direction (a correct task failed) is not measured, and the credit cost of one Sonnet
+verification is not yet measured; BL479's cost is recorded at the next usage reading.
