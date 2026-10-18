@@ -56,25 +56,52 @@ func (s *Server) toolAutomationCreate() mcpsdk.Tool {
 	)
 }
 
-func (s *Server) handleAutomationCreate(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
-	name := req.GetString("name", "")
-	desc := req.GetString("description", "")
-	entry := req.GetString("entry_member_id", "")
-	var members []map[string]any
-	_ = json.Unmarshal([]byte(req.GetString("members_json", "[]")), &members)
-	var budget map[string]any
-	_ = json.Unmarshal([]byte(req.GetString("budget_policy_json", "{}")), &budget)
-	body := map[string]any{
-		"name": name, "description": desc, "entry_member_id": entry,
-		"members": members, "budget_policy": budget,
-		"project_dir":          req.GetString("project_dir", ""),
-		"backend":              req.GetString("backend", ""),
-		"model":                req.GetString("model", ""),
-		"effort":               req.GetString("effort", ""),
-		"verification_backend": req.GetString("verification_backend", ""),
-		"verification_model":   req.GetString("verification_model", ""),
-		"verification_effort":  req.GetString("verification_effort", ""),
+// automationProxyBody converts the MCP tool arguments into a REST request
+// body, forwarding only the fields the caller actually provided. Empty
+// strings, nulls, an empty members array and an empty budget object are
+// dropped so the server treats them as "unchanged" (partial updates) rather
+// than as explicit empty values, which would fail server-side validation
+// (e.g. a zero-valued budget policy has no ceiling type).
+func automationProxyBody(req mcpsdk.CallToolRequest) map[string]any {
+	body := map[string]any{}
+	args := req.GetArguments()
+	for k, v := range args {
+		if v == nil {
+			continue
+		}
+		switch k {
+		case "members_json":
+			var m []map[string]any
+			if err := json.Unmarshal([]byte(asJSONString(v)), &m); err == nil && len(m) > 0 {
+				body["members"] = m
+			}
+		case "budget_policy_json":
+			var b map[string]any
+			if err := json.Unmarshal([]byte(asJSONString(v)), &b); err == nil && len(b) > 0 {
+				body["budget_policy"] = b
+			}
+		case "id":
+			// path parameter, not part of the body
+		default:
+			if str, ok := v.(string); ok && str == "" {
+				continue
+			}
+			body[k] = v
+		}
 	}
+	return body
+}
+
+func asJSONString(v any) string {
+	if s, ok := v.(string); ok {
+		return s
+	}
+	b, _ := json.Marshal(v)
+	return string(b)
+}
+
+func (s *Server) handleAutomationCreate(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	body := automationProxyBody(req)
 	data, err := s.proxyJSON(http.MethodPost, "/api/automations", body)
 	if err != nil {
 		return mcpsdk.NewToolResultText("error: " + err.Error()), nil
@@ -125,28 +152,7 @@ func (s *Server) toolAutomationUpdate() mcpsdk.Tool {
 
 func (s *Server) handleAutomationUpdate(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	id := req.GetString("id", "")
-	name := req.GetString("name", "")
-	desc := req.GetString("description", "")
-	entry := req.GetString("entry_member_id", "")
-	var members []map[string]any
-	_ = json.Unmarshal([]byte(req.GetString("members_json", "[]")), &members)
-	var budget map[string]any
-	_ = json.Unmarshal([]byte(req.GetString("budget_policy_json", "{}")), &budget)
-	body := map[string]any{
-		"name": name, "description": desc, "entry_member_id": entry,
-		"members": members, "budget_policy": budget,
-		"reason":               req.GetString("reason", ""),
-		"project_dir":          req.GetString("project_dir", ""),
-		"backend":              req.GetString("backend", ""),
-		"model":                req.GetString("model", ""),
-		"effort":               req.GetString("effort", ""),
-		"verification_backend": req.GetString("verification_backend", ""),
-		"verification_model":   req.GetString("verification_model", ""),
-		"verification_effort":  req.GetString("verification_effort", ""),
-	}
-	if v, ok := req.GetArguments()["expected_version"]; ok && v != nil {
-		body["expected_version"] = v
-	}
+	body := automationProxyBody(req)
 	data, err := s.proxyJSON(http.MethodPut, "/api/automations/"+id, body)
 	if err != nil {
 		return mcpsdk.NewToolResultText("error: " + err.Error()), nil

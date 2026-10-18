@@ -86,15 +86,28 @@ func (m *Manager) UpdateAutomation(id string, expectedVersion int64, in Automati
 	var oldMembers []AutomationMember
 	a, err := m.automations.Update(id, expectedVersion, func(a *Automation) error {
 		oldMembers = append([]AutomationMember(nil), a.Members...)
-		stored, err := json.Marshal(a.Members)
-		if err != nil {
-			return err
+		// Partial-update semantics: omitted members (nil) and a blank entry
+		// member ID mean "leave unchanged", matching the blank-Name rule
+		// and the operator contract ("provide only the fields to change")
+		// — the REST body cannot distinguish an omitted list from an empty
+		// one, and the dirty check below must only trip on fields the
+		// caller actually supplied, or a plain name rename 409s on a
+		// non-draft Automation and silently wipes a draft's members.
+		membersProvided := in.Members != nil
+		membersChanged := false
+		if membersProvided {
+			stored, err := json.Marshal(a.Members)
+			if err != nil {
+				return err
+			}
+			incoming, err := json.Marshal(in.Members)
+			if err != nil {
+				return err
+			}
+			membersChanged = string(incoming) != string(stored)
 		}
-		incoming, err := json.Marshal(in.Members)
-		if err != nil {
-			return err
-		}
-		if string(incoming) != string(stored) || in.EntryMemberID != a.EntryMemberID {
+		entryChanged := in.EntryMemberID != "" && in.EntryMemberID != a.EntryMemberID
+		if membersChanged || entryChanged {
 			if a.Status != AutomationDraft {
 				return fmt.Errorf("409: members can only be edited while the automation is a draft")
 			}
@@ -113,6 +126,9 @@ func (m *Manager) UpdateAutomation(id string, expectedVersion int64, in Automati
 		a.VerificationEffort = in.VerificationEffort
 		if in.EntryMemberID != "" {
 			a.EntryMemberID = in.EntryMemberID
+		}
+		if !membersProvided {
+			return nil
 		}
 		now := time.Now()
 		byID := make(map[string]AutomationMember, len(a.Members))
