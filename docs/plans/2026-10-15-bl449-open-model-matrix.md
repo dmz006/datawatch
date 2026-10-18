@@ -47,26 +47,50 @@ before that round runs. Additions, not yet executed:
   sample, no reasoning-effort control, on a contended node, and compared
   against a mixed task basket — not a real substitute for a matrix-grade
   run.
-- **Reasoning effort / thinking level control — BLOCKED on an unresolved
-  reference.** The operator asked this round to document the reasoning/
-  effort/thinking-level configuration "added to BL492." No such tracker
-  item exists: not in this repo's code, docs, or CHANGELOG, and not in
-  the live daemon's PRD registry (checked 2026-10-18; highest real item
-  found is BL484). The only effort concept that exists today is
-  `internal/autonomous/models.go`'s `Effort` type
-  (`low/medium/high/max/quick/normal/thorough`), which maps to **claude-
-  code's `--effort` flag** (BL422/BL41) — it has no connection to Ollama/
-  qwen "thinking" control. There is currently no `reasoning_effort`/
-  `thinking_level`/`think` setting anywhere in `internal/llm` or
-  `internal/config`. **Do not design matrix cells around per-effort
-  variants until this is resolved** — get the correct tracker ID/location
-  from the operator, or confirm no such config exists yet and this matrix
-  round should add it (new scope, not a reuse).
+- **Reasoning effort / thinking level control — now real, via BL492
+  (correction: an earlier revision of this section said no such tracker
+  item existed; the supervisor filed it minutes later as README row 74,
+  draft PRD `f888d75b`, status `draft` as of 2026-10-18).** BL492 is
+  "make local-model (pi) workers observable and less prone to stalling,"
+  not a matrix feature in itself, but it is the source of the knob this
+  round needs:
+  - **`pi.thinking_level`** — new setting, default empty (= pi's own
+    default). Allowed values: `off`, `minimal`, `low`, `medium`, `high`.
+    Passed to the pi worker as its `--thinking` flag. Has a per-PRD and
+    per-task override, same resolution shape as other per-unit LLM
+    settings (PRD > task > global). Full parity surface per BL492's spec:
+    REST/MCP/CLI/comm config get/set, PWA settings, `docs/config-
+    reference.yaml`, `docs/operations.md`, with locale keys in
+    de/en/es/fr/ja.
+  - **`autonomous.loop_detect_turns`** (default 3, `0` = off) — a
+    related but separate BL492 setting: fires a "looping" warning (and,
+    for one-shot print sessions, stops+retries with a hint) when the
+    last N assistant turns are announce-only or repeat an identical tool
+    call. Not a reasoning-effort knob, but relevant to this matrix
+    because a stuck/looping cell should be classified as that, not as a
+    silent `model_result` failure.
+  - BL492 also adds `--mode json`/`rpc` pi launch + a progress reader
+    over `~/.pi/agent/sessions/<project>/<time>_<id>.jsonl` (last-event
+    heartbeat, tool-call counts, last-thinking-block summary) — useful
+    for this matrix's own debugging of a stuck cell, not a scoring input.
+  - **BL492 is itself still `draft`** (not yet decomposed/built as of
+    2026-10-18) and is explicitly sequenced to be exercised by this
+    matrix *after* v10.0.0, per the supervisor's own note on README row
+    74 ("tested in the open-model matrix after v10.0.0, not now"). So
+    this matrix round depends on BL492 shipping first — `pi.thinking_level`
+    has to exist and work before a cell can pin it.
+  - Swift/qwen3-coder cells (the new execution-role candidates above) run
+    via the **opencode** backend in this matrix, not pi — confirm at
+    implementation time whether `pi.thinking_level` is pi-only or also
+    reaches the opencode→Ollama path's own `think` request field; if it's
+    pi-only, the opencode-backed cells need their own equivalent knob
+    (Ollama's native per-request `think: true/false`/level) rather than
+    inheriting BL492's setting unchanged.
 - **Methodology fixes for this round, regardless of model list**: multi-
   sample per cell (the matrix driver already loops cells; just don't
-  short-circuit to n=1), and if/when a reasoning-effort knob exists,
-  pin it explicitly per cell rather than leaving it at the model's
-  default — mirrors the gap that made Finding 2 inconclusive.
+  short-circuit to n=1), and pin `pi.thinking_level` (or the opencode-
+  path equivalent) explicitly per cell rather than leaving it at the
+  model's default — mirrors the gap that made Finding 2 inconclusive.
 - **Still blocking before any of this can run** (r8 follow-ups from the
   table below, unresolved as of 2026-10-18 — confirmed via git log, zero
   commits touching the driver or its fixtures since 2026-10-16): node-a
