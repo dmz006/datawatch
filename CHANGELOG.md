@@ -5,6 +5,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.1 — fix(verifier): pi verifier sessions run the configured verification model, and failures name it
+
+**The autonomous verifier uses the model you configured for pi.** A pi or pi-prompt
+verifier session now runs with the model set in `autonomous.verification_model`.
+Before, it silently fell back to another backend's default model, and those sessions
+often ended without a verdict.
+
+**Verifier failures say which model was used.** When a pi-family verifier session
+ends without writing its verdict file, the failure message now names the backend and
+the exact model the session was started with, so you can tell whether the configured
+model was the one that failed to answer.
+
 ## v9.5.0 — feat(session): finished one-shot sessions close themselves, and a one-shot only commits what it validated
 
 **One-shot sessions no longer pile up.** When a one-shot session's command ends

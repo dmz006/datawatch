@@ -2,6 +2,8 @@ package pi
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -105,6 +107,69 @@ func TestPromptBackend_SetModel(t *testing.T) {
 	b.SetModel("ollama/qwen3.8:27b")
 	if b.model != "ollama/qwen3.8:27b" {
 		t.Errorf("model after SetModel = %q, want \"ollama/qwen3.8:27b\"", b.model)
+	}
+}
+
+// TestBuildLaunchCmd_ModelPassesThroughVerbatim pins the model string the
+// verifier selection carries to the pi --model flag: no provider-prefix
+// rewriting, no substitution with a default. A regression here is how a
+// pi-prompt verifier ended up launching with an unrelated ollama model.
+func TestBuildLaunchCmd_ModelPassesThroughVerbatim(t *testing.T) {
+	const model = "ollama-datawatch/qwen3.8-64k:27b"
+	cmd := buildLaunchCmd("pi", model, "some task", "work", "ses")
+	want := "--model '" + model + "' "
+	if !strings.Contains(cmd, want) {
+		t.Errorf("expected exactly %q in command, got: %s", want, cmd)
+	}
+	if n := strings.Count(cmd, "--model"); n != 1 {
+		t.Errorf("expected exactly one --model flag, got %d in: %s", n, cmd)
+	}
+}
+
+// TestBuildLaunchCmd_EmptyModelOmitsModelFlag: an empty model means pi
+// uses its own configured default — the intended manager fallback.
+func TestBuildLaunchCmd_EmptyModelOmitsModelFlag(t *testing.T) {
+	cmd := buildLaunchCmd("pi", "", "some task", "work", "ses")
+	if strings.Contains(cmd, "--model") {
+		t.Errorf("empty model must not add any --model flag, got: %s", cmd)
+	}
+}
+
+// TestPromptBackend_LaunchCmdSendsSetModelToTmux drives the real Launch path
+// with a fake tmux on PATH that records its argv, proving SetModel feeds
+// the command Launch sends — and that a second SetModel call wins.
+func TestPromptBackend_LaunchCmdSendsSetModelToTmux(t *testing.T) {
+	dir := t.TempDir()
+	argvFile := filepath.Join(dir, "argv")
+	fakeTmux := filepath.Join(dir, "tmux")
+	script := "#!/bin/sh\nprintf '%s\\0' \"$@\" > '" + shellEscape(argvFile) + "'\n"
+	if err := os.WriteFile(fakeTmux, []byte(script), 0o755); err != nil { //nolint:gosec // test fixture must be executable
+		t.Fatalf("write fake tmux: %v", err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	launch := func(b *PromptBackend) string {
+		t.Helper()
+		if err := b.Launch(context.Background(), "", "cs-test", dir, ""); err != nil {
+			t.Fatalf("Launch: %v", err)
+		}
+		raw, err := os.ReadFile(argvFile)
+		if err != nil {
+			t.Fatalf("read recorded tmux argv: %v", err)
+		}
+		args := strings.Split(strings.TrimSuffix(string(raw), "\x00"), "\x00")
+		return args[len(args)-2] // send-keys ... <cmd> Enter
+	}
+
+	b := NewPrompt("pi").(*PromptBackend)
+	b.SetModel("prov/first:64k")
+	if cmd := launch(b); !strings.Contains(cmd, "--model 'prov/first:64k'") {
+		t.Errorf("Launch after SetModel(first) must carry the model, got: %s", cmd)
+	}
+
+	b.SetModel("prov/second:64k")
+	if cmd := launch(b); !strings.Contains(cmd, "--model 'prov/second:64k'") || strings.Contains(cmd, "prov/first") {
+		t.Errorf("second SetModel must win on the next Launch, got: %s", cmd)
 	}
 }
 

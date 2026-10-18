@@ -277,12 +277,109 @@ func TestRunOneShotJSONSession_FailedStateWithNoOutputIsAnError(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.DataDir = dataDir
 
-	_, err := runOneShotJSONSession(cfg, "prd-3", projectDir, "claude-code", "",
+	_, err := runOneShotJSONSession(cfg, "prd-3", projectDir, "claude-code", "sonnet",
 		"autonomous:test", "unused", outputFile, "test-output-failed.json", 10*time.Second)
 	if err == nil {
 		t.Fatal("expected an error when the session ends failed with no output file")
 	}
 	if !strings.Contains(err.Error(), "ended with state") {
 		t.Errorf("error = %v, want it to name the terminal state", err)
+	}
+	assertErrorNamesBackendAndModel(t, err, "claude-code", "sonnet")
+}
+
+// TestRunOneShotJSONSession_CompleteStateWithNoOutputIsAnError covers the
+// "complete" terminal branch: the session reports done but never wrote the
+// output file, which must surface as an error naming the launch settings.
+func TestRunOneShotJSONSession_CompleteStateWithNoOutputIsAnError(t *testing.T) {
+	projectDir := t.TempDir()
+	dataDir := t.TempDir()
+	outputFile := filepath.Join(projectDir, ".test-output-complete.json")
+
+	srv, _ := fakeSessionServer(t, "complete", outputFile, "", false)
+	withFakeLoopback(t, srv)
+
+	cfg := &config.Config{}
+	cfg.DataDir = dataDir
+
+	_, err := runOneShotJSONSession(cfg, "prd-5", projectDir, "pi-prompt", "prov/model:64k",
+		"autonomous:test", "unused", outputFile, "test-output-complete.json", 10*time.Second)
+	if err == nil {
+		t.Fatal("expected an error when the session completes with no output file")
+	}
+	if !strings.Contains(err.Error(), "completed but output file") {
+		t.Errorf("error = %v, want it to say the session completed without the output file", err)
+	}
+	assertErrorNamesBackendAndModel(t, err, "pi-prompt", "prov/model:64k")
+}
+
+// assertErrorNamesBackendAndModel checks that a no-output error reports the
+// backend and model the session start request carried, so an operator can
+// tell from the recorded summary which selection produced it.
+func assertErrorNamesBackendAndModel(t *testing.T, err error, backend, model string) {
+	t.Helper()
+	if !strings.Contains(err.Error(), "backend="+backend) {
+		t.Errorf("error = %v, want it to name backend=%s", err, backend)
+	}
+	if !strings.Contains(err.Error(), "model="+`"`+model+`"`) {
+		t.Errorf("error = %v, want it to name model=%q", err, model)
+	}
+}
+
+// TestRunOneShotJSONSession_PiPromptStartBodyCarriesModelVerbatim proves
+// the verifier selection's model reaches the session start request
+// unchanged. The start handler records the decoded body; the pi --model
+// flag itself is rendered from that field by the pi backend tests.
+func TestRunOneShotJSONSession_PiPromptStartBodyCarriesModelVerbatim(t *testing.T) {
+	projectDir := t.TempDir()
+	dataDir := t.TempDir()
+	outputFile := filepath.Join(projectDir, ".test-output-pi-model.json")
+	const want = `{"ok":true,"severity":"info","summary":"verified"}`
+	const model = "prov/model:64k"
+
+	var startBody map[string]any
+	polls := 0
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/sessions/start", func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&startBody); err != nil {
+			t.Errorf("decode start body: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{"id": "sess-test-1"})
+	})
+	mux.HandleFunc("/api/sessions/sess-test-1", func(w http.ResponseWriter, r *http.Request) {
+		polls++
+		if polls == 1 {
+			_ = os.WriteFile(outputFile, []byte(want), 0o600)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{"state": "running"})
+	})
+	mux.HandleFunc("/api/sessions/kill", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	withFakeLoopback(t, srv)
+
+	cfg := &config.Config{}
+	cfg.DataDir = dataDir
+
+	got, err := runOneShotJSONSessionWithEffort(cfg, "prd-4", projectDir, "pi-prompt", model, "",
+		"autonomous:verify", "verify the thing", outputFile, "verify-pi.json", 10*time.Second)
+	if err != nil {
+		t.Fatalf("runOneShotJSONSessionWithEffort: %v", err)
+	}
+	if got != want {
+		t.Errorf("content = %q, want %q", got, want)
+	}
+	if startBody == nil {
+		t.Fatal("start handler never received a request body")
+	}
+	if startBody["backend"] != "pi-prompt" {
+		t.Errorf("start body backend = %v, want \"pi-prompt\"", startBody["backend"])
+	}
+	if startBody["model"] != model {
+		t.Errorf("start body model = %v, want %q verbatim", startBody["model"], model)
 	}
 }
