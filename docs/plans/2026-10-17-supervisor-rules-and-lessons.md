@@ -218,6 +218,12 @@ Version and release kinds (from AGENT.md, with the operator's tag rule):
   Never a slice of a feature, and never a scaffolding change.
 - **Major** (`X.0.0`): breaking changes, only when the operator explicitly asks.
 
+These release rules are the operator's rules for this project. Other projects will have
+their own, so the Automation coordinator must treat release rules (what counts as a patch,
+a minor or a major, what gets tagged and when, whether a push needs approval) as
+per-project configuration, not built-in behaviour. The first complete release after the
+unreleased 9.1 to 9.5 work is numbered 9.6.0; the gap is left in place.
+
 Bumping the version in the code for every behaviour change, as happened from 9.0.87 to
 9.5.0 without a single tag, produces numbers that are development counters, not releases.
 Do not release those; fold them into the first complete release.
@@ -263,6 +269,9 @@ The coordinator replaces the human loop, so these become mechanical:
   for the tag until it is green, with CI failures routed to fix PRDs.
 - Alerting when a bad state sits silent. In one incident two tasks sat blocked for about
   fifty minutes before a person noticed.
+
+- Release rules (patch, minor, major, tagging, push approval) read from per-project
+  configuration, since they differ between projects.
 
 Design choices left to the operator: the escalation channel and thresholds, which
 surfaces map to which regression suites, and how an urgent bug may jump the queue.
