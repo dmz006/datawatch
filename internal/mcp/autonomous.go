@@ -47,7 +47,8 @@ func (s *Server) handleAutonomousConfigGet(_ context.Context, _ mcpsdk.CallToolR
 func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_config_set",
 		mcpsdk.WithDescription("Update the autonomous (Automata) config. Merges onto the current config, so a partial body (e.g. just enabled) only changes the fields given and leaves the rest untouched. "+
-			"Automaton-level (per_prd_guardrails) guardrails accept \"rules-review\" and \"ci-watch\"; both are off unless listed. \"ci-watch\" makes an automaton, when it completes, wait (up to ci_watch_timeout_seconds, default 1500) for the CI runs of the commit it pushed; if any run failed, the configured LLM judges the failure against the project's rules file. It is skipped when nothing was pushed or the origin remote is not GitHub."),
+			"Automaton-level (per_prd_guardrails) guardrails accept \"rules-review\" and \"ci-watch\"; both are off unless listed. \"ci-watch\" makes an automaton, when it completes, wait (up to ci_watch_timeout_seconds, default 1500) for the CI runs of the commit it pushed; if any run failed, the configured LLM judges the failure against the project's rules file. It is skipped when nothing was pushed or the origin remote is not GitHub. "+
+			"task_override_statuses sets which PRD statuses accept task- and story-level LLM overrides; unknown status names are rejected."),
 		mcpsdk.WithBoolean("enabled", mcpsdk.Description("Toggle autonomous loop on/off")),
 		mcpsdk.WithNumber("poll_interval_seconds", mcpsdk.Description("Background loop tick (default 30)")),
 		mcpsdk.WithNumber("max_concurrent_tasks", mcpsdk.Description("Daemon-wide default for how many independent tasks of one Automaton run at once. An Automaton's own setting overrides it. 1 = sequential (the default); values below 1 are ignored.")),
@@ -55,6 +56,7 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithString("planning_backend", mcpsdk.Description("LLM backend for the Automata planning call (empty = inherit); alias: decomposition_backend")),
 		mcpsdk.WithString("verification_backend", mcpsdk.Description("BL25 verifier backend (empty = inherit; set to a different backend for cross-backend independence)")),
 		mcpsdk.WithArray("verification_backends", mcpsdk.Description("v8.36.9 — ordered list of LLM registry names to load-balance verifier capacity across (e.g. [\"ollama-datawatch\", \"ollama-johnnyjohnny\"]); tries each in order, uses whichever has free node capacity right now. Empty = single-backend behavior via verification_backend above.")),
+		mcpsdk.WithArray("task_override_statuses", mcpsdk.Description("PRD statuses that accept task/story-level LLM overrides; names: draft, planning, needs_review, approved, revisions_asked, active, running, completed, rejected, cancelled, archived, blocked, failed, paused; empty array restores the defaults (needs_review, revisions_asked, cancelled, blocked)")),
 		mcpsdk.WithString("planning_effort", mcpsdk.Description("BL41 effort hint for planning; alias: decomposition_effort")),
 		mcpsdk.WithString("verification_effort", mcpsdk.Description("BL41 effort hint for verifier")),
 		mcpsdk.WithNumber("auto_fix_retries", mcpsdk.Description("Retries on verifier failure (default 1)")),
@@ -124,6 +126,13 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 	if args := req.GetArguments(); args != nil {
 		if _, ok := args["verification_backends"]; ok {
 			body["verification_backends"] = req.GetStringSlice("verification_backends", nil)
+		}
+	}
+	// v9.5.5 — presence-aware: an explicit [] reverts to the default list,
+	// an absent key leaves the stored list untouched.
+	if args := req.GetArguments(); args != nil {
+		if _, ok := args["task_override_statuses"]; ok {
+			body["task_override_statuses"] = req.GetStringSlice("task_override_statuses", []string{})
 		}
 	}
 	// BL367 — default quality gates nested under default_quality_gates.
