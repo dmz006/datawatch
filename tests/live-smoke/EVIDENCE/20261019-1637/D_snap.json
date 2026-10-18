@@ -1,0 +1,125 @@
+{
+  "approved_at": "2026-10-18T16:36:36.774540038-04:00",
+  "approved_by": "operator",
+  "created_at": "2026-10-18T16:36:00.513331796-04:00",
+  "decisions": [
+    {
+      "actor": "autonomous",
+      "at": "2026-10-18T16:36:30.634386605-04:00",
+      "backend": "pi-prompt",
+      "kind": "decompose",
+      "prompt_chars": 3227,
+      "response_chars": 1931
+    },
+    {
+      "actor": "operator",
+      "at": "2026-10-18T16:36:36.774540038-04:00",
+      "kind": "approve"
+    },
+    {
+      "actor": "autonomous",
+      "at": "2026-10-18T16:36:36.796183389-04:00",
+      "kind": "run"
+    },
+    {
+      "actor": "autonomous",
+      "at": "2026-10-18T16:36:58.809979671-04:00",
+      "kind": "file_drift_detected",
+      "note": "task 63e0fc09: committed pre-existing uncommitted file(s) outside its planned files: .datawatch/tree.lock, .datawatch/verify/create-d-file-txt.sh, .gitignore, .mcp.json"
+    }
+  ],
+  "git": {},
+  "id": "6085a8d3",
+  "memory_harvest": {},
+  "memory_seed": {},
+  "project_dir": "/home/dmz/.datawatch/tree-smoke-20261019-0945/s2d",
+  "rev": 11,
+  "spec": "Create exactly one new file named D_FILE.txt at the project root containing the single line 'worktree D ok' and nothing else. Do not modify any other file.",
+  "status": "failed",
+  "stories": [
+    {
+      "created_at": "2026-10-18T16:36:30.634417061-04:00",
+      "description": "Create exactly one new file named D_FILE.txt at the project root (s2d repository root) containing the single line 'worktree D ok' followed by a trailing newline, and nothing else. The repository currently contains only README.md, .gitignore and .mcp.json on a fresh baseline commit 'baseline s2d'; no source code, build tooling, or scripts exist. No other file may be created, modified, or deleted.",
+      "files": [
+        "D_FILE.txt"
+      ],
+      "files_generated": [
+        ".datawatch/verify/create-d-file-txt.sh"
+      ],
+      "id": "63e0f5a9",
+      "prd_id": "6085a8d3",
+      "status": "failed",
+      "tasks": [
+        {
+          "attempt_commit_shas": [
+            "1703c10980f80ae848d0a79ecdbeb4e1c3b043c6"
+          ],
+          "base_sha": "d29360e2c12c6c740778707835a575f81f6fa40e",
+          "created_at": "2026-10-18T16:36:30.634417372-04:00",
+          "error": "verification failed after retries",
+          "failure_reason": {
+            "category": "infra",
+            "detail": "worker stopped and asked an interactive question instead of completing the one-shot task — this is a one-shot run, no one will answer; make the most reasonable judgment call yourself (e.g. if output already exists from a prior attempt, verify it's still correct and either finish or redo it) and continue to DATAWATCH_COMPLETE without asking: worker stalled",
+            "occurred_at": "2026-10-18T16:37:32.723210875-04:00",
+            "retryable": false,
+            "source": "task-exhausted"
+          },
+          "files": [
+            "D_FILE.txt"
+          ],
+          "files_generated": [
+            ".datawatch/verify/create-d-file-txt.sh"
+          ],
+          "files_touched": [
+            ".datawatch/tree.lock",
+            ".datawatch/verify/create-d-file-txt.sh",
+            ".gitignore",
+            ".mcp.json",
+            "CLAUDE.md"
+          ],
+          "foreign_file_drift": [
+            ".datawatch/tree.lock",
+            ".datawatch/verify/create-d-file-txt.sh",
+            ".gitignore",
+            ".mcp.json"
+          ],
+          "id": "63e0fc09",
+          "prd_id": "6085a8d3",
+          "pre_task_dirty_files": [
+            ".mcp.json"
+          ],
+          "pre_task_sha": "1703c10980f80ae848d0a79ecdbeb4e1c3b043c6",
+          "prior_attempt_count": 1,
+          "retry_count": 1,
+          "session_id": "b12f",
+          "spec": "Working in the s2d project root (the directory containing README.md, .gitignore and .mcp.json): create exactly one new file named D_FILE.txt at this root. Its content must be exactly the single line 'worktree D ok' terminated by one trailing newline — no other characters, whitespace, or BOM. Use a standard shell redirect, e.g. printf 'worktree D ok\\n' \u003e D_FILE.txt (resolve 'printf' via PATH; it is a POSIX builtin). Do not touch, rename, or delete any other file in the repository (README.md, .gitignore, .mcp.json must remain byte-identical). Do not create any additional helper files. After writing, confirm the file's byte size is 14 and that wc -l reports 1. Note: do not run git add or git commit; the harness handles commits automatically.",
+          "started_at": "2026-10-18T16:36:58.827105492-04:00",
+          "status": "failed",
+          "story_id": "63e0f5a9",
+          "title": "Write D_FILE.txt with single line 'worktree D ok'",
+          "updated_at": "2026-10-18T16:37:32.723213298-04:00",
+          "verification": {
+            "issues": [
+              "D_FILE.txt is not part of the diff and does not exist at the project root (stat: No such file or directory)",
+              "Project verification script .datawatch/verify/create-d-file-txt.sh fails: exit=1, 'FAIL: D_FILE.txt does not exist at project root'",
+              "The spec's primary requirement (create D_FILE.txt containing 'worktree D ok\\n', 14 bytes, 1 line) is unmet; the diff only adds harness/verification scaffolding (CLAUDE.md, .gitignore, .mcp.json, .datawatch/*) and none of the requested file"
+            ],
+            "ok": false,
+            "severity": "critical",
+            "summary": "Core deliverable D_FILE.txt is absent: not in the diff and not on disk; the repo's own verify script exits 1 with 'D_FILE.txt does not exist at project root'.",
+            "verified_at": "2026-10-18T16:36:58.808591912-04:00",
+            "verifier_backend": "pi-prompt",
+            "verifier_model": "ollama/qwen3.8-64k:27b",
+            "verifier_source": "global"
+          },
+          "verification_script": ".datawatch/verify/create-d-file-txt.sh"
+        }
+      ],
+      "title": "Add D_FILE.txt at project root",
+      "updated_at": "2026-10-18T16:36:30.634417101-04:00",
+      "verification_script": ".datawatch/verify/create-d-file-txt.sh"
+    }
+  ],
+  "title": "Create D_FILE.txt placeholder file",
+  "updated_at": "2026-10-18T16:37:32.728192839-04:00"
+}

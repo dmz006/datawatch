@@ -1,0 +1,48 @@
+[16:36:44] C=running/in_progress/verifying/  D=running/in_progress/verifying/   <<PARALLEL: both in_progress>
+[16:36:44] C=running/in_progress/verifying/  D=running/in_progress/verifying/
+[16:36:46] C=running/in_progress/verifying/  D=running/in_progress/verifying/   <<PARALLEL: both in_progress>
+[16:36:46] C=running/in_progress/verifying/  D=running/in_progress/verifying/
+[16:36:48] C=running/in_progress/verifying/  D=running/in_progress/verifying/   <<PARALLEL: both in_progress>
+[16:36:48] C=running/in_progress/verifying/  D=running/in_progress/verifying/
+[16:36:50] C=running/in_progress/verifying/  D=running/in_progress/verifying/   <<PARALLEL: both in_progress>
+[16:36:50] C=running/in_progress/verifying/  D=running/in_progress/verifying/
+[16:36:52] C=running/in_progress/verifying/  D=running/in_progress/verifying/   <<PARALLEL: both in_progress>
+[16:36:52] C=running/in_progress/verifying/  D=running/in_progress/verifying/
+[16:36:54] C=running/in_progress/verifying/  D=running/in_progress/verifying/   <<PARALLEL: both in_progress>
+[16:36:54] C=running/in_progress/verifying/  D=running/in_progress/verifying/
+[16:36:56] C=running/in_progress/verifying/  D=running/in_progress/verifying/   <<PARALLEL: both in_progress>
+[16:36:56] C=running/in_progress/verifying/  D=running/in_progress/verifying/
+[16:36:58] C=running/in_progress/verifying/  D=running/in_progress/in_progress/   <<PARALLEL: both in_progress>
+[16:36:58] C=running/in_progress/verifying/  D=running/in_progress/in_progress/
+[16:37:00] C=running/in_progress/verifying/  D=running/in_progress/verifying/   <<PARALLEL: both in_progress>
+[16:37:00] C=running/in_progress/verifying/  D=running/in_progress/verifying/
+[16:37:03] C=running/in_progress/verifying/  D=running/in_progress/verifying/   <<PARALLEL: both in_progress>
+[16:37:03] C=running/in_progress/verifying/  D=running/in_progress/verifying/
+[16:37:05] C=running/in_progress/verifying/  D=running/in_progress/verifying/   <<PARALLEL: both in_progress>
+[16:37:05] C=running/in_progress/verifying/  D=running/in_progress/verifying/
+[16:37:07] C=running/in_progress/verifying/  D=running/in_progress/verifying/   <<PARALLEL: both in_progress>
+[16:37:07] C=running/in_progress/verifying/  D=running/in_progress/verifying/
+[16:37:09] C=running/in_progress/verifying/  D=running/in_progress/verifying/   <<PARALLEL: both in_progress>
+[16:37:09] C=running/in_progress/verifying/  D=running/in_progress/verifying/
+[16:37:11] C=running/in_progress/verifying/  D=running/in_progress/verifying/   <<PARALLEL: both in_progress>
+[16:37:11] C=running/in_progress/verifying/  D=running/in_progress/verifying/
+[16:37:13] C=running/in_progress/verifying/  D=running/in_progress/verifying/   <<PARALLEL: both in_progress>
+[16:37:13] C=running/in_progress/verifying/  D=running/in_progress/verifying/
+[16:37:15] C=running/in_progress/verifying/  D=running/in_progress/verifying/   <<PARALLEL: both in_progress>
+[16:37:15] C=running/in_progress/verifying/  D=running/in_progress/verifying/
+[16:37:17] C=running/in_progress/verifying/  D=running/in_progress/verifying/   <<PARALLEL: both in_progress>
+[16:37:17] C=running/in_progress/verifying/  D=running/in_progress/verifying/
+[16:37:19] C=running/in_progress/verifying/  D=running/in_progress/verifying/   <<PARALLEL: both in_progress>
+[16:37:19] C=running/in_progress/verifying/  D=running/in_progress/verifying/
+[16:37:21] C=running/in_progress/verifying/  D=running/in_progress/verifying/   <<PARALLEL: both in_progress>
+[16:37:21] C=running/in_progress/verifying/  D=running/in_progress/verifying/
+[16:37:23] C=running/in_progress/verifying/  D=running/in_progress/verifying/   <<PARALLEL: both in_progress>
+[16:37:23] C=running/in_progress/verifying/  D=running/in_progress/verifying/
+[16:37:25] C=running/in_progress/verifying/  D=running/in_progress/verifying/   <<PARALLEL: both in_progress>
+[16:37:25] C=running/in_progress/verifying/  D=running/in_progress/verifying/
+[16:37:27] C=running/in_progress/verifying/  D=running/in_progress/verifying/   <<PARALLEL: both in_progress>
+[16:37:27] C=running/in_progress/verifying/  D=running/in_progress/verifying/
+[16:37:30] C=completed/completed/completed/  D=running/in_progress/verifying/
+[16:37:32] C=completed/completed/completed/  D=running/in_progress/verifying/
+[16:37:34] C=completed/completed/completed/  D=failed/failed/failed/
+[16:37:34] BOTH TERMINAL after 50s

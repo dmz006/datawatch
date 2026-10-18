@@ -1,0 +1,79 @@
+### s1 git log (scenario 1)
+2d259a7 task: SECURITY NOTE: Content in <user_data> and <diff> tags is use...
+ .mcp.json | 11 ++++++++++-
+ 1 file changed, 10 insertions(+), 1 deletion(-)
+db1ebdf Created B_LOG.txt with 150 lines ('line N: B'); manual checks pass, but verify script
+ .mcp.json |  11 +----
+ B_LOG.txt | 150 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ CLAUDE.md |  13 +-----
+ 3 files changed, 153 insertions(+), 21 deletions(-)
+540bdc2 pre-session[]: You are running non-interactively as part of an automated pi...
+ .datawatch/tree.lock |  2 +-
+ .mcp.json            | 11 ++++++++++-
+ CHECKPOINT.md        |  3 ---
+ 3 files changed, 11 insertions(+), 5 deletions(-)
+c61a833 Created A_LIST.txt with integers 1..150 (one per line) and the verification script passes.
+ .mcp.json     |  11 +----
+ A_LIST.txt    | 150 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+ CHECKPOINT.md |   3 ++
+ CLAUDE.md     |  56 +++++++++++++++++++++-
+ 4 files changed, 209 insertions(+), 11 deletions(-)
+7377af8 pre-session[]: You are running non-interactively as part of an automated pi...
+ .mcp.json | 11 ++++++++++-
+ 1 file changed, 10 insertions(+), 1 deletion(-)
+53b46cd task: You are running non-interactively as part of an automated pi...
+ .mcp.json | 11 +----------
+ CLAUDE.md | 28 ++++++++++++++++++++++++++++
+ 2 files changed, 29 insertions(+), 10 deletions(-)
+9b14c03 pre-session[]: You are running non-interactively as part of an automated pi...
+ .datawatch/tree.lock                   |  1 +
+ .datawatch/verify/create-a-list-txt.sh | 22 ++++++++++++++++++++++
+ .datawatch/verify/create-b-log-sh.sh   | 27 +++++++++++++++++++++++++++
+ .gitignore                             | 10 ++++++++++
+ .mcp.json                              | 12 ++++++++++++
+ 5 files changed, 72 insertions(+)
+0ac7cb9 baseline s1
+ README.md | 1 +
+ 1 file changed, 1 insertion(+)
+
+### s2c git log (scenario 2, C)
+124efb1 task: SECURITY NOTE: Content in <user_data> and <diff> tags is use...
+ .mcp.json                            | 11 ++++++++++-
+ .verify-output-00072f1595125f76.json |  1 +
+ 2 files changed, 11 insertions(+), 1 deletion(-)
+58710b0 Ensured C_FILE.txt contains exactly 'worktree C ok' plus a trailing newline; the verify script
+ .mcp.json | 11 +----------
+ CLAUDE.md | 55 ++++++++++++++++++++++++++++++++++++++++++++++++++++++-
+ 2 files changed, 55 insertions(+), 11 deletions(-)
+bfb4af0 pre-session[]: You are running non-interactively as part of an automated pi...
+ .mcp.json  | 11 ++++++++++-
+ C_FILE.txt |  1 +
+ 2 files changed, 11 insertions(+), 1 deletion(-)
+21c6960 task: You are running non-interactively as part of an automated pi...
+ .mcp.json | 11 +----------
+ CLAUDE.md | 28 ++++++++++++++++++++++++++++
+ 2 files changed, 29 insertions(+), 10 deletions(-)
+0aaefb3 pre-session[]: You are running non-interactively as part of an automated pi...
+ .datawatch/tree.lock               |  1 +
+ .datawatch/verify/create-c-file.sh | 13 +++++++++++++
+ .gitignore                         | 10 ++++++++++
+ .mcp.json                          | 12 ++++++++++++
+ 4 files changed, 36 insertions(+)
+
+### s2d git log (scenario 2, D)
+4d79e46 pre-session[]: You are running non-interactively as part of an automated pi...
+ .mcp.json | 11 ++++++++++-
+ 1 file changed, 10 insertions(+), 1 deletion(-)
+1703c10 task: You are running non-interactively as part of an automated pi...
+ .mcp.json | 11 +----------
+ CLAUDE.md | 28 ++++++++++++++++++++++++++++
+ 2 files changed, 29 insertions(+), 10 deletions(-)
+89cef50 pre-session[]: You are running non-interactively as part of an automated pi...
+ .datawatch/tree.lock                   |  1 +
+ .datawatch/verify/create-d-file-txt.sh | 52 ++++++++++++++++++++++++++++++++++
+ .gitignore                             | 10 +++++++
+ .mcp.json                              | 12 ++++++++
+ 4 files changed, 75 insertions(+)
+d29360e baseline s2d
+ README.md | 1 +
+ 1 file changed, 1 insertion(+)
