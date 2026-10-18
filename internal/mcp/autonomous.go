@@ -67,6 +67,7 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithBoolean("injection_guard", mcpsdk.Description("BL369 — scan user-supplied PRD/task specs for prompt injection phrases (warn only by default)")),
 		mcpsdk.WithBoolean("block_on_injection", mcpsdk.Description("BL369 — reject PRD/task create or edit when injection phrases are detected (requires injection_guard:true)")),
 		mcpsdk.WithNumber("planning_timeout_seconds", mcpsdk.Description("Override effort-scaled decompose timeout (0 = default: 5 min normal, 15 min high/max, 2 min quick/low)")),
+		mcpsdk.WithNumber("verification_timeout_seconds", mcpsdk.Description("Bound for one verifier/guardrail judgment session in seconds (default 1800 = 30m; use 0 or a negative value to mean \"leave unset\"); local models need more time than the old hard-coded 10m")),
 		mcpsdk.WithBoolean("capacity_enabled", mcpsdk.Description("Capacity-aware admission: tasks wait for a free host/node/LLM slot instead of failing (default true)")),
 		mcpsdk.WithNumber("capacity_wait_timeout_seconds", mcpsdk.Description("Maximum seconds a task waits for capacity (default 14400)")),
 		mcpsdk.WithNumber("ci_watch_timeout_seconds", mcpsdk.Description("Maximum seconds the ci-watch completion guardrail waits for the CI runs of an automaton's own pushed commit (default 1500). Runs still unfinished at the deadline leave the automaton complete with ci_watch.status \"pending\".")),
@@ -152,6 +153,9 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 	// v8.25.1 — configurable planning timeout.
 	if v := req.GetFloat("planning_timeout_seconds", -1); v >= 0 {
 		body["planning_timeout_seconds"] = int(v)
+	}
+	if v := req.GetFloat("verification_timeout_seconds", -1); v >= 0 {
+		body["verification_timeout_seconds"] = int(v)
 	}
 	if args := req.GetArguments(); args != nil {
 		if _, ok := args["capacity_enabled"]; ok {
