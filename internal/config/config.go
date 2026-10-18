@@ -2041,6 +2041,14 @@ type AutonomousConfig struct {
 	// config.yaml, found live immediately after fixing the MCP tool
 	// handler's own instance of the identical bug.
 	VerificationBackends []string `yaml:"verification_backends" json:"verification_backends"`
+	// TaskOverrideStatuses (v9.5.5) lists the PRD lifecycle statuses that accept
+	// task-level and story-level LLM override calls (set_task_llm, set_story_llm,
+	// set_task_guardrail_llm, set_task_verification_llm, set_story_verification_llm).
+	// Empty means the default [needs_review, revisions_asked, cancelled, blocked].
+	// PRD-level overrides (set_llm and PRD-level guardrail/verification LLM) are
+	// unaffected and stay locked to the pre-Run trio.
+	// No omitempty on purpose: an explicit empty list must round-trip as a clear.
+	TaskOverrideStatuses []string `yaml:"task_override_statuses" json:"task_override_statuses"`
 	// PlanningTimeoutSeconds overrides the effort-scaled LLM call timeout
 	// during PRD decomposition. 0 = use effort-scaled defaults
 	// (120s quick, 300s normal, 900s high/max). Raise for slow Ollama.
