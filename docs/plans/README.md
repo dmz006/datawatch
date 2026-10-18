@@ -138,6 +138,7 @@ Internal research — does not block Stage A/B/C, can run alongside it.
 ## Excluded from v10.0.0
 
 - BL415 `dependency-review` required check. Deferred until after v10.0.0 by decision.
+- [BL449](2026-10-15-bl449-open-model-matrix.md) Open-model 16-cell matrix runner (BL437 S5). Deferred until after v10.0.0 ships (operator decision, 2026-10-18); scope expanded same day to add `swift-1.5-qwen38-27b`, `qwen3-coder:30b`, `qwen3-coder-next:q4_K_M`, `qwen3.5:35b` as execution-role candidates alongside baseline `qwen3.8:27b`. Still blocked on r8's unresolved opencode-session-death and file-drift-guard bugs regardless of model list; a reasoning-effort/thinking-level config knob was requested for this round but no such setting exists yet anywhere in the codebase (see the plan doc's 2026-10-18 section) — needs operator clarification before it's designed.
 
 ## v11.0.0 roadmap (separate lanes)
 

@@ -1,17 +1,92 @@
 # BL449 — Open-model 16-cell matrix runner (BL437 S5)
 
-**Status:** In progress · **Date:** 2026-10-15 · **Tracker:** BL449 · **Implements:** BL437 S5 ([design doc](2026-10-14-recurring-model-eval-design.md))
+**Status:** Deferred until after v10.0.0 ships (operator decision, 2026-10-18)
+— scope expanded below to be fully inclusive before that round runs; no
+infra/driver work resumes until the release is out. · **Date filed:**
+2026-10-15 · **Tracker:** BL449 · **Implements:** BL437 S5 ([design
+doc](2026-10-14-recurring-model-eval-design.md))
 
 Filed as autonomous PRD `9e7bad8e`. This doc records scope, status and
 history. It was written after the fact, because the work began without a
 plan doc of its own.
 
+## 2026-10-18 scope expansion (pre-work for the post-10.0.0 round)
+
+Operator asked to fold the standalone Swift-1.5/coder-model question (see
+[[project_open_model_decompose_findings]] Finding 2, and the 2026-10-18
+research turn) into this matrix as real cells rather than a separate
+one-off test, and to make the matrix's candidate list "fully inclusive"
+before that round runs. Additions, not yet executed:
+
+- **New execution-role candidates** (`datawatch` ComputeNode, confirmed
+  present via `ollama show` 2026-10-18, all Q4_K_M):
+  - `swift-1.5-qwen38-27b:latest` (qwen35 family) — UkisAI's reasoning-
+    efficient Qwen3.8-27B tune. Vendor claims are scoped to coding/agent
+    work (LiveCodeBench v6, Terminal-Bench 2.1); it trails the base model
+    on IFBench/ERQA/AIME/HMMT. **Execution-role candidate only** — do not
+    add it as a verify or decompose candidate; nothing in the vendor's own
+    data supports that role, and Finding 1 (headless-ollama can't
+    decompose a tooled PRD) is a harness constraint that applies
+    regardless of which model sits behind it.
+  - `qwen3-coder:30b` (qwen3moe) — coder-specialized, not a reasoning-
+    efficiency tune. Newly present on the node since the last matrix
+    touch; never tested here.
+  - `qwen3-coder-next:q4_K_M` (qwen3next, 79.7B) — larger coder-
+    specialized variant, same family. Newly present; never tested.
+  - `qwen3.5:35b` (qwen35moe) — newer Qwen generation, general-purpose.
+    Newly present; never tested.
+  - Baseline stays `qwen3.8:27b` (the existing confirmed-good execution
+    model, [[project_open_model_decompose_findings]]).
+- **Why fold Swift/coder in here instead of a separate script**: the
+  existing driver's 3-verdict split (`model_identity` /
+  `verification_integrity` / `model_result`) plus its per-cell dual-
+  verdict design already gives a correctness-controlled comparison;
+  redoing that machinery standalone for just Swift would duplicate work
+  the matrix driver is built to do once it's unblocked. The prior Swift
+  test ([[project_open_model_decompose_findings]] Finding 2) was single-
+  sample, no reasoning-effort control, on a contended node, and compared
+  against a mixed task basket — not a real substitute for a matrix-grade
+  run.
+- **Reasoning effort / thinking level control — BLOCKED on an unresolved
+  reference.** The operator asked this round to document the reasoning/
+  effort/thinking-level configuration "added to BL492." No such tracker
+  item exists: not in this repo's code, docs, or CHANGELOG, and not in
+  the live daemon's PRD registry (checked 2026-10-18; highest real item
+  found is BL484). The only effort concept that exists today is
+  `internal/autonomous/models.go`'s `Effort` type
+  (`low/medium/high/max/quick/normal/thorough`), which maps to **claude-
+  code's `--effort` flag** (BL422/BL41) — it has no connection to Ollama/
+  qwen "thinking" control. There is currently no `reasoning_effort`/
+  `thinking_level`/`think` setting anywhere in `internal/llm` or
+  `internal/config`. **Do not design matrix cells around per-effort
+  variants until this is resolved** — get the correct tracker ID/location
+  from the operator, or confirm no such config exists yet and this matrix
+  round should add it (new scope, not a reuse).
+- **Methodology fixes for this round, regardless of model list**: multi-
+  sample per cell (the matrix driver already loops cells; just don't
+  short-circuit to n=1), and if/when a reasoning-effort knob exists,
+  pin it explicitly per cell rather than leaving it at the model's
+  default — mirrors the gap that made Finding 2 inconclusive.
+- **Still blocking before any of this can run** (r8 follow-ups from the
+  table below, unresolved as of 2026-10-18 — confirmed via git log, zero
+  commits touching the driver or its fixtures since 2026-10-16): node-a
+  fast/mid opencode sessions dying 3-7s after spawn even post-v9.1.4,
+  and the file-drift guard blocking on files a task spec requires the
+  worker to commit. New candidate models do not change this — they ride
+  the same broken opencode-session-start path until it's fixed.
+
 ## Scope
 
 A 4 roles × 4 task types = 16-cell eval of the open (opencode/Ollama)
 models, run through the Automaton system. It reuses the model-tiering
-fixtures unchanged (`fixtures_from: testdata/eval/model-tiering`). Each
-cell records three verdicts that are never collapsed into one:
+fixtures unchanged (`fixtures_from: testdata/eval/model-tiering`). Per
+the 2026-10-18 expansion above, the `execution` role's candidate set for
+the post-10.0.0 round grows to baseline `qwen3.8:27b` plus
+`swift-1.5-qwen38-27b`, `qwen3-coder:30b`, `qwen3-coder-next:q4_K_M`, and
+`qwen3.5:35b` — `decompose`/`verify`/other roles are unchanged, since
+nothing in the vendor data or Finding 1's harness constraint supports
+Swift or the coder variants there. Each cell records three verdicts
+that are never collapsed into one:
 
 - `model_identity`: did the cell run on the expected model?
 - `verification_integrity`: did the task and verifier operate on the
