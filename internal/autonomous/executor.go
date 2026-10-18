@@ -1155,6 +1155,13 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			}
 			done := time.Now()
 			t.CompletedAt = &done
+			// Pin this task's own commit (HEAD in its resolved dir — BL465
+			// fires the deterministic commit at DATAWATCH_COMPLETE, before
+			// verify) so the PRD-completion CI guardrail watches that commit
+			// instead of whatever live HEAD is at roll-up time. Best-effort:
+			// a capture failure leaves PostVerifySHA empty and the guardrail
+			// falls back to live HEAD; it must never fail the task.
+			t.PostVerifySHA = CapturePostVerifySHA(ctx, m.resolveTaskProjectDir(prd, t), m.driftGit)
 			preDoneStatus := t.Status
 			t.Status = TaskCompleted
 			// Sweep any leftover CHECKPOINT.md out of the shared

@@ -11,10 +11,29 @@
 //
 // Design:
 //
+//   - Watches the PRD's own commit, not whatever live HEAD happens to be at
+//     roll-up time (2026-10-13 incident, root cause iii — a sibling PRD or
+//     the operator can move the same tree between the last task verifying
+//     and the roll-up, so "HEAD" no longer names the work that was just
+//     shipped). Each task records its post-verify HEAD in PostVerifySHA
+//     (executor.go captures git rev-parse HEAD right where it sets
+//     TaskCompleted; BL465 fires the deterministic commit at
+//     DATAWATCH_COMPLETE, before verify, so that IS the task's own commit).
+//     ci-watch pins the last completed task's PostVerifySHA and, for
+//     reachability, tests that pinned SHA (not live HEAD) against the
+//     remote-tracking refs — git branch -r --contains <sha>, equivalently
+//     git merge-base --is-ancestor <sha> <ref> against each ref — so a
+//     pinned commit that was pushed but is no longer a branch tip still
+//     reads as pushed (not tip equality, ancestry). The pinned SHA is also
+//     what gets listed and judged on. Only when no task recorded a pin
+//     (legacy stores, capture failure) does ci-watch fall back to live
+//     HEAD exactly as before.
+//
 //   - Push-mechanism-agnostic. ci-watch never pushes and never cares
 //     HOW a commit reached the remote (a task's own `git push`, a
-//     cluster push, a release step). It only acts when the final local
-//     HEAD is already reachable from a remote-tracking ref; otherwise it
+//     cluster push, a release step). It only acts when the final commit
+//     (the pinned one, or live HEAD when no pin exists) is already
+//     reachable from a remote-tracking ref; otherwise it
 //     records a skip. Consequence worth stating plainly: worktree/
 //     auto-PR automata push inside the PRDCompleted branch
 //     (handleWorktreeCompletion) AFTER this check runs, so for them HEAD
@@ -83,6 +102,7 @@ var ghAvailable = func() bool {
 // ciWatchDeps is a snapshot of the ci-watch seams with defaults applied.
 type ciWatchDeps struct {
 	git      func(ctx context.Context, projectDir string) (string, string, bool, error)
+	gitSHA   func(ctx context.Context, projectDir, sha string) (string, bool, error) // pinned-SHA variant; nil → defaultCIGitSHA
 	runs     func(ctx context.Context, ownerRepo, sha string) ([]CIWatchRun, error)
 	rerun    func(ctx context.Context, ownerRepo string, runID int64) error
 	poll     time.Duration
@@ -92,10 +112,13 @@ type ciWatchDeps struct {
 
 func (m *Manager) ciWatchDeps() ciWatchDeps {
 	m.mu.Lock()
-	d := ciWatchDeps{git: m.ciGitFn, runs: m.ciRunsFn, rerun: m.ciRerunFn, poll: m.ciPollInterval, followUp: m.ciFollowUpDelay}
+	d := ciWatchDeps{git: m.ciGitFn, gitSHA: m.ciGitSHAFn, runs: m.ciRunsFn, rerun: m.ciRerunFn, poll: m.ciPollInterval, followUp: m.ciFollowUpDelay}
 	m.mu.Unlock()
 	if d.git == nil {
 		d.git = defaultCIGit
+	}
+	if d.gitSHA == nil {
+		d.gitSHA = defaultCIGitSHA
 	}
 	if d.runs == nil {
 		d.runs = defaultCIRuns
@@ -156,6 +179,57 @@ func defaultCIGit(ctx context.Context, projectDir string) (headSHA, originURL st
 	cancel()
 	refs, err := run(ctx, "branch", "-r", "--contains", headSHA)
 	return headSHA, originURL, err == nil && refs != "", nil
+}
+
+// defaultCIGitSHA is the pinned-SHA variant of defaultCIGit: it reports
+// the origin URL for projectDir and whether the given sha is reachable
+// from ANY remote-tracking ref (git branch -r --contains <sha>;
+// equivalent to git merge-base --is-ancestor <sha> <ref> against each
+// remote-tracking ref). Unlike defaultCIGit it never reads live HEAD —
+// the caller pins the SHA from the last completed task's PostVerifySHA,
+// and for a commit that is no longer a branch tip, "pushed" is decided
+// by ancestry, not tip equality.
+func defaultCIGitSHA(ctx context.Context, projectDir, sha string) (originURL string, pushed bool, err error) {
+	gitBin, err := exec.LookPath("git")
+	if err != nil {
+		return "", false, err
+	}
+	run := func(ctx context.Context, args ...string) (string, error) {
+		cmd := exec.CommandContext(ctx, gitBin, args...) // #nosec G204 -- fixed git subcommands; projectDir comes from the PRD record and sha was produced by git itself
+		cmd.Dir = projectDir
+		out, err := cmd.Output()
+		return strings.TrimSpace(string(out)), err
+	}
+	if _, err := run(ctx, "rev-parse", "--git-dir"); err != nil {
+		return "", false, fmt.Errorf("git rev-parse --git-dir: %w", err)
+	}
+	originURL, err = run(ctx, "remote", "get-url", "origin")
+	if err != nil || originURL == "" {
+		return "", false, nil
+	}
+	fctx, cancel := context.WithTimeout(ctx, ciFetchTimeout)
+	if _, ferr := run(fctx, "fetch", "--quiet", "origin"); ferr != nil {
+		log.Printf("[autonomous] ci-watch: git fetch in %s failed (continuing with local remote-tracking refs): %v", projectDir, ferr)
+	}
+	cancel()
+	refs, err := run(ctx, "branch", "-r", "--contains", sha)
+	return originURL, err == nil && refs != "", nil
+}
+
+// prdLastPostVerifySHA returns the PostVerifySHA of the last completed
+// task in the PRD (stories and tasks in order), skipping completed tasks
+// that recorded no pin, or "" when none recorded one.
+func prdLastPostVerifySHA(prd *PRD) string {
+	sha := ""
+	for si := range prd.Story {
+		for ti := range prd.Story[si].Tasks {
+			t := &prd.Story[si].Tasks[ti]
+			if t.Status == TaskCompleted && t.PostVerifySHA != "" {
+				sha = t.PostVerifySHA
+			}
+		}
+	}
+	return sha
 }
 
 // defaultCIRuns lists the GitHub Actions runs for sha via the gh CLI.
@@ -391,15 +465,31 @@ func (m *Manager) runPRDCompletionCIWatch(ctx context.Context, prd *PRD) (blocke
 		return skip(CIWatchResult{Summary: "no project directory"})
 	}
 	d := m.ciWatchDeps()
-	sha, origin, pushed, gerr := d.git(ctx, prd.ProjectDir)
+	var sha, origin string
+	var pushed bool
+	var gerr error
+	if pinned := prdLastPostVerifySHA(prd); pinned != "" {
+		// Pin: watch the last completed task's own commit (its
+		// PostVerifySHA), not live HEAD — the tree may have moved since
+		// that task verified (2026-10-13 incident, root cause iii).
+		// "Pushed" means the pinned sha is reachable from a
+		// remote-tracking ref (ancestry, not tip equality), and the
+		// pinned sha is what gets listed and judged on below.
+		sha = pinned
+		origin, pushed, gerr = d.gitSHA(ctx, prd.ProjectDir, pinned)
+	} else {
+		// Fallback: no completed task recorded a PostVerifySHA (legacy
+		// store or capture failure) — watch live HEAD exactly as before.
+		sha, origin, pushed, gerr = d.git(ctx, prd.ProjectDir)
+	}
 	if gerr != nil {
-		return skip(CIWatchResult{Summary: "not a git repository (HEAD unreadable): " + gerr.Error()})
+		return skip(CIWatchResult{Summary: "not a git repository: " + gerr.Error()})
 	}
 	if origin == "" {
 		return skip(CIWatchResult{SHA: sha, Summary: "no origin remote"})
 	}
 	if !pushed {
-		return skip(CIWatchResult{SHA: sha, Summary: "HEAD is not on any remote-tracking ref (not pushed yet — e.g. a worktree/auto-PR automaton, which pushes after completion)"})
+		return skip(CIWatchResult{SHA: sha, Summary: "the commit is not reachable from any remote-tracking ref (not pushed yet — e.g. a worktree/auto-PR automaton, which pushes after completion)"})
 	}
 	ownerRepo := githubOwnerRepo(origin)
 	if ownerRepo == "" {

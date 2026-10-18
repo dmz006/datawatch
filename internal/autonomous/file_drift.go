@@ -62,6 +62,29 @@ func CommittedFilesSince(ctx context.Context, dir, preSHA string, run driftGitRu
 	return sortedUnion(splitLines(out)), nil
 }
 
+// CapturePostVerifySHA returns dir's current HEAD SHA, or "" when dir is
+// empty or not a usable git repo. Best-effort: the caller (the executor's
+// task-completion path) uses it to pin the commit the ci-watch
+// PRD-completion guardrail should watch; a failure leaves the pin empty,
+// never an error.
+func CapturePostVerifySHA(ctx context.Context, dir string, run driftGitRunner) string {
+	if dir == "" {
+		return ""
+	}
+	if run == nil {
+		run = defaultDriftGitRunner
+	}
+	out, err := run(ctx, dir, "rev-parse", "HEAD")
+	if err != nil {
+		return ""
+	}
+	sha := strings.TrimSpace(out)
+	if len(sha) < 7 {
+		return ""
+	}
+	return sha
+}
+
 // DetectForeignFileDrift returns the sorted files that a task's own
 // commit(s) swept in although they were already dirty or untracked
 // before its worker session started and were never planned by the

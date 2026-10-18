@@ -159,3 +159,30 @@ func TestCommittedFilesSince(t *testing.T) {
 		t.Fatalf("empty preSHA: got %v, %v; want nil, nil", got, err)
 	}
 }
+
+func TestCapturePostVerifySHA(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not on PATH")
+	}
+	dir := driftTestRepo(t)
+	driftWrite(t, dir, "a.txt", "a")
+	driftGit(t, dir, "add", "a.txt")
+	driftGit(t, dir, "commit", "-q", "-m", "c1")
+	want := driftGit(t, dir, "rev-parse", "HEAD")
+	if got := CapturePostVerifySHA(context.Background(), dir, nil); got != want {
+		t.Fatalf("CapturePostVerifySHA = %q, want %q", got, want)
+	}
+	// Best-effort: empty dir / non-repo yield "", never an error.
+	if got := CapturePostVerifySHA(context.Background(), "", nil); got != "" {
+		t.Fatalf("empty dir: got %q, want \"\"", got)
+	}
+	if got := CapturePostVerifySHA(context.Background(), t.TempDir(), nil); got != "" {
+		t.Fatalf("non-repo dir: got %q, want \"\"", got)
+	}
+	// A failing runner (injected) also just yields "".
+	if got := CapturePostVerifySHA(context.Background(), dir, func(context.Context, string, ...string) (string, error) {
+		return "", context.Canceled
+	}); got != "" {
+		t.Fatalf("failing runner: got %q, want \"\"", got)
+	}
+}

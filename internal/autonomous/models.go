@@ -644,6 +644,15 @@ type Task struct {
 	// anchors the diff of the task's entire work against the state before
 	// it ever started.
 	BaseSHA string `json:"base_sha,omitempty"`
+	// PostVerifySHA — the git HEAD (this task's own commit; BL465 fires
+	// the deterministic commit at DATAWATCH_COMPLETE, before verify) captured
+	// right where the executor sets TaskCompleted. The ci-watch
+	// PRD-completion guardrail watches this pin instead of whatever live HEAD
+	// is at roll-up time — a sibling PRD or the operator may have moved the
+	// same tree in the meantime (2026-10-13 incident, root cause iii).
+	// Empty when there is no usable git repo (or the capture failed); the
+	// guardrail then falls back to live HEAD.
+	PostVerifySHA string `json:"post_verify_sha,omitempty"`
 	// AttemptCommitSHAs — the deterministic commit shas recorded for this
 	// task's finished attempts, in order (RecordAttemptCommit; duplicates
 	// and empty values are ignored).

@@ -426,11 +426,13 @@ type Manager struct {
 
 	// ci-watch completion guardrail seams (see ci_watch.go). Guarded by
 	// mu like guardrail. nil/zero means "use the real implementation":
-	// ciGitFn → defaultCIGit, ciRunsFn → defaultCIRuns, ciRerunFn →
+	// ciGitFn → defaultCIGit, ciGitSHAFn → defaultCIGitSHA, ciRunsFn →
+	// defaultCIRuns, ciRerunFn →
 	// defaultCIRerun, ciPollInterval → 30s, ciFollowUpDelay → the
 	// ci-watch timeout (ciWatchTimeout). Injectable so tests never shell
 	// out to the real git/gh binaries or wait real minutes.
-	ciGitFn         func(ctx context.Context, projectDir string) (headSHA, originURL string, pushed bool, err error)
+	ciGitFn      func(ctx context.Context, projectDir string) (headSHA, originURL string, pushed bool, err error)
+	ciGitSHAFn   func(ctx context.Context, projectDir, sha string) (originURL string, pushed bool, err error)
 	ciRunsFn        func(ctx context.Context, ownerRepo, sha string) ([]CIWatchRun, error)
 	ciRerunFn       func(ctx context.Context, ownerRepo string, runID int64) error
 	ciPollInterval  time.Duration
