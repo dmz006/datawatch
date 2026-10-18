@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.8 — fix(release): the release-time version check no longer false-fails when a push ends on an automated, version-unchanged task commit
+
+The version check is now range-based: it compares the version at the end of the pushed range to the version at the start of the range (the previous remote head / push base), instead of only checking the last commit against its parent, so an automaton's automated task commits no longer need to bump the version individually as long as the range ends at a strictly higher version. The legacy strict per-commit behavior remains available locally via `VERSION_CHECK_MODE=commit`.
+
 ## v9.5.7 — feat(config): `autonomous.task_override_statuses` (blocked Automata accept LLM overrides)
 
 - **New autonomous setting** `autonomous.task_override_statuses` (list of Automaton status names; default `needs_review`, `revisions_asked`, `cancelled`, `blocked`; `[]` restores the default) — the statuses under which task-level and story-level LLM override calls (set_task_llm, set_story_llm, per-task guardrail LLM, task / story verification LLM) are accepted. v9.5.5 adds `blocked` to the previously hardcoded trio: a blocked Automaton is operator-held and re-pointing the next retry's LLM used to be refused with `status "blocked" is locked`.
