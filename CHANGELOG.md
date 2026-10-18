@@ -5,6 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.5 — feat(config): `autonomous.task_override_statuses` (blocked PRDs accept LLM overrides)
+
+- **New autonomous setting** `autonomous.task_override_statuses` (list of PRD status names; default `needs_review`, `revisions_asked`, `cancelled`, `blocked`; `[]` restores the default) — the statuses under which task-level and story-level LLM override calls (set_task_llm, set_story_llm, per-task guardrail LLM, task / story verification LLM) are accepted. v9.5.5 adds `blocked` to the previously hardcoded trio: a blocked PRD is operator-held and re-pointing the next retry's LLM used to be refused with `status "blocked" is locked`.
+- **All config surfaces**: YAML config, REST `PUT/GET /api/config` (array or comma-separated string), `PUT /api/autonomous/config`, MCP `autonomous_config_set`, CLI `datawatch config set autonomous.task_override_statuses blocked,running`, comm channel `configure autonomous.task_override_statuses=blocked,running`, and the PWA settings card (5-locale label).
+- **Validation**: unknown status names are rejected with a 400 that names the bad value and lists the 14 known PRD statuses, on both the REST and the autonomous-config/MCP path.
+- PRD-level LLM overrides (set_llm and PRD-level guardrail / verification LLM) are intentionally unchanged — still limited to `needs_review` / `revisions_asked` / `cancelled`, pinned by tests.
+- Version bump 9.5.4 -> 9.5.5 (cmd/datawatch/main.go + internal/server/api.go kept identical).
+
 ## v9.5.4 — fix(decompose): a finished decompose always stores stories or fails with a reason
 
 **A decompose can no longer finish with an empty plan.** When a decompose ends, the PRD
