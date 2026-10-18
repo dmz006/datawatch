@@ -209,6 +209,19 @@ route back as corrective work, not something to skip:
 - CI is checked after every tag, on every tick, until the run is green. Anything CI finds
   goes to a fix PRD (never a hand fix) and the check repeats until it is clear.
 
+Version and release kinds (from AGENT.md, with the operator's tag rule):
+
+- **Patch** (`X.Y.Z`): bug fixes, docs, refactors and config changes. Tagged for release,
+  and CI builds it. A patch needs a released base, so it is not cut on top of unreleased
+  work.
+- **Minor** (`X.Y.0`): a completed feature, meaning every checklist item above is done.
+  Never a slice of a feature, and never a scaffolding change.
+- **Major** (`X.0.0`): breaking changes, only when the operator explicitly asks.
+
+Bumping the version in the code for every behaviour change, as happened from 9.0.87 to
+9.5.0 without a single tag, produces numbers that are development counters, not releases.
+Do not release those; fold them into the first complete release.
+
 The standing permission to push and tag applies only to a completed feature that has
 passed this checklist. Any other push still needs the operator's explicit go-ahead.
 
