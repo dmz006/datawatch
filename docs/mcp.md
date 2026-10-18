@@ -311,6 +311,41 @@ Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
 - **`session_guardrail_approve`** (v8.27.5, GH#153) — approve a single blocked guardrail verdict so the session can proceed. Parameters: `session_id`, `guardrail` (guardrail name in telemetry, required), `note` (optional). Returns `{guardrail, approved, session_unblocked, telemetry}`. Use when a block verdict was a false positive; approval is scoped to the current session run (in-memory only). See also `POST /api/sessions/{id}/guardrail/{name}/approve`.
 - **`retry_profile_list/create/get/update/delete`** (BL410 Phase 1) — manage named retry profiles (per-category retry budgets + behavior: ceiling, infra escalation threshold, content auto-fix, auto-fix approval-skip) — mirrors `guardrail_profile_*` exactly.
 - **`per_automaton_retry_policy_set`** (BL410 Phase 1) — override retry profile and per-category retry policy for a specific PRD.
+- **`automation_list/create/get/update/delete`** — manage Automation records: a named chain of member Automatons (PRDs) connected by per-outcome edges (`on_complete` / `on_blocked` / `on_failed`), with an entry member, an optional budget policy, and Automation-level execution/verification defaults. These tools are **data records only — no automatic advance yet**: the daemon does not run members or follow edges on its own. Tool shape mirrors `retry_profile_*` / `guardrail_profile_*`; same surface over REST at `GET/POST /api/automations` and `GET/PUT/DELETE /api/automations/{id}`.
+
+  Parameters shared by the create/update family (`list` takes none; `get` and `delete` take only `id`; `update` sends only the fields to change):
+
+  | Parameter | Used by | Description |
+  |---|---|---|
+  | `name` | create, update | Automation name (required on create; blank on update keeps the existing name). |
+  | `description` | create, update | Optional free-text description. |
+  | `entry_member_id` | create, update | The member ID where the chain starts. |
+  | `members_json` | create, update | JSON array of members; each member has: `id` (blank = the daemon assigns one), `prd_id` (the member Automaton), `on_complete` / `on_blocked` / `on_failed` (a member ID, or `""` = the chain stops there), and `added_reason`. |
+  | `budget_policy_json` | create, update | Optional JSON object — budget policy for this Automation. |
+  | `project_dir` | create, update | Optional project directory (informational). |
+  | `backend` / `model` / `effort` | create, update | Optional execution defaults for the chain. |
+  | `verification_backend` / `verification_model` / `verification_effort` | create, update | Optional verification defaults for the chain. |
+  | `id` | get, update, delete | Automation ID (required). |
+  | `expected_version` | update | The `version` you last read; the update is rejected (`409`) if the record moved since (optimistic concurrency). |
+  | `reason` | update | Reason for this update; recorded alongside the change and the operator audit log. |
+
+  Example — create a two-member chain (member 2 follows only when member 1 completes):
+  ```
+  automation_create(
+    name="cve-sweep",
+    entry_member_id="m1",
+    members_json='[
+      {"id":"m1","prd_id":"a1b2c3d4","on_complete":"m2"},
+      {"id":"m2","prd_id":"e5f6a7b8","on_complete":""}
+    ]',
+    backend="claude-code", model="sonnet", effort="medium"
+  )
+  → 201: the record, stamped with an 8-hex `id` and `version` 1
+
+  automation_get(id="3fa9c2d1")        # status, members, edges, budget policy, defaults
+  automation_update(id="3fa9c2d1", expected_version=1, name="cve-sweep v2", reason="renaming")
+  automation_delete(id="3fa9c2d1")     # member Automatons are unaffected — the back-reference is cleared
+  ```
 - **`autonomous_config_get` / `autonomous_config_set` — completion guardrails + CI watch.** `per_prd_guardrails` (array, default empty) is the daemon-wide list of guardrails run once when an Automaton completes; valid names are `rules-review` and `ci-watch`, both off unless listed (an Automaton's own list or its guardrail profile overrides it). `ci_watch_timeout_seconds` (number, default `1500`; `0` = default) is how long `ci-watch` waits for the CI runs of the commit the Automaton pushed; runs still unfinished at the deadline leave the Automaton completed with `ci_watch.status` `"pending"`. Same keys over REST/CLI/comm as `autonomous.per_prd_guardrails` / `autonomous.ci_watch_timeout_seconds`. See [howto/ci-watch-guardrail.md](howto/ci-watch-guardrail.md).
 - **`autonomous_config_get` / `autonomous_config_set` — `block_on_file_drift`.** Boolean, default `false`. Daemon-wide default for the foreign-file-drift check that runs after every direct-mode (non-worktree) task: `false` only flags a task whose own commit(s) swept in files that were already uncommitted (modified, staged or untracked) before it started and are not in its planned `files`; `true` sets that task to blocked (`error: "foreign_file_drift: <files>"`) and halts the walk. `autonomous_config_set` forwards it only when supplied. Same key over REST/CLI/comm/YAML as `autonomous.block_on_file_drift`; PWA Settings → Automate → Block on file drift. See [howto/file-drift-guardrail.md](howto/file-drift-guardrail.md).
 - **`autonomous_config_get` / `autonomous_config_set` — `max_concurrent_tasks`.** Integer, default `1`. Daemon-wide default for how many independent tasks of one Automaton run at once; an Automaton's own setting (`max_concurrent_tasks` on the Automaton) overrides it, and `1` means sequential. `autonomous_config_set` forwards it only when supplied and `>= 1`. Same key over REST (`PUT /api/config` `autonomous.max_concurrent_tasks`, `PUT /api/autonomous/config`), CLI (`datawatch autonomous config-set '{"max_concurrent_tasks":2}'`), comm (`configure autonomous.max_concurrent_tasks=2`) and YAML. `max_parallel_tasks` is **deprecated**: it is accepted and ignored (it never had an effect), and the response carries a `deprecated_fields` note naming `max_concurrent_tasks`; it will be removed in a future release.

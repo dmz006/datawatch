@@ -1310,7 +1310,7 @@ real daemon, full `go test ./...` and `node --test`, the 8-item documentation
 checklist, CHANGELOG, `docs/config-reference.yaml`, `docs/testing-tracker.md`,
 howto, and the `datawatch-app` issue where applicable.
 
-1. **Phase 1 — Data model, store, validation, CRUD.** Status: Planned.
+1. **Phase 1 — Data model, store, validation, CRUD.** Status: Done (development build 9.5.5; released with the first complete release, 9.6.0).
    - `Automation` / `AutomationMember` / `BudgetPolicy` and `PRD.AutomationID`.
    - `automations.jsonl` with the ownership index.
    - Cycle, reachability and ownership validation.

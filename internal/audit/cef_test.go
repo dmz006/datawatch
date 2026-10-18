@@ -70,6 +70,9 @@ func TestCEF_SignatureSeverityTriples(t *testing.T) {
 		{"schedule", 25, "ScheduleChange", 3},
 		{"autonomous_file_drift_detected", 26, "AutonomousFileDriftDetected", 3},
 		{"config_deprecated_key", 27, "ConfigDeprecatedKey", 2},
+		{"automation_create", 28, "AutomationCreated", 3},
+		{"automation_update", 29, "AutomationUpdated", 3},
+		{"automation_delete", 30, "AutomationDeleted", 5},
 		{"some_unmapped_future_action", 0, "AuditEvent", 3},
 	}
 	for _, c := range cases {
@@ -228,5 +231,99 @@ func TestAutonomousFileDriftDetected_CEF(t *testing.T) {
 	}
 	if !strings.Contains(line, "deviceCustomString1=autonomous_file_drift_detected") {
 		t.Errorf("action extension missing: %q", line)
+	}
+}
+
+// automation_create — emitted by the server's automation handler. Even
+// operator-supplied values carrying the CEF special characters (|, =, \,
+// newline) must collapse into one correctly escaped line.
+func TestAutomationCreate_CEFSingleLineEscaping(t *testing.T) {
+	SetCEFVersionFn(func() string { return `9|0\1` })
+	defer SetCEFVersionFn(func() string { return "v?" })
+	line := FormatCEFLine(Entry{
+		Timestamp: time.Now(),
+		Actor:     "operator",
+		Action:    "automation_create",
+		Details: map[string]any{
+			"name":   "cve = sweep\\|1",
+			"reason": "fix = it\nsecond \\line",
+		},
+	})
+	wantPrefix := `CEF:0|datawatch|datawatch|9\|0\\1|28|AutomationCreated|3|`
+	if !strings.HasPrefix(line, wantPrefix) {
+		t.Fatalf("line = %q, want header prefix %q", line, wantPrefix)
+	}
+	if strings.ContainsAny(line, "\n\r") {
+		t.Fatalf("raw newline survived into CEF line: %q", line)
+	}
+	// Details sort as name, reason → cs3, cs4; '='/'\\'/newline escaped
+	// per the extension rules (pipes stay literal in extensions).
+	if !strings.Contains(line, `deviceCustomString3Label=name deviceCustomString3=cve \= sweep\\|1`) {
+		t.Errorf("name extension not correctly escaped: %q", line)
+	}
+	if !strings.Contains(line, `deviceCustomString4Label=reason deviceCustomString4=fix \= it\nsecond \\line`) {
+		t.Errorf("reason extension not correctly escaped: %q", line)
+	}
+	if !strings.Contains(line, "deviceCustomString1=automation_create") {
+		t.Errorf("action extension missing: %q", line)
+	}
+}
+
+func TestAutomationCreate_JSONLinesRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	l, err := New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	in := Entry{
+		Timestamp: time.Now().UTC().Truncate(time.Millisecond),
+		Actor:     "operator",
+		Action:    "automation_create",
+		Details: map[string]any{
+			"name":          "cve = sweep\\|1\nnightly",
+			"actor":         "operator",
+			"reason":        "fix = it",
+			"members":       2,
+			"resource_type": "automation",
+			"resource_id":   "ab12cd34",
+		},
+	}
+	if err := l.Write(in); err != nil {
+		t.Fatal(err)
+	}
+	_ = l.Close()
+
+	f, err := os.Open(filepath.Join(dir, "audit.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = f.Close() }()
+	sc := bufio.NewScanner(f)
+	var lines []string
+	for sc.Scan() {
+		lines = append(lines, sc.Text())
+	}
+	if len(lines) != 1 {
+		t.Fatalf("want 1 JSON line, got %d: %q", len(lines), lines)
+	}
+	var out Entry
+	if err := json.Unmarshal([]byte(lines[0]), &out); err != nil {
+		t.Fatalf("line is not valid JSON: %v (%q)", err, lines[0])
+	}
+	if out.Action != in.Action || out.Actor != "operator" || !out.Timestamp.Equal(in.Timestamp) {
+		t.Fatalf("round-trip mismatch: %+v", out)
+	}
+	// Round-trip the input details through JSON too, so numeric types
+	// compare like the values read back out of the file.
+	if b, _ := json.Marshal(in.Details); b != nil {
+		var wantD map[string]any
+		if err := json.Unmarshal(b, &wantD); err == nil {
+			in.Details = wantD
+		}
+	}
+	for k, want := range in.Details {
+		if got := out.Details[k]; got != want {
+			t.Errorf("Details[%q] = %v, want %v", k, got, want)
+		}
 	}
 }

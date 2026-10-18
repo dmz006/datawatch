@@ -850,9 +850,52 @@ func writeJSONL(path string, _ int, fn func(emit func(any) error) error) error {
 	return fn(func(v any) error { return enc.Encode(v) })
 }
 
-// newID returns an 8-hex string. Time-based + random-ish so concurrent
-// callers don't collide.
+// newID returns an 8-hex string (store.go IDs throughout the package are
+// documented as "8-hex").
+//
+// The IDs are not just opaque labels: the executor falls back to ID
+// lexicographic order when scheduling dependency-free tasks (executor.go
+// topoSort: "executing in ID-sort order"), so creation order must equal ID
+// order — IDs have to be monotonic.
+//
+// The old implementation was fmt.Sprintf("%08x", uint32(UnixNano)) — the
+// low 32 bits of the nanosecond clock, which wrapped every 2^32 ns ≈
+// 4.295s. Two objects created ~4.3s (or 8.6s, 12.9s, ...) apart therefore
+// got the SAME id, and worse, an object created earlier could get a
+// LARGER id than one created later (across the wrap), reordering the
+// ID-sort execution order. The current encoding is a 16-bit
+// microsecond-window (increments every 65536 µs ≈ 65.5 ms, wrapping in
+// ~280 years) + a 16-bit per-window counter that only ever moves
+// forward. That is strictly monotonic within a process (up to a 1M ids/s
+// sustained rate, after which the counter carries into the next window
+// rather than colliding) and unique within a process; cross-process odds
+// stay the usual 1/2^32, as with any 8-hex id scheme.
+var (
+	idMu         sync.Mutex
+	idLastBucket uint32
+	idCounter    uint32
+)
+
 func newID() string {
-	t := time.Now().UnixNano()
-	return fmt.Sprintf("%08x", uint32(t))
+	idMu.Lock()
+	defer idMu.Unlock()
+	bucket := uint32(time.Now().UnixNano() >> 16) // µs since epoch, windowed to 65536 µs
+	if bucket > idLastBucket {
+		idLastBucket = bucket
+		idCounter = 1
+	} else {
+		// First call, or clock did not advance past the last window, or the
+		// clock stepped backwards: keep the monotonic sequence going instead
+		// of issuing a smaller id.
+		idCounter++
+		if idCounter >= 1<<16 { // sustained >1M ids/s: carry into next window, don't collide
+			idCounter = 1
+			idLastBucket++
+			if bucket > idLastBucket {
+				idLastBucket = bucket
+				idCounter = 1
+			}
+		}
+	}
+	return fmt.Sprintf("%08x", (idLastBucket<<16)|idCounter)
 }

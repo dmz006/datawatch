@@ -5,6 +5,40 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.5 — feat(autonomous): Automations — named, graph-shaped groups of Automata (data model only)
+
+**This release is data-model-only.** It adds the Automation record and the
+surface for managing it. Nothing in this release runs them: nothing starts
+the next Automaton automatically yet (that coordinator arrives in a later
+release), and no existing Automaton behavior changes.
+
+datawatch can now define an **Automation**: a named, graph-shaped group of
+Automata (PRDs) where each member's next step depends on how it ends — one
+edge per outcome, `on_complete` / `on_blocked` / `on_failed` — plus an
+optional budget policy. An Automation also carries a status (`draft`,
+`active`, `paused`, `completed`, `blocked`, `cancelled`), an entry member,
+execution defaults (`backend`/`model`/`effort`) and verification defaults of
+its own (between the Automaton and the global settings). Completed history is
+immutable: a finished member can no longer
+be removed or re-ordered.
+
+- **CRUD surface.** Automations can be created, listed, read, updated and
+  deleted through REST (`GET/POST /api/automations`, `GET/PUT/DELETE
+  /api/automations/{id}`) or MCP (`automation_list`, `automation_get`,
+  `automation_create`, `automation_update`, `automation_delete`). Every
+  create, update and delete is written to the audit log.
+- **Membership validation (on every write).** The next-step edges are checked
+  for cycles; every member must be reachable from the entry member (a warning
+  in `draft`, but refused on activation); an Automaton can belong to only one
+  active Automation; and templates and child Automata cannot be members. Edges
+  or an entry that names a missing member are rejected with `400`.
+- **Persistence.** Automations are stored in a new file, `automations.jsonl`
+  under the autonomous data directory (next to `prds.jsonl`), with a per-id
+  write lock.
+- **Concurrency.** Every write bumps the Automation's `version`, and an update
+  must pass back the version it read, so two edits racing on the same
+  Automation can't silently clobber each other.
+
 ## v9.5.4 — fix(decompose): a finished decompose always stores stories or fails with a reason
 
 **A decompose can no longer finish with an empty plan.** When a decompose ends, the PRD

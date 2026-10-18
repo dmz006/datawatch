@@ -134,6 +134,7 @@ Selected core tools:
 | `observer_envelopes_all_peers` | Federation-aware envelope view with cross-host caller attribution |
 | `memory_remember` / `memory_recall` / `kg_query` | Episodic memory + knowledge graph |
 | `orchestrator_graph_run` / `orchestrator_verdicts` | PRD-DAG orchestrator |
+| `automation_list` / `automation_get` / `automation_create` / `automation_update` / `automation_delete` | Automation records — a chain of Automatons with per-outcome edges, entry member, optional budget policy and execution/verification defaults (data records only — no automatic advance yet) |
 | `pipeline_start` / `pipeline_status` | Session chaining |
 | `exit_hook_list` / `exit_hook_add` / `exit_hook_delete` / `exit_hook_enable` / `exit_hook_disable` | Session exit hooks (BL356) |
 | `queue_push` / `queue_claim` / `queue_complete` / `queue_fail` / `queue_list` | Distributed work queue (BL357) |

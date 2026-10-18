@@ -114,7 +114,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "9.5.4"
+var Version = "9.5.5"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -12229,6 +12229,22 @@ func runMCP(cmd *cobra.Command, _ []string) error {
 				mcpSrv.SetVisioner(channelVisioner)
 			}
 		}
+	}
+
+	// Automations/proxy parity (live-smoke fix): the automation_* tools
+	// (and other REST-parity tools) work by proxying to the daemon's loopback
+	// HTTP endpoint. The daemon sets s.webPort at startup; the standalone
+	// `datawatch mcp` entrypoint must do the same, otherwise those tools
+	// always answer "REST loopback unavailable (web server disabled)" even
+	// when the daemon is running on the configured port. s.token must be
+	// set for the same reason: the proxy sends the bearer token when the
+	// daemon requires one (SEC-002 fallback token is only used for MCP SSE
+	// auth, not for loopback calls).
+	if cfg.Server.Port > 0 {
+		mcpSrv.SetWebPort(cfg.Server.Port)
+	}
+	if cfg.Server.Token != "" {
+		mcpSrv.SetToken(cfg.Server.Token)
 	}
 
 	sseMode, _ := cmd.Flags().GetBool("sse")
