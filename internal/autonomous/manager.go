@@ -1084,12 +1084,7 @@ func (m *Manager) Decompose(prdID string) (*PRD, error) {
 			if m.retryDecomposeFailure(prd, "infra", "decompose-llm", derr.Error()) {
 				continue
 			}
-			old := prd.Status
-			prd.Status = PRDDraft
-			prd.UpdatedAt = time.Now()
-			if m.store.SavePRD(prd) == nil {
-				m.emitPRDStatus(prd, old, nil, nil)
-			}
+			m.failDecomposeAttempt(prd, "decompose-llm", derr)
 			return nil, fmt.Errorf("LLM plan: %w", derr)
 		}
 		t, s, perr := ParsePlanning(r)
@@ -1097,13 +1092,18 @@ func (m *Manager) Decompose(prdID string) (*PRD, error) {
 			if m.retryDecomposeFailure(prd, "infra", "decompose-parse", perr.Error()) {
 				continue
 			}
-			old := prd.Status
-			prd.Status = PRDDraft
-			prd.UpdatedAt = time.Now()
-			if m.store.SavePRD(prd) == nil {
-				m.emitPRDStatus(prd, old, nil, nil)
-			}
+			m.failDecomposeAttempt(prd, "decompose-parse", perr)
 			return nil, perr
+		}
+		// A valid-JSON plan with no usable stories must not be stored as
+		// a finished decompose. Route it through the same retry path as
+		// a parse failure so the reason lands on LastDecomposeFailure.
+		if zerr := validateParsedPlan(s); zerr != nil {
+			if m.retryDecomposeFailure(prd, "content", "decompose-zero-stories", zerr.Error()) {
+				continue
+			}
+			m.failDecomposeAttempt(prd, "decompose-zero-stories", zerr)
+			return nil, zerr
 		}
 		// B124 — kick back a tooled plan that skipped verification
 		// scripts entirely despite planning real file changes (see this
@@ -1115,12 +1115,7 @@ func (m *Manager) Decompose(prdID string) (*PRD, error) {
 			if m.retryDecomposeFailure(prd, "scope", "verification-script-coverage", verr.Error()) {
 				continue
 			}
-			old := prd.Status
-			prd.Status = PRDDraft
-			prd.UpdatedAt = time.Now()
-			if m.store.SavePRD(prd) == nil {
-				m.emitPRDStatus(prd, old, nil, nil)
-			}
+			m.failDecomposeAttempt(prd, "verification-script-coverage", verr)
 			return nil, verr
 		}
 		raw, title, stories = r, t, s
@@ -1150,6 +1145,13 @@ func (m *Manager) Decompose(prdID string) (*PRD, error) {
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
 	}
+	// Only the persisted state counts: a decompose whose stories did not
+	// land in the store is a failure, and its output artifact is kept.
+	if perr := m.checkPersistedDecompose(prdID); perr != nil {
+		m.failDecomposeAttempt(prd, "decompose-persist", perr)
+		return nil, perr
+	}
+	RemoveDecomposeOutputArtifact(m.dataDir, prdID)
 	m.emitPRDStatus(prd, reviewOld, lastDecision(prd, "decompose"), nil)
 	updated, _ := m.store.GetPRD(prdID)
 	return updated, nil
@@ -1258,12 +1260,7 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (*PRD, 
 			if m.retryDecomposeFailure(prd, "infra", "decompose-llm", derr.Error()) {
 				continue
 			}
-			old := prd.Status
-			prd.Status = PRDDraft
-			prd.UpdatedAt = time.Now()
-			if m.store.SavePRD(prd) == nil {
-				m.emitPRDStatus(prd, old, nil, nil)
-			}
+			m.failDecomposeAttempt(prd, "decompose-llm", derr)
 			return nil, fmt.Errorf("LLM plan: %w", derr)
 		}
 		t, s, perr := ParsePlanning(r)
@@ -1271,13 +1268,17 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (*PRD, 
 			if m.retryDecomposeFailure(prd, "infra", "decompose-parse", perr.Error()) {
 				continue
 			}
-			old := prd.Status
-			prd.Status = PRDDraft
-			prd.UpdatedAt = time.Now()
-			if m.store.SavePRD(prd) == nil {
-				m.emitPRDStatus(prd, old, nil, nil)
-			}
+			m.failDecomposeAttempt(prd, "decompose-parse", perr)
 			return nil, perr
+		}
+		// Zero-story guard — see Decompose()'s identical call. Kept in
+		// sync with the twin loop so both paths reject the same output.
+		if zerr := validateParsedPlan(s); zerr != nil {
+			if m.retryDecomposeFailure(prd, "content", "decompose-zero-stories", zerr.Error()) {
+				continue
+			}
+			m.failDecomposeAttempt(prd, "decompose-zero-stories", zerr)
+			return nil, zerr
 		}
 		// B124 — see Decompose()'s identical call for the full
 		// explanation; decomposeStreamingCore is a drifted duplicate of
@@ -1287,12 +1288,7 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (*PRD, 
 			if m.retryDecomposeFailure(prd, "scope", "verification-script-coverage", verr.Error()) {
 				continue
 			}
-			old := prd.Status
-			prd.Status = PRDDraft
-			prd.UpdatedAt = time.Now()
-			if m.store.SavePRD(prd) == nil {
-				m.emitPRDStatus(prd, old, nil, nil)
-			}
+			m.failDecomposeAttempt(prd, "verification-script-coverage", verr)
 			return nil, verr
 		}
 		raw, title, stories = r, t, s
@@ -1319,6 +1315,13 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (*PRD, 
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
 	}
+	// Only the persisted state counts: a decompose whose stories did not
+	// land in the store is a failure, and its output artifact is kept.
+	if perr := m.checkPersistedDecompose(prdID); perr != nil {
+		m.failDecomposeAttempt(prd, "decompose-persist", perr)
+		return nil, perr
+	}
+	RemoveDecomposeOutputArtifact(m.dataDir, prdID)
 	m.emitPRDStatus(prd, reviewOld, lastDecision(prd, "decompose"), nil)
 	updated, _ := m.store.GetPRD(prdID)
 	// Yield stories via callback after persisting.

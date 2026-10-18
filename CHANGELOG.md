@@ -5,6 +5,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.4 — fix(decompose): a finished decompose always stores stories or fails with a reason
+
+**A decompose can no longer finish with an empty plan.** When a decompose ends, the PRD
+must now have at least one story, and each story must have at least one task. If it
+does not, the attempt fails. A silently empty plan is no longer accepted.
+
+**Failed decomposes keep the model's output for reading.** When a decompose fails, the
+output file is kept in the scratch directory with a `.failed` suffix, so you can read
+exactly what the model returned. The failure is also logged with the PRD id.
+
+**The failure reason shows in two places.** The PRD's JSON carries the reason in
+`last_decompose_failure`. The web UI shows the same reason on the PRD card.
+
 ## v9.5.3 — fix(verifier): judge-session timeout is now a setting (autonomous.verification_timeout_seconds, 30m default)
 
 **Verifier judge sessions no longer time out after a hard-coded 10 minutes.** The

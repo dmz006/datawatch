@@ -11662,6 +11662,15 @@ function statusPill(status) {
   return `<span class="${klass}" data-state="${escHtml(s)}" style="border:1px solid currentColor;padding:1px 7px;border-radius:10px;font-size:11px;font-weight:600;">${escHtml(s)}</span>`;
 }
 
+// Persistent read-only line for the last failed decompose. The server clears
+// last_decompose_failure on a successful retry, so the line disappears with it.
+// The detail is free text from the LLM/validator, so it goes through escHtml.
+function renderPRDDecomposeFailure(prd) {
+  const f = prd && prd.last_decompose_failure;
+  if (!f || !f.detail) return '';
+  return `<div class="prd-decompose-failure" style="margin-top:4px;font-size:11px;color:#ef4444;">${escHtml(t('decompose_last_failure') || 'Decompose failed: ')}${escHtml(f.detail)}</div>`;
+}
+
 function renderPRDRow(prd) {
   const id = prd.id || '';
   const stories = prd.stories || [];
@@ -11717,6 +11726,7 @@ function renderPRDRow(prd) {
         <code style="font-size:11px;color:var(--text2);">${escHtml(id)}</code> ${statusPill(prd.status)}${serverBadge}${tplBadge}${tplOf}${llmBadge}${parentBadge}${depthBadge}
         <div style="margin-top:2px;color:var(--text);font-weight:600;">${escHtml(prd.title || '(no title)')}</div>
         <div style="font-size:10px;color:var(--text2);">${stories.length} stories &middot; ${taskCount} tasks &middot; ${prd.decisions ? prd.decisions.length : 0} decisions</div>
+        ${renderPRDDecomposeFailure(prd)}
       </div>
       <div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;">${dashExpandBtn}${actions}</div>
     </div>

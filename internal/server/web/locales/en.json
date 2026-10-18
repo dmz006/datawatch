@@ -1546,6 +1546,7 @@
   "decompose_in_progress": "Decomposing Automaton...",
   "decompose_story_count": "{{count}} stories generated",
   "decompose_error": "Decompose failed",
+  "decompose_last_failure": "Decompose failed: ",
   "decompose_reconnecting": "Reconnecting...",
   "comm_matrix_title": "Matrix",
   "comm_matrix_enabled": "Enable Matrix",

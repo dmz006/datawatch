@@ -452,6 +452,7 @@
   "dash_task_tree": "Arbre des Tâches",
   "dash_verdicts": "Verdicts",
   "decompose_error": "Échec de la décomposition",
+  "decompose_last_failure": "Échec de la décomposition : ",
   "decompose_in_progress": "Décomposition de l'automate...",
   "decompose_reconnecting": "Reconnexion...",
   "decompose_story_count": "{{count}} stories générées",

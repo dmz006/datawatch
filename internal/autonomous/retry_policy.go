@@ -230,6 +230,38 @@ func (m *Manager) retryDecomposeFailure(prd *PRD, category, source, detail strin
 	return false
 }
 
+// failDecomposeAttempt is the give-up tail shared by every decompose
+// failure branch in Decompose() and decomposeStreamingCore(), called only
+// after retryDecomposeFailure has decided no retry budget remains. It logs
+// the PRD id and exact error, keeps the decompose output artifact under its
+// .failed name for post-mortem, and rolls the PRD back to PRDDraft.
+func (m *Manager) failDecomposeAttempt(prd *PRD, source string, cause error) {
+	log.Printf("[autonomous] decompose FAILED prd=%s source=%q: %v", prd.ID, source, cause)
+	if _, err := MarkDecomposeOutputArtifactFailed(m.dataDir, prd.ID); err != nil {
+		log.Printf("[autonomous] decompose FAILED prd=%s: keep output artifact: %v", prd.ID, err)
+	}
+	old := prd.Status
+	prd.Status = PRDDraft
+	prd.UpdatedAt = time.Now()
+	if m.store.SavePRD(prd) == nil {
+		m.emitPRDStatus(prd, old, nil, nil)
+	}
+}
+
+// checkPersistedDecompose re-reads the PRD and its stories from the store
+// after SetStories/SavePRD, so the success path only commits when the
+// persisted state holds at least one story with at least one task, not
+// merely the in-memory slice it was handed.
+func (m *Manager) checkPersistedDecompose(prdID string) error {
+	if _, ok := m.store.GetPRD(prdID); !ok {
+		return fmt.Errorf("prd %q missing from store after decompose persist", prdID)
+	}
+	if err := validateParsedPlan(m.store.storiesSnapshot(prdID)); err != nil {
+		return fmt.Errorf("persisted decompose: %w", err)
+	}
+	return nil
+}
+
 // orContentCategory applies FailureReason's "empty means content"
 // convention — shared by recordFailureLearning and every
 // Task.FailureReason/Story.FailureReason assignment (BL410 remediation,

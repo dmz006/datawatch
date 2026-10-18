@@ -452,6 +452,7 @@
   "dash_task_tree": "タスクツリー",
   "dash_verdicts": "判定",
   "decompose_error": "分解に失敗しました",
+  "decompose_last_failure": "分解に失敗しました: ",
   "decompose_in_progress": "オートマトンを分解中...",
   "decompose_reconnecting": "再接続中...",
   "decompose_story_count": "{{count}}個のストーリーを生成",
