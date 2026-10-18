@@ -705,10 +705,10 @@ can disagree sharply, and the shared ceiling is the real constraint.
 | 2026-10-16 ~16:3x | 97% used, operator estimate ~3 hours left | first time-remaining estimate; anchor for burn rate |
 | 2026-10-16 ~17:3x | 99% used; session meter at 15% with 2 hours left, all models at 99% | the two numbers disagreed; session stopped |
 | 2026-10-17 ~13:4x | usage ran out; operator bought $20 of extra usage to reach 2026-10-18 | purchase recorded as a snapshot event |
-| 2026-10-17 ~14:30 | $7.22 left of the $20 | the supervisor catch-up and audit after switching to Sonnet 5.5 (read of both rule docs, the 79-commit audit, the v9.5.0 release work) cost about $12.78, a one-time cost to keep apart from steady supervision |
-| 2026-10-17 ~15:20 | $2.12 left | steady supervision ticks plus resets and fix work cost roughly $0.60 per tick (approximate) |
-| 2026-10-17 16:29 | $20 fully used | the last supervision tick consumed the remainder |
-| 2026-10-18 08:00 | weekly limit reset | operator allows one Claude development thread on the backlog in addition to the two GPU threads; the Claude thread's usage is tracked as its own line, apart from supervision |
+| 2026-10-17 ~14:30 | 7.22 credits left of the 20 purchased | the supervisor catch-up and audit after switching to Sonnet 5.5 (read of both rule docs, the 79-commit audit, the v9.5.0 release work) cost about 12.78 credits, a one-time cost to keep apart from steady supervision |
+| 2026-10-17 ~15:20 | 2.12 credits left | steady supervision ticks plus resets and fix work cost roughly 0.60 credits per tick (approximate) |
+| 2026-10-17 16:29 | all 20 credits used | the last supervision tick consumed the remainder |
+| 2026-10-18 08:00 | weekly limit reset | back on the weekly percent limit, not credits; operator allows one Claude development thread on the backlog in addition to the two GPU threads; the Claude thread's usage is tracked as its own line, apart from supervision |
 
 Restricted window: while the weekly ceiling was exhausted, autonomous PRD
 decompose, run, verify and smoke used pi-prompt with ollama/qwen3.8-64k:27b
