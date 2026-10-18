@@ -21,19 +21,21 @@ func TestVerdictForAlreadyLanded(t *testing.T) {
 	failing := writeScript(t, dir, "fail.sh", "#!/usr/bin/env bash\nexit 1\n")
 
 	tests := []struct {
-		name     string
-		script   string
-		wantOK   bool
-		wantTrue bool
+		name          string
+		script        string
+		priorAttempts int
+		wantOK        bool
+		wantTrue      bool
 	}{
-		{name: "empty script returns false", script: "", wantOK: false, wantTrue: false},
-		{name: "whitespace script returns false", script: "   ", wantOK: false, wantTrue: false},
-		{name: "passing script returns OK true", script: passing, wantOK: true, wantTrue: true},
-		{name: "failing script returns false", script: failing, wantOK: false, wantTrue: false},
+		{name: "empty script returns false", script: "", priorAttempts: 1, wantOK: false, wantTrue: false},
+		{name: "whitespace script returns false", script: "   ", priorAttempts: 1, wantOK: false, wantTrue: false},
+		{name: "passing script returns OK true", script: passing, priorAttempts: 1, wantOK: true, wantTrue: true},
+		{name: "failing script returns false", script: failing, priorAttempts: 1, wantOK: false, wantTrue: false},
+		{name: "passing script with no prior attempt returns false", script: passing, priorAttempts: 0, wantOK: false, wantTrue: false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			res, gotTrue := verdictForAlreadyLanded(tt.script, dir)
+			res, gotTrue := verdictForAlreadyLanded(tt.script, dir, tt.priorAttempts)
 			if gotTrue != tt.wantTrue {
 				t.Fatalf("want true=%v, got %v (res %+v)", tt.wantTrue, gotTrue, res)
 			}

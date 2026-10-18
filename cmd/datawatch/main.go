@@ -4846,7 +4846,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					// under BL410 instead of exhausted after one attempt.
 					// Work already landed by an earlier attempt: if the task's own
 					// verification script passes, accept instead of no-output failure.
-					if alreadyLanded, ok := verdictForAlreadyLanded(task.VerificationScript, taskDir); ok {
+					if alreadyLanded, ok := verdictForAlreadyLanded(task.VerificationScript, taskDir, task.PriorAttemptCount); ok {
 						return alreadyLanded, nil
 					}
 					category := ""

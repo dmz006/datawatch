@@ -951,6 +951,12 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			t.StartedAt = &now
 			t.Status = TaskInProgress
 			t.RetryCount = attempt
+			// A genuine in-loop retry (attempt > 0) follows a prior attempt that
+			// already ran, so it registers as one for the verifier's already-landed
+			// check. attempt 0 is the first run and adds nothing.
+			if attempt > 0 {
+				t.PriorAttemptCount++
+			}
 			if m.store.SaveTask(t) == nil {
 				m.emitTaskSession(prd, t, oldSession)
 				m.emitTaskStatus(prd, t, oldStatus, nil, nil)
