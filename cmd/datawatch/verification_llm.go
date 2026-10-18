@@ -47,7 +47,9 @@ type verifierSelection struct {
 //   - Otherwise (global) the behavior is unchanged: try each pool
 //     candidate via tryAdmit (nil = no pool), then fall back to the
 //     global verification_backend/model, then the Automaton's own
-//     backend.
+//     backend. A pi-family session kind (pi, pi-prompt) on this path
+//     takes the configured verification_model as its session model; an
+//     empty one leaves the model empty for the manager's pi fallback.
 //
 // The global verification_effort is still not consumed by the verify
 // path (a pre-existing gap, deliberately left as-is here so the global
@@ -81,12 +83,48 @@ func selectVerifierLLM(
 			}
 		}
 	}
+	// The effective backend is verification_backend, else the PRD's own,
+	// else ollama — the same order resolveVerifierBackendModel uses.
+	effBackend := in.GlobalBackend
+	usesPRDBackend := effBackend == "" && in.PRDBackend != ""
+	if effBackend == "" {
+		effBackend = in.PRDBackend
+	}
+	if effBackend == "" {
+		effBackend = "ollama"
+	}
+	effKind, _, _ := resolveAskBackend(effBackend)
+	piFamily := isPiFamilyKind(effKind)
+
+	// A pi-family session uses exactly the configured verification_model
+	// (a pi 'provider/model' string). Other session kinds never get it —
+	// the ask-compatible model would be rejected by e.g. a claude-code
+	// session (see resolveVerifierBackendModelWithSessionModel).
+	var sessionModel string
+	if piFamily {
+		sessionModel = in.GlobalModel
+	}
 	var sel verifierSelection
-	sel.Backend, sel.Kind, sel.Model, sel.UseSession = resolveVerifierBackendModel(
-		in.GlobalBackend, in.GlobalModel, in.PRDBackend, in.PRDModel, in.ProjectDir,
+	sel.Backend, sel.Kind, sel.Model, sel.UseSession = resolveVerifierBackendModelWithSessionModel(
+		in.GlobalBackend, in.GlobalModel, in.PRDBackend, in.PRDModel, in.ProjectDir, sessionModel,
 		resolveAskBackend, askCompatible, isSessionKind)
+	// Pi family with no configured verification_model: do not let the
+	// function fall back to resolveAskBackend's default model for the
+	// named backend (a model that belongs to some other backend). Leave
+	// the model empty so the session manager's pi / pi-prompt fallback
+	// applies the configured pi model. The PRD's own model still wins
+	// when the PRD's backend is the one in use.
+	if piFamily && sel.UseSession && in.GlobalModel == "" && !(usesPRDBackend && in.PRDModel != "") {
+		sel.Model = ""
+	}
 	sel.Source = autonomouspkg.VerifierSourceGlobal
 	return sel
+}
+
+// isPiFamilyKind reports whether kind is a pi.dev harness kind: the
+// interactive "pi" or the one-shot "pi-prompt" backend.
+func isPiFamilyKind(kind string) bool {
+	return kind == "pi" || kind == "pi-prompt"
 }
 
 // stamp records the selection on a verification result.

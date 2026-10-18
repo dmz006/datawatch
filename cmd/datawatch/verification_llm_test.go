@@ -227,3 +227,113 @@ func TestResolveVerifierBackendModelWithSessionModel_EmptyMatchesBase(t *testing
 		}
 	}
 }
+
+// piAwareSessionKind is fakeIsSessionKind plus the pi.dev kinds, which
+// carry tool access and so route to a real session when a project dir exists.
+func piAwareSessionKind(kind string) bool {
+	return fakeIsSessionKind(kind) || isPiFamilyKind(kind)
+}
+
+// TestSelectVerifierLLM_GlobalSessionModelPiFamily covers the global
+// (non-override, no pool) path for pi-family and other session kinds.
+func TestSelectVerifierLLM_GlobalSessionModelPiFamily(t *testing.T) {
+	const bogusNamedModel = "ollama-model-from-other-backend"
+	cases := []struct {
+		name       string
+		backend    string
+		model      string
+		kind       string // resolveAskBackend's kind for backend
+		projectDir string
+		prdBackend string
+		prdModel   string
+		wantModel  string
+		wantSess   bool
+	}{
+		{
+			// (a) the configured pi-prompt model is used verbatim.
+			name: "pi-prompt configured model", backend: "pi-prompt", model: "prov/model:64k",
+			kind: "pi-prompt", projectDir: "/work/p1", wantModel: "prov/model:64k", wantSess: true,
+		},
+		{
+			// (b) the same for the interactive pi kind.
+			name: "pi configured model", backend: "pi", model: "prov/model",
+			kind: "pi", projectDir: "/work/p1", wantModel: "prov/model", wantSess: true,
+		},
+		{
+			// (c) empty verification_model: the named backend's own default
+			// (bogusNamedModel) must not leak in. Model stays empty so the
+			// manager's pi / pi-prompt configured-model fallback applies;
+			// an explicit request model would still override that fallback.
+			name: "pi-prompt empty model", backend: "pi-prompt", model: "",
+			kind: "pi-prompt", projectDir: "/work/p1", wantModel: "", wantSess: true,
+		},
+		{
+			// (c') empty verification_model with the PRD's own backend in
+			// use: the PRD's model is that backend's own, so it still applies.
+			name: "pi PRD backend empty model uses PRD model", backend: "", model: "",
+			kind: "pi", projectDir: "/work/p1", prdBackend: "pi", prdModel: "prov/prd",
+			wantModel: "prov/prd", wantSess: true,
+		},
+		{
+			// (d) a non-pi session kind keeps the existing behaviour: the
+			// ask-compatible configured model is never forced onto it.
+			name: "claude-code keeps registry default", backend: "claude-code", model: "qwen3.8:27b",
+			kind: "claude-code", projectDir: "/work/p1", wantModel: "registry-default", wantSess: true,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			prd, task, cfg := overrideFixture()
+			prd.ProjectDir = c.projectDir
+			prd.Backend = c.prdBackend
+			prd.Model = c.prdModel
+			cfg.VerificationBackend = c.backend
+			cfg.VerificationModel = c.model
+			cfg.VerificationBackends = nil
+			task.VerificationBackend = ""
+			task.VerificationModel = ""
+			resolve, compatible := fakeAskResolver(
+				map[string]string{c.backend: c.kind},
+				map[string]string{c.backend: "registry-default"})
+			if isPiFamilyKind(c.kind) {
+				resolve, compatible = fakeAskResolver(
+					map[string]string{c.backend: c.kind},
+					map[string]string{c.backend: bogusNamedModel})
+			}
+
+			sel := selectVerifierLLM(selectInputFor(prd, task, cfg), nil, resolve, compatible, piAwareSessionKind)
+
+			if sel.Source != autonomouspkg.VerifierSourceGlobal {
+				t.Fatalf("Source = %q, want global", sel.Source)
+			}
+			if sel.UseSession != c.wantSess {
+				t.Fatalf("UseSession = %v, want %v (%+v)", sel.UseSession, c.wantSess, sel)
+			}
+			if sel.Model != c.wantModel {
+				t.Errorf("Model = %q, want %q", sel.Model, c.wantModel)
+			}
+			if sel.Model == bogusNamedModel {
+				t.Errorf("Model = %q: named backend's default leaked into a pi-family session", sel.Model)
+			}
+		})
+	}
+}
+
+// TestSelectVerifierLLM_GlobalPiFamilyNoProjectDirDowngrades keeps the
+// ask-compatible path intact: a pi-family backend with no project dir has
+// nowhere to spawn a session, so it downgrades to ollama as before.
+func TestSelectVerifierLLM_GlobalPiFamilyNoProjectDirDowngrades(t *testing.T) {
+	prd, task, cfg := overrideFixture()
+	prd.ProjectDir = ""
+	cfg.VerificationBackend = "pi-prompt"
+	cfg.VerificationModel = "prov/model:64k"
+	cfg.VerificationBackends = nil
+	resolve, compatible := fakeAskResolver(
+		map[string]string{"pi-prompt": "pi-prompt"}, nil)
+
+	sel := selectVerifierLLM(selectInputFor(prd, task, cfg), nil, resolve, compatible, piAwareSessionKind)
+
+	if sel.UseSession || sel.Backend != "ollama" || sel.Kind != "ollama" {
+		t.Errorf("got %+v, want ollama downgrade without a session", sel)
+	}
+}
