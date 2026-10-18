@@ -5,6 +5,27 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.3 — fix(verifier): judge-session timeout is now a setting (autonomous.verification_timeout_seconds, 30m default)
+
+**Verifier judge sessions no longer time out after a hard-coded 10 minutes.** The
+verifier and the per-task guardrail judgment sessions were bounded by a fixed 10-minute
+limit. Slow local models often need longer than that to reach a verdict, so their
+sessions were cut off and the task failed with `verifier(session): ... timed out after
+10m0s`. The limit is now a setting.
+
+**New setting: `autonomous.verification_timeout_seconds`.** It is set through the REST
+config get and set endpoints, the MCP config tool, and the autonomous Settings card in the
+PWA. It defaults to 1800 seconds (30 minutes). If it is unset, zero, or negative, the
+default applies.
+
+**Timeout failures now say what timed out.** A judgment session that hits its limit
+reports the backend, the exact model, and the configured limit, so the operator can see
+which model needs more time and which setting to raise.
+
+Reuse audit (B9): this extends the existing `autonomous.*` timeout settings family
+(alongside `planning_timeout_seconds`) and reuses the timeout parameter of
+`runOneShotJSONSession`. It adds no new timeout mechanism.
+
 ## v9.5.2 — fix(verifier): an empty first attempt no longer passes as already landed
 
 **An empty first attempt is no longer accepted as "already landed".** When a task's
