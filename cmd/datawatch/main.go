@@ -114,7 +114,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "9.5.5"
+var Version = "9.5.6"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -4249,7 +4249,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			// treading on each other's scratch state). See
 			// internal/autonomous/scratch.go.
 			return runOneShotJSONSession(cfg, req.PRDID, req.ProjectDir, backend, req.Model,
-				"autonomous:decompose", sessionTask, outputFile, "decompose-output.json", timeout)
+				decomposeSessionName, sessionTask, outputFile, "decompose-output.json", timeout)
 		}
 		decomposeFn := func(req autonomouspkg.DecomposeRequest) (string, error) {
 			// Per-PRD decomposition_profile takes priority over global planning_backend.
@@ -5263,6 +5263,9 @@ Verify whether the diff plausibly implements the spec. Reply with STRICT JSON on
 			fmt.Fprintf(os.Stderr, "[warn] autonomous manager: %v\n", err)
 		} else {
 			autonomousMgrRef = amgr // BL244 — expose for plugin context wiring below
+			// Planning/verification pairing check at startup. Each warning is
+			// written to the daemon log once; the status endpoint keeps them.
+			amgr.ReportPairingWarnings()
 			amgr.SetGuardrail(autonomousGuardrail)
 			// Foreign-file drift (and future autonomous audit events) →
 			// operator audit log, so they land in JSON-lines + CEF mirror.

@@ -89,7 +89,7 @@ func (s *Server) handleAutonomousConfig(w http.ResponseWriter, r *http.Request) 
 			}
 		}
 		s.audit(r.Context(), "update", "autonomous_config", "", nil) // GH#201 Phase 4
-		resp := map[string]any{"status": "ok"}
+		resp := map[string]any{"status": "ok", "warnings": autonomousConfigWarnings(s.autonomousMgr)}
 		if deprecated != nil {
 			resp["deprecated_fields"] = deprecated
 		}
@@ -97,6 +97,23 @@ func (s *Server) handleAutonomousConfig(w http.ResponseWriter, r *http.Request) 
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// pairingWarner is the optional surface a manager exposes for planning and
+// verification model pairing warnings. A manager without it reports none.
+type pairingWarner interface {
+	ReportPairingWarnings() []string
+}
+
+// autonomousConfigWarnings returns the current pairing warnings for a config
+// response. It is never nil, so the JSON field is always an array.
+func autonomousConfigWarnings(mgr AutonomousAPI) []string {
+	if pw, ok := mgr.(pairingWarner); ok {
+		if ws := pw.ReportPairingWarnings(); ws != nil {
+			return ws
+		}
+	}
+	return []string{}
 }
 
 // handleAutonomousStatus — GET only.

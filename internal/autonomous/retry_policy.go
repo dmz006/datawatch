@@ -11,6 +11,7 @@ package autonomous
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"time"
@@ -260,6 +261,64 @@ func (m *Manager) checkPersistedDecompose(prdID string) error {
 		return fmt.Errorf("persisted decompose: %w", err)
 	}
 	return nil
+}
+
+// decomposeSessionStopThreshold is how many consecutive no-output decompose
+// sessions stop the PRD. The second such session is the last one spawned:
+// the streak is treated as the session path being broken, not as a
+// transient failure worth a third attempt.
+const decomposeSessionStopThreshold = 2
+
+// noteDecomposeSessionFailure handles a decompose error from a one-shot
+// session that ended without writing its plan file (OneShotNoOutputError).
+// The count is persisted before anything else, so a restart mid-streak
+// keeps it. Below the threshold it seeds prd.LastDecomposeFailure as the
+// next attempt's hint and returns false so the caller respawns. At the
+// threshold it parks the PRD in PRDFailed and returns true: the caller
+// must return the error and must not invoke the decompose fn again.
+func (m *Manager) noteDecomposeSessionFailure(prd *PRD, backend, model string, derr error) bool {
+	prd.DecomposeSessionFailures++
+	now := time.Now()
+	modelLabel := model
+	if modelLabel == "" {
+		modelLabel = "default"
+	}
+	if prd.DecomposeSessionFailures < decomposeSessionStopThreshold {
+		prd.LastDecomposeFailure = &FailureReason{
+			Category:   "infra",
+			Source:     "decompose-session",
+			Retryable:  true,
+			Detail:     fmt.Sprintf("the decompose session ended without writing the plan file (%s, %s model); retrying with a fresh session", backend, modelLabel),
+			OccurredAt: now,
+		}
+		_ = m.store.SavePRD(prd)
+		return false
+	}
+	detail := fmt.Sprintf("%d decompose sessions ended without writing a plan (%s, %s model); stopped — reset to draft to retry", prd.DecomposeSessionFailures, backend, modelLabel)
+	prd.LastDecomposeFailure = &FailureReason{
+		Category:   "infra",
+		Source:     "decompose-session",
+		Retryable:  false,
+		Detail:     detail,
+		OccurredAt: now,
+	}
+	old := prd.Status
+	prd.Status = PRDFailed
+	prd.UpdatedAt = now
+	log.Printf("[autonomous] prd=%s decompose stopped after %d no-output sessions (backend=%s, model=%s): %v",
+		prd.ID, prd.DecomposeSessionFailures, backend, modelLabel, derr)
+	m.recordFailureLearning(prd, prd.ID, "infra", detail)
+	if m.store.SavePRD(prd) == nil {
+		m.emitPRDStatus(prd, old, nil, nil)
+	}
+	return true
+}
+
+// isOneShotNoOutput reports whether a decompose error is the one-shot
+// no-output family (see OneShotNoOutputError).
+func isOneShotNoOutput(err error) bool {
+	var noOutput *OneShotNoOutputError
+	return errors.As(err, &noOutput)
 }
 
 // orContentCategory applies FailureReason's "empty means content"

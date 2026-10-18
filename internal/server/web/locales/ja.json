@@ -81,6 +81,7 @@
   "app_name": "datawatch",
   "audit_no_entries_range": "範囲内に監査エントリがありません。",
   "automata_action_approve": "承認",
+  "automata_pairing_warnings_title": "モデルとバックエンドの組み合わせの警告",
   "automata_action_approve_disabled_tip": "承認待ちなし",
   "automata_action_approve_tip": "次のストーリーを承認 / ブロック解除",
   "automata_action_cancel": "キャンセル",

@@ -81,6 +81,7 @@
   "app_name": "datawatch",
   "audit_no_entries_range": "Keine Audit-Einträge im Zeitraum.",
   "automata_action_approve": "Genehmigen",
+  "automata_pairing_warnings_title": "Warnungen zur Modell-Backend-Zuordnung",
   "automata_action_approve_disabled_tip": "Keine Genehmigung ausstehend",
   "automata_action_approve_tip": "Nächste Story genehmigen / Blocker lösen",
   "automata_action_cancel": "Abbrechen",

@@ -412,6 +412,10 @@ type Manager struct {
 	decompose   DecomposeFn
 	guardrail   GuardrailFn
 
+	// pairingLogged records each pairing warning already written to the
+	// daemon log, so a config set does not repeat a warning it logged before.
+	pairingLogged map[string]bool
+
 	// BL451 — per-PRD count of executor-owned saves (savePRDOwn), so the
 	// completion rollup can discount its own Rev bumps. Guarded by mu.
 	ownSaves map[string]int
@@ -1070,13 +1074,7 @@ func (m *Manager) Decompose(prdID string) (*PRD, error) {
 	// BL416 Phase 2 — see verification_script_prompt.go. Twin call in decomposeStreamingCore(); keep both in sync.
 	prompt += m.verificationScriptSuffix(prd)
 
-	planModel := prd.DecompositionModel
-	if planModel == "" {
-		planModel = m.cfg.PlanningModel
-	}
-	if planModel == "" {
-		planModel = prd.Model
-	}
+	planModel := resolvePlannedModel(backend, prd.DecompositionModel, prd.Backend, prd.Model, m.cfg.PlanningBackend, m.cfg.PlanningModel)
 	// BL410 remediation (2026-10-13) — bounded, hint-fed retry for an
 	// infra/scope-classified decompose failure, instead of immediately
 	// rolling back to PRDDraft on the very first failure. See
@@ -1092,6 +1090,12 @@ func (m *Manager) Decompose(prdID string) (*PRD, error) {
 		}
 		r, derr := m.decompose(DecomposeRequest{Spec: attemptPrompt, Backend: backend, Effort: effort, Model: planModel, ProjectDir: prd.ProjectDir, ScopeBlock: ScopeBlock(prd), PRDID: prd.ID, TimeoutSeconds: m.cfg.PlanningTimeoutSeconds})
 		if derr != nil {
+			if isOneShotNoOutput(derr) {
+				if m.noteDecomposeSessionFailure(prd, backend, planModel, derr) {
+					return nil, derr
+				}
+				continue
+			}
 			if m.retryDecomposeFailure(prd, "infra", "decompose-llm", derr.Error()) {
 				continue
 			}
@@ -1131,6 +1135,7 @@ func (m *Manager) Decompose(prdID string) (*PRD, error) {
 		}
 		raw, title, stories = r, t, s
 		prd.LastDecomposeFailure = nil // success — clear the single-use hint
+		prd.DecomposeSessionFailures = 0
 		break
 	}
 	if title != "" {
@@ -1247,14 +1252,8 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (*PRD, 
 	// jumping straight to the global default whenever one was configured
 	// — backend resolution above was correct (so the claude CLI launched
 	// fine), but the --model argument fed into it was always wrong.
-	// Restored to the same 3-tier fallback Decompose() already uses.
-	planModel2 := prd.DecompositionModel
-	if planModel2 == "" {
-		planModel2 = m.cfg.PlanningModel
-	}
-	if planModel2 == "" {
-		planModel2 = prd.Model
-	}
+	// Restored to the same tiered resolution Decompose() uses.
+	planModel2 := resolvePlannedModel(backend, prd.DecompositionModel, prd.Backend, prd.Model, m.cfg.PlanningBackend, m.cfg.PlanningModel)
 	// BL410 remediation (2026-10-13) — see Decompose()'s identical loop
 	// for the full explanation; retryDecomposeFailure is the shared
 	// helper both copies of this drifted-duplicate pair call, so the
@@ -1268,6 +1267,12 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (*PRD, 
 		}
 		r, derr := m.decompose(DecomposeRequest{Spec: attemptPrompt, Backend: backend, Effort: effort, Model: planModel2, ProjectDir: prd.ProjectDir, ScopeBlock: ScopeBlock(prd), PRDID: prd.ID, TimeoutSeconds: m.cfg.PlanningTimeoutSeconds})
 		if derr != nil {
+			if isOneShotNoOutput(derr) {
+				if m.noteDecomposeSessionFailure(prd, backend, planModel2, derr) {
+					return nil, derr
+				}
+				continue
+			}
 			if m.retryDecomposeFailure(prd, "infra", "decompose-llm", derr.Error()) {
 				continue
 			}
@@ -1304,6 +1309,7 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (*PRD, 
 		}
 		raw, title, stories = r, t, s
 		prd.LastDecomposeFailure = nil // success — clear the single-use hint
+		prd.DecomposeSessionFailures = 0
 		break
 	}
 	if title != "" {
@@ -1482,6 +1488,12 @@ func (m *Manager) ResetToDraft(id, actor string) (*PRD, error) {
 	prd.ApprovedBy = ""
 	prd.ApprovedAt = nil
 	prd.RejectionReason = ""
+	// A reset starts a fresh decompose streak: the no-output counter and
+	// its terminal hint must not carry into the next attempt.
+	prd.DecomposeSessionFailures = 0
+	if prd.LastDecomposeFailure != nil && prd.LastDecomposeFailure.Source == "decompose-session" {
+		prd.LastDecomposeFailure = nil
+	}
 	prd.UpdatedAt = now
 	prd.Decisions = trimDecisions(append(prd.Decisions, Decision{
 		At: now, Kind: "reset_to_draft", Actor: actor,
@@ -3233,6 +3245,7 @@ func (m *Manager) Status() LoopStatus {
 	if len(verdictCounts) > 0 {
 		st.VerdictCounts = verdictCounts
 	}
+	st.Warnings = PairingWarnings(m.cfg, m.pairingDecomposeRefs(m.cfg))
 	return st
 }
 

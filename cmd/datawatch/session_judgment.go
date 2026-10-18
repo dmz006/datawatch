@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -17,7 +16,13 @@ import (
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/inference"
 	"github.com/dmz006/datawatch/internal/llm"
+	"github.com/dmz006/datawatch/internal/session"
 )
+
+// decomposeSessionName is the sessionName the PRD decompose one-shot
+// session runs under. runOneShotJSONSessionWithEffort keys its
+// decompose-only waiting_input handling off it.
+const decomposeSessionName = "autonomous:decompose"
 
 // resolveAskCompatibleKind maps a raw backend string to (askKind, model,
 // err): if raw is a named LLM in the registry, its kind is returned,
@@ -246,13 +251,18 @@ func runOneShotJSONSessionWithEffort(cfg *config.Config, prdID, projectDir, back
 		fmt.Printf("[%s] killed %s\n", sessionName, sessionID)
 	}()
 
+	// role names this session's job in the no-output error family, e.g.
+	// "decompose" for the PRD planning session.
+	role := strings.TrimPrefix(sessionName, "autonomous:")
+
 	// Poll for session completion.
 	tick := time.NewTicker(3 * time.Second)
 	defer tick.Stop()
+	waitingInputTicks := 0
 	for {
 		select {
 		case <-ctx.Done():
-			return "", errors.New(sessionOneShotTimeoutMessage(sessionName, startOut.ID, backend, model, timeout))
+			return "", &autonomouspkg.OneShotNoOutputError{Msg: sessionOneShotTimeoutMessage(sessionName, startOut.ID, backend, model, timeout)}
 		case <-tick.C:
 			pollReq, err := http.NewRequestWithContext(ctx, http.MethodGet,
 				loopbackBaseURL(cfg)+"/api/sessions/"+startOut.ID, nil)
@@ -282,6 +292,22 @@ func runOneShotJSONSessionWithEffort(cfg *config.Config, prdID, projectDir, back
 				fmt.Printf("[%s] %s state=%q, output file ready (%d bytes) — treating as complete\n", sessionName, startOut.ID, s.State, len(content))
 				return content, nil
 			}
+			// waiting_input debounce, mirroring the task executor's
+			// stall check (see waitingInputTick). A one-shot decompose
+			// session is never answered by a human, so a sustained
+			// waiting_input is a stuck session: kill it (the deferred kill
+			// above) and report the no-output family rather than polling
+			// to the timeout. Scoped to claude-code like the executor:
+			// other backends show a persistent prompt-looking status line
+			// that would be misread as waiting_input.
+			var stalled bool
+			if sessionName == decomposeSessionName && backend == "claude-code" {
+				waitingInputTicks, stalled = waitingInputTick(waitingInputTicks, session.State(s.State))
+			}
+			if stalled {
+				fmt.Printf("[%s] %s state=waiting_input for %d ticks — killing; one-shot session cannot answer\n", sessionName, startOut.ID, waitingInputTicks)
+				return "", &autonomouspkg.OneShotNoOutputError{Msg: fmt.Sprintf("one-shot %s session %s ended with state waiting_input without producing output (backend=%s, model=%q)", role, startOut.ID, backend, model)}
+			}
 			switch s.State {
 			case "complete":
 				return "", fmt.Errorf("%s session %s completed but output file %s not found (backend=%s, model=%q)", sessionName, startOut.ID, outputFile, backend, model)
@@ -293,7 +319,7 @@ func runOneShotJSONSessionWithEffort(cfg *config.Config, prdID, projectDir, back
 					fmt.Printf("[%s] %s state=%q, output file appeared after kill (%d bytes)\n", sessionName, startOut.ID, s.State, len(content))
 					return content, nil
 				}
-				return "", fmt.Errorf("%s session %s ended with state %q and no output file (backend=%s, model=%q)", sessionName, startOut.ID, s.State, backend, model)
+				return "", &autonomouspkg.OneShotNoOutputError{Msg: fmt.Sprintf("one-shot %s session %s ended with state %s without producing output (backend=%s, model=%q)", role, startOut.ID, s.State, backend, model)}
 			}
 		}
 	}

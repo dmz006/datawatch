@@ -5,6 +5,29 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.6 — fix(decompose): the right planning model, a bounded respawn, and no revival of a cancelled decompose
+
+**Decompose fixes: the right planning model, a clear failure after repeated silent sessions, and no revival of cancelled PRDs.**
+
+**Decompose uses the planning model that belongs to its backend.** A planning
+model set for a different backend is no longer passed to the decompose session.
+If no planning model is configured for the backend in use, no model is passed at
+all, so the backend's own default applies.
+
+**Decompose stops after two empty sessions.** When two decompose sessions in a row
+end waiting for input, or finish without producing a plan, the decompose is marked
+failed on the PRD with a readable reason. `prd-get` and the web UI show that reason.
+Datawatch no longer starts another decompose session for that PRD.
+
+**Restarting the daemon no longer revives a decompose.** A cancelled PRD, or a PRD
+that is not in the planning state, keeps its decompose stopped across a restart.
+
+**Warning for a planning model that does not match the decompose backends.** The
+daemon logs a warning at startup, and again whenever the autonomous planning or
+verification settings change, when a planning model does not belong to any decompose
+backend in use. The warning names the model and the backends, so you can correct
+the pairing before a decompose runs with the wrong model.
+
 ## v9.5.5 — feat(autonomous): Automations — named, graph-shaped groups of Automata (data model only)
 
 **This release is data-model-only.** It adds the Automation record and the

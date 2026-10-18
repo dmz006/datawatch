@@ -288,6 +288,21 @@ autonomous:
   security_scan:          true        # nightwire-port .py scanner before commit
 ```
 
+### Model pairing warnings
+
+A model only reaches its session when it pairs with that session's backend.
+A planning model written as `<prefix>/<model>` for a different backend, or a
+planning model set for a different planning backend than a non-finished PRD
+decomposes with, is dropped (planning) or sent to a session that may reject
+it (verification). The daemon checks this at startup and on every
+`PUT /api/autonomous/config`, and reports the plain-language messages in:
+
+- the `warnings` array of the `PUT /api/autonomous/config` response (always present, empty when none);
+- the `warnings` field of `GET /api/autonomous/status` (omitted when none).
+
+Each warning is written to the daemon log once per process. Completed,
+cancelled, rejected and archived PRDs are not checked.
+
 ---
 
 ## CLI

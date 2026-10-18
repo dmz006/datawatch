@@ -46,3 +46,88 @@ func TestDecomposeRequest_CarriesPRDID(t *testing.T) {
 		t.Fatalf("decompose request PRDID = %q, want %q", got, prd.ID)
 	}
 }
+
+func TestBootResume_CancelledPRDKillsLiveDecomposeSessionWithoutRedecompose(t *testing.T) {
+	m, api, _, _ := apiFixture(t)
+	prd, _ := m.CreatePRD("s", "/w/proj", "opencode", "", EffortNormal)
+	p, _ := m.Store().GetPRD(prd.ID)
+	p.Status = PRDCancelled
+	_ = m.Store().SavePRD(p)
+
+	decomposeCalls := 0
+	m.decompose = func(r DecomposeRequest) (string, error) {
+		decomposeCalls++
+		return `{"title":"T","stories":[{"title":"S","tasks":[{"title":"Task","spec":"do it"}]}]}`, nil
+	}
+	live := map[string][]string{prd.ID: {"dec-cancelled-1"}}
+	var killed []string
+	m.SetDecomposeSessionsFn(func(id string) []string { return live[id] })
+	m.SetSessionKillerFn(func(id string) error { killed = append(killed, id); return nil })
+
+	api.resumeRunningPRDs()
+
+	if len(killed) != 1 || killed[0] != "dec-cancelled-1" {
+		t.Fatalf("want live decompose session killed, got %v", killed)
+	}
+	if decomposeCalls != 0 {
+		t.Fatalf("decompose invoked %d times for a cancelled PRD, want 0", decomposeCalls)
+	}
+	got, _ := m.Store().GetPRD(prd.ID)
+	if got.Status != PRDCancelled {
+		t.Fatalf("status = %s, want %s", got.Status, PRDCancelled)
+	}
+}
+
+func TestBootResume_CancelledPRDWithNoSessionsIsNoOp(t *testing.T) {
+	m, api, _, _ := apiFixture(t)
+	prd, _ := m.CreatePRD("s", "/w/proj", "opencode", "", EffortNormal)
+	p, _ := m.Store().GetPRD(prd.ID)
+	p.Status = PRDCancelled
+	_ = m.Store().SavePRD(p)
+
+	var killed []string
+	m.SetDecomposeSessionsFn(func(string) []string { return nil })
+	m.SetSessionKillerFn(func(id string) error { killed = append(killed, id); return nil })
+
+	api.resumeRunningPRDs()
+	api.resumeRunningPRDs()
+
+	if len(killed) != 0 {
+		t.Fatalf("no live sessions, but killed %v", killed)
+	}
+	got, _ := m.Store().GetPRD(prd.ID)
+	if got.Status != PRDCancelled {
+		t.Fatalf("status = %s, want %s", got.Status, PRDCancelled)
+	}
+}
+
+func TestBootResume_PlanningPRDContrastStillResetsToDraft(t *testing.T) {
+	m, api, _, _ := apiFixture(t)
+	prd, _ := m.CreatePRD("s", "/w/proj", "opencode", "", EffortNormal)
+	p, _ := m.Store().GetPRD(prd.ID)
+	p.Status = PRDPlanning
+	_ = m.Store().SavePRD(p)
+
+	decomposeCalls := 0
+	m.decompose = func(r DecomposeRequest) (string, error) {
+		decomposeCalls++
+		return `{}`, nil
+	}
+	live := map[string][]string{prd.ID: {"dec-planning-1"}}
+	var killed []string
+	m.SetDecomposeSessionsFn(func(id string) []string { return live[id] })
+	m.SetSessionKillerFn(func(id string) error { killed = append(killed, id); return nil })
+
+	api.resumeRunningPRDs()
+
+	if len(killed) != 1 || killed[0] != "dec-planning-1" {
+		t.Fatalf("want planning orphan killed, got %v", killed)
+	}
+	if decomposeCalls != 0 {
+		t.Fatalf("decompose invoked %d times on boot-resume, want 0", decomposeCalls)
+	}
+	got, _ := m.Store().GetPRD(prd.ID)
+	if got.Status != PRDDraft {
+		t.Fatalf("status = %s, want %s", got.Status, PRDDraft)
+	}
+}
