@@ -267,6 +267,15 @@ requirement (open question 19).
   later" in a tick prompt does not count. Every tick ends with a defect sweep: list
   anything odd seen (failed task causes, stuck sessions, wrong models, silent drops,
   oversized replies, side effects of a restart) and confirm each has a row and a PRD.
+- **Lane fill (lesson, 2026-10-18).** Every tick lists each lane (the two GPU lanes and the
+  Claude lane) and what it is running. An idle lane with eligible queued work is a defect
+  of the tick, not a quiet state: start the next item on it in the same tick, or write down
+  why not (for example a hold the operator asked for). The qwen lanes sat idle for about an
+  hour because the tick only tracked the PRDs it already knew about and the whole fix queue
+  had been assigned to the Claude lane; nothing re-assigned work when the two qwen PRDs
+  finished. The queue is split by lane up front (small independent fixes to the qwen lanes,
+  work needing the Claude builder to the Claude lane), planning for the next item runs while
+  the current one builds, and the report names each lane and its occupant.
 - **Plan check against the original spec.** A rewritten or shortened spec can drop test
   requirements, so compare the decomposed plan with the original request and add missing
   tests or surfaces with a task edit.
@@ -285,6 +294,10 @@ The coordinator replaces the human loop, so these become mechanical:
   for the tag until it is green, with CI failures routed to fix PRDs.
 - A minimum model context (64k), the pinned model per node and the model-swap rule as
   policy settings, and accounting for every other consumer of the tracked models.
+- Lane occupancy: each tick (or event) compares every configured lane with the queue, starts
+  eligible work on an idle lane, plans the next item while the current one runs, and alerts
+  when a lane has been idle with eligible work for longer than a configured limit, because a
+  lane that nobody mentions is easy to miss (qwen lanes idle for an hour on 2026-10-18).
 - Alerting when a bad state sits silent. In one incident two tasks sat blocked for about
   fifty minutes before a person noticed.
 
