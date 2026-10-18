@@ -69,6 +69,11 @@ The supervisor orchestrates and validates. It does not hand-fix code.
   [concurrency and budget, section 4b](2026-10-14-concurrency-and-budget-design.md).
 - Two GPU nodes are two lanes. Keep both busy, and run at most one engine per node. If
   two land on one node, cancel the newer one.
+- **No experiments on a busy GPU.** Never run a test, benchmark or trial of a model setting
+  on a node while a PRD engine uses it, and never take a lane for it. An idea about open
+  models (thinking levels, prompts, settings) is written into the plan docs as a tracker
+  item and tested later, in the open-model matrix after v10.0.0 or when the operator
+  frees a node. The supervisor only observes (logs, process lists, small reads).
 - **Pin the model.** The 64k-context variant (`qwen3.8-64k:27b`) is pinned resident
   with `keep_alive: -1`. The 32k default caused eviction and context overflow
   (`stopReason=length`). Check residency every tick and re-pin when it lapses.
