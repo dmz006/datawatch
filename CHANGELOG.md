@@ -5,6 +5,37 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.6.0 — feat(autonomous): Automations — the data model, store and CRUD for multi-Automaton orchestration
+
+datawatch can now define an **Automation**: a group of Automata (PRDs) wired
+together with per-outcome edges, plus an execution/verification tier of its own
+between the Automaton and the global settings. This release lands Phase 1 of the
+Automation plan — the data model, persistence, validation and the CRUD surface;
+the coordinator that actually runs the chain arrives in a later release.
+
+- **Data model.** An Automation has a name, a status (`draft`, `active`, `paused`,
+  `completed`, `blocked`, `cancelled`), a member list (each member names a PRD and
+  an `on_complete` / `on_blocked` / `on_failed` edge), an entry member, execution
+  defaults (`backend`/`model`/`effort`) and verification defaults, and a `BudgetPolicy`.
+  Completed history is immutable: a finished member can no longer be removed or
+  re-ordered.
+- **Persistence.** Automations live in `<data_dir>/autonomous/automations.jsonl`
+  next to `prds.jsonl`, with a per-id write lock and a PRD-ownership index rebuilt
+  on load.
+- **Validation (on every write).** Edge loops are rejected with `400`, as is an
+  edge or entry that names a missing member; a PRD may belong to at most one
+  Automation that is not `completed`/`cancelled` (enforced through
+  `PRD.AutomationID`); templates and child PRDs can't be members; members
+  unreachable from the entry are a warning in `draft` but `409` on activation.
+- **Concurrency.** Every write bumps the Automation's `version`; updates pass the
+  version they read, so two edits racing on the same Automation can't silently
+  clobber each other.
+- **CRUD surface.** REST `GET/POST /api/automations`, `GET/PUT/DELETE
+  /api/automations/{id}`, and MCP `automation_list` / `automation_create` /
+  `automation_get` and friends. Several Automations may be `active` at once; when
+  their members share a project tree, the BL428 per-tree write lock still
+  serializes their task execution.
+
 ## v9.5.0 — feat(session): finished one-shot sessions close themselves, and a one-shot only commits what it validated
 
 **One-shot sessions no longer pile up.** When a one-shot session's command ends

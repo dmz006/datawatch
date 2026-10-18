@@ -56,7 +56,7 @@ BL431's open question 14, and BL405 Phase 7.
 |---|---|---|---|
 | 7 | [BL427 Phase 2](2026-10-13-prd-lifecycle-events.md) Built-in lifecycle-event sinks | shipped in v9.3.0 (PRD `172bf30f`, completed; `5154c783` is a stale draft). Checklist gaps remain: testing-tracker row, operations docs, datawatch-app issue, live smoke | BL427 Phase 1 (shipped) |
 | 8 | [BL428 Phase 2](2026-10-14-concurrency-and-budget-design.md) Project-tree write lock | blocked (PRD `29bd62a1`; T2 blocked on a stale file-drift check). Config keys shipped v9.4.0 and the same-tree admission check shipped v9.5.0; lock acquire/release is not built | BL428 Phase 1 (shipped) |
-| 9 | [BL431 Phase 1](2026-10-14-automation-orchestration-design.md) Automation data model, store and CRUD | blocked (PRD `b9bd3f99`; both tasks failed, same "no output" symptom as BL455 — pending that investigation) | - |
+| 9 | [BL431 Phase 1](2026-10-14-automation-orchestration-design.md) Automation data model, store and CRUD | **shipped v9.6.0** (PRD `b9bd3f99`) | - |
 | 10 | [BL431 Phase 2](2026-10-14-automation-orchestration-design.md) Automation coordinator with auto-advance (now also scoped as a real quality/regression gate — test-coverage validation, cross-cutting-surface regression checks, stall/idle alerting, dynamic reprioritization for urgent bugs; see design doc open question 17) | not started | 7, 8, 9 |
 | 11 | [BL427 Phase 3](2026-10-13-prd-lifecycle-events.md) Persisted subscriptions and CRUD across surfaces | not started | 7 |
 | 12 | [BL428 Phase 3](2026-10-14-concurrency-and-budget-design.md) Inference-cap gap closure (includes §3c federation shared-compute-node detection) | not started | 8 |
