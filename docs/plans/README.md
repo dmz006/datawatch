@@ -122,6 +122,7 @@ advances it without hand sequencing.
 | 63 | BL482 Task and story level LLM overrides allowed on a blocked PRD, with the allowed states a setting (`autonomous.task_override_statuses`) | draft PRD `516a7777` | 9a |
 | 64 | BL483 Automation policy: every option for how automation runs is configurable per project (release rules, cadence, lane limits, backends and models, retry and escalation limits, plan checks, override-lock states, git default, timeouts, defect intake, escalation channel), with our tested behaviour as the shipped default policy; belongs inside BL431 Phase 2 and BL473 | not started | 10 |
 | 65 | Fixed in the unreleased development build (listed so the release notes of 9.6.0 can include them): verifier used the wrong model (v9.5.1, PRD `9d3033b8`); an empty-diff first attempt passed as already landed (v9.5.2, PRD `1e79466d`) | done, not released | - |
+| 66 | BL484 Stall detector: a task worker or verifier session that sits idle without completing is treated as an infra failure after `autonomous.session_idle_timeout_seconds` (default 900) and raises an alert (a live-smoke task sat in verifying for an hour before a person noticed) | draft PRD `90d45cb0` | 9a |
 
 ## Opportunistic, non-blocking research
 
