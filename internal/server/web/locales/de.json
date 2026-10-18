@@ -452,6 +452,7 @@
   "dash_task_tree": "Aufgabenbaum",
   "dash_verdicts": "Urteile",
   "decompose_error": "Zerlegung fehlgeschlagen",
+  "decompose_last_failure": "Zerlegung fehlgeschlagen: ",
   "decompose_in_progress": "Automat wird zerlegt...",
   "decompose_reconnecting": "Verbindung wird wiederhergestellt...",
   "decompose_story_count": "{{count}} Stories generiert",
