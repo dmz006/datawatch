@@ -21,9 +21,9 @@
 //     DATAWATCH_COMPLETE, before verify, so that IS the task's own commit).
 //     ci-watch pins the last completed task's PostVerifySHA and, for
 //     reachability, tests that pinned SHA (not live HEAD) against the
-//     remote-tracking refs — git branch -r --contains <sha>, equivalently
-//     git merge-base --is-ancestor <sha> <ref> against each ref — so a
-//     pinned commit that was pushed but is no longer a branch tip still
+//     remote-tracking refs — git merge-base --is-ancestor <sha> <ref>
+//     against each ref (equivalently git branch -r --contains <sha>) — so
+//     a pinned commit that was pushed but is no longer a branch tip still
 //     reads as pushed (not tip equality, ancestry). The pinned SHA is also
 //     what gets listed and judged on. Only when no task recorded a pin
 //     (legacy stores, capture failure) does ci-watch fall back to live
@@ -183,12 +183,15 @@ func defaultCIGit(ctx context.Context, projectDir string) (headSHA, originURL st
 
 // defaultCIGitSHA is the pinned-SHA variant of defaultCIGit: it reports
 // the origin URL for projectDir and whether the given sha is reachable
-// from ANY remote-tracking ref (git branch -r --contains <sha>;
-// equivalent to git merge-base --is-ancestor <sha> <ref> against each
-// remote-tracking ref). Unlike defaultCIGit it never reads live HEAD —
-// the caller pins the SHA from the last completed task's PostVerifySHA,
-// and for a commit that is no longer a branch tip, "pushed" is decided
-// by ancestry, not tip equality.
+// from ANY remote-tracking ref. Unlike defaultCIGit it never reads live
+// HEAD — the caller pins the SHA from the last completed task's
+// PostVerifySHA, and for a commit that is no longer a branch tip,
+// "pushed" is decided by ancestry, not tip equality.
+//
+// Reachability check: git merge-base --is-ancestor <sha> <ref> against
+// every remote-tracking ref (git branch -r), skipping the origin/HEAD
+// decoration line — exit 0 means the pinned sha is an ancestor of (or
+// equal to) that ref's tip, i.e. it was pushed.
 func defaultCIGitSHA(ctx context.Context, projectDir, sha string) (originURL string, pushed bool, err error) {
 	gitBin, err := exec.LookPath("git")
 	if err != nil {
@@ -212,8 +215,26 @@ func defaultCIGitSHA(ctx context.Context, projectDir, sha string) (originURL str
 		log.Printf("[autonomous] ci-watch: git fetch in %s failed (continuing with local remote-tracking refs): %v", projectDir, ferr)
 	}
 	cancel()
-	refs, err := run(ctx, "branch", "-r", "--contains", sha)
-	return originURL, err == nil && refs != "", nil
+	refsOut, err := run(ctx, "branch", "-r")
+	if err != nil {
+		return originURL, false, fmt.Errorf("git branch -r: %w", err)
+	}
+	pushed = false
+	for _, line := range strings.Split(refsOut, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.Contains(line, " -> ") { // skip the origin/HEAD decoration line
+			continue
+		}
+		// exit 0 ⇔ sha is an ancestor of (or equal to) that ref's tip —
+		// the pinned commit was pushed.
+		cmd := exec.CommandContext(ctx, gitBin, "merge-base", "--is-ancestor", sha, line) // #nosec G204 -- fixed subcommand; sha from git's output, line from `git branch -r`
+		cmd.Dir = projectDir
+		if cmd.Run() == nil {
+			pushed = true
+			break
+		}
+	}
+	return originURL, pushed, nil
 }
 
 // prdLastPostVerifySHA returns the PostVerifySHA of the last completed
