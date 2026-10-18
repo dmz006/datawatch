@@ -202,6 +202,15 @@ route back as corrective work, not something to skip:
 - New config keys in `docs/config-reference.yaml`; docs, testing tracker and
   cross-references updated.
 - The PRD's roadmap entry closed, and the README status matching the PRD registry.
+- Pushed, not only committed. Done means the work is on the remote.
+- Every minor version is tagged for release. A minor version is a complete feature.
+  The tag push runs the CI release pipeline, so releases are never built or uploaded by
+  hand.
+- CI is checked after every tag, on every tick, until the run is green. Anything CI finds
+  goes to a fix PRD (never a hand fix) and the check repeats until it is clear.
+
+The standing permission to push and tag applies only to a completed feature that has
+passed this checklist. Any other push still needs the operator's explicit go-ahead.
 
 The interim loop did not run this checklist, which is why it is a coordinator
 requirement (open question 19).
@@ -237,7 +246,8 @@ The coordinator replaces the human loop, so these become mechanical:
 - Tree admission and scoped commits (section 7), already started as BL469 and BL470.
 - The one-shot validation gate and reaper (section 8), shipped as part of this work.
 - The after-done checklist and a registry-versus-README consistency check
-  (sections 9 and 10) before it advances.
+  (sections 9 and 10) before it advances, including push, tag and watching the CI run
+  for the tag until it is green, with CI failures routed to fix PRDs.
 - Alerting when a bad state sits silent. In one incident two tasks sat blocked for about
   fifty minutes before a person noticed.
 
