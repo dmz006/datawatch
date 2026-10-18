@@ -25,10 +25,10 @@
 //
 //  3. No lost version bump. The release critical section (read →
 //     bump → write against the shared tree) runs only while the task
-//     holds the tree: the two concurrent bump tasks are serialized
-//     with the second visible in a "tree lock" wait episode, and each
-//     lands its own increment — the version ends at the second
-//     sequential bump from the base ("9.10.1"), not the single
+//     holds the tree: the three concurrent bump tasks are serialized
+//     with the later ones visible in a "tree lock" wait episode, and
+//     each lands its own increment — the version ends at the third
+//     sequential bump from the base ("9.10.2"), not the single
 //     stale-read bump the incident shipped.
 //
 // Two layers of the tree-lock wiring protect the tree, and these two
@@ -137,11 +137,11 @@ func TestSameTreeThreePRDsSerialize(t *testing.T) {
 	st := mgr.Store()
 
 	type onePRD struct {
-		prd   *PRD
-		task  string
-		file  string
-		err   error
-		intv  interval
+		prd     *PRD
+		task    string
+		file    string
+		err     error
+		intv    interval
 		touched bool
 	}
 	ones := make([]*onePRD, 0, 3)
@@ -288,8 +288,9 @@ func TestSameTreeThreePRDsSerialize(t *testing.T) {
 type interval struct{ start, end time.Time }
 
 // releaseBump mimics a release version bump: patch + 1 with a carry
-// at 10 — the shape of the datawatch release version, so two
-// sequential bumps from 9.9.9 land 9.10.0 → 9.10.1.
+// at 10 — the shape of the datawatch release version, so three
+// sequential bumps from 9.9.9 land 9.10.0 → 9.10.1 → 9.10.2 (a
+// 9.10.x-equivalent).
 func releaseBump(v string) (string, error) {
 	var a, b, c int
 	if _, err := fmt.Sscanf(strings.TrimSpace(v), "%d.%d.%d", &a, &b, &c); err != nil {
@@ -325,17 +326,17 @@ func bumpsLanded(base, got string) int {
 	return -1
 }
 
-
 // TestSameTreeConcurrentReleaseBumpsDoNotCollide pins the second
 // branch of the 2026-10-13 incident — concurrent release-style
-// read-bump-writes of a shared version (the incident: two concurrent
-// release tasks consumed v9.0.64, so only one increment was visible in
-// the shipped version). This branch pins the TASK-LEVEL writer lock
-// (BL428 §3a, the holdTree acquisition in executor.go) that serializes
-// concurrent tasks on the same tree: two concurrent release tasks in
-// one PRD on one shared direct tree (MaxConcurrentTasks=2), each seam
-// performing the release critical section — read the shared VERSION
-// file (starting "9.9.9"), bump the patch by 1, write it back.
+// read-bump-writes of a shared version (the incident: concurrent
+// release work consumed the same version, so one or more increments
+// were invisible in the shipped version). This branch pins the
+// TASK-LEVEL writer lock (BL428 §3a, the holdTree acquisition in
+// executor.go) that serializes concurrent tasks on the same tree:
+// THREE concurrent release tasks in one PRD on one shared direct
+// tree (MaxConcurrentTasks=3), each seam performing the release
+// critical section — read the shared Version (file, starting
+// "9.9.9"), bump the patch by 1, write it back.
 //
 // (TestSameTreeThreePRDsSerialize pins the PRD-level tree-admission
 // gate, the BL469 refusal; a single PRD's own tasks are exempt from
@@ -345,16 +346,18 @@ func bumpsLanded(base, got string) int {
 //
 // Assertions:
 //
-//  1. Serialized — the two bump sessions never overlap; while the
-//     first task holds the tree the second is visible in the task
-//     store in a waiting state with a "tree lock" wait reason (the
-//     recorded episode), and then acquires and finishes.
+//  1. Serialized — no two of the three bump sessions overlap; while
+//     an earlier task holds the tree a later one is visible in the
+//     task store in a waiting state with a "tree lock" wait reason
+//     (the recorded episode), and then acquires and finishes.
 //
-//  2. No lost bump — exactly two sequential bumps land, so the file
-//     ends at "9.10.1" (9.9.9 → 9.10.0 → 9.10.1). With holdTree
-//     commented out both tasks read the same stale value and
-//     last-write-wins: the file keeps one bump and there is no
-//     "tree lock" wait episode — red in both assertions.
+//  2. No lost bump — all three complete and exactly three sequential
+//     bumps land, so the file ends at the 9.10.x-equivalent
+//     "9.10.2" (9.9.9 → 9.10.0 → 9.10.1 → 9.10.2). With holdTree
+//     commented out all three read the same stale value and
+//     last-write-wins: the file keeps only one bump ("9.10.0") and
+//     no "tree lock" wait episode is recorded — red in both
+//     assertions.
 func TestSameTreeConcurrentReleaseBumpsDoNotCollide(t *testing.T) {
 	fastTreeLockPolling(t)
 	repo := gitRepoWithDWSeed(t)
@@ -372,7 +375,11 @@ func TestSameTreeConcurrentReleaseBumpsDoNotCollide(t *testing.T) {
 	}
 	if err := st.SetStories(prd.ID, []Story{{
 		Title: "S1",
-		Tasks: []Task{{Title: "release-a", Spec: "bump A"}, {Title: "release-b", Spec: "bump B"}},
+		Tasks: []Task{
+			{Title: "release-a", Spec: "bump A"},
+			{Title: "release-b", Spec: "bump B"},
+			{Title: "release-c", Spec: "bump C"},
+		},
 	}}); err != nil {
 		t.Fatalf("SetStories: %v", err)
 	}
@@ -381,20 +388,21 @@ func TestSameTreeConcurrentReleaseBumpsDoNotCollide(t *testing.T) {
 		t.Fatal("GetPRD")
 	}
 	prd.Status = PRDApproved
-	prd.MaxConcurrentTasks = 2
+	prd.MaxConcurrentTasks = 3
 	if err := st.SavePRD(prd); err != nil {
 		t.Fatalf("SavePRD: %v", err)
 	}
 	taskA := prd.Story[0].Tasks[0].ID
 	taskB := prd.Story[0].Tasks[1].ID
-	if taskA == "" || taskB == "" {
+	taskC := prd.Story[0].Tasks[2].ID
+	if taskA == "" || taskB == "" || taskC == "" {
 		t.Fatal("task IDs not assigned")
 	}
 
 	// The release critical section: read → bump → write, with a window
 	// between read and write wide enough that WITHOUT the tree lock
-	// both concurrent tasks read the same stale value (last write
-	// wins, one increment swallowed — the incident).
+	// all three concurrent tasks read the same stale value (last
+	// write wins, two increments swallowed — the incident).
 	const readWriteGap = 40 * time.Millisecond
 	var mu sync.Mutex
 	window := map[string]interval{}
@@ -423,19 +431,19 @@ func TestSameTreeConcurrentReleaseBumpsDoNotCollide(t *testing.T) {
 	ran := make(chan error, 1)
 	go func() { ran <- mgr.Run(ctx, prd.ID, seam, tlVerify) }()
 
-	// Record the second task's wait episode: while it waits for the
-	// tree lock it must be visible as waiting with a "tree lock"
+	// Record the later tasks' wait episode: while a task waits for
+	// the tree lock it must be visible as waiting with a "tree lock"
 	// wait reason.
 	episodeSeen := false
 	runDone := false
 	var runErr error
 	deadline := time.Now().Add(15 * time.Second)
 	for !runDone {
-		ca, _ := st.TaskSnapshot(taskA)
-		cb, _ := st.TaskSnapshot(taskB)
-		if (ca.Status == TaskWaitingCapacity && strings.Contains(ca.WaitReason, "tree lock")) ||
-			(cb.Status == TaskWaitingCapacity && strings.Contains(cb.WaitReason, "tree lock")) {
-			episodeSeen = true
+		for _, id := range []string{taskA, taskB, taskC} {
+			snap, _ := st.TaskSnapshot(id)
+			if snap.Status == TaskWaitingCapacity && strings.Contains(snap.WaitReason, "tree lock") {
+				episodeSeen = true
+			}
 		}
 		select {
 		case runErr = <-ran:
@@ -443,7 +451,7 @@ func TestSameTreeConcurrentReleaseBumpsDoNotCollide(t *testing.T) {
 		case <-time.After(5 * time.Millisecond):
 		}
 		if time.Now().After(deadline) {
-			t.Fatal("Run did not complete the two concurrent release tasks")
+			t.Fatal("Run did not complete the three concurrent release tasks")
 		}
 	}
 	if runErr != nil {
@@ -452,35 +460,46 @@ func TestSameTreeConcurrentReleaseBumpsDoNotCollide(t *testing.T) {
 
 	ta, _ := st.GetTask(taskA)
 	tb, _ := st.GetTask(taskB)
-	if ta.Status != TaskCompleted || tb.Status != TaskCompleted {
-		t.Fatalf("release tasks not completed (a=%q b=%q, aerr=%s berr=%s)", ta.Status, tb.Status, ta.Error, tb.Error)
+	tc, _ := st.GetTask(taskC)
+	if ta.Status != TaskCompleted || tb.Status != TaskCompleted || tc.Status != TaskCompleted {
+		t.Fatalf("release tasks not completed (a=%q b=%q c=%q, aerr=%s berr=%s cerr=%s)",
+			ta.Status, tb.Status, tc.Status, ta.Error, tb.Error, tc.Error)
 	}
 	if !episodeSeen {
-		t.Errorf("neither task was ever visible waiting with a \"tree lock\" wait reason — the second release task was not serialized behind the tree lock (the holdTree wiring is gone; the incident's concurrent bump shape)")
+		t.Errorf("no task was ever visible waiting with a \"tree lock\" wait reason — the later release tasks were not serialized behind the tree lock (the holdTree wiring is gone; the incident's concurrent bump shape)")
 	}
 
-	ia, iaOK := window[taskA]
-	ib, ibOK := window[taskB]
-	if !iaOK || !ibOK {
-		t.Fatalf("expected both release tasks to run the bump once each; observed %d bump session(s)", len(window))
+	var ias []interval
+	for _, id := range []string{taskA, taskB, taskC} {
+		iv, okv := window[id]
+		if !okv {
+			t.Fatalf("expected all three release tasks to run the bump once each; observed %d bump session(s)", len(window))
+		}
+		ias = append(ias, iv)
 	}
-	if !ia.end.Before(ib.start) && !ib.end.Before(ia.start) {
-		t.Errorf("the two bump sessions overlapped on the shared tree (the incident's swallowed-increment shape): A and B each did read-bump-write concurrently")
+	for i := 0; i < len(ias); i++ {
+		for j := i + 1; j < len(ias); j++ {
+			a, b := ias[i], ias[j]
+			if !a.end.Before(b.start) && !b.end.Before(a.start) {
+				t.Errorf("two bump sessions overlapped on the shared tree (the incident's swallowed-increment shape): read-bump-write concurrent")
+			}
+		}
 	}
 
-	// No lost bump: exactly two sequential bumps land, and in either
-	// order the file ends at the second sequential bump from the base.
+	// No lost bump: all three complete and exactly three sequential
+	// bumps land, so the file ends at the third sequential bump from
+	// the base.
 	var b []byte
 	got := ""
 	if b, err = os.ReadFile(versionFile); err != nil {
 		t.Fatalf("read VERSION.txt: %v", err)
 	}
 	got = strings.TrimSpace(string(b))
-	if bumpsLanded(base, got) != 2 {
-		t.Errorf("version after two release bumps is %q (%d sequential bump(s) from %q); want exactly two — the incident's failure was concurrent tasks consuming the same version and one increment being swallowed",
+	if bumpsLanded(base, got) != 3 {
+		t.Errorf("version after three release bumps is %q (%d sequential bump(s) from %q); want exactly three — the incident's failure was concurrent tasks consuming the same version and increments being swallowed",
 			got, bumpsLanded(base, got), base)
 	}
-	if got != "9.10.1" {
-		t.Errorf("version is %q; want \"9.10.1\" (9.9.9 → 9.10.0 → 9.10.1, both bumps landed)", got)
+	if got != "9.10.2" {
+		t.Errorf("version is %q; want \"9.10.2\" (9.9.9 → 9.10.0 → 9.10.1 → 9.10.2, all three bumps landed)", got)
 	}
 }
