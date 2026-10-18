@@ -41,7 +41,9 @@ import (
 // Restart path: when DW_LIVE_RESTART_CMD is unset, the test resolves systemctl
 // with `command -v`. If `systemctl --user` works, it runs
 // `systemctl --user restart datawatch`, the documented operator command. If
-// not, it falls back to the repo's `datawatch restart` CLI. Which path ran is
+// not, it falls back to the repo's `datawatch restart` CLI, which needs
+// TMUX_TMPDIR set (the test refuses to run it without, since a restart that
+// drops the tmux socket would fake the failure under test). Which path ran is
 // logged with t.Log. Run the default path only from an operator shell whose
 // `datawatch` unit is the daemon behind DW_BASE. It restarts that unit.
 //
@@ -188,6 +190,12 @@ func bl462RestartCommand(t *testing.T) (*exec.Cmd, string) {
 		}
 	}
 	if out, err := exec.Command("sh", "-c", "command -v datawatch").Output(); err == nil && len(bytes.TrimSpace(out)) > 0 {
+		// The CLI restart re-execs the daemon in this environment. Without the
+		// daemon's TMUX_TMPDIR the new daemon cannot see its tmux sessions and
+		// marks them failed, which is the bug this test exists to catch.
+		if os.Getenv("TMUX_TMPDIR") == "" {
+			t.Fatal("datawatch restart CLI fallback needs TMUX_TMPDIR set to the daemon's tmux socket dir; otherwise the restarted daemon loses its tmux sessions. Set it, or use DW_LIVE_RESTART_CMD")
+		}
 		return exec.Command("datawatch", "restart"), "datawatch restart CLI (systemd --user unavailable)" // #nosec G204 -- fixed arguments
 	}
 	t.Fatal("no restart path: systemctl --user is unavailable and datawatch is not on PATH; set DW_LIVE_RESTART_CMD")
