@@ -47,7 +47,7 @@ func TestDecomposeStreaming_UsesDecompositionModel_OverGlobal(t *testing.T) {
 	}
 }
 
-func TestDecomposeStreaming_FallsBackToGlobalModel_WhenDecompositionModelEmpty(t *testing.T) {
+func TestDecomposeStreaming_ForeignGlobalModelNotUsedForClaudeCode(t *testing.T) {
 	const globalModel = "ollama/qwen3.8:27b"
 
 	var capturedModel string
@@ -75,8 +75,10 @@ func TestDecomposeStreaming_FallsBackToGlobalModel_WhenDecompositionModelEmpty(t
 		t.Fatalf("DecomposeStreaming: %v", err)
 	}
 
-	if capturedModel != globalModel {
-		t.Errorf("DecomposeStreaming used model %q, want global fallback %q", capturedModel, globalModel)
+	// An Ollama-tagged global model must not reach a claude-code planning
+	// session: it stalls on an "unknown model" prompt. Empty = backend default.
+	if capturedModel != "" {
+		t.Errorf("DecomposeStreaming used model %q for claude-code, want empty (backend default; global %q is foreign)", capturedModel, globalModel)
 	}
 }
 
@@ -90,6 +92,8 @@ func TestDecomposeStreaming_FallsBackToPRDModel_WhenDecompositionModelAndGlobalE
 	}
 
 	cfg := DefaultConfig() // PlanningModel left empty
+	// The PRD model only pairs when the planning backend matches the PRD's own backend.
+	cfg.PlanningBackend = "claude-code"
 	m, err := NewManager(t.TempDir(), cfg, fakeFn)
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)

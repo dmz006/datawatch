@@ -1050,13 +1050,7 @@ func (m *Manager) Decompose(prdID string) (*PRD, error) {
 	// BL416 Phase 2 — see verification_script_prompt.go. Twin call in decomposeStreamingCore(); keep both in sync.
 	prompt += m.verificationScriptSuffix(prd)
 
-	planModel := prd.DecompositionModel
-	if planModel == "" {
-		planModel = m.cfg.PlanningModel
-	}
-	if planModel == "" {
-		planModel = prd.Model
-	}
+	planModel := resolvePlannedModel(backend, prd.DecompositionModel, prd.Backend, prd.Model, m.cfg.PlanningBackend, m.cfg.PlanningModel)
 	// BL410 remediation (2026-10-13) — bounded, hint-fed retry for an
 	// infra/scope-classified decompose failure, instead of immediately
 	// rolling back to PRDDraft on the very first failure. See
@@ -1225,14 +1219,8 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (*PRD, 
 	// jumping straight to the global default whenever one was configured
 	// — backend resolution above was correct (so the claude CLI launched
 	// fine), but the --model argument fed into it was always wrong.
-	// Restored to the same 3-tier fallback Decompose() already uses.
-	planModel2 := prd.DecompositionModel
-	if planModel2 == "" {
-		planModel2 = m.cfg.PlanningModel
-	}
-	if planModel2 == "" {
-		planModel2 = prd.Model
-	}
+	// Restored to the same tiered resolution Decompose() uses.
+	planModel2 := resolvePlannedModel(backend, prd.DecompositionModel, prd.Backend, prd.Model, m.cfg.PlanningBackend, m.cfg.PlanningModel)
 	// BL410 remediation (2026-10-13) — see Decompose()'s identical loop
 	// for the full explanation; retryDecomposeFailure is the shared
 	// helper both copies of this drifted-duplicate pair call, so the
