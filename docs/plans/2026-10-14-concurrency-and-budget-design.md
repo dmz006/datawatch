@@ -715,6 +715,15 @@ Restricted window: while the weekly ceiling was exhausted, autonomous PRD
 decompose, run, verify and smoke used pi-prompt with ollama/qwen3.8-64k:27b
 only. The window runs until Sunday 2026-10-18.
 
+### 4c. Other consumers of tracked models (calculator input)
+
+Plugins, integrated services, scheduled jobs (the hourly mail daemon), web UIs and helper
+models (embedder, summariser) use the same models and nodes as the build. They tie into
+the same accounting: consumer name and kind, model, node, tokens where known, wall-clock
+seconds, and whether the call evicted another model. The calculator reports PRD work and
+all other consumers separately. Details in
+[model host requirements](2026-10-18-model-host-requirements.md) section 3.
+
 ## 5. Scope boundary
 
 - **Claude only for now.** The reactive back-off, the tier defaults and the

@@ -99,6 +99,14 @@ before that round runs. Additions, not yet executed:
   worker to commit. New candidate models do not change this — they ride
   the same broken opencode-session-start path until it's fixed.
 
+## 2026-10-18 precondition: 64k context
+
+Every cell must run with a 64k context (`num_ctx` 65536). The 32k default overflowed
+(`stopReason=length`) and made large diffs unverifiable, so context size is a recorded
+axis of each cell, not a background detail. Record the effective context window, the model
+name and digest, the node, and the keep-alive setting with each result; discard or flag a
+result that ran at 32k. See [model host requirements](2026-10-18-model-host-requirements.md).
+
 ## Scope
 
 A 4 roles × 4 task types = 16-cell eval of the open (opencode/Ollama)

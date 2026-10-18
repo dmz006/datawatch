@@ -267,3 +267,21 @@ local daemon with whatever Ollama config you have. To verify the
 no-GPU path: `unset` the Ollama host, restart, run the smoke — it
 must still pass (BL274 vector layer, /api/ask fail-soft, etc. all
 have fallbacks).
+
+## Model host settings for datawatch builds
+
+A host that serves local models to datawatch (planning, execution, verification) needs a
+64k context and resident models. Add a systemd drop-in, for example
+`/etc/systemd/system/ollama.service.d/64k.conf`:
+
+```
+[Service]
+Environment="OLLAMA_CONTEXT_LENGTH=65536"
+Environment="OLLAMA_KEEP_ALIVE=-1"
+```
+
+Then `sudo systemctl daemon-reload && sudo systemctl restart ollama`. Keep one large model
+per node. Do not set `OLLAMA_MAX_LOADED_MODELS=1`, because small helper models would evict
+the large one. Other tools that share the host (web UIs, scheduled jobs) can load their own
+models; plan for that. Restarting Ollama interrupts running sessions on the host, so do it
+between runs. Details: `docs/plans/2026-10-18-model-host-requirements.md`.

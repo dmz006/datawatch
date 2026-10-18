@@ -74,6 +74,9 @@ The supervisor orchestrates and validates. It does not hand-fix code.
   models (thinking levels, prompts, settings) is written into the plan docs as a tracker
   item and tested later, in the open-model matrix after v10.0.0 or when the operator
   frees a node. The supervisor only observes (logs, process lists, small reads).
+- **Host settings.** Model hosts run with `OLLAMA_CONTEXT_LENGTH=65536` and
+  `OLLAMA_KEEP_ALIVE=-1`, one large model per node; see
+  [model host requirements](2026-10-18-model-host-requirements.md).
 - **Pin the model.** The 64k-context variant (`qwen3.8-64k:27b`) is pinned resident
   with `keep_alive: -1`. The 32k default caused eviction and context overflow
   (`stopReason=length`). Check residency every tick and re-pin when it lapses.
@@ -280,6 +283,8 @@ The coordinator replaces the human loop, so these become mechanical:
 - The after-done checklist and a registry-versus-README consistency check
   (sections 9 and 10) before it advances, including push, tag and watching the CI run
   for the tag until it is green, with CI failures routed to fix PRDs.
+- A minimum model context (64k), the pinned model per node and the model-swap rule as
+  policy settings, and accounting for every other consumer of the tracked models.
 - Alerting when a bad state sits silent. In one incident two tasks sat blocked for about
   fifty minutes before a person noticed.
 
