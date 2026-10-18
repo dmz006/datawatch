@@ -273,6 +273,20 @@ func (s *Store) ListPRDs() []*PRD {
 	return out
 }
 
+// storiesSnapshot returns copies of the stories the store holds for prdID,
+// as persisted (used to verify a decompose actually stored its stories).
+func (s *Store) storiesSnapshot(prdID string) []Story {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []Story
+	for _, st := range s.stories {
+		if st.PRDID == prdID {
+			out = append(out, *st)
+		}
+	}
+	return out
+}
+
 // SetStories replaces a PRD's story list (post-decompose).
 func (s *Store) SetStories(prdID string, stories []Story) error {
 	s.mu.Lock()

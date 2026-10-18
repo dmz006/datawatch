@@ -32,9 +32,12 @@
 package autonomous
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 // ScratchDir returns (creating if needed) the durable, PRD-scoped scratch
@@ -72,4 +75,59 @@ func RelocateProjectFile(projectDir, srcName, scratchDir, destName string) (stri
 	}
 	_ = os.Remove(src)
 	return string(content), true
+}
+
+// decomposeOutputName is the artifact the decompose session's output is
+// relocated to (see RelocateProjectFile's destName in decomposeFnSession).
+const decomposeOutputName = "decompose-output.json"
+
+// decomposeOutputFailedName is where a decompose output that failed
+// validation is kept for forensics.
+const decomposeOutputFailedName = decomposeOutputName + ".failed"
+
+// MarkDecomposeOutputArtifactFailed keeps a failed decompose's output for
+// post-mortem: it renames <dataDir>/autonomous/scratch/<prdID>/
+// decompose-output.json to decompose-output.json.failed. When that target
+// already exists from an earlier failure, the name gains a unix-seconds
+// suffix (and a counter if even that collides), so no earlier artifact is
+// ever overwritten. Returns the final path, or ("", nil) when there was no
+// artifact to keep.
+func MarkDecomposeOutputArtifactFailed(dataDir, prdID string) (string, error) {
+	if dataDir == "" || prdID == "" {
+		return "", fmt.Errorf("mark decompose output: dataDir and prdID are both required")
+	}
+	dir := filepath.Join(dataDir, "autonomous", "scratch", prdID)
+	src := filepath.Join(dir, decomposeOutputName)
+	if _, err := os.Stat(src); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return "", nil
+		}
+		return "", fmt.Errorf("stat decompose output: %w", err)
+	}
+	dst := filepath.Join(dir, decomposeOutputFailedName)
+	if _, err := os.Stat(dst); err == nil {
+		stamp := time.Now().Unix()
+		dst = filepath.Join(dir, fmt.Sprintf("%s-%d", decomposeOutputFailedName, stamp))
+		for n := 1; ; n++ {
+			if _, err := os.Stat(dst); errors.Is(err, fs.ErrNotExist) {
+				break
+			}
+			dst = filepath.Join(dir, fmt.Sprintf("%s-%d-%d", decomposeOutputFailedName, stamp, n))
+		}
+	}
+	if err := os.Rename(src, dst); err != nil {
+		return "", fmt.Errorf("rename decompose output: %w", err)
+	}
+	return dst, nil
+}
+
+// RemoveDecomposeOutputArtifact deletes <dataDir>/autonomous/scratch/
+// <prdID>/decompose-output.json once its stories are confirmed persisted.
+// Best-effort: a missing file is not an error, and any other failure only
+// leaves a stale scratch file behind, which never blocks the decompose.
+func RemoveDecomposeOutputArtifact(dataDir, prdID string) {
+	if dataDir == "" || prdID == "" {
+		return
+	}
+	_ = os.Remove(filepath.Join(dataDir, "autonomous", "scratch", prdID, decomposeOutputName))
 }
