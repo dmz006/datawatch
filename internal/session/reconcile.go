@@ -96,10 +96,12 @@ func (m *Manager) ReconcileSessions(autoImport bool) (*ReconcileResult, error) {
 // (the operator can still see them via /api/sessions/reconcile or
 // `datawatch session reconcile` and import individually).
 //
-// Wired into startup unconditionally so that a daemon restart never
-// silently loses a running session — the case that motivated this
-// hook (operator lost a 2-day-old running Claude session after a
-// daemon restart because reconcile_on_startup defaulted to false).
+// Not called directly at boot. Startup runs ReconcileSessions(true)
+// (cmd/datawatch/main.go), which auto-imports every orphan dir, live
+// or stopped, so a daemon restart never silently loses a running session.
+// This helper is kept for callers that want only the live subset (BL462
+// F7: an earlier comment claimed it was wired into startup, which was
+// never true).
 //
 // Returns Imported = recovered live sessions, Orphaned = dead orphan
 // dirs left behind, LiveOrphans = same set as Imported (kept for

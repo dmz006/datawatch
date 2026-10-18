@@ -333,6 +333,31 @@ func (l *Ledger) remove(w *waiter) {
 	l.dispatchLocked()
 }
 
+// Adopt records a lease for work that is already running and must not wait:
+// a task whose session survived a daemon restart (BL462). Unlike Acquire it
+// never queues and ignores pool limits, because the session already occupies
+// its slots. Idempotent: an existing lease for the holder is kept and only
+// its session binding is refreshed.
+func (l *Ledger) Adopt(req Request, sessionID string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if ls, ok := l.leases[req.Holder]; ok {
+		if sessionID != "" {
+			ls.SessionID = sessionID
+		}
+		return
+	}
+	now := time.Now()
+	l.leases[req.Holder] = &Lease{
+		Holder: req.Holder, PRDID: req.PRDID, Pools: append([]string(nil), req.Pools...),
+		Node: req.Node, Model: req.Model, Acquired: now, SessionID: sessionID,
+	}
+	l.lastGrant[req.PRDID] = now
+	if req.Node != "" && req.Model != "" {
+		l.lastModel[req.Node] = req.Model
+	}
+}
+
 // Bind records the session backing a lease.
 func (l *Ledger) Bind(holder, sessionID string) {
 	l.mu.Lock()

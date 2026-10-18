@@ -168,6 +168,31 @@ func (m *Manager) admit(ctx context.Context, prd *PRD, t *Task, backend, model s
 	}
 }
 
+// adoptCapacity (BL462 F1) gives a task whose session survived a daemon
+// restart the lease it held before the restart. The ledger is in-memory
+// only, so without this a live task holds no slot and the host pool
+// over-admits. It never waits: the session already occupies its slots.
+// Idempotent, so the boot-time pass and executeOne's skip-spawn path can
+// both call it.
+func (m *Manager) adoptCapacity(prd *PRD, t *Task) {
+	if !m.capacityOn() {
+		return
+	}
+	m.mu.Lock()
+	led, keysFn := m.capacity, m.capacityKeys
+	fallback := m.cfg.ExecutionBackend
+	m.mu.Unlock()
+	story := findStory(prd, t.StoryID)
+	backend, model := resolveTaskBackendModel(t, story, prd, fallback)
+	pools, node := keysFn(backend, model)
+	if len(pools) == 0 {
+		return
+	}
+	led.Adopt(capacity.Request{
+		Holder: t.ID, PRDID: prd.ID, Priority: prd.Priority, Pools: pools, Node: node, Model: model,
+	}, t.SessionID)
+}
+
 // releaseCapacity frees the task's lease (safe when none is held).
 func (m *Manager) releaseCapacity(taskID string) {
 	m.mu.Lock()

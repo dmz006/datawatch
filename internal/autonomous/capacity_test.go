@@ -341,3 +341,60 @@ func TestExecutor_WorkerStallExhaustsRetriesLikeNormalFailure(t *testing.T) {
 		t.Fatalf("repeated stalls must still fail once retries are exhausted, got %s", got.Status)
 	}
 }
+
+// BL462 F1/F2/F3: a task that was verifying on a live session when the
+// daemon restarted keeps its session, re-takes its capacity lease at boot
+// (so the host pool is not over-admitted), and keeps the lease until the
+// session ends.
+func TestCapacity_BootResumeReadoptsLiveTaskLease(t *testing.T) {
+	m, _, led := capFixture(t, 1)
+	prd := newPRDWithTasks(t, m, 2)
+	cur, _ := m.Store().GetPRD(prd.ID)
+	live := &cur.Story[0].Tasks[0]
+	live.Status = TaskVerifying
+	live.SessionID = "live-sess"
+	_ = m.Store().SaveTask(live)
+	cur, _ = m.Store().GetPRD(prd.ID)
+
+	alive := map[string]bool{"live-sess": true}
+	m.SetSessionAliveFn(func(id string) bool { return alive[id] })
+
+	m.resetInProgressTasksForResume(cur)
+
+	got, _ := m.Store().GetPRD(prd.ID)
+	if st := got.Story[0].Tasks[0].Status; st != TaskVerifying {
+		t.Fatalf("live task must stay verifying, got %s", st)
+	}
+	if got.Story[0].Tasks[0].SessionID != "live-sess" {
+		t.Fatalf("live task must keep its session, got %q", got.Story[0].Tasks[0].SessionID)
+	}
+	if !led.Held(live.ID) {
+		t.Fatal("live task holds no capacity lease after boot")
+	}
+
+	// Idempotent: a second boot-time pass, or executeOne's own adoption,
+	// must not add a second lease.
+	m.adoptCapacity(cur, live)
+	m.resetInProgressTasksForResume(cur)
+	if n := len(led.Snapshot().Leases); n != 1 {
+		t.Fatalf("want exactly one lease for the live task, got %d", n)
+	}
+
+	// The limit is 1 and the live task holds the slot, so the sibling task
+	// must not be admitted over it.
+	sib := &cur.Story[0].Tasks[1]
+	err := led.Acquire(context.Background(), capacity.Request{Holder: sib.ID, PRDID: prd.ID, Pools: []string{"node:n1"}}, 50*time.Millisecond, nil, nil)
+	if err == nil {
+		t.Fatal("sibling was admitted over a live task's slot")
+	}
+
+	// Reaping keeps the lease while the session is alive, and frees it
+	// once the session ends.
+	if rel := led.Reap(func(ls capacity.Lease) bool { return alive[ls.SessionID] }); len(rel) != 0 {
+		t.Fatalf("live lease reaped: %v", rel)
+	}
+	alive["live-sess"] = false
+	if rel := led.Reap(func(ls capacity.Lease) bool { return alive[ls.SessionID] }); len(rel) != 1 {
+		t.Fatalf("lease of ended session not reaped, got %v", rel)
+	}
+}

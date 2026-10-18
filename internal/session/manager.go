@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -3010,12 +3011,17 @@ func (m *Manager) runSubprocess(sess *Session) {
 
 	_, _ = fmt.Fprintf(f, "[subprocess] task: %s\n[subprocess] dir: %s\n", sess.Task, sess.ProjectDir)
 
-	cmd := exec.Command("bash", "-c", sess.Task)
-	cmd.Dir = sess.ProjectDir
+	cmd := subprocessCommand(sess)
 	cmd.Stdout = f
 	cmd.Stderr = f
 
-	runErr := cmd.Run()
+	// Record the wrapper pid so a daemon restart can find the task (BL462 F4).
+	runErr := cmd.Start()
+	if runErr == nil {
+		_ = os.WriteFile(subprocessFile(sess, subprocessPIDFile), []byte(strconv.Itoa(cmd.Process.Pid)), 0644)
+		runErr = cmd.Wait()
+		_ = os.Remove(subprocessFile(sess, subprocessPIDFile))
+	}
 	if runErr != nil {
 		_, _ = fmt.Fprintf(f, "\n[subprocess] failed: %v\n", runErr)
 	} else {
@@ -4631,6 +4637,12 @@ func (m *Manager) ResumeMonitors(ctx context.Context) {
 		// for certain — firing the same callbacks subprocessFinish would
 		// have, so listeners (e.g. the scheduler) see a terminal state.
 		if sess.TmuxSession == "" {
+			// BL462 F4: a subprocess whose task is still running keeps its
+			// state and is watched by pid. Only a task that is gone with no
+			// recorded status is marked failed below.
+			if sess.Subprocess && m.reattachSubprocess(sess) {
+				continue
+			}
 			oldState := sess.State
 			sess.State = StateFailed
 			sess.UpdatedAt = time.Now()

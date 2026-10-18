@@ -921,6 +921,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			m.mu.Unlock()
 			if aliveFn != nil && aliveFn(t.SessionID) {
 				log.Printf("[autonomous] executeOne: task %s resuming verify for live session %s (daemon restart)", t.ID, t.SessionID)
+				m.adoptCapacity(prd, t)
 				skipSpawn = true
 			}
 		}

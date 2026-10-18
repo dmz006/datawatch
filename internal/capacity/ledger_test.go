@@ -287,3 +287,50 @@ func TestReapSkipsLeaseReplacedWhileCallbackRan(t *testing.T) {
 		t.Fatalf("a re-acquired lease must survive a stale reap verdict: reaped=%v held=%v", got, l.Held("a"))
 	}
 }
+
+// BL462 F1: a session that survived a daemon restart re-takes its lease
+// without waiting, even when the pool is already at its limit, so a new
+// request for the same pool still queues behind it.
+func TestAdoptRestoresLeaseOverLimitWithoutWaiting(t *testing.T) {
+	led := New(fast())
+	led.SetLimit("host", 1)
+	led.Adopt(Request{Holder: "task-a", PRDID: "p", Pools: []string{"host"}}, "sess-a")
+	led.Adopt(Request{Holder: "task-b", PRDID: "p", Pools: []string{"host"}}, "sess-b")
+
+	st := led.Snapshot()
+	if len(st.Leases) != 2 {
+		t.Fatalf("want 2 adopted leases, got %+v", st.Leases)
+	}
+	if st.Pools[0].Held != 2 {
+		t.Fatalf("host held = %d, want 2", st.Pools[0].Held)
+	}
+	for _, ls := range st.Leases {
+		if ls.SessionID == "" {
+			t.Fatalf("adopted lease %s lost its session binding", ls.Holder)
+		}
+	}
+
+	err := led.Acquire(context.Background(), Request{Holder: "task-c", PRDID: "p", Pools: []string{"host"}}, 50*time.Millisecond, nil, nil)
+	if !errors.Is(err, ErrWaitTimeout) {
+		t.Fatalf("new request must wait behind adopted leases, got %v", err)
+	}
+}
+
+// Adopt is idempotent: repeating it keeps one lease and refreshes only the
+// session binding, and Release frees it exactly once.
+func TestAdoptIsIdempotent(t *testing.T) {
+	led := New(fast())
+	req := Request{Holder: "task-a", PRDID: "p", Pools: []string{"host"}}
+	led.Adopt(req, "")
+	led.Adopt(req, "sess-a")
+	led.Adopt(req, "sess-a")
+
+	st := led.Snapshot()
+	if len(st.Leases) != 1 || st.Leases[0].SessionID != "sess-a" {
+		t.Fatalf("want one lease bound to sess-a, got %+v", st.Leases)
+	}
+	led.Release("task-a")
+	if led.Held("task-a") {
+		t.Fatal("lease still held after release")
+	}
+}

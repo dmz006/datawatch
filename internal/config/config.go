@@ -1765,11 +1765,10 @@ type SessionConfig struct {
 	// "MCP server failed" is detected in claude-code session output. Default: 5.
 	MCPMaxRetries int `yaml:"mcp_max_retries"`
 
-	// ReconcileOnStartup (BL93) — when true the daemon scans
-	// <data_dir>/sessions/<id>/session.json at startup and imports
-	// any session not already in the registry. Default: false (dry-
-	// run via REST/MCP/CLI is the safe default — operators opt in to
-	// auto-import once they trust the orphan list).
+	// ReconcileOnStartup (BL93) — retained for config compatibility only; it is
+	// not read. The daemon always imports orphan session dirs at startup
+	// (ReconcileSessions(true) in cmd/datawatch/main.go), so this key has no
+	// effect (BL462 F7).
 	ReconcileOnStartup bool `yaml:"reconcile_on_startup"`
 
 	// ConsoleCols and ConsoleRows set the default tmux terminal size for new sessions.

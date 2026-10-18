@@ -250,3 +250,18 @@ Each finding states BROKEN or CONFIRMED-WORKING, the reproduction, the code loca
 - Long-running open-model task beyond the 8-minute loop not exercised.
 - Whether the sandbox's startup `cleaned up 1 stale MCP registration(s)` touched a production MCP registration is not verified.
 - The sandbox directory `.bl462-sandbox/` should be deleted once the audit is closed.
+
+---
+
+## Fix status (2026-10-18)
+
+Code fixes for the BROKEN findings. Unit tests cover each fix's scenario. Only the live restart gate can confirm the systemd and live-daemon behaviour, and that gate has not been run.
+
+- **F1 — Fix status:** code fix. `capacity.Ledger.Adopt` (internal/capacity/ledger.go) records a non-waiting, idempotent lease for a live task. `Manager.adoptCapacity` (internal/autonomous/capacity.go) calls it from `resetInProgressTasksForResume`'s live-session branch (boot pass) and from `executeOne`'s skip-spawn branch. Covered by `TestAdoptRestoresLeaseOverLimitWithoutWaiting`, `TestAdoptIsIdempotent` and `TestCapacity_BootResumeReadoptsLiveTaskLease`. Live gate still needed: confirm `GET /api/capacity` shows `held 1` per live task right after a restart. Note that the audit's live tasks were in `verifying`, the only live state that survives boot. `in_progress` tasks are always reset at boot, so they hold no session to re-adopt.
+- **F2 — Fix status:** no separate code change. `external()` in cmd/datawatch/capacity_wiring.go still excludes `autonomous:` sessions. With F1 fixed, those tasks are counted once, through their leases, so no double count is introduced. Covered by `TestCapacity_BootResumeReadoptsLiveTaskLease`, which asserts a single lease and that a sibling is not admitted over it.
+- **F3 — Fix status:** the boot pass now logs unconditionally for each live `verifying`/`running_tests` task it keeps (`boot-resume: prd=... task ... kept (was ...) on live session ..., capacity lease re-adopted`). The audit's missing `resuming verify for live session` line is not explained by code reading, so the live gate must confirm which path a restored task takes.
+- **F4 — Fix status:** code fix. A subprocess session now writes `subprocess.pid` (wrapper pid) and `subprocess.rc` (exit status) in its session directory, in internal/session/subprocess_resume.go. On boot, `ResumeMonitors` re-attaches a session whose task is still running (matched by pid and command line) and keeps it `running`. It finishes the session from `subprocess.rc` when the task ends. It marks the session `failed` only when the task is gone with no recorded status. Covered by `TestSubprocessSurvivesDaemonRestart`, `TestSubprocessEndedWhileDaemonDownUsesRecordedStatus` and `TestSubprocessGoneWithoutStatusIsNotReattached`. Caveat for the live gate: systemd's default `KillMode=control-group` kills the child on stop, so this helps only when children survive the daemon.
+- **F7 — Fix status:** comment fix, not wiring. Boot already runs `ReconcileSessions(true)` (cmd/datawatch/main.go), which imports every orphan dir, live or stopped. The `ReconcileLiveSessions` comment and the `reconcile_on_startup` comment were wrong and now say so. The config key stays for compatibility and is not read. Removing the key would change the public config surface, which is out of scope.
+- **F5, F6, F8 — Fix status:** CONFIRMED-WORKING. No code change.
+- **F9 — Fix status:** doc follow-up, not done in this change. Operations docs should mention the lease and subprocess caveats once the live gate passes.
+- **F10 — Fix status:** OPEN, not BROKEN. No code change in this task. Logging the caller on `killed` transitions is a separate change.

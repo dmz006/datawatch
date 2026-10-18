@@ -751,7 +751,12 @@ func (m *Manager) resetInProgressTasksForResume(prd *PRD) {
 				// TaskVerifying — any session is necessarily orphaned.
 			case TaskVerifying, TaskRunningTests:
 				if aliveFn != nil && t.SessionID != "" && aliveFn(t.SessionID) {
-					continue // session still live; leave it for executeOne to resume
+					// Session still live; leave it for executeOne to resume. Re-take
+					// its capacity lease now (BL462 F1) so admission counts it before
+					// any other task on this PRD or another PRD is admitted.
+					m.adoptCapacity(prd, t)
+					log.Printf("[autonomous] boot-resume: prd=%s task %s kept (was %s) on live session %s, capacity lease re-adopted", prd.ID, t.ID, prevStatus, t.SessionID)
+					continue
 				}
 			default:
 				continue
