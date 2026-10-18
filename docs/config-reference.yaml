@@ -929,6 +929,11 @@ autonomous:
   # BL41 effort hint for the verifier.
   # Per-task / per-story / per-Automaton overrides (set_*_verification_llm) take precedence over verification_backend / verification_model / verification_effort.
   verification_effort: "normal"
+  # Bound in seconds for one verifier or per-task guardrail judgment session.
+  # 0 or negative falls back to the 1800-second (30m) default. Local models can
+  # need more than this; the old hard-coded limit was 10m and timed out slow
+  # local models.
+  verification_timeout_seconds: 1800
   # 0 = inherit session.stale_timeout_seconds.
   stale_task_seconds: 0
   # Retries on verifier failure (re-prompts the same backend with the

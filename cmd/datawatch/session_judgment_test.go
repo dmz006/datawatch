@@ -383,3 +383,21 @@ func TestRunOneShotJSONSession_PiPromptStartBodyCarriesModelVerbatim(t *testing.
 		t.Errorf("start body model = %v, want %q verbatim", startBody["model"], model)
 	}
 }
+
+// The one-shot timeout error is what operators see after the
+// verifier(session)/guardrail(session) prefix, so it must name the backend,
+// the exact model and the limit — not just "timed out after 10m0s".
+func TestSessionOneShotTimeoutMessage(t *testing.T) {
+	msg := sessionOneShotTimeoutMessage("autonomous:verify:task-1", "sess-42", "ollama", "qwen2.5:14b", 30*time.Minute)
+	for _, want := range []string{
+		"autonomous:verify:task-1",
+		"sess-42",
+		"backend=ollama",
+		"model=qwen2.5:14b",
+		"30m0s",
+	} {
+		if !strings.Contains(msg, want) {
+			t.Fatalf("sessionOneShotTimeoutMessage() = %q, missing %q", msg, want)
+		}
+	}
+}

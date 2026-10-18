@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -138,6 +139,15 @@ func runOneShotJSONSession(cfg *config.Config, prdID, projectDir, backend, model
 // thorough). Empty effort omits the field, so the request body is
 // identical to runOneShotJSONSession's and the daemon's
 // session.default_effort applies.
+// sessionOneShotTimeoutMessage is the operator-visible text for a one-shot
+// judgment session that exceeded its limit. Operators acting on it need the
+// backend, the exact model and the limit to debug a local-model timeout, so
+// all four are named. An empty model means the backend default was used and
+// prints as "model=" — that is the truth, so no placeholder is substituted.
+func sessionOneShotTimeoutMessage(sessionName, sessionID, backend, model string, timeout time.Duration) string {
+	return fmt.Sprintf("%s session %s (backend=%s, model=%s) timed out after %v", sessionName, sessionID, backend, model, timeout)
+}
+
 func runOneShotJSONSessionWithEffort(cfg *config.Config, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName string, timeout time.Duration) (string, error) {
 	scratchDir, scratchErr := autonomouspkg.ScratchDir(expandHome(cfg.DataDir), prdID)
 	if scratchErr != nil {
@@ -242,7 +252,7 @@ func runOneShotJSONSessionWithEffort(cfg *config.Config, prdID, projectDir, back
 	for {
 		select {
 		case <-ctx.Done():
-			return "", fmt.Errorf("%s session %s timed out after %v", sessionName, startOut.ID, timeout)
+			return "", errors.New(sessionOneShotTimeoutMessage(sessionName, startOut.ID, backend, model, timeout))
 		case <-tick.C:
 			pollReq, err := http.NewRequestWithContext(ctx, http.MethodGet,
 				loopbackBaseURL(cfg)+"/api/sessions/"+startOut.ID, nil)

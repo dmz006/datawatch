@@ -2045,6 +2045,11 @@ type AutonomousConfig struct {
 	// during PRD decomposition. 0 = use effort-scaled defaults
 	// (120s quick, 300s normal, 900s high/max). Raise for slow Ollama.
 	PlanningTimeoutSeconds int `yaml:"planning_timeout_seconds,omitempty" json:"planning_timeout_seconds,omitempty"`
+	// VerificationTimeoutSeconds bounds one verifier or guardrail one-shot
+	// judgment session. Default 1800 seconds (30 minutes); zero or negative
+	// values fall back to the default. Raise for slow local (Ollama /
+	// OpenWebUI) models.
+	VerificationTimeoutSeconds int `yaml:"verification_timeout_seconds,omitempty" json:"verification_timeout_seconds,omitempty"`
 	// CapacityEnabled turns capacity-aware admission on (default true when
 	// unset): tasks wait for a free host/node/LLM slot instead of failing.
 	CapacityEnabled *bool `yaml:"capacity_enabled,omitempty" json:"capacity_enabled,omitempty"`

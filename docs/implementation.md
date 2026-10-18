@@ -705,6 +705,7 @@ All fields in `~/.datawatch/config.yaml`:
 | `goose.api_key_ref` | string | `""` | API key (literal or `${secret:name}`) injected as the provider-specific key env var; resolved at startup |
 | `goose.channel_enabled` | bool | `false` | When true, inject `GOOSE_MCP__DATAWATCH__*` env vars so Goose connects back as an MCP client (stdio transport) |
 | `autonomous.verifier_diff_max_bytes` | int | `0` | Byte cap on the git diff injected into the verifier prompt for evidence grounding. `0` = 8192. Raise for large changesets; lower to reduce token cost. |
+| `autonomous.verification_timeout_seconds` | int | `1800` | Declared in `internal/config/config.go` (`VerificationTimeoutSeconds`). Bounds one verifier or per-task guardrail judgment session; consumed by the verifier and guardrail closures in `cmd/datawatch/main.go` through the `verificationSessionTimeout` resolver. `0` or negative = 1800-second (30m) fallback. Exposed in the PWA Settings autonomous card. |
 | `autonomous.default_quality_gates.enabled` | bool | `false` | Master toggle for per-PRD test regression gates. When true, the executor captures a test baseline before the first task and re-runs after each task completes. |
 | `autonomous.default_quality_gates.test_command` | string | `""` | Shell command used to run the test suite (e.g. `go test ./...`). Run relative to the PRD's `project_dir`. |
 | `autonomous.default_quality_gates.timeout` | int | `0` | Per-run timeout in seconds for the test command. `0` = no cap. |

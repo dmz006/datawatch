@@ -14162,6 +14162,7 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.planning_backend', label: 'Planning backend', type: 'llm_backend', pairedModelKey: 'autonomous.planning_model' },
     { key: 'autonomous.planning_model', label: 'Planning model', type: 'llm_model', backendKey: 'autonomous.planning_backend' },
     { key: 'autonomous.planning_timeout_seconds', label: 'Planning timeout (sec, 0=effort default)', type: 'number', placeholder: '0' },
+    { key: 'autonomous.verification_timeout_seconds', label: 'Verifier/guardrail session timeout (sec, 0=30m)', labelKey: 'settings_verification_timeout', type: 'number', placeholder: '1800' },
     // GH#172/#182 — planning_effort, verification_effort, and
     // stale_task_seconds were real config keys (internal/config/
     // config.go) with no card field. decomposition_backend/

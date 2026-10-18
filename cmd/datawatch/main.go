@@ -256,6 +256,14 @@ var (
 	serverURL  string // --url/-u flag: direct base URL override (test/dev targeting)
 )
 
+// verificationSessionTimeout bounds one verifier or guardrail one-shot judgment
+// session. It comes from autonomous.verification_timeout_seconds; zero or negative
+// falls back to the 1800-second (30m) default, replacing the old hard-coded 10m
+// literal that was too short for local models.
+func verificationSessionTimeout(cfg *config.Config) time.Duration {
+	return time.Duration(config.NormalizeVerificationTimeoutSeconds(cfg.Autonomous.VerificationTimeoutSeconds)) * time.Second
+}
+
 func main() {
 	root := &cobra.Command{
 		Use:   "datawatch",
@@ -4100,6 +4108,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			PlanningEffort:             acfgIn.PlanningEffort,
 			VerificationEffort:         acfgIn.VerificationEffort,
 			PlanningTimeoutSeconds:     acfgIn.PlanningTimeoutSeconds,
+			VerificationTimeoutSeconds: acfgIn.VerificationTimeoutSeconds,
 			CapacityEnabled:            acfgIn.CapacityEnabled,
 			CapacityWaitTimeoutSeconds: acfgIn.CapacityWaitTimeoutSeconds,
 			StaleTaskSeconds:           acfgIn.StaleTaskSeconds,
@@ -5047,7 +5056,7 @@ Verify whether the diff plausibly implements the spec. Reply with STRICT JSON on
 				sessionTask := sessionJudgmentTask(prompt, taskDir, outputFile)
 				content, serr := runOneShotJSONSessionWithEffort(cfg, prd.ID, taskDir, vbackend, verifyModel,
 					mapEffortToSession(autonomouspkg.Effort(vsel.Effort)),
-					"autonomous:verify:"+task.ID, sessionTask, outputFile, "verify-"+task.ID+".json", 10*time.Minute)
+					"autonomous:verify:"+task.ID, sessionTask, outputFile, "verify-"+task.ID+".json", verificationSessionTimeout(cfg))
 				if serr != nil {
 					// BL410 Phase 0 — the session itself failed; see the
 					// identical fix in autonomousGuardrail's closure above.
@@ -5164,7 +5173,7 @@ Verify whether the diff plausibly implements the spec. Reply with STRICT JSON on
 					sessionTask := sessionJudgmentTask(prompt, req.ProjectDir, outputFile)
 					content, serr := runOneShotJSONSession(cfg, req.PRDID, req.ProjectDir, gbackend, sessionModel,
 						"autonomous:guardrail:"+req.UnitID, sessionTask, outputFile,
-						"guardrail-"+req.UnitID+"-"+req.Guardrail+".json", 10*time.Minute)
+						"guardrail-"+req.UnitID+"-"+req.Guardrail+".json", verificationSessionTimeout(cfg))
 					if serr != nil {
 						// BL410 Phase 0 — the SESSION itself failed (timeout,
 						// crash); no judgment ever ran. "infra", not a real

@@ -1931,7 +1931,7 @@ curl -sX POST http://localhost:7433/api/autonomous/prds/<id>/set_llm \
 task, per story or per Automaton. Resolution: task → story → Automaton
 → global `autonomous.verification_backend` / `verification_model` /
 `verification_effort`; a backend set at any per-unit level bypasses the
-`autonomous.verification_backends` pool. Same presence rules: omit to
+`autonomous.verification_backends` pool. Judge sessions (verifier and guardrail) are bounded by `autonomous.verification_timeout_seconds` (default 30m). If a `verifier(session):` or `guardrail(session):` failure names `backend=`, `model=` and `timed out after X`, raise that key rather than treating the model's output as a judgment. Same presence rules: omit to
 keep, `""` to clear. The task's `verification` result records
 `verifier_backend` / `verifier_model` / `verifier_effort` /
 `verifier_source`. Full reference: [`api/autonomous.md`](api/autonomous.md).

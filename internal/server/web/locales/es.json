@@ -1664,6 +1664,7 @@
   "fab_new_template": "New template",
   "settings_planning_effort": "Planning effort",
   "settings_verification_effort": "Verification effort",
+  "settings_verification_timeout": "Tiempo de espera de la sesión de verificación/guardrail (seg, 0=30m)",
   "settings_stale_task_seconds": "Stale task timeout (sec, 0=inherit session default)",
   "prd_action_repair_deps": "Repair deps",
   "memory_scope_inventory_failed": "Failed to load scope inventory",
