@@ -6,32 +6,46 @@ import (
 	"testing"
 )
 
-func writeScript(t *testing.T, dir, name, body string) string {
+// writeAlreadyLandedScripts writes a script that exits 0 and one that exits 1
+// into dir, returning their names relative to dir.
+func writeAlreadyLandedScripts(t *testing.T, dir string) (passing, failing string) {
 	t.Helper()
-	p := filepath.Join(dir, name)
-	if err := os.WriteFile(p, []byte(body), 0o755); err != nil {
-		t.Fatalf("write script %s: %v", name, err)
+	passing = "pass.sh"
+	failing = "fail.sh"
+	scripts := map[string]string{
+		passing: "#!/usr/bin/env bash\nexit 0\n",
+		failing: "#!/usr/bin/env bash\nexit 1\n",
 	}
-	return name
+	for name, body := range scripts {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o755); err != nil {
+			t.Fatalf("write script %s: %v", name, err)
+		}
+	}
+	return passing, failing
 }
 
 func TestVerdictForAlreadyLanded(t *testing.T) {
 	dir := t.TempDir()
-	passing := writeScript(t, dir, "pass.sh", "#!/usr/bin/env bash\nexit 0\n")
-	failing := writeScript(t, dir, "fail.sh", "#!/usr/bin/env bash\nexit 1\n")
+	passing, failing := writeAlreadyLandedScripts(t, dir)
 
 	tests := []struct {
 		name          string
-		script        string
 		priorAttempts int
+		script        string
 		wantOK        bool
 		wantTrue      bool
 	}{
-		{name: "empty script returns false", script: "", priorAttempts: 1, wantOK: false, wantTrue: false},
-		{name: "whitespace script returns false", script: "   ", priorAttempts: 1, wantOK: false, wantTrue: false},
-		{name: "passing script returns OK true", script: passing, priorAttempts: 1, wantOK: true, wantTrue: true},
-		{name: "failing script returns false", script: failing, priorAttempts: 1, wantOK: false, wantTrue: false},
-		{name: "passing script with no prior attempt returns false", script: passing, priorAttempts: 0, wantOK: false, wantTrue: false},
+		// An empty-diff first attempt must not pass as "already landed".
+		{name: "first attempt with passing script does not verify", priorAttempts: 0, script: passing, wantOK: false, wantTrue: false},
+		{name: "first attempt with failing script does not verify", priorAttempts: 0, script: failing, wantOK: false, wantTrue: false},
+		// A genuine retry whose verification script passes verifies.
+		{name: "retry with passing script verifies", priorAttempts: 1, script: passing, wantOK: true, wantTrue: true},
+		{name: "later retry with passing script verifies", priorAttempts: 3, script: passing, wantOK: true, wantTrue: true},
+		// No script to run means nothing can be verified.
+		{name: "retry with empty script path returns false", priorAttempts: 1, script: "", wantOK: false, wantTrue: false},
+		{name: "retry with whitespace script path returns false", priorAttempts: 1, script: "   ", wantOK: false, wantTrue: false},
+		// A failing script never verifies, whatever the attempt count.
+		{name: "retry with failing script returns false", priorAttempts: 1, script: failing, wantOK: false, wantTrue: false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

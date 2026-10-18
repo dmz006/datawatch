@@ -5,6 +5,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.2 — fix(verifier): an empty first attempt no longer passes as already landed
+
+**An empty first attempt is no longer accepted as "already landed".** When a task's
+first attempt produced no changes, the verifier used to run the task's verification
+script and, if it passed, mark the task verified. That let an attempt with no output
+pass. Now a first attempt with no output fails verification as "no output", the same
+as before this check existed.
+
+**Genuine retries still verify.** When a retry produces no new changes because an
+earlier attempt already made the work, the verification script still runs, and the
+task passes if it succeeds.
+
 ## v9.5.1 — fix(verifier): pi verifier sessions run the configured verification model, and failures name it
 
 **The autonomous verifier uses the model you configured for pi.** A pi or pi-prompt
