@@ -9,6 +9,33 @@ Do not mark **Validated=Yes** based solely on unit tests.
 
 ---
 
+## Daemon restart safety (live, opt-in) — BL462
+
+Live companion to the BL462 restart audit (`docs/plans/bl462-restart-audit-findings.md`).
+It repeats the audit's sequence against a real daemon: start a long claude-code
+task session, restart the daemon, and check that the tmux session survives,
+the session record is not failed, and the session log keeps growing. The test
+is skipped unless `DW_LIVE_RESTART_TEST=1`, so `go test ./...` in CI skips it.
+
+Run it on the daemon's host, against a sandbox daemon (never production), with
+the same `TMUX_TMPDIR` as that daemon:
+
+```sh
+DW_LIVE_RESTART_TEST=1 DW_BASE=https://127.0.0.1:18443 DW_BASE_TOKEN=... \
+  DW_LIVE_RESTART_CMD='<command that restarts the sandbox daemon>' \
+  go test -count=1 -timeout 20m -run TestBL462_DaemonRestartSurvivesLive -v ./internal/session/
+```
+
+Leave `DW_LIVE_RESTART_CMD` unset to restart through the operator path
+(`systemctl --user restart datawatch`, falling back to `datawatch restart`).
+Only do that from an operator shell where that unit is the daemon behind `DW_BASE`.
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| Daemon restart with a live claude-code task session — tmux session survives, session record not `failed`/`killed`/spurious `complete`, session log grows after restart (re-pipe), task reaches a terminal state if it finishes within the wait | **Yes** (skip path only: `TestBL462_DaemonRestartSurvivesLive` in `internal/session/restart_safety_live_test.go`, run by `.datawatch/verify/bl462-s3-live-restart-test.sh`) | **No** (gated live run not performed; no sandbox daemon was started for it) | `go test` with `DW_LIVE_RESTART_TEST=1` against a live daemon via `DW_BASE`/`DW_BASE_TOKEN`; restart is `systemctl --user restart datawatch` or the `datawatch restart` CLI, or `DW_LIVE_RESTART_CMD` for a sandbox | Verifies what the audit verified by hand. Does not cover subprocess sessions (F4) or the capacity lease (F1); the audit's live run of those is in `docs/plans/bl462-restart-audit-findings.md` |
+
+---
+
 ## Per-tree write lock + same-tree admission + ci-watch own-commit pin — v9.4.0 / v9.5.0
 
 The 2026-10-13 incident (three concurrent PRDs, one working tree) shipped two
