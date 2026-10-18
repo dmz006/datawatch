@@ -274,7 +274,7 @@ func runOneShotJSONSessionWithEffort(cfg *config.Config, prdID, projectDir, back
 			}
 			switch s.State {
 			case "complete":
-				return "", fmt.Errorf("%s session %s completed but output file %s not found", sessionName, startOut.ID, outputFile)
+				return "", fmt.Errorf("%s session %s completed but output file %s not found (backend=%s, model=%q)", sessionName, startOut.ID, outputFile, backend, model)
 			case "failed", "killed", "cancelled":
 				// Give the output file one last chance: the session may
 				// have written it in the same instant it was killed.
@@ -283,7 +283,7 @@ func runOneShotJSONSessionWithEffort(cfg *config.Config, prdID, projectDir, back
 					fmt.Printf("[%s] %s state=%q, output file appeared after kill (%d bytes)\n", sessionName, startOut.ID, s.State, len(content))
 					return content, nil
 				}
-				return "", fmt.Errorf("%s session %s ended with state %q and no output file", sessionName, startOut.ID, s.State)
+				return "", fmt.Errorf("%s session %s ended with state %q and no output file (backend=%s, model=%q)", sessionName, startOut.ID, s.State, backend, model)
 			}
 		}
 	}

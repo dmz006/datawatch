@@ -277,13 +277,52 @@ func TestRunOneShotJSONSession_FailedStateWithNoOutputIsAnError(t *testing.T) {
 	cfg := &config.Config{}
 	cfg.DataDir = dataDir
 
-	_, err := runOneShotJSONSession(cfg, "prd-3", projectDir, "claude-code", "",
+	_, err := runOneShotJSONSession(cfg, "prd-3", projectDir, "claude-code", "sonnet",
 		"autonomous:test", "unused", outputFile, "test-output-failed.json", 10*time.Second)
 	if err == nil {
 		t.Fatal("expected an error when the session ends failed with no output file")
 	}
 	if !strings.Contains(err.Error(), "ended with state") {
 		t.Errorf("error = %v, want it to name the terminal state", err)
+	}
+	assertErrorNamesBackendAndModel(t, err, "claude-code", "sonnet")
+}
+
+// TestRunOneShotJSONSession_CompleteStateWithNoOutputIsAnError covers the
+// "complete" terminal branch: the session reports done but never wrote the
+// output file, which must surface as an error naming the launch settings.
+func TestRunOneShotJSONSession_CompleteStateWithNoOutputIsAnError(t *testing.T) {
+	projectDir := t.TempDir()
+	dataDir := t.TempDir()
+	outputFile := filepath.Join(projectDir, ".test-output-complete.json")
+
+	srv, _ := fakeSessionServer(t, "complete", outputFile, "", false)
+	withFakeLoopback(t, srv)
+
+	cfg := &config.Config{}
+	cfg.DataDir = dataDir
+
+	_, err := runOneShotJSONSession(cfg, "prd-5", projectDir, "pi-prompt", "prov/model:64k",
+		"autonomous:test", "unused", outputFile, "test-output-complete.json", 10*time.Second)
+	if err == nil {
+		t.Fatal("expected an error when the session completes with no output file")
+	}
+	if !strings.Contains(err.Error(), "completed but output file") {
+		t.Errorf("error = %v, want it to say the session completed without the output file", err)
+	}
+	assertErrorNamesBackendAndModel(t, err, "pi-prompt", "prov/model:64k")
+}
+
+// assertErrorNamesBackendAndModel checks that a no-output error reports the
+// backend and model the session start request carried, so an operator can
+// tell from the recorded summary which selection produced it.
+func assertErrorNamesBackendAndModel(t *testing.T, err error, backend, model string) {
+	t.Helper()
+	if !strings.Contains(err.Error(), "backend="+backend) {
+		t.Errorf("error = %v, want it to name backend=%s", err, backend)
+	}
+	if !strings.Contains(err.Error(), "model="+`"`+model+`"`) {
+		t.Errorf("error = %v, want it to name model=%q", err, model)
 	}
 }
 
