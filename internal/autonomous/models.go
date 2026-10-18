@@ -294,6 +294,13 @@ type PRD struct {
 	// Decompose retry's prompt, mirroring Task.PriorAttemptHint's exact
 	// lifecycle (set before a retry, consumed-and-cleared on use).
 	LastDecomposeFailure *FailureReason `json:"last_decompose_failure,omitempty"`
+	// DecomposeSessionFailures counts consecutive decompose-attempt
+	// sessions that ended without writing the plan output file (see
+	// OneShotNoOutputError). Reaching decomposeSessionStopThreshold stops
+	// the PRD instead of spawning another session. Cleared on a successful
+	// decompose and on ResetToDraft. Persisted by SavePRD, so it survives
+	// a daemon restart.
+	DecomposeSessionFailures int `json:"decompose_session_failures,omitempty"`
 	// CIWatch is this automaton's own record of whether CI actually
 	// passed for the commit it pushed, written by the ci-watch
 	// completion guardrail. nil = ci-watch never ran for this PRD.

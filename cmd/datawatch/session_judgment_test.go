@@ -10,6 +10,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -19,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	autonomouspkg "github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/inference"
 	"github.com/dmz006/datawatch/internal/llm"
@@ -381,5 +383,66 @@ func TestRunOneShotJSONSession_PiPromptStartBodyCarriesModelVerbatim(t *testing.
 	}
 	if startBody["model"] != model {
 		t.Errorf("start body model = %v, want %q verbatim", startBody["model"], model)
+	}
+}
+
+// TestRunOneShotJSONSession_DecomposeWaitingInputIsKilledBeforeTimeout covers
+// the decompose one-shot waiting_input debounce: a planning session that
+// sits in waiting_input (asking a question no one will answer) is killed and
+// reported in the no-output family after the debounce window, long before
+// its timeout, instead of polling until the timeout.
+func TestRunOneShotJSONSession_DecomposeWaitingInputIsKilledBeforeTimeout(t *testing.T) {
+	projectDir := t.TempDir()
+	dataDir := t.TempDir()
+	outputFile := filepath.Join(projectDir, ".test-output-waiting.json")
+
+	var mu sync.Mutex
+	kills := 0
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/sessions/start", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{"id": "sess-test-1"})
+	})
+	mux.HandleFunc("/api/sessions/sess-test-1", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{"state": "waiting_input"})
+	})
+	mux.HandleFunc("/api/sessions/kill", func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		kills++
+		mu.Unlock()
+		w.WriteHeader(http.StatusOK)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	withFakeLoopback(t, srv)
+
+	cfg := &config.Config{}
+	cfg.DataDir = dataDir
+
+	const timeout = 60 * time.Second
+	start := time.Now()
+	_, err := runOneShotJSONSession(cfg, "prd-wait", projectDir, "claude-code", "sonnet",
+		decomposeSessionName, "unused", outputFile, "decompose-output.json", timeout)
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("expected an error when a decompose session stays in waiting_input")
+	}
+	var noOutput *autonomouspkg.OneShotNoOutputError
+	if !errors.As(err, &noOutput) {
+		t.Fatalf("error = %v (%T), want *autonomous.OneShotNoOutputError", err, err)
+	}
+	if !strings.Contains(err.Error(), "ended with state waiting_input without producing output") {
+		t.Errorf("error = %v, want the waiting_input no-output message", err)
+	}
+	assertErrorNamesBackendAndModel(t, err, "claude-code", "sonnet")
+	if elapsed >= timeout/2 {
+		t.Errorf("waiting_input session polled for %v, want the debounce to stop it well before the %v timeout", elapsed, timeout)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if kills != 1 {
+		t.Errorf("kill calls = %d, want 1 (stuck session must be killed)", kills)
 	}
 }

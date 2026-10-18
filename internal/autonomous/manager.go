@@ -1070,6 +1070,12 @@ func (m *Manager) Decompose(prdID string) (*PRD, error) {
 		}
 		r, derr := m.decompose(DecomposeRequest{Spec: attemptPrompt, Backend: backend, Effort: effort, Model: planModel, ProjectDir: prd.ProjectDir, ScopeBlock: ScopeBlock(prd), PRDID: prd.ID, TimeoutSeconds: m.cfg.PlanningTimeoutSeconds})
 		if derr != nil {
+			if isOneShotNoOutput(derr) {
+				if m.noteDecomposeSessionFailure(prd, backend, planModel, derr) {
+					return nil, derr
+				}
+				continue
+			}
 			if m.retryDecomposeFailure(prd, "infra", "decompose-llm", derr.Error()) {
 				continue
 			}
@@ -1114,6 +1120,7 @@ func (m *Manager) Decompose(prdID string) (*PRD, error) {
 		}
 		raw, title, stories = r, t, s
 		prd.LastDecomposeFailure = nil // success — clear the single-use hint
+		prd.DecomposeSessionFailures = 0
 		break
 	}
 	if title != "" {
@@ -1238,6 +1245,12 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (*PRD, 
 		}
 		r, derr := m.decompose(DecomposeRequest{Spec: attemptPrompt, Backend: backend, Effort: effort, Model: planModel2, ProjectDir: prd.ProjectDir, ScopeBlock: ScopeBlock(prd), PRDID: prd.ID, TimeoutSeconds: m.cfg.PlanningTimeoutSeconds})
 		if derr != nil {
+			if isOneShotNoOutput(derr) {
+				if m.noteDecomposeSessionFailure(prd, backend, planModel2, derr) {
+					return nil, derr
+				}
+				continue
+			}
 			if m.retryDecomposeFailure(prd, "infra", "decompose-llm", derr.Error()) {
 				continue
 			}
@@ -1280,6 +1293,7 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (*PRD, 
 		}
 		raw, title, stories = r, t, s
 		prd.LastDecomposeFailure = nil // success — clear the single-use hint
+		prd.DecomposeSessionFailures = 0
 		break
 	}
 	if title != "" {
@@ -1451,6 +1465,12 @@ func (m *Manager) ResetToDraft(id, actor string) (*PRD, error) {
 	prd.ApprovedBy = ""
 	prd.ApprovedAt = nil
 	prd.RejectionReason = ""
+	// A reset starts a fresh decompose streak: the no-output counter and
+	// its terminal hint must not carry into the next attempt.
+	prd.DecomposeSessionFailures = 0
+	if prd.LastDecomposeFailure != nil && prd.LastDecomposeFailure.Source == "decompose-session" {
+		prd.LastDecomposeFailure = nil
+	}
 	prd.UpdatedAt = now
 	prd.Decisions = trimDecisions(append(prd.Decisions, Decision{
 		At: now, Kind: "reset_to_draft", Actor: actor,

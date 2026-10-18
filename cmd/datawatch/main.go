@@ -4240,7 +4240,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			// treading on each other's scratch state). See
 			// internal/autonomous/scratch.go.
 			return runOneShotJSONSession(cfg, req.PRDID, req.ProjectDir, backend, req.Model,
-				"autonomous:decompose", sessionTask, outputFile, "decompose-output.json", timeout)
+				decomposeSessionName, sessionTask, outputFile, "decompose-output.json", timeout)
 		}
 		decomposeFn := func(req autonomouspkg.DecomposeRequest) (string, error) {
 			// Per-PRD decomposition_profile takes priority over global planning_backend.
