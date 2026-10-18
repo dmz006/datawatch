@@ -974,6 +974,19 @@ autonomous:
   # apply).
   per_task_guardrails: []
   per_story_guardrails: []
+  # v9.5.5 — PRD lifecycles statuses that accept task-level and story-level
+  # LLM override calls (set_task_llm / set_story_llm and the per-task
+  # guardrail / verification LLM setters).
+  # Empty list = the defaults: needs_review, revisions_asked, cancelled,
+  # blocked. PRD-level overrides (the set_llm-style endpoints) are NOT
+  # affected by this and remain limited to those 3 pre-Run statuses.
+  # Valid names: draft, planning, needs_review, approved, revisions_asked,
+  # active, running, completed, rejected, cancelled, archived, blocked,
+  # failed, paused. Settable through any config surface: YAML,
+  # REST PUT /api/config, MCP autonomous_config_set, CLI
+  # `datawatch config set autonomous.task_override_statuses blocked,running`,
+  # comm channel `configure autonomous.task_override_statuses=blocked,running`.
+  task_override_statuses: []
   # BL418 — PRD-completion rules review opt-in. Empty (default) means
   # runPRDCompletionRulesReview never fires, even when a rules/context
   # file exists. Add "rules-review" here (or to a PRD's own
