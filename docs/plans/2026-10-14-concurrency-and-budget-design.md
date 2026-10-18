@@ -709,6 +709,7 @@ can disagree sharply, and the shared ceiling is the real constraint.
 | 2026-10-17 ~15:20 | 2.12 credits left | steady supervision ticks plus resets and fix work cost roughly 0.60 credits per tick (approximate) |
 | 2026-10-17 16:29 | all 20 credits used | the last supervision tick consumed the remainder |
 | 2026-10-18 08:00 | weekly limit reset | back on the weekly percent limit, not credits; operator allows one Claude development thread on the backlog in addition to the two GPU threads; the Claude thread's usage is tracked as its own line, apart from supervision |
+| 2026-10-18 ~10:20 | 2% weekly, 8% session, session resets in 2h40m | about two hours of supervision plus the first Claude-lane fix PRDs (Haiku worker, Sonnet verifier); first data point for the Claude-lane line |
 
 Restricted window: while the weekly ceiling was exhausted, autonomous PRD
 decompose, run, verify and smoke used pi-prompt with ollama/qwen3.8-64k:27b

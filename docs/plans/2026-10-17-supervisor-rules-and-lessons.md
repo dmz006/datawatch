@@ -254,6 +254,14 @@ requirement (open question 19).
 - Report state changes only. A tick with nothing new says so briefly.
 - Long-lived facts about datawatch go in `docs/plans/` or datawatch's own memory, not
   in an assistant's private memory.
+- **Defect intake.** Every datawatch defect seen during supervision, with or without a
+  workaround, gets a tracker row and a draft fix PRD in the same tick. Writing "fix it
+  later" in a tick prompt does not count. Every tick ends with a defect sweep: list
+  anything odd seen (failed task causes, stuck sessions, wrong models, silent drops,
+  oversized replies, side effects of a restart) and confirm each has a row and a PRD.
+- **Plan check against the original spec.** A rewritten or shortened spec can drop test
+  requirements, so compare the decomposed plan with the original request and add missing
+  tests or surfaces with a task edit.
 
 ## 12. What the Automation coordinator must absorb
 
@@ -272,6 +280,14 @@ The coordinator replaces the human loop, so these become mechanical:
 
 - Release rules (patch, minor, major, tagging, push approval) read from per-project
   configuration, since they differ between projects.
+- Every other option for how automation runs is configurable too, with the settings proven
+  in our tests as the shipped defaults (a per-project automation policy, BL483): cadence,
+  lane and concurrency limits, which backend and model plans, executes and verifies, retry
+  and escalation limits, plan checks, override-lock states, the git default, timeouts,
+  defect-intake behaviour and the escalation channel. Other users and their agents build a
+  plan that matches their own rules.
+- Defect intake (section 11): when it triages a failure as a product defect, it files the
+  tracker row and a draft fix PRD itself.
 
 Design choices left to the operator: the escalation channel and thresholds, which
 surfaces map to which regression suites, and how an urgent bug may jump the queue.
