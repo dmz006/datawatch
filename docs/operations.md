@@ -1927,10 +1927,10 @@ curl -sX POST http://localhost:7433/api/autonomous/prds/<id>/set_llm \
 ```
 
 **Accepted while** — task-level and story-level LLM override calls are
-accepted while the PRD's status matches one of
+accepted while the Automaton's status matches one of
 `autonomous.task_override_statuses` (default: `needs_review`,
 `revisions_asked`, `cancelled`, `blocked` — v9.5.5 adds `blocked`:
-repointing the next retry's LLM on a blocked PRD used to be refused with
+repointing the next retry's LLM on a blocked Automaton used to be refused with
 `status "blocked" is locked`). Change the set with
 `datawatch config set autonomous.task_override_statuses blocked,running`
 (or REST `PUT /api/config {"autonomous.task_override_statuses":["blocked","running"]}`,
