@@ -36,6 +36,14 @@ func resolvePlannedModel(backend, prdDecompositionModel, prdBackend, prdModel, g
 // addressed to a different backend or provider, so it does not pair with
 // backend.
 func carriesForeignBackendPrefix(model, backend string) bool {
+	_, foreign := foreignModelPrefix(model, backend)
+	return foreign
+}
+
+// foreignModelPrefix returns the "<prefix>" of a model written as
+// "<prefix>/<model>" when that prefix differs from backend. The second
+// result is false when there is no prefix or the prefix names backend.
+func foreignModelPrefix(model, backend string) (string, bool) {
 	prefix, _, found := strings.Cut(model, "/")
-	return found && prefix != backend
+	return prefix, found && prefix != backend
 }

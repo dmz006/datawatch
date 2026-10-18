@@ -81,6 +81,7 @@
   "app_name": "datawatch",
   "audit_no_entries_range": "Sin entradas de auditoría en el rango.",
   "automata_action_approve": "Aprobar",
+  "automata_pairing_warnings_title": "Advertencias de emparejamiento de modelos",
   "automata_action_approve_disabled_tip": "No hay aprobación pendiente",
   "automata_action_approve_tip": "Aprobar próxima historia / desbloquear",
   "automata_action_cancel": "Cancelar",

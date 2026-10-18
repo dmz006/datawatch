@@ -28888,6 +28888,17 @@ function loadAutomataSettingsPanel() {
             onchange="try{saveGeneralField('autonomous.upstream_repos',JSON.parse(this.value||'[]'))}catch(e){showToast('Invalid JSON: '+e.message,'error')}"
           >${escHtml(JSON.stringify(ac.upstream_repos||[]))}</textarea>
         </div>`;
+      // Planning/verification pairing warnings (see autonomous.PairingWarnings).
+      // Shown only when the status endpoint reports some; the card is unchanged otherwise.
+      apiFetch('/api/autonomous/status').then(st => {
+        const ws = (st && st.warnings) || [];
+        if (!ws.length || !aEl) return;
+        aEl.insertAdjacentHTML('afterbegin', `
+        <div class="settings-row" role="alert" style="flex-direction:column;align-items:stretch;border-left:3px solid var(--warning);padding-left:8px;margin-bottom:8px;">
+          <div style="font-size:12px;font-weight:600;">${escHtml(t('automata_pairing_warnings_title')||'Model pairing warnings')}</div>
+          ${ws.map(w => `<div style="font-size:12px;color:var(--text2);margin-top:4px;">${escHtml(w)}</div>`).join('')}
+        </div>`);
+      }).catch(() => {});
     }).catch(e => {
       if (aEl) aEl.innerHTML = `<em style="color:var(--text2);">${escHtml(_fedMsg(e, 'not available'))}</em>`;
     });

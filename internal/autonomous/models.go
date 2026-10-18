@@ -907,6 +907,11 @@ type LoopStatus struct {
 	StoriesCancelled int64 `json:"stories_cancelled,omitempty"`
 	TasksCancelled   int64 `json:"tasks_cancelled,omitempty"`
 	TasksRequeued    int64 `json:"tasks_requeued,omitempty"`
+
+	// Warnings are plain-language notices that a planning or verification
+	// model does not pair with the backend it is used with, so it will not
+	// reach its session. See PairingWarnings.
+	Warnings []string `json:"warnings,omitempty"`
 }
 
 // CIWatchResult is an automaton's own record of whether the CI runs for

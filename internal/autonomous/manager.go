@@ -402,6 +402,10 @@ type Manager struct {
 	decompose DecomposeFn
 	guardrail GuardrailFn
 
+	// pairingLogged records each pairing warning already written to the
+	// daemon log, so a config set does not repeat a warning it logged before.
+	pairingLogged map[string]bool
+
 	// BL451 — per-PRD count of executor-owned saves (savePRDOwn), so the
 	// completion rollup can discount its own Rev bumps. Guarded by mu.
 	ownSaves map[string]int
@@ -3198,6 +3202,7 @@ func (m *Manager) Status() LoopStatus {
 	if len(verdictCounts) > 0 {
 		st.VerdictCounts = verdictCounts
 	}
+	st.Warnings = PairingWarnings(m.cfg, m.pairingDecomposeRefs(m.cfg))
 	return st
 }
 

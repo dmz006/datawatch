@@ -5254,6 +5254,9 @@ Verify whether the diff plausibly implements the spec. Reply with STRICT JSON on
 			fmt.Fprintf(os.Stderr, "[warn] autonomous manager: %v\n", err)
 		} else {
 			autonomousMgrRef = amgr // BL244 — expose for plugin context wiring below
+			// Planning/verification pairing check at startup. Each warning is
+			// written to the daemon log once; the status endpoint keeps them.
+			amgr.ReportPairingWarnings()
 			amgr.SetGuardrail(autonomousGuardrail)
 			// Foreign-file drift (and future autonomous audit events) →
 			// operator audit log, so they land in JSON-lines + CEF mirror.

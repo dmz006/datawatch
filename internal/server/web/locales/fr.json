@@ -81,6 +81,7 @@
   "app_name": "datawatch",
   "audit_no_entries_range": "Aucune entrée d'audit dans la plage.",
   "automata_action_approve": "Approuver",
+  "automata_pairing_warnings_title": "Avertissements d'appariement des modèles",
   "automata_action_approve_disabled_tip": "Aucune approbation en attente",
   "automata_action_approve_tip": "Approuver la prochaine histoire / débloquer",
   "automata_action_cancel": "Annuler",

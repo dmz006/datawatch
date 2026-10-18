@@ -217,6 +217,11 @@ func (a *API) SetConfig(v any) error {
 
 func (a *API) Status() any { return a.M.Status() }
 
+// ReportPairingWarnings returns the current planning/verification pairing
+// warnings and logs any not yet logged. The REST config set handler reads it
+// through an optional interface, so AutonomousAPI fakes need no change.
+func (a *API) ReportPairingWarnings() []string { return a.M.ReportPairingWarnings() }
+
 func (a *API) CreatePRD(spec, projectDir, backend, model, effort string) (any, error) {
 	prd, err := a.M.CreatePRD(spec, projectDir, backend, model, Effort(effort))
 	if err == nil && prd != nil {
