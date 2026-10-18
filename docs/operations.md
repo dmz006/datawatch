@@ -2170,6 +2170,93 @@ operator's push-primary/poll-fallback direction for it.
 
 ---
 
+## Project-tree write serialization (one writer per tree)
+
+When more than one Automaton can touch the same working tree, datawatch
+serializes writes per tree. This exists because concurrent PRDs running
+workers in one tree interleave commits and diffs — the 2026-10-13 incident
+saw three Automata do exactly that, producing cross-contaminated changes
+and release-version drift in one checkout.
+
+### What gets serialized, and what still runs in parallel
+
+**Serialized:** task runs whose canonical tree resolves to the same key.
+In direct mode that means the main checkout, any subdirectory of it, and
+every linked worktree of the same git repository — the lock key is the
+repo's shared base, so a linked worktree of your main branch serializes
+against the main checkout. An ancestor (parent) Automaton that spawned
+the running one is exempt — it is waiting on its child, not competing
+with it.
+
+**Still in parallel:** Automata on different trees (different checkout
+roots, different worktrees, or different non-git directories) — the
+mechanism is per-tree, not global. Worktree-mode Automata (per-PRD
+`automaton.git.branch`) each key on their own worktree, so they run in
+parallel with each other and with other branches. Capacity admission
+(`autonomous.capacity.*`) is a separate gate on top.
+
+### What you see
+
+- A task blocked on the tree lock shows a wait reason:
+  `tree lock: <tree> held by task <id> (PRD <id>) since <time>`, and it
+  resumes when the holder releases (auto-wait works at the task level).
+- Starting an Automaton whose tree is already held by a running one is
+  refused with `tree busy: PRD <id> is already running on this tree; run
+  one PRD per direct tree or use worktree mode`. The Automaton stays in
+  an approvable state; re-kick it after the first one completes. Known
+gap: there is no PRD-level auto-wait/auto-resume yet — a refused loser
+  sits in `approved` until re-kicked (live-confirmed on 2026-10-18, see
+  `tests/live-smoke/REPORT.md`).
+- If you enabled `autonomous.refuse_dirty_tree_start`, a task whose tree
+  has uncommitted changes is refused at admission with the dirty-file
+  count and the options (commit or stash, `git clean`, or set the key
+  back to `false`).
+
+### Inspecting and unblocking the lock
+
+- The lock file is at `<canonical-tree>/.datawatch/tree.lock`. Its JSON
+  names the holder task, the Automaton and the acquisition time — that is
+  who holds it and since when.
+- It is git-ignored (`.datawatch/`), so a held lock never dirties `git
+  status`.
+- Normal case: an orphaned lock is reclaimed automatically once its
+  holder task is gone or terminal (bounded reclaim attempts; a 30-second
+  grace protects a fresh-but-unreadable record from being reclaimed
+  mid-write). No operator action needed.
+- Force-clear: if you are certain the holder is dead (daemon crash
+  mid-write, corrupted task record) and the tree is wedged, delete
+  `.datawatch/tree.lock` in the canonical tree; the next task re-creates
+  it. Destructive — only when you can confirm no live worker is mid-commit.
+
+### `refuse_dirty_tree_start` — the tradeoff
+
+- **On:** a task in a dirty tree is refused at admission instead of
+  starting. Catches the "previous run left cruft behind" state before
+  any work begins, at the cost of requiring you to commit/stash/`git
+  clean` before re-kicking.
+- **Off (default):** tasks start regardless of tree state; the
+  foreign-file drift guard after verification remains the after-the-fact
+  detector for unexplained changes.
+- The lock is advisory: it serializes only datawatch's own task writers.
+  A human hand-editing the tree while an Automaton runs is outside the
+  lock's scope — if that happens regularly, worktree mode (below) is the
+  fix, not a setting.
+
+### Worktree mode as the parallelism escape hatch
+
+Want more than one Automaton on the same repo without waiting? Use
+worktree mode (per-PRD `automaton.git.branch`) — each gets its own
+worktree and the per-tree lock keys on each worktree's own path, so
+there is no cross-worktree contention. The 2026-10-18 live smoke
+verified this exactly: two PRDs on distinct trees ran concurrently for
+the full duration while a third PRD on the shared tree was correctly
+serialized (evidence: `tests/live-smoke/EVIDENCE/20261019-1637/`).
+
+Reproduce the smoke: `bash tests/live-smoke/tree-serialization-smoke.sh`
+against an isolated scratch daemon (never your production daemon).
+
+---
+
 ## Terminal Performance
 
 ### xterm.js load time

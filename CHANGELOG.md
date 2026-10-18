@@ -98,12 +98,60 @@ while another one is running on the same checkout is refused with a message nami
 the one that holds it. An Automaton that was spawned by a running one is still
 allowed to run, and Automata in their own worktree do not collide.
 
-## v9.4.0 — config: tree write-lock settings
+## v9.4.0 — feat(autonomous): one writer per project tree at a time
 
-Adds two settings under `autonomous` ahead of the project-tree write lock:
-`project_write_serialization` (`advisory` by default) and `refuse_dirty_tree_start`
-(off by default). They only validate and record the choice for now; the lock itself
-arrives in a later release. No behavior changes unless you set them.
+**Automata task writes on the same project tree are serialized.** Every task
+acquires an exclusive, advisory lock keyed to its canonical project tree before its
+worker spawns, and holds it through spawn → verify → retries with release on every
+exit path. A task that can't get the lock shows a wait reason naming the holder
+(`tree lock: <tree> held by task <id> (PRD <id>) since <time>`) and auto-resumes when
+the holder releases; if the wait outlasts the daemon's capacity-wait window, the
+task is refused and the run aborts with the Automaton back in an approvable state.
+
+**Why: on 2026-10-13 three concurrent PRDs ran workers in one working tree**,
+interleaving commits into each other's diffs and consuming the same release version.
+The lock is the fix for that failure mode: same-tree writes now queue instead of
+interleaving — including release-bump critical sections, where each task's increment
+lands in its own commit in order. Different trees (and Automata in their own
+worktrees) still run fully in parallel.
+
+**The lock file is `<tree>/.datawatch/tree.lock`.** It's git-ignored (a held lock
+never dirties your `git status`), and it records the holder's task, Automaton and
+acquisition time so you can always tell who holds it and since when. The lock is
+advisory by contract — only datawatch's own task writers check it — and stale records
+(holder task no longer live or terminal, or a record older than a 30-second grace)
+are reclaimed automatically with a bounded number of attempts; a live holder's
+record is never reclaimed. If you're certain the holder is gone and the tree is
+wedged, delete the file to force-clear.
+
+**Same tree = same key.** The main checkout, any subdirectory of that checkout, and
+linked worktrees of the same git repo all resolve to one lock key (via the repo's
+shared base), so a linked worktree of your main branch serializes against your main
+branch. A worktree-mode Automaton keys on its own worktree — worktrees run in
+parallel with each other and with any other branch. Non-git directories key on the
+directory itself.
+
+Two settings under `autonomous`:
+- `project_write_serialization` — `advisory` (default). `parallel` is recognized but
+  reserved: the daemon still enforces the advisory lock and logs a startup warning.
+  Any other value is a config error and the daemon refuses to start.
+- `refuse_dirty_tree_start` — off by default. When on, a task is refused at admission
+  if its tree has uncommitted changes (the error names the dirty-file count and the
+  options — commit or stash, `git clean`, or set this key back to `false`).
+
+**The CI completion guardrail now pins the Automaton's own commit.** ci-watch judges
+the last completed task's commit (its recorded post-verify SHA) rather than the
+tree's live `HEAD`, so a later write on a shared tree can no longer drag someone
+else's CI runs into your Automaton's verdict. Automata whose commit isn't reachable
+from a remote yet at guardrail time (worktree / auto-PR flows that push after
+completion) are skipped with a recorded reason instead of being judged on
+someone else's push.
+
+Phase 2 (per-tree write lock) of the 2026-10-14 concurrency design is implemented —
+see [the design](docs/plans/2026-10-14-concurrency-and-budget-design.md) for scope
+and the live smoke report at `tests/live-smoke/REPORT.md` (2026-10-18) for the
+verified behavior, including one known gap: a refused loser PRD still needs a manual
+re-kick today; auto-wait/auto-resume at the PRD level is the follow-up.
 
 ## v9.3.0 — feat(autonomous): lifecycle-event notification sinks
 

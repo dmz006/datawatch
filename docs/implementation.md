@@ -204,6 +204,121 @@ comm verb `autonomous set-task-project-dir`, and the PWA task edit
 modal's **Project dir override** field (shown on the task card as a
 `dir:` badge).
 
+### Per-tree write lock (Automata)
+
+The per-tree write lock (BL428 Phase 2,
+docs/plans/2026-10-14-concurrency-and-budget-design.md §3a) makes writes to a
+single project tree exclusive. It fixes the failure mode where two or more
+Automata ran workers in the same working tree concurrently — interleaved
+diffs and release-version drift — the shape of the 2026-10-13 incident
+that three concurrent PRDs in one tree produced. Two cooperating layers
+protect a tree:
+
+**Layer 1 — PRD admission gate (BL469, `internal/autonomous/tree_admission.go`).**
+`admitTree` runs under the manager lock before a PRD is marked `running`. It
+refuses to start a PRD whose canonical tree is already held by a PRD in
+`running` or `active` status, with a message naming the holder
+(`tree busy: PRD %s is already running on this tree (%s); run one PRD per
+direct tree or use worktree mode`). Ancestor (parent/child) PRDs never
+conflict: a spawned Automaton running on its parent's tree is exempt, since
+the parent is waiting on it, not competing with it. The walk is bound to 32
+levels to defend against a corrupt parent chain. No project dir yet =
+nothing to contend on, so it's a no-op.
+
+**Layer 2 — task writer lock (BL428 §3a, `internal/autonomous/tree_lock.go`).**
+This is the finer-grained mechanism. `executeOne` (executor.go) acquires the
+task's canonical-tree lock before spawning the worker and releases it after
+verification finishes. The lock is held across the full critical section
+(spawn → run → verify → retry loop), covering every exit path including
+cancellation and daemon shutdown. The `holdTree` closure in `executeOne`
+is idempotent per task: re-calling `acquireTreeWritersLock` with the same
+holder is a no-op (the record already names this task).
+
+Key resolution — `ResolveTreeKey`:
+
+- **Git repo (no explicit branch)**: canonical base = `git rev-parse
+  --git-common-dir` resolved to an absolute path. All worktrees of the same
+  repo map to the same key, so a linked worktree serializes against the
+  main checkout.
+- **Worktree-mode Automaton** (`prd.Git.Branch != ""`): key = the worktree's
+  own path (no canonicalization). Each worktree is its own lock domain, so
+  worktree-mode PRDs run in parallel with each other.
+- **Non-git path**: key = the project directory itself (path-based key, no
+  git).
+
+Lock file: `<canonical-tree>/.datawatch/tree.lock` (a `tree.lock` file
+inside a `.datawatch/` directory at the tree root). datawatch's own
+`.gitignore` covers `.datawatch/`, and the regression test
+(`TestTreeLockFileDoesNotDirtyGitStatus`) pins the invariant that holding
+the lock must never show up in `git status --porcelain` (a project that
+adopts the lock gitignores `.datawatch/` for the same reason). The lock is
+advisory by design: only datawatch's own task writers consult it; a human
+editor or another tool bypassing it is outside the lock's scope.
+
+Lock record (`LockRecord`): `holder_task_id`, `holder_prd_id`,
+`acquired_at` (unix seconds), `pid`. This lets the PWA, CLI and operator
+tell who holds the lock and since when.
+
+Stale lock reclamation:
+- A lock whose holder task no longer exists in the store → stale, reclaimed
+  (up to `maxStaleReclaimAttempts = 3` consecutive reclaim attempts).
+- A lock whose holder task is in a terminal status → stale, reclaimed.
+- A lock whose record is missing/unreadable but the file is younger than
+  `staleLockGrace = 30s` → not reclaimed (likely a live acquirer two steps
+  into writing the record); after the grace window, reclaimed.
+- A live holder's record → never reclaimed (`TestTreeLock_LiveHolderWaits_NotReclaimed`).
+
+Wait behavior: if the lock is held by another live task, `AcquireTreeLock`
+polls every `defaultTreeLockPoll = 5s` (production passes the
+Manager-controlled interval) until the lock is released or the
+context timeout (`Manager.capacityWait()`, default
+`capacity_wait_timeout_seconds = 14400s` = 4 h) fires. While waiting, the
+task's wait reason is visible in the PWA as:
+`tree lock: <canonical-tree> held by task <id> (PRD <id>) since <time>`.
+On timeout the acquire returns an error and the task is refused — the PRD
+returns to an approvable state (this is the known PRD-level auto-wait gap;
+the per-task wait+auto-resume in the lock itself works as documented
+above and is exercised by `TestExecutorTreeLock_WaitReason`).
+
+The `resolveRefuseDirtyTree` companion gate:
+`autonomous.refuse_dirty_tree_start` (default `false`, per-PRD override via
+`PRD.RefuseDirtyTreeStart *bool`) is checked at admission, before the tree
+lock is acquired. When enabled, `dirtyTreeRefused` calls
+`git status --porcelain` on the canonical tree; non-empty output → the task
+is refused with a message naming the dirty-file count and the options
+(commit or stash first, `git clean`, or the config key back to `false`).
+Git not available or not a repo → the gate passes the tree through silently
+(the gate only reasons about dirt it can observe).
+
+Config: `autonomous.project_write_serialization` — `advisory` (default) or
+`parallel` (recognized, reserved; daemon still enforces the advisory lock
+and logs a startup warning). Any other value is a config error and prevents
+daemon start.
+
+CI-watch own-commit pin (BL423, `internal/autonomous/ci_watch.go`):
+the ci-watch completion guardrail now judges the last completed task's
+recorded post-verify SHA (`Task.PostVerifySHA`, selected by
+`prdLastPostVerifySHA` — iteration order over the PRD's stories/tasks, so
+the last one in that order wins) rather than the tree's live `HEAD`.
+This prevents a later write on the shared tree from dragging
+someone else's CI run into a PRD's verdict. If no
+task in the PRD recorded a `PostVerifySHA` (legacy store), ci-watch falls
+back to live `HEAD` (the pre-fix behavior). If the pinned SHA is not
+reachable from the remote (`git merge-base --is-ancestor <sha> <remote-tracking-ref/>` fails), ci-watch skips with a logged reason —
+this is the expected behavior for worktree/auto-PR Automata that push
+after completion.
+
+Tests: `tree_lock_test.go` (20 tests covering key resolution, lock path,
+exclusivity, stale reclamation, release guards, and git-status purity),
+`executor_tree_lock_test.go` (9 tests: same-tree serialization, wait reason,
+release-on-spawn-failure, release-after-verify, dirty-tree refused,
+clean-tree admitted, gate-off, missing-tree, worktree parallel),
+`same_tree_serialization_test.go` (2 regression tests for the
+2026-10-13 shape: three-PRD serialization and release-bump no-clobber),
+and the live smoke `tests/live-smoke/tree-serialization-smoke.sh` (2026-10-18,
+v9.5.4; same-tree serialized PASS, cross-tree parallel PASS, loser
+auto-resume GAP documented in `tests/live-smoke/REPORT.md`).
+
 ### Message Routing
 
 The router (`internal/router`) is stateless. It:

@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-14
 **Version:** v9.0.75 at time of writing (`var Version` in `cmd/datawatch/main.go`); implementation target TBD / next minor
-**Status:** Design pass — needs_review (no implementation approved; no code, config default or version changed by this doc)
+**Status:** Phases 1–2 implemented (dead-knob removal + per-tree write lock, shipped in the v9.4.0/v9.5.0 development builds; live smoke 2026-10-18 in `tests/live-smoke/REPORT.md`); Phases 3–6 Planned (no implementation approved; this doc's design pass otherwise unchanged)
 
 Terminology note: operator-facing text says **Automaton/Automata**; the code
 and this plan say **PRD** for the same object (`internal/autonomous`). The
@@ -995,9 +995,10 @@ New and changed config keys:
 
 ## Phases
 
-These are the phases of the **follow-up implementation PRD**. All are
-**Planned**, not approved. Every phase carries AGENT.md's Phase Completion
-Checklist, and none is done until that checklist is.
+These are the phases of the **follow-up implementation PRD**. Phase 1 and
+Phase 2 are **Done**; the rest are **Planned**, not approved. Every phase
+carries AGENT.md's Phase Completion Checklist, and none is done until that
+checklist is.
 
 1. **Phase 1 — Dead-knob removal plus the global `max_concurrent_tasks`
    plumbing.** Deprecation warning and accept-and-ignore for
@@ -1005,9 +1006,74 @@ Checklist, and none is done until that checklist is.
    `autonomous.max_concurrent_tasks` to YAML, REST, MCP, CLI, comm and PWA.
    Status: Done (v9.0.86) — max_parallel_tasks removal deferred one release.
 2. **Phase 2 — Project-tree write lock (3a).** Canonical key resolution,
-   worktree keying, `tree:<key>` representation in ledger status, the
-   advisory lock file, the `refuse_dirty_tree_start` check, and CW watching
-   the PRD's own recorded SHA. Status: Planned.
+   worktree keying, the `tree:<key>` representation, the advisory lock file,
+   the `refuse_dirty_tree_start` check, CW watching the PRD's own recorded
+   SHA. Status: **Done (v9.4.0/v9.5.0 development builds, 2026-10-18)** —
+   `internal/autonomous/tree_lock.go` (BL428 §3a writer lock),
+   `executor.go` admission order (capacity → dirty-tree gate → tree lock →
+   spawn), `tree_admission.go` (BL469 PRD-level same-tree gate, the
+   2026-10-13-incident shape pinned by
+   `same_tree_serialization_test.go`), `ci_watch.go` own-commit pin
+   (`prdLastPostVerifySHA`), config keys
+   `autonomous.project_write_serialization` / `autonomous.refuse_dirty_tree_start`.
+   Operator guide: `docs/operations.md` → "Project-tree write serialization";
+   mechanism: `docs/implementation.md` → "Per-tree write lock (Automata)";
+   tests: `docs/testing-tracker.md` → "Per-tree write lock + same-tree
+   admission + ci-watch own-commit pin". Live smoke 2026-10-18
+   (`tests/live-smoke/tree-serialization-smoke.sh`, evidence
+   `tests/live-smoke/EVIDENCE/20261019-1637/`): same-tree serialized PASS,
+   cross-tree parallel PASS. Known gap (carried to the Phase 2 follow-up,
+   not a checklist-failing item): a PRD refused by the admission gate needs a
+   manual re-kick today — PRD-level auto-wait/auto-resume is not implemented;
+   the task-level wait+resume works.
+
+   **Phase Completion Checklist (recorded 2026-10-21, evidence re-verified
+   same day):**
+   - Functionality per §3a: ✅ `internal/autonomous/tree_lock.go` (key
+     resolution, advisory lock, stale reclamation, release guard),
+     `executor.go` (admission order: capacity → dirty-tree gate → tree lock →
+     spawn), `tree_admission.go` (BL469 PRD-level, shipped v9.5.0),
+     `ci_watch.go` (own-commit pin via `prdLastPostVerifySHA`),
+     `config.go` (`autonomous.project_write_serialization`,
+     `autonomous.refuse_dirty_tree_start`).
+   - Unit tests: ✅ 54 dedicated tests green on 2026-10-21 (20
+     `tree_lock_test.go`, 9 `executor_tree_lock_test.go`, 2
+     `same_tree_serialization_test.go`, 13 `bl451_rollup_race_test.go`,
+     10 in `ci_watch_plumbing_test.go` including the 5 incident pin tests).
+   - Full suites: ✅ `go test ./...` 4,517 passed / 84 packages, 0 fail
+     (2026-10-21); ✅ `node --test internal/server/web/*.test.js` 257/257
+     pass (2026-10-21).
+   - Live smoke against a real daemon: ✅ 2026-10-18, v9.5.4, isolated
+     scratch daemon (port 18912, temp data dir — never production),
+     `tests/live-smoke/tree-serialization-smoke.sh`, verdicts in
+     `tests/live-smoke/REPORT.md`, raw evidence in
+     `tests/live-smoke/EVIDENCE/20261019-1637/`.
+   - 8-item documentation checklist (2026-10-21): `CHANGELOG.md` ✅ (v9.4.0
+     entry); `docs/config-reference.yaml` ✅ (both keys + cross-references);
+     `docs/operations.md` ✅ ("Project-tree write serialization");
+     `README.md` ✅ (per-tree serialization line in Orchestration & autonomy);
+     doc index N/A (no new doc added, only existing sections grown);
+     `docs/testing-tracker.md` ✅ (dedicated section added 2026-10-21);
+     no leaked tracker IDs ✅ (README/locales/howto surfaces clean per the
+     2026-10-07 rule — BL428/BL469 ids appear only in reference docs,
+     CHANGELOG and plans, which are exempt); Parity-surface section of this
+     plan still accurate ✅.
+   - Conditional docs: N/A — the operator-visible pieces are the two config
+     keys (in `docs/config-reference.yaml`) and the refusal/wait strings
+     (in `docs/operations.md`); no new user-followable workflow beyond the
+     force-clear procedure documented there, and no new diagram-worthy
+     data flow (the lock file is one advisory file under the project's
+     already-documented `.datawatch/` directory).
+   - Mobile-Parity: covered by existing open datawatch-app issue #263
+     ("Parity: … tree-busy refusal (datawatch v9.5.0)"); the task-level
+     wait reason flows through the existing task message/status fields, so
+     no new API contract for mobile clients.
+   - Localization: N/A — no `app.js` change in this phase.
+   - Plans README line updated: ✅ row 8 status `blocked` → implemented
+     (2026-10-21).
+   - Version: in the v9.4.0/v9.5.0 development builds; not in a public
+     release yet (ships with the first complete release, tracked as 9.6.0 in
+     `docs/plans/README.md` row 9a).
 3. **Phase 3 — Inference-cap gap closure (3b).**
    - Decompose admits on `llm:`/`node:`.
    - Hand off the task lease to the verify lease instead of stacking them.

@@ -877,6 +877,8 @@ autonomous:
   # until the real mechanism lands in the follow-up implementation PRD; the
   # daemon still enforces the advisory lock and logs a startup warning.
   # Any other value is a config error and the daemon refuses to start.
+  # Operator guide: docs/operations.md → "Project-tree write serialization";
+  # mechanism: docs/implementation.md → "Per-tree write lock (Automata)".
   project_write_serialization: advisory
   # BL428 §3a ii — admission-time companion: when true, task admission
   # hard-fails (error naming the dirty file count and the options — commit
