@@ -4100,6 +4100,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			PlanningEffort:             acfgIn.PlanningEffort,
 			VerificationEffort:         acfgIn.VerificationEffort,
 			PlanningTimeoutSeconds:     acfgIn.PlanningTimeoutSeconds,
+			VerificationTimeoutSeconds: acfgIn.VerificationTimeoutSeconds,
 			CapacityEnabled:            acfgIn.CapacityEnabled,
 			CapacityWaitTimeoutSeconds: acfgIn.CapacityWaitTimeoutSeconds,
 			StaleTaskSeconds:           acfgIn.StaleTaskSeconds,

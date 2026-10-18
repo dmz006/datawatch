@@ -66,8 +66,17 @@ type Config struct {
 	// used during PRD decomposition (default: 120s quick/low, 300s normal,
 	// 900s high/max). Set to 0 to use the effort-scaled defaults.
 	// Exposed as autonomous.planning_timeout_seconds in config.
-	PlanningTimeoutSeconds int    `json:"planning_timeout_seconds,omitempty"`
-	VerificationModel      string `json:"verification_model,omitempty"`
+	PlanningTimeoutSeconds int `json:"planning_timeout_seconds,omitempty"`
+	// VerificationTimeoutSeconds is the sibling of PlanningTimeoutSeconds.
+	// Exposed as autonomous.verification_timeout_seconds in config. The
+	// manager itself does not consume it: the daemon's verifier/guardrail
+	// wiring in cmd/datawatch/main.go reads it from config.Config. The field
+	// exists so the live manager config round-trip carried by
+	// handleAutonomousConfig does not drop the key, the way the
+	// VerificationBackends omitempty bug described in the config.go comment
+	// dropped its value.
+	VerificationTimeoutSeconds int    `json:"verification_timeout_seconds,omitempty"`
+	VerificationModel          string `json:"verification_model,omitempty"`
 	// VerificationBackends (v8.36.9) — see config.AutonomousConfig's doc
 	// comment. Ordered list of LLM registry names to load-balance
 	// verifier/guardrail capacity across; empty = single-backend
