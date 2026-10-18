@@ -2929,7 +2929,7 @@ func verificationLLMLocked(prd *PRD) error {
 // task_override_statuses list may name (the models.go PRDStatus constants).
 var taskOverrideStatusesKnown = []string{
 	string(PRDDraft), string(PRDPlanning), string(PRDNeedsReview), string(PRDApproved),
-	string(PRDRevisionsAsked), string(PRDRunning), string(PRDCompleted), string(PRDRejected),
+	string(PRDRevisionsAsked), string(PRDActive), string(PRDRunning), string(PRDCompleted), string(PRDRejected),
 	string(PRDCancelled), string(PRDArchived), string(PRDBlocked), string(PRDFailed),
 	string(PRDPaused),
 }

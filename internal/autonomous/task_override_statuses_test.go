@@ -159,3 +159,18 @@ func TestEffectiveTaskOverrideStatuses(t *testing.T) {
 		t.Errorf("[draft] -> %v; want [draft]", got)
 	}
 }
+
+func TestTaskOverrideStatusesKnownFourteen(t *testing.T) {
+	known := TaskOverrideStatusesKnown()
+	if len(known) != 14 {
+		t.Fatalf("known set has %d names; want 14: %v", len(known), known)
+	}
+	if err := ValidateTaskOverrideStatuses([]string{"active"}); err != nil {
+		t.Errorf("legacy [active] should be valid: %v", err)
+	}
+	err := ValidateTaskOverrideStatuses([]string{"bogus"})
+	want := `task_override_statuses: unknown PRD status "bogus" (known: draft, planning, needs_review, approved, revisions_asked, active, running, completed, rejected, cancelled, archived, blocked, failed, paused)`
+	if err == nil || err.Error() != want {
+		t.Errorf("error = %v; want %q", err, want)
+	}
+}
