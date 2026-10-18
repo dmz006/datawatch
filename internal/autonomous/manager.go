@@ -1096,6 +1096,21 @@ func (m *Manager) Decompose(prdID string) (*PRD, error) {
 			}
 			return nil, perr
 		}
+		// A valid-JSON plan with no usable stories must not be stored as
+		// a finished decompose. Route it through the same retry path as
+		// a parse failure so the reason lands on LastDecomposeFailure.
+		if zerr := validateParsedPlan(s); zerr != nil {
+			if m.retryDecomposeFailure(prd, "content", "decompose-zero-stories", zerr.Error()) {
+				continue
+			}
+			old := prd.Status
+			prd.Status = PRDDraft
+			prd.UpdatedAt = time.Now()
+			if m.store.SavePRD(prd) == nil {
+				m.emitPRDStatus(prd, old, nil, nil)
+			}
+			return nil, zerr
+		}
 		// B124 — kick back a tooled plan that skipped verification
 		// scripts entirely despite planning real file changes (see this
 		// function's own doc comment). Decompose() is a lower-level
@@ -1269,6 +1284,20 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (*PRD, 
 				m.emitPRDStatus(prd, old, nil, nil)
 			}
 			return nil, perr
+		}
+		// Zero-story guard — see Decompose()'s identical call. Kept in
+		// sync with the twin loop so both paths reject the same output.
+		if zerr := validateParsedPlan(s); zerr != nil {
+			if m.retryDecomposeFailure(prd, "content", "decompose-zero-stories", zerr.Error()) {
+				continue
+			}
+			old := prd.Status
+			prd.Status = PRDDraft
+			prd.UpdatedAt = time.Now()
+			if m.store.SavePRD(prd) == nil {
+				m.emitPRDStatus(prd, old, nil, nil)
+			}
+			return nil, zerr
 		}
 		// B124 — see Decompose()'s identical call for the full
 		// explanation; decomposeStreamingCore is a drifted duplicate of

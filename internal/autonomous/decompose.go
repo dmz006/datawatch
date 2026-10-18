@@ -169,6 +169,23 @@ type DecomposeRequest struct {
 // while production wires through to /api/ask or a session.Manager.Start.
 type DecomposeFn func(req DecomposeRequest) (jsonResponse string, err error)
 
+// validateParsedPlan rejects a parsed decompose result that cannot
+// become a runnable PRD: no stories at all, or stories with no task in
+// any of them. ParsePlanning accepts valid JSON regardless of content,
+// so a finished decompose must pass this check before its stories are
+// stored.
+func validateParsedPlan(stories []Story) error {
+	if len(stories) == 0 {
+		return fmt.Errorf("decompose output contained no stories")
+	}
+	for _, s := range stories {
+		if len(s.Tasks) > 0 {
+			return nil
+		}
+	}
+	return fmt.Errorf("decompose output contained %d stories but none had any tasks", len(stories))
+}
+
 // ParsePlanning cleans common LLM JSON pathologies (fences,
 // smart quotes, // comments) and unmarshals into a Story slice.
 func ParsePlanning(raw string) (title string, stories []Story, err error) {
