@@ -710,10 +710,52 @@ can disagree sharply, and the shared ceiling is the real constraint.
 | 2026-10-17 16:29 | all 20 credits used | the last supervision tick consumed the remainder |
 | 2026-10-18 08:00 | weekly limit reset | back on the weekly percent limit, not credits; operator allows one Claude development thread on the backlog in addition to the two GPU threads; the Claude thread's usage is tracked as its own line, apart from supervision |
 | 2026-10-18 ~10:20 | 2% weekly, 8% session, session resets in 2h40m | about two hours of supervision plus the first Claude-lane fix PRDs (Haiku worker, Sonnet verifier); first data point for the Claude-lane line |
+| 2026-10-18 ~14:3x | 4% weekly | this Claude dev-lane session (BL449 pi-switch + BL472 mockup filing below); session stopped here on operator instruction, handed back to the supervisor |
 
 Restricted window: while the weekly ceiling was exhausted, autonomous PRD
 decompose, run, verify and smoke used pi-prompt with ollama/qwen3.8-64k:27b
 only. The window runs until Sunday 2026-10-18.
+
+### 4b-i. Calculator visualization mockups (design reference, not data)
+
+Operator supplied four dashboard mockups (2026-10-18) as design reference
+for whoever builds BL472's actual UI/output once it leaves "not started" —
+these are illustrative layouts with placeholder numbers (14.29%/day decay,
+a $1000/week example, etc.), **not real operator-reported snapshots**; the
+table above stays the only source of real readings. Filed under
+`docs/plans/assets/bl472-calculator-mockups/`:
+
+- `daily-decay-and-weekly-refresh.jpeg` — a single day's 8am→8am decay
+  gauge (100%→86%, -14%) next to a Sun→Sat weekly bar/line chart showing
+  the same 14%/day compounding decay down to a Saturday low, with a
+  "refresh to 100%" arrow into the next Sunday. Models the two numbers
+  this doc already tracks as separate (session-local meter vs. shared
+  weekly ceiling) as one combined visual.
+- `weekly-dashboard-sections.jpeg` — a 4-section dashboard layout: weekly
+  totals/cost summary, a Sun-Sat daily-decay strip (gauge per day), an
+  hourly-rate section (bar chart + $/hr), and a system-metrics section
+  (heatmap by hour×day, cumulative-cost line, average-rate gauges). A
+  candidate shape for a BL472 summary view.
+- `daily-breakdown-dashboard.jpeg` — single-day drill-down: a uniform
+  hourly-consumption-rate bar chart (modelling flat ~0.595%/hr, i.e.
+  100%/7days/24h), a cumulative progressive-decay line (100%→85.71% over
+  24h), a cumulative-total-consumed area chart, and a 4-way time-of-day
+  phase breakdown (morning/afternoon/evening/night, each ~2.4-4.8%
+  consumed). The flat-hourly-rate assumption is a mockup simplification,
+  not a finding — real usage is bursty (see the irregular readings in the
+  table above), so BL472's actual rollup should not assume uniform
+  hourly draw.
+- `3-shift-plan-dashboard.jpeg` — the same day broken into three 8-hour
+  shifts (day/evening/night) with per-shift and per-block consumption,
+  plus the same cumulative-decay line annotated with shift-end markers.
+  Useful if BL472 ever needs to attribute weekly burn to the three
+  concurrent lanes this doc already tracks (GPU/pi lanes + the Claude
+  dev lane) rather than to time-of-day.
+
+None of this is a spec — BL472 is still "not started" (README row 53) and
+these are inputs for whoever designs it, not a commitment to any specific
+chart library, cadence, or the flat-hourly-rate model the mockups use as
+a simplification.
 
 ## 5. Scope boundary
 

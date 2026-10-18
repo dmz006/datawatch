@@ -99,12 +99,52 @@ before that round runs. Additions, not yet executed:
   worker to commit. New candidate models do not change this — they ride
   the same broken opencode-session-start path until it's fixed.
 
+## 2026-10-18 backend switch: pi primary, opencode kept as an open question
+
+Operator instruction (same day, after the above): pi has proven more
+stable than opencode for open-model work generally (fewer stalls, better
+completion detection — see [[project_opencode_acp_switch_findings]] and
+the r4/r6/r8 opencode-session-death history above). **Switch this
+matrix's default execution path to pi for every cell**, superseding the
+"Swift/coder cells run via opencode" assumption two sections up — all 16
+cells, baseline and new execution candidates alike, run through
+pi-prompt by default now. This also sidesteps the still-blocking node-a
+opencode-session-death bug for the matrix's primary (pi) scoring, though
+it does not fix that bug.
+
+**Opencode is not dropped, only demoted to a secondary question.**
+Operator's own framing: "we should also test on opencode since we are
+testing supported tooling maybe" — part of what this matrix is for is
+confirming which backends a given open model actually runs under, not
+only which backend is fastest. So each cell's design should leave room
+for an optional opencode run of the same model/task pair for
+comparison, but **whether to run it, and for which cells, is a question
+for the supervisor/PRD to settle when this round actually starts**
+(after v10.0.0, after BL492 ships) — not decided in this doc. Reasons to
+leave it open rather than commit now:
+- opencode's own node-a session-death bug (r4/r6/r8, unresolved) may
+  still be unfixed by the time this round runs, which would make an
+  opencode lane pure noise regardless of which model is under test;
+- the `pi.thinking_level` vs. opencode→Ollama `think`-field question
+  (two sections up) is still unresolved and bears directly on whether an
+  opencode lane can even be scored on the same terms as the pi lane;
+- running every cell twice (pi + opencode) doubles the round's GPU-node
+  cost for a matrix that is already gated on node availability.
+
+If opencode is kept as a comparison lane, it should **not** gate
+`model_result` the way the pi lane does — it would be an
+informational/secondary verdict column, so an opencode-side
+infrastructure failure never blocks the matrix's primary (pi) scoring.
+
 ## Scope
 
-A 4 roles × 4 task types = 16-cell eval of the open (opencode/Ollama)
-models, run through the Automaton system. It reuses the model-tiering
-fixtures unchanged (`fixtures_from: testdata/eval/model-tiering`). Per
-the 2026-10-18 expansion above, the `execution` role's candidate set for
+A 4 roles × 4 task types = 16-cell eval of the open (Ollama-backed)
+models, run through the Automaton system, backend **pi by default**
+(2026-10-18 switch above) with opencode as an optional, non-gating
+secondary lane pending the supervisor/PRD's call at round-start time. It
+reuses the model-tiering fixtures unchanged (`fixtures_from:
+testdata/eval/model-tiering`). Per the 2026-10-18 expansion above, the
+`execution` role's candidate set for
 the post-10.0.0 round grows to baseline `qwen3.8:27b` plus
 `swift-1.5-qwen38-27b`, `qwen3-coder:30b`, `qwen3-coder-next:q4_K_M`, and
 `qwen3.5:35b` — `decompose`/`verify`/other roles are unchanged, since
