@@ -1937,8 +1937,8 @@ repointing the next retry's LLM on a blocked PRD used to be refused with
 MCP `autonomous_config_set`, or comm channel
 `configure autonomous.task_override_statuses=blocked,running`). Unknown
 status names are rejected with a 400 that lists the known statuses; an
-empty list restores the 4-item default. PRD-level overrides (per-PRD
-`set_llm`, per-PRD guardrail / verification LLM) are not affected by this
+empty list restores the 4-item default. Automaton-level overrides (per-Automaton
+`set_llm`, per-Automaton guardrail / verification LLM) are not affected by this
 setting and remain locked to the 3 pre-Run statuses.
 
 **Verification LLM** — `verification_backend` / `verification_model` /
