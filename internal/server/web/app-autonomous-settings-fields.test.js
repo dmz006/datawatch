@@ -40,3 +40,25 @@ test('autonomous settings expose verification_timeout_seconds with an en label k
   assert.ok(typeof en.settings_verification_timeout === 'string' && en.settings_verification_timeout.length > 0,
     'settings_verification_timeout missing from en locale');
 });
+
+test('autonomous settings expose task_override_statuses as a csv text field with a label key', () => {
+  const sandbox = buildSandbox();
+  vm.createContext(sandbox);
+  loadScript(path.join(__dirname, 'app.js'), sandbox);
+  const field = vm.runInContext(
+    "JSON.stringify((GENERAL_CONFIG_FIELDS.find(s => s.id === 'autonomous') || {fields: []}).fields.find(f => f.key === 'autonomous.task_override_statuses') || null)",
+    sandbox);
+  const parsed = JSON.parse(field);
+  assert.ok(parsed, 'autonomous.task_override_statuses missing from autonomous card fields');
+  assert.equal(parsed.type, 'text');
+  assert.ok(parsed.csv, 'autonomous.task_override_statuses must set csv: true');
+  assert.equal(parsed.labelKey, 'settings_task_override_statuses');
+});
+
+test('settings_task_override_statuses is a non-empty string in all five locale bundles', () => {
+  for (const locale of ['en', 'de', 'es', 'fr', 'ja']) {
+    const bundle = JSON.parse(fs.readFileSync(path.join(__dirname, 'locales', locale + '.json'), 'utf8'));
+    assert.ok(typeof bundle.settings_task_override_statuses === 'string' && bundle.settings_task_override_statuses.length > 0,
+      'settings_task_override_statuses missing or empty in ' + locale + ' locale');
+  }
+});
