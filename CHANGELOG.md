@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.88 — fix(security): remove stale CVE suppressions now fixed upstream
+
+### Fixed
+- **Removed 1 .trivyignore suppression(s) with a fix now available in Debian bookworm** — found by the daily `image-refresh` recheck, which rebuilds every shipped image fresh and scans without `.trivyignore` applied. See the PR for exactly which CVEs and which images.
+
+
 ## v9.2.0 — feat(session): task sessions are committed automatically, the moment they're done
 
 Task sessions are now committed automatically by datawatch itself the
