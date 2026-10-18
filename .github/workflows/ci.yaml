@@ -39,12 +39,20 @@ jobs:
           echo '{}' > internal/docsindex/assets/docs-bm25-index.json
           make sync-docs docs-index
 
-      # 2026-10-07 — catches a commit reusing the version its parent
-      # already used (found by a compliance audit: commit 71397878
+      # 2026-10-07 — catches a range reusing the version its base
+      # already had (found by a compliance audit: commit 71397878
       # shipped real changes with no bump). Runs on every push/PR, not
-      # just at release time, so it's caught immediately.
+      # just at release time, so it's caught immediately. Now
+      # range-based: compares the range from the push base (passed as
+      # github.event.before; the script falls back to CHECK_VERSION_BASE,
+      # PR merge base, or the default branch merge base when it's empty
+      # or the all-zeros sha) through head, and passes when the range's
+      # head version is numerically newer than the base version — so a
+      # push that ends on a non-bumping PRD task commit is no longer a
+      # false negative. fetch-depth: 0 above is required because the
+      # base sha (and merge base) must exist in the local object store.
       - name: version bump check
-        run: bash scripts/check-version-bump.sh HEAD^
+        run: bash scripts/check-version-bump.sh "${{ github.event.before }}"
 
       # 2026-10-07 — internal-ref leak audit, promoted from release-time
       # only to every push/PR for earlier feedback.
