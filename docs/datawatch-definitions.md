@@ -1394,6 +1394,17 @@ Project Profile names), closing the one gap between cluster mode and
 worktree mode's own branch handling. See "PRD Git-Worktree Isolation +
 Completion PR" in `docs/operations.md`.
 
+**Automation** — a named group of Automata (PRDs) wired together as
+members with per-outcome next-step edges (`on_complete` / `on_blocked` /
+`on_failed`), starting at a single entry member and advancing a single
+current member (the cursor) as members finish or fail. It is a distinct
+tier *above* the Automaton: an Automaton is one autonomous PRD
+(stories → tasks); an Automation is a group of Automata plus the edges
+deciding which member runs next. For now it is stored data only — records
+are CRUD-ed and persisted (`automations.jsonl`, managed via REST
+`/api/automations` and MCP `automation_*` tools) but no execution loop
+consumes the edges yet.
+
 ---
 
 ## Core feature reference matrix

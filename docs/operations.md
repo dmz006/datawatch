@@ -517,6 +517,8 @@ signal-cli -u +12125551234 unregister
 | `~/.local/share/signal-cli/` | Signal account keys and identity | Critical — lose this and you must re-link from scratch |
 | `~/.datawatch/logs/` | Session output logs | Nice to have — historical output |
 
+Autonomous Automata state lives as plain JSONL files under the autonomous data directory: `prds.jsonl` (Automata) and, alongside it, `automations.jsonl` (Automations — named groups of Automata with next-step edges). Both are captured automatically by any backup of that directory.
+
 ### Backup command
 
 ```bash
