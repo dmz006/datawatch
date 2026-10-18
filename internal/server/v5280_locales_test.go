@@ -142,6 +142,8 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"plugin_widget_unavailable",
 		"plugin_widget_no_data",
 		"plugin_widget_loading",
+		// v9.5.5 — autonomous settings card field for task_override_statuses.
+		"settings_task_override_statuses",
 	}
 	for _, lang := range requiredLocales {
 		bundle := loadLocaleBundle(t, lang)

@@ -190,7 +190,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "9.5.6"
+var Version = "9.5.7"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -5584,7 +5584,10 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"decomposition_backend": s.cfg.Autonomous.PlanningBackend,
 			"verification_backend":  s.cfg.Autonomous.VerificationBackend,
 			"verification_backends": s.cfg.Autonomous.VerificationBackends,
-			"execution_backend":     s.cfg.Autonomous.ExecutionBackend,
+			// v9.5.5 — render the EFFECTIVE list so an unset value shows the
+			// 4-item default in the PWA rather than an empty field.
+			"task_override_statuses": autonomous.EffectiveTaskOverrideStatuses(s.cfg.Autonomous.TaskOverrideStatuses),
+			"execution_backend":      s.cfg.Autonomous.ExecutionBackend,
 			// BL304: new key + legacy alias.
 			"planning_effort":               s.cfg.Autonomous.PlanningEffort,
 			"decomposition_effort":          s.cfg.Autonomous.PlanningEffort,
@@ -5761,6 +5764,22 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&patch); err != nil {
 		http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
 		return
+	}
+	// v9.5.5 — validate task_override_statuses before anything is applied,
+	// so a bad name rejects the whole PUT instead of storing a partial one.
+	// Accepts the array form and the comma-separated string form the CLI
+	// and comm channel send, mirroring applyConfigPatch.
+	if v, ok := patch["autonomous.task_override_statuses"]; ok {
+		var candidate []string
+		if arr, ok := toStringArray(v); ok {
+			candidate = arr
+		} else if str, ok := v.(string); ok {
+			candidate = splitCSV(str)
+		}
+		if verr := autonomous.ValidateTaskOverrideStatuses(candidate); verr != nil {
+			http.Error(w, "autonomous."+verr.Error(), http.StatusBadRequest)
+			return
+		}
 	}
 	skipped := applyConfigPatch(s.cfg, patch)
 	// BL368 — re-initialize visioner when vision config changes via PUT.
@@ -6939,6 +6958,12 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 				cfg.Autonomous.VerificationBackends = arr
 			} else if s, ok := v.(string); ok {
 				cfg.Autonomous.VerificationBackends = splitCSV(s)
+			}
+		case "autonomous.task_override_statuses":
+			if arr, ok := toStringArray(v); ok {
+				cfg.Autonomous.TaskOverrideStatuses = arr
+			} else if s, ok := v.(string); ok {
+				cfg.Autonomous.TaskOverrideStatuses = splitCSV(s)
 			}
 		case "autonomous.notify.default_events":
 			// Default event kinds the built-in lifecycle sinks subscribe to.

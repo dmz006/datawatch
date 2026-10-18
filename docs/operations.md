@@ -1928,6 +1928,21 @@ curl -sX POST http://localhost:7433/api/autonomous/prds/<id>/set_llm \
   -d '{"guardrail_backend":"ollama","guardrail_model":"qwen3.8:27b"}'
 ```
 
+**Accepted while** — task-level and story-level LLM override calls are
+accepted while the Automaton's status matches one of
+`autonomous.task_override_statuses` (default: `needs_review`,
+`revisions_asked`, `cancelled`, `blocked` — v9.5.5 adds `blocked`:
+repointing the next retry's LLM on a blocked Automaton used to be refused with
+`status "blocked" is locked`). Change the set with
+`datawatch config set autonomous.task_override_statuses blocked,running`
+(or REST `PUT /api/config {"autonomous.task_override_statuses":["blocked","running"]}`,
+MCP `autonomous_config_set`, or comm channel
+`configure autonomous.task_override_statuses=blocked,running`). Unknown
+status names are rejected with a 400 that lists the known statuses; an
+empty list restores the 4-item default. Automaton-level overrides (per-Automaton
+`set_llm`, per-Automaton guardrail / verification LLM) are not affected by this
+setting and remain locked to the 3 pre-Run statuses.
+
 **Verification LLM** — `verification_backend` / `verification_model` /
 `verification_effort` choose the LLM that verifies a task's work, per
 task, per story or per Automaton. Resolution: task → story → Automaton

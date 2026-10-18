@@ -89,6 +89,10 @@ type Config struct {
 	// before persisting — omitempty here would elide an explicit clear
 	// from that marshal, silently reverting it on the next load.
 	VerificationBackends []string `json:"verification_backends"`
+	// TaskOverrideStatuses (v9.5.5) — PRD statuses that accept task-level and
+	// story-level LLM overrides. Empty = default; see config.AutonomousConfig's doc comment.
+	// No omitempty, same round-trip reason as VerificationBackends.
+	TaskOverrideStatuses []string `json:"task_override_statuses"`
 	StaleTaskSeconds     int      `json:"stale_task_seconds,omitempty"`
 	AutoFixRetries       int      `json:"auto_fix_retries,omitempty"`
 
@@ -2610,15 +2614,16 @@ func (m *Manager) RecordTaskAttemptCommit(prdID, taskID, sha string) error {
 // SetStoryLLM (BL381) lets the operator override a story's worker LLM
 // (backend / effort / model). All tasks in this story inherit these
 // values unless overridden at the task level. Empty string clears the
-// override (falls back to PRD-level then global). Allowed in
-// needs_review / revisions_asked only.
+// override (falls back to PRD-level then global). Accepted-while is
+// governed by autonomous.task_override_statuses (default: needs_review /
+// revisions_asked / cancelled / blocked).
 func (m *Manager) SetStoryLLM(prdID, storyID, backend, effort, model, actor string) (*PRD, error) {
 	prd, ok := m.store.GetPRD(prdID)
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
 	}
-	if prd.Status != PRDNeedsReview && prd.Status != PRDRevisionsAsked && prd.Status != PRDCancelled {
-		return nil, fmt.Errorf("prd %q status %q is locked; only needs_review / revisions_asked / cancelled accept LLM overrides", prdID, prd.Status)
+	if err := m.taskOverrideLocked(prd, prdID); err != nil {
+		return nil, err
 	}
 	found := false
 	for i := range prd.Story {
@@ -2648,16 +2653,17 @@ func (m *Manager) SetStoryLLM(prdID, storyID, backend, effort, model, actor stri
 
 // SetTaskLLM (BL203, v5.4.0) lets the operator override a task's
 // worker LLM (backend / effort / model) before approval. Empty string
-// clears the override (falls back to story-level then PRD-level then global). Allowed
-// in needs_review / revisions_asked only — once approved or running
-// the worker is locked in.
+// clears the override (falls back to story-level then PRD-level then global).
+// Accepted-while is governed by autonomous.task_override_statuses (default:
+// needs_review / revisions_asked / cancelled / blocked); outside those
+// statuses the worker is locked in.
 func (m *Manager) SetTaskLLM(prdID, taskID, backend, effort, model, actor string) (*PRD, error) {
 	prd, ok := m.store.GetPRD(prdID)
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
 	}
-	if prd.Status != PRDNeedsReview && prd.Status != PRDRevisionsAsked && prd.Status != PRDCancelled {
-		return nil, fmt.Errorf("prd %q status %q is locked; only needs_review / revisions_asked / cancelled accept LLM overrides", prdID, prd.Status)
+	if err := m.taskOverrideLocked(prd, prdID); err != nil {
+		return nil, err
 	}
 	found := false
 	for si := range prd.Story {
@@ -2694,14 +2700,14 @@ func (m *Manager) SetTaskLLM(prdID, taskID, backend, effort, model, actor string
 // task's per-task guardrail judge. Presence-aware: a nil pointer leaves
 // that field unchanged; a pointer to "" clears it so resolution falls
 // back to the PRD-level then global guardrail_backend/guardrail_model.
-// Same lock rule as SetTaskLLM.
+// Same accepted-while rule as SetTaskLLM (autonomous.task_override_statuses).
 func (m *Manager) SetTaskGuardrailLLM(prdID, taskID string, backend, model *string, actor string) (*PRD, error) {
 	prd, ok := m.store.GetPRD(prdID)
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
 	}
-	if prd.Status != PRDNeedsReview && prd.Status != PRDRevisionsAsked && prd.Status != PRDCancelled {
-		return nil, fmt.Errorf("prd %q status %q is locked; only needs_review / revisions_asked / cancelled accept LLM overrides", prdID, prd.Status)
+	if err := m.taskOverrideLocked(prd, prdID); err != nil {
+		return nil, err
 	}
 	var task *Task
 	for si := range prd.Story {
@@ -2942,6 +2948,77 @@ func verificationLLMLocked(prd *PRD) error {
 	return nil
 }
 
+// taskOverrideStatusesKnown is the PRD status set a
+// task_override_statuses list may name (the models.go PRDStatus constants).
+var taskOverrideStatusesKnown = []string{
+	string(PRDDraft), string(PRDPlanning), string(PRDNeedsReview), string(PRDApproved),
+	string(PRDRevisionsAsked), string(PRDActive), string(PRDRunning), string(PRDCompleted), string(PRDRejected),
+	string(PRDCancelled), string(PRDArchived), string(PRDBlocked), string(PRDFailed),
+	string(PRDPaused),
+}
+
+// TaskOverrideStatusesKnown returns the 14 PRD status names a
+// task_override_statuses list may name (the models.go status constants).
+func TaskOverrideStatusesKnown() []string {
+	return append([]string(nil), taskOverrideStatusesKnown...)
+}
+
+// TaskOverrideStatusValid reports whether s is a known PRD status name.
+func TaskOverrideStatusValid(s string) bool {
+	for _, k := range taskOverrideStatusesKnown {
+		if s == k {
+			return true
+		}
+	}
+	return false
+}
+
+// TaskOverrideStatusesDefault — v9.5.5 default accepted-while list: the
+// pre-existing pre-Run trio plus blocked. A blocked PRD is
+// operator-held and unblocking it usually starts with re-pointing the
+// next retry's LLM, which used to be refused with
+// `status "blocked" is locked`.
+func TaskOverrideStatusesDefault() []string {
+	return []string{string(PRDNeedsReview), string(PRDRevisionsAsked), string(PRDCancelled), string(PRDBlocked)}
+}
+
+// EffectiveTaskOverrideStatuses resolves the empty-list-means-default
+// convention: non-empty lists are returned verbatim (copy), empty/nil
+// lists return the default 4.
+func EffectiveTaskOverrideStatuses(list []string) []string {
+	if len(list) == 0 {
+		return TaskOverrideStatusesDefault()
+	}
+	return append([]string(nil), list...)
+}
+
+// ValidateTaskOverrideStatuses reports the first unknown name and the
+// known set. Empty list is VALID (= revert to defaults). Error must be
+// exactly the shape (so every surface returns the same message).
+func ValidateTaskOverrideStatuses(list []string) error {
+	for _, s := range list {
+		if !TaskOverrideStatusValid(s) {
+			return fmt.Errorf("task_override_statuses: unknown PRD status %q (known: %s)",
+				s, strings.Join(taskOverrideStatusesKnown, ", "))
+		}
+	}
+	return nil
+}
+
+// taskOverrideLocked enforces the configurable accepted-while rule for
+// task-level and story-level LLM override calls (v9.5.5). PRD-level
+// overrides keep using verificationLLMLocked / their inline checks.
+func (m *Manager) taskOverrideLocked(prd *PRD, prdID string) error {
+	eff := EffectiveTaskOverrideStatuses(m.cfg.TaskOverrideStatuses)
+	for _, s := range eff {
+		if s == string(prd.Status) {
+			return nil
+		}
+	}
+	return fmt.Errorf("prd %q status %q is locked; only %s accept LLM overrides (autonomous.task_override_statuses)",
+		prdID, prd.Status, strings.Join(eff, " / "))
+}
+
 // applyVerificationLLM writes the presence-aware overrides onto the
 // three fields: a nil pointer leaves the field unchanged; a pointer to
 // "" clears it so resolution falls back to the next level.
@@ -2961,8 +3038,8 @@ func applyVerificationLLM(dstBackend, dstModel *string, dstEffort *Effort, backe
 // for one task (most specific level; see ResolveVerificationLLM).
 // Presence-aware: a nil pointer leaves that field unchanged; a pointer
 // to "" clears it so resolution falls back to the story, then the
-// Automaton, then the global verification_* config. Same lock rule as
-// SetTaskLLM.
+// Automaton, then the global verification_* config. Same accepted-while
+// rule as SetTaskLLM (autonomous.task_override_statuses).
 func (m *Manager) SetTaskVerificationLLM(prdID, taskID string, backend, model, effort *string, actor string) (*PRD, error) {
 	if effort != nil && !validVerificationEffort(*effort) {
 		return nil, fmt.Errorf("invalid verification effort %q", *effort)
@@ -2971,7 +3048,7 @@ func (m *Manager) SetTaskVerificationLLM(prdID, taskID string, backend, model, e
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
 	}
-	if err := verificationLLMLocked(prd); err != nil {
+	if err := m.taskOverrideLocked(prd, prdID); err != nil {
 		return nil, err
 	}
 	var task *Task
@@ -3007,8 +3084,8 @@ func (m *Manager) SetTaskVerificationLLM(prdID, taskID string, backend, model, e
 // SetStoryVerificationLLM overrides the verifier backend/model/effort
 // for every task in one story that has no task-level override.
 // Presence-aware like SetTaskVerificationLLM; "" falls back to the
-// Automaton then the global verification_* config. Same lock rule as
-// SetTaskLLM.
+// Automaton then the global verification_* config. Same accepted-while
+// rule as SetTaskLLM (autonomous.task_override_statuses).
 func (m *Manager) SetStoryVerificationLLM(prdID, storyID string, backend, model, effort *string, actor string) (*PRD, error) {
 	if effort != nil && !validVerificationEffort(*effort) {
 		return nil, fmt.Errorf("invalid verification effort %q", *effort)
@@ -3017,7 +3094,7 @@ func (m *Manager) SetStoryVerificationLLM(prdID, storyID string, backend, model,
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
 	}
-	if err := verificationLLMLocked(prd); err != nil {
+	if err := m.taskOverrideLocked(prd, prdID); err != nil {
 		return nil, err
 	}
 	var story *Story
@@ -3048,7 +3125,7 @@ func (m *Manager) SetStoryVerificationLLM(prdID, storyID string, backend, model,
 // SetPRDVerificationLLM overrides the Automaton-level verifier
 // backend/model/effort. Presence-aware like SetTaskVerificationLLM; ""
 // falls back to the global verification_* config. Same lock rule as
-// SetTaskLLM.
+// SetPRDLLM.
 func (m *Manager) SetPRDVerificationLLM(prdID string, backend, model, effort *string, actor string) (*PRD, error) {
 	if effort != nil && !validVerificationEffort(*effort) {
 		return nil, fmt.Errorf("invalid verification effort %q", *effort)

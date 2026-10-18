@@ -217,6 +217,19 @@ func (a *API) SetConfig(v any) error {
 	// on every partial update. Starting from the current config makes an
 	// omitted field mean "leave as-is", matching what every caller of a
 	// partial update actually expects.
+	// v9.5.5 — reject unknown task_override_statuses names before any
+	// merge. Both REST (PUT /api/autonomous/config) and MCP
+	// autonomous_config_set land here, so one probe covers both. A
+	// non-pointer slice means "absent" stays nil and passes; an explicit
+	// [] is valid and reverts to the defaults.
+	var probe struct {
+		TaskOverrideStatuses []string `json:"task_override_statuses"`
+	}
+	if err := json.Unmarshal(raw, &probe); err == nil {
+		if verr := ValidateTaskOverrideStatuses(probe.TaskOverrideStatuses); verr != nil {
+			return verr
+		}
+	}
 	cfg := a.M.Config()
 	if err := json.Unmarshal(raw, &cfg); err != nil {
 		return fmt.Errorf("config: %w", err)
