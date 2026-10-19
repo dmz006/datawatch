@@ -207,6 +207,10 @@ func (b *Backend) buildRunCmd(escapedDir, task, tmuxSession string) string {
 		escapedDir, b.binary, standaloneFlag, escaped)
 }
 
+// Launch starts a fresh opencode session. The typed command is delivered
+// via the shared llm.SendKeys helper: the shared MaxSendKeysCommand
+// length guard applies and a tmux failure carries its stderr text in the
+// returned error instead of a bare "exit status 1".
 func (b *Backend) Launch(ctx context.Context, task, tmuxSession, projectDir, logFile string) error {
 	escapedDir := strings.ReplaceAll(projectDir, "'", `'\''`)
 	cmd := b.buildRunCmd(escapedDir, task, tmuxSession)

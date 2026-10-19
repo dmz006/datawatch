@@ -145,7 +145,10 @@ func buildInteractiveCmd(binary, model, sessionID, task, projectDir, tmuxSession
 
 // Launch starts a fresh interactive pi session. If SetSessionName was
 // called first, that name is used as pi's --session-id so a later
-// LaunchResume with the same ID reattaches to it.
+// LaunchResume with the same ID reattaches to it. The command is
+// delivered via the shared llm.SendKeys helper, so the shared
+// MaxSendKeysCommand length guard applies and a tmux failure surfaces
+// its stderr text in the returned error.
 func (b *Backend) Launch(ctx context.Context, task, tmuxSession, projectDir, logFile string) error {
 	cmd := buildInteractiveCmd(b.binary, b.model, b.sessionName, task, projectDir, tmuxSession)
 	return llm.SendKeys(ctx, tmuxSession, cmd)

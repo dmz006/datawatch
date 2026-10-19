@@ -80,5 +80,11 @@ func (b *Backend) Launch(ctx context.Context, task, tmuxSession, projectDir, log
 			cmd = fmt.Sprintf("cd '%s' && PROMPT_COMMAND='' PS1='datawatch:\\w$ ' %s --norc", escapedDir, shell)
 		}
 	}
+	// Delivery goes through the shared llm.SendKeys helper: a tmux failure
+	// carries tmux's own stderr text in the returned error (not a bare
+	// exit status), and the shared MaxSendKeysCommand guard is the
+	// explicit length check for this branch's intentionally inline forms
+	// (the interactive echo-of-task and the script argv) — oversize
+	// commands are rejected up front, so nothing is ever sent to tmux.
 	return llm.SendKeys(ctx, tmuxSession, cmd)
 }

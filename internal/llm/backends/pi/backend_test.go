@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -364,6 +365,52 @@ func TestLaunch_TmuxStderrSurfacesInError(t *testing.T) {
 			}
 			if !strings.Contains(err.Error(), want) {
 				t.Errorf("error must carry tmux stderr %q, got: %v", want, err)
+			}
+			// The "tmux send-keys" wrapper only exists in llm.SendKeys' error
+			// path — this proves the call went through the shared helper
+			// rather than a bare exec.Command("tmux", ...).
+			if !strings.Contains(err.Error(), "tmux send-keys") {
+				t.Errorf("error must be wrapped by the shared llm.SendKeys helper (\"tmux send-keys\"), got: %v", err)
+			}
+		})
+	}
+}
+
+// TestLaunch_SendKeysLengthGuardApplies pins the second shared-helper
+// guarantee at these call sites: commands longer than
+// llm.MaxSendKeysCommand bytes are rejected up front with a clear error
+// naming the limit, and nothing is exec'd at all — no fake tmux is placed
+// on PATH in this test, so any stray exec would fail differently. No fake
+// tmux server is ever involved.
+func TestLaunch_SendKeysLengthGuardApplies(t *testing.T) {
+	// Oversize via the project dir, which both the interactive and
+	// one-shot command builders inline (`cd '...'`), even though the task
+	// text itself may go through a scratch file.
+	hugeDir := strings.Repeat("p", llm.MaxSendKeysCommand+1000)
+	cases := []struct {
+		name string
+		fn   func() error
+	}{
+		{"Launch", func() error { return New("pi").Launch(context.Background(), "task", "cs-guard", hugeDir, "") }},
+		{"LaunchResume", func() error {
+			return New("pi").(*Backend).LaunchResume(context.Background(), "task", "cs-guard", hugeDir, "", "res-1")
+		}},
+		{"PromptLaunch", func() error { return NewPrompt("pi").Launch(context.Background(), "task", "cs-guard", hugeDir, "") }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.fn()
+			if err == nil {
+				t.Fatal("expected the shared length guard to reject the oversize command")
+			}
+			if !strings.Contains(err.Error(), "command too long") {
+				t.Errorf("expected a \"command too long\" guard error, got: %v", err)
+			}
+			if !strings.Contains(err.Error(), strconv.Itoa(llm.MaxSendKeysCommand)) {
+				t.Errorf("guard error must name the %d-byte limit, got: %v", llm.MaxSendKeysCommand, err)
+			}
+			if strings.Contains(err.Error(), "tmux send-keys") {
+				t.Errorf("guard rejection happens before any exec, so no exec error should be present, got: %v", err)
 			}
 		})
 	}
