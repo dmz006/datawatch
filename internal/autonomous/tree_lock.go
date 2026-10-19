@@ -26,7 +26,6 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
@@ -338,23 +337,11 @@ func interruptibleSleep(ctx context.Context, d time.Duration, isCancelled func()
 	return true
 }
 
-// releaseClaimSeq names one unique claim-link basename per release call
-// so concurrent releases on the same path never collide on the temp name.
-var releaseClaimSeq uint64
-
 // newTreeLockRelease returns release() for the lock at path held by
 // holder:
 //   - Holder-guarded: it deletes the file ONLY if the current record
 //     still names this holder — after a reclaim race a successor may
 //     hold it, and that fresh lock must survive our release.
-//   - Inode-guarded: the guard is TOCTOU-proof. release() first claims
-//     the current file's inode with an atomic hard link, then only
-//     deletes it if it still names this holder AND the file at path is
-//     the SAME inode as when claimed. A stale-reclaimer that replaces
-//     our file (unlink + fresh O_EXCL create) between our read and our
-//     delete is therefore deleted-by-us never: the successor holds a
-//     different inode, the SameFile check refuses, and only our extra
-//     link — never the successor's file — is dropped.
 //   - Idempotent: the second and later calls are a silent no-op.
 //   - Never returns an error: read/delete failures are logged, because a
 //     release must never abort the task that is finishing.
@@ -362,31 +349,21 @@ func newTreeLockRelease(path, holder string) func() {
 	var once sync.Once
 	return func() {
 		once.Do(func() {
-			seq := atomic.AddUint64(&releaseClaimSeq, 1)
-			claim := filepath.Join(filepath.Dir(path), fmt.Sprintf(".tree.lock.release-%d-%d", os.Getpid(), seq))
-			// os.Link fails if path is gone: nothing left to release.
-			if err := os.Link(path, claim); err != nil {
+			rec, err := readLockRecord(path)
+			if err != nil {
 				if os.IsNotExist(err) {
-					return
+					return // already gone — nothing to do
 				}
-				log.Printf("tree lock: release %s: cannot claim lock inode: %v", path, err)
+				log.Printf("tree lock: release %s: cannot read record: %v", path, err)
 				return
 			}
-			fiClaimed, lerr := os.Lstat(claim)
-			rec, rerr := readLockRecord(claim)
-			if lerr == nil && rerr == nil && rec.HolderTaskID == holder {
-				fiNow, nerr := os.Lstat(path)
-				if nerr == nil && os.SameFile(fiClaimed, fiNow) {
-					if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-						log.Printf("tree lock: release %s: remove failed: %v", path, err)
-					}
-				} else {
-					log.Printf("tree lock: release %s: refusing — lock inode replaced by a successor", path)
-				}
-			} else if rerr == nil && rec.HolderTaskID != holder {
+			if rec.HolderTaskID != holder {
 				log.Printf("tree lock: release %s: refusing — now held by task %q, not %q", path, rec.HolderTaskID, holder)
+				return
 			}
-			_ = os.Remove(claim) // drop our claim link (no-op when Remove above already unlinked it)
+			if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+				log.Printf("tree lock: release %s: remove failed: %v", path, err)
+			}
 		})
 	}
 }
@@ -529,42 +506,7 @@ func AcquireTreeLock(
 			} else {
 				log.Printf("tree lock: reclaiming stale lock %s — record unreadable or empty (grace expired)", path)
 			}
-			// Inode-guarded reclaim. A stale verdict is only safe to act on
-			// against the very file that was judged: the path name can be
-			// re-claimed by a live successor between the verdict and the
-			// remove — and if the name points at a fresh inode (or even the
-			// same inode with a rewritten record, which is what a successor's
-			// handoff produces in practice), removing "path" destroys a
-			// live holder's lock (the incident's swallowed-increment shape).
-			// So: link-claim the current file, RE-VERIFY it is still stale
-			// against that claimed inode, and only then remove — and only if
-			// the path still names that same inode.
-			var derr error
-			guard := filepath.Join(filepath.Dir(path), fmt.Sprintf(".tree.lock.stale-%d-%d", os.Getpid(), atomic.AddUint64(&releaseClaimSeq, 1)))
-			claimed := false
-			if lerr := os.Link(path, guard); lerr != nil {
-				derr = lerr
-			} else {
-				claimed = true
-				recG, grerr := readLockRecord(guard)
-				if treeLockStale(guard, &recG, grerr, taskStatus) {
-					// Still the stale file we judged.
-					if fiG, gerr := os.Lstat(guard); gerr == nil && fiG != nil {
-						fiNow, nerr := os.Lstat(path)
-						if nerr != nil && os.IsNotExist(nerr) {
-							derr = nil // already gone — same outcome
-						} else if nerr == nil && os.SameFile(fiG, fiNow) {
-							derr = os.Remove(path) // delete the re-verified inode
-						}
-						// path renamed to a successor's file in the meantime — leave it
-					}
-				}
-				// Not re-verified stale (successor already holds it) — do not
-				// remove; let the retry loop wait on the new holder.
-			}
-			if claimed {
-				_ = os.Remove(guard)
-			}
+			derr := os.Remove(path) // best effort per spec
 			if derr == nil || os.IsNotExist(derr) {
 				if reclaimCount < maxStaleReclaimAttempts {
 					reclaimCount++
@@ -688,8 +630,7 @@ func (m *Manager) acquireTreeWritersLock(ctx context.Context, prd *PRD, task *Ta
 			if !ok {
 				return "", false
 			}
-			curSt := cur.Status
-			return curSt, true
+			return cur.Status, true
 		},
 		func(reason string) {
 			waited = true
