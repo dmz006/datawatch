@@ -309,16 +309,17 @@ requirement (open question 19).
   no project directory first. A lane may sit idle only with a named blocker in the report.
   Recreating PRDs: a draft created from the command line gets the working directory as its
   project directory, so create drafts through MCP with the project directory left empty.
-- **Local GPU lane idle, root cause (2026-10-19).** The local node johnnyjohnny ran nothing
-  for most of a day while its 64k model was resident and the lane was defined. The LLM
-  registry lists qwen3.8-64k:27b only on the datawatch node, so every local-model PRD
-  routed to node datawatch and queued behind it. The lane was defined on paper but had no
-  route. Lesson: a lane is defined by its node and its model, and both must be bound in the
-  registry. Each tick must check that every defined lane has a route: the model appears under
-  its node in `datawatch llm list`, and a freshly pinned PRD lands on that node in
-  `datawatch capacity`. A lane with no route is a blocker to name, not an idle state to report.
-  Lanes, defined: datawatch GPU = node datawatch, ollama-datawatch/qwen3.8-64k:27b;
-  local GPU = node johnnyjohnny, ollama-johnnyjohnny/qwen3.8-64k:27b (binding pending);
+- **Lane idle diagnosis corrected (2026-10-19).** A first diagnosis said the local GPU lane
+  was idle because the LLM registry did not bind the 64k model to its node. That was wrong.
+  Both machines serve the 64k model. The local machine (johnnyjohnny, 127.0.1.1) does the
+  PRD work: the pi sessions and the daemon connect to its Ollama. The pool the capacity
+  report labels "datawatch" holds the work that actually runs here, so the labels do not
+  match the traffic. The remote machine datawatch (100.64.0.20) gets no PRD traffic, so it
+  is the GPU that is really idle. Lesson: judge a lane by the live connections to its
+  Ollama port (`ss -tnp | grep 11434`) and its model residency (`ollama ps` on each machine),
+  not by the capacity labels alone. Each tick checks both before calling a lane idle.
+  Lanes, defined: GPU lane A = this machine (johnnyjohnny), qwen3.8-64k:27b;
+  GPU lane B = remote datawatch (100.64.0.20), qwen3.8-64k:27b, no traffic yet;
   Claude 1 and Claude 2 = claude-code, two lanes only.
 - **Plan check against the original spec.** A rewritten or shortened spec can drop test
   requirements, so compare the decomposed plan with the original request and add missing
