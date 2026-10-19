@@ -3,9 +3,14 @@
 All notable changes to datawatch will be documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## Unreleased
+## [Unreleased]
 
 Automatic commits made after an automated task now use the task's title as their subject, and the commit body lists the files changed and the verification result. Snapshot commits made before a task starts now name the PRD and the purpose of the snapshot instead of repeating the worker prompt.
+
+## v9.5.26 — autonomous: honor each backend's delivery mode when typing waiting tasks into tmux
+
+- **One-shot “send the task and wait for it to finish” sessions (pi --print, goose --print, aider) no longer get a second copy of the task typed into their shell (send_input)** — the daemon now asks each backend whether it accepts interactive input before typing a waiting task into the pane, so a backend that only takes its task once, at launch, can never be typed into, even if it is a brand-new backend never added to a list.
+- **Interactive backends (e.g. goose) are unchanged** — waiting one-shot tasks still go to them as before.
 
 ## v9.5.24 — a retried task whose work already landed is judged by its own verification script
 
