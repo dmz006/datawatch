@@ -398,3 +398,98 @@ func TestCapacity_BootResumeReadoptsLiveTaskLease(t *testing.T) {
 		t.Fatalf("lease of ended session not reaped, got %v", rel)
 	}
 }
+
+// localEngineKeys mirrors cmd/datawatch's keys function: a local-engine
+// session takes its provider's node pool, a hosted-backend session takes none.
+func localEngineKeys(backend, model string) ([]string, string) {
+	pools := []string{"host"}
+	node, gated := LocalEngineGate(backend, model, func(provider string) (string, bool) {
+		if provider == "ollama" {
+			return "alpha", true
+		}
+		return "", false
+	})
+	if gated {
+		pools = append(pools, "node:"+node)
+	}
+	return pools, node
+}
+
+func capFixtureLocalEngine(t *testing.T) (*Manager, *API, *capacity.Ledger) {
+	t.Helper()
+	m, api, _, _ := apiFixture(t)
+	led := capacity.New(capacity.Options{PollInterval: 10 * time.Millisecond})
+	led.SetLimit("node:alpha", 1)
+	m.SetCapacity(led, localEngineKeys)
+	return m, api, led
+}
+
+func newPRDOnBackend(t *testing.T, m *Manager, backend, model string) *PRD {
+	t.Helper()
+	prd, _ := m.CreatePRD("s", "/w/proj", backend, model, EffortNormal)
+	_ = m.Store().SetStories(prd.ID, []Story{{Title: "S", Tasks: []Task{{Title: "T0", Spec: "write docs/x.md"}}}})
+	got, _ := m.Store().GetPRD(prd.ID)
+	got.MaxConcurrentTasks = 1
+	_ = m.Store().SavePRD(got)
+	return got
+}
+
+func TestCapacity_LocalEngineTaskWaitsOnNodePool(t *testing.T) {
+	m, api, led := capFixtureLocalEngine(t)
+	_ = led.Acquire(context.Background(), capacity.Request{Holder: "other", PRDID: "other", Pools: []string{"node:alpha"}}, time.Second, nil, nil)
+	spawned := int32(0)
+	spawn := func(_ context.Context, r SpawnRequest) (SpawnResult, error) {
+		atomic.AddInt32(&spawned, 1)
+		return SpawnResult{SessionID: "s"}, nil
+	}
+	verify := func(context.Context, *PRD, *Task) (VerificationResult, error) {
+		return VerificationResult{OK: true}, nil
+	}
+	api.SetExecutors(spawn, verify)
+	time.Sleep(100 * time.Millisecond)
+	prd := newPRDOnBackend(t, m, "pi", "ollama/qwen3.8:27b")
+	p, _ := m.Store().GetPRD(prd.ID)
+	p.Status = PRDApproved
+	_ = m.Store().SavePRD(p)
+	if err := api.Run(prd.ID); err != nil {
+		t.Fatal(err)
+	}
+	var reason string
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		cur, _ := m.Store().GetPRD(prd.ID)
+		if tk := cur.Story[0].Tasks[0]; tk.Status == TaskWaitingCapacity {
+			reason = tk.WaitReason
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if reason == "" || atomic.LoadInt32(&spawned) != 0 {
+		t.Fatalf("local-engine task should wait on node:alpha with no spawn (reason=%q spawned=%d)", reason, spawned)
+	}
+	led.Release("other")
+	if got := runWait(t, m, prd.ID); got.Status != PRDCompleted {
+		t.Fatalf("after node:alpha frees the task must complete, got %s", got.Status)
+	}
+}
+
+func TestCapacity_HostedTaskNeverWaitsOnNodePool(t *testing.T) {
+	m, api, led := capFixtureLocalEngine(t)
+	_ = led.Acquire(context.Background(), capacity.Request{Holder: "other", PRDID: "other", Pools: []string{"node:alpha"}}, time.Second, nil, nil)
+	spawned := int32(0)
+	spawn := func(_ context.Context, r SpawnRequest) (SpawnResult, error) {
+		atomic.AddInt32(&spawned, 1)
+		return SpawnResult{SessionID: "s"}, nil
+	}
+	verify := func(context.Context, *PRD, *Task) (VerificationResult, error) {
+		return VerificationResult{OK: true}, nil
+	}
+	prd := newPRDOnBackend(t, m, "claude-code", "claude-sonnet-5-5")
+	if got := runToTerminal(t, m, api, prd.ID, spawn, verify); got.Status != PRDCompleted {
+		t.Fatalf("hosted task must not wait on node:alpha, got %s", got.Status)
+	}
+	if atomic.LoadInt32(&spawned) != 1 {
+		t.Fatalf("hosted task should spawn once, spawned=%d", spawned)
+	}
+	led.Release("other")
+}

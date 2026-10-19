@@ -1104,7 +1104,7 @@ func (m *Manager) Decompose(prdID string) (*PRD, error) {
 		if prd.LastDecomposeFailure != nil {
 			attemptPrompt += fmt.Sprintf("\n\nYour previous attempt failed: %s\nFix this in your next response.", prd.LastDecomposeFailure.Detail)
 		}
-		r, derr := m.decompose(DecomposeRequest{Spec: attemptPrompt, Backend: backend, Effort: effort, Model: planModel, ProjectDir: prd.ProjectDir, ScopeBlock: ScopeBlock(prd), PRDID: prd.ID, TimeoutSeconds: m.cfg.PlanningTimeoutSeconds})
+		r, derr := m.decomposeAdmitted(prd, backend, planModel, DecomposeRequest{Spec: attemptPrompt, Backend: backend, Effort: effort, Model: planModel, ProjectDir: prd.ProjectDir, ScopeBlock: ScopeBlock(prd), PRDID: prd.ID, TimeoutSeconds: m.cfg.PlanningTimeoutSeconds})
 		if derr != nil {
 			if isOneShotNoOutput(derr) {
 				if m.noteDecomposeSessionFailure(prd, backend, planModel, derr) {
@@ -1296,7 +1296,7 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (*PRD, 
 		if prd.LastDecomposeFailure != nil {
 			attemptPrompt += fmt.Sprintf("\n\nYour previous attempt failed: %s\nFix this in your next response.", prd.LastDecomposeFailure.Detail)
 		}
-		r, derr := m.decompose(DecomposeRequest{Spec: attemptPrompt, Backend: backend, Effort: effort, Model: planModel2, ProjectDir: prd.ProjectDir, ScopeBlock: ScopeBlock(prd), PRDID: prd.ID, TimeoutSeconds: m.cfg.PlanningTimeoutSeconds})
+		r, derr := m.decomposeAdmitted(prd, backend, planModel2, DecomposeRequest{Spec: attemptPrompt, Backend: backend, Effort: effort, Model: planModel2, ProjectDir: prd.ProjectDir, ScopeBlock: ScopeBlock(prd), PRDID: prd.ID, TimeoutSeconds: m.cfg.PlanningTimeoutSeconds})
 		if derr != nil {
 			if isOneShotNoOutput(derr) {
 				if m.noteDecomposeSessionFailure(prd, backend, planModel2, derr) {

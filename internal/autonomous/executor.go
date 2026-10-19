@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dmz006/datawatch/internal/capacity"
 	"github.com/dmz006/datawatch/internal/metrics"
 	"github.com/dmz006/datawatch/internal/pipeline"
 	"github.com/dmz006/datawatch/internal/tooling"
@@ -998,7 +999,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				contextPrepend = m.contextFn(prd.Type)
 			}
 			m.mu.Unlock()
-			if aerr := m.admit(ctx, prd, t, backend, model); aerr != nil {
+			if aerr := m.admit(ctx, prd, t, backend, model, capacity.RoleWorker); aerr != nil {
 				if errors.Is(aerr, errCancelledWhileWaiting) {
 					return nil
 				}
