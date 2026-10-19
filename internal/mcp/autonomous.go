@@ -7,7 +7,9 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
+	"net/url"
 
 	mcpsdk "github.com/mark3labs/mcp-go/mcp"
 )
@@ -246,8 +248,11 @@ func (s *Server) handleAutonomousPRDCreate(_ context.Context, req mcpsdk.CallToo
 
 func (s *Server) toolAutonomousPRDGet() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_prd_get",
-		mcpsdk.WithDescription("Fetch one automaton with its story+task tree. "+
-			"When the ci-watch completion guardrail ran, the response includes ci_watch {status, sha, repo, runs[], summary, issues, checked_at}. "+
+		mcpsdk.WithDescription("Fetch one automaton. The detail argument picks how much comes back; the default is summary. "+
+			"summary: ids, titles, statuses and counts for the automaton, its stories and its tasks. "+
+			"tasks: everything in summary, plus each task's status, error and verification summary. "+
+			"full: everything, including specs and logs. "+
+			"When the ci-watch completion guardrail ran, the response includes ci_watch {status, sha, repo, runs[], summary, issues, checked_at} at every detail level. "+
 			"status: skipped = nothing to watch (HEAD not pushed yet, origin not GitHub, not a git repository, or the gh CLI is missing; summary says which); "+
 			"pass = every CI run for the pushed commit succeeded; "+
 			"pending = runs were still unfinished when ci_watch_timeout_seconds elapsed, so CI is unconfirmed; "+
@@ -260,15 +265,23 @@ func (s *Server) toolAutonomousPRDGet() mcpsdk.Tool {
 			"To resume a blocked automaton: commit your decision (fix, upgrade, or accepted-risk entry) to the repo first, "+
 			"then autonomous_prd_reset_task with force=true on the task that pushed, then autonomous_prd_run; "+
 			"ci-watch then watches the new commit's CI. If you finished the work by hand, leave it blocked as the record or autonomous_prd_cancel it. "+
-			"Each task may carry foreign_file_drift: a list of files the task's own commit swept in that were already uncommitted before the task started and were not in its planned files. "+
+			"Each task may carry foreign_file_drift (full detail only; summary and tasks omit it): a list of files the task's own commit swept in that were already uncommitted before the task started and were not in its planned files. "+
 			"This is warn-only (the task still completes) unless block_on_file_drift is on for the automaton, its guardrail profile, or the daemon, in which case the task is blocked; worktree-mode automata are never checked. "+
 			"Each finding is also recorded in the decision log with kind file_drift_detected."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
+		mcpsdk.WithString("detail", mcpsdk.Enum("summary", "tasks", "full"),
+			mcpsdk.Description("Response level: summary (default), tasks, or full. See the tool description for what each level returns.")),
 	)
 }
 func (s *Server) handleAutonomousPRDGet(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	id := req.GetString("id", "")
-	out, err := s.proxyGet("/api/autonomous/prds/"+id, nil)
+	detail := req.GetString("detail", "summary")
+	switch detail {
+	case "summary", "tasks", "full":
+	default:
+		return mcpsdk.NewToolResultError(fmt.Sprintf("detail must be one of summary, tasks, full (got %q)", detail)), nil
+	}
+	out, err := s.proxyGet("/api/autonomous/prds/"+id, url.Values{"detail": {detail}})
 	if err != nil {
 		return nil, err
 	}
