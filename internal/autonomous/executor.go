@@ -1284,7 +1284,15 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 	}
 	exhaustedOld := t.Status
 	t.Status = TaskFailed
-	t.Error = "verification failed after retries"
+	// A budget-exhausted task must carry the final failing verdict's output
+	// (summary + issues — e.g. a failed verification script's output) into
+	// Task.Error, not just a bare status: FailureReason.Detail already does,
+	// and Task.Error is where operators look first.
+	if hint != "" {
+		t.Error = "verification failed after retries\n" + hint
+	} else {
+		t.Error = "verification failed after retries"
+	}
 	// BL410 Phase 3 — Learning writer revival: record the final,
 	// budget-exhausted failure for future pattern analysis. Fires once,
 	// here, not on every retry attempt — a transient failure that
