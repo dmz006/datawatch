@@ -1144,7 +1144,9 @@ func (m *Manager) Decompose(prdID string) (*PRD, error) {
 	planOld := prd.Status
 	prd.Status = PRDPlanning
 	prd.UpdatedAt = time.Now()
-	if m.store.SavePRD(prd) == nil {
+	if err := m.store.SavePRD(prd); err != nil {
+		log.Printf("[autonomous] prd=%s: planning-mark save failed: %v", prd.ID, err)
+	} else {
 		m.emitPRDStatus(prd, planOld, nil, nil)
 	}
 
@@ -1345,7 +1347,9 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (*PRD, 
 	planOld := prd.Status
 	prd.Status = PRDPlanning
 	prd.UpdatedAt = time.Now()
-	if m.store.SavePRD(prd) == nil {
+	if err := m.store.SavePRD(prd); err != nil {
+		log.Printf("[autonomous] prd=%s: planning-mark save failed: %v", prd.ID, err)
+	} else {
 		m.emitPRDStatus(prd, planOld, nil, nil)
 	}
 

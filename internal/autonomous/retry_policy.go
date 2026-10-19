@@ -269,9 +269,11 @@ func (m *Manager) failDecomposeAttempt(prd *PRD, source string, cause error) {
 	old := prd.Status
 	prd.Status = PRDDraft
 	prd.UpdatedAt = time.Now()
-	if m.store.SavePRD(prd) == nil {
-		m.emitPRDStatus(prd, old, nil, nil)
+	if err := m.store.SavePRD(prd); err != nil {
+		log.Printf("[autonomous] prd=%s: give-up rollback save failed: %v", prd.ID, err)
+		return
 	}
+	m.emitPRDStatus(prd, old, nil, nil)
 }
 
 // checkPersistedDecompose re-reads the PRD and its stories from the store
