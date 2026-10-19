@@ -711,6 +711,7 @@ can disagree sharply, and the shared ceiling is the real constraint.
 | 2026-10-18 08:00 | weekly limit reset | back on the weekly percent limit, not credits; operator allows one Claude development thread on the backlog in addition to the two GPU threads; the Claude thread's usage is tracked as its own line, apart from supervision |
 | 2026-10-18 ~10:20 | 2% weekly, 8% session, session resets in 2h40m | about two hours of supervision plus the first Claude-lane fix PRDs (Haiku worker, Sonnet verifier); first data point for the Claude-lane line |
 | 2026-10-18 ~14:3x | 4% weekly | this Claude dev-lane session (BL449 pi-switch + BL472 mockup filing below); session stopped here on operator instruction, handed back to the supervisor |
+| 2026-10-18 ~21:05 | 7% weekly | operator-reported to the supervisor (Sonnet 5.5) after the 20:18 tmux loss and recovery; Claude lane running one PRD (stall detector) |
 | 2026-10-18 ~17:00 | 5% weekly; session meter at 15%, session resets in about 50 minutes | operator-reported. One Claude builder thread plus two qwen GPU threads; operator decided to hold at one Claude thread (decision 2026-10-18 17:02) and revisit after a per-PRD cost is measured |
 
 Restricted window: while the weekly ceiling was exhausted, autonomous PRD
