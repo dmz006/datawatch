@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.14 — decompose: depends_on accepts real IDs, sibling titles and positional codes, and bad entries are rejected
+
+- **`depends_on` entries in a decomposed plan are now understood in more than one form:** a real task or story ID, the sibling's title, a positional code like `s1-t2` (task 2 of story 1), `s2` for the second story, or a plain number meaning the Nth story.
+- **Plans with unresolvable dependencies are rejected at store time instead of silently ignoring them.** A `depends_on` entry that matches nothing — including out-of-range positional codes — or a dependency cycle now causes the plan to be rejected, with the exact offending entry reported.
+- **The PRD repair tool (`autonomous_prd_repair_depends_on`) now fixes the same forms in place** and names exactly which entry it cannot resolve, without partially rewriting the plan.
+- Version bump 9.5.13 -> 9.5.14 (cmd/datawatch/main.go + internal/server/api.go kept identical).
+
 ## v9.5.13 — fix(restart): restarts with long task text succeed, and tmux errors are surfaced
 
 - **Restarts of sessions with long task text (above roughly 8 KB) now succeed.** The task is written to a scratch file that the launch command reads, instead of being typed inline.
