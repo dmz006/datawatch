@@ -55,12 +55,24 @@ var ErrVerificationScriptMissing = errors.New("verification script is missing fr
 // internal function it always did; this is a thin exported wrapper, so there
 // is one implementation of the exec behavior in both places.
 func RunVerificationScript(scriptRelPath, projectDir string) (output string, ok bool, err error) {
-	output, exitCode, runErr := runVerificationScript(scriptRelPath, projectDir)
+	output, exitCode, runErr := RunVerificationScriptExit(scriptRelPath, projectDir)
 	if runErr != nil {
 		return output, false, runErr
 	}
 	return output, exitCode == 0, nil
 }
+
+func RunVerificationScriptExit(scriptRelPath, projectDir string) (output string, exitCode int, err error) {
+	return runVerificationScript(scriptRelPath, projectDir)
+}
+
+// RunVerificationScriptExit is the same single execution as
+// RunVerificationScript, for callers that must distinguish "script exists
+// but exited non-zero (code N)" from "runner failed" and report the exact
+// exit code (e.g. a verifier building a failure summary around a retry). An
+// unsafe path, a script file missing from the worktree (err wrapping
+// ErrVerificationScriptMissing), or a bash launch failure all yield
+// exitCode -1 with a non-nil err.
 
 // runVerificationScript executes scriptRelPath (relative to projectDir)
 // with bash, cwd = projectDir. A script's own non-zero exit is reported
