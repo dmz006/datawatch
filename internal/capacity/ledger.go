@@ -62,6 +62,19 @@ type Status struct {
 	Waiting []Waiter     `json:"waiting"`
 }
 
+// Clock supplies the time source the ledger uses for wait deadlines, poll
+// ticks and grant ordering. Tests inject a fake; production uses the real clock.
+type Clock interface {
+	Now() time.Time
+	After(d time.Duration) <-chan time.Time
+}
+
+// realClock is the wall clock backed by the time package.
+type realClock struct{}
+
+func (realClock) Now() time.Time                         { return time.Now() }
+func (realClock) After(d time.Duration) <-chan time.Time { return time.After(d) }
+
 // Options tune dispatch behaviour.
 type Options struct {
 	// External reports slots in a pool used by work outside the ledger (for
@@ -74,6 +87,8 @@ type Options struct {
 	// PollInterval is how often waiters re-check cancellation and
 	// backpressure. Default 5s.
 	PollInterval time.Duration
+	// Clock is the time source. Nil means the real clock.
+	Clock Clock
 }
 
 type waiter struct {
@@ -103,6 +118,9 @@ func New(opt Options) *Ledger {
 	}
 	if opt.PollInterval <= 0 {
 		opt.PollInterval = 5 * time.Second
+	}
+	if opt.Clock == nil {
+		opt.Clock = realClock{}
 	}
 	return &Ledger{
 		limits:    map[string]int{},
@@ -219,7 +237,7 @@ func (l *Ledger) dispatchLocked() {
 	if len(l.waiters) == 0 {
 		return
 	}
-	now := time.Now()
+	now := l.opt.Clock.Now()
 	for _, w := range l.orderLocked(now) {
 		why := l.blockReasonLocked(w.req.Pools)
 		w.reason = why
@@ -258,7 +276,7 @@ func (l *Ledger) Acquire(ctx context.Context, req Request, timeout time.Duration
 		return nil
 	}
 	l.seq++
-	w := &waiter{req: req, seq: l.seq, since: time.Now(), grant: make(chan struct{})}
+	w := &waiter{req: req, seq: l.seq, since: l.opt.Clock.Now(), grant: make(chan struct{})}
 	l.waiters = append(l.waiters, w)
 	l.dispatchLocked()
 	select {
@@ -275,12 +293,9 @@ func (l *Ledger) Acquire(ctx context.Context, req Request, timeout time.Duration
 	}
 	var deadline <-chan time.Time
 	if timeout > 0 {
-		t := time.NewTimer(timeout)
-		defer t.Stop()
-		deadline = t.C
+		deadline = l.opt.Clock.After(timeout)
 	}
-	tick := time.NewTicker(l.opt.PollInterval)
-	defer tick.Stop()
+	tick := l.opt.Clock.After(l.opt.PollInterval)
 	for {
 		select {
 		case <-w.grant:
@@ -294,7 +309,8 @@ func (l *Ledger) Acquire(ctx context.Context, req Request, timeout time.Duration
 			l.mu.Unlock()
 			l.remove(w)
 			return fmt.Errorf("%w: %s", ErrWaitTimeout, why)
-		case <-tick.C:
+		case <-tick:
+			tick = l.opt.Clock.After(l.opt.PollInterval)
 			if cancelled != nil && cancelled() {
 				l.remove(w)
 				return context.Canceled
