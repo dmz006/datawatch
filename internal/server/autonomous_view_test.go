@@ -317,3 +317,133 @@ func TestWriteCasesCompactPRDLevel(t *testing.T) {
 		})
 	}
 }
+
+// newPRDDetailTestServer builds a real manager with one PRD holding a story
+// whose task has failed, a story description and a task spec, plus one
+// decision, so each detail level has something distinct to show.
+func newPRDDetailTestServer(t *testing.T) (*Server, string) {
+	t.Helper()
+	mgr, err := autonomous.NewManager(t.TempDir(), autonomous.DefaultConfig(), nil)
+	if err != nil {
+		t.Fatalf("autonomous.NewManager: %v", err)
+	}
+	prd, err := mgr.CreatePRD("detail spec text", t.TempDir(), "", "", autonomous.EffortNormal)
+	if err != nil {
+		t.Fatalf("CreatePRD: %v", err)
+	}
+	if err := mgr.Store().SetStories(prd.ID, []autonomous.Story{
+		{ID: "s1", Title: "Story", Description: "story description", Tasks: []autonomous.Task{
+			{ID: "t1", Title: "Task", Spec: "task spec text"},
+		}},
+	}); err != nil {
+		t.Fatalf("SetStories: %v", err)
+	}
+	prd, _ = mgr.Store().GetPRD(prd.ID)
+	prd.Status = autonomous.PRDRunning
+	prd.Story[0].Tasks[0].Status = autonomous.TaskFailed
+	prd.Story[0].Tasks[0].Error = "boom"
+	prd.Decisions = []autonomous.Decision{{Kind: "run"}}
+	if err := mgr.Store().SavePRD(prd); err != nil {
+		t.Fatalf("SavePRD: %v", err)
+	}
+	return &Server{autonomousMgr: autonomous.NewAPI(mgr)}, prd.ID
+}
+
+// TestGetPRDDetailLevels checks the detail query parameter on the PRD GET route.
+func TestGetPRDDetailLevels(t *testing.T) {
+	tests := []struct {
+		name       string
+		query      string
+		wantStatus int
+		check      func(t *testing.T, body map[string]json.RawMessage)
+	}{
+		{
+			name:       "absent returns full",
+			query:      "",
+			wantStatus: http.StatusOK,
+			check: func(t *testing.T, body map[string]json.RawMessage) {
+				for _, k := range []string{"spec", "stories", "decisions"} {
+					if _, ok := body[k]; !ok {
+						t.Errorf("full reply missing key %q", k)
+					}
+				}
+			},
+		},
+		{
+			name:       "detail=full returns full with stories spec text",
+			query:      "?detail=full",
+			wantStatus: http.StatusOK,
+			check: func(t *testing.T, body map[string]json.RawMessage) {
+				var stories []struct {
+					Tasks []struct {
+						Spec string `json:"spec"`
+					} `json:"tasks"`
+				}
+				if err := json.Unmarshal(body["stories"], &stories); err != nil {
+					t.Fatalf("decode stories: %v", err)
+				}
+				if len(stories) != 1 || len(stories[0].Tasks) != 1 || stories[0].Tasks[0].Spec != "task spec text" {
+					t.Errorf("full stories do not carry task spec text: %s", body["stories"])
+				}
+			},
+		},
+		{
+			name:       "detail=summary omits spec and decisions",
+			query:      "?detail=summary",
+			wantStatus: http.StatusOK,
+			check: func(t *testing.T, body map[string]json.RawMessage) {
+				for _, k := range []string{"spec", "decisions"} {
+					if _, ok := body[k]; ok {
+						t.Errorf("summary reply has unexpected key %q", k)
+					}
+				}
+				if _, ok := body["stories"]; !ok {
+					t.Errorf("summary reply missing stories key")
+				}
+			},
+		},
+		{
+			name:       "detail=tasks includes error on failed task",
+			query:      "?detail=tasks",
+			wantStatus: http.StatusOK,
+			check: func(t *testing.T, body map[string]json.RawMessage) {
+				var tasks []map[string]json.RawMessage
+				if err := json.Unmarshal(body["tasks"], &tasks); err != nil {
+					t.Fatalf("decode tasks: %v", err)
+				}
+				if len(tasks) != 1 {
+					t.Fatalf("tasks has %d entries, want 1", len(tasks))
+				}
+				if _, ok := tasks[0]["error"]; !ok {
+					t.Errorf("failed task entry missing error key; body %s", body["tasks"])
+				}
+			},
+		},
+		{
+			name:       "detail=bogus is rejected",
+			query:      "?detail=bogus",
+			wantStatus: http.StatusBadRequest,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			s, id := newPRDDetailTestServer(t)
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodGet, "/api/autonomous/prds/"+id+tc.query, nil)
+			s.handleAutonomousPRDs(rec, req)
+
+			if rec.Code != tc.wantStatus {
+				t.Fatalf("status = %d, want %d (body %q)", rec.Code, tc.wantStatus, rec.Body.String())
+			}
+			if tc.check == nil {
+				return
+			}
+			var body map[string]json.RawMessage
+			if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+				t.Fatalf("decode reply: %v", err)
+			}
+			tc.check(t, body)
+		})
+	}
+}

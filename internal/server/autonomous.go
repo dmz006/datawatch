@@ -304,7 +304,12 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "not found", http.StatusNotFound)
 				return
 			}
-			writeJSONOK(w, prd)
+			detail, ok := parsePRDDetail(r)
+			if !ok {
+				http.Error(w, "invalid detail: accepted values are full, summary, tasks", http.StatusBadRequest)
+				return
+			}
+			writePRDDetail(w, prd, detail)
 		case http.MethodDelete:
 			if !s.fedCap(w, r, federation.CapAutonomousRun) {
 				return

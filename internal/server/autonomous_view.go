@@ -51,6 +51,40 @@ func (s *Server) writeAutonomousCancelResult(w http.ResponseWriter, r *http.Requ
 	writeJSONOK(w, view)
 }
 
+// parsePRDDetail reads the detail query parameter of the PRD GET route. An
+// absent value means "full". It returns the level and true for full, summary
+// and tasks, and false for any other value.
+func parsePRDDetail(r *http.Request) (string, bool) {
+	switch detail := r.URL.Query().Get("detail"); detail {
+	case "":
+		return "full", true
+	case "full", "summary", "tasks":
+		return detail, true
+	default:
+		return "", false
+	}
+}
+
+// writePRDDetail writes prd at the given detail level. full writes prd as it
+// is, summary writes its summary view, and tasks writes its task listing.
+func writePRDDetail(w http.ResponseWriter, prd any, detail string) {
+	switch detail {
+	case "summary", "tasks":
+		p, err := toPRD(prd)
+		if err != nil {
+			http.Error(w, "detail view: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if detail == "summary" {
+			writeJSONOK(w, autonomous.BuildSummaryView(p))
+			return
+		}
+		writeJSONOK(w, autonomous.BuildTasksView(p))
+	default:
+		writeJSONOK(w, prd)
+	}
+}
+
 // isNilPRD reports whether v is nil, or a nil *autonomous.PRD.
 func isNilPRD(v any) bool {
 	if v == nil {
