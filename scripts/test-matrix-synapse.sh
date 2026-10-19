@@ -104,6 +104,14 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# Shared sandbox teardown (lib/sandbox.sh) — last-resort backstop: the smoke
+# daemon (and its restart on the same ports) is re-stopped by RECORDED PID,
+# then cleanup above runs as before. Deliberately does NOT register
+# $TMPDIR_DW: its removal is gated by --no-cleanup inside cleanup.
+SMOKE_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SMOKE_LIB_DIR/lib/sandbox.sh"
+sandbox_install_exit_trap
+
 SYNAPSE_URL="http://localhost:8008"
 BOT_USER="dwmatrixbot"
 BOT_PASS="$(openssl rand -hex 16)"
@@ -261,6 +269,7 @@ YAML
 
 "$DW_BIN" start --foreground --config "$DW_CONFIG" >"$TMPDIR_DW/daemon-init.log" 2>&1 &
 DW_PID=$!
+sandbox_add_pid "$DW_PID"   # lib/sandbox.sh backstop (resolved at runtime)
 echo -n "Waiting for daemon (init phase)"
 for i in $(seq 1 20); do
   if curl -sf -H "Authorization: Bearer matrixtesttoken" \
@@ -303,6 +312,7 @@ ok "Full config written — Matrix uses secrets-store ref"
 H "5. Start datawatch daemon"
 "$DW_BIN" start --foreground --config "$DW_CONFIG" >"$TMPDIR_DW/daemon.log" 2>&1 &
 DW_PID=$!
+sandbox_add_pid "$DW_PID"   # lib/sandbox.sh backstop (resolved at runtime)
 
 echo -n "Waiting for daemon health"
 for i in $(seq 1 30); do
@@ -429,6 +439,7 @@ DW_PID=""
 
 "$DW_BIN" start --foreground --config "$DW_CONFIG" >"$TMPDIR_DW/daemon-restart.log" 2>&1 &
 DW_PID=$!
+sandbox_add_pid "$DW_PID"   # lib/sandbox.sh backstop (previous PID already dead)
 
 echo -n "Waiting for daemon restart"
 for i in $(seq 1 20); do

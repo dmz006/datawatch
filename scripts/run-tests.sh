@@ -216,6 +216,9 @@ PY2
   mkdir -p "$TEST_DATA"
   "$binary" start --foreground --config "$test_cfg" >> "$TEST_DATA/daemon.log" 2>&1 &
   DAEMON_PID=$!
+  # Shared-sandbox backstop (lib/sandbox.sh): recorded PID re-stopped on exit
+  # in case the cleanup below missed it (e.g. partial early-exit paths).
+  declare -F sandbox_add_pid >/dev/null 2>&1 && sandbox_add_pid "$DAEMON_PID"
 
   # Poll /api/health up to 30s (use HTTPS since HTTP port redirects when TLS enabled)
   local deadline=$(( $(date +%s) + 30 ))
@@ -279,6 +282,7 @@ start_ntfy_server() {
     --base-url "http://127.0.0.1:${TEST_NTFY_PORT}" \
     > "$TEST_DIR/ntfy.log" 2>&1 &
   NTFY_PID=$!
+  declare -F sandbox_add_pid >/dev/null 2>&1 && sandbox_add_pid "$NTFY_PID"
   # Wait up to 5s for ntfy to be ready
   local tries=0
   while [[ $tries -lt 10 ]]; do
@@ -406,6 +410,14 @@ cleanup() {
   fi
 }
 trap 'FAILED=$?; cleanup' EXIT
+
+# Shared sandbox teardown (scripts/lib/sandbox.sh) — last-resort backstop:
+# every daemon this run started is re-stopped by RECORDED PID (never by
+# name), then the runner's own cleanup above runs as before (kills of
+# already-dead PIDs are no-ops). Sourcing must happen AFTER the runner's
+# own EXIT trap so it chains on top of it.
+source "$SCRIPT_DIR/lib/sandbox.sh"
+sandbox_install_exit_trap
 
 # flush_story_cleanup — delete resources registered via add_cleanup() after
 # each serial story runs, so sessions don't accumulate and hit max_sessions.

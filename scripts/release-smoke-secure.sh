@@ -47,13 +47,22 @@ fi
 TMPDIR=$(mktemp -d)
 PORT_TLS=18444
 PORT_HTTP=18081
+# Shared sandbox teardown (lib/sandbox.sh): on exit / failure / interrupt,
+# the daemon is re-stopped by RECORDED PID and the sandbox data dir is
+# removed — a backstop for early-exit paths. The legacy trap stays chained
+# as a fallback.
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/sandbox.sh"
 trap 'kill $DW_PID 2>/dev/null; rm -rf "$TMPDIR"' EXIT
+sandbox_install_exit_trap
+sandbox_add_dir "$TMPDIR"
 
 H "1. Bring up encrypted-mode daemon"
 DATAWATCH_DATA_DIR="$TMPDIR" datawatch start --foreground --secure \
   --bind 127.0.0.1:$PORT_HTTP --tls-port $PORT_TLS \
   >/tmp/dw-secure.log 2>&1 &
 DW_PID=$!
+# sandbox.sh backstop: recorded PID re-stopped on exit (no-op if already dead).
+sandbox_add_pid "$DW_PID"
 # Poll for /api/health.
 for i in $(seq 1 30); do
   if curl -sk "https://127.0.0.1:$PORT_TLS/api/health" 2>/dev/null | grep -q '"status":"ok"'; then
@@ -114,6 +123,9 @@ DATAWATCH_DATA_DIR="$TMPDIR" datawatch start --foreground --secure \
   --bind 127.0.0.1:$PORT_HTTP --tls-port $PORT_TLS \
   >>/tmp/dw-secure.log 2>&1 &
 DW_PID=$!
+# sandbox.sh backstop: register the restart's PID too (the previous one is
+# already dead; a second stop is a no-op).
+sandbox_add_pid "$DW_PID"
 for i in $(seq 1 30); do
   curl -sk "https://127.0.0.1:$PORT_TLS/api/health" 2>/dev/null | grep -q ok && break
   sleep 1

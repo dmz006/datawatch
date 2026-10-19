@@ -199,6 +199,10 @@ YAML
   "$_DW_BIN" --config "$TEST_CONFIG" start --foreground \
     >"$TEST_WORK_DIR/daemon.log" 2>&1 &
   TEST_DAEMON_PID=$!
+  # Shared-sandbox backstop (lib/sandbox.sh): recorded PID re-stopped on exit
+  # (only if the cleanup above missed it). Sourcing happens below, after the
+  # runner's own EXIT trap — functions are resolved at runtime, not now.
+  declare -F sandbox_add_pid >/dev/null 2>&1 && sandbox_add_pid "$TEST_DAEMON_PID"
 
   # Wait up to 30 s for the daemon to answer health.
   echo "Waiting for test daemon..."
@@ -363,8 +367,15 @@ except Exception:
   else
     rm -rf "$TEST_WORK_DIR" 2>/dev/null || true
   fi
-}
+} 
 trap cleanup_all EXIT
+
+# Shared sandbox teardown (lib/sandbox.sh) — last-resort backstop: the test
+# daemon is re-stopped by RECORDED PID if the cleanup above missed it, then
+# cleanup_all (chained below) runs as before. Deliberately does NOT register
+# $TEST_WORK_DIR here: its removal is gated by KEEP_TEST_DIR inside cleanup_all.
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/sandbox.sh"
+sandbox_install_exit_trap
 
 PASS=0
 FAIL=0

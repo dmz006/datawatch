@@ -33,6 +33,14 @@
 #   TMUX_TMPDIR="$TMUX" tmux new-session -d -s mybox   # socket lives in $TMUX
 
 # --- repo-root resolution ----------------------------------------------------
+
+# Idempotent source guard: re-sourcing (e.g. a story script inside a runner
+# worker shell) must not clobber registrations made earlier in this shell.
+if [[ -n "${_SANDBOX_HELPER_LOADED:-}" ]]; then return 0; fi
+_SANDBOX_HELPER_LOADED=1
+
+# sandbox_repo_root — print the repository checkout root this sandbox.sh
+# copy ships with (best effort).
 sandbox_repo_root() {
   # Best effort: git toplevel if resolvable, else the two-level parent of
   # this file (scripts/lib/sandbox.sh -> repo root).
@@ -106,7 +114,15 @@ sandbox_stop_pid() {
 sandbox_stop_tmux_server() {
   local tdir="${1:-}"
   [[ -n "$tdir" ]] || return 0
-  TMUX_TMPDIR="$tdir" tmux kill-server 2>/dev/null || true
+  # $TMUX outranks TMUX_TMPDIR, so inside a tmux pane the old form killed the
+  # parent server. Address the throwaway socket explicitly with $TMUX unset,
+  # and only when that socket file exists and is not a datawatch production dir.
+  local sock="$tdir/tmux-$(id -u)/default"
+  [[ -S "$sock" ]] || return 0
+  case "$(readlink -f "$tdir")" in
+    "$HOME"/.datawatch/tmux*|"$HOME"/.datawatch) return 0 ;;
+  esac
+  env -u TMUX -u TMUX_TMPDIR tmux -S "$sock" kill-server 2>/dev/null || true
   return 0
 }
 
@@ -124,7 +140,9 @@ sandbox_add_tmux_server() { _SANDBOX_TMUX_DIRS+=("${1:?}"); return 0; }
 # sandbox_cleanup — stop all registered PIDs, all per-socket tmux servers,
 # remove all registered temp dirs (in reverse order), then run any previously
 # installed EXIT trap. Idempotent. Preserves the shell's original exit
-# status in the handler's return value.
+# status in the handler's return value, and hands it to the chained handler
+# as $? (which may itself end the shell with a non-zero status for the
+# `FAILED=$?` pattern).
 sandbox_cleanup() {
   local rc=$?
   [[ "${_SANDBOX_CLEANED:-0}" == 1 ]] && return 0
@@ -149,8 +167,14 @@ sandbox_cleanup() {
   done
 
   # Preserve any previously installed EXIT trap (runners install their own
-  # cleanup trap before sourcing story scripts).
+  # cleanup trap before sourcing story scripts). Before running it, restore
+  # $? to the status that triggered this trap: my teardown above clobbered
+  # it, and chained handlers such as run-tests' `FAILED=$?; cleanup` make
+  # keep-or-rm decisions based on that status.
   if [[ -n "${_SANDBOX_PREV_EXIT_TRAP:-}" ]]; then
+    if [[ $rc -gt 0 && $rc -lt 256 ]]; then
+      return "${rc}"                       # $? is now rc
+    fi
     eval "$_SANDBOX_PREV_EXIT_TRAP"
   fi
 

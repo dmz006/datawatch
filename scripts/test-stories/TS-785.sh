@@ -59,6 +59,10 @@ _story_ts_785() {
   mkdir -p "$FED_PEER_DATA"
   "$TEST_BINARY" start --foreground --config "$FED_PEER_DATA/config.yaml" >> "$FED_PEER_DATA/daemon.log" 2>&1 &
   FED_PEER_PID=$!
+  # Bootstrap story: this daemon is INTENTIONALLY left running for TS-786 and
+  # later. Teardown is owned by the runner, not this story — run-tests.sh's
+  # stop_second_test_daemon() reaps it by the RECORDED PID from this pidfile
+  # (and removes $FED_PEER_DATA), so a SIGKILLed run still gets cleaned.
   echo "$FED_PEER_PID" > "${TEST_DIR:-$FED_PEER_DATA}/fed-peer-daemon.pid"
 
   local deadline=$(( $(date +%s) + 20 )) healthy=0

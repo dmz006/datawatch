@@ -82,6 +82,19 @@ CLEANUP_LOG="${CLEANUP_LOG:-$TEST_DIR/cleanup.log}"
 curl_args=(-sk --max-time 30 -H "Authorization: Bearer $TEST_TOKEN")
 
 # ---------------------------------------------------------------------------
+# Shared sandbox teardown helpers (scripts/lib/sandbox.sh)
+#   Sourced (idempotently) so stories that start an inline sandbox daemon can
+#   register a per-PID stop + temp-dir removal that runs on exit / failure /
+#   interrupt in THIS shell. A story opts in by calling
+#   sandbox_install_exit_trap right after starting the daemon (see TS-619).
+# ---------------------------------------------------------------------------
+_DW_LIB_SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -f "$_DW_LIB_SELF_DIR/../lib/sandbox.sh" ]]; then
+  . "$_DW_LIB_SELF_DIR/../lib/sandbox.sh"
+fi
+unset _DW_LIB_SELF_DIR
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 add_cleanup() { echo "$1 $2" >> "$CLEANUP_LOG"; }
