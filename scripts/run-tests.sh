@@ -250,6 +250,24 @@ PY2
     return 1
   fi
 
+  # Unsafe-tmux-call gate — must pass (or be explicitly skipped) BEFORE the daemon
+  # is spawned a few lines below: a fail-closed static audit of the repo's shell
+  # code for tmux calls that would wipe sessions beyond a dedicated socket
+  # (server-wide kills without an explicit -S/--socket, kill-session -a,
+  # pkill/killall of the tmux server — see scripts/check-unsafe-tmux-calls.sh's
+  # own header for the exact rules). Catching a bad call here means it can't
+  # reach any live machine's tmux via a later spawned test run either. The
+  # executable-bit is verified before invoking: a missing/non-executable gate
+  # must fail this run, not silently skip the audit (mirrors the other gate
+  # checks). Skip knob for local iteration only: DW_SKIP_UNSAFE_TMUX_CALLS_CHECK=1.
+  if [ "${DW_SKIP_UNSAFE_TMUX_CALLS_CHECK:-0}" != "1" ]; then
+    if [ ! -x "$SCRIPT_DIR/check-unsafe-tmux-calls.sh" ]; then
+      echo "Error: scripts/check-unsafe-tmux-calls.sh is missing or not executable (gate must run before the test daemon starts); set DW_SKIP_UNSAFE_TMUX_CALLS_CHECK=1 to skip deliberately" >&2
+      return 1
+    fi
+    "$SCRIPT_DIR/check-unsafe-tmux-calls.sh" >&2 || return 1
+  fi
+
   start_ntfy_server
 
   # Dedicated tmux socket scratch dir, under the e2e scratch area: the daemon

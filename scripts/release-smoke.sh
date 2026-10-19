@@ -97,6 +97,19 @@ fi
 if [ "${DW_SKIP_DOCKERFILE_GO_VERSION_CHECK:-0}" != "1" ] && [ -x "$SMOKE_DIR/check-dockerfile-go-versions.sh" ]; then
   "$SMOKE_DIR/check-dockerfile-go-versions.sh" >&2 || exit 1
 fi
+# 2026-10-18 — unsafe-tmux-call audit (fail-closed): server-wide kills
+# without a dedicated socket, kill-session -a, pkill/killall of the tmux
+# server. Static scan, no daemon required, so it sits with the other lints
+# and blocks the release before any daemon is even started. Verify the
+# executable-bit first (a missing/non-executable gate must fail this run,
+# not silently skip the audit).
+if [ "${DW_SKIP_UNSAFE_TMUX_CALLS_CHECK:-0}" != "1" ]; then
+  if [ ! -x "$SMOKE_DIR/check-unsafe-tmux-calls.sh" ]; then
+    echo "Error: scripts/check-unsafe-tmux-calls.sh is missing or not executable (release gate must run)" >&2
+    exit 1
+  fi
+  "$SMOKE_DIR/check-unsafe-tmux-calls.sh" >&2 || exit 1
+fi
 # v6.21.0 — Docs-as-MCP currency lints.
 if [ "${DW_SKIP_DOCS_AS_MCP_CHECK:-0}" != "1" ]; then
   for s in check-curated-howtos.sh check-howto-coverage.sh check-plugin-manifests.sh; do
