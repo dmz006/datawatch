@@ -4407,33 +4407,44 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			// BL447: req.ProjectDir is the task's resolved dir (executor sets
 			// it via resolveTaskProjectDir), so SHA/untracked/dirty capture
 			// anchors to the override repo, never the PRD dir.
-			if req.ProjectDir != "" {
-				// v8.36.7 — see ensureProjectDirOwnGitRepo's doc comment
-				// (verifier_diff.go): prevents a worker's `git add -A`
-				// from silently staging the operator's whole home
-				// directory when the project dir has no git repo of its
-				// own. Found live on PRD a2833a5e.
-				if home, herr := os.UserHomeDir(); herr == nil {
-					ensureProjectDirOwnGitRepo(ctx, req.ProjectDir, home, execGit)
-				}
-				if out, err := exec.CommandContext(ctx, "git", "-C", req.ProjectDir, "rev-parse", "HEAD").Output(); err == nil {
-					preTaskSHA = strings.TrimSpace(string(out))
-				}
-				if out, err := exec.CommandContext(ctx, "git", "-C", req.ProjectDir,
-					"ls-files", "--others", "--exclude-standard").Output(); err == nil {
-					for _, f := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-						if f != "" {
-							preTaskUntrackedFiles = append(preTaskUntrackedFiles, f)
+			// capturePreTask records the pre-task SHA, untracked files and
+			// dirty files. It is a closure so the restore step can run after it.
+			capturePreTask := func() {
+				if req.ProjectDir != "" {
+					// v8.36.7 — see ensureProjectDirOwnGitRepo's doc comment
+					// (verifier_diff.go): prevents a worker's `git add -A`
+					// from silently staging the operator's whole home
+					// directory when the project dir has no git repo of its
+					// own. Found live on PRD a2833a5e.
+					if home, herr := os.UserHomeDir(); herr == nil {
+						ensureProjectDirOwnGitRepo(ctx, req.ProjectDir, home, execGit)
+					}
+					if out, err := exec.CommandContext(ctx, "git", "-C", req.ProjectDir, "rev-parse", "HEAD").Output(); err == nil {
+						preTaskSHA = strings.TrimSpace(string(out))
+					}
+					if out, err := exec.CommandContext(ctx, "git", "-C", req.ProjectDir,
+						"ls-files", "--others", "--exclude-standard").Output(); err == nil {
+						for _, f := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+							if f != "" {
+								preTaskUntrackedFiles = append(preTaskUntrackedFiles, f)
+							}
 						}
 					}
-				}
-				// Foreign-file drift — tracked files already modified
-				// (unstaged or staged via git diff --cached) before the
-				// worker starts. Skipped for a PRD-owned worktree.
-				if !req.SkipDirtyCapture {
-					preTaskDirtyFiles = autonomouspkg.CapturePreTaskDirtyFiles(ctx, req.ProjectDir, nil)
+					// Foreign-file drift — tracked files already modified
+					// (unstaged or staged via git diff --cached) before the
+					// worker starts. Skipped for a PRD-owned worktree.
+					if !req.SkipDirtyCapture {
+						preTaskDirtyFiles = autonomouspkg.CapturePreTaskDirtyFiles(ctx, req.ProjectDir, nil)
+					}
 				}
 			}
+			// Attempt-work restore (preserve_attempt_work). It runs after the
+			// capture above so restored files are not reported as drift, and before
+			// the worker starts. Cluster workers run on another host, so the local
+			// project dir is never restored for them.
+			restoreAttemptWorkBeforeSpawn(ctx, req.ProjectDir, req.AttemptRefs,
+				cfg.Autonomous.PreserveAttemptWorkEnabled() && strings.TrimSpace(req.ClusterProfile) == "",
+				capturePreTask, autonomouspkg.RestoreAttemptWork)
 			// v5.26.19 — F10 cluster profile dispatch. When the PRD
 			// declares a cluster_profile, spawn a worker via the F10
 			// agents endpoint instead of a local tmux session. The

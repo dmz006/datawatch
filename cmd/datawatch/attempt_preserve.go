@@ -52,3 +52,30 @@ func preserveAttemptWork(ctx context.Context, store attemptSnapshotStore, workDi
 		log.Printf("[autonomous] task %s/%s: RecordTaskAttemptSnapshot(%s): %v", task.PRDID, task.ID, ref, err)
 	}
 }
+
+// attemptRestoreFunc is autonomouspkg.RestoreAttemptWork as a value, so the
+// spawn-time ordering can be tested with a stub.
+type attemptRestoreFunc func(ctx context.Context, dir, ref string) error
+
+// restoreAttemptWorkBeforeSpawn is the attempt-restore step of the spawn
+// closure. capture always runs first: it records the pre-task SHA, untracked
+// files and dirty files, so the restored files are never reported as foreign
+// drift. Only after that does restore write the last recorded attempt ref back
+// into dir. A restore error is logged and never blocks the attempt, which then
+// starts from the pre-task state.
+func restoreAttemptWorkBeforeSpawn(ctx context.Context, dir string, refs []string, enabled bool, capture func(), restore attemptRestoreFunc) {
+	capture()
+	if !enabled || dir == "" || len(refs) == 0 {
+		return
+	}
+	// The clean-restart flag (a task that must start from a clean tree) is
+	// added by a later change and is not on Task yet. When it lands, check it
+	// here and return before restoring.
+	ref := refs[len(refs)-1]
+	if err := restore(ctx, dir, ref); err != nil {
+		log.Printf("[autonomous] restore of attempt work from %s into %s failed, attempt starts from pre-task state: %v",
+			ref, dir, err)
+		return
+	}
+	log.Printf("[autonomous] restored attempt work from %s into %s before spawn", ref, dir)
+}
