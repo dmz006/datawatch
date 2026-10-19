@@ -5,6 +5,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+Finished feature branches no longer conflict on the version number when they are merged. The version number is now chosen once, at merge time, and applied to all branches merged in the same run. The merge check refuses a branch that changed the version to the wrong number, and its message names the expected version.
+
 ## v9.5.18 — autonomous: warn when a PRD model name looks like it belongs to another backend, once per PRD
 
 The autonomous status stops warning when a planning model with a provider tag (for example an `ollama/...` model) is set for a pi or pi-prompt session, because those backends forward the model name to their configured provider — the warning now appears only when the named backend cannot serve the model at all. Pairing warnings also improved: each affected PRD is now named once with the reason instead of a long list of ids.
