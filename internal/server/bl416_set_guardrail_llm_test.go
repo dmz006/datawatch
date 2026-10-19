@@ -26,7 +26,7 @@ type guardrailLLMTestOrch struct {
 	gotBackend, gotModel                  *string
 }
 
-func (o *guardrailLLMTestOrch) SetPRDLLM(string, string, string, string, string, string, string) (any, error) {
+func (o *guardrailLLMTestOrch) SetPRDLLM(string, *string, *string, *string, *string, *string, string) (any, error) {
 	o.prdLLMCalls++
 	return map[string]any{"ok": true}, nil
 }

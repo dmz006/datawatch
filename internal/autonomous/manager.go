@@ -2756,9 +2756,10 @@ func (m *Manager) SetTaskGuardrailLLM(prdID, taskID string, backend, model *stri
 }
 
 // SetPRDLLM (BL203, v5.4.0) overrides the PRD-level worker LLM defaults
-// (backend / effort / model). Only allowed pre-Run. Tasks without
-// per-task overrides will inherit these.
-// SetMemorySeed (BL386 Phase 1) updates the PRD's warm-start seed config.
+// (backend / effort / model / decomposition LLM). Presence-aware: a nil
+// pointer leaves that field unchanged; a pointer to "" clears it so
+// resolution falls back to the global default. Only allowed pre-Run.
+// Tasks without per-task overrides will inherit these.
 func (m *Manager) SetMemorySeed(prdID string, cfg MemorySeedConfig, actor string) (*PRD, error) {
 	prd, ok := m.store.GetPRD(prdID)
 	if !ok {
@@ -2877,7 +2878,7 @@ func (m *Manager) SetMemoryHarvest(prdID string, cfg MemoryHarvestConfig, actor 
 	return updated, nil
 }
 
-func (m *Manager) SetPRDLLM(prdID, backend, effort, model, decompositionProfile, decompositionModel, actor string) (*PRD, error) {
+func (m *Manager) SetPRDLLM(prdID string, backend, effort, model, decompositionProfile, decompositionModel *string, actor string) (*PRD, error) {
 	prd, ok := m.store.GetPRD(prdID)
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
@@ -2885,19 +2886,41 @@ func (m *Manager) SetPRDLLM(prdID, backend, effort, model, decompositionProfile,
 	if prd.Status == PRDRunning || prd.Status == PRDCompleted {
 		return nil, fmt.Errorf("prd %q status %q is locked; PRD LLM overrides only apply pre-Run", prdID, prd.Status)
 	}
-	prd.Backend = backend
-	prd.Effort = Effort(effort)
-	prd.Model = model
-	prd.DecompositionProfile = decompositionProfile
-	prd.DecompositionModel = decompositionModel
+	if backend != nil {
+		prd.Backend = *backend
+	}
+	if effort != nil {
+		prd.Effort = Effort(*effort)
+	}
+	if model != nil {
+		prd.Model = *model
+	}
+	if decompositionProfile != nil {
+		prd.DecompositionProfile = *decompositionProfile
+	}
+	if decompositionModel != nil {
+		prd.DecompositionModel = *decompositionModel
+	}
 	prd.UpdatedAt = time.Now()
-	note := fmt.Sprintf("backend=%s effort=%s model=%s", backend, effort, model)
-	if decompositionProfile != "" {
-		note += " decomposition_profile=" + decompositionProfile
+	// Decision-log note lists ONLY the fields included in this call:
+	// a pointer to "" shows the field as cleared (empty value), a nil
+	// field is not mentioned at all.
+	var parts []string
+	for _, p := range []struct {
+		name string
+		v    *string
+	}{
+		{"backend", backend},
+		{"effort", effort},
+		{"model", model},
+		{"decomposition_profile", decompositionProfile},
+		{"decomposition_model", decompositionModel},
+	} {
+		if p.v != nil {
+			parts = append(parts, p.name+"="+*p.v)
+		}
 	}
-	if decompositionModel != "" {
-		note += " decomposition_model=" + decompositionModel
-	}
+	note := strings.Join(parts, " ")
 	prd.Decisions = append(prd.Decisions, Decision{
 		At: time.Now(), Kind: "set_prd_llm", Actor: actor,
 		Note: note,

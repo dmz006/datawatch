@@ -1270,7 +1270,10 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		// present or no guardrail key is.
 		var updated any
 		if hasLegacy || !hasGuardrail {
-			updated, err = s.autonomousMgr.SetPRDLLM(id, req.Backend, req.Effort, req.Model, req.DecompositionProfile, req.DecompositionModel, req.Actor)
+			// Presence semantics live in the REST-decode change; for now the
+			// handler always passes all five fields so behavior is unchanged.
+			b, e, mo, dp, dm := req.Backend, req.Effort, req.Model, req.DecompositionProfile, req.DecompositionModel
+			updated, err = s.autonomousMgr.SetPRDLLM(id, &b, &e, &mo, &dp, &dm, req.Actor)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return

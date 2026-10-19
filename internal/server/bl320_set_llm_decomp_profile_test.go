@@ -24,13 +24,17 @@ type setLLMTestOrch struct {
 	returnErr       error
 }
 
-func (o *setLLMTestOrch) SetPRDLLM(prdID, backend, effort, model, decompositionProfile, decompositionModel, actor string) (any, error) {
-	o.capturedProfile = decompositionProfile
-	o.capturedBackend = backend
+func (o *setLLMTestOrch) SetPRDLLM(prdID string, backend, effort, model, decompositionProfile, decompositionModel *string, actor string) (any, error) {
+	if decompositionProfile != nil {
+		o.capturedProfile = *decompositionProfile
+	}
+	if backend != nil {
+		o.capturedBackend = *backend
+	}
 	if o.returnErr != nil {
 		return nil, o.returnErr
 	}
-	return map[string]any{"id": prdID, "decomposition_profile": decompositionProfile}, nil
+	return map[string]any{"id": prdID, "decomposition_profile": o.capturedProfile}, nil
 }
 
 func newSetLLMTestServer(orch *setLLMTestOrch, reg *inference.Registry) *Server {

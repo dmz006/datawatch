@@ -33,7 +33,7 @@ func TestDecomposeStreaming_UsesDecompositionModel_OverGlobal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreatePRD: %v", err)
 	}
-	if _, err := m.SetPRDLLM(prd.ID, "claude-code", "", "claude-sonnet-5", "claude-code", perPRDModel, "test"); err != nil {
+	if _, err := m.SetPRDLLM(prd.ID, sp("claude-code"), sp(""), sp("claude-sonnet-5"), sp("claude-code"), sp(perPRDModel), "test"); err != nil {
 		t.Fatalf("SetPRDLLM: %v", err)
 	}
 
@@ -103,7 +103,7 @@ func TestDecomposeStreaming_FallsBackToPRDModel_WhenDecompositionModelAndGlobalE
 	if err != nil {
 		t.Fatalf("CreatePRD: %v", err)
 	}
-	if _, err := m.SetPRDLLM(prd.ID, "claude-code", "", prdModel, "", "", "test"); err != nil {
+	if _, err := m.SetPRDLLM(prd.ID, sp("claude-code"), sp(""), sp(prdModel), sp(""), sp(""), "test"); err != nil {
 		t.Fatalf("SetPRDLLM: %v", err)
 	}
 
