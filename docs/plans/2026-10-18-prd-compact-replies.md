@@ -1,7 +1,7 @@
 # PRD compact replies and detail levels
 
 **Date:** 2026-10-18
-**Version:** 9.5.10
+**Version:** 9.5.12
 
 **Scope:** Packages and files touched:
 
@@ -17,12 +17,12 @@ Each phase is one story, in implementation order. A phase is Done when its gate 
 
 | # | Phase | Status | Shipped | Gate |
 |---|-------|--------|---------|------|
-| 1 | Summary and tasks detail views (`BuildSummaryView`, `BuildTasksView`) | Done | 9.5.10 | `TestBuildSummaryView`, `TestBuildTasksView` pass |
-| 2 | Compact write view (`BuildWriteView`, `writeAutonomousResult`) on all PRD write cases | Done | 9.5.10 | `TestBuildWriteView_*`, `TestWriteCasesCompact*`, `TestResetTaskCompactReply` pass |
-| 3 | REST `GET ?detail=summary\|tasks\|full` and unchanged REST default | Done (live daemon check pending) | 9.5.10 | `TestGetPRDDetailLevels`, `TestPRDRESTDefaultUnchanged` pass |
-| 4 | MCP: write tools send `view=compact`; `autonomous_prd_get` defaults to `summary` | Done (live daemon check pending) | 9.5.10 | `TestMCPWriteToolsRequestCompactView`, `TestMCPPRDGetDetailArgument` pass |
-| 5 | Documentation of the detail levels and compact replies | Done | 9.5.10 | `docs/mcp.md`, `docs/api-mcp-mapping.md`, `docs/testing-tracker.md` updated |
-| 6 | Release: CHANGELOG entry and version bump | Done | 9.5.10 | `CHANGELOG.md` v9.5.10 entry; `Version` = 9.5.10 in `main.go` and `api.go` |
+| 1 | Summary and tasks detail views (`BuildSummaryView`, `BuildTasksView`) | Done | 9.5.12 | `TestBuildSummaryView`, `TestBuildTasksView` pass |
+| 2 | Compact write view (`BuildWriteView`, `writeAutonomousResult`) on all PRD write cases | Done | 9.5.12 | `TestBuildWriteView_*`, `TestWriteCasesCompact*`, `TestResetTaskCompactReply` pass |
+| 3 | REST `GET ?detail=summary\|tasks\|full` and unchanged REST default | Done (live daemon check pending) | 9.5.12 | `TestGetPRDDetailLevels`, `TestPRDRESTDefaultUnchanged` pass |
+| 4 | MCP: write tools send `view=compact`; `autonomous_prd_get` defaults to `summary` | Done (live daemon check pending) | 9.5.12 | `TestMCPWriteToolsRequestCompactView`, `TestMCPPRDGetDetailArgument` pass |
+| 5 | Documentation of the detail levels and compact replies | Done | 9.5.12 | `docs/mcp.md`, `docs/api-mcp-mapping.md`, `docs/testing-tracker.md` updated |
+| 6 | Release: CHANGELOG entry and version bump | Done | 9.5.12 | `CHANGELOG.md` v9.5.12 entry; `Version` = 9.5.12 in `main.go` and `api.go` |
 
 Open items:
 

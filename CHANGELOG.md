@@ -5,7 +5,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-## v9.5.10 — feat(mcp): PRD write tools return a short result, and `autonomous_prd_get` defaults to a summary
+## v9.5.12 — PRD tools return short replies, and the PRD summary view is the default for reads
 
 PRD tools used to return the whole Automaton on every write, which could exceed client limits and use a lot of context. Write tools now return a short result with the id, status, rev, the changed task or story and a message. `autonomous_prd_get` now defaults to a summary and takes `detail` = `summary`, `tasks` or `full` when you need more. REST responses are unchanged unless the new query parameters are passed. The CLI `prd-get` command gained a `--detail` flag (`summary`, `tasks` or `full`); without it the CLI output is unchanged.
 
