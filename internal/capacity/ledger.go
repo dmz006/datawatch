@@ -16,6 +16,33 @@ import (
 // ErrWaitTimeout is returned by Acquire when the wait exceeds its timeout.
 var ErrWaitTimeout = errors.New("capacity wait timed out")
 
+// Role classifies the work behind a request for dispatch ordering.
+type Role string
+
+const (
+	// RoleVerifier is a verifier or guardrail session for a task that already
+	// has finished work. It is granted before worker and planner requests.
+	RoleVerifier Role = "verifier"
+	// RoleWorker is an ordinary task session. It is the zero-value role.
+	RoleWorker Role = "worker"
+	// RolePlanner is a planning or decomposition session. It waits behind
+	// verifiers and workers.
+	RolePlanner Role = "planner"
+)
+
+// rank orders roles for dispatch; lower is granted first. The zero value and
+// any unknown role rank as RoleWorker so existing callers keep their order.
+func (r Role) rank() int {
+	switch r {
+	case RoleVerifier:
+		return 0
+	case RolePlanner:
+		return 2
+	default:
+		return 1
+	}
+}
+
 // Request describes one admission request.
 type Request struct {
 	Holder   string   // lease owner, normally the task id
@@ -24,6 +51,7 @@ type Request struct {
 	Pools    []string // all must have room (all-or-nothing)
 	Node     string   // primary compute node, for model affinity
 	Model    string   // model wanted, for model affinity
+	Role     Role     // dispatch rank; zero value means RoleWorker
 }
 
 // Lease is a held slot set.
@@ -62,6 +90,19 @@ type Status struct {
 	Waiting []Waiter     `json:"waiting"`
 }
 
+// Clock supplies the time source the ledger uses for wait deadlines, poll
+// ticks and grant ordering. Tests inject a fake; production uses the real clock.
+type Clock interface {
+	Now() time.Time
+	After(d time.Duration) <-chan time.Time
+}
+
+// realClock is the wall clock backed by the time package.
+type realClock struct{}
+
+func (realClock) Now() time.Time                         { return time.Now() }
+func (realClock) After(d time.Duration) <-chan time.Time { return time.After(d) }
+
 // Options tune dispatch behaviour.
 type Options struct {
 	// External reports slots in a pool used by work outside the ledger (for
@@ -74,6 +115,8 @@ type Options struct {
 	// PollInterval is how often waiters re-check cancellation and
 	// backpressure. Default 5s.
 	PollInterval time.Duration
+	// Clock is the time source. Nil means the real clock.
+	Clock Clock
 }
 
 type waiter struct {
@@ -103,6 +146,9 @@ func New(opt Options) *Ledger {
 	}
 	if opt.PollInterval <= 0 {
 		opt.PollInterval = 5 * time.Second
+	}
+	if opt.Clock == nil {
+		opt.Clock = realClock{}
 	}
 	return &Ledger{
 		limits:    map[string]int{},
@@ -158,6 +204,9 @@ func (l *Ledger) usedLocked(pool string) int {
 func (l *Ledger) blockReasonLocked(pools []string) string {
 	for _, p := range pools {
 		if lim := l.limits[p]; lim > 0 && l.usedLocked(p) >= lim {
+			if name, ok := strings.CutPrefix(p, "node:"); ok {
+				return fmt.Sprintf("waiting for node %s: %d/%d engines in use, held by %s", name, l.usedLocked(p), lim, l.holdersLocked(p))
+			}
 			return fmt.Sprintf("pool %s full (%d/%d, held by %s)", p, l.usedLocked(p), lim, l.holdersLocked(p))
 		}
 		if l.opt.Backpressure != nil {
@@ -186,8 +235,9 @@ func (l *Ledger) holdersLocked(pool string) string {
 	return strings.Join(hs, ",")
 }
 
-// orderLocked sorts waiters into grant order: priority, aged waiters,
-// model affinity, least-recently-served PRD, then FIFO.
+// orderLocked sorts waiters into grant order: role (verifier, worker,
+// planner), priority, aged waiters, model affinity, least-recently-served
+// PRD, then FIFO.
 func (l *Ledger) orderLocked(now time.Time) []*waiter {
 	ws := append([]*waiter(nil), l.waiters...)
 	aged := func(w *waiter) bool { return now.Sub(w.since) >= l.opt.AgeOverride }
@@ -196,6 +246,9 @@ func (l *Ledger) orderLocked(now time.Time) []*waiter {
 	}
 	sort.SliceStable(ws, func(i, j int) bool {
 		a, b := ws[i], ws[j]
+		if ra, rb := a.req.Role.rank(), b.req.Role.rank(); ra != rb {
+			return ra < rb
+		}
 		if a.req.Priority != b.req.Priority {
 			return a.req.Priority > b.req.Priority
 		}
@@ -219,7 +272,7 @@ func (l *Ledger) dispatchLocked() {
 	if len(l.waiters) == 0 {
 		return
 	}
-	now := time.Now()
+	now := l.opt.Clock.Now()
 	for _, w := range l.orderLocked(now) {
 		why := l.blockReasonLocked(w.req.Pools)
 		w.reason = why
@@ -258,7 +311,7 @@ func (l *Ledger) Acquire(ctx context.Context, req Request, timeout time.Duration
 		return nil
 	}
 	l.seq++
-	w := &waiter{req: req, seq: l.seq, since: time.Now(), grant: make(chan struct{})}
+	w := &waiter{req: req, seq: l.seq, since: l.opt.Clock.Now(), grant: make(chan struct{})}
 	l.waiters = append(l.waiters, w)
 	l.dispatchLocked()
 	select {
@@ -275,12 +328,9 @@ func (l *Ledger) Acquire(ctx context.Context, req Request, timeout time.Duration
 	}
 	var deadline <-chan time.Time
 	if timeout > 0 {
-		t := time.NewTimer(timeout)
-		defer t.Stop()
-		deadline = t.C
+		deadline = l.opt.Clock.After(timeout)
 	}
-	tick := time.NewTicker(l.opt.PollInterval)
-	defer tick.Stop()
+	tick := l.opt.Clock.After(l.opt.PollInterval)
 	for {
 		select {
 		case <-w.grant:
@@ -294,7 +344,8 @@ func (l *Ledger) Acquire(ctx context.Context, req Request, timeout time.Duration
 			l.mu.Unlock()
 			l.remove(w)
 			return fmt.Errorf("%w: %s", ErrWaitTimeout, why)
-		case <-tick.C:
+		case <-tick:
+			tick = l.opt.Clock.After(l.opt.PollInterval)
 			if cancelled != nil && cancelled() {
 				l.remove(w)
 				return context.Canceled

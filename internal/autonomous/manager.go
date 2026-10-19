@@ -253,6 +253,11 @@ type Config struct {
 	// independent (no-dependency) tasks up to the specified limit. Per-PRD
 	// MaxConcurrentTasks overrides this global default.
 	MaxConcurrentTasks int `json:"max_concurrent_tasks,omitempty"`
+	// MaxEnginesPerNode is how many local-model engine sessions one
+	// compute node may run at once. 1 = one per node (default). Mirrors
+	// config.AutonomousConfig.MaxEnginesPerNode; the runtime copy is what
+	// REST and MCP writes change.
+	MaxEnginesPerNode int `json:"max_engines_per_node,omitempty"`
 	// BL428 §3a ii — refuse to admit a task onto a project tree that
 	// has uncommitted changes: the canonical tree's `git status
 	// --porcelain` is non-empty. Hard failure at admission (before the
@@ -288,6 +293,7 @@ func DefaultConfig() Config {
 		Enabled:             false,
 		PollIntervalSeconds: 30,
 		MaxConcurrentTasks:  1,
+		MaxEnginesPerNode:   1,
 		AutoFixRetries:      1,
 		SecurityScan:        true,
 		MaxRecursionDepth:   5,
@@ -820,6 +826,7 @@ func (m *Manager) resetInProgressTasksForResume(prd *PRD) {
 			}
 			now := time.Now()
 			oldSession := t.SessionID
+			m.releaseCapacity(t.ID)
 			t.SessionID = ""
 			t.Status = TaskPending
 			t.Error = ""
@@ -1160,7 +1167,11 @@ func (m *Manager) Decompose(prdID string) (*PRD, error) {
 	planModel := resolvePlannedModel(backend, prd.DecompositionModel, prd.Backend, prd.Model, m.cfg.PlanningBackend, m.cfg.PlanningModel)
 	// BL410 remediation (2026-10-13) — bounded, hint-fed retry for an
 	// infra/scope-classified decompose failure, instead of immediately
-	// rolling back to PRDDraft on the very first failure. See
+	// rolling back to PRDDraft on the very first failure. Parse failures
+	// are NOT in this class: a parse failure means the session DID write
+	// a plan (the session-based decompose fn only returns non-empty
+	// content when the output file was written), so it fails immediately
+	// below rather than consuming infra retry budget. See
 	// retryDecomposeFailure's doc comment for the full rationale; see
 	// decomposeStreamingCore's identical loop for the twin copy this
 	// drifted-duplicate pair requires.
@@ -1171,7 +1182,7 @@ func (m *Manager) Decompose(prdID string) (*PRD, error) {
 		if prd.LastDecomposeFailure != nil {
 			attemptPrompt += fmt.Sprintf("\n\nYour previous attempt failed: %s\nFix this in your next response.", prd.LastDecomposeFailure.Detail)
 		}
-		r, derr := m.decompose(DecomposeRequest{Spec: attemptPrompt, Backend: backend, Effort: effort, Model: planModel, ProjectDir: prd.ProjectDir, ScopeBlock: ScopeBlock(prd), PRDID: prd.ID, TimeoutSeconds: m.cfg.PlanningTimeoutSeconds})
+		r, derr := m.decomposeAdmitted(prd, backend, planModel, DecomposeRequest{Spec: attemptPrompt, Backend: backend, Effort: effort, Model: planModel, ProjectDir: prd.ProjectDir, ScopeBlock: ScopeBlock(prd), PRDID: prd.ID, TimeoutSeconds: m.cfg.PlanningTimeoutSeconds})
 		if derr != nil {
 			if isOneShotNoOutput(derr) {
 				if m.noteDecomposeSessionFailure(prd, backend, planModel, derr) {
@@ -1187,9 +1198,14 @@ func (m *Manager) Decompose(prdID string) (*PRD, error) {
 		}
 		t, s, perr := ParsePlanning(r)
 		if perr != nil {
-			if m.retryDecomposeFailure(prd, "infra", "decompose-parse", perr.Error()) {
-				continue
-			}
+			// Written-verdict class (2026-10-19 incident; same class as
+			// BL478's 28KB-discarded-plan bug): a parse failure means the
+			// session wrote an output file that failed to parse — a verdict
+			// was produced, so this is NOT an infra-category failure and
+			// must not consume infra retry budget (retrying risks re-running
+			// twice and discarding a good second plan). Fail immediately;
+			// failDecomposeAttempt still records the parse reason on
+			// LastDecomposeFailure.Detail so an operator sees WHY.
 			m.failDecomposeAttempt(prd, "decompose-parse", perr)
 			return nil, perr
 		}
@@ -1363,7 +1379,7 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (*PRD, 
 		if prd.LastDecomposeFailure != nil {
 			attemptPrompt += fmt.Sprintf("\n\nYour previous attempt failed: %s\nFix this in your next response.", prd.LastDecomposeFailure.Detail)
 		}
-		r, derr := m.decompose(DecomposeRequest{Spec: attemptPrompt, Backend: backend, Effort: effort, Model: planModel2, ProjectDir: prd.ProjectDir, ScopeBlock: ScopeBlock(prd), PRDID: prd.ID, TimeoutSeconds: m.cfg.PlanningTimeoutSeconds})
+		r, derr := m.decomposeAdmitted(prd, backend, planModel2, DecomposeRequest{Spec: attemptPrompt, Backend: backend, Effort: effort, Model: planModel2, ProjectDir: prd.ProjectDir, ScopeBlock: ScopeBlock(prd), PRDID: prd.ID, TimeoutSeconds: m.cfg.PlanningTimeoutSeconds})
 		if derr != nil {
 			if isOneShotNoOutput(derr) {
 				if m.noteDecomposeSessionFailure(prd, backend, planModel2, derr) {
@@ -1379,9 +1395,11 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (*PRD, 
 		}
 		t, s, perr := ParsePlanning(r)
 		if perr != nil {
-			if m.retryDecomposeFailure(prd, "infra", "decompose-parse", perr.Error()) {
-				continue
-			}
+			// See Decompose()'s identical branch: a parse failure IS a
+			// written verdict (non-empty content only returns when the
+			// output file was written), so it fails immediately rather than
+			// retrying as infra — 2026-10-19 incident class. The parse
+			// reason still lands on LastDecomposeFailure.Detail.
 			m.failDecomposeAttempt(prd, "decompose-parse", perr)
 			return nil, perr
 		}
@@ -2145,6 +2163,9 @@ func (m *Manager) CancelStory(prdID, storyID, actor, reason string) (*PRD, error
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
 	}
+	for _, ev := range cancelled {
+		m.releaseCapacity(ev.t.ID)
+	}
 	emitCancelled()
 	updated, _ := m.store.GetPRD(prdID)
 	return updated, nil
@@ -2206,6 +2227,7 @@ func (m *Manager) CancelTask(prdID, taskID, actor, reason string) (*PRD, error) 
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
 	}
+	m.releaseCapacity(taskID)
 	emitCancelled()
 	updated, _ := m.store.GetPRD(prdID)
 	return updated, nil
@@ -3551,6 +3573,9 @@ func (m *Manager) reconcileStuckTasks() {
 				if completing {
 					log.Printf("[autonomous] boot-reconcile: prd=%s task=%s status=%s session=%s → TaskCompleted (recorded ok verification, dead session)",
 						prd.ID, t.ID, t.Status, t.SessionID)
+					// The session is gone, so the task's node lease is freed here
+					// rather than left for the periodic reaper.
+					m.releaseCapacity(t.ID)
 					reset = append(reset, pendingTaskEvent{t: t, oldStatus: t.Status, oldSession: t.SessionID})
 					t.Status = TaskCompleted
 					t.CompletedAt = &now
@@ -3560,6 +3585,7 @@ func (m *Manager) reconcileStuckTasks() {
 				} else {
 					log.Printf("[autonomous] boot-reconcile: prd=%s task=%s status=%s session=%s → TaskPending (session gone on daemon restart)",
 						prd.ID, t.ID, t.Status, t.SessionID)
+					m.releaseCapacity(t.ID)
 					reset = append(reset, pendingTaskEvent{t: t, oldStatus: t.Status, oldSession: t.SessionID})
 					t.Status = TaskPending
 					t.Error = ""

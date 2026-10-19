@@ -1659,8 +1659,8 @@ type StartOptions struct {
 	// autonomous.EffectiveTaskWriteDirs). When non-empty, automatic
 	// commits (pre-session snapshot, completion commit) stage only files
 	// under these directories instead of sweeping the whole tree with
-	// `git add -A`. nil/empty preserves the historical broad behavior
-	// (with a warning).
+	// `git add -A`. nil/empty stages only the files changed since the
+	// run started (see ProjectGit.SetRunStart), with a warning.
 	WriteScope []string
 	// ValidateCommands (validation gate): commands run in the project dir
 	// before a one-shot's completion commit. Required for auto-commit of
@@ -4006,6 +4006,13 @@ func (m *Manager) commitOnCompletion(current *Session, projGit *ProjectGit) {
 	summary := ""
 	if tail, err := m.TailOutput(current.FullID, 200); err == nil {
 		summary = ExtractCompletionSummary(tail)
+	}
+
+	// Unscoped (empty-scope) commits stage only files this run changed:
+	// bound the staging to the session's start so pre-existing untracked
+	// files (another session's work, operator scratch) are never swept in.
+	if !current.CreatedAt.IsZero() {
+		projGit.SetRunStart(current.CreatedAt)
 	}
 
 	if sha, err := projGit.CommitSessionWork(current.ID, current.Task, summary, current.WriteScope); err != nil {

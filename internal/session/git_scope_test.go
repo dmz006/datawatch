@@ -3,15 +3,19 @@ package session
 // Scoped auto-commit staging (auto-commit leak fix). The historical
 // `git add -A`-of-everything sweeped unrelated untracked/unstaged files
 // out of the same tree (sibling sessions, operator scratch) into the
-// session's commit. These tests pin the new behavior: a non-empty scope
+// session's commit, including pre-existing untracked files (the
+// 2026-10-19 incident). These tests pin the behavior: a non-empty scope
 // stages only files within it, and out-of-scope changes never leak into
-// the commit; an empty scope preserves the historical broad behavior.
+// the commit; an empty scope stages only the files the run changed
+// (tracked modifications + untracked files created after the run
+// started), never pre-existing untracked files.
 
 import (
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestCommitSessionWork_ScopedStagesOnlyInScopeDir(t *testing.T) {
@@ -162,6 +166,22 @@ func TestCommitSessionWork_UnscopedStagesNewFiles(t *testing.T) {
 		t.Skip("git not on PATH")
 	}
 	dir, g := newSessionWorkTestRepo(t)
+
+	// A pre-existing untracked file — mtime predating the run. The
+	// unscoped commit must NOT sweep it in (2026-10-19 incident).
+	existing := filepath.Join(dir, "pre_existing.txt")
+	if err := os.WriteFile(existing, []byte("operator scratch"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	oldMtime := time.Now().Add(-1 * time.Hour)
+	if err := os.Chtimes(existing, oldMtime, oldMtime); err != nil {
+		t.Fatal(err)
+	}
+
+	// Run start is after that file's mtime, before the session's work.
+	runStart := time.Now().Add(-30 * time.Second)
+	g.SetRunStart(runStart)
+
 	if err := os.MkdirAll(filepath.Join(dir, "brand", "new"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -183,7 +203,190 @@ func TestCommitSessionWork_UnscopedStagesNewFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !strings.Contains(out, "brand/new/f.txt") || !strings.Contains(out, "top.txt") {
-		t.Errorf("unscoped commit should include all new files: %q", out)
+		t.Errorf("unscoped commit should include the session's new files: %q", out)
+	}
+	if strings.Contains(out, "pre_existing.txt") {
+		t.Errorf("pre-existing untracked file leaked into commit: %q", out)
+	}
+	// And it must still be untracked — never staged by the fix.
+	st, err := gitOutput(dir, "ls-files", "--others", "--exclude-standard")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(st, "pre_existing.txt") {
+		t.Errorf("pre-existing file should remain untracked: %q", st)
+	}
+}
+
+func TestCommitSessionWork_UnscopedStagesTrackedModification(t *testing.T) {
+	if !haveGit(t) {
+		t.Skip("git not on PATH")
+	}
+	dir, g := newSessionWorkTestRepo(t)
+	// Seed a tracked file, then dirty it.
+	if err := os.WriteFile(filepath.Join(dir, "tracked.txt"), []byte("v1"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mustGit(t, dir, "add", "-A")
+	mustGit(t, dir, "commit", "-q", "-m", "seed")
+	g.SetRunStart(time.Now().Add(-30 * time.Second))
+	if err := os.WriteFile(filepath.Join(dir, "tracked.txt"), []byte("v2"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	before := headCount(t, dir)
+	sha, err := g.CommitSessionWork("sess1", "task", "unscoped tracked", nil)
+	if err != nil {
+		t.Fatalf("CommitSessionWork: %v", err)
+	}
+	if sha == "" {
+		t.Fatal("expected a commit for a tracked modification, got empty sha")
+	}
+	if got := headCount(t, dir); got != before+1 {
+		t.Fatalf("commits=%d want %d", got, before+1)
+	}
+	changed, err := gitOutput(dir, "diff", "--name-only", "HEAD~1", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(changed, "tracked.txt") {
+		t.Errorf("tracked modification missing from commit: %q", changed)
+	}
+	if got, _ := os.ReadFile(filepath.Join(dir, "tracked.txt")); string(got) != "v2" {
+		t.Errorf("tracked.txt content = %q want v2", got)
+	}
+}
+
+func TestCommitSessionWork_UnscopedNoRunStartStagesAllUntracked(t *testing.T) {
+	if !haveGit(t) {
+		t.Skip("git not on PATH")
+	}
+	dir, g := newSessionWorkTestRepo(t)
+	// Run start unknown (SetRunStart never called): every untracked file
+	// counts as run output, so the commit still finds work when
+	// timestamps are unavailable. This is the documented fallback.
+	if err := os.WriteFile(filepath.Join(dir, "a.txt"), []byte("a"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	before := headCount(t, dir)
+	sha, err := g.CommitSessionWork("sess1", "task", "unscoped fallback", nil)
+	if err != nil {
+		t.Fatalf("CommitSessionWork: %v", err)
+	}
+	if sha == "" {
+		t.Fatal("expected a commit for new untracked files, got empty sha")
+	}
+	if got := headCount(t, dir); got != before+1 {
+		t.Fatalf("commits=%d want %d", got, before+1)
+	}
+}
+
+func TestCommitSessionWork_UnscopedNoChangesStagesNothing(t *testing.T) {
+	if !haveGit(t) {
+		t.Skip("git not on PATH")
+	}
+	dir, g := newSessionWorkTestRepo(t)
+	// Only a pre-existing untracked file (old mtime) and no tracked dirt:
+	// nothing this run changed, so nothing is staged and no commit lands.
+	g.SetRunStart(time.Now().Add(-30 * time.Second))
+	old := time.Now().Add(-1 * time.Hour)
+	if err := os.WriteFile(filepath.Join(dir, "stale.txt"), []byte("s"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(filepath.Join(dir, "stale.txt"), old, old); err != nil {
+		t.Fatal(err)
+	}
+	before := headCount(t, dir)
+	sha, err := g.CommitSessionWork("sess1", "task", "nothing to commit", nil)
+	if err != nil {
+		t.Fatalf("CommitSessionWork: %v", err)
+	}
+	if sha != "" {
+		t.Errorf("sha=%q want empty (nothing staged)", sha)
+	}
+	if got := headCount(t, dir); got != before {
+		t.Errorf("commits=%d want %d", got, before)
+	}
+}
+
+func TestUnscopedChangedFilesUnionAndMtimeBound(t *testing.T) {
+	if !haveGit(t) {
+		t.Skip("git not on PATH")
+	}
+	dir, g := newSessionWorkTestRepo(t)
+	// Seed tracked files: one modified (worktree diff), one staged.
+	if err := os.WriteFile(filepath.Join(dir, "modified.txt"), []byte("v1"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "staged.txt"), []byte("v1"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mustGit(t, dir, "add", "-A")
+	mustGit(t, dir, "commit", "-q", "-m", "seed")
+	if err := os.WriteFile(filepath.Join(dir, "modified.txt"), []byte("v2"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "staged.txt"), []byte("v2"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	mustGit(t, dir, "add", "--", "staged.txt")
+
+	runStart := time.Now().Add(-30 * time.Second)
+	old := time.Now().Add(-1 * time.Hour)
+	// Fresh run output (untouched mtime) is untracked and in-bounds.
+	if err := os.WriteFile(filepath.Join(dir, "fresh.txt"), []byte("f"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Pre-existing untracked file, mtime predates the run.
+	unrelated := filepath.Join(dir, "unrelated.txt")
+	if err := os.WriteFile(unrelated, []byte("u"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(unrelated, old, old); err != nil {
+		t.Fatal(err)
+	}
+
+	files := g.unscopedChangedFiles(runStart)
+	contains := func(name string) bool {
+		for _, f := range files {
+			if f == name {
+				return true
+			}
+		}
+		return false
+	}
+	if !contains("modified.txt") {
+		t.Errorf("modified tracked file missing: %v", files)
+	}
+	if !contains("staged.txt") {
+		t.Errorf("staged file missing: %v", files)
+	}
+	if !contains("fresh.txt") {
+		t.Errorf("fresh untracked file missing: %v", files)
+	}
+	if contains("unrelated.txt") {
+		t.Errorf("pre-existing untracked file should be excluded with since set: %v", files)
+	}
+	// Unknown run start (zero since): pre-existing untracked counts too.
+	files = g.unscopedChangedFiles(time.Time{})
+	found := false
+	for _, f := range files {
+		if f == "unrelated.txt" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("pre-existing untracked file should be included with zero since: %v", files)
+	}
+	// Results are sorted for deterministic logs.
+	sorted := true
+	for i := 1; i < len(files); i++ {
+		if files[i-1] > files[i] {
+			sorted = false
+			break
+		}
+	}
+	if !sorted {
+		t.Errorf("unscopedChangedFiles not sorted: %v", files)
 	}
 }
 

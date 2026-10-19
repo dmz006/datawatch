@@ -26,6 +26,7 @@ Subcommands:
   config-get                      Read current autonomous config
   config-set <json>               Merge fields into autonomous config, e.g.
                                   config-set '{"max_concurrent_tasks":2}'
+                                  config-set '{"max_engines_per_node":2}'
   prd-list                        List all PRDs
   prd-create <spec>               Create a draft PRD (--type, --guided-mode, --skills)
   prd-get <id>                    Fetch one PRD with story+task tree
@@ -135,7 +136,12 @@ func newAutonomousConfigGetCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "config-get",
 		Short: "Read autonomous config",
-		RunE:  func(*cobra.Command, []string) error { return daemonGet("/api/autonomous/config") },
+		Long: `Read the current autonomous config.
+
+The concurrency keys are max_concurrent_tasks (tasks of one Automaton that
+run at once; 1 = sequential) and max_engines_per_node (engine sessions one
+compute node runs at once; 1 = one engine per node, the default).`,
+		RunE: func(*cobra.Command, []string) error { return daemonGet("/api/autonomous/config") },
 	}
 }
 
@@ -150,6 +156,11 @@ Example — let up to 2 independent tasks of one Automaton run at once
 (daemon-wide default; an Automaton's own setting overrides it; 1 = sequential):
 
   datawatch autonomous config-set '{"max_concurrent_tasks":2}'
+
+Example — let each compute node run up to 2 engine sessions at once
+(default 1; values below 1 are clamped to 1):
+
+  datawatch autonomous config-set '{"max_engines_per_node":2}'
 
 max_parallel_tasks is deprecated and ignored; use max_concurrent_tasks.`,
 		Args: cobra.ExactArgs(1),

@@ -36,11 +36,17 @@ import "time"
 type FailureReason struct {
 	// Category is one of:
 	//   "infra"   — the judging/executing MECHANISM itself never
-	//               completed its job (session timeout/crash,
-	//               unparseable response, a stalled worker, a failed
-	//               LLM call). Retrying the identical call against a
-	//               healthy session would likely produce a different
-	//               outcome.
+	//               completed its job (session timeout/crash, a
+	//               stalled worker, a failed LLM call — no output was
+	//               produced at all). Retrying the identical call
+	//               against a healthy session would likely produce a
+	//               different outcome.
+	//   "invalid-response" — the judge DID write a response, but it
+	//               could not be parsed as a verdict. Terminal, NOT
+	//               infra-retryable: re-running the whole judge would
+	//               re-deliver the same already-relocated output file,
+	//               so the response was consumed twice (or not at all) —
+	//               the bbf70001 double-consumption incident class.
 	//   "content" — the mechanism ran to completion and produced a
 	//               real judgment: the work itself was found
 	//               deficient, and the judgment's own Issues name

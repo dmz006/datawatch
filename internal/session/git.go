@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 )
@@ -12,6 +13,10 @@ import (
 // ProjectGit manages git operations on the user's project directory.
 type ProjectGit struct {
 	dir string
+	// runStart bounds unscoped auto-commit staging: untracked files
+	// whose mtime predates it are not considered part of this run
+	// (see unscopedChangedFiles). Zero means the run start is unknown.
+	runStart time.Time
 }
 
 // NewProjectGit creates a new ProjectGit for the given directory.
@@ -44,9 +49,11 @@ func (g *ProjectGit) Init() error {
 //
 // Scope entries come from the PRD/task scope namespace. Entries outside
 // this repo's directory are skipped with a warning (other PRD write dirs
-// live in their own repos or on another host). An empty scope preserves
-// the historical behavior — git add -A — with a warning so broad staging
-// stays visible in the log.
+// live in their own repos or on another host). An empty scope stages
+// only the files this run changed (see unscopedChangedFiles), with a
+// warning so the reduced staging stays visible in the log — the old
+// `git add -A` fallthrough swept pre-existing untracked files into the
+// session's commit (2026-10-19 incident) and must never return.
 func (g *ProjectGit) stageChanges(scope []string) error {
 	if len(scope) > 0 {
 		absDir, err := filepath.Abs(g.dir)
@@ -83,11 +90,86 @@ func (g *ProjectGit) stageChanges(scope []string) error {
 		}
 		return nil
 	}
-	fmt.Printf("[datawatch] warning: no write scope set for this session — staging ALL changes in %s (git add -A); untracked files elsewhere in the repo will be committed\n", g.dir)
-	if err := runGit(g.dir, "add", "-A"); err != nil {
-		return fmt.Errorf("git add -A: %v", err)
+	files := g.unscopedChangedFiles(g.runStart)
+	if len(files) == 0 {
+		fmt.Printf("[datawatch] warning: no write scope set for this session in %s — staged nothing (no files changed this run detected)\n", g.dir)
+		return nil
+	}
+	names := files
+	if len(names) > 20 {
+		names = append(append([]string{}, names[:20]...), fmt.Sprintf("…(%d more)", len(files)-20))
+	}
+	fmt.Printf("[datawatch] warning: no write scope set for this session in %s — staging only the %d file(s) this run changed: %s\n",
+		g.dir, len(files), strings.Join(names, ", "))
+	if err := runGit(g.dir, append([]string{"add", "--"}, files...)...); err != nil {
+		return fmt.Errorf("git add %v: %v", names, err)
 	}
 	return nil
+}
+
+// SetRunStart records when this run started so an empty-scope (unscoped)
+// auto-commit stages only the files changed since then. See
+// unscopedChangedFiles. Zero (the default) means the run start is
+// unknown: every untracked file then counts as run output.
+func (g *ProjectGit) SetRunStart(t time.Time) {
+	g.runStart = t
+}
+
+// unscopedChangedFiles returns the set of files this run changed in the
+// working tree — the union of modified tracked files
+// (`git diff --name-only HEAD`), staged changes
+// (`git diff --cached --name-only`), and new untracked files
+// (`git ls-files --others --exclude-standard`). When since is non-zero,
+// untracked files whose mtime predates since are excluded: they existed
+// before the run and may be another session's (or the operator's) work,
+// exactly the leak the scoped-staging fix closes for empty scopes. Paths
+// are repo-relative and sorted for deterministic logs. Returns an empty
+// slice when git reports nothing (including when git itself fails).
+func (g *ProjectGit) unscopedChangedFiles(since time.Time) []string {
+	seen := make(map[string]struct{})
+	var untracked []string
+	if out, err := gitOutput(g.dir, "diff", "--name-only", "HEAD"); err == nil {
+		for _, l := range strings.Split(strings.TrimSpace(out), "\n") {
+			if l = strings.TrimSpace(l); l != "" {
+				seen[l] = struct{}{}
+			}
+		}
+	}
+	if out, err := gitOutput(g.dir, "diff", "--cached", "--name-only"); err == nil {
+		for _, l := range strings.Split(strings.TrimSpace(out), "\n") {
+			if l = strings.TrimSpace(l); l != "" {
+				seen[l] = struct{}{}
+			}
+		}
+	}
+	if out, err := gitOutput(g.dir, "ls-files", "--others", "--exclude-standard"); err == nil {
+		for _, l := range strings.Split(strings.TrimSpace(out), "\n") {
+			if l = strings.TrimSpace(l); l != "" {
+				untracked = append(untracked, l)
+			}
+		}
+	}
+	for _, rel := range untracked {
+		if since.IsZero() {
+			seen[rel] = struct{}{}
+			continue
+		}
+		// mtime bounds what counts as run output. Files that no longer
+		// exist are skipped — staging a missing path would fail the add.
+		st, err := os.Stat(filepath.Join(g.dir, rel))
+		if err != nil {
+			continue
+		}
+		if st.ModTime().After(since) {
+			seen[rel] = struct{}{}
+		}
+	}
+	out := make([]string, 0, len(seen))
+	for f := range seen {
+		out = append(out, f)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // stagedOnly reports whether the index holds any staged changes relative
@@ -101,8 +183,12 @@ func (g *ProjectGit) stagedOnly() bool {
 }
 
 // PreSessionCommit creates a snapshot commit before the session starts.
-// scope are the session's effective write directories; nil/empty falls
-// back to broad (unscoped) staging with a warning.
+// scope are the session's effective write directories. nil/empty
+// preserves baseline behavior — the whole dirty tree is staged, with a
+// warning: the pre-session snapshot is designed to capture pre-existing
+// dirt (the pinned Start() test contract), so the run's later completion
+// commit diffs only against that baseline. Completion auto-commits bound
+// unscoped staging to the run via SetRunStart instead.
 func (g *ProjectGit) PreSessionCommit(sessionID, task string, scope []string) error {
 	if err := g.stageChanges(scope); err != nil {
 		return err
@@ -115,8 +201,9 @@ func (g *ProjectGit) PreSessionCommit(sessionID, task string, scope []string) er
 }
 
 // PostSessionCommit creates a final commit after the session ends.
-// scope are the session's effective write directories; nil/empty falls
-// back to broad (unscoped) staging with a warning.
+// scope are the session's effective write directories; nil/empty stages
+// only the files changed since the run start (SetRunStart) with a
+// warning.
 func (g *ProjectGit) PostSessionCommit(sessionID, task string, state State, scope []string) error {
 	if err := g.stageChanges(scope); err != nil {
 		return err
@@ -135,8 +222,8 @@ func (g *ProjectGit) PostSessionCommit(sessionID, task string, state State, scop
 //
 // scope are the session's effective write directories (PRD.WriteDirs /
 // task ProjectDir override, resolved by the autonomous executor). Nil or
-// empty preserves the historical broad behavior: git add -A, with a
-// warning.
+// empty stages only the files changed since the run start
+// (SetRunStart), with a warning.
 func (g *ProjectGit) CommitSessionWork(sessionID, task, summary string, scope []string) (string, error) {
 	if err := g.stageChanges(scope); err != nil {
 		return "", err

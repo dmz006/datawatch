@@ -3,14 +3,41 @@
 All notable changes to datawatch will be documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## [Unreleased]
+## v9.5.24 — a retried task whose work already landed is judged by its own verification script
 
-## v9.5.22 — autonomous: resolve stale 'verifying' tasks at daemon boot
+## v9.5.25 — autonomous: resolve tasks left verifying after a restart from the recorded verdict
 
 - **After a daemon restart, tasks that were still shown as 'verifying' with no verifier actually running now immediately take their recorded verification result** — a passing verdict shows the task as completed, a failed or missing verdict re-enters the normal retry flow.
 - **Every boot-time resolution is written to the PRD's decision log** (a single entry per boot summarizing how many tasks completed from a recorded ok verdict and how many were re-queued for retry), so the decision is auditable.
 - **The CLI and REST endpoints report the resolved status** instead of a stale 'verifying' label, since status reads go through the same boot-time pass.
 - Version bump 9.5.18 -> 9.5.22 (cmd/datawatch/main.go + internal/server/api.go kept identical).
+### Fixed
+- **A retried task whose work an earlier attempt already committed is no longer failed as "no changes detected".** Instead, the task's own verification script is run against the current tree: a passing script completes the task, and the completion is recorded as an audit note.
+- **A failing verification script fails the task, showing the script's exit code and output.**
+- **A verification script the task named but that is missing from the worktree is reported as a setup fault naming the missing path, and the task is held (blocked) for operator action rather than failed.**
+- Version bump 9.5.21 -> 9.5.22 (cmd/datawatch/main.go + internal/server/api.go kept identical).
+
+## v9.5.21 — autonomous: check a PRD's guardrail verdict once, and stage only a session's own changes
+
+### Fixed
+- A guardrail or decompose judge that has already written its output file is judged exactly once on that output. If the output cannot be read as a verdict, the failure is reported naming what went wrong and no second judge is spawned to re-read it; a judge session that ends without producing any output still gets its single bounded automatic retry.
+- A session with no write scope no longer stages the whole repository for its auto-commit. It stages only the files its own run changed, and the log warning names those files — pre-existing untracked files in the same worktree are no longer swept into a session's commit.
+- Version bump 9.5.18 -> 9.5.21 (cmd/datawatch/main.go + internal/server/api.go kept identical).
+## v9.5.23 — autonomous: one local model engine per GPU node, with a queue
+
+
+Finished feature branches no longer conflict on the version number when they are merged. The version number is now chosen once, at merge time, and applied to all branches merged in the same run. The merge check refuses a branch that changed the version to the wrong number, and its message names the expected version.
+
+## v9.5.19 — autonomous: a per-node limit on local-model sessions, with a queue for the rest
+
+Each compute node can now run only a set number of local-model sessions at once. The new setting `autonomous.max_engines_per_node` controls that number and defaults to 1; values below 1 are treated as 1. It applies to sessions whose model runs on a local engine on that node (pi, pi-prompt, ollama, opencode, and opencode-acp). Hosted backends such as claude-code are not limited by it.
+
+When a node is full, the session waits instead of starting past the limit. The task shows the reason "waiting for node <name>" with how many engines are in use and which tasks hold them. The capacity view lists each node's queue depth and current holders.
+
+Waiting sessions are granted in a fixed order. Verifier and guardrail sessions for a task that already has finished work go first, then ordinary worker sessions, then planning and decomposition sessions. Within the same role, higher-priority work goes first, then sessions that have waited longest.
+
+The setting can be changed from the config file, the REST API, the MCP tools, the CLI, and the comm `configure` command. The operator guide describes the queue and its priority order.
+- Version bump 9.5.18 -> 9.5.19 (cmd/datawatch/main.go + internal/server/api.go kept identical).
 ## v9.5.18 — autonomous: warn when a PRD model name looks like it belongs to another backend, once per PRD
 
 The autonomous status stops warning when a planning model with a provider tag (for example an `ollama/...` model) is set for a pi or pi-prompt session, because those backends forward the model name to their configured provider — the warning now appears only when the named backend cannot serve the model at all. Pairing warnings also improved: each affected PRD is now named once with the reason instead of a long list of ids.

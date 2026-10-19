@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"sort"
+	"strings"
 
 	"github.com/dmz006/datawatch/internal/capacity"
 	"github.com/dmz006/datawatch/internal/federation"
@@ -184,6 +185,23 @@ func (s *Server) prdRelevantPools(prdID string) (relevant map[string]bool, ok bo
 	return relevant, true
 }
 
+// capacityPoolJSON is one pool in the /api/capacity response. queue_depth and
+// holder are only set on node:<name> pools; they are pointers so every node
+// pool reports them (zero / empty when idle) while other pools keep the
+// plain PoolStatus shape.
+type capacityPoolJSON struct {
+	capacity.PoolStatus
+	QueueDepth *int    `json:"queue_depth,omitempty"`
+	Holder     *string `json:"holder,omitempty"`
+}
+
+// capacityResponse is the /api/capacity body.
+type capacityResponse struct {
+	Pools   []capacityPoolJSON `json:"pools"`
+	Leases  []capacity.Lease   `json:"leases"`
+	Waiting []capacity.Waiter  `json:"waiting"`
+}
+
 // handleCapacity serves GET /api/capacity: pools, limits, holders and the
 // wait queue. With ?prd_id=, scopes the pool list to that PRD's own backend
 // usage (always includes "host") instead of the whole machine's ledger —
@@ -212,6 +230,15 @@ func (s *Server) handleCapacity(w http.ResponseWriter, r *http.Request) {
 	}
 	if st.Waiting == nil {
 		st.Waiting = []capacity.Waiter{}
+	}
+
+	// Waiters per pool, counted over the whole ledger before any ?prd_id=
+	// scoping so a node's queue_depth is the real pool depth.
+	waitersOn := map[string]int{}
+	for _, wtr := range st.Waiting {
+		for _, p := range wtr.Pools {
+			waitersOn[p]++
+		}
 	}
 
 	have := map[string]bool{}
@@ -262,5 +289,17 @@ func (s *Server) handleCapacity(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sort.Slice(st.Pools, func(i, j int) bool { return st.Pools[i].Name < st.Pools[j].Name })
-	writeJSONOK(w, st)
+
+	out := capacityResponse{Pools: make([]capacityPoolJSON, 0, len(st.Pools)), Leases: st.Leases, Waiting: st.Waiting}
+	for _, p := range st.Pools {
+		pj := capacityPoolJSON{PoolStatus: p}
+		if strings.HasPrefix(p.Name, "node:") {
+			depth := waitersOn[p.Name]
+			holder := strings.Join(p.Holders, ",")
+			pj.QueueDepth = &depth
+			pj.Holder = &holder
+		}
+		out.Pools = append(out.Pools, pj)
+	}
+	writeJSONOK(w, out)
 }

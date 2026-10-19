@@ -190,7 +190,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "9.5.22"
+var Version = "9.5.25"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -5582,6 +5582,8 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			// Daemon-wide default for how many independent tasks of one
 			// Automaton run at once (an Automaton's own setting overrides).
 			"max_concurrent_tasks": s.cfg.Autonomous.MaxConcurrentTasks,
+			// Local-model engine sessions allowed per compute node (1 = default).
+			"max_engines_per_node": s.cfg.Autonomous.MaxEnginesPerNode,
 			// BL304: new key. Also emit legacy key for back-compat with old clients.
 			"planning_backend":      s.cfg.Autonomous.PlanningBackend,
 			"decomposition_backend": s.cfg.Autonomous.PlanningBackend,
@@ -6947,6 +6949,15 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// normalizes an unset value to 1 the same way).
 			if n, ok := toInt(v); ok && n >= 1 {
 				cfg.Autonomous.MaxConcurrentTasks = n
+			}
+		case "autonomous.max_engines_per_node":
+			// Clamped to 1 like config load does: values below 1 become 1
+			// rather than being skipped, so the stored value is always valid.
+			if n, ok := toInt(v); ok {
+				if n < 1 {
+					n = 1
+				}
+				cfg.Autonomous.MaxEnginesPerNode = n
 			}
 		// BL304: accept both new planning_* and legacy decomposition_* keys.
 		case "autonomous.planning_backend", "autonomous.decomposition_backend":

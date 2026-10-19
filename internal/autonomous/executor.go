@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dmz006/datawatch/internal/capacity"
 	"github.com/dmz006/datawatch/internal/metrics"
 	"github.com/dmz006/datawatch/internal/pipeline"
 	"github.com/dmz006/datawatch/internal/tooling"
@@ -81,7 +82,8 @@ type SpawnRequest struct {
 	// else PRD.WriteDirs). When non-empty, the local-session SpawnFn
 	// forwards them to the session manager so automatic commits stage
 	// only files under these directories instead of `git add -A` of the
-	// whole repo. Nil/empty = historical broad staging (warns).
+	// whole repo. Nil/empty = stage only files changed since the session
+	// (run) started (warns).
 	WriteScope []string
 	// AttemptRefs — the task's preserved attempt snapshot refs, in order
 	// (Task.AttemptRefs). The SpawnFn restores the last one into ProjectDir
@@ -337,6 +339,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 				if m.store.SaveTask(t) == nil {
 					m.emitTaskStatus(prd, t, oldStatus, nil, nil)
 				}
+				m.releaseCapacity(t.ID)
 				failedIDs[tid] = true
 			} else {
 				// Mark the owning story in_progress when its first task begins.
@@ -345,6 +348,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 					_ = m.store.SavePRD(prd)
 				}
 				if err := m.executeOne(ctx, prd, t, spawn, verify, retries, qgCfg, qgBaselines); err != nil {
+					m.releaseCapacity(t.ID)
 					oldStatus := t.Status
 					t.Status = TaskFailed
 					t.Error = err.Error()
@@ -469,6 +473,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 					if m.store.SaveTask(t) == nil {
 						m.emitTaskStatus(prd, t, oldStatus, nil, nil)
 					}
+					m.releaseCapacity(t.ID)
 					failedIDs[tid] = true
 					completedIDs[tid] = true
 					remaining--
@@ -529,6 +534,9 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 				if m.store.SaveTask(t) == nil {
 					m.emitTaskStatus(prd, t, oldStatus, nil, nil)
 				}
+				// The task's worker may still be running here; free its slot
+				// so a task waiting on the same node is not held up.
+				m.releaseCapacity(t.ID)
 			}
 		}
 
@@ -554,6 +562,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 				remaining--
 				if r.err != nil {
 					if t := lookupTask(prd, r.tid); t != nil {
+						m.releaseCapacity(t.ID)
 						oldStatus := t.Status
 						t.Status = TaskFailed
 						t.Error = r.err.Error()
@@ -998,7 +1007,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				contextPrepend = m.contextFn(prd.Type)
 			}
 			m.mu.Unlock()
-			if aerr := m.admit(ctx, prd, t, backend, model); aerr != nil {
+			if aerr := m.admit(ctx, prd, t, backend, model, capacity.RoleWorker); aerr != nil {
 				if errors.Is(aerr, errCancelledWhileWaiting) {
 					return nil
 				}
@@ -1113,6 +1122,10 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 					// retryable verification failure, not a fatal error — it consumes
 					// the same auto_fix_retries budget as a normal failed verification.
 					lastFailureCategory = "infra" // BL410 Phase 3
+					// The stalled worker is killed before the retry spawns, so
+					// free its capacity lease now; the retry re-admits through
+					// the normal queue like any other waiting task.
+					m.releaseCapacity(t.ID)
 					hint = err.Error()
 					if cp := m.relocateCheckpoint(prd, t); cp != "" {
 						hint += "\n\nCheckpoint from the previous attempt (context only):\n" + cp
@@ -1221,6 +1234,17 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			if err := m.store.SaveTask(t); err != nil {
 				return err
 			}
+			// v9.2.1 — passing-script retry: verification passed via the
+			// unmodified-retry escape hatch (the retry itself produced no diff;
+			// already-committed work passed the verification script). Append the
+			// audit-trail note now that the task is persisted as completed.
+			// Best-effort: a failure here is a lost audit note, never a lost
+			// outcome — log and move on.
+			if vr.UnmodifiedRetry {
+				if recErr := m.RecordUnmodifiedRetry(prd.ID, t.ID, "verification script passed on the work an earlier attempt already committed"); recErr != nil {
+					log.Printf("[autonomous] %s/%s record unmodified-retry audit note: %v", prd.ID, t.ID, recErr)
+				}
+			}
 			m.emitTaskStatus(prd, t, preDoneStatus, nil, nil)
 			m.deleteTaskSession(t.SessionID)
 			return nil
@@ -1240,6 +1264,27 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				}
 			}
 		}
+		// setup-fault verdict (three-way retry no-output path): the verdict
+		// is an environment fault, not a task fault. Retrying the identical
+		// setup against an identical environment reproduces the same error, and
+		// TaskFailed would wrongly record a healthy task as failed. Hold the
+		// task exactly the way the guardrail 'block' verdict above holds it
+		// (TaskBlocked, persisted, status emitted, return), consuming none of
+		// the auto_fix_retries budget.
+		if vr.Category == "setup" {
+			oldStatus := t.Status
+			t.Status = TaskBlocked
+			t.Error = vr.Summary
+			t.FailureReason = &FailureReason{
+				Category: "setup", Source: "setup-fault", Retryable: false,
+				Detail: vr.Summary, OccurredAt: time.Now(),
+			}
+			if err := m.store.SaveTask(t); err != nil {
+				return err
+			}
+			m.emitTaskStatus(prd, t, oldStatus, nil, nil)
+			return nil
+		}
 		lastFailureCategory = vr.Category // BL410 Phase 3
 		hint = vr.Summary
 		if len(vr.Issues) > 0 {
@@ -1251,7 +1296,15 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 	}
 	exhaustedOld := t.Status
 	t.Status = TaskFailed
-	t.Error = "verification failed after retries"
+	// A budget-exhausted task must carry the final failing verdict's output
+	// (summary + issues — e.g. a failed verification script's output) into
+	// Task.Error, not just a bare status: FailureReason.Detail already does,
+	// and Task.Error is where operators look first.
+	if hint != "" {
+		t.Error = "verification failed after retries\n" + hint
+	} else {
+		t.Error = "verification failed after retries"
+	}
 	// BL410 Phase 3 — Learning writer revival: record the final,
 	// budget-exhausted failure for future pattern analysis. Fires once,
 	// here, not on every retry attempt — a transient failure that
