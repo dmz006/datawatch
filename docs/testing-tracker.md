@@ -1581,3 +1581,20 @@ and absent or `view=full` keeps the full reply.
 | MCP `autonomous_prd_get` `detail` argument: omitted = `summary`; `full` and `tasks` forwarded; invalid value rejected | **Yes** (`TestMCPPRDGetDetailArgument` in `internal/mcp/autonomous_view_test.go`) | No | Go 1.27.2 on linux/amd64; recording in-process loopback server | Live daemon check still pending. |
 | CLI PRD get detail flag | No (`TestCLIPRDGetDetailFlag` does not exist in the repo, and `cmd/datawatch` has no PRD-get `--detail` flag) | No | — | Gap: the CLI has no detail flag yet, so there is nothing to test. Add the flag and its test, or drop this row. |
 | Live check: real daemon returns the `summary`/`tasks`/`full` shapes on GET and the compact write view on POST, with MCP calls matching | No | **PENDING** | Needs the new binary running on a sandbox daemon | Live daemon check is still pending. |
+
+## RepairDependsOn full-forms resolution + error surfacing — v8.36.6 (verified 2026-10-17)
+`POST /api/autonomous/prds/{id}/repair_depends_on` (`Store.RepairDependsOn`, shared with `SetStories` via `resolveDependsOn`)
+plus the MCP `autonomous_repair_depends_on` tool and the CLI `prd-repair-depends-on` command: depends_on entries in any supported
+form (real IDs, sibling titles, positional `sN-tM`/`sN`, plain number) must resolve to real IDs and be persisted; an unresolvable
+entry or a dependency cycle must reject the call naming the exact bad entry (or cycle) and leave the persisted state byte-identical.
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| `Store.RepairDependsOn` resolves positional story/task codes (`s1`, `s1-t1`) | **Yes** (`TestStore_RepairDependsOn_ResolvesPositionalStoryAndTaskCodes` in `internal/autonomous/repair_depends_on_forms_test.go`) | No | Go 1.27.x, `go test ./internal/autonomous/ -count=1` | Repairs the stored slice in place, one `Rev++` per call. |
+| `Store.RepairDependsOn` resolves plain-number codes | **Yes** (`TestStore_RepairDependsOn_ResolvesPlainNumberCodes`) | No | ditto | Bare N = Nth story at both levels. |
+| `Store.RepairDependsOn` still resolves raw sibling titles (pre-fix shape) | **Yes** (`TestStore_RepairDependsOn_StillResolvesTitles`, plus the original `TestStore_RepairDependsOn` in `autonomous_test.go`) | No | ditto | The a2833a5e-era recovery shape stays covered. |
+| Unresolvable entry → error names the raw entry, nothing persist | **Yes** (`TestStore_RepairDependsOn_UnresolvableEntryErrorsAndPersistsNothing`) | No | ditto — asserts error contains the raw entry and `prds.jsonl` bytes + `Rev` unchanged (no `persist()` on the error path) | In-memory slice may be touched after a reject (resolution mutates before detection); only the file must be identical. |
+| Cycle → error names cycle + members, nothing persist | **Yes** (`TestStore_RepairDependsOn_CycleErrorsAndPersistsNothing`) | No | ditto | Same file-byte assertion. |
+| `Manager.RepairDependsOn` returns the store error untouched (appends decision + save only on success) | **Yes** (code-inspected, `internal/autonomous/manager.go` — no early return between the store call and the error check) | **Pending** | — | No dedicated test; the store-level rejection tests are the enforcement point and the manager path is a straight pass-through. |
+| REST `POST /api/autonomous/prds/{id}/repair_depends_on` 400 body carries the store's message | **Yes** (code-inspected, `internal/server/autonomous.go` — `http.Error(w, err.Error(), http.StatusBadRequest)`) | **Pending** | — | `http.Error` prefixes `400 Bad Request: ` then the raw message; the bad entry name survives. |
+| Live: a repair call on a PRD with a bad entry returns 400 naming the entry, and none of the MCP/CLI surfaces swallow it | No | **PENDING** | Needs a running daemon + seeded PRD | MCP `autonomous_repair_depends_on` and CLI `prd-repair-depends-on` both surface `err.Error()` verbatim (inspected). |
