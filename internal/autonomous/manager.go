@@ -774,6 +774,7 @@ func (m *Manager) resetInProgressTasksForResume(prd *PRD) {
 				}
 			}
 			oldSession := t.SessionID
+			m.releaseCapacity(t.ID)
 			t.SessionID = ""
 			t.Status = TaskPending
 			if m.store.SaveTask(t) == nil {
@@ -2078,6 +2079,9 @@ func (m *Manager) CancelStory(prdID, storyID, actor, reason string) (*PRD, error
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
 	}
+	for _, ev := range cancelled {
+		m.releaseCapacity(ev.t.ID)
+	}
 	emitCancelled()
 	updated, _ := m.store.GetPRD(prdID)
 	return updated, nil
@@ -2139,6 +2143,7 @@ func (m *Manager) CancelTask(prdID, taskID, actor, reason string) (*PRD, error) 
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
 	}
+	m.releaseCapacity(taskID)
 	emitCancelled()
 	updated, _ := m.store.GetPRD(prdID)
 	return updated, nil
@@ -3459,6 +3464,9 @@ func (m *Manager) reconcileStuckTasks() {
 				}
 				log.Printf("[autonomous] boot-reconcile: prd=%s task=%s status=%s session=%s → TaskPending (session gone on daemon restart)",
 					prd.ID, t.ID, t.Status, t.SessionID)
+				// The session is gone, so the task's node lease is freed here
+				// rather than left for the periodic reaper.
+				m.releaseCapacity(t.ID)
 				reset = append(reset, pendingTaskEvent{t: t, oldStatus: t.Status, oldSession: t.SessionID})
 				t.Status = TaskPending
 				t.Error = ""

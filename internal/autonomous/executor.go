@@ -338,6 +338,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 				if m.store.SaveTask(t) == nil {
 					m.emitTaskStatus(prd, t, oldStatus, nil, nil)
 				}
+				m.releaseCapacity(t.ID)
 				failedIDs[tid] = true
 			} else {
 				// Mark the owning story in_progress when its first task begins.
@@ -346,6 +347,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 					_ = m.store.SavePRD(prd)
 				}
 				if err := m.executeOne(ctx, prd, t, spawn, verify, retries, qgCfg, qgBaselines); err != nil {
+					m.releaseCapacity(t.ID)
 					oldStatus := t.Status
 					t.Status = TaskFailed
 					t.Error = err.Error()
@@ -470,6 +472,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 					if m.store.SaveTask(t) == nil {
 						m.emitTaskStatus(prd, t, oldStatus, nil, nil)
 					}
+					m.releaseCapacity(t.ID)
 					failedIDs[tid] = true
 					completedIDs[tid] = true
 					remaining--
@@ -530,6 +533,9 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 				if m.store.SaveTask(t) == nil {
 					m.emitTaskStatus(prd, t, oldStatus, nil, nil)
 				}
+				// The task's worker may still be running here; free its slot
+				// so a task waiting on the same node is not held up.
+				m.releaseCapacity(t.ID)
 			}
 		}
 
@@ -555,6 +561,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 				remaining--
 				if r.err != nil {
 					if t := lookupTask(prd, r.tid); t != nil {
+						m.releaseCapacity(t.ID)
 						oldStatus := t.Status
 						t.Status = TaskFailed
 						t.Error = r.err.Error()
@@ -1114,6 +1121,10 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 					// retryable verification failure, not a fatal error — it consumes
 					// the same auto_fix_retries budget as a normal failed verification.
 					lastFailureCategory = "infra" // BL410 Phase 3
+					// The stalled worker is killed before the retry spawns, so
+					// free its capacity lease now; the retry re-admits through
+					// the normal queue like any other waiting task.
+					m.releaseCapacity(t.ID)
 					hint = err.Error()
 					if cp := m.relocateCheckpoint(prd, t); cp != "" {
 						hint += "\n\nCheckpoint from the previous attempt (context only):\n" + cp
