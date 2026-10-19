@@ -309,6 +309,17 @@ requirement (open question 19).
   no project directory first. A lane may sit idle only with a named blocker in the report.
   Recreating PRDs: a draft created from the command line gets the working directory as its
   project directory, so create drafts through MCP with the project directory left empty.
+- **Local GPU lane idle, root cause (2026-10-19).** The local node johnnyjohnny ran nothing
+  for most of a day while its 64k model was resident and the lane was defined. The LLM
+  registry lists qwen3.8-64k:27b only on the datawatch node, so every local-model PRD
+  routed to node datawatch and queued behind it. The lane was defined on paper but had no
+  route. Lesson: a lane is defined by its node and its model, and both must be bound in the
+  registry. Each tick must check that every defined lane has a route: the model appears under
+  its node in `datawatch llm list`, and a freshly pinned PRD lands on that node in
+  `datawatch capacity`. A lane with no route is a blocker to name, not an idle state to report.
+  Lanes, defined: datawatch GPU = node datawatch, ollama-datawatch/qwen3.8-64k:27b;
+  local GPU = node johnnyjohnny, ollama-johnnyjohnny/qwen3.8-64k:27b (binding pending);
+  Claude 1 and Claude 2 = claude-code, two lanes only.
 - **Plan check against the original spec.** A rewritten or shortened spec can drop test
   requirements, so compare the decomposed plan with the original request and add missing
   tests or surfaces with a task edit.
