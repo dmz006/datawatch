@@ -1224,12 +1224,13 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var req struct {
-			Backend              string `json:"backend"`
-			Effort               string `json:"effort"`
-			Model                string `json:"model"`
-			DecompositionProfile string `json:"decomposition_profile"`
-			DecompositionModel   string `json:"decomposition_model"`
-			Actor                string `json:"actor"`
+			// Presence-aware: absent = leave unchanged, "" = clear.
+			Backend              *string `json:"backend"`
+			Effort               *string `json:"effort"`
+			Model                *string `json:"model"`
+			DecompositionProfile *string `json:"decomposition_profile"`
+			DecompositionModel   *string `json:"decomposition_model"`
+			Actor                string  `json:"actor"`
 			// BL416 — presence-aware: absent = leave unchanged, "" = clear.
 			GuardrailBackend *string `json:"guardrail_backend"`
 			GuardrailModel   *string `json:"guardrail_model"`
@@ -1243,37 +1244,35 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
 			return
 		}
-		hasGuardrail, hasLegacy := guardrailLLMKeys(body, "backend", "effort", "model", "decomposition_profile", "decomposition_model")
+		hasGuardrail, _ := guardrailLLMKeys(body, "backend", "effort", "model", "decomposition_profile", "decomposition_model")
 		if req.Actor == "" {
 			req.Actor = "operator"
 		}
 		// BL308 — validate backend against the inference registry when present.
-		if req.Backend != "" && s.inferenceReg != nil {
-			if _, err := s.inferenceReg.Get(req.Backend); err != nil {
-				http.Error(w, "unknown LLM "+strconv.Quote(req.Backend)+" — check /api/llms for valid names", http.StatusBadRequest)
+		if req.Backend != nil && *req.Backend != "" && s.inferenceReg != nil {
+			if _, err := s.inferenceReg.Get(*req.Backend); err != nil {
+				http.Error(w, "unknown LLM "+strconv.Quote(*req.Backend)+" — check /api/llms for valid names", http.StatusBadRequest)
 				return
 			}
 		}
 		// Validate decomposition_profile against the registry (any kind accepted —
 		// ollama/openwebui run headless, opencode/claude-code spawn a session).
-		if req.DecompositionProfile != "" && s.inferenceReg != nil {
-			if _, err := s.inferenceReg.Get(req.DecompositionProfile); err != nil {
-				http.Error(w, "unknown planning LLM "+strconv.Quote(req.DecompositionProfile)+" — check /api/llms for valid names", http.StatusBadRequest)
+		if req.DecompositionProfile != nil && *req.DecompositionProfile != "" && s.inferenceReg != nil {
+			if _, err := s.inferenceReg.Get(*req.DecompositionProfile); err != nil {
+				http.Error(w, "unknown planning LLM "+strconv.Quote(*req.DecompositionProfile)+" — check /api/llms for valid names", http.StatusBadRequest)
 				return
 			}
 		}
 		if !s.validGuardrailBackend(w, req.GuardrailBackend) {
 			return
 		}
-		// BL416 — a guardrail-only body must not clear the worker LLM, so
-		// the legacy (overwrite-all) setter only runs when a legacy key is
-		// present or no guardrail key is.
+		// Presence-aware semantics: the legacy worker-LLM setter only runs
+		// when at least one legacy key is present; a guardrail-only body
+		// leaves legacy fields untouched (and adds no decision-log entry).
 		var updated any
-		if hasLegacy || !hasGuardrail {
-			// Presence semantics live in the REST-decode change; for now the
-			// handler always passes all five fields so behavior is unchanged.
-			b, e, mo, dp, dm := req.Backend, req.Effort, req.Model, req.DecompositionProfile, req.DecompositionModel
-			updated, err = s.autonomousMgr.SetPRDLLM(id, &b, &e, &mo, &dp, &dm, req.Actor)
+		anyLegacy := req.Backend != nil || req.Effort != nil || req.Model != nil || req.DecompositionProfile != nil || req.DecompositionModel != nil
+		if anyLegacy {
+			updated, err = s.autonomousMgr.SetPRDLLM(id, req.Backend, req.Effort, req.Model, req.DecompositionProfile, req.DecompositionModel, req.Actor)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
@@ -1286,7 +1285,18 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		detail := map[string]any{"backend": req.Backend, "model": req.Model}
+		if updated == nil {
+			if prd, ok := s.autonomousMgr.GetPRD(id); ok {
+				updated = prd
+			}
+		}
+		detail := map[string]any{"backend": "", "model": ""}
+		if req.Backend != nil {
+			detail["backend"] = *req.Backend
+		}
+		if req.Model != nil {
+			detail["model"] = *req.Model
+		}
 		addGuardrailAuditDetail(detail, req.GuardrailBackend, req.GuardrailModel)
 		s.audit(r.Context(), "set_llm", "automaton", id, detail) // GH#201 Phase 4
 		writeJSONOK(w, updated)

@@ -134,13 +134,14 @@ func TestBL416_LegacyOnlyBody_SkipsGuardrailSetter(t *testing.T) {
 		t.Errorf("set_task_llm legacy-only: SetTaskLLM=%d SetTaskGuardrailLLM=%d; want 1/0", orch.taskLLMCalls, orch.taskGuardrailCalls)
 	}
 
-	// An empty body (no keys at all) keeps the legacy behavior too.
+	// An empty body (no keys at all) leaves all LLM fields unchanged —
+	// no legacy setter call, no guardrail setter call.
 	orch = &guardrailLLMTestOrch{}
 	if rr := bl416Post(t, orch, "set_llm", `{}`); rr.Code != http.StatusOK {
 		t.Fatalf("set_llm {}: %d %s", rr.Code, rr.Body.String())
 	}
-	if orch.prdLLMCalls != 1 || orch.prdGuardrailCalls != 0 {
-		t.Errorf("set_llm {}: SetPRDLLM=%d SetPRDGuardrailLLM=%d; want 1/0", orch.prdLLMCalls, orch.prdGuardrailCalls)
+	if orch.prdLLMCalls != 0 || orch.prdGuardrailCalls != 0 {
+		t.Errorf("set_llm {}: SetPRDLLM=%d SetPRDGuardrailLLM=%d; want 0/0", orch.prdLLMCalls, orch.prdGuardrailCalls)
 	}
 }
 
