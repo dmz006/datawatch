@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.0.88 — fix(security): remove stale CVE suppressions now fixed upstream
+
+### Fixed
+- **Removed 1 .trivyignore suppression(s) with a fix now available in Debian bookworm** — found by the daily `image-refresh` recheck, which rebuilds every shipped image fresh and scans without `.trivyignore` applied. See the PR for exactly which CVEs and which images.
+
+
 ## v9.5.8 — fix(release): the release-time version check no longer false-fails when a push ends on an automated, version-unchanged task commit
 
 The version check is now range-based: it compares the version at the end of the pushed range to the version at the start of the range (the previous remote head / push base), instead of only checking the last commit against its parent, so an automaton's automated task commits no longer need to bump the version individually as long as the range ends at a strictly higher version. The legacy strict per-commit behavior remains available locally via `VERSION_CHECK_MODE=commit`.
