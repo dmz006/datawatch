@@ -3,7 +3,6 @@ package session
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -59,11 +58,11 @@ func (t *TmuxManager) NewSessionWithSize(name string, cols, rows int) error {
 	}
 	colStr := fmt.Sprintf("%d", cols)
 	rowStr := fmt.Sprintf("%d", rows)
-	if err := exec.Command("tmux", "new-session", "-d", "-s", name, "-x", colStr, "-y", rowStr).Run(); err != nil {
+	if err := TmuxCommand("new-session", "-d", "-s", name, "-x", colStr, "-y", rowStr).Run(); err != nil {
 		return err
 	}
-	exec.Command("tmux", "set-option", "-t", name, "aggressive-resize", "on").Run()  //nolint:errcheck
-	exec.Command("tmux", "resize-window", "-t", name, "-x", colStr, "-y", rowStr).Run()  //nolint:errcheck
+	TmuxCommand("set-option", "-t", name, "aggressive-resize", "on").Run()  //nolint:errcheck
+	TmuxCommand("resize-window", "-t", name, "-x", colStr, "-y", rowStr).Run()  //nolint:errcheck
 	return nil
 }
 
@@ -71,11 +70,11 @@ func (t *TmuxManager) NewSessionWithSize(name string, cols, rows int) error {
 // The dialog shows "❯ No, exit" pre-selected. Sends Down to move to
 // "Yes, I trust this folder" then Enter to confirm.
 func (t *TmuxManager) SendTrustPromptAccept(session string) error {
-	if err := exec.Command("tmux", "send-keys", "-t", session, "Down").Run(); err != nil {
+	if err := TmuxCommand("send-keys", "-t", session, "Down").Run(); err != nil {
 		return err
 	}
 	time.Sleep(100 * time.Millisecond)
-	return exec.Command("tmux", "send-keys", "-t", session, "Enter").Run()
+	return TmuxCommand("send-keys", "-t", session, "Enter").Run()
 }
 
 // DisableAlternateScreen turns off tmux's alternate-screen feature for a session's
@@ -83,12 +82,12 @@ func (t *TmuxManager) SendTrustPromptAccept(session string) error {
 // buffer, so all output lands on the main screen and tmux scrollback works normally.
 // Used for opencode sessions where the TUI would otherwise hide output from scrollback.
 func (t *TmuxManager) DisableAlternateScreen(session string) error {
-	return exec.Command("tmux", "set-window-option", "-t", session, "alternate-screen", "off").Run()
+	return TmuxCommand("set-window-option", "-t", session, "alternate-screen", "off").Run()
 }
 
 // SessionExists reports whether a tmux session with the given name exists.
 func (t *TmuxManager) SessionExists(name string) bool {
-	err := exec.Command("tmux", "has-session", "-t", name).Run()
+	err := TmuxCommand("has-session", "-t", name).Run()
 	return err == nil
 }
 
@@ -199,7 +198,7 @@ func (t *TmuxManager) SendKeysWithSettle(session, keys string, settle time.Durat
 			chunk = keys[:tmuxSendChunk]
 		}
 		keys = keys[len(chunk):]
-		if err := exec.Command("tmux", "send-keys", "-t", session, "-l", chunk).Run(); err != nil {
+		if err := TmuxCommand("send-keys", "-t", session, "-l", chunk).Run(); err != nil {
 			return err
 		}
 		if len(keys) > 0 {
@@ -207,17 +206,17 @@ func (t *TmuxManager) SendKeysWithSettle(session, keys string, settle time.Durat
 		}
 	}
 	time.Sleep(settleForChunks(settle, numChunks))
-	return exec.Command("tmux", "send-keys", "-t", session, "Enter").Run()
+	return TmuxCommand("send-keys", "-t", session, "Enter").Run()
 }
 
 // SendText sends text to a tmux session without pressing Enter.
 func (t *TmuxManager) SendText(session, text string) error {
-	return exec.Command("tmux", "send-keys", "-t", session, text, "").Run()
+	return TmuxCommand("send-keys", "-t", session, text, "").Run()
 }
 
 // ResizePane resizes a tmux pane to match the web terminal dimensions.
 func (t *TmuxManager) ResizePane(session string, cols, rows int) error {
-	return exec.Command("tmux", "resize-window", "-t", session,
+	return TmuxCommand("resize-window", "-t", session,
 		"-x", fmt.Sprintf("%d", cols), "-y", fmt.Sprintf("%d", rows)).Run()
 }
 
@@ -234,7 +233,7 @@ func (t *TmuxManager) ResizePane(session string, cols, rows int) error {
 // on a device with (or without) a different screen size than whoever
 // last viewed it.
 func (t *TmuxManager) WindowSize(session string) (cols, rows int, err error) {
-	out, err := exec.Command("tmux", "display-message", "-t", session, "-p",
+	out, err := TmuxCommand("display-message", "-t", session, "-p",
 		"#{window_width} #{window_height}").Output()
 	if err != nil {
 		return 0, 0, err
@@ -256,7 +255,7 @@ func (t *TmuxManager) WindowSize(session string) (cols, rows int, err error) {
 // waits.  PWA display continues using CapturePaneVisible because the
 // operator-friendly scroll behaviour is the right shape for that path.
 func (t *TmuxManager) CapturePaneLiveTail(session string) (string, error) {
-	out, err := exec.Command("tmux", "capture-pane", "-e", "-p", "-t", session).Output()
+	out, err := TmuxCommand("capture-pane", "-e", "-p", "-t", session).Output()
 	if err != nil {
 		return "", err
 	}
@@ -268,7 +267,7 @@ func (t *TmuxManager) CapturePaneLiveTail(session string) (string, error) {
 // on one-shot TUI sessions where the completion marker may have been pushed
 // above the visible area by a progress animation before the watcher fired.
 func (t *TmuxManager) CapturePaneScrollback(session string, lines int) (string, error) {
-	out, err := exec.Command("tmux", "capture-pane", "-e", "-p", "-S", fmt.Sprintf("-%d", lines), "-t", session).Output()
+	out, err := TmuxCommand("capture-pane", "-e", "-p", "-S", fmt.Sprintf("-%d", lines), "-t", session).Output()
 	if err != nil {
 		return "", err
 	}
@@ -280,7 +279,7 @@ func (t *TmuxManager) CapturePaneScrollback(session string, lines int) (string, 
 // by using the scroll_position offset; otherwise captures the current visible pane.
 func (t *TmuxManager) CapturePaneVisible(session string) (string, error) {
 	// Check if pane is in copy-mode (scrollback browsing)
-	modeOut, _ := exec.Command("tmux", "display-message", "-t", session, "-p", "#{pane_in_mode} #{scroll_position} #{pane_height}").Output()
+	modeOut, _ := TmuxCommand("display-message", "-t", session, "-p", "#{pane_in_mode} #{scroll_position} #{pane_height}").Output()
 	fields := strings.Fields(string(modeOut))
 	if len(fields) == 3 && fields[0] == "1" {
 		// In copy-mode — capture the scrolled view using offset
@@ -291,7 +290,7 @@ func (t *TmuxManager) CapturePaneVisible(session string) (string, error) {
 		if sp > 0 && h > 0 {
 			start := fmt.Sprintf("%d", -sp)
 			end := fmt.Sprintf("%d", -sp+h-1)
-			out, err := exec.Command("tmux", "capture-pane", "-e", "-p", "-S", start, "-E", end, "-t", session).Output()
+			out, err := TmuxCommand("capture-pane", "-e", "-p", "-S", start, "-E", end, "-t", session).Output()
 			if err != nil {
 				return "", err
 			}
@@ -299,7 +298,7 @@ func (t *TmuxManager) CapturePaneVisible(session string) (string, error) {
 		}
 	}
 	// Normal mode — capture visible pane
-	out, err := exec.Command("tmux", "capture-pane", "-e", "-p", "-t", session).Output()
+	out, err := TmuxCommand("capture-pane", "-e", "-p", "-t", session).Output()
 	if err != nil {
 		return "", err
 	}
@@ -309,7 +308,7 @@ func (t *TmuxManager) CapturePaneVisible(session string) (string, error) {
 // CapturePaneANSI captures the full pane content including scrollback with ANSI preserved.
 // Used for state detection and initial snapshot (includes all history).
 func (t *TmuxManager) CapturePaneANSI(session string) (string, error) {
-	out, err := exec.Command("tmux", "capture-pane", "-e", "-p", "-t", session, "-S", "-").Output()
+	out, err := TmuxCommand("capture-pane", "-e", "-p", "-t", session, "-S", "-").Output()
 	if err != nil {
 		return "", err
 	}
@@ -319,7 +318,7 @@ func (t *TmuxManager) CapturePaneANSI(session string) (string, error) {
 // SendKeysLiteral sends literal bytes to a tmux session using -l flag.
 // This preserves special characters and doesn't append Enter.
 func (t *TmuxManager) SendKeysLiteral(session, data string) error {
-	return exec.Command("tmux", "send-keys", "-t", session, "-l", data).Run()
+	return TmuxCommand("send-keys", "-t", session, "-l", data).Run()
 }
 
 // PipeOutput configures the tmux session to pipe all output to a log file.
@@ -327,7 +326,7 @@ func (t *TmuxManager) SendKeysLiteral(session, data string) error {
 // a pipe if no pipe is in effect, which is correct for the create path.
 func (t *TmuxManager) PipeOutput(session, logFile string) error {
 	cmd := fmt.Sprintf("cat >> '%s'", logFile)
-	out, err := exec.Command("tmux", "pipe-pane", "-o", "-t", session, cmd).CombinedOutput()
+	out, err := TmuxCommand("pipe-pane", "-o", "-t", session, cmd).CombinedOutput()
 	if err != nil {
 		if len(out) > 0 {
 			return fmt.Errorf("%w: %s", err, strings.TrimSpace(string(out)))
@@ -354,10 +353,10 @@ func (t *TmuxManager) PipeOutput(session, logFile string) error {
 // RepipeOutput handles both cases unconditionally (BL263 / v6.11.9).
 func (t *TmuxManager) RepipeOutput(session, logFile string) error {
 	// Close any existing pipe-pane (no-op if none in effect).
-	_ = exec.Command("tmux", "pipe-pane", "-t", session).Run()
+	_ = TmuxCommand("pipe-pane", "-t", session).Run()
 	// Start a fresh pipe.
 	cmd := fmt.Sprintf("cat >> '%s'", logFile)
-	out, err := exec.Command("tmux", "pipe-pane", "-t", session, cmd).CombinedOutput()
+	out, err := TmuxCommand("pipe-pane", "-t", session, cmd).CombinedOutput()
 	if err != nil {
 		if len(out) > 0 {
 			return fmt.Errorf("%w: %s", err, strings.TrimSpace(string(out)))
@@ -379,12 +378,12 @@ func (t *TmuxManager) KillSession(name string) error {
 	if strings.TrimSpace(name) == "" {
 		return fmt.Errorf("tmux KillSession: refusing to call with empty target (would kill arbitrary sessions)")
 	}
-	return exec.Command("tmux", "kill-session", "-t", name).Run()
+	return TmuxCommand("kill-session", "-t", name).Run()
 }
 
 // ListSessions returns names of all tmux sessions matching a prefix.
 func (t *TmuxManager) ListSessions(prefix string) ([]string, error) {
-	out, err := exec.Command("tmux", "list-sessions", "-F", "#{session_name}").Output()
+	out, err := TmuxCommand("list-sessions", "-F", "#{session_name}").Output()
 	if err != nil {
 		// tmux returns error if no sessions exist
 		return nil, nil
@@ -402,7 +401,7 @@ func (t *TmuxManager) ListSessions(prefix string) ([]string, error) {
 // Returns a map of key→value pairs. Only includes variables explicitly set
 // in the tmux session environment (not inherited from the global environment).
 func (t *TmuxManager) ShowEnvironment(session string) (map[string]string, error) {
-	out, err := exec.Command("tmux", "show-environment", "-t", session).Output()
+	out, err := TmuxCommand("show-environment", "-t", session).Output()
 	if err != nil {
 		return nil, err
 	}
@@ -422,7 +421,7 @@ func (t *TmuxManager) ShowEnvironment(session string) (map[string]string, error)
 // SetEnvironment sets environment variables in a tmux session.
 func (t *TmuxManager) SetEnvironment(session string, env map[string]string) error {
 	for k, v := range env {
-		if err := exec.Command("tmux", "set-environment", "-t", session, k, v).Run(); err != nil {
+		if err := TmuxCommand("set-environment", "-t", session, k, v).Run(); err != nil {
 			return fmt.Errorf("set-environment %s: %w", k, err)
 		}
 	}
@@ -467,7 +466,7 @@ func TmuxAttachCommand(session string) string {
 // PaneTTY returns the TTY device path for the first pane of the given tmux
 // session (e.g. "/dev/pts/7"). Returns "" on any error.
 func (t *TmuxManager) PaneTTY(session string) string {
-	out, err := exec.Command("tmux", "list-panes", "-t", session, "-F", "#{pane_tty}").Output()
+	out, err := TmuxCommand("list-panes", "-t", session, "-F", "#{pane_tty}").Output()
 	if err != nil {
 		return ""
 	}
