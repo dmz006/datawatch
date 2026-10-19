@@ -159,6 +159,8 @@ Active tmux sessions survive the daemon restart — they are independent OS proc
 
 A restart (`systemctl --user restart datawatch`, `datawatch restart`, or a stop and start) does not require waiting for work to finish first, for the tmux-backed sessions that are the default. The table states what is verified and what enforces it.
 
+The first two rows were observed on sandbox daemons during the restart audit, by signalling the daemon and relaunching it. The systemd unit path was not exercised there. The live test is the check to re-run on any daemon before relying on them. The release build has not yet been run through that live test, so the lease and subprocess rows are confirmed by unit tests only until it is.
+
 | What survives a restart | Status | Enforced by |
 |---|---|---|
 | tmux pane and the LLM process inside it | Verified. The pane and process stay up across the restart. | `TestBL462_DaemonRestartSurvivesLive` (opt-in, below) |

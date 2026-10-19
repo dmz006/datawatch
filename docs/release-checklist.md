@@ -135,13 +135,12 @@ commit that adds it, same as any other rule change.
 - [ ] Check for in-flight work before restarting:
   `GET /api/capacity` for held leases, and running sessions
   (`GET /api/sessions?state=running`). A daemon restart does not kill a
-  tmux-backed session, and a PRD task that is verifying on a live session
-  keeps its capacity lease across the restart. See
-  `docs/operations.md` § Restart safety for what is verified and what is not.
-- [ ] A PRD task that is still executing (not yet verifying) is reset at
-  boot and runs again from the start. If one is running, the operator
-  decides whether that rerun cost is acceptable (e.g. "local LLM, no cloud
-  cost, just time") before restarting.
+  tmux-backed session, but it does reset in-memory capacity-ledger
+  state and briefly interrupt anything mid-call.
+- [ ] If a lease is actively held by autonomous/PRD work, prefer to wait
+  for it to clear rather than restart through it — unless the operator
+  has explicitly said the interruption cost is acceptable (e.g. "local
+  LLM, no cloud cost, just time").
 - [ ] Use `make install` (see § 4) — not a manual `cp` — for the binary
   swap, so there's no ETXTBSY race against this daemon's own long-lived
   `datawatch mcp`/`datawatch mcp-search` subprocess helpers (which any

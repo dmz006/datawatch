@@ -11,7 +11,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **Fixed:** a PRD task that was verifying on a live session lost its capacity lease on restart, so the host pool undercounted it. The lease is now re-adopted at boot.
 - **Fixed:** a subprocess session was marked `failed` at boot while its process was still running. The daemon now re-attaches to a still-running process and records its exit status when it ends.
 - **Not covered:** encrypted (`--secure`) sessions do not get their output pipe re-attached at boot. Restart any such session whose output has stopped.
-- **Operations:** `docs/operations.md` § Restart safety states the verified guarantees. The release checklist no longer tells operators to wait for autonomous work to clear before a restart when the task is only verifying.
+- **Operations:** `docs/operations.md` § Restart safety states the verified guarantees, and says which ones are confirmed only by unit tests so far.
 - Version bump 9.5.8 -> 9.5.9 (cmd/datawatch/main.go + internal/server/api.go kept identical).
 
 ## v9.5.8 — fix(release): the release-time version check no longer false-fails when a push ends on an automated, version-unchanged task commit
