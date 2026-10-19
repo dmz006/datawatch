@@ -1,6 +1,8 @@
 package autonomous
 
 import (
+	"bytes"
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -230,4 +232,93 @@ func TestManagerReportPairingWarnings_LogsEachWarningOnce(t *testing.T) {
 	if n := len(m.pairingLogged); n != 1 {
 		t.Fatalf("want exactly one logged warning key, got %d", n)
 	}
+}
+
+// TestStatusWarningsPayloadShape pins the wire shape of LoopStatus.Warnings:
+// it must stay a plain JSON array of warning strings (a []string in Go),
+// never an object. (1) With one non-finished PRD and a planning model that
+// does not pair with the PRD's decompose backend, the marshaled status has a
+// "warnings" key whose value is an array of exactly that one string.
+// (2) With a clean config and zero non-finished PRDs, the field is an empty
+// non-nil []string, and the current omitempty tag omits the key (Go treats a
+// len-0 slice as empty) — the field stays a plain []string in both cases.
+func TestStatusWarningsPayloadShape(t *testing.T) {
+	t.Run("one warning present, warnings key is a plain string array", func(t *testing.T) {
+		cfg := DefaultConfig()
+		cfg.PlanningBackend = "claude-code"
+		cfg.PlanningModel = "ollama/qwen3.8-64k:27b"
+		m, err := NewManager(t.TempDir(), cfg, nil)
+		if err != nil {
+			t.Fatalf("NewManager: %v", err)
+		}
+		if _, err := m.CreatePRD("spec", t.TempDir(), "", "", ""); err != nil {
+			t.Fatalf("CreatePRD: %v", err)
+		}
+
+		st := m.Status()
+		if st.Warnings == nil {
+			t.Fatal("Status().Warnings must be a non-nil []string")
+		}
+		if len(st.Warnings) != 1 {
+			t.Fatalf("want exactly 1 warning, got %d: %v", len(st.Warnings), st.Warnings)
+		}
+
+		raw, err := json.Marshal(st)
+		if err != nil {
+			t.Fatalf("Marshal status: %v", err)
+		}
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &fields); err != nil {
+			t.Fatalf("Marshal produced no status object: %v", err)
+		}
+		wraw, ok := fields["warnings"]
+		if !ok {
+			t.Fatalf(`marshaled status is missing the "warnings" key: %s`, raw)
+		}
+		body := bytes.TrimSpace(wraw)
+		if len(body) == 0 || body[0] != '[' {
+			t.Fatalf(`"warnings" must be a JSON array (a plain []string), got %s`, body)
+		}
+		var items []string
+		if err := json.Unmarshal(wraw, &items); err != nil {
+			t.Fatalf(`"warnings" is not an array of strings: %v: %s`, err, body)
+		}
+		if len(items) != 1 {
+			t.Fatalf(`"warnings" must hold exactly 1 string, got %d: %s`, len(items), body)
+		}
+		if items[0] != st.Warnings[0] {
+			t.Errorf("marshaled warning %q does not match in-memory warning %q", items[0], st.Warnings[0])
+		}
+	})
+
+	t.Run("clean config, no warnings key, field stays a plain []string", func(t *testing.T) {
+		cfg := DefaultConfig() // no planning model
+		m, err := NewManager(t.TempDir(), cfg, nil)
+		if err != nil {
+			t.Fatalf("NewManager: %v", err)
+		}
+		// zero PRDs at all, so zero non-finished PRDs
+
+		st := m.Status()
+		if st.Warnings == nil {
+			t.Fatal("Status().Warnings must be a non-nil []string (PairingWarnings never returns nil)")
+		}
+		if len(st.Warnings) != 0 {
+			t.Fatalf("clean config with no PRDs: want a warnings slice of len 0, got %v", st.Warnings)
+		}
+
+		raw, err := json.Marshal(st)
+		if err != nil {
+			t.Fatalf("Marshal status: %v", err)
+		}
+		var fields map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &fields); err != nil {
+			t.Fatalf("Marshal produced no status object: %v", err)
+		}
+		if wraw, ok := fields["warnings"]; ok {
+			// Current behavior: the json tag is warnings,omitempty and Go
+			// treats a len-0 slice as empty, so the key is omitted entirely.
+			t.Fatalf(`with the current omitempty tag, a len-0 warnings slice omits the key, but "warnings" is present: %s`, wraw)
+		}
+	})
 }
