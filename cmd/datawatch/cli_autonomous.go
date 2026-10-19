@@ -208,9 +208,6 @@ func newAutonomousPRDCreateCmd() *cobra.Command {
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			spec := joinArgs(args)
-			if projectDir == "" {
-				projectDir, _ = os.Getwd()
-			}
 			body := map[string]any{
 				"spec":        spec,
 				"project_dir": projectDir,
@@ -235,7 +232,7 @@ func newAutonomousPRDCreateCmd() *cobra.Command {
 			return daemonJSON(http.MethodPost, "/api/autonomous/prds", body)
 		},
 	}
-	cmd.Flags().StringVar(&projectDir, "project-dir", "", "Project directory (default: cwd)")
+	cmd.Flags().StringVar(&projectDir, "project-dir", "", "Project directory; omit to let the daemon apply its default (worktree mode) instead of assuming the current directory")
 	cmd.Flags().StringVar(&backend, "backend", "", "LLM backend override")
 	cmd.Flags().StringVar(&effort, "effort", "", "Effort hint (low/medium/high/max)")
 	cmd.Flags().StringVar(&typ, "type", "", "Automaton type (software|research|operational|personal or custom)")
@@ -1019,9 +1016,6 @@ func newAutonomousTemplateInstantiateCmd() *cobra.Command {
 		Short: "Create a new PRD from an automaton template (template store version)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
-			if projectDir == "" {
-				projectDir, _ = os.Getwd()
-			}
 			vars := map[string]string{}
 			for _, kv := range strings.Split(varsCSV, ",") {
 				if i := strings.IndexByte(kv, '='); i > 0 {
@@ -1038,7 +1032,7 @@ func newAutonomousTemplateInstantiateCmd() *cobra.Command {
 			return daemonJSON(http.MethodPost, "/api/autonomous/templates/"+args[0]+"/instantiate", body)
 		},
 	}
-	cmd.Flags().StringVar(&projectDir, "project-dir", "", "Project directory (default: cwd)")
+	cmd.Flags().StringVar(&projectDir, "project-dir", "", "Project directory; omit to let the daemon apply its default (worktree mode) instead of assuming the current directory")
 	cmd.Flags().StringVar(&backend, "backend", "", "LLM backend override")
 	cmd.Flags().StringVar(&effort, "effort", "", "Effort hint (low/medium/high/max)")
 	cmd.Flags().StringVar(&varsCSV, "vars", "", "Comma-separated k=v variable substitutions")
