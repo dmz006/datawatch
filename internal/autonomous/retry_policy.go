@@ -241,6 +241,26 @@ func (m *Manager) failDecomposeAttempt(prd *PRD, source string, cause error) {
 	if _, err := MarkDecomposeOutputArtifactFailed(m.dataDir, prd.ID); err != nil {
 		log.Printf("[autonomous] decompose FAILED prd=%s: keep output artifact: %v", prd.ID, err)
 	}
+	// 2026-10-19 incident — the give-up paths that went through
+	// retryDecomposeFailure already recorded a richer FailureReason; the
+	// parse-failure path (a written-but-unparseable plan, "invalid-"
+	// "response" category — terminal, never infra-retryable) is the one
+	// that would otherwise leave LastDecomposeFailure nil. Record the
+	// parse reason so an operator sees WHY (the same intent manager.go's
+	// decom-parse comment states), without touching an existing record.
+	if prd.LastDecomposeFailure == nil {
+		category := "content"
+		if source == "decompose-parse" {
+			category = "invalid-response"
+		}
+		prd.LastDecomposeFailure = &FailureReason{
+			Category:   category,
+			Detail:     cause.Error(),
+			Source:     source,
+			Retryable:  false,
+			OccurredAt: time.Now(),
+		}
+	}
 	old := prd.Status
 	prd.Status = PRDDraft
 	prd.UpdatedAt = time.Now()
