@@ -253,6 +253,11 @@ type Config struct {
 	// independent (no-dependency) tasks up to the specified limit. Per-PRD
 	// MaxConcurrentTasks overrides this global default.
 	MaxConcurrentTasks int `json:"max_concurrent_tasks,omitempty"`
+	// MaxEnginesPerNode is how many local-model engine sessions one
+	// compute node may run at once. 1 = one per node (default). Mirrors
+	// config.AutonomousConfig.MaxEnginesPerNode; the runtime copy is what
+	// REST and MCP writes change.
+	MaxEnginesPerNode int `json:"max_engines_per_node,omitempty"`
 	// BL428 §3a ii — refuse to admit a task onto a project tree that
 	// has uncommitted changes: the canonical tree's `git status
 	// --porcelain` is non-empty. Hard failure at admission (before the
@@ -288,6 +293,7 @@ func DefaultConfig() Config {
 		Enabled:             false,
 		PollIntervalSeconds: 30,
 		MaxConcurrentTasks:  1,
+		MaxEnginesPerNode:   1,
 		AutoFixRetries:      1,
 		SecurityScan:        true,
 		MaxRecursionDepth:   5,
