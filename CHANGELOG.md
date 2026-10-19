@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.16 — fix: prd-create no longer defaults the project directory to the current directory
+
+### Fixed
+
+- `datawatch autonomous prd-create` without `--project-dir` now sends an empty project directory, so the daemon applies its own default (an isolated git worktree when `autonomous.worktree_base_repo` is configured) instead of running the PRD directly in the directory the command was invoked from; previously the omitted flag silently became the current working directory and bypassed worktree mode.
+- An explicit `--project-dir` still forces that directory.
+- The daemon REST endpoint (POST /api/autonomous/prds) and the comm-channel `autonomous create` command already used the empty-directory default and now match the CLI.
+- The flag's help text was updated so `datawatch autonomous prd-create --help` says omitting the flag lets the daemon apply its default.
+- Version bump to 9.5.16 (cmd/datawatch/main.go + internal/server/api.go kept identical).
 ## v9.5.15 — autonomous: detect a stalled task by activity; keep the work of a killed attempt
 
 ### Fixed
