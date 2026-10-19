@@ -39,7 +39,7 @@ func runSetLLMCmd(t *testing.T, c *cobra.Command, argv []string) map[string]stri
 
 func TestCLISetLLM_LegacyBodyUnchanged(t *testing.T) {
 	got := runSetLLMCmd(t, newAutonomousPRDSetLLMCmd(), []string{"p1", "--backend", "opencode"})
-	want := map[string]string{"backend": "opencode", "effort": "", "model": "", "decomposition_profile": "", "actor": "operator"}
+	want := map[string]string{"backend": "opencode", "actor": "operator"}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("body=%v want %v", got, want)
 	}
@@ -55,7 +55,7 @@ func TestCLISetLLM_GuardrailOnly(t *testing.T) {
 
 func TestCLISetLLM_GuardrailWithLegacy(t *testing.T) {
 	got := runSetLLMCmd(t, newAutonomousPRDSetLLMCmd(), []string{"p1", "--effort", "high", "--guardrail-model", "m1"})
-	want := map[string]string{"backend": "", "effort": "high", "model": "", "decomposition_profile": "", "guardrail_model": "m1", "actor": "operator"}
+	want := map[string]string{"effort": "high", "guardrail_model": "m1", "actor": "operator"}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("body=%v want %v", got, want)
 	}

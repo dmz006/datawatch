@@ -512,15 +512,14 @@ func newAutonomousPRDSetLLMCmd() *cobra.Command {
 		Short: "Set the PRD-level worker LLM (backend / effort / model / decomposition-profile) and/or guardrail judge LLM. Tasks inherit unless overridden.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			legacy := map[string]string{"backend": backend, "effort": effort, "model": model, "decomposition_profile": decompositionProfile}
-			body, _ := json.Marshal(setLLMCLIBody(cmd, legacy, map[string]string{"actor": "operator"}, guardrailBackend, guardrailModel, "backend", "effort", "model", "decomposition-profile"))
+			body, _ := json.Marshal(prdSetLLMCLIBody(cmd))
 			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/set_llm", body)
 		},
 	}
-	cmd.Flags().StringVar(&backend, "backend", "", "LLM backend name for task execution (claude-code / opencode / ollama / etc.) — empty = inherit global default")
-	cmd.Flags().StringVar(&effort, "effort", "", "effort level (low / medium / high / max / quick / normal / thorough) — empty = inherit")
-	cmd.Flags().StringVar(&model, "model", "", "specific model name (e.g. qwen3.8:27b) — empty = backend default")
-	cmd.Flags().StringVar(&decompositionProfile, "decomposition-profile", "", "LLM backend for planning/decompose (any configured LLM — opencode/claude-code get full codebase tool access; ollama/openwebui use headless planning) — empty = use global autonomous.planning_backend")
+	cmd.Flags().StringVar(&backend, "backend", "", "Worker LLM name (empty value clears to fallback; omit the flag to leave unchanged)")
+	cmd.Flags().StringVar(&effort, "effort", "", "Worker LLM effort (empty value clears to fallback; omit the flag to leave unchanged)")
+	cmd.Flags().StringVar(&model, "model", "", "Worker LLM model (empty value clears to fallback; omit the flag to leave unchanged)")
+	cmd.Flags().StringVar(&decompositionProfile, "decomposition-profile", "", "Worker LLM decomposition profile (empty value clears to fallback; omit the flag to leave unchanged)")
 	addGuardrailLLMFlags(cmd, &guardrailBackend, &guardrailModel)
 	return cmd
 }
@@ -660,6 +659,29 @@ func verificationLLMCLIBody(cmd *cobra.Command, base map[string]string) map[stri
 func addGuardrailLLMFlags(cmd *cobra.Command, backend, model *string) {
 	cmd.Flags().StringVar(backend, "guardrail-backend", "", "guardrail/verification judge LLM override; inherits task -> automaton -> global autonomous.verification_backend; empty = clear, omit = unchanged")
 	cmd.Flags().StringVar(model, "guardrail-model", "", "guardrail/verification judge model override; empty = clear, omit = unchanged")
+}
+
+// prdSetLLMCLIBody builds the set_llm body for prd-set-llm. Each legacy
+// (backend / effort / model / decomposition-profile) and guardrail key is
+// included only when its flag was Changed, so an omitted flag leaves the
+// setting unchanged while an explicit --flag "" clears it. actor is always
+// sent.
+func prdSetLLMCLIBody(cmd *cobra.Command) map[string]string {
+	body := map[string]string{"actor": "operator"}
+	for flag, key := range map[string]string{
+		"backend":               "backend",
+		"effort":                "effort",
+		"model":                 "model",
+		"decomposition-profile": "decomposition_profile",
+		"guardrail-backend":     "guardrail_backend",
+		"guardrail-model":       "guardrail_model",
+	} {
+		if cmd.Flags().Changed(flag) {
+			v, _ := cmd.Flags().GetString(flag)
+			body[key] = v
+		}
+	}
+	return body
 }
 
 // setLLMCLIBody (BL416) builds a set_llm / set_task_llm body. Guardrail
