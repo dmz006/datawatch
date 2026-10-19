@@ -137,7 +137,8 @@ func sessionJudgmentTask(prompt, projectDir, outputFile string) string {
 // "decompose-output.json", "verify-<taskID>.json") so concurrent
 // sessions for the same PRD never collide on the same relocated file.
 func runOneShotJSONSession(cfg *config.Config, prdID, projectDir, backend, model, sessionName, sessionTask, outputFile, scratchRelocateName string, timeout time.Duration) (string, error) {
-	return runOneShotJSONSessionWithEffort(cfg, prdID, projectDir, backend, model, "", sessionName, sessionTask, outputFile, scratchRelocateName, timeout)
+	content, _, err := runOneShotJSONSessionCaptureID(cfg, prdID, projectDir, backend, model, "", sessionName, sessionTask, outputFile, scratchRelocateName, timeout)
+	return content, err
 }
 
 // runOneShotJSONSessionWithEffort is runOneShotJSONSession plus the
@@ -155,6 +156,17 @@ func sessionOneShotTimeoutMessage(sessionName, sessionID, backend, model string,
 }
 
 func runOneShotJSONSessionWithEffort(cfg *config.Config, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName string, timeout time.Duration) (string, error) {
+	content, _, err := runOneShotJSONSessionCaptureID(cfg, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName, timeout)
+	return content, err
+}
+
+// runOneShotJSONSessionCaptureID is runOneShotJSONSessionWithEffort that also
+// returns the id of the session it spawned. sessionID is set as soon as the
+// start request succeeds and is returned on every later path (success,
+// timeout, failed/killed/cancelled, waiting-input stall and idle error), so a
+// caller can name the session even when the judgment failed. It stays empty
+// only when no session was started.
+func runOneShotJSONSessionCaptureID(cfg *config.Config, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName string, timeout time.Duration) (content string, sessionID string, err error) {
 	scratchDir, scratchErr := autonomouspkg.ScratchDir(expandHome(cfg.DataDir), prdID)
 	if scratchErr != nil {
 		fmt.Printf("[%s] scratch dir for prd=%s: %v\n", sessionName, prdID, scratchErr)
@@ -167,7 +179,7 @@ func runOneShotJSONSessionWithEffort(cfg *config.Config, prdID, projectDir, back
 	// from its own content hash).
 	if existingContent, ok := relocate(); ok {
 		fmt.Printf("[%s] reusing prior output file %s (%d bytes)\n", sessionName, outputFile, len(existingContent))
-		return existingContent, nil
+		return existingContent, "", nil
 	}
 	_ = os.Remove(outputFile) // clear stale/empty output from an incomplete prior attempt
 
@@ -196,7 +208,7 @@ func runOneShotJSONSessionWithEffort(cfg *config.Config, prdID, projectDir, back
 			loopbackBaseURL(cfg)+"/api/sessions/start",
 			bytes.NewReader(body))
 		if err != nil {
-			return "", err
+			return "", "", err
 		}
 		httpReq.Header.Set("Content-Type", "application/json")
 		if cfg.Server.Token != "" {
@@ -204,7 +216,7 @@ func runOneShotJSONSessionWithEffort(cfg *config.Config, prdID, projectDir, back
 		}
 		resp, err := http.DefaultClient.Do(httpReq)
 		if err != nil {
-			return "", fmt.Errorf("%s session start: %w", sessionName, err)
+			return "", "", fmt.Errorf("%s session start: %w", sessionName, err)
 		}
 		rb, _ = io.ReadAll(resp.Body)
 		resp.Body.Close() //nolint:errcheck
@@ -212,12 +224,12 @@ func runOneShotJSONSessionWithEffort(cfg *config.Config, prdID, projectDir, back
 			break
 		}
 		if !strings.Contains(string(rb), "max sessions") {
-			return "", fmt.Errorf("%s session start: %s — %s", sessionName, resp.Status, string(rb))
+			return "", "", fmt.Errorf("%s session start: %s — %s", sessionName, resp.Status, string(rb))
 		}
 		fmt.Printf("[%s] waiting for a free session slot: %s\n", sessionName, strings.TrimSpace(string(rb)))
 		select {
 		case <-ctx.Done():
-			return "", fmt.Errorf("%s session start: %w while waiting for capacity", sessionName, ctx.Err())
+			return "", "", fmt.Errorf("%s session start: %w while waiting for capacity", sessionName, ctx.Err())
 		case <-time.After(15 * time.Second):
 		}
 	}
@@ -226,13 +238,13 @@ func runOneShotJSONSessionWithEffort(cfg *config.Config, prdID, projectDir, back
 	}
 	_ = json.Unmarshal(rb, &startOut)
 	if startOut.ID == "" {
-		return "", fmt.Errorf("%s session start: no id in response: %s", sessionName, string(rb))
+		return "", "", fmt.Errorf("%s session start: no id in response: %s", sessionName, string(rb))
 	}
+	sessionID = startOut.ID
 	fmt.Printf("[%s] spawned %s (backend=%s, output=%s)\n", sessionName, startOut.ID, backend, outputFile)
 
 	// Best-effort: kill the session when this function returns (handles
 	// TUI sessions that land in waiting_input after writing the output).
-	sessionID := startOut.ID
 	defer func() {
 		killCtx, killCancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer killCancel()
@@ -268,7 +280,7 @@ func runOneShotJSONSessionWithEffort(cfg *config.Config, prdID, projectDir, back
 	for {
 		select {
 		case <-ctx.Done():
-			return "", &autonomouspkg.OneShotNoOutputError{Msg: sessionOneShotTimeoutMessage(sessionName, startOut.ID, backend, model, timeout)}
+			return "", sessionID, &autonomouspkg.OneShotNoOutputError{Msg: sessionOneShotTimeoutMessage(sessionName, startOut.ID, backend, model, timeout)}
 		case <-tick.C:
 			pollReq, err := http.NewRequestWithContext(ctx, http.MethodGet,
 				loopbackBaseURL(cfg)+"/api/sessions/"+startOut.ID, nil)
@@ -297,7 +309,7 @@ func runOneShotJSONSessionWithEffort(cfg *config.Config, prdID, projectDir, back
 			// state — see decomposeFnSession's identical reasoning.
 			if content, ok := relocate(); ok {
 				fmt.Printf("[%s] %s state=%q, output file ready (%d bytes) — treating as complete\n", sessionName, startOut.ID, s.State, len(content))
-				return content, nil
+				return content, sessionID, nil
 			}
 			// waiting_input debounce, mirroring the task executor's
 			// stall check (see waitingInputTick). A one-shot decompose
@@ -313,7 +325,7 @@ func runOneShotJSONSessionWithEffort(cfg *config.Config, prdID, projectDir, back
 			}
 			if stalled {
 				fmt.Printf("[%s] %s state=waiting_input for %d ticks — killing; one-shot session cannot answer\n", sessionName, startOut.ID, waitingInputTicks)
-				return "", &autonomouspkg.OneShotNoOutputError{Msg: fmt.Sprintf("one-shot %s session %s ended with state waiting_input without producing output (backend=%s, model=%q)", role, startOut.ID, backend, model)}
+				return "", sessionID, &autonomouspkg.OneShotNoOutputError{Msg: fmt.Sprintf("one-shot %s session %s ended with state waiting_input without producing output (backend=%s, model=%q)", role, startOut.ID, backend, model)}
 			}
 			// Session idle detector: a one-shot verifier parked in
 			// waiting_input with no live runner child past the budget
@@ -340,22 +352,22 @@ func runOneShotJSONSessionWithEffort(cfg *config.Config, prdID, projectDir, back
 					if idleStalled, idleReason := idleObs.Stalled(); idleStalled {
 						alertspkg.EmitSystem(alertspkg.LevelError, "Verifier session idle without completion",
 							fmt.Sprintf("prd=%s session=%s backend=%s model=%s: %s", prdID, startOut.ID, backend, model, idleReason))
-						return "", autonomouspkg.SessionIdleError(idleObs)
+						return "", sessionID, autonomouspkg.SessionIdleError(idleObs)
 					}
 				}
 			}
 			switch s.State {
 			case "complete":
-				return "", fmt.Errorf("%s session %s completed but output file %s not found (backend=%s, model=%q)", sessionName, startOut.ID, outputFile, backend, model)
+				return "", sessionID, fmt.Errorf("%s session %s completed but output file %s not found (backend=%s, model=%q)", sessionName, startOut.ID, outputFile, backend, model)
 			case "failed", "killed", "cancelled":
 				// Give the output file one last chance: the session may
 				// have written it in the same instant it was killed.
 				time.Sleep(3 * time.Second)
 				if content, ok := relocate(); ok {
 					fmt.Printf("[%s] %s state=%q, output file appeared after kill (%d bytes)\n", sessionName, startOut.ID, s.State, len(content))
-					return content, nil
+					return content, sessionID, nil
 				}
-				return "", &autonomouspkg.OneShotNoOutputError{Msg: fmt.Sprintf("one-shot %s session %s ended with state %s without producing output (backend=%s, model=%q)", role, startOut.ID, s.State, backend, model)}
+				return "", sessionID, &autonomouspkg.OneShotNoOutputError{Msg: fmt.Sprintf("one-shot %s session %s ended with state %s without producing output (backend=%s, model=%q)", role, startOut.ID, s.State, backend, model)}
 			}
 		}
 	}

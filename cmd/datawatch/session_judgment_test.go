@@ -315,6 +315,63 @@ func TestRunOneShotJSONSession_CompleteStateWithNoOutputIsAnError(t *testing.T) 
 	assertErrorNamesBackendAndModel(t, err, "pi-prompt", "prov/model:64k")
 }
 
+// TestRunOneShotJSONSessionCaptureID_ReturnsSpawnedSessionID proves the
+// spawned session id comes back alongside the content on the success path and
+// alongside the error on the failed-state path, so a caller can name the
+// session even when the judgment failed. fakeSessionServer always issues
+// "sess-test-1" from its start endpoint.
+func TestRunOneShotJSONSessionCaptureID_ReturnsSpawnedSessionID(t *testing.T) {
+	const wantID = "sess-test-1"
+
+	t.Run("success", func(t *testing.T) {
+		projectDir := t.TempDir()
+		dataDir := t.TempDir()
+		outputFile := filepath.Join(projectDir, ".test-output-capture-ok.json")
+		const want = `{"ok":true,"severity":"info","summary":"looks good"}`
+
+		srv, _ := fakeSessionServer(t, "running", outputFile, want, true)
+		withFakeLoopback(t, srv)
+
+		cfg := &config.Config{}
+		cfg.DataDir = dataDir
+
+		got, id, err := runOneShotJSONSessionCaptureID(cfg, "prd-capture-ok", projectDir, "claude-code", "sonnet", "",
+			"autonomous:test", "do the thing, write JSON to "+outputFile, outputFile, "test-output-capture-ok.json",
+			10*time.Second)
+		if err != nil {
+			t.Fatalf("runOneShotJSONSessionCaptureID: %v", err)
+		}
+		if got != want {
+			t.Errorf("content = %q, want %q", got, want)
+		}
+		if id != wantID {
+			t.Errorf("sessionID = %q, want %q", id, wantID)
+		}
+	})
+
+	t.Run("failed", func(t *testing.T) {
+		projectDir := t.TempDir()
+		dataDir := t.TempDir()
+		outputFile := filepath.Join(projectDir, ".test-output-capture-failed.json")
+
+		srv, _ := fakeSessionServer(t, "failed", outputFile, "", false)
+		withFakeLoopback(t, srv)
+
+		cfg := &config.Config{}
+		cfg.DataDir = dataDir
+
+		_, id, err := runOneShotJSONSessionCaptureID(cfg, "prd-capture-failed", projectDir, "claude-code", "sonnet", "",
+			"autonomous:test", "unused", outputFile, "test-output-capture-failed.json",
+			10*time.Second)
+		if err == nil {
+			t.Fatal("expected an error when the session ends failed with no output file")
+		}
+		if id != wantID {
+			t.Errorf("sessionID = %q on failed path, want %q", id, wantID)
+		}
+	})
+}
+
 // assertErrorNamesBackendAndModel checks that a no-output error reports the
 // backend and model the session start request carried, so an operator can
 // tell from the recorded summary which selection produced it.
