@@ -1075,7 +1075,8 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		// immediately; the live goroutine will pick up the newly-pending task.
 		_ = s.autonomousMgr.Run(id)
 		s.audit(r.Context(), "reset_task", "automaton", id, map[string]any{"task_id": req.TaskID, "force": req.Force}) // GH#201 Phase 4
-		writeJSONOK(w, updated)
+		prd, _ := updated.(*autonomous.PRD)
+		s.writeAutonomousResult(w, r, prd, req.TaskID, "", "task reset to pending; the executor will retry it")
 	case "repair_depends_on":
 		// v8.36.6 — one-time repair for PRDs whose SetStories call predates
 		// the v8.36.5 title->ID DependsOn fix (see Store.RepairDependsOn).
