@@ -9,12 +9,18 @@ import (
 )
 
 // installFakeTmux puts a PATH-resolvable fake `tmux` in dir that records
-// its argv (NUL-separated, same pattern as pi/backend_test.go) to
-// argvFile. No real tmux server is ever touched.
+// its argv (one argument per line) to argvFile. No real tmux server is
+// ever touched.
+//
+// Recording uses `printf '%s\n'` inside a POSIX `for` loop rather than the
+// NUL-separated `printf '%s\0'` form: NUL bytes in printf formats are not
+// guaranteed on every shell/busybox build on every host, while `%s\n` is
+// POSIX. The command Launch sends is a single line (the task body lives in
+// a scratch file, never inline), so line separation loses nothing.
 func installFakeTmux(t *testing.T, dir, argvFile string) {
 	t.Helper()
 	fakeTmux := filepath.Join(dir, "tmux")
-	script := "#!/bin/sh\nprintf '%s\\0' \"$@\" > '" + shellQuote(argvFile) + "'\n"
+	script := "#!/bin/sh\nfor a in \"$@\"; do printf '%s\\n' \"$a\"; done > '" + shellQuote(argvFile) + "'\n"
 	if err := os.WriteFile(fakeTmux, []byte(script), 0o755); err != nil { //nolint:gosec // test fixture must be executable
 		t.Fatalf("write fake tmux: %v", err)
 	}
@@ -27,8 +33,11 @@ func recordedSendKeysCmd(t *testing.T, argvFile string) string {
 	if err != nil {
 		t.Fatalf("read recorded tmux argv: %v", err)
 	}
-	args := strings.Split(strings.TrimSuffix(string(raw), "\x00"), "\x00")
-	// tmux send-keys -t <session> <cmd> Enter
+	// One argument per line: tmux send-keys -t <session> <cmd> Enter
+	args := strings.Split(strings.TrimSuffix(string(raw), "\n"), "\n")
+	if len(args) < 2 || args[len(args)-2] == "" {
+		t.Fatalf("fake tmux recorded %d argv element(s) (%q); want `... <cmd> Enter` with a non-empty command", len(args), string(raw))
+	}
 	return args[len(args)-2]
 }
 
