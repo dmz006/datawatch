@@ -76,6 +76,52 @@ func TestScope_LintStillFlagsPlannedFileUnderBinDir(t *testing.T) {
 	}
 }
 
+func TestScope_LintIgnoresGrepPatternProse(t *testing.T) {
+	prd := &PRD{ProjectDir: "/w/proj"}
+	spec := "Grep your final output for 'real hostnames', then for the home-directory path /home/<user>/workspace, then for 'API keys'."
+	if p := LintTaskScope(prd, "t", spec, nil); len(p) != 0 {
+		t.Fatalf("search-pattern prose flagged: %v", p)
+	}
+}
+
+func TestScope_LintIgnoresPlaceholderAndGlobPaths(t *testing.T) {
+	prd := &PRD{ProjectDir: "/w/proj"}
+	for _, spec := range []string{
+		"Save the report under /home/{user}/reports before you finish.",
+		"Collect every log matching /home/dmz/*/logs/today.txt for the summary.",
+		"Expand /home/$USER/notes in the template.",
+		"Compare against ~alice's copy at /home/~alice/notes.md.",
+	} {
+		if p := LintTaskScope(prd, "t", spec, nil); len(p) != 0 {
+			t.Fatalf("placeholder/glob path flagged for %q: %v", spec, p)
+		}
+	}
+}
+
+func TestScope_LintIgnoresQuotedSearchPatterns(t *testing.T) {
+	prd := &PRD{ProjectDir: "/w/proj"}
+	for _, spec := range []string{
+		"search for '/home/<user>/.ssh/id_rsa' in the output",
+		"search for '/home/dmz/secret.txt' in the output",
+		"match `/home/dmz/secret.txt` against the log",
+	} {
+		if p := LintTaskScope(prd, "t", spec, nil); len(p) != 0 {
+			t.Fatalf("quoted search pattern flagged for %q: %v", spec, p)
+		}
+	}
+	// A quoted path with no pattern verb before it is still a path claim.
+	if p := LintTaskScope(prd, "t", "copy '/home/dmz/secret.txt' into docs", nil); len(p) != 1 {
+		t.Fatalf("quoted non-pattern path must still be flagged: %v", p)
+	}
+}
+
+func TestScope_LintStillFlagsOutOfScopeReadPath(t *testing.T) {
+	prd := &PRD{ProjectDir: "/w/proj", ReadDirs: []string{"/w/ref"}}
+	if p := LintTaskScope(prd, "t", "Read /home/dmz/workspace/datawatch/notes.md and summarise it", nil); len(p) != 1 {
+		t.Fatalf("want 1 problem for out-of-scope read path, got %v", p)
+	}
+}
+
 func TestScope_PlanningPromptCarriesBoundary(t *testing.T) {
 	prd := &PRD{ProjectDir: "/w/proj", ReadDirs: []string{"/w/ref"}}
 	got := fmt.Sprintf(PlanningPromptSession, ScopeBlock(prd), "/w/proj/.out.json", "spec")

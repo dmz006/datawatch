@@ -125,6 +125,71 @@ func isBinaryMention(p, pre string) bool {
 	return !writeVerbRe.MatchString(strings.Join(words, " "))
 }
 
+// patternVerbRe matches the words that mark a quoted span as a search pattern
+// (e.g. grep for '/home/x/.ssh') rather than a path the worker must touch.
+var patternVerbRe = regexp.MustCompile(`(?i)(?:^|[^A-Za-z])(?:grep|pattern|patterns|scan|search|match|matches|forbidden)(?:$|[^A-Za-z])`)
+
+// patternWindowWords is how many words before an opening quote are checked for a pattern verb.
+const patternWindowWords = 5
+
+// isPlaceholderPath reports whether p is template or glob syntax rather than a
+// concrete location: an angle-bracket or curly-brace placeholder, a glob star,
+// or a segment that is a shell variable ($NAME) or tilde-user form (~name).
+func isPlaceholderPath(p string) bool {
+	if strings.ContainsAny(p, "<>{}*") {
+		return true
+	}
+	for _, seg := range strings.Split(p, "/") {
+		if strings.HasPrefix(seg, "$") || strings.HasPrefix(seg, "~") {
+			return true
+		}
+	}
+	return false
+}
+
+// isPatternQuoted reports whether the token starting at pos sits inside a
+// single-, double- or backtick-quoted span whose opening quote follows a
+// pattern verb on the same line. A quote only opens when it does not follow a
+// word character, so the apostrophe in "don't" is not taken for a quote.
+func isPatternQuoted(spec string, pos int) bool {
+	lineStart := strings.LastIndex(spec[:pos], "\n") + 1
+	open := -1
+	var quote byte
+	for i := lineStart; i < pos; i++ {
+		c := spec[i]
+		if open < 0 {
+			if isQuoteByte(c) && (i == lineStart || !isWordByte(spec[i-1])) {
+				open, quote = i, c
+			}
+			continue
+		}
+		if c == quote && (i+1 >= len(spec) || !isWordByte(spec[i+1])) {
+			open = -1
+		}
+	}
+	if open < 0 {
+		return false
+	}
+	return patternVerbRe.MatchString(lastWords(spec[lineStart:open], patternWindowWords))
+}
+
+func isQuoteByte(c byte) bool {
+	return c == '\'' || c == '"' || c == '`'
+}
+
+func isWordByte(c byte) bool {
+	return c == '_' || (c >= '0' && c <= '9') || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+}
+
+// lastWords returns the final n whitespace-separated words of s, joined by spaces.
+func lastWords(s string, n int) string {
+	words := strings.Fields(s)
+	if len(words) > n {
+		words = words[len(words)-n:]
+	}
+	return strings.Join(words, " ")
+}
+
 func firstSegment(p string) string {
 	p = strings.TrimPrefix(p, "/")
 	if i := strings.Index(p, "/"); i >= 0 {
@@ -141,7 +206,9 @@ func firstSegment(p string) string {
 // that merely naming a system binary (a path directly inside an execDirs
 // entry, e.g. "fall back to /usr/bin/time -v") is not an access claim and is
 // skipped, unless a write verb in the few words before it makes it a write
-// target (BL421).
+// target (BL421). Placeholder or glob syntax (/home/<user>, /home/{x}, $NAME,
+// ~name, *) and paths inside a quoted pattern after a search verb (grep for
+// '/home/x') are not access claims either.
 func LintTaskScope(prd *PRD, label, spec string, files []string) []string {
 	return lintScope(prd.ProjectDir, EffectiveReadDirs(prd), EffectiveWriteDirs(prd), label, spec, files)
 }
@@ -168,6 +235,9 @@ func lintScope(projectDir string, read, write []string, label, spec string, file
 	for _, m := range absPathRe.FindAllStringSubmatchIndex(spec, -1) {
 		p := strings.TrimRight(spec[m[2]:m[3]], ".")
 		if seg := firstSegment(p); !fsRoots[seg] && seg != firstSegment(projectDir) {
+			continue
+		}
+		if isPlaceholderPath(p) || isPatternQuoted(spec, m[2]) {
 			continue
 		}
 		if isBinaryMention(p, spec[:m[2]]) {
