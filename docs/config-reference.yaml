@@ -867,6 +867,13 @@ autonomous:
   # task at a time (sequential). Tasks of different Automata are not limited
   # by this key.
   max_concurrent_tasks: 1
+  # Number of local-model sessions one compute node runs at once. Default 1;
+  # values below 1 are clamped to 1. The cap applies only to sessions whose
+  # model runs on a local engine on that node (pi, pi-prompt, ollama, opencode,
+  # opencode-acp). Hosted backends such as claude-code are not gated by this key.
+  # Sessions past the cap wait in the node queue (see docs/operations.md →
+  # "Compute-node queue").
+  max_engines_per_node: 1
   # max_parallel_tasks: DEPRECATED — never had any effect; accepted and ignored
   # with a startup warning for one release, then removed. Use max_concurrent_tasks.
   # BL428 §3a (docs/plans/2026-10-14-concurrency-and-budget-design.md) — how

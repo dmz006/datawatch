@@ -5,6 +5,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.19 — autonomous: a per-node limit on local-model sessions, with a queue for the rest
+
+Each compute node can now run only a set number of local-model sessions at once. The new setting `autonomous.max_engines_per_node` controls that number and defaults to 1; values below 1 are treated as 1. It applies to sessions whose model runs on a local engine on that node (pi, pi-prompt, ollama, opencode, and opencode-acp). Hosted backends such as claude-code are not limited by it.
+
+When a node is full, the session waits instead of starting past the limit. The task shows the reason "waiting for node <name>" with how many engines are in use and which tasks hold them. The capacity view lists each node's queue depth and current holders.
+
+Waiting sessions are granted in a fixed order. Verifier and guardrail sessions for a task that already has finished work go first, then ordinary worker sessions, then planning and decomposition sessions. Within the same role, higher-priority work goes first, then sessions that have waited longest.
+
+The setting can be changed from the config file, the REST API, the MCP tools, the CLI, and the comm `configure` command. The operator guide describes the queue and its priority order.
+- Version bump 9.5.18 -> 9.5.19 (cmd/datawatch/main.go + internal/server/api.go kept identical).
 ## v9.5.18 — autonomous: warn when a PRD model name looks like it belongs to another backend, once per PRD
 
 The autonomous status stops warning when a planning model with a provider tag (for example an `ollama/...` model) is set for a pi or pi-prompt session, because those backends forward the model name to their configured provider — the warning now appears only when the named backend cannot serve the model at all. Pairing warnings also improved: each affected PRD is now named once with the reason instead of a long list of ids.
