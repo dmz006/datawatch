@@ -311,16 +311,22 @@ requirement (open question 19).
   project directory, so create drafts through MCP with the project directory left empty.
 - **Lane idle diagnosis corrected (2026-10-19).** A first diagnosis said the local GPU lane
   was idle because the LLM registry did not bind the 64k model to its node. That was wrong.
-  Both machines serve the 64k model. The local machine (johnnyjohnny, 127.0.1.1) does the
-  PRD work: the pi sessions and the daemon connect to its Ollama. The pool the capacity
-  report labels "datawatch" holds the work that actually runs here, so the labels do not
-  match the traffic. The remote machine datawatch (100.64.0.20) gets no PRD traffic, so it
-  is the GPU that is really idle. Lesson: judge a lane by the live connections to its
-  Ollama port (`ss -tnp | grep 11434`) and its model residency (`ollama ps` on each machine),
-  not by the capacity labels alone. Each tick checks both before calling a lane idle.
+  Both machines have the 64k model, and both hold it resident (verified 2026-10-19:
+  `ollama ps` on johnnyjohnny shows qwen3.8-64k:27b at a 65536 context, 100% GPU; the remote
+  box at 100.64.0.20 also shows it resident, about 18 GB VRAM). The remote box has done PRD
+  work, per the operator. Which Ollama serves a given pi PRD is NOT yet verified: the
+  pi sessions and daemon were seen connected to the local Ollama on one check, and no
+  connection to the remote one was seen on that check. The capacity pool labels do not show
+  where traffic goes. Do not call either GPU idle or busy without a live check (`ss -tnp |
+  grep 11434` on each side, `ollama ps` on each machine, the remote box's own logs). Each
+  tick does this before judging a lane.
   Lanes, defined: GPU lane A = this machine (johnnyjohnny), qwen3.8-64k:27b;
-  GPU lane B = remote datawatch (100.64.0.20), qwen3.8-64k:27b, no traffic yet;
+  GPU lane B = remote datawatch (100.64.0.20), qwen3.8-64k:27b; traffic routing unverified;
   Claude 1 and Claude 2 = claude-code, two lanes only.
+- **Registry gap (2026-10-19).** Neither ollama backend (`ollama-datawatch`,
+  `ollama-johnnyjohnny`) lists `qwen3.8-64k:27b` in its model list; each lists only
+  `qwen3.8:27b`. The PRD and config settings use `ollama/qwen3.8-64k:27b` anyway. Track this
+  in the automation BL; do not change the registry without a decision.
 - **Plan check against the original spec.** A rewritten or shortened spec can drop test
   requirements, so compare the decomposed plan with the original request and add missing
   tests or surfaces with a task edit.
