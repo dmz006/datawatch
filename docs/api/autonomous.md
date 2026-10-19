@@ -76,6 +76,12 @@ When `autonomous.enabled` is false, every endpoint returns
 
 ### Guardrail judge LLM override (`set_llm` / `set_task_llm`)
 
+Set a PRD's worker LLM with `set_llm`: Omitted fields stay unchanged; an
+empty value (`""`) clears that field (falls back to global). Every `set_llm`
+call is audit-logged and appended to the PRD's decision log.
+
+Command-line usage: `autonomous set-llm <prd-id> [backend=<v>] [effort=<v>] [model=<v>] [decomposition_profile=<v>]`
+
 `guardrail_backend` / `guardrail_model` pick the LLM that judges the
 guardrail/verification step for an Automaton or a single task. They
 are presence-aware, unlike the worker-LLM keys:

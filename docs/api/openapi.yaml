@@ -1181,6 +1181,28 @@ paths:
       tags: [Autonomous]
       parameters: [{name: id, in: path, required: true, schema: {type: string}}]
       responses: {"200": {description: OK}}
+  /api/autonomous/prds/{id}/set_llm:
+    post:
+      summary: Set a PRD's worker-LLM override fields
+      description: Sets the PRD-level worker LLM override. Fields the caller omits are left unchanged; an empty string ("") clears that field (falls back to global). Applied settings are audit-logged and appended to the PRD's decision log.
+      operationId: autonomousPRDSetLLM
+      tags: [Autonomous]
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                backend: {type: string, description: "Omitted = unchanged; empty string = cleared"}
+                effort: {type: string, description: "Omitted = unchanged; empty string = cleared"}
+                model: {type: string, description: "Omitted = unchanged; empty string = cleared"}
+                decomposition_profile: {type: string, description: "Omitted = unchanged; empty string = cleared"}
+                guardrail_backend: {type: string, description: "Optional; omitted = unchanged; empty string = cleared"}
+                guardrail_model: {type: string, description: "Optional; omitted = unchanged; empty string = cleared"}
+      responses:
+        "200": {description: Updated PRD}
   /api/autonomous/learnings:
     get:
       summary: List extracted post-task learnings
