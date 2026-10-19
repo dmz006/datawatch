@@ -114,7 +114,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "9.5.19"
+var Version = "9.5.21"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -4743,7 +4743,12 @@ func runStart(cmd *cobra.Command, _ []string) error {
 										if tail, terr := mgr.TailOutput(s.FullID, 200); terr == nil {
 											summary = session.ExtractCompletionSummary(tail)
 										}
-										sha, cerr := session.NewProjectGit(taskDir).CommitSessionWork(s.ID, s.Task, summary, s.WriteScope)
+										pg := session.NewProjectGit(taskDir)
+										// Bound unscoped staging to this run's own changes.
+										if !s.CreatedAt.IsZero() {
+											pg.SetRunStart(s.CreatedAt)
+										}
+										sha, cerr := pg.CommitSessionWork(s.ID, s.Task, summary, s.WriteScope)
 										if cerr != nil {
 											return cerr
 										}
@@ -5181,16 +5186,29 @@ Verify whether the diff plausibly implements the spec. Reply with STRICT JSON on
 						Category:   "infra",
 					}, nil
 				}
-				vr := autonomouspkg.VerificationResult{
-					OK: false, Severity: "medium", Summary: "verifier(session): unparseable response",
-					VerifiedAt: time.Now(),
-					Category:   "infra", // default pessimistic; cleared below on a successful parse
+				var parsed autonomouspkg.VerificationResult
+				if uerr := json.Unmarshal([]byte(extractJSON(content)), &parsed); uerr != nil {
+					// Written but unparseable — a TERMINAL, non-retryable
+					// "invalid-response" verdict, NOT "infra": an infra block
+					// makes runGuardrailWithInfraRetry re-run the whole judge,
+					// and the retry re-delivers the same already-relocated
+					// output file, so the response is consumed twice (the same
+					// class of defect that discarded a 28KB decompose plan) or
+					// not at all. It must not be empty either — an empty
+					// category reads as a content-category block eligible for
+					// content auto-fix. Only a genuine no-output session
+					// failure (the serr branch above) is "infra".
+					return autonomouspkg.VerificationResult{
+						OK:         false,
+						Severity:   "medium",
+						Summary:    fmt.Sprintf("decompose judge returned %d bytes — its response could not be parsed as a verdict: %v", len(content), uerr),
+						VerifiedAt: time.Now(),
+						Category:   "invalid-response",
+						Issues:     []string{fmt.Sprintf("raw judge output (%d bytes): %s", len(content), truncate(content, 400))},
+					}, nil
 				}
-				if uerr := json.Unmarshal([]byte(extractJSON(content)), &vr); uerr == nil {
-					vr.Category = "" // a real judgment parsed — content, not infra
-				}
-				vr.VerifiedAt = time.Now()
-				return vr, nil
+				parsed.VerifiedAt = time.Now()
+				return parsed, nil
 			}
 			// /api/ask has no effort field — an override effort is only
 			// recorded (VerifierEffort) on this path, not applied.
@@ -5238,16 +5256,25 @@ Verify whether the diff plausibly implements the spec. Reply with STRICT JSON on
 			// v8.25.9: unparseable LLM response is a verification failure, not a pass.
 			// OK: false triggers AutoFixRetries so the task is re-run rather than
 			// silently advancing the DAG on a verifier that couldn't respond.
-			vr := autonomouspkg.VerificationResult{
-				OK: false, Severity: "medium", Summary: "verifier: unparseable response",
-				VerifiedAt: time.Now(),
-				Category:   "infra", // default pessimistic; cleared below on a successful parse
+			var parsed autonomouspkg.VerificationResult
+			if uerr := json.Unmarshal([]byte(extractJSON(ask.Answer)), &parsed); uerr != nil {
+				// Written but unparseable — a TERMINAL, non-retryable
+				// "invalid-response" verdict, for exactly the reasons the
+				// session branch above documents: never "infra" (that would
+				// auto-retry a judge whose written response we simply could
+				// not read), never empty (that would trigger content
+				// auto-fix on a failure that was never a judgment).
+				return autonomouspkg.VerificationResult{
+					OK:         false,
+					Severity:   "medium",
+					Summary:    fmt.Sprintf("verifier judge returned %d bytes — its response could not be parsed as a verdict: %v", len(ask.Answer), uerr),
+					VerifiedAt: time.Now(),
+					Category:   "invalid-response",
+					Issues:     []string{fmt.Sprintf("raw judge output (%d bytes): %s", len(ask.Answer), truncate(ask.Answer, 400))},
+				}, nil
 			}
-			if uerr := json.Unmarshal([]byte(extractJSON(ask.Answer)), &vr); uerr == nil {
-				vr.Category = "" // a real judgment parsed — content, not infra
-			}
-			vr.VerifiedAt = time.Now()
-			return vr, nil
+			parsed.VerifiedAt = time.Now()
+			return parsed, nil
 		}
 		// BL191 Q6 (v5.10.0) — per-story / per-task guardrail invocation.
 		// Same /api/ask loopback shape the BL25 verifier uses; backends
@@ -5301,17 +5328,32 @@ Verify whether the diff plausibly implements the spec. Reply with STRICT JSON on
 							Category:  "infra",
 						}, nil
 					}
-					gv := autonomouspkg.GuardrailVerdict{
-						Outcome: "block", Severity: "medium",
-						Summary:   "guardrail(session): unparseable response — cannot verify compliance",
-						VerdictAt: time.Now(),
-						Category:  "infra", // default pessimistic; a successful parse replaces it (judgedGuardrailCategory: "policy" or "")
+					var parsed autonomouspkg.GuardrailVerdict
+					if uerr := json.Unmarshal([]byte(extractJSON(content)), &parsed); uerr != nil {
+						// Written but unparseable — a TERMINAL, non-retryable
+						// "invalid-response" verdict, NOT "infra": an infra
+						// block makes runGuardrailWithInfraRetry re-run the
+						// whole judge, and the retry re-delivers the same
+						// already-relocated output file (runOneShotJSONSession*),
+						// so the response is consumed twice or not at all (PRD
+						// bbf70001, 8.6KB guardrail output). It must not be
+						// empty either — an empty category reads as a
+						// content-category block eligible for content auto-fix
+						// in runPerTaskGuardrails/runPerStoryGuardrails. Only a
+						// genuine no-output session failure (the serr branch
+						// above) is "infra".
+						return autonomouspkg.GuardrailVerdict{
+							Outcome:   "block",
+							Severity:  "medium",
+							Summary:   fmt.Sprintf("guardrail judge returned %d bytes — its response could not be parsed as a verdict: %v", len(content), uerr),
+							VerdictAt: time.Now(),
+							Category:  "invalid-response",
+							Issues:    []string{fmt.Sprintf("raw judge output (%d bytes): %s", len(content), truncate(content, 400))},
+						}, nil
 					}
-					if uerr := json.Unmarshal([]byte(extractJSON(content)), &gv); uerr == nil {
-						gv.Category = judgedGuardrailCategory(gv.Category)
-					}
-					gv.VerdictAt = time.Now()
-					return gv, nil
+					parsed.Category = judgedGuardrailCategory(parsed.Category)
+					parsed.VerdictAt = time.Now()
+					return parsed, nil
 				}
 				gkind = "ollama"
 			}
@@ -5361,17 +5403,25 @@ Verify whether the diff plausibly implements the spec. Reply with STRICT JSON on
 			_ = json.Unmarshal(rb, &ask)
 			// v8.25.11: unparseable guardrail response is a block, not a pass.
 			// Failing safe here prevents PRD from advancing on malformed output.
-			gv := autonomouspkg.GuardrailVerdict{
-				Outcome: "block", Severity: "medium",
-				Summary:   "guardrail: unparseable LLM response — cannot verify compliance",
-				VerdictAt: time.Now(),
-				Category:  "infra", // default pessimistic; a successful parse replaces it (judgedGuardrailCategory: "policy" or "")
+			var parsed autonomouspkg.GuardrailVerdict
+			if uerr := json.Unmarshal([]byte(extractJSON(ask.Answer)), &parsed); uerr != nil {
+				// Written but unparseable — a TERMINAL, non-retryable
+				// "invalid-response" verdict, never "infra" (which would
+				// auto-retry a judge whose written response we could not
+				// parse) and never empty (which would trigger content
+				// auto-fix on a failure that was never a judgment).
+				return autonomouspkg.GuardrailVerdict{
+					Outcome:   "block",
+					Severity:  "medium",
+					Summary:   fmt.Sprintf("guardrail judge returned %d bytes — its response could not be parsed as a verdict: %v", len(ask.Answer), uerr),
+					VerdictAt: time.Now(),
+					Category:  "invalid-response",
+					Issues:    []string{fmt.Sprintf("raw judge output (%d bytes): %s", len(ask.Answer), truncate(ask.Answer, 400))},
+				}, nil
 			}
-			if uerr := json.Unmarshal([]byte(extractJSON(ask.Answer)), &gv); uerr == nil {
-				gv.Category = judgedGuardrailCategory(gv.Category)
-			}
-			gv.VerdictAt = time.Now()
-			return gv, nil
+			parsed.Category = judgedGuardrailCategory(parsed.Category)
+			parsed.VerdictAt = time.Now()
+			return parsed, nil
 		}
 		if amgr, err := autonomouspkg.NewManager(expandHome(cfg.DataDir), amgrCfg, decomposeFn); err != nil {
 			fmt.Fprintf(os.Stderr, "[warn] autonomous manager: %v\n", err)
@@ -10456,16 +10506,16 @@ func runSessionList(cfg *config.Config) error {
 func runSessionNew(cfg *config.Config, task, dir, name, backend, llm, compute string, chrome bool, parent string, killChildren, killChildrenRecursive bool, validate []string) error {
 	// Try the structured HTTP API first
 	type startReq struct {
-		Task                  string `json:"task"`
-		ProjectDir            string `json:"project_dir,omitempty"`
-		Backend               string `json:"backend,omitempty"`
-		Name                  string `json:"name,omitempty"`
-		LLM                   string `json:"llm,omitempty"`
-		ComputeNode           string `json:"compute_node,omitempty"`
-		Chrome                *bool  `json:"chrome,omitempty"`
-		ParentID              string `json:"parent_id,omitempty"`
-		KillChildren          bool   `json:"kill_children,omitempty"`
-		KillChildrenRecursive bool   `json:"kill_children_recursive,omitempty"`
+		Task                  string   `json:"task"`
+		ProjectDir            string   `json:"project_dir,omitempty"`
+		Backend               string   `json:"backend,omitempty"`
+		Name                  string   `json:"name,omitempty"`
+		LLM                   string   `json:"llm,omitempty"`
+		ComputeNode           string   `json:"compute_node,omitempty"`
+		Chrome                *bool    `json:"chrome,omitempty"`
+		ParentID              string   `json:"parent_id,omitempty"`
+		KillChildren          bool     `json:"kill_children,omitempty"`
+		KillChildrenRecursive bool     `json:"kill_children_recursive,omitempty"`
 		ValidateCommands      []string `json:"validate_commands,omitempty"`
 	}
 	req := startReq{Task: task, ProjectDir: dir, Backend: backend, Name: name, LLM: llm, ComputeNode: compute, ParentID: parent, KillChildren: killChildren, KillChildrenRecursive: killChildrenRecursive, ValidateCommands: validate}

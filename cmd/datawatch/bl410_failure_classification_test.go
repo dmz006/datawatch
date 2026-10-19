@@ -2,128 +2,152 @@
 // main() and are not unit-testable directly (same constraint
 // bl369_prompt_security_test.go / session_judgment_wiring_test.go
 // document); source inspection confirms each infra-vs-content
-// collapse point is stamped with the right Category, including the
-// "default pessimistic, clear on successful parse" discipline the
-// unparseable-response branches need (a successfully-parsed real
-// judgment must not be left looking like an infra failure just
-// because the LLM's own JSON never mentions "category").
+// collapse point: genuine no-output failures (session error, ask call
+// failure) keep Category "infra" so the bounded infra retry can fire,
+// and a successfully-parsed real judgment is never left looking like
+// an infra failure just because the LLM's own JSON never mentions
+// "category".
+//
+// 2026-10-19 (bbf70001 double-consumption / BL478 class) — a WRITTEN
+// but unparseable judge response is no longer stamped "infra": that
+// would make runGuardrailWithInfraRetry re-run the WHOLE judge, and
+// the retry re-delivers the same already-relocated output file, so
+// the response is consumed twice or not at all. The unparseable
+// branches are now a terminal, non-retryable "invalid-response"
+// verdict naming the real parse error, with the truncated raw output
+// preserved in Issues — "invalid-response" is non-empty (so it is not
+// a content-category block eligible for content auto-fix) and not
+// "infra" (so it is not infra-retried).
 package main
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+)
 
-func TestBL410_GuardrailSessionError_StampedInfra(t *testing.T) {
-	src := readMainGo(t)
-	if !contains(src, `Summary:   "guardrail(session): " + serr.Error(),
-							VerdictAt: time.Now(),
-							Category:  "infra",`) {
-		t.Error("autonomousGuardrail: session-error branch must stamp Category:\"infra\"")
+// contains, readMainGo are provided by bl369_prompt_security_test.go.
+
+func TestJudgedGuardrailCategory_PessimisticInfraSelfReport(t *testing.T) {
+	got := judgedGuardrailCategory("infra")
+	if got != "" {
+		t.Fatalf("judgedGuardrailCategory(\"infra\") = %q; want \"\" (a self-reported infra category on a parsed verdict must be treated as a content judgment, not an infra failure)", got)
 	}
 }
 
-func TestBL410_GuardrailSessionUnparseable_DefaultsInfraClearsOnParse(t *testing.T) {
-	src := readMainGo(t)
-	if !contains(src, `Category:  "infra", // default pessimistic; a successful parse replaces it (judgedGuardrailCategory: "policy" or "")
-					}
-					if uerr := json.Unmarshal([]byte(extractJSON(content)), &gv); uerr == nil {
-						gv.Category = judgedGuardrailCategory(gv.Category)
-					}`) {
-		t.Error("autonomousGuardrail: session-unparseable branch must default Category to \"infra\" and replace it only on a successful parse")
+func TestJudgedGuardrailCategory_PolicyEscalationStaysNonRetryable(t *testing.T) {
+	got := judgedGuardrailCategory("policy")
+	if got != "policy" {
+		t.Fatalf("judgedGuardrailCategory(\"policy\") = %q; want \"policy\" (a quality-gate regression must stay non-retryable, but must not masquerade as content)", got)
 	}
 }
 
-func TestBL410_GuardrailAskCallFailed_StampedInfra(t *testing.T) {
-	src := readMainGo(t)
-	if !contains(src, `Summary:   "guardrail: ask call failed: " + reason,
-					VerdictAt: time.Now(),
-					Category:  "infra",`) {
-		t.Error("autonomousGuardrail: ask-call-failed branch must stamp Category:\"infra\"")
+func TestJudgedGuardrailCategory_EmptyStaysEmpty(t *testing.T) {
+	if got := judgedGuardrailCategory(""); got != "" {
+		t.Fatalf(`judgedGuardrailCategory("") = %q; want "" (empty already means "content")`, got)
 	}
 }
 
-func TestBL410_GuardrailAskUnparseable_DefaultsInfraClearsOnParse(t *testing.T) {
-	src := readMainGo(t)
-	if !contains(src, `Category:  "infra", // default pessimistic; a successful parse replaces it (judgedGuardrailCategory: "policy" or "")
-			}
-			if uerr := json.Unmarshal([]byte(extractJSON(ask.Answer)), &gv); uerr == nil {
-				gv.Category = judgedGuardrailCategory(gv.Category)
-			}`) {
-		t.Error("autonomousGuardrail: ask-unparseable branch must default Category to \"infra\" and replace it only on a successful parse")
+// invalidResponseWants checks the shape every written-but-unparseable
+// fallback must have: a non-empty, non-infra "invalid-response"
+// Category; a Summary naming the real parse error via %v (not a
+// static suffix); and the truncated raw judge output preserved in
+// Issues. categoryPad is the extra alignment spaces after "Category:"
+// that distinguish the verifier-family verdicts (longer field
+// names) from the guardrail-family ones in main.go.
+func invalidResponseWants(categoryPad string) func(src string) error {
+	return func(src string) error {
+		if !contains(src, `Category:`+categoryPad+`"invalid-response"`) {
+			return fmt.Errorf("unparseable-response fallback must be a terminal Category\"invalid-response\" verdict — never \"infra\" (that would re-run the whole judge against the same already-relocated output file) and never empty (that would trigger content auto-fix on a failure that was never a judgment)")
+		}
+		if !contains(src, `its response could not be parsed as a verdict: %v`) {
+			return fmt.Errorf("unparseable-response Summary must name the real parse error via %%v (uerr), not a static \"unparseable response\" string")
+		}
+		if !contains(src, `raw judge output (%d bytes): %s`) {
+			return fmt.Errorf("unparseable-response verdict must preserve the truncated raw judge output in Issues")
+		}
+		return nil
 	}
 }
 
-func TestBL410_VerifierGitDiffFailed_StampedInfra(t *testing.T) {
+// Verifier-family verdicts (VerificationResult) have longer field
+// names than GuardrailVerdict's, so "Category:" is padded with one
+// extra space before the value in the unparseable fallback blocks.
+const (
+	verifierCategoryPad  = "   "
+	guardrailCategoryPad = "  "
+)
+
+func TestBL410_VerifierSessionUnparseable_TerminalInvalidResponse(t *testing.T) {
 	src := readMainGo(t)
-	if !contains(src, `Summary:    fmt.Sprintf("verifier: git diff failed: %v", diffErr),
-						VerifiedAt: time.Now(),
-						Category:   "infra",`) {
-		t.Error("autonomousVerify: git-diff-failed branch must stamp Category:\"infra\"")
+	if contains(src, `"verifier(session): unparseable response"`) {
+		t.Error(`autonomousVerify: the session-unparseable fallback must no longer return a static "unparseable response" verdict stamped "infra"`)
+	}
+	if err := invalidResponseWants(verifierCategoryPad)(src); err != nil {
+		t.Error(err)
 	}
 }
 
-func TestBL410_VerifierCapacityFailed_StampedInfra(t *testing.T) {
+func TestBL410_VerifierAskUnparseable_TerminalInvalidResponse(t *testing.T) {
 	src := readMainGo(t)
-	if !contains(src, `Summary:    "verifier: capacity: " + aerr.Error(),
-							VerifiedAt: time.Now(),
-							Category:   "infra",`) {
-		t.Error("autonomousVerify: capacity-admission-failed branch must stamp Category:\"infra\"")
+	if contains(src, `"verifier: unparseable response"`) {
+		t.Error(`autonomousVerify: the ask-unparseable fallback must no longer return a static "unparseable response" verdict stamped "infra"`)
+	}
+	if err := invalidResponseWants(verifierCategoryPad)(src); err != nil {
+		t.Error(err)
 	}
 }
 
-func TestBL410_VerifierSessionError_StampedInfra(t *testing.T) {
+func TestBL410_GuardrailSessionUnparseable_TerminalInvalidResponse(t *testing.T) {
 	src := readMainGo(t)
-	if !contains(src, `Summary:    "verifier(session): " + serr.Error(),
-						VerifiedAt: time.Now(),
-						Category:   "infra",`) {
-		t.Error("autonomousVerify: session-error branch must stamp Category:\"infra\"")
+	if contains(src, `Summary:   "guardrail(session): unparseable response — cannot verify compliance"`) {
+		t.Error(`autonomousGuardrail: the session-unparseable fallback must no longer return a static "unparseable response" verdict stamped "infra"`)
+	}
+	if err := invalidResponseWants(guardrailCategoryPad)(src); err != nil {
+		t.Error(err)
 	}
 }
 
-func TestBL410_VerifierSessionUnparseable_DefaultsInfraClearsOnParse(t *testing.T) {
+func TestBL410_GuardrailAskUnparseable_TerminalInvalidResponse(t *testing.T) {
 	src := readMainGo(t)
-	if !contains(src, `Category:   "infra", // default pessimistic; cleared below on a successful parse
-				}
-				if uerr := json.Unmarshal([]byte(extractJSON(content)), &vr); uerr == nil {
-					vr.Category = "" // a real judgment parsed — content, not infra
-				}`) {
-		t.Error("autonomousVerify: session-unparseable branch must default Category to \"infra\" and replace it only on a successful parse")
+	if contains(src, `Summary:   "guardrail: unparseable LLM response — cannot verify compliance"`) {
+		t.Error(`autonomousGuardrail: the ask-unparseable fallback must no longer return a static "unparseable LLM response" verdict stamped "infra"`)
+	}
+	if err := invalidResponseWants(guardrailCategoryPad)(src); err != nil {
+		t.Error(err)
 	}
 }
 
-func TestBL410_VerifierAskCallFailed_StampedInfra(t *testing.T) {
+// Genuine no-output failures must STILL be "infra" — the bounded
+// infra retry exists for exactly these (the judge never produced
+// anything to parse, so re-running the call against a healthy session
+// is meaningful).
+func TestBL410_SessionErrorBranchKeepsInfra(t *testing.T) {
 	src := readMainGo(t)
-	if !contains(src, `Summary:    "verifier: ask call failed: " + reason,
-					VerifiedAt: time.Now(),
-					Category:   "infra",`) {
-		t.Error("autonomousVerify: ask-call-failed branch must stamp Category:\"infra\"")
+	if !contains(src, `Summary:   "guardrail(session): " + serr.Error(),`) ||
+		!contains(src, `Category:  "infra",`) ||
+		!contains(src, `Summary:    "verifier(session): " + serr.Error(),`) ||
+		!contains(src, `Category:   "infra",`) {
+		t.Error(`autonomousGuardrail/autonomousVerify: the session-error (no output file) branch must keep Category "infra" — that is the only "infra" verdict left for a written-file-less failure, and the infra retry must still fire for it`)
 	}
 }
 
-func TestBL410_VerifierAskUnparseable_DefaultsInfraClearsOnParse(t *testing.T) {
+func TestBL410_AskCallFailureKeepsInfra(t *testing.T) {
 	src := readMainGo(t)
-	if !contains(src, `Category:   "infra", // default pessimistic; cleared below on a successful parse
-			}
-			if uerr := json.Unmarshal([]byte(extractJSON(ask.Answer)), &vr); uerr == nil {
-				vr.Category = "" // a real judgment parsed — content, not infra
-			}`) {
-		t.Error("autonomousVerify: ask-unparseable branch must default Category to \"infra\" and replace it only on a successful parse")
+	if !contains(src, `Summary:   "guardrail: ask call failed: " + reason,`) ||
+		!contains(src, `Category:  "infra",`) ||
+		!contains(src, `Summary:    "verifier: ask call failed: " + reason,`) ||
+		!contains(src, `Category:   "infra",`) {
+		t.Error(`autonomousGuardrail/autonomousVerify: the ask call-failure (no response at all) branch must keep Category "infra" — infra retry must fire when no output was produced, and only then`)
 	}
 }
 
-// A successfully parsed guardrail verdict is a real judgment: it may
-// report "policy" (a project rule requires operator sign-off), but
-// never "infra", and anything else collapses to "" (content).
-func TestJudgedGuardrailCategory(t *testing.T) {
-	cases := map[string]string{
-		"infra":   "", // pessimistic default left by an omitted category, or a self-reported infra
-		"":        "",
-		"policy":  "policy",
-		"content": "",
-		"scope":   "",
-		"Policy":  "",
-	}
-	for in, want := range cases {
-		if got := judgedGuardrailCategory(in); got != want {
-			t.Errorf("judgedGuardrailCategory(%q) = %q, want %q", in, got, want)
+func TestBL410_ParsedVerdictCategoryStillFiltered(t *testing.T) {
+	src := readMainGo(t)
+	for _, want := range []string{
+		`parsed.Category = judgedGuardrailCategory(parsed.Category)`,
+	} {
+		if !contains(src, want) {
+			t.Errorf("autonomousGuardrail: %q — a successfully-parsed verdict still must go through judgedGuardrailCategory so a self-reported \"infra\" never reads like an infra failure", want)
 		}
 	}
 }

@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.21 — autonomous: check a PRD's guardrail verdict once, and stage only a session's own changes
+
+### Fixed
+- A guardrail or decompose judge that has already written its output file is judged exactly once on that output. If the output cannot be read as a verdict, the failure is reported naming what went wrong and no second judge is spawned to re-read it; a judge session that ends without producing any output still gets its single bounded automatic retry.
+- A session with no write scope no longer stages the whole repository for its auto-commit. It stages only the files its own run changed, and the log warning names those files — pre-existing untracked files in the same worktree are no longer swept into a session's commit.
+- Version bump 9.5.18 -> 9.5.21 (cmd/datawatch/main.go + internal/server/api.go kept identical).
 ## v9.5.19 — finished branches no longer conflict on version numbers
 
 
