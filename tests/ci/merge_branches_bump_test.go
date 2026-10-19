@@ -75,3 +75,66 @@ func TestMergeBranchesBumpsOnce(t *testing.T) {
 		}
 	}
 }
+
+// TestMergeBranchesRefusesSecondBump covers two branches that each bump the
+// version by hand from the same base commit, both to 1.0.1. The first merge
+// is allowed: 1.0.1 is the version expected after main at 1.0.0. Once main
+// is at 1.0.1, the second branch's 1.0.1 clashes with the expected 1.0.2, so
+// merge-branches-bump-version.sh must refuse it before merging anything. Main
+// keeps its head and both version files still read 1.0.1. Everything runs in
+// a throwaway repository under t.TempDir(); no tmux, service or process is
+// touched.
+func TestMergeBranchesRefusesSecondBump(t *testing.T) {
+	r := newMergeRepo(t, "check-merge-version.sh", "set-release-version.sh", "merge-branches-bump-version.sh")
+
+	base := r.head()
+
+	r.git("checkout", "-b", "first", base)
+	setVersionLines(r, "1.0.1")
+	r.commitAll("first: bump version to 1.0.1")
+
+	r.git("checkout", "-b", "second", base)
+	setVersionLines(r, "1.0.1")
+	r.commitAll("second: bump version to 1.0.1")
+
+	r.git("checkout", "main")
+
+	out, err := r.runScript("merge-branches-bump-version.sh", "first change", "first")
+	if err != nil {
+		t.Fatalf("first merge: merge-branches-bump-version.sh failed: %v\n%s", err, out)
+	}
+	if got := r.versionAt("main"); got != "1.0.1" {
+		t.Fatalf("after first merge: cmd/datawatch/main.go on main: want version 1.0.1, got %s", got)
+	}
+
+	mainBefore := r.head()
+
+	out, err = r.runScript("merge-branches-bump-version.sh", "second change", "second")
+	if err == nil {
+		t.Fatalf("second merge: want non-zero exit for a second bump to 1.0.1, got success\n%s", out)
+	}
+	if !strings.Contains(out, "1.0.2") {
+		t.Fatalf("second merge: combined output does not mention the expected version 1.0.2:\n%s", out)
+	}
+	if got := r.head(); got != mainBefore {
+		t.Fatalf("second merge: main moved from %s to %s; a refused merge must change nothing", mainBefore, got)
+	}
+
+	mainMain := r.git("show", "main:cmd/datawatch/main.go")
+	if !strings.Contains(mainMain, `var Version = "1.0.1"`) {
+		t.Fatalf("cmd/datawatch/main.go on main does not read 1.0.1 after the refused merge:\n%s", mainMain)
+	}
+	apiSrc := r.git("show", "main:internal/server/api.go")
+	if !strings.Contains(apiSrc, `var Version = "1.0.1"`) {
+		t.Fatalf("internal/server/api.go on main does not read 1.0.1 after the refused merge:\n%s", apiSrc)
+	}
+}
+
+// setVersionLines rewrites the var Version line in both version files of the
+// temp repo to version. The files keep the same layout newMergeRepo gives
+// them, and the change is left for the caller to commit.
+func setVersionLines(r *mergeRepo, version string) {
+	r.t.Helper()
+	r.writeFile("cmd/datawatch/main.go", "package main\n\nvar Version = \""+version+"\"\n")
+	r.writeFile("internal/server/api.go", "package server\n\nvar Version = \""+version+"\"\n")
+}
