@@ -2073,6 +2073,10 @@ type AutonomousConfig struct {
 	// StaleTaskSeconds — default 900 seconds. A zero or negative value
 	// inherits session.stale_timeout_seconds.
 	StaleTaskSeconds int `yaml:"stale_task_seconds,omitempty" json:"stale_task_seconds,omitempty"`
+	// PreserveAttemptWork keeps a failed attempt's worktree changes around
+	// so the next attempt can build on them. Nil (unset) means true; use
+	// PreserveAttemptWorkEnabled rather than dereferencing the pointer.
+	PreserveAttemptWork *bool `yaml:"preserve_attempt_work,omitempty" json:"preserve_attempt_work,omitempty"`
 	// AutoFixRetries — how many times to re-prompt on verifier failure.
 	AutoFixRetries int `yaml:"auto_fix_retries,omitempty" json:"auto_fix_retries,omitempty"`
 	// VerifierDiffMaxBytes caps the git diff injected into the verifier
@@ -2218,7 +2222,13 @@ type AutonomousConfig struct {
 	Notify AutonomousNotifyConfig `yaml:"notify" json:"notify"`
 }
 
-// AutonomousNotifyConfig — autonomous.notify sub-config. DefaultEvents
+// PreserveAttemptWorkEnabled reports whether failed-attempt work is kept.
+// An unset (nil) PreserveAttemptWork means true.
+func (a AutonomousConfig) PreserveAttemptWorkEnabled() bool {
+	return a.PreserveAttemptWork == nil || *a.PreserveAttemptWork
+}
+
+// AutonomousNotifyConfig —autonomous.notify sub-config. DefaultEvents
 // is the global default set of lifecycle event kinds the built-in
 // lifecycle sinks subscribe to (see
 // internal/autonomous/lifecycle_event.go: KindPRDUpdated

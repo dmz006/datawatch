@@ -5602,6 +5602,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"per_prd_guardrails":            s.cfg.Autonomous.PerPRDGuardrails, // rules-review, ci-watch
 			"block_on_file_drift":           s.cfg.Autonomous.BlockOnFileDrift, // strict foreign-file-drift enforcement
 			"stale_task_seconds":            s.cfg.Autonomous.StaleTaskSeconds,
+			"preserve_attempt_work":         s.cfg.Autonomous.PreserveAttemptWorkEnabled(),
 			"auto_fix_retries":              s.cfg.Autonomous.AutoFixRetries,
 			"verifier_diff_max_bytes":       s.cfg.Autonomous.VerifierDiffMaxBytes,
 			"security_scan":                 s.cfg.Autonomous.SecurityScan,
@@ -7028,6 +7029,10 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		case "autonomous.stale_task_seconds":
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.Autonomous.StaleTaskSeconds = n
+			}
+		case "autonomous.preserve_attempt_work":
+			if b, ok := v.(bool); ok {
+				cfg.Autonomous.PreserveAttemptWork = &b
 			}
 		case "autonomous.auto_fix_retries":
 			if n, ok := toInt(v); ok && n >= 0 {
