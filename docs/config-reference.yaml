@@ -938,8 +938,15 @@ autonomous:
   verification_timeout_seconds: 1800
   # autonomous
   session_idle_timeout_seconds: 900   # bound on one worker/verifier session sitting in waiting_input/idle with no live child process; exceeded => infra failure 'session idle without completion', alert raised, auto_fix_retries budget handles the retry
-  # 0 = inherit session.stale_timeout_seconds.
-  stale_task_seconds: 0
+  # Stall window for a running worker, in seconds. A worker counts as stalled
+  # only when, for this many seconds, it has no output, no live child process,
+  # no backend activity, and no file change in its work directory. 0 or
+  # negative inherits session.stale_timeout_seconds.
+  stale_task_seconds: 900
+  # Save a killed attempt's uncommitted work to refs/datawatch/attempts/<task>/<n>
+  # and restore it on the next attempt, unless that attempt was started with
+  # clean_restart (reset_task). false disables the save and restore.
+  preserve_attempt_work: true
   # Retries on verifier failure (re-prompts the same backend with the
   # verifier's findings prepended).
   auto_fix_retries: 1

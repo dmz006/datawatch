@@ -74,6 +74,17 @@ DELETE /api/automations/{id}         delete (draft/completed/cancelled only); bo
 When `autonomous.enabled` is false, every endpoint returns
 `503 autonomous disabled`.
 
+### Clean restart on `reset_task`
+
+`POST /api/autonomous/prds/{id}/reset_task` accepts a `clean_restart` boolean
+(default `false`) alongside `task_id` and `force`. By default the next attempt
+restores the work that `preserve_attempt_work` saved from earlier killed
+attempts. Setting `clean_restart: true` starts that one attempt from the
+pre-task tree instead, so the saved work is not restored for that attempt. The
+flag applies to the single reset only; later attempts restore again unless they
+are reset with `clean_restart` too. The MCP tool and the comm-channel command
+accept the same option.
+
 ### Guardrail judge LLM override (`set_llm` / `set_task_llm`)
 
 Set a PRD's worker LLM with `set_llm`: Omitted fields stay unchanged; an
@@ -289,7 +300,8 @@ autonomous:
   verification_backend:   ""          # empty = inherit; set differently for cross-backend independence
   planning_effort:        "thorough"  # BL41 effort hint (BL304; old key decomposition_effort still accepted)
   verification_effort:    "normal"    # per-task/story/Automaton overrides (set_*_verification_llm) take precedence
-  stale_task_seconds:     0           # 0 = inherit session.stale_timeout_seconds
+  stale_task_seconds:     900         # activity-based stall window: no output, child process, backend activity, or file change for this long = stalled; 0 = inherit session.stale_timeout_seconds
+  preserve_attempt_work:  true        # save a killed attempt's uncommitted work to refs/datawatch/attempts/; restored on the next attempt unless clean_restart
   auto_fix_retries:       1           # re-prompt count on verifier failure
   security_scan:          true        # nightwire-port .py scanner before commit
 ```
