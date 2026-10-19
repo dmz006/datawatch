@@ -184,6 +184,24 @@ default `false`) is on, in which case the task is blocked and the walk halts. It
 runs read-only git commands and never rewrites history. See
 `docs/howto/file-drift-guardrail.md`.
 
+### Pre-spawn scope lint mode (`autonomous.scope_lint`)
+
+`autonomous.scope_lint` (`config.AutonomousConfig.ScopeLint`, JSON
+`scope_lint`, default `enforce`) selects what the pre-spawn scope lint does
+with a hit: `off` skips the lint, `warn` records the problems and spawns the
+task, `enforce` blocks it. `ScopeLintMode` normalises the value, and any empty
+or unknown value resolves to `enforce`, so an existing configuration keeps
+blocking. `ValidateScopeLint` rejects unknown values on the write surfaces.
+The executor reads the resolved mode (`Manager.scopeLintMode`) in
+`executeOne`, before the task spawns. Plan-time `ScopeWarnings` are skipped
+when the mode is `off` (`planScopeWarnings`). Placeholder and quoted pattern
+text is never flagged in any mode. A failed Automaton accepts a spec edit
+(`EditTaskSpec`) only for a task whose failure is a scope-lint rejection
+(`isScopeLintFailure`). Surfaces: YAML `autonomous.scope_lint`, REST
+`PUT /api/config` and `GET /api/config`, MCP `autonomous_config_get` /
+`autonomous_config_set`, comm `configure`, CLI `autonomous config-set`, and the PWA
+Settings → Automate → Task scope lint select. See `docs/operations.md`.
+
 ### Per-task project directory (Automata)
 
 `autonomous.Task.ProjectDir` (JSON `project_dir`) overrides the

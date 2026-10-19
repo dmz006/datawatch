@@ -482,6 +482,42 @@ signal:
   group_id: abc123base64groupid==
 ```
 
+### Task scope lint
+
+Before an Automaton task spawns, the scope lint checks the task's spec and
+planned files against the Automaton's read and write directories. Set the mode
+with `autonomous.scope_lint` in the config file, in the PWA under Settings →
+Automate → Task scope lint, or with `autonomous_config_set` over MCP.
+
+| Mode | What it does |
+|---|---|
+| `off` | Skips the lint. No problems are recorded, and no scope warnings are produced at plan time. |
+| `warn` | Lints the task and records each problem as a `scope_lint_warn` decision, then spawns the task anyway. |
+| `enforce` | Blocks the task with a `scope:` error and does not spawn it. This is the default. |
+
+An empty or unrecognised value is treated as `enforce`, so an existing
+configuration keeps blocking.
+
+**Placeholder and quoted patterns are never flagged.** In every mode the lint
+ignores template and glob syntax (`<name>`, `{x}`, `*`, `$NAME`, `~user`) and a
+path that sits inside a quoted search pattern, such as `grep '/home/x/.ssh'`.
+A task that only mentions such text is not blocked.
+
+**Remedies.** A lint message names the token, the line and one of two fixes:
+
+- *A spec path outside the allowed directories:* edit the task spec to remove
+  or quote the path, or widen the PRD read dirs if the task really needs to
+  read it.
+- *A planned file outside the writable directories:* remove the file from the
+  task's files, or widen the PRD write dirs.
+
+**Failed Automatons.** When a task fails only because the scope lint rejected
+its spec, the failed Automaton still accepts a spec edit for that one task. Use
+the task spec edit surface (`autonomous_prd_edit_task` over MCP, or the
+`edit_task` REST route). Correct the spec, then retry the task. You do not need to
+widen the PRD dirs or recreate the Automaton. Other failed tasks, and completed
+tasks in any status, stay locked.
+
 ---
 
 ## 5. Signal Account Management
