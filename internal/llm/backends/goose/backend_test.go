@@ -1,10 +1,126 @@
 package goose
 
 import (
+	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
+
+// installFakeTmux puts a PATH-resolvable fake `tmux` in dir that records
+// its argv (one argument per line) to argvFile. No real tmux server is
+// ever touched.
+//
+// Recording uses `printf '%s\n'` inside a POSIX `for` loop rather than the
+// NUL-separated `printf '%s\0'` form: NUL bytes in printf formats are not
+// guaranteed on every shell/busybox build on every host, while `%s\n` is
+// POSIX. The command Launch sends is a single line (the task body lives in
+// a scratch file, never inline), so line separation loses nothing.
+func installFakeTmux(t *testing.T, dir, argvFile string) {
+	t.Helper()
+	fakeTmux := filepath.Join(dir, "tmux")
+	script := "#!/bin/sh\nfor a in \"$@\"; do printf '%s\\n' \"$a\"; done > '" + shellQuote(argvFile) + "'\n"
+	if err := os.WriteFile(fakeTmux, []byte(script), 0o755); err != nil { //nolint:gosec // test fixture must be executable
+		t.Fatalf("write fake tmux: %v", err)
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
+func recordedSendKeysCmd(t *testing.T, argvFile string) string {
+	t.Helper()
+	raw, err := os.ReadFile(argvFile)
+	if err != nil {
+		t.Fatalf("read recorded tmux argv: %v", err)
+	}
+	// One argument per line: tmux send-keys -t <session> <cmd> Enter
+	args := strings.Split(strings.TrimSuffix(string(raw), "\n"), "\n")
+	if len(args) < 2 || args[len(args)-2] == "" {
+		t.Fatalf("fake tmux recorded %d argv element(s) (%q); want `... <cmd> Enter` with a non-empty command", len(args), string(raw))
+	}
+	return args[len(args)-2]
+}
+
+// TestPromptBackendLaunch_LongTaskGoesThroughScratchFile proves that the
+// goose-prompt one-shot Launch with a 40 KB task (multi-KB spec inline
+// would blow past tmux's ~16 KB send-keys limit) emits a short command
+// containing the `$(cat '...')` expression, and that the scratch file
+// holds the exact task text. The interactive goose Launch/LaunchResume
+// send no task on the command line and are unaffected.
+func TestPromptBackendLaunch_LongTaskGoesThroughScratchFile(t *testing.T) {
+	dir := t.TempDir()
+	argvFile := filepath.Join(dir, "argv")
+	installFakeTmux(t, dir, argvFile)
+
+	task := "SPEC\n" + strings.Repeat("y", 40*1024)
+	b := NewPrompt("goose")
+	if err := b.Launch(context.Background(), task, "cs-test", "/proj", "/tmp/out.log"); err != nil {
+		t.Fatalf("Launch: %v", err)
+	}
+	cmd := recordedSendKeysCmd(t, argvFile)
+
+	if len(cmd) >= len(task) {
+		t.Errorf("Launch command length %d must be far shorter than the %d-byte task", len(cmd), len(task))
+	}
+	i := strings.Index(cmd, "$(cat '")
+	if i < 0 {
+		t.Fatalf("expected task delivered via `$(cat '...')`, got: %.200s", cmd)
+	}
+	if strings.Contains(cmd, "yyyyyyyyyyyyyyyy") {
+		t.Errorf("task text must not appear inline in the command, got: %.200s", cmd)
+	}
+	// Extract the scratch file path and verify it holds the full task.
+	rest := cmd[i+len("$(cat '"):]
+	end := strings.Index(rest, "'")
+	if end < 0 {
+		t.Fatalf("unterminated scratch file path in: %s", rest)
+	}
+	path := rest[:end]
+	if !filepath.IsAbs(path) {
+		t.Fatalf("scratch file path = %q, want absolute", path)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read scratch file: %v", err)
+	}
+	if string(got) != task {
+		t.Errorf("scratch file contents = %d bytes, want the full %d-byte task text", len(got), len(task))
+	}
+	// Cleanup must be scheduled before the completion echo.
+	rmIdx := strings.Index(cmd, "rm -f '"+path+"'")
+	echoIdx := strings.Index(cmd, "DATAWATCH_COMPLETE")
+	if !(rmIdx >= 0 && rmIdx < echoIdx) {
+		t.Errorf("rm -f cleanup must come before the DATAWATCH_COMPLETE echo, got: %.400s", cmd)
+	}
+	if !strings.HasSuffix(cmd, "echo 'DATAWATCH_COMPLETE: goose done'") {
+		t.Errorf("completion marker must be echoed unconditionally, got: %.400s", cmd)
+	}
+}
+
+// TestPromptBackendLaunch_FallsBackToInlineWhenScratchFileFails proves
+// that if writing the scratch file fails (unwritable temp dir), the
+// goose-prompt Launch falls back to the old inline form so the task is
+// still delivered.
+func TestPromptBackendLaunch_FallsBackToInlineWhenScratchFileFails(t *testing.T) {
+	dir := t.TempDir()
+	argvFile := filepath.Join(dir, "argv")
+	installFakeTmux(t, dir, argvFile)
+	// Point TMPDIR at a path that doesn't exist so os.CreateTemp fails.
+	t.Setenv("TMPDIR", filepath.Join(dir, "definitely-missing"))
+
+	task := "small inline task"
+	b := NewPrompt("goose")
+	if err := b.Launch(context.Background(), task, "cs-test", "/proj", ""); err != nil {
+		t.Fatalf("Launch: %v", err)
+	}
+	cmd := recordedSendKeysCmd(t, argvFile)
+	if strings.Contains(cmd, "$(cat '") {
+		t.Errorf("scratch file write failed; command must not reference a cat file, got: %s", cmd)
+	}
+	if !strings.Contains(cmd, "--text 'small inline task'") {
+		t.Errorf("expected inline fallback form in: %s", cmd)
+	}
+}
 
 func TestResolveBinary_PathLookup(t *testing.T) {
 	// If the binary name is on PATH, it should be returned as-is.
@@ -313,4 +429,3 @@ func indexOf(s, sub string) int {
 	}
 	return -1
 }
-

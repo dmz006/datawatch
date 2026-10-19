@@ -161,7 +161,7 @@ func (b *PromptBackend) Launch(ctx context.Context, task, tmuxSession, projectDi
 			`| python3 -c "import sys,json;[print(e['part']['text'],end='',flush=True) if e.get('type')=='text' else print('['+e['type']+']',flush=True) for line in sys.stdin for e in [json.loads(line)] if e.get('type') in ('text','step_start','step_finish','tool_call')]" `+
 			`; %secho; sleep 1; echo 'DATAWATCH_COMPLETE: opencode done'`,
 		escapedDir, b.binary, standaloneFlag, msgExpr, cleanup)
-	return exec.CommandContext(ctx, "tmux", "send-keys", "-t", tmuxSession, cmd, "Enter").Run()
+	return llm.SendKeys(ctx, tmuxSession, cmd)
 }
 func (b *Backend) Version() string {
 	out, err := exec.Command(b.binary, "--version").Output()
@@ -207,10 +207,14 @@ func (b *Backend) buildRunCmd(escapedDir, task, tmuxSession string) string {
 		escapedDir, b.binary, standaloneFlag, escaped)
 }
 
+// Launch starts a fresh opencode session. The typed command is delivered
+// via the shared llm.SendKeys helper: the shared MaxSendKeysCommand
+// length guard applies and a tmux failure carries its stderr text in the
+// returned error instead of a bare "exit status 1".
 func (b *Backend) Launch(ctx context.Context, task, tmuxSession, projectDir, logFile string) error {
 	escapedDir := strings.ReplaceAll(projectDir, "'", `'\''`)
 	cmd := b.buildRunCmd(escapedDir, task, tmuxSession)
-	return exec.CommandContext(ctx, "tmux", "send-keys", "-t", tmuxSession, cmd, "Enter").Run()
+	return llm.SendKeys(ctx, tmuxSession, cmd)
 }
 
 // LaunchResume resumes a prior opencode session.
@@ -220,5 +224,5 @@ func (b *Backend) Launch(ctx context.Context, task, tmuxSession, projectDir, log
 func (b *Backend) LaunchResume(ctx context.Context, task, tmuxSession, projectDir, logFile, resumeID string) error {
 	escapedDir := strings.ReplaceAll(projectDir, "'", `'\''`)
 	cmd := b.buildRunCmd(escapedDir, task, tmuxSession)
-	return exec.CommandContext(ctx, "tmux", "send-keys", "-t", tmuxSession, cmd, "Enter").Run()
+	return llm.SendKeys(ctx, tmuxSession, cmd)
 }

@@ -78,7 +78,7 @@ func resolveBinary(binary string) string {
 	return binary
 }
 
-func (b *Backend) Name() string                  { return "goose" }
+func (b *Backend) Name() string                   { return "goose" }
 func (b *Backend) SupportsInteractiveInput() bool { return true }
 func (b *Backend) PromptRequired() bool           { return false }
 func (b *Backend) HasToolAccess() bool            { return true }
@@ -90,15 +90,15 @@ func (b *Backend) SetSessionName(name string) {
 	b.sessionName = name
 }
 
-func (b *Backend) SetProvider(p string)           { b.provider = p }
-func (b *Backend) SetModel(m string)               { b.model = m }
-func (b *Backend) SetAPIKey(k string)              { b.apiKey = k }
-func (b *Backend) SetChannelEnabled(v bool)        { b.channelEnabled = v }
-func (b *Backend) SetSessionFullID(id string)      { b.sessionFullID = id }
-func (b *Backend) SetCallerPRDID(id string)        { b.callerPRDID = id }   // BL385
-func (b *Backend) SetCallerStoryID(id string)      { b.callerStoryID = id } // BL385
-func (b *Backend) SetWebSearchEnabled(v bool)      { b.webSearchEnabled = v }     // BL372
-func (b *Backend) SetWebSearchURL(url string)      { b.webSearchURL = url }       // BL372
+func (b *Backend) SetProvider(p string)             { b.provider = p }
+func (b *Backend) SetModel(m string)                { b.model = m }
+func (b *Backend) SetAPIKey(k string)               { b.apiKey = k }
+func (b *Backend) SetChannelEnabled(v bool)         { b.channelEnabled = v }
+func (b *Backend) SetSessionFullID(id string)       { b.sessionFullID = id }
+func (b *Backend) SetCallerPRDID(id string)         { b.callerPRDID = id }         // BL385
+func (b *Backend) SetCallerStoryID(id string)       { b.callerStoryID = id }       // BL385
+func (b *Backend) SetWebSearchEnabled(v bool)       { b.webSearchEnabled = v }     // BL372
+func (b *Backend) SetWebSearchURL(url string)       { b.webSearchURL = url }       // BL372
 func (b *Backend) SetWebSearchEngine(engine string) { b.webSearchEngine = engine } // BL372
 
 // gooseEnvPrefix returns the env var prefix string to prepend to commands,
@@ -159,6 +159,32 @@ func (b *Backend) gooseEnvPrefix() string {
 // shellQuote wraps s in single quotes, escaping any embedded single quotes.
 func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// writeTaskFile writes the task text to a scratch file instead of embedding
+// it inline in the shell command sent to the pane. Mirrors
+// pi.writeTaskFile for the same reason: typing a multi-KB task spec inline
+// via `tmux send-keys` can make the send-keys command exceed tmux's roughly
+// 16 KB limit, so the task is read back from the file with
+// `$(cat 'file')` — the *typed* line stays short while the agent still
+// receives the exact same content.
+func writeTaskFile(tmuxSession, task string) (string, error) {
+	safe := strings.Map(func(r rune) rune {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			return r
+		}
+		return '-'
+	}, tmuxSession)
+	f, err := os.CreateTemp("", "datawatch-goose-task-"+safe+"-*.txt")
+	if err != nil {
+		return "", err
+	}
+	defer f.Close() //nolint:errcheck
+	if _, err := f.WriteString(task); err != nil {
+		os.Remove(f.Name()) //nolint:errcheck
+		return "", err
+	}
+	return f.Name(), nil
 }
 
 func (b *Backend) Version() string {
@@ -229,19 +255,19 @@ func NewPrompt(binary string) llm.Backend {
 	return &PromptBackend{binary: resolveBinary(binary)}
 }
 
-func (b *PromptBackend) Name() string                  { return "goose-prompt" }
+func (b *PromptBackend) Name() string                   { return "goose-prompt" }
 func (b *PromptBackend) SupportsInteractiveInput() bool { return false }
 func (b *PromptBackend) PromptRequired() bool           { return true }
 func (b *PromptBackend) HasToolAccess() bool            { return true }
 
-func (b *PromptBackend) SetProvider(p string)            { b.provider = p }
-func (b *PromptBackend) SetModel(m string)               { b.model = m }
-func (b *PromptBackend) SetAPIKey(k string)              { b.apiKey = k }
-func (b *PromptBackend) SetChannelEnabled(v bool)        { b.channelEnabled = v }
-func (b *PromptBackend) SetSessionFullID(id string)      { b.sessionFullID = id }
-func (b *PromptBackend) SetWebSearchEnabled(v bool)      { b.webSearchEnabled = v }      // BL372
-func (b *PromptBackend) SetWebSearchURL(url string)      { b.webSearchURL = url }        // BL372
-func (b *PromptBackend) SetWebSearchEngine(e string)     { b.webSearchEngine = e }       // BL372
+func (b *PromptBackend) SetProvider(p string)        { b.provider = p }
+func (b *PromptBackend) SetModel(m string)           { b.model = m }
+func (b *PromptBackend) SetAPIKey(k string)          { b.apiKey = k }
+func (b *PromptBackend) SetChannelEnabled(v bool)    { b.channelEnabled = v }
+func (b *PromptBackend) SetSessionFullID(id string)  { b.sessionFullID = id }
+func (b *PromptBackend) SetWebSearchEnabled(v bool)  { b.webSearchEnabled = v } // BL372
+func (b *PromptBackend) SetWebSearchURL(url string)  { b.webSearchURL = url }   // BL372
+func (b *PromptBackend) SetWebSearchEngine(e string) { b.webSearchEngine = e }  // BL372
 
 func (b *PromptBackend) gooseEnvPrefix() string {
 	var parts []string
@@ -296,6 +322,12 @@ func (b *PromptBackend) Version() string {
 	return v
 }
 
+// Launch runs goose in one-shot --text mode on the given task. The task
+// text is delivered via a scratch file (`--text "$(cat '...')"`) rather
+// than typed inline — see writeTaskFile's doc comment; only if writing the
+// scratch file fails does it fall back to the old inline form. The
+// interactive goose Launch and LaunchResume send no task on the command
+// line and are unaffected.
 func (b *PromptBackend) Launch(ctx context.Context, task, tmuxSession, projectDir, logFile string) error {
 	if task == "" {
 		return fmt.Errorf("goose-prompt requires a task")
@@ -303,8 +335,15 @@ func (b *PromptBackend) Launch(ctx context.Context, task, tmuxSession, projectDi
 	escapedDir := strings.ReplaceAll(projectDir, "'", `'\''`)
 	env := b.gooseEnvPrefix()
 	escaped := strings.ReplaceAll(task, "'", `'\''`)
+	prompt := escaped // fallback: inline
+	cleanup := ""
+	if path, err := writeTaskFile(tmuxSession, task); err == nil {
+		escapedPath := strings.ReplaceAll(path, "'", `'\''`)
+		prompt = "$(cat '" + escapedPath + "')"
+		cleanup = "rm -f '" + escapedPath + "'; "
+	}
 	cmd := fmt.Sprintf(
-		"cd '%s' && GOOSE_CLI_THEME=plain %s%s run --text '%s'; echo 'DATAWATCH_COMPLETE: goose done'",
-		escapedDir, env, b.binary, escaped)
+		"cd '%s' && GOOSE_CLI_THEME=plain %s%s run --text '%s'; %secho 'DATAWATCH_COMPLETE: goose done'",
+		escapedDir, env, b.binary, prompt, cleanup)
 	return exec.CommandContext(ctx, "tmux", "send-keys", "-t", tmuxSession, cmd, "Enter").Run()
 }

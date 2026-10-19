@@ -6,6 +6,7 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 
@@ -192,19 +193,24 @@ func (b *Backend) Launch(ctx context.Context, task, tmuxSession, projectDir, log
 		cmd = fmt.Sprintf("cd %s && NO_COLOR=1 %s%s --add-dir %s%s; echo 'DATAWATCH_COMPLETE: claude done'",
 			shellQuote(projectDir), b.binaryPath, pre, shellQuote(projectDir), post)
 	} else {
-		escaped := escapeForShell(task)
-		cmd = fmt.Sprintf("cd %s && NO_COLOR=1 %s%s --add-dir %s%s '%s'; echo 'DATAWATCH_COMPLETE: claude done'",
-			shellQuote(projectDir), b.binaryPath, pre, shellQuote(projectDir), post, escaped)
+		// Task is delivered via a scratch file ($(cat 'path')) so the typed
+		// line stays tmux-send-keys-friendly; rm -f cleanup runs right
+		// before the completion marker. See taskArgExpr.
+		argExpr, cleanup := taskArgExpr(tmuxSession, task)
+		cmd = fmt.Sprintf("cd %s && NO_COLOR=1 %s%s --add-dir %s%s %s; %secho 'DATAWATCH_COMPLETE: claude done'",
+			shellQuote(projectDir), b.binaryPath, pre, shellQuote(projectDir), post, argExpr, cleanup)
 	}
 
-	err := exec.CommandContext(ctx,
-		"tmux", "send-keys", "-t", tmuxSession, cmd, "Enter",
-	).Run()
-	if err != nil {
+	if err := llm.SendKeys(ctx, tmuxSession, cmd); err != nil {
 		return fmt.Errorf("launch claude-code in %s: %w", tmuxSession, err)
 	}
 	return nil
 }
+
+// ResumeKeepsTask implements llm.ResumeKeepsTask: a resumed claude-code
+// conversation already holds the original task in its context, so a
+// no-override restart should not resend the full task text.
+func (b *Backend) ResumeKeepsTask() bool { return true }
 
 // LaunchResume resumes a prior claude-code conversation using --resume SESSION_ID.
 // If resumeID is not a UUID, it's treated as a session name and the deterministic
@@ -231,18 +237,61 @@ func (b *Backend) LaunchResume(ctx context.Context, task, tmuxSession, projectDi
 	base := fmt.Sprintf("cd %s && NO_COLOR=1", quotedDir)
 	claudeBase := fmt.Sprintf("%s%s --add-dir %s%s", b.binaryPath, pre, quotedDir, post)
 
-	var resumeCmd, fallbackCmd string
-	if task == "" {
-		resumeCmd = fmt.Sprintf("%s %s --resume %s", base, claudeBase, quotedUUID)
-		fallbackCmd = fmt.Sprintf("%s %s --session-id %s", base, claudeBase, quotedUUID)
-	} else {
-		escaped := escapeForShell(task)
-		resumeCmd = fmt.Sprintf("%s %s --resume %s '%s'", base, claudeBase, quotedUUID, escaped)
-		fallbackCmd = fmt.Sprintf("%s %s --session-id %s '%s'", base, claudeBase, quotedUUID, escaped)
-	}
+	// One task-delivery expression (the scratch-file $(cat 'path') from
+	// taskArgExpr, or empty when task is "") is reused on both the
+	// --resume and the --session-id fallback halves, with a single rm -f
+	// cleanup after the fallback — so the typed line carries only the
+	// short scratch-file path rather than the task text twice.
+	argExpr, cleanup := taskArgExpr(tmuxSession, task)
+	resumeCmd := fmt.Sprintf("%s %s --resume %s %s", base, claudeBase, quotedUUID, argExpr)
+	fallbackCmd := fmt.Sprintf("%s %s --session-id %s %s", base, claudeBase, quotedUUID, argExpr)
 
-	cmd := fmt.Sprintf("%s || %s; echo 'DATAWATCH_COMPLETE: claude done'", resumeCmd, fallbackCmd)
-	return exec.CommandContext(ctx, "tmux", "send-keys", "-t", tmuxSession, cmd, "Enter").Run()
+	cmd := fmt.Sprintf("%s || %s; %secho 'DATAWATCH_COMPLETE: claude done'", resumeCmd, fallbackCmd, cleanup)
+	if err := llm.SendKeys(ctx, tmuxSession, cmd); err != nil {
+		return fmt.Errorf("resume claude-code in %s: %w", tmuxSession, err)
+	}
+	return nil
+}
+
+// writeTaskFile writes task text to a scratch file instead of embedding it
+// inline in the shell command sent to the pane. Mirrors the pi backend's
+// writeTaskFile for the same reason: typing a multi-KB task spec inline via
+// `tmux send-keys` hits tmux's "command too long" limit and makes the
+// terminal echo the whole thing back into the pane before the agent's own
+// output starts. Reading it back with `$(cat 'file')` keeps the *typed* line
+// short while claude still receives the exact same content.
+func writeTaskFile(tmuxSession, task string) (string, error) {
+	f, err := os.CreateTemp("", "datawatch-claudecode-task-"+strings.Map(func(r rune) rune {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			return r
+		}
+		return '-'
+	}, tmuxSession)+"-*.txt")
+	if err != nil {
+		return "", err
+	}
+	defer f.Close() //nolint:errcheck
+	if _, err := f.WriteString(task); err != nil {
+		os.Remove(f.Name()) //nolint:errcheck
+		return "", err
+	}
+	return f.Name(), nil
+}
+
+// taskArgExpr returns the shell expression delivering task text as a quoted
+// positional argument — as a single-quoted command substitution of
+// cat reading the scratch file, `"$(cat 'path')"` — plus the rm -f cleanup to
+// append after the main command. Empty task yields empty strings so callers
+// build byte-identical commands to the pre-file-delivery behavior.
+func taskArgExpr(tmuxSession, task string) (argExpr, cleanup string) {
+	if task == "" {
+		return "", ""
+	}
+	if path, err := writeTaskFile(tmuxSession, task); err == nil {
+		quoted := shellQuote(path)
+		return fmt.Sprintf("$(cat %s)", quoted), fmt.Sprintf("rm -f %s; ", quoted)
+	}
+	return "'" + escapeForShell(task) + "'", ""
 }
 
 // isUUID checks if a string looks like a UUID (8-4-4-4-12 hex pattern).
@@ -265,6 +314,8 @@ func isUUID(s string) bool {
 	return true
 }
 
+// escapeForShell shell-escapes s for use inside single quotes
+// (fallback path in taskArgExpr when the scratch file cannot be written).
 func escapeForShell(s string) string {
 	return strings.ReplaceAll(s, "'", `'\''`)
 }

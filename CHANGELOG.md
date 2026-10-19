@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.13 — fix(restart): restarts with long task text succeed, and tmux errors are surfaced
+
+- **Restarts of sessions with long task text (above roughly 8 KB) now succeed.** The task is written to a scratch file that the launch command reads, instead of being typed inline.
+- **Resuming without a task override no longer retypes the original task.**
+- **tmux send-keys failures now surface tmux's own error message** (for example `command too long`) instead of just `exit status 1`.
+- Version bump 9.5.12 -> 9.5.13 (cmd/datawatch/main.go + internal/server/api.go kept identical).
+
 ## v9.5.12 — PRD tools return short replies, and the PRD summary view is the default for reads
 
 PRD tools used to return the whole Automaton on every write, which could exceed client limits and use a lot of context. Write tools now return a short result with the id, status, rev, the changed task or story and a message. `autonomous_prd_get` now defaults to a summary and takes `detail` = `summary`, `tasks` or `full` when you need more. REST responses are unchanged unless the new query parameters are passed. The CLI `prd-get` command gained a `--detail` flag (`summary`, `tasks` or `full`); without it the CLI output is unchanged.

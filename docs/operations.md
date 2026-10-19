@@ -174,6 +174,8 @@ The first two rows were observed on sandbox daemons during the restart audit, by
 
 **Encrypted sessions** (`--secure`). Not covered by this guarantee. At boot the daemon does not re-attach the output pipe for encrypted sessions, so their output may stop after a restart. After restarting a `--secure` daemon, check that each session that matters is still producing output, and restart any session whose output has stopped.
 
+**Long task text and no-override restarts.** Restarting a session is no longer limited by how long its task text is. The claude-code backend, and the aider and goose-prompt one-shot paths, deliver the task through a scratch file that the typed command reads, so the full text is not typed inline. A no-override restart of a resumed conversation therefore no longer resends the original task. If a tmux command still fails, the returned and logged error now carries tmux's own stderr text (for example `command too long`) instead of a bare exit status.
+
 **Confirming on a live daemon.** `TestBL462_DaemonRestartSurvivesLive` in `internal/session/restart_safety_live_test.go` restarts a daemon and checks that a live probe session survives it. It is skipped unless `DW_LIVE_RESTART_TEST=1` is set, so `go test ./...` does not run it. It needs `DW_BASE` set to the daemon under test, and it must run on the daemon's host with the same `TMUX_TMPDIR`. The default restart path is `systemctl --user restart datawatch`. Use `DW_LIVE_RESTART_CMD` only for a sandbox daemon that systemd does not manage. Run it against a sandbox, never against production.
 
 ### Data compatibility
