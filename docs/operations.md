@@ -2325,6 +2325,67 @@ against an isolated scratch daemon (never your production daemon).
 
 ---
 
+## Compute-node queue (max_engines_per_node)
+
+A compute node can only run so many local models at once. Each node has a
+capacity pool named `node:<name>`, and its limit is
+`autonomous.max_engines_per_node` (default `1`; values below `1` are clamped
+to `1`). A node's own `max_concurrent_sessions` still acts as a ceiling when
+it is set and smaller.
+
+### What is gated
+
+Only sessions whose model runs on a local engine on that node are gated: the
+`pi`, `pi-prompt`, `ollama`, `opencode` and `opencode-acp` backends, when the
+model's provider prefix (the text before the first `/`) names the node. Hosted
+backends such as `claude-code` are never gated by this setting, and neither is
+a model with no provider prefix.
+
+### Waiting for node
+
+When a node's pool is full, a session that needs it does not start. Its task
+shows as `waiting_capacity`, and the wait reason names the node, for example:
+
+```
+waiting for node alpha: 1/1 engines in use, held by task-42
+```
+
+The `GET /api/capacity` response lists each `node:<name>` pool with its
+`limit`, `held`, `queue_depth` (how many requests wait on that pool) and
+`holder` (the IDs occupying its slots). The wait ends when a slot frees. It
+is bounded by `autonomous.capacity_wait_timeout_seconds`, and it needs
+capacity admission on (`autonomous.capacity_enabled`, on by default).
+
+### Queue priority
+
+When a slot frees, waiting requests are granted in this order:
+
+1. **Verifier and guardrail sessions** for a task that already has finished
+   work. They go first so finished work is checked and released.
+2. **Workers**: ordinary task sessions.
+3. **Planners**: planning and decomposition sessions. They wait behind workers
+   and verifiers, so a PRD waiting on a busy node does not start extra
+   planning work past the limit.
+
+Within the same role, the existing order applies: higher PRD priority, then
+waiters that have aged past the override window, then model affinity on the
+node, then the least-recently-served PRD, then first in, first out.
+
+### Setting it
+
+```bash
+datawatch autonomous config-set '{"max_engines_per_node":2}'
+```
+
+The same key is available in `config.yaml`, `PUT /api/config`, the MCP
+`autonomous_config_set` tool, and the comm `configure` command
+(`configure autonomous.max_engines_per_node=2`). The full
+key list is in `docs/config-reference.yaml`. Raising the value lets more local
+sessions run on each node at once. It does not change how many hosted-backend
+sessions run.
+
+---
+
 ## Terminal Performance
 
 ### xterm.js load time
