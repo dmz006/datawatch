@@ -35,7 +35,8 @@ func (s *Server) toolAutonomousConfigGet() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_config_get",
 		mcpsdk.WithDescription("Read the current autonomous (Automata) config: poll interval, max_concurrent_tasks (daemon-wide default for how many independent tasks of one Automaton run at once; 1 = sequential), max_engines_per_node (local-model sessions allowed per compute node; default 1), backends, retries, capacity limits, guardrail lists and timeouts. "+
 			"Automaton-level (per_prd_guardrails) guardrails accept \"rules-review\" and \"ci-watch\"; both are off unless listed. \"ci-watch\" makes an automaton, when it completes, wait (up to ci_watch_timeout_seconds, default 1500) for the CI runs of the commit it pushed; if any run failed, the configured LLM judges the failure against the project's rules file. It is skipped when nothing was pushed or the origin remote is not GitHub. "+
-			"block_on_file_drift (default false) controls foreign-file drift: when false a task whose commit swept in files that were already uncommitted before it started is only flagged (warn-only); when true that task is blocked instead. An automaton's own setting or its guardrail profile overrides it; worktree-mode automata are never checked."),
+			"block_on_file_drift (default false) controls foreign-file drift: when false a task whose commit swept in files that were already uncommitted before it started is only flagged (warn-only); when true that task is blocked instead. An automaton's own setting or its guardrail profile overrides it; worktree-mode automata are never checked. "+
+			"scope_lint (off, warn or enforce; default enforce) controls the pre-spawn scope lint that checks a task's planned paths before its session starts: off skips it, warn spawns the task and records a scope_lint_warn decision, enforce blocks the task."),
 	)
 }
 func (s *Server) handleAutonomousConfigGet(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
@@ -80,6 +81,7 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithArray("per_prd_guardrails", mcpsdk.Description("Daemon-wide default guardrails run once when an automaton completes. Accepts \"rules-review\" (judge the automaton's diff against the project's rules file) and \"ci-watch\" (wait for and judge the CI runs of the commit it pushed). Empty list (the default) turns both off; an automaton's own list or guardrail profile overrides this. The value replaces the whole list, so read it with autonomous_config_get first and include the entries you want to keep."), mcpsdk.WithStringItems()),
 		mcpsdk.WithBoolean("continue_on_story_failure", mcpsdk.Description("Daemon-wide default: false (halt) stops a PRD as soon as any story fails instead of continuing into later, independent stories; true restores the old continue-regardless behavior. Per-PRD override takes precedence.")),
 		mcpsdk.WithBoolean("block_on_file_drift", mcpsdk.Description("Daemon-wide default for foreign-file-drift enforcement. false (the default) only flags a task whose own commit swept in files that were already uncommitted before it started and were not in its planned files (warn-only, recorded as task foreign_file_drift and a file_drift_detected decision); true blocks that task instead. An automaton's own setting or its guardrail profile overrides this; worktree-mode automata are never checked.")),
+		mcpsdk.WithString("scope_lint", mcpsdk.Description("Pre-spawn scope lint mode. off skips the lint; warn spawns a task whose planned paths fail it and records a scope_lint_warn decision; enforce (the default) blocks that task before its session starts."), mcpsdk.Enum("off", "warn", "enforce")),
 		mcpsdk.WithBoolean("default_auto_pr", mcpsdk.Description("BL407 Phase 5 — daemon-wide default for a new PRD's Git.AutoPR (push+open a PR on completion). Applied once at PRD creation; the per-PRD autonomous_prd_set_git tool overrides it after that. Default false.")),
 	)
 }
@@ -205,6 +207,9 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 		}
 		if _, ok := args["block_on_file_drift"]; ok {
 			body["block_on_file_drift"] = req.GetBool("block_on_file_drift", false)
+		}
+		if _, ok := args["scope_lint"]; ok {
+			body["scope_lint"] = req.GetString("scope_lint", "")
 		}
 	}
 	out, err := s.proxyJSON(http.MethodPut, "/api/autonomous/config", body)

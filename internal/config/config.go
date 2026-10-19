@@ -2267,6 +2267,18 @@ func (a AutonomousConfig) ScopeLintMode() string {
 	}
 }
 
+// ValidateScopeLint reports an error unless s is exactly one of the
+// scope-lint modes. Write surfaces (REST, MCP, comm, CLI) call it so a
+// typo is refused instead of being stored and quietly resolved to enforce
+// by ScopeLintMode. Unlike ScopeLintMode it does not trim or fold case.
+func ValidateScopeLint(s string) error {
+	switch s {
+	case ScopeLintOff, ScopeLintWarn, ScopeLintEnforce:
+		return nil
+	}
+	return fmt.Errorf("scope_lint: unknown mode %q (use off, warn or enforce)", s)
+}
+
 // AutonomousNotifyConfig —autonomous.notify sub-config. DefaultEvents
 // is the global default set of lifecycle event kinds the built-in
 // lifecycle sinks subscribe to (see

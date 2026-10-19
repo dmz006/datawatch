@@ -15,6 +15,7 @@ import (
 	"time"
 
 	scanPkg "github.com/dmz006/datawatch/internal/autonomous/scan"
+	"github.com/dmz006/datawatch/internal/config"
 )
 
 // API wraps a *Manager to satisfy server.AutonomousAPI.
@@ -227,6 +228,17 @@ func (a *API) SetConfig(v any) error {
 	}
 	if err := json.Unmarshal(raw, &probe); err == nil {
 		if verr := ValidateTaskOverrideStatuses(probe.TaskOverrideStatuses); verr != nil {
+			return verr
+		}
+	}
+	// scope_lint — refuse an unknown mode on every write path (REST, MCP,
+	// comm) instead of storing it and resolving it to enforce later. A
+	// null or absent key leaves the current mode alone.
+	var scopeProbe struct {
+		ScopeLint *string `json:"scope_lint"`
+	}
+	if err := json.Unmarshal(raw, &scopeProbe); err == nil && scopeProbe.ScopeLint != nil {
+		if verr := config.ValidateScopeLint(*scopeProbe.ScopeLint); verr != nil {
 			return verr
 		}
 	}

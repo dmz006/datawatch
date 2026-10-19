@@ -162,6 +162,15 @@ Example — let each compute node run up to 2 engine sessions at once
 
   datawatch autonomous config-set '{"max_engines_per_node":2}'
 
+Example — set the pre-spawn scope lint to warn (spawn the task and record a
+scope_lint_warn decision) instead of blocking it:
+
+  datawatch autonomous config-set '{"scope_lint":"warn"}'
+
+scope_lint takes one of three values: off (skip the lint), warn (spawn the
+task and record a scope_lint_warn decision) or enforce (block the task before
+its session starts; the default). Any other value is rejected.
+
 max_parallel_tasks is deprecated and ignored; use max_concurrent_tasks.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
