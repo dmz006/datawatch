@@ -18,6 +18,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	mcpsdk "github.com/mark3labs/mcp-go/mcp"
@@ -69,10 +70,34 @@ func (s *Server) proxyGetWithHeaders(path string, q url.Values) ([]byte, http.He
 	return body, resp.Header, nil
 }
 
+// isAutonomousPRDWrite reports whether method+path is a write against the
+// autonomous PRD surface (/api/autonomous/prds or anything under it).
+func isAutonomousPRDWrite(method, path string) bool {
+	switch method {
+	case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
+	default:
+		return false
+	}
+	return path == "/api/autonomous/prds" || strings.HasPrefix(path, "/api/autonomous/prds/")
+}
+
+// withCompactView appends view=compact to path, using '&' when the path
+// already carries a query string and '?' otherwise.
+func withCompactView(path string) string {
+	if strings.Contains(path, "?") {
+		return path + "&view=compact"
+	}
+	return path + "?view=compact"
+}
+
 // proxyJSON sends method+body to the loopback and returns the body.
+// Autonomous PRD writes request the compact response view.
 func (s *Server) proxyJSON(method, path string, body any) ([]byte, error) {
 	if s.webPort == 0 {
 		return nil, fmt.Errorf("REST loopback unavailable (web server disabled)")
+	}
+	if isAutonomousPRDWrite(method, path) {
+		path = withCompactView(path)
 	}
 	u := fmt.Sprintf("http://127.0.0.1:%d%s", s.webPort, path)
 	var rdr io.Reader
