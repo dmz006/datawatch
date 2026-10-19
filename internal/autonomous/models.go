@@ -790,8 +790,12 @@ type GuardrailVerdict struct {
 	Issues    []string  `json:"issues,omitempty"`
 	VerdictAt time.Time `json:"verdict_at"`
 	// Category (BL410 Phase 0) classifies WHY a non-pass outcome happened:
-	// "infra" (the judging mechanism itself failed — session timeout/
-	// crash/unparseable response — never reached a real judgment) vs
+	// "infra" (the judging mechanism itself failed with NO output —
+	// session timeout/crash/no-output failure — never reached a real
+	// judgment) vs "invalid-response" (the judge DID write a response,
+	// but it could not be parsed as a verdict; terminal — never a basis
+	// for an infra retry, which would re-run the whole judge against
+	// the same already-relocated output file) vs
 	// "content" (a real judgment ran and found a real issue). Empty
 	// means "content" — the pre-BL410 implicit behavior, since every
 	// verdict before this field existed came from a completed judgment.
