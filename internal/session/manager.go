@@ -4019,7 +4019,21 @@ func (m *Manager) commitOnCompletion(current *Session, projGit *ProjectGit) {
 		projGit.SetRunStart(current.CreatedAt)
 	}
 
-	if sha, err := projGit.CommitSessionWork(current.ID, current.Task, summary, current.WriteScope); err != nil {
+	var sha string
+	var err error
+	if current.PRDID != "" {
+		// Verification is not known on this path (the verifier ran earlier),
+		// so the body says it was not run before this commit.
+		sha, err = projGit.CommitTaskWork(current.ID, TaskCommitLabel{
+			PRDID:     current.PRDID,
+			TaskTitle: current.TaskTitle,
+			Prompt:    current.Task,
+			Summary:   summary,
+		}, current.WriteScope)
+	} else {
+		sha, err = projGit.CommitSessionWork(current.ID, current.Task, summary, current.WriteScope)
+	}
+	if err != nil {
 		fmt.Printf("[warn] completion commit: %v\n", err)
 	} else {
 		current.CommitSHA = sha

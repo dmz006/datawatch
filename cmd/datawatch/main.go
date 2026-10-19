@@ -4748,7 +4748,15 @@ func runStart(cmd *cobra.Command, _ []string) error {
 										if !s.CreatedAt.IsZero() {
 											pg.SetRunStart(s.CreatedAt)
 										}
-										sha, cerr := pg.CommitSessionWork(s.ID, s.Task, summary, s.WriteScope)
+										// The checkpoint verification script passed before this
+										// closure runs, so the commit body records it as passed.
+										sha, cerr := pg.CommitTaskWork(s.ID, session.TaskCommitLabel{
+											PRDID:        s.PRDID,
+											TaskTitle:    s.TaskTitle,
+											Prompt:       s.Task,
+											Summary:      summary,
+											Verification: "passed",
+										}, s.WriteScope)
 										if cerr != nil {
 											return cerr
 										}

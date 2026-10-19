@@ -98,14 +98,15 @@ func TestOneShotCompletion_SummaryBecomesCommitSubject(t *testing.T) {
 	}
 }
 
-func TestOneShotCompletion_NoSummaryFallsBackToTaskTitle(t *testing.T) {
+func TestOneShotCompletion_NoSummaryFallsBackToSessionWork(t *testing.T) {
 	const task = "write the report"
 	_, dir := driveOneShotCompletion(t, task,
 		"working on the report, no summary emitted\n",
 		"DATAWATCH_COMPLETE:")
 
+	// The worker prompt must never become the subject; the fallback names the session.
 	subject := gitOut(t, dir, "log", "-1", "--pretty=%s")
-	if !strings.HasPrefix(subject, "task: "+task) {
-		t.Fatalf("commit subject %q — want the task-title fallback %q", subject, "task: "+task)
+	if !strings.HasPrefix(subject, "session work") || strings.Contains(subject, task) {
+		t.Fatalf("commit subject %q — want the session-work fallback without the task text", subject)
 	}
 }

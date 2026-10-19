@@ -57,10 +57,7 @@ func refusePromptSubject(subject, prompt, title string) string {
 		rest = subject[len(m):]
 	}
 
-	sig := promptSignature(prompt)
-	promptLike := (sig != "" && (rest == sig || strings.HasPrefix(rest, sig))) ||
-		strings.Contains(rest, commitPromptPhrase)
-	if !promptLike {
+	if !isPromptLike(rest, prompt) {
 		return subject
 	}
 
@@ -68,6 +65,15 @@ func refusePromptSubject(subject, prompt, title string) string {
 		prefix = "task: "
 	}
 	return prefix + normalizeCommitTitle(title)
+}
+
+// isPromptLike reports whether text is prompt text: it equals or starts with
+// the prompt's first non-empty line, or contains the non-interactive pipeline
+// phrase.
+func isPromptLike(text, prompt string) bool {
+	sig := promptSignature(prompt)
+	return (sig != "" && (text == sig || strings.HasPrefix(text, sig))) ||
+		strings.Contains(text, commitPromptPhrase)
 }
 
 // promptSignature returns the prompt's first non-empty line, trimmed and
