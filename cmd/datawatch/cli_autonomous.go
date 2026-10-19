@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 
@@ -244,14 +245,21 @@ func newAutonomousPRDCreateCmd() *cobra.Command {
 }
 
 func newAutonomousPRDGetCmd() *cobra.Command {
-	return &cobra.Command{
+	var detail string
+	cmd := &cobra.Command{
 		Use:   "prd-get <id>",
 		Short: "Fetch one PRD with its story+task tree",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
-			return daemonGet("/api/autonomous/prds/" + args[0])
+			path := "/api/autonomous/prds/" + args[0]
+			if detail != "" {
+				path += "?" + url.Values{"detail": {detail}}.Encode()
+			}
+			return daemonGet(path)
 		},
 	}
+	cmd.Flags().StringVar(&detail, "detail", "", "Detail level: summary, tasks or full (default: the daemon's full view)")
+	return cmd
 }
 
 func newAutonomousPRDPlanCmd() *cobra.Command {

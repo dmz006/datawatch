@@ -279,7 +279,7 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			s.audit(r.Context(), "create", "automaton", prdID, map[string]any{"project_dir": req.ProjectDir, "backend": req.Backend}) // GH#201 Phase 4
-			writeJSONOK(w, prd)
+			s.writeAutonomousResult(w, r, prd, "", "", "")
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
@@ -304,7 +304,12 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "not found", http.StatusNotFound)
 				return
 			}
-			writeJSONOK(w, prd)
+			detail, ok := parsePRDDetail(r)
+			if !ok {
+				http.Error(w, "invalid detail: accepted values are full, summary, tasks", http.StatusBadRequest)
+				return
+			}
+			writePRDDetail(w, prd, detail)
 		case http.MethodDelete:
 			if !s.fedCap(w, r, federation.CapAutonomousRun) {
 				return
@@ -417,7 +422,8 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			}
 			killSessions()
 			s.audit(r.Context(), "cancel", "automaton", id, withKillDetail(map[string]any{"killed_sessions": len(sessionIDs)})) // GH#201 Phase 4
-			writeJSONOK(w, withKillDetail(map[string]any{"status": "cancelled", "id": id, "killed_sessions": len(sessionIDs)}))
+			got, _ := s.autonomousMgr.GetPRD(id)
+			s.writeAutonomousCancelResult(w, r, got, len(sessionIDs), withKillDetail(map[string]any{"status": "cancelled", "id": id, "killed_sessions": len(sessionIDs)}))
 		case http.MethodPatch:
 			if !s.fedCap(w, r, federation.CapAutonomousWrite) {
 				return
@@ -471,7 +477,8 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.audit(r.Context(), "run", "automaton", id, nil) // GH#201 Phase 4
-		writeJSONOK(w, map[string]any{"status": "running", "id": id})
+		got, _ := s.autonomousMgr.GetPRD(id)
+		s.writeAutonomousResult(w, r, got, "", "", "")
 	// v6.13.1 — operator-reported: "multi-select automata - once selected
 	// when i run the options (delete, cancel, etc) i get an error that
 	// the command isn't known". The PWA's batchAutomataAction POSTs to
@@ -511,7 +518,7 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.audit(r.Context(), "approve", "automaton", id, map[string]any{"note": req.Note}) // GH#201 Phase 4
-		writeJSONOK(w, updated)
+		s.writeAutonomousResult(w, r, updated, "", "", "")
 	case "reject":
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -531,7 +538,7 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.audit(r.Context(), "reject", "automaton", id, map[string]any{"reason": req.Reason}) // GH#201 Phase 4
-		writeJSONOK(w, updated)
+		s.writeAutonomousResult(w, r, updated, "", "", "")
 	case "reset_to_draft":
 		// v8.20.1 — operator restores a cancelled PRD to draft for re-decompose + re-run.
 		if r.Method != http.MethodPost {
@@ -552,7 +559,7 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.audit(r.Context(), "reset_to_draft", "automaton", id, nil) // GH#201 Phase 4
-		writeJSONOK(w, updated)
+		s.writeAutonomousResult(w, r, updated, "", "", "")
 	case "archive":
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -564,7 +571,7 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.audit(r.Context(), "archive", "automaton", id, nil) // GH#201 Phase 4
-		writeJSONOK(w, updated)
+		s.writeAutonomousResult(w, r, updated, "", "", "")
 	case "clone_to_template":
 		// BL221 (v6.2.0) — create a TemplateStore entry from this PRD's spec.
 		if r.Method != http.MethodPost {
@@ -611,7 +618,7 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.audit(r.Context(), "request_revision", "automaton", id, map[string]any{"note": req.Note}) // GH#201 Phase 4
-		writeJSONOK(w, updated)
+		s.writeAutonomousResult(w, r, updated, "", "", "")
 	case "edit_task":
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -642,7 +649,8 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.audit(r.Context(), "edit_task", "automaton", id, map[string]any{"task_id": req.TaskID}) // GH#201 Phase 4
-		writeJSONOK(w, updated)
+		prd, _ := updated.(*autonomous.PRD)
+		s.writeAutonomousResult(w, r, prd, req.TaskID, "", "")
 	case "edit_story":
 		// v5.26.32 — story title + description edit. Operator-asked
 		// alongside the unified-profile dropdown work: "i don't see a
@@ -677,7 +685,8 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.audit(r.Context(), "edit_story", "automaton", id, map[string]any{"story_id": req.StoryID}) // GH#201 Phase 4
-		writeJSONOK(w, updated)
+		prd, _ := updated.(*autonomous.PRD)
+		s.writeAutonomousResult(w, r, prd, "", req.StoryID, "")
 	// Structural edits (operator-requested: add/remove a story or task
 	// without re-running decompose and handing the structure back to the
 	// LLM). Only allowed pre-approval (needs_review / revisions_asked),
@@ -712,7 +721,8 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.audit(r.Context(), "add_story", "automaton", id, map[string]any{"title": req.Title}) // GH#201 Phase 4
-		writeJSONOK(w, updated)
+		prd, _ := updated.(*autonomous.PRD)
+		s.writeAutonomousResult(w, r, prd, "", "", "")
 	case "remove_story":
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -742,7 +752,8 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.audit(r.Context(), "remove_story", "automaton", id, map[string]any{"story_id": req.StoryID}) // GH#201 Phase 4
-		writeJSONOK(w, updated)
+		prd, _ := updated.(*autonomous.PRD)
+		s.writeAutonomousResult(w, r, prd, "", req.StoryID, "")
 	case "add_task":
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -775,7 +786,8 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.audit(r.Context(), "add_task", "automaton", id, map[string]any{"story_id": req.StoryID, "title": req.Title}) // GH#201 Phase 4
-		writeJSONOK(w, updated)
+		prd, _ := updated.(*autonomous.PRD)
+		s.writeAutonomousResult(w, r, prd, "", req.StoryID, "")
 	case "remove_task":
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -806,7 +818,8 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.audit(r.Context(), "remove_task", "automaton", id, map[string]any{"story_id": req.StoryID, "task_id": req.TaskID}) // GH#201 Phase 4
-		writeJSONOK(w, updated)
+		prd, _ := updated.(*autonomous.PRD)
+		s.writeAutonomousResult(w, r, prd, req.TaskID, req.StoryID, "")
 	case "set_story_profile":
 		// Phase 3 (v5.26.60) — per-story execution profile override.
 		// Body: {story_id, profile, actor?}. Empty profile clears.
@@ -839,7 +852,8 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.audit(r.Context(), "set_story_profile", "automaton", id, map[string]any{"story_id": req.StoryID, "profile": req.Profile}) // GH#201 Phase 4
-		writeJSONOK(w, updated)
+		prd, _ := updated.(*autonomous.PRD)
+		s.writeAutonomousResult(w, r, prd, "", req.StoryID, "")
 	case "approve_story":
 		// Phase 3 (v5.26.60) — per-story approval.
 		if r.Method != http.MethodPost {
@@ -870,7 +884,8 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.audit(r.Context(), "approve_story", "automaton", id, map[string]any{"story_id": req.StoryID}) // GH#201 Phase 4
-		writeJSONOK(w, updated)
+		prd, _ := updated.(*autonomous.PRD)
+		s.writeAutonomousResult(w, r, prd, "", req.StoryID, "")
 	case "approve_task":
 		// BL406 Phase 5 — per-task approval (GuidedModeSource="operator").
 		if r.Method != http.MethodPost {
@@ -901,7 +916,8 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.audit(r.Context(), "approve_task", "automaton", id, map[string]any{"task_id": req.TaskID})
-		writeJSONOK(w, updated)
+		prd, _ := updated.(*autonomous.PRD)
+		s.writeAutonomousResult(w, r, prd, req.TaskID, "", "")
 	case "reject_story":
 		// Phase 3 (v5.26.60) — per-story rejection (sets blocked + reason).
 		if r.Method != http.MethodPost {
@@ -933,7 +949,8 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.audit(r.Context(), "reject_story", "automaton", id, map[string]any{"story_id": req.StoryID, "reason": req.Reason}) // GH#201 Phase 4
-		writeJSONOK(w, updated)
+		prd, _ := updated.(*autonomous.PRD)
+		s.writeAutonomousResult(w, r, prd, "", req.StoryID, "")
 	case "set_story_files":
 		// Phase 4 (v5.26.64) — operator overrides Story.FilesPlanned.
 		// Body: {story_id, files: [...], actor?}.
@@ -966,7 +983,8 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.audit(r.Context(), "set_story_files", "automaton", id, map[string]any{"story_id": req.StoryID}) // GH#201 Phase 4
-		writeJSONOK(w, updated)
+		prd, _ := updated.(*autonomous.PRD)
+		s.writeAutonomousResult(w, r, prd, "", req.StoryID, "")
 	case "set_task_files":
 		// Phase 4 (v5.26.64) — operator overrides Task.FilesPlanned.
 		// Body: {task_id, files: [...], actor?}.
@@ -999,7 +1017,8 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.audit(r.Context(), "set_task_files", "automaton", id, map[string]any{"task_id": req.TaskID}) // GH#201 Phase 4
-		writeJSONOK(w, updated)
+		prd, _ := updated.(*autonomous.PRD)
+		s.writeAutonomousResult(w, r, prd, req.TaskID, "", "")
 	case "record_task_files_touched":
 		// Operator-reported 2026-10-06 — manual backfill for tasks that
 		// completed before the verifier's post-session FilesTouched hook
@@ -1030,7 +1049,8 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.audit(r.Context(), "record_task_files_touched", "automaton", id, map[string]any{"task_id": req.TaskID}) // GH#201 Phase 4
-		writeJSONOK(w, updated)
+		prd, _ := updated.(*autonomous.PRD)
+		s.writeAutonomousResult(w, r, prd, req.TaskID, "", "")
 	case "reset_task":
 		// v8.23.0 — operator resets a failed/blocked task to pending so
 		// the autonomous loop retries it without cancelling the whole PRD.
@@ -1075,7 +1095,8 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		// immediately; the live goroutine will pick up the newly-pending task.
 		_ = s.autonomousMgr.Run(id)
 		s.audit(r.Context(), "reset_task", "automaton", id, map[string]any{"task_id": req.TaskID, "force": req.Force}) // GH#201 Phase 4
-		writeJSONOK(w, updated)
+		prd, _ := updated.(*autonomous.PRD)
+		s.writeAutonomousResult(w, r, prd, req.TaskID, "", "task reset to pending; the executor will retry it")
 	case "repair_depends_on":
 		// v8.36.6 — one-time repair for PRDs whose SetStories call predates
 		// the v8.36.5 title->ID DependsOn fix (see Store.RepairDependsOn).
@@ -1137,7 +1158,8 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.audit(r.Context(), "cancel_story", "automaton", id, map[string]any{"story_id": req.StoryID, "reason": req.Reason}) // GH#201 Phase 4
-		writeJSONOK(w, updated)
+		prd, _ := updated.(*autonomous.PRD)
+		s.writeAutonomousResult(w, r, prd, "", req.StoryID, "")
 	case "cancel_task":
 		// BL382 — cancel an individual task without cancelling its story or PRD.
 		// Body: {task_id, actor?, reason?}.
@@ -1174,7 +1196,8 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.audit(r.Context(), "cancel_task", "automaton", id, map[string]any{"task_id": req.TaskID, "reason": req.Reason}) // GH#201 Phase 4
-		writeJSONOK(w, updated)
+		prd, _ := updated.(*autonomous.PRD)
+		s.writeAutonomousResult(w, r, prd, req.TaskID, "", "")
 	case "children":
 		// BL191 Q4 (v5.9.0) — list child PRDs spawned from this PRD's
 		// SpawnPRD tasks. Empty list when none — same shape as the
@@ -1299,7 +1322,7 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		}
 		addGuardrailAuditDetail(detail, req.GuardrailBackend, req.GuardrailModel)
 		s.audit(r.Context(), "set_llm", "automaton", id, detail) // GH#201 Phase 4
-		writeJSONOK(w, updated)
+		s.writeAutonomousResult(w, r, updated, "", "", "")
 	// BL381 — per-story worker LLM override.
 	case "set_story_llm":
 		if r.Method != http.MethodPost {
@@ -1339,7 +1362,8 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.audit(r.Context(), "set_story_llm", "automaton", id, map[string]any{"story_id": req.StoryID, "backend": req.Backend}) // GH#201 Phase 4
-		writeJSONOK(w, updated)
+		prd, _ := updated.(*autonomous.PRD)
+		s.writeAutonomousResult(w, r, prd, "", req.StoryID, "")
 	// BL203 (v5.4.0) — per-task worker LLM override.
 	case "set_task_llm":
 		if r.Method != http.MethodPost {
@@ -1405,7 +1429,8 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		detail := map[string]any{"task_id": req.TaskID, "backend": req.Backend}
 		addGuardrailAuditDetail(detail, req.GuardrailBackend, req.GuardrailModel)
 		s.audit(r.Context(), "set_task_llm", "automaton", id, detail) // GH#201 Phase 4
-		writeJSONOK(w, updated)
+		prd, _ := updated.(*autonomous.PRD)
+		s.writeAutonomousResult(w, r, prd, req.TaskID, "", "")
 	// BL447 — per-task ProjectDir override (task > PRD; empty inherits).
 	case "set_task_project_dir":
 		if r.Method != http.MethodPost {
@@ -1437,7 +1462,8 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.audit(r.Context(), "set_task_project_dir", "automaton", id, map[string]any{"task_id": req.TaskID, "project_dir": req.ProjectDir})
-		writeJSONOK(w, updated)
+		prd, _ := updated.(*autonomous.PRD)
+		s.writeAutonomousResult(w, r, prd, req.TaskID, "", "")
 	// Per-unit verification (judge) LLM overrides. Precedence:
 	// task > story > Automaton > global autonomous verification_*.
 	case "set_task_verification_llm", "set_story_verification_llm", "set_verification_llm":
@@ -1505,7 +1531,15 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		s.audit(r.Context(), action, "automaton", id, detail)
-		writeJSONOK(w, updated)
+		prd, _ := updated.(*autonomous.PRD)
+		switch action {
+		case "set_task_verification_llm":
+			s.writeAutonomousResult(w, r, prd, req.TaskID, "", "")
+		case "set_story_verification_llm":
+			s.writeAutonomousResult(w, r, prd, "", req.StoryID, "")
+		default:
+			s.writeAutonomousResult(w, r, updated, "", "", "")
+		}
 	case "profiles":
 		// v5.26.20 — post-create profile attachment for PRDs that
 		// were created via project_dir but later need to be tied to
@@ -1554,7 +1588,7 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.audit(r.Context(), "set_type", "automaton", id, map[string]any{"type": req.Type}) // GH#201 Phase 4
-		writeJSONOK(w, updated)
+		s.writeAutonomousResult(w, r, updated, "", "", "")
 	case "set_guided_mode":
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -1576,7 +1610,7 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.audit(r.Context(), "set_guided_mode", "automaton", id, map[string]any{"guided_mode": req.GuidedMode}) // GH#201 Phase 4
-		writeJSONOK(w, updated)
+		s.writeAutonomousResult(w, r, updated, "", "", "")
 	case "set_skills":
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -1598,7 +1632,7 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.audit(r.Context(), "set_skills", "automaton", id, map[string]any{"skills": req.Skills}) // GH#201 Phase 4
-		writeJSONOK(w, updated)
+		s.writeAutonomousResult(w, r, updated, "", "", "")
 
 	// BL370 — per-PRD max_concurrent_tasks override.
 	case "set_concurrency":
@@ -1622,7 +1656,7 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.audit(r.Context(), "set_concurrency", "automaton", id, map[string]any{"max_concurrent_tasks": req.MaxConcurrentTasks}) // GH#201 Phase 4
-		writeJSONOK(w, updated)
+		s.writeAutonomousResult(w, r, updated, "", "", "")
 
 	// Per-PRD capacity-queue priority (higher first).
 	case "set_priority":
@@ -1646,7 +1680,7 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.audit(r.Context(), "set_priority", "automaton", id, map[string]any{"priority": req.Priority}) // GH#201 Phase 4
-		writeJSONOK(w, updated)
+		s.writeAutonomousResult(w, r, updated, "", "", "")
 
 	// Per-PRD directory scope: read-only and writable dirs.
 	case "set_dirs":
@@ -1671,7 +1705,7 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.audit(r.Context(), "set_dirs", "automaton", id, map[string]any{"read_dirs": req.ReadDirs, "write_dirs": req.WriteDirs}) // GH#201 Phase 4
-		writeJSONOK(w, updated)
+		s.writeAutonomousResult(w, r, updated, "", "", "")
 
 	// BL367 — per-PRD quality gate config.
 	case "set_quality_gates":
@@ -1698,7 +1732,7 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.audit(r.Context(), "set_quality_gates", "automaton", id, map[string]any{"enabled": req.Enabled}) // GH#201 Phase 4
-		writeJSONOK(w, updated)
+		s.writeAutonomousResult(w, r, updated, "", "", "")
 
 	// Per-PRD override: does a story failure halt the PRD (default) or
 	// does the executor continue into later, independent stories?
@@ -1723,7 +1757,7 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.audit(r.Context(), "set_continue_on_story_failure", "automaton", id, map[string]any{"continue_on_story_failure": req.ContinueOnStoryFailure}) // GH#201 Phase 4
-		writeJSONOK(w, updated)
+		s.writeAutonomousResult(w, r, updated, "", "", "")
 
 	// BL407 Phase 5 — per-PRD Git.AutoPR/BaseBranch overrides.
 	case "set_git":
@@ -1748,7 +1782,7 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.audit(r.Context(), "set_git", "automaton", id, map[string]any{"auto_pr": req.AutoPR, "base_branch": req.BaseBranch}) // GH#201 Phase 4
-		writeJSONOK(w, updated)
+		s.writeAutonomousResult(w, r, updated, "", "", "")
 
 	// BL386 Phase 1 — per-PRD warm-start memory seed config.
 	case "set_memory_seed":
@@ -1776,7 +1810,7 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.audit(r.Context(), "set_memory_seed", "automaton", id, map[string]any{"enabled": req.Enabled}) // GH#201 Phase 4
-		writeJSONOK(w, updated)
+		s.writeAutonomousResult(w, r, updated, "", "", "")
 
 	// BL386 Phase 2 — per-PRD harvest-on-completion config.
 	case "set_memory_harvest":
@@ -1804,7 +1838,7 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.audit(r.Context(), "set_memory_harvest", "automaton", id, map[string]any{"enabled": req.Enabled}) // GH#201 Phase 4
-		writeJSONOK(w, updated)
+		s.writeAutonomousResult(w, r, updated, "", "", "")
 
 	// GH#172 D75 — per-PRD permission_mode.
 	case "set_permission_mode":
@@ -1829,7 +1863,7 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.audit(r.Context(), "set_permission_mode", "automaton", id, map[string]any{"permission_mode": req.PermissionMode}) // GH#201 Phase 4
-		writeJSONOK(w, updated)
+		s.writeAutonomousResult(w, r, updated, "", "", "")
 
 	// GH#172 D52 — pause a running PRD without treating it as blocked/failed.
 	case "pause":
@@ -1933,7 +1967,7 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.audit(r.Context(), "set_retry_policy", "automaton", id, map[string]any{"retry_profile": req.RetryProfile})
-		writeJSONOK(w, updated)
+		s.writeAutonomousResult(w, r, updated, "", "", "")
 
 	// BL221 (v6.2.0) Phase 3 — scan actions
 	case "scan":

@@ -255,6 +255,14 @@ shape.
 | Ask / assist | `ask`, `assist` |
 | Voice | (no MCP tools — REST `/api/voice/transcribe` + chat-channel auto-handle) |
 
+Autonomous PRD reads and writes:
+
+- **`autonomous_prd_get`** — takes an optional `detail` argument that sets how much comes back. The default is `summary`. Any other value is rejected with an error.
+  - `summary` returns the Automaton's ids, titles, statuses and counts, and the same for its stories and tasks.
+  - `tasks` returns everything in `summary`, plus each task's status, error and verification summary.
+  - `full` returns everything, including task specs and logs, and the `foreign_file_drift` field on tasks.
+- **Behaviour change for PRD write tools.** `autonomous_prd_reset_task`, `autonomous_prd_run`, `autonomous_prd_approve`, `autonomous_prd_cancel`, and the set, add and edit tools no longer return the whole Automaton. Each write reply is now a small object with the Automaton's `id`, its `status` and `rev`, the id and status of the task or story that changed, and a `message`. To read the full Automaton after a write, call `autonomous_prd_get` with `detail` set to `full`.
+
 Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
 
 - **`autonomous_prd_children`** (v5.9.0, BL191 Q4) — list child PRDs spawned from a parent's `Task.SpawnPRD` shortcuts.
@@ -283,7 +291,7 @@ Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
   autonomous_prd_set_verification_llm(id="a1b2c3d4", verification_model="")   # clear the Automaton-level model only
   ```
 
-  Returns the updated Automaton JSON. These overrides are separate from `guardrail_backend` / `guardrail_model` on `autonomous_prd_set_llm` / `autonomous_prd_set_task_llm`, which pick the guardrail judge.
+  Returns the write reply described above (a small summary, not the whole Automaton). These overrides are separate from `guardrail_backend` / `guardrail_model` on `autonomous_prd_set_llm` / `autonomous_prd_set_task_llm`, which pick the guardrail judge.
 - **`autonomous_prd_instantiate`** (v5.x) — instantiate from a template PRD with variable substitution.
 - **`observer_envelopes_all_peers`** (v5.12.0, BL180 cross-host) — federation-aware envelope view; cross-peer caller attribution surfaces as `<peer>:<envelope-id>` rows on each matched server envelope.
 - **`session_bind_agent`** (v5.x) — bind a manual session to an existing agent record so observer/cost roll-ups attribute correctly.

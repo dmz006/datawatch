@@ -1,0 +1,69 @@
+package autonomous
+
+// TasksView is a read-only view of a PRD for task-level listings. It embeds
+// SummaryView, so its JSON carries the summary fields plus a flat list of
+// per-task entries. Each entry holds only identity, status and outcome
+// metadata: no task spec, story description or decisions.
+type TasksView struct {
+	SummaryView
+	Tasks []TaskEntry `json:"tasks"`
+}
+
+// TaskEntry is one task's row in a TasksView. Error, Verification,
+// FailureCategory and SessionID are omitted when empty.
+type TaskEntry struct {
+	ID              string            `json:"id"`
+	Title           string            `json:"title"`
+	Status          TaskStatus        `json:"status"`
+	Error           string            `json:"error,omitempty"`
+	Verification    *TaskVerification `json:"verification,omitempty"`
+	FailureCategory string            `json:"failure_category,omitempty"`
+	SessionID       string            `json:"session_id,omitempty"`
+}
+
+// TaskVerification is the outcome of a task's verification. It deliberately
+// omits the issue list and the diff SHA, which can carry code and paths.
+type TaskVerification struct {
+	OK       bool   `json:"ok"`
+	Severity string `json:"severity,omitempty"`
+	Summary  string `json:"summary"`
+}
+
+// BuildTasksView builds a TasksView for prd. A nil prd yields a zero view.
+// Tasks are listed in story order, then in the order they appear within
+// each story.
+func BuildTasksView(prd *PRD) TasksView {
+	if prd == nil {
+		return TasksView{}
+	}
+	view := TasksView{SummaryView: BuildSummaryView(prd)}
+
+	for i := range prd.Story {
+		for j := range prd.Story[i].Tasks {
+			view.Tasks = append(view.Tasks, buildTaskEntry(&prd.Story[i].Tasks[j]))
+		}
+	}
+	return view
+}
+
+// buildTaskEntry copies the listing fields of one task into a TaskEntry.
+func buildTaskEntry(task *Task) TaskEntry {
+	entry := TaskEntry{
+		ID:        task.ID,
+		Title:     task.Title,
+		Status:    task.Status,
+		Error:     task.Error,
+		SessionID: task.SessionID,
+	}
+	if v := task.Verification; v != nil {
+		entry.Verification = &TaskVerification{
+			OK:       v.OK,
+			Severity: v.Severity,
+			Summary:  v.Summary,
+		}
+	}
+	if task.FailureReason != nil {
+		entry.FailureCategory = task.FailureReason.Category
+	}
+	return entry
+}

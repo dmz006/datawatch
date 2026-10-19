@@ -8,6 +8,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/dmz006/datawatch/internal/autonomous"
 )
 
 type taskProjectDirTestOrch struct {
@@ -23,7 +25,7 @@ func (o *taskProjectDirTestOrch) SetTaskProjectDir(_, taskID, dir, _ string) (an
 	if o.err != nil {
 		return nil, o.err
 	}
-	return map[string]any{"ok": true}, nil
+	return &autonomous.PRD{ID: "p1"}, nil
 }
 
 func bl447Post(t *testing.T, orch *taskProjectDirTestOrch, body string) *httptest.ResponseRecorder {

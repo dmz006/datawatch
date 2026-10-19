@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.12 — PRD tools return short replies, and the PRD summary view is the default for reads
+
+PRD tools used to return the whole Automaton on every write, which could exceed client limits and use a lot of context. Write tools now return a short result with the id, status, rev, the changed task or story and a message. `autonomous_prd_get` now defaults to a summary and takes `detail` = `summary`, `tasks` or `full` when you need more. REST responses are unchanged unless the new query parameters are passed. The CLI `prd-get` command gained a `--detail` flag (`summary`, `tasks` or `full`); without it the CLI output is unchanged.
+
+- **Behaviour change for MCP clients:** `autonomous_prd_get` returns the summary view by default. Clients that relied on the full Automaton from a bare call must pass `detail: "full"`. Write tools no longer echo the full Automaton; read it with `autonomous_prd_get` after a write if you need the whole thing.
+- **REST:** `GET` PRD responses and the PRD write responses are unchanged unless the new `detail` query parameter (on GET) or `view=compact` (on writes) is passed.
+
 ## v9.5.11 — fix: PRD set_llm keeps the LLM fields the caller did not pass
 
 ### Fixed
