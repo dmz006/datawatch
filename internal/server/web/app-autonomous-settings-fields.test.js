@@ -62,3 +62,19 @@ test('settings_task_override_statuses is a non-empty string in all five locale b
       'settings_task_override_statuses missing or empty in ' + locale + ' locale');
   }
 });
+
+test('autonomous settings expose session_idle_timeout_seconds as a number with an en label key', () => {
+  const sandbox = buildSandbox();
+  vm.createContext(sandbox);
+  loadScript(path.join(__dirname, 'app.js'), sandbox);
+  const field = vm.runInContext(
+    "JSON.stringify((GENERAL_CONFIG_FIELDS.find(s => s.id === 'autonomous') || {fields: []}).fields.find(f => f.key === 'autonomous.session_idle_timeout_seconds') || null)",
+    sandbox);
+  const parsed = JSON.parse(field);
+  assert.ok(parsed, 'autonomous.session_idle_timeout_seconds missing from autonomous card fields');
+  assert.equal(parsed.type, 'number');
+  assert.equal(parsed.labelKey, 'settings_session_idle_timeout');
+  const en = JSON.parse(fs.readFileSync(path.join(__dirname, 'locales', 'en.json'), 'utf8'));
+  assert.ok(typeof en.settings_session_idle_timeout === 'string' && en.settings_session_idle_timeout.length > 0,
+    'settings_session_idle_timeout missing from en locale');
+});
