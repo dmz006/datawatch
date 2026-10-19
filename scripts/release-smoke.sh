@@ -212,11 +212,11 @@ YAML
   # default tmux server. cleanup_all cleans up the exact same socket
   # layout (tmux-$(id -u)/default under $SMOKE_TMUX_DIR), matching the sandbox
   # helper's convention (scripts/lib/sandbox.sh).
-  SMOKE_TMUX_DIR="${TEST_WORK_DIR}/dw-tmux-scratch"
+  SMOKE_TMUX_DIR="${TEST_DATA_DIR}/dw-tmux-scratch"
   mkdir -p "$SMOKE_TMUX_DIR"
 
   # Start the test daemon in the background.
-  env TMUX_TMPDIR="${TEST_WORK_DIR}/dw-tmux-scratch" \
+  env TMUX_TMPDIR="${TEST_DATA_DIR}/dw-tmux-scratch" \
     "$_DW_BIN" --config "$TEST_CONFIG" start --foreground \
     >"$TEST_WORK_DIR/daemon.log" 2>&1 &
   TEST_DAEMON_PID=$!
