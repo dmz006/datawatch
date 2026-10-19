@@ -82,7 +82,8 @@ type SpawnRequest struct {
 	// else PRD.WriteDirs). When non-empty, the local-session SpawnFn
 	// forwards them to the session manager so automatic commits stage
 	// only files under these directories instead of `git add -A` of the
-	// whole repo. Nil/empty = historical broad staging (warns).
+	// whole repo. Nil/empty = stage only files changed since the session
+	// (run) started (warns).
 	WriteScope []string
 	// AttemptRefs — the task's preserved attempt snapshot refs, in order
 	// (Task.AttemptRefs). The SpawnFn restores the last one into ProjectDir

@@ -1100,7 +1100,11 @@ func (m *Manager) Decompose(prdID string) (*PRD, error) {
 	planModel := resolvePlannedModel(backend, prd.DecompositionModel, prd.Backend, prd.Model, m.cfg.PlanningBackend, m.cfg.PlanningModel)
 	// BL410 remediation (2026-10-13) — bounded, hint-fed retry for an
 	// infra/scope-classified decompose failure, instead of immediately
-	// rolling back to PRDDraft on the very first failure. See
+	// rolling back to PRDDraft on the very first failure. Parse failures
+	// are NOT in this class: a parse failure means the session DID write
+	// a plan (the session-based decompose fn only returns non-empty
+	// content when the output file was written), so it fails immediately
+	// below rather than consuming infra retry budget. See
 	// retryDecomposeFailure's doc comment for the full rationale; see
 	// decomposeStreamingCore's identical loop for the twin copy this
 	// drifted-duplicate pair requires.
@@ -1127,9 +1131,14 @@ func (m *Manager) Decompose(prdID string) (*PRD, error) {
 		}
 		t, s, perr := ParsePlanning(r)
 		if perr != nil {
-			if m.retryDecomposeFailure(prd, "infra", "decompose-parse", perr.Error()) {
-				continue
-			}
+			// Written-verdict class (2026-10-19 incident; same class as
+			// BL478's 28KB-discarded-plan bug): a parse failure means the
+			// session wrote an output file that failed to parse — a verdict
+			// was produced, so this is NOT an infra-category failure and
+			// must not consume infra retry budget (retrying risks re-running
+			// twice and discarding a good second plan). Fail immediately;
+			// failDecomposeAttempt still records the parse reason on
+			// LastDecomposeFailure.Detail so an operator sees WHY.
 			m.failDecomposeAttempt(prd, "decompose-parse", perr)
 			return nil, perr
 		}
@@ -1319,9 +1328,11 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (*PRD, 
 		}
 		t, s, perr := ParsePlanning(r)
 		if perr != nil {
-			if m.retryDecomposeFailure(prd, "infra", "decompose-parse", perr.Error()) {
-				continue
-			}
+			// See Decompose()'s identical branch: a parse failure IS a
+			// written verdict (non-empty content only returns when the
+			// output file was written), so it fails immediately rather than
+			// retrying as infra — 2026-10-19 incident class. The parse
+			// reason still lands on LastDecomposeFailure.Detail.
 			m.failDecomposeAttempt(prd, "decompose-parse", perr)
 			return nil, perr
 		}

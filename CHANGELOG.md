@@ -5,6 +5,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.21 — autonomous: check a PRD's guardrail verdict once, and stage only a session's own changes
+
+### Fixed
+- A guardrail or decompose judge that has already written its output file is judged exactly once on that output. If the output cannot be read as a verdict, the failure is reported naming what went wrong and no second judge is spawned to re-read it; a judge session that ends without producing any output still gets its single bounded automatic retry.
+- A session with no write scope no longer stages the whole repository for its auto-commit. It stages only the files its own run changed, and the log warning names those files — pre-existing untracked files in the same worktree are no longer swept into a session's commit.
+- Version bump 9.5.18 -> 9.5.21 (cmd/datawatch/main.go + internal/server/api.go kept identical).
+## v9.5.23 — autonomous: one local model engine per GPU node, with a queue
+
+
+Finished feature branches no longer conflict on the version number when they are merged. The version number is now chosen once, at merge time, and applied to all branches merged in the same run. The merge check refuses a branch that changed the version to the wrong number, and its message names the expected version.
+
 ## v9.5.19 — autonomous: a per-node limit on local-model sessions, with a queue for the rest
 
 Each compute node can now run only a set number of local-model sessions at once. The new setting `autonomous.max_engines_per_node` controls that number and defaults to 1; values below 1 are treated as 1. It applies to sessions whose model runs on a local engine on that node (pi, pi-prompt, ollama, opencode, and opencode-acp). Hosted backends such as claude-code are not limited by it.
