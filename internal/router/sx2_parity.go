@@ -91,6 +91,24 @@ func extractGuardrailLLMTokens(args []string) ([]string, map[string]string) {
 	return rest, guardrail
 }
 
+// extractLegacySetLLMTokens pulls backend=<v> / effort=<v> / model=<v> /
+// decomposition_profile=<v> tokens out of set-llm args so the remaining
+// positional parsing is unchanged. Only tokens that appear are returned,
+// so "model=" clears and an absent token stays absent.
+func extractLegacySetLLMTokens(args []string) ([]string, map[string]string) {
+	rest := make([]string, 0, len(args))
+	legacy := map[string]string{}
+	for _, a := range args {
+		k, v, ok := strings.Cut(a, "=")
+		if ok && (k == "backend" || k == "effort" || k == "model" || k == "decomposition_profile") {
+			legacy[k] = v
+			continue
+		}
+		rest = append(rest, a)
+	}
+	return rest, legacy
+}
+
 // reply sends a tagged response back through the messaging backend.
 func (r *Router) reply(label, body string) {
 	if body == "" {
@@ -302,7 +320,7 @@ func prettyJSON(body string) string {
 // `prd` is accepted as a shorter alias for `autonomous`.
 func (r *Router) handleAutonomous(cmd Command) {
 	args := strings.Fields(strings.TrimSpace(cmd.Text))
-	help := "usage: autonomous {status|list|config-get|config-set key=value [k2=v2 ...]|get <id>|decompose <id>|approve <id>|reject <id> [reason]|request-revision <id> [note]|edit-task <prd> <task> <new-spec>|set-llm <prd> <backend> [effort] [model] [guardrail_backend=X] [guardrail_model=Y]|set-task-llm <prd> <task> <backend> [effort] [model] [guardrail_backend=X] [guardrail_model=Y]|set-task-project-dir <prd> <task> [dir]|set-task-verification-llm <prd> <task> [backend=X] [model=Y] [effort=Z]|set-story-verification-llm <prd> <story> [backend=X] [model=Y] [effort=Z]|set-verification-llm <prd> [backend=X] [model=Y] [effort=Z]|instantiate <template> [k=v,k=v]|run <id>|cancel <id>|cancel-story <prd> <story> [reason]|cancel-task <prd> <task> [reason]|reset-to-draft <id>|set-quality-gates <prd> [enabled=bool] [test_command=cmd] [timeout=N] [block_on_regression=bool]|scan-results <id>|learnings|children <id>|create <spec>|scan <id>|scan-fix <id>|scan-rules <id>|scan-config [get|set k=v]|types|type-register <id> <label> [description=...] [color=#hex]|set-type <id> <type>|guided-mode <id> on|off|set-skills <id> <skill1,skill2>|templates|template-get <id>|template-create <title> <spec>|template-update <id> <title> <spec>|template-delete <id>|template-instantiate <id> [dir] [k=v,k=v]|template-clone <prd-id> [desc]}"
+	help := "usage: autonomous {status|list|config-get|config-set key=value [k2=v2 ...]|get <id>|decompose <id>|approve <id>|reject <id> [reason]|request-revision <id> [note]|edit-task <prd> <task> <new-spec>|set-llm <prd> [backend=X] [effort=Y] [model=Z] [decomposition_profile=P] [<backend> [effort] [model]] [guardrail_backend=X] [guardrail_model=Y]|set-task-llm <prd> <task> <backend> [effort] [model] [guardrail_backend=X] [guardrail_model=Y]|set-task-project-dir <prd> <task> [dir]|set-task-verification-llm <prd> <task> [backend=X] [model=Y] [effort=Z]|set-story-verification-llm <prd> <story> [backend=X] [model=Y] [effort=Z]|set-verification-llm <prd> [backend=X] [model=Y] [effort=Z]|instantiate <template> [k=v,k=v]|run <id>|cancel <id>|cancel-story <prd> <story> [reason]|cancel-task <prd> <task> [reason]|reset-to-draft <id>|set-quality-gates <prd> [enabled=bool] [test_command=cmd] [timeout=N] [block_on_regression=bool]|scan-results <id>|learnings|children <id>|create <spec>|scan <id>|scan-fix <id>|scan-rules <id>|scan-config [get|set k=v]|types|type-register <id> <label> [description=...] [color=#hex]|set-type <id> <type>|guided-mode <id> on|off|set-skills <id> <skill1,skill2>|templates|template-get <id>|template-create <title> <spec>|template-update <id> <title> <spec>|template-delete <id>|template-instantiate <id> [dir] [k=v,k=v]|template-clone <prd-id> [desc]}"
 	if len(args) == 0 {
 		r.reply("autonomous", help)
 		return
@@ -557,23 +575,43 @@ func (r *Router) handleAutonomous(cmd Command) {
 		}
 		r.reply("autonomous remove-task", prettyJSON(out))
 	case "set-llm", "set_llm":
+		args, legacy := extractLegacySetLLMTokens(args)
 		args, guardrail := extractGuardrailLLMTokens(args)
-		if len(args) < 2 || (len(args) < 3 && len(guardrail) == 0) {
-			r.reply("autonomous set-llm failed", "usage: autonomous set-llm <prd-id> <backend> [effort] [model] [guardrail_backend=X] [guardrail_model=Y]  |  autonomous set-llm <prd-id> guardrail_backend=X [guardrail_model=Y]")
+		if len(args) < 2 || (len(args) < 3 && len(legacy) == 0 && len(guardrail) == 0) {
+			r.reply("autonomous set-llm failed", "usage: autonomous set-llm <prd-id> [backend=X] [effort=Y] [model=Z] [decomposition_profile=P] [<backend> [effort] [model]] [guardrail_backend=X] [guardrail_model=Y]")
 			return
 		}
 		body := map[string]string{"actor": "operator"}
 		for k, v := range guardrail {
 			body[k] = v
 		}
+		setLegacy := map[string]string{}
+		if v, ok := legacy["backend"]; ok {
+			setLegacy["backend"] = v
+		}
+		if v, ok := legacy["effort"]; ok {
+			setLegacy["effort"] = v
+		}
+		if v, ok := legacy["model"]; ok {
+			setLegacy["model"] = v
+		}
+		// Positional args count as explicitly provided and take precedence
+		// over the same-named token.
 		if len(args) >= 3 {
-			body["backend"] = args[2]
+			setLegacy["backend"] = args[2]
 		}
 		if len(args) >= 4 {
-			body["effort"] = args[3]
+			setLegacy["effort"] = args[3]
 		}
 		if len(args) >= 5 {
-			body["model"] = strings.Join(args[4:], " ")
+			setLegacy["model"] = strings.Join(args[4:], " ")
+		}
+		for k, v := range setLegacy {
+			body[k] = v
+		}
+		// decomposition_profile is token-only — no positional mapping.
+		if v, ok := legacy["decomposition_profile"]; ok {
+			body["decomposition_profile"] = v
 		}
 		raw, _ := json.Marshal(body)
 		out, err := r.commJSON(http.MethodPost, "/api/autonomous/prds/"+args[1]+"/set_llm", string(raw))
