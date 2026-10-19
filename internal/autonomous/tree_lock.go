@@ -337,6 +337,38 @@ func interruptibleSleep(ctx context.Context, d time.Duration, isCancelled func()
 	return true
 }
 
+// treeLockPathMutexs serializes, per lock-file path and per process,
+// every section of the advisory lifecycle that mutates or judges the
+// file — the acquirer's claim → stale-verify → delete sequence and the
+// releaser's read → guard → delete sequence. Without it two contenders
+// can both verify the same dead holder as stale, interleave their
+// removes with each other's fresh creates, and end with TWO live holders
+// on one tree (the swallowed-increment shape the BL428 tests pin):
+// contender A verifies holder X terminal and deletes; contender B does
+// the same, then B's delete lands on A's FRESH record and B creates on
+// top while A is already holding. In-process that interleaving is a
+// plain race; the per-path mutex closes it. The advisory cross-process
+// contract is unchanged — external writers that never look at the file
+// were never covered by BL428 by design.
+//
+// The map grows by distinct lock paths (bounded by the number of
+// distinct project trees a daemon serves) and is never pruned.
+var treeLockPathMutexs = struct {
+	sync.Mutex
+	m map[string]*sync.Mutex
+}{m: make(map[string]*sync.Mutex)}
+
+func treeLockPathMutex(path string) *sync.Mutex {
+	treeLockPathMutexs.Lock()
+	defer treeLockPathMutexs.Unlock()
+	mu, ok := treeLockPathMutexs.m[path]
+	if !ok {
+		mu = &sync.Mutex{}
+		treeLockPathMutexs.m[path] = mu
+	}
+	return mu
+}
+
 // newTreeLockRelease returns release() for the lock at path held by
 // holder:
 //   - Holder-guarded: it deletes the file ONLY if the current record
@@ -347,8 +379,11 @@ func interruptibleSleep(ctx context.Context, d time.Duration, isCancelled func()
 //     release must never abort the task that is finishing.
 func newTreeLockRelease(path, holder string) func() {
 	var once sync.Once
+	pathMu := treeLockPathMutex(path)
 	return func() {
 		once.Do(func() {
+			pathMu.Lock()
+			defer pathMu.Unlock()
 			rec, err := readLockRecord(path)
 			if err != nil {
 				if os.IsNotExist(err) {
@@ -461,6 +496,7 @@ func AcquireTreeLock(
 	}
 
 	reclaimCount := 0
+	pathMu := treeLockPathMutex(path)
 	for {
 		if ctx != nil && ctx.Err() != nil {
 			return nil, fmt.Errorf("tree lock: cancelled while waiting for %q", key)
@@ -469,65 +505,95 @@ func AcquireTreeLock(
 			return nil, fmt.Errorf("tree lock: cancelled while waiting for %q", key)
 		}
 
-		err := claim()
-		if err == nil {
-			log.Printf("tree lock: acquired %s holder task=%s prd=%s", path, holder, prdID)
-			return newTreeLockRelease(path, holder), nil
+		// The claim → verify → (stale) delete section runs under the
+		// per-path mutex so it cannot interleave with a peer acquirer's
+		// fresh create or a peer's release (see treeLockPathMutexs).
+		// The wait sleep stays OUTSIDE the section: waiters must never
+		// block one another.
+		type stepOutcome struct {
+			release  func()
+			err      error
+			retryNow bool
+			reason   string
 		}
-		if !os.IsExist(err) {
-			// Not "already held" — most likely the lazily-created
-			// .datawatch dir (or a transient FS error). Mkdir the parent
-			// once, retry the claim, and give up if it still fails.
-			if merr := os.MkdirAll(filepath.Dir(path), 0o755); merr != nil {
-				return nil, fmt.Errorf("tree lock: %v", merr)
-			}
-			retryErr := claim()
-			if retryErr == nil {
+		pathMu.Lock()
+		out := func() stepOutcome {
+			defer pathMu.Unlock()
+
+			err := claim()
+			if err == nil {
 				log.Printf("tree lock: acquired %s holder task=%s prd=%s", path, holder, prdID)
-				return newTreeLockRelease(path, holder), nil
+				return stepOutcome{release: newTreeLockRelease(path, holder)}
 			}
-			if !os.IsExist(retryErr) {
-				return nil, fmt.Errorf("tree lock: create %s: %w", path, retryErr)
-			}
-		}
-
-		// The lock exists (either already on first pass, or re-appearing
-		// after a lost reclaim race). NeverBlockOnRead: a plain read with
-		// nothing else held.
-		existing, rerr := readLockRecord(path)
-		if rerr == nil && existing.HolderTaskID == holder {
-			log.Printf("tree lock: re-acquired %s holder task=%s (idempotent)", path, holder)
-			return newTreeLockRelease(path, holder), nil
-		}
-
-		if treeLockStale(path, &existing, rerr, taskStatus) {
-			if rerr == nil {
-				log.Printf("tree lock: reclaiming stale lock %s — holder task %q (PRD %q) is unknown or terminal", path, existing.HolderTaskID, existing.HolderPRDID)
-			} else {
-				log.Printf("tree lock: reclaiming stale lock %s — record unreadable or empty (grace expired)", path)
-			}
-			derr := os.Remove(path) // best effort per spec
-			if derr == nil || os.IsNotExist(derr) {
-				if reclaimCount < maxStaleReclaimAttempts {
-					reclaimCount++
-					continue // immediate retry — the stale file is gone
+			if !os.IsExist(err) {
+				// Not "already held" — most likely the lazily-created
+				// .datawatch dir (or a transient FS error). Mkdir the
+				// parent once, retry the claim, and give up if it still
+				// fails.
+				if merr := os.MkdirAll(filepath.Dir(path), 0o755); merr != nil {
+					return stepOutcome{err: fmt.Errorf("tree lock: %v", merr)}
 				}
-				// Lost the delete race maxStaleReclaimAttempts times
-				// running: fall through to the wait loop (bounded; no
-				// corruption — we only ever removed locks re-verified
-				// stale in the same pass).
-			} else {
-				log.Printf("tree lock: best-effort reclaim of %s failed: %v", path, derr)
+				retryErr := claim()
+				if retryErr == nil {
+					log.Printf("tree lock: acquired %s holder task=%s prd=%s", path, holder, prdID)
+					return stepOutcome{release: newTreeLockRelease(path, holder)}
+				}
+				if !os.IsExist(retryErr) {
+					return stepOutcome{err: fmt.Errorf("tree lock: create %s: %w", path, retryErr)}
+				}
 			}
+
+			// The lock exists (either already on first pass, or re-appearing
+			// after a lost reclaim race). NeverBlockOnRead: a plain read
+			// with nothing else held.
+			existing, rerr := readLockRecord(path)
+			if rerr == nil && existing.HolderTaskID == holder {
+				log.Printf("tree lock: re-acquired %s holder task=%s (idempotent)", path, holder)
+				return stepOutcome{release: newTreeLockRelease(path, holder)}
+			}
+
+			if treeLockStale(path, &existing, rerr, taskStatus) {
+				if rerr == nil {
+					log.Printf("tree lock: reclaiming stale lock %s — holder task %q (PRD %q) is unknown or terminal", path, existing.HolderTaskID, existing.HolderPRDID)
+				} else {
+					log.Printf("tree lock: reclaiming stale lock %s — record unreadable or empty (grace expired)", path)
+				}
+				derr := os.Remove(path) // best effort per spec
+				if derr == nil || os.IsNotExist(derr) {
+					if reclaimCount < maxStaleReclaimAttempts {
+						reclaimCount++
+						return stepOutcome{retryNow: true} // immediate retry — the stale file is gone
+					}
+					// Lost the delete race maxStaleReclaimAttempts times
+					// running: fall through to the wait loop (bounded; no
+					// corruption — we only ever removed locks re-verified
+					// stale in this section).
+				} else {
+					log.Printf("tree lock: best-effort reclaim of %s failed: %v", path, derr)
+				}
+			}
+
+			// Live holder (or a bounded reclaim loop): the caller notifies
+			// and sleeps OUTSIDE the section.
+			return stepOutcome{reason: treeWaitReason(key, &existing, rerr)}
+		}()
+
+		if out.err != nil {
+			return nil, out.err
+		}
+		if out.release != nil {
+			return out.release, nil
+		}
+		if out.retryNow {
+			continue
 		}
 
 		// Live holder (or a bounded reclaim loop): notify, sleep, retry.
-		reason := treeWaitReason(key, &existing, rerr)
 		if waitHook != nil {
-			waitHook(reason)
+			waitHook(out.reason)
 		}
 		if !interruptibleSleep(ctx, pollInterval, isCancelled) {
-			return nil, fmt.Errorf("tree lock: cancelled while waiting: %s", reason)
+			return nil, fmt.Errorf("tree lock: cancelled while waiting: %s", out.reason)
 		}
 	}
 }
