@@ -14161,6 +14161,7 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.enabled', label: 'Enable autonomous loop', type: 'toggle' },
     { key: 'autonomous.poll_interval_seconds', label: 'Poll interval (sec)', type: 'number', placeholder: '30' },
     { key: 'autonomous.max_concurrent_tasks', label: 'Max concurrent tasks per Automaton (1 = one at a time)', labelKey: 'settings_max_concurrent_tasks', type: 'number', placeholder: '1' },
+    { key: 'autonomous.max_engines_per_node', label: 'Max engines per node (1 = one at a time)', labelKey: 'max_engines_per_node', type: 'number', min: 1, placeholder: '1' },
     { key: 'autonomous.capacity_enabled', label: 'Capacity-aware admission (wait for free slots instead of failing)', labelKey: 'settings_capacity_enabled', type: 'toggle' },
     { key: 'autonomous.capacity_wait_timeout_seconds', label: 'Capacity wait timeout (sec, 0=4h)', labelKey: 'settings_capacity_wait_timeout', type: 'number', placeholder: '14400' },
     { key: 'autonomous.ci_watch_timeout_seconds', label: 'CI watch timeout (sec, 0=25m)', labelKey: 'settings_ci_watch_timeout', type: 'number', placeholder: '1500' },
@@ -14530,7 +14531,7 @@ function loadCommsConfig() {
           html += `<div class="settings-row" style="justify-content:space-between;">
             <div class="settings-label">${escHtml(f.label)}</div>
             <input type="${f.type === 'number' ? 'number' : 'text'}" class="form-input general-cfg-input" value="${escHtml(String(val || ''))}"
-              placeholder="${escHtml(f.placeholder || '')}"
+              placeholder="${escHtml(f.placeholder || '')}"${f.min !== undefined ? ` min="${f.min}"` : ''}
               onchange="saveGeneralField('${f.key}', this.value)" />
           </div>`;
         }
@@ -20879,6 +20880,15 @@ window._loadPRDCapacityCard = function(prdId) {
     if (p.name.startsWith('llm:')) return t('capacity_pool_llm_hint')||'Concurrent in-flight requests this LLM backend will accept at once.';
     return '';
   };
+  // Node pools carry queue_depth and holder (GET /api/capacity). Show who
+  // holds the node and, when work is queued behind it, say so by name.
+  const nodeMeta = p => {
+    if (!p.name.startsWith('node:') || p.queue_depth === undefined) return '';
+    const holder = p.holder ? `${escHtml(t('capacity_node_holder')||'holder')}: ${escHtml(p.holder.split(',').map(h => h.slice(0,8)).join(', '))}` : '';
+    const waiting = p.queue_depth > 0 ? `${escHtml(t('capacity_waiting_for_node')||'waiting for node')} ${escHtml(p.name.slice(5))}` : '';
+    const parts = [holder, waiting].filter(Boolean).join(' · ');
+    return parts ? `<div style="font-size:11px;color:var(--text2);">${parts}</div>` : '';
+  };
   const render = () => {
     if (!document.getElementById('prdCapacityCard')) { clearInterval(window._prdCapacityInterval); return; }
     const url = '/api/capacity' + (prdId ? '?prd_id=' + encodeURIComponent(prdId) : '');
@@ -20893,16 +20903,16 @@ window._loadPRDCapacityCard = function(prdId) {
       // bucket below). List it plainly so real hardware isn't hidden just
       // because nobody capped it.
       const idleNodes = allPools.filter(p => p.name.startsWith('node:') && !(p.limit > 0) && ((p.held||0)+(p.external||0)) === 0)
-        .map(p => `<div style="color:var(--text2);opacity:0.7;" title="${escHtml(poolTitle(p))}">${escHtml(poolLabel(p))}: ${escHtml(t('capacity_no_cap_configured')||'no cap configured')}</div>`).join('');
+        .map(p => `<div style="color:var(--text2);opacity:0.7;" title="${escHtml(poolTitle(p))}">${escHtml(poolLabel(p))}: ${escHtml(t('capacity_no_cap_configured')||'no cap configured')}</div>${nodeMeta(p)}`).join('');
       if (pools.length === 0 && waiting.length === 0 && !idleNodes) { slot.style.display = 'none'; slot.innerHTML = ''; return; }
       const bars = pools.map(p => {
         const used = (p.held || 0) + (p.external || 0);
         const pct = Math.min(100, Math.round(100 * used / p.limit));
         const color = pct >= 100 ? 'var(--error,#ef4444)' : pct >= 75 ? 'var(--warning,#f59e0b)' : 'var(--success,#22c55e)';
-        return `<div style="margin-bottom:4px;" title="${escHtml(poolTitle(p))}"><div style="display:flex;justify-content:space-between;color:var(--text2);"><span>${escHtml(poolLabel(p))}</span><span style="font-variant-numeric:tabular-nums;color:var(--text);">${used} / ${p.limit}</span></div><div style="height:4px;background:var(--bg3,rgba(0,0,0,0.2));border-radius:2px;overflow:hidden;"><div style="height:100%;width:${pct}%;background:${color};"></div></div></div>`;
+        return `<div style="margin-bottom:4px;" title="${escHtml(poolTitle(p))}"><div style="display:flex;justify-content:space-between;color:var(--text2);"><span>${escHtml(poolLabel(p))}</span><span style="font-variant-numeric:tabular-nums;color:var(--text);">${used} / ${p.limit}</span></div><div style="height:4px;background:var(--bg3,rgba(0,0,0,0.2));border-radius:2px;overflow:hidden;"><div style="height:100%;width:${pct}%;background:${color};"></div></div>${nodeMeta(p)}</div>`;
       }).join('');
       const unlimited = allPools.filter(p => !(p.limit > 0) && ((p.held||0)+(p.external||0)) > 0)
-        .map(p => `<div style="color:var(--text2);" title="${escHtml(poolTitle(p))}">${escHtml(poolLabel(p))}: ${(p.held||0)+(p.external||0)} · ${escHtml(t('capacity_no_limit')||'no limit')}</div>`).join('');
+        .map(p => `<div style="color:var(--text2);" title="${escHtml(poolTitle(p))}">${escHtml(poolLabel(p))}: ${(p.held||0)+(p.external||0)} · ${escHtml(t('capacity_no_limit')||'no limit')}</div>${nodeMeta(p)}`).join('');
       const queue = waiting.length
         ? `<div style="margin-top:6px;font-weight:600;color:var(--text2);">${escHtml(t('capacity_waiting')||'Waiting')} (${waiting.length})</div>` +
           waiting.map(w => `<div class="prd-capacity-wait" title="${escHtml(w.reason||'')}">&#9203; ${escHtml(w.holder.slice(0,8))} · PRD ${escHtml((w.prd_id||'').slice(0,8))} · ${escHtml(fmtWait(w.since))} — ${escHtml(w.reason||'')}</div>`).join('')
@@ -28878,6 +28888,11 @@ function loadAutomataSettingsPanel() {
           <div class="settings-label" title="${escHtml(t('settings_max_concurrent_tasks_hint')||'Daemon-wide default. An Automaton\'s own setting overrides it.')}">${escHtml(t('settings_max_concurrent_tasks')||'Max concurrent tasks per Automaton (1 = one at a time)')}</div>
           <input type="number" min="1" value="${ac.max_concurrent_tasks||1}" style="width:80px;font-size:12px;" class="form-input"
             onchange="saveGeneralField('autonomous.max_concurrent_tasks',+this.value)">
+        </div>
+        <div class="settings-row" style="justify-content:space-between;">
+          <div class="settings-label">${escHtml(t('max_engines_per_node')||'Max engines per node (1 = one at a time)')}</div>
+          <input type="number" min="1" value="${ac.max_engines_per_node||1}" style="width:80px;font-size:12px;" class="form-input"
+            onchange="saveGeneralField('autonomous.max_engines_per_node',+this.value)">
         </div>
         <div class="settings-row" style="justify-content:space-between;">
           <div class="settings-label">Auto-fix retries</div>
