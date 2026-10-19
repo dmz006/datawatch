@@ -4444,7 +4444,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			// project dir is never restored for them.
 			restoreAttemptWorkBeforeSpawn(ctx, req.ProjectDir, req.AttemptRefs,
 				cfg.Autonomous.PreserveAttemptWorkEnabled() && strings.TrimSpace(req.ClusterProfile) == "",
-				capturePreTask, autonomouspkg.RestoreAttemptWork)
+				req.CleanRestart, capturePreTask, autonomouspkg.RestoreAttemptWork)
 			// v5.26.19 — F10 cluster profile dispatch. When the PRD
 			// declares a cluster_profile, spawn a worker via the F10
 			// agents endpoint instead of a local tmux session. The

@@ -597,6 +597,13 @@ type Task struct {
 	// the first attempt (0) is invisible on the wire; no existing client
 	// relied on its absence to mean something.
 	PriorAttemptCount int `json:"prior_attempt_count,omitempty"`
+	// CleanRestart — set by an operator reset (ResetTaskWithOptions with
+	// cleanRestart=true) to ask that the next attempt start from the pre-task
+	// tree instead of restoring the last preserved attempt work (AttemptRefs).
+	// The spawn path skips the restore for that one attempt and clears the flag
+	// once the attempt has run, so automatic retries after it restore again.
+	// Default false: restore stays on.
+	CleanRestart bool `json:"clean_restart,omitempty"`
 	// FailureReason (BL410 Phase 1) — structured, categorized detail
 	// alongside Error (a bare string, left untouched for existing
 	// readers). Set on the task's last failed/blocked attempt.

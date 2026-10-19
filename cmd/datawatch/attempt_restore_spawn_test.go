@@ -18,7 +18,7 @@ func TestAttemptRestoreRunsAfterDirtyCapture(t *testing.T) {
 	}
 
 	restoreAttemptWorkBeforeSpawn(context.Background(), "/proj",
-		[]string{"refs/datawatch/attempts/t/1", "refs/datawatch/attempts/t/2"}, true, capture, restore)
+		[]string{"refs/datawatch/attempts/t/1", "refs/datawatch/attempts/t/2"}, true, false, capture, restore)
 
 	want := []string{"capture", "restore:/proj:refs/datawatch/attempts/t/2"}
 	if !reflect.DeepEqual(calls, want) {
@@ -45,7 +45,7 @@ func TestAttemptRestoreSkippedWhenDisabledOrNoRefs(t *testing.T) {
 				calls = append(calls, "restore")
 				return nil
 			}
-			restoreAttemptWorkBeforeSpawn(context.Background(), tc.dir, tc.refs, tc.enabled, capture, restore)
+			restoreAttemptWorkBeforeSpawn(context.Background(), tc.dir, tc.refs, tc.enabled, false, capture, restore)
 			if !reflect.DeepEqual(calls, []string{"capture"}) {
 				t.Fatalf("calls = %v, want only capture", calls)
 			}
@@ -62,7 +62,7 @@ func TestAttemptRestoreErrorDoesNotBlockSpawn(t *testing.T) {
 		return errors.New("boom")
 	}
 	restoreAttemptWorkBeforeSpawn(context.Background(), "/proj",
-		[]string{"refs/datawatch/attempts/t/1"}, true, capture, restore)
+		[]string{"refs/datawatch/attempts/t/1"}, true, false, capture, restore)
 	if !captured {
 		t.Fatal("capture must run even when restore fails")
 	}

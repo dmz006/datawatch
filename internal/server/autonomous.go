@@ -1064,9 +1064,10 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var req struct {
-			TaskID string `json:"task_id"`
-			Actor  string `json:"actor"`
-			Force  bool   `json:"force"`
+			TaskID       string `json:"task_id"`
+			Actor        string `json:"actor"`
+			Force        bool   `json:"force"`
+			CleanRestart bool   `json:"clean_restart"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
@@ -1079,7 +1080,7 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		if req.Actor == "" {
 			req.Actor = "operator"
 		}
-		updated, err := s.autonomousMgr.ResetTask(id, req.TaskID, req.Actor, req.Force)
+		updated, err := s.autonomousMgr.ResetTaskWithOptions(id, req.TaskID, req.Actor, req.Force, req.CleanRestart)
 		if err != nil {
 			status := http.StatusBadRequest
 			if len(err.Error()) > 4 && err.Error()[:4] == "409:" {
@@ -1094,7 +1095,7 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		// Run() is now idempotent: if an executor is already live it returns
 		// immediately; the live goroutine will pick up the newly-pending task.
 		_ = s.autonomousMgr.Run(id)
-		s.audit(r.Context(), "reset_task", "automaton", id, map[string]any{"task_id": req.TaskID, "force": req.Force}) // GH#201 Phase 4
+		s.audit(r.Context(), "reset_task", "automaton", id, map[string]any{"task_id": req.TaskID, "force": req.Force, "clean_restart": req.CleanRestart}) // GH#201 Phase 4
 		prd, _ := updated.(*autonomous.PRD)
 		s.writeAutonomousResult(w, r, prd, req.TaskID, "", "task reset to pending; the executor will retry it")
 	case "repair_depends_on":

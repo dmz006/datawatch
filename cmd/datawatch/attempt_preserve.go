@@ -62,16 +62,19 @@ type attemptRestoreFunc func(ctx context.Context, dir, ref string) error
 // files and dirty files, so the restored files are never reported as foreign
 // drift. Only after that does restore write the last recorded attempt ref back
 // into dir. A restore error is logged and never blocks the attempt, which then
-// starts from the pre-task state.
-func restoreAttemptWorkBeforeSpawn(ctx context.Context, dir string, refs []string, enabled bool, capture func(), restore attemptRestoreFunc) {
+// starts from the pre-task state. cleanRestart (an operator clean restart,
+// Task.CleanRestart) skips the restore so the attempt starts from the pre-task
+// state on purpose.
+func restoreAttemptWorkBeforeSpawn(ctx context.Context, dir string, refs []string, enabled, cleanRestart bool, capture func(), restore attemptRestoreFunc) {
 	capture()
 	if !enabled || dir == "" || len(refs) == 0 {
 		return
 	}
-	// The clean-restart flag (a task that must start from a clean tree) is
-	// added by a later change and is not on Task yet. When it lands, check it
-	// here and return before restoring.
 	ref := refs[len(refs)-1]
+	if cleanRestart {
+		log.Printf("[autonomous] skipped restore of attempt work from %s into %s: clean restart requested", ref, dir)
+		return
+	}
 	if err := restore(ctx, dir, ref); err != nil {
 		log.Printf("[autonomous] restore of attempt work from %s into %s failed, attempt starts from pre-task state: %v",
 			ref, dir, err)

@@ -1813,6 +1813,13 @@ func (m *Manager) recoverPendingTask(prd *PRD, si int, taskID, actor string) (*P
 }
 
 func (m *Manager) ResetTask(prdID, taskID, actor string, force bool) (*PRD, error) {
+	return m.ResetTaskWithOptions(prdID, taskID, actor, force, false)
+}
+
+// ResetTaskWithOptions is ResetTask with the clean-restart option. cleanRestart
+// true makes the next attempt skip the restore of preserved attempt work
+// (Task.CleanRestart); false keeps the restore on, as ResetTask always did.
+func (m *Manager) ResetTaskWithOptions(prdID, taskID, actor string, force, cleanRestart bool) (*PRD, error) {
 	prd, ok := m.store.GetPRD(prdID)
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
@@ -1923,6 +1930,10 @@ func (m *Manager) ResetTask(prdID, taskID, actor string, force bool) (*PRD, erro
 				// genuine no-output. Auto in-loop retries don't go through
 				// ResetTask and leave this at 0 (see Task's field doc).
 				t.PriorAttemptCount++
+				// Operator's choice for this reset only: a plain reset leaves
+				// the flag false, so an unconsumed clean restart never carries
+				// over into a later reset.
+				t.CleanRestart = cleanRestart
 				t.StartedAt = nil
 				t.CompletedAt = nil
 				t.UpdatedAt = time.Now()

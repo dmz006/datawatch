@@ -629,6 +629,9 @@ type AutonomousAPI interface {
 	// v8.23.0 — reset a failed/blocked task to pending for retry.
 	// BL382 — force=true also requeues completed/cancelled tasks.
 	ResetTask(prdID, taskID, actor string, force bool) (any, error)
+	// clean_restart — as ResetTask, and cleanRestart=true makes the next
+	// attempt skip the restore of preserved attempt work.
+	ResetTaskWithOptions(prdID, taskID, actor string, force, cleanRestart bool) (any, error)
 	// v8.36.6 — repair DependsOn titles to real IDs on an existing PRD.
 	RepairDependsOn(prdID, actor string) (any, error)
 	// BL382 — cancel an individual story or task without cancelling the whole PRD.

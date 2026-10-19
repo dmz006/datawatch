@@ -87,6 +87,10 @@ type SpawnRequest struct {
 	// (Task.AttemptRefs). The SpawnFn restores the last one into ProjectDir
 	// before the worker starts when preserve_attempt_work is enabled.
 	AttemptRefs []string
+	// CleanRestart — Task.CleanRestart at spawn time. The SpawnFn skips the
+	// attempt-work restore when set; the executor clears the task's flag once
+	// this spawn has run.
+	CleanRestart bool
 }
 
 // SpawnResult is what SpawnFn returns. SessionID is the datawatch
@@ -1039,11 +1043,16 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				SkipDirtyCapture: prd.Git.Branch != "",           // worktree mode: nothing pre-dirty to protect
 				WriteScope:       EffectiveTaskWriteDirs(prd, t), // auto-commit staging scope
 				AttemptRefs:      t.AttemptRefs,                  // preserved attempt work to restore
+				CleanRestart:     t.CleanRestart,                 // operator clean restart: skip the restore once
 			})
+			if err != nil && errors.Is(err, errCancelledWhileWaiting) {
+				return nil
+			}
+			// The spawn ran with the restore skipped (if clean restart was set),
+			// so the request is spent. Clear it, success or failure, so later
+			// automatic retries restore again.
+			t.CleanRestart = false
 			if err != nil {
-				if errors.Is(err, errCancelledWhileWaiting) {
-					return nil
-				}
 				return fmt.Errorf("spawn: %w", err)
 			}
 			if led := m.Capacity(); led != nil {
