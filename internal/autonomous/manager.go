@@ -732,14 +732,33 @@ func (m *Manager) SetMemoryReportFn(fn func(ctx context.Context, prdID, projectD
 	m.memoryReportFn = fn
 }
 
+// decisionKindExists reports whether prd.Decisions already carries a decision
+// of the given kind. Used to guard against appending a duplicate boot audit
+// entry when the same PRD is saved more than once during the same boot pass
+// (e.g. both the reconcile and the resume pass touch it).
+func decisionKindExists(prd *PRD, kind string) bool {
+	if prd == nil {
+		return false
+	}
+	for i := range prd.Decisions {
+		if prd.Decisions[i].Kind == kind {
+			return true
+		}
+	}
+	return false
+}
+
 // resetInProgressTasksForResume resets tasks left mid-flight by a prior
 // daemon instance so the executor re-runs them cleanly instead of spawning
 // a duplicate alongside an orphaned session. TaskInProgress tasks are always
 // reset (the spawn goroutine never reached TaskVerifying, so any session is
-// necessarily orphaned). TaskVerifying/TaskRunningTests tasks are reset only
-// when sessionAliveFn confirms the session is gone — a genuinely live session
-// is left alone so executeOne's own skip-spawn check picks it up and verifies
-// it directly, matching reconcileStuckTasks' logic (B90/B93). This is the
+// necessarily orphaned). TaskVerifying/TaskRunningTests tasks with a dead or
+// absent session resolve via ResolveVerifyingTask: a recorded ok verification
+// verdict is applied (TaskCompleted) instead of blindly re-running the task;
+// otherwise the task is reset to TaskPending. A genuinely live session is
+// left alone (still TaskVerifying) so executeOne's own skip-spawn check picks
+// it up and verifies it directly, matching reconcileStuckTasks' logic
+// (B90/B93). This is the
 // canonical boot-time task/session reconciliation; executeOne's own
 // kill-before-respawn guard (executor.go) is the second line of defense if
 // this pass or its liveness check is wrong.
@@ -752,6 +771,8 @@ func (m *Manager) resetInProgressTasksForResume(prd *PRD) {
 	if prd == nil {
 		return
 	}
+	var reset []pendingTaskEvent
+	completedCount, requeuedCount := 0, 0
 	for si := range prd.Story {
 		for ti := range prd.Story[si].Tasks {
 			t := &prd.Story[si].Tasks[ti]
@@ -763,14 +784,38 @@ func (m *Manager) resetInProgressTasksForResume(prd *PRD) {
 				// Spawn goroutine died with the prior daemon before reaching
 				// TaskVerifying — any session is necessarily orphaned.
 			case TaskVerifying, TaskRunningTests:
-				if aliveFn != nil && t.SessionID != "" && aliveFn(t.SessionID) {
+				switch ResolveVerifyingTask(aliveFn, t) {
+				case TaskVerifying:
 					// Session still live; leave it for executeOne to resume. Re-take
 					// its capacity lease now (BL462 F1) so admission counts it before
 					// any other task on this PRD or another PRD is admitted.
 					m.adoptCapacity(prd, t)
 					log.Printf("[autonomous] boot-resume: prd=%s task %s kept (was %s) on live session %s, capacity lease re-adopted", prd.ID, t.ID, prevStatus, t.SessionID)
 					continue
+				case TaskCompleted:
+					// A recorded ok verification verdict stands: complete the task
+					// instead of resetting it for a blind re-run. Verification is
+					// kept untouched.
+					if killerFn != nil && t.SessionID != "" {
+						if err := killerFn(t.SessionID); err != nil {
+							log.Printf("[autonomous] boot-resume: kill orphaned session %s: %v", t.SessionID, err)
+						}
+					}
+					now := time.Now()
+					t.Status = TaskCompleted
+					t.CompletedAt = &now
+					t.Error = ""
+					oldSession := t.SessionID
+					t.SessionID = ""
+					t.UpdatedAt = now
+					reset = append(reset, pendingTaskEvent{t: t, oldStatus: prevStatus, oldSession: oldSession})
+					completedCount++
+					log.Printf("[autonomous] boot-resume: completed task %s (was %s) for prd=%s from recorded ok verification", t.ID, prevStatus, prd.ID)
+					continue
 				}
+				// TaskPending: fall through to the reset-to-pending path below;
+				// it was an orphaned verifying task re-queued for retry.
+				requeuedCount++
 			default:
 				continue
 			}
@@ -779,17 +824,39 @@ func (m *Manager) resetInProgressTasksForResume(prd *PRD) {
 					log.Printf("[autonomous] boot-resume: kill orphaned session %s: %v", t.SessionID, err)
 				}
 			}
+			now := time.Now()
 			oldSession := t.SessionID
 			m.releaseCapacity(t.ID)
 			t.SessionID = ""
 			t.Status = TaskPending
-			if m.store.SaveTask(t) == nil {
-				m.emitTaskStatus(prd, t, prevStatus, nil, nil)
-				m.emitTaskSession(prd, t, oldSession)
-			}
+			t.Error = ""
+			t.UpdatedAt = now
+			reset = append(reset, pendingTaskEvent{t: t, oldStatus: prevStatus, oldSession: oldSession})
 			log.Printf("[autonomous] boot-resume: reset task %s (was %s) for prd=%s", t.ID, prevStatus, prd.ID)
 		}
 	}
+	if len(reset) == 0 {
+		return
+	}
+	now := time.Now()
+	prd.UpdatedAt = now
+	// Auditable verification of the orphaned-verifying resolutions: record how
+	// many verifying tasks completed from a recorded ok verdict vs how many
+	// were re-queued for retry. Guarded so a PRD saved twice in the same boot
+	// pass never carries two verifying_resolution entries.
+	if completedCount+requeuedCount > 0 && !decisionKindExists(prd, verifyingResolution) {
+		prd.Decisions = append(prd.Decisions, Decision{
+			At:    now,
+			Kind:  verifyingResolution,
+			Actor: "autonomous",
+			Note: fmt.Sprintf("boot-resume resolved %d orphaned verifying task(s) to completed (recorded ok verification) and re-queued %d for retry", completedCount, requeuedCount),
+		})
+	}
+	if err := m.store.SavePRD(prd); err != nil {
+		log.Printf("[autonomous] boot-resume: save prd=%s: %v", prd.ID, err)
+		return
+	}
+	m.emitPendingTaskEvents(prd, reset, lastDecision(prd, verifyingResolution))
 }
 
 // resetKilledTasksForResume checks a PRDFailed PRD: if every failed task has
@@ -3444,11 +3511,14 @@ func (m *Manager) Stop() {
 	}
 }
 
-// reconcileStuckTasks scans all PRDs on daemon start and resets any task
-// in TaskInProgress/TaskVerifying/TaskRunningTests to TaskPending when its
-// session is gone (B90). Resetting to pending (not failed) lets the executor
-// restart pick them up naturally, avoiding the bug where tasks end up stuck
-// in failed state because resetInProgressTasksForResume only looks for
+// reconcileStuckTasks scans all PRDs on daemon start and resolves any stuck
+// TaskInProgress/TaskVerifying/TaskRunningTests whose session is gone (B90).
+// TaskVerifying/TaskRunningTests tasks resolve via ResolveVerifyingTask: a
+// recorded ok verification verdict is applied (TaskCompleted) instead of a
+// blind reset; everything else — TaskInProgress, or a verifying task with a
+// failed or missing verdict — resets to TaskPending (not failed) so the
+// executor restart picks it up naturally, avoiding the bug where tasks end up
+// stuck in failed state because resetInProgressTasksForResume only looks for
 // TaskInProgress (which reconcileStuckTasks would have already converted).
 func (m *Manager) reconcileStuckTasks() {
 	m.mu.Lock()
@@ -3462,6 +3532,7 @@ func (m *Manager) reconcileStuckTasks() {
 			continue
 		}
 		changed := false
+		verdictCompleted, verdictRequeued := 0, 0
 		var reset []pendingTaskEvent
 		for si := range prd.Story {
 			for ti := range prd.Story[si].Tasks {
@@ -3469,8 +3540,19 @@ func (m *Manager) reconcileStuckTasks() {
 				if t.Status != TaskInProgress && t.Status != TaskVerifying && t.Status != TaskRunningTests {
 					continue
 				}
-				if aliveFn != nil && t.SessionID != "" && aliveFn(t.SessionID) {
-					continue // session still live; leave it
+				completing := false
+				if t.Status == TaskVerifying || t.Status == TaskRunningTests {
+					switch ResolveVerifyingTask(aliveFn, t) {
+					case TaskVerifying:
+						continue // session still live; leave it
+					case TaskCompleted:
+						// A recorded ok verification verdict stands: complete the
+						// task instead of blindly re-running it. Verification is
+						// kept untouched.
+						completing = true
+					}
+				} else if aliveFn != nil && t.SessionID != "" && aliveFn(t.SessionID) {
+					continue // session still live; leave it (TaskInProgress)
 				}
 				// Kill any surviving tmux session so the new executor doesn't
 				// spawn alongside it.
@@ -3479,16 +3561,37 @@ func (m *Manager) reconcileStuckTasks() {
 						log.Printf("[autonomous] boot-reconcile: kill orphaned session %s: %v", t.SessionID, err)
 					}
 				}
-				log.Printf("[autonomous] boot-reconcile: prd=%s task=%s status=%s session=%s → TaskPending (session gone on daemon restart)",
-					prd.ID, t.ID, t.Status, t.SessionID)
-				// The session is gone, so the task's node lease is freed here
-				// rather than left for the periodic reaper.
-				m.releaseCapacity(t.ID)
-				reset = append(reset, pendingTaskEvent{t: t, oldStatus: t.Status, oldSession: t.SessionID})
-				t.Status = TaskPending
-				t.Error = ""
-				t.SessionID = ""
-				t.UpdatedAt = time.Now()
+				// Count the orphaned verifying resolutions for the audit entry.
+				if t.Status == TaskVerifying || t.Status == TaskRunningTests {
+					if completing {
+						verdictCompleted++
+					} else {
+						verdictRequeued++
+					}
+				}
+				now := time.Now()
+				if completing {
+					log.Printf("[autonomous] boot-reconcile: prd=%s task=%s status=%s session=%s → TaskCompleted (recorded ok verification, dead session)",
+						prd.ID, t.ID, t.Status, t.SessionID)
+					// The session is gone, so the task's node lease is freed here
+					// rather than left for the periodic reaper.
+					m.releaseCapacity(t.ID)
+					reset = append(reset, pendingTaskEvent{t: t, oldStatus: t.Status, oldSession: t.SessionID})
+					t.Status = TaskCompleted
+					t.CompletedAt = &now
+					t.Error = ""
+					t.SessionID = ""
+					t.UpdatedAt = now
+				} else {
+					log.Printf("[autonomous] boot-reconcile: prd=%s task=%s status=%s session=%s → TaskPending (session gone on daemon restart)",
+						prd.ID, t.ID, t.Status, t.SessionID)
+					m.releaseCapacity(t.ID)
+					reset = append(reset, pendingTaskEvent{t: t, oldStatus: t.Status, oldSession: t.SessionID})
+					t.Status = TaskPending
+					t.Error = ""
+					t.SessionID = ""
+					t.UpdatedAt = now
+				}
 				changed = true
 			}
 		}
@@ -3501,8 +3604,20 @@ func (m *Manager) reconcileStuckTasks() {
 			At:    now,
 			Kind:  "boot_reconcile",
 			Actor: "autonomous",
-			Note:  "orphaned task(s) reset to pending on daemon restart",
+			Note:  "orphaned task(s) resolved to completed (recorded ok verification) or pending on daemon restart",
 		})
+		// Auditable verification of the orphaned-verifying resolutions: record
+		// how many verifying tasks completed from a recorded ok verdict vs how
+		// many were re-queued for retry. Guarded so a PRD saved twice in the
+		// same boot pass never carries two verifying_resolution entries.
+		if verdictCompleted+verdictRequeued > 0 && !decisionKindExists(prd, verifyingResolution) {
+			prd.Decisions = append(prd.Decisions, Decision{
+				At:    now,
+				Kind:  verifyingResolution,
+				Actor: "autonomous",
+				Note: fmt.Sprintf("boot pass resolved %d orphaned verifying task(s) to completed (recorded ok verification) and re-queued %d for retry", verdictCompleted, verdictRequeued),
+			})
+		}
 		if err := m.store.SavePRD(prd); err != nil {
 			log.Printf("[autonomous] boot-reconcile: save prd=%s: %v", prd.ID, err)
 		} else {

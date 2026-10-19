@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## v9.5.24 — a retried task whose work already landed is judged by its own verification script
 
+## v9.5.25 — autonomous: resolve tasks left verifying after a restart from the recorded verdict
+
+- **After a daemon restart, tasks that were still shown as 'verifying' with no verifier actually running now immediately take their recorded verification result** — a passing verdict shows the task as completed, a failed or missing verdict re-enters the normal retry flow.
+- **Every boot-time resolution is written to the PRD's decision log** (a single entry per boot summarizing how many tasks completed from a recorded ok verdict and how many were re-queued for retry), so the decision is auditable.
+- **The CLI and REST endpoints report the resolved status** instead of a stale 'verifying' label, since status reads go through the same boot-time pass.
+- Version bump 9.5.18 -> 9.5.22 (cmd/datawatch/main.go + internal/server/api.go kept identical).
 ### Fixed
 - **A retried task whose work an earlier attempt already committed is no longer failed as "no changes detected".** Instead, the task's own verification script is run against the current tree: a passing script completes the task, and the completion is recorded as an audit note.
 - **A failing verification script fails the task, showing the script's exit code and output.**

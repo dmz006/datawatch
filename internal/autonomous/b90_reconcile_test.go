@@ -121,12 +121,21 @@ func TestB90_DecisionAppended(t *testing.T) {
 	m.reconcileStuckTasks()
 
 	got, _ := m.Store().GetPRD(prd.ID)
-	added := len(got.Decisions) - initialDecisions
-	if added != 1 {
-		t.Fatalf("want 1 boot_reconcile decision appended, got %d added (total %d)", added, len(got.Decisions))
+	// Count per kind: this setup's stuck task is an orphaned verifying task,
+	// so the boot pass appends one boot_reconcile entry plus one
+	// verifying_resolution audit entry. Assert on the boot_reconcile entries
+	// (exactly one, as TC-6 requires) rather than on the total added count,
+	// which legitimately varies with the task mix resolved.
+	bootAdded := 0
+	for _, d := range got.Decisions[initialDecisions:] {
+		if d.Kind == "boot_reconcile" {
+			bootAdded++
+		}
 	}
-	last := got.Decisions[len(got.Decisions)-1]
-	if last.Kind != "boot_reconcile" {
-		t.Fatalf("want kind=boot_reconcile, got %q", last.Kind)
+	if bootAdded != 1 {
+		t.Fatalf("want 1 boot_reconcile decision appended, got %d (total %d)", bootAdded, len(got.Decisions)-initialDecisions)
+	}
+	if !decisionKindExists(got, verifyingResolution) {
+		t.Fatal("want a verifying_resolution audit entry for the orphaned verifying task")
 	}
 }
