@@ -107,6 +107,45 @@ func TestPairingWarnings_PlanningBackendMismatchWarns(t *testing.T) {
 	}
 }
 
+// TestPairingWarnings_EachPRDNamedOnceWithReason pins the compact rendering:
+// one warning per (planning model, decompose backend) group, each PRD named
+// at most once, more than three PRDs abbreviated to the first three plus a
+// count of the rest, and the reason (model, its backend, and the decompose
+// backend) still stated.
+func TestPairingWarnings_EachPRDNamedOnceWithReason(t *testing.T) {
+	cfg := Config{PlanningBackend: "opencode", PlanningModel: "qwen3.8:27b"}
+
+	got := PairingWarnings(cfg, map[string][]string{"claude-code": {"p1", "p2", "p3", "p4", "p5"}})
+	if len(got) != 1 {
+		t.Fatalf("want exactly 1 warning, got %d: %v", len(got), got)
+	}
+	w := got[0]
+	for _, id := range []string{"p1", "p2", "p3", "p4", "p5"} {
+		if n := strings.Count(w, id); n != 0 && n != 1 {
+			t.Errorf("id %q appears %d times in warning %q, want 0 or 1", id, n, w)
+		}
+	}
+	for _, want := range []string{"and 2 more", "qwen3.8:27b", "opencode", "claude-code"} {
+		if !strings.Contains(w, want) {
+			t.Errorf("warning %q does not name %q", w, want)
+		}
+	}
+
+	single := PairingWarnings(cfg, map[string][]string{"claude-code": {"p1"}})
+	if len(single) != 1 {
+		t.Fatalf("single-PRD group: want exactly 1 warning, got %d: %v", len(single), single)
+	}
+	sw := single[0]
+	if n := strings.Count(sw, "p1"); n != 1 {
+		t.Errorf("single-PRD warning names %q %d times, want once: %q", "p1", n, sw)
+	}
+	for _, want := range []string{"qwen3.8:27b", "opencode", "claude-code"} {
+		if !strings.Contains(sw, want) {
+			t.Errorf("single-PRD warning %q does not name %q", sw, want)
+		}
+	}
+}
+
 func TestPairingWarnings_VerificationMismatchWarns(t *testing.T) {
 	cfg := Config{VerificationBackend: "claude-code", VerificationModel: "ollama/qwen3.8:27b"}
 	got := PairingWarnings(cfg, nil)

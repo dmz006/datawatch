@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log"
 	"sort"
-	"strings"
 )
 
 // PairingWarnings reports, in plain language, each autonomous model setting
@@ -59,15 +58,38 @@ func planningPairingWarning(cfg Config, decomposeBackend string, prdIDs []string
 		cfg.PlanningModel, cfg.PlanningBackend, prdNoun(prdIDs), decomposeBackend)
 }
 
-// prdNoun renders the PRD IDs as "PRD x" or "PRDs x, y".
+// prdNoun renders the PRD IDs as one noun: "PRD x" for a single PRD,
+// "PRDs x, y" for two, and for more than three the first three IDs plus a
+// count of the rest ("PRDs p1, p2, p3, and 2 more"). Each ID is listed at
+// most once, so a long group stays one compact warning instead of a long list.
 func prdNoun(ids []string) string {
+	ids = dedupeStrings(ids)
 	if len(ids) == 0 {
 		return "a PRD"
 	}
 	if len(ids) == 1 {
 		return "PRD " + ids[0]
 	}
-	return "PRDs " + strings.Join(ids, ", ")
+	if len(ids) == 2 {
+		return "PRDs " + ids[0] + ", " + ids[1]
+	}
+	return fmt.Sprintf("PRDs %s, %s, %s, and %d more",
+		ids[0], ids[1], ids[2], len(ids)-3)
+}
+
+// dedupeStrings returns ids with duplicates removed, keeping first
+// occurrence order.
+func dedupeStrings(ids []string) []string {
+	seen := make(map[string]bool, len(ids))
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		out = append(out, id)
+	}
+	return out
 }
 
 // prdFinishedForPairing reports whether a PRD has reached a state where it
