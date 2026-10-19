@@ -16,6 +16,12 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+// wsTestFrameTimeout bounds a single WS read in tests. It is generous
+// (~10x the old 3 s hard-coded deadline) and well above actual frame
+// delivery time, since frames are enqueued on the hub before the read
+// begins; the bound only guards against a genuinely stuck read.
+const wsTestFrameTimeout = 30 * time.Second
+
 // newSessionStreamServer starts a hub + /ws endpoint with the given
 // server.ws_session_list_default.
 func newSessionStreamServer(t *testing.T, listDefault string) (*Server, *httptest.Server) {
@@ -44,7 +50,7 @@ func dialSessionStream(t *testing.T, srv *httptest.Server) *websocket.Conn {
 
 func readWSFrame(t *testing.T, conn *websocket.Conn) WSMessage {
 	t.Helper()
-	_ = conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+	_ = conn.SetReadDeadline(time.Now().Add(wsTestFrameTimeout))
 	_, b, err := conn.ReadMessage()
 	if err != nil {
 		t.Fatalf("read: %v", err)
@@ -354,6 +360,16 @@ func TestWSSessionStream_SummaryView(t *testing.T) {
 func TestWSSessionStream_ConfigDefaultDelta(t *testing.T) {
 	s, srv := newSessionStreamServer(t, "delta")
 	conn := dialSessionStream(t, srv)
+	// Wait for the client to actually register on the hub so the
+	// broadcast below is ordered against the read that follows, instead
+	// of assuming a wall-clock bound.
+	deadline := time.Now().Add(wsTestFrameTimeout)
+	for s.hub.ClientCount() < 1 {
+		if time.Now().After(deadline) {
+			t.Fatalf("client never registered: ClientCount = %d", s.hub.ClientCount())
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 	s.hub.BroadcastSessions([]*session.Session{testSession("a", "one", session.StateRunning)})
 	frames := drainUntilSentinel(t, s.hub, conn)[0]
 	// No connect-time list and no sessions frames, only the delta.
