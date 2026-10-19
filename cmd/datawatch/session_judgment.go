@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	alertspkg "github.com/dmz006/datawatch/internal/alerts"
 	autonomouspkg "github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/inference"
@@ -259,6 +260,11 @@ func runOneShotJSONSessionWithEffort(cfg *config.Config, prdID, projectDir, back
 	tick := time.NewTicker(3 * time.Second)
 	defer tick.Stop()
 	waitingInputTicks := 0
+	// Session idle detector (autonomous.session_idle_timeout_seconds):
+	// idleSince is when the session was first seen parked in waiting_input in
+	// the current unbroken run.
+	idleLimit := time.Duration(config.NormalizeSessionIdleTimeoutSeconds(cfg.Autonomous.SessionIdleTimeoutSeconds)) * time.Second
+	var idleSince time.Time
 	for {
 		select {
 		case <-ctx.Done():
@@ -280,7 +286,8 @@ func runOneShotJSONSessionWithEffort(cfg *config.Config, prdID, projectDir, back
 			pollResp.Body.Close() //nolint:errcheck
 
 			var s struct {
-				State string `json:"state"`
+				State       string `json:"state"`
+				TmuxSession string `json:"tmux_session"`
 			}
 			if err := json.Unmarshal(pollBody, &s); err != nil {
 				continue
@@ -307,6 +314,35 @@ func runOneShotJSONSessionWithEffort(cfg *config.Config, prdID, projectDir, back
 			if stalled {
 				fmt.Printf("[%s] %s state=waiting_input for %d ticks — killing; one-shot session cannot answer\n", sessionName, startOut.ID, waitingInputTicks)
 				return "", &autonomouspkg.OneShotNoOutputError{Msg: fmt.Sprintf("one-shot %s session %s ended with state waiting_input without producing output (backend=%s, model=%q)", role, startOut.ID, backend, model)}
+			}
+			// Session idle detector: a one-shot verifier parked in
+			// waiting_input with no live runner child past the budget
+			// will never write its output. Returning here fires the
+			// deferred kill above, and the infra error feeds the retry budget.
+			if s.State != "waiting_input" {
+				idleSince = time.Time{}
+			} else {
+				if idleSince.IsZero() {
+					idleSince = time.Now()
+				}
+				if idleFor := time.Since(idleSince); idleFor > idleLimit {
+					_, outputAge, _ := staleWorkerCheck(outputFile, idleLimit, time.Now())
+					idleObs := autonomouspkg.SessionIdleObservation{
+						SessionID:           startOut.ID,
+						Backend:             backend,
+						Model:               model,
+						State:               s.State,
+						IdleFor:             idleFor,
+						OutputAge:           outputAge,
+						HasLiveChildProcess: hasLiveChildProcess(s.TmuxSession),
+						Limit:               idleLimit,
+					}
+					if idleStalled, idleReason := idleObs.Stalled(); idleStalled {
+						alertspkg.EmitSystem(alertspkg.LevelError, "Verifier session idle without completion",
+							fmt.Sprintf("prd=%s session=%s backend=%s model=%s: %s", prdID, startOut.ID, backend, model, idleReason))
+						return "", autonomouspkg.SessionIdleError(idleObs)
+					}
+				}
 			}
 			switch s.State {
 			case "complete":

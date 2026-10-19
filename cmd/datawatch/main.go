@@ -4572,6 +4572,12 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				var stallErr error
 				waitTick := 0
 				waitingInputTicks := 0
+				// Session idle detector (autonomous.session_idle_timeout_seconds):
+				// idleSince is when the session was first seen parked in
+				// waiting_input in the current unbroken run; the probe only runs
+				// once that run exceeds idleLimit.
+				idleLimit := time.Duration(config.NormalizeSessionIdleTimeoutSeconds(cfg.Autonomous.SessionIdleTimeoutSeconds)) * time.Second
+				var idleSince time.Time
 				// Genuine worker-stall bound (see staleWorkerCheck): the log file's own
 				// mtime, not session liveness state, which a cosmetic pane change can
 				// refresh without any real output.
@@ -4639,6 +4645,39 @@ func runStart(cmd *cobra.Command, _ []string) error {
 							_ = mgr.Kill(task.SessionID)
 							stallErr = fmt.Errorf("worker stopped and asked an interactive question instead of completing the one-shot task — this is a one-shot run, no one will answer; make the most reasonable judgment call yourself (e.g. if output already exists from a prior attempt, verify it's still correct and either finish or redo it) and continue to DATAWATCH_COMPLETE without asking: %w", autonomouspkg.ErrWorkerStalled)
 							break waitLoop
+						}
+						// Session idle detector: a session parked in waiting_input
+						// with no live runner child past the configured budget
+						// will never complete on its own. The probe only runs once
+						// the idle run has outlived the limit.
+						if s.State != session.StateWaitingInput {
+							idleSince = time.Time{}
+						} else {
+							if idleSince.IsZero() {
+								idleSince = time.Now()
+							}
+							if idleFor := time.Since(idleSince); idleFor > idleLimit {
+								_, outputAge, _ := staleWorkerCheck(staleLogPath, idleLimit, time.Now())
+								idleObs := autonomouspkg.SessionIdleObservation{
+									SessionID:           task.SessionID,
+									Backend:             s.BackendFamily,
+									Model:               s.Model,
+									State:               string(s.State),
+									IdleFor:             idleFor,
+									OutputAge:           outputAge,
+									HasLiveChildProcess: hasLiveChildProcess(s.TmuxSession),
+									Limit:               idleLimit,
+								}
+								if idleStalled, idleReason := idleObs.Stalled(); idleStalled {
+									log.Printf("[autonomous] session idle detector fired for %s task %s/%s: %s; killing for retry",
+										task.SessionID, task.PRDID, task.ID, idleReason)
+									_ = mgr.Kill(task.SessionID)
+									alertspkg.EmitSystem(alertspkg.LevelError, "Task session idle without completion",
+										fmt.Sprintf("prd=%s task=%s: %s", prd.ID, task.Title, idleReason))
+									stallErr = autonomouspkg.SessionIdleError(idleObs)
+									break waitLoop
+								}
+							}
 						}
 						// Every ~30s scan scrollback for SSE stall patterns that
 						// indicate opencode's Ollama connection timed out and the
