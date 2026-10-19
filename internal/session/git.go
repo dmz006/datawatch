@@ -183,21 +183,23 @@ func (g *ProjectGit) stagedOnly() bool {
 }
 
 // PreSessionCommit creates a snapshot commit before the session starts.
-// scope are the session's effective write directories. nil/empty
-// preserves baseline behavior — the whole dirty tree is staged, with a
-// warning: the pre-session snapshot is designed to capture pre-existing
-// dirt (the pinned Start() test contract), so the run's later completion
-// commit diffs only against that baseline. Completion auto-commits bound
-// unscoped staging to the run via SetRunStart instead.
-func (g *ProjectGit) PreSessionCommit(sessionID, task string, scope []string) error {
+// prdID and taskTitle name the snapshot; the subject comes from
+// snapshotSubject, e.g. "snapshot before task <title> (PRD <prdShortID>)",
+// and never contains the worker prompt. scope are the session's effective
+// write directories. nil/empty preserves baseline behavior — the whole
+// dirty tree is staged, with a warning: the pre-session snapshot is
+// designed to capture pre-existing dirt (the pinned Start() test
+// contract), so the run's later completion commit diffs only against that
+// baseline. Completion auto-commits bound unscoped staging to the run via
+// SetRunStart instead.
+func (g *ProjectGit) PreSessionCommit(prdID, taskTitle string, scope []string) error {
 	if err := g.stageChanges(scope); err != nil {
 		return err
 	}
 	if !g.stagedOnly() {
 		return nil // nothing to commit
 	}
-	msg := fmt.Sprintf("pre-session[%s]: %s", sessionID, truncateStr(task, 60))
-	return runGit(g.dir, "commit", "-m", msg)
+	return runGit(g.dir, "commit", "-m", snapshotSubject(prdID, taskTitle))
 }
 
 // PostSessionCommit creates a final commit after the session ends.

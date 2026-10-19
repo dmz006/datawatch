@@ -1741,7 +1741,7 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		// Validation gate: only PRD-owned one-shots snapshot-commit here. An
 		// ad-hoc one-shot must not commit operator work on its own.
 		if projGit.IsRepo() && opt.PRDID != "" {
-			if err := projGit.PreSessionCommit("", task, opt.WriteScope); err != nil {
+			if err := projGit.PreSessionCommit(opt.PRDID, opt.TaskTitle, opt.WriteScope); err != nil {
 				fmt.Printf("[warn] pre-session commit: %v\n", err)
 			}
 		}

@@ -87,6 +87,21 @@ func promptSignature(prompt string) string {
 	return ""
 }
 
+// snapshotSubject names the pre-session snapshot commit. The result is
+// "snapshot before task <title> (PRD <prdShortID>)", with the PRD part
+// omitted when prdID is empty. The title is collapsed to one line and capped
+// at 120 runes; a blank title becomes "snapshot before session work".
+func snapshotSubject(prdID, taskTitle string) string {
+	subject := "snapshot before task " + normalizeCommitTitle(taskTitle)
+	if strings.TrimSpace(taskTitle) == "" {
+		subject = "snapshot before " + commitFallbackTitle
+	}
+	if short := prdShortID(prdID); short != "" {
+		subject += " (PRD " + short + ")"
+	}
+	return subject
+}
+
 // normalizeCommitTitle collapses a title to one line and caps it at 120
 // runes. A blank title becomes "session work".
 func normalizeCommitTitle(title string) string {
