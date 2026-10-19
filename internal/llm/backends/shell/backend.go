@@ -80,5 +80,5 @@ func (b *Backend) Launch(ctx context.Context, task, tmuxSession, projectDir, log
 			cmd = fmt.Sprintf("cd '%s' && PROMPT_COMMAND='' PS1='datawatch:\\w$ ' %s --norc", escapedDir, shell)
 		}
 	}
-	return exec.CommandContext(ctx, "tmux", "send-keys", "-t", tmuxSession, cmd, "Enter").Run()
+	return llm.SendKeys(ctx, tmuxSession, cmd)
 }

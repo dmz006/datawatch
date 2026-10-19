@@ -148,7 +148,7 @@ func buildInteractiveCmd(binary, model, sessionID, task, projectDir, tmuxSession
 // LaunchResume with the same ID reattaches to it.
 func (b *Backend) Launch(ctx context.Context, task, tmuxSession, projectDir, logFile string) error {
 	cmd := buildInteractiveCmd(b.binary, b.model, b.sessionName, task, projectDir, tmuxSession)
-	return exec.CommandContext(ctx, "tmux", "send-keys", "-t", tmuxSession, cmd, "Enter").Run()
+	return llm.SendKeys(ctx, tmuxSession, cmd)
 }
 
 // LaunchResume implements llm.Resumable: resumes (or, per pi's own
@@ -159,7 +159,7 @@ func (b *Backend) LaunchResume(ctx context.Context, task, tmuxSession, projectDi
 		id = b.sessionName
 	}
 	cmd := buildInteractiveCmd(b.binary, b.model, id, task, projectDir, tmuxSession)
-	return exec.CommandContext(ctx, "tmux", "send-keys", "-t", tmuxSession, cmd, "Enter").Run()
+	return llm.SendKeys(ctx, tmuxSession, cmd)
 }
 
 // PromptBackend runs pi in --print (non-interactive, run-to-completion)
@@ -200,7 +200,7 @@ func (b *PromptBackend) Version() string { return versionOf(b.binary) }
 // one-shot task).
 func (b *PromptBackend) Launch(ctx context.Context, task, tmuxSession, projectDir, logFile string) error {
 	cmd := buildLaunchCmd(b.binary, b.model, task, projectDir, tmuxSession)
-	return exec.CommandContext(ctx, "tmux", "send-keys", "-t", tmuxSession, cmd, "Enter").Run()
+	return llm.SendKeys(ctx, tmuxSession, cmd)
 }
 
 // buildLaunchCmd builds the shell command string sent to tmux. Pulled out
