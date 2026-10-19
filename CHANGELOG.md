@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.21 — judge verdicts are judged once, and unscoped sessions commit only their own work
+
+### Fixed
+- A guardrail or decompose judge that has already written its output file is judged exactly once on that output. If the output cannot be read as a verdict, the failure is reported naming what went wrong and no second judge is spawned to re-read it; a judge session that ends without producing any output still gets its single bounded automatic retry.
+- A session with no write scope no longer stages the whole repository for its auto-commit. It stages only the files its own run changed, and the log warning names those files — pre-existing untracked files in the same worktree are no longer swept into a session's commit.
+- Version bump 9.5.18 -> 9.5.21 (cmd/datawatch/main.go + internal/server/api.go kept identical).
+
 ## v9.5.18 — autonomous: warn when a PRD model name looks like it belongs to another backend, once per PRD
 
 The autonomous status stops warning when a planning model with a provider tag (for example an `ollama/...` model) is set for a pi or pi-prompt session, because those backends forward the model name to their configured provider — the warning now appears only when the named backend cannot serve the model at all. Pairing warnings also improved: each affected PRD is now named once with the reason instead of a long list of ids.
