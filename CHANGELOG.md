@@ -3,7 +3,7 @@
 All notable changes to datawatch will be documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## v9.5.22 — a retried task whose work already landed is judged by its own verification script
+## v9.5.24 — a retried task whose work already landed is judged by its own verification script
 
 ### Fixed
 - **A retried task whose work an earlier attempt already committed is no longer failed as "no changes detected".** Instead, the task's own verification script is run against the current tree: a passing script completes the task, and the completion is recorded as an audit note.
