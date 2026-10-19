@@ -14222,6 +14222,8 @@ const GENERAL_CONFIG_FIELDS = [
     // Foreign-file drift: off = warn-only; on = a task whose commit swept in
     // pre-existing uncommitted files it didn't plan is blocked.
     { key: 'autonomous.block_on_file_drift', label: 'Block on file drift', labelKey: 'settings_block_on_file_drift', type: 'toggle' },
+    // Pre-spawn task scope lint: off = skip, warn = report only, enforce = block a task whose spec fails the lint.
+    { key: 'autonomous.scope_lint', label: 'Task scope lint', labelKey: 'settings_scope_lint', type: 'select', options: ['off', 'warn', 'enforce'] },
     // Phase 3 (v5.26.62) — per-story approval gate. When ON, PRD
     // approval transitions every story to "awaiting_approval" and
     // the runner skips those until the operator approves each

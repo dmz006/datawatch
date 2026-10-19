@@ -1642,6 +1642,7 @@
   "settings_capacity_wait_timeout": "Capacity wait timeout (sec, 0=4h)",
   "settings_ci_watch_timeout": "CI watch timeout (sec, 0=25m)",
   "settings_block_on_file_drift": "Block on file drift",
+  "settings_scope_lint": "Task scope lint",
   "settings_capacity_gpu_util": "Hold tasks while node GPU is above (% util, 0=off)",
   "settings_planning_effort": "Planning effort",
   "settings_verification_effort": "Verification effort",
