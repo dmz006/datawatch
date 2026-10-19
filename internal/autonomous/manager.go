@@ -1724,8 +1724,10 @@ func (m *Manager) EditPRDFields(id, title, spec, actor string) (*PRD, error) {
 // While blocked, only a failed or blocked task may be edited: the point is
 // to patch the one stuck task, not to replan its pending siblings. A
 // completed task's spec is immutable in every PRD status, since it is the
-// record of work already done. Records a Decision so the timeline shows
-// the edit.
+// record of work already done. A failed PRD accepts an edit only for a task
+// that failed the pre-spawn scope lint (isScopeLintFailure), so that task can
+// be corrected and retried without widening PRD dirs or recreating the PRD.
+// Records a Decision so the timeline shows the edit.
 func (m *Manager) EditTaskSpec(prdID, taskID, newSpec, actor string) (*PRD, error) {
 	if err := m.checkInjectionGuard("task spec edit", newSpec); err != nil {
 		return nil, err
@@ -1734,8 +1736,8 @@ func (m *Manager) EditTaskSpec(prdID, taskID, newSpec, actor string) (*PRD, erro
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
 	}
-	if prd.Status != PRDNeedsReview && prd.Status != PRDRevisionsAsked && prd.Status != PRDCancelled && prd.Status != PRDBlocked {
-		return nil, fmt.Errorf("prd %q status %q is locked; only needs_review / revisions_asked / cancelled / blocked accept task edits", prdID, prd.Status)
+	if prd.Status != PRDNeedsReview && prd.Status != PRDRevisionsAsked && prd.Status != PRDCancelled && prd.Status != PRDBlocked && prd.Status != PRDFailed {
+		return nil, fmt.Errorf("prd %q status %q is locked; only needs_review / revisions_asked / cancelled / blocked / failed (scope-lint tasks only) accept task edits", prdID, prd.Status)
 	}
 	found := false
 	for si := range prd.Story {
@@ -1750,6 +1752,9 @@ func (m *Manager) EditTaskSpec(prdID, taskID, newSpec, actor string) (*PRD, erro
 						ts = TaskPending
 					}
 					return nil, fmt.Errorf("task %q status %q cannot be edited while prd %q is blocked; only failed or blocked tasks can be patched in place", taskID, ts, prdID)
+				}
+				if prd.Status == PRDFailed && !isScopeLintFailure(&prd.Story[si].Tasks[ti]) {
+					return nil, fmt.Errorf("prd %q status %q is locked for task %q; a failed prd only accepts edits to a task that failed the pre-spawn scope lint", prdID, prd.Status, taskID)
 				}
 				prd.Story[si].Tasks[ti].Spec = newSpec
 				prd.Story[si].Tasks[ti].UpdatedAt = time.Now()

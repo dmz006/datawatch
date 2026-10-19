@@ -289,6 +289,17 @@ func TaskScopeBlock(prd *PRD, t *Task) string {
 	return renderScopeBlock(prd.ReadDirs, ResolveTaskProjectDir(prd, t), EffectiveTaskWriteDirs(prd, t))
 }
 
+// scopeLintErrorPrefix is the Task.Error prefix the executor writes when the
+// pre-spawn scope lint rejects a task (see executor.go, "scope: %s (task not
+// spawned)").
+const scopeLintErrorPrefix = "scope:"
+
+// isScopeLintFailure reports whether t failed only because the pre-spawn scope
+// lint rejected its spec, so the operator can fix the spec in place.
+func isScopeLintFailure(t *Task) bool {
+	return t != nil && t.Status == TaskFailed && strings.HasPrefix(t.Error, scopeLintErrorPrefix)
+}
+
 // ValidateTaskProjectDir checks a per-task ProjectDir override: it must be an
 // absolute path, not the filesystem root or a top-level system dir, and must
 // sit inside the PRD's declared WriteDirs when there are any.
