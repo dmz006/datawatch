@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.17 — fix(test): the WebSocket delta test no longer fails under parallel load
+
+### Fixed
+
+- **The live WebSocket session stream no longer looks flaky when its test runs in parallel with the rest of the suite.** The underlying issue was the test's own fixed 3-second wait being too tight under scheduler load, so a good stream could be reported as unreliable. The wait now waits for the actual delivery event and uses a generous bounded timeout instead of assuming a hard 3 s window; there is no behavior change to the daemon or the streaming protocol.
+- Version bump 9.5.15 -> 9.5.16 (cmd/datawatch/main.go + internal/server/api.go kept identical).
 ## v9.5.16 — fix: prd-create no longer defaults the project directory to the current directory
 
 ### Fixed
