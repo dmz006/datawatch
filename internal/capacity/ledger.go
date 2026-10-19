@@ -16,6 +16,33 @@ import (
 // ErrWaitTimeout is returned by Acquire when the wait exceeds its timeout.
 var ErrWaitTimeout = errors.New("capacity wait timed out")
 
+// Role classifies the work behind a request for dispatch ordering.
+type Role string
+
+const (
+	// RoleVerifier is a verifier or guardrail session for a task that already
+	// has finished work. It is granted before worker and planner requests.
+	RoleVerifier Role = "verifier"
+	// RoleWorker is an ordinary task session. It is the zero-value role.
+	RoleWorker Role = "worker"
+	// RolePlanner is a planning or decomposition session. It waits behind
+	// verifiers and workers.
+	RolePlanner Role = "planner"
+)
+
+// rank orders roles for dispatch; lower is granted first. The zero value and
+// any unknown role rank as RoleWorker so existing callers keep their order.
+func (r Role) rank() int {
+	switch r {
+	case RoleVerifier:
+		return 0
+	case RolePlanner:
+		return 2
+	default:
+		return 1
+	}
+}
+
 // Request describes one admission request.
 type Request struct {
 	Holder   string   // lease owner, normally the task id
@@ -24,6 +51,7 @@ type Request struct {
 	Pools    []string // all must have room (all-or-nothing)
 	Node     string   // primary compute node, for model affinity
 	Model    string   // model wanted, for model affinity
+	Role     Role     // dispatch rank; zero value means RoleWorker
 }
 
 // Lease is a held slot set.
@@ -204,8 +232,9 @@ func (l *Ledger) holdersLocked(pool string) string {
 	return strings.Join(hs, ",")
 }
 
-// orderLocked sorts waiters into grant order: priority, aged waiters,
-// model affinity, least-recently-served PRD, then FIFO.
+// orderLocked sorts waiters into grant order: role (verifier, worker,
+// planner), priority, aged waiters, model affinity, least-recently-served
+// PRD, then FIFO.
 func (l *Ledger) orderLocked(now time.Time) []*waiter {
 	ws := append([]*waiter(nil), l.waiters...)
 	aged := func(w *waiter) bool { return now.Sub(w.since) >= l.opt.AgeOverride }
@@ -214,6 +243,9 @@ func (l *Ledger) orderLocked(now time.Time) []*waiter {
 	}
 	sort.SliceStable(ws, func(i, j int) bool {
 		a, b := ws[i], ws[j]
+		if ra, rb := a.req.Role.rank(), b.req.Role.rank(); ra != rb {
+			return ra < rb
+		}
 		if a.req.Priority != b.req.Priority {
 			return a.req.Priority > b.req.Priority
 		}

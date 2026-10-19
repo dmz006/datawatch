@@ -334,3 +334,100 @@ func TestAdoptIsIdempotent(t *testing.T) {
 		t.Fatal("lease still held after release")
 	}
 }
+
+// waitQueued polls until n requests are waiting, so the test controls the
+// order in which waiters enter the queue instead of relying on sleeps.
+func waitQueued(t *testing.T, l *Ledger, n int) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for len(l.Snapshot().Waiting) < n {
+		if time.Now().After(deadline) {
+			t.Fatalf("only %d of %d waiters queued", len(l.Snapshot().Waiting), n)
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+// Role ranks a waiter ahead of others in the same pool: verifier before
+// worker before planner, ahead of priority. A zero-value role is a worker.
+func TestRoleOrdersWaitersWhenPoolFrees(t *testing.T) {
+	tests := []struct {
+		name  string
+		queue []Request // queued in this order behind a full pool
+		want  string    // holder granted first once capacity frees
+	}{
+		{
+			name: "verifier queued after planner is granted first",
+			queue: []Request{
+				{Holder: "plan", PRDID: "P", Role: RolePlanner},
+				{Holder: "verify", PRDID: "V", Role: RoleVerifier},
+			},
+			want: "verify",
+		},
+		{
+			name: "worker queued after planner outranks it",
+			queue: []Request{
+				{Holder: "plan", PRDID: "P", Role: RolePlanner},
+				{Holder: "work", PRDID: "W", Role: RoleWorker},
+			},
+			want: "work",
+		},
+		{
+			name: "verifier queued after worker is granted first",
+			queue: []Request{
+				{Holder: "work", PRDID: "W", Role: RoleWorker},
+				{Holder: "verify", PRDID: "V", Role: RoleVerifier},
+			},
+			want: "verify",
+		},
+		{
+			name: "role beats priority: low-priority worker beats high-priority planner",
+			queue: []Request{
+				{Holder: "plan", PRDID: "P", Priority: 10, Role: RolePlanner},
+				{Holder: "work", PRDID: "W", Priority: 0, Role: RoleWorker},
+			},
+			want: "work",
+		},
+		{
+			name: "zero-value role ranks as worker, ahead of planner",
+			queue: []Request{
+				{Holder: "plan", PRDID: "P", Role: RolePlanner},
+				{Holder: "legacy", PRDID: "L"},
+			},
+			want: "legacy",
+		},
+		{
+			name: "same role falls through to priority",
+			queue: []Request{
+				{Holder: "low", PRDID: "L", Priority: 0, Role: RoleVerifier},
+				{Holder: "high", PRDID: "H", Priority: 5, Role: RoleVerifier},
+			},
+			want: "high",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			l := New(fast())
+			l.SetLimit("p", 1)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			if err := l.Acquire(ctx, Request{Holder: "seed", PRDID: "S", Pools: []string{"p"}}, time.Second, nil, nil); err != nil {
+				t.Fatal(err)
+			}
+			granted := make(chan string, len(tc.queue))
+			for i, req := range tc.queue {
+				req.Pools = []string{"p"}
+				go func(req Request) {
+					if err := l.Acquire(ctx, req, 5*time.Second, nil, nil); err == nil {
+						granted <- req.Holder
+					}
+				}(req)
+				waitQueued(t, l, i+1)
+			}
+			l.Release("seed")
+			if first := <-granted; first != tc.want {
+				t.Fatalf("granted %s first, want %s", first, tc.want)
+			}
+		})
+	}
+}
