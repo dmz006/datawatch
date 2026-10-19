@@ -3,6 +3,13 @@
 All notable changes to datawatch will be documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [Unreleased]
+
+## v9.5.26 — autonomous: honor each backend's delivery mode when typing waiting tasks into tmux
+
+- **One-shot “send the task and wait for it to finish” sessions (pi --print, goose --print, aider) no longer get a second copy of the task typed into their shell (send_input)** — the daemon now asks each backend whether it accepts interactive input before typing a waiting task into the pane, so a backend that only takes its task once, at launch, can never be typed into, even if it is a brand-new backend never added to a list.
+- **Interactive backends (e.g. goose) are unchanged** — waiting one-shot tasks still go to them as before.
+
 ## v9.5.24 — a retried task whose work already landed is judged by its own verification script
 
 ## v9.5.25 — autonomous: resolve tasks left verifying after a restart from the recorded verdict
