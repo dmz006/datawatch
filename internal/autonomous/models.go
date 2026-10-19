@@ -667,6 +667,11 @@ type Task struct {
 	// task's finished attempts, in order (RecordAttemptCommit; duplicates
 	// and empty values are ignored).
 	AttemptCommitSHAs []string `json:"attempt_commit_shas,omitempty"`
+	// AttemptRefs — the git refs (refs/datawatch/attempts/<task>/<n>) that
+	// preserve the working state of this task's killed or stalled attempts,
+	// in order. Appended by recordAttemptSnapshot; the next snapshot uses
+	// len(AttemptRefs)+1 as its attempt number so refs never collide.
+	AttemptRefs []string `json:"attempt_refs,omitempty"`
 	// v8.25.12 — untracked file list (git ls-files --others --exclude-standard)
 	// captured alongside PreTaskSHA. Verifier uses this to detect newly created
 	// files that are not tracked by git (e.g. new documentation, new test fixtures).
