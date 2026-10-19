@@ -3,6 +3,12 @@
 All notable changes to datawatch will be documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## Unreleased
+
+### Added
+- **`autonomous.scope_lint` setting (`off` / `warn` / `enforce`, default `enforce`).** Sets what the pre-spawn scope lint does with a task whose spec or planned files fall outside the Automaton's read and write directories. Available in the config file, the PWA (Settings → Automate → Task scope lint), REST, MCP, the comm channel and the CLI. Placeholder and quoted pattern text is never flagged.
+- **A failed Automaton accepts a spec edit for a task whose only failure is a scope lint rejection.** Other failed tasks and completed tasks stay locked.
+
 ## v9.5.24 — a retried task whose work already landed is judged by its own verification script
 
 ### Fixed
