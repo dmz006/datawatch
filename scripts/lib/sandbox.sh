@@ -87,7 +87,19 @@ _sandbox_validate_dir() {
   # System default socket location: <system temp dir>/tmux-* (e.g. the
   # tmux-<uid> socket folder). Anything under it is production, not throwaway.
   sys_tmp="$(_sandbox_system_tmpdir)"
+  # Resolve symlinks and ".." so a crafted path cannot slip past the matches.
+  dir="$(cd -P -- "$dir" 2>/dev/null && pwd)" || {
+    _sandbox_deny "scratch dir cannot be resolved: $1"
+    return 1
+  }
   if [ -n "$sys_tmp" ]; then
+    sys_tmp="${sys_tmp%/}"
+    # The system temp dir itself would put the socket at the default
+    # <tmp>/tmux-<uid>/default, i.e. the operator's default server.
+    if [ "$dir" = "$sys_tmp" ] || [ "$dir" = "$(cd -P -- "$sys_tmp" 2>/dev/null && pwd)" ]; then
+      _sandbox_deny "$dir is the system temp dir; its tmux-<uid> socket is the default server, which is production, not throwaway"
+      return 1
+    fi
     case "$dir" in
       "$sys_tmp"/tmux-*)
         _sandbox_deny "$dir points at the default tmux-<uid> socket location in the system temp dir ($sys_tmp); that is production, not throwaway"
