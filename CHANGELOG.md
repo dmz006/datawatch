@@ -5,6 +5,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.15 — autonomous: detect a stalled task by activity; keep the work of a killed attempt
+
+### Fixed
+
+- **A busy worker is no longer killed as stalled.** A worker counts as busy while any of these is true: a test run, compiler, or git process is alive; its work directory has recent file changes; or its backend reports activity. Only silence on all three counts for the full limit is treated as a stall.
+- **The default stall limit is 15 minutes, up from 5.** Slow but working tasks now get more room before they are stopped.
+- **The stall failure text names the evidence.** When a worker is stopped, the failure message says which signals were checked and found silent, so you can tell why it was stopped.
+- **A killed attempt's uncommitted work is kept.** Before the next attempt starts, the uncommitted work of the killed attempt is saved to a git ref and restored into the new attempt's work directory. The new setting `preserve_attempt_work` controls this.
+- **A clean restart can be requested.** The new `clean_restart` option makes the next attempt start without restoring the saved work. It is available on the REST reset-task call and the MCP reset tool.
+- **A worker that reports all steps done gets its verification run.** If a worker's checkpoint says every step is complete, its verification script runs before the attempt is counted as failed.
+- Version bump 9.5.11 -> 9.5.12 (cmd/datawatch/main.go + internal/server/api.go kept identical).
 ## v9.5.14 — decompose: depends_on accepts real IDs, sibling titles and positional codes, and bad entries are rejected
 
 - **`depends_on` entries in a decomposed plan are now understood in more than one form:** a real task or story ID, the sibling's title, a positional code like `s1-t2` (task 2 of story 1), `s2` for the second story, or a plain number meaning the Nth story.

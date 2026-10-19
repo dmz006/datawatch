@@ -548,14 +548,16 @@ func (s *Server) toolAutonomousPRDResetTask() mcpsdk.Tool {
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
 		mcpsdk.WithString("task_id", mcpsdk.Required(), mcpsdk.Description("Task ID to reset")),
 		mcpsdk.WithBoolean("force", mcpsdk.Description("Set true to requeue completed or cancelled tasks (not just failed/blocked)")),
+		mcpsdk.WithBoolean("clean_restart", mcpsdk.Description("Set true to start the next attempt from the pre-task tree: the preserved work of earlier attempts is not restored for that one attempt. Default false (restore stays on)")),
 	)
 }
 func (s *Server) handleAutonomousPRDResetTask(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	id := req.GetString("id", "")
 	body, _ := json.Marshal(map[string]any{
-		"task_id": req.GetString("task_id", ""),
-		"actor":   "operator",
-		"force":   req.GetBool("force", false),
+		"task_id":       req.GetString("task_id", ""),
+		"actor":         "operator",
+		"force":         req.GetBool("force", false),
+		"clean_restart": req.GetBool("clean_restart", false),
 	})
 	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/reset_task", body)
 	if err != nil {

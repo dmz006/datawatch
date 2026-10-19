@@ -114,7 +114,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "9.5.14"
+var Version = "9.5.15"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -4407,33 +4407,44 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			// BL447: req.ProjectDir is the task's resolved dir (executor sets
 			// it via resolveTaskProjectDir), so SHA/untracked/dirty capture
 			// anchors to the override repo, never the PRD dir.
-			if req.ProjectDir != "" {
-				// v8.36.7 — see ensureProjectDirOwnGitRepo's doc comment
-				// (verifier_diff.go): prevents a worker's `git add -A`
-				// from silently staging the operator's whole home
-				// directory when the project dir has no git repo of its
-				// own. Found live on PRD a2833a5e.
-				if home, herr := os.UserHomeDir(); herr == nil {
-					ensureProjectDirOwnGitRepo(ctx, req.ProjectDir, home, execGit)
-				}
-				if out, err := exec.CommandContext(ctx, "git", "-C", req.ProjectDir, "rev-parse", "HEAD").Output(); err == nil {
-					preTaskSHA = strings.TrimSpace(string(out))
-				}
-				if out, err := exec.CommandContext(ctx, "git", "-C", req.ProjectDir,
-					"ls-files", "--others", "--exclude-standard").Output(); err == nil {
-					for _, f := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-						if f != "" {
-							preTaskUntrackedFiles = append(preTaskUntrackedFiles, f)
+			// capturePreTask records the pre-task SHA, untracked files and
+			// dirty files. It is a closure so the restore step can run after it.
+			capturePreTask := func() {
+				if req.ProjectDir != "" {
+					// v8.36.7 — see ensureProjectDirOwnGitRepo's doc comment
+					// (verifier_diff.go): prevents a worker's `git add -A`
+					// from silently staging the operator's whole home
+					// directory when the project dir has no git repo of its
+					// own. Found live on PRD a2833a5e.
+					if home, herr := os.UserHomeDir(); herr == nil {
+						ensureProjectDirOwnGitRepo(ctx, req.ProjectDir, home, execGit)
+					}
+					if out, err := exec.CommandContext(ctx, "git", "-C", req.ProjectDir, "rev-parse", "HEAD").Output(); err == nil {
+						preTaskSHA = strings.TrimSpace(string(out))
+					}
+					if out, err := exec.CommandContext(ctx, "git", "-C", req.ProjectDir,
+						"ls-files", "--others", "--exclude-standard").Output(); err == nil {
+						for _, f := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+							if f != "" {
+								preTaskUntrackedFiles = append(preTaskUntrackedFiles, f)
+							}
 						}
 					}
-				}
-				// Foreign-file drift — tracked files already modified
-				// (unstaged or staged via git diff --cached) before the
-				// worker starts. Skipped for a PRD-owned worktree.
-				if !req.SkipDirtyCapture {
-					preTaskDirtyFiles = autonomouspkg.CapturePreTaskDirtyFiles(ctx, req.ProjectDir, nil)
+					// Foreign-file drift — tracked files already modified
+					// (unstaged or staged via git diff --cached) before the
+					// worker starts. Skipped for a PRD-owned worktree.
+					if !req.SkipDirtyCapture {
+						preTaskDirtyFiles = autonomouspkg.CapturePreTaskDirtyFiles(ctx, req.ProjectDir, nil)
+					}
 				}
 			}
+			// Attempt-work restore (preserve_attempt_work). It runs after the
+			// capture above so restored files are not reported as drift, and before
+			// the worker starts. Cluster workers run on another host, so the local
+			// project dir is never restored for them.
+			restoreAttemptWorkBeforeSpawn(ctx, req.ProjectDir, req.AttemptRefs,
+				cfg.Autonomous.PreserveAttemptWorkEnabled() && strings.TrimSpace(req.ClusterProfile) == "",
+				req.CleanRestart, capturePreTask, autonomouspkg.RestoreAttemptWork)
 			// v5.26.19 — F10 cluster profile dispatch. When the PRD
 			// declares a cluster_profile, spawn a worker via the F10
 			// agents endpoint instead of a local tmux session. The
@@ -4566,10 +4577,18 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			// state before verifying. Previously verify fired immediately
 			// after spawn, so the verifier saw no git diff and the session
 			// kept running indefinitely after the PRD completed.
+			// BL447: diff/evidence/judgment anchor to the task's resolved dir —
+			// the same dir SpawnRequest.ProjectDir captured PreTaskSHA in.
+			// Resolved before the wait loop so its stall check reads the same dir.
+			taskDir := autonomouspkg.ResolveTaskProjectDir(prd, task)
 			if task.SessionID != "" && mgr != nil {
 				tick := time.NewTicker(3 * time.Second)
 				defer tick.Stop()
 				var stallErr error
+				// doneVerdict is set when a stall is overridden because the worker's
+				// checkpoint and verification script show the work already finished.
+				var doneVerdict *autonomouspkg.VerificationResult
+				var stallScriptOutput string
 				waitTick := 0
 				waitingInputTicks := 0
 				// Session idle detector (autonomous.session_idle_timeout_seconds):
@@ -4687,17 +4706,71 @@ func runStart(cmd *cobra.Command, _ []string) error {
 								if pat, matched := matchSSEStallPattern(sb); matched {
 									log.Printf("[autonomous] SSE stall detected in session %s task %s/%s (%q); killing for retry",
 										task.SessionID, task.PRDID, task.ID, pat)
-									_ = mgr.Kill(task.SessionID)
+									killStalledWorker(ctx, mgr, autonomousMgrRef, cfg.Autonomous.PreserveAttemptWorkEnabled(), taskDir, task, task.SessionID)
 									stallErr = fmt.Errorf("opencode SSE stall detected (%q): %w", pat, autonomouspkg.ErrWorkerStalled)
 									break waitLoop
 								}
 							}
-							if stale, since, serr := staleWorkerCheck(staleLogPath, staleThreshold, time.Now()); staleWorkerAppliesTo(family) && serr == nil && stale {
-								log.Printf("[autonomous] worker stall detected in session %s task %s/%s (no output for %s); killing for retry",
-									task.SessionID, task.PRDID, task.ID, since.Round(time.Second))
-								_ = mgr.Kill(task.SessionID)
-								stallErr = fmt.Errorf("worker produced no output for %s (stale_task_seconds=%ds): %w", since.Round(time.Second), int(staleThreshold.Seconds()), autonomouspkg.ErrWorkerStalled)
-								break waitLoop
+							if staleWorkerAppliesTo(family) {
+								// The log mtime is one of four signals (see
+								// workerActivityEvidence). A worker that changed files
+								// in its work dir, still has a live runner child, or
+								// whose backend was active within the threshold is not
+								// stalled, even with a silent log.
+								obs := workerStallObservation{
+									LogPath:   staleLogPath,
+									WorkDir:   taskDir,
+									Threshold: staleThreshold,
+									Now:       time.Now(),
+									ChildAlive: func() bool {
+										return hasLiveChildProcess(s.TmuxSession)
+									},
+									BackendBusy: func() bool {
+										return !s.LastChannelEventAt.IsZero() && time.Since(s.LastChannelEventAt) <= staleThreshold
+									},
+								}
+								if isStalled, reason := decideWorkerStall(obs); isStalled {
+									log.Printf("[autonomous] worker stall detected in session %s task %s/%s (%s); checking CHECKPOINT.md before killing",
+										task.SessionID, task.PRDID, task.ID, reason)
+									// A worker whose checkpoint says every step is done and whose
+									// verification script passes finished its work; it only stopped
+									// talking. Accept that attempt instead of retrying it.
+									commitDone := func() error {
+										if !session.NewProjectGit(taskDir).IsRepo() {
+											return nil
+										}
+										summary := ""
+										if tail, terr := mgr.TailOutput(s.FullID, 200); terr == nil {
+											summary = session.ExtractCompletionSummary(tail)
+										}
+										sha, cerr := session.NewProjectGit(taskDir).CommitSessionWork(s.ID, s.Task, summary, s.WriteScope)
+										if cerr != nil {
+											return cerr
+										}
+										if sha != "" && autonomousMgrRef != nil {
+											if rerr := autonomousMgrRef.RecordTaskAttemptCommit(task.PRDID, task.ID, sha); rerr != nil {
+												log.Printf("[autonomous] verifier: RecordTaskAttemptCommit(%s/%s): %v", task.PRDID, task.ID, rerr)
+											}
+										}
+										return nil
+									}
+									if vr, scriptOut, done := doneCheckpointVerify(mgr, task.SessionID, readDoneCheckpoint(taskDir), task.VerificationScript, taskDir, commitDone); done {
+										log.Printf("[autonomous] worker stall in session %s task %s/%s: checkpoint reports all steps done and verification script passed; accepting attempt",
+											task.SessionID, task.PRDID, task.ID)
+										doneVerdict = &vr
+										break waitLoop
+									} else if scriptOut != "" {
+										stallScriptOutput = scriptOut
+									}
+									log.Printf("[autonomous] worker stall detected in session %s task %s/%s (%s); killing for retry",
+										task.SessionID, task.PRDID, task.ID, reason)
+									killStalledWorker(ctx, mgr, autonomousMgrRef, cfg.Autonomous.PreserveAttemptWorkEnabled(), taskDir, task, task.SessionID)
+									stallErr = workerStallError(reason, staleThreshold)
+									if stallScriptOutput != "" {
+										stallErr = fmt.Errorf("%w; task verification script output: %s", stallErr, stallScriptOutput)
+									}
+									break waitLoop
+								}
 							}
 						}
 					}
@@ -4751,13 +4824,13 @@ func runStart(cmd *cobra.Command, _ []string) error {
 						}
 					}
 				}
+				if doneVerdict != nil {
+					return *doneVerdict, nil
+				}
 				if stallErr != nil {
 					return autonomouspkg.VerificationResult{}, stallErr
 				}
 			}
-			// BL447: diff/evidence/judgment anchor to the task's resolved dir —
-			// the same dir SpawnRequest.ProjectDir captured PreTaskSHA in.
-			taskDir := autonomouspkg.ResolveTaskProjectDir(prd, task)
 			// BL366 — git-diff grounding: capture the worker's actual change.
 			// v8.25.9: when PreTaskSHA is set, an empty diff is a hard failure —
 			// the session made no changes, so the task cannot be verified as done.

@@ -190,7 +190,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "9.5.14"
+var Version = "9.5.15"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -629,6 +629,9 @@ type AutonomousAPI interface {
 	// v8.23.0 — reset a failed/blocked task to pending for retry.
 	// BL382 — force=true also requeues completed/cancelled tasks.
 	ResetTask(prdID, taskID, actor string, force bool) (any, error)
+	// clean_restart — as ResetTask, and cleanRestart=true makes the next
+	// attempt skip the restore of preserved attempt work.
+	ResetTaskWithOptions(prdID, taskID, actor string, force, cleanRestart bool) (any, error)
 	// v8.36.6 — repair DependsOn titles to real IDs on an existing PRD.
 	RepairDependsOn(prdID, actor string) (any, error)
 	// BL382 — cancel an individual story or task without cancelling the whole PRD.
@@ -5602,6 +5605,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"per_prd_guardrails":            s.cfg.Autonomous.PerPRDGuardrails, // rules-review, ci-watch
 			"block_on_file_drift":           s.cfg.Autonomous.BlockOnFileDrift, // strict foreign-file-drift enforcement
 			"stale_task_seconds":            s.cfg.Autonomous.StaleTaskSeconds,
+			"preserve_attempt_work":         s.cfg.Autonomous.PreserveAttemptWorkEnabled(),
 			"auto_fix_retries":              s.cfg.Autonomous.AutoFixRetries,
 			"verifier_diff_max_bytes":       s.cfg.Autonomous.VerifierDiffMaxBytes,
 			"security_scan":                 s.cfg.Autonomous.SecurityScan,
@@ -7028,6 +7032,10 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		case "autonomous.stale_task_seconds":
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.Autonomous.StaleTaskSeconds = n
+			}
+		case "autonomous.preserve_attempt_work":
+			if b, ok := v.(bool); ok {
+				cfg.Autonomous.PreserveAttemptWork = &b
 			}
 		case "autonomous.auto_fix_retries":
 			if n, ok := toInt(v); ok && n >= 0 {

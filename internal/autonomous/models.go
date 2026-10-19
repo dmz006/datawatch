@@ -597,6 +597,13 @@ type Task struct {
 	// the first attempt (0) is invisible on the wire; no existing client
 	// relied on its absence to mean something.
 	PriorAttemptCount int `json:"prior_attempt_count,omitempty"`
+	// CleanRestart — set by an operator reset (ResetTaskWithOptions with
+	// cleanRestart=true) to ask that the next attempt start from the pre-task
+	// tree instead of restoring the last preserved attempt work (AttemptRefs).
+	// The spawn path skips the restore for that one attempt and clears the flag
+	// once the attempt has run, so automatic retries after it restore again.
+	// Default false: restore stays on.
+	CleanRestart bool `json:"clean_restart,omitempty"`
 	// FailureReason (BL410 Phase 1) — structured, categorized detail
 	// alongside Error (a bare string, left untouched for existing
 	// readers). Set on the task's last failed/blocked attempt.
@@ -667,6 +674,11 @@ type Task struct {
 	// task's finished attempts, in order (RecordAttemptCommit; duplicates
 	// and empty values are ignored).
 	AttemptCommitSHAs []string `json:"attempt_commit_shas,omitempty"`
+	// AttemptRefs — the git refs (refs/datawatch/attempts/<task>/<n>) that
+	// preserve the working state of this task's killed or stalled attempts,
+	// in order. Appended by recordAttemptSnapshot; the next snapshot uses
+	// len(AttemptRefs)+1 as its attempt number so refs never collide.
+	AttemptRefs []string `json:"attempt_refs,omitempty"`
 	// v8.25.12 — untracked file list (git ls-files --others --exclude-standard)
 	// captured alongside PreTaskSHA. Verifier uses this to detect newly created
 	// files that are not tracked by git (e.g. new documentation, new test fixtures).

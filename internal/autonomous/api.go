@@ -501,7 +501,10 @@ func (a *API) EditTaskSpec(prdID, taskID, newSpec, actor string) (any, error) {
 	return out, err
 }
 func (a *API) ResetTask(prdID, taskID, actor string, force bool) (any, error) {
-	out, err := a.M.ResetTask(prdID, taskID, actor, force)
+	return a.ResetTaskWithOptions(prdID, taskID, actor, force, false)
+}
+func (a *API) ResetTaskWithOptions(prdID, taskID, actor string, force, cleanRestart bool) (any, error) {
+	out, err := a.M.ResetTaskWithOptions(prdID, taskID, actor, force, cleanRestart)
 	if err == nil {
 		a.M.EmitPRDUpdate(prdID)
 	}

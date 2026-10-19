@@ -2070,8 +2070,13 @@ type AutonomousConfig struct {
 	// CapacityGPUUtilPct holds new tasks back while a node's busiest GPU is at
 	// or above this utilisation percent (0 = off).
 	CapacityGPUUtilPct int `yaml:"capacity_gpu_util_pct,omitempty" json:"capacity_gpu_util_pct,omitempty"`
-	// StaleTaskSeconds — 0 inherits session.stale_timeout_seconds.
+	// StaleTaskSeconds — default 900 seconds. A zero or negative value
+	// inherits session.stale_timeout_seconds.
 	StaleTaskSeconds int `yaml:"stale_task_seconds,omitempty" json:"stale_task_seconds,omitempty"`
+	// PreserveAttemptWork keeps a failed attempt's worktree changes around
+	// so the next attempt can build on them. Nil (unset) means true; use
+	// PreserveAttemptWorkEnabled rather than dereferencing the pointer.
+	PreserveAttemptWork *bool `yaml:"preserve_attempt_work,omitempty" json:"preserve_attempt_work,omitempty"`
 	// AutoFixRetries — how many times to re-prompt on verifier failure.
 	AutoFixRetries int `yaml:"auto_fix_retries,omitempty" json:"auto_fix_retries,omitempty"`
 	// VerifierDiffMaxBytes caps the git diff injected into the verifier
@@ -2217,7 +2222,13 @@ type AutonomousConfig struct {
 	Notify AutonomousNotifyConfig `yaml:"notify" json:"notify"`
 }
 
-// AutonomousNotifyConfig — autonomous.notify sub-config. DefaultEvents
+// PreserveAttemptWorkEnabled reports whether failed-attempt work is kept.
+// An unset (nil) PreserveAttemptWork means true.
+func (a AutonomousConfig) PreserveAttemptWorkEnabled() bool {
+	return a.PreserveAttemptWork == nil || *a.PreserveAttemptWork
+}
+
+// AutonomousNotifyConfig —autonomous.notify sub-config. DefaultEvents
 // is the global default set of lifecycle event kinds the built-in
 // lifecycle sinks subscribe to (see
 // internal/autonomous/lifecycle_event.go: KindPRDUpdated
@@ -2681,6 +2692,7 @@ func DefaultConfig() *Config {
 		Autonomous: AutonomousConfig{
 			AutoFixRetries:     1,
 			MaxConcurrentTasks: 1,
+			StaleTaskSeconds:   900,
 			// BL410 Phase 1 — see AutonomousConfig.RetryPolicy's doc
 			// comment for why "content"/"policy" are absent here.
 			RetryPolicy:             map[string]int{"infra": 4, "scope": 0},
