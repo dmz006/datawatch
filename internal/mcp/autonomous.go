@@ -566,7 +566,7 @@ func (s *Server) handleAutonomousPRDResetTask(_ context.Context, req mcpsdk.Call
 
 func (s *Server) toolAutonomousPRDRepairDependsOn() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_prd_repair_depends_on",
-		mcpsdk.WithDescription("v8.36.6 — resolve any DependsOn entries still stuck as raw decompose titles (rather than real story/task IDs) on an existing PRD. Only needed for PRDs whose SetStories call predates the v8.36.5 fix, where dependency ordering was never actually enforced; a no-op if the PRD is already resolved."),
+		mcpsdk.WithDescription("v8.36.6 — resolve DependsOn entries in an existing PRD: entries may be given as real story/task IDs, sibling story/task titles, or positional codes (e.g. 's1-t2' = the 2nd task in story 1; a plain number means the Nth story, 1-based). Full-resolution-or-nothing: if any entry is unresolvable/unknown or the resolved plan has a dependency cycle, the call is rejected, the error names the exact bad entry (or the cycle), and nothing is partially persisted. A no-op if the PRD is already resolved."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
 	)
 }

@@ -456,8 +456,8 @@ type Manager struct {
 	// defaultCIRerun, ciPollInterval → 30s, ciFollowUpDelay → the
 	// ci-watch timeout (ciWatchTimeout). Injectable so tests never shell
 	// out to the real git/gh binaries or wait real minutes.
-	ciGitFn      func(ctx context.Context, projectDir string) (headSHA, originURL string, pushed bool, err error)
-	ciGitSHAFn   func(ctx context.Context, projectDir, sha string) (originURL string, pushed bool, err error)
+	ciGitFn         func(ctx context.Context, projectDir string) (headSHA, originURL string, pushed bool, err error)
+	ciGitSHAFn      func(ctx context.Context, projectDir, sha string) (originURL string, pushed bool, err error)
 	ciRunsFn        func(ctx context.Context, ownerRepo, sha string) ([]CIWatchRun, error)
 	ciRerunFn       func(ctx context.Context, ownerRepo string, runID int64) error
 	ciPollInterval  time.Duration
@@ -1149,6 +1149,21 @@ func (m *Manager) Decompose(prdID string) (*PRD, error) {
 			m.failDecomposeAttempt(prd, "verification-script-coverage", verr)
 			return nil, verr
 		}
+		// SetStories is where depends_on gets resolved + validated: it
+		// rejects the whole plan (naming the exact bad entry or the
+		// cycle, storing nothing) when a reference can't be resolved. That
+		// is a content rejection, so it takes the same retry-then-fail
+		// path as the checks above. The only other error SetStories can
+		// return is "prd not found", which cannot happen here (this PRD
+		// was just loaded and is alive in the store for the duration of
+		// this call), so every SetStories failure takes this branch.
+		if err := m.store.SetStories(prdID, s); err != nil {
+			if m.retryDecomposeFailure(prd, "content", "decompose-depends-on", err.Error()) {
+				continue
+			}
+			m.failDecomposeAttempt(prd, "decompose-depends-on", err)
+			return nil, err
+		}
 		raw, title, stories = r, t, s
 		prd.LastDecomposeFailure = nil // success — clear the single-use hint
 		prd.DecomposeSessionFailures = 0
@@ -1171,9 +1186,9 @@ func (m *Manager) Decompose(prdID string) (*PRD, error) {
 		Actor:         "autonomous",
 	})
 	prd.ScopeWarnings = LintPlanScope(prd, stories)
-	if err := m.store.SetStories(prdID, stories); err != nil {
-		return nil, err
-	}
+	// SetStories (with depends_on resolution + validation) already ran
+	// inside the retry loop above — the decompose-depends-on branch; the
+	// stories are stored and only the PRD record itself needs saving now.
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
 	}
@@ -1323,6 +1338,16 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (*PRD, 
 			m.failDecomposeAttempt(prd, "verification-script-coverage", verr)
 			return nil, verr
 		}
+		// SetStories + depends_on validation — see Decompose()'s identical
+		// block for the full rationale; kept in sync here rather than risk
+		// a drifted duplicate.
+		if err := m.store.SetStories(prdID, s); err != nil {
+			if m.retryDecomposeFailure(prd, "content", "decompose-depends-on", err.Error()) {
+				continue
+			}
+			m.failDecomposeAttempt(prd, "decompose-depends-on", err)
+			return nil, err
+		}
 		raw, title, stories = r, t, s
 		prd.LastDecomposeFailure = nil // success — clear the single-use hint
 		prd.DecomposeSessionFailures = 0
@@ -1342,9 +1367,9 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (*PRD, 
 		Actor:         "autonomous",
 	})
 	prd.ScopeWarnings = LintPlanScope(prd, stories)
-	if err := m.store.SetStories(prdID, stories); err != nil {
-		return nil, err
-	}
+	// SetStories (with depends_on resolution + validation) already ran
+	// inside the retry loop above — the decompose-depends-on branch; the
+	// stories are stored and only the PRD record itself needs saving now.
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
 	}
