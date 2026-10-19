@@ -14159,6 +14159,7 @@ const GENERAL_CONFIG_FIELDS = [
   // to the operator docs. Field-level config stays YAML/REST/CLI.
   { id: 'autonomous', section: 'Autonomous Automata planning', docs: 'howto/autonomous-planning.md', fields: [
     { key: 'autonomous.enabled', label: 'Enable autonomous loop', type: 'toggle' },
+    { key: 'autonomous.tmux_kill_guard', label: 'Worker tmux kill guard', labelKey: 'settings_tmux_kill_guard', type: 'toggle' },
     { key: 'autonomous.poll_interval_seconds', label: 'Poll interval (sec)', type: 'number', placeholder: '30' },
     { key: 'autonomous.max_concurrent_tasks', label: 'Max concurrent tasks per Automaton (1 = one at a time)', labelKey: 'settings_max_concurrent_tasks', type: 'number', placeholder: '1' },
     { key: 'autonomous.capacity_enabled', label: 'Capacity-aware admission (wait for free slots instead of failing)', labelKey: 'settings_capacity_enabled', type: 'toggle' },
