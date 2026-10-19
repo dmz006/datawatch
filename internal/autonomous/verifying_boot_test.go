@@ -14,6 +14,7 @@ package autonomous
 //   - live session → stays TaskVerifying, not reset
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -143,6 +144,96 @@ func TestResetInProgressVerifying(t *testing.T) {
 			t.Fatalf("live session task must not be reset/completed, CompletedAt=%v", *task.CompletedAt)
 		}
 	})
+}
+
+func TestBootVerifyingDecisionLog(t *testing.T) {
+	// Auditable boot-time resolution: each PRD with orphaned verifying tasks
+	// resolved must carry exactly one verifying_resolution Decision naming
+	// how many completed vs re-queued; a PRD with nothing resolvable must not
+	// gain a spurious entry. Covers both boot passes.
+	entryCount := func(got *PRD) int {
+		n := 0
+		for _, d := range got.Decisions {
+			if d.Kind == "verifying_resolution" {
+				n++
+			}
+		}
+		return n
+	}
+
+	okVerdictStory := func() []Story {
+		return []Story{
+			{Title: "story", Tasks: []Task{
+				{Title: "task", Status: TaskVerifying, SessionID: "sess-dead",
+					Verification: &VerificationResult{OK: true, Summary: "looks good", VerifierID: "ver-1"}},
+			}},
+		}
+	}
+
+	resolvable := func(t *testing.T, stories []Story, boot func(m *Manager, prd *PRD)) (*Manager, *PRD) {
+		t.Helper()
+		m, prd := verifyingBootManager(t, stories)
+		m.SetSessionAliveFn(func(string) bool { return false })
+		boot(m, prd)
+		return m, prd
+	}
+
+	drive := func(t *testing.T, name string, boot func(m *Manager, prd *PRD)) {
+		t.Helper()
+
+		t.Run(name+"_records_exactly_one_verifying_resolution", func(t *testing.T) {
+			m, prd := resolvable(t, okVerdictStory(), boot)
+			got, _ := m.Store().GetPRD(prd.ID)
+
+			task := got.Story[0].Tasks[0]
+			if task.Status != TaskCompleted {
+				t.Fatalf("want terminal TaskCompleted, got %q", task.Status)
+			}
+
+			n := entryCount(got)
+			if n != 1 {
+				t.Fatalf("want exactly 1 verifying_resolution decision, got %d: %+v", n, got.Decisions)
+			}
+			var d *Decision
+			for i := range got.Decisions {
+				if got.Decisions[i].Kind == "verifying_resolution" {
+					d = &got.Decisions[i]
+					break
+				}
+			}
+			if d.Actor != "autonomous" {
+				t.Fatalf("want Actor autonomous, got %q", d.Actor)
+			}
+			if d.Note == "" || !strings.Contains(d.Note, "1") {
+				t.Fatalf("note must name the resolved counts, got %q", d.Note)
+			}
+			if d.At.IsZero() {
+				t.Fatal("verifying_resolution decision must carry a timestamp")
+			}
+		})
+
+		t.Run(name+"_nothing_resolvable_no_spurious_entry", func(t *testing.T) {
+			// Only a pending task with no session and a live verifying task:
+			// nothing is an orphaned-with-dead-session verifying task.
+			m, prd := verifyingBootManager(t, []Story{
+				{Title: "story", Tasks: []Task{
+					{Title: "pending", Status: TaskPending},
+					{Title: "livever", Status: TaskVerifying, SessionID: "sess-alive",
+						Verification: &VerificationResult{OK: true, Summary: "looks good"}},
+				}},
+			})
+			before := entryCount(prd)
+			m.SetSessionAliveFn(func(id string) bool { return id == "sess-alive" })
+			boot(m, prd)
+			got, _ := m.Store().GetPRD(prd.ID)
+			if entryCount(got) != before {
+				t.Fatalf("no verifying_resolution entry expected, got %+v", got.Decisions)
+			}
+		})
+	}
+
+	drive(t, "reset-resume", func(m *Manager, prd *PRD) { m.resetInProgressTasksForResume(prd) })
+	drive(t, "daemon-start", func(m *Manager, prd *PRD) { m.reconcileStuckTasks() })
 }
 
 func TestReconcileStuckVerifying(t *testing.T) {
