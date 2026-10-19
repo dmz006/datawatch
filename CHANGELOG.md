@@ -3,6 +3,12 @@
 All notable changes to datawatch will be documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## 9.5.10
+
+### Fixed
+
+- PRD set_llm (autonomous_prd_set_llm, POST /api/autonomous/prds/{id}/set_llm, datawatch prd-set-llm, comm autonomous set-llm) no longer clears LLM fields the caller did not pass: an omitted field is left unchanged and only an explicitly empty value clears that field. The PRD decision log now lists exactly which fields each call changed.
+
 ## [Unreleased]
 
 ## v9.5.10 — autonomous: detect a worker or verifier session sitting idle
