@@ -350,8 +350,8 @@ stop_test_daemon() {
   fi
   # Kill any tmux sessions the test daemon created (cs-dw-e2e-test-*).
   # The hostname comes from testdata/datawatch.yaml (hostname: dw-e2e-test).
-  tmux list-sessions -F '#{session_name}' 2>/dev/null | grep '^cs-dw-e2e-test-' | \
-    while read -r s; do tmux kill-session -t "$s" 2>/dev/null || true; done
+  env -u TMUX tmux list-sessions -F '#{session_name}' 2>/dev/null | grep '^cs-dw-e2e-test-' | \
+    while read -r s; do env -u TMUX tmux kill-session -t "$s" 2>/dev/null || true; done
 }
 
 stop_second_test_daemon() {

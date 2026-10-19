@@ -356,8 +356,8 @@ except Exception:
     wait "$TEST_DAEMON_PID" 2>/dev/null || true
   fi
   # Kill any tmux sessions the smoke daemon created (cs-dw-smoke-test-*).
-  tmux list-sessions -F '#{session_name}' 2>/dev/null | grep '^cs-dw-smoke-test-' | \
-    while read -r s; do tmux kill-session -t "$s" 2>/dev/null || true; done
+  env -u TMUX tmux list-sessions -F '#{session_name}' 2>/dev/null | grep '^cs-dw-smoke-test-' | \
+    while read -r s; do env -u TMUX tmux kill-session -t "$s" 2>/dev/null || true; done
   if [[ -n "${KEEP_TEST_DIR:-}" ]]; then
     echo "Test data kept: $TEST_WORK_DIR"
   else
