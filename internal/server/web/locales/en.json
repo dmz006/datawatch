@@ -1248,6 +1248,7 @@
   "settings_observer_open_btn_title": "Open Observer view: shape A/B/C config + Federated Peers card + per-peer stats",
   "settings_observer_section": "Federated Observer",
   "settings_orphaned_tmux": "Orphaned tmux sessions",
+  "settings_tmux_kill_guard": "When on, worker/verifier/judge sessions spawned by the daemon are blocked from killing the operator's tmux server. Off = no guard.",
   "settings_finished_oneshots": "Finished one-shot sessions",
   "settings_finished_oneshots_none": "No finished one-shot sessions.",
   "settings_finished_oneshots_open": "finished one-shot session(s) still open.",
