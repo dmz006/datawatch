@@ -48,7 +48,7 @@ BL431's open question 14, and BL405 Phase 7.
 | 3 | BL455 Fix B126: a retry can record the wrong pre-task SHA, producing a false "no output" failure on real, correctly-committed work | failed (PRD `2713dbb9`); retry PRD `6b99f00f` is in needs_review. This is the next critical-path item: BL431 Phase 1 (row 9) waits on it | - |
 | 4 | **BL462** A running PRD task's session must not be impacted by a daemon restart/update | not started (PRD `c96f2104`, draft) — **operator priority**, blocks safely updating the daemon during active work | - |
 | 5 | **BL463** MCP connection reliability, session isolation clarity, error-mode parity with REST | not started (PRD `bf78e50a`, draft) — every spawned session depends on MCP as its primary interface | - |
-| 6 | **BL464** Execute/build session names need a function prefix (`autonomous:task:` to match `autonomous:verify:`/`autonomous:decompose`) | not started (PRD `dc6c597b`, draft; the earlier `e303d88d` was cancelled) — small, real observability fix | - |
+| 6 | **BL464** Execute/build session names need a function prefix (`autonomous:task:` to match `autonomous:verify:`/`autonomous:decompose`) | not started (cancelled PRD `dc6c597b` (its plan kept releasing 9.1.9 after two revisions; the naming fix is already on main), draft; the earlier `e303d88d` was cancelled) — small, real observability fix | - |
 
 ### Stage B: the Automaton execution engine
 
