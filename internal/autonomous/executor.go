@@ -209,7 +209,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 	// rather than registering a pseudo-entry in BackendArtifacts (which
 	// QueryAllStatus assumes is exclusively real backends).
 	if isFirstRun && prd.ProjectDir != "" {
-		if _, err := tooling.EnsureIgnoredPatterns(prd.ProjectDir, []string{".decompose-output-*.json", "CHECKPOINT.md"}); err != nil {
+		if _, err := tooling.EnsureIgnoredPatterns(prd.ProjectDir, append([]string{".decompose-output-*.json", "CHECKPOINT.md"}, tooling.DefaultPythonArtifactPatterns...)); err != nil {
 			log.Printf("[autonomous] EnsureIgnoredPatterns for %s: %v", prd.ProjectDir, err)
 		}
 		// 2026-10-15 — BL449 incident: a task with its own ProjectDir
@@ -225,7 +225,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 					continue
 				}
 				seen[dir] = true
-				if _, err := tooling.EnsureIgnoredPatterns(dir, []string{".decompose-output-*.json", "CHECKPOINT.md"}); err != nil {
+				if _, err := tooling.EnsureIgnoredPatterns(dir, append([]string{".decompose-output-*.json", "CHECKPOINT.md"}, tooling.DefaultPythonArtifactPatterns...)); err != nil {
 					log.Printf("[autonomous] EnsureIgnoredPatterns for task dir %s: %v", dir, err)
 				}
 			}
