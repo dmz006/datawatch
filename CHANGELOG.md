@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.9 — fix(restart): PRD capacity and subprocess sessions now survive a daemon restart; restart safety is documented
+
+- **Verified and now documented:** tmux-backed sessions survive a daemon restart with their pane, process, state and output stream intact. The opt-in live restart test (`DW_LIVE_RESTART_TEST=1`) checks this.
+- **Fixed:** a PRD task that was verifying on a live session lost its capacity lease on restart, so the host pool undercounted it. The lease is now re-adopted at boot.
+- **Fixed:** a subprocess session was marked `failed` at boot while its process was still running. The daemon now re-attaches to a still-running process and records its exit status when it ends.
+- **Not covered:** encrypted (`--secure`) sessions do not get their output pipe re-attached at boot. Restart any such session whose output has stopped.
+- **Operations:** `docs/operations.md` § Restart safety states the verified guarantees. The release checklist no longer tells operators to wait for autonomous work to clear before a restart when the task is only verifying.
+- Version bump 9.5.8 -> 9.5.9 (cmd/datawatch/main.go + internal/server/api.go kept identical).
+
 ## v9.5.8 — fix(release): the release-time version check no longer false-fails when a push ends on an automated, version-unchanged task commit
 
 The version check is now range-based: it compares the version at the end of the pushed range to the version at the start of the range (the previous remote head / push base), instead of only checking the last commit against its parent, so an automaton's automated task commits no longer need to bump the version individually as long as the range ends at a strictly higher version. The legacy strict per-commit behavior remains available locally via `VERSION_CHECK_MODE=commit`.

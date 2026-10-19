@@ -153,7 +153,26 @@ datawatch start
 # or: sudo systemctl start datawatch
 ```
 
-Active tmux sessions survive the daemon restart — they are independent OS processes. Sessions in `running` or `waiting_input` state continue uninterrupted. The daemon re-attaches to them on startup by re-scanning tmux.
+Active tmux sessions survive the daemon restart — they are independent OS processes. Sessions in `running` or `waiting_input` state continue uninterrupted, and the daemon re-attaches to them on startup. The exact guarantees, and the cases that do not hold, are in [Restart safety](#restart-safety) below.
+
+### Restart safety
+
+A restart (`systemctl --user restart datawatch`, `datawatch restart`, or a stop and start) does not require waiting for work to finish first, for the tmux-backed sessions that are the default. The table states what is verified and what enforces it.
+
+| What survives a restart | Status | Enforced by |
+|---|---|---|
+| tmux pane and the LLM process inside it | Verified. The pane and process stay up across the restart. | `TestBL462_DaemonRestartSurvivesLive` (opt-in, below) |
+| Session state and output monitoring | Verified. A live session stays `running` or `waiting_input`, and its log keeps growing after the restart (the output pipe is re-attached). | `TestBL462_DaemonRestartSurvivesLive` (opt-in, below) |
+| Capacity-ledger lease for a PRD task on a live session | Fixed. A task in `verifying` on a live session has its lease re-adopted at boot, so the host pool counts it. Before the fix, the lease was dropped and the pool undercounted. | Unit tests `TestAdoptRestoresLeaseOverLimitWithoutWaiting`, `TestAdoptIsIdempotent` and `TestCapacity_BootResumeReadoptsLiveTaskLease`. The live test does not check leases. |
+| Task completion and verification | Observed. A PRD task that was `verifying` on a live session ran to completion after two daemon restarts in the audit. | Live audit only. The live test does not check task completion. |
+
+**Tasks that were mid-run.** A task that was executing (not yet verifying) when the daemon stopped has no session to re-attach to. It is reset at boot and re-run, and it holds no lease to restore. This is the one case where a restart interrupts work: that task starts again from the beginning.
+
+**Subprocess sessions** (`subprocess: true`, no tmux pane). A subprocess session records its process ID and exit status in its session directory. At boot, the daemon re-attaches to a subprocess that is still running and keeps the session `running` until the process exits, then records the exit status. If the process ended while the daemon was down, the recorded status is used. The session is marked `failed` only when the process is gone and no exit status was recorded. This restart behaviour is fixed but not yet confirmed by the live test. A systemd stop or restart kills the daemon's child processes too (the unit's default `KillMode=control-group`), so a subprocess survives only a restart that signals the daemon process alone.
+
+**Encrypted sessions** (`--secure`). Not covered by this guarantee. At boot the daemon does not re-attach the output pipe for encrypted sessions, so their output may stop after a restart. After restarting a `--secure` daemon, check that each session that matters is still producing output, and restart any session whose output has stopped.
+
+**Confirming on a live daemon.** `TestBL462_DaemonRestartSurvivesLive` in `internal/session/restart_safety_live_test.go` restarts a daemon and checks that a live probe session survives it. It is skipped unless `DW_LIVE_RESTART_TEST=1` is set, so `go test ./...` does not run it. It needs `DW_BASE` set to the daemon under test, and it must run on the daemon's host with the same `TMUX_TMPDIR`. The default restart path is `systemctl --user restart datawatch`. Use `DW_LIVE_RESTART_CMD` only for a sandbox daemon that systemd does not manage. Run it against a sandbox, never against production.
 
 ### Data compatibility
 
@@ -637,7 +656,7 @@ export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
 **Prevention:**
 - Use tmux server persistence plugins (e.g. `tmux-resurrect`) to restore tmux sessions across reboots
 - Only restart the daemon, not the whole machine, to preserve running sessions
-- For the daemon itself: `systemctl restart datawatch` preserves tmux sessions; only a machine reboot or `tmux kill-server` loses them
+- For the daemon itself: `systemctl restart datawatch` preserves tmux sessions; only a machine reboot or `tmux kill-server` loses them. Which restart cases are covered, and which are not, is in [Restart safety](#restart-safety)
 
 ### PWA can't connect (port, firewall, Tailscale)
 
