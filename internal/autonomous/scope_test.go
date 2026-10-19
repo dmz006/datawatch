@@ -263,3 +263,37 @@ func TestScope_ExecutorPrependsScopeBlockToSpec(t *testing.T) {
 		t.Fatalf("spec not prefixed with scope block: %q", spec)
 	}
 }
+
+func TestScope_LintSpecProblemNamesTokenLineAndRemedy(t *testing.T) {
+	prd := &PRD{ProjectDir: "/w/proj"}
+	spec := "Step one: summarise the notes.\nStep two: keep the draft in docs/x.md.\nStep three: read /home/dmz/workspace/datawatch/notes.md and summarise it."
+	p := LintTaskScope(prd, "task 't'", spec, nil)
+	if len(p) != 1 {
+		t.Fatalf("want 1 problem, got %v", p)
+	}
+	for _, want := range []string{
+		"/home/dmz/workspace/datawatch/notes.md",
+		"line 3",
+		"edit the task spec to remove or quote it, or widen the PRD read dirs if the task must read it",
+	} {
+		if !strings.Contains(p[0], want) {
+			t.Fatalf("problem %q missing %q", p[0], want)
+		}
+	}
+}
+
+func TestScope_LintPlannedFileNamesPathAndRemedy(t *testing.T) {
+	prd := &PRD{ProjectDir: "/w/proj", ReadDirs: []string{"/w/ref"}}
+	p := LintTaskScope(prd, "task 't'", "x", []string{"/w/ref/f.md"})
+	if len(p) != 1 {
+		t.Fatalf("want 1 problem, got %v", p)
+	}
+	for _, want := range []string{
+		"/w/ref/f.md",
+		"remove it from the task's files or widen the PRD write dirs",
+	} {
+		if !strings.Contains(p[0], want) {
+			t.Fatalf("problem %q missing %q", p[0], want)
+		}
+	}
+}

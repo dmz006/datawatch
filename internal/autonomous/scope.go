@@ -226,7 +226,7 @@ func lintScope(projectDir string, read, write []string, label, spec string, file
 		switch {
 		case filepath.IsAbs(f):
 			if !PathInDirs(f, write) {
-				out = append(out, fmt.Sprintf("%s: planned file %s is outside the writable directories", label, f))
+				out = append(out, fmt.Sprintf("%s: planned file %s is outside the writable directories; remove it from the task's files or widen the PRD write dirs", label, f))
 			}
 		case strings.HasPrefix(filepath.Clean(f), ".."):
 			out = append(out, fmt.Sprintf("%s: planned file %s escapes the project directory", label, f))
@@ -244,7 +244,8 @@ func lintScope(projectDir string, read, write []string, label, spec string, file
 			continue
 		}
 		if !PathInDirs(p, read) {
-			out = append(out, fmt.Sprintf("%s: spec references %s outside the allowed directories", label, p))
+			line := strings.Count(spec[:m[2]], "\n") + 1
+			out = append(out, fmt.Sprintf("%s: spec line %d references %s outside the allowed directories; edit the task spec to remove or quote it, or widen the PRD read dirs if the task must read it", label, line, p))
 		}
 	}
 	return out
