@@ -204,6 +204,9 @@ func (l *Ledger) usedLocked(pool string) int {
 func (l *Ledger) blockReasonLocked(pools []string) string {
 	for _, p := range pools {
 		if lim := l.limits[p]; lim > 0 && l.usedLocked(p) >= lim {
+			if name, ok := strings.CutPrefix(p, "node:"); ok {
+				return fmt.Sprintf("waiting for node %s: %d/%d engines in use, held by %s", name, l.usedLocked(p), lim, l.holdersLocked(p))
+			}
 			return fmt.Sprintf("pool %s full (%d/%d, held by %s)", p, l.usedLocked(p), lim, l.holdersLocked(p))
 		}
 		if l.opt.Backpressure != nil {

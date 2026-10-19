@@ -431,3 +431,39 @@ func TestRoleOrdersWaitersWhenPoolFrees(t *testing.T) {
 		})
 	}
 }
+
+func TestBlockReasonNodePoolNamesNode(t *testing.T) {
+	l := New(fast())
+	l.SetLimit("node:a", 1)
+	ctx := context.Background()
+	if err := l.Acquire(ctx, Request{Holder: "t1", PRDID: "p1", Pools: []string{"node:a"}}, time.Second, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	var reason string
+	err := l.Acquire(ctx, Request{Holder: "t2", PRDID: "p2", Pools: []string{"node:a"}}, 50*time.Millisecond, nil, func(r string) { reason = r })
+	if !errors.Is(err, ErrWaitTimeout) {
+		t.Fatalf("want timeout, got %v", err)
+	}
+	want := "waiting for node a: 1/1 engines in use, held by t1"
+	if reason != want {
+		t.Fatalf("reason = %q, want %q", reason, want)
+	}
+}
+
+func TestBlockReasonHostPoolUnchanged(t *testing.T) {
+	l := New(fast())
+	l.SetLimit("host", 1)
+	ctx := context.Background()
+	if err := l.Acquire(ctx, Request{Holder: "t1", PRDID: "p1", Pools: []string{"host"}}, time.Second, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	var reason string
+	err := l.Acquire(ctx, Request{Holder: "t2", PRDID: "p2", Pools: []string{"host"}}, 50*time.Millisecond, nil, func(r string) { reason = r })
+	if !errors.Is(err, ErrWaitTimeout) {
+		t.Fatalf("want timeout, got %v", err)
+	}
+	want := "pool host full (1/1, held by t1)"
+	if reason != want {
+		t.Fatalf("reason = %q, want %q", reason, want)
+	}
+}
