@@ -1206,7 +1206,7 @@ func (m *Manager) Decompose(prdID string) (*PRD, error) {
 		ResponseChars: len(raw),
 		Actor:         "autonomous",
 	})
-	prd.ScopeWarnings = LintPlanScope(prd, stories)
+	prd.ScopeWarnings = m.planScopeWarnings(prd, stories)
 	// SetStories (with depends_on resolution + validation) already ran
 	// inside the retry loop above — the decompose-depends-on branch; the
 	// stories are stored and only the PRD record itself needs saving now.
@@ -1389,7 +1389,7 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (*PRD, 
 		ResponseChars: len(raw),
 		Actor:         "autonomous",
 	})
-	prd.ScopeWarnings = LintPlanScope(prd, stories)
+	prd.ScopeWarnings = m.planScopeWarnings(prd, stories)
 	// SetStories (with depends_on resolution + validation) already ran
 	// inside the retry loop above — the decompose-depends-on branch; the
 	// stories are stored and only the PRD record itself needs saving now.
@@ -3857,7 +3857,7 @@ func (m *Manager) SetPRDDirs(prdID string, readDirs, writeDirs []string) error {
 	if writeDirs != nil {
 		prd.WriteDirs = cleanDirs(writeDirs)
 	}
-	prd.ScopeWarnings = LintPlanScope(prd, prd.Story)
+	prd.ScopeWarnings = m.planScopeWarnings(prd, prd.Story)
 	prd.UpdatedAt = time.Now()
 	return m.store.SavePRD(prd)
 }

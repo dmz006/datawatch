@@ -2,10 +2,55 @@ package autonomous
 
 import (
 	"fmt"
+	"log"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 )
+
+// Scope-lint modes for Config.ScopeLint, as resolved by
+// config.AutonomousConfig.ScopeLintMode.
+const (
+	scopeLintOff     = "off"
+	scopeLintWarn    = "warn"
+	scopeLintEnforce = "enforce"
+)
+
+// scopeLintMode returns the resolved scope-lint mode. Any value other than
+// off or warn, including the empty value a bare Config carries, is enforce:
+// today's blocking behaviour.
+func (m *Manager) scopeLintMode() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	switch m.cfg.ScopeLint {
+	case scopeLintOff, scopeLintWarn:
+		return m.cfg.ScopeLint
+	}
+	return scopeLintEnforce
+}
+
+// planScopeWarnings is LintPlanScope gated by the scope-lint mode: off leaves
+// ScopeWarnings empty at plan time, warn and enforce record the problems.
+func (m *Manager) planScopeWarnings(prd *PRD, stories []Story) []string {
+	if m.scopeLintMode() == scopeLintOff {
+		return nil
+	}
+	return LintPlanScope(prd, stories)
+}
+
+// recordScopeLintWarn appends a scope_lint_warn Decision for a task that the
+// pre-spawn scope lint flagged in warn mode, then persists the PRD. The task
+// still spawns; the Decision is the operator's record of the flagged scope.
+func (m *Manager) recordScopeLintWarn(prd *PRD, t *Task, problems []string) {
+	prd.Decisions = append(prd.Decisions, Decision{
+		At: time.Now(), Kind: "scope_lint_warn", Actor: "autonomous",
+		Note: "task " + t.ID + ": spawned despite scope lint (warn mode): " + strings.Join(problems, "; "),
+	})
+	if err := m.store.SavePRD(prd); err != nil {
+		log.Printf("[autonomous] %s/%s scope-lint warn: save PRD: %v", prd.ID, t.ID, err)
+	}
+}
 
 // EffectiveWriteDirs returns the directories workers may modify: the PRD's
 // WriteDirs, or its ProjectDir when none are declared.

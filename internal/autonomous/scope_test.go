@@ -297,3 +297,83 @@ func TestScope_LintPlannedFileNamesPathAndRemedy(t *testing.T) {
 		}
 	}
 }
+
+// scopeLintRun runs one task whose spec names a path outside the PRD scope,
+// under the given scope_lint mode, with a fake spawn. It returns the terminal
+// PRD and how many sessions the executor spawned.
+func scopeLintRun(t *testing.T, mode string) (*PRD, int) {
+	t.Helper()
+	m, api, _, verify := apiFixture(t)
+	cfg := m.Config()
+	cfg.ScopeLint = mode
+	m.SetConfig(cfg)
+	prd, _ := m.CreatePRD("s", t.TempDir(), "opencode", "", EffortNormal)
+	_ = m.Store().SetStories(prd.ID, []Story{{Title: "S", Tasks: []Task{{Title: "T", Spec: "work in /home/dmz/workspace/datawatch"}}}})
+	// Plan-time lint: SetPRDDirs re-runs it and fills ScopeWarnings per mode.
+	if err := m.SetPRDDirs(prd.ID, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	spawned := 0
+	spawn := func(context.Context, SpawnRequest) (SpawnResult, error) {
+		spawned++
+		return SpawnResult{SessionID: "x"}, nil
+	}
+	return runToTerminal(t, m, api, prd.ID, spawn, verify), spawned
+}
+
+func hasScopeLintWarnDecision(prd *PRD) bool {
+	for _, d := range prd.Decisions {
+		if d.Kind == "scope_lint_warn" {
+			return true
+		}
+	}
+	return false
+}
+
+func TestScope_ScopeLintOffSkipsLintAndWarnings(t *testing.T) {
+	got, spawned := scopeLintRun(t, scopeLintOff)
+	if spawned != 1 {
+		t.Fatalf("off mode: spawned %d sessions, want 1", spawned)
+	}
+	if hasScopeLintWarnDecision(got) {
+		t.Fatalf("off mode: unexpected scope_lint_warn decision: %+v", got.Decisions)
+	}
+	if len(got.ScopeWarnings) != 0 {
+		t.Fatalf("off mode: ScopeWarnings should be empty, got %v", got.ScopeWarnings)
+	}
+	if got.Status != PRDCompleted {
+		t.Fatalf("off mode: want completed, got %s", got.Status)
+	}
+}
+
+func TestScope_ScopeLintWarnSpawnsAndRecordsDecision(t *testing.T) {
+	got, spawned := scopeLintRun(t, scopeLintWarn)
+	if spawned != 1 {
+		t.Fatalf("warn mode: spawned %d sessions, want 1", spawned)
+	}
+	if !hasScopeLintWarnDecision(got) {
+		t.Fatalf("warn mode: missing scope_lint_warn decision: %+v", got.Decisions)
+	}
+	if len(got.ScopeWarnings) == 0 {
+		t.Fatal("warn mode: ScopeWarnings should still be populated at plan time")
+	}
+	if got.Status != PRDCompleted {
+		t.Fatalf("warn mode: want completed, got %s", got.Status)
+	}
+}
+
+func TestScope_ScopeLintEnforceBlocksWithoutSpawning(t *testing.T) {
+	got, spawned := scopeLintRun(t, scopeLintEnforce)
+	if spawned != 0 {
+		t.Fatalf("enforce mode: out-of-scope task spawned %d sessions", spawned)
+	}
+	if hasScopeLintWarnDecision(got) {
+		t.Fatalf("enforce mode: blocked task must not record scope_lint_warn: %+v", got.Decisions)
+	}
+	if len(got.ScopeWarnings) == 0 {
+		t.Fatal("enforce mode: ScopeWarnings should be populated at plan time")
+	}
+	if got.Status != PRDFailed {
+		t.Fatalf("enforce mode: want failed, got %s", got.Status)
+	}
+}
