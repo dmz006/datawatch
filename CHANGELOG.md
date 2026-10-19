@@ -5,6 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.27 — autonomous: a decompose that fails to persist its outcome is now explicit and retryable
+
+- **A decompose that produced a valid plan but whose final save to the store used to fail silently now shows the failure** — the PRD id and the exact save error are logged.
+- **The decompose output file is kept under a `.failed` name** instead of being discarded, so the produced plan is preserved for inspection.
+- **A visible, retryable decompose failure (infra/persist) is recorded on the PRD** and the PRD is left in draft so it can simply be re-run; no new statuses, fields, or endpoints are introduced.
+- **Save errors on the planning-mark and give-up paths that were previously dropped are now logged.**
+- Version bump 9.5.26 → 9.5.27 (cmd/datawatch/main.go + internal/server/api.go kept identical)
+
 ## v9.5.26 — autonomous: honor each backend's delivery mode when typing waiting tasks into tmux
 
 - **One-shot “send the task and wait for it to finish” sessions (pi --print, goose --print, aider) no longer get a second copy of the task typed into their shell (send_input)** — the daemon now asks each backend whether it accepts interactive input before typing a waiting task into the pane, so a backend that only takes its task once, at launch, can never be typed into, even if it is a brand-new backend never added to a list.
