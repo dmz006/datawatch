@@ -1241,6 +1241,27 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				}
 			}
 		}
+		// setup-fault verdict (three-way retry no-output path): the verdict
+		// is an environment fault, not a task fault. Retrying the identical
+		// setup against an identical environment reproduces the same error, and
+		// TaskFailed would wrongly record a healthy task as failed. Hold the
+		// task exactly the way the guardrail 'block' verdict above holds it
+		// (TaskBlocked, persisted, status emitted, return), consuming none of
+		// the auto_fix_retries budget.
+		if vr.Category == "setup" {
+			oldStatus := t.Status
+			t.Status = TaskBlocked
+			t.Error = vr.Summary
+			t.FailureReason = &FailureReason{
+				Category: "setup", Source: "setup-fault", Retryable: false,
+				Detail: vr.Summary, OccurredAt: time.Now(),
+			}
+			if err := m.store.SaveTask(t); err != nil {
+				return err
+			}
+			m.emitTaskStatus(prd, t, oldStatus, nil, nil)
+			return nil
+		}
 		lastFailureCategory = vr.Category // BL410 Phase 3
 		hint = vr.Summary
 		if len(vr.Issues) > 0 {
