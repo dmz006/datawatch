@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.22 — autonomous: resolve stale 'verifying' tasks at daemon boot
+
+- **After a daemon restart, tasks that were still shown as 'verifying' with no verifier actually running now immediately take their recorded verification result** — a passing verdict shows the task as completed, a failed or missing verdict re-enters the normal retry flow.
+- **Every boot-time resolution is written to the PRD's decision log** (a single entry per boot summarizing how many tasks completed from a recorded ok verdict and how many were re-queued for retry), so the decision is auditable.
+- **The CLI and REST endpoints report the resolved status** instead of a stale 'verifying' label, since status reads go through the same boot-time pass.
+- Version bump 9.5.18 -> 9.5.22 (cmd/datawatch/main.go + internal/server/api.go kept identical).
 ## v9.5.18 — autonomous: warn when a PRD model name looks like it belongs to another backend, once per PRD
 
 The autonomous status stops warning when a planning model with a provider tag (for example an `ollama/...` model) is set for a pi or pi-prompt session, because those backends forward the model name to their configured provider — the warning now appears only when the named backend cannot serve the model at all. Pairing warnings also improved: each affected PRD is now named once with the reason instead of a long list of ids.
