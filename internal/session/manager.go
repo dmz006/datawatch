@@ -369,6 +369,14 @@ type Manager struct {
 	// grace window while the resumed TUI re-renders prior conversation history.
 	restartedAt map[string]time.Time
 
+	// restartTaskOverride marks sessions whose restart carried an explicit
+	// task override (RestartSession called with a non-empty task). Restart's
+	// relaunch block reads and clears the flag to decide whether a
+	// llm.ResumeKeepsTask backend should still receive its stored task (it
+	// did) or get an empty string so the resumed conversation is not
+	// re-prompted with the original long task text. Guarded by mu.
+	restartTaskOverride map[string]bool
+
 	// taskDeliveredAt records when a task was delivered to a OneShot session
 	// via send_input. Used to suppress DATAWATCH_COMPLETE: detection for 5 min
 	// after delivery so the TUI's re-render of the task text itself (which may
@@ -3454,6 +3462,13 @@ func (m *Manager) Restart(ctx context.Context, fullID string) (*Session, error) 
 	case StateComplete, StateFailed, StateKilled:
 		// OK to restart
 	default:
+		// No relaunch is going to happen — drop any pending override flag so
+		// it can't leak into a later legitimate no-override restart.
+		m.mu.Lock()
+		if m.restartTaskOverride != nil {
+			delete(m.restartTaskOverride, sess.FullID)
+		}
+		m.mu.Unlock()
 		return nil, fmt.Errorf("cannot restart session in state %q (must be complete, failed, or killed)", sess.State)
 	}
 
@@ -3605,10 +3620,29 @@ func (m *Manager) Restart(ctx context.Context, fullID string) (*Session, error) 
 	// Backends that support full resumption (e.g. claude-code) can derive their
 	// own session ID from this; backends that don't (e.g. opencode TUI) ignore it.
 	resumeID := sess.FullID
+	// Choose the task text for LaunchResume (under mu): if this restart carried
+	// an explicit task override, sess.Task (the override) is delivered as-is.
+	// Otherwise, for backends implementing llm.ResumeKeepsTask, pass an empty
+	// string: the resumed conversation already holds the original task, so
+	// re-typing a long task into the TUI is both wasteful and can be rejected
+	// by tmux's send-keys length limit. Backends that do NOT implement the
+	// interface keep the current behavior of receiving sess.Task unchanged.
+	m.mu.Lock()
+	hadTaskOverride := m.restartTaskOverride != nil && m.restartTaskOverride[sess.FullID]
+	if hadTaskOverride {
+		delete(m.restartTaskOverride, sess.FullID)
+	}
+	m.mu.Unlock()
+	resumeLaunchTask := sess.Task
+	if !hadTaskOverride {
+		if rk, ok := backendObj.(llm.ResumeKeepsTask); ok && rk.ResumeKeepsTask() {
+			resumeLaunchTask = ""
+		}
+	}
 	var launchErr error
 	if rb, ok := backendObj.(llm.Resumable); ok {
 		m.debugf("restarting %q with resume=%q", backendName, resumeID)
-		launchErr = rb.LaunchResume(ctx, sess.Task, sess.TmuxSession, sess.ProjectDir, logFile, resumeID)
+		launchErr = rb.LaunchResume(ctx, resumeLaunchTask, sess.TmuxSession, sess.ProjectDir, logFile, resumeID)
 	} else if launchFn != nil {
 		m.debugf("restarting %q (no resume support)", backendName)
 		launchErr = launchFn(ctx, sess.Task, sess.TmuxSession, sess.ProjectDir, logFile)
@@ -3691,6 +3725,15 @@ func (m *Manager) RestartSession(ctx context.Context, fullID string, task string
 	// Override task if requested.
 	if task != "" {
 		sess.Task = task
+		// Mark this fullID as restarted-with-override so Restart's relaunch
+		// block delivers the override text even to ResumeKeepsTask backends
+		// (which otherwise get an empty task on no-override resumption).
+		m.mu.Lock()
+		if m.restartTaskOverride == nil {
+			m.restartTaskOverride = make(map[string]bool)
+		}
+		m.restartTaskOverride[sess.FullID] = true
+		m.mu.Unlock()
 	}
 
 	// Delegate to the existing Restart logic (which handles terminal states).
