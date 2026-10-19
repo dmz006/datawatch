@@ -697,6 +697,58 @@ func TestBlockOnFileDrift_YAMLRoundTrip(t *testing.T) {
 	}
 }
 
+func TestDefaultConfig_ScopeLintEnforce(t *testing.T) {
+	if got := DefaultConfig().Autonomous.ScopeLint; got != ScopeLintEnforce {
+		t.Errorf("Autonomous.ScopeLint = %q, want %q", got, ScopeLintEnforce)
+	}
+}
+
+func TestScopeLint_YAMLRoundTrip(t *testing.T) {
+	for _, mode := range []string{ScopeLintOff, ScopeLintWarn, ScopeLintEnforce} {
+		t.Run(mode, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.yaml")
+			if err := os.WriteFile(path, []byte("autonomous:\n  scope_lint: "+mode+"\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			cfg, err := Load(path)
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			if got := cfg.Autonomous.ScopeLintMode(); got != mode {
+				t.Fatalf("loaded ScopeLintMode() = %q, want %q", got, mode)
+			}
+			out := filepath.Join(t.TempDir(), "saved.yaml")
+			if err := Save(cfg, out); err != nil {
+				t.Fatalf("Save: %v", err)
+			}
+			raw, err := os.ReadFile(out)
+			if err != nil {
+				t.Fatal(err)
+			}
+			// yaml.v3 quotes "off" (a YAML 1.1 boolean word), so accept either form.
+			if !strings.Contains(string(raw), "scope_lint: "+mode) && !strings.Contains(string(raw), `scope_lint: "`+mode+`"`) {
+				t.Errorf("saved YAML lacks scope_lint: %s:\n%s", mode, raw)
+			}
+			cfg2, err := Load(out)
+			if err != nil {
+				t.Fatalf("reload: %v", err)
+			}
+			if got := cfg2.Autonomous.ScopeLintMode(); got != mode {
+				t.Errorf("ScopeLintMode() after round-trip = %q, want %q", got, mode)
+			}
+		})
+	}
+}
+
+func TestScopeLintMode_UnknownFallsBackToEnforce(t *testing.T) {
+	for _, value := range []string{"", "   ", "garbage", "on"} {
+		a := AutonomousConfig{ScopeLint: value}
+		if got := a.ScopeLintMode(); got != ScopeLintEnforce {
+			t.Errorf("ScopeLint %q resolved to %q, want %q", value, got, ScopeLintEnforce)
+		}
+	}
+}
+
 // BL428 §3a — autonomous.project_write_serialization /
 // autonomous.refuse_dirty_tree_start (config surface for
 // docs/plans/2026-10-14-concurrency-and-budget-design.md).

@@ -141,6 +141,10 @@ type Config struct {
 	// Default false (opt-in); overridable per GuardrailProfile and per
 	// PRD (resolveBlockOnFileDrift).
 	BlockOnFileDrift bool `json:"block_on_file_drift"`
+	// ScopeLint — the resolved pre-spawn scope-lint mode: "off", "warn"
+	// or "enforce" (config.AutonomousConfig.ScopeLintMode). The executor
+	// and plan-time code read it; enforce is today's blocking behaviour.
+	ScopeLint string `json:"scope_lint"`
 	// VerifierDiffMaxBytes caps the git diff injected into the verifier
 	// prompt for evidence grounding (BL366). 0 = 8192.
 	VerifierDiffMaxBytes int  `json:"verifier_diff_max_bytes,omitempty"`
@@ -312,6 +316,7 @@ func DefaultConfig() Config {
 		InfraRetryEscalateAfter: 2,
 		ContentAutoFixEnabled:   true,
 		BlockOnFileDrift:        false, // opt-in strict drift enforcement
+		ScopeLint:               "enforce",
 		AutoFixSkipApproval:     true,
 	}
 }

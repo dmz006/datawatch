@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -2150,6 +2151,17 @@ type AutonomousConfig struct {
 	// guardrail profile and per Automaton. No omitempty, same
 	// explicit-clear reason as ContentAutoFixEnabled above.
 	BlockOnFileDrift bool `yaml:"block_on_file_drift" json:"block_on_file_drift"`
+	// ScopeLint controls the pre-spawn scope lint that checks a task's
+	// spec or planned files before the task runs. Modes:
+	//   - "off" skips the scope lint entirely.
+	//   - "warn" lints and records problems but never blocks a task.
+	//   - "enforce" blocks a task whose spec or planned files fail the
+	//     lint — today's behaviour, and the default.
+	// Placeholder and quoted pattern text is never flagged in any mode.
+	// An empty or unrecognised value resolves to "enforce" (see
+	// ScopeLintMode), so an existing configuration keeps blocking.
+	// No omitempty, same explicit-clear reason as BlockOnFileDrift above.
+	ScopeLint string `yaml:"scope_lint" json:"scope_lint"`
 
 	// Phase 3 (v5.26.61) — per-story approval gate. Default false
 	// (preserves the v5.26.x behavior where PRD approval auto-
@@ -2230,6 +2242,29 @@ type AutonomousConfig struct {
 // An unset (nil) PreserveAttemptWork means true.
 func (a AutonomousConfig) PreserveAttemptWorkEnabled() bool {
 	return a.PreserveAttemptWork == nil || *a.PreserveAttemptWork
+}
+
+// Scope-lint modes for AutonomousConfig.ScopeLint. See the field's doc
+// comment for what each mode does.
+const (
+	ScopeLintOff     = "off"
+	ScopeLintWarn    = "warn"
+	ScopeLintEnforce = "enforce"
+)
+
+// ScopeLintMode returns the normalised scope-lint mode: the value is
+// trimmed and lower-cased, and anything other than off or warn —
+// including an empty or garbage value — resolves to enforce, so an
+// existing configuration keeps today's blocking behaviour.
+func (a AutonomousConfig) ScopeLintMode() string {
+	switch strings.ToLower(strings.TrimSpace(a.ScopeLint)) {
+	case ScopeLintOff:
+		return ScopeLintOff
+	case ScopeLintWarn:
+		return ScopeLintWarn
+	default:
+		return ScopeLintEnforce
+	}
 }
 
 // AutonomousNotifyConfig —autonomous.notify sub-config. DefaultEvents
@@ -2707,6 +2742,7 @@ func DefaultConfig() *Config {
 			ContentAutoFixEnabled:   true,
 			AutoFixSkipApproval:     true,
 			BlockOnFileDrift:        false, // opt-in strict drift enforcement
+			ScopeLint:               ScopeLintEnforce,
 			// Notify is left as the zero value on purpose: an empty
 			// DefaultEvents list means the built-in lifecycle sinks
 			// subscribe to nothing — zero config = zero behavior change.
