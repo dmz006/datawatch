@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -446,4 +447,70 @@ func TestGetPRDDetailLevels(t *testing.T) {
 			tc.check(t, body)
 		})
 	}
+}
+
+// decodeAnyMap decodes a JSON object into map[string]any so two bodies can be
+// compared with reflect.DeepEqual, which ignores key order.
+func decodeAnyMap(t *testing.T, b []byte) map[string]any {
+	t.Helper()
+	var m map[string]any
+	if err := json.Unmarshal(b, &m); err != nil {
+		t.Fatalf("decode %s: %v", b, err)
+	}
+	return m
+}
+
+// TestPRDRESTDefaultUnchanged is a regression guard: with no view or detail
+// query, the PRD GET route and the reset_task POST route must return the PRD
+// exactly as the manager holds it. It also checks that the spec text reaches
+// the default GET body.
+func TestPRDRESTDefaultUnchanged(t *testing.T) {
+	const specText = "task spec text"
+
+	t.Run("GET no query equals stored PRD", func(t *testing.T) {
+		s, id := newPRDDetailTestServer(t)
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/api/autonomous/prds/"+id, nil)
+		s.handleAutonomousPRDs(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200 (body %q)", rec.Code, rec.Body.String())
+		}
+		stored, ok := s.autonomousMgr.GetPRD(id)
+		if !ok {
+			t.Fatalf("store has no PRD %q", id)
+		}
+		want, err := json.Marshal(stored)
+		if err != nil {
+			t.Fatalf("marshal stored PRD: %v", err)
+		}
+		if got := decodeAnyMap(t, rec.Body.Bytes()); !reflect.DeepEqual(got, decodeAnyMap(t, want)) {
+			t.Errorf("default GET body differs from stored PRD\n got: %s\nwant: %s", rec.Body.String(), want)
+		}
+		if !strings.Contains(rec.Body.String(), specText) {
+			t.Errorf("default GET body does not contain task spec text %q; body %s", specText, rec.Body.String())
+		}
+	})
+
+	t.Run("POST reset_task no view equals stored PRD", func(t *testing.T) {
+		s, id := newPRDDetailTestServer(t)
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/api/autonomous/prds/"+id+"/reset_task", strings.NewReader(`{"task_id":"t1"}`))
+		s.handleAutonomousPRDs(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want 200 (body %q)", rec.Code, rec.Body.String())
+		}
+		stored, ok := s.autonomousMgr.GetPRD(id)
+		if !ok {
+			t.Fatalf("store has no PRD %q", id)
+		}
+		want, err := json.Marshal(stored)
+		if err != nil {
+			t.Fatalf("marshal stored PRD: %v", err)
+		}
+		if got := decodeAnyMap(t, rec.Body.Bytes()); !reflect.DeepEqual(got, decodeAnyMap(t, want)) {
+			t.Errorf("default reset_task body differs from stored PRD\n got: %s\nwant: %s", rec.Body.String(), want)
+		}
+	})
 }
