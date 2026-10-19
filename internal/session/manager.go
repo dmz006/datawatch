@@ -3039,31 +3039,41 @@ func (m *Manager) runSubprocess(sess *Session) {
 }
 
 // subprocessFinish transitions a subprocess session to StateComplete or StateFailed.
+//
+// This runs from the re-attach watcher goroutine, which fires independently
+// of whichever code is currently reading the session (pollers, REST
+// handlers, the test harness). Store.Get returns the shared *Session, so we
+// must never mutate the object it hands back — that is an unsynchronized
+// read/write race on the session's fields. Copy it first: the watcher
+// writes only its copy, and Store.Save swaps the map entry for that copy,
+// so concurrent readers consistently see the old (unmutated) or the new
+// (fully updated) snapshot, never a torn one.
 func (m *Manager) subprocessFinish(sess *Session, runErr error) {
 	current, ok := m.store.Get(sess.FullID)
 	if !ok {
 		return
 	}
-	oldState := current.State
+	snap := *current
+	oldState := snap.State
 	if runErr != nil {
-		current.State = StateFailed
+		snap.State = StateFailed
 	} else {
 		// Run the deterministic completion-commit BEFORE the state is saved
 		// as Complete — same as every other real completion path; a poller
 		// must never observe Complete while the worker's changes are still
 		// uncommitted.
-		m.commitOnCompletion(current, NewProjectGit(current.ProjectDir))
-		current.State = StateComplete
+		m.commitOnCompletion(&snap, NewProjectGit(snap.ProjectDir))
+		snap.State = StateComplete
 	}
-	current.UpdatedAt = time.Now()
-	_ = m.store.Save(current)
+	snap.UpdatedAt = time.Now()
+	_ = m.store.Save(&snap)
 	if m.onStateChange != nil {
-		m.onStateChange(current, oldState)
+		m.onStateChange(&snap, oldState)
 	}
 	if m.onSessionEnd != nil {
-		m.onSessionEnd(current)
+		m.onSessionEnd(&snap)
 	}
-	m.triggerSummarize(current.FullID, 200)
+	m.triggerSummarize(snap.FullID, 200)
 }
 
 // MarkChannelActivityFromText (post-BL266 / v6.11.24) — DEMOTED to
