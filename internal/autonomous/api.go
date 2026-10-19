@@ -234,6 +234,11 @@ func (a *API) SetConfig(v any) error {
 	if err := json.Unmarshal(raw, &cfg); err != nil {
 		return fmt.Errorf("config: %w", err)
 	}
+	// max_engines_per_node is clamped to 1 the same way config load does
+	// (config.Load normalizes anything below 1), so every write path agrees.
+	if cfg.MaxEnginesPerNode < 1 {
+		cfg.MaxEnginesPerNode = 1
+	}
 	a.M.SetConfig(cfg)
 	return nil
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/capacity"
 	"github.com/dmz006/datawatch/internal/config"
+	"github.com/dmz006/datawatch/internal/inference"
 	"github.com/dmz006/datawatch/internal/metrics"
 	"github.com/dmz006/datawatch/internal/server"
 	"github.com/dmz006/datawatch/internal/session"
@@ -43,6 +44,26 @@ var verifierCapacityTryAdmit func(ctx context.Context, backend, model, holder, p
 // wiring runs earlier in main.go, before wireCapacity — callers resolve
 // this var at call time, not at wiring time).
 var councilCapacityAdmit func(ctx context.Context, backend, model, holder, prdID string) (release func(), err error)
+
+// engineNodes maps each inference LLM kind (the provider prefix of a model
+// such as "ollama/qwen3.8:27b") to the compute node that hosts it: the first
+// ComputeNode of the first LLM of that kind. Kinds with no compute node are
+// absent, so autonomous.LocalEngineGate leaves them ungated. A nil registry
+// yields an empty map.
+func engineNodes(reg *inference.Registry) map[string]string {
+	nodes := map[string]string{}
+	if reg == nil {
+		return nodes
+	}
+	for _, l := range reg.List() {
+		kind := string(l.Kind)
+		if _, seen := nodes[kind]; seen || len(l.ComputeNodes) == 0 {
+			continue
+		}
+		nodes[kind] = l.ComputeNodes[0]
+	}
+	return nodes
+}
 
 // wireCapacity creates the admission ledger, connects it to the autonomous
 // manager and the REST surface, and starts the sync loop that keeps pool
@@ -82,15 +103,20 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 
 	keys := func(backend, model string) ([]string, string) {
 		pools := []string{"host"}
-		node := ""
-		if reg := httpServer.InferenceRegistry(); reg != nil {
+		reg := httpServer.InferenceRegistry()
+		if reg != nil {
 			if l, err := reg.Get(backend); err == nil && l != nil {
 				pools = append(pools, "llm:"+l.Name)
-				if len(l.ComputeNodes) > 0 {
-					node = l.ComputeNodes[0]
-					pools = append(pools, "node:"+node)
-				}
 			}
+		}
+		// Only a local-engine session takes a compute node's pool. A
+		// hosted-backend session gets no node pool and no node affinity.
+		node, gated := autonomous.LocalEngineGate(backend, model, func(provider string) (string, bool) {
+			n, ok := engineNodes(reg)[provider]
+			return n, ok
+		})
+		if gated {
+			pools = append(pools, "node:"+node)
 		}
 		return pools, node
 	}
@@ -118,7 +144,7 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 			return func() {}, nil
 		}
 		waitDur := amgr.CapacityWaitDuration()
-		if err := led.Acquire(ctx, capacity.Request{Holder: holder, PRDID: prdID, Pools: pools, Node: node, Model: model}, waitDur, func() bool { return false }, func(string) {}); err != nil {
+		if err := led.Acquire(ctx, capacity.Request{Holder: holder, PRDID: prdID, Pools: pools, Node: node, Model: model, Role: capacity.RoleVerifier}, waitDur, func() bool { return false }, func(string) {}); err != nil {
 			return func() {}, err
 		}
 		return func() { led.Release(holder) }, nil
@@ -154,7 +180,7 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 		if len(pools) == 0 {
 			return func() {}, true
 		}
-		if err := led.Acquire(ctx, capacity.Request{Holder: holder, PRDID: prdID, Pools: pools, Node: node, Model: model}, 150*time.Millisecond, func() bool { return false }, func(string) {}); err != nil {
+		if err := led.Acquire(ctx, capacity.Request{Holder: holder, PRDID: prdID, Pools: pools, Node: node, Model: model, Role: capacity.RoleVerifier}, 150*time.Millisecond, func() bool { return false }, func(string) {}); err != nil {
 			return func() {}, false
 		}
 		return func() { led.Release(holder) }, true
@@ -167,9 +193,27 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 		} else {
 			led.SetLimit("host", 0)
 		}
+		// A compute node that hosts local engines takes its pool limit from
+		// autonomous.max_engines_per_node. The node's own
+		// max_concurrent_sessions stays a ceiling when it is set and smaller.
+		engines := cfg.Autonomous.MaxEnginesPerNode
+		if engines < 1 {
+			engines = 1
+		}
+		hosting := map[string]bool{}
+		for _, node := range engineNodes(httpServer.InferenceRegistry()) {
+			hosting[node] = true
+		}
 		if reg := httpServer.ComputeRegistry(); reg != nil {
 			for _, n := range reg.List() {
-				led.SetLimit("node:"+n.Name, n.MaxConcurrentSessions)
+				limit := n.MaxConcurrentSessions
+				if hosting[n.Name] {
+					limit = engines
+					if n.MaxConcurrentSessions > 0 && n.MaxConcurrentSessions < limit {
+						limit = n.MaxConcurrentSessions
+					}
+				}
+				led.SetLimit("node:"+n.Name, limit)
 				if cfg.Autonomous.CapacityGPUUtilPct > 0 {
 					if u, ok := httpServer.NodeGPUStats(n.Name); ok {
 						gpuMu.Lock()

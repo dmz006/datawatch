@@ -296,6 +296,7 @@ autonomous:
   poll_interval_seconds:  30          # background loop tick
   max_concurrent_tasks:   1           # daemon-wide default: independent tasks of one Automaton run at once (1 = sequential; an Automaton's own setting overrides)
   # max_parallel_tasks is deprecated and ignored (it never had an effect); use max_concurrent_tasks
+  max_engines_per_node:   1           # local-model sessions one compute node runs at once (default 1; below 1 clamps to 1; hosted backends are not gated)
   planning_backend:       ""          # empty = inherit session.llm_backend (BL304; old key decomposition_backend still accepted)
   verification_backend:   ""          # empty = inherit; set differently for cross-backend independence
   planning_effort:        "thorough"  # BL41 effort hint (BL304; old key decomposition_effort still accepted)
@@ -305,6 +306,30 @@ autonomous:
   auto_fix_retries:       1           # re-prompt count on verifier failure
   security_scan:          true        # nightwire-port .py scanner before commit
 ```
+
+### Compute-node engine cap (`max_engines_per_node`)
+
+`autonomous.max_engines_per_node` caps how many local-model sessions one
+compute node runs at once. The default is `1`, and a value below `1` is
+clamped to `1`. Only sessions on a local engine on that node count
+(`pi`, `pi-prompt`, `ollama`, `opencode`, `opencode-acp`); hosted backends
+such as `claude-code` are not gated by it. Sessions past the cap wait with
+the reason `waiting for node <name>`. The operator guide, including queue
+priority, is in `docs/operations.md` → "Compute-node queue".
+
+- **REST:** `PUT /api/config` with `{"autonomous.max_engines_per_node": N}`;
+  `PUT /api/autonomous/config` with `{"max_engines_per_node": N}`. Both
+  read back from `GET /api/config` (`autonomous.max_engines_per_node`) and
+  `GET /api/autonomous/config` (`max_engines_per_node`). The value is
+  persisted to `config.yaml`. Each `node:<name>` pool's `queue_depth` and
+  `holder` are reported by `GET /api/capacity`.
+- **MCP:** `autonomous_config_set` with `max_engines_per_node`. The field
+  is forwarded only when the caller supplies it, so `0` is sent and clamped
+  to `1`. `autonomous_config_get` returns it.
+- **CLI:** `datawatch autonomous config-set '{"max_engines_per_node":2}'`
+  (merges into the config; `config-get` shows it).
+- **Comm:** `configure autonomous.max_engines_per_node=2` (any channel that
+  accepts `configure`; the key is listed in the usage help).
 
 ### Model pairing warnings
 
@@ -329,6 +354,7 @@ cancelled, rejected and archived PRDs are not checked.
 datawatch autonomous status
 datawatch autonomous config-get
 datawatch autonomous config-set '{"enabled":true,"max_concurrent_tasks":2}'   # merges; any deprecated_fields note goes to stderr
+datawatch autonomous config-set '{"max_engines_per_node":2}'                  # local-model sessions per compute node (default 1)
 datawatch autonomous prd-list
 datawatch autonomous prd-create "Add OAuth login with Google + GitHub"
 datawatch autonomous prd-get <id>
@@ -354,7 +380,7 @@ operator-facing AI can drive the autonomous loop end-to-end:
 |---|---|
 | `autonomous_status`         | loop snapshot |
 | `autonomous_config_get`     | read config |
-| `autonomous_config_set`     | merge fields into config (incl. `max_concurrent_tasks`) |
+| `autonomous_config_set`     | merge fields into config (incl. `max_concurrent_tasks` and `max_engines_per_node`) |
 | `autonomous_prd_list`       | list all PRDs |
 | `autonomous_prd_create`     | create draft PRD |
 | `autonomous_prd_get`        | fetch one PRD with tree |
@@ -396,6 +422,9 @@ autonomous set-verification-llm abcd1234 model=
 `autonomous set-llm` / `set-task-llm`; when they are the only settings
 given, no backend positional is needed and the worker LLM is left
 unchanged. `guardrail_model=` with no value clears the override.
+
+The per-node engine cap is a daemon setting, so it goes through `configure`
+rather than an `autonomous` subcommand: `configure autonomous.max_engines_per_node=2`.
 
 The reply is the JSON response from the daemon, pretty-printed when
 short.

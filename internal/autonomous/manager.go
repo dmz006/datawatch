@@ -253,6 +253,11 @@ type Config struct {
 	// independent (no-dependency) tasks up to the specified limit. Per-PRD
 	// MaxConcurrentTasks overrides this global default.
 	MaxConcurrentTasks int `json:"max_concurrent_tasks,omitempty"`
+	// MaxEnginesPerNode is how many local-model engine sessions one
+	// compute node may run at once. 1 = one per node (default). Mirrors
+	// config.AutonomousConfig.MaxEnginesPerNode; the runtime copy is what
+	// REST and MCP writes change.
+	MaxEnginesPerNode int `json:"max_engines_per_node,omitempty"`
 	// BL428 §3a ii — refuse to admit a task onto a project tree that
 	// has uncommitted changes: the canonical tree's `git status
 	// --porcelain` is non-empty. Hard failure at admission (before the
@@ -288,6 +293,7 @@ func DefaultConfig() Config {
 		Enabled:             false,
 		PollIntervalSeconds: 30,
 		MaxConcurrentTasks:  1,
+		MaxEnginesPerNode:   1,
 		AutoFixRetries:      1,
 		SecurityScan:        true,
 		MaxRecursionDepth:   5,
@@ -774,6 +780,7 @@ func (m *Manager) resetInProgressTasksForResume(prd *PRD) {
 				}
 			}
 			oldSession := t.SessionID
+			m.releaseCapacity(t.ID)
 			t.SessionID = ""
 			t.Status = TaskPending
 			if m.store.SaveTask(t) == nil {
@@ -1108,7 +1115,7 @@ func (m *Manager) Decompose(prdID string) (*PRD, error) {
 		if prd.LastDecomposeFailure != nil {
 			attemptPrompt += fmt.Sprintf("\n\nYour previous attempt failed: %s\nFix this in your next response.", prd.LastDecomposeFailure.Detail)
 		}
-		r, derr := m.decompose(DecomposeRequest{Spec: attemptPrompt, Backend: backend, Effort: effort, Model: planModel, ProjectDir: prd.ProjectDir, ScopeBlock: ScopeBlock(prd), PRDID: prd.ID, TimeoutSeconds: m.cfg.PlanningTimeoutSeconds})
+		r, derr := m.decomposeAdmitted(prd, backend, planModel, DecomposeRequest{Spec: attemptPrompt, Backend: backend, Effort: effort, Model: planModel, ProjectDir: prd.ProjectDir, ScopeBlock: ScopeBlock(prd), PRDID: prd.ID, TimeoutSeconds: m.cfg.PlanningTimeoutSeconds})
 		if derr != nil {
 			if isOneShotNoOutput(derr) {
 				if m.noteDecomposeSessionFailure(prd, backend, planModel, derr) {
@@ -1305,7 +1312,7 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (*PRD, 
 		if prd.LastDecomposeFailure != nil {
 			attemptPrompt += fmt.Sprintf("\n\nYour previous attempt failed: %s\nFix this in your next response.", prd.LastDecomposeFailure.Detail)
 		}
-		r, derr := m.decompose(DecomposeRequest{Spec: attemptPrompt, Backend: backend, Effort: effort, Model: planModel2, ProjectDir: prd.ProjectDir, ScopeBlock: ScopeBlock(prd), PRDID: prd.ID, TimeoutSeconds: m.cfg.PlanningTimeoutSeconds})
+		r, derr := m.decomposeAdmitted(prd, backend, planModel2, DecomposeRequest{Spec: attemptPrompt, Backend: backend, Effort: effort, Model: planModel2, ProjectDir: prd.ProjectDir, ScopeBlock: ScopeBlock(prd), PRDID: prd.ID, TimeoutSeconds: m.cfg.PlanningTimeoutSeconds})
 		if derr != nil {
 			if isOneShotNoOutput(derr) {
 				if m.noteDecomposeSessionFailure(prd, backend, planModel2, derr) {
@@ -2089,6 +2096,9 @@ func (m *Manager) CancelStory(prdID, storyID, actor, reason string) (*PRD, error
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
 	}
+	for _, ev := range cancelled {
+		m.releaseCapacity(ev.t.ID)
+	}
 	emitCancelled()
 	updated, _ := m.store.GetPRD(prdID)
 	return updated, nil
@@ -2150,6 +2160,7 @@ func (m *Manager) CancelTask(prdID, taskID, actor, reason string) (*PRD, error) 
 	if err := m.store.SavePRD(prd); err != nil {
 		return nil, err
 	}
+	m.releaseCapacity(taskID)
 	emitCancelled()
 	updated, _ := m.store.GetPRD(prdID)
 	return updated, nil
@@ -3470,6 +3481,9 @@ func (m *Manager) reconcileStuckTasks() {
 				}
 				log.Printf("[autonomous] boot-reconcile: prd=%s task=%s status=%s session=%s → TaskPending (session gone on daemon restart)",
 					prd.ID, t.ID, t.Status, t.SessionID)
+				// The session is gone, so the task's node lease is freed here
+				// rather than left for the periodic reaper.
+				m.releaseCapacity(t.ID)
 				reset = append(reset, pendingTaskEvent{t: t, oldStatus: t.Status, oldSession: t.SessionID})
 				t.Status = TaskPending
 				t.Error = ""

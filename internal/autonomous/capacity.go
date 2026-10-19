@@ -134,8 +134,9 @@ func (m *Manager) clearWaiting(t *Task) {
 }
 
 // admit blocks until the task holds a capacity lease. Waiting is visible as
-// TaskWaitingCapacity and never counts as a retry or failure.
-func (m *Manager) admit(ctx context.Context, prd *PRD, t *Task, backend, model string) error {
+// TaskWaitingCapacity and never counts as a retry or failure. role ranks the
+// request in the ledger's dispatch order (see capacity.Role).
+func (m *Manager) admit(ctx context.Context, prd *PRD, t *Task, backend, model string, role capacity.Role) error {
 	if !m.capacityOn() {
 		return nil
 	}
@@ -148,7 +149,7 @@ func (m *Manager) admit(ctx context.Context, prd *PRD, t *Task, backend, model s
 	}
 	waited := false
 	err := led.Acquire(ctx, capacity.Request{
-		Holder: t.ID, PRDID: prd.ID, Priority: prd.Priority, Pools: pools, Node: node, Model: model,
+		Holder: t.ID, PRDID: prd.ID, Priority: prd.Priority, Pools: pools, Node: node, Model: model, Role: role,
 	}, m.capacityWait(), func() bool { return m.taskCancelled(t.ID) }, func(reason string) {
 		waited = true
 		m.setWaiting(t, reason)
@@ -166,6 +167,32 @@ func (m *Manager) admit(ctx context.Context, prd *PRD, t *Task, backend, model s
 	default:
 		return err
 	}
+}
+
+// decomposeAdmitted runs one decompose attempt inside a RolePlanner capacity
+// lease on the same pools a task on that backend+model would use. The lease is
+// held only for the attempt, so a PRD waiting on a busy node queues behind
+// workers and verifiers (RolePlanner ranks last) instead of spawning past the
+// limit. With capacity off the attempt runs unchanged.
+func (m *Manager) decomposeAdmitted(prd *PRD, backend, model string, req DecomposeRequest) (string, error) {
+	if !m.capacityOn() {
+		return m.decompose(req)
+	}
+	m.mu.Lock()
+	led, keysFn := m.capacity, m.capacityKeys
+	m.mu.Unlock()
+	pools, node := keysFn(backend, model)
+	if len(pools) == 0 {
+		return m.decompose(req)
+	}
+	holder := "plan:" + prd.ID
+	if err := led.Acquire(context.Background(), capacity.Request{
+		Holder: holder, PRDID: prd.ID, Priority: prd.Priority, Pools: pools, Node: node, Model: model, Role: capacity.RolePlanner,
+	}, m.capacityWait(), func() bool { return false }, func(string) {}); err != nil {
+		return "", fmt.Errorf("capacity: %w", err)
+	}
+	defer led.Release(holder)
+	return m.decompose(req)
 }
 
 // adoptCapacity (BL462 F1) gives a task whose session survived a daemon

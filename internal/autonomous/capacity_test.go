@@ -398,3 +398,288 @@ func TestCapacity_BootResumeReadoptsLiveTaskLease(t *testing.T) {
 		t.Fatalf("lease of ended session not reaped, got %v", rel)
 	}
 }
+
+// localEngineKeys mirrors cmd/datawatch's keys function: a local-engine
+// session takes its provider's node pool, a hosted-backend session takes none.
+func localEngineKeys(backend, model string) ([]string, string) {
+	pools := []string{"host"}
+	node, gated := LocalEngineGate(backend, model, func(provider string) (string, bool) {
+		if provider == "ollama" {
+			return "alpha", true
+		}
+		return "", false
+	})
+	if gated {
+		pools = append(pools, "node:"+node)
+	}
+	return pools, node
+}
+
+func capFixtureLocalEngine(t *testing.T) (*Manager, *API, *capacity.Ledger) {
+	t.Helper()
+	m, api, _, _ := apiFixture(t)
+	led := capacity.New(capacity.Options{PollInterval: 10 * time.Millisecond})
+	led.SetLimit("node:alpha", 1)
+	m.SetCapacity(led, localEngineKeys)
+	return m, api, led
+}
+
+func newPRDOnBackend(t *testing.T, m *Manager, backend, model string) *PRD {
+	t.Helper()
+	prd, _ := m.CreatePRD("s", "/w/proj", backend, model, EffortNormal)
+	_ = m.Store().SetStories(prd.ID, []Story{{Title: "S", Tasks: []Task{{Title: "T0", Spec: "write docs/x.md"}}}})
+	got, _ := m.Store().GetPRD(prd.ID)
+	got.MaxConcurrentTasks = 1
+	_ = m.Store().SavePRD(got)
+	return got
+}
+
+func TestCapacity_LocalEngineTaskWaitsOnNodePool(t *testing.T) {
+	m, api, led := capFixtureLocalEngine(t)
+	_ = led.Acquire(context.Background(), capacity.Request{Holder: "other", PRDID: "other", Pools: []string{"node:alpha"}}, time.Second, nil, nil)
+	spawned := int32(0)
+	spawn := func(_ context.Context, r SpawnRequest) (SpawnResult, error) {
+		atomic.AddInt32(&spawned, 1)
+		return SpawnResult{SessionID: "s"}, nil
+	}
+	verify := func(context.Context, *PRD, *Task) (VerificationResult, error) {
+		return VerificationResult{OK: true}, nil
+	}
+	api.SetExecutors(spawn, verify)
+	time.Sleep(100 * time.Millisecond)
+	prd := newPRDOnBackend(t, m, "pi", "ollama/qwen3.8:27b")
+	p, _ := m.Store().GetPRD(prd.ID)
+	p.Status = PRDApproved
+	_ = m.Store().SavePRD(p)
+	if err := api.Run(prd.ID); err != nil {
+		t.Fatal(err)
+	}
+	var reason string
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		cur, _ := m.Store().GetPRD(prd.ID)
+		if tk := cur.Story[0].Tasks[0]; tk.Status == TaskWaitingCapacity {
+			reason = tk.WaitReason
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if reason == "" || atomic.LoadInt32(&spawned) != 0 {
+		t.Fatalf("local-engine task should wait on node:alpha with no spawn (reason=%q spawned=%d)", reason, spawned)
+	}
+	led.Release("other")
+	if got := runWait(t, m, prd.ID); got.Status != PRDCompleted {
+		t.Fatalf("after node:alpha frees the task must complete, got %s", got.Status)
+	}
+}
+
+func TestCapacity_HostedTaskNeverWaitsOnNodePool(t *testing.T) {
+	m, api, led := capFixtureLocalEngine(t)
+	_ = led.Acquire(context.Background(), capacity.Request{Holder: "other", PRDID: "other", Pools: []string{"node:alpha"}}, time.Second, nil, nil)
+	spawned := int32(0)
+	spawn := func(_ context.Context, r SpawnRequest) (SpawnResult, error) {
+		atomic.AddInt32(&spawned, 1)
+		return SpawnResult{SessionID: "s"}, nil
+	}
+	verify := func(context.Context, *PRD, *Task) (VerificationResult, error) {
+		return VerificationResult{OK: true}, nil
+	}
+	prd := newPRDOnBackend(t, m, "claude-code", "claude-sonnet-5-5")
+	if got := runToTerminal(t, m, api, prd.ID, spawn, verify); got.Status != PRDCompleted {
+		t.Fatalf("hosted task must not wait on node:alpha, got %s", got.Status)
+	}
+	if atomic.LoadInt32(&spawned) != 1 {
+		t.Fatalf("hosted task should spawn once, spawned=%d", spawned)
+	}
+	led.Release("other")
+}
+
+// fakeCapClock is a capacity.Clock whose time only moves when a test sets it.
+// Its After channels never fire, so a queued request is admitted only when a
+// lease is released, never because real time passed.
+type fakeCapClock struct {
+	mu  sync.Mutex
+	now time.Time
+}
+
+func newFakeCapClock() *fakeCapClock {
+	return &fakeCapClock{now: time.Date(2026, 10, 19, 12, 0, 0, 0, time.UTC)}
+}
+
+func (c *fakeCapClock) Now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.now
+}
+
+func (c *fakeCapClock) After(time.Duration) <-chan time.Time {
+	return make(chan time.Time)
+}
+
+// capFixtureFakeClock is capFixture with the ledger on the fake clock, so the
+// tests below cannot depend on wall-clock poll ticks or wait deadlines.
+func capFixtureFakeClock(t *testing.T, limit int) (*Manager, *API, *capacity.Ledger) {
+	t.Helper()
+	m, api, _, _ := apiFixture(t)
+	led := capacity.New(capacity.Options{PollInterval: time.Second, Clock: newFakeCapClock()})
+	led.SetLimit("node:n1", limit)
+	m.SetCapacity(led, func(backend, model string) ([]string, string) { return []string{"node:n1"}, "n1" })
+	return m, api, led
+}
+
+// capWaitUntil polls until cond holds, failing the test after two seconds.
+func capWaitUntil(t *testing.T, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for !cond() {
+		if time.Now().After(deadline) {
+			t.Fatal("condition not reached")
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+// capNodeReq is a request for one task on the node:n1 pool.
+func capNodeReq(holder, prdID string) capacity.Request {
+	return capacity.Request{Holder: holder, PRDID: prdID, Pools: []string{"node:n1"}, Node: "n1"}
+}
+
+// admitQueued starts a blocking Acquire for holder and returns the channel
+// its result arrives on.
+func admitQueued(led *capacity.Ledger, req capacity.Request) <-chan error {
+	done := make(chan error, 1)
+	go func() { done <- led.Acquire(context.Background(), req, 0, nil, nil) }()
+	return done
+}
+
+// awaitAdmitted fails the test unless the queued request is granted promptly.
+func awaitAdmitted(t *testing.T, done <-chan error, what string) {
+	t.Helper()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("%s: acquire failed: %v", what, err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("%s: queued task was not admitted", what)
+	}
+}
+
+// A holder whose session is killed loses its node lease at the next reap,
+// and the next queued task on that node is admitted. The session table is
+// in-memory; the liveness check mirrors cmd/datawatch's lease reaper.
+func TestCapacity_KilledHolderLeaseReleasedAdmitsNextOnNode(t *testing.T) {
+	m, _, led := capFixtureFakeClock(t, 1)
+	prd := newPRDWithTasks(t, m, 2)
+	cur, _ := m.Store().GetPRD(prd.ID)
+	holder, queued := cur.Story[0].Tasks[0].ID, cur.Story[0].Tasks[1].ID
+
+	sessions := map[string]string{"sess-holder": "running"}
+	live := func(ls capacity.Lease) bool {
+		st, ok := sessions[ls.SessionID]
+		return ok && st != "complete" && st != "failed" && st != "killed"
+	}
+
+	if err := led.Acquire(context.Background(), capNodeReq(holder, prd.ID), 0, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	led.Bind(holder, "sess-holder")
+	done := admitQueued(led, capNodeReq(queued, prd.ID))
+	capWaitUntil(t, func() bool { return len(led.Snapshot().Waiting) == 1 })
+
+	if rel := led.Reap(live); len(rel) != 0 {
+		t.Fatalf("live holder reaped: %v", rel)
+	}
+	sessions["sess-holder"] = "killed"
+	if rel := led.Reap(live); len(rel) != 1 || rel[0] != holder {
+		t.Fatalf("killed holder not reaped, got %v", rel)
+	}
+	awaitAdmitted(t, done, "after kill")
+	if led.Held(holder) || !led.Held(queued) {
+		t.Fatal("lease not handed from the killed holder to the queued task")
+	}
+}
+
+// A stale holder (its worker stopped making progress, but the session is
+// still reported running) is released through releaseCapacity, the call the
+// executor makes on the stall path, and the next queued task is admitted.
+func TestCapacity_StaleHolderReleaseAdmitsNextOnNode(t *testing.T) {
+	m, _, led := capFixtureFakeClock(t, 1)
+	prd := newPRDWithTasks(t, m, 2)
+	cur, _ := m.Store().GetPRD(prd.ID)
+	stale, queued := cur.Story[0].Tasks[0].ID, cur.Story[0].Tasks[1].ID
+
+	if err := led.Acquire(context.Background(), capNodeReq(stale, prd.ID), 0, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	// The session stays "running" from the session manager's view, so the
+	// reaper would keep this lease; only the executor's stall release frees it.
+	led.Bind(stale, "sess-stale")
+	done := admitQueued(led, capNodeReq(queued, prd.ID))
+	capWaitUntil(t, func() bool { return len(led.Snapshot().Waiting) == 1 })
+
+	m.releaseCapacity(stale)
+	awaitAdmitted(t, done, "after stale release")
+	if led.Held(stale) || !led.Held(queued) {
+		t.Fatal("stale holder's lease was not released to the queued task")
+	}
+}
+
+// The executor's stall path frees the stalled worker's lease before the
+// retry spawns, so the retry's session kill sees no lease held.
+func TestCapacity_StalledWorkerLeaseReleasedBeforeRetry(t *testing.T) {
+	m, api, led := capFixtureFakeClock(t, 1)
+	prd, _ := m.CreatePRD("s", "/w/proj", "opencode", "", EffortNormal)
+	_ = m.Store().SetStories(prd.ID, []Story{{Title: "S", Tasks: []Task{{Title: "T", Spec: "write docs/x.md"}}}})
+	p, _ := m.Store().GetPRD(prd.ID)
+	p.Status = PRDApproved
+	_ = m.Store().SavePRD(p)
+
+	var heldAtKill []bool
+	m.SetSessionKillerFn(func(string) error {
+		heldAtKill = append(heldAtKill, len(led.Snapshot().Leases) > 0)
+		return nil
+	})
+	spawns := 0
+	spawn := func(_ context.Context, r SpawnRequest) (SpawnResult, error) {
+		spawns++
+		return SpawnResult{SessionID: fmt.Sprintf("s-%d", spawns)}, nil
+	}
+	verifyCalls := 0
+	verify := func(_ context.Context, _ *PRD, _ *Task) (VerificationResult, error) {
+		verifyCalls++
+		if verifyCalls == 1 {
+			return VerificationResult{}, fmt.Errorf("stall: %w", ErrWorkerStalled)
+		}
+		return VerificationResult{OK: true}, nil
+	}
+	got := runToTerminal(t, m, api, prd.ID, spawn, verify)
+	if got.Status != PRDCompleted {
+		t.Fatalf("a stalled-then-recovered task must complete, got %s", got.Status)
+	}
+	if len(heldAtKill) == 0 || heldAtKill[0] {
+		t.Fatalf("stalled worker's lease was still held when its session was killed for retry: %v", heldAtKill)
+	}
+	if n := len(led.Snapshot().Leases); n != 0 {
+		t.Fatalf("leases leaked after completion: %d", n)
+	}
+}
+
+// Cancelling a task releases its lease immediately, so a waiting task on the
+// same node is not held behind a cancelled holder.
+func TestCapacity_CancelTaskReleasesLease(t *testing.T) {
+	m, _, led := capFixtureFakeClock(t, 1)
+	prd := newPRDWithTasks(t, m, 1)
+	cur, _ := m.Store().GetPRD(prd.ID)
+	task := cur.Story[0].Tasks[0]
+
+	if err := led.Acquire(context.Background(), capNodeReq(task.ID, prd.ID), 0, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.CancelTask(prd.ID, task.ID, "test", ""); err != nil {
+		t.Fatal(err)
+	}
+	if led.Held(task.ID) {
+		t.Fatal("cancelled task still holds its capacity lease")
+	}
+}
