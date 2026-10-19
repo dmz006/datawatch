@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.18 — autonomous: warn when a PRD model name looks like it belongs to another backend, once per PRD
+
+The autonomous status stops warning when a planning model with a provider tag (for example an `ollama/...` model) is set for a pi or pi-prompt session, because those backends forward the model name to their configured provider — the warning now appears only when the named backend cannot serve the model at all. Pairing warnings also improved: each affected PRD is now named once with the reason instead of a long list of ids.
+- Version bump 9.5.15 -> 9.5.16 (cmd/datawatch/main.go + internal/server/api.go kept identical).
 ## v9.5.17 — fix(test): the WebSocket delta test no longer fails under parallel load
 
 ### Fixed
