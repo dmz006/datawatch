@@ -4566,6 +4566,10 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			// state before verifying. Previously verify fired immediately
 			// after spawn, so the verifier saw no git diff and the session
 			// kept running indefinitely after the PRD completed.
+			// BL447: diff/evidence/judgment anchor to the task's resolved dir —
+			// the same dir SpawnRequest.ProjectDir captured PreTaskSHA in.
+			// Resolved before the wait loop so its stall check reads the same dir.
+			taskDir := autonomouspkg.ResolveTaskProjectDir(prd, task)
 			if task.SessionID != "" && mgr != nil {
 				tick := time.NewTicker(3 * time.Second)
 				defer tick.Stop()
@@ -4692,12 +4696,31 @@ func runStart(cmd *cobra.Command, _ []string) error {
 									break waitLoop
 								}
 							}
-							if stale, since, serr := staleWorkerCheck(staleLogPath, staleThreshold, time.Now()); staleWorkerAppliesTo(family) && serr == nil && stale {
-								log.Printf("[autonomous] worker stall detected in session %s task %s/%s (no output for %s); killing for retry",
-									task.SessionID, task.PRDID, task.ID, since.Round(time.Second))
-								_ = mgr.Kill(task.SessionID)
-								stallErr = fmt.Errorf("worker produced no output for %s (stale_task_seconds=%ds): %w", since.Round(time.Second), int(staleThreshold.Seconds()), autonomouspkg.ErrWorkerStalled)
-								break waitLoop
+							if staleWorkerAppliesTo(family) {
+								// The log mtime is one of four signals (see
+								// workerActivityEvidence). A worker that changed files
+								// in its work dir, still has a live runner child, or
+								// whose backend was active within the threshold is not
+								// stalled, even with a silent log.
+								obs := workerStallObservation{
+									LogPath:   staleLogPath,
+									WorkDir:   taskDir,
+									Threshold: staleThreshold,
+									Now:       time.Now(),
+									ChildAlive: func() bool {
+										return hasLiveChildProcess(s.TmuxSession)
+									},
+									BackendBusy: func() bool {
+										return !s.LastChannelEventAt.IsZero() && time.Since(s.LastChannelEventAt) <= staleThreshold
+									},
+								}
+								if isStalled, reason := decideWorkerStall(obs); isStalled {
+									log.Printf("[autonomous] worker stall detected in session %s task %s/%s (%s); killing for retry",
+										task.SessionID, task.PRDID, task.ID, reason)
+									_ = mgr.Kill(task.SessionID)
+									stallErr = workerStallError(reason, staleThreshold)
+									break waitLoop
+								}
 							}
 						}
 					}
@@ -4755,9 +4778,6 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					return autonomouspkg.VerificationResult{}, stallErr
 				}
 			}
-			// BL447: diff/evidence/judgment anchor to the task's resolved dir —
-			// the same dir SpawnRequest.ProjectDir captured PreTaskSHA in.
-			taskDir := autonomouspkg.ResolveTaskProjectDir(prd, task)
 			// BL366 — git-diff grounding: capture the worker's actual change.
 			// v8.25.9: when PreTaskSHA is set, an empty diff is a hard failure —
 			// the session made no changes, so the task cannot be verified as done.
