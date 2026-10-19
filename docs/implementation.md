@@ -1241,3 +1241,17 @@ Response:
 - **`internal/server/memory_scopes.go`** — `archive-import` and `inventory` REST handlers
 - **`internal/server/autonomous.go`** — `memory-report` route + `handlePRDMemoryReport`
 - **`internal/mcp/memory_scopes.go`** — all four new MCP tools
+
+## Session idle timeout (autonomous.session_idle_timeout_seconds)
+
+- **Field:** `autonomous.session_idle_timeout_seconds`, default `900` (15 minutes). Bounds one autonomous worker or verifier session that sits in `waiting_input` or `idle` with no live child process.
+- **Surfaces:**
+  - config YAML (`internal/config/config.go`, `Autonomous.SessionIdleTimeoutSeconds`);
+  - REST `GET` / `PUT` on the `autonomous.*` config (`internal/server/api.go`);
+  - MCP `autonomous_config_set` (`internal/mcp/autonomous.go`, `session_idle_timeout_seconds` parameter);
+  - web settings card (`internal/server/web/app.js`) with strings in 5 locales (en, de, es, fr, ja).
+- **Default:** `SessionIdleTimeoutDefaultSeconds = 900` and `NormalizeSessionIdleTimeoutSeconds` in `internal/config/session_idle_timeout.go`. Zero or negative values normalize to the default.
+- **Detector hook points:**
+  - `cmd/datawatch/main.go`, the worker wait loop, for task sessions;
+  - `cmd/datawatch/session_judgment.go`, the verifier one-shot session.
+- **Failure path:** a tripped bound is reported as the infra failure `session idle without completion`, raises an alert, and is retried through the existing `auto_fix_retries` budget.

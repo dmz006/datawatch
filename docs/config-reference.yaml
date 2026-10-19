@@ -936,6 +936,8 @@ autonomous:
   # need more than this; the old hard-coded limit was 10m and timed out slow
   # local models.
   verification_timeout_seconds: 1800
+  # autonomous
+  session_idle_timeout_seconds: 900   # bound on one worker/verifier session sitting in waiting_input/idle with no live child process; exceeded => infra failure 'session idle without completion', alert raised, auto_fix_retries budget handles the retry
   # 0 = inherit session.stale_timeout_seconds.
   stale_task_seconds: 0
   # Retries on verifier failure (re-prompts the same backend with the

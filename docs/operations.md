@@ -2011,6 +2011,34 @@ filled in by the system and are read-only; view them with
 3. Or set per-PRD via PWA Settings modal → "Planning backend" dropdown → pick any configured LLM
 4. Decompose → Review → Approve → Run
 
+### Session idle timeout (autonomous.session_idle_timeout_seconds)
+
+This bounds how long one autonomous worker or verifier session may sit
+idle before datawatch gives up on it. The default is 900 seconds (15
+minutes).
+
+- **What it watches:** a worker task session or a verifier one-shot
+  session whose state is `waiting_input` or `idle` and that has no live
+  child process.
+- **When it fires:** the session has stayed in that state with no live
+  child process for longer than the bound.
+- **What you see:**
+  - a datawatch alert for the session;
+  - the task failure reason `session idle without completion`, naming
+    the session id, backend and model;
+  - the task is retried through the existing `auto_fix_retries` budget.
+    Once that budget is spent, the task stays failed like any other
+    failed task.
+- **Setting it:** `autonomous.session_idle_timeout_seconds` in
+  `config.yaml`, or through the web settings card, the REST
+  `autonomous.*` config endpoints, or the MCP `autonomous_config_set`
+  tool. A value of `0` means "use the default 900".
+
+```yaml
+autonomous:
+  session_idle_timeout_seconds: 900
+```
+
 ---
 
 ## Autonomous Prompt Injection Protection
