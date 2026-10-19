@@ -2062,6 +2062,13 @@ type AutonomousConfig struct {
 	// process for longer than this is an infra failure. 0 or unset => 900
 	// (see NormalizeSessionIdleTimeoutSeconds).
 	SessionIdleTimeoutSeconds int `yaml:"session_idle_timeout_seconds,omitempty" json:"session_idle_timeout_seconds,omitempty"`
+	// TmuxKillGuard turns the tmux kill guard on (default ON): a tmux
+	// session/pane kill only proceeds after its guard checks pass.
+	// nil = unset = enabled; an explicit false is an operator opt-out
+	// and is distinguishable from the default. The yaml tag has no
+	// omitempty (B124 no-omitempty pattern) so an explicit opt-out
+	// survives a Save/Load round trip; the pointer carries it.
+	TmuxKillGuard *bool `yaml:"tmux_kill_guard" json:"tmux_kill_guard,omitempty"`
 	// CapacityEnabled turns capacity-aware admission on (default true when
 	// unset): tasks wait for a free host/node/LLM slot instead of failing.
 	CapacityEnabled *bool `yaml:"capacity_enabled,omitempty" json:"capacity_enabled,omitempty"`
@@ -2215,6 +2222,13 @@ type AutonomousConfig struct {
 	// Notify — lifecycle-notification knobs for the built-in lifecycle
 	// sinks (comm fanout / alert paging).
 	Notify AutonomousNotifyConfig `yaml:"notify" json:"notify"`
+}
+
+// TmuxKillGuardEnabled reports whether the tmux kill guard is on for
+// this autonomous config: ON by default (field unset / nil receiver),
+// OFF only when TmuxKillGuard was explicitly set to false.
+func (a *AutonomousConfig) TmuxKillGuardEnabled() bool {
+	return a == nil || a.TmuxKillGuard == nil || *a.TmuxKillGuard
 }
 
 // AutonomousNotifyConfig — autonomous.notify sub-config. DefaultEvents
