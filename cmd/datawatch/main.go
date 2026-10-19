@@ -4743,7 +4743,12 @@ func runStart(cmd *cobra.Command, _ []string) error {
 										if tail, terr := mgr.TailOutput(s.FullID, 200); terr == nil {
 											summary = session.ExtractCompletionSummary(tail)
 										}
-										sha, cerr := session.NewProjectGit(taskDir).CommitSessionWork(s.ID, s.Task, summary, s.WriteScope)
+										pg := session.NewProjectGit(taskDir)
+										// Bound unscoped staging to this run's own changes.
+										if !s.CreatedAt.IsZero() {
+											pg.SetRunStart(s.CreatedAt)
+										}
+										sha, cerr := pg.CommitSessionWork(s.ID, s.Task, summary, s.WriteScope)
 										if cerr != nil {
 											return cerr
 										}

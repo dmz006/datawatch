@@ -258,8 +258,8 @@ type Session struct {
 	// WriteScope (auto-commit leak fix): the session's effective write
 	// directories (PRD.WriteDirs or task ProjectDir override). Automatic
 	// commits stage only files under these directories instead of the
-	// historical `git add -A`-of-everything. Empty = broad staging with
-	// a warning, preserving pre-fix behavior for interactive sessions.
+	// historical `git add -A`-of-everything. Empty = stage only files
+	// changed since the session (run) started, with a warning.
 	WriteScope []string `json:"write_scope,omitempty"`
 
 	// ValidateCommands: shell commands run in the project dir before a
