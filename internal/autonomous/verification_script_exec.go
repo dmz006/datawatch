@@ -16,6 +16,7 @@ package autonomous
 import (
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -24,6 +25,14 @@ import (
 // maxVerificationScriptOutput caps the combined output carried into
 // GuardrailInvocation.ScriptOutput.
 const maxVerificationScriptOutput = 8 * 1024
+
+// ErrVerificationScriptMissing is the sentinel error returned when a
+// task/story names a verification script that does not exist in the
+// worktree (or the resolved path is not a regular file). It is wrapped
+// with the script path exactly as given, so callers detect it with
+// errors.Is(err, ErrVerificationScriptMissing) and read the name from
+// err.Error().
+var ErrVerificationScriptMissing = errors.New("verification script is missing from the worktree")
 
 // RunVerificationScript is the exported runner for a task/story
 // VerificationScript. It executes the same `bash <script>` under the same
@@ -34,8 +43,9 @@ const maxVerificationScriptOutput = 8 * 1024
 //   - script exit 0: ok=true, output=<truncated combined output>
 //   - script non-zero exit: ok=false, output=... , err=nil (a script's own
 //     non-zero exit is a legitimate verdict, not a runner failure)
-//   - unsafe path or failed to launch bash: ok=false, err!=nil (output may
-//     be empty)
+//   - unsafe path, script absent from the worktree
+//     (errors.Is(err, ErrVerificationScriptMissing)), or failed to launch
+//     bash: ok=false, err!=nil (output may be empty)
 //
 // It exists so callers at the cmd/ layer (the autonomous verifier in
 // cmd/datawatch) can re-run a task's own deterministic verification script
@@ -55,7 +65,8 @@ func RunVerificationScript(scriptRelPath, projectDir string) (output string, ok 
 // runVerificationScript executes scriptRelPath (relative to projectDir)
 // with bash, cwd = projectDir. A script's own non-zero exit is reported
 // via exitCode with err == nil; err is non-nil (exitCode -1) only for an
-// unsafe path or a failure to run bash at all.
+// unsafe path, a script file that is absent from the worktree (wrapping
+// ErrVerificationScriptMissing), or a failure to run bash at all.
 func runVerificationScript(scriptRelPath, projectDir string) (output string, exitCode int, err error) {
 	if scriptRelPath == "" {
 		return "", -1, errors.New("verification script path is empty")
@@ -67,6 +78,9 @@ func runVerificationScript(scriptRelPath, projectDir string) (output string, exi
 	rel, relErr := filepath.Rel(filepath.Clean(projectDir), scriptPath)
 	if relErr != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return "", -1, fmt.Errorf("verification script path %q escapes the project dir", scriptRelPath)
+	}
+	if info, statErr := os.Stat(scriptPath); statErr != nil || !info.Mode().IsRegular() {
+		return "", -1, fmt.Errorf("%w: %s", ErrVerificationScriptMissing, scriptRelPath)
 	}
 
 	cmd := exec.Command("bash", scriptPath) // #nosec G204 -- scriptPath validated above to resolve inside projectDir

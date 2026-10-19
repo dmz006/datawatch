@@ -2,6 +2,7 @@
 package autonomous
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -46,17 +47,23 @@ func TestRunVerificationScript_NonZeroExitIsNotError(t *testing.T) {
 	}
 }
 
-// A missing script file is not a Go-level error: bash itself starts,
-// fails to open the file and exits 127, which surfaces as an
-// *exec.ExitError — so exitCode is 127 and err is nil.
-func TestRunVerificationScript_MissingFileExit127(t *testing.T) {
+// A script the unit names but that is absent from the worktree is a
+// runner failure: RunVerificationScript returns
+// ErrVerificationScriptMissing (wrapped) instead of exec'ing bash.
+func TestRunVerificationScript_MissingFileIsMissingScriptError(t *testing.T) {
 	dir := t.TempDir()
-	_, code, err := runVerificationScript("nope.sh", dir)
-	if err != nil {
-		t.Fatalf("err=%v, want nil", err)
+	out, ok, err := RunVerificationScript("nope.sh", dir)
+	if !errors.Is(err, ErrVerificationScriptMissing) {
+		t.Fatalf("err=%v, want errors.Is(err, ErrVerificationScriptMissing)", err)
 	}
-	if code != 127 {
-		t.Fatalf("exitCode=%d, want 127", code)
+	if ok {
+		t.Fatalf("ok=true, want false")
+	}
+	if !strings.Contains(err.Error(), "nope.sh") {
+		t.Fatalf("error message %q does not name the script %q", err.Error(), "nope.sh")
+	}
+	if out != "" {
+		t.Fatalf("output=%q, want empty (nothing was exec'd)", out)
 	}
 }
 
