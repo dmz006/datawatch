@@ -142,3 +142,9 @@ func checkpointItems(lines []string) []string {
 	}
 	return items
 }
+
+// CheckpointSaysAllDone is the exported form of checkpointSaysAllDone for
+// callers outside this package (the verify wait loop in cmd/datawatch).
+func CheckpointSaysAllDone(text string) bool {
+	return checkpointSaysAllDone(text)
+}

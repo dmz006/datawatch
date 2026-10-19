@@ -4585,6 +4585,10 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				tick := time.NewTicker(3 * time.Second)
 				defer tick.Stop()
 				var stallErr error
+				// doneVerdict is set when a stall is overridden because the worker's
+				// checkpoint and verification script show the work already finished.
+				var doneVerdict *autonomouspkg.VerificationResult
+				var stallScriptOutput string
 				waitTick := 0
 				waitingInputTicks := 0
 				// Session idle detector (autonomous.session_idle_timeout_seconds):
@@ -4726,10 +4730,45 @@ func runStart(cmd *cobra.Command, _ []string) error {
 									},
 								}
 								if isStalled, reason := decideWorkerStall(obs); isStalled {
+									log.Printf("[autonomous] worker stall detected in session %s task %s/%s (%s); checking CHECKPOINT.md before killing",
+										task.SessionID, task.PRDID, task.ID, reason)
+									// A worker whose checkpoint says every step is done and whose
+									// verification script passes finished its work; it only stopped
+									// talking. Accept that attempt instead of retrying it.
+									commitDone := func() error {
+										if !session.NewProjectGit(taskDir).IsRepo() {
+											return nil
+										}
+										summary := ""
+										if tail, terr := mgr.TailOutput(s.FullID, 200); terr == nil {
+											summary = session.ExtractCompletionSummary(tail)
+										}
+										sha, cerr := session.NewProjectGit(taskDir).CommitSessionWork(s.ID, s.Task, summary, s.WriteScope)
+										if cerr != nil {
+											return cerr
+										}
+										if sha != "" && autonomousMgrRef != nil {
+											if rerr := autonomousMgrRef.RecordTaskAttemptCommit(task.PRDID, task.ID, sha); rerr != nil {
+												log.Printf("[autonomous] verifier: RecordTaskAttemptCommit(%s/%s): %v", task.PRDID, task.ID, rerr)
+											}
+										}
+										return nil
+									}
+									if vr, scriptOut, done := doneCheckpointVerify(mgr, task.SessionID, readDoneCheckpoint(taskDir), task.VerificationScript, taskDir, commitDone); done {
+										log.Printf("[autonomous] worker stall in session %s task %s/%s: checkpoint reports all steps done and verification script passed; accepting attempt",
+											task.SessionID, task.PRDID, task.ID)
+										doneVerdict = &vr
+										break waitLoop
+									} else if scriptOut != "" {
+										stallScriptOutput = scriptOut
+									}
 									log.Printf("[autonomous] worker stall detected in session %s task %s/%s (%s); killing for retry",
 										task.SessionID, task.PRDID, task.ID, reason)
 									killStalledWorker(ctx, mgr, autonomousMgrRef, cfg.Autonomous.PreserveAttemptWorkEnabled(), taskDir, task, task.SessionID)
 									stallErr = workerStallError(reason, staleThreshold)
+									if stallScriptOutput != "" {
+										stallErr = fmt.Errorf("%w; task verification script output: %s", stallErr, stallScriptOutput)
+									}
 									break waitLoop
 								}
 							}
@@ -4784,6 +4823,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 							log.Printf("[autonomous] verifier: RecordTaskAttemptCommit(%s/%s): %v", task.PRDID, task.ID, rerr)
 						}
 					}
+				}
+				if doneVerdict != nil {
+					return *doneVerdict, nil
 				}
 				if stallErr != nil {
 					return autonomouspkg.VerificationResult{}, stallErr
