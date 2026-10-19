@@ -75,8 +75,15 @@ type Config struct {
 	// handleAutonomousConfig does not drop the key, the way the
 	// VerificationBackends omitempty bug described in the config.go comment
 	// dropped its value.
-	VerificationTimeoutSeconds int    `json:"verification_timeout_seconds,omitempty"`
-	VerificationModel          string `json:"verification_model,omitempty"`
+	VerificationTimeoutSeconds int `json:"verification_timeout_seconds,omitempty"`
+	// SessionIdleTimeoutSeconds mirrors autonomous.session_idle_timeout_seconds
+	// in config. The manager does not consume it: the daemon's autonomous
+	// worker/verifier wait loops in cmd/datawatch/main.go and
+	// cmd/datawatch/session_judgment.go read it from config.Config. The field
+	// exists so the handleAutonomousConfig live round-trip
+	// (internal/server/autonomous.go) does not drop the key.
+	SessionIdleTimeoutSeconds int    `json:"session_idle_timeout_seconds,omitempty"`
+	VerificationModel         string `json:"verification_model,omitempty"`
 	// VerificationBackends (v8.36.9) — see config.AutonomousConfig's doc
 	// comment. Ordered list of LLM registry names to load-balance
 	// verifier/guardrail capacity across; empty = single-backend

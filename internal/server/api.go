@@ -5594,6 +5594,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"verification_effort":           s.cfg.Autonomous.VerificationEffort,
 			"planning_timeout_seconds":      s.cfg.Autonomous.PlanningTimeoutSeconds,
 			"verification_timeout_seconds":  s.cfg.Autonomous.VerificationTimeoutSeconds,
+			"session_idle_timeout_seconds":  s.cfg.Autonomous.SessionIdleTimeoutSeconds,
 			"capacity_enabled":              s.cfg.Autonomous.CapacityEnabled == nil || *s.cfg.Autonomous.CapacityEnabled,
 			"capacity_wait_timeout_seconds": s.cfg.Autonomous.CapacityWaitTimeoutSeconds,
 			"capacity_gpu_util_pct":         s.cfg.Autonomous.CapacityGPUUtilPct,
@@ -6993,6 +6994,12 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// config.NormalizeVerificationTimeoutSeconds at read time.
 			if n, ok := toInt(v); ok {
 				cfg.Autonomous.VerificationTimeoutSeconds = n
+			}
+		case "autonomous.session_idle_timeout_seconds":
+			// Stored as-is; zero falls back to the default via
+			// config.NormalizeSessionIdleTimeoutSeconds at read time.
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Autonomous.SessionIdleTimeoutSeconds = n
 			}
 		case "autonomous.capacity_enabled":
 			if b, ok := v.(bool); ok {

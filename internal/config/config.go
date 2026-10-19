@@ -2057,6 +2057,11 @@ type AutonomousConfig struct {
 	// values fall back to the default. Raise for slow local (Ollama /
 	// OpenWebUI) models.
 	VerificationTimeoutSeconds int `yaml:"verification_timeout_seconds,omitempty" json:"verification_timeout_seconds,omitempty"`
+	// SessionIdleTimeoutSeconds bounds one autonomous worker or verifier
+	// session: a session sitting in waiting_input/idle with no live child
+	// process for longer than this is an infra failure. 0 or unset => 900
+	// (see NormalizeSessionIdleTimeoutSeconds).
+	SessionIdleTimeoutSeconds int `yaml:"session_idle_timeout_seconds,omitempty" json:"session_idle_timeout_seconds,omitempty"`
 	// CapacityEnabled turns capacity-aware admission on (default true when
 	// unset): tasks wait for a free host/node/LLM slot instead of failing.
 	CapacityEnabled *bool `yaml:"capacity_enabled,omitempty" json:"capacity_enabled,omitempty"`
