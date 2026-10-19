@@ -49,7 +49,7 @@ func NormalizePRDStatus(s PRDStatus) PRDStatus {
 // and mirrored into the security-grade audit log for compliance.
 type Decision struct {
 	At             time.Time `json:"at"`
-	Kind           string    `json:"kind"` // decompose | run | verify | approve | reject | request_revision | edit_task | template_instantiate | ci_watch
+	Kind           string    `json:"kind"` // decompose | run | verify | approve | reject | request_revision | edit_task | template_instantiate | ci_watch | boot_reconcile | verifying_resolution
 	Backend        string    `json:"backend,omitempty"`
 	Model          string    `json:"model,omitempty"`
 	PromptChars    int       `json:"prompt_chars,omitempty"`
@@ -63,6 +63,15 @@ type Decision struct {
 	// Verdict/Verification struct.
 	FailureCategory string `json:"failure_category,omitempty"`
 }
+
+// verifyingResolution is the Decision.Kind for the boot-time audit entry
+// appended to prd.Decisions whenever an orphaned TaskVerifying /
+// TaskRunningTests task is resolved on daemon restart — either completed from
+// a recorded ok verification verdict or re-queued for executor retry. The
+// Note names how many of each occurred for that PRD. Unexported: the
+// decision kind is internal to the autonomous manager; the string literal is
+// the wire value persisted in the decision log.
+const verifyingResolution = "verifying_resolution"
 
 type StoryStatus string
 
