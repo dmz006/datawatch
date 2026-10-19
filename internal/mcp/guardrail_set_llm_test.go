@@ -32,7 +32,7 @@ func TestMCPSetLLM_LegacyBodyUnchanged(t *testing.T) {
 		_, err := s.handleAutonomousPRDSetLLM(context.Background(), callReq(map[string]any{"id": "p1", "backend": "opencode"}))
 		return err
 	})
-	want := map[string]string{"backend": "opencode", "effort": "", "model": "", "decomposition_profile": "", "actor": "operator"}
+	want := map[string]string{"backend": "opencode", "actor": "operator"}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("body = %v, want %v", got, want)
 	}
@@ -54,7 +54,7 @@ func TestMCPSetLLM_GuardrailWithLegacy(t *testing.T) {
 		_, err := s.handleAutonomousPRDSetLLM(context.Background(), callReq(map[string]any{"id": "p1", "backend": "opencode", "guardrail_model": "m1"}))
 		return err
 	})
-	want := map[string]string{"backend": "opencode", "effort": "", "model": "", "decomposition_profile": "", "guardrail_model": "m1", "actor": "operator"}
+	want := map[string]string{"backend": "opencode", "guardrail_model": "m1", "actor": "operator"}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("body = %v, want %v", got, want)
 	}

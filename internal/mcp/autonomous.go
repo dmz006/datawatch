@@ -655,7 +655,7 @@ func (s *Server) handleAutonomousPRDInstantiate(_ context.Context, req mcpsdk.Ca
 
 func (s *Server) toolAutonomousPRDSetLLM() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_prd_set_llm",
-		mcpsdk.WithDescription("BL203 — set the PRD-level worker LLM. Tasks inherit unless they have their own override. Empty string = clear (fall back to global session.llm_backend). decomposition_profile sets the planning/decompose LLM — any configured LLM works: opencode/claude-code spawn a full session with codebase tool access; ollama/openwebui use headless planning. backend sets the task-execution backend."),
+		mcpsdk.WithDescription("BL203 — set the PRD-level worker LLM. Tasks inherit unless they have their own override. Pass only the fields to change — an omitted parameter leaves the PRD field unchanged, an empty value clears that field (falling back to the global default). decomposition_profile sets the planning/decompose LLM — any configured LLM works: opencode/claude-code spawn a full session with codebase tool access; ollama/openwebui use headless planning. backend sets the task-execution backend."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
 		mcpsdk.WithString("backend", mcpsdk.Description("Task-execution backend (claude-code / opencode / goose / ollama / etc.)")),
 		mcpsdk.WithString("effort", mcpsdk.Description("low / medium / high / max / quick / normal / thorough")),
@@ -667,21 +667,35 @@ func (s *Server) toolAutonomousPRDSetLLM() mcpsdk.Tool {
 }
 func (s *Server) handleAutonomousPRDSetLLM(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	id := req.GetString("id", "")
-	body, _ := json.Marshal(map[string]string{
-		"backend":               req.GetString("backend", ""),
-		"effort":                req.GetString("effort", ""),
-		"model":                 req.GetString("model", ""),
-		"decomposition_profile": req.GetString("decomposition_profile", ""),
-		"actor":                 "operator",
-	})
-	if gb := guardrailLLMBody(req, map[string]string{"actor": "operator"}, "backend", "effort", "model", "decomposition_profile"); gb != nil {
-		body = gb
+	body, err := prdSetLLMBody(req)
+	if err != nil {
+		return nil, err
 	}
 	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/set_llm", body)
 	if err != nil {
 		return nil, err
 	}
 	return textOK(string(out)), nil
+}
+
+// prdSetLLMBody builds the PRD-level set_llm proxy body with per-field
+// presence: actor is always included (defaulting to "operator"), and each
+// worker-LLM field — backend, effort, model, decomposition_profile plus
+// guardrail_backend / guardrail_model — is forwarded only when that key
+// actually appears in the call arguments. A present key may be "", which
+// clears the field; an absent key leaves the PRD field unchanged.
+func prdSetLLMBody(req mcpsdk.CallToolRequest) (map[string]any, error) {
+	args := req.GetArguments()
+	body := map[string]any{"actor": req.GetString("actor", "operator")}
+	if body["actor"] == "" {
+		body["actor"] = "operator"
+	}
+	for _, k := range []string{"backend", "effort", "model", "decomposition_profile", "guardrail_backend", "guardrail_model"} {
+		if _, ok := args[k]; ok {
+			body[k] = req.GetString(k, "")
+		}
+	}
+	return body, nil
 }
 
 func (s *Server) toolAutonomousPRDSetStoryLLM() mcpsdk.Tool {
