@@ -250,14 +250,19 @@ func (m *Manager) failDecomposeAttempt(prd *PRD, source string, cause error) {
 	// decom-parse comment states), without touching an existing record.
 	if prd.LastDecomposeFailure == nil {
 		category := "content"
-		if source == "decompose-parse" {
+		retryable := false
+		switch source {
+		case "decompose-parse":
 			category = "invalid-response"
+		case "decompose-persist":
+			category = "infra"
+			retryable = true // a store persistence failure is operator-retryable, not a content judgement
 		}
 		prd.LastDecomposeFailure = &FailureReason{
 			Category:   category,
 			Detail:     cause.Error(),
 			Source:     source,
-			Retryable:  false,
+			Retryable:  retryable,
 			OccurredAt: time.Now(),
 		}
 	}
