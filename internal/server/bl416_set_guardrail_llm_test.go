@@ -15,6 +15,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/inference"
 )
 
@@ -32,7 +33,7 @@ func (o *guardrailLLMTestOrch) SetPRDLLM(string, *string, *string, *string, *str
 }
 func (o *guardrailLLMTestOrch) SetTaskLLM(string, string, string, string, string, string) (any, error) {
 	o.taskLLMCalls++
-	return map[string]any{"ok": true}, nil
+	return &autonomous.PRD{ID: "p1"}, nil
 }
 func (o *guardrailLLMTestOrch) SetPRDGuardrailLLM(_ string, backend, model *string, _ string) (any, error) {
 	o.prdGuardrailCalls++
@@ -42,7 +43,7 @@ func (o *guardrailLLMTestOrch) SetPRDGuardrailLLM(_ string, backend, model *stri
 func (o *guardrailLLMTestOrch) SetTaskGuardrailLLM(_, _ string, backend, model *string, _ string) (any, error) {
 	o.taskGuardrailCalls++
 	o.gotBackend, o.gotModel = backend, model
-	return map[string]any{"ok": true}, nil
+	return &autonomous.PRD{ID: "p1"}, nil
 }
 
 func bl416Post(t *testing.T, orch *guardrailLLMTestOrch, action, body string) *httptest.ResponseRecorder {

@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/dmz006/datawatch/internal/audit"
+	"github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/inference"
 )
 
@@ -43,7 +44,7 @@ func (o *verifLLMTestOrch) apply(key string, backend, model, effort *string) (an
 	if effort != nil {
 		v.effort = *effort
 	}
-	return map[string]any{"ok": true}, nil
+	return &autonomous.PRD{ID: key}, nil
 }
 
 func (o *verifLLMTestOrch) SetTaskVerificationLLM(prdID, taskID string, backend, model, effort *string, _ string) (any, error) {
