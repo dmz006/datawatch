@@ -130,6 +130,20 @@ The testing tracker (`docs/testing-tracker.md`) must include **two levels of val
 - Never push without bumping the version — a version mismatch between the binary and the running
   daemon causes confusing support issues.
 
+### Feature branches and merges
+
+- Feature branches do **not** change the version number. Neither `cmd/datawatch/main.go` nor
+  `internal/server/api.go` changes on a branch, and the `## vX.Y.Z` heading in `CHANGELOG.md` is
+  not added on a branch.
+- `scripts/merge-branches-bump-version.sh` does the version step when branches reach main. It
+  chooses the next patch above the current main version and records that version in one bump
+  commit that covers every branch merged in that run.
+- `scripts/check-merge-version.sh` runs before each branch is merged. It refuses a branch whose
+  version change is not the expected next patch, and the refusal names the expected version.
+- `scripts/set-release-version.sh` is the writer. It sets the version in both version files and
+  adds the matching heading to `CHANGELOG.md`. The merge script calls it; do not edit those
+  three places by hand for a merge.
+
 ## Dependency Rules
 
 - Do not add new Go module dependencies without noting them in `CHANGELOG.md`.
