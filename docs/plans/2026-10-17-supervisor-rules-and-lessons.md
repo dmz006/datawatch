@@ -276,6 +276,27 @@ requirement (open question 19).
   finished. The queue is split by lane up front (small independent fixes to the qwen lanes,
   work needing the Claude builder to the Claude lane), planning for the next item runs while
   the current one builds, and the report names each lane and its occupant.
+- **Tmux-loss check (lesson, 2026-10-18).** Every tick runs
+  `systemctl --user show datawatch-tmux -p NRestarts,ActiveEnterTimestamp`. A higher
+  NRestarts or a newer ActiveEnterTimestamp than the last tick means the tmux server was
+  lost and every session died. Then list sessions, audit every non-terminal PRD for killed
+  worker, verify and guardrail sessions, restart the supervisor session if it was killed
+  (`datawatch session restart <id> --task "<short note>"`; a task over about 8 KB cannot be
+  resumed, BL503), recreate the session-only crons, and find the cause before moving on:
+  read what ran in the last 60 seconds in `~/.pi/agent/sessions/*/` and
+  `~/.claude/projects/*/` transcripts (UTC) and `journalctl --user -u datawatch-tmux`.
+- **Dangerous-script review (lesson, 2026-10-18).** A task that writes or runs a script
+  touching tmux, `pkill`, `killall`, `systemctl`, daemon start or stop, or a sandbox or
+  cleanup helper is read line by line before its verification runs. Require an explicit
+  `-S <socket>` or `env -u TMUX`, never `TMUX_TMPDIR` alone (tmux prefers `$TMUX`, which
+  inside a worker pane points at the production server), and never `kill-server`,
+  `kill-session -a` or a name-pattern kill. A verification script that exercises such a
+  helper must run with `env -u TMUX -u TMUX_TMPDIR` and throwaway directories only.
+- **Mass-kill log.** 2026-10-18 20:18:09: a worker's sandbox helper ran
+  `TMUX_TMPDIR=$dir tmux kill-server` inside a production pane, which killed the production
+  tmux server and every session. Found in the worker's pi transcript, reproduced with
+  throwaway servers. Recovered: sessions relaunched by the daemon, the supervisor restarted,
+  the helper fixed in the PRD worktree. Fix PRD: BL504.
 - **Plan check against the original spec.** A rewritten or shortened spec can drop test
   requirements, so compare the decomposed plan with the original request and add missing
   tests or surfaces with a task edit.
