@@ -36,6 +36,51 @@ func TestPairingWarnings_MatchingPairGivesNoWarning(t *testing.T) {
 	}
 }
 
+// TestPairingWarnings_PiPromptProviderServedNoWarning pins the acceptance case:
+// a provider-served model (ollama/ prefix) is forwarded to pi and pi-prompt
+// decompose sessions, so no warning must fire for those backends.
+func TestPairingWarnings_PiPromptProviderServedNoWarning(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  Config
+		refs map[string][]string
+	}{
+		{
+			name: "pi-prompt planning backend with ollama model and pi-prompt PRDs",
+			cfg:  Config{PlanningBackend: "pi-prompt", PlanningModel: "ollama/qwen3.8-64k:27b"},
+			refs: map[string][]string{"pi-prompt": {"p1", "p2"}},
+		},
+		{
+			name: "pi planning backend with ollama model and pi PRDs",
+			cfg:  Config{PlanningBackend: "pi", PlanningModel: "ollama/qwen3.8-64k:27b"},
+			refs: map[string][]string{"pi": {"p1", "p2"}},
+		},
+		{
+			name: "empty planning backend with ollama model and pi-prompt PRDs",
+			cfg:  Config{PlanningModel: "ollama/qwen3.8-64k:27b"},
+			refs: map[string][]string{"pi-prompt": {"p1"}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := PairingWarnings(tt.cfg, tt.refs)
+			if got == nil {
+				t.Fatal("want a non-nil empty slice so the JSON field is an array")
+			}
+			if len(got) != 0 {
+				t.Fatalf("want zero warnings for a pi-family backend serving provider models, got %v", got)
+			}
+		})
+	}
+}
+
+func TestPairingWarnings_VerificationPiPromptNoWarning(t *testing.T) {
+	cfg := Config{VerificationBackend: "pi-prompt", VerificationModel: "ollama/qwen3.8-64k:27b"}
+	if got := PairingWarnings(cfg, nil); len(got) != 0 {
+		t.Fatalf("want zero warnings, the pi-family backend serves provider-served models, got %v", got)
+	}
+}
+
 func TestPairingWarnings_MismatchedPrefixGivesOneWarningNamingBothBackends(t *testing.T) {
 	cfg := Config{PlanningModel: "ollama/qwen3.8:27b"}
 	got := PairingWarnings(cfg, map[string][]string{"claude-code": {"p1"}})
