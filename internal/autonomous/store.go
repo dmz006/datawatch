@@ -31,6 +31,11 @@ type Store struct {
 	profiles map[string]*GuardrailProfile
 	// BL410 Phase 1 — retry profiles
 	retryProfiles map[string]*RetryProfile
+
+	// SavePRDFailHook is test-only: when set and it returns true for a PRD,
+	// SavePRD rejects the save with an error. Nil in production — behavior
+	// is unchanged when unset.
+	SavePRDFailHook func(prd *PRD) bool
 }
 
 // NewStore opens (or creates) the JSONL files under dir/autonomous/.
@@ -201,6 +206,9 @@ func (s *Store) UpdatePRDFields(id, title, spec string) (*PRD, error) {
 func (s *Store) SavePRD(p *PRD) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.SavePRDFailHook != nil && s.SavePRDFailHook(p) {
+		return errors.New("SavePRD: forced failure (test hook)")
+	}
 	p.UpdatedAt = time.Now()
 	p.Decisions = trimDecisions(p.Decisions)
 	p.Rev++
