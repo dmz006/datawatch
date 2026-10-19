@@ -18,7 +18,7 @@ func newScratchProjectRepo(t *testing.T) string {
 	dir := t.TempDir()
 	run := func(args ...string) {
 		t.Helper()
-		if out, rerr := exec.Command(git, "-C", dir, args...).CombinedOutput(); rerr != nil {
+		if out, rerr := exec.Command(git, append([]string{"-C", dir}, args...)...).CombinedOutput(); rerr != nil {
 			t.Fatalf("git %v: %v: %s", args, rerr, out)
 		}
 	}
@@ -79,7 +79,9 @@ func TestLeftoverWarningsSurfacedOnRollup(t *testing.T) {
 func TestLeftoverWarningsDedupedOnRepeatedCleanup(t *testing.T) {
 	m, prd := bl382RunningPRD(t)
 	proj := t.TempDir()
-	mustWriteFile(t, filepath.Join(proj, "mystery.txt"), "unexpected\n")
+	// No git repo here: cleanup must report the scratch candidate as a
+	// leftover instead of deleting it.
+	mustWriteFile(t, filepath.Join(proj, ".decompose-output-dedup.json"), "{}")
 
 	m.finishRunArtifacts(prd.ID, proj)
 	m.finishRunArtifacts(prd.ID, proj)
