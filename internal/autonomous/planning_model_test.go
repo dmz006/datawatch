@@ -20,6 +20,19 @@ func TestResolvePlannedModel(t *testing.T) {
 			want:                "",
 		},
 		{
+			name:                "global ollama-prefixed model is forwarded by pi-prompt with no planning backend",
+			backend:             "pi-prompt",
+			globalPlanningModel: "ollama/qwen3.8-64k:27b",
+			want:                "ollama/qwen3.8-64k:27b",
+		},
+		{
+			name:                  "global ollama-prefixed model is forwarded by pi-prompt with matching planning backend",
+			backend:               "pi-prompt",
+			globalPlanningBackend: "pi-prompt",
+			globalPlanningModel:   "ollama/qwen3.8-64k:27b",
+			want:                  "ollama/qwen3.8-64k:27b",
+		},
+		{
 			name:                  "global ollama-prefixed model with non-matching planning backend does not pair with claude-code",
 			backend:               "claude-code",
 			globalPlanningBackend: "opencode",
@@ -197,16 +210,40 @@ func plannedPRDCases(backend string) []plannedPRDCase {
 	}
 }
 
+func TestServesProviderModels(t *testing.T) {
+	tests := []struct {
+		backend string
+		want    bool
+	}{
+		{"pi", true},
+		{"pi-prompt", true},
+		{"claude-code", false},
+		{"opencode", false},
+		{"ollama", false},
+		{"", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.backend, func(t *testing.T) {
+			if got := servesProviderModels(tt.backend); got != tt.want {
+				t.Errorf("servesProviderModels(%q) = %v, want %v", tt.backend, got, tt.want)
+			}
+		})
+	}
+}
+
 // expectedPlannedModel is the matrix oracle. It is written from the rule in
 // the comment above, not from resolvePlannedModel, and it uses the axis kind
 // instead of parsing the model string, so a wrong resolver fails the matrix.
+// A foreign prefix only disqualifies a model when the decompose backend
+// cannot serve provider-tagged models (pi-family backends forward any
+// "provider/model" string to their configured provider).
 func expectedPlannedModel(backend string, g plannedGlobalCase, p plannedPRDCase) string {
 	if p.prdDecompositionModel != "" {
 		return p.prdDecompositionModel
 	}
 	if g.kind != plannedGlobalNone {
 		pairedBackend := g.planningBackend == "" || g.planningBackend == backend
-		ownedElsewhere := g.kind == plannedGlobalForeign
+		ownedElsewhere := g.kind == plannedGlobalForeign && !servesProviderModels(backend)
 		if pairedBackend && !ownedElsewhere {
 			return g.model
 		}

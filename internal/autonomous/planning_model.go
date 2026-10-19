@@ -10,14 +10,17 @@ import "strings"
 //  1. prdDecompositionModel — an explicit PRD-level planning pairing always wins.
 //  2. globalPlanningModel — only when it is paired with backend: the global
 //     planning backend is empty or equal to backend, and the model does not
-//     carry a "<other>/<model>" prefix naming a different backend.
+//     carry a "<prefix>/<model>" prefix that backend cannot serve.
 //  3. prdModel — only when the PRD's own backend equals backend, so the model
 //     belongs to that backend.
 //  4. "" — let the backend pick its default.
 //
-// Passing a model that belongs to another backend (e.g. an Ollama tag
-// "ollama/qwen3.8:27b" handed to claude-code) makes the session stall on an
-// "unknown model" prompt, which is why each tier is checked against backend.
+// The pairing rule is decided by the backend the PRD or config names: the
+// model must be one that backend can serve. pi-family backends serve
+// provider-tagged models (e.g. "ollama/qwen3.8:27b"), so a foreign-looking
+// prefix is fine for them; for other backends (e.g. an Ollama tag handed to
+// claude-code) it stalls the session on an "unknown model" prompt, which is
+// why each tier is checked against backend.
 func resolvePlannedModel(backend, prdDecompositionModel, prdBackend, prdModel, globalPlanningBackend, globalPlanningModel string) string {
 	if prdDecompositionModel != "" {
 		return prdDecompositionModel
@@ -31,11 +34,24 @@ func resolvePlannedModel(backend, prdDecompositionModel, prdBackend, prdModel, g
 	return ""
 }
 
+// servesProviderModels reports whether backend accepts arbitrary model names
+// written in pi's own "provider/model" form. The pi and pi-prompt backends
+// forward any such model string to their configured provider (for example
+// "ollama/qwen3.8:27b"), so the prefix is a provider tag, not a different
+// datawatch backend.
+func servesProviderModels(backend string) bool {
+	return backend == "pi" || backend == "pi-prompt"
+}
+
 // carriesForeignBackendPrefix reports whether model is written as
-// "<prefix>/<model>" with a prefix other than backend. Such a model is
-// addressed to a different backend or provider, so it does not pair with
-// backend.
+// "<prefix>/<model>" with a prefix backend cannot serve. pi-family backends
+// serve provider-tagged models, so they never carry a foreign prefix. For
+// other backends the prefix names a backend the PRD or config did not
+// select, so the model does not pair with backend.
 func carriesForeignBackendPrefix(model, backend string) bool {
+	if servesProviderModels(backend) {
+		return false
+	}
 	_, foreign := foreignModelPrefix(model, backend)
 	return foreign
 }
