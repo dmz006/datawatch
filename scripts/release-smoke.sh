@@ -57,6 +57,16 @@ SMOKE_DIR=$(cd "$(dirname "$0")" && pwd)
 REPO_DIR=$(cd "$SMOKE_DIR/.." && pwd)
 REPO_PARENT=$(cd "$REPO_DIR/.." && pwd)
 
+# tmux sandbox helpers (scripts/lib/sandbox.sh) — public functions that run
+# every tmux call as `env -u TMUX tmux -S '<scratch>/tmux-$(id -u)/default'`
+# and refuse production scratch dirs. This script sources them and follows the
+# same socket layout + refusal rules for its own scoped cleanup below
+# (cleanup_all) so production tmux sockets are never touched.
+if [[ -f "$SMOKE_DIR/lib/sandbox.sh" ]]; then
+  # shellcheck source=/dev/null
+  source "$SMOKE_DIR/lib/sandbox.sh"
+fi
+
 # --- static source lints (no daemon required) --------------------------------
 # v6.11.25 — keep docs/plans/ clean before every release.
 if [ "${DW_SKIP_TIDY_CHECK:-0}" != "1" ] && [ -x "$SMOKE_DIR/tidy-plans.sh" ]; then
@@ -111,6 +121,7 @@ mkdir -p "$TEST_DATA_DIR" # scratch dir for this script's own fixtures either wa
 EXTERNAL_DAEMON=0
 PLUGINS_SMOKE_DIR=""
 DEMO_SERVICE_PORT=""
+SMOKE_TMUX_DIR=""
 
 if [[ -n "${DW_BASE:-}" ]]; then
   EXTERNAL_DAEMON=1
@@ -195,8 +206,18 @@ YAML
   echo "Binary       : $_DW_BIN"
   echo ""
 
+  # Dedicated tmux socket scratch dir, under the smoke scratch area: the daemon
+  # is started with TMUX_TMPDIR pointing here so its tmux sessions
+  # (cs-dw-smoke-test-*) land on a dedicated socket — never the production or
+  # default tmux server. cleanup_all cleans up the exact same socket
+  # layout (tmux-$(id -u)/default under $SMOKE_TMUX_DIR), matching the sandbox
+  # helper's convention (scripts/lib/sandbox.sh).
+  SMOKE_TMUX_DIR="${TEST_WORK_DIR}/dw-tmux-scratch"
+  mkdir -p "$SMOKE_TMUX_DIR"
+
   # Start the test daemon in the background.
-  "$_DW_BIN" --config "$TEST_CONFIG" start --foreground \
+  env TMUX_TMPDIR="${TEST_WORK_DIR}/dw-tmux-scratch" \
+    "$_DW_BIN" --config "$TEST_CONFIG" start --foreground \
     >"$TEST_WORK_DIR/daemon.log" 2>&1 &
   TEST_DAEMON_PID=$!
 
@@ -356,8 +377,23 @@ except Exception:
     wait "$TEST_DAEMON_PID" 2>/dev/null || true
   fi
   # Kill any tmux sessions the smoke daemon created (cs-dw-smoke-test-*).
-  tmux list-sessions -F '#{session_name}' 2>/dev/null | grep '^cs-dw-smoke-test-' | \
-    while read -r s; do tmux kill-session -t "$s" 2>/dev/null || true; done
+  # The daemon was started with TMUX_TMPDIR=$SMOKE_TMUX_DIR, so its socket
+  # lives at $SMOKE_TMUX_DIR/tmux-$(id -u)/default. BOTH the list and the
+  # kill are scoped to that socket: each tmux line strips an inherited TMUX
+  # (env -u TMUX) and targets that explicit scratch socket — the same layout
+  # the sandbox helper (scripts/lib/sandbox.sh, sourced above) enforces — so
+  # the production/default tmux server is never touched, even on hosts without
+  # tmux (guarded below; helper refusal rules also cover prod-dir misuse).
+  if [[ -n "${SMOKE_TMUX_DIR:-}" && -d "${SMOKE_TMUX_DIR:-}" && -f "${SMOKE_TMUX_DIR:-}/tmux-$(id -u)/default" ]] \
+     && command -v tmux >/dev/null 2>&1; then
+    local s
+    while IFS= read -r s; do
+      [[ -n "$s" ]] || continue
+      env -u TMUX tmux -S "$SMOKE_TMUX_DIR/tmux-$(id -u)/default" kill-session -t "$s" 2>/dev/null || true
+    done < <(env -u TMUX tmux -S "$SMOKE_TMUX_DIR/tmux-$(id -u)/default" list-sessions -F '#{session_name}' 2>/dev/null | grep '^cs-dw-smoke-test-' || true)
+    # Kill the scratch server itself so no orphaned server survives the run.
+    env -u TMUX tmux -S "$SMOKE_TMUX_DIR/tmux-$(id -u)/default" kill-server 2>/dev/null || true
+  fi
   if [[ -n "${KEEP_TEST_DIR:-}" ]]; then
     echo "Test data kept: $TEST_WORK_DIR"
   else
