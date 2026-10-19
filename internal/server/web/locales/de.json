@@ -1269,6 +1269,7 @@
   "settings_observer_open_btn_title": "Observer-Ansicht öffnen: Shape A/B/C-Konfiguration + Federated-Peers-Karte + Peer-Statistik",
   "settings_observer_section": "Föderierter Beobachter",
   "settings_orphaned_tmux": "Verwaiste tmux-Sitzungen",
+  "settings_tmux_kill_guard": "Wenn aktiv, werden Worker-/Verifier-/Judge-Sitzungen, die vom Daemon gestartet wurden, daran gehindert, den tmux-Server des Operators zu beenden. Inaktiv = keine Sicherung.",
   "settings_finished_oneshots": "Beendete One-Shot-Sitzungen",
   "settings_finished_oneshots_none": "Keine beendeten One-Shot-Sitzungen.",
   "settings_finished_oneshots_open": "beendete One-Shot-Sitzung(en) noch offen.",
