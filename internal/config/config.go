@@ -1960,6 +1960,10 @@ type AutonomousConfig struct {
 	// An Automaton's own max_concurrent_tasks overrides it. 1 =
 	// sequential (default).
 	MaxConcurrentTasks int `yaml:"max_concurrent_tasks,omitempty" json:"max_concurrent_tasks,omitempty"`
+	// MaxEnginesPerNode is how many engine sessions one compute node
+	// may run at once. 1 = one engine per node (default). Values below
+	// 1 are clamped to 1 at load time.
+	MaxEnginesPerNode int `yaml:"max_engines_per_node,omitempty" json:"max_engines_per_node,omitempty"`
 	// ProjectWriteSerialization (BL428 §3a —
 	// docs/plans/2026-10-14-concurrency-and-budget-design.md) selects
 	// how Automaton task writes that target the same project tree are
@@ -2692,6 +2696,7 @@ func DefaultConfig() *Config {
 		Autonomous: AutonomousConfig{
 			AutoFixRetries:     1,
 			MaxConcurrentTasks: 1,
+			MaxEnginesPerNode:  1,
 			StaleTaskSeconds:   900,
 			// BL410 Phase 1 — see AutonomousConfig.RetryPolicy's doc
 			// comment for why "content"/"policy" are absent here.
@@ -3082,6 +3087,9 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.Autonomous.MaxConcurrentTasks <= 0 {
 		cfg.Autonomous.MaxConcurrentTasks = 1
+	}
+	if cfg.Autonomous.MaxEnginesPerNode < 1 {
+		cfg.Autonomous.MaxEnginesPerNode = 1
 	}
 	// BL428 §3a — autonomous.project_write_serialization defaults to
 	// "advisory"; "parallel" is reserved-but-disabled (recognized,
