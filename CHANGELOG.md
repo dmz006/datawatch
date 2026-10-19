@@ -3,7 +3,13 @@
 All notable changes to datawatch will be documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## [Unreleased]
+## v9.5.22 — a retried task whose work already landed is judged by its own verification script
+
+### Fixed
+- **A retried task whose work an earlier attempt already committed is no longer failed as "no changes detected".** Instead, the task's own verification script is run against the current tree: a passing script completes the task, and the completion is recorded as an audit note.
+- **A failing verification script fails the task, showing the script's exit code and output.**
+- **A verification script the task named but that is missing from the worktree is reported as a setup fault naming the missing path, and the task is held (blocked) for operator action rather than failed.**
+- Version bump 9.5.21 -> 9.5.22 (cmd/datawatch/main.go + internal/server/api.go kept identical).
 
 ## v9.5.21 — autonomous: check a PRD's guardrail verdict once, and stage only a session's own changes
 
