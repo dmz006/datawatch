@@ -13,8 +13,10 @@ import (
 // picks the shape: empty or "full" returns prd as it is, and "compact" returns
 // the small WriteView summary. Any other value is rejected.
 func (s *Server) writeAutonomousResult(w http.ResponseWriter, r *http.Request, prd any, taskID, storyID, message string) {
+	// A nil reply is written as it is, as before the compact view existed,
+	// so a write whose PRD lookup came back empty keeps its 200 response.
 	if isNilPRD(prd) {
-		http.Error(w, "not found", http.StatusNotFound)
+		writeJSONOK(w, prd)
 		return
 	}
 	switch view := r.URL.Query().Get("view"); view {
