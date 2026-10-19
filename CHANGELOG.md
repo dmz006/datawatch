@@ -3,6 +3,10 @@
 All notable changes to datawatch will be documented here.
 Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## Unreleased
+
+Automatic commits made after an automated task now use the task's title as their subject, and the commit body lists the files changed and the verification result. Snapshot commits made before a task starts now name the PRD and the purpose of the snapshot instead of repeating the worker prompt.
+
 ## v9.5.24 — a retried task whose work already landed is judged by its own verification script
 
 ## v9.5.25 — autonomous: resolve tasks left verifying after a restart from the recorded verdict
