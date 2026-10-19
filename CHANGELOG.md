@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.10 — autonomous: detect a worker or verifier session sitting idle
+
+**Stuck autonomous sessions now fail instead of waiting forever.** If an autonomous task's worker or verifier session sits waiting for input (or otherwise not in a terminal state) with no live runner process for longer than `autonomous.session_idle_timeout_seconds`, the daemon kills it and records the failure as an infra problem with the reason 'session idle without completion (session=..., backend=..., model=...)'. The `auto_fix_retries` budget then decides whether to retry. A session with a live claude, pi, or opencode process is never treated as idle, so a running task is not killed early.
+
+**New setting `autonomous.session_idle_timeout_seconds` (default 900).** It is settable through the same paths as the other autonomous.* settings: REST, MCP, and the web settings card, which has labels in all five language bundles. 0 means "use the default 900".
+
+**The alert reaches you when the detector fires.** A datawatch alert is raised at that moment, so you do not have to find the stuck session yourself.
+- Version bump 9.5.9 -> 9.5.10 (cmd/datawatch/main.go + internal/server/api.go kept identical).
+
 ## v9.5.9 — fix(restart): PRD capacity and subprocess sessions now survive a daemon restart; restart safety is documented
 
 - **Verified and now documented:** tmux-backed sessions survive a daemon restart with their pane, process, state and output stream intact. The opt-in live restart test (`DW_LIVE_RESTART_TEST=1`) checks this.
