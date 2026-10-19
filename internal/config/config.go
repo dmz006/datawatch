@@ -2070,7 +2070,8 @@ type AutonomousConfig struct {
 	// CapacityGPUUtilPct holds new tasks back while a node's busiest GPU is at
 	// or above this utilisation percent (0 = off).
 	CapacityGPUUtilPct int `yaml:"capacity_gpu_util_pct,omitempty" json:"capacity_gpu_util_pct,omitempty"`
-	// StaleTaskSeconds — 0 inherits session.stale_timeout_seconds.
+	// StaleTaskSeconds — default 900 seconds. A zero or negative value
+	// inherits session.stale_timeout_seconds.
 	StaleTaskSeconds int `yaml:"stale_task_seconds,omitempty" json:"stale_task_seconds,omitempty"`
 	// AutoFixRetries — how many times to re-prompt on verifier failure.
 	AutoFixRetries int `yaml:"auto_fix_retries,omitempty" json:"auto_fix_retries,omitempty"`
@@ -2681,6 +2682,7 @@ func DefaultConfig() *Config {
 		Autonomous: AutonomousConfig{
 			AutoFixRetries:     1,
 			MaxConcurrentTasks: 1,
+			StaleTaskSeconds:   900,
 			// BL410 Phase 1 — see AutonomousConfig.RetryPolicy's doc
 			// comment for why "content"/"policy" are absent here.
 			RetryPolicy:             map[string]int{"infra": 4, "scope": 0},
