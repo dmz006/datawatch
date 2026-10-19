@@ -251,3 +251,69 @@ func TestWriteAutonomousResult(t *testing.T) {
 		})
 	}
 }
+
+// TestWriteCasesCompactPRDLevel checks that each PRD-level write case returns
+// the compact write view when asked for view=compact. The path holds {id}
+// where the PRD goes. Each subtest builds its own PRD, so an earlier action
+// cannot change the status a later one sees. The create case posts to the
+// collection route, so it builds its PRD inside the handler.
+func TestWriteCasesCompactPRDLevel(t *testing.T) {
+	tests := []struct {
+		name   string
+		method string
+		path   string
+		body   string
+		status autonomous.PRDStatus
+	}{
+		{"run", http.MethodPost, "/api/autonomous/prds/{id}/run", ``, autonomous.PRDApproved},
+		{"cancel", http.MethodDelete, "/api/autonomous/prds/{id}", ``, autonomous.PRDNeedsReview},
+		{"approve", http.MethodPost, "/api/autonomous/prds/{id}/approve", `{"actor":"tester"}`, autonomous.PRDNeedsReview},
+		{"reject", http.MethodPost, "/api/autonomous/prds/{id}/reject", `{"reason":"not ready"}`, autonomous.PRDNeedsReview},
+		{"reset_to_draft", http.MethodPost, "/api/autonomous/prds/{id}/reset_to_draft", ``, autonomous.PRDCancelled},
+		{"archive", http.MethodPost, "/api/autonomous/prds/{id}/archive", ``, autonomous.PRDCompleted},
+		{"request_revision", http.MethodPost, "/api/autonomous/prds/{id}/request_revision", `{"note":"rework"}`, autonomous.PRDNeedsReview},
+		{"set_llm", http.MethodPost, "/api/autonomous/prds/{id}/set_llm", `{"backend":""}`, autonomous.PRDNeedsReview},
+		{"set_type", http.MethodPost, "/api/autonomous/prds/{id}/set_type", `{"type":""}`, autonomous.PRDNeedsReview},
+		{"set_guided_mode", http.MethodPost, "/api/autonomous/prds/{id}/set_guided_mode", `{"guided_mode":true}`, autonomous.PRDNeedsReview},
+		{"set_skills", http.MethodPost, "/api/autonomous/prds/{id}/set_skills", `{"skills":[]}`, autonomous.PRDNeedsReview},
+		{"set_concurrency", http.MethodPost, "/api/autonomous/prds/{id}/set_concurrency", `{"max_concurrent_tasks":1}`, autonomous.PRDNeedsReview},
+		{"set_priority", http.MethodPost, "/api/autonomous/prds/{id}/set_priority", `{"priority":1}`, autonomous.PRDNeedsReview},
+		{"set_dirs", http.MethodPost, "/api/autonomous/prds/{id}/set_dirs", `{"read_dirs":[],"write_dirs":[]}`, autonomous.PRDNeedsReview},
+		{"set_quality_gates", http.MethodPost, "/api/autonomous/prds/{id}/set_quality_gates", `{"enabled":false}`, autonomous.PRDNeedsReview},
+		{"set_continue_on_story_failure", http.MethodPost, "/api/autonomous/prds/{id}/set_continue_on_story_failure", `{"continue_on_story_failure":true}`, autonomous.PRDNeedsReview},
+		{"set_git", http.MethodPost, "/api/autonomous/prds/{id}/set_git", `{"auto_pr":false,"base_branch":"main"}`, autonomous.PRDNeedsReview},
+		{"set_verification_llm", http.MethodPost, "/api/autonomous/prds/{id}/set_verification_llm", `{}`, autonomous.PRDNeedsReview},
+		{"set_memory_seed", http.MethodPost, "/api/autonomous/prds/{id}/set_memory_seed", `{"enabled":false}`, autonomous.PRDNeedsReview},
+		{"set_memory_harvest", http.MethodPost, "/api/autonomous/prds/{id}/set_memory_harvest", `{"enabled":false}`, autonomous.PRDNeedsReview},
+		{"set_permission_mode", http.MethodPost, "/api/autonomous/prds/{id}/set_permission_mode", `{"permission_mode":""}`, autonomous.PRDNeedsReview},
+		{"set_retry_policy", http.MethodPut, "/api/autonomous/prds/{id}/set_retry_policy", `{}`, autonomous.PRDNeedsReview},
+		{"create", http.MethodPost, "/api/autonomous/prds", `{"spec":"new spec","project_dir":"{dir}"}`, autonomous.PRDNeedsReview},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			s, id := newWriteCasesTestServer(t, tc.status)
+			path := strings.Replace(tc.path, "{id}", id, 1) + "?view=compact"
+			body := strings.Replace(tc.body, "{dir}", t.TempDir(), 1)
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(tc.method, path, strings.NewReader(body))
+			s.handleAutonomousPRDs(rec, req)
+
+			if rec.Code < 200 || rec.Code > 299 {
+				t.Fatalf("status = %d, want 2xx (body %q)", rec.Code, rec.Body.String())
+			}
+			if rec.Body.Len() >= 1024 {
+				t.Errorf("compact body is %d bytes, want < 1024", rec.Body.Len())
+			}
+			var got map[string]json.RawMessage
+			if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+				t.Fatalf("decode reply: %v", err)
+			}
+			for _, k := range []string{"id", "status", "rev"} {
+				if _, ok := got[k]; !ok {
+					t.Errorf("reply missing key %q; body %s", k, rec.Body.String())
+				}
+			}
+		})
+	}
+}
