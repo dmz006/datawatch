@@ -292,6 +292,7 @@ requirement (open question 19).
   inside a worker pane points at the production server), and never `kill-server`,
   `kill-session -a` or a name-pattern kill. A verification script that exercises such a
   helper must run with `env -u TMUX -u TMUX_TMPDIR` and throwaway directories only.
+- **Second tmux loss, 2026-10-18 22:55:29.** The dedicated tmux server exited and systemd restarted it at 22:55:31; every session died. Cause not established: no worker command in the minute before touched tmux, the 22:50 and 22:51 kills targeted PIDs that were already gone, and the production server (PID 2185604) was not among them. Lesson: duplicated tmux helpers written by workers are the risk; test cleanup must use the existing scripts only.
 - **Mass-kill log.** 2026-10-18 20:18:09: a worker's sandbox helper ran
   `TMUX_TMPDIR=$dir tmux kill-server` inside a production pane, which killed the production
   tmux server and every session. Found in the worker's pi transcript, reproduced with
