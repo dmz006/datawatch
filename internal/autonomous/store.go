@@ -12,6 +12,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -296,6 +298,8 @@ func (s *Store) SetStories(prdID string, stories []Story) error {
 		return fmt.Errorf("prd %q not found", prdID)
 	}
 	// Re-id each story + child task to ensure uniqueness across PRDs.
+	// (local mutation only — the store maps are untouched until the full
+	// validation pass below succeeds).
 	for i := range stories {
 		if stories[i].ID == "" {
 			stories[i].ID = newID()
@@ -315,37 +319,82 @@ func (s *Store) SetStories(prdID string, stories []Story) error {
 			stories[i].Tasks[j].PRDID = prdID
 			stories[i].Tasks[j].CreatedAt = time.Now()
 			stories[i].Tasks[j].UpdatedAt = time.Now()
-			s.tasks[stories[i].Tasks[j].ID] = &stories[i].Tasks[j]
 		}
-		s.stories[stories[i].ID] = &stories[i]
 	}
 	// v8.36.5 — resolve DependsOn from decompose's LLM-output titles to real
 	// IDs, now that every story/task above has one. DependsOn is documented
 	// as "other Task/Story IDs" and every consumer (topoSort, the
 	// sequential/concurrent executor paths) compares it against IDs — but
-	// the decompose LLM can only ever reference a sibling by its title (IDs
-	// don't exist until this exact function assigns them), so an
-	// unresolved DependsOn entry is a title, not an ID, and silently never
-	// matches anything. Found live on PRD a2833a5e: this meant dependency
-	// ordering had never actually been enforced — topoSort treated every
-	// task as having no real dependency edges, executing in ID-sort order,
-	// which happens to approximate decompose's own sequence closely enough
-	// that the gap went unnoticed until a cancelled task's dependent
-	// proceeded without it. See resolveDependsOnTitles for the resolution
-	// itself (extracted v8.36.6 for reuse by RepairDependsOn).
-	resolveDependsOnTitles(stories, s.stories, s.tasks)
+	// the decompose LLM can only ever reference a sibling by its title (or a
+	// positional code; IDs don't exist until this exact function assigns
+	// them), so an unresolved DependsOn entry silently never matched
+	// anything. Found live on PRD a2833a5e: this meant dependency ordering
+	// had never actually been enforced — topoSort treated every task as
+	// having no real dependency edges, executing in ID-sort order, which
+	// happens to approximate decompose's own sequence closely enough that
+	// the gap went unnoticed until a cancelled task's dependent proceeded
+	// without it. Resolution itself lives in resolveDependsOn (extracted
+	// v8.36.6 for reuse by RepairDependsOn).
+	//
+	// Full validation pass BEFORE mutating the store maps: if any entry is
+	// unresolvable or the resolved plan contains a dependency cycle, reject
+	// the whole plan and persist nothing.
+	if err := resolveDependsOn(stories, s.stories, s.tasks); err != nil {
+		return err
+	}
+	for i := range stories {
+		s.stories[stories[i].ID] = &stories[i]
+		for j := range stories[i].Tasks {
+			s.tasks[stories[i].Tasks[j].ID] = &stories[i].Tasks[j]
+		}
+	}
 	prd.Story = stories
 	prd.UpdatedAt = time.Now()
 	return s.persist()
 }
 
-// resolveDependsOnTitles rewrites each DependsOn entry that names a sibling
-// by title (not yet an ID) to that sibling's real ID, leaving anything that
-// matches neither a known ID nor a known sibling title untouched rather
-// than silently dropping it. Shared by SetStories (fresh decompose output)
-// and RepairDependsOn (existing PRDs whose SetStories call predates this
-// fix and are still stuck with raw titles).
-func resolveDependsOnTitles(stories []Story, storyByID map[string]*Story, taskByID map[string]*Task) {
+// dependsOnReStoryTask matches a positional "sN-tM" reference (the Mth task
+// of the Nth story, 1-based)
+var dependsOnReStoryTask = regexp.MustCompile(`^s([1-9][0-9]*)-t([1-9][0-9]*)$`)
+
+// dependsOnReStory matches a positional "sN" reference (the Nth story, 1-based)
+var dependsOnReStory = regexp.MustCompile(`^s([1-9][0-9]*)$`)
+
+// dependsOnRePlainNumber matches a bare numeric reference (the Nth story, 1-based)
+var dependsOnRePlainNumber = regexp.MustCompile(`^[1-9][0-9]*$`)
+
+// resolveDependsOn validates and rewrites each DependsOn entry of the given
+// stories (which must already have real IDs assigned) into a real ID, and
+// rejects the plan if any entry cannot be resolved or if the resolved plan
+// contains a dependency cycle entirely within its own IDs.
+//
+// Each entry is trimmed of surrounding whitespace, then resolved in this
+// precedence:
+//  1. already a known story ID (story-level entry) or task ID (task-level
+//     entry) in the store's maps — kept as-is;
+//  2. a sibling story title (story-level) or sibling task title (task-level)
+//     from the same plan — that sibling's real ID. Task-level entries match
+//     task titles only, as before. (Interpretation documented here for the
+//     live-observed case on PRD a2833a5e, where decompose's LLM output came
+//     back with sibling titles rather than IDs.)
+//  3. a positional code, 1-based against the order of the stories slice
+//     being stored: "sN-tM" is the Mth task of the Nth story, "sN" is the
+//     Nth story, and bare number N is the Nth story at BOTH the story and
+//     the task level (a task may depend on an earlier story's completion);
+//  4. anything else — including positional codes out of range for this plan
+//     (N or M below 1, or past the last story/task) — is UNSRESOLVED and
+//     the whole plan is rejected with an error naming the exact raw entry
+//     and its owner story/task.
+//
+// After resolution, edges whose both endpoints are within this plan's own
+// story+task ID set are checked for cycles; edges pointing outside the
+// plan are ignored. A cycle rejects the plan with the cycle members named.
+//
+// Shared by SetStories (fresh decompose output — a rejection means nothing
+// was ever stored or persisted) and RepairDependsOn (existing PRDs whose
+// SetStories call predates the v8.36.5 fix and are still stuck with raw
+// titles).
+func resolveDependsOn(stories []Story, storyByID map[string]*Story, taskByID map[string]*Task) error {
 	taskIDByTitle := make(map[string]string, len(taskByID))
 	storyIDByTitle := make(map[string]string, len(stories))
 	for i := range stories {
@@ -354,33 +403,173 @@ func resolveDependsOnTitles(stories []Story, storyByID map[string]*Story, taskBy
 			taskIDByTitle[stories[i].Tasks[j].Title] = stories[i].Tasks[j].ID
 		}
 	}
+
+	errUnresolvable := func(raw, owner string) error {
+		return fmt.Errorf("unresolvable depends_on entry %q on %s", raw, owner)
+	}
+
+	// resolve maps one raw entry to its real ID, applying the precedence
+	// described above; storyLevel selects the known-ID map and the
+	// sibling-title map, positional codes work at both levels.
+	resolve := func(raw string, storyLevel bool) (string, bool) {
+		e := strings.TrimSpace(raw)
+		if storyLevel {
+			if _, ok := storyByID[e]; ok {
+				return e, true
+			}
+			if id, ok := storyIDByTitle[e]; ok {
+				return id, true
+			}
+		} else {
+			if _, ok := taskByID[e]; ok {
+				return e, true
+			}
+			if id, ok := taskIDByTitle[e]; ok {
+				return id, true
+			}
+		}
+		return positionalDependsOn(e, stories)
+	}
+
 	for i := range stories {
 		for k, dep := range stories[i].DependsOn {
-			if _, isID := storyByID[dep]; isID {
-				continue
+			id, ok := resolve(dep, true)
+			if !ok {
+				return errUnresolvable(dep, "story "+quote(stories[i].Title))
 			}
-			if id, ok := storyIDByTitle[dep]; ok {
-				stories[i].DependsOn[k] = id
-			}
+			stories[i].DependsOn[k] = id
 		}
 		for j := range stories[i].Tasks {
 			for k, dep := range stories[i].Tasks[j].DependsOn {
-				if _, isID := taskByID[dep]; isID {
-					continue
+				id, ok := resolve(dep, false)
+				if !ok {
+					return errUnresolvable(dep, "task "+quote(stories[i].Tasks[j].Title))
 				}
-				if id, ok := taskIDByTitle[dep]; ok {
-					stories[i].Tasks[j].DependsOn[k] = id
-				}
+				stories[i].Tasks[j].DependsOn[k] = id
 			}
 		}
 	}
+	if cyc := dependsOnCycle(stories); cyc != "" {
+		return fmt.Errorf("depends_on cycle: %s", cyc)
+	}
+	return nil
 }
 
-// RepairDependsOn (v8.36.6) re-runs resolveDependsOnTitles against a PRD's
+// quote wraps a name for use inside an error message.
+func quote(s string) string { return fmt.Sprintf("%q", s) }
+
+// positionalDependsOn resolves a positional code ("sN-tM" -> the Mth task
+// of the Nth story, "sN" or bare number N -> the Nth story) against the
+// stored story order; (ok) is false when the code is out of range.
+func positionalDependsOn(ref string, stories []Story) (string, bool) {
+	if m := dependsOnReStoryTask.FindStringSubmatch(ref); m != nil {
+		n, _ := strconv.Atoi(m[1])
+		mm, _ := strconv.Atoi(m[2])
+		if n >= 1 && n <= len(stories) && mm <= len(stories[n-1].Tasks) {
+			return stories[n-1].Tasks[mm-1].ID, true
+		}
+		return "", false
+	}
+	if m := dependsOnReStory.FindStringSubmatch(ref); m != nil {
+		n, _ := strconv.Atoi(m[1])
+		if n >= 1 && n <= len(stories) {
+			return stories[n-1].ID, true
+		}
+		return "", false
+	}
+	if dependsOnRePlainNumber.MatchString(ref) {
+		n, err := strconv.Atoi(ref)
+		if err == nil && n >= 1 && n <= len(stories) {
+			return stories[n-1].ID, true
+		}
+	}
+	return "", false
+}
+
+// dependsOnCycle returns "A -> B -> A" describing any dependency cycle
+// entirely within this plan's own story+task IDs, or "" if there is none.
+// Edges whose target is outside the plan's ID set are ignored: after
+// resolution every in-plan entry is a real ID, so a missing match means the
+// edge points at something outside this plan and can't form a cycle among
+// in-plan members.
+func dependsOnCycle(stories []Story) string {
+	inPlan := make(map[string]bool)
+	adj := make(map[string][]string)
+	for i := range stories {
+		inPlan[stories[i].ID] = true
+		for j := range stories[i].Tasks {
+			inPlan[stories[i].Tasks[j].ID] = true
+		}
+	}
+	addEdge := func(from, to string) {
+		if inPlan[to] {
+			adj[from] = append(adj[from], to)
+		}
+	}
+	for i := range stories {
+		for _, d := range stories[i].DependsOn {
+			addEdge(stories[i].ID, d)
+		}
+		for j := range stories[i].Tasks {
+			for _, d := range stories[i].Tasks[j].DependsOn {
+				addEdge(stories[i].Tasks[j].ID, d)
+			}
+		}
+	}
+
+	const (
+		white, gray, black = 0, 1, 2
+	)
+	color := make(map[string]int)
+	var stack []string
+	var cycle []string
+	var dfs func(n string) bool
+	dfs = func(n string) bool {
+		color[n] = gray
+		stack = append(stack, n)
+		for _, m := range adj[n] {
+			switch color[m] {
+			case white:
+				if dfs(m) {
+					return true
+				}
+			case gray:
+				start := 0
+				for k, v := range stack {
+					if v == m {
+						start = k
+						break
+					}
+				}
+				cycle = append(append([]string{}, stack[start:]...), m)
+				return true
+			}
+		}
+		stack = stack[:len(stack)-1]
+		color[n] = black
+		return false
+	}
+	for i := range stories {
+		if color[stories[i].ID] == white && dfs(stories[i].ID) {
+			return strings.Join(cycle, " -> ")
+		}
+		for j := range stories[i].Tasks {
+			id := stories[i].Tasks[j].ID
+			if color[id] == white && dfs(id) {
+				return strings.Join(cycle, " -> ")
+			}
+		}
+	}
+	return ""
+}
+
+// RepairDependsOn (v8.36.6) re-runs resolveDependsOn against a PRD's
 // already-stored stories/tasks. For PRDs whose SetStories call predates the
 // v8.36.5 fix, DependsOn entries are still stuck as raw titles and were
 // never actually enforced — this repairs an existing PRD in place instead
-// of losing all progress via reset_to_draft + a fresh decompose.
+// of losing all progress via reset_to_draft + a fresh decompose. If an
+// entry can no longer be resolved, or the stored plan is cyclic, the error
+// is returned and nothing is persisted.
 func (s *Store) RepairDependsOn(prdID string) (*PRD, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -388,7 +577,9 @@ func (s *Store) RepairDependsOn(prdID string) (*PRD, error) {
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
 	}
-	resolveDependsOnTitles(prd.Story, s.stories, s.tasks)
+	if err := resolveDependsOn(prd.Story, s.stories, s.tasks); err != nil {
+		return nil, err
+	}
 	prd.UpdatedAt = time.Now()
 	if err := s.persist(); err != nil {
 		return nil, err

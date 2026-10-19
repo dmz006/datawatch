@@ -456,8 +456,8 @@ type Manager struct {
 	// defaultCIRerun, ciPollInterval → 30s, ciFollowUpDelay → the
 	// ci-watch timeout (ciWatchTimeout). Injectable so tests never shell
 	// out to the real git/gh binaries or wait real minutes.
-	ciGitFn      func(ctx context.Context, projectDir string) (headSHA, originURL string, pushed bool, err error)
-	ciGitSHAFn   func(ctx context.Context, projectDir, sha string) (originURL string, pushed bool, err error)
+	ciGitFn         func(ctx context.Context, projectDir string) (headSHA, originURL string, pushed bool, err error)
+	ciGitSHAFn      func(ctx context.Context, projectDir, sha string) (originURL string, pushed bool, err error)
 	ciRunsFn        func(ctx context.Context, ownerRepo, sha string) ([]CIWatchRun, error)
 	ciRerunFn       func(ctx context.Context, ownerRepo string, runID int64) error
 	ciPollInterval  time.Duration

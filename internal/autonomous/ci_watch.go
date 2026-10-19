@@ -40,11 +40,13 @@
 //     is usually not pushed yet and ci-watch skips. That is deliberate —
 //     handleWorktreeCompletion is not moved; their CI is the PR's own
 //     checks, reviewed on the PR.
+//
 //   - Same opt-in shape as rules-review: fires only when "ci-watch" is
 //     in resolveGuardrails(prd, "prd") (PRD.PerPRDGuardrails >
 //     GuardrailProfile > Config.PerPRDGuardrails, empty by default).
 //     GitHub Actions via the `gh` CLI only; anything else (no origin,
 //     non-GitHub host, gh missing) is a recorded skip, never an error.
+//
 //   - Judgment against the operator's own rules file, never hardcoded
 //     rule content (the operator decision recorded at the top of
 //     rules_review.go). A failed run is not auto-classified by job name
@@ -53,6 +55,7 @@
 //     (m.rulesContextFilenames) and at the real failure logs, and the
 //     judge decides — including whether a project rule says an operator
 //     must decide ("category":"policy") rather than auto-fix.
+//
 //   - Reuses the existing failure/retry machinery instead of a new
 //     loop: runGuardrailWithInfraRetry for the judge session,
 //     retryBudgetRemaining/consumeRetryBudget/recordAutoRetryDecision
@@ -61,6 +64,7 @@
 //     shared with rules-review (handing a contentFixVerdict back for the
 //     caller to synthesizeCorrectiveWork from), and recordFailureLearning
 //     once a failure is genuinely unresolved.
+//
 //   - Never holds an automaton hostage to slow CI: if runs are still
 //     queued/in progress when the ci-watch timeout (ciWatchTimeout)
 //     elapses, the automaton completes with CIWatch.Status "pending" and

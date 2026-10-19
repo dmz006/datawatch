@@ -105,11 +105,13 @@ func TestStore_SetStories_ResolvesDependsOnTitlesToIDs(t *testing.T) {
 	}
 }
 
-// TestStore_SetStories_DependsOnUnresolvableTitleLeftUntouched verifies an
-// entry matching neither a known ID nor a sibling title is left as-is
-// rather than silently dropped — e.g. a stale reference to a task/story
-// that was since removed.
-func TestStore_SetStories_DependsOnUnresolvableTitleLeftUntouched(t *testing.T) {
+// TestStore_SetStories_UnresolvableDependsOnRejected verifies an entry
+// matching neither a known ID, a sibling title, nor a valid positional code
+// rejects the whole plan rather than being stored unresolved (the old
+// silent passthrough meant such dependencies were simply never enforced).
+// The PRD must be left with no stories persisted and the error must name
+// the exact bad entry.
+func TestStore_SetStories_UnresolvableDependsOnRejected(t *testing.T) {
 	dir := t.TempDir()
 	st, _ := NewStore(dir)
 	prd, _ := st.CreatePRD("spec", "/p", "", "", "")
@@ -117,12 +119,16 @@ func TestStore_SetStories_DependsOnUnresolvableTitleLeftUntouched(t *testing.T) 
 		Title: "S1",
 		Tasks: []Task{{Title: "T1", Spec: "do thing", DependsOn: []string{"does not exist"}}},
 	}}
-	if err := st.SetStories(prd.ID, stories); err != nil {
-		t.Fatalf("SetStories: %v", err)
+	err := st.SetStories(prd.ID, stories)
+	if err == nil {
+		t.Fatalf("SetStories: want error for unresolvable depends_on entry, got nil")
+	}
+	if !strings.Contains(err.Error(), "does not exist") {
+		t.Fatalf("error %q does not name the bad entry", err)
 	}
 	got, _ := st.GetPRD(prd.ID)
-	if len(got.Story[0].Tasks[0].DependsOn) != 1 || got.Story[0].Tasks[0].DependsOn[0] != "does not exist" {
-		t.Fatalf("unresolvable DependsOn entry was altered: %v", got.Story[0].Tasks[0].DependsOn)
+	if len(got.Story) != 0 {
+		t.Fatalf("PRD must not have any stories persisted after rejection: %+v", got.Story)
 	}
 }
 
