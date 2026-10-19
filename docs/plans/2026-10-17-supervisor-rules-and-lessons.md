@@ -298,6 +298,17 @@ requirement (open question 19).
   tmux server and every session. Found in the worker's pi transcript, reproduced with
   throwaway servers. Recovered: sessions relaunched by the daemon, the supervisor restarted,
   the helper fixed in the PRD worktree. Fix PRD: BL504.
+- **Lane fill, every tick (lesson, 2026-10-19).** Lanes went idle while eligible work was
+  waiting. The tick checked which PRD occupied each lane but never checked what was queued
+  behind it. Every tick now lists the four lanes (datawatch GPU, local GPU, Claude 1, Claude 2)
+  with the occupant of each. An idle lane starts the next eligible PRD in the same tick, and a
+  lane with fewer than two queued items behind it gets the next draft decomposed on that
+  lane's backend. Eligible means approved and not marked HOLD in its spec, or a pinned draft
+  with a decompose guidance block. A spec that says HOLD, do-not-run or operator-decision
+  pending is never run. A PRD whose project directory is the main checkout is recreated with
+  no project directory first. A lane may sit idle only with a named blocker in the report.
+  Recreating PRDs: a draft created from the command line gets the working directory as its
+  project directory, so create drafts through MCP with the project directory left empty.
 - **Plan check against the original spec.** A rewritten or shortened spec can drop test
   requirements, so compare the decomposed plan with the original request and add missing
   tests or surfaces with a task edit.
