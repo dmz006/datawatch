@@ -311,6 +311,9 @@ func (m *Manager) noteDecomposeSessionFailure(prd *PRD, backend, model string, d
 	if m.store.SavePRD(prd) == nil {
 		m.emitPRDStatus(prd, old, nil, nil)
 	}
+	if prd.ProjectDir != "" {
+		m.finishRunArtifacts(prd.ID, prd.ProjectDir)
+	}
 	return true
 }
 

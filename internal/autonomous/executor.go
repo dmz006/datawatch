@@ -1949,6 +1949,9 @@ func (m *Manager) commitRollupStatus(prd *PRD, observed PRDStatus, expectedRev i
 		return true
 	})
 	if err == nil {
+		if prd.ProjectDir != "" {
+			m.finishRunArtifacts(prd.ID, prd.ProjectDir)
+		}
 		return old, true
 	}
 	if errors.Is(err, ErrPRDStale) {
@@ -1957,6 +1960,48 @@ func (m *Manager) commitRollupStatus(prd *PRD, observed PRDStatus, expectedRev i
 		log.Printf("[autonomous] rollup commit: prd=%s: %v", prd.ID, err)
 	}
 	return "", false
+}
+
+// finishRunArtifacts performs end-of-run cleanup of harness scratch files
+// in the PRD's project directory once the PRD has reached a terminal
+// outcome (success or failure). Files that could not be removed — tracked
+// scratch files and unexpected untracked files — are appended to the
+// PRD's LeftoverWarnings and persisted via the store. Never blocks the
+// outcome itself; failures are logged.
+func (m *Manager) finishRunArtifacts(prdID, projectDir string) {
+	removed, leftover := tooling.CleanupRunArtifacts(projectDir)
+	for _, p := range removed {
+		log.Printf("[autonomous] prd=%s cleaned run artifact: %s", prdID, p)
+	}
+	if len(leftover) == 0 {
+		return
+	}
+	p, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return
+	}
+	added := false
+	for _, l := range leftover {
+		w := "leftover file: " + l
+		dup := false
+		for _, e := range p.LeftoverWarnings {
+			if e == w {
+				dup = true
+				break
+			}
+		}
+		if !dup {
+			p.LeftoverWarnings = append(p.LeftoverWarnings, w)
+			added = true
+		}
+	}
+	if !added {
+		return
+	}
+	p.UpdatedAt = time.Now()
+	if err := m.store.SavePRD(p); err != nil {
+		log.Printf("[autonomous] prd=%s leftover warnings save: %v", prdID, err)
+	}
 }
 
 // recordRollupAborted appends a rollup_aborted_stale decision to the

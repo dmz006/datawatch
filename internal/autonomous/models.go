@@ -362,6 +362,13 @@ type PRD struct {
 	ReadDirs      []string `json:"read_dirs,omitempty"`
 	WriteDirs     []string `json:"write_dirs,omitempty"`
 	ScopeWarnings []string `json:"scope_warnings,omitempty"`
+
+	// LeftoverWarnings surfaces files left behind in the project
+	// directory when the PRD reaches a terminal outcome: known harness
+	// scratch files that were tracked (and therefore not deletable) and
+	// unexpected untracked files. Populated at end-of-run cleanup, plain
+	// language, one warning per file.
+	LeftoverWarnings []string `json:"leftover_warnings,omitempty"`
 }
 
 // GitWorkflow (BL407) is a PRD's branch-per-PRD + auto-PR workflow
