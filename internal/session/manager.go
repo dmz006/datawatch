@@ -1650,9 +1650,10 @@ type StartOptions struct {
 	// PRDID, TaskID, and StoryID link an autonomous task session to its executor
 	// so the PWA detail view can filter sessions by PRD and show which task is
 	// actively being worked on. StoryID added BL385 Phase 4 for memory scope routing.
-	PRDID   string
-	TaskID  string
-	StoryID string
+	PRDID     string
+	TaskID    string
+	StoryID   string
+	TaskTitle string
 	// WriteScope (auto-commit leak fix) — the session's effective write
 	// directories (PRD.WriteDirs or the task's ProjectDir override,
 	// resolved by the autonomous executor via
@@ -1852,6 +1853,9 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 	}
 	if opt != nil && opt.StoryID != "" {
 		sess.StoryID = opt.StoryID
+	}
+	if opt != nil && opt.TaskTitle != "" {
+		sess.TaskTitle = opt.TaskTitle
 	}
 	if opt != nil && len(opt.WriteScope) > 0 {
 		sess.WriteScope = opt.WriteScope

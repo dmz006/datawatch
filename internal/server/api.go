@@ -4379,6 +4379,8 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		PRDID   string `json:"prd_id,omitempty"`
 		TaskID  string `json:"task_id,omitempty"`
 		StoryID string `json:"story_id,omitempty"`
+		// TaskTitle is the bare autonomous task title (no "autonomous:" prefix).
+		TaskTitle string `json:"task_title,omitempty"`
 		// WriteScope (auto-commit leak fix) — the session's effective write
 		// directories. Automatic commits stage only files under these
 		// directories instead of the whole tree. Empty = historical broad
@@ -4701,6 +4703,7 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		PRDID:                 req.PRDID,
 		TaskID:                req.TaskID,
 		StoryID:               req.StoryID,
+		TaskTitle:             req.TaskTitle,
 		WriteScope:            req.WriteScope,
 		ValidateCommands:      req.ValidateCommands,
 	}

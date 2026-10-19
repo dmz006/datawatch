@@ -254,6 +254,9 @@ type Session struct {
 	PRDID   string `json:"prd_id,omitempty"`
 	TaskID  string `json:"task_id,omitempty"`
 	StoryID string `json:"story_id,omitempty"`
+	// TaskTitle is the bare autonomous task title (no "autonomous:" prefix),
+	// so the completion commit can use it without parsing Name.
+	TaskTitle string `json:"task_title,omitempty"`
 
 	// WriteScope (auto-commit leak fix): the session's effective write
 	// directories (PRD.WriteDirs or task ProjectDir override). Automatic

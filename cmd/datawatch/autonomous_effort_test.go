@@ -174,3 +174,20 @@ func TestHarnessBlockCommitInstructions(t *testing.T) {
 		}
 	}
 }
+
+func TestAutonomousSessionBodyCarriesTaskTitle(t *testing.T) {
+	req := autonomouspkg.SpawnRequest{Title: "Add retry to fetcher"}
+	body := buildAutonomousSessionBody(req, "spec", "")
+	if got := body["task_title"]; got != "Add retry to fetcher" {
+		t.Errorf("task_title = %v, want %q", got, "Add retry to fetcher")
+	}
+	if body["name"] != "autonomous:Add retry to fetcher" {
+		t.Errorf("name = %v, want the autonomous: prefixed title", body["name"])
+	}
+
+	req.Title = ""
+	body = buildAutonomousSessionBody(req, "spec", "")
+	if _, ok := body["task_title"]; ok {
+		t.Errorf("task_title should be absent when Title is empty, got %v", body["task_title"])
+	}
+}
