@@ -112,3 +112,65 @@ func TestRelocateProjectFile_EmptyProjectDirIsNoop(t *testing.T) {
 		t.Errorf("empty projectDir should return (\"\", false), got (%q, %v)", content, ok)
 	}
 }
+
+func TestPeekProjectFile_ReturnsContentAndLeavesFile(t *testing.T) {
+	projectDir := t.TempDir()
+	src := filepath.Join(projectDir, "judge-output.json")
+	if err := os.WriteFile(src, []byte(`{"verdict":"pass"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	content, ok := PeekProjectFile(projectDir, "judge-output.json")
+	if !ok {
+		t.Fatal("expected ok=true")
+	}
+	if content != `{"verdict":"pass"}` {
+		t.Errorf("got content %q", content)
+	}
+	if _, err := os.Stat(src); err != nil {
+		t.Errorf("peek must leave the source file on disk: %v", err)
+	}
+}
+
+func TestPeekProjectFile_NoFileCases(t *testing.T) {
+	projectDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(projectDir, "empty.json"), []byte{}, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cases := []struct {
+		name, dir, src string
+	}{
+		{"missing file", projectDir, "absent.json"},
+		{"empty file", projectDir, "empty.json"},
+		{"empty srcName", projectDir, ""},
+		{"empty projectDir", "", "empty.json"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			content, ok := PeekProjectFile(tc.dir, tc.src)
+			if ok || content != "" {
+				t.Errorf("got (%q, %v), want (\"\", false)", content, ok)
+			}
+		})
+	}
+}
+
+func TestRemoveJudgeOutputFile_DeletesExistingFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "judge-output.json")
+	if err := os.WriteFile(path, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := RemoveJudgeOutputFile(path); err != nil {
+		t.Fatalf("RemoveJudgeOutputFile: %v", err)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Error("file should be deleted")
+	}
+}
+
+func TestRemoveJudgeOutputFile_MissingFileIsNil(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "absent.json")
+	if err := RemoveJudgeOutputFile(path); err != nil {
+		t.Errorf("missing file should return nil, got %v", err)
+	}
+}
