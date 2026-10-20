@@ -4,16 +4,16 @@ docs:
   topics: [git, guardrails, autonomous, automata]
 exec_params:
   - {name: automaton_id, required: true, description: "Automaton ID whose tasks you want to inspect for foreign_file_drift"}
-  - {name: block_on_file_drift, required: false, default: "true", description: "Daemon-wide default: true blocks a task whose commit swept in someone else's uncommitted file, false keeps it warn-only"}
+  - {name: drift_mode, required: false, default: "block", description: "Daemon-wide enforcement for pre-existing drift: block (the default) stops the task; warn records the finding and the task completes. Only block or warn are accepted. The MCP set tool does not take this key; set it via CLI/REST/YAML."}
 exec_steps:
   - tool: autonomous_config_get
-    description: Read the current daemon-wide block_on_file_drift setting (false = warn-only, the default)
+    description: Read the current autonomous.drift_mode (block = default, warn = flag-only) and block_on_file_drift settings
     args: {}
-  - tool: autonomous_config_set
-    description: Set the daemon-wide block_on_file_drift default (an Automaton's own setting or its guardrail profile still overrides it)
-    args: {block_on_file_drift: "{{params.block_on_file_drift}}"}
+  - tool: shell
+    description: Set the daemon-wide drift_mode (block or warn). Per-Automaton opt-out to warn-only is instead block_on_file_drift=false on the Automaton or its guardrail profile (see per_automaton_guardrails_set / guardrail_profile_update)
+    args: {command: "datawatch config set autonomous.drift_mode {{params.drift_mode}}"}
   - tool: autonomous_prd_get
-    description: Read the Automaton; each task carries foreign_file_drift when its commit swept in a pre-existing uncommitted file, and the decision log has a file_drift_detected entry
+    description: Read the Automaton; each task carries foreign_file_drift when its commit swept in a pre-existing uncommitted file, and the decision log has a file_drift_detected entry (in-run edits by the task's own worker get one too)
     args: {id: "{{params.automaton_id}}"}
 ---
 # How-to: File Drift Guardrail
@@ -26,8 +26,12 @@ before the task started, and the task never planned to touch it, that
 edit now ships under the Automaton's commit message. The file drift
 check notices this and tells you.
 
-It's always on, warn-only by default, and costs no LLM call: it's a
-plain comparison of git file lists.
+It's always on, costs no LLM call — it's a plain comparison of git file
+lists — and it distinguishes two kinds of finding: a swept-in edit that
+already existed (pre-existing drift) **blocks the task by default**, while
+edits made by the task's own worker are always warn-only, never blocked.
+You can relax the pre-existing default to warn-only with the
+`autonomous.drift_mode` setting (below).
 
 ## What it detects and why
 
@@ -41,28 +45,33 @@ records:
 
 After the session finishes and the task's verifier has run, it
 collects every file touched by every commit in `<pre-task SHA>..HEAD`.
-A file is reported as **foreign file drift** when all three are true:
+Each touched file lands in exactly one bucket:
 
-1. a commit made during the task touched it,
-2. it was already uncommitted (modified, staged or untracked) before
-   the task started, and
-3. it is **not** in the task's planned `files` list.
+- **foreign file drift (pre-existing)** — all three are true: a commit
+  made during the task touched it, it was already uncommitted (modified,
+  staged or untracked) before the task started, and it is **not** in the
+  task's planned `files` list. This is the finding that can block the
+  task (default mode).
+- **in-run edit (the worker's own)** — the file was clean before the task
+  started, so the task's worker made the change (planned or not, e.g. a
+  newly created file). This is always recorded, warned and audited, but
+  **never blocks** the task.
 
-The typical cause is a worker running `git add -A` or `git commit -a`
-in a tree that also holds someone else's work in progress. The diff
-looks fine to the verifier because it's real content; it's just not
-this task's content.
+The typical cause of pre-existing drift is a worker running `git add -A`
+or `git commit -a` in a tree that also holds someone else's work in
+progress. The diff looks fine to the verifier because it's real content;
+it's just not this task's content.
 
 ## What is and isn't flagged
 
-| Situation | Flagged? |
-|---|---|
-| Task commits a file that was uncommitted beforehand and isn't in its planned `files` | **Yes** |
-| Task commits a file that was uncommitted beforehand but **is** in its planned `files` | No. Planned files are never flagged, even if they were dirty when the task started |
-| Task commits a file that was clean before it started (new edit by the task itself) | No |
-| Task leaves a pre-existing uncommitted file alone (still uncommitted afterwards) | No |
-| Automaton runs in **worktree** mode (git branch set, auto-PR) | No. The check is skipped entirely; each task gets its own clean worktree, so there's nothing pre-dirty to protect |
-| Automaton has no project directory, or the pre-task SHA couldn't be read | No. Skipped |
+| Situation | Flagged? | Blocks (drift_mode: block)? |
+|---|---|---|
+| Task commits a file that was uncommitted beforehand and isn't in its planned `files` | **Yes — pre-existing drift: the task's `foreign_file_drift`, a `file_drift_detected` decision and an audit event** | **Yes (the default)** — task set to Blocked, Automaton halts; under `drift_mode: warn` it is flagged only and the task completes |
+| Task commits a file that was uncommitted beforehand but **is** in its planned `files` | No. Planned files are never flagged, even if they were dirty when the task started | No |
+| Task commits a file that was clean before it started (new edit by the task itself, planned or not) | **Yes — an in-run finding: a `file_drift_detected` decision noting it is the worker's own edit, logged and audited** | **Never** — in-run edits are warn-only in every mode |
+| Task leaves a pre-existing uncommitted file alone (still uncommitted afterwards) | No | No |
+| Automaton runs in **worktree** mode (git branch set, auto-PR) | No. The check is skipped entirely; each task gets its own clean worktree, so there's nothing pre-dirty to protect | No |
+| Automaton has no project directory, or the pre-task SHA couldn't be read | No. Skipped | No |
 
 Paths are compared after normalising (`./a/b` and `a/b` are the same
 file). Findings from several retries of the same task accumulate.
@@ -71,22 +80,45 @@ The check **never modifies your repository**. It doesn't revert,
 reset, amend, un-stage or rewrite anything, and it never rewrites git
 history.
 
-## Warn-only vs. blocking
+## Blocking vs. warn (`drift_mode`)
 
-| `block_on_file_drift` | What happens on a finding |
+The daemon-wide enforcement knob is **`autonomous.drift_mode`**, with
+two values:
+
+| `drift_mode` | What happens on a pre-existing finding |
 |---|---|
-| `false` (default) | The task keeps going and completes normally. The finding is recorded on the task, in the decision log and in the audit log. |
-| `true` | The task is set to **Blocked** with error `foreign_file_drift: <files>`, and the Automaton stops walking its tasks so you can look. |
+| `block` (**the default**) | The task is set to **Blocked** with error `foreign_file_drift: <files>`, and the Automaton stops walking its tasks so you can look. |
+| `warn` | The task keeps going and completes normally. The finding is recorded on the task, in the decision log and in the audit log. |
 
-The setting is resolved in the same priority order as other guardrail
-settings ([guardrail-library.md](guardrail-library.md)):
+Notes on the mode:
 
-1. **The Automaton's own setting** (`block_on_file_drift` on the
-   Automaton; unset = inherit)
-2. **Its guardrail profile** (`block_on_file_drift` on the profile;
-   unset = inherit)
-3. **Global config** (`autonomous.block_on_file_drift`, default
-   `false`)
+- It applies to **pre-existing drift only**. Edits made by the task's
+  own worker are recorded, warned and audited in *both* modes and never
+  block, whether the files were in the task's planned `files` list or
+  not.
+- It is **global**: an Automaton or its guardrail profile does not
+  override the mode. The daemon-wide setting cannot be relaxed per
+  Automaton — the per-Automaton direction only goes *toward* warn-only
+  (opt-out, next).
+- Only `block` and `warn` are accepted; any other value is rejected at
+  the config surface, and an empty/unknown value resolves to `block`.
+  An unrecognized mode never silently relaxes enforcement.
+
+**Per-Automaton opt-out.** Even under `drift_mode: block`, an explicit
+`block_on_file_drift: false` on the Automaton itself or on its
+guardrail profile opts *that* Automaton out of blocking: its findings
+become warn-only. This is the operator's escape hatch for Automata you
+trust in a shared tree. Beware the shape of the flag: it remains a
+legacy opt-in boolean, so the daemon-wide `false` default by itself is
+**not** an opt-out and does not change the default `block` behaviour;
+what matters is the explicit `false` on the PRD or profile.
+
+Reading the effective value:
+
+- MCP: `autonomous_config_get` includes `drift_mode` (it shows the
+  effective mode, so an unset value renders as `block`).
+- REST: `GET /api/config` (key `autonomous.drift_mode`) or
+  `GET /api/autonomous/config`.
 
 ## Where to see it
 
@@ -115,7 +147,8 @@ The Automaton's `decisions` list gets one entry per finding:
 }
 ```
 
-With strict mode on, the same task shows `"status": "blocked"` and
+With `drift_mode: block` (the default), the same task instead shows
+`"status": "blocked"` and
 `"error": "foreign_file_drift: docs/notes.md, internal/server/web/app.js"`.
 
 **PWA.** The Automaton detail view shows a warning chip (⚠ and a
@@ -127,51 +160,51 @@ event (CEF severity informational) with `prd_id`, `task_id` and
 `files`. Query it with `audit_query` or `GET /api/audit`. The daemon
 log also gets a `WARNING ... foreign file drift` line.
 
-## Turning strict mode on
+## Changing the mode
 
-### Globally (every Automaton)
+Blocking pre-existing drift is the **default** (`drift_mode: block`).
+Relax it to warn-only where you want, for example Automata you trust
+in a shared tree.
+
+### Daemon-wide: `drift_mode`
+
+Only `block` and `warn` are accepted; any other value is rejected with
+an error naming the two legal values, and an unset value behaves as
+`block`.
 
 YAML (`~/.datawatch/config.yaml`):
 
 ```yaml
 autonomous:
-  block_on_file_drift: true
+  drift_mode: warn
 ```
-
-PWA: Settings → **Automate** → **Block on file drift** toggle.
 
 REST:
 
 ```sh
 BASE=https://localhost:8443
 curl -sk -X PUT -H "Content-Type: application/json" \
-  -d '{"key":"autonomous.block_on_file_drift","value":true}' \
+  -d '{"key":"autonomous.drift_mode","value":"warn"}' \
   $BASE/api/config
-```
-
-MCP:
-
-```json
-{ "tool": "autonomous_config_set", "args": { "block_on_file_drift": true } }
 ```
 
 CLI:
 
 ```sh
-datawatch config set autonomous.block_on_file_drift true
-```
-
-Comm channel:
-
-```
-You: configure autonomous.block_on_file_drift=true
+datawatch config set autonomous.drift_mode warn
 ```
 
 Read it back with `autonomous_config_get` (or `GET /api/config`, key
-`autonomous.block_on_file_drift`). Set it to `false` the same way to
-return to warn-only.
+`autonomous.drift_mode`) — it shows the effective value, so an unset
+setting reads as `block`. Set it to `block` the same way to return to
+the enforced default. Note the MCP `autonomous_config_set` tool does not
+take this key yet; use YAML, REST, or the CLI for it.
 
-### For a guardrail profile
+### For a guardrail profile (opt-out)
+
+An explicit `block_on_file_drift: false` on a profile opts that
+profile's Automata out of blocking; their pre-existing findings become
+warn-only even under `drift_mode: block`.
 
 MCP:
 
@@ -179,10 +212,10 @@ MCP:
 {
   "tool": "guardrail_profile_create",
   "args": {
-    "name": "shared-tree",
-    "description": "Automata that run in a tree other sessions also edit",
+    "name": "trusted-shared-tree",
+    "description": "Automata that run in a tree other sessions also edit; trust their WIP",
     "guardrails_json": "[\"rules-review\"]",
-    "block_on_file_drift": true
+    "block_on_file_drift": false
   }
 }
 ```
@@ -194,22 +227,22 @@ REST:
 
 ```sh
 curl -sk -X POST -H "Content-Type: application/json" \
-  -d '{"name":"shared-tree","guardrails":["rules-review"],"block_on_file_drift":true}' \
+  -d '{"name":"trusted-shared-tree","guardrails":["rules-review"],"block_on_file_drift":false}' \
   $BASE/api/autonomous/guardrail_profiles
 ```
 
 CLI:
 
 ```sh
-datawatch guardrail profile create --name shared-tree \
-  --guardrails rules-review --block-on-file-drift
+datawatch guardrail profile create --name trusted-shared-tree \
+  --guardrails rules-review --block-on-file-drift=false
 ```
 
 Then assign the profile to an Automaton (next section, or
-`guardrail automaton set <id> profile=shared-tree` from a comm
+`guardrail automaton set <id> profile=trusted-shared-tree` from a comm
 channel).
 
-### For one Automaton
+### For one Automaton (opt-out)
 
 > The per-Automaton set call **replaces** the profile, all three
 > guardrail lists and `block_on_file_drift` in one go. Read the
@@ -221,7 +254,7 @@ MCP:
 ```json
 {
   "tool": "per_automaton_guardrails_set",
-  "args": { "id": "a1b2c3d4", "guardrail_profile": "release", "block_on_file_drift": true }
+  "args": { "id": "a1b2c3d4", "guardrail_profile": "release", "block_on_file_drift": false }
 }
 ```
 
@@ -229,14 +262,14 @@ REST:
 
 ```sh
 curl -sk -X PUT -H "Content-Type: application/json" \
-  -d '{"guardrail_profile":"release","block_on_file_drift":true}' \
+  -d '{"guardrail_profile":"release","block_on_file_drift":false}' \
   $BASE/api/autonomous/prds/a1b2c3d4/guardrails
 ```
 
 CLI:
 
 ```sh
-datawatch guardrail automaton set a1b2c3d4 --profile release --block-on-file-drift
+datawatch guardrail automaton set a1b2c3d4 --profile release --block-on-file-drift=false
 ```
 
 Comm channel: the per-Automaton command takes a profile, so use a
@@ -260,13 +293,22 @@ that's "wrong": the content itself is whatever was in the file.
    by hand with a new commit: for example revert just those files in a
    follow-up commit and let the owner commit them with their own
    message. Don't rewrite published history.
-4. If the task is **Blocked** (strict mode) and you're happy with what
-   it committed, reset and re-run it, or move on:
+4. If the task is **Blocked** and you're happy with what it committed:
+   - **Approve that one task.** Per-task approval now accepts a PRD in
+     the **blocked** status (draft and cancelled still refuse), and an
+     approved blocked task is released back to `pending` with its stale
+     error cleared, ready for an existing run path to pick up:
 
-   ```
-   autonomous_prd_reset_task {"id":"a1b2c3d4","task_id":"t-3","force":true}
-   autonomous_prd_run        {"id":"a1b2c3d4"}
-   ```
+     ```
+     autonomous_prd_approve_task {"id":"a1b2c3d4","task_id":"t-3"}
+     autonomous_prd_run          {"id":"a1b2c3d4"}
+     ```
+   - **Or reset and re-run it**, or move on:
+
+     ```
+     autonomous_prd_reset_task {"id":"a1b2c3d4","task_id":"t-3","force":true}
+     autonomous_prd_run        {"id":"a1b2c3d4"}
+     ```
 
    See [autonomous-recovery.md](autonomous-recovery.md) for the other
    recovery routes.

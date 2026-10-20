@@ -175,14 +175,35 @@ capture point is the worker spawn in `cmd/datawatch/main.go`: alongside the pre-
 The values ride back on the spawn result into `Task.PreTaskSHA` /
 `PreTaskUntrackedFiles` / `PreTaskDirtyFiles`. In `executeOne`, right after the
 verifier returns, `checkForeignFileDrift` (`internal/autonomous/file_drift.go`)
-unions the files of every commit in `<pre-task SHA>..HEAD` and flags those that were
-already dirty/untracked and are not in the task's `files`. A finding is stored on
-`Task.ForeignFileDrift`, appended as a `file_drift_detected` decision and emitted as
-the `autonomous_file_drift_detected` audit event. It is warn-only unless
-`autonomous.block_on_file_drift` (resolved Automaton > guardrail profile > global,
-default `false`) is on, in which case the task is blocked and the walk halts. It only
-runs read-only git commands and never rewrites history. See
-`docs/howto/file-drift-guardrail.md`.
+unions the files of every commit in `<pre-task SHA>..HEAD` and splits them via
+`ClassifyFileDrift` into **pre-existing drift** (already dirty/untracked before
+the task started and not in the task's `files`) and **in-run edits** (the
+worker's own committed files, planned or not; e.g. a new file it created). Pre-existing findings are stored on `Task.ForeignFileDrift`; both kinds are
+appended as a `file_drift_detected` decision and emitted as the
+`autonomous_file_drift_detected` audit event (audited as `pre_existing` or
+`in_run`).
+
+Enforcement is set by `autonomous.drift_mode` — `"block"` (the default; an
+empty or unknown value resolves to `"block"`, and the config surfaces accept
+only `"block"` or `"warn"`) or `"warn"` — and applies only to pre-existing
+findings (see `resolveDriftMode` + `driftBlockExplicitlyOff`). Under `"block"`
+the task is set to `TaskBlocked` with error
+`foreign_file_drift: <files>`, the PRD halts as `blocked`, and the task walk
+stops — unless the operator explicitly opted that Automaton out with
+`block_on_file_drift=false` on the PRD or its guardrail profile (the legacy
+daemon-wide flag's `false` default is *not* an opt-out). Under `"warn"` the
+task records the finding and still completes. In-run edits (the task's own
+worker's commits) are always warned, never blocked, in either mode.
+
+Recovery: a blocked PRD now accepts per-task approval — `ApproveTask`
+(`ApproveTask` in `internal/autonomous/manager.go`, REST
+`POST /api/autonomous/prds/{id}/approve_task`, MCP
+`autonomous_prd_approve_task`) accepts PRDs in the `blocked` status (draft and
+cancelled still refuse), and approving a `TaskBlocked` task releases it back to
+`TaskPending` with the stale error cleared, ready for the existing run path to
+pick it up; the PRD's own status transition stays with the run path. The
+drift check remains read-only — it never reverts, resets, amends or rewrites
+history. See `docs/howto/file-drift-guardrail.md`.
 
 ### Per-task project directory (Automata)
 
