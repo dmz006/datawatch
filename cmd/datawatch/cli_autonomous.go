@@ -38,6 +38,8 @@ Subcommands:
   prd-edit <id>                   Edit PRD title + spec
   prd-approve <id>                Approve planned PRD
   prd-reject <id>                 Reject a PRD plan
+  prd-coverage <id>               Show the stored plan-requirement coverage report (mode, min_ratio, report, ack, findings)
+  prd-ack-coverage <id>           Acknowledge a failing coverage report (--actor, --note) so approve in block mode is allowed
   prd-request-revision <id>       Request fresh planning run
   prd-edit-task <id>              Rewrite a task spec before approving
   prd-edit-story <id>             Rewrite a story's title/description before approving
@@ -79,6 +81,8 @@ Subcommands:
 		newAutonomousPRDCancelCmd(),
 		newAutonomousPRDApproveCmd(),
 		newAutonomousPRDRejectCmd(),
+		newAutonomousPRDCoverageCmd(),
+		newAutonomousPRDAckCoverageCmd(),
 		newAutonomousPRDRequestRevisionCmd(),
 		newAutonomousPRDEditTaskCmd(),
 		newAutonomousPRDEditStoryCmd(),
@@ -389,6 +393,77 @@ func newAutonomousPRDRejectCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&reason, "reason", "", "operator-supplied rejection reason")
+	return cmd
+}
+
+// newAutonomousPRDCoverageCmd — show the PRD's stored plan-requirement
+// coverage report (the plan-coverage gate record: the mode/min_ratio
+// the PRD was pinned to, the coverage report, any structural findings
+// and the operator acknowledgement of a failing surface, if present).
+func newAutonomousPRDCoverageCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "prd-coverage <id>",
+		Short: "Show the PRD's stored plan-coverage report (gate mode, ratio, report, ack, findings)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			body, err := daemonJSONBody(http.MethodGet, "/api/autonomous/prds/"+args[0]+"?detail=full", nil)
+			if err != nil {
+				return err
+			}
+			var prd struct {
+				ID           string          `json:"id"`
+				Status       string          `json:"status"`
+				PlanCoverage json.RawMessage `json:"plan_coverage"`
+			}
+			if err := json.Unmarshal(body, &prd); err != nil {
+				return fmt.Errorf("decode PRD: %w", err)
+			}
+			if len(prd.PlanCoverage) == 0 || string(prd.PlanCoverage) == "null" {
+				fmt.Printf("No plan-coverage report stored for %s (run the planning phase first; the deterministic coverage check is computed at decompose time).\n", prd.ID)
+				return nil
+			}
+			var report any
+			if err := json.Unmarshal(prd.PlanCoverage, &report); err != nil {
+				return fmt.Errorf("decode plan_coverage: %w", err)
+			}
+			out, err := json.MarshalIndent(report, "", "  ")
+			if err != nil {
+				return fmt.Errorf("re-marshal plan_coverage: %w", err)
+			}
+			prettyPrint(out)
+			return nil
+		},
+	}
+}
+
+// newAutonomousPRDAckCoverageCmd — operator-acknowledge the PRD's
+// failing plan-coverage report (the block-mode gate). The manager pins
+// the ack to the exact failing surface (fingerprint); a non-empty note
+// is required. See the REST endpoint
+// POST /api/autonomous/prds/{id}/plan_coverage/acknowledge.
+func newAutonomousPRDAckCoverageCmd() *cobra.Command {
+	var actor, note string
+	cmd := &cobra.Command{
+		Use:   "prd-ack-coverage <id>",
+		Short: "Acknowledge a failing plan-coverage report so approve is allowed (block mode)",
+		Long: "Operator-acknowledge the PRD's stored failing plan-requirement coverage report. " +
+			"The ack is pinned to the exact failing surface at the time it is recorded (unmatched requirements + structural findings), " +
+			"so approving after the plan changed needs a fresh ack. " +
+			"Use prd-coverage <id> to read the report first.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(_ *cobra.Command, args []string) error {
+			if strings.TrimSpace(note) == "" {
+				return fmt.Errorf("a non-empty --note is required to acknowledge a failing plan-coverage report")
+			}
+			if actor == "" {
+				actor = "operator"
+			}
+			body, _ := json.Marshal(map[string]string{"actor": actor, "note": note})
+			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/plan_coverage/acknowledge", body)
+		},
+	}
+	cmd.Flags().StringVar(&actor, "actor", "operator", "operator identity recorded on the ack")
+	cmd.Flags().StringVar(&note, "note", "", "non-empty justification for accepting the failing coverage surface")
 	return cmd
 }
 

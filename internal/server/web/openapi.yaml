@@ -978,11 +978,21 @@ paths:
   /api/autonomous/config:
     get:
       summary: Read autonomous config
+      description: |
+        The response includes the plan-requirement coverage gate settings:
+        `plan_coverage_check` (off|warn|block, default block) and
+        `plan_coverage_min_ratio` (covered/extractable ratio required for a
+        passing report, 0-1, default 1.0). Both are settable via this PUT and
+        via /api/config PUT (`autonomous.plan_coverage_check` / `autonomous.plan_coverage_min_ratio`).
       operationId: autonomousConfigGet
       tags: [Autonomous]
       responses: {"200": {description: OK}}
     put:
       summary: Replace autonomous config
+      description: |
+        Accepts partial JSON. Among the valid fields are `plan_coverage_check`
+        (off|warn|block, default block) and `plan_coverage_min_ratio` (0-1,
+        default 1.0). Values outside the allowed range are rejected with 400.
       operationId: autonomousConfigSet
       tags: [Autonomous]
       requestBody:
@@ -1046,6 +1056,31 @@ paths:
                   killed_session_ids: {type: array, items: {type: string}, description: "Session IDs a kill was attempted on; always an array, [] when none"}
                   kill_errors: {type: object, additionalProperties: {type: string}, description: "Present only when a kill failed; session ID -> error"}
                   memory_strategy: {type: string, description: "Hard delete only: keep | purge | archive"}
+  /api/autonomous/prds/{id}/plan_coverage/acknowledge:
+    post:
+      summary: Acknowledge the PRD's failing plan-coverage report
+      description: |
+        Operator-acknowledge the PRD's stored failing plan-requirement coverage
+        report (the block-mode gate). The ack is pinned to the exact failing
+        surface at the time it is recorded (unmatched requirements + structural
+        findings), so approving after the plan changed needs a fresh ack.
+        A non-empty `note` is required.
+      operationId: autonomousPRDAcknowledgePlanCoverage
+      tags: [Autonomous]
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [note]
+              properties:
+                actor: {type: string, description: "Operator identity recorded on the ack (default `operator` when absent)"}
+                note: {type: string, description: "Non-empty justification for accepting the failing coverage surface"}
+      responses:
+        "200": {description: Acknowledged PRD}
+        "400": {description: No report to ack, already acked, or missing `note`}
   /api/autonomous/prds/{id}/decompose:
     post:
       summary: Run LLM decomposition for a PRD
