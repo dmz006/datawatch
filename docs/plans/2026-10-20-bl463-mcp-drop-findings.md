@@ -86,6 +86,20 @@ Different failure classes, different fixes (boot-time retry vs in-session transp
 4. **Silent-stream prevention** — SSE keepalive ping fixed at 10s (`server.go ServeSSE`, mcp-go `WithKeepAliveInterval`) so held-open streams stay visibly alive against client/middlebox idle kills.
 5. **Timeout profile made intentional and printed** — ReadTimeout 30s / IdleTimeout 120s / *no* WriteTimeout retained, with the rationale logged at serve start (`LogSSEServerTimeouts`).
 6. **Repro tests** — `internal/mcp/drop_repro_test.go` (7 tests, all named `…Transport…`/`Drop…`, all green; 252 passed whole-package).
+7. **Live bridge liveness + close reason in self-scope** (added by the
+   fix-verification retry) — `channel.BridgeHealth(port)`
+   (`internal/channel/bridge_diagnostics.go`) probes the session bridge's
+   own `/health` on loopback and classifies the failure mode: no port
+   registered (never announced via `/api/channel/ready`) vs. no listener —
+   bridge exited and is *not* automatically respawned, restart the session
+   vs. listener wedged (timeout) vs. unhealthy HTTP answer.
+   `channel.BuildSelfScope` (`internal/channel/session_scope.go`) now
+   reports `bridge_alive` + `bridge_close_reason` next to `channel_ready`,
+   so `get_my_scope` (MCP) and `GET /api/sessions/self/scope` (REST)
+   distinguish "registered but dead" from "registered and live" — the
+   stale `ChannelReady=true` left over from the 2026-10-15 drop is now
+   diagnosable by the session itself, without server logs.
+   Regression-tested by `internal/channel/bridge_diagnostics_test.go`.
 
 No tracker IDs were added outside `docs/plans/` by this investigation: the instrumentation and tests reference the findings doc by path only (e.g. `internal/mcp/server.go:325`, `transport_debug.go` header) — the only BL/HLLM/SEC identifiers appearing in code come from the pre-existing Phase 1 `get_my_scope` work, which follows the repo's established in-code tag convention.
 

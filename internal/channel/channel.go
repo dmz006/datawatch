@@ -4,8 +4,8 @@
 package channel
 
 import (
-	_ "embed"
 	"crypto/sha256"
+	_ "embed"
 	"fmt"
 	"os"
 	"os/exec"

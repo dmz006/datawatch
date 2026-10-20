@@ -31,9 +31,11 @@ type SelfScope struct {
 	EphemeralWorkspace bool        `json:"ephemeral_workspace"` // daemon-owned ProjectDir (reaped on delete)
 	ChannelReady       bool        `json:"channel_ready"`
 	ChannelPort        int         `json:"channel_port,omitempty"`
-	MCPServerName      string      `json:"mcp_server_name"` // ChannelServerName(FullID) — this session's channel
-	SharedEntryName    string      `json:"shared_entry_name"` // ProjectMCPEntryName — the legacy/global .mcp.json entry
-	ResolvedVia        string      `json:"resolved_via"`    // "hint" | "caller-scope" | "channel-ready-fallback" (set by caller)
+	BridgeAlive        bool        `json:"bridge_alive"`                  // live /health probe of the session's channel bridge
+	BridgeCloseReason  string      `json:"bridge_close_reason,omitempty"` // why the bridge is down, when it is
+	MCPServerName      string      `json:"mcp_server_name"`               // ChannelServerName(FullID) — this session's channel
+	SharedEntryName    string      `json:"shared_entry_name"`             // ProjectMCPEntryName — the legacy/global .mcp.json entry
+	ResolvedVia        string      `json:"resolved_via"`                  // "hint" | "caller-scope" | "channel-ready-fallback" (set by caller)
 	Peers              []PeerScope `json:"peers"`
 }
 
@@ -51,7 +53,15 @@ type PeerScope struct {
 // session list (all). Peers is every other session in all (stable: same
 // order as ListSessions), each with its own MCP channel name. sess itself
 // never appears in Peers.
+//
+// ChannelReady/ChannelPort are *daemon-side* registration state: a stale
+// port on a dead bridge still reads ChannelReady=true here. To keep
+// "channel_ready" honest in the BL463 sense, BuildSelfScope also does a
+// live /health probe of the session's bridge (BridgeHealth) when a port is
+// recorded; BridgeAlive + BridgeCloseReason carry the live answer and the
+// close-reason diagnostic.
 func BuildSelfScope(sess *session.Session, all []*session.Session) SelfScope {
+	bridgeAlive, bridgeCloseReason := BridgeHealth(sess.ChannelPort)
 	sc := SelfScope{
 		SessionID:          sess.ID,
 		FullID:             sess.FullID,
@@ -65,6 +75,8 @@ func BuildSelfScope(sess *session.Session, all []*session.Session) SelfScope {
 		EphemeralWorkspace: sess.EphemeralWorkspace,
 		ChannelReady:       sess.ChannelReady,
 		ChannelPort:        sess.ChannelPort,
+		BridgeAlive:        bridgeAlive,
+		BridgeCloseReason:  bridgeCloseReason,
 		MCPServerName:      ChannelServerName(sess.FullID),
 		SharedEntryName:    ProjectMCPEntryName,
 		Peers:              []PeerScope{},
