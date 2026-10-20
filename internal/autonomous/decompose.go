@@ -216,17 +216,21 @@ func ParsePlanning(raw string) (title string, stories []Story, err error) {
 			} `json:"tasks"`
 		} `json:"stories"`
 	}
-	json.Unmarshal([]byte(cleaned), &alt)
-	for si, story := range doc.Stories {
-		for ti := range story.Tasks {
-			if story.Tasks[ti].Title == "" && si < len(alt.Stories) && ti < len(alt.Stories[si].Tasks) {
-				story.Tasks[ti].Title = alt.Stories[si].Tasks[ti].Name
+	// Backfill is best-effort: if the cleaned JSON parses into the
+	// primary shape (above) but not the alt-key shape, keep the already
+	// parsed fields and carry on rather than hard-failing.
+	if err := json.Unmarshal([]byte(cleaned), &alt); err == nil {
+		for si, story := range doc.Stories {
+			for ti := range story.Tasks {
+				if story.Tasks[ti].Title == "" && si < len(alt.Stories) && ti < len(alt.Stories[si].Tasks) {
+					story.Tasks[ti].Title = alt.Stories[si].Tasks[ti].Name
+				}
+				if story.Tasks[ti].Spec == "" && si < len(alt.Stories) && ti < len(alt.Stories[si].Tasks) {
+					story.Tasks[ti].Spec = alt.Stories[si].Tasks[ti].Description
+				}
 			}
-			if story.Tasks[ti].Spec == "" && si < len(alt.Stories) && ti < len(alt.Stories[si].Tasks) {
-				story.Tasks[ti].Spec = alt.Stories[si].Tasks[ti].Description
-			}
+			doc.Stories[si] = story
 		}
-		doc.Stories[si] = story
 	}
 	for _, story := range doc.Stories {
 		for ti, task := range story.Tasks {
