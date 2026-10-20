@@ -279,6 +279,10 @@ type Config struct {
 	CapacityEnabled *bool `json:"capacity_enabled,omitempty"`
 	// CapacityWaitTimeoutSeconds bounds a capacity wait (default 14400).
 	CapacityWaitTimeoutSeconds int `json:"capacity_wait_timeout_seconds,omitempty"`
+	// ResumeMaxAgeSeconds is how old (in seconds) a completed task may be
+	// before it is no longer eligible for resume (default 3600). 0 is
+	// meaningful: never resume.
+	ResumeMaxAgeSeconds int `json:"resume_max_age_seconds"`
 	// CIWatchTimeoutSeconds bounds how long the ci-watch completion guardrail waits for this automaton's own pushed commit's CI runs to finish (default 1500).
 	// Default rationale: this repo's own tag Release workflow took ~18
 	// minutes on the most recent real run (gh run list) and ordinary

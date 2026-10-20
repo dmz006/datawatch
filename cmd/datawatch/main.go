@@ -4113,6 +4113,10 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			SessionIdleTimeoutSeconds:  acfgIn.SessionIdleTimeoutSeconds,
 			CapacityEnabled:            acfgIn.CapacityEnabled,
 			CapacityWaitTimeoutSeconds: acfgIn.CapacityWaitTimeoutSeconds,
+			// 0 is meaningful (never resume) and -1 passes through as-is;
+			// 3600 arrives only if the daemon config itself supplied nothing
+			// (config.Load merges over DefaultConfig()).
+			ResumeMaxAgeSeconds:      acfgIn.ResumeMaxAgeSeconds,
 			StaleTaskSeconds:           acfgIn.StaleTaskSeconds,
 			AutoFixRetries:             acfgIn.AutoFixRetries,
 			VerifierDiffMaxBytes:       acfgIn.VerifierDiffMaxBytes,
