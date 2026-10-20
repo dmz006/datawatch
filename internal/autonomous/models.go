@@ -380,6 +380,51 @@ type PRD struct {
 	ReadDirs      []string `json:"read_dirs,omitempty"`
 	WriteDirs     []string `json:"write_dirs,omitempty"`
 	ScopeWarnings []string `json:"scope_warnings,omitempty"`
+
+	// PlanCoverage is the stored plan-requirement coverage state from
+	// the last decomposition: the check mode and min ratio in effect
+	// when the report was computed, the covered/missing/weakened
+	// counts and the unmatched requirements, plus the operator
+	// acknowledgement state (nil until acknowledged). Nil = no coverage
+	// check has been stored for this PRD yet.
+	PlanCoverage *PlanCoverage `json:"plan_coverage,omitempty"`
+}
+
+// PlanCoverage is the plan-coverage state stored on the PRD
+// (PRD.PlanCoverage). It pins the effective settings from the moment
+// the report was computed (so later config changes don't silently
+// re-interpret an old report) and carries the acknowledgement state.
+type PlanCoverage struct {
+	// Mode is the plan-coverage check mode in effect when the report
+	// was computed: "off" | "warn" | "block".
+	Mode string `json:"mode"`
+	// MinRatio is the minimum covered/extractable requirement ratio
+	// in effect when the report was computed (0,1]; 1.0 = full coverage.
+	MinRatio float64 `json:"min_ratio"`
+	// Report is the coverage report from CheckPlanCoverage for the
+	// latest decomposition attempt.
+	Report PlanCoverageReport `json:"report"`
+	// Ack is the operator acknowledgement of a failing report, if one
+	// exists. Nil = the report is (if failing) unacknowledged.
+	Ack *PlanCoverageAck `json:"ack,omitempty"`
+}
+
+// PlanCoverageAck is the operator acknowledgement of one specific
+// failing plan-coverage report. Fingerprint ties it to that report's
+// content: a later decomposition producing a report with a different
+// fingerprint no longer counts as acknowledged and must be re-acked.
+type PlanCoverageAck struct {
+	// By is the operator identity that acknowledged (user id or caller
+	// kind, e.g. "api").
+	By string `json:"by"`
+	// At is the acknowledgement time (UTC).
+	At *time.Time `json:"at"`
+	// Note is the operator's optional free-text justification.
+	Note string `json:"note,omitempty"`
+	// Fingerprint is the fingerprint of the failing report this
+	// acknowledgement covers (the consuming code computes it from the
+	// report's failing content).
+	Fingerprint string `json:"fingerprint"`
 }
 
 // GitWorkflow (BL407) is a PRD's branch-per-PRD + auto-PR workflow

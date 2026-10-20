@@ -2056,6 +2056,27 @@ type AutonomousConfig struct {
 	// during PRD decomposition. 0 = use effort-scaled defaults
 	// (120s quick, 300s normal, 900s high/max). Raise for slow Ollama.
 	PlanningTimeoutSeconds int `yaml:"planning_timeout_seconds,omitempty" json:"planning_timeout_seconds,omitempty"`
+	// PlanCoverageCheck sets how decomposition treats plan-requirement
+	// coverage failures: "off" (no check), "warn" (report + surface,
+	// proceed) or "block" (failing coverage stops decomposition).
+	// Empty normalizes to "block" (the safe default) — see
+	// NormalizePlanCoverageCheck. Unknown values are a config error.
+	//
+	// No `omitempty`, deliberately: handleAutonomousConfig
+	// (internal/server/autonomous.go) round-trips the manager's live
+	// config through json.Marshal + json.Unmarshal onto this struct
+	// before persisting, and omitempty would elide an empty/explicit
+	// value and leave the previous stored value in place — an
+	// operator's explicit "off" (or a ratio changed to 0) must survive
+	// the round-trip (same gotcha as the VerificationBackends comment
+	// above).
+	PlanCoverageCheck string `yaml:"plan_coverage_check" json:"plan_coverage_check"`
+	// PlanCoverageMinRatio is the minimum covered/extractable-requirement
+	// ratio a plan must meet for coverage to pass. Valid range (0,1];
+	// zero or negative normalizes to 1.0 (require full coverage) and
+	// values above 1 clamp to 1.0 — see NormalizePlanCoverageRatio.
+	// No omitempty for the same round-trip reason as PlanCoverageCheck.
+	PlanCoverageMinRatio float64 `yaml:"plan_coverage_min_ratio" json:"plan_coverage_min_ratio"`
 	// VerificationTimeoutSeconds bounds one verifier or guardrail one-shot
 	// judgment session. Default 1800 seconds (30 minutes); zero or negative
 	// values fall back to the default. Raise for slow local (Ollama /

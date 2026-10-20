@@ -35,8 +35,8 @@ const (
 // RequirementVerdict pairs an extracted requirement with its verdict
 // and the spec fragment it came from (the requirement text itself).
 type RequirementVerdict struct {
-	Requirement string          // requirement text, as extracted from the spec
-	Verdict     CoverageVerdict // covered / missing / weakened
+	Requirement string          `json:"requirement"` // requirement text, as extracted from the spec
+	Verdict     CoverageVerdict `json:"verdict"`     // covered / missing / weakened
 }
 
 // PlanCoverageReport summarizes how fully a decomposed plan covers the

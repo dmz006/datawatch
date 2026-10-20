@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/dmz006/datawatch/internal/autonomous/scan"
+	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/git"
 	"github.com/dmz006/datawatch/internal/metrics"
 	"github.com/dmz006/datawatch/internal/pipeline"
@@ -67,6 +68,20 @@ type Config struct {
 	// 900s high/max). Set to 0 to use the effort-scaled defaults.
 	// Exposed as autonomous.planning_timeout_seconds in config.
 	PlanningTimeoutSeconds int `json:"planning_timeout_seconds,omitempty"`
+	// PlanCoverageCheck sets how decomposition treats plan-requirement
+	// coverage failures: "off" | "warn" | "block". Empty normalizes to
+	// "block" (see config.NormalizePlanCoverageCheck / Manager
+	// .EffectivePlanCoverage).
+	// No `omitempty`, deliberately: the same round-trip gotcha as
+	// config.AutonomousConfig.PlanCoverageCheck — an operator's explicit
+	// "off" must survive the manager Config → config.AutonomousConfig
+	// json round-trip in handleAutonomousConfig (internal/server/autonomous.go).
+	PlanCoverageCheck string `json:"plan_coverage_check"`
+	// PlanCoverageMinRatio is the minimum covered-requirement ratio a
+	// plan must meet; zero/negative normalizes to 1.0 (full coverage) and
+	// >1 clamps to 1.0 (see config.NormalizePlanCoverageRatio). No
+	// omitempty for the same round-trip reason as PlanCoverageCheck.
+	PlanCoverageMinRatio float64 `json:"plan_coverage_min_ratio"`
 	// VerificationTimeoutSeconds is the sibling of PlanningTimeoutSeconds.
 	// Exposed as autonomous.verification_timeout_seconds in config. The
 	// manager itself does not consume it: the daemon's verifier/guardrail
@@ -1057,6 +1072,19 @@ func (m *Manager) Config() Config {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.cfg
+}
+
+// EffectivePlanCoverage resolves the plan-coverage settings in effect
+// from the manager's current config (Config.PlanCoverageCheck /
+// .PlanCoverageMinRatio) via the canonical config normalizers: an empty
+// unset mode becomes "block" (the safe default), a zero/negative min
+// ratio becomes 1.0 (require full coverage), and a ratio above 1 is
+// clamped to 1.0. It returns an error if the stored mode is not one of
+// off|warn|block — callers must surface that error rather than guess a
+// mode.
+func (m *Manager) EffectivePlanCoverage() (config.PlanCoverageSettings, error) {
+	cfg := m.Config()
+	return config.EffectivePlanCoverage(cfg.PlanCoverageCheck, cfg.PlanCoverageMinRatio)
 }
 
 // Store exposes the underlying store (REST handlers and tests use it).
