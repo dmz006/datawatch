@@ -27,6 +27,7 @@ Subcommands:
   config-set <json>               Merge fields into autonomous config, e.g.
                                   config-set '{"max_concurrent_tasks":2}'
                                   config-set '{"max_engines_per_node":2}'
+                                  config-set '{"resume_max_age_seconds":1800}'
   prd-list                        List all PRDs
   prd-create <spec>               Create a draft PRD (--type, --guided-mode, --skills)
   prd-get <id>                    Fetch one PRD with story+task tree
@@ -140,7 +141,11 @@ func newAutonomousConfigGetCmd() *cobra.Command {
 
 The concurrency keys are max_concurrent_tasks (tasks of one Automaton that
 run at once; 1 = sequential) and max_engines_per_node (engine sessions one
-compute node runs at once; 1 = one engine per node, the default).`,
+compute node runs at once; 1 = one engine per node, the default).
+
+resume_max_age_seconds is the boot-resume age limit in seconds (default
+3600): a completed task older than that is no longer eligible for resume.
+0 = never resume, -1 = no age limit.`,
 		RunE: func(*cobra.Command, []string) error { return daemonGet("/api/autonomous/config") },
 	}
 }
@@ -161,6 +166,11 @@ Example — let each compute node run up to 2 engine sessions at once
 (default 1; values below 1 are clamped to 1):
 
   datawatch autonomous config-set '{"max_engines_per_node":2}'
+
+Example — make completed tasks older than 30 minutes no longer eligible
+for resume (default 3600; 0 = never resume, -1 = no age limit):
+
+  datawatch autonomous config-set '{"resume_max_age_seconds":1800}'
 
 max_parallel_tasks is deprecated and ignored; use max_concurrent_tasks.`,
 		Args: cobra.ExactArgs(1),
