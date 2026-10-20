@@ -5,6 +5,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.31 — Format the session package and reject whole-package checks in plans
+
+
 ### Fixed
 - **The twenty session files that were not formatted are now formatted** — formatting only, with no change in behaviour.
 - **Verification scripts are now told to check only the files a task changes** — a package's old formatting problems no longer fail unrelated tasks.
