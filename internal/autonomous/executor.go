@@ -1564,7 +1564,11 @@ func (m *Manager) recurseChildPRD(ctx context.Context, parent *PRD, t *Task, spa
 		return emitSaved(old)
 	}
 	if m.cfg.AutoApproveChildren {
-		if _, err := m.Approve(child.ID, "autonomous", fmt.Sprintf("auto-approve from parent task %s/%s", parent.ID, t.ID)); err != nil {
+		// approveAuto (not plain Approve): child plans that fail the stored
+		// plan-coverage gate in block mode are auto-acknowledged with an
+		// auditable record rather than failing the parent task — the
+		// operator explicitly enabled this automation.
+		if _, err := m.approveAuto(child.ID, "autonomous", fmt.Sprintf("auto-approve from parent task %s/%s", parent.ID, t.ID)); err != nil {
 			old = t.Status
 			t.Status = TaskFailed
 			t.Error = fmt.Sprintf("child PRD %s auto-approve: %v", child.ID, err)

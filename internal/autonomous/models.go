@@ -407,6 +407,14 @@ type PlanCoverage struct {
 	// Ack is the operator acknowledgement of a failing report, if one
 	// exists. Nil = the report is (if failing) unacknowledged.
 	Ack *PlanCoverageAck `json:"ack,omitempty"`
+	// Findings is the structural-findings half of the same
+	// deterministic (non-LLM) coverage check computed alongside the
+	// requirements report at decompose time: any present finding
+	// counts as a failing stored report in the Approve gate, and the
+	// finding set participates in the Ack fingerprint (see
+	// PlanCoverage.Fingerprint). Nil/empty means the stored plan had
+	// no structural findings.
+	Findings []StructuralFinding `json:"findings,omitempty"`
 }
 
 // PlanCoverageAck is the operator acknowledgement of one specific

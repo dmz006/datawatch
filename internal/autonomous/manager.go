@@ -1087,6 +1087,143 @@ func (m *Manager) EffectivePlanCoverage() (config.PlanCoverageSettings, error) {
 	return config.EffectivePlanCoverage(cfg.PlanCoverageCheck, cfg.PlanCoverageMinRatio)
 }
 
+// decomposeAttemptOutcome is the shared outcome validateAndStorePlan
+// reports for one decompose attempt's parsed plan.
+type decomposeAttemptOutcome int
+
+const (
+	// decomposeAttemptStored — every shared validation passed and the
+	// stories are stored; the caller may finalize (see
+	// finalizeDecomposedPlan).
+	decomposeAttemptStored decomposeAttemptOutcome = iota
+	// decomposeAttemptRetry — a retryable failure was recorded within
+	// budget; the caller must loop back and retry the decompose.
+	decomposeAttemptRetry
+	// decomposeAttemptTerminal — the shared failure is terminal (budget
+	// exhausted); the caller must surface the error (the helper has
+	// already run failDecomposeAttempt).
+	decomposeAttemptTerminal
+)
+
+// validateAndStorePlan is the SHARED validation + store tail that both
+// decompose paths (Decompose and decomposeStreamingCore) ran as drifted
+// copies of each other before this existed: the zero-story guard, the B124
+// verification-script-coverage check, and SetStories (depends_on
+// resolution + validation). Each step keeps the exact retry-with-budget
+// (then draft-rollback) behavior the twins had, surfacing the retry/terminal
+// distinction to the caller as decomposeAttemptOutcome.
+func (m *Manager) validateAndStorePlan(prd *PRD, prdID string, s []Story) (decomposeAttemptOutcome, error) {
+	// A valid-JSON plan with no usable stories must not be stored as a
+	// finished decompose: a "content"-category failure, retryable within
+	// the RetryPolicy budget and recorded as terminal when that budget is
+	// exhausted (same path as below).
+	if zerr := validateParsedPlan(s); zerr != nil {
+		if m.retryDecomposeFailure(prd, "content", "decompose-zero-stories", zerr.Error()) {
+			return decomposeAttemptRetry, nil
+		}
+		m.failDecomposeAttempt(prd, "decompose-zero-stories", zerr)
+		return decomposeAttemptTerminal, zerr
+	}
+	// B124 — kick back a tooled plan that skipped verification scripts
+	// entirely despite planning real file changes: a "scope"-category
+	// failure in the same retry-then-terminal path.
+	if verr := validateVerificationScriptCoverage(prd.ProjectDir, s); verr != nil {
+		if m.retryDecomposeFailure(prd, "scope", "verification-script-coverage", verr.Error()) {
+			return decomposeAttemptRetry, nil
+		}
+		m.failDecomposeAttempt(prd, "verification-script-coverage", verr)
+		return decomposeAttemptTerminal, verr
+	}
+	// Release-version gate and verification-script scope gate: restored
+	// here from main (they were duplicated in both decompose twins, and the
+	// shared tail must enforce them for both paths).
+	if err := validateNoFixedReleaseVersion(s); err != nil {
+		if m.retryDecomposeFailure(prd, "content", "release-version-fixed", err.Error()) {
+			return decomposeAttemptRetry, nil
+		}
+		m.failDecomposeAttempt(prd, "release-version-fixed", err)
+		return decomposeAttemptTerminal, err
+	}
+	if err := validateVerificationScriptScope(prd.ProjectDir, s); err != nil {
+		if m.retryDecomposeFailure(prd, "scope", "verification-script-scope", err.Error()) {
+			return decomposeAttemptRetry, nil
+		}
+		m.failDecomposeAttempt(prd, "verification-script-scope", err)
+		return decomposeAttemptTerminal, err
+	}
+	// SetStories is where depends_on gets resolved + validated: it rejects
+	// the whole plan (naming the exact bad entry or the cycle, storing
+	// nothing) when a reference can't be resolved. A content rejection in
+	// the same retry-then-terminal path — the only other error it can
+	// return ("prd not found") cannot happen for a PRD loaded moments
+	// ago and alive for the duration of this call.
+	if err := m.store.SetStories(prdID, s); err != nil {
+		if m.retryDecomposeFailure(prd, "content", "decompose-depends-on", err.Error()) {
+			return decomposeAttemptRetry, nil
+		}
+		m.failDecomposeAttempt(prd, "decompose-depends-on", err)
+		return decomposeAttemptTerminal, err
+	}
+	return decomposeAttemptStored, nil
+}
+
+// finalizeDecomposedPlan is the SHARED post-store tail of both decompose
+// paths (formerly the copy-pasted block after each of their retry
+// loops): clears the failure hint, attaches the deterministic
+// plan-coverage report computed right at this moment (see
+// recordPlanCoverage — stored in ALL modes, pinned to the effective
+// plan-coverage settings at compute time so a later config flip
+// can't re-interpret this stored report), transitions the PRD to
+// needs_review with the decompose Decision + scope warnings, runs the
+// BL268 persist-check, and removes the scratch decompose artifact.
+func (m *Manager) finalizeDecomposedPlan(prd *PRD, prdID, backend, prompt, raw, title string, s []Story) (*PRD, error) {
+	prd.LastDecomposeFailure = nil // success — clear the single-use hint
+	prd.DecomposeSessionFailures = 0
+
+	settings, serr := m.EffectivePlanCoverage()
+	if serr != nil {
+		// A plan-coverage mode that cannot be resolved is a config
+		// error; do not leave the PRD half-finalized.
+		m.failDecomposeAttempt(prd, "plan-coverage-config", serr)
+		return nil, serr
+	}
+	// Compute + store the deterministic (non-LLM) coverage report BEFORE
+	// saving the PRD so it lands atomically with the validated plan it
+	// describes — in off/warn/block alike.
+	m.recordPlanCoverage(prd, s, settings)
+
+	if title != "" {
+		prd.Title = title
+	}
+	// BL191 Q1: operator review/approve gate. Status lands in needs_review
+	// rather than active/running. Approve / Reject / RequestRevision are
+	// the explicit transitions out.
+	reviewOld := prd.Status
+	prd.Status = PRDNeedsReview
+	prd.Decisions = append(prd.Decisions, Decision{
+		At:            time.Now(),
+		Kind:          "decompose",
+		Backend:       backend,
+		PromptChars:   len(prompt),
+		ResponseChars: len(raw),
+		Actor:         "autonomous",
+	})
+	prd.ScopeWarnings = LintPlanScope(prd, s)
+	if err := m.store.SavePRD(prd); err != nil {
+		return nil, err
+	}
+	// Only the persisted state counts: a decompose whose stories did not
+	// land in the store is a failure, and its output artifact is kept.
+	if perr := m.checkPersistedDecompose(prdID); perr != nil {
+		m.failDecomposeAttempt(prd, "decompose-persist", perr)
+		return nil, perr
+	}
+	RemoveDecomposeOutputArtifact(m.dataDir, prdID)
+	m.emitPRDStatus(prd, reviewOld, lastDecision(prd, "decompose"), nil)
+	updated, _ := m.store.GetPRD(prdID)
+	return updated, nil
+}
+
 // Store exposes the underlying store (REST handlers and tests use it).
 func (m *Manager) Store() *Store { return m.store }
 
@@ -1207,9 +1344,8 @@ func (m *Manager) Decompose(prdID string) (*PRD, error) {
 	// below rather than consuming infra retry budget. See
 	// retryDecomposeFailure's doc comment for the full rationale; see
 	// decomposeStreamingCore's identical loop for the twin copy this
-	// drifted-duplicate pair requires.
-	var raw, title string
-	var stories []Story
+	// drifted-duplicate pair requires; both tails now route through the
+	// shared validateAndStorePlan + finalizeDecomposedPlan helpers below.
 	for {
 		attemptPrompt := prompt
 		if prd.LastDecomposeFailure != nil {
@@ -1242,100 +1378,25 @@ func (m *Manager) Decompose(prdID string) (*PRD, error) {
 			m.failDecomposeAttempt(prd, "decompose-parse", perr)
 			return nil, perr
 		}
-		// A valid-JSON plan with no usable stories must not be stored as
-		// a finished decompose. Route it through the same retry path as
-		// a parse failure so the reason lands on LastDecomposeFailure.
-		if zerr := validateParsedPlan(s); zerr != nil {
-			if m.retryDecomposeFailure(prd, "content", "decompose-zero-stories", zerr.Error()) {
-				continue
+		// SHARED validation + store tail for the parsed plan (see
+		// validateAndStorePlan) — the single source of truth both
+		// decompose paths now call: retryable failures loop back into
+		// the hint-fed retry above, terminal failures are already
+		// recorded and surface to the caller, and success finalizes
+		// through the shared tail (finalizeDecomposedPlan).
+		switch outcome, oerr := m.validateAndStorePlan(prd, prdID, s); outcome {
+		case decomposeAttemptRetry:
+			continue
+		case decomposeAttemptTerminal:
+			return nil, oerr
+		default: // decomposeAttemptStored — plan validated and stored.
+			updated, ferr := m.finalizeDecomposedPlan(prd, prdID, backend, prompt, r, t, s)
+			if ferr != nil {
+				return nil, ferr
 			}
-			m.failDecomposeAttempt(prd, "decompose-zero-stories", zerr)
-			return nil, zerr
+			return updated, nil
 		}
-		// B124 — kick back a tooled plan that skipped verification
-		// scripts entirely despite planning real file changes (see this
-		// function's own doc comment). Decompose() is a lower-level
-		// call used directly by tests and any caller that wants a
-		// non-streaming result, so this check must live here too, not
-		// only in decomposeStreamingCore.
-		if verr := validateVerificationScriptCoverage(prd.ProjectDir, s); verr != nil {
-			if m.retryDecomposeFailure(prd, "scope", "verification-script-coverage", verr.Error()) {
-				continue
-			}
-			m.failDecomposeAttempt(prd, "verification-script-coverage", verr)
-			return nil, verr
-		}
-		// Release-version gate — see decomposeStreamingCore's identical
-		// block; the two twin loops must stay in sync.
-		if err := validateNoFixedReleaseVersion(s); err != nil {
-			if m.retryDecomposeFailure(prd, "content", "release-version-fixed", err.Error()) {
-				continue
-			}
-			m.failDecomposeAttempt(prd, "release-version-fixed", err)
-			return nil, err
-		}
-		// Verification-script scope gate — see decomposeStreamingCore's
-		// identical block; the two twin loops must stay in sync.
-		if err := validateVerificationScriptScope(prd.ProjectDir, s); err != nil {
-			if m.retryDecomposeFailure(prd, "scope", "verification-script-scope", err.Error()) {
-				continue
-			}
-			m.failDecomposeAttempt(prd, "verification-script-scope", err)
-			return nil, err
-		}
-		// SetStories is where depends_on gets resolved + validated: it
-		// rejects the whole plan (naming the exact bad entry or the
-		// cycle, storing nothing) when a reference can't be resolved. That
-		// is a content rejection, so it takes the same retry-then-fail
-		// path as the checks above. The only other error SetStories can
-		// return is "prd not found", which cannot happen here (this PRD
-		// was just loaded and is alive in the store for the duration of
-		// this call), so every SetStories failure takes this branch.
-		if err := m.store.SetStories(prdID, s); err != nil {
-			if m.retryDecomposeFailure(prd, "content", "decompose-depends-on", err.Error()) {
-				continue
-			}
-			m.failDecomposeAttempt(prd, "decompose-depends-on", err)
-			return nil, err
-		}
-		raw, title, stories = r, t, s
-		prd.LastDecomposeFailure = nil // success — clear the single-use hint
-		prd.DecomposeSessionFailures = 0
-		break
 	}
-	if title != "" {
-		prd.Title = title
-	}
-	// BL191 Q1: operator review/approve gate. Status lands in needs_review
-	// rather than active/running. Approve / Reject / RequestRevision are
-	// the explicit transitions out.
-	reviewOld := prd.Status
-	prd.Status = PRDNeedsReview
-	prd.Decisions = append(prd.Decisions, Decision{
-		At:            time.Now(),
-		Kind:          "decompose",
-		Backend:       backend,
-		PromptChars:   len(prompt),
-		ResponseChars: len(raw),
-		Actor:         "autonomous",
-	})
-	prd.ScopeWarnings = LintPlanScope(prd, stories)
-	// SetStories (with depends_on resolution + validation) already ran
-	// inside the retry loop above — the decompose-depends-on branch; the
-	// stories are stored and only the PRD record itself needs saving now.
-	if err := m.store.SavePRD(prd); err != nil {
-		return nil, err
-	}
-	// Only the persisted state counts: a decompose whose stories did not
-	// land in the store is a failure, and its output artifact is kept.
-	if perr := m.checkPersistedDecompose(prdID); perr != nil {
-		m.failDecomposeAttempt(prd, "decompose-persist", perr)
-		return nil, perr
-	}
-	RemoveDecomposeOutputArtifact(m.dataDir, prdID)
-	m.emitPRDStatus(prd, reviewOld, lastDecision(prd, "decompose"), nil)
-	updated, _ := m.store.GetPRD(prdID)
-	return updated, nil
 }
 
 // StoryCallback is called by decomposeStreamingCore as each story
@@ -1422,9 +1483,9 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (*PRD, 
 	// BL410 remediation (2026-10-13) — see Decompose()'s identical loop
 	// for the full explanation; retryDecomposeFailure is the shared
 	// helper both copies of this drifted-duplicate pair call, so the
-	// retry logic itself exists in exactly one place.
-	var raw, title string
-	var stories []Story
+	// retry logic itself exists in exactly one place; the retry loop and
+	// both tails now share the validateAndStorePlan +
+	// finalizeDecomposedPlan helpers (see Decompose above).
 	for {
 		attemptPrompt := prompt
 		if prd.LastDecomposeFailure != nil {
@@ -1454,95 +1515,29 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (*PRD, 
 			m.failDecomposeAttempt(prd, "decompose-parse", perr)
 			return nil, perr
 		}
-		// Zero-story guard — see Decompose()'s identical call. Kept in
-		// sync with the twin loop so both paths reject the same output.
-		if zerr := validateParsedPlan(s); zerr != nil {
-			if m.retryDecomposeFailure(prd, "content", "decompose-zero-stories", zerr.Error()) {
-				continue
+		// Same SHARED validation + store tail as Decompose (see
+		// validateAndStorePlan) — kept in one place rather than a second
+		// drifted copy; retry/terminal outcomes are handled identically.
+		switch outcome, oerr := m.validateAndStorePlan(prd, prdID, s); outcome {
+		case decomposeAttemptRetry:
+			continue
+		case decomposeAttemptTerminal:
+			return nil, oerr
+		default: // decomposeAttemptStored — plan validated and stored.
+			updated, ferr := m.finalizeDecomposedPlan(prd, prdID, backend, prompt, r, t, s)
+			if ferr != nil {
+				return nil, ferr
 			}
-			m.failDecomposeAttempt(prd, "decompose-zero-stories", zerr)
-			return nil, zerr
-		}
-		// B124 — see Decompose()'s identical call for the full
-		// explanation; decomposeStreamingCore is a drifted duplicate of
-		// Decompose() by design history, kept in sync here too rather
-		// than risk a third hand-copied gate.
-		if verr := validateVerificationScriptCoverage(prd.ProjectDir, s); verr != nil {
-			if m.retryDecomposeFailure(prd, "scope", "verification-script-coverage", verr.Error()) {
-				continue
+			// Yield stories via callback after finalizing (s IS the
+			// stored slice — IDs included, mutated in place by SetStories).
+			if cb != nil {
+				for i := range s {
+					cb(i, len(s), s[i])
+				}
 			}
-			m.failDecomposeAttempt(prd, "verification-script-coverage", verr)
-			return nil, verr
-		}
-		// Release-version gate — see Decompose()'s identical block; the
-		// two twin loops must stay in sync.
-		if err := validateNoFixedReleaseVersion(s); err != nil {
-			if m.retryDecomposeFailure(prd, "content", "release-version-fixed", err.Error()) {
-				continue
-			}
-			m.failDecomposeAttempt(prd, "release-version-fixed", err)
-			return nil, err
-		}
-		// Verification-script scope gate — see Decompose()'s identical
-		// block; the two twin loops must stay in sync.
-		if err := validateVerificationScriptScope(prd.ProjectDir, s); err != nil {
-			if m.retryDecomposeFailure(prd, "scope", "verification-script-scope", err.Error()) {
-				continue
-			}
-			m.failDecomposeAttempt(prd, "verification-script-scope", err)
-			return nil, err
-		}
-		// SetStories + depends_on validation — see Decompose()'s identical
-		// block for the full rationale; kept in sync here rather than risk
-		// a drifted duplicate.
-		if err := m.store.SetStories(prdID, s); err != nil {
-			if m.retryDecomposeFailure(prd, "content", "decompose-depends-on", err.Error()) {
-				continue
-			}
-			m.failDecomposeAttempt(prd, "decompose-depends-on", err)
-			return nil, err
-		}
-		raw, title, stories = r, t, s
-		prd.LastDecomposeFailure = nil // success — clear the single-use hint
-		prd.DecomposeSessionFailures = 0
-		break
-	}
-	if title != "" {
-		prd.Title = title
-	}
-	reviewOld := prd.Status
-	prd.Status = PRDNeedsReview
-	prd.Decisions = append(prd.Decisions, Decision{
-		At:            time.Now(),
-		Kind:          "decompose",
-		Backend:       backend,
-		PromptChars:   len(prompt),
-		ResponseChars: len(raw),
-		Actor:         "autonomous",
-	})
-	prd.ScopeWarnings = LintPlanScope(prd, stories)
-	// SetStories (with depends_on resolution + validation) already ran
-	// inside the retry loop above — the decompose-depends-on branch; the
-	// stories are stored and only the PRD record itself needs saving now.
-	if err := m.store.SavePRD(prd); err != nil {
-		return nil, err
-	}
-	// Only the persisted state counts: a decompose whose stories did not
-	// land in the store is a failure, and its output artifact is kept.
-	if perr := m.checkPersistedDecompose(prdID); perr != nil {
-		m.failDecomposeAttempt(prd, "decompose-persist", perr)
-		return nil, perr
-	}
-	RemoveDecomposeOutputArtifact(m.dataDir, prdID)
-	m.emitPRDStatus(prd, reviewOld, lastDecision(prd, "decompose"), nil)
-	updated, _ := m.store.GetPRD(prdID)
-	// Yield stories via callback after persisting.
-	if cb != nil {
-		for i, s := range stories {
-			cb(i, len(stories), s)
+			return updated, nil
 		}
 	}
-	return updated, nil
 }
 
 // Approve transitions a PRD from needs_review → approved so the loop /
@@ -1554,6 +1549,15 @@ func (m *Manager) Approve(prdID, actor, note string) (*PRD, error) {
 	}
 	if prd.Status != PRDNeedsReview && prd.Status != PRDRevisionsAsked {
 		return nil, fmt.Errorf("prd %q status %q is not approvable", prdID, prd.Status)
+	}
+	// Plan-coverage gate (block mode = the demonstrated default): a
+	// stored, failing plan-coverage report blocks approval unless the
+	// operator acknowledged THAT exact failing surface — an unmatched
+	// requirement set or structural findings are never approved past
+	// silently (see planCoverageApprovalGate and
+	// AcknowledgePlanCoverage).
+	if gerr := m.planCoverageApprovalGate(prdID, prd); gerr != nil {
+		return nil, gerr
 	}
 	now := time.Now()
 	old := prd.Status
