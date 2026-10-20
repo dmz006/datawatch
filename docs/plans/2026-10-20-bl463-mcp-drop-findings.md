@@ -1,7 +1,93 @@
 # BL463 — MCP connection reliability, session isolation clarity, REST error-mode parity
 
-Status: **Phase 0 (audit) complete; Phase 1 (read-only `get_my_scope` tool + REST mirror) implemented in this commit.**
+Status: **Phase 0 (audit) complete; Phase 1 (read-only `get_my_scope` tool + REST mirror) implemented in this commit; the live CONNECTION_CLOSED drop incident investigated (this doc) with repro tests and permanent mitigations shipped.**
 PRD `bf78e50a` (autonomous PRD backlog, PRD #5 in `docs/plans/README.md`).
+
+---
+
+## Incident — mid-session MCP CONNECTION_CLOSED (live report 2026-10-15)
+
+### Symptom
+
+A spawned session's datawatch MCP connection reported **CONNECTION_CLOSED mid-session and never recovered**, while `/api/mcp/tools` on the same daemon stayed healthy. That split is the defining evidence: the daemon's MCP *logic* was fine; what died was the *per-client transport* (SSE stream or stdio bridge process) and nothing on the client side could re-establish it.
+
+Before this investigation there was **zero server-side evidence** of why any of our transports close:
+
+- mcp-go v0.46.0 **silently discards write and flush errors** on its SSE main loop (`server/sse.go`) — a stream that dies on a failed write leaves no log line at all, and a mid-write death is indistinguishable from a client/middlebox kill by timing alone.
+- mcp-go's `WithRecovery()` tool-panic middleware is **opt-in and was unregistered on every datawatch MCP entry point** (daemon SSE, daemon stdio, bridge) — so a single panicking tool handler killed the whole process serving that session. For a per-session stdio bridge that is *exactly* "CONNECTION_CLOSED, daemon healthy, never recovers" (`handleMessage` runs `HandleMessage` in a goroutine on the SSE path — the daemon itself was dead, with `/api/mcp/tools` served by the still-up sibling process explaining the split).
+- The stdio `Listen` loop logged nothing on exit — no start line, no stop reason.
+- The daemon's `http.Server` timeout profile (ReadTimeout 30s / IdleTimeout 120s / WriteTimeout unset) was set in code without any record of which of these stdlib deadlines can actually touch an in-flight SSE stream.
+
+### What dropped — the traced drop modes
+
+Two drop classes; one is **permanent** (matches the incident), one is recoverable:
+
+1. **PERMANENT: panic in a tool handler killing the stdio bridge (or daemon SSE process).** The client's only transport endpoint dies; the client sees the stream close and, because bridge processes are spawned per-session and *nothing respawns them*, there is no recovery path. The daemon's REST endpoints keep working because they live in the daemon process. **Evidence:** `internal/mcp/drop_repro_test.go` `TestStdioTransportDropFromToolPanicRecovered` — the *unregistered*-recovery path is what a panic does by mcp-go default (a tool handler panic is an unrecovered panic → process death in the stdio `Listen` goroutine); with the now-mandatory recovery middleware registered, the identical panicking tool returns an `isError` JSON-RPC result (`"internal panic in tool ..."`) and the **same session** answers a second tool call with `pong` afterward. PASS in 0.00s.
+2. **RECOVERABLE but silent: the SSE stream going quiet and dying mid-session.** mcp-go v0.46.0 defaults to `keepAlive=false` — a held-open SSE stream is *silent* unless pings are opted in, which is exactly what a proxy, middlebox or the client's own idle read timeout then kills on their schedule. **Evidence:** `TestSSETransportSurvivesDaemonTimeoutProfile` (control — with the 100ms test keepalive the daemon's exact timeout profile never drops the stream; the daemon now ships a 10s keepalive, `server.go ServeSSE`) and `TestSSETransportDropWhenWriteTimeoutExpires` (setting the single stdlib deadline that CAN kill an in-flight stream — `WriteTimeout` — drops the stream with the captured close log below). Both PASS in ~0.3–0.6s.
+
+### Evidence captured by the repro tests
+
+`go test ./internal/mcp/ -run 'Drop|Transport' -v -count=1` (2026-10-20):
+
+```
+--- PASS: TestSSETransportSurvivesDaemonTimeoutProfile   (0.30s)
+--- PASS: TestSSETransportDropWhenWriteTimeoutExpires    (0.60s)
+--- PASS: TestSSEObserveHandlerRecordsClientDisconnect   (0.30s)
+--- PASS: TestStdioTransportDropFromToolPanicRecovered   (0.00s)
+--- PASS: TestStdioTransportCloseReasonOnClientDisconnect(0.00s)
+--- PASS: TestToolPanicGuardMiddlewareDirectly           (0.00s)
+--- PASS: TestGuardStdioListenContextCancelLogging       (0.15s)
+ok   github.com/dmz006/datawatch/internal/mcp        1.366s
+```
+
+The instrumentation now records, at close time, exactly the lines the incident lacked (captured live from the WriteTimeout drop repro):
+
+```
+mcp/sse: STREAM OPEN /sse from "127.0.0.1:42416" (session transport begins)
+mcp/sse: STREAM CLOSE after 300ms — client disconnected (request context: context canceled) |
+        writes=8 bytes=289 idle_at_close=0s FIRST_WRITE_ERROR="write tcp 127.0.0.1:45729->127.0.0.1:42416: i/o timeout"
+```
+
+The `FIRST_WRITE_ERROR` field is the smoking gun the incident never had: server-side write failure vs client/middlebox kill are recorded, not guessed. `TestSSEObserveHandlerRecordsClientDisconnect` proves the benign side: a client disconnect logs `client disconnected (request context: context canceled)` with the `writes=/bytes=/idle_at_close=` stream summary.
+
+### Timeout-profile audit (which stdlib deadline can touch an in-flight SSE stream)
+
+From the Go net/http source, verified by the two control/drop tests above:
+
+| Deadline | Daemon value | Can kill an in-flight SSE stream? |
+|---|---|---|
+| `ReadTimeout` | 30s | **No** — applies only while reading a request; no read occurs on a body-less stream while its handler runs |
+| `IdleTimeout` | 120s | **No while in-flight** — applies between keep-alive requests; can kill a *stalled POST* that outlives 120s |
+| `WriteTimeout` | **unset (deliberately)** | **Yes** — the only one; `readRequest` wraps the handler in `SetWriteDeadline`, so in-flight event/keepalive writes fail on expiry (reproduced in 0.6s above) |
+| Keepalive pings | 10s (new) | N/A — keeps the stream visibly alive against client/middlebox idle kills |
+| Bridge stdio path | no HTTP | None of the above apply at all — the stdio risk class is process-panic/EOF, covered by the recovery + stop-reason logging |
+
+`LogSSEServerTimeouts` prints this profile verbatim at serve start, so a future profile change is auditable next to the stream logs it would break.
+
+### How this incident differs from BL444 (cross-reference only, do not conflate)
+
+BL444 ("MCP SSE listener retries bind at boot", `docs/plans/README.md` row 47) is a **boot-time availability** failure class in the same subsystem:
+
+| Axis | BL444 (boot bind gap) | This incident (mid-session drop) |
+|---|---|---|
+| When it fails | Listener (re)start at boot — bind/accept retry | Stream already established, held open in-session |
+| What dies | The listener never came up (or the retry loop) | The established transport (stdio bridge process or the SSE stream) |
+| Client state at failure | Connection refused / no endpoint found | `CONNECTION_CLOSED` on a live session |
+| Recovery shape | Daemon restart / retry succeeds from cold | Nothing was respawning the per-session bridge — recovery required a *new* session, not a retry |
+| Server evidence at time of failure | Absent listener logs | Absent close-reason logs (now fixed by the same instrumentation) |
+
+Different failure classes, different fixes (boot-time retry vs in-session transport hardening + close-reason audit trail); both live in the MCP SSE/stdio transport path, which is why they get cross-referenced.
+
+### Mitigations shipped (permanent)
+
+1. **Panic recovery on every MCP entry point** — `RegisterToolPanicRecovery` (internal/mcp/transport_debug.go) wired at daemon MCP server construction (`internal/mcp/server.go:330`); `GuardStdioListen` wraps the daemon stdio path (`server.go ServeStdio`) so panics escaping the synchronous dispatch are also recovered.
+2. **SSE stream open/close observability always on** — `ObserveSSEHandler` (wrapped at `server.go ServeSSE`): one `STREAM OPEN` / `STREAM CLOSE` line pair per stream with duration, write count, bytes, idle-at-close and first write/flush error (the mcp-go-discarded errors the incident lacked). `DATAWATCH_MCP_DEBUG=1` adds per-request lines.
+3. **Stdio stop-reason logging** — `GuardStdioListen` logs `listener <name> started` / `stopped — stdin closed/EOF (client disconnected or shutting down)` (or `stopped with error: …` / `panic recovered: …`), so the "who closed the stream and why" question has a server-side answer.
+4. **Silent-stream prevention** — SSE keepalive ping fixed at 10s (`server.go ServeSSE`, mcp-go `WithKeepAliveInterval`) so held-open streams stay visibly alive against client/middlebox idle kills.
+5. **Timeout profile made intentional and printed** — ReadTimeout 30s / IdleTimeout 120s / *no* WriteTimeout retained, with the rationale logged at serve start (`LogSSEServerTimeouts`).
+6. **Repro tests** — `internal/mcp/drop_repro_test.go` (7 tests, all named `…Transport…`/`Drop…`, all green; 252 passed whole-package).
+
+No tracker IDs were added outside `docs/plans/` by this investigation: the instrumentation and tests reference the findings doc by path only (e.g. `internal/mcp/server.go:325`, `transport_debug.go` header) — the only BL/HLLM/SEC identifiers appearing in code come from the pre-existing Phase 1 `get_my_scope` work, which follows the repo's established in-code tag convention.
 
 ---
 
