@@ -5,6 +5,44 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.29 — MCP held to REST's reliability bar
+
+### Fixed
+
+- **MCP sessions dropping mid-conversation (BL463)** — mcp-go v0.46.0 discards
+  write/flush errors on the SSE stream outright, and a client disconnect only
+  surfaces at the next write, so a stalled client or proxy could kill the
+  connection while datawatch neither noticed, surfaced it, nor logged it. The
+  SSE serve path now registers error recovery, pings the stream with a 10 s
+  keepalive, and observes every stream (open/close, bytes, write/flush errors,
+  close reason). The stdio listen loop logs start/stop and client disconnects.
+  Root-cause analysis: `docs/plans/2026-10-20-bl463-mcp-drop-findings.md`.
+- **A recovery log line could corrupt the JSON-RPC stream in `datawatch mcp`
+  (stdio) mode** — session-store recovery messages (corruption warning,
+  subdirectory merge, flock timeout) were written to stdout, which in stdio
+  mode is the MCP protocol channel. They now go to stderr and stdout stays
+  strict JSON-RPC. Caught live by the release-smoke §7r probe.
+
+### Added
+
+- **`get_my_scope` — the session asks who it is and where it stands** —
+  returns `session_id` / `full_id` / `mcp_server_name` / `shared_entry_name`
+  / `mode` / `channel_ready` / `channel_port` / `bridge_alive` / `peers`,
+  with `resolved_via` (`hint` | `in-band` | `channel-ready-fallback`).
+  `datawatch mcp` now injects the in-band scope credential from the datawatch
+  session (BL463), and falls back to the current channel-ready active session.
+- **REST mirror: `GET /api/sessions/self/scope?hint=<id>`** — both surfaces
+  call the same `channel.BuildSelfScope` (`internal/channel/session_scope.go`),
+  so the MCP tool and the REST route can only differ by transport.
+- **Release smoke (§7r, stdio MCP) now asserts the BL463 contract** — a live
+  session calls `get_my_scope` and gets back its scope (the probe starts its
+  own fixture session when it owns the daemon); failing calls — both
+  in-process (`get_my_scope` with an unresolvable hint) and loopback-proxy
+  (`template_delete` of a missing template) — must come back as
+  `isError:true` results named after the tool and carrying the upstream
+  status + body (e.g. `template_delete: HTTP 404: template not found`); and
+  the server's stdout must stay strict JSON-RPC (a log leak fails the smoke).
+
 ### Changed
 
 - MCP tool failure responses are now real error results: every MCP tool failure
@@ -20,6 +58,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   …), the REST-loopback proxy tools (templates, projects, cooldown, audit, cost,
   rollback, diagnose, …), and the memory tools. Successful responses and result
   payloads are unchanged.
+
+**The point of v9.5.29: MCP is now held to REST's reliability bar — same
+reliability, same scope knowledge, same failure information.**
 
 ## v9.5.28
 

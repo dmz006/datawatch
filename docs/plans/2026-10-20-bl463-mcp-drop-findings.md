@@ -418,3 +418,41 @@ without pretending the HTTP status line has to double as the MCP signal.
   in `docs/mcp.md`, `docs/cursor-mcp.md`, `docs/datawatch-definitions.md`; the new REST
   endpoint is in `docs/testing-tracker.md` (test coverage index for MCP tools + REST
   endpoints).
+
+---
+
+## Implementation log — 2026-10-20 (smoke / scope / failures slice, v9.5.29)
+
+This slice shipped the rest of the BL463 contract on this branch (dd8c0001):
+
+1. **Smoke hardening (BL463 acceptance):** `scripts/release-smoke-stdio-mcp.sh`
+   rewritten as a 7-probe protocol suite (initialize → tools/list incl.
+   `get_my_scope` → live `memory_recall` → `get_my_scope` positive →
+   `get_my_scope` negative → failing proxy call). `scripts/release-smoke.sh`
+   §7r now passes `DW_BIN` / `DW_CONFIG` / `DW_SESSION_HINT` (fixture session
+   when the smoke owns the daemon — shell backend preferred) and
+   `DW_REQUIRE_HTTP_STATUS=1` in local mode, so the probe demands
+   `isError:true` + `HTTP <status>: <body>` on a failing loopback proxy call.
+   Verified: live daemon (fallback path + 404 with body), and a sandbox
+   (`resolved_via=hint` asserted, fake REST 404).
+2. **stdout hygiene (new finding, caught live by §7r on its first run):**
+   `datawatch mcp` is a JSON-RPC-over-stdio server; session-store recovery
+   logs (`internal/session/store.go` corrupt/merge messages,
+   `internal/session/flock_unix.go` flock timeout) were `fmt.Printf`'d to
+   stdout and corrupted the framing (`Expecting value: line 1 column 2`).
+   Moved to stderr — the daemon-facing log channel — verified by repro
+   (subdir-merge scenario): stdout parses strict JSON line-by-line,
+   `[recovery]` lines land on stderr.
+3. **Version / CHANGELOG / docs:** 9.5.28 → **9.5.29** via
+   `scripts/set-release-version.sh` ("MCP held to REST's reliability bar"),
+   superseding this doc's earlier "version bump N/A on this branch" note —
+   the slice task instructed an explicit bump and one patch of
+   `Version` is consistent across `cmd/datawatch/main.go` +
+   `internal/server/api.go` (9.5.29). CHANGELOG v9.5.29 entry carries the
+   three legs (connection-drop fixes, `get_my_scope` + REST mirror, failing
+   contract + smoke) and closes with the reliability-bar statement.
+   `docs/mcp.md` gained the failure-response semantics + stderr/log contract
+   and `get_my_scope`/`get_my_session_id` in the Sessions family;
+   `docs/testing-tracker.md` records the live validations above.
+4. **Not included (tracked above, out of this slice):** BL467 bridge
+   owner-binding, REST→MCP error-shape sweep, CLI `session scope`.

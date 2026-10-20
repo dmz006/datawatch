@@ -395,7 +395,10 @@ func newStoreWithKey(path string, key []byte) (*Store, error) {
 			ts := time.Now().Unix()
 			corruptedPath := fmt.Sprintf("%s.corrupted-%d", path, ts)
 			_ = os.WriteFile(corruptedPath, data, 0600)
-			fmt.Printf("[warn] sessions store %s was corrupted (likely a non-atomic write killed mid-flush in a pre-v6.15.1 daemon). Recovered %d sessions from JSON prefix; original body saved to %s.\n", path, n, corruptedPath)
+			// BL463 — log to stderr, never stdout: in `datawatch mcp` (stdio)
+			// mode stdout is the JSON-RPC protocol channel and any log line on
+			// it corrupts the framing (detected by release-smoke §7r).
+			fmt.Fprintf(os.Stderr, "[warn] sessions store %s was corrupted (likely a non-atomic write killed mid-flush in a pre-v6.15.1 daemon). Recovered %d sessions from JSON prefix; original body saved to %s.\n", path, n, corruptedPath)
 			sessions = recovered
 		}
 		for _, sess := range sessions {
@@ -414,7 +417,7 @@ func newStoreWithKey(path string, key []byte) (*Store, error) {
 	// is lost on any daemon restart, so subdir merge captures everything
 	// that was persistable in the first place.
 	if added := s.mergeFromSessionDirs(filepath.Dir(path)); added > 0 {
-		fmt.Printf("[recovery] merged %d session(s) from per-session subdirectories not present in sessions.json\n", added)
+		fmt.Fprintf(os.Stderr, "[recovery] merged %d session(s) from per-session subdirectories not present in sessions.json\n", added)
 	}
 
 	return s, nil
@@ -446,7 +449,7 @@ func (s *Store) mergeFromSessionDirs(dataDir string) int {
 		}
 		var sess Session
 		if err := json.Unmarshal(raw, &sess); err != nil {
-			fmt.Printf("[recovery] skipping %s: parse %s: %v\n", fullID, metaPath, err)
+			fmt.Fprintf(os.Stderr, "[recovery] skipping %s: parse %s: %v\n", fullID, metaPath, err)
 			continue
 		}
 		if sess.FullID == "" {

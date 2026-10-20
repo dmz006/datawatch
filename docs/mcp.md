@@ -228,11 +228,19 @@ About → "MCP tools" link opens it. The selected tools below are
 documented inline; the rest follow the same parameter-table-and-example
 shape.
 
+**Failure responses** (v9.5.29, BL463): a failed tool call returns an
+`isError:true` result named after the tool (e.g.
+`template_delete: HTTP 404: template not found`) — tools mirroring a REST
+route also carry the upstream HTTP status and the daemon's error body
+(truncated where long), holding MCP to REST's reliability bar. In stdio mode
+`datawatch mcp` logs to **stderr only**; stdout is the JSON-RPC channel and
+must stay strict JSON-RPC (release-smoke §7r asserts all of this).
+
 ### Tool families (high-level)
 
 | Family | Tools |
 |--------|-------|
-| Sessions | `list_sessions`, `start_session`, `send_input`, `copy_response`, `kill_session`, `delete_session`, `restart_session`, `rename_session`, `session_output`, `session_timeline`, `session_bind_agent`, `session_import`, `session_reconcile`, `session_rollback`, `sessions_stale`, `stop_all_sessions`, `session_children`, `reply_to_parent` |
+| Sessions | `list_sessions`, `start_session`, `send_input`, `copy_response`, `kill_session`, `delete_session`, `restart_session`, `rename_session`, `session_output`, `session_timeline`, `session_bind_agent`, `session_import`, `session_reconcile`, `session_rollback`, `sessions_stale`, `stop_all_sessions`, `session_children`, `reply_to_parent`, `get_my_session_id`, `get_my_scope` |
 | Vision | `vision_describe` |
 | Web Search | `websearch_providers_list/get/add/update/delete/enable/disable/test`, `websearch_stats`, `websearch_history`, `web_search_stats` (deprecated alias) |
 | Exit Hooks | `exit_hook_list`, `exit_hook_add`, `exit_hook_delete`, `exit_hook_enable`, `exit_hook_disable` |

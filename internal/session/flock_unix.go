@@ -53,7 +53,8 @@ func flockAcquire(lockPath string) (*os.File, error) {
 		// The goroutine will eventually receive the lock and release it by
 		// letting the function return, but we abandon the *os.File. The OS
 		// will release the lock when the file descriptor is GC'd / closed.
-		fmt.Printf("[warn] sessions.json flock timeout after 5s — skipping persist to avoid deadlock\n")
+		// BL463 — stderr, never stdout: in stdio-MCP mode stdout is the JSON-RPC channel.
+		fmt.Fprintf(os.Stderr, "[warn] sessions.json flock timeout after 5s — skipping persist to avoid deadlock\n")
 		return nil, nil //nolint:nilerr // intentional: caller treats (nil,nil) as skip-persist
 	}
 }

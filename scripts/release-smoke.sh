@@ -1402,9 +1402,57 @@ H "7r. Stdio-mode MCP tools (when wrapper available)"
 # Spawns `datawatch mcp` as a subprocess, sends JSON-RPC initialize +
 # tools/list + tools/call(memory_recall), validates each response.
 # Closes mempalace-audit partial: "memory_recall not in stdio surface".
+# 9.5.29 (BL463) — adds the live get_my_scope probe (a session calls it and
+# gets its scope back) and the failing-call contract: both in-process and
+# loopback-proxy failures must come back isError=true with status + body,
+# holding MCP to REST's reliability bar.
 STDIO_MCP_SCRIPT="$(dirname "$0")/release-smoke-stdio-mcp.sh"
 if [[ -x "$STDIO_MCP_SCRIPT" ]]; then
-  if STDIO_OUT=$(bash "$STDIO_MCP_SCRIPT" 2>&1); then
+  # Give the probe its context. Local smoke mode: point the spawned
+  # `datawatch mcp` at the smoke daemon's config so its loopback proxies hit
+  # SMOKE_PORT against the isolated data dir (and the failing proxy call
+  # gets a real HTTP status + body). External-daemon mode: use the binary
+  # we already resolved for the CLI if we have one.
+  STDIO_ENV=()
+  STDIO_HINT=""
+  if [[ "$EXTERNAL_DAEMON" -eq 0 && -n "${TEST_CONFIG:-}" && -n "${_DW_BIN:-}" ]]; then
+    STDIO_ENV=("DW_BIN=$_DW_BIN" "DW_CONFIG=$TEST_CONFIG" "DW_REQUIRE_HTTP_STATUS=1")
+    # Positive probe needs a known session: reuse one if the smoke daemon
+    # already has one, else start a throwaway fixture session (shell backend
+    # preferred — free, local, no LLM quota).
+    STDIO_HINT=$(curl "${curl_args[@]}" -s "$BASE/api/sessions" 2>/dev/null | python3 -c '
+import json,sys
+d=json.load(sys.stdin); ss=d.get("sessions") if isinstance(d,dict) else d
+for s in (ss or []):
+    fid=s.get("full_id") or s.get("id")
+    if fid: print(fid); break' 2>/dev/null || echo "")
+    if [[ -z "$STDIO_HINT" ]]; then
+      FIX_BACKEND=$(curl "${curl_args[@]}" -s "$BASE/api/backends" 2>/dev/null | python3 -c '
+import json,sys
+d=json.load(sys.stdin); llm=d.get("llm") or []
+prefer=["shell","opencode-acp","opencode","claude-code"]
+avail=[b.get("name") for b in llm if b.get("available") and b.get("name")]
+for p in prefer:
+    if p in avail: print(p); break
+else: print(avail[0] if avail else "")' 2>/dev/null || echo "")
+      if [[ -n "$FIX_BACKEND" ]]; then
+        FIX_RESP=$(curl "${curl_args[@]}" -s -X POST -H "Content-Type: application/json" \
+          -d "{\"task\":\"smoke fixture: stdio get_my_scope check\",\"llm_backend\":\"$FIX_BACKEND\",\"project_dir\":\"/tmp\",\"name\":\"smoke-stdio-scope-$RUN_ID\"}" \
+          "$BASE/api/sessions/start" 2>/dev/null || echo "")
+        STDIO_HINT=$(echo "$FIX_RESP" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("full_id",""))' 2>/dev/null || echo "")
+      fi
+      [[ -n "$STDIO_HINT" ]] && add_cleanup sess "$STDIO_HINT"
+    fi
+  elif [[ -n "${_DW_BIN:-}" ]]; then
+    STDIO_ENV=("DW_BIN=$_DW_BIN")
+    STDIO_HINT=$(curl "${curl_args[@]}" -s "$BASE/api/sessions" 2>/dev/null | python3 -c '
+import json,sys
+d=json.load(sys.stdin); ss=d.get("sessions") if isinstance(d,dict) else d
+for s in (ss or []):
+    fid=s.get("full_id") or s.get("id")
+    if fid: print(fid); break' 2>/dev/null || echo "")
+  fi
+  if STDIO_OUT=$(env DW_SESSION_HINT="$STDIO_HINT" "${STDIO_ENV[@]}" bash "$STDIO_MCP_SCRIPT" 2>&1); then
     ok "$STDIO_OUT"
   else
     rc=$?
@@ -1413,6 +1461,7 @@ if [[ -x "$STDIO_MCP_SCRIPT" ]]; then
     else
       ko "$STDIO_OUT"
     fi
+    [ -n "$STDIO_HINT" ] && echo "  (probe session hint: $STDIO_HINT)" >&2
   fi
 else
   skip "release-smoke-stdio-mcp.sh missing; stdio MCP probe deferred"
