@@ -169,6 +169,9 @@ func (m *Manager) runPRDCompletionRulesReview(ctx context.Context, prd *PRD) (bl
 	}
 	v.Guardrail = "rules-review"
 	prd.Verdicts = append(prd.Verdicts, v)
+	if err := m.recordGuardrailVerdict(prd, prd.ID, v); err != nil {
+		return false, nil, err
+	}
 	if v.Outcome != "block" {
 		return false, nil, nil
 	}

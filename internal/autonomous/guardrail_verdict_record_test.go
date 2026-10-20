@@ -1,6 +1,7 @@
 package autonomous
 
 import (
+	"context"
 	"errors"
 	"os"
 	"path/filepath"
@@ -100,6 +101,47 @@ func TestRecordGuardrailVerdict_TextOnlyBackendAndIssueFallback(t *testing.T) {
 	}
 	if !strings.Contains(d.Note, "missing changelog entry") {
 		t.Errorf("Note %q does not fall back to the first issue", d.Note)
+	}
+}
+
+func TestTaskGuardrail_PassVerdictRecordedNotBlocked(t *testing.T) {
+	m, prd, _ := newScriptGuardrailPRD(t, []string{"rules"}, nil)
+	rec := &recordingGuardrail{ret: GuardrailVerdict{Outcome: "pass", Summary: "looks fine"}}
+	m.SetGuardrail(rec.fn)
+	tk := &Task{ID: "t1", Title: "T", Spec: "do"}
+
+	blocked, _, err := m.runPerTaskGuardrails(context.Background(), prd, tk)
+	if err != nil {
+		t.Fatalf("runPerTaskGuardrails: %v", err)
+	}
+	if blocked {
+		t.Fatal("blocked = true for a pass verdict")
+	}
+	if tk.Status == TaskBlocked || tk.FailureReason != nil {
+		t.Errorf("task marked blocked: status=%q failure=%+v", tk.Status, tk.FailureReason)
+	}
+	if len(prd.Decisions) != 1 {
+		t.Fatalf("Decisions: got %d entries, want 1", len(prd.Decisions))
+	}
+	d := prd.Decisions[0]
+	if d.Kind != "guardrail_verdict" || d.VerdictOutcome != "pass" {
+		t.Errorf("decision Kind/VerdictOutcome: got %q/%q, want guardrail_verdict/pass", d.Kind, d.VerdictOutcome)
+	}
+}
+
+func TestTaskGuardrail_FailedSaveReturnsError(t *testing.T) {
+	m, prd, _ := newScriptGuardrailPRD(t, []string{"rules"}, nil)
+	rec := &recordingGuardrail{ret: GuardrailVerdict{Outcome: "pass", Summary: "looks fine"}}
+	m.SetGuardrail(rec.fn)
+	m.savePRDHook = func(*PRD) error { return errors.New("disk full") }
+	tk := &Task{ID: "t1", Title: "T", Spec: "do"}
+
+	blocked, _, err := m.runPerTaskGuardrails(context.Background(), prd, tk)
+	if err == nil {
+		t.Fatal("runPerTaskGuardrails: want save error, got nil")
+	}
+	if blocked {
+		t.Error("blocked = true on a failed record; want the error alone")
 	}
 }
 

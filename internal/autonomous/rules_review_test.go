@@ -9,6 +9,18 @@ import (
 	"testing"
 )
 
+// newRulesReviewManager returns a Manager backed by a real store. A bare
+// &Manager{} is enough for the suffix tests, but runPRDCompletionRulesReview
+// now persists every verdict it records, so its tests need a store to save to.
+func newRulesReviewManager(t *testing.T, cfg Config) *Manager {
+	t.Helper()
+	st, err := NewStore(filepath.Join(t.TempDir(), "prds.json"))
+	if err != nil {
+		t.Fatalf("store: %v", err)
+	}
+	return &Manager{cfg: cfg, store: st}
+}
+
 func TestRulesReviewSuffix_EmptyProjectDir(t *testing.T) {
 	m := &Manager{cfg: Config{}}
 	if got := m.rulesReviewSuffix(&PRD{}); got != "" {
@@ -124,7 +136,7 @@ func TestRunPRDCompletionRulesReview_PassDoesNotBlock(t *testing.T) {
 		t.Fatal(err)
 	}
 	var captured GuardrailInvocation
-	m := &Manager{cfg: Config{}}
+	m := newRulesReviewManager(t, Config{})
 	m.SetGuardrail(func(ctx context.Context, req GuardrailInvocation) (GuardrailVerdict, error) {
 		captured = req
 		return GuardrailVerdict{Outcome: "pass", Summary: "looks fine"}, nil
@@ -153,7 +165,7 @@ func TestRunPRDCompletionRulesReview_BlockOutcomeBlocks(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "AGENT.md"), []byte("rules"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	m := &Manager{cfg: Config{}}
+	m := newRulesReviewManager(t, Config{})
 	m.SetGuardrail(func(ctx context.Context, req GuardrailInvocation) (GuardrailVerdict, error) {
 		return GuardrailVerdict{Outcome: "block", Severity: "high", Summary: "version collides with a shipped release"}, nil
 	})
@@ -192,7 +204,7 @@ func TestRunPRDCompletionRulesReview_ResolvesBackendFromPRDThenGlobal(t *testing
 		t.Fatal(err)
 	}
 	var captured GuardrailInvocation
-	m := &Manager{cfg: Config{VerificationBackend: "global-backend", VerificationModel: "global-model"}}
+	m := newRulesReviewManager(t, Config{VerificationBackend: "global-backend", VerificationModel: "global-model"})
 	m.SetGuardrail(func(ctx context.Context, req GuardrailInvocation) (GuardrailVerdict, error) {
 		captured = req
 		return GuardrailVerdict{Outcome: "pass"}, nil

@@ -1679,6 +1679,9 @@ func (m *Manager) runPerTaskGuardrails(ctx context.Context, prd *PRD, t *Task) (
 			v.VerdictAt = time.Now()
 		}
 		v.Guardrail = g
+		if err := m.recordGuardrailVerdict(prd, t.ID, v); err != nil {
+			return false, "", err
+		}
 		t.Verdicts = append(t.Verdicts, v)
 		if v.Outcome == "block" {
 			// BL410 Phase 2 — a content-category block (a real judgment,
@@ -1769,6 +1772,9 @@ func (m *Manager) runPerStoryGuardrails(ctx context.Context, prd *PRD, s *Story)
 			v.VerdictAt = time.Now()
 		}
 		v.Guardrail = g
+		if err := m.recordGuardrailVerdict(prd, s.ID, v); err != nil {
+			return false, nil, err
+		}
 		s.Verdicts = append(s.Verdicts, v)
 		if v.Outcome == "block" {
 			// BL410 Phase 2 — same content-auto-fix eligibility check as
