@@ -67,6 +67,10 @@ Rules:
   runtime via "command -v <name>" / $PATH, with a graceful fallback if
   unavailable. Any literal absolute path in a spec must be one the task
   will actually read or write under the PRD's allowed directories.
+- Release tasks never contain a fixed version number. The release version is
+  taken at merge time as the next patch above main; write 'next patch above
+  main' in task titles, specs and descriptions instead of a number, and do not
+  repeat a number even if a revision note or earlier plan used one.
 - Do not include markdown fences. Return raw JSON only.
 
 Feature request:
@@ -144,6 +148,10 @@ Rules:
   runtime via "command -v <name>" / $PATH, with a graceful fallback if
   unavailable. Any literal absolute path in a spec must be one the task
   will actually read or write under the directories above.
+- Release tasks never contain a fixed version number. The release version is
+  taken at merge time as the next patch above main; write 'next patch above
+  main' in task titles, specs and descriptions instead of a number, and do not
+  repeat a number even if a revision note or earlier plan used one.
 - Write ONLY raw JSON to the file — no markdown fences, no explanatory prose.
 
 Feature request:

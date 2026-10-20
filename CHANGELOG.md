@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.28
+
+### Fixed
+- **The planner is now instructed to never pin a fixed version number in release tasks** — the version is chosen at merge time, so plans no longer hard-code it.
+- **A plan whose release task names a fixed version is rejected early with a clear reason before it reaches review** — it can be revised and resubmitted without suffering a failed validation.
+- **Covered by tests using a fake planner.**
+
 ## v9.5.27
 
 ### Fixed

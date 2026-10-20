@@ -107,8 +107,15 @@ Do not rubber-stamp a plan. Before approving, check every item:
 - No tracker ID (BL, B, GH) appears in any file, function, test or type name the plan
   specifies. Tracker IDs belong in `docs/plans/` and commit messages only.
 - The PRD is pinned to the open-model backend and model before it is approved or run.
+- Release tasks never contain a fixed version number. The release version is taken
+  at merge time as the next patch above main: task titles, specs and descriptions
+  say 'next patch above main' instead of a number, and no number is repeated even
+  if a revision note or earlier plan used one.
 - Before decomposing, append the atomic-sizing guidance block to the spec while the PRD
   is still a draft.
+- The atomic-sizing guidance block appended before decomposing must also carry this
+  release-version rule, so the draft spec and the planner prompts state it the same
+  way.
 
 If the plan fails, either request a revision with specific feedback or fix a small
 mechanical gap directly through the edit, add and remove task commands. If a decompose
