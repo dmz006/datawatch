@@ -14,8 +14,9 @@
 //     IDs) — pi accepts an arbitrary caller-supplied ID directly.
 //   - PromptBackend ("pi-prompt"): one-shot, non-interactive `pi --print`.
 //     Kept as simple as aider's backend: one blocking CLI call that only
-//     returns once the agent is genuinely done, followed by an
-//     unconditional shell-level "DATAWATCH_COMPLETE:" echo. This sidesteps
+//     returns once the agent is genuinely done, followed by a shell-level
+//     outcome report: "DATAWATCH_COMPLETE:" on a clean run with output,
+//     "DATAWATCH_PI_FAILED:" otherwise. This sidesteps
 //     the class of bug found live 2026-10-16 in the opencode-acp backend
 //     (completion detection racing against an async SSE/event stream) —
 //     there is no async completion signal to race against here, only "did
@@ -45,12 +46,7 @@ import (
 // Reading it back with `$(cat 'file')` keeps the *typed* line short while
 // the agent still receives the exact same content.
 func writeTaskFile(tmuxSession, task string) (string, error) {
-	f, err := os.CreateTemp("", "datawatch-pi-task-"+strings.Map(func(r rune) rune {
-		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
-			return r
-		}
-		return '-'
-	}, tmuxSession)+"-*.txt")
+	f, err := os.CreateTemp("", "datawatch-pi-task-"+scratchNamePart(tmuxSession)+"-*.txt")
 	if err != nil {
 		return "", err
 	}
@@ -59,6 +55,30 @@ func writeTaskFile(tmuxSession, task string) (string, error) {
 		os.Remove(f.Name()) //nolint:errcheck
 		return "", err
 	}
+	return f.Name(), nil
+}
+
+// scratchNamePart reduces a tmux session name to characters safe in a
+// scratch file name.
+func scratchNamePart(tmuxSession string) string {
+	return strings.Map(func(r rune) rune {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			return r
+		}
+		return '-'
+	}, tmuxSession)
+}
+
+// reserveScratchFile creates an empty, uniquely named scratch file and
+// returns its path. Like writeTaskFile, only this short path goes into the
+// shell command; the command writes to the file at run time, so the typed
+// command stays under the send-keys length limit.
+func reserveScratchFile(tmuxSession, purpose string) (string, error) {
+	f, err := os.CreateTemp("", "datawatch-pi-"+purpose+"-"+scratchNamePart(tmuxSession)+"-*")
+	if err != nil {
+		return "", err
+	}
+	defer f.Close() //nolint:errcheck
 	return f.Name(), nil
 }
 
@@ -194,11 +214,11 @@ func (b *PromptBackend) SetModel(model string) { b.model = model }
 func (b *PromptBackend) Version() string { return versionOf(b.binary) }
 
 // Launch runs `pi --print ... '<task>'` as a single blocking command inside
-// the tmux session, then unconditionally echoes the completion marker once
-// it returns — success or failure, pi has definitely stopped running
-// either way, so there is nothing left to wait on. --mode text keeps the
-// pane human-readable (session-stream visibility) rather than raw JSON
-// lines; --approve trusts project-local pi config in the worktree
+// the tmux session. Once it returns, the command reports the outcome: a
+// non-zero exit or empty output prints a DATAWATCH_PI_FAILED line and exits
+// non-zero, and only a clean run with output prints DATAWATCH_COMPLETE. --mode
+// text keeps the pane human-readable (session-stream visibility) rather than
+// raw JSON lines; --approve trusts project-local pi config in the worktree
 // non-interactively (there is no human to answer an approval prompt in a
 // one-shot task).
 func (b *PromptBackend) Launch(ctx context.Context, task, tmuxSession, projectDir, logFile string) error {
@@ -215,13 +235,37 @@ func (b *PromptBackend) Launch(ctx context.Context, task, tmuxSession, projectDi
 // via tmux send-keys has its embedded newlines submitted as literal Enter
 // keypresses mid-command, corrupting the shell command — confirmed live
 // 2026-10-16 ("These: command not found" mid-paste) before this fix.
+//
+// Outcome reporting: pi's stdout is teed into an output scratch file and its
+// exit status is written to a status scratch file, so the command can tell
+// a clean run from a failed one after pi returns. A non-zero status prints
+// DATAWATCH_PI_FAILED with the status and model, then exits with that
+// status. A zero status with an empty output file prints DATAWATCH_PI_FAILED
+// too. Only a clean run with output reaches DATAWATCH_COMPLETE. The failure
+// path exits the shell, so the scratch files are removed before the checks.
 func buildLaunchCmd(binary, model, task, projectDir, tmuxSession string) string {
 	escapedDir := shellEscape(projectDir)
 	modelFlag := ""
 	if model != "" {
 		modelFlag = fmt.Sprintf("--model '%s' ", shellEscape(model))
 	}
+	outPath, errOut := reserveScratchFile(tmuxSession, "out")
+	statusPath, errStatus := reserveScratchFile(tmuxSession, "status")
+	if errOut != nil || errStatus != nil {
+		return "echo 'DATAWATCH_PI_FAILED: could not create scratch file for pi output capture'; exit 1"
+	}
+	modelLabel := model
+	if modelLabel == "" {
+		modelLabel = "pi default"
+	}
 	argExpr, cleanup := taskArgExpr(tmuxSession, task)
-	return fmt.Sprintf("cd '%s' && %s --print --mode text --approve %s%s; %secho 'DATAWATCH_COMPLETE: pi done'",
-		escapedDir, binary, modelFlag, argExpr, cleanup)
+	escapedOut := shellEscape(outPath)
+	escapedStatus := shellEscape(statusPath)
+	return fmt.Sprintf("cd '%s' && { %s --print --mode text --approve %s%s; echo $? > '%s'; } | tee '%s'; "+
+		"read dw_status < '%s'; [ -s '%s' ]; dw_has_output=$?; %srm -f '%s' '%s'; "+
+		"if [ \"${dw_status:-1}\" -ne 0 ]; then printf 'DATAWATCH_PI_FAILED: pi exited with status %%s (model %%s)\\n' \"${dw_status:-1}\" '%s'; exit \"${dw_status:-1}\"; fi; "+
+		"if [ \"$dw_has_output\" -ne 0 ]; then echo 'DATAWATCH_PI_FAILED: pi produced no output'; exit 1; fi; "+
+		"echo 'DATAWATCH_COMPLETE: pi done'",
+		escapedDir, binary, modelFlag, argExpr, escapedStatus, escapedOut,
+		escapedStatus, escapedOut, cleanup, escapedOut, escapedStatus, shellEscape(modelLabel))
 }
