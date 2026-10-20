@@ -3738,6 +3738,113 @@ function _dismissTermLoadingSplashWithMinDwell() {
   else finish();
 }
 
+// ── Shared full-page refresh splash ───────────────────────────────────────
+// Sites that currently navigate with a bare location.reload() give the
+// operator a blank flash between navigation start and the boot #splash
+// Earthrise scene. This shared treatment mounts a full-viewport splash
+// OVER the page before navigating, so the reload is visually covered.
+//
+// Reuse-and-expand: the artwork comes exclusively from the existing
+// window.DWSplashArt primitives in splash-art.js (startEyeOnly for the
+// plain animated eye; startSessionLoading for eye + pulsing lightning
+// bolt — the same pair the session-connect splash below uses). There is
+// no animation code of its own here, and no hardcoded UI strings (the
+// optional operator-facing text is caller-supplied, expected already
+// localized via t('key'), and rendered escaped). Min-dwell + stop() +
+// timestamp bookkeeping mirrors the session-connect splash's
+// state._termSplashMountedAt / _dismissTermLoadingSplashWithMinDwell.
+//
+// Call-site convention (per the treatment inventory): replace the bare
+// location.reload() with performFullPageRefresh({ eyeBolt: false }) —
+// pass eyeBolt: true only where the table graded the row eye+bolt.
+function mountFullPageRefreshSplash(opts) {
+  opts = opts || {};
+  // Re-mount guard: tear down any previous overlay + its animation first
+  // so a double mount can't stack two rAF loops or two overlays.
+  const prev = document.getElementById('fullPageRefreshSplash');
+  if (prev && prev.remove) prev.remove();
+  const prevStop = state._fullPageRefreshSplashStop;
+  if (typeof prevStop === 'function') { try { prevStop(); } catch (e) {} }
+
+  // Caller-supplied text is the only string here, and it's escaped —
+  // the artwork itself carries no text.
+  const textHtml = opts.text
+    ? `<div style="position:relative;margin-top:8px;font-size:12px;font-weight:600;letter-spacing:2px;color:var(--text2);">${escHtml(opts.text)}</div>`
+    : '';
+  const overlay = document.createElement('div');
+  overlay.id = 'fullPageRefreshSplash';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:10000;display:flex;flex-direction:column;align-items:center;justify-content:center;background:#0F1117;';
+  overlay.innerHTML = `<canvas id="fullPageRefreshSplashCanvas" style="width:100%;height:100%;position:absolute;inset:0;"></canvas>${textHtml}`;
+  if (document.body && document.body.appendChild) document.body.appendChild(overlay);
+
+  const canvas = document.getElementById('fullPageRefreshSplashCanvas');
+  let stop = null;
+  if (canvas && window.DWSplashArt) {
+    stop = (opts.eyeBolt
+      ? window.DWSplashArt.startSessionLoading(canvas)
+      : window.DWSplashArt.startEyeOnly(canvas));
+  }
+  // Same bookkeeping shape as the session-connect splash: mount timestamp
+  // drives min-dwell; the stop() handle + overlay ref live on state.
+  state._fullPageRefreshSplashMountedAt = Date.now();
+  state._fullPageRefreshSplashStop = (typeof stop === 'function') ? stop : null;
+  state._fullPageRefreshSplashOverlay = overlay;
+  // Dismiss handle — the mount's return value.
+  return () => dismissFullPageRefreshSplash();
+}
+
+// Remove the overlay + stop its animation NOW (no dwell gate). Shared by
+// dismissFullPageRefreshSplash (after the dwell has elapsed) and
+// performFullPageRefresh (inside its dwell timer) so the reload path
+// never removes the overlay a second time or double-stops.
+function _finishFullPageRefreshSplash() {
+  const stop = state._fullPageRefreshSplashStop;
+  state._fullPageRefreshSplashStop = null; // idempotence: only the first finish stops the loop
+  if (typeof stop === 'function') { try { stop(); } catch (e) {} }
+  const splash = document.getElementById('fullPageRefreshSplash');
+  if (splash && splash.remove) splash.remove();
+}
+
+// Dismiss the full-page refresh splash. Honors min-dwell the same way
+// _dismissTermLoadingSplashWithMinDwell does: if the splash was mounted
+// less than (minDwellMs || 600) ago, wait for the remainder before
+// removal so a fast reload can't flash it; then stop the animation and
+// remove the overlay. Idempotent — safe to call more than once.
+function dismissFullPageRefreshSplash(minDwellMs) {
+  const minDwell = (typeof minDwellMs === 'number' && minDwellMs > 0) ? minDwellMs : 600;
+  const elapsed = Date.now() - (state._fullPageRefreshSplashMountedAt || 0);
+  if (elapsed < minDwell) setTimeout(_finishFullPageRefreshSplash, minDwell - elapsed);
+  else _finishFullPageRefreshSplash();
+}
+
+// The single entry point call sites use: mount the splash, let its first
+// frame paint, hold it for at least (opts.minDwell, default 600ms, never
+// below) so a fast reload shows a frame instead of a flicker, dismiss it,
+// then perform the navigation — opts.reload() if provided, otherwise
+// location.reload(). The reload stays inside this function so a site's
+// only change is swapping its bare location.reload() call.
+// (requestAnimationFrame is used for scheduling only; the animation loop
+// itself remains splash-art.js's job, reduced-motion handled there.)
+function performFullPageRefresh(opts) {
+  opts = opts || {};
+  const minDwell = Math.max(600, (typeof opts.minDwell === 'number' && opts.minDwell > 0) ? opts.minDwell : 600);
+  mountFullPageRefreshSplash({ eyeBolt: !!opts.eyeBolt, text: opts.text });
+  const doReload = () => {
+    if (typeof opts.reload === 'function') opts.reload();
+    else location.reload();
+  };
+  const proceed = () => {
+    const wait = Math.max(0, minDwell - (Date.now() - (state._fullPageRefreshSplashMountedAt || 0)));
+    // Finish + reload in ONE step (not via dismiss, which would itself
+    // re-defer the still-pending dwell and let the navigation race ahead).
+    const go = () => { _finishFullPageRefreshSplash(); doReload(); };
+    if (wait > 0) setTimeout(go, wait);
+    else go();
+  };
+  try { requestAnimationFrame(proceed); return; } catch (e) { /* fall through */ }
+  proceed();
+}
+
 function changeTermFontSize(delta) {
   const current = parseInt(localStorage.getItem('cs_term_font_size') || '9', 10);
   const next = Math.max(5, Math.min(20, current + delta));
