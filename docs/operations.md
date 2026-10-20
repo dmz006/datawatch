@@ -2013,6 +2013,106 @@ filled in by the system and are read-only; view them with
 3. Or set per-PRD via PWA Settings modal → "Planning backend" dropdown → pick any configured LLM
 4. Decompose → Review → Approve → Run
 
+### Plan requirement coverage gate (autonomous.plan_coverage_check)
+
+Before an Automaton is Approved for its first `Run`, datawatch runs a
+**deterministic, no-LLM** plan-requirement coverage check and stores the result
+on the PRD as the `plan_coverage` record. It is a function of the spec text and
+the plan text — the same inputs always produce the same report — so nothing
+about it varies from run to run the way a model judgment would.
+
+**What the report contains.** The settings the PRD was pinned to (gate `mode`
+and `plan_coverage_min_ratio` at decompose time), the report (the covered /
+missing / weakened requirement counts and each unmatched requirement with its
+verdict — `covered`, `missing` or `weak`), any **structural findings** (a
+dangling `DependsOn`, a dependency cycle, a plan entry with no file provenance,
+a step with no verification reason, a bad tracker-ID name), and — when one
+exists — the operator `ack` `{by, at, note, fingerprint}`.
+
+**A report fails in two ways**, and both stop approval in `block` mode:
+the covered/extractable requirement ratio is below `plan_coverage_min_ratio`, or
+any structural finding is present (findings fail the report regardless of ratio).
+
+**The three modes** (`autonomous.plan_coverage_check`, default **block**):
+
+| Mode | Behavior on a failing report |
+|---|---|
+| `block` (default) | Approve is **blocked** until the operator acknowledges that exact failing surface. |
+| `warn` | The failing report is stored and shown on the PRD; **approval proceeds**. |
+| `off` | No gating; the report is still recorded for visibility. |
+
+**Reading the stored report on a `needs_review` PRD.**
+
+```sh
+# CLI — pretty-print the stored plan_coverage record
+# (mode, min_ratio, report, findings, ack)
+datawatch autonomous prd-coverage <id>
+
+# REST — full PRD detail carries the plan_coverage field
+curl -sX GET http://localhost:7433/api/autonomous/prds/<id>?detail=full
+
+# MCP — the full detail exposes the plan_coverage record
+autonomous_prd_get(id="<prd-id>", level="full")
+```
+
+In the **PWA**, open the PRD; the coverage panel shows the status line —
+"Plan covers the spec requirements" (pass), "Plan coverage below threshold —
+warning mode" (`warn`), or "Plan coverage below threshold — blocked mode"
+(`block`) — next to the covered/missing requirement list and any findings.
+
+**warn vs block in practice.** In `warn` mode you see the same failing report
+in the panel, but Approve is enabled and the PRD moves on — the coverage gap is
+informational. In `block` mode the same report locks Approve: the panel shows
+the failing surface and an **Acknowledge** control instead of letting Approve
+through. `off` behaves like `warn` but the report is purely for the record.
+
+**Acknowledging a failing report (the `block`-mode override).** To unblock
+Approve without fixing the plan, an operator acknowledges the *exact* failing
+surface. Every surface requires a **non-empty note** (the justification) and an
+actor identity. The ack is **bound to the stored report's fingerprint** — a
+stable hash of the unmatched requirements + findings at the time it was recorded —
+so it cannot silently cover a *different* failure surface: if the plan changes
+after an ack, the fingerprint no longer matches and a fresh ack is required.
+
+```sh
+# CLI — note is required (non-empty); actor defaults to "operator"
+datawatch autonomous prd-ack-coverage <id> --actor alice --note "step 3 covers this via the shared helper, acknowledged for this release"
+
+# MCP — id + non-empty note
+autonomous_prd_plan_coverage_acknowledge(id="<prd-id>", note="...")
+```
+
+```sh
+# REST POST
+# -H "Authorization: Bearer <token>" -H "Content-Type: application/json"
+curl -sX POST http://localhost:7433/api/autonomous/prds/<id>/plan_coverage/acknowledge \
+  -d '{"actor":"alice","note":"acknowledged for this release"}'
+```
+
+In the **PWA** the PRD coverage panel exposes an **Acknowledge** control: type
+the note, submit, and the panel switches to "Acknowledged: <actor> — <note>".
+Approval is then allowed.
+
+**Why this is deterministic (no LLM).** The coverage check and the structural
+findings are pure string-level functions of the spec and the plan: no model
+call, no filesystem access, no clock in the verdict. That means the report on a
+`needs_review` PRD is exactly reproducible — reading it again, or re-running the
+decompose from the same spec + plan, gives the same covered/missing/weakened
+counts, the same findings, and the same fingerprint. The only judgment in the
+flow is the operator's own acknowledgement, which is why that step requires an
+actor and a non-empty note and is pinned to the failing surface.
+
+**Changing the settings.** Both keys are hot-applied (no restart) and reachable
+on every parity surface that carries `autonomous.*` config: YAML `config.yaml`,
+REST `PUT /api/config`, REST `GET/PUT /api/autonomous/config`, MCP
+`autonomous_config_set`, CLI `datawatch config set autonomous.plan_coverage_check=…`
+/ `autonomous.plan_coverage_min_ratio=…`, comm `configure
+autonomous.plan_coverage_check=…`, and the PWA Settings fields. A PRD is pinned
+**at decompose time**: a mode/ratio changed later does not retroactively
+re-evaluate an already-`needs_review` PRD's stored report, and does not undo an
+ack — the ack is bound to the stored report's fingerprint, not to the live
+settings.
+
 ### Session idle timeout (autonomous.session_idle_timeout_seconds)
 
 This bounds how long one autonomous worker or verifier session may sit

@@ -60,6 +60,8 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithString("verification_backend", mcpsdk.Description("BL25 verifier backend (empty = inherit; set to a different backend for cross-backend independence)")),
 		mcpsdk.WithArray("verification_backends", mcpsdk.Description("v8.36.9 — ordered list of LLM registry names to load-balance verifier capacity across (e.g. [\"ollama-datawatch\", \"ollama-johnnyjohnny\"]); tries each in order, uses whichever has free node capacity right now. Empty = single-backend behavior via verification_backend above.")),
 		mcpsdk.WithArray("task_override_statuses", mcpsdk.Description("PRD statuses that accept task/story-level LLM overrides; names: draft, planning, needs_review, approved, revisions_asked, active, running, completed, rejected, cancelled, archived, blocked, failed, paused; empty array restores the defaults (needs_review, revisions_asked, cancelled, blocked)")),
+		mcpsdk.WithString("plan_coverage_check", mcpsdk.Description("Plan requirement-coverage gate mode: off (no gate), warn (failing coverage is reported on the PRD but approval proceeds), block (the default: approving a PRD with a failing plan-coverage report is blocked until the operator acknowledges that exact failing surface with autonomous_prd_plan_coverage_acknowledge)")),
+		mcpsdk.WithNumber("plan_coverage_min_ratio", mcpsdk.Description("Minimum covered/total requirement ratio for a plan to pass the coverage gate; a number in (0,1] (e.g. 0.9 = 90%). Zero/negative and values above 1 both clamp to 1.0 (require full coverage — the safe default). The gate also fails on any structural finding regardless of ratio.")),
 		mcpsdk.WithString("planning_effort", mcpsdk.Description("BL41 effort hint for planning; alias: decomposition_effort")),
 		mcpsdk.WithString("verification_effort", mcpsdk.Description("BL41 effort hint for verifier")),
 		mcpsdk.WithNumber("auto_fix_retries", mcpsdk.Description("Retries on verifier failure (default 1)")),
@@ -144,6 +146,18 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 	if args := req.GetArguments(); args != nil {
 		if _, ok := args["task_override_statuses"]; ok {
 			body["task_override_statuses"] = req.GetStringSlice("task_override_statuses", []string{})
+		}
+	}
+	// Plan-coverage gate — off|warn|block mode (empty = send nothing, let
+	// the REST side keep its stored value) plus the presence-aware
+	// minimum-coverage ratio so an operator can explicitly set 0 (which
+	// normalizes to the 1.0 safe default) rather than having it dropped.
+	if v := req.GetString("plan_coverage_check", ""); v != "" {
+		body["plan_coverage_check"] = v
+	}
+	if args := req.GetArguments(); args != nil {
+		if _, ok := args["plan_coverage_min_ratio"]; ok {
+			body["plan_coverage_min_ratio"] = req.GetFloat("plan_coverage_min_ratio", 0)
 		}
 	}
 	// BL367 — default quality gates nested under default_quality_gates.
@@ -260,6 +274,7 @@ func (s *Server) toolAutonomousPRDGet() mcpsdk.Tool {
 			"summary: ids, titles, statuses and counts for the automaton, its stories and its tasks. "+
 			"tasks: everything in summary, plus each task's status, error and verification summary. "+
 			"full: everything, including specs and logs. "+
+			"full also exposes plan_coverage — the plan-requirement coverage gate report stored at decompose time: the settings the PRD was pinned to (mode + min_ratio), the report (covered/missing/weak requirement counts, each unmatched requirement with its verdict), any findings (structural findings), and the operator acknowledgment ack {by, at, note, fingerprint} when one exists. Absent when no report was recorded yet. "+
 			"When the ci-watch completion guardrail ran, the response includes ci_watch {status, sha, repo, runs[], summary, issues, checked_at} at every detail level. "+
 			"status: skipped = nothing to watch (HEAD not pushed yet, origin not GitHub, not a git repository, or the gh CLI is missing; summary says which); "+
 			"pass = every CI run for the pushed commit succeeded; "+
@@ -389,6 +404,29 @@ func (s *Server) handleAutonomousPRDReject(_ context.Context, req mcpsdk.CallToo
 	id := req.GetString("id", "")
 	body, _ := json.Marshal(map[string]string{"actor": "operator", "reason": req.GetString("reason", "")})
 	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/reject", body)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
+// Plan-coverage gate — operator acknowledgment of a failing coverage
+// report. The manager pins the ack to the exact failing surface (the
+// fingerprint of the stored report), so acknowledging an old or
+// different failing surface is refused; re-decompose to fix the plan or
+// acknowledge the new surface.
+func (s *Server) toolAutonomousPRDPlanCoverageAcknowledge() mcpsdk.Tool {
+	return mcpsdk.NewTool("autonomous_prd_plan_coverage_acknowledge",
+		mcpsdk.WithDescription("Operator-acknowledge a failing plan-requirement coverage report on a PRD (plan_coverage_check=block gate). Required arguments: id and a non-empty note explaining why the failing surface is accepted. The ack is pinned to the exact failing surface of the stored report (unmatched requirements + structural findings), so approving after the plan changed needs a fresh ack. Read the report first with the full detail of autonomous_prd_get (plan_coverage field)."),
+		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
+		mcpsdk.WithString("actor", mcpsdk.Description("Operator identity recorded on the ack (defaults to the caller)")),
+		mcpsdk.WithString("note", mcpsdk.Required(), mcpsdk.Description("Non-empty justification for accepting the failing coverage surface")),
+	)
+}
+func (s *Server) handleAutonomousPRDPlanCoverageAcknowledge(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	id := req.GetString("id", "")
+	body, _ := json.Marshal(map[string]string{"actor": req.GetString("actor", "operator"), "note": req.GetString("note", "")})
+	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/plan_coverage/acknowledge", body)
 	if err != nil {
 		return nil, err
 	}

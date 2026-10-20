@@ -380,6 +380,59 @@ type PRD struct {
 	ReadDirs      []string `json:"read_dirs,omitempty"`
 	WriteDirs     []string `json:"write_dirs,omitempty"`
 	ScopeWarnings []string `json:"scope_warnings,omitempty"`
+
+	// PlanCoverage is the stored plan-requirement coverage state from
+	// the last decomposition: the check mode and min ratio in effect
+	// when the report was computed, the covered/missing/weakened
+	// counts and the unmatched requirements, plus the operator
+	// acknowledgement state (nil until acknowledged). Nil = no coverage
+	// check has been stored for this PRD yet.
+	PlanCoverage *PlanCoverage `json:"plan_coverage,omitempty"`
+}
+
+// PlanCoverage is the plan-coverage state stored on the PRD
+// (PRD.PlanCoverage). It pins the effective settings from the moment
+// the report was computed (so later config changes don't silently
+// re-interpret an old report) and carries the acknowledgement state.
+type PlanCoverage struct {
+	// Mode is the plan-coverage check mode in effect when the report
+	// was computed: "off" | "warn" | "block".
+	Mode string `json:"mode"`
+	// MinRatio is the minimum covered/extractable requirement ratio
+	// in effect when the report was computed (0,1]; 1.0 = full coverage.
+	MinRatio float64 `json:"min_ratio"`
+	// Report is the coverage report from CheckPlanCoverage for the
+	// latest decomposition attempt.
+	Report PlanCoverageReport `json:"report"`
+	// Ack is the operator acknowledgement of a failing report, if one
+	// exists. Nil = the report is (if failing) unacknowledged.
+	Ack *PlanCoverageAck `json:"ack,omitempty"`
+	// Findings is the structural-findings half of the same
+	// deterministic (non-LLM) coverage check computed alongside the
+	// requirements report at decompose time: any present finding
+	// counts as a failing stored report in the Approve gate, and the
+	// finding set participates in the Ack fingerprint (see
+	// PlanCoverage.Fingerprint). Nil/empty means the stored plan had
+	// no structural findings.
+	Findings []StructuralFinding `json:"findings,omitempty"`
+}
+
+// PlanCoverageAck is the operator acknowledgement of one specific
+// failing plan-coverage report. Fingerprint ties it to that report's
+// content: a later decomposition producing a report with a different
+// fingerprint no longer counts as acknowledged and must be re-acked.
+type PlanCoverageAck struct {
+	// By is the operator identity that acknowledged (user id or caller
+	// kind, e.g. "api").
+	By string `json:"by"`
+	// At is the acknowledgement time (UTC).
+	At *time.Time `json:"at"`
+	// Note is the operator's optional free-text justification.
+	Note string `json:"note,omitempty"`
+	// Fingerprint is the fingerprint of the failing report this
+	// acknowledgement covers (the consuming code computes it from the
+	// report's failing content).
+	Fingerprint string `json:"fingerprint"`
 }
 
 // GitWorkflow (BL407) is a PRD's branch-per-PRD + auto-PR workflow
@@ -779,6 +832,19 @@ type Task struct {
 	// judgment-only guardrail behavior is the fallback. Inert today:
 	// nothing writes or reads it yet.
 	VerificationScript string `json:"verification_script,omitempty"`
+	// VerificationScriptReason — B124 exemption: a task may legitimately
+	// have no verification script (e.g. a pure-config or documentation
+	// change where a script would only re-assert trivially true things).
+	// When such a task exists in a plan, the decomposer / editor sets this
+	// field to state explicitly WHY no VerificationScript is attached
+	// (e.g. "config-only change; no executable surface to verify"). The
+	// structural plan check (CheckPlanStructure) flags any task that has
+	// neither a VerificationScript nor a VerificationScriptReason, so an
+	// unexplained absence is a finding while an explained one passes.
+	// Optional (omitempty); setting it does not change any existing
+	// VerificationScript behavior — it is purely metadata consumed by the
+	// structural check and surfaced in reports.
+	VerificationScriptReason string `json:"verification_script_reason,omitempty"`
 }
 
 // RecordAttemptCommit appends the deterministic commit sha recorded for a

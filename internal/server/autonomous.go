@@ -12,6 +12,8 @@
 //   POST   /api/autonomous/prds/{id}/decompose run the LLM planning phase (back-compat alias)
 //   POST   /api/autonomous/prds/{id}/run       kick the executor for this PRD
 //   GET    /api/autonomous/prds/{id}/children  list child PRDs (BL191 Q4 — recursion)
+//   POST   /api/autonomous/prds/{id}/plan_coverage/acknowledge
+//                                                 operator-acknowledge a failing plan-coverage gate (actor + non-empty note)
 //   GET    /api/autonomous/learnings           extracted learnings (paginated)
 
 package server
@@ -21,6 +23,7 @@ import (
 	"encoding/json"
 	"io"
 	"log"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -63,6 +66,37 @@ func (s *Server) handleAutonomousConfig(w http.ResponseWriter, r *http.Request) 
 					body = b
 				}
 				deprecated = map[string]string{"max_parallel_tasks": maxParallelTasksDeprecatedNote}
+			}
+			// Plan-coverage parity: this surface feeds the manager's
+			// config directly (autonomousConfigSet bypasses the PUT
+			// /api/config validation), so an invalid mode or malformed
+			// ratio must be rejected HERE instead of being stored and
+			// blowing up every later EffectivePlanCoverage read (both
+			// surfaces must agree: invalid values are a 400, never a
+			// stored half-state).
+			if rawMode, ok := top["plan_coverage_check"]; ok {
+				var mode string
+				if json.Unmarshal(rawMode, &mode) != nil {
+					http.Error(w, "plan_coverage_check: must be a string (off|warn|block)", http.StatusBadRequest)
+					return
+				}
+				if _, verr := config.NormalizePlanCoverageCheck(mode); verr != nil {
+					http.Error(w, verr.Error(), http.StatusBadRequest)
+					return
+				}
+			}
+			if rawRatio, ok := top["plan_coverage_min_ratio"]; ok {
+				var ratio float64
+				if json.Unmarshal(rawRatio, &ratio) != nil {
+					http.Error(w, "plan_coverage_min_ratio: must be a number in (0,1]",
+					http.StatusBadRequest)
+					return
+				}
+				if math.IsNaN(ratio) || math.IsInf(ratio, 0) {
+					http.Error(w, "plan_coverage_min_ratio: must be a finite number in (0,1]",
+					http.StatusBadRequest)
+					return
+				}
 			}
 		}
 		if err := s.autonomousMgr.SetConfig(body); err != nil {
@@ -518,6 +552,43 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.audit(r.Context(), "approve", "automaton", id, map[string]any{"note": req.Note}) // GH#201 Phase 4
+		s.writeAutonomousResult(w, r, updated, "", "", "")
+	// Plan-coverage gate — operator acknowledgment of a failing
+	// plan-requirement coverage report. The manager pins the ack to the
+	// exact failing surface (fingerprint) and requires a non-empty note;
+	// approving a PRD in "block" mode with a failing report stays
+	// blocked unless the stored ack matches the current surface.
+	case "plan_coverage/acknowledge":
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+			return
+		}
+		var req struct{ Actor, Note string }
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		if req.Actor == "" {
+			req.Actor = "operator"
+		}
+		if strings.TrimSpace(req.Note) == "" {
+			http.Error(w, "note is required to acknowledge a failing plan coverage report", http.StatusBadRequest)
+			return
+		}
+		// Optional interface: AutonomousAPI fakes in server tests don't
+		// implement the ack, so assert rather than widen the main
+		// interface (same pattern as ReportPairingWarnings).
+		ackner, ok := s.autonomousMgr.(planCoverageAckner)
+		if !ok {
+			http.Error(w, "plan-coverage acknowledgment is not supported by this autonomous manager", http.StatusNotImplemented)
+			return
+		}
+		updated, err := ackner.AcknowledgePlanCoverage(id, req.Actor, req.Note)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		s.audit(r.Context(), "acknowledge_plan_coverage", "automaton", id, map[string]any{"actor": req.Actor, "note": req.Note}) // GH#201 Phase 4
 		s.writeAutonomousResult(w, r, updated, "", "", "")
 	case "reject":
 		if r.Method != http.MethodPost {

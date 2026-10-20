@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"github.com/dmz006/datawatch/internal/capacity"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"os"
@@ -5598,7 +5599,12 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			// v9.5.5 — render the EFFECTIVE list so an unset value shows the
 			// 4-item default in the PWA rather than an empty field.
 			"task_override_statuses": autonomous.EffectiveTaskOverrideStatuses(s.cfg.Autonomous.TaskOverrideStatuses),
-			"execution_backend":      s.cfg.Autonomous.ExecutionBackend,
+			// Plan requirement coverage gate — render the EFFECTIVE value
+			// so the unset state (empty mode / zero ratio) shows its safe
+			// defaults ("block", 1.0) rather than blanks.
+			"plan_coverage_check":     effectivePlanCoverageCheckForDisplay(s.cfg.Autonomous.PlanCoverageCheck),
+			"plan_coverage_min_ratio": config.NormalizePlanCoverageRatio(s.cfg.Autonomous.PlanCoverageMinRatio),
+			"execution_backend":       s.cfg.Autonomous.ExecutionBackend,
 			// BL304: new key + legacy alias.
 			"planning_effort":               s.cfg.Autonomous.PlanningEffort,
 			"decomposition_effort":          s.cfg.Autonomous.PlanningEffort,
@@ -5790,6 +5796,22 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 			candidate = splitCSV(str)
 		}
 		if verr := autonomous.ValidateTaskOverrideStatuses(candidate); verr != nil {
+			http.Error(w, "autonomous."+verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	// Plan requirement coverage gate — validate both knobs before
+	// anything is applied, so a bad mode or ratio rejects the whole
+	// PUT instead of storing a half-set or malformed pair (same rule
+	// as the task_override_statuses block above).
+	if v, ok := patch["autonomous.plan_coverage_check"]; ok {
+		if _, verr := config.NormalizePlanCoverageCheck(fmt.Sprintf("%v", v)); verr != nil {
+			http.Error(w, "autonomous."+verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	if v, ok := patch["autonomous.plan_coverage_min_ratio"]; ok {
+		if _, verr := configPatchFloat(v); verr != nil {
 			http.Error(w, "autonomous."+verr.Error(), http.StatusBadRequest)
 			return
 		}
@@ -6987,6 +7009,23 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			} else if s, ok := v.(string); ok {
 				cfg.Autonomous.TaskOverrideStatuses = splitCSV(s)
 			}
+		case "autonomous.plan_coverage_check":
+			// off|warn|block plan-coverage gate (empty normalizes to
+			// "block"). handlePutConfig rejects invalid modes loudly; this
+			// re-normalizes defensively so a direct applyConfigPatch caller
+			// still can't store a malformed value.
+			if str, ok := v.(string); ok {
+				if mode, err := config.NormalizePlanCoverageCheck(str); err == nil {
+					cfg.Autonomous.PlanCoverageCheck = mode
+				}
+			}
+		case "autonomous.plan_coverage_min_ratio":
+			// Stored normalized into (0,1]; zero/negative and >1 both
+			// clamp to the 1.0 safe default. handlePutConfig rejects
+			// non-numeric values loudly before applyConfigPatch runs.
+			if ratio, err := configPatchFloat(v); err == nil {
+				cfg.Autonomous.PlanCoverageMinRatio = config.NormalizePlanCoverageRatio(ratio)
+			}
 		case "autonomous.notify.default_events":
 			// Default event kinds the built-in lifecycle sinks subscribe to.
 			// Accept array or comma-separated string, same as
@@ -7353,6 +7392,62 @@ func toBool(v interface{}) bool {
 		return x != 0
 	}
 	return false
+}
+
+// effectivePlanCoverageCheckForDisplay renders the plan-coverage
+// check mode for the /api/config display surface: the unset state
+// (empty) shows its safe default "block", a valid raw value passes
+// through, and a malformed raw value (written via raw YAML) is shown
+// as-is rather than turning a config read into an error.
+func effectivePlanCoverageCheckForDisplay(raw string) string {
+	mode, err := config.NormalizePlanCoverageCheck(raw)
+	if err != nil {
+		return raw
+	}
+	return mode
+}
+
+// configPatchFloat coerces a /api/config patch value for
+// autonomous.plan_coverage_min_ratio to a float64. Accepts a JSON
+// number and a numeric string (the CLI and comm channel commonly send
+// strings); booleans and unparseable values are errors. NaN/±Inf are
+// rejected because they would defeat the (0,1] clamping.
+func configPatchFloat(v interface{}) (float64, error) {
+	rejectNonFinite := func(f float64, lit string) error {
+		if math.IsNaN(f) || math.IsInf(f, 0) {
+			return fmt.Errorf("invalid plan_coverage_min_ratio %s: must be a finite number in (0,1]", lit)
+		}
+		return nil
+	}
+	switch n := v.(type) {
+	case float64:
+		if err := rejectNonFinite(n, fmt.Sprintf("%v", v)); err != nil {
+			return 0, err
+		}
+		return n, nil
+	case json.Number:
+		f, err := n.Float64()
+		if err != nil {
+			return 0, fmt.Errorf("invalid plan_coverage_min_ratio %s: %v", n, err)
+		}
+		if err := rejectNonFinite(f, n.String()); err != nil {
+			return 0, err
+		}
+		return f, nil
+	case bool:
+		return 0, fmt.Errorf("invalid plan_coverage_min_ratio %v: must be a number in (0,1]", v)
+	case string:
+		f, err := strconv.ParseFloat(strings.TrimSpace(n), 64)
+		if err != nil {
+			return 0, fmt.Errorf("invalid plan_coverage_min_ratio %q: must be a number in (0,1]", n)
+		}
+		if err := rejectNonFinite(f, n); err != nil {
+			return 0, err
+		}
+		return f, nil
+	default:
+		return 0, fmt.Errorf("invalid plan_coverage_min_ratio %v: must be a number in (0,1]", v)
+	}
 }
 
 func toString(v interface{}) string {

@@ -491,6 +491,18 @@ func (a *API) Reject(id, actor, reason string) (any, error) {
 	}
 	return out, err
 }
+
+// AcknowledgePlanCoverage — operator acknowledgments of a PRD's failing
+// plan-requirement coverage report (the block-mode gate). The manager pins
+// the ack to the exact failing surface (fingerprint) and requires a
+// non-empty note; see Manager.AcknowledgePlanCoverage.
+func (a *API) AcknowledgePlanCoverage(prdID, actor, note string) (*PRD, error) {
+	out, err := a.M.AcknowledgePlanCoverage(prdID, actor, note)
+	if err == nil {
+		a.M.EmitPRDUpdate(prdID)
+	}
+	return out, err
+}
 func (a *API) RequestRevision(id, actor, note string) (any, error) {
 	out, err := a.M.RequestRevision(id, actor, note)
 	if err == nil {

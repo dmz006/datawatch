@@ -87,6 +87,16 @@ func writePRDDetail(w http.ResponseWriter, prd any, detail string) {
 	}
 }
 
+// planCoverageAckner is the optional autonomous-manager surface for
+// acknowledging a failing plan-requirement coverage report. It is an
+// optional interface (like the ReportPairingWarnings reader in
+// handleAutonomousConfig) so AutonomousAPI fakes in server tests don't
+// need to implement it — handlers that hit a fake get a clean
+// 501 "not supported" instead of a compile error.
+type planCoverageAckner interface {
+	AcknowledgePlanCoverage(prdID, actor, note string) (*autonomous.PRD, error)
+}
+
 // isNilPRD reports whether v is nil, or a nil *autonomous.PRD.
 func isNilPRD(v any) bool {
 	if v == nil {

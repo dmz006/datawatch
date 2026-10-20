@@ -14235,6 +14235,12 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.default_quality_gates.block_on_regression', label: 'Block task on test regression', labelKey: 'settings_quality_gates_block_on_regression', type: 'toggle' },
     { key: 'autonomous.injection_guard', label: 'Prompt injection guard (warn on suspicious PRD/task specs)', labelKey: 'settings_injection_guard', type: 'toggle' },
     { key: 'autonomous.block_on_injection', label: 'Block PRD/task create when injection phrases detected', labelKey: 'settings_block_on_injection', type: 'toggle' },
+    // Plan-coverage gate — how strictly decompose must cover the spec's
+    // requirements before approve. Off = never gate, warn = report +
+    // warning state only, block = gate approval (server display default is
+    // block when unset). Min ratio 0..1 (server default 1.0).
+    { key: 'autonomous.plan_coverage_check', label: 'Plan coverage check (off | warn | block, default block)', labelKey: 'settings_plan_coverage', type: 'select', options: ['off', 'warn', 'block'], default: 'block' },
+    { key: 'autonomous.plan_coverage_min_ratio', label: 'Plan coverage min ratio (requirement coverage 0-1, default 1.0)', labelKey: 'settings_plan_coverage_min_ratio', type: 'number', placeholder: '1.0', min: 0.1, max: 1, step: 0.1, default: '1' },
   ]},
   // v5.26.16 — operator-reported: PRD-DAG orchestrator section
   // belongs above Plugin framework. Orchestrator is a workflow-level
@@ -15023,8 +15029,9 @@ function loadGeneralConfig() {
               </div>
             </div>`;
           } else if (f.type === 'select') {
+            const selVal = String(val);
             const opts = (f.options || []).map(o =>
-              `<option value="${escHtml(o)}" ${String(val) === o ? 'selected' : ''}>${escHtml(o)}</option>`
+              `<option value="${escHtml(o)}" ${selVal === o || (selVal === '' && f.default !== undefined && String(f.default) === o) ? 'selected' : ''}>${escHtml(o)}</option>`
             ).join('');
             html += `<div class="settings-row" style="justify-content:space-between;">
               <div class="settings-label">${escHtml(fLabel)}</div>
@@ -15220,10 +15227,14 @@ function loadGeneralConfig() {
                 onchange="saveGeneralField('${f.key}', this.value)">${escHtml(String(val || ''))}</textarea>
             </div>`;
           } else {
+            const defVal = (val !== '' && val !== undefined) ? String(val) : (f.default !== undefined ? String(f.default) : '');
             html += `<div class="settings-row" style="justify-content:space-between;">
               <div class="settings-label">${escHtml(fLabel)}</div>
-              <input type="${f.type}" class="form-input general-cfg-input" value="${escHtml(String(val || ''))}"
+              <input type="${f.type}" class="form-input general-cfg-input" value="${escHtml(defVal)}"
                 ${f.placeholder ? 'placeholder="' + escHtml(f.placeholder) + '"' : ''}
+                ${f.min !== undefined ? 'min="' + f.min + '"' : ''}
+                ${f.max !== undefined ? 'max="' + f.max + '"' : ''}
+                ${f.step !== undefined ? 'step="' + f.step + '"' : ''}
                 onchange="saveGeneralField('${f.key}', ${f.type === 'number' ? 'Number(this.value)' : 'this.value'})" />
             </div>`;
           }
@@ -21481,6 +21492,112 @@ window._loadPRDSessionResources = function(prd) {
   window._prdSessionResInterval = setInterval(refresh, 5000);
 };
 
+// ── Plan-coverage gate (PRD view) ─────────────────────────────────────────────
+// Server-side (autonomous/plan_coverage*.go) gates approval on the
+// per-PRD plan requirement coverage report in prd.plan_coverage and
+// exposes POST /api/autonomous/prds/{id}/plan_coverage/acknowledge so an
+// operator can acknowledge a failing report in block mode with a note.
+// This block surfaces that report in the PRD detail view: covered/
+// missing/weakened counts, the unmatched-requirement list, the warn vs
+// block state, and the acknowledge flow (non-empty note required).
+function _prdPlanCoverageBlock(prd) {
+  const pc = prd && prd.plan_coverage;
+  if (!pc) return '';
+  const report = pc.report || {};
+  const covered = report.covered || 0;
+  const missing = report.missing || 0;
+  const weakened = report.weakened || 0;
+  const total = covered + missing + weakened;
+  const ratio = total > 0 ? covered / total : 1;
+  const minRatio = (typeof pc.min_ratio === 'number' && pc.min_ratio > 0) ? pc.min_ratio : 1;
+  const findings = Array.isArray(pc.findings) ? pc.findings : [];
+  const failing = findings.length > 0 || ratio < minRatio;
+  const mode = pc.mode || 'off';
+  const ack = pc.ack || null;
+  const acked = !!(ack && (ack.by || ack.note));
+  const unmatched = Array.isArray(report.unmatched) ? report.unmatched : [];
+
+  const color = !failing ? 'var(--success,#22c55e)'
+            : mode === 'warn' ? 'var(--warning,#f59e0b)' : 'var(--error,#ef4444)';
+  const statusLine = !failing
+    ? (t('prd_plan_coverage_pass') || 'Plan covers the spec requirements')
+    : mode === 'warn'
+      ? (t('prd_plan_coverage_warn') || 'Plan coverage below threshold — warning mode')
+      : (t('prd_plan_coverage_fail') || 'Plan coverage below threshold — blocked mode');
+
+  let listHtml = '';
+  if (unmatched.length > 0 || findings.length > 0) {
+    const items = [];
+    unmatched.forEach(u => {
+      const req = u && u.requirement ? String(u.requirement) : (u !== undefined ? String(u) : '');
+      const verdict = u && u.verdict ? String(u.verdict) : '';
+      items.push((verdict ? escHtml(verdict) + ' — ' : '') + escHtml(req));
+    });
+    findings.forEach(fd => {
+      const line = fd && (fd.detail || fd.rule) ? String(fd.detail || fd.rule) : String(fd);
+      items.push(escHtml(line));
+    });
+    listHtml = `<ul style="margin:4px 0 0 16px;padding:0;font-size:11px;">${items.map(i => `<li>${i}</li>`).join('')}</ul>`;
+  }
+
+  let ackHtml = '';
+  if (failing && mode === 'block') {
+    if (acked) {
+      ackHtml = `<div style="margin-top:6px;font-size:11px;color:var(--text2);">${escHtml(t('prd_plan_coverage_ack_done') || 'Acknowledged')}: <strong>${escHtml(ack.by || 'operator')}</strong> — ${escHtml(ack.note || '')}</div>`;
+    } else {
+      const inputId = 'prdPcAck-' + String(prd.id || '').replace(/[^a-zA-Z0-9_-]/g, '_');
+      ackHtml = `<div style="display:flex;gap:6px;margin-top:6px;">
+        <input type="text" id="${inputId}" class="form-input" style="flex:1;font-size:11px;" placeholder="${escHtml(t('prd_plan_coverage_ack_hint') || 'Note explaining why you acknowledge the failing coverage (required)')}" />
+        <button class="btn-primary" id="${inputId}-btn" style="font-size:11px;padding:3px 10px;white-space:nowrap;" onclick="window._prdPlanCoverageAck(${JSON.stringify(prd.id || '')}, document.getElementById('${inputId}'), document.getElementById('${inputId}-btn'))">${escHtml(t('prd_plan_coverage_ack') || 'Acknowledge')}</button>
+      </div>`;
+    }
+  }
+
+  return `<div class="prd-plan-coverage" style="margin-top:8px;padding:8px 10px;border-left:3px solid ${color};background:var(--bg2);border-radius:0 4px 4px 0;font-size:12px;">
+    <div style="font-weight:600;color:${color};">${escHtml(t('prd_plan_coverage_title') || 'Plan requirement coverage')} — ${escHtml(statusLine)}</div>
+    <div style="font-family:var(--mono,monospace);font-size:11px;margin-top:3px;">covered ${covered}/${total} · missing ${missing} · weakened ${weakened}${total > 0 ? ' · ratio ' + (ratio * 100).toFixed(0) + '% (min ' + (minRatio * 100).toFixed(0) + '%)' : ''}</div>
+    ${listHtml}
+    ${ackHtml}
+  </div>`;
+}
+window._prdPlanCoverageBlock = _prdPlanCoverageBlock;
+
+// Pure payload builder (exported for pin tests): acknowledgment requires
+// a non-empty note — returns null when the note is empty after trim, so
+// the caller never posts a blank note.
+function _prdPlanCoverageAckPayload(note) {
+  const trimmed = String(note == null ? '' : note).trim();
+  if (!trimmed) return null;
+  return { actor: 'operator', note: trimmed };
+}
+window._prdPlanCoverageAckPayload = _prdPlanCoverageAckPayload;
+
+// Acknowledge a failing plan-coverage report (block mode). POSTs
+// {actor, note} to /api/autonomous/prds/{id}/plan_coverage/acknowledge
+// and refreshes the automata view when the server accepts it.
+window._prdPlanCoverageAck = function(prdID, inputEl, btnEl) {
+  const raw = (inputEl && typeof inputEl.value === 'string')
+    ? inputEl.value
+    : (typeof window.prompt === 'function' ? window.prompt(t('prd_plan_coverage_ack_hint') || 'Acknowledgment note (required)', '') : '');
+  const payload = _prdPlanCoverageAckPayload(raw);
+  if (!payload) {
+    showToast(t('prd_plan_coverage_ack_empty') || 'Acknowledgment requires a non-empty note', 'warning', 2500);
+    return Promise.resolve(null);
+  }
+  if (btnEl) btnEl.disabled = true;
+  return apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdID) + '/plan_coverage/acknowledge', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  }).then(() => {
+    showToast(t('prd_plan_coverage_ack_done') || 'Plan coverage acknowledged', 'success', 2000);
+    _refreshAutomataOrPRD();
+  }).catch(err => {
+    if (btnEl) btnEl.disabled = false;
+    showToast('Plan coverage acknowledge failed: ' + String(err), 'error', 3000);
+  });
+};
+
 // BL246 v6.6.0 — persistent header (title + status + toolbar) shown on every sub-tab.
 // BL293 (v6.22.2 — verified live 2026-05-08) — per-state button matrix.
 // The audit confirmed the previous implementation IS consistent; operator's
@@ -21637,6 +21754,7 @@ function _renderDetailHeader(prd, typeBadge, tplBadge) {
       <div id="prdActiveSessionCard" class="prd-active-session-card" style="display:none;margin-top:8px;"></div>
       <div id="prdCapacityCard" class="prd-capacity-slot" style="display:none;margin-top:8px;"></div>
       <div id="prdStatusGraphsSlot" style="display:none;margin-top:8px;"></div>
+      ${_prdPlanCoverageBlock(prd)}
       <div class="prd-detail-toolbar prd-detail-toolbar-v2" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;">
         ${planBtn}${runBtn}${cancelBtn}${approveBtn}${resetToDraftBtn}${buttons.join('')}
         <span style="margin-left:auto;display:inline-flex;gap:6px;align-items:center;">${editBtn}${deleteBtn}</span>
