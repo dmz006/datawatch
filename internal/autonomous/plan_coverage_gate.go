@@ -217,7 +217,7 @@ func (pc *PlanCoverage) isBlockingWithoutAck() bool {
 	if !pc.IsFailing() {
 		return false
 	}
-	return !(pc.Ack != nil && pc.Ack.Fingerprint != "" && pc.Ack.Fingerprint == pc.Fingerprint())
+	return pc.Ack == nil || pc.Ack.Fingerprint == "" || pc.Ack.Fingerprint != pc.Fingerprint()
 }
 
 // AcknowledgePlanCoverage records the operator's explicit

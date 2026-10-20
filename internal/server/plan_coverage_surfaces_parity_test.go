@@ -208,7 +208,7 @@ func TestPlanCoverage_SurfacesParity(t *testing.T) {
 		}
 		pcBody, ok := rawPRD["plan_coverage"]
 		if !ok {
-			t.Fatalf("PRD GET (detail=full) lacks plan_coverage: %s", string(rr.Body.Bytes()))
+			t.Fatalf("PRD GET (detail=full) lacks plan_coverage: %s", rr.Body.String())
 		}
 		var pc map[string]any
 		if err := json.Unmarshal(pcBody, &pc); err != nil {

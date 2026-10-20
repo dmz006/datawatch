@@ -338,12 +338,8 @@ func termCoverage(planLower, term string) (present, effective bool) {
 			break
 		}
 		pos := i + off
-		if termBoundaryOK(planLower, pos, len(term)) {
-			present = true
-			if !occurrenceNegated(planLower, pos) {
-				effective = true
-				return true, true
-			}
+		if termBoundaryOK(planLower, pos, len(term)) && !occurrenceNegated(planLower, pos) {
+			return true, true
 		}
 		i = pos + 1
 	}
