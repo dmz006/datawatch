@@ -189,3 +189,71 @@ func TestBL416Fields_PopulatedRoundTrip(t *testing.T) {
 		t.Errorf("Task fields: got %+v", gt)
 	}
 }
+
+func TestGuardrailJudgeFields_RoundTrip(t *testing.T) {
+	prdIn := PRD{
+		ID:            "abcd1234",
+		Status:        PRDBlocked,
+		BlockedReason: "guardrail security returned block; judge session judge-7f3a produced it",
+	}
+	decIn := Decision{
+		Kind:           "verify",
+		VerdictOutcome: "block",
+		JudgeSessionID: "judge-7f3a",
+	}
+	verdictIn := GuardrailVerdict{
+		Guardrail:       "security",
+		Outcome:         "block",
+		JudgeSessionID:  "judge-7f3a",
+		JudgeOutputPath: "/home/dmz/.datawatch/judge/judge-7f3a.out",
+	}
+
+	prdRaw, err := json.Marshal(prdIn)
+	if err != nil {
+		t.Fatalf("marshal PRD: %v", err)
+	}
+	var prdOut PRD
+	if err := json.Unmarshal(prdRaw, &prdOut); err != nil {
+		t.Fatalf("unmarshal PRD: %v", err)
+	}
+	if prdOut.BlockedReason != prdIn.BlockedReason {
+		t.Errorf("PRD.BlockedReason: got %q, want %q", prdOut.BlockedReason, prdIn.BlockedReason)
+	}
+
+	decRaw, err := json.Marshal(decIn)
+	if err != nil {
+		t.Fatalf("marshal Decision: %v", err)
+	}
+	var decOut Decision
+	if err := json.Unmarshal(decRaw, &decOut); err != nil {
+		t.Fatalf("unmarshal Decision: %v", err)
+	}
+	if decOut.JudgeSessionID != decIn.JudgeSessionID {
+		t.Errorf("Decision.JudgeSessionID: got %q, want %q", decOut.JudgeSessionID, decIn.JudgeSessionID)
+	}
+
+	verdictRaw, err := json.Marshal(verdictIn)
+	if err != nil {
+		t.Fatalf("marshal GuardrailVerdict: %v", err)
+	}
+	var verdictOut GuardrailVerdict
+	if err := json.Unmarshal(verdictRaw, &verdictOut); err != nil {
+		t.Fatalf("unmarshal GuardrailVerdict: %v", err)
+	}
+	if verdictOut.JudgeSessionID != verdictIn.JudgeSessionID {
+		t.Errorf("GuardrailVerdict.JudgeSessionID: got %q, want %q", verdictOut.JudgeSessionID, verdictIn.JudgeSessionID)
+	}
+	if verdictOut.JudgeOutputPath != verdictIn.JudgeOutputPath {
+		t.Errorf("GuardrailVerdict.JudgeOutputPath: got %q, want %q", verdictOut.JudgeOutputPath, verdictIn.JudgeOutputPath)
+	}
+}
+
+func TestGuardrailJudgeFields_EmptyPRDOmitsBlockedReason(t *testing.T) {
+	raw, err := json.Marshal(PRD{})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if strings.Contains(string(raw), `"blocked_reason"`) {
+		t.Errorf("empty PRD marshal contains blocked_reason key: %s", raw)
+	}
+}

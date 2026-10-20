@@ -372,6 +372,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 					if lt.Status == TaskBlocked {
 						old := latest.Status
 						latest.Status = PRDBlocked
+						latest.BlockedReason = blockedReasonFromVerdicts(lt.Verdicts)
 						if m.store.SavePRD(latest) == nil {
 							m.emitPRDStatus(latest, old, nil, lastBlockVerdict(lt.Verdicts))
 						}
@@ -597,6 +598,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 						if lt.Status == TaskBlocked {
 							old := latest.Status
 							latest.Status = PRDBlocked
+							latest.BlockedReason = blockedReasonFromVerdicts(lt.Verdicts)
 							if m.store.SavePRD(latest) == nil {
 								m.emitPRDStatus(latest, old, nil, lastBlockVerdict(lt.Verdicts))
 							}
@@ -649,6 +651,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 		} else if blocked {
 			old := prd.Status
 			prd.Status = PRDBlocked
+			prd.BlockedReason = blockedReasonFromVerdicts(s.Verdicts)
 			if m.store.SavePRD(prd) == nil {
 				m.emitPRDStatus(prd, old, nil, lastBlockVerdict(s.Verdicts))
 			}
@@ -704,7 +707,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 		return ok && cur.Status == observed && prdAllTasksTerminal(cur)
 	}
 	if anyFailed {
-		old, ok := m.commitRollupStatus(prd, observed, expectedRev(), PRDFailed, "failed")
+		old, ok := m.commitRollupStatus(prd, observed, expectedRev(), PRDFailed, "failed", "")
 		if ok {
 			m.emitPRDStatus(prd, old, nil, nil)
 		}
@@ -718,7 +721,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 		// project rule firing is itself the signal, same PRDBlocked
 		// status the task/story guardrail "block" outcome already
 		// uses above.
-		if old, ok := m.commitRollupStatus(prd, observed, expectedRev(), PRDBlocked, "project_rules_block"); ok {
+		if old, ok := m.commitRollupStatus(prd, observed, expectedRev(), PRDBlocked, "project_rules_block", ""); ok {
 			m.emitPRDStatus(prd, old, lastDecision(prd, "project_rules_block"), nil)
 		}
 		return nil
@@ -731,7 +734,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 		// see rules_review.go's own doc comment for why this is a
 		// judgment review against whatever rules file the operator
 		// configured, not a second hardcoded checklist.
-		if old, ok := m.commitRollupStatus(prd, observed, expectedRev(), PRDBlocked, "rules_review_block"); ok {
+		if old, ok := m.commitRollupStatus(prd, observed, expectedRev(), PRDBlocked, "rules_review_block", blockedReasonFromVerdicts(prd.Verdicts)); ok {
 			m.emitPRDStatus(prd, old, nil, lastBlockVerdict(prd.Verdicts))
 		}
 		return nil
@@ -765,7 +768,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 		// inside the PRDCompleted branch (handleWorktreeCompletion),
 		// so for them HEAD is usually unpushed here and ci-watch
 		// records a skip — see ci_watch.go's header.
-		if old, ok := m.commitRollupStatus(prd, observed, expectedRev(), PRDBlocked, "ci_watch_block"); ok {
+		if old, ok := m.commitRollupStatus(prd, observed, expectedRev(), PRDBlocked, "ci_watch_block", blockedReasonFromVerdicts(prd.Verdicts)); ok {
 			m.emitPRDStatus(prd, old, nil, lastBlockVerdict(prd.Verdicts))
 		}
 		return nil
@@ -786,7 +789,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 	}
 	// BL451 — commit PRDCompleted first; completion side effects only
 	// run once the status actually landed.
-	completedOld, ok := m.commitRollupStatus(prd, observed, expectedRev(), PRDCompleted, "completed")
+	completedOld, ok := m.commitRollupStatus(prd, observed, expectedRev(), PRDCompleted, "completed", "")
 	if !ok {
 		return nil
 	}
@@ -1679,6 +1682,9 @@ func (m *Manager) runPerTaskGuardrails(ctx context.Context, prd *PRD, t *Task) (
 			v.VerdictAt = time.Now()
 		}
 		v.Guardrail = g
+		if err := m.recordGuardrailVerdict(prd, t.ID, v); err != nil {
+			return false, "", err
+		}
 		t.Verdicts = append(t.Verdicts, v)
 		if v.Outcome == "block" {
 			// BL410 Phase 2 — a content-category block (a real judgment,
@@ -1769,6 +1775,9 @@ func (m *Manager) runPerStoryGuardrails(ctx context.Context, prd *PRD, s *Story)
 			v.VerdictAt = time.Now()
 		}
 		v.Guardrail = g
+		if err := m.recordGuardrailVerdict(prd, s.ID, v); err != nil {
+			return false, nil, err
+		}
 		s.Verdicts = append(s.Verdicts, v)
 		if v.Outcome == "block" {
 			// BL410 Phase 2 — same content-auto-fix eligibility check as
@@ -2003,17 +2012,20 @@ func prdAllTasksTerminal(p *PRD) bool {
 // commitRollupStatus (BL451) commits the completion-rollup status via
 // Store.CommitPRDIfRev: only if the PRD's Rev is still expectedRev, its
 // status is still observed and every task is still terminal — all
-// re-checked under the store lock. On a stale commit nothing is set, a
-// rollup_aborted_stale decision is recorded and ok=false is returned:
-// the concurrent writer (reset_task, cancel, another Run) is
+// re-checked under the store lock. blockedReason is written together with
+// status, so a guardrail block carries its reason in the same commit; pass
+// "" for every status that is not a guardrail block. On a stale commit
+// nothing is set, a rollup_aborted_stale decision is recorded and ok=false
+// is returned: the concurrent writer (reset_task, cancel, another Run) is
 // authoritative.
-func (m *Manager) commitRollupStatus(prd *PRD, observed PRDStatus, expectedRev int, status PRDStatus, reason string) (old PRDStatus, ok bool) {
+func (m *Manager) commitRollupStatus(prd *PRD, observed PRDStatus, expectedRev int, status PRDStatus, reason, blockedReason string) (old PRDStatus, ok bool) {
 	err := m.store.CommitPRDIfRev(prd.ID, expectedRev, func(p *PRD) bool {
 		if p.Status != observed || !prdAllTasksTerminal(p) {
 			return false
 		}
 		old = p.Status
 		p.Status = status
+		p.BlockedReason = blockedReason
 		return true
 	})
 	if err == nil {
@@ -2053,7 +2065,11 @@ func (m *Manager) rollupOwnSaves(prdID string) int {
 
 // savePRDOwn saves prd and counts it as an executor-owned write.
 func (m *Manager) savePRDOwn(prd *PRD) error {
-	err := m.store.SavePRD(prd)
+	save := m.store.SavePRD
+	if m.savePRDHook != nil {
+		save = m.savePRDHook
+	}
+	err := save(prd)
 	if err == nil {
 		m.mu.Lock()
 		if m.ownSaves == nil {

@@ -437,6 +437,11 @@ type Manager struct {
 	// completion rollup can discount its own Rev bumps. Guarded by mu.
 	ownSaves map[string]int
 
+	// savePRDHook is a test seam: when non-nil, savePRDOwn persists through
+	// it instead of m.store.SavePRD, so a test can force a save failure.
+	// Production never sets it.
+	savePRDHook func(*PRD) error
+
 	// BL427 — in-process lifecycle event dispatcher (lifecycle_event.go).
 	// Has its own lock; never guarded by mu. lifecycleHost is
 	// os.Hostname, cached once.

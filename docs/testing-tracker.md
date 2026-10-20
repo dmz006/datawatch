@@ -1598,3 +1598,47 @@ entry or a dependency cycle must reject the call naming the exact bad entry (or 
 | `Manager.RepairDependsOn` returns the store error untouched (appends decision + save only on success) | **Yes** (code-inspected, `internal/autonomous/manager.go` — no early return between the store call and the error check) | **Pending** | — | No dedicated test; the store-level rejection tests are the enforcement point and the manager path is a straight pass-through. |
 | REST `POST /api/autonomous/prds/{id}/repair_depends_on` 400 body carries the store's message | **Yes** (code-inspected, `internal/server/autonomous.go` — `http.Error(w, err.Error(), http.StatusBadRequest)`) | **Pending** | — | `http.Error` prefixes `400 Bad Request: ` then the raw message; the bad entry name survives. |
 | Live: a repair call on a PRD with a bad entry returns 400 naming the entry, and none of the MCP/CLI surfaces swallow it | No | **PENDING** | Needs a running daemon + seeded PRD | MCP `autonomous_repair_depends_on` and CLI `prd-repair-depends-on` both surface `err.Error()` verbatim (inspected). |
+
+## Guardrail verdict decision log
+
+Every guardrail verdict, judged or deterministic, is now recorded as a `guardrail_verdict`
+Decision on the Automaton. A blocked Automaton also says why it is blocked. This is a
+server-side change only; no client displays it yet.
+
+Contract changes:
+
+- `blocked_reason` (string, `omitempty`) on automaton objects (`PRD.BlockedReason`). It is set only
+  while the automaton is blocked by a guardrail verdict. It is cleared when the automaton leaves a
+  blocked status.
+- `judge_session_id` (string, `omitempty`) on decision entries (`Decision`) and on guardrail verdicts
+  (`GuardrailVerdict`). It names the session that ran the guardrail judge.
+- `judge_output_path` (string, `omitempty`) on guardrail verdicts (`GuardrailVerdict`). It names the
+  judge output file, which is kept until the verdict save succeeds.
+- New decision kind `guardrail_verdict`, appended by `recordGuardrailVerdict` at the four guardrail
+  sites: task-level, per-story, rules-review and ci-watch.
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| `blocked_reason` set on task-level, per-story, rules-review and ci-watch guardrail blocks; cleared on a non-blocked save; left empty for project-rules blocks | **Yes** (`TestBlockedReason_RulesReviewBlockNamesGuardrailAndJudge`, `TestBlockedReason_SavePRDNonBlockedStatusClearsReason`, `TestBlockedReason_CommitPRDIfRevNonBlockedStatusClearsReason`, `TestBlockedReason_ProjectRulesBlockLeavesReasonEmpty` in `internal/autonomous/blocked_reason_test.go`) | No | `go test` in `internal/autonomous`; in-process Manager with a recorded verdict fake | No live daemon run has been done yet. |
+| `blocked_reason` helper (`blockedReasonFor`) text for each verdict | **Yes** (`TestBlockedReasonFor` in `internal/autonomous/guardrail_verdict_record_test.go`) | No | `go test` in `internal/autonomous` | No live daemon run has been done yet. |
+| Block flow at each guardrail site: rules-review and task-level blocks, the pass verdict, and output-file retention until save succeeds | **Yes** (`TestGuardrailVerdictBlock_RulesReviewBlock`, `TestGuardrailVerdictBlock_RulesReviewPass`, `TestGuardrailVerdictBlock_TaskLevelBlock`, `TestGuardrailVerdictBlock_OutputFileKeptUntilSaveSucceeds` in `internal/autonomous/guardrail_verdict_block_test.go`) | No | `go test` in `internal/autonomous` | No live daemon run has been done yet. |
+| `recordGuardrailVerdict` appends one `guardrail_verdict` Decision and saves via `savePRDOwn` | **Yes** (`TestRecordGuardrailVerdict_DecisionEntry`, `TestRecordGuardrailVerdict_TextOnlyBackendAndIssueFallback`, `TestRecordGuardrailVerdict_FailedSaveKeepsOutputFile`, `TestRecordGuardrailVerdict_SuccessfulSaveRemovesOutputFile` in `internal/autonomous/guardrail_verdict_record_test.go`) | No | `go test` in `internal/autonomous` | No live daemon run has been done yet. |
+| Task guardrail: a pass verdict is recorded and not blocked; a failed save returns an error | **Yes** (`TestTaskGuardrail_PassVerdictRecordedNotBlocked`, `TestTaskGuardrail_FailedSaveReturnsError` in `internal/autonomous/guardrail_verdict_record_test.go`) | No | `go test` in `internal/autonomous` | No live daemon run has been done yet. |
+| `judge_session_id` on `Decision` and `GuardrailVerdict`; `judge_output_path` on `GuardrailVerdict`; JSON round trip and `omitempty` on an empty PRD | **Yes** (`TestGuardrailJudgeFields_RoundTrip`, `TestGuardrailJudgeFields_EmptyPRDOmitsBlockedReason` in `internal/autonomous/models_guardrail_fields_test.go`) | No | `go test` in `internal/autonomous` | No live daemon run has been done yet. |
+| Session path stamps judge verdicts with `JudgeSessionID` and `JudgeOutputPath` (`judgeVerdictWithSession`) | **Yes** (`TestJudgeVerdictWithSession`, `TestJudgeVerdictWithSession_DoesNotMutateInput` in `cmd/datawatch/guardrail_verdict_stamp_test.go`) | No | `go test` in `cmd/datawatch` | No live daemon run has been done yet. |
+| Guardrail judge session returns the spawned session id on all paths (`runOneShotJSONSessionCaptureID`) | **Yes** (`TestRunOneShotJSONSessionCaptureID_ReturnsSpawnedSessionID` in `cmd/datawatch/session_judgment_test.go`) | No | `go test` in `cmd/datawatch`; real one-shot spawn path, about 9 s | No live daemon run has been done yet. |
+| Guardrail judge output: the project file is kept and copied to scratch; a present output is reused without starting a session (`runOneShotJudgeSessionCaptureID`) | **Yes** (`TestRunOneShotJudgeSession_KeepsProjectOutputAndCopiesToScratch`, `TestRunOneShotJudgeSession_ReusesPresentOutputWithoutStarting` in `cmd/datawatch/session_judgment_test.go`) | No | `go test` in `cmd/datawatch` | No live daemon run has been done yet. |
+| `PeekProjectFile` reads a non-empty project file and leaves it in place; `RemoveJudgeOutputFile` deletes an existing file and returns nil for a missing one | **Yes** (`TestPeekProjectFile_ReturnsContentAndLeavesFile`, `TestPeekProjectFile_NoFileCases`, `TestRemoveJudgeOutputFile_DeletesExistingFile`, `TestRemoveJudgeOutputFile_MissingFileIsNil` in `internal/autonomous/scratch_test.go`) | No | `go test` in `internal/autonomous` | No live daemon run has been done yet. |
+| Live check: a real guardrail block on a sandbox daemon shows `blocked_reason`, a `guardrail_verdict` decision with `judge_session_id`, and `judge_output_path` on the verdict | No | **No** | Needs a sandbox daemon run with a guardrail that blocks | No live daemon run has been done yet. |
+
+Test command (run from the repository root):
+
+```sh
+go test -count=1 -v -run 'TestJudgeVerdictWithSession|TestRunOneShotJSONSessionCaptureID_ReturnsSpawnedSessionID|TestRunOneShotJudgeSession_|TestBlockedReason_|TestGuardrailVerdictBlock_|TestRecordGuardrailVerdict_|TestTaskGuardrail_|TestBlockedReasonFor|TestGuardrailJudgeFields_|TestPeekProjectFile_|TestRemoveJudgeOutputFile_' ./internal/autonomous/ ./cmd/datawatch/
+```
+
+This ran on go1.27.2 linux/amd64: 26 tests, all PASS (21 in `internal/autonomous`, 5 in `cmd/datawatch`).
+
+Parity surfaces not yet exposed:
+
+- **PWA, Android and iPhone** do not display `blocked_reason` yet. The reason: this change is server-side only, and client display is a follow-up. Clients also do not yet show the `guardrail_verdict` decision kind or the `judge_session_id` and `judge_output_path` fields.

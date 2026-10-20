@@ -58,6 +58,11 @@ type Decision struct {
 	VerdictOutcome string    `json:"verdict_outcome,omitempty"` // pass | warn | block | n/a
 	Actor          string    `json:"actor,omitempty"`           // operator | autonomous | verifier
 	Note           string    `json:"note,omitempty"`            // free-form: what was edited, why rejected, etc.
+	// JudgeSessionID is the id of the one-shot session that produced a
+	// guardrail verdict. Empty when the judgment was a text-only call or
+	// a deterministic check, so the audit entry links back to the judge
+	// run only when one existed.
+	JudgeSessionID string `json:"judge_session_id,omitempty"`
 	// FailureCategory (BL410 Phase 1) mirrors FailureReason.Category —
 	// visible inline in this append-only log without opening a nested
 	// Verdict/Verification struct.
@@ -184,8 +189,12 @@ type PRD struct {
 	// default. Per-task value takes precedence.
 	PermissionMode string    `json:"permission_mode,omitempty"`
 	Status         PRDStatus `json:"status"`
-	CreatedAt      time.Time `json:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
+	// BlockedReason is a plain sentence saying which guardrail verdict
+	// blocked the automaton and which judge session produced it. Empty
+	// unless Status is blocked by a guardrail.
+	BlockedReason string    `json:"blocked_reason,omitempty"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 	// BL451 — optimistic-concurrency revision, bumped by Store.SavePRD
 	// (and Store.CommitPRDIfRev) on every save. 0 for PRDs persisted
 	// before BL451; load tolerates the missing field.
@@ -813,6 +822,17 @@ type GuardrailVerdict struct {
 	// produced an indistinguishable block outcome, so a timeout required
 	// the same manual operator intervention as a real compliance finding.
 	Category string `json:"category,omitempty"`
+	// JudgeSessionID is the id of the one-shot session that produced this
+	// verdict. Empty when the judgment was a text-only call or a
+	// deterministic check.
+	JudgeSessionID string `json:"judge_session_id,omitempty"`
+	// JudgeOutputPath is the full path of the judge output file that
+	// backed this verdict. Empty when there was no file.
+	JudgeOutputPath string `json:"judge_output_path,omitempty"`
+	// Backend is the name of the backend that ran a text-only judgment.
+	// Empty when the verdict carries no backend (the usual case) or when a
+	// judge session already identifies the run.
+	Backend string `json:"backend,omitempty"`
 }
 
 // VerificationResult is BL25 output. Severity levels match

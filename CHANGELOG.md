@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.27
+
+### Fixed
+- **Every guardrail judgment is now written to the Automaton's decision log before the Automaton's status changes.** Each entry records the verdict, the reason, and the judge session that made it, so a guardrail decision can always be traced afterward.
+- **An Automaton blocked by a guardrail now shows the guardrail and the judge session as its blocked reason.** That reason clears when the Automaton leaves the blocked state.
+- **A guardrail judge's output file is kept until its decision has been saved, and only then removed.** If saving fails, the output is still available for inspection.
+
 ## v9.5.26 — autonomous: honor each backend's delivery mode when typing waiting tasks into tmux
 
 - **One-shot “send the task and wait for it to finish” sessions (pi --print, goose --print, aider) no longer get a second copy of the task typed into their shell (send_input)** — the daemon now asks each backend whether it accepts interactive input before typing a waiting task into the pane, so a backend that only takes its task once, at launch, can never be typed into, even if it is a brand-new backend never added to a list.

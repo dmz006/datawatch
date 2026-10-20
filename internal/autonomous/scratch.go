@@ -131,3 +131,31 @@ func RemoveDecomposeOutputArtifact(dataDir, prdID string) {
 	}
 	_ = os.Remove(filepath.Join(dataDir, "autonomous", "scratch", prdID, decomposeOutputName))
 }
+
+// PeekProjectFile returns the content of <projectDir>/<srcName> and true when
+// the file exists and is non-empty. It never deletes or moves the file: the
+// keep-until-recorded contract means the caller removes the project copy only
+// after the content is durably recorded elsewhere (see RemoveJudgeOutputFile).
+// It returns ("", false) for empty arguments, a missing file, an empty file,
+// or any read error.
+func PeekProjectFile(projectDir, srcName string) (string, bool) {
+	if projectDir == "" || srcName == "" {
+		return "", false
+	}
+	content, err := os.ReadFile(filepath.Join(projectDir, srcName)) // #nosec G304 -- srcName is a fixed internal constant, projectDir is this daemon's own PRD record
+	if err != nil || len(content) == 0 {
+		return "", false
+	}
+	return string(content), true
+}
+
+// RemoveJudgeOutputFile deletes the file at path. It is the companion to
+// PeekProjectFile under the keep-until-recorded contract: call it only once
+// the content has been recorded. A missing file is not an error and returns
+// nil; any other failure is returned to the caller.
+func RemoveJudgeOutputFile(path string) error {
+	if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	return nil
+}

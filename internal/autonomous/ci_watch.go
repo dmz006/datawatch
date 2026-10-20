@@ -681,6 +681,9 @@ func (m *Manager) ciWatchJudge(ctx context.Context, prd *PRD, res CIWatchResult,
 	}
 	v.Guardrail = "ci-watch"
 	prd.Verdicts = append(prd.Verdicts, v)
+	if err := m.recordGuardrailVerdict(prd, prd.ID, v); err != nil {
+		return false, nil, err
+	}
 	res.Summary = v.Summary
 	res.Issues = v.Issues
 	res.Category = v.Category
