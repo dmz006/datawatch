@@ -57,7 +57,7 @@ Browse the catalog in-app (Settings → Skills → Registry) or on GitHub. To co
 
 ## Current release
 
-**Current release: v9.1.4 (2026-10-15).** opencode sessions on an Ollama
+**Current release: v9.5.29 (2026-10-20).** opencode sessions on an Ollama
 compute node now start when the model is given without its `ollama/`
 prefix. The session gets the Ollama provider settings instead of exiting
 at launch. **v9.1.3** fixes `llm test` and ask calls for opencode LLM
