@@ -14161,6 +14161,7 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.enabled', label: 'Enable autonomous loop', type: 'toggle' },
     { key: 'autonomous.poll_interval_seconds', label: 'Poll interval (sec)', type: 'number', placeholder: '30' },
     { key: 'autonomous.max_concurrent_tasks', label: 'Max concurrent tasks per Automaton (1 = one at a time)', labelKey: 'settings_max_concurrent_tasks', type: 'number', placeholder: '1' },
+    { key: 'autonomous.resume_max_age_seconds', label: 'Resume stale Automata at startup only if active within (sec; 0 = never, -1 = always)', labelKey: 'settings_resume_max_age', type: 'number', placeholder: '3600' },
     { key: 'autonomous.max_engines_per_node', label: 'Max engines per node (1 = one at a time)', labelKey: 'max_engines_per_node', type: 'number', min: 1, placeholder: '1' },
     { key: 'autonomous.capacity_enabled', label: 'Capacity-aware admission (wait for free slots instead of failing)', labelKey: 'settings_capacity_enabled', type: 'toggle' },
     { key: 'autonomous.capacity_wait_timeout_seconds', label: 'Capacity wait timeout (sec, 0=4h)', labelKey: 'settings_capacity_wait_timeout', type: 'number', placeholder: '14400' },
@@ -28888,6 +28889,12 @@ function loadAutomataSettingsPanel() {
           <div class="settings-label" title="${escHtml(t('settings_max_concurrent_tasks_hint')||'Daemon-wide default. An Automaton\'s own setting overrides it.')}">${escHtml(t('settings_max_concurrent_tasks')||'Max concurrent tasks per Automaton (1 = one at a time)')}</div>
           <input type="number" min="1" value="${ac.max_concurrent_tasks||1}" style="width:80px;font-size:12px;" class="form-input"
             onchange="saveGeneralField('autonomous.max_concurrent_tasks',+this.value)">
+        </div>
+        <div class="settings-row" style="justify-content:space-between;">
+          <div class="settings-label" title="${escHtml(t('settings_resume_max_age_hint')||'Applies when the daemon restarts: an Automaton left running is resumed only if its newest activity is within this many seconds. 0 = never auto-resume, -1 = no age limit. PRDs that do not auto-resume are parked as blocked with a reason and raise an alert.')}">${escHtml(t('settings_resume_max_age')||'Resume stale Automata at startup only if active within (sec; 0 = never, -1 = always)')}</div>
+          <!-- 0 (never resume) and -1 (always) are meaningful, so no min bound. -->
+          <input type="number" value="${(ac.resume_max_age_seconds === undefined || ac.resume_max_age_seconds === null) ? 3600 : ac.resume_max_age_seconds}" placeholder="3600" style="width:80px;font-size:12px;" class="form-input"
+            onchange="saveGeneralField('autonomous.resume_max_age_seconds',+this.value)">
         </div>
         <div class="settings-row" style="justify-content:space-between;">
           <div class="settings-label">${escHtml(t('max_engines_per_node')||'Max engines per node (1 = one at a time)')}</div>

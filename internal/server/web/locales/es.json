@@ -1598,6 +1598,8 @@
   "max_engines_per_node": "Máx. motores por nodo (1 = uno a la vez)",
   "settings_max_concurrent_tasks": "Máx. tareas simultáneas por autómata (1 = una a la vez)",
   "settings_max_concurrent_tasks_hint": "Valor predeterminado de todo el daemon. La configuración propia de un autómata lo sustituye.",
+  "settings_resume_max_age": "Reanudar autómatas obsoletos al inicio solo si estuvieron activos dentro de (s; 0 = nunca, -1 = siempre)",
+  "settings_resume_max_age_hint": "Se aplica cuando el daemon se reinicia: un autómata que quedó en ejecución se reanuda solo si su última actividad es anterior a este número de segundos. 0 = nunca reanudar automáticamente, -1 = sin límite de antigüedad (un directorio de proyecto ausente impide la reanudación de todas formas). Un PRD que no se reanuda queda aparcado como bloqueado con una razón y genera una alerta para el operador.",
   "settings_capacity_wait_timeout": "Capacity wait timeout (sec, 0=4h)",
   "settings_ci_watch_timeout": "CI watch timeout (sec, 0=25m)",
   "settings_block_on_file_drift": "Bloquear ante deriva de archivos",

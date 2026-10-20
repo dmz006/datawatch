@@ -1598,6 +1598,8 @@
   "max_engines_per_node": "Max. Engines pro Node (1 = nacheinander)",
   "settings_max_concurrent_tasks": "Max. gleichzeitige Aufgaben pro Automat (1 = nacheinander)",
   "settings_max_concurrent_tasks_hint": "Daemon-weiter Standardwert. Die eigene Einstellung eines Automaten hat Vorrang.",
+  "settings_resume_max_age": "Abgelaufene Automaten beim Start nur fortsetzen, wenn zuletzt aktiv innerhalb von (Sek.; 0 = nie, -1 = immer)",
+  "settings_resume_max_age_hint": "Gilt beim Neustart des Daemons: Ein Automat, der bei dem Neustart noch lief, wird nur fortgesetzt, wenn seine jüngste Aktivität nicht länger als diese Anzahl Sekunden zurückliegt. 0 = nie automatisch fortsetzen, -1 = kein Alterslimit (fehlende Projektdatenordner verhindern die Fortsetzung trotzdem). PRDs, die nicht automatisch fortgesetzt werden, werden mit einem Grund blockiert und lösen eine Benachrichtigung aus.",
   "settings_capacity_wait_timeout": "Capacity wait timeout (sec, 0=4h)",
   "settings_ci_watch_timeout": "CI watch timeout (sec, 0=25m)",
   "settings_block_on_file_drift": "Bei fremden Dateiänderungen blockieren",

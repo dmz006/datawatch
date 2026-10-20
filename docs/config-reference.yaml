@@ -867,6 +867,14 @@ autonomous:
   # task at a time (sequential). Tasks of different Automata are not limited
   # by this key.
   max_concurrent_tasks: 1
+  # How recent an Automaton's last activity must be for the daemon to resume
+  # it automatically at startup (seconds). A PRD left in "running" state when
+  # the daemon stopped is resumed on boot only if its newest activity is
+  # within this many seconds — 0 = never auto-resume, -1 = no age limit.
+  # The resume also always requires the PRD's project directory to still
+  # exist; a missing directory parks the PRD as blocked (with a reason) and
+  # raises an operator alert either way. Default 3600.
+  # resume_max_age_seconds: 3600
   # Number of local-model sessions one compute node runs at once. Default 1;
   # values below 1 are clamped to 1. The cap applies only to sessions whose
   # model runs on a local engine on that node (pi, pi-prompt, ollama, opencode,
