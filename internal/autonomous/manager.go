@@ -849,7 +849,7 @@ func (m *Manager) resetInProgressTasksForResume(prd *PRD) {
 			At:    now,
 			Kind:  verifyingResolution,
 			Actor: "autonomous",
-			Note: fmt.Sprintf("boot-resume resolved %d orphaned verifying task(s) to completed (recorded ok verification) and re-queued %d for retry", completedCount, requeuedCount),
+			Note:  fmt.Sprintf("boot-resume resolved %d orphaned verifying task(s) to completed (recorded ok verification) and re-queued %d for retry", completedCount, requeuedCount),
 		})
 	}
 	if err := m.store.SavePRD(prd); err != nil {
@@ -3615,7 +3615,7 @@ func (m *Manager) reconcileStuckTasks() {
 				At:    now,
 				Kind:  verifyingResolution,
 				Actor: "autonomous",
-				Note: fmt.Sprintf("boot pass resolved %d orphaned verifying task(s) to completed (recorded ok verification) and re-queued %d for retry", verdictCompleted, verdictRequeued),
+				Note:  fmt.Sprintf("boot pass resolved %d orphaned verifying task(s) to completed (recorded ok verification) and re-queued %d for retry", verdictCompleted, verdictRequeued),
 			})
 		}
 		if err := m.store.SavePRD(prd); err != nil {
