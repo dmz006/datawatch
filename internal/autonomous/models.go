@@ -184,8 +184,13 @@ type PRD struct {
 	// default. Per-task value takes precedence.
 	PermissionMode string    `json:"permission_mode,omitempty"`
 	Status         PRDStatus `json:"status"`
-	CreatedAt      time.Time `json:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
+	// B165 — plain-English reason the PRD was parked (e.g. by the
+	// boot-resume gate: stale activity, removed project directory,
+	// resume disabled). Set alongside Status = PRDBlocked so the
+	// operator sees WHY without digging through daemon logs.
+	BlockedReason     string    `json:"blocked_reason,omitempty"`
+	CreatedAt         time.Time `json:"created_at"`
+	UpdatedAt         time.Time `json:"updated_at"`
 	// BL451 — optimistic-concurrency revision, bumped by Store.SavePRD
 	// (and Store.CommitPRDIfRev) on every save. 0 for PRDs persisted
 	// before BL451; load tolerates the missing field.
@@ -947,6 +952,11 @@ type LoopStatus struct {
 	// model does not pair with the backend it is used with, so it will not
 	// reach its session. See PairingWarnings.
 	Warnings []string `json:"warnings,omitempty"`
+
+	// B165 — boot-resume gate decisions (resumed and parked), most recent
+	// boot-resume scan at the end. Empty when boot-resume has never
+	// decided anything for a PRDRunning PRD. See BootResumeEntry.
+	BootResume []BootResumeEntry `json:"boot_resume,omitempty"`
 }
 
 // CIWatchResult is an automaton's own record of whether the CI runs for

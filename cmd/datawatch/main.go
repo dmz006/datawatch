@@ -5585,6 +5585,11 @@ Verify whether the diff plausibly implements the spec. Reply with STRICT JSON on
 			// executor sessions (prevents "connection refused" on daemon restart).
 			aAPI.SetServerReadyCh(httpServer.ReadyCh())
 			aAPI.SetExecutors(autonomousSpawn, autonomousVerify)
+			// B165 — boot-resume gate: alert the operator when a PRD is
+			// parked (stale work or removed project dir) instead of resumed.
+			amgr.SetAlertFn(func(title, body string) {
+				_ = alertStore.AddSystem(alertspkg.LevelWarn, title, body)
+			})
 			// PRD/automata watchdog — scans every 60 s for autonomous task
 			// sessions that have been in a non-terminal state for >5 min and
 			// whose scrollback contains an SSE stall pattern. Kills the

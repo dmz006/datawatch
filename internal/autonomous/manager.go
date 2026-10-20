@@ -317,6 +317,11 @@ func DefaultConfig() Config {
 		ContentAutoFixEnabled:   true,
 		BlockOnFileDrift:        false, // opt-in strict drift enforcement
 		AutoFixSkipApproval:     true,
+		// B165 — boot-resume default limit: 1 h. 0 and -1 are meaningful
+		// values (never resume / no limit), so an unset value must land
+		// here, not at the zero value — mirrors the config-load default
+		// (internal/config resume_max_age) that main.go's bridge picks up.
+		ResumeMaxAgeSeconds: bootResumeDefaultMaxAgeSeconds,
 	}
 }
 
@@ -481,6 +486,15 @@ type Manager struct {
 	// doesn't exist yet — this is a placeholder seam, not a finished
 	// contract.
 	councilApprovalFn func(ctx context.Context, prd *PRD, t *Task) (approved bool, note string, err error)
+
+	// B165 — boot-resume gate bookkeeping (boot_resume_gate.go).
+	// bootResumeReport: append-only log of every boot-resume decision
+	// (resumed or parked) since Manager construction; guarded by mu.
+	// Surfaced on LoopStatus.BootResume + Manager.BootResumeReport.
+	// alertFn: operator-alert hook fired when boot-resume parks a PRD;
+	// wired in main.go to the daemon's alert store, nil = log-only.
+	bootResumeReport []BootResumeEntry
+	alertFn          func(title, body string)
 
 	// BL221 (v6.2.0) Phase 4 — type registry
 	typesMu sync.Mutex
@@ -3423,6 +3437,7 @@ func (m *Manager) Status() LoopStatus {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	st := m.status
+	st.BootResume = append([]BootResumeEntry(nil), m.bootResumeReport...)
 	st.Running = m.ctx != nil && m.ctx.Err() == nil
 	verdictCounts := map[string]int{}
 	for _, p := range m.store.ListPRDs() {
