@@ -262,8 +262,16 @@ func (s *Server) handleAutonomousPRDCreate(_ context.Context, req mcpsdk.CallToo
 		"effort":      req.GetString("effort", ""),
 	}
 	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds", body)
+	return llmSetterResult(out, err)
+}
+
+// llmSetterResult turns a proxied LLM setter response into a tool result.
+// A refusal from the REST handler (non-2xx, such as a model/backend
+// pairing the backend cannot serve) becomes a tool error carrying the REST
+// error text, so the caller sees a failure rather than a success.
+func llmSetterResult(out []byte, err error) (*mcpsdk.CallToolResult, error) {
 	if err != nil {
-		return nil, err
+		return mcpsdk.NewToolResultError(err.Error()), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -749,10 +757,7 @@ func (s *Server) handleAutonomousPRDSetLLM(_ context.Context, req mcpsdk.CallToo
 		return nil, err
 	}
 	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/set_llm", body)
-	if err != nil {
-		return nil, err
-	}
-	return textOK(string(out)), nil
+	return llmSetterResult(out, err)
 }
 
 // prdSetLLMBody builds the PRD-level set_llm proxy body with per-field
@@ -795,10 +800,7 @@ func (s *Server) handleAutonomousPRDSetStoryLLM(_ context.Context, req mcpsdk.Ca
 		"actor":    "operator",
 	})
 	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/set_story_llm", body)
-	if err != nil {
-		return nil, err
-	}
-	return textOK(string(out)), nil
+	return llmSetterResult(out, err)
 }
 
 func (s *Server) toolAutonomousPRDSetTaskLLM() mcpsdk.Tool {
@@ -826,10 +828,7 @@ func (s *Server) handleAutonomousPRDSetTaskLLM(_ context.Context, req mcpsdk.Cal
 		body = gb
 	}
 	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/set_task_llm", body)
-	if err != nil {
-		return nil, err
-	}
-	return textOK(string(out)), nil
+	return llmSetterResult(out, err)
 }
 
 func (s *Server) toolAutonomousPRDSetTaskProjectDir() mcpsdk.Tool {
@@ -949,10 +948,7 @@ func (s *Server) handleAutonomousPRDSetVerificationLLM(_ context.Context, req mc
 // an absent key leaves the field unchanged and "" clears it.
 func (s *Server) proxyVerificationLLM(req mcpsdk.CallToolRequest, action, unitKey string) (*mcpsdk.CallToolResult, error) {
 	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+req.GetString("id", "")+"/"+action, verificationLLMBody(req, unitKey))
-	if err != nil {
-		return nil, err
-	}
-	return textOK(string(out)), nil
+	return llmSetterResult(out, err)
 }
 
 func verificationLLMBody(req mcpsdk.CallToolRequest, unitKey string) []byte {

@@ -21,6 +21,7 @@ package server
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"log"
 	"math"
@@ -243,7 +244,7 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			}
 			prd, err := s.autonomousMgr.CreatePRD(req.Spec, req.ProjectDir, req.Backend, req.Model, req.Effort)
 			if err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
+				http.Error(w, err.Error(), modelBackendErrStatus(err, http.StatusBadRequest))
 				return
 			}
 			// v5.26.19 — patch profiles after create so the
@@ -1399,14 +1400,14 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		if anyLegacy {
 			updated, err = s.autonomousMgr.SetPRDLLM(id, req.Backend, req.Effort, req.Model, req.DecompositionProfile, req.DecompositionModel, req.Actor)
 			if err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
+				http.Error(w, err.Error(), modelBackendErrStatus(err, http.StatusBadRequest))
 				return
 			}
 		}
 		if hasGuardrail {
 			updated, err = s.autonomousMgr.SetPRDGuardrailLLM(id, req.GuardrailBackend, req.GuardrailModel, req.Actor)
 			if err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
+				http.Error(w, err.Error(), modelBackendErrStatus(err, http.StatusBadRequest))
 				return
 			}
 		}
@@ -1460,7 +1461,7 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		}
 		updated, err := s.autonomousMgr.SetStoryLLM(id, req.StoryID, req.Backend, req.Effort, req.Model, req.Actor)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			http.Error(w, err.Error(), modelBackendErrStatus(err, http.StatusBadRequest))
 			return
 		}
 		s.audit(r.Context(), "set_story_llm", "automaton", id, map[string]any{"story_id": req.StoryID, "backend": req.Backend}) // GH#201 Phase 4
@@ -1517,14 +1518,14 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		if hasLegacy || !hasGuardrail {
 			updated, err = s.autonomousMgr.SetTaskLLM(id, req.TaskID, req.Backend, req.Effort, req.Model, req.Actor)
 			if err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
+				http.Error(w, err.Error(), modelBackendErrStatus(err, http.StatusBadRequest))
 				return
 			}
 		}
 		if hasGuardrail {
 			updated, err = s.autonomousMgr.SetTaskGuardrailLLM(id, req.TaskID, req.GuardrailBackend, req.GuardrailModel, req.Actor)
 			if err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
+				http.Error(w, err.Error(), modelBackendErrStatus(err, http.StatusBadRequest))
 				return
 			}
 		}
@@ -1620,7 +1621,7 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			updated, err = s.autonomousMgr.SetPRDVerificationLLM(id, req.VerificationBackend, req.VerificationModel, req.VerificationEffort, req.Actor)
 		}
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
+			http.Error(w, err.Error(), modelBackendErrStatus(err, http.StatusBadRequest))
 			return
 		}
 		for k, v := range map[string]*string{
@@ -2926,6 +2927,16 @@ func guardrailLLMKeys(body []byte, legacyKeys ...string) (hasGuardrail, hasLegac
 // validGuardrailBackend (BL416) validates a non-empty guardrail_backend
 // against the inference registry (BL308 pattern), writing a 400 and
 // returning false when it is unknown.
+// modelBackendErrStatus is the HTTP status for an autonomous LLM setter
+// error. A refused model/backend pairing is a client error (400); any
+// other error keeps the status the calling handler already uses.
+func modelBackendErrStatus(err error, fallback int) int {
+	if errors.Is(err, autonomous.ErrModelBackendMismatch) {
+		return http.StatusBadRequest
+	}
+	return fallback
+}
+
 func (s *Server) validGuardrailBackend(w http.ResponseWriter, backend *string) bool {
 	if backend == nil || *backend == "" || s.inferenceReg == nil {
 		return true
