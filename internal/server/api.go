@@ -632,6 +632,12 @@ type AutonomousAPI interface {
 	// clean_restart — as ResetTask, and cleanRestart=true makes the next
 	// attempt skip the restore of preserved attempt work.
 	ResetTaskWithOptions(prdID, taskID, actor string, force, cleanRestart bool) (any, error)
+	// Re-run the PRD-completion "rules-review" guardrail for a PRDBlocked
+	// PRD whose work is fully done: the verdict and a
+	// "guardrail_rejudge" Decision for the acting operator are recorded
+	// in the decision log, a pass unblocks the PRD, a block keeps it
+	// blocked, and a no-verdict failure returns an error.
+	RejudgeCompletionGuardrail(prdID, actor string) (any, error)
 	// v8.36.6 — repair DependsOn titles to real IDs on an existing PRD.
 	RepairDependsOn(prdID, actor string) (any, error)
 	// BL382 — cancel an individual story or task without cancelling the whole PRD.

@@ -1098,6 +1098,36 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		s.audit(r.Context(), "reset_task", "automaton", id, map[string]any{"task_id": req.TaskID, "force": req.Force, "clean_restart": req.CleanRestart}) // GH#201 Phase 4
 		prd, _ := updated.(*autonomous.PRD)
 		s.writeAutonomousResult(w, r, prd, req.TaskID, "", "task reset to pending; the executor will retry it")
+	case "rejudge":
+		// Re-run the PRD-completion "rules-review" guardrail for a
+		// PRDBlocked PRD whose work is fully done, on the operator's
+		// behalf. The guardrail verdict and a "guardrail_rejudge"
+		// Decision are recorded on the PRD's decision log; a pass
+		// unblocks the PRD, a block keeps it blocked. Body: {actor?}.
+		// No Run() afterwards — a pass ends the PRD, not a retry of any
+		// task, and a block waits for operator action again.
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+			return
+		}
+		var req struct {
+			Actor string `json:"actor"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		if req.Actor == "" {
+			req.Actor = "operator"
+		}
+		updated, err := s.autonomousMgr.RejudgeCompletionGuardrail(id, req.Actor)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		s.audit(r.Context(), "rejudge", "automaton", id, map[string]any{"actor": req.Actor}) // GH#201 Phase 4
+		prd, _ := updated.(*autonomous.PRD)
+		s.writeAutonomousResult(w, r, prd, "", "", "rejudge complete; the guardrail verdict and outcome are in the PRD's decision log")
 	case "repair_depends_on":
 		// v8.36.6 — one-time repair for PRDs whose SetStories call predates
 		// the v8.36.5 title->ID DependsOn fix (see Store.RepairDependsOn).
