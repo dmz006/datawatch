@@ -47,3 +47,30 @@ func validateModelForBackend(backend, model string) error {
 		return nil
 	}
 }
+
+// preflightModelBackend checks every non-completed task of a PRD against the
+// backend and model that dispatch would resolve for it, so Run can refuse to
+// start a PRD that would spawn a mismatched pair. The resolution is the same
+// resolveTaskBackendModel call the dispatch loop makes. It returns an error
+// wrapping ErrModelBackendMismatch that names each offending task, or nil.
+func (m *Manager) preflightModelBackend(prdID string, prd *PRD) error {
+	var bad []string
+	for si := range prd.Story {
+		story := &prd.Story[si]
+		for ti := range story.Tasks {
+			t := &story.Tasks[ti]
+			if t.Status == TaskCompleted {
+				continue
+			}
+			backend, model := resolveTaskBackendModel(t, story, prd, m.cfg.ExecutionBackend)
+			if err := validateModelForBackend(backend, model); err != nil {
+				bad = append(bad, fmt.Sprintf("task %s (backend %q, model %q): %v", t.ID, backend, model, err))
+			}
+		}
+	}
+	if len(bad) == 0 {
+		return nil
+	}
+	return fmt.Errorf("prd %q not started: %w in %d task(s): %s",
+		prdID, ErrModelBackendMismatch, len(bad), strings.Join(bad, "; "))
+}

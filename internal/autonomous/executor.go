@@ -168,6 +168,13 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 		m.mu.Unlock()
 		return err
 	}
+	// Model/backend preflight — refuse to start a PRD whose task would spawn
+	// a pair that cannot run (e.g. pi-prompt + bare claude-haiku-5-5). The
+	// PRD stays approved and nothing is dispatched.
+	if err := m.preflightModelBackend(prdID, prd); err != nil {
+		m.mu.Unlock()
+		return err
+	}
 	isFirstRun := prd.Status == PRDApproved || prd.Status == PRDActive
 	runOld := prd.Status
 	prd.Status = PRDRunning
@@ -987,6 +994,18 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			// per-task → per-story → per-PRD → cfg.ExecutionBackend → global session.llm_backend.
 			story := findStory(prd, t.StoryID)
 			backend, model := resolveTaskBackendModel(t, story, prd, m.cfg.ExecutionBackend)
+			// Backstop for the Run preflight: never spawn an invalid pair.
+			if merr := validateModelForBackend(backend, model); merr != nil {
+				mismatch := fmt.Errorf("task %s not spawned: %w", t.ID, merr)
+				log.Printf("[autonomous] prd=%s task=%s model/backend mismatch, not spawning: %v", prd.ID, t.ID, merr)
+				oldStatus := t.Status
+				t.Status = TaskFailed
+				t.Error = mismatch.Error()
+				if m.store.SaveTask(t) == nil {
+					m.emitTaskStatus(prd, t, oldStatus, nil, nil)
+				}
+				return mismatch
+			}
 			effort := t.Effort
 			if effort == "" && story != nil {
 				effort = story.Effort
