@@ -456,3 +456,66 @@ This slice shipped the rest of the BL463 contract on this branch (dd8c0001):
    `docs/testing-tracker.md` records the live validations above.
 4. **Not included (tracked above, out of this slice):** BL467 bridge
    owner-binding, REST→MCP error-shape sweep, CLI `session scope`.
+
+**Final verification run (release finalization, 2026-10-20):**
+`go build ./...` clean; `go test ./...` — 5342 passed / 0 failed across 85
+packages; `node --test internal/server/web/*.test.js` — 260 passed / 0 failed;
+`scripts/check-no-internal-refs.sh` — clean on user-facing surfaces;
+## Phase Completion Checklist (per AGENT.md, for the v9.5.29 slice)
+
+- [x] **Functionality implemented** — smoke §7r suite, `get_my_scope` + REST mirror,
+  MCP failure contract (isError + named + status/body), stderr/stdout split, docs.
+- [x] **Unit tests added/passing** — `internal/mcp/errors_test.go`,
+  `internal/mcp/error_parity_test.go`, repro tests, `drop_repro_test.go`, smoke probes.
+- [x] **Live/smoke test** — `scripts/release-smoke.sh` §7r +
+  `scripts/release-smoke-stdio-mcp.sh` run live against a running daemon (fallback
+  path + real 404 with body) and in a sandbox harness (`resolved_via=hint`, fake REST
+  404); recorded in `docs/testing-tracker.md` (PASS 2026-10-20).
+- [x] **`go test ./...` + `node --test internal/server/web/*.test.js`** — re-run at
+  release finalization (see the implementation log's final run note).
+- [x] **General documentation checklist (8 items)** —
+  - [x] `CHANGELOG.md` v9.5.29 (all three legs + reliability-bar statement)
+  - [x] `docs/config-reference.yaml` — **N/A:** no new config keys; keepalive
+        (10 s), timeout profile, and the `DATAWATCH_MCP_DEBUG` env var are runtime
+        behavior, not config; the env var is documented in `docs/operations.md`
+        (MCP transport diagnostics), where operator log-channel notes live
+  - [x] `docs/operations.md` — new "MCP transport diagnostics" section
+        (stream observation, keepalive, timeout profile, verbose log, stdio log/stderr
+        split, failed handlers no longer kill bridges)
+  - [x] `README.md` — **N/A:** the README does not enumerate individual MCP tools
+        (it links `docs/mcp.md`/`docs/howto/mcp-tools.md`); the new tool + REST route
+        are both covered by those linked surfaces, which are up to date
+  - [x] Doc index (`README.md`/`docs/README.md`) — **N/A for new files:**
+        `docs/mcp.md`, `docs/cursor-mcp.md`, `docs/datawatch-definitions.md`,
+        `docs/operations.md` are existing, already-indexed files this phase updated;
+        the findings doc sits under `docs/plans/` which is indexed as a backlog area
+  - [x] `docs/testing-tracker.md` — §7r live lines + failure-contract lines +
+        `GET /api/sessions/self/scope` (new REST endpoint)
+  - [x] No leaked tracker IDs — this phase's new docs use plain language on the
+        must-not-contain surfaces (`datawatch-definitions.md`, `operations.md`,
+        `README.md` untouched); `scripts/check-no-internal-refs.sh` runs as part of
+        release smoke (and was clean at finalization)
+  - [x] Parity surface — updated above (CLI deferred to Phase 2; mobile/app surfaces
+        unaffected — see below)
+- [x] **Conditional docs** — `docs/datawatch-definitions.md` updated (the
+  self-session block gains `get_my_scope` + the REST scope route); `docs/flow/*.md`
+  and `docs/howto/*.md` **N/A:** no new operator workflow or data-flow concept was
+  introduced — one read-only tool, one read-only REST mirror, diagnostic logging.
+- [x] **Mobile-Parity Rule** — **N/A with note:** nothing the mobile app parses
+  changed — no PWA layout/behavior change, no REST/WS route was renamed, re-shaped or
+  removed; the only new REST surface is *additive*
+  (`GET /api/sessions/self/scope`) and mobile-app parity for a *self-scope* query is
+  not a datawatch-app use case (it is a session-side identification call, same class
+  as `GET /api/sessions/self`, which is already not app-parsed for scope); MCP-side
+  failure-message changes reach AI-agent clients only. No `datawatch-app` issue
+  filed, per this task's rule ("file the issue only if a REST/WS contract changed").
+- [x] **Localization Rule** — **N/A:** no `app.js` / locale-bundle changes in this
+  slice (no PWA strings touched).
+- [x] **Version bumped in both files** — 9.5.28 → 9.5.29 via
+  `scripts/set-release-version.sh`, `cmd/datawatch/main.go` and
+  `internal/server/api.go` in lockstep; CHANGELOG `## v9.5.29` heading present.
+- [x] **Plan status lines current** — this doc's top Status line, the Version/release
+  note (superseded-in-place by the implementation log), and the implementation log
+  all reflect the shipped slice;
+  `docs/plans/README.md` BL463 row updated in place (deferred items noted), since
+  Phase 2 items make this **partially completed**, not fully moved-to-completed.
