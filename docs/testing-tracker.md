@@ -27,6 +27,27 @@ New endpoint and MCP tool. Re-runs the PRD-completion "rules-review" guardrail f
 
 ---
 
+## Service worker activate guard — `shouldNavigateOnActivate` in `internal/server/web/sw.js`
+
+On a real cache-name upgrade the new SW must force every controlled window to re-navigate so
+installed PWA tabs drop the stale cached app.js. But `activate` also re-runs on a no-op
+re-activation (browser re-activates the same SW on restart with no cache change) — the guard keeps
+that path from needlessly churning open tabs: `clients.claim()` is still called, but the
+`matchAll`/`navigate` loop is skipped when no stale cache key exists. The pure guard is unit-tested
+and the `activate` listener is driven end-to-end with a stubbed `self` in `sw.test.js`; the
+operator-visible double-load symptom on daemon restart was then verified live in headless Chrome
+(CDP, `live-sw-check/` below).
+
+| Test Condition | Unit | Live | Test ID / Location | Notes |
+|---|---|---|---|---|
+| Guard: no keys, or only the current key → navigate skipped; current + stale key(s) → navigate; non-array input tolerated | **Yes** | No | `shouldNavigateOnActivate: no keys at all is a no-op re-activation`, `...only the current cache present...`, `...current plus a stale key is a genuine upgrade`, `...multiple stale keys are a genuine upgrade`, `...non-array input is treated as no keys` in `internal/server/web/sw.test.js` | 5 pure-guard tests, `node --test` |
+| `activate`: stale cache present → stale caches deleted, `claim()` once, every window navigated exactly once | **Yes** | No | `activate: stale cache present → stale deleted, claim called, every window navigated once` in `internal/server/web/sw.test.js` | Real `activate` listener, stubbed `self`/`caches`/`clients`; also `activate: one window navigate rejecting does not abort the others or the handler` |
+| `activate`: no-op re-activation (only current cache, or no caches) → `claim()` still called, **no** navigate | **Yes** | No | `activate: only the current cache present (no-op) → claim called, no navigate`, `activate: no caches at all → claim called, no navigate` in `internal/server/web/sw.test.js` | `matchAll` skipped on the no-op path |
+| Live: daemon-restart / reload under an already-activated current-version SW → exactly one document load, no spurious reload | No | **Yes** | `live-sw-check/`: `sw-live.mjs` (Phase B) + `RESULTS.md`; daemon `live-sw-check/config.yaml` (port 18491), log in `daemon-b.log` | Headless Chrome 155.0.8059.39 over CDP (puppeteer-core was absent); CDP `Page.loadEventFired`=1, `navigation entries`=[navigate], `reloadCount` 0, hook log empty. Phase A (fresh install) showed the one-time first-load SW-takeover reload that happens independently of the guard — not a guard-driven navigate |
+| Live: genuine cache-name upgrade (new SW, stale cache present) → exactly one SW-driven reload, stale cache purged, new SW controls the page | No | **Yes** | `live-sw-check/RESULTS.md` (Phase C: `sw.js` `CACHE_NAME` bumped to `...-51-livecheck`, daemon rebuilt + restarted) | CDP `frameNavigated` once at +2.1s after the SW update burst (`reloadCount` 1); `caches` ended as [bumped key] only (stale deleted); page-script hook never hit — reload is the guard's `win.navigate`, not app JS. `sw.js` then reverted and rebuilt |
+
+---
+
 ## Daemon restart safety (live, opt-in) — BL462
 
 Live companion to the BL462 restart audit (`docs/plans/bl462-restart-audit-findings.md`).
