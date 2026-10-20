@@ -779,6 +779,19 @@ type Task struct {
 	// judgment-only guardrail behavior is the fallback. Inert today:
 	// nothing writes or reads it yet.
 	VerificationScript string `json:"verification_script,omitempty"`
+	// VerificationScriptReason — B124 exemption: a task may legitimately
+	// have no verification script (e.g. a pure-config or documentation
+	// change where a script would only re-assert trivially true things).
+	// When such a task exists in a plan, the decomposer / editor sets this
+	// field to state explicitly WHY no VerificationScript is attached
+	// (e.g. "config-only change; no executable surface to verify"). The
+	// structural plan check (CheckPlanStructure) flags any task that has
+	// neither a VerificationScript nor a VerificationScriptReason, so an
+	// unexplained absence is a finding while an explained one passes.
+	// Optional (omitempty); setting it does not change any existing
+	// VerificationScript behavior — it is purely metadata consumed by the
+	// structural check and surfaced in reports.
+	VerificationScriptReason string `json:"verification_script_reason,omitempty"`
 }
 
 // RecordAttemptCommit appends the deterministic commit sha recorded for a
