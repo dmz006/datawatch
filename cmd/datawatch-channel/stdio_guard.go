@@ -29,6 +29,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"runtime/debug"
 
@@ -69,8 +70,10 @@ func stdioToolPanicGuard(next server.ToolHandlerFunc) server.ToolHandlerFunc {
 //     the process.
 //
 // Panics inside toolCallWorker goroutines cannot be caught here; they are
-// covered by stdioToolPanicGuard.
-func stdioListenGuarded(srv *server.StdioServer, ctx context.Context, name string) (err error) {
+// covered by stdioToolPanicGuard. in/out are the concrete stdio pipes —
+// mcp-go v0.46.0 takes them explicitly (nil readers panic inside its
+// bufio.NewReader path).
+func stdioListenGuarded(srv *server.StdioServer, ctx context.Context, name string, in io.Reader, out io.Writer) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("mcp/stdio: RECOVERED panic escaping Listen (%s): %v\n%s", name, r, debug.Stack())
@@ -85,5 +88,5 @@ func stdioListenGuarded(srv *server.StdioServer, ctx context.Context, name strin
 			log.Printf("mcp/stdio: listener %s stopped with error: %v", name, err)
 		}
 	}()
-	return srv.Listen(ctx)
+	return srv.Listen(ctx, in, out)
 }

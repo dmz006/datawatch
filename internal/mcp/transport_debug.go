@@ -30,6 +30,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"io"
 	"net/http"
 	"os"
 	"runtime/debug"
@@ -77,9 +78,11 @@ func NewSSECloseObserver(w http.ResponseWriter, remote string) *sseCloseObserver
 	return &sseCloseObserver{w: w, lastWrite: time.Now()}
 }
 
-// Header / Write implement http.ResponseWriter pass-through with
-// observation: see sseCloseObserver doc.
+// Header / Write / WriteHeader implement http.ResponseWriter pass-through
+// with observation: see sseCloseObserver doc.
 func (o *sseCloseObserver) Header() http.Header { return o.w.Header() }
+
+func (o *sseCloseObserver) WriteHeader(statusCode int) { o.w.WriteHeader(statusCode) }
 
 func (o *sseCloseObserver) Write(p []byte) (int, error) {
 	n, err := o.w.Write(p)
@@ -87,18 +90,33 @@ func (o *sseCloseObserver) Write(p []byte) (int, error) {
 	return n, err
 }
 
-type sseFlusher interface{ Flush() error }
+type sseFlusher interface{ Flush() }
 
-// Flush captures flush errors — the mcp-go SSE main loop calls
-// flusher.Flush() and discards the result; we keep ours.
-func (o *sseCloseObserver) Flush() error {
+type sseFlushErrorer interface{ FlushError() error }
+
+// Flush implements http.Flusher (no return value, per the stdlib
+// interface) and forwards to the underlying writer's Flush. This
+// forwarding is what keeps the SSE byte stream on the wire; without it
+// net/http buffers response writes until ~4KB accumulate and a held
+// stream looks dead even though the server is writing into its own
+// buffer.
+//
+// The Go stdlib's concrete response type implements the flush error
+// separately (FlushError() on *http.response), so we pull it out here
+// and record it: mcp-go's SSE main loop discards both write and flush
+// errors, so keeping our own error view is the only way to attribute a
+// stream drop to a server-side write failure at close time.
+func (o *sseCloseObserver) Flush() {
 	f, ok := o.w.(sseFlusher)
 	if !ok {
-		return nil
+		return
 	}
-	err := f.Flush()
+	f.Flush()
+	var err error
+	if fe, ok2 := o.w.(sseFlushErrorer); ok2 {
+		err = fe.FlushError()
+	}
 	o.observe(0, err)
-	return nil
 }
 
 func (o *sseCloseObserver) observe(n int, err error) {
@@ -216,13 +234,14 @@ func timeoutStr(d time.Duration) string {
 // server/server.go:365) but is opt-in and was unregistered on every
 // datawatch entry point.
 func RegisterToolPanicRecovery(mcpSrv *server.MCPServer) {
-	guard := mcpToolPanicGuard()
-	_ = server.WithToolHandlerMiddleware(guard)(mcpSrv)
+	server.WithToolHandlerMiddleware(mcpToolPanicGuard())(mcpSrv)
 }
 
 // mcpToolPanicGuard returns the raw middleware so tests can run it
 // directly without constructing an MCPServer: it converts a panicking
-// handler into a JSON-RPC error result and recovers the process.
+// handler into a JSON-RPC error result and recovers the process. mcp-go
+// v0.46.0's WithToolHandlerMiddleware is option-style with no return
+// value — call it; do not assign.
 func mcpToolPanicGuard() server.ToolHandlerMiddleware {
 	return func(next server.ToolHandlerFunc) server.ToolHandlerFunc {
 		return func(ctx context.Context, req mcpsdk.CallToolRequest) (res *mcpsdk.CallToolResult, err error) {
@@ -243,7 +262,11 @@ func mcpToolPanicGuard() server.ToolHandlerMiddleware {
 // and ran inline in the Listen loop) and logs the exact reason the
 // listener stopped — the transport close-reason evidence stdio used to
 // leave behind only as a process-death signature.
-func GuardStdioListen(srv *server.StdioServer, ctx context.Context, name string) (err error) {
+//
+// in/out are the concrete stdio pipes: mcp-go v0.46.0's StdioServer.Listen
+// takes them as explicit arguments (nil readers used to panic inside its
+// bufio.NewReader path — pass os.Stdin/os.Stdout, never nil).
+func GuardStdioListen(srv *server.StdioServer, ctx context.Context, name string, in io.Reader, out io.Writer) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			log.Printf("mcp/stdio: RECOVERED panic escaping %s listener: %v\n%s", name, r, debug.Stack())
@@ -258,5 +281,5 @@ func GuardStdioListen(srv *server.StdioServer, ctx context.Context, name string)
 			log.Printf("mcp/stdio: listener %s stopped with error: %v", name, err)
 		}
 	}()
-	return srv.Listen(ctx)
+	return srv.Listen(ctx, in, out)
 }

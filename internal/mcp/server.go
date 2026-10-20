@@ -1346,7 +1346,7 @@ func (s *Server) ToolDocs() []ToolDoc {
 // dispatch path (tool panics inside queued handlers are covered by the
 // panic-recovery middleware) and logs why the listener stopped.
 func (s *Server) ServeStdio(ctx context.Context) error {
-	return GuardStdioListen(server.NewStdioServer(s.srv), ctx, "daemon")
+	return GuardStdioListen(server.NewStdioServer(s.srv), ctx, "daemon", os.Stdin, os.Stdout)
 }
 
 // ServeSSE starts an HTTP/SSE MCP server for remote AI clients.

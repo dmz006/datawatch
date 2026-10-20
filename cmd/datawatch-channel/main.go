@@ -141,7 +141,7 @@ the request will be forwarded to the user automatically.`),
 	// the whole bridge process and permanently dropped the session's MCP
 	// connection while the daemon stayed healthy. Recover and convert the
 	// panic into a JSON-RPC error result instead.
-	_ = server.WithToolHandlerMiddleware(stdioToolPanicGuard)(mcpSrv)
+	server.WithToolHandlerMiddleware(stdioToolPanicGuard)(mcpSrv)
 
 	bridge := &bridge{cfg: cfg, srv: mcpSrv}
 	bridgeRef = bridge
@@ -247,7 +247,7 @@ the request will be forwarded to the user automatically.`),
 		// synchronous dispatch path and logs exactly why the listener
 		// stopped — the transport close-reason evidence this bridge used to
 		// leave behind only as a process-death signature.
-		if err := stdioListenGuarded(server.NewStdioServer(mcpSrv), ctx, "bridge"); err != nil && err != context.Canceled {
+		if err := stdioListenGuarded(server.NewStdioServer(mcpSrv), ctx, "bridge", os.Stdin, os.Stdout); err != nil && err != context.Canceled {
 			fmt.Fprintf(os.Stderr, "[datawatch-channel] MCP stdio: %v\n", err)
 		}
 		stop()
