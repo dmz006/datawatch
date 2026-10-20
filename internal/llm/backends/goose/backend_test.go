@@ -89,7 +89,7 @@ func TestPromptBackendLaunch_LongTaskGoesThroughScratchFile(t *testing.T) {
 	// Cleanup must be scheduled before the completion echo.
 	rmIdx := strings.Index(cmd, "rm -f '"+path+"'")
 	echoIdx := strings.Index(cmd, "DATAWATCH_COMPLETE")
-	if !(rmIdx >= 0 && rmIdx < echoIdx) {
+	if rmIdx < 0 || rmIdx >= echoIdx {
 		t.Errorf("rm -f cleanup must come before the DATAWATCH_COMPLETE echo, got: %.400s", cmd)
 	}
 	if !strings.HasSuffix(cmd, "echo 'DATAWATCH_COMPLETE: goose done'") {

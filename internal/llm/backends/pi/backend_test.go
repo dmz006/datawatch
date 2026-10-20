@@ -178,7 +178,7 @@ func TestPromptBackend_SetModelSatisfiesSessionManagerDuckType(t *testing.T) {
 	// internal/session/manager.go type-asserts against this exact shape
 	// (interface{ SetModel(string) }) to apply per-task/story/PRD model
 	// overrides — same mechanism opencode-acp and goose use.
-	var b llm.Backend = NewPrompt("")
+	b := NewPrompt("")
 	if _, ok := b.(interface{ SetModel(string) }); !ok {
 		t.Error("PromptBackend must satisfy interface{ SetModel(string) } for the session manager's model-override path")
 	}
@@ -296,7 +296,7 @@ func TestBackend_SetSessionName(t *testing.T) {
 }
 
 func TestBackend_SetModelSatisfiesSessionManagerDuckType(t *testing.T) {
-	var b llm.Backend = New("")
+	b := New("")
 	if _, ok := b.(interface{ SetModel(string) }); !ok {
 		t.Error("Backend must satisfy interface{ SetModel(string) } for the session manager's model-override path")
 	}
