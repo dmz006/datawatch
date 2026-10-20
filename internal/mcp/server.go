@@ -51,6 +51,7 @@ import (
 
 	"github.com/dmz006/datawatch/internal/acme"
 	"github.com/dmz006/datawatch/internal/alerts"
+	"github.com/dmz006/datawatch/internal/channel"
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/federation"
 	dwserver "github.com/dmz006/datawatch/internal/server"
@@ -850,6 +851,8 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolDashboardCardDelete(), tracked(s.handleDashboardCardDeleteMCP))
 	// BL349 — self-session discovery.
 	mcpSrv.AddTool(s.toolGetMySessionID(), tracked(s.handleGetMySessionID))
+	// BL463 — self-scope + isolation surface (superset of BL349).
+	mcpSrv.AddTool(s.toolGetMyScope(), tracked(s.handleGetMyScope))
 	// BL350 — orphaned sessions listing.
 	mcpSrv.AddTool(s.toolListOrphanedSessions(), tracked(s.handleListOrphanedSessions))
 
@@ -1292,6 +1295,7 @@ func (s *Server) ToolDocs() []ToolDoc {
 		{s.toolAutomationDelete, "automation_delete"},
 		// BL349 — self-session discovery
 		{s.toolGetMySessionID, "get_my_session_id"},
+		{s.toolGetMyScope, "get_my_scope"},
 		// BL350 — orphan lineage listing
 		{s.toolListOrphanedSessions, "list_orphaned_sessions"},
 	}
@@ -3155,6 +3159,76 @@ func (s *Server) handleGetMySessionID(_ context.Context, req mcpsdk.CallToolRequ
 		}
 	}
 	return mcpsdk.NewToolResultText("No channel-ready active session found. Set the CLAUDE_SESSION_ID env var or pass hint=<id>."), nil
+}
+
+// BL463 — get_my_scope (self-scope + isolation surface; superset of BL349
+// get_my_session_id). Answers "what is my scope?" from inside the calling
+// session: identity, the MCP server name its channel was actually
+// registered under (per-session user-scope name), the shared/global
+// .mcp.json entry name, host-vs-container mode, project/tmux identity,
+// channel readiness, and the set of every other session's MCP names — so
+// a session can confirm its own name is distinct from every peer's (see
+// docs/plans/2026-10-20-bl463-mcp-drop-findings.md and the BL467 race at
+// docs/plans/2026-10-16-mcp-bridge-registration-race.md).
+
+func (s *Server) toolGetMyScope() mcpsdk.Tool {
+	return mcpsdk.NewTool("get_my_scope",
+		mcpsdk.WithDescription("Describe the calling datawatch session's own scope: session id, full id, hostname, state, mode (host vs container/agent), project dir, tmux session, the MCP server name its channel is registered under, the shared/global .mcp.json entry name, channel readiness, and every other session with its own MCP server name, so you can confirm yours is distinct from all peers and never use one of theirs. Read-only superset of get_my_session_id."),
+		mcpsdk.WithString("hint",
+			mcpsdk.Description("Optional session id (short or full) to resolve as self. Without hint: resolves via the calling session's own in-band scope credential when available, else the channel-ready active session (same fallback as get_my_session_id).")),
+		mcpsdk.WithReadOnlyHintAnnotation(true),
+	)}
+
+func (s *Server) handleGetMyScope(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	all := s.manager.ListSessions()
+
+	var sess *session.Session
+	var resolvedVia string
+
+	hint := req.GetString("hint", "")
+	if hint != "" {
+		cand, err := s.resolveSession(hint)
+		if err != nil {
+			return mcpsdk.NewToolResultText(fmt.Sprintf("Error: %v", err)), nil
+		}
+		if cand == nil {
+			return mcpsdk.NewToolResultText(fmt.Sprintf("Error: session %q not found", hint)), nil
+		}
+		sess, resolvedVia = cand, "hint"
+	} else {
+		// 1) In-band caller identity (HLLM-004: POST /api/mcp/call
+		//    authenticated by a session token stashes the FullID on ctx) —
+		//    authoritative when present.
+		if callerID, ok := s.scopedCallerSessionID(ctx); ok {
+			if cand, _ := s.resolveSession(callerID); cand != nil {
+				sess, resolvedVia = cand, "caller-scope"
+			}
+		}
+		// 2) Fallback — the same channel-ready/active rule as
+		//    get_my_session_id and GET /api/sessions/self (flagged as such
+		//    in resolved_via so the first-come ambiguity is visible, not
+		//    silent — BL463/BL467).
+		if sess == nil {
+			for _, cand := range all {
+				if cand.ChannelReady && (cand.State == session.StateRunning || cand.State == session.StateWaitingInput) {
+					sess, resolvedVia = cand, "channel-ready-fallback"
+					break
+				}
+			}
+		}
+	}
+
+	if sess == nil {
+		return mcpsdk.NewToolResultText("Error: no self-scope resolved — pass hint=<session id>, or call from inside a session over its scoped channel."), nil
+	}
+
+	scope := channel.BuildSelfScope(sess, all)
+	scope.ResolvedVia = resolvedVia
+	out, err := json.MarshalIndent(scope, "", "  ")
+	if err != nil {
+		return mcpsdk.NewToolResultText(fmt.Sprintf("Error: %v", err)), nil
+	}
+	return textOK(string(out)), nil
 }
 
 // BL350 — list_orphaned_sessions

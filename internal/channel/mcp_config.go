@@ -46,6 +46,14 @@ type MCPServerSpec struct {
 	Env     map[string]string `json:"env,omitempty"`
 }
 
+// ProjectMCPEntryName is the shared/global MCP server name written into a
+// project's (or the daemon's instance) .mcp.json, and the name used by the
+// global claude mcp registration. Per-session channels use a different,
+// per-session name — see ChannelServerName (internal/channel/channel.go).
+// Single source of truth for every place that code writes or compares
+// against that entry name.
+const ProjectMCPEntryName = "datawatch"
+
 // WriteProjectMCPConfig writes (or rewrites) `<projectDir>/.mcp.json`
 // with a "datawatch" server entry pointing at channelJSPath plus any
 // extras (BL344 / GH#118). Existing entries under other names are
@@ -96,9 +104,9 @@ func WriteProjectMCPConfig(projectDir, channelJSPath string, env map[string]stri
 		}
 	}
 
-	cfg.MCPServers["datawatch"] = spec
+	cfg.MCPServers[ProjectMCPEntryName] = spec
 	for name, extra := range extras {
-		if name != "datawatch" {
+		if name != ProjectMCPEntryName {
 			cfg.MCPServers[name] = extra
 		}
 	}
@@ -143,7 +151,7 @@ func InjectExtrasIntoMCPConfig(projectDir string, extras map[string]MCPServerSpe
 	}
 	changed := false
 	for name, spec := range extras {
-		if name == "datawatch" {
+		if name == ProjectMCPEntryName {
 			continue
 		}
 		cfg.MCPServers[name] = spec
@@ -219,7 +227,7 @@ func sweepMCPConfigFile(path, channelJSPath string, env map[string]string) (bool
 	}
 
 	// Skip rewrite when the existing entry is already correct.
-	if existing, ok := cfg.MCPServers["datawatch"]; ok {
+	if existing, ok := cfg.MCPServers[ProjectMCPEntryName]; ok {
 		argsMatch := len(existing.Args) == len(want.Args) &&
 			(len(existing.Args) == 0 || existing.Args[0] == want.Args[0])
 		if existing.Command == want.Command && argsMatch {
@@ -227,7 +235,7 @@ func sweepMCPConfigFile(path, channelJSPath string, env map[string]string) (bool
 		}
 	}
 
-	cfg.MCPServers["datawatch"] = want
+	cfg.MCPServers[ProjectMCPEntryName] = want
 	out, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		return false, fmt.Errorf("marshal %s: %w", path, err)
@@ -293,7 +301,7 @@ func IsStaleProjectMCPConfig(path string) (bool, string, error) {
 	if err := json.Unmarshal(raw, &cfg); err != nil {
 		return false, "", nil
 	}
-	spec, ok := cfg.MCPServers["datawatch"]
+	spec, ok := cfg.MCPServers[ProjectMCPEntryName]
 	if !ok {
 		return false, "", nil
 	}

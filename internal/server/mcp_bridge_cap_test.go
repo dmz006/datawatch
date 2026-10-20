@@ -10,6 +10,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -21,13 +22,14 @@ import (
 )
 
 // fakeMCPBridge is a minimal mcpBridgeAPI stub covering just enough for
-// these tests: a fixed two-tool catalog (one session-safe, one
+// these tests: a fixed three-tool catalog (two session-safe, one
 // admin-only, per federation.MCPToolCap) and an echo-back call result.
 type fakeMCPBridge struct{}
 
 func (fakeMCPBridge) MCPToolsJSON() ([]byte, error) {
 	return json.Marshal([]map[string]string{
 		{"name": "get_my_session_id", "description": "session-safe (health:read)"},
+		{"name": "get_my_scope", "description": "session-safe (health:read)"},
 		{"name": "secret_set", "description": "admin-only (secrets:write)"},
 	})
 }
@@ -93,9 +95,11 @@ func TestMCPCall_SessionToken_SessionSafeToolAllowed(t *testing.T) {
 	if err != nil {
 		t.Fatalf("mint: %v", err)
 	}
-	rr := callMCP(s, http.MethodPost, "/api/mcp/call", tok, `{"tool":"get_my_session_id","args":{}}`)
-	if rr.Code != http.StatusOK {
-		t.Errorf("session token calling a session-safe tool should be 200, got %d body=%s", rr.Code, rr.Body.String())
+	for _, tool := range []string{"get_my_session_id", "get_my_scope"} {
+		rr := callMCP(s, http.MethodPost, "/api/mcp/call", tok, fmt.Sprintf(`{"tool":%q,"args":{}}`, tool))
+		if rr.Code != http.StatusOK {
+			t.Errorf("session token calling %s (session-safe) should be 200, got %d body=%s", tool, rr.Code, rr.Body.String())
+		}
 	}
 }
 
@@ -137,8 +141,8 @@ func TestMCPTools_SessionToken_ListIsFilteredToItsCapabilities(t *testing.T) {
 	for _, tool := range tools {
 		names[tool["name"]] = true
 	}
-	if !names["get_my_session_id"] {
-		t.Error("expected get_my_session_id (session-safe) to be listed")
+	if !names["get_my_session_id"] || !names["get_my_scope"] {
+		t.Error("expected get_my_session_id and get_my_scope (session-safe) to be listed")
 	}
 	if names["secret_set"] {
 		t.Error("expected secret_set (admin-only) to be filtered OUT of a session token's tool list")
@@ -155,7 +159,7 @@ func TestMCPTools_Admin_ListIsUnfiltered(t *testing.T) {
 	if err := json.Unmarshal(rr.Body.Bytes(), &tools); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if len(tools) != 2 {
-		t.Errorf("expected the admin to see the full unfiltered 2-tool catalog, got %d", len(tools))
+	if len(tools) != 3 {
+		t.Errorf("expected the admin to see the full unfiltered 3-tool catalog, got %d", len(tools))
 	}
 }
