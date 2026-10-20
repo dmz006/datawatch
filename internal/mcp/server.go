@@ -321,6 +321,13 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	// in the server's initialize response and can handle createMessage requests.
 	mcpSrv.EnableSampling()
 
+	// CRASH-SAFETY (findings: docs/plans/2026-10-20-bl463-mcp-drop-findings.md)
+	// — recover panics in any tool handler into a JSON-RPC error result
+	// instead of killing the process. mcp-go's WithRecovery() (opt-in)
+	// was unregistered here, so one panicking tool was a permanent, full
+	// MCP drop (daemon: whole process; bridge: CONNECTION_CLOSED forever).
+	RegisterToolPanicRecovery(mcpSrv)
+
 	// tracked wraps an MCP handler with channel stats tracking
 	tracked := func(fn func(context.Context, mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error)) func(context.Context, mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 		return func(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
@@ -1333,8 +1340,13 @@ func (s *Server) ToolDocs() []ToolDoc {
 // bufio.NewReader path. Pass os.Stdin/os.Stdout explicitly so the
 // stdio entrypoint handles its first message instead of segfaulting
 // on EOF. Caught by scripts/release-smoke-stdio-mcp.sh.
+//
+// GuardStdioListen adds the close-reason evidence the investigated MCP
+// drop incident lacked: it recovers panics escaping the synchronous
+// dispatch path (tool panics inside queued handlers are covered by the
+// panic-recovery middleware) and logs why the listener stopped.
 func (s *Server) ServeStdio(ctx context.Context) error {
-	return server.NewStdioServer(s.srv).Listen(ctx, os.Stdin, os.Stdout)
+	return GuardStdioListen(server.NewStdioServer(s.srv), ctx, "daemon")
 }
 
 // ServeSSE starts an HTTP/SSE MCP server for remote AI clients.
@@ -1354,21 +1366,42 @@ func (s *Server) ServeSSE(ctx context.Context) error {
 	}
 	baseURL := fmt.Sprintf("%s://%s", scheme, firstAddr)
 
-	sseSrv := server.NewSSEServer(s.srv, server.WithBaseURL(baseURL))
+	sseSrv := server.NewSSEServer(
+		s.srv,
+		server.WithBaseURL(baseURL),
+		// CRASH-SAFETY / RELIABILITY — mcp-go v0.46.0 keeps the SSE
+		// session stream silent unless keepalive is opted in (default
+		// keepAlive=false). A silent long-lived stream is exactly what
+		// proxies/clients kill on their own idle read timeouts — one of
+		// the two traced mid-session drop modes (findings doc in the
+		// header comment of this function). Periodic pings keep the
+		// stream visibly alive on both ends.
+		server.WithKeepAliveInterval(10 * time.Second),
+	)
 
 	// BL317 — replace static bearerAuthMiddleware with combined admin+federation auth.
 	// Admin token passes through unrestricted; federation peer tokens are accepted
 	// and tagged in context so per-tool fedCap checks can enforce CBAC.
 	handler := s.mcpFedAuthMiddleware(sseSrv)
 
+	// Observe the long-lived stream: open/close with duration, bytes,
+	// write/flush errors and close reason (see transport_debug.go).
 	mux := http.NewServeMux()
-	mux.Handle("/", handler)
+	mux.Handle("/", ObserveSSEHandler(handler))
 
 	httpSrv := &http.Server{
-		Handler:     mux,
+		Handler: mux,
+		// NOTE (findings doc for the investigated MCP drop incident):
+		// ReadTimeout applies while reading requests — the handler run is
+		// exempt. IdleTimeout applies between keep-alive requests. There is
+		// deliberately NO WriteTimeout: setting one would time out in-flight
+		// SSE event delivery on a slow client and could cut long-lived
+		// streams mid-write. SSE-specific long-lived streams are unaffected
+		// by ReadTimeout/IdleTimeout while their handler is still running.
 		ReadTimeout: 30 * time.Second,
 		IdleTimeout: 120 * time.Second,
 	}
+	LogSSEServerTimeouts(httpSrv)
 
 	var tlsCfg *tls.Config
 	if s.cfg.TLSEnabled {
