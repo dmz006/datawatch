@@ -134,7 +134,9 @@ async function setLocaleOverride(lang) {
   } else {
     return;
   }
-  location.reload();
+  // bl434 row 1 (eye-only): inventory-graded — not a session connect, bolt
+  // would misreport "connecting"; eye = "app alive, switching locale".
+  performFullPageRefresh({ eyeBolt: false });
 }
 window.setLocaleOverride = setLocaleOverride;
 
@@ -478,7 +480,9 @@ function connect() {
           if (!h || !h.version) return;
           if (state._daemonVersion !== h.version) {
             console.log(`[datawatch] daemon version changed during reconnect: ${state._daemonVersion} → ${h.version}, reloading…`);
-            location.reload();
+            // bl434 row 2 (full eye+bolt): the one inventory-graded site
+            // whose reload directly continues an in-flight session reconnect.
+            performFullPageRefresh({ eyeBolt: true });
           }
         })
         .catch(() => {});
@@ -752,7 +756,9 @@ function handleMessage(msg) {
           state._daemonVersion = msg.data.version;
         } else if (state._daemonVersion !== msg.data.version) {
           console.log(`[datawatch] daemon version changed: ${state._daemonVersion} → ${msg.data.version}, reloading…`);
-          location.reload();
+          // bl434 row 3 (eye-only): a new daemon build was detected, not a
+          // session connect — bolt would be misleading.
+          performFullPageRefresh({ eyeBolt: false });
           return;
         }
       }
@@ -19015,7 +19021,8 @@ function registerServiceWorker() {
       if (_reloadGuard) return;
       _reloadGuard = true;
       console.log('SW controller changed — reloading for fresh assets');
-      window.location.reload();
+      // bl434 row 5 (eye-only): a PWA asset swap, not a session connect.
+      performFullPageRefresh({ eyeBolt: false });
     });
   }
 }
@@ -19036,7 +19043,9 @@ window.forcePWAUpdate = async function() {
     }
   } catch (e) { console.warn('forcePWAUpdate cleanup error:', e); }
   // Hard reload bypassing HTTP cache too.
-  window.location.reload();
+  // bl434 row 6 (eye-only): cache-bust reload, not a session connect — the
+  // eye keeps the deliberate gesture from reading as a broken page.
+  performFullPageRefresh({ eyeBolt: false });
 };
 
 // ── Alerts view ───────────────────────────────────────────────────────────────

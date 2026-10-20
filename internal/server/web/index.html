@@ -50,7 +50,14 @@
         if (j && j.version && baked && baked.indexOf('%') === -1 && j.version !== baked) {
           if (!sessionStorage.getItem('_dw_reloaded_for_' + j.version)) {
             sessionStorage.setItem('_dw_reloaded_for_' + j.version, '1');
-            location.reload();
+            // bl434 row 7 (eye-only): startup self-heal, not a session connect.
+            // Guarded: this inline script runs before app.js's static load in
+            // slow-load edge cases; fall back to the bare reload there.
+            if (typeof window.performFullPageRefresh === 'function') {
+              window.performFullPageRefresh({ eyeBolt: false });
+            } else {
+              location.reload();
+            }
           }
         }
       } catch (e) { /* offline; ignore */ }

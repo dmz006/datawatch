@@ -22,7 +22,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('path');
-const { vm, buildSandbox, loadScript, makeStubElement } = require('./testutil_browser_stub');
+const { vm, buildSandbox, loadScript, makeStubElement, flushAsync } = require('./testutil_browser_stub');
 
 const APP_JS = path.join(__dirname, 'app.js');
 const SPLASH_ART_JS = path.join(__dirname, 'splash-art.js');
@@ -271,4 +271,156 @@ test('motion allowed (contrast): loop() DOES schedule the next frame after the f
   sandbox.DWSplashArt.startEyeOnly(canvas);
   assert.equal(frames(), 1, 'first frame painted in the test harness');
   assert.equal(rafCount(), 2, 'without reduced motion the loop requests its next frame');
+});
+
+// ── (e) Wired sites — one test per BL434 inventory row that fires in app.js ─
+// Each test engages ONLY that row's entry point (with the minimum state the
+// row's branch reads), then asserts (1) the shared overlay was mounted with
+// the primitive the inventory table graded for that row, and (2) the
+// location.reload() default fired only after the min-dwell timer. rAF is
+// fired synchronously and the sandbox timer is captured, so these stay fast
+// and clock-free (same trick as section (c) above).
+
+function armRefreshSandbox(sandbox) {
+  sandbox.requestAnimationFrame = (cb) => { cb(0); return 1; };
+  const scheduled = [];
+  sandbox.setTimeout = (fn, ms) => { scheduled.push({ fn, ms }); return scheduled.length; };
+  return scheduled;
+}
+
+// The 600ms-default dwell timer among whatever the path schedules (a row's
+// surrounding handler may also schedule an unrelated no-op timer, e.g. the
+// WS-open handler's updateProgressOverlay removal).
+function findDwellTimer(scheduled) {
+  return scheduled.find((t) => t.ms > 400 && t.ms <= 600);
+}
+
+test('site (row 1, eye-only): setLocaleOverride locale switch mounts the eye overlay and reloads only after min-dwell', async () => {
+  const { sandbox, spy } = loadWithSpy();
+  const scheduled = armRefreshSandbox(sandbox);
+  // Branch state: 'de' is in window._i18n.supported (app.js defines the
+  // default table at load); the sandbox fetch stub resolves /api/config to
+  // {ok:false} — its catch treats the whisper sync as best-effort, which is
+  // exactly the non-fatal contract this site already had.
+  sandbox.__lang = 'de';
+  const p = vm.runInContext('setLocaleOverride(__lang)', sandbox);
+  assert.ok(p && typeof p.then === 'function', 'setLocaleOverride is async');
+  await flushAsync(10);
+  assert.equal(spy.calls.length, 1, 'the site engaged the shared splash exactly once');
+  assert.equal(spy.calls[0].fn, 'startEyeOnly', 'row 1 graded eye-only — no bolt');
+  assert.equal(sandbox.location.reloaded, false, 'no reload before min-dwell');
+  const dwell = findDwellTimer(scheduled);
+  assert.ok(dwell, 'a min-dwell timer is scheduled');
+  dwell.fn();
+  assert.equal(sandbox.location.reloaded, true, 'location.reload fires only after min-dwell');
+  assert.deepEqual(spy.stopped, ['startEyeOnly'], 'the eye animation was stopped as part of the dismiss');
+});
+
+test('site (row 2, eye+bolt): WS-open version catch-up mismatch fires the session-loading treatment, then reload after dwell', async () => {
+  const { sandbox, spy } = loadWithSpy();
+  const scheduled = armRefreshSandbox(sandbox);
+  // A fake WebSocket that records the 'open' listener connect() attaches.
+  const listeners = {};
+  sandbox.WebSocket = function(url, sub) {
+    this.url = url;
+    this.addEventListener = (type, fn) => { listeners[type] = fn; };
+  };
+  sandbox.WebSocket.OPEN = 1;
+  sandbox.WebSocket.CONNECTING = 0;
+  // Branch state: a KNOWN old daemon version vs. the NEW one /api/health reports.
+  sandbox.fetch = (url) => {
+    if (String(url) === '/api/health') {
+      return Promise.resolve({ ok: true, json: () => Promise.resolve({ version: 'v9.9.9' }) });
+    }
+    return Promise.resolve({ ok: false, status: 404 });
+  };
+  setState(sandbox, { ws: null, connected: false, activeServer: null, _daemonVersion: 'v1.0.0' });
+  vm.runInContext('connect()', sandbox);
+  assert.equal(typeof listeners.open, 'function', 'connect() attached the open handler this row lives in');
+  listeners.open();
+  await flushAsync(10); // let the /api/health fetch chain resolve
+  assert.equal(spy.calls.length, 1, 'the version-mismatch branch engaged the shared splash exactly once');
+  assert.equal(spy.calls[0].fn, 'startSessionLoading', 'row 2 is the one eye+bolt row (session continuation)');
+  assert.equal(sandbox.location.reloaded, false, 'no reload before min-dwell');
+  const dwell = findDwellTimer(scheduled);
+  assert.ok(dwell, 'a min-dwell timer is scheduled');
+  dwell.fn();
+  assert.equal(sandbox.location.reloaded, true, 'location.reload fires only after min-dwell');
+  assert.deepEqual(spy.stopped, ['startSessionLoading'], 'the eye+bolt animation was stopped as part of the dismiss');
+});
+
+test('site (row 3, eye-only): sessions-broadcast daemon version change mounts the eye overlay and reloads only after min-dwell', () => {
+  const { sandbox, spy } = loadWithSpy();
+  const scheduled = armRefreshSandbox(sandbox);
+  // Branch state: a stored version that now disagrees with the broadcast.
+  setState(sandbox, { activeServer: null, sessions: [], _daemonVersion: 'v1.0.0' });
+  sandbox.__msg = { type: 'sessions', data: { version: 'v2.0.0', sessions: [] } };
+  vm.runInContext('handleMessage(__msg)', sandbox);
+  assert.equal(spy.calls.length, 1, 'the broadcast version-mismatch branch engaged the shared splash');
+  assert.equal(spy.calls[0].fn, 'startEyeOnly', 'row 3 graded eye-only — bolt would be misleading');
+  assert.equal(sandbox.location.reloaded, false, 'no reload before min-dwell');
+  const dwell = findDwellTimer(scheduled);
+  assert.ok(dwell, 'a min-dwell timer is scheduled');
+  dwell.fn();
+  assert.equal(sandbox.location.reloaded, true, 'location.reload fires only after min-dwell');
+  assert.deepEqual(spy.stopped, ['startEyeOnly']);
+});
+
+test('site (row 5, eye-only): SW controllerchange handler mounts the eye overlay and reloads only after min-dwell', async () => {
+  const { sandbox, spy } = loadWithSpy();
+  const scheduled = armRefreshSandbox(sandbox);
+  // A bare serviceWorker surface just enough for registerServiceWorker()
+  // to reach the controllerchange listener registration.
+  const reg = { scope: '/', update() { return Promise.resolve(); }, waiting: undefined, addEventListener() {} };
+  let ccListener = null;
+  sandbox.navigator = {
+    userAgent: 'node-test',
+    serviceWorker: {
+      controller: null,
+      register: () => Promise.resolve(reg),
+      addEventListener: (type, fn) => { if (type === 'controllerchange') ccListener = fn; },
+    },
+  };
+  vm.runInContext('registerServiceWorker()', sandbox);
+  await flushAsync(10);
+  assert.equal(typeof ccListener, 'function', 'the controllerchange listener was attached');
+  ccListener(); // fire the site directly — it is a standalone listener
+  assert.equal(spy.calls.length, 1, 'controllerchange engaged the shared splash');
+  assert.equal(spy.calls[0].fn, 'startEyeOnly', 'row 5 graded eye-only — PWA asset swap, not a session connect');
+  assert.equal(sandbox.location.reloaded, false, 'no reload before min-dwell');
+  const dwell = findDwellTimer(scheduled);
+  assert.ok(dwell, 'a min-dwell timer is scheduled');
+  dwell.fn();
+  assert.equal(sandbox.location.reloaded, true, 'location.reload fires only after min-dwell');
+  assert.deepEqual(spy.stopped, ['startEyeOnly']);
+});
+
+test('site (row 6, eye-only): forcePWAUpdate cleanup fires the eye overlay and reloads only after min-dwell', async () => {
+  const { sandbox, spy } = loadWithSpy();
+  const scheduled = armRefreshSandbox(sandbox);
+  // The sandbox navigator exposes no serviceWorker and the sandbox has no
+  // caches, so the cleanup branch is a no-op — exactly the gating we keep;
+  // only the final navigation changes.
+  await sandbox.forcePWAUpdate();
+  assert.equal(spy.calls.length, 1, 'forcePWAUpdate engaged the shared splash');
+  assert.equal(spy.calls[0].fn, 'startEyeOnly', 'row 6 graded eye-only — cache-bust, not a session connect');
+  assert.equal(sandbox.location.reloaded, false, 'cleanup ran, but no reload before min-dwell');
+  const dwell = findDwellTimer(scheduled);
+  assert.ok(dwell, 'a min-dwell timer is scheduled');
+  dwell.fn();
+  assert.equal(sandbox.location.reloaded, true, 'location.reload fires only after min-dwell');
+  assert.deepEqual(spy.stopped, ['startEyeOnly']);
+});
+
+test('leave-as-is (row 4): window.replaySplash still bare-reloads with no shared-splash mount', async () => {
+  const { sandbox, spy } = loadWithSpy();
+  const scheduled = armRefreshSandbox(sandbox);
+  await sandbox.replaySplash();
+  assert.equal(spy.calls.length, 0, 'the inventory table grades this row leave-as-is: the boot #splash Earthrise immediately follows the reload');
+  assert.equal(sandbox.location.reloaded, true, 'it still reloads, via the original bare path');
+  assert.equal((scheduled || []).length, 0);
+  const src = require('fs').readFileSync(APP_JS, 'utf8');
+  const replay = src.slice(src.indexOf('window.replaySplash'), src.indexOf('window.replaySplash') + 400);
+  assert.match(replay, /location\.reload\(\)/, 'source guard: window.replaySplash still uses the bare reload');
+  assert.doesNotMatch(replay, /performFullPageRefresh/, 'source guard: no shared-splash wiring at the replaySplash site');
 });

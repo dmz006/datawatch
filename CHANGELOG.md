@@ -5,6 +5,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+- **Every full-page reload in the PWA is now covered by a full-screen datawatch eye instead of a hard white cut** — switching locale, the WS-reconnect daemon-version catch-up (eye + pulsing bolt — the one inventory row graded session-continuation), a sessions broadcast detecting a new daemon build, a service-worker controller take-over, a manual PWA cache-bust, and the stale-version self-heal stamp all mount a shared full-screen splash (reusing the existing `DWSplashArt` primitives) for at least 600 ms before navigating, per `docs/plans/2026-10-14-bl434-fullscreen-refresh-splash-inventory.md` (BL434 rows 1–3, 5, 6, 7).
+
 ## v9.5.26 — autonomous: honor each backend's delivery mode when typing waiting tasks into tmux
 
 - **One-shot “send the task and wait for it to finish” sessions (pi --print, goose --print, aider) no longer get a second copy of the task typed into their shell (send_input)** — the daemon now asks each backend whether it accepts interactive input before typing a waiting task into the pane, so a backend that only takes its task once, at launch, can never be typed into, even if it is a brand-new backend never added to a list.
