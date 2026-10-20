@@ -2507,8 +2507,8 @@ func (m *Manager) ApproveTask(prdID, taskID, actor string) (*PRD, error) {
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
 	}
-	if prd.Status != PRDApproved && prd.Status != PRDActive && prd.Status != PRDRunning {
-		return nil, fmt.Errorf("prd %q status %q does not accept per-task approval; PRD must be approved or running first", prdID, prd.Status)
+	if prd.Status != PRDApproved && prd.Status != PRDActive && prd.Status != PRDRunning && prd.Status != PRDBlocked {
+		return nil, fmt.Errorf("prd %q status %q does not accept per-task approval; PRD must be approved, running, or blocked first", prdID, prd.Status)
 	}
 	now := time.Now()
 	found := false
@@ -2527,6 +2527,17 @@ func (m *Manager) ApproveTask(prdID, taskID, actor string) (*PRD, error) {
 					t.Status = TaskPending
 					// BL427 — fired after the SavePRD below succeeds.
 					emitPending = func() { m.emitTaskStatus(prd, t, TaskAwaitingApproval, lastDecision(prd, "approve_task"), nil) }
+				}
+				// Operator-approved a blocked task: release it back to
+				// pending for re-run (matching checkForeignFileDrift's
+				// blocked state). Clear the stale error from the blocked
+				// attempt. The PRD itself is left in PRDBlocked — the
+				// existing run path decides the PRD status transition; we
+				// never auto-run anything from here.
+				if t.Status == TaskBlocked {
+					t.Status = TaskPending
+					t.Error = ""
+					emitPending = func() { m.emitTaskStatus(prd, t, TaskBlocked, lastDecision(prd, "approve_task"), nil) }
 				}
 				t.UpdatedAt = now
 				found = true
