@@ -1258,6 +1258,15 @@ When implementing any new feature or bug fix:
 4. **Clean up test sessions** — if testing creates sessions, stop and delete them
 5. **Document results** in `docs/plans/README.md` testing section and `docs/testing.md`
 
+### Design-document verification (DIP decision, 2026-10-20)
+
+Design documents in `docs/plans/` are checked mechanically before a PRD that writes one is approved:
+
+1. **Section presence:** the verification script confirms every heading the spec names exists in the document and is non-empty.
+2. **Content:** each named section meets a minimum length and cites at least one file path or PRD ID.
+
+Both checks run in the task's verification script. A design-document task with no script fails plan validation.
+
 ### Bug testing
 
 Before closing any bug, document in `docs/testing.md` with: test description, steps,

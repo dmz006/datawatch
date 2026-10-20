@@ -713,6 +713,9 @@ can disagree sharply, and the shared ceiling is the real constraint.
 | 2026-10-18 ~14:3x | 4% weekly | this Claude dev-lane session (BL449 pi-switch + BL472 mockup filing below); session stopped here on operator instruction, handed back to the supervisor |
 | 2026-10-18 ~21:05 | 7% weekly | operator-reported to the supervisor (Sonnet 5.5) after the 20:18 tmux loss and recovery; Claude lane running one PRD (stall detector) |
 | 2026-10-19 ~09:55 | 9% weekly | operator-reported; Claude lane running one PRD (stale-task detector, 10 of 12 tasks) with Haiku workers and a Sonnet verifier |
+| 2026-10-19 ~17:50 | 13% weekly | operator-reported for tracking; two Claude lanes running (BL515 `d4c50001`, BL514 `da660001`), `06ae0001` queued |
+| 2026-10-19 ~20:15 | 14% weekly | operator-reported; operator decision: use both Claude lanes, with Claude decompose run serially (one decompose thread) when a Claude lane is free, to clear backlog for the GPU workers. Provisional: the operator tracks Claude usage for the next 24 hours and adjusts the lane model on 2026-10-20 |
+| 2026-10-20 ~04:31 | 16% weekly | operator-reported for the calculator; operator proposes a third Claude lane (not yet decided; the lane model still has two) |
 | 2026-10-18 ~17:00 | 5% weekly; session meter at 15%, session resets in about 50 minutes | operator-reported. One Claude builder thread plus two qwen GPU threads; operator decided to hold at one Claude thread (decision 2026-10-18 17:02) and revisit after a per-PRD cost is measured |
 
 Restricted window: while the weekly ceiling was exhausted, autonomous PRD

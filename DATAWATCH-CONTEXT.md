@@ -616,7 +616,7 @@ current state over either table.
 
 ## Gotchas to Avoid
 
-- **No version bump without ask** — user must say "release" or "bump the version"
+- **Version bumps** — the supervisor is release manager and bumps patch and minor versions through the automation scripts (2026-10-20 operator decision). Only a major release (10.0) waits for the operator.
 - **Interface stability** — `SignalBackend`, `LLMBackend` are breaking-change boundaries; changes require major bump
 - **Both Version strings must match** — `cmd/datawatch/main.go` AND `internal/server/api.go`; the v8.9.2 incident missed one file
 - **No internal IDs in user-facing docs** — B/BL/F numbers only in `docs/plans/`, not CHANGELOG/README/operations/setup
