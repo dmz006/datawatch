@@ -174,7 +174,8 @@ func TestRejudgeCompletionGuardrailPass(t *testing.T) {
 	// The guardrail_verdict Decision must carry the pass verdict's judge session.
 	foundVerdict := false
 	for _, d := range got.Decisions {
-		if d.Kind == "guardrail_verdict" {
+		switch d.Kind {
+		case "guardrail_verdict":
 			foundVerdict = true
 			if d.VerdictOutcome != "pass" {
 				t.Errorf("guardrail_verdict VerdictOutcome = %q, want pass", d.VerdictOutcome)
@@ -182,7 +183,7 @@ func TestRejudgeCompletionGuardrailPass(t *testing.T) {
 			if d.JudgeSessionID != rj.v.JudgeSessionID {
 				t.Errorf("guardrail_verdict JudgeSessionID = %q, want %q", d.JudgeSessionID, rj.v.JudgeSessionID)
 			}
-		} else if d.Kind == "guardrail_rejudge" {
+		case "guardrail_rejudge":
 			if d.Actor != "operator" {
 				t.Errorf("guardrail_rejudge Actor = %q, want operator", d.Actor)
 			}
