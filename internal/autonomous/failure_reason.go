@@ -67,7 +67,8 @@ type FailureReason struct {
 	Evidence []string `json:"evidence,omitempty"`
 	// Source names which call site produced this, e.g.
 	// "guardrail-session", "verifier-ask", "decompose-llm",
-	// "decompose-parse", "verification-script-coverage".
+	// "decompose-parse", "verification-script-coverage",
+	// "verification-script-scope".
 	Source string `json:"source,omitempty"`
 	// Retryable reports whether this occurrence was eligible for
 	// auto-retry under the resolved policy at the time it occurred —

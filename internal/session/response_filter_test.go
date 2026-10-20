@@ -143,9 +143,13 @@ func TestStripResponseNoise_DropsMultiSpinnerLine(t *testing.T) {
 // garbage and not any text from the last set of responses." The
 // v5.26.23 filter was too charitable: it kept any line with hasWord3
 // AND only matched footers anchored to line start. So lines like
-//   `⏵⏵ bypass permissions on (shift+tab to cycle) · esc to interrupt`
+//
+//	`⏵⏵ bypass permissions on (shift+tab to cycle) · esc to interrupt`
+//
 // passed through (leading `⏵⏵` defeated the anchored prefix), and
-//   `* Perambulating… (11m 42s · ↓ 22.2k tokens · thinking)`
+//
+//	`* Perambulating… (11m 42s · ↓ 22.2k tokens · thinking)`
+//
 // passed through (Perambulating gives hasWord3, no anchored match).
 // v5.26.31 broadens the noise-pattern check to apply unconditionally
 // and adds three new structural detectors (labeled border, embedded

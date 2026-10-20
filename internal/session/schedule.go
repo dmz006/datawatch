@@ -108,9 +108,9 @@ type DeferredSession struct {
 	Backend    string `json:"backend"`
 	Name       string `json:"name"`
 	// v8.11.0 — extended spawn fields (GH#128)
-	LLMRef    string `json:"llm_ref,omitempty"`  // unified LLM registry ref
-	Model     string `json:"model,omitempty"`     // model name override
-	Effort    string `json:"effort,omitempty"`    // quick/normal/thorough
+	LLMRef     string `json:"llm_ref,omitempty"`    // unified LLM registry ref
+	Model      string `json:"model,omitempty"`      // model name override
+	Effort     string `json:"effort,omitempty"`     // quick/normal/thorough
 	OneShot    bool   `json:"one_shot,omitempty"`   // terminate on DATAWATCH_COMPLETE:
 	Ephemeral  bool   `json:"ephemeral,omitempty"`  // reap workspace directory on delete
 	Subprocess bool   `json:"subprocess,omitempty"` // run via bash -c, not TUI (exit code = completion)

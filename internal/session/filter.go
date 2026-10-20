@@ -31,9 +31,9 @@ const (
 // FilterPattern is a rule: when output matches Pattern, perform Action.
 type FilterPattern struct {
 	ID        string       `json:"id"`
-	Pattern   string       `json:"pattern"`  // regular expression matched against output lines
+	Pattern   string       `json:"pattern"` // regular expression matched against output lines
 	Action    FilterAction `json:"action"`
-	Value     string       `json:"value"`    // input text, alert body, or scheduled command
+	Value     string       `json:"value"` // input text, alert body, or scheduled command
 	Enabled   bool         `json:"enabled"`
 	Seeded    bool         `json:"seeded,omitempty"` // true for pre-populated patterns
 	CreatedAt time.Time    `json:"created_at"`
@@ -194,10 +194,10 @@ func (fs *FilterStore) Seed(seeds []FilterPattern) error {
 
 // ActionHandlers holds callbacks the FilterEngine uses when a filter matches.
 type ActionHandlers struct {
-	SendInput     func(sessID, text string) error
-	AddAlert      func(sessID, title, body string)
-	AddSchedule   func(sessID, command string) error
-	DetectPrompt  func(sessID, matchedLine string) // marks session as waiting_input immediately
+	SendInput    func(sessID, text string) error
+	AddAlert     func(sessID, title, body string)
+	AddSchedule  func(sessID, command string) error
+	DetectPrompt func(sessID, matchedLine string) // marks session as waiting_input immediately
 }
 
 // FilterEngine applies enabled filters to output lines and fires actions.

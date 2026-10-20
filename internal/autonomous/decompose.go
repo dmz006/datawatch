@@ -61,6 +61,11 @@ Rules:
   task is expected to touch. Include both code and docs/test files.
   Empty array is valid when paths are unknown ahead of time. Do NOT
   invent paths that obviously can't exist.
+- Verification scripts must check only the files their unit of work
+  changes (e.g. list them from 'git diff --name-only' plus the untracked
+  files, or name them explicitly) and must never run gofmt or a similar
+  formatter over a whole package or directory — unrelated files that
+  were already unformatted would fail the task.
 - Never write a literal absolute path to a system binary (e.g. /usr/bin/foo
   or /bin/bar) in a task spec. Refer to standard system tools by command
   name only (e.g. "the time command") and have the task resolve them at
@@ -142,6 +147,11 @@ Rules:
   verification_script is only correct for a unit with no applicable
   check (e.g. a pure-research story producing no files); every unit that
   touches real files should have one.
+- Verification scripts must check only the files their unit of work
+  changes (e.g. list them from 'git diff --name-only' plus the untracked
+  files, or name them explicitly) and must never run gofmt or a similar
+  formatter over a whole package or directory — unrelated files that
+  were already unformatted would fail the task.
 - Never write a literal absolute path to a system binary (e.g. /usr/bin/foo
   or /bin/bar) in a task spec. Refer to standard system tools by command
   name only (e.g. "the time command") and have the task resolve them at

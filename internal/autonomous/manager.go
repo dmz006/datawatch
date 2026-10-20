@@ -854,7 +854,7 @@ func (m *Manager) resetInProgressTasksForResume(prd *PRD) {
 			At:    now,
 			Kind:  verifyingResolution,
 			Actor: "autonomous",
-			Note: fmt.Sprintf("boot-resume resolved %d orphaned verifying task(s) to completed (recorded ok verification) and re-queued %d for retry", completedCount, requeuedCount),
+			Note:  fmt.Sprintf("boot-resume resolved %d orphaned verifying task(s) to completed (recorded ok verification) and re-queued %d for retry", completedCount, requeuedCount),
 		})
 	}
 	if err := m.store.SavePRD(prd); err != nil {
@@ -1246,6 +1246,15 @@ func (m *Manager) Decompose(prdID string) (*PRD, error) {
 			m.failDecomposeAttempt(prd, "release-version-fixed", err)
 			return nil, err
 		}
+		// Verification-script scope gate — see decomposeStreamingCore's
+		// identical block; the two twin loops must stay in sync.
+		if err := validateVerificationScriptScope(prd.ProjectDir, s); err != nil {
+			if m.retryDecomposeFailure(prd, "scope", "verification-script-scope", err.Error()) {
+				continue
+			}
+			m.failDecomposeAttempt(prd, "verification-script-scope", err)
+			return nil, err
+		}
 		// SetStories is where depends_on gets resolved + validated: it
 		// rejects the whole plan (naming the exact bad entry or the
 		// cycle, storing nothing) when a reference can't be resolved. That
@@ -1444,6 +1453,15 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (*PRD, 
 				continue
 			}
 			m.failDecomposeAttempt(prd, "release-version-fixed", err)
+			return nil, err
+		}
+		// Verification-script scope gate — see Decompose()'s identical
+		// block; the two twin loops must stay in sync.
+		if err := validateVerificationScriptScope(prd.ProjectDir, s); err != nil {
+			if m.retryDecomposeFailure(prd, "scope", "verification-script-scope", err.Error()) {
+				continue
+			}
+			m.failDecomposeAttempt(prd, "verification-script-scope", err)
 			return nil, err
 		}
 		// SetStories + depends_on validation — see Decompose()'s identical
@@ -3638,7 +3656,7 @@ func (m *Manager) reconcileStuckTasks() {
 				At:    now,
 				Kind:  verifyingResolution,
 				Actor: "autonomous",
-				Note: fmt.Sprintf("boot pass resolved %d orphaned verifying task(s) to completed (recorded ok verification) and re-queued %d for retry", verdictCompleted, verdictRequeued),
+				Note:  fmt.Sprintf("boot pass resolved %d orphaned verifying task(s) to completed (recorded ok verification) and re-queued %d for retry", verdictCompleted, verdictRequeued),
 			})
 		}
 		if err := m.store.SavePRD(prd); err != nil {
