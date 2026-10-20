@@ -94,26 +94,24 @@ func TestBL91_GetVersion(t *testing.T) {
 func TestBL91_SendInput_SessionNotFound(t *testing.T) {
 	s := bl91Server(t)
 	text := invoke(t, s.handleSendInput,
-		map[string]any{"id": "does-not-exist", "input": "hi"})
-	if !strings.Contains(strings.ToLower(text), "error") &&
-		!strings.Contains(strings.ToLower(text), "not found") {
+		map[string]any{"session_id": "does-not-exist", "text": "hi"})
+	if !strings.Contains(strings.ToLower(text), "not found") {
 		t.Errorf("expected not-found error, got: %q", text)
 	}
 }
 
 func TestBL91_SendInput_MissingID(t *testing.T) {
 	s := bl91Server(t)
-	text := invoke(t, s.handleSendInput,
-		map[string]any{"input": "hi"})
-	if !strings.Contains(strings.ToLower(text), "error") {
-		t.Errorf("expected error for missing id: %q", text)
+	text := invoke(t, s.handleSendInput, map[string]any{"text": "hi"})
+	if !strings.Contains(text, "session_id or session_name is required") {
+		t.Errorf("expected required-id error, got: %q", text)
 	}
 }
 
 func TestBL91_RenameSession_MissingArgs(t *testing.T) {
 	s := bl91Server(t)
 	text := invoke(t, s.handleRenameSession, map[string]any{})
-	if !strings.Contains(strings.ToLower(text), "error") {
-		t.Errorf("expected error: %q", text)
+	if !strings.Contains(text, "are required") {
+		t.Errorf("expected required-args error, got: %q", text)
 	}
 }

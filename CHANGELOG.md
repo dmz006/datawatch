@@ -5,6 +5,22 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- MCP tool failure responses are now real error results: every MCP tool failure
+  (`isError:true`) is named after the tool call and, for tools that mirror a REST
+  route, carries the upstream HTTP status and the daemon's error body (truncated
+  where long). Previously many tools failed as indistinguishable success results
+  with an "Error: ..." text payload, and the `POST /api/mcp/call` bridge reported
+  HTTP 200 / `isError:false` for them while the direct REST route returned a 4xx
+  with a JSON body. Affected tools span session management
+  (`get_my_session_id`, `get_my_scope`, `start_session`, `send_input`,
+  `rename_session`, `kill_session`, `session_output`, `session_timeline`,
+  `session_children`, `send_saved_command`, `schedule_add`, `session_reconcile`,
+  …), the REST-loopback proxy tools (templates, projects, cooldown, audit, cost,
+  rollback, diagnose, …), and the memory tools. Successful responses and result
+  payloads are unchanged.
+
 ## v9.5.28
 
 ### Fixed

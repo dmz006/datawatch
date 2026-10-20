@@ -109,8 +109,8 @@ func TestBL331_ChannelRoutingConfigSet_InvalidJSON(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	text := res.Content[0].(mcpsdk.TextContent).Text
-	if !strings.HasPrefix(text, "Error:") {
-		t.Errorf("expected error prefix, got: %s", text)
+	if !res.IsError || !strings.HasPrefix(text, "channel_routing_config_set: ") {
+		t.Errorf("expected IsError result with tool-name prefix, got IsError=%v: %s", res.IsError, text)
 	}
 }
 
@@ -124,7 +124,7 @@ func TestBL331_ChannelRoutingConfigSet_EmptyRulesJSON(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	text := res.Content[0].(mcpsdk.TextContent).Text
-	if !strings.HasPrefix(text, "Error:") {
-		t.Errorf("expected error prefix for empty input, got: %s", text)
+	if !res.IsError || !strings.HasPrefix(text, "channel_routing_config_set: ") {
+		t.Errorf("expected IsError result with tool-name prefix for empty input, got IsError=%v: %s", res.IsError, text)
 	}
 }

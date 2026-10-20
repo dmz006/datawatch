@@ -9,6 +9,31 @@ Do not mark **Validated=Yes** based solely on unit tests.
 
 ---
 
+## MCP error-mode parity with REST — BL463 (2026-10-20)
+
+Follow-up to the findings in `docs/plans/2026-10-20-bl463-mcp-drop-findings.md`. Before
+this change, many MCP handlers failed "soft": they returned
+`mcpsdk.NewToolResultText("Error: ...")` with a nil Go error, so the result carried no
+`isError` flag, no tool name, and (for REST-loopback proxies) no upstream HTTP status
+or body — the same wire result a successful call would have, and `POST /api/mcp/call`
+mirrored that (HTTP 200, `isError:false`) while direct REST returned 4xx/5xx. The
+shared helpers in `internal/mcp/errors.go` (`toolError`, `toolErrorf`,
+`toolHTTPError`) now return real IsError results named after the tool call,
+and the `sx_parity.go` REST-loopback proxy helpers capture and carry the upstream
+status + body (truncated at 2048 chars).
+
+| Interface | Tested | Validated | Test File | Validation Steps |
+|---|---|---|---|---|
+| `toolError` flags `IsError` and names the operation | **Yes** | No | `TestToolError_FlagsIsErrorWithPrefix` in `internal/mcp/errors_test.go` | PASS |
+| `toolErrorf` formats args into the message | **Yes** | No | `TestToolErrorf_FormatsArguments` in `internal/mcp/errors_test.go` | PASS |
+| `toolHTTPError` carries the HTTP status + upstream body, degrades to the status text on an empty body, and bounds oversized bodies at 2048 bytes (maxToolErrorBody); the `sx_parity.go` loopback proxy helpers cap their error bodies the same way (boundedErrorBody) | **Yes** | No | `TestToolHTTPError_CarriesStatusAndBody`, `TestToolHTTPError_NoBody`, `TestToolHTTPError_TruncatesOversizedBody`, `TestBoundedErrorBody_TrimsAndCaps` in `internal/mcp/errors_test.go` | PASS |
+| `channel_routing_config_set` validation failures return `IsError` results named after the tool | **Yes** | No | `TestBL331_ChannelRoutingConfigSet_InvalidJSON` / `_EmptyRulesJSON` in `internal/mcp/bl331_channel_routing_tools_test.go` (assert `res.IsError` + tool-name prefix) | PASS |
+| Session-handler failure modes (`send_input`, `rename_session`, vision `image_path` read failure) return named IsError results | **Yes** | No | `TestBL91_SendInput_SessionNotFound`, `TestBL91_SendInput_MissingID`, `TestBL91_RenameSession_MissingArgs` (`internal/mcp/bl91_handler_test.go`); `TestBL368_VisionDescribe_FileNotFound_ReturnsError` (`internal/mcp/bl368_vision_describe_test.go`) | PASS — `go test ./internal/mcp/... -count=1`: 269 passed, 0 failed; `go test ./internal/server/... -count=1`: 1013 passed, 0 failed; `go build ./...` clean |
+
+Live validation (not yet performed): drive an MCP client through one proxy tool
+(e.g. `get_cooldown`) and one session tool against a faulted daemon and confirm the
+client sees `isError:true` with the upstream status in the message.
+
 ## Daemon restart safety (live, opt-in) — BL462
 
 Live companion to the BL462 restart audit (`docs/plans/bl462-restart-audit-findings.md`).

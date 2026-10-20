@@ -1380,7 +1380,7 @@ func (s *Server) ServeSSE(ctx context.Context) error {
 		// the two traced mid-session drop modes (findings doc in the
 		// header comment of this function). Periodic pings keep the
 		// stream visibly alive on both ends.
-		server.WithKeepAliveInterval(10 * time.Second),
+		server.WithKeepAliveInterval(10*time.Second),
 	)
 
 	// BL317 — replace static bearerAuthMiddleware with combined admin+federation auth.
@@ -1854,7 +1854,7 @@ func (s *Server) toolScheduleCancel() mcpsdk.Tool {
 func (s *Server) handleListSessions(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	// BL432 — view / states / since go through the REST list view.
 	if q, ok, errMsg := listSessionsViewQuery(req); errMsg != "" {
-		return mcpsdk.NewToolResultText(errMsg), nil
+		return toolErrorf("list_sessions", "%s", strings.TrimPrefix(errMsg, "Error: ")), nil
 	} else if ok {
 		return s.listSessionsViaREST(q)
 	}
@@ -2041,8 +2041,7 @@ func (s *Server) handleStartSession(ctx context.Context, req mcpsdk.CallToolRequ
 			"auto": true, "bypassPermissions": true, "dontAsk": true,
 		}
 		if !valid[pm] {
-			return mcpsdk.NewToolResultText(fmt.Sprintf(
-				"Error: invalid permission_mode %q — valid values: default, plan, acceptEdits, auto, bypassPermissions, dontAsk", pm)), nil
+			return toolErrorf("start_session", "invalid permission_mode %q — valid values: default, plan, acceptEdits, auto, bypassPermissions, dontAsk", pm), nil
 		}
 	}
 
@@ -2151,10 +2150,10 @@ func (s *Server) handleSessionOutput(ctx context.Context, req mcpsdk.CallToolReq
 		return toolError("session_output", err), nil
 	}
 	if sess == nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Session %q not found.", id)), nil
+		return toolErrorf("session_output", "session %q not found", id), nil
 	}
 	if !s.ownsSession(ctx, sess.FullID) {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Session %q not found.", id)), nil
+		return toolErrorf("session_output", "session %q not found", id), nil
 	}
 
 	out, err := s.manager.TailOutput(sess.FullID, n)
@@ -2229,7 +2228,7 @@ func (s *Server) handleSessionTimeline(_ context.Context, req mcpsdk.CallToolReq
 		return toolError("session_timeline", err), nil
 	}
 	if sess == nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Session %q not found.", id)), nil
+		return toolErrorf("session_timeline", "session %q not found", id), nil
 	}
 
 	lines, err := s.manager.ReadTimeline(sess.FullID)
@@ -2355,10 +2354,10 @@ func (s *Server) handleSendInput(ctx context.Context, req mcpsdk.CallToolRequest
 		return toolError("send_input", err), nil
 	}
 	if sess == nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Session %q not found.", id)), nil
+		return toolErrorf("send_input", "session %q not found", id), nil
 	}
 	if !s.ownsSession(ctx, sess.FullID) {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Session %q not found.", id)), nil
+		return toolErrorf("send_input", "session %q not found", id), nil
 	}
 
 	if err := s.manager.SendInput(sess.FullID, text, "mcp"); err != nil {
@@ -2450,10 +2449,10 @@ func (s *Server) handleKillSession(ctx context.Context, req mcpsdk.CallToolReque
 		return toolError("kill_session", err), nil
 	}
 	if sess == nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Session %q not found.", id)), nil
+		return toolErrorf("kill_session", "session %q not found", id), nil
 	}
 	if !s.ownsSession(ctx, sess.FullID) {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Session %q not found.", id)), nil
+		return toolErrorf("kill_session", "session %q not found", id), nil
 	}
 
 	if err := s.manager.Kill(sess.FullID); err != nil {
@@ -2480,7 +2479,7 @@ func (s *Server) handleRenameSession(ctx context.Context, req mcpsdk.CallToolReq
 		return toolError("rename_session", err), nil
 	}
 	if sess == nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Session %q not found.", id)), nil
+		return toolErrorf("rename_session", "session %q not found", id), nil
 	}
 
 	if err := s.manager.Rename(sess.FullID, name); err != nil {
@@ -2506,7 +2505,7 @@ func (s *Server) handleSessionChildren(ctx context.Context, req mcpsdk.CallToolR
 		return toolError("session_children", err), nil
 	}
 	if parent == nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Session %q not found.", id)), nil
+		return toolErrorf("session_children", "session %q not found", id), nil
 	}
 	children := s.manager.GetChildren(parent.FullID)
 	if len(children) == 0 {
@@ -2799,7 +2798,7 @@ func (s *Server) handleSendSavedCommand(_ context.Context, req mcpsdk.CallToolRe
 
 	cmd, ok := s.cmdLib.Get(name)
 	if !ok {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Saved command %q not found.", name)), nil
+		return toolErrorf("send_saved_command", "saved command %q not found", name), nil
 	}
 
 	sess, resolveErr := s.resolveSession(id)
@@ -2807,7 +2806,7 @@ func (s *Server) handleSendSavedCommand(_ context.Context, req mcpsdk.CallToolRe
 		return toolError("send_saved_command", resolveErr), nil
 	}
 	if sess == nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Session %q not found.", id)), nil
+		return toolErrorf("send_saved_command", "session %q not found", id), nil
 	}
 
 	if err := s.manager.SendInput(sess.FullID, cmd.Command, "mcp"); err != nil {
@@ -2842,7 +2841,7 @@ func (s *Server) handleScheduleAdd(_ context.Context, req mcpsdk.CallToolRequest
 			return toolError("schedule_add", resolveErr), nil
 		}
 		if sess == nil {
-			return mcpsdk.NewToolResultText(fmt.Sprintf("Session %q not found.", id)), nil
+			return toolErrorf("schedule_add", "session %q not found", id), nil
 		}
 		resolvedID = sess.FullID
 		sessID = sess.ID
@@ -3177,7 +3176,8 @@ func (s *Server) toolGetMyScope() mcpsdk.Tool {
 		mcpsdk.WithString("hint",
 			mcpsdk.Description("Optional session id (short or full) to resolve as self. Without hint: resolves via the calling session's own in-band scope credential when available, else the channel-ready active session (same fallback as get_my_session_id).")),
 		mcpsdk.WithReadOnlyHintAnnotation(true),
-	)}
+	)
+}
 
 func (s *Server) handleGetMyScope(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	all := s.manager.ListSessions()

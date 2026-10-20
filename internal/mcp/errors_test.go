@@ -86,3 +86,20 @@ func TestToolHTTPError_TruncatesOversizedBody(t *testing.T) {
 		t.Errorf("body not truncated to %d bytes; total len %d", 2048, len(text))
 	}
 }
+
+func TestBoundedErrorBody_TrimsAndCaps(t *testing.T) {
+	if got := boundedErrorBody([]byte("  hi  ")); got != "hi" {
+		t.Errorf("expected trimmed %q, got %q", "hi", got)
+	}
+	if got := boundedErrorBody([]byte(`{"error":"x"}`)); got != `{"error":"x"}` {
+		t.Errorf("short body must pass through unchanged, got %q", got)
+	}
+	big := strings.Repeat("y", maxToolErrorBody*3)
+	out := boundedErrorBody([]byte(big))
+	if len(out) != maxToolErrorBody+len("…") { // 2048 bytes + 3-byte ellipsis marker
+		t.Errorf("expected capped length %d, got %d", maxToolErrorBody+len("…"), len(out))
+	}
+	if !strings.HasSuffix(out, "…") {
+		t.Error("capped body must end with the ellipsis marker")
+	}
+}

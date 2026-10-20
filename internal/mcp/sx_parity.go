@@ -65,7 +65,7 @@ func (s *Server) proxyGetWithHeaders(path string, q url.Values) ([]byte, http.He
 	defer resp.Body.Close() //nolint:errcheck
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode/100 != 2 {
-		return nil, resp.Header, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(body))
+		return nil, resp.Header, fmt.Errorf("HTTP %d: %s", resp.StatusCode, boundedErrorBody(body))
 	}
 	return body, resp.Header, nil
 }
@@ -88,6 +88,17 @@ func withCompactView(path string) string {
 		return path + "&view=compact"
 	}
 	return path + "?view=compact"
+}
+
+// boundedErrorBody trims and caps an upstream error body so a verbose
+// 5xx dump can't flood the agent's context; successful bodies are
+// returned by the callers as-is and are never passed through here.
+func boundedErrorBody(b []byte) string {
+	s := strings.TrimSpace(string(b))
+	if len(s) <= maxToolErrorBody {
+		return s
+	}
+	return s[:maxToolErrorBody] + "…"
 }
 
 // proxyJSON sends method+body to the loopback and returns the body.
@@ -125,7 +136,7 @@ func (s *Server) proxyJSON(method, path string, body any) ([]byte, error) {
 	defer resp.Body.Close() //nolint:errcheck
 	respBody, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode/100 != 2 {
-		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(respBody))
+		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, boundedErrorBody(respBody))
 	}
 	return respBody, nil
 }

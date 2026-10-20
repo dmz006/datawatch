@@ -299,16 +299,107 @@ inside the calling session:
 
 ---
 
+## Error-mode parity (MCP vs REST) — opaque-failure audit + shared helper
+
+The third leg of BL463's title ("REST error-mode parity") — the audit is scoped to the
+MCP surface the phase sections above didn't cover, and the fix is in-tree.
+
+### What was wrong
+
+Many MCP handlers failed *soft*: they returned
+`mcpsdk.NewToolResultText("Error: ...")` with a **nil Go error**, so the resulting
+`CallToolResult` carried no `isError` flag, no tool name, and (for the REST-loopback
+proxy helpers in `sx_parity.go`) no upstream status code or body except what happened
+to be spliced into the message string. Consequences:
+
+1. **Clients couldn't distinguish failure from success** — the MCP wire result is
+   identical in shape to a successful call (`isError:false`). Claude Desktop, pi,
+   and any other client treating `isError` as the failure bit kept going on an error
+   string, exactly like the `list_templates`/`delete_template`-class drift the
+   earlier BL463 slice flagged for `get_my_scope`'s neighbors.
+2. **The REST mirror diverged.** `POST /api/mcp/call` (`internal/server/api.go`)
+   marshals the `CallToolResult` verbatim, so a failed tool call came back as
+   **HTTP 200 + `isError:false`** through the bridge while the direct REST route
+   (`GET /api/templates?project=...`, `POST /api/sessions`, ...) returned a real
+   **4xx + JSON body**. Same daemon, same underlying call, two different failure
+   signals — the parity gap this PRD names.
+3. **Upstream detail was lost or unstructured.** The loopback proxy helpers
+   (`proxyGetWithHeaders`/`proxyJSON` in `sx_parity.go`) spliced the daemon's
+   error body into the message without any bound — a verbose 5xx dump (config
+   dump, big validation payload) went straight into the agent's context;
+   memory proxies named the operation `"path"` regardless of which tool was
+   running.
+
+### Audit: opaque cases (before → now)
+
+| Handler(s) | Before (soft failure) | After |
+|---|---|---|
+| `get_my_session_id`, `get_my_scope` (server.go) | hint miss / no resolution returned soft "Error: ..." text | `toolError(f)` — named, `IsError` |
+| `start_session` — invalid `permission_mode` | soft "Error: invalid permission_mode..." | `toolErrorf("start_session", ...)` |
+| `send_input` / `rename_session` / `kill_session` / `session_output` / `session_timeline` / `session_children` / `send_saved_command` / `schedule_add` — not-found paths | soft `"Session X not found."` (2 of 11 sites were also success-flagged) | `toolErrorf("<tool>", "session %q not found", id)` at all 11 sites |
+| `list_sessions` — invalid `view` / invalid `states` combo | soft "Error: unknown view ..." | `toolErrorf("list_sessions", ...)` (legacy string contract for non-error paths unchanged) |
+| `sx_parity.go` REST-loopback proxies — `ask`, `project_summary`, `template_list`/`template_upsert`/`template_delete`, `project_list`/`project_upsert`/`project_alias_delete`, `session_rollback`, `cooldown_status`/`cooldown_set`/`cooldown_clear`, `sessions_stale`, `cost_summary`/`cost_usage`/`cost_rates`, `audit_query`/`audit_access_query`, `diagnose`, `reload`, `assist`, `device_alias_*`, `splash_info`, `routing_rules_*`, `analytics` | `NewToolResultText(fmt.Sprintf("Error: %v", err))` — success-flagged, upstream status/body only inside the message, unbounded | `toolError("<tool>", err)` — `IsError` set, tool name in the message; the proxy helpers now build the error as `HTTP %d: <body>` with the body bounded to `maxToolErrorBody` (2048B) |
+| memory-loopback proxies (`memory_remember`/`recall`/`list`/`forget`/`stats`/`pin`/`sweep`/`spell_check`/`extract_facts`/`import`/`export`/`learnings`) | `toolError("path", err)` — generic op name | `proxyMemoryPOST`/`proxyMemoryGET` take the tool name as the op |
+| `session_reconcile`, `session_import` (session_reconcile.go) | soft "Error: ..." | `toolError(f)` |
+| `bl220` MCP tools (bl220_mcp_tools.go) | `textOK("Error: ...")` soft strings | `toolErrorf("<tool>", ...)` |
+| `bl241` matrix tools, `bl331` channel-routing, `bl332` discussion tools, `bl356` exit hooks, `bl357` queue, `bl358` discussion subscribe, `bl360` result store, `bl362` channel diagnostics, `agent_audit`, `v52710` channel info, `v5278` gap closures, `v6040`/`v6080` session tools, `profile_tools`, `agent_tools` not-found paths | `NewToolResultText("Error: ...")` with nil error in the not-found / validation branches | `toolError` / `toolErrorf` with the tool's registered name |
+
+No `NewToolResultText("Error: ...")` (non-test) occurrences remain in
+`internal/mcp/` except the legacy-view string helper in `list_sessions_view.go`
+(which the `list_sessions` handler now wraps with `toolErrorf` rather than emitting
+it directly).
+
+### The shared helper (`internal/mcp/errors.go`)
+
+```go
+// toolError / toolErrorf → CallToolResult{IsError:true,
+//                              content: "<op>: <message>"}
+// toolHTTPError → CallToolResult{IsError:true,
+//                     content: "<op>: HTTP <status>: <body≤2048B (…-ellipsized if longer)>",
+//                     with nil-response/empty-body fallbacks ("HTTP 0" / status text)}
+//
+// Loopback proxy helpers (sx_parity.go) build their error as
+// "HTTP %d: <body>" with the same 2048-byte cap (boundedErrorBody), and
+// toolError() names the operation in front of it.
+```
+
+`maxToolErrorBody` = 2048 — a verbose daemon error body (config dump, big
+validation payload) is cut to 2048 bytes with a `…` in both the proxy helpers
+and `toolHTTPError` instead of flooding the client's context.
+
+### What the REST bridge now reports
+
+`POST /api/mcp/call` still returns the marshalled `CallToolResult` — that is now
+correct by construction: failed tool calls carry `isError:true` + a named,
+bounded message that includes the upstream `HTTP <status>` + body for the
+loopback proxies, matching what direct REST gives (4xx + body) semantically,
+without pretending the HTTP status line has to double as the MCP signal.
+
+### Tests (this slice)
+
+- `internal/mcp/errors_test.go` — new: `TestToolError_FlagsIsErrorWithPrefix`,
+  `TestToolErrorf_FormatsArguments`, `TestToolHTTPError_CarriesStatusAndBody`,
+  `TestToolHTTPError_NoBody`, `TestToolHTTPError_TruncatesOversizedBody`,
+  `TestBoundedErrorBody_TrimsAndCaps` (the proxy helpers' body cap).
+- Assertion updates to the new failure contract: `bl331_channel_routing_tools_test.go`
+  (both tests now assert `res.IsError` + the tool-name prefix),
+  `bl91_handler_test.go` (`send_input` / `rename_session` failure messages),
+  `bl368_vision_describe_test.go` (file-not-found message).
+- Full suites: `go test ./internal/mcp/... ./internal/server/...` — **269 + 1013
+  passed, 0 failed**; `go build ./...` clean.
+
+---
+
 ## Phase 2 — deferred (out of this PRD slice, tracked separately)
 
 - **BL467 fix itself**: making the bridge slot owner-bound (a session that loses the
   first-come race gets an explicit error/signal in-band, not a silent no-op).
   `get_my_scope`'s `channel_ready` + `resolved_via` fields make the failure observable
   in the meantime; the actual owner-binding fix is its own PRD.
-- **REST error-mode parity sweep** (the third leg of BL463's title "error-mode parity
-  with REST"): auditing that every MCP tool's failure response has a matching,
-  same-shape REST failure (and vice versa) is a cross-cutting audit of its own, not
-  something this single-tool slice should attempt.
+- **REST error-mode parity sweep** (the other direction): that every *REST* error
+  shape has a matching MCP message — the MCP-side opaque-failure audit + shared
+  helper shipped in the section above ("Error-mode parity") covers MCP→REST
+  direction; the REST→MCP direction is a separate audit pass, tracked here.
 - **CLI `session scope` command**, if/when wanted.
 
 ## Version / release
