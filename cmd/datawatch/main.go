@@ -5312,8 +5312,8 @@ Verify whether the diff plausibly implements the spec. Reply with STRICT JSON on
 					specHash := sha256.Sum256([]byte(req.UnitID + "|" + req.Guardrail + "|" + prompt))
 					outputFile := filepath.Join(req.ProjectDir, ".guardrail-output-"+hex.EncodeToString(specHash[:8])+".json")
 					sessionTask := sessionJudgmentTask(prompt, req.ProjectDir, outputFile)
-					content, serr := runOneShotJSONSession(cfg, req.PRDID, req.ProjectDir, gbackend, sessionModel,
-						"autonomous:guardrail:"+req.UnitID, sessionTask, outputFile,
+					content, judgeID, serr := runOneShotJSONSessionCaptureID(cfg, req.PRDID, req.ProjectDir, gbackend, sessionModel,
+						"", "autonomous:guardrail:"+req.UnitID, sessionTask, outputFile,
 						"guardrail-"+req.UnitID+"-"+req.Guardrail+".json", verificationSessionTimeout(cfg))
 					if serr != nil {
 						// BL410 Phase 0 — the SESSION itself failed (timeout,
@@ -5321,12 +5321,12 @@ Verify whether the diff plausibly implements the spec. Reply with STRICT JSON on
 						// content finding. See FailureReason's doc comment —
 						// this is the exact collapse that made B127's 10-minute
 						// timeout indistinguishable from a genuine block.
-						return autonomouspkg.GuardrailVerdict{
+						return judgeVerdictWithSession(autonomouspkg.GuardrailVerdict{
 							Outcome: "block", Severity: "medium",
 							Summary:   "guardrail(session): " + serr.Error(),
 							VerdictAt: time.Now(),
 							Category:  "infra",
-						}, nil
+						}, judgeID, outputFile), nil
 					}
 					var parsed autonomouspkg.GuardrailVerdict
 					if uerr := json.Unmarshal([]byte(extractJSON(content)), &parsed); uerr != nil {
@@ -5342,18 +5342,18 @@ Verify whether the diff plausibly implements the spec. Reply with STRICT JSON on
 						// in runPerTaskGuardrails/runPerStoryGuardrails. Only a
 						// genuine no-output session failure (the serr branch
 						// above) is "infra".
-						return autonomouspkg.GuardrailVerdict{
+						return judgeVerdictWithSession(autonomouspkg.GuardrailVerdict{
 							Outcome:   "block",
 							Severity:  "medium",
 							Summary:   fmt.Sprintf("guardrail judge returned %d bytes — its response could not be parsed as a verdict: %v", len(content), uerr),
 							VerdictAt: time.Now(),
 							Category:  "invalid-response",
 							Issues:    []string{fmt.Sprintf("raw judge output (%d bytes): %s", len(content), truncate(content, 400))},
-						}, nil
+						}, judgeID, outputFile), nil
 					}
 					parsed.Category = judgedGuardrailCategory(parsed.Category)
 					parsed.VerdictAt = time.Now()
-					return parsed, nil
+					return judgeVerdictWithSession(parsed, judgeID, outputFile), nil
 				}
 				gkind = "ollama"
 			}

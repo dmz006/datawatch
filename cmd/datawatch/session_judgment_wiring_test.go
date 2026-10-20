@@ -35,7 +35,8 @@ func TestB124_AutonomousGuardrail_RoutesThroughSessionWhenNeeded(t *testing.T) {
 		want string
 	}{
 		{"checks needsSessionJudgment before downgrading", "if needsSessionJudgment(gkind, req.ProjectDir, isInferenceSessionKind) {"},
-		{"spawns a real session", "runOneShotJSONSession(cfg, req.PRDID, req.ProjectDir, gbackend, sessionModel,"},
+		{"spawns a real session and captures its id", "runOneShotJSONSessionCaptureID(cfg, req.PRDID, req.ProjectDir, gbackend, sessionModel,"},
+		{"stamps the judge session onto its verdicts", "judgeVerdictWithSession(autonomouspkg.GuardrailVerdict{"},
 		{"reuses the same judgment prompt", "sessionJudgmentTask(prompt, req.ProjectDir, outputFile)"},
 		// The old unconditional downgrade must still exist as the
 		// no-project-dir fallback, just gated behind the session check
