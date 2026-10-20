@@ -53,6 +53,11 @@ so you never have to discard a partially-completed run:
   never actually enforced. Safe to call on any Automaton; a no-op if
   everything already resolves.
 
+A fourth path, `rejudge` (covered below), is for the opposite stuck
+state: an Automaton whose tasks are all already `completed` but which
+ended `blocked` on its completion guardrail — it re-runs that guardrail
+as a fresh judgment without resetting anything.
+
 ## Base requirements
 
 - `autonomous.enabled: true`
@@ -113,6 +118,45 @@ autonomous_prd_repair_depends_on(id="<prd_id>")
 autonomous_prd_reset_task(id="<prd_id>", task_id="<task_id>", force=true)
 autonomous_prd_cancel_story(id="<prd_id>", story_id="<story_id>", reason="...")
 autonomous_prd_cancel_task(id="<prd_id>", task_id="<task_id>", reason="...")
+```
+
+## Re-judging a blocked Automaton whose guardrail verdict was lost (`rejudge`)
+
+A different stuck state from the ones above: every task completed fine, but
+the Automaton ended `blocked` because the completion guardrail's verdict was
+lost or in doubt. The **rejudge** action asks for that same completion
+guardrail to run again — as a fresh judgment — without resetting or retrying
+any task:
+
+- The Automaton must be `blocked`; re-judging one that isn't is refused.
+- **Every task in every story must be `completed`.** If any task is pending,
+  running, failed, or cancelled, the call is refused and names the first such
+  task and its status — fix that one first (`reset_task` above) and re-judge
+  once the genuine work is done.
+- It never resets anything: no task goes back to pending, no story reopens.
+
+Outcome, in every case written to the Automaton's decision log (attributed
+to the acting operator) **before** any status change:
+
+- **Pass** — the blocked reason is cleared and the Automaton becomes
+  `completed` in the same step.
+- **Block** — the Automaton stays `blocked`, and its blocked reason is
+  updated from the new verdict.
+- **No verdict** (the judge failed or returned nothing) — the Automaton
+  stays `blocked` with its previous blocked reason, and an error is
+  returned so you see the re-judge produced no judgment.
+
+### REST
+
+```bash
+curl -sk -X POST https://HOST:PORT/api/autonomous/prds/<prd_id>/rejudge \
+  -H 'Content-Type: application/json' -d '{"actor":"operator"}'
+```
+
+### MCP
+
+```
+autonomous_prd_rejudge(id="<prd_id>")
 ```
 
 ## Common pitfalls
