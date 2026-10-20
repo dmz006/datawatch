@@ -4219,10 +4219,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		// own construction, the startup amgrCfg.Enabled gate) are
 		// intentionally untouched.
 		liveAutonomousConfig := func() autonomouspkg.Config {
-			if autonomousMgrRef != nil {
-				return autonomousMgrRef.Config()
-			}
-			return amgrCfg
+			return effectiveAutonomousConfig(autonomousMgrRef, amgrCfg)
 		}
 		// decomposeFn — REST loopback to /api/ask.
 		//
@@ -5164,12 +5161,16 @@ Verify whether the diff plausibly implements the spec. Reply with STRICT JSON on
 					return verifierCapacityTryAdmit(ctx, backend, model, "verify:"+task.ID, prd.ID)
 				}
 			}
+			// BL-stale-config tests (live_autonomous_config_test.go) pin
+			// this exact projection: pool / global backend / global model
+			// always come from the live snapshot, never a captured value.
+			vpool, vglobalBackend, vglobalModel := effectiveVerifierSelection(liveCfg)
 			vsel := selectVerifierLLM(verifierSelectInput{
 				Resolved:       resolvedVLLM,
 				ExplicitEffort: autonomouspkg.ResolveVerificationLLM(prd, task, explicitEffortCfg).Effort,
-				Pool:           liveCfg.VerificationBackends,
-				GlobalBackend:  liveCfg.VerificationBackend,
-				GlobalModel:    liveCfg.VerificationModel,
+				Pool:           vpool,
+				GlobalBackend:  vglobalBackend,
+				GlobalModel:    vglobalModel,
 				PRDBackend:     prd.Backend,
 				PRDModel:       prd.Model,
 				ProjectDir:     taskDir,
