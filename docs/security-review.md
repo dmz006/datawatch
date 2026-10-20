@@ -123,7 +123,7 @@ the registry and run `python3 scripts/gen_trivyignore.py`.
 
 <!-- BEGIN GENERATED: security/accepted-risks.yml container entries (scripts/gen_trivyignore.py) -->
 
-**74 suppressed container CVEs across 8 images, 2 independently traced.**
+**73 suppressed container CVEs across 8 images, 2 independently traced.**
 
 | CVE | Package | Severity | Images | Traced | Expires | Reason |
 |---|---|---|---|---|---|---|
@@ -198,7 +198,6 @@ the registry and run `python3 scripts/gen_trivyignore.py`.
 | CVE-2026-8458 | `curl, libcurl3-gnutls, libcurl4` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-09-07 | No fix available in Debian bookworm as of this migration; re-check each release ... |
 | CVE-2026-84782 | `libssl3` | high | agent-base, agent-gemini, agent-aider, parent-full, stats-cluster | no | 2026-10-29 | No fix available in Debian bookworm as of this migration; re-check each release ... |
 | CVE-2026-8927 | `curl, libcurl3-gnutls, libcurl4` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-08-20 | No fix available in Debian bookworm as of this migration; re-check each release ... |
-| CVE-2026-93748 | `http-cache-semantics (npm)` | high | agent-gemini | no | 2026-11-02 | No newer published npm version exists as of this migration. NOT independently tr... |
 | CVE-2026-9538 | `perl, perl-base, perl-modules-5.36, libperl5.36` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-06-30 | No fix available in Debian bookworm. GH#163 (2026-10-07) already removed CVE-202... |
 | CVE-2026-96512 | `sudo` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-10-26 | No fix available in Debian bookworm as of this migration; re-check each release ... |
 
