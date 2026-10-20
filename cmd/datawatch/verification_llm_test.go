@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"testing"
 
 	autonomouspkg "github.com/dmz006/datawatch/internal/autonomous"
@@ -335,5 +336,58 @@ func TestSelectVerifierLLM_GlobalPiFamilyNoProjectDirDowngrades(t *testing.T) {
 
 	if sel.UseSession || sel.Backend != "ollama" || sel.Kind != "ollama" {
 		t.Errorf("got %+v, want ollama downgrade without a session", sel)
+	}
+}
+
+// TestPiFamilyClearModelConditionEquivalence proves the De Morgan rewrite
+// of selectVerifierLLM's "clear the model" guard is equivalent to the
+// original negated-compound form. It exercises every combination of the
+// operands: piFamily, useSession, usesPRDBackend (bools) and whether the
+// global / PRD model strings are set.
+func TestPiFamilyClearModelConditionEquivalence(t *testing.T) {
+	type operand struct {
+		name           string
+		piFamily       bool
+		useSession     bool
+		globalModel    string
+		usesPRDBackend bool
+		prdModel       string
+	}
+	original := func(o operand) bool {
+		// The pre-rewrite guard, negation applied to the compound.
+		compound := o.usesPRDBackend && o.prdModel != ""
+		return o.piFamily && o.useSession && o.globalModel == "" && !compound
+	}
+	rewritten := func(o operand) bool {
+		return o.piFamily && o.useSession && o.globalModel == "" && (!o.usesPRDBackend || o.prdModel == "")
+	}
+
+	cases := []operand{}
+	for _, piFamily := range []bool{false, true} {
+		for _, useSession := range []bool{false, true} {
+			for _, globalModel := range []string{"", "prov/model"} {
+				for _, usesPRDBackend := range []bool{false, true} {
+					for _, prdModel := range []string{"", "sonnet-4"} {
+						cases = append(cases, operand{
+						name: fmt.Sprintf("piFamily=%v useSession=%v globalModel=%q usesPRDBackend=%v prdModel=%q",
+								piFamily, useSession, globalModel, usesPRDBackend, prdModel),
+							piFamily: piFamily, useSession: useSession, globalModel: globalModel,
+							usesPRDBackend: usesPRDBackend, prdModel: prdModel,
+						})
+					}
+				}
+			}
+		}
+	}
+	if len(cases) != 32 {
+		t.Fatalf("expected 32 operand combinations, got %d", len(cases))
+	}
+	for _, c := range cases {
+		c := c
+		t.Run(c.name, func(t *testing.T) {
+			if original(c) != rewritten(c) {
+				t.Fatalf("De Morgan rewrite diverges from original: operand=%+v original=%v rewritten=%v", c, original(c), rewritten(c))
+			}
+		})
 	}
 }

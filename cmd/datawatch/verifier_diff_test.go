@@ -800,7 +800,7 @@ func TestResolveEmptyDiffWithPriorWork_Retries(t *testing.T) {
 	if len(priorDiff) == 0 || !strings.Contains(string(priorDiff), "work.md") {
 		t.Fatalf("prior diff must carry the reachable commit's patch for the verifier's evidence: %q", priorDiff)
 	}
-	if priorNames == nil || len(priorNames) == 0 {
+	if len(priorNames) == 0 {
 		t.Fatalf("prior names = %v, want the commit's changed files for RecordTaskFilesTouched", priorNames)
 	}
 
