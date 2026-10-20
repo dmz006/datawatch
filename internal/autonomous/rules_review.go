@@ -122,13 +122,40 @@ func (m *Manager) presentRulesContextFiles(prd *PRD) string {
 // there is no single task/story a PRD-wide finding belongs to, so a
 // content-category block eligible for auto-fix is handed back for the
 // caller to synthesizeCorrectiveWork from, rather than retried here.
+// prdRulesReviewInvocation builds the "rules-review" GuardrailInvocation
+// for a whole-PRD judgment: Level "prd", the PRD itself as the judged
+// unit, the PRD spec plus the rulesReviewSuffix pointer text as the unit
+// spec, and the PRD → global backend/model resolution (no PRD-level Task
+// to inherit from — resolveGuardrailBackendModel's task-level branch
+// never fires, identical to runPerStoryGuardrails' own reuse of the same
+// helper). Shared by runPRDCompletionRulesReview's completion rollup and
+// RejudgeCompletionGuardrail's operator-triggered re-judge so the two
+// invocations are built in exactly one place and can't drift apart.
+func (m *Manager) prdRulesReviewInvocation(prd *PRD) GuardrailInvocation {
+	m.mu.Lock()
+	globalBackend, globalModel := m.cfg.VerificationBackend, m.cfg.VerificationModel
+	m.mu.Unlock()
+
+	inv := GuardrailInvocation{
+		PRDID:      prd.ID,
+		Level:      "prd",
+		UnitID:     prd.ID,
+		UnitTitle:  prd.Title,
+		UnitSpec:   fmt.Sprintf("Original request for this automaton:\n%s\n\n%s", prd.Spec, m.rulesReviewSuffix(prd)),
+		Guardrail:  "rules-review",
+		ProjectDir: prd.ProjectDir,
+		OwnerPeer:  prd.OwnerPeer, // BL369 Layer 3 — federation trust boundary
+	}
+	inv.GuardrailBackend, inv.GuardrailModel = resolveGuardrailBackendModel(&Task{}, prd, globalBackend, globalModel)
+	return inv
+}
+
 func (m *Manager) runPRDCompletionRulesReview(ctx context.Context, prd *PRD) (blocked bool, contentFixVerdict *GuardrailVerdict, err error) {
 	if !slices.Contains(m.resolveGuardrails(prd, "prd"), "rules-review") {
 		return false, nil, nil
 	}
 	m.mu.Lock()
 	fn := m.guardrail
-	globalBackend, globalModel := m.cfg.VerificationBackend, m.cfg.VerificationModel
 	m.mu.Unlock()
 	if fn == nil {
 		return false, nil, nil
@@ -138,20 +165,7 @@ func (m *Manager) runPRDCompletionRulesReview(ctx context.Context, prd *PRD) (bl
 		return false, nil, nil
 	}
 
-	inv := GuardrailInvocation{
-		PRDID:      prd.ID,
-		Level:      "prd",
-		UnitID:     prd.ID,
-		UnitTitle:  prd.Title,
-		UnitSpec:   fmt.Sprintf("Original request for this automaton:\n%s\n\n%s", prd.Spec, suffix),
-		Guardrail:  "rules-review",
-		ProjectDir: prd.ProjectDir,
-		OwnerPeer:  prd.OwnerPeer, // BL369 Layer 3 — federation trust boundary
-	}
-	// No PRD-level Task to inherit from — resolveGuardrailBackendModel's
-	// task-level branch never fires, so this resolves PRD → global,
-	// identical to runPerStoryGuardrails' own reuse of the same helper.
-	inv.GuardrailBackend, inv.GuardrailModel = resolveGuardrailBackendModel(&Task{}, prd, globalBackend, globalModel)
+	inv := m.prdRulesReviewInvocation(prd)
 
 	// BL410 Phase 1 — bounded, escalating auto-retry for an infra-
 	// category block (the guardrail session itself failed — this is
