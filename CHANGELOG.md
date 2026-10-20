@@ -11,7 +11,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 - **Autonomous settings changed at runtime now apply to live Automata right away.** Previously, changes made with `datawatch config set autonomous.…`, the REST `PUT /api/config`, or the WebUI settings panel (for example `verification_backend`, `verification_model`, the `verification_backends` pool, `stale_task_seconds`, `planning_backend`, `planning_model`, `verifier_diff_max_bytes`) were stored and read back correctly, but the verifier, the guardrail, the planner, the stall detection and the diff truncation kept using the values from daemon start-up until the daemon was restarted. Every one of those paths now re-reads the current setting on each run, so a setting changed at runtime is used on the very next task with no restart.
 - This also closes the 2026-10-18 finding that `stale_task_seconds` was stored but ignored until a restart.
-- Version bump 9.5.26 -> 9.5.30 (cmd/datawatch/main.go + internal/server/api.go kept identical).
+- Version bump 9.5.29 -> 9.5.30 (cmd/datawatch/main.go + internal/server/api.go kept identical).
 
 ## v9.5.26 — autonomous: honor each backend's delivery mode when typing waiting tasks into tmux
 
