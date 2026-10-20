@@ -615,3 +615,110 @@ func TestRunOneShotJudgeSession_ReusesPresentOutputWithoutStarting(t *testing.T)
 		t.Errorf("project-dir output %s must still exist after reuse: %v", outputFile, statErr)
 	}
 }
+
+// fakeSessionServerCaptureStart is fakeSessionServer plus capture of the
+// /api/sessions/start request body, so a test can assert exactly what the
+// daemon was asked to start with.
+func fakeSessionServerCaptureStart(t *testing.T, state string, outputPath, outputContent string, writeOnPoll bool) (*httptest.Server, map[string]any) {
+	t.Helper()
+	var mu sync.Mutex
+	captured := map[string]any{}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/sessions/start", func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		if err := json.NewDecoder(r.Body).Decode(&captured); err != nil {
+			t.Errorf("decoding /api/sessions/start body: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{"id": "sess-test-1"})
+	})
+	polls := 0
+	mux.HandleFunc("/api/sessions/sess-test-1", func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		polls++
+		if writeOnPoll && polls == 1 {
+			_ = os.WriteFile(outputPath, []byte(outputContent), 0o600)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{"state": state})
+	})
+	mux.HandleFunc("/api/sessions/kill", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	return srv, captured
+}
+
+// assertPlanningStartBody checks the fields a planning/judgment start
+// request must carry: skip_snapshot=true (no pre-session snapshot commit and
+// no completion commit in the PRD's repo — the session's own output files
+// would otherwise get staged and committed), plus the one-shot/PRD linkage
+// the daemon's snapshot gate keys on.
+func assertPlanningStartBody(t *testing.T, startBody map[string]any, prdID string) {
+	t.Helper()
+	if v, ok := startBody["skip_snapshot"].(bool); !ok || !v {
+		t.Errorf("start request skip_snapshot = %v (%T), want true — without it the daemon snapshot-commits the planning session's own output", startBody["skip_snapshot"], startBody["skip_snapshot"])
+	}
+	if v, ok := startBody["one_shot"].(bool); !ok || !v {
+		t.Errorf("start request one_shot = %v (%T), want true", startBody["one_shot"], startBody["one_shot"])
+	}
+	if v, ok := startBody["prd_id"].(string); !ok || v != prdID {
+		t.Errorf("start request prd_id = %v, want %q", startBody["prd_id"], prdID)
+	}
+}
+
+// The start request built for the decompose and judge one-shots must carry
+// skip_snapshot=true (via the same runOneShotJSONSessionWithReader seam
+// both go through), so the daemon never stages or commits a planning
+// session's working tree.
+func TestPlanningSessionStartRequestSkipsSnapshot(t *testing.T) {
+	t.Run("decompose", func(t *testing.T) {
+		projectDir := t.TempDir()
+		dataDir := t.TempDir()
+		outputFile := filepath.Join(projectDir, ".decompose-output-abc.json")
+
+		srv, startBody := fakeSessionServerCaptureStart(t, "running", outputFile, `{"tasks":[]}`, true)
+		withFakeLoopback(t, srv)
+
+		cfg := &config.Config{}
+		cfg.DataDir = dataDir
+
+		got, id, err := runOneShotJSONSessionCaptureID(cfg, "prd-decomp-skip", projectDir, "claude-code", "sonnet", "",
+			decomposeSessionName, "decompose it, write JSON to "+outputFile, outputFile, "decompose-output.json",
+			10*time.Second)
+		if err != nil {
+			t.Fatalf("runOneShotJSONSessionCaptureID: %v", err)
+		}
+		if got == "" || id != "sess-test-1" {
+			t.Fatalf("content=%q id=%q, want content and the spawned id", got, id)
+		}
+		assertPlanningStartBody(t, startBody, "prd-decomp-skip")
+	})
+
+	t.Run("judge", func(t *testing.T) {
+		projectDir := t.TempDir()
+		dataDir := t.TempDir()
+		outputFile := filepath.Join(projectDir, ".guardrail-output-skip.json")
+		const want = `{"outcome":"pass","severity":"info","summary":"ok"}`
+
+		srv, startBody := fakeSessionServerCaptureStart(t, "running", outputFile, want, true)
+		withFakeLoopback(t, srv)
+
+		cfg := &config.Config{}
+		cfg.DataDir = dataDir
+
+		got, id, err := runOneShotJudgeSessionCaptureID(cfg, "prd-judge-skip", projectDir, "claude-code", "sonnet", "",
+			"autonomous:guardrail:skip-unit", "judge it, write JSON to "+outputFile, outputFile, "guardrail-skip-unit-sec.json",
+			10*time.Second)
+		if err != nil {
+			t.Fatalf("runOneShotJudgeSessionCaptureID: %v", err)
+		}
+		if got != want || id != "sess-test-1" {
+			t.Fatalf("content=%q id=%q, want %q and the spawned id", got, id, want)
+		}
+		assertPlanningStartBody(t, startBody, "prd-judge-skip")
+	})
+}
