@@ -83,8 +83,8 @@ func TestKill_CascadeWhenKillChildrenTrue(t *testing.T) {
 	child := &Session{
 		ID: "cc10", FullID: "host-cc10", Hostname: "host",
 		TmuxSession: "cs-cc10", LogFile: t.TempDir() + "/cc10.log",
-		ParentID: "host-pp10",
-		State:    StateRunning,
+		ParentID:  "host-pp10",
+		State:     StateRunning,
 		UpdatedAt: time.Now(), CreatedAt: time.Now().Add(time.Second),
 	}
 

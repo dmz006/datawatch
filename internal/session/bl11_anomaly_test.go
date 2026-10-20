@@ -64,7 +64,7 @@ func TestBL11_DetectLongInputWait_NotWaiting(t *testing.T) {
 
 func TestBL11_DetectDurationOutlier(t *testing.T) {
 	sess := &Session{
-		FullID:    "h-aa", State: StateRunning,
+		FullID: "h-aa", State: StateRunning,
 		CreatedAt: time.Now().Add(-30 * time.Minute),
 	}
 	a := DetectDurationOutlier(sess, 10*time.Minute, 2.0)
@@ -75,7 +75,7 @@ func TestBL11_DetectDurationOutlier(t *testing.T) {
 
 func TestBL11_DetectDurationOutlier_WithinThreshold(t *testing.T) {
 	sess := &Session{
-		FullID:    "h-aa", State: StateRunning,
+		FullID: "h-aa", State: StateRunning,
 		CreatedAt: time.Now().Add(-5 * time.Minute),
 	}
 	if DetectDurationOutlier(sess, 10*time.Minute, 2.0) != nil {

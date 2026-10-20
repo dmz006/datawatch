@@ -8,7 +8,7 @@ import (
 
 func TestCancelBySession(t *testing.T) {
 	tmp, _ := os.CreateTemp("", "sched-test-*.json")
-	os.Remove(tmp.Name()) //nolint:errcheck // Remove so NewScheduleStore creates fresh
+	os.Remove(tmp.Name())       //nolint:errcheck // Remove so NewScheduleStore creates fresh
 	defer os.Remove(tmp.Name()) //nolint:errcheck
 
 	store, err := NewScheduleStore(tmp.Name())
@@ -17,9 +17,9 @@ func TestCancelBySession(t *testing.T) {
 	}
 
 	// Add commands for two sessions
-	store.Add("host-abc1", "cmd1", time.Time{}, "") //nolint:errcheck
+	store.Add("host-abc1", "cmd1", time.Time{}, "")               //nolint:errcheck
 	store.Add("host-abc1", "cmd2", time.Now().Add(time.Hour), "") //nolint:errcheck
-	store.Add("host-def2", "cmd3", time.Time{}, "") //nolint:errcheck
+	store.Add("host-def2", "cmd3", time.Time{}, "")               //nolint:errcheck
 
 	// Cancel by full ID
 	n := store.CancelBySession("host-abc1")
@@ -42,7 +42,7 @@ func TestCancelBySession(t *testing.T) {
 
 func TestCancelBySessionShortID(t *testing.T) {
 	tmp, _ := os.CreateTemp("", "sched-test-*.json")
-	os.Remove(tmp.Name()) //nolint:errcheck
+	os.Remove(tmp.Name())       //nolint:errcheck
 	defer os.Remove(tmp.Name()) //nolint:errcheck
 
 	store, _ := NewScheduleStore(tmp.Name())
@@ -57,7 +57,7 @@ func TestCancelBySessionShortID(t *testing.T) {
 
 func TestDelete(t *testing.T) {
 	tmp, _ := os.CreateTemp("", "sched-test-*.json")
-	os.Remove(tmp.Name()) //nolint:errcheck
+	os.Remove(tmp.Name())       //nolint:errcheck
 	defer os.Remove(tmp.Name()) //nolint:errcheck
 
 	store, _ := NewScheduleStore(tmp.Name())
@@ -81,7 +81,7 @@ func TestDelete(t *testing.T) {
 
 func TestAddSpawn(t *testing.T) {
 	tmp, _ := os.CreateTemp("", "sched-test-*.json")
-	os.Remove(tmp.Name()) //nolint:errcheck
+	os.Remove(tmp.Name())       //nolint:errcheck
 	defer os.Remove(tmp.Name()) //nolint:errcheck
 
 	store, err := NewScheduleStore(tmp.Name())
@@ -91,17 +91,17 @@ func TestAddSpawn(t *testing.T) {
 
 	runAt := time.Now().Add(time.Hour)
 	sc, err := store.AddSpawn(AddSpawnOptions{
-		Task:       "run audit",
-		ProjectDir: "/home/user/project",
-		Backend:    "openai",
-		LLMRef:     "gpt4o",
-		Model:      "gpt-4o",
-		Effort:     "thorough",
-		SessionName: "audit-session",
+		Task:         "run audit",
+		ProjectDir:   "/home/user/project",
+		Backend:      "openai",
+		LLMRef:       "gpt4o",
+		Model:        "gpt-4o",
+		Effort:       "thorough",
+		SessionName:  "audit-session",
 		ScheduleName: "hourly-audit",
-		RunAt:      runAt,
-		OneShot:    true,
-		Ephemeral:  true,
+		RunAt:        runAt,
+		OneShot:      true,
+		Ephemeral:    true,
 	})
 	if err != nil {
 		t.Fatalf("AddSpawn: %v", err)
@@ -153,7 +153,7 @@ func TestAddSpawn(t *testing.T) {
 
 func TestDuePendingSessionsSpawn(t *testing.T) {
 	tmp, _ := os.CreateTemp("", "sched-test-*.json")
-	os.Remove(tmp.Name()) //nolint:errcheck
+	os.Remove(tmp.Name())       //nolint:errcheck
 	defer os.Remove(tmp.Name()) //nolint:errcheck
 
 	store, _ := NewScheduleStore(tmp.Name())
@@ -189,7 +189,7 @@ func TestDuePendingSessionsSpawn(t *testing.T) {
 
 func TestAddSpawnCronNextFire(t *testing.T) {
 	tmp, _ := os.CreateTemp("", "sched-test-*.json")
-	os.Remove(tmp.Name()) //nolint:errcheck
+	os.Remove(tmp.Name())       //nolint:errcheck
 	defer os.Remove(tmp.Name()) //nolint:errcheck
 
 	store, _ := NewScheduleStore(tmp.Name())
@@ -213,7 +213,7 @@ func TestAddSpawnCronNextFire(t *testing.T) {
 
 func TestMarkDoneSpawnCronRecurrence(t *testing.T) {
 	tmp, _ := os.CreateTemp("", "sched-test-*.json")
-	os.Remove(tmp.Name()) //nolint:errcheck
+	os.Remove(tmp.Name())       //nolint:errcheck
 	defer os.Remove(tmp.Name()) //nolint:errcheck
 
 	store, _ := NewScheduleStore(tmp.Name())
@@ -248,7 +248,7 @@ func TestMarkDoneSpawnCronRecurrence(t *testing.T) {
 // before DuePendingSessions could process them.
 func TestDuePendingExcludesSpawnAndNewSession(t *testing.T) {
 	tmp, _ := os.CreateTemp("", "sched-test-*.json")
-	os.Remove(tmp.Name()) //nolint:errcheck
+	os.Remove(tmp.Name())       //nolint:errcheck
 	defer os.Remove(tmp.Name()) //nolint:errcheck
 
 	store, _ := NewScheduleStore(tmp.Name())
@@ -285,7 +285,7 @@ func TestDuePendingExcludesSpawnAndNewSession(t *testing.T) {
 // causing CancelBySession to cancel the re-armed schedule when the session ended.
 func TestCancelBySessionDoesNotAffectSpawnSchedule(t *testing.T) {
 	tmp, _ := os.CreateTemp("", "sched-test-*.json")
-	os.Remove(tmp.Name()) //nolint:errcheck
+	os.Remove(tmp.Name())       //nolint:errcheck
 	defer os.Remove(tmp.Name()) //nolint:errcheck
 
 	store, _ := NewScheduleStore(tmp.Name())
@@ -324,7 +324,7 @@ func TestCancelBySessionDoesNotAffectSpawnSchedule(t *testing.T) {
 // the scheduler tick and an explicit cancel), MarkDone must not re-arm it.
 func TestMarkDoneRespectsCancel(t *testing.T) {
 	tmp, _ := os.CreateTemp("", "sched-test-*.json")
-	os.Remove(tmp.Name()) //nolint:errcheck
+	os.Remove(tmp.Name())       //nolint:errcheck
 	defer os.Remove(tmp.Name()) //nolint:errcheck
 
 	store, _ := NewScheduleStore(tmp.Name())
@@ -359,7 +359,7 @@ func TestMarkDoneRespectsCancel(t *testing.T) {
 // regular command schedules (non-spawn, cron-based).
 func TestMarkDoneRespectsCancel_CommandType(t *testing.T) {
 	tmp, _ := os.CreateTemp("", "sched-test-*.json")
-	os.Remove(tmp.Name()) //nolint:errcheck
+	os.Remove(tmp.Name())       //nolint:errcheck
 	defer os.Remove(tmp.Name()) //nolint:errcheck
 
 	store, _ := NewScheduleStore(tmp.Name())

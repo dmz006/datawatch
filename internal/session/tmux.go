@@ -22,7 +22,7 @@ type TmuxAPI interface {
 	ResizePane(session string, cols, rows int) error
 	WindowSize(session string) (cols, rows int, err error) // v8.37.3 — lets ResizeTmux skip a no-op resize
 	CapturePaneVisible(session string) (string, error)
-	CapturePaneLiveTail(session string) (string, error)      // v5.27.6 — state detection
+	CapturePaneLiveTail(session string) (string, error)              // v5.27.6 — state detection
 	CapturePaneScrollback(session string, lines int) (string, error) // v8.20.11 — scrollback for one-shot completion
 	CapturePaneANSI(session string) (string, error)
 	PipeOutput(session, logFile string) error
@@ -62,8 +62,8 @@ func (t *TmuxManager) NewSessionWithSize(name string, cols, rows int) error {
 	if err := exec.Command("tmux", "new-session", "-d", "-s", name, "-x", colStr, "-y", rowStr).Run(); err != nil {
 		return err
 	}
-	exec.Command("tmux", "set-option", "-t", name, "aggressive-resize", "on").Run()  //nolint:errcheck
-	exec.Command("tmux", "resize-window", "-t", name, "-x", colStr, "-y", rowStr).Run()  //nolint:errcheck
+	exec.Command("tmux", "set-option", "-t", name, "aggressive-resize", "on").Run()     //nolint:errcheck
+	exec.Command("tmux", "resize-window", "-t", name, "-x", colStr, "-y", rowStr).Run() //nolint:errcheck
 	return nil
 }
 

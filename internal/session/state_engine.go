@@ -144,11 +144,11 @@ func (m *Manager) markChannelEventAt(fullID string, kind ChannelEventKind, ts ti
 // because the on-disk LastChannelEventAt timestamps were necessarily
 // older than the gap. Two changes:
 //
-//   1. ResumeMonitors now resets LCE to time.Now() for sessions whose
-//      tmux pane is confirmed alive (positive evidence of activity).
-//   2. The watcher takes a 30 s warm-up grace period after start before
-//      its first transition, so any sessions that resumed without
-//      pane-content changes still have a chance to settle.
+//  1. ResumeMonitors now resets LCE to time.Now() for sessions whose
+//     tmux pane is confirmed alive (positive evidence of activity).
+//  2. The watcher takes a 30 s warm-up grace period after start before
+//     its first transition, so any sessions that resumed without
+//     pane-content changes still have a chance to settle.
 //
 // Sessions with zero LastChannelEventAt are skipped (no events seen yet
 // — could be a fresh session that hasn't produced output).
@@ -313,4 +313,3 @@ func (m *Manager) acpTurnSeen(fullID string, set bool) bool {
 	}
 	return m.acpBusySeen[fullID]
 }
-
