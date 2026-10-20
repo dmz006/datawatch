@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+- Changing an Automaton's LLM settings while its plan is being written is now refused with a clear message naming the running plan (HTTP 409 over the API), instead of returning the Automaton to draft and losing the plan. The plan is kept, and the settings can be changed once it finishes.
+- Covered by tests using a fake planner.
+
 ## v9.5.29
 
 
