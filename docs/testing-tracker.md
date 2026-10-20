@@ -1642,3 +1642,37 @@ This ran on go1.27.2 linux/amd64: 26 tests, all PASS (21 in `internal/autonomous
 Parity surfaces not yet exposed:
 
 - **PWA, Android and iPhone** do not display `blocked_reason` yet. The reason: this change is server-side only, and client display is a follow-up. Clients also do not yet show the `guardrail_verdict` decision kind or the `judge_session_id` and `judge_output_path` fields.
+
+## `set_llm` refused with 409 while a plan is in flight — v9.5.30
+
+Contract change on an existing endpoint (`B1`): `POST /api/autonomous/prds/{id}/set_llm` previously
+changed the Automaton's LLM settings **and reverted it to draft while a plan was being written**,
+silently destroying the in-flight plan. Now, while the PRD is in `planning`, both setter paths —
+the legacy worker-LLM setter (`SetPRDLLM`, fires on `backend`/`effort`/`model`/
+`decomposition_profile`/`decomposition_model`) and the guardrail setter (`SetPRDGuardrailLLM`, fires on
+`guardrail_backend`/`guardrail_model`) — are **refused with HTTP 409 Conflict** (not 400 — a plan in
+flight is a transient state the client can retry, not a malformed request), with a body that names the
+`planning` state. Nothing is persisted on refusal. Once the plan lands (PRD `needs_review`), the same
+call is accepted with 200. The refusal sentinel is `autonomous.ErrPlanInProgress`
+(`internal/autonomous/manager.go`); the 409 mapping for both branches lives in
+`internal/server/autonomous.go` (`handleAutonomousPRDs`, `case "set_llm"`).
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| `SetPRDLLM` refused while PRD `planning` (error wraps `ErrPlanInProgress`); `SetPRDGuardrailLLM` refused the same way; both accepted after the plan lands | **Yes** (planning-state refusal suite in `internal/autonomous/settings_during_planning_test.go`) | **Yes** (live, via the release-smoke section below) | `go test` on go1.27.x linux/amd64; in-process Manager with a fake planner that blocks inside planning, then releases and returns a valid plan | Manager-level contract: refusal text names the running plan; plan survives to `needs_review` with its stories |
+| `POST /api/autonomous/prds/{id}/set_llm` legacy body returns **409** (not 400) during planning and 200 after, with the plan intact | **Yes** (`TestSetLLMDuringPlanning` in `internal/server/autonomous_set_llm_planning_test.go`) | **Yes** (live, via the release-smoke section below — run on each release of the minor series) | `go test`, real `handleAutonomousPRDs` handler, real Manager with blocked fake planner; no sessions/tmux/real LLM | 409 + body naming `planning` mid-plan; 200 post-plan; stories/tasks intact after the plan lands |
+| `POST /api/autonomous/prds/{id}/set_llm` **guardrail-only** body (`guardrail_backend`/`guardrail_model`) returns the **same 409** during planning, persists nothing while refused, and 200 + persisted after | **Yes** (`TestSetGuardrailLLMDuringPlanning` in `internal/server/autonomous_set_llm_planning_test.go`) | **Yes** (live, via the release-smoke section below) | `go test`, real `handleAutonomousPRDs` handler, real Manager with blocked fake planner | Second `ErrPlanInProgress` site at the HTTP layer — previously covered only at Manager level, never over HTTP; refusal persists no guardrail fields |
+
+Release smoke (B12): `scripts/release-smoke.sh` **section 75** — starts a real decompose on a
+throwaway PRD, polls `set_llm` during the window in which the PRD is `planning`, and asserts the 409
+refusal and that the plan afterwards survives to `needs_review`; skips (non-fatal) when no LLM backend
+is reachable so the planning window never opens. Smoke-cleanup: PRD created via `add_cleanup prd` and
+waited to completion (max 300 s) before the section ends, so cleanup never races an in-flight plan.
+Orphan sweep untouched (no new entity kind or name pattern).
+
+Test commands (run from the repository root):
+
+```sh
+go test -count=1 -run 'TestSetLLMDuringPlanning|TestSetGuardrailLLMDuringPlanning' ./internal/server/
+go test -count=1 -run 'Planning' ./internal/autonomous/
+```

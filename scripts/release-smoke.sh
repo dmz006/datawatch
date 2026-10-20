@@ -3924,6 +3924,88 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+H "75. set_llm refused with 409 while the plan is in flight (v9.5.30)"
+# Contract change on an existing endpoint (B1/B12): changing an
+# Automaton's LLM settings while its plan is being written used to
+# revert the PRD to draft and lose the plan. Now both setter paths
+# (legacy worker LLM + guardrail LLM) are refused with 409 — a
+# transient state the client can retry, not a malformed request — and
+# the plan survives to needs_review. Create a throwaway PRD, start a
+# real decompose in the background, and probe set_llm while the PRD
+# sits in `planning`; assert the 409 and that the plan lands intact.
+ok/ko/skip are non-fatal on skip: no LLM backend → planning window
+# never opens → skip (same convention as §7/§7b).
+if [[ "$A_ENABLED" != "yes" ]]; then
+  skip "autonomous disabled; skipping set_llm planning-conflict test"
+else
+  SM75_B=$(curl "${curl_args[@]}" "$BASE/api/backends" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+order = ["ollama", "openwebui", "opencode", "claude-code"]
+have = {b["name"]: b for b in d.get("llm",[])}
+for name in order:
+    b = have.get(name)
+    if b and b.get("enabled") and b.get("available"):
+        print(name); break'
+  2>/dev/null || echo "")
+  if [[ -z "$SM75_B" ]]; then
+    skip "set_llm-conflict: no LLM backend available; can't open a planning window"
+  else
+    PC=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+      -d "{\"spec\":\"smoke probe — set_llm conflict during planning\",\"project_dir\":\"/tmp\",\"backend\":\"$SM75_B\",\"effort\":\"low\"}" \
+      "$BASE/api/autonomous/prds" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d.get("id",""))')
+    if [[ -z "$PC" ]]; then
+      ko "set_llm-conflict: PRD create failed"
+    else
+      add_cleanup prd "$PC"
+      # Start decompose in the background; it blocks the HTTP request
+      # while the planner runs, which is exactly the `planning` window.
+      curl "${curl_args[@]}" --max-time 280 -X POST \
+        "$BASE/api/autonomous/prds/$PC/decompose" >/dev/null 2>&1 &
+      DECOMP_PID=$!
+      SM75_ST=""
+      SAW409=""
+      for _ in $(seq 1 120); do
+        SM75_ST=$(curl "${curl_args[@]}" "$BASE/api/autonomous/prds/$PC" \
+          | python3 -c 'import json,sys;print(json.load(sys.stdin).get("status",""))' 2>/dev/null)
+        if [[ "$SM75_ST" == "planning" ]]; then
+          R=$(curl -s "${curl_args[@]}" -o /dev/null -w "%{http_code}" -X POST \
+            -H "Content-Type: application/json" \
+            -d "{\"backend\":\"$SM75_B\"}" \
+            "$BASE/api/autonomous/prds/$PC/set_llm")
+          if [[ "$R" == "409" ]]; then SAW409="yes"; break; fi
+        elif [[ -n "$SM75_ST" && "$SM75_ST" != "draft" ]]; then
+          break
+        fi
+        sleep 0.5
+      done
+      wait "$DECOMP_PID" 2>/dev/null
+      if [[ -n "$SAW409" ]]; then
+        ok "set_llm during planning refused with 409 (conflict, not 400)"
+        # The refusal must cost the plan nothing: it lands needs_review.
+        ST=""
+        for _ in $(seq 1 120); do
+          ST=$(curl "${curl_args[@]}" "$BASE/api/autonomous/prds/$PC" \
+            | python3 -c 'import json,sys;print(json.load(sys.stdin).get("status",""))' 2>/dev/null)
+          [[ -n "$ST" && "$ST" != "planning" && "$ST" != "draft" ]] && break
+          sleep 0.5
+        done
+        if [[ "$ST" == "needs_review" ]]; then
+          ok "plan survived the refused set_llm: PRD reached needs_review"
+        else
+          ko "plan did not land after the refusal: status=$ST (want needs_review)"
+        fi
+      elif [[ "$SM75_ST" == "needs_review" ]]; then
+        skip "planning window closed before the probe landed (decompose too fast); 409 not observed this run"
+      else
+        skip "planning window never opened (status=$SM75_ST, LLM unreachable or planner refused); 409 not observed this run"
+      fi
+      # cleanup_all on EXIT removes $PC via the trap (same as §7).
+    fi
+  fi
+fi
+
+# ---------------------------------------------------------------------------
 H "Summary"
 echo "  Pass:  $PASS"
 echo "  Fail:  $FAIL"

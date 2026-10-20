@@ -103,3 +103,88 @@ func TestSetLLMDuringPlanning(t *testing.T) {
 		t.Errorf("set_llm after planning: want 200, got %d body=%s", rr2.Code, rr2.Body.String())
 	}
 }
+
+// TestSetGuardrailLLMDuringPlanning pins the second ErrPlanInProgress
+// site (SetPRDGuardrailLLM) at the HTTP layer: a guardrail-only set_llm
+// body (guardrail_backend/guardrail_model, no legacy keys) must hit the
+// SAME 409-during-planning contract as the legacy setter, persist
+// nothing while refused, and be accepted once the plan lands. The
+// legacy path above (TestSetLLMDuringPlanning) never exercises this
+// branch, so without this test the 409 mapping on the guardrail setter
+// would be verified only at Manager level, never at the HTTP layer.
+func TestSetGuardrailLLMDuringPlanning(t *testing.T) {
+	started := make(chan struct{}, 1)
+	release := make(chan func(), 1)
+	fn := func(req autonomous.DecomposeRequest) (string, error) {
+		started <- struct{}{}
+		rf := <-release
+		rf()
+		return validPlanJSON, nil
+	}
+
+	mgr, err := autonomous.NewManager(t.TempDir(), autonomous.DefaultConfig(), fn)
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	prd, err := mgr.CreatePRD("Build the thing.", "", "", "", "")
+	if err != nil {
+		t.Fatalf("CreatePRD: %v", err)
+	}
+
+	srv := &Server{}
+	srv.SetAutonomousAPI(autonomous.NewAPI(mgr))
+
+	go func() { _, _ = mgr.Decompose(prd.ID) }()
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("fake planner never started")
+	}
+
+	// Mid-plan: a guardrail-only body must be refused with 409 + the
+	// same planning wording the legacy branch uses.
+	req := httptest.NewRequest(http.MethodPost,
+		"/api/autonomous/prds/"+prd.ID+"/set_llm",
+		strings.NewReader(`{"guardrail_backend":"x","guardrail_model":"m"}`))
+	rr := httptest.NewRecorder()
+	srv.handleAutonomousPRDs(rr, req)
+
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("guardrail set_llm during planning: want 409, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	if !strings.Contains(strings.ToLower(rr.Body.String()), "planning") {
+		t.Errorf("guardrail set_llm during planning: body should mention planning, got %q", rr.Body.String())
+	}
+
+	// The refused call must persist nothing.
+	if p, ok := mgr.Store().GetPRD(prd.ID); ok && p != nil {
+		if p.GuardrailBackend != "" || p.GuardrailModel != "" {
+			t.Errorf("refused set_llm must not persist guardrail fields: backend=%q model=%q", p.GuardrailBackend, p.GuardrailModel)
+		}
+	}
+
+	// Release the planner and wait for the plan to land.
+	release <- func() {}
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if p, ok := mgr.Store().GetPRD(prd.ID); ok && p != nil && p.Status == autonomous.PRDNeedsReview {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	// Post-plan: the same guardrail-only body must now be accepted and
+	// persisted.
+	req2 := httptest.NewRequest(http.MethodPost,
+		"/api/autonomous/prds/"+prd.ID+"/set_llm",
+		strings.NewReader(`{"guardrail_backend":"x","guardrail_model":"m"}`))
+	rr2 := httptest.NewRecorder()
+	srv.handleAutonomousPRDs(rr2, req2)
+	if rr2.Code != http.StatusOK {
+		t.Fatalf("guardrail set_llm after planning: want 200, got %d body=%s", rr2.Code, rr2.Body.String())
+	}
+	p, ok := mgr.Store().GetPRD(prd.ID)
+	if !ok || p == nil || p.GuardrailBackend != "x" || p.GuardrailModel != "m" {
+		t.Errorf("guardrail fields not persisted after planning: %+v", p)
+	}
+}

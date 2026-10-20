@@ -5,9 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.30 — 2026-10-20
+
 ### Fixed
-- Changing an Automaton's LLM settings while its plan is being written is now refused with a clear message naming the running plan (HTTP 409 over the API), instead of returning the Automaton to draft and losing the plan. The plan is kept, and the settings can be changed once it finishes.
-- Covered by tests using a fake planner.
+- Changing an Automaton's LLM settings while its plan is being written is now refused with a clear message naming the running plan (HTTP 409 over the API), instead of returning the Automaton to draft and losing the plan. The plan is kept, and the settings can be changed once it finishes. This covers both setter paths — the worker LLM and the guardrail LLM.
+- Covered by tests using a fake planner at both the Manager level and the HTTP layer (legacy body and guardrail-only body); a `docs/testing-tracker.md` section records the endpoint-contract change; `scripts/release-smoke.sh` section 75 exercises the live 409 during planning.
 
 ## v9.5.29
 
