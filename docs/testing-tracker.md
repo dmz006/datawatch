@@ -1680,3 +1680,31 @@ This ran on go1.27.2 linux/amd64: 26 tests, all PASS (21 in `internal/autonomous
 Parity surfaces not yet exposed:
 
 - **PWA, Android and iPhone** do not display `blocked_reason` yet. The reason: this change is server-side only, and client display is a follow-up. Clients also do not yet show the `guardrail_verdict` decision kind or the `judge_session_id` and `judge_output_path` fields.
+
+## Model/backend pairing — endpoint contract change
+
+Changed endpoint contract. The PRD create, PRD LLM, story LLM, task LLM and
+verification/guardrail set endpoints now return `400` with the mismatch text
+when a model does not pair with its backend (a bare Claude alias on `pi` or
+`pi-prompt`, or a provider-tagged model on `claude-code`). Before this change
+they accepted the pair and the session later exited with no output. A PRD
+Run also refuses a PRD whose unfinished tasks contain a mismatched pair, so
+records written earlier are refused too. The `pi-prompt` backend prints
+`DATAWATCH_PI_FAILED` instead of `DATAWATCH_COMPLETE` on a non-zero exit or an
+empty run.
+
+Two levels: the Go tests, and the **model/backend live check** row, which
+needs a running daemon. Leave the live row at Validated=No until the next task
+has run against a sandbox daemon.
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| `validateModelForBackend`: bare Claude alias refused on `pi` and `pi-prompt`; provider-tagged model refused on `claude-code`; other backends not checked | **Yes** (`TestValidateModelForBackend`, `TestValidateModelForBackendErrorSuggestsFix` in `internal/autonomous/model_backend_compat_test.go`) | No | `go test` in `internal/autonomous`; pure function | Error text suggests the fix. |
+| PRD create with a bare Claude alias on pi is refused; set PRD LLM, story LLM, task LLM and verification/guardrail setters refuse a mismatch and leave the record unchanged | **Yes** (`TestModelBackendRefusalCreatePRDClaudeAliasOnPi`, `TestModelBackendRefusalSetPRDLLMLeavesRecordUnchanged`, `TestModelBackendRefusalSetStoryLLMLeavesRecordUnchanged`, `TestModelBackendRefusalSetTaskLLMUsesEffectiveBackend`, `TestModelBackendRefusalVerificationSetterRefused`, `TestModelBackendRefusalAcceptsValidVerificationPair` in `internal/autonomous/model_backend_refusal_test.go`) | No | `go test` in `internal/autonomous`; in-process Manager | Decomposition model is not checked (`TestModelBackendRefusalDecompositionModelNotChecked`). |
+| REST: the PRD create, LLM and verification/guardrail set endpoints return `400` with the mismatch text | **Yes** (`TestModelBackendRefusalRESTReturns400` in `internal/server/model_backend_refusal_test.go`) | No | `go test` in `internal/server`; `httptest` in-process server | Status code and body text checked. |
+| MCP: a mismatch returns a tool error with the mismatch text | **Yes** (`TestModelBackendRefusalMCPReturnsToolError` in `internal/mcp/model_backend_refusal_test.go`) | No | `go test` in `internal/mcp`; recording in-process server | Comm channel path not covered by a separate test. |
+| Run preflight: a PRD whose unfinished task pairs a bare alias with `pi-prompt` never spawns; the refusal lists only the mismatched task | **Yes** (`TestModelBackendRunRefusalPiPromptClaudeAliasNeverSpawns`, `TestModelBackendRunRefusalListsOnlyMismatchedTask`, `TestModelBackendRunRefusalDispatchBackstopNeverSpawns` in `internal/autonomous/model_backend_run_refusal_test.go`) | No | `go test` in `internal/autonomous` | Dispatch-time backstop also covered. |
+| `pi-prompt` failure marker: non-zero exit prints `DATAWATCH_PI_FAILED`, not `DATAWATCH_COMPLETE`, and exits with pi's own status | **Yes** (`TestPiLoudFailureNonZeroExitReportsFailure` in `internal/llm/backends/pi/backend_test.go`) | No | `go test` in `internal/llm/backends/pi`; stub pi binary via tmux-free launch command | Success with output still prints `DATAWATCH_COMPLETE` (`TestPiLoudFailureSuccessWithOutputReportsComplete`). |
+| `pi-prompt` failure marker: empty output prints `DATAWATCH_PI_FAILED` | **Yes** (`TestPiLoudFailureZeroExitNoOutputReportsFailure`, `TestPiLoudFailureFailureLineNamesModel` in `internal/llm/backends/pi/backend_test.go`) | No | `go test` in `internal/llm/backends/pi` | Failure line names the model. |
+| Model/backend live check: on a sandbox daemon, a PRD create with a bare Claude alias on `pi` returns `400` with the mismatch text; a PRD Run with a mismatched task is refused before any session spawns | No | **No** | Needs a sandbox daemon and the next task run | Leave Validated=No until the next task has run; record the observed status code and body text here. |
+| Model/backend live check: a `pi-prompt` run with a non-existent provider model prints `DATAWATCH_PI_FAILED` and not `DATAWATCH_COMPLETE` | No | **No** | Needs a sandbox daemon with pi installed and a model that fails | Leave Validated=No until the next task has run. |
