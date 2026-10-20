@@ -271,6 +271,12 @@ type Session struct {
 	// "failed: ..." or "unvalidated: ...". Empty = gate not reached.
 	ValidationResult string `json:"validation_result,omitempty"`
 
+	// SkipSnapshot: planning/judgment one-shot sessions must never stage or
+	// commit the repo. When set, Start skips the pre-session snapshot commit
+	// and commitOnCompletion skips the completion commit (and its checkpoint
+	// tag). Task-execution sessions leave this false.
+	SkipSnapshot bool `json:"skip_snapshot,omitempty"`
+
 	// Subprocess — when true, Task is executed directly as a child process
 	// via bash -c instead of through a Claude Code tmux session. Completion
 	// is signaled by exit code (0 = StateComplete, non-zero = StateFailed),

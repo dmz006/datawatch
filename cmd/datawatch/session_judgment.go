@@ -232,6 +232,8 @@ func runOneShotJSONSessionWithReader(cfg *config.Config, prdID, projectDir, back
 		"name":        sessionName,
 		"one_shot":    true,
 		"prd_id":      prdID,
+		// Planning/judgment sessions must never stage or commit the repo.
+		"skip_snapshot": true,
 	}
 	if effort != "" {
 		startReq["effort"] = effort

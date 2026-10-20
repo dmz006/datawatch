@@ -32,7 +32,7 @@ out from this transition.
 | Endpoint | Purpose |
 |---|---|
 | `GET /api/sessions` | List sessions (active + recent). Filter via `?name=`, `?state=`, `?backend=`, `?alive=`; compact list via `?view=summary`, narrow with `?since=` / `?states=` — see [Compact session list](#compact-session-list-viewsummary). |
-| `POST /api/sessions/start` | Start a new session. Body: `{task, project_dir, backend, name?, template?, effort?}`. |
+| `POST /api/sessions/start` | Start a new session. Body: `{task, project_dir, backend, name?, template?, effort?, one_shot?, skip_snapshot?}`. `one_shot` terminates the session on `DATAWATCH_COMPLETE:`. `skip_snapshot` (bool, default false) is for planning/judgment sessions: when true the session must never stage or commit the repo — both the pre-session snapshot commit and the completion commit are skipped. |
 | `GET /api/output?id=&n=` | Last N output lines. |
 | `POST /api/command` | Send raw input to a session's tmux pane. |
 | `POST /api/sessions/kill` | Kill the underlying backend; tmux pane stays. |

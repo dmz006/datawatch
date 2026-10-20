@@ -1666,6 +1666,14 @@ type StartOptions struct {
 	// before a one-shot's completion commit. Required for auto-commit of
 	// one-shots started outside a PRD. See commitOnCompletion.
 	ValidateCommands []string
+
+	// SkipSnapshot — planning/judgment sessions must never stage or commit
+	// the repo: they are read-only work (decompose, judge, verify) whose
+	// output is a JSON verdict, not repo changes. When true, Start skips the
+	// pre-session snapshot commit and commitOnCompletion skips the
+	// completion commit entirely. Task-execution (executor) sessions leave
+	// this false and keep their current commit behaviour.
+	SkipSnapshot bool
 }
 
 // Start creates a new AI coding session for the given task.
@@ -1739,7 +1747,9 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		}
 		// Validation gate: only PRD-owned one-shots snapshot-commit here. An
 		// ad-hoc one-shot must not commit operator work on its own.
-		if projGit.IsRepo() && opt.PRDID != "" {
+		// SkipSnapshot (planning/judgment sessions) must never stage or commit
+		// the repo, so it short-circuits here as well.
+		if projGit.IsRepo() && opt.PRDID != "" && !opt.SkipSnapshot {
 			if err := projGit.PreSessionCommit("", task, opt.WriteScope); err != nil {
 				fmt.Printf("[warn] pre-session commit: %v\n", err)
 			}
@@ -1825,6 +1835,9 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 	}
 	if opt != nil && opt.OneShot {
 		sess.OneShot = true
+	}
+	if opt != nil && opt.SkipSnapshot {
+		sess.SkipSnapshot = true
 	}
 	if opt != nil && opt.LSPLanguage != "" {
 		sess.LSPLanguage = opt.LSPLanguage
@@ -3979,6 +3992,12 @@ func (m *Manager) commitOnCompletion(current *Session, projGit *ProjectGit) {
 	// every one of them to get that right individually is exactly the
 	// kind of gap this regression came from.
 	if !current.OneShot {
+		return
+	}
+	// Planning/judgment sessions must never stage or commit the repo. This
+	// is the single choke point for the completion commit (CommitSessionWork
+	// + checkpoint tag), so gating it here covers every call site.
+	if current.SkipSnapshot {
 		return
 	}
 	if projGit == nil || !projGit.IsRepo() {
