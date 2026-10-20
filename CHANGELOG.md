@@ -5,6 +5,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+- **An Automaton stuck `blocked` because its guardrail verdict was lost or in doubt can now be re-judged with the new rejudge action.** It re-runs the completion guardrail without resetting, reopening, or otherwise touching any completed task — only a truly blocked Automaton whose every task is already completed qualifies, and it is refused (naming the first task that isn't completed) if any task still is. The new verdict is written to the Automaton's decision log before its status changes; a pass clears the blocked reason and completes the Automaton, a block keeps it blocked with the new reason.
+- **Covered by tests using a fake judge.**
 ## v9.5.29
 
 

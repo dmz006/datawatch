@@ -9,6 +9,24 @@ Do not mark **Validated=Yes** based solely on unit tests.
 
 ---
 
+## Autonomous completion-guardrail rejudgment — `POST /api/autonomous/prds/{id}/rejudge` + MCP `autonomous_prd_rejudge`
+
+New endpoint and MCP tool. Re-runs the PRD-completion "rules-review" guardrail for a `blocked` Automaton whose every task in every story is `completed`, without resetting or editing any task. The verdict is durably recorded on the Automaton's decision log (`guardrail_verdict` Decision + save, then a `guardrail_rejudge` Decision attributed to the acting operator) **before** any status change: `pass` clears the blocked reason and completes the Automaton; `block` keeps it `blocked` with the blocked reason set from the new verdict; no verdict (judge error or empty outcome) keeps it `blocked` with its previous reason and returns an error.
+
+| Test Condition | Unit | Live | Test ID / Location | Notes |
+|---|---|---|---|---|
+| Rejudge — pass: blocked PRD, all tasks completed → judge runs once, PRD `completed`, `BlockedReason` cleared, durable store copy agrees, task statuses untouched | **Yes** | No | `TestRejudgeCompletionGuardrailPass` in `internal/autonomous/rejudge_test.go` | Fake judge returning a pass verdict; asserts `guardrail_verdict` + `guardrail_rejudge` Decisions carry the judge session and `actor` `operator`; judge output removed after the saved verdict |
+| Rejudge — block: PRD stays `blocked`, `BlockedReason` taken from the new verdict | **Yes** | No | `TestRejudgeCompletionGuardrailFail` in `internal/autonomous/rejudge_test.go` | Fake judge returning a block verdict with reason |
+| Rejudge — no verdict: judge error / empty outcome → PRD stays `blocked` with its **previous** blocked reason, error returned | **Yes** | No | `TestRejudgeCompletionGuardrailNoVerdict` in `internal/autonomous/rejudge_test.go` | Both error and empty-outcome judge shapes | Re-judge produces no judgment; operator sees the error |
+| Rejudge — refusals: nonexistent PRD, PRD not `blocked`, any task not `completed` (names the first offending task id + status, no task touched) | **Yes** | No | `TestRejudgeCompletionGuardrailRefuses` in `internal/autonomous/rejudge_test.go` | Table of refusal cases; asserts no reset, no decision, no status change on refusal |
+| REST `POST /api/autonomous/prds/{id}/rejudge` — wrong method → 405 | **Yes** | No | `TestRejudgeHandler_WrongMethodIs405` in `internal/server/autonomous_rejudge_test.go` | GET on the route |
+| REST — manager refusal (not blocked / unfinished task) → 400 with the manager's error text | **Yes** | No | `TestRejudgeHandler_RefusalIs400WithManagerErrorText` in `internal/server/autonomous_rejudge_test.go` | Refusal text names the offending task |
+| REST — pass → 200 with the PRD reply, actor defaulted to `operator`, and a decision-log message | **Yes** | No | `TestRejudgeHandler_PassIs200WithPRDAndDecisionLogMessage`, `TestRejudgeHandler_PassDefaultsActorToOperator`, `TestRejudgeHandler_PassCompactViewNamesDecisionLog` in `internal/server/autonomous_rejudge_test.go` | `view=compact` write reply confirmed; full view unchanged |
+| MCP `autonomous_prd_rejudge` — forwards `POST /api/autonomous/prds/{id}/rejudge` with `actor=operator`; tool definition takes `id` only (no `task_id` — rejudge never resets a task) | **Yes** | No | `TestAutonomousPRDRejudgeForwardsActorOperator`, `TestAutonomousPRDRejudgeToolDefinition` in `internal/mcp/autonomous_rejudge_test.go` | Fake REST sink captures method, path and body |
+| REST full round-trip against a live daemon (blocked Automaton, wired guardrail, all tasks completed) | No | No | — | Needs a real blocked Automaton with a live guardrail judge; not exercised live in this change | Operator-visible flow documented in `docs/howto/autonomous-recovery.md` (Re-judging section) and `docs/mcp.md`; a `datawatch-app` issue for the new REST surface should be tracked separately |
+
+---
+
 ## Daemon restart safety (live, opt-in) — BL462
 
 Live companion to the BL462 restart audit (`docs/plans/bl462-restart-audit-findings.md`).

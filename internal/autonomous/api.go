@@ -515,6 +515,12 @@ func (a *API) ResetTaskWithOptions(prdID, taskID, actor string, force, cleanRest
 	}
 	return out, err
 }
+func (a *API) RejudgeCompletionGuardrail(id, actor string) (any, error) {
+	// Manager.RejudgeCompletionGuardrail records its own verdict and
+	// guardrail_rejudge Decision and fires the status event itself, so
+	// no EmitPRDUpdate here (a second notify would be a duplicate).
+	return a.M.RejudgeCompletionGuardrail(context.Background(), id, actor)
+}
 func (a *API) RepairDependsOn(prdID, actor string) (any, error) {
 	out, err := a.M.RepairDependsOn(prdID, actor)
 	if err == nil {

@@ -574,6 +574,22 @@ func (s *Server) handleAutonomousPRDResetTask(_ context.Context, req mcpsdk.Call
 	return textOK(string(out)), nil
 }
 
+func (s *Server) toolAutonomousPRDRejudge() mcpsdk.Tool {
+	return mcpsdk.NewTool("autonomous_prd_rejudge",
+		mcpsdk.WithDescription("Re-judge the completion guardrail of a blocked automaton (PRD) whose tasks are all completed, without resetting any task. Use it when the guardrail verdict that blocked the PRD deserves a fresh evaluation (new evidence, revised gate settings) but no task needs another attempt. Refused otherwise: on PRDs that are not blocked, or on blocked PRDs that still have incomplete tasks — use autonomous_prd_reset_task instead."),
+		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
+	)
+}
+func (s *Server) handleAutonomousPRDRejudge(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	id := req.GetString("id", "")
+	body, _ := json.Marshal(map[string]string{"actor": "operator"})
+	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/rejudge", body)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
 func (s *Server) toolAutonomousPRDRepairDependsOn() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_prd_repair_depends_on",
 		mcpsdk.WithDescription("v8.36.6 — resolve DependsOn entries in an existing PRD: entries may be given as real story/task IDs, sibling story/task titles, or positional codes (e.g. 's1-t2' = the 2nd task in story 1; a plain number means the Nth story, 1-based). Full-resolution-or-nothing: if any entry is unresolvable/unknown or the resolved plan has a dependency cycle, the call is rejected, the error names the exact bad entry (or the cycle), and nothing is partially persisted. A no-op if the PRD is already resolved."),

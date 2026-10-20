@@ -544,6 +544,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutonomousPRDAddTask(), tracked(s.handleAutonomousPRDAddTask))
 	mcpSrv.AddTool(s.toolAutonomousPRDRemoveTask(), tracked(s.handleAutonomousPRDRemoveTask))
 	mcpSrv.AddTool(s.toolAutonomousPRDResetTask(), tracked(s.handleAutonomousPRDResetTask))
+	mcpSrv.AddTool(s.toolAutonomousPRDRejudge(), tracked(s.handleAutonomousPRDRejudge))
 	mcpSrv.AddTool(s.toolAutonomousPRDRepairDependsOn(), tracked(s.handleAutonomousPRDRepairDependsOn))
 	mcpSrv.AddTool(s.toolAutonomousPRDCancelStory(), tracked(s.handleAutonomousPRDCancelStory))
 	mcpSrv.AddTool(s.toolAutonomousPRDCancelTask(), tracked(s.handleAutonomousPRDCancelTask))

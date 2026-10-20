@@ -239,7 +239,7 @@ shape.
 | Work Queue | `queue_push`, `queue_claim`, `queue_complete`, `queue_fail`, `queue_list` |
 | Discussion Subscribe | `discussion_subscribe`, `discussion_unsubscribe`, `discussion_subscriptions` |
 | Result Store | `result_put`, `result_get`, `result_list`, `result_delete` |
-| Autonomous PRDs | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_list/create/get/decompose/approve/reject/request_revision/edit_task/instantiate/run/cancel/set_llm/set_task_llm/set_task_verification_llm/set_story_verification_llm/set_verification_llm/children`, `autonomous_learnings`, `capacity_status` |
+| Autonomous PRDs | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_list/create/get/decompose/approve/reject/request_revision/edit_task/instantiate/run/cancel/rejudge/set_llm/set_task_llm/set_task_verification_llm/set_story_verification_llm/set_verification_llm/children`, `autonomous_learnings`, `capacity_status` |
 | Orchestrator | `orchestrator_graph_create/plan/run/get/list/cancel`, `orchestrator_verdicts`, `orchestrator_config_get/set` |
 | Pipelines | `pipeline_start/list/status/cancel` |
 | Memory + KG | `memory_remember/recall/list/forget/export/import/reindex/stats/learnings`, `kg_add/query/timeline/stats/invalidate`, `research_sessions`, `get_prompt`, `copy_response` |
@@ -293,6 +293,17 @@ Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
 
   Returns the write reply described above (a small summary, not the whole Automaton). These overrides are separate from `guardrail_backend` / `guardrail_model` on `autonomous_prd_set_llm` / `autonomous_prd_set_task_llm`, which pick the guardrail judge.
 - **`autonomous_prd_instantiate`** (v5.x) — instantiate from a template PRD with variable substitution.
+- **`autonomous_prd_rejudge`** — re-judge the PRD-completion "rules-review" guardrail of a **blocked** Automaton whose work is fully done, on an operator's behalf, without resetting or editing any task. Use it when the guardrail verdict that blocked the Automaton deserves a fresh evaluation (new evidence, revised gate settings) but no task needs another attempt. Refused — with a clear error, no side effects on any task — when the Automaton is not `blocked`, or when any task in any story is not `completed` (the refusal names the first such task and its status; re-run that work with `autonomous_prd_reset_task` first). The identical completion-guardrail invocation the rollup runs is re-executed through the same infra-retry wrapper. Outcome: the verdict is durably recorded on the Automaton's decision log (`guardrail_verdict` + a `guardrail_rejudge` Decision attributed to the acting operator) **before** any status change — `pass` clears the blocked reason and completes the Automaton, `block` keeps it `blocked` with the blocked reason set from the new verdict, and no verdict (judge error or empty outcome) keeps it `blocked` with its previous reason and returns an error. Proxies `POST /api/autonomous/prds/{id}/rejudge` (see [howto/autonomous-recovery.md](howto/autonomous-recovery.md)).
+
+  | Parameter | Required | Description |
+  |---|---|---|
+  | `id` | yes | Automaton (PRD) ID |
+
+  ```
+  autonomous_prd_rejudge(id="a1b2c3d4")
+  ```
+
+  Returns the write reply described above (a small summary, not the whole Automaton); the guardrail verdict and the `guardrail_rejudge` Decision are in the Automaton's decision log, readable with `autonomous_prd_get`. The REST body `actor` (default `operator`) is fixed to `operator` here, as with the other PRD write tools.
 - **`observer_envelopes_all_peers`** (v5.12.0, BL180 cross-host) — federation-aware envelope view; cross-peer caller attribution surfaces as `<peer>:<envelope-id>` rows on each matched server envelope.
 - **`session_bind_agent`** (v5.x) — bind a manual session to an existing agent record so observer/cost roll-ups attribute correctly.
 - **`session_import`** (v5.x) — import a foreign tmux session record into datawatch state without re-spawning.
