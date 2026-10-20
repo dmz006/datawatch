@@ -381,3 +381,130 @@ func TestExecutor_ForeignFileDriftWarnOnlyStillCompletes(t *testing.T) {
 		t.Fatalf("audit calls = %d, want 2 (one per group)", len(rec.calls))
 	}
 }
+
+// TestInRunEditWarnsAndDoesNotBlock (case 1): the worker edits a file that
+// was clean before the task started and commits it. classifyFileDrift puts it
+// in the in-run group, checkForeignFileDrift must return false (never block),
+// the task must not be TaskBlocked, and a file_drift_detected decision must be
+// recorded.
+func TestInRunEditWarnsAndDoesNotBlock(t *testing.T) {
+	m, prd, task, dir, rec := driftCheckFixture(t, []string{"own.txt"})
+	// own.txt is clean before the task (not in PreTaskDirtyFiles, not
+	// untracked). The worker edits it and commits only it.
+	driftWrite(t, dir, "own.txt", "task work\n")
+	driftGit(t, dir, "add", "own.txt")
+	driftGit(t, dir, "commit", "-q", "-m", "task commit")
+
+	if m.checkForeignFileDrift(context.Background(), prd, task) {
+		t.Fatal("an in-run edit must never block")
+	}
+	if task.Status == TaskBlocked {
+		t.Fatal("in-run edit must not set TaskBlocked")
+	}
+	if task.ForeignFileDrift != nil {
+		t.Fatalf("ForeignFileDrift = %v, want nil (in-run is not foreign drift)", task.ForeignFileDrift)
+	}
+	ds := driftDecisions(prd)
+	if len(ds) != 1 {
+		t.Fatalf("want exactly 1 file_drift_detected decision, got %d", len(ds))
+	}
+	if !strings.Contains(ds[0].Note, "in-run edit by the task's own worker") || !strings.Contains(ds[0].Note, "own.txt") {
+		t.Fatalf("in-run decision note = %q", ds[0].Note)
+	}
+	if len(rec.calls) != 1 || rec.calls[0]["kind"] != "in_run" {
+		t.Fatalf("audit calls = %+v, want one in_run call", rec.calls)
+	}
+}
+
+// TestUntrackedFileSweptInBlocks (case 2): a file that was untracked before
+// the task (an operator's .mcp.json) is swept into the task's own commit by
+// the worker. Under the default drift_mode (block) with no opt-out this is
+// pre-existing drift and must block the task with a "foreign_file_drift:"
+// error.
+func TestUntrackedFileSweptInBlocks(t *testing.T) {
+	m, prd, task, dir, rec := driftCheckFixture(t, nil)
+	driftWrite(t, dir, ".mcp.json", `{"mcpServers":{}}\n`)
+	task.PreTaskUntrackedFiles = []string{".mcp.json"}
+	// The worker commits the untracked file along with (only) it.
+	driftGit(t, dir, "add", ".mcp.json")
+	driftGit(t, dir, "commit", "-q", "-m", "task commit")
+
+	if !m.checkForeignFileDrift(context.Background(), prd, task) {
+		t.Fatal("default drift_mode must block a pre-existing untracked file swept into the task commit")
+	}
+	if task.Status != TaskBlocked {
+		t.Fatalf("status = %s, want blocked", task.Status)
+	}
+	if !strings.HasPrefix(task.Error, "foreign_file_drift:") || !strings.Contains(task.Error, ".mcp.json") {
+		t.Fatalf("error = %q, want prefix \"foreign_file_drift:\" containing .mcp.json", task.Error)
+	}
+	if !reflect.DeepEqual(task.ForeignFileDrift, []string{".mcp.json"}) {
+		t.Fatalf("ForeignFileDrift = %v, want [.mcp.json]", task.ForeignFileDrift)
+	}
+	if len(driftDecisions(prd)) != 1 || len(rec.calls) != 1 {
+		t.Fatalf("decisions=%d audit=%d, want 1/1", len(driftDecisions(prd)), len(rec.calls))
+	}
+	// The check never rewrites history: HEAD still holds the sweep commit.
+	if got := driftGit(t, dir, "log", "-1", "--format=%s"); got != "task commit" {
+		t.Fatalf("HEAD subject = %q — the check must not rewrite history", got)
+	}
+}
+
+// TestPreexistingDefaultsToBlock (case 3): an explicitly empty DriftMode
+// config must fail-safe to the "block" mode and still block on pre-existing
+// drift.
+func TestPreexistingDefaultsToBlock(t *testing.T) {
+	m, prd, task, dir, rec := driftCheckFixture(t, []string{"own.txt"})
+	cfg := DefaultConfig()
+	cfg.DriftMode = ""
+	m.SetConfig(cfg)
+	driftWrite(t, dir, "own.txt", "task work\n")
+	driftGit(t, dir, "add", "own.txt", "pre.txt") // the sweep
+	driftGit(t, dir, "commit", "-q", "-m", "task commit")
+
+	if !m.checkForeignFileDrift(context.Background(), prd, task) {
+		t.Fatal("empty DriftMode must fail-safe to block")
+	}
+	if task.Status != TaskBlocked {
+		t.Fatalf("status = %s, want blocked", task.Status)
+	}
+	if !strings.HasPrefix(task.Error, "foreign_file_drift:") || !strings.Contains(task.Error, "pre.txt") {
+		t.Fatalf("error = %q", task.Error)
+	}
+	if !reflect.DeepEqual(task.ForeignFileDrift, []string{"pre.txt"}) {
+		t.Fatalf("ForeignFileDrift = %v, want [pre.txt]", task.ForeignFileDrift)
+	}
+	// Both groups are still recorded: in-run (own.txt) + pre-existing (pre.txt).
+	if len(driftDecisions(prd)) != 2 || len(rec.calls) != 2 {
+		t.Fatalf("empty DriftMode still records everything: decisions=%d audit=%d", len(driftDecisions(prd)), len(rec.calls))
+	}
+}
+
+// TestPreexistingDriftModeWarnOnlyWarns (case 4): the same pre-existing-drift
+// setup as TestPreexistingDefaultsToBlock, but with DriftMode "warn" the
+// finding is recorded yet the task is never blocked and carries no Error.
+func TestPreexistingDriftModeWarnOnlyWarns(t *testing.T) {
+	m, prd, task, dir, rec := driftCheckFixture(t, []string{"own.txt"})
+	cfg := DefaultConfig()
+	cfg.DriftMode = "warn"
+	m.SetConfig(cfg)
+	driftWrite(t, dir, "own.txt", "task work\n")
+	driftGit(t, dir, "add", "own.txt", "pre.txt") // the sweep
+	driftGit(t, dir, "commit", "-q", "-m", "task commit")
+
+	if m.checkForeignFileDrift(context.Background(), prd, task) {
+		t.Fatal(`DriftMode="warn" must never block, even on pre-existing drift`)
+	}
+	if task.Status == TaskBlocked {
+		t.Fatal("warn mode must not set TaskBlocked")
+	}
+	if task.Error != "" {
+		t.Fatalf("warn mode must not set Error, got %q", task.Error)
+	}
+	if !reflect.DeepEqual(task.ForeignFileDrift, []string{"pre.txt"}) {
+		t.Fatalf("ForeignFileDrift = %v, want [pre.txt]", task.ForeignFileDrift)
+	}
+	if len(driftDecisions(prd)) != 2 || len(rec.calls) != 2 {
+		t.Fatalf("warn mode still records everything: decisions=%d audit=%d", len(driftDecisions(prd)), len(rec.calls))
+	}
+}
