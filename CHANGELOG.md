@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **The twenty session files that were not formatted are now formatted** — formatting only, with no change in behaviour.
+- **Verification scripts are now told to check only the files a task changes** — a package's old formatting problems no longer fail unrelated tasks.
+- **A plan whose verification script checks a whole package is now rejected early with a clear reason** — covered by tests using a fake plan and fake files.
+
 ## v9.5.28
 
 ### Fixed
