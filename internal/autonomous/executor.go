@@ -1088,6 +1088,10 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				}
 			}
 			t.PreTaskSHA = sr.PreTaskSHA // BL366: persisted for verifier diff grounding
+			// Root cause (repro: TestBaseSHA_RetryDoesNotAdoptRetryHeadWhenFirstAttemptHadNoHead,
+			// task_base_sha_retry_test.go): the guard tests only that BaseSHA is empty, not that
+			// this is the first attempt. If attempt 1 captured no HEAD (no commits yet), BaseSHA
+			// stays empty and a retry adopts its own HEAD, which already includes attempt 1's work.
 			if t.BaseSHA == "" && sr.PreTaskSHA != "" {
 				t.BaseSHA = sr.PreTaskSHA // per-task anchor: only the first attempt sets it; retries never overwrite
 			}
