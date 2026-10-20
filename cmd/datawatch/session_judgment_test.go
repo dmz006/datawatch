@@ -521,3 +521,97 @@ func TestRunOneShotJSONSession_DecomposeWaitingInputIsKilledBeforeTimeout(t *tes
 		t.Errorf("kill calls = %d, want 1 (stuck session must be killed)", kills)
 	}
 }
+
+// A guardrail judgment reads its output with PeekProjectFile, so the
+// project-directory copy must survive the call. The content is still copied to
+// the scratch dir so the durable copy exists.
+func TestRunOneShotJudgeSession_KeepsProjectOutputAndCopiesToScratch(t *testing.T) {
+	projectDir := t.TempDir()
+	dataDir := t.TempDir()
+	outputFile := filepath.Join(projectDir, ".guardrail-output-judge.json")
+	const want = `{"outcome":"pass","severity":"info","summary":"looks good"}`
+
+	srv, polls := fakeSessionServer(t, "running", outputFile, want, true)
+	withFakeLoopback(t, srv)
+
+	cfg := &config.Config{}
+	cfg.DataDir = dataDir
+
+	got, id, err := runOneShotJudgeSessionCaptureID(cfg, "prd-judge", projectDir, "claude-code", "sonnet", "",
+		"autonomous:guardrail:unit-1", "judge it, write JSON to "+outputFile, outputFile, "guardrail-unit-1-sec.json",
+		10*time.Second)
+	if err != nil {
+		t.Fatalf("runOneShotJudgeSessionCaptureID: %v", err)
+	}
+	if got != want {
+		t.Errorf("content = %q, want %q", got, want)
+	}
+	if id != "sess-test-1" {
+		t.Errorf("session id = %q, want sess-test-1", id)
+	}
+	if *polls == 0 {
+		t.Error("expected at least one poll of the session before the output file was found")
+	}
+	if _, statErr := os.Stat(outputFile); statErr != nil {
+		t.Errorf("project-dir output %s must survive the judge read: %v", outputFile, statErr)
+	}
+	scratchCopy := filepath.Join(dataDir, "autonomous", "scratch", "prd-judge", "guardrail-unit-1-sec.json")
+	copied, statErr := os.ReadFile(scratchCopy)
+	if statErr != nil {
+		t.Fatalf("expected scratch copy at %s: %v", scratchCopy, statErr)
+	}
+	if string(copied) != want {
+		t.Errorf("scratch copy = %q, want %q", string(copied), want)
+	}
+}
+
+// A judged output already on disk (restart recovery, or a retry after a failed
+// decision save) must be returned without starting a new judgment session, and
+// it must stay on disk for the next call.
+func TestRunOneShotJudgeSession_ReusesPresentOutputWithoutStarting(t *testing.T) {
+	projectDir := t.TempDir()
+	dataDir := t.TempDir()
+	outputFile := filepath.Join(projectDir, ".guardrail-output-judged.json")
+	const want = `{"outcome":"pass","severity":"info","summary":"judged earlier"}`
+	if err := os.WriteFile(outputFile, []byte(want), 0o600); err != nil {
+		t.Fatalf("seed output file: %v", err)
+	}
+
+	var mu sync.Mutex
+	starts := 0
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/sessions/start", func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+		starts++
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	withFakeLoopback(t, srv)
+
+	cfg := &config.Config{}
+	cfg.DataDir = dataDir
+
+	for call := 1; call <= 2; call++ {
+		got, id, err := runOneShotJudgeSessionCaptureID(cfg, "prd-judged", projectDir, "claude-code", "sonnet", "",
+			"autonomous:guardrail:unit-2", "unused", outputFile, "guardrail-unit-2-sec.json",
+			10*time.Second)
+		if err != nil {
+			t.Fatalf("call %d: runOneShotJudgeSessionCaptureID: %v", call, err)
+		}
+		if got != want {
+			t.Errorf("call %d: content = %q, want %q", call, got, want)
+		}
+		if id != "" {
+			t.Errorf("call %d: session id = %q, want empty (no session was started)", call, id)
+		}
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if starts != 0 {
+		t.Errorf("start requests = %d, want 0 (a judged output on disk must be reused, not re-judged)", starts)
+	}
+	if _, statErr := os.Stat(outputFile); statErr != nil {
+		t.Errorf("project-dir output %s must still exist after reuse: %v", outputFile, statErr)
+	}
+}

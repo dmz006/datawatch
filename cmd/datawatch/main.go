@@ -5312,7 +5312,7 @@ Verify whether the diff plausibly implements the spec. Reply with STRICT JSON on
 					specHash := sha256.Sum256([]byte(req.UnitID + "|" + req.Guardrail + "|" + prompt))
 					outputFile := filepath.Join(req.ProjectDir, ".guardrail-output-"+hex.EncodeToString(specHash[:8])+".json")
 					sessionTask := sessionJudgmentTask(prompt, req.ProjectDir, outputFile)
-					content, judgeID, serr := runOneShotJSONSessionCaptureID(cfg, req.PRDID, req.ProjectDir, gbackend, sessionModel,
+					content, judgeID, serr := runOneShotJudgeSessionCaptureID(cfg, req.PRDID, req.ProjectDir, gbackend, sessionModel,
 						"", "autonomous:guardrail:"+req.UnitID, sessionTask, outputFile,
 						"guardrail-"+req.UnitID+"-"+req.Guardrail+".json", verificationSessionTimeout(cfg))
 					if serr != nil {

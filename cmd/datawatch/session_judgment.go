@@ -167,12 +167,53 @@ func runOneShotJSONSessionWithEffort(cfg *config.Config, prdID, projectDir, back
 // caller can name the session even when the judgment failed. It stays empty
 // only when no session was started.
 func runOneShotJSONSessionCaptureID(cfg *config.Config, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName string, timeout time.Duration) (content string, sessionID string, err error) {
+	return runOneShotJSONSessionWithReader(cfg, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName, timeout, autonomouspkg.RelocateProjectFile)
+}
+
+// runOneShotJudgeSessionCaptureID is runOneShotJSONSessionCaptureID for a
+// guardrail judgment whose output file must outlive the read. It differs only
+// in how the output is read: the project-directory file is peeked (see
+// peekJudgeOutput), so it is never deleted here. The content is still copied
+// to the scratch dir under scratchRelocateName so the durable copy exists. The
+// caller removes the project file with autonomouspkg.RemoveJudgeOutputFile
+// once the verdict is recorded.
+func runOneShotJudgeSessionCaptureID(cfg *config.Config, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName string, timeout time.Duration) (content string, sessionID string, err error) {
+	return runOneShotJSONSessionWithReader(cfg, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName, timeout, peekJudgeOutput)
+}
+
+// judgeOutputReader reads a one-shot session's output file from projectDir
+// and returns its content and whether it was ready. It may copy the content to
+// scratchDir/destName; it decides whether the project-directory file survives.
+type judgeOutputReader func(projectDir, srcName, scratchDir, destName string) (string, bool)
+
+// peekJudgeOutput is the judgment reader: it reads srcName without removing it
+// and copies the content to scratchDir/destName. Unlike
+// autonomouspkg.RelocateProjectFile, the project copy is left in place. A
+// missing or empty source is "not ready". A failed scratch write is ignored,
+// as RelocateProjectFile ignores it, so the content still reaches the caller.
+func peekJudgeOutput(projectDir, srcName, scratchDir, destName string) (string, bool) {
+	content, ok := autonomouspkg.PeekProjectFile(projectDir, srcName)
+	if !ok {
+		return "", false
+	}
+	if scratchDir != "" && destName != "" {
+		dst := filepath.Join(scratchDir, destName)
+		_ = os.WriteFile(dst, []byte(content), 0o600) // #nosec G304 G703 -- scratchDir/destName are built from internal identifiers (data dir + PRD/task IDs), not external input
+	}
+	return content, true
+}
+
+// runOneShotJSONSessionWithReader is the spawn / poll / kill body shared by
+// runOneShotJSONSessionCaptureID and runOneShotJudgeSessionCaptureID. readOutput
+// decides how the output file is read, and whether it is removed from the
+// project directory.
+func runOneShotJSONSessionWithReader(cfg *config.Config, prdID, projectDir, backend, model, effort, sessionName, sessionTask, outputFile, scratchRelocateName string, timeout time.Duration, readOutput judgeOutputReader) (content string, sessionID string, err error) {
 	scratchDir, scratchErr := autonomouspkg.ScratchDir(expandHome(cfg.DataDir), prdID)
 	if scratchErr != nil {
 		fmt.Printf("[%s] scratch dir for prd=%s: %v\n", sessionName, prdID, scratchErr)
 	}
 	relocate := func() (string, bool) {
-		return autonomouspkg.RelocateProjectFile(projectDir, filepath.Base(outputFile), scratchDir, scratchRelocateName)
+		return readOutput(projectDir, filepath.Base(outputFile), scratchDir, scratchRelocateName)
 	}
 	// Restart-recovery: reuse output written by a previous attempt of
 	// the exact same call (same outputFile name, derived by the caller
