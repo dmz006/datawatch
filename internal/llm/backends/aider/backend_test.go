@@ -96,7 +96,7 @@ func TestLaunch_LongTaskGoesThroughScratchFile(t *testing.T) {
 	}
 	rmIdx := strings.Index(cmd, "rm -f '"+path+"'")
 	echoIdx := strings.Index(cmd, "DATAWATCH_COMPLETE")
-	if !(rmIdx < echoIdx) {
+	if rmIdx >= echoIdx {
 		t.Errorf("rm -f cleanup must come before the DATAWATCH_COMPLETE echo, got: %.400s", cmd)
 	}
 	if !strings.HasSuffix(cmd, "echo 'DATAWATCH_COMPLETE: aider done'") {

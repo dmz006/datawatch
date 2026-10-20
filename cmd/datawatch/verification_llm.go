@@ -114,7 +114,7 @@ func selectVerifierLLM(
 	// the model empty so the session manager's pi / pi-prompt fallback
 	// applies the configured pi model. The PRD's own model still wins
 	// when the PRD's backend is the one in use.
-	if piFamily && sel.UseSession && in.GlobalModel == "" && !(usesPRDBackend && in.PRDModel != "") {
+	if piFamily && sel.UseSession && in.GlobalModel == "" && (!usesPRDBackend || in.PRDModel == "") {
 		sel.Model = ""
 	}
 	sel.Source = autonomouspkg.VerifierSourceGlobal

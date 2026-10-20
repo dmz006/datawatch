@@ -21,7 +21,9 @@ func SnapshotAttemptWork(ctx context.Context, dir, taskKey string, attempt int) 
 	if err != nil {
 		return "", fmt.Errorf("create snapshot temp dir: %w", err)
 	}
-	defer os.RemoveAll(tmpDir)
+	// Best-effort cleanup: a failed removal of the temp index dir must
+	// not turn a successful snapshot into an error.
+	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	key := sanitizeAttemptTaskKey(taskKey)
 	env := append(os.Environ(),

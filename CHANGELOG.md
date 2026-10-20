@@ -5,6 +5,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+- The project's lint check (errcheck and staticcheck) now passes again on main: unchecked error returns are handled or deliberately ignored, and a few style findings were corrected, with no change in behaviour.
+
 ## v9.5.28
 
 ### Fixed

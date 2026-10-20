@@ -40,7 +40,7 @@ func TestStreamEventsOnce_NudgesForwardOnIdle(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/event", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
-		fmt.Fprint(w, sseIdleEvents(2)) // fewer than maxIdleNudges — all should get a nudge
+		_, _ = fmt.Fprint(w, sseIdleEvents(2)) // fewer than maxIdleNudges — all should get a nudge
 	})
 	mux.HandleFunc("/session/sess1/message", func(w http.ResponseWriter, r *http.Request) {
 		messageCount.Add(1)
@@ -82,7 +82,7 @@ func TestStreamEventsOnce_StopsNudgingAfterMax(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/event", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
-		fmt.Fprint(w, sseIdleEvents(maxIdleNudges+5)) // well past the cap
+		_, _ = fmt.Fprint(w, sseIdleEvents(maxIdleNudges+5)) // well past the cap
 	})
 	mux.HandleFunc("/session/sess1/message", func(w http.ResponseWriter, r *http.Request) {
 		messageCount.Add(1)
@@ -122,7 +122,7 @@ func TestStreamEventsOnce_SuppressesOnACPEventWhileNudging(t *testing.T) {
 		// maxIdleNudges+1 idle events: the first maxIdleNudges should be
 		// suppressed (a nudge is sent for each), the last should be
 		// forwarded (nudges exhausted, manager needs to know).
-		fmt.Fprint(w, sseIdleEvents(maxIdleNudges+1))
+		_, _ = fmt.Fprint(w, sseIdleEvents(maxIdleNudges+1))
 	})
 	mux.HandleFunc("/session/sess1/message", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -169,12 +169,12 @@ func TestStreamEventsOnce_DatawatchCompleteMarkerCompletesImmediately(t *testing
 	mux := http.NewServeMux()
 	mux.HandleFunc("/event", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
-		fmt.Fprint(w, `data: {"type":"message.part.updated","properties":{"part":{"type":"step-start"}}}`+"\n\n")
-		fmt.Fprint(w, `data: {"type":"message.part.delta","properties":{"field":"text","delta":"DATAWATCH_COMPLETE: did the thing"}}`+"\n\n")
-		fmt.Fprint(w, `data: {"type":"message.part.updated","properties":{"part":{"type":"step-finish"}}}`+"\n\n")
+		_, _ = fmt.Fprint(w, `data: {"type":"message.part.updated","properties":{"part":{"type":"step-start"}}}`+"\n\n")
+		_, _ = fmt.Fprint(w, `data: {"type":"message.part.delta","properties":{"field":"text","delta":"DATAWATCH_COMPLETE: did the thing"}}`+"\n\n")
+		_, _ = fmt.Fprint(w, `data: {"type":"message.part.updated","properties":{"part":{"type":"step-finish"}}}`+"\n\n")
 		// A trailing idle after the marker must not trigger a nudge —
 		// completed is already true by the time this event arrives.
-		fmt.Fprint(w, sseIdleEvents(1))
+		_, _ = fmt.Fprint(w, sseIdleEvents(1))
 	})
 	mux.HandleFunc("/session/sess1/message", func(w http.ResponseWriter, r *http.Request) {
 		nudgeCount.Add(1)
@@ -213,8 +213,8 @@ func TestStreamEventsOnce_NoNudgeAfterCompletion(t *testing.T) {
 	mux.HandleFunc("/event", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		// Completed first, then an idle event — must not nudge after completion.
-		fmt.Fprint(w, `data: {"type":"session.completed","properties":{}}`+"\n\n")
-		fmt.Fprint(w, sseIdleEvents(1))
+		_, _ = fmt.Fprint(w, `data: {"type":"session.completed","properties":{}}`+"\n\n")
+		_, _ = fmt.Fprint(w, sseIdleEvents(1))
 	})
 	mux.HandleFunc("/session/sess1/message", func(w http.ResponseWriter, r *http.Request) {
 		messageCount.Add(1)

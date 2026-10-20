@@ -99,6 +99,24 @@ func TestAttemptSnapshotLeavesStashStackUnchanged(t *testing.T) {
 	}
 }
 
+// attemptTempEntries lists the entries in the process temp dir whose
+// names start with prefix, so the cleanup tests can compare before and
+// after without assuming an empty temp dir.
+func attemptTempEntries(t *testing.T, prefix string) map[string]bool {
+	t.Helper()
+	entries, err := os.ReadDir(os.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := make(map[string]bool)
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), prefix) {
+			out[e.Name()] = true
+		}
+	}
+	return out
+}
+
 func TestAttemptSnapshotSanitizesTaskKey(t *testing.T) {
 	dir := snapTestRepo(t)
 	if err := os.WriteFile(filepath.Join(dir, "tracked.txt"), []byte("changed\n"), 0o644); err != nil {
@@ -115,5 +133,63 @@ func TestAttemptSnapshotSanitizesTaskKey(t *testing.T) {
 	}
 	if refs := snapTestGit(t, dir, "for-each-ref", "--format=%(refname)", "refs/datawatch/"); refs != want {
 		t.Errorf("refs = %q, want only %q", refs, want)
+	}
+}
+
+// TestAttemptSnapshotCleansUpTempDir: the deferred RemoveAll of the temp
+// index dir is best-effort (never an error of its own), but it must
+// actually run on the success path — a successful snapshot must leave
+// no attempt-snapshot-* dir behind in the temp dir.
+func TestAttemptSnapshotCleansUpTempDir(t *testing.T) {
+	dir := snapTestRepo(t)
+	if err := os.WriteFile(filepath.Join(dir, "tracked.txt"), []byte("dirty\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	before := attemptTempEntries(t, "attempt-snapshot-")
+	ref, err := SnapshotAttemptWork(context.Background(), dir, "task-cleanup", 1)
+	if err != nil {
+		t.Fatalf("SnapshotAttemptWork: %v", err)
+	}
+	if ref == "" {
+		t.Fatal("expected a snapshot ref for a dirty tree")
+	}
+	for name := range attemptTempEntries(t, "attempt-snapshot-") {
+		if _, existedBefore := before[name]; !existedBefore {
+			t.Errorf("SnapshotAttemptWork left temp dir %s behind — best-effort cleanup did not run", name)
+		}
+	}
+}
+
+// TestAttemptSnapshotUnusableTempAreaSurfacesError: a read-only temp
+// area makes MkdirTemp fail BEFORE any git work — that failure must be
+// returned (wrapped) to the caller, not swallowed by the best-effort
+// cleanup path.
+func TestAttemptSnapshotUnusableTempAreaSurfacesError(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root bypasses directory permission bits")
+	}
+	dir := snapTestRepo(t)
+	if err := os.WriteFile(filepath.Join(dir, "tracked.txt"), []byte("dirty\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	readOnly := t.TempDir()
+	if err := os.Chmod(readOnly, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chmod(readOnly, 0o755); err != nil {
+			t.Errorf("restore temp area perms: %v", err)
+		}
+	})
+	t.Setenv("TMPDIR", readOnly)
+
+	ref, err := SnapshotAttemptWork(context.Background(), dir, "task-ro", 1)
+	if err == nil {
+		t.Fatalf("SnapshotAttemptWork with a read-only temp area: want error, got ref %q", ref)
+	}
+	if !strings.Contains(err.Error(), "create snapshot temp dir") {
+		t.Errorf("error %q must be the wrapped MkdirTemp failure", err)
 	}
 }

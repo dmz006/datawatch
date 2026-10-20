@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -167,5 +168,55 @@ func TestCommFanoutSeparateAutomata(t *testing.T) {
 	}
 	if !foundA || !foundB {
 		t.Fatalf("expected one send each for PRD A and PRD B, got:\n%q", texts)
+	}
+}
+
+// TestCommFanoutPanickingSinkRecoveredAndSinkStaysUsable: the send hook
+// is injected — if it panics, deliver() must recover around it: that
+// one message is lost, but the process and the sink must keep working,
+// and later events are delivered normally.
+func TestCommFanoutPanickingSinkRecoveredAndSinkStaysUsable(t *testing.T) {
+	m := &Manager{}
+	defer m.lifecycleBus().Close()
+
+	capSink := &textCapture{}
+	var panics int32
+	flakySink := func(text string) {
+		if atomic.AddInt32(&panics, 1) == 1 {
+			panic("injected transport failure")
+		}
+		capSink.record(text)
+	}
+	cancel := InstallLifecycleSinks(m, SinkConfig{
+		Kinds:      []string{TaskStatusKind(TaskInProgress)},
+		CommSink:   flakySink,
+		CommWindow: commFanoutTestWindow,
+	})
+	defer cancel()
+
+	// First event: its delivery panics inside send — it must be
+	// recovered (no crashed daemon), so the waiter keeps going.
+	commFanoutFire(m, "prd-flaky", "flaky-1")
+	waitFor(t, "the panicking delivery to have been attempted", func() bool {
+		return atomic.LoadInt32(&panics) == 1
+	})
+
+	// The sink must still be usable: the next event is coalesced and
+	// delivered exactly as if nothing had happened.
+	commFanoutFire(m, "prd-flaky", "flaky-2")
+	waitFor(t, "the post-panic delivery", func() bool {
+		for _, text := range capSink.snapshot() {
+			if strings.Contains(text, "flaky-2") {
+				return true
+			}
+		}
+		return false
+	})
+
+	// The panicking sink lost its own message; none may have leaked.
+	for _, text := range capSink.snapshot() {
+		if strings.Contains(text, "flaky-1") {
+			t.Errorf("the message lost to a panicking sink leaked through:\n%s", text)
+		}
 	}
 }
