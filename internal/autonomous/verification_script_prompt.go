@@ -53,7 +53,13 @@ func (m *Manager) verificationScriptSuffix(prd *PRD) string {
 		"3. In the JSON, set that unit's `verification_script` to the" +
 		" relative path and also list the same path in its" +
 		" `files_generated` array.\n" +
-		"4. If neither " + rulesFile + " nor " + contextFile + " exists, do" +
+		"4. A script must check only the files its task changes — for" +
+		" example by listing them from `git diff --name-only` plus the" +
+		" untracked files, or by naming them explicitly — and must never" +
+		" run gofmt or a similar formatter over a whole package or" +
+		" directory, because unrelated files that were already" +
+		" unformatted would fail the task.\n" +
+		"5. If neither " + rulesFile + " nor " + contextFile + " exists, do" +
 		" not skip verification: detect the ecosystem conventions actually" +
 		" present (Makefile lint/test targets, package.json scripts," +
 		" pyproject.toml, go.mod + standard go tooling, etc.) and script" +
