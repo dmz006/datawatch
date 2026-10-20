@@ -5,6 +5,7 @@ package autonomous
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/dmz006/datawatch/internal/capacity"
 	"log"
@@ -3026,10 +3027,17 @@ func (m *Manager) SetMemoryHarvest(prdID string, cfg MemoryHarvestConfig, actor 
 	return updated, nil
 }
 
+// ErrPlanInProgress is returned when a PRD-level mutation is refused
+// because a planning run is in flight for the PRD.
+var ErrPlanInProgress = errors.New("plan in progress")
+
 func (m *Manager) SetPRDLLM(prdID string, backend, effort, model, decompositionProfile, decompositionModel *string, actor string) (*PRD, error) {
 	prd, ok := m.store.GetPRD(prdID)
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
+	}
+	if prd.Status == PRDPlanning {
+		return nil, fmt.Errorf("%w: prd %q is planning (a plan is running); wait for it to finish, then change the LLM settings", ErrPlanInProgress, prdID)
 	}
 	if prd.Status == PRDRunning || prd.Status == PRDCompleted {
 		return nil, fmt.Errorf("prd %q status %q is locked; PRD LLM overrides only apply pre-Run", prdID, prd.Status)
@@ -3089,6 +3097,9 @@ func (m *Manager) SetPRDGuardrailLLM(prdID string, backend, model *string, actor
 	prd, ok := m.store.GetPRD(prdID)
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
+	}
+	if prd.Status == PRDPlanning {
+		return nil, fmt.Errorf("%w: prd %q is planning (a plan is running); wait for it to finish, then change the LLM settings", ErrPlanInProgress, prdID)
 	}
 	if prd.Status == PRDRunning || prd.Status == PRDCompleted {
 		return nil, fmt.Errorf("prd %q status %q is locked; PRD LLM overrides only apply pre-Run", prdID, prd.Status)
