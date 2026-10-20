@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.33 — Retried tasks keep their first-attempt pre-task SHA
+
+
+### Fixed
+- **A retried task no longer records a pre-task SHA from its own retry, so correctly committed work is no longer reported as a false no-output failure.** When the first attempt captured no HEAD (no commits yet), the task's base SHA stayed empty, and the retry adopted its own pre-task HEAD — which already included the first attempt's commit. The verifier then diffed from the wrong base and saw nothing. The base SHA is now set only on the first attempt (attempt 0); retries never overwrite it. Covered by tests that reproduce the no-HEAD first attempt and the retry path.
+
 ## v9.5.31 — Format the session package and reject whole-package checks in plans
 
 
