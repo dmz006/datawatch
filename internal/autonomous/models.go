@@ -829,6 +829,10 @@ type GuardrailVerdict struct {
 	// JudgeOutputPath is the full path of the judge output file that
 	// backed this verdict. Empty when there was no file.
 	JudgeOutputPath string `json:"judge_output_path,omitempty"`
+	// Backend is the name of the backend that ran a text-only judgment.
+	// Empty when the verdict carries no backend (the usual case) or when a
+	// judge session already identifies the run.
+	Backend string `json:"backend,omitempty"`
 }
 
 // VerificationResult is BL25 output. Severity levels match

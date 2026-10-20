@@ -2053,7 +2053,11 @@ func (m *Manager) rollupOwnSaves(prdID string) int {
 
 // savePRDOwn saves prd and counts it as an executor-owned write.
 func (m *Manager) savePRDOwn(prd *PRD) error {
-	err := m.store.SavePRD(prd)
+	save := m.store.SavePRD
+	if m.savePRDHook != nil {
+		save = m.savePRDHook
+	}
+	err := save(prd)
 	if err == nil {
 		m.mu.Lock()
 		if m.ownSaves == nil {
