@@ -5,7 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-- **Every full-page reload in the PWA is now covered by a full-screen datawatch eye instead of a hard white cut** — switching locale, the WS-reconnect daemon-version catch-up (eye + pulsing bolt — the one inventory row graded session-continuation), a sessions broadcast detecting a new daemon build, a service-worker controller take-over, a manual PWA cache-bust, and the stale-version self-heal stamp all mount a shared full-screen splash (reusing the existing `DWSplashArt` primitives) for at least 600 ms before navigating, per `docs/plans/2026-10-14-bl434-fullscreen-refresh-splash-inventory.md` (BL434 rows 1–3, 5, 6, 7).
+- **The PWA no longer cuts to a white screen during its full-page refresh transitions** — when the app reloads itself (switching locale, the reconnect-path daemon-version catch-up, a broadcast that detects a new daemon build, a service-worker asset update, a manual cache-bust, or the stale-version self-heal stamp), the animated datawatch eye now fills the screen for a short minimum window before the refreshed page takes over, so the transition reads as "the app is alive and swapping" instead of a dead page. The WS-reconnect daemon-version catch-up is the one case that also shows the pulsing bolt, matching the in-flight session-connect treatment; every other refresh shows the plain eye.
+- **The boot splash and the inline panel spinners are unchanged** — the initial launch Earthrise scene and the in-panel loading glyphs behave exactly as before; only the full-screen refresh transitions gain the new treatment.
+- **Reduced-motion users get a single static eye frame** instead of the animation during these transitions; the eye stays visible for the same window without motion.
+- Reuse audit: this extends the existing `DWSplashArt.startEyeOnly` / `DWSplashArt.startSessionLoading` primitives in `internal/server/web/splash-art.js` — no new animation code was added; the new behavior is a shared overlay + min-dwell dismissal in `app.js` around those exact primitives, per reuse-and-expand.
 
 ## v9.5.26 — autonomous: honor each backend's delivery mode when typing waiting tasks into tmux
 

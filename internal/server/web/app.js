@@ -3756,7 +3756,8 @@ function _dismissTermLoadingSplashWithMinDwell() {
 // bolt — the same pair the session-connect splash below uses). There is
 // no animation code of its own here, and no hardcoded UI strings (the
 // optional operator-facing text is caller-supplied, expected already
-// localized via t('key'), and rendered escaped). Min-dwell + stop() +
+// translated through the app's locale system at the call site, and
+// rendered escaped). Min-dwell + stop() +
 // timestamp bookkeeping mirrors the session-connect splash's
 // state._termSplashMountedAt / _dismissTermLoadingSplashWithMinDwell.
 //

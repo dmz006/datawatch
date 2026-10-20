@@ -113,49 +113,63 @@ or N/A-with-reason:
 
 (= this PRD's stories/tasks; status: Planned / In Progress / Done)
 
-1. **Story 1 — shared full-screen overlay helper (Planned).** Add one
-   helper in `app.js` that mounts a `DWSplashArt.startEyeOnly` (or
+1. **Story 1 — shared full-screen overlay helper (Done).** Added one
+   helper family in `app.js` (`mountFullPageRefreshSplash` /
+   `dismissFullPageRefreshSplash` / `performFullPageRefresh`) that mounts a
+   `DWSplashArt.startEyeOnly` (or
    `startSessionLoading` for row 2) canvas onto a full-viewport overlay with
    `stop()` and min-dwell semantics modeled on
    `state._termSplashMountedAt` / `_dismissTermLoadingSplashWithMinDwell()`
    (contract per `app-gh192-phase1b.test.js`). Reuse only — no new animation
-   code in `splash-art.js` required.
+   code in `splash-art.js`.
    - Phase checklist: Phase Completion Checklist applies (functionality,
      tests, live smoke, `go test ./...` + `node --test internal/server/web/*.test.js`,
      the 8-item general docs checklist, conditional docs N/A, Mobile-Parity
      Rule N/A — datawatch-app already ships the overlay, Localization Rule
      N/A unless a string is added, version-bump decision, status update).
-2. **Story 2 — wire the 6 Eye-only sites (Planned).** Rows 1, 3, 5, 6, 7 and
-   the leave-as-is guard for row 4: show the eye overlay before
-   `location.reload()` at `setLocaleOverride` (app.js:137), the
-   sessions-broadcast version change (app.js:755), the SW
-   `controllerchange` handler (app.js:18911), `forcePWAUpdate`
-   (app.js:18932), and the index.html:53 version-stamp check; leave
-   `window.replaySplash` (app.js:17207) exactly as-is (boot `#splash`
+2. **Story 2 — wire the 6 Eye-only sites (Done).** Rows 1, 3, 5, 6, 7 and
+   the leave-as-is guard for row 4 wired: `setLocaleOverride`
+   (app.js:139), the
+   sessions-broadcast version change (app.js:761), the SW
+   `controllerchange` handler (app.js:19025), `forcePWAUpdate`
+   (app.js:19048), and the index.html version-stamp check;
+   `window.replaySplash` left exactly as-is (boot `#splash`
    Earthrise immediately follows).
    - Phase checklist: Phase Completion Checklist applies (same items as Story 1).
-3. **Story 3 — wire the 1 Full eye+bolt site (Planned).** Row 2: the
-   WS-reconnect version catch-up (app.js:481) shows the
+3. **Story 3 — wire the 1 Full eye+bolt site (Done).** Row 2: the
+   WS-reconnect version catch-up (app.js:485) shows the
    `DWSplashArt.startSessionLoading` (eye + pulsing bolt) treatment,
    mirroring the `termLoadingSplash` connect session — the only reload that
    directly continues an in-flight session reconnect.
    - Phase checklist: Phase Completion Checklist applies (same items as Story 1).
-4. **Story 4 — tests + gates + live smoke (Planned).** Node test asserting the
-   overlay is shown (and auto-stopped on canvas disconnect) before each wired
-   reload site and that `replaySplash` stays untouched; `node --check
-   internal/server/web/app.js` green; `node --test internal/server/web/*.test.js`
-   green; reduced-motion live smoke (static single frame, not animation);
-   `CHANGELOG.md` [Unreleased] entry.
+4. **Story 4 — tests + gates + live smoke (Done).** Covered by
+   `internal/server/web/app-fullscreen-refresh-splash.test.js`: asserts the
+   overlay is mounted with the inventory-graded primitive (and stopped on
+   dismiss) at each wired reload site, that the reload fires only after the
+   min-dwell, that `replaySplash` stays untouched, and the
+   `prefers-reduced-motion` contract (one static frame, no animation loop);
+   `node --check internal/server/web/app.js` green;
+   `node --test internal/server/web/*.test.js` green;
+   `CHANGELOG.md` [Unreleased] entry in place.
    - Phase checklist: Phase Completion Checklist applies (same items as Story 1).
 
 ## Status
 
 | Story | Status | Shipped in |
 |---|---|---|
-| 1 — shared overlay helper | Planned | — |
-| 2 — 6 eye-only sites | Planned | — |
-| 3 — 1 eye+bolt site | Planned | — |
-| 4 — tests + gates + smoke | Planned | — |
+| 1 — shared overlay helper | Done | next patch above main (version decided at merge time) |
+| 2 — 6 eye-only sites | Done | next patch above main (version decided at merge time) |
+| 3 — 1 eye+bolt site | Done | next patch above main (version decided at merge time) |
+| 4 — tests + gates + smoke | Done | next patch above main (version decided at merge time) |
 
-This document is the inventory + plan of record for BL434; it is
-read-only with respect to source — no file listed in Scope has been modified.
+Phase-checklist notes for close-out: no new config (parity N/A per the
+statement above), Mobile-Parity Rule met with no app-side change (see
+Mobile parity above — the operator-visible PWA change is documented through
+the CHANGELOG entry rather than a datawatch-app issue), no new `t()` strings
+(Localization N/A), version not hardcoded — the release commit bumps
+CHANGELOG/README at tag time; this close-out prepared content only.
+
+This document is the inventory + plan of record for BL434. Implementation
+landed in the Scope files (`app.js` overlay helper + the 7 wired sites,
+`index.html` version-stamp site) exactly as graded in the table; no further
+source change is pending.
