@@ -91,8 +91,38 @@ func TestCheckForeignFileDrift_WorktreeModeMakesZeroGitCalls(t *testing.T) {
 	}
 }
 
-func TestCheckForeignFileDrift_DirtyFileSweptInWarnsByDefault(t *testing.T) {
+func TestCheckForeignFileDrift_DefaultModeBlocksPreExisting(t *testing.T) {
 	m, prd, task, dir, rec := driftCheckFixture(t, []string{"own.txt"})
+	driftWrite(t, dir, "own.txt", "task work\n")
+	driftGit(t, dir, "add", "own.txt", "pre.txt") // the sweep
+	driftGit(t, dir, "commit", "-q", "-m", "task commit")
+
+	if !m.checkForeignFileDrift(context.Background(), prd, task) {
+		t.Fatal("DriftMode default \"block\" with no opt-out must block on pre-existing drift")
+	}
+	if task.Status != TaskBlocked {
+		t.Fatalf("status = %s, want blocked", task.Status)
+	}
+	if !strings.HasPrefix(task.Error, "foreign_file_drift: ") || !strings.Contains(task.Error, "pre.txt") {
+		t.Fatalf("error = %q", task.Error)
+	}
+	if !reflect.DeepEqual(task.ForeignFileDrift, []string{"pre.txt"}) {
+		t.Fatalf("ForeignFileDrift = %v, want [pre.txt]", task.ForeignFileDrift)
+	}
+	// Both groups recorded: in-run (own.txt) and pre-existing (pre.txt).
+	ds := driftDecisions(prd)
+	if len(ds) != 2 {
+		t.Fatalf("want 2 file_drift_detected decisions (in-run + pre-existing), got %d", len(ds))
+	}
+	if len(rec.calls) != 2 {
+		t.Fatalf("audit calls = %d, want 2 (one per group)", len(rec.calls))
+	}
+}
+
+func TestCheckForeignFileDrift_DirtyFileSweptInWarnsOnExplicitOptOut(t *testing.T) {
+	m, prd, task, dir, rec := driftCheckFixture(t, []string{"own.txt"})
+	off := false
+	prd.BlockOnFileDrift = &off // explicit PRD opt-out from blocking
 	calls := 0
 	m.driftGit = func(ctx context.Context, d string, args ...string) (string, error) {
 		calls++
@@ -103,7 +133,7 @@ func TestCheckForeignFileDrift_DirtyFileSweptInWarnsByDefault(t *testing.T) {
 	driftGit(t, dir, "commit", "-q", "-m", "task commit")
 
 	if m.checkForeignFileDrift(context.Background(), prd, task) {
-		t.Fatal("BlockOnFileDrift default false must not block")
+		t.Fatal("block_on_file_drift=false on the PRD must opt out of blocking")
 	}
 	if calls != 1 {
 		t.Fatalf("git calls = %d, want 1", calls)
@@ -115,22 +145,42 @@ func TestCheckForeignFileDrift_DirtyFileSweptInWarnsByDefault(t *testing.T) {
 		t.Fatal("warn-only must not set TaskBlocked")
 	}
 	ds := driftDecisions(prd)
-	if len(ds) != 1 {
-		t.Fatalf("want exactly 1 file_drift_detected decision, got %d", len(ds))
+	if len(ds) != 2 {
+		t.Fatalf("want exactly 2 file_drift_detected decisions (in-run own.txt + pre-existing pre.txt), got %d", len(ds))
 	}
-	if ds[0].Actor != "autonomous" || !strings.Contains(ds[0].Note, "task task-1:") || !strings.HasSuffix(ds[0].Note, ": pre.txt") {
-		t.Fatalf("decision = %+v", ds[0])
+	var preNote, inRunNote string
+	for _, d := range ds {
+		switch {
+		case strings.Contains(d.Note, "in-run edit by the task's own worker"):
+			inRunNote = d.Note
+		case strings.Contains(d.Note, "pre-existing"):
+			preNote = d.Note
+		}
+	}
+	if inRunNote == "" || !strings.Contains(inRunNote, "own.txt") || inRunNote == preNote {
+		t.Fatalf("in-run decision missing/wrong: %q", inRunNote)
+	}
+	if preNote == "" || !strings.Contains(preNote, "task task-1:") || !strings.HasSuffix(preNote, ": pre.txt") {
+		t.Fatalf("pre-existing decision = %q", preNote)
 	}
 	stored, _ := m.Store().GetPRD(prd.ID)
-	if len(driftDecisions(stored)) != 1 {
-		t.Fatal("decision not persisted on the stored PRD")
+	if len(driftDecisions(stored)) != 2 {
+		t.Fatal("decisions not persisted on the stored PRD")
 	}
-	if len(rec.calls) != 1 || rec.acts[0] != "autonomous_file_drift_detected" {
-		t.Fatalf("audit calls = %v %v", rec.acts, rec.calls)
+	if len(rec.calls) != 2 {
+		t.Fatalf("audit calls = %d %v, want 2 (one per group)", len(rec.calls), rec.acts)
 	}
-	d := rec.calls[0]
-	if d["task_id"] != "task-1" || d["prd_id"] != prd.ID || !reflect.DeepEqual(d["files"], []string{"pre.txt"}) {
-		t.Fatalf("audit details = %+v", d)
+	var preAudit map[string]any
+	for _, d := range rec.calls {
+		if d["kind"] == "pre_existing" {
+			preAudit = d
+		}
+	}
+	if preAudit == nil {
+		t.Fatalf("no pre_existing audit call: %+v", rec.calls)
+	}
+	if preAudit["task_id"] != "task-1" || preAudit["prd_id"] != prd.ID || !reflect.DeepEqual(preAudit["files"], []string{"pre.txt"}) {
+		t.Fatalf("audit details = %+v", preAudit)
 	}
 
 	// A retry with an earlier finding accumulates (sorted, de-duplicated).
@@ -138,6 +188,80 @@ func TestCheckForeignFileDrift_DirtyFileSweptInWarnsByDefault(t *testing.T) {
 	m.checkForeignFileDrift(context.Background(), prd, task)
 	if !reflect.DeepEqual(task.ForeignFileDrift, []string{"pre.txt", "zz.txt"}) {
 		t.Fatalf("accumulated ForeignFileDrift = %v", task.ForeignFileDrift)
+	}
+}
+
+func TestCheckForeignFileDrift_WarnModePreExistingDoesNotBlock(t *testing.T) {
+	m, prd, task, dir, rec := driftCheckFixture(t, []string{"own.txt"})
+	cfg := DefaultConfig()
+	cfg.DriftMode = "warn"
+	m.SetConfig(cfg)
+	driftWrite(t, dir, "own.txt", "task work\n")
+	driftGit(t, dir, "add", "own.txt", "pre.txt")
+	driftGit(t, dir, "commit", "-q", "-m", "task commit")
+
+	if m.checkForeignFileDrift(context.Background(), prd, task) {
+		t.Fatal("DriftMode=\"warn\" must never block, even on pre-existing drift")
+	}
+	if task.Status == TaskBlocked {
+		t.Fatal("warn mode must not set TaskBlocked")
+	}
+	if !reflect.DeepEqual(task.ForeignFileDrift, []string{"pre.txt"}) {
+		t.Fatalf("ForeignFileDrift = %v, want [pre.txt]", task.ForeignFileDrift)
+	}
+	if len(driftDecisions(prd)) != 2 || len(rec.calls) != 2 {
+		t.Fatalf("warn mode still records everything: decisions=%d audit=%d", len(driftDecisions(prd)), len(rec.calls))
+	}
+}
+
+func TestCheckForeignFileDrift_ProfileExplicitFalseOptOutDoesNotBlock(t *testing.T) {
+	m, prd, task, dir, rec := driftCheckFixture(t, nil)
+	p, err := m.CreateGuardrailProfile("lenient", "", nil, boolPtr(false))
+	if err != nil {
+		t.Fatalf("CreateGuardrailProfile: %v", err)
+	}
+	if prd, err = m.SetPRDGuardrails(prd.ID, p.ID, nil, nil, nil, nil); err != nil {
+		t.Fatalf("SetPRDGuardrails: %v", err)
+	}
+	driftGit(t, dir, "add", "pre.txt")
+	driftGit(t, dir, "commit", "-q", "-m", "task commit")
+
+	if m.checkForeignFileDrift(context.Background(), prd, task) {
+		t.Fatal("profile block_on_file_drift=false must opt out of blocking")
+	}
+	if !reflect.DeepEqual(task.ForeignFileDrift, []string{"pre.txt"}) {
+		t.Fatalf("ForeignFileDrift = %v, want [pre.txt]", task.ForeignFileDrift)
+	}
+	if len(driftDecisions(prd)) != 1 || len(rec.calls) != 1 {
+		t.Fatalf("finding must still be recorded: decisions=%d audit=%d", len(driftDecisions(prd)), len(rec.calls))
+	}
+}
+
+func TestCheckForeignFileDrift_InRunOnlyNeverBlocks(t *testing.T) {
+	m, prd, task, dir, rec := driftCheckFixture(t, []string{"own.txt"})
+	// The worker commits only its own file — no pre-existing sweep.
+	driftWrite(t, dir, "own.txt", "task work\n")
+	driftGit(t, dir, "add", "own.txt")
+	driftGit(t, dir, "commit", "-q", "-m", "task commit")
+
+	if m.checkForeignFileDrift(context.Background(), prd, task) {
+		t.Fatal("in-run findings NEVER block")
+	}
+	if task.Status == TaskBlocked {
+		t.Fatal("in-run findings must not set TaskBlocked")
+	}
+	if task.ForeignFileDrift != nil {
+		t.Fatalf("ForeignFileDrift = %v, want nil (in-run is not foreign drift)", task.ForeignFileDrift)
+	}
+	ds := driftDecisions(prd)
+	if len(ds) != 1 {
+		t.Fatalf("want exactly 1 in-run file_drift_detected decision, got %d", len(ds))
+	}
+	if !strings.Contains(ds[0].Note, "in-run edit by the task's own worker") || !strings.Contains(ds[0].Note, "own.txt") {
+		t.Fatalf("in-run decision note = %q", ds[0].Note)
+	}
+	if len(rec.calls) != 1 || rec.calls[0]["kind"] != "in_run" {
+		t.Fatalf("audit calls = %+v, want one in_run call", rec.calls)
 	}
 }
 
@@ -168,6 +292,8 @@ func TestCheckForeignFileDrift_BlocksWhenPRDOverrideTrue(t *testing.T) {
 
 func TestCheckForeignFileDrift_UntrackedFileSweptInIsFlagged(t *testing.T) {
 	m, prd, task, dir, rec := driftCheckFixture(t, nil)
+	off := false
+	prd.BlockOnFileDrift = &off
 	driftWrite(t, dir, "scratch.md", "operator notes\n")
 	task.PreTaskDirtyFiles = nil
 	task.PreTaskUntrackedFiles = []string{"scratch.md"}
@@ -175,13 +301,13 @@ func TestCheckForeignFileDrift_UntrackedFileSweptInIsFlagged(t *testing.T) {
 	driftGit(t, dir, "commit", "-q", "-m", "task commit")
 
 	if m.checkForeignFileDrift(context.Background(), prd, task) {
-		t.Fatal("default must not block")
+		t.Fatal("explicit opt-out must not block")
 	}
 	if !reflect.DeepEqual(task.ForeignFileDrift, []string{"scratch.md"}) {
 		t.Fatalf("ForeignFileDrift = %v", task.ForeignFileDrift)
 	}
-	if len(rec.calls) != 1 {
-		t.Fatalf("audit calls = %d", len(rec.calls))
+	if len(rec.calls) != 1 || rec.calls[0]["kind"] != "pre_existing" {
+		t.Fatalf("audit calls = %+v; scratch.md was untracked → pre_existing only", rec.calls)
 	}
 }
 
@@ -215,6 +341,9 @@ func TestExecutor_ForeignFileDriftWarnOnlyStillCompletes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	off := false
+	prd.BlockOnFileDrift = &off // warn-only e2e: opt out of blocking
+	_ = m.Store().SavePRD(prd)
 	_ = m.Store().SetStories(prd.ID, []Story{
 		{Title: "S", Tasks: []Task{{Title: "T", Spec: "write own.txt", FilesPlanned: []string{"own.txt"}}}},
 	})
@@ -243,12 +372,12 @@ func TestExecutor_ForeignFileDriftWarnOnlyStillCompletes(t *testing.T) {
 	if !reflect.DeepEqual(task.ForeignFileDrift, []string{"pre.txt"}) {
 		t.Fatalf("ForeignFileDrift = %v, want [pre.txt]", task.ForeignFileDrift)
 	}
-	if len(driftDecisions(got)) != 1 {
-		t.Fatalf("file_drift_detected decisions = %d, want 1", len(driftDecisions(got)))
+	if len(driftDecisions(got)) != 2 {
+		t.Fatalf("file_drift_detected decisions = %d, want 2 (in-run own.txt + pre-existing pre.txt)", len(driftDecisions(got)))
 	}
 	rec.mu.Lock()
 	defer rec.mu.Unlock()
-	if len(rec.calls) != 1 {
-		t.Fatalf("audit calls = %d, want 1", len(rec.calls))
+	if len(rec.calls) != 2 {
+		t.Fatalf("audit calls = %d, want 2 (one per group)", len(rec.calls))
 	}
 }

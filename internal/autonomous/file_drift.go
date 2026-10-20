@@ -85,28 +85,31 @@ func CapturePostVerifySHA(ctx context.Context, dir string, run driftGitRunner) s
 	return sha
 }
 
-// DetectForeignFileDrift returns the sorted files that a task's own
-// commit(s) swept in although they were already dirty or untracked
-// before its worker session started and were never planned by the
-// task: (a) in actualCommittedFiles AND (b) in preTaskUntracked ∪
-// preTaskDirty AND (c) NOT in task.FilesPlanned (json "files", the
-// same list LintTaskScope checks). Paths are compared after
-// normalizeDriftPath on every side. Pure and deterministic — no LLM,
-// no git, no guardrail session. Returns nil when nothing drifted.
-func DetectForeignFileDrift(task *Task, preTaskUntracked, preTaskDirty, actualCommittedFiles []string) []string {
+// ClassifyFileDrift splits the files a task's own commit(s) touched
+// into two disjoint groups, both sorted, de-duplicated and nil when
+// empty:
+//
+//	preExisting — committed files that were ALREADY dirty or untracked
+//	before the worker session started and were never planned by the
+//	task: (a) in committed AND (b) in preTaskUntracked ∪ preTaskDirty
+//	AND (c) NOT in task.FilesPlanned (json "files", the same list
+//	LintTaskScope checks). These are files the task commit swept in
+//	from outside its own work — exactly what DetectForeignFileDrift
+//	returns.
+//
+//	inRun — committed files that were NOT dirty-or-untracked before
+//	the task started: the worker's own edits, planned or not.
+//
+// A committed file that was pre-dirty/untracked AND in FilesPlanned
+// belongs to neither group: it was expected work on a pre-existing
+// edit. Paths are compared after normalizeDriftPath on every side.
+// Pure and deterministic — no LLM, no git, no guardrail session.
+func ClassifyFileDrift(task *Task, preTaskUntracked, preTaskDirty, committed []string) (preExisting, inRun []string) {
 	pre := make(map[string]bool, len(preTaskUntracked)+len(preTaskDirty))
-	for _, f := range preTaskUntracked {
+	for _, f := range sortedUnion(preTaskUntracked, preTaskDirty) {
 		if n := normalizeDriftPath(f); n != "" {
 			pre[n] = true
 		}
-	}
-	for _, f := range preTaskDirty {
-		if n := normalizeDriftPath(f); n != "" {
-			pre[n] = true
-		}
-	}
-	if len(pre) == 0 {
-		return nil
 	}
 	planned := map[string]bool{}
 	if task != nil {
@@ -116,18 +119,32 @@ func DetectForeignFileDrift(task *Task, preTaskUntracked, preTaskDirty, actualCo
 			}
 		}
 	}
-	var drift []string
-	for _, f := range actualCommittedFiles {
+	var preL, inL []string
+	for _, f := range committed {
 		n := normalizeDriftPath(f)
-		if n == "" || !pre[n] || planned[n] {
+		if n == "" {
 			continue
 		}
-		drift = append(drift, n)
+		if pre[n] {
+			if !planned[n] {
+				preL = append(preL, n)
+			}
+		} else {
+			inL = append(inL, n)
+		}
 	}
-	if len(drift) == 0 {
-		return nil
-	}
-	return sortedUnion(drift)
+	return sortedUnion(preL), sortedUnion(inL)
+}
+
+// DetectForeignFileDrift returns the sorted files that a task's own
+// commit(s) swept in although they were already dirty or untracked
+// before its worker session started and were never planned by the
+// task. It is the preExisting half of ClassifyFileDrift and keeps the
+// same contract as before: pure and deterministic, nil when nothing
+// drifted.
+func DetectForeignFileDrift(task *Task, preTaskUntracked, preTaskDirty, committed []string) []string {
+	preExisting, _ := ClassifyFileDrift(task, preTaskUntracked, preTaskDirty, committed)
+	return preExisting
 }
 
 // normalizeDriftPath cleans a repo-relative path so "./x", "x" and
@@ -174,6 +191,42 @@ func sortedUnion(lists ...[]string) []string {
 	return out
 }
 
+// resolveDriftMode returns the resolved pre-existing-drift
+// enforcement mode for prd: "block" or "warn". The mode is sourced
+// from the global Config.DriftMode field (PRD/profile do not override
+// it — an explicit PRD/profile opt-out is expressed via
+// block_on_file_drift=false, see driftBlockExplicitlyOff). An empty or
+// unknown value resolves to "block": fail-safe default, since an
+// unrecognized mode must never silently relax enforcement.
+func (m *Manager) resolveDriftMode(prd *PRD) string {
+	_ = prd // reserved for a future per-PRD override; resolution is global today
+	m.mu.Lock()
+	mode := strings.ToLower(strings.TrimSpace(m.cfg.DriftMode))
+	m.mu.Unlock()
+	if mode == "warn" {
+		return "warn"
+	}
+	return "block"
+}
+
+// driftBlockExplicitlyOff reports whether block_on_file_drift was
+// explicitly set to false for prd at the PRD or guardrail-profile
+// level — the operator's opt-out from blocking, honored even when
+// DriftMode is "block". The global Config.BlockOnFileDrift default
+// (false) is NOT an opt-out: it predates DriftMode and keeps its
+// legacy opt-in shape for resolveBlockOnFileDrift.
+func (m *Manager) driftBlockExplicitlyOff(prd *PRD) bool {
+	if prd.BlockOnFileDrift != nil && !*prd.BlockOnFileDrift {
+		return true
+	}
+	if prd.GuardrailProfile != "" {
+		if p, ok := m.store.GetGuardrailProfile(prd.GuardrailProfile); ok && p.BlockOnFileDrift != nil && !*p.BlockOnFileDrift {
+			return true
+		}
+	}
+	return false
+}
+
 // resolveBlockOnFileDrift reports whether detected foreign-file drift
 // should block the task (strict enforcement) rather than merely be
 // flagged. Priority: explicit PRD override > named GuardrailProfile >
@@ -193,17 +246,27 @@ func (m *Manager) resolveBlockOnFileDrift(prd *PRD) bool {
 	return m.cfg.BlockOnFileDrift
 }
 
-// checkForeignFileDrift runs the deterministic foreign-file-drift check
-// for one worker attempt of t, right after its verifier returns. It
-// compares the files committed since t.PreTaskSHA against the files
-// that were already dirty/untracked before the worker started and are
-// not in t.FilesPlanned. On a finding it records the files on
-// t.ForeignFileDrift (accumulated across retries), appends a
-// file_drift_detected Decision to the PRD, emits an audit event and
-// logs a warning. It returns true (task set to TaskBlocked) only when
-// resolveBlockOnFileDrift says strict enforcement is on; otherwise the
-// finding is warn-only and the task continues. It never reverts,
-// resets, amends, un-stages or otherwise modifies any file.
+// checkForeignFileDrift runs the deterministic file-drift check for
+// one worker attempt of t, right after its verifier returns. It
+// classifies the files committed since t.PreTaskSHA via
+// ClassifyFileDrift against the files that were dirty/untracked before
+// the worker started:
+//
+//   - preExisting (committed, pre-dirty/untracked, unplanned) is the
+//     operator's own work swept into the task's commit. It is recorded
+//     on t.ForeignFileDrift, appended to the PRD as a
+//     file_drift_detected Decision, audited and logged as a warning.
+//     It BLOCKS the task (TaskBlocked) when the resolved DriftMode is
+//     "block" (the default) AND block_on_file_drift was not explicitly
+//     set false on the PRD or its guardrail profile (the operator's
+//     opt-out); under DriftMode "warn" it is warn-only.
+//   - inRun (committed, not pre-dirty/untracked, planned or not) is the
+//     worker's own edits. It is recorded as a file_drift_detected
+//     Decision noting it is an in-run edit, logged as a warning, and
+//     NEVER blocks.
+//
+// It never reverts, resets, amends, un-stages or otherwise modifies
+// any file.
 func (m *Manager) checkForeignFileDrift(ctx context.Context, prd *PRD, t *Task) (blocked bool) {
 	// Worktree mode runs each task in an isolated tree (see
 	// ensureWorktreeIfConfigured) — nothing pre-dirty to protect.
@@ -218,36 +281,66 @@ func (m *Manager) checkForeignFileDrift(ctx context.Context, prd *PRD, t *Task) 
 		log.Printf("[autonomous] %s/%s file-drift: git log since %s: %v", prd.ID, t.ID, t.PreTaskSHA, err)
 		return false
 	}
-	findings := DetectForeignFileDrift(t, t.PreTaskUntrackedFiles, t.PreTaskDirtyFiles, committed)
-	if len(findings) == 0 {
+	preExisting, inRun := ClassifyFileDrift(t, t.PreTaskUntrackedFiles, t.PreTaskDirtyFiles, committed)
+	if len(preExisting) == 0 && len(inRun) == 0 {
 		return false
 	}
-	t.ForeignFileDrift = sortedUnion(t.ForeignFileDrift, findings)
-	joined := strings.Join(findings, ", ")
-	prd.Decisions = append(prd.Decisions, Decision{
-		At: time.Now(), Kind: "file_drift_detected", Actor: "autonomous",
-		Note: "task " + t.ID + ": committed pre-existing uncommitted file(s) outside its planned files: " + joined,
-	})
+
+	// In-run findings: the worker's own edits. Recorded + warned, and
+	// structurally incapable of blocking the task.
+	if len(inRun) > 0 {
+		joined := strings.Join(inRun, ", ")
+		prd.Decisions = append(prd.Decisions, Decision{
+			At: time.Now(), Kind: "file_drift_detected", Actor: "autonomous",
+			Note: "task " + t.ID + ": in-run edit by the task's own worker (committed file(s) not pre-existing drift): " + joined,
+		})
+		m.appendDriftAudit(t.ID, prd.ID, "in_run", inRun)
+		log.Printf("[autonomous] WARNING %s/%s in-run file drift: task committed its own file(s): %s", prd.ID, t.ID, joined)
+	}
+
+	blockPreExisting := false
+	if len(preExisting) > 0 {
+		joined := strings.Join(preExisting, ", ")
+		t.ForeignFileDrift = sortedUnion(t.ForeignFileDrift, preExisting)
+		prd.Decisions = append(prd.Decisions, Decision{
+			At: time.Now(), Kind: "file_drift_detected", Actor: "autonomous",
+			Note: "task " + t.ID + ": committed pre-existing uncommitted file(s) outside its planned files: " + joined,
+		})
+		m.appendDriftAudit(t.ID, prd.ID, "pre_existing", preExisting)
+		log.Printf("[autonomous] WARNING %s/%s foreign file drift: task committed pre-existing uncommitted file(s) outside its planned files: %s", prd.ID, t.ID, joined)
+
+		// Block only under the resolved mode (default "block") and only
+		// when the operator has not explicitly opted out via
+		// block_on_file_drift=false on the PRD or its guardrail profile.
+		if m.resolveDriftMode(prd) == "block" && !m.driftBlockExplicitlyOff(prd) {
+			blockPreExisting = true
+		}
+	}
+
 	if err := m.store.SavePRD(prd); err != nil {
 		log.Printf("[autonomous] %s/%s file-drift: save PRD: %v", prd.ID, t.ID, err)
 	}
+	if blockPreExisting {
+		t.Status = TaskBlocked
+		t.Error = "foreign_file_drift: " + strings.Join(preExisting, ", ")
+	}
+	_ = m.store.SaveTask(t)
+	return blockPreExisting
+}
+
+// appendDriftAudit emits the file-drift audit event for one finding
+// group, if an audit sink is wired.
+func (m *Manager) appendDriftAudit(taskID, prdID, kind string, files []string) {
 	m.mu.Lock()
 	auditFn := m.auditFn
 	m.mu.Unlock()
-	if auditFn != nil {
-		auditFn("autonomous_file_drift_detected", map[string]any{
-			"task_id": t.ID,
-			"prd_id":  prd.ID,
-			"files":   append([]string(nil), findings...),
-		})
+	if auditFn == nil {
+		return
 	}
-	log.Printf("[autonomous] WARNING %s/%s foreign file drift: task committed pre-existing uncommitted file(s) outside its planned files: %s", prd.ID, t.ID, joined)
-	if m.resolveBlockOnFileDrift(prd) {
-		t.Status = TaskBlocked
-		t.Error = "foreign_file_drift: " + joined
-		_ = m.store.SaveTask(t)
-		return true
-	}
-	_ = m.store.SaveTask(t)
-	return false
+	auditFn("autonomous_file_drift_detected", map[string]any{
+		"task_id": taskID,
+		"prd_id":  prdID,
+		"kind":    kind,
+		"files":   append([]string(nil), files...),
+	})
 }

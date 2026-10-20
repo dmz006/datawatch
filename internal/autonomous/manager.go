@@ -141,6 +141,18 @@ type Config struct {
 	// Default false (opt-in); overridable per GuardrailProfile and per
 	// PRD (resolveBlockOnFileDrift).
 	BlockOnFileDrift bool `json:"block_on_file_drift"`
+	// DriftMode — pre-existing file-drift enforcement mode:
+	// "block" (default) blocks the task when its commit swept in files
+	// that were already dirty/untracked before the worker started and
+	// were not in its planned files; "warn" only records a
+	// file_drift_detected decision + warning. In-run findings (the
+	// task's own commits) are never blocked regardless of mode. An
+	// empty/unknown value resolves as "block" (resolveDriftMode), and
+	// an explicit block_on_file_drift=false on the PRD or its
+	// guardrail profile is honored as an opt-out even under "block"
+	// (checkForeignFileDrift). No omitempty: keeping it explicit
+	// mirrors the clear discipline of BlockOnFileDrift above.
+	DriftMode string `json:"drift_mode"`
 	// VerifierDiffMaxBytes caps the git diff injected into the verifier
 	// prompt for evidence grounding (BL366). 0 = 8192.
 	VerifierDiffMaxBytes int  `json:"verifier_diff_max_bytes,omitempty"`
@@ -311,7 +323,8 @@ func DefaultConfig() Config {
 		RetryCeilingTotal:       5,
 		InfraRetryEscalateAfter: 2,
 		ContentAutoFixEnabled:   true,
-		BlockOnFileDrift:        false, // opt-in strict drift enforcement
+		BlockOnFileDrift:        false,   // legacy opt-in flag; DriftMode below is the enforcement knob
+		DriftMode:               "block", // pre-existing drift blocks by default; "warn" for flag-only
 		AutoFixSkipApproval:     true,
 	}
 }
@@ -849,7 +862,7 @@ func (m *Manager) resetInProgressTasksForResume(prd *PRD) {
 			At:    now,
 			Kind:  verifyingResolution,
 			Actor: "autonomous",
-			Note: fmt.Sprintf("boot-resume resolved %d orphaned verifying task(s) to completed (recorded ok verification) and re-queued %d for retry", completedCount, requeuedCount),
+			Note:  fmt.Sprintf("boot-resume resolved %d orphaned verifying task(s) to completed (recorded ok verification) and re-queued %d for retry", completedCount, requeuedCount),
 		})
 	}
 	if err := m.store.SavePRD(prd); err != nil {
@@ -3615,7 +3628,7 @@ func (m *Manager) reconcileStuckTasks() {
 				At:    now,
 				Kind:  verifyingResolution,
 				Actor: "autonomous",
-				Note: fmt.Sprintf("boot pass resolved %d orphaned verifying task(s) to completed (recorded ok verification) and re-queued %d for retry", verdictCompleted, verdictRequeued),
+				Note:  fmt.Sprintf("boot pass resolved %d orphaned verifying task(s) to completed (recorded ok verification) and re-queued %d for retry", verdictCompleted, verdictRequeued),
 			})
 		}
 		if err := m.store.SavePRD(prd); err != nil {
