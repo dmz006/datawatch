@@ -65,3 +65,15 @@ func blockedReasonFor(v GuardrailVerdict) string {
 	}
 	return fmt.Sprintf("guardrail %s returned block (%s) - %s", v.Guardrail, who, v.Summary)
 }
+
+// blockedReasonFromVerdicts returns blockedReasonFor the most recent block
+// verdict in vs, or "" when vs holds no block. Callers that block on a
+// guardrail verdict set it as the PRD's BlockedReason in the same save as
+// the PRDBlocked status.
+func blockedReasonFromVerdicts(vs []GuardrailVerdict) string {
+	v := lastBlockVerdict(vs)
+	if v == nil {
+		return ""
+	}
+	return blockedReasonFor(*v)
+}

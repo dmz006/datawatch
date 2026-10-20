@@ -230,7 +230,7 @@ func TestBL451RollupCommitStaleRev(t *testing.T) {
 		prd, _ := bl451RunningPRD(t, m, nil, TaskFailed)
 		rev, _ := m.Store().PRDRev(prd.ID)
 		_ = m.Store().SavePRD(prd) // concurrent writer
-		if _, ok := m.commitRollupStatus(prd, PRDRunning, rev, status, "test"); ok {
+		if _, ok := m.commitRollupStatus(prd, PRDRunning, rev, status, "test", ""); ok {
 			t.Fatalf("%s: commit succeeded on stale rev", status)
 		}
 		p, _ := m.Store().GetPRD(prd.ID)
@@ -248,7 +248,7 @@ func TestBL451RollupCommitRechecksTasks(t *testing.T) {
 	prd.Story[0].Tasks[0].Status = TaskPending
 	_ = m.Store().SavePRD(prd)
 	rev, _ := m.Store().PRDRev(prd.ID)
-	if _, ok := m.commitRollupStatus(prd, PRDRunning, rev, PRDFailed, "test"); ok {
+	if _, ok := m.commitRollupStatus(prd, PRDRunning, rev, PRDFailed, "test", ""); ok {
 		t.Fatal("commit succeeded with a non-terminal task")
 	}
 }

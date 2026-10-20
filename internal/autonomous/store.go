@@ -203,6 +203,7 @@ func (s *Store) SavePRD(p *PRD) error {
 	defer s.mu.Unlock()
 	p.UpdatedAt = time.Now()
 	p.Decisions = trimDecisions(p.Decisions)
+	clearStaleBlockedReason(p)
 	p.Rev++
 	s.prds[p.ID] = p
 	return s.persist()
@@ -233,8 +234,17 @@ func (s *Store) CommitPRDIfRev(id string, expectedRev int, mutate func(p *PRD) b
 	}
 	p.UpdatedAt = time.Now()
 	p.Decisions = trimDecisions(p.Decisions)
+	clearStaleBlockedReason(p)
 	p.Rev++
 	return s.persist()
+}
+
+// clearStaleBlockedReason empties BlockedReason unless the PRD is blocked,
+// so a reason from an earlier block never outlives that block.
+func clearStaleBlockedReason(p *PRD) {
+	if p.Status != PRDBlocked {
+		p.BlockedReason = ""
+	}
 }
 
 // PRDRev (BL451) returns the PRD's current revision under the lock.
