@@ -5604,7 +5604,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			// defaults ("block", 1.0) rather than blanks.
 			"plan_coverage_check":     effectivePlanCoverageCheckForDisplay(s.cfg.Autonomous.PlanCoverageCheck),
 			"plan_coverage_min_ratio": config.NormalizePlanCoverageRatio(s.cfg.Autonomous.PlanCoverageMinRatio),
-			"execution_backend":      s.cfg.Autonomous.ExecutionBackend,
+			"execution_backend":       s.cfg.Autonomous.ExecutionBackend,
 			// BL304: new key + legacy alias.
 			"planning_effort":               s.cfg.Autonomous.PlanningEffort,
 			"decomposition_effort":          s.cfg.Autonomous.PlanningEffort,
