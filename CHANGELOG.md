@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+- **The planner is now instructed to never pin a fixed version number in release tasks** — the version is chosen at merge time, so plans no longer hard-code it.
+- **A plan whose release task names a fixed version is rejected early with a clear reason before it reaches review** — it can be revised and resubmitted without suffering a failed validation.
+- **Covered by tests using a fake planner.**
+
 ## v9.5.26 — autonomous: honor each backend's delivery mode when typing waiting tasks into tmux
 
 - **One-shot “send the task and wait for it to finish” sessions (pi --print, goose --print, aider) no longer get a second copy of the task typed into their shell (send_input)** — the daemon now asks each backend whether it accepts interactive input before typing a waiting task into the pane, so a backend that only takes its task once, at launch, can never be typed into, even if it is a brand-new backend never added to a list.
