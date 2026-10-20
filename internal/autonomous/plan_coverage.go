@@ -104,13 +104,30 @@ var negationWords = map[string]bool{
 	"wouldn't": true, "couldn't": true, "can't": true, "shouldn't": true,
 }
 
-// coverageRequirementKey is the dedup key for a requirement: trimmed,
-// lowercased, trailing sentence punctuation stripped so "Add tests"
-// and "Add tests." are the same requirement.
+// normalizeRequirement returns the requirement's canonical stored form
+// together with its dedup key. The leading list numbering of the spec
+// line ("(1) ", "2. ", "3) ") is metadata, not requirement content, so
+// it is stripped before either form is derived — this is what lets the
+// sentence pass see that "(1) Exporter must flush" is the same
+// requirement as the already-extracted "1. Exporter must flush" and
+// "Exporter must flush" base phrasing, rather than resurfacing it as a
+// second entry. The key form is additionally lowercased and trailing
+// sentence punctuation stripped so "Add tests" and "Add tests." are
+// the same requirement.
+func normalizeRequirement(s string) (normalized, key string) {
+	norm := strings.TrimSpace(numberedItemRe.ReplaceAllString(s, ""))
+	key = strings.ToLower(norm)
+	key = strings.TrimRight(key, " \t.!?;:,")
+	return norm, key
+}
+
+// coverageRequirementKey is the dedup key for a requirement: its
+// canonical form, lowercased, with trailing sentence punctuation
+// stripped (and any leading list numbering removed) — see
+// normalizeRequirement.
 func coverageRequirementKey(s string) string {
-	k := strings.ToLower(strings.TrimSpace(s))
-	k = strings.TrimRight(k, " \t.!?;:,")
-	return k
+	_, key := normalizeRequirement(s)
+	return key
 }
 
 // ExtractRequirements returns the ordered, deduplicated list of
@@ -131,7 +148,7 @@ func ExtractRequirements(spec string) []string {
 	var out []string
 	seen := make(map[string]bool)
 	add := func(s string) {
-		k := coverageRequirementKey(s)
+		norm, k := normalizeRequirement(s)
 		if len(k) < 3 || seen[k] {
 			return
 		}
@@ -139,7 +156,7 @@ func ExtractRequirements(spec string) []string {
 			return // no alphanumeric content at all — nothing to enforce
 		}
 		seen[k] = true
-		out = append(out, strings.TrimSpace(s))
+		out = append(out, norm)
 	}
 
 	lines := strings.Split(spec, "\n")
