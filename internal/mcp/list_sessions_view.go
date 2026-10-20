@@ -62,7 +62,7 @@ func listSessionsViewQuery(req mcpsdk.CallToolRequest) (q url.Values, ok bool, e
 func (s *Server) listSessionsViaREST(q url.Values) (*mcpsdk.CallToolResult, error) {
 	body, hdr, err := s.proxyGetWithHeaders("/api/sessions", q)
 	if err != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error: %v", err)), nil
+		return toolError("list_sessions_via_rest", err), nil
 	}
 	res := mcpsdk.NewToolResultText(string(body))
 	if n, _ := strconv.Atoi(hdr.Get(sessionsOmittedHeader)); n > 0 {

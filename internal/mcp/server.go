@@ -1925,7 +1925,7 @@ func (s *Server) handleListSessions(_ context.Context, req mcpsdk.CallToolReques
 		}
 		raw, err := json.Marshal(out)
 		if err != nil {
-			return mcpsdk.NewToolResultText(fmt.Sprintf("Error marshaling JSON: %v", err)), nil
+			return toolError("list_sessions", err), nil
 		}
 		return mcpsdk.NewToolResultText(string(raw)), nil
 	}
@@ -2019,7 +2019,7 @@ func (s *Server) handleStartSession(ctx context.Context, req mcpsdk.CallToolRequ
 	}
 	task := req.GetString("task", "")
 	if strings.TrimSpace(task) == "" {
-		return mcpsdk.NewToolResultText("Error: task is required"), nil
+		return toolErrorf("start_session", "task is required"), nil
 	}
 	if imgPaths := req.GetStringSlice("image_paths", nil); len(imgPaths) > 0 {
 		if prefix := s.buildImagePrefix(ctx, imgPaths); prefix != "" {
@@ -2085,12 +2085,12 @@ func (s *Server) handleStartSession(ctx context.Context, req mcpsdk.CallToolRequ
 		sreq.Header.Set("Content-Type", "application/json")
 		resp, err := s.webDo(sreq)
 		if err != nil {
-			return mcpsdk.NewToolResultText(fmt.Sprintf("Error starting session: %v", err)), nil
+			return toolError("start_session", err), nil
 		}
 		defer resp.Body.Close() //nolint:errcheck
 		raw, _ := io.ReadAll(resp.Body)
 		if resp.StatusCode >= 400 {
-			return mcpsdk.NewToolResultText(fmt.Sprintf("Error starting session (%d): %s", resp.StatusCode, string(raw))), nil
+			return toolErrorf("start_session", "starting session (%d): %s", resp.StatusCode, string(raw)), nil
 		}
 		var sess struct {
 			ID, Task, ProjectDir, TmuxSession, LLMRef, ComputeNodeRef string
@@ -2110,7 +2110,7 @@ func (s *Server) handleStartSession(ctx context.Context, req mcpsdk.CallToolRequ
 	}
 
 	if computeRef != "" {
-		return mcpsdk.NewToolResultText("Error: compute_node requires llm — pick an LLM whose compute_nodes include this node, or omit compute_node"), nil
+		return toolErrorf("start_session", "compute_node requires llm — pick an LLM whose compute_nodes include this node, or omit compute_node"), nil
 	}
 
 	startCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -2123,7 +2123,7 @@ func (s *Server) handleStartSession(ctx context.Context, req mcpsdk.CallToolRequ
 	}
 	sess, err := s.manager.Start(startCtx, task, "mcp", projectDir, opts)
 	if err != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error starting session: %v", err)), nil
+		return toolError("start_session", err), nil
 	}
 
 	return mcpsdk.NewToolResultText(fmt.Sprintf(
@@ -2138,7 +2138,7 @@ func (s *Server) handleSessionOutput(ctx context.Context, req mcpsdk.CallToolReq
 		id = sn // resolveSession handles name lookup
 	}
 	if id == "" {
-		return mcpsdk.NewToolResultText("Error: session_id or session_name is required"), nil
+		return toolErrorf("session_output", "session_id or session_name is required"), nil
 	}
 
 	n := req.GetInt("lines", 50)
@@ -2148,7 +2148,7 @@ func (s *Server) handleSessionOutput(ctx context.Context, req mcpsdk.CallToolReq
 
 	sess, err := s.resolveSession(id)
 	if err != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error: %v", err)), nil
+		return toolError("session_output", err), nil
 	}
 	if sess == nil {
 		return mcpsdk.NewToolResultText(fmt.Sprintf("Session %q not found.", id)), nil
@@ -2159,7 +2159,7 @@ func (s *Server) handleSessionOutput(ctx context.Context, req mcpsdk.CallToolReq
 
 	out, err := s.manager.TailOutput(sess.FullID, n)
 	if err != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error reading output: %v", err)), nil
+		return toolError("session_output", err), nil
 	}
 
 	header := fmt.Sprintf("[%s] State: %s | Task: %s\n---\n", sess.ID, sess.State, sess.Task)
@@ -2176,7 +2176,7 @@ func (s *Server) handleSessionSummarize(ctx context.Context, req mcpsdk.CallTool
 		id = sn // resolveSession handles name lookup
 	}
 	if id == "" {
-		return mcpsdk.NewToolResultText("Error: session_id or session_name is required"), nil
+		return toolErrorf("session_summarize", "session_id or session_name is required"), nil
 	}
 	n := req.GetInt("lines", 200)
 	if n <= 0 {
@@ -2188,7 +2188,7 @@ func (s *Server) handleSessionSummarize(ctx context.Context, req mcpsdk.CallTool
 	body, _ := json.Marshal(map[string]int{"lines": n})
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error building request: %v", err)), nil
+		return toolError("session_summarize", err), nil
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	if s.token != "" {
@@ -2196,7 +2196,7 @@ func (s *Server) handleSessionSummarize(ctx context.Context, req mcpsdk.CallTool
 	}
 	resp, err := http.DefaultClient.Do(httpReq)
 	if err != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error calling summarize: %v", err)), nil
+		return toolError("session_summarize", err), nil
 	}
 	defer resp.Body.Close() //nolint:errcheck
 	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
@@ -2221,12 +2221,12 @@ func (s *Server) handleSessionTimeline(_ context.Context, req mcpsdk.CallToolReq
 		id = sn // resolveSession handles name lookup
 	}
 	if id == "" {
-		return mcpsdk.NewToolResultText("Error: session_id or session_name is required"), nil
+		return toolErrorf("session_timeline", "session_id or session_name is required"), nil
 	}
 
 	sess, err := s.resolveSession(id)
 	if err != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error: %v", err)), nil
+		return toolError("session_timeline", err), nil
 	}
 	if sess == nil {
 		return mcpsdk.NewToolResultText(fmt.Sprintf("Session %q not found.", id)), nil
@@ -2234,7 +2234,7 @@ func (s *Server) handleSessionTimeline(_ context.Context, req mcpsdk.CallToolReq
 
 	lines, err := s.manager.ReadTimeline(sess.FullID)
 	if err != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error reading timeline: %v", err)), nil
+		return toolError("session_timeline", err), nil
 	}
 
 	if len(lines) == 0 {
@@ -2276,14 +2276,14 @@ func (s *Server) handleTelemetryGet(_ context.Context, req mcpsdk.CallToolReques
 		id = sn // resolveSession handles name lookup
 	}
 	if id == "" {
-		return mcpsdk.NewToolResultText("Error: session_id or session_name is required"), nil
+		return toolErrorf("telemetry_get", "session_id or session_name is required"), nil
 	}
 	if s.webPort <= 0 {
-		return mcpsdk.NewToolResultText("Error: daemon API not available"), nil
+		return toolErrorf("telemetry_get", "daemon API not available"), nil
 	}
 	resp, err := http.Get(fmt.Sprintf("http://127.0.0.1:%d/api/sessions/%s/telemetry", s.webPort, id))
 	if err != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error: %v", err)), nil
+		return toolError("telemetry_get", err), nil
 	}
 	defer resp.Body.Close() //nolint:errcheck
 	body, _ := io.ReadAll(resp.Body)
@@ -2338,11 +2338,11 @@ func (s *Server) handleSendInput(ctx context.Context, req mcpsdk.CallToolRequest
 		id = sn // resolveSession handles name lookup
 	}
 	if id == "" {
-		return mcpsdk.NewToolResultText("Error: session_id or session_name is required"), nil
+		return toolErrorf("send_input", "session_id or session_name is required"), nil
 	}
 	text := req.GetString("text", "")
 	if text == "" {
-		return mcpsdk.NewToolResultText("Error: text is required"), nil
+		return toolErrorf("send_input", "text is required"), nil
 	}
 	if imgPaths := req.GetStringSlice("image_paths", nil); len(imgPaths) > 0 {
 		if prefix := s.buildImagePrefix(ctx, imgPaths); prefix != "" {
@@ -2352,7 +2352,7 @@ func (s *Server) handleSendInput(ctx context.Context, req mcpsdk.CallToolRequest
 
 	sess, err := s.resolveSession(id)
 	if err != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error: %v", err)), nil
+		return toolError("send_input", err), nil
 	}
 	if sess == nil {
 		return mcpsdk.NewToolResultText(fmt.Sprintf("Session %q not found.", id)), nil
@@ -2362,29 +2362,29 @@ func (s *Server) handleSendInput(ctx context.Context, req mcpsdk.CallToolRequest
 	}
 
 	if err := s.manager.SendInput(sess.FullID, text, "mcp"); err != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error sending input: %v", err)), nil
+		return toolError("send_input", err), nil
 	}
 	return mcpsdk.NewToolResultText(fmt.Sprintf("Input sent to session %s.", sess.ID)), nil
 }
 
 func (s *Server) handleVisionDescribe(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	if s.visioner == nil {
-		return mcpsdk.NewToolResultText("Error: vision not enabled — set vision.enabled=true in config"), nil
+		return toolErrorf("vision_describe", "vision not enabled — set vision.enabled=true in config"), nil
 	}
 	imagePath := req.GetString("image_path", "")
 	if imagePath == "" {
-		return mcpsdk.NewToolResultText("Error: image_path is required"), nil
+		return toolErrorf("vision_describe", "image_path is required"), nil
 	}
 	prompt := req.GetString("prompt", "")
 
 	imageData, err := os.ReadFile(imagePath)
 	if err != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error reading image: %v", err)), nil
+		return toolError("vision_describe", err), nil
 	}
 	contentType := visionExtMIME(strings.ToLower(filepath.Ext(imagePath)))
 	desc, err := s.visioner.Describe(ctx, imageData, contentType, prompt)
 	if err != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error describing image: %v", err)), nil
+		return toolError("vision_describe", err), nil
 	}
 	return mcpsdk.NewToolResultText(desc), nil
 }
@@ -2442,12 +2442,12 @@ func (s *Server) handleKillSession(ctx context.Context, req mcpsdk.CallToolReque
 		id = sn // resolveSession handles name lookup
 	}
 	if id == "" {
-		return mcpsdk.NewToolResultText("Error: session_id or session_name is required"), nil
+		return toolErrorf("kill_session", "session_id or session_name is required"), nil
 	}
 
 	sess, err := s.resolveSession(id)
 	if err != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error: %v", err)), nil
+		return toolError("kill_session", err), nil
 	}
 	if sess == nil {
 		return mcpsdk.NewToolResultText(fmt.Sprintf("Session %q not found.", id)), nil
@@ -2457,7 +2457,7 @@ func (s *Server) handleKillSession(ctx context.Context, req mcpsdk.CallToolReque
 	}
 
 	if err := s.manager.Kill(sess.FullID); err != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error killing session: %v", err)), nil
+		return toolError("kill_session", err), nil
 	}
 	return mcpsdk.NewToolResultText(fmt.Sprintf("Session %s killed.", sess.ID)), nil
 }
@@ -2472,19 +2472,19 @@ func (s *Server) handleRenameSession(ctx context.Context, req mcpsdk.CallToolReq
 	}
 	name := req.GetString("name", "")
 	if id == "" || name == "" {
-		return mcpsdk.NewToolResultText("Error: (session_id or session_name) and name are required"), nil
+		return toolErrorf("rename_session", "(session_id or session_name) and name are required"), nil
 	}
 
 	sess, err := s.resolveSession(id)
 	if err != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error: %v", err)), nil
+		return toolError("rename_session", err), nil
 	}
 	if sess == nil {
 		return mcpsdk.NewToolResultText(fmt.Sprintf("Session %q not found.", id)), nil
 	}
 
 	if err := s.manager.Rename(sess.FullID, name); err != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error renaming session: %v", err)), nil
+		return toolError("rename_session", err), nil
 	}
 	return mcpsdk.NewToolResultText(fmt.Sprintf("Session %s renamed to %q.", sess.ID, name)), nil
 }
@@ -2499,11 +2499,11 @@ func (s *Server) handleSessionChildren(ctx context.Context, req mcpsdk.CallToolR
 		id = sn // resolveSession handles name lookup
 	}
 	if id == "" {
-		return mcpsdk.NewToolResultText("Error: session_id or session_name is required"), nil
+		return toolErrorf("session_children", "session_id or session_name is required"), nil
 	}
 	parent, err := s.resolveSession(id)
 	if err != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error: %v", err)), nil
+		return toolError("session_children", err), nil
 	}
 	if parent == nil {
 		return mcpsdk.NewToolResultText(fmt.Sprintf("Session %q not found.", id)), nil
@@ -2531,7 +2531,7 @@ func (s *Server) handleReplyToParent(ctx context.Context, req mcpsdk.CallToolReq
 	}
 	text := req.GetString("text", "")
 	if text == "" {
-		return mcpsdk.NewToolResultText("Error: text is required"), nil
+		return toolErrorf("reply_to_parent", "text is required"), nil
 	}
 	childID := req.GetString("session_id", "")
 
@@ -2542,7 +2542,7 @@ func (s *Server) handleReplyToParent(ctx context.Context, req mcpsdk.CallToolReq
 		var err error
 		childSess, err = s.resolveSession(childID)
 		if err != nil {
-			return mcpsdk.NewToolResultText(fmt.Sprintf("Error resolving session: %v", err)), nil
+			return toolError("reply_to_parent", err), nil
 		}
 	}
 	// HLLM-004 — reply_to_parent only ever means MY parent; an explicit
@@ -2560,7 +2560,7 @@ func (s *Server) handleReplyToParent(ctx context.Context, req mcpsdk.CallToolReq
 		return mcpsdk.NewToolResultText(fmt.Sprintf("Parent session %q no longer exists.", childSess.ParentID)), nil
 	}
 	if err := s.manager.SendInput(parent.FullID, text, "mcp-reply"); err != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error sending to parent session %s: %v", parent.ID, err)), nil
+		return toolErrorf("reply_to_parent", "sending to parent session %s: %s", parent.ID, err), nil
 	}
 	return mcpsdk.NewToolResultText(fmt.Sprintf("Sent to parent session %s.", parent.ID)), nil
 }
@@ -2593,7 +2593,7 @@ func (s *Server) handleStopAllSessions(ctx context.Context, _ mcpsdk.CallToolReq
 
 func (s *Server) handleGetAlerts(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	if s.alertStore == nil {
-		return mcpsdk.NewToolResultText("Alert store not available."), nil
+		return toolErrorf("get_alerts", "Alert store not available."), nil
 	}
 
 	limit := req.GetInt("limit", 10)
@@ -2653,11 +2653,11 @@ func (s *Server) handleGetAlerts(_ context.Context, req mcpsdk.CallToolRequest) 
 
 func (s *Server) handleCreateAlert(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	if s.alertStore == nil {
-		return mcpsdk.NewToolResultText("Alert store not available."), nil
+		return toolErrorf("create_alert", "Alert store not available."), nil
 	}
 	title := req.GetString("title", "")
 	if title == "" {
-		return mcpsdk.NewToolResultText("Error: title required"), nil
+		return toolErrorf("create_alert", "title required"), nil
 	}
 	var level alerts.Level
 	switch alerts.Level(req.GetString("level", "")) {
@@ -2668,7 +2668,7 @@ func (s *Server) handleCreateAlert(_ context.Context, req mcpsdk.CallToolRequest
 	case alerts.LevelError:
 		level = alerts.LevelError
 	default:
-		return mcpsdk.NewToolResultText("Error: level must be info, warn, or error"), nil
+		return toolErrorf("create_alert", "level must be info, warn, or error"), nil
 	}
 	a := s.alertStore.AddSystem(level, title, req.GetString("body", ""))
 	return mcpsdk.NewToolResultText(fmt.Sprintf("Alert %s created.", a.ID)), nil
@@ -2676,7 +2676,7 @@ func (s *Server) handleCreateAlert(_ context.Context, req mcpsdk.CallToolRequest
 
 func (s *Server) handleMarkAlertRead(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	if s.alertStore == nil {
-		return mcpsdk.NewToolResultText("Alert store not available."), nil
+		return toolErrorf("mark_alert_read", "Alert store not available."), nil
 	}
 	id := req.GetString("id", "")
 	if id == "" {
@@ -2684,7 +2684,7 @@ func (s *Server) handleMarkAlertRead(_ context.Context, req mcpsdk.CallToolReque
 		return mcpsdk.NewToolResultText("All alerts marked as read."), nil
 	}
 	if err := s.alertStore.MarkRead(id); err != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error: %v", err)), nil
+		return toolError("mark_alert_read", err), nil
 	}
 	return mcpsdk.NewToolResultText(fmt.Sprintf("Alert %s marked as read.", id)), nil
 }
@@ -2694,7 +2694,7 @@ func (s *Server) handleRestartDaemon(ctx context.Context, _ mcpsdk.CallToolReque
 		return deny, nil
 	}
 	if s.restartFn == nil {
-		return mcpsdk.NewToolResultText("Restart not available (not running as daemon)."), nil
+		return toolErrorf("restart_daemon", "Restart not available (not running as daemon)."), nil
 	}
 	go func() {
 		time.Sleep(500 * time.Millisecond)
@@ -2710,7 +2710,7 @@ func (s *Server) handleAcmeStatus(ctx context.Context, _ mcpsdk.CallToolRequest)
 		return deny, nil
 	}
 	if s.acmeManager == nil {
-		return mcpsdk.NewToolResultText("ACME is not enabled (acme.enabled: false)."), nil
+		return toolErrorf("acme_status", "ACME is not enabled (acme.enabled: false)."), nil
 	}
 	b, _ := json.MarshalIndent(s.acmeManager.Status(), "", "  ")
 	return mcpsdk.NewToolResultText(string(b)), nil
@@ -2721,7 +2721,7 @@ func (s *Server) handleAcmeRenew(ctx context.Context, _ mcpsdk.CallToolRequest) 
 		return deny, nil
 	}
 	if s.acmeManager == nil {
-		return mcpsdk.NewToolResultText("ACME is not enabled (acme.enabled: false)."), nil
+		return toolErrorf("acme_renew", "ACME is not enabled (acme.enabled: false)."), nil
 	}
 	if err := s.acmeManager.IssueNow(); err != nil {
 		return mcpsdk.NewToolResultText("ACME renew failed: " + err.Error()), nil
@@ -2735,7 +2735,7 @@ func (s *Server) handleAcmeIssuerLog(ctx context.Context, _ mcpsdk.CallToolReque
 		return deny, nil
 	}
 	if s.acmeManager == nil {
-		return mcpsdk.NewToolResultText("ACME is not enabled (acme.enabled: false)."), nil
+		return toolErrorf("acme_issuer_log", "ACME is not enabled (acme.enabled: false)."), nil
 	}
 	b, _ := json.MarshalIndent(s.acmeManager.IssuerLog(), "", "  ")
 	return mcpsdk.NewToolResultText(string(b)), nil
@@ -2767,7 +2767,7 @@ func (s *Server) handleGetVersion(_ context.Context, _ mcpsdk.CallToolRequest) (
 
 func (s *Server) handleListSavedCommands(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	if s.cmdLib == nil {
-		return mcpsdk.NewToolResultText("Command library not available."), nil
+		return toolErrorf("list_saved_commands", "Command library not available."), nil
 	}
 	cmds := s.cmdLib.List()
 	if len(cmds) == 0 {
@@ -2786,7 +2786,7 @@ func (s *Server) handleListSavedCommands(_ context.Context, _ mcpsdk.CallToolReq
 
 func (s *Server) handleSendSavedCommand(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	if s.cmdLib == nil {
-		return mcpsdk.NewToolResultText("Command library not available."), nil
+		return toolErrorf("send_saved_command", "Command library not available."), nil
 	}
 	id := req.GetString("session_id", "")
 	if sn := req.GetString("session_name", ""); sn != "" && id == "" {
@@ -2794,7 +2794,7 @@ func (s *Server) handleSendSavedCommand(_ context.Context, req mcpsdk.CallToolRe
 	}
 	name := req.GetString("command_name", "")
 	if id == "" || name == "" {
-		return mcpsdk.NewToolResultText("Error: (session_id or session_name) and command_name are required"), nil
+		return toolErrorf("send_saved_command", "(session_id or session_name) and command_name are required"), nil
 	}
 
 	cmd, ok := s.cmdLib.Get(name)
@@ -2804,21 +2804,21 @@ func (s *Server) handleSendSavedCommand(_ context.Context, req mcpsdk.CallToolRe
 
 	sess, resolveErr := s.resolveSession(id)
 	if resolveErr != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error: %v", resolveErr)), nil
+		return toolError("send_saved_command", resolveErr), nil
 	}
 	if sess == nil {
 		return mcpsdk.NewToolResultText(fmt.Sprintf("Session %q not found.", id)), nil
 	}
 
 	if err := s.manager.SendInput(sess.FullID, cmd.Command, "mcp"); err != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error sending command: %v", err)), nil
+		return toolError("send_saved_command", err), nil
 	}
 	return mcpsdk.NewToolResultText(fmt.Sprintf("Sent command %q (%q) to session %s.", name, cmd.Command, sess.ID)), nil
 }
 
 func (s *Server) handleScheduleAdd(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	if s.schedStore == nil {
-		return mcpsdk.NewToolResultText("Schedule store not available."), nil
+		return toolErrorf("schedule_add", "Schedule store not available."), nil
 	}
 	id := req.GetString("session_id", "")
 	sessionName := req.GetString("session_name", "")
@@ -2827,10 +2827,10 @@ func (s *Server) handleScheduleAdd(_ context.Context, req mcpsdk.CallToolRequest
 	scheduleName := req.GetString("schedule_name", "")
 
 	if command == "" {
-		return mcpsdk.NewToolResultText("Error: command is required"), nil
+		return toolErrorf("schedule_add", "command is required"), nil
 	}
 	if id == "" && sessionName == "" {
-		return mcpsdk.NewToolResultText("Error: session_id or session_name is required"), nil
+		return toolErrorf("schedule_add", "session_id or session_name is required"), nil
 	}
 
 	// Resolve session ID
@@ -2839,7 +2839,7 @@ func (s *Server) handleScheduleAdd(_ context.Context, req mcpsdk.CallToolRequest
 	if id != "" {
 		sess, resolveErr := s.resolveSession(id)
 		if resolveErr != nil {
-			return mcpsdk.NewToolResultText(fmt.Sprintf("Error: %v", resolveErr)), nil
+			return toolError("schedule_add", resolveErr), nil
 		}
 		if sess == nil {
 			return mcpsdk.NewToolResultText(fmt.Sprintf("Session %q not found.", id)), nil
@@ -2892,7 +2892,7 @@ func (s *Server) handleScheduleAdd(_ context.Context, req mcpsdk.CallToolRequest
 		CronExpr:     cronExpr,
 	})
 	if err != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error scheduling: %v", err)), nil
+		return toolError("schedule_add", err), nil
 	}
 	runDesc := "on next input prompt"
 	if !runAt.IsZero() {
@@ -2907,7 +2907,7 @@ func (s *Server) handleScheduleAdd(_ context.Context, req mcpsdk.CallToolRequest
 
 func (s *Server) handleScheduleList(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	if s.schedStore == nil {
-		return mcpsdk.NewToolResultText("Schedule store not available."), nil
+		return toolErrorf("schedule_list", "Schedule store not available."), nil
 	}
 	pending := s.schedStore.List("pending")
 	if len(pending) == 0 {
@@ -2936,12 +2936,12 @@ func (s *Server) handleScheduleList(_ context.Context, _ mcpsdk.CallToolRequest)
 
 func (s *Server) handleScheduleCancel(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	if s.schedStore == nil {
-		return mcpsdk.NewToolResultText("Schedule store not available."), nil
+		return toolErrorf("schedule_cancel", "Schedule store not available."), nil
 	}
 	id := req.GetString("id", "")
 	name := req.GetString("name", "")
 	if id == "" && name == "" {
-		return mcpsdk.NewToolResultText("Error: id or name is required"), nil
+		return toolErrorf("schedule_cancel", "id or name is required"), nil
 	}
 	if name != "" {
 		n := s.schedStore.CancelByScheduleName(name)
@@ -2951,7 +2951,7 @@ func (s *Server) handleScheduleCancel(_ context.Context, req mcpsdk.CallToolRequ
 		return mcpsdk.NewToolResultText(fmt.Sprintf("Cancelled %d scheduled command(s) named %q.", n, name)), nil
 	}
 	if err := s.schedStore.Cancel(id); err != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error: %v", err)), nil
+		return toolError("schedule_cancel", err), nil
 	}
 	return mcpsdk.NewToolResultText(fmt.Sprintf("Scheduled command [%s] cancelled.", id)), nil
 }
@@ -2959,11 +2959,11 @@ func (s *Server) handleScheduleCancel(_ context.Context, req mcpsdk.CallToolRequ
 // handleScheduleSpawn schedules an ephemeral one-shot session spawn (GH#128).
 func (s *Server) handleScheduleSpawn(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	if s.schedStore == nil {
-		return mcpsdk.NewToolResultText("Schedule store not available."), nil
+		return toolErrorf("schedule_spawn", "Schedule store not available."), nil
 	}
 	task := req.GetString("task", "")
 	if task == "" {
-		return mcpsdk.NewToolResultText("Error: task is required"), nil
+		return toolErrorf("schedule_spawn", "task is required"), nil
 	}
 
 	cronExpr := req.GetString("cron_expr", "")
@@ -3010,7 +3010,7 @@ func (s *Server) handleScheduleSpawn(_ context.Context, req mcpsdk.CallToolReque
 		Ephemeral:    ephemeral,
 	})
 	if err != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error: %v", err)), nil
+		return toolError("schedule_spawn", err), nil
 	}
 
 	when := "immediately"
@@ -3074,49 +3074,49 @@ func (s *Server) toolPipelineList() mcpsdk.Tool {
 
 func (s *Server) handlePipelineStart(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	if s.pipelineAPI == nil {
-		return mcpsdk.NewToolResultText("Pipeline system not available."), nil
+		return toolErrorf("pipeline_start", "Pipeline system not available."), nil
 	}
 	spec := req.GetString("spec", "")
 	if spec == "" {
-		return mcpsdk.NewToolResultText("Error: spec is required"), nil
+		return toolErrorf("pipeline_start", "spec is required"), nil
 	}
 	projectDir := req.GetString("project_dir", "")
 	maxParallel := req.GetInt("max_parallel", 3)
 	id, err := s.pipelineAPI.StartPipeline(spec, projectDir, nil, maxParallel)
 	if err != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error: %v", err)), nil
+		return toolError("pipeline_start", err), nil
 	}
 	return mcpsdk.NewToolResultText(fmt.Sprintf("Pipeline started: %s", id)), nil
 }
 
 func (s *Server) handlePipelineStatus(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	if s.pipelineAPI == nil {
-		return mcpsdk.NewToolResultText("Pipeline system not available."), nil
+		return toolErrorf("pipeline_status", "Pipeline system not available."), nil
 	}
 	id := req.GetString("id", "")
 	if id == "" {
-		return mcpsdk.NewToolResultText("Error: id is required"), nil
+		return toolErrorf("pipeline_status", "id is required"), nil
 	}
 	return mcpsdk.NewToolResultText(s.pipelineAPI.GetStatus(id)), nil
 }
 
 func (s *Server) handlePipelineCancel(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	if s.pipelineAPI == nil {
-		return mcpsdk.NewToolResultText("Pipeline system not available."), nil
+		return toolErrorf("pipeline_cancel", "Pipeline system not available."), nil
 	}
 	id := req.GetString("id", "")
 	if id == "" {
-		return mcpsdk.NewToolResultText("Error: id is required"), nil
+		return toolErrorf("pipeline_cancel", "id is required"), nil
 	}
 	if err := s.pipelineAPI.Cancel(id); err != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error: %v", err)), nil
+		return toolError("pipeline_cancel", err), nil
 	}
 	return mcpsdk.NewToolResultText(fmt.Sprintf("Pipeline %s cancelled.", id)), nil
 }
 
 func (s *Server) handlePipelineList(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	if s.pipelineAPI == nil {
-		return mcpsdk.NewToolResultText("Pipeline system not available."), nil
+		return toolErrorf("pipeline_list", "Pipeline system not available."), nil
 	}
 	return mcpsdk.NewToolResultText(s.pipelineAPI.ListAll()), nil
 }
@@ -3138,10 +3138,10 @@ func (s *Server) handleGetMySessionID(_ context.Context, req mcpsdk.CallToolRequ
 	if hint != "" {
 		sess, err := s.resolveSession(hint)
 		if err != nil {
-			return mcpsdk.NewToolResultText(fmt.Sprintf("Error: %v", err)), nil
+			return toolError("get_my_session_id", err), nil
 		}
 		if sess == nil {
-			return mcpsdk.NewToolResultText(fmt.Sprintf("Error: session %q not found", hint)), nil
+			return toolErrorf("get_my_session_id", "session %q not found", hint), nil
 		}
 		return mcpsdk.NewToolResultText(fmt.Sprintf(
 			"Session ID:   %s\nFull ID:      %s\nState:        %s\nName:         %s\n",
@@ -3189,10 +3189,10 @@ func (s *Server) handleGetMyScope(ctx context.Context, req mcpsdk.CallToolReques
 	if hint != "" {
 		cand, err := s.resolveSession(hint)
 		if err != nil {
-			return mcpsdk.NewToolResultText(fmt.Sprintf("Error: %v", err)), nil
+			return toolError("get_my_scope", err), nil
 		}
 		if cand == nil {
-			return mcpsdk.NewToolResultText(fmt.Sprintf("Error: session %q not found", hint)), nil
+			return toolErrorf("get_my_scope", "session %q not found", hint), nil
 		}
 		sess, resolvedVia = cand, "hint"
 	} else {
@@ -3219,14 +3219,14 @@ func (s *Server) handleGetMyScope(ctx context.Context, req mcpsdk.CallToolReques
 	}
 
 	if sess == nil {
-		return mcpsdk.NewToolResultText("Error: no self-scope resolved — pass hint=<session id>, or call from inside a session over its scoped channel."), nil
+		return toolErrorf("get_my_scope", "no self-scope resolved — pass hint=<session id>, or call from inside a session over its scoped channel."), nil
 	}
 
 	scope := channel.BuildSelfScope(sess, all)
 	scope.ResolvedVia = resolvedVia
 	out, err := json.MarshalIndent(scope, "", "  ")
 	if err != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error: %v", err)), nil
+		return toolError("get_my_scope", err), nil
 	}
 	return textOK(string(out)), nil
 }

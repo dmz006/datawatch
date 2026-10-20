@@ -5,7 +5,6 @@ package mcp
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 
 	mcpsdk "github.com/mark3labs/mcp-go/mcp"
 
@@ -35,7 +34,7 @@ func (s *Server) toolAgentAudit() mcpsdk.Tool {
 
 func (s *Server) handleAgentAudit(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	if s.agentAuditPath == "" {
-		return mcpsdk.NewToolResultText("agent audit not enabled"), nil
+		return toolErrorf("agent_audit", "agent audit not enabled"), nil
 	}
 	if s.agentAuditCEF {
 		return mcpsdk.NewToolResultText(
@@ -53,7 +52,7 @@ func (s *Server) handleAgentAudit(_ context.Context, req mcpsdk.CallToolRequest)
 	}
 	events, err := agents.ReadEvents(s.agentAuditPath, filter, limit)
 	if err != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("error: %v", err)), nil
+		return toolError("agent_audit", err), nil
 	}
 	body, _ := json.MarshalIndent(events, "", "  ")
 	return mcpsdk.NewToolResultText(string(body)), nil

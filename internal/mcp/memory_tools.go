@@ -24,7 +24,7 @@ func (s *Server) proxyMemoryPOST(path string, body any) (*mcpsdk.CallToolResult,
 	}
 	data, err := s.proxyJSON("POST", path, body)
 	if err != nil {
-		return mcpsdk.NewToolResultError("memory: " + err.Error()), true
+		return toolError("path", err), true
 	}
 	return mcpsdk.NewToolResultText(string(data)), true
 }
@@ -36,7 +36,7 @@ func (s *Server) proxyMemoryGET(path string, q url.Values) (*mcpsdk.CallToolResu
 	}
 	data, err := s.proxyGet(path, q)
 	if err != nil {
-		return mcpsdk.NewToolResultError("memory: " + err.Error()), true
+		return toolError("path", err), true
 	}
 	return mcpsdk.NewToolResultText(string(data)), true
 }
@@ -127,7 +127,7 @@ func (s *Server) handleMemoryRemember(ctx context.Context, req mcpsdk.CallToolRe
 	projectDir := req.GetString("project_dir", "")
 	tags := req.GetString("tags", "")
 	if text == "" {
-		return mcpsdk.NewToolResultError("text is required"), nil
+		return toolErrorf("memory_remember", "text is required"), nil
 	}
 	// BL385 Phase 3 — for a scoped caller (subprocess mode, or a session
 	// token through the shared daemon MCP server — HLLM-004), writes go to
@@ -155,11 +155,11 @@ func (s *Server) handleMemoryRemember(ctx context.Context, req mcpsdk.CallToolRe
 		if r, ok := s.proxyMemoryPOST("/api/memory/save", body); ok {
 			return r, nil
 		}
-		return mcpsdk.NewToolResultText("Memory not enabled. Set memory.enabled=true in config."), nil
+		return toolErrorf("memory_remember", "Memory not enabled. Set memory.enabled=true in config."), nil
 	}
 	id, err := s.memoryAPI.Remember(projectDir, text)
 	if err != nil {
-		return mcpsdk.NewToolResultError(fmt.Sprintf("remember failed: %v", err)), nil
+		return toolErrorf("memory_remember", "remember failed: %v", err), nil
 	}
 	if tags != "" {
 		_ = s.memoryAPI.SetTags(id, tags) // best-effort, see tool description
@@ -178,7 +178,7 @@ func (s *Server) toolMemoryRecall() mcpsdk.Tool {
 func (s *Server) handleMemoryRecall(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	query := req.GetString("query", "")
 	if query == "" {
-		return mcpsdk.NewToolResultError("query is required"), nil
+		return toolErrorf("memory_recall", "query is required"), nil
 	}
 	// BL385 Phase 3 / HLLM-004 — for a scoped caller, recall walks the scope
 	// hierarchy (session-local, story-shared, prd-shared, project-shared) so
@@ -199,11 +199,11 @@ func (s *Server) handleMemoryRecall(ctx context.Context, req mcpsdk.CallToolRequ
 		if r, ok := s.proxyMemoryGET("/api/memory/search", url.Values{"q": {query}}); ok {
 			return r, nil
 		}
-		return mcpsdk.NewToolResultText("Memory not enabled."), nil
+		return toolErrorf("memory_recall", "Memory not enabled."), nil
 	}
 	results, err := s.memoryAPI.Search(query, 10)
 	if err != nil {
-		return mcpsdk.NewToolResultError(fmt.Sprintf("recall failed: %v", err)), nil
+		return toolErrorf("memory_recall", "recall failed: %v", err), nil
 	}
 	data, _ := json.MarshalIndent(results, "", "  ")
 	return mcpsdk.NewToolResultText(string(data)), nil
@@ -238,11 +238,11 @@ func (s *Server) handleMemoryList(ctx context.Context, req mcpsdk.CallToolReques
 		if r, ok := s.proxyMemoryGET("/api/memory/list", url.Values{"project": {projectDir}, "n": {fmt.Sprintf("%d", n)}}); ok {
 			return r, nil
 		}
-		return mcpsdk.NewToolResultText("Memory not enabled."), nil
+		return toolErrorf("memory_list", "Memory not enabled."), nil
 	}
 	results, err := s.memoryAPI.ListRecent(projectDir, n)
 	if err != nil {
-		return mcpsdk.NewToolResultError(fmt.Sprintf("list failed: %v", err)), nil
+		return toolErrorf("memory_list", "list failed: %v", err), nil
 	}
 	data, _ := json.MarshalIndent(results, "", "  ")
 	return mcpsdk.NewToolResultText(string(data)), nil
@@ -262,21 +262,21 @@ func (s *Server) handleMemoryForget(ctx context.Context, req mcpsdk.CallToolRequ
 	// would let a task session delete any memory, including other sessions'
 	// or the operator's. Same precedent as memory_sweep_stale/memory_import below.
 	if _, scoped := s.scopedCallerSessionID(ctx); scoped {
-		return mcpsdk.NewToolResultError("memory_forget is not available for a scoped session credential"), nil
+		return toolErrorf("memory_forget", "memory_forget is not available for a scoped session credential"), nil
 	}
 	if s.memoryAPI == nil {
 		id := int64(req.GetInt("id", 0))
 		if r, ok := s.proxyMemoryPOST("/api/memory/delete", map[string]any{"id": id}); ok {
 			return r, nil
 		}
-		return mcpsdk.NewToolResultText("Memory not enabled."), nil
+		return toolErrorf("memory_forget", "Memory not enabled."), nil
 	}
 	id := int64(req.GetInt("id", 0))
 	if id <= 0 {
-		return mcpsdk.NewToolResultError("valid numeric id is required"), nil
+		return toolErrorf("memory_forget", "valid numeric id is required"), nil
 	}
 	if err := s.memoryAPI.Delete(id); err != nil {
-		return mcpsdk.NewToolResultError(fmt.Sprintf("delete failed: %v", err)), nil
+		return toolErrorf("memory_forget", "delete failed: %v", err), nil
 	}
 	return mcpsdk.NewToolResultText(fmt.Sprintf("Deleted memory #%d", id)), nil
 }
@@ -314,7 +314,7 @@ func (s *Server) toolMemoryPin() mcpsdk.Tool {
 func (s *Server) handleMemoryPin(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	// HLLM-004 — same raw-ID-with-no-ownership-context issue as memory_forget.
 	if _, scoped := s.scopedCallerSessionID(ctx); scoped {
-		return mcpsdk.NewToolResultError("memory_pin is not available for a scoped session credential"), nil
+		return toolErrorf("memory_pin", "memory_pin is not available for a scoped session credential"), nil
 	}
 	if s.memoryAPI == nil {
 		id := int64(req.GetInt("id", 0))
@@ -322,15 +322,15 @@ func (s *Server) handleMemoryPin(ctx context.Context, req mcpsdk.CallToolRequest
 		if r, ok := s.proxyMemoryPOST("/api/memory/pin", map[string]any{"id": id, "pinned": pinned}); ok {
 			return r, nil
 		}
-		return mcpsdk.NewToolResultText("Memory not enabled."), nil
+		return toolErrorf("memory_pin", "Memory not enabled."), nil
 	}
 	id := int64(req.GetInt("id", 0))
 	if id <= 0 {
-		return mcpsdk.NewToolResultError("valid numeric id is required"), nil
+		return toolErrorf("memory_pin", "valid numeric id is required"), nil
 	}
 	pinned := req.GetBool("pinned", true)
 	if err := s.memoryAPI.SetPinned(id, pinned); err != nil {
-		return mcpsdk.NewToolResultError(fmt.Sprintf("pin failed: %v", err)), nil
+		return toolErrorf("memory_pin", "pin failed: %v", err), nil
 	}
 	state := "pinned"
 	if !pinned {
@@ -352,7 +352,7 @@ func (s *Server) handleMemorySweep(ctx context.Context, req mcpsdk.CallToolReque
 	// caller; sweeping shared layers from a task session could evict
 	// memories that other concurrent tasks or the operator need.
 	if _, scoped := s.scopedCallerSessionID(ctx); scoped {
-		return mcpsdk.NewToolResultError("memory_sweep_stale is not available for a scoped session credential"), nil
+		return toolErrorf("memory_sweep", "memory_sweep_stale is not available for a scoped session credential"), nil
 	}
 	if s.memoryAPI == nil {
 		days := req.GetInt("older_than_days", 90)
@@ -360,13 +360,13 @@ func (s *Server) handleMemorySweep(ctx context.Context, req mcpsdk.CallToolReque
 		if r, ok := s.proxyMemoryPOST("/api/memory/sweep_stale", map[string]any{"older_than_days": days, "dry_run": dry}); ok {
 			return r, nil
 		}
-		return mcpsdk.NewToolResultText("Memory not enabled."), nil
+		return toolErrorf("memory_sweep", "Memory not enabled."), nil
 	}
 	days := req.GetInt("older_than_days", 90)
 	dry := req.GetBool("dry_run", true)
 	res, err := s.memoryAPI.SweepStale(days, dry)
 	if err != nil {
-		return mcpsdk.NewToolResultError(fmt.Sprintf("sweep failed: %v", err)), nil
+		return toolErrorf("memory_sweep", "sweep failed: %v", err), nil
 	}
 	data, _ := json.MarshalIndent(res, "", "  ")
 	return mcpsdk.NewToolResultText(string(data)), nil
@@ -385,11 +385,11 @@ func (s *Server) handleMemorySpellCheck(_ context.Context, req mcpsdk.CallToolRe
 		if r, ok := s.proxyMemoryPOST("/api/memory/spellcheck", map[string]any{"text": text}); ok {
 			return r, nil
 		}
-		return mcpsdk.NewToolResultText("Memory not enabled."), nil
+		return toolErrorf("memory_spell_check", "Memory not enabled."), nil
 	}
 	text := req.GetString("text", "")
 	if text == "" {
-		return mcpsdk.NewToolResultError("text is required"), nil
+		return toolErrorf("memory_spell_check", "text is required"), nil
 	}
 	out := s.memoryAPI.SpellCheckText(text, nil)
 	data, _ := json.MarshalIndent(out, "", "  ")
@@ -409,11 +409,11 @@ func (s *Server) handleMemoryExtractFacts(_ context.Context, req mcpsdk.CallTool
 		if r, ok := s.proxyMemoryPOST("/api/memory/extract_facts", map[string]any{"text": text}); ok {
 			return r, nil
 		}
-		return mcpsdk.NewToolResultText("Memory not enabled."), nil
+		return toolErrorf("memory_extract_facts", "Memory not enabled."), nil
 	}
 	text := req.GetString("text", "")
 	if text == "" {
-		return mcpsdk.NewToolResultError("text is required"), nil
+		return toolErrorf("memory_extract_facts", "text is required"), nil
 	}
 	out := s.memoryAPI.ExtractFactsText(text)
 	data, _ := json.MarshalIndent(out, "", "  ")
@@ -441,7 +441,7 @@ func (s *Server) handleMemorySchemaVersion(_ context.Context, _ mcpsdk.CallToolR
 			}
 			return mcpsdk.NewToolResultText("(no schema_version in stats — pre-v5.27.0 database)"), nil
 		}
-		return mcpsdk.NewToolResultText("Memory not enabled."), nil
+		return toolErrorf("memory_schema_version", "Memory not enabled."), nil
 	}
 	v := s.memoryAPI.SchemaVersion()
 	if v == "" {
@@ -491,7 +491,7 @@ func (s *Server) toolMemoryReindex() mcpsdk.Tool {
 
 func (s *Server) handleMemoryReindex(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	if s.memoryAPI == nil {
-		return mcpsdk.NewToolResultText("Memory not enabled."), nil
+		return toolErrorf("memory_reindex", "Memory not enabled."), nil
 	}
 	// Call reindex via a simple approach — find the Reindex method
 	// The memory API doesn't have Reindex directly, route through comm channel
@@ -512,7 +512,7 @@ func (s *Server) toolResearchSessions() mcpsdk.Tool {
 func (s *Server) handleResearchSessions(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	query := req.GetString("query", "")
 	if query == "" {
-		return mcpsdk.NewToolResultError("query is required"), nil
+		return toolErrorf("research_sessions", "query is required"), nil
 	}
 	maxResults := req.GetInt("max_results", 10)
 
@@ -606,7 +606,7 @@ func (s *Server) handleGetConfig(_ context.Context, req mcpsdk.CallToolRequest) 
 		"http://127.0.0.1:"+fmt.Sprintf("%d", s.webPort)+"/api/config", nil)
 	resp, err := s.webDo(cfgReq)
 	if err != nil {
-		return mcpsdk.NewToolResultError(fmt.Sprintf("config error: %v", err)), nil
+		return toolErrorf("get_config", "config error: %v", err), nil
 	}
 	defer resp.Body.Close() //nolint:errcheck
 	body, _ := io.ReadAll(resp.Body)
@@ -637,14 +637,14 @@ func (s *Server) toolDeleteSession() mcpsdk.Tool {
 func (s *Server) handleDeleteSession(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	id := req.GetString("session_id", "")
 	if id == "" {
-		return mcpsdk.NewToolResultError("session_id is required"), nil
+		return toolErrorf("delete_session", "session_id is required"), nil
 	}
 	memStrat := req.GetString("memory_strategy", "")
 	if memStrat == "" {
 		// No memory-strategy fields requested — the direct in-process path
 		// avoids a needless loopback HTTP round-trip for the common case.
 		if err := s.manager.Delete(id, true); err != nil {
-			return mcpsdk.NewToolResultError(fmt.Sprintf("delete error: %v", err)), nil
+			return toolErrorf("delete_session", "delete error: %v", err), nil
 		}
 		return mcpsdk.NewToolResultText(fmt.Sprintf("Deleted session %s", id)), nil
 	}
@@ -659,7 +659,7 @@ func (s *Server) handleDeleteSession(_ context.Context, req mcpsdk.CallToolReque
 		body["archive_to_scope"] = scope
 	}
 	if _, err := s.proxyJSON(http.MethodPost, "/api/sessions/delete", body); err != nil {
-		return mcpsdk.NewToolResultError(fmt.Sprintf("delete error: %v", err)), nil
+		return toolErrorf("delete_session", "delete error: %v", err), nil
 	}
 	return mcpsdk.NewToolResultText(fmt.Sprintf("Deleted session %s (memory_strategy=%s)", id, memStrat)), nil
 }
@@ -688,18 +688,18 @@ func (s *Server) handleRestartSession(_ context.Context, req mcpsdk.CallToolRequ
 		id = sn // resolveSession handles name lookup
 	}
 	if id == "" {
-		return mcpsdk.NewToolResultError("session_id or session_name is required"), nil
+		return toolErrorf("restart_session", "session_id or session_name is required"), nil
 	}
 	sess, err := s.resolveSession(id)
 	if err != nil {
-		return mcpsdk.NewToolResultError(fmt.Sprintf("resolve session: %v", err)), nil
+		return toolErrorf("restart_session", "resolve session: %v", err), nil
 	}
 	if sess == nil {
-		return mcpsdk.NewToolResultError(fmt.Sprintf("session not found: %s", id)), nil
+		return toolErrorf("restart_session", "session not found: %s", id), nil
 	}
 	updated, err := s.manager.RestartSession(context.Background(), sess.FullID, task)
 	if err != nil {
-		return mcpsdk.NewToolResultError(fmt.Sprintf("restart error: %v", err)), nil
+		return toolErrorf("restart_session", "restart error: %v", err), nil
 	}
 	return mcpsdk.NewToolResultText(fmt.Sprintf("Restarted session %s (state: %s)", updated.FullID, updated.State)), nil
 }
@@ -715,7 +715,7 @@ func (s *Server) handleGetStats(_ context.Context, _ mcpsdk.CallToolRequest) (*m
 		"http://127.0.0.1:"+fmt.Sprintf("%d", s.webPort)+"/api/stats", nil)
 	resp, err := s.webDo(statsReq)
 	if err != nil {
-		return mcpsdk.NewToolResultError(fmt.Sprintf("stats error: %v", err)), nil
+		return toolErrorf("get_stats", "stats error: %v", err), nil
 	}
 	defer resp.Body.Close() //nolint:errcheck
 	body, _ := io.ReadAll(resp.Body)
@@ -732,17 +732,17 @@ func (s *Server) handleMemoryExport(ctx context.Context, _ mcpsdk.CallToolReques
 	// HLLM-004 — exports every memory in the store, not just this session's;
 	// blocked for any scoped caller, same as memory_import/memory_sweep_stale.
 	if _, scoped := s.scopedCallerSessionID(ctx); scoped {
-		return mcpsdk.NewToolResultError("memory_export is not available for a scoped session credential"), nil
+		return toolErrorf("memory_export", "memory_export is not available for a scoped session credential"), nil
 	}
 	if s.memoryAPI == nil {
 		if r, ok := s.proxyMemoryGET("/api/memory/export", nil); ok {
 			return r, nil
 		}
-		return mcpsdk.NewToolResultText("Memory not enabled."), nil
+		return toolErrorf("memory_export", "Memory not enabled."), nil
 	}
 	var buf strings.Builder
 	if err := s.memoryAPI.Export(&buf); err != nil {
-		return mcpsdk.NewToolResultError(fmt.Sprintf("export error: %v", err)), nil
+		return toolErrorf("memory_export", "export error: %v", err), nil
 	}
 	return mcpsdk.NewToolResultText(buf.String()), nil
 }
@@ -757,7 +757,7 @@ func (s *Server) toolOllamaStats() mcpsdk.Tool {
 
 func (s *Server) handleOllamaStats(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	if s.ollamaHost == "" {
-		return mcpsdk.NewToolResultText("Ollama not configured."), nil
+		return toolErrorf("ollama_stats", "Ollama not configured."), nil
 	}
 	// Fetch live stats from Ollama API
 	olStats := fetchOllamaStatsHTTP(s.ollamaHost)
@@ -778,16 +778,16 @@ func (s *Server) toolKGQuery() mcpsdk.Tool {
 
 func (s *Server) handleKGQuery(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	if s.kgAPI == nil {
-		return mcpsdk.NewToolResultText("Knowledge graph not enabled."), nil
+		return toolErrorf("kg_query", "Knowledge graph not enabled."), nil
 	}
 	entity := req.GetString("entity", "")
 	asOf := req.GetString("as_of", "")
 	if entity == "" {
-		return mcpsdk.NewToolResultError("entity is required"), nil
+		return toolErrorf("kg_query", "entity is required"), nil
 	}
 	results, err := s.kgAPI.QueryEntity(entity, asOf)
 	if err != nil {
-		return mcpsdk.NewToolResultError(fmt.Sprintf("KG query error: %v", err)), nil
+		return toolErrorf("kg_query", "KG query error: %v", err), nil
 	}
 	data, _ := json.MarshalIndent(results, "", "  ")
 	return mcpsdk.NewToolResultText(string(data)), nil
@@ -808,7 +808,7 @@ func (s *Server) toolKGAdd() mcpsdk.Tool {
 
 func (s *Server) handleKGAdd(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	if s.kgAPI == nil {
-		return mcpsdk.NewToolResultText("Knowledge graph not enabled."), nil
+		return toolErrorf("kg_add", "Knowledge graph not enabled."), nil
 	}
 	subj := req.GetString("subject", "")
 	pred := req.GetString("predicate", "")
@@ -816,11 +816,11 @@ func (s *Server) handleKGAdd(_ context.Context, req mcpsdk.CallToolRequest) (*mc
 	validFrom := req.GetString("valid_from", "")
 	source := req.GetString("source", "")
 	if subj == "" || pred == "" || obj == "" {
-		return mcpsdk.NewToolResultError("subject, predicate, and object are required"), nil
+		return toolErrorf("kg_add", "subject, predicate, and object are required"), nil
 	}
 	id, err := s.kgAPI.AddTriple(subj, pred, obj, validFrom, source)
 	if err != nil {
-		return mcpsdk.NewToolResultError(fmt.Sprintf("KG add error: %v", err)), nil
+		return toolErrorf("kg_add", "KG add error: %v", err), nil
 	}
 	return mcpsdk.NewToolResultText(fmt.Sprintf("Added triple #%d: %s %s %s", id, subj, pred, obj)), nil
 }
@@ -837,17 +837,17 @@ func (s *Server) toolKGInvalidate() mcpsdk.Tool {
 
 func (s *Server) handleKGInvalidate(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	if s.kgAPI == nil {
-		return mcpsdk.NewToolResultText("Knowledge graph not enabled."), nil
+		return toolErrorf("kg_invalidate", "Knowledge graph not enabled."), nil
 	}
 	subj := req.GetString("subject", "")
 	pred := req.GetString("predicate", "")
 	obj := req.GetString("object", "")
 	ended := req.GetString("ended", "")
 	if subj == "" || pred == "" || obj == "" {
-		return mcpsdk.NewToolResultError("subject, predicate, and object are required"), nil
+		return toolErrorf("kg_invalidate", "subject, predicate, and object are required"), nil
 	}
 	if err := s.kgAPI.Invalidate(subj, pred, obj, ended); err != nil {
-		return mcpsdk.NewToolResultError(fmt.Sprintf("KG invalidate error: %v", err)), nil
+		return toolErrorf("kg_invalidate", "KG invalidate error: %v", err), nil
 	}
 	return mcpsdk.NewToolResultText(fmt.Sprintf("Invalidated: %s %s %s", subj, pred, obj)), nil
 }
@@ -861,15 +861,15 @@ func (s *Server) toolKGTimeline() mcpsdk.Tool {
 
 func (s *Server) handleKGTimeline(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	if s.kgAPI == nil {
-		return mcpsdk.NewToolResultText("Knowledge graph not enabled."), nil
+		return toolErrorf("kg_timeline", "Knowledge graph not enabled."), nil
 	}
 	entity := req.GetString("entity", "")
 	if entity == "" {
-		return mcpsdk.NewToolResultError("entity is required"), nil
+		return toolErrorf("kg_timeline", "entity is required"), nil
 	}
 	results, err := s.kgAPI.Timeline(entity)
 	if err != nil {
-		return mcpsdk.NewToolResultError(fmt.Sprintf("KG timeline error: %v", err)), nil
+		return toolErrorf("kg_timeline", "KG timeline error: %v", err), nil
 	}
 	data, _ := json.MarshalIndent(results, "", "  ")
 	return mcpsdk.NewToolResultText(string(data)), nil
@@ -936,22 +936,22 @@ func (s *Server) handleMemoryImport(ctx context.Context, req mcpsdk.CallToolRequ
 	// importing a large snapshot from a task could overwrite
 	// operator-curated shared memories.
 	if _, scoped := s.scopedCallerSessionID(ctx); scoped {
-		return mcpsdk.NewToolResultError("memory_import is not available for a scoped session credential"), nil
+		return toolErrorf("memory_import", "memory_import is not available for a scoped session credential"), nil
 	}
 	if s.memoryAPI == nil {
 		data := req.GetString("json_data", "")
 		if r, ok := s.proxyMemoryPOST("/api/memory/import", []byte(data)); ok {
 			return r, nil
 		}
-		return mcpsdk.NewToolResultText("Memory not enabled."), nil
+		return toolErrorf("memory_import", "Memory not enabled."), nil
 	}
 	data := req.GetString("json_data", "")
 	if data == "" {
-		return mcpsdk.NewToolResultText("Error: json_data is required"), nil
+		return toolErrorf("memory_import", "json_data is required"), nil
 	}
 	count, err := s.memoryAPI.Import(strings.NewReader(data))
 	if err != nil {
-		return mcpsdk.NewToolResultError(fmt.Sprintf("import error: %v", err)), nil
+		return toolErrorf("memory_import", "import error: %v", err), nil
 	}
 	return mcpsdk.NewToolResultText(fmt.Sprintf("Imported %d memories.", count)), nil
 }
@@ -974,12 +974,12 @@ func (s *Server) toolConfigSet() mcpsdk.Tool {
 
 func (s *Server) handleConfigSet(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	if s.webPort <= 0 {
-		return mcpsdk.NewToolResultText("Web server not available for config update."), nil
+		return toolErrorf("config_set", "Web server not available for config update."), nil
 	}
 	key := req.GetString("key", "")
 	value := req.GetString("value", "")
 	if key == "" || value == "" {
-		return mcpsdk.NewToolResultText("Error: key and value are required"), nil
+		return toolErrorf("config_set", "key and value are required"), nil
 	}
 
 	// BL110 — permission gate. Default closed; operators flip
@@ -1019,12 +1019,12 @@ func (s *Server) handleConfigSet(_ context.Context, req mcpsdk.CallToolRequest) 
 		cfgReq2.Header.Set("Content-Type", "application/json")
 		resp, err = s.webDo(cfgReq2)
 		if err != nil {
-			return mcpsdk.NewToolResultError(fmt.Sprintf("config error: %v", err)), nil
+			return toolErrorf("config_set", "config error: %v", err), nil
 		}
 	}
 	defer resp.Body.Close() //nolint:errcheck
 	if resp.StatusCode != 200 {
-		return mcpsdk.NewToolResultError(fmt.Sprintf("config error: HTTP %d", resp.StatusCode)), nil
+		return toolErrorf("config_set", "config error: HTTP %d", resp.StatusCode), nil
 	}
 	return mcpsdk.NewToolResultText(fmt.Sprintf("Set %s = %s", key, value)), nil
 }
@@ -1050,13 +1050,13 @@ func (s *Server) handleMemoryLearnings(_ context.Context, req mcpsdk.CallToolReq
 		if r, ok := s.proxyMemoryGET("/api/memory/learnings", url.Values{"query": {query}, "limit": {fmt.Sprintf("%d", limit)}}); ok {
 			return r, nil
 		}
-		return mcpsdk.NewToolResultText("Memory not enabled."), nil
+		return toolErrorf("memory_learnings", "Memory not enabled."), nil
 	}
 	query := req.GetString("query", "")
 	limit := req.GetInt("limit", 20)
 	results, err := s.memoryAPI.ListLearnings("", query, limit)
 	if err != nil {
-		return mcpsdk.NewToolResultError(fmt.Sprintf("error: %v", err)), nil
+		return toolErrorf("memory_learnings", "error: %v", err), nil
 	}
 	if len(results) == 0 {
 		return mcpsdk.NewToolResultText("No learnings found."), nil

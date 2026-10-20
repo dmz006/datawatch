@@ -29,17 +29,17 @@ func (s *Server) toolDiscussionSubscribe() mcpsdk.Tool {
 func (s *Server) handleDiscussionSubscribe(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	id := req.GetString("discussion_id", "")
 	if id == "" {
-		return textOK("Error: discussion_id is required"), nil
+		return toolErrorf("discussion_subscribe", "discussion_id is required"), nil
 	}
 	sname := req.GetString("session_name", "")
 	if sname == "" {
-		return textOK("Error: session_name is required"), nil
+		return toolErrorf("discussion_subscribe", "session_name is required"), nil
 	}
 	if s.subStore == nil {
-		return textOK("Error: discussion subscription store not configured"), nil
+		return toolErrorf("discussion_subscribe", "discussion subscription store not configured"), nil
 	}
 	if err := s.subStore.Subscribe(id, sname); err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("discussion_subscribe", err), nil
 	}
 	return textOK(fmt.Sprintf(`{"ok":true,"discussion_id":%q,"session_name":%q,"status":"subscribed"}`, id, sname)), nil
 }
@@ -58,17 +58,17 @@ func (s *Server) toolDiscussionUnsubscribe() mcpsdk.Tool {
 func (s *Server) handleDiscussionUnsubscribe(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	id := req.GetString("discussion_id", "")
 	if id == "" {
-		return textOK("Error: discussion_id is required"), nil
+		return toolErrorf("discussion_unsubscribe", "discussion_id is required"), nil
 	}
 	sname := req.GetString("session_name", "")
 	if sname == "" {
-		return textOK("Error: session_name is required"), nil
+		return toolErrorf("discussion_unsubscribe", "session_name is required"), nil
 	}
 	if s.subStore == nil {
-		return textOK("Error: discussion subscription store not configured"), nil
+		return toolErrorf("discussion_unsubscribe", "discussion subscription store not configured"), nil
 	}
 	if err := s.subStore.Unsubscribe(id, sname); err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("discussion_unsubscribe", err), nil
 	}
 	return textOK(fmt.Sprintf(`{"ok":true,"discussion_id":%q,"session_name":%q,"status":"unsubscribed"}`, id, sname)), nil
 }
@@ -85,7 +85,7 @@ func (s *Server) toolDiscussionSubscriptions() mcpsdk.Tool {
 
 func (s *Server) handleDiscussionSubscriptions(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	if s.subStore == nil {
-		return textOK("Error: discussion subscription store not configured"), nil
+		return toolErrorf("discussion_subscriptions", "discussion subscription store not configured"), nil
 	}
 	subs := s.subStore.List()
 	// Optional filter

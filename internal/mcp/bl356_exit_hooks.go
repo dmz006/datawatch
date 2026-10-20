@@ -77,7 +77,7 @@ func (s *Server) toolExitHookDisable() mcpsdk.Tool {
 
 func (s *Server) handleExitHookList(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	if s.exitHookStore == nil {
-		return mcpsdk.NewToolResultText("Exit hook store not available."), nil
+		return toolErrorf("exit_hook_list", "Exit hook store not available."), nil
 	}
 	entries := s.exitHookStore.List()
 	if len(entries) == 0 {
@@ -108,15 +108,15 @@ func (s *Server) handleExitHookList(_ context.Context, _ mcpsdk.CallToolRequest)
 
 func (s *Server) handleExitHookAdd(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	if s.exitHookStore == nil {
-		return mcpsdk.NewToolResultText("Exit hook store not available."), nil
+		return toolErrorf("exit_hook_add", "Exit hook store not available."), nil
 	}
 	name := req.GetString("name", "")
 	action := req.GetString("action", "")
 	if name == "" || action == "" {
-		return mcpsdk.NewToolResultText("Error: name and action are required."), nil
+		return toolErrorf("exit_hook_add", "name and action are required."), nil
 	}
 	if action != "restart" && action != "notify" {
-		return mcpsdk.NewToolResultText("Error: action must be 'restart' or 'notify'."), nil
+		return toolErrorf("exit_hook_add", "action must be 'restart' or 'notify'."), nil
 	}
 	notifySession := req.GetString("notify_session", "")
 	notifyMessage := req.GetString("notify_message", "")
@@ -124,7 +124,7 @@ func (s *Server) handleExitHookAdd(_ context.Context, req mcpsdk.CallToolRequest
 
 	e, err := s.exitHookStore.Add(name, session.ExitHookAction(action), notifySession, notifyMessage, cooldown)
 	if err != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error: %v", err)), nil
+		return toolError("exit_hook_add", err), nil
 	}
 	data, _ := json.MarshalIndent(e, "", "  ")
 	return mcpsdk.NewToolResultText(fmt.Sprintf("Exit hook added:\n%s", string(data))), nil
@@ -132,42 +132,42 @@ func (s *Server) handleExitHookAdd(_ context.Context, req mcpsdk.CallToolRequest
 
 func (s *Server) handleExitHookDelete(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	if s.exitHookStore == nil {
-		return mcpsdk.NewToolResultText("Exit hook store not available."), nil
+		return toolErrorf("exit_hook_delete", "Exit hook store not available."), nil
 	}
 	id := req.GetString("id", "")
 	if id == "" {
-		return mcpsdk.NewToolResultText("Error: id is required."), nil
+		return toolErrorf("exit_hook_delete", "id is required."), nil
 	}
 	if err := s.exitHookStore.Delete(id); err != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error: %v", err)), nil
+		return toolError("exit_hook_delete", err), nil
 	}
 	return mcpsdk.NewToolResultText(fmt.Sprintf("Exit hook %s deleted.", id)), nil
 }
 
 func (s *Server) handleExitHookEnable(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	if s.exitHookStore == nil {
-		return mcpsdk.NewToolResultText("Exit hook store not available."), nil
+		return toolErrorf("exit_hook_enable", "Exit hook store not available."), nil
 	}
 	id := req.GetString("id", "")
 	if id == "" {
-		return mcpsdk.NewToolResultText("Error: id is required."), nil
+		return toolErrorf("exit_hook_enable", "id is required."), nil
 	}
 	if err := s.exitHookStore.SetEnabled(id, true); err != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error: %v", err)), nil
+		return toolError("exit_hook_enable", err), nil
 	}
 	return mcpsdk.NewToolResultText(fmt.Sprintf("Exit hook %s enabled.", id)), nil
 }
 
 func (s *Server) handleExitHookDisable(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	if s.exitHookStore == nil {
-		return mcpsdk.NewToolResultText("Exit hook store not available."), nil
+		return toolErrorf("exit_hook_disable", "Exit hook store not available."), nil
 	}
 	id := req.GetString("id", "")
 	if id == "" {
-		return mcpsdk.NewToolResultText("Error: id is required."), nil
+		return toolErrorf("exit_hook_disable", "id is required."), nil
 	}
 	if err := s.exitHookStore.SetEnabled(id, false); err != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error: %v", err)), nil
+		return toolError("exit_hook_disable", err), nil
 	}
 	return mcpsdk.NewToolResultText(fmt.Sprintf("Exit hook %s disabled.", id)), nil
 }

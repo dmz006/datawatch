@@ -12,7 +12,6 @@ package mcp
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 
 	mcpsdk "github.com/mark3labs/mcp-go/mcp"
 )
@@ -33,21 +32,21 @@ func (s *Server) toolQueuePush() mcpsdk.Tool {
 
 func (s *Server) handleQueuePush(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	if s.queueStore == nil {
-		return mcpsdk.NewToolResultText("Queue store not available. Start the daemon first."), nil
+		return toolErrorf("queue_push", "Queue store not available. Start the daemon first."), nil
 	}
 	role := req.GetString("role", "")
 	if role == "" {
-		return mcpsdk.NewToolResultText("Error: role is required"), nil
+		return toolErrorf("queue_push", "role is required"), nil
 	}
 	var payload map[string]any
 	if ps := req.GetString("payload", ""); ps != "" {
 		if err := json.Unmarshal([]byte(ps), &payload); err != nil {
-			return mcpsdk.NewToolResultText(fmt.Sprintf("Error: invalid payload JSON: %v", err)), nil
+			return toolErrorf("queue_push", "invalid payload JSON: %v", err), nil
 		}
 	}
 	it, err := s.queueStore.Push(role, payload)
 	if err != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error: push failed: %v", err)), nil
+		return toolErrorf("queue_push", "push failed: %v", err), nil
 	}
 	b, _ := json.MarshalIndent(it, "", "  ")
 	return mcpsdk.NewToolResultText(string(b)), nil
@@ -73,15 +72,15 @@ func (s *Server) toolQueueClaim() mcpsdk.Tool {
 
 func (s *Server) handleQueueClaim(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	if s.queueStore == nil {
-		return mcpsdk.NewToolResultText("Queue store not available. Start the daemon first."), nil
+		return toolErrorf("queue_claim", "Queue store not available. Start the daemon first."), nil
 	}
 	role := req.GetString("role", "")
 	if role == "" {
-		return mcpsdk.NewToolResultText("Error: role is required"), nil
+		return toolErrorf("queue_claim", "role is required"), nil
 	}
 	claimedBy := req.GetString("claimed_by", "")
 	if claimedBy == "" {
-		return mcpsdk.NewToolResultText("Error: claimed_by is required"), nil
+		return toolErrorf("queue_claim", "claimed_by is required"), nil
 	}
 	leaseSeconds := 300
 	if ls := req.GetFloat("lease_seconds", 0); ls > 0 {
@@ -89,7 +88,7 @@ func (s *Server) handleQueueClaim(_ context.Context, req mcpsdk.CallToolRequest)
 	}
 	it, err := s.queueStore.Claim(role, claimedBy, leaseSeconds)
 	if err != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error: claim failed: %v", err)), nil
+		return toolErrorf("queue_claim", "claim failed: %v", err), nil
 	}
 	if it == nil {
 		return mcpsdk.NewToolResultText("No pending items available for role: " + role), nil
@@ -114,20 +113,20 @@ func (s *Server) toolQueueComplete() mcpsdk.Tool {
 
 func (s *Server) handleQueueComplete(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	if s.queueStore == nil {
-		return mcpsdk.NewToolResultText("Queue store not available. Start the daemon first."), nil
+		return toolErrorf("queue_complete", "Queue store not available. Start the daemon first."), nil
 	}
 	id := req.GetString("id", "")
 	if id == "" {
-		return mcpsdk.NewToolResultText("Error: id is required"), nil
+		return toolErrorf("queue_complete", "id is required"), nil
 	}
 	var result map[string]any
 	if rs := req.GetString("result", ""); rs != "" {
 		if err := json.Unmarshal([]byte(rs), &result); err != nil {
-			return mcpsdk.NewToolResultText(fmt.Sprintf("Error: invalid result JSON: %v", err)), nil
+			return toolErrorf("queue_complete", "invalid result JSON: %v", err), nil
 		}
 	}
 	if err := s.queueStore.Complete(id, result); err != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error: complete failed: %v", err)), nil
+		return toolErrorf("queue_complete", "complete failed: %v", err), nil
 	}
 	return mcpsdk.NewToolResultText("Queue item " + id + " marked complete."), nil
 }
@@ -149,15 +148,15 @@ func (s *Server) toolQueueFail() mcpsdk.Tool {
 
 func (s *Server) handleQueueFail(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	if s.queueStore == nil {
-		return mcpsdk.NewToolResultText("Queue store not available. Start the daemon first."), nil
+		return toolErrorf("queue_fail", "Queue store not available. Start the daemon first."), nil
 	}
 	id := req.GetString("id", "")
 	if id == "" {
-		return mcpsdk.NewToolResultText("Error: id is required"), nil
+		return toolErrorf("queue_fail", "id is required"), nil
 	}
 	errMsg := req.GetString("error", "")
 	if err := s.queueStore.Fail(id, errMsg); err != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error: fail operation failed: %v", err)), nil
+		return toolErrorf("queue_fail", "fail operation failed: %v", err), nil
 	}
 	return mcpsdk.NewToolResultText("Queue item " + id + " marked failed."), nil
 }
@@ -177,7 +176,7 @@ func (s *Server) toolQueueList() mcpsdk.Tool {
 
 func (s *Server) handleQueueList(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	if s.queueStore == nil {
-		return mcpsdk.NewToolResultText("Queue store not available. Start the daemon first."), nil
+		return toolErrorf("queue_list", "Queue store not available. Start the daemon first."), nil
 	}
 	role := req.GetString("role", "")
 	state := req.GetString("state", "")

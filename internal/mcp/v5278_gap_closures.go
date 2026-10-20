@@ -34,7 +34,7 @@ func (s *Server) handleMemoryWAL(_ context.Context, req mcpsdk.CallToolRequest) 
 	n := req.GetInt("n", 50)
 	out, err := s.proxyJSON(http.MethodGet, fmt.Sprintf("/api/memory/wal?n=%d", n), nil)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("memory_wal", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -47,7 +47,7 @@ func (s *Server) toolMemoryTestEmbedder() mcpsdk.Tool {
 func (s *Server) handleMemoryTestEmbedder(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	out, err := s.proxyJSON(http.MethodPost, "/api/memory/test", nil)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("memory_test_embedder", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -81,7 +81,7 @@ func (s *Server) handleMemoryWakeup(_ context.Context, req mcpsdk.CallToolReques
 	}
 	out, err := s.proxyJSON(http.MethodGet, path, nil)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("memory_wakeup", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -96,7 +96,7 @@ func (s *Server) toolClaudeModels() mcpsdk.Tool {
 func (s *Server) handleClaudeModels(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	out, err := s.proxyJSON(http.MethodGet, "/api/llm/claude/models", nil)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("claude_models", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -109,7 +109,7 @@ func (s *Server) toolClaudeEfforts() mcpsdk.Tool {
 func (s *Server) handleClaudeEfforts(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	out, err := s.proxyJSON(http.MethodGet, "/api/llm/claude/efforts", nil)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("claude_efforts", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -122,7 +122,7 @@ func (s *Server) toolClaudePermissionModes() mcpsdk.Tool {
 func (s *Server) handleClaudePermissionModes(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	out, err := s.proxyJSON(http.MethodGet, "/api/llm/claude/permission_modes", nil)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("claude_permission_modes", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -137,7 +137,7 @@ func (s *Server) toolRTKVersion() mcpsdk.Tool {
 func (s *Server) handleRTKVersion(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	out, err := s.proxyJSON(http.MethodGet, "/api/rtk/version", nil)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("rtk_version", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -150,7 +150,7 @@ func (s *Server) toolRTKCheck() mcpsdk.Tool {
 func (s *Server) handleRTKCheck(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	out, err := s.proxyJSON(http.MethodPost, "/api/rtk/check", nil)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("rtk_check", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -163,7 +163,7 @@ func (s *Server) toolRTKUpdate() mcpsdk.Tool {
 func (s *Server) handleRTKUpdate(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	out, err := s.proxyJSON(http.MethodPost, "/api/rtk/update", nil)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("rtk_update", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -176,7 +176,7 @@ func (s *Server) toolRTKDiscover() mcpsdk.Tool {
 func (s *Server) handleRTKDiscover(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	out, err := s.proxyJSON(http.MethodGet, "/api/rtk/discover", nil)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("rtk_discover", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -193,7 +193,7 @@ func (s *Server) handleDaemonLogs(_ context.Context, req mcpsdk.CallToolRequest)
 	n := req.GetInt("n", 100)
 	out, err := s.proxyJSON(http.MethodGet, fmt.Sprintf("/api/logs?n=%d", n), nil)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("daemon_logs", err), nil
 	}
 	return textOK(string(out)), nil
 }

@@ -22,7 +22,7 @@ func (s *Server) toolChannelDiagnostics() mcpsdk.Tool {
 func (s *Server) handleChannelDiagnostics(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	out, err := s.proxyJSON(http.MethodGet, "/api/channel/diagnostics", nil)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("channel_diagnostics", err), nil
 	}
 	return textOK(string(out)), nil
 }

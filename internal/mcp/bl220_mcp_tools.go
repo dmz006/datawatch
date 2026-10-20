@@ -63,7 +63,7 @@ func (s *Server) toolDetectionStatus() mcpsdk.Tool {
 func (s *Server) handleDetectionStatus(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	out, err := s.proxyGet("/api/diagnose", nil)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("detection_status", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -79,7 +79,7 @@ func (s *Server) toolDetectionConfigGet() mcpsdk.Tool {
 func (s *Server) handleDetectionConfigGet(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	out, err := s.configSection("detection")
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("detection_config_get", err), nil
 	}
 	return textOK(out), nil
 }
@@ -121,7 +121,7 @@ func (s *Server) handleDetectionConfigSet(ctx context.Context, req mcpsdk.CallTo
 	}
 	out, err := s.proxyJSON(http.MethodPut, "/api/config", patch)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("detection_config_set", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -137,7 +137,7 @@ func (s *Server) toolDNSChannelConfigGet() mcpsdk.Tool {
 func (s *Server) handleDNSChannelConfigGet(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	out, err := s.configSection("dns_channel")
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("dns_channel_config_get", err), nil
 	}
 	return textOK(out), nil
 }
@@ -207,7 +207,7 @@ func (s *Server) handleDNSChannelConfigSet(ctx context.Context, req mcpsdk.CallT
 	}
 	out, err := s.proxyJSON(http.MethodPut, "/api/config", patch)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("dns_channel_config_set", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -223,7 +223,7 @@ func (s *Server) toolProxyConfigGet() mcpsdk.Tool {
 func (s *Server) handleProxyConfigGet(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	out, err := s.configSection("proxy")
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("proxy_config_get", err), nil
 	}
 	return textOK(out), nil
 }
@@ -275,7 +275,7 @@ func (s *Server) handleProxyConfigSet(ctx context.Context, req mcpsdk.CallToolRe
 	}
 	out, err := s.proxyJSON(http.MethodPut, "/api/config", patch)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("proxy_config_set", err), nil
 	}
 	return textOK(string(out)), nil
 }
