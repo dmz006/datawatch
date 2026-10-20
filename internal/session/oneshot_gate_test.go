@@ -82,7 +82,11 @@ func TestRemoveOneShotScratch_RemovesOnlyThatSession(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	defer os.Remove(other)
+	t.Cleanup(func() {
+		if err := os.Remove(other); err != nil && !os.IsNotExist(err) {
+			t.Errorf("cleanup: remove %s: %v", other, err)
+		}
+	})
 	removeOneShotScratch("cs-testhost-gate1")
 	if _, err := os.Stat(mine); !os.IsNotExist(err) {
 		t.Fatal("scratch file for the closed session should be removed")
