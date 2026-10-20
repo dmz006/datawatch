@@ -5606,13 +5606,18 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"ci_watch_timeout_seconds":      s.cfg.Autonomous.CIWatchTimeoutSeconds,
 			"per_prd_guardrails":            s.cfg.Autonomous.PerPRDGuardrails, // rules-review, ci-watch
 			"block_on_file_drift":           s.cfg.Autonomous.BlockOnFileDrift, // strict foreign-file-drift enforcement
-			"stale_task_seconds":            s.cfg.Autonomous.StaleTaskSeconds,
-			"preserve_attempt_work":         s.cfg.Autonomous.PreserveAttemptWorkEnabled(),
-			"auto_fix_retries":              s.cfg.Autonomous.AutoFixRetries,
-			"verifier_diff_max_bytes":       s.cfg.Autonomous.VerifierDiffMaxBytes,
-			"security_scan":                 s.cfg.Autonomous.SecurityScan,
-			"per_story_approval":            s.cfg.Autonomous.PerStoryApproval, // Phase 3 (v5.26.61)
-			"continue_on_story_failure":     s.cfg.Autonomous.ContinueOnStoryFailure,
+			// Pre-existing foreign-file-drift enforcement mode: "block"
+			// (default) or "warn". Show the effective mode so an unset
+			// value renders as "block" (same as the executor's
+			// resolveDriftMode), matching EffectiveTaskOverrideStatuses above.
+			"drift_mode":                effectiveDriftMode(s.cfg.Autonomous.DriftMode),
+			"stale_task_seconds":        s.cfg.Autonomous.StaleTaskSeconds,
+			"preserve_attempt_work":     s.cfg.Autonomous.PreserveAttemptWorkEnabled(),
+			"auto_fix_retries":          s.cfg.Autonomous.AutoFixRetries,
+			"verifier_diff_max_bytes":   s.cfg.Autonomous.VerifierDiffMaxBytes,
+			"security_scan":             s.cfg.Autonomous.SecurityScan,
+			"per_story_approval":        s.cfg.Autonomous.PerStoryApproval, // Phase 3 (v5.26.61)
+			"continue_on_story_failure": s.cfg.Autonomous.ContinueOnStoryFailure,
 			// BL367 — default quality gate config (GET surface; PUT cases in applyConfigPatch).
 			"default_quality_gates": map[string]interface{}{
 				"enabled":             s.cfg.Autonomous.DefaultQualityGates.Enabled,
@@ -5785,6 +5790,15 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 		}
 		if verr := autonomous.ValidateTaskOverrideStatuses(candidate); verr != nil {
 			http.Error(w, "autonomous."+verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	// drift_mode accepts only "block" or "warn"; reject the whole PUT
+	// before anything is applied (same discipline as
+	// task_override_statuses above).
+	if v, ok := patch["autonomous.drift_mode"]; ok {
+		if verr := config.ValidateDriftMode(toString(v)); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
 			return
 		}
 	}
@@ -7128,6 +7142,10 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			cfg.Autonomous.AutoFixSkipApproval = toBool(v)
 		case "autonomous.block_on_file_drift":
 			cfg.Autonomous.BlockOnFileDrift = toBool(v)
+		case "autonomous.drift_mode": // "block" (default) or "warn"; validated in handlePutConfig
+			if mode := toString(v); config.ValidateDriftMode(mode) == nil {
+				cfg.Autonomous.DriftMode = mode
+			}
 		// BL428 §3a ii — refuse tasks on a dirty tree.
 		case "autonomous.refuse_dirty_tree_start":
 			cfg.Autonomous.RefuseDirtyTreeStart = toBool(v)
@@ -7335,6 +7353,18 @@ func (s *Server) handleTestMessage(w http.ResponseWriter, r *http.Request) {
 		"responses": responses,
 		"count":     len(responses),
 	})
+}
+
+// effectiveDriftMode renders the configured autonomous.drift_mode the way
+// the executor enforces it, so GET /api/config shows the effective mode:
+// an unset/empty value renders as "block" (matching
+// resolveDriftMode in internal/autonomous/file_drift.go), as does any
+// "block" spelling, and "warn" stays "warn".
+func effectiveDriftMode(mode string) string {
+	if strings.EqualFold(strings.TrimSpace(mode), "warn") {
+		return "warn"
+	}
+	return "block"
 }
 
 func toBool(v interface{}) bool {

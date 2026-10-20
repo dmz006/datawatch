@@ -697,6 +697,71 @@ func TestBlockOnFileDrift_YAMLRoundTrip(t *testing.T) {
 	}
 }
 
+func TestDriftMode_DefaultIsBlock(t *testing.T) {
+	if got := DefaultConfig().Autonomous.DriftMode; got != "block" {
+		t.Errorf("Autonomous.DriftMode default = %q, want \"block\"", got)
+	}
+}
+
+func TestDriftMode_YAMLRoundTrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("autonomous:\n  drift_mode: warn\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Autonomous.DriftMode != "warn" {
+		t.Fatalf("drift_mode: warn in YAML did not load (got %q)", cfg.Autonomous.DriftMode)
+	}
+	out := filepath.Join(t.TempDir(), "saved.yaml")
+	if err := Save(cfg, out); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	raw, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), "drift_mode: warn") {
+		t.Errorf("saved YAML lacks drift_mode: warn:\n%s", raw)
+	}
+	cfg2, err := Load(out)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if cfg2.Autonomous.DriftMode != "warn" {
+		t.Errorf("drift_mode did not survive Save/Load round-trip (got %q)", cfg2.Autonomous.DriftMode)
+	}
+	// "block" (the default) must round-trip exactly too.
+	cfg2.Autonomous.DriftMode = "block"
+	if err := Save(cfg2, out); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ = os.ReadFile(out)
+	if !strings.Contains(string(raw), "drift_mode: block") {
+		t.Errorf("drift_mode: block should be written, got:\n%s", raw)
+	}
+}
+
+func TestValidateDriftMode(t *testing.T) {
+	for _, mode := range []string{"block", "warn", "WARN", " block ", "Block", "Warn"} {
+		if err := ValidateDriftMode(mode); err != nil {
+			t.Errorf("ValidateDriftMode(%q) = %v, want nil", mode, err)
+		}
+	}
+	for _, mode := range []string{"", "allow", "silent", "blocking", "warns", "block and warn", "true"} {
+		err := ValidateDriftMode(mode)
+		if err == nil {
+			t.Errorf("ValidateDriftMode(%q) = nil, want error", mode)
+			continue
+		}
+		if !strings.Contains(err.Error(), "block\" or \"warn\"") {
+			t.Errorf("ValidateDriftMode(%q) error %q does not name the accepted values", mode, err)
+		}
+	}
+}
+
 // BL428 §3a — autonomous.project_write_serialization /
 // autonomous.refuse_dirty_tree_start (config surface for
 // docs/plans/2026-10-14-concurrency-and-budget-design.md).

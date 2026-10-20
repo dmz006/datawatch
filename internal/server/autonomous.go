@@ -64,6 +64,21 @@ func (s *Server) handleAutonomousConfig(w http.ResponseWriter, r *http.Request) 
 				}
 				deprecated = map[string]string{"max_parallel_tasks": maxParallelTasksDeprecatedNote}
 			}
+			// drift_mode accepts only "block" or "warn"; reject the whole
+			// PUT before SetConfig merges a bad value into the live
+			// manager (a null value is absent and passes through below).
+			if raw, ok := top["drift_mode"]; ok {
+				var mode string
+				if json.Unmarshal(raw, &mode) == nil {
+					if verr := config.ValidateDriftMode(mode); verr != nil {
+						http.Error(w, verr.Error(), http.StatusBadRequest)
+						return
+					}
+				} else {
+					http.Error(w, "autonomous.drift_mode: must be a string (\"block\" or \"warn\")", http.StatusBadRequest)
+					return
+				}
+			}
 		}
 		if err := s.autonomousMgr.SetConfig(body); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -2150,6 +2151,17 @@ type AutonomousConfig struct {
 	// guardrail profile and per Automaton. No omitempty, same
 	// explicit-clear reason as ContentAutoFixEnabled above.
 	BlockOnFileDrift bool `yaml:"block_on_file_drift" json:"block_on_file_drift"`
+	// DriftMode — pre-existing foreign-file-drift enforcement mode for
+	// the autonomous executor: "block" (default) blocks a task whose
+	// own commit swept in files that were already uncommitted before it
+	// started and were not in its planned files; "warn" only flags the
+	// task (recorded as foreign_file_drift, still completes). Replaces
+	// the legacy block_on_file_drift boolean as the daemon-wide knob.
+	// PUT /api/config and PUT /api/autonomous/config reject any value
+	// other than "block" or "warn" (ValidateDriftMode). No omitempty —
+	// the effective mode must survive YAML round-trips, matching the
+	// executor's resolveDriftMode (empty/"block" → block).
+	DriftMode string `yaml:"drift_mode" json:"drift_mode"`
 
 	// Phase 3 (v5.26.61) — per-story approval gate. Default false
 	// (preserves the v5.26.x behavior where PRD approval auto-
@@ -2230,6 +2242,20 @@ type AutonomousConfig struct {
 // An unset (nil) PreserveAttemptWork means true.
 func (a AutonomousConfig) PreserveAttemptWorkEnabled() bool {
 	return a.PreserveAttemptWork == nil || *a.PreserveAttemptWork
+}
+
+// ValidateDriftMode accepts the two legal autonomous.drift_mode values,
+// "block" and "warn" (case-insensitive, trimmed — the executor's
+// resolveDriftMode normalizes the same way), and rejects every other
+// value with a clear error naming the accepted set. PUT /api/config
+// and PUT /api/autonomous/config both run this before any write.
+func ValidateDriftMode(mode string) error {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "block", "warn":
+		return nil
+	default:
+		return fmt.Errorf("autonomous.drift_mode: %q is not a valid value (must be \"block\" or \"warn\")", mode)
+	}
 }
 
 // AutonomousNotifyConfig —autonomous.notify sub-config. DefaultEvents
@@ -2706,7 +2732,8 @@ func DefaultConfig() *Config {
 			CIWatchTimeoutSeconds:   1500,
 			ContentAutoFixEnabled:   true,
 			AutoFixSkipApproval:     true,
-			BlockOnFileDrift:        false, // opt-in strict drift enforcement
+			BlockOnFileDrift:        false,   // opt-in strict drift enforcement
+			DriftMode:               "block", // pre-existing drift blocks by default; "warn" for flag-only
 			// Notify is left as the zero value on purpose: an empty
 			// DefaultEvents list means the built-in lifecycle sinks
 			// subscribe to nothing — zero config = zero behavior change.
