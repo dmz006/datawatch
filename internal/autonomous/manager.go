@@ -1232,6 +1232,15 @@ func (m *Manager) Decompose(prdID string) (*PRD, error) {
 			m.failDecomposeAttempt(prd, "verification-script-coverage", verr)
 			return nil, verr
 		}
+		// Release-version gate — see decomposeStreamingCore's identical
+		// block; the two twin loops must stay in sync.
+		if err := validateNoFixedReleaseVersion(s); err != nil {
+			if m.retryDecomposeFailure(prd, "content", "release-version-fixed", err.Error()) {
+				continue
+			}
+			m.failDecomposeAttempt(prd, "release-version-fixed", err)
+			return nil, err
+		}
 		// SetStories is where depends_on gets resolved + validated: it
 		// rejects the whole plan (naming the exact bad entry or the
 		// cycle, storing nothing) when a reference can't be resolved. That
@@ -1422,6 +1431,15 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (*PRD, 
 			}
 			m.failDecomposeAttempt(prd, "verification-script-coverage", verr)
 			return nil, verr
+		}
+		// Release-version gate — see Decompose()'s identical block; the
+		// two twin loops must stay in sync.
+		if err := validateNoFixedReleaseVersion(s); err != nil {
+			if m.retryDecomposeFailure(prd, "content", "release-version-fixed", err.Error()) {
+				continue
+			}
+			m.failDecomposeAttempt(prd, "release-version-fixed", err)
+			return nil, err
 		}
 		// SetStories + depends_on validation — see Decompose()'s identical
 		// block for the full rationale; kept in sync here rather than risk
