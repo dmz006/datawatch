@@ -37,6 +37,7 @@ func gateFixture(t *testing.T) (*Manager, *API) {
 	api := NewAPI(m)
 	api.spawnFn = spawn
 	api.verify = verify
+	drainOnCleanup(t, m, api)
 	return m, api
 }
 
@@ -78,8 +79,12 @@ func gatePRD(t *testing.T, m *Manager, projectDir string, age time.Duration) *PR
 // the deadline passes.
 func waitForStatus(t *testing.T, m *Manager, prdID string, deadline time.Duration, want ...PRDStatus) *PRD {
 	t.Helper()
-	by := time.Now().Add(deadline)
-	for time.Now().Before(by) {
+	timeout := time.NewTimer(deadline)
+	defer timeout.Stop()
+	tick := time.NewTicker(5 * time.Millisecond)
+	defer tick.Stop()
+poll:
+	for {
 		p, ok := m.Store().GetPRD(prdID)
 		if !ok {
 			t.Fatalf("PRD %q disappeared", prdID)
@@ -89,7 +94,11 @@ func waitForStatus(t *testing.T, m *Manager, prdID string, deadline time.Duratio
 				return p
 			}
 		}
-		time.Sleep(20 * time.Millisecond)
+		select {
+		case <-timeout.C:
+			break poll
+		case <-tick.C:
+		}
 	}
 	p, _ := m.Store().GetPRD(prdID)
 	return p
