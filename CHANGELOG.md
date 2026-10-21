@@ -5,6 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.45 — A decompose whose save fails is retryable instead of stuck
+
+### Fixed
+- **When saving a finished decompose fails, the PRD now rolls back to draft with a recorded, retryable `decompose-persist` failure** (category `infra`, operator-retryable) instead of returning a bare error and leaving the PRD in `needs_review` with no stories stored. The give-up path also logs a failed rollback save rather than ignoring it, and a failed planning-mark save is logged.
+
+### Tests
+- `decompose_persist_failure_test.go` and `decompose_streaming_coverage_test.go` (with the test-only `Store.SavePRDFailHook`, nil in production).
+
 ## v9.5.44 — Autonomous config changes take effect without a daemon restart
 
 ### Fixed
