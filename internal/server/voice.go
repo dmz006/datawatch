@@ -100,7 +100,7 @@ func (s *Server) handleVoiceTranscribe(w http.ResponseWriter, r *http.Request) {
 		if errors.As(err, &maxErr) {
 			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 			w.WriteHeader(http.StatusRequestEntityTooLarge)
-			fmt.Fprintf(w, "audio upload exceeds the %d MB limit — split the recording or lower the quality\n", maxVoiceUploadBytes>>20)
+			_, _ = fmt.Fprintf(w, "audio upload exceeds the %d MB limit — split the recording or lower the quality\n", maxVoiceUploadBytes>>20)
 			return
 		}
 		http.Error(w, "bad multipart: "+err.Error(), http.StatusBadRequest)

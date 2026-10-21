@@ -183,7 +183,7 @@ func TestVoice_LongRecording_SlowUploadCompletes(t *testing.T) {
 	// production voice route (internal/server/server.go → apiMux).
 	s := &http.Server{Handler: http.HandlerFunc(srv.handleVoiceTranscribe), ReadTimeout: voiceUploadReadTimeout}
 	go func() { _ = s.Serve(ln) }()
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	// Client: deliver the pre-built body in two parts with a 5 s pause
 	// in between — previously killed by the 15 s read timeout, now
@@ -202,7 +202,7 @@ func TestVoice_LongRecording_SlowUploadCompletes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("slow upload failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	got, _ := io.ReadAll(resp.Body)
 	elapsed := time.Since(start)
 
