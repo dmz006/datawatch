@@ -1903,6 +1903,43 @@ Sessions with `output_mode: chat` skip tmux capture-pane and idle timeout prompt
 
 ---
 
+## PWA connection stability (cellular / Tailscale)
+
+The PWA keeps its WebSocket healthy on flaky links (cellular handoffs, carrier NAT, Tailscale roaming) without hammering the daemon.
+
+### Reconnect behavior
+
+- **Jittered exponential backoff.** After a drop the PWA retries with a 1 s base delay doubling up to a 30 s cap, using full jitter (each delay is random in `0..current cap`) so many clients do not reconnect in lockstep.
+- **15 s stability window.** The attempt counter resets only after a connection has stayed up for 15 s. A link that connects and drops again inside the window keeps its backoff growing instead of restarting at 1 s.
+- **Immediate retry on recovery signals.** The browser `online` event and the tab becoming visible again both cancel the pending backoff timer and retry right away.
+- **No timers while hidden.** A hidden tab schedules no reconnect or heartbeat timers; it resumes on the visibility event.
+
+### Heartbeat and stale detection
+
+The PWA sends a heartbeat every 15 s and treats the socket as stale after 35 s without any inbound traffic, then closes it and reconnects. Carrier NATs commonly drop idle TCP mappings after 30 s or less, so a quiet socket can be dead without the browser noticing; the 15 s heartbeat keeps the mapping alive and the 35 s threshold catches a half-open connection within roughly two missed beats.
+
+### Connection-state indicator
+
+The status dot shows one of: **connected**, **reconnecting** (with the current attempt count), or **offline** (browser reports no network). The tooltip carries the detail.
+
+### Update-available banner
+
+When the daemon reports a different version than the loaded page, the PWA shows a single tap-to-reload banner. It never reloads the page automatically while the user is typing, has the terminal focused, or has an unsent draft; it reloads on its own only when none of those apply.
+
+### Incremental resync
+
+After a reconnect the PWA makes one `GET /api/sessions` request and sends one subscribe for the open session, rather than reloading every view. Terminal content already on screen is kept.
+
+### Diagnosing with the access log
+
+Each WebSocket open and close is recorded as a `ws_connect` / `ws_disconnect` access-log event. Query them with the `audit_access_query` MCP tool (or the audit access endpoint) filtered on those actions and look at the timing per client:
+
+- A burst of `ws_connect` / `ws_disconnect` pairs spaced about 30-35 s apart points to a NAT idle timeout or stale-detection cycle.
+- Pairs spaced at the backoff steps (about 1, 2, 4, 8 s up to 30 s) mean the client is correctly backing off against a network that is down.
+- Many connects per second from one client would indicate a regression in the backoff.
+
+---
+
 ## Session Reconnect on Daemon Restart
 
 When the daemon restarts, running sessions in tmux survive but in-memory backend state is lost. Datawatch automatically reconnects:

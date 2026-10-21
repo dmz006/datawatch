@@ -210,6 +210,27 @@ body {
   background: var(--success);
 }
 
+.status-dot.reconnecting {
+  background: var(--warning, #d9a400);
+  animation: ws-dot-pulse 1.2s ease-in-out infinite;
+}
+
+.status-dot.offline {
+  background: var(--error);
+}
+
+@keyframes ws-dot-pulse {
+  50% { opacity: 0.4; }
+}
+
+.ws-state-chip {
+  font-size: 11px;
+  color: var(--text2);
+  margin-right: 6px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 /* Header search-icon — moved from the sessions card so it's reachable
    from any tab without scrolling. Mirrors the in-card affordance the
    mobile app uses. Visible only on the sessions view (toggled in JS). */

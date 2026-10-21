@@ -172,7 +172,8 @@ const state = {
   activeSession: null,    // session FullID being viewed
   activeOutputTab: 'tmux', // which output tab is active: 'tmux' | 'channel'
   ws: null,
-  reconnectDelay: 1000,
+  reconnectAttempt: 0,
+  wsOpenedAt: 0,
   reconnectTimer: null,
   token: localStorage.getItem('cs_token') || '',
   outputBuffer: {},       // sessionId -> string[] (ANSI stripped for fallback)
@@ -384,18 +385,125 @@ function _checkFederatedConnection(serverName) {
 // minutes" or may never happen at all while the tab sits idle. Pinging on an
 // interval gives a real round-trip signal independent of actual session
 // activity (which can legitimately be silent for a while even when healthy).
-// Detection latency after the connection actually dies is 50-70s (WS_STALE_MS
+// Detection latency after the connection actually dies is 35-50s (WS_STALE_MS
 // plus up to one more WS_PING_INTERVAL_MS of tick-alignment slop, since the
 // check only runs once per tick, not the instant the threshold is crossed)
-// before scheduleReconnect's path takes over — still well under "a few
-// minutes" of manual-reload pain, with real jitter margin either way.
-const WS_PING_INTERVAL_MS = 20000;
-const WS_STALE_MS = 50000;
+// before scheduleReconnect's path takes over. The 15s ping keeps idle traffic
+// well under the ~30s mapping timeouts of carrier-grade NATs, so a healthy
+// mapping is kept alive and a dead one is noticed within about 50s.
+const WS_PING_INTERVAL_MS = 15000;
+const WS_STALE_MS = 35000;
+
+// Reconnect backoff: full-jitter exponential (base 1s, cap 30s, floor 250ms).
+// Pure (rand injected) so it is unit-testable without a timer or Math.random.
+const WS_BACKOFF_BASE_MS = 1000;
+const WS_BACKOFF_CAP_MS = 30000;
+const WS_BACKOFF_FLOOR_MS = 250;
+function _wsBackoffDelay(attempt, rand) {
+  const ceil = Math.min(WS_BACKOFF_CAP_MS, WS_BACKOFF_BASE_MS * Math.pow(2, Math.max(0, attempt)));
+  return Math.max(WS_BACKOFF_FLOOR_MS, rand * ceil);
+}
+
+// A socket that opens and then dies within the window is flapping; only a
+// socket that has stayed open this long counts as a successful connection
+// and resets the backoff attempt counter.
+const WS_STABLE_MS = 15000;
+function _wsStableEnough(openedAt, now) {
+  return !!openedAt && (now - openedAt) >= WS_STABLE_MS;
+}
+
+function _wsResetAttemptIfStable() {
+  if (_wsStableEnough(state.wsOpenedAt, Date.now())) {
+    state.reconnectAttempt = 0;
+    state.wsOpenedAt = 0;
+  }
+}
+
+function _wsHidden() {
+  return typeof document !== 'undefined' && document.visibilityState === 'hidden';
+}
 
 function _wsSendPing() {
   if (state.ws && state.ws.readyState === WebSocket.OPEN) {
     try { state.ws.send(JSON.stringify({ type: 'ping' })); } catch { /* next tick will catch a truly dead socket */ }
   }
+}
+
+// Daemon-version-change reload policy. A new build must never yank the page
+// out from under someone who is typing or using the terminal, so reloads are
+// deferred behind a tap-to-reload banner until the user is idle.
+const AUTO_RELOAD_IDLE_MS = 30000;
+const AUTO_RELOAD_RECHECK_MS = 5000;
+function _canAutoReload(ctx) {
+  if (!ctx) return false;
+  if (ctx.activeElementIsInput || ctx.terminalFocused || ctx.hasUnsentDraft) return false;
+  return (ctx.idleMs || 0) >= AUTO_RELOAD_IDLE_MS;
+}
+function _autoReloadCtx() {
+  const ae = document.activeElement;
+  const tag = ae && ae.tagName ? String(ae.tagName).toUpperCase() : '';
+  const isInput = !!ae && (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' ||
+    ae.isContentEditable === true || (ae.getAttribute && ae.getAttribute('contenteditable') === 'true'));
+  const inTerm = !!(ae && ae.closest && ae.closest('.xterm'));
+  const sessionInput = document.getElementById('sessionInput');
+  let draft = !!(sessionInput && sessionInput.value && String(sessionInput.value).trim());
+  if (!draft && state._unsentDraft) draft = true;
+  return {
+    activeElementIsInput: isInput,
+    terminalFocused: inTerm,
+    hasUnsentDraft: draft,
+    idleMs: Date.now() - (state._lastUserActivityAt || 0),
+  };
+}
+function _markUserActivity() { state._lastUserActivityAt = Date.now(); }
+['keydown', 'pointerdown', 'touchstart', 'wheel', 'mousemove'].forEach(ev => {
+  try { window.addEventListener(ev, _markUserActivity, { passive: true }); } catch (e) {}
+});
+state._lastUserActivityAt = Date.now();
+
+function _hideUpdateBanner() {
+  if (state._updateBannerTimer) { clearTimeout(state._updateBannerTimer); state._updateBannerTimer = null; }
+  const b = document.getElementById('updateAvailableBanner');
+  if (b && b.remove) b.remove();
+  state._updateBannerShown = false;
+}
+function _scheduleUpdateRecheck() {
+  if (state._updateBannerTimer) clearTimeout(state._updateBannerTimer);
+  state._updateBannerTimer = setTimeout(() => {
+    state._updateBannerTimer = null;
+    if (!state._updateAvailable) return;
+    if (_canAutoReload(_autoReloadCtx())) { _hideUpdateBanner(); location.reload(); return; }
+    _scheduleUpdateRecheck();
+  }, AUTO_RELOAD_RECHECK_MS);
+}
+function _showUpdateBanner() {
+  if (state._updateBannerShown) return;
+  state._updateBannerShown = true;
+  const bar = document.createElement('div');
+  bar.id = 'updateAvailableBanner';
+  bar.setAttribute('role', 'status');
+  bar.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:10000;display:flex;align-items:center;justify-content:center;gap:12px;padding:10px 16px;background:var(--accent,#7c3aed);color:#fff;font-size:14px;';
+  const label = document.createElement('span');
+  label.textContent = 'Update available — tap to reload';
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.textContent = 'Reload';
+  btn.style.cssText = 'padding:4px 12px;border-radius:4px;border:0;cursor:pointer;';
+  btn.addEventListener('click', () => { _hideUpdateBanner(); location.reload(); });
+  bar.appendChild(label);
+  bar.appendChild(btn);
+  document.body.appendChild(bar);
+  _scheduleUpdateRecheck();
+}
+// Single entry point for every "the daemon build changed" signal.
+function _onDaemonVersionChange(newVersion) {
+  if (_canAutoReload(_autoReloadCtx())) {
+    console.log(`[datawatch] daemon version changed → ${newVersion}, reloading…`);
+    location.reload();
+    return;
+  }
+  state._updateAvailable = newVersion || true;
+  _showUpdateBanner();
 }
 
 // Pure decision function (no I/O) so it's unit-testable without a real
@@ -426,8 +534,11 @@ function _paneSilenceCheck() {
 function startWsWatchdog() {
   stopWsWatchdog();
   state.wsLastActivityAt = Date.now();
+  if (_wsHidden()) return;
   state.wsWatchdogTimer = setInterval(() => {
+    if (_wsHidden()) return;
     if (!state.ws || state.ws.readyState !== WebSocket.OPEN) return;
+    _wsResetAttemptIfStable();
     if (_wsIsStale(state.wsLastActivityAt, Date.now())) {
       _dbg('WS', `watchdog: no activity for >${WS_STALE_MS}ms despite OPEN readyState — forcing reconnect`);
       // close() still fires the 'close' listener, which runs the normal
@@ -445,6 +556,60 @@ function stopWsWatchdog() {
     clearInterval(state.wsWatchdogTimer);
     state.wsWatchdogTimer = null;
   }
+}
+
+// Server-side UI preferences into state cache. Called on first connect and,
+// after a reconnect, only when the daemon version changed.
+function _loadUiConfig() {
+  fetch('/api/config', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).then(cfg => {
+    if (!cfg) return;
+    state.suppressActiveToasts = cfg.server?.suppress_active_toasts !== false;
+    state.autoRestartOnConfig = !!cfg.server?.auto_restart_on_config;
+    state._recentMinutes = cfg.server?.recent_session_minutes || 5;
+    state._maxSessions = cfg.session?.max_sessions || 10;
+    state._summarizerEnabled = !!cfg.session?.summarizer?.enabled;
+  }).catch(() => {});
+}
+
+// Reconnect resync: exactly one GET /api/sessions (batched apply + one
+// onSessionsUpdated) and, for an open session-detail view, a single
+// 'subscribe' so the daemon sends a fresh capture. The terminal is left
+// intact when the same session is still active and already has content.
+function _resyncAfterReconnect() {
+  const view = state.activeView;
+  const sid = state.activeSession;
+  const detail = view === 'session-detail' && !!sid;
+  const termLive = () => detail && state._termSessionId === sid && state._termHasContent;
+  const fullRender = () => {
+    if (state.activeView === 'session-detail' && state.activeSession === sid) {
+      state._lastPaneFrame = null;
+      state._termHasContent = false;
+      renderSessionDetail(sid);
+    }
+  };
+  fetch('/api/sessions', { headers: tokenHeader() })
+    .then(r => r.ok ? r.json() : null)
+    .then(sessions => {
+      if (sessions) {
+        sessions.forEach(s => applySessionUpdate(s));
+        onSessionsUpdated();
+      }
+      if (!detail || state.activeView !== 'session-detail' || state.activeSession !== sid) {
+        if (view === 'alerts') renderAlertsView();
+        return;
+      }
+      const exists = !sessions || sessions.some(s => s.full_id === sid || s.id === sid);
+      if (exists && termLive()) {
+        // Keep the terminal on screen; the fresh capture redraws it.
+        send('subscribe', { session_id: sid });
+      } else {
+        fullRender();
+      }
+    })
+    .catch(() => {
+      if (termLive()) send('subscribe', { session_id: sid });
+      else fullRender();
+    });
 }
 
 // ── WebSocket ───────────────────────────────────────────────────────────────
@@ -470,7 +635,10 @@ function connect() {
 
   ws.addEventListener('open', () => {
     state.connected = true;
-    state.reconnectDelay = 1000;
+    // Not reset here: the attempt counter only clears once the socket has
+    // stayed open past WS_STABLE_MS (watchdog tick / close handler).
+    state.wsOpenedAt = Date.now();
+    state._wsOutageToastShown = false;
     startWsWatchdog();
     updateStatusDot();
     // v7.0.0-alpha.18 #250 — auto-close the disconnect error toast
@@ -492,20 +660,10 @@ function connect() {
     // causes entire session to refresh, like a full browser refresh.
     // But not when server restarted only when i send the command".
     // Probe /api/health which returns the version cheaply.
-    if (state._daemonVersion) {
-      fetch('/api/health', { headers: tokenHeader() })
-        .then(r => r.ok ? r.json() : null)
-        .then(h => {
-          if (!h || !h.version) return;
-          if (state._daemonVersion !== h.version) {
-            console.log(`[datawatch] daemon version changed during reconnect: ${state._daemonVersion} → ${h.version}, reloading…`);
-            // bl434 row 2 (full eye+bolt): the one inventory-graded site
-            // whose reload directly continues an in-flight session reconnect.
-            performFullPageRefresh({ eyeBolt: true });
-          }
-        })
-        .catch(() => {});
-    }
+    // On a RECONNECT the version is checked from the 'sessions' WS frame the
+    // daemon sends on connect (see handleMessage), so no extra probe request.
+    const isReconnect = !!state._wsEverOpened;
+    state._wsEverOpened = true;
     // v4.0.6 — dismiss the self-update overlay once the daemon is
     // reachable again. We give it a moment so the "installed /
     // restarting" message is visible before the panel vanishes.
@@ -554,15 +712,11 @@ function connect() {
       }
     }
     showToast('Connected', 'success', 2000);
-    // Load server-side UI preferences into state cache
-    fetch('/api/config', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).then(cfg => {
-      if (!cfg) return;
-      state.suppressActiveToasts = cfg.server?.suppress_active_toasts !== false;
-      state.autoRestartOnConfig = !!cfg.server?.auto_restart_on_config;
-      state._recentMinutes = cfg.server?.recent_session_minutes || 5;
-      state._maxSessions = cfg.session?.max_sessions || 10;
-      state._summarizerEnabled = !!cfg.session?.summarizer?.enabled;
-    }).catch(() => {});
+    if (!isReconnect) _loadUiConfig();
+    if (isReconnect) {
+      _resyncAfterReconnect();
+      return;
+    }
     // After reconnect (e.g. after daemon restart), re-render the current view
     // so settings/LLM data reloads from the fresh daemon
     if (state.activeView === 'settings') {
@@ -661,6 +815,8 @@ function connect() {
   ws.addEventListener('close', (e) => {
     _dbg('WS', `closed code=${e.code}`);
     stopWsWatchdog();
+    _wsResetAttemptIfStable();
+    state.wsOpenedAt = 0;
     state.connected = false;
     state.ws = null;
     updateStatusDot();
@@ -692,12 +848,44 @@ function disconnect() {
 
 function scheduleReconnect() {
   if (state.reconnectTimer) return;
+  // Hidden tabs don't reconnect; the visibilitychange handler does it on return.
+  if (_wsHidden()) return;
+  const delay = _wsBackoffDelay(state.reconnectAttempt, Math.random());
+  state.reconnectAttempt++;
   state.reconnectTimer = setTimeout(() => {
     state.reconnectTimer = null;
     connect();
-  }, state.reconnectDelay);
-  state.reconnectDelay = Math.min(state.reconnectDelay * 2, 30000);
+  }, delay);
 }
+
+// Reconnect immediately when the network returns or the tab becomes visible;
+// ping an already-open socket so a dead mapping is detected without waiting.
+function _wsWake() {
+  if (state.reconnectTimer) {
+    clearTimeout(state.reconnectTimer);
+    state.reconnectTimer = null;
+  }
+  if (state.ws && state.ws.readyState === WebSocket.OPEN) {
+    startWsWatchdog();
+    _wsSendPing();
+  } else {
+    connect();
+  }
+}
+
+window.addEventListener('online', () => { updateStatusDot(); _wsWake(); });
+window.addEventListener('offline', updateStatusDot);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') {
+    stopWsWatchdog();
+    if (state.reconnectTimer) {
+      clearTimeout(state.reconnectTimer);
+      state.reconnectTimer = null;
+    }
+  } else {
+    _wsWake();
+  }
+});
 
 function send(type, data) {
   if (!state.ws || state.ws.readyState !== WebSocket.OPEN) {
@@ -706,7 +894,11 @@ function send(type, data) {
     // upper right". Pass an inline action via a sentinel detail so
     // showError can render the button. Auto-close on reconnect is
     // wired in the ws 'open' handler below.
-    showError('Not connected — daemon link is down. Reconnecting…', '__RECONNECT_BUTTON__');
+    // At most once per outage; cleared in the ws 'open' handler.
+    if (!state._wsOutageToastShown) {
+      state._wsOutageToastShown = true;
+      showError('Not connected — daemon link is down. Reconnecting…', '__RECONNECT_BUTTON__');
+    }
     return false;
   }
   state.ws.send(JSON.stringify({ type, data, ts: new Date().toISOString() }));
@@ -784,11 +976,8 @@ function handleMessage(msg) {
         if (!state._daemonVersion) {
           state._daemonVersion = msg.data.version;
         } else if (state._daemonVersion !== msg.data.version) {
-          console.log(`[datawatch] daemon version changed: ${state._daemonVersion} → ${msg.data.version}, reloading…`);
-          // bl434 row 3 (eye-only): a new daemon build was detected, not a
-          // session connect — bolt would be misleading.
-          performFullPageRefresh({ eyeBolt: false });
-          return;
+          _loadUiConfig();
+          _onDaemonVersionChange(msg.data.version);
         }
       }
       onSessionsUpdated();
@@ -18081,10 +18270,48 @@ window.showError = function(message, detail) {
 };
 
 // ── Status dot ────────────────────────────────────────────────────────────────
+// Pure: 'connected' | 'reconnecting' | 'offline'. online===false (browser
+// reports no network) wins over a stale connected flag.
+function _wsConnState(connected, attempt, online) {
+  if (online === false) return 'offline';
+  if (connected) return 'connected';
+  return 'reconnecting';
+}
+
+function _wsStateLabel(st, attempt) {
+  if (st === 'connected') return 'Connected';
+  if (st === 'offline') return 'Offline';
+  return 'Reconnecting (attempt ' + Math.max(1, attempt | 0) + ')';
+}
+
 function updateStatusDot() {
   const dot = document.getElementById('statusDot');
+  const online = (typeof navigator !== 'undefined' && navigator) ? navigator.onLine : true;
+  const attempt = state.reconnectAttempt || 0;
+  const st = _wsConnState(!!state.connected, attempt, online);
   if (dot) {
-    dot.classList.toggle('connected', state.connected);
+    dot.classList.toggle('connected', st === 'connected');
+    dot.classList.toggle('reconnecting', st === 'reconnecting');
+    dot.classList.toggle('offline', st === 'offline');
+    const label = _wsStateLabel(st, attempt);
+    dot.title = label;
+    // Non-blocking chip beside the dot, only while not connected. Only
+    // touches the chip; sessions list / terminal are never re-rendered here.
+    let chip = document.getElementById('wsStateChip');
+    if (st === 'connected') {
+      if (chip) chip.remove();
+    } else {
+      if (!chip && dot.parentNode && document.createElement) {
+        chip = document.createElement('span');
+        chip.id = 'wsStateChip';
+        chip.className = 'ws-state-chip';
+        dot.parentNode.insertBefore(chip, dot);
+      }
+      if (chip) {
+        chip.textContent = st === 'offline' ? 'Offline' : 'Retry #' + Math.max(1, attempt | 0);
+        chip.className = 'ws-state-chip ' + st;
+      }
+    }
   }
   // v5.26.8 — auto badge removed entirely; header status dot is the
   // single source of WS-state truth.
@@ -18205,7 +18432,7 @@ function forceRefreshConnection() {
     clearTimeout(state.reconnectTimer);
     state.reconnectTimer = null;
   }
-  state.reconnectDelay = 1000;
+  state.reconnectAttempt = 0;
   if (state.ws) {
     try { state.ws.close(); } catch (_) {}
     state.ws = null;
@@ -19287,12 +19514,19 @@ function registerServiceWorker() {
       console.warn('SW registration failed:', err);
     });
     let _reloadGuard = false;
+    // First install: sw.js clients.claim() fires controllerchange although
+    // there is no new build — only a change from an existing controller is an update.
+    let _hadController = !!navigator.serviceWorker.controller;
     navigator.serviceWorker.addEventListener('controllerchange', () => {
       if (_reloadGuard) return;
-      _reloadGuard = true;
-      console.log('SW controller changed — reloading for fresh assets');
-      // bl434 row 5 (eye-only): a PWA asset swap, not a session connect.
-      performFullPageRefresh({ eyeBolt: false });
+      if (!_hadController) { _hadController = true; return; }
+      console.log('SW controller changed — fresh assets available');
+      if (_canAutoReload(_autoReloadCtx())) {
+        _reloadGuard = true;
+        window.location.reload();
+      } else {
+        _onDaemonVersionChange(null);
+      }
     });
   }
 }
