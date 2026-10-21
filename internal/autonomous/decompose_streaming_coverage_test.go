@@ -153,7 +153,7 @@ func TestDecompose_ScopeRetryContinuesAndSucceeds(t *testing.T) {
 		return planRespFilesWithScript, nil
 	}
 	cfg := DefaultConfig()
-	cfg.RetryPolicy = map[string]int{"scope": 1}
+	cfg.RetryPolicy = map[string]int{"content": 1}
 	m, prd := newDecomposeCovManager(t, "/p", cfg, fn)
 
 	updated, err := m.Decompose(prd.ID)
@@ -166,7 +166,7 @@ func TestDecompose_ScopeRetryContinuesAndSucceeds(t *testing.T) {
 	if calls != 2 {
 		t.Fatalf("decompose calls = %d, want 2 (scope retry)", calls)
 	}
-	if !strings.Contains(secondPrompt, "zero verification_script") {
+	if !strings.Contains(secondPrompt, "no verification_script") {
 		t.Errorf("retry prompt does not carry the scope failure hint: %q", secondPrompt)
 	}
 }
@@ -185,7 +185,7 @@ func TestDecomposeStreaming_CoreScopeRetrySucceeds(t *testing.T) {
 		return planRespFilesWithScript, nil
 	}
 	cfg := DefaultConfig()
-	cfg.RetryPolicy = map[string]int{"scope": 1}
+	cfg.RetryPolicy = map[string]int{"content": 1}
 	m, prd := newDecomposeCovManager(t, "/p", cfg, fn)
 
 	updated, err := m.decomposeStreamingCore(prd.ID, nil)
@@ -211,17 +211,17 @@ func TestDecomposeStreaming_CoreScopeBudgetExhaustFails(t *testing.T) {
 		return planRespFilesNoScript, nil
 	}
 	cfg := DefaultConfig()
-	cfg.RetryPolicy = map[string]int{"scope": 1}
+	cfg.RetryPolicy = map[string]int{"content": 1}
 	m, prd := newDecomposeCovManager(t, "/p", cfg, fn)
 
 	_, err := m.decomposeStreamingCore(prd.ID, nil)
-	if err == nil || !strings.Contains(err.Error(), "zero verification_script") {
-		t.Fatalf("err = %v, want scope (zero verification_script) failure", err)
+	if err == nil || !strings.Contains(err.Error(), "no verification_script") {
+		t.Fatalf("err = %v, want scope (no verification_script) failure", err)
 	}
 	if calls != 2 {
 		t.Fatalf("decompose calls = %d, want 2 (retry then give-up)", calls)
 	}
-	requireDecomposeFailureState(t, m, prd.ID, "verification-script-coverage", "zero verification_script")
+	requireDecomposeFailureState(t, m, prd.ID, "verification-script-coverage", "no verification_script")
 }
 
 // --- Zero-story guard on the streaming core ---
