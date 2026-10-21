@@ -57,7 +57,7 @@ Browse the catalog in-app (Settings → Skills → Registry) or on GitHub. To co
 
 ## Current release
 
-**Current release: v9.5.33 (2026-10-20).** The PWA no longer floods the daemon with schedule requests when a session view recovers, retried tasks keep their first-attempt pre-task SHA, voice recordings longer than 30 seconds transcribe, and a model that cannot run on a PRD's backend is refused. **v9.5.32** opencode sessions on an Ollama
+**Current release: v9.5.34 (2026-10-20).** Automaton guardrail judges and decompose sessions now always run on a model you explicitly configured — the PRD/task guardrail pin first, then the global guardrail, verification and planning models — and `pi`'s built-in default is never used; when no configured level resolves to a model the judge's backend can serve, the judge is not launched and the failure names the keys to set. See [LLM backends](docs/llm-backends.md#judge-and-planning-model-resolution-automata). **v9.5.33** The PWA no longer floods the daemon with schedule requests when a session view recovers, retried tasks keep their first-attempt pre-task SHA, voice recordings longer than 30 seconds transcribe, and a model that cannot run on a PRD's backend is refused. **v9.5.32** opencode sessions on an Ollama
 compute node now start when the model is given without its `ollama/`
 prefix. The session gets the Ollama provider settings instead of exiting
 at launch. **v9.1.3** fixes `llm test` and ask calls for opencode LLM
