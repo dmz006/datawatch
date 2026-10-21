@@ -41,6 +41,13 @@ open questions 17 to 20) is where these rules become mechanical.
   them, that is a product bug to fix in datawatch, not a reason to change their setup.
 - **Commits.** The supervisor commits validated work it owns, staging an explicit list of
   files. An automatic snapshot or task commit is not approval of its contents.
+- **Merge, push, tag and release are the supervisor's calls (2026-10-21).** The supervisor is
+  release manager. A completed, validated PRD is merged, pushed (fast-forward, Section A
+  checks pass) and tagged (patch or minor) without asking; only the 10.0 tag is the
+  operator's. Never end a tick on "do you want me to merge/push/tag?". If a residual risk
+  remains (for example other flaky tests), ship the fix that is ready, file a follow-up fix
+  PRD for the rest, and report both. A question to the operator is allowed only for a
+  design choice or after the loop rule; a build or release question is neither.
 - **Resets.** Reset a blocked task once after its cause is fixed, then run. If it fails
   again with the same error, that is the loop rule above.
 
@@ -409,7 +416,7 @@ surfaces map to which regression suites, and how an urgent bug may jump the queu
 
 - **Correction to rule 6b (2026-10-20): AGENT.md governs every merge and push.** Rule 6b as first written said build and the touched package's tests were enough. That was wrong. Before any push or merge the supervisor must follow `AGENT.md`: feature branches never change the version (the merge script does it); merge with `scripts/check-merge-version.sh`, and bump with `scripts/merge-branches-bump-version.sh` (one bump commit per run, next patch above main) and `scripts/set-release-version.sh`, never by hand; run the Section A checks before each push (full `go test ./...`, `make lint`, `make build`, `node --check`, CHANGELOG entry, README current-release line, backlog refactor, ID and leak checks), and check CI after the push. Two merges on 2026-10-20 (`06ae0001` as 9.5.27 and `be670001` as 9.5.28) were bumped by hand in separate commits, and were pushed before the Section A checks had run. That is recorded as a process deviation in `docs/plans/README.md` row 95 (BL514).
 
-- **Supersedes rule 6b on pushes (2026-10-20): pushes need operator approval.** The tick instruction is explicit: no pushes without operator approval. Rule 6b, as written earlier the same day, let the supervisor push. That conflicts with the tick and is withdrawn. The supervisor merges completed branches into local `main` (rule 6, per AGENT.md: merge script, one bump per run, Section A checks), and records each merge in the BL. Pushing local `main` to origin is an operator decision, and the supervisor asks for it with the commit range and the Section A results. The push of `c1922994` on 2026-10-20 was made before this rule was settled and is recorded as a deviation in row 95 (BL514).
+- **[SUPERSEDED 2026-10-21 by the 'Merge, push, tag and release' bullet in section 1: the supervisor pushes and tags.] Earlier text: pushes need operator approval.** The tick instruction is explicit: no pushes without operator approval. Rule 6b, as written earlier the same day, let the supervisor push. That conflicts with the tick and is withdrawn. The supervisor merges completed branches into local `main` (rule 6, per AGENT.md: merge script, one bump per run, Section A checks), and records each merge in the BL. Pushing local `main` to origin is an operator decision, and the supervisor asks for it with the commit range and the Section A results. The push of `c1922994` on 2026-10-20 was made before this rule was settled and is recorded as a deviation in row 95 (BL514).
 
 - **Pushes are the supervisor's decision when tests pass (decided by the operator, 2026-10-20).** This supersedes the 2026-10-20 line above that required operator approval. Push is not a design decision. The supervisor pushes local `main` to origin when all of these hold: fast-forward only, never force; `go test ./...` passes; `make build` and `node --check` pass; `make lint` is clean (AGENT.md Section A12 requires this, so lint is part of "tests pass"); no HOLD PRD is in the range; the push is recorded in the BL with the commit range and the Section A results; and CI is checked after the push. If any condition fails, the supervisor does not push and records the reason. Release tags stay with the operator. Deviation on 2026-10-20: `c1922994` was pushed while `make lint` had 16 findings (10 errcheck, 6 staticcheck); the lint cleanup is BL522.
 
@@ -432,7 +439,7 @@ The tick runs these checks in order and reports only state changes and idle lane
 3. Model and routing drift: restate backend and decomposition profile together in `prd-set-llm`.
 4. Lane fill, per section 3: GPU lanes 1 and 2, Claude lanes 1 to 3. Record the weekly % and days since reset; apply the pace rule. Start eligible work on any idle lane; a one-off Claude decompose only inside pace; P0 per the P0 rule.
 5. Validate every decompose against section 4, including the tests rule.
-6. Merges per AGENT.md; pushes per rule 6b, and tags for patch and minor releases.
+6. Merges per AGENT.md; the supervisor then pushes (fast-forward, Section A green) and tags patch and minor releases itself, watches CI, and reruns a failed Release. Do not ask the operator; if a risk remains, ship what is ready and file a follow-up PRD.
 7. README registry matches the registry; each defect has a row and a draft PRD.
 8. Report state changes only.
 
