@@ -233,3 +233,13 @@ name) are hardening that heals or narrows the symptom, not the cause. Per the sc
 this task (server-side causes only) none of them is implemented here, so there is no Go
 change or test. The client fix (trailing-edge throttle, jump-to-live control, subscribe
 re-send on silence) and the server hardening remain for the next patch above main.
+
+## Client fix implemented (2026-10-21)
+
+internal/server/web/app.js: `pane_capture` now goes through `handlePaneCapture`
+(trailing-edge 33 ms throttle; the newest held frame is flushed from a 40 ms timer),
+frames received while the xterm viewport is scrolled up are held in
+`state._pendingPaneFrame` with a visible "Jump to live" button (also triggered by typing,
+sending input, or scrolling back to the bottom), and the 20 s WS watchdog tick re-sends
+`subscribe` when no pane frame has arrived for 30 s on an open session view. Tests:
+internal/server/web/app-pane-capture.test.js. Server-side hardening remains for a later patch.
