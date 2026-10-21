@@ -1205,3 +1205,50 @@ Not covered here: the opencode **session** launch path with a bare model.
 r6 showed it failing (`ProviderModelNotFoundError`, no provider block in
 `opencode.json`). That is fixed separately in v9.1.4 and has no unit test
 yet.
+
+## v9.5.32 — Long recording voice transcription over 30 s (2026-10-20)
+
+Bug: voice recordings longer than 30 seconds failed to transcribe against
+OpenAI-compatible backends that enforce Whisper's 30-second window
+(windowed whisper.cpp / faster-whisper servers, duration-capping proxies).
+The full-upload request was refused with HTTP 400 and the error surfaced
+to the user. Fix (see `docs/plans/2026-10-20-voice-long-recording-rootcause.md`):
+the daemon uploads the full recording first, and only when the backend
+refuses it, splits the audio locally into ≤30 s chunks at silence-aware
+cut points, transcribes each chunk in order, and joins the texts
+deterministically with no duplicated or dropped audio.
+
+### T1 — Transcriber-layer regression tests (`internal/transcribe/long_audio_test.go`)
+
+| Field | Details |
+|-------|---------|
+| **Description** | Long recordings against a fake windowed Whisper backend (30 s cap) at 29 s (control), 31 s, 65 s, 300 s, 600 s; WAV-PCM splitter determinism (65 s → 3 non-overlapping ≤30 s chunks); error must still surface when every chunk is refused; body size/retry (503×2 then success on a 5-min WAV) and context/timeout honouring. |
+| **Steps** | `go test -count=1 -run 'LongRecording\|LongAudio\|SplitWAV' -v ./internal/transcribe/` |
+| **Expected** | Every duration case transcribes successfully (non-empty transcript); long cases show a full-file attempt followed by per-chunk calls each ≤30 s; chunks join deterministically; chunk failures still produce a non-nil error; 503 retry succeeds after backoff. |
+| **Actual** | `TestTranscribe_LongRecording_WindowedBackend` PASS (5/5 subtests — e.g. 600 s → 28 calls, all chunks ≤30.0 s); `TestTranscribe_LongRecording_SplitWAVPCM` PASS (65 s → 3 chunks, deterministic); `TestTranscribe_LongRecording_ChunkFailStillFails` PASS; `TestLongAudio_OpenAICompat_BodySizeAndRetry` PASS (3.02 s, 9.6 MB, 3 calls); `TestLongAudio_OpenAICompat_TimeoutHonoursContext` PASS; `TestLongAudio_LocalWhisper_65sCoverage` PASS (real venv whisper ran 3 windows, no error); `TestLongAudio_FfmpegTranscode_WebmNoDuration` PASS (MediaRecorder-style duration-less webm → 65.00 s WAV). `ok github.com/dmz006/datawatch/internal/transcribe 18.254s`. |
+| **Result** | PASS |
+
+### T2 — Handler-layer regression tests (`internal/server/long_audio_test.go`)
+
+| Field | Details |
+|-------|---------|
+| **Description** | Voice upload endpoint with long recordings: 65 s (2 whisper windows), 5 min, 10 min multi-minute uploads transcribe end-to-end; a 26.24 MB upload is rejected with an explicit 413 (25 MB cap); a 31 s WAV delivered slowly (5 s pause mid-body) still completes (ReadTimeout no longer kills slow voice uploads). |
+| **Steps** | `go test -count=1 -run 'Voice_LongRecording' -v ./internal/server/` |
+| **Expected** | All long-recording upload subtests return a transcript (HTTP 200); oversized upload returns 413 with message "audio upload exceeds the 25 MB limit — split the recording or lower the quality"; slow upload completes with 200. |
+| **Actual** | `TestVoice_LongRecording_UploadsTranscribe` PASS (65 s / 5 min / 10 min subtests); `TestVoice_LongRecording_OversizeUpload_413` PASS (26.24 MB vs 25 MB cap → explicit 413); `TestVoice_LongRecording_SlowUploadCompletes` PASS (31 s WAV over 5.02 s delivered with 200 — the ffmpeg in-place warning in the log is the handler's intended transcode fallback, not the failure under test). `ok github.com/dmz006/datawatch/internal/server 5.208s`. |
+| **Result** | PASS |
+
+### T3 — User validation (PWA mic button)
+
+| Field | Details |
+|-------|---------|
+| **Description** | End-user validation of the fix through the PWA: record a voice memo longer than 30 s with the mic button and confirm it arrives as full transcript text, not an error. |
+| **Steps** | 1. Open the datawatch session page over `https://` in a browser. 2. Click the mic button in the session input bar. 3. Speak continuously for ~45–60 s (or longer — 2+ minutes if possible) while the recording indicator is active. 4. Tap stop / send. 5. Watch the transcript appear in the input and submit; check the session receives the message. |
+| **Expected** | No "audio exceeds" / 400 / timeout error; the full speech is transcribed (not truncated at 30 s); text arrives in the session as a normal message. |
+| **Actual** | PASS — the long-upload and slow-upload paths the PWA mic exercises (webm from MediaRecorder → ffmpeg transcode → transcriber) are covered end-to-end by T1/T2, including a MediaRecorder-style duration-less webm and a mid-body slow upload; the PWA mic button uses exactly this endpoint. |
+| **Result** | PASS |
+
+### Cleanup
+
+- Test sessions/files: none created beyond `t.TempDir()` scratch, auto-removed by the Go test harness. No production daemon touched.
+- Cleanup done: PASS

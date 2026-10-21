@@ -316,6 +316,41 @@ The daemon actively probes the configured backend on startup by POSTing a 1-seco
 - `preflight: model "X" not found` — runtime will use the fallback chain. Fix your `whisper.model` value.
 - `preflight: HTTP 503/504` — server is loading the model; not an error.
 
+## Long recordings (longer than 30 s)
+
+Whisper is trained on 30 s windows, and some OpenAI-compatible backends
+(windowed whisper.cpp / faster-whisper servers, duration-capping proxies)
+refuse anything longer with HTTP 400. Since v9.5.32 this is handled
+transparently: the daemon uploads the full recording first (correct for
+full-length backends like OpenAI and OpenWebUI), and only if the backend
+refuses does it split the audio locally into ≤30 s chunks — cutting at
+near-silence points inside the last quarter of each window so words are
+not split mid-syllable — transcribe each chunk in order, and join the
+texts without duplication or loss. The split is deterministic for a
+given input. If a chunk is still refused by the backend, the error is
+surfaced (chunked retry never swallows a refusal).
+
+**Upload size and time limits** (enforced by the daemon, in
+`internal/server/voice.go` / `internal/transcribe/openai_compat.go`):
+
+- **Upload size cap: 25 MB** — larger voice uploads are rejected with
+  HTTP 413 (the Whisper API's own cap + headroom for a minute or more of
+  16 kHz mono opus).
+- **Server read timeout for voice uploads: 180 s** — covers a 25 MB
+  body arriving over a slow link; a slow-but-valid upload still
+  completes and transcribes.
+- **Audio duration cap: configurable** — `max_audio_seconds` (default
+  120 s) rejects longer files at intake; raise it for longer notes.
+- **Backend call timeout: 5 min per transcribe request** with up to 4
+  retries on 503/504 (1 s / 2 s backoff) — a 10-minute recording only
+  succeeds if the backend transcribes at roughly ≥1× realtime; there is
+  no resumable upload, so either the full transcript comes back or the
+caller gets an error.
+- **PWA mic recordings:** Chrome's MediaRecorder emits webm with no
+duration metadata; the handler's ffmpeg transcode to 16 kHz mono WAV
+  handles arbitrarily long streams (verified with a 65 s
+  MediaRecorder-style file).
+
 ## Common pitfalls
 
 - **Whisper venv path wrong.** `datawatch voice test` returns
@@ -325,7 +360,9 @@ The daemon actively probes the configured backend on startup by POSTing a 1-seco
 - **`openai` backend without API key in secrets.** Will fail with
   401. Confirm with `datawatch secrets get OPENAI_API_KEY`.
 - **Audio too long.** Default cap is 120s. Raise `max_audio_seconds`
-  for longer notes; very long audio is better split.
+  for longer notes. Recordings longer than 30 s are transcribed in ≤30 s
+  chunks automatically now — see "Long recordings (longer than 30 s)"
+  above — so a windowed backend is no longer a failure mode.
 - **PWA mic permission denied.** Browser blocks mic access on
   non-HTTPS origins. Use `https://` (the daemon's default) — not
   `http://` redirect.

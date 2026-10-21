@@ -15,6 +15,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -27,6 +28,22 @@ import (
 
 	"github.com/dmz006/datawatch/internal/federation"
 )
+
+// maxVoiceUploadBytes is the hard cap for POST /api/voice/transcribe
+// uploads (25 MB — the Whisper API's own cap + headroom for a couple of
+// minutes of 16 kHz mono opus). Enforced on the wire via
+// http.MaxBytesReader (explicit 413) and again as the multipart memory
+// budget; see docs/plans/2026-10-20-voice-long-recording-rootcause.md.
+const maxVoiceUploadBytes int64 = 25 << 20
+
+// voiceUploadReadTimeout is the server-wide http.Server.ReadTimeout
+// (set in server.go). ReadTimeout bounds reading the ENTIRE request
+// body, so it must cover a 25 MB voice blob arriving over a slow
+// mobile link — the old flat 15 s aborted in-flight long-recording
+// uploads ("bad multipart: … i/o timeout") before the handler ran.
+// 180 s comfortably covers 25 MB at a realistic worst-case link
+// (~115 kbps) while still bounding pathological clients.
+const voiceUploadReadTimeout = 180 * time.Second
 
 // transcribeSurface is the narrow interface the handler needs; the
 // full transcribe.Transcriber implements it. Defined here so server
@@ -70,8 +87,22 @@ func (s *Server) handleVoiceTranscribe(w http.ResponseWriter, r *http.Request) {
 
 	start := time.Now()
 	// Limit uploads to 25 MB (Whisper API's own cap + enough headroom
-	// for a minute of 16 kHz mono opus).
-	if err := r.ParseMultipartForm(25 << 20); err != nil {
+	// for a minute of 16 kHz mono opus). http.MaxBytesReader enforces
+	// the cap on the wire with an explicit 413 (the old sole guard,
+	// ParseMultipartForm(25<<20), only bound in-memory spooling — a
+	// valid >25 MB body was spooled to disk and accepted). See
+	// docs/plans/2026-10-20-voice-long-recording-rootcause.md.
+	if r.Body != nil {
+		r.Body = http.MaxBytesReader(w, r.Body, maxVoiceUploadBytes)
+	}
+	if err := r.ParseMultipartForm(maxVoiceUploadBytes); err != nil {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+			w.WriteHeader(http.StatusRequestEntityTooLarge)
+			fmt.Fprintf(w, "audio upload exceeds the %d MB limit — split the recording or lower the quality\n", maxVoiceUploadBytes>>20)
+			return
+		}
 		http.Error(w, "bad multipart: "+err.Error(), http.StatusBadRequest)
 		return
 	}

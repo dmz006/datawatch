@@ -706,7 +706,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	srv := &http.Server{
 		Addr:              addr,
 		Handler:           securityHeadersMiddleware(cfg, mux),
-		ReadTimeout:       15 * time.Second,
+		ReadTimeout:       voiceUploadReadTimeout, // was 15 s — aborted in-flight long-audio uploads (docs/plans/2026-10-20-voice-long-recording-rootcause.md)
 		ReadHeaderTimeout: 10 * time.Second,
 		WriteTimeout:      0, // 0 = no timeout for WebSocket
 		IdleTimeout:       60 * time.Second,
