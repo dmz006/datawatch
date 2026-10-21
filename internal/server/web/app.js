@@ -19404,8 +19404,12 @@ function registerServiceWorker() {
       console.warn('SW registration failed:', err);
     });
     let _reloadGuard = false;
+    // First install: sw.js clients.claim() fires controllerchange although
+    // there is no new build — only a change from an existing controller is an update.
+    let _hadController = !!navigator.serviceWorker.controller;
     navigator.serviceWorker.addEventListener('controllerchange', () => {
       if (_reloadGuard) return;
+      if (!_hadController) { _hadController = true; return; }
       console.log('SW controller changed — fresh assets available');
       if (_canAutoReload(_autoReloadCtx())) {
         _reloadGuard = true;
