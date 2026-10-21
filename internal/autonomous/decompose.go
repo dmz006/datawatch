@@ -46,7 +46,8 @@ Return ONLY a JSON object with this shape:
           "title": "<task title>",
           "spec": "<concrete instructions for one worker session>",
           "files": ["<repo-relative path>", "..."],
-          "depends_on": []
+          "depends_on": [],
+          "kind": "<smoke|final_gate>" // optional, see the kind rule below
         }
       ]
     }
@@ -57,6 +58,9 @@ Rules:
 - depends_on lists either story or task titles that must complete first.
 - Each task's spec must be self-contained — the worker won't see other tasks.
 - Aim for 1-3 stories per PRD, 1-5 tasks per story. Prefer fewer, well-scoped tasks.
+- "kind" (optional): tag a task that is a live smoke test with "smoke",
+  and the task that verifies the whole feature end-to-end as a final gate
+  with "final_gate". Ordinary tasks should omit the field (or use "").
 - "files" (Phase 4, v5.26.67): list repo-relative paths each story or
   task is expected to touch. Include both code and docs/test files.
   Empty array is valid when paths are unknown ahead of time. Do NOT
@@ -130,7 +134,8 @@ The JSON must follow this schema exactly:
           "files": ["<repo-relative path>", "..."],
           "depends_on": [],
           "verification_script": "<repo-relative path to an executable verification script you wrote, or empty string — see the Verification scripts section below>",
-          "files_generated": ["<repo-relative path>", "..."]
+          "files_generated": ["<repo-relative path>", "..."],
+          "kind": "<smoke|final_gate>" // optional — "smoke" for a live smoke-test task, "final_gate" for the end-to-end verification task
         }
       ]
     }
@@ -141,6 +146,9 @@ Rules:
 - depends_on lists either story or task titles that must complete first.
 - Each task spec must be self-contained — the worker won't see other tasks.
 - Aim for 1-3 stories per PRD, 1-5 tasks per story. Prefer fewer, well-scoped tasks.
+- "kind" (optional): tag a task that is a live smoke test with "smoke",
+  and the task that verifies the whole feature end-to-end as a final gate
+  with "final_gate". Ordinary tasks should omit the field (or use "").
 - verification_script / files_generated (B124/BL416): these two fields are
   part of this schema, not optional extras — fill them in per any
   "Verification scripts" instructions appended below. An empty string for
@@ -205,7 +213,11 @@ func validateParsedPlan(stories []Story) error {
 }
 
 // ParsePlanning cleans common LLM JSON pathologies (fences,
-// smart quotes, // comments) and unmarshals into a Story slice.
+// smart quotes, // comments) and unmarshals into a Story slice. Task
+// objects may optionally carry a "kind" string ("smoke" / "final_gate" /
+// anything else); it lands on Task.Kind, and an absent or unknown value
+// is simply the empty/unknown string — never a parse error, so the
+// parser stays tolerant of plans that omit the field.
 func ParsePlanning(raw string) (title string, stories []Story, err error) {
 	cleaned := cleanLLMJSON(raw)
 	var doc struct {

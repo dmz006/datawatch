@@ -2282,6 +2282,27 @@ type AutonomousConfig struct {
 	// Notify — lifecycle-notification knobs for the built-in lifecycle
 	// sinks (comm fanout / alert paging).
 	Notify AutonomousNotifyConfig `yaml:"notify" json:"notify"`
+
+	// PlanReview (2026-10-17 pre-approval gate) — a one-shot LLM judge
+	// over the freshly decomposed plan, run at the end of Decompose and
+	// re-runnable via Manager.ReviewPlan. Internal wiring: see the
+	// autonomous.Manager Config (internal/autonomous/manager.go) and
+	// plan_review.go.
+	// PlanReviewBackend / PlanReviewModel select the reviewer backend +
+	// model (empty = daemon default backend chain).
+	PlanReviewBackend string `yaml:"plan_review_backend,omitempty" json:"plan_review_backend,omitempty"`
+	PlanReviewModel   string `yaml:"plan_review_model,omitempty" json:"plan_review_model,omitempty"`
+	// PlanReviewMode: "" / "off" = disabled (default); "warn" = record
+	// the verdict only; "block" = a negative verdict refuses
+	// Manager.Approve until a new ok:true verdict lands. Any other
+	// value is a config error (validateLoaded).
+	PlanReviewMode string `yaml:"plan_review_mode,omitempty" json:"plan_review_mode,omitempty"`
+
+	// SmokeVerificationBackend / SmokeVerificationModel — forward config
+	// surface for the smoke-verification feature (an independent story
+	// consumes these; default-off semantics).
+	SmokeVerificationBackend string `yaml:"smoke_verification_backend,omitempty" json:"smoke_verification_backend,omitempty"`
+	SmokeVerificationModel   string `yaml:"smoke_verification_model,omitempty" json:"smoke_verification_model,omitempty"`
 }
 
 // PreserveAttemptWorkEnabled reports whether failed-attempt work is kept.
@@ -3209,11 +3230,19 @@ const (
 func validateLoaded(cfg *Config) error {
 	switch cfg.Autonomous.ProjectWriteSerialization {
 	case autonomousProjectWriteSerializationAdvisory, autonomousProjectWriteSerializationParallel:
+		// ok
+	default:
+		return fmt.Errorf("autonomous.project_write_serialization: invalid value %q (valid values: %q, %q)",
+			cfg.Autonomous.ProjectWriteSerialization,
+			autonomousProjectWriteSerializationAdvisory, autonomousProjectWriteSerializationParallel)
+	}
+	// 2026-10-17 plan-review gate: mode must be empty/off/warn/block.
+	switch cfg.Autonomous.PlanReviewMode {
+	case "", "off", "warn", "block":
 		return nil
 	}
-	return fmt.Errorf("autonomous.project_write_serialization: invalid value %q (valid values: %q, %q)",
-		cfg.Autonomous.ProjectWriteSerialization,
-		autonomousProjectWriteSerializationAdvisory, autonomousProjectWriteSerializationParallel)
+	return fmt.Errorf("autonomous.plan_review_mode: invalid value %q (valid: empty, %q, %q, %q)",
+		cfg.Autonomous.PlanReviewMode, "off", "warn", "block")
 }
 
 // detectDeprecatedKeys reports the deprecated keys the just-parsed YAML

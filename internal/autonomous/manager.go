@@ -326,6 +326,22 @@ type Config struct {
 	// push workflows 1-11 minutes, so 25 minutes covers the slowest real
 	// run with headroom. 0 = use the default (see ciWatchTimeout).
 	CIWatchTimeoutSeconds int `json:"ci_watch_timeout_seconds,omitempty"`
+
+	// Plan review (2026-10-17 pre-approval gate; see plan_review.go).
+	// Mode: "" or "off" = disabled (default); "warn" = record-only;
+	// "block" = a negative verdict refuses Manager.Approve until the
+	// verdict is replaced (review re-run or re-decompose with ok:true).
+	// A malformed mode is a config error on the operator surface
+	// (internal/config validates it); the manager normalizes anything
+	// unrecognized to "off" rather than failing.
+	PlanReviewBackend string `json:"plan_review_backend,omitempty"`
+	PlanReviewModel   string `json:"plan_review_model,omitempty"`
+	PlanReviewMode    string `json:"plan_review_mode,omitempty"`
+	// Smoke verification backend/model pair — forward config surface for
+	// the smoke-verification feature story (independent deliverable; it
+	// consumes these, this task only defines the fields).
+	SmokeVerificationBackend string `json:"smoke_verification_backend,omitempty"`
+	SmokeVerificationModel   string `json:"smoke_verification_model,omitempty"`
 }
 
 // DefaultConfig returns sane defaults — autonomous OFF until operator opts in.
@@ -478,6 +494,7 @@ type Manager struct {
 	templates   *TemplateStore // BL221 (v6.2.0) — dedicated template store
 	decompose   DecomposeFn
 	guardrail   GuardrailFn
+	planReview  PlanReviewFn // pre-approval plan review (see plan_review.go); nil = degraded 'skipped' verdicts
 
 	// pairingLogged records each pairing warning already written to the
 	// daemon log, so a config set does not repeat a warning it logged before.
@@ -1048,6 +1065,16 @@ func (m *Manager) SetGuardrail(fn GuardrailFn) {
 	m.guardrail = fn
 }
 
+// SetPlanReview wires the plan-review indirection (see plan_review.go).
+// Nil = when a mode asks for a review, a degraded 'skipped' verdict is
+// recorded instead (never a decompose / approve failure). Only called
+// at daemon wiring time, like SetGuardrail.
+func (m *Manager) SetPlanReview(fn PlanReviewFn) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.planReview = fn
+}
+
 // EmitPRDUpdate (v5.24.0) is the explicit broadcast trigger for
 // callers that wrote through Store.SavePRD directly and want the WS
 // broadcast to fire. The Manager's own mutator methods (Approve,
@@ -1254,6 +1281,12 @@ func (m *Manager) finalizeDecomposedPlan(prd *PRD, prdID, backend, prompt, raw, 
 	// BL191 Q1: operator review/approve gate. Status lands in needs_review
 	// rather than active/running. Approve / Reject / RequestRevision are
 	// the explicit transitions out.
+	// Smoke verification: apply the configured smoke-task verification
+	// backend/model while the PRD is still needs_review (the state where
+	// an operator can still see + correct it). Never clobbers explicit
+	// per-task overrides; no-op unless smoke_verification_backend /
+	// smoke_verification_model are set. See ApplySmokeVerificationOverrides.
+	ApplySmokeVerificationOverrides(prd, m.cfg.SmokeVerificationBackend, m.cfg.SmokeVerificationModel)
 	reviewOld := prd.Status
 	prd.Status = PRDNeedsReview
 	prd.Decisions = append(prd.Decisions, Decision{
@@ -1279,6 +1312,12 @@ func (m *Manager) finalizeDecomposedPlan(prd *PRD, prdID, backend, prompt, raw, 
 		m.failDecomposeAttempt(prd, "decompose-persist", perr)
 		return nil, perr
 	}
+	// Plan review (2026-10-17 gate): pre-approval judgment over the
+	// just-decomposed plan. Runs before the status emit so the verdict
+	// decision row lands right after the decompose row. Never fails
+	// Decompose — a reviewer outage is recorded as a verdict, not an
+	// error (see plan_review.go).
+	m.runPlanReview(prd, s, "")
 	RemoveDecomposeOutputArtifact(m.dataDir, prdID)
 	m.emitPRDStatus(prd, reviewOld, lastDecision(prd, "decompose"), nil)
 	updated, _ := m.store.GetPRD(prdID)
@@ -1640,6 +1679,19 @@ func (m *Manager) Approve(prdID, actor, note string) (*PRD, error) {
 	// AcknowledgePlanCoverage).
 	if gerr := m.planCoverageApprovalGate(prdID, prd); gerr != nil {
 		return nil, gerr
+	}
+	// Plan review gate (2026-10-17): in "block" mode a negative verdict
+	// recorded by runPlanReview refuses approval until it is replaced
+	// (review re-run or re-decompose with ok:true). A degraded verdict
+	// (reviewer outage / unparseable / skipped) never blocks.
+	if normalizePlanReviewMode(m.cfg.PlanReviewMode) == PlanReviewModeBlock {
+		if v := prd.PlanReview; v != nil && !v.Ok && !v.ReviewerFailed {
+			msg := v.Summary
+			if cats := planReviewCategories(v.Findings); len(cats) > 0 {
+				msg = strings.Join(cats, ", ") + ": " + msg
+			}
+			return nil, fmt.Errorf("plan review blocks approval of prd %q (mode block): %s", prdID, msg)
+		}
 	}
 	now := time.Now()
 	old := prd.Status
