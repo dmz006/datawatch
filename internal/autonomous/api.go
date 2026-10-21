@@ -39,6 +39,11 @@ type API struct {
 	runMu      sync.Mutex
 	runCancels map[string]context.CancelFunc
 
+	// execWG counts live executor goroutines (and the boot-resume
+	// scan that may launch them) so WaitIdle can block until they have
+	// all exited.
+	execWG sync.WaitGroup
+
 	// serverReadyCh, when non-nil, is closed by the HTTP server layer once
 	// it is ready to accept requests. resumeRunningPRDs blocks on it so that
 	// executor spawn calls don't fail with "connection refused" on daemon
@@ -69,7 +74,41 @@ func (a *API) SetServerReadyCh(ch <-chan struct{}) {
 func (a *API) SetExecutors(spawn SpawnFn, verify VerifyFn) {
 	a.spawnFn = spawn
 	a.verify = verify
-	go a.resumeRunningPRDs()
+	a.execWG.Add(1)
+	go func() {
+		defer a.execWG.Done()
+		a.resumeRunningPRDs()
+	}()
+}
+
+// WaitIdle cancels every live executor context and blocks until all
+// executor goroutines (including the boot-resume scan) have exited. It
+// returns an error if they are still running after timeout. Executors
+// launched while draining are cancelled too.
+func (a *API) WaitIdle(timeout time.Duration) error {
+	idle := make(chan struct{})
+	go func() {
+		a.execWG.Wait()
+		close(idle)
+	}()
+	deadline := time.NewTimer(timeout)
+	defer deadline.Stop()
+	retry := time.NewTicker(5 * time.Millisecond)
+	defer retry.Stop()
+	for {
+		a.runMu.Lock()
+		for _, cancel := range a.runCancels {
+			cancel()
+		}
+		a.runMu.Unlock()
+		select {
+		case <-idle:
+			return nil
+		case <-deadline.C:
+			return fmt.Errorf("autonomous: executor goroutines still running after %s", timeout)
+		case <-retry.C:
+		}
+	}
 }
 
 // resumeRunningPRDs re-launches executor goroutines for PRDs that are
@@ -366,7 +405,9 @@ func (a *API) Run(id string) error {
 	}
 	a.runCancels[id] = cancel
 	a.runMu.Unlock()
+	a.execWG.Add(1)
 	go func() {
+		defer a.execWG.Done()
 		defer func() {
 			a.runMu.Lock()
 			if a.runCancels[id] != nil {

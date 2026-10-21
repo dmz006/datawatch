@@ -37,8 +37,15 @@ func runToTerminalOrBlocked(t *testing.T, m *Manager, api *API, id string, spawn
 	deadline := time.Now().Add(30 * time.Second)
 	for time.Now().Before(deadline) {
 		got, _ := m.Store().GetPRD(id)
-		if got.Status == PRDCompleted || got.Status == PRDFailed || got.Status == PRDBlocked {
-			time.Sleep(50 * time.Millisecond)
+		m.mu.Lock()
+		status := got.Status
+		m.mu.Unlock()
+		if status == PRDCompleted || status == PRDFailed || status == PRDBlocked {
+			// Let the executor goroutine finish its tail (final emit)
+			// before the caller reads or mutates the shared PRD.
+			if err := api.WaitIdle(10 * time.Second); err != nil {
+				t.Fatal(err)
+			}
 			return got
 		}
 		time.Sleep(20 * time.Millisecond)

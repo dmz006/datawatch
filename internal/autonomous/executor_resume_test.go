@@ -34,6 +34,14 @@ func apiFixture(t *testing.T) (*Manager, *API, func(context.Context, SpawnReques
 		return VerificationResult{OK: true}, nil
 	}
 	api := NewAPI(m)
+	// Registered after t.TempDir so it runs first (cleanup is LIFO): no
+	// executor may still be writing PRD files when the directory is removed.
+	t.Cleanup(func() {
+		m.Stop()
+		if err := api.WaitIdle(10 * time.Second); err != nil {
+			t.Errorf("draining executors: %v", err)
+		}
+	})
 	return m, api, spawn, verify
 }
 
