@@ -220,7 +220,7 @@ See the operations guide for device-specific cert install instructions.
 
 ## Available Tools
 
-The MCP server exposes **150 tools** across the surfaces below
+The MCP server exposes **150+ tools** across the surfaces below
 (v8.10.16 count — includes BL356–BL362 additions). The authoritative live list is served at
 `GET /api/mcp/docs` (HTML) or `GET /api/mcp/docs?format=json` (JSON)
 — `claude mcp list` queries this on connect, and the PWA Settings →
@@ -248,6 +248,7 @@ must stay strict JSON-RPC (release-smoke §7r asserts all of this).
 | Discussion Subscribe | `discussion_subscribe`, `discussion_unsubscribe`, `discussion_subscriptions` |
 | Result Store | `result_put`, `result_get`, `result_list`, `result_delete` |
 | Autonomous PRDs | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_list/create/get/decompose/approve/reject/request_revision/edit_task/instantiate/run/cancel/rejudge/set_llm/set_task_llm/set_task_verification_llm/set_story_verification_llm/set_verification_llm/children`, `autonomous_learnings`, `capacity_status` |
+| Lifecycle subscriptions (BL427) | `autonomous_subscribe`, `autonomous_unsubscribe`, `autonomous_subscriptions` |
 | Orchestrator | `orchestrator_graph_create/plan/run/get/list/cancel`, `orchestrator_verdicts`, `orchestrator_config_get/set` |
 | Pipelines | `pipeline_start/list/status/cancel` |
 | Memory + KG | `memory_remember/recall/list/forget/export/import/reindex/stats/learnings`, `kg_add/query/timeline/stats/invalidate`, `research_sessions`, `get_prompt`, `copy_response` |
@@ -312,6 +313,36 @@ Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
   ```
 
   Returns the write reply described above (a small summary, not the whole Automaton); the guardrail verdict and the `guardrail_rejudge` Decision are in the Automaton's decision log, readable with `autonomous_prd_get`. The REST body `actor` (default `operator`) is fixed to `operator` here, as with the other PRD write tools.
+- **`autonomous_subscribe` / `autonomous_unsubscribe` / `autonomous_subscriptions`** (BL427) — persisted Automaton lifecycle-event subscriptions (design: [plans/2026-10-13-prd-lifecycle-events.md](plans/2026-10-13-prd-lifecycle-events.md)). Register, list and remove subscriptions so matching lifecycle events (e.g. `task.session_started`, `task.completed`, `prd.blocked`) are delivered to a sink when they fire.
+
+  `autonomous_subscribe` parameters:
+
+  | Parameter | Required | Description |
+  |---|---|---|
+  | `kinds` | one of `kinds`/`level` | Comma-separated event kinds (also accepts a string array), e.g. `"task.session_started,prd.blocked"` |
+  | `level` | one of `kinds`/`level` | Event level: `prd` or `task` |
+  | `prd_id` | no | Scope to one Automaton (PRD) id |
+  | `task_id` | no | Scope to one task id |
+  | `sink_type` | yes | `comm`, `session`, `topic` or `alert` |
+  | `sink_target` | yes | The sink's target (session id, topic, router/alert name) |
+  | `action_text` | no | Text typed into the sink session on every match (the `send_input` action — the only action in this phase; requires `sink_type` `session`) |
+  | `one_shot` | no | Delete the subscription after its first delivery (default false) |
+  | `coalesce` | no | Batch human-facing sink deliveries in quiet windows (default false) |
+  | `expires_in_seconds` | no | TTL in seconds; the subscription stops matching after it elapses |
+
+  Returns the stored subscription record (with its `id`). `autonomous_unsubscribe(id)` removes one (`id` — 404 for unknown ids). `autonomous_subscriptions` lists them, optionally filtered by `owner`. Proxies `POST /api/autonomous/subscriptions`, `DELETE /api/autonomous/subscriptions/{id}`, `GET /api/autonomous/subscriptions`. The same surface over CLI is `datawatch autonomous subscribe` / `unsubscribe <id>` / `subscriptions [--owner <owner>]` — the CLI's watch-and-inject shorthand is `datawatch autonomous subscribe --task <id> --on session_started --send "<text>"` (defaults to a one-shot `send_input` action into a session sink).
+
+  Example — a one-shot nudge to a session when its task's session starts:
+  ```
+  autonomous_subscribe(
+    kinds="task.session_started",
+    task_id="t7",
+    sink_type="session", sink_target="pi-host",
+    action_text="Task t7 session started — pick up the build.",
+    one_shot=true
+  )
+  → the stored subscription record (has an id you can pass to autonomous_unsubscribe)
+  ```
 - **`observer_envelopes_all_peers`** (v5.12.0, BL180 cross-host) — federation-aware envelope view; cross-peer caller attribution surfaces as `<peer>:<envelope-id>` rows on each matched server envelope.
 - **`session_bind_agent`** (v5.x) — bind a manual session to an existing agent record so observer/cost roll-ups attribute correctly.
 - **`session_import`** (v5.x) — import a foreign tmux session record into datawatch state without re-spawning.
