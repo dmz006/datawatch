@@ -408,7 +408,7 @@ func TestPreSessionCommit_ScopedLeavesOutOfScopeUnstaged(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := g.PreSessionCommit("sess1", "task", []string{scopeDir}); err != nil {
+	if err := g.PreSessionCommit("", "task", []string{scopeDir}); err != nil {
 		t.Fatalf("PreSessionCommit: %v", err)
 	}
 	out, err := gitOutput(dir, "ls-tree", "-r", "--name-only", "HEAD")

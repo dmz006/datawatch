@@ -183,21 +183,23 @@ func (g *ProjectGit) stagedOnly() bool {
 }
 
 // PreSessionCommit creates a snapshot commit before the session starts.
-// scope are the session's effective write directories. nil/empty
-// preserves baseline behavior — the whole dirty tree is staged, with a
-// warning: the pre-session snapshot is designed to capture pre-existing
-// dirt (the pinned Start() test contract), so the run's later completion
-// commit diffs only against that baseline. Completion auto-commits bound
-// unscoped staging to the run via SetRunStart instead.
-func (g *ProjectGit) PreSessionCommit(sessionID, task string, scope []string) error {
+// prdID and taskTitle name the snapshot; the subject comes from
+// snapshotSubject, e.g. "snapshot before task <title> (PRD <prdShortID>)",
+// and never contains the worker prompt. scope are the session's effective
+// write directories. nil/empty preserves baseline behavior — the whole
+// dirty tree is staged, with a warning: the pre-session snapshot is
+// designed to capture pre-existing dirt (the pinned Start() test
+// contract), so the run's later completion commit diffs only against that
+// baseline. Completion auto-commits bound unscoped staging to the run via
+// SetRunStart instead.
+func (g *ProjectGit) PreSessionCommit(prdID, taskTitle string, scope []string) error {
 	if err := g.stageChanges(scope); err != nil {
 		return err
 	}
 	if !g.stagedOnly() {
 		return nil // nothing to commit
 	}
-	msg := fmt.Sprintf("pre-session[%s]: %s", sessionID, truncateStr(task, 60))
-	return runGit(g.dir, "commit", "-m", msg)
+	return runGit(g.dir, "commit", "-m", snapshotSubject(prdID, taskTitle))
 }
 
 // PostSessionCommit creates a final commit after the session ends.
@@ -231,9 +233,90 @@ func (g *ProjectGit) CommitSessionWork(sessionID, task, summary string, scope []
 	if !g.stagedOnly() {
 		return "", nil
 	}
-	if err := runGit(g.dir, "commit", "-m", buildCommitMessage(summary, task)); err != nil {
+	if err := runGit(g.dir, "commit", "-m", buildCommitMessage(sessionID, summary, task)); err != nil {
 		return "", err
 	}
+	return g.headSHA()
+}
+
+// TaskCommitLabel is the bare task identity an automatic task commit is
+// named after. Prompt is the full worker prompt: it is only ever used to
+// recognise prompt text, never written as a subject.
+type TaskCommitLabel struct {
+	PRDID        string
+	TaskTitle    string
+	Prompt       string
+	Summary      string
+	Verification string
+}
+
+// CommitTaskWork stages changes exactly as CommitSessionWork does and commits
+// them under a subject built from the task title ("task(<prd>): <title>")
+// rather than from the worker prompt. The body lists the staged files and the
+// verification result; a non-empty Summary that is not prompt text is
+// appended as the final line. Returns the new HEAD sha, or ("", nil) when
+// nothing is staged.
+func (g *ProjectGit) CommitTaskWork(sessionID string, label TaskCommitLabel, scope []string) (string, error) {
+	if err := g.stageChanges(scope); err != nil {
+		return "", err
+	}
+	if !g.stagedOnly() {
+		return "", nil
+	}
+	names, err := gitOutput(g.dir, "diff", "--cached", "--name-only")
+	if err != nil {
+		return "", err
+	}
+	files := strings.Split(strings.TrimSpace(names), "\n")
+
+	msg := taskCommitSubject(label.PRDID, label.TaskTitle, label.Prompt) + "\n\n" +
+		commitBody(files, label.Verification)
+	if s := taskCommitSummaryLine(label.Summary, label.Prompt); s != "" {
+		msg += "\n\n" + s
+	}
+
+	path, err := writeCommitMessageFile(msg)
+	if err != nil {
+		return "", err
+	}
+	defer os.Remove(path)
+	if err := runGit(g.dir, "commit", "-F", path); err != nil {
+		return "", fmt.Errorf("session %s: %w", sessionID, err)
+	}
+	return g.headSHA()
+}
+
+// taskCommitSummaryLine collapses summary to one line for a task commit body.
+// It returns "" when the summary is empty or is prompt text.
+func taskCommitSummaryLine(summary, prompt string) string {
+	line := strings.Join(strings.Fields(summary), " ")
+	if line == "" || isPromptLike(line, prompt) {
+		return ""
+	}
+	return capRunes(line, commitSubjectMaxRunes)
+}
+
+// writeCommitMessageFile writes msg to a new temporary file in the OS temp
+// directory and returns its path. The caller removes it.
+func writeCommitMessageFile(msg string) (string, error) {
+	f, err := os.CreateTemp("", "datawatch-commit-*.txt")
+	if err != nil {
+		return "", fmt.Errorf("commit message file: %w", err)
+	}
+	if _, err := f.WriteString(msg); err != nil {
+		_ = f.Close()
+		_ = os.Remove(f.Name())
+		return "", fmt.Errorf("commit message file: %w", err)
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(f.Name())
+		return "", fmt.Errorf("commit message file: %w", err)
+	}
+	return f.Name(), nil
+}
+
+// headSHA returns the sha of HEAD, trimmed.
+func (g *ProjectGit) headSHA() (string, error) {
 	sha, err := gitOutput(g.dir, "rev-parse", "HEAD")
 	if err != nil {
 		return "", err
@@ -241,11 +324,13 @@ func (g *ProjectGit) CommitSessionWork(sessionID, task, summary string, scope []
 	return strings.TrimSpace(sha), nil
 }
 
-// buildCommitMessage builds the commit subject for
-// CommitSessionWork: summary trimmed, collapsed to its first line,
-// capped at 200 chars; if that is empty, falls back to
-// "task: <task>" (task truncated to 60 chars). Never empty.
-func buildCommitMessage(summary, task string) string {
+// buildCommitMessage builds the commit subject for CommitSessionWork:
+// summary trimmed, collapsed to its first line, capped at 200 chars. If that
+// is empty it falls back to "session work", with the session ID appended in
+// parentheses when sessionID is non-empty. The task prompt is never used as
+// the subject; the result passes through refusePromptSubject as a safety net.
+// Never empty.
+func buildCommitMessage(sessionID, summary, task string) string {
 	msg := strings.TrimSpace(summary)
 	if i := strings.IndexByte(msg, '\n'); i >= 0 {
 		msg = strings.TrimSpace(msg[:i])
@@ -254,12 +339,12 @@ func buildCommitMessage(summary, task string) string {
 		msg = msg[:200]
 	}
 	if msg == "" {
-		msg = "task: " + truncateStr(task, 60)
+		msg = commitFallbackTitle
+		if sessionID != "" {
+			msg += " (" + sessionID + ")"
+		}
 	}
-	if strings.TrimSpace(msg) == "" {
-		msg = "session work"
-	}
-	return msg
+	return refusePromptSubject(msg, task, commitFallbackTitle)
 }
 
 // TagCheckpoint (BL29) creates an annotated tag at HEAD pointing at

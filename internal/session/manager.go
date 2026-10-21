@@ -1691,6 +1691,8 @@ type StartOptions struct {
 	PRDID   string
 	TaskID  string
 	StoryID string
+	// TaskTitle is the PRD task's title, used for the automatic task commit subject.
+	TaskTitle string
 
 	// Git — when true, Start opts the session into git activity in its
 	// project dir: `git init` (if the dir is not yet a repo), the
@@ -1800,7 +1802,7 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		// SkipSnapshot (planning/judgment sessions) must never stage or commit
 		// the repo, so it short-circuits here as well.
 		if projGit.IsRepo() && opt.PRDID != "" && !opt.SkipSnapshot {
-			if err := projGit.PreSessionCommit("", task, opt.WriteScope); err != nil {
+			if err := projGit.PreSessionCommit(opt.PRDID, opt.TaskTitle, opt.WriteScope); err != nil {
 				fmt.Printf("[warn] pre-session commit: %v\n", err)
 			}
 		}
@@ -1921,6 +1923,9 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 	}
 	if opt != nil && opt.StoryID != "" {
 		sess.StoryID = opt.StoryID
+	}
+	if opt != nil && opt.TaskTitle != "" {
+		sess.TaskTitle = opt.TaskTitle
 	}
 	if opt != nil && len(opt.WriteScope) > 0 {
 		sess.WriteScope = opt.WriteScope
@@ -4130,7 +4135,21 @@ func (m *Manager) commitOnCompletion(current *Session, projGit *ProjectGit) {
 		projGit.SetRunStart(current.CreatedAt)
 	}
 
-	if sha, err := projGit.CommitSessionWork(current.ID, current.Task, summary, current.WriteScope); err != nil {
+	var sha string
+	var err error
+	if current.PRDID != "" {
+		// Verification is not known on this path (the verifier ran earlier),
+		// so the body says it was not run before this commit.
+		sha, err = projGit.CommitTaskWork(current.ID, TaskCommitLabel{
+			PRDID:     current.PRDID,
+			TaskTitle: current.TaskTitle,
+			Prompt:    current.Task,
+			Summary:   summary,
+		}, current.WriteScope)
+	} else {
+		sha, err = projGit.CommitSessionWork(current.ID, current.Task, summary, current.WriteScope)
+	}
+	if err != nil {
 		fmt.Printf("[warn] completion commit: %v\n", err)
 	} else {
 		current.CommitSHA = sha

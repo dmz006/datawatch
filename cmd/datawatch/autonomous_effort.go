@@ -111,6 +111,11 @@ func buildAutonomousSessionBody(req autonomouspkg.SpawnRequest, spec, defaultBac
 	if len(req.WriteScope) > 0 {
 		sessionBody["write_scope"] = req.WriteScope
 	}
+	// Bare task title, so the completion commit can use it without
+	// parsing the "autonomous:"-prefixed name.
+	if req.Title != "" {
+		sessionBody["task_title"] = req.Title
+	}
 	// Real claude --effort pass-through (additive to "effort" above).
 	// session.Manager.Start applies ClaudeEffort via an interface check
 	// (SetEffort(string)) that only the claude-code backend implements,

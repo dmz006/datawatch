@@ -201,8 +201,8 @@ func TestCommitSessionWork_EmptySummaryFallsBackToTask(t *testing.T) {
 	if _, err := g.CommitSessionWork("sess1", task, "   \n  ", nil); err != nil {
 		t.Fatalf("CommitSessionWork: %v", err)
 	}
-	if got := headSubject(t, dir); !strings.Contains(got, task) {
-		t.Errorf("subject=%q want it to contain task text %q", got, task)
+	if got := headSubject(t, dir); got != "session work (sess1)" {
+		t.Errorf("subject=%q want %q", got, "session work (sess1)")
 	}
 }
 
@@ -257,25 +257,180 @@ func TestCommitSessionWork_UntrackedFileCommitted(t *testing.T) {
 
 func TestBuildCommitMessage(t *testing.T) {
 	// First line wins, trimmed.
-	if got := buildCommitMessage("  line one\nline two\n", "task"); got != "line one" {
+	if got := buildCommitMessage("sess1", "  line one\nline two\n", "task"); got != "line one" {
 		t.Errorf("got %q", got)
 	}
 	// Capped at 200 chars.
 	long := strings.Repeat("a", 500)
-	if got := buildCommitMessage(long, "task"); len(got) != 200 {
+	if got := buildCommitMessage("sess1", long, "task"); len(got) != 200 {
 		t.Errorf("len=%d want 200", len(got))
 	}
-	// Fallback to task.
-	if got := buildCommitMessage("", "some task"); got != "task: some task" {
+	// Fallback is "session work" with the session ID, never the task.
+	if got := buildCommitMessage("sess1", "", "some task"); got != "session work (sess1)" {
 		t.Errorf("got %q", got)
 	}
-	// Task truncated to 60 chars (+ "..." per truncateStr).
-	if got := buildCommitMessage("", strings.Repeat("b", 100)); len(got) != len("task: ")+63 {
-		t.Errorf("got %q (len %d)", got, len(got))
+	// No session ID: bare fallback.
+	if got := buildCommitMessage("", "", "some task"); got != "session work" {
+		t.Errorf("got %q", got)
+	}
+	// A prompt-shaped task never leaks into the fallback subject.
+	prompt := "You are running non-interactively\nFix the parser."
+	if got := buildCommitMessage("sess1", "", prompt); strings.Contains(got, "non-interactively") || strings.Contains(got, "Fix the parser") {
+		t.Errorf("fallback leaked prompt text: %q", got)
+	}
+	// A summary that is itself prompt text is replaced by the safety net.
+	if got := buildCommitMessage("sess1", "You are running non-interactively now", "task"); strings.Contains(got, "non-interactively") {
+		t.Errorf("prompt-shaped summary used as subject: %q", got)
 	}
 	// Never empty.
-	if got := buildCommitMessage("", ""); got == "" {
+	if got := buildCommitMessage("", "", ""); got == "" {
 		t.Error("must never be empty")
+	}
+}
+
+// ── CommitTaskWork ─────────────────────────────────
+
+// headMessage returns the full message of HEAD, trimmed.
+func headMessage(t *testing.T, dir string) string {
+	t.Helper()
+	m, err := gitOutput(dir, "log", "-1", "--format=%B")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return strings.TrimSpace(m)
+}
+
+func TestCommitTaskWork_SubjectNamedAfterTaskTitle(t *testing.T) {
+	if !haveGit(t) {
+		t.Skip("git not on PATH")
+	}
+	dir, g := newSessionWorkTestRepo(t)
+	if err := os.WriteFile(filepath.Join(dir, "note.txt"), []byte("hello"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	label := TaskCommitLabel{
+		PRDID:        "abcdef0123456789",
+		TaskTitle:    "Add login form",
+		Prompt:       "You are running non-interactively\nAdd the login form and wire it up.",
+		Verification: "passed",
+	}
+	sha, err := g.CommitTaskWork("sess1", label, nil)
+	if err != nil {
+		t.Fatalf("CommitTaskWork: %v", err)
+	}
+	if got := headSubject(t, dir); got != "task(abcdef01): Add login form" {
+		t.Errorf("subject=%q want %q", got, "task(abcdef01): Add login form")
+	}
+	body := headMessage(t, dir)
+	if !strings.Contains(body, "Files changed:\n- note.txt") {
+		t.Errorf("body missing staged file list:\n%s", body)
+	}
+	if !strings.Contains(body, "Verification: passed") {
+		t.Errorf("body missing verification result:\n%s", body)
+	}
+	if strings.Contains(body, "non-interactively") {
+		t.Errorf("prompt text leaked into the commit message:\n%s", body)
+	}
+	head, err := gitOutput(dir, "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sha != strings.TrimSpace(head) {
+		t.Errorf("sha=%q want HEAD %q", sha, strings.TrimSpace(head))
+	}
+}
+
+func TestCommitTaskWork_NoPRDUsesTaskPrefix(t *testing.T) {
+	if !haveGit(t) {
+		t.Skip("git not on PATH")
+	}
+	dir, g := newSessionWorkTestRepo(t)
+	if err := os.WriteFile(filepath.Join(dir, "note.txt"), []byte("hello"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := g.CommitTaskWork("sess1", TaskCommitLabel{TaskTitle: "Tidy imports", Prompt: "Tidy the imports"}, nil); err != nil {
+		t.Fatalf("CommitTaskWork: %v", err)
+	}
+	if got := headSubject(t, dir); got != "task: Tidy imports" {
+		t.Errorf("subject=%q want %q", got, "task: Tidy imports")
+	}
+}
+
+func TestCommitTaskWork_PromptSummaryNotAppended(t *testing.T) {
+	if !haveGit(t) {
+		t.Skip("git not on PATH")
+	}
+	dir, g := newSessionWorkTestRepo(t)
+	if err := os.WriteFile(filepath.Join(dir, "note.txt"), []byte("hello"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	prompt := "You are running non-interactively\nAdd the login form."
+	label := TaskCommitLabel{PRDID: "abcdef0123456789", TaskTitle: "Add login form", Prompt: prompt, Summary: prompt}
+	if _, err := g.CommitTaskWork("sess1", label, nil); err != nil {
+		t.Fatalf("CommitTaskWork: %v", err)
+	}
+	if body := headMessage(t, dir); strings.Contains(body, "non-interactively") {
+		t.Errorf("prompt-shaped summary appended to the commit message:\n%s", body)
+	}
+}
+
+func TestCommitTaskWork_SummaryAppendedAsFinalLine(t *testing.T) {
+	if !haveGit(t) {
+		t.Skip("git not on PATH")
+	}
+	dir, g := newSessionWorkTestRepo(t)
+	if err := os.WriteFile(filepath.Join(dir, "note.txt"), []byte("hello"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	const summary = "Wrote note.txt and checked it"
+	label := TaskCommitLabel{PRDID: "abcdef0123456789", TaskTitle: "Write note", Prompt: "Write a note", Summary: summary}
+	if _, err := g.CommitTaskWork("sess1", label, nil); err != nil {
+		t.Fatalf("CommitTaskWork: %v", err)
+	}
+	body := headMessage(t, dir)
+	lines := strings.Split(body, "\n")
+	if last := lines[len(lines)-1]; last != summary {
+		t.Errorf("final line=%q want %q\n%s", last, summary, body)
+	}
+}
+
+func TestCommitTaskWork_CleanTreeReturnsEmpty(t *testing.T) {
+	if !haveGit(t) {
+		t.Skip("git not on PATH")
+	}
+	dir, g := newSessionWorkTestRepo(t)
+	before := headCount(t, dir)
+	sha, err := g.CommitTaskWork("sess1", TaskCommitLabel{PRDID: "abcdef0123456789", TaskTitle: "Nothing"}, nil)
+	if err != nil {
+		t.Fatalf("CommitTaskWork: %v", err)
+	}
+	if sha != "" {
+		t.Errorf("sha=%q want empty for clean tree", sha)
+	}
+	if got := headCount(t, dir); got != before {
+		t.Errorf("commits=%d want %d (no new commit)", got, before)
+	}
+}
+
+func TestCommitTaskWork_RemovesMessageFile(t *testing.T) {
+	if !haveGit(t) {
+		t.Skip("git not on PATH")
+	}
+	tmp := t.TempDir()
+	t.Setenv("TMPDIR", tmp)
+	dir, g := newSessionWorkTestRepo(t)
+	if err := os.WriteFile(filepath.Join(dir, "note.txt"), []byte("hello"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := g.CommitTaskWork("sess1", TaskCommitLabel{PRDID: "abcdef0123456789", TaskTitle: "Write note"}, nil); err != nil {
+		t.Fatalf("CommitTaskWork: %v", err)
+	}
+	entries, err := os.ReadDir(tmp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Errorf("temporary commit message file left behind: %v", entries)
 	}
 }
 

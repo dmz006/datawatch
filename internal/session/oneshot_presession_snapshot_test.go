@@ -43,8 +43,8 @@ func TestStart_OneShotSnapshotsDirtyTreeWithAutoCommitOff(t *testing.T) {
 	dir := newDirtyRepo(t)
 
 	mgr.SetLLMBackend("test", func(_ context.Context, _, tmuxSession, projectDir, _ string) error {
-		if got := headSubject(t, projectDir); !strings.HasPrefix(got, "pre-session[") {
-			t.Errorf("HEAD at launch = %q, want a pre-session[ snapshot commit", got)
+		if got := headSubject(t, projectDir); !strings.HasPrefix(got, "snapshot before ") {
+			t.Errorf("HEAD at launch = %q, want a snapshot before ... commit", got)
 		}
 		if status, _ := exec.Command("git", "-C", projectDir, "status", "--porcelain").Output(); len(strings.TrimSpace(string(status))) != 0 {
 			t.Errorf("working tree still dirty at launch: %q", strings.TrimSpace(string(status)))
@@ -78,8 +78,8 @@ func TestStart_OneShotInitsNonRepoDirAndSnapshots(t *testing.T) {
 		if !NewProjectGit(projectDir).IsRepo() {
 			t.Errorf("project dir is not a git repo at launch; expected init")
 		}
-		if got := headSubject(t, projectDir); !strings.HasPrefix(got, "pre-session[") {
-			t.Errorf("HEAD at launch = %q, want a pre-session[ snapshot commit", got)
+		if got := headSubject(t, projectDir); !strings.HasPrefix(got, "snapshot before ") {
+			t.Errorf("HEAD at launch = %q, want a snapshot before ... commit", got)
 		}
 		_ = fake.NewSessionWithSize(tmuxSession, 80, 24)
 		_ = fake.PipeOutput(tmuxSession, "/dev/null")
@@ -103,8 +103,8 @@ func TestStart_OneShotInitsEvenWithAutoGitInitOff(t *testing.T) {
 		if !NewProjectGit(projectDir).IsRepo() {
 			t.Errorf("project dir is not a git repo at launch; expected init")
 		}
-		if got := headSubject(t, projectDir); !strings.HasPrefix(got, "pre-session[") {
-			t.Errorf("HEAD at launch = %q, want a pre-session[ snapshot commit", got)
+		if got := headSubject(t, projectDir); !strings.HasPrefix(got, "snapshot before ") {
+			t.Errorf("HEAD at launch = %q, want a snapshot before ... commit", got)
 		}
 		_ = fake.NewSessionWithSize(tmuxSession, 80, 24)
 		_ = fake.PipeOutput(tmuxSession, "/dev/null")
