@@ -1333,6 +1333,39 @@ label or tag, a date range, or "everything since date X")**
 8. **History.** A snapshot is stored daily and on each milestone so the estimate has a trend line
    and the operator can see whether it is converging.
 
+**Stage ledger: every stage is timed, not just the build (operator, 2026-10-21).** Each PRD and
+each task carries start and end timestamps for every stage, so the dashboard can show where time
+goes and the optimizer can act on it. Stages, with what exists today and what must be added:
+
+| Stage | Start event | End event | Today |
+|---|---|---|---|
+| Created and spec written | `created_at` | decompose requested | `created_at`; request time not stored |
+| Decompose | planning mark (status planning) | `decompose` decision | end only; add planning-start timestamp and session id |
+| Plan validation | decompose done | `approve` decision | `plan_coverage_ack` and `approve` decisions exist; supervisor validation start/end and plan-review result must be added |
+| Approval wait | plan ready (needs_review) | `approve` | derivable |
+| Queue wait | `approve`/`run` | first task spawn | `run` decision and task `started_at` |
+| Per task: spawn and delivery | session created | task text delivered | `session.json` has `task_delivered_at`; copy onto the task |
+| Per task: work | delivered | worker turn ends | add: first output time, turn-end time, idle dwell after turn end |
+| Per task: nudge or stall handling | turn end without completion marker | marker seen or nudged or killed | add: nudge count and time |
+| Per task: verification | verifier spawn | `verification.verified_at` | end only; add verifier start and session id |
+| Per task: retries | each failed attempt | next attempt | `retry_count`, `prior_attempt_count`; add per-attempt durations and failure reason |
+| PRD completion review | last task done | PRD guardrail verdict | add timestamps |
+| Merge wait and merge | PRD completed | branch merged | not in the store; add `merged_at` and merge duration from the merge event |
+| CI and release | tag pushed | release workflow green | not in the store; add from `ci_watch` events |
+| Deployed | release green | daemon running that version | add: daemon version change event |
+
+The dashboard shows each stage's median and p90 per kind, the share of lead time each stage takes,
+and the slowest stage. Anything that cannot be timed yet is shown as "not measured", never as zero.
+
+**Optimization inputs (so queue and lane decisions can be made from live data, not guesses).**
+Per lane: busy, idle, waiting-on-nudge and blocked time, split by lane type. Per task: work time
+against idle dwell after turn end, nudge count, retry count and wasted attempt time. Per PRD:
+critical-path length against task count (potential parallel speedup), and which tasks are
+independent. Queue: number of validated, approved PRDs waiting per lane type (decompose-ahead
+depth), blocked-reason histogram, time from "completed" to "merged". Capacity: GPU engines in use
+against the limit, model load events, Claude session and weekly usage against pace. Quality: first-
+pass verification success rate per backend and model, retry rate per backend.
+
 **Lessons recorded from the script (2026-10-21), to become tests**
 - Measuring PRD time from approval to last update overstated it by an order of magnitude.
 - Counting PRDs touched in the last 24 hours as throughput counted the cleanup actions themselves.
