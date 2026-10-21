@@ -100,6 +100,21 @@ and the server's 30 s protocol-ping ticker (`internal/server/ws.go` `writePump`)
 separate, legitimate disconnect/reconnect mechanisms, recorded for the record and not
 fixed in this pass. See CHANGELOG.md [Unreleased].
 
+## PWA connection stability — `scripts/test-stories/pwa/TS-799.mjs` (TS-799, wrapper `scripts/test-stories/TS-799.sh`)
+
+Story TS-799: with an open session terminal, the connection is flapped 6 times
+(`setOffline(true)` ~1 s, `setOffline(false)` ~1.5 s) plus one forced
+`state.ws.close()`. Asserts: no main-frame navigation after initial load (window
+marker survives); `GET /api/sessions` <= flaps+3, `GET /api/schedules` <= 5, no
+`ERR_INSUFFICIENT_RESOURCES`; the terminal keeps its first marker and a second
+marker typed after recovery appears within 3000 ms; `state.reconnectAttempt` is
+non-decreasing across flaps shorter than the stability window and ends > 0. The
+session is always deleted afterwards.
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| PWA reconnect stability across repeated connection flaps (backoff, no reload, bounded requests, terminal recovery) | Yes (story `pwa/TS-799.mjs`; node unit tests below) | No (not run against a live daemon in this change) | Playwright + headless Chrome against an isolated daemon, as for the schedules-flood story; shell session created inline | New `node --test` files under `internal/server/web/`: `app-ws-backoff.test.js` (jittered backoff, 15 s stability window), `app-ws-state.test.js` (connection-state indicator), `app-reload-guard.test.js` (update banner never auto-reloads while typing / focused / draft), `app-resync.test.js` (one sessions request + one subscribe on reconnect) |
+
 ---
 
 ## Autonomous completion-guardrail rejudgment — `POST /api/autonomous/prds/{id}/rejudge` + MCP `autonomous_prd_rejudge`
