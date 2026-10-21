@@ -230,6 +230,7 @@ func TestLifecycle_Filter(t *testing.T) {
 		m.emit(ev)
 	}
 	waitFor(t, "wildcard subscriber", func() bool { return len(all.snapshot()) == 4 })
+	waitFor(t, "terminal subscriber", func() bool { return len(term.snapshot()) >= 1 })
 	if g := term.snapshot(); len(g) != 1 || g[0].Kind != "prd.completed" {
 		t.Fatalf("terminal subscriber got %+v", g)
 	}
