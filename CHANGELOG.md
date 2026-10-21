@@ -5,6 +5,22 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.39 — operator docs: the per-session git opt-in, and the version catches main
+
+- **Documented the per-session git opt-in in the operator guide** —
+  what `git: true` / `git: false` on a session start does (repo
+  initialization, the pre-session snapshot commit for PRD task sessions,
+  the `datawatch-pre-`/`datawatch-post-` checkpoint tags usable for
+  diffing and rolling the tree back, and the validation-gated, exactly-
+  once completion commit), that PRD task sessions are git-enabled by
+  default when their PRD has git settings (a PRD git block or a project
+  profile), and how `session.git_default` sets the daemon-wide default
+  for every other start request (default `false`; an explicit `git`
+  value in the start request always wins).
+- **Bumped the reported version 9.5.26 → 9.5.39** in both places it is
+  declared so this checkout reports the next patch above main again. No
+  behaviour change in this version.
+
 ## v9.5.26 — autonomous: honor each backend's delivery mode when typing waiting tasks into tmux
 
 - **One-shot “send the task and wait for it to finish” sessions (pi --print, goose --print, aider) no longer get a second copy of the task typed into their shell (send_input)** — the daemon now asks each backend whether it accepts interactive input before typing a waiting task into the pane, so a backend that only takes its task once, at launch, can never be typed into, even if it is a brand-new backend never added to a list.
