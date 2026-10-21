@@ -593,7 +593,10 @@ paths:
         `webhook.enabled`, `github_webhook.enabled`, `server.enabled`,
         `server.host`, `server.port`, `server.token`, `server.tls_enabled`,
         `autonomous.plan_coverage_check` (off|warn|block, default block),
-        `autonomous.plan_coverage_min_ratio` (0-1, default 1.0).
+        `autonomous.plan_coverage_min_ratio` (0-1, default 1.0),
+        `autonomous.plan_review_backend`, `autonomous.plan_review_model`,
+        `autonomous.plan_review_mode` (off | warn | block),
+        `autonomous.smoke_verification_backend`, `autonomous.smoke_verification_model`.
       operationId: updateConfig
       tags: [System]
       requestBody:
@@ -1210,6 +1213,58 @@ paths:
       tags: [Autonomous]
       parameters: [{name: id, in: path, required: true, schema: {type: string}}]
       responses: {"200": {description: OK}}
+  /api/autonomous/prds/{id}/plan-review:
+    post:
+      summary: Run (or re-run) the pre-approval plan review
+      description: |
+        Runs the configured plan reviewer over the PRD's current plan — a
+        bounded projection of the spec plus the stories'/tasks' titles, specs,
+        dependencies, kinds and verification scripts — and records a fresh
+        `plan_review` verdict on the PRD. Mode effects (all modes allow the
+        re-run):
+        - `off` (default): no review runs and approval is never affected;
+          a re-run is a no-op that returns the PRD as stored.
+        - `warn`: the verdict is recorded and visible but never blocks approval.
+        - `block`: a verdict with `ok: false` refuses
+          `POST /api/autonomous/prds/{id}/approve` until the verdict is
+          replaced (re-run this endpoint until it passes, or re-decompose).
+        A reviewer outage or unparseable verdict is recorded with
+        `reviewer_failed: true` and never blocks approval in any mode.
+        Only the latest verdict counts — re-running or re-decomposing
+        replaces the previous one. Reviewer cost/tokens appear on the
+        verdict when the backend reports them (`est_cost_usd`,
+        `tokens_in` / `tokens_out`; 0 when unavailable).
+        Config: `autonomous.plan_review_backend`, `autonomous.plan_review_model`,
+        `autonomous.plan_review_mode` (off | warn | block), settable here,
+        via MCP `autonomous_config_set`, comm
+        `configure autonomous.plan_review_mode=...`, CLI
+        `datawatch config set`, or `~/.datawatch/config.yaml`.
+      operationId: autonomousPRDPlanReview
+      tags: [Autonomous]
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                actor: {type: string, description: "Operator identity, recorded on the decision row"}
+                note: {type: string, description: "Free-text note for the decision row"}
+      responses:
+        "200":
+          description: Updated PRD carrying the new `plan_review` verdict
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/AutonomousPRD"}
+        "400":
+          description: "PRD not found, the review call failed, or the plan-review surface is not wired (old binary shape)"
+        "403":
+          description: "Federation peer or scoped session token lacks the autonomous-write capability"
+        "409":
+          description: "State conflict — the PRD is not in a reviewable (decomposed) state"
+        "405":
+          description: "Method not allowed (plan review is POST-only)"
   /api/autonomous/prds/{id}/run:
     post:
       summary: Kick the executor for a PRD
@@ -3020,6 +3075,67 @@ components:
             example: "unauthorized"
 
   schemas:
+    PlanReviewVerdict:
+      type: object
+      description: |
+        Recorded verdict of the pre-approval plan reviewer (see
+        `autonomous.plan_review_mode`). Only the latest verdict is stored —
+        re-running the review or re-decomposing replaces it. A verdict with
+        `reviewer_failed: true` is the placeholder for a reviewer outage or
+        an unparseable response: it is displayed, but must never be treated
+        as an approval blocker.
+      properties:
+        ok: {type: boolean, description: "Reviewer's overall judgment (false for a reviewer_failed placeholder)"}
+        severity: {type: string, enum: [low, medium, high], description: "Worst finding's severity; 'high' blocks approval in block mode"}
+        summary: {type: string, description: "One or two operator-actionable sentences"}
+        findings: {type: array, items: {$ref: "#/components/schemas/PlanReviewFinding"}, description: "Empty for an ok:true verdict"}
+        backend: {type: string, description: "Reviewer LLM backend actually used"}
+        model: {type: string}
+        mode: {type: string, enum: [warn, block], description: "plan_review_mode in effect when this verdict was produced"}
+        at: {type: string, format: date-time}
+        prompt_chars: {type: integer, description: "Size of the bounded plan projection that was judged"}
+        response_chars: {type: integer}
+        tokens_in: {type: integer, description: "Reviewer spend; 0 when the backend does not report it"}
+        tokens_out: {type: integer}
+        est_cost_usd: {type: number}
+        reviewer_failed: {type: boolean, description: "Reviewer outage / unparseable verdict; never blocks approval"}
+    PlanReviewFinding:
+      type: object
+      description: One concrete problem the reviewer located in the plan
+      properties:
+        task_id: {type: string, description: "Task the finding is about; empty when story- or plan-scoped"}
+        task_title: {type: string}
+        category: {type: string, enum: [missing, weakened, too_large, wrong_dependency, fragile_verification, out_of_scope]}
+        detail: {type: string, description: "One specific, actionable sentence"}
+    AutonomousPRD:
+      type: object
+      description: |
+        Autonomous PRD shape relevant to plan review; the full
+        story/task tree is returned by `GET /api/autonomous/prds/{id}`
+        and by the plan-review endpoint above.
+      properties:
+        id: {type: string}
+        spec: {type: string}
+        status: {type: string}
+        plan_review: {$ref: "#/components/schemas/PlanReviewVerdict", description: "Present once a review has run (warn/block modes)"}
+        story:
+          type: array
+          items:
+            type: object
+            properties:
+              title: {type: string}
+              tasks: {type: array, items: {$ref: "#/components/schemas/AutonomousTask"}}
+    AutonomousTask:
+      type: object
+      description: One task in the PRD's plan (subset of stored fields)
+      properties:
+        id: {type: string}
+        title: {type: string}
+        spec: {type: string}
+        depends_on: {type: array, items: {type: string}}
+        kind: {type: string, enum: ['', decompose, smoke, final_gate], description: "Empty = ordinary task. 'smoke' marks the task that IS the plan's own smoke verification (judged by the verifier LLM from autonomous.smoke_verification_backend/models); 'final_gate' the terminal verification task that runs the plan's verification script"}
+        verification_script: {type: string}
+        status: {type: string}
     SessionAutomatonDetail:
       type: object
       description: |
