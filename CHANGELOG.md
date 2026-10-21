@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.53 — Deterministic boot-resume and API-executor tests
+
+### Fixed
+- **`TestBootResumeGateReport`, `TestRunDedupe_BootResumeVsRun` and the other `internal/autonomous` tests that start API executors no longer flake with "TempDir RemoveAll cleanup: directory not empty".** A new `drainOnCleanup` test helper (`WaitIdle` plus `Manager.Stop`, registered after the temp dir so it runs first) is wired into the gate fixture and every API-executor test, and state-wait sleeps in those tests are replaced with bounded polls. The package passes three `-count=20` runs, a `GOMAXPROCS=2 -cpu 1,2` run and `-race -count=2`. Test-only change.
+
 ## v9.5.52 — Sonnet plan review before approval
 
 ### Added
