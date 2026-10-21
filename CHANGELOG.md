@@ -5,6 +5,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.62 — PWA stays connected on cellular: stable reconnect, safe reload, incremental resync
+
+### Fixed
+- **PWA connection no longer flaps or hammers the daemon on cellular / Tailscale links.** WebSocket reconnect now uses jittered exponential backoff (1 s base, 30 s cap) with a 15 s stability window, retries immediately on the browser `online` event and when the tab becomes visible, and sets no timers while hidden. A 15 s heartbeat with a 35 s stale threshold detects carrier NAT idle drops. After reconnect the PWA makes one `GET /api/sessions` and one subscribe for the open session instead of a full reload.
+- **Old failed Automata are no longer re-launched at every daemon restart.** A failed Automaton whose failed tasks were all killed by the restart now goes through the same boot-resume check as a running one: a fresh one is recovered, a stale one (older than `autonomous.resume_max_age_seconds`, or with a missing project directory) is parked as blocked with an alert and a boot-resume report entry, and a cancelled one is left alone.
+
+### Changed
+
+- **PWA shows connection state and a tap-to-reload update banner.** The status dot now reads connected, reconnecting (with attempt count) or offline. A new daemon version shows a single update banner; the page never auto-reloads while the user is typing, focused in the terminal or has a draft.
+
+### Changed
+- **A daemon-version change no longer shows the datawatch-eye splash before reloading.** The new reload guard replaces three of the sites that used the splash (the WS-open version probe, the sessions-broadcast version change and the service-worker controller change): the page now shows an "update available, tap to reload" banner, or reloads at once only when you are fully idle. The splash still covers the other full-page refreshes. The three splash tests for the removed mechanisms were dropped; the new reload-guard tests cover the replacement.
+
 ## v9.5.61 — Automatic task commits use the task title as their subject
 
 ### Fixed
