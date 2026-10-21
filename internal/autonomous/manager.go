@@ -2072,8 +2072,9 @@ func (m *Manager) ResetTaskWithOptions(prdID, taskID, actor string, force, clean
 				// A human reset means starting over: drop the per-task git
 				// anchors so the fresh attempt re-captures them at spawn.
 				// Automatic verifier retries never go through here — BaseSHA
-				// is written only when empty in the executor's spawn path,
-				// so in-loop retries keep the first attempt's anchor.
+				// is written only on the first attempt (attempt 0) of the
+				// executor's spawn path, so in-loop retries keep the first
+				// attempt's anchor.
 				t.BaseSHA = ""
 				t.AttemptCommitSHAs = nil
 				// BL427 — fired after the SavePRD below succeeds.

@@ -1107,8 +1107,14 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				}
 			}
 			t.PreTaskSHA = sr.PreTaskSHA // BL366: persisted for verifier diff grounding
-			if t.BaseSHA == "" && sr.PreTaskSHA != "" {
-				t.BaseSHA = sr.PreTaskSHA // per-task anchor: only the first attempt sets it; retries never overwrite
+			// BaseSHA anchors the task's FIRST attempt only. Gate on attempt == 0,
+			// not on BaseSHA being empty: when attempt 1 captured no HEAD (no
+			// commits yet) BaseSHA stays empty, and a retry would otherwise adopt
+			// its own pre-task HEAD, which already includes attempt 1's commit.
+			// Repro: TestBaseSHA_RetryDoesNotAdoptRetryHeadWhenFirstAttemptHadNoHead
+			// (task_base_sha_retry_test.go).
+			if attempt == 0 && t.BaseSHA == "" && sr.PreTaskSHA != "" {
+				t.BaseSHA = sr.PreTaskSHA // per-task anchor: set once on the first attempt, never by retries
 			}
 			t.PreTaskUntrackedFiles = sr.PreTaskUntrackedFiles // v8.25.12: detect newly created untracked files
 			t.PreTaskDirtyFiles = sr.PreTaskDirtyFiles         // foreign-file-drift: tracked files already modified before the worker started
