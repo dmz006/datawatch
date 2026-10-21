@@ -7050,6 +7050,10 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			cfg.Autonomous.PlanningModel = toString(v)
 		case "autonomous.verification_model":
 			cfg.Autonomous.VerificationModel = toString(v)
+		// v9.10.18 — pinned guardrail judge model (tier 3 of
+		// ResolveGuardrailModel, internal/autonomous/guardrail_model.go).
+		case "autonomous.guardrail_model":
+			cfg.Autonomous.GuardrailModel = toString(v)
 		case "autonomous.planning_timeout_seconds":
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.Autonomous.PlanningTimeoutSeconds = n

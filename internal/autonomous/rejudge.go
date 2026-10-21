@@ -46,7 +46,14 @@ func (m *Manager) judgeCompletionRulesReview(ctx context.Context, prd *PRD) (Gua
 	if fn == nil {
 		return GuardrailVerdict{}, fmt.Errorf("no guardrail function is wired for prd %s (SetGuardrail); the rules-review judgment cannot run", prd.ID)
 	}
-	return m.runGuardrailWithInfraRetry(ctx, prd, m.prdRulesReviewInvocation(prd), fn)
+	inv, resErr := m.prdRulesReviewInvocation(prd)
+	if resErr != nil {
+		// v9.10.18 — no judge model resolvable at any level: loud,
+		// non-retried infra block, recorded by RejudgeCompletionGuardrail
+		// exactly like any other block verdict.
+		return noGuardrailModelVerdict("rules-review", resErr), nil
+	}
+	return m.runGuardrailWithInfraRetry(ctx, prd, inv, fn)
 }
 
 // firstNonCompletedTask returns the (in story, then task order) first

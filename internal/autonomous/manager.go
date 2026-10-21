@@ -99,6 +99,16 @@ type Config struct {
 	// (internal/server/autonomous.go) does not drop the key.
 	SessionIdleTimeoutSeconds int    `json:"session_idle_timeout_seconds,omitempty"`
 	VerificationModel         string `json:"verification_model,omitempty"`
+	// GuardrailModel (v9.10.18) — pinned model for guardrail judge
+	// sessions (rules-review, ci-watch, per-task/per-story guardrails,
+	// rejudge). Tier 3 of ResolveGuardrailModel (guardrail_model.go):
+	// PRD guardrail_model → task guardrail_model → GuardrailModel →
+	// VerificationModel → PlanningModel. Empty = the tier falls through;
+	// if no tier resolves a model the guardrail backend can serve, the
+	// guardrail records a loud, non-retried infra-category block
+	// (ErrNoGuardrailModel / noGuardrailModelVerdict) instead of
+	// launching a judge on the backend's built-in default model.
+	GuardrailModel string `json:"guardrail_model,omitempty"`
 	// VerificationBackends (v8.36.9) — see config.AutonomousConfig's doc
 	// comment. Ordered list of LLM registry names to load-balance
 	// verifier/guardrail capacity across; empty = single-backend
@@ -407,8 +417,11 @@ type GuardrailInvocation struct {
 	// combined stdout+stderr, capped by truncateScriptOutput) so the
 	// judgment call is grounded in real output, not a guess.
 	// GuardrailBackend/GuardrailModel are ALREADY-RESOLVED values from
-	// resolveGuardrailBackendModel — callers never pass raw task/PRD
-	// override fields here.
+	// resolveUnitGuardrailModel / ResolveGuardrailModel (v9.10.18,
+	// guardrail_model.go) — callers never pass raw task/PRD override
+	// fields here. GuardrailModel is always populated for pi-family
+	// backends; when no tier resolves it is left empty and the caller
+	// records noGuardrailModelVerdict instead of launching a judge.
 	ScriptRan        bool
 	ScriptExitCode   int
 	ScriptOutput     string
@@ -2948,9 +2961,17 @@ func (m *Manager) SetTaskGuardrailLLM(prdID, taskID string, backend, model *stri
 		if model != nil {
 			next.GuardrailModel = *model
 		}
-		gb, gm := resolveGuardrailBackendModel(&next, prd, "", "")
-		if err := validateModelForBackend(gb, gm); err != nil {
-			return nil, fmt.Errorf("prd %q: %w", prdID, err)
+		// v9.10.18 — refuse before any field changes: resolve the full
+		// guardrail pair the judge will use, on a copy of the task with
+		// the call's fields applied. The live resolution covers both the
+		// v8.37.2 pairing rule (a Claude-alias default on a pi-family
+		// backend, or a foreign-prefixed model on a non-serving backend)
+		// AND the new no-fallback contract: a combination that resolves
+		// to no model at all is refused here (ErrNoGuardrailModel)
+		// instead of passing validation ("backend default") and failing
+		// at judge time.
+		if _, _, gerr := m.resolveUnitGuardrailModel(&next, prd); gerr != nil {
+			return nil, fmt.Errorf("prd %q: guardrail model: %w", prdID, gerr)
 		}
 	}
 	if backend != nil {

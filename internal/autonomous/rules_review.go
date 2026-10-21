@@ -125,17 +125,18 @@ func (m *Manager) presentRulesContextFiles(prd *PRD) string {
 // prdRulesReviewInvocation builds the "rules-review" GuardrailInvocation
 // for a whole-PRD judgment: Level "prd", the PRD itself as the judged
 // unit, the PRD spec plus the rulesReviewSuffix pointer text as the unit
-// spec, and the PRD → global backend/model resolution (no PRD-level Task
-// to inherit from — resolveGuardrailBackendModel's task-level branch
-// never fires, identical to runPerStoryGuardrails' own reuse of the same
-// helper). Shared by runPRDCompletionRulesReview's completion rollup and
-// RejudgeCompletionGuardrail's operator-triggered re-judge so the two
-// invocations are built in exactly one place and can't drift apart.
-func (m *Manager) prdRulesReviewInvocation(prd *PRD) GuardrailInvocation {
-	m.mu.Lock()
-	globalBackend, globalModel := m.cfg.VerificationBackend, m.cfg.VerificationModel
-	m.mu.Unlock()
-
+// spec, and the judge backend/model from resolveUnitGuardrailModel
+// (v9.10.18) — no PRD-level Task to inherit from, so the task-level
+// model tier never fires, identical to runPerStoryGuardrails' own reuse
+// of the same helper. Shared by runPRDCompletionRulesReview's
+// completion rollup and RejudgeCompletionGuardrail's
+// operator-triggered re-judge so the two invocations are built in
+// exactly one place and can't drift apart.
+//
+// Returns an error wrapping ErrNoGuardrailModel when no tier resolves a
+// model the backend can serve; callers must then record
+// noGuardrailModelVerdict instead of launching a judge (v9.10.18).
+func (m *Manager) prdRulesReviewInvocation(prd *PRD) (GuardrailInvocation, error) {
 	inv := GuardrailInvocation{
 		PRDID:      prd.ID,
 		Level:      "prd",
@@ -146,8 +147,11 @@ func (m *Manager) prdRulesReviewInvocation(prd *PRD) GuardrailInvocation {
 		ProjectDir: prd.ProjectDir,
 		OwnerPeer:  prd.OwnerPeer, // BL369 Layer 3 — federation trust boundary
 	}
-	inv.GuardrailBackend, inv.GuardrailModel = resolveGuardrailBackendModel(&Task{}, prd, globalBackend, globalModel)
-	return inv
+	gb, gm, resErr := m.resolveUnitGuardrailModel(&Task{}, prd)
+	if resErr == nil {
+		inv.GuardrailBackend, inv.GuardrailModel = gb, gm
+	}
+	return inv, resErr
 }
 
 func (m *Manager) runPRDCompletionRulesReview(ctx context.Context, prd *PRD) (blocked bool, contentFixVerdict *GuardrailVerdict, err error) {
@@ -165,7 +169,7 @@ func (m *Manager) runPRDCompletionRulesReview(ctx context.Context, prd *PRD) (bl
 		return false, nil, nil
 	}
 
-	inv := m.prdRulesReviewInvocation(prd)
+	inv, resErr := m.prdRulesReviewInvocation(prd)
 
 	// BL410 Phase 1 — bounded, escalating auto-retry for an infra-
 	// category block (the guardrail session itself failed — this is
@@ -174,7 +178,19 @@ func (m *Manager) runPRDCompletionRulesReview(ctx context.Context, prd *PRD) (bl
 	// from a genuine AGENT.md finding). A content block — a real
 	// judgment, like rules-review's own post-fix `warn` — falls
 	// through unchanged to the PRDBlocked handling below.
-	v, ferr := m.runGuardrailWithInfraRetry(ctx, prd, inv, fn)
+	//
+	// v9.10.18 — an unresolvable judge model is a loud, NON-retried
+	// infra block (constructed directly, never through the retry
+	// wrapper below) — retrying cannot configure a model that is not
+	// configured, and launching the judge would fall back to the
+	// backend's built-in default model.
+	var v GuardrailVerdict
+	var ferr error
+	if resErr != nil {
+		v = noGuardrailModelVerdict("rules-review", resErr)
+	} else {
+		v, ferr = m.runGuardrailWithInfraRetry(ctx, prd, inv, fn)
+	}
 	if ferr != nil {
 		return false, nil, fmt.Errorf("rules review for prd %s: %w", prd.ID, ferr)
 	}
