@@ -7,6 +7,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 - **model/backend pairing** — a model that cannot run on its backend is now refused when it is set, and again before a PRD runs. A bare Claude alias (such as `claude-haiku-5-5`) is refused on `pi` and `pi-prompt`, and a provider-tagged model (such as `ollama/qwen3.8:27b`) is refused on `claude-code`. The check covers the PRD, story, task and verification/guardrail model setters on REST, MCP and the comm channel. REST returns `400` with the mismatch text, and MCP returns a tool error. The PRD Run preflight refuses a PRD whose unfinished tasks contain a mismatched pair, so earlier records are refused too. On `pi-prompt`, a non-zero exit or an empty run now prints `DATAWATCH_PI_FAILED` instead of `DATAWATCH_COMPLETE`. See `docs/llm-backends.md`.
 
+## v9.5.34 — tolerant issues decoding for guardrail verdicts and per-task verification
+
+
+### Fixed
+- **A guardrail judge or per-task verifier that returns `issues` as objects (or a single string/object instead of a string array) no longer blocks the PRD.** Judges and verifiers emit `issues` in more than one shape; the previous strict decode failed on the first object-shaped element (`json: cannot unmarshal object into GuardrailVerdict.issues.0 of type string`), dropped the whole verdict, and left the Automaton `blocked` even though every task had completed. `GuardrailVerdict` and `VerificationResult` now decode `issues` tolerantly: each element may be a string or an object, string/object arrays may be mixed, and a bare string, object, or number is accepted; issue objects are rendered into one readable line (e.g. `[high] pkg/file.go:42: description / message`), with everything else decoded strictly exactly as before.
+- **The raw judge text is now kept on the verdict in `raw_judge` (truncated to 16 KiB)** for both guardrail verdicts and verification results, so the exact text a judge produced can be inspected for auditing and debugging instead of being lost with a failed decode.
+- **Judge and verifier prompts now state that `issues` must be an array of plain strings, one sentence each, never objects** — defense in depth on top of the tolerant decoder.
+- **A PRD blocked earlier by `json: cannot unmarshal object into GuardrailVerdict.issues.0 of type string` now passes when rejudged** with the rejudge action (see `docs/howto/autonomous-recovery.md`) — the re-judge decodes the object-shaped issues and records the real judgment.
+- **Covered by regression tests** in `internal/autonomous/tolerant_issues_test.go`: `TestTolerantIssuesShapes` (string/object/mixed/bare/null shapes, including the incident's object-issue verdict), `TestTolerantIssuesStrictOtherFields` (strictness kept on every other field), `TestIssuesRoundTrip`, and `TestIncidentFixtureSizes`.
+
 ## v9.5.33 — Retried tasks keep their first-attempt pre-task SHA
 
 

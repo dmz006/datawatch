@@ -9,6 +9,24 @@ Do not mark **Validated=Yes** based solely on unit tests.
 
 ---
 
+## Tolerant `issues` parser for guardrail verdicts and per-task verification — v9.5.34
+
+The guardrail judge and the per-task verifier used to have to return `issues` as an
+array of JSON strings: a single object element — or a bare string/object where an
+array was expected — failed the whole verdict/verification decode
+(`json: cannot unmarshal object into GuardrailVerdict.issues.0 of type string`),
+blocking the PRD even though the work was done. The tolerant decoder
+(`internal/autonomous/tolerant_issues.go` — `parseIssues` + custom `UnmarshalJSON`
+on `GuardrailVerdict` and `VerificationResult`) accepts all of those shapes and
+renders issue objects into readable text, while every other field keeps strict
+typing. See CHANGELOG v9.5.34.
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| Tolerant `issues` decoding — string / object / mixed-array / bare-string / bare-object / bare-number / null shapes normalize to `[]string`; objects render `[severity] file:line: description / message` (deduped, stable order); malformed issues JSON still errors; all other fields (e.g. `"outcome": 5`) still fail strict unmarshal | **Yes** (`TestTolerantIssuesShapes`, `TestTolerantIssuesStrictOtherFields`, `TestIssuesRoundTrip`, `TestIncidentFixtureSizes` in `internal/autonomous/tolerant_issues_test.go`) | **No** (this session did not perform a live rejudge — set to **Yes** with the run date + host once one is actually observed, e.g. a PRD previously blocked by `json: cannot unmarshal object into GuardrailVerdict.issues.0 of type string` rejudged via `POST /api/autonomous/prds/<id>/rejudge`) | `go test ./internal/autonomous/` | Only `issues` is widened; the raw judge text is kept on the verdict in `raw_judge` (16 KiB), and the judge/verifier prompts now instruct "issues must be an array of plain strings, one sentence each, never objects" |
+
+---
+
 ## PWA schedules-flood — `make test-e2e-pwa` (story `scripts/test-stories/pwa/schedule-flood.mjs`, TS-797 spec)
 
 The PWA schedules-flood story: after a WS disconnect/reconnect burst with 20+

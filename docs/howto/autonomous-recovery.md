@@ -146,6 +146,24 @@ to the acting operator) **before** any status change:
   stays `blocked` with its previous blocked reason, and an error is
   returned so you see the re-judge produced no judgment.
 
+Reading the judge's verdict:
+
+- **Issues come back normalized to strings, whatever the judge emitted.**
+  The guardrail judge and the per-task verifier may return `issues` as
+  plain strings or as objects (with `description`/`message`/`file`/`line`/
+  `severity` keys); objects are rendered into one readable line (for
+  example `[high] pkg/file.go:42: description / message`) before the
+  verdict is stored, so an object-shaped or mixed issues value never
+  drops the verdict.
+- **The raw judge text is kept on the verdict** in `raw_judge` (truncated
+  to 16 KiB), so you can inspect exactly what the judge wrote even when
+  its format was off.
+- **A PRD that was blocked earlier by
+  `json: cannot unmarshal object into GuardrailVerdict.issues.0 of type
+  string` now passes when rejudged** — the lenient decoder accepts the
+  object-shaped issues that previously failed the whole verdict, so the
+  re-judge surfaces the real judgment instead of a decode failure.
+
 ### REST
 
 ```bash
