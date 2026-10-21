@@ -4937,6 +4937,7 @@ function renderSessionStatusBoardInner(area, board, sessionId) {
   };
   const chip = (text, color) => `<span style="display:inline-block;font-size:10px;font-weight:700;padding:1px 6px;border-radius:8px;border:1px solid ${color};color:${color};">${escHtml(text)}</span>`;
   const kvRow = (label, valueHtml) => `<div style="display:flex;gap:6px;font-size:12px;"><span style="color:var(--text2);min-width:90px;">${escHtml(label)}</span><span style="flex:1;min-width:0;word-break:break-word;">${valueHtml}</span></div>`;
+  const fmtUndeclaredEdit = (e) => e.path + ' (' + (e.lines_changed || 0) + ')';
   const fileList = (label, files, color) => {
     const list = Array.isArray(files) ? files : [];
     const style = color ? `color:${color};` : '';
@@ -5048,12 +5049,14 @@ function renderSessionStatusBoardInner(area, board, sessionId) {
   } else if (auto && auto.git) {
     const g = auto.git;
     const drift = Array.isArray(g.foreign_file_drift) ? g.foreign_file_drift : [];
+    const undeclared = Array.isArray(g.undeclared_edits) ? g.undeclared_edits : [];
     gitBody = `
       <div style="display:flex;flex-direction:column;gap:4px;font-size:13px;">
         ${g.pre_task_sha ? kvRow(t('status_pre_task_sha')||'Base commit', `<code>${escHtml(String(g.pre_task_sha).slice(0, 8))}</code>`) : ''}
         ${fileList(t('status_files_planned')||'Files planned', g.files_planned)}
         ${fileList(t('status_files_touched')||'Files touched', g.files_touched)}
         ${drift.length ? fileList(t('status_foreign_drift')||'Changed outside this task', drift, 'var(--warning,#f59e0b)') : ''}
+        ${undeclared.length ? fileList(t('status_undeclared_edits')||'Edited without being declared', undeclared.map(fmtUndeclaredEdit), 'var(--warning,#f59e0b)') : ''}
       </div>`;
   } else if (auto) {
     gitBody = muted(t('status_no_file_activity')||'no file activity recorded yet');
@@ -12388,6 +12391,7 @@ function renderTask(prd, story, task, editable) {
     ${task.status === 'waiting_capacity' ? `<div class="prd-task-wait-reason">&#9203; ${escHtml(t('prd_task_waiting_capacity')||'Waiting for capacity')}${task.wait_reason ? ': ' + escHtml(task.wait_reason) : ''}</div>` : ''}
     ${errRow}${verifRow}
     ${renderTaskFileDrift(task)}
+    ${renderTaskUndeclaredEdits(task)}
     ${filesP}
     ${filesT}
     ${filesG}
@@ -12399,7 +12403,7 @@ function renderTask(prd, story, task, editable) {
       ${statusGlyphSpan}
       <code class="prd-task-id">${escHtml(taskID)}</code>
       <strong class="prd-task-title">${escHtml(task.title || '')}</strong>
-      ${llmBadge}${projDirBadge}${spawnBadge}${childLink}${verdicts}${sessionLink}${(task.foreign_file_drift || []).length ? `<span class="prd-verdict-badge prd-verdict-warn" title="${escHtml(t('automata_task_foreign_file_drift') || 'Foreign file drift')}">&#9888; ${task.foreign_file_drift.length}</span>` : ''}
+      ${llmBadge}${projDirBadge}${spawnBadge}${childLink}${verdicts}${sessionLink}${(task.foreign_file_drift || []).length ? `<span class="prd-verdict-badge prd-verdict-warn" title="${escHtml(t('automata_task_foreign_file_drift') || 'Foreign file drift')}">&#9888; ${task.foreign_file_drift.length}</span>` : ''}${(task.undeclared_edits || []).length ? `<span class="prd-verdict-badge prd-verdict-warn" title="${escHtml(t('automata_task_undeclared_edits') || 'Undeclared edits')}">&#9998; ${task.undeclared_edits.length}</span>` : ''}
       <span class="prd-task-header-spacer"></span>
       ${approveTaskBtn}${retryBtn}${requeueBtn}${cancelTaskBtn}${editIcons}
     </div>
@@ -14318,6 +14322,7 @@ const GENERAL_CONFIG_FIELDS = [
     // warning state only, block = gate approval (server display default is
     // block when unset). Min ratio 0..1 (server default 1.0).
     { key: 'autonomous.plan_coverage_check', label: 'Plan coverage check (off | warn | block, default block)', labelKey: 'settings_plan_coverage', type: 'select', options: ['off', 'warn', 'block'], default: 'block' },
+    { key: 'autonomous.undeclared_edit_mode', label: 'Undeclared edit mode (off | warn | block, default warn)', labelKey: 'settings_undeclared_edit_mode', type: 'select', options: ['off', 'warn', 'block'], default: 'warn' },
     { key: 'autonomous.plan_coverage_min_ratio', label: 'Plan coverage min ratio (requirement coverage 0-1, default 1.0)', labelKey: 'settings_plan_coverage_min_ratio', type: 'number', placeholder: '1.0', min: 0.1, max: 1, step: 0.1, default: '1' },
   ]},
   // v5.26.16 — operator-reported: PRD-DAG orchestrator section
@@ -20694,7 +20699,7 @@ function renderDetailStoriesTree(prd) {
         <span class="prd-task-title">${escHtml(t.title || t.Title || '(task ' + (ti+1) + ')')}</span>
         <span class="prd-task-status">${escHtml(sts)}</span>
         ${sessionLink}${childPRD}
-      </div>${renderTaskFileDrift(t)}`;
+      </div>${renderTaskFileDrift(t)}${renderTaskUndeclaredEdits(t)}`;
     }).join('');
     const verdicts = renderVerdicts(st.verdicts);
     // B99: same effective-status override as _renderStatusGraphs — if any task is
@@ -20754,6 +20759,17 @@ function renderTaskFileDrift(task) {
   const label = t('automata_task_foreign_file_drift') || 'Foreign file drift';
   return `<div class="prd-task-error" style="border-color:var(--warning,#d90);"><span class="prd-verdict-badge prd-verdict-warn">&#9888; ${escHtml(label)} (${drift.length})</span>
     <ul style="margin:4px 0 0 16px;font-size:11px;">${drift.map(f => `<li><code>${escHtml(f)}</code></li>`).join('')}</ul></div>`;
+}
+
+// Per-task undeclared edits: files the worker's own commit changed that were
+// in neither its planned nor generated files, with lines changed per path.
+// Warn-only unless autonomous.undeclared_edit_mode is block. Empty when none.
+function renderTaskUndeclaredEdits(task) {
+  const edits = (task && task.undeclared_edits) || [];
+  if (!edits.length) return '';
+  const label = t('automata_task_undeclared_edits') || 'Undeclared edits';
+  return `<div class="prd-task-error" style="border-color:var(--warning,#d90);"><span class="prd-verdict-badge prd-verdict-warn">&#9888; ${escHtml(label)} (${edits.length})</span>
+    <ul style="margin:4px 0 0 16px;font-size:11px;">${edits.map(e => `<li><code>${escHtml(e.path)}</code> (${Number(e.lines_changed) || 0})</li>`).join('')}</ul></div>`;
 }
 
 // Automaton's own record of whether CI passed for the commit it pushed
