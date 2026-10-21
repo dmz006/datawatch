@@ -27,6 +27,18 @@
 const CACHE_NAME = 'datawatch-v7-0-0-alpha-51';
 const STATIC_ASSETS = ['/', '/index.html', '/app.js', '/style.css', '/manifest.json'];
 
+// GATE: navigate-on-activate guard (pure, testable). Return true only when
+// at least one existing cache key differs from the current name — i.e. a
+// genuine upgrade just purged a stale cache, which is the signal that open
+// tabs are still running the old app.js and need a forced reload. A no-op
+// re-activation (every key already equals the current name, or there are no
+// keys at all) means no stale build is outstanding, so re-navigating every
+// window would only churn the user's open tabs for nothing.
+function shouldNavigateOnActivate(cacheKeys, cacheName) {
+  if (!Array.isArray(cacheKeys)) return false;
+  return cacheKeys.some(key => key !== cacheName);
+}
+
 self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE_NAME).then(cache => cache.addAll(STATIC_ASSETS))
@@ -56,9 +68,15 @@ self.addEventListener('activate', event => {
   event.waitUntil((async () => {
     // Purge old caches.
     const keys = await caches.keys();
+    // GATE: compute the upgrade signal BEFORE purging — only a genuine
+    // upgrade (≥1 stale key) warrants force-navigating open tabs; a no-op
+    // re-activation must claim control but leave the windows alone. See
+    // shouldNavigateOnActivate for the full rationale.
+    const shouldNavigate = shouldNavigateOnActivate(keys, CACHE_NAME);
     await Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)));
     // Take control of every existing tab.
     await self.clients.claim();
+    if (!shouldNavigate) return;
     // Force every window to reload from network. WindowClient.navigate
     // requires the SW to be the controller (just claimed above) and the
     // target URL to be same-origin (always true here).
@@ -121,3 +139,10 @@ self.addEventListener('notificationclick', event => {
   event.notification.close();
   event.waitUntil(clients.openWindow('/'));
 });
+
+// Expose the pure guard for node:test (internal/server/web/sw.test.js).
+// `module` is undefined in the service-worker global scope, so this is a
+// no-op in the browser.
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { shouldNavigateOnActivate };
+}
