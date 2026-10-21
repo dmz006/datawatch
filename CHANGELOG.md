@@ -7,6 +7,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## v9.5.43 — Deterministic autonomous tests and executor data races fixed
 
+### Fixed
+- **The autonomous executor no longer has data races under `go test -race`.** PRD, story and task fields that executor goroutines write are now written and persisted under the store lock (`Store.WithLock`), and the lifecycle event builders read them under it. `Store.SnapshotPRD` returns a deep copy for read-only callers that may overlap a running executor.
+- **One PRD can no longer be started twice at the same moment.** The boot-time resume scan and an explicit run for the same PRD are now deduplicated.
+- **Stale tree-lock removal can no longer delete a fresh lock.** Removing a stale same-tree lock is serialized and re-checked, so two waiters can no longer both end up holding it.
+- **`TestSameTreeConcurrentReleaseBumpsDoNotCollide` and `TestExecutor_CancelledDependencyFailsDependent`, which flaked in about half of the full `-count=20` runs, are now deterministic.** The package passes `-race` and three `-count=20` runs in a row.
+
+### Tests
+- New: `persist_race_test.go`, `run_dedupe_test.go`, `store_snapshot_test.go`, and extended `tree_lock_test.go`.
 
 ## v9.5.42 — Deterministic internal/session screen-capture tests
 
