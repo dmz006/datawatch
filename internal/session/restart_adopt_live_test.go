@@ -30,7 +30,12 @@ package session
 //	                                path (systemctl --user / datawatch CLI)
 //	                                is used, same as the BL462 test.
 //
-// The test must run on the daemon's host with the same TMUX_TMPDIR as the
+// The restart subprocess runs with TMUX and TMUX_TMPDIR removed from its
+// environment (see bl462RestartEnv in restart_safety_live_test.go). The only
+// exception is the `datawatch restart` CLI fallback, which keeps TMUX_TMPDIR
+// because it re-execs the daemon in the ambient environment — without it the
+// restarted daemon would lose its tmux socket, the failure under test. The
+// test must run on the daemon's host with the same TMUX_TMPDIR as the
 // daemon (see restart_safety_live_test.go).
 //
 // Run with a timeout above the default 10 minute test timeout:
@@ -250,7 +255,7 @@ func TestDaemonRestartAdoptsLiveWorkerLive(t *testing.T) {
 		t.Fatalf("read daemon uptime before restart: %v", err)
 	}
 	cmd, label := bl462RestartCommand(t)
-	t.Logf("restart path: %s", label)
+	t.Logf("restart path: %s (Env is set by bl462RestartEnv: TMUX and, except on the\nCLI fallback, TMUX_TMPDIR are stripped)", label)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("restart via %s failed: %v\n%s", label, err, out)
 	}

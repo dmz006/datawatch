@@ -47,6 +47,16 @@ import (
 // logged with t.Log. Run the default path only from an operator shell whose
 // `datawatch` unit is the daemon behind DW_BASE. It restarts that unit.
 //
+// Restart subprocess environment: per the restart-safety spec, the restart
+// command runs with TMUX and TMUX_TMPDIR removed from its environment (see
+// bl462RestartEnv). The single documented exception is the `datawatch
+// restart` CLI fallback, which re-execs the daemon in the ambient
+// environment and therefore keeps TMUX_TMPDIR — without it the restarted
+// daemon would lose its tmux socket (the failure this test family exists to
+// catch). An operator-supplied DW_LIVE_RESTART_CMD is responsible for giving
+// the restarted daemon the socket dir it needs (e.g. export TMUX_TMPDIR
+// inside the command).
+//
 // Run with a timeout above the default 10 minute test timeout:
 //
 //	DW_LIVE_RESTART_TEST=1 DW_BASE=https://127.0.0.1:18443 \
@@ -176,17 +186,51 @@ func bl462TmuxHasSession(name string) bool {
 	return cmd.Run() == nil
 }
 
-// bl462RestartCommand returns the restart command and a label for the path it took.
+// bl462RestartEnv returns the environment for the restart subprocess. The
+// restart-safety spec requires restart subprocesses to run without TMUX or
+// TMUX_TMPDIR: inheriting TMUX would point tmux clients at the parent test
+// shell's server, and the restart command must not depend on ambient session
+// variables. keepTmuxTmpdir is the documented exception for the
+// `datawatch restart` CLI fallback: it re-execs the daemon in the ambient
+// environment, so stripping TMUX_TMPDIR would make the restarted daemon lose
+// its tmux socket — exactly the failure this test family catches. An
+// operator-supplied DW_LIVE_RESTART_CMD must instead export whatever its
+// daemon needs inside the command itself.
+func bl462RestartEnv(keepTmuxTmpdir bool) []string {
+	env := make([]string, 0, len(os.Environ()))
+	for _, kv := range os.Environ() {
+		if strings.HasPrefix(kv, "TMUX=") {
+			continue
+		}
+		if !keepTmuxTmpdir && strings.HasPrefix(kv, "TMUX_TMPDIR=") {
+			continue
+		}
+		env = append(env, kv)
+	}
+	return env
+}
+
+// bl462RestartCommand returns the restart command and a label for the path it
+// took. The command's Env is set by bl462RestartEnv: TMUX and TMUX_TMPDIR are
+// removed except on the datawatch-CLI fallback, which keeps TMUX_TMPDIR (see
+// bl462RestartEnv for the documented exception).
 func bl462RestartCommand(t *testing.T) (*exec.Cmd, string) {
 	t.Helper()
 	if override := os.Getenv("DW_LIVE_RESTART_CMD"); override != "" {
-		return exec.Command("sh", "-c", override), "DW_LIVE_RESTART_CMD override (sandbox)" // #nosec G204 -- operator-supplied restart command
+		cmd := exec.Command("sh", "-c", override) // #nosec G204 -- operator-supplied restart command
+		cmd.Env = bl462RestartEnv(false)
+		label := "DW_LIVE_RESTART_CMD override (sandbox), env: TMUX+TMUX_TMPDIR stripped"
+		t.Logf("restart env: TMUX=%q -> stripped, TMUX_TMPDIR=%q -> stripped", os.Getenv("TMUX"), os.Getenv("TMUX_TMPDIR"))
+		return cmd, label
 	}
 	// Resolve systemctl at runtime, not from a hard-coded absolute path.
 	if out, err := exec.Command("sh", "-c", "command -v systemctl").Output(); err == nil && len(bytes.TrimSpace(out)) > 0 {
 		// systemd --user must be reachable. Otherwise fall through to the CLI.
 		if exec.Command("systemctl", "--user", "show-environment").Run() == nil { // #nosec G204 -- fixed arguments
-			return exec.Command("systemctl", "--user", "restart", "datawatch"), "systemctl --user restart datawatch" // #nosec G204 -- fixed arguments
+			cmd := exec.Command("systemctl", "--user", "restart", "datawatch") // #nosec G204 -- fixed arguments
+			cmd.Env = bl462RestartEnv(false)
+			t.Logf("restart env: TMUX=%q -> stripped, TMUX_TMPDIR=%q -> stripped", os.Getenv("TMUX"), os.Getenv("TMUX_TMPDIR"))
+			return cmd, "systemctl --user restart datawatch, env: TMUX+TMUX_TMPDIR stripped" // #nosec G204 -- fixed arguments
 		}
 	}
 	if out, err := exec.Command("sh", "-c", "command -v datawatch").Output(); err == nil && len(bytes.TrimSpace(out)) > 0 {
@@ -196,7 +240,12 @@ func bl462RestartCommand(t *testing.T) (*exec.Cmd, string) {
 		if os.Getenv("TMUX_TMPDIR") == "" {
 			t.Fatal("datawatch restart CLI fallback needs TMUX_TMPDIR set to the daemon's tmux socket dir; otherwise the restarted daemon loses its tmux sessions. Set it, or use DW_LIVE_RESTART_CMD")
 		}
-		return exec.Command("datawatch", "restart"), "datawatch restart CLI (systemd --user unavailable)" // #nosec G204 -- fixed arguments
+		cmd := exec.Command("datawatch", "restart") // #nosec G204 -- fixed arguments
+		// Documented exception: the CLI re-execs the daemon in the ambient env,
+		// so TMUX_TMPDIR must survive here; only TMUX is stripped.
+		cmd.Env = bl462RestartEnv(true)
+		t.Logf("restart env: TMUX=%q -> stripped, TMUX_TMPDIR=%q -> KEPT (datawatch restart CLI re-execs the daemon; documented exception)", os.Getenv("TMUX"), os.Getenv("TMUX_TMPDIR"))
+		return cmd, "datawatch restart CLI (systemd --user unavailable), env: TMUX stripped, TMUX_TMPDIR kept (exception)" // #nosec G204 -- fixed arguments
 	}
 	t.Fatal("no restart path: systemctl --user is unavailable and datawatch is not on PATH; set DW_LIVE_RESTART_CMD")
 	return nil, ""
