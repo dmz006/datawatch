@@ -427,6 +427,83 @@ function _wsSendPing() {
   }
 }
 
+// Daemon-version-change reload policy. A new build must never yank the page
+// out from under someone who is typing or using the terminal, so reloads are
+// deferred behind a tap-to-reload banner until the user is idle.
+const AUTO_RELOAD_IDLE_MS = 30000;
+const AUTO_RELOAD_RECHECK_MS = 5000;
+function _canAutoReload(ctx) {
+  if (!ctx) return false;
+  if (ctx.activeElementIsInput || ctx.terminalFocused || ctx.hasUnsentDraft) return false;
+  return (ctx.idleMs || 0) >= AUTO_RELOAD_IDLE_MS;
+}
+function _autoReloadCtx() {
+  const ae = document.activeElement;
+  const tag = ae && ae.tagName ? String(ae.tagName).toUpperCase() : '';
+  const isInput = !!ae && (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' ||
+    ae.isContentEditable === true || (ae.getAttribute && ae.getAttribute('contenteditable') === 'true'));
+  const inTerm = !!(ae && ae.closest && ae.closest('.xterm'));
+  const sessionInput = document.getElementById('sessionInput');
+  let draft = !!(sessionInput && sessionInput.value && String(sessionInput.value).trim());
+  if (!draft && state._unsentDraft) draft = true;
+  return {
+    activeElementIsInput: isInput,
+    terminalFocused: inTerm,
+    hasUnsentDraft: draft,
+    idleMs: Date.now() - (state._lastUserActivityAt || 0),
+  };
+}
+function _markUserActivity() { state._lastUserActivityAt = Date.now(); }
+['keydown', 'pointerdown', 'touchstart', 'wheel', 'mousemove'].forEach(ev => {
+  try { window.addEventListener(ev, _markUserActivity, { passive: true }); } catch (e) {}
+});
+state._lastUserActivityAt = Date.now();
+
+function _hideUpdateBanner() {
+  if (state._updateBannerTimer) { clearTimeout(state._updateBannerTimer); state._updateBannerTimer = null; }
+  const b = document.getElementById('updateAvailableBanner');
+  if (b && b.remove) b.remove();
+  state._updateBannerShown = false;
+}
+function _scheduleUpdateRecheck() {
+  if (state._updateBannerTimer) clearTimeout(state._updateBannerTimer);
+  state._updateBannerTimer = setTimeout(() => {
+    state._updateBannerTimer = null;
+    if (!state._updateAvailable) return;
+    if (_canAutoReload(_autoReloadCtx())) { _hideUpdateBanner(); location.reload(); return; }
+    _scheduleUpdateRecheck();
+  }, AUTO_RELOAD_RECHECK_MS);
+}
+function _showUpdateBanner() {
+  if (state._updateBannerShown) return;
+  state._updateBannerShown = true;
+  const bar = document.createElement('div');
+  bar.id = 'updateAvailableBanner';
+  bar.setAttribute('role', 'status');
+  bar.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:10000;display:flex;align-items:center;justify-content:center;gap:12px;padding:10px 16px;background:var(--accent,#7c3aed);color:#fff;font-size:14px;';
+  const label = document.createElement('span');
+  label.textContent = 'Update available — tap to reload';
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.textContent = 'Reload';
+  btn.style.cssText = 'padding:4px 12px;border-radius:4px;border:0;cursor:pointer;';
+  btn.addEventListener('click', () => { _hideUpdateBanner(); location.reload(); });
+  bar.appendChild(label);
+  bar.appendChild(btn);
+  document.body.appendChild(bar);
+  _scheduleUpdateRecheck();
+}
+// Single entry point for every "the daemon build changed" signal.
+function _onDaemonVersionChange(newVersion) {
+  if (_canAutoReload(_autoReloadCtx())) {
+    console.log(`[datawatch] daemon version changed → ${newVersion}, reloading…`);
+    location.reload();
+    return;
+  }
+  state._updateAvailable = newVersion || true;
+  _showUpdateBanner();
+}
+
 // Pure decision function (no I/O) so it's unit-testable without a real
 // timer — the stub browser environment node:test uses for this file's
 // sibling tests no-ops setInterval entirely.
@@ -533,8 +610,7 @@ function connect() {
         .then(h => {
           if (!h || !h.version) return;
           if (state._daemonVersion !== h.version) {
-            console.log(`[datawatch] daemon version changed during reconnect: ${state._daemonVersion} → ${h.version}, reloading…`);
-            location.reload();
+            _onDaemonVersionChange(h.version);
           }
         })
         .catch(() => {});
@@ -855,9 +931,7 @@ function handleMessage(msg) {
         if (!state._daemonVersion) {
           state._daemonVersion = msg.data.version;
         } else if (state._daemonVersion !== msg.data.version) {
-          console.log(`[datawatch] daemon version changed: ${state._daemonVersion} → ${msg.data.version}, reloading…`);
-          location.reload();
-          return;
+          _onDaemonVersionChange(msg.data.version);
         }
       }
       onSessionsUpdated();
@@ -19288,9 +19362,13 @@ function registerServiceWorker() {
     let _reloadGuard = false;
     navigator.serviceWorker.addEventListener('controllerchange', () => {
       if (_reloadGuard) return;
-      _reloadGuard = true;
-      console.log('SW controller changed — reloading for fresh assets');
-      window.location.reload();
+      console.log('SW controller changed — fresh assets available');
+      if (_canAutoReload(_autoReloadCtx())) {
+        _reloadGuard = true;
+        window.location.reload();
+      } else {
+        _onDaemonVersionChange(null);
+      }
     });
   }
 }
