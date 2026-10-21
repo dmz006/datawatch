@@ -157,10 +157,15 @@ def main():
                             s["work_h"] += h
                             s["task_h"].append(h)
             if st in DONE_STATUS:
-                a = parse_ts(p.get("approved_at")) or parse_ts(p.get("created_at"))
-                b = parse_ts(p.get("updated_at"))
-                if a and b and b > a:
-                    s["prd_wall_h"].append((b - a).total_seconds() / 3600.0)
+                # Time the PRD was actually being worked: first task start to
+                # last task completion. approved_at -> updated_at is wrong: it
+                # includes weeks of waiting and every later edit or cancel.
+                starts = [parse_ts(t.get("started_at")) for sy in p.get("stories", []) for t in sy.get("tasks", [])]
+                ends = [parse_ts(t.get("completed_at")) for sy in p.get("stories", []) for t in sy.get("tasks", [])]
+                starts = [x for x in starts if x]
+                ends = [x for x in ends if x]
+                if starts and ends and max(ends) > min(starts):
+                    s["prd_wall_h"].append((max(ends) - min(starts)).total_seconds() / 3600.0)
         return s
 
     st = {k: stats(v) for k, v in groups.items()}
@@ -168,12 +173,16 @@ def main():
     first = min((parse_ts(p.get("created_at")) for p in prds if parse_ts(p.get("created_at"))), default=now)
     elapsed_days = max((now - max(first, since_dt)).total_seconds() / 86400.0, 0.1)
 
+    def last_done(p):
+        ends = [parse_ts(t.get("completed_at")) for sy in p.get("stories", []) for t in sy.get("tasks", [])]
+        ends = [x for x in ends if x]
+        return max(ends) if ends else None
     done_ps = [p for p in prds if p["status"] in DONE_STATUS]
-    last24 = sum(
-        1 for p in done_ps
-        if (parse_ts(p.get("updated_at")) or now) >= datetime.fromtimestamp(now.timestamp() - 86400, timezone.utc)
-    )
-    throughput = max(last24, total_done / elapsed_days if elapsed_days else 0)
+    cut24 = now.timestamp() - 86400
+    cut72 = now.timestamp() - 3 * 86400
+    last24 = sum(1 for p in done_ps if last_done(p) and last_done(p).timestamp() >= cut24)
+    last72 = sum(1 for p in done_ps if last_done(p) and last_done(p).timestamp() >= cut72)
+    throughput = last72 / 3.0 if last72 else 0.0
 
     open_rows = registry_open_rows()
     # Remaining work = (1) PRDs that already exist and are not done, with the
@@ -205,12 +214,16 @@ def main():
     est_tasks_new = (new_prds + undecomposed) * avg_tasks
     remaining_tasks = existing_tasks_left + est_tasks_new
     in_flight = sum(s["running"] for s in st.values())
-    avg_wall = [h for s in st.values() for h in s["prd_wall_h"]]
-    avg_wall_h = sum(avg_wall) / len(avg_wall) if avg_wall else None
+    walls = sorted(h for s in st.values() for h in s["prd_wall_h"])
+    avg_wall_h = walls[len(walls) // 2] if walls else None  # median
     eta_days = (remaining_prds / throughput) if throughput else None
-    eta_lane_days = (
-        remaining_prds * avg_wall_h / LANES / 24.0 if avg_wall_h else None
-    )
+    total_work_h = st["feature"]["work_h"] + st["bug"]["work_h"]
+    done_tasks_n = st["feature"]["tasks_done"] + st["bug"]["tasks_done"]
+    h_per_task = total_work_h / done_tasks_n if done_tasks_n else None
+    worker_h_per_day = total_work_h / elapsed_days
+    utilization = worker_h_per_day / (LANES * 24.0)
+    work_left_h = remaining_tasks * h_per_task if h_per_task else None
+    eta_lane_days = (work_left_h / worker_h_per_day) if (work_left_h and worker_h_per_day) else None
 
     result = dict(
         since=since,
@@ -239,10 +252,10 @@ def main():
     print("v10.0.0 STATUS  (since %s, %.1f days elapsed, %d lanes)" % (since, elapsed_days, LANES))
     print("%-8s %5s %5s %5s %6s %7s | %6s %6s %5s | %9s %9s %9s" % (
         "", "PRDs", "done", "run", "wait", "blocked", "tasks", "done", "left",
-        "work", "avg/PRD", "avg/task"))
+        "work", "med/PRD", "avg/task"))
     for g in ("feature", "bug"):
         s = st[g]
-        aw = sum(s["prd_wall_h"]) / len(s["prd_wall_h"]) if s["prd_wall_h"] else None
+        ws = sorted(s["prd_wall_h"]); aw = ws[len(ws) // 2] if ws else None
         at = sum(s["task_h"]) / len(s["task_h"]) if s["task_h"] else None
         print("%-8s %5d %5d %5d %6d %7d | %6d %6d %5d | %9s %9s %9s" % (
             g, s["prds"], s["done"], s["running"], s["waiting"], s["blocked"],
@@ -263,10 +276,11 @@ def main():
           % (len(unfiled_rows), expand, new_prds))
     print("      total left: about %d PRDs and about %d tasks (%d existing + %.0f estimated at %.1f tasks/PRD)" % (
         remaining_prds, remaining_tasks, existing_tasks_left, est_tasks_new, avg_tasks))
-    print("ETA   throughput %.1f PRDs/day -> about %s; lane math (avg %s/PRD over %d lanes) -> about %s" % (
-        throughput,
-        "-" if eta_days is None else "%.1f days" % eta_days,
-        fmt_h(avg_wall_h), LANES,
+    print("ETA   PRD rate %.1f PRDs/day (last 3 days, by last task completed) -> about %s" % (
+        throughput, "-" if eta_days is None else "%.1f days" % eta_days))
+    print("      worker-hours: %.2f h/task x %d tasks = %s of work; lanes did %.1f worker-h/day = %.0f%% of %d lanes -> about %s at today's utilization" % (
+        h_per_task or 0, remaining_tasks, "-" if work_left_h is None else "%.0f h" % work_left_h,
+        worker_h_per_day, utilization * 100, LANES,
         "-" if eta_lane_days is None else "%.1f days" % eta_lane_days))
     # Task-based estimate: tasks completed per day over the whole period and
     # over the last 24 hours, against the estimated tasks left.
