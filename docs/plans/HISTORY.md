@@ -11,6 +11,7 @@ Releases before v8.1.0 are not listed here. See the changelog.
 
 - **BL447**: per-task project directory override, available on every surface (v9.1.0).
 - **BL451**: a stale completion rollup can no longer overwrite a concurrent task reset (v9.1.1-v9.1.2).
+- **BL454** (+ **BL495**): autonomous settings changed at runtime — the verification backend and model, the verification backends pool, the planner backend and model, the stall-detection limit and the verifier diff cap — now take effect on the very next task without a daemon restart (v9.5.30).
 - **BL449**: 16-cell open-model test matrix runner, plus opencode model routing fixes (v9.1.3-v9.1.4).
 - One-shot tasks no longer stall mid-task on the checkpoint protocol (v9.1.5).
 - Compute nodes that represent the local machine attach cleanly to the local self-peer (v9.1.6-v9.1.7).

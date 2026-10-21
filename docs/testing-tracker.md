@@ -1823,3 +1823,13 @@ Changed endpoint contract: `/api/sessions/start` takes a `git` field, and a one-
 | PRD task sessions are git-enabled when the PRD has git settings | **Yes** (`internal/autonomous/executor_git_test.go`) | **No** | Needs a sandbox PRD run | |
 | PWA new-session "git" checkbox, 5 locales | **Yes** (`internal/server/web/app-new-session-git.test.js`) | **No** | Needs a sandbox PWA session | |
 
+## 2026-10-21 Autonomous config is read live (no daemon restart)
+
+Changed behavior: `autonomous.*` runtime settings (`verification_backend`, `verification_model`, the `verification_backends` pool, `stale_task_seconds`, `planning_backend`, `planning_model`, `verifier_diff_max_bytes`) are re-read on each run through the manager's live config instead of a boot-time snapshot.
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| `effectiveAutonomousConfig` live-read wiring in `cmd/datawatch/live_autonomous_config.go` | **Yes** (`cmd/datawatch/live_autonomous_config_test.go`) | **Yes** (unit) | Go unit tests | Exercise an extracted copy of the wiring |
+| REST `PUT /api/config` autonomous change is visible to the next verifier/guardrail/planner run | **Yes** (`internal/server/autonomous_config_live_read_test.go`) | **No** | Needs a sandbox daemon: change `autonomous.verification_model` at runtime, run a task, check the verifier used the new value with no restart | Live row stays No until run |
+| `stale_task_seconds` changed at runtime is used by stall detection on the next scan | **Yes** (unit) | **No** | Needs a sandbox daemon | |
+

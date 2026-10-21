@@ -1,0 +1,39 @@
+package main
+
+import (
+	autonomouspkg "github.com/dmz006/datawatch/internal/autonomous"
+)
+
+// effectiveAutonomousConfig is the single live read point the
+// config-sensitive closures in main.go (decomposeFn, autonomousVerify,
+// autonomousGuardrail, the BL221 scan-grader askFn) use on every
+// invocation: the Manager's live Config() snapshot when the Manager
+// exists, else the boot-time literal captured before NewManager.
+//
+// Runtime config sets — PUT /api/autonomous/config →
+// autonomous.API.SetConfig, MCP autonomous_config_set, Manager.SetConfig
+// — mutate only the Manager, never the boot-time literal a closure could
+// have captured. Reading through the Manager per invocation is therefore
+// what makes a config set take effect on the NEXT closure call with no
+// restart and no reconstruction of the closures.
+//
+// Extracted out of main()'s inline closure so cmd/datawatch's unit tests
+// (live_autonomous_config_test.go) exercise byte-for-byte the helper the
+// closures call, instead of a copy of its logic.
+func effectiveAutonomousConfig(ref *autonomouspkg.Manager, boot autonomouspkg.Config) autonomouspkg.Config {
+	if ref != nil {
+		return ref.Config()
+	}
+	return boot
+}
+
+// effectiveVerifierSelection projects one live config snapshot onto the
+// fields the autonomousVerify and autonomousGuardrail closures hand to
+// the verifier selection: the verification_backends pool, the global
+// verification_backend, and the global verification_model. Per-unit
+// (task/story/PRD) overrides are applied by the selection helpers
+// themselves; global config must always come from a live snapshot taken
+// at call time.
+func effectiveVerifierSelection(cfg autonomouspkg.Config) (pool []string, backend, model string) {
+	return cfg.VerificationBackends, cfg.VerificationBackend, cfg.VerificationModel
+}

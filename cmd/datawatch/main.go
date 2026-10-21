@@ -114,7 +114,7 @@ import (
 )
 
 // Version is set at build time via -ldflags.
-var Version = "9.5.43"
+var Version = "9.5.44"
 
 // writeMigrationStatus persists the v7-migration result to a JSON
 // file the PWA reads via /api/migration/status to surface a one-time
@@ -4199,6 +4199,29 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		if amgrCfg.MaxConcurrentTasks <= 0 {
 			amgrCfg.MaxConcurrentTasks = 1
 		}
+		// The autonomous config-set path (REST PUT /api/autonomous/config
+		// → autonomous.API.SetConfig; MCP autonomous_config_set) merges
+		// onto the Manager's LIVE config copy, which never reaches the
+		// boot-time amgrCfg literal captured into the closures built
+		// below (they all predate NewManager). Every closure read of a
+		// runtime-tunable field routes through this helper instead: one
+		// Config() snapshot per invocation (not per field), falling back
+		// to the boot-time amgrCfg while the Manager does not yet exist.
+		// Fields read live through it (BL-stale-config fix, 2026-10-19):
+		//   PlanningBackend / PlanningModel (decomposeFn)
+		//   StaleTaskSeconds                (autonomousVerify stall bound)
+		//   VerifierDiffMaxBytes            (autonomousVerify diff truncation)
+		//   VerificationBackends / VerificationBackend / VerificationModel / VerificationEffort
+		//                                     (autonomousVerify verifier selection,
+		//                                      via ResolveVerificationLLM + selectVerifierLLM)
+		//   VerificationBackend / VerificationModel (autonomousGuardrail)
+		//   PlanningBackend (BL221 scan-grader askFn)
+		// Boot-time-only reads (defaults before NewManager, NewManager's
+		// own construction, the startup amgrCfg.Enabled gate) are
+		// intentionally untouched.
+		liveAutonomousConfig := func() autonomouspkg.Config {
+			return effectiveAutonomousConfig(autonomousMgrRef, amgrCfg)
+		}
 		// decomposeFn — REST loopback to /api/ask.
 		//
 		// v5.26.9 — backend resolution overhauled:
@@ -4210,7 +4233,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		//   2. The PRD's Backend is for the *worker* (per BL203); the
 		//      planner is a separate concern that should always run
 		//      against an ask-compatible backend.
-		// Resolution order: amgrCfg.PlanningBackend → req.Backend
+		// Resolution order: live PlanningBackend → req.Backend
 		// (only if ask-compatible after kind resolution) → "ollama" default.
 		// BL306: named LLMs from /api/llms are resolved to their adapter kind
 		// before the askCompatible check, so "ollama-datawatch" (kind=ollama)
@@ -4255,10 +4278,14 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				decomposeSessionName, sessionTask, outputFile, "decompose-output.json", timeout)
 		}
 		decomposeFn := func(req autonomouspkg.DecomposeRequest) (string, error) {
+			// One live-config snapshot for this invocation (see
+			// liveAutonomousConfig): runtime config sets must reach these
+			// reads, not the boot-time literal.
+			liveCfg := liveAutonomousConfig()
 			// Per-PRD decomposition_profile takes priority over global planning_backend.
 			rawBackend := req.Backend
 			if rawBackend == "" {
-				rawBackend = amgrCfg.PlanningBackend
+				rawBackend = liveCfg.PlanningBackend
 			}
 			if rawBackend == "" {
 				rawBackend = "ollama"
@@ -4303,7 +4330,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				askBody["llm"] = rawBackend
 			}
 			// Prefer explicitly configured model, then the resolved LLM model.
-			planModel := amgrCfg.PlanningModel
+			planModel := liveCfg.PlanningModel
 			if planModel == "" {
 				planModel = resolvedModel
 			}
@@ -4574,6 +4601,10 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		// against the session summary. verification_backend (empty =
 		// inherit) gives cross-backend independence per BL25 design.
 		autonomousVerify := func(ctx context.Context, prd *autonomouspkg.PRD, task *autonomouspkg.Task) (vres autonomouspkg.VerificationResult, verr error) {
+			// One live-config snapshot for this invocation (see
+			// liveAutonomousConfig): runtime config sets must reach the
+			// stale bound, diff truncation, and verifier selection below.
+			liveCfg := liveAutonomousConfig()
 			// v8.20.2 — wait for the spawned session to reach a terminal
 			// state before verifying. Previously verify fired immediately
 			// after spawn, so the verifier saw no git diff and the session
@@ -4601,7 +4632,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				// Genuine worker-stall bound (see staleWorkerCheck): the log file's own
 				// mtime, not session liveness state, which a cosmetic pane change can
 				// refresh without any real output.
-				staleThreshold := time.Duration(amgrCfg.StaleTaskSeconds) * time.Second
+				staleThreshold := time.Duration(liveCfg.StaleTaskSeconds) * time.Second
 				if staleThreshold <= 0 {
 					staleThreshold = time.Duration(cfg.Session.StaleTimeoutSeconds) * time.Second
 				}
@@ -4991,7 +5022,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 						Category:   category,
 					}, nil
 				}
-				maxBytes := amgrCfg.VerifierDiffMaxBytes
+				maxBytes := liveCfg.VerifierDiffMaxBytes
 				if maxBytes <= 0 {
 					maxBytes = 8192
 				}
@@ -5123,8 +5154,8 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// before. Effort is applied only from an explicit override —
 			// the global verification_effort is still not consumed by
 			// verify (pre-existing gap, unchanged here).
-			resolvedVLLM := autonomouspkg.ResolveVerificationLLM(prd, task, amgrCfg)
-			explicitEffortCfg := amgrCfg
+			resolvedVLLM := autonomouspkg.ResolveVerificationLLM(prd, task, liveCfg)
+			explicitEffortCfg := liveCfg
 			explicitEffortCfg.VerificationEffort = ""
 			var verifierTryAdmit func(backend, model string) (func(), bool)
 			if verifierCapacityTryAdmit != nil {
@@ -5132,12 +5163,16 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 					return verifierCapacityTryAdmit(ctx, backend, model, "verify:"+task.ID, prd.ID)
 				}
 			}
+			// BL-stale-config tests (live_autonomous_config_test.go) pin
+			// this exact projection: pool / global backend / global model
+			// always come from the live snapshot, never a captured value.
+			vpool, vglobalBackend, vglobalModel := effectiveVerifierSelection(liveCfg)
 			vsel := selectVerifierLLM(verifierSelectInput{
 				Resolved:       resolvedVLLM,
 				ExplicitEffort: autonomouspkg.ResolveVerificationLLM(prd, task, explicitEffortCfg).Effort,
-				Pool:           amgrCfg.VerificationBackends,
-				GlobalBackend:  amgrCfg.VerificationBackend,
-				GlobalModel:    amgrCfg.VerificationModel,
+				Pool:           vpool,
+				GlobalBackend:  vglobalBackend,
+				GlobalModel:    vglobalModel,
 				PRDBackend:     prd.Backend,
 				PRDModel:       prd.Model,
 				ProjectDir:     taskDir,
@@ -5305,9 +5340,12 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 		// JSON shape mirrors the BL117 orchestrator's Verdict so the
 		// downstream UI renders uniformly.
 		autonomousGuardrail := func(ctx context.Context, req autonomouspkg.GuardrailInvocation) (autonomouspkg.GuardrailVerdict, error) {
+			// One live-config snapshot for this invocation (see
+			// liveAutonomousConfig).
+			gcfg := liveAutonomousConfig()
 			prompt := buildAutonomousGuardrailPrompt(req)
 			// BL416 Phase 3 — per-unit resolved backend/model win over the flat config.
-			gbackend, guardrailModel := guardrailBackendModel(req, amgrCfg.VerificationBackend, amgrCfg.VerificationModel)
+			gbackend, guardrailModel := guardrailBackendModel(req, gcfg.VerificationBackend, gcfg.VerificationModel)
 			gkind, gmodel, _ := resolveAskBackend(gbackend)
 			if !askCompatible(gkind) {
 				// B124 — a real tool-using backend with somewhere to run
@@ -5667,7 +5705,9 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// BL221 (v6.2.0) Phase 3 — wire scan grader + rule editor via
 			// POST /api/ask loopback (Option C: same pattern as decomposeFn).
 			askFn := func(prompt string) (string, error) {
-				backend := amgrCfg.PlanningBackend
+				// Live config, not the boot-time literal (see
+				// liveAutonomousConfig).
+				backend := liveAutonomousConfig().PlanningBackend
 				if backend == "" {
 					backend = "ollama"
 				}
