@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.34 — tmux safety rules documented for workers, scripts and tests
+
+### Documentation
+- **Documented the tmux safety rules** in `AGENT.md` (Session Safety), `docs/testing.md` and `docs/operations.md`: PRD workers, verifiers and guardrails run with `TMUX` and `TMUX_TMPDIR` removed; scripts and tests never run `kill-server` or `kill-session -a` except against an explicit `-S` throwaway socket or under `env -u TMUX`; every verification script runs with `env -u TMUX -u TMUX_TMPDIR`; `scripts/check-no-unscoped-tmux.sh` enforces it in `make lint`, CI and decompose validation.
+- **Why:** on 2026-10-18 20:18 and again on 2026-10-20 18:46:35 a worker's script ran `TMUX_TMPDIR=<dir> tmux kill-server` and killed the production tmux server with every session on it. Root cause: tmux prefers `TMUX` over `TMUX_TMPDIR`, and every worker runs inside a production pane, so the "private" directory was ignored.
+
+
 ## v9.5.32 — autonomous: a deterministic, no-LLM plan requirement coverage gate at decompose time, with an operator acknowledgement override
 
 - **New gate: `autonomous.plan_coverage_check` (`off|warn|block`, default `block`) + `autonomous.plan_coverage_min_ratio` (in the range (0,1], default 1.0)** — at decompose time datawatch runs a pure string-level check measuring how much of the PRD's spec the decomposed plan actually addresses, plus a set of structural findings (a dangling `DependsOn`, a dependency cycle, a plan entry with no file provenance, a step with no verification reason, a bad tracker-ID name). The result is stored on the PRD as the `plan_coverage` record (the mode + min_ratio it was pinned to, the covered/missing/weakened requirement counts, each unmatched requirement with its verdict, any findings, and the operator ack when one exists). The check is deterministic: the same spec + plan always gives the same report — no model call, no clock in the verdict.

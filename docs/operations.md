@@ -87,6 +87,8 @@ Note: For user services to start at boot (without login), enable lingering:
 sudo loginctl enable-linger $USER
 ```
 
+**Keeping scripts away from the live tmux server.** PRD workers, verifiers and guardrails run with `TMUX` and `TMUX_TMPDIR` removed. Scripts and tests must never run `tmux kill-server` or `tmux kill-session -a` except against an explicit `-S` throwaway socket or under `env -u TMUX -u TMUX_TMPDIR`; setting `TMUX_TMPDIR` alone is not enough. `scripts/check-no-unscoped-tmux.sh` enforces this in `make lint`, in CI and at decompose time. See [testing.md](testing.md#tmux-safety-rules-for-tests-and-scripts).
+
 ### Direct invocation
 
 ```bash
