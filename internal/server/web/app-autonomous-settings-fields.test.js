@@ -283,3 +283,46 @@ test('settings_resume_max_age and settings_resume_max_age_hint are non-empty str
       'settings_resume_max_age_hint missing or empty in ' + locale + ' locale');
   }
 });
+
+// 2026-10-17 — plan review gate + smoke verification settings card fields.
+
+const FIVE = ['en','de','es','fr','ja'];
+
+test('autonomous settings expose plan review + smoke verification fields', () => {
+  const keys = autonomousKeys();
+  const want = ['autonomous.plan_review_backend','autonomous.plan_review_model','autonomous.plan_review_mode','autonomous.smoke_verification_backend','autonomous.smoke_verification_model'];
+  for (const k of want) assert.ok(keys.includes(k), k + ' missing: ' + keys.join(','));
+});
+
+test('plan review backend/model pairs follow the paired-model pattern; mode is a select over off/warn/block', () => {
+  const sandbox = buildSandbox();
+  vm.createContext(sandbox);
+  loadScript(path.join(__dirname, 'app.js'), sandbox);
+  const fields = JSON.parse(vm.runInContext(
+    'JSON.stringify(GENERAL_CONFIG_FIELDS.find(s => s.id === "autonomous").fields)', sandbox));
+  const get = k => fields.find(f => f.key === k);
+  const pb = get('autonomous.plan_review_backend');
+  assert.equal(pb.type, 'llm_backend');
+  assert.equal(pb.pairedModelKey, 'autonomous.plan_review_model');
+  const pm = get('autonomous.plan_review_model');
+  assert.equal(pm.type, 'llm_model');
+  assert.equal(pm.backendKey, 'autonomous.plan_review_backend');
+  const mode = get('autonomous.plan_review_mode');
+  assert.equal(mode.type, 'select');
+  for (const m of ['off','warn','block']) assert.ok(mode.options.includes(m), 'mode options missing ' + m);
+  const sb = get('autonomous.smoke_verification_backend');
+  assert.equal(sb.type, 'llm_backend');
+  assert.equal(sb.pairedModelKey, 'autonomous.smoke_verification_model');
+  const sm = get('autonomous.smoke_verification_model');
+  assert.equal(sm.type, 'llm_model');
+  assert.equal(sm.backendKey, 'autonomous.smoke_verification_backend');
+});
+
+test('all five label keys are non-empty strings in all five locale bundles', () => {
+  for (const locale of FIVE) {
+    const bundle = JSON.parse(fs.readFileSync(path.join(__dirname, 'locales', locale + '.json'), 'utf8'));
+    for (const k of ['settings_plan_review_backend','settings_plan_review_model','settings_plan_review_mode','settings_smoke_verification_backend','settings_smoke_verification_model']) {
+      assert.ok(typeof bundle[k] === 'string' && bundle[k].length > 0, k + ' missing or empty in ' + locale + ' locale');
+    }
+  }
+});

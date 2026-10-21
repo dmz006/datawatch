@@ -1774,5 +1774,10 @@
   "settings_smoke_verification_model": "Smoke verification model",
   "prd_plan_review_ok": "Plan review passed",
   "prd_plan_review_fail": "Plan review failed",
-  "prd_plan_review_rerun": "Re-run review"
+  "prd_plan_review_rerun": "Re-run review",
+  "prd_plan_review_rerun_tip": "Run the configured reviewer on this plan again",
+  "prd_plan_review_done": "Plan review re-run complete",
+  "plan_review_approve_blocked_tip": "Plan review blocked this approval — ",
+  "prd_task_kind_tip": "Smoke-verification target task",
+  "prd_task_smoke_verifier_tip": "Smoke verification LLM override for this task"
 }
