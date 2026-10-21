@@ -866,3 +866,62 @@ func TestDeprecatedKeys_MaxParallelTasksStillDetected(t *testing.T) {
 		}
 	}
 }
+
+func TestDefaultConfig_UndeclaredEditModeWarn(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.Autonomous.UndeclaredEditMode != "warn" {
+		t.Fatalf("Autonomous.UndeclaredEditMode = %q, want \"warn\"", cfg.Autonomous.UndeclaredEditMode)
+	}
+}
+
+func TestYAMLRoundTrip_UndeclaredEditMode(t *testing.T) {
+	// An explicitly set value ("block") must survive Marshal->Unmarshal.
+	cfg := DefaultConfig()
+	cfg.Autonomous.UndeclaredEditMode = "block"
+	out := filepath.Join(t.TempDir(), "saved.yaml")
+	if err := Save(cfg, out); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	raw, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), "undeclared_edit_mode: block") {
+		t.Errorf("saved YAML lacks 'undeclared_edit_mode: block':\n%s", raw)
+	}
+	cfg2, err := Load(out)
+	if err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if cfg2.Autonomous.UndeclaredEditMode != "block" {
+		t.Errorf("UndeclaredEditMode after round-trip = %q, want \"block\"", cfg2.Autonomous.UndeclaredEditMode)
+	}
+
+	// No omitempty: an unset config still marshals the default explicitly
+	// as 'undeclared_edit_mode: warn' (explicit-clear discipline).
+	cfg3 := DefaultConfig()
+	out3 := filepath.Join(t.TempDir(), "default.yaml")
+	if err := Save(cfg3, out3); err != nil {
+		t.Fatalf("Save(default): %v", err)
+	}
+	raw3, err := os.ReadFile(out3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw3), "undeclared_edit_mode: warn") {
+		t.Errorf("default YAML lacks 'undeclared_edit_mode: warn':\n%s", raw3)
+	}
+}
+
+func TestValidateUndeclaredEditMode(t *testing.T) {
+	for _, ok := range []string{"off", "warn", "block", " Block ", "OFF"} {
+		if err := ValidateUndeclaredEditMode(ok); err != nil {
+			t.Errorf("ValidateUndeclaredEditMode(%q) = %v, want nil", ok, err)
+		}
+	}
+	for _, bad := range []string{"", "strict", "on", "true"} {
+		if err := ValidateUndeclaredEditMode(bad); err == nil {
+			t.Errorf("ValidateUndeclaredEditMode(%q) = nil, want error", bad)
+		}
+	}
+}

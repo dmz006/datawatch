@@ -178,6 +178,11 @@ type Config struct {
 	// (checkForeignFileDrift). No omitempty: keeping it explicit
 	// mirrors the clear discipline of BlockOnFileDrift above.
 	DriftMode string `json:"drift_mode"`
+	// UndeclaredEditMode — off | warn | block: what to do with the
+	// worker's own edits outside FilesPlanned ∪ FilesGenerated. Default
+	// "warn"; empty/unknown resolves to "warn" (EffectiveUndeclaredEditMode).
+	// Independent of DriftMode, which governs pre-existing drift only.
+	UndeclaredEditMode string `json:"undeclared_edit_mode"`
 	// VerifierDiffMaxBytes caps the git diff injected into the verifier
 	// prompt for evidence grounding (BL366). 0 = 8192.
 	VerifierDiffMaxBytes int  `json:"verifier_diff_max_bytes,omitempty"`
@@ -354,6 +359,7 @@ func DefaultConfig() Config {
 		ContentAutoFixEnabled:   true,
 		BlockOnFileDrift:        false,   // legacy opt-in flag; DriftMode below is the enforcement knob
 		DriftMode:               "block", // pre-existing drift blocks by default; "warn" for flag-only
+		UndeclaredEditMode:      "warn",
 		AutoFixSkipApproval:     true,
 		// B165 — boot-resume default limit: 1 h. 0 and -1 are meaningful
 		// values (never resume / no limit), so an unset value must land
@@ -361,6 +367,26 @@ func DefaultConfig() Config {
 		// (internal/config resume_max_age) that main.go's bridge picks up.
 		ResumeMaxAgeSeconds: bootResumeDefaultMaxAgeSeconds,
 	}
+}
+
+// EffectiveUndeclaredEditMode resolves the undeclared-edit mode, preferring
+// s over the configured default. Lowercased; only off|warn|block pass
+// through, empty or unknown resolves to "warn".
+func (m *Manager) EffectiveUndeclaredEditMode(s string) string {
+	normalize := func(v string) string {
+		v = strings.ToLower(strings.TrimSpace(v))
+		if v == "off" || v == "warn" || v == "block" {
+			return v
+		}
+		return "warn"
+	}
+	if s != "" {
+		return normalize(s)
+	}
+	m.mu.Lock()
+	v := m.cfg.UndeclaredEditMode
+	m.mu.Unlock()
+	return normalize(v)
 }
 
 // checkInjectionGuard (BL369) scans user-supplied text for prompt injection
@@ -600,6 +626,10 @@ type Manager struct {
 	// Guarded by mu. Nil = audit silently skipped.
 	auditFn func(action string, details map[string]any)
 
+	// alertSink — operator-facing alert callback (level, title, body).
+	// Guarded by mu. Nil = alerts silently skipped.
+	alertSink func(level, title, body string)
+
 	// driftGit — git runner for checkForeignFileDrift's committed-file
 	// lookup. nil means defaultDriftGitRunner; tests inject a counting
 	// fake.
@@ -748,6 +778,20 @@ func (m *Manager) SetAuditFn(fn func(action string, details map[string]any)) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.auditFn = fn
+}
+
+// SetAlertSink wires the operator-facing alert callback. Nil disables.
+func (m *Manager) SetAlertSink(fn func(level, title, body string)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.alertSink = fn
+}
+
+// AlertSink returns the configured alert callback, or nil when unset.
+func (m *Manager) AlertSink() func(level, title, body string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.alertSink
 }
 
 // SetMemoryVerifierFn (BL387 Phase 1a) wires the verifier-finding write callback.
