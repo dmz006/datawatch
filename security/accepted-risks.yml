@@ -189,6 +189,23 @@ entries:
     validated_by: "claude-session"
     reason: "No fix available in Debian bookworm. GH#163 (2026-10-07) already removed CVE-2026-42496/42497/48962/8376 from this block once a fix shipped for those four -- same removal process applies here if/when one ships."
 
+  - id: cve/CVE-2026-53615
+    kind: container
+    package: "bsdutils, libblkid1, libmount1, libsmartcols1, libuuid1, mount, util-linux, util-linux-extra"
+    version: "1:2.38.1-5+deb12u3"
+    severity: high
+    images:
+      - agent-base
+    impact:
+      traced: false
+      reachable: "unknown"
+      analysis: "libblkid parse_dos_extended() uses a 32-bit addition for the extended-partition start sector and skips bounds checks for the first two EBR entries; a crafted DOS extended-partition image can make libblkid report a false partition overlapping the MBR. Exploitation needs local libblkid probing of an attacker-crafted disk image or removable medium. Agent containers are not expected to probe untrusted block devices (not verified against the agent runtime configuration); not exposed via datawatch REST/MCP APIs. All eight packages are built from the single Debian source package util-linux."
+    first_added: "2026-10-21"
+    added: "2026-10-21"
+    expires: "2026-11-20"
+    validated_by: "claude-session"
+    reason: "No fix available in Debian bookworm: security-tracker.debian.org/tracker/CVE-2026-53615 (checked 2026-10-21) lists bookworm 2.38.1-5+deb12u3 as vulnerable with no fixed version (Debian bug 1140197); fixed only in trixie 2.41.5-0+deb13u1. Review by 2026-11-20 and remove once Debian ships a bookworm util-linux update (see docs/plans/2026-10-21-cve-2026-53615-agent-base.md)."
+
   - id: cve/CVE-2025-26625
     kind: container
     package: "git-lfs"
