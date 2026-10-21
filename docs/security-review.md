@@ -123,7 +123,7 @@ the registry and run `python3 scripts/gen_trivyignore.py`.
 
 <!-- BEGIN GENERATED: security/accepted-risks.yml container entries (scripts/gen_trivyignore.py) -->
 
-**74 suppressed container CVEs across 8 images, 2 independently traced.**
+**75 suppressed container CVEs across 8 images, 2 independently traced.**
 
 | CVE | Package | Severity | Images | Traced | Expires | Reason |
 |---|---|---|---|---|---|---|
@@ -153,6 +153,7 @@ the registry and run `python3 scripts/gen_trivyignore.py`.
 | CVE-2026-40553 | `gawk` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-08-20 | No fix available in Debian bookworm. BL398 Phase 3 candidate for outright remova... |
 | CVE-2026-41992 | `gzip` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-08-20 | No fix available in Debian bookworm as of this migration; re-check each release ... |
 | CVE-2026-53613 | `bsdutils, libmount1, util-linux` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-09-30 | No fix available in Debian bookworm as of this migration; re-check each release ... |
+| CVE-2026-53615 | `bsdutils, libblkid1, libmount1, libsmartcols1, libuuid1, mount, util-linux, util-linux-extra` | high | agent-base | no | 2026-11-20 | No fix available in Debian bookworm: security-tracker.debian.org/tracker/CVE-202... |
 | CVE-2026-53783 | `rsync` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-09-30 | By far the largest single block (19 of 70 entries). No fix available in Debian b... |
 | CVE-2026-53784 | `rsync` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-09-30 | By far the largest single block (19 of 70 entries). No fix available in Debian b... |
 | CVE-2026-53785 | `rsync` | high | agent-base, agent-gemini, agent-aider, parent-full | no | 2026-09-30 | By far the largest single block (19 of 70 entries). No fix available in Debian b... |
