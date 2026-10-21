@@ -1229,9 +1229,16 @@ func (m *Manager) Decompose(prdID string) (*PRD, error) {
 		// function's own doc comment). Decompose() is a lower-level
 		// call used directly by tests and any caller that wants a
 		// non-streaming result, so this check must live here too, not
-		// only in decomposeStreamingCore.
+		// only in decomposeStreamingCore. Content, not scope: the
+		// planner wrote a plan that's fixable by adding scripts — the
+		// scope budget (0 by default) meant it was never retried, and
+		// no amount of scope budgeting is a reason to accept a plan
+		// that has none; the content budget (AutoFixRetries fallback
+		// in resolveRetryPolicy) is where content rejections like this
+		// retry, and retryDecomposeFailure's hint feeds the offending
+		// task names into the next attempt.
 		if verr := validateVerificationScriptCoverage(prd.ProjectDir, s); verr != nil {
-			if m.retryDecomposeFailure(prd, "scope", "verification-script-coverage", verr.Error()) {
+			if m.retryDecomposeFailure(prd, "content", "verification-script-coverage", verr.Error()) {
 				continue
 			}
 			m.failDecomposeAttempt(prd, "verification-script-coverage", verr)
@@ -1436,11 +1443,12 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (*PRD, 
 			return nil, zerr
 		}
 		// B124 — see Decompose()'s identical call for the full
-		// explanation; decomposeStreamingCore is a drifted duplicate of
+		// explanation (including why the category is "content", not
+		// "scope"); decomposeStreamingCore is a drifted duplicate of
 		// Decompose() by design history, kept in sync here too rather
 		// than risk a third hand-copied gate.
 		if verr := validateVerificationScriptCoverage(prd.ProjectDir, s); verr != nil {
-			if m.retryDecomposeFailure(prd, "scope", "verification-script-coverage", verr.Error()) {
+			if m.retryDecomposeFailure(prd, "content", "verification-script-coverage", verr.Error()) {
 				continue
 			}
 			m.failDecomposeAttempt(prd, "verification-script-coverage", verr)
