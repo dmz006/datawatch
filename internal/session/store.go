@@ -238,6 +238,14 @@ type Session struct {
 	// self-terminates after the task is done.
 	OneShot bool `json:"one_shot,omitempty"`
 
+	// Git — when true, the session owns git activity in its project dir:
+	// Start runs `git init` (if needed) + the pre-session snapshot commit +
+	// the pre-checkpoint tag, and commitOnCompletion is allowed to run its
+	// completion commit. Default false: no git init, no snapshot, no
+	// completion commit. Persisted so the monitor/reaper/restart paths,
+	// which only have the stored Session, see the same decision.
+	Git bool `json:"git,omitempty"`
+
 	// TaskDeliveredAt — when Task was first typed into a OneShot session by
 	// handleChannelReady. Set once, before the send (cleared again only if
 	// the send fails), so the channel bridge's 60 s ready heartbeat can

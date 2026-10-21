@@ -42,7 +42,7 @@ func TestCommitOnCompletion_CommitsWorkWithWorkerSummary(t *testing.T) {
 	mgr := &Manager{store: store, hostname: "testhost"}
 	sess := &Session{
 		ID: "abcd", FullID: "testhost-abcd", Hostname: "testhost",
-		State: StateRunning, OneShot: true, ValidateCommands: []string{"true"}, ProjectDir: dir,
+		State: StateRunning, OneShot: true, Git: true, ValidateCommands: []string{"true"}, ProjectDir: dir,
 		LogFile: logFile, Task: "add the widget",
 		CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}
