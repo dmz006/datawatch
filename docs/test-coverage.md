@@ -38,6 +38,33 @@ The runner creates a temp data dir, starts a fresh daemon on random ports,
 runs all stories, then kills the daemon and removes the temp dir. Artifacts
 (evidence, logs) land in a dated work dir outside the repo.
 
+### PWA Playwright Suite
+
+Browser-level PWA stories live in `scripts/test-stories/pwa`. Each `TS-*.mjs`
+story drives the PWA with Playwright, `lib.mjs` holds the shared helpers, and
+`run-all.mjs` runs every story in sorted order, printing a PASS/FAIL line per
+story and exiting 1 if any story fails.
+
+```bash
+# Run every PWA story
+make test-e2e-pwa
+
+# Point the path check at a different suite directory
+make test-e2e-pwa PWA_SUITE_DIR=path/to/suite
+```
+
+`make test-e2e-pwa` first checks the suite directory. It stops with an error
+naming the path if the directory, its `package.json`, or any `TS-*.mjs` story
+is missing. It then starts the `datawatch` service from
+`docs/testing/docker-compose.test.yml`, waits for it to report healthy, and runs
+`node run-all.mjs` inside the `playwright` compose service. That service reaches
+the daemon at `http://datawatch:8080` on the internal compose network, so the
+suite does not depend on host ports.
+
+`PWA_SUITE_DIR` defaults to `scripts/test-stories/pwa`. The `playwright` service
+mounts that directory at `/tests/pwa` in the compose file, so the mount itself
+does not follow `PWA_SUITE_DIR`.
+
 ---
 
 ## Unit / Package Tests
@@ -78,7 +105,7 @@ Unit test suite runs on every `git push` via `make ci-tests`.
 
 ## Coverage Gaps (Known)
 
-- **PWA browser-nav E2E** — current PWA stories (TS-130, TS-143–TS-149) check API endpoints and JavaScript syntax. GH#78 tracks making them exercise real browser navigation + component interaction (Playwright). Not yet scheduled.
+- **PWA browser-nav E2E** — the Playwright suite in `scripts/test-stories/pwa` (see above) drives real browser pages, but several of its stories still check structure or API responses rather than live component interaction. Older stories (TS-130, TS-143–TS-149) check API endpoints and JavaScript syntax. GH#78 tracks moving the remaining stories to full browser navigation and component interaction.
 - **Clone-with-real-token** — worker clone tested against local bare repo; HTTPS-with-token path only covered by `spawn_docker.sh --RUN_BOOTSTRAP=1`.
 - **Live forge PR open** — `internal/git/provider_test.go` has fake `gh` test; real PR requires integration smoke.
 - **WebSocket relay under load** — single-client bidirectional echo covered; concurrent clients not tested.

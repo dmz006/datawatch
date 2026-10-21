@@ -312,8 +312,11 @@ cross-channel:
 # Local:   make test-e2e          (auto-starts isolated daemon, adaptive parallel)
 # Docker:  make test-e2e-docker   (docker compose stack, routing tests)
 # PWA:     make test-e2e-pwa      (Playwright via docker compose)
+#          PWA_SUITE_DIR (default scripts/test-stories/pwa) selects the story suite;
+#          override on the command line, e.g. make test-e2e-pwa PWA_SUITE_DIR=path/to/suite
 # Requires: docker, docker compose v2, bash
 E2E_COMPOSE=docs/testing/docker-compose.test.yml
+PWA_SUITE_DIR?=scripts/test-stories/pwa
 
 # Local E2E: run-tests.sh starts its own isolated daemon, cleans up after.
 test-e2e:
@@ -335,6 +338,7 @@ test-e2e-docker:
 	  bash scripts/run-tests.sh --feature=routing --no-daemon
 
 test-e2e-pwa:
+	bash scripts/check-pwa-suite-path.sh $(PWA_SUITE_DIR)
 	docker compose -f $(E2E_COMPOSE) up datawatch -d
 	@echo "Waiting for daemon healthy..."
 	until docker compose -f $(E2E_COMPOSE) ps datawatch | grep -q healthy; do sleep 2; done

@@ -12,9 +12,18 @@
 
 import { chromium } from 'playwright';
 import { mkdir } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import path from 'node:path';
 
-const CHROME_EXECUTABLE = '/usr/bin/google-chrome';
+const DEFAULT_CHROME_EXECUTABLE = '/usr/bin/google-chrome';
+
+// DW_CHROME_PATH overrides the browser binary. Unset, fall back to the host's
+// system Chrome if it exists; otherwise undefined lets Playwright use its
+// bundled Chromium (e.g. inside the official Playwright container image).
+function resolveChromeExecutable() {
+  if (process.env.DW_CHROME_PATH) return process.env.DW_CHROME_PATH;
+  return existsSync(DEFAULT_CHROME_EXECUTABLE) ? DEFAULT_CHROME_EXECUTABLE : undefined;
+}
 
 // --- env helpers ------------------------------------------------------------
 
@@ -34,7 +43,7 @@ export function storyEvidenceDir() {
 
 export async function launchBrowser({ headless = true } = {}) {
   return chromium.launch({
-    executablePath: CHROME_EXECUTABLE,
+    executablePath: resolveChromeExecutable(),
     headless,
     args: [
       '--no-sandbox',

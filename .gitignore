@@ -16,6 +16,8 @@ channel/node_modules/
 channel/dist/
 internal/stats/bpf/vmlinux.h
 .venv/
+scripts/test-stories/pwa/node_modules/
+scripts/test-stories/pwa/evidence/
 
 # F10: container build env (registry creds + IPs)
 .env.build
