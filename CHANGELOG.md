@@ -5,6 +5,22 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.64 — Persisted lifecycle subscriptions with CRUD on every surface
+
+### Added
+
+- **Automata lifecycle event subscriptions — Phase 3 of the [lifecycle-events design](docs/plans/2026-10-13-prd-lifecycle-events.md).** Register a persisted rule — *when this Automaton event fires, deliver it there* — instead of polling session lists to notice a new worker session and then injecting text into it:
+  - **Subscription model** — filter (event kinds / level / Automaton / task) → one sink (`comm`, `session`, `topic`, `alert`) → optional `send_input` action (types text into the session sink's target on fire). `one_shot` deletes the record after first *successful* delivery; `expires_at` sets a TTL; `coalesce` batches human-facing sinks in quiet windows. Event kinds are a closed set (all PRD/task status kinds + `task.session_started` / `task.session_cleared` / `prd.updated`); unknown kinds are rejected at creation.
+  - **Session delivery** — bridge preferred: the daemon POSTs the message to the session's channel bridge on `http://127.0.0.1:<port>/send` (5 s timeout); falls back to typing the text into the session's input via `SendInput` (source tag `lifecycle-sub`) when the bridge is absent, off-localhost, or errors. One-shot failure: one retry, then log + drop.
+  - **REST** — `GET/POST /api/autonomous/subscriptions` (list with optional `?owner=`, create → 201), `DELETE /api/autonomous/subscriptions/{id}` (auth `autonomous:read`/`autonomous:write`; `503` when the lifecycle engine is not wired).
+  - **MCP** — `autonomous_subscribe`, `autonomous_unsubscribe`, `autonomous_subscriptions` (proxy the daemon's REST on loopback; the daemon store is the source of truth).
+  - **CLI** — `datawatch autonomous subscribe` (including the watch-and-inject shorthand `--task <id> --on session_started --send "<text>" --sink session --target <session> --one-shot`; `--task` implies one-shot; shorthands `session_started` / `session_cleared` map to task kinds, full kinds pass through), `datawatch autonomous unsubscribe <id>`, `datawatch autonomous subscriptions [--owner <owner>]`.
+  - **Comm channel** — `autonomous subscribe <kinds…> [prd=<id>] [task=<id>]`, `autonomous subscriptions`, `autonomous unsubscribe <id>`; owner-scoped (the calling channel is both owner and sink target — a channel can never list or remove another channel's records).
+  - **Storage & lifecycle** — persisted at `<data_dir>/lifecycle_subscriptions.json` (secfile-encrypted at rest); the engine re-attaches immediately on add/remove — no daemon restart; create/delete are audit-logged. `webhook` and `mcp_queue` sink types are rejected with a clear phase error (later releases).
+  - **Docs** — [howto](docs/howto/automaton-lifecycle-subscriptions.md), [flow diagram](docs/flow/lifecycle-subscription-flow.md), operations section in `docs/operations.md`, "lifecycle event subscription" glossary entry + core-feature matrix row in `docs/datawatch-definitions.md`, `README.md` feature line, testing-tracker rows (unit surfaces; live rows pending a sandbox sweep). No new config keys in this phase — subscriptions are data, so `docs/config-reference.yaml` is N/A. App side (Android/iOS UI): tracked in [docs/plans/2026-10-21-datawatch-app-lifecycle-subscriptions-note.md](docs/plans/2026-10-21-datawatch-app-lifecycle-subscriptions-note.md).
+
+### Fixed
+
 ## v9.5.63 — Automaton workers no longer read other sessions CLAUDE.md files
 
 ### Fixed
