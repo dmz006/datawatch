@@ -7,6 +7,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## v9.5.42 — Deterministic internal/session screen-capture tests
 
+### Fixed
+- **`TestSelfUpdateDialog_ScreenCaptureSendsNoKeyAndDoesNotFlipToWaiting` and the other `internal/session` tests that used fixed sleeps to wait for the screen-capture goroutine now poll for the real condition with a deadline** (`pollUntil`, `waitCaptureLoopsExit` and `mutatePane` in `internal/session/test_sync_helpers_test.go`), and wait for the capture loop to exit before asserting. This stops them failing under CI load (the v9.5.37 Release `go test + lint` job failed on the first one). Test-only change; no production behavior changed. Covers `self_update_dialog_test.go`, `startup_dialog_dismiss_test.go`, `alertgate_test.go` and `tmux_env_scrub_test.go`.
 
 ## v9.5.41 — Pin the gh builder Go toolchain above the CVE fix, with a pin check
 
