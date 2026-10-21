@@ -716,6 +716,7 @@ can disagree sharply, and the shared ceiling is the real constraint.
 | 2026-10-19 ~17:50 | 13% weekly | operator-reported for tracking; two Claude lanes running (BL515 `d4c50001`, BL514 `da660001`), `06ae0001` queued |
 | 2026-10-19 ~20:15 | 14% weekly | operator-reported; operator decision: use both Claude lanes, with Claude decompose run serially (one decompose thread) when a Claude lane is free, to clear backlog for the GPU workers. Provisional: the operator tracks Claude usage for the next 24 hours and adjusts the lane model on 2026-10-20 |
 | 2026-10-20 ~04:31 | 16% weekly | operator-reported for the calculator; operator proposes a third Claude lane (not yet decided; the lane model still has two) |
+| 2026-10-20 ~16:40 | 19% weekly, used since the Sunday 2026-10-18 reset | operator-reported for accounting (calculator). Lanes: two GPU lanes on qwen plus Claude lanes on decompose and Haiku workers |
 | 2026-10-18 ~17:00 | 5% weekly; session meter at 15%, session resets in about 50 minutes | operator-reported. One Claude builder thread plus two qwen GPU threads; operator decided to hold at one Claude thread (decision 2026-10-18 17:02) and revisit after a per-PRD cost is measured |
 
 Restricted window: while the weekly ceiling was exhausted, autonomous PRD
@@ -1311,3 +1312,19 @@ fragile scripts (a `tee | grep -q` pipe that exits 141) and two real gaps (embed
 drift, a file that is unformatted on main). Open: the rate of wrong verdicts in the other
 direction (a correct task failed) is not measured, and the credit cost of one Sonnet
 verification is not yet measured; BL479's cost is recorded at the next usage reading.
+
+**2026-10-20 rule note (operator):** the weekly ceiling was exhausted on 2026-10-17 and reset on Sunday 2026-10-18 at 08:00. The section 3 "pi only" rule in `docs/plans/2026-10-17-supervisor-rules-and-lessons.md` was written during the exhaustion and is corrected there. Claude lanes are allowed under the lane model; this timeline is the usage record.
+
+**Time and accuracy log (operator request, 2026-10-20).** One row per PRD that runs on a Claude lane or a GPU lane, so Claude and qwen can be compared. Fill `time` from start to verdict and `accuracy` from the verifier result and any rework.
+
+| PRD | lane | worker model | verifier | start | verdict | time | accuracy (pass first try / rework) |
+|---|---|---|---|---|---|---|---|
+| (first entry: the next PRD run on a Claude lane) | | | | | | | |
+
+**Tick 16:58 (2026-10-20):** weekly % not reported since 16:40 (19%). Pace allows about 34% at 2.4 days since the 10-18 08:00 reset, so one Claude-lane run is inside pace. Claude lane 1 runs `148b0001` (Haiku worker, Sonnet verifier). Operator to report the next weekly % reading.
+
+**Tick 17:35 (2026-10-20):** no new weekly % reading since 16:40 (19%); pace allows about 34% at 2.4 days since the reset. Claude lane 1 runs `148b0001` (Haiku worker, Sonnet verifier); Claude lanes 2 and 3 replan `677d0001` and `51670001`. Operator to report the next weekly % reading.
+**Tick 17:50 (2026-10-20):** no new weekly % reading since 16:40 (19%). Pace allows about 35% at 2.42 days since reset. Claude lane 1 runs 148b0001; lanes 2 and 3 replan 677d0001 and 51670001 after second revisions. Operator to report the next weekly % reading.
+**Tick 18:10 (2026-10-20):** no new weekly % since 16:40 (19%); pace allows about 35% at 2.5 days since reset. Claude lanes: 148b0001, 51670001, 677d0001 (all Haiku workers, Sonnet verifier). GPU lanes: cece0001 (P0) and 49ac0001. Operator to report the next weekly % reading.
+**Tick 18:30 (2026-10-20):** weekly % still 19% (16:40); pace about 35%. Finding: the three Claude-lane PRDs (148b0001, 51670001, 677d0001) verify task-by-task on qwen 64k, not Sonnet, because the PRD verifier can only be set before a run; their guardrail judge is Sonnet. Also 49ac0001's guardrail session ran on qwen 27b, not the pinned 64k. Running PRDs are locked for LLM overrides (HTTP 400), so neither can be changed in place.
+**Tick 18:50 (2026-10-20):** weekly % still 19% (16:40); pace about 35%. GPU lane 1 runs 17880001 (main-checkout decompose fix); GPU lane 2 reruns cece0001 (P0) after a verdict-parse failure on its last task. 49ac0001 completed. Claude lanes: 148b0001, 51670001, 677d0001 running. Operator to report the next weekly % reading.

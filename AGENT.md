@@ -1257,6 +1257,7 @@ When implementing any new feature or bug fix:
    - **MCP**: if MCP tools affected, verify via channel or test client
 4. **Clean up test sessions** — if testing creates sessions, stop and delete them
 5. **Document results** in `docs/plans/README.md` testing section and `docs/testing.md`
+6. **Every commit adds its own tests at every level it touches** (2026-10-20 rule). Unit tests (`_test.go`) cover new and changed code. Smoke tests (`scripts/release-smoke*.sh` or the matching `scripts/test-stories` story) cover the built binary. Any web or PWA change also needs an e2e story (Playwright under `scripts/test-stories/pwa`), run through `scripts/run-tests.sh --stories=...` against the sandbox. A bug fix adds a regression test that fails before the fix and passes after. A feature, fix or refactor is not done, and not validated, until its tests are in the same change and pass. A change without new tests, or with a failing test, is not merged.
 
 ### Design-document verification (DIP decision, 2026-10-20)
 

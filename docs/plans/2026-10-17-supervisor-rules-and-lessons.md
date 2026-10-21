@@ -63,10 +63,32 @@ The supervisor orchestrates and validates. It does not hand-fix code.
 
 ## 3. Backends, models and compute
 
-- While the Claude weekly ceiling is exhausted, every PRD decompose, run, verify and
-  smoke session uses the pi or pi-prompt backend with a local qwen model. No
-  claude-code and no opencode. The window and its history are in
-  [concurrency and budget, section 4b](2026-10-14-concurrency-and-budget-design.md).
+- **Lane model (operator, 2026-10-20; supersedes the pi-only rule of 2026-10-17).** The weekly
+  Claude ceiling was exhausted on 2026-10-17 and reset on Sunday 2026-10-18 08:00. Claude is
+  tracked, not capped, and the reset day can differ by provider, so the reset date is read from
+  `docs/plans/2026-10-14-concurrency-and-budget-design.md`, not assumed.
+  - **GPU lanes (two):** pi-prompt with `qwen3.8-64k:27b`, one engine per node.
+  - **Claude lanes (three, interchangeable):** each runs one PRD and one decompose thread at a
+    time. A worker is Claude Haiku (`claude-haiku-5-5`); the verifier is Claude Sonnet for a PRD
+    on a Claude lane. Any Claude lane takes a decompose, a worker or a verify as the queue needs.
+  - **Budget pace (operator):** Claude work beyond the lanes is allowed only while
+    `weekly % <= days elapsed since reset / 7 x 100`. Read the weekly % each tick and record it
+    in the budget doc. Above pace, Claude takes no extra work; the GPU lanes carry the queue.
+  - **P0 and overflow (operator):** a P0 takes a free Claude lane. If every lane is full and the
+    pace rule allows, the supervisor opens a temporary Claude lane for it. Otherwise the P0 waits
+    for the next free GPU or Claude lane.
+  - **One-off decompose:** a decompose may run as a one-off Claude session when there is pace
+    budget. Otherwise it waits for any lane to free.
+  - **Compare, don't assume:** record Claude vs qwen time and accuracy per PRD (the
+    `time`/`accuracy` columns in the budget doc). If qwen matches Claude, the operator may move
+    work back to the GPU lanes.
+  - The supervisor enforces the lane count; the daemon does not. Do not exceed two GPU engines
+    or three Claude lanes.
+  - **Accepted ideas (operator, 2026-10-20):** (1) when both GPU lanes are full and pace
+    allows, the next approved PRD runs on a Claude lane as a Haiku worker; (2) run the time and
+    accuracy log for about a week before moving work between qwen and Claude. **Not adopted:** keeping a Claude lane idle
+    for P0. P0 is infrequent, so the three Claude lanes stay interchangeable and P0 takes a free
+    one, or a temporary lane under the P0 rule.
 - Two GPU nodes are two lanes. Keep both busy, and run at most one engine per node. If
   two land on one node, cancel the newer one.
 - **No experiments on a busy GPU.** Never run a test, benchmark or trial of a model setting
@@ -96,7 +118,10 @@ The supervisor orchestrates and validates. It does not hand-fix code.
 
 Do not rubber-stamp a plan. Before approving, check every item:
 
-- Every story and task has a title and a spec. The planning parser once accepted blank
+- Tests are part of the plan (2026-10-20 rule). For each feature, bug fix or refactor the plan
+  has unit-test tasks, a smoke or e2e task for every web, API or CLI surface it changes, and a
+  verification script that runs them. A plan without them is revised, not approved.
+- Every story and task has a title and a spec.- Every story and task has a title and a spec. The planning parser once accepted blank
   titles and specs (`dbf62787`); a plan with blanks is rejected.
 - Each task is one tool-call chain with one checkable outcome. A task that reads like
   two or more deliverables is split into atomic tasks with `depends_on` chains. Two
@@ -213,6 +238,7 @@ Recovery moves that have been needed in practice:
 Run this before marking a PRD done and moving on. Anything missing is a content gap to
 route back as corrective work, not something to skip:
 
+- The tests the change needs (unit, smoke, and e2e where a surface changed) are in the same commit, cover the new behaviour, and pass on the merged main. A bug fix has a regression test that fails before the fix.
 - Version bumped in `cmd/datawatch/main.go` and `internal/server/api.go` together.
 - A CHANGELOG entry in plain operator language with no tracker IDs.
 - Real tests for new behaviour, not only a passing existing suite.
@@ -265,8 +291,8 @@ requirement (open question 19).
 
 ## 11. Supervisor loop mechanics
 
-- A recurring wakeup runs the tick every five minutes, and an hourly backstop confirms
-  the tick chain is alive.
+- A recurring wakeup runs the tick every 20 minutes (cron `7,27,47 * * * *`), and an hourly
+  backstop (cron `17 * * * *`) confirms the tick chain is alive. Never a 5-minute tick.
 - **A tick must not strand the work it interrupts.** Each tick does its checks, then
   tells the supervisor to resume what it was doing. Every tick prompt names the work in
   progress.
@@ -395,3 +421,24 @@ surfaces map to which regression suites, and how an urgent bug may jump the queu
 
 
 - **Release manager and kill validation (operator decisions, 2026-10-20).** The supervisor is release manager: it does patch and minor version bumps and releases through the automation scripts (AGENT.md scripts, one bump commit per run). Only a major release (10.0) is the operator's. The "no version bump without ask" gotcha in `DATAWATCH-CONTEXT.md` predates automation and is superseded by this line; the context file is updated to match. A session is killed only when all of these hold: its pi process has exited (checked by process, not by pane silence); the session log or task output shows no completion record and nothing written after the exit; and the reason is written to the BL. A session that is still running and quiet is waiting, not wedged. The earlier kills on 2026-10-19 and 2026-10-20 did not check the log before killing; that gap is recorded as a deviation.
+
+### Tick prompt (current, 2026-10-20)
+
+The tick runs these checks in order and reports only state changes and idle lanes with blockers:
+
+0. tmux: `systemctl --user show datawatch-tmux -p NRestarts,ActiveEnterTimestamp`; baseline NRestarts 3 and 18:46:38 EDT (third tmux death, 2026-10-20 18:46:35). Never kill the tmux server.
+1. Infrastructure: qwen3.8-64k:27b resident locally (`ollama ps`) and on 100.64.0.20.
+2. Every non-terminal PRD (`prd-list`, `prd-get`). A session silent for 15 minutes after a read with no reply is wedged: kill that one session by ID.
+3. Model and routing drift: restate backend and decomposition profile together in `prd-set-llm`.
+4. Lane fill, per section 3: GPU lanes 1 and 2, Claude lanes 1 to 3. Record the weekly % and days since reset; apply the pace rule. Start eligible work on any idle lane; a one-off Claude decompose only inside pace; P0 per the P0 rule.
+5. Validate every decompose against section 4, including the tests rule.
+6. Merges per AGENT.md; pushes per rule 6b, and tags for patch and minor releases.
+7. README registry matches the registry; each defect has a row and a draft PRD.
+8. Report state changes only.
+
+### Lesson: third tmux server death, 2026-10-20 18:46:35 (cause found)
+
+- **Time:** the dedicated tmux server (`datawatch-tmux.service`) died at 18:46:35 EDT and every session died with it, including the supervisor. systemd restarted it at 18:46:38 (NRestarts 3). Earlier deaths: 2026-10-18 20:18:09 (found: a pi worker's sandbox helper) and 2026-10-18 22:55:31.
+- **Cause:** at 22:46:32.852Z (18:46:32 EDT) the Claude Haiku worker of PRD `148b0001` (live smoke cleanup of the retried-task story) ran `TMUX_TMPDIR=$S/tmux tmux kill-server`. tmux gives the `$TMUX` variable priority over `TMUX_TMPDIR`, and every worker runs inside a pane where `$TMUX` points at the production socket, so the "sandbox" kill hit the production server. It is the same mechanism as the 2026-10-18 20:18 death. Found in `~/.claude/projects/-home-dmz--datawatch-prd-worktrees-148b0001/*.jsonl` by searching the minute before the death.
+- **Why it recurred:** the fix PRDs for this class (BL504 `c7f10001`, then `e2120001`) were cancelled on 2026-10-19 as duplicated by the scoped cleanup in `scripts/run-tests.sh` and `scripts/release-smoke.sh`. Those scripts are scoped, but a worker writes and runs its own cleanup, so the worker environment itself must make the production socket unreachable.
+- **Recovered:** no task was left running or verifying. After the restart the daemon resumed the workers, and `148b0001`, `17880001`, `677d0001` and `51670001` completed. `cece0001` is blocked with all five tasks completed (verdict defect). Merges for six completed PRDs are pending.
