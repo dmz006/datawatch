@@ -166,9 +166,10 @@ entries:
       - agent-aider
       - parent-full
     impact:
-      traced: false
-      reachable: "unknown"
-      analysis: "Buffer overflow in terminal escape sequence parsing. Triggerable only by attacker-controlled terminal output inside a tmux session; requires prior container shell access."
+      traced: true
+      reachable: "no"
+      method: "docker run --network none on the built agent-base image: dpkg-query, apt-cache rdepends --installed, which infocmp/tic/tput; grep of Dockerfiles and internal/ cmd/ Go sources; CVE description read"
+      analysis: "CVE-2025-69720 is a stack buffer overflow in analyze_string() in progs/infocmp.c, i.e. in the infocmp command-line tool, not in the terminal escape-sequence parser the earlier wording described (ncurses before 6.5-20251213). Only the infocmp binary reaches that function, and infocmp ships in ncurses-bin, which is NOT installed in agent-base (dpkg-query finds no ncurses-bin; which infocmp tic toe tput clear finds nothing). The flagged packages are only libraries: libtinfo6 is linked by bash, tmux, less, util-linux, libreadline8 and procps, libncursesw6 by procps and pinentry-curses, ncurses-base is terminfo data. None of them contains analyze_string. No Dockerfile or entrypoint and no Go source under internal/ or cmd/ invokes infocmp, and the container runs as uid 10001. Unreachable; the libraries are required by tmux, bash and less."
     first_added: "2026-05-19"
     added: "2026-05-19"
     expires: "2026-06-18"
@@ -186,9 +187,10 @@ entries:
       - agent-aider
       - parent-full
     impact:
-      traced: false
-      reachable: "unknown"
-      analysis: "Archive::Tar memory corruption via crafted tar archive. Perl is a transitive dependency of git/gnupg; the datawatch service does not execute Perl scripts or call Archive::Tar, and does not extract tar archives at runtime."
+      traced: true
+      reachable: "no"
+      method: "docker run --network none on the built agent-base image: dpkg Depends of git, apt-cache rdepends --installed perl, grep for Archive::Tar in /usr/lib/git-core, dpkg -S /usr/bin/ptar; grep of Go sources and Dockerfiles; CVE description read"
+      analysis: "CVE-2026-9538 is a memory-exhaustion flaw in Perl's Archive::Tar before 3.10: the entry size is read from the 12-byte tar header with no upper bound, so a crafted archive makes Perl allocate a huge buffer (denial of service). It only triggers when a Perl program calls Archive::Tar on an untrusted archive. In agent-base, perl is needed by git (git Depends: perl, liberror-perl, so it cannot be dropped while git stays) and by debconf and adduser; git 2.39.5's Perl scripts do not use Archive::Tar (grep of /usr/lib/git-core finds none) and git archive and git clone are C code. The only Archive::Tar callers are the perl-provided ptar, ptardiff, ptargrep and instmodsh utilities in /usr/bin, which nothing runs. No datawatch Go source or image Dockerfile or entrypoint executes perl or those tools, and tar is extracted with GNU tar. The path is unreachable."
     first_added: "2026-05-31"
     added: "2026-05-31"
     expires: "2026-06-30"
@@ -203,9 +205,10 @@ entries:
     images:
       - agent-base
     impact:
-      traced: false
-      reachable: "unknown"
-      analysis: "libblkid parse_dos_extended() uses a 32-bit addition for the extended-partition start sector and skips bounds checks for the first two EBR entries; a crafted DOS extended-partition image can make libblkid report a false partition overlapping the MBR. Exploitation needs local libblkid probing of an attacker-crafted disk image or removable medium. Agent containers are not expected to probe untrusted block devices (not verified against the agent runtime configuration); not exposed via datawatch REST/MCP APIs. All eight packages are built from the single Debian source package util-linux."
+      traced: true
+      reachable: "no"
+      method: "docker run --network none on the built agent-base image: dpkg-query, apt-cache rdepends --installed for libblkid1/libmount1/mount, ldd of tmux and git, which blkid lsblk mount; grep of Go sources and Dockerfiles; CVE description read"
+      analysis: "CVE-2026-53615 is in libblkid's parse_dos_extended(): a 32-bit sum for the extended-partition start sector and missing bounds checks let a crafted DOS extended-partition table be misreported. It needs libblkid to probe a block device or disk image holding that table. In agent-base the library is pulled in by util-linux, mount and libmount1 (apt-cache rdepends); the blkid, lsblk, mount, umount, findmnt and wipefs binaries exist, but ldd shows neither tmux nor git links libblkid or libmount. No Dockerfile or entrypoint calls them, and no Go source under internal/ or cmd/ runs blkid, lsblk, mount or fdisk (internal/observer/disk_linux.go only parses /proc mount information and calls statfs). The container runs as uid 10001 with no /dev/sd*, nvme or loop devices, so nothing can probe a crafted partition table. Unreachable; util-linux is essential and cannot be removed."
     first_added: "2026-10-21"
     added: "2026-10-21"
     expires: "2026-11-20"
