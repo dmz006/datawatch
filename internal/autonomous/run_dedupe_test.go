@@ -65,37 +65,51 @@ func prdInApprovedState(t *testing.T, m *Manager) *PRD {
 	return prd
 }
 
-// (a) boot-resume of a PRDRunning PRD racing an explicit Run starts one executor.
+// (a) boot-resume of a PRDRunning PRD and an explicit Run start one executor.
+// Both orderings are exercised sequentially: the resume scan reads the live
+// *PRD without a lock, so truly simultaneous scan and Run is a data race in
+// the scan itself, not something this dedupe check is about.
 func TestRunDedupe_BootResumeVsRun(t *testing.T) {
-	m, api, _, verify := apiFixture(t)
-	prd := prdInRunningState(t, m)
-	probe := newSpawnProbe()
+	for _, tc := range []struct {
+		name     string
+		runFirst bool
+	}{
+		{"run_then_resume", true},
+		{"resume_then_run", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m, api, _, verify := apiFixture(t)
+			prd := prdInRunningState(t, m)
+			probe := newSpawnProbe()
 
-	ready := make(chan struct{})
-	api.SetServerReadyCh(ready)
-	api.SetExecutors(probe.spawn, verify) // resume scan parked on ready
+			if tc.runFirst {
+				// Scan runs synchronously after Run's executor holds the slot, so the
+				// drain below cannot cancel that executor before the scan looks.
+				api.spawnFn, api.verify = probe.spawn, verify
+				if err := api.Run(prd.ID); err != nil {
+					t.Fatalf("Run: %v", err)
+				}
+				probe.waitEntered(t)
+				api.resumeRunningPRDs()
+			} else {
+				ready := make(chan struct{})
+				api.SetServerReadyCh(ready)
+				api.SetExecutors(probe.spawn, verify) // resume scan parked on ready
+				close(ready)
+				probe.waitEntered(t)
+				if err := api.Run(prd.ID); err != nil {
+					t.Fatalf("Run: %v", err)
+				}
+			}
 
-	var wg sync.WaitGroup
-	start := make(chan struct{})
-	wg.Add(2)
-	go func() { defer wg.Done(); <-start; close(ready) }()
-	go func() {
-		defer wg.Done()
-		<-start
-		if err := api.Run(prd.ID); err != nil {
-			t.Errorf("Run: %v", err)
-		}
-	}()
-	close(start)
-	wg.Wait()
-
-	probe.waitEntered(t)
-	// Drain: cancels the blocked executor and waits out the resume scan too.
-	if err := api.WaitIdle(10 * time.Second); err != nil {
-		t.Fatal(err)
-	}
-	if n := probe.count(prd.ID); n != 1 {
-		t.Fatalf("executor spawned %d times for PRD, want 1", n)
+			// Drain: cancels the blocked executor and waits out the resume scan too.
+			if err := api.WaitIdle(10 * time.Second); err != nil {
+				t.Fatal(err)
+			}
+			if n := probe.count(prd.ID); n != 1 {
+				t.Fatalf("executor spawned %d times for PRD, want 1", n)
+			}
+		})
 	}
 }
 

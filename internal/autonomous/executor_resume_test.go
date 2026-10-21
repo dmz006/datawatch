@@ -45,12 +45,7 @@ func apiFixture(t *testing.T) (*Manager, *API, func(context.Context, SpawnReques
 	api := NewAPI(m)
 	// Registered after t.TempDir so it runs first (cleanup is LIFO): no
 	// executor may still be writing PRD files when the directory is removed.
-	t.Cleanup(func() {
-		m.Stop()
-		if err := api.WaitIdle(10 * time.Second); err != nil {
-			t.Errorf("draining executors: %v", err)
-		}
-	})
+	drainOnCleanup(t, m, api)
 	return m, api, spawn, verify
 }
 
@@ -108,17 +103,7 @@ func TestExecutorResume_BootResume(t *testing.T) {
 	api.SetExecutors(wrappedSpawn, verify)
 
 	// Wait for the executor to finish — it runs the single task.
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		got, ok := m.Store().GetPRD(prd.ID)
-		if !ok {
-			t.Fatal("PRD disappeared")
-		}
-		if st := statusOf(m, got); st == PRDCompleted || st == PRDFailed {
-			break
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
+	pollPRDTerminal(t, m, prd.ID, 5*time.Second)
 
 	got, _ := m.Store().GetPRD(prd.ID)
 	if statusOf(m, got) != PRDCompleted {
@@ -159,14 +144,7 @@ func TestExecutorResume_ResetTaskLaunchesExecutor(t *testing.T) {
 		t.Fatalf("API.Run after reset: %v", err)
 	}
 
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		got, _ := m.Store().GetPRD(prd.ID)
-		if st := statusOf(m, got); st == PRDCompleted || st == PRDFailed {
-			break
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
+	pollPRDTerminal(t, m, prd.ID, 5*time.Second)
 
 	got, _ := m.Store().GetPRD(prd.ID)
 	if statusOf(m, got) != PRDCompleted {
@@ -198,14 +176,7 @@ func TestExecutorResume_DoubleRunSafe(t *testing.T) {
 		t.Fatalf("second Run: %v", err)
 	}
 
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		got, _ := m.Store().GetPRD(prd.ID)
-		if st := statusOf(m, got); st == PRDCompleted || st == PRDFailed {
-			break
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
+	pollPRDTerminal(t, m, prd.ID, 5*time.Second)
 
 	// Must not panic or deadlock. The PRD reaches some non-blocked state:
 	// PRDCompleted (second executor finished), PRDFailed, or PRDApproved

@@ -37,6 +37,7 @@ func gateFixture(t *testing.T) (*Manager, *API) {
 	api := NewAPI(m)
 	api.spawnFn = spawn
 	api.verify = verify
+	drainOnCleanup(t, m, api)
 	return m, api
 }
 
@@ -78,9 +79,13 @@ func gatePRD(t *testing.T, m *Manager, projectDir string, age time.Duration) *PR
 // the deadline passes.
 func waitForStatus(t *testing.T, m *Manager, prdID string, deadline time.Duration, want ...PRDStatus) *PRD {
 	t.Helper()
-	by := time.Now().Add(deadline)
-	for time.Now().Before(by) {
-		p, ok := m.Store().GetPRD(prdID)
+	timeout := time.NewTimer(deadline)
+	defer timeout.Stop()
+	tick := time.NewTicker(5 * time.Millisecond)
+	defer tick.Stop()
+poll:
+	for {
+		p, ok := m.Store().SnapshotPRD(prdID)
 		if !ok {
 			t.Fatalf("PRD %q disappeared", prdID)
 		}
@@ -89,9 +94,13 @@ func waitForStatus(t *testing.T, m *Manager, prdID string, deadline time.Duratio
 				return p
 			}
 		}
-		time.Sleep(20 * time.Millisecond)
+		select {
+		case <-timeout.C:
+			break poll
+		case <-tick.C:
+		}
 	}
-	p, _ := m.Store().GetPRD(prdID)
+	p, _ := m.Store().SnapshotPRD(prdID)
 	return p
 }
 
@@ -308,8 +317,6 @@ func TestBootResumeGateReport(t *testing.T) {
 
 	freshDir := testProjectDir(t)
 	staleDir := testProjectDir(t)
-	fresh := gatePRD(t, m, freshDir, time.Minute)
-	stale := gatePRD(t, m, staleDir, 3*time.Hour)
 
 	var spawned atomic.Int32
 	api.spawnFn = func(ctx context.Context, req SpawnRequest) (SpawnResult, error) {
@@ -317,10 +324,16 @@ func TestBootResumeGateReport(t *testing.T) {
 		return SpawnResult{SessionID: "sess-" + req.TaskID}, nil
 	}
 
+	// Park the stale PRD in its own pass before the fresh one exists: a fresh
+	// executor persists every PRD, which would otherwise race the park's
+	// status write on the stale record.
+	stale := gatePRD(t, m, staleDir, 3*time.Hour)
+	api.resumeRunningPRDs()
+	sp := waitForStatus(t, m, stale.ID, 2*time.Second, PRDBlocked)
+	fresh := gatePRD(t, m, freshDir, time.Minute)
 	api.resumeRunningPRDs()
 
 	fp := waitForStatus(t, m, fresh.ID, 10*time.Second, PRDCompleted, PRDFailed, PRDBlocked)
-	sp := waitForStatus(t, m, stale.ID, 2*time.Second, PRDBlocked)
 	if fp.Status != PRDCompleted {
 		t.Errorf("fresh PRD want PRDCompleted, got %q", fp.Status)
 	}
@@ -364,8 +377,8 @@ func TestBootResumeGateAlertOnPark(t *testing.T) {
 	prd := gatePRD(t, m, proj, time.Minute)
 
 	var (
-		mu      sync.Mutex
-		alerts  []string
+		mu     sync.Mutex
+		alerts []string
 	)
 	m.SetAlertFn(func(title, body string) {
 		mu.Lock()
