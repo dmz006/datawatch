@@ -5,6 +5,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.43 — Deterministic autonomous tests and executor data races fixed
+
+
 ## v9.5.42 — Deterministic internal/session screen-capture tests
 
 ### Fixed
