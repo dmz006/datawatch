@@ -74,21 +74,62 @@ func newStartupDialogSession(t *testing.T, mgr *Manager, backend string, oneShot
 	return sess
 }
 
-// driveCaptureTicks runs StartScreenCapture at a fast interval and mutates the
-// fake pane once per iteration so the loop's "content changed" gate
-// (capture != lastCapture) passes on every tick.
-func driveCaptureTicks(t *testing.T, mgr *Manager, sess *Session, fake *FakeTmux, n int) {
+// paneCaptures counts the capture-loop's visible-pane captures of the given
+// tmux session. The loop captures once per tick before evaluating the pane,
+// so an increase proves the loop has since scanned the pane's content.
+func paneCaptures(f *FakeTmux, session string) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	n := 0
+	for _, c := range f.Calls {
+		if c.Op == "capture-visible" && c.Session == session {
+			n++
+		}
+	}
+	return n
+}
+
+// scanTicks proves the capture loop scanned the current pane at least n more
+// times: it polls until n+1 further captures happened (the +1 covers a
+// capture already in flight when the pane changed), mutating the pane on each
+// poll iteration so the loop's "content changed" gate (capture != lastCapture)
+// passes on every tick.
+func scanTicks(t *testing.T, sess *Session, fake *FakeTmux, n int) {
+	t.Helper()
+	base := paneCaptures(fake, sess.TmuxSession)
+	pollUntil(t, 10*time.Second, func() bool {
+		mutatePane(fake, sess.TmuxSession)
+		return paneCaptures(fake, sess.TmuxSession) >= base+n+1
+	}, "capture loop did not scan the pane the expected number of times")
+}
+
+// startCapture runs StartScreenCapture at a fast interval and returns a stop
+// func that cancels the loop and waits for its goroutine to exit, so counts
+// are asserted only once nothing can still send.
+func startCapture(t *testing.T, mgr *Manager, sess *Session) (stop func()) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 	mgr.StartScreenCapture(ctx, sess.FullID, 20)
-	for i := 0; i < n; i++ {
-		time.Sleep(40 * time.Millisecond)
-		fake.mu.Lock()
-		fake.Pane[sess.TmuxSession] += " "
-		fake.mu.Unlock()
+	stopped := false
+	stop = func() {
+		if stopped {
+			return
+		}
+		stopped = true
+		cancel()
+		waitCaptureLoopsExit(t, 10*time.Second)
 	}
-	time.Sleep(50 * time.Millisecond)
+	t.Cleanup(stop)
+	return stop
+}
+
+// driveCaptureTicks runs StartScreenCapture at a fast interval, scans the
+// pane n times, then stops the loop and waits for it to exit.
+func driveCaptureTicks(t *testing.T, mgr *Manager, sess *Session, fake *FakeTmux, n int) {
+	t.Helper()
+	stop := startCapture(t, mgr, sess)
+	scanTicks(t, sess, fake, n)
+	stop()
 }
 
 // trustSends counts trust-dialog accept sends through the m.tmux abstraction.
@@ -129,7 +170,10 @@ func TestStartupDialogDismiss_OneShotTrustDialogAcceptedByCaptureLoop(t *testing
 	sess := newStartupDialogSession(t, mgr, "claude-code", true)
 	fake.Pane[sess.TmuxSession] = trustPane
 
-	driveCaptureTicks(t, mgr, sess, fake, 4)
+	stop := startCapture(t, mgr, sess)
+	pollUntil(t, 10*time.Second, func() bool { return trustSends(fake) >= 1 }, "trust accept never sent")
+	scanTicks(t, sess, fake, 3) // a double-send would show up within these ticks
+	stop()
 
 	if got := trustSends(fake); got != 1 {
 		t.Fatalf("trust dialog accept sent %d time(s) via m.tmux, want exactly 1; capture loop calls: %+v", got, fake.Calls)
@@ -146,7 +190,10 @@ func TestStartupDialogDismiss_OneShotChannelsDialogAcceptedByCaptureLoop(t *test
 	sess := newStartupDialogSession(t, mgr, "claude-code", true)
 	fake.Pane[sess.TmuxSession] = channelsPane
 
-	driveCaptureTicks(t, mgr, sess, fake, 4)
+	stop := startCapture(t, mgr, sess)
+	pollUntil(t, 10*time.Second, func() bool { return channelSends(fake) >= 1 }, "channels accept never sent")
+	scanTicks(t, sess, fake, 3)
+	stop()
 
 	if got := channelSends(fake); got != 1 {
 		t.Fatalf("channels consent accept sent %d time(s) via m.tmux, want exactly 1; capture loop calls: %+v", got, fake.Calls)
@@ -169,7 +216,13 @@ func TestStartupDialogDismiss_FailedAcceptIsRetriedOnNextTick(t *testing.T) {
 	sess := newStartupDialogSession(t, mgr, "claude-code", true)
 	fake.Pane[sess.TmuxSession] = trustPane
 
-	driveCaptureTicks(t, mgr, sess, fake, 5)
+	stop := startCapture(t, mgr, sess)
+	pollUntil(t, 10*time.Second, func() bool {
+		mutatePane(fake, sess.TmuxSession) // keep the content-change gate open for the retry tick
+		return trustSends(fake) >= 2
+	}, "failed accept was never retried")
+	scanTicks(t, sess, fake, 3) // retry must stick: no third attempt while the pane lingers
+	stop()
 
 	got := trustSends(fake)
 	if got != 2 {
@@ -188,27 +241,16 @@ func TestStartupDialogDismiss_NotResentOnceDialogGone(t *testing.T) {
 	sess := newStartupDialogSession(t, mgr, "claude-code", true)
 	fake.Pane[sess.TmuxSession] = trustPane
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	mgr.StartScreenCapture(ctx, sess.FullID, 20)
-	// Dialog visible for the first two ticks (accept sent).
-	for i := 0; i < 2; i++ {
-		time.Sleep(40 * time.Millisecond)
-		fake.mu.Lock()
-		fake.Pane[sess.TmuxSession] += " "
-		fake.mu.Unlock()
-	}
-	// Claude accepted — dialog gone, ordinary prompt on screen.
+	stop := startCapture(t, mgr, sess)
+	// Dialog visible: accept sent.
+	pollUntil(t, 10*time.Second, func() bool { return trustSends(fake) >= 1 }, "trust accept never sent")
+	// Claude accepted — dialog gone, ordinary prompt on screen. Prove the
+	// loop scanned the new pane several times before asserting no re-send.
 	fake.mu.Lock()
 	fake.Pane[sess.TmuxSession] = "▸ working on the task\n❯ "
 	fake.mu.Unlock()
-	for i := 0; i < 3; i++ {
-		time.Sleep(40 * time.Millisecond)
-		fake.mu.Lock()
-		fake.Pane[sess.TmuxSession] += " "
-		fake.mu.Unlock()
-	}
-	time.Sleep(50 * time.Millisecond)
+	scanTicks(t, sess, fake, 3)
+	stop()
 
 	got := trustSends(fake)
 	if got != 1 {
@@ -216,18 +258,24 @@ func TestStartupDialogDismiss_NotResentOnceDialogGone(t *testing.T) {
 	}
 }
 
-// drivePhase holds the pane at the given content across n ticks with the
-// " " mutation so the capture loop's content-change gate passes each tick.
+// drivePhase holds the pane at the given content until the capture loop has
+// scanned it n times (see scanTicks), mutating the pane each poll so the
+// content-change gate passes.
 func drivePhase(t *testing.T, sess *Session, fake *FakeTmux, pane string, n int) {
 	t.Helper()
 	fake.mu.Lock()
 	fake.Pane[sess.TmuxSession] = pane
 	fake.mu.Unlock()
-	for i := 0; i < n; i++ {
-		time.Sleep(40 * time.Millisecond)
-		fake.mu.Lock()
-		fake.Pane[sess.TmuxSession] += " "
-		fake.mu.Unlock()
+	scanTicks(t, sess, fake, n)
+}
+
+// holdPane keeps scanning the given pane until at least d has elapsed,
+// proving via scanTicks that the loop kept seeing it throughout.
+func holdPane(t *testing.T, sess *Session, fake *FakeTmux, pane string, d time.Duration) {
+	t.Helper()
+	t0 := time.Now()
+	for time.Since(t0) < d {
+		drivePhase(t, sess, fake, pane, 2)
 	}
 }
 
@@ -247,14 +295,15 @@ func TestStartupDialogDismiss_StuckDialogAutoRecovers(t *testing.T) {
 	mgr, fake := newTestManagerWithFake(t)
 	sess := newStartupDialogSession(t, mgr, "claude-code", true)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	mgr.StartScreenCapture(ctx, sess.FullID, 20)
+	stop := startCapture(t, mgr, sess)
 
 	prompt := "\u25b8 working on the task\n\u276f "
 
 	// Phase 1: dialog visible → first accept send.
-	drivePhase(t, sess, fake, trustPane, 1)
+	fake.mu.Lock()
+	fake.Pane[sess.TmuxSession] = trustPane
+	fake.mu.Unlock()
+	pollUntil(t, 10*time.Second, func() bool { return trustSends(fake) >= 1 }, "phase 1: trust accept never sent")
 	if got := trustSends(fake); got != 1 {
 		t.Fatalf("phase 1: trust accept sent %d time(s), want 1; calls: %+v", got, fake.Calls)
 	}
@@ -266,23 +315,20 @@ func TestStartupDialogDismiss_StuckDialogAutoRecovers(t *testing.T) {
 	// Phase 3: dialog still visible. During the settle gap the loop must
 	// hold; once the gap has elapsed it must re-send on its own (this is
 	// the automatic recovery the live run of 2026-10-21 never achieved).
-	for i := 0; i < 13 && trustSends(fake) == 1; i++ {
-		drivePhase(t, sess, fake, trustPane, 1)
-	}
-	deadline := time.Now().Add(3 * time.Second)
-	for trustSends(fake) == 1 && time.Now().Before(deadline) {
-		drivePhase(t, sess, fake, trustPane, 2)
-	}
+	fake.mu.Lock()
+	fake.Pane[sess.TmuxSession] = trustPane
+	fake.mu.Unlock()
+	pollUntil(t, 10*time.Second, func() bool {
+		mutatePane(fake, sess.TmuxSession)
+		return trustSends(fake) >= 2
+	}, "phase 3: stuck dialog not re-sent after the settle gap")
 	if got := trustSends(fake); got != 2 {
 		t.Fatalf("phase 3: stuck dialog not re-sent — accepts total %d, want 2 (auto-recovery after settle gap); calls: %+v", got, fake.Calls)
 	}
 
 	// Phase 4: the dialog is finally accepted — sustained absence commits
 	// the "dismissed confirmed" latch.
-	t0 := time.Now()
-	for time.Since(t0) < 1500*time.Millisecond {
-		drivePhase(t, sess, fake, prompt, 5)
-	}
+	holdPane(t, sess, fake, prompt, 1500*time.Millisecond)
 	if got := trustSends(fake); got != 2 {
 		t.Fatalf("phase 4: no re-send expected after sustained absence, got %d accepts; calls: %+v", got, fake.Calls)
 	}
@@ -290,20 +336,20 @@ func TestStartupDialogDismiss_StuckDialogAutoRecovers(t *testing.T) {
 	// Phase 5: the dialog text appears again after the confirmed latch
 	// (a second trust prompt on the pane, or a stale latch that committed
 	// on a mid-render frame) — the budget must re-arm and fire.
-	drivePhase(t, sess, fake, trustPane, 1)
-	deadline = time.Now().Add(3 * time.Second)
-	for trustSends(fake) == 2 && time.Now().Before(deadline) {
-		drivePhase(t, sess, fake, trustPane, 2)
-	}
+	fake.mu.Lock()
+	fake.Pane[sess.TmuxSession] = trustPane
+	fake.mu.Unlock()
+	pollUntil(t, 10*time.Second, func() bool {
+		mutatePane(fake, sess.TmuxSession)
+		return trustSends(fake) >= 3
+	}, "phase 5: re-appearance after dismissed latch not honoured")
 	if got := trustSends(fake); got != 3 {
 		t.Fatalf("phase 5: re-appearance after dismissed latch not honoured — accepts total %d, want 3; calls: %+v", got, fake.Calls)
 	}
 
 	// Phase 6: sustained absence commits the latch again and holds.
-	t0 = time.Now()
-	for time.Since(t0) < 1500*time.Millisecond {
-		drivePhase(t, sess, fake, prompt, 5)
-	}
+	holdPane(t, sess, fake, prompt, 1500*time.Millisecond)
+	stop()
 	if got := trustSends(fake); got != 3 {
 		t.Fatalf("phase 6: re-send after re-dismiss — accepts total %d, want 3; calls: %+v", got, fake.Calls)
 	}
