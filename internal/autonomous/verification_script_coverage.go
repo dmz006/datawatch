@@ -21,46 +21,45 @@ import (
 )
 
 // validateVerificationScriptCoverage inspects a freshly-parsed decompose
-// response and rejects it when it plans real file changes but names a
-// verification script nowhere. Two conditions must both hold before this
-// fires, matching the exact scope verificationScriptSuffix itself used:
+// response and rejects it when any file-changing unit leaves its
+// verification script unnamed — per unit, not per plan. A story-level
+// script does NOT excuse its tasks: a single whole-plan script can cover
+// exactly one unit, and a worker running the other task would have
+// nothing of its own to check with. Rules:
 //
-//   - projectDir != "" — the same gate the prompt suffix itself uses. A
+//   - projectDir == "" — the same gate the prompt suffix itself uses. A
 //     headless/ask-only backend was never asked for scripts (it has
 //     nowhere to write one), so it isn't held to this bar either.
-//   - at least one story or task plans real file changes (FilesPlanned
-//     non-empty). A PRD whose decompose output has no files planned
-//     anywhere (pure research, or paths genuinely unknown ahead of
-//     time, same tolerance the schema's own "files" field already
-//     documents) is not held to this bar.
+//   - every task with FilesPlanned non-empty must carry its own
+//     non-blank VerificationScript. A task with no planned files
+//     (pure research, or paths genuinely unknown ahead of time, same
+//     tolerance the schema's own "files" field already documents) is
+//     exempt.
+//   - a story with FilesPlanned non-empty and zero tasks must carry its
+//     own non-blank VerificationScript.
+//
+// Every offender is collected (not just the first) so a retry attempt
+// sees the full list in one error.
 func validateVerificationScriptCoverage(projectDir string, stories []Story) error {
 	if projectDir == "" {
 		return nil
 	}
-	var plansFiles, hasScript bool
-	taskCount := 0
+	var offenders []string
 	for _, s := range stories {
-		if len(s.FilesPlanned) > 0 {
-			plansFiles = true
-		}
-		if strings.TrimSpace(s.VerificationScript) != "" {
-			hasScript = true
+		if len(s.FilesPlanned) > 0 && len(s.Tasks) == 0 && strings.TrimSpace(s.VerificationScript) == "" {
+			offenders = append(offenders, fmt.Sprintf("story %q", s.Title))
 		}
 		for _, t := range s.Tasks {
-			taskCount++
-			if len(t.FilesPlanned) > 0 {
-				plansFiles = true
-			}
-			if strings.TrimSpace(t.VerificationScript) != "" {
-				hasScript = true
+			if len(t.FilesPlanned) > 0 && strings.TrimSpace(t.VerificationScript) == "" {
+				offenders = append(offenders, fmt.Sprintf("story %q / task %q", s.Title, t.Title))
 			}
 		}
 	}
-	if plansFiles && !hasScript {
-		return fmt.Errorf(
-			"decompose produced zero verification_script values across %d stories / %d tasks despite planning real file changes — a tooled PRD requires at least one deterministic check. Retry decompose; if it recurs, check the planning backend/model actually has file access and is following the schema's verification_script field",
-			len(stories), taskCount,
-		)
+	if len(offenders) == 0 {
+		return nil
 	}
-	return nil
+	return fmt.Errorf(
+		"decompose left file-changing units with no verification_script: %s. A story-level script does not excuse its tasks, and a task with no planned files is exempt — every file-changing unit needs its own deterministic check. Retry decompose; if it recurs, check the planning backend/model actually has file access and is following the schema's verification_script field. Give every file-changing task a verification_script path under .datawatch/verify/ that checks only that task's own files",
+		strings.Join(offenders, "; "),
+	)
 }

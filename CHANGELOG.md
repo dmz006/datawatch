@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.37 — Every task that changes files must have a verification script
+
+### Fixed
+- **It is now checked that every task that changes files has a verification script, and the tasks that are missing one are named** — a plan with an unverified file-changing task no longer slips through unchecked.
+- **A plan that fails this check is now sent back to the planner with the names of the offending tasks for another try, instead of being passed on to review or failed without a retry.**
+
 ## v9.5.36 — One-shot startup dialog auto-dismiss
 
 ### Fixed

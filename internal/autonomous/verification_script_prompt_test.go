@@ -229,6 +229,7 @@ func TestPlanningPromptSession_SchemaIncludesVerificationScriptFields(t *testing
 // correctly produced zero of them across 16 tasks.
 const planRespFilesNoScript = `{"title":"T","stories":[{"title":"S","files":["a.go"],"tasks":[{"title":"Task 1","spec":"do it","files":["a.go"]}]}]}`
 const planRespFilesWithScript = `{"title":"T","stories":[{"title":"S","files":["a.go"],"tasks":[{"title":"Task 1","spec":"do it","files":["a.go"],"verification_script":".datawatch/verify/task-1.sh"}]}]}`
+const planRespTwoFileTasksOneScript = `{"title":"T","stories":[{"title":"S","tasks":[{"title":"Task 1","spec":"do it","files":["a.go"],"verification_script":".datawatch/verify/t1.sh"},{"title":"Task 2","spec":"do it","files":["b.go"]}]}]}`
 const planRespNoFilesNoScript = `{"title":"T","stories":[{"title":"S","tasks":[{"title":"Task 1","spec":"research only"}]}]}`
 
 func newTooledManagerForScriptCoverageTest(t *testing.T, resp string) (*Manager, *PRD) {
@@ -257,8 +258,8 @@ func TestDecompose_RejectsZeroScriptsWhenFilesArePlanned(t *testing.T) {
 	if err == nil {
 		t.Fatal("want an error when the plan touches files but names zero verification scripts")
 	}
-	if !strings.Contains(err.Error(), "zero verification_script") {
-		t.Errorf("error = %v, want it to name the real problem", err)
+	if !strings.Contains(err.Error(), `task "Task 1"`) {
+		t.Errorf("error = %v, want it to name the offending task (story \"S\" / task \"Task 1\")", err)
 	}
 	got, ok := m.Store().GetPRD(prd.ID)
 	if !ok {
@@ -269,7 +270,7 @@ func TestDecompose_RejectsZeroScriptsWhenFilesArePlanned(t *testing.T) {
 	}
 }
 
-func TestDecompose_AcceptsAtLeastOneScriptAcrossTheWholePlan(t *testing.T) {
+func TestDecompose_AcceptsPlanWhereEveryFileTaskHasAScript(t *testing.T) {
 	m, prd := newTooledManagerForScriptCoverageTest(t, planRespFilesWithScript)
 	if _, err := m.Decompose(prd.ID); err != nil {
 		t.Fatalf("Decompose: %v", err)
@@ -279,7 +280,31 @@ func TestDecompose_AcceptsAtLeastOneScriptAcrossTheWholePlan(t *testing.T) {
 		t.Fatal("PRD vanished")
 	}
 	if got.Status != PRDNeedsReview {
-		t.Errorf("status = %q, want needs_review (a plan with at least one script must not be rejected)", got.Status)
+		t.Errorf("status = %q, want needs_review (a plan where every file-changing task has its own script must not be rejected)", got.Status)
+	}
+}
+
+func TestDecompose_RejectsWhenOnlyOneOfTwoFileTasksHasAScript(t *testing.T) {
+	// One story-level script does not excuse its tasks: with two
+	// file-changing tasks and only one script, the scriptless task
+	// must be the one named.
+	m, prd := newTooledManagerForScriptCoverageTest(t, planRespTwoFileTasksOneScript)
+	_, err := m.Decompose(prd.ID)
+	if err == nil {
+		t.Fatal("want an error when only one of two file-changing tasks names a verification script")
+	}
+	if !strings.Contains(err.Error(), `task "Task 2"`) {
+		t.Errorf("error = %v, want it to name the scriptless task Task 2", err)
+	}
+	if strings.Contains(err.Error(), `task "Task 1"`) {
+		t.Errorf("error = %v, must name only the offending task (Task 1 has its own script)", err)
+	}
+	got, ok := m.Store().GetPRD(prd.ID)
+	if !ok {
+		t.Fatal("PRD vanished")
+	}
+	if got.Status != PRDDraft {
+		t.Errorf("status = %q, want rolled back to draft so the operator can retry", got.Status)
 	}
 }
 

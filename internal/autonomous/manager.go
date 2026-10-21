@@ -1125,10 +1125,13 @@ func (m *Manager) validateAndStorePlan(prd *PRD, prdID string, s []Story) (decom
 		return decomposeAttemptTerminal, zerr
 	}
 	// B124 — kick back a tooled plan that skipped verification scripts
-	// entirely despite planning real file changes: a "scope"-category
-	// failure in the same retry-then-terminal path.
+	// entirely despite planning real file changes. Content, not scope:
+	// the plan is fixable by adding scripts, so it retries from the
+	// content budget (AutoFixRetries fallback in resolveRetryPolicy), and
+	// retryDecomposeFailure's hint feeds the offending task names into
+	// the next attempt.
 	if verr := validateVerificationScriptCoverage(prd.ProjectDir, s); verr != nil {
-		if m.retryDecomposeFailure(prd, "scope", "verification-script-coverage", verr.Error()) {
+		if m.retryDecomposeFailure(prd, "content", "verification-script-coverage", verr.Error()) {
 			return decomposeAttemptRetry, nil
 		}
 		m.failDecomposeAttempt(prd, "verification-script-coverage", verr)
