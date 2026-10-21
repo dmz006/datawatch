@@ -99,7 +99,7 @@ func (m *Manager) ciWatchTimeout() time.Duration {
 }
 
 func (m *Manager) taskCancelled(id string) bool {
-	if cur, ok := m.store.GetTask(id); ok {
+	if cur, ok := m.store.TaskSnapshot(id); ok {
 		return cur.Status == TaskCancelled
 	}
 	return false

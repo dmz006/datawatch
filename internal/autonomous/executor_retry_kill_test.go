@@ -72,7 +72,7 @@ func TestExecutor_RetrySpawn_KillsStaleSessionBeforeRespawn(t *testing.T) {
 
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		got, ok := m.Store().GetPRD(prd.ID)
+		got, ok := m.Store().SnapshotPRD(prd.ID)
 		if !ok {
 			t.Fatal("PRD disappeared")
 		}

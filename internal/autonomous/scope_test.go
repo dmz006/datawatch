@@ -129,7 +129,9 @@ func TestScope_SetPRDDirsValidatesAndRelints(t *testing.T) {
 func runToTerminal(t *testing.T, m *Manager, api *API, id string, spawn SpawnFn, verify VerifyFn) *PRD {
 	t.Helper()
 	prd, _ := m.Store().GetPRD(id)
-	prd.Status = PRDApproved
+	m.mu.Lock()
+	m.Store().WithLock(func() { prd.Status = PRDApproved })
+	m.mu.Unlock()
 	_ = m.Store().SavePRD(prd)
 	api.SetExecutors(spawn, verify)
 	if err := api.Run(id); err != nil {

@@ -177,7 +177,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 	}
 	isFirstRun := prd.Status == PRDApproved || prd.Status == PRDActive
 	runOld := prd.Status
-	prd.Status = PRDRunning
+	m.store.WithLock(func() { prd.Status = PRDRunning })
 	m.mu.Unlock()
 	// BL427 — the running event fires only once the "run" Decision
 	// below is saved; an early return (worktree setup) emits nothing.
@@ -248,7 +248,9 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 			}
 		}
 	}
-	prd.Decisions = append(prd.Decisions, Decision{At: time.Now(), Kind: "run", Actor: "autonomous"})
+	m.store.WithLock(func() {
+		prd.Decisions = append(prd.Decisions, Decision{At: time.Now(), Kind: "run", Actor: "autonomous"})
+	})
 	if err := m.store.SavePRD(prd); err != nil {
 		return err
 	}
@@ -321,7 +323,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 			// recommendations" completed depending on two never-produced
 			// files from a cancelled story. A cancelled dependency was never
 			// fulfilled either; it must propagate the same as a failed one.
-			if isTaskTerminal(t.Status) {
+			if m.taskTerminal(t) {
 				if t.Status == TaskFailed || t.Status == TaskCancelled {
 					failedIDs[tid] = true
 				}
@@ -337,12 +339,16 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 			}
 			if depFailed != "" {
 				oldStatus := t.Status
-				t.Status = TaskFailed
+				m.store.WithLock(func() {
+					t.Status = TaskFailed
+				})
 				verb := "failed"
 				if dt := lookupTask(prd, depFailed); dt != nil && dt.Status == TaskCancelled {
 					verb = "was cancelled"
 				}
-				t.Error = "dependency " + depFailed + " " + verb
+				m.store.WithLock(func() {
+					t.Error = "dependency " + depFailed + " " + verb
+				})
 				if m.store.SaveTask(t) == nil {
 					m.emitTaskStatus(prd, t, oldStatus, nil, nil)
 				}
@@ -351,14 +357,16 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 			} else {
 				// Mark the owning story in_progress when its first task begins.
 				if s := lookupStoryByTaskID(prd, tid); s != nil && (s.Status == "" || s.Status == StoryPending) {
-					s.Status = StoryInProgress
+					m.store.WithLock(func() { s.Status = StoryInProgress })
 					_ = m.store.SavePRD(prd)
 				}
 				if err := m.executeOne(ctx, prd, t, spawn, verify, retries, qgCfg, qgBaselines); err != nil {
 					m.releaseCapacity(t.ID)
 					oldStatus := t.Status
-					t.Status = TaskFailed
-					t.Error = err.Error()
+					m.store.WithLock(func() {
+						t.Status = TaskFailed
+						t.Error = err.Error()
+					})
 					if m.store.SaveTask(t) == nil {
 						m.emitTaskStatus(prd, t, oldStatus, nil, nil)
 					}
@@ -378,7 +386,9 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 					// operator can review before more tasks run.
 					if lt.Status == TaskBlocked {
 						old := latest.Status
-						latest.Status = PRDBlocked
+						m.store.WithLock(func() {
+							latest.Status = PRDBlocked
+						})
 						latest.BlockedReason = blockedReasonFromVerdicts(lt.Verdicts)
 						if m.store.SavePRD(latest) == nil {
 							m.emitPRDStatus(latest, old, nil, lastBlockVerdict(lt.Verdicts))
@@ -387,15 +397,17 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 					}
 				}
 				// Roll up story status when all its tasks reached a terminal state.
-				if s := lookupStoryByTaskID(latest, tid); s != nil && storyAllTasksDone(s) {
-					s.Status = storyRollupStatus(s)
+				if s := lookupStoryByTaskID(latest, tid); s != nil && m.storyDone(s) {
+					m.store.WithLock(func() { s.Status = storyRollupStatus(s) })
 					// A story failure halts the PRD by default so the operator
 					// can re-edit/rerun the failed story instead of the executor
 					// barreling ahead into later, independent stories unattended.
 					// Opt out per-PRD or globally via ContinueOnStoryFailure.
-					if s.Status == StoryFailed && !m.resolveContinueOnStoryFailure(latest) && anyNonTerminalTasksRemain(latest) {
+					if s.Status == StoryFailed && !m.resolveContinueOnStoryFailure(latest) && m.nonTerminalRemain(latest) {
 						old := latest.Status
-						latest.Status = PRDBlocked
+						m.store.WithLock(func() {
+							latest.Status = PRDBlocked
+						})
 						if m.store.SavePRD(latest) == nil {
 							m.emitPRDStatus(latest, old, nil, nil)
 						}
@@ -433,7 +445,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 		// deps, failed/cancelled ones propagate as unmet.
 		for _, tid := range order {
 			t := lookupTask(prd, tid)
-			if t == nil || !isTaskTerminal(t.Status) {
+			if t == nil || !m.taskTerminal(t) {
 				continue
 			}
 			completedIDs[tid] = true
@@ -476,8 +488,10 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 				}
 				if depFailed != "" {
 					oldStatus := t.Status
-					t.Status = TaskFailed
-					t.Error = "dependency " + depFailed + " failed"
+					m.store.WithLock(func() {
+						t.Status = TaskFailed
+						t.Error = "dependency " + depFailed + " failed"
+					})
 					if m.store.SaveTask(t) == nil {
 						m.emitTaskStatus(prd, t, oldStatus, nil, nil)
 					}
@@ -505,7 +519,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 					continue
 				}
 				if s := lookupStoryByTaskID(prd, tid); s != nil && (s.Status == "" || s.Status == StoryPending) {
-					s.Status = StoryInProgress
+					m.store.WithLock(func() { s.Status = StoryInProgress })
 					_ = m.store.SavePRD(prd)
 				}
 				inFlight[tid] = true
@@ -535,10 +549,12 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 			if dr.err == nil {
 				return
 			}
-			if t := lookupTask(prd, dr.tid); t != nil && !isTaskTerminal(t.Status) {
+			if t := lookupTask(prd, dr.tid); t != nil && !m.taskTerminal(t) {
 				oldStatus := t.Status
-				t.Status = TaskFailed
-				t.Error = dr.err.Error()
+				m.store.WithLock(func() {
+					t.Status = TaskFailed
+					t.Error = dr.err.Error()
+				})
 				if m.store.SaveTask(t) == nil {
 					m.emitTaskStatus(prd, t, oldStatus, nil, nil)
 				}
@@ -572,8 +588,10 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 					if t := lookupTask(prd, r.tid); t != nil {
 						m.releaseCapacity(t.ID)
 						oldStatus := t.Status
-						t.Status = TaskFailed
-						t.Error = r.err.Error()
+						m.store.WithLock(func() {
+							t.Status = TaskFailed
+							t.Error = r.err.Error()
+						})
 						if m.store.SaveTask(t) == nil {
 							m.emitTaskStatus(prd, t, oldStatus, nil, nil)
 						}
@@ -604,7 +622,9 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 						}
 						if lt.Status == TaskBlocked {
 							old := latest.Status
-							latest.Status = PRDBlocked
+							m.store.WithLock(func() {
+								latest.Status = PRDBlocked
+							})
 							latest.BlockedReason = blockedReasonFromVerdicts(lt.Verdicts)
 							if m.store.SavePRD(latest) == nil {
 								m.emitPRDStatus(latest, old, nil, lastBlockVerdict(lt.Verdicts))
@@ -618,11 +638,13 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 							return nil
 						}
 					}
-					if s := lookupStoryByTaskID(latest, r.tid); s != nil && storyAllTasksDone(s) {
-						s.Status = storyRollupStatus(s)
-						if s.Status == StoryFailed && !m.resolveContinueOnStoryFailure(latest) && anyNonTerminalTasksRemain(latest) {
+					if s := lookupStoryByTaskID(latest, r.tid); s != nil && m.storyDone(s) {
+						m.store.WithLock(func() { s.Status = storyRollupStatus(s) })
+						if s.Status == StoryFailed && !m.resolveContinueOnStoryFailure(latest) && m.nonTerminalRemain(latest) {
 							old := latest.Status
-							latest.Status = PRDBlocked
+							m.store.WithLock(func() {
+								latest.Status = PRDBlocked
+							})
 							if m.store.SavePRD(latest) == nil {
 								m.emitPRDStatus(latest, old, nil, nil)
 							}
@@ -650,7 +672,7 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 	// settle first; story-level block also halts the PRD.
 	for i := range prd.Story {
 		s := &prd.Story[i]
-		if !storyAllTasksDone(s) {
+		if !m.storyDone(s) {
 			continue
 		}
 		if blocked, contentFixVerdict, err := m.runPerStoryGuardrails(ctx, prd, s); err != nil {
@@ -687,15 +709,17 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 	// failure — only an actual TaskFailed should mark the PRD failed.
 	allDone := true
 	anyFailed := false
-	for _, s := range prd.Story {
-		for _, t := range s.Tasks {
-			if !isTaskTerminal(t.Status) {
-				allDone = false
-			} else if t.Status == TaskFailed {
-				anyFailed = true
+	m.store.WithLock(func() {
+		for _, s := range prd.Story {
+			for _, t := range s.Tasks {
+				if !isTaskTerminal(t.Status) {
+					allDone = false
+				} else if t.Status == TaskFailed {
+					anyFailed = true
+				}
 			}
 		}
-	}
+	})
 	if !allDone {
 		return m.store.SavePRD(prd)
 	}
@@ -818,8 +842,10 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 			}
 			if p, ok := m.store.GetPRD(prdID); ok {
 				now := time.Now().UTC()
-				p.MemoryReport = report
-				p.MemoryReportAt = &now
+				m.store.WithLock(func() {
+					p.MemoryReport = report
+					p.MemoryReportAt = &now
+				})
 				if serr := m.store.SavePRD(p); serr != nil {
 					log.Printf("[autonomous] memory-report save: prd=%s: %v", prdID, serr)
 				}
@@ -973,18 +999,20 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 						log.Printf("[autonomous] executeOne: killed stale session %s for task %s before respawn", t.SessionID, t.ID)
 					}
 				}
-				t.SessionID = ""
+				m.store.WithLock(func() { t.SessionID = "" })
 			}
 			now := time.Now()
-			t.StartedAt = &now
-			t.Status = TaskInProgress
-			t.RetryCount = attempt
-			// A genuine in-loop retry (attempt > 0) follows a prior attempt that
-			// already ran, so it registers as one for the verifier's already-landed
-			// check. attempt 0 is the first run and adds nothing.
-			if attempt > 0 {
-				t.PriorAttemptCount++
-			}
+			m.store.WithLock(func() {
+				t.StartedAt = &now
+				t.Status = TaskInProgress
+				t.RetryCount = attempt
+				// A genuine in-loop retry (attempt > 0) follows a prior attempt that
+				// already ran, so it registers as one for the verifier's already-landed
+				// check. attempt 0 is the first run and adds nothing.
+				if attempt > 0 {
+					t.PriorAttemptCount++
+				}
+			})
 			if m.store.SaveTask(t) == nil {
 				m.emitTaskSession(prd, t, oldSession)
 				m.emitTaskStatus(prd, t, oldStatus, nil, nil)
@@ -999,8 +1027,10 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				mismatch := fmt.Errorf("task %s not spawned: %w", t.ID, merr)
 				log.Printf("[autonomous] prd=%s task=%s model/backend mismatch, not spawning: %v", prd.ID, t.ID, merr)
 				oldStatus := t.Status
-				t.Status = TaskFailed
-				t.Error = mismatch.Error()
+				m.store.WithLock(func() {
+					t.Status = TaskFailed
+					t.Error = mismatch.Error()
+				})
 				if m.store.SaveTask(t) == nil {
 					m.emitTaskStatus(prd, t, oldStatus, nil, nil)
 				}
@@ -1082,15 +1112,17 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			// The spawn ran with the restore skipped (if clean restart was set),
 			// so the request is spent. Clear it, success or failure, so later
 			// automatic retries restore again.
-			t.CleanRestart = false
+			m.store.WithLock(func() { t.CleanRestart = false })
 			if err != nil {
 				return fmt.Errorf("spawn: %w", err)
 			}
 			if led := m.Capacity(); led != nil {
 				led.Bind(t.ID, sr.SessionID)
 			}
-			oldSession = t.SessionID
-			t.SessionID = sr.SessionID
+			m.store.WithLock(func() {
+				oldSession = t.SessionID
+				t.SessionID = sr.SessionID
+			})
 			// persist SessionID immediately so killPRDSessions can reach it if daemon exits before TaskVerifying is saved
 			if m.store.SaveTask(t) == nil {
 				m.emitTaskSession(prd, t, oldSession)
@@ -1106,20 +1138,22 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 					}
 				}
 			}
-			t.PreTaskSHA = sr.PreTaskSHA // BL366: persisted for verifier diff grounding
+			m.store.WithLock(func() { t.PreTaskSHA = sr.PreTaskSHA }) // BL366: persisted for verifier diff grounding
 			// BaseSHA anchors the task's FIRST attempt only. Gate on attempt == 0,
 			// not on BaseSHA being empty: when attempt 1 captured no HEAD (no
 			// commits yet) BaseSHA stays empty, and a retry would otherwise adopt
 			// its own pre-task HEAD, which already includes attempt 1's commit.
 			// Repro: TestBaseSHA_RetryDoesNotAdoptRetryHeadWhenFirstAttemptHadNoHead
 			// (task_base_sha_retry_test.go).
-			if attempt == 0 && t.BaseSHA == "" && sr.PreTaskSHA != "" {
-				t.BaseSHA = sr.PreTaskSHA // per-task anchor: set once on the first attempt, never by retries
-			}
-			t.PreTaskUntrackedFiles = sr.PreTaskUntrackedFiles // v8.25.12: detect newly created untracked files
-			t.PreTaskDirtyFiles = sr.PreTaskDirtyFiles         // foreign-file-drift: tracked files already modified before the worker started
-			oldStatus = t.Status
-			t.Status = TaskVerifying
+			m.store.WithLock(func() {
+				if attempt == 0 && t.BaseSHA == "" && sr.PreTaskSHA != "" {
+					t.BaseSHA = sr.PreTaskSHA // per-task anchor: set once on the first attempt, never by retries
+				}
+				t.PreTaskUntrackedFiles = sr.PreTaskUntrackedFiles // v8.25.12: detect newly created untracked files
+				t.PreTaskDirtyFiles = sr.PreTaskDirtyFiles         // foreign-file-drift: tracked files already modified before the worker started
+				oldStatus = t.Status
+				t.Status = TaskVerifying
+			})
 			if m.store.SaveTask(t) == nil {
 				m.emitTaskStatus(prd, t, oldStatus, nil, nil)
 			}
@@ -1158,7 +1192,9 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 					if cp := m.relocateCheckpoint(prd, t); cp != "" {
 						hint += "\n\nCheckpoint from the previous attempt (context only):\n" + cp
 					}
-					t.Error = hint
+					m.store.WithLock(func() {
+						t.Error = hint
+					})
 					_ = m.store.SaveTask(t)
 					continue
 				}
@@ -1167,7 +1203,8 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 		} else {
 			vr = VerificationResult{OK: true, Summary: "no verifier configured", VerifiedAt: time.Now()}
 		}
-		t.Verification = &vr
+		vrFinal := vr
+		m.store.WithLock(func() { t.Verification = &vrFinal })
 		// Foreign-file drift: deterministic, once per worker attempt.
 		// Warn-only by default; a strict-mode block halts the walk the
 		// same way a per-task guardrail block does below.
@@ -1194,8 +1231,10 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				if cmp.Regression && qgCfg.BlockOnRegression {
 					lastFailureCategory = "policy" // BL410 Phase 3
 					oldStatus := t.Status
-					t.Status = TaskFailed
-					t.Error = "quality_gate_regression: " + cmp.Summary
+					m.store.WithLock(func() {
+						t.Status = TaskFailed
+						t.Error = "quality_gate_regression: " + cmp.Summary
+					})
 					if m.store.SaveTask(t) == nil {
 						m.emitTaskStatus(prd, t, oldStatus, nil, nil)
 					}
@@ -1210,16 +1249,20 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				}
 			}
 			done := time.Now()
-			t.CompletedAt = &done
+			m.store.WithLock(func() { t.CompletedAt = &done })
 			// Pin this task's own commit (HEAD in its resolved dir — BL465
 			// fires the deterministic commit at DATAWATCH_COMPLETE, before
 			// verify) so the PRD-completion CI guardrail watches that commit
 			// instead of whatever live HEAD is at roll-up time. Best-effort:
 			// a capture failure leaves PostVerifySHA empty and the guardrail
 			// falls back to live HEAD; it must never fail the task.
-			t.PostVerifySHA = CapturePostVerifySHA(ctx, m.resolveTaskProjectDir(prd, t), m.driftGit)
-			preDoneStatus := t.Status
-			t.Status = TaskCompleted
+			postSHA := CapturePostVerifySHA(ctx, m.resolveTaskProjectDir(prd, t), m.driftGit)
+			var preDoneStatus TaskStatus
+			m.store.WithLock(func() {
+				t.PostVerifySHA = postSHA
+				preDoneStatus = t.Status
+				t.Status = TaskCompleted
+			})
 			// Sweep any leftover CHECKPOINT.md out of the shared
 			// project_dir now that the task is done — nothing will ever
 			// need to resume it again.
@@ -1230,7 +1273,9 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			if blocked, contentHint, err := m.runPerTaskGuardrails(ctx, prd, t); err != nil {
 				return err
 			} else if blocked {
-				t.Status = TaskBlocked
+				m.store.WithLock(func() {
+					t.Status = TaskBlocked
+				})
 				if err := m.store.SaveTask(t); err != nil {
 					return err
 				}
@@ -1244,7 +1289,9 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				// quality-gate regression already does above.
 				lastFailureCategory = "" // BL410 Phase 3 — content
 				hint = contentHint
-				t.Error = hint
+				m.store.WithLock(func() {
+					t.Error = hint
+				})
 				_ = m.store.SaveTask(t)
 				continue
 			}
@@ -1301,8 +1348,10 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 		// the auto_fix_retries budget.
 		if vr.Category == "setup" {
 			oldStatus := t.Status
-			t.Status = TaskBlocked
-			t.Error = vr.Summary
+			m.store.WithLock(func() {
+				t.Status = TaskBlocked
+				t.Error = vr.Summary
+			})
 			t.FailureReason = &FailureReason{
 				Category: "setup", Source: "setup-fault", Retryable: false,
 				Detail: vr.Summary, OccurredAt: time.Now(),
@@ -1323,15 +1372,21 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 		}
 	}
 	exhaustedOld := t.Status
-	t.Status = TaskFailed
+	m.store.WithLock(func() {
+		t.Status = TaskFailed
+	})
 	// A budget-exhausted task must carry the final failing verdict's output
 	// (summary + issues — e.g. a failed verification script's output) into
 	// Task.Error, not just a bare status: FailureReason.Detail already does,
 	// and Task.Error is where operators look first.
 	if hint != "" {
-		t.Error = "verification failed after retries\n" + hint
+		m.store.WithLock(func() {
+			t.Error = "verification failed after retries\n" + hint
+		})
 	} else {
-		t.Error = "verification failed after retries"
+		m.store.WithLock(func() {
+			t.Error = "verification failed after retries"
+		})
 	}
 	// BL410 Phase 3 — Learning writer revival: record the final,
 	// budget-exhausted failure for future pattern analysis. Fires once,
@@ -1517,21 +1572,27 @@ func (m *Manager) recurseChildPRD(ctx context.Context, parent *PRD, t *Task, spa
 	maxDepth := m.cfg.MaxRecursionDepth
 	if maxDepth <= 0 {
 		old = t.Status
-		t.Status = TaskFailed
-		t.Error = "recursion disabled (autonomous.max_recursion_depth=0); set spawn_prd=false or raise the limit"
+		m.store.WithLock(func() {
+			t.Status = TaskFailed
+			t.Error = "recursion disabled (autonomous.max_recursion_depth=0); set spawn_prd=false or raise the limit"
+		})
 		return emitSaved(old)
 	}
 	if parent.Depth+1 > maxDepth {
 		old = t.Status
-		t.Status = TaskFailed
-		t.Error = fmt.Sprintf("recursion depth %d would exceed autonomous.max_recursion_depth=%d", parent.Depth+1, maxDepth)
+		m.store.WithLock(func() {
+			t.Status = TaskFailed
+			t.Error = fmt.Sprintf("recursion depth %d would exceed autonomous.max_recursion_depth=%d", parent.Depth+1, maxDepth)
+		})
 		return emitSaved(old)
 	}
 
 	now := time.Now()
 	t.StartedAt = &now
 	old = t.Status
-	t.Status = TaskInProgress
+	m.store.WithLock(func() {
+		t.Status = TaskInProgress
+	})
 	_ = emitSaved(old)
 
 	// Inherit LLM defaults from parent task → parent PRD; the child PRD
@@ -1556,13 +1617,17 @@ func (m *Manager) recurseChildPRD(ctx context.Context, parent *PRD, t *Task, spa
 	child, err := m.store.CreatePRDWithParent(t.Spec, m.resolveTaskProjectDir(parent, t), backend, model, effort, parent.ID, t.ID, parent.Depth+1)
 	if err != nil {
 		old = t.Status
-		t.Status = TaskFailed
-		t.Error = "spawn child PRD: " + err.Error()
+		m.store.WithLock(func() {
+			t.Status = TaskFailed
+			t.Error = "spawn child PRD: " + err.Error()
+		})
 		return emitSaved(old)
 	}
 	t.ChildPRDID = child.ID
 	old = t.Status
-	t.Status = TaskInProgress
+	m.store.WithLock(func() {
+		t.Status = TaskInProgress
+	})
 	_ = emitSaved(old)
 
 	// BL387 Phase 1b — inherit parent prd-shared memories into child so the
@@ -1584,8 +1649,10 @@ func (m *Manager) recurseChildPRD(ctx context.Context, parent *PRD, t *Task, spa
 	// operators can flip it off for high-stakes pipelines.
 	if _, err := m.Decompose(child.ID); err != nil {
 		old = t.Status
-		t.Status = TaskFailed
-		t.Error = fmt.Sprintf("child PRD %s decompose: %v", child.ID, err)
+		m.store.WithLock(func() {
+			t.Status = TaskFailed
+			t.Error = fmt.Sprintf("child PRD %s decompose: %v", child.ID, err)
+		})
 		return emitSaved(old)
 	}
 	if m.cfg.AutoApproveChildren {
@@ -1595,8 +1662,10 @@ func (m *Manager) recurseChildPRD(ctx context.Context, parent *PRD, t *Task, spa
 		// operator explicitly enabled this automation.
 		if _, err := m.approveAuto(child.ID, "autonomous", fmt.Sprintf("auto-approve from parent task %s/%s", parent.ID, t.ID)); err != nil {
 			old = t.Status
-			t.Status = TaskFailed
-			t.Error = fmt.Sprintf("child PRD %s auto-approve: %v", child.ID, err)
+			m.store.WithLock(func() {
+				t.Status = TaskFailed
+				t.Error = fmt.Sprintf("child PRD %s auto-approve: %v", child.ID, err)
+			})
 			return emitSaved(old)
 		}
 	} else {
@@ -1605,14 +1674,18 @@ func (m *Manager) recurseChildPRD(ctx context.Context, parent *PRD, t *Task, spa
 		// the usual /approve endpoint; the parent's loop tick re-checks
 		// child status and unblocks when the child reaches PRDCompleted.
 		old = t.Status
-		t.Status = TaskBlocked
-		t.Error = fmt.Sprintf("waiting for operator approval on child PRD %s", child.ID)
+		m.store.WithLock(func() {
+			t.Status = TaskBlocked
+			t.Error = fmt.Sprintf("waiting for operator approval on child PRD %s", child.ID)
+		})
 		return emitSaved(old)
 	}
 	if err := m.Run(ctx, child.ID, spawn, verify); err != nil {
 		old = t.Status
-		t.Status = TaskFailed
-		t.Error = fmt.Sprintf("child PRD %s run: %v", child.ID, err)
+		m.store.WithLock(func() {
+			t.Status = TaskFailed
+			t.Error = fmt.Sprintf("child PRD %s run: %v", child.ID, err)
+		})
 		return emitSaved(old)
 	}
 
@@ -1622,12 +1695,16 @@ func (m *Manager) recurseChildPRD(ctx context.Context, parent *PRD, t *Task, spa
 	t.CompletedAt = &done
 	if updated == nil || updated.Status != PRDCompleted {
 		old = t.Status
-		t.Status = TaskFailed
-		t.Error = fmt.Sprintf("child PRD %s ended with status %s", child.ID, statusOrUnknown(updated))
+		m.store.WithLock(func() {
+			t.Status = TaskFailed
+			t.Error = fmt.Sprintf("child PRD %s ended with status %s", child.ID, statusOrUnknown(updated))
+		})
 		return emitSaved(old)
 	}
 	old = t.Status
-	t.Status = TaskCompleted
+	m.store.WithLock(func() {
+		t.Status = TaskCompleted
+	})
 	t.Verification = &VerificationResult{
 		OK:         true,
 		Summary:    fmt.Sprintf("child PRD %s completed (%d stories)", child.ID, len(updated.Story)),
@@ -1873,6 +1950,25 @@ func scriptPassVerdict(script string) GuardrailVerdict {
 // transition further without operator intervention.
 func isTaskTerminal(s TaskStatus) bool {
 	return s == TaskCompleted || s == TaskFailed || s == TaskCancelled
+}
+
+// storyDone, nonTerminalRemain and taskTerminal are storyAllTasksDone,
+// anyNonTerminalTasksRemain and isTaskTerminal evaluated under the store
+// lock, for the Run coordinator reading status fields that concurrent
+// executeOne goroutines write.
+func (m *Manager) storyDone(s *Story) (done bool) {
+	m.store.WithLock(func() { done = storyAllTasksDone(s) })
+	return done
+}
+
+func (m *Manager) nonTerminalRemain(prd *PRD) (remain bool) {
+	m.store.WithLock(func() { remain = anyNonTerminalTasksRemain(prd) })
+	return remain
+}
+
+func (m *Manager) taskTerminal(t *Task) (term bool) {
+	m.store.WithLock(func() { term = isTaskTerminal(t.Status) })
+	return term
 }
 
 // storyAllTasksDone returns true when every task in the story has reached

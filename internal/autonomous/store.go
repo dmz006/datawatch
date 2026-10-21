@@ -685,6 +685,16 @@ func (s *Store) GetTask(id string) (*Task, bool) {
 	return t, ok
 }
 
+// WithLock runs f holding the store lock. Plain field writes to a PRD,
+// Story or Task reachable from the store must go through it so they are
+// ordered against persist's JSON encoding and against snapshot reads; f
+// must not call other Store methods (the lock is not re-entrant).
+func (s *Store) WithLock(f func()) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	f()
+}
+
 // TaskSnapshot returns a value copy of one task taken under the store
 // lock. Safe for concurrent readers: unlike GetTask's shared pointer,
 // whose fields the executor mutates (status/wait transitions) while a

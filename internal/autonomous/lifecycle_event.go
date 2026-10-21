@@ -345,24 +345,38 @@ func (m *Manager) emitPRDStatus(prd *PRD, old PRDStatus, dec *Decision, v *Guard
 	if m == nil || prd == nil {
 		return
 	}
-	ev := LifecycleEvent{
-		Kind:        PRDStatusKind(prd.Status),
-		Level:       LevelPRD,
-		PRDID:       prd.ID,
-		ParentPRDID: prd.ParentPRDID,
-		OldStatus:   string(old),
-		NewStatus:   string(prd.Status),
-	}
-	if dec != nil {
-		d := *dec
-		ev.Decision = &d
-	}
-	if v != nil {
-		vc := *v
-		vc.Issues = append([]string(nil), v.Issues...)
-		ev.Verdict = &vc
-	}
+	var ev LifecycleEvent
+	m.readLocked(func() {
+		ev = LifecycleEvent{
+			Kind:        PRDStatusKind(prd.Status),
+			Level:       LevelPRD,
+			PRDID:       prd.ID,
+			ParentPRDID: prd.ParentPRDID,
+			OldStatus:   string(old),
+			NewStatus:   string(prd.Status),
+		}
+		if dec != nil {
+			d := *dec
+			ev.Decision = &d
+		}
+		if v != nil {
+			vc := *v
+			vc.Issues = append([]string(nil), v.Issues...)
+			ev.Verdict = &vc
+		}
+	})
 	m.emit(ev)
+}
+
+// readLocked runs f under the store lock so the event builders read PRD
+// and Task fields that executeOne goroutines write; without a store (bare
+// test Managers) it just runs f.
+func (m *Manager) readLocked(f func()) {
+	if m.store == nil {
+		f()
+		return
+	}
+	m.store.WithLock(f)
 }
 
 // lastDecision returns a pointer to the most recent Decision of kind on
@@ -399,22 +413,31 @@ func (m *Manager) emitTaskStatus(prd *PRD, t *Task, old TaskStatus, dec *Decisio
 	if m == nil || t == nil {
 		return
 	}
-	old, cur := normTaskStatus(old), normTaskStatus(t.Status)
-	if old == cur {
+	var ev LifecycleEvent
+	same := false
+	m.readLocked(func() {
+		var cur TaskStatus
+		old, cur = normTaskStatus(old), normTaskStatus(t.Status)
+		if old == cur {
+			same = true
+			return
+		}
+		ev = newTaskEvent(prd, t)
+		ev.Kind = TaskStatusKind(cur)
+		ev.OldStatus = string(old)
+		ev.NewStatus = string(cur)
+		if dec != nil {
+			d := *dec
+			ev.Decision = &d
+		}
+		if v != nil {
+			vc := *v
+			vc.Issues = append([]string(nil), v.Issues...)
+			ev.Verdict = &vc
+		}
+	})
+	if same {
 		return
-	}
-	ev := newTaskEvent(prd, t)
-	ev.Kind = TaskStatusKind(cur)
-	ev.OldStatus = string(old)
-	ev.NewStatus = string(cur)
-	if dec != nil {
-		d := *dec
-		ev.Decision = &d
-	}
-	if v != nil {
-		vc := *v
-		vc.Issues = append([]string(nil), v.Issues...)
-		ev.Verdict = &vc
 	}
 	m.emit(ev)
 }
@@ -425,17 +448,28 @@ func (m *Manager) emitTaskStatus(prd *PRD, t *Task, old TaskStatus, dec *Decisio
 // save that persisted the new SessionID succeeded. For a cleared event
 // SessionID carries the session that was cleared.
 func (m *Manager) emitTaskSession(prd *PRD, t *Task, oldSession string) {
-	if m == nil || t == nil || oldSession == t.SessionID {
+	if m == nil || t == nil {
 		return
 	}
-	ev := newTaskEvent(prd, t)
-	ev.OldStatus = string(normTaskStatus(t.Status))
-	ev.NewStatus = ev.OldStatus
-	if t.SessionID == "" {
-		ev.Kind = KindTaskSessionCleared
-		ev.SessionID = oldSession
-	} else {
-		ev.Kind = KindTaskSessionStarted
+	var ev LifecycleEvent
+	same := false
+	m.readLocked(func() {
+		if oldSession == t.SessionID {
+			same = true
+			return
+		}
+		ev = newTaskEvent(prd, t)
+		ev.OldStatus = string(normTaskStatus(t.Status))
+		ev.NewStatus = ev.OldStatus
+		if t.SessionID == "" {
+			ev.Kind = KindTaskSessionCleared
+			ev.SessionID = oldSession
+		} else {
+			ev.Kind = KindTaskSessionStarted
+		}
+	})
+	if same {
+		return
 	}
 	m.emit(ev)
 }

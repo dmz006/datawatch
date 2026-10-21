@@ -330,7 +330,7 @@ func TestExecutor_DrainedInFlightTaskGetsFinalized(t *testing.T) {
 	var got *PRD
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		got, _ = m.Store().GetPRD(prd.ID)
+		got, _ = m.Store().SnapshotPRD(prd.ID)
 		if got.Story[1].Tasks[0].Status == TaskFailed {
 			break
 		}

@@ -88,7 +88,7 @@ func TestCapacity_WaitingTaskShowsStatusAndNeverFails(t *testing.T) {
 	var reason string
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
-		cur, _ := m.Store().GetPRD(prd.ID)
+		cur, _ := m.Store().SnapshotPRD(prd.ID)
 		tk := cur.Story[0].Tasks[0]
 		if tk.Status == TaskWaitingCapacity {
 			reason = tk.WaitReason
@@ -245,7 +245,7 @@ func TestCapacity_CancelWhileWaitingRemovesFromQueueAndKeepsCancelled(t *testing
 	var taskID string
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) && taskID == "" {
-		cur, _ := m.Store().GetPRD(prd.ID)
+		cur, _ := m.Store().SnapshotPRD(prd.ID)
 		if tk := cur.Story[0].Tasks[0]; tk.Status == TaskWaitingCapacity {
 			taskID = tk.ID
 		}
@@ -309,10 +309,6 @@ func TestExecutor_WorkerStallRespectsRetryBudget(t *testing.T) {
 			return VerificationResult{}, fmt.Errorf("stall: %w", ErrWorkerStalled)
 		}
 		return VerificationResult{OK: true}, nil
-	}
-	api.SetExecutors(spawn, verify)
-	if err := api.Run(prd.ID); err != nil {
-		t.Fatal(err)
 	}
 	got := runToTerminal(t, m, api, prd.ID, spawn, verify)
 	if got.Status != PRDCompleted {
@@ -463,7 +459,7 @@ func TestCapacity_LocalEngineTaskWaitsOnNodePool(t *testing.T) {
 	var reason string
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
-		cur, _ := m.Store().GetPRD(prd.ID)
+		cur, _ := m.Store().SnapshotPRD(prd.ID)
 		if tk := cur.Story[0].Tasks[0]; tk.Status == TaskWaitingCapacity {
 			reason = tk.WaitReason
 			break
