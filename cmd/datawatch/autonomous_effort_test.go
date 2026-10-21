@@ -96,6 +96,21 @@ func TestBuildAutonomousSessionBody(t *testing.T) {
 		t.Errorf("auto_git_commit should not be set: %v", body["auto_git_commit"])
 	}
 
+	// No git settings → no git key (existing flow unchanged).
+	if _, ok := body["git"]; ok {
+		t.Errorf("git key must be absent when the PRD has no git settings: %v", body["git"])
+	}
+
+	// Git settings present on the PRD → git:true forwarded so the session
+	// manager opts into git activity (pre-session snapshot + completion
+	// commit), because PRDs are development work.
+	reqWithGit := req
+	reqWithGit.Git = true
+	bodyWithGit := buildAutonomousSessionBody(reqWithGit, "spec", "")
+	if bodyWithGit["git"] != true {
+		t.Errorf("git key = %v, want true when SpawnRequest.Git is set", bodyWithGit["git"])
+	}
+
 	req.Backend = "opencode"
 	body = buildAutonomousSessionBody(req, "spec", "claude-code")
 	if body["effort"] != "quick" {

@@ -4387,6 +4387,11 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		// ValidateCommands (validation gate): run in the project dir before a
 		// one-shot may commit. Required to auto-commit an ad-hoc one-shot.
 		ValidateCommands []string `json:"validate_commands,omitempty"`
+		// Git — true when the PRD that spawned this session has git settings
+		// (prd.Git populated or a project profile). The session then runs git
+		// activity: pre-session snapshot, checkpoint tag, completion commit.
+		// Non-PRD / git-less sessions omit it (absent = existing behavior).
+		Git bool `json:"git,omitempty"`
 		// BL386 Phase 1 — optional warm-start seeding at session creation.
 		// When from_scope is set, memories are copied from that scope into
 		// the new session's session-local scope after it starts.
@@ -4703,6 +4708,7 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		StoryID:               req.StoryID,
 		WriteScope:            req.WriteScope,
 		ValidateCommands:      req.ValidateCommands,
+		Git:                   req.Git,
 	}
 	// Empty per-request overrides fall through to LLM registry (v7.0.0 clean move).
 	if opts.PermissionMode == "" && s.inferenceReg != nil {
