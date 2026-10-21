@@ -5,10 +5,6 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
-### Fixed
-
-- **Old failed Automata are no longer re-launched at every daemon restart.** A failed Automaton whose failed tasks were all killed by the restart now goes through the same boot-resume check as a running one: a fresh one is recovered, a stale one (older than `autonomous.resume_max_age_seconds`, or with a missing project directory) is parked as blocked with an alert and a boot-resume report entry, and a cancelled one is left alone.
-
 ## v9.5.57 — PWA terminal no longer stalls while a session is live
 
 ### Fixed

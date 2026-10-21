@@ -254,6 +254,35 @@ Leave `DW_LIVE_RESTART_CMD` unset to restart through the operator path
 only do that when that unit is the daemon behind `DW_BASE`. Optional:
 `DW_LIVE_RESTART_PROJECT_DIR` sets the probe's project directory.
 
+## Task failed with `no matching files found` (docs-bm25-index) or "no new changes to verify"
+
+Symptom: a task is reported `failed` even though the worker's own work
+was fine — either the verification build shows
+`pattern assets/docs-bm25-index.json: no matching files found`, or the
+task simply failed with "no new changes to verify".
+
+**Cause.** The `internal/docsindex` package go:embeds
+`assets/docs-bm25-index.json`, a git-ignored generated artifact. A
+fresh git worktree checkout does not contain the file, so packages that
+import it (`internal/server`, `cmd/datawatch`) cannot compile, the
+build/verification step fails, and the task ends up reported failed
+with nothing to verify.
+
+**Fixed now — worktrees self-heal.** When the daemon creates or
+reuses a PRD worktree it now prepares the tree: in repos with
+`internal/docsindex` it writes the same `{}` placeholder `make
+docs-index` writes, only if the file is missing (an existing index is
+never touched), keeps it git-ignored (falling back to the worktree's
+own `info/exclude` if the ignore rule is absent), and never stages or
+commits it. Both new and reused worktrees get this, so this failure
+should not recur for worktrees created by the current daemon.
+
+**Manual fix for a worktree created by an older daemon.** Run `make
+docs-index` inside the worktree, or create
+`internal/docsindex/assets/docs-bm25-index.json` containing `{}` (the
+placeholder `make docs-index` would seed). Then retry the task with
+`reset_task` (above) if it was left `failed`.
+
 ## Common pitfalls
 
 - **Cancelling a story mid-run and not restarting it.** The rest of the

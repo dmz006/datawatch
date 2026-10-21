@@ -2501,6 +2501,18 @@ deprecated and ignored everywhere) — the whole point of the branch is
 to be reviewable, which breaks silently if nothing ever gets committed
 onto it.
 
+Worktrees are also made buildable the moment they exist: when a PRD
+worktree is created or reused, the daemon ensures
+`internal/docsindex/assets/docs-bm25-index.json` exists in repos that
+contain `internal/docsindex`, writing the same `{}` placeholder
+`make docs-index` writes — and only when the file is missing (an
+already-generated index is never touched), while the file stays
+git-ignored (falling back to the worktree's own `info/exclude` file if
+the ignore rule is absent) and is never staged or committed. The
+consequence of the placeholder: a daemon binary built inside the
+worktree runs with an empty docs search until `make docs-index` is
+actually run there.
+
 The worktree is created once, at first `Run()`, and is idempotent
 across a daemon restart mid-run. Setting `PRD.Git.AutoPR` to `true` (per-PRD, defaults false — or set
 `autonomous.default_auto_pr: true` to start every future PRD with it
