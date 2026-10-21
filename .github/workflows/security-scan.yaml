@@ -52,7 +52,7 @@ permissions:
 
 jobs:
   govulncheck:
-    # GH#201/BL399 (2026-10-09) — was `go-version: stable`, which installs
+    # GH#201/BL399 (2026-10-09) — was `go-version-file: go.mod`, which installs
     # whatever Go release is newest AT CI-RUN TIME, not the version this
     # repo actually ships with (go.mod's 1.26.6, same as ci.yaml's build
     # job). That meant a brand-new upstream Go release landing with a
@@ -79,7 +79,8 @@ jobs:
   govulncheck-latest-advisory:
     # GH#201/BL399 (2026-10-09) — the "should we upgrade Go" signal the
     # pinned job above deliberately no longer provides as a blocker.
-    # Runs the identical scan against whatever Go is newest today;
+    # Now pinned to go.mod's Go (go-version-file) like the job above, so
+    # it no longer tracks the newest Go release; kept non-blocking.
     # continue-on-error so a new upstream release — or its CVEs — never
     # blocks CI, but still shows up as a visibly failed (non-blocking)
     # step for the operator to actually look at, not silently discarded.
@@ -93,7 +94,7 @@ jobs:
           cache: true
       - name: Install govulncheck
         run: go install golang.org/x/vuln/cmd/govulncheck@latest
-      - name: Run govulncheck against latest-stable Go (advisory, non-blocking)
+      - name: Run govulncheck against go.mod Go (advisory, non-blocking)
         run: $(go env GOPATH)/bin/govulncheck ./...
 
   gosec:

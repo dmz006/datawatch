@@ -34,7 +34,9 @@ ARG RTK_VERSION=0.37.0
 # the golang.org/x/net forced into gh's module graph.
 ARG GH_VERSION=2.102.0
 ARG GH_COMMIT=fc4b137cdef0a6bd28fd461b7cf9c84a5812a8cd
-ARG GH_GO_VERSION=1.27.2
+# 1.27.3 carries the fix for CVE-2026-111943 (stdlib); chosen over 1.26.10
+# so the gh build keeps the same Go minor it was validated with.
+ARG GH_GO_VERSION=1.27.3
 ARG GH_XNET_VERSION=0.60.0
 
 # ── Stage 1: Go builder for the datawatch binary ────────────────────────
@@ -165,11 +167,13 @@ RUN install_packages \
 # datawatch binaries were clean. gh_2.102.0, the newest cli/cli release,
 # ships built with go1.27.1 and x/net v0.58.0. cli/cli trunk has already
 # moved to go1.27.2 and x/net v0.60.0, but no release includes them yet.
+# go1.27.2 is itself flagged by CVE-2026-111943 (fixed in go1.27.3), so the
+# builder is now go1.27.3.
 # So the released v2.102.0 source is rebuilt in the ghbuilder stage with
 # GH_GO_VERSION and GH_XNET_VERSION. Evidence:
 # docs/plans/2026-10-14-bl426-agent-base-trivy.md.
 # Back to apt (or a pinned release .deb) once a cli/cli release ships with
-# Go >= 1.27.2 and x/net >= v0.60.0. Check with `go version -m`.
+# Go >= 1.27.3 (CVE-2026-111943) and x/net >= v0.60.0. Check with `go version -m`.
 COPY --from=ghbuilder /out/gh /usr/bin/gh
 
 # ── Layer 2b: apply available security upgrades ─────────────────────────
