@@ -1283,6 +1283,60 @@ manually this session for exactly this kind of check.
 
 ---
 
+## Progress, estimates and the running dashboard (operator-raised 2026-10-21)
+
+**Requirement.** Everything the supervisor prints in the `scripts/v10-status.py` table is a product
+feature of the Automation, not a supervisor script. As the Automation builds, it keeps these numbers
+current from the data it already owns, and as PRDs and tasks are added the averages and estimates
+move on their own. The operator should see one running dashboard (PWA card, MCP, REST, CLI, comm
+verb), not a report that someone regenerates. The script is the reference oracle: the server's output
+for a fixture store must equal the script's.
+
+**What it computes, per Automation and for the whole store (scope selectable: an Automation, a
+label or tag, a date range, or "everything since date X")**
+
+1. **Counts.** PRDs and tasks, each split by kind (feature, bug, other) and by state (done, running,
+   waiting, blocked). Tasks done and tasks left. A cancelled PRD whose tasks all completed is merged
+   work whose record was closed: it counts as done. Other cancelled, rejected and archived PRDs are
+   not counted.
+2. **Kind.** An explicit `kind` field on the PRD (feature, bug, other), set at create time and
+   editable. The keyword heuristic in the script is only the migration default for old PRDs.
+3. **Time, measured correctly.**
+   - Task time: `started_at` to `completed_at`. Per-PRD work is the sum of its tasks.
+   - PRD time: first task start to last task completion. **Not** `approved_at` to `updated_at`:
+     that includes weeks of waiting and every later edit, cancel or registry cleanup, and
+     inflated the first version of the estimate about 15x.
+   - Report medians next to means; a few outliers dominate the means.
+4. **Throughput.** PRDs and tasks completed per day, taken from the completion timestamps of the
+   last task (never from record update times), over windows of 24 hours, 3 days and the whole period.
+5. **Utilization.** Worker-hours done per day divided by lane capacity (lanes x 24). This is the
+   number that explains why the lanes' raw speed is not the limit.
+6. **Remaining work, without double counting.**
+   - Known: tasks still open in PRDs that exist and are decomposed (an exact count).
+   - Estimated: PRDs not yet decomposed, and backlog items that have no PRD yet, each at the
+     measured tasks-per-PRD for its kind (mean and median, with a spread).
+   - The two are shown separately and never summed into one unlabelled number. A backlog item that
+     already has a PRD is counted once, through the PRD.
+   - Needs a machine-readable backlog: each backlog row carries an id, kind, linked PRD ids and a
+     phase count, so the dashboard does not parse prose.
+7. **Estimated time to completion as a range, with its method shown.** By PRD rate, by task rate
+   (overall and last 24 hours) and by worker-hours at current utilization. The dashboard shows the
+   range and which assumption moves it (utilization, mix of large PRDs, undecomposed backlog).
+8. **History.** A snapshot is stored daily and on each milestone so the estimate has a trend line
+   and the operator can see whether it is converging.
+
+**Lessons recorded from the script (2026-10-21), to become tests**
+- Measuring PRD time from approval to last update overstated it by an order of magnitude.
+- Counting PRDs touched in the last 24 hours as throughput counted the cleanup actions themselves.
+- Adding open backlog rows to PRDs that already exist double counted them (59 vs the real 78 total
+  was wrong in both directions).
+- Existing-but-undecomposed PRDs have no tasks yet; their size is an estimate and must be labelled so.
+
+**Phasing.** The data comes from the Automation member list and the lifecycle events, so it follows
+Phase 2 (coordinator). Compute and REST/MCP/CLI/comm in one phase, PWA dashboard card with the
+Phase 6 PWA work, daily snapshots with Phase 5 BudgetPolicy (it shares the cost rollup). Filed as
+BL553 (docs/plans/README.md row 134).
+
 ## Parity surface
 
 None of these is implemented in this design phase. Every surface follows AGENT.md's
@@ -1346,6 +1400,12 @@ howto, and the `datawatch-app` issue where applicable.
    - The howto (`docs/howto/automation-*.md`, no BL ids).
    - The release-smoke section.
    - The `datawatch-app` Android and iOS issues.
+8. **Phase 8 — Progress, estimates and running dashboard (BL553).** Status: Planned.
+   - The metrics engine (counts by kind and state, correct time and throughput, utilization,
+     remaining work split known vs estimated, completion range) with REST, MCP, CLI and comm verb.
+   - The explicit PRD `kind` field and a machine-readable backlog.
+   - Daily snapshots and trend; the PWA dashboard card; `scripts/v10-status.py` kept as the oracle
+     and as a golden test.
 
 ---
 
