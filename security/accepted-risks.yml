@@ -60,9 +60,10 @@ entries:
       - agent-aider
       - parent-full
     impact:
-      traced: false
-      reachable: "unknown"
-      analysis: "SQLite used internally by the gh CLI binary; not exposed via datawatch REST/MCP APIs. CVE-2025-7458: integer overflow. CVE-2026-11822/11824: FTS5 full-text-search memory corruption via crafted database pages -- exploitable only against attacker-controlled SQLite databases; gh CLI processes only trusted local cached GitHub state, not attacker-supplied databases."
+      traced: true
+      reachable: "no"
+      method: "docker run --network none on a built agent-base image: dpkg Depends scan for libsqlite3-0 and ldd over /usr/bin, git-core and /usr/local/bin; Dockerfile and Go/script grep for sqlite, gpg and python use"
+      analysis: "CVE-2025-7458 is an integer overflow in SQLite core that needs attacker-supplied SQL text or a crafted database; The earlier claim that the gh CLI uses SQLite is wrong: gh is built from source in the ghbuilder stage with CGO_ENABLED=0 and is a statically linked Go ELF, so it links no libsqlite3. In agent-base the only installed package depending on libsqlite3-0 is gpg (ldd confirms /usr/bin/gpg is the only binary linking it, via its TOFU trust database); git, apt, curl, tmux and openssh do not link it, and agent-base has no python3. Nothing in datawatch Go sources, scripts or entrypoints invokes gpg; gnupg is only used at image build time for the nodesource apt key. datawatch itself uses the pure-Go modernc.org/sqlite driver (internal/memory, websearch, council, docsindex), built CGO_ENABLED=0, so it never loads the system library. agent-aider adds python3 whose _sqlite3 module links libsqlite3-0 (aider's diskcache and tags cache use fixed SQL, no FTS5, and no attacker-supplied SQL or FTS5 tables). agent-gemini adds only nodejs and gnupg. parent-full adds a headless JRE. No path reaches the vulnerable code with attacker input."
     first_added: "2026-05-19"
     added: "2026-05-19"
     expires: "2026-06-18"
@@ -80,9 +81,10 @@ entries:
       - agent-aider
       - parent-full
     impact:
-      traced: false
-      reachable: "unknown"
-      analysis: "SQLite used internally by the gh CLI binary; not exposed via datawatch REST/MCP APIs. CVE-2025-7458: integer overflow. CVE-2026-11822/11824: FTS5 full-text-search memory corruption via crafted database pages -- exploitable only against attacker-controlled SQLite databases; gh CLI processes only trusted local cached GitHub state, not attacker-supplied databases."
+      traced: true
+      reachable: "no"
+      method: "docker run --network none on a built agent-base image: dpkg Depends scan for libsqlite3-0 and ldd over /usr/bin, git-core and /usr/local/bin; Dockerfile and Go/script grep for sqlite, gpg and python use"
+      analysis: "CVE-2026-11822 is FTS5 memory corruption that needs an FTS5 virtual table in a crafted database file; The earlier claim that the gh CLI uses SQLite is wrong: gh is built from source in the ghbuilder stage with CGO_ENABLED=0 and is a statically linked Go ELF, so it links no libsqlite3. In agent-base the only installed package depending on libsqlite3-0 is gpg (ldd confirms /usr/bin/gpg is the only binary linking it, via its TOFU trust database); git, apt, curl, tmux and openssh do not link it, and agent-base has no python3. Nothing in datawatch Go sources, scripts or entrypoints invokes gpg; gnupg is only used at image build time for the nodesource apt key. datawatch itself uses the pure-Go modernc.org/sqlite driver (internal/memory, websearch, council, docsindex), built CGO_ENABLED=0, so it never loads the system library. agent-aider adds python3 whose _sqlite3 module links libsqlite3-0 (aider's diskcache and tags cache use fixed SQL, no FTS5, and no attacker-supplied SQL or FTS5 tables). agent-gemini adds only nodejs and gnupg. parent-full adds a headless JRE. No path reaches the vulnerable code with attacker input."
     first_added: "2026-06-25"
     added: "2026-06-25"
     expires: "2026-07-25"
@@ -100,9 +102,10 @@ entries:
       - agent-aider
       - parent-full
     impact:
-      traced: false
-      reachable: "unknown"
-      analysis: "SQLite used internally by the gh CLI binary; not exposed via datawatch REST/MCP APIs. CVE-2025-7458: integer overflow. CVE-2026-11822/11824: FTS5 full-text-search memory corruption via crafted database pages -- exploitable only against attacker-controlled SQLite databases; gh CLI processes only trusted local cached GitHub state, not attacker-supplied databases."
+      traced: true
+      reachable: "no"
+      method: "docker run --network none on a built agent-base image: dpkg Depends scan for libsqlite3-0 and ldd over /usr/bin, git-core and /usr/local/bin; Dockerfile and Go/script grep for sqlite, gpg and python use"
+      analysis: "CVE-2026-11824 is FTS5 memory corruption that needs an FTS5 virtual table in a crafted database file; The earlier claim that the gh CLI uses SQLite is wrong: gh is built from source in the ghbuilder stage with CGO_ENABLED=0 and is a statically linked Go ELF, so it links no libsqlite3. In agent-base the only installed package depending on libsqlite3-0 is gpg (ldd confirms /usr/bin/gpg is the only binary linking it, via its TOFU trust database); git, apt, curl, tmux and openssh do not link it, and agent-base has no python3. Nothing in datawatch Go sources, scripts or entrypoints invokes gpg; gnupg is only used at image build time for the nodesource apt key. datawatch itself uses the pure-Go modernc.org/sqlite driver (internal/memory, websearch, council, docsindex), built CGO_ENABLED=0, so it never loads the system library. agent-aider adds python3 whose _sqlite3 module links libsqlite3-0 (aider's diskcache and tags cache use fixed SQL, no FTS5, and no attacker-supplied SQL or FTS5 tables). agent-gemini adds only nodejs and gnupg. parent-full adds a headless JRE. No path reaches the vulnerable code with attacker input."
     first_added: "2026-06-25"
     added: "2026-06-25"
     expires: "2026-07-25"
