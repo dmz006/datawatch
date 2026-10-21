@@ -58,3 +58,10 @@ func (t *ExitSilenceTracker) Observe(now time.Time, runnerAlive bool, logModTime
 func ExitSilenceError(reason string) error {
 	return fmt.Errorf("%s: %w", reason, ErrWorkerStalled)
 }
+
+// Reset restarts the silence clock from now. Design §6.ii: when a parked
+// (await-external) worker is resumed, the silence accumulated while it
+// intentionally waited was by design, not a stall.
+func (t *ExitSilenceTracker) Reset(now time.Time) {
+	t.lastActivity = now
+}

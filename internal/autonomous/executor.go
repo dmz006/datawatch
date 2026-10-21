@@ -964,6 +964,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 		if treeRelease != nil {
 			treeRelease()
 		}
+		m.detachTreeRelease(t.ID)
 	}()
 	holdTree := func() error {
 		if treeRelease != nil {
@@ -974,6 +975,11 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			return terr
 		}
 		treeRelease = rel
+		// Design §6.ii — register the release closure so an await-external
+		// cycle (m.AwaitExternal) can release this lock while the task waits
+		// on an external condition when the tree is fully pushed, and point
+		// it at the re-claimed lock on re-admission.
+		m.attachTreeRelease(t.ID, &treeRelease)
 		return nil
 	}
 	spawn = m.capacityRetrySpawn(t, spawn)

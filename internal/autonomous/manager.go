@@ -650,6 +650,16 @@ type Manager struct {
 	// Guarded by mu. Nil = audit silently skipped.
 	auditFn func(action string, details map[string]any)
 
+	// sessionContinueFn — design §6.ii: sends a "resume" prompt to a parked
+	// worker session after an await-external cycle re-admits it. Optional.
+	sessionContinueFn func(sessionID string) error
+
+	// treeLockBox — task ID → pointer to the executor's task-tree-lock
+	// release closure, so an await-external cycle can release the lock while
+	// the task waits (tree fully pushed) and re-claim it on re-admission.
+	treeBoxMu   sync.Mutex
+	treeLockBox map[string]*func()
+
 	// alertSink — operator-facing alert callback (level, title, body).
 	// Guarded by mu. Nil = alerts silently skipped.
 	alertSink func(level, title, body string)
@@ -935,6 +945,34 @@ func (m *Manager) resetInProgressTasksForResume(prd *PRD) {
 			switch t.Status {
 			case TaskWaitingCapacity:
 				// Waiter died with the prior daemon; it holds no session.
+				//
+				// Design §6.ii exception — a task parked on an EXTERNAL
+				// condition (await_external sub-reason of waiting_capacity) may
+				// still have its worker session alive and parked at the prompt, and
+				// its capacity lease was released during the await cycle. Such a
+				// task must be RE-ADMITTED on restart, not lost:
+				// live session → re-take the lease (adopt, like the TaskInProgress
+				// live branch above) and prompt the worker to finish; dead/absent
+				// session → fall through to the plain re-queue below. Either way
+				// the task resumes without having counted a retry.
+				if IsAwaitExternalWaitReason(t.WaitReason) {
+					if t.SessionID != "" && aliveFn != nil && aliveFn(t.SessionID) {
+						if contFn := m.sessionContinueFnLocked(); contFn != nil {
+							if cerr := contFn(t.SessionID); cerr != nil {
+								log.Printf("[autonomous] boot-resume: await-external continue prompt to session %s: %v", t.SessionID, cerr)
+							}
+						}
+						m.adoptCapacity(prd, t)
+						t.Status = TaskInProgress
+						t.AdoptedSession = true
+						t.WaitReason = ""
+						t.UpdatedAt = time.Now()
+						reset = append(reset, pendingTaskEvent{t: t, oldStatus: prevStatus, oldSession: t.SessionID})
+						log.Printf("[autonomous] boot-resume: re-admitted await-external task %s on live session %s for prd=%s (no retry counted)", t.ID, t.SessionID, prd.ID)
+						continue
+					}
+					log.Printf("[autonomous] boot-resume: await-external task %s for prd=%s has no live session; re-queueing a fresh attempt", t.ID, prd.ID)
+				}
 			case TaskInProgress:
 				switch decideInProgressResume(aliveFn, outputFn, t.SessionID) {
 				case resumeAdopt:
