@@ -377,3 +377,36 @@ func TestOneShotTaskDelivery_ExitAfterDisclaimerBeforeDelivery(t *testing.T) {
 		t.Error("SendInput to an ended session succeeded; it must be refused")
 	}
 }
+
+func TestIsCompletionPlaceholder(t *testing.T) {
+	for l, want := range map[string]bool{
+		"DATAWATCH_COMPLETE: <one-line plain-text summary of what was done>":   true,
+		"DATAWATCH_COMPLETE: <one-sentence summary of what was done, used as>": true,
+		"DATAWATCH_COMPLETE: added the widget":                                 false,
+	} {
+		if got := isCompletionPlaceholder(l); got != want {
+			t.Errorf("isCompletionPlaceholder(%q) = %v, want %v", l, got, want)
+		}
+	}
+}
+
+func TestClaimTaskDeliveryArmsEchoGuardAndReleaseClears(t *testing.T) {
+	h := newTaskDeliveryHarness(t)
+	sess := h.launch()
+	if !h.mgr.ClaimTaskDelivery(sess.FullID) {
+		t.Fatal("claim lost")
+	}
+	h.mgr.mu.Lock()
+	_, armed := h.mgr.taskDeliveredAt[sess.FullID]
+	h.mgr.mu.Unlock()
+	if !armed {
+		t.Error("claim did not arm the task-echo suppression")
+	}
+	h.mgr.ReleaseTaskDelivery(sess.FullID)
+	h.mgr.mu.Lock()
+	_, armed = h.mgr.taskDeliveredAt[sess.FullID]
+	h.mgr.mu.Unlock()
+	if armed || h.mgr.TaskDelivered(sess.FullID) {
+		t.Error("release did not clear the guard")
+	}
+}
