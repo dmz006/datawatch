@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.65 — Automation coordinator: the queue advances itself
+
+### Added
+
+- **An active Automation now advances itself.** When the Automaton under an Automation's cursor completes, is blocked or fails, the next Automaton starts with no LLM, chat session or operator call in between. The coordinator listens to the existing lifecycle events, takes the `on_complete` / `on_blocked` / `on_failed` edge from the member's real status, and moves the cursor with a version compare-and-set so a duplicate or racing event starts the next member once. A next member that is not approved blocks the Automation with a reason and an alert; a paused one is resumed; a member that fails to start blocks it; an empty edge blocks it; reaching the end completes it and clears member ownership. Each advance and block is written to the audit log. After a daemon restart, reconcile runs once boot-resume has finished: a member that finished while the daemon was down advances, a still-running member is left alone, and a pending start is retried without double-starting. Design: `docs/plans/2026-10-14-automation-orchestration-design.md` (Phase 2); walkthrough: `docs/howto/automation-queue-advance.md`.
+- **An Automation can now be activated from every interface.** `POST /api/automations/{id}/activate` (body `{actor?, reason?}`, actor defaults to `operator`), the `automation_activate` MCP tool, `datawatch automation activate <id>` and the chat verb `automation activate <id>` all start a draft Automation: it is validated, marked active and its entry member starts through the normal approval gate (or the Automation becomes blocked with a reason). Only a draft can be activated (409 otherwise), an unknown ID is a 404, and each activation is written to the audit log.
+- **`GET /api/autonomous/status` and the `autonomous_status` MCP tool now return an `automations` array**: one row per draft, active, paused or blocked Automation with its current member and Automaton, pending member count, idle time and blocked reason. The PWA has no Automation view yet, so this array is surfaced through the API and MCP only.
+- **New setting `autonomous.automation.idle_alert_minutes`** (whole minutes, default `0` = off): raises one alert when an active Automation has sat idle that long. Settable through `PUT /api/config`, `PUT /api/autonomous/config`, the `automation_idle_alert_minutes` argument of `autonomous_config_set`, `datawatch config set`, chat `configure`, and the PWA Settings → General → Automate card (labelled in all five languages). A negative or non-integer value is rejected with 400.
+
 ## v9.5.64 — Persisted lifecycle subscriptions with CRUD on every surface
 
 ### Added
