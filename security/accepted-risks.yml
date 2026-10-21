@@ -40,9 +40,10 @@ entries:
       - agent-aider
       - parent-full
     impact:
-      traced: false
-      reachable: "unknown"
-      analysis: "Integer overflow in inflate(). Only exploitable processing attacker-controlled deflate streams with a specific window size. curl and git in this image decompress only trusted responses from operator-configured remotes; not network-exposed via datawatch APIs."
+      traced: true
+      reachable: "no"
+      method: "grep of docker/dockerfiles (agent-base, agent-gemini, agent-aider, parent-full) for minizip/zip tooling plus grep of internal/ and cmd/ Go sources for zlib/compress use; CVE description read"
+      analysis: "CVE-2023-45853 is an integer overflow in zlib's contrib MiniZip (zipOpenNewFileInZip4_64) when a caller passes an overlong filename, comment or extra field while WRITING a zip. It is not in inflate() (the earlier wording was wrong) and Debian ships MiniZip as separate libminizip packages, not in zlib1g. zlib1g stays installed only as an essential dependency of git, curl, libcurl4, openssh-client and tmux. grep of agent-base, agent-gemini, agent-aider and parent-full Dockerfiles finds no minizip/libminizip package; zip/unzip (Info-ZIP) bundle their own code and do not link MiniZip. datawatch Go sources use only the stdlib compress/gzip (server.go, api_gzip.go, main.go), which is pure Go and never calls libz. No MiniZip caller exists, so the vulnerable function is unreachable. zlib1g cannot be removed (essential)."
     first_added: "2026-05-19"
     added: "2026-05-19"
     expires: "2026-06-18"
@@ -123,9 +124,10 @@ entries:
       - agent-aider
       - parent-full
     impact:
-      traced: false
-      reachable: "unknown"
-      analysis: "Cookie leak on cross-origin redirect. curl is used by agent tooling for REST API calls to operator-configured endpoints."
+      traced: true
+      reachable: "no"
+      method: "grep of Go sources, hook/entrypoint scripts and image Dockerfiles for runtime curl invocations, checking each for redirect-following (-L) and cookie options (-b/-c)"
+      analysis: "Cookie leak on cross-origin redirect needs curl to both hold cookies (cookie engine enabled by -b/-c) and follow a redirect (-L) to another origin. Runtime curl callers in the repo: internal/hookinstaller/install.go POSTs to the local daemon with curl -ks and no -L/-b/-c; internal/memory/hooks.go does the same to DATAWATCH_URL; internal/llm/backends/openwebui/backend.go runs curl -s -N against the configured Open WebUI endpoint with a Bearer header, no cookie jar and no -L. docker/entrypoint.sh has no curl at all. Dockerfile curl -fsSL calls (agent-base rtk, agent-gemini nodesource, parent-full signal-cli) run at build time only, with no cookies, so nothing is leaked at runtime. No datawatch code path combines cookies with redirects, so the flaw is unreachable from datawatch itself. An agent could in theory run curl -b -L by hand; that is operator-trusted work, not an exposed path."
     first_added: "2026-05-19"
     added: "2026-05-19"
     expires: "2026-06-18"
@@ -143,9 +145,10 @@ entries:
       - agent-aider
       - parent-full
     impact:
-      traced: false
-      reachable: "unknown"
-      analysis: "Null pointer dereference in ber_memalloc_x via malformed LDAP response. OpenLDAP not directly used; pulled transitively by OpenSSH. No LDAP connections made from within the container."
+      traced: true
+      reachable: "no"
+      method: "grep of Go sources, scripts and Dockerfiles for ldap usage; apt dependency reasoning for how libldap-2.5-0 enters the images"
+      analysis: "Null pointer dereference in OpenLDAP ber_memalloc_x, triggered only when an LDAP client library parses a malformed response from an LDAP server. The earlier note blamed OpenSSH; in Debian bookworm libldap-2.5-0 is actually a dependency of libcurl4 and libcurl3-gnutls (curl is built with LDAP/LDAPS scheme support), which agent-base installs via curl and git. grep for ldap across internal/, cmd/, scripts/ and the agent-base, agent-gemini, agent-aider and parent-full Dockerfiles finds no LDAP use, no ldap URL, and no slapd or ldap-utils package. The only way to reach the code is curl being handed an ldap:// or ldaps:// URL pointing at a hostile server; every curl call in the repo targets http(s) endpoints (local daemon, operator-configured LLM URL, github/nodesource at build time). The library cannot be removed without removing curl and git, so no removal is recommended."
     first_added: "2026-05-19"
     added: "2026-05-19"
     expires: "2026-06-18"
