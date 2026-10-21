@@ -5,6 +5,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **Automaton workers no longer read ancestor-directory `CLAUDE.md` files.** A worker launched in a PRD worktree or the main checkout also loaded parent-directory `CLAUDE.md` files, such as another session's `Session:`/`Task:` guardrails, and stalled asking which task to do. The claude-code backend now passes `--settings '{"claudeMdExcludes":[...]}'` listing every `CLAUDE.md` in a strict ancestor of the project directory (absolute paths, computed per launch). The project's own `CLAUDE.md` and `~/.claude/CLAUDE.md` still load. It applies to Automaton-owned launches and resumes only; interactive sessions are unchanged. Verified on Claude Code 2.1.306. Tests in `internal/llm/claudecode/ancestors_test.go`, `internal/llm/claudecode/ancestors_launch_test.go` and `internal/session/exclude_ancestor_claudemd_test.go`; see `docs/operations.md` and `docs/plans/ancestor-claude-md-findings.md`.
+
 ## v9.5.59 — PWA shows the datawatch eye during full-page refreshes
 
 ### Fixed
