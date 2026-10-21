@@ -10,7 +10,6 @@ import (
 	"log"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/dmz006/datawatch/internal/autonomous/scan"
@@ -524,11 +523,6 @@ type Manager struct {
 	planReview  PlanReviewFn // pre-approval plan review (see plan_review.go); nil = degraded 'skipped' verdicts
 
 	coordinator *Coordinator // set by Coordinator.Start; nil until then
-
-	// bootReconciled flips once the boot-time stuck-task reconcile has run;
-	// onBootReconciled (if set) is called right after.
-	bootReconciled   atomic.Bool
-	onBootReconciled func()
 
 	// pairingLogged records each pairing warning already written to the
 	// daemon log, so a config set does not repeat a warning it logged before.
@@ -4052,7 +4046,6 @@ func (m *Manager) reconcileStuckTasks() {
 // the executor in executor.go (called from REST handler).
 func (m *Manager) run() {
 	m.reconcileStuckTasks()
-	m.markBootReconciled()
 
 	interval := time.Duration(m.cfg.PollIntervalSeconds) * time.Second
 	if interval <= 0 {

@@ -242,6 +242,13 @@ func (a *API) resumeRunningPRDs() {
 		}
 	}
 	fmt.Printf("[autonomous] boot-resume: resumed %d, parked %d\n", resumed, parked)
+
+	// Last, so a daemon-killed member has been recovered above and is not
+	// routed down on_failed: ready the coordinator and reconcile Automations.
+	a.M.mu.Lock()
+	coord := a.M.coordinator
+	a.M.mu.Unlock()
+	coord.reconcile()
 }
 
 // gateBootResume runs the boot-resume decision for a PRD whose prior status

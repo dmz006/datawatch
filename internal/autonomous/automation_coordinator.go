@@ -51,6 +51,7 @@ type Coordinator struct {
 	mu       sync.Mutex
 	cancel   func()
 	deferred map[string]struct{} // failed member PRDs seen before boot recovery finished
+	starting map[string]int      // member PRDs between the cursor write and the end of the start call
 	ready    atomic.Bool
 }
 
@@ -61,7 +62,7 @@ func NewCoordinator(m *Manager, starter AutomationStarter) *Coordinator {
 	if m == nil || starter == nil {
 		return nil
 	}
-	return &Coordinator{m: m, starter: starter, deferred: map[string]struct{}{}}
+	return &Coordinator{m: m, starter: starter, deferred: map[string]struct{}{}, starting: map[string]int{}}
 }
 
 // coordinatorKinds is the set of PRD kinds the coordinator listens to: the
@@ -90,11 +91,7 @@ func (c *Coordinator) Start() {
 
 	c.m.mu.Lock()
 	c.m.coordinator = c
-	c.m.onBootReconciled = c.markReady
 	c.m.mu.Unlock()
-	if c.m.BootReconciled() {
-		c.markReady()
-	}
 }
 
 // Stop cancels the subscription.
@@ -116,10 +113,10 @@ func (c *Coordinator) Stop() {
 	c.m.mu.Unlock()
 }
 
-// Ready reports whether boot recovery has finished, so a failed member is
+// Ready reports whether boot recovery (API.resumeRunningPRDs) has finished, so a failed member is
 // known to be a real failure and not a run the reconcile is about to reset.
 func (c *Coordinator) Ready() bool {
-	return c != nil && (c.ready.Load() || c.m.BootReconciled())
+	return c != nil && c.ready.Load()
 }
 
 // SetReady marks boot recovery finished and replays deferred failures.
@@ -143,21 +140,6 @@ func (c *Coordinator) markReady() {
 		}
 	}
 }
-
-// markBootReconciled records that the boot-time reconcile has run and
-// notifies the coordinator, if one is registered.
-func (m *Manager) markBootReconciled() {
-	m.bootReconciled.Store(true)
-	m.mu.Lock()
-	fn := m.onBootReconciled
-	m.mu.Unlock()
-	if fn != nil {
-		fn()
-	}
-}
-
-// BootReconciled reports whether the boot-time stuck-task reconcile ran.
-func (m *Manager) BootReconciled() bool { return m != nil && m.bootReconciled.Load() }
 
 func (c *Coordinator) alert(level, title, body string) {
 	fn := c.alertFn
@@ -242,8 +224,10 @@ func (c *Coordinator) onMemberTerminal(ev LifecycleEvent) {
 		if plan == nil {
 			return
 		}
+		release := c.beginStart(plan.toPRD, plan.start)
 		updated, err := c.m.automations.Update(a.ID, a.Version, plan.apply)
 		if err != nil {
+			release()
 			if strings.HasPrefix(err.Error(), "409") {
 				continue // Version moved: re-read; the loser becomes a no-op
 			}
@@ -251,9 +235,38 @@ func (c *Coordinator) onMemberTerminal(ev LifecycleEvent) {
 			return
 		}
 		c.afterAdvance(updated, plan)
+		release()
 		return
 	}
 	log.Printf("[autonomous] automation %s: advance on prd %s dropped after %d version conflicts", autoID, ev.PRDID, coordinatorCASRetries)
+}
+
+// beginStart marks prdID as being started (when on is true) and returns the
+// func that clears the mark. The mark is taken before the cursor write and
+// cleared after the start call returns, so the boot reconcile never reads a
+// member that was just marked running but not yet started as "run errored".
+func (c *Coordinator) beginStart(prdID string, on bool) func() {
+	if !on || prdID == "" {
+		return func() {}
+	}
+	c.mu.Lock()
+	c.starting[prdID]++
+	c.mu.Unlock()
+	return func() {
+		c.mu.Lock()
+		if c.starting[prdID] <= 1 {
+			delete(c.starting, prdID)
+		} else {
+			c.starting[prdID]--
+		}
+		c.mu.Unlock()
+	}
+}
+
+func (c *Coordinator) isStarting(prdID string) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.starting[prdID] > 0
 }
 
 func automationMember(a *Automation, id string) *AutomationMember {
@@ -538,6 +551,7 @@ func (c *Coordinator) activate(id, actor string) (*Automation, error) {
 		if mode == "" {
 			reason = fmt.Sprintf("next member %s is %s", name, status)
 		}
+		release := c.beginStart(entry.PRDID, reason == "")
 		updated, err := c.m.automations.Update(a.ID, a.Version, func(a *Automation) error {
 			now := time.Now()
 			a.Status = AutomationActive
@@ -556,6 +570,7 @@ func (c *Coordinator) activate(id, actor string) (*Automation, error) {
 			return nil
 		})
 		if err != nil {
+			release()
 			if strings.HasPrefix(err.Error(), "409") && !strings.Contains(err.Error(), "only a draft") {
 				continue
 			}
@@ -570,6 +585,7 @@ func (c *Coordinator) activate(id, actor string) (*Automation, error) {
 			return updated, nil
 		}
 		c.startMember(updated.ID, entry.ID, entry.PRDID, name, mode == "resume")
+		release()
 		final, _ := c.m.automations.Get(updated.ID)
 		if final == nil {
 			final = updated
