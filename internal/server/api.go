@@ -191,7 +191,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "9.5.33"
+var Version = "9.5.34"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -4398,6 +4398,10 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		// commit the repo. When true, the pre-session snapshot commit and
 		// the completion commit are both skipped.
 		SkipSnapshot bool `json:"skip_snapshot,omitempty"`
+		// ScrubTmuxEnv: PRD-owned launchers ask the pane shell to unset
+		// TMUX and TMUX_TMPDIR before the LLM starts, so tmux commands the
+		// LLM runs cannot reach the production tmux server.
+		ScrubTmuxEnv bool `json:"scrub_tmux_env,omitempty"`
 		// BL386 Phase 1 — optional warm-start seeding at session creation.
 		// When from_scope is set, memories are copied from that scope into
 		// the new session's session-local scope after it starts.
@@ -4715,6 +4719,7 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		WriteScope:            req.WriteScope,
 		ValidateCommands:      req.ValidateCommands,
 		SkipSnapshot:          req.SkipSnapshot,
+		ScrubTmuxEnv:          req.ScrubTmuxEnv,
 	}
 	// Empty per-request overrides fall through to LLM registry (v7.0.0 clean move).
 	if opts.PermissionMode == "" && s.inferenceReg != nil {

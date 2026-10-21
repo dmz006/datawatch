@@ -7,6 +7,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 - **model/backend pairing** — a model that cannot run on its backend is now refused when it is set, and again before a PRD runs. A bare Claude alias (such as `claude-haiku-5-5`) is refused on `pi` and `pi-prompt`, and a provider-tagged model (such as `ollama/qwen3.8:27b`) is refused on `claude-code`. The check covers the PRD, story, task and verification/guardrail model setters on REST, MCP and the comm channel. REST returns `400` with the mismatch text, and MCP returns a tool error. The PRD Run preflight refuses a PRD whose unfinished tasks contain a mismatched pair, so earlier records are refused too. On `pi-prompt`, a non-zero exit or an empty run now prints `DATAWATCH_PI_FAILED` instead of `DATAWATCH_COMPLETE`. See `docs/llm-backends.md`.
 
+## v9.5.34 — tmux safety rules documented for workers, scripts and tests
+
+### Fixed
+- **PRD worker, verifier and guardrail sessions can no longer reach the production tmux server.** They now start with `TMUX` and `TMUX_TMPDIR` unset in the pane shell, so a `tmux kill-server` run by a worker cannot take down the server and every session with it. Operator-started sessions are unchanged.
+- **New check `scripts/check-no-unscoped-tmux.sh`** fails on `kill-server` or `kill-session -a` in scripts, tests and plan verification scripts unless the call uses an explicit throwaway socket; decompose validation rejects such plans.
+
+### Documentation
+- **Documented the tmux safety rules** in `AGENT.md` (Session Safety), `docs/testing.md` and `docs/operations.md`: PRD workers, verifiers and guardrails run with `TMUX` and `TMUX_TMPDIR` removed; scripts and tests never run `kill-server` or `kill-session -a` except against an explicit `-S` throwaway socket or under `env -u TMUX`; every verification script runs with `env -u TMUX -u TMUX_TMPDIR`; `scripts/check-no-unscoped-tmux.sh` enforces it in `make lint`, CI and decompose validation.
+- **Why:** on 2026-10-18 20:18 and again on 2026-10-20 18:46:35 a worker's script ran `TMUX_TMPDIR=<dir> tmux kill-server` and killed the production tmux server with every session on it. Root cause: tmux prefers `TMUX` over `TMUX_TMPDIR`, and every worker runs inside a production pane, so the "private" directory was ignored.
+
 ## v9.5.33 — Retried tasks keep their first-attempt pre-task SHA
 
 

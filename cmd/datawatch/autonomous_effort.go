@@ -101,6 +101,8 @@ func buildAutonomousSessionBody(req autonomouspkg.SpawnRequest, spec, defaultBac
 		"prd_id":          req.PRDID,
 		"task_id":         req.TaskID,
 		"story_id":        req.StoryID, // BL385 Phase 4 — memory scope routing
+		// PRD-owned worker: keep its tmux commands off the production server.
+		"scrub_tmux_env": true,
 	}
 	// Write scope (auto-commit leak fix): the task's effective write
 	// directories. The session manager uses them to stage only in-scope

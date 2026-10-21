@@ -65,6 +65,13 @@ When documenting a test, use this table format:
 
 ---
 
+## tmux Safety Rules for Tests and Scripts
+
+- PRD workers, verifiers and guardrails run with `TMUX` and `TMUX_TMPDIR` removed from their environment.
+- Never run `tmux kill-server` or `tmux kill-session -a` except against an explicit throwaway socket (`tmux -S "$(mktemp -d)/s" ...`) or under `env -u TMUX -u TMUX_TMPDIR`. Setting `TMUX_TMPDIR` alone is not enough: tmux prefers `TMUX` when it is set, so a script run from inside a session can still reach the live server.
+- Every verification script must run with `env -u TMUX -u TMUX_TMPDIR`, for example `env -u TMUX -u TMUX_TMPDIR bash scripts/check-no-unscoped-tmux.sh`.
+- `scripts/check-no-unscoped-tmux.sh` enforces these rules. It runs in `make lint`, in CI, and as a check when a PRD is decomposed. A line that only holds fixture text and is never run against tmux may carry a `tmux-scope-ok` marker.
+
 ## Historical Feature Tests
 
 ### 1. Splash Screen

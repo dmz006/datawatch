@@ -1134,6 +1134,15 @@ func (m *Manager) validateAndStorePlan(prd *PRD, prdID string, s []Story) (decom
 		m.failDecomposeAttempt(prd, "verification-script-coverage", verr)
 		return decomposeAttemptTerminal, verr
 	}
+	// Unscoped tmux kill-server / kill-session -a in a spec or verification
+	// script: a "scope"-category failure, same retry path as B124.
+	if terr := validateNoUnscopedTmux(prd.ProjectDir, s); terr != nil {
+		if m.retryDecomposeFailure(prd, "scope", "unscoped-tmux", terr.Error()) {
+			return decomposeAttemptRetry, nil
+		}
+		m.failDecomposeAttempt(prd, "unscoped-tmux", terr)
+		return decomposeAttemptTerminal, terr
+	}
 	// Release-version gate and verification-script scope gate: restored
 	// here from main (they were duplicated in both decompose twins, and the
 	// shared tail must enforce them for both paths).

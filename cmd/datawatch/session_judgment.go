@@ -234,6 +234,9 @@ func runOneShotJSONSessionWithReader(cfg *config.Config, prdID, projectDir, back
 		"prd_id":      prdID,
 		// Planning/judgment sessions must never stage or commit the repo.
 		"skip_snapshot": true,
+		// PRD-owned judgment session: keep its tmux commands off the
+		// production server.
+		"scrub_tmux_env": true,
 	}
 	if effort != "" {
 		startReq["effort"] = effort

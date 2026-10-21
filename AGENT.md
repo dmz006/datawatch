@@ -21,6 +21,10 @@ This ensures rules are not forgotten over long sessions as context compresses.
 - **Never stop, kill, or delete running user sessions** unless explicitly asked.
 - When debugging or testing, create new sessions instead of interfering with existing ones.
 - When restarting the daemon, preserve all active tmux sessions (they survive daemon restarts).
+- **PRD workers, verifiers and guardrails run with `TMUX` and `TMUX_TMPDIR` removed** from their environment, so nothing they run can reach the operator's tmux server.
+- **Never run `tmux kill-server` or `tmux kill-session -a`** in a script or test except against an explicit throwaway socket (`tmux -S "$(mktemp -d)/s" ...`) or under `env -u TMUX -u TMUX_TMPDIR`. Setting `TMUX_TMPDIR` alone is not enough.
+- **Every verification script must run with `env -u TMUX -u TMUX_TMPDIR`.**
+- `scripts/check-no-unscoped-tmux.sh` enforces this. It runs in `make lint`, in CI, and when a PRD is decomposed (a spec that asks for an unscoped kill is rejected).
 
 ## Scope Constraints
 

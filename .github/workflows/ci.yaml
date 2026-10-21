@@ -59,6 +59,10 @@ jobs:
       - name: internal-ref leak check
         run: bash scripts/check-no-internal-refs.sh
 
+      # Unscoped `tmux kill-server` / `kill-session -a` audit.
+      - name: unscoped tmux kill check
+        run: bash scripts/check-no-unscoped-tmux.sh
+
       # 2026-10-09 — a Dockerfile's exact-pinned ARG GO_VERSION can fall
       # behind go.mod's `go` directive without anything catching it until
       # the actual release workflow runs a container build against a

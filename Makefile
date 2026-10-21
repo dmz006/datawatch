@@ -3,7 +3,7 @@ VERSION=$(shell grep 'var Version' cmd/datawatch/main.go | head -1 | sed 's/.*"\
 BUILD_DIR=./bin
 LDFLAGS=-X main.Version=$(VERSION) -X github.com/dmz006/datawatch/internal/server.Version=$(VERSION)
 
-.PHONY: build clean install lint test fmt cross release release-snapshot channel-build \
+.PHONY: build clean install lint check-tmux test fmt cross release release-snapshot channel-build \
         container container-load container-tarball container-clean container-upgrade \
         container-agent-base container-parent-full _container-build \
         registry-up registry-down sync-docs \
@@ -229,7 +229,10 @@ install: sync-docs docs-index
 clean:
 	rm -rf $(BUILD_DIR)
 
-lint:
+check-tmux:
+	bash scripts/check-no-unscoped-tmux.sh
+
+lint: check-tmux
 	golangci-lint run ./...
 
 test:
