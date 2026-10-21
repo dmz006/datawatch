@@ -485,6 +485,8 @@ For `waiting_input` sessions, the Ollama summary is preserved across repeated AP
 
 **Loading splash:** appears while the first pane_capture frame arrives. Always dismisses — even for ended sessions, the saved final frame is shown.
 
+**Live updates and Jump to live:** the terminal always shows the newest screen frame — a frame that arrives during the 33 ms render throttle is drawn a moment later rather than dropped. If you scroll up, new frames are held (so the view does not jump) and a **Jump to live** button appears; click it, type, send input, or scroll back to the bottom to return to the live screen. If no frame arrives for 30 s on an open session, the PWA re-subscribes to the session automatically.
+
 **Generating indicator:** a 3-dot wave below the output area when the session is `Running`. Sits below the channel tab too, so it's always under the visible content.
 
 **Anti-clobber typing detection:** when an agent (via MCP, channel relay, or session→session send) sends input to an active session while the operator is typing in the xterm input bar, the daemon holds the message until 30 s of operator keystroke idle has elapsed, so agent messages never clobber in-progress operator input. Multiple agent messages that arrive during a typing window queue in arrival order (capacity 256) and flush immediately after the first held message is finally sent. Session-to-session AI relays (agent→agent) bypass the idle wait entirely. The queue closes cleanly on session delete.
