@@ -23,10 +23,9 @@
 # release.yaml already runs govulncheck + gosec before goreleaser.
 #
 #   - govulncheck-latest-advisory (NON-BLOCKING, GH#201/BL399
-#     2026-10-09) — the same scan against Go's latest "stable" release
-#     instead of the pinned one above, so an upgrade that would fix (or
-#     newly flag) something is visible without making every push to
-#     main hostage to whatever Go shipped that morning.
+#     2026-10-09) — the same scan, non-blocking, now also on go.mod's
+#     Go (it originally tracked Go's floating "stable" release; that was
+#     dropped because it could resolve below the CVE floor).
 #
 #   - security-registry (BLOCKING, schema-only) — validates
 #     security/accepted-risks.yml against the shared datawatch/
@@ -52,7 +51,7 @@ permissions:
 
 jobs:
   govulncheck:
-    # GH#201/BL399 (2026-10-09) — was `go-version-file: go.mod`, which installs
+    # GH#201/BL399 (2026-10-09) — was `go-version: stable`, which installs
     # whatever Go release is newest AT CI-RUN TIME, not the version this
     # repo actually ships with (go.mod's 1.26.6, same as ci.yaml's build
     # job). That meant a brand-new upstream Go release landing with a
@@ -80,7 +79,8 @@ jobs:
     # GH#201/BL399 (2026-10-09) — the "should we upgrade Go" signal the
     # pinned job above deliberately no longer provides as a blocker.
     # Now pinned to go.mod's Go (go-version-file) like the job above, so
-    # it no longer tracks the newest Go release; kept non-blocking.
+    # it no longer tracks the newest Go release (a floating `stable`
+    # resolved to a toolchain below the CVE floor); kept non-blocking.
     # continue-on-error so a new upstream release — or its CVEs — never
     # blocks CI, but still shows up as a visibly failed (non-blocking)
     # step for the operator to actually look at, not silently discarded.
@@ -90,7 +90,7 @@ jobs:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5
       - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c  # v6
         with:
-          go-version: stable
+          go-version-file: go.mod
           cache: true
       - name: Install govulncheck
         run: go install golang.org/x/vuln/cmd/govulncheck@latest
