@@ -91,7 +91,7 @@ func startSSEStream(t *testing.T, url string) (*sseEventFeed, context.CancelFunc
 
 	feed := &sseEventFeed{events: make(chan string, 64), ended: make(chan error, 1)}
 	go func() {
-		defer resp.Body.Close()
+		defer func() { _ = resp.Body.Close() }()
 		r := bufio.NewReader(resp.Body)
 		var payload []string
 		for {
@@ -298,8 +298,8 @@ func startStdioSession(t *testing.T, m *server.MCPServer, name string) *stdioSes
 	inR, inW := io.Pipe()
 	outR, outW := io.Pipe()
 	ctx, cancel := context.WithCancel(context.Background())
-	
-done := make(chan error, 1)
+
+	done := make(chan error, 1)
 	go func() { done <- GuardStdioListen(server.NewStdioServer(m), ctx, name, inR, outW) }()
 
 	lines := make(chan string, 64)

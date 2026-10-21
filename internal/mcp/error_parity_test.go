@@ -73,7 +73,7 @@ func errorParityREST(t *testing.T, srv *httptest.Server, method, path string) (i
 	if err != nil {
 		t.Fatalf("REST baseline request failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	b, err := io.ReadAll(resp.Body)
 	if err != nil {
 		t.Fatalf("reading REST baseline body: %v", err)

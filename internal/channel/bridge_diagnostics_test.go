@@ -27,7 +27,7 @@ func TestBridgeHealth_LiveBridge(t *testing.T) {
 		t.Fatalf("SplitHostPort: %v", err)
 	}
 	port := 0
-	fmt.Sscanf(portStr, "%d", &port)
+	_, _ = fmt.Sscanf(portStr, "%d", &port)
 
 	alive, reason := BridgeHealth(port)
 	if !alive {
@@ -47,9 +47,9 @@ func TestBridgeHealth_BridgeExitedReason(t *testing.T) {
 		t.Fatalf("Listen: %v", err)
 	}
 	_, portStr, _ := net.SplitHostPort(l.Addr().String())
-	l.Close() // free the port so nothing is listening
+	_ = l.Close() // free the port so nothing is listening
 	var port int
-	fmt.Sscanf(portStr, "%d", &port)
+	_, _ = fmt.Sscanf(portStr, "%d", &port)
 
 	alive, reason := BridgeHealth(port)
 	if alive {
@@ -77,9 +77,9 @@ func TestBridgeHealth_WedgedBridgeTimeout(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Listen: %v", err)
 	}
-	defer l.Close()
+	defer func() { _ = l.Close() }()
 	var port int
-	fmt.Sscanf(mustPort(l), "%d", &port)
+	_, _ = fmt.Sscanf(mustPort(l), "%d", &port)
 
 	go func() {
 		for {
@@ -119,7 +119,7 @@ func TestBuildSelfScope_ReportsBridgeLiveness(t *testing.T) {
 	}))
 	defer ts.Close()
 	livePort := 0
-	fmt.Sscanf(mustPort(ts.Listener), "%d", &livePort)
+	_, _ = fmt.Sscanf(mustPort(ts.Listener), "%d", &livePort)
 
 	// A dead bridge (recorded port, nothing listening) → bridge_alive=false
 	// with the close-reason diagnostic attached.
@@ -128,8 +128,8 @@ func TestBuildSelfScope_ReportsBridgeLiveness(t *testing.T) {
 		t.Fatalf("Listen: %v", err)
 	}
 	deadPort := 0
-	fmt.Sscanf(mustPort(l2), "%d", &deadPort)
-	l2.Close() // free the port so nothing is listening
+	_, _ = fmt.Sscanf(mustPort(l2), "%d", &deadPort)
+	_ = l2.Close() // free the port so nothing is listening
 	sess := &session.Session{
 		ID: "aa01", FullID: "h1-aa01", Hostname: "h1",
 		State: session.StateRunning, ChannelReady: true,
