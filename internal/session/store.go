@@ -141,6 +141,16 @@ type Session struct {
 	// Never mutated after creation.
 	ParentID string `json:"parent_id,omitempty"`
 
+	// ScheduleName (GH#204 Phase 1) — the name of the schedule entry that
+	// SPAWNED this session. Set server-side at spawn time from the
+	// originating DeferredSession (which carried it in via AddSpawn) or the
+	// ScheduledCommand itself — never self-reported by the job. Persisted
+	// with the session so a later result panel can group results per
+	// schedule_name, and so `memory_recall`-style lookups can find which
+	// scheduled job produced a given run. Empty for sessions not spawned
+	// by a schedule.
+	ScheduleName string `json:"schedule_name,omitempty"`
+
 	// KillChildren (BL347) — when true, killing THIS session also kills all
 	// sessions whose ParentID equals this session's FullID (direct children only).
 	// Default false: children survive the parent and are shown as orphaned

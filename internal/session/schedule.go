@@ -115,6 +115,10 @@ type DeferredSession struct {
 	Ephemeral  bool   `json:"ephemeral,omitempty"`  // reap workspace directory on delete
 	Subprocess bool   `json:"subprocess,omitempty"` // run via bash -c, not TUI (exit code = completion)
 	Git        bool   `json:"git,omitempty"`        // opt in to git init/snapshot/commit (default false)
+	// GH#204 Phase 1 — name of the schedule entry that owns this spawn,
+	// carried server-side into the spawned session's Session.ScheduleName
+	// so results/sessions can be grouped per schedule_name.
+	ScheduleName string `json:"schedule_name,omitempty"` // originating schedule entry name
 }
 
 // ScheduleStore persists scheduled commands to a JSON file.
@@ -328,17 +332,18 @@ func (s *ScheduleStore) AddSpawn(opts AddSpawnOptions) (*ScheduledCommand, error
 		State:        SchedPending,
 		CreatedAt:    time.Now(),
 		DeferredSession: &DeferredSession{
-			Task:       opts.Task,
-			ProjectDir: opts.ProjectDir,
-			Backend:    opts.Backend,
-			Name:       opts.SessionName,
-			LLMRef:     opts.LLMRef,
-			Model:      opts.Model,
-			Effort:     opts.Effort,
-			OneShot:    opts.OneShot,
-			Ephemeral:  opts.Ephemeral,
-			Subprocess: opts.Subprocess,
-			Git:        opts.Git,
+			Task:         opts.Task,
+			ProjectDir:   opts.ProjectDir,
+			Backend:      opts.Backend,
+			Name:         opts.SessionName,
+			LLMRef:       opts.LLMRef,
+			Model:        opts.Model,
+			Effort:       opts.Effort,
+			OneShot:      opts.OneShot,
+			Ephemeral:    opts.Ephemeral,
+			Subprocess:   opts.Subprocess,
+			Git:          opts.Git,
+			ScheduleName: opts.ScheduleName,
 		},
 	}
 	s.entries = append(s.entries, sc)

@@ -1346,6 +1346,13 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		}
 	}
 
+	// GH#204 Phase 1 — subprocess sessions get their session identity,
+	// base URL, and a scoped result-posting credential (ONLY
+	// sessions:result_write, for exactly that session) in their child
+	// environment. nil-safe: no store here means no token variable.
+	mgr.SetSessionTokenMinter(sessionTokenStore)
+	mgr.SetSubprocessBaseURL(loopbackBaseURL(cfg))
+
 	// Per-session MCP channel registration for claude-code multi-session support.
 	if claudeChannelEnabled {
 		channelJSPath := filepath.Join(expandHome(cfg.DataDir), "channel", "channel.js")

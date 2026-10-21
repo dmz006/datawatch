@@ -23,6 +23,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/dmz006/datawatch/internal/config"
+	"github.com/dmz006/datawatch/internal/federation"
 	"github.com/dmz006/datawatch/internal/llm"
 	"github.com/dmz006/datawatch/internal/llm/backends/ollama"
 	"github.com/dmz006/datawatch/internal/llm/backends/opencode"
@@ -360,6 +361,10 @@ type Manager struct {
 	mcpMaxRetries  int    // max MCP restart attempts per session (0 = disabled)
 	encKey         []byte // AES-256 key for encrypting session logs (nil = plaintext)
 	secureTracking string // "full" = encrypt tracker .md files too
+
+	// GH#204 Phase 1 — subprocess result-posting credential wiring.
+	resultTokenMinter SessionTokenMinter // mints the per-session scoped token (nil = no token env var)
+	subprocessBaseURL string             // daemon base URL injected as DATAWATCH_BASE_URL
 
 	// mcpRetryCounts tracks per-session MCP retry attempts.
 	mcpRetryCounts map[string]int
@@ -765,6 +770,28 @@ func (m *Manager) ReapOrphanWorkspaces() (removed []string, err error) {
 
 // SetMCPMaxRetries sets the maximum MCP restart attempts per session.
 func (m *Manager) SetMCPMaxRetries(n int) { m.mcpMaxRetries = n }
+
+// SessionTokenMinter issues a session-scoped credential for the given
+// session, scoped to exactly the given capability set. Satisfied by
+// *auth.SessionTokenStore; defined here (rather than importing the auth
+// package) so the session package stays decoupled from credential-storage
+// details.
+type SessionTokenMinter interface {
+	Mint(sessionID string, caps []string) (string, error)
+}
+
+// SetSessionTokenMinter (GH#204 Phase 1) wires the daemon's per-session
+// token store into the manager. Subprocess sessions then get a freshly
+// minted scoped credential — carrying ONLY
+// federation.CapSessionsResultWrite, for exactly that session — injected
+// as DATAWATCH_RESULT_TOKEN in the child's environment. Nil-safe: with no
+// minter set the child gets no token variable at all.
+func (m *Manager) SetSessionTokenMinter(minter SessionTokenMinter) { m.resultTokenMinter = minter }
+
+// SetSubprocessBaseURL (GH#204 Phase 1) sets the daemon base URL injected
+// as DATAWATCH_BASE_URL into subprocess sessions' environment (empty = the
+// variable is omitted). Trailing slashes are trimmed.
+func (m *Manager) SetSubprocessBaseURL(url string) { m.subprocessBaseURL = strings.TrimRight(url, "/") }
 
 // SetMaxSessions overrides the maximum concurrent active sessions (0 = unlimited).
 func (m *Manager) SetMaxSessions(n int) { m.maxSessions = n }
@@ -3115,6 +3142,30 @@ func (m *Manager) MarkInputSent(fullID string) {
 // runSubprocess executes sess.Task as a child process via bash -c,
 // streaming stdout+stderr to the session log file. Transitions to
 // StateComplete on exit 0, StateFailed on non-zero exit or error.
+// subprocessEnv (GH#204 Phase 1) builds the child environment for a
+// subprocess session: the daemon's own environment plus the session's
+// identity (DATAWATCH_SESSION_ID) and base URL (DATAWATCH_BASE_URL), and —
+// when a token minter is wired (SetSessionTokenMinter) — a freshly minted
+// scoped credential (DATAWATCH_RESULT_TOKEN) carrying ONLY
+// federation.CapSessionsResultWrite, issued for exactly this session. A
+// nil/absent minter means no token variable at all (an unset minter can't
+// mint anything, so there is no capability regression path).
+func (m *Manager) subprocessEnv(sess *Session) []string {
+	env := os.Environ()
+	if sess != nil && sess.FullID != "" {
+		env = append(env, "DATAWATCH_SESSION_ID="+sess.FullID)
+	}
+	if baseURL := m.subprocessBaseURL; baseURL != "" {
+		env = append(env, "DATAWATCH_BASE_URL="+baseURL)
+	}
+	if minter := m.resultTokenMinter; minter != nil && sess != nil && sess.FullID != "" {
+		if tok, err := minter.Mint(sess.FullID, []string{federation.CapSessionsResultWrite}); err == nil && tok != "" {
+			env = append(env, "DATAWATCH_RESULT_TOKEN="+tok)
+		}
+	}
+	return env
+}
+
 func (m *Manager) runSubprocess(sess *Session) {
 	f, err := os.OpenFile(sess.LogFile, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
 	if err != nil {
@@ -3126,6 +3177,8 @@ func (m *Manager) runSubprocess(sess *Session) {
 	_, _ = fmt.Fprintf(f, "[subprocess] task: %s\n[subprocess] dir: %s\n", sess.Task, sess.ProjectDir)
 
 	cmd := subprocessCommand(sess)
+	// GH#204 Phase 1 — identity + scope the job's result-posting credential.
+	cmd.Env = m.subprocessEnv(sess)
 	cmd.Stdout = f
 	cmd.Stderr = f
 
@@ -5649,6 +5702,21 @@ func (m *Manager) processScheduledItems(ctx context.Context) {
 			// spawned session is deleted, which would cancel the recurring schedule.
 			if sc.Type != SchedTypeSpawn {
 				sc.SessionID = newSess.FullID
+			}
+			// GH#204 Phase 1 — attach the schedule that spawned this session, set
+			// server-side (never self-reported by the job): the DeferredSession
+			// carries it from AddSpawn; fall back to the entry's own
+			// ScheduleName for schedules written before DeferredSession had the
+			// field.
+			name := ds.ScheduleName
+			if name == "" {
+				name = sc.ScheduleName
+			}
+			if name != "" && newSess.ScheduleName == "" {
+				newSess.ScheduleName = name
+				if err := m.store.Save(newSess); err != nil {
+					fmt.Printf("[schedule] persist schedule_name on %s: %v\n", newSess.FullID, err)
+				}
 			}
 			_ = m.schedStore.MarkDone(sc.ID, false)
 			fmt.Printf("[schedule] spawned session %s (%s type=%s)\n", newSess.FullID, ds.Name, sc.Type)

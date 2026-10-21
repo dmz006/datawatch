@@ -188,3 +188,24 @@ func TestListBuiltinGroups(t *testing.T) {
 		t.Error("expected 'federation-peer' in builtin group list")
 	}
 }
+
+// TestCapSessionsResultWrite_NotInAnyBuiltinGroup (GH#204 Phase 1) —
+// sessions:result_write is a per-session, explicitly minted capability: it
+// must not leak into any built-in group's default set (not even
+// full-control), so a peer or a session granted a group never receives it
+// without the daemon minting it into that session's own scoped token.
+func TestCapSessionsResultWrite_NotInAnyBuiltinGroup(t *testing.T) {
+	for _, g := range federation.ListBuiltinGroups() {
+		resolved := federation.Resolve([]string{g.Name}, nil)
+		if len(resolved) == 0 {
+			t.Fatalf("builtin group %q resolved to no caps at all", g.Name)
+		}
+		if federation.Check(resolved, federation.CapSessionsResultWrite) {
+			t.Errorf("builtin group %q must not grant %s by default — it is minted explicitly into per-session tokens", g.Name, federation.CapSessionsResultWrite)
+		}
+	}
+	// And a standalone grant still resolves (the constant is live).
+	if got := federation.Resolve([]string{federation.CapSessionsResultWrite}, nil); len(got) != 1 || got[0] != federation.CapSessionsResultWrite {
+		t.Errorf("standalone grant of %s should resolve to itself, got %v", federation.CapSessionsResultWrite, got)
+	}
+}
