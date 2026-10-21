@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-13 (investigation and writing finished 2026-10-14)
 **Version:** v9.0.75 (`var Version` in `cmd/datawatch/main.go` at time of writing)
-**Status:** Phase 1 Done (v9.0.85, 2026-10-14). Phases 2–5 Planned.
+**Status:** Phase 1 Done (v9.0.85, 2026-10-14), Phase 2 Done (v9.3.0), Phase 3 Done (Unreleased, this build). Phases 4–5 Planned.
 
 Terminology: this doc says **Automaton / Automata** in prose, per AGENT.md's
 terminology rule. The internal Go type is `PRD` (and identifiers such as
@@ -544,7 +544,7 @@ milliseconds. No polling, no scratchpad script, no 25 s race window.
 
 ## Phases
 
-Phase 1 is **Done** (v9.0.85); Phases 2–5 are **Planned**. Each phase's own checklist must include
+Phase 1 is **Done** (v9.0.85); Phase 2 is **Done** (v9.3.0); Phase 3 is **Done** (Unreleased, this build); Phases 4–5 are **Planned**. Each phase's own checklist must include
 AGENT.md's **Phase Completion Checklist** (functionality, unit tests, live
 smoke against a real daemon, full `go test ./...` + `node --test`, the
 8-item documentation checklist, conditional docs).
@@ -564,13 +564,45 @@ smoke against a real daemon, full `go test ./...` + `node --test`, the
    operator-visible concept or workflow yet — the frame and the PWA are
    unchanged); Mobile-Parity N/A (WS `prd_update` contract unchanged);
    Localization N/A (no `app.js` change); version bumped to v9.0.85.
-2. **Phase 2 — Planned.** Built-in sinks: alert store, `PublishToTopic`,
+2. **Phase 2 — Done (v9.3.0).** Built-in sinks: alert store, `PublishToTopic`,
    comm fan-out with per-Automaton coalescing; global default event-set
-   config. *(Phase Completion Checklist applies.)*
-3. **Phase 3 — Planned.** Persisted subscriptions + REST/MCP/CLI/comm CRUD;
-   session-push adapter (bridge `/send` preferred, `SendInput` fallback)
-   including the `send_input` action subscription. *(Phase Completion
-   Checklist applies.)*
+   config (`autonomous.notify.default_events`). *(Phase Completion
+   Checklist applies — recorded in the v9.3.0 CHANGELOG entry.)*
+3. **Phase 3 — Done (Unreleased, this build).** Persisted subscriptions +
+   REST/MCP/CLI/comm CRUD; session-push adapter (bridge `/send` preferred,
+   `SendInput` fallback) including the `send_input` action subscription.
+   *(Phase Completion Checklist applies.)* Shipped as
+   `internal/autonomous/lifecycle_subscription.go`,
+   `lifecycle_subscription_store.go`, `lifecycle_session_push.go` (engine
+   wired in `cmd/datawatch/main.go`) + the four surfaces:
+   `internal/server/autonomous_subscriptions.go` (REST),
+   `internal/mcp/autonomous_subscription_tools.go` (MCP),
+   `cmd/datawatch/cli_autonomous_subscriptions.go` (CLI),
+   `internal/router/autonomous_subscriptions.go` (owner-scoped comm verbs).
+   Checklist: unit tests green — `go test ./cmd/datawatch
+   ./internal/autonomous ./internal/mcp ./internal/router
+   ./internal/server` = 5 packages, EXIT 0 (2026-10-21);
+   `docs/config-reference.yaml` **N/A** (no new config keys in this phase —
+   subscriptions are data, not config); `docs/operations.md` section added
+   ("Managing Automata lifecycle event subscriptions");
+   `docs/testing-tracker.md` rows added (unit surfaces **Validated=Yes**;
+   live rows **Validated=No**, pending a sandbox sweep); howto
+   (`docs/howto/automaton-lifecycle-subscriptions.md`) + flow diagram
+   (`docs/flow/lifecycle-subscription-flow.md`) + glossary entry +
+   core-feature matrix row in `docs/datawatch-definitions.md` added;
+   `README.md` feature line + `docs/README.md` index entries +
+   `docs/howto/README.md` entry added; Mobile-Parity: event *delivery*
+   flows via the v9.3.0 `PublishToTopic` → UnifiedPush/APNs path, the
+   app-side *management* UI is tracked in
+   [2026-10-21-datawatch-app-lifecycle-subscriptions-note.md](2026-10-21-datawatch-app-lifecycle-subscriptions-note.md)
+   (referenced from `docs/parity-status.md`; file a `dmz006/datawatch-app`
+   issue on merge); Localization **N/A** (no `app.js` string changes in
+   this phase); version — Unreleased (final number set at merge).
+   **Known gap for follow-up (code, not docs):** the CLI/comm shorthand
+   `prd_updated` resolves to `task.prd_updated`, which is *not* in the
+   closed `KnownEventKinds` set (the emitted kind is `prd.updated`) — a
+   subscription created with that shorthand is rejected at validation; use
+   the full `prd.updated` until the shorthand mapping is fixed.
 4. **Phase 4 — Planned.** Pending-events MCP tool for generic MCP clients;
    PWA subscription UI. *(Phase Completion Checklist applies.)*
 5. **Phase 5 — Planned.** Outbound webhook URL sink (HMAC, SSRF guard,
@@ -648,31 +680,46 @@ smoke against a real daemon, full `go test ./...` + `node --test`, the
 
 Phase 1 (v9.0.85) adds **no** external surface: the dispatcher is
 in-process only, and the WS `MsgPRDUpdate` frame keeps its existing
-`{prd_id, status}` / `{prd_id, deleted:true}` shape (it is not yet enriched).
-**None** of the following is implemented yet. Intent for Phases 2–5:
+`{prd_id, status}` / `{prd_id, deleted:true}` shape (it is not yet
+enriched). **Phase 3 — implemented in this build** (Phase 2's sinks
+shipped in v9.3.0). Current status of each intended surface:
 
-- **REST:** `GET/POST/DELETE /api/autonomous/subscriptions`;
-  `GET /api/autonomous/events?since=<cursor>` (pending-events feed); WS
-  `MsgPRDUpdate` payload enriched with event kind + task fields.
-- **MCP:** `autonomous_subscribe`, `autonomous_unsubscribe`,
-  `autonomous_subscriptions`, `autonomous_events_pending`.
-- **CLI:** `datawatch autonomous subscribe|unsubscribe|subscriptions|events`
-  (including `--task <id> --on session_started --send "<text>"` for
-  example 1).
-- **Comm channel:** verbs for subscribe/unsubscribe/list, scoped to the
-  calling channel as the sink. Delivery uses the existing comm router
-  fan-out.
-- **YAML/config:** `autonomous.notify.*` keys (above) in
-  `docs/config-reference.yaml`; per-Automaton `notify_events` only if
-  approved.
-- **PWA:** subscription list/editor on the Automaton detail view; live
-  toasts driven by the enriched WS frame.
-- **Android:** receives events via the existing `PublishToTopic` →
-  UnifiedPush path (no new daemon surface). Subscription management is a
-  `datawatch-app` issue to file when Phase 3 ships.
-- **iPhone/iOS:** same as Android, via the existing APNs-backed push
-  registration. The app-side UI is likewise tracked as a `datawatch-app`
-  issue, not built in this repo.
+- **REST:** ✅ `GET/POST /api/autonomous/subscriptions` (list with
+  optional `?owner=` filter; create → 201) and
+  `DELETE /api/autonomous/subscriptions/{id}` (`autonomous:read` /
+  `autonomous:write`; `503` when the engine is not wired). ❌
+  `GET /api/autonomous/events?since=<cursor>` (Phase 4). ❌ WS
+  `MsgPRDUpdate` payload enrichment (Phase 4 scope).
+- **MCP:** ✅ `autonomous_subscribe`, `autonomous_unsubscribe`,
+  `autonomous_subscriptions` (proxy the daemon REST on loopback; the daemon
+  store is the source of truth). ❌ `autonomous_events_pending` (Phase 4).
+- **CLI:** ✅ `datawatch autonomous
+  subscribe|unsubscribe|subscriptions` (including `--task <id> --on
+  session_started --send "<text>"` for example 1). ❌ `events` (Phase 4).
+- **Comm channel:** ✅ verbs for subscribe/subscriptions/unsubscribe,
+  owner-scoped — the calling channel is the owner *and* the sink target.
+  Delivery fan-out uses the existing comm router.
+- **Session delivery:** ✅ session-push adapter — bridge
+  `POST 127.0.0.1:<port>/send` (5 s timeout) preferred, `SendInput`
+  fallback (source tag `lifecycle-sub`); one-shot removed only on success,
+  one retry then log+drop on failure.
+- **YAML/config:** ✅ Phase 2's `autonomous.notify.default_events`
+  (v9.3.0). **No new keys in Phase 3** — subscriptions are data; per-
+  Automaton `notify_events` remains "only if approved" (open question 2).
+- **PWA:** ❌ subscription list/editor on the Automaton detail view; ❌ live
+  toasts off an enriched WS frame (both Phase 4). Event *delivery* works
+  today via the v9.3.0 topic-push path.
+- **Android:** ✅ receives events via the existing `PublishToTopic` →
+  UnifiedPush path (no new daemon surface since v9.3.0). ⏳ Subscription
+  *management* UI: [2026-10-21-datawatch-app-lifecycle-subscriptions-note.md](2026-10-21-datawatch-app-lifecycle-subscriptions-note.md)
+  — file a `dmz006/datawatch-app` issue on merge.
+- **iPhone/iOS:** ⏳ same as Android, via the existing APNs-backed push
+  registration; the app-side UI is likewise tracked in that note, not built
+  in this repo.
+
+**Phase 5 (not started):** outbound webhook URL sink (HMAC / SSRF guard /
+retry-backoff) and federation forwarding of the event stream. `webhook` / `mcp_queue`
+sink types are rejected at creation until then (clear phase error).
 
 ---
 

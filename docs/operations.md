@@ -2811,3 +2811,40 @@ Real-time output lines are batched per session at 100ms intervals before broadca
 - `pane_capture` writes wrapped in try/catch with auto-recovery
 - ResizeObserver cleaned up on terminal dispose (prevents memory leak)
 - Frame rate capped at ~30fps to prevent xterm.js buffer overload
+
+## Managing Automata lifecycle event subscriptions (Unreleased — Phase 3 of [plans/2026-10-13-prd-lifecycle-events.md](plans/2026-10-13-prd-lifecycle-events.md))
+
+**Operator workflow: no config, no restart.** Subscriptions are *data*, not config: create them from any surface, change them at any time, and the daemon's subscription engine re-attaches to the store immediately (`OnChanged`) — there is nothing to restart and nothing to restart-safe. `docs/config-reference.yaml` is therefore **N/A for this feature** (no new keys in this phase; the v9.3.0 `autonomous.notify.default_events` default-set key is the only lifecycle-related config).
+
+### What is where
+
+- Storage: `<data_dir>/lifecycle_subscriptions.json` — secfile-encrypted at rest (same treatment as `channel_routing.json`), modeled on the discussion-subscription store. Back up with the data dir; re-apply after migration.
+- Audit: create/delete are audit-logged. Per-event *delivery* is not audited (high-frequency, same convention as discussion `subscribe` deliveries) — the daemon log is the delivery ledger (`lifecycle-sub` lines).
+- Engine: in-daemon, wired in `cmd/datawatch/main.go` (store → engine → REST/MCP/CLI/comm all hit the same store). REST returns **503** in a context where the engine is not wired (unit-test / stripped-down daemons).
+
+### Managing — all four surfaces
+
+- **CLI** — `datawatch autonomous subscribe` (repeatable `--on <kind>`, `--level prd|task`, `--prd-id`, `--task-id`, `--sink-type`, `--sink-target`, `--send`, `--one-shot[=false]`, `--coalesce`, `--expires <seconds>`, `--owner`) · `datawatch autonomous unsubscribe <id>` · `datawatch autonomous subscriptions [--owner <owner>]`.
+- **MCP** — `autonomous_subscribe`, `autonomous_unsubscribe`, `autonomous_subscriptions`. The MCP server holds no state; it proxies the daemon's REST on loopback, so the daemon store remains the single source of truth across host restarts.
+- **Comm channel** — `autonomous subscribe <kinds…> [prd=<id>] [task=<id>]`, `autonomous subscriptions`, `autonomous unsubscribe <id>`. Owner-scoped: the calling channel is both the owner and the sink target; a channel can only ever see and remove *its own* records.
+- **REST** — `GET/POST /api/autonomous/subscriptions` (optional `?owner=`), `DELETE /api/autonomous/subscriptions/{id}`; auth `autonomous:read`/`autonomous:write`; `400` malformed/unknown kind, `404` unknown id, `503` engine not wired.
+
+### Session-sink delivery order (what the operator should expect)
+
+Bridge first, then typed text: if the target session has a channel bridge with a local port, the daemon POSTs the message to `http://127.0.0.1:<port>/send` (5 s timeout). On port 0, POST error, or no bridge, it types the text into the session via `SendInput` with source tag **`lifecycle-sub`** — visible in the session input history so you can distinguish daemon-typed text from operator-typed text. The `send_input` action (up to 4096 chars) applies only to session sinks.
+
+### Semantics
+
+- **One-shot** — removed only after *successful* delivery; failure → one retry → log + drop (the daemon never blocks on a dead target).
+- **Expiry** — `expires_at` is enforced by the janitor; the record stops matching once the timestamp elapses.
+- **Coalesce** — human-facing sink deliveries (comm/alert) are batched in quiet windows rather than one message per event.
+
+### Verification & troubleshooting
+
+- `datawatch autonomous subscriptions` (+ `--owner`) — the live list is the state of truth.
+- Confirm an injection actually typed text: check the target session's input history for the `lifecycle-sub` source tag.
+- `503` → engine not wired in that context (see above); unknown-kind rejection at creation ("not a known event kind") → use the full kind — e.g. **`prd.updated`**, *not* the `prd_updated` shorthand, which currently maps to `task.prd_updated` and is rejected at validation (known gap — see the design doc's Phase 3 notes).
+- `webhook` / `mcp_queue` sinks are refused by design in this release (Phase 5: outbound webhooks / MCP pending-events queue).
+
+**Checklist record:** `docs/config-reference.yaml` — N/A (no new keys); localization — N/A (no `app.js` strings in this phase); version — Unreleased (final number set at merge); Mobile-Parity — app-side UI tracked in [plans/2026-10-21-datawatch-app-lifecycle-subscriptions-note.md](plans/2026-10-21-datawatch-app-lifecycle-subscriptions-note.md);
+ full checklist outcome recorded in the design doc's Phase 3 bullet.
