@@ -175,8 +175,8 @@ func TestStart_PlanningSessionOutputFilesNeverStagedOrCommitted(t *testing.T) {
 	}
 }
 
-// Control: with SkipSnapshot unset (the previous task's default), a PRD
-// one-shot Start keeps its existing contract — the dirty tree is still
+// Control: with SkipSnapshot unset (the previous task's default) and git
+// enabled, a PRD one-shot Start keeps its existing contract — the dirty tree is still
 // snapshot-committed at launch.
 func TestStart_TaskSessionStillSnapshotsWhenSkipSnapshotUnset(t *testing.T) {
 	mgr, fake := newTestManagerWithFake(t)
@@ -205,6 +205,9 @@ func TestStart_TaskSessionStillSnapshotsWhenSkipSnapshotUnset(t *testing.T) {
 	if _, err := mgr.Start(context.Background(), "do the work", "", dir, &StartOptions{
 		OneShot: true,
 		PRDID:   "prd-snapshot-unset",
+		// Git is opt-in: a PRD task session is git-enabled when its PRD
+		// has git settings, which is what the executor passes here.
+		Git: true,
 		// SkipSnapshot intentionally unset.
 	}); err != nil {
 		t.Fatalf("Start: %v", err)
