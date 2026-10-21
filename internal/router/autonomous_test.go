@@ -32,6 +32,11 @@ func TestParse_AutonomousVerbs(t *testing.T) {
 		{"autonomous config-set plan_review_backend=anthropic plan_review_model=opus plan_review_mode=warn smoke_verification_backend=openai smoke_verification_model=gpt-5.5", "config-set plan_review_backend=anthropic plan_review_model=opus plan_review_mode=warn smoke_verification_backend=openai smoke_verification_model=gpt-5.5"},
 		{"autonomous learnings", "learnings"},
 		{"autonomous create Add a search-icon toggle to the sessions list", "create Add a search-icon toggle to the sessions list"},
+		// BL427 (phase 3) — lifecycle-event subscription verbs.
+		{"autonomous subscribe session_started,prd.blocked prd=prd_a3f9", "subscribe session_started,prd.blocked prd=prd_a3f9"},
+		{"autonomous subscribe task=task_7 prd_updated", "subscribe task=task_7 prd_updated"},
+		{"autonomous unsubscribe sub_a3f9", "unsubscribe sub_a3f9"},
+		{"autonomous subscriptions", "subscriptions"},
 	}
 	for _, tc := range cases {
 		got := Parse(tc.in)
