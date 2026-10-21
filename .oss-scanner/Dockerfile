@@ -5,7 +5,7 @@
 # Module downloads happen in the build stage; the final test step runs with
 # GOPROXY=off and GOFLAGS=-mod=readonly so any missing dependency fails loudly.
 
-FROM golang:1.26.9-bookworm
+FROM golang:1.26.10-bookworm
 
 # tmux and git are used by some datawatch tests; nodejs/npm are needed by
 # internal/channel, which extracts and npm-installs the MCP channel server in tests.

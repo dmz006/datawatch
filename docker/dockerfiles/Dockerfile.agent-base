@@ -21,7 +21,7 @@
 #
 # Target size: ~250-300MB.
 
-ARG GO_VERSION=1.26.9
+ARG GO_VERSION=1.26.10
 ARG MINIDEB_TAG=bookworm
 ARG RTK_VERSION=0.37.0
 # GitHub CLI, built from source in the ghbuilder stage (see Layer 2 below
