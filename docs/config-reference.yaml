@@ -1435,6 +1435,19 @@ council:
   # 0 disables garbage collection entirely.
   draft_retention_days: 7
 
+# ── Scheduled Job Results ──
+# Per-schedule result history: every scheduled run posts a result payload
+# (title required; status ok/warn/error; summary, metrics, tables, optional
+# markdown). Each schedule name retains only the most recent
+# schedule_history_limit entries, oldest evicted first. The store lives
+# under data_dir and survives daemon restarts, independent of the posting
+# session.
+results:
+  # Number of latest result entries kept per schedule name.
+  # Default: 20. Values below 1 are rejected; the effective limit is
+  # always at least 1. Changing it applies from the next posted result.
+  schedule_history_limit: 20
+
 # ── Auto-Update ──
 # Automatic self-update configuration.
 update:

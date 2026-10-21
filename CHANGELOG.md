@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+- **Scheduled jobs can post structured results into a per-schedule history.** A new file-backed store (`internal/session/schedule_result_store.go`) keyed by schedule name keeps each schedule's most recent `results.schedule_history_limit` posted results, evicting the oldest entries first when the limit is lowered or exceeded. Result payloads carry a required title, an ok/warn/error status, an optional summary, a free-form metrics map, up to 20 tables of at most 100 rows, and an optional markdown report; strings over 2000 characters (summary, markdown, table titles, headers, cells) are truncated with a `…(truncated)` marker instead of being dropped, and payloads that still serialize to more than 64 KB after truncation are rejected. Payloads that fail validation are rejected with typed errors (missing title, unrecognized status, table/row/size limits), and the store is concurrent-safe and persists atomically under the data dir, so history survives daemon restarts independent of the posting session.
+- **New `results.schedule_history_limit` config.** Default 20; the effective value is clamped so it is never below 1. Editable through every existing config surface: `datawatch configure results.schedule_history_limit=…`, MCP `config_set key=results.schedule_history_limit value=…`, `PUT /api/config {"results.schedule_history_limit": …}`, the Web UI Settings card (new “Scheduled Job Results” section), and direct YAML editing. See `docs/config-reference.yaml` (results section).
+- Tests: `internal/session/schedule_result_store_test.go` (eviction, limit raise/lower, persist/reopen, truncation, typed rejections, concurrent adds under `-race`) and `internal/config/results_config_test.go` + `internal/server/results_config_patch_test.go` (defaults, min-1 clamping, YAML round-trip, REST patch path).
+
 ## v9.5.61 — Automatic task commits use the task title as their subject
 
 ### Fixed

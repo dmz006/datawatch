@@ -14515,6 +14515,11 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'pipeline.max_parallel', label: 'Max parallel tasks (0 = default 3)', type: 'number', placeholder: '3' },
     { key: 'pipeline.default_backend', label: 'Default backend (empty = session default)', type: 'text' },
   ]},
+  // scheduled-jobs results: how many latest posted results each
+  // schedule name retains before the oldest are evicted.
+  { id: 'results', section: 'Scheduled Job Results', fields: [
+    { key: 'results.schedule_history_limit', label: 'Results kept per schedule (min 1, default 20)', type: 'number', min: 1, placeholder: '20' },
+  ]},
   // v4.0.1 — feature toggles for autonomous / plugins / orchestrator.
   // Each feature's full surface is REST + MCP + CLI per parity rule;
   // these Settings cards give the operator a one-click enable + links

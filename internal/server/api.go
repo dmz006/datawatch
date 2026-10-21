@@ -5855,6 +5855,10 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"max_parallel":         s.cfg.Council.MaxParallel,
 			"comm_firehose":        s.cfg.Council.CommFirehose,
 		},
+		// scheduled-jobs results: per-schedule result history store.
+		"results": map[string]interface{}{
+			"schedule_history_limit": s.cfg.Results.EffectiveScheduleHistoryLimit(),
+		},
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(out) //nolint:errcheck
@@ -7486,6 +7490,13 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		case "session.quick_commands":
 			if cmds, ok := toQuickCommands(v); ok {
 				cfg.Session.QuickCommands = cmds
+			}
+		// Results — scheduled-jobs per-schedule result history. Unset or
+		// below 1 is rejected here; the getter always reports the
+		// effective value (default 20, min 1).
+		case "results.schedule_history_limit":
+			if n, ok := toInt(v); ok && n >= 1 {
+				cfg.Results.ScheduleHistoryLimit = n
 			}
 		default:
 			// Unknown keys are logged so future mobile/PWA schema
