@@ -5,6 +5,63 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.49 — MCP held to REST's reliability bar
+
+### Fixed
+
+- **MCP sessions dropping mid-conversation (BL463)** — mcp-go v0.46.0 discards
+  write/flush errors on the SSE stream outright, and a client disconnect only
+  surfaces at the next write, so a stalled client or proxy could kill the
+  connection while datawatch neither noticed, surfaced it, nor logged it. The
+  SSE serve path now registers error recovery, pings the stream with a 10 s
+  keepalive, and observes every stream (open/close, bytes, write/flush errors,
+  close reason). The stdio listen loop logs start/stop and client disconnects.
+  Root-cause analysis: `docs/plans/2026-10-20-bl463-mcp-drop-findings.md`.
+- **A recovery log line could corrupt the JSON-RPC stream in `datawatch mcp`
+  (stdio) mode** — session-store recovery messages (corruption warning,
+  subdirectory merge, flock timeout) were written to stdout, which in stdio
+  mode is the MCP protocol channel. They now go to stderr and stdout stays
+  strict JSON-RPC. Caught live by the release-smoke §7r probe.
+
+### Added
+
+- **`get_my_scope` — the session asks who it is and where it stands** —
+  returns `session_id` / `full_id` / `mcp_server_name` / `shared_entry_name`
+  / `mode` / `channel_ready` / `channel_port` / `bridge_alive` / `peers`,
+  with `resolved_via` (`hint` | `in-band` | `channel-ready-fallback`).
+  `datawatch mcp` now injects the in-band scope credential from the datawatch
+  session (BL463), and falls back to the current channel-ready active session.
+- **REST mirror: `GET /api/sessions/self/scope?hint=<id>`** — both surfaces
+  call the same `channel.BuildSelfScope` (`internal/channel/session_scope.go`),
+  so the MCP tool and the REST route can only differ by transport.
+- **Release smoke (§7r, stdio MCP) now asserts the BL463 contract** — a live
+  session calls `get_my_scope` and gets back its scope (the probe starts its
+  own fixture session when it owns the daemon); failing calls — both
+  in-process (`get_my_scope` with an unresolvable hint) and loopback-proxy
+  (`template_delete` of a missing template) — must come back as
+  `isError:true` results named after the tool and carrying the upstream
+  status + body (e.g. `template_delete: HTTP 404: template not found`); and
+  the server's stdout must stay strict JSON-RPC (a log leak fails the smoke).
+
+### Changed
+
+- MCP tool failure responses are now real error results: every MCP tool failure
+  (`isError:true`) is named after the tool call and, for tools that mirror a REST
+  route, carries the upstream HTTP status and the daemon's error body (truncated
+  where long). Previously many tools failed as indistinguishable success results
+  with an "Error: ..." text payload, and the `POST /api/mcp/call` bridge reported
+  HTTP 200 / `isError:false` for them while the direct REST route returned a 4xx
+  with a JSON body. Affected tools span session management
+  (`get_my_session_id`, `get_my_scope`, `start_session`, `send_input`,
+  `rename_session`, `kill_session`, `session_output`, `session_timeline`,
+  `session_children`, `send_saved_command`, `schedule_add`, `session_reconcile`,
+  …), the REST-loopback proxy tools (templates, projects, cooldown, audit, cost,
+  rollback, diagnose, …), and the memory tools. Successful responses and result
+  payloads are unchanged.
+
+**The point of v9.5.29: MCP is now held to REST's reliability bar — same
+reliability, same scope knowledge, same failure information.**
+
 ## v9.5.48 — File drift guardrail blocks pre-existing drift and only warns on the worker's own edits
 
 - **File drift guardrail: pre-existing drift blocks by default, the worker's own edits only ever warn.** The guardrail now distinguishes two kinds of finding. A swept-in edit that *already existed* before the task started (uncommitted work that a `git add -A` picked up) is **blocked by default** under the new `autonomous.drift_mode: block` value: the task is set to `blocked` with error `foreign_file_drift: <files>` and the automaton stops walking, so the swept-in change is visible and you decide what to do. Edits made *by the task's own worker* (committed files that were clean before the task started, planned or not) are always recorded, warned and audited — but **never blocked**, in either mode. `drift_mode: warn` restores the previous flag-and-continue behaviour daemon-wide. Only `block` and `warn` are accepted (anything else is rejected, and an unset value behaves as `block`); the per-automaton / per-profile `block_on_file_drift: false` is the opt-out for automata you trust in a shared tree, and an unset daemon-wide flag no longer means "warn for everyone".
