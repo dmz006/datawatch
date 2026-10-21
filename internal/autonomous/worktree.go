@@ -8,6 +8,7 @@ package autonomous
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -83,6 +84,10 @@ func EnsureWorktree(prd *PRD, baseRepo, worktreeDir string) (path, branch string
 	if prd.Git.Branch != "" {
 		if st, serr := os.Stat(filepath.Join(path, ".git")); serr == nil {
 			_ = st
+			// Reused worktree: still make sure the go:embed placeholder
+			// exists (a daemon restart doesn't conjure it back into
+			// life if the worktree was pruned and re-added by hand).
+			prepareWorktreeBestEffort(path)
 			return path, prd.Git.Branch, nil
 		}
 	}
@@ -105,7 +110,20 @@ func EnsureWorktree(prd *PRD, baseRepo, worktreeDir string) (path, branch string
 			return "", "", fmt.Errorf("worktree add (%s): %s / retry on existing branch: %s: %w", branch, out, out2, werr2)
 		}
 	}
+	// Fresh worktree: drop the git-ignored go:embed placeholder in so
+	// the first build doesn't fail on internal/docsindex.
+	prepareWorktreeBestEffort(path)
 	return path, branch, nil
+}
+
+// prepareWorktreeBestEffort runs prepareWorktree on a created/reused
+// worktree and logs any failure instead of propagating it: a broken
+// placeholder or exclude setup is worth seeing in the daemon log, but
+// must not roll back a worktree that was otherwise created fine.
+func prepareWorktreeBestEffort(path string) {
+	if perr := prepareWorktree(path); perr != nil {
+		log.Printf("[autonomous] worktree prepare at %s (non-fatal): %v", path, perr)
+	}
 }
 
 // ensureWorktreeIfConfigured is the shared gate Run() (BL407 Phase 1)
