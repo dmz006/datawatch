@@ -16,6 +16,15 @@ type CapacityKeysFn func(backend, model string) (pools []string, node string)
 
 var errCancelledWhileWaiting = errors.New("task cancelled while waiting for capacity")
 
+// errDecomposeCancelled is returned by decomposeAdmitted when the operator
+// cancels (or rejects) the PRD while its planner is still queued on
+// capacity. The two decompose retry loops (Decompose, decomposeStreamingCore)
+// must treat it as "not a decompose failure": the PRD already holds a
+// terminal status, so neither the infra retry budget must be consumed nor
+// the draft-rollback path of failDecomposeAttempt run — both of those would
+// silently clobber PRDCancelled/PRDRejected back to PRDDraft.
+var errDecomposeCancelled = errors.New("decompose cancelled while waiting for capacity")
+
 // ErrWorkerStalled marks a verify() error as a worker-stall detection (SSE
 // stall, or the log-mtime staleWorkerCheck) rather than a hard fault. The
 // executor's retry budget applies to it exactly like a normal verification
@@ -170,10 +179,32 @@ func (m *Manager) admit(ctx context.Context, prd *PRD, t *Task, backend, model s
 }
 
 // decomposeAdmitted runs one decompose attempt inside a RolePlanner capacity
-// lease on the same pools a task on that backend+model would use. The lease is
-// held only for the attempt, so a PRD waiting on a busy node queues behind
-// workers and verifiers (RolePlanner ranks last) instead of spawning past the
-// limit. With capacity off the attempt runs unchanged.
+// lease on the same pools a task on that backend+model would use, minus the
+// "host" pool.
+//
+// The host exclusion is not cosmetic. A session-based decompose spawns the
+// autonomous:decompose one-shot session, and the ledger's External counter
+// (cmd/datawatch) already charges that session against the host pool. Holding
+// a host lease at the same time would stack a second slot on a session that
+// is already counted, halving the effective host budget for planning. The
+// ask-based decompose spawns no session, but its engine concurrency is still
+// bounded by the llm: pool it takes here, so nothing is under-counted either
+// way. (The task path keeps its host lease as-is: only the decompose session
+// is in External's count.)
+//
+// The lease is held only for the attempt, so a PRD waiting on a busy node
+// queues behind workers and verifiers (RolePlanner ranks last) instead of
+// spawning past the limit, and it is released on every exit path — success,
+// error, cancel, timeout — because Release is deferred immediately after the
+// successful Acquire.
+//
+// The wait is visible: while queued, the reason is persisted on the PRD itself
+// (PRD.WaitReason, same convention as Task.WaitReason for waiting tasks) and
+// emitted as a PRD update, and it is cleared as soon as the wait ends —
+// admitted, timed out, or cancelled. Cancelling the PRD while the planner is
+// still queued drops the waiter immediately (plannerCancelled, mirroring the
+// task path's taskCancelled) instead of holding its queue position until the
+// global capacity wait timeout. With capacity off the attempt runs unchanged.
 func (m *Manager) decomposeAdmitted(prd *PRD, backend, model string, req DecomposeRequest) (string, error) {
 	if !m.capacityOn() {
 		return m.decompose(req)
@@ -181,18 +212,92 @@ func (m *Manager) decomposeAdmitted(prd *PRD, backend, model string, req Decompo
 	m.mu.Lock()
 	led, keysFn := m.capacity, m.capacityKeys
 	m.mu.Unlock()
-	pools, node := keysFn(backend, model)
+	allPools, node := keysFn(backend, model)
+	pools := decomposePools(allPools)
 	if len(pools) == 0 {
 		return m.decompose(req)
 	}
 	holder := "plan:" + prd.ID
-	if err := led.Acquire(context.Background(), capacity.Request{
+	err := led.Acquire(context.Background(), capacity.Request{
 		Holder: holder, PRDID: prd.ID, Priority: prd.Priority, Pools: pools, Node: node, Model: model, Role: capacity.RolePlanner,
-	}, m.capacityWait(), func() bool { return false }, func(string) {}); err != nil {
+	}, m.capacityWait(), func() bool { return m.plannerCancelled(prd.ID) }, func(reason string) {
+		m.setPRDWaitReason(prd.ID, reason)
+	})
+	if err != nil {
+		// The wait ended without admission (timeout or cancel): nothing is held,
+		// but the queued reason must not outlive the wait.
+		m.clearPRDWaitReason(prd.ID)
+		if m.plannerCancelled(prd.ID) {
+			// Not an attempt failure — the PRD went terminal under us. The
+			// retry loops must neither retry (budget) nor roll back (draft);
+			// see errDecomposeCancelled.
+			return "", errDecomposeCancelled
+		}
 		return "", fmt.Errorf("capacity: %w", err)
 	}
 	defer led.Release(holder)
+	m.clearPRDWaitReason(prd.ID)
 	return m.decompose(req)
+}
+
+// decomposePools drops the "host" pool from a decompose lease. The
+// autonomous:decompose one-shot already counts against the host pool through
+// the ledger's External counter (cmd/datawatch), so the planner lease must
+// never stack on it; everything else (llm:, node:) stays.
+func decomposePools(pools []string) []string {
+	out := make([]string, 0, len(pools))
+	for _, p := range pools {
+		if p == "host" {
+			continue
+		}
+		out = append(out, p)
+	}
+	return out
+}
+
+// plannerCancelled reports whether the operator cancelled (or rejected) the
+// PRD while the planner is still queued on capacity, so the waiter drops out
+// immediately instead of running to the global capacity wait timeout. The
+// PRD can also be gone; that is not a cancel (the waiter simply finishes and
+// the LLM call fails on the missing PRD, same as before capacity existed).
+func (m *Manager) plannerCancelled(prdID string) bool {
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return false
+	}
+	return prd.Status == PRDCancelled || prd.Status == PRDRejected
+}
+
+// setPRDWaitReason persists why the planner is queued on the PRD and emits a
+// PRD update, so the status block / PWA show it without a poll. The reason
+// must name what the planner is waiting for (e.g. "llm:ollama at 1/1 (1
+// waiting)"). No-op when the reason is unchanged.
+func (m *Manager) setPRDWaitReason(prdID, reason string) {
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok || prd.WaitReason == reason {
+		return
+	}
+	prd.WaitReason = reason
+	if err := m.store.SavePRD(prd); err != nil {
+		return
+	}
+	m.EmitPRDUpdate(prdID)
+}
+
+// clearPRDWaitReason empties PRD.WaitReason once the wait is over — the
+// planner admitted, or the wait ended in timeout/cancel. A stale reason is
+// worse than none: an operator reading "waiting on node:alpha" after the
+// planner moved on would chase a queue that no longer exists.
+func (m *Manager) clearPRDWaitReason(prdID string) {
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok || prd.WaitReason == "" {
+		return
+	}
+	prd.WaitReason = ""
+	if err := m.store.SavePRD(prd); err != nil {
+		return
+	}
+	m.EmitPRDUpdate(prdID)
 }
 
 // adoptCapacity (BL462 F1) gives a task whose session survived a daemon

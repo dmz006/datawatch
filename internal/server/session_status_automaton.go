@@ -87,11 +87,12 @@ type SessionAutomatonCost struct {
 // GetPRD returns `any`; decoding through JSON keeps this package free of
 // an import on internal/autonomous (and works with test fakes that return maps).
 type automatonPRDView struct {
-	ID        string                     `json:"id"`
-	Title     string                     `json:"title"`
-	Status    string                     `json:"status"`
-	Stories   []automatonStoryView       `json:"stories"`
-	Decisions []SessionAutomatonDecision `json:"decisions"`
+	ID         string                     `json:"id"`
+	Title      string                     `json:"title"`
+	Status     string                     `json:"status"`
+	WaitReason string                     `json:"wait_reason"`
+	Stories    []automatonStoryView       `json:"stories"`
+	Decisions  []SessionAutomatonDecision `json:"decisions"`
 }
 
 type automatonStoryView struct {
@@ -208,6 +209,12 @@ func (s *Server) buildSessionAutomatonDetail(sess *session.Session) *SessionAuto
 				ForeignFileDrift:  task.ForeignFileDrift,
 			}
 		}
+	}
+	// Planning (decompose) sessions have no linked task — surface the
+	// PRD-level planner wait reason (why the decompose is queued on
+	// capacity) in the same `wait_reason` slot a waiting task already uses.
+	if d.WaitReason == "" {
+		d.WaitReason = prd.WaitReason
 	}
 	// Decisions carry no story/task id, so the block shows the most recent
 	// PRD-level entries.

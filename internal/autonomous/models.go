@@ -200,9 +200,15 @@ type PRD struct {
 	// which guardrail verdict blocked it and which judge produced it, or (B165)
 	// why the boot-resume gate parked it (stale activity, removed project
 	// directory, resume disabled). Empty unless Status is blocked.
-	BlockedReason string    `json:"blocked_reason,omitempty"`
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	BlockedReason string `json:"blocked_reason,omitempty"`
+	// WaitReason is a plain sentence saying why the PRD's planner is queued
+	// on capacity (which pool is full) while a decompose waits for admission.
+	// Same convention as Task.WaitReason for waiting tasks; empty unless the
+	// planner is (or was) waiting. Set and cleared by
+	// setPRDWaitReason/clearPRDWaitReason so it never outlives the wait.
+	WaitReason string    `json:"wait_reason,omitempty"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
 	// BL451 — optimistic-concurrency revision, bumped by Store.SavePRD
 	// (and Store.CommitPRDIfRev) on every save. 0 for PRDs persisted
 	// before BL451; load tolerates the missing field.

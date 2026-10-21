@@ -5,6 +5,7 @@ package autonomous
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/dmz006/datawatch/internal/capacity"
 	"log"
@@ -1559,6 +1560,12 @@ func (m *Manager) Decompose(prdID string) (*PRD, error) {
 		}
 		r, derr := m.decomposeAdmitted(prd, backend, planModel, DecomposeRequest{Spec: attemptPrompt, Backend: backend, Effort: effort, Model: planModel, ProjectDir: prd.ProjectDir, ScopeBlock: ScopeBlock(prd), PRDID: prd.ID, TimeoutSeconds: m.cfg.PlanningTimeoutSeconds})
 		if derr != nil {
+			if errors.Is(derr, errDecomposeCancelled) {
+				// Operator cancel/reject dropped the planner from the queue:
+				// the PRD already holds a terminal status, so no retry budget
+				// and no draft rollback (failDecomposeAttempt would clobber it).
+				return nil, derr
+			}
 			if isOneShotNoOutput(derr) {
 				if m.noteDecomposeSessionFailure(prd, backend, planModel, derr) {
 					return nil, derr
@@ -1707,6 +1714,11 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (*PRD, 
 		}
 		r, derr := m.decomposeAdmitted(prd, backend, planModel2, DecomposeRequest{Spec: attemptPrompt, Backend: backend, Effort: effort, Model: planModel2, ProjectDir: prd.ProjectDir, ScopeBlock: ScopeBlock(prd), PRDID: prd.ID, TimeoutSeconds: m.cfg.PlanningTimeoutSeconds})
 		if derr != nil {
+			if errors.Is(derr, errDecomposeCancelled) {
+				// Same as Decompose() above: a cancelled/rejected PRD is not a
+				// decompose failure — keep its terminal status, don't retry.
+				return nil, derr
+			}
 			if isOneShotNoOutput(derr) {
 				if m.noteDecomposeSessionFailure(prd, backend, planModel2, derr) {
 					return nil, derr
