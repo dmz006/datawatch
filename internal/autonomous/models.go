@@ -786,6 +786,12 @@ type Task struct {
 	// completion read as a failure.
 	ForeignFileDrift []string `json:"foreign_file_drift,omitempty"`
 
+	// UndeclaredEdits — the worker's own committed edits to files that are
+	// in neither FilesPlanned nor FilesGenerated (see checkUndeclaredEdits).
+	// Accumulated across retries; LinesChanged is summed per path. Disjoint
+	// from ForeignFileDrift by construction.
+	UndeclaredEdits []UndeclaredEdit `json:"undeclared_edits,omitempty"`
+
 	// BL367 — quality gate result recorded after each task completes.
 	// Nil when quality gates are disabled for this PRD.
 	QualityGateResult *pipeline.QualityGateResult `json:"quality_gate_result,omitempty"`
@@ -864,6 +870,13 @@ type Task struct {
 	// VerificationScript behavior — it is purely metadata consumed by the
 	// structural check and surfaced in reports.
 	VerificationScriptReason string `json:"verification_script_reason,omitempty"`
+}
+
+// UndeclaredEdit records one file a task's worker edited without declaring
+// it (neither planned nor generated) and the lines changed in it.
+type UndeclaredEdit struct {
+	Path         string `json:"path"`
+	LinesChanged int    `json:"lines_changed"`
 }
 
 // RecordAttemptCommit appends the deterministic commit sha recorded for a

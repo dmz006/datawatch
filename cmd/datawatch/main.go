@@ -5702,6 +5702,11 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			amgr.SetAlertFn(func(title, body string) {
 				_ = alertStore.AddSystem(alertspkg.LevelWarn, title, body)
 			})
+			// Undeclared-edit detection: raise the operator alert at the
+			// level the manager asks for (warn by default).
+			amgr.SetAlertSink(func(level, title, body string) {
+				_ = alertStore.AddSystem(autonomousAlertLevel(level), title, body)
+			})
 			// PRD/automata watchdog — scans every 60 s for autonomous task
 			// sessions that have been in a non-terminal state for >5 min and
 			// whose scrollback contains an SSE stall pattern. Kills the

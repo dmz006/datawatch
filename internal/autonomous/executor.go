@@ -1232,6 +1232,12 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 		if m.checkForeignFileDrift(ctx, prd, t) {
 			return m.store.SaveTask(t)
 		}
+		// Undeclared edits: the worker's own edits outside
+		// FilesPlanned ∪ FilesGenerated. Runs after the drift step, so a
+		// drift block fires first and this is not reached that attempt.
+		if m.checkUndeclaredEdits(ctx, prd, t) {
+			return m.store.SaveTask(t)
+		}
 		if vr.OK {
 			// BL367 — quality gate: run tests after verifier passes and
 			// check for regressions vs. the pre-PRD baseline.

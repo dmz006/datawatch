@@ -1161,6 +1161,18 @@ autonomous:
   # "block" and "warn" are accepted; any other value is rejected at the
   # config surface.
   drift_mode: block
+  # Undeclared-edit enforcement: what happens when a task's own worker
+  # commits files that are in neither the task's planned files nor its
+  # generated files (and were clean before the task started, so they are
+  # not pre-existing drift). A file is never reported by both this check
+  # and drift_mode. off = skip the check; warn = record the finding on the
+  # task (undeclared_edits), log an undeclared_edit_detected decision and
+  # raise a warn-level alert, the task continues (default); block = the
+  # task is set to blocked and the Automaton stops walking its tasks.
+  # Global-only. Only off, warn and block are accepted; any other value is
+  # rejected at the config surface and resolves to warn if stored anyway.
+  # The check never reverts or modifies any file.
+  undeclared_edit_mode: warn
   # BL367 — default quality gate config applied to every PRD that does not
   # set its own quality_gates at creation time. When enabled, a test
   # baseline is captured before the first task runs, and tests are re-run

@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -60,6 +61,68 @@ func CommittedFilesSince(ctx context.Context, dir, preSHA string, run driftGitRu
 		return nil, err
 	}
 	return sortedUnion(splitLines(out)), nil
+}
+
+// CommittedLineStatsSince returns the per-file changed-line count
+// (added + removed) between preSHA and HEAD in dir (git diff --numstat).
+// Paths are normalized with normalizeDriftPath; renames are reported under
+// the new path and binary entries ("-\t-\tpath") count as
+// 0, so a binary edit still has an entry. An empty preSHA, or no changed
+// files, yields nil, nil.
+func CommittedLineStatsSince(ctx context.Context, dir, preSHA string, run driftGitRunner) (map[string]int, error) {
+	if preSHA == "" {
+		return nil, nil
+	}
+	if run == nil {
+		run = defaultDriftGitRunner
+	}
+	out, err := run(ctx, dir, "diff", "--numstat", preSHA, "HEAD")
+	if err != nil {
+		return nil, err
+	}
+	stats := map[string]int{}
+	for _, l := range splitLines(out) {
+		parts := strings.SplitN(l, "\t", 3)
+		if len(parts) < 3 {
+			continue
+		}
+		n := normalizeDriftPath(numstatNewPath(parts[2]))
+		if n == "" {
+			continue
+		}
+		stats[n] += numstatLines(parts[0]) + numstatLines(parts[1])
+	}
+	if len(stats) == 0 {
+		return nil, nil
+	}
+	return stats, nil
+}
+
+// numstatNewPath resolves a numstat path field to the post-change path:
+// "a => b" and the brace form "dir/{a => b}/f" yield the new side.
+func numstatNewPath(p string) string {
+	if !strings.Contains(p, " => ") {
+		return p
+	}
+	if open := strings.Index(p, "{"); open >= 0 {
+		if end := strings.Index(p[open:], "}"); end >= 0 {
+			inner := p[open+1 : open+end]
+			if i := strings.Index(inner, " => "); i >= 0 {
+				return strings.ReplaceAll(p[:open]+inner[i+len(" => "):]+p[open+end+1:], "//", "/")
+			}
+		}
+	}
+	return p[strings.LastIndex(p, " => ")+len(" => "):]
+}
+
+// numstatLines parses one numstat column; "-" (binary) and malformed
+// values count as 0.
+func numstatLines(v string) int {
+	n, err := strconv.Atoi(strings.TrimSpace(v))
+	if err != nil || n < 0 {
+		return 0
+	}
+	return n
 }
 
 // CapturePostVerifySHA returns dir's current HEAD SHA, or "" when dir is
@@ -343,4 +406,102 @@ func (m *Manager) appendDriftAudit(taskID, prdID, kind string, files []string) {
 		"kind":    kind,
 		"files":   append([]string(nil), files...),
 	})
+}
+
+// checkUndeclaredEdits runs the undeclared-edit check for one worker
+// attempt of t, immediately after checkForeignFileDrift. Its input is the
+// inRun set from ClassifyFileDrift (the worker's own edits; never
+// re-derived here), minus every path in t.FilesPlanned and
+// t.FilesGenerated. What remains is undeclared: it is stored on
+// t.UndeclaredEdits (line counts summed across retries), appended to the
+// PRD as an undeclared_edit_detected Decision, audited
+// (autonomous_undeclared_edit_detected), logged and raised as a warn alert
+// through the alert sink (nil-safe). Mode (EffectiveUndeclaredEditMode):
+// "off" is a full no-op, "warn" never blocks, "block" sets TaskBlocked
+// with error "undeclared_edit: <files>" and returns true. Worktree-mode
+// PRDs, an empty task dir and an empty PreTaskSHA are skipped, as in
+// checkForeignFileDrift. It never reverts, resets or un-stages anything.
+func (m *Manager) checkUndeclaredEdits(ctx context.Context, prd *PRD, t *Task) (blocked bool) {
+	mode := m.EffectiveUndeclaredEditMode("")
+	if mode == "off" {
+		return false
+	}
+	taskDir := m.resolveTaskProjectDir(prd, t)
+	if prd.Git.Branch != "" || taskDir == "" || t.PreTaskSHA == "" {
+		return false
+	}
+	committed, err := CommittedFilesSince(ctx, taskDir, t.PreTaskSHA, m.driftGit)
+	if err != nil {
+		log.Printf("[autonomous] %s/%s undeclared-edit: git log since %s: %v", prd.ID, t.ID, t.PreTaskSHA, err)
+		return false
+	}
+	_, inRun := ClassifyFileDrift(t, t.PreTaskUntrackedFiles, t.PreTaskDirtyFiles, committed)
+	declared := map[string]bool{}
+	for _, f := range append(append([]string(nil), t.FilesPlanned...), t.FilesGenerated...) {
+		if n := normalizeDriftPath(f); n != "" {
+			declared[n] = true
+		}
+	}
+	var findings []string
+	for _, f := range inRun {
+		if !declared[f] {
+			findings = append(findings, f)
+		}
+	}
+	if len(findings) == 0 {
+		return false
+	}
+	stats, err := CommittedLineStatsSince(ctx, taskDir, t.PreTaskSHA, m.driftGit)
+	if err != nil {
+		log.Printf("[autonomous] %s/%s undeclared-edit: git numstat since %s: %v", prd.ID, t.ID, t.PreTaskSHA, err)
+		stats = nil
+	}
+	lineDetail := map[string]int{}
+	for _, f := range findings {
+		lineDetail[f] = stats[f]
+		found := false
+		for i := range t.UndeclaredEdits {
+			if t.UndeclaredEdits[i].Path == f {
+				t.UndeclaredEdits[i].LinesChanged += stats[f]
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.UndeclaredEdits = append(t.UndeclaredEdits, UndeclaredEdit{Path: f, LinesChanged: stats[f]})
+		}
+	}
+	joined := strings.Join(findings, ", ")
+	prd.Decisions = append(prd.Decisions, Decision{
+		At: time.Now(), Kind: "undeclared_edit_detected", Actor: "autonomous",
+		Note: "task " + t.ID + ": edited file(s) not in its planned or generated files: " + joined,
+	})
+	if err := m.store.SavePRD(prd); err != nil {
+		log.Printf("[autonomous] %s/%s undeclared-edit: save PRD: %v", prd.ID, t.ID, err)
+	}
+	m.mu.Lock()
+	auditFn := m.auditFn
+	alertFn := m.alertSink
+	m.mu.Unlock()
+	if auditFn != nil {
+		auditFn("autonomous_undeclared_edit_detected", map[string]any{
+			"task_id": t.ID,
+			"prd_id":  prd.ID,
+			"files":   append([]string(nil), findings...),
+			"lines":   lineDetail,
+			"mode":    mode,
+		})
+	}
+	if alertFn != nil {
+		alertFn("warn", "Undeclared edit detected", "prd "+prd.ID+" task "+t.ID+": "+joined)
+	}
+	log.Printf("[autonomous] WARNING %s/%s undeclared edit: task edited file(s) not in its planned or generated files: %s", prd.ID, t.ID, joined)
+	if mode == "block" {
+		t.Status = TaskBlocked
+		t.Error = "undeclared_edit: " + joined
+		_ = m.store.SaveTask(t)
+		return true
+	}
+	_ = m.store.SaveTask(t)
+	return false
 }

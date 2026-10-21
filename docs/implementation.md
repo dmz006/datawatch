@@ -205,6 +205,26 @@ pick it up; the PRD's own status transition stays with the run path. The
 drift check remains read-only — it never reverts, resets, amends or rewrites
 history. See `docs/howto/file-drift-guardrail.md`.
 
+Undeclared-edit mode — `autonomous.undeclared_edit_mode`
+(`config.AutonomousConfig.UndeclaredEditMode`, YAML `undeclared_edit_mode`;
+default `"warn"`, no `omitempty` so an explicit value round-trips) governs
+the undeclared-edit check, which covers the worker's own edits while
+`drift_mode` keeps governing pre-existing drift. Resolution is
+`EffectiveUndeclaredEditMode` on both the daemon config and
+`autonomous.Manager`: lowercase/trim, only `off|warn|block` pass, anything
+else resolves to `"warn"`. The enforcement is `checkUndeclaredEdits`
+(`internal/autonomous/file_drift.go`), run in `executeOne` right after
+`checkForeignFileDrift`. It takes the `inRun` set from `ClassifyFileDrift`
+(so a file is never in both sets) and subtracts `FilesPlanned` and
+`FilesGenerated`; what remains is recorded as `Task.UndeclaredEdits`
+(`{path, lines_changed}`, from `CommittedLineStatsSince`, summed across
+retries), an `undeclared_edit_detected` decision, an
+`autonomous_undeclared_edit_detected` audit event and a warn alert through
+`Manager.SetAlertSink` (wired to the alerts store in `cmd/datawatch/main.go`;
+nil-safe). `off` is a full no-op, `warn` never blocks, `block` sets
+`TaskBlocked` with `undeclared_edit: <files>` and halts the walk.
+Worktree-mode PRDs are skipped. Read-only git only.
+
 ### Per-task project directory (Automata)
 
 `autonomous.Task.ProjectDir` (JSON `project_dir`) overrides the

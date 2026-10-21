@@ -2208,6 +2208,11 @@ type AutonomousConfig struct {
 	// the effective mode must survive YAML round-trips, matching the
 	// executor's resolveDriftMode (empty/"block" → block).
 	DriftMode string `yaml:"drift_mode" json:"drift_mode"`
+	// UndeclaredEditMode — off | warn | block: what the executor does with
+	// the worker's own edits outside a task's planned and generated files.
+	// Default "warn". Independent of DriftMode. No omitempty so an explicit
+	// value round-trips. Validated by ValidateUndeclaredEditMode.
+	UndeclaredEditMode string `yaml:"undeclared_edit_mode" json:"undeclared_edit_mode"`
 
 	// Phase 3 (v5.26.61) — per-story approval gate. Default false
 	// (preserves the v5.26.x behavior where PRD approval auto-
@@ -2322,6 +2327,18 @@ func ValidateDriftMode(mode string) error {
 		return nil
 	default:
 		return fmt.Errorf("autonomous.drift_mode: %q is not a valid value (must be \"block\" or \"warn\")", mode)
+	}
+}
+
+// ValidateUndeclaredEditMode accepts the three legal
+// autonomous.undeclared_edit_mode values, "off", "warn" and "block"
+// (case-insensitive, trimmed), and rejects every other value.
+func ValidateUndeclaredEditMode(mode string) error {
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "off", "warn", "block":
+		return nil
+	default:
+		return fmt.Errorf("autonomous.undeclared_edit_mode: %q is not a valid value (must be \"off\", \"warn\" or \"block\")", mode)
 	}
 }
 
@@ -2803,6 +2820,7 @@ func DefaultConfig() *Config {
 			AutoFixSkipApproval:     true,
 			BlockOnFileDrift:        false,   // opt-in strict drift enforcement
 			DriftMode:               "block", // pre-existing drift blocks by default; "warn" for flag-only
+			UndeclaredEditMode:      "warn",
 			// Notify is left as the zero value on purpose: an empty
 			// DefaultEvents list means the built-in lifecycle sinks
 			// subscribe to nothing — zero config = zero behavior change.
