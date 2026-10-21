@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.48 — File drift guardrail blocks pre-existing drift and only warns on the worker's own edits
+
+- **File drift guardrail: pre-existing drift blocks by default, the worker's own edits only ever warn.** The guardrail now distinguishes two kinds of finding. A swept-in edit that *already existed* before the task started (uncommitted work that a `git add -A` picked up) is **blocked by default** under the new `autonomous.drift_mode: block` value: the task is set to `blocked` with error `foreign_file_drift: <files>` and the automaton stops walking, so the swept-in change is visible and you decide what to do. Edits made *by the task's own worker* (committed files that were clean before the task started, planned or not) are always recorded, warned and audited — but **never blocked**, in either mode. `drift_mode: warn` restores the previous flag-and-continue behaviour daemon-wide. Only `block` and `warn` are accepted (anything else is rejected, and an unset value behaves as `block`); the per-automaton / per-profile `block_on_file_drift: false` is the opt-out for automata you trust in a shared tree, and an unset daemon-wide flag no longer means "warn for everyone".
+- **Approving a file-drift-blocked task now works on a blocked PRD.** Per-task approval (`autonomous_prd_approve_task`, REST `POST /api/autonomous/prds/{id}/approve_task`) accepts PRDs in the **blocked** status — including ones halted by the file drift check — and an approved blocked task is released back to its pending queue with the stale error cleared, ready for an existing run path. Draft and cancelled PRDs still refuse approval.
+
 ## v9.5.47 — Daemon restart no longer revives stale running Automata
 
 ### Added
