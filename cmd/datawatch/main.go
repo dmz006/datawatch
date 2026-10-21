@@ -5727,6 +5727,10 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				})
 			}
 			aAPI := autonomouspkg.NewAPI(amgr)
+			// Automation coordinator: advances an Automation's cursor from
+			// member lifecycle events (nil-safe if it could not be built).
+			autoCoord := autonomouspkg.NewCoordinator(amgr, aAPI)
+			autoCoord.Start()
 			// Wire the HTTP server readiness channel so boot-resume goroutines
 			// wait until the server is accepting connections before spawning
 			// executor sessions (prevents "connection refused" on daemon restart).
