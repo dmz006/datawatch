@@ -1608,6 +1608,8 @@
   "max_engines_per_node": "ノードあたりの最大エンジン数（1 = 1 件ずつ）",
   "settings_max_concurrent_tasks": "オートマトンあたりの最大同時タスク数（1 = 1 件ずつ）",
   "settings_max_concurrent_tasks_hint": "デーモン全体の既定値です。オートマトン個別の設定が優先されます。",
+  "settings_resume_max_age": "起動時のオートマトン再開：最後の活動からの経過秒数で判定（0 = 常に再開しない、-1 = 常に再開）",
+  "settings_resume_max_age_hint": "デーモンの起動時に適用されます。再起動の時点で実行中だったオートマトンは、最新の活動がこの秒数より新しい場合にのみ再開されます。0 = 自動再開しない、-1 = 経過時間の制限なし（プロジェクトディレクトリが既に存在しない場合は、いずれの設定でも再開できません）。再開を見送ったオートマトンは理由付きでブロックされ、オペレーター通知のアラートが発生します。",
   "settings_capacity_wait_timeout": "Capacity wait timeout (sec, 0=4h)",
   "settings_ci_watch_timeout": "CI watch timeout (sec, 0=25m)",
   "settings_block_on_file_drift": "ファイル混入時にブロック",

@@ -189,9 +189,10 @@ type PRD struct {
 	// default. Per-task value takes precedence.
 	PermissionMode string    `json:"permission_mode,omitempty"`
 	Status         PRDStatus `json:"status"`
-	// BlockedReason is a plain sentence saying which guardrail verdict
-	// blocked the automaton and which judge session produced it. Empty
-	// unless Status is blocked by a guardrail.
+	// BlockedReason is a plain sentence saying why the automaton is blocked:
+	// which guardrail verdict blocked it and which judge produced it, or (B165)
+	// why the boot-resume gate parked it (stale activity, removed project
+	// directory, resume disabled). Empty unless Status is blocked.
 	BlockedReason string    `json:"blocked_reason,omitempty"`
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`
@@ -1043,6 +1044,11 @@ type LoopStatus struct {
 	// model does not pair with the backend it is used with, so it will not
 	// reach its session. See PairingWarnings.
 	Warnings []string `json:"warnings,omitempty"`
+
+	// B165 — boot-resume gate decisions (resumed and parked), most recent
+	// boot-resume scan at the end. Empty when boot-resume has never
+	// decided anything for a PRDRunning PRD. See BootResumeEntry.
+	BootResume []BootResumeEntry `json:"boot_resume,omitempty"`
 }
 
 // CIWatchResult is an automaton's own record of whether the CI runs for

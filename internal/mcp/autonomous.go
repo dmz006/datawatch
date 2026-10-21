@@ -33,7 +33,7 @@ func (s *Server) handleAutonomousStatus(_ context.Context, _ mcpsdk.CallToolRequ
 
 func (s *Server) toolAutonomousConfigGet() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_config_get",
-		mcpsdk.WithDescription("Read the current autonomous (Automata) config: poll interval, max_concurrent_tasks (daemon-wide default for how many independent tasks of one Automaton run at once; 1 = sequential), max_engines_per_node (local-model sessions allowed per compute node; default 1), backends, retries, capacity limits, guardrail lists and timeouts. "+
+		mcpsdk.WithDescription("Read the current autonomous (Automata) config: poll interval, max_concurrent_tasks (daemon-wide default for how many independent tasks of one Automaton run at once; 1 = sequential), resume_max_age_seconds (how old in seconds a completed task may be before it is no longer eligible for resume; 3600 = 1h default, 0 = never resume, -1 = no age limit), max_engines_per_node (local-model sessions allowed per compute node; default 1), backends, retries, capacity limits, guardrail lists and timeouts. "+
 			"Automaton-level (per_prd_guardrails) guardrails accept \"rules-review\" and \"ci-watch\"; both are off unless listed. \"ci-watch\" makes an automaton, when it completes, wait (up to ci_watch_timeout_seconds, default 1500) for the CI runs of the commit it pushed; if any run failed, the configured LLM judges the failure against the project's rules file. It is skipped when nothing was pushed or the origin remote is not GitHub. "+
 			"block_on_file_drift (default false) controls foreign-file drift: when false a task whose commit swept in files that were already uncommitted before it started is only flagged (warn-only); when true that task is blocked instead. An automaton's own setting or its guardrail profile overrides it; worktree-mode automata are never checked."),
 	)
@@ -54,6 +54,7 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithBoolean("enabled", mcpsdk.Description("Toggle autonomous loop on/off")),
 		mcpsdk.WithNumber("poll_interval_seconds", mcpsdk.Description("Background loop tick (default 30)")),
 		mcpsdk.WithNumber("max_concurrent_tasks", mcpsdk.Description("Daemon-wide default for how many independent tasks of one Automaton run at once. An Automaton's own setting overrides it. 1 = sequential (the default); values below 1 are ignored.")),
+		mcpsdk.WithNumber("resume_max_age_seconds", mcpsdk.Description("How old (in seconds) a completed task may be before it is no longer eligible for resume (default 3600). 0 = never resume; -1 = no age limit.")),
 		mcpsdk.WithNumber("max_parallel_tasks", mcpsdk.Description("DEPRECATED — accepted and ignored, has no effect; use max_concurrent_tasks. Will be removed in a future release.")),
 		mcpsdk.WithNumber("max_engines_per_node", mcpsdk.Description("Number of local-model sessions allowed per compute node. Defaults to 1; values below 1 are clamped to 1.")),
 		mcpsdk.WithString("planning_backend", mcpsdk.Description("LLM backend for the Automata planning call (empty = inherit); alias: decomposition_backend")),
@@ -99,6 +100,13 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 	}
 	if v := req.GetFloat("max_concurrent_tasks", -1); v >= 1 {
 		body["max_concurrent_tasks"] = int(v)
+	}
+	// B165 — resume_max_age_seconds: 0 (never resume) and -1 (no age
+	// limit) are meaningful sentinels, so the sentinel for "unset" is -2,
+	// the first value below the valid domain; any value >= -1 is
+	// forwarded as given (0 and -1 pass through).
+	if v := req.GetFloat("resume_max_age_seconds", -2); v >= -1 {
+		body["resume_max_age_seconds"] = int(v)
 	}
 	// Presence-aware and forwarded as given (0 included): the REST write
 	// clamps anything below 1 to 1, so the clamp lives in one place.

@@ -11,6 +11,7 @@ package autonomous
 
 import (
 	"context"
+	"os"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -58,7 +59,15 @@ func apiFixture(t *testing.T) (*Manager, *API, func(context.Context, SpawnReques
 // still shows PRDRunning with tasks at "" (pending).
 func prdInRunningState(t *testing.T, m *Manager) *PRD {
 	t.Helper()
-	prd, err := m.CreatePRD("test spec", "/proj", "opencode", "", EffortNormal)
+	// B165 — the boot-resume gate parks PRDs whose project dir no longer
+	// exists, so the fake project dir must be a real one for these tests
+	// to keep seeing the PRD resumed (not parked).
+	proj, err := os.MkdirTemp("", "autonomous-boot-resume")
+	if err != nil {
+		t.Fatalf("MkdirTemp: %v", err)
+	}
+	t.Cleanup(func() { os.RemoveAll(proj) })
+	prd, err := m.CreatePRD("test spec", proj, "opencode", "", EffortNormal)
 	if err != nil {
 		t.Fatalf("CreatePRD: %v", err)
 	}

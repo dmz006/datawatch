@@ -127,6 +127,9 @@ func (a *API) resumeRunningPRDs() {
 		<-ch
 	}
 
+	// B165 — counts for the per-PRD decision log + summary line.
+	resumed, parked := 0, 0
+
 	for _, prd := range a.M.Store().ListPRDs() {
 		// ListPRDs returns the shared *PRD, so reading .Status here would race
 		// against a concurrent Run() mutating it. Read it under the Manager mutex.
@@ -159,6 +162,42 @@ func (a *API) resumeRunningPRDs() {
 			// its session, so it must only run once this call has claimed the
 			// executor slot; runLocked claims first, then preps, and is a no-op
 			// when an executor is already live.
+			// A PRD that already has a live executor is left alone (runCancels
+			// is the same liveness signal API.Run uses for its idempotency):
+			// parking it would block a run that is actually still in flight.
+			a.runMu.Lock()
+			_, alreadyLive := a.runCancels[prd.ID]
+			a.runMu.Unlock()
+			if alreadyLive {
+				continue
+			}
+
+			// B165 — boot-resume gate: before re-running a PRD left in
+			// PRDRunning state by a prior daemon instance, decide whether its
+			// pre-restart work is still worth picking up. Park (PRDBlocked +
+			// plain-English reason + alert) when the newest recorded activity
+			// is stale versus resume_max_age_seconds (0 = never resume, -1 =
+			// no age limit), or the PRD's/task's project directory no longer
+			// exists (removed temp workspace). Parked PRDs must NOT go through
+			// resetInProgressTasksForResume or a run.
+			a.M.mu.Lock()
+			maxAge := a.M.cfg.ResumeMaxAgeSeconds
+			a.M.mu.Unlock()
+			now := time.Now()
+			dec := decideBootResume(prd, now, maxAge)
+			if !dec.resume {
+				fmt.Printf("[autonomous] boot-resume: prd=%s parked age=%ds reason=%s\n", prd.ID, dec.ageSec, dec.reason)
+				if err := a.M.parkPRDForBootResume(prd, dec.reason); err != nil {
+					fmt.Printf("[autonomous] boot-resume: prd=%s park save failed: %v\n", prd.ID, err)
+				}
+				a.M.recordBootResume(BootResumeEntry{PRDID: prd.ID, Outcome: "parked", AgeSeconds: dec.ageSec, Reason: dec.reason, At: now})
+				parked++
+				continue
+			}
+			a.M.recordBootResume(BootResumeEntry{PRDID: prd.ID, Outcome: "resumed", AgeSeconds: dec.ageSec, Reason: dec.reason, At: now})
+			fmt.Printf("[autonomous] boot-resume: prd=%s resumed age=%ds reason=%s\n", prd.ID, dec.ageSec, dec.reason)
+			resumed++
+
 			started, err := a.runLocked(prd.ID, func() bool {
 				a.M.resetInProgressTasksForResume(prd)
 				return true
@@ -188,6 +227,7 @@ func (a *API) resumeRunningPRDs() {
 			}
 		}
 	}
+	fmt.Printf("[autonomous] boot-resume: resumed %d, parked %d\n", resumed, parked)
 }
 
 func (a *API) Config() any { return a.M.Config() }

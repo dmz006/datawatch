@@ -4114,6 +4114,10 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			SessionIdleTimeoutSeconds:  acfgIn.SessionIdleTimeoutSeconds,
 			CapacityEnabled:            acfgIn.CapacityEnabled,
 			CapacityWaitTimeoutSeconds: acfgIn.CapacityWaitTimeoutSeconds,
+			// 0 is meaningful (never resume) and -1 passes through as-is;
+			// 3600 arrives only if the daemon config itself supplied nothing
+			// (config.Load merges over DefaultConfig()).
+			ResumeMaxAgeSeconds:      acfgIn.ResumeMaxAgeSeconds,
 			StaleTaskSeconds:           acfgIn.StaleTaskSeconds,
 			AutoFixRetries:             acfgIn.AutoFixRetries,
 			VerifierDiffMaxBytes:       acfgIn.VerifierDiffMaxBytes,
@@ -5693,6 +5697,11 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// executor sessions (prevents "connection refused" on daemon restart).
 			aAPI.SetServerReadyCh(httpServer.ReadyCh())
 			aAPI.SetExecutors(autonomousSpawn, autonomousVerify)
+			// B165 — boot-resume gate: alert the operator when a PRD is
+			// parked (stale work or removed project dir) instead of resumed.
+			amgr.SetAlertFn(func(title, body string) {
+				_ = alertStore.AddSystem(alertspkg.LevelWarn, title, body)
+			})
 			// PRD/automata watchdog — scans every 60 s for autonomous task
 			// sessions that have been in a non-terminal state for >5 min and
 			// whose scrollback contains an SSE stall pattern. Kills the

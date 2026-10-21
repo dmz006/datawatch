@@ -5614,6 +5614,10 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			// Daemon-wide default for how many independent tasks of one
 			// Automaton run at once (an Automaton's own setting overrides).
 			"max_concurrent_tasks": s.cfg.Autonomous.MaxConcurrentTasks,
+			// B165 — boot-resume age limit in seconds (default 3600). 0 =
+			// never resume, -1 = no age limit: both survive, so no
+			// omitempty on the struct tag.
+			"resume_max_age_seconds": s.cfg.Autonomous.ResumeMaxAgeSeconds,
 			// Local-model engine sessions allowed per compute node (1 = default).
 			"max_engines_per_node": s.cfg.Autonomous.MaxEnginesPerNode,
 			// BL304: new key. Also emit legacy key for back-compat with old clients.
@@ -7004,6 +7008,14 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// normalizes an unset value to 1 the same way).
 			if n, ok := toInt(v); ok && n >= 1 {
 				cfg.Autonomous.MaxConcurrentTasks = n
+			}
+			// B165 — boot-resume age limit. 0 (never resume) and -1 (no age
+			// limit) are meaningful sentinels, so the threshold is >= -1,
+			// not >= 0. Values below -1 are skipped, not stored (same
+			// treatment as max_concurrent_tasks below 1).
+		case "autonomous.resume_max_age_seconds":
+			if n, ok := toInt(v); ok && n >= -1 {
+				cfg.Autonomous.ResumeMaxAgeSeconds = n
 			}
 		case "autonomous.max_engines_per_node":
 			// Clamped to 1 like config load does: values below 1 become 1

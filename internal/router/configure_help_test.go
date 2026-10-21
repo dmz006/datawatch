@@ -66,6 +66,39 @@ func TestHandleConfigure_HelpAndListMentionMaxEnginesPerNode(t *testing.T) {
 	}
 }
 
+// B165 — the boot-resume age limit (default 3600; 0 = never resume,
+// -1 = no age limit) must be listed on the same surfaces as the
+// concurrency keys so callers know it exists.
+func TestHandleConfigure_HelpAndListMentionResumeMaxAge(t *testing.T) {
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	var sent []string
+	capture := func(s string) {
+		mu.Lock()
+		sent = append(sent, s)
+		mu.Unlock()
+		wg.Done()
+	}
+	r := &Router{hostname: "h", backend: &captureBackend{name: "test", capture: capture}}
+	r.SetConfigureFunc(func(string, string) error { return nil })
+
+	for _, text := range []string{"help", "list"} {
+		wg.Add(1)
+		r.handleConfigure(Command{Type: CmdConfigure, Text: text})
+		wg.Wait()
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(sent) != 2 {
+		t.Fatalf("sent=%q", sent)
+	}
+	for i, s := range sent {
+		if !strings.Contains(s, "autonomous.resume_max_age_seconds") {
+			t.Errorf("reply %d lacks autonomous.resume_max_age_seconds: %q", i, s)
+		}
+	}
+}
+
 func TestHandleConfigure_AcceptsMaxEnginesPerNodeNumeric(t *testing.T) {
 	var mu sync.Mutex
 	var wg sync.WaitGroup

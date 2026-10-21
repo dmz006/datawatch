@@ -180,6 +180,30 @@ The first two rows were observed on sandbox daemons during the restart audit, by
 
 **Confirming on a live daemon.** `TestBL462_DaemonRestartSurvivesLive` in `internal/session/restart_safety_live_test.go` restarts a daemon and checks that a live probe session survives it. It is skipped unless `DW_LIVE_RESTART_TEST=1` is set, so `go test ./...` does not run it. It needs `DW_BASE` set to the daemon under test, and it must run on the daemon's host with the same `TMUX_TMPDIR`. The default restart path is `systemctl --user restart datawatch`. Use `DW_LIVE_RESTART_CMD` only for a sandbox daemon that systemd does not manage. Run it against a sandbox, never against production.
 
+### Daemon restart and in-flight Automata
+
+Automata (PRDs) do **not** silently resume across a daemon restart. The daemon only auto-resumes a PRD that was in `running` state when it stopped, and only if that work still looks fresh: the PRD's newest recorded activity must be within `autonomous.resume_max_age_seconds` (default 3600 — one hour; set `0` to never auto-resume, `-1` for no age limit), and the PRD's project directory must still exist on disk (a removed temp workspace means the work cannot continue in place). A PRD that fails either check is **parked**: it is set to `blocked` with a plain-English reason, an operator alert is raised, and it does **not** run. A PRD still in `planning` state (decompose in flight when the daemon stopped) is reset to `draft` instead so you can re-run planning, and a `failed` PRD is recovered only when all of its failed tasks were killed by the daemon with no recorded result.
+
+**What the startup log says.** Each decision is printed as it happens and summarized at the end:
+
+```
+[autonomous] boot-resume: prd=a1b2c3 resumed age=412s reason=last activity 412 seconds ago is within the 3600-second resume limit and its project directory still exists
+[autonomous] boot-resume: prd=d4e5f6 parked age=86400s reason=last activity was 86400 seconds ago ...
+[autonomous] boot-resume: resumed 1, parked 1
+```
+
+**Seeing what the last restart did.** The per-PRD boot-resume report for the current boot — outcome (`resumed` or `parked`), activity age in seconds, and the reason — is on the loop status: `GET /api/autonomous/status` (field `boot_resume`), the same data `datawatch autonomous status` prints, and as the `boot_resume` array on the loop-state JSON. A parked PRD also shows its reason as its blocked reason on its card in the PWA Automata view.
+
+**Resuming a parked PRD by hand.**
+
+1. Read the blocked reason first (PWA Automata card, or the `boot_resume` entry above). It names exactly why the PRD was held.
+2. If the reason is a missing project directory but the project still exists at another path, re-point the PRD at the live directory (PRD settings in the PWA detail view) — the gate checks the directory at startup only, but the executor also needs it to exist while the work runs.
+3. Open the blocked PRD in the PWA and use **Retry** on the stopped task(s) in its stories. Retrying a failed or blocked task is allowed while the PRD is blocked, re-queues it to pending, moves the PRD back to `running`, and the executor picks it up — completed work is kept.
+4. From a bare daemon or a shell, kick the executor the same way: `datawatch autonomous prd-run <id>` (`POST /api/autonomous/prds/<id>/run`) once the PRD is back in a runnable state.
+5. If the work is stale or no longer wanted, or the project directory is genuinely gone, do not resume: cancel the PRD (PWA or `DELETE /api/autonomous/prds/<id>`) so it stops showing as blocked.
+
+If you routinely see PRDs parked for age, either raise `autonomous.resume_max_age_seconds` (or set it to `-1`) or resume them by hand within the window; if they are parked for the missing-directory reason, the projects were in a temp location that did not survive the restart — give long-running Automata a stable project directory.
+
 ### Data compatibility
 
 datawatch data files (`sessions.json`, `schedule.json`, `commands.json`, `filters.json`, `alerts.json`) use a flat JSON schema. Fields are added forwards-compatibly; the daemon ignores unknown fields from older schema versions.

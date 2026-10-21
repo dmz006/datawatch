@@ -254,3 +254,32 @@ test('plan coverage ack: POSTs {actor,note} to the acknowledge endpoint; blank n
   assert.equal(body.note, 'accepted risk: 80% is fine for this slice');
   assert.equal(sandbox.__ackBtn.disabled, true, 'button disabled while in flight');
 });
+
+test('autonomous settings expose resume_max_age_seconds as a min-less number with a label key', () => {
+  const sandbox = buildSandbox();
+  vm.createContext(sandbox);
+  loadScript(path.join(__dirname, 'app.js'), sandbox);
+  const field = vm.runInContext(
+    "JSON.stringify((GENERAL_CONFIG_FIELDS.find(s => s.id === 'autonomous') || {fields: []}).fields.find(f => f.key === 'autonomous.resume_max_age_seconds') || null)",
+    sandbox);
+  const parsed = JSON.parse(field);
+  assert.ok(parsed, 'autonomous.resume_max_age_seconds missing from autonomous card fields');
+  assert.equal(parsed.type, 'number');
+  assert.equal(parsed.labelKey, 'settings_resume_max_age');
+  // 0 (never resume) and -1 (no age limit) are both meaningful sentinels,
+  // so the field must not impose a min bound that would reject them.
+  assert.ok(parsed.min === undefined, 'autonomous.resume_max_age_seconds must not set a min bound');
+  const en = JSON.parse(fs.readFileSync(path.join(__dirname, 'locales', 'en.json'), 'utf8'));
+  assert.ok(typeof en.settings_resume_max_age === 'string' && en.settings_resume_max_age.length > 0,
+    'settings_resume_max_age missing from en locale');
+});
+
+test('settings_resume_max_age and settings_resume_max_age_hint are non-empty strings in all five locale bundles', () => {
+  for (const locale of ['en', 'de', 'es', 'fr', 'ja']) {
+    const bundle = JSON.parse(fs.readFileSync(path.join(__dirname, 'locales', locale + '.json'), 'utf8'));
+    assert.ok(typeof bundle.settings_resume_max_age === 'string' && bundle.settings_resume_max_age.length > 0,
+      'settings_resume_max_age missing or empty in ' + locale + ' locale');
+    assert.ok(typeof bundle.settings_resume_max_age_hint === 'string' && bundle.settings_resume_max_age_hint.length > 0,
+      'settings_resume_max_age_hint missing or empty in ' + locale + ' locale');
+  }
+});

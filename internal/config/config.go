@@ -1967,6 +1967,13 @@ type AutonomousConfig struct {
 	// An Automaton's own max_concurrent_tasks overrides it. 1 =
 	// sequential (default).
 	MaxConcurrentTasks int `yaml:"max_concurrent_tasks,omitempty" json:"max_concurrent_tasks,omitempty"`
+	// ResumeMaxAgeSeconds is how old (in seconds) a completed task may be
+	// before it is no longer eligible for resume. Default 3600.
+	// NOTE: 0 is a meaningful value (never resume), so it must not be
+	// normalised to the default in applyDefaults; Load merges over
+	// DefaultConfig() so an absent key keeps 3600 while an explicit 0 or
+	// -1 survives. No omitempty so 0 round-trips through Save/Load.
+	ResumeMaxAgeSeconds int `yaml:"resume_max_age_seconds" json:"resume_max_age_seconds"`
 	// MaxEnginesPerNode is how many engine sessions one compute node
 	// may run at once. 1 = one engine per node (default). Values below
 	// 1 are clamped to 1 at load time.
@@ -2736,6 +2743,7 @@ func DefaultConfig() *Config {
 		Autonomous: AutonomousConfig{
 			AutoFixRetries:     1,
 			MaxConcurrentTasks: 1,
+			ResumeMaxAgeSeconds: 3600,
 			MaxEnginesPerNode:  1,
 			StaleTaskSeconds:   900,
 			// BL410 Phase 1 — see AutonomousConfig.RetryPolicy's doc
