@@ -1234,7 +1234,12 @@ func (m *Manager) finalizeDecomposedPlan(prd *PRD, prdID, backend, prompt, raw, 
 		Actor:         "autonomous",
 	})
 	prd.ScopeWarnings = LintPlanScope(prd, s)
+	// A save failure here is a real decompose failure: route it through
+	// the shared give-up tail (log, keep artifact, record
+	// LastDecomposeFailure, roll back to PRDDraft) rather than returning
+	// a bare error that strands the completed session's output.
 	if err := m.store.SavePRD(prd); err != nil {
+		m.failDecomposeAttempt(prd, "decompose-persist", err)
 		return nil, err
 	}
 	// Only the persisted state counts: a decompose whose stories did not
