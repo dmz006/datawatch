@@ -68,9 +68,27 @@ func (t *TmuxManager) NewSessionWithSize(name string, cols, rows int) error {
 }
 
 // SendTrustPromptAccept accepts Claude Code's workspace-trust TUI dialog.
-// The dialog shows "❯ No, exit" pre-selected. Sends Down to move to
-// "Yes, I trust this folder" then Enter to confirm.
+// claude renders the preselected option with the ❯ cursor on the same
+// line. In the builds observed up to claude v2.1.306 the accept option
+// ("Yes, I trust this folder") is already preselected, where a plain Enter
+// confirms it and "Down Enter" selects the neighboring "No, exit" option
+// and exits claude — that stale hard-coded sequence killed one-shot
+// sessions during the round-2 live validation (docs/plans/
+// 2026-10-20-oneshot-startup-dialog-dismiss.md). In the earlier builds it
+// was "❯ No, exit" that was preselected and a Down was needed first. Read
+// the rendered pane and pick the confirm sequence it actually wants.
 func (t *TmuxManager) SendTrustPromptAccept(session string) error {
+	if out, err := exec.Command("tmux", "capture-pane", "-pt", session).Output(); err == nil {
+		for _, line := range strings.Split(string(out), "\n") {
+			if strings.Contains(line, "Yes, I trust this folder") {
+				if strings.Contains(line, "❯") {
+					return exec.Command("tmux", "send-keys", "-t", session, "Enter").Run()
+				}
+				break // accept option one row from the cursor → fall through to Down+Enter
+			}
+		}
+	}
+	// Pane unreadable, or older claude layout with decline preselected.
 	if err := exec.Command("tmux", "send-keys", "-t", session, "Down").Run(); err != nil {
 		return err
 	}

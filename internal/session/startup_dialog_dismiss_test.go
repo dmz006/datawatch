@@ -216,6 +216,99 @@ func TestStartupDialogDismiss_NotResentOnceDialogGone(t *testing.T) {
 	}
 }
 
+// drivePhase holds the pane at the given content across n ticks with the
+// " " mutation so the capture loop's content-change gate passes each tick.
+func drivePhase(t *testing.T, sess *Session, fake *FakeTmux, pane string, n int) {
+	t.Helper()
+	fake.mu.Lock()
+	fake.Pane[sess.TmuxSession] = pane
+	fake.mu.Unlock()
+	for i := 0; i < n; i++ {
+		time.Sleep(40 * time.Millisecond)
+		fake.mu.Lock()
+		fake.Pane[sess.TmuxSession] += " "
+		fake.mu.Unlock()
+	}
+}
+
+// TestStartupDialogDismiss_StuckDialogAutoRecovers pins the 2026-10-21
+// live failure (one-shot trust dialog unhandled for ~6'41" until operator
+// intervention): an accept send whose keystrokes did not take (the dialog
+// never leaves the pane) must be re-sent automatically after the settle
+// gap — no operator — and a "dismissed" latch that committed on a fleeting
+// absence must re-arm the moment the dialog text is visible again.
+//
+// Phases: visible (send 1) → fleeting absence → visible again (blocked by
+// the settle gap, then send 2 — auto-recovery) → sustained absence
+// (dismiss confirmed) → visible again (re-arm, send 3) → sustained absence
+// (dismiss confirmed again, no further sends).
+func TestStartupDialogDismiss_StuckDialogAutoRecovers(t *testing.T) {
+	trustPane, _ := loadStartupDialogPanes(t)
+	mgr, fake := newTestManagerWithFake(t)
+	sess := newStartupDialogSession(t, mgr, "claude-code", true)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	mgr.StartScreenCapture(ctx, sess.FullID, 20)
+
+	prompt := "\u25b8 working on the task\n\u276f "
+
+	// Phase 1: dialog visible → first accept send.
+	drivePhase(t, sess, fake, trustPane, 1)
+	if got := trustSends(fake); got != 1 {
+		t.Fatalf("phase 1: trust accept sent %d time(s), want 1; calls: %+v", got, fake.Calls)
+	}
+
+	// Phase 2: a fleeting absence (one mid-render frame the dialog was
+	// not in) — must NOT commit the dismissed latch on its own.
+	drivePhase(t, sess, fake, prompt, 1)
+
+	// Phase 3: dialog still visible. During the settle gap the loop must
+	// hold; once the gap has elapsed it must re-send on its own (this is
+	// the automatic recovery the live run of 2026-10-21 never achieved).
+	for i := 0; i < 13 && trustSends(fake) == 1; i++ {
+		drivePhase(t, sess, fake, trustPane, 1)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for trustSends(fake) == 1 && time.Now().Before(deadline) {
+		drivePhase(t, sess, fake, trustPane, 2)
+	}
+	if got := trustSends(fake); got != 2 {
+		t.Fatalf("phase 3: stuck dialog not re-sent — accepts total %d, want 2 (auto-recovery after settle gap); calls: %+v", got, fake.Calls)
+	}
+
+	// Phase 4: the dialog is finally accepted — sustained absence commits
+	// the "dismissed confirmed" latch.
+	t0 := time.Now()
+	for time.Since(t0) < 1500*time.Millisecond {
+		drivePhase(t, sess, fake, prompt, 5)
+	}
+	if got := trustSends(fake); got != 2 {
+		t.Fatalf("phase 4: no re-send expected after sustained absence, got %d accepts; calls: %+v", got, fake.Calls)
+	}
+
+	// Phase 5: the dialog text appears again after the confirmed latch
+	// (a second trust prompt on the pane, or a stale latch that committed
+	// on a mid-render frame) — the budget must re-arm and fire.
+	drivePhase(t, sess, fake, trustPane, 1)
+	deadline = time.Now().Add(3 * time.Second)
+	for trustSends(fake) == 2 && time.Now().Before(deadline) {
+		drivePhase(t, sess, fake, trustPane, 2)
+	}
+	if got := trustSends(fake); got != 3 {
+		t.Fatalf("phase 5: re-appearance after dismissed latch not honoured — accepts total %d, want 3; calls: %+v", got, fake.Calls)
+	}
+
+	// Phase 6: sustained absence commits the latch again and holds.
+	t0 = time.Now()
+	for time.Since(t0) < 1500*time.Millisecond {
+		drivePhase(t, sess, fake, prompt, 5)
+	}
+	if got := trustSends(fake); got != 3 {
+		t.Fatalf("phase 6: re-send after re-dismiss — accepts total %d, want 3; calls: %+v", got, fake.Calls)
+	}
+}
+
 // TestStartupDialogDismiss_NonOneShotAndOtherBackendsUnaffected pins the
 // negative: interactive (non-one-shot) sessions — where an operator is at
 // the terminal and the daemon's main-loop pollers already cover auto-accept

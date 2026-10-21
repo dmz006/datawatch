@@ -4474,7 +4474,8 @@ func (m *Manager) IsOpenCodeAtPrompt(fullID string) bool {
 }
 
 // SendTrustDialogAccept accepts the workspace-trust TUI dialog for sessID
-// by delegating to tmux.SendTrustPromptAccept (Down then Enter).
+// by delegating to tmux.SendTrustPromptAccept (pane-aware: Enter or
+// Down+Enter depending on which option claude preselected).
 func (m *Manager) SendTrustDialogAccept(fullID string) error {
 	sess, ok := m.store.Get(fullID)
 	if !ok {
@@ -4499,8 +4500,11 @@ const (
 	claudeDialogChannels = "channels"
 
 	// claudeStartupDialogMaxAttempts bounds how many accept-send attempts
-	// one session may make for one dialog before giving up (logged, left
-	// to the operator).
+	// one session may make for one dialog before a burst is exhausted
+	// (logged, left to the operator). The bound only throttles bursts: a
+	// dialog still on the screen re-arms the budget (see
+	// trySendDialogAccept), so a persisting dialog is retried forever at a
+	// bounded pace instead of being stranded.
 	claudeStartupDialogMaxAttempts = 5
 
 	// claudeStartupDialogRetryGap is the minimum distance between two send
@@ -4509,19 +4513,41 @@ const (
 	// single burst; failed attempts are otherwise re-sent on the next
 	// evaluation that still sees the dialog.
 	claudeStartupDialogRetryGap = 10 * time.Millisecond
+
+	// claudeDialogConfirmWindow is how long the dialog must stay absent
+	// from the evaluated text after a successful accept send before the
+	// "dismissed" latch commits. A single fleeting absence (a mid-render
+	// frame, a cursor-addressing redraw, a stray log line that never
+	// carried the dialog text) must NOT confirm the dismissal: the
+	// one-shot live run of 2026-10-21 latched on exactly such a frame and
+	// left a still-visible trust dialog unhandled for ~6'41" (see
+	// docs/plans/2026-10-20-oneshot-startup-dialog-dismiss.md, Live
+	// Validation).
+	claudeDialogConfirmWindow = 700 * time.Millisecond
+
+	// claudeDialogReSendGap is the minimum wait after a successful send
+	// before a re-send is allowed when the dialog is still (or re-)visible
+	// — Claude needs a beat to apply the keystrokes, and re-firing while
+	// the TUI is mid-transition risks the second keystroke landing on the
+	// wrong frame.
+	claudeDialogReSendGap = 500 * time.Millisecond
 )
 
 // claudeDialogState is the per-(session, dialog) record of accept
 // keystrokes sent for one claude-code startup dialog. "Dismissed
-// confirmed", not "fired once": a failed send stays retryable, a sent
-// keystroke is suppressed until the dialog is observed gone, and once
-// gone the dialog is dismissed for the life of the session.
+// confirmed" means the absence persisted past claudeDialogConfirmWindow
+// after a successful send — not "fired once": a failed send stays
+// retryable, a sent keystroke is suppressed while the dialog is still
+// visible (with a bounded re-send after the settle gap), and a dialog
+// text that re-appears after the dismissed latch re-arms the budget —
+// the stale latch wins nothing when the dialog is actually on the pane.
 type claudeDialogState struct {
 	mu          sync.Mutex
-	inFlight    bool      // an accept send went out; wait for the dialog to disappear
-	dismissed   bool      // dialog observed gone after a send — never re-send
+	inFlight    bool      // an accept send went out; absence window running or not yet started
+	dismissed   bool      // sustained absence confirmed the dismissal — re-arm only if it re-appears
 	attempts    int       // send attempts made so far (bounded by claudeStartupDialogMaxAttempts)
 	lastAttempt time.Time // wall time of the last send attempt
+	absentSince time.Time // first absent evaluation after a successful send; zero = window not started
 }
 
 // dismissClaudeStartupDialog inspects text (a visible pane capture from
@@ -4543,9 +4569,11 @@ func (m *Manager) dismissClaudeStartupDialog(sess *Session, text string) bool {
 		sendAccept func() error
 	}{
 		{
-			// "❯ No, exit / Yes, I trust this folder" (the
-			// "Quick safety check" heading suffices) — move down to the
-			// trust option and confirm via the existing TmuxAPI method.
+			// "No, exit / Yes, I trust this folder" (the
+			// "Quick safety check" heading suffices) — confirm the
+			// preselected trust option via the existing TmuxAPI method
+			// (it reads the pane to pick between plain Enter and
+			// Down+Enter — see TmuxManager.SendTrustPromptAccept).
 			name:    claudeDialogTrust,
 			visible: strings.Contains(lower, "yes, i trust this folder") || strings.Contains(lower, "quick safety check"),
 			sendAccept: func() error {
@@ -4590,9 +4618,29 @@ func (m *Manager) trySendDialogAccept(sess *Session, dialog string, sendAccept f
 	st := v.(*claudeDialogState)
 
 	st.mu.Lock()
-	if st.dismissed || st.inFlight {
-		st.mu.Unlock()
-		return false
+	if st.dismissed {
+		// The dialog text is visible again after we confirmed a dismissal —
+		// the stale latch was wrong (it committed on a mid-render frame).
+		// Re-arm with a fresh budget; the settle gap below bounds the pace.
+		st.dismissed = false
+		st.absentSince = time.Time{}
+		st.attempts = 0
+		st.lastAttempt = time.Time{}
+		m.debugf("dismissClaudeStartupDialog: %s (%s): dialog re-appeared after dismiss confirmed — re-armed the accept budget", dialog, sess.FullID)
+	} else if st.inFlight {
+		// A successful send went out, but the dialog is still (or re-)visible:
+		// the keystrokes did not take (sent while the TUI was still rendering).
+		// Let the pane settle before re-sending instead of firing every tick.
+		if time.Since(st.lastAttempt) < claudeDialogReSendGap {
+			st.mu.Unlock()
+			return false
+		}
+		st.inFlight = false
+		st.absentSince = time.Time{} // any earlier absence streak is void once the dialog is visible again
+		if st.attempts >= claudeStartupDialogMaxAttempts {
+			st.attempts = 0
+			m.debugf("dismissClaudeStartupDialog: %s (%s): dialog still on screen after %d accepted sends — re-armed the accept budget", dialog, sess.FullID, claudeStartupDialogMaxAttempts)
+		}
 	}
 	if st.attempts >= claudeStartupDialogMaxAttempts {
 		st.mu.Unlock()
@@ -4622,11 +4670,13 @@ func (m *Manager) trySendDialogAccept(sess *Session, dialog string, sendAccept f
 }
 
 // markDialogConfirmedIfGone runs when an evaluation no longer sees the
-// named dialog in the text. If an accept send is in flight, the dialog
-// has been dismissed — confirm it and keep suppressing. If the dialog
-// vanished without our send confirming it (e.g. an operator accepted it),
-// clear the failed-attempt record so a fresh appearance later in the
-// session's life gets a full retry budget again.
+// named dialog in the text. If an accept send is in flight, absence starts
+// (and, once sustained past claudeDialogConfirmWindow, confirms) the
+// dismissal — a single fleeting absence never latches, so a mid-render
+// flash cannot lock out a dialog that is actually still on screen. If the
+// dialog vanished without our send confirming it (e.g. an operator
+// accepted it), clear the failed-attempt record so a fresh appearance
+// later in the session's life gets a full retry budget again.
 func (m *Manager) markDialogConfirmedIfGone(sess *Session, dialog string) {
 	v, ok := m.claudeDialogDismiss.Load(sess.FullID + ":" + dialog)
 	if !ok {
@@ -4636,11 +4686,20 @@ func (m *Manager) markDialogConfirmedIfGone(sess *Session, dialog string) {
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	if st.inFlight {
+		if st.absentSince.IsZero() {
+			st.absentSince = time.Now()
+			m.debugf("dismissClaudeStartupDialog: %s (%s): absence observed — starting the dismiss confirm window", dialog, sess.FullID)
+			return
+		}
+		if time.Since(st.absentSince) < claudeDialogConfirmWindow {
+			return // keep the send confirmed-pending; absence may be a fleeting frame
+		}
 		st.inFlight = false
 		st.dismissed = true
 		st.attempts = 0
-		m.debugf("dismissClaudeStartupDialog: %s (%s): dialog no longer visible — dismissed confirmed, no re-send", dialog, sess.FullID)
-	} else if st.attempts > 0 {
+		st.absentSince = time.Time{}
+		m.debugf("dismissClaudeStartupDialog: %s (%s): sustained absence — dismissed confirmed, no re-send", dialog, sess.FullID)
+	} else if st.attempts > 0 && !st.dismissed {
 		st.attempts = 0
 	}
 }

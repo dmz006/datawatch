@@ -404,3 +404,98 @@ a real claude-code one-shot session in an untrusted directory.
   works; send timing/latch needs the follow-ups listed above for bulletproof first-shot autonomy.
 
 _Validation status: complete — live one-shot reached DATAWATCH_COMPLETE; one reliability caveat noted above._
+
+---
+
+## Live Validation — Round 2 (2026-10-21, post Fix #3)
+
+### Root cause of the round-1 failure
+
+The round-1 `PARTIAL` verdict had two defects interacting:
+
+1. **Premature latch** (Fix #1 in this doc): `markDialogConfirmedIfGone`
+   confirmed dismissal on a single "not visible" capture. Fixed with a
+   sustained-absence window (700 ms) and re-arm on re-appearance.
+2. **Wrong key sequence** (this round's new finding): in Claude Code
+   v2.1.306 the trust dialog shows **"Yes, I trust this folder"
+   preselected** (❯ cursor on that option; "No, exit" is the other one).
+   The old `TmuxManager.SendTrustPromptAccept`
+   (`internal/session/tmux.go`) hard-coded `Down` + `Enter`, which moved
+   the cursor **off** the preselected accept option onto "No, exit" —
+   selecting it and *exiting claude*. The channels consent dialog has the
+   same shape ("❯ 1. I am using this for local development / 2. Exit");
+   its accept path (`m.tmux.SendKeys(sess.TmuxSession, "Enter")` in
+   `internal/session/manager.go`) was already correct because option 1
+   is preselected. Round-1 log evidence: the session's final pane content
+   was `DATAWATCH_COMPLETE: claude done` — the shell line that runs only
+   after claude exits — i.e. the automatic accept had just told
+   claude "No, exit".
+
+### Fix #3 (this round)
+
+`internal/session/tmux.go` — `SendTrustPromptAccept` is now pane-aware:
+it `capture-pane`s the target pane, and if the line containing
+`Yes, I trust this folder` also carries the `❯` cursor it sends a plain
+`Enter` (confirming the preselected accept option); otherwise it falls
+back to the historical `Down` + `Enter` sequence for the earlier-layout
+builds where decline was preselected. The `dismissClaudeStartupDialog`
+trust spec in `internal/session/manager.go` keeps routing through
+`m.tmux.SendTrustPromptAccept` (keeps FakeTmux coverage), and its comment
+was corrected. Detection, latch, re-arm and re-send-gap behavior are
+unchanged from the Fix #1 design.
+
+### Setup (round 2)
+
+- Worktree build at `/home/dmz/.datawatch/prd-worktrees/b0390001`
+  (`./datawatch`, **v9.5.31**), rebuilt 2026-10-21 ~03:13 after Fix #3;
+  `go build` rc=0, `go vet ./internal/session/` clean,
+  `rtk go test ./internal/session/` → **478 passed** (including the 8
+  `TestStartupDialog*` tests).
+- Sandbox daemon in `/tmp/dw-oneshot-livetest2` (fresh `data/`),
+  `TMUX` unset, HTTP 28080 / TLS 28443. *Deviation from AGENT.md's
+  18080/18443 sandbox ports: both were held by the live production
+  daemon (`datawatch start --foreground`, PID 205216); the same port
+  workaround was used in round 1.*
+- Claude Code v2.1.306.
+- Fresh, untrusted project dirs (absent from `~/.claude.json`), started
+  via `POST /api/sessions/start` (`Authorization: Bearer dw-test-token-12345`)
+  with `one_shot:true`, `backend:claude-code`.
+
+### Runs (both zero operator keypresses)
+
+| | session A | session B |
+|---|---|---|
+| full ID | `dw-sbx-oneshot-live2-6638` | `dw-sbx-oneshot-live2-ec44` |
+| project dir | `/tmp/dw-oneshot-livetest2/projects/live3-c7qz` | `/tmp/dw-oneshot-livetest2/projects/live4-vx2a` |
+| started | 03:15:28 | 03:20:33 (local) |
+| task | `Reply with exactly this one line and nothing else: TRUSTDIALOG-AUDIT-OK` | `Write a file named marker.txt with the text ok, then reply with exactly this one line and nothing else: DATAWATCH_COMPLETE: dialog dismissal validated, marker.txt written` |
+| trust dialog | auto-accepted, 1 attempt | auto-accepted, 1 attempt |
+| channels dialog | auto-dismissed, 1 attempt | auto-dismissed, 1 attempt |
+| agent reply observed in pane | `● TRUSTDIALOG-AUDIT-OK` | `● DATAWATCH_COMPLETE: dialog dismissal validated, marker.txt written` |
+| final state | idle `❯` prompt (claude stayed interactive — task had no completion marker, expected) | **`complete`** at 03:21:15 (marker line in pane drove the normal one-shot completion path) |
+
+Daemon log (both sessions, same shape):
+
+```text
+dismissClaudeStartupDialog: trust (dw-sbx-oneshot-live2-6638): attempt 1/5 sent via m.tmux — awaiting the dialog to disappear
+dismissClaudeStartupDialog: trust (dw-sbx-oneshot-live2-6638): absence observed — starting the dismiss confirm window
+dismissClaudeStartupDialog: trust (dw-sbx-oneshot-live2-6638): sustained absence — dismissed confirmed, no re-send
+dismissClaudeStartupDialog: channels (dw-sbx-oneshot-live2-6638): attempt 1/5 sent via m.tmux — awaiting the dialog to disappear
+dismissClaudeStartupDialog: channels (dw-sbx-oneshot-live2-6638): absence observed — starting the dismiss confirm window
+dismissClaudeStartupDialog: channels (dw-sbx-oneshot-live2-6638): sustained absence — dismissed confirmed, no re-send
+SendInput session=dw-sbx-oneshot-live2-6638 tmux=cs-dw-sbx-oneshot-live2-6638 text="Reply with exactly this one line and nothing else: ..."
+task delivered to dw-sbx-oneshot-live2-6638 via send_input
+```
+
+### Result
+
+**PASS** — one-shot claude-code startup dialogs are dismissed fully
+automatically with zero operator keypresses, and the session proceeds to
+run the task (session A shows the task's exact reply in the pane; session
+B reached `state=complete` via the standard `DATAWATCH_COMPLETE:` path
+with the task's exact marker line as its output) on the live worktree
+build (v9.5.31) of `internal/session/manager.go`
+(`dismissClaudeStartupDialog` / `trySendDialogAccept` /
+`markDialogConfirmedIfGone`) plus the pane-aware
+`SendTrustPromptAccept` in `internal/session/tmux.go`, against
+Claude Code v2.1.306 in an untrusted directory.
