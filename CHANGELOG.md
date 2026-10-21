@@ -9,6 +9,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 - **Old failed Automata are no longer re-launched at every daemon restart.** A failed Automaton whose failed tasks were all killed by the restart now goes through the same boot-resume check as a running one: a fresh one is recovered, a stale one (older than `autonomous.resume_max_age_seconds`, or with a missing project directory) is parked as blocked with an alert and a boot-resume report entry, and a cancelled one is left alone.
 
+## v9.5.56 — A daemon restart keeps a task whose worker is still running
+
+### Changed
+- **Restart-safety live tests now sanitize the restart subprocess environment.** The daemon restart step in `TestBL462_DaemonRestartSurvivesLive` and `TestDaemonRestartAdoptsLiveWorkerLive` runs via `bl462RestartEnv`: `TMUX` and `TMUX_TMPDIR` are stripped on the `DW_LIVE_RESTART_CMD` and `systemctl --user` paths. The one documented exception is the `datawatch restart` CLI fallback, which re-execs the daemon in the ambient environment and must keep `TMUX_TMPDIR` (without it the restarted daemon loses its tmux socket — the failure these tests catch); `TMUX` is still stripped there.
+
+### Added
+- **Tests and docs for the boot-resume live-session adoption behavior.** When the daemon restarts mid-run, an `in_progress` task whose worker session survived is now adopted (kept in `in_progress` on the same session id, its capacity lease re-adopted, no duplicate spawn — the resumed run waits for the worker to finish and then verifies it); a task whose session died but whose output already carries the completion marker goes straight to verification; only fully dead tasks reset to pending. The Automaton stays `running` throughout because boot-resume recreates its executor under the same lock a manual run uses. Covered deterministically by `TestAdoptLive_AliveAdopted`, `TestAdoptLive_DeadReset`, `TestAdoptLive_FinishedWhileDown` and `TestAdoptLive_NoDuplicateSpawn` (`internal/autonomous`, all session backends, passing `-race -count=3`) and, for the live path, by the opt-in `TestDaemonRestartAdoptsLiveWorkerLive` (`internal/session`, gated on `DW_LIVE_RESTART_TEST=1` + `DW_BASE`, restarts the daemon through the operator path or `DW_LIVE_RESTART_CMD`). `docs/howto/autonomous-recovery.md` gains a section on what a daemon restart does to an in-progress task.
+
 ## v9.5.55 — A restart no longer revives old failed PRDs
 
 ### Fixed
