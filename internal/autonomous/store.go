@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
@@ -258,12 +259,82 @@ func (s *Store) PRDRev(id string) (int, bool) {
 	return p.Rev, true
 }
 
-// GetPRD by ID; returns false on miss.
+// GetPRD by ID; returns false on miss. The result is the live *PRD held
+// in the store, so callers that mutate it and then SavePRD keep working,
+// but it must not be read concurrently with executor writes; read-only
+// callers that may overlap a running executor should use SnapshotPRD.
 func (s *Store) GetPRD(id string) (*PRD, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	p, ok := s.prds[id]
 	return p, ok
+}
+
+// SnapshotPRD returns a deep copy of the PRD (stories, tasks and every
+// nested slice, map and pointer) taken under the store lock; returns false
+// on miss. The copy shares nothing with the stored PRD, so it is safe to
+// read after the call returns and mutating it never alters the store.
+func (s *Store) SnapshotPRD(id string) (*PRD, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p, ok := s.prds[id]
+	if !ok {
+		return nil, false
+	}
+	return deepCopyPRD(p), true
+}
+
+// deepCopyPRD copies p including all reachable exported slices, maps and
+// pointers. Unexported fields (e.g. time.Time internals) are copied by value.
+func deepCopyPRD(p *PRD) *PRD {
+	out := new(PRD)
+	deepCopyValue(reflect.ValueOf(out).Elem(), reflect.ValueOf(p).Elem())
+	return out
+}
+
+func deepCopyValue(dst, src reflect.Value) {
+	switch src.Kind() {
+	case reflect.Struct:
+		dst.Set(src) // by-value copy covers unexported fields
+		for i := 0; i < src.NumField(); i++ {
+			if src.Type().Field(i).IsExported() {
+				deepCopyValue(dst.Field(i), src.Field(i))
+			}
+		}
+	case reflect.Slice:
+		if src.IsNil() {
+			return
+		}
+		dst.Set(reflect.MakeSlice(src.Type(), src.Len(), src.Len()))
+		for i := 0; i < src.Len(); i++ {
+			deepCopyValue(dst.Index(i), src.Index(i))
+		}
+	case reflect.Map:
+		if src.IsNil() {
+			return
+		}
+		dst.Set(reflect.MakeMapWithSize(src.Type(), src.Len()))
+		for _, k := range src.MapKeys() {
+			v := reflect.New(src.Type().Elem()).Elem()
+			deepCopyValue(v, src.MapIndex(k))
+			dst.SetMapIndex(k, v)
+		}
+	case reflect.Ptr:
+		if src.IsNil() {
+			return
+		}
+		dst.Set(reflect.New(src.Type().Elem()))
+		deepCopyValue(dst.Elem(), src.Elem())
+	case reflect.Interface:
+		if src.IsNil() {
+			return
+		}
+		v := reflect.New(src.Elem().Type()).Elem()
+		deepCopyValue(v, src.Elem())
+		dst.Set(v)
+	default:
+		dst.Set(src)
+	}
 }
 
 // ListPRDs returns all PRDs newest-first.
@@ -612,6 +683,16 @@ func (s *Store) GetTask(id string) (*Task, bool) {
 	defer s.mu.Unlock()
 	t, ok := s.tasks[id]
 	return t, ok
+}
+
+// WithLock runs f holding the store lock. Plain field writes to a PRD,
+// Story or Task reachable from the store must go through it so they are
+// ordered against persist's JSON encoding and against snapshot reads; f
+// must not call other Store methods (the lock is not re-entrant).
+func (s *Store) WithLock(f func()) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	f()
 }
 
 // TaskSnapshot returns a value copy of one task taken under the store

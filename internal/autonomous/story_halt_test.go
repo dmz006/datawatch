@@ -28,33 +28,41 @@ import (
 func runToTerminalOrBlocked(t *testing.T, m *Manager, api *API, id string, spawn SpawnFn, verify VerifyFn) *PRD {
 	t.Helper()
 	prd, _ := m.Store().GetPRD(id)
+	m.mu.Lock()
 	prd.Status = PRDApproved
+	m.mu.Unlock()
 	_ = m.Store().SavePRD(prd)
 	api.SetExecutors(spawn, verify)
+	// SetExecutors launches the boot-resume scan. If it overlaps the
+	// executor it can observe the already-finished PRD as PRDFailed,
+	// "recover" it back to PRDRunning, and have its Run dropped because
+	// the finished executor's runCancels entry is not yet cleared —
+	// stranding the PRD Running with no executor. Let the scan finish
+	// (the PRD is Approved, so it is a no-op) before the explicit Run.
+	if err := api.WaitIdle(10 * time.Second); err != nil {
+		t.Fatal(err)
+	}
 	if err := api.Run(id); err != nil {
 		t.Fatal(err)
 	}
-	deadline := time.Now().Add(30 * time.Second)
-	for time.Now().Before(deadline) {
-		got, _ := m.Store().GetPRD(id)
-		m.mu.Lock()
-		status := got.Status
-		m.mu.Unlock()
-		if status == PRDCompleted || status == PRDFailed || status == PRDBlocked {
-			// Let the executor goroutine finish its tail (final emit)
-			// before the caller reads or mutates the shared PRD.
-			if err := api.WaitIdle(10 * time.Second); err != nil {
-				t.Fatal(err)
-			}
-			// Re-read after the drain: the goroutine's error path may
-			// still rewrite the status after the poll observed it.
-			final, _ := m.Store().GetPRD(id)
-			return final
-		}
-		time.Sleep(20 * time.Millisecond)
+	// Wait for the executor goroutine itself to exit (a real condition,
+	// not a status poll). Its tail has then fully run.
+	exited := make(chan struct{})
+	go func() {
+		api.execWG.Wait()
+		close(exited)
+	}()
+	select {
+	case <-exited:
+	case <-time.After(30 * time.Second):
+		t.Fatal("PRD did not reach a terminal state")
 	}
-	t.Fatal("PRD did not reach a terminal state")
-	return nil
+	final, _ := m.Store().SnapshotPRD(id)
+	status := final.Status
+	if status != PRDCompleted && status != PRDFailed && status != PRDBlocked {
+		t.Fatalf("executor exited with non-terminal PRD status %q", status)
+	}
+	return final
 }
 
 // waitForPRDStatus polls the store until the PRD reaches one of want or the
@@ -64,10 +72,8 @@ func waitForPRDStatus(t *testing.T, m *Manager, id string, timeout time.Duration
 	deadline := time.Now().Add(timeout)
 	var last PRDStatus
 	for {
-		if p, ok := m.Store().GetPRD(id); ok {
-			m.mu.Lock()
+		if p, ok := m.Store().SnapshotPRD(id); ok {
 			last = p.Status
-			m.mu.Unlock()
 			for _, w := range want {
 				if last == w {
 					return p
@@ -324,7 +330,7 @@ func TestExecutor_DrainedInFlightTaskGetsFinalized(t *testing.T) {
 	var got *PRD
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		got, _ = m.Store().GetPRD(prd.ID)
+		got, _ = m.Store().SnapshotPRD(prd.ID)
 		if got.Story[1].Tasks[0].Status == TaskFailed {
 			break
 		}

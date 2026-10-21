@@ -129,7 +129,9 @@ func TestScope_SetPRDDirsValidatesAndRelints(t *testing.T) {
 func runToTerminal(t *testing.T, m *Manager, api *API, id string, spawn SpawnFn, verify VerifyFn) *PRD {
 	t.Helper()
 	prd, _ := m.Store().GetPRD(id)
-	prd.Status = PRDApproved
+	m.mu.Lock()
+	m.Store().WithLock(func() { prd.Status = PRDApproved })
+	m.mu.Unlock()
 	_ = m.Store().SavePRD(prd)
 	api.SetExecutors(spawn, verify)
 	if err := api.Run(id); err != nil {
@@ -137,10 +139,8 @@ func runToTerminal(t *testing.T, m *Manager, api *API, id string, spawn SpawnFn,
 	}
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		got, _ := m.Store().GetPRD(id)
-		m.mu.Lock()
+		got, _ := m.Store().SnapshotPRD(id)
 		status := got.Status
-		m.mu.Unlock()
 		if status == PRDCompleted || status == PRDFailed {
 			// The executor goroutine writes the terminal status inside
 			// Manager.Run, then still has its deferred cleanup and a final

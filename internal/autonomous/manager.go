@@ -2323,8 +2323,10 @@ func (m *Manager) CancelTask(prdID, taskID, actor, reason string) (*PRD, error) 
 					}
 				}
 				oldStatus := t.Status
-				t.Status = TaskCancelled
-				t.UpdatedAt = now
+				m.store.WithLock(func() {
+					t.Status = TaskCancelled
+					t.UpdatedAt = now
+				})
 				// BL427 — fired after the SavePRD below succeeds.
 				emitCancelled = func() { m.emitTaskStatus(prd, t, oldStatus, lastDecision(prd, "cancel_task"), nil) }
 				found = true

@@ -128,14 +128,9 @@ func (a *API) resumeRunningPRDs() {
 	}
 
 	for _, prd := range a.M.Store().ListPRDs() {
-		// See the matching comment in executor.go's Run(): GetPRD/ListPRDs
-		// return a shared *PRD, so reading .Status here races against an
-		// immediate Run() call mutating it on another goroutine. Read it
-		// once under the Manager's mutex instead of touching prd.Status
-		// again in the switch below.
-		a.M.mu.Lock()
-		status := prd.Status
-		a.M.mu.Unlock()
+		// ListPRDs returns the shared *PRD, so reading .Status here would race
+		// against a concurrent Run() mutating it. Read it under the Manager mutex.
+		status, _ := a.prdStatus(prd.ID)
 		fmt.Printf("[autonomous] boot-resume: scanning prd=%s status=%s\n", prd.ID, status)
 		switch status {
 		case PRDPlanning:
@@ -161,24 +156,16 @@ func (a *API) resumeRunningPRDs() {
 			// boot-resume pass) is already actively driving it — not because
 			// it's an orphan left behind by a dead process. resetInProgressTasksForResume
 			// unconditionally treats any in-progress task as orphaned and kills
-			// its session (sessionAliveFn only covers the Verifying/RunningTests
-			// cases, not InProgress), so running it against a PRD that already
-			// has a live executor would kill a session that's actually still
-			// in flight. runCancels is the same liveness signal API.Run() uses
-			// for its own idempotency — skip recovery entirely when it's set.
-			a.runMu.Lock()
-			_, alreadyLive := a.runCancels[prd.ID]
-			a.runMu.Unlock()
-			if alreadyLive {
-				continue
-			}
-			// Kill any orphaned sessions from in-progress tasks and reset them
-			// to pending so the new executor re-runs them cleanly instead of
-			// re-spawning a duplicate alongside an already-running old session.
-			a.M.resetInProgressTasksForResume(prd)
-			if err := a.Run(prd.ID); err != nil {
+			// its session, so it must only run once this call has claimed the
+			// executor slot; runLocked claims first, then preps, and is a no-op
+			// when an executor is already live.
+			started, err := a.runLocked(prd.ID, func() bool {
+				a.M.resetInProgressTasksForResume(prd)
+				return true
+			})
+			if err != nil {
 				fmt.Printf("[autonomous] boot-resume: prd=%s: %v\n", prd.ID, err)
-			} else {
+			} else if started {
 				fmt.Printf("[autonomous] boot-resume: re-launched executor for prd=%s\n", prd.ID)
 			}
 		case PRDFailed:
@@ -190,14 +177,14 @@ func (a *API) resumeRunningPRDs() {
 			// kill any that remain. Never decomposes and never mutates status here.
 			a.M.killOrphanDecomposeSessions(prd.ID)
 			fmt.Printf("[autonomous] boot-resume: prd=%s is PRDFailed, attempting recovery\n", prd.ID)
-			if a.M.resetKilledTasksForResume(prd) {
-				if err := a.Run(prd.ID); err != nil {
-					fmt.Printf("[autonomous] boot-resume: failed-prd recovery %s: %v\n", prd.ID, err)
-				} else {
-					fmt.Printf("[autonomous] boot-resume: recovered PRDFailed prd=%s (all tasks were daemon-killed)\n", prd.ID)
-				}
-			} else {
-				fmt.Printf("[autonomous] boot-resume: prd=%s PRDFailed recovery skipped (tasks have results or live sessions)\n", prd.ID)
+			started, err := a.runLocked(prd.ID, func() bool { return a.M.resetKilledTasksForResume(prd) })
+			switch {
+			case err != nil:
+				fmt.Printf("[autonomous] boot-resume: failed-prd recovery %s: %v\n", prd.ID, err)
+			case started:
+				fmt.Printf("[autonomous] boot-resume: recovered PRDFailed prd=%s (all tasks were daemon-killed)\n", prd.ID)
+			default:
+				fmt.Printf("[autonomous] boot-resume: prd=%s PRDFailed recovery skipped (tasks have results, live sessions or a live executor)\n", prd.ID)
 			}
 		}
 	}
@@ -370,52 +357,116 @@ func (a *API) DecomposeStreaming(id string, cb func(index, total int, story any)
 // fallback path here also flips to PRDRunning so the operator's loop
 // status reflects what's happening.
 func (a *API) Run(id string) error {
-	prd, ok := a.M.Store().GetPRD(id)
+	_, err := a.runLocked(id, nil)
+	return err
+}
+
+// prdStatus reads a PRD's status under the Manager mutex, the lock executor
+// status writes hold; the shared *PRD from the store must not be read bare.
+func (a *API) prdStatus(id string) (PRDStatus, bool) {
+	p, ok := a.M.Store().GetPRD(id)
 	if !ok {
-		return fmt.Errorf("prd %q not found", id)
+		return "", false
 	}
-	if prd.Status != PRDApproved && prd.Status != PRDActive && prd.Status != PRDRunning {
-		return fmt.Errorf("prd %q status %q is not runnable; call /approve first", id, prd.Status)
-	}
-	old := prd.Status
-	prd.Status = PRDRunning
-	if err := a.M.Store().SavePRD(prd); err != nil {
-		return err
-	}
-	a.M.emitPRDStatus(prd, old, nil, nil)
-	a.M.EmitPRDUpdate(id)
-	if a.spawnFn == nil || a.verify == nil {
-		return nil // executors not configured — status-only mode
-	}
-	// v5.26.16 — cancellable per-PRD context so Cancel / DeletePRD
-	// can stop the executor goroutine.
+	a.M.mu.Lock()
+	defer a.M.mu.Unlock()
+	return p.Status, true
+}
+
+// claimRun atomically registers an executor slot for the PRD in runCancels.
+// It returns false when an executor is already live (B98: the live goroutine
+// is never cancelled; it picks up newly-pending tasks on its next poll).
+func (a *API) claimRun(id string) (context.Context, bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	a.runMu.Lock()
+	defer a.runMu.Unlock()
 	if a.runCancels == nil {
 		a.runCancels = map[string]context.CancelFunc{}
 	}
-	// B98 — if an executor goroutine is already live, don't cancel it:
-	// it will pick up any newly-pending tasks on its next poll cycle.
-	// Cancelling a live goroutine mid-spawn causes "context canceled"
-	// on the spawn HTTP call, which marks the task failed again.
 	if _, alive := a.runCancels[id]; alive {
-		cancel() // discard unused context
-		a.runMu.Unlock()
-		return nil
+		cancel()
+		return nil, false
 	}
 	a.runCancels[id] = cancel
+	return ctx, true
+}
+
+// releaseRun drops a claimed slot (early-error path or goroutine exit).
+func (a *API) releaseRun(id string) {
+	a.runMu.Lock()
+	if cancel := a.runCancels[id]; cancel != nil {
+		cancel()
+		delete(a.runCancels, id)
+	}
 	a.runMu.Unlock()
+}
+
+// runLocked is the shared body of Run and boot-resume. When executors are
+// wired it claims the runCancels slot before any status mutation or goroutine
+// launch, so a concurrent second call for the same PRD is a no-op. prep, if
+// non-nil, runs after the claim and before the status flip; returning false
+// aborts without starting. started reports whether this call launched (or, in
+// status-only mode, marked running) the PRD.
+func (a *API) runLocked(id string, prep func() bool) (started bool, err error) {
+	if _, ok := a.prdStatus(id); !ok {
+		return false, fmt.Errorf("prd %q not found", id)
+	}
+	execs := a.spawnFn != nil && a.verify != nil
+	var ctx context.Context
+	if execs {
+		var ok bool
+		if ctx, ok = a.claimRun(id); !ok {
+			return false, nil
+		}
+	} else {
+		// Status-only mode has no goroutine to hold a slot, but a slot
+		// registered by a live executor must still suppress recovery prep.
+		a.runMu.Lock()
+		_, alive := a.runCancels[id]
+		a.runMu.Unlock()
+		if alive {
+			return false, nil
+		}
+	}
+	release := func() {
+		if execs {
+			a.releaseRun(id)
+		}
+	}
+	if prep != nil && !prep() {
+		release()
+		return false, nil
+	}
+	prd, ok := a.M.Store().GetPRD(id)
+	if !ok {
+		release()
+		return false, fmt.Errorf("prd %q not found", id)
+	}
+	// Re-read after prep, which may have changed status (PRDFailed -> PRDRunning).
+	a.M.mu.Lock()
+	old := prd.Status
+	if old != PRDApproved && old != PRDActive && old != PRDRunning {
+		a.M.mu.Unlock()
+		release()
+		return false, fmt.Errorf("prd %q status %q is not runnable; call /approve first", id, old)
+	}
+	if old != PRDRunning {
+		prd.Status = PRDRunning
+	}
+	a.M.mu.Unlock()
+	if err := a.M.Store().SavePRD(prd); err != nil {
+		release()
+		return false, err
+	}
+	a.M.emitPRDStatus(prd, old, nil, nil)
+	a.M.EmitPRDUpdate(id)
+	if !execs {
+		return true, nil // executors not configured — status-only mode
+	}
 	a.execWG.Add(1)
 	go func() {
 		defer a.execWG.Done()
-		defer func() {
-			a.runMu.Lock()
-			if a.runCancels[id] != nil {
-				a.runCancels[id]()
-				delete(a.runCancels, id)
-			}
-			a.runMu.Unlock()
-		}()
+		defer a.releaseRun(id)
 		if err := a.M.Run(ctx, id, a.spawnFn, a.verify); err != nil {
 			if p, ok := a.M.Store().GetPRD(id); ok {
 				// If cancelled by operator, leave status as cancelled.
@@ -433,7 +484,7 @@ func (a *API) Run(id string) error {
 		// terminal state (completed / blocked / approved-on-error).
 		a.M.EmitPRDUpdate(id)
 	}()
-	return nil
+	return true, nil
 }
 
 // Pause (GH#172 D52) — see Manager.Pause's doc comment for the actual
