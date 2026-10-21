@@ -9,6 +9,32 @@ Do not mark **Validated=Yes** based solely on unit tests.
 
 ---
 
+## PRD worktree buildability — `EnsureWorktree` docs-index placeholder
+
+When the daemon creates or reuses a PRD's git worktree, `EnsureWorktree`
+(`internal/autonomous/worktree.go`) calls the `prepareWorktree` helper
+(`internal/autonomous/worktree_prepare.go`): in repos containing the
+`internal/docsindex` package it ensures
+`internal/docsindex/assets/docs-bm25-index.json` exists, writing the
+same `{}` placeholder `make docs-index` writes, only when the file is
+missing (an existing index is never touched), keeps the file
+git-ignored (falling back to the worktree's own `info/exclude` if the
+ignore rule is absent) and never stages or commits it. Before this,
+packages importing `internal/docsindex` failed to build in a fresh
+worktree with `pattern assets/docs-bm25-index.json: no matching files
+found`, and the daemon reported an otherwise-fine task as failed with
+"no new changes to verify".
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| Creates when missing — a new or reused worktree gets a `{}` placeholder at `internal/docsindex/assets/docs-bm25-index.json` when the file is absent (same content `make docs-index` seeds) | **Yes** (`TestWorktreePrepare_CreatesWhenMissing`, `TestEnsureDocsIndexPlaceholder_CreatesEmptyIndex`, `TestWorktreePrepare_ReuseRecreates` in `internal/autonomous/worktree_prepare_test.go`) | No | `go test ./internal/autonomous/` | Covers both fresh creation and recreation on a reused worktree |
+| Leaves existing untouched — an existing (custom or fully generated) index is neither rewritten nor mtime-churned when the worktree is reused | **Yes** (`TestWorktreePrepare_LeavesExistingUntouched`, `TestEnsureDocsIndexPlaceholder_LeavesExistingFileUntouched` in `internal/autonomous/worktree_prepare_test.go`) | No | `go test ./internal/autonomous/` | Never clobbers a real generated index |
+| Never staged / stays ignored — placeholder absent from `git status --porcelain` and the index; `git check-ignore -q` passes; exclude line appended to the worktree's `info/exclude` only when the repo `.gitignore` lacks the rule, idempotently (no duplicate on re-prepare) | **Yes** (`TestWorktreePrepare_NeverStaged`, `TestPrepareWorktree_GitIgnoredByRepoGitignore`, `TestPrepareWorktree_NonIgnoredRepoGetsExcludeLine`, `TestWorktreePrepare_ExcludeLineNotDuplicated`, `TestAppendGitExcludeLine_IdsAndNoDuplicate` in `internal/autonomous/worktree_prepare_test.go`) | No | `go test ./internal/autonomous/` | Prepares never run `git add` or any staging/commit |
+| No-op for repos without `internal/docsindex` — no files, no directories, no `info/exclude` mutation in foreign checkouts | **Yes** (`TestWorktreePrepare_NoOpWithoutDocsIndex`, `TestEnsureDocsIndexPlaceholder_IgnoresForeignRepos`, `TestPrepareWorktree_RejectsUnknownRepos` in `internal/autonomous/worktree_prepare_test.go`) | No | `go test ./internal/autonomous/` | Preparation is non-fatal and must not touch other projects' trees |
+| Fresh-worktree compile regression — `go build ./...` in a prepared worktree succeeds against a go:embed consumer package, and the same build fails with "no matching files" once the placeholder is removed (the exact failure this guards against) | **Yes** (`TestDocsIndex_PackageCompilesInNewWorktree` in `internal/autonomous/worktree_prepare_test.go`) | No | `go test ./internal/autonomous/` (skips when no `go` toolchain); runs `go build ./...` inside a scratch worktree | A placeholder-built binary has empty docs search until `make docs-index` runs |
+
+---
+
 ## Plan review before approval + smoke/final-gate verifier split
 
 Pre-approval plan reviewer: after decompose, a configured LLM reviews the ORIGINAL spec against the plan (requirement coverage, task sizes, dependencies, non-trivial verification scripts, scope outside write_dirs) and records a `plan_review` verdict on the Automaton. Modes `autonomous.plan_review_mode` = `off` (default, no review, approval never affected) / `warn` (verdict recorded and visible, never blocks) / `block` (a `ok:false` verdict refuses approve until it is replaced). A reviewer outage is recorded (`reviewer_failed`) and never blocks in any mode. The plan's own smoke / final-gate verification task is judged by a separate LLM from `autonomous.smoke_verification_backend` / `autonomous.smoke_verification_model`; explicit per-task verifier overrides always win. Surfaces: REST `POST /api/autonomous/prds/{id}/plan-review`, MCP `autonomous_prd_plan_review`, comm `autonomous plan-review <id>`, CLI `datawatch autonomous prd-plan-review <id>` (alias `plan-review`), PWA verdict panel + re-run button + settings fields (en/de/es/fr/ja).
