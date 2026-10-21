@@ -126,6 +126,14 @@ func buildAutonomousSessionBody(req autonomouspkg.SpawnRequest, spec, defaultBac
 			sessionBody["claude_effort"] = ce
 		}
 	}
+	// Git (PRD-owned git sessions): when the PRD has git settings (prd.Git
+	// populated or a project profile), forward StartOptions.Git=true so the
+	// session manager runs git activity — pre-session snapshot, checkpoint
+	// tag and the completion commit — because PRDs are development work.
+	// Absent for PRDs without git settings, so existing flows are unchanged.
+	if req.Git {
+		sessionBody["git"] = true
+	}
 	return sessionBody
 }
 

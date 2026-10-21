@@ -61,6 +61,11 @@ session:
   channel_enabled: true
   # Auto-initialize git repo in project directory
   auto_git_init: false
+  # Default for the `git` field on session start requests: when omitted,
+  # the session starts with git activity (pre-session snapshot, checkpoint
+  # tag, completion commit) enabled iff this is true. Explicit git true/false
+  # in a start request always wins. Default false.
+  git_default: false
   # Auto-commit project changes after session completes
   auto_git_commit: true
   # Kill all sessions when daemon stops

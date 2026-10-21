@@ -2340,6 +2340,94 @@ operator's push-primary/poll-fallback direction for it.
 
 ---
 
+## Session git opt-in (`git` true/false at start, `session.git_default`)
+
+Every session start can opt the session in or out of git activity in
+its project directory. This is the mechanism that makes a session's
+output reviewable and rewritable: checkpoint tags around the work, a
+pre-session snapshot for PRD task sessions, and a gated completion
+commit.
+
+### `git: true` — what the session does in the project tree
+
+1. **Repo setup (only if needed).** If the project directory is not yet
+   a git repository, one is initialized there (branch `main`, committer
+   identity `datawatch <datawatch@localhost>`) so the steps below have
+   something to commit to.
+2. **Pre-session snapshot (PRD-owned task sessions only).** The tree
+   state at launch is committed (message starts `pre-session: <task`),
+   so the work the session is about to do can always be told apart from
+   what was already there. Ad-hoc one-shot sessions without a PRD owner
+   never get a snapshot commit — an operator's in-flight work is not
+   something a session should own.
+3. **Checkpoint tags.** An annotated tag `datawatch-pre-<session id>` is
+   placed before the session runs and `datawatch-post-<session id>`
+   after it finishes. These are the handles for review and rollback:
+   - `git diff datawatch-pre-<id> datawatch-post-<id>` shows exactly
+     what the session changed.
+   - `POST /api/sessions/<id>/rollback` (or the `session_rollback` MCP
+     tool) resets the tree back to the pre-session state. It refuses
+     while uncommitted changes exist unless you pass `{"force": true}`.
+4. **Completion commit.** When the session signals completion, its work
+   is committed exactly once, message built from the session's
+   completion summary (falling back to the task title):
+   - A PRD-owned session is gated by the PRD's own verifier before it
+     reaches the commit.
+   - An ad-hoc one-shot without a PRD owner commits only after its
+     declared validation commands all pass; with none declared the
+     commit is skipped and the reason is logged.
+   - Staging is scoped to the session's write directories — files
+     elsewhere in the same tree are never swept in. If the session has
+     no write scope, only the files changed during that run are staged,
+     and a log warning names them.
+
+### `git: false` — what the session does
+
+Nothing to git, full stop: no `git init`, no snapshot commit, no
+checkpoint tags, and no completion commit — on any path (completion
+watcher, one-shot reaper, daemon restart) that would otherwise try to
+commit a finished session. This is the safe setting for a tree you
+don't want the daemon touching.
+
+### What the default is on each surface
+
+| Start surface | Default |
+|---|---|
+| PRD task session spawned by the autonomous executor | Git on when the PRD has git settings (a non-empty PRD git block — provider/URL/branches/Auto PR — or a project profile); off otherwise |
+| Any other start request that omits `git` | `session.git_default` (default **false**) |
+| Any start request with an explicit `git: true` / `git: false` | The explicit value always wins |
+
+So PRD task sessions are git-enabled out of the box when the PRD is set
+up with git; everything else (MCP, schedules, chat, API, PWA) is
+git-less unless it asks for it explicitly or you flip the daemon-wide
+default.
+
+### `session.git_default`
+
+The daemon-wide default for the `git` field when a start request does
+not set it:
+
+```yaml
+session:
+  git_default: false   # default: sessions started without git leave the tree alone
+```
+
+- `git_default: true` — every session started without an explicit `git`
+  field runs under git (repo setup, pre-session snapshot for PRD task
+  sessions, checkpoint tags, gated completion commit). Useful when your
+  one-shots come from MCP, schedules, or chat and you want the completion
+  commit in history.
+- `git_default: false` (default) — keeps the historical behaviour:
+  sessions started without a `git` field touch git in no way.
+- An explicit `git: true` or `git: false` in the start request always
+  beats the setting, in both directions.
+- Change it like any other setting: `config.yaml`, the PWA settings
+  surface, or the REST config API (key `session.git_default`). It is
+  read at session start, so the new value applies to sessions started
+  after the change — no restart needed.
+
+---
+
 ## Project-tree write serialization (one writer per tree)
 
 When more than one Automaton can touch the same working tree, datawatch

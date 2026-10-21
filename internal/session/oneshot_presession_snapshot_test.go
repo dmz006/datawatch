@@ -57,6 +57,7 @@ func TestStart_OneShotSnapshotsDirtyTreeWithAutoCommitOff(t *testing.T) {
 	if _, err := mgr.Start(context.Background(), "do the work", "", dir, &StartOptions{
 		OneShot:       true,
 		PRDID:         "prd-presession-test",
+		Git:           true,
 		AutoGitCommit: boolPtr(false),
 	}); err != nil {
 		t.Fatalf("Start: %v", err)
@@ -85,7 +86,7 @@ func TestStart_OneShotInitsNonRepoDirAndSnapshots(t *testing.T) {
 		return nil
 	})
 
-	if _, err := mgr.Start(context.Background(), "do the work", "", dir, &StartOptions{OneShot: true, PRDID: "prd-presession-test"}); err != nil {
+	if _, err := mgr.Start(context.Background(), "do the work", "", dir, &StartOptions{OneShot: true, Git: true, PRDID: "prd-presession-test"}); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
 }
@@ -110,7 +111,7 @@ func TestStart_OneShotInitsEvenWithAutoGitInitOff(t *testing.T) {
 		return nil
 	})
 
-	if _, err := mgr.Start(context.Background(), "do the work", "", dir, &StartOptions{OneShot: true, PRDID: "prd-presession-test"}); err != nil {
+	if _, err := mgr.Start(context.Background(), "do the work", "", dir, &StartOptions{OneShot: true, Git: true, PRDID: "prd-presession-test"}); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
 }

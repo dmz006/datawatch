@@ -1691,6 +1691,17 @@ type StartOptions struct {
 	PRDID   string
 	TaskID  string
 	StoryID string
+
+	// Git — when true, Start opts the session into git activity in its
+	// project dir: `git init` (if the dir is not yet a repo), the
+	// pre-session snapshot commit (PRD task sessions) and the
+	// pre-checkpoint tag at start; and commitOnCompletion is allowed to
+	// run its validation gate + completion commit (covering the
+	// one-shot reaper / monitor / restart paths, which only have the
+	// stored Session). Default false: Start touches no git at all and no
+	// completion commit ever runs. Persisted on Session.Git so the flag
+	// survives the restart paths.
+	Git bool
 	// WriteScope (auto-commit leak fix) — the session's effective write
 	// directories (PRD.WriteDirs or the task's ProjectDir override,
 	// resolved by the autonomous executor via
@@ -1770,14 +1781,15 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		return nil, fmt.Errorf("create project dir: %w", err)
 	}
 
-	// Pre-session snapshot: one-shot task sessions always get a
-	// deterministic snapshot of the tree as of launch (init-ing the
-	// repo first if the dir is not yet one). This is the only place
-	// Start touches git; interactive (non-one-shot) sessions do not
-	// auto-commit here at all, regardless of manager-level auto-git
-	// settings or per-session overrides.
+	// Pre-session snapshot: one-shot task sessions opt in via StartOptions.Git
+	// and get a deterministic snapshot of the tree as of launch (init-ing the
+	// repo first if the dir is not yet one). With Git false (default) Start
+	// touches git in no way at all — no git init in the working dir, no
+	// snapshot commit, no checkpoint tag. Interactive (non-one-shot)
+	// sessions never auto-commit here, regardless of manager-level
+	// auto-git settings or per-session overrides.
 	projGit := NewProjectGit(projectDir)
-	if opt != nil && opt.OneShot {
+	if opt != nil && opt.OneShot && opt.Git {
 		if !projGit.IsRepo() {
 			if err := projGit.Init(); err != nil {
 				fmt.Printf("[warn] git init %s: %v\n", projectDir, err)
@@ -1879,6 +1891,9 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 	}
 	if opt != nil && opt.SkipSnapshot {
 		sess.SkipSnapshot = true
+	}
+	if opt != nil && opt.Git {
+		sess.Git = true
 	}
 	if opt != nil && opt.LSPLanguage != "" {
 		sess.LSPLanguage = opt.LSPLanguage
@@ -2247,8 +2262,10 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 	m.mu.Unlock()
 
 	// BL29 — record the pre-session checkpoint tag once the session
-	// ID exists. Best-effort; failure does not block start.
-	if sess.OneShot && projGit.IsRepo() {
+	// ID exists. Best-effort; failure does not block start. Only for
+	// sessions that opted into git (StartOptions.Git), so git-less
+	// one-shots get no tags.
+	if sess.OneShot && sess.Git && projGit.IsRepo() {
 		if err := projGit.TagCheckpoint("pre", sess.ID, task); err != nil {
 			fmt.Printf("[warn] pre-checkpoint tag: %v\n", err)
 		}
@@ -4053,6 +4070,13 @@ func (m *Manager) commitOnCompletion(current *Session, projGit *ProjectGit) {
 	// is the single choke point for the completion commit (CommitSessionWork
 	// + checkpoint tag), so gating it here covers every call site.
 	if current.SkipSnapshot {
+		return
+	}
+	// Git-less sessions (StartOptions.Git false, the default) never
+	// commit on completion — no repo may have been created for them, so
+	// validate/stage/commit none of it. Persisted on the Session so the
+	// monitor, one-shot reaper and restart paths all see the same flag.
+	if !current.Git {
 		return
 	}
 	if projGit == nil || !projGit.IsRepo() {

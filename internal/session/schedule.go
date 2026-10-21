@@ -114,6 +114,7 @@ type DeferredSession struct {
 	OneShot    bool   `json:"one_shot,omitempty"`   // terminate on DATAWATCH_COMPLETE:
 	Ephemeral  bool   `json:"ephemeral,omitempty"`  // reap workspace directory on delete
 	Subprocess bool   `json:"subprocess,omitempty"` // run via bash -c, not TUI (exit code = completion)
+	Git        bool   `json:"git,omitempty"`        // opt in to git init/snapshot/commit (default false)
 }
 
 // ScheduleStore persists scheduled commands to a JSON file.
@@ -295,6 +296,7 @@ type AddSpawnOptions struct {
 	OneShot      bool      // auto-terminate session on DATAWATCH_COMPLETE: (default true for spawn)
 	Ephemeral    bool      // reap workspace directory when session is deleted (default true)
 	Subprocess   bool      // run task as subprocess (exit code = completion, no TUI scraping)
+	Git          bool      // opt in to git init/snapshot/commit (default false)
 }
 
 // AddSpawn schedules an ephemeral one-shot session to start at a future time or
@@ -336,6 +338,7 @@ func (s *ScheduleStore) AddSpawn(opts AddSpawnOptions) (*ScheduledCommand, error
 			OneShot:    opts.OneShot,
 			Ephemeral:  opts.Ephemeral,
 			Subprocess: opts.Subprocess,
+			Git:        opts.Git,
 		},
 	}
 	s.entries = append(s.entries, sc)

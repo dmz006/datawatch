@@ -1735,6 +1735,13 @@ type SessionConfig struct {
 	// AutoGitInit initializes a git repo in the project dir if one doesn't exist.
 	AutoGitInit bool `yaml:"auto_git_init"`
 
+	// GitDefault is the default for the `git` field on session start
+	// requests: when a start request does not set `git` explicitly, the
+	// session starts with git enabled iff GitDefault is true (pre-session
+	// snapshot, checkpoint tag, completion commit). Default false keeps
+	// existing flows unchanged.
+	GitDefault bool `yaml:"git_default"`
+
 	// SecureTracking controls tracker file encryption when --secure is enabled.
 	// "log_only" (default) encrypts only output.log; "full" also encrypts tracker .md files.
 	SecureTracking string `yaml:"secure_tracking"`
@@ -2670,6 +2677,7 @@ func DefaultConfig() *Config {
 			DefaultProjectDir:   home,
 			AutoGitCommit:       true,
 			AutoGitInit:         false,
+			GitDefault:          false,
 			ClaudeEnabled:       true,
 			MCPMaxRetries:       5,
 			ScheduleSettleMs:    200,

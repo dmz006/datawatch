@@ -62,6 +62,12 @@ type SpawnRequest struct {
 	// 1's EnsureWorktree or this phase's cluster-mode counterpart
 	// (e.g. AutoPR-less PRDs with an explicit ProjectDir).
 	Branch string
+	// Git — true when the PRD has git settings (prd.Git populated — a
+	// worktree-set PRD has Branch — or a project profile, i.e. it runs
+	// against a project repo). The local-session SpawnFn passes this to
+	// StartOptions.Git so PRD task sessions get git activity (pre-session
+	// snapshot + completion commit), because PRDs are development work.
+	Git bool
 	// BL244 — plugin session injection. Non-empty when a plugin declares
 	// session_injection for the PRD's type; prepended to the task spec
 	// by the SpawnFn so plugin context arrives in the worker session.
@@ -93,6 +99,18 @@ type SpawnRequest struct {
 	// attempt-work restore when set; the executor clears the task's flag once
 	// this spawn has run.
 	CleanRestart bool
+}
+
+// prdHasGit reports whether a PRD has git settings: prd.Git populated
+// (provider/url/base_branch/branch/auto_pr or a project repo) or a
+// project profile, i.e. the PRD runs against a project repo. PRDs with
+// git settings are development work, so their task sessions opt into
+// git activity (StartOptions.Git).
+func prdHasGit(prd *PRD) bool {
+	if prd == nil {
+		return false
+	}
+	return prd.Git != (GitWorkflow{}) || prd.ProjectProfile != ""
 }
 
 // SpawnResult is what SpawnFn returns. SessionID is the datawatch
@@ -1068,6 +1086,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				ProjectProfile:   prd.ProjectProfile, // v5.26.19
 				ClusterProfile:   prd.ClusterProfile, // v5.26.19
 				Branch:           prd.Git.Branch,     // BL407 Phase 4
+				Git:              prdHasGit(prd),     // PRD has git settings → session git activity
 				ContextPrepend:   contextPrepend,     // BL244
 				LSPLanguage:      lspLang,
 				MemorySeed:       prd.MemorySeed,                 // BL386 Phase 1

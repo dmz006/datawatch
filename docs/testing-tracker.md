@@ -1807,3 +1807,19 @@ Plan + failure log: `docs/plans/2026-10-20-oneshot-startup-dialog-dismiss.md` (a
 | Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
 |---|---|---|---|---|
 | `dismissClaudeStartupDialog` in `internal/session/manager.go` detects the trust dialog in a capture and sends the accept via `m.tmux` | **Yes** (`startup_dialog_dismiss_test.go`; full `internal/session/` suite 478 tests, `go test ./internal/session/...` rc=0 on worktree build) | **Yes** (round 2, 2026-10-21) | Live daemon (worktree `./datawatch` v9.5.31, sandbox `/tmp/dw-oneshot-livetest2` on 28080/28443, `TMUX` unset, fresh untrusted project dirs, `POST /api/sessions/start` with `one_shot:true`, `backend:claude-code`), Claude Code v2.1.306 | Round 1 was PARTIAL (first send latched dismissed before the dialog went away). Round 2: both defects fixed — sustained-absence confirm window + re-arm (`manager.go`) and pane-aware accept keys: v2.1.306 preselects "Yes, I trust this folder", so `TmuxManager.SendTrustPromptAccept` (`internal/session/tmux.go`) now sends plain `Enter` when the ❯ cursor is on that line, Down+Enter fallback otherwise (old layout). Round-2 runs `dw-sbx-oneshot-live2-6638` (task reply `TRUSTDIALOG-AUDIT-OK` in pane) and `dw-sbx-oneshot-live2-ec44` (state=`complete`, output `DATAWATCH_COMPLETE: dialog dismissal validated, marker.txt written`) — trust + channels dialogs auto-accepted in 1 attempt each, **zero operator keypresses**, session proceeded. See plan doc "Live Validation — Round 2" section. |
+
+## 2026-10-21 Git is opt-in for sessions (`git` field, `session.git_default`)
+
+Changed endpoint contract: `/api/sessions/start` takes a `git` field, and a one-shot session is no longer committed on completion unless git was requested (previously always, inside a repo). Default comes from `session.git_default` (default `false`); an explicit `git` always wins.
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| REST `/api/sessions/start`: `git` true/false/omitted, and the `session.git_default` fallback | **Yes** (`internal/server/session_start_git_test.go`) | **No** | Needs a sandbox daemon start with and without `git` | Live row stays No until run against a sandbox daemon |
+| MCP `start_session` `git` parameter | **Yes** (`internal/mcp/start_session_git_test.go`) | **No** | Needs a sandbox daemon | |
+| Comm channel `new: git=` token | **Yes** (`internal/router/git_token_test.go`) | **No** | Needs a sandbox daemon | |
+| CLI `--git` and schedule `git` | **Yes** (`cmd/datawatch/session_new_git_test.go`, `internal/session/schedule_git_test.go`) | **No** | Needs a sandbox daemon | |
+| Config `session.git_default` default `false` | **Yes** (`internal/config/git_default_test.go`) | **Yes** (unit) | Config load | |
+| One-shot completion: git-less session never commits; git session commits once, validation-gated | **Yes** (`internal/session/oneshot_gitless_test.go`, `completion_commit_*_test.go`) | **No** | Needs a sandbox one-shot in a repo | |
+| PRD task sessions are git-enabled when the PRD has git settings | **Yes** (`internal/autonomous/executor_git_test.go`) | **No** | Needs a sandbox PRD run | |
+| PWA new-session "git" checkbox, 5 locales | **Yes** (`internal/server/web/app-new-session-git.test.js`) | **No** | Needs a sandbox PWA session | |
+

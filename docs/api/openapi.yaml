@@ -3232,6 +3232,11 @@ components:
             LLM backend to use for this session. Must match a registered backend name.
             Defaults to the active backend from config.
           example: "aider"
+        git:
+          type: boolean
+          default: false
+          description: Opt in to git init, snapshot and automatic commit.
+          example: true
 
     CommandRequest:
       type: object

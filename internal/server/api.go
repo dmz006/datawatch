@@ -191,7 +191,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "9.5.39"
+var Version = "9.5.40"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -4402,6 +4402,12 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		// TMUX and TMUX_TMPDIR before the LLM starts, so tmux commands the
 		// LLM runs cannot reach the production tmux server.
 		ScrubTmuxEnv bool `json:"scrub_tmux_env,omitempty"`
+		// Git — true when the PRD that spawned this session has git settings
+		// (prd.Git populated or a project profile). The session then runs git
+		// activity: pre-session snapshot, checkpoint tag, completion commit.
+		// PRD / git-less sessions may omit it; an explicit value always wins;
+		// session.git_default config value (default false = existing behavior) when the field is omitted.
+		Git *bool `json:"git,omitempty"`
 		// BL386 Phase 1 — optional warm-start seeding at session creation.
 		// When from_scope is set, memories are copied from that scope into
 		// the new session's session-local scope after it starts.
@@ -4692,6 +4698,13 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	gitFlag := false
+	if req.Git != nil {
+		gitFlag = *req.Git
+	} else if s.cfg != nil {
+		gitFlag = s.cfg.Session.GitDefault
+	}
+
 	opts := &session.StartOptions{
 		Name:                  req.Name,
 		Backend:               req.Backend,
@@ -4720,6 +4733,7 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		ValidateCommands:      req.ValidateCommands,
 		SkipSnapshot:          req.SkipSnapshot,
 		ScrubTmuxEnv:          req.ScrubTmuxEnv,
+		Git:                   gitFlag,
 	}
 	// Empty per-request overrides fall through to LLM registry (v7.0.0 clean move).
 	if opts.PermissionMode == "" && s.inferenceReg != nil {
@@ -5386,6 +5400,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 				"claude_enabled":        s.cfg.Session.ClaudeEnabled,
 				"auto_git_commit":       s.cfg.Session.AutoGitCommit,
 				"auto_git_init":         s.cfg.Session.AutoGitInit,
+				"git_default":           s.cfg.Session.GitDefault,
 				"kill_sessions_on_exit": s.cfg.Session.KillSessionsOnExit,
 				"one_shot_sessions":     s.cfg.Session.OneShotSessions,
 				"root_path":             s.cfg.Session.RootPath,
@@ -6240,6 +6255,8 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// v7.0.0: moved to LLM registry — handled by applyLLMRegistryPatch.
 		case "session.auto_git_init":
 			cfg.Session.AutoGitInit = toBool(v)
+		case "session.git_default":
+			cfg.Session.GitDefault = toBool(v)
 		case "session.kill_sessions_on_exit":
 			cfg.Session.KillSessionsOnExit = toBool(v)
 		case "session.one_shot_sessions":

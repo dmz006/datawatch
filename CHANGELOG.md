@@ -5,6 +5,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.40 — Git is now opt-in for sessions
+
+### Changed
+- **A session now touches git only when you ask it to.** Before this release a one-shot session that finished inside a git repository was committed automatically; now it is committed only when git was requested for that session. **This reverses the old default.** Start requests have a new `git` field (REST `/api/sessions/start`, the CLI `--git` flag, the MCP `start_session` tool, `git=` in the `new:` chat command, schedules, and a "git" checkbox in the PWA new-session form in all five locales). An explicit `git` value always wins; when it is omitted, the new config key `session.git_default` decides, and it defaults to `false`. PRD task sessions are git-enabled when their PRD has git settings (a PRD git block or a project profile). A git-enabled session gets the pre-session snapshot commit, the `datawatch-pre-` and `datawatch-post-` checkpoint tags, and one validation-gated completion commit; planning and judgment sessions (`skip_snapshot`) still never commit.
+
+### Documentation
+- **Operator guide** `docs/operations.md`, `docs/api/openapi.yaml`, `docs/api-mcp-mapping.md` and `docs/config-reference.yaml` describe the opt-in and the new key.
+
+### Tests
+- Per-surface tests for the `git` field and the default: `internal/server/session_start_git_test.go`, `internal/mcp/start_session_git_test.go`, `internal/router/git_token_test.go`, `internal/session/schedule_git_test.go`, `cmd/datawatch/session_new_git_test.go`, `internal/config/git_default_test.go`, `internal/autonomous/executor_git_test.go`, `internal/server/web/app-new-session-git.test.js`, and the gitless one-shot flow in `internal/session/oneshot_gitless_test.go`.
+
 ## v9.5.39 — Accept util-linux CVE-2026-53615 in agent-base (no Debian fix)
 
 ### Security
