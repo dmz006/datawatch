@@ -401,6 +401,211 @@ func TestBootResumeGateAlertOnPark(t *testing.T) {
 	}
 }
 
+// gateFailedPRD is gatePRD with the PRD left in PRDFailed and its single task
+// failed with no session — the shape of a PRD whose executor was killed by a
+// daemon restart. age > 0 backdates it like gatePRD.
+func gateFailedPRD(t *testing.T, m *Manager, projectDir string, age time.Duration) *PRD {
+	t.Helper()
+	p := gatePRD(t, m, projectDir, age)
+	p.Status = PRDFailed
+	p.Story[0].Tasks[0].Status = TaskFailed
+	p.Story[0].Tasks[0].SessionID = ""
+	return p
+}
+
+// countSpawns installs a spawnFn that counts calls, so a test can prove
+// whether the executor started.
+func countSpawns(api *API) *atomic.Int32 {
+	var n atomic.Int32
+	api.spawnFn = func(_ context.Context, req SpawnRequest) (SpawnResult, error) {
+		n.Add(1)
+		return SpawnResult{SessionID: "sess-" + req.TaskID}, nil
+	}
+	return &n
+}
+
+func hasRunSlot(api *API, id string) bool {
+	api.runMu.Lock()
+	defer api.runMu.Unlock()
+	_, ok := api.runCancels[id]
+	return ok
+}
+
+// assertFailedParked checks a failed PRD was parked, not recovered.
+func assertFailedParked(t *testing.T, m *Manager, api *API, id string, spawned *atomic.Int32) *PRD {
+	t.Helper()
+	p := waitForStatus(t, m, id, 2*time.Second, PRDBlocked)
+	if p.Status != PRDBlocked {
+		t.Fatalf("failed PRD want PRDBlocked, got %q", p.Status)
+	}
+	if p.BlockedReason == "" {
+		t.Error("parked PRD has empty BlockedReason")
+	}
+	if spawned.Load() != 0 {
+		t.Errorf("parked PRD was spawned %d times", spawned.Load())
+	}
+	if hasRunSlot(api, id) {
+		t.Error("parked PRD has an executor slot — executor was started")
+	}
+	rep := m.BootResumeReport()
+	if len(rep) != 1 || rep[0].Outcome != "parked" || rep[0].PRDID != id {
+		t.Errorf("report want 1x parked for %s, got %+v", id, rep)
+	}
+	return p
+}
+
+// assertFailedRecovered checks a failed PRD was recovered and run.
+func assertFailedRecovered(t *testing.T, m *Manager, id string, spawned *atomic.Int32) {
+	t.Helper()
+	p := waitForStatus(t, m, id, 10*time.Second, PRDCompleted, PRDBlocked)
+	if p.Status != PRDCompleted {
+		t.Errorf("recovered PRD want PRDCompleted, got %q", p.Status)
+	}
+	if spawned.Load() == 0 {
+		t.Error("spawn never called — failed PRD was not recovered")
+	}
+	rep := m.BootResumeReport()
+	if len(rep) != 1 || rep[0].Outcome != "resumed" || rep[0].PRDID != id {
+		t.Errorf("report want 1x resumed for %s, got %+v", id, rep)
+	}
+}
+
+// (h) Fresh failed PRD with a killed task is still recovered by default.
+func TestBootResumeGateFailedFreshRecovered(t *testing.T) {
+	m, api := gateFixture(t)
+	prd := gateFailedPRD(t, m, testProjectDir(t), time.Minute)
+	spawned := countSpawns(api)
+
+	api.resumeRunningPRDs()
+	assertFailedRecovered(t, m, prd.ID, spawned)
+}
+
+// (i) Failed PRD older than the default 3600s limit is parked, with a
+// plain-English reason and an alert, and the executor never starts.
+func TestBootResumeGateFailedStaleParked(t *testing.T) {
+	m, api := gateFixture(t)
+	prd := gateFailedPRD(t, m, testProjectDir(t), 2*time.Hour)
+	spawned := countSpawns(api)
+
+	var (
+		mu     sync.Mutex
+		alerts []string
+	)
+	m.SetAlertFn(func(title, body string) {
+		mu.Lock()
+		alerts = append(alerts, title+" | "+body)
+		mu.Unlock()
+	})
+
+	api.resumeRunningPRDs()
+	p := assertFailedParked(t, m, api, prd.ID, spawned)
+	if !strings.Contains(p.BlockedReason, "older than") {
+		t.Errorf("BlockedReason %q — should mention the age limit", p.BlockedReason)
+	}
+	if rep := m.BootResumeReport(); len(rep) == 1 && rep[0].AgeSeconds < 7000 {
+		t.Errorf("report age want ~7200s, got %d", rep[0].AgeSeconds)
+	}
+	// The failed task must not have been reset to pending by a recovery.
+	if got := p.Story[0].Tasks[0].Status; got != TaskFailed {
+		t.Errorf("parked PRD task status = %q, want %q", got, TaskFailed)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(alerts) != 1 {
+		t.Fatalf("want exactly 1 alert, got %d: %v", len(alerts), alerts)
+	}
+	if !strings.Contains(alerts[0], "parked") {
+		t.Errorf("alert %q — should say the PRD was parked", alerts[0])
+	}
+}
+
+// (j) A cancelled PRD is never touched, whether stale or fresh.
+func TestBootResumeGateCancelledUntouched(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		age  time.Duration
+	}{
+		{"fresh", time.Minute},
+		{"stale", 48 * time.Hour},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			m, api := gateFixture(t)
+			prd := gateFailedPRD(t, m, testProjectDir(t), tc.age)
+			prd.Status = PRDCancelled
+			spawned := countSpawns(api)
+
+			api.resumeRunningPRDs()
+
+			p, _ := m.Store().SnapshotPRD(prd.ID)
+			if p.Status != PRDCancelled {
+				t.Errorf("cancelled PRD status = %q, want %q", p.Status, PRDCancelled)
+			}
+			if p.BlockedReason != "" {
+				t.Errorf("cancelled PRD got BlockedReason %q", p.BlockedReason)
+			}
+			if spawned.Load() != 0 {
+				t.Errorf("cancelled PRD was spawned %d times", spawned.Load())
+			}
+			if hasRunSlot(api, prd.ID) {
+				t.Error("cancelled PRD has an executor slot")
+			}
+			if rep := m.BootResumeReport(); len(rep) != 0 {
+				t.Errorf("cancelled PRD must have no report entry, got %+v", rep)
+			}
+		})
+	}
+}
+
+// (k) resume_max_age_seconds applies to failed PRDs: 0 parks a fresh one,
+// -1 recovers a stale one, and -1 still parks a missing project directory.
+func TestBootResumeGateFailedLimits(t *testing.T) {
+	setLimit := func(m *Manager, v int) {
+		m.mu.Lock()
+		m.cfg.ResumeMaxAgeSeconds = v
+		m.mu.Unlock()
+	}
+
+	t.Run("zero parks fresh", func(t *testing.T) {
+		m, api := gateFixture(t)
+		setLimit(m, 0)
+		prd := gateFailedPRD(t, m, testProjectDir(t), time.Minute)
+		spawned := countSpawns(api)
+
+		api.resumeRunningPRDs()
+		p := assertFailedParked(t, m, api, prd.ID, spawned)
+		if !strings.Contains(p.BlockedReason, "resume_max_age_seconds") {
+			t.Errorf("BlockedReason %q — should explain 0 = never resumed", p.BlockedReason)
+		}
+	})
+
+	t.Run("minus one recovers stale", func(t *testing.T) {
+		m, api := gateFixture(t)
+		setLimit(m, -1)
+		prd := gateFailedPRD(t, m, testProjectDir(t), 30*24*time.Hour)
+		spawned := countSpawns(api)
+
+		api.resumeRunningPRDs()
+		assertFailedRecovered(t, m, prd.ID, spawned)
+	})
+
+	t.Run("minus one missing dir parks", func(t *testing.T) {
+		m, api := gateFixture(t)
+		setLimit(m, -1)
+		proj := testProjectDir(t)
+		prd := gateFailedPRD(t, m, proj, time.Minute)
+		if err := os.RemoveAll(proj); err != nil {
+			t.Fatalf("RemoveAll: %v", err)
+		}
+		spawned := countSpawns(api)
+
+		api.resumeRunningPRDs()
+		p := assertFailedParked(t, m, api, prd.ID, spawned)
+		if !strings.Contains(p.BlockedReason, "project directory") {
+			t.Errorf("BlockedReason %q — should name the removed project directory", p.BlockedReason)
+		}
+	})
+}
+
 // decideBootResume is deterministic — unit-check all branches directly.
 func TestDecideBootResumeUnit(t *testing.T) {
 	now := time.Now()
