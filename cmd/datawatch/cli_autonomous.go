@@ -38,6 +38,7 @@ Subcommands:
   prd-delete <id>                 Hard-delete a PRD + descendants
   prd-edit <id>                   Edit PRD title + spec
   prd-approve <id>                Approve planned PRD
+  prd-plan-review <id>            Re-run the plan reviewer for a PRD (alias: plan-review)
   prd-reject <id>                 Reject a PRD plan
   prd-coverage <id>               Show the stored plan-requirement coverage report (mode, min_ratio, report, ack, findings)
   prd-ack-coverage <id>           Acknowledge a failing coverage report (--actor, --note) so approve in block mode is allowed
@@ -84,6 +85,7 @@ Subcommands:
 		newAutonomousPRDRejectCmd(),
 		newAutonomousPRDCoverageCmd(),
 		newAutonomousPRDAckCoverageCmd(),
+		newAutonomousPRDPlanReviewCmd(),
 		newAutonomousPRDRequestRevisionCmd(),
 		newAutonomousPRDEditTaskCmd(),
 		newAutonomousPRDEditStoryCmd(),
