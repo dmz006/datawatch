@@ -160,12 +160,13 @@ Sessions whose `parent_id` references a session that no longer exists.
 - **CLI:** `datawatch session orphaned` or `datawatch session list --orphaned`
 - **Channel:** `session orphaned`
 
-**Self-session discovery:**
+**Self-session discovery and scope:**
 
-Agents that need to know their own session ID without relying on `$CLAUDE_SESSION_ID`.
+Agents that need to know their own session ID or which MCP channel they are registered under, without relying on `$CLAUDE_SESSION_ID`.
 
 - **MCP:** `get_my_session_id(hint="<id>")` — hint is optional; finds the channel-ready active session.
-- **REST:** `GET /api/sessions/self`
+- **MCP:** `get_my_scope(hint="<id>")` — the full self-scope: identity, per-session MCP server name (and the shared `datawatch` entry name it must not confuse with its own), host/container mode, project dir, channel readiness, bridge liveness, and every peer session's name + MCP server name. Read-only.
+- **REST:** `GET /api/sessions/self`; `GET /api/sessions/self/scope?hint=<id>`
 - **CLI:** `datawatch session self`
 - **Channel:** `session self`
 

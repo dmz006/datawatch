@@ -40,7 +40,7 @@ func (s *Server) handleToolingStatus(_ context.Context, req mcpsdk.CallToolReque
 	}
 	out, err := s.proxyJSON(http.MethodGet, path, nil)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("tooling_status", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -65,7 +65,7 @@ func (s *Server) handleToolingGitignore(_ context.Context, req mcpsdk.CallToolRe
 	}
 	out, err := s.proxyJSON(http.MethodPost, "/api/tooling/gitignore", body)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("tooling_gitignore", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -90,7 +90,7 @@ func (s *Server) handleToolingCleanup(_ context.Context, req mcpsdk.CallToolRequ
 	}
 	out, err := s.proxyJSON(http.MethodPost, "/api/tooling/cleanup", body)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("tooling_cleanup", err), nil
 	}
 	return textOK(string(out)), nil
 }

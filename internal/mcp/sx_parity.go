@@ -65,7 +65,7 @@ func (s *Server) proxyGetWithHeaders(path string, q url.Values) ([]byte, http.He
 	defer resp.Body.Close() //nolint:errcheck
 	body, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode/100 != 2 {
-		return nil, resp.Header, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(body))
+		return nil, resp.Header, fmt.Errorf("HTTP %d: %s", resp.StatusCode, boundedErrorBody(body))
 	}
 	return body, resp.Header, nil
 }
@@ -88,6 +88,17 @@ func withCompactView(path string) string {
 		return path + "&view=compact"
 	}
 	return path + "?view=compact"
+}
+
+// boundedErrorBody trims and caps an upstream error body so a verbose
+// 5xx dump can't flood the agent's context; successful bodies are
+// returned by the callers as-is and are never passed through here.
+func boundedErrorBody(b []byte) string {
+	s := strings.TrimSpace(string(b))
+	if len(s) <= maxToolErrorBody {
+		return s
+	}
+	return s[:maxToolErrorBody] + "…"
 }
 
 // proxyJSON sends method+body to the loopback and returns the body.
@@ -125,7 +136,7 @@ func (s *Server) proxyJSON(method, path string, body any) ([]byte, error) {
 	defer resp.Body.Close() //nolint:errcheck
 	respBody, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode/100 != 2 {
-		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(respBody))
+		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, boundedErrorBody(respBody))
 	}
 	return respBody, nil
 }
@@ -154,7 +165,7 @@ func (s *Server) handleAsk(_ context.Context, req mcpsdk.CallToolRequest) (*mcps
 	}
 	out, err := s.proxyJSON(http.MethodPost, "/api/ask", body)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("ask", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -171,7 +182,7 @@ func (s *Server) handleProjectSummary(_ context.Context, req mcpsdk.CallToolRequ
 	q := url.Values{"dir": []string{req.GetString("dir", "")}}
 	out, err := s.proxyGet("/api/project/summary", q)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("project_summary", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -184,7 +195,7 @@ func (s *Server) toolTemplateList() mcpsdk.Tool {
 func (s *Server) handleTemplateList(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	out, err := s.proxyGet("/api/templates", nil)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("template_list", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -209,7 +220,7 @@ func (s *Server) handleTemplateUpsert(_ context.Context, req mcpsdk.CallToolRequ
 	}
 	out, err := s.proxyJSON(http.MethodPost, "/api/templates", body)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("template_upsert", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -223,7 +234,7 @@ func (s *Server) toolTemplateDelete() mcpsdk.Tool {
 func (s *Server) handleTemplateDelete(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	out, err := s.proxyJSON(http.MethodDelete, "/api/templates/"+req.GetString("name", ""), nil)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("template_delete", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -236,7 +247,7 @@ func (s *Server) toolProjectList() mcpsdk.Tool {
 func (s *Server) handleProjectList(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	out, err := s.proxyGet("/api/projects", nil)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("project_list", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -259,7 +270,7 @@ func (s *Server) handleProjectUpsert(_ context.Context, req mcpsdk.CallToolReque
 	}
 	out, err := s.proxyJSON(http.MethodPost, "/api/projects", body)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("project_upsert", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -273,7 +284,7 @@ func (s *Server) toolProjectAliasDelete() mcpsdk.Tool {
 func (s *Server) handleProjectAliasDelete(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	out, err := s.proxyJSON(http.MethodDelete, "/api/projects/"+req.GetString("name", ""), nil)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("project_alias_delete", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -291,7 +302,7 @@ func (s *Server) handleSessionRollback(_ context.Context, req mcpsdk.CallToolReq
 	body := map[string]any{"force": req.GetBool("force", false)}
 	out, err := s.proxyJSON(http.MethodPost, "/api/sessions/"+req.GetString("id", "")+"/rollback", body)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("session_rollback", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -306,7 +317,7 @@ func (s *Server) toolCooldownStatus() mcpsdk.Tool {
 func (s *Server) handleCooldownStatus(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	out, err := s.proxyGet("/api/cooldown", nil)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("cooldown_status", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -325,7 +336,7 @@ func (s *Server) handleCooldownSet(_ context.Context, req mcpsdk.CallToolRequest
 	}
 	out, err := s.proxyJSON(http.MethodPost, "/api/cooldown", body)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("cooldown_set", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -338,7 +349,7 @@ func (s *Server) toolCooldownClear() mcpsdk.Tool {
 func (s *Server) handleCooldownClear(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	out, err := s.proxyJSON(http.MethodDelete, "/api/cooldown", nil)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("cooldown_clear", err), nil
 	}
 	if len(out) == 0 {
 		out = []byte(`{"status":"cleared"}`)
@@ -361,7 +372,7 @@ func (s *Server) handleSessionsStale(_ context.Context, req mcpsdk.CallToolReque
 	}
 	out, err := s.proxyGet("/api/sessions/stale", q)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("sessions_stale", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -381,7 +392,7 @@ func (s *Server) handleCostSummary(_ context.Context, req mcpsdk.CallToolRequest
 	}
 	out, err := s.proxyGet("/api/cost", q)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("cost_summary", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -406,7 +417,7 @@ func (s *Server) handleCostUsage(_ context.Context, req mcpsdk.CallToolRequest) 
 	}
 	out, err := s.proxyJSON(http.MethodPost, "/api/cost/usage", body)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("cost_usage", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -419,7 +430,7 @@ func (s *Server) toolCostRates() mcpsdk.Tool {
 func (s *Server) handleCostRates(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	out, err := s.proxyGet("/api/cost/rates", nil)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("cost_rates", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -449,7 +460,7 @@ func (s *Server) handleAuditQuery(_ context.Context, req mcpsdk.CallToolRequest)
 	}
 	out, err := s.proxyGet("/api/audit", q)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("audit_query", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -479,7 +490,7 @@ func (s *Server) handleAuditAccessQuery(_ context.Context, req mcpsdk.CallToolRe
 	}
 	out, err := s.proxyGet("/api/audit/access", q)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("audit_access_query", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -494,7 +505,7 @@ func (s *Server) toolDiagnose() mcpsdk.Tool {
 func (s *Server) handleDiagnose(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	out, err := s.proxyGet("/api/diagnose", nil)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("diagnose", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -514,7 +525,7 @@ func (s *Server) handleReload(_ context.Context, req mcpsdk.CallToolRequest) (*m
 	}
 	out, err := s.proxyJSON(http.MethodPost, path, nil)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("reload", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -532,7 +543,7 @@ func (s *Server) handleAssist(_ context.Context, req mcpsdk.CallToolRequest) (*m
 	body := map[string]any{"question": req.GetString("question", "")}
 	out, err := s.proxyJSON(http.MethodPost, "/api/assist", body)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("assist", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -546,7 +557,7 @@ func (s *Server) toolDeviceAliasList() mcpsdk.Tool {
 func (s *Server) handleDeviceAliasList(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	out, err := s.proxyGet("/api/device-aliases", nil)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("device_alias_list", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -565,7 +576,7 @@ func (s *Server) handleDeviceAliasUpsert(_ context.Context, req mcpsdk.CallToolR
 	}
 	out, err := s.proxyJSON(http.MethodPost, "/api/device-aliases", body)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("device_alias_upsert", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -579,7 +590,7 @@ func (s *Server) toolDeviceAliasDelete() mcpsdk.Tool {
 func (s *Server) handleDeviceAliasDelete(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	out, err := s.proxyJSON(http.MethodDelete, "/api/device-aliases/"+req.GetString("alias", ""), nil)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("device_alias_delete", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -593,7 +604,7 @@ func (s *Server) toolSplashInfo() mcpsdk.Tool {
 func (s *Server) handleSplashInfo(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	out, err := s.proxyGet("/api/splash/info", nil)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("splash_info", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -607,7 +618,7 @@ func (s *Server) toolRoutingRulesList() mcpsdk.Tool {
 func (s *Server) handleRoutingRulesList(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	out, err := s.proxyGet("/api/routing-rules", nil)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("routing_rules_list", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -622,7 +633,7 @@ func (s *Server) handleRoutingRulesTest(_ context.Context, req mcpsdk.CallToolRe
 	out, err := s.proxyJSON(http.MethodPost, "/api/routing-rules/test",
 		map[string]any{"task": req.GetString("task", "")})
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("routing_rules_test", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -642,7 +653,7 @@ func (s *Server) handleAnalytics(_ context.Context, req mcpsdk.CallToolRequest) 
 	}
 	out, err := s.proxyGet("/api/analytics", q)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("analytics", err), nil
 	}
 	return textOK(string(out)), nil
 }

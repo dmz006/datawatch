@@ -135,6 +135,14 @@ the request will be forwarded to the user automatically.`),
 	// roundtrip automatically once the capability is declared here.
 	mcpSrv.EnableSampling()
 
+	// CRASH-SAFETY (findings: docs/plans/2026-10-20-bl463-mcp-drop-findings.md) —
+	// mcp-go's panic-recovery middleware (WithRecovery) is opt-in and is NOT
+	// enabled here, so a single panicking tool handler previously tore down
+	// the whole bridge process and permanently dropped the session's MCP
+	// connection while the daemon stayed healthy. Recover and convert the
+	// panic into a JSON-RPC error result instead.
+	server.WithToolHandlerMiddleware(stdioToolPanicGuard)(mcpSrv)
+
 	bridge := &bridge{cfg: cfg, srv: mcpSrv}
 	bridgeRef = bridge
 	mcpSrv.AddTool(bridge.replyTool(), bridge.handleReply)
@@ -235,7 +243,11 @@ the request will be forwarded to the user automatically.`),
 	// MCP stdio transport — claude-code spawns us and talks over stdin/stdout.
 	go func() {
 		fmt.Fprintln(os.Stderr, "[datawatch-channel] MCP stdio transport starting")
-		if err := server.NewStdioServer(mcpSrv).Listen(ctx, os.Stdin, os.Stdout); err != nil && err != context.Canceled {
+		// stdioListenGuarded (stdio_guard.go) recovers panics escaping the
+		// synchronous dispatch path and logs exactly why the listener
+		// stopped — the transport close-reason evidence this bridge used to
+		// leave behind only as a process-death signature.
+		if err := stdioListenGuarded(server.NewStdioServer(mcpSrv), ctx, "bridge", os.Stdin, os.Stdout); err != nil && err != context.Canceled {
 			fmt.Fprintf(os.Stderr, "[datawatch-channel] MCP stdio: %v\n", err)
 		}
 		stop()
@@ -360,6 +372,9 @@ func (b *bridge) callParent(ctx context.Context, method, path string, body any) 
 	client := &http.Client{Timeout: 30 * time.Second} // memory ops can be slow (embedding)
 	resp, err := client.Do(req)
 	if err != nil {
+		// Operational visibility — parent timeout (the common mid-session MCP
+		// failure, previously only visible client-side as an opaque error).
+		fmt.Fprintf(os.Stderr, "[datawatch-channel] callParent %s %s failed: %v\n", method, path, err)
 		return nil, err
 	}
 	defer func() { _ = resp.Body.Close() }()

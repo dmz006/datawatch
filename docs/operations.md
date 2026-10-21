@@ -1793,6 +1793,28 @@ On daemon startup, stale MCP channel registrations (from deleted sessions) are
 automatically removed from Claude's MCP config. This prevents the MCP server list from
 growing unboundedly over time.
 
+### MCP transport diagnostics (connection drops, stream health)
+
+Every MCP SSE stream is observed: the daemon logs one `STREAM OPEN` / `STREAM CLOSE`
+line pair per stream (duration, write count, bytes, idle time at close, and the first
+write/flush error if one occurred), so client disconnects, middlebox kills,
+and server-side write failures are distinguishable from the daemon log alone. The
+stdio MCP entry points (`datawatch mcp`) log their listener start and stop reason
+(client disconnect / error / recovered panic). Failed tool handlers no longer kill
+the bridge process — a panic returns an `isError` result and the session keeps
+serving.
+
+- **Keepalive:** the SSE stream pings every 10 s so idle read timeouts in proxies or
+  clients do not silently kill held-open streams.
+- **Timeout profile:** `ReadTimeout` 30 s / `IdleTimeout` 120 s, `WriteTimeout`
+  deliberately unset (it is the only stdlib deadline that can kill an in-flight SSE
+  stream); the exact profile is printed at serve start.
+- **Verbose per-request logging:** set `DATAWATCH_MCP_DEBUG=1` on the daemon or
+  bridge process.
+- **`DATAWATCH_MCP_DEBUG` and the stream lines are log-channel output only** — the
+  stdio MCP server's stdout stays strict JSON-RPC; recovery/diagnostic messages go
+  to stderr, so no line outside the protocol can corrupt a client's stream.
+
 ---
 
 ## Chat Mode and Output Modes

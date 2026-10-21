@@ -23,7 +23,7 @@ func (s *Server) handleSessionReconcile(_ context.Context, req mcpsdk.CallToolRe
 	auto := req.GetBool("auto_import", false)
 	res, err := s.manager.ReconcileSessions(auto)
 	if err != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error: %v", err)), nil
+		return toolError("session_reconcile", err), nil
 	}
 	body, _ := json.MarshalIndent(res, "", "  ")
 	return mcpsdk.NewToolResultText(string(body)), nil
@@ -43,14 +43,14 @@ func (s *Server) toolSessionImport() mcpsdk.Tool {
 func (s *Server) handleSessionImport(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	dir := req.GetString("dir", "")
 	if dir == "" {
-		return mcpsdk.NewToolResultText("Error: dir is required"), nil
+		return toolErrorf("session_import", "dir is required"), nil
 	}
 	if !filepath.IsAbs(dir) {
 		dir = filepath.Join(s.manager.DataDir(), "sessions", dir)
 	}
 	sess, imported, err := s.manager.ImportSessionDir(dir)
 	if err != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error: %v", err)), nil
+		return toolError("session_import", err), nil
 	}
 	if imported {
 		return mcpsdk.NewToolResultText(fmt.Sprintf("Imported %s (state=%s)", sess.FullID, sess.State)), nil

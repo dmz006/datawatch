@@ -22,7 +22,7 @@ func (s *Server) toolChannelRoutingConfigGet() mcpsdk.Tool {
 func (s *Server) handleChannelRoutingConfigGet(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	out, err := s.proxyJSON(http.MethodGet, "/api/channel/routing", nil)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("channel_routing_config_get", err), nil
 	}
 	return textOK(string(out)), nil
 }
@@ -40,16 +40,16 @@ func (s *Server) toolChannelRoutingConfigSet() mcpsdk.Tool {
 func (s *Server) handleChannelRoutingConfigSet(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	raw := req.GetString("rules_json", "")
 	if raw == "" {
-		return textOK("Error: rules_json is required"), nil
+		return toolErrorf("channel_routing_config_set", "rules_json is required"), nil
 	}
 	var rules []json.RawMessage
 	if err := json.Unmarshal([]byte(raw), &rules); err != nil {
-		return textOK("Error: rules_json must be a JSON array: " + err.Error()), nil
+		return toolErrorf("channel_routing_config_set", "rules_json must be a JSON array: %s", err), nil
 	}
 	body := map[string]any{"rules": rules}
 	out, err := s.proxyJSON(http.MethodPut, "/api/channel/routing", body)
 	if err != nil {
-		return textOK("Error: " + err.Error()), nil
+		return toolError("channel_routing_config_set", err), nil
 	}
 	return textOK(string(out)), nil
 }

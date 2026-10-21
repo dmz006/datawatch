@@ -6,7 +6,6 @@ package mcp
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"net/url"
 
@@ -22,7 +21,7 @@ func (s *Server) toolMatrixStatus() mcpsdk.Tool {
 func (s *Server) handleMatrixStatus(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	body, err := s.proxyGet("/api/matrix/status", url.Values{})
 	if err != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error: %v", err)), nil
+		return toolError("matrix_status", err), nil
 	}
 	return mcpsdk.NewToolResultText(string(body)), nil
 }
@@ -45,7 +44,7 @@ func (s *Server) handleMatrixTest(_ context.Context, req mcpsdk.CallToolRequest)
 	}
 	body, err := s.proxyJSON(http.MethodPost, "/api/matrix/test", payload)
 	if err != nil {
-		return mcpsdk.NewToolResultText(fmt.Sprintf("Error: %v", err)), nil
+		return toolError("matrix_test", err), nil
 	}
 	return mcpsdk.NewToolResultText(string(body)), nil
 }

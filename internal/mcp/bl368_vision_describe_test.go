@@ -80,8 +80,8 @@ func TestBL368_VisionDescribe_FileNotFound_ReturnsError(t *testing.T) {
 		t.Fatalf("unexpected error return: %v", err)
 	}
 	text := toolResultText(res)
-	if !strings.Contains(text, "Error reading image") {
-		t.Errorf("want 'Error reading image', got %q", text)
+	if !strings.Contains(text, "vision_describe") {
+		t.Errorf("want IsError result named vision_describe, got %q", text)
 	}
 }
 

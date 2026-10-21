@@ -263,8 +263,8 @@ func TestBL210Remaining_NoWebPort(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	out := resultText(t, res, nil)
-	if !strings.Contains(out, "Error") {
-		t.Errorf("expected error when webPort=0, got: %s", out)
+	// BL463: failure responses must be flagged IsError and carry the upstream error text.
+	if !res.IsError {
+		t.Errorf("expected IsError when webPort=0, got: %s", resultText(t, res, nil))
 	}
 }

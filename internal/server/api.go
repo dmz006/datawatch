@@ -31,6 +31,7 @@ import (
 	"github.com/dmz006/datawatch/internal/audit"
 	"github.com/dmz006/datawatch/internal/auth"
 	"github.com/dmz006/datawatch/internal/autonomous"
+	"github.com/dmz006/datawatch/internal/channel"
 	"github.com/dmz006/datawatch/internal/compute"
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/council"
@@ -3682,6 +3683,55 @@ func (s *Server) handleSessionSelf(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(candidates[0]) //nolint:errcheck
+}
+
+// handleSessionSelfScope returns the self session's full scope: identity,
+// MCP channel server name (per-session), shared/global .mcp.json entry
+// name, mode (host vs container/agent), project/tmux surface, channel
+// readiness, and the set of every other session's MCP names — the REST
+// mirror of the get_my_scope MCP tool (BL463), built from the same
+// channel.BuildSelfScope so both surfaces report identical data.
+//
+// Resolution: ?hint=<id|name> first, then the same channel-ready/active
+// rule as handleSessionSelf (the MCP tool additionally consults the
+// in-band caller-scope credential, HLLM-004, which only exists on the
+// MCP-calls-via-token path). resolved_via always says which one applied.
+// GET /api/sessions/self/scope — BL463.
+func (s *Server) handleSessionSelfScope(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapSessionsRead) {
+		return
+	}
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	all := s.manager.ListSessions()
+	var sess *session.Session
+	var resolvedVia string
+	if hint := r.URL.Query().Get("hint"); hint != "" {
+		found, ok := s.manager.GetSession(hint)
+		if !ok {
+			http.Error(w, "session not found", http.StatusNotFound)
+			return
+		}
+		sess, resolvedVia = found, "hint"
+	}
+	if sess == nil {
+		for _, cand := range all {
+			if cand.ChannelReady && (cand.State == session.StateRunning || cand.State == session.StateWaitingInput) {
+				sess, resolvedVia = cand, "channel-ready-fallback"
+				break
+			}
+		}
+	}
+	if sess == nil {
+		http.Error(w, "no channel-ready session found", http.StatusNotFound)
+		return
+	}
+	selfScope := channel.BuildSelfScope(sess, all)
+	selfScope.ResolvedVia = resolvedVia
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(selfScope) //nolint:errcheck
 }
 
 // handleSessionPrompt returns the last user prompt for a session.

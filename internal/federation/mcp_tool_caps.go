@@ -226,6 +226,7 @@ var MCPToolCap = map[string]string{
 	"get_alerts":                     CapAlertsRead,
 	"get_config":                     CapConfigRead,
 	"get_identity":                   CapConfigRead,
+	"get_my_scope":                   CapHealthRead,
 	"get_my_session_id":              CapHealthRead,
 	"get_stats":                      CapHealthRead,
 	"get_version":                    CapHealthRead,

@@ -228,11 +228,19 @@ About → "MCP tools" link opens it. The selected tools below are
 documented inline; the rest follow the same parameter-table-and-example
 shape.
 
+**Failure responses** (v9.5.29, BL463): a failed tool call returns an
+`isError:true` result named after the tool (e.g.
+`template_delete: HTTP 404: template not found`) — tools mirroring a REST
+route also carry the upstream HTTP status and the daemon's error body
+(truncated where long), holding MCP to REST's reliability bar. In stdio mode
+`datawatch mcp` logs to **stderr only**; stdout is the JSON-RPC channel and
+must stay strict JSON-RPC (release-smoke §7r asserts all of this).
+
 ### Tool families (high-level)
 
 | Family | Tools |
 |--------|-------|
-| Sessions | `list_sessions`, `start_session`, `send_input`, `copy_response`, `kill_session`, `delete_session`, `restart_session`, `rename_session`, `session_output`, `session_timeline`, `session_bind_agent`, `session_import`, `session_reconcile`, `session_rollback`, `sessions_stale`, `stop_all_sessions`, `session_children`, `reply_to_parent` |
+| Sessions | `list_sessions`, `start_session`, `send_input`, `copy_response`, `kill_session`, `delete_session`, `restart_session`, `rename_session`, `session_output`, `session_timeline`, `session_bind_agent`, `session_import`, `session_reconcile`, `session_rollback`, `sessions_stale`, `stop_all_sessions`, `session_children`, `reply_to_parent`, `get_my_session_id`, `get_my_scope` |
 | Vision | `vision_describe` |
 | Web Search | `websearch_providers_list/get/add/update/delete/enable/disable/test`, `websearch_stats`, `websearch_history`, `web_search_stats` (deprecated alias) |
 | Exit Hooks | `exit_hook_list`, `exit_hook_add`, `exit_hook_delete`, `exit_hook_enable`, `exit_hook_disable` |
@@ -323,6 +331,7 @@ Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
 - **`result_put/get/list/delete`** (BL360) — structured named-result store for agents to share outputs without out-of-band coordination.
 - **`channel_info`** (BL216) — daemon's resolved MCP bridge kind (go|js), path, ready state, stale .mcp.json detection. Read-only.
 - **`channel_diagnostics`** (BL362) — per-session bridge ports, live `/health` probe results, and actionable remediation hints. Use when sessions fail to connect or MCP errors appear with no clear cause.
+- **`get_my_scope`** (BL463) — self-scope confirmation for the session calling over its MCP bridge. Read-only (`health:read`), no session argument required — resolution order is `hint` (optional session ID or name) → the in-band caller scope carried by the session's MCP bridge token (HLLM-004) → the first channel-ready session (flagged as such in `resolved_via`). Returns the session's identity and mode ("host" vs "container(agent=<id>)" — F10 sessions), its per-session MCP server name (`datawatch-<FullID>`; the exact `<mcpServers>` key it was registered under in `~/.claude.json` / `.mcp.json`), `shared_entry_name` (the common `datawatch` entry in the per-project `.mcp.json` every host-mode session shares), its project dir + tmux identity, channel readiness, and `peers[]` — every other session's name, state, and MCP server name, so the caller can confirm its own name is distinct from each peer's. Use it to answer "which MCP server is actually mine, and which of these are peers I must not be using?" (the BL467 first-come bridge race, see [plans/2026-10-16-mcp-bridge-registration-race.md](plans/2026-10-16-mcp-bridge-registration-race.md); audit in [plans/2026-10-20-bl463-mcp-drop-findings.md](plans/2026-10-20-bl463-mcp-drop-findings.md)). Same data over REST: `GET /api/sessions/self/scope` (optional `?hint=<id>`).
 - **`guardrail_library_list`** (BL303 S2) — list all registered guardrails (built-in scan guardrails + skill-contributed).
 - **`guardrail_profile_list/create/get/update/delete`** (BL303 S2) — manage named guardrail profiles (named sets of guardrails that can be applied to sessions or PRDs).
 - **`per_automaton_guardrails_set`** (BL303 S2) — override guardrail profile and per-task/per-story guardrails for a specific PRD, plus the Automaton-completion list (`per_prd_guardrails_json`, e.g. `["rules-review","ci-watch"]`). The call replaces the profile and all three lists, so pass the ones you want to keep.
