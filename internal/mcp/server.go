@@ -567,6 +567,10 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutonomousPRDSetVerificationLLM(), tracked(s.handleAutonomousPRDSetVerificationLLM))
 	mcpSrv.AddTool(s.toolAutonomousPRDSetStoryVerificationLLM(), tracked(s.handleAutonomousPRDSetStoryVerificationLLM))
 	mcpSrv.AddTool(s.toolAutonomousPRDSetTaskVerificationLLM(), tracked(s.handleAutonomousPRDSetTaskVerificationLLM))
+	// BL427 lifecycle-event subscriptions (proxy /api/autonomous/subscriptions).
+	mcpSrv.AddTool(s.toolAutonomousSubscribe(), tracked(s.handleAutonomousSubscribe))
+	mcpSrv.AddTool(s.toolAutonomousUnsubscribe(), tracked(s.handleAutonomousUnsubscribe))
+	mcpSrv.AddTool(s.toolAutonomousSubscriptions(), tracked(s.handleAutonomousSubscriptions))
 	mcpSrv.AddTool(s.toolAutonomousLearnings(), tracked(s.handleAutonomousLearnings))
 	mcpSrv.AddTool(s.toolAutonomousPRDChildren(), tracked(s.handleAutonomousPRDChildren))
 	// BL221 (v6.2.0) Phase 3 — scan framework tools.

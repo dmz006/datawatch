@@ -1408,6 +1408,27 @@ are CRUD-ed and persisted (`automations.jsonl`, managed via REST
 `/api/automations` and MCP `automation_*` tools) but no execution loop
 consumes the edges yet.
 
+**Lifecycle event subscription** — a persisted rule that maps an Automaton
+lifecycle event (PRD/task status changes, `task.session_started` /
+`task.session_cleared`, `prd.updated`) to a delivery sink: a comm router,
+a datawatch session (bridge `POST /send` preferred, `SendInput` fallback
+tagged `lifecycle-sub`), a push topic, or the in-app alert store. Options:
+`one_shot` (removed after first *successful* delivery — one retry, then
+log + drop), `expires_at` TTL (pruned by the engine's janitor),
+`coalesce` quiet-window batching for human-facing sinks. Manageable from
+every surface — CLI `datawatch autonomous subscribe | unsubscribe |
+subscriptions`, MCP `autonomous_subscribe | autonomous_unsubscribe |
+autonomous_subscriptions` (proxying the daemon REST), comm verbs
+(owner-scoped: the calling channel is both owner and sink target), REST
+`/api/autonomous/subscriptions`. Stored encrypted at
+`<data_dir>/lifecycle_subscriptions.json`; the engine re-attaches live on
+add/remove, so changes apply without a daemon restart. Replaces the
+per-session polling-script pattern (watch for a new worker session, then
+inject text). See
+[howto/automaton-lifecycle-subscriptions.md](howto/automaton-lifecycle-subscriptions.md)
+and
+[flow/lifecycle-subscription-flow.md](flow/lifecycle-subscription-flow.md).
+
 ---
 
 ## Core feature reference matrix
@@ -1482,6 +1503,7 @@ Tracks which core features have how-to walkthroughs, plans, and architecture dia
 | FCM push payload enrichment | [`howto/push-notifications.md`](howto/push-notifications.md) | v8.13.1 | session_id/session_name/last_response in session_state_changed and waiting_input push events |
 | Goose backend | [`docs/llm-backends.md`](llm-backends.md) | v8.13.36–v8.14.0 | provider/model/api_key env-var injection, MCP channel bridge, `agent-goose` container, `channel_enabled` config flag |
 | Vision input system | [`docs/config-reference.yaml`](config-reference.yaml) · [`docs/mcp.md`](mcp.md) | v8.15.0 (pending) | `vision.*` config, `POST /api/vision/describe`, comms image→description injection, `vision_describe` MCP tool, `image_paths` on start_session/send_input, council `image_path`, skills `accepts_images`, `remember [image]` |
+| Automaton lifecycle event subscriptions | [`howto/automaton-lifecycle-subscriptions.md`](howto/automaton-lifecycle-subscriptions.md) · [`flow/lifecycle-subscription-flow.md`](flow/lifecycle-subscription-flow.md) | Unreleased (Phase 3 of `plans/2026-10-13-prd-lifecycle-events.md`) | persisted encrypted store, engine with one-shot/expire/coalesce, comm/session(bridge, SendInput)/topic/alert sinks, REST + MCP + CLI + owner-scoped comm verbs, live re-attach (no restart) |
 
 Every core feature now has a dedicated how-to. Per-channel coverage on each is being expanded so the same walkthrough works across PWA / Mobile / REST / MCP / CLI / Comm / YAML — every operator workflow is reachable from every surface.
 

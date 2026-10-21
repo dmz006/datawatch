@@ -235,7 +235,8 @@ That uniformity is the whole point. Read once, write once, audit once.
 ### Orchestration & autonomy
 
 The **Automata PRD-DAG orchestrator** decomposes a goal into a dependency graph of stories and tasks, executes them with quality gates and git-diff-grounded verification, and supports guardrails, rubric-based grading, and structural mid-run editing. Writes are serialized per project tree: at most one task writer per tree at a time (same-tree tasks queue behind an advisory lock with a visible wait reason), while work on different trees — including per-Automaton worktrees — runs in parallel. **Algorithm Mode** is PAI's 7-phase structured-thinking harness (Observe → Orient → Decide → Act → Measure → Learn → Improve) as a per-session state machine. **Council Mode** runs multi-persona structured debate — 6 default personas, each able to use its own LLM backend — with real-time SSE streaming. The **Evals framework** replaces binary pass/fail verification with rubric-based grading.
-→ [docs/api/autonomous.md](docs/api/autonomous.md) · [docs/api/orchestrator.md](docs/api/orchestrator.md)
+**Lifecycle event subscriptions** turn the Automaton's event stream into rules you can act on ahead of time: *when this event fires (status change, worker session start, PRD update), deliver it there* — a comm channel, a session (text typed in, bridge-preferred with `SendInput` fallback), a push topic, or the alert store. One-shot subscriptions and the `--task <id> --on session_started --send "…"` shorthand replace the watch-and-inject polling scripts; everything persists across restarts and applies without a daemon restart.
+→ [docs/api/autonomous.md](docs/api/autonomous.md) · [docs/api/orchestrator.md](docs/api/orchestrator.md) · [docs/howto/automaton-lifecycle-subscriptions.md](docs/howto/automaton-lifecycle-subscriptions.md) · [docs/flow/lifecycle-subscription-flow.md](docs/flow/lifecycle-subscription-flow.md)
 
 ### Compute & LLM routing
 

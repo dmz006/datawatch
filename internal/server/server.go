@@ -408,6 +408,8 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	// BL303 S2 — guardrail library + profile CRUD.
 	apiMux.HandleFunc("/api/autonomous/guardrails", api.handleAutonomousGuardrails)
 	apiMux.HandleFunc("/api/autonomous/guardrail_profiles", api.handleAutonomousGuardrailProfiles)
+	apiMux.HandleFunc("/api/autonomous/subscriptions", api.handleAutonomousSubscriptions)
+	apiMux.HandleFunc("/api/autonomous/subscriptions/", api.handleAutonomousSubscriptions)
 	apiMux.HandleFunc("/api/autonomous/guardrail_profiles/", api.handleAutonomousGuardrailProfiles)
 	// BL410 Phase 1 — retry profile CRUD.
 	apiMux.HandleFunc("/api/autonomous/retry_profiles", api.handleAutonomousRetryProfiles)
@@ -1062,6 +1064,13 @@ func (s *HTTPServer) SetPipelineAPI(api PipelineAPI) {
 // return 503).
 func (s *HTTPServer) SetAutonomousAPI(api AutonomousAPI) {
 	s.api.SetAutonomousAPI(api)
+}
+
+// SetAutonomousSubscriptions (BL427 phase 3) wires the lifecycle event
+// subscription store for /api/autonomous/subscriptions. Nil disables the
+// endpoints (handlers return 503).
+func (s *HTTPServer) SetAutonomousSubscriptions(api LifecycleSubscriptionsAPI) {
+	s.api.SetAutonomousSubscriptions(api)
 }
 
 // SetGitTokenMinter (v5.26.24) wires the BL113 token broker for

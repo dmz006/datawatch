@@ -124,6 +124,9 @@ documenting coverage gaps and the reasoning behind them.
 | `PUT /api/llms/{name}` (`max_inflight`) | `llm_update` / `llm_add` | Complete | per-LLM cap on autonomous sessions |
 | `POST /api/autonomous/prds/{id}/run` | `autonomous_prd_run` | Complete | `?view=compact` (absent or `view=full` = full; MCP sends `view=compact`) |
 | `GET /api/autonomous/learnings` | `autonomous_learnings` | Complete | |
+| `GET /api/autonomous/subscriptions` | `autonomous_subscriptions` | Complete | list the operator's persisted lifecycle event subscriptions (optional `?owner=` filter) |
+| `POST /api/autonomous/subscriptions` | `autonomous_subscribe` | Complete | body `{filter:{kinds[], level?, prd_id?, task_id?, story_id?, owner?}, sink:{type, target}, action:{type, text}?, coalesce?, one_shot?, expires_at?}`; 400 with the validation message on bad input; sinks `comm`/`session`/`topic`/`alert` (webhook + mcp_queue deferred to later phases). MCP `expires_in_seconds` maps to `expires_at` |
+| `DELETE /api/autonomous/subscriptions/{id}` | `autonomous_unsubscribe` | Complete | 404 for unknown ids (also accepted as `DELETE ?id={id}`); one-shot subscriptions are also auto-deleted after first delivery; changes take effect live (engine re-attaches), no restart needed |
 
 ### Automation records
 

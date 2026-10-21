@@ -66,6 +66,7 @@ Legend:
 | Animated "eye" loading state (replacing plain "Loading…" / shimmer bars) | ❌ — tracked, `dmz006/datawatch#186`, not started | ✅ | ✅ |
 | Native ACME / Let's Encrypt cert management — HTTP-01 + DNS-01 (Cloudflare) + zero-downtime hot-swap (BL397) | ✅ v8.62.x | N/A (server-side feature; apps just consume whatever cert the daemon serves) | N/A |
 | Plan review before approval — verdict panel (pass / findings / reviewer-outage state), re-run button, long approve-rejection toast, `plan_review_*` + `smoke_verification_*` settings fields, smoke/final-gate task chips | ✅ | ❌ (tracked: [app#266](https://github.com/dmz006/datawatch-app/issues/266)) | ❌ (tracked: [app#266](https://github.com/dmz006/datawatch-app/issues/266)) |
+| Automaton lifecycle event subscriptions — daemon-side CRUD (REST/MCP/CLI/comm) + session-push | ✅ (Unreleased — Phase 3 of `plans/2026-10-13-prd-lifecycle-events.md`) | ❌ (subscription *editor* UI is Phase 4 of that plan; event *delivery* already flows via the v9.3.0 `PublishToTopic` → UnifiedPush path) | ⏳ file a `dmz006/datawatch-app` issue on merge — spec + Android/iOS build guidance in [`plans/2026-10-21-datawatch-app-lifecycle-subscriptions-note.md`](plans/2026-10-21-datawatch-app-lifecycle-subscriptions-note.md) |
 
 ## Known PWA gaps (tracked, not yet closed)
 
@@ -85,6 +86,7 @@ The table above tracks **shipped** client parity. This section tracks **in-fligh
 | Eval nodes in the PRD-DAG orchestrator | REST, MCP, CLI, comm, PWA | planned — spec under `docs/plans/harness-impl/` (proposal: `docs/plans/harness-research/enhancement-proposals.md` §2) |
 | Red-team validator pipeline (deepening the injection guard) | REST, MCP, CLI, comm, PWA | planned — spec under `docs/plans/harness-impl/` (proposal: `docs/plans/harness-research/enhancement-proposals.md` §5) |
 | ACME B1 (delegated-zone DNS-01 via an extended `dns_channel`) | internal + YAML | deferred — a much larger subsystem than Phase 2's scoped-token path (B2, shipped); see the BL397 plan doc's scope note |
+| Automata lifecycle subscriptions — Phase 4 (PWA editor + `autonomous_events_pending` / `events` CLI + `GET /autonomous/events`) and Phase 5 (webhook sink, federation forwarding) | REST, MCP, CLI, comm, PWA, app (note) | planned — `docs/plans/2026-10-13-prd-lifecycle-events.md` (Phase 3 shipped Unreleased; app-side UI tracked in `docs/plans/2026-10-21-datawatch-app-lifecycle-subscriptions-note.md`) |
 
 Features promoted to shipped move a row into the Feature Parity Table above with per-client ✅/🔶/❌ columns and `datawatch-app` tracking; until then they remain visible here.
 

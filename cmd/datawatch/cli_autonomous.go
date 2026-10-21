@@ -69,7 +69,12 @@ Subcommands:
   template-instantiate <id>       Create PRD from template (BL221 Phase 2)
   template-clone <prd-id>         Clone PRD to template (BL221 Phase 2)
   prd-instantiate <tmpl-id>       Instantiate legacy YAML template (BL191)
-  learnings                       List extracted post-task learnings`,
+  learnings                       List extracted post-task learnings
+  subscriptions [--owner X]       List persisted lifecycle event subscriptions (BL427)
+  subscribe --on <kind> ...       Subscribe to lifecycle events → sink: comm|session|topic|alert (BL427)
+                                  shorthand: --task <id> --on session_started --send "<text>"
+  unsubscribe <id>                Delete a lifecycle event subscription by id (BL427)
+`,
 	}
 	cmd.AddCommand(
 		newAutonomousStatusCmd(),
@@ -127,6 +132,10 @@ Subcommands:
 		newAutonomousTemplateDeleteCmd(),
 		newAutonomousTemplateInstantiateCmd(),
 		newAutonomousTemplateCloneCmd(),
+		// BL427 lifecycle-event subscriptions.
+		newAutonomousSubscriptionsCmd(),
+		newAutonomousSubscribeCmd(),
+		newAutonomousUnsubscribeCmd(),
 	)
 	return cmd
 }
@@ -462,7 +471,7 @@ func newAutonomousPRDAckCoverageCmd() *cobra.Command {
 			"The ack is pinned to the exact failing surface at the time it is recorded (unmatched requirements + structural findings), " +
 			"so approving after the plan changed needs a fresh ack. " +
 			"Use prd-coverage <id> to read the report first.",
-		Args:  cobra.ExactArgs(1),
+		Args: cobra.ExactArgs(1),
 		RunE: func(_ *cobra.Command, args []string) error {
 			if strings.TrimSpace(note) == "" {
 				return fmt.Errorf("a non-empty --note is required to acknowledge a failing plan-coverage report")

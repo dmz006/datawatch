@@ -504,6 +504,58 @@ Step 1/3: Enter bot token:
 - Signal setup cannot be performed over a messaging channel (QR code required). You will receive instructions to run `datawatch setup signal` on the host machine.
 - Type `cancel` or `abort` at any prompt to exit the wizard.
 
+### `autonomous subscribe <kinds|short-names> [prd=<id>] [task=<id>]`
+
+Subscribe this comm channel to Automaton (PRD/task) lifecycle events
+(BL427 phase 3). When a matching event fires, the daemon delivers it back
+over this channel's comm sink, batched per Automaton during the quiet
+window (coalesced by default).
+
+**Syntax:** `autonomous subscribe <kinds> [prd=<id>] [task=<id>]`
+
+- `<kinds>` — one or more event kinds, comma-separated. Shorthand words
+  map to task kinds (`session_started` = `task.session_started`);
+  full kinds pass through (`prd.blocked`, `task.completed`), and any
+  other bare word is treated as a task status kind (`waiting_capacity`
+  → `task.waiting_capacity`).
+- `prd=<id>` / `task=<id>` — scope the subscription to one Automaton or
+  one task.
+
+**Example:**
+```
+autonomous subscribe session_started,prd.blocked prd=prd_a3f9
+```
+→ `subscribed sub_a3f2  kinds=task.session_started,prd.blocked  prd=prd_a3f9  sink=comm -> telegram:-1001234  coalesce=yes  (owner telegram:-1001234)`
+
+Each channel's identity (`<backend>:<group-id>`) becomes both the sink
+**target** and the **owner** — a channel receives the events it
+subscribed to and manages only its own subscriptions.
+
+### `autonomous subscriptions`
+
+List this channel's lifecycle-event subscriptions (owner-scoped — you
+never see other channels' subscriptions). One record per line:
+```
+sub_a3f2  kinds=task.session_started,prd.blocked  prd=prd_a3f9  sink=comm -> telegram:-1001234  coalesce=yes
+```
+
+### `autonomous unsubscribe <id>`
+
+Delete one of **this channel's** subscriptions. The id is verified
+against this channel's owner-scoped list before the delete reaches the
+deemon — a channel that created a subscription (or the daemon itself)
+removes it:
+```
+autonomous unsubscribe sub_a3f2
+```
+→ `deleted sub_a3f2`
+
+> The other `autonomous` verbs (status, list, plan-review, …) work from
+> a comm channel the same way; this section documents the lifecycle
+> subscription verbs. The CLI equivalents are
+> `datawatch autonomous subscribe/unsubscribe/subscriptions` (richer
+> flags, including session/topic/alert sinks).
+
 ---
 
 ## CLI Commands
@@ -867,6 +919,9 @@ PRD lifecycle — full CRUD parity with the REST + MCP surfaces.
 | `status` | One-shot status (running PRDs, child PRD count, max recursion depth, blocked PRDs, verdict counts) |
 | `config get/set` | Get / set autonomous engine config (max_recursion_depth, auto_approve_children, per_task_guardrails, per_story_guardrails) |
 | `learnings` | List engine learnings (BL202) |
+| `subscribe --on <kind> [--level prd|task] [--prd <id>] [--task <id>] --sink comm\|session\|topic\|alert --target <t> [--send <text>] [--one-shot] [--coalesce] [--expires <secs>]` | Subscribe to Automaton lifecycle events and route them to a sink (BL427 phase 3); `--on` is repeatable; shorthand words map to task kinds, full kinds pass through |
+| `unsubscribe <id>` | Delete a lifecycle-event subscription by id (BL427 phase 3) |
+| `subscriptions [--owner <owner>]` | List lifecycle-event subscriptions, optionally scoped to one owner (BL427 phase 3) |
 | `prd list/get/create/decompose/edit/edit-task/delete/instantiate/run/cancel` | PRD CRUD (cancel + edit + delete added in v5.19.0) |
 | `prd approve/reject/request-revision` | BL191 Q1 review/approve gate (v5.2.0) |
 | `prd children` | List child PRDs spawned via SpawnPRD (v5.9.0, BL191 Q4) |
