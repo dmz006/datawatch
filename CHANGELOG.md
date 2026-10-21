@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.47 — Daemon restart no longer revives stale running Automata
+
+### Added
+- **New setting `autonomous.resume_max_age_seconds` (default 3600)** — how old a left-running Automaton's newest activity may be at daemon restart and still be eligible to resume. `0` = never auto-resume after a restart, `-1` = no age limit. Both values can be set from the config file, the REST API (`autonomous.resume_max_age_seconds`, or the autonomous config endpoint), the MCP autonomous-config tools, the `datawatch autonomous config-set` CLI, the comm-channel `configure` command, and the Settings card in the web UI (label and hint provided in all five language bundles).
+
+### Fixed
+- **A daemon restart no longer unconditionally revives every running Automaton.** At startup, each Automaton that was left running before the restart is checked against the resume-age limit and its project directory is verified to still exist. A fresh Automaton resumes as before; a stale one — or one whose project directory is gone (for example a reclaimed temp directory) — is parked as `blocked` with a plain-English reason and an operator alert is raised, instead of silently re-running from a dead context. A parked Automaton can be approved manually if it should still run.
+- **Every boot decision is now auditable.** The startup log, the Automaton's decision log, and the `boot_resume` list on the autonomous status all record each Automaton that was resumed or parked, with its age in seconds at decision time and the reason — so the operator can see exactly why a stale or missing-directory Automaton was parked.
+
 ## v9.5.46 — A silently exited one-shot pi task is caught and retried
 
 - **A one-shot pi task where the pi process quits without ever writing a completion or a verdict no longer stalls the PRD** — the daemon now notices the silence after the idle limit (autonomous.session_idle_timeout_seconds, default 15 minutes), stops the session, and retries the task.
