@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.50 — Container scans: certifi pinned in agent-aider, libcups2 accepted in parent-full
+
+### Security
+- **The `agent-aider` image now installs certifi 2026.10.19 or newer**, which clears the CRITICAL advisory GHSA-6q48-6c7w-9gw2 (compromised emSign root CAs). `scripts/check-dockerfile-certifi.sh` fails the build if the pin is missing or below that floor; it runs in the `ci` workflow and has a `--self-test` mode.
+- **libcups2 CVE-2026-55453 in the `parent-full` image is now an accepted risk.** Debian bookworm has no fixed `libcups2` yet (the fix is only in sid), the flaw needs a hostile IPP printer, and the image does not print. The entry in `security/accepted-risks.yml` expires on 2026-11-20 and `.trivyignore` was regenerated from it. Evidence is in `docs/plans/2026-10-21-trivy-aider-parent-full.md`.
+
 ## v9.5.49 — MCP held to REST's reliability bar
 
 ### Fixed
