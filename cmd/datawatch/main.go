@@ -4117,11 +4117,11 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			// 0 is meaningful (never resume) and -1 passes through as-is;
 			// 3600 arrives only if the daemon config itself supplied nothing
 			// (config.Load merges over DefaultConfig()).
-			ResumeMaxAgeSeconds:      acfgIn.ResumeMaxAgeSeconds,
-			StaleTaskSeconds:           acfgIn.StaleTaskSeconds,
-			AutoFixRetries:             acfgIn.AutoFixRetries,
-			VerifierDiffMaxBytes:       acfgIn.VerifierDiffMaxBytes,
-			SecurityScan:               acfgIn.SecurityScan,
+			ResumeMaxAgeSeconds:  acfgIn.ResumeMaxAgeSeconds,
+			StaleTaskSeconds:     acfgIn.StaleTaskSeconds,
+			AutoFixRetries:       acfgIn.AutoFixRetries,
+			VerifierDiffMaxBytes: acfgIn.VerifierDiffMaxBytes,
+			SecurityScan:         acfgIn.SecurityScan,
 			// v5.17.0 — BL191 Q4 + Q6 config bridge. The autonomous
 			// Manager has carried these fields since v5.9.0 / v5.10.0
 			// but the YAML + REST + PWA path didn't until now; pre-
@@ -5624,6 +5624,88 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				},
 				CommWindow: 5 * time.Second, // same quiet window as the remote-alert bundler
 			})
+			// BL427 (phase 3) — run the operator's persisted lifecycle
+			// subscriptions from the SubscriptionStore: each subscription's
+			// filter is registered on the dispatcher and matching events are
+			// delivered to the target session via that session's Claude Code
+			// channel bridge (POST http://127.0.0.1:<ChannelPort>/send, the
+			// same payload the session push endpoints accept), falling back
+			// to SendInput when the port is 0 or the bridge POST errors. A
+			// send_input action on task.session_started targets the worker
+			// session the event records. Delivery runs on the dispatcher's
+			// subscriber goroutine, so a stalled bridge or busy session can
+			// never block the executor path. One-shot subscriptions are
+			// consumed (store delete + audit record) only after a successful
+			// delivery; on failure the engine retries once, logs, and leaves
+			// the subscription armed for a later event.
+			if lifeSubStore, err := autonomouspkg.NewSubscriptionStore(
+				filepath.Join(expandHome(cfg.DataDir), "lifecycle_subscriptions.json"), encKey,
+			); err != nil {
+				log.Printf("[warn] lifecycle subscription store: %v", err)
+			} else {
+				lifeSubCommSend := func(text string) {
+					// Same notify pipeline as the CommSink above, honouring
+					// notify_exclude per send.
+					excludeSet := notifyExcludeSet(cfg.NotifyExclude)
+					for _, r := range routers {
+						if !isNotifyExcluded(excludeSet, r.BackendName()) {
+							r.SendDirect(text)
+						}
+					}
+					if ntfyBackend != nil && !isNotifyExcluded(excludeSet, "ntfy") {
+						ntfyBackend.Send(cfg.Ntfy.Topic, text) //nolint:errcheck
+					}
+					if emailBackend != nil && !isNotifyExcluded(excludeSet, "email") {
+						emailBackend.Send(cfg.Email.To, text) //nolint:errcheck
+					}
+				}
+				lifeSubEngine := autonomouspkg.NewLifecycleSubscriptionEngine(amgr, lifeSubStore, autonomouspkg.SessionPushConfig{
+					// Resolve a session name, full ID, or short ID to the
+					// session's full ID and channel-bridge port (0 when the
+					// session has no bridge — then the engine uses SendInput
+					// directly). GetSession matches full and short IDs; a
+					// human-readable name falls through to FindSessionByName.
+					FindSession: func(nameOrID string) (string, int, bool) {
+						s, ok := mgr.GetSession(nameOrID)
+						if !ok {
+							s, ok = mgr.FindSessionByName(nameOrID)
+						}
+						if !ok {
+							return "", 0, false
+						}
+						return s.FullID, s.ChannelPort, true
+					},
+					// PostBridge left nil — the engine defaults to
+					// DefaultBridgePost (5s timeout, falls to SendInput on
+					// any error).
+					SendInput: mgr.SendInput, // source tag "lifecycle-sub" is set by the engine
+					Comm:      autonomouspkg.CommSinkConfig{Send: lifeSubCommSend, Window: 5 * time.Second},
+					RecordAlert: func(level, title, body string) {
+						lv := alertspkg.LevelInfo
+						switch level {
+						case "warn":
+							lv = alertspkg.LevelWarn
+						case "error":
+							lv = alertspkg.LevelError
+						}
+						_ = alertStore.Add(lv, title, body, "")
+					},
+					PublishTopics: func(topics []string, title, message string) {
+						for _, tp := range topics {
+							server.PublishToTopic(tp, server.PushEvent{
+								Title:   title,
+								Message: message,
+								Tags:    []string{"lifecycle"},
+							})
+						}
+					},
+				})
+				if err := lifeSubEngine.Start(); err != nil {
+					log.Printf("[warn] lifecycle subscription engine: %v", err)
+				} else {
+					defer lifeSubEngine.Close()
+				}
+			}
 			wireCapacity(context.Background(), cfg, mgr, amgr, httpServer, func(title, body string) {
 				alertStore.AddSystem(alertspkg.LevelWarn, title, body)
 			})
