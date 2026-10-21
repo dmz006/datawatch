@@ -76,6 +76,9 @@ jobs:
       - name: go toolchain pin floor check
         run: bash scripts/check-go-toolchain-pins.sh && bash scripts/check-go-toolchain-pins.sh --self-test
 
+      - name: dockerfile certifi floor check
+        run: bash scripts/check-dockerfile-certifi.sh && bash scripts/check-dockerfile-certifi.sh --self-test
+
       - name: go test
         run: go test ./... -count=1 -timeout 5m
 

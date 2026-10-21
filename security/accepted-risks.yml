@@ -206,6 +206,23 @@ entries:
     validated_by: "claude-session"
     reason: "No fix available in Debian bookworm: security-tracker.debian.org/tracker/CVE-2026-53615 (checked 2026-10-21) lists bookworm 2.38.1-5+deb12u3 as vulnerable with no fixed version (Debian bug 1140197); fixed only in trixie 2.41.5-0+deb13u1. Review by 2026-11-20 and remove once Debian ships a bookworm util-linux update (see docs/plans/2026-10-21-cve-2026-53615-agent-base.md)."
 
+  - id: cve/CVE-2026-55453
+    kind: container
+    package: "libcups2"
+    version: "2.4.2-3+deb12u9"
+    severity: high
+    images:
+      - parent-full
+    impact:
+      traced: false
+      reachable: "unknown"
+      analysis: "CUPS backend quote_string() in backend/ipp.c keeps CR/LF in a printer-supplied marker message, so a hostile or spoofed IPP printer can inject a newline that the scheduler reads as a separate PPD control line and saves an attacker-chosen PPD keyword; the reporter showed this can lead to arbitrary code execution as the lp user through a later print job on a Foomatic-backed queue. Exploitation needs a CUPS scheduler talking to an attacker-controlled IPP printer plus a later print job. parent-full pulls libcups2 only as a library dependency of the Java runtime (openjdk jre-headless) and is not expected to run a CUPS scheduler or print (not verified against the parent runtime configuration); not exposed via datawatch REST/MCP APIs. No other image's Trivy log lists libcups2."
+    first_added: "2026-10-21"
+    added: "2026-10-21"
+    expires: "2026-11-20"
+    validated_by: "claude-session"
+    reason: "No fix available in Debian bookworm: security-tracker.debian.org/tracker/CVE-2026-55453 (checked 2026-10-21) lists bookworm 2.4.2-3+deb12u9 as vulnerable with no fixed version (Debian bug 1150560); fixed only in sid 2.4.20-1. Review by 2026-11-20 and remove once Debian ships a bookworm cups update (see docs/plans/2026-10-21-trivy-aider-parent-full.md)."
+
   - id: cve/CVE-2025-26625
     kind: container
     package: "git-lfs"

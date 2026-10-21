@@ -24,6 +24,8 @@ RUN install_packages \
     # Use python -m pip (not the pip symlink) — Debian venvs omit the bare pip binary.
     /opt/pipx/venvs/aider-chat/bin/python -m pip install --quiet --no-cache-dir \
         "gitpython>=3.1.50" \
+        # certifi floor clears GHSA-6q48-6c7w-9gw2
+        "certifi>=2026.10.19" \
         "litellm>=1.83.7" \
         "urllib3>=2.8.0" \
         "pyasn1>=0.6.3" \
