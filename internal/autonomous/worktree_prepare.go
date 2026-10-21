@@ -21,7 +21,7 @@ import (
 )
 
 // docsIndexPlaceholderPath is the worktree-relative path of the
-// go:embed target that must exist for the build to succeed.
+// embed target (the go:embed pattern) that must exist for the build to succeed.
 const docsIndexPlaceholderPath = "internal/docsindex/assets/docs-bm25-index.json"
 
 // prepareWorktree brings a freshly created (or reused) worktree to a
@@ -107,7 +107,7 @@ func appendGitExcludeLine(excludePath, line string) error {
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	data, _ := os.ReadFile(excludePath) // re-check just in case of concurrent appends
 	if len(data) > 0 && !strings.HasSuffix(string(data), "\n") {
 		if _, werr := f.WriteString("\n"); werr != nil {
