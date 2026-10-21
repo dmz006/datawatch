@@ -3,9 +3,10 @@
 // (the same store the daemon's LifecycleSubscriptionEngine runs from
 // <data_dir>/lifecycle_subscriptions.json).
 //
-//	GET    /api/autonomous/subscriptions        — list
+//	GET    /api/autonomous/subscriptions        — list (optional ?owner= filter)
 //	POST   /api/autonomous/subscriptions        — create (201 + the record)
 //	DELETE /api/autonomous/subscriptions/{id}   — delete (204)
+//	DELETE /api/autonomous/subscriptions?id=    — delete (204, same as above)
 //
 // The store's Add/Delete run ValidateSubscription, so malformed input is
 // a 400 carrying the store's message and an unknown id on delete is a
@@ -65,11 +66,15 @@ func (s *Server) handleAutonomousSubscriptions(w http.ResponseWriter, r *http.Re
 	rest := strings.TrimPrefix(r.URL.Path, "/api/autonomous/subscriptions")
 	rest = strings.Trim(rest, "/")
 	id := rest
+	if id == "" {
+		id = r.URL.Query().Get("id") // delete also accepts ?id=
+	}
 
 	if id == "" {
 		switch r.Method {
 		case http.MethodGet:
-			list := s.autonomousSubs.List("")
+			owner := r.URL.Query().Get("owner") // optional filter; empty = all
+			list := s.autonomousSubs.List(owner)
 			if list == nil {
 				list = []autonomous.Subscription{} // never "null" to the operator
 			}

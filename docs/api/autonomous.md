@@ -71,9 +71,9 @@ PUT    /api/automations/{id}         update; body: create fields + expected_vers
 DELETE /api/automations/{id}         delete (draft/completed/cancelled only); body: {actor?, reason?}
 
 # Lifecycle event subscriptions (BL427 — PRD lifecycle events, phase 3)
-GET    /api/autonomous/subscriptions        list persisted lifecycle event subscriptions
+GET    /api/autonomous/subscriptions        list persisted lifecycle event subscriptions (optional ?owner= lists only those created by the named owner)
 POST   /api/autonomous/subscriptions        create (201 + the record); body: {filter:{kinds[], level?, prd_id?, task_id?, story_id?, owner?}, sink:{type, target}, action:{type, text}?, coalesce?, one_shot?, expires_at?}. Sink types: comm | session | topic | alert. An action is only valid with a session sink (action.type must be send_input, ≤4096 chars). 400 with the validation message on bad input
-DELETE /api/autonomous/subscriptions/{id}   delete (204; 404 when unknown). One-shot subscriptions are also auto-deleted by the engine after their first delivery. Changes take effect live — the engine re-attaches on store changes, no restart
+DELETE /api/autonomous/subscriptions/{id}   delete (204; 404 when unknown) — also accepted as DELETE /api/autonomous/subscriptions?id={id}. One-shot subscriptions are also auto-deleted by the engine after their first delivery. Changes take effect live — the engine re-attaches on store changes, no restart
 ```
 
 `GET/POST/DELETE /api/autonomous/subscriptions` sit on the operator's

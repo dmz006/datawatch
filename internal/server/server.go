@@ -409,6 +409,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/autonomous/guardrails", api.handleAutonomousGuardrails)
 	apiMux.HandleFunc("/api/autonomous/guardrail_profiles", api.handleAutonomousGuardrailProfiles)
 	apiMux.HandleFunc("/api/autonomous/subscriptions", api.handleAutonomousSubscriptions)
+	apiMux.HandleFunc("/api/autonomous/subscriptions/", api.handleAutonomousSubscriptions)
 	apiMux.HandleFunc("/api/autonomous/guardrail_profiles/", api.handleAutonomousGuardrailProfiles)
 	// BL410 Phase 1 — retry profile CRUD.
 	apiMux.HandleFunc("/api/autonomous/retry_profiles", api.handleAutonomousRetryProfiles)

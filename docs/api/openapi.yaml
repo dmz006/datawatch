@@ -1311,6 +1311,42 @@ paths:
       tags: [Autonomous]
       responses: {"200": {description: OK}}
 
+  # ─── Lifecycle event subscriptions (BL427 phase 3) ────────────
+  /api/autonomous/subscriptions:
+    get:
+      summary: List persisted lifecycle event subscriptions
+      operationId: autonomousSubscriptionList
+      tags: [Autonomous]
+      parameters:
+        - name: owner
+          in: query
+          required: false
+          schema: {type: string}
+          description: Optional; omit for all subscriptions, set to list only those created by the named owner
+      responses:
+        "200": {description: "Array of subscriptions (empty array when none)"}
+        "503": {description: subscription engine not wired into this server}
+    post:
+      summary: Create a lifecycle event subscription (takes effect without restart)
+      operationId: autonomousSubscriptionCreate
+      tags: [Autonomous]
+      responses:
+        "201": {description: Created subscription, with the server-assigned id}
+        "400": {description: "Validation message from the subscription store"}
+        "503": {description: subscription engine not wired into this server}
+  /api/autonomous/subscriptions/{id}:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}}
+    delete:
+      summary: Delete a lifecycle event subscription
+      operationId: autonomousSubscriptionDelete
+      tags: [Autonomous]
+      responses:
+        "204": {description: Deleted}
+        "404": {description: Subscription id not found}
+        "405": {description: "Only DELETE is accepted on the {id} form (delete also works as DELETE ?id= on the collection path)"}
+        "503": {description: subscription engine not wired into this server}
+
   # ─── Plugin framework (BL33, v3.11.0) ──────────────────────────
   /api/plugins:
     get:

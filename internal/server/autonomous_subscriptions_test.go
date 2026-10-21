@@ -14,6 +14,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -267,5 +268,161 @@ func TestSubscriptionRESTFederationCaps(t *testing.T) {
 	s.handleAutonomousSubscriptions(rec, peerReq)
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("DELETE as autonomous:write peer: want 204, got %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+// TestSubscriptionsMuxRoutable is the regression for the ServeMux routing
+// gap: the collection pattern "/api/autonomous/subscriptions" alone does
+// not match "/api/autonomous/subscriptions/{id}", so DELETE-by-id 404'd
+// through the real mux even though the handler test (which calls the
+// handler directly) passed. Registering the trailing-slash subtree
+// pattern (which Go's mux also matches on the collection itself, since
+// the final element may be empty) covers both forms.
+func TestSubscriptionsMuxRoutable(t *testing.T) {
+	// Structural guard: server.go must keep registering the
+	// trailing-slash subtree pattern for the subscription routes; if
+	// it disappears, DELETE /api/autonomous/subscriptions/{id} 404s
+	// from the real ServeMux again.
+	src, err := os.ReadFile("server.go") // tests run in the package directory
+	if err != nil {
+		t.Fatalf("read server.go: %v", err)
+	}
+	wantSub := "apiMux.HandleFunc(\"/api/autonomous/subscriptions/\","
+	if !bytes.Contains(src, []byte(wantSub)) {
+		t.Fatalf("server.go no longer registers the trailing-slash subtree %q — "+
+			"DELETE /api/autonomous/subscriptions/{id} will 404 from the real mux", wantSub)
+	}
+	if !bytes.Contains(src, []byte("apiMux.HandleFunc(\"/api/autonomous/subscriptions\",")) {
+		t.Fatalf("server.go no longer registers /api/autonomous/subscriptions")
+	}
+
+	// Behavioural: drive the handler through a ServeMux registered exactly
+	// the way server.go does, so the path (not just the handler) is tested.
+	s, _ := newSubsRESTServer(t)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/autonomous/subscriptions", s.handleAutonomousSubscriptions)
+	mux.HandleFunc("/api/autonomous/subscriptions/", s.handleAutonomousSubscriptions)
+
+	body, err := json.Marshal(validSub())
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	var created autonomous.Subscription
+	resp, err := http.Post(srv.URL+"/api/autonomous/subscriptions", "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST via mux: %v", err)
+	}
+	defer resp.Body.Close()
+	if got := resp.StatusCode; got != http.StatusCreated {
+		t.Fatalf("POST via mux: want 201, got %d", got)
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&created); err != nil || created.ID == "" {
+		t.Fatalf("decode create via mux: %v id=%q", err, created.ID)
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, srv.URL+"/api/autonomous/subscriptions/"+created.ID, nil)
+	if err != nil {
+		t.Fatalf("new DELETE: %v", err)
+	}
+	resp, err = http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("DELETE via mux: %v", err)
+	}
+	defer resp.Body.Close()
+	if got := resp.StatusCode; got != http.StatusNoContent {
+		t.Fatalf("DELETE /subscriptions/{id} via mux: want 204, got %d (the original bug)", got)
+	}
+	if got := len(s.autonomousSubs.List("")); got != 0 {
+		t.Fatalf("store after mux delete: %d subs, want 0", got)
+	}
+}
+
+// TestSubscriptionsOwnerFilter covers the spec's "list with optional
+// ?owner=": no/empty owner lists everything, a value filters on
+// Subscription.Owner, and an owner nobody used lists nothing.
+func TestSubscriptionsOwnerFilter(t *testing.T) {
+	s, store := newSubsRESTServer(t)
+
+	mk := func(owner string) map[string]any {
+		m := validSub()
+		if owner != "" {
+			m["owner"] = owner
+		}
+		return m
+	}
+	for _, owner := range []string{"ops", "dev"} {
+		if rr := doSubs(t, s, http.MethodPost, "/api/autonomous/subscriptions", mk(owner)); rr.Code != http.StatusCreated {
+			t.Fatalf("POST owner=%s: got %d body=%s", owner, rr.Code, rr.Body.String())
+		}
+	}
+	if got := len(store.List("")); got != 2 {
+		t.Fatalf("store: %d subs, want 2", got)
+	}
+
+	cases := []struct {
+		q    string
+		want int
+	}{
+		{"", 2},       // no owner param — all
+		{"owner=", 2}, // empty owner — all
+		{"owner=ops", 1},
+		{"owner=dev", 1},
+		{"owner=nobody", 0},
+	}
+	for _, tc := range cases {
+		name := "no-owner"
+		if tc.q != "" {
+			name = tc.q
+		}
+		t.Run(name, func(t *testing.T) {
+			path := "/api/autonomous/subscriptions"
+			if tc.q != "" {
+				path += "?" + tc.q
+			}
+			rr := doSubs(t, s, http.MethodGet, path, nil)
+			if rr.Code != http.StatusOK {
+				t.Fatalf("GET ?%s: want 200, got %d body=%s", tc.q, rr.Code, rr.Body.String())
+			}
+			var list []autonomous.Subscription
+			if err := json.Unmarshal(rr.Body.Bytes(), &list); err != nil {
+				t.Fatalf("decode list: %v body=%q", err, rr.Body.String())
+			}
+			if len(list) != tc.want {
+				t.Fatalf("GET ?%s: %d subs, want %d", tc.q, len(list), tc.want)
+			}
+		})
+	}
+}
+
+// TestSubscriptionsDeleteByIDQueryParam covers the alternate delete form
+// DELETE /api/autonomous/subscriptions?id=<id> (the spec allows either
+// the {id} sub-path or the query parameter).
+func TestSubscriptionsDeleteByIDQueryParam(t *testing.T) {
+	s, store := newSubsRESTServer(t)
+
+	rr := doSubs(t, s, http.MethodPost, "/api/autonomous/subscriptions", validSub())
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("POST: got %d body=%s", rr.Code, rr.Body.String())
+	}
+	var created autonomous.Subscription
+	if err := json.Unmarshal(rr.Body.Bytes(), &created); err != nil || created.ID == "" {
+		t.Fatalf("decode create: %v id=%q", err, created.ID)
+	}
+
+	rr = doSubs(t, s, http.MethodDelete, "/api/autonomous/subscriptions?id="+created.ID, nil)
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("DELETE ?id=: want 204, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	if got := len(store.List("")); got != 0 {
+		t.Fatalf("store after delete ?id=: %d subs, want 0", got)
+	}
+
+	// A ?id= naming nothing that exists is still a 404, not a silent 204.
+	rr = doSubs(t, s, http.MethodDelete, "/api/autonomous/subscriptions?id=never-existed", nil)
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("DELETE ?id=unknown: want 404, got %d body=%s", rr.Code, rr.Body.String())
 	}
 }
