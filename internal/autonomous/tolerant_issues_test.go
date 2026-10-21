@@ -80,22 +80,22 @@ func checkIssues(t *testing.T, got []string, tc issuesTestCase) {
 func TestTolerantIssuesShapes(t *testing.T) {
 	wrappers := []struct {
 		name   string
-		decode func(string) (issues []string, err error, outcome, summary string)
+		decode func(string) (issues []string, outcome, summary string, err error)
 	}{
 		{
 			name: "guardrail verdict",
-			decode: func(raw string) ([]string, error, string, string) {
+			decode: func(raw string) ([]string, string, string, error) {
 				var v GuardrailVerdict
 				err := json.Unmarshal([]byte(raw), &v)
-				return v.Issues, err, v.Outcome, v.Summary
+				return v.Issues, v.Outcome, v.Summary, err
 			},
 		},
 		{
 			name: "verification result",
-			decode: func(raw string) ([]string, error, string, string) {
+			decode: func(raw string) ([]string, string, string, error) {
 				var r VerificationResult
 				err := json.Unmarshal([]byte(raw), &r)
-				return r.Issues, err, "", r.Summary
+				return r.Issues, "", r.Summary, err
 			},
 		},
 	}
@@ -107,17 +107,17 @@ func TestTolerantIssuesShapes(t *testing.T) {
 			wantLen:   2,
 		},
 		{
-			name:     "issues as objects with description/message/file/line/severity", 
-			issues:   `[` + objectIssueFragment + `]`, 
-			wantLen:  1, 
+			name:    "issues as objects with description/message/file/line/severity",
+			issues:  `[` + objectIssueFragment + `]`,
+			wantLen: 1,
 			// every present part must appear in the rendered string
 			wantContains: []string{"high", "f.go", "7", "d1", "m1"},
 		},
 		{
-			name:      "mixed array of strings and objects",
-			issues:    `["plain string issue", ` + objectIssueFragment + `]`,
-			wantLen:   2,
-			wantExact: []string{"plain string issue", "[high] f.go:7: d1 / m1"},
+			name:         "mixed array of strings and objects",
+			issues:       `["plain string issue", ` + objectIssueFragment + `]`,
+			wantLen:      2,
+			wantExact:    []string{"plain string issue", "[high] f.go:7: d1 / m1"},
 			wantContains: []string{"plain string issue"},
 		},
 		{name: "empty array", issues: `[]`, wantLen: 0},
@@ -132,15 +132,15 @@ func TestTolerantIssuesShapes(t *testing.T) {
 		},
 		{
 			name:      "object with only unknown keys falls back to compact JSON",
-			issues:    `{"wat":1}`, 
-			wantExact: []string{`{"wat":1}`}, 
+			issues:    `{"wat":1}`,
+			wantExact: []string{`{"wat":1}`},
 			wantLen:   1,
 		},
 	}
 	for _, w := range wrappers {
 		for _, tc := range cases {
 			t.Run(w.name+" "+tc.name, func(t *testing.T) {
-				issues, err, outcome, summary := w.decode(spliceIssues(w.name, tc.issues))
+				issues, outcome, summary, err := w.decode(spliceIssues(w.name, tc.issues))
 				if err != nil {
 					if strings.Contains(err.Error(), legacyIssuesError) {
 						t.Fatalf("legacy error text must never be produced: %v", err)
@@ -202,7 +202,7 @@ func TestTolerantIssuesStrictOtherFields(t *testing.T) {
 	// And the valid combination (right types everywhere, object
 	// issues) must still decode.
 	var v GuardrailVerdict
-	if err := json.Unmarshal([]byte(wrapGuardrail(`[` + objectIssueFragment + `]`)), &v); err != nil {
+	if err := json.Unmarshal([]byte(wrapGuardrail(`[`+objectIssueFragment+`]`)), &v); err != nil {
 		t.Fatalf("valid verdict with object issues must decode: %v", err)
 	}
 	if v.Outcome != "block" || v.Severity != "high" || v.Summary != "verdict summary" {
@@ -264,7 +264,7 @@ func TestIssuesRoundTrip(t *testing.T) {
 	// Decoding an object-shaped issues fixture, marshalling, and
 	// decoding again must be stable on the []string.
 	var fx GuardrailVerdict
-	if err := json.Unmarshal([]byte(wrapGuardrail(`[` + objectIssueFragment + `]`)), &fx); err != nil {
+	if err := json.Unmarshal([]byte(wrapGuardrail(`[`+objectIssueFragment+`]`)), &fx); err != nil {
 		t.Fatalf("decode fixture: %v", err)
 	}
 	out2, err := json.Marshal(&fx)
