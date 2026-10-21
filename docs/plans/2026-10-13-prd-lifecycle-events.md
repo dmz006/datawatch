@@ -597,8 +597,10 @@ smoke against a real daemon, full `go test ./...` + `node --test`, the
    sinks rejected at validation, no SSRF/federation-forwarding code (Phase 4–5
    absent). Gate commands: `go build ./...` **PASS**; `go vet ./...` **PASS**
    (exit 0); `go test ./...` **PASS** (exit 0); `node --test
-   internal/server/web/*.test.js` **PASS** (304/304); `check-docs-sync.sh`
-   **PASS**; `check-howto-coverage.sh` **PASS**. One check red and **not caused
+   internal/server/web/*.test.js` **PASS** (304/304); `make sync-docs`
+   re-embedded the PWA plan-doc copy (files byte-identical; re-run after this
+   paragraph was appended); `check-docs-sync.sh` **PASS** (re-run after
+   `make sync-docs`); `check-howto-coverage.sh` **PASS**. One check red and **not caused
    by this phase**: `check-no-internal-refs.sh` reports 19 pre-existing
    `internal/server/web/openapi.yaml` `summary:` leaks (old IDs BL5/BL9/BL12/
    BL17/BL24/BL27/BL30/BL31/BL34/BL35/BL37/BL40/BL42/BL93/BL94/BL107/BL362, F10,
