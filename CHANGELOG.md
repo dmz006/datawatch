@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.46 — A silently exited one-shot pi task is caught and retried
+
+- **A one-shot pi task where the pi process quits without ever writing a completion or a verdict no longer stalls the PRD** — the daemon now notices the silence after the idle limit (autonomous.session_idle_timeout_seconds, default 15 minutes), stops the session, and retries the task.
+- **The silence is measured from the moment pi stopped, not from when the pane happens to read as waiting for input** — a pane whose state flickers after pi exits can no longer hide the dead run.
+- **The task records why it was retried** — the reason "pi print run exited without a completion or verdict" is attached to the task.
+
 ## v9.5.45 — A decompose whose save fails is retryable instead of stuck
 
 ### Fixed
