@@ -2061,6 +2061,11 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		m.onPreLaunch(sess)
 	}
 
+	// PRD workers must not read ancestor CLAUDE.md files (other sessions'
+	// Session:/Task: lines). Set on every launch: the backend is a singleton.
+	if ex, ok := backendObj.(interface{ SetExcludeAncestorClaudeMd(bool) }); ok {
+		ex.SetExcludeAncestorClaudeMd(sess.PRDID != "")
+	}
 	// Set session name on the backend (for --name flag) if it supports it
 	if nb, ok := backendObj.(llm.Nameable); ok && sess.Name != "" {
 		nb.SetSessionName(sess.Name)
@@ -3665,7 +3670,12 @@ func (m *Manager) Restart(ctx context.Context, fullID string) (*Session, error) 
 		m.onPreLaunch(sess)
 	}
 
-	// Set session name on backend
+	// PRD workers must not read ancestor CLAUDE.md files (other sessions'
+	// Session:/Task: lines). Set on every launch: the backend is a singleton.
+	if ex, ok := backendObj.(interface{ SetExcludeAncestorClaudeMd(bool) }); ok {
+		ex.SetExcludeAncestorClaudeMd(sess.PRDID != "")
+	}
+	// Set session name on the backend (for --name flag) if it supports it
 	if nb, ok := backendObj.(llm.Nameable); ok && sess.Name != "" {
 		nb.SetSessionName(sess.Name)
 	}

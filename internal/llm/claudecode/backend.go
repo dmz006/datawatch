@@ -5,9 +5,11 @@ import (
 	"context"
 	"crypto/sha1"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
 	"github.com/dmz006/datawatch/internal/llm"
@@ -41,6 +43,11 @@ type Backend struct {
 	// chrome (v8.8.3) — when non-nil, passes --chrome (true) or
 	// --no-chrome (false) to claude at launch. Nil = omit flag.
 	chrome *bool
+	// excludeAncestorClaudeMd — when true, Launch/LaunchResume pass
+	// `--settings {"claudeMdExcludes":[...]}` listing every CLAUDE.md in an
+	// ancestor of the project directory, so autonomous workers don't read
+	// other sessions' Session:/Task: guardrail lines. Off by default.
+	excludeAncestorClaudeMd bool
 }
 
 // New creates a claude-code backend. binaryPath defaults to "claude".
@@ -71,11 +78,56 @@ func (b *Backend) SetModel(model string) { b.model = model }
 // SetEffort (v5.27.5) — effort level forwarded to `--effort`.
 func (b *Backend) SetEffort(effort string) { b.effort = effort }
 
+// SetExcludeAncestorClaudeMd — opt-in: hide ancestor-directory CLAUDE.md files
+// (never the project's own or ~/.claude/CLAUDE.md) from the launched claude.
+// Set explicitly on every launch: the backend is a shared singleton.
+func (b *Backend) SetExcludeAncestorClaudeMd(on bool) { b.excludeAncestorClaudeMd = on }
+
+// ancestorClaudeMds returns the absolute path of every existing CLAUDE.md in
+// a strict ancestor of projectDir, nearest parent first. projectDir's own
+// CLAUDE.md and anything beneath it are never included.
+func ancestorClaudeMds(projectDir string) []string {
+	dir := filepath.Clean(projectDir)
+	if abs, err := filepath.Abs(dir); err == nil {
+		dir = abs
+	}
+	var out []string
+	for {
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+		p := filepath.Join(dir, "CLAUDE.md")
+		if st, err := os.Stat(p); err == nil && !st.IsDir() {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// settingsFlag returns the ` --settings '<json>'` flag excluding ancestor
+// CLAUDE.md files for projectDir, or "" when disabled or none exist.
+func (b *Backend) settingsFlag(projectDir string) string {
+	if !b.excludeAncestorClaudeMd {
+		return ""
+	}
+	paths := ancestorClaudeMds(projectDir)
+	if len(paths) == 0 {
+		return ""
+	}
+	js, err := json.Marshal(map[string][]string{"claudeMdExcludes": paths})
+	if err != nil {
+		return ""
+	}
+	return " --settings " + shellQuote(string(js))
+}
+
 // SetChrome (v8.8.3) — passes --chrome or --no-chrome to claude at launch.
 // Nil means neither flag is passed (let claude use its default).
 func (b *Backend) SetChrome(enabled bool) { b.chrome = &enabled }
 
-func (b *Backend) Name() string                  { return "claude-code" }
+func (b *Backend) Name() string                   { return "claude-code" }
 func (b *Backend) SupportsInteractiveInput() bool { return true }
 func (b *Backend) HasToolAccess() bool            { return true }
 
@@ -177,7 +229,7 @@ func sessionChannelName(tmuxSession string) string {
 func (b *Backend) Launch(ctx context.Context, task, tmuxSession, projectDir, logFile string) error {
 	channelName := sessionChannelName(tmuxSession)
 	pre := b.preFlagsStr(channelName)
-	post := b.postFlagsStr()
+	post := b.postFlagsStr() + b.settingsFlag(projectDir)
 
 	// Derive a deterministic session ID from the tmux session name so that
 	// LaunchResume can later --resume the same conversation by deriving the
@@ -220,7 +272,7 @@ func (b *Backend) ResumeKeepsTask() bool { return true }
 func (b *Backend) LaunchResume(ctx context.Context, task, tmuxSession, projectDir, logFile, resumeID string) error {
 	channelName := sessionChannelName(tmuxSession)
 	pre := b.preFlagsStr(channelName)
-	post := b.postFlagsStr()
+	post := b.postFlagsStr() + b.settingsFlag(projectDir)
 
 	// If resumeID is not a UUID, derive the deterministic UUID from the name
 	actualResumeID := resumeID
