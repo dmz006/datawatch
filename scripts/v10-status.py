@@ -13,8 +13,9 @@ supervisor tick:
     time to completion from the measured throughput
 
 Classification is a heuristic on title and spec (fix, flaky, defect, root
-cause, stall and similar words mean bug). Cancelled, rejected and archived
-PRDs are records of replaced or merged work and are not counted.
+cause, stall and similar words mean bug). Cancelled PRDs whose tasks all completed count as done (merged work whose
+record was closed at merge); other cancelled, rejected and archived PRDs are
+replaced or abandoned records and are not counted.
 
 Usage: python3 scripts/v10-status.py [--json] [--since 2026-10-10]
 No third-party packages; stdlib only.
@@ -108,7 +109,18 @@ def main():
     since_dt = datetime.fromisoformat(since).replace(tzinfo=timezone.utc)
     now = datetime.now(timezone.utc)
 
-    prds = [p for p in load_prds() if p["status"] not in SKIP_STATUS]
+    prds = []
+    for p in load_prds():
+        if p["status"] in SKIP_STATUS:
+            # A cancelled record whose tasks all completed is merged work whose
+            # record was closed at merge time: count it as done. Anything else
+            # cancelled, rejected or archived is a replaced or abandoned record.
+            ts = [t for s in p.get("stories", []) for t in s.get("tasks", [])]
+            if p["status"] == "cancelled" and ts and all(t["status"] == "completed" for t in ts):
+                p = dict(p, status="completed")
+            else:
+                continue
+        prds.append(p)
     prds = [
         p
         for p in prds
