@@ -177,6 +177,32 @@ curl -sk -X POST https://HOST:PORT/api/autonomous/prds/<prd_id>/rejudge \
 autonomous_prd_rejudge(id="<prd_id>")
 ```
 
+## Restarting the daemon while a task is in progress
+
+Restarting the daemon no longer wastes a task that was already `in_progress`
+with a live worker session. On boot, the resumed run looks at each
+`in_progress` task and does one of three things:
+
+- **Adopts the live worker** (the common case, when the worker's session
+  survived the restart). The task stays `in_progress` on the *same* session
+  id, keeps holding its capacity slot, and the resumed run simply waits for
+  the worker to finish and then verifies its result. No second worker is
+  spawned and no duplicate session appears for the same task.
+- **Sends the task straight to verification** when the worker session is
+  gone but its output already recorded a completion marker — the work
+  finished in the shutdown window, so verifying the existing output is
+  faster than re-running it.
+- **Resets the task to `pending`** only when the session is dead *and* no
+  completion marker exists. The old behavior was to reset unconditionally
+  and kill the worker; that is no longer the case.
+
+As operator this needs no action. If a restart happens mid-run, watch the
+Automaton with `prd_get`: an adopted task keeps its `session_id` and
+surfaces an `adopted_session` marker, and the session list shows the same
+worker session continuing to run. A reset task is the one to question —
+check the session's log for why it died (crash, OOM, operator kill) before
+resetting it again.
+
 ## Common pitfalls
 
 - **Cancelling a story mid-run and not restarting it.** The rest of the
