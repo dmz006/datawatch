@@ -521,11 +521,15 @@ type Manager struct {
 	monitors map[string]context.CancelFunc // fullID -> cancel func for monitor goroutine
 	trackers map[string]*Tracker           // fullID -> Tracker
 
-	// startupDialogSent prevents multiple goroutines from firing for the same
-	// startup dialog (channels consent, workspace-trust) when processOutputLine
-	// is called across multiple screen-capture ticks while the dialog is visible.
-	// Key: "fullID:dialog-type" (e.g. "johnnyjohnny-abc1:channels").
-	startupDialogSent sync.Map
+	// claudeDialogDismiss tracks the accept-keystroke record per
+	// (session, dialog) for claude-code startup dialogs (workspace trust,
+	// dev-channels consent). Key: fullID + ":" + dialog name.
+	// Replaces the old startupDialogSent sync.Map: that latch fired once and
+	// then blocked every further attempt, so a single failed or mistimed
+	// keystroke wedged the session permanently. This record instead tracks
+	// in-flight / attempts and confirms the dismissal once the dialog is
+	// observed gone — see dismissClaudeStartupDialog.
+	claudeDialogDismiss sync.Map
 
 	// summaries stores the last generated summary per session ID.
 	// Access is protected by the summariesMu mutex.
@@ -2322,6 +2326,18 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 						lines := strings.Split(capture, "\n")
 						m.onScreenCapture(sess, lines)
 					}
+
+					// One-shot claude-code startup dialogs (workspace trust /
+					// dev-channels consent) must be accepted: there is no human
+					// at the terminal, and the log-line match in
+					// processOutputLine can miss the TUI rendering. The capture
+					// loop is the only component started unconditionally for
+					// one-shot sessions, so it forms the reliable floor. Runs
+					// before the firstTick skip so a dialog already on screen
+					// at attach time is handled, not only later redraw. Gated
+					// on one-shot claude-code inside the helper — a no-op for
+					// interactive sessions and other backends.
+					m.dismissClaudeStartupDialog(current, capture)
 
 					// Skip state detection on the first tick for interactive
 					// sessions — this is the initial baseline capture when a
@@ -4516,13 +4532,234 @@ func (m *Manager) IsOpenCodeAtPrompt(fullID string) bool {
 }
 
 // SendTrustDialogAccept accepts the workspace-trust TUI dialog for sessID
-// by delegating to tmux.SendTrustPromptAccept (Down then Enter).
+// by delegating to tmux.SendTrustPromptAccept (pane-aware: Enter or
+// Down+Enter depending on which option claude preselected).
 func (m *Manager) SendTrustDialogAccept(fullID string) error {
 	sess, ok := m.store.Get(fullID)
 	if !ok {
 		return fmt.Errorf("session %s not found", fullID)
 	}
 	return m.tmux.SendTrustPromptAccept(sess.TmuxSession)
+}
+
+// Claude-code startup-dialog dismissal (workspace trust + dev-channels
+// consent), shared by the screen-capture loop and processOutputLine.
+//
+// One-shot sessions have no human at the terminal, and Claude Code's Ink
+// TUI renders the dialog text with cursor addressing so the per-log-line
+// match in processOutputLine can miss it entirely (split reads, redraws).
+// The capture loop reads the rendered pane and therefore forms the
+// reliable floor for the dismissal; both paths converge on
+// dismissClaudeStartupDialog, which inspects a block of text (a pane
+// capture or a log line) and sends the matching accept keystrokes through
+// the m.tmux abstraction.
+const (
+	claudeDialogTrust    = "trust"
+	claudeDialogChannels = "channels"
+
+	// claudeStartupDialogMaxAttempts bounds how many accept-send attempts
+	// one session may make for one dialog before a burst is exhausted
+	// (logged, left to the operator). The bound only throttles bursts: a
+	// dialog still on the screen re-arms the budget (see
+	// trySendDialogAccept), so a persisting dialog is retried forever at a
+	// bounded pace instead of being stranded.
+	claudeStartupDialogMaxAttempts = 5
+
+	// claudeStartupDialogRetryGap is the minimum distance between two send
+	// attempts for the same dialog — it only prevents two concurrent
+	// callers (capture loop + output monitor) from double-firing within a
+	// single burst; failed attempts are otherwise re-sent on the next
+	// evaluation that still sees the dialog.
+	claudeStartupDialogRetryGap = 10 * time.Millisecond
+
+	// claudeDialogConfirmWindow is how long the dialog must stay absent
+	// from the evaluated text after a successful accept send before the
+	// "dismissed" latch commits. A single fleeting absence (a mid-render
+	// frame, a cursor-addressing redraw, a stray log line that never
+	// carried the dialog text) must NOT confirm the dismissal: the
+	// one-shot live run of 2026-10-21 latched on exactly such a frame and
+	// left a still-visible trust dialog unhandled for ~6'41" (see
+	// docs/plans/2026-10-20-oneshot-startup-dialog-dismiss.md, Live
+	// Validation).
+	claudeDialogConfirmWindow = 700 * time.Millisecond
+
+	// claudeDialogReSendGap is the minimum wait after a successful send
+	// before a re-send is allowed when the dialog is still (or re-)visible
+	// — Claude needs a beat to apply the keystrokes, and re-firing while
+	// the TUI is mid-transition risks the second keystroke landing on the
+	// wrong frame.
+	claudeDialogReSendGap = 500 * time.Millisecond
+)
+
+// claudeDialogState is the per-(session, dialog) record of accept
+// keystrokes sent for one claude-code startup dialog. "Dismissed
+// confirmed" means the absence persisted past claudeDialogConfirmWindow
+// after a successful send — not "fired once": a failed send stays
+// retryable, a sent keystroke is suppressed while the dialog is still
+// visible (with a bounded re-send after the settle gap), and a dialog
+// text that re-appears after the dismissed latch re-arms the budget —
+// the stale latch wins nothing when the dialog is actually on the pane.
+type claudeDialogState struct {
+	mu          sync.Mutex
+	inFlight    bool      // an accept send went out; absence window running or not yet started
+	dismissed   bool      // sustained absence confirmed the dismissal — re-arm only if it re-appears
+	attempts    int       // send attempts made so far (bounded by claudeStartupDialogMaxAttempts)
+	lastAttempt time.Time // wall time of the last send attempt
+	absentSince time.Time // first absent evaluation after a successful send; zero = window not started
+}
+
+// dismissClaudeStartupDialog inspects text (a visible pane capture from
+// the screen-capture loop, or a log-pipe line via processOutputLine) for
+// claude-code startup dialogs on a one-shot session and sends the matching
+// accept keystrokes through m.tmux. Returns true if it sent or attempted a
+// send. Interactive sessions — where a human is at the terminal and the
+// main-loop pollers already cover auto-accept — and other backends are
+// intentionally untouched.
+func (m *Manager) dismissClaudeStartupDialog(sess *Session, text string) bool {
+	if sess == nil || sess.BackendFamily != "claude-code" || !sess.OneShot || sess.TmuxSession == "" {
+		return false
+	}
+	lower := strings.ToLower(StripANSI(text))
+
+	specs := []struct {
+		name       string
+		visible    bool
+		sendAccept func() error
+	}{
+		{
+			// "No, exit / Yes, I trust this folder" (the
+			// "Quick safety check" heading suffices) — confirm the
+			// preselected trust option via the existing TmuxAPI method
+			// (it reads the pane to pick between plain Enter and
+			// Down+Enter — see TmuxManager.SendTrustPromptAccept).
+			name:    claudeDialogTrust,
+			visible: strings.Contains(lower, "yes, i trust this folder") || strings.Contains(lower, "quick safety check"),
+			sendAccept: func() error {
+				return m.tmux.SendTrustPromptAccept(sess.TmuxSession)
+			},
+		},
+		{
+			// "❯ I am using this for local development" — confirm the
+			// pre-selected option with Enter. Match the option text only
+			// (not the "loading development channels" warning) so a stray
+			// Enter never races ahead of a still-pending trust dialog.
+			name:    claudeDialogChannels,
+			visible: strings.Contains(lower, "i am using this for local development"),
+			sendAccept: func() error {
+				return m.tmux.SendKeys(sess.TmuxSession, "Enter")
+			},
+		},
+	}
+
+	acted := false
+	for _, d := range specs {
+		if d.visible {
+			if m.trySendDialogAccept(sess, d.name, d.sendAccept) {
+				acted = true
+			}
+		} else {
+			m.markDialogConfirmedIfGone(sess, d.name)
+		}
+	}
+	return acted
+}
+
+// trySendDialogAccept sends the accept for the named dialog unless the
+// per-dialog record says otherwise: dismissed (confirmed gone), in flight
+// (send recorded, awaiting the dialog to disappear), attempts bounded,
+// or a second attempt inside the retry gap. A failed send leaves the
+// record retryable — a later evaluation that still sees the dialog
+// re-sends, up to the bound.
+func (m *Manager) trySendDialogAccept(sess *Session, dialog string, sendAccept func() error) bool {
+	key := sess.FullID + ":" + dialog
+	v, _ := m.claudeDialogDismiss.LoadOrStore(key, &claudeDialogState{})
+	st := v.(*claudeDialogState)
+
+	st.mu.Lock()
+	if st.dismissed {
+		// The dialog text is visible again after we confirmed a dismissal —
+		// the stale latch was wrong (it committed on a mid-render frame).
+		// Re-arm with a fresh budget; the settle gap below bounds the pace.
+		st.dismissed = false
+		st.absentSince = time.Time{}
+		st.attempts = 0
+		st.lastAttempt = time.Time{}
+		m.debugf("dismissClaudeStartupDialog: %s (%s): dialog re-appeared after dismiss confirmed — re-armed the accept budget", dialog, sess.FullID)
+	} else if st.inFlight {
+		// A successful send went out, but the dialog is still (or re-)visible:
+		// the keystrokes did not take (sent while the TUI was still rendering).
+		// Let the pane settle before re-sending instead of firing every tick.
+		if time.Since(st.lastAttempt) < claudeDialogReSendGap {
+			st.mu.Unlock()
+			return false
+		}
+		st.inFlight = false
+		st.absentSince = time.Time{} // any earlier absence streak is void once the dialog is visible again
+		if st.attempts >= claudeStartupDialogMaxAttempts {
+			st.attempts = 0
+			m.debugf("dismissClaudeStartupDialog: %s (%s): dialog still on screen after %d accepted sends — re-armed the accept budget", dialog, sess.FullID, claudeStartupDialogMaxAttempts)
+		}
+	}
+	if st.attempts >= claudeStartupDialogMaxAttempts {
+		st.mu.Unlock()
+		m.debugf("dismissClaudeStartupDialog: %s (%s): giving up after %d attempts — dialog still visible", dialog, sess.FullID, st.attempts)
+		return false
+	}
+	if st.attempts > 0 && time.Since(st.lastAttempt) < claudeStartupDialogRetryGap {
+		st.mu.Unlock()
+		return false
+	}
+	st.attempts++
+	attempt := st.attempts
+	st.mu.Unlock()
+
+	err := sendAccept()
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	st.lastAttempt = time.Now()
+	if err != nil {
+		st.inFlight = false
+		m.debugf("dismissClaudeStartupDialog: %s (%s): attempt %d/%d FAILED: %v — retrying while the dialog stays visible", dialog, sess.FullID, attempt, claudeStartupDialogMaxAttempts, err)
+		return true
+	}
+	st.inFlight = true
+	m.debugf("dismissClaudeStartupDialog: %s (%s): attempt %d/%d sent via m.tmux — awaiting the dialog to disappear", dialog, sess.FullID, attempt, claudeStartupDialogMaxAttempts)
+	return true
+}
+
+// markDialogConfirmedIfGone runs when an evaluation no longer sees the
+// named dialog in the text. If an accept send is in flight, absence starts
+// (and, once sustained past claudeDialogConfirmWindow, confirms) the
+// dismissal — a single fleeting absence never latches, so a mid-render
+// flash cannot lock out a dialog that is actually still on screen. If the
+// dialog vanished without our send confirming it (e.g. an operator
+// accepted it), clear the failed-attempt record so a fresh appearance
+// later in the session's life gets a full retry budget again.
+func (m *Manager) markDialogConfirmedIfGone(sess *Session, dialog string) {
+	v, ok := m.claudeDialogDismiss.Load(sess.FullID + ":" + dialog)
+	if !ok {
+		return
+	}
+	st := v.(*claudeDialogState)
+	st.mu.Lock()
+	defer st.mu.Unlock()
+	if st.inFlight {
+		if st.absentSince.IsZero() {
+			st.absentSince = time.Now()
+			m.debugf("dismissClaudeStartupDialog: %s (%s): absence observed — starting the dismiss confirm window", dialog, sess.FullID)
+			return
+		}
+		if time.Since(st.absentSince) < claudeDialogConfirmWindow {
+			return // keep the send confirmed-pending; absence may be a fleeting frame
+		}
+		st.inFlight = false
+		st.dismissed = true
+		st.attempts = 0
+		st.absentSince = time.Time{}
+		m.debugf("dismissClaudeStartupDialog: %s (%s): sustained absence — dismissed confirmed, no re-send", dialog, sess.FullID)
+	} else if st.attempts > 0 && !st.dismissed {
+		st.attempts = 0
+	}
 }
 
 // KillAll terminates all running and waiting sessions on this host.
@@ -6281,38 +6518,14 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 				}
 			}
 		}
-		// Auto-approve claude-code startup dialogs so executor/automated sessions
-		// don't block waiting for user input.
-		// Each handler fires at most once per session per dialog type — the
-		// startupDialogSent guard prevents duplicate goroutines when the same
-		// dialog text appears across multiple screen-capture ticks.
-		if sess.BackendFamily == "claude-code" && sess.TmuxSession != "" {
-			tmuxSess := sess.TmuxSession
-			// Channels dialog: with --channels pre-selecting option 1 ("I am using
-			// this for local development"), pressing Enter confirms it. Trigger on
-			// the specific option text only (not "Please use --channels") to avoid
-			// sending two Enters that would also dismiss the subsequent trust dialog.
-			if strings.Contains(line, "I am using this for local development") {
-				key := sess.FullID + ":channels"
-				if _, loaded := m.startupDialogSent.LoadOrStore(key, struct{}{}); !loaded {
-					go func() {
-						time.Sleep(300 * time.Millisecond)
-						_ = exec.Command("tmux", "send-keys", "-t", tmuxSess, "Enter").Run()
-					}()
-				}
-			}
-			// Trust dialog: "❯ No, exit / Yes, I trust this folder" — press Down to
-			// select "Yes, I trust this folder" and Enter to confirm.
-			if strings.Contains(line, "Yes, I trust this folder") {
-				key := sess.FullID + ":trust"
-				if _, loaded := m.startupDialogSent.LoadOrStore(key, struct{}{}); !loaded {
-					go func() {
-						time.Sleep(300 * time.Millisecond)
-						_ = exec.Command("tmux", "send-keys", "-t", tmuxSess, "Down", "Enter").Run()
-					}()
-				}
-			}
-		}
+		// Auto-approve claude-code startup dialogs (workspace trust /
+		// dev-channels consent) so automated sessions don't block waiting
+		// for user input. Shared with the screen-capture loop in
+		// dismissClaudeStartupDialog: gated on one-shot claude-code
+		// sessions, keystrokes go through the m.tmux abstraction
+		// (observable and testable), and the per-dialog record lets a
+		// failed send be retried instead of a permanent fire-once latch.
+		m.dismissClaudeStartupDialog(sess, line)
 		// Check for explicit completion pattern — applies to all backends, including
 		// structured-channel ones (claude-code emits DATAWATCH_COMPLETE: when its
 		// shell wrapper runs `echo` after claude exits).
