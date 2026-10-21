@@ -66,7 +66,7 @@ func prdInRunningState(t *testing.T, m *Manager) *PRD {
 	if err != nil {
 		t.Fatalf("MkdirTemp: %v", err)
 	}
-	t.Cleanup(func() { os.RemoveAll(proj) })
+	t.Cleanup(func() { _ = os.RemoveAll(proj) })
 	prd, err := m.CreatePRD("test spec", proj, "opencode", "", EffortNormal)
 	if err != nil {
 		t.Fatalf("CreatePRD: %v", err)
