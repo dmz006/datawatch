@@ -986,14 +986,53 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 		// the first attempt (attempt > 0 means the previous session already
 		// finished and failed verification, so we must spawn a new one).
 		skipSpawn := false
-		if attempt == 0 && t.Status == TaskVerifying && t.SessionID != "" {
+		if attempt == 0 && t.SessionID != "" && (t.Status == TaskVerifying || (t.Status == TaskInProgress && t.AdoptedSession)) {
 			m.mu.Lock()
-			aliveFn := m.sessionAliveFn
+			aliveFn, outputFn, waitFn := m.sessionAliveFn, m.sessionOutputFn, m.sessionWaitFn
 			m.mu.Unlock()
-			if aliveFn != nil && aliveFn(t.SessionID) {
+			alive := aliveFn != nil && aliveFn(t.SessionID)
+			switch {
+			case alive && t.Status == TaskVerifying:
 				log.Printf("[autonomous] executeOne: task %s resuming verify for live session %s (daemon restart)", t.ID, t.SessionID)
 				m.adoptCapacity(prd, t)
 				skipSpawn = true
+			case alive:
+				// Adopted at boot-resume: never spawn (and never reach the
+				// kill-before-respawn block). Wait for the session's completion
+				// marker, then verify it like a freshly finished worker.
+				log.Printf("[autonomous] executeOne: task %s waiting on adopted session %s (daemon restart)", t.ID, t.SessionID)
+				m.adoptCapacity(prd, t)
+				skipSpawn = true
+				if werr := waitForAdoptedSession(ctx, waitFn, aliveFn, t.SessionID); werr != nil {
+					if ctx.Err() != nil {
+						return nil
+					}
+					// A stall or a failed/killed session takes the normal retry path:
+					// free the lease; the retry kills the leftover session and
+					// re-admits a fresh spawn like any other failed attempt.
+					lastFailureCategory = "infra"
+					m.releaseCapacity(t.ID)
+					hint = werr.Error()
+					m.store.WithLock(func() { t.Error = hint; t.AdoptedSession = false })
+					_ = m.store.SaveTask(t)
+					continue
+				}
+				oldStatus := t.Status
+				m.store.WithLock(func() {
+					t.AdoptedSession = false
+					t.Status = TaskVerifying
+				})
+				if m.store.SaveTask(t) == nil {
+					m.emitTaskStatus(prd, t, oldStatus, nil, nil)
+				}
+			case t.Status == TaskVerifying && outputFn != nil:
+				// Finished while the daemon was down (boot-resume moved it to
+				// verifying): its recorded output holds the marker, so verify
+				// it instead of killing and respawning.
+				if out, ok := outputFn(t.SessionID); ok && outputHasCompletionMarker(out) {
+					log.Printf("[autonomous] executeOne: task %s verifying finished session %s from recorded output (daemon restart)", t.ID, t.SessionID)
+					skipSpawn = true
+				}
 			}
 		}
 

@@ -614,6 +614,12 @@ type Manager struct {
 	// tasks whose session is still running (B90). Nil = conservative:
 	// all stuck tasks are failed regardless of session state.
 	sessionAliveFn func(sessionID string) bool
+	// sessionOutputFn — when set, boot-resume reads a dead session's recorded
+	// output to find a completion marker written while the daemon was down.
+	sessionOutputFn func(sessionID string) (output string, ok bool)
+	// sessionWaitFn — when set, executeOne waits on an adopted session through
+	// it; nil falls back to polling sessionAliveFn.
+	sessionWaitFn func(ctx context.Context, sessionID string) error
 	// decomposeSessionsFn lists live planning sessions linked to a PRD.
 	decomposeSessionsFn func(prdID string) []string
 
@@ -760,6 +766,25 @@ func (m *Manager) SetSessionAliveFn(fn func(sessionID string) bool) {
 	m.sessionAliveFn = fn
 }
 
+// SetSessionOutputFn wires the recorded-output reader used at boot-resume to
+// detect a worker that finished while the daemon was down. ok=false means the
+// session record or its output is unavailable. Nil disables the check.
+func (m *Manager) SetSessionOutputFn(fn func(sessionID string) (output string, ok bool)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.sessionOutputFn = fn
+}
+
+// SetSessionWaitFn wires the wait used for a session adopted at boot-resume.
+// fn blocks until the session reaches its completion marker (nil error) or
+// fails/stalls (non-nil error, wrapping ErrWorkerStalled for a stall). Nil
+// falls back to polling the liveness hook.
+func (m *Manager) SetSessionWaitFn(fn func(ctx context.Context, sessionID string) error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.sessionWaitFn = fn
+}
+
 // SetSessionDeleteFn wires the post-completion session cleanup callback.
 // When set, it is called after each task reaches a terminal state so the
 // ephemeral executor session is removed from the session list automatically.
@@ -873,25 +898,29 @@ func decisionKindExists(prd *PRD, kind string) bool {
 	return false
 }
 
-// resetInProgressTasksForResume resets tasks left mid-flight by a prior
-// daemon instance so the executor re-runs them cleanly instead of spawning
-// a duplicate alongside an orphaned session. TaskInProgress tasks are always
-// reset (the spawn goroutine never reached TaskVerifying, so any session is
-// necessarily orphaned). TaskVerifying/TaskRunningTests tasks with a dead or
+// resetInProgressTasksForResume reconciles tasks left mid-flight by a prior
+// daemon instance so the executor neither spawns a duplicate alongside a
+// surviving session nor redoes work that is still running or already done.
+// A TaskInProgress task with a live session is adopted: its capacity lease is
+// re-taken, AdoptedSession is set and executeOne waits for the session instead
+// of spawning. One whose session ended while the daemon was down, with the
+// completion marker in its recorded output, moves to TaskVerifying. One with
+// an empty or dead session (no marker) is killed if a session is recorded and
+// reset to TaskPending. TaskVerifying/TaskRunningTests tasks with a dead or
 // absent session resolve via ResolveVerifyingTask: a recorded ok verification
 // verdict is applied (TaskCompleted) instead of blindly re-running the task;
 // otherwise the task is reset to TaskPending. A genuinely live session is
 // left alone (still TaskVerifying) so executeOne's own skip-spawn check picks
 // it up and verifies it directly, matching reconcileStuckTasks' logic
-// (B90/B93). This is the
-// canonical boot-time task/session reconciliation; executeOne's own
-// kill-before-respawn guard (executor.go) is the second line of defense if
-// this pass or its liveness check is wrong.
+// (B90/B93). This is the canonical boot-time task/session reconciliation;
+// executeOne's kill-before-respawn guard (executor.go) is the second line of
+// defense if this pass or its liveness check is wrong.
 // Called from api.resumeRunningPRDs before re-launching the executor.
 func (m *Manager) resetInProgressTasksForResume(prd *PRD) {
 	m.mu.Lock()
 	killerFn := m.sessionKillerFn
 	aliveFn := m.sessionAliveFn
+	outputFn := m.sessionOutputFn
 	m.mu.Unlock()
 	if prd == nil {
 		return
@@ -906,8 +935,28 @@ func (m *Manager) resetInProgressTasksForResume(prd *PRD) {
 			case TaskWaitingCapacity:
 				// Waiter died with the prior daemon; it holds no session.
 			case TaskInProgress:
-				// Spawn goroutine died with the prior daemon before reaching
-				// TaskVerifying — any session is necessarily orphaned.
+				switch decideInProgressResume(aliveFn, outputFn, t.SessionID) {
+				case resumeAdopt:
+					// The worker's session outlived the daemon: keep it. Re-take
+					// its lease and mark it adopted so executeOne waits instead
+					// of spawning.
+					m.adoptCapacity(prd, t)
+					t.AdoptedSession = true
+					t.UpdatedAt = time.Now()
+					reset = append(reset, pendingTaskEvent{t: t, oldStatus: prevStatus, oldSession: t.SessionID})
+					log.Printf("[autonomous] boot-resume: adopted task %s (in_progress) on live session %s for prd=%s, capacity lease re-adopted", t.ID, t.SessionID, prd.ID)
+					continue
+				case resumeFinished:
+					// Finished while the daemon was down: verify from the
+					// recorded output; keep the session id, no kill.
+					m.adoptCapacity(prd, t)
+					t.Status = TaskVerifying
+					t.UpdatedAt = time.Now()
+					reset = append(reset, pendingTaskEvent{t: t, oldStatus: prevStatus, oldSession: t.SessionID})
+					log.Printf("[autonomous] boot-resume: task %s (in_progress) finished while daemon was down (session %s), moved to verifying for prd=%s", t.ID, t.SessionID, prd.ID)
+					continue
+				}
+				// Empty or dead session without a marker: orphaned, reset below.
 			case TaskVerifying, TaskRunningTests:
 				switch ResolveVerifyingTask(aliveFn, t) {
 				case TaskVerifying:

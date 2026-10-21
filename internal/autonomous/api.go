@@ -189,6 +189,12 @@ func (a *API) resumeRunningPRDs() {
 			fmt.Printf("[autonomous] boot-resume: prd=%s resumed age=%ds reason=%s\n", prd.ID, dec.ageSec, dec.reason)
 			resumed++
 
+			// The recreated executor goes through runLocked: claimRun takes the
+			// runCancels slot before prep, so no other Run() can start a second
+			// executor, and the PRD record stays PRDRunning throughout (prep
+			// never touches prd.Status; only the park path above leaves it, and
+			// that never reaches here). Adopted in_progress sessions are
+			// resumed by that same executor, not by a separate goroutine.
 			started, err := a.runLocked(prd.ID, func() bool {
 				a.M.resetInProgressTasksForResume(prd)
 				return true

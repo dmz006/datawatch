@@ -210,6 +210,37 @@ Only do that from an operator shell where that unit is the daemon behind `DW_BAS
 |---|---|---|---|---|
 | Daemon restart with a live claude-code task session — tmux session survives, session record not `failed`/`killed`/spurious `complete`, session log grows after restart (re-pipe), task reaches a terminal state if it finishes within the wait | **Yes** (skip path only: `TestBL462_DaemonRestartSurvivesLive` in `internal/session/restart_safety_live_test.go`, run by `.datawatch/verify/bl462-s3-live-restart-test.sh`) | **No** (gated live run not performed; no sandbox daemon was started for it) | `go test` with `DW_LIVE_RESTART_TEST=1` against a live daemon via `DW_BASE`/`DW_BASE_TOKEN`; restart is `systemctl --user restart datawatch` or the `datawatch restart` CLI, or `DW_LIVE_RESTART_CMD` for a sandbox | Verifies what the audit verified by hand. Does not cover subprocess sessions (F4) or the capacity lease (F1); the audit's live run of those is in `docs/plans/bl462-restart-audit-findings.md` |
 
+## Boot-resume adopts a live in-progress worker (deterministic + gated live)
+
+Deterministic coverage for the adoption behavior — a daemon restart
+resumes a run whose task was `in_progress` with a live worker session:
+the live session is **adopted** (task stays `in_progress` on the same
+session id, capacity lease re-adopted, **no duplicate spawn**, worker
+finishes and the task verifies and completes), a dead session with a
+completion marker in its output **goes straight to verification** (no
+re-run of finished work), and a dead session without a marker **resets to
+`pending`** (the only reset case). All sessions are fakes (map-backed
+`alive` function, recording killer, fake output, spawn counter); every
+wait is a bounded poll — no fixed sleeps; table-driven across the
+`claude-code`, `opencode`, and `pi-prompt` backends; verified green with
+`-race -count=3` (three races, no fixed sleeps). The pre-existing
+`TestAdoptSessionDecision` (decision table for the same code) is
+unchanged.
+
+Gated live companion — one PRD with a long worker, restarted mid-worker
+through the operator path (`systemctl --user` / `datawatch restart`) or
+`DW_LIVE_RESTART_CMD`; asserts the session id is unchanged after
+restart, the session is not `killed`, no task is re-issued a new
+session, and the task drives to verification/completion.
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| Boot-resume: alive worker adopted — task stays `in_progress`, same session id, `AdoptedSession` set, capacity lease held, idempotent on a second boot | **Yes** | **Yes** | `TestAdoptLive_AliveAdopted` in `internal/autonomous/adopt_live_session_test.go`; `-race -count=3` | Fake sessions; no production state. Boot scan parked via `SetServerReadyCh` to keep the concurrent paths deterministic (same pattern as `TestRunDedupe`) |
+| Boot-resume: dead worker without marker — task reset to `pending`, session id cleared, killer called for the exact session | **Yes** | **Yes** | `TestAdoptLive_DeadReset` | Table over dead-with-no-output / empty-session / never-started; no marker in the dead output in any case |
+| Boot-resume: dead worker that finished during the down window — output carries `DATAWATCH_COMPLETE` → task goes to `verifying`, verifier runs once, **no spawn** | **Yes** | **Yes** | `TestAdoptLive_FinishedWhileDown` | Completing session is recorded as `complete` in the fake registry; the run finishes `completed` with verifyCount=1, spawnN=0 |
+| Boot-resume: adopted task not re-spawned — executor run over an adopted `in_progress` task waits for the existing session (0 spawns), completes after fake completion; two concurrent `Run` calls start exactly one executor and the PRD stays `running` | **Yes** | **Yes** | `TestAdoptLive_NoDuplicateSpawn` | `apiFixture` + `countingSpawn`/`recordedKiller`; drainOnCleanup wired. Verified with `-race -count=3` (all green) |
+| Restart while a worker PRD task is live — session id unchanged after restart, no second spawn (no task re-issued a session), worker not killed, task drives to verification/completion | **Yes** (skip path only) | **No** (gated live run not performed) | `TestDaemonRestartAdoptsLiveWorkerLive` in `internal/session/restart_adopt_live_test.go`; `DW_LIVE_RESTART_TEST=1` + `DW_BASE` (+ optional `DW_BASE_TOKEN`, `DW_LIVE_RESTART_PROJECT_DIR`, `DW_LIVE_RESTART_CMD`); run with `-timeout 25m`; cleanup kills only its own probe session via the API (no raw tmux kill) | PRD-level counterpart of `TestBL462_DaemonRestartSurvivesLive`: reuses `newBL462LiveClient`, `bl462RestartCommand`, `bl462PollUntil`, `bl462TmuxHasSession` from `restart_safety_live_test.go`. The restart subprocess env is sanitized by `bl462RestartEnv`: TMUX and TMUX_TMPDIR stripped, except the `datawatch restart` CLI fallback which keeps TMUX_TMPDIR (documented exception — the CLI re-execs the daemon in the ambient env and must keep the tmux socket dir) |
+
 ---
 
 ## Restart no longer revives stale running Automata — new `autonomous.resume_max_age_seconds` limit — v9.5.32
