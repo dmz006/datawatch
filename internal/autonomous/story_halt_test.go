@@ -57,10 +57,8 @@ func runToTerminalOrBlocked(t *testing.T, m *Manager, api *API, id string, spawn
 	case <-time.After(30 * time.Second):
 		t.Fatal("PRD did not reach a terminal state")
 	}
-	final, _ := m.Store().GetPRD(id)
-	m.mu.Lock()
+	final, _ := m.Store().SnapshotPRD(id)
 	status := final.Status
-	m.mu.Unlock()
 	if status != PRDCompleted && status != PRDFailed && status != PRDBlocked {
 		t.Fatalf("executor exited with non-terminal PRD status %q", status)
 	}
@@ -74,10 +72,8 @@ func waitForPRDStatus(t *testing.T, m *Manager, id string, timeout time.Duration
 	deadline := time.Now().Add(timeout)
 	var last PRDStatus
 	for {
-		if p, ok := m.Store().GetPRD(id); ok {
-			m.mu.Lock()
+		if p, ok := m.Store().SnapshotPRD(id); ok {
 			last = p.Status
-			m.mu.Unlock()
 			for _, w := range want {
 				if last == w {
 					return p

@@ -137,10 +137,8 @@ func runToTerminal(t *testing.T, m *Manager, api *API, id string, spawn SpawnFn,
 	}
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		got, _ := m.Store().GetPRD(id)
-		m.mu.Lock()
+		got, _ := m.Store().SnapshotPRD(id)
 		status := got.Status
-		m.mu.Unlock()
 		if status == PRDCompleted || status == PRDFailed {
 			// The executor goroutine writes the terminal status inside
 			// Manager.Run, then still has its deferred cleanup and a final

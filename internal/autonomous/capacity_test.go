@@ -110,7 +110,7 @@ func runWait(t *testing.T, m *Manager, id string) *PRD {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		got, _ := m.Store().GetPRD(id)
+		got, _ := m.Store().SnapshotPRD(id)
 		if got.Status == PRDCompleted || got.Status == PRDFailed {
 			return got
 		}
