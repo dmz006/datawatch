@@ -114,6 +114,20 @@ func (s *Server) handleAutonomousConfig(w http.ResponseWriter, r *http.Request) 
 					return
 				}
 			}
+			// undeclared_edit_mode accepts only "off", "warn" or "block";
+			// same whole-PUT rejection as drift_mode.
+			if raw, ok := top["undeclared_edit_mode"]; ok {
+				var mode string
+				if json.Unmarshal(raw, &mode) == nil {
+					if verr := config.ValidateUndeclaredEditMode(mode); verr != nil {
+						http.Error(w, verr.Error(), http.StatusBadRequest)
+						return
+					}
+				} else {
+					http.Error(w, "autonomous.undeclared_edit_mode: must be a string (\"off\", \"warn\" or \"block\")", http.StatusBadRequest)
+					return
+				}
+			}
 		}
 		if err := s.autonomousMgr.SetConfig(body); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)

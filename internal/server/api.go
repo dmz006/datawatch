@@ -5701,7 +5701,9 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			// (default) or "warn". Show the effective mode so an unset
 			// value renders as "block" (same as the executor's
 			// resolveDriftMode), matching EffectiveTaskOverrideStatuses above.
-			"drift_mode":                effectiveDriftMode(s.cfg.Autonomous.DriftMode),
+			"drift_mode": effectiveDriftMode(s.cfg.Autonomous.DriftMode),
+			// Undeclared-edit enforcement: off|warn|block; unset/unknown renders "warn".
+			"undeclared_edit_mode":      effectiveUndeclaredEditMode(s.cfg.Autonomous.UndeclaredEditMode),
 			"stale_task_seconds":        s.cfg.Autonomous.StaleTaskSeconds,
 			"preserve_attempt_work":     s.cfg.Autonomous.PreserveAttemptWorkEnabled(),
 			"auto_fix_retries":          s.cfg.Autonomous.AutoFixRetries,
@@ -5905,6 +5907,14 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	// task_override_statuses above).
 	if v, ok := patch["autonomous.drift_mode"]; ok {
 		if verr := config.ValidateDriftMode(toString(v)); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	// undeclared_edit_mode accepts only "off", "warn" or "block"; same
+	// whole-PUT rejection as drift_mode above.
+	if v, ok := patch["autonomous.undeclared_edit_mode"]; ok {
+		if verr := config.ValidateUndeclaredEditMode(toString(v)); verr != nil {
 			http.Error(w, verr.Error(), http.StatusBadRequest)
 			return
 		}
@@ -7284,6 +7294,10 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			if mode := toString(v); config.ValidateDriftMode(mode) == nil {
 				cfg.Autonomous.DriftMode = mode
 			}
+		case "autonomous.undeclared_edit_mode": // "off", "warn" (default) or "block"; validated in handlePutConfig
+			if mode := toString(v); config.ValidateUndeclaredEditMode(mode) == nil {
+				cfg.Autonomous.UndeclaredEditMode = strings.ToLower(strings.TrimSpace(mode))
+			}
 		// BL428 §3a ii — refuse tasks on a dirty tree.
 		case "autonomous.refuse_dirty_tree_start":
 			cfg.Autonomous.RefuseDirtyTreeStart = toBool(v)
@@ -7503,6 +7517,17 @@ func effectiveDriftMode(mode string) string {
 		return "warn"
 	}
 	return "block"
+}
+
+// effectiveUndeclaredEditMode renders autonomous.undeclared_edit_mode the
+// way the executor resolves it (Manager.EffectiveUndeclaredEditMode):
+// lowercased off|warn|block, anything else renders "warn".
+func effectiveUndeclaredEditMode(mode string) string {
+	switch m := strings.ToLower(strings.TrimSpace(mode)); m {
+	case "off", "warn", "block":
+		return m
+	}
+	return "warn"
 }
 
 func toBool(v interface{}) bool {

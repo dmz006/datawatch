@@ -35,7 +35,8 @@ func (s *Server) toolAutonomousConfigGet() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_config_get",
 		mcpsdk.WithDescription("Read the current autonomous (Automata) config: poll interval, max_concurrent_tasks (daemon-wide default for how many independent tasks of one Automaton run at once; 1 = sequential), resume_max_age_seconds (how old in seconds a completed task may be before it is no longer eligible for resume; 3600 = 1h default, 0 = never resume, -1 = no age limit), max_engines_per_node (local-model sessions allowed per compute node; default 1), backends, retries, capacity limits, guardrail lists and timeouts. "+
 			"Automaton-level (per_prd_guardrails) guardrails accept \"rules-review\" and \"ci-watch\"; both are off unless listed. \"ci-watch\" makes an automaton, when it completes, wait (up to ci_watch_timeout_seconds, default 1500) for the CI runs of the commit it pushed; if any run failed, the configured LLM judges the failure against the project's rules file. It is skipped when nothing was pushed or the origin remote is not GitHub. "+
-			"block_on_file_drift (default false) controls foreign-file drift: when false a task whose commit swept in files that were already uncommitted before it started is only flagged (warn-only); when true that task is blocked instead. An automaton's own setting or its guardrail profile overrides it; worktree-mode automata are never checked."),
+			"block_on_file_drift (default false) controls foreign-file drift: when false a task whose commit swept in files that were already uncommitted before it started is only flagged (warn-only); when true that task is blocked instead. An automaton's own setting or its guardrail profile overrides it; worktree-mode automata are never checked. "+
+			"undeclared_edit_mode sets what happens when a task edits files outside its declared scope: off = skip the check, warn = record + alert (the default), block = hold the task."),
 	)
 }
 func (s *Server) handleAutonomousConfigGet(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
@@ -50,7 +51,8 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_config_set",
 		mcpsdk.WithDescription("Update the autonomous (Automata) config. Merges onto the current config, so a partial body (e.g. just enabled) only changes the fields given and leaves the rest untouched. "+
 			"Automaton-level (per_prd_guardrails) guardrails accept \"rules-review\" and \"ci-watch\"; both are off unless listed. \"ci-watch\" makes an automaton, when it completes, wait (up to ci_watch_timeout_seconds, default 1500) for the CI runs of the commit it pushed; if any run failed, the configured LLM judges the failure against the project's rules file. It is skipped when nothing was pushed or the origin remote is not GitHub. "+
-			"task_override_statuses sets which PRD statuses accept task- and story-level LLM overrides; unknown status names are rejected."),
+			"task_override_statuses sets which PRD statuses accept task- and story-level LLM overrides; unknown status names are rejected. "+
+			"undeclared_edit_mode sets what happens when a task edits files outside its declared scope: off = skip the check, warn = record + alert (the default), block = hold the task."),
 		mcpsdk.WithBoolean("enabled", mcpsdk.Description("Toggle autonomous loop on/off")),
 		mcpsdk.WithNumber("poll_interval_seconds", mcpsdk.Description("Background loop tick (default 30)")),
 		mcpsdk.WithNumber("max_concurrent_tasks", mcpsdk.Description("Daemon-wide default for how many independent tasks of one Automaton run at once. An Automaton's own setting overrides it. 1 = sequential (the default); values below 1 are ignored.")),
@@ -83,6 +85,7 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithArray("per_prd_guardrails", mcpsdk.Description("Daemon-wide default guardrails run once when an automaton completes. Accepts \"rules-review\" (judge the automaton's diff against the project's rules file) and \"ci-watch\" (wait for and judge the CI runs of the commit it pushed). Empty list (the default) turns both off; an automaton's own list or guardrail profile overrides this. The value replaces the whole list, so read it with autonomous_config_get first and include the entries you want to keep."), mcpsdk.WithStringItems()),
 		mcpsdk.WithBoolean("continue_on_story_failure", mcpsdk.Description("Daemon-wide default: false (halt) stops a PRD as soon as any story fails instead of continuing into later, independent stories; true restores the old continue-regardless behavior. Per-PRD override takes precedence.")),
 		mcpsdk.WithBoolean("block_on_file_drift", mcpsdk.Description("Daemon-wide default for foreign-file-drift enforcement. false (the default) only flags a task whose own commit swept in files that were already uncommitted before it started and were not in its planned files (warn-only, recorded as task foreign_file_drift and a file_drift_detected decision); true blocks that task instead. An automaton's own setting or its guardrail profile overrides this; worktree-mode automata are never checked.")),
+		mcpsdk.WithString("undeclared_edit_mode", mcpsdk.Description("Daemon-wide default for undeclared edits (a task editing files outside its declared scope): off = skip the check, warn = record + alert (the default), block = hold the task.")),
 		mcpsdk.WithBoolean("default_auto_pr", mcpsdk.Description("BL407 Phase 5 — daemon-wide default for a new PRD's Git.AutoPR (push+open a PR on completion). Applied once at PRD creation; the per-PRD autonomous_prd_set_git tool overrides it after that. Default false.")),
 	)
 }
@@ -227,6 +230,9 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 		}
 		if _, ok := args["block_on_file_drift"]; ok {
 			body["block_on_file_drift"] = req.GetBool("block_on_file_drift", false)
+		}
+		if _, ok := args["undeclared_edit_mode"]; ok {
+			body["undeclared_edit_mode"] = req.GetString("undeclared_edit_mode", "")
 		}
 	}
 	out, err := s.proxyJSON(http.MethodPut, "/api/autonomous/config", body)
