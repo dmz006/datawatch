@@ -32,6 +32,7 @@ func GenerateAnnotatedConfig(cfg *Config) string {
 	fieldi(&b, "claude_enabled", cfg.Session.ClaudeEnabled, "Enable the claude-code backend")
 	fieldi(&b, "auto_git_init", cfg.Session.AutoGitInit, "Auto-initialize git repo in project directory")
 	fieldi(&b, "auto_git_commit", cfg.Session.AutoGitCommit, "Deprecated and ignored: task sessions are committed automatically. Key retained for compatibility")
+	fieldi(&b, "git_default", cfg.Session.GitDefault, "Default for the session-start git flag when a start request does not set it explicitly (git activity: pre-session snapshot, checkpoint tag, completion commit)")
 	fieldi(&b, "kill_sessions_on_exit", cfg.Session.KillSessionsOnExit, "Kill all sessions when daemon stops")
 	fieldi(&b, "mcp_max_retries", cfg.Session.MCPMaxRetries, "Max MCP channel restart attempts per session")
 	fieldi(&b, "schedule_settle_ms", cfg.Session.ScheduleSettleMs, "B30: ms to wait between text and Enter for scheduled commands (0 = legacy single send-keys; 200 default fixes the 2nd-Enter bug for TUIs like claude-code)")
