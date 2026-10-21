@@ -51,9 +51,9 @@ func TestPlanCoverageFindings_DanglingDependsOn(t *testing.T) {
 				ID:    "s1",
 				Title: "First story",
 				Tasks: []Task{{
-					ID:                   "t1",
-					Title:                "Do the work",
-					DependsOn:            []string{"ghost"},
+					ID:                       "t1",
+					Title:                    "Do the work",
+					DependsOn:                []string{"ghost"},
 					VerificationScriptReason: exemption,
 				}},
 			}},
@@ -67,9 +67,9 @@ func TestPlanCoverageFindings_DanglingDependsOn(t *testing.T) {
 					ID:    "s1",
 					Title: "First story",
 					Tasks: []Task{{
-						ID:                         "t1",
-						Title:                      "Do the work",
-						VerificationScriptReason:   exemption,
+						ID:                       "t1",
+						Title:                    "Do the work",
+						VerificationScriptReason: exemption,
 					}},
 				},
 				{
@@ -77,9 +77,9 @@ func TestPlanCoverageFindings_DanglingDependsOn(t *testing.T) {
 					Title:     "Second story",
 					DependsOn: []string{"missing-story"},
 					Tasks: []Task{{
-						ID:                         "t2",
-						Title:                      "Do more work",
-						VerificationScriptReason:   exemption,
+						ID:                       "t2",
+						Title:                    "Do more work",
+						VerificationScriptReason: exemption,
 					}},
 				},
 			},
@@ -94,18 +94,18 @@ func TestPlanCoverageFindings_DanglingDependsOn(t *testing.T) {
 					Title:     "First story",
 					DependsOn: []string{"s2"}, // s2 comes later in plan order
 					Tasks: []Task{{
-						ID:                         "t1",
-						Title:                      "Do the work",
-						VerificationScriptReason:   exemption,
+						ID:                       "t1",
+						Title:                    "Do the work",
+						VerificationScriptReason: exemption,
 					}},
 				},
 				{
 					ID:    "s2",
 					Title: "Second story",
 					Tasks: []Task{{
-						ID:                         "t2",
-						Title:                      "Do more work",
-						VerificationScriptReason:   exemption,
+						ID:                       "t2",
+						Title:                    "Do more work",
+						VerificationScriptReason: exemption,
 					}},
 				},
 			},
@@ -119,9 +119,9 @@ func TestPlanCoverageFindings_DanglingDependsOn(t *testing.T) {
 					ID:    "s1",
 					Title: "First story",
 					Tasks: []Task{{
-						ID:                         "t1",
-						Title:                      "Found the layout",
-						VerificationScriptReason:   exemption,
+						ID:                       "t1",
+						Title:                    "Found the layout",
+						VerificationScriptReason: exemption,
 					}},
 				},
 				{
@@ -129,16 +129,16 @@ func TestPlanCoverageFindings_DanglingDependsOn(t *testing.T) {
 					Title: "Second story",
 					Tasks: []Task{
 						{
-							ID:                         "t2",
-							Title:                      "Wire the layout",
-							DependsOn:                  []string{"t1"}, // earlier story: allowed
-							VerificationScriptReason:   exemption,
+							ID:                       "t2",
+							Title:                    "Wire the layout",
+							DependsOn:                []string{"t1"}, // earlier story: allowed
+							VerificationScriptReason: exemption,
 						},
 						{
-							ID:                         "t3",
-							Title:                      "Tune the layout",
-							DependsOn:                  []string{"t2"}, // same story: allowed
-							VerificationScriptReason:   exemption,
+							ID:                       "t3",
+							Title:                    "Tune the layout",
+							DependsOn:                []string{"t2"}, // same story: allowed
+							VerificationScriptReason: exemption,
 						},
 					},
 				},
@@ -168,8 +168,8 @@ func TestPlanCoverageFindings_DanglingDependsOn(t *testing.T) {
 
 func TestPlanCoverageFindings_DependencyCycle(t *testing.T) {
 	tests := []struct {
-		name   string
-		stories []Story
+		name       string
+		stories    []Story
 		wantDetail string
 	}{
 		{
@@ -179,16 +179,16 @@ func TestPlanCoverageFindings_DependencyCycle(t *testing.T) {
 				Title: "Story one",
 				Tasks: []Task{
 					{
-						ID:                         "a",
-						Title:                      "first step",
-						DependsOn:                  []string{"b"},
-						VerificationScriptReason:   exemption,
+						ID:                       "a",
+						Title:                    "first step",
+						DependsOn:                []string{"b"},
+						VerificationScriptReason: exemption,
 					},
 					{
-						ID:                         "b",
-						Title:                      "second step",
-						DependsOn:                  []string{"a"},
-						VerificationScriptReason:   exemption,
+						ID:                       "b",
+						Title:                    "second step",
+						DependsOn:                []string{"a"},
+						VerificationScriptReason: exemption,
 					},
 				},
 			}},
@@ -200,10 +200,10 @@ func TestPlanCoverageFindings_DependencyCycle(t *testing.T) {
 				ID:    "s1",
 				Title: "Story one",
 				Tasks: []Task{{
-					ID:                         "c",
-					Title:                      "step",
-					DependsOn:                  []string{"c"},
-					VerificationScriptReason:   exemption,
+					ID:                       "c",
+					Title:                    "step",
+					DependsOn:                []string{"c"},
+					VerificationScriptReason: exemption,
 				}},
 			}},
 			wantDetail: "dependency cycle: c -> c",
@@ -216,8 +216,8 @@ func TestPlanCoverageFindings_DependencyCycle(t *testing.T) {
 					Title:     "Story one",
 					DependsOn: []string{"s2"},
 					Tasks: []Task{{
-						ID:                     "t1",
-						Title: "step",
+						ID:                       "t1",
+						Title:                    "step",
 						VerificationScriptReason: exemption,
 					}},
 				},
@@ -226,8 +226,8 @@ func TestPlanCoverageFindings_DependencyCycle(t *testing.T) {
 					Title:     "Story two",
 					DependsOn: []string{"s1"},
 					Tasks: []Task{{
-						ID:                     "t2",
-						Title: "step",
+						ID:                       "t2",
+						Title:                    "step",
 						VerificationScriptReason: exemption,
 					}},
 				},
@@ -241,20 +241,20 @@ func TestPlanCoverageFindings_DependencyCycle(t *testing.T) {
 				Title: "Story one",
 				Tasks: []Task{
 					{
-						ID:                     "c",
-						Title: "third",
-						DependsOn:            []string{"b"},
+						ID:                       "c",
+						Title:                    "third",
+						DependsOn:                []string{"b"},
 						VerificationScriptReason: exemption,
 					},
 					{
-						ID:                     "b",
-						Title: "second",
-						DependsOn:            []string{"a"},
+						ID:                       "b",
+						Title:                    "second",
+						DependsOn:                []string{"a"},
 						VerificationScriptReason: exemption,
 					},
 					{
-						ID:                     "a",
-						Title: "first",
+						ID:                       "a",
+						Title:                    "first",
 						VerificationScriptReason: exemption,
 					},
 				},
@@ -295,8 +295,8 @@ func TestPlanCoverageFindings_FileProvenance(t *testing.T) {
 			ID:    "s1",
 			Title: "Story one",
 			Tasks: []Task{{
-				ID:                     "t1",
-				Title: "Wire the reports/daily.txt reporter",
+				ID:                       "t1",
+				Title:                    "Wire the reports/daily.txt reporter",
 				VerificationScriptReason: exemption,
 			}},
 		}})
@@ -319,15 +319,15 @@ func TestPlanCoverageFindings_FileProvenance(t *testing.T) {
 			Title: "Story one",
 			Tasks: []Task{
 				{
-					ID:                         "t1",
-					Title:                      "Scaffold the reporter",
-					FilesGenerated:             []string{"reports/daily.txt"},
-					VerificationScriptReason:   exemption,
+					ID:                       "t1",
+					Title:                    "Scaffold the reporter",
+					FilesGenerated:           []string{"reports/daily.txt"},
+					VerificationScriptReason: exemption,
 				},
 				{
-					ID:                     "t2",
-					Title: "Wire the reports/daily.txt reporter",
-					VerificationScriptReason:   exemption,
+					ID:                       "t2",
+					Title:                    "Wire the reports/daily.txt reporter",
+					VerificationScriptReason: exemption,
 				},
 			},
 		}})
@@ -349,8 +349,8 @@ func TestPlanCoverageFindings_FileProvenance(t *testing.T) {
 			ID:    "s1",
 			Title: "Story one",
 			Tasks: []Task{{
-				ID:                     "t1",
-				Title: "Adjust pkg/util/helper.go behavior",
+				ID:                       "t1",
+				Title:                    "Adjust pkg/util/helper.go behavior",
 				VerificationScriptReason: exemption,
 			}},
 		}})
@@ -373,8 +373,8 @@ func TestPlanCoverageFindings_FileProvenance(t *testing.T) {
 			ID:    "s1",
 			Title: "Story one",
 			Tasks: []Task{{
-				ID:                     "t1",
-				Title: "Adjust pkg/util/helper.go behavior",
+				ID:                       "t1",
+				Title:                    "Adjust pkg/util/helper.go behavior",
 				VerificationScriptReason: exemption,
 			}},
 		}})
@@ -390,8 +390,8 @@ func TestPlanCoverageFindings_FileProvenance(t *testing.T) {
 			Title:          "Story one",
 			FilesGenerated: []string{"orphan/out.sh"},
 			Tasks: []Task{{
-				ID:                     "t1",
-				Title: "Do the work",
+				ID:                       "t1",
+				Title:                    "Do the work",
 				VerificationScriptReason: exemption,
 			}},
 		}})
@@ -411,10 +411,10 @@ func TestPlanCoverageFindings_FileProvenance(t *testing.T) {
 			Title:          "Story one",
 			FilesGenerated: []string{"verify/t1.sh"},
 			Tasks: []Task{{
-				ID:                         "t1",
-				Title:                      "Write the check",
-				FilesGenerated:             []string{"verify/t1.sh"},
-				VerificationScriptReason:   exemption,
+				ID:                       "t1",
+				Title:                    "Write the check",
+				FilesGenerated:           []string{"verify/t1.sh"},
+				VerificationScriptReason: exemption,
 			}},
 		}})
 		if !report.Pass {
@@ -425,8 +425,8 @@ func TestPlanCoverageFindings_FileProvenance(t *testing.T) {
 
 func TestPlanCoverageFindings_VerificationReason(t *testing.T) {
 	tests := []struct {
-		name    string
-		task    Task
+		name     string
+		task     Task
 		wantPass bool
 	}{
 		{
@@ -487,10 +487,10 @@ func TestPlanCoverageFindings_TrackerIDNaming(t *testing.T) {
 		{
 			name: "lowercase bl9 in a generated name fails",
 			task: Task{
-				ID:                         "t1",
-				Title:                      "Add the patch step",
-				FilesGenerated:             []string{"bl9_patch.sh"},
-				VerificationScriptReason:   exemption,
+				ID:                       "t1",
+				Title:                    "Add the patch step",
+				FilesGenerated:           []string{"bl9_patch.sh"},
+				VerificationScriptReason: exemption,
 			},
 			wantFail: true,
 		},
@@ -500,8 +500,8 @@ func TestPlanCoverageFindings_TrackerIDNaming(t *testing.T) {
 			wantFail: false,
 		},
 		{
-			name: "containment match: rebl124 embeds the bl124 pattern and fails",
-			task: Task{ID: "t1", Title: "Refactor rebl124 handling", VerificationScriptReason: exemption},
+			name:     "containment match: rebl124 embeds the bl124 pattern and fails",
+			task:     Task{ID: "t1", Title: "Refactor rebl124 handling", VerificationScriptReason: exemption},
 			wantFail: true,
 		},
 	}
@@ -573,9 +573,9 @@ func TestPlanCoverageFindings_FalsePositiveTokens(t *testing.T) {
 				ID:    "s1",
 				Title: "Story one",
 				Tasks: []Task{{
-					ID:                         "t1",
-					Title:                      "Touch " + tok,
-					VerificationScriptReason:   exemption,
+					ID:                       "t1",
+					Title:                    "Touch " + tok,
+					VerificationScriptReason: exemption,
 				}},
 			}})
 			var misses []StructuralFinding
@@ -596,8 +596,8 @@ func TestPlanCoverageFindings_FalsePositiveTokens(t *testing.T) {
 		ID:    "s1",
 		Title: "Story one",
 		Tasks: []Task{{
-			ID:                     "t1",
-			Title:                  "Touch definitely_missing_xyz.go",
+			ID:                       "t1",
+			Title:                    "Touch definitely_missing_xyz.go",
 			VerificationScriptReason: exemption,
 		}},
 	}})
@@ -614,6 +614,140 @@ func TestPlanCoverageFindings_FalsePositiveTokens(t *testing.T) {
 	}
 	if !strings.Contains(f.Detail, "definitely_missing_xyz.go") {
 		t.Fatalf("detail %q does not name the missing file", f.Detail)
+	}
+}
+
+// TestPlanCoverageFindings_RealMisses pins rule 3's two-sided contract
+// at the same time: references that resolve to a declaration (the
+// referencing story's own FilesGenerated, a task's own FilesGenerated,
+// or any earlier story's task outputs — exact path or bare base name)
+// must NOT surface as unresolved_file, while references that resolve to
+// nothing at that point in the plan MUST still do.
+func TestPlanCoverageFindings_RealMisses(t *testing.T) {
+	newStory := func(ID, title string, tasks ...Task) Story {
+		return Story{ID: ID, Title: title, Tasks: tasks}
+	}
+	newTask := func(ID, title string, generated ...string) Task {
+		return Task{
+			ID:                       ID,
+			Title:                    title,
+			FilesGenerated:           generated,
+			VerificationScriptReason: exemption,
+		}
+	}
+	tests := []struct {
+		name           string
+		treeFiles      []string // relative files to create under the temp project dir
+		stories        []Story
+		wantUnresolved bool   // an unresolved_file finding must be present
+		wantToken      string // the file name the finding must name (or that must be absent from findings when wantUnresolved is false)
+	}{
+		{
+			name:      "path under an existing directory that is absent and never generated",
+			treeFiles: []string{"internal/autonomous/existing.go"},
+			stories: []Story{newStory("s1", "Story one",
+				newTask("t1", "Add internal/autonomous/nonexistent_helper.go"),
+			)},
+			wantUnresolved: true,
+			wantToken:      "nonexistent_helper.go",
+		},
+		{
+			name:      "bare name with an allowlisted extension that exists nowhere and is never generated",
+			treeFiles: []string{"other/unrelated.txt"},
+			stories: []Story{newStory("s1", "Story one",
+				newTask("t1", "Wire the ghost_widget_xyz.go reporter"),
+			)},
+			wantUnresolved: true,
+			wantToken:      "ghost_widget_xyz.go",
+		},
+		{
+			name: "file generated by a LATER task in the same story is a miss at the referencing point",
+			stories: []Story{newStory("s1", "Story one",
+				newTask("t1", "Consume helper.go"), // before the generation
+				newTask("t2", "Create pkg/helper.go", "pkg/helper.go"),
+			)},
+			wantUnresolved: true,
+			wantToken:      "helper.go",
+		},
+		{
+			name:      "file generated in the same task is not flagged",
+			treeFiles: []string{"other/unrelated.txt"},
+			stories: []Story{newStory("s1", "Story one",
+				newTask("t1", "Build the pkg/wizard.go engine", "pkg/wizard.go"),
+			)},
+			wantUnresolved: false,
+			wantToken:      "wizard.go",
+		},
+		{
+			name: "file generated in an earlier story is not flagged",
+			stories: []Story{
+				newStory("s1", "Story one",
+					newTask("t1", "Produce the digest", "reports/summary.md")),
+				newStory("s2", "Story two",
+					newTask("t2", "Consume reports/summary.md")),
+			},
+			wantUnresolved: false,
+			wantToken:      "summary.md",
+		},
+		{
+			name: "story-level reference resolved by the story's own FilesGenerated and its task output",
+			stories: []Story{newStory("s1", "Ship the verify/bootstrap.sh runner",
+				newTask("t1", "Write the runner", "verify/bootstrap.sh"))},
+			wantUnresolved: false,
+			wantToken:      "bootstrap.sh",
+		},
+		{
+			name: "story-level reference resolved by an earlier story's task output",
+			stories: []Story{
+				newStory("s1", "Story one",
+					newTask("t1", "Produce the layout", "assets/theme.css")),
+				newStory("s2", "Theme the app assets/theme.css",
+					newTask("t2", "Apply the theme")),
+			},
+			wantUnresolved: false,
+			wantToken:      "theme.css",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			for _, f := range tc.treeFiles {
+				args := append([]string{dir}, strings.Split(f, "/")...)
+				p := filepath.Join(args...)
+				if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(p, []byte("x"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			report := CheckPlanStructure(&PRD{ProjectDir: dir}, tc.stories)
+			var misses []StructuralFinding
+			for _, f := range report.Findings {
+				if f.Kind == FindingUnresolvedFile {
+					misses = append(misses, f)
+				}
+			}
+			if tc.wantUnresolved {
+				if len(misses) == 0 {
+					t.Fatalf("expected an unresolved_file finding naming %q; got findings %+v", tc.wantToken, report.Findings)
+				}
+				for _, m := range misses {
+					if !strings.Contains(m.Detail, tc.wantToken) {
+						t.Fatalf("unresolved_file findings %+v do not name the miss %q", misses, tc.wantToken)
+					}
+				}
+				return
+			}
+			if len(misses) != 0 {
+				for _, m := range misses {
+					if strings.Contains(m.Detail, tc.wantToken) {
+						t.Fatalf("must not flag %q: %+v", tc.wantToken, m)
+					}
+				}
+				t.Fatalf("unexpected unresolved_file findings: %+v", misses)
+			}
+		})
 	}
 }
 

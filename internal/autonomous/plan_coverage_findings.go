@@ -12,8 +12,10 @@
 //     in the plan and point to an *earlier or same-story* target;
 //     unknown ids are dangling findings, later-story targets are
 //     forward findings;
+//
 //  2. acyclicity — no depends_on cycle in the combined story+task
 //     dependency graph (DFS over both node sets);
+//
 //  3. file provenance — every file-like path named in a story/task
 //     (FilesGenerated entries and file-like tokens in titles/specs)
 //     must either exist in the project tree (relative to
@@ -28,32 +30,35 @@
 //     File-token recognition is deliberately conservative so that prose
 //     is not mistaken for paths:
 //
-//       a) a *bare* file name (no directory component, "executor.go")
-//          is a path only if it ends in a known file extension (an
-//          explicit allowlist — go, md, js, ts, tsx, jsx, json, yaml,
-//          yml, sh, py, html, css, txt, toml, sql, mod, sum, proto,
-//          svg, png, log, tf, mjs, cfg, conf, ini, xml) and it passes
-//          when a file with that base name exists *anywhere* under the
-//          project base dir (the tree is walked lazily, once per
-//          CheckPlanStructure call; .git, node_modules, vendor and
-//          .datawatch directories are skipped); dotted identifiers with
-//          non-file finals ("GuardrailVerdict.Issues", "json.Unmarshal")
-//          are therefore never candidates;
-//       b) a *slash-separated* token ("task/story/PRD", "absent/null/
-//          empty", "ollama/qwen3.8") is a path candidate only if its
-//          last segment has an allowlisted extension, or its *first*
-//          segment names an existing directory under the base dir —
-//          slash-containing word lists that satisfy neither are prose
-//          and ignored;
-//       c) runtime artifacts (output.log, *.log, *.pid, *.tmp, *.out)
-//          are ignored entirely if they are not present in the tree;
-//       d) pure-numeric tokens and traversal-looking paths ("..") are
-//          excluded, as before;
+//     a) a *bare* file name (no directory component, "executor.go")
+//     is a path only if it ends in a known file extension (an
+//     explicit allowlist — go, md, js, ts, tsx, jsx, json, yaml,
+//     yml, sh, py, html, css, txt, toml, sql, mod, sum, proto,
+//     svg, png, log, tf, mjs, cfg, conf, ini, xml) and it passes
+//     when a file with that base name exists *anywhere* under the
+//     project base dir (the tree is walked lazily, once per
+//     CheckPlanStructure call; .git, node_modules, vendor and
+//     .datawatch directories are skipped); dotted identifiers with
+//     non-file finals ("GuardrailVerdict.Issues", "json.Unmarshal")
+//     are therefore never candidates;
+//     b) a *slash-separated* token ("task/story/PRD", "absent/null/
+//     empty", "ollama/qwen3.8") is a path candidate only if its
+//     last segment has an allowlisted extension, or its *first*
+//     segment names an existing directory under the base dir —
+//     slash-containing word lists that satisfy neither are prose
+//     and ignored;
+//     c) runtime artifacts (output.log, *.log, *.pid, *.tmp, *.out)
+//     are ignored entirely if they are not present in the tree;
+//     d) pure-numeric tokens and traversal-looking paths ("..") are
+//     excluded, as before;
+//
 //  4. verification — every task must carry a VerificationScript OR an
 //     explicit VerificationScriptReason (the B124 exemption: a task may
 //     legitimately have no script, but it must say why);
+//
 //  5. naming — no task title or generated file name may embed a tracker
 //     id (BL + digits, case-insensitive), per AGENT.md's naming rule;
+//
 //  6. failing — any finding of any kind fails the check (Pass == false);
 //     the caller decides whether that means warn or block.
 package autonomous
@@ -228,7 +233,7 @@ func CheckPlanStructure(prd *PRD, stories []Story) *PlanStructureReport {
 						Kind:    FindingDanglingDependsOn,
 						StoryID: s.ID,
 						TaskID:  t.ID,
-						Detail: "task " + t.ID + " depends_on references unknown task id " + strconv.Quote(d),
+						Detail:  "task " + t.ID + " depends_on references unknown task id " + strconv.Quote(d),
 					})
 					continue
 				}
@@ -345,14 +350,34 @@ func CheckPlanStructure(prd *PRD, stories []Story) *PlanStructureReport {
 		}
 		return baseNameSet[name]
 	}
-	// generatesAtOrBefore reports whether p is listed in the
-	// FilesGenerated of a task at or before the (si, maxTI) point in
-	// plan order; maxTI == -1 covers the whole story (story-level
-	// references).
+	// generatesAtOrBefore reports whether p is declared as a generated
+	// output at or before the (si, maxTI) point in plan order: the
+	// referencing story's own FilesGenerated (a declared output of the
+	// story, honored for both story-level and task-level references),
+	// plus the FilesGenerated of the tasks at or before maxTI of the
+	// referencing story and of every task of every earlier story.
+	// maxTI == -1 covers the whole story (story-level references).
+	// Entries match by exact path, and — when p is a bare file name with
+	// no directory component — also by base name, so a spec naming
+	// "helper.go" resolves against a task generating "pkg/helper.go".
 	generatesAtOrBefore := func(si, maxTI int, p string) bool {
+		bare := !strings.Contains(p, "/")
+		matches := func(g string) bool {
+			if g == p {
+				return true
+			}
+			return bare && filepath.Base(g) == p
+		}
 		for i, s := range stories {
 			if i > si {
 				break
+			}
+			if i == si {
+				for _, g := range s.FilesGenerated {
+					if matches(g) {
+						return true
+					}
+				}
 			}
 			last := len(s.Tasks)
 			if i == si && maxTI >= 0 && maxTI < len(s.Tasks) {
@@ -360,7 +385,7 @@ func CheckPlanStructure(prd *PRD, stories []Story) *PlanStructureReport {
 			}
 			for j := 0; j < last; j++ {
 				for _, g := range s.Tasks[j].FilesGenerated {
-					if g == p {
+					if matches(g) {
 						return true
 					}
 				}
@@ -394,7 +419,7 @@ func CheckPlanStructure(prd *PRD, stories []Story) *PlanStructureReport {
 				Kind:    FindingUnresolvedFile,
 				StoryID: s.ID,
 				TaskID:  taskIDAt(s, ti),
-				Detail:  where + " names file " + strconv.Quote(p) +
+				Detail: where + " names file " + strconv.Quote(p) +
 					" which exists neither in the project tree (" + baseDir +
 					") nor in an earlier task's FilesGenerated",
 			})
@@ -411,7 +436,7 @@ func CheckPlanStructure(prd *PRD, stories []Story) *PlanStructureReport {
 			add(StructuralFinding{
 				Kind:    FindingUnresolvedFile,
 				StoryID: s.ID,
-				Detail:  "story " + s.ID + " FilesGenerated entry " + strconv.Quote(g) +
+				Detail: "story " + s.ID + " FilesGenerated entry " + strconv.Quote(g) +
 					" is produced by no task in the plan and not in tree " + baseDir,
 			})
 		}
@@ -622,4 +647,3 @@ func lessRotation(nodes []string, i, j int) bool {
 	}
 	return false
 }
-
