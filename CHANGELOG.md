@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.61 — Automatic task commits use the task title as their subject
+
+### Fixed
+Automatic commits made after an automated task now use the task's title as their subject, and the commit body lists the files changed and the verification result. Snapshot commits made before a task starts now name the PRD and the purpose of the snapshot instead of repeating the worker prompt.
+
 ## v9.5.60 — Task delivery is protected from the completion detector
 
 ### Fixed
