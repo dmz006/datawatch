@@ -398,6 +398,10 @@ type Command struct {
 	// When true, --chrome is forwarded to claude-code at launch.
 	Chrome bool
 
+	// Git — parsed from "new: git=true: <task>". When true, the started
+	// session opts into git init/snapshot/commit. Default false.
+	Git bool
+
 	// BL347/BL351 — session lineage flags parsed from "new:" command.
 	// ParentID: "new: parent=<hostname-hex>: <task>" — records calling session.
 	// KillChildren: "new: kill_children=true: <task>" — cascade kill direct children.
@@ -458,6 +462,7 @@ type Command struct {
 	SpawnEffort    string // quick/normal/thorough
 	SpawnOneShot   bool   // auto-terminate on DATAWATCH_COMPLETE:
 	SpawnEphemeral bool   // reap workspace on delete
+	SpawnGit       bool   // opt in to git init/snapshot/commit (default false)
 
 	// BL356 — CmdExitHook fields.
 	ExitHookVerb          string // "list" | "add" | "delete" | "enable" | "disable"
@@ -550,7 +555,7 @@ func parseScheduleSpawnParams(text string) Command {
 			params[k] = v
 		}
 	}
-	spawnKeys := []string{" task=", " dir=", " backend=", " llm-ref=", " model=", " effort=", " cron=", " at=", " name=", " session-name=", " one-shot=", " ephemeral="}
+	spawnKeys := []string{" task=", " dir=", " backend=", " llm-ref=", " model=", " effort=", " cron=", " at=", " name=", " session-name=", " one-shot=", " ephemeral=", " git="}
 	// Handle task= which may be multi-word
 	if idx := strings.Index(text, "task="); idx >= 0 {
 		val := text[idx+5:]
@@ -595,6 +600,9 @@ func parseScheduleSpawnParams(text string) Command {
 	if v, ok := params["ephemeral"]; ok {
 		cmd.SpawnEphemeral = v == "true" || v == "1"
 	}
+	if v, ok := params["git"]; ok {
+		cmd.SpawnGit = v == "true" || v == "1"
+	}
 	return cmd
 }
 
@@ -632,10 +640,10 @@ func Parse(text string) Command {
 		// v8.10.0 — extended with parent=<id> and kill_children=true.
 		// v8.10.3 — extended with kill_children_recursive=true (BL351).
 		// Strip leading key=value tokens before the ": <task>" separator.
-		// Recognised keys: llm, compute, chrome, parent, kill_children, kill_children_recursive.
+		// Recognised keys: llm, compute, chrome, git, parent, kill_children, kill_children_recursive.
 		// Unknown keys are left alone (the entire prefix becomes part of the
 		// task), preserving back-compat.
-		knownPrefixes := []string{"llm=", "compute=", "chrome=", "parent=", "kill_children=", "kill_children_recursive="}
+		knownPrefixes := []string{"llm=", "compute=", "chrome=", "git=", "parent=", "kill_children=", "kill_children_recursive="}
 		hasKnown := false
 		for _, p := range knownPrefixes {
 			if strings.HasPrefix(rest, p) {
@@ -648,7 +656,7 @@ func Parse(text string) Command {
 			prefix := rest[:idx]
 			tail := strings.TrimSpace(rest[idx+2:])
 			llmRef, computeRef, parentID := "", "", ""
-			chrome, killChildren, killChildrenRecursive := false, false, false
+			chrome, git, killChildren, killChildrenRecursive := false, false, false, false
 			ok := true
 			for _, tok := range strings.Fields(prefix) {
 				switch {
@@ -660,6 +668,10 @@ func Parse(text string) Command {
 					chrome = true
 				case tok == "chrome=false":
 					// explicit false → leave chrome=false, still valid
+				case tok == "git=true":
+					git = true
+				case tok == "git=false":
+					// explicit false → leave git=false, still valid
 				case strings.HasPrefix(tok, "parent="):
 					parentID = strings.TrimPrefix(tok, "parent=")
 				case tok == "kill_children=true":
@@ -674,13 +686,14 @@ func Parse(text string) Command {
 					ok = false
 				}
 			}
-			if ok && (llmRef != "" || chrome || parentID != "" || killChildren || killChildrenRecursive) {
+			if ok && (llmRef != "" || chrome || git || parentID != "" || killChildren || killChildrenRecursive) {
 				return Command{
 					Type:                  CmdNew,
 					Text:                  tail,
 					LLMRef:                llmRef,
 					ComputeNodeRef:        computeRef,
 					Chrome:                chrome,
+					Git:                   git,
 					ParentID:              parentID,
 					KillChildren:          killChildren,
 					KillChildrenRecursive: killChildrenRecursive,

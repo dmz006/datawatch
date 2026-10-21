@@ -1571,6 +1571,7 @@ func (r *Router) handleScheduleSpawn(cmd Command) {
 		RunAt:        runAt,
 		OneShot:      cmd.SpawnOneShot,
 		Ephemeral:    cmd.SpawnEphemeral,
+		Git:          cmd.SpawnGit,
 	})
 	if err != nil {
 		r.send(fmt.Sprintf("[%s] Failed to schedule spawn: %v", r.hostname, err))
@@ -1627,6 +1628,9 @@ func (r *Router) handleNew(cmd Command) {
 		if cmd.Chrome {
 			body["chrome"] = true
 		}
+		if cmd.Git {
+			body["git"] = true
+		}
 		if cmd.ParentID != "" {
 			body["parent_id"] = cmd.ParentID
 		}
@@ -1658,6 +1662,9 @@ func (r *Router) handleNew(cmd Command) {
 	if cmd.Chrome {
 		t := true
 		startOpts.Chrome = &t
+	}
+	if cmd.Git {
+		startOpts.Git = true
 	}
 	if cmd.ParentID != "" {
 		startOpts.ParentID = cmd.ParentID

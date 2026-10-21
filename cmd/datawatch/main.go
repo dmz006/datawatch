@@ -11694,6 +11694,7 @@ func runScheduler(ctx context.Context, store *session.ScheduleStore, mgr *sessio
 					OneShot:            ds.OneShot,
 					EphemeralWorkspace: ds.Ephemeral,
 					Subprocess:         ds.Subprocess,
+					Git:                ds.Git,
 				}
 				sess, err := mgr.Start(ctx, ds.Task, "", ds.ProjectDir, opts)
 				if err != nil {
