@@ -485,3 +485,49 @@ func TestPlanReviewCategories_Dedup(t *testing.T) {
 		t.Fatalf("planReviewCategories = %v, want [missing too_large]", got)
 	}
 }
+
+// --- decompose tail integration (streaming path, failure routing) -----
+
+// The streaming decompose shares finalizeDecomposedPlan with Decompose, so
+// a block-mode verdict must land there too and gate Approve.
+func TestPlanReview_Streaming_BlockVerdictRecordedAndGatesApprove(t *testing.T) {
+	calls := 0
+	m := newPlanReviewManager(t, planReviewConfig("block"), func(ctx context.Context, req PlanReviewRequest) (PlanReviewVerdict, error) {
+		calls++
+		return PlanReviewVerdict{Ok: false, Severity: "high", Summary: "plan misses the spec"}, nil
+	})
+	prd, _ := m.CreatePRD("spec", "", "", "", "")
+	updated, err := m.decomposeStreamingCore(prd.ID, nil)
+	if err != nil {
+		t.Fatalf("decomposeStreamingCore must not fail on a negative verdict: %v", err)
+	}
+	if calls != 1 {
+		t.Fatalf("reviewer called %d times, want 1", calls)
+	}
+	if updated.Status != PRDNeedsReview {
+		t.Fatalf("status = %q, want needs_review", updated.Status)
+	}
+	if _, err := m.Approve(prd.ID, "op", ""); err == nil {
+		t.Fatal("Approve must be refused by a blocking verdict")
+	}
+}
+
+// A decompose that fails (here: unparseable output) is routed through the
+// existing failure path and must never invoke the reviewer.
+func TestPlanReview_DecomposeFailure_NeverReviews(t *testing.T) {
+	m, err := NewManager(t.TempDir(), planReviewConfig("block"), func(req DecomposeRequest) (string, error) {
+		return "not json at all", nil
+	})
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	m.SetPlanReview(reviewerMustNotRun(t))
+	prd, _ := m.CreatePRD("spec", "", "", "", "")
+	if _, err := m.Decompose(prd.ID); err == nil {
+		t.Fatal("expected decompose failure for unparseable output")
+	}
+	stored, _ := m.store.GetPRD(prd.ID)
+	if stored.PlanReview != nil {
+		t.Fatalf("failed decompose must not record a review, got %+v", stored.PlanReview)
+	}
+}
