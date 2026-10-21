@@ -97,7 +97,8 @@ def registry_open_rows(path="docs/plans/README.md"):
             continue
         if POST10_RE.search(" ".join(cells)):
             continue
-        rows.append((m.group(1), item[:70], status[:60]))
+        has_prd = bool(re.search(r"PRD `[0-9a-f]{8}`|`[0-9a-f]{8}`", " ".join(cells)))
+        rows.append((m.group(1), item[:70], status[:60], has_prd))
     return rows
 
 
@@ -175,20 +176,35 @@ def main():
     throughput = max(last24, total_done / elapsed_days if elapsed_days else 0)
 
     open_rows = registry_open_rows()
-    # Remaining PRDs: open registry rows (each about one PRD; phase rows are
-    # one PRD per phase) plus in-flight and waiting PRDs not yet done.
-    in_flight = sum(s["running"] + s["waiting"] + s["blocked"] for s in st.values())
+    # Remaining work = (1) PRDs that already exist and are not done, with the
+    # tasks they still have, plus (2) work that has no PRD yet: registry rows
+    # with no PRD id, and the PRDs that multi-phase rows will expand into.
+    # Existing PRDs are never counted a second time through their registry row.
+    existing_left = [p for p in prds if p["status"] not in DONE_STATUS]
+    existing_prds_left = len(existing_left)
+    existing_tasks_left = sum(
+        1 for p in existing_left for story in p.get("stories", [])
+        for t in story.get("tasks", []) if t["status"] != "completed"
+    )
+    undecomposed = sum(
+        1 for p in existing_left
+        if not any(story.get("tasks") for story in p.get("stories", []))
+    )
     avg_tasks = (
         (st["feature"]["tasks"] + st["bug"]["tasks"]) / max(len(prds), 1)
     )
-    # BL405 phases 0-10 and the four security items expand into several PRDs.
+    unfiled_rows = [r for r in open_rows if not r[3]]
     expand = 0
-    for rid, item, _ in open_rows:
+    for rid, item, _, _ in open_rows:
         if "BL405" in item:
             expand += 10
         if item.startswith("Security remediation"):
             expand += 3
-    remaining_prds = len(open_rows) + expand
+    new_prds = len(unfiled_rows) + expand
+    remaining_prds = existing_prds_left + new_prds
+    est_tasks_new = (new_prds + undecomposed) * avg_tasks
+    remaining_tasks = existing_tasks_left + est_tasks_new
+    in_flight = sum(s["running"] for s in st.values())
     avg_wall = [h for s in st.values() for h in s["prd_wall_h"]]
     avg_wall_h = sum(avg_wall) / len(avg_wall) if avg_wall else None
     eta_days = (remaining_prds / throughput) if throughput else None
@@ -201,10 +217,12 @@ def main():
         elapsed_days=round(elapsed_days, 2),
         groups=st,
         completed_prds=total_done,
-        in_flight_prds=in_flight,
-        open_registry_rows=len(open_rows),
-        expanded_prds=expand,
+        running_prds=in_flight,
+        existing_prds_left=existing_prds_left,
+        existing_tasks_left=existing_tasks_left,
+        new_prds_not_yet_filed=new_prds,
         remaining_prds=remaining_prds,
+        remaining_tasks_est=round(remaining_tasks),
         throughput_per_day=round(throughput, 1),
         avg_prd_wall_h=avg_wall_h,
         avg_tasks_per_prd=round(avg_tasks, 1),
@@ -237,19 +255,23 @@ def main():
         "total", tp, total_done, "", "", "", tt, td, tt - td,
         fmt_h(st["feature"]["work_h"] + st["bug"]["work_h"])))
     print("")
-    print("LEFT  open registry rows: %d (+%d PRDs from phase/multi-item rows) = about %d more PRDs, "
-          "%d already in flight; about %.0f more tasks at %.1f tasks/PRD" % (
-              len(open_rows), expand, remaining_prds, in_flight,
-              remaining_prds * avg_tasks, avg_tasks))
+    print("LEFT  existing PRDs not done: %d (%d running, %d waiting or blocked) with %d tasks still open; "
+          "%d of them are not decomposed yet" % (
+              existing_prds_left, in_flight, existing_prds_left - in_flight,
+              existing_tasks_left, undecomposed))
+    print("      not yet filed: %d registry rows with no PRD + %d PRDs from multi-phase rows = %d new PRDs"
+          % (len(unfiled_rows), expand, new_prds))
+    print("      total left: about %d PRDs and about %d tasks (%d existing + %.0f estimated at %.1f tasks/PRD)" % (
+        remaining_prds, remaining_tasks, existing_tasks_left, est_tasks_new, avg_tasks))
     print("ETA   throughput %.1f PRDs/day -> about %s; lane math (avg %s/PRD over %d lanes) -> about %s" % (
         throughput,
         "-" if eta_days is None else "%.1f days" % eta_days,
         fmt_h(avg_wall_h), LANES,
         "-" if eta_lane_days is None else "%.1f days" % eta_lane_days))
-    print("      (estimate only: open rows are counted as one PRD each; BL405 counts 10 more, security 3 more)")
-    print("OPEN ROWS (first 14 of %d): %s" % (
-        len(open_rows),
-        "; ".join("%s %s" % (r[0], r[1][:30]) for r in open_rows[:14])))
+    print("      (estimate only; a range, not a promise. Many blocked/waiting PRDs are old and may never run.)")
+    print("UNFILED ROWS (first 14 of %d): %s" % (
+        len(unfiled_rows),
+        "; ".join("%s %s" % (r[0], r[1][:30]) for r in unfiled_rows[:14])))
 
 
 if __name__ == "__main__":
