@@ -41,6 +41,7 @@ open questions 17 to 20) is where these rules become mechanical.
   them, that is a product bug to fix in datawatch, not a reason to change their setup.
 - **Commits.** The supervisor commits validated work it owns, staging an explicit list of
   files. An automatic snapshot or task commit is not approval of its contents.
+- **Idle lanes are the supervisor's defect, not an operator question (2026-10-21).** The operator should never have to ask why a lane is idle. Check 4 of the tick (section 11) is mandatory and fills every idle lane in the same tick. Ask the operator only for design decisions.
 - **Merge, push, tag and release are the supervisor's calls (2026-10-21).** The supervisor is
   release manager. A completed, validated PRD is merged, pushed (fast-forward, Section A
   checks pass) and tagged (patch or minor) without asking; only the 10.0 tag is the
@@ -437,11 +438,17 @@ The tick runs these checks in order and reports only state changes and idle lane
 1. Infrastructure: qwen3.8-64k:27b resident locally (`ollama ps`) and on 100.64.0.20.
 2. Every non-terminal PRD (`prd-list`, `prd-get`). A session silent for 15 minutes after a read with no reply is wedged: kill that one session by ID.
 3. Model and routing drift: restate backend and decomposition profile together in `prd-set-llm`.
-4. Lane fill, per section 3: GPU lanes 1 and 2, Claude lanes 1 to 3. Record the weekly % and days since reset; apply the pace rule. Start eligible work on any idle lane; a one-off Claude decompose only inside pace; P0 per the P0 rule.
+4. **Lane fill is mandatory (operator, 2026-10-21: "I shouldn't have to keep asking about idle lanes").** After checks 0 to 3, look at GPU 1, GPU 2 and Claude 1 to 3. Every lane that is not running a PRD MUST be given work in this same tick, taking the first source that has something:
+   a. Already-decomposed PRDs (`prd-list` approved, then needs_review): read the spec first (a spec that says HOLD or "sequenced last" is never run; BL424 was started by mistake on 2026-10-21), validate against section 4, approve, run.
+   b. PRDs whose tasks are all done but whose status is blocked or failed: rejudge or merge (section 7).
+   c. Draft PRDs: set backend and decomposition profile together, decompose, validate, run.
+   d. File a new PRD from the roadmap: the lowest-numbered not-started row in `docs/plans/README.md` whose dependencies are done (rows 10, 11, 12, 13 first, then open defects), with the design document's phase section as the spec, and decompose it.
+   GPU lanes take mechanical PRDs on pi-prompt (tests, docs, ports, small fixes, CRUD); Claude decomposes everything and takes the hard debugging and design-heavy PRDs. Keep decompose-ahead: at all times at least one validated, approved PRD waits per lane type so a freed lane starts without a tick. The report line for an idle lane must name a blocker with an identifier (for example "GPU 2: projected weekly 47% vs 46.7% allowed") or the lane gets work. "Nothing eligible" is never a valid report; a lane left idle without a named blocker is a supervisor defect, fixed in that tick and recorded in the BL514 row.
+   Pace: use the last operator-reported weekly % and project it forward (assume +4 points per 24 hours with no new reading, and +2 points for each Claude PRD started since the reading). Ask the operator for a reading at most once per day and never wait for the answer. If the projection exceeds the allowed pace, move the work to the GPU lanes rather than idling. A one-off Claude decompose is allowed inside the pace; P0 per the P0 rule.
 5. Validate every decompose against section 4, including the tests rule.
 6. Merges per AGENT.md; the supervisor then pushes (fast-forward, Section A green) and tags patch and minor releases itself, watches CI, and reruns a failed Release. Do not ask the operator; if a risk remains, ship what is ready and file a follow-up PRD.
 7. README registry matches the registry; each defect has a row and a draft PRD.
-8. Report state changes only.
+8. Report: one line per lane (occupant, or the named blocker), then state changes only. Never end a report with a question about idle lanes.
 
 ### Lesson: third tmux server death, 2026-10-20 18:46:35 (cause found)
 
