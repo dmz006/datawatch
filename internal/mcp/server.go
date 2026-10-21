@@ -1480,6 +1480,9 @@ func (s *Server) toolStartSession() mcpsdk.Tool {
 		mcpsdk.WithBoolean("kill_children",
 			mcpsdk.Description("When true, killing this session will also kill direct child sessions it has spawned. Default false."),
 		),
+		mcpsdk.WithBoolean("git",
+			mcpsdk.Description("Opt-in git integration: when true, the session works in a git repo with init/snapshot/auto-commit of its changes. Default false (no git integration)."),
+		),
 		mcpsdk.WithBoolean("kill_children_recursive",
 			mcpsdk.Description("BL351 — when true, killing this session kills ALL descendants recursively, regardless of their own kill_children settings. Supersedes kill_children when both are set."),
 		),
@@ -1997,6 +2000,7 @@ func (s *Server) handleStartSession(ctx context.Context, req mcpsdk.CallToolRequ
 	callerID := req.GetString("caller_session_id", "")
 	killChildren := req.GetBool("kill_children", false)
 	killChildrenRecursive := req.GetBool("kill_children_recursive", false)
+	git := req.GetBool("git", false)
 
 	if pm != "" {
 		valid := map[string]bool{
@@ -2015,7 +2019,7 @@ func (s *Server) handleStartSession(ctx context.Context, req mcpsdk.CallToolRequ
 	// v8.8.3 — also forward when chrome=true so the flag reaches claudecode.Backend.
 	// v8.9.24 — also forward when permission_mode is set so the flag reaches
 	// claudecode.Backend.SetPermissionMode via the REST handler.
-	if (llmRef != "" || chrome || pm != "" || callerID != "" || killChildren || killChildrenRecursive) && s.webPort > 0 {
+	if (llmRef != "" || chrome || pm != "" || callerID != "" || killChildren || killChildrenRecursive || git) && s.webPort > 0 {
 		body := map[string]any{"task": task}
 		if llmRef != "" {
 			body["llm"] = llmRef
@@ -2040,6 +2044,9 @@ func (s *Server) handleStartSession(ctx context.Context, req mcpsdk.CallToolRequ
 		}
 		if killChildrenRecursive {
 			body["kill_children_recursive"] = true
+		}
+		if git {
+			body["git"] = true
 		}
 		bodyJSON, _ := json.Marshal(body)
 		sreq, _ := http.NewRequestWithContext(ctx, http.MethodPost,
