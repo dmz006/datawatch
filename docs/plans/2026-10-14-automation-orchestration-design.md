@@ -1354,6 +1354,16 @@ goes and the optimizer can act on it. Stages, with what exists today and what mu
 | CI and release | tag pushed | release workflow green | not in the store; add from `ci_watch` events |
 | Deployed | release green | daemon running that version | add: daemon version change event |
 
+| Operator wait (whole system) | an explicit `operator_wait_start` event: the supervisor or a PRD asks the operator and stops | `operator_wait_end` when the answer arrives | not recorded; the status script infers it from 3 h or longer gaps with no task activity (15 such gaps, 137 h, about half of calendar time since 2026-10-10) |
+
+**Operator waits are tracked, not zeroed (operator, 2026-10-21).** Each wait carries a `kind`:
+`design` (a design decision only the operator can make) or `build` (a build, release or merge
+decision that is the supervisor's to make). Rates, throughput and utilization are computed on active
+time, so one overnight wait does not make the lanes look slow. The dashboard also shows the waits
+themselves, the share of calendar time they took, and a calendar estimate that includes that share.
+A `build` wait is a supervisor defect and is reported as one; `design` waits are expected. Until the
+events exist, inactive windows are inferred from task activity and labelled as inferred.
+
 The dashboard shows each stage's median and p90 per kind, the share of lead time each stage takes,
 and the slowest stage. Anything that cannot be timed yet is shown as "not measured", never as zero.
 

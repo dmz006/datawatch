@@ -24,9 +24,10 @@ import json
 import re
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 SINCE = "2026-10-10"  # roadmap lock date (docs/plans/README.md)
+GAP_H = 3.0  # hours of no task activity that count as an inactive window
 LANES = 5  # two GPU lanes + three Claude lanes
 
 BUG_RE = re.compile(
@@ -177,12 +178,53 @@ def main():
         ends = [parse_ts(t.get("completed_at")) for sy in p.get("stories", []) for t in sy.get("tasks", [])]
         ends = [x for x in ends if x]
         return max(ends) if ends else None
+    # Inactive windows: stretches of GAP_H hours or more with no task start or
+    # completion anywhere. Mostly overnight waits for the operator (including
+    # build decisions that were the supervisor's to make) plus outages. They
+    # are reported but excluded from the calculator: rates, utilization and
+    # the estimate use ACTIVE time only. Extra explicit windows can be listed in
+    # docs/plans/operator-wait-windows.tsv (start<TAB>end<TAB>kind<TAB>reason,
+    # ISO times with offset); they are excluded the same way.
+    evs = []
+    for pr in prds:
+        for sy in pr.get("stories", []):
+            for t in sy.get("tasks", []):
+                for k in ("started_at", "completed_at"):
+                    x = parse_ts(t.get(k))
+                    if x and x >= since_dt:
+                        evs.append(x)
+    evs.sort()
+    windows = []
+    for a, b in zip(evs, evs[1:]):
+        if (b - a).total_seconds() / 3600.0 >= GAP_H:
+            windows.append((a, b, "inactive"))
+    try:
+        for line in open("docs/plans/operator-wait-windows.tsv"):
+            f = line.rstrip("\n").split("\t")
+            if len(f) >= 3 and not f[0].startswith("#"):
+                a, b = parse_ts(f[0]), parse_ts(f[1])
+                if a and b and b > a:
+                    windows.append((a, b, f[2]))
+    except OSError:
+        pass
+
+    def active_hours(t0, t1):
+        total = (t1 - t0).total_seconds() / 3600.0
+        for a, b, _ in windows:
+            lo, hi = max(a, t0), min(b, t1)
+            if hi > lo:
+                total -= (hi - lo).total_seconds() / 3600.0
+        return max(total, 0.1)
+
+    excluded_h = sum((b - a).total_seconds() / 3600.0 for a, b, _ in windows)
+    cal_days = elapsed_days
+    elapsed_days = active_hours(max(first, since_dt), now) / 24.0
     done_ps = [p for p in prds if p["status"] in DONE_STATUS]
     cut24 = now.timestamp() - 86400
     cut72 = now.timestamp() - 3 * 86400
     last24 = sum(1 for p in done_ps if last_done(p) and last_done(p).timestamp() >= cut24)
     last72 = sum(1 for p in done_ps if last_done(p) and last_done(p).timestamp() >= cut72)
-    throughput = last72 / 3.0 if last72 else 0.0
+    throughput = last72 / (active_hours(now - timedelta(days=3), now) / 24.0) if last72 else 0.0
 
     open_rows = registry_open_rows()
     # Remaining work = (1) PRDs that already exist and are not done, with the
@@ -249,7 +291,7 @@ def main():
         print(json.dumps(result, indent=1))
         return
 
-    print("v10.0.0 STATUS  (since %s, %.1f days elapsed, %d lanes)" % (since, elapsed_days, LANES))
+    print("v10.0.0 STATUS  (since %s: %.1f calendar days, %.1f ACTIVE days after excluding %d inactive windows of %.0f h; %d lanes)" % (since, cal_days, elapsed_days, len(windows), excluded_h, LANES))
     print("%-8s %5s %5s %5s %6s %7s | %6s %6s %5s | %9s %9s %9s" % (
         "", "PRDs", "done", "run", "wait", "blocked", "tasks", "done", "left",
         "work", "med/PRD", "avg/task"))
@@ -316,7 +358,17 @@ def main():
     rate_all = len(done_tasks) / elapsed_days
     print("      task math: %d tasks left at %.0f tasks/day overall -> %.1f days; at %d tasks in the last 24 h -> %s" % (
         remaining_tasks, rate_all, remaining_tasks / rate_all if rate_all else 0,
-        last24_tasks, "-" if not last24_tasks else "%.1f days" % (remaining_tasks / last24_tasks)))
+        last24_tasks, "-" if not last24_tasks else "%.1f days" % (remaining_tasks / last24_tasks * active_hours(now - timedelta(days=1), now) / 24.0)))
+    idle_share = excluded_h / (cal_days * 24.0) if cal_days else 0.0
+    cal_eta = (remaining_tasks / (len(done_tasks) / elapsed_days)) / (1.0 - idle_share) if elapsed_days and idle_share < 0.95 else None
+    print("WAITS %d inactive windows, %.0f h = %.0f%% of calendar time (excluded from every rate above, never hidden). "
+          "Calendar view if the same share recurs: about %s; with no waits (no operator-held build decisions): about the active-time figures above." % (
+              len(windows), excluded_h, idle_share * 100,
+              "-" if cal_eta is None else "%.1f days" % cal_eta))
+    for a, b, kind in windows:
+        loc = timezone(timedelta(hours=-4))
+        print("      %s -> %s  %.1f h  [%s]" % (a.astimezone(loc).strftime("%m-%d %H:%M"), b.astimezone(loc).strftime("%m-%d %H:%M"),
+                                              (b - a).total_seconds() / 3600.0, kind))
     print("      (estimate only; a range, not a promise. Many blocked/waiting PRDs are old and may never run.)")
     print("UNFILED ROWS (first 14 of %d): %s" % (
         len(unfiled_rows),
