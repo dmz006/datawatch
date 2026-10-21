@@ -1766,5 +1766,13 @@
   "status_est_cost": "est.",
   "prd_task_projdir_label": "Project dir override",
   "prd_task_projdir_placeholder": "inherits Automaton dir",
-  "prd_task_projdir_badge_title": "Per-task project dir override"
+  "prd_task_projdir_badge_title": "Per-task project dir override",
+  "settings_plan_review_backend": "Plan review backend — optional, empty = off. When set the plan is reviewed after decompose",
+  "settings_plan_review_model": "Plan review model",
+  "settings_plan_review_mode": "Plan review mode — block mode holds approval on a failing verdict",
+  "settings_smoke_verification_backend": "Smoke verification backend — optional, empty = off. Verifier LLM for smoke / final-gate tasks",
+  "settings_smoke_verification_model": "Smoke verification model",
+  "prd_plan_review_ok": "Plan review passed",
+  "prd_plan_review_fail": "Plan review failed",
+  "prd_plan_review_rerun": "Re-run review"
 }

@@ -1766,5 +1766,13 @@
   "status_est_cost": "est.",
   "prd_task_projdir_label": "Répertoire de projet (surcharge)",
   "prd_task_projdir_placeholder": "hérite du répertoire de l'Automate",
-  "prd_task_projdir_badge_title": "Surcharge du répertoire de projet par tâche"
+  "prd_task_projdir_badge_title": "Surcharge du répertoire de projet par tâche",
+  "settings_plan_review_backend": "Backend de revue de plan — facultatif, vide = désactivé. Si configuré, le plan est revu après la décomposition",
+  "settings_plan_review_model": "Modèle de revue de plan",
+  "settings_plan_review_mode": "Mode de revue de plan — le mode bloc retient l'approbation en cas de verdict en échec",
+  "settings_smoke_verification_backend": "Backend de vérification fumigène — facultatif, vide = désactivé. LLM vérificateur des tâches fumigène/porte finale",
+  "settings_smoke_verification_model": "Modèle de vérification fumigène",
+  "prd_plan_review_ok": "Revue de plan réussie",
+  "prd_plan_review_fail": "Revue de plan échouée",
+  "prd_plan_review_rerun": "Relancer la revue"
 }

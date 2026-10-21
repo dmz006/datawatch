@@ -5697,6 +5697,12 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"ci_watch_timeout_seconds":      s.cfg.Autonomous.CIWatchTimeoutSeconds,
 			"per_prd_guardrails":            s.cfg.Autonomous.PerPRDGuardrails, // rules-review, ci-watch
 			"block_on_file_drift":           s.cfg.Autonomous.BlockOnFileDrift, // strict foreign-file-drift enforcement
+			// Plan review gate + smoke verification settings.
+			"plan_review_backend":        s.cfg.Autonomous.PlanReviewBackend,
+			"plan_review_model":          s.cfg.Autonomous.PlanReviewModel,
+			"plan_review_mode":           s.cfg.Autonomous.PlanReviewMode,
+			"smoke_verification_backend": s.cfg.Autonomous.SmokeVerificationBackend,
+			"smoke_verification_model":   s.cfg.Autonomous.SmokeVerificationModel,
 			// Pre-existing foreign-file-drift enforcement mode: "block"
 			// (default) or "warn". Show the effective mode so an unset
 			// value renders as "block" (same as the executor's
@@ -5897,6 +5903,16 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	if v, ok := patch["autonomous.plan_coverage_min_ratio"]; ok {
 		if _, verr := configPatchFloat(v); verr != nil {
 			http.Error(w, "autonomous."+verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	// plan_review_mode must be a known mode (off/warn/block). A typo would
+	// otherwise normalize to off and silently disable the gate, so reject
+	// the whole PUT as a client error.
+	if mv, ok := patch["autonomous.plan_review_mode"]; ok {
+		mode := toString(mv)
+		if !autonomous.ValidPlanReviewMode(mode) {
+			http.Error(w, fmt.Sprintf("autonomous.plan_review_mode: %q is not a valid mode (expected off, warn or block)", mode), http.StatusBadRequest)
 			return
 		}
 	}
@@ -7280,6 +7296,18 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			cfg.Autonomous.AutoFixSkipApproval = toBool(v)
 		case "autonomous.block_on_file_drift":
 			cfg.Autonomous.BlockOnFileDrift = toBool(v)
+		// Plan review gate (plan_review_mode is pre-validated in
+		// handlePutConfig) and smoke-verification reviewer override.
+		case "autonomous.plan_review_backend":
+			cfg.Autonomous.PlanReviewBackend = toString(v)
+		case "autonomous.plan_review_model":
+			cfg.Autonomous.PlanReviewModel = toString(v)
+		case "autonomous.plan_review_mode":
+			cfg.Autonomous.PlanReviewMode = toString(v)
+		case "autonomous.smoke_verification_backend":
+			cfg.Autonomous.SmokeVerificationBackend = toString(v)
+		case "autonomous.smoke_verification_model":
+			cfg.Autonomous.SmokeVerificationModel = toString(v)
 		case "autonomous.drift_mode": // "block" (default) or "warn"; validated in handlePutConfig
 			if mode := toString(v); config.ValidateDriftMode(mode) == nil {
 				cfg.Autonomous.DriftMode = mode

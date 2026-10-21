@@ -1766,5 +1766,13 @@
   "status_est_cost": "est.",
   "prd_task_projdir_label": "プロジェクトディレクトリの上書き",
   "prd_task_projdir_placeholder": "オートマトンのディレクトリを継承",
-  "prd_task_projdir_badge_title": "タスクごとのプロジェクトディレクトリ上書き"
+  "prd_task_projdir_badge_title": "タスクごとのプロジェクトディレクトリ上書き",
+  "settings_plan_review_backend": "プランレビューバックエンド — オプション、空なら無効。設定すると分解後にプランがレビューされます",
+  "settings_plan_review_model": "プランレビューモデル",
+  "settings_plan_review_mode": "プランレビューモード — block モードでは不合格の判定で承認が保留されます",
+  "settings_smoke_verification_backend": "スモーク検証バックエンド — オプション、空なら無効。smoke / final-gate タスクの検証 LLM",
+  "settings_smoke_verification_model": "スモーク検証モデル",
+  "prd_plan_review_ok": "プランレビュー合格",
+  "prd_plan_review_fail": "プランレビュー不合格",
+  "prd_plan_review_rerun": "レビュー再実行"
 }

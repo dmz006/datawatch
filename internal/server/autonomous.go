@@ -22,6 +22,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"math"
@@ -164,6 +165,39 @@ func autonomousConfigWarnings(mgr AutonomousAPI) []string {
 		}
 	}
 	return []string{}
+}
+
+// planReviewRunner is the optional surface a manager exposes for
+// operator-triggered re-runs of the pre-approval plan review. Asserted as
+// a sub-interface so minimal AutonomousAPI test doubles keep compiling.
+type planReviewRunner interface {
+	ReviewPlan(id string, actor string) (any, error)
+}
+
+func runPlanReview(mgr AutonomousAPI, prdID, actor string) (any, error) {
+	pr, ok := mgr.(planReviewRunner)
+	if !ok {
+		return nil, fmt.Errorf("plan review is not wired on this daemon (no reviewer surface)")
+	}
+	return pr.ReviewPlan(prdID, actor)
+}
+
+// stringOfPlanReview extracts the plan_review mode from a PRD value for
+// the plan-review audit entry; tolerant of map or struct shapes.
+func stringOfPlanReview(prd any) string {
+	switch v := prd.(type) {
+	case map[string]any:
+		if pr, ok := v["plan_review"].(map[string]any); ok {
+			if m, ok := pr["mode"].(string); ok {
+				return m
+			}
+		}
+	case *autonomous.PRD:
+		if v != nil && v.PlanReview != nil {
+			return v.PlanReview.Mode
+		}
+	}
+	return ""
 }
 
 // handleAutonomousStatus — GET only.
@@ -606,6 +640,29 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		}
 		s.audit(r.Context(), "acknowledge_plan_coverage", "automaton", id, map[string]any{"actor": req.Actor, "note": req.Note}) // GH#201 Phase 4
 		s.writeAutonomousResult(w, r, updated, "", "", "")
+	// Plan review gate — operator-triggered re-run of the pre-approval
+	// reviewer judge. Same write gate as approve. Re-running replaces the
+	// stored verdict; with mode off the PRD is returned as stored.
+	case "plan-review", "run-plan-review", "run_plan_review":
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+			return
+		}
+		var req struct{ Actor string }
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		if req.Actor == "" {
+			req.Actor = "operator"
+		}
+		updated, err := runPlanReview(s.autonomousMgr, id, req.Actor)
+		if err != nil {
+			http.Error(w, "plan review: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		s.audit(r.Context(), "plan-review", "automaton", id, map[string]any{"mode": stringOfPlanReview(updated)}) // GH#201 Phase 4
+		s.writeAutonomousResult(w, r, updated, "", "", "plan review re-run")
 	case "reject":
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)

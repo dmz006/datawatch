@@ -1766,5 +1766,13 @@
   "status_est_cost": "est.",
   "prd_task_projdir_label": "Directorio de proyecto (anulación)",
   "prd_task_projdir_placeholder": "hereda el directorio del Autómata",
-  "prd_task_projdir_badge_title": "Anulación del directorio de proyecto por tarea"
+  "prd_task_projdir_badge_title": "Anulación del directorio de proyecto por tarea",
+  "settings_plan_review_backend": "Backend de revisión de plan — opcional, vacío = desactivado. Si se establece, el plan se revisa después de la descomposición",
+  "settings_plan_review_model": "Modelo de revisión de plan",
+  "settings_plan_review_mode": "Modo de revisión de plan — el modo de bloqueo retiene la aprobación con un veredicto fallido",
+  "settings_smoke_verification_backend": "Backend de verificación en frío — opcional, vacío = desactivado. LLM verificador para tareas smoke/puerta final",
+  "settings_smoke_verification_model": "Modelo de verificación en frío",
+  "prd_plan_review_ok": "Revisión de plan superada",
+  "prd_plan_review_fail": "Revisión de plan fallida",
+  "prd_plan_review_rerun": "Repetir revisión"
 }
