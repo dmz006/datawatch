@@ -157,7 +157,7 @@ Rows are in execution order; the numbers are stable ids, not positions. Operator
 | 18 | [BL431 Phase 5](2026-10-14-automation-orchestration-design.md) BudgetPolicy | not started | 17 |
 | 19 | [BL428 Phase 6](2026-10-14-concurrency-and-budget-design.md) Visibility, audit and parity close-out | not started | 17 |
 | 20 | [BL431 Phase 6](2026-10-14-automation-orchestration-design.md) Automation PWA | not started | 18 |
-| 21 | [BL427 Phase 4](2026-10-13-prd-lifecycle-events.md) Pending-events tool and PWA subscription UI | not started | 11 |
+| 21 | [BL427 Phase 4](2026-10-13-prd-lifecycle-events.md) Pending-events tool and PWA subscription UI | draft PRD `98e10001` filed 2026-10-21 19:25 (pi-prompt worker on a GPU lane, Claude decompose); dependency row 11 shipped in 9.5.64 | 11 |
 | 22 | [BL431 Phase 7](2026-10-14-automation-orchestration-design.md) Remaining parity, migration and close-out | not started | 20 |
 | 23 | [BL427 Phase 5](2026-10-13-prd-lifecycle-events.md) Webhook sink and federation forwarding | not started | 21 |
 
