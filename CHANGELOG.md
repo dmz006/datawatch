@@ -7,6 +7,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## v9.5.41 — Pin the gh builder Go toolchain above the CVE fix, with a pin check
 
+### Security
+- **The `agent-base` image no longer ships a `gh` binary built with a Go standard library that is flagged by CVE-2026-111943 (`crypto/x509`).** The `gh` build stage in `Dockerfile.agent-base` now uses Go 1.27.3 (the fixed release), and the other Dockerfiles pin Go 1.26.10 instead of a floating `1.26`.
+- **CI now builds and scans with the Go version in `go.mod`** (`go-version-file`) instead of a floating `stable`, which could resolve below the CVE floor.
+
+### Added
+- **`scripts/check-go-toolchain-pins.sh`** fails when any Dockerfile or workflow pins a Go version below 1.26.10. It runs in `make lint`, in the `ci` and `release` workflows, and has a `--self-test` mode.
 
 ## v9.5.40 — Git is now opt-in for sessions
 
