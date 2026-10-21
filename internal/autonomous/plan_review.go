@@ -30,8 +30,7 @@ import (
 
 // Finding categories (bounded set; the reviewer is instructed to use
 // only these — an unknown category is still recorded verbatim so an
-// operator can see what the reviewer said; validPlanReviewCategory is
-// used to classify, not to reject).
+// operator can see what the reviewer said).
 const (
 	PlanReviewCategoryMissing             = "missing"
 	PlanReviewCategoryWeakened            = "weakened"
@@ -40,21 +39,6 @@ const (
 	PlanReviewCategoryFragileVerification = "fragile_verification"
 	PlanReviewCategoryOutOfScope          = "out_of_scope"
 )
-
-// validPlanReviewCategory reports whether c is one of the bounded
-// finding categories above.
-func validPlanReviewCategory(c string) bool {
-	switch c {
-	case PlanReviewCategoryMissing,
-		PlanReviewCategoryWeakened,
-		PlanReviewCategoryTooLarge,
-		PlanReviewCategoryWrongDependency,
-		PlanReviewCategoryFragileVerification,
-		PlanReviewCategoryOutOfScope:
-		return true
-	}
-	return false
-}
 
 // Plan-review modes.
 const (

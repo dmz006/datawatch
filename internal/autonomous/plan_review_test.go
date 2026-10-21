@@ -35,8 +35,6 @@ type planReviewReviewer struct {
 	called   int
 }
 
-func (r *planReviewReviewer) fn(ctx interface{ Done() <-chan struct{} }) {} // never used
-
 // newPlanReviewManager builds a manager whose decompose emits one
 // story with one task; attach the reviewer via SetPlanReview when
 // wantReviewer is true.
