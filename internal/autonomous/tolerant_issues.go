@@ -23,6 +23,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 )
 
 // parseIssues accepts an absent/null/empty value (nil), a JSON array
@@ -118,58 +119,64 @@ func issueText(raw json.RawMessage) string {
 	return string(trimmed)
 }
 
-// severityField / fileField / lineField pull the well-known issue
-// object keys, tolerating either string or number values.
-func severityField(obj map[string]json.RawMessage) string {
-	if v, ok := obj["severity"]; ok {
+// fieldText pulls one well-known issue object key, tolerating either
+// string or number values.
+func fieldText(obj map[string]json.RawMessage, key string) string {
+	if v, ok := obj[key]; ok {
 		return issueText(v)
 	}
 	return ""
 }
 
-func fileField(obj map[string]json.RawMessage) string {
-	if v, ok := obj["file"]; ok {
-		return issueText(v)
+func hasString(list []string, s string) bool {
+	for _, x := range list {
+		if x == s {
+			return true
+		}
 	}
-	return ""
+	return false
 }
 
-func lineField(obj map[string]json.RawMessage) string {
-	if v, ok := obj["line"]; ok {
-		return issueText(v)
+// descriptionParts collects the textual body of an issue object:
+// description and message are both kept (deduplicated, order stable),
+// falling back to issue/text/detail when neither is present.
+func descriptionParts(obj map[string]json.RawMessage) []string {
+	var parts []string
+	if d := fieldText(obj, "description"); d != "" {
+		parts = append(parts, d)
 	}
-	return ""
-}
-
-// descriptionField pulls the description, accepting issue/text/detail
-// as fallbacks (first non-empty wins).
-func descriptionField(obj map[string]json.RawMessage) string {
-	for _, k := range []string{"description", "message", "issue", "text", "detail"} {
-		if v, ok := obj[k]; ok {
-			if s := issueText(v); s != "" {
-				return s
+	if m := fieldText(obj, "message"); m != "" && !hasString(parts, m) {
+		parts = append(parts, m)
+	}
+	if len(parts) == 0 {
+		for _, k := range []string{"issue", "text", "detail"} {
+			if v := fieldText(obj, k); v != "" {
+				parts = append(parts, v)
+				break
 			}
 		}
 	}
-	return ""
+	return parts
 }
 
 // renderIssueObject renders one issue object into a readable single
-// line, e.g. `[high] path/to/file.go:42: description text`. Key
-// presence is best-effort: whatever of severity/file/line/description
-// is available is included. An object with none of the known keys
-// falls back to its compact JSON.
+// line, e.g. `[high] path/to/file.go:42: description / message`. Key
+// presence is best-effort: whatever of severity/file/line/description/
+// message is available is included (non-empty distinct description and
+// message parts are joined with " / "). An object with none of the
+// known keys falls back to its compact JSON.
 func renderIssueObject(raw json.RawMessage) (string, error) {
 	var obj map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &obj); err != nil {
 		return "", fmt.Errorf("autonomous: issues object: %w", err)
 	}
-	severity := severityField(obj)
-	file := fileField(obj)
-	line := lineField(obj)
-	desc := descriptionField(obj)
+	severity := fieldText(obj, "severity")
+	file := fieldText(obj, "file")
+	line := fieldText(obj, "line")
+	parts := descriptionParts(obj)
+	body := strings.Join(parts, " / ")
 
-	if severity == "" && file == "" && line == "" && desc == "" {
+	if severity == "" && file == "" && line == "" && body == "" {
 		// No known keys at all: keep the compact JSON of the object.
 		compact, encErr := json.Marshal(obj)
 		if encErr != nil {
@@ -197,7 +204,7 @@ func renderIssueObject(raw json.RawMessage) (string, error) {
 		}
 		head += loc
 	}
-	if desc != "" {
+	if body != "" {
 		if head != "" {
 			if loc != "" {
 				head += ": "
@@ -205,7 +212,7 @@ func renderIssueObject(raw json.RawMessage) (string, error) {
 				head += " "
 			}
 		}
-		head += desc
+		head += body
 	}
 	return head, nil
 }
