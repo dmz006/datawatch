@@ -49,15 +49,12 @@ func bl387Phase3Setup(t *testing.T) (*Manager, *PRD, SpawnFn, VerifyFn) {
 // waitForMemoryReport polls PRD.MemoryReport until non-empty or timeout.
 func waitForMemoryReport(t *testing.T, m *Manager, prdID string) *PRD {
 	t.Helper()
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		p, ok := m.Store().SnapshotPRD(prdID)
-		if ok && p.MemoryReport != "" {
-			return p
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
-	p, _ := m.Store().SnapshotPRD(prdID)
+	var p *PRD
+	pollUntil(t, 3*time.Second, "PRD memory report", func() bool {
+		var ok bool
+		p, ok = m.Store().SnapshotPRD(prdID)
+		return ok && p.MemoryReport != ""
+	})
 	return p
 }
 

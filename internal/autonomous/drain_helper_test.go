@@ -19,3 +19,26 @@ func drainOnCleanup(t *testing.T, m *Manager, api *API) {
 		m.Stop()
 	})
 }
+
+// pollUntil polls cond every few milliseconds until it holds, failing the
+// test loudly when timeout elapses first. Use it instead of time.Sleep when
+// waiting for a state change.
+func pollUntil(t *testing.T, timeout time.Duration, what string, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for !cond() {
+		if time.Now().After(deadline) {
+			t.Fatalf("pollUntil: %s not reached within %s", what, timeout)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// pollPRDTerminal waits until the PRD is completed or failed.
+func pollPRDTerminal(t *testing.T, m *Manager, id string, timeout time.Duration) {
+	t.Helper()
+	pollUntil(t, timeout, "PRD "+id+" terminal status", func() bool {
+		got, ok := m.Store().SnapshotPRD(id)
+		return ok && (got.Status == PRDCompleted || got.Status == PRDFailed)
+	})
+}

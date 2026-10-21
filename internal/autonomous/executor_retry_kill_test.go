@@ -70,17 +70,7 @@ func TestExecutor_RetrySpawn_KillsStaleSessionBeforeRespawn(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		got, ok := m.Store().SnapshotPRD(prd.ID)
-		if !ok {
-			t.Fatal("PRD disappeared")
-		}
-		if got.Status == PRDCompleted || got.Status == PRDFailed {
-			break
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
+	pollPRDTerminal(t, m, prd.ID, 5*time.Second)
 
 	got, _ := m.Store().GetPRD(prd.ID)
 	if got.Status != PRDCompleted {

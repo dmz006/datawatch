@@ -85,7 +85,7 @@ func waitForStatus(t *testing.T, m *Manager, prdID string, deadline time.Duratio
 	defer tick.Stop()
 poll:
 	for {
-		p, ok := m.Store().GetPRD(prdID)
+		p, ok := m.Store().SnapshotPRD(prdID)
 		if !ok {
 			t.Fatalf("PRD %q disappeared", prdID)
 		}
@@ -100,7 +100,7 @@ poll:
 		case <-tick.C:
 		}
 	}
-	p, _ := m.Store().GetPRD(prdID)
+	p, _ := m.Store().SnapshotPRD(prdID)
 	return p
 }
 

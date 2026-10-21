@@ -117,6 +117,7 @@ func TestLifecycleEmitPRD_Transitions(t *testing.T) {
 				m := newEmitManager(t, DefaultConfig(), nil)
 				p := newEmitPRD(t, m, PRDRunning)
 				api := NewAPI(m)
+				drainOnCleanup(t, m, api)
 				return m, p.ID, func() error { return api.Cancel(p.ID) }
 			},
 		},
@@ -127,6 +128,7 @@ func TestLifecycleEmitPRD_Transitions(t *testing.T) {
 				m := newEmitManager(t, DefaultConfig(), nil)
 				p := newEmitPRD(t, m, PRDApproved)
 				api := NewAPI(m)
+				drainOnCleanup(t, m, api)
 				return m, p.ID, func() error { return api.Run(p.ID) }
 			},
 		},

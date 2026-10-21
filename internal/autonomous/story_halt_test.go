@@ -328,14 +328,10 @@ func TestExecutor_DrainedInFlightTaskGetsFinalized(t *testing.T) {
 	// status specifically, not just the PRD-level status, or the
 	// assertion races ahead of the fix's actual finalization work.
 	var got *PRD
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
+	pollUntil(t, 2*time.Second, "T2 task failed", func() bool {
 		got, _ = m.Store().SnapshotPRD(prd.ID)
-		if got.Story[1].Tasks[0].Status == TaskFailed {
-			break
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
+		return got.Story[1].Tasks[0].Status == TaskFailed
+	})
 	if got.Status != PRDBlocked {
 		t.Fatalf("want PRDBlocked, got %s", got.Status)
 	}

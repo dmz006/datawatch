@@ -137,24 +137,15 @@ func runToTerminal(t *testing.T, m *Manager, api *API, id string, spawn SpawnFn,
 	if err := api.Run(id); err != nil {
 		t.Fatal(err)
 	}
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		got, _ := m.Store().SnapshotPRD(id)
-		status := got.Status
-		if status == PRDCompleted || status == PRDFailed {
-			// The executor goroutine writes the terminal status inside
-			// Manager.Run, then still has its deferred cleanup and a final
-			// EmitPRDUpdate to run. Drain it before the caller reads the PRD
-			// or t.TempDir() is removed.
-			if err := api.WaitIdle(10 * time.Second); err != nil {
-				t.Fatal(err)
-			}
-			return got
-		}
-		time.Sleep(20 * time.Millisecond)
+	pollPRDTerminal(t, m, id, 5*time.Second)
+	// The executor goroutine writes the terminal status inside Manager.Run,
+	// then still has its deferred cleanup and a final EmitPRDUpdate to run.
+	// Drain it before the caller reads the PRD.
+	if err := api.WaitIdle(10 * time.Second); err != nil {
+		t.Fatal(err)
 	}
-	t.Fatal("PRD did not reach a terminal state")
-	return nil
+	got, _ := m.Store().SnapshotPRD(id)
+	return got
 }
 
 func TestScope_ExecutorBlocksOutOfScopeTaskWithoutSpawning(t *testing.T) {
