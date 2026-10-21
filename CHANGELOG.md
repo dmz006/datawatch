@@ -7,6 +7,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 
+- **claude-code worker sessions no longer end before their task is delivered.** A one-shot worker that showed a startup dialog and then finished or exited was recorded as complete even though the task text was never sent. Claiming a session for task delivery now arms the task-echo suppression straight away, so the typed task is not mistaken for a completion marker, and a shared, stricter guard rejects placeholder `DATAWATCH_COMPLETE` text. If a session still reaches a terminal state with no delivery recorded, the executor now treats it as a launch failure (wrapping `ErrWorkerStalled`) and retries it through the normal `auto_fix_retries` budget as an infrastructure failure instead of sending the empty session to verification. Covered by new `TestOneShotTaskDelivery*` and `TestLaunchFailure*` tests.
 - **Old failed Automata are no longer re-launched at every daemon restart.** A failed Automaton whose failed tasks were all killed by the restart now goes through the same boot-resume check as a running one: a fresh one is recovered, a stale one (older than `autonomous.resume_max_age_seconds`, or with a missing project directory) is parked as blocked with an alert and a boot-resume report entry, and a cancelled one is left alone.
 
 ## v9.5.56 — A daemon restart keeps a task whose worker is still running
