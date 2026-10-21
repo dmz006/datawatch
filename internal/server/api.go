@@ -412,6 +412,11 @@ type Server struct {
 	// return 503 in that case.
 	autonomousMgr AutonomousAPI
 
+	// BL427 phase 3 — lifecycle event subscription store for
+	// /api/autonomous/subscriptions. Wired from main.go alongside the
+	// subscription engine; nil (default) makes the handlers return 503.
+	autonomousSubs LifecycleSubscriptionsAPI
+
 	// BL328 — in-flight async decompose jobs. key=prdID (string),
 	// value=*decomposeJob. Jobs are in-memory only; not persisted across
 	// daemon restarts (TS-649 is a future stretch goal).

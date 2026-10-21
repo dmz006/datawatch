@@ -69,7 +69,29 @@ POST   /api/automations              create (returns draft, version 1); body: {n
 GET    /api/automations/{id}         get one
 PUT    /api/automations/{id}         update; body: create fields + expected_version (required)
 DELETE /api/automations/{id}         delete (draft/completed/cancelled only); body: {actor?, reason?}
+
+# Lifecycle event subscriptions (BL427 — PRD lifecycle events, phase 3)
+GET    /api/autonomous/subscriptions        list persisted lifecycle event subscriptions
+POST   /api/autonomous/subscriptions        create (201 + the record); body: {filter:{kinds[], level?, prd_id?, task_id?, story_id?, owner?}, sink:{type, target}, action:{type, text}?, coalesce?, one_shot?, expires_at?}. Sink types: comm | session | topic | alert. An action is only valid with a session sink (action.type must be send_input, ≤4096 chars). 400 with the validation message on bad input
+DELETE /api/autonomous/subscriptions/{id}   delete (204; 404 when unknown). One-shot subscriptions are also auto-deleted by the engine after their first delivery. Changes take effect live — the engine re-attaches on store changes, no restart
 ```
+
+`GET/POST/DELETE /api/autonomous/subscriptions` sit on the operator's
+persisted lifecycle subscriptions (`<data_dir>/lifecycle_subscriptions.json`):
+`filter.kinds` picks event kinds from the known set (`prd.completed`,
+`task.completed`, … every PRD/task status-change kind plus
+`task.session_started`, `task.session_cleared`, `prd.updated`),
+`filter.level` narrows to `prd` or `task` events, and the `sink` is
+where matching events are delivered (`comm` = the notify pipeline, `session`
+= a datawatch-managed session, `topic` = the push-topic bus, `alert` = the
+in-app alerts store). With `sink.type = session`, `action` may type
+`action.text` into the session each time (`send_input`), which replaces
+per-event watch-and-inject scripts. `one_shot: true` consumes the
+subscription after its first delivery; `expires_at` (RFC 3339, future)
+expires it instead. These endpoints require the same auth as the other
+`/api/autonomous` routes (federation peers need `autonomous:read` for
+list, `autonomous:write` for create/delete). They are served only when the
+daemon runs the subscription engine; otherwise 503.
 
 When `autonomous.enabled` is false, every endpoint returns
 `503 autonomous disabled`.

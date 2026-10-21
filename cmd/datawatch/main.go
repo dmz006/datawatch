@@ -5705,6 +5705,12 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				} else {
 					defer lifeSubEngine.Close()
 				}
+				// BL427 (phase 3) — expose the same store over REST
+				// (GET/POST/DELETE /api/autonomous/subscriptions). The
+				// engine above re-attaches its dispatcher sinks on every
+				// store change, so a subscription created or deleted over
+				// REST takes effect without a restart.
+				httpServer.SetAutonomousSubscriptions(lifeSubStore)
 			}
 			wireCapacity(context.Background(), cfg, mgr, amgr, httpServer, func(title, body string) {
 				alertStore.AddSystem(alertspkg.LevelWarn, title, body)
