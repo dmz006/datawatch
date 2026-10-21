@@ -7,6 +7,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## v9.5.39 — Accept util-linux CVE-2026-53615 in agent-base (no Debian fix)
 
+### Security
+- **The util-linux finding CVE-2026-53615 in the `agent-base` image is now an accepted risk, so the container scan no longer fails the release.** Debian bookworm has no fixed `util-linux` yet (the fix is only in trixie), the eight affected packages come from one source package, and the agent containers do not probe untrusted block devices. The entry in `security/accepted-risks.yml` expires on 2026-11-20 and `.trivyignore` was regenerated from it. Evidence and the review date are in `docs/plans/2026-10-21-cve-2026-53615-agent-base.md`.
 
 ## v9.5.38 — Guardrail judges always run on the model you pinned
 
