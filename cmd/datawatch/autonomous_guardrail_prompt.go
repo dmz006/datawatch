@@ -49,7 +49,8 @@ Unit: <user_data>%s</user_data>
 Spec: <user_data>%s</user_data>
 %s
 Reply with STRICT JSON:
-{"outcome": "pass|warn|block", "severity": "info|low|medium|high|critical", "summary": "<one line>", "issues": ["..."]}`,
+{"outcome": "pass|warn|block", "severity": "info|low|medium|high|critical", "summary": "<one line>", "issues": ["..."]}
+issues must be an array of plain strings, one sentence each, never objects.`,
 		guardTrustNotice, req.Guardrail, req.Level, req.UnitTitle, req.UnitSpec, scriptSection)
 }
 

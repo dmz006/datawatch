@@ -17,6 +17,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **Documented the tmux safety rules** in `AGENT.md` (Session Safety), `docs/testing.md` and `docs/operations.md`: PRD workers, verifiers and guardrails run with `TMUX` and `TMUX_TMPDIR` removed; scripts and tests never run `kill-server` or `kill-session -a` except against an explicit `-S` throwaway socket or under `env -u TMUX`; every verification script runs with `env -u TMUX -u TMUX_TMPDIR`; `scripts/check-no-unscoped-tmux.sh` enforces it in `make lint`, CI and decompose validation.
 - **Why:** on 2026-10-18 20:18 and again on 2026-10-20 18:46:35 a worker's script ran `TMUX_TMPDIR=<dir> tmux kill-server` and killed the production tmux server with every session on it. Root cause: tmux prefers `TMUX` over `TMUX_TMPDIR`, and every worker runs inside a production pane, so the "private" directory was ignored.
 
+## Unreleased — tolerant issues decoding for guardrail verdicts and per-task verification
+
+### Fixed
+- **A guardrail judge or per-task verifier that returns `issues` as objects (or a single string/object instead of a string array) no longer blocks the PRD.** Judges and verifiers emit `issues` in more than one shape; the previous strict decode failed on the first object-shaped element (`json: cannot unmarshal object into GuardrailVerdict.issues.0 of type string`), dropped the whole verdict, and left the Automaton `blocked` even though every task had completed. `GuardrailVerdict` and `VerificationResult` now decode `issues` tolerantly: each element may be a string or an object, string/object arrays may be mixed, and a bare string, object, or number is accepted; issue objects are rendered into one readable line (e.g. `[high] pkg/file.go:42: description / message`), with everything else decoded strictly exactly as before.
+- **The raw judge text is now kept on the verdict in `raw_judge` (truncated to 16 KiB)** for both guardrail verdicts and verification results, so the exact text a judge produced can be inspected for auditing and debugging instead of being lost with a failed decode.
+- **Judge and verifier prompts now state that `issues` must be an array of plain strings, one sentence each, never objects** — defense in depth on top of the tolerant decoder.
+- **A PRD blocked earlier by `json: cannot unmarshal object into GuardrailVerdict.issues.0 of type string` now passes when rejudged** with the rejudge action (see `docs/howto/autonomous-recovery.md`) — the re-judge decodes the object-shaped issues and records the real judgment.
+- **Covered by regression tests** in `internal/autonomous/tolerant_issues_test.go`: `TestTolerantIssuesShapes` (string/object/mixed/bare/null shapes, including the incident's object-issue verdict), `TestTolerantIssuesStrictOtherFields` (strictness kept on every other field), `TestIssuesRoundTrip`, and `TestIncidentFixtureSizes`.
+
 ## v9.5.33 — Retried tasks keep their first-attempt pre-task SHA
 
 

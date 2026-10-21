@@ -899,6 +899,11 @@ type GuardrailVerdict struct {
 	// Empty when the verdict carries no backend (the usual case) or when a
 	// judge session already identifies the run.
 	Backend string `json:"backend,omitempty"`
+	// RawJudge is the raw judge text backing this verdict, truncated to
+	// 16 KiB, persisted on the PRD for auditing and debugging. Empty when
+	// no raw text is available (deterministic checks, or the judge text
+	// was not captured).
+	RawJudge string `json:"raw_judge,omitempty"`
 }
 
 // VerificationResult is BL25 output. Severity levels match
@@ -933,6 +938,11 @@ type VerificationResult struct {
 	// every other verification path; omitempty keeps the wire shape
 	// unchanged for existing consumers.
 	UnmodifiedRetry bool `json:"unmodified_retry,omitempty"`
+	// RawJudge is the raw verifier text backing this result, truncated to
+	// 16 KiB, persisted on the PRD for auditing and debugging. Empty when
+	// no raw text is available (deterministic path, or the verification
+	// text was not captured).
+	RawJudge string `json:"raw_judge,omitempty"`
 }
 
 // Learning is a post-task insight extracted by the loop and saved

@@ -5099,7 +5099,8 @@ Pre-existing files written by task (not tracked by git):
 %s%s
 
 Verify whether the diff plausibly implements the spec. Reply with STRICT JSON only — no prose before or after:
-{"ok": <bool>, "severity": "info|low|medium|high|critical", "summary": "<one line>", "issues": ["..."]}`,
+{"ok": <bool>, "severity": "info|low|medium|high|critical", "summary": "<one line>", "issues": ["..."]}
+issues must be an array of plain strings, one sentence each, never objects.`,
 				trustNotice, specPart, diffSection)
 			// v8.36.0 — acquire the same node:/llm: pool a task on vbackend
 			// would use before firing the ask call, and hold it for the
@@ -5204,9 +5205,11 @@ Verify whether the diff plausibly implements the spec. Reply with STRICT JSON on
 						Summary:    fmt.Sprintf("decompose judge returned %d bytes — its response could not be parsed as a verdict: %v", len(content), uerr),
 						VerifiedAt: time.Now(),
 						Category:   "invalid-response",
+						RawJudge:   truncate(content, 16*1024),
 						Issues:     []string{fmt.Sprintf("raw judge output (%d bytes): %s", len(content), truncate(content, 400))},
 					}, nil
 				}
+				parsed.RawJudge = truncate(content, 16*1024)
 				parsed.VerifiedAt = time.Now()
 				return parsed, nil
 			}
@@ -5270,9 +5273,11 @@ Verify whether the diff plausibly implements the spec. Reply with STRICT JSON on
 					Summary:    fmt.Sprintf("verifier judge returned %d bytes — its response could not be parsed as a verdict: %v", len(ask.Answer), uerr),
 					VerifiedAt: time.Now(),
 					Category:   "invalid-response",
+					RawJudge:   truncate(ask.Answer, 16*1024),
 					Issues:     []string{fmt.Sprintf("raw judge output (%d bytes): %s", len(ask.Answer), truncate(ask.Answer, 400))},
 				}, nil
 			}
+			parsed.RawJudge = truncate(ask.Answer, 16*1024)
 			parsed.VerifiedAt = time.Now()
 			return parsed, nil
 		}
@@ -5348,9 +5353,11 @@ Verify whether the diff plausibly implements the spec. Reply with STRICT JSON on
 							Summary:   fmt.Sprintf("guardrail judge returned %d bytes — its response could not be parsed as a verdict: %v", len(content), uerr),
 							VerdictAt: time.Now(),
 							Category:  "invalid-response",
+							RawJudge:  truncate(content, 16*1024),
 							Issues:    []string{fmt.Sprintf("raw judge output (%d bytes): %s", len(content), truncate(content, 400))},
 						}, judgeID, outputFile), nil
 					}
+					parsed.RawJudge = truncate(content, 16*1024)
 					parsed.Category = judgedGuardrailCategory(parsed.Category)
 					parsed.VerdictAt = time.Now()
 					return judgeVerdictWithSession(parsed, judgeID, outputFile), nil
@@ -5416,9 +5423,11 @@ Verify whether the diff plausibly implements the spec. Reply with STRICT JSON on
 					Summary:   fmt.Sprintf("guardrail judge returned %d bytes — its response could not be parsed as a verdict: %v", len(ask.Answer), uerr),
 					VerdictAt: time.Now(),
 					Category:  "invalid-response",
+					RawJudge:  truncate(ask.Answer, 16*1024),
 					Issues:    []string{fmt.Sprintf("raw judge output (%d bytes): %s", len(ask.Answer), truncate(ask.Answer, 400))},
 				}, nil
 			}
+			parsed.RawJudge = truncate(ask.Answer, 16*1024)
 			parsed.Category = judgedGuardrailCategory(parsed.Category)
 			parsed.VerdictAt = time.Now()
 			return parsed, nil
@@ -5974,7 +5983,8 @@ PRD %s summary:
 %s
 
 Return STRICT JSON:
-{"outcome":"pass|warn|block","severity":"info|low|medium|high|critical","summary":"<one line>","issues":["..."]}`,
+{"outcome":"pass|warn|block","severity":"info|low|medium|high|critical","summary":"<one line>","issues":["..."]}
+issues must be an array of plain strings, one sentence each, never objects.`,
 					sys, req.PRDID, req.Summary)
 				gbackend := ocfg.GuardrailBackend
 				if !askCompatible(gbackend) {
