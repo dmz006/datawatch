@@ -317,6 +317,81 @@ func TestSessionPushOneShotDeletedOnlyAfterSuccess(t *testing.T) {
 	}
 }
 
+// TestSessionPushOneShotSendInputTargetsWorker — the watch-and-inject
+// shape combined: a task.session_started + send_input action + one-shot
+// subscription. It locks the dispatcher path end to end (event →
+// Manager.Subscribe → engine → session adapter → injected sender) and
+// the one-shot consume-after-success with an action: the ACTION text is
+// typed into the newly started worker exactly once (SendInput fallback,
+// tagged), never leaked to the owner target, and the record is deleted
+// ONLY after that delivery succeeds. This is the exact case the
+// --task/--on session_started/--send/--one-shot shorthand produces.
+func TestSessionPushOneShotSendInputTargetsWorker(t *testing.T) {
+	rec := &sessionPushRecorder{}
+	m, store, e := newEngineForTest(t, rec, sessionTable{"worker-1": 0}, 0)
+
+	var auditMu sync.Mutex
+	var audited []string
+	e.auditHook = func(action string, details map[string]any) {
+		auditMu.Lock()
+		audited = append(audited, fmt.Sprintf("%s|%v", action, details["subscription_id"]))
+		auditMu.Unlock()
+	}
+
+	sub, err := store.Add(Subscription{
+		Owner:   "alice",
+		Filter:  LifecycleFilter{Kinds: []string{KindTaskSessionStarted}},
+		Sink:    SubscriptionSink{Type: SinkSession, Target: "ops"}, // owner target: ignored for an action
+		Action:  &SubscriptionAction{Type: SinkActionSendInput, Text: "Start with the Setup section of TASK.md"},
+		OneShot: true,
+	})
+	if err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	m.emit(startedEvent()) // worker-1 at port 0 → SendInput fallback
+
+	waitFor(t, "worker send_input delivery", func() bool { return rec.inputCount() == 1 })
+
+	call := rec.input[0]
+	if !strings.HasPrefix(call, "worker-1|") {
+		t.Errorf("send_input action went to %q, want the worker session %q from the event", call, "worker-1")
+	}
+	if !strings.Contains(call, "Start with the Setup section of TASK.md") {
+		t.Errorf("delivered text %q is not the subscription's action text", call)
+	}
+	if !strings.Contains(call, "lifecycle-sub") {
+		t.Errorf("delivered text %q lacks the %q source tag", call, sessionPushSourceTag)
+	}
+	if strings.Contains(call, "ops|") {
+		t.Errorf("action delivery leaked to the owner target: %q", call)
+	}
+	if rec.bridgeCount() != 0 {
+		t.Errorf("bridge attempted %d times for a port-0 worker, want 0", rec.bridgeCount())
+	}
+
+	// One-shot consumed: a second matching event re-delivers nothing, and
+	// the record is left empty in the store.
+	m.emit(startedEvent())
+	time.Sleep(150 * time.Millisecond)
+	if got := rec.inputCount(); got != 1 {
+		t.Errorf("one-shot send_input fired %d times, want exactly 1", got)
+	}
+	waitFor(t, "one-shot removal", func() bool {
+		_, ok := store.Get(sub.ID)
+		return !ok
+	})
+
+	auditMu.Lock()
+	actions := strings.Join(audited, " ")
+	auditMu.Unlock()
+	if !strings.Contains(actions, auditLifecycleSubCreate+"|"+sub.ID) {
+		t.Errorf("audit records %q lack the create for %s", actions, sub.ID)
+	}
+	if !strings.Contains(actions, auditLifecycleSubRemove+"|"+sub.ID) {
+		t.Errorf("audit records %q lack the removal for consumed one-shot %s", actions, sub.ID)
+	}
+}
+
 // TestSessionPushOneShotRetriedOnceThenRetained — a failing one-shot
 // delivery retries exactly once (2 attempts total), logs, and LEAVES
 // the subscription armed for a later event.

@@ -582,6 +582,30 @@ smoke against a real daemon, full `go test ./...` + `node --test`, the
    Checklist: unit tests green — `go test ./cmd/datawatch
    ./internal/autonomous ./internal/mcp ./internal/router
    ./internal/server` = 5 packages, EXIT 0 (2026-10-21);
+   **End-to-end gate (verification pass, 2026-10-21, `env -u TMUX`):** all six
+   code-level criteria verified by reading code — (1) `task.session_started` +
+   `send_input` action + one-shot dispatched via the injected sender: covered by
+   `TestSessionPushSendInputTargetsNewWorker` + `TestSessionPushOneShot
+   DeletedOnlyAfterSuccess`, plus this pass's **additive**
+   `TestSessionPushOneShotSendInputTargetsWorker` (the combined watch-and-inject
+   case; test-only, no feature change — PASS); (2) all four surfaces proxy the
+   single `NewSubscriptionStore` wired in `cmd/datawatch/main.go`; (3) REST
+   guarded by `fedCap(CapAutonomousRead/Write)`, comm verbs owner-scoped, no
+   cross-store writes outside the daemon; (4) `docs/testing-tracker.md` live rows
+   all **Validated=No** (sandbox sweep pending); (5) new howto/flow/operations
+   docs carry no tracker IDs or unreleased version numbers; (6) `webhook`/`mcp_queue`
+   sinks rejected at validation, no SSRF/federation-forwarding code (Phase 4–5
+   absent). Gate commands: `go build ./...` **PASS**; `go vet ./...` **PASS**
+   (exit 0); `go test ./...` **PASS** (exit 0); `node --test
+   internal/server/web/*.test.js` **PASS** (304/304); `check-docs-sync.sh`
+   **PASS**; `check-howto-coverage.sh` **PASS**. One check red and **not caused
+   by this phase**: `check-no-internal-refs.sh` reports 19 pre-existing
+   `internal/server/web/openapi.yaml` `summary:` leaks (old IDs BL5/BL9/BL12/
+   BL17/BL24/BL27/BL30/BL31/BL34/BL35/BL37/BL40/BL42/BL93/BL94/BL107/BL362, F10,
+   F17). Confirmed unrelated to BL427 — Phase 3 adds no openapi internal-ID lines
+   and `BL427` appears nowhere in `openapi.yaml`; those belong to other features
+   and should be cleaned on their own ticket. **Net: Phase 3 gate green; the
+   single red is a pre-existing, operator-facing leak tracked separately.**
    `docs/config-reference.yaml` **N/A** (no new config keys in this phase —
    subscriptions are data, not config); `docs/operations.md` section added
    ("Managing Automata lifecycle event subscriptions");
