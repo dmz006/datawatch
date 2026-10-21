@@ -16,6 +16,14 @@ import (
 	"time"
 )
 
+// statusOf reads a PRD's status under the Manager mutex, which is the lock
+// executor status writes hold (the store hands out the shared *PRD).
+func statusOf(m *Manager, p *PRD) PRDStatus {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return p.Status
+}
+
 // apiFixture builds a Manager + API pair wired with controllable spawn/verify.
 func apiFixture(t *testing.T) (*Manager, *API, func(context.Context, SpawnRequest) (SpawnResult, error), func(context.Context, *PRD, *Task) (VerificationResult, error)) {
 	t.Helper()
@@ -97,15 +105,15 @@ func TestExecutorResume_BootResume(t *testing.T) {
 		if !ok {
 			t.Fatal("PRD disappeared")
 		}
-		if got.Status == PRDCompleted || got.Status == PRDFailed {
+		if st := statusOf(m, got); st == PRDCompleted || st == PRDFailed {
 			break
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
 
 	got, _ := m.Store().GetPRD(prd.ID)
-	if got.Status != PRDCompleted {
-		t.Errorf("want PRDCompleted after boot-resume, got %q", got.Status)
+	if statusOf(m, got) != PRDCompleted {
+		t.Errorf("want PRDCompleted after boot-resume, got %q", statusOf(m, got))
 	}
 	if spawned.Load() == 0 {
 		t.Error("executor never spawned a session — boot-resume did not work")
@@ -145,15 +153,15 @@ func TestExecutorResume_ResetTaskLaunchesExecutor(t *testing.T) {
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		got, _ := m.Store().GetPRD(prd.ID)
-		if got.Status == PRDCompleted || got.Status == PRDFailed {
+		if st := statusOf(m, got); st == PRDCompleted || st == PRDFailed {
 			break
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
 
 	got, _ := m.Store().GetPRD(prd.ID)
-	if got.Status != PRDCompleted {
-		t.Errorf("want PRDCompleted after reset+run, got %q", got.Status)
+	if statusOf(m, got) != PRDCompleted {
+		t.Errorf("want PRDCompleted after reset+run, got %q", statusOf(m, got))
 	}
 }
 
@@ -184,7 +192,7 @@ func TestExecutorResume_DoubleRunSafe(t *testing.T) {
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		got, _ := m.Store().GetPRD(prd.ID)
-		if got.Status == PRDCompleted || got.Status == PRDFailed {
+		if st := statusOf(m, got); st == PRDCompleted || st == PRDFailed {
 			break
 		}
 		time.Sleep(20 * time.Millisecond)
@@ -196,11 +204,11 @@ func TestExecutorResume_DoubleRunSafe(t *testing.T) {
 	// is safe — the operator can retry). PRDRunning with no executor is the
 	// only unacceptable outcome.
 	got, _ := m.Store().GetPRD(prd.ID)
-	switch got.Status {
+	switch statusOf(m, got) {
 	case PRDCompleted, PRDFailed, PRDApproved:
 		// all acceptable outcomes
 	default:
-		t.Errorf("PRD in unexpected state %q after double-Run (want completed/failed/approved)", got.Status)
+		t.Errorf("PRD in unexpected state %q after double-Run (want completed/failed/approved)", statusOf(m, got))
 	}
 }
 
@@ -225,8 +233,8 @@ func TestExecutorResume_NonRunningSkipped(t *testing.T) {
 
 	// The draft PRD must not have been touched.
 	got, _ := m.Store().GetPRD(draft.ID)
-	if got.Status != PRDDraft {
-		t.Errorf("draft PRD status changed to %q — should be skipped by resumeRunningPRDs", got.Status)
+	if statusOf(m, got) != PRDDraft {
+		t.Errorf("draft PRD status changed to %q — should be skipped by resumeRunningPRDs", statusOf(m, got))
 	}
 	if spawnCalls.Load() != 0 {
 		t.Errorf("spawn called %d times — should be 0 with no PRDRunning PRDs", spawnCalls.Load())
