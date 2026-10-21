@@ -361,6 +361,7 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newMarketplaceCmd(),   // alpha.33 #244 — Ollama marketplace
 		newGuardrailCmd(),     // BL303 S2 — guardrail library + profiles
 		newRetryCmd(),         // BL410 Phase 1 — retry profiles + per-Automaton policy
+		newAutomationCmd(),    // Automation lifecycle (activate)
 		newDashboardCmd(),     // #57/#58 — dashboard card layout CRUD
 		newSmokeCmd(),         // #54 — smoke-run cross-instance forwarding
 		newFilterCmd(),        // top-level filter command
@@ -4167,6 +4168,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			WorktreeDir:      acfgIn.WorktreeDir,
 			// BL407 Phase 5 — daemon-wide default-AutoPR config bridge.
 			DefaultAutoPR: acfgIn.DefaultAutoPR,
+			// Automation idle-alert threshold (autonomous.automation.*).
+			Automation: autonomouspkg.AutomationConfig{IdleAlertMinutes: acfgIn.Automation.IdleAlertMinutes},
 		}
 		// BL191 Q4 defaults — preserve the autonomouspkg defaults when
 		// the operator hasn't explicitly configured these.
@@ -5833,6 +5836,10 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				})
 			}
 			aAPI := autonomouspkg.NewAPI(amgr)
+			// Automation coordinator: advances an Automation's cursor from
+			// member lifecycle events (nil-safe if it could not be built).
+			autoCoord := autonomouspkg.NewCoordinator(amgr, aAPI)
+			autoCoord.Start()
 			// Wire the HTTP server readiness channel so boot-resume goroutines
 			// wait until the server is accepting connections before spawning
 			// executor sessions (prevents "connection refused" on daemon restart).

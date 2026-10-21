@@ -50,6 +50,53 @@ lines are never read. Interactive sessions get no such flag. See
 | Session manager wiring — option on only for Automaton workers, reset for interactive sessions on a shared backend, follows the PRD id on `Restart` | **Yes** (`TestStart_ExcludeAncestorClaudeMd_OnlyForPRDWorkers`, `TestStart_ExcludeAncestorClaudeMd_InteractiveResetsStaleOn`, `TestRestart_ExcludeAncestorClaudeMd_FollowsPRDID` in `internal/session/exclude_ancestor_claudemd_test.go`) | No | `go test ./internal/session/` | Fake backend records the setting at launch |
 | Effect on a real claude — parent marker hidden, own and user-level `CLAUDE.md` still loaded | **No** (manual research check only, `docs/plans/ancestor-claude-md-findings.md`) | No | Claude Code 2.1.306, `claude -p` | Not run through a live Automaton worker |
 
+## Automation activate + status array + idle-alert setting
+
+Activation of a draft Automation on every operator surface, the `automations`
+array on the loop status, and the `autonomous.automation.idle_alert_minutes`
+setting. Design: `docs/plans/2026-10-14-automation-orchestration-design.md`.
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| `POST /api/automations/{id}/activate` (REST) | **Yes** (`TestAutomationActivateAuditsAndMapsErrors`, `TestAutomationActivateWithoutCoordinatorFails` in `internal/server/automation_activate_test.go`) | No | Real manager + coordinator: 200 with audit entry (resource, actor, reason); second activation 409; unknown ID 404; GET 405; malformed body 400; no coordinator 400 | Validated=No: not yet run against a live daemon with a started Automation. |
+| `GET /api/autonomous/status` `automations` array | **Yes** (`TestAutomationStatusIncludesAutomationsArray`) | No | Draft Automation appears with name, status and pending member count | Surfaced through API and MCP only; the PWA has no Automation view yet. |
+| `autonomous.automation.idle_alert_minutes` (REST config, both surfaces) | **Yes** (`TestAutomationIdleAlertConfigRoundTrip`) | No | Default 0; PUT 30 reaches the live manager; negative, non-integer and string values are 400 and change nothing; 0 turns it off | |
+| MCP `automation_activate`, `autonomous_status`, `autonomous_config_set` | **Yes** (`internal/mcp/automation_activate_test.go`) | No | Proxies POST with actor/reason, omits empty fields, surfaces a 409 as an error, passes the automations array through, forwards an explicit 0 | |
+| Comm `automation activate <id>` and `configure` help | **Yes** (`internal/router/automation_cmd_test.go`) | No | Parse, loopback POST with actor `comm`, usage and error replies, help lists the new key | |
+| Coordinator advance: member lifecycle event moves the cursor and starts the next member (`on_complete`/`on_blocked`/`on_failed` mapped from the real PRD status), no LLM or chat involved | **Yes** (`TestAutomationCoordinator_LinearAdvance`, `_EdgeMappingTable`, `_AdvancesFromLifecycleEvents`, `_PausedAutomationMovesCursorWithoutStarting`, `_UnapprovedNextMemberBlocks`, `_PausedNextMemberResumes`, `_EmptyEdge`, `_StartFailureBlocks`, `_FailedDefersUntilBootRecovery`, `_IgnoresNonMembersAndNonCursor` in `internal/autonomous/automation_coordinator_test.go`) | No | Real `Manager` and lifecycle dispatcher, fake starter | Validated=No: needs a sandbox daemon with two real approved Automata. |
+| Compare-and-set: a duplicate or racing completion event starts the next member once | **Yes** (`TestAutomationCoordinator_DoubleAdvanceStartsOnce`, `TestAutomationReconcile_LiveEventRacesReconcile`) | No | Concurrent events against one cursor, `-race` | |
+| Activate (coordinator side): entry member started, or Automation blocked on an unapproved entry | **Yes** (`TestAutomationCoordinator_ActivateStartsEntryMember`, `_ActivateBlocksOnUnapprovedEntry`, `_ActivateWithoutCoordinator`, `_NilSafe`) | No | | |
+| Reconcile after boot-resume: member finished while down advances; running member untouched; pending start retried once; idempotent | **Yes** (`TestAutomationReconcile_*` in `internal/autonomous/automation_reconcile_test.go`, incl. `_RestartMidRun`, `_RestartAfterCompletedWhileDown`, `_RunsFromBootResume`) | No | Real `Manager`, simulated restart | Validated=No: needs a real daemon restart. |
+| Idle alert: one alert per idle episode, threshold read live, none when off or paused | **Yes** (`TestAutomationIdleOneAlertPerEpisode`, `_NoAlertWhenOff`, `_NoAlertWhenPaused`, `_ThresholdReadLive`, `_StartStop` in `internal/autonomous/automation_status_test.go`) | No | Injected clock | Validated=No: alert delivery to a real channel not exercised. |
+| Status array detail: current member, idle seconds, blocked reason, terminal omitted | **Yes** (`TestAutomationStatusSummaryFields`, `_IdleSecondsAndBlockedReason`, `_OmitsTerminal`) | No | | |
+| Live: activate a two-member Automation on a sandbox daemon, first member completes, second starts with no operator call | PENDING | No | Sandbox daemon (TLS port 18443), two trivial approved Automata | Validated=No |
+| E2E story 1: advance with zero LLM or chat involvement (stall regression) | No | No | Sandbox daemon; second member reaches `running` within one lifecycle event of the first's `completed` | Validated=No |
+| E2E story 2: insert a member while the Automation is active | No | No | Needs the later control-ops phase | Validated=No; not buildable until insert exists |
+| E2E story 3: blocked member with empty `on_blocked` blocks the Automation, alerts, and skip resumes it | No | No | Needs skip (later phase) for the resume half | Validated=No |
+| E2E story 4: restart mid-run, and restart after the member completed while down | No | No | Sandbox daemon restart; unit coverage exists for both cases | Validated=No |
+| E2E story 5: budget ceiling reached pauses the Automation and alerts | No | No | Needs the budget phase | Validated=No |
+| E2E story 6: cancel leaves the in-flight member running | No | No | Needs the control-ops phase | Validated=No |
+| CLI `datawatch automation activate <id>` | No (thin wrapper over the shared REST helper; compiled and vetted) | No | | |
+| PWA Settings field + 5 locale labels | **Yes** (`internal/server/web/app-autonomous-settings-fields.test.js`) | No | Field is a number with min 0 and a label key; every bundle has a non-empty label | |
+
+**Mobile-Parity: owed, not yet filed.** Issues are not filed from this
+pipeline. File on `dmz006/datawatch-app` when the release containing this lands:
+
+> `feat(automation): activate a draft Automation + automations status array + idle-alert setting`
+>
+> Server added `POST /api/automations/{id}/activate` (body `{actor?, reason?}`;
+> 200 = the Automation, 404 unknown, 409 not a draft), an `automations` array
+> on `GET /api/autonomous/status` (rows: `id`, `name`, `status`,
+> `current_member_id`, `current_prd_id`, `current_prd_title`,
+> `pending_members`, `idle_since`, `idle_seconds`, `blocked_reason`), and the
+> config key `autonomous.automation.idle_alert_minutes` (whole minutes >= 0,
+> 0 = off; 400 otherwise). New locale key `settings_automation_idle_alert_minutes`
+> (shipped in all five PWA bundles; Android/iOS need the same string).
+> Acceptance: Android and iOS show the Settings field, parse the `automations`
+> array without error, and offer an Activate action on a draft Automation that
+> surfaces the 409/404 messages. The PWA has no Automation view yet, so the
+> Activate affordance and status rows are API-only until one exists.
+
 ---
 
 ## Plan review before approval + smoke/final-gate verifier split

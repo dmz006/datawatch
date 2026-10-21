@@ -785,6 +785,7 @@ type AutonomousAPI interface {
 	DeleteAutomation(id string) error
 	ListAutomations() []any
 	GetAutomation(id string) (any, bool)
+	ActivateAutomation(id, actor string) (any, error)
 
 	// BL303 S3 T15 — on-demand guardrail invocation for a session.
 	// Runs the named guardrail against projectDir; result is appended to the
@@ -5754,6 +5755,9 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			// rather than null. The field itself has no omitempty for the
 			// same reason (see config.AutonomousNotifyConfig).
 			"notify": defaultEventsNotifySurface(s.cfg.Autonomous.Notify),
+			"automation": map[string]interface{}{
+				"idle_alert_minutes": s.cfg.Autonomous.Automation.IdleAlertMinutes,
+			},
 			"scan": map[string]interface{}{
 				"enabled":              s.cfg.Autonomous.Scan.Enabled,
 				"sast_enabled":         s.cfg.Autonomous.Scan.SASTEnabled,
@@ -5913,6 +5917,14 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	if v, ok := patch["autonomous.plan_coverage_min_ratio"]; ok {
 		if _, verr := configPatchFloat(v); verr != nil {
 			http.Error(w, "autonomous."+verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	// Automation idle-alert threshold: whole minutes, 0 = off. A negative or
+	// non-integer value rejects the whole PUT rather than being skipped.
+	if v, ok := patch["autonomous.automation.idle_alert_minutes"]; ok {
+		if verr := validateIdleAlertMinutes(v); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
 			return
 		}
 	}
@@ -7163,6 +7175,11 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			if ratio, err := configPatchFloat(v); err == nil {
 				cfg.Autonomous.PlanCoverageMinRatio = config.NormalizePlanCoverageRatio(ratio)
 			}
+		case "autonomous.automation.idle_alert_minutes":
+			// 0 = off; negative values are skipped, not stored.
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Autonomous.Automation.IdleAlertMinutes = n
+			}
 		case "autonomous.notify.default_events":
 			// Default event kinds the built-in lifecycle sinks subscribe to.
 			// Accept array or comma-separated string, same as
@@ -7639,6 +7656,19 @@ func toString(v interface{}) string {
 		return s
 	}
 	return fmt.Sprintf("%v", v)
+}
+
+// validateIdleAlertMinutes checks autonomous.automation.idle_alert_minutes:
+// a whole number >= 0 (0 turns the idle alert off).
+func validateIdleAlertMinutes(v interface{}) error {
+	f, ok := v.(float64)
+	if i, isInt := v.(int); isInt {
+		f, ok = float64(i), true
+	}
+	if !ok || f != math.Trunc(f) || f < 0 {
+		return fmt.Errorf("autonomous.automation.idle_alert_minutes: must be a whole number >= 0 (0 = off)")
+	}
+	return nil
 }
 
 func toInt(v interface{}) (int, bool) {

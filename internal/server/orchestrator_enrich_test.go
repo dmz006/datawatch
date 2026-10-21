@@ -196,6 +196,9 @@ func (f *fakeOrchAutonomous) UpdateAutomation(string, int64, autonomous.Automati
 func (f *fakeOrchAutonomous) DeleteAutomation(string) error    { return nil }
 func (f *fakeOrchAutonomous) ListAutomations() []any           { return nil }
 func (f *fakeOrchAutonomous) GetAutomation(string) (any, bool) { return nil, false }
+func (f *fakeOrchAutonomous) ActivateAutomation(string, string) (any, error) {
+	return nil, nil
+}
 func (f *fakeOrchAutonomous) SetPRDRetryPolicy(string, string, map[string]int, int, *bool, *bool) (any, error) {
 	return nil, nil
 }

@@ -2288,6 +2288,10 @@ type AutonomousConfig struct {
 	// sinks (comm fanout / alert paging).
 	Notify AutonomousNotifyConfig `yaml:"notify" json:"notify"`
 
+	// Automation — knobs for Automation (multi-Automaton orchestration)
+	// coordination. See AutonomousAutomationConfig.
+	Automation AutonomousAutomationConfig `yaml:"automation" json:"automation"`
+
 	// PlanReview (2026-10-17 pre-approval gate) — a one-shot LLM judge
 	// over the freshly decomposed plan, run at the end of Decompose and
 	// re-runnable via Manager.ReviewPlan. Internal wiring: see the
@@ -2340,6 +2344,15 @@ func ValidateUndeclaredEditMode(mode string) error {
 	default:
 		return fmt.Errorf("autonomous.undeclared_edit_mode: %q is not a valid value (must be \"off\", \"warn\" or \"block\")", mode)
 	}
+}
+
+// AutonomousAutomationConfig — autonomous.automation sub-config.
+// IdleAlertMinutes is how long an active Automation may sit idle (a member
+// finished and no next member started) before the coordinator raises one
+// alert for that idle episode. 0 (the default) turns the alert off. Not
+// omitempty, so an explicit 0 survives a round trip.
+type AutonomousAutomationConfig struct {
+	IdleAlertMinutes int `yaml:"idle_alert_minutes" json:"idle_alert_minutes"`
 }
 
 // AutonomousNotifyConfig —autonomous.notify sub-config. DefaultEvents

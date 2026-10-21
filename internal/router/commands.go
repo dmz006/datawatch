@@ -302,6 +302,10 @@ const (
 	//   "retry automaton set <id> [...]"              → per-Automaton override
 	CmdRetry CommandType = "retry"
 
+	// Automation lifecycle over chat.
+	//   "automation activate <id>" → start a draft Automation
+	CmdAutomation CommandType = "automation"
+
 	// BL302 S1 — MCP resources over chat.
 	//   "mcp resources"          → list resources
 	//   "mcp read <uri>"         → read resource by URI
@@ -736,6 +740,13 @@ func Parse(text string) Command {
 			rest = strings.TrimSpace(text[6:])
 		}
 		return Command{Type: CmdRetry, Text: rest}
+
+	case lower == "automation" || strings.HasPrefix(lower, "automation "):
+		rest := ""
+		if strings.HasPrefix(lower, "automation ") {
+			rest = strings.TrimSpace(text[len("automation "):])
+		}
+		return Command{Type: CmdAutomation, Text: rest}
 
 	// BL302 S1 — MCP resources over chat.
 	case lower == "mcp" || strings.HasPrefix(lower, "mcp "):

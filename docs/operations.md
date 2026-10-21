@@ -568,6 +568,8 @@ signal-cli -u +12125551234 unregister
 
 Autonomous Automata state lives as plain JSONL files under the autonomous data directory: `prds.jsonl` (Automata) and, alongside it, `automations.jsonl` (Automations — named groups of Automata with next-step edges). Both are captured automatically by any backup of that directory.
 
+**Automation advance and idle alert.** An active Automation starts its next Automaton by itself when the current one reaches a terminal state; after a daemon restart it reconciles once boot-resume has finished (a member that finished while the daemon was down advances, a running one is left alone). `autonomous.automation.idle_alert_minutes` (default `0` = off, whole minutes) raises one alert when an active Automation has had no member running that long; it is read live, so changing it needs no restart. See [howto/automation-queue-advance.md](howto/automation-queue-advance.md).
+
 ### Backup command
 
 ```bash

@@ -1390,7 +1390,11 @@ BL553 (docs/plans/README.md row 134).
 
 ## Parity surface
 
-None of these is implemented in this design phase. Every surface follows AGENT.md's
+Phase 2 (development build) has shipped part of this table: activate on REST, MCP,
+CLI and comm channel; the `automations[]` array on `autonomous_status` (REST and MCP);
+and the `autonomous.automation.idle_alert_minutes` key on every config surface including
+the PWA Settings field. The rest of the table is still the plan for Phases 3-7, and the
+table below remains accurate as written. Every surface follows AGENT.md's
 Configuration Accessibility Rule and the full parity-surface set.
 
 | Surface | Included? | Concrete design |
@@ -1421,7 +1425,7 @@ howto, and the `datawatch-app` issue where applicable.
    - Cycle, reachability and ownership validation.
    - REST + MCP CRUD.
    - Audit of create, update and delete.
-2. **Phase 2 — Coordinator.** Status: Planned.
+2. **Phase 2 — Coordinator.** Status: Done (development build; released with the next release).
    - The BL427 dispatcher subscriber, or the temporary hook.
    - The advance with compare-and-set, `API.Run` / `API.Resume` in-process, the
      approval gate and blocked alerts.

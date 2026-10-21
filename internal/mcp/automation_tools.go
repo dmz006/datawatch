@@ -1,14 +1,13 @@
 // MCP tools for Automation records (a chain of Automatons with per-outcome
 // edges). Mirrors internal/mcp/retry_tools.go's shape exactly.
 //
-// Automation records currently store data only — no automatic advance yet.
-//
 // Tools:
 //   automation_list   — list Automations
 //   automation_get    — get one Automation by ID
 //   automation_create — create an Automation
 //   automation_update — update an Automation
 //   automation_delete — delete an Automation
+//   automation_activate — start a draft Automation
 
 package mcp
 
@@ -24,7 +23,7 @@ import (
 
 func (s *Server) toolAutomationList() mcpsdk.Tool {
 	return mcpsdk.NewTool("automation_list",
-		mcpsdk.WithDescription("List all Automations. An Automation is a chain of Automatons (PRDs) connected by per-outcome edges. Automation records currently store data only — no automatic advance yet."),
+		mcpsdk.WithDescription("List all Automations. An Automation is a chain of Automatons (PRDs) connected by per-outcome edges. Activate a draft with automation_activate."),
 	)
 }
 
@@ -40,7 +39,7 @@ func (s *Server) handleAutomationList(_ context.Context, _ mcpsdk.CallToolReques
 
 func (s *Server) toolAutomationCreate() mcpsdk.Tool {
 	return mcpsdk.NewTool("automation_create",
-		mcpsdk.WithDescription("Create a new Automation — a named chain of Automatons with per-outcome edges, an entry member, optional budgets and execution/verification defaults. The record currently stores data only; nothing advances automatically yet."),
+		mcpsdk.WithDescription("Create a new Automation — a named chain of Automatons with per-outcome edges, an entry member, optional budgets and execution/verification defaults. The Automation stays a draft until automation_activate."),
 		mcpsdk.WithString("name", mcpsdk.Required(), mcpsdk.Description("Automation name.")),
 		mcpsdk.WithString("description", mcpsdk.Description("Optional description.")),
 		mcpsdk.WithString("entry_member_id", mcpsdk.Description("Member ID where the chain starts.")),
@@ -131,7 +130,7 @@ func (s *Server) handleAutomationGet(_ context.Context, req mcpsdk.CallToolReque
 
 func (s *Server) toolAutomationUpdate() mcpsdk.Tool {
 	return mcpsdk.NewTool("automation_update",
-		mcpsdk.WithDescription("Update an Automation (name, description, entry member, members, budgets, defaults). Provide only the fields to change. The record currently stores data only; nothing advances automatically yet."),
+		mcpsdk.WithDescription("Update an Automation (name, description, entry member, members, budgets, defaults). Provide only the fields to change. The Automation stays a draft until automation_activate."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("Automation ID.")),
 		mcpsdk.WithNumber("expected_version", mcpsdk.Description("Optional — the version you read; the update is rejected if the record moved since (optimistic concurrency).")),
 		mcpsdk.WithString("reason", mcpsdk.Description("Reason for this update (recorded alongside the change).")),
@@ -176,4 +175,31 @@ func (s *Server) handleAutomationDelete(_ context.Context, req mcpsdk.CallToolRe
 		return mcpsdk.NewToolResultText("error: " + err.Error()), nil
 	}
 	return mcpsdk.NewToolResultText(`{"status":"deleted"}`), nil
+}
+
+// ── automation_activate ─────────────────────────────────────────────────
+
+func (s *Server) toolAutomationActivate() mcpsdk.Tool {
+	return mcpsdk.NewTool("automation_activate",
+		mcpsdk.WithDescription("Activate a draft Automation: validate it, start its entry member through the normal approval gate and let it advance member to member as each finishes. If the entry member cannot start the Automation goes blocked instead. Only a draft can be activated."),
+		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("Automation ID.")),
+		mcpsdk.WithString("actor", mcpsdk.Description("Who is activating (recorded in the audit trail). Defaults to operator.")),
+		mcpsdk.WithString("reason", mcpsdk.Description("Reason for activating (recorded alongside the audit entry).")),
+	)
+}
+
+func (s *Server) handleAutomationActivate(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	id := req.GetString("id", "")
+	body := map[string]any{}
+	if v := req.GetString("actor", ""); v != "" {
+		body["actor"] = v
+	}
+	if v := req.GetString("reason", ""); v != "" {
+		body["reason"] = v
+	}
+	data, err := s.proxyJSON(http.MethodPost, "/api/automations/"+id+"/activate", body)
+	if err != nil {
+		return mcpsdk.NewToolResultText("error: " + err.Error()), nil
+	}
+	return mcpsdk.NewToolResultText(string(data)), nil
 }
