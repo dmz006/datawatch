@@ -135,15 +135,6 @@ func setupBootedAdoptState(t *testing.T, m *Manager, sessionID string) *PRD {
 	return cur
 }
 
-func taskStatusOf(t *testing.T, m *Manager, prdID string) TaskStatus {
-	t.Helper()
-	got, ok := m.Store().GetPRD(prdID)
-	if !ok {
-		t.Fatalf("PRD %s gone", prdID)
-	}
-	return got.Story[0].Tasks[0].Status
-}
-
 // TestAdoptLive_AliveAdopted: an in_progress task whose worker session
 // survived the daemon restart is adopted at boot-resume: it stays in_progress
 // with the same session ID, its capacity lease is re-taken (so a sibling
