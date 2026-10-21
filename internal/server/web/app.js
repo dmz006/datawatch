@@ -170,7 +170,8 @@ const state = {
   activeSession: null,    // session FullID being viewed
   activeOutputTab: 'tmux', // which output tab is active: 'tmux' | 'channel'
   ws: null,
-  reconnectDelay: 1000,
+  reconnectAttempt: 0,
+  wsOpenedAt: 0,
   reconnectTimer: null,
   token: localStorage.getItem('cs_token') || '',
   outputBuffer: {},       // sessionId -> string[] (ANSI stripped for fallback)
@@ -382,13 +383,43 @@ function _checkFederatedConnection(serverName) {
 // minutes" or may never happen at all while the tab sits idle. Pinging on an
 // interval gives a real round-trip signal independent of actual session
 // activity (which can legitimately be silent for a while even when healthy).
-// Detection latency after the connection actually dies is 50-70s (WS_STALE_MS
+// Detection latency after the connection actually dies is 35-50s (WS_STALE_MS
 // plus up to one more WS_PING_INTERVAL_MS of tick-alignment slop, since the
 // check only runs once per tick, not the instant the threshold is crossed)
-// before scheduleReconnect's path takes over — still well under "a few
-// minutes" of manual-reload pain, with real jitter margin either way.
-const WS_PING_INTERVAL_MS = 20000;
-const WS_STALE_MS = 50000;
+// before scheduleReconnect's path takes over. The 15s ping keeps idle traffic
+// well under the ~30s mapping timeouts of carrier-grade NATs, so a healthy
+// mapping is kept alive and a dead one is noticed within about 50s.
+const WS_PING_INTERVAL_MS = 15000;
+const WS_STALE_MS = 35000;
+
+// Reconnect backoff: full-jitter exponential (base 1s, cap 30s, floor 250ms).
+// Pure (rand injected) so it is unit-testable without a timer or Math.random.
+const WS_BACKOFF_BASE_MS = 1000;
+const WS_BACKOFF_CAP_MS = 30000;
+const WS_BACKOFF_FLOOR_MS = 250;
+function _wsBackoffDelay(attempt, rand) {
+  const ceil = Math.min(WS_BACKOFF_CAP_MS, WS_BACKOFF_BASE_MS * Math.pow(2, Math.max(0, attempt)));
+  return Math.max(WS_BACKOFF_FLOOR_MS, rand * ceil);
+}
+
+// A socket that opens and then dies within the window is flapping; only a
+// socket that has stayed open this long counts as a successful connection
+// and resets the backoff attempt counter.
+const WS_STABLE_MS = 15000;
+function _wsStableEnough(openedAt, now) {
+  return !!openedAt && (now - openedAt) >= WS_STABLE_MS;
+}
+
+function _wsResetAttemptIfStable() {
+  if (_wsStableEnough(state.wsOpenedAt, Date.now())) {
+    state.reconnectAttempt = 0;
+    state.wsOpenedAt = 0;
+  }
+}
+
+function _wsHidden() {
+  return typeof document !== 'undefined' && document.visibilityState === 'hidden';
+}
 
 function _wsSendPing() {
   if (state.ws && state.ws.readyState === WebSocket.OPEN) {
@@ -424,8 +455,11 @@ function _paneSilenceCheck() {
 function startWsWatchdog() {
   stopWsWatchdog();
   state.wsLastActivityAt = Date.now();
+  if (_wsHidden()) return;
   state.wsWatchdogTimer = setInterval(() => {
+    if (_wsHidden()) return;
     if (!state.ws || state.ws.readyState !== WebSocket.OPEN) return;
+    _wsResetAttemptIfStable();
     if (_wsIsStale(state.wsLastActivityAt, Date.now())) {
       _dbg('WS', `watchdog: no activity for >${WS_STALE_MS}ms despite OPEN readyState — forcing reconnect`);
       // close() still fires the 'close' listener, which runs the normal
@@ -468,7 +502,9 @@ function connect() {
 
   ws.addEventListener('open', () => {
     state.connected = true;
-    state.reconnectDelay = 1000;
+    // Not reset here: the attempt counter only clears once the socket has
+    // stayed open past WS_STABLE_MS (watchdog tick / close handler).
+    state.wsOpenedAt = Date.now();
     startWsWatchdog();
     updateStatusDot();
     // v7.0.0-alpha.18 #250 — auto-close the disconnect error toast
@@ -657,6 +693,8 @@ function connect() {
   ws.addEventListener('close', (e) => {
     _dbg('WS', `closed code=${e.code}`);
     stopWsWatchdog();
+    _wsResetAttemptIfStable();
+    state.wsOpenedAt = 0;
     state.connected = false;
     state.ws = null;
     updateStatusDot();
@@ -688,12 +726,43 @@ function disconnect() {
 
 function scheduleReconnect() {
   if (state.reconnectTimer) return;
+  // Hidden tabs don't reconnect; the visibilitychange handler does it on return.
+  if (_wsHidden()) return;
+  const delay = _wsBackoffDelay(state.reconnectAttempt, Math.random());
+  state.reconnectAttempt++;
   state.reconnectTimer = setTimeout(() => {
     state.reconnectTimer = null;
     connect();
-  }, state.reconnectDelay);
-  state.reconnectDelay = Math.min(state.reconnectDelay * 2, 30000);
+  }, delay);
 }
+
+// Reconnect immediately when the network returns or the tab becomes visible;
+// ping an already-open socket so a dead mapping is detected without waiting.
+function _wsWake() {
+  if (state.reconnectTimer) {
+    clearTimeout(state.reconnectTimer);
+    state.reconnectTimer = null;
+  }
+  if (state.ws && state.ws.readyState === WebSocket.OPEN) {
+    startWsWatchdog();
+    _wsSendPing();
+  } else {
+    connect();
+  }
+}
+
+window.addEventListener('online', _wsWake);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') {
+    stopWsWatchdog();
+    if (state.reconnectTimer) {
+      clearTimeout(state.reconnectTimer);
+      state.reconnectTimer = null;
+    }
+  } else {
+    _wsWake();
+  }
+});
 
 function send(type, data) {
   if (!state.ws || state.ws.readyState !== WebSocket.OPEN) {
@@ -18091,7 +18160,7 @@ function forceRefreshConnection() {
     clearTimeout(state.reconnectTimer);
     state.reconnectTimer = null;
   }
-  state.reconnectDelay = 1000;
+  state.reconnectAttempt = 0;
   if (state.ws) {
     try { state.ws.close(); } catch (_) {}
     state.ws = null;
