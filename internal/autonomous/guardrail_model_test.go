@@ -8,7 +8,7 @@
 // → autonomous.planning_model — paired with the resolved guardrail backend.
 // When nothing configured can be served, resolution fails with
 // ErrNoGuardrailModel and the caller records a loud, non-retried
-// infra-category block (noGuardrailModelVerdict) instead of launching a
+// infra-category block (NoGuardrailModelVerdict) instead of launching a
 // judge on the backend's built-in default model (the exact bug: an
 // unconfigured pi judge silently fell back to the registry default,
 // evicting the operator's pinned model on the node).
@@ -361,7 +361,7 @@ func TestManagerResolveUnitGuardrailModel(t *testing.T) {
 // block shape the callers record when model resolution fails.
 func TestNoGuardrailModelVerdict(t *testing.T) {
 	cause := errors.New("no guardrail judge model configured (boom)")
-	v := noGuardrailModelVerdict("rules-review", cause)
+	v := NoGuardrailModelVerdict("rules-review", cause)
 	if v.Outcome != "block" {
 		t.Fatalf("Outcome = %q; want block", v.Outcome)
 	}

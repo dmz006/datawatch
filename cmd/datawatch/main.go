@@ -5142,6 +5142,23 @@ Verify whether the diff plausibly implements the spec. Reply with STRICT JSON on
 				ProjectDir:     taskDir,
 			}, verifierTryAdmit, resolveAskBackend, askCompatible, isInferenceSessionKind)
 			vbackend, vkind, verifyModel, useSession := vsel.Backend, vsel.Kind, vsel.Model, vsel.UseSession
+			// v9.10.19 — a pi-family VERIFY session must be pinned to an
+			// explicit model; it must never run on pi's own host default.
+			// selectVerifierLLM already applied the documented chain
+			// (task → story → PRD → autonomous.verification_model); if
+			// the pi/pi-prompt session still has no model, guardPiFamilyVerifyModel
+			// takes the last documented tier (autonomous.planning_model)
+			// and, when even that is unset, returns a loud "setup" verdict
+			// naming the configuration keys (same verdict class as a
+			// missing verifier script: the judge never ran, so the block
+			// costs no auto-fix budget).
+			if useSession && isPiFamilyKind(vkind) && verifyModel == "" {
+				if m, setup := guardPiFamilyVerifyModel(vbackend, amgrCfg.VerificationModel, amgrCfg.PlanningModel); setup != nil {
+					return *setup, nil
+				} else {
+					verifyModel = m
+				}
+			}
 			release := vsel.Release
 			// Every result returned from here on records which LLM judged it.
 			defer func() { vsel.stamp(&vres) }()
@@ -5302,13 +5319,21 @@ Verify whether the diff plausibly implements the spec. Reply with STRICT JSON on
 					// identical bug fixed in resolveVerifierBackendModel
 					// for verify: a real claude-code session rejected an
 					// Ollama model name outright and hung until the
-					// session timeout. Only a genuine per-unit override
-					// (req.GuardrailModel) carries through; otherwise
-					// prefer the session backend's own registry-default
-					// model (gmodel).
-					sessionModel := req.GuardrailModel
-					if sessionModel == "" {
-						sessionModel = gmodel
+					// session timeout. So only a genuine per-unit override
+					// (req.GuardrailModel) carries through for non-pi
+					// session backends.
+					var sessionModel string
+					if model, verdict := guardPiFamilySessionModel(
+						gkind, gbackend, req.Guardrail,
+						req.GuardrailModel,
+						amgrCfg.GuardrailModel,
+						amgrCfg.VerificationModel,
+						amgrCfg.PlanningModel,
+						gmodel, // non-pi fallback only
+					); verdict != nil {
+						return *verdict, nil
+					} else {
+						sessionModel = model
 					}
 					specHash := sha256.Sum256([]byte(req.UnitID + "|" + req.Guardrail + "|" + prompt))
 					outputFile := filepath.Join(req.ProjectDir, ".guardrail-output-"+hex.EncodeToString(specHash[:8])+".json")

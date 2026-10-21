@@ -681,7 +681,7 @@ func (m *Manager) ciWatchJudge(ctx context.Context, prd *PRD, res CIWatchResult,
 	if resErr != nil {
 		// Loud, non-retried infra block — retrying cannot configure a
 		// model that is not configured.
-		v = noGuardrailModelVerdict("ci-watch", resErr)
+		v = NoGuardrailModelVerdict("ci-watch", resErr)
 	} else {
 		v, ferr = m.runGuardrailWithInfraRetry(ctx, prd, inv, fn)
 	}

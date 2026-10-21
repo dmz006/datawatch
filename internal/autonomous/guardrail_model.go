@@ -16,7 +16,7 @@
 // paired with an incompatible backend and a bare Claude alias is never
 // paired with a pi-family one. When no tier resolves, the typed error
 // ErrNoGuardrailModel is returned and the caller records a loud,
-// non-retried infra-category block verdict (noGuardrailModelVerdict)
+// non-retried infra-category block verdict (NoGuardrailModelVerdict)
 // instead of ever launching a judge.
 package autonomous
 
@@ -68,7 +68,7 @@ var ErrNoGuardrailModel = errors.New("no guardrail judge model configured: none 
 // When no tier resolves, ("", an error wrapping ErrNoGuardrailModel) is
 // returned — the error names the resolved backend and every skipped
 // candidate. Callers must then record a loud, non-retried
-// infra-category block (noGuardrailModelVerdict) and must NOT launch a
+// infra-category block (NoGuardrailModelVerdict) and must NOT launch a
 // judge with an empty model.
 func ResolveGuardrailModel(backend, prdModel, taskModel, globalGuardrailModel, globalVerificationModel, globalPlanningModel string) (string, error) {
 	explicitTiers := []struct {
@@ -188,7 +188,7 @@ func (m *Manager) resolveUnitGuardrailModel(t *Task, prd *PRD) (backend, model s
 	return resolveUnitGuardrailModelLocked(cfg, t, prd)
 }
 
-// noGuardrailModelVerdict builds the loud, NON-RETRIED infra-category
+// NoGuardrailModelVerdict builds the loud, NON-RETRIED infra-category
 // block verdict a guardrail produces when its judge model cannot be
 // resolved at any level. It is constructed directly — never passed
 // through runGuardrailWithInfraRetry — so it is never retried: no
@@ -197,7 +197,7 @@ func (m *Manager) resolveUnitGuardrailModel(t *Task, prd *PRD) (backend, model s
 // block (Outcome "block", Category "infra") it stops the unit with a
 // reason that names the configuration failure and the operator
 // remedy.
-func noGuardrailModelVerdict(guardrail string, cause error) GuardrailVerdict {
+func NoGuardrailModelVerdict(guardrail string, cause error) GuardrailVerdict {
 	return GuardrailVerdict{
 		Guardrail: guardrail,
 		Outcome:   "block",

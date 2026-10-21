@@ -1707,7 +1707,7 @@ func (m *Manager) runPerTaskGuardrails(ctx context.Context, prd *PRD, t *Task) (
 				// non-retried infra block (constructed directly, never via
 				// runGuardrailWithInfraRetry — retrying cannot configure a
 				// model that is not configured).
-				v = noGuardrailModelVerdict(g, resErr)
+				v = NoGuardrailModelVerdict(g, resErr)
 			} else {
 				// BL410 Phase 1 — bounded, escalating auto-retry for an
 				// infra-category block (the guardrail session itself
@@ -1813,7 +1813,7 @@ func (m *Manager) runPerStoryGuardrails(ctx context.Context, prd *PRD, s *Story)
 		} else if fn != nil {
 			if resErr != nil {
 				// v9.10.18 — see runPerTaskGuardrails for the identical block.
-				v = noGuardrailModelVerdict(g, resErr)
+				v = NoGuardrailModelVerdict(g, resErr)
 			} else {
 				// BL410 Phase 1 — see runPerTaskGuardrails' identical comment.
 				v, verr = m.runGuardrailWithInfraRetry(ctx, prd, inv, fn)

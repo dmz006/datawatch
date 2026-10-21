@@ -51,7 +51,7 @@ func (m *Manager) judgeCompletionRulesReview(ctx context.Context, prd *PRD) (Gua
 		// v9.10.18 — no judge model resolvable at any level: loud,
 		// non-retried infra block, recorded by RejudgeCompletionGuardrail
 		// exactly like any other block verdict.
-		return noGuardrailModelVerdict("rules-review", resErr), nil
+		return NoGuardrailModelVerdict("rules-review", resErr), nil
 	}
 	return m.runGuardrailWithInfraRetry(ctx, prd, inv, fn)
 }

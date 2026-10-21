@@ -49,7 +49,10 @@ type verifierSelection struct {
 //     global verification_backend/model, then the Automaton's own
 //     backend. A pi-family session kind (pi, pi-prompt) on this path
 //     takes the configured verification_model as its session model; an
-//     empty one leaves the model empty for the manager's pi fallback.
+//     empty one stays empty — the caller's pi-family pinned-model guard
+//     (v9.10.19) then applies the global pin from the verification
+//     chain (autonomous.planning_model) or fails loudly, naming the
+//     configuration keys.
 //
 // The global verification_effort is still not consumed by the verify
 // path (a pre-existing gap, deliberately left as-is here so the global
@@ -111,9 +114,10 @@ func selectVerifierLLM(
 	// Pi family with no configured verification_model: do not let the
 	// function fall back to resolveAskBackend's default model for the
 	// named backend (a model that belongs to some other backend). Leave
-	// the model empty so the session manager's pi / pi-prompt fallback
-	// applies the configured pi model. The PRD's own model still wins
-	// when the PRD's backend is the one in use.
+	// the model empty so the caller's pi-family pinned-model guard
+	// (v9.10.19) applies the global pin from the verification chain or
+	// fails loudly. The PRD's own model still wins when the PRD's
+	// backend is the one in use.
 	if piFamily && sel.UseSession && in.GlobalModel == "" && (!usesPRDBackend || in.PRDModel == "") {
 		sel.Model = ""
 	}

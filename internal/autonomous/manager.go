@@ -106,7 +106,7 @@ type Config struct {
 	// VerificationModel → PlanningModel. Empty = the tier falls through;
 	// if no tier resolves a model the guardrail backend can serve, the
 	// guardrail records a loud, non-retried infra-category block
-	// (ErrNoGuardrailModel / noGuardrailModelVerdict) instead of
+	// (ErrNoGuardrailModel / NoGuardrailModelVerdict) instead of
 	// launching a judge on the backend's built-in default model.
 	GuardrailModel string `json:"guardrail_model,omitempty"`
 	// VerificationBackends (v8.36.9) — see config.AutonomousConfig's doc
@@ -421,7 +421,7 @@ type GuardrailInvocation struct {
 	// guardrail_model.go) — callers never pass raw task/PRD override
 	// fields here. GuardrailModel is always populated for pi-family
 	// backends; when no tier resolves it is left empty and the caller
-	// records noGuardrailModelVerdict instead of launching a judge.
+	// records NoGuardrailModelVerdict instead of launching a judge.
 	ScriptRan        bool
 	ScriptExitCode   int
 	ScriptOutput     string
@@ -1350,7 +1350,17 @@ func (m *Manager) Decompose(prdID string) (*PRD, error) {
 	// BL416 Phase 2 — see verification_script_prompt.go. Twin call in decomposeStreamingCore(); keep both in sync.
 	prompt += m.verificationScriptSuffix(prd)
 
-	planModel := resolvePlannedModel(backend, prd.DecompositionModel, prd.Backend, prd.Model, m.cfg.PlanningBackend, m.cfg.PlanningModel)
+	planModel := resolvePlannedModel(backend, prd.DecompositionModel, prd.Backend, prd.Model, m.cfg.PlanningBackend, m.cfg.PlanningModel, m.cfg.VerificationModel)
+	// v9.10.19 — a pi-family decompose session must launch with an explicit
+	// non-empty model — never its host's built-in default (on a federated
+	// peer that would be the operator-local node model the session exists
+	// to replace). A config failure retries nothing, so fail immediately
+	// (no infra retry budget consumed) and record the reason loud.
+	if serr := RequirePinnedModel(backend, planModel,
+		"the PRD's decomposition_model", "autonomous.planning_model", "the PRD's model", "autonomous.verification_model"); serr != nil {
+		m.failDecomposeAttempt(prd, "decompose-config", serr)
+		return nil, serr
+	}
 	// BL410 remediation (2026-10-13) — bounded, hint-fed retry for an
 	// infra/scope-classified decompose failure, instead of immediately
 	// rolling back to PRDDraft on the very first failure. Parse failures
@@ -1495,7 +1505,15 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (*PRD, 
 	// — backend resolution above was correct (so the claude CLI launched
 	// fine), but the --model argument fed into it was always wrong.
 	// Restored to the same tiered resolution Decompose() uses.
-	planModel2 := resolvePlannedModel(backend, prd.DecompositionModel, prd.Backend, prd.Model, m.cfg.PlanningBackend, m.cfg.PlanningModel)
+	planModel2 := resolvePlannedModel(backend, prd.DecompositionModel, prd.Backend, prd.Model, m.cfg.PlanningBackend, m.cfg.PlanningModel, m.cfg.VerificationModel)
+	// v9.10.19 — pi-family decompose session: explicit non-empty model or
+	// loud failure, never the host's built-in default (see the twin check
+	// in Decompose above). Config failure: fail immediately, no retry budget.
+	if serr := RequirePinnedModel(backend, planModel2,
+		"the PRD's decomposition_model", "autonomous.planning_model", "the PRD's model", "autonomous.verification_model"); serr != nil {
+		m.failDecomposeAttempt(prd, "decompose-config", serr)
+		return nil, serr
+	}
 	// BL410 remediation (2026-10-13) — see Decompose()'s identical loop
 	// for the full explanation; retryDecomposeFailure is the shared
 	// helper both copies of this drifted-duplicate pair call, so the

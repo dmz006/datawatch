@@ -135,7 +135,7 @@ func (m *Manager) presentRulesContextFiles(prd *PRD) string {
 //
 // Returns an error wrapping ErrNoGuardrailModel when no tier resolves a
 // model the backend can serve; callers must then record
-// noGuardrailModelVerdict instead of launching a judge (v9.10.18).
+// NoGuardrailModelVerdict instead of launching a judge (v9.10.18).
 func (m *Manager) prdRulesReviewInvocation(prd *PRD) (GuardrailInvocation, error) {
 	inv := GuardrailInvocation{
 		PRDID:      prd.ID,
@@ -187,7 +187,7 @@ func (m *Manager) runPRDCompletionRulesReview(ctx context.Context, prd *PRD) (bl
 	var v GuardrailVerdict
 	var ferr error
 	if resErr != nil {
-		v = noGuardrailModelVerdict("rules-review", resErr)
+		v = NoGuardrailModelVerdict("rules-review", resErr)
 	} else {
 		v, ferr = m.runGuardrailWithInfraRetry(ctx, prd, inv, fn)
 	}
