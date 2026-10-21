@@ -1872,3 +1872,17 @@ Changed behavior: `autonomous.*` runtime settings (`verification_backend`, `veri
 | REST `PUT /api/config` autonomous change is visible to the next verifier/guardrail/planner run | **Yes** (`internal/server/autonomous_config_live_read_test.go`) | **No** | Needs a sandbox daemon: change `autonomous.verification_model` at runtime, run a task, check the verifier used the new value with no restart | Live row stays No until run |
 | `stale_task_seconds` changed at runtime is used by stall detection on the next scan | **Yes** (unit) | **No** | Needs a sandbox daemon | |
 
+
+## Undeclared-edit detection (direct-mode Automata) — unreleased
+
+Changed behavior: after each direct-mode task, files the task's own worker committed that are in neither its planned `files` nor its generated files are flagged, governed by the new `autonomous.undeclared_edit_mode` (`off`/`warn`/`block`, default `warn`). `drift_mode` keeps governing pre-existing drift; a file is never reported by both.
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| Detection `checkUndeclaredEdits`: off no-op, warn records and continues, block sets Blocked `undeclared_edit: <files>`, line counts summed across retries, `FilesGenerated` exempt, no double report with pre-existing drift, worktree mode skipped, nil alert sink safe | **Yes** (`internal/autonomous/file_drift_undeclared_test.go`, `undeclared_edit_test.go`, `undeclared_edit_classifier_test.go`) | **No** | Real temp git repos and a real `Manager`/`Store`; no live daemon | Live row stays No until a sandbox Automaton run commits an undeclared file and the task, decision, audit event and alert are observed |
+| Alert sink wired to the daemon alert store (`SetAlertSink` in `cmd/datawatch/main.go`) | **Yes** (nil-safe path only; sink behavior covered with a fake sink) | **No** | Go unit tests with a fake sink | The real wiring is not exercised by a Go test; needs a sandbox daemon to confirm a warn alert appears |
+| REST `GET`/`PUT /api/config` `autonomous.undeclared_edit_mode` round-trip, 400 on invalid values; `PUT /api/autonomous/config` validation | **Yes** (`internal/server/undeclared_edit_config_test.go`) | **No** | httptest server and a real manager | Not run against a live daemon |
+| MCP `autonomous_config_get` / `autonomous_config_set` `undeclared_edit_mode` | **Yes** (`internal/mcp/undeclared_edit_test.go`) | **No** | Go unit test | Not run through a live MCP client |
+| CLI `datawatch config set/get autonomous.undeclared_edit_mode` | **Yes** (config default `warn` only: `TestDefaultConfig_UndeclaredEditModeWarn`; the REST round-trip is covered in the row above) | **No** | Go unit test; CLI goes through the generic `config set` path | No CLI-specific test |
+| Comm `configure autonomous.undeclared_edit_mode=<v>` | **No** (key is listed in the router help text only; no dedicated test) | **No** | Not tested | Needs a Go test and a sandbox comm session |
+| PWA Settings select (off/warn/block) and the per-task Undeclared edits badge/list, locales | **No** (no JS test for these) | **No** | Not tested | Needs a sandbox PWA session |

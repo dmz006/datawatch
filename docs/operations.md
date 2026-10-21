@@ -2209,6 +2209,40 @@ autonomous:
 
 ---
 
+## Undeclared Edit Mode (`autonomous.undeclared_edit_mode`)
+
+Every direct-mode (non-worktree) autonomous task is checked after
+verification for **undeclared edits**: files the task's own worker
+committed in `<pre-task SHA>..HEAD` that were clean before the task started
+and are in neither the task's planned `files` nor its generated files.
+Pre-existing uncommitted files it swept in belong to `drift_mode` (see
+[docs/howto/file-drift-guardrail.md](howto/file-drift-guardrail.md)), and a
+file is never reported by both. The check never reverts or modifies
+anything; it decides only what *happens* to the task:
+
+| Value | Behavior on a finding |
+|---|---|
+| `off` | The check does nothing: nothing is recorded or alerted. |
+| `warn` (default) | The finding is recorded on the task (`undeclared_edits`, lines summed across retries), appended as an `undeclared_edit_detected` decision, audited, logged and raised as a warn-level alert. The task continues and completes normally. |
+| `block` | The task is set to **Blocked** with error `undeclared_edit: <files>` and the Automaton stops walking its tasks. |
+
+Only `off`, `warn` and `block` are accepted. `PUT /api/config` and
+`PUT /api/autonomous/config` reject anything else with HTTP 400; a bad value
+that is stored another way (hand-edited YAML) resolves to `warn`, never `off`.
+
+### Reading and writing it
+
+| Surface | Read | Write |
+|---|---|---|
+| **CLI** | `datawatch config get autonomous.undeclared_edit_mode` | `datawatch config set autonomous.undeclared_edit_mode block` |
+| **REST** | `GET /api/config` (key `autonomous.undeclared_edit_mode`, `"warn"` when unset); `GET /api/autonomous/config` | `PUT /api/config` with `{"autonomous.undeclared_edit_mode":"block"}`, or `PUT /api/autonomous/config` with `{"undeclared_edit_mode":"block"}` |
+| **MCP** | `autonomous_config_get` | `autonomous_config_set` with `{"undeclared_edit_mode":"block"}` |
+| **Comm chat** | `configure` (no args) lists the key | `configure autonomous.undeclared_edit_mode=block` |
+| **Web (PWA)** | Settings → Autonomous Automata planning → **Undeclared edit mode** | Same select: `off`, `warn` or `block` |
+| **YAML** | `autonomous.undeclared_edit_mode:` in `~/.datawatch/config.yaml` | Set it under `autonomous:` |
+
+---
+
 ## Notification Routing Across Comm Channels
 
 Every comm channel you enable (Signal, Telegram, Discord, Slack, Matrix,

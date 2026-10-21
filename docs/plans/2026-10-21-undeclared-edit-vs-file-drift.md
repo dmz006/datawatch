@@ -122,3 +122,18 @@ The branch is based on an older `main` (it predates `drift_mode` and
   `internal/server/undeclared_edit_config_test.go` and the config test, plus new
   cases for the `FilesGenerated` exemption and the no-double-report rule. Run as
   `env -u TMUX -u TMUX_TMPDIR go test ./internal/autonomous/ ./internal/config/ ./internal/server/ ./internal/mcp/`.
+
+## 6. Implementation status
+
+Shipped on current `main`, following section 4:
+
+- `checkUndeclaredEdits` takes the `inRun` set from `ClassifyFileDrift` and subtracts `FilesPlanned ∪ FilesGenerated`; worktree-mode PRDs are skipped; read-only git only.
+- `Task.UndeclaredEdits`, `CommittedLineStatsSince`, the `undeclared_edit_detected` decision, the `autonomous_undeclared_edit_detected` audit event and a warn alert.
+- `autonomous.undeclared_edit_mode` (`off`/`warn`/`block`, default `warn`) on `GET`/`PUT /api/config`, `PUT /api/autonomous/config` (validated, section 3 gap fixed), MCP, CLI via `config set`, comm `configure`, YAML and the PWA (rendered as a select, section 3 gap fixed). `SetAlertSink` is wired to the alerts store in the daemon (section 3 gap fixed). The PWA shows a per-task badge and list.
+- The how-to wording now says generated files count as declared.
+
+Deviations and open items:
+
+- None from the section 4 rules.
+- The comm `configure` path and the PWA select/badge have no dedicated automated tests, and no row is live-validated yet; `docs/testing-tracker.md` records both honestly.
+- The OpenAPI spec has no dedicated task schema, so `undeclared_edits` is documented in the description of `GET /api/autonomous/prds/{id}`.

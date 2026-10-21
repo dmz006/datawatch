@@ -54,8 +54,10 @@ Each touched file lands in exactly one bucket:
   task (default mode).
 - **in-run edit (the worker's own)** — the file was clean before the task
   started, so the task's worker made the change (planned or not, e.g. a
-  newly created file). This is always recorded, warned and audited, but
-  **never blocks** the task.
+  newly created file). This is always recorded, warned and audited.
+  `drift_mode` never blocks on it; whether an in-run edit to a file the
+  task never declared can block is the separate `undeclared_edit_mode`
+  setting (see [Undeclared edits](#undeclared-edits)).
 
 The typical cause of pre-existing drift is a worker running `git add -A`
 or `git commit -a` in a tree that also holds someone else's work in
@@ -68,7 +70,7 @@ it's just not this task's content.
 |---|---|---|
 | Task commits a file that was uncommitted beforehand and isn't in its planned `files` | **Yes — pre-existing drift: the task's `foreign_file_drift`, a `file_drift_detected` decision and an audit event** | **Yes (the default)** — task set to Blocked, Automaton halts; under `drift_mode: warn` it is flagged only and the task completes |
 | Task commits a file that was uncommitted beforehand but **is** in its planned `files` | No. Planned files are never flagged, even if they were dirty when the task started | No |
-| Task commits a file that was clean before it started (new edit by the task itself, planned or not) | **Yes — an in-run finding: a `file_drift_detected` decision noting it is the worker's own edit, logged and audited** | **Never** — in-run edits are warn-only in every mode |
+| Task commits a file that was clean before it started (new edit by the task itself, planned or not) | **Yes — an in-run finding: a `file_drift_detected` decision noting it is the worker's own edit, logged and audited** | **Never under `drift_mode`** — in-run edits are warn-only there; undeclared ones are governed by `undeclared_edit_mode` (see [Undeclared edits](#undeclared-edits)) |
 | Task leaves a pre-existing uncommitted file alone (still uncommitted afterwards) | No | No |
 | Automaton runs in **worktree** mode (git branch set, auto-PR) | No. The check is skipped entirely; each task gets its own clean worktree, so there's nothing pre-dirty to protect | No |
 | Automaton has no project directory, or the pre-task SHA couldn't be read | No. Skipped | No |
@@ -277,6 +279,37 @@ profile with `block_on_file_drift` set (above).
 
 YAML: per-Automaton settings live in the Automaton record, not in
 `config.yaml`. Use any surface above.
+
+## Undeclared edits
+
+`drift_mode` governs files that were **already uncommitted before the task started**. A separate check covers the other half: files the task's own worker edited or created that the task never declared. A file is reported as an **undeclared edit** when all of these are true:
+
+1. a commit made during the task touched it (`<pre-task SHA>..HEAD`),
+2. it was clean before the task started (so it is the worker's own edit, not pre-existing drift), and
+3. it is in neither the task's planned `files` nor its **generated files** (files the task is expected to produce, such as a verification script's output).
+
+Generated files count as declared, so a task that creates the files it is expected to create is not flagged. The typical hit is a worker taking a drive-by edit, for example fixing an unrelated flaky test or tweaking an adjacent file.
+
+A file is never reported by both checks. Pre-existing files belong to `drift_mode` and the worker's own edits belong to `undeclared_edit_mode`, so a single file can never trigger both. If both would block in the same attempt, the drift block fires first and the undeclared check is not reached for that attempt. Like the drift check it runs only in direct mode, right after the verifier, with read-only git commands, and it never reverts or modifies anything.
+
+### off / warn / block
+
+| `autonomous.undeclared_edit_mode` | What happens on a finding |
+|---|---|
+| `off` | The check does nothing: nothing is recorded or alerted. |
+| `warn` (default) | The finding is recorded and alerted. The task keeps going and completes normally. |
+| `block` | The task is set to **Blocked** with error `undeclared_edit: <files>` and the Automaton stops walking its tasks. |
+
+Only `off`, `warn` and `block` are accepted; anything else is rejected with HTTP 400 on `PUT /api/config`. A bad value that reaches storage another way (for example hand-edited YAML) is treated as `warn`, never `off`. The mode is daemon-wide; there is no per-Automaton or per-profile override. Set it like any other config key, for example `datawatch config set autonomous.undeclared_edit_mode block`, `PUT /api/config`, MCP `autonomous_config_set`, comm `configure autonomous.undeclared_edit_mode=block`, or Settings → Autonomous Automata planning → **Undeclared edit mode** in the PWA. See [operations.md](../operations.md#undeclared-edit-mode-autonomousundeclared_edit_mode).
+
+### Where the warning shows
+
+- **On the task** — an **Undeclared edits** badge in the Automaton detail view, and an `undeclared_edits` list (path and lines changed, summed across retries) from `autonomous_prd_get` / `GET /api/autonomous/prds/<id>`.
+- **In the Automaton's decisions** — one `undeclared_edit_detected` entry naming the task and files.
+- **As an alert** — a warn-level "Undeclared edit detected" alert.
+- **In the audit log** — an `autonomous_undeclared_edit_detected` event with `prd_id`, `task_id`, `files`, `lines` and `mode`.
+
+With `block` the task instead shows `"status": "blocked"` and `"error": "undeclared_edit: <files>"`; recover it as described under [Recovery](#recovery).
 
 ## Recovery
 

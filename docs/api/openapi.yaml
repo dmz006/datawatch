@@ -1106,6 +1106,8 @@ paths:
         `plan_coverage_check` (off|warn|block, default block) and
         `plan_coverage_min_ratio` (covered/extractable ratio required for a passing
         report, 0-1, default 1.0). Both are settable here and via /api/config PUT.
+        It also carries `undeclared_edit_mode` (off|warn|block, default warn), the
+        enforcement for files a task's worker edited without declaring them.
       operationId: autonomousConfigGet
       tags: [Autonomous]
       responses: {"200": {description: OK}}
@@ -1115,6 +1117,8 @@ paths:
         Accepts partial JSON. Among the valid fields are `plan_coverage_check`
         (off|warn|block, default block) and `plan_coverage_min_ratio` (0-1,
         default 1.0). Values outside the allowed range are rejected with 400.
+        `undeclared_edit_mode` (off|warn|block, default warn) is also accepted;
+        any other value is rejected with 400.
       operationId: autonomousConfigSet
       tags: [Autonomous]
       requestBody:
@@ -1150,6 +1154,12 @@ paths:
     parameters: [{name: id, in: path, required: true, schema: {type: string}}]
     get:
       summary: Fetch one PRD with story+task tree
+      description: |
+        Each task may carry `undeclared_edits`: an array of
+        `{path: string, lines_changed: integer}` for files the task's worker
+        committed that are in neither the task's planned nor generated files
+        (lines summed across retries). Absent when there are none. Enforcement
+        is `autonomous.undeclared_edit_mode` (off|warn|block, default warn).
       operationId: autonomousPRDGet
       tags: [Autonomous]
       responses: {"200": {description: OK}, "404": {description: Not found}}
