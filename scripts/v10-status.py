@@ -268,6 +268,16 @@ def main():
         "-" if eta_days is None else "%.1f days" % eta_days,
         fmt_h(avg_wall_h), LANES,
         "-" if eta_lane_days is None else "%.1f days" % eta_lane_days))
+    # Task-based estimate: tasks completed per day over the whole period and
+    # over the last 24 hours, against the estimated tasks left.
+    cutoff = datetime.fromtimestamp(now.timestamp() - 86400, timezone.utc)
+    done_tasks = [t for p in prds for story in p.get("stories", []) for t in story.get("tasks", [])
+                  if t["status"] == "completed"]
+    last24_tasks = sum(1 for t in done_tasks if (parse_ts(t.get("completed_at")) or now) >= cutoff)
+    rate_all = len(done_tasks) / elapsed_days
+    print("      task math: %d tasks left at %.0f tasks/day overall -> %.1f days; at %d tasks in the last 24 h -> %s" % (
+        remaining_tasks, rate_all, remaining_tasks / rate_all if rate_all else 0,
+        last24_tasks, "-" if not last24_tasks else "%.1f days" % (remaining_tasks / last24_tasks)))
     print("      (estimate only; a range, not a promise. Many blocked/waiting PRDs are old and may never run.)")
     print("UNFILED ROWS (first 14 of %d): %s" % (
         len(unfiled_rows),
