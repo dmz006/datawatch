@@ -1,0 +1,329 @@
+# One-shot claude-code startup dialogs are never dismissed by the capture loop
+
+- Date: 2026-10-20 (red phase recorded 2026-10-21, worktree b0390001)
+- Status: **TDD red** — tests exist and fail for the right reason; fix designed, not implemented
+- Tests: `internal/session/startup_dialog_dismiss_test.go` (`TestStartupDialogDismiss_*`)
+- Fixture: `internal/session/testdata/claude_trust_dialog.txt`
+- Failure record: `docs/plans/2026-10-20-oneshot-startup-dialog-dismiss-failures.log`
+
+## Symptom
+
+A one-shot claude-code session created by the daemon can sit blocked forever
+on its startup dialogs: the workspace-trust dialog
+(`Quick safety check: ... ❯ No, exit / Yes, I trust this folder`) and the
+development-channels consent dialog
+(`❯ I am using this for local development`). Nothing is at the terminal for a
+one-shot session, so whichever path the daemon relies on is the *only* chance
+to accept the dialog. That path is unreliable, and the screen-capture loop —
+the one component that is started unconditionally for one-shot sessions at
+creation time — does not participate in dialog dismissal at all.
+
+## Root cause
+
+### 1. (Primary) The screen-capture loop never invokes the dialog handlers
+
+`StartScreenCapture` (`internal/session/manager.go`, ~2226–2600) is launched
+unconditionally ~2 s after one-shot session creation (~2207–2210):
+
+```go
+if sess.OneShot {
+    go func(fullID string) {
+        time.Sleep(2 * time.Second)
+        mgr.StartScreenCapture(ctx, fullID, 500)
+    }(sess.FullID)
+}
+```
+
+It reads the pane every tick and drives state detection, prompt matching, and
+completion handling — but it contains **no call whatsoever** to
+`GetActiveStartupPromptInput`, `IsTrustDialogShowing`, or
+`SendTrustDialogAccept`. (Verified by reading the loop body and by grep:
+those helpers only appear in `manager.go`'s dialog-block area, `main.go`, and
+the `self_update` path.) So for one-shot sessions the capture loop sees the
+dialog on screen every 500 ms and does nothing.
+
+Every dismissal logic that today exists lives *elsewhere*, and each of those
+elsewhere paths has its own miss-mode:
+
+### 2. `processOutputLine` only fires if the dialog text arrives intact on ONE log pipe line
+
+`internal/session/manager.go` ~6231:
+
+```go
+if prompt := m.GetActiveStartupPromptInput(sess.FullID); prompt != "" {
+    if _, loaded := m.startupDialogSent.LoadOrStore(sess.FullID, struct{}{}); !loaded {
+        go func() {
+            time.Sleep(300 * time.Millisecond)
+            if strings.Contains(prompt, "trust this folder") {
+                _ = exec.Command("tmux", "send-keys", "-t", sess.TmuxSession, "Down").Run()  // ignored error
+                _ = exec.Command("tmux", "send-keys", "-t", sess.TmuxSession, "Enter").Run() // ignored error
+            } else {
+                _ = m.tmux.SendKeys(sess.TmuxSession, "Enter") // ignored error
+            }
+            m.debugf(...)
+        }()
+    }
+}
+```
+
+`monitorOutput` reads the log pipe with `ReadString('\n')` and matches
+`strings.Contains(line, marker)` line-by-line. Claude Code's TUI (Ink) renders
+with cursor-addressing; a marker string can be split across two pipe reads,
+have its prefix erased by a cursor-up + line-clear sequence, or be redrawn
+piecewise. Any of that and the `Contains` match never fires for that
+rendering. The handler also only *reacts* to log text — it cannot detect a
+dialog that was already on screen when the read position was reset or that
+rendered before the pipe subscription started.
+
+### 3. The send is latched *before* success and its errors are ignored
+
+`startupDialogSent.LoadOrStore` happens synchronously in the loop; the send
+runs 300 ms later in a goroutine whose `exec.Command(...).Run()` errors are
+discarded (`_ =`). So:
+
+- keystroke landed before the dialog fully rendered (t+300 ms can be too
+  early on slow startups) or hit the wrong control → lost, and the latch
+  blocks any retry for the life of the session;
+- tmux busy / pane not yet ready / race with `SendInput` → lost, same as
+  above.
+
+A "latch" that means "fired once" instead of "dismissed confirmed" turns any
+single failed or mistimed send into a permanently stuck session.
+
+### 4. The direct `exec.Command` bypasses the `m.tmux` abstraction
+
+The trust accept shells out to a fresh tmux binary instead of using the
+`TmuxAPI` (which already has the correct `SendTrustPromptAccept` — Down then
+Enter, with settle). Consequences: it is invisible to `FakeTmux` in tests,
+it bypasses the manager's tmux handle configuration, and the codebase has
+*two* implementations of "accept the trust dialog" (the raw exec pair vs.
+`SendTrustDialogAccept`).
+
+### 5. Backup pollers in `main.go` are config-gated and incomplete
+
+`cmd/datawatch/main.go`:
+
+- the DetectPrompt auto-accept callback (~2195 ff.) is gated on
+  `session.claude_auto_accept_disclaimer` (`claudeAutoAccept`);
+- the 45 s trust-dialog poller (~2279 ff.) is likewise gated, and **only
+  covers the trust dialog** — the channels consent dialog has no poller
+  backup at all;
+- both are in `main`, outside the manager, and not testable through
+  `FakeTmux`.
+
+Net effect: with auto-accept off (default in many deployments), if the pipe
+line match in (2) misses (very common for a TUI), **nothing dismisses either
+dialog**, and the latching behavior in (3) guarantees the miss is permanent.
+
+### 6. Why the capture loop is the right place (and an extra miss-mode it must dodge)
+
+It is the only component that (a) is started unconditionally for one-shot
+sessions, (b) reads the *rendered* pane (not the fragile pipe text), and
+(c) is testable through `FakeTmux`. One caveat to design around: the loop
+body only runs when `capture != lastCapture` — a fully static dialog pane
+would, after the first evaluation, stop triggering detection runs. The
+fix should keep checking the pane for these dialogs once per tick *after*
+dismissal is pending, not only on content change (or rely on the periodic
+capture diff that Claude emits while waiting — the safe design is to check
+explicitly each tick; it is cheap: a string `Contains` on ~100 lines).
+
+## Reproduction
+
+### Production-level
+
+1. Fresh project directory that Claude Code has not seen before (trust
+   prompt guaranteed), `claudeAutoAccept` unset, or a channel-enabled
+   deployment (channels consent guaranteed).
+2. Create the session via the one-shot path (schedule / API / pipeline).
+3. Claude starts, renders `Quick safety check: ... ✗ No, exit / ✓ Yes, I
+   trust this folder`.
+4. Daemon never accepts: the log-line match may miss due to TUI redraws;
+   even if it fires, a t+300 ms Down+Enter can precede the render and the
+   latch then blocks retries. Session is stuck until an operator manually
+   sends `Down Enter` in the tmux pane.
+   Same story for `❯ I am using this for local development`, which has no
+   poller backup at all.
+
+### Test-level (reproducible RED, currently failing by design)
+
+```bash
+cd <worktree>
+rtk go test ./internal/session/ -run TestStartupDialogDismiss -count=1
+```
+
+Expected output (recorded in
+`docs/plans/2026-10-20-oneshot-startup-dialog-dismiss-failures.log`):
+
+- `FAIL TestStartupDialogDismiss_OneShotTrustDialogAcceptedByCaptureLoop`
+  — "trust dialog accept sent 0 time(s) via m.tmux, want exactly 1"
+- `FAIL TestStartupDialogDismiss_OneShotChannelsDialogAcceptedByCaptureLoop`
+  — "channels consent accept sent 0 time(s) via m.tmux, want exactly 1"
+- `FAIL TestStartupDialogDismiss_FailedAcceptIsRetriedOnNextTick`
+  — "failed accept send was retried 0 attempt(s) via m.tmux, want 2"
+- `FAIL TestStartupDialogDismiss_NotResentOnceDialogGone`
+  — "trust accept sent 0 time(s), want exactly 1"
+- `PASS TestStartupDialogDismiss_NonOneShotAndOtherBackendsUnaffected`
+  (interactive claude-code + one-shot opencode subtests — no spurious
+  keystrokes; must stay green after the fix)
+
+The failure output lists the capture loop's `FakeTmux` calls per run: only
+`capture-visible` / `capture-live-tail` / `capture-scrollback` ops — zero
+`SendTrustPromptAccept`, zero `send-keys`. That is the "right-reason"
+signal: the loop detects nothing because it has no dialog logic, not because
+of a flaky fixture or a race in the harness.
+
+Full package run for context: `473 passed, 4 failed (all four above),
+1 skipped`.
+
+## Fix design
+
+### Goal
+
+Make the screen-capture loop the *reliable floor* for startup-dialog
+dismissal on one-shot claude-code sessions: detect the dialog on the pane,
+send the accept through the `m.tmux` abstraction, retry a failed send on the
+next tick, and stay quiet once the dialog is gone — while leaving interactive
+sessions and other backends untouched (their existing main-loop pollers keep
+working).
+
+### Design
+
+1. **One shared helper in the manager** (single source of truth, callable from
+   both the capture loop and `processOutputLine`):
+
+   ```go
+   // dismissVisibleStartupDialogs inspects text (a pane capture or a log
+   // line) for claude-code startup dialogs on a one-shot session and sends
+   // the matching accept keystroke through m.tmux. Returns true if it acted.
+   func (m *Manager) dismissVisibleStartupDialogs(sess *Session, text string) bool
+   ```
+
+   Detection — on `strings.ToLower(text)`, mirroring the existing markers
+   (`main.go` `claudeDisclaimerResponse` / `isTrustDialogLine` /
+   `getActiveStartupPromptInput`):
+
+   - **Trust**: `strings.Contains(lower, "trust this folder")` (+
+     `"no, exit"` required, to avoid hitting ordinary conversation text) →
+     `m.tmux.SendTrustPromptAccept(sess.TmuxSession)` (Down, then Enter —
+     the existing `TmuxAPI` method, not a new exec.Command pair).
+   - **Channels**: `strings.Contains(lower, "i am using this for local
+     development")` (or `loading development channels`) →
+     `m.tmux.SendKeys(sess.TmuxSession, "Enter")`.
+
+   Gates (kept inside the helper so both callers get them):
+   `sess.BackendFamily == "claude-code" && sess.OneShot &&
+   sess.TmuxSession != ""`.
+
+2. **Retry-safe latch** (replaces the fire-once `startupDialogSent` pattern):
+
+   Per-`(fullID, dialog)` state machine with three values, keyed in a map
+   guarded by a mutex (or a small struct on `Manager`):
+
+   ```
+   (absent / failed) --send OK--> awaitingDismiss
+   (awaitingDismiss) --pane shows dialog--> skip (no double-send this tick)
+   (awaitingDismiss) --pane no dialog-->   dismissed (clear)
+   (absent / failed) --send err-->  failed  (next tick retries if still visible)
+   ```
+
+   Concretely each evaluation:
+
+   ```go
+   if strings.Contains(lower, trustMarkers) {
+       if state[fullID+tr] == dismissed || state[fullID+tr] == awaiting { return }
+       if err := m.tmux.SendTrustPromptAccept(tmux); err != nil {
+           state[fullID+tr] = attempted // retry next tick
+           continue
+       }
+       state[fullID+tr] = awaiting       // do not double-send this/next tick
+   } else if state[fullID+tr] == awaiting {
+       state[fullID+tr] = dismissed      // dialog gone → confirmed, clear
+   }
+   ```
+
+   This satisfies the acceptance criteria: a failed send is retried on the
+   next tick exactly once (test 3 expects attempts == 2: one failure, one
+   successful retry, then latched); a dialog that disappears is not re-sent
+   (test 4); a lingering dialog is not hammered (tests 1/2 expect exactly 1
+   send across 4–5 ticks).
+
+   Note on test 3: "retry on next tick and succeed, then stick" — the retry
+   fires because `awaiting` was never set (send errored). Once the retry
+   succeeds, `awaiting` blocks further sends even though the fake pane still
+   shows the dialog (the test does not simulate the pane clearing), which is
+   the desired operator-visibility behavior: one clean attempt per render.
+
+3. **Wire it into the capture loop** (`StartScreenCapture` body, inside the
+   `if capture != lastCapture` block, after stateCapture is computed):
+
+   ```go
+   // One-shot startup-dialog floor: claude-code trust / channels consent.
+   m.dismissVisibleStartupDialogs(current, displayCapture)
+   ```
+
+   Also handle the *static-panes* miss-mode (Root cause 6): when a dismissal
+   is in `awaiting` state, do one extra explicit pane read each tick
+   (or simply re-evaluate on the next `capture != lastCapture`, which for a
+   real Claude dialog includes redraw/heartbeat bytes). Simplest first
+   iteration: rely on the tick diffing; the main.go pollers remain as a
+   backstop for the static case. (Document the residual edge.)
+
+4. **Collapse the processOutputLine block** to a call into the same helper:
+
+   ```go
+   if m.dismissVisibleStartupDialogs(sess, line) { /* fired; latch handled */ }
+   ```
+
+   dropping the goroutine, the 300 ms sleep, the `exec.Command` send-keys
+   pair, and the `startupDialogSent` sync.Map (the helper's latch
+   subsumes it). Keystrokes now always go through `TmuxAPI` → observable by
+   `FakeTmux`, retryable, and covered by the same tests.
+
+   `GetActiveStartupPromptInput` / `IsTrustDialogShowing` /
+   `SendTrustDialogAccept` keep their current behavior (main-loop pollers
+   and API still use them); the helper is additive, not a rename.
+
+5. **FakeTmux (already in place)**: `FailNextOp map[string]int` +
+   `ErrInjected` let a test fail exactly the `SendTrustPromptAccept` call
+   without the surrounding capture calls eating the error (test 3).
+
+### What stays out of scope
+
+- `main.go` poller behavior for interactive sessions (they are the
+  operator-at-terminal case and their existing handlers + this manager-level
+  change are compatible; the negative test pins "no new keystrokes from the
+  capture loop").
+- Registry / PRD completion paths.
+- Other backends (opencode/goose/aider) — they have no equivalent startup
+  dialog today; the helper is claude-code-gated.
+
+### Acceptance (maps to the red tests)
+
+1. one-shot claude-code + trust dialog on pane → exactly one
+   `SendTrustPromptAccept` via `m.tmux` (`TestStartupDialogDismiss_OneShotTrustDialogAcceptedByCaptureLoop`)
+2. one-shot claude-code + channels dialog on pane → exactly one `send-keys
+   Enter` via `m.tmux`, and no trust accept
+   (`TestStartupDialogDismiss_OneShotChannelsDialogAcceptedByCaptureLoop`)
+3. first accept send fails → next tick retries; total attempts == 2, then
+   latched (`TestStartupDialogDismiss_FailedAcceptIsRetriedOnNextTick`)
+4. dialog gone after accept → no re-send (`TestStartupDialogDismiss_NotResentOnceDialogGone`);
+   dialog lingering → no double-send (implicit in 1/2 via `want exactly 1`
+   across 4–5 ticks)
+5. interactive claude-code / one-shot opencode → zero keystrokes
+   (`TestStartupDialogDismiss_NonOneShotAndOtherBackendsUnaffected`)
+
+Green gate: all five green **and** the full `./internal/session/` package
+green (baseline: 473 passed / 1 skipped today, with the four intentional
+reds).
+
+### Rollout notes
+
+- Behavior change: one-shot claude-code sessions with auto-accept *off* will
+  now get their dialogs accepted by the capture loop. That is the intent
+  (one-shot = no human present). Operators who want to handle it
+  interactively should use an interactive session — where this change is
+  deliberately a no-op.
+- Residual edge (documented): a byte-static dialog pane after the first
+  evaluation defers the retry to the next pane change; the main.go pollers
+  (when `claudeAutoAccept` is on) remain as a second independent floor for
+  the trust dialog specifically.

@@ -8,10 +8,15 @@
 package session
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 	"time"
 )
+
+// ErrInjected is the error FakeTmux returns for calls covered by a
+// FakeTmux.FailNextOp budget.
+var ErrInjected = errors.New("fake tmux: injected failure")
 
 // FakeTmux is a test-only TmuxAPI that records calls in memory.
 type FakeTmux struct {
@@ -25,6 +30,14 @@ type FakeTmux struct {
 
 	// Pane simulates visible pane content returned by CapturePane*.
 	Pane map[string]string
+
+	// FailNextOp maps a FakeTmuxCall.Op name (e.g. "SendTrustPromptAccept")
+	// to the number of upcoming calls under that op that should fail with
+	// ErrInjected before succeeding again. Unlike the global FailNext queue
+	// (consumed by whatever call happens next, e.g. a capture), the budget is
+	// only spent by the matching op — so a test can force a failed keystroke
+	// send without the surrounding capture calls eating the error.
+	FailNextOp map[string]int
 
 	// WindowSizes simulates each session's current tmux window size, for
 	// WindowSize/ResizePane. Unset sessions return an error (callers fall
@@ -52,6 +65,10 @@ func (f *FakeTmux) record(op, session string, args ...string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.Calls = append(f.Calls, FakeTmuxCall{Op: op, Session: session, Args: args})
+	if n, ok := f.FailNextOp[op]; ok && n > 0 {
+		f.FailNextOp[op] = n - 1
+		return ErrInjected
+	}
 	if len(f.FailNext) > 0 {
 		err := f.FailNext[0]
 		f.FailNext = f.FailNext[1:]
