@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.54 — Undeclared-file warning on completed tasks
+
+### Added
+
+- **Automata now warn when a task changes files it never declared.** After each direct-mode task, files the task's own worker committed that are in neither the task's planned files nor its generated files are flagged. The finding shows on the task (an Undeclared edits badge and `undeclared_edits` with lines changed), as an `undeclared_edit_detected` decision on the Automaton, in the audit log and as a warn-level alert. Files that were already uncommitted before the task started stay under `drift_mode`, and a file is never reported by both.
+- **New setting `autonomous.undeclared_edit_mode`** (`off` | `warn` | `block`, default `warn`). `warn` records and alerts while the task continues; `block` holds the task as Blocked; `off` disables the check. Available over REST, MCP, CLI, comm `configure`, the PWA Settings (a select) and YAML. See `docs/howto/file-drift-guardrail.md`.
+
 ## v9.5.53 — Deterministic boot-resume and API-executor tests
 
 ### Fixed
