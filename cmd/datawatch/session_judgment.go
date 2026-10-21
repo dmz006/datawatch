@@ -232,6 +232,9 @@ func runOneShotJSONSessionWithReader(cfg *config.Config, prdID, projectDir, back
 		"name":        sessionName,
 		"one_shot":    true,
 		"prd_id":      prdID,
+		// PRD-owned judgment session: keep its tmux commands off the
+		// production server.
+		"scrub_tmux_env": true,
 	}
 	if effort != "" {
 		startReq["effort"] = effort

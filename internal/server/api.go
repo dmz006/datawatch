@@ -4394,6 +4394,10 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		// ValidateCommands (validation gate): run in the project dir before a
 		// one-shot may commit. Required to auto-commit an ad-hoc one-shot.
 		ValidateCommands []string `json:"validate_commands,omitempty"`
+		// ScrubTmuxEnv: PRD-owned launchers ask the pane shell to unset
+		// TMUX and TMUX_TMPDIR before the LLM starts, so tmux commands the
+		// LLM runs cannot reach the production tmux server.
+		ScrubTmuxEnv bool `json:"scrub_tmux_env,omitempty"`
 		// BL386 Phase 1 — optional warm-start seeding at session creation.
 		// When from_scope is set, memories are copied from that scope into
 		// the new session's session-local scope after it starts.
@@ -4710,6 +4714,7 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		StoryID:               req.StoryID,
 		WriteScope:            req.WriteScope,
 		ValidateCommands:      req.ValidateCommands,
+		ScrubTmuxEnv:          req.ScrubTmuxEnv,
 	}
 	// Empty per-request overrides fall through to LLM registry (v7.0.0 clean move).
 	if opts.PermissionMode == "" && s.inferenceReg != nil {

@@ -1549,6 +1549,33 @@ func (m *Manager) OutputHandler() func(*Session, string) {
 	return m.onOutput
 }
 
+// scrubTmuxEnvCommand is typed into a PRD-owned pane shell before the LLM
+// backend launches.
+//
+// Incident: tmux sets TMUX in every pane to the socket of the server that
+// owns it, and tmux gives TMUX priority over TMUX_TMPDIR when choosing a
+// server. An LLM running in a pane that issued a tmux command (even one
+// meant for a sandbox via TMUX_TMPDIR) therefore still reached the
+// production server and could kill its sessions. Unsetting both in the pane
+// shell makes tmux fall back to the default socket resolution, which the
+// LLM can no longer point at production by accident. The pane shell
+// outlives the LLM process, so restarts and resumes inherit the scrub.
+// The daemon's own environment is deliberately left untouched.
+const scrubTmuxEnvCommand = "unset TMUX TMUX_TMPDIR"
+
+// scrubPaneTmuxEnv types scrubTmuxEnvCommand into sess's pane shell when the
+// session was started with ScrubTmuxEnv. It is the single place both the
+// initial launch and the restart/resume relaunch go through, so every
+// backend is covered. Failure is logged, not fatal: the launch proceeds.
+func (m *Manager) scrubPaneTmuxEnv(sess *Session) {
+	if sess == nil || !sess.ScrubTmuxEnv || sess.TmuxSession == "" {
+		return
+	}
+	if err := m.tmux.SendKeys(sess.TmuxSession, scrubTmuxEnvCommand); err != nil {
+		fmt.Printf("[warn] scrub tmux env for %s: %v\n", sess.ID, err)
+	}
+}
+
 // StartOptions holds optional parameters for starting a session.
 type StartOptions struct {
 	Name          string            // optional human-readable name
@@ -1589,6 +1616,13 @@ type StartOptions struct {
 	// Manager.Delete to reap the cloned tree after the session ends.
 	// Default false; only set true at the clone site.
 	EphemeralWorkspace bool
+
+	// ScrubTmuxEnv makes the pane shell run `unset TMUX TMUX_TMPDIR`
+	// before the LLM backend is launched. See scrubTmuxEnvCommand for why.
+	// Set by PRD-owned launchers only; operator-started interactive
+	// sessions leave it false. Recorded on Session.ScrubTmuxEnv so restart
+	// and resume re-apply it to the fresh pane shell.
+	ScrubTmuxEnv bool
 
 	// Skills (v6.13.7) — comma-separated list of synced-skill names to
 	// inject into <ProjectDir>/.datawatch/skills/<name>/ at session
@@ -1813,6 +1847,9 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 	}
 	if opt != nil && opt.EphemeralWorkspace {
 		sess.EphemeralWorkspace = true
+	}
+	if opt != nil && opt.ScrubTmuxEnv {
+		sess.ScrubTmuxEnv = true
 	}
 	if opt != nil && len(opt.Skills) > 0 {
 		sess.Skills = append([]string(nil), opt.Skills...)
@@ -2139,6 +2176,7 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 	if sess.OneShot && strings.HasPrefix(task, "!") {
 		launchTask = task + `; echo "DATAWATCH_COMPLETE: shell task done"`
 	}
+	m.scrubPaneTmuxEnv(sess)
 	if launchFn != nil {
 		var launchErr error
 		if resumeID != "" {
@@ -3649,6 +3687,7 @@ func (m *Manager) Restart(ctx context.Context, fullID string) (*Session, error) 
 			resumeLaunchTask = ""
 		}
 	}
+	m.scrubPaneTmuxEnv(sess)
 	var launchErr error
 	if rb, ok := backendObj.(llm.Resumable); ok {
 		m.debugf("restarting %q with resume=%q", backendName, resumeID)

@@ -212,6 +212,11 @@ type Session struct {
 	// project_dirs are never reaped (flag is false by default).
 	EphemeralWorkspace bool `json:"ephemeral_workspace,omitempty"`
 
+	// ScrubTmuxEnv records that the pane shell was told to unset TMUX and
+	// TMUX_TMPDIR before launching the LLM (see scrubTmuxEnvCommand); a
+	// restart re-applies it to the new pane shell.
+	ScrubTmuxEnv bool `json:"scrub_tmux_env,omitempty"`
+
 	// LastChannelEventAt (BL266 v6.11.24) — wall time of the last channel
 	// event (ACP/MCP message, chat_message, structured status, or
 	// significant tmux pane change). Used by the channel-state watcher
