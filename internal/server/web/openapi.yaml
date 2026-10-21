@@ -594,6 +594,8 @@ paths:
         `server.host`, `server.port`, `server.token`, `server.tls_enabled`,
         `autonomous.plan_coverage_check` (off|warn|block, default block),
         `autonomous.plan_coverage_min_ratio` (0-1, default 1.0),
+        `autonomous.automation.idle_alert_minutes` (whole minutes >= 0, default 0 =
+        off; a negative or non-integer value is rejected with 400),
         `autonomous.plan_review_backend`, `autonomous.plan_review_model`,
         `autonomous.plan_review_mode` (off | warn | block),
         `autonomous.smoke_verification_backend`, `autonomous.smoke_verification_model`.
@@ -1098,9 +1100,38 @@ paths:
   /api/autonomous/status:
     get:
       summary: Loop status snapshot
+      description: |
+        Besides the loop counters, the snapshot carries `automations`: one row
+        per non-terminal Automation (draft, active, paused or blocked). Each
+        row has `id`, `name`, `status`, `current_member_id`, `current_prd_id`,
+        `current_prd_title`, `pending_members`, `idle_since` and
+        `idle_seconds` (set while no member is running), and `blocked_reason`
+        (blocked only). The array is omitted when there are none.
       operationId: autonomousStatus
       tags: [Autonomous]
-      responses: {"200": {description: OK}}
+      responses:
+        "200":
+          description: Loop status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  automations:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: {type: string}
+                        name: {type: string}
+                        status: {type: string, enum: [draft, active, paused, blocked]}
+                        current_member_id: {type: string}
+                        current_prd_id: {type: string}
+                        current_prd_title: {type: string}
+                        pending_members: {type: integer}
+                        idle_since: {type: string, format: date-time}
+                        idle_seconds: {type: integer}
+                        blocked_reason: {type: string}
   /api/autonomous/config:
     get:
       summary: Read autonomous config
@@ -1659,6 +1690,41 @@ paths:
         "204": {description: Deleted}
         "404": {description: Automation not found}
         "409": {description: "The Automation is active, paused or blocked and cannot be deleted; complete or cancel it first"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "503": {description: "autonomous disabled"}
+
+  /api/automations/{id}/activate:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}, description: "Automation ID (8-hex)"}
+    post:
+      summary: Activate a draft Automation
+      description: |
+        Validates the Automation, marks it active and starts its entry member
+        through the same approval gate used between members; if the entry
+        member cannot start, the Automation becomes blocked instead. Only a
+        draft can be activated. Optional body `{"actor": "...", "reason": "..."}`
+        for the audit log; actor defaults to "operator".
+      operationId: automationsActivate
+      tags: [Automations]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                actor: {type: string}
+                reason: {type: string}
+      responses:
+        "200":
+          description: The Automation after activation (active, or blocked with its reason in the status row)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Automation"
+        "400": {description: "The Automation cannot be activated (for example it has no entry member)"}
+        "404": {description: Automation not found}
+        "409": {description: "The Automation is not a draft, or changed while it was being activated"}
         "401": {$ref: "#/components/responses/Unauthorized"}
         "503": {description: "autonomous disabled"}
 

@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **An Automation can now be activated from every interface.** `POST /api/automations/{id}/activate` (body `{actor?, reason?}`, actor defaults to `operator`), the `automation_activate` MCP tool, `datawatch automation activate <id>` and the chat verb `automation activate <id>` all start a draft Automation: it is validated, marked active and its entry member starts through the normal approval gate (or the Automation becomes blocked with a reason). Only a draft can be activated (409 otherwise), an unknown ID is a 404, and each activation is written to the audit log.
+- **`GET /api/autonomous/status` and the `autonomous_status` MCP tool now return an `automations` array**: one row per draft, active, paused or blocked Automation with its current member and Automaton, pending member count, idle time and blocked reason. The PWA has no Automation view yet, so this array is surfaced through the API and MCP only.
+- **New setting `autonomous.automation.idle_alert_minutes`** (whole minutes, default `0` = off): raises one alert when an active Automation has sat idle that long. Settable through `PUT /api/config`, `PUT /api/autonomous/config`, the `automation_idle_alert_minutes` argument of `autonomous_config_set`, `datawatch config set`, chat `configure`, and the PWA Settings → General → Automate card (labelled in all five languages). A negative or non-integer value is rejected with 400.
+
 ### Fixed
 
 - **Old failed Automata are no longer re-launched at every daemon restart.** A failed Automaton whose failed tasks were all killed by the restart now goes through the same boot-resume check as a running one: a fresh one is recovered, a stale one (older than `autonomous.resume_max_age_seconds`, or with a missing project directory) is parked as blocked with an alert and a boot-resume report entry, and a cancelled one is left alone.

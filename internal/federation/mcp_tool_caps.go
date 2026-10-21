@@ -39,6 +39,7 @@ var MCPToolCap = map[string]string{
 	"assist":                                       CapHealthRead,
 	"audit_query":                                  CapAuditRead,
 	"audit_access_query":                           CapAuditRead,
+	"automation_activate":                          CapAutonomousWrite,
 	"automation_create":                            CapAutonomousWrite,
 	"automation_delete":                            CapAutonomousWrite,
 	"automation_get":                               CapAutonomousRead,

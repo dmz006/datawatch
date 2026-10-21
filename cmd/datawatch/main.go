@@ -361,6 +361,7 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newMarketplaceCmd(),   // alpha.33 #244 — Ollama marketplace
 		newGuardrailCmd(),     // BL303 S2 — guardrail library + profiles
 		newRetryCmd(),         // BL410 Phase 1 — retry profiles + per-Automaton policy
+		newAutomationCmd(),    // Automation lifecycle (activate)
 		newDashboardCmd(),     // #57/#58 — dashboard card layout CRUD
 		newSmokeCmd(),         // #54 — smoke-run cross-instance forwarding
 		newFilterCmd(),        // top-level filter command

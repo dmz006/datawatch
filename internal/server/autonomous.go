@@ -87,6 +87,22 @@ func (s *Server) handleAutonomousConfig(w http.ResponseWriter, r *http.Request) 
 					return
 				}
 			}
+			// automation.idle_alert_minutes: whole minutes >= 0 (0 = off).
+			if rawAuto, ok := top["automation"]; ok {
+				var auto struct {
+					IdleAlertMinutes *float64 `json:"idle_alert_minutes"`
+				}
+				if json.Unmarshal(rawAuto, &auto) != nil {
+					http.Error(w, "automation: must be an object", http.StatusBadRequest)
+					return
+				}
+				if auto.IdleAlertMinutes != nil {
+					if verr := validateIdleAlertMinutes(*auto.IdleAlertMinutes); verr != nil {
+						http.Error(w, verr.Error(), http.StatusBadRequest)
+						return
+					}
+				}
+			}
 			if rawRatio, ok := top["plan_coverage_min_ratio"]; ok {
 				var ratio float64
 				if json.Unmarshal(rawRatio, &ratio) != nil {
@@ -2879,6 +2895,7 @@ func automationErrStatus(err error) (int, string) {
 //	GET    /api/automations/{id}   — get
 //	PUT    /api/automations/{id}   — update
 //	DELETE /api/automations/{id}   — delete
+//	POST   /api/automations/{id}/activate — start a draft Automation
 func (s *Server) handleAutomations(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
 		if !s.fedCap(w, r, federation.CapAutonomousRead) {
@@ -2896,6 +2913,11 @@ func (s *Server) handleAutomations(w http.ResponseWriter, r *http.Request) {
 	rest := strings.TrimPrefix(r.URL.Path, "/api/automations")
 	rest = strings.Trim(rest, "/")
 	id := rest
+
+	if actID, ok := strings.CutSuffix(rest, "/activate"); ok && actID != "" && !strings.Contains(actID, "/") {
+		s.handleAutomationActivate(w, r, actID)
+		return
+	}
 
 	if id == "" {
 		switch r.Method {
@@ -2969,6 +2991,38 @@ func (s *Server) handleAutomations(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// handleAutomationActivate serves POST /api/automations/{id}/activate.
+// Body {actor?, reason?}; actor defaults to "operator". Manager errors
+// carrying a "409: " / "404: " prefix map to 409 / 404.
+func (s *Server) handleAutomationActivate(w http.ResponseWriter, r *http.Request, id string) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		Actor  string `json:"actor"`
+		Reason string `json:"reason"`
+	}
+	if r.Body != nil {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	if req.Actor == "" {
+		req.Actor = "operator"
+	}
+	a, err := s.autonomousMgr.ActivateAutomation(id, req.Actor)
+	if err != nil {
+		code, msg := automationErrStatus(err)
+		http.Error(w, msg, code)
+		return
+	}
+	s.audit(r.Context(), "automation_activate", "automation", id,
+		map[string]any{"actor": req.Actor, "reason": req.Reason})
+	writeJSONOK(w, a)
 }
 
 // automationIdentity reads the ID and version out of the value returned

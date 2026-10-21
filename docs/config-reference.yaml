@@ -860,6 +860,16 @@ autonomous:
   # Documented as autonomous.notify.default_events elsewhere (see
   # docs/implementation.md "Lifecycle event sinks" and the PWA settings
   # card under Settings → General → Automate).
+  # Automation (chained Automatons) coordination. idle_alert_minutes: raise
+  # one alert when an active Automation has sat idle (a member finished and no
+  # next member started) this many minutes. Whole number >= 0; 0 = off.
+  # Settable via PUT /api/config, MCP autonomous_config_set
+  # (automation_idle_alert_minutes), CLI `datawatch config set
+  # autonomous.automation.idle_alert_minutes=30`, comm `configure
+  # autonomous.automation.idle_alert_minutes=30`, and the PWA Settings field
+  # (settings_automation_idle_alert_minutes).
+  automation:
+    idle_alert_minutes: 0
   notify:
     # Built-in sinks (alert store, topic push, comm fan-out) act on the
     # lifecycle event kinds listed here. Empty list (the default) = nothing

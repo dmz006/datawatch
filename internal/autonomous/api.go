@@ -1376,6 +1376,11 @@ func (a *API) GetAutomation(id string) (any, bool) {
 	return got, true
 }
 
+// ActivateAutomation starts a draft Automation (in-process; never via REST).
+func (a *API) ActivateAutomation(id, actor string) (any, error) {
+	return a.M.ActivateAutomation(id, actor)
+}
+
 func (a *API) SetPRDRetryPolicy(prdID, profile string, policy map[string]int, ceilingTotal int, contentAutoFixEnabled, autoFixSkipApproval *bool) (any, error) {
 	prd, err := a.M.SetPRDRetryPolicy(prdID, profile, policy, ceilingTotal, contentAutoFixEnabled, autoFixSkipApproval)
 	if err != nil {

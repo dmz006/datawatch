@@ -780,6 +780,7 @@ type AutonomousAPI interface {
 	DeleteAutomation(id string) error
 	ListAutomations() []any
 	GetAutomation(id string) (any, bool)
+	ActivateAutomation(id, actor string) (any, error)
 
 	// BL303 S3 T15 — on-demand guardrail invocation for a session.
 	// Runs the named guardrail against projectDir; result is appended to the
@@ -5911,6 +5912,14 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// Automation idle-alert threshold: whole minutes, 0 = off. A negative or
+	// non-integer value rejects the whole PUT rather than being skipped.
+	if v, ok := patch["autonomous.automation.idle_alert_minutes"]; ok {
+		if verr := validateIdleAlertMinutes(v); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
 	// plan_review_mode must be a known mode (off/warn/block). A typo would
 	// otherwise normalize to off and silently disable the gate, so reject
 	// the whole PUT as a client error.
@@ -7639,6 +7648,19 @@ func toString(v interface{}) string {
 		return s
 	}
 	return fmt.Sprintf("%v", v)
+}
+
+// validateIdleAlertMinutes checks autonomous.automation.idle_alert_minutes:
+// a whole number >= 0 (0 turns the idle alert off).
+func validateIdleAlertMinutes(v interface{}) error {
+	f, ok := v.(float64)
+	if i, isInt := v.(int); isInt {
+		f, ok = float64(i), true
+	}
+	if !ok || f != math.Trunc(f) || f < 0 {
+		return fmt.Errorf("autonomous.automation.idle_alert_minutes: must be a whole number >= 0 (0 = off)")
+	}
+	return nil
 }
 
 func toInt(v interface{}) (int, bool) {

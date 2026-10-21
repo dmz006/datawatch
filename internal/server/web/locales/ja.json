@@ -1250,6 +1250,7 @@
   "settings_block_on_injection": "インジェクションフレーズ検出時にオートマトン/タスク作成をブロック",
   "settings_plan_coverage": "プランカバレッジチェック（off | warn | block、デフォルト: block）",
   "settings_plan_coverage_min_ratio": "プランカバレッジ最低比率（要件カバレッジ 0〜1、デフォルト 1.0）",
+  "settings_automation_idle_alert_minutes": "Automation アイドルアラート（アラートまでのアイドル分数、0 = オフ）",
   "settings_undeclared_edit_mode": "未宣言の編集モード（off | warn | block、デフォルト: warn）",
   "prd_plan_coverage_title": "プラン要件カバレッジ",
   "prd_plan_coverage_pass": "プランは仕様の要件をカバーしています",

@@ -9,6 +9,42 @@ Do not mark **Validated=Yes** based solely on unit tests.
 
 ---
 
+## Automation activate + status array + idle-alert setting
+
+Activation of a draft Automation on every operator surface, the `automations`
+array on the loop status, and the `autonomous.automation.idle_alert_minutes`
+setting. Design: `docs/plans/2026-10-14-automation-orchestration-design.md`.
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| `POST /api/automations/{id}/activate` (REST) | **Yes** (`TestAutomationActivateAuditsAndMapsErrors`, `TestAutomationActivateWithoutCoordinatorFails` in `internal/server/automation_activate_test.go`) | No | Real manager + coordinator: 200 with audit entry (resource, actor, reason); second activation 409; unknown ID 404; GET 405; malformed body 400; no coordinator 400 | Validated=No: not yet run against a live daemon with a started Automation. |
+| `GET /api/autonomous/status` `automations` array | **Yes** (`TestAutomationStatusIncludesAutomationsArray`) | No | Draft Automation appears with name, status and pending member count | Surfaced through API and MCP only; the PWA has no Automation view yet. |
+| `autonomous.automation.idle_alert_minutes` (REST config, both surfaces) | **Yes** (`TestAutomationIdleAlertConfigRoundTrip`) | No | Default 0; PUT 30 reaches the live manager; negative, non-integer and string values are 400 and change nothing; 0 turns it off | |
+| MCP `automation_activate`, `autonomous_status`, `autonomous_config_set` | **Yes** (`internal/mcp/automation_activate_test.go`) | No | Proxies POST with actor/reason, omits empty fields, surfaces a 409 as an error, passes the automations array through, forwards an explicit 0 | |
+| Comm `automation activate <id>` and `configure` help | **Yes** (`internal/router/automation_cmd_test.go`) | No | Parse, loopback POST with actor `comm`, usage and error replies, help lists the new key | |
+| CLI `datawatch automation activate <id>` | No (thin wrapper over the shared REST helper; compiled and vetted) | No | | |
+| PWA Settings field + 5 locale labels | **Yes** (`internal/server/web/app-autonomous-settings-fields.test.js`) | No | Field is a number with min 0 and a label key; every bundle has a non-empty label | |
+
+**Mobile-Parity: owed, not yet filed.** Issues are not filed from this
+pipeline. File on `dmz006/datawatch-app` when the release containing this lands:
+
+> `feat(automation): activate a draft Automation + automations status array + idle-alert setting`
+>
+> Server added `POST /api/automations/{id}/activate` (body `{actor?, reason?}`;
+> 200 = the Automation, 404 unknown, 409 not a draft), an `automations` array
+> on `GET /api/autonomous/status` (rows: `id`, `name`, `status`,
+> `current_member_id`, `current_prd_id`, `current_prd_title`,
+> `pending_members`, `idle_since`, `idle_seconds`, `blocked_reason`), and the
+> config key `autonomous.automation.idle_alert_minutes` (whole minutes >= 0,
+> 0 = off; 400 otherwise). New locale key `settings_automation_idle_alert_minutes`
+> (shipped in all five PWA bundles; Android/iOS need the same string).
+> Acceptance: Android and iOS show the Settings field, parse the `automations`
+> array without error, and offer an Activate action on a draft Automation that
+> surfaces the 409/404 messages. The PWA has no Automation view yet, so the
+> Activate affordance and status rows are API-only until one exists.
+
+---
+
 ## Plan review before approval + smoke/final-gate verifier split
 
 Pre-approval plan reviewer: after decompose, a configured LLM reviews the ORIGINAL spec against the plan (requirement coverage, task sizes, dependencies, non-trivial verification scripts, scope outside write_dirs) and records a `plan_review` verdict on the Automaton. Modes `autonomous.plan_review_mode` = `off` (default, no review, approval never affected) / `warn` (verdict recorded and visible, never blocks) / `block` (a `ok:false` verdict refuses approve until it is replaced). A reviewer outage is recorded (`reviewer_failed`) and never blocks in any mode. The plan's own smoke / final-gate verification task is judged by a separate LLM from `autonomous.smoke_verification_backend` / `autonomous.smoke_verification_model`; explicit per-task verifier overrides always win. Surfaces: REST `POST /api/autonomous/prds/{id}/plan-review`, MCP `autonomous_prd_plan_review`, comm `autonomous plan-review <id>`, CLI `datawatch autonomous prd-plan-review <id>` (alias `plan-review`), PWA verdict panel + re-run button + settings fields (en/de/es/fr/ja).
