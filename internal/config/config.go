@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dmz006/datawatch/internal/inference"
 	"gopkg.in/yaml.v3"
 )
 
@@ -2121,6 +2122,17 @@ type AutonomousConfig struct {
 	// CapacityGPUUtilPct holds new tasks back while a node's busiest GPU is at
 	// or above this utilisation percent (0 = off).
 	CapacityGPUUtilPct int `yaml:"capacity_gpu_util_pct,omitempty" json:"capacity_gpu_util_pct,omitempty"`
+	// PlanTierMaxInflight maps an inference.PlanTier (pro / max_5x /
+	// max_20x / api) to the per-LLM inflight cap the capacity ledger
+	// enforces when an LLM entry sets that plan_tier and no explicit
+	// max_inflight. Starting table pro=1, max_5x=2, max_20x=4, api=0 is
+	// OPERATOR POLICY, not a technical limit — override the map here.
+	// api=0 (unlimited): the dollar budget is a later phase. Unknown
+	// tier keys or negative values are a config error (validateLoaded).
+	// No omitempty: an operator's explicit map edit (including clearing a
+	// tier to 0) must survive the JSON round-trip through
+	// handleAutonomousConfig, same gotcha as VerificationBackends above.
+	PlanTierMaxInflight map[string]int `yaml:"plan_tier_max_inflight" json:"plan_tier_max_inflight"`
 	// StaleTaskSeconds — default 900 seconds. A zero or negative value
 	// inherits session.stale_timeout_seconds.
 	StaleTaskSeconds int `yaml:"stale_task_seconds,omitempty" json:"stale_task_seconds,omitempty"`
@@ -2809,6 +2821,15 @@ func DefaultConfig() *Config {
 			MaxConcurrentTasks: 1,
 			ResumeMaxAgeSeconds: 3600,
 			MaxEnginesPerNode:  1,
+			// Starting plan-tier table — operator policy, see the field
+		// doc on PlanTierMaxInflight. api=0 = unlimited; the dollar
+		// budget is a later phase.
+			PlanTierMaxInflight: map[string]int{
+				"pro":      1,
+				"max_5x":   2,
+				"max_20x":  4,
+				"api":      0,
+			},
 			StaleTaskSeconds:   900,
 			// BL410 Phase 1 — see AutonomousConfig.RetryPolicy's doc
 			// comment for why "content"/"policy" are absent here.
@@ -3257,10 +3278,22 @@ func validateLoaded(cfg *Config) error {
 	// 2026-10-17 plan-review gate: mode must be empty/off/warn/block.
 	switch cfg.Autonomous.PlanReviewMode {
 	case "", "off", "warn", "block":
-		return nil
+		// ok
+	default:
+		return fmt.Errorf("autonomous.plan_review_mode: invalid value %q (valid: empty, %q, %q, %q)",
+			cfg.Autonomous.PlanReviewMode, "off", "warn", "block")
 	}
-	return fmt.Errorf("autonomous.plan_review_mode: invalid value %q (valid: empty, %q, %q, %q)",
-		cfg.Autonomous.PlanReviewMode, "off", "warn", "block")
+	// plan_tier_max_inflight: every key must be a known tier and every
+	// value a non-negative cap (0 = unlimited).
+	for tier, cap := range cfg.Autonomous.PlanTierMaxInflight {
+		if !inference.ValidPlanTier(inference.PlanTier(tier)) {
+			return fmt.Errorf("autonomous.plan_tier_max_inflight: unknown tier %q (allowed: pro, max_5x, max_20x, api)", tier)
+		}
+		if cap < 0 {
+			return fmt.Errorf("autonomous.plan_tier_max_inflight: tier %q cap %d must be >= 0", tier, cap)
+		}
+	}
+	return nil
 }
 
 // detectDeprecatedKeys reports the deprecated keys the just-parsed YAML

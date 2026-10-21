@@ -82,6 +82,33 @@ var AllKinds = []Kind{
 	KindGeminiAPI, KindOpenCodeAPI,
 }
 
+// PlanTier names the operator's subscription/API spend tier for an LLM
+// entry. It drives the capacity ledger's per-LLM inflight cap through
+// EffectiveMaxInflight when MaxInflight is not set explicitly.
+type PlanTier string
+
+const (
+	// PlanTier unset — zero value; kind-based conservative defaults apply.
+	PlanTierUnset PlanTier = ""
+	// PlanTierPro is the Pro subscription tier.
+	PlanTierPro PlanTier = "pro"
+	// PlanTierMax5x is the Max 5× usage tier.
+	PlanTierMax5x PlanTier = "max_5x"
+	// PlanTierMax20x is the Max 20× usage tier.
+	PlanTierMax20x PlanTier = "max_20x"
+	// PlanTierAPI is API billing (dollar budget is a later phase).
+	PlanTierAPI PlanTier = "api"
+)
+
+// ValidPlanTier reports whether t is a known tier (or unset/empty).
+func ValidPlanTier(t PlanTier) bool {
+	switch t {
+	case PlanTierUnset, PlanTierPro, PlanTierMax5x, PlanTierMax20x, PlanTierAPI:
+		return true
+	}
+	return false
+}
+
 // EnabledModel pairs one ComputeNode with one model name.
 // Node is empty for SaaS kinds (claude, gemini).
 type EnabledModel struct {
@@ -126,6 +153,13 @@ type LLM struct {
 	// MaxInflight caps autonomous sessions in flight on this LLM across all
 	// PRDs (0 = unlimited). Enforced by the capacity ledger.
 	MaxInflight int `yaml:"max_inflight,omitempty" json:"max_inflight,omitempty"`
+	// PlanTier (unset|pro|max_5x|max_20x|api) is the operator's spend tier
+	// for this LLM entry. When MaxInflight is > 0 it is an explicit
+	// override and wins; otherwise EffectiveMaxInflight derives the
+	// ledger limit from the tier table (autonomous.
+	// plan_tier_max_inflight). Unset falls back to conservative
+	// kind-based defaults (see EffectiveMaxInflight).
+	PlanTier PlanTier `yaml:"plan_tier,omitempty" json:"plan_tier,omitempty"`
 	Tags           []string `yaml:"tags,omitempty" json:"tags,omitempty"`
 	// AutoTags are daemon-applied internal markers. v7.0.0-alpha.23
 	// (Q7): PWA strips these from the user-visible tag list.
@@ -197,10 +231,82 @@ func (l *LLM) ApplyModelMigration() {
 	}
 }
 
+// kindInflightClass classifies an LLM kind for conservative default
+// caps when neither MaxInflight nor PlanTier pins a value.
+type kindInflightClass int
+
+const (
+	// localKinds run on operator-computed nodes; they stay uncapped on
+	// the LLM pool (0 = unlimited) and are governed by the node: pools
+	// and the hard two-engines-per-GPU-node limit instead.
+	localKinds kindInflightClass = iota
+	// apiKinds are dollar-metered (Anthropic / Google / OpenAI-compat
+	// APIs). Unlimited here on purpose: the dollar budget is a later
+	// phase; the operator still caps them via MaxInflight per LLM.
+	apiKinds
+	// subscriptionKinds (claude-code and the other non-local, non-API
+	// session backends) are rate-limited by the operator's subscription
+	// plan, so an unset tier gets a conservative cap of 1 in-flight.
+	subscriptionKinds
+)
+
+func (l LLM) kindInflight() kindInflightClass {
+	switch l.Kind {
+	case KindOllama, KindOpenWebUI, KindOpenCode:
+		return localKinds
+	case KindClaude, KindGemini, KindGeminiAPI, KindOpenCodeAPI:
+		return apiKinds
+	default:
+		return subscriptionKinds
+	}
+}
+
+// EffectiveMaxInflight returns the capacity-ledger inflight limit for
+// l:
+//
+//  1. l.MaxInflight when > 0 — an explicit operator override always wins.
+//  2. Otherwise the tier table (map tier -> int, from
+//     autonomous.plan_tier_max_inflight) when l.PlanTier is set and
+//     present in the table.
+//  3. Otherwise a conservative kind default:
+//     - subscription kinds (claude-code and the other non-local,
+//       non-API kinds): 1 in-flight;
+//     - local kinds (Ollama / OpenWebUI / opencode wrapping Ollama):
+//       0 (unlimited) — they stay governed by the node: pools and the
+//       hard two-engines-per-GPU-node limit in capacity_wiring;
+//     - API kinds (dollar-metered): 0 (unlimited) — the dollar budget
+//       is a later phase; MaxInflight per LLM is the operator's tool.
+//
+// The starting table pro=1, max_5x=2, max_20x=4, api=0 is operator
+// policy, not a technical limit: it is overridable through
+// autonomous.plan_tier_max_inflight in internal/config. A nil/missing
+// table, or a tier absent from it, falls back to the kind default
+// above. Pure function: no I/O, no globals — safe to call from tests
+// and the syncPools loop.
+func EffectiveMaxInflight(l LLM, table map[string]int) int {
+	if l.MaxInflight > 0 {
+		return l.MaxInflight
+	}
+	if l.PlanTier != PlanTierUnset {
+		if v, ok := table[string(l.PlanTier)]; ok {
+			return v
+		}
+	}
+	switch l.kindInflight() {
+	case localKinds, apiKinds:
+		return 0
+	}
+	return 1
+}
+
 // Validate returns the first reason this LLM is malformed, or nil.
 func (l *LLM) Validate() error {
 	if l.MaxInflight < 0 {
 		return fmt.Errorf("llm: max_inflight %d must be >= 0", l.MaxInflight)
+	}
+	if !ValidPlanTier(l.PlanTier) {
+		return fmt.Errorf("llm: unknown plan_tier %q (allowed: %s, %s, %s, %s, or empty for unset)",
+			string(l.PlanTier), PlanTierPro, PlanTierMax5x, PlanTierMax20x, PlanTierAPI)
 	}
 	if strings.TrimSpace(l.Name) == "" {
 		return errors.New("llm: name required")

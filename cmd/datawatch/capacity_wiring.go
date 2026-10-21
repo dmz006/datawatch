@@ -74,6 +74,20 @@ func engineNodes(reg *inference.Registry) map[string]string {
 	return nodes
 }
 
+// syncLLMLimits sets the ledger limit for every LLM entry's pool
+// ("llm:<name>") from inference.EffectiveMaxInflight: the explicit
+// max_inflight override when > 0, else the autonomous.plan_tier_max_inflight
+// tier table, else the conservative kind-based default (1 for subscription
+// kinds like claude-code; 0/unlimited for local Ollama-protocol kinds, which
+// stay governed by the node: pools and the two-engines-per-GPU limit above).
+// Extracted from syncPools so it is unit-testable without a live daemon; the
+// 10s syncPools ticker re-runs it on registry change.
+func syncLLMLimits(cfg *config.Config, reg *inference.Registry, led *capacity.Ledger) {
+	for _, l := range reg.List() {
+		led.SetLimit("llm:"+l.Name, inference.EffectiveMaxInflight(*l, cfg.Autonomous.PlanTierMaxInflight))
+	}
+}
+
 // wireCapacity creates the admission ledger, connects it to the autonomous
 // manager and the REST surface, and starts the sync loop that keeps pool
 // limits current with config, compute nodes and LLMs, refreshes GPU
@@ -262,9 +276,7 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 			}
 		}
 		if reg := httpServer.InferenceRegistry(); reg != nil {
-			for _, l := range reg.List() {
-				led.SetLimit("llm:"+l.Name, l.MaxInflight)
-			}
+			syncLLMLimits(cfg, reg, led)
 		}
 		live := func(ls capacity.Lease) bool {
 			if ls.SessionID == "" {
