@@ -556,6 +556,60 @@ function stopWsWatchdog() {
   }
 }
 
+// Server-side UI preferences into state cache. Called on first connect and,
+// after a reconnect, only when the daemon version changed.
+function _loadUiConfig() {
+  fetch('/api/config', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).then(cfg => {
+    if (!cfg) return;
+    state.suppressActiveToasts = cfg.server?.suppress_active_toasts !== false;
+    state.autoRestartOnConfig = !!cfg.server?.auto_restart_on_config;
+    state._recentMinutes = cfg.server?.recent_session_minutes || 5;
+    state._maxSessions = cfg.session?.max_sessions || 10;
+    state._summarizerEnabled = !!cfg.session?.summarizer?.enabled;
+  }).catch(() => {});
+}
+
+// Reconnect resync: exactly one GET /api/sessions (batched apply + one
+// onSessionsUpdated) and, for an open session-detail view, a single
+// 'subscribe' so the daemon sends a fresh capture. The terminal is left
+// intact when the same session is still active and already has content.
+function _resyncAfterReconnect() {
+  const view = state.activeView;
+  const sid = state.activeSession;
+  const detail = view === 'session-detail' && !!sid;
+  const termLive = () => detail && state._termSessionId === sid && state._termHasContent;
+  const fullRender = () => {
+    if (state.activeView === 'session-detail' && state.activeSession === sid) {
+      state._lastPaneFrame = null;
+      state._termHasContent = false;
+      renderSessionDetail(sid);
+    }
+  };
+  fetch('/api/sessions', { headers: tokenHeader() })
+    .then(r => r.ok ? r.json() : null)
+    .then(sessions => {
+      if (sessions) {
+        sessions.forEach(s => applySessionUpdate(s));
+        onSessionsUpdated();
+      }
+      if (!detail || state.activeView !== 'session-detail' || state.activeSession !== sid) {
+        if (view === 'alerts') renderAlertsView();
+        return;
+      }
+      const exists = !sessions || sessions.some(s => s.full_id === sid || s.id === sid);
+      if (exists && termLive()) {
+        // Keep the terminal on screen; the fresh capture redraws it.
+        send('subscribe', { session_id: sid });
+      } else {
+        fullRender();
+      }
+    })
+    .catch(() => {
+      if (termLive()) send('subscribe', { session_id: sid });
+      else fullRender();
+    });
+}
+
 // ── WebSocket ───────────────────────────────────────────────────────────────
 function connect() {
   if (state.ws && (state.ws.readyState === WebSocket.OPEN || state.ws.readyState === WebSocket.CONNECTING)) {
@@ -604,17 +658,10 @@ function connect() {
     // causes entire session to refresh, like a full browser refresh.
     // But not when server restarted only when i send the command".
     // Probe /api/health which returns the version cheaply.
-    if (state._daemonVersion) {
-      fetch('/api/health', { headers: tokenHeader() })
-        .then(r => r.ok ? r.json() : null)
-        .then(h => {
-          if (!h || !h.version) return;
-          if (state._daemonVersion !== h.version) {
-            _onDaemonVersionChange(h.version);
-          }
-        })
-        .catch(() => {});
-    }
+    // On a RECONNECT the version is checked from the 'sessions' WS frame the
+    // daemon sends on connect (see handleMessage), so no extra probe request.
+    const isReconnect = !!state._wsEverOpened;
+    state._wsEverOpened = true;
     // v4.0.6 — dismiss the self-update overlay once the daemon is
     // reachable again. We give it a moment so the "installed /
     // restarting" message is visible before the panel vanishes.
@@ -663,15 +710,11 @@ function connect() {
       }
     }
     showToast('Connected', 'success', 2000);
-    // Load server-side UI preferences into state cache
-    fetch('/api/config', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).then(cfg => {
-      if (!cfg) return;
-      state.suppressActiveToasts = cfg.server?.suppress_active_toasts !== false;
-      state.autoRestartOnConfig = !!cfg.server?.auto_restart_on_config;
-      state._recentMinutes = cfg.server?.recent_session_minutes || 5;
-      state._maxSessions = cfg.session?.max_sessions || 10;
-      state._summarizerEnabled = !!cfg.session?.summarizer?.enabled;
-    }).catch(() => {});
+    if (!isReconnect) _loadUiConfig();
+    if (isReconnect) {
+      _resyncAfterReconnect();
+      return;
+    }
     // After reconnect (e.g. after daemon restart), re-render the current view
     // so settings/LLM data reloads from the fresh daemon
     if (state.activeView === 'settings') {
@@ -931,6 +974,7 @@ function handleMessage(msg) {
         if (!state._daemonVersion) {
           state._daemonVersion = msg.data.version;
         } else if (state._daemonVersion !== msg.data.version) {
+          _loadUiConfig();
           _onDaemonVersionChange(msg.data.version);
         }
       }
