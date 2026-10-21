@@ -46,12 +46,40 @@ func runToTerminalOrBlocked(t *testing.T, m *Manager, api *API, id string, spawn
 			if err := api.WaitIdle(10 * time.Second); err != nil {
 				t.Fatal(err)
 			}
-			return got
+			// Re-read after the drain: the goroutine's error path may
+			// still rewrite the status after the poll observed it.
+			final, _ := m.Store().GetPRD(id)
+			return final
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
 	t.Fatal("PRD did not reach a terminal state")
 	return nil
+}
+
+// waitForPRDStatus polls the store until the PRD reaches one of want or the
+// timeout elapses, failing with the last observed status.
+func waitForPRDStatus(t *testing.T, m *Manager, id string, timeout time.Duration, want ...PRDStatus) *PRD {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	var last PRDStatus
+	for {
+		if p, ok := m.Store().GetPRD(id); ok {
+			m.mu.Lock()
+			last = p.Status
+			m.mu.Unlock()
+			for _, w := range want {
+				if last == w {
+					return p
+				}
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("PRD %s did not reach %v within %s; last status %q", id, want, timeout, last)
+			return nil
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }
 
 // TestExecutor_StoryFailureHaltsPRDByDefault verifies the operator's core

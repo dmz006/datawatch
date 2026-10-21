@@ -5,6 +5,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 // outOfScopeSpec references an absolute path outside the PRD's project dir
@@ -64,7 +65,8 @@ func blockedPRDFixture(t *testing.T) (*Manager, *API, *PRD, string, string, stri
 	c := prd.Story[1].Tasks[0].ID
 
 	rec := &spawnRecorder{}
-	got := runToTerminalOrBlocked(t, m, api, prd.ID, rec.spawn, verify)
+	runToTerminalOrBlocked(t, m, api, prd.ID, rec.spawn, verify)
+	got := waitForPRDStatus(t, m, prd.ID, 30*time.Second, PRDBlocked)
 	if n := len(rec.reqs); n != 0 {
 		t.Fatalf("no task should spawn (A completed, B out of scope, C halted); got %d spawns", n)
 	}

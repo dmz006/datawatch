@@ -218,8 +218,10 @@ func TestExecutorResume_NonRunningSkipped(t *testing.T) {
 		return spawn(ctx, req)
 	}, verify)
 
-	// Give resumeRunningPRDs a moment to run (it's a goroutine).
-	time.Sleep(100 * time.Millisecond)
+	// Wait for the resumeRunningPRDs boot scan goroutine to exit.
+	if err := api.WaitIdle(10 * time.Second); err != nil {
+		t.Fatal(err)
+	}
 
 	// The draft PRD must not have been touched.
 	got, _ := m.Store().GetPRD(draft.ID)

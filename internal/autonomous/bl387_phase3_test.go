@@ -108,7 +108,8 @@ func TestBL387_AutoReport_NotCalledWhenSeedDisabled(t *testing.T) {
 	if err := m.Run(context.Background(), prd.ID, spawn, verify); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	time.Sleep(100 * time.Millisecond) // let goroutine fire if it was going to
+	// The report goroutine is only spawned synchronously inside Run when
+	// enabled, so nothing can still be pending here.
 
 	if called {
 		t.Error("memoryReportFn must NOT be called when MemorySeed.Enabled=false")
@@ -164,14 +165,20 @@ func TestBL387_AutoReport_StoredOnPRD(t *testing.T) {
 func TestBL387_AutoReport_ErrorDoesNotAbortCompletion(t *testing.T) {
 	m, prd, spawn, verify := bl387Phase3Setup(t)
 
+	fired := make(chan struct{}, 1)
 	m.SetMemoryReportFn(func(_ context.Context, _, _ string) (string, error) {
+		fired <- struct{}{}
 		return "", context.DeadlineExceeded
 	})
 
 	if err := m.Run(context.Background(), prd.ID, spawn, verify); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	time.Sleep(100 * time.Millisecond) // let goroutine settle
+	select {
+	case <-fired:
+	case <-time.After(5 * time.Second):
+		t.Fatal("memoryReportFn was never called")
+	}
 
 	p, _ := m.Store().GetPRD(prd.ID)
 	if p.Status != PRDCompleted {
@@ -187,14 +194,20 @@ func TestBL387_AutoReport_ErrorDoesNotAbortCompletion(t *testing.T) {
 func TestBL387_AutoReport_EmptyStringNotStored(t *testing.T) {
 	m, prd, spawn, verify := bl387Phase3Setup(t)
 
+	fired := make(chan struct{}, 1)
 	m.SetMemoryReportFn(func(_ context.Context, _, _ string) (string, error) {
+		fired <- struct{}{}
 		return "", nil // empty — nothing to store
 	})
 
 	if err := m.Run(context.Background(), prd.ID, spawn, verify); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	time.Sleep(100 * time.Millisecond) // let goroutine settle
+	select {
+	case <-fired:
+	case <-time.After(5 * time.Second):
+		t.Fatal("memoryReportFn was never called")
+	}
 
 	p, _ := m.Store().GetPRD(prd.ID)
 	if p.MemoryReport != "" {
