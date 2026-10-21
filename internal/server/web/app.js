@@ -6681,6 +6681,9 @@ function renderNewSessionView() {
             <input type="checkbox" id="gitInitToggle" /> Auto git init
           </label>
           <label style="display:flex;align-items:center;gap:6px;font-size:12px;">
+            <input type="checkbox" id="newSessionGitEnable" /> ${t('new_session_git_label')||'Git'}
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;font-size:12px;">
             <input type="checkbox" id="gitCommitToggle" checked /> Auto git commit
           </label>
           <label style="display:flex;align-items:center;gap:6px;font-size:12px;" title="${t('kill_children_recursive_tip')||'When killed, also kill all descendant sessions recursively'}">
@@ -7418,6 +7421,9 @@ function submitNewSession() {
   // v8.8.3 — Chrome integration: only send chrome:true when checked; omit field otherwise.
   const chromeEl = document.getElementById('newSessionChrome');
   if (chromeEl && chromeEl.checked) payload.chrome = true;
+  // Git: only send git:true when the new-session Git checkbox is checked; omit otherwise.
+  const gitEnable = document.getElementById('newSessionGitEnable');
+  if (gitEnable && gitEnable.checked) payload.git = true;
   // BL351 — kill_children_recursive: only send when checked.
   const kcrEl = document.getElementById('killChildrenRecursiveToggle');
   if (kcrEl && kcrEl.checked) payload.kill_children_recursive = true;
