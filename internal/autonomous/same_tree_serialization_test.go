@@ -399,15 +399,28 @@ func TestSameTreeConcurrentReleaseBumpsDoNotCollide(t *testing.T) {
 		t.Fatal("task IDs not assigned")
 	}
 
-	// The release critical section: read → bump → write, with a window
-	// between read and write wide enough that WITHOUT the tree lock
-	// all three concurrent tasks read the same stale value (last
-	// write wins, two increments swallowed — the incident).
-	const readWriteGap = 40 * time.Millisecond
+	// The release critical section: read → bump → write. Between the
+	// read and the write each session parks on gate, so WITHOUT the tree
+	// lock all three concurrent tasks read the same stale value (last
+	// write wins, two increments swallowed — the incident). The test
+	// opens the gate only once it has observed the real condition it is
+	// pinning: the two later tasks visibly waiting on the tree lock.
+	gate := make(chan struct{})
 	var mu sync.Mutex
-	window := map[string]interval{}
+	inflight, maxInflight, runs := 0, 0, 0
 	seam := SpawnFn(func(_ context.Context, req SpawnRequest) (SpawnResult, error) {
-		start := time.Now()
+		mu.Lock()
+		inflight++
+		runs++
+		if inflight > maxInflight {
+			maxInflight = inflight
+		}
+		mu.Unlock()
+		defer func() {
+			mu.Lock()
+			inflight--
+			mu.Unlock()
+		}()
 		cur, err := os.ReadFile(versionFile)
 		if err != nil {
 			return SpawnResult{}, err
@@ -416,43 +429,73 @@ func TestSameTreeConcurrentReleaseBumpsDoNotCollide(t *testing.T) {
 		if err != nil {
 			return SpawnResult{}, err
 		}
-		time.Sleep(readWriteGap)
+		<-gate
 		if err := os.WriteFile(versionFile, []byte(next+"\n"), 0o644); err != nil {
 			return SpawnResult{}, err
 		}
-		mu.Lock()
-		window[req.TaskID] = interval{start: start, end: time.Now()}
-		mu.Unlock()
 		return SpawnResult{SessionID: "sess-bump-" + req.TaskID}, nil
 	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
-	defer cancel()
 	ran := make(chan error, 1)
 	go func() { ran <- mgr.Run(ctx, prd.ID, seam, tlVerify) }()
-
-	// Record the later tasks' wait episode: while a task waits for
-	// the tree lock it must be visible as waiting with a "tree lock"
-	// wait reason.
-	episodeSeen := false
-	runDone := false
+	var gateOnce sync.Once
+	openGate := func() { gateOnce.Do(func() { close(gate) }) }
+	// Never leave Run or a parked seam behind: open the gate, cancel,
+	// and wait for Run (and with it the executor goroutines) to return.
+	runReaped := false
 	var runErr error
+	reap := func() {
+		if runReaped {
+			return
+		}
+		openGate()
+		cancel()
+		runErr = <-ran
+		runReaped = true
+	}
+	t.Cleanup(reap)
+
+	// Wait for the real condition: two tasks visible waiting with a
+	// "tree lock" wait reason while the third holds the tree parked on
+	// the gate. If the lock admitted a second session instead, that
+	// shows as an in-flight overlap and is reported below.
+	episodeSeen := false
 	deadline := time.Now().Add(15 * time.Second)
-	for !runDone {
+	for {
+		waiting := 0
 		for _, id := range []string{taskA, taskB, taskC} {
 			snap, _ := st.TaskSnapshot(id)
 			if snap.Status == TaskWaitingCapacity && strings.Contains(snap.WaitReason, "tree lock") {
-				episodeSeen = true
+				waiting++
 			}
+		}
+		mu.Lock()
+		overlapped := maxInflight > 1
+		mu.Unlock()
+		if waiting >= 2 {
+			episodeSeen = true
+			break
+		}
+		if overlapped {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("no \"tree lock\" wait episode within 15s (waiting=%d)", waiting)
 		}
 		select {
 		case runErr = <-ran:
-			runDone = true
-		case <-time.After(5 * time.Millisecond):
+			runReaped = true
+			t.Fatalf("Run returned before the tree lock episode was observed: %v", runErr)
+		case <-time.After(time.Millisecond):
 		}
-		if time.Now().After(deadline) {
-			t.Fatal("Run did not complete the three concurrent release tasks")
-		}
+	}
+	openGate()
+	select {
+	case runErr = <-ran:
+		runReaped = true
+	case <-time.After(15 * time.Second):
+		t.Fatal("Run did not complete the three concurrent release tasks")
 	}
 	if runErr != nil {
 		t.Fatalf("Run: %v", runErr)
@@ -469,21 +512,14 @@ func TestSameTreeConcurrentReleaseBumpsDoNotCollide(t *testing.T) {
 		t.Errorf("no task was ever visible waiting with a \"tree lock\" wait reason — the later release tasks were not serialized behind the tree lock (the holdTree wiring is gone; the incident's concurrent bump shape)")
 	}
 
-	var ias []interval
-	for _, id := range []string{taskA, taskB, taskC} {
-		iv, okv := window[id]
-		if !okv {
-			t.Fatalf("expected all three release tasks to run the bump once each; observed %d bump session(s)", len(window))
-		}
-		ias = append(ias, iv)
+	mu.Lock()
+	gotRuns, gotMax := runs, maxInflight
+	mu.Unlock()
+	if gotRuns != 3 {
+		t.Fatalf("expected all three release tasks to run the bump once each; observed %d bump session(s)", gotRuns)
 	}
-	for i := 0; i < len(ias); i++ {
-		for j := i + 1; j < len(ias); j++ {
-			a, b := ias[i], ias[j]
-			if !a.end.Before(b.start) && !b.end.Before(a.start) {
-				t.Errorf("two bump sessions overlapped on the shared tree (the incident's swallowed-increment shape): read-bump-write concurrent")
-			}
-		}
+	if gotMax > 1 {
+		t.Errorf("%d bump sessions were in flight at once on the shared tree (the incident's swallowed-increment shape): read-bump-write concurrent", gotMax)
 	}
 
 	// No lost bump: all three complete and exactly three sequential

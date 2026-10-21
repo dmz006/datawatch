@@ -291,6 +291,38 @@ func treeLockStale(path string, rec *LockRecord, readErr error, taskStatus func(
 	return isTerminalTaskStatus(st)
 }
 
+// reclaimMu serializes stale-lock removal within this process. A waiter
+// decides "stale" from a record it read earlier; without re-verifying
+// under a lock, its delayed os.Remove can delete the FRESH lock a
+// faster waiter has since claimed (read stale → other waiter reclaims
+// and claims → our Remove deletes their live lock → two holders).
+var reclaimMu sync.Mutex
+
+// removeStaleLock deletes the lock at path only if it still carries the
+// stale record the caller observed (seen=true) — a changed holder means
+// a successor already reclaimed and claimed it, and that live lock must
+// survive; the caller then just loops and waits on it. With seen=false
+// (unreadable/empty record) the file is removed as before. Because new
+// claims are O_EXCL, nothing can replace the file between the re-read
+// and the Remove except another remover, and removers are serialized.
+func removeStaleLock(path string, observed LockRecord, seen bool) error {
+	reclaimMu.Lock()
+	defer reclaimMu.Unlock()
+	if seen {
+		cur, err := readLockRecord(path)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return nil
+			}
+			return err
+		}
+		if cur.HolderTaskID != observed.HolderTaskID || cur.AcquiredAt != observed.AcquiredAt || cur.PID != observed.PID {
+			return fmt.Errorf("tree lock %s: lock changed hands (now task %q); not removing", path, cur.HolderTaskID)
+		}
+	}
+	return os.Remove(path)
+}
+
 // interruptibleSleep sleeps d, returning false as soon as ctx cancels or
 // isCancelled() reports true. Checked in fine chunks so cancellation
 // during a long Manager-controlled poll is honored promptly.
@@ -506,7 +538,7 @@ func AcquireTreeLock(
 			} else {
 				log.Printf("tree lock: reclaiming stale lock %s — record unreadable or empty (grace expired)", path)
 			}
-			derr := os.Remove(path) // best effort per spec
+			derr := removeStaleLock(path, existing, rerr == nil) // best effort per spec
 			if derr == nil || os.IsNotExist(derr) {
 				if reclaimCount < maxStaleReclaimAttempts {
 					reclaimCount++
