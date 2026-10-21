@@ -75,7 +75,9 @@ func TestCapacity_WaitingTaskShowsStatusAndNeverFails(t *testing.T) {
 	}
 	// SetExecutors kicks an async boot-resume scan; let it finish before the PRD exists.
 	api.SetExecutors(spawn, verify)
-	time.Sleep(100 * time.Millisecond)
+	if err := api.WaitIdle(10 * time.Second); err != nil {
+		t.Fatal(err)
+	}
 	prd := newPRDWithTasks(t, m, 1)
 	p, _ := m.Store().GetPRD(prd.ID)
 	p.Status = PRDApproved
@@ -230,7 +232,9 @@ func TestCapacity_CancelWhileWaitingRemovesFromQueueAndKeepsCancelled(t *testing
 		return VerificationResult{OK: true}, nil
 	}
 	api.SetExecutors(spawn, verify)
-	time.Sleep(100 * time.Millisecond)
+	if err := api.WaitIdle(10 * time.Second); err != nil {
+		t.Fatal(err)
+	}
 	prd := newPRDWithTasks(t, m, 1)
 	p, _ := m.Store().GetPRD(prd.ID)
 	p.Status = PRDApproved
@@ -446,7 +450,9 @@ func TestCapacity_LocalEngineTaskWaitsOnNodePool(t *testing.T) {
 		return VerificationResult{OK: true}, nil
 	}
 	api.SetExecutors(spawn, verify)
-	time.Sleep(100 * time.Millisecond)
+	if err := api.WaitIdle(10 * time.Second); err != nil {
+		t.Fatal(err)
+	}
 	prd := newPRDOnBackend(t, m, "pi", "ollama/qwen3.8:27b")
 	p, _ := m.Store().GetPRD(prd.ID)
 	p.Status = PRDApproved

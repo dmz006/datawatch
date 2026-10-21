@@ -37,14 +37,49 @@ func runToTerminalOrBlocked(t *testing.T, m *Manager, api *API, id string, spawn
 	deadline := time.Now().Add(30 * time.Second)
 	for time.Now().Before(deadline) {
 		got, _ := m.Store().GetPRD(id)
-		if got.Status == PRDCompleted || got.Status == PRDFailed || got.Status == PRDBlocked {
-			time.Sleep(50 * time.Millisecond)
-			return got
+		m.mu.Lock()
+		status := got.Status
+		m.mu.Unlock()
+		if status == PRDCompleted || status == PRDFailed || status == PRDBlocked {
+			// Let the executor goroutine finish its tail (final emit)
+			// before the caller reads or mutates the shared PRD.
+			if err := api.WaitIdle(10 * time.Second); err != nil {
+				t.Fatal(err)
+			}
+			// Re-read after the drain: the goroutine's error path may
+			// still rewrite the status after the poll observed it.
+			final, _ := m.Store().GetPRD(id)
+			return final
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
 	t.Fatal("PRD did not reach a terminal state")
 	return nil
+}
+
+// waitForPRDStatus polls the store until the PRD reaches one of want or the
+// timeout elapses, failing with the last observed status.
+func waitForPRDStatus(t *testing.T, m *Manager, id string, timeout time.Duration, want ...PRDStatus) *PRD {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	var last PRDStatus
+	for {
+		if p, ok := m.Store().GetPRD(id); ok {
+			m.mu.Lock()
+			last = p.Status
+			m.mu.Unlock()
+			for _, w := range want {
+				if last == w {
+					return p
+				}
+			}
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("PRD %s did not reach %v within %s; last status %q", id, want, timeout, last)
+			return nil
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }
 
 // TestExecutor_StoryFailureHaltsPRDByDefault verifies the operator's core
