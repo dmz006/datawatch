@@ -505,6 +505,7 @@ function connect() {
     // Not reset here: the attempt counter only clears once the socket has
     // stayed open past WS_STABLE_MS (watchdog tick / close handler).
     state.wsOpenedAt = Date.now();
+    state._wsOutageToastShown = false;
     startWsWatchdog();
     updateStatusDot();
     // v7.0.0-alpha.18 #250 — auto-close the disconnect error toast
@@ -751,7 +752,8 @@ function _wsWake() {
   }
 }
 
-window.addEventListener('online', _wsWake);
+window.addEventListener('online', () => { updateStatusDot(); _wsWake(); });
+window.addEventListener('offline', updateStatusDot);
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') {
     stopWsWatchdog();
@@ -771,7 +773,11 @@ function send(type, data) {
     // upper right". Pass an inline action via a sentinel detail so
     // showError can render the button. Auto-close on reconnect is
     // wired in the ws 'open' handler below.
-    showError('Not connected — daemon link is down. Reconnecting…', '__RECONNECT_BUTTON__');
+    // At most once per outage; cleared in the ws 'open' handler.
+    if (!state._wsOutageToastShown) {
+      state._wsOutageToastShown = true;
+      showError('Not connected — daemon link is down. Reconnecting…', '__RECONNECT_BUTTON__');
+    }
     return false;
   }
   state.ws.send(JSON.stringify({ type, data, ts: new Date().toISOString() }));
@@ -18036,10 +18042,48 @@ window.showError = function(message, detail) {
 };
 
 // ── Status dot ────────────────────────────────────────────────────────────────
+// Pure: 'connected' | 'reconnecting' | 'offline'. online===false (browser
+// reports no network) wins over a stale connected flag.
+function _wsConnState(connected, attempt, online) {
+  if (online === false) return 'offline';
+  if (connected) return 'connected';
+  return 'reconnecting';
+}
+
+function _wsStateLabel(st, attempt) {
+  if (st === 'connected') return 'Connected';
+  if (st === 'offline') return 'Offline';
+  return 'Reconnecting (attempt ' + Math.max(1, attempt | 0) + ')';
+}
+
 function updateStatusDot() {
   const dot = document.getElementById('statusDot');
+  const online = (typeof navigator !== 'undefined' && navigator) ? navigator.onLine : true;
+  const attempt = state.reconnectAttempt || 0;
+  const st = _wsConnState(!!state.connected, attempt, online);
   if (dot) {
-    dot.classList.toggle('connected', state.connected);
+    dot.classList.toggle('connected', st === 'connected');
+    dot.classList.toggle('reconnecting', st === 'reconnecting');
+    dot.classList.toggle('offline', st === 'offline');
+    const label = _wsStateLabel(st, attempt);
+    dot.title = label;
+    // Non-blocking chip beside the dot, only while not connected. Only
+    // touches the chip; sessions list / terminal are never re-rendered here.
+    let chip = document.getElementById('wsStateChip');
+    if (st === 'connected') {
+      if (chip) chip.remove();
+    } else {
+      if (!chip && dot.parentNode && document.createElement) {
+        chip = document.createElement('span');
+        chip.id = 'wsStateChip';
+        chip.className = 'ws-state-chip';
+        dot.parentNode.insertBefore(chip, dot);
+      }
+      if (chip) {
+        chip.textContent = st === 'offline' ? 'Offline' : 'Retry #' + Math.max(1, attempt | 0);
+        chip.className = 'ws-state-chip ' + st;
+      }
+    }
   }
   // v5.26.8 — auto badge removed entirely; header status dot is the
   // single source of WS-state truth.
