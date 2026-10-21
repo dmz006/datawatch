@@ -5,6 +5,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.39 — Accept util-linux CVE-2026-53615 in agent-base (no Debian fix)
+
+
 ## v9.5.38 — Guardrail judges always run on the model you pinned
 
 ### Fixed
