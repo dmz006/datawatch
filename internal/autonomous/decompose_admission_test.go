@@ -206,11 +206,14 @@ func TestDecompose_CancelWhileWaitingDropsPlanner(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { _, err := m.Decompose(prd.ID); done <- err }()
 
-	// Queue, then cancel the PRD while the planner waits.
+	// Queue, then cancel the PRD while the planner waits. Mutate a
+	// snapshot copy and SavePRD it (atomic map swap): writing the shared
+	// pointer GetPRD returns would race with the planner goroutine's
+	// concurrent PRD reads under -race.
 	pollUntil(t, 3*time.Second, "planner queued", func() bool {
 		return plannerQueued(led, prd.ID)
 	})
-	cur, _ := m.Store().GetPRD(prd.ID)
+	cur, _ := m.Store().SnapshotPRD(prd.ID)
 	cur.Status = PRDCancelled
 	_ = m.Store().SavePRD(cur)
 

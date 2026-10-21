@@ -150,7 +150,10 @@ func runToTerminal(t *testing.T, m *Manager, api *API, id string, spawn SpawnFn,
 
 func TestScope_ExecutorBlocksOutOfScopeTaskWithoutSpawning(t *testing.T) {
 	m, api, _, verify := apiFixture(t)
-	prd, _ := m.CreatePRD("s", "/w/proj", "opencode", "", EffortNormal)
+	// B165 — a real project dir: a fake one lets a concurrent boot-resume
+	// scan park this PRD (dir-missing) and clobber the PRDFailed state
+	// the test asserts.
+	prd, _ := m.CreatePRD("s", t.TempDir(), "opencode", "", EffortNormal)
 	_ = m.Store().SetStories(prd.ID, []Story{{Title: "S", Tasks: []Task{{Title: "T", Spec: "work in /home/dmz/workspace/datawatch"}}}})
 	spawned := 0
 	spawn := func(context.Context, SpawnRequest) (SpawnResult, error) {

@@ -5,8 +5,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Decompose is now capacity-gated.** Every decompose entry point — MCP `run`, `resume`, `retry-decompose`, REST, CLI, and session-based decompose — acquires an LLM pool lease (planner role, host engine excluded) through the shared pool before the one-shot decompose runs, and the lease is released on success, failure, timeout, and cancel. When the pool is saturated the PRD stays in `planning` with a visible wait reason (`capacity: planner waiting (n planner / m worker active …)`) instead of failing immediately, or spinning the planner in a run/wait/failed loop against a saturated pool. The reason is surfaced on the PRD status, the planning session's `wait_reason` (the session-status automaton block falls back to the PRD-level reason for planning sessions), MCP output, and the CLI; when it clears, the decompose proceeds without re-submitting.
+- **Decompose capacity wait timeout.** A decompose queued on a saturated pool gives up when the shared `autonomous.capacity_wait_timeout_seconds` bound (default 14400s, 4h — the same bound the executor's capacity wait already used) elapses, failing with a clear "decompose timed out waiting for capacity" reason instead of queueing forever.
+- **Decompose cancel is a cancel, not a failure.** Cancelling (or rejecting) the PRD while its planner is still queued on capacity drops the waiter immediately, is reported as "decompose cancelled" on the PRD, and does not consume the decompose retry budget or roll the PRD back to draft.
+- **Tests:** `TestDecompose_WaitsForLLMPoolAndProceeds`, `TestDecompose_ReleasesLeaseOnAttemptError`, `TestDecompose_TimeoutClearsWaitReason`, `TestDecompose_CancelWhileWaitingDropsPlanner`, `TestDecompose_NodeLimitRespected`, `TestDecompose_PlannerLeaseExcludesHost` and `TestDecompose_CapacityDisabledUnchanged` (`internal/autonomous`).
+
 ### Fixed
 
+- **Three `internal/autonomous` executor tests no longer flake under full-suite load.** `TestExecutor_WorkerStallExhaustsRetriesLikeNormalFailure`, `TestExitSilenceRetry_ExhaustsRetriesAndFailsInfra` and `TestScope_ExecutorBlocksOutOfScopeTaskWithoutSpawning` now create their PRD against a real `t.TempDir()` project directory. With the fake `/w/proj` path, a concurrent boot-resume scan could see the PRD in `failed` (after the executor's terminal write) and park it as "project directory no longer exists", clobbering the `PRDFailed` state the test asserts (B165).
 - **Old failed Automata are no longer re-launched at every daemon restart.** A failed Automaton whose failed tasks were all killed by the restart now goes through the same boot-resume check as a running one: a fresh one is recovered, a stale one (older than `autonomous.resume_max_age_seconds`, or with a missing project directory) is parked as blocked with an alert and a boot-resume report entry, and a cancelled one is left alone.
 
 ## v9.5.56 — A daemon restart keeps a task whose worker is still running
