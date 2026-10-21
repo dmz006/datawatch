@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.51 — Plan-coverage gate stops flagging valid plans
+
+- **plan-coverage gate no longer reports false unresolved_file findings** — plan prose that is not a file is no longer flagged: bare file names are resolved by searching the project tree, tokens without a known file extension, dotted code identifiers (`json.Unmarshal`) and slash-separated prose lists (`absent/null/empty`) are not treated as files, and untracked runtime files (`output.log`) are not reported. A file declared in the generated-files list of the same task or an earlier story/task counts as existing, while a path under an existing directory that does not exist and is never generated is still reported, so genuine gaps keep failing the gate.
+
 - **model/backend pairing** — a model that cannot run on its backend is now refused when it is set, and again before a PRD runs. A bare Claude alias (such as `claude-haiku-5-5`) is refused on `pi` and `pi-prompt`, and a provider-tagged model (such as `ollama/qwen3.8:27b`) is refused on `claude-code`. The check covers the PRD, story, task and verification/guardrail model setters on REST, MCP and the comm channel. REST returns `400` with the mismatch text, and MCP returns a tool error. The PRD Run preflight refuses a PRD whose unfinished tasks contain a mismatched pair, so earlier records are refused too. On `pi-prompt`, a non-zero exit or an empty run now prints `DATAWATCH_PI_FAILED` instead of `DATAWATCH_COMPLETE`. See `docs/llm-backends.md`.
 
 ## v9.5.33 — Retried tasks keep their first-attempt pre-task SHA

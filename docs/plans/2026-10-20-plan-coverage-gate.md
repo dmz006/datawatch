@@ -303,3 +303,33 @@ One parity test — `internal/server/plan_coverage_surfaces_parity_test.go` — 
 the shared contract literals (both config keys, the bare setting names, the
 acknowledge action, and the CLI verbs) across REST, MCP, CLI and comm so a
 rename or path drift on any one surface fails it.
+
+---
+
+## Follow-up note — `unresolved_file` false positives fixed (post-release, recorded here)
+
+After this gate shipped, valid plans tripped spurious `unresolved_file`
+findings from plan prose that is not a file (the BL534 false-positive fix —
+tracker IDs appear only here and in the code comments/tests above; the
+operator-facing docs and CHANGELOG stay plain-English). The conservative
+recognition rules now in force:
+
+- a **bare file name** passes when a file of that base name exists anywhere
+  under the project tree (lazy base-name walk, `skippedTreeDirs` excluded);
+- tokens **without a known file extension**, dotted code identifiers
+  (`json.Unmarshal`, `GuardrailVerdict.Issues`) and slash-separated prose
+  lists (`absent/null/empty`, `task/story/PRD`) are **not** treated as file
+  references — a slash token is a path candidate only if its last segment has
+  an allowlisted extension or its first segment names an existing directory;
+- **untracked runtime files** (`output.log` and other `*.log/.pid/.tmp/.out`)
+  are ignored when absent from the tree;
+- a file in the `FilesGenerated` of the **same task or an earlier
+task/story** counts as existing at the referencing point (a *later* task's
+  output still counts as a miss there);
+- a path **under an existing directory** that exists nowhere and is never
+  generated is **still reported** — see
+  `TestPlanCoverageFindings_FalsePositiveTokens` and
+  `TestPlanCoverageFindings_RealMisses` in
+  `internal/autonomous/plan_coverage_findings_test.go`, and the
+  "How the `unresolved_file` finding is determined" note in
+  `docs/operations.md`.
