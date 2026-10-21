@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.58 — PRD worktrees are buildable out of the box
+
+### Fixed
+- **PRD worktrees are buildable out of the box now.** When a PRD's git worktree is created or reused, `EnsureWorktree` (`internal/autonomous/worktree.go`) prepares the tree via `prepareWorktree` (`internal/autonomous/worktree_prepare.go`): in repos that contain `internal/docsindex` it ensures `internal/docsindex/assets/docs-bm25-index.json` exists, writing the same `{}` placeholder `make docs-index` writes only when the file is missing (an existing index is left byte-for-byte untouched), keeps the file git-ignored (falling back to the worktree's own `info/exclude` if the ignore rule is absent) and never stages or commits it. Before this, building the packages that import `internal/docsindex` (`internal/server`, `cmd/datawatch`) inside a fresh worktree failed with `pattern assets/docs-bm25-index.json: no matching files found`, and the task was reported failed with "no new changes to verify" even though the worker's work was fine — new and reused worktrees now self-heal, and a worktree created by an older daemon is fixed manually with `make docs-index` (or by creating the file containing `{}`). Unit coverage in `internal/autonomous/worktree_prepare_test.go` (including a fresh-worktree compile regression); docs updated in `docs/operations.md` and `docs/howto/autonomous-recovery.md`.
+
 ## v9.5.57 — PWA terminal no longer stalls while a session is live
 
 ### Fixed
