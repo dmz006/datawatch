@@ -71,6 +71,9 @@ jobs:
       - name: dockerfile GO_VERSION drift check
         run: bash scripts/check-dockerfile-go-versions.sh
 
+      - name: go toolchain pin floor check
+        run: bash scripts/check-go-toolchain-pins.sh && bash scripts/check-go-toolchain-pins.sh --self-test
+
 # ── Stage 2: security (parallel, both must pass) ─────────────────────────────
 
   govulncheck:
