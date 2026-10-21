@@ -17,34 +17,37 @@ import (
 	"testing"
 )
 
-// guardrail resolution with a task-level override: the task's own
-// backend wins, and its own model survives — the PRD-level
-// claude-code pin is skipped entirely (a bare Claude alias is not
-// servable by the pi-family backend, and the task-level model tier is
-// reached before the global tiers anyway).
-func TestGuardrailResolution_TaskOverrideDropsStaleModel(t *testing.T) {
+// v9.10.18 — the PRD's own guardrail_model pin is tier 1: it still
+// resolves on the task's backend (which wins backend resolution) when
+// it is servable by it. A bare Claude alias pinned at the PRD level is
+// never paired with a pi-family backend (see the unpairably-pinned
+// case below, where the task's own model resolves instead).
+func TestGuardrailResolution_TaskBackendWinsPRDModelPinResolves(t *testing.T) {
 	task := &Task{GuardrailBackend: "pi", GuardrailModel: "qwen3.8-64k:27b"}
 	prd := &PRD{GuardrailBackend: "claude-code", GuardrailModel: "sonnet"}
 	backend, model, err := resolveUnitGuardrailModelLocked(Config{}, task, prd)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if backend != "pi" || model != "qwen3.8-64k:27b" {
-		t.Errorf("task override: got (%q, %q), want (pi, qwen3.8-64k:27b)", backend, model)
+	if backend != "pi" || model != "sonnet" {
+		t.Errorf("got (%q, %q), want (pi, sonnet) — task backend wins, PRD pin is tier 1", backend, model)
 	}
 }
 
-// Same shape as the case above, over a different backend: the task's
-// openwebui backend and model beat the PRD-level claude-code pin.
-func TestGuardrailResolution_TaskOverrideDropsStaleModel_OpenWebUI(t *testing.T) {
-	task := &Task{GuardrailBackend: "openwebui", GuardrailModel: "llama3"}
-	prd := &PRD{GuardrailBackend: "claude-code", GuardrailModel: "sonnet"}
+// The pairing check protects tier 1: a bare Claude alias pinned at the
+// PRD level cannot be served by the pi-family task backend, so that
+// tier is skipped and the task's own pin (tier 2) resolves instead —
+// the original "drops stale model" case, now under the v9.10.18 tier
+// order.
+func TestGuardrailResolution_TaskBackendDropsUnpairablePRDPin(t *testing.T) {
+	task := &Task{GuardrailBackend: "pi", GuardrailModel: "qwen3.8-64k:27b"}
+	prd := &PRD{GuardrailBackend: "claude-code", GuardrailModel: "claude-opus-5-5"}
 	backend, model, err := resolveUnitGuardrailModelLocked(Config{}, task, prd)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if backend != "openwebui" || model != "llama3" {
-		t.Errorf("openwebui task override: got (%q, %q), want (openwebui, llama3)", backend, model)
+	if backend != "pi" || model != "qwen3.8-64k:27b" {
+		t.Errorf("got (%q, %q), want (pi, qwen3.8-64k:27b) — unpairable PRD pin skipped", backend, model)
 	}
 }
 

@@ -2027,7 +2027,7 @@ type AutonomousConfig struct {
 	// guardrail records a loud, non-retried infra-category block
 	// instead of launching a judge on the backend's built-in default
 	// model (which would evict the operator's pinned model).
-	GuardrailModel           string `yaml:"guardrail_model,omitempty" json:"guardrail_model,omitempty"`
+	GuardrailModel string `yaml:"guardrail_model,omitempty" json:"guardrail_model,omitempty"`
 	// VerificationBackends (v8.36.9) is an ordered list of LLM registry
 	// names to load-balance the verifier's capacity requests across — e.g.
 	// ["ollama-datawatch", "ollama-johnnyjohnny"]. Found live: a

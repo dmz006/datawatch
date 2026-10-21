@@ -53,7 +53,12 @@ func (r *recordedVerdictJudge) fn(_ context.Context, inv GuardrailInvocation) (G
 // retrying it.
 func newRulesReviewVerdictPRD(t *testing.T) (*Manager, *PRD) {
 	t.Helper()
-	m, err := NewManager(t.TempDir(), DefaultConfig(), fakeDecompose)
+	cfg := DefaultConfig()
+	// v9.10.18 — a configured judge model (tier-4 global verification
+	// model) so the recorded fake rules-review judge is reachable; the
+	// tests assert its verdict, not a resolution-failure block.
+	cfg.VerificationModel = "ollama/qwen3.8:27b"
+	m, err := NewManager(t.TempDir(), cfg, fakeDecompose)
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}

@@ -45,7 +45,9 @@ import (
 // BL441 — PRD-completion rules-review content block must synthesize
 // corrective work on the same PRD instead of leaving it silently running.
 func TestBL441_PRDCompletionContentBlockSynthesizesCorrectiveWork(t *testing.T) {
-	m, _ := NewManager(t.TempDir(), DefaultConfig(), fakeDecompose)
+	cfg := DefaultConfig()
+	cfg.VerificationModel = "ollama/qwen3.8:27b" // v9.10.18 judge model for the fake fn
+	m, _ := NewManager(t.TempDir(), cfg, fakeDecompose)
 	prdLevelCalls := 0
 	m.SetGuardrail(func(_ context.Context, req GuardrailInvocation) (GuardrailVerdict, error) {
 		if req.Level != "prd" {

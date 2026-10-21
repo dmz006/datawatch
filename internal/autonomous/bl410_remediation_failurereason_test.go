@@ -16,6 +16,10 @@ func TestFailureReason_TaskGuardrailBlock_Populated(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.PerTaskGuardrails = []string{"security"}
 	cfg.ContentAutoFixEnabled = false // single attempt, no auto-fix retry noise
+	// v9.10.18 — a configured judge model (tier-4 global verification
+	// model) so the fake blocking guardrail is actually reachable; the
+	// test asserts its verdict, not a resolution-failure block.
+	cfg.VerificationModel = "ollama/qwen3.8:27b"
 	m, _ := NewManager(t.TempDir(), cfg, fakeDecompose)
 	m.SetGuardrail(fakeGuardrailBlocking)
 
@@ -53,6 +57,9 @@ func TestFailureReason_StoryGuardrailBlock_Populated(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.PerStoryGuardrails = []string{"release-readiness"}
 	cfg.ContentAutoFixEnabled = false // single attempt, mirrors ContentAutoFixDisabled_SingleAttempt
+	// v9.10.18 — a configured judge model (tier-4 global verification
+	// model) so the fake blocking guardrail is actually reachable.
+	cfg.VerificationModel = "ollama/qwen3.8:27b"
 	m, _ := NewManager(t.TempDir(), cfg, fakeDecompose)
 	m.SetGuardrail(fakeGuardrailBlocking)
 

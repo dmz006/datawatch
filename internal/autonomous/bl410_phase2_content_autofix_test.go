@@ -15,6 +15,7 @@ import (
 func TestContentAutoFix_TaskLevel_RetriesWithHintThenPasses(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.PerTaskGuardrails = []string{"release-readiness"}
+	cfg.VerificationModel = "ollama/qwen3.8:27b" // v9.10.18 judge model for the fake fn
 	m, _ := NewManager(t.TempDir(), cfg, fakeDecompose)
 
 	calls := 0
@@ -67,6 +68,7 @@ func TestContentAutoFix_TaskLevel_BudgetExhaustedStillBlocks(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.PerTaskGuardrails = []string{"release-readiness"}
 	cfg.RetryPolicy = map[string]int{"content": 1} // tight budget
+	cfg.VerificationModel = "ollama/qwen3.8:27b"   // v9.10.18 judge model for the fake fn
 	m, _ := NewManager(t.TempDir(), cfg, fakeDecompose)
 
 	m.SetGuardrail(func(_ context.Context, req GuardrailInvocation) (GuardrailVerdict, error) {
@@ -95,6 +97,7 @@ func TestContentAutoFix_PRDLevel_SynthesizesOnSamePRD_NeverANewOne(t *testing.T)
 		t.Fatal(err)
 	}
 	cfg := DefaultConfig()
+	cfg.VerificationModel = "ollama/qwen3.8:27b" // v9.10.18 judge model for the fake fn
 	m, _ := NewManager(t.TempDir(), cfg, fakeDecompose)
 
 	calls := 0

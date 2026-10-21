@@ -210,7 +210,12 @@ func TestBL451RollupRaceResetDuringCIWatch(t *testing.T) {
 }
 
 func TestBL451RollupRaceResetDuringRulesReviewBlock(t *testing.T) {
-	m, _ := NewManager(t.TempDir(), DefaultConfig(), fakeDecompose)
+	cfg := DefaultConfig()
+	// v9.10.18 — the resolver refuses to launch the (slow) judge fn
+	// with no configured model, so the race's slow seam would never be
+	// entered; declare the model the fn stands in for.
+	cfg.VerificationModel = "ollama/qwen3.8:27b"
+	m, _ := NewManager(t.TempDir(), cfg, fakeDecompose)
 	entered, release := make(chan struct{}), make(chan struct{})
 	var once sync.Once
 	m.SetGuardrail(func(_ context.Context, _ GuardrailInvocation) (GuardrailVerdict, error) {

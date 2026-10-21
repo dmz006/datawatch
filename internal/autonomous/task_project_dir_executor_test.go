@@ -20,7 +20,11 @@ import (
 // carries taskDir as its override when non-empty.
 func tpdSetup(t *testing.T, prdDir, taskDir string) (*Manager, *PRD) {
 	t.Helper()
-	m, err := NewManager(t.TempDir(), DefaultConfig(), nil)
+	cfg := DefaultConfig()
+	// v9.10.18 — the guardrail judge (fake fn) stands in for a real
+	// model; the resolver refuses to launch it with none configured.
+	cfg.VerificationModel = "ollama/qwen3.8:27b"
+	m, err := NewManager(t.TempDir(), cfg, nil)
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}

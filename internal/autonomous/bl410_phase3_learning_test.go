@@ -16,6 +16,7 @@ func TestLearning_TaskExhaustedBudget_WritesExactlyOneRow(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.PerTaskGuardrails = []string{"release-readiness"}
 	cfg.RetryPolicy = map[string]int{"content": 1}
+	cfg.VerificationModel = "ollama/qwen3.8:27b" // v9.10.18 judge model for the fake fn
 	m, _ := NewManager(t.TempDir(), cfg, fakeDecompose)
 	m.SetGuardrail(func(_ context.Context, req GuardrailInvocation) (GuardrailVerdict, error) {
 		return GuardrailVerdict{Outcome: "block", Summary: "never actually fixed", Issues: []string{"x"}}, nil
@@ -41,6 +42,7 @@ func TestLearning_TaskExhaustedBudget_WritesExactlyOneRow(t *testing.T) {
 func TestLearning_SucceedsOnRetry_WritesZeroRows(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.PerTaskGuardrails = []string{"release-readiness"}
+	cfg.VerificationModel = "ollama/qwen3.8:27b" // v9.10.18 judge model for the fake fn
 	m, _ := NewManager(t.TempDir(), cfg, fakeDecompose)
 	calls := 0
 	m.SetGuardrail(func(_ context.Context, req GuardrailInvocation) (GuardrailVerdict, error) {
@@ -72,6 +74,7 @@ func TestLearning_PRDLevelRulesReviewExhausted_WritesRow(t *testing.T) {
 	}
 	cfg := DefaultConfig()
 	cfg.RetryPolicy = map[string]int{"content": 1}
+	cfg.VerificationModel = "ollama/qwen3.8:27b" // v9.10.18 judge model for the fake fn
 	m, _ := NewManager(t.TempDir(), cfg, fakeDecompose)
 	m.SetGuardrail(func(_ context.Context, req GuardrailInvocation) (GuardrailVerdict, error) {
 		if req.Level != "prd" {

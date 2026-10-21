@@ -108,7 +108,7 @@ func ResolveGuardrailModel(backend, prdModel, taskModel, globalGuardrailModel, g
 		}
 		return model, nil
 	}
-	for i, tier := range globalTiers {
+	for _, tier := range globalTiers {
 		model := strings.TrimSpace(tier.model)
 		if model == "" {
 			continue
@@ -120,7 +120,7 @@ func ResolveGuardrailModel(backend, prdModel, taskModel, globalGuardrailModel, g
 		return model, nil
 	}
 	if claudeCode {
-		for i, tier := range []struct {
+		for _, tier := range []struct {
 			label string
 			model string
 		}{
@@ -128,7 +128,6 @@ func ResolveGuardrailModel(backend, prdModel, taskModel, globalGuardrailModel, g
 			{"autonomous.verification_model", globalVerificationModel},
 			{"autonomous.planning_model", globalPlanningModel},
 		} {
-			_ = i
 			if m := strings.TrimSpace(tier.model); m != "" {
 				skipped = append(skipped, tier.label+" "+m+" (pi-specific global, skipped on the claude-code backend)")
 			}

@@ -2952,26 +2952,32 @@ func (m *Manager) SetTaskGuardrailLLM(prdID, taskID string, backend, model *stri
 		return nil, fmt.Errorf("task %q not found in prd %q", taskID, prdID)
 	}
 	if backend != nil || model != nil {
-		// Refuse before any field changes: resolve the guardrail pair on a
-		// copy of the task with the call's fields applied.
-		next := *task
-		if backend != nil {
-			next.GuardrailBackend = *backend
+		// Refuse an unpairable replacement pair first — the same v8.37.2
+		// rule the sibling setters enforce via checkLevelPair — so a bare
+		// Claude alias on a pi-family backend (or any model the effective
+		// backend cannot serve) is a pairing mismatch
+		// (ErrModelBackendMismatch) regardless of what other config tiers
+		// exist below it.
+		if err := checkLevelPair(prdID, backend, model, task.GuardrailBackend, task.GuardrailModel); err != nil {
+			return nil, err
 		}
+		// v9.10.18 — when the call pins/clears the MODEL, additionally
+		// require the full unit pair to resolve to a servable model on the
+		// copy the call would produce (v9.10.18 no-implicit-default
+		// contract): a pin that leaves the unit with no resolvable model
+		// is refused here instead of passing validation and failing at
+		// judge time. Backend-only calls stay as accepted as before — the
+		// unit's model may legitimately come from a lower tier, and the
+		// resolver records a loud infra block at judge time if not.
 		if model != nil {
+			next := *task
+			if backend != nil {
+				next.GuardrailBackend = *backend
+			}
 			next.GuardrailModel = *model
-		}
-		// v9.10.18 — refuse before any field changes: resolve the full
-		// guardrail pair the judge will use, on a copy of the task with
-		// the call's fields applied. The live resolution covers both the
-		// v8.37.2 pairing rule (a Claude-alias default on a pi-family
-		// backend, or a foreign-prefixed model on a non-serving backend)
-		// AND the new no-fallback contract: a combination that resolves
-		// to no model at all is refused here (ErrNoGuardrailModel)
-		// instead of passing validation ("backend default") and failing
-		// at judge time.
-		if _, _, gerr := m.resolveUnitGuardrailModel(&next, prd); gerr != nil {
-			return nil, fmt.Errorf("prd %q: guardrail model: %w", prdID, gerr)
+			if _, _, gerr := m.resolveUnitGuardrailModel(&next, prd); gerr != nil {
+				return nil, fmt.Errorf("prd %q: guardrail model: %w", prdID, gerr)
+			}
 		}
 	}
 	if backend != nil {
