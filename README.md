@@ -57,7 +57,7 @@ Browse the catalog in-app (Settings → Skills → Registry) or on GitHub. To co
 
 ## Current release
 
-**Current release: v9.5.32 (2026-10-20).** opencode sessions on an Ollama
+**Current release: v9.5.33 (2026-10-20).** The PWA no longer floods the daemon with schedule requests when a session view recovers, retried tasks keep their first-attempt pre-task SHA, voice recordings longer than 30 seconds transcribe, and a model that cannot run on a PRD's backend is refused. **v9.5.32** opencode sessions on an Ollama
 compute node now start when the model is given without its `ollama/`
 prefix. The session gets the Ollama provider settings instead of exiting
 at launch. **v9.1.3** fixes `llm test` and ask calls for opencode LLM
