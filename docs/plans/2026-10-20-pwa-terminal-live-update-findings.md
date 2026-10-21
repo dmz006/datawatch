@@ -219,3 +219,17 @@ Confirmed contributing, not the root cause.
 - Throwaway tmux experiment (private socket only, `env -u TMUX -u TMUX_TMPDIR`)
   comparing frame size and latency at 333x89 and 120x40 after the capped
   scrollback change.
+
+## Server-side check (2026-10-21): no code change on this branch
+
+The confirmed root cause is client-side: the `pane_capture` handler in app.js drops
+frames (33 ms leading-edge throttle, no trailing flush) and stops writing while the
+xterm viewport is scrolled up. The server sends each changed pane correctly, the
+output.log, output-pipe re-attach and service worker/cache-header paths were ruled out
+above, and no server-side defect was confirmed as the cause of the stall. The
+server-side items listed under "Confirmed contributing leads" (periodic keyframe,
+capture-error stop, off-loop subscribe/resize captures, scoped pane frames, sw.js cache
+name) are hardening that heals or narrows the symptom, not the cause. Per the scope of
+this task (server-side causes only) none of them is implemented here, so there is no Go
+change or test. The client fix (trailing-edge throttle, jump-to-live control, subscribe
+re-send on silence) and the server hardening remain for the next patch above main.
