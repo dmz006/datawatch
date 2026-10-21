@@ -213,7 +213,7 @@ func TestAutomationReconcile_Idempotent(t *testing.T) {
 func TestAutomationReconcile_PendingStartIdempotent(t *testing.T) {
 	h, rs := newReconcileHarness(t, 1)
 	a := h.makeAuto(nil, 1)
-	h.m.automations.Update(a.ID, 0, func(a *Automation) error {
+	_, _ = h.m.automations.Update(a.ID, 0, func(a *Automation) error {
 		a.Status = AutomationActive
 		a.CurrentMemberID = a.EntryMemberID
 		return nil
