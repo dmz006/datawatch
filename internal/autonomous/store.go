@@ -319,7 +319,7 @@ func deepCopyValue(dst, src reflect.Value) {
 			deepCopyValue(v, src.MapIndex(k))
 			dst.SetMapIndex(k, v)
 		}
-	case reflect.Ptr:
+	case reflect.Pointer:
 		if src.IsNil() {
 			return
 		}
