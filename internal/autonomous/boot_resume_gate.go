@@ -145,7 +145,7 @@ func decideBootResume(prd *PRD, now time.Time, maxAgeSec int) bootResumeDecision
 		return bootResumeDecision{
 			resume: false,
 			ageSec: ageSec,
-			reason: "boot-resume is disabled for this daemon (resume_max_age_seconds = 0): this PRD was left running before the restart and needs manual review before it runs again",
+			reason: "boot-resume is disabled for this daemon (resume_max_age_seconds = 0): this PRD was left running or failed before the restart and needs manual review before it runs again",
 		}
 	case maxAgeSec > 0 && ageSec > int64(maxAgeSec):
 		return bootResumeDecision{
@@ -196,8 +196,10 @@ func (m *Manager) recordBootResume(entry BootResumeEntry) {
 }
 
 // parkPRDForBootResume applies the park outcome: status PRDBlocked +
-// reason, persisted, status event emitted, operator alert raised.
-func (m *Manager) parkPRDForBootResume(prd *PRD, reason string) error {
+// reason, persisted, status event emitted, operator alert raised. prior is
+// the status the PRD held before the park (PRDRunning or PRDFailed) and is
+// used for the emitted status change and the alert wording.
+func (m *Manager) parkPRDForBootResume(prd *PRD, prior PRDStatus, reason string) error {
 	m.mu.Lock()
 	prd.Status = PRDBlocked
 	prd.BlockedReason = reason
@@ -207,12 +209,16 @@ func (m *Manager) parkPRDForBootResume(prd *PRD, reason string) error {
 	if err := m.store.SavePRD(prd); err != nil {
 		return err
 	}
-	m.emitPRDStatus(prd, PRDRunning, lastDecision(prd, "boot_resume_parked"), nil)
+	m.emitPRDStatus(prd, prior, lastDecision(prd, "boot_resume_parked"), nil)
 	m.EmitPRDUpdate(prd.ID)
 	if alert != nil {
+		was := "left running"
+		if prior == PRDFailed {
+			was = "left running or failed"
+		}
 		alert(
 			"Automaton parked at boot resume",
-			fmt.Sprintf("PRD %s %q was left running before the daemon restarted and did not auto-resume. Reason: %s. Approve it manually if it should still run.", prd.ID, prd.Title, reason),
+			fmt.Sprintf("PRD %s %q was %s before the daemon restarted and did not auto-resume. Reason: %s. Approve it manually if it should still run.", prd.ID, prd.Title, was, reason),
 		)
 	}
 	return nil

@@ -180,17 +180,8 @@ func (a *API) resumeRunningPRDs() {
 			// no age limit), or the PRD's/task's project directory no longer
 			// exists (removed temp workspace). Parked PRDs must NOT go through
 			// resetInProgressTasksForResume or a run.
-			a.M.mu.Lock()
-			maxAge := a.M.cfg.ResumeMaxAgeSeconds
-			a.M.mu.Unlock()
-			now := time.Now()
-			dec := decideBootResume(prd, now, maxAge)
-			if !dec.resume {
-				fmt.Printf("[autonomous] boot-resume: prd=%s parked age=%ds reason=%s\n", prd.ID, dec.ageSec, dec.reason)
-				if err := a.M.parkPRDForBootResume(prd, dec.reason); err != nil {
-					fmt.Printf("[autonomous] boot-resume: prd=%s park save failed: %v\n", prd.ID, err)
-				}
-				a.M.recordBootResume(BootResumeEntry{PRDID: prd.ID, Outcome: "parked", AgeSeconds: dec.ageSec, Reason: dec.reason, At: now})
+			dec, now, parkedNow := a.gateBootResume(prd, PRDRunning)
+			if parkedNow {
 				parked++
 				continue
 			}
@@ -215,12 +206,29 @@ func (a *API) resumeRunningPRDs() {
 			// Defensive: a failed PRD should have no planning session, but
 			// kill any that remain. Never decomposes and never mutates status here.
 			a.M.killOrphanDecomposeSessions(prd.ID)
+
+			// Same gate as the running case: a stale failed PRD, or one
+			// whose project directory is gone, is parked rather than
+			// recovered, and a PRD with a live executor is left alone.
+			a.runMu.Lock()
+			_, alreadyLive := a.runCancels[prd.ID]
+			a.runMu.Unlock()
+			if alreadyLive {
+				continue
+			}
+			dec, now, parkedNow := a.gateBootResume(prd, PRDFailed)
+			if parkedNow {
+				parked++
+				continue
+			}
 			fmt.Printf("[autonomous] boot-resume: prd=%s is PRDFailed, attempting recovery\n", prd.ID)
 			started, err := a.runLocked(prd.ID, func() bool { return a.M.resetKilledTasksForResume(prd) })
 			switch {
 			case err != nil:
 				fmt.Printf("[autonomous] boot-resume: failed-prd recovery %s: %v\n", prd.ID, err)
 			case started:
+				a.M.recordBootResume(BootResumeEntry{PRDID: prd.ID, Outcome: "resumed", AgeSeconds: dec.ageSec, Reason: dec.reason, At: now})
+				resumed++
 				fmt.Printf("[autonomous] boot-resume: recovered PRDFailed prd=%s (all tasks were daemon-killed)\n", prd.ID)
 			default:
 				fmt.Printf("[autonomous] boot-resume: prd=%s PRDFailed recovery skipped (tasks have results, live sessions or a live executor)\n", prd.ID)
@@ -228,6 +236,28 @@ func (a *API) resumeRunningPRDs() {
 		}
 	}
 	fmt.Printf("[autonomous] boot-resume: resumed %d, parked %d\n", resumed, parked)
+}
+
+// gateBootResume runs the boot-resume decision for a PRD whose prior status
+// was prior. When the decision is to park, it parks the PRD, logs the
+// decision, records a "parked" entry and returns parked=true; the caller
+// must then not start any executor. Otherwise it returns the decision and
+// the decision time for the caller to record once it actually resumes.
+func (a *API) gateBootResume(prd *PRD, prior PRDStatus) (dec bootResumeDecision, now time.Time, parked bool) {
+	a.M.mu.Lock()
+	maxAge := a.M.cfg.ResumeMaxAgeSeconds
+	a.M.mu.Unlock()
+	now = time.Now()
+	dec = decideBootResume(prd, now, maxAge)
+	if dec.resume {
+		return dec, now, false
+	}
+	fmt.Printf("[autonomous] boot-resume: prd=%s parked age=%ds reason=%s\n", prd.ID, dec.ageSec, dec.reason)
+	if err := a.M.parkPRDForBootResume(prd, prior, dec.reason); err != nil {
+		fmt.Printf("[autonomous] boot-resume: prd=%s park save failed: %v\n", prd.ID, err)
+	}
+	a.M.recordBootResume(BootResumeEntry{PRDID: prd.ID, Outcome: "parked", AgeSeconds: dec.ageSec, Reason: dec.reason, At: now})
+	return dec, now, true
 }
 
 func (a *API) Config() any { return a.M.Config() }
