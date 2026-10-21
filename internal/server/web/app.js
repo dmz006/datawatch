@@ -598,7 +598,17 @@ function connect() {
       fetch('/api/sessions', { headers: tokenHeader() })
         .then(r => r.ok ? r.json() : null)
         .then(sessions => {
-          if (sessions) sessions.forEach(s => updateSession(s));
+          if (sessions) {
+            // Batch the reconnect refresh: apply ALL session updates to
+            // state first, then notify once — instead of updateSession() per
+            // session, which ran onSessionsUpdated (and, before the
+            // schedule-load refactor, a per-session schedule-bar fetch) N
+            // times for the same snapshot. Detail-side rendering is covered
+            // by the renderSessionDetail(sid) below.
+            sessions.forEach(s => applySessionUpdate(s));
+            onSessionsUpdated();
+            if (state.activeView === 'alerts') renderAlertsView();
+          }
           if (state.activeView === 'session-detail' && state.activeSession === sid) {
             // Reset frame cache + terminal-content flag IMMEDIATELY
             // before the render so post-render pane_capture frames
@@ -1586,20 +1596,46 @@ function handleChannelReply(data) {
   }
 }
 
-function updateSession(sess) {
-  if (!sess) return;
+// applySessionUpdate mutates state for one incoming session (state.sessions,
+// channel_ready, detail-view schedule refresh) WITHOUT calling
+// onSessionsUpdated or triggering view re-renders. It returns true when the
+// session's state actually changed (or the session is new). Used by
+// updateSession (single WS event) and by the reconnect batch, which applies
+// N updates then notifies once.
+function applySessionUpdate(sess) {
+  if (!sess) return false;
   // Sync channel_ready from session state updates
   if (sess.channel_ready) state.channelReady[sess.full_id] = true;
   const idx = state.sessions.findIndex(s => s.full_id === sess.full_id);
   const oldState = idx >= 0 ? state.sessions[idx].state : null;
+  const changed = idx < 0 || oldState !== sess.state;
   if (idx >= 0) {
     state.sessions[idx] = sess;
   } else {
     state.sessions.push(sess);
   }
+  // Schedule refresh: the server does NOT broadcast schedule-change events
+  // over WS (see internal/server/ws.go MessageType list — no schedule type),
+  // so there is no event to react to on receipt. Pending schedules are most
+  // likely to have fired after a session STATE transition (e.g.
+  // waiting_input → running for an "on input" schedule), so refresh the
+  // schedule bar only for the session the detail view is showing and only
+  // when that session's state actually changed — and through the SAME
+  // coalescing loader, so a burst never multiplies requests. (Previously the
+  // bar was reloaded unconditionally on every session update, once per
+  // session.)
+  if (state.activeView === 'session-detail' && state.activeSession === sess.full_id && changed) {
+    loadSessionSchedules(sess.full_id);
+  }
+  return changed;
+}
+
+function updateSession(sess) {
+  if (!sess) return;
+  const changed = applySessionUpdate(sess);
   onSessionsUpdated();
   // If viewing alerts and session state changed, refresh to update quick-input buttons
-  if (state.activeView === 'alerts' && oldState !== sess.state) {
+  if (state.activeView === 'alerts' && changed) {
     renderAlertsView();
   }
   // BL182 — when the active session-detail view is open and the
@@ -1911,8 +1947,6 @@ function updateSessionDetailButtons(sessionId) {
       btnContainer.innerHTML = '';
     }
   }
-  // Refresh schedule bar — removes executed schedules from the UI
-  loadSessionSchedules(sessionId);
 }
 
 function onSessionsUpdated() {
@@ -4334,10 +4368,37 @@ function refreshSessionPluginWidgets() {
   }
 }
 
+// Minimum interval (ms) between completed loads for the same session, so a
+// burst of same-session calls collapses instead of fanning out into N requests.
+const _SCHEDULE_LOAD_MIN_INTERVAL_MS = 1000;
+// Per-session load state: { inFlight, pending, lastLoadedAt }.
+const _schedLoadState = new Map();
+
 function loadSessionSchedules(sessionId) {
+  _loadSessionSchedules(sessionId, false);
+}
+
+function _loadSessionSchedules(sessionId, force) {
   const el = document.getElementById('sessionSchedules');
   if (!el) return;
-  apiFetch('/api/schedules?session_id=' + encodeURIComponent(sessionId) + '&state=pending')
+  let st = _schedLoadState.get(sessionId);
+  if (!st) {
+    st = { inFlight: false, pending: false, lastLoadedAt: 0 };
+    _schedLoadState.set(sessionId, st);
+  }
+  if (st.inFlight) { st.pending = true; return; }
+  if (!force && Date.now() - st.lastLoadedAt < _SCHEDULE_LOAD_MIN_INTERVAL_MS) { st.pending = true; return; }
+  st.inFlight = true;
+  let req;
+  try {
+    req = apiFetch('/api/schedules?session_id=' + encodeURIComponent(sessionId) + '&state=pending');
+  } catch (e) {
+    st.inFlight = false;
+    st.lastLoadedAt = Date.now();
+    if (st.pending) { st.pending = false; _loadSessionSchedules(sessionId, true); }
+    throw e;
+  }
+  req
     .then(items => {
       if (!items || items.length === 0) {
         el.style.display = 'none';
@@ -4358,7 +4419,17 @@ function loadSessionSchedules(sessionId) {
       }).join('');
       el.innerHTML = `<div style="font-size:10px;color:var(--text2);text-transform:uppercase;letter-spacing:.5px;padding:4px 10px;border-bottom:1px solid var(--border);">Scheduled (${items.length})</div>${rows}`;
     })
-    .catch(() => { el.style.display = 'none'; });
+    .catch(() => { el.style.display = 'none'; })
+    .finally(() => {
+      st.inFlight = false;
+      st.lastLoadedAt = Date.now();
+      if (st.pending) {
+        st.pending = false;
+        // Exactly one trailing refresh serves every caller that coalesced onto
+        // the in-flight request (submit/cancel force-loads land here too).
+        _loadSessionSchedules(sessionId, true);
+      }
+    });
 }
 
 function showScheduleInputPopup(sessionId) {

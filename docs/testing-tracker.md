@@ -9,6 +9,58 @@ Do not mark **Validated=Yes** based solely on unit tests.
 
 ---
 
+## PWA schedules-flood — `make test-e2e-pwa` (story `scripts/test-stories/pwa/schedule-flood.mjs`, TS-797 spec)
+
+The PWA schedules-flood story: after a WS disconnect/reconnect burst with 20+
+seeded sessions, the PWA's `GET /api/schedules` fetches stay coalesced (≤ 5,
+independent of session count) and the browser never sees
+`net::ERR_INSUFFICIENT_RESOURCES`. Run against **two origins**: (A) the
+untrusted self-signed TLS origin, (B) a trusted TLS origin (service worker
+controlled). `make test-e2e-pwa` is the local, non-docker route
+(`scripts/e2e-pwa.sh`: isolated daemon + `npm ci` + `node schedule-flood.mjs`);
+exit code = story's (0 pass / 1 fail / 2 skip).
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| Coalesced `/api/schedules` refreshes after WS reconnect — untrusted self-signed TLS origin (A) | No (fix lives in `internal/server/web/app.js` (`_loadSessionSchedules` coalescer); no `node --test` unit test for it) | **Yes** (2026-10-20, `make test-e2e-pwa`, `rc=0`) | Isolated daemon from `bin/datawatch` on fresh 127.0.0.1 ports (config from `testdata/datawatch.yaml`, self-generated TLS); 20 seeded shell sessions (always cleaned up — 20 disposed observed); Playwright + headless Chrome; evidence dir `/tmp/dw-e2e-pwa-04LWs3/evidence/schedule-flood` (removed post-success) | `PASS [A-untrusted-tls] /api/schedules=1 (limit 5) failed-events=0` — one fetch covered the reconnected detail view; zero `ERR_INSUFFICIENT_RESOURCES`; `/api/sessions` + `/api/stats` 200 after the burst |
+| Coalesced `/api/schedules` refreshes after WS reconnect — trusted TLS origin (B, service-worker controlled) | No (same as above) | **Yes** (2026-10-20, same run, scenario B self-generated: openssl throwaway CA + Node TLS proxy + Chrome `--ignore-certificate-errors-spki-list`) | Same harness; `TEST_TRUSTED_TLS` unset → auto-trusted origin; `navigator.serviceWorker.controller` asserted set before request counting | `PASS [B-trusted-tls] sw-controller=true /api/schedules=1 (limit 5)`; 4 `requestfailed` events were non-`ERR_INSUFFICIENT_RESOURCES` (expected offline-window/WS-reconnect closes), so the bounded-flood assertion held |
+| `make test-e2e-pwa` target — local non-docker route, non-zero exit on story failure | No (bash script; no unit test) | **Yes** (2026-10-20, run above) | `make test-e2e-pwa` from repo root; `node v24.15.0`, `npm` present; optional `TEST_TRUSTED_TLS` supported; `TEST_HTTP`/`TEST_TLS`/`TEST_TOKEN` external-daemon mode accepted | `scripts/e2e-pwa.sh` ran `npm ci` then `node schedule-flood.mjs`, propagated rc=0, killed the daemon; on failure it keeps the evidence dir and exits non-zero (story's own code 1 or 2) |
+
+### Baseline measurement — before-fix vs after-fix (connection-drop investigation, 2026-10-20)
+
+The story now also logs peak in-flight concurrency per phase — `load` = page load +
+detail-view open; `reconnect` = the WS-disconnect → recover window — so before/after
+comparisons diff on one line. Both runs 2026-10-20, 20 seeded sessions, scenario A
+(untrusted-TLS origin; the daemon offers HTTP/1.1 only, so the browser's 6-concurrent
+per-origin cap applies exactly as on the phone/cellular path). Two binaries with
+different embedded `app.js` — no git stash: **before** = `app.js` as of `31d96b1e`
+(parent of the fix commit, no `_loadSessionSchedules` coalescer), **after** = HEAD
+(`8412e745` coalescer in place), both run via `bash scripts/e2e-pwa.sh schedule-flood`.
+
+| origin | metric | before-fix (no coalescer) | after-fix (HEAD) |
+|---|---|---|---|
+| A (untrusted TLS) | total `/api/schedules` | **42** (page-load+detail=1, **reconnect-window=41**) | **1** (page-load only; reconnect-window=0) |
+| A (untrusted TLS) | peak in-flight, all traffic, reconnect window | 8 | 0 |
+| A (untrusted TLS) | peak in-flight `/api/schedules`, reconnect window | 4 | 0 |
+| A (untrusted TLS) | story verdict | FAIL (`42 > limit 5`) | PASS, `failed-events=0` |
+
+Evidence: `.scratch/evidence/README.md` (method + pointers), `.scratch/evidence/BASELINE-run-before.log` and `.scratch/evidence/run-after.log` (full run transcripts),
+`.scratch/evidence-before/run-1/` (before-run screenshots + daemon log), binaries `.scratch/bin/datawatch-{before,after}`.
+
+**Interpretation (CONFIRMED):** the pre-fix burst is ~41× the post-fix footprint, fired
+in the reconnect window, proportional to session count (one un-coalesced fetch per
+session update of the active detail view). 41+ requests against a 6-connection
+per-origin pool starve the co-residents on that origin — `/api/sessions`, `/api/stats`,
+and the WS upgrade handshake itself — which to an operator on cellular looks like the
+device "dropped the connection." The flood does **not** by itself sever the WS
+transport; it exhausts the shared HTTP pool. Other observed drop-path code — WS stale
+watchdog (50 s stale threshold, 20 s ping tick, 50–70 s detection), reconnect backoff,
+and the server's 30 s protocol-ping ticker (`internal/server/ws.go` `writePump`) — are
+separate, legitimate disconnect/reconnect mechanisms, recorded for the record and not
+fixed in this pass. See CHANGELOG.md [Unreleased].
+
+---
+
 ## Autonomous completion-guardrail rejudgment — `POST /api/autonomous/prds/{id}/rejudge` + MCP `autonomous_prd_rejudge`
 
 New endpoint and MCP tool. Re-runs the PRD-completion "rules-review" guardrail for a `blocked` Automaton whose every task in every story is `completed`, without resetting or editing any task. The verdict is durably recorded on the Automaton's decision log (`guardrail_verdict` Decision + save, then a `guardrail_rejudge` Decision attributed to the acting operator) **before** any status change: `pass` clears the blocked reason and completes the Automaton; `block` keeps it `blocked` with the blocked reason set from the new verdict; no verdict (judge error or empty outcome) keeps it `blocked` with its previous reason and returns an error.

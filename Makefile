@@ -337,6 +337,11 @@ test-e2e-docker:
 	TEST_PORT=18080 TEST_MCP_PORT=19090 DW_PEER_URL=http://localhost:28081 DW_PEER_TOKEN=peer-test-token \
 	  bash scripts/run-tests.sh --feature=routing --no-daemon
 
+# PWA schedules-flood story (TS-797) via its entry script scripts/test-stories/pwa/schedule-flood.mjs.
+# Local route (no Docker): starts an isolated daemon on fresh 127.0.0.1 ports,
+# runs `npm ci` in scripts/test-stories/pwa, then `node schedule-flood.mjs` with
+# TEST_HTTP/TEST_TLS/TEST_TOKEN (and TEST_TRUSTED_TLS when set). Exits with the
+# story's code: 0 pass · 1 fail · 2 skip. See docs/testing/README.md.
 test-e2e-pwa:
 	bash scripts/check-pwa-suite-path.sh $(PWA_SUITE_DIR)
 	docker compose -f $(E2E_COMPOSE) up datawatch -d

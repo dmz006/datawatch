@@ -12,6 +12,22 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 - **A retried task no longer records a pre-task SHA from its own retry, so correctly committed work is no longer reported as a false no-output failure.** When the first attempt captured no HEAD (no commits yet), the task's base SHA stayed empty, and the retry adopted its own pre-task HEAD — which already included the first attempt's commit. The verifier then diffed from the wrong base and saw nothing. The base SHA is now set only on the first attempt (attempt 0); retries never overwrite it. Covered by tests that reproduce the no-HEAD first attempt and the retry path.
+### Fixed
+- **The PWA no longer issues one `/api/schedules` fetch per session update when a session-detail view recovers after a WebSocket reconnect** — schedule reloads for the same session are now coalesced (in-flight dedup + 1 s minimum interval) and only the currently-open session triggers a reload, so a reconnect burst is bounded regardless of how many sessions the daemon has.
+
+### Investigation
+- **CONFIRMED: the `/api/schedules` reconnect flood is the dominant contributor to the drop-like symptoms reported on cellular.** Measured with the `TS-797` schedule-flood story (20 seeded sessions; WS disconnect → recovery; the daemon serves HTTP/1.1 only, so the browser's 6-concurrent-per-origin connection cap applies exactly as on the phone) on two locally built daemon binaries with only the embedded `app.js` differing — **before-fix** (`app.js` from `31d96b1e`, no `_loadSessionSchedules` coalescer) vs **after-fix** (HEAD, `8412e745` coalescer in place):
+
+  | metric (untrusted-TLS origin) | before-fix | after-fix |
+  |---|---|---|
+  | total `/api/schedules` requests | **42** (1 on page load, **41 during the reconnect window**) | **1** (0 during the reconnect window) |
+  | peak in-flight, all traffic (reconnect window) | 8 | 0 |
+  | peak in-flight `/api/schedules` (reconnect window) | 4 | 0 |
+  | story verdict | FAIL (`42 > limit 5`) | PASS |
+
+  41 un-coalesced concurrent requests necessarily overflow a 6-connection HTTP/1.1 per-origin pool, queuing and starving the other traffic on that origin — `/api/sessions`, `/api/stats`, and even the WebSocket upgrade handshake — so an operator on cellular sees requests fail and the app appear to “lose the connection” (on constrained devices: `net::ERR_INSUFFICIENT_RESOURCES`). The flood itself does not sever the WebSocket transport; it exhausts the shared HTTP pool while the device is most fragile (just reconnected on a flaky link).
+- **Other drop-related code paths observed and recorded (not fixed in this pass):** the client WS stale watchdog (50 s stale threshold, 20 s ping tick → 50–70 s detection latency before it forces a reconnect), the reconnect backoff schedule, and the server-side WS protocol ping in the write pump (30 s ticker, `internal/server/ws.go`) — each is a legitimate independent disconnect/reconnect mechanism on a flaky cellular link and is documented here for the record.
+- **Evidence and how to reproduce:** `docs/testing-tracker.md` (“PWA schedules-flood” → “Baseline measurement” table), `.scratch/evidence/README.md` (full run transcripts), `.scratch/evidence-before/run-1/` (before-run screenshots + daemon log), before/after binaries in `.scratch/bin/`. Reproduce: build the two binaries as described, then `TEST_BINARY=<binary> bash scripts/e2e-pwa.sh schedule-flood` — the before binary FAILS at `/api/schedules=42`, the after binary PASSES at `/api/schedules=1`.
 
 ## v9.5.32 — autonomous: a deterministic, no-LLM plan requirement coverage gate at decompose time, with an operator acknowledgement override
 
