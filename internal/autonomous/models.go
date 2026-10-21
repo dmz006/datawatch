@@ -90,6 +90,13 @@ const (
 	StoryCancelled        StoryStatus = "cancelled" // BL382 — operator-cancelled via cancel_story
 )
 
+// Task-kind constants (2026-10-17, smoke-verification story): "smoke" marks a task that IS the smoke
+// verification (its verification script is the plan's smoke suite), "final_gate" the terminal task; empty = ordinary.
+const (
+	TaskKindSmoke     = "smoke"
+	TaskKindFinalGate = "final_gate"
+)
+
 type TaskStatus string
 
 const (
@@ -213,6 +220,12 @@ type PRD struct {
 
 	// BL191 Q3 — append-only per-PRD audit timeline.
 	Decisions []Decision `json:"decisions,omitempty"`
+
+	// PlanReview (2026-10-17 plan-review gate) — the latest pre-approval
+	// plan-review verdict for this PRD (see plan_review.go). Nil when the
+	// configured mode is off (default) or no review has been recorded; the
+	// latest verdict wins — re-run (ReviewPlan) or re-decompose replaces it.
+	PlanReview *PlanReviewVerdict `json:"plan_review,omitempty"`
 
 	// PRD-completion rules review (B124 extension, 2026-10-12) —
 	// judgment verdicts at the whole-PRD level, same shape Story/Task
@@ -641,15 +654,20 @@ type Story struct {
 //
 //	per-task → per-story (BL381) → per-PRD → per-stage (autonomous.{planning,verification}_backend) → global session.llm_backend
 type Task struct {
-	ID           string              `json:"id"`
-	StoryID      string              `json:"story_id"`
-	PRDID        string              `json:"prd_id"`
-	Title        string              `json:"title"`
-	Spec         string              `json:"spec"` // detailed task description for the worker
-	Status       TaskStatus          `json:"status"`
-	DependsOn    []string            `json:"depends_on,omitempty"`  // other Task IDs
-	SessionID    string              `json:"session_id,omitempty"`  // datawatch session ID once running
-	WaitReason   string              `json:"wait_reason,omitempty"` // why the task is waiting_capacity
+	ID         string     `json:"id"`
+	StoryID    string     `json:"story_id"`
+	PRDID      string     `json:"prd_id"`
+	Title      string     `json:"title"`
+	Spec       string     `json:"spec"` // detailed task description for the worker
+	Status     TaskStatus `json:"status"`
+	DependsOn  []string   `json:"depends_on,omitempty"`  // other Task IDs
+	SessionID  string     `json:"session_id,omitempty"`  // datawatch session ID once running
+	WaitReason string     `json:"wait_reason,omitempty"` // why the task is waiting_capacity
+	// Kind classifies the task for the smoke-verification feature story
+	// (independent deliverable; this task only adds the field): "smoke" |
+	// "final_gate" | "" (ordinary). Empty = ordinary task; readers must
+	// tolerate unknown values.
+	Kind         string              `json:"kind,omitempty"`
 	CreatedAt    time.Time           `json:"created_at"`
 	UpdatedAt    time.Time           `json:"updated_at"`
 	StartedAt    *time.Time          `json:"started_at,omitempty"`

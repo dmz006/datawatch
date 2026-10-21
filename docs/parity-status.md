@@ -65,6 +65,7 @@ Legend:
 | Council markdown rendering | 🔶 v8.46.0 — completed-run modal only; the live in-progress run log is still plain text (GH#181, left open) | ✅ | ✅ |
 | Animated "eye" loading state (replacing plain "Loading…" / shimmer bars) | ❌ — tracked, `dmz006/datawatch#186`, not started | ✅ | ✅ |
 | Native ACME / Let's Encrypt cert management — HTTP-01 + DNS-01 (Cloudflare) + zero-downtime hot-swap (BL397) | ✅ v8.62.x | N/A (server-side feature; apps just consume whatever cert the daemon serves) | N/A |
+| Plan review before approval — verdict panel (pass / findings / reviewer-outage state), re-run button, long approve-rejection toast, `plan_review_*` + `smoke_verification_*` settings fields, smoke/final-gate task chips | ✅ | ❌ (tracked: [app#266](https://github.com/dmz006/datawatch-app/issues/266)) | ❌ (tracked: [app#266](https://github.com/dmz006/datawatch-app/issues/266)) |
 
 ## Known PWA gaps (tracked, not yet closed)
 

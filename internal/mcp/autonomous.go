@@ -74,6 +74,11 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithBoolean("quality_gates_block_on_regression", mcpsdk.Description("BL367 — block task on regression by default")),
 		mcpsdk.WithBoolean("injection_guard", mcpsdk.Description("BL369 — scan user-supplied PRD/task specs for prompt injection phrases (warn only by default)")),
 		mcpsdk.WithBoolean("block_on_injection", mcpsdk.Description("BL369 — reject PRD/task create or edit when injection phrases are detected (requires injection_guard:true)")),
+		mcpsdk.WithString("plan_review_backend", mcpsdk.Description("Plan review gate — LLM backend for the pre-approval reviewer judge (empty = inherit planning_backend)")),
+		mcpsdk.WithString("plan_review_model", mcpsdk.Description("Plan review gate — model for the pre-approval reviewer judge (empty = planning_model)")),
+		mcpsdk.WithString("plan_review_mode", mcpsdk.Description("Plan review gate — off (default, no review), warn (findings recorded, approval allowed), block (high-critical findings block approval). Unknown modes are rejected.")),
+		mcpsdk.WithString("smoke_verification_backend", mcpsdk.Description("Smoke verification — reviewer LLM backend for smoke tasks (empty = feature off)")),
+		mcpsdk.WithString("smoke_verification_model", mcpsdk.Description("Smoke verification — reviewer model; use a different model than the task for cross-model independence")),
 		mcpsdk.WithNumber("planning_timeout_seconds", mcpsdk.Description("Override effort-scaled decompose timeout (0 = default: 5 min normal, 15 min high/max, 2 min quick/low)")),
 		mcpsdk.WithNumber("verification_timeout_seconds", mcpsdk.Description("Bound for one verifier/guardrail judgment session in seconds (default 1800 = 30m; use 0 or a negative value to mean \"leave unset\"); local models need more time than the old hard-coded 10m")),
 		mcpsdk.WithNumber("session_idle_timeout_seconds", mcpsdk.Description("Bound for one autonomous worker/verifier session in seconds — a session sitting in waiting_input/idle with no live child process longer than this is treated as an infra failure and retried through the auto_fix_retries budget (default 900 = 15m; 0 or negative means use the default)")),
@@ -191,6 +196,11 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 	}
 	if v := req.GetBool("block_on_injection", false); v {
 		body["block_on_injection"] = v
+	}
+	for _, k := range []string{"plan_review_backend", "plan_review_model", "plan_review_mode", "smoke_verification_backend", "smoke_verification_model"} {
+		if v := req.GetString(k, ""); v != "" {
+			body[k] = v
+		}
 	}
 	// v8.25.1 — configurable planning timeout.
 	if v := req.GetFloat("planning_timeout_seconds", -1); v >= 0 {
@@ -443,6 +453,28 @@ func (s *Server) handleAutonomousPRDPlanCoverageAcknowledge(_ context.Context, r
 	id := req.GetString("id", "")
 	body, _ := json.Marshal(map[string]string{"actor": req.GetString("actor", "operator"), "note": req.GetString("note", "")})
 	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/plan_coverage/acknowledge", body)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
+// Plan review gate: re-run the pre-approval reviewer judge for a stored
+// PRD. The response is the PRD with its plan_review verdict replaced, so a
+// passing verdict clears a blocking one; with plan_review_mode off the PRD
+// is returned as stored.
+func (s *Server) toolAutonomousPRDPlanReview() mcpsdk.Tool {
+	return mcpsdk.NewTool("autonomous_prd_plan_review",
+		mcpsdk.WithDescription("Plan review gate — re-run the pre-approval reviewer judge for a PRD and return the PRD with its new plan_review verdict (ok, severity, summary, findings). Re-running replaces the stored verdict, so a passing verdict clears a blocking one; with plan_review_mode off the PRD is returned as stored."),
+		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
+		mcpsdk.WithString("actor", mcpsdk.Description("Operator identity recorded on the audit entry (defaults to operator)")),
+		mcpsdk.WithString("note", mcpsdk.Description("Optional operator note for the audit trail")),
+	)
+}
+func (s *Server) handleAutonomousPRDPlanReview(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	id := req.GetString("id", "")
+	body, _ := json.Marshal(map[string]string{"actor": req.GetString("actor", "operator"), "note": req.GetString("note", "")})
+	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/plan-review", body)
 	if err != nil {
 		return nil, err
 	}

@@ -2218,6 +2218,115 @@ autonomous:
 
 ---
 
+## Autonomous Plan Review before approval (optional, off by default)
+
+An optional second opinion sits between decompose and your approval:
+a one-shot, non-interactive LLM judge looks at the Automaton's plan (spec vs.
+decomposed stories/tasks) and records a verdict on the Automaton. **This is
+off by default** — with the keys unset, datawatch behaves exactly as
+before: no LLM verdict call, no effect on approval.
+
+**Keys** (all under `autonomous:`):
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `plan_review_backend` | `""` (off) | LLM that does the review. Any configured LLM, same rules as `planning_backend`. |
+| `plan_review_model` | `""` | Model for the reviewer; empty = the backend's own default. |
+| `plan_review_mode` | `""` (= off) | `off` / `warn` / `block`. Unknown values are a config error — a typo cannot silently disable a gate. |
+| `smoke_verification_backend` | `""` | LLM that verifies the plan's own smoke task (see below). Empty = no split. |
+| `smoke_verification_model` | `""` | Model for that verifier; empty = backend default. |
+
+Set them any surface: `~/.datawatch/config.yaml`, REST `PUT /api/config`
+(dot-path keys), MCP `autonomous_config_set`, comm channel
+`configure autonomous.plan_review_mode=warn`, CLI
+`datawatch config set autonomous.plan_review_mode warn`, or the PWA
+Settings (Autonomous section).
+
+### Modes
+
+- **off** (default): the review does not run; nothing is recorded; approval is unaffected.
+- **warn**: the review runs after decompose; the verdict (`ok`, findings,
+  summary, cost/tokens) is recorded on the Automaton and shown in the PWA, REST
+  and MCP; approval is always still allowed — the verdict is advisory.
+- **block**: a verdict with `ok: false` refuses `approve`
+  (`POST /api/autonomous/prds/{id}/approve`) with the finding categories
+  and the reviewer's summary. Approval stays refused until the verdict is
+  **replaced** — re-run the review until it passes, or re-decompose. There
+  is no force-approve bypass: the point of block mode is that the gate
+  works.
+
+### What the reviewer sees and judges
+
+The reviewer gets a **bounded projection** of the plan — the spec plus
+story/task titles, task specs, dependencies, kinds and verification
+scripts, each field length-capped (it never sees the whole repository).
+It judges: faithfulness to the spec, completeness (nothing important
+missing), task size/verifiability, dependency ordering, acceptance
+criteria that can actually be checked, and in/out-of-scope work. It
+reports findings only — it does not re-plan. Each finding carries a
+bounded category (`missing`, `weakened`, `too_large`,
+`wrong_dependency`, `fragile_verification`, `out_of_scope`) and one
+actionable sentence; `high` severity is the approval-blocking grade.
+The Automaton content goes to the reviewer inside a neutralized data block so a
+spec string cannot inject instructions into the prompt.
+
+### Reviewer outage — record only, never block
+
+If the reviewer call fails or returns an unparseable verdict, the
+recorded verdict carries `reviewer_failed: true` (the PWA shows an error-
+styled "reviewer failed — outage, not a plan failure" panel). In every
+mode, an outage verdict **never blocks approval**: the reviewer's
+availability must not wedge your approval gate. Re-run the review once
+the backend is back.
+
+### Re-running (works in every mode)
+
+- **PWA**: the re-run button in the Automaton detail's plan-review panel.
+- **REST**: `POST /api/autonomous/prds/{id}/plan-review` (body
+  `{actor?, note?}`; the response is the updated Automaton with the new
+  verdict).
+- **MCP**: `autonomous_prd_plan_review`.
+- **Comm channel**: `autonomous plan-review <id> [note]`.
+- **CLI**: `datawatch autonomous prd-plan-review <id> [note]` (alias `plan-review`).
+
+Only the **latest verdict counts** — a re-run or a re-decompose *replaces*
+the previous one, so a blocked Automaton unblocks itself as soon as one review
+run passes. In mode `off` a re-run is a no-op that returns the Automaton as
+stored. Each verdict also appends a `plan_review` decision row to the Automaton's
+decision log (the PWA decision list shows it with the reviewer's
+summary) and emits an SSE update on the Automaton channel.
+
+### Reviewer cost and tokens
+
+The verdict records `est_cost_usd`, `tokens_in` / `tokens_out` when the
+backend reports spend (one-shot backends usually don't — the fields are
+0 in that case); the automation budget policy reads these off the verdict
+for Automaton-level cost accounting. The PWA shows the line
+"cost: $… · in/out tokens" only when present.
+
+### Smoke / final-gate verifier split
+
+When the plan contains a task **that is itself the smoke verification**,
+decompose tags it `kind: "smoke"` (the terminal verification task is
+`kind: "final_gate"` and runs the script itself). The judge for that smoke
+task can be a *different* LLM — the verifier — set via
+`autonomous.smoke_verification_backend` / `..._model`. These two keys are
+the **default surface only**: an explicit per-task verifier
+(`set-task-verification-llm`, including a deliberate `""` clear) always
+wins and survives re-decompose (the bulk apply never clobbers a filled
+slot). Titles like "smokescreen" are not smoke tasks — matching is
+word-boundary (`smoke`, `final gate`, `final-gate`) plus the explicit
+`kind` tag. The PWA shows a kind chip + the resolved verifier LLM on
+those tasks.
+
+### Mobile parity
+
+Android/iOS equivalents (verdict panel, re-run button, long
+approve-rejection toast, the three settings fields, task kind chips) are
+tracked in [dmz006/datawatch-app#266](https://github.com/dmz006/datawatch-app/issues/266).
+
+---
+
 ## Autonomous Prompt Injection Protection
 
 When using autonomous PRDs with user-supplied specs (especially via federation peers, comm channels, or operator-created tasks), enable the injection guard to detect and optionally block known prompt injection patterns before they reach the LLM:

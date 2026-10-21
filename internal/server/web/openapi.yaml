@@ -378,6 +378,89 @@ paths:
           description: Path is not a directory or cannot be read
         "401":
           $ref: "#/components/responses/Unauthorized"
+    post:
+      summary: Upload a file
+      description: |
+        Upload a file to the server's file-service root (multipart/form-data).
+        The `path` field sets the destination path relative to the file-service root.
+        Requires `CapConfigWrite` federation capability.
+        Used by the PWA and Android app for image attachment in the session input bar.
+      operationId: uploadFile
+      tags: [System]
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, path]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: The file to upload (image, document, etc.)
+                path:
+                  type: string
+                  description: Destination filename (relative or absolute within file-service root)
+                  example: "dw_attach_1234567890_photo.jpg"
+      responses:
+        "200":
+          description: File uploaded successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  path:
+                    type: string
+                    description: Absolute server path of the uploaded file
+                  bytes:
+                    type: integer
+                    description: Number of bytes written
+        "400":
+          description: Missing file or path field, or parse error
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Path traversal outside file-service root
+    delete:
+      summary: Delete a file
+      description: |
+        Delete a file from the server filesystem.
+        Requires `CapConfigWrite` federation capability.
+        Body: JSON `{"path": "<absolute-path>"}`.
+      operationId: deleteFile
+      tags: [System]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [path]
+              properties:
+                path:
+                  type: string
+                  description: Absolute path of the file to delete
+      responses:
+        "200":
+          description: File deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  deleted:
+                    type: string
+                    description: Path of the deleted file
+        "400":
+          description: Missing or empty path
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Path traversal outside file-service root
+        "404":
+          description: File not found
 
   /api/sessions/start:
     post:
@@ -508,7 +591,12 @@ paths:
         Supported keys: `telegram.enabled`, `discord.enabled`, `slack.enabled`,
         `matrix.enabled`, `twilio.enabled`, `ntfy.enabled`, `email.enabled`,
         `webhook.enabled`, `github_webhook.enabled`, `server.enabled`,
-        `server.host`, `server.port`, `server.token`, `server.tls_enabled`.
+        `server.host`, `server.port`, `server.token`, `server.tls_enabled`,
+        `autonomous.plan_coverage_check` (off|warn|block, default block),
+        `autonomous.plan_coverage_min_ratio` (0-1, default 1.0),
+        `autonomous.plan_review_backend`, `autonomous.plan_review_model`,
+        `autonomous.plan_review_mode` (off | warn | block),
+        `autonomous.smoke_verification_backend`, `autonomous.smoke_verification_model`.
       operationId: updateConfig
       tags: [System]
       requestBody:
@@ -795,6 +883,44 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
+  /api/capacity:
+    get:
+      summary: Capacity admission status
+      description: Pools (host, node:<name>, llm:<name>) with limits and holders, active leases, and the queue of Automata tasks waiting for capacity with reasons.
+      operationId: capacityStatus
+      tags: [Autonomous]
+      responses:
+        "200":
+          description: Ledger snapshot
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pools: {type: array, items: {type: object}}
+                  leases: {type: array, items: {type: object}}
+                  waiting: {type: array, items: {type: object}}
+
+  /api/autonomous/prds/{id}/set_priority:
+    post:
+      summary: Set a PRD's capacity-queue priority
+      description: Higher priority PRDs are admitted first when compute capacity is contended. Default 0.
+      operationId: autonomousPRDSetPriority
+      tags: [Autonomous]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [priority]
+              properties:
+                priority: {type: integer}
+      responses:
+        "200": {description: Updated PRD}
+
   /api/alerts:
     get:
       summary: List alerts
@@ -979,11 +1105,10 @@ paths:
     get:
       summary: Read autonomous config
       description: |
-        The response includes the plan-requirement coverage gate settings:
+        The response includes the plan-requirement coverage gate settings under
         `plan_coverage_check` (off|warn|block, default block) and
-        `plan_coverage_min_ratio` (covered/extractable ratio required for a
-        passing report, 0-1, default 1.0). Both are settable via this PUT and
-        via /api/config PUT (`autonomous.plan_coverage_check` / `autonomous.plan_coverage_min_ratio`).
+        `plan_coverage_min_ratio` (covered/extractable ratio required for a passing
+        report, 0-1, default 1.0). Both are settable here and via /api/config PUT.
       operationId: autonomousConfigGet
       tags: [Autonomous]
       responses: {"200": {description: OK}}
@@ -1088,6 +1213,58 @@ paths:
       tags: [Autonomous]
       parameters: [{name: id, in: path, required: true, schema: {type: string}}]
       responses: {"200": {description: OK}}
+  /api/autonomous/prds/{id}/plan-review:
+    post:
+      summary: Run (or re-run) the pre-approval plan review
+      description: |
+        Runs the configured plan reviewer over the PRD's current plan — a
+        bounded projection of the spec plus the stories'/tasks' titles, specs,
+        dependencies, kinds and verification scripts — and records a fresh
+        `plan_review` verdict on the PRD. Mode effects (all modes allow the
+        re-run):
+        - `off` (default): no review runs and approval is never affected;
+          a re-run is a no-op that returns the PRD as stored.
+        - `warn`: the verdict is recorded and visible but never blocks approval.
+        - `block`: a verdict with `ok: false` refuses
+          `POST /api/autonomous/prds/{id}/approve` until the verdict is
+          replaced (re-run this endpoint until it passes, or re-decompose).
+        A reviewer outage or unparseable verdict is recorded with
+        `reviewer_failed: true` and never blocks approval in any mode.
+        Only the latest verdict counts — re-running or re-decomposing
+        replaces the previous one. Reviewer cost/tokens appear on the
+        verdict when the backend reports them (`est_cost_usd`,
+        `tokens_in` / `tokens_out`; 0 when unavailable).
+        Config: `autonomous.plan_review_backend`, `autonomous.plan_review_model`,
+        `autonomous.plan_review_mode` (off | warn | block), settable here,
+        via MCP `autonomous_config_set`, comm
+        `configure autonomous.plan_review_mode=...`, CLI
+        `datawatch config set`, or `~/.datawatch/config.yaml`.
+      operationId: autonomousPRDPlanReview
+      tags: [Autonomous]
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                actor: {type: string, description: "Operator identity, recorded on the decision row"}
+                note: {type: string, description: "Free-text note for the decision row"}
+      responses:
+        "200":
+          description: Updated PRD carrying the new `plan_review` verdict
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/AutonomousPRD"}
+        "400":
+          description: "PRD not found, the review call failed, or the plan-review surface is not wired (old binary shape)"
+        "403":
+          description: "Federation peer or scoped session token lacks the autonomous-write capability"
+        "409":
+          description: "State conflict — the PRD is not in a reviewable (decomposed) state"
+        "405":
+          description: "Method not allowed (plan review is POST-only)"
   /api/autonomous/prds/{id}/run:
     post:
       summary: Kick the executor for a PRD
@@ -1095,25 +1272,28 @@ paths:
       tags: [Autonomous]
       parameters: [{name: id, in: path, required: true, schema: {type: string}}]
       responses: {"200": {description: OK}}
-  /api/autonomous/prds/{id}/reset_task:
+  /api/autonomous/prds/{id}/set_llm:
     post:
-      summary: Reset a failed or blocked task back to pending for retry
-      operationId: autonomousPRDResetTask
+      summary: Set a PRD's worker-LLM override fields
+      description: Sets the PRD-level worker LLM override. Fields the caller omits are left unchanged; an empty string ("") clears that field (falls back to global). Applied settings are audit-logged and appended to the PRD's decision log.
+      operationId: autonomousPRDSetLLM
       tags: [Autonomous]
       parameters: [{name: id, in: path, required: true, schema: {type: string}}]
       requestBody:
-        required: true
+        required: false
         content:
           application/json:
             schema:
               type: object
-              required: [task_id]
               properties:
-                task_id: {type: string, description: Task ID to reset}
-                actor: {type: string, description: Actor identity (default operator)}
+                backend: {type: string, description: "Omitted = unchanged; empty string = cleared"}
+                effort: {type: string, description: "Omitted = unchanged; empty string = cleared"}
+                model: {type: string, description: "Omitted = unchanged; empty string = cleared"}
+                decomposition_profile: {type: string, description: "Omitted = unchanged; empty string = cleared"}
+                guardrail_backend: {type: string, description: "Optional; omitted = unchanged; empty string = cleared"}
+                guardrail_model: {type: string, description: "Optional; omitted = unchanged; empty string = cleared"}
       responses:
         "200": {description: Updated PRD}
-        "400": {description: Task not failed/blocked or PRD not running}
   /api/autonomous/learnings:
     get:
       summary: List extracted post-task learnings
@@ -1172,6 +1352,92 @@ paths:
                 hook: {type: string}
                 payload: {type: object}
       responses: {"200": {description: OK}, "400": {description: Bad Request}}
+  # Plugin widgets (BL403). "token" is a reserved widget id: manifests may
+  # not declare it, so the token path never collides with {widget_id}.
+  /api/plugins/{name}/widgets:
+    get:
+      summary: List a plugin's declared widgets merged with their latest values
+      description: Operator auth. Each entry is the manifest widget plus `value` (a WidgetValue, or null before any value arrived).
+      operationId: pluginWidgetsList
+      tags: [Plugins]
+      parameters: [{name: name, in: path, required: true, schema: {type: string}}]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  plugin: {type: string}
+                  widgets: {type: array, items: {$ref: '#/components/schemas/PluginWidgetView'}}
+        "404": {description: Unknown plugin}
+        "503": {description: Plugin widgets not wired}
+  /api/plugins/{name}/widgets/token:
+    post:
+      summary: Mint (or rotate) the plugin's widget push token
+      description: |
+        Operator auth. The plugin must exist. The plaintext token is returned
+        once; only its bcrypt hash is stored (<data_dir>/plugins/widget_tokens.json).
+        Calling again rotates the token and invalidates the previous one.
+      operationId: pluginWidgetTokenMint
+      tags: [Plugins]
+      parameters: [{name: name, in: path, required: true, schema: {type: string}}]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: {type: string}
+        "404": {description: Unknown plugin}
+  /api/plugins/{name}/widgets/{widget_id}:
+    parameters:
+      - {name: name, in: path, required: true, schema: {type: string}}
+      - {name: widget_id, in: path, required: true, schema: {type: string}}
+    get:
+      summary: One declared widget with its latest value
+      description: Operator auth.
+      operationId: pluginWidgetGet
+      tags: [Plugins]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/PluginWidgetView'}
+        "404": {description: Unknown plugin, or widget not declared by the plugin}
+    post:
+      summary: Push a value for a push-mode widget
+      description: |
+        Authenticated with the plugin's own push token (`Authorization: Bearer <token>`
+        from POST /api/plugins/{name}/widgets/token), not the operator token. The
+        request body is the widget value itself: any JSON document, stored as-is
+        (no {"data": ...} envelope), up to 65536 bytes.
+      operationId: pluginWidgetPush
+      tags: [Plugins]
+      security: [{BearerToken: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {description: Any JSON value}
+      responses:
+        "200":
+          description: Stored
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  updated_at: {type: string, format: date-time}
+        "400": {description: Body is not valid JSON}
+        "401": {description: Missing, malformed or wrong push token}
+        "404": {description: Unknown plugin, or widget not declared by the plugin}
+        "409": {description: Widget is pull-mode; push is not accepted}
+        "413": {description: Body over 65536 bytes}
 
   # ─── PRD-DAG orchestrator (BL117, v4.0.0) ──────────────────────
   /api/orchestrator/config:
@@ -1197,7 +1463,7 @@ paths:
       tags: [Orchestrator]
       responses: {"200": {description: OK}}
     post:
-      summary: Create a graph from a set of PRD IDs
+      summary: Create a graph from a set of BL24 PRD IDs
       operationId: orchestratorGraphCreate
       tags: [Orchestrator]
       requestBody:
@@ -1262,6 +1528,139 @@ paths:
       operationId: orchestratorVerdicts
       tags: [Orchestrator]
       responses: {"200": {description: OK}}
+
+  # ─── Automations — stored orchestration records over member Automata ────
+  #
+  # An Automation is a named graph of member Automata (PRDs), run one at a
+  # time by a single cursor. Each member names at most one next member per
+  # outcome (on_complete / on_blocked / on_failed); an empty edge ends the
+  # Automation in the status that outcome implies. For now these are stored
+  # records only — nothing on the server advances from one member Automaton
+  # to the next automatically.
+  /api/automations:
+    get:
+      summary: List Automations
+      description: All Automation records, one object each, in store order.
+      operationId: automationsList
+      tags: [Automations]
+      responses:
+        "200":
+          description: Array of Automations
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Automation"
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "503": {description: "autonomous disabled"}
+    post:
+      summary: Create an Automation
+      description: |
+        Creates a new Automation in `draft` status at version 1. Members
+        reference existing Automata (PRDs) by `prd_id`; a member may belong
+        to at most one non-terminal Automation. The per-outcome edges must
+        form an acyclic graph rooted at `entry_member_id` (when
+        `entry_member_id` is omitted, the first member is the entry).
+        `actor` and `reason` are recorded in the audit log.
+      operationId: automationsCreate
+      tags: [Automations]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AutomationCreate"
+      responses:
+        "201":
+          description: Created Automation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Automation"
+        "400":
+          description: |
+            Validation failure: unknown member or edge target, a cycle in
+            the member graph, a member already owned by another Automation,
+            or a template/owned PRD enrolled as a member.
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "503": {description: "autonomous disabled"}
+  /api/automations/{id}:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}, description: "Automation ID (8-hex)"}
+    get:
+      summary: Get an Automation
+      operationId: automationsGet
+      tags: [Automations]
+      responses:
+        "200":
+          description: Automation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Automation"
+        "404": {description: Automation not found}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "503": {description: "autonomous disabled"}
+    put:
+      summary: Update an Automation
+      description: |
+        Replaces name, description, budget policy, execution and verification
+        defaults, `project_dir`, members and the entry member. A blank name
+        keeps the existing one. Members and the entry member may only
+        actually change while the Automation is a draft.
+        Optimistic concurrency: send the last `version` you saw as
+        `expected_version`; a stale value is rejected and the record is left
+        unchanged.
+      operationId: automationsUpdate
+      tags: [Automations]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AutomationUpdate"
+      responses:
+        "200":
+          description: Updated Automation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Automation"
+        "400": {description: "Validation failure (same rules as create)"}
+        "404": {description: Automation not found}
+        "409":
+          description: |
+            `expected_version` does not match the stored version, or the
+            member list / entry member is changing while the Automation is
+            not in draft.
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "503": {description: "autonomous disabled"}
+    delete:
+      summary: Delete an Automation
+      description: |
+        Removes the record and frees its members (their PRDs are no longer
+        reserved by an Automation). Only draft, completed or cancelled
+        Automations may be deleted; an intermediate status is a 409.
+        Optional body `{"actor": "...", "reason": "..."}` for the audit log;
+        actor defaults to "operator".
+      operationId: automationsDelete
+      tags: [Automations]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                actor: {type: string}
+                reason: {type: string}
+      responses:
+        "204": {description: Deleted}
+        "404": {description: Automation not found}
+        "409": {description: "The Automation is active, paused or blocked and cannot be deleted; complete or cancel it first"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "503": {description: "autonomous disabled"}
 
   # ─── Mobile-client parity endpoints (documented in v4.0.3) ────
   /api/backends/active:
@@ -2092,6 +2491,17 @@ paths:
   # /api/pipeline*. See docs/plans/2026-04-25-bl170-feature-completeness-audit.md.
 
   # Sessions sub-routes
+  /api/sessions/finished-oneshots:
+    get:
+      summary: List one-shot sessions whose command has ended but that never reached complete
+      operationId: sessionsFinishedOneShotsList
+      tags: [Sessions]
+      responses: {"200": {description: "{count, ids}"}}
+    post:
+      summary: Complete those sessions (runs the validation gate), close their panes and remove scratch files
+      operationId: sessionsFinishedOneShotsCleanup
+      tags: [Sessions]
+      responses: {"200": {description: "{reaped: [session ids]}"}}
   /api/sessions/aggregated:
     get:
       summary: Aggregated session view across federated peers
@@ -2107,7 +2517,7 @@ paths:
       responses: {"200": {description: Bound}, "404": {description: Session or agent not found}}
   /api/sessions/import:
     post:
-      summary: Import a single orphan session from disk
+      summary: Import a single orphan session from disk (BL94)
       operationId: sessionImport
       tags: [Sessions]
       requestBody: {required: true, content: {application/json: {schema: {type: object, required: [path], properties: {path: {type: string}}}}}}
@@ -2129,7 +2539,7 @@ paths:
       responses: {"200": {description: OK}, "404": {description: Not found}}
   /api/sessions/reconcile:
     get:
-      summary: List orphan session directories on disk that are missing from the registry
+      summary: List orphan session directories on disk that are missing from the registry (BL93)
       operationId: sessionReconcile
       tags: [Sessions]
       responses: {"200": {description: List of orphans}}
@@ -2143,7 +2553,7 @@ paths:
       responses: {"200": {description: OK}, "404": {description: Not found}}
   /api/sessions/stale:
     get:
-      summary: List running sessions stuck longer than session.stale_timeout_seconds
+      summary: List running sessions stuck longer than session.stale_timeout_seconds (BL40)
       operationId: sessionsStale
       tags: [Sessions]
       parameters:
@@ -2160,7 +2570,7 @@ paths:
   # Agents
   /api/agents:
     get:
-      summary: List ephemeral agent workers
+      summary: List ephemeral agent workers (F10 sprint 3+)
       operationId: agentsList
       tags: [Agents]
       responses: {"200": {description: OK}}
@@ -2172,7 +2582,7 @@ paths:
       responses: {"200": {description: Spawned}, "400": {description: Bad Request}}
   /api/agents/audit:
     get:
-      summary: Tail of the agent-audit log — every spawn, terminate, bootstrap event
+      summary: Tail of the agent-audit log (BL107) — every spawn, terminate, bootstrap event
       operationId: agentsAudit
       tags: [Agents]
       parameters:
@@ -2183,7 +2593,7 @@ paths:
   # Channel
   /api/channel/diagnostics:
     get:
-      summary: MCP channel bridge diagnostics — bridge kind/path, per-session port and liveness
+      summary: MCP channel bridge diagnostics — bridge kind/path, per-session port and liveness (BL362)
       operationId: channelDiagnostics
       tags: [Channel]
       responses:
@@ -2206,7 +2616,7 @@ paths:
   # Devices
   /api/devices:
     get:
-      summary: List registered devices
+      summary: List registered devices (F17 mobile registry)
       operationId: devicesList
       tags: [Devices]
       responses: {"200": {description: OK}}
@@ -2219,7 +2629,7 @@ paths:
       responses: {"200": {description: Registered}, "400": {description: Bad Request}}
   /api/device-aliases:
     get:
-      summary: "List device aliases for `new: @<alias>:` routing"
+      summary: "List device aliases for `new: @<alias>:` routing (BL31)"
       operationId: deviceAliasList
       tags: [Devices]
       responses: {"200": {description: OK}}
@@ -2406,7 +2816,7 @@ paths:
   # Operator-facing singletons
   /api/ask:
     post:
-      summary: Single-shot LLM ask — no session, no tmux
+      summary: Single-shot LLM ask — no session, no tmux (BL34)
       operationId: ask
       tags: [Singletons]
       requestBody:
@@ -2423,14 +2833,14 @@ paths:
       responses: {"200": {description: OK}, "503": {description: Backend not configured}}
   /api/assist:
     post:
-      summary: Quick-response assistant — uses the configured assistant backend
+      summary: Quick-response assistant (BL42) — uses the configured assistant backend
       operationId: assist
       tags: [Singletons]
       requestBody: {required: true, content: {application/json: {schema: {type: object, required: [text], properties: {text: {type: string}}}}}}
       responses: {"200": {description: OK}, "503": {description: Assistant backend not configured}}
   /api/audit:
     get:
-      summary: Query the operator-action audit log
+      summary: Query the operator-action audit log (BL9)
       operationId: auditQuery
       tags: [Singletons]
       parameters:
@@ -2443,7 +2853,7 @@ paths:
       responses: {"200": {description: OK}}
   /api/cooldown:
     get:
-      summary: Current global rate-limit cooldown state
+      summary: Current global rate-limit cooldown state (BL30)
       operationId: cooldownGet
       tags: [Singletons]
       responses: {"200": {description: OK}}
@@ -2455,25 +2865,25 @@ paths:
       responses: {"200": {description: OK}}
   /api/diagnose:
     get:
-      summary: Diagnostic snapshot — backend reachability, config validity, recent errors
+      summary: Diagnostic snapshot — backend reachability, config validity, recent errors (BL37)
       operationId: diagnose
       tags: [Singletons]
       responses: {"200": {description: OK}}
   /api/analytics:
     get:
-      summary: Aggregate analytics — session counts, backend distribution, cost summary
+      summary: Aggregate analytics — session counts, backend distribution, cost summary (BL12)
       operationId: analytics
       tags: [Singletons]
       responses: {"200": {description: OK}}
   /api/reload:
     post:
-      summary: Hot config reload — equivalent to SIGHUP
+      summary: Hot config reload (BL17) — equivalent to SIGHUP
       operationId: reload
       tags: [Singletons]
       responses: {"200": {description: Reloaded}, "400": {description: Config invalid}}
   /api/project/summary:
     get:
-      summary: Project overview — git status + sessions + stats
+      summary: Project overview — git status + sessions + stats (BL35)
       operationId: projectSummary
       tags: [Singletons]
       parameters:
@@ -2591,7 +3001,7 @@ paths:
 
   /api/projects:
     get:
-      summary: List project aliases
+      summary: List project aliases (BL27)
       operationId: projectsList
       tags: [Singletons]
       responses: {"200": {description: OK}}
@@ -2603,7 +3013,7 @@ paths:
       responses: {"200": {description: OK}}
   /api/templates:
     get:
-      summary: List session-start templates
+      summary: List session-start templates (BL5)
       operationId: templatesList
       tags: [Singletons]
       responses: {"200": {description: OK}}
@@ -2665,6 +3075,67 @@ components:
             example: "unauthorized"
 
   schemas:
+    PlanReviewVerdict:
+      type: object
+      description: |
+        Recorded verdict of the pre-approval plan reviewer (see
+        `autonomous.plan_review_mode`). Only the latest verdict is stored —
+        re-running the review or re-decomposing replaces it. A verdict with
+        `reviewer_failed: true` is the placeholder for a reviewer outage or
+        an unparseable response: it is displayed, but must never be treated
+        as an approval blocker.
+      properties:
+        ok: {type: boolean, description: "Reviewer's overall judgment (false for a reviewer_failed placeholder)"}
+        severity: {type: string, enum: [low, medium, high], description: "Worst finding's severity; 'high' blocks approval in block mode"}
+        summary: {type: string, description: "One or two operator-actionable sentences"}
+        findings: {type: array, items: {$ref: "#/components/schemas/PlanReviewFinding"}, description: "Empty for an ok:true verdict"}
+        backend: {type: string, description: "Reviewer LLM backend actually used"}
+        model: {type: string}
+        mode: {type: string, enum: [warn, block], description: "plan_review_mode in effect when this verdict was produced"}
+        at: {type: string, format: date-time}
+        prompt_chars: {type: integer, description: "Size of the bounded plan projection that was judged"}
+        response_chars: {type: integer}
+        tokens_in: {type: integer, description: "Reviewer spend; 0 when the backend does not report it"}
+        tokens_out: {type: integer}
+        est_cost_usd: {type: number}
+        reviewer_failed: {type: boolean, description: "Reviewer outage / unparseable verdict; never blocks approval"}
+    PlanReviewFinding:
+      type: object
+      description: One concrete problem the reviewer located in the plan
+      properties:
+        task_id: {type: string, description: "Task the finding is about; empty when story- or plan-scoped"}
+        task_title: {type: string}
+        category: {type: string, enum: [missing, weakened, too_large, wrong_dependency, fragile_verification, out_of_scope]}
+        detail: {type: string, description: "One specific, actionable sentence"}
+    AutonomousPRD:
+      type: object
+      description: |
+        Autonomous PRD shape relevant to plan review; the full
+        story/task tree is returned by `GET /api/autonomous/prds/{id}`
+        and by the plan-review endpoint above.
+      properties:
+        id: {type: string}
+        spec: {type: string}
+        status: {type: string}
+        plan_review: {$ref: "#/components/schemas/PlanReviewVerdict", description: "Present once a review has run (warn/block modes)"}
+        story:
+          type: array
+          items:
+            type: object
+            properties:
+              title: {type: string}
+              tasks: {type: array, items: {$ref: "#/components/schemas/AutonomousTask"}}
+    AutonomousTask:
+      type: object
+      description: One task in the PRD's plan (subset of stored fields)
+      properties:
+        id: {type: string}
+        title: {type: string}
+        spec: {type: string}
+        depends_on: {type: array, items: {type: string}}
+        kind: {type: string, enum: ['', decompose, smoke, final_gate], description: "Empty = ordinary task. 'smoke' marks the task that IS the plan's own smoke verification (judged by the verifier LLM from autonomous.smoke_verification_backend/models); 'final_gate' the terminal verification task that runs the plan's verification script"}
+        verification_script: {type: string}
+        status: {type: string}
     SessionAutomatonDetail:
       type: object
       description: |
@@ -2723,6 +3194,26 @@ components:
             tokens_in: {type: integer}
             tokens_out: {type: integer}
             est_cost_usd: {type: number}
+    PluginWidgetView:
+      type: object
+      description: A manifest widget plus its latest stored value.
+      properties:
+        id: {type: string}
+        surface: {type: string, enum: [dashboard, session]}
+        kind: {type: string, enum: [stat_tile, table, list, sparkline, status_badge, markdown]}
+        data_mode: {type: string, enum: [push, pull]}
+        pull_path: {type: string}
+        interval_seconds: {type: integer}
+        value:
+          nullable: true
+          type: object
+          properties:
+            plugin: {type: string}
+            widget_id: {type: string}
+            data: {description: The widget value as pushed or pulled}
+            updated_at: {type: string, format: date-time}
+            source: {type: string, enum: [push, pull]}
+            error: {type: string, description: Last pull error; data keeps the previous value}
     ChannelDiagnostics:
       type: object
       properties:
@@ -2857,6 +3348,11 @@ components:
             LLM backend to use for this session. Must match a registered backend name.
             Defaults to the active backend from config.
           example: "aider"
+        git:
+          type: boolean
+          default: false
+          description: Opt in to git init, snapshot and automatic commit.
+          example: true
 
     CommandRequest:
       type: object
@@ -3062,8 +3558,15 @@ components:
           example: "http://203.0.113.10:8080"
         token:
           type: string
-          description: Bearer token (masked as *** when non-empty)
+          description: "Bearer token. Accepted on create/update requests; never returned in a response (SEC-014) — responses carry token_present/token_prefix instead, and omit this field entirely when redacted."
           example: "***"
+        token_present:
+          type: boolean
+          description: "Response-only (SEC-014). Whether a token is set — never its value."
+        token_prefix:
+          type: string
+          description: "Response-only (SEC-014). First 4 characters of the token, for operator identification only; cannot be used to reconstruct the token."
+          example: "a1b2"
         enabled:
           type: boolean
 
@@ -3210,3 +3713,107 @@ components:
         updated_at:
           type: string
           format: date-time
+
+    Automation:
+      type: object
+      description: |
+        An Automation: a named graph of member Automata (PRDs) advanced by a
+        single cursor, one member at a time. For now a stored record only —
+        nothing on the server advances from one member to the next
+        automatically.
+      properties:
+        id: {type: string, description: "Automation ID (8-hex)"}
+        name: {type: string}
+        description: {type: string}
+        status: {type: string, enum: [draft, active, paused, completed, blocked, cancelled]}
+        entry_member_id: {type: string, description: "Member the Automation starts at"}
+        current_member_id: {type: string, description: "Member the cursor is on (while active)"}
+        members:
+          type: array
+          items:
+            $ref: "#/components/schemas/AutomationMember"
+        version: {type: integer, description: "Bumped on every write; send back as expected_version on update"}
+        budget_policy: {$ref: "#/components/schemas/BudgetPolicy"}
+        backend: {type: string, description: "Execution backend default for member runs"}
+        model: {type: string, description: "Execution model default for member runs"}
+        effort: {type: string, description: "Execution effort default for member runs"}
+        verification_backend: {type: string, description: "Verifier backend default for member runs"}
+        verification_model: {type: string, description: "Verifier model default for member runs"}
+        verification_effort: {type: string, description: "Verifier effort default for member runs"}
+        project_dir: {type: string, description: "Working tree member runs operate in (informational)"}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+        started_at: {type: string, format: date-time, nullable: true}
+        finished_at: {type: string, format: date-time, nullable: true}
+        idle_since: {type: string, format: date-time, nullable: true, description: "Set when a member finished and no next member started yet"}
+        decisions:
+          type: array
+          description: "Decision log entries; same shape as an Automaton's decision log"
+          items: {type: object}
+
+    AutomationMember:
+      type: object
+      description: "One member of an Automation: one member PRD plus one next member per outcome."
+      properties:
+        id: {type: string, description: "Stable member ID (8-hex, or operator-supplied)"}
+        prd_id: {type: string, description: "The member Automaton (PRD) ID"}
+        on_complete: {type: string, description: "Next member when this one completes; empty = the Automation completes"}
+        on_blocked: {type: string, description: "Next member when this one is blocked; empty = the Automation is blocked"}
+        on_failed: {type: string, description: "Next member when this one fails; empty = the Automation is blocked"}
+        added_at: {type: string, format: date-time}
+        added_by: {type: string, description: "Who enrolled it: operator (default) or an acting session/agent"}
+        added_reason: {type: string}
+        status: {type: string, enum: [pending, running, completed, blocked, failed, skipped, cancelled]}
+        started_at: {type: string, format: date-time, nullable: true}
+        finished_at: {type: string, format: date-time, nullable: true}
+        outcome: {type: string, description: "Automaton status observed when this member last finished"}
+        edge_taken: {type: string, description: "Edge followed at last finish: on_complete | on_blocked | on_failed | skip"}
+        budget_policy: {$ref: "#/components/schemas/BudgetPolicy"}
+      required: [id, prd_id, status]
+
+    BudgetPolicy:
+      type: object
+      description: |
+        A budget guard-rail, applied per Automation or per member: a ceiling
+        (dollar total, or a percentage of the window's allowance) and how it
+        is enforced — pacing governs how quickly the ceiling may be consumed
+        and on_breach what happens when it is hit.
+      properties:
+        ceiling_type: {type: string, enum: [dollar, allocation_pct]}
+        ceiling_value: {type: number, description: "Dollar limit, or percent of the window's allowance"}
+        window: {type: string, enum: [automation, day, week, month], description: "Scope the ceiling is measured over"}
+        pacing: {type: string, enum: [none, even], description: "How the ceiling is spent: up front, or spread evenly across the window"}
+        on_breach: {type: string, enum: [pause, block], description: "What happens when the ceiling is hit"}
+        backend: {type: string, description: "When set, the ceiling applies only to spend on this backend"}
+      required: [ceiling_type, ceiling_value, window, on_breach]
+
+    AutomationCreate:
+      type: object
+      description: Request body for POST /api/automations (create a draft Automation).
+      required: [members]
+      properties:
+        name: {type: string}
+        description: {type: string}
+        entry_member_id: {type: string, description: "Entry member ID; when omitted, the first members entry is the entry"}
+        members:
+          type: array
+          items:
+            $ref: "#/components/schemas/AutomationMember"
+        budget_policy: {$ref: "#/components/schemas/BudgetPolicy"}
+        project_dir: {type: string}
+        backend: {type: string}
+        model: {type: string}
+        effort: {type: string}
+        verification_backend: {type: string}
+        verification_model: {type: string}
+        verification_effort: {type: string}
+        actor: {type: string, description: "operator (default) or the acting session/agent; recorded in the audit log"}
+        reason: {type: string, description: "Why this Automation is being created; recorded in the audit log"}
+
+    AutomationUpdate:
+      allOf:
+        - $ref: "#/components/schemas/AutomationCreate"
+        - type: object
+          required: [expected_version]
+          properties:
+            expected_version: {type: integer, description: "The `version` you last observed; the write is rejected with 409 if it is stale"}

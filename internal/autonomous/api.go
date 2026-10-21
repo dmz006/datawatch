@@ -635,6 +635,18 @@ func (a *API) AcknowledgePlanCoverage(prdID, actor, note string) (*PRD, error) {
 	}
 	return out, err
 }
+
+// 2026-10-17 — plan review gate: operator-triggered re-run of the
+// pre-approval judge (Manager.ReviewPlan in plan_review.go). Re-running
+// replaces the stored verdict, so a passing verdict clears a blocking
+// one; mode off returns the PRD as stored.
+func (a *API) ReviewPlan(id, actor string) (any, error) {
+	out, err := a.M.ReviewPlan(id, actor)
+	if err == nil {
+		a.M.EmitPRDUpdate(id)
+	}
+	return out, err
+}
 func (a *API) RequestRevision(id, actor, note string) (any, error) {
 	out, err := a.M.RequestRevision(id, actor, note)
 	if err == nil {

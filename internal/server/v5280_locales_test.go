@@ -144,6 +144,16 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"plugin_widget_loading",
 		// v9.5.5 — autonomous settings card field for task_override_statuses.
 		"settings_task_override_statuses",
+		// 2026-10-17 — plan review gate + smoke verification settings card
+		// fields (all five operator-facing keys, plus the PRD card panel).
+		"settings_plan_review_backend",
+		"settings_plan_review_model",
+		"settings_plan_review_mode",
+		"settings_smoke_verification_backend",
+		"settings_smoke_verification_model",
+		"prd_plan_review_ok",
+		"prd_plan_review_fail",
+		"prd_plan_review_rerun",
 	}
 	for _, lang := range requiredLocales {
 		bundle := loadLocaleBundle(t, lang)

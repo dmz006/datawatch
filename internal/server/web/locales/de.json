@@ -1766,5 +1766,18 @@
   "status_est_cost": "est.",
   "prd_task_projdir_label": "Projektverzeichnis-Überschreibung",
   "prd_task_projdir_placeholder": "erbt Verzeichnis des Automaten",
-  "prd_task_projdir_badge_title": "Projektverzeichnis-Überschreibung pro Aufgabe"
+  "prd_task_projdir_badge_title": "Projektverzeichnis-Überschreibung pro Aufgabe",
+  "settings_plan_review_backend": "Plan-Review-Backend — optional, leer = aus. Bei Einstellung wird der Plan nach der Zerlegung geprüft",
+  "settings_plan_review_model": "Plan-Review-Modell",
+  "settings_plan_review_mode": "Plan-Review-Modus — im Block-Modus wird die Freigabe bei einem fehlgeschlagenen Urteil behalten",
+  "settings_smoke_verification_backend": "Smoke-Verifikations-Backend — optional, leer = aus. Prüfer-LLM für Smoke-/Final-Gate-Aufgaben",
+  "settings_smoke_verification_model": "Smoke-Verifikationsmodell",
+  "prd_plan_review_ok": "Plan-Review bestanden",
+  "prd_plan_review_fail": "Plan-Review fehlgeschlagen",
+  "prd_plan_review_rerun": "Review erneut ausführen",
+  "prd_plan_review_rerun_tip": "Den konfigurierten Prüfer auf diesen Plan erneut ausführen",
+  "prd_plan_review_done": "Plan-Review erneut ausgeführt",
+  "plan_review_approve_blocked_tip": "Plan-Review hat diese Freigabe blockiert — ",
+  "prd_task_kind_tip": "Zielaufgabe der Smoke-Verifikation",
+  "prd_task_smoke_verifier_tip": "Smoke-Verifikations-LLM für diese Aufgabe"
 }

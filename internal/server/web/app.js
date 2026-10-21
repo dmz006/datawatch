@@ -11748,6 +11748,59 @@ function renderPRDDecomposeFailure(prd) {
   return `<div class="prd-decompose-failure" style="margin-top:4px;font-size:11px;color:#ef4444;">${escHtml(t('decompose_last_failure') || 'Decompose failed: ')}${escHtml(f.detail)}</div>`;
 }
 
+// 2026-10-17 — plan review gate: PRD-card verdict panel + re-run button.
+// The server keeps the latest PlanReviewVerdict on prd.plan_review (see
+// internal/autonomous/plan_review.go). ok=true → green pass line;
+// ok=false → red fail line with the reviewer's findings. The re-run
+// button POSTs the /plan-review endpoint (operator-triggered fresh
+// review) and refreshes the panel so the new verdict renders in place.
+function renderPRDPlanReview(prd) {
+  const v = prd && prd.plan_review;
+  const id = prd && prd.id ? prd.id : '';
+  if (!v || !id) return '';
+  const idJ = JSON.stringify(id);
+  const pass = !!v.ok;
+  const headColor = pass ? '#10b981' : '#ef4444';
+  const who = [v.backend, v.model].filter(Boolean).map(escHtml).join(' / ');
+  const metaBits = [];
+  if (v.mode) metaBits.push(escHtml(v.mode));
+  if (who) metaBits.push(who);
+  if (v.at) metaBits.push(new Date(v.at).toLocaleString());
+  const findings = (v.findings || []).map(f =>
+    `<div style="padding:2px 0;border-top:1px solid var(--border);">${escHtml(f.task_title || f.task_id || '')} — ${f.category ? '<code>' + escHtml(f.category) + '</code> ' : ''}${escHtml(f.detail || '')}</div>`
+  ).join('');
+  const rerunBtn = `<button class="btn-secondary" style="font-size:10px;white-space:nowrap;" onclick="event.stopPropagation();prdrPlanReviewReRun(${idJ}, this)" title="${escHtml(t('prd_plan_review_rerun_tip') || 'Run the configured reviewer on this plan again')}">&#10227; ${escHtml(t('prd_plan_review_rerun') || 'Re-run review')}</button>`;
+  return `<div class="prd-plan-review" style="margin-top:4px;padding:6px 8px;border-left:3px solid ${headColor};background:rgba(255,255,255,0.04);border-radius:4px;font-size:11px;">
+    <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+      <span style="font-weight:700;color:${headColor};">${pass ? '&#10003;' : '&#10007;'} ${escHtml(pass ? (t('prd_plan_review_ok') || 'Plan review passed') : (t('prd_plan_review_fail') || 'Plan review failed'))}</span>
+      <span style="color:var(--text2);">${metaBits.join(' · ')}</span>
+      <span style="flex:1 1 auto;"></span>
+      ${rerunBtn}
+    </div>
+    ${v.summary ? `<div style="margin-top:3px;color:var(--text);">${escHtml(v.summary)}</div>` : ''}
+    ${findings ? `<div style="margin-top:3px;color:var(--text);">${findings}</div>` : ''}
+  </div>`;
+}
+window.renderPRDPlanReview = renderPRDPlanReview;
+
+// Re-run the stored plan review for one PRD (same endpoint the daemon
+// calls post-decompose). Success → toast + panel refresh; failure →
+// long error toast with the server's reason.
+window.prdrPlanReviewReRun = function(id, btn) {
+  if (btn) { btn.disabled = true; btn.style.opacity = '0.45'; }
+  apiFetch('/api/autonomous/prds/' + encodeURIComponent(id) + '/plan-review', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ actor: 'operator' }),
+  }).then(() => {
+    showToast(t('prd_plan_review_done') || 'Plan review re-run complete', 'success', 2500);
+    if (typeof _refreshAutomataOrPRD === 'function') _refreshAutomataOrPRD();
+  }).catch(err => {
+    showToast('Plan review failed: ' + String(err), 'error', 8000);
+    if (btn) { btn.disabled = false; btn.style.opacity = ''; }
+  });
+};
+
 function renderPRDRow(prd) {
   const id = prd.id || '';
   const stories = prd.stories || [];
@@ -11804,6 +11857,7 @@ function renderPRDRow(prd) {
         <div style="margin-top:2px;color:var(--text);font-weight:600;">${escHtml(prd.title || '(no title)')}</div>
         <div style="font-size:10px;color:var(--text2);">${stories.length} stories &middot; ${taskCount} tasks &middot; ${prd.decisions ? prd.decisions.length : 0} decisions</div>
         ${renderPRDDecomposeFailure(prd)}
+        ${renderPRDPlanReview(prd)}
       </div>
       <div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;">${dashExpandBtn}${actions}</div>
     </div>
@@ -12283,6 +12337,16 @@ function renderTask(prd, story, task, editable) {
   const projDirBadge = task.project_dir
     ? `<span class="prd-task-llm-badge prd-task-projdir-badge" title="${escHtml(t('prd_task_projdir_badge_title')||'Per-task project dir override')}">dir: ${escHtml(task.project_dir)}</span>`
     : '';
+  // 2026-10-17 — smoke/final-gate kind chip. The decomposer tags these
+  // tasks as smoke-verification targets; when the pair is configured
+  // they get a dedicated verifier LLM (smoke_verification_backend/model),
+  // which we surface next to the normal LLM badge.
+  const taskKindBadge = (task.kind === 'smoke' || task.kind === 'final_gate')
+    ? `<span class="prd-task-llm-badge prd-task-kind-badge" title="${escHtml(t('prd_task_kind_tip') || 'Smoke-verification target task')}">${escHtml(task.kind === 'final_gate' ? 'final-gate' : task.kind)}</span>`
+    : '';
+  const smokeVkBadge = (task.kind === 'smoke' || task.kind === 'final_gate') && (task.verification_backend || task.verification_model)
+    ? `<span class="prd-task-llm-badge" title="${escHtml(t('prd_task_smoke_verifier_tip') || 'Smoke verification LLM override for this task')}">vfy: ${escHtml(task.verification_backend || 'inherit')}${task.verification_model ? ' / ' + escHtml(task.verification_model) : ''}</span>`
+    : '';
   const spawnBadge = task.spawn_prd
     ? `<span class="prd-task-spawn-badge" title="this task spec is a child automaton spec; executor will Plan + Approve + Run">&#8627; spawn</span>`
     : '';
@@ -12399,7 +12463,7 @@ function renderTask(prd, story, task, editable) {
       ${statusGlyphSpan}
       <code class="prd-task-id">${escHtml(taskID)}</code>
       <strong class="prd-task-title">${escHtml(task.title || '')}</strong>
-      ${llmBadge}${projDirBadge}${spawnBadge}${childLink}${verdicts}${sessionLink}${(task.foreign_file_drift || []).length ? `<span class="prd-verdict-badge prd-verdict-warn" title="${escHtml(t('automata_task_foreign_file_drift') || 'Foreign file drift')}">&#9888; ${task.foreign_file_drift.length}</span>` : ''}
+      ${llmBadge}${taskKindBadge}${smokeVkBadge}${projDirBadge}${spawnBadge}${childLink}${verdicts}${sessionLink}${(task.foreign_file_drift || []).length ? `<span class="prd-verdict-badge prd-verdict-warn" title="${escHtml(t('automata_task_foreign_file_drift') || 'Foreign file drift')}">&#9888; ${task.foreign_file_drift.length}</span>` : ''}
       <span class="prd-task-header-spacer"></span>
       ${approveTaskBtn}${retryBtn}${requeueBtn}${cancelTaskBtn}${editIcons}
     </div>
@@ -12815,7 +12879,18 @@ function prdAction(id, action, method, body) {
     return;
   }
   apiFetch(url, opts).then(() => { showToast('PRD action ok', 'success', 1500); _refreshAutomataOrPRD(); })
-    .catch(err => showToast('Automaton action failed: ' + String(err), 'error', 3000));
+    .catch(err => {
+      const msg = String(err);
+      // 2026-10-17 — plan review gate (mode=block): the Approve endpoint
+      // rejects with a "plan review blocks approval" error. Surface that
+      // specifically (longer toast) so the operator reads the block
+      // reason instead of a generic action-failed line.
+      if (msg.includes('plan review blocks')) {
+        showToast((t('plan_review_approve_blocked_tip') || 'Plan review blocked this approval — ') + msg, 'error', 8000);
+      } else {
+        showToast('Automaton action failed: ' + msg, 'error', 3000);
+      }
+    });
 }
 window.prdAction = prdAction;
 
@@ -14319,6 +14394,14 @@ const GENERAL_CONFIG_FIELDS = [
     // block when unset). Min ratio 0..1 (server default 1.0).
     { key: 'autonomous.plan_coverage_check', label: 'Plan coverage check (off | warn | block, default block)', labelKey: 'settings_plan_coverage', type: 'select', options: ['off', 'warn', 'block'], default: 'block' },
     { key: 'autonomous.plan_coverage_min_ratio', label: 'Plan coverage min ratio (requirement coverage 0-1, default 1.0)', labelKey: 'settings_plan_coverage_min_ratio', type: 'number', placeholder: '1.0', min: 0.1, max: 1, step: 0.1, default: '1' },
+    // 2026-10-17 — plan review gate + smoke verification. All optional;
+    // empty backend = feature off. Backend/model pairs follow the same
+    // paired-model pattern as the guardrail fields above.
+    { key: 'autonomous.plan_review_backend', label: 'Plan review backend (optional)', labelKey: 'settings_plan_review_backend', type: 'llm_backend', pairedModelKey: 'autonomous.plan_review_model' },
+    { key: 'autonomous.plan_review_model', label: 'Plan review model', labelKey: 'settings_plan_review_model', type: 'llm_model', backendKey: 'autonomous.plan_review_backend' },
+    { key: 'autonomous.plan_review_mode', label: 'Plan review mode — block holds approval on a failing verdict', labelKey: 'settings_plan_review_mode', type: 'select', options: ['', 'off', 'warn', 'block'] },
+    { key: 'autonomous.smoke_verification_backend', label: 'Smoke verification backend (optional)', labelKey: 'settings_smoke_verification_backend', type: 'llm_backend', pairedModelKey: 'autonomous.smoke_verification_model' },
+    { key: 'autonomous.smoke_verification_model', label: 'Smoke verification model', labelKey: 'settings_smoke_verification_model', type: 'llm_model', backendKey: 'autonomous.smoke_verification_backend' },
   ]},
   // v5.26.16 — operator-reported: PRD-DAG orchestrator section
   // belongs above Plugin framework. Orchestrator is a workflow-level

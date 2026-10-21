@@ -968,6 +968,41 @@ autonomous:
   # need more than this; the old hard-coded limit was 10m and timed out slow
   # local models.
   verification_timeout_seconds: 1800
+  # --- Plan review before approval (off by default) ---
+  # LLM backend that reviews each PRD's plan (spec vs. decomposed stories/
+  # tasks) after decompose. Empty (default) = no review; the PRD goes to
+  # needs_review unchanged. Any configured LLM works (same rules as
+  # planning_backend). The reviewer gets a bounded projection of the plan
+  # (spec + story/task titles, specs, dependencies, kinds, verification
+  # scripts, each capped), not the whole repository.
+  plan_review_backend: ""
+  # Model for the plan reviewer. Empty (default) = the backend's own
+  # default model.
+  plan_review_model: ""
+  # Plan-review mode:
+  #   "" / off   (default) - no review; approval is never affected
+  #   warn        - review runs and its verdict is recorded on the PRD
+  #                 (visible in the PWA, REST, MCP) but never blocks approval
+  #   block       - a verdict of ok:false refuses POST .../approve until it
+  #                 is replaced (re-run the review until it passes, or
+  #                 re-decompose). A reviewer outage or unparseable verdict
+  #                 (reviewer_failed) is recorded but never blocks approval
+  #                 in any mode.
+  # Unknown values are a config error (a typo cannot silently disable a gate).
+  # Re-run a review any time: PWA re-run button, POST /api/autonomous/prds/{id}/plan-review,
+  # MCP autonomous_prd_plan_review, comm `autonomous plan-review <id>`,
+  # CLI `datawatch autonomous prd-plan-review <id>`.
+  plan_review_mode: ""
+  # LLM that VERIFIES the plan's own smoke / final-gate verification task —
+  # i.e. the judge for the plan's verification script, independent of the
+  # task's worker and of the plan reviewer. Decompose sets kind="smoke" on
+  # that task; the final-gate task (kind="final_gate") runs the script. Both
+  # accept an explicit per-task verifier (set-task-verification-llm) and the
+  # per-task value always wins; these keys are the default surface and never
+  # clobber an explicit choice (including a deliberate clear). Empty (default)
+  # = no split; verification resolves exactly as before.
+  smoke_verification_backend: ""
+  smoke_verification_model: ""
   # autonomous
   session_idle_timeout_seconds: 900   # bound on one worker/verifier session sitting in waiting_input/idle with no live child process; exceeded => infra failure 'session idle without completion', alert raised, auto_fix_retries budget handles the retry
   # Stall window for a running worker, in seconds. A worker counts as stalled
