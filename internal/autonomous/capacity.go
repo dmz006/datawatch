@@ -335,6 +335,62 @@ func (m *Manager) releaseCapacity(taskID string) {
 	}
 }
 
+// VerifyHolder is the capacity-holder name the verifier admits under while a
+// worker lease is handed to it, so one task holds exactly one slot from spawn
+// through verification (the worker lease "<taskID>" becomes
+// "verify:<taskID>").
+func VerifyHolder(taskID string) string { return "verify:" + taskID }
+
+// HandoffVerifyLease re-keys the task's worker lease (holder taskID) to the
+// verifier's "verify:<taskID>" lease so the task in verification holds exactly
+// one slot instead of two, with no release-and-re-wait window in which a
+// sibling task could steal the slot. It reports false — changing nothing —
+// when capacity is off, the task holds no worker lease, or the verifier's
+// backend/model resolves to a different pool set than the worker lease
+// covers; in that case the caller must fall back to releasing the worker
+// lease and admitting the verifier separately.
+func (m *Manager) HandoffVerifyLease(taskID, verifierBackend, verifierModel string) bool {
+	if taskID == "" || !m.capacityOn() {
+		return false
+	}
+	m.mu.Lock()
+	led, keysFn := m.capacity, m.capacityKeys
+	m.mu.Unlock()
+	workerLease := led.LeaseOf(taskID)
+	if workerLease == nil {
+		return false
+	}
+	verifyPools, _ := keysFn(verifierBackend, verifierModel)
+	if len(verifyPools) == 0 {
+		return false
+	}
+	if !samePoolSet(workerLease.Pools, verifyPools) {
+		return false
+	}
+	return led.Handoff(taskID, VerifyHolder(taskID))
+}
+
+// samePoolSet reports whether the two pool lists name the same set of pools
+// (order-insensitive; duplicates count).
+func samePoolSet(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	counts := make(map[string]int, len(a))
+	for _, p := range a {
+		counts[p]++
+	}
+	for _, p := range b {
+		counts[p]--
+	}
+	for _, n := range counts {
+		if n != 0 {
+			return false
+		}
+	}
+	return true
+}
+
 // IsCapacityError reports whether a spawn error means "no free session slot".
 func IsCapacityError(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "max sessions")

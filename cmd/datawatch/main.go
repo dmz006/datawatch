@@ -5203,7 +5203,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			var verifierTryAdmit func(backend, model string) (func(), bool)
 			if verifierCapacityTryAdmit != nil {
 				verifierTryAdmit = func(backend, model string) (func(), bool) {
-					return verifierCapacityTryAdmit(ctx, backend, model, "verify:"+task.ID, prd.ID)
+					return verifierCapacityTryAdmit(ctx, backend, model, task.ID, prd.ID)
 				}
 			}
 			// BL-stale-config tests (live_autonomous_config_test.go) pin
@@ -5243,7 +5243,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			defer func() { vsel.stamp(&vres) }()
 			if release == nil {
 				if verifierCapacityAdmit != nil {
-					r, aerr := verifierCapacityAdmit(ctx, vbackend, verifyModel, "verify:"+task.ID, prd.ID)
+					r, aerr := verifierCapacityAdmit(ctx, vbackend, verifyModel, task.ID, prd.ID)
 					if aerr != nil {
 						// BL410 Phase 0 — resource contention/admission
 						// failure, not a content judgment.
