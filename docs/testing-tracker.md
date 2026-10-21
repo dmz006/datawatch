@@ -1660,3 +1660,11 @@ This ran on go1.27.2 linux/amd64: 26 tests, all PASS (21 in `internal/autonomous
 Parity surfaces not yet exposed:
 
 - **PWA, Android and iPhone** do not display `blocked_reason` yet. The reason: this change is server-side only, and client display is a follow-up. Clients also do not yet show the `guardrail_verdict` decision kind or the `judge_session_id` and `judge_output_path` fields.
+
+## 2026-10-20 One-shot startup dialog dismissal (claude-code trust prompt) — live validation
+
+Plan + failure log: `docs/plans/2026-10-20-oneshot-startup-dialog-dismiss.md` (and `-failures.log`).
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| `dismissClaudeStartupDialog` in `internal/session/manager.go` detects the trust dialog in a capture and sends the accept via `m.tmux` | **Yes** (`startup_dialog_dismiss_test.go`; full `internal/session/` suite 477 tests, `go test ./internal/session/...` rc=0 on worktree build) | **Partial** | Live daemon (worktree `./datawatch` v9.5.31, sandbox on 28080/28443, untrusted project dir, `POST /api/sessions/start` with `one_shot:true`, `backend:claude-code`) | Log proves detection+send (`attempt 1/5 sent via m.tmux`); first send landed while dialog was still rendering, code prematurely latched "dismissed confirmed"; session stuck in `waiting_input` ~6m41s until a `attempt 2/5` re-send (+ operator Down/Enter at same instant) accepted it. After accept: task ran, `hello.txt` created, `DATAWATCH_COMPLETE:` emitted. Follow-ups in plan doc: persist-absent-before-latch, re-arm on re-appearance, wait for settled dialog. |

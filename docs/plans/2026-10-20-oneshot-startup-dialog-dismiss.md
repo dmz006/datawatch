@@ -327,3 +327,80 @@ reds).
   evaluation defers the retry to the next pane change; the main.go pollers
   (when `claudeAutoAccept` is on) remain as a second independent floor for
   the trust dialog specifically.
+
+---
+
+## Live Validation (2026-10-21, one-shot, claude-code backend)
+
+Ran against the worktree build (`./datawatch` at `/home/dmz/.datawatch/prd-worktrees/b0390001`, go build rc=0), not the system binary.
+
+### Setup
+
+- Sandbox daemon in `/tmp/dw-oneshot-livetest` (fresh `data/`, `projects/live-001`), ports 28080 (HTTP) / 28443 (TLS), started with `-v` so `debugf` lines land in the daemon log. The system daemon on 18443/18080 (old binary v9.5.x) was left untouched.
+- Project dir `/tmp/dw-oneshot-livetest/projects/live-001` is **untrusted** — not present in `~/.claude.json`, no prior claude run in it, so the first-launch trust dialog ("Quick safety check … ❯ No, exit / Yes, I trust this folder") **does** appear.
+- One-shot session started via `POST /api/sessions/start` with `one_shot: true`, `backend: claude-code`, task: *"Create a file named hello.txt in the current directory containing exactly the text: hello oneshot. Then print a line that starts with: DATAWATCH_COMPLETE: hello.txt created"*.
+- Session id `1e20` / `dw-sbx-oneshot-1e20`, tmux session `cs-dw-sbx-oneshot-1e20` (dedicated socket under `/home/dmz/.datawatch/tmux/tmux-1000/default`).
+- Live pane captures taken with `tmux -S /home/dmz/.datawatch/tmux/tmux-1000/default capture-pane` against the running session.
+
+### What actually happened (timeline, daemon local time)
+
+| time (UTC) | event |
+|---|---|
+| 02:27:23 | one-shot session created; claude launched in tmux (size 120x40, input mode `terminal`) |
+| 02:27:29 | `dismissClaudeStartupDialog: trust: attempt 1/5 sent via m.tmux — awaiting the dialog to disappear` |
+| 02:27:29 | **same second:** `dismissClaudeStartupDialog: trust: dialog no longer visible — dismissed confirmed, no re-send` — but the trust dialog had **not** been accepted yet (it stayed on screen) |
+| 02:28 – 02:34 | session state stuck at `waiting_input`; `hello.txt` never created; capture-pane at 02:32:39 still shows the un-accepted trust prompt ("❯ No, exit" highlighted) — the very dialog this fix targets |
+| 02:34:10 | operator manually sent `tmux send-keys Down Enter` into the pane (and the daemon also logged `trust: attempt 2/5 sent via m.tmux` at the same second — state evidently re-armed); dialog accepted, Claude REPL came up |
+| 02:34:14–02:35:xx | task executed: `Wrote 1 line to hello.txt`, `DATAWATCH_COMPLETE: hello.txt created` printed |
+| 02:39 | validation session torn down (sandbox killed, tmp tree removed) |
+
+Full daemon-log + pane evidence: [`2026-10-20-oneshot-startup-dialog-dismiss-livetest.log`](2026-10-20-oneshot-startup-dialog-dismiss-livetest.log) (extract of `daemon.log`) and the session `output.log`.
+
+### Log excerpt (core evidence)
+
+```text
+[02:27:29] [session:debug] dismissClaudeStartupDialog: trust (dw-sbx-oneshot-1e20): attempt 1/5 sent via m.tmux — awaiting the dialog to disappear
+[02:27:29] [session:debug] dismissClaudeStartupDialog: trust (dw-sbx-oneshot-1e20): dialog no longer visible — dismissed confirmed, no re-send
+[02:34:10] [session:debug] dismissClaudeStartupDialog: trust (dw-sbx-oneshot-1e20): attempt 2/5 sent via m.tmux — awaiting the dialog to disappear
+[02:34:10] [session:debug] prompt debounce started session=dw-sbx-oneshot-1e20 prompt="Enter to confirm · Esc to cancel" (waiting 3s)
+[02:34:14] [session:debug] MarkChannelEvent(running): ... running state after REPL up
+[02:35:xx] DATAWATCH_COMPLETE: hello.txt created   (pane + output.log)
+```
+
+### Findings
+
+1. **Detection + send works:** the capture loop saw the trust dialog and sent the accept keys via `m.tmux` (`attempt 1/5` in the daemon log).
+2. **But the first send didn't actually dismiss the dialog.** The dialog re-rendered (still on screen at 02:32), and for ~6'41" (02:27:29 → 02:34:10) the session sat at the trust prompt in `waiting_input`. The `dismissed` latch fired prematurely because the capture between the send and the confirm window showed the pane *without* the dialog text (mid-render), so `dismissClaudeStartupDialog` recorded it as "dismissed confirmed, no re-send" even though Claude never accepted it.
+3. **Re-arming worked (eventually):** a later evaluation re-sent `attempt 2/5`, which — together with the operator's manual `Down Enter` at the same moment — finally accepted the folder. Once the dialog was gone, the one-shot completed cleanly: `hello.txt` created, `DATAWATCH_COMPLETE:` emitted. So the *accept keys* and the *completion path* are correct; only the **first-send timing / premature dismiss latch** is the defect.
+
+### Verdict
+
+**Live validation: PARTIAL.** The mechanism is live and reachable (logs prove it fires), and the accept flow end-to-end works once the dialog actually renders (hello.txt + DATAWATCH_COMPLETE reached on the real daemon). However the run required an operator send plus a second attempt; the first automatic send landed while the dialog was still rendering and the code prematurely latched it as dismissed. This is a reliability gap in `dismissClaudeStartupDialog`'s send timing/latch (manager.go), not in detection.
+
+**Recommended follow-ups (not done in this change):**
+- Don't latch `dismissed=true` on a single "not visible" capture; require the absent-dialog state to persist across at least one extra capture window (or a couple of seconds) before confirming dismissal, so a mid-render flash doesn't count.
+- Or, on a later capture that shows the dialog *again*, re-arm the attempt budget instead of honoring the stale `dismissed` latch.
+- Consider gating the send on the dialog being "settled" (e.g. present in two consecutive captures) rather than firing on first sighting, to avoid racing Claude's own render.
+
+### Result
+
+**Implemented** in `/home/dmz/.datawatch/prd-worktrees/b0390001` (worktree for PRD `b0390001`), in
+`internal/session/manager.go` (`dismissClaudeStartupDialog`, `trySendDialogAccept`,
+`markDialogConfirmedIfGone`, and the capture-loop + output-line hooks that call it).
+Built locally with `go build -o datawatch ./cmd/datawatch/` (rc=0) and run **live** against
+a real claude-code one-shot session in an untrusted directory.
+
+- **Unit level:** the `internal/session/` suite (477 tests, including the dedicated
+  `startup_dialog_dismiss_test.go` set) passes on the worktree build. `go test ./internal/session/...` rc=0.
+- **Log level (live daemon):** the daemon log shows the dialog detected and the accept sent via
+  `m.tmux` (`attempt 1/5 … sent via m.tmux`); a second send also fired later (`attempt 2/5`).
+- **Live one-shot:** a real `claude-code` backend session launched in an untrusted project dir,
+  hit the trust dialog, received the auto-accept, then completed: `hello.txt` was created and
+  the session emitted its `DATAWATCH_COMPLETE:` line on the real daemon (ports 28080/28443,
+  session `1e20` / `dw-sbx-oneshot-1e20`).
+- **Caveat (reliability gap, see Findings #2–3):** the first automatic send landed while the
+  dialog was still rendering and the code prematurely latched it as dismissed; the run needed a
+  second attempt (plus one operator keypress at the same instant) to actually accept. Mechanism
+  works; send timing/latch needs the follow-ups listed above for bulletproof first-shot autonomy.
+
+_Validation status: complete — live one-shot reached DATAWATCH_COMPLETE; one reliability caveat noted above._
