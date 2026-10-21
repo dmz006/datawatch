@@ -196,12 +196,40 @@ with a live worker session. On boot, the resumed run looks at each
   completion marker exists. The old behavior was to reset unconditionally
   and kill the worker; that is no longer the case.
 
+This applies to every worker backend (`claude-code`, `opencode` and
+`pi-prompt`). The Automaton itself also stays `running` across the restart:
+boot-resume recreates its executor under the same lock a manual run uses, so
+there is no gap in which another run request could start a second executor
+for the same Automaton.
+
 As operator this needs no action. If a restart happens mid-run, watch the
 Automaton with `prd_get`: an adopted task keeps its `session_id` and
 surfaces an `adopted_session` marker, and the session list shows the same
 worker session continuing to run. A reset task is the one to question —
 check the session's log for why it died (crash, OOM, operator kill) before
 resetting it again.
+
+### Checking this against a sandbox daemon (opt-in live test)
+
+The deterministic tests run with `go test ./internal/autonomous/`. The live
+check starts a long worker, restarts the daemon mid-task, and asserts the
+session id is unchanged, the worker was not killed, no second session was
+spawned for the task, and the task reaches verification. It is skipped unless
+`DW_LIVE_RESTART_TEST=1`, so normal test runs never touch a daemon. Run it
+only against a sandbox daemon, never production, from the daemon's host with
+the same `TMUX_TMPDIR` as that daemon:
+
+```sh
+env -u TMUX -u TMUX_TMPDIR \
+DW_LIVE_RESTART_TEST=1 DW_BASE=https://127.0.0.1:18443 DW_BASE_TOKEN=... \
+  DW_LIVE_RESTART_CMD='<command that restarts the sandbox daemon>' \
+  go test -count=1 -timeout 25m -run TestDaemonRestartAdoptsLiveWorkerLive -v ./internal/session/
+```
+
+Leave `DW_LIVE_RESTART_CMD` unset to restart through the operator path
+(`systemctl --user restart datawatch`, falling back to `datawatch restart`);
+only do that when that unit is the daemon behind `DW_BASE`. Optional:
+`DW_LIVE_RESTART_PROJECT_DIR` sets the probe's project directory.
 
 ## Common pitfalls
 
