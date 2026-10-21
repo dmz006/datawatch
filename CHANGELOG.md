@@ -9,6 +9,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 - **Old failed Automata are no longer re-launched at every daemon restart.** A failed Automaton whose failed tasks were all killed by the restart now goes through the same boot-resume check as a running one: a fresh one is recovered, a stale one (older than `autonomous.resume_max_age_seconds`, or with a missing project directory) is parked as blocked with an alert and a boot-resume report entry, and a cancelled one is left alone.
 
+## v9.5.57 — PWA terminal no longer stalls while a session is live
+
+### Fixed
+- **PWA terminal no longer stalls while a session is live.** The session terminal could stop updating even though the daemon kept sending screen frames: the 33 ms render throttle dropped any frame that arrived inside the window (and the daemon only resends a pane when it changes), and frames were silently discarded while the terminal was scrolled up. The throttle now keeps the newest frame and draws it from a 40 ms trailing timer, so the last change is never lost. While scrolled up the newest frame is held and a **Jump to live** button appears; it is also triggered by typing, sending input, or scrolling back to the bottom, and draws the held frame. If an open session view receives no screen frame for 30 s, the 20 s WebSocket watchdog tick re-sends `subscribe` to re-sync. Covered by `internal/server/web/app-pane-capture.test.js` and the new `TS-798` PWA story (`feature:terminal-live-update`), which types commands into a live shell session and asserts the output appears within 3 s before and after a forced WebSocket reconnect. See `docs/operations.md` (Terminal Performance) and `docs/plans/2026-10-20-pwa-terminal-live-update-findings.md`.
+
 ## v9.5.56 — A daemon restart keeps a task whose worker is still running
 
 ### Changed
