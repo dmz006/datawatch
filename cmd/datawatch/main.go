@@ -4910,6 +4910,16 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				if stallErr != nil {
 					return autonomouspkg.VerificationResult{}, stallErr
 				}
+				// A claude-code worker is handed its task after launch (channel
+				// delivery). If it ended without the delivery ever being
+				// recorded, nothing ran: classify it as a launch failure and
+				// retry rather than verifying an untouched tree.
+				if ls, ok := mgr.GetSession(task.SessionID); ok && ls.OneShot && ls.AgentID == "" &&
+					ls.BackendFamily == "claude-code" && !mgr.TaskDelivered(ls.FullID) {
+					log.Printf("[autonomous] launch failure: session %s task %s/%s ended (%s) with no task delivery recorded; retrying",
+						ls.FullID, task.PRDID, task.ID, ls.State)
+					return autonomouspkg.VerificationResult{}, autonomouspkg.LaunchFailureError(ls.FullID, ls.BackendFamily, string(ls.State))
+				}
 			}
 			// BL366 — git-diff grounding: capture the worker's actual change.
 			// v8.25.9: when PreTaskSHA is set, an empty diff is a hard failure —

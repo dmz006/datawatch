@@ -1966,3 +1966,13 @@ Changed behavior: after each direct-mode task, files the task's own worker commi
 | CLI `datawatch config set/get autonomous.undeclared_edit_mode` | **Yes** (config default `warn` only: `TestDefaultConfig_UndeclaredEditModeWarn`; the REST round-trip is covered in the row above) | **No** | Go unit test; CLI goes through the generic `config set` path | No CLI-specific test |
 | Comm `configure autonomous.undeclared_edit_mode=<v>` | **No** (key is listed in the router help text only; no dedicated test) | **No** | Not tested | Needs a Go test and a sandbox comm session |
 | PWA Settings select (off/warn/block) and the per-task Undeclared edits badge/list, locales | **No** (no JS test for these) | **No** | Not tested | Needs a sandbox PWA session |
+
+## One-shot task delivery and launch-failure retry — unreleased
+
+Changed behavior: claiming a one-shot session for task delivery arms task-echo suppression immediately, placeholder completion text is rejected by a shared guard, and a session that ends with no task delivery recorded is retried as a launch failure through `auto_fix_retries`.
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| One-shot task delivery: startup disclaimer then ready sends the task once; typed task echo does not complete; overlapping launches each deliver once; exit after disclaimer before delivery is not complete | **Yes** (`internal/session/oneshot_task_delivery_test.go`: `TestOneShotTaskDelivery_DisclaimerThenReadySendsTaskOnce`, `_TypedTaskEchoDoesNotComplete`, `_OverlappingLaunchesEachDeliverOnce`, `_ExitAfterDisclaimerBeforeDelivery`) | **No** | Go unit tests with a fake tmux; no live daemon | Live row stays No until a sandbox claude-code Automaton task is observed delivering its task after the startup dialog |
+| Completion placeholder guard and claim-time echo guard: `TestIsCompletionPlaceholder`, `TestClaimTaskDeliveryArmsEchoGuardAndReleaseClears` | **Yes** (`internal/session/oneshot_task_delivery_test.go`) | **No** | Go unit tests | Not run against a live session |
+| Launch-failure retry: error wraps `ErrWorkerStalled`; retries then recovers; bounded and fails as infra | **Yes** (`internal/autonomous/launch_failure_test.go`: `TestLaunchFailureError_WrapsWorkerStalled`, `TestLaunchFailureRetry_RetriesThenRecovers`, `TestLaunchFailureRetry_BoundedAndFailsInfra`) | **No** | Go unit tests with a real `Manager`/`Store` and a stub worker | Needs a sandbox Automaton whose worker exits before delivery to confirm the retry on a live daemon |

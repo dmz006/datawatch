@@ -2562,7 +2562,7 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 						// The LLM's real completion never contains the literal angle-bracket
 						// placeholder text; this guards against the task-box remaining visible
 						// on screen indefinitely while the LLM processes.
-						if strings.Contains(l, "<one-sentence summary") {
+						if isCompletionPlaceholder(l) {
 							m.debugf("StartScreenCapture: skipping placeholder line=%q session=%s", l, sess.FullID)
 							continue
 						}
@@ -2606,7 +2606,7 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 									continue
 								}
 								// Same placeholder guard as the visible scan above.
-								if strings.Contains(l, "<one-sentence summary") {
+								if isCompletionPlaceholder(l) {
 									continue
 								}
 								for _, pat := range m.effectiveCompletionPatterns() {
@@ -3065,8 +3065,24 @@ func (m *Manager) ClaimTaskDelivery(fullID string) bool {
 	}
 	now := time.Now()
 	sess.TaskDeliveredAt = &now
+	// Arm the task-echo suppression from the moment the claim is won, so the
+	// echo of the task while it is being typed cannot read as a completion.
+	m.taskDeliveredAt[fullID] = now
 	_ = m.store.Save(sess)
 	return true
+}
+
+// isCompletionPlaceholder reports whether l is the instruction placeholder
+// ("DATAWATCH_COMPLETE: <one-sentence summary ...>" or "<one-line plain-text
+// summary ...>") rather than a real model completion: it contains the marker
+// followed by an angle-bracket placeholder mentioning "summary".
+func isCompletionPlaceholder(l string) bool {
+	i := strings.Index(l, "<")
+	if i < 0 {
+		return false
+	}
+	rest := l[i:]
+	return strings.Contains(rest, "summary") && strings.Contains(l, "DATAWATCH_COMPLETE")
 }
 
 // ReleaseTaskDelivery undoes a ClaimTaskDelivery whose send failed, so a
@@ -3074,6 +3090,7 @@ func (m *Manager) ClaimTaskDelivery(fullID string) bool {
 func (m *Manager) ReleaseTaskDelivery(fullID string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	delete(m.taskDeliveredAt, fullID)
 	if sess, ok := m.store.Get(fullID); ok && sess.TaskDeliveredAt != nil {
 		sess.TaskDeliveredAt = nil
 		_ = m.store.Save(sess)
@@ -6556,6 +6573,9 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 		completionLine := strings.TrimSpace(line)
 		for _, pat := range m.effectiveCompletionPatterns() {
 			if matchesCompletionPattern(completionLine, pat) {
+				if isCompletionPlaceholder(completionLine) {
+					continue
+				}
 				// Post-restart grace window: when a session is restarted with
 				// --resume, the TUI re-renders prior conversation history to the
 				// terminal. If that history contained DATAWATCH_COMPLETE: (from
