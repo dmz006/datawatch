@@ -158,12 +158,17 @@ func TestTmuxEnvScrub_KillServerSparesSecondServer(t *testing.T) {
 	if err := a.SendKeys("w", "TMUX_TMPDIR="+third+" tmux kill-server; echo $? > "+marker); err != nil {
 		t.Fatal(err)
 	}
+	// The marker is written after kill-server returns, so by now any kill
+	// that was going to reach A has already been delivered. Absence of an
+	// event cannot be polled for, so additionally observe A staying alive
+	// over a short window (a late kill would flip alive() to false).
 	waitForFile(t, marker)
-	time.Sleep(200 * time.Millisecond)
-
-	if !a.alive() {
-		t.Fatal("server A was killed by a scrubbed pane")
+	for end := time.Now().Add(200 * time.Millisecond); time.Now().Before(end); time.Sleep(20 * time.Millisecond) {
+		if !a.alive() {
+			t.Fatal("server A was killed by a scrubbed pane")
+		}
 	}
+
 	if !b.alive() {
 		t.Fatal("server B was killed by a scrubbed pane on server A")
 	}
