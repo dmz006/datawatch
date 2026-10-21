@@ -1259,3 +1259,10 @@ Response:
   - `cmd/datawatch/main.go`, the worker wait loop, for task sessions;
   - `cmd/datawatch/session_judgment.go`, the verifier one-shot session.
 - **Failure path:** a tripped bound is reported as the infra failure `session idle without completion`, raises an alert, and is retried through the existing `auto_fix_retries` budget.
+
+### Post-exit silence check (one-shot pi runs that exits without verdict)
+
+- **Scope:** applies only to the `pi-prompt` backend family. One-shot `pi --print` runs write nothing to the session log until they finish, so the existing log-mtime stall check deliberately excludes pi-prompt (`staleWorkerAppliesTo`); a pi process that **exits without** writing a completion or a verdict was previously invisible, especially when the pane state flickers and never settles into `waiting_input`/`idle`.
+- **How it works:** `ExitSilenceTracker` (`internal/autonomous/exit_silence.go`) is state-independent — it only counts silence after the runner process has stopped. The clock is advanced by a live runner child or log growth (non-zero log mtime), so a pane that has not yet launched pi, or a run still emitting output, is never flagged. `exitSilenceTick` (`cmd/datawatch/exit_silence_wait.go`) gates the tracker to the pi-prompt family and returns control to the existing detectors for every other backend.
+- **Config:** reuses `autonomous.session_idle_timeout_seconds` (same default, `NormalizeSessionIdleTimeoutSeconds`) — no new config field.
+- **Failure path:** the tripped bound stops the session, records the reason "pi print run exited without a completion or verdict" on the task, and re-enters the normal retry flow.

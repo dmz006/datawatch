@@ -4641,6 +4641,18 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					staleLogPath = s.LogFile
 					family = s.BackendFamily
 				}
+				// pi-prompt exit-silence detector. One-shot `pi --print` runs write
+				// nothing to the log until they finish, so the log-mtime stall check
+				// is (correctly) disabled for this family — see staleWorkerAppliesTo.
+				// That leaves a silently exited pi with no state-independent
+				// safety net: the tracker below measures silence from now with the
+				// same idleLimit budget and only fires after the runner process is
+				// gone and the log has not grown. Nil for other families, so
+				// exitSilenceTick is a no-op for them.
+				var exitSilenceTracker *autonomouspkg.ExitSilenceTracker
+				if family == "pi-prompt" {
+					exitSilenceTracker = autonomouspkg.NewExitSilenceTracker(time.Now(), idleLimit)
+				}
 			waitLoop:
 				for {
 					select {
@@ -4728,6 +4740,33 @@ func runStart(cmd *cobra.Command, _ []string) error {
 									stallErr = autonomouspkg.SessionIdleError(idleObs)
 									break waitLoop
 								}
+							}
+						}
+						// pi-prompt exit-silence detector: a `pi --print` run that
+						// exits without a completion or verdict leaves no log growth
+						// and may never reach a terminal state, so silence after the
+						// runner stops is the stall signal. Deliberately
+						// state-independent (unlike the idle detector above): it must
+						// fire even if the pane is parked anywhere other than
+						// waiting_input. Only the pi-prompt family runs it (nil tracker
+						// otherwise), and mgr.Kill below is the only kill path — no
+						// tmux kill commands.
+						if exitSilenceTracker != nil {
+							if stalled, reason := exitSilenceTick(exitSilenceTracker, family, time.Now(),
+								func() bool { return hasLiveChildProcess(s.TmuxSession) },
+								func() time.Time {
+									if fst, serr := os.Stat(staleLogPath); serr == nil {
+										return fst.ModTime()
+									}
+									return time.Time{}
+								}); stalled {
+								log.Printf("[autonomous] exit-silence detector fired for session %s task %s/%s: %s; killing for retry",
+									task.SessionID, task.PRDID, task.ID, reason)
+								_ = mgr.Kill(task.SessionID)
+								alertspkg.EmitSystem(alertspkg.LevelError, "Task session exited silently",
+									fmt.Sprintf("prd=%s task=%s: %s", prd.ID, task.Title, reason))
+								stallErr = autonomouspkg.ExitSilenceError(reason)
+								break waitLoop
 							}
 						}
 						// Every ~30s scan scrollback for SSE stall patterns that
