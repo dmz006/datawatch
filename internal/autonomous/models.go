@@ -1085,6 +1085,27 @@ type LoopStatus struct {
 	// boot-resume scan at the end. Empty when boot-resume has never
 	// decided anything for a PRDRunning PRD. See BootResumeEntry.
 	BootResume []BootResumeEntry `json:"boot_resume,omitempty"`
+
+	// Automations summarises each non-terminal Automation (draft, active,
+	// paused or blocked): where its cursor is and how long it has sat idle.
+	Automations []AutomationStatusSummary `json:"automations,omitempty"`
+}
+
+// AutomationStatusSummary is one Automation's row in LoopStatus. SpentUSD
+// and CeilingDisplay stay zero/empty until budgets are tracked.
+type AutomationStatusSummary struct {
+	ID              string     `json:"id"`
+	Name            string     `json:"name"`
+	Status          string     `json:"status"`
+	CurrentMemberID string     `json:"current_member_id,omitempty"`
+	CurrentPRDID    string     `json:"current_prd_id,omitempty"`
+	CurrentPRDTitle string     `json:"current_prd_title,omitempty"`
+	PendingMembers  int        `json:"pending_members"`
+	IdleSince       *time.Time `json:"idle_since,omitempty"`
+	IdleSeconds     int64      `json:"idle_seconds,omitempty"`
+	BlockedReason   string     `json:"blocked_reason,omitempty"`
+	SpentUSD        float64    `json:"spent_usd,omitempty"`
+	CeilingDisplay  string     `json:"ceiling_display,omitempty"`
 }
 
 // CIWatchResult is an automaton's own record of whether the CI runs for

@@ -5746,6 +5746,9 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			// rather than null. The field itself has no omitempty for the
 			// same reason (see config.AutonomousNotifyConfig).
 			"notify": defaultEventsNotifySurface(s.cfg.Autonomous.Notify),
+			"automation": map[string]interface{}{
+				"idle_alert_minutes": s.cfg.Autonomous.Automation.IdleAlertMinutes,
+			},
 			"scan": map[string]interface{}{
 				"enabled":              s.cfg.Autonomous.Scan.Enabled,
 				"sast_enabled":         s.cfg.Autonomous.Scan.SASTEnabled,
@@ -7154,6 +7157,11 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// non-numeric values loudly before applyConfigPatch runs.
 			if ratio, err := configPatchFloat(v); err == nil {
 				cfg.Autonomous.PlanCoverageMinRatio = config.NormalizePlanCoverageRatio(ratio)
+			}
+		case "autonomous.automation.idle_alert_minutes":
+			// 0 = off; negative values are skipped, not stored.
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Autonomous.Automation.IdleAlertMinutes = n
 			}
 		case "autonomous.notify.default_events":
 			// Default event kinds the built-in lifecycle sinks subscribe to.

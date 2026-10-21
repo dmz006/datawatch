@@ -347,6 +347,17 @@ type Config struct {
 	// consumes these, this task only defines the fields).
 	SmokeVerificationBackend string `json:"smoke_verification_backend,omitempty"`
 	SmokeVerificationModel   string `json:"smoke_verification_model,omitempty"`
+
+	// Automation holds the autonomous.automation.* knobs.
+	Automation AutomationConfig `json:"automation"`
+}
+
+// AutomationConfig carries the Automation coordination knobs
+// (autonomous.automation.*).
+type AutomationConfig struct {
+	// IdleAlertMinutes: alert once when an active Automation stays idle
+	// this long. 0 = off.
+	IdleAlertMinutes int `json:"idle_alert_minutes"`
 }
 
 // DefaultConfig returns sane defaults — autonomous OFF until operator opts in.
@@ -3828,6 +3839,9 @@ func indexOf(s, sub string) int {
 // /api/autonomous/status get visible signal for the recursion + per-
 // task/story guardrail features.
 func (m *Manager) Status() LoopStatus {
+	// Built before m.mu is taken: the summaries read the Automation store
+	// and the PRD store, and neither may be entered while holding m.mu.
+	automations := m.automationStatusSummaries(time.Now())
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	st := m.status
@@ -3896,6 +3910,7 @@ func (m *Manager) Status() LoopStatus {
 		st.VerdictCounts = verdictCounts
 	}
 	st.Warnings = PairingWarnings(m.cfg, m.pairingDecomposeRefs(m.cfg))
+	st.Automations = automations
 	return st
 }
 

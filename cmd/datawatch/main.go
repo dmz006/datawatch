@@ -4167,6 +4167,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			WorktreeDir:      acfgIn.WorktreeDir,
 			// BL407 Phase 5 — daemon-wide default-AutoPR config bridge.
 			DefaultAutoPR: acfgIn.DefaultAutoPR,
+			// Automation idle-alert threshold (autonomous.automation.*).
+			Automation: autonomouspkg.AutomationConfig{IdleAlertMinutes: acfgIn.Automation.IdleAlertMinutes},
 		}
 		// BL191 Q4 defaults — preserve the autonomouspkg defaults when
 		// the operator hasn't explicitly configured these.

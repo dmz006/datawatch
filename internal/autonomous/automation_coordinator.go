@@ -53,6 +53,14 @@ type Coordinator struct {
 	deferred map[string]struct{} // failed member PRDs seen before boot recovery finished
 	starting map[string]int      // member PRDs between the cursor write and the end of the start call
 	ready    atomic.Bool
+
+	// Idle-alert ticker (see automation_idle.go). now and idleTick are
+	// injectable; alerted maps an Automation to the IdleSince of the
+	// episode already alerted.
+	now      func() time.Time
+	idleTick time.Duration
+	idleStop chan struct{}
+	alerted  map[string]time.Time
 }
 
 // NewCoordinator builds a coordinator over m that starts members through
@@ -62,7 +70,7 @@ func NewCoordinator(m *Manager, starter AutomationStarter) *Coordinator {
 	if m == nil || starter == nil {
 		return nil
 	}
-	return &Coordinator{m: m, starter: starter, deferred: map[string]struct{}{}, starting: map[string]int{}}
+	return &Coordinator{m: m, starter: starter, deferred: map[string]struct{}{}, starting: map[string]int{}, now: time.Now, idleTick: defaultIdleTick, alerted: map[string]time.Time{}}
 }
 
 // coordinatorKinds is the set of PRD kinds the coordinator listens to: the
@@ -87,6 +95,8 @@ func (c *Coordinator) Start() {
 		return
 	}
 	c.cancel = c.m.Subscribe(LifecycleFilter{Level: LevelPRD, Kinds: coordinatorKinds()}, c.onMemberTerminal)
+	c.idleStop = make(chan struct{})
+	go c.idleLoop(c.idleStop, c.idleTick)
 	c.mu.Unlock()
 
 	c.m.mu.Lock()
@@ -102,6 +112,10 @@ func (c *Coordinator) Stop() {
 	c.mu.Lock()
 	cancel := c.cancel
 	c.cancel = nil
+	if c.idleStop != nil {
+		close(c.idleStop)
+		c.idleStop = nil
+	}
 	c.mu.Unlock()
 	if cancel != nil {
 		cancel()
