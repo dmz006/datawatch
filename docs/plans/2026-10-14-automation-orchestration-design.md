@@ -1301,7 +1301,15 @@ label or tag, a date range, or "everything since date X")**
    not counted.
 2. **Kind.** An explicit `kind` field on the PRD (feature, bug, other), set at create time and
    editable. The keyword heuristic in the script is only the migration default for old PRDs.
-3. **Time, measured correctly.**
+3. **Two clocks, kept apart (operator, 2026-10-21).**
+   - **Lead time (state tracking):** created, approved, first task start, last task complete, merged
+     or delivered. Per-stage durations (approval wait, queue wait, run time, merge wait) are shown for
+     every PRD and as medians. This is useful as a state to track from created or approved to
+     delivery, and it is where waiting and hand-offs show up.
+   - **Queue time (the running queue):** only the start and stop of each task counts. Time to
+     completion is estimated from task service time and real, observed completion rates, not from lead
+     time. Lead time never feeds the completion estimate; waits are reported as their own stage.
+   Details of the second clock:
    - Task time: `started_at` to `completed_at`. Per-PRD work is the sum of its tasks.
    - PRD time: first task start to last task completion. **Not** `approved_at` to `updated_at`:
      that includes weeks of waiting and every later edit, cancel or registry cleanup, and

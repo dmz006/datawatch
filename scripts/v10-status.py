@@ -282,6 +282,31 @@ def main():
         h_per_task or 0, remaining_tasks, "-" if work_left_h is None else "%.0f h" % work_left_h,
         worker_h_per_day, utilization * 100, LANES,
         "-" if eta_lane_days is None else "%.1f days" % eta_lane_days))
+    # Lead-time stages (tracking only, not used for the estimate): created ->
+    # approved -> first task start -> last task complete. The estimate uses
+    # task start/stop (service time) and real completion rates, not these waits.
+    def med(xs):
+        xs = sorted(xs)
+        return xs[len(xs) // 2] if xs else None
+    appr_wait, q_wait, run_t, lead = [], [], [], []
+    for p in done_ps:
+        c, a = parse_ts(p.get("created_at")), parse_ts(p.get("approved_at"))
+        sts = [parse_ts(t.get("started_at")) for sy in p.get("stories", []) for t in sy.get("tasks", [])]
+        sts = [x for x in sts if x]
+        ld = last_done(p)
+        if not (c and sts and ld):
+            continue
+        f = min(sts)
+        if a and a >= c:
+            appr_wait.append((a - c).total_seconds() / 3600.0)
+        if a and f >= a:
+            q_wait.append((f - a).total_seconds() / 3600.0)
+        if ld >= f:
+            run_t.append((ld - f).total_seconds() / 3600.0)
+        if ld >= c:
+            lead.append((ld - c).total_seconds() / 3600.0)
+    print("LEAD  median created->approved %s, approved->first task %s, running %s, created->last task done %s  (tracked state; the ETA above uses task start/stop and real rates)" % (
+        fmt_h(med(appr_wait)), fmt_h(med(q_wait)), fmt_h(med(run_t)), fmt_h(med(lead))))
     # Task-based estimate: tasks completed per day over the whole period and
     # over the last 24 hours, against the estimated tasks left.
     cutoff = datetime.fromtimestamp(now.timestamp() - 86400, timezone.utc)
