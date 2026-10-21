@@ -5,6 +5,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.41 — Pin the gh builder Go toolchain above the CVE fix, with a pin check
+
+
 ## v9.5.40 — Git is now opt-in for sessions
 
 ### Changed
