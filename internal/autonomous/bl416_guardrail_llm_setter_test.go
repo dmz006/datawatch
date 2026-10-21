@@ -18,7 +18,14 @@ func strp(s string) *string { return &s }
 
 func newBL416Manager(t *testing.T) (*Manager, *PRD) {
 	t.Helper()
-	m, err := NewManager(t.TempDir(), DefaultConfig(), nil)
+	cfg := DefaultConfig()
+	// v9.10.18 — the setters refuse a (prd, task) guardrail pair that
+	// resolves to NO model anywhere (ErrNoGuardrailModel), so tests
+	// that clear a pin back to the globals need a tier-4 global
+	// verification model to fall back to — exactly what an operator's
+	// real config carries.
+	cfg.VerificationModel = "ollama/qwen3:8b"
+	m, err := NewManager(t.TempDir(), cfg, nil)
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}

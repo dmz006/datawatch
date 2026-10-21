@@ -262,9 +262,10 @@ func TestSelectVerifierLLM_GlobalSessionModelPiFamily(t *testing.T) {
 		},
 		{
 			// (c) empty verification_model: the named backend's own default
-			// (bogusNamedModel) must not leak in. Model stays empty so the
-			// manager's pi / pi-prompt configured-model fallback applies;
-			// an explicit request model would still override that fallback.
+			// (bogusNamedModel) must not leak in. Model stays empty; the
+			// caller's pi-family pinned-model guard (v9.10.19) then applies
+			// the global pin from the verification chain or fails loudly.
+			// An explicit request model would still override that fallback.
 			name: "pi-prompt empty model", backend: "pi-prompt", model: "",
 			kind: "pi-prompt", projectDir: "/work/p1", wantModel: "", wantSess: true,
 		},

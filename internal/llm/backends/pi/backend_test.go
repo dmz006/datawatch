@@ -16,23 +16,25 @@ import (
 // ---- PromptBackend (one-shot, --print) ----
 
 func TestBuildLaunchCmd_NoModel(t *testing.T) {
-	cmd := buildLaunchCmd("pi", "", "do the thing", "/home/dmz/work", "cs-abc")
-	if !strings.Contains(cmd, "cd '/home/dmz/work'") {
-		t.Errorf("missing cd into project dir, got: %s", cmd)
+	// Since v9.10.19 the pi-family backends no longer fall back to the
+	// host's built-in default model: an empty model is a build error.
+	_, err := buildLaunchCmd("pi", "", "do the thing", "/home/dmz/work", "cs-abc")
+	if !errors.Is(err, ErrNoModel) {
+		t.Fatalf("empty model must be an error wrapping ErrNoModel, got: %v", err)
 	}
-	if !strings.Contains(cmd, "pi --print --mode text --approve") {
-		t.Errorf("unexpected command shape, got: %s", cmd)
-	}
-	if strings.Contains(cmd, "--model") {
-		t.Errorf("empty model must not add a --model flag, got: %s", cmd)
-	}
-	if !strings.HasSuffix(cmd, "echo 'DATAWATCH_COMPLETE: pi done'") {
-		t.Errorf("completion marker must be the success-path tail of the command, got: %s", cmd)
+}
+
+func TestBuildLaunchCmd_WhitespaceModelRefused(t *testing.T) {
+	if _, err := buildLaunchCmd("pi", "   ", "task", "/proj", "cs-abc"); !errors.Is(err, ErrNoModel) {
+		t.Fatalf("whitespace-only model must be an ErrNoModel error, got: %v", err)
 	}
 }
 
 func TestBuildLaunchCmd_WithModel(t *testing.T) {
-	cmd := buildLaunchCmd("pi", "ollama/qwen3.8:27b", "task text", "/proj", "cs-abc")
+	cmd, err := buildLaunchCmd("pi", "ollama/qwen3.8:27b", "task text", "/proj", "cs-abc")
+	if err != nil {
+		t.Fatalf("buildLaunchCmd with a model: %v", err)
+	}
 	if !strings.Contains(cmd, "--model 'ollama/qwen3.8:27b'") {
 		t.Errorf("expected --model flag with the set model, got: %s", cmd)
 	}
@@ -45,7 +47,10 @@ func TestBuildLaunchCmd_WithModel(t *testing.T) {
 // newline as a literal Enter keypress mid-command. Confirmed live
 // 2026-10-16 ("These: command not found" mid-paste) before this fix.
 func TestBuildLaunchCmd_TaskGoesThroughScratchFile(t *testing.T) {
-	cmd := buildLaunchCmd("pi", "", "it's a test\nwith a newline", "/proj", "cs-abc")
+	cmd, err := buildLaunchCmd("pi", "prov/model-a", "it's a test\nwith a newline", "/proj", "cs-abc")
+	if err != nil {
+		t.Fatalf("buildLaunchCmd: %v", err)
+	}
 	if !strings.Contains(cmd, `$(cat '`) {
 		t.Errorf("expected task text delivered via a scratch file, got: %s", cmd)
 	}
@@ -55,21 +60,30 @@ func TestBuildLaunchCmd_TaskGoesThroughScratchFile(t *testing.T) {
 }
 
 func TestBuildLaunchCmd_EscapesSingleQuotesInProjectDir(t *testing.T) {
-	cmd := buildLaunchCmd("pi", "", "task", "/proj's/dir", "cs-abc")
+	cmd, err := buildLaunchCmd("pi", "prov/model-a", "task", "/proj's/dir", "cs-abc")
+	if err != nil {
+		t.Fatalf("buildLaunchCmd: %v", err)
+	}
 	if !strings.Contains(cmd, `/proj'\''s/dir`) {
 		t.Errorf("expected single quote in project dir to be shell-escaped, got: %s", cmd)
 	}
 }
 
 func TestBuildLaunchCmd_EscapesSingleQuotesInModel(t *testing.T) {
-	cmd := buildLaunchCmd("pi", "weird'model", "task", "/proj", "cs-abc")
+	cmd, err := buildLaunchCmd("pi", "weird'model", "task", "/proj", "cs-abc")
+	if err != nil {
+		t.Fatalf("buildLaunchCmd: %v", err)
+	}
 	if !strings.Contains(cmd, `weird'\''model`) {
 		t.Errorf("expected single quote in model to be shell-escaped, got: %s", cmd)
 	}
 }
 
 func TestBuildLaunchCmd_EmptyTaskOmitsArg(t *testing.T) {
-	cmd := buildLaunchCmd("pi", "", "", "/proj", "cs-abc")
+	cmd, err := buildLaunchCmd("pi", "prov/model-a", "", "/proj", "cs-abc")
+	if err != nil {
+		t.Fatalf("buildLaunchCmd: %v", err)
+	}
 	if strings.Contains(cmd, "$(cat") {
 		t.Errorf("empty task must not reference a task file, got: %s", cmd)
 	}
@@ -119,7 +133,10 @@ func TestPromptBackend_SetModel(t *testing.T) {
 // pi-prompt verifier ended up launching with an unrelated ollama model.
 func TestBuildLaunchCmd_ModelPassesThroughVerbatim(t *testing.T) {
 	const model = "ollama-datawatch/qwen3.8-64k:27b"
-	cmd := buildLaunchCmd("pi", model, "some task", "work", "ses")
+	cmd, err := buildLaunchCmd("pi", model, "some task", "work", "ses")
+	if err != nil {
+		t.Fatalf("buildLaunchCmd: %v", err)
+	}
 	want := "--model '" + model + "' "
 	if !strings.Contains(cmd, want) {
 		t.Errorf("expected exactly %q in command, got: %s", want, cmd)
@@ -129,12 +146,13 @@ func TestBuildLaunchCmd_ModelPassesThroughVerbatim(t *testing.T) {
 	}
 }
 
-// TestBuildLaunchCmd_EmptyModelOmitsModelFlag: an empty model means pi
-// uses its own configured default — the intended manager fallback.
-func TestBuildLaunchCmd_EmptyModelOmitsModelFlag(t *testing.T) {
-	cmd := buildLaunchCmd("pi", "", "some task", "work", "ses")
-	if strings.Contains(cmd, "--model") {
-		t.Errorf("empty model must not add any --model flag, got: %s", cmd)
+// TestBuildLaunchCmd_EmptyModelRefused: since v9.10.19 an empty model is a
+// hard error — silently running on the pi harness's built-in default model
+// is exactly the fallback the datawatch launch paths must not take.
+func TestBuildLaunchCmd_EmptyModelRefused(t *testing.T) {
+	_, err := buildLaunchCmd("pi", "", "some task", "work", "ses")
+	if !errors.Is(err, ErrNoModel) {
+		t.Fatalf("expected ErrNoModel for an empty model, got: %v", err)
 	}
 }
 
@@ -194,7 +212,8 @@ func TestPromptBackend_VersionReturnsEmptyOnMissingBinary(t *testing.T) {
 }
 
 func TestPromptLaunch_InvokesTmuxSendKeys(t *testing.T) {
-	b := NewPrompt("pi")
+	b := NewPrompt("pi").(*PromptBackend)
+	b.SetModel("prov/model-a")
 	err := b.Launch(context.Background(), "task", "cs-nonexistent-session-xyz", "/tmp", "/tmp/out.log")
 	if err == nil {
 		t.Skip("tmux session happened to exist or tmux accepted the target; nothing to assert here")
@@ -206,8 +225,13 @@ var _ llm.Backend = NewPrompt("")
 
 // ---- Backend (interactive) ----
 
-func TestBuildInteractiveCmd_NoSessionNoModel(t *testing.T) {
-	cmd := buildInteractiveCmd("pi", "", "", "do the thing", "/home/dmz/work", "cs-abc")
+func TestBuildInteractiveCmd_NoSessionWithModel(t *testing.T) {
+	// Since v9.10.19 model is required; an empty session ID still must not
+	// add a --session-id flag.
+	cmd, err := buildInteractiveCmd("pi", "prov/model-a", "", "do the thing", "/home/dmz/work", "cs-abc")
+	if err != nil {
+		t.Fatalf("buildInteractiveCmd with model: %v", err)
+	}
 	if !strings.Contains(cmd, "cd '/home/dmz/work'") {
 		t.Errorf("missing cd into project dir, got: %s", cmd)
 	}
@@ -217,8 +241,8 @@ func TestBuildInteractiveCmd_NoSessionNoModel(t *testing.T) {
 	if strings.Contains(cmd, "--session-id") {
 		t.Errorf("empty session ID must not add a --session-id flag, got: %s", cmd)
 	}
-	if strings.Contains(cmd, "--model") {
-		t.Errorf("empty model must not add a --model flag, got: %s", cmd)
+	if !strings.Contains(cmd, "--model 'prov/model-a'") {
+		t.Errorf("expected the --model flag, got: %s", cmd)
 	}
 	if !strings.Contains(cmd, "--approve") {
 		t.Errorf("expected --approve flag, got: %s", cmd)
@@ -228,8 +252,21 @@ func TestBuildInteractiveCmd_NoSessionNoModel(t *testing.T) {
 	}
 }
 
+func TestBuildInteractiveCmd_EmptyModelRefused(t *testing.T) {
+	// Since v9.10.19 an empty model is a hard error — silently running on
+	// the pi harness's built-in default model is exactly the fallback the
+	// datawatch launch paths must not take.
+	_, err := buildInteractiveCmd("pi", "", "", "do the thing", "/home/dmz/work", "cs-abc")
+	if !errors.Is(err, ErrNoModel) {
+		t.Fatalf("empty model must be an ErrNoModel error, got: %v", err)
+	}
+}
+
 func TestBuildInteractiveCmd_WithSessionAndModel(t *testing.T) {
-	cmd := buildInteractiveCmd("pi", "ollama/qwen3.8:27b", "johnnyjohnny-c905", "task text", "/proj", "cs-abc")
+	cmd, err := buildInteractiveCmd("pi", "ollama/qwen3.8:27b", "johnnyjohnny-c905", "task text", "/proj", "cs-abc")
+	if err != nil {
+		t.Fatalf("buildInteractiveCmd: %v", err)
+	}
 	if !strings.Contains(cmd, "--session-id 'johnnyjohnny-c905'") {
 		t.Errorf("expected --session-id with the given session name, got: %s", cmd)
 	}
@@ -239,7 +276,10 @@ func TestBuildInteractiveCmd_WithSessionAndModel(t *testing.T) {
 }
 
 func TestBuildInteractiveCmd_EmptyTaskOmitsArg(t *testing.T) {
-	cmd := buildInteractiveCmd("pi", "", "", "", "/proj", "cs-abc")
+	cmd, err := buildInteractiveCmd("pi", "prov/model-a", "", "", "/proj", "cs-abc")
+	if err != nil {
+		t.Fatalf("buildInteractiveCmd: %v", err)
+	}
 	if strings.Contains(cmd, "$(cat") {
 		t.Errorf("empty task must not reference a task file, got: %s", cmd)
 	}
@@ -317,7 +357,8 @@ func TestLaunch_InvokesTmuxSendKeys(t *testing.T) {
 	// Launch builds and attempts the command rather than panicking or
 	// silently no-op'ing. A full spawn-and-observe test belongs at the
 	// session-manager integration level, not here.
-	b := New("pi")
+	b := New("pi").(*Backend)
+	b.SetModel("prov/model-a")
 	err := b.Launch(context.Background(), "task", "cs-nonexistent-session-xyz", "/tmp", "/tmp/out.log")
 	if err == nil {
 		t.Skip("tmux session happened to exist or tmux accepted the target; nothing to assert here")
@@ -327,6 +368,7 @@ func TestLaunch_InvokesTmuxSendKeys(t *testing.T) {
 func TestLaunchResume_FallsBackToSessionNameWhenResumeIDEmpty(t *testing.T) {
 	b := New("pi").(*Backend)
 	b.SetSessionName("stored-name")
+	b.SetModel("prov/model-a")
 	err := b.LaunchResume(context.Background(), "task", "cs-nonexistent-session-xyz", "/tmp", "/tmp/out.log", "")
 	if err == nil {
 		t.Skip("tmux session happened to exist or tmux accepted the target; nothing to assert here")
@@ -353,11 +395,21 @@ func TestLaunch_TmuxStderrSurfacesInError(t *testing.T) {
 		name string
 		fn   func() error
 	}{
-		{"Launch", func() error { return New("pi").Launch(context.Background(), "task", "cs-err", dir, "") }},
-		{"LaunchResume", func() error {
-			return New("pi").(*Backend).LaunchResume(context.Background(), "task", "cs-err", dir, "", "res-1")
+		{"Launch", func() error {
+			b := New("pi").(*Backend)
+			b.SetModel("prov/model-a")
+			return b.Launch(context.Background(), "task", "cs-err", dir, "")
 		}},
-		{"PromptLaunch", func() error { return NewPrompt("pi").Launch(context.Background(), "task", "cs-err", dir, "") }},
+		{"LaunchResume", func() error {
+			b := New("pi").(*Backend)
+			b.SetModel("prov/model-a")
+			return b.LaunchResume(context.Background(), "task", "cs-err", dir, "", "res-1")
+		}},
+		{"PromptLaunch", func() error {
+			b := NewPrompt("pi").(*PromptBackend)
+			b.SetModel("prov/model-a")
+			return b.Launch(context.Background(), "task", "cs-err", dir, "")
+		}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -393,11 +445,21 @@ func TestLaunch_SendKeysLengthGuardApplies(t *testing.T) {
 		name string
 		fn   func() error
 	}{
-		{"Launch", func() error { return New("pi").Launch(context.Background(), "task", "cs-guard", hugeDir, "") }},
-		{"LaunchResume", func() error {
-			return New("pi").(*Backend).LaunchResume(context.Background(), "task", "cs-guard", hugeDir, "", "res-1")
+		{"Launch", func() error {
+			b := New("pi").(*Backend)
+			b.SetModel("prov/model-a")
+			return b.Launch(context.Background(), "task", "cs-guard", hugeDir, "")
 		}},
-		{"PromptLaunch", func() error { return NewPrompt("pi").Launch(context.Background(), "task", "cs-guard", hugeDir, "") }},
+		{"LaunchResume", func() error {
+			b := New("pi").(*Backend)
+			b.SetModel("prov/model-a")
+			return b.LaunchResume(context.Background(), "task", "cs-guard", hugeDir, "", "res-1")
+		}},
+		{"PromptLaunch", func() error {
+			b := NewPrompt("pi").(*PromptBackend)
+			b.SetModel("prov/model-a")
+			return b.Launch(context.Background(), "task", "cs-guard", hugeDir, "")
+		}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -423,12 +485,22 @@ func TestLaunch_SendKeysLengthGuardApplies(t *testing.T) {
 // the binary. No tmux is involved: the command is executed directly.
 func runLaunchCmdWithStubPi(t *testing.T, stubBody, model string) (string, error) {
 	t.Helper()
+	// Since v9.10.19 buildLaunchCmd refuses an empty model outright; these
+	// scenario tests exercise the command's failure/success reporting, so a
+	// model must be supplied (the rejection path itself is covered by the
+	// ErrNoModel tests above).
+	if strings.TrimSpace(model) == "" {
+		t.Fatal("runLaunchCmdWithStubPi: model must be non-empty")
+	}
 	dir := t.TempDir()
 	stub := filepath.Join(dir, "pi-stub")
 	if err := os.WriteFile(stub, []byte("#!/bin/sh\n"+stubBody), 0o755); err != nil { //nolint:gosec // test fixture must be executable
 		t.Fatalf("write stub pi: %v", err)
 	}
-	cmd := buildLaunchCmd(stub, model, "do the thing", dir, "cs-loud-test")
+	cmd, err := buildLaunchCmd(stub, model, "do the thing", dir, "cs-loud-test")
+	if err != nil {
+		t.Fatalf("buildLaunchCmd: %v", err)
+	}
 	out, err := exec.Command("sh", "-c", cmd).CombinedOutput()
 	return string(out), err
 }
@@ -451,7 +523,7 @@ func exitCodeOf(t *testing.T, err error) int {
 // command must report DATAWATCH_PI_FAILED, must not report success, and must
 // exit non-zero with pi's own status.
 func TestPiLoudFailureNonZeroExitReportsFailure(t *testing.T) {
-	out, err := runLaunchCmdWithStubPi(t, "exit 3\n", "")
+	out, err := runLaunchCmdWithStubPi(t, "exit 3\n", "prov/model-a")
 	if !strings.Contains(out, "DATAWATCH_PI_FAILED") {
 		t.Errorf("expected DATAWATCH_PI_FAILED in output, got: %q", out)
 	}
@@ -466,7 +538,7 @@ func TestPiLoudFailureNonZeroExitReportsFailure(t *testing.T) {
 // TestPiLoudFailureSuccessWithOutputReportsComplete: pi prints a result and
 // exits 0. The success marker is printed and no failure line appears.
 func TestPiLoudFailureSuccessWithOutputReportsComplete(t *testing.T) {
-	out, err := runLaunchCmdWithStubPi(t, "echo 'the result'\nexit 0\n", "")
+	out, err := runLaunchCmdWithStubPi(t, "echo 'the result'\nexit 0\n", "prov/model-a")
 	if err != nil {
 		t.Fatalf("expected a clean run, got: %v (output %q)", err, out)
 	}
@@ -482,7 +554,7 @@ func TestPiLoudFailureSuccessWithOutputReportsComplete(t *testing.T) {
 // nothing. This is a silent failure, so the command must report that pi
 // produced no output and exit non-zero without the success marker.
 func TestPiLoudFailureZeroExitNoOutputReportsFailure(t *testing.T) {
-	out, err := runLaunchCmdWithStubPi(t, "exit 0\n", "")
+	out, err := runLaunchCmdWithStubPi(t, "exit 0\n", "prov/model-a")
 	if !strings.Contains(out, "DATAWATCH_PI_FAILED") || !strings.Contains(out, "no output") {
 		t.Errorf("expected a DATAWATCH_PI_FAILED no-output line, got: %q", out)
 	}

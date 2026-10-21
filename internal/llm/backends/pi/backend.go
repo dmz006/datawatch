@@ -30,6 +30,7 @@ package pi
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -37,6 +38,21 @@ import (
 
 	"github.com/dmz006/datawatch/internal/llm"
 )
+
+// ErrNoModel — a pi-family launch was built with no model configured.
+//
+// Since v9.10.19 every datawatch launch path that can land on a pi-family
+// backend must resolve an explicit, non-empty model first (task/story/PRD
+// pin, or the autonomous config tier for that session type — planning,
+// verification, guardrail — see internal/autonomous/pinned_model.go), or
+// fail loudly at that layer. This error is the hard stop when a path still
+// manages to ship an empty model: omitting --model would make the pi
+// harness silently run on the host's own default model — on a federated
+// peer that is the operator-local node model the session exists to
+// replace.
+var ErrNoModel = errors.New(
+	"pi-family backend received an empty model at launch: refusing to omit --model and run on this host's built-in default model — " +
+		"set the session's model (task/story/PRD) or the autonomous config tier for this session type")
 
 // writeTaskFile writes task text to a scratch file instead of embedding it
 // inline in the shell command sent to the pane. Mirrors
@@ -148,19 +164,23 @@ func (b *Backend) Version() string { return versionOf(b.binary) }
 // ID (if any) accompanies --session-id. Pulled out of Launch/LaunchResume
 // so the quoting/flag logic is unit-testable without tmux or the pi
 // binary.
-func buildInteractiveCmd(binary, model, sessionID, task, projectDir, tmuxSession string) string {
-	escapedDir := shellEscape(projectDir)
-	modelFlag := ""
-	if model != "" {
-		modelFlag = fmt.Sprintf("--model '%s' ", shellEscape(model))
+//
+// Since v9.10.19 model is required: an interactive pi session without an
+// explicit --model runs on the host's own default model, which is exactly
+// the fallback every launch path must not take (ErrNoModel).
+func buildInteractiveCmd(binary, model, sessionID, task, projectDir, tmuxSession string) (string, error) {
+	if strings.TrimSpace(model) == "" {
+		return "", ErrNoModel
 	}
+	escapedDir := shellEscape(projectDir)
+	modelFlag := fmt.Sprintf("--model '%s' ", shellEscape(model))
 	sessionFlag := ""
 	if sessionID != "" {
 		sessionFlag = fmt.Sprintf("--session-id '%s' ", shellEscape(sessionID))
 	}
 	argExpr, cleanup := taskArgExpr(tmuxSession, task)
 	return fmt.Sprintf("cd '%s' && %s --approve %s%s%s; %secho; echo 'DATAWATCH_COMPLETE: pi session ended'",
-		escapedDir, binary, modelFlag, sessionFlag, argExpr, cleanup)
+		escapedDir, binary, modelFlag, sessionFlag, argExpr, cleanup), nil
 }
 
 // Launch starts a fresh interactive pi session. If SetSessionName was
@@ -170,7 +190,10 @@ func buildInteractiveCmd(binary, model, sessionID, task, projectDir, tmuxSession
 // MaxSendKeysCommand length guard applies and a tmux failure surfaces
 // its stderr text in the returned error.
 func (b *Backend) Launch(ctx context.Context, task, tmuxSession, projectDir, logFile string) error {
-	cmd := buildInteractiveCmd(b.binary, b.model, b.sessionName, task, projectDir, tmuxSession)
+	cmd, err := buildInteractiveCmd(b.binary, b.model, b.sessionName, task, projectDir, tmuxSession)
+	if err != nil {
+		return fmt.Errorf("pi interactive launch: %w", err)
+	}
 	return llm.SendKeys(ctx, tmuxSession, cmd)
 }
 
@@ -181,7 +204,10 @@ func (b *Backend) LaunchResume(ctx context.Context, task, tmuxSession, projectDi
 	if id == "" {
 		id = b.sessionName
 	}
-	cmd := buildInteractiveCmd(b.binary, b.model, id, task, projectDir, tmuxSession)
+	cmd, err := buildInteractiveCmd(b.binary, b.model, id, task, projectDir, tmuxSession)
+	if err != nil {
+		return fmt.Errorf("pi interactive resume: %w", err)
+	}
 	return llm.SendKeys(ctx, tmuxSession, cmd)
 }
 
@@ -222,7 +248,10 @@ func (b *PromptBackend) Version() string { return versionOf(b.binary) }
 // non-interactively (there is no human to answer an approval prompt in a
 // one-shot task).
 func (b *PromptBackend) Launch(ctx context.Context, task, tmuxSession, projectDir, logFile string) error {
-	cmd := buildLaunchCmd(b.binary, b.model, task, projectDir, tmuxSession)
+	cmd, err := buildLaunchCmd(b.binary, b.model, task, projectDir, tmuxSession)
+	if err != nil {
+		return fmt.Errorf("pi-prompt launch: %w", err)
+	}
 	return llm.SendKeys(ctx, tmuxSession, cmd)
 }
 
@@ -243,20 +272,21 @@ func (b *PromptBackend) Launch(ctx context.Context, task, tmuxSession, projectDi
 // status. A zero status with an empty output file prints DATAWATCH_PI_FAILED
 // too. Only a clean run with output reaches DATAWATCH_COMPLETE. The failure
 // path exits the shell, so the scratch files are removed before the checks.
-func buildLaunchCmd(binary, model, task, projectDir, tmuxSession string) string {
-	escapedDir := shellEscape(projectDir)
-	modelFlag := ""
-	if model != "" {
-		modelFlag = fmt.Sprintf("--model '%s' ", shellEscape(model))
+//
+// Since v9.10.19 model is required: a pi-prompt session without an explicit
+// --model would run on the host's own default model, which is exactly the
+// fallback every launch path must not take (ErrNoModel). The
+// DATAWATCH_PI_FAILED wording for other failures is unchanged.
+func buildLaunchCmd(binary, model, task, projectDir, tmuxSession string) (string, error) {
+	if strings.TrimSpace(model) == "" {
+		return "", ErrNoModel
 	}
+	escapedDir := shellEscape(projectDir)
+	modelFlag := fmt.Sprintf("--model '%s' ", shellEscape(model))
 	outPath, errOut := reserveScratchFile(tmuxSession, "out")
 	statusPath, errStatus := reserveScratchFile(tmuxSession, "status")
 	if errOut != nil || errStatus != nil {
-		return "echo 'DATAWATCH_PI_FAILED: could not create scratch file for pi output capture'; exit 1"
-	}
-	modelLabel := model
-	if modelLabel == "" {
-		modelLabel = "pi default"
+		return "echo 'DATAWATCH_PI_FAILED: could not create scratch file for pi output capture'; exit 1", nil
 	}
 	argExpr, cleanup := taskArgExpr(tmuxSession, task)
 	escapedOut := shellEscape(outPath)
@@ -267,5 +297,5 @@ func buildLaunchCmd(binary, model, task, projectDir, tmuxSession string) string 
 		"if [ \"$dw_has_output\" -ne 0 ]; then echo 'DATAWATCH_PI_FAILED: pi produced no output'; exit 1; fi; "+
 		"echo 'DATAWATCH_COMPLETE: pi done'",
 		escapedDir, binary, modelFlag, argExpr, escapedStatus, escapedOut,
-		escapedStatus, escapedOut, cleanup, escapedOut, escapedStatus, shellEscape(modelLabel))
+		escapedStatus, escapedOut, cleanup, escapedOut, escapedStatus, shellEscape(model)), nil
 }

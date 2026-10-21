@@ -11,7 +11,10 @@ func TestResolvePlannedModel(t *testing.T) {
 		prdModel              string
 		globalPlanningBackend string
 		globalPlanningModel   string
-		want                  string
+		// globalVerificationModel is the v9.10.19 tier-4 last resort (the
+		// global verification model); empty in every pre-existing case.
+		globalVerificationModel string
+		want                    string
 	}{
 		{
 			name:                "global ollama-prefixed model does not pair with claude-code",
@@ -97,11 +100,50 @@ func TestResolvePlannedModel(t *testing.T) {
 			backend: "claude-code",
 			want:    "",
 		},
+		{
+			name:                    "tier 4: pi-prompt with only the global verification model takes it",
+			backend:                 "pi-prompt",
+			globalVerificationModel: "ollama/qwen3.8:27b",
+			want:                    "ollama/qwen3.8:27b",
+		},
+		{
+			name:                    "tier 4: claude-code takes a bare alias verification model",
+			backend:                 "claude-code",
+			globalVerificationModel: "claude-sonnet-5",
+			want:                    "claude-sonnet-5",
+		},
+		{
+			name:                    "tier 4: provider-qualified verification model is refused on claude-code",
+			backend:                 "claude-code",
+			globalVerificationModel: "ollama/qwen3.8-64k:27b",
+			want:                    "",
+		},
+		{
+			name:                    "tier 4: bare claude alias is refused on a pi-family backend",
+			backend:                 "pi",
+			globalVerificationModel: "claude-sonnet-5",
+			want:                    "",
+		},
+		{
+			name:                    "tier 4: a mismatched global planning pair falls through to the verification pair on pi",
+			backend:                 "pi",
+			globalPlanningBackend:   "elsewhere",
+			globalPlanningModel:     "prov/p",
+			globalVerificationModel: "ollama/qwen3.8:27b",
+			want:                    "ollama/qwen3.8:27b",
+		},
+		{
+			name:                  "tier 4 loses to the explicit PRD decomposition model",
+			backend:               "pi",
+			prdDecompositionModel: "prov/decomp",
+			globalVerificationModel: "ollama/qwen3.8:27b",
+			want:                  "prov/decomp",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := resolvePlannedModel(tt.backend, tt.prdDecompositionModel, tt.prdBackend, tt.prdModel, tt.globalPlanningBackend, tt.globalPlanningModel)
+			got := resolvePlannedModel(tt.backend, tt.prdDecompositionModel, tt.prdBackend, tt.prdModel, tt.globalPlanningBackend, tt.globalPlanningModel, tt.globalVerificationModel)
 			if got != tt.want {
 				t.Errorf("resolvePlannedModel(%q, ...) = %q, want %q", tt.backend, got, tt.want)
 			}
@@ -262,7 +304,7 @@ func TestResolvePlannedModelMatrix(t *testing.T) {
 				want := expectedPlannedModel(backend, g, p)
 				name := backend + " | " + g.name + " | " + p.name
 				t.Run(name, func(t *testing.T) {
-					got := resolvePlannedModel(backend, p.prdDecompositionModel, p.prdBackend, p.prdModel, g.planningBackend, g.model)
+					got := resolvePlannedModel(backend, p.prdDecompositionModel, p.prdBackend, p.prdModel, g.planningBackend, g.model, "")
 					if got != want {
 						t.Errorf("resolvePlannedModel(%q, ...) = %q, want %q", backend, got, want)
 					}

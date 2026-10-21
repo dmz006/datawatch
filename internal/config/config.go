@@ -2017,6 +2017,17 @@ type AutonomousConfig struct {
 	// accepted on read for back-compat, never written.
 	DecompositionModelLegacy string `yaml:"decomposition_model,omitempty" json:"-"`
 	VerificationModel        string `yaml:"verification_model,omitempty" json:"verification_model,omitempty"`
+	// GuardrailModel (v9.10.18) — pinned model for the guardrail judge
+	// sessions (rules-review, ci-watch, per-task/per-story guardrails,
+	// rejudge). Tier 3 of ResolveGuardrailModel (see
+	// internal/autonomous/guardrail_model.go):
+	// PRD guardrail_model → task guardrail_model → GuardrailModel →
+	// VerificationModel → PlanningModel. Empty = the tier falls through;
+	// if no tier resolves a model the guardrail backend can serve, the
+	// guardrail records a loud, non-retried infra-category block
+	// instead of launching a judge on the backend's built-in default
+	// model (which would evict the operator's pinned model).
+	GuardrailModel string `yaml:"guardrail_model,omitempty" json:"guardrail_model,omitempty"`
 	// VerificationBackends (v8.36.9) is an ordered list of LLM registry
 	// names to load-balance the verifier's capacity requests across — e.g.
 	// ["ollama-datawatch", "ollama-johnnyjohnny"]. Found live: a

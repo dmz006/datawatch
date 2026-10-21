@@ -191,7 +191,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "9.5.37"
+var Version = "9.5.38"
 
 // Server holds all HTTP handler dependencies
 type Server struct {
@@ -7055,6 +7055,10 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			cfg.Autonomous.PlanningModel = toString(v)
 		case "autonomous.verification_model":
 			cfg.Autonomous.VerificationModel = toString(v)
+		// v9.10.18 — pinned guardrail judge model (tier 3 of
+		// ResolveGuardrailModel, internal/autonomous/guardrail_model.go).
+		case "autonomous.guardrail_model":
+			cfg.Autonomous.GuardrailModel = toString(v)
 		case "autonomous.planning_timeout_seconds":
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.Autonomous.PlanningTimeoutSeconds = n

@@ -55,6 +55,9 @@ func TestPerTaskGuardrails_NoConfigured_NoOp(t *testing.T) {
 func TestPerTaskGuardrails_AllPass_AppendsVerdicts(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.PerTaskGuardrails = []string{"rules", "security"}
+	// v9.10.18 — declare the model the judge fn stands in for; the
+	// resolver refuses to launch a judge with no configured model.
+	cfg.VerificationModel = "ollama/qwen3.8:27b"
 	m, _ := NewManager(t.TempDir(), cfg, fakeDecompose)
 	m.SetGuardrail(fakeGuardrailAlwaysPass)
 
@@ -90,6 +93,7 @@ func TestPerTaskGuardrails_AllPass_AppendsVerdicts(t *testing.T) {
 func TestPerTaskGuardrails_Block_HaltsPRD(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.PerTaskGuardrails = []string{"security"}
+	cfg.VerificationModel = "ollama/qwen3.8:27b" // v9.10.18 judge model for the fake fn
 	m, _ := NewManager(t.TempDir(), cfg, fakeDecompose)
 	m.SetGuardrail(fakeGuardrailBlocking)
 
@@ -125,6 +129,7 @@ func TestPerTaskGuardrails_Block_HaltsPRD(t *testing.T) {
 func TestPerStoryGuardrails_FireAfterAllTasksDone(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.PerStoryGuardrails = []string{"docs-diagrams-architecture"}
+	cfg.VerificationModel = "ollama/qwen3.8:27b" // v9.10.18 judge model for the fake fn
 	m, _ := NewManager(t.TempDir(), cfg, fakeDecompose)
 	m.SetGuardrail(fakeGuardrailAlwaysPass)
 
@@ -157,6 +162,7 @@ func TestPerStoryGuardrails_FireAfterAllTasksDone(t *testing.T) {
 func TestPerStoryGuardrails_Block_HaltsPRD(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.PerStoryGuardrails = []string{"release-readiness"}
+	cfg.VerificationModel = "ollama/qwen3.8:27b" // v9.10.18 judge model for the fake fn
 	m, _ := NewManager(t.TempDir(), cfg, fakeDecompose)
 	m.SetGuardrail(fakeGuardrailBlocking)
 
@@ -267,6 +273,11 @@ func newScriptGuardrailPRD(t *testing.T, taskGs, storyGs []string) (*Manager, *P
 	cfg := DefaultConfig()
 	cfg.PerTaskGuardrails = taskGs
 	cfg.PerStoryGuardrails = storyGs
+	// v9.10.18 — the guardrail judge model must resolve to a configured
+	// tier before a judge may be launched; give the manager a global
+	// verification model (the documented tier-4 fallback) the way an
+	// operator's config does, so the fake GuardrailFn stays reachable.
+	cfg.VerificationModel = "ollama/qwen3.8:27b"
 	m, err := NewManager(t.TempDir(), cfg, fakeDecompose)
 	if err != nil {
 		t.Fatal(err)
@@ -522,13 +533,14 @@ func TestGuardrailInvocation_BackendResolution(t *testing.T) {
 		}
 	})
 
-	t.Run("no overrides uses global backend but not global model", func(t *testing.T) {
-		// Fixed live 2026-10-12 (BL418 live validation): model used to
-		// fall through to the flat ask-only global VerificationModel
-		// here too, which a B124 session-routed guardrail call then
-		// trusted as a genuine per-unit override and sent straight to
-		// a real tool-using session — the exact bug already fixed for
-		// verify in resolveVerifierBackendModel, unfixed here until now.
+	t.Run("no overrides falls back to the global verification model tier", func(t *testing.T) {
+		// v9.10.18 — the contract this case encoded (global model must
+		// stay empty) was the pre-9.10.18 one: the judge then silently
+		// ran on the backend's built-in default. The v9.10.18 resolver
+		// makes the global verification_model the tier-4 fallback, so a
+		// judge with no explicit pin is guaranteed a configured model
+		// (or a loud ErrNoGuardrailModel block — never a backend
+		// default).
 		m, prd, rec := newM(t, []string{"rules"}, []string{"rules"})
 		if _, _, err := m.runPerTaskGuardrails(context.Background(), prd, &Task{ID: "t1"}); err != nil {
 			t.Fatal(err)
@@ -543,8 +555,8 @@ func TestGuardrailInvocation_BackendResolution(t *testing.T) {
 			if inv.GuardrailBackend != "ollama" {
 				t.Fatalf("inv %d backend = %q, want ollama (global fallback)", i, inv.GuardrailBackend)
 			}
-			if inv.GuardrailModel != "" {
-				t.Fatalf("inv %d model = %q, want empty — global model must not leak into a session-routed guardrail call", i, inv.GuardrailModel)
+			if inv.GuardrailModel != "global-model" {
+				t.Fatalf("inv %d model = %q, want global-model (tier-4 global verification model)", i, inv.GuardrailModel)
 			}
 		}
 	})

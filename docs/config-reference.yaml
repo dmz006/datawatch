@@ -932,6 +932,18 @@ autonomous:
   # ask-compatible (v8.36.0); otherwise the resolved backend's own default
   # model.
   verification_model: ""
+  # v9.10.18 — pinned model for the guardrail JUDGE (rules-review, ci-watch,
+  # per-task / per-story guardrails, rejudge). Tier 3 of the 5-tier
+  # precedence chain that replaces the old silent backend-default fallback:
+  # PRD guardrail_model → task guardrail_model → this field →
+  # verification_model → planning_model. Empty = the tier falls through to
+  # the next; if ALL tiers resolve to nothing servable on the judge
+  # backend, the record gets a loud non-retried infra-category block
+  # (ErrNoGuardrailModel) — a pi-family judge NEVER runs on the backend's
+  # built-in default model. Pairing is validated per tier (a bare Claude
+  # alias on a pi-family backend, or a provider-qualified model on
+  # claude-code, is skipped with a recorded reason).
+  guardrail_model: ""
   # BL41 effort hint for the planning LLM call.
   # BL304: renamed from decomposition_effort; old key still accepted on read.
   planning_effort: "thorough"

@@ -163,6 +163,82 @@ When you see `DATAWATCH_PI_FAILED`, check these two things:
 
 Fix the cause, then run the task again.
 
+## Judge and planning model resolution (Automata)
+
+Every guardrail **judge** session and every decompose (planning) session
+launched by the autonomous runner must carry a model **you configured**.
+datawatch never falls back to `pi`'s — or any other backend's — built-in
+default model for these sessions: a judge running on an unpinned model would
+evict the model you pinned on the node, and a decompose session would spend
+its whole run on a model you may not want or pay for.
+
+### Guardrail judge resolution order
+
+Every guardrail judge — `rules-review`, `ci-watch`, the per-task and
+per-story guardrail verdicts (what the verify step judges), and the rejudge
+action — resolves its model through a single resolver with a five-tier
+precedence chain. The first tier that is set **and** that the judge's
+backend can serve wins:
+
+| Tier | Source | What it is |
+|---|---|---|
+| 1 | PRD `guardrail_model` | the Automaton's own guardrail judge pin |
+| 2 | task `guardrail_model` | the override on the specific task being judged |
+| 3 | `autonomous.guardrail_model` | the global guardrail judge model |
+| 4 | `autonomous.verification_model` | the global verification model |
+| 5 | `autonomous.planning_model` | the global planning model |
+
+Tiers 1–2 are explicit pins for the resolved judge backend.
+Tiers 3–5 are global defaults configured for the global pi-family backend;
+when a judge resolves to the `claude-code` backend they are skipped (they
+are pi-style model names that backend would reject), and only the explicit
+PRD/task pins may win. Every tier is validated against the judge's resolved
+backend with the [pairing rule](#the-pairing-rule) above — a provider-tagged
+model is refused on `claude-code`, a bare Claude alias is refused on `pi`
+and `pi-prompt` — so a tier that the backend cannot serve is skipped with a
+recorded reason, never launched.
+
+### Loud failure when no tier resolves
+
+If no tier yields a model the backend can serve — either nothing is
+configured, or every configured tier is unpairable for the judge's backend —
+the judge is **not launched at all**. The guardrail record gets a loud,
+non-retried infrastructure-category block instead, and the message names
+exactly which keys to set:
+
+- the PRD's `guardrail_model` pin, or
+- the task's `guardrail_model` override, or
+- `autonomous.guardrail_model`, or
+- `autonomous.verification_model`, or
+- `autonomous.planning_model`.
+
+`pi`'s built-in default model is never used, and the model handed to `pi`
+is never empty. The guardrail model setters (`set_prd_guardrail_llm` /
+`set_task_guardrail_llm`, on REST, MCP and the comm channel) validate the
+model/backend pair — and, when a model is pinned, the full resolution —
+before accepting the change, so a pin that would leave the unit with no
+resolvable model is refused at set time rather than failing at judge time.
+
+### Decompose (planning) sessions
+
+Decompose sessions follow the same no-built-in-default rule. Their model
+resolves as the PRD's `decomposition_model`, then `autonomous.planning_model`
+(when it belongs to the resolved planning backend), then the PRD's own
+model, then `autonomous.verification_model` — with each tier checked against
+the resolved backend. When no tier resolves and the backend is pi-family,
+the decompose attempt fails immediately (without consuming infrastructure
+retry budget) with a message naming the same set of keys. A decompose
+session is therefore never launched on the backend's built-in default.
+
+### Coverage
+
+This rule covers the `rules-review` judgment, the `ci-watch` guardrail, the
+per-task and per-story guardrail verdicts, the rejudge action, and the
+decompose (planning) session. The verifier's own model is a separate pin
+(task → story → PRD → `autonomous.verification_model`), but a guardrail
+judge that cannot resolve one of the tiers above always fails loudly
+rather than borrowing the backend default.
+
 ---
 
 ## claude-code (default)

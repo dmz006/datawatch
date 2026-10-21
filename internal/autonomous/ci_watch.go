@@ -650,7 +650,6 @@ func (m *Manager) ciWatchFollowUp(prdID, sha, ownerRepo string) {
 func (m *Manager) ciWatchJudge(ctx context.Context, prd *PRD, res CIWatchResult, failed []CIWatchRun) (bool, *GuardrailVerdict, error) {
 	m.mu.Lock()
 	fn := m.guardrail
-	globalBackend, globalModel := m.cfg.VerificationBackend, m.cfg.VerificationModel
 	m.mu.Unlock()
 	if fn == nil {
 		// Same as rules-review with no judge wired: nothing to judge with.
@@ -670,9 +669,22 @@ func (m *Manager) ciWatchJudge(ctx context.Context, prd *PRD, res CIWatchResult,
 		ProjectDir: prd.ProjectDir,
 		OwnerPeer:  prd.OwnerPeer,
 	}
-	inv.GuardrailBackend, inv.GuardrailModel = resolveGuardrailBackendModel(&Task{}, prd, globalBackend, globalModel)
+	// v9.10.18 — paired judge-model resolution, no backend-default
+	// fallback; see rules-review's identical handling.
+	gb, gm, resErr := m.resolveUnitGuardrailModel(&Task{}, prd)
+	if resErr == nil {
+		inv.GuardrailBackend, inv.GuardrailModel = gb, gm
+	}
 
-	v, ferr := m.runGuardrailWithInfraRetry(ctx, prd, inv, fn)
+	var v GuardrailVerdict
+	var ferr error
+	if resErr != nil {
+		// Loud, non-retried infra block — retrying cannot configure a
+		// model that is not configured.
+		v = NoGuardrailModelVerdict("ci-watch", resErr)
+	} else {
+		v, ferr = m.runGuardrailWithInfraRetry(ctx, prd, inv, fn)
+	}
 	if ferr != nil {
 		return false, nil, fmt.Errorf("ci watch for prd %s: %w", prd.ID, ferr)
 	}

@@ -226,7 +226,8 @@ func TestCIWatch_AllGreenPasses(t *testing.T) {
 }
 
 func TestCIWatch_FailingPolicyBlocks(t *testing.T) {
-	cfg := DefaultConfig() // ContentAutoFixEnabled defaults to true
+	cfg := DefaultConfig()                       // ContentAutoFixEnabled defaults to true
+	cfg.VerificationModel = "ollama/qwen3.8:27b" // v9.10.18 judge model for the fake fn
 	m, _ := NewManager(t.TempDir(), cfg, fakeDecompose)
 	wireCIWatch(t, m, true, func(context.Context) []CIWatchRun { return ciRun("completed", "failure") }, nil)
 	var mu sync.Mutex
@@ -291,7 +292,9 @@ func TestCIWatch_FailingPolicyBlocks(t *testing.T) {
 }
 
 func TestCIWatch_FailingContentSynthesizesOnce(t *testing.T) {
-	m, _ := NewManager(t.TempDir(), DefaultConfig(), fakeDecompose)
+	cfg := DefaultConfig()
+	cfg.VerificationModel = "ollama/qwen3.8:27b" // v9.10.18 judge model for the fake fn
+	m, _ := NewManager(t.TempDir(), cfg, fakeDecompose)
 	var judged atomic.Int32
 	// CI is red for the original commit; once the judge has asked for a
 	// fix (and the corrective task has run) it reads green.

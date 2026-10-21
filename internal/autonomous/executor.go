@@ -1668,8 +1668,13 @@ func statusOrUnknown(p *PRD) PRDStatus {
 func (m *Manager) runPerTaskGuardrails(ctx context.Context, prd *PRD, t *Task) (blocked bool, contentHint string, err error) {
 	m.mu.Lock()
 	fn := m.guardrail
-	globalBackend, globalModel := m.cfg.VerificationBackend, m.cfg.VerificationModel
 	m.mu.Unlock()
+	// v9.10.18 — judge resolution: model resolution is paired with the
+	// resolved backend and NEVER falls back to the backend's built-in
+	// default. An unresolvable route does not run a judge — it records
+	// a loud, non-retried infra-category block so the misconfiguration
+	// is visible instead of evicting the operator's pinned model.
+	gb, gm, resErr := m.resolveUnitGuardrailModel(t, prd)
 
 	guardrails := m.resolveGuardrails(prd, "task")
 	if len(guardrails) == 0 {
@@ -1684,7 +1689,9 @@ func (m *Manager) runPerTaskGuardrails(ctx context.Context, prd *PRD, t *Task) (
 		ProjectDir: m.resolveTaskProjectDir(prd, t), // BL447: judge the task in its own dir
 		OwnerPeer:  prd.OwnerPeer,                   // BL369 Layer 3 — federation trust boundary
 	}
-	inv.GuardrailBackend, inv.GuardrailModel = resolveGuardrailBackendModel(t, prd, globalBackend, globalModel)
+	if resErr == nil {
+		inv.GuardrailBackend, inv.GuardrailModel = gb, gm
+	}
 	scriptPassed := prepareScriptEvidence(&inv, t.VerificationScript, inv.ProjectDir) // BL447
 	for _, g := range guardrails {
 		inv.Guardrail = g
@@ -1695,12 +1702,20 @@ func (m *Manager) runPerTaskGuardrails(ctx context.Context, prd *PRD, t *Task) (
 		} else if scriptPassed {
 			v = scriptPassVerdict(t.VerificationScript) // BL416 P3: no LLM call on a clean deterministic pass
 		} else if fn != nil {
-			// BL410 Phase 1 — bounded, escalating auto-retry for an
-			// infra-category block (the guardrail session itself
-			// failed, no real judgment ran). A content/scope/policy
-			// block, or infra once the budget is exhausted, falls
-			// through unchanged to the TaskBlocked handling below.
-			v, verr = m.runGuardrailWithInfraRetry(ctx, prd, inv, fn)
+			if resErr != nil {
+				// v9.10.18 — no judge model resolvable at any level: loud,
+				// non-retried infra block (constructed directly, never via
+				// runGuardrailWithInfraRetry — retrying cannot configure a
+				// model that is not configured).
+				v = NoGuardrailModelVerdict(g, resErr)
+			} else {
+				// BL410 Phase 1 — bounded, escalating auto-retry for an
+				// infra-category block (the guardrail session itself
+				// failed, no real judgment ran). A content/scope/policy
+				// block, or infra once the budget is exhausted, falls
+				// through unchanged to the TaskBlocked handling below.
+				v, verr = m.runGuardrailWithInfraRetry(ctx, prd, inv, fn)
+			}
 		} else {
 			continue // silent no-op: scan not in lib + no GuardrailFn
 		}
@@ -1763,8 +1778,12 @@ func contentFixHint(v GuardrailVerdict) string {
 func (m *Manager) runPerStoryGuardrails(ctx context.Context, prd *PRD, s *Story) (blocked bool, contentFixVerdict *GuardrailVerdict, err error) {
 	m.mu.Lock()
 	fn := m.guardrail
-	globalBackend, globalModel := m.cfg.VerificationBackend, m.cfg.VerificationModel
 	m.mu.Unlock()
+	// v9.10.18 — see runPerTaskGuardrails: paired model resolution, no
+	// backend-default fallback, loud non-retried infra block on failure.
+	// No story-level guardrail routing exists, so an empty Task means
+	// no task-level tier for this call.
+	gb, gm, resErr := m.resolveUnitGuardrailModel(&Task{}, prd)
 
 	guardrails := m.resolveGuardrails(prd, "story")
 	if len(guardrails) == 0 {
@@ -1779,9 +1798,9 @@ func (m *Manager) runPerStoryGuardrails(ctx context.Context, prd *PRD, s *Story)
 		ProjectDir: storyEvidenceDir(prd, s), // BL447: see storyEvidenceDir
 		OwnerPeer:  prd.OwnerPeer,            // BL369 Layer 3 — federation trust boundary
 	}
-	// No story-level guardrail routing exists, so an empty Task makes
-	// resolution fall through to PRD → global.
-	inv.GuardrailBackend, inv.GuardrailModel = resolveGuardrailBackendModel(&Task{}, prd, globalBackend, globalModel)
+	if resErr == nil {
+		inv.GuardrailBackend, inv.GuardrailModel = gb, gm
+	}
 	scriptPassed := prepareScriptEvidence(&inv, s.VerificationScript, inv.ProjectDir) // BL447
 	for _, g := range guardrails {
 		inv.Guardrail = g
@@ -1792,8 +1811,13 @@ func (m *Manager) runPerStoryGuardrails(ctx context.Context, prd *PRD, s *Story)
 		} else if scriptPassed {
 			v = scriptPassVerdict(s.VerificationScript) // BL416 P3: no LLM call on a clean deterministic pass
 		} else if fn != nil {
-			// BL410 Phase 1 — see runPerTaskGuardrails' identical comment.
-			v, verr = m.runGuardrailWithInfraRetry(ctx, prd, inv, fn)
+			if resErr != nil {
+				// v9.10.18 — see runPerTaskGuardrails for the identical block.
+				v = NoGuardrailModelVerdict(g, resErr)
+			} else {
+				// BL410 Phase 1 — see runPerTaskGuardrails' identical comment.
+				v, verr = m.runGuardrailWithInfraRetry(ctx, prd, inv, fn)
+			}
 		} else {
 			continue // silent no-op
 		}
@@ -1970,60 +1994,18 @@ func resolveTaskBackendModel(t *Task, story *Story, prd *PRD, fallbackBackend st
 	return backend, model
 }
 
-// resolveGuardrailBackendModel resolves a task's effective guardrail
-// backend and model (BL416 Phase 1, most-specific wins: task → PRD →
-// global; there is no story level for guardrail routing).
-//
-// Same v8.37.2 rule as resolveTaskBackendModel: model is resolved from
-// the SAME level backend was found at, never cascading past a level
-// that overrides backend, so a stale model is never paired with an
-// incompatible backend. The guardrail fields are independent of the
-// task's execution Backend/Model.
-//
-// globalBackend/globalModel are the EXISTING autonomous
-// verification_backend/verification_model config
-// (Config.VerificationBackend / Config.VerificationModel in manager.go)
-// — no new global config key. The empty-global case ("ollama" default)
-// and the ask-compatible check remain the caller's responsibility,
-// exactly as main.go's autonomousGuardrail closure does today.
-//
-// Used by runPerTaskGuardrails/runPerStoryGuardrails (BL416 Phase 3).
-func resolveGuardrailBackendModel(t *Task, prd *PRD, globalBackend, globalModel string) (backend, model string) {
-	backend, model = t.GuardrailBackend, t.GuardrailModel
-	switch {
-	case backend != "":
-		// task-level guardrail backend override: model is the task's
-		// own (possibly empty = that backend's default).
-	case prd.GuardrailBackend != "":
-		backend = prd.GuardrailBackend
-		if model == "" {
-			model = prd.GuardrailModel
-		}
-	default:
-		backend = globalBackend
-		if model == "" {
-			model = prd.GuardrailModel
-		}
-		// No globalModel fallback here — found live (2026-10-12, BL418
-		// live validation): this function's own doc comment above
-		// already says the empty-global case is the caller's
-		// responsibility, but this branch baked it in anyway. A B124
-		// session-routed guardrail call (main.go's autonomousGuardrail
-		// closure) treats a non-empty GuardrailInvocation.GuardrailModel
-		// as a genuine per-unit override and sends it straight to a
-		// real tool-using session; the flat ask-only VerificationModel
-		// (e.g. an Ollama model name) baked in here reached that path
-		// with nothing configured anywhere, and a real claude-code
-		// session rejected it outright and hung for its full 10-minute
-		// timeout — the exact bug class B124 already fixed in
-		// resolveVerifierBackendModel for verify, unfixed here for
-		// guardrails. Leaving model empty lets each path apply its own
-		// correct fallback: the ask path's guardrailBackendModel still
-		// falls through to globalModel itself; the session path falls
-		// through to the backend's own registry-default model instead.
-	}
-	return backend, model
-}
+// resolveGuardrailBackendModel (BL416 Phase 1) was removed in v9.10.18:
+// its model half returned an empty model whenever nothing was pinned and
+// left the fallback to the execution path, so a pi-family judge launched
+// with no override silently ran on the backend's built-in default model.
+// Its successor is ResolveGuardrailModel (guardrail_model.go), which
+// resolves the model at resolution time — PRD guardrail_model → task
+// guardrail_model → autonomous.guardrail_model →
+// autonomous.verification_model → autonomous.planning_model — paired
+// with the resolved backend, and fails loudly (ErrNoGuardrailModel) when
+// no tier resolves, instead of returning a judge with an empty model.
+// The backend half (task → PRD → global verification_backend) is preserved
+// verbatim inside resolveUnitGuardrailModelLocked (guardrail_model.go).
 
 // prdAllTasksTerminal reports whether every task in every story of p is
 // in a terminal state.

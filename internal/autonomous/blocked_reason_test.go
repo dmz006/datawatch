@@ -21,7 +21,12 @@ func rulesReviewBlockManager(t *testing.T) (*Manager, *PRD) {
 	if err := os.WriteFile(filepath.Join(dir, "AGENT.md"), []byte("rules"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	m, err := NewManager(t.TempDir(), DefaultConfig(), fakeDecompose)
+	cfg := DefaultConfig()
+	// v9.10.18 — a configured judge model (tier-4 global verification
+	// model) so the recorded fake rules-review judge is reachable; the
+	// test asserts its verdict, not a resolution-failure block.
+	cfg.VerificationModel = "ollama/qwen3.8:27b"
+	m, err := NewManager(t.TempDir(), cfg, fakeDecompose)
 	if err != nil {
 		t.Fatal(err)
 	}
