@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.51 — Plan-coverage gate stops flagging valid plans
+
+- **plan-coverage gate no longer reports false unresolved_file findings** — plan prose that is not a file is no longer flagged: bare file names are resolved by searching the project tree, tokens without a known file extension, dotted code identifiers (`json.Unmarshal`) and slash-separated prose lists (`absent/null/empty`) are not treated as files, and untracked runtime files (`output.log`) are not reported. A file declared in the generated-files list of the same task or an earlier story/task counts as existing, while a path under an existing directory that does not exist and is never generated is still reported, so genuine gaps keep failing the gate.
+
 ## v9.5.50 — Container scans: certifi pinned in agent-aider, libcups2 accepted in parent-full
 
 ### Security
