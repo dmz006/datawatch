@@ -1236,6 +1236,9 @@ func (m *Manager) CreatePRD(spec, projectDir, backend, model string, effort Effo
 	if err := m.checkInjectionGuard("prd spec", spec); err != nil {
 		return nil, err
 	}
+	if err := validateModelForBackend(backend, model); err != nil {
+		return nil, fmt.Errorf("create prd: %w", err)
+	}
 	prd, err := m.store.CreatePRD(spec, projectDir, backend, model, effort)
 	if err != nil {
 		return nil, err
@@ -2835,20 +2838,25 @@ func (m *Manager) SetStoryLLM(prdID, storyID, backend, effort, model, actor stri
 	if err := m.taskOverrideLocked(prd, prdID); err != nil {
 		return nil, err
 	}
-	found := false
+	var story *Story
 	for i := range prd.Story {
 		if prd.Story[i].ID == storyID {
-			prd.Story[i].Backend = backend
-			prd.Story[i].Effort = Effort(effort)
-			prd.Story[i].Model = model
-			prd.Story[i].UpdatedAt = time.Now()
-			found = true
+			story = &prd.Story[i]
 			break
 		}
 	}
-	if !found {
+	if story == nil {
 		return nil, fmt.Errorf("story %q not found in prd %q", storyID, prdID)
 	}
+	// Refuse before any field changes: check the pair the story's tasks
+	// will resolve to, using the story's new values over the record's.
+	if err := checkResolvedLLMPair(prdID, &Task{}, &Story{Backend: backend, Model: model}, prd); err != nil {
+		return nil, err
+	}
+	story.Backend = backend
+	story.Effort = Effort(effort)
+	story.Model = model
+	story.UpdatedAt = time.Now()
 	prd.UpdatedAt = time.Now()
 	prd.Decisions = append(prd.Decisions, Decision{
 		At: time.Now(), Kind: "set_story_llm", Actor: actor,
@@ -2875,25 +2883,20 @@ func (m *Manager) SetTaskLLM(prdID, taskID, backend, effort, model, actor string
 	if err := m.taskOverrideLocked(prd, prdID); err != nil {
 		return nil, err
 	}
-	found := false
-	for si := range prd.Story {
-		for ti := range prd.Story[si].Tasks {
-			if prd.Story[si].Tasks[ti].ID == taskID {
-				prd.Story[si].Tasks[ti].Backend = backend
-				prd.Story[si].Tasks[ti].Effort = Effort(effort)
-				prd.Story[si].Tasks[ti].Model = model
-				prd.Story[si].Tasks[ti].UpdatedAt = time.Now()
-				found = true
-				break
-			}
-		}
-		if found {
-			break
-		}
-	}
-	if !found {
+	task, story := findTaskInPRD(prd, taskID)
+	if task == nil {
 		return nil, fmt.Errorf("task %q not found in prd %q", taskID, prdID)
 	}
+	// Refuse before any field changes: check the pair the task will run
+	// with, after the task's new values are applied over the story and
+	// PRD the executor falls back to.
+	if err := checkResolvedLLMPair(prdID, &Task{Backend: backend, Model: model}, story, prd); err != nil {
+		return nil, err
+	}
+	task.Backend = backend
+	task.Effort = Effort(effort)
+	task.Model = model
+	task.UpdatedAt = time.Now()
 	prd.UpdatedAt = time.Now()
 	prd.Decisions = append(prd.Decisions, Decision{
 		At: time.Now(), Kind: "set_task_llm", Actor: actor,
@@ -2933,6 +2936,21 @@ func (m *Manager) SetTaskGuardrailLLM(prdID, taskID string, backend, model *stri
 	}
 	if task == nil {
 		return nil, fmt.Errorf("task %q not found in prd %q", taskID, prdID)
+	}
+	if backend != nil || model != nil {
+		// Refuse before any field changes: resolve the guardrail pair on a
+		// copy of the task with the call's fields applied.
+		next := *task
+		if backend != nil {
+			next.GuardrailBackend = *backend
+		}
+		if model != nil {
+			next.GuardrailModel = *model
+		}
+		gb, gm := resolveGuardrailBackendModel(&next, prd, "", "")
+		if err := validateModelForBackend(gb, gm); err != nil {
+			return nil, fmt.Errorf("prd %q: %w", prdID, err)
+		}
 	}
 	if backend != nil {
 		task.GuardrailBackend = *backend
@@ -3084,6 +3102,11 @@ func (m *Manager) SetPRDLLM(prdID string, backend, effort, model, decompositionP
 	if prd.Status == PRDRunning || prd.Status == PRDCompleted {
 		return nil, fmt.Errorf("prd %q status %q is locked; PRD LLM overrides only apply pre-Run", prdID, prd.Status)
 	}
+	// The decomposition model is not checked: its backend is the planning
+	// backend, which resolvePlannedModel resolves separately.
+	if err := checkLevelPair(prdID, backend, model, prd.Backend, prd.Model); err != nil {
+		return nil, err
+	}
 	if backend != nil {
 		prd.Backend = *backend
 	}
@@ -3142,6 +3165,9 @@ func (m *Manager) SetPRDGuardrailLLM(prdID string, backend, model *string, actor
 	}
 	if prd.Status == PRDRunning || prd.Status == PRDCompleted {
 		return nil, fmt.Errorf("prd %q status %q is locked; PRD LLM overrides only apply pre-Run", prdID, prd.Status)
+	}
+	if err := checkLevelPair(prdID, backend, model, prd.GuardrailBackend, prd.GuardrailModel); err != nil {
+		return nil, err
 	}
 	if backend != nil {
 		prd.GuardrailBackend = *backend
@@ -3255,6 +3281,56 @@ func (m *Manager) taskOverrideLocked(prd *PRD, prdID string) error {
 // applyVerificationLLM writes the presence-aware overrides onto the
 // three fields: a nil pointer leaves the field unchanged; a pointer to
 // "" clears it so resolution falls back to the next level.
+// findTaskInPRD returns the task with taskID and the story that holds it,
+// or nil, nil when no task matches.
+func findTaskInPRD(prd *PRD, taskID string) (*Task, *Story) {
+	for si := range prd.Story {
+		for ti := range prd.Story[si].Tasks {
+			if prd.Story[si].Tasks[ti].ID == taskID {
+				return &prd.Story[si].Tasks[ti], &prd.Story[si]
+			}
+		}
+	}
+	return nil, nil
+}
+
+// pickString returns the value a presence-aware setter field carries: the
+// new value when the call sent the field (a nil pointer means it did not),
+// otherwise the record's current value.
+func pickString(next *string, current string) string {
+	if next == nil {
+		return current
+	}
+	return *next
+}
+
+// checkLevelPair refuses a backend/model override at one level (PRD, story
+// or task) when the call sets either field. The pair checked is the one the
+// level will hold after the call: a field the call leaves out keeps its
+// current value. A call that touches neither field is not checked, so an
+// unrelated edit cannot be refused over a pair it never changed.
+func checkLevelPair(prdID string, backend, model *string, curBackend, curModel string) error {
+	if backend == nil && model == nil {
+		return nil
+	}
+	if err := validateModelForBackend(pickString(backend, curBackend), pickString(model, curModel)); err != nil {
+		return fmt.Errorf("prd %q: %w", prdID, err)
+	}
+	return nil
+}
+
+// checkResolvedLLMPair refuses a story- or task-level worker pair that the
+// executor would run with. It resolves the effective backend and model
+// through resolveTaskBackendModel, so an empty backend inherits the story
+// or PRD backend exactly as a run does.
+func checkResolvedLLMPair(prdID string, task *Task, story *Story, prd *PRD) error {
+	backend, model := resolveTaskBackendModel(task, story, prd, "")
+	if err := validateModelForBackend(backend, model); err != nil {
+		return fmt.Errorf("prd %q: %w", prdID, err)
+	}
+	return nil
+}
+
 func applyVerificationLLM(dstBackend, dstModel *string, dstEffort *Effort, backend, model, effort *string) {
 	if backend != nil {
 		*dstBackend = *backend
@@ -3299,6 +3375,9 @@ func (m *Manager) SetTaskVerificationLLM(prdID, taskID string, backend, model, e
 	if task == nil {
 		return nil, fmt.Errorf("task %q not found in prd %q", taskID, prdID)
 	}
+	if err := checkLevelPair(prdID, backend, model, task.VerificationBackend, task.VerificationModel); err != nil {
+		return nil, err
+	}
 	applyVerificationLLM(&task.VerificationBackend, &task.VerificationModel, &task.VerificationEffort, backend, model, effort)
 	task.UpdatedAt = time.Now()
 	prd.UpdatedAt = time.Now()
@@ -3340,6 +3419,9 @@ func (m *Manager) SetStoryVerificationLLM(prdID, storyID string, backend, model,
 	if story == nil {
 		return nil, fmt.Errorf("story %q not found in prd %q", storyID, prdID)
 	}
+	if err := checkLevelPair(prdID, backend, model, story.VerificationBackend, story.VerificationModel); err != nil {
+		return nil, err
+	}
 	applyVerificationLLM(&story.VerificationBackend, &story.VerificationModel, &story.VerificationEffort, backend, model, effort)
 	story.UpdatedAt = time.Now()
 	prd.UpdatedAt = time.Now()
@@ -3368,6 +3450,9 @@ func (m *Manager) SetPRDVerificationLLM(prdID string, backend, model, effort *st
 		return nil, fmt.Errorf("prd %q not found", prdID)
 	}
 	if err := verificationLLMLocked(prd); err != nil {
+		return nil, err
+	}
+	if err := checkLevelPair(prdID, backend, model, prd.VerificationBackend, prd.VerificationModel); err != nil {
 		return nil, err
 	}
 	applyVerificationLLM(&prd.VerificationBackend, &prd.VerificationModel, &prd.VerificationEffort, backend, model, effort)

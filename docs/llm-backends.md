@@ -112,6 +112,59 @@ task and exit when complete. For these:
 
 ---
 
+## Model/backend pairing
+
+A model name must be one the chosen backend can serve. datawatch checks each
+model against its backend when the model is set, and refuses a mismatched
+pair. The refusal names the model and the backend.
+
+### The pairing rule
+
+- A bare Claude alias such as `claude-haiku-5-5` is refused on the `pi` and
+  `pi-prompt` backends. pi resolves a bare alias across providers and exits
+  with no output. Use a provider-qualified name such as
+  `anthropic/claude-haiku-5-5` on pi, or use the `claude-code` backend with a
+  bare name.
+- A provider-tagged model such as `ollama/qwen3.8:27b` is refused on
+  `claude-code`, which takes only bare Claude model names. Use a bare name on
+  `claude-code`.
+
+The check runs when a PRD, story, task, or verification or guardrail model is
+set. It applies to REST, MCP, and the comm channel alike. A refused set leaves
+the record unchanged; REST returns `400` with the mismatch text, and MCP returns
+a tool error.
+
+The check runs again before a PRD runs. A PRD that contains a mismatched task is
+not started, and the error names each offending task. This means records written
+before the check existed are also refused, instead of spawning a session that
+exits with no output.
+
+### pi-prompt failure marker
+
+On the `pi-prompt` backend, a run that fails no longer reports success. A
+non-zero exit from pi, or a run that produces no output, prints
+`DATAWATCH_PI_FAILED` and does not print `DATAWATCH_COMPLETE`. The failure line
+names the exit status and the model, for example:
+
+```
+DATAWATCH_PI_FAILED: pi exited with status 3 (model ollama/qwen3.8:27b)
+DATAWATCH_PI_FAILED: pi produced no output
+```
+
+When you see `DATAWATCH_PI_FAILED`, check these two things:
+
+1. **The model name.** Confirm it is provider-qualified (`provider/model`) and
+   matches the `pi_prompt.model` setting, or the model set on the PRD, story,
+   or task.
+2. **The pi provider.** Run `pi` by hand in the project directory with the same
+   model. Confirm the provider is configured (`pi auth`, or pi's
+   `~/.pi/agent/models.json`) and that its endpoint is reachable. For Ollama,
+   check that the server is running and has the model pulled.
+
+Fix the cause, then run the task again.
+
+---
+
 ## claude-code (default)
 
 **Name:** `claude-code`

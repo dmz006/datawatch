@@ -2,7 +2,9 @@ package pi
 
 import (
 	"context"
+	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -25,7 +27,7 @@ func TestBuildLaunchCmd_NoModel(t *testing.T) {
 		t.Errorf("empty model must not add a --model flag, got: %s", cmd)
 	}
 	if !strings.HasSuffix(cmd, "echo 'DATAWATCH_COMPLETE: pi done'") {
-		t.Errorf("completion marker must always be echoed unconditionally, got: %s", cmd)
+		t.Errorf("completion marker must be the success-path tail of the command, got: %s", cmd)
 	}
 }
 
@@ -413,6 +415,105 @@ func TestLaunch_SendKeysLengthGuardApplies(t *testing.T) {
 				t.Errorf("guard rejection happens before any exec, so no exec error should be present, got: %v", err)
 			}
 		})
+	}
+}
+
+// runLaunchCmdWithStubPi runs the command buildLaunchCmd generates under sh,
+// with a stub pi script (body is the shell code after the shebang) passed as
+// the binary. No tmux is involved: the command is executed directly.
+func runLaunchCmdWithStubPi(t *testing.T, stubBody, model string) (string, error) {
+	t.Helper()
+	dir := t.TempDir()
+	stub := filepath.Join(dir, "pi-stub")
+	if err := os.WriteFile(stub, []byte("#!/bin/sh\n"+stubBody), 0o755); err != nil { //nolint:gosec // test fixture must be executable
+		t.Fatalf("write stub pi: %v", err)
+	}
+	cmd := buildLaunchCmd(stub, model, "do the thing", dir, "cs-loud-test")
+	out, err := exec.Command("sh", "-c", cmd).CombinedOutput()
+	return string(out), err
+}
+
+// exitCodeOf returns the process exit code from a finished exec, or 0 when
+// the command exited cleanly.
+func exitCodeOf(t *testing.T, err error) int {
+	t.Helper()
+	if err == nil {
+		return 0
+	}
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		t.Fatalf("expected an exit status, got: %v", err)
+	}
+	return exitErr.ExitCode()
+}
+
+// TestPiLoudFailureNonZeroExitReportsFailure: pi exits 3 with no output. The
+// command must report DATAWATCH_PI_FAILED, must not report success, and must
+// exit non-zero with pi's own status.
+func TestPiLoudFailureNonZeroExitReportsFailure(t *testing.T) {
+	out, err := runLaunchCmdWithStubPi(t, "exit 3\n", "")
+	if !strings.Contains(out, "DATAWATCH_PI_FAILED") {
+		t.Errorf("expected DATAWATCH_PI_FAILED in output, got: %q", out)
+	}
+	if strings.Contains(out, "DATAWATCH_COMPLETE") {
+		t.Errorf("failure path must not print DATAWATCH_COMPLETE, got: %q", out)
+	}
+	if code := exitCodeOf(t, err); code != 3 {
+		t.Errorf("exit status = %d, want 3 (pi's own status)", code)
+	}
+}
+
+// TestPiLoudFailureSuccessWithOutputReportsComplete: pi prints a result and
+// exits 0. The success marker is printed and no failure line appears.
+func TestPiLoudFailureSuccessWithOutputReportsComplete(t *testing.T) {
+	out, err := runLaunchCmdWithStubPi(t, "echo 'the result'\nexit 0\n", "")
+	if err != nil {
+		t.Fatalf("expected a clean run, got: %v (output %q)", err, out)
+	}
+	if !strings.Contains(out, "DATAWATCH_COMPLETE: pi done") {
+		t.Errorf("expected DATAWATCH_COMPLETE on a clean run with output, got: %q", out)
+	}
+	if strings.Contains(out, "DATAWATCH_PI_FAILED") {
+		t.Errorf("clean run must not print DATAWATCH_PI_FAILED, got: %q", out)
+	}
+}
+
+// TestPiLoudFailureZeroExitNoOutputReportsFailure: pi exits 0 but prints
+// nothing. This is a silent failure, so the command must report that pi
+// produced no output and exit non-zero without the success marker.
+func TestPiLoudFailureZeroExitNoOutputReportsFailure(t *testing.T) {
+	out, err := runLaunchCmdWithStubPi(t, "exit 0\n", "")
+	if !strings.Contains(out, "DATAWATCH_PI_FAILED") || !strings.Contains(out, "no output") {
+		t.Errorf("expected a DATAWATCH_PI_FAILED no-output line, got: %q", out)
+	}
+	if strings.Contains(out, "DATAWATCH_COMPLETE") {
+		t.Errorf("no-output path must not print DATAWATCH_COMPLETE, got: %q", out)
+	}
+	if code := exitCodeOf(t, err); code == 0 {
+		t.Errorf("no-output path must exit non-zero, got exit 0 (output %q)", out)
+	}
+}
+
+// TestPiLoudFailureFailureLineNamesModel: a non-zero exit names the model in
+// the failure line, so the operator can see which model failed.
+func TestPiLoudFailureFailureLineNamesModel(t *testing.T) {
+	const model = "ollama/qwen3.8:27b"
+	out, _ := runLaunchCmdWithStubPi(t, "exit 5\n", model)
+	var line string
+	for _, l := range strings.Split(out, "\n") {
+		if strings.HasPrefix(l, "DATAWATCH_PI_FAILED:") {
+			line = l
+			break
+		}
+	}
+	if line == "" {
+		t.Fatalf("expected a line starting DATAWATCH_PI_FAILED:, got: %q", out)
+	}
+	if !strings.Contains(line, model) {
+		t.Errorf("failure line must name model %q, got: %q", model, line)
+	}
+	if !strings.Contains(line, "5") {
+		t.Errorf("failure line must include the exit status, got: %q", line)
 	}
 }
 
