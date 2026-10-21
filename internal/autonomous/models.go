@@ -694,6 +694,11 @@ type Task struct {
 	// once the attempt has run, so automatic retries after it restore again.
 	// Default false: restore stays on.
 	CleanRestart bool `json:"clean_restart,omitempty"`
+	// AdoptedSession — set at boot-resume when this in_progress task's recorded
+	// session survived the daemon restart and was adopted instead of killed.
+	// It tells executeOne not to spawn: wait for the session's completion
+	// marker, then verify. Cleared once executeOne consumes it.
+	AdoptedSession bool `json:"adopted_session,omitempty"`
 	// FailureReason (BL410 Phase 1) — structured, categorized detail
 	// alongside Error (a bare string, left untouched for existing
 	// readers). Set on the task's last failed/blocked attempt.

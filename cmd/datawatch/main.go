@@ -5651,6 +5651,41 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 					s.State != session.StateFailed &&
 					s.State != session.StateKilled
 			})
+			// Boot-resume: recorded output of a session that ended while the daemon
+			// was down, so a finished worker is verified instead of redone.
+			amgr.SetSessionOutputFn(func(sessionID string) (string, bool) {
+				out, err := mgr.TailOutput(sessionID, 500)
+				if err != nil {
+					return "", false
+				}
+				return out, true
+			})
+			// Wait for an adopted session by its state / completion marker, so it
+			// works for any backend (claude-code, opencode, pi-prompt).
+			amgr.SetSessionWaitFn(func(ctx context.Context, sessionID string) error {
+				tick := time.NewTicker(3 * time.Second)
+				defer tick.Stop()
+				for {
+					s, ok := mgr.GetSession(sessionID)
+					if !ok {
+						return fmt.Errorf("adopted session %s no longer exists", sessionID)
+					}
+					switch s.State {
+					case session.StateComplete:
+						return nil
+					case session.StateFailed, session.StateKilled:
+						return fmt.Errorf("adopted session %s ended %s", sessionID, s.State)
+					}
+					if out, err := mgr.TailOutput(sessionID, 200); err == nil && session.ExtractCompletionSummary(out) != "" {
+						return nil
+					}
+					select {
+					case <-ctx.Done():
+						return ctx.Err()
+					case <-tick.C:
+					}
+				}
+			})
 			// Wire session cleanup so executor sessions are removed from the list
 			// once their task reaches a terminal state (completed/failed).
 			amgr.SetSessionDeleteFn(func(sessionID string) {
