@@ -35,24 +35,31 @@ func pollUntil(t failer, timeout time.Duration, cond func() bool, msg string) {
 	}
 }
 
-// captureLoopsRunning reports whether any StartScreenCapture goroutine is
-// still alive. StartScreenCapture exposes no done channel and production code
-// must not change, so a full goroutine stack scan is the observable signal.
-func captureLoopsRunning() bool {
+// captureLoopCount returns how many StartScreenCapture goroutines created by
+// the calling goroutine are alive. StartScreenCapture exposes no done channel
+// and production code must not change, so a full goroutine stack scan is the
+// observable signal. Loops spawned by other tests or by Manager.Start carry a
+// different creator goroutine id and are ignored.
+func captureLoopCount() int {
+	self := make([]byte, 64)
+	self = self[:runtime.Stack(self, false)]
+	id := strings.Fields(string(self))[1]
+	marker := "Manager).StartScreenCapture in goroutine " + id + "\n"
 	buf := make([]byte, 1<<20)
 	for {
 		n := runtime.Stack(buf, true)
 		if n < len(buf) {
-			return strings.Contains(string(buf[:n]), "Manager).StartScreenCapture.func")
+			return strings.Count(string(buf[:n])+"\n", marker)
 		}
 		buf = make([]byte, 2*len(buf))
 	}
 }
 
-// waitCaptureLoopsExit blocks until no screen-capture goroutine remains.
+// waitCaptureLoopsExit blocks until none of the calling goroutine's capture
+// loops remain.
 func waitCaptureLoopsExit(t failer, timeout time.Duration) {
 	t.Helper()
-	pollUntil(t, timeout, func() bool { return !captureLoopsRunning() },
+	pollUntil(t, timeout, func() bool { return captureLoopCount() == 0 },
 		"screen-capture goroutines did not exit")
 }
 
@@ -107,7 +114,7 @@ func TestCaptureLoop_ExitsAfterCancel(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	mgr.StartScreenCapture(ctx, sess.FullID, 5)
-	pollUntil(t, 10*time.Second, captureLoopsRunning, "capture loop never started")
+	pollUntil(t, 10*time.Second, func() bool { return captureLoopCount() > 0 }, "capture loop never started")
 	mutatePane(fake, sess.TmuxSession)
 	cancel()
 	waitCaptureLoopsExit(t, 10*time.Second)
