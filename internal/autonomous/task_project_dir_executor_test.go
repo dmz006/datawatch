@@ -421,8 +421,21 @@ func TestBL447_IncidentReplay_SeparateRepos(t *testing.T) {
 		t.Fatalf("drift reported from PRD-repo commit: %v", task.ForeignFileDrift)
 	}
 	for _, d := range got.Decisions {
-		if d.Kind == "file_drift_detected" {
-			t.Fatalf("unexpected drift decision: %+v", d)
+		if d.Kind != "file_drift_detected" {
+			continue
+		}
+		// In-run recording (the worker's own task.txt commit) is expected;
+		// what the replay must rule out is a PRE-EXISTING finding from
+		// the foreign PRD-repo commit.
+		note := d.Note
+		if !strings.Contains(note, "in-run edit by the task's own worker") {
+			t.Fatalf("foreign-drift decision from PRD-repo commit (not an in-run note): %+v", d)
+		}
+		if !strings.Contains(note, "task.txt") {
+			t.Fatalf("in-run note should name the task's own file task.txt: %+v", d)
+		}
+		if strings.Contains(note, "foreign.txt") || strings.Contains(note, "base.txt") {
+			t.Fatalf("decision swept in PRD-repo files: %+v", d)
 		}
 	}
 }

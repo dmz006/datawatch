@@ -73,6 +73,133 @@ func TestDetectForeignFileDrift(t *testing.T) {
 	}
 }
 
+func TestClassifyFileDrift_PartitionsCommittedFiles(t *testing.T) {
+	task := &Task{FilesPlanned: []string{"a.go", "expected.go"}}
+	preExisting, inRun := ClassifyFileDrift(task,
+		[]string{"scratch.md"},          // preTaskUntracked
+		[]string{"d.go", "expected.go"}, // preTaskDirty (expected.go also planned)
+		[]string{"a.go", "scratch.md", "d.go", "expected.go", "new.go", "worker_extra.go"})
+	if !reflect.DeepEqual(preExisting, []string{"d.go", "scratch.md"}) {
+		t.Fatalf("preExisting = %v, want [d.go scratch.md]", preExisting)
+	}
+	// In-run = everything committed that was NOT pre-dirty/untracked —
+	// the worker's own edits, planned (a.go) or not.
+	if !reflect.DeepEqual(inRun, []string{"a.go", "new.go", "worker_extra.go"}) {
+		t.Fatalf("inRun = %v, want [a.go new.go worker_extra.go]", inRun)
+	}
+}
+
+func TestClassifyFileDrift_PlannedPreExistingFileInNeitherGroup(t *testing.T) {
+	task := &Task{FilesPlanned: []string{"pre.txt"}}
+	preExisting, inRun := ClassifyFileDrift(task,
+		nil, []string{"pre.txt"}, []string{"pre.txt", "other.txt"})
+	if preExisting != nil {
+		t.Fatalf("preExisting = %v, want nil (pre-dirty but planned)", preExisting)
+	}
+	if !reflect.DeepEqual(inRun, []string{"other.txt"}) {
+		t.Fatalf("inRun = %v, want [other.txt]", inRun)
+	}
+}
+
+func TestClassifyFileDrift_EmptyAndNilSides(t *testing.T) {
+	for name, tc := range map[string]struct {
+		task             *Task
+		preTaskUntracked []string
+		preTaskDirty     []string
+		committed        []string
+		wantPre, wantIn  []string
+	}{
+		"no committed":   {task: &Task{FilesPlanned: []string{"a.go"}}, preTaskDirty: []string{"d.go"}, committed: nil, wantPre: nil, wantIn: nil},
+		"nil task":       {task: nil, preTaskDirty: []string{"d.go"}, committed: []string{"x.go"}, wantPre: nil, wantIn: []string{"x.go"}},
+		"untracked-only": {task: &Task{}, preTaskUntracked: []string{"s.md"}, committed: []string{"s.md", "n.go"}, wantPre: []string{"s.md"}, wantIn: []string{"n.go"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			pre, in := ClassifyFileDrift(tc.task, tc.preTaskUntracked, tc.preTaskDirty, tc.committed)
+			if !reflect.DeepEqual(pre, tc.wantPre) {
+				t.Fatalf("preExisting = %v, want %v", pre, tc.wantPre)
+			}
+			if !reflect.DeepEqual(in, tc.wantIn) {
+				t.Fatalf("inRun = %v, want %v", in, tc.wantIn)
+			}
+		})
+	}
+}
+
+func TestClassifyFileDrift_NormalizesAndDedupes(t *testing.T) {
+	task := &Task{FilesPlanned: []string{"./internal/planned.go"}}
+	pre, in := ClassifyFileDrift(task,
+		[]string{"./s.md", "s.md"}, // untracked, duplicated/normalized
+		[]string{"a/../d.go"},      // dirty, path-cleaned
+		[]string{"./s.md", "a/../d.go", "x.go", "./x.go", "internal/planned.go", "internal/planned.go"})
+	if !reflect.DeepEqual(pre, []string{"d.go", "s.md"}) {
+		t.Fatalf("preExisting = %v, want [d.go s.md]", pre)
+	}
+	if !reflect.DeepEqual(in, []string{"internal/planned.go", "x.go"}) {
+		t.Fatalf("inRun = %v, want [internal/planned.go x.go]", in)
+	}
+}
+
+func TestClassifyFileDrift_MatchesDetectForeignFileDrift(t *testing.T) {
+	tasks := []*Task{nil, {FilesPlanned: nil}, {FilesPlanned: []string{"a.go", "./b/c.go"}}}
+	untracked := []string{"s.md", "n/1.md"}
+	dirty := []string{"d.go", "./b/c.go"}
+	committed := []string{"a.go", "s.md", "d.go", "b/c.go", "n/1.md", "free.go"}
+	for _, task := range tasks {
+		pre, in := ClassifyFileDrift(task, untracked, dirty, committed)
+		if got, want := pre, DetectForeignFileDrift(task, untracked, dirty, committed); !reflect.DeepEqual(got, want) {
+			t.Fatalf("preExisting %v != DetectForeignFileDrift %v (task=%+v)", got, want, task)
+		}
+		// Disjoint, complete partition except planned-pre files: every
+		// committed path lands in exactly one group or is planned.
+		preSet := map[string]bool{}
+		for _, f := range pre {
+			preSet[f] = true
+		}
+		for _, f := range in {
+			if preSet[f] {
+				t.Fatalf("%q in both groups", f)
+			}
+		}
+	}
+}
+
+func TestResolveDriftMode_DefaultIsBlock(t *testing.T) {
+	if DefaultConfig().DriftMode != "block" {
+		t.Fatalf("DefaultConfig().DriftMode = %q, want \"block\"", DefaultConfig().DriftMode)
+	}
+	m, _ := NewManager(t.TempDir(), DefaultConfig(), nil)
+	prd := newBlockOnFileDriftPRD(t, m)
+	if got := m.resolveDriftMode(prd); got != "block" {
+		t.Fatalf("resolveDriftMode default = %q, want \"block\"", got)
+	}
+}
+
+func TestResolveDriftMode_Warn(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.DriftMode = "warn"
+	m, _ := NewManager(t.TempDir(), cfg, nil)
+	prd := newBlockOnFileDriftPRD(t, m)
+	if got := m.resolveDriftMode(prd); got != "warn" {
+		t.Fatalf("resolveDriftMode = %q, want \"warn\"", got)
+	}
+}
+
+func TestResolveDriftMode_UnknownOrEmptyMeansBlock(t *testing.T) {
+	for _, mode := range []string{"", "garbage", "BLOCK", "WARN", " warn ", "blocking"} {
+		cfg := DefaultConfig()
+		cfg.DriftMode = mode
+		m, _ := NewManager(t.TempDir(), cfg, nil)
+		prd := newBlockOnFileDriftPRD(t, m)
+		want := "block"
+		if mode == "WARN" || strings.TrimSpace(mode) == "warn" {
+			want = "warn"
+		}
+		if got := m.resolveDriftMode(prd); got != want {
+			t.Errorf("DriftMode=%q: got %q, want %q", mode, got, want)
+		}
+	}
+}
+
 func driftTestRepo(t *testing.T) string {
 	t.Helper()
 	if _, err := exec.LookPath("git"); err != nil {

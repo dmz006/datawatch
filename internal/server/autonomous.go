@@ -90,12 +90,27 @@ func (s *Server) handleAutonomousConfig(w http.ResponseWriter, r *http.Request) 
 				var ratio float64
 				if json.Unmarshal(rawRatio, &ratio) != nil {
 					http.Error(w, "plan_coverage_min_ratio: must be a number in (0,1]",
-					http.StatusBadRequest)
+						http.StatusBadRequest)
 					return
 				}
 				if math.IsNaN(ratio) || math.IsInf(ratio, 0) {
 					http.Error(w, "plan_coverage_min_ratio: must be a finite number in (0,1]",
-					http.StatusBadRequest)
+						http.StatusBadRequest)
+					return
+				}
+			}
+			// drift_mode accepts only "block" or "warn"; reject the whole
+			// PUT before SetConfig merges a bad value into the live
+			// manager (a null value is absent and passes through below).
+			if raw, ok := top["drift_mode"]; ok {
+				var mode string
+				if json.Unmarshal(raw, &mode) == nil {
+					if verr := config.ValidateDriftMode(mode); verr != nil {
+						http.Error(w, verr.Error(), http.StatusBadRequest)
+						return
+					}
+				} else {
+					http.Error(w, "autonomous.drift_mode: must be a string (\"block\" or \"warn\")", http.StatusBadRequest)
 					return
 				}
 			}

@@ -36,7 +36,7 @@ you already have a daemon you can talk to.
 | [Automata DAG orchestrator](automata-orchestrator.md) | Compose multiple Automata into a graph with guardrails (rules, security, release-readiness, docs integrity) |
 | [Guardrail Library](guardrail-library.md) | Named guardrail registry, profiles, per-Automaton overrides, skill-declared guardrails, scan unification |
 | [Retry Policy](retry-policy.md) | Failure categories (infra/content/scope/policy), bounded auto-retry budgets, content auto-fix, retry profiles |
-| [File Drift Guardrail](file-drift-guardrail.md) | Flag (or, with `block_on_file_drift`, block) a direct-mode Automaton task whose commit swept in someone else's pre-existing uncommitted edit; warn-only by default, worktree mode skipped |
+| [File Drift Guardrail](file-drift-guardrail.md) | Foreign-file drift for direct-mode Automata: a task whose commit swept in someone else's pre-existing uncommitted edit **blocks by default** (`autonomous.drift_mode: block`; set `warn` to flag-only) — the task's own in-run edits only ever warn — worktree mode skipped |
 | [CI Watch Guardrail](ci-watch-guardrail.md) | Opt-in completion guardrail: wait for the pushed commit's GitHub Actions runs; on failure an LLM judge applies your project's rules (operator decision / auto-fix / CI re-run) |
 | [Project + Cluster Profiles](profiles.md) | Operator walkthrough for both profile sets — REST/MCP/CLI/comm CRUD, the unified Automaton profile dropdown, common multi-cluster patterns, troubleshooting |
 | [Container workers](container-workers.md) | Configure project + cluster profiles, spawn ephemeral container workers, monitor + collect attestations |

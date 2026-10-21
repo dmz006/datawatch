@@ -1224,9 +1224,11 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 		}
 		vrFinal := vr
 		m.store.WithLock(func() { t.Verification = &vrFinal })
-		// Foreign-file drift: deterministic, once per worker attempt.
-		// Warn-only by default; a strict-mode block halts the walk the
-		// same way a per-task guardrail block does below.
+		// File drift: deterministic, once per worker attempt.
+		// Pre-existing findings block under DriftMode "block" (the default)
+		// unless the PRD/profile explicitly opts out; in-run findings
+		// (the worker's own commits) never block. A block halts the walk
+		// the same way a per-task guardrail block does below.
 		if m.checkForeignFileDrift(ctx, prd, t) {
 			return m.store.SaveTask(t)
 		}

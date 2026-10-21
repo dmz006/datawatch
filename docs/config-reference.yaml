@@ -1101,12 +1101,31 @@ autonomous:
   # Foreign-file drift: after a task commits, files its own commit swept
   # in that were already uncommitted before the task started (and were
   # not in its planned files) are recorded on the task as
-  # foreign_file_drift plus a file_drift_detected decision. Default
-  # false = warn-only (the task still completes); true turns a finding
-  # into a blocked task. An Automaton's own setting or its guardrail
-  # profile overrides this. Worktree-mode Automata are never checked
+  # foreign_file_drift plus a file_drift_detected decision. Enforcement
+  # for those pre-existing findings is governed by drift_mode below
+  # ("block" is the default and blocks the task); an explicit
+  # block_on_file_drift=false set on an Automaton itself or on its
+  # guardrail profile is the operator's opt-out for that Automaton and
+  # keeps it warn-only. This flag's daemon-wide false default is the
+  # legacy opt-in shape and, on its own, no longer means "warn for
+  # everyone". Findings for edits made by the task's own worker
+  # (committed files that were clean before the task started) are always
+  # warn-only, in any mode. Worktree-mode Automata are never checked
   # (their worktree starts clean).
   block_on_file_drift: false
+  # Pre-existing foreign-file-drift enforcement mode: "block" (default)
+  # or "warn". "block" (also what an empty or unknown value resolves to
+  # — an unrecognized mode never silently relaxes enforcement) turns a
+  # task whose own commit swept in pre-existing uncommitted files it
+  # never planned into a blocked task, with the Automaton stopping its
+  # task walk. "warn" only records the finding (task
+  # foreign_file_drift, file_drift_detected decision, audit event) and
+  # the task still completes. Global-only: an Automaton or its
+  # guardrail profile does not override the mode; per-Automaton opt-out
+  # is block_on_file_drift=false on the Automaton or its profile. Only
+  # "block" and "warn" are accepted; any other value is rejected at the
+  # config surface.
+  drift_mode: block
   # BL367 — default quality gate config applied to every PRD that does not
   # set its own quality_gates at creation time. When enabled, a test
   # baseline is captured before the first task runs, and tests are re-run

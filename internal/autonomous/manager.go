@@ -166,6 +166,18 @@ type Config struct {
 	// Default false (opt-in); overridable per GuardrailProfile and per
 	// PRD (resolveBlockOnFileDrift).
 	BlockOnFileDrift bool `json:"block_on_file_drift"`
+	// DriftMode — pre-existing file-drift enforcement mode:
+	// "block" (default) blocks the task when its commit swept in files
+	// that were already dirty/untracked before the worker started and
+	// were not in its planned files; "warn" only records a
+	// file_drift_detected decision + warning. In-run findings (the
+	// task's own commits) are never blocked regardless of mode. An
+	// empty/unknown value resolves as "block" (resolveDriftMode), and
+	// an explicit block_on_file_drift=false on the PRD or its
+	// guardrail profile is honored as an opt-out even under "block"
+	// (checkForeignFileDrift). No omitempty: keeping it explicit
+	// mirrors the clear discipline of BlockOnFileDrift above.
+	DriftMode string `json:"drift_mode"`
 	// VerifierDiffMaxBytes caps the git diff injected into the verifier
 	// prompt for evidence grounding (BL366). 0 = 8192.
 	VerifierDiffMaxBytes int  `json:"verifier_diff_max_bytes,omitempty"`
@@ -340,7 +352,8 @@ func DefaultConfig() Config {
 		RetryCeilingTotal:       5,
 		InfraRetryEscalateAfter: 2,
 		ContentAutoFixEnabled:   true,
-		BlockOnFileDrift:        false, // opt-in strict drift enforcement
+		BlockOnFileDrift:        false,   // legacy opt-in flag; DriftMode below is the enforcement knob
+		DriftMode:               "block", // pre-existing drift blocks by default; "warn" for flag-only
 		AutoFixSkipApproval:     true,
 		// B165 — boot-resume default limit: 1 h. 0 and -1 are meaningful
 		// values (never resume / no limit), so an unset value must land
@@ -2639,8 +2652,8 @@ func (m *Manager) ApproveTask(prdID, taskID, actor string) (*PRD, error) {
 	if !ok {
 		return nil, fmt.Errorf("prd %q not found", prdID)
 	}
-	if prd.Status != PRDApproved && prd.Status != PRDActive && prd.Status != PRDRunning {
-		return nil, fmt.Errorf("prd %q status %q does not accept per-task approval; PRD must be approved or running first", prdID, prd.Status)
+	if prd.Status != PRDApproved && prd.Status != PRDActive && prd.Status != PRDRunning && prd.Status != PRDBlocked {
+		return nil, fmt.Errorf("prd %q status %q does not accept per-task approval; PRD must be approved, running, or blocked first", prdID, prd.Status)
 	}
 	now := time.Now()
 	found := false
@@ -2659,6 +2672,17 @@ func (m *Manager) ApproveTask(prdID, taskID, actor string) (*PRD, error) {
 					t.Status = TaskPending
 					// BL427 — fired after the SavePRD below succeeds.
 					emitPending = func() { m.emitTaskStatus(prd, t, TaskAwaitingApproval, lastDecision(prd, "approve_task"), nil) }
+				}
+				// Operator-approved a blocked task: release it back to
+				// pending for re-run (matching checkForeignFileDrift's
+				// blocked state). Clear the stale error from the blocked
+				// attempt. The PRD itself is left in PRDBlocked — the
+				// existing run path decides the PRD status transition; we
+				// never auto-run anything from here.
+				if t.Status == TaskBlocked {
+					t.Status = TaskPending
+					t.Error = ""
+					emitPending = func() { m.emitTaskStatus(prd, t, TaskBlocked, lastDecision(prd, "approve_task"), nil) }
 				}
 				t.UpdatedAt = now
 				found = true
