@@ -63,7 +63,7 @@ Sources: `internal/server/web/app.js`, `internal/server/web/sw.js`, `internal/se
    - `session-detail` → `GET /api/sessions`, then `applySessionUpdate` per session, `onSessionsUpdated()`, and (if alerts view) `renderAlertsView()`, then `_lastPaneFrame = null`, `_termHasContent = false` and a **full `renderSessionDetail(sid)`**. That rebuilds the terminal and input bar and sends a fresh `subscribe`.
 7. Server side, on every connect (`api.go` ~2095-2110): an access-log write, plus a full `sessions` list pushed to the client unless the delta stream is the configured default.
 
-Cost per reconnect with the detail view open: 2-3 HTTP requests (`/api/health`, `/api/config`, `/api/sessions`), a full detail re-render, a `subscribe` plus a full pane capture, and the sessions list push. The code comment at `app.js` ~575-585 states the optimized "same session alive" path was removed on purpose (v6.11.13) because it left the view in bad states.
+Cost per reconnect with the detail view open: 2-3 HTTP requests (`/api/health`, `/api/config`, `/api/sessions`), a full detail re-render, a `subscribe` plus a full pane capture, and the sessions list push. The code comment at `app.js` ~575-585 states the optimized "same session alive" path was removed on purpose in an earlier release because it left the view in bad states.
 
 Because the connection churns every minute or so (see Access log), these costs are paid continuously.
 
@@ -95,7 +95,7 @@ Notes:
 - `activate` purges old caches, calls `clients.claim()`, and then **navigates every open window** (`w.navigate(w.url)`) when `shouldNavigateOnActivate(keys, CACHE_NAME)` is true. That guard returns true only if some cache key differs from the current `CACHE_NAME`, so a no-op re-activation does not churn tabs.
 - The "BL442" label is not present in `sw.js` or `app.js`. The guard described above (`shouldNavigateOnActivate`, comment prefix "GATE") is the only navigate guard found; I assumed it is the one meant.
 - Both `activate`-navigate and the page's `controllerchange` reload can fire for the same update: the SW navigates the window, and the new page can still receive a `controllerchange`. `_reloadGuard` is per page load only, so a double reload is possible.
-- `CACHE_NAME` is the string `datawatch-v7-0-0-alpha-51` and the comment says it needs bumping per release. If it is not bumped, installed PWAs may not see updates. This is unrelated to churn; noted only.
+- `CACHE_NAME` is a hard-coded string that embeds a release tag, and the comment says it needs bumping per release. If it is not bumped, installed PWAs may not see updates. This is unrelated to churn; noted only.
 - `fetch` handler: `/api/*` and `/ws` bypass the SW, so the SW does not affect the socket directly.
 
 ## Findings
