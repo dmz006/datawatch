@@ -5,6 +5,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.52 — Sonnet plan review before approval
+
+### Added
+
+- **Plan review before approval — a reviewer LLM judges each Automaton's plan against its original spec before you approve it (off by default).** Set `autonomous.plan_review_backend` (any configured LLM) and optionally `autonomous.plan_review_model`; the reviewer checks requirement coverage, task sizes, dependencies, non-trivial verification scripts and scope outside the write dirs, and its verdict is stored on the Automaton and in the decision log.
+- **New `autonomous.plan_review_mode` setting: `off` (default), `warn` (verdict recorded, never blocks) or `block` (a failing verdict refuses approve until the review is re-run to a pass or the plan is re-decomposed).** An unknown value is a config error. A reviewer outage or unreadable verdict is recorded as a reviewer failure and never blocks approval in any mode.
+- **Re-run endpoint: `POST /api/autonomous/prds/{id}/plan-review`**, with the same action on every surface: the PWA re-run button, MCP `autonomous_prd_plan_review`, comm `autonomous plan-review <id>`, and `datawatch autonomous prd-plan-review <id>`. In block mode the PWA shows a dedicated explanation toast when approve is refused.
+- **Reviewer cost and tokens appear on the verdict** when the backend reports them.
+- **Separate verifier for the plan's smoke and final-gate tasks** via `autonomous.smoke_verification_backend` / `autonomous.smoke_verification_model`; an explicit per-task verifier always wins. Empty by default (no behavior change).
+- **PWA settings** for all five new keys, localized in English, German, Spanish, French and Japanese. Android/iOS parity is tracked in `docs/parity-status.md`.
+
 ## v9.5.51 — Plan-coverage gate stops flagging valid plans
 
 - **plan-coverage gate no longer reports false unresolved_file findings** — plan prose that is not a file is no longer flagged: bare file names are resolved by searching the project tree, tokens without a known file extension, dotted code identifiers (`json.Unmarshal`) and slash-separated prose lists (`absent/null/empty`) are not treated as files, and untracked runtime files (`output.log`) are not reported. A file declared in the generated-files list of the same task or an earlier story/task counts as existing, while a path under an existing directory that does not exist and is never generated is still reported, so genuine gaps keep failing the gate.
