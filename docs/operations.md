@@ -2780,6 +2780,56 @@ against an isolated scratch daemon (never your production daemon).
 
 ---
 
+## Ancestor CLAUDE.md files hidden from Automaton workers
+
+**Symptom.** Claude Code loads every `CLAUDE.md` it finds walking up from
+its working directory. A worker running in a PRD worktree (or in the main
+checkout) therefore also read parent-directory files such as another
+session's guardrails (`Session: ... | Task: ...`). The worker then took the
+foreign task line as its own instruction, stopped, and asked which task to
+do, which the daemon reports as "worker stopped and asked an interactive
+question instead of completing the one-shot task".
+
+**Mechanism.** The claude-code backend passes the launched `claude` a
+per-worker `--settings` flag carrying the `claudeMdExcludes` setting:
+
+```
+claude ... --settings '{"claudeMdExcludes":["/abs/parent/CLAUDE.md", ...]}'
+```
+
+The list is computed at launch: every existing `CLAUDE.md` in a strict
+ancestor directory of the worker's project directory, as absolute paths.
+The project directory's own `CLAUDE.md` and the user-level
+`~/.claude/CLAUDE.md` are never listed, so they still load. The
+alternatives were rejected: `CLAUDE_CODE_DISABLE_CLAUDE_MDS=1` also drops the
+project's own and the user-level file (workers rely on the worktree's timing
+and completion rules), and `--bare` also disables auth, hooks and
+auto-memory. No fallback file was needed.
+
+**Verification.** Checked against Claude Code 2.1.306 (the version
+installed when this was built) with `claude -p` and a scratch parent/child
+`CLAUDE.md` pair carrying unique markers: with the exclude, the parent
+marker disappeared and the child's, the worktree's and the user-level files
+still loaded; with the env var everything disappeared. Not tested: glob
+patterns (explicit paths only) and how `--settings` merges with the project's
+own settings files. Findings: `docs/plans/ancestor-claude-md-findings.md`.
+Unit tests are listed in `docs/testing-tracker.md`.
+
+**Which launches.** Every launch of a session that belongs to an Automaton
+(`Start` and `Restart`), in both PRD-worktree mode and main-checkout mode,
+including resumed launches. Interactive and other non-Automaton sessions are
+never touched: the flag is set explicitly on each launch, so a stale
+setting cannot leak from a previous worker into an interactive session.
+Only the claude-code backend is affected.
+
+**Confirm it.** Look at the session's launch command (the `claude ...` line
+at the top of the session's tmux pane or log). A worker shows
+`--settings '{"claudeMdExcludes":[...]}'` naming each ancestor
+`CLAUDE.md`; an interactive session shows no `--settings` flag. A worker
+with no ancestor `CLAUDE.md` files also shows none.
+
+---
+
 ## Compute-node queue (max_engines_per_node)
 
 A compute node can only run so many local models at once. Each node has a

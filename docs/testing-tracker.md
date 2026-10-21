@@ -35,6 +35,23 @@ found`, and the daemon reported an otherwise-fine task as failed with
 
 ---
 
+## Ancestor CLAUDE.md exclusion for Automaton workers
+
+Claude-code workers belonging to an Automaton are launched with
+`--settings '{"claudeMdExcludes":[...]}'` listing every `CLAUDE.md` in a
+strict ancestor of the project directory, so another session's guardrail
+lines are never read. Interactive sessions get no such flag. See
+`docs/operations.md` (Ancestor CLAUDE.md files hidden from Automaton workers).
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| Ancestor walk and settings flag — only strict ancestors' existing `CLAUDE.md` files, nearest first; empty when none exist or the option is off | **Yes** (`TestAncestorClaudeMds`, `TestSettingsFlag` in `internal/llm/claudecode/ancestors_test.go`) | No | `go test ./internal/llm/claudecode/` | Real files in a temp directory tree |
+| Launch command contents — `Launch` excludes exactly the ancestor files, never the project's own `CLAUDE.md`, adds nothing when off, and `LaunchResume` carries the same excludes | **Yes** (`TestLaunch_ExcludesExactlyAncestorClaudeMds`, `TestLaunch_NeverExcludesProjectOwnClaudeMd`, `TestLaunch_OptionOff_NoSettings`, `TestLaunchResume_CarriesSameExcludes` in `internal/llm/claudecode/ancestors_launch_test.go`) | No | `go test ./internal/llm/claudecode/` | Inspects the generated launch command, not a live claude |
+| Session manager wiring — option on only for Automaton workers, reset for interactive sessions on a shared backend, follows the PRD id on `Restart` | **Yes** (`TestStart_ExcludeAncestorClaudeMd_OnlyForPRDWorkers`, `TestStart_ExcludeAncestorClaudeMd_InteractiveResetsStaleOn`, `TestRestart_ExcludeAncestorClaudeMd_FollowsPRDID` in `internal/session/exclude_ancestor_claudemd_test.go`) | No | `go test ./internal/session/` | Fake backend records the setting at launch |
+| Effect on a real claude — parent marker hidden, own and user-level `CLAUDE.md` still loaded | **No** (manual research check only, `docs/plans/ancestor-claude-md-findings.md`) | No | Claude Code 2.1.306, `claude -p` | Not run through a live Automaton worker |
+
+---
+
 ## Plan review before approval + smoke/final-gate verifier split
 
 Pre-approval plan reviewer: after decompose, a configured LLM reviews the ORIGINAL spec against the plan (requirement coverage, task sizes, dependencies, non-trivial verification scripts, scope outside write_dirs) and records a `plan_review` verdict on the Automaton. Modes `autonomous.plan_review_mode` = `off` (default, no review, approval never affected) / `warn` (verdict recorded and visible, never blocks) / `block` (a `ok:false` verdict refuses approve until it is replaced). A reviewer outage is recorded (`reviewer_failed`) and never blocks in any mode. The plan's own smoke / final-gate verification task is judged by a separate LLM from `autonomous.smoke_verification_backend` / `autonomous.smoke_verification_model`; explicit per-task verifier overrides always win. Surfaces: REST `POST /api/autonomous/prds/{id}/plan-review`, MCP `autonomous_prd_plan_review`, comm `autonomous plan-review <id>`, CLI `datawatch autonomous prd-plan-review <id>` (alias `plan-review`), PWA verdict panel + re-run button + settings fields (en/de/es/fr/ja).
