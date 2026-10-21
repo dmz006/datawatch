@@ -5,6 +5,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.42 — Deterministic internal/session screen-capture tests
+
+
 ## v9.5.41 — Pin the gh builder Go toolchain above the CVE fix, with a pin check
 
 ### Security
