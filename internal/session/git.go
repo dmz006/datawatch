@@ -279,7 +279,7 @@ func (g *ProjectGit) CommitTaskWork(sessionID string, label TaskCommitLabel, sco
 	if err != nil {
 		return "", err
 	}
-	defer os.Remove(path)
+	defer func() { _ = os.Remove(path) }()
 	if err := runGit(g.dir, "commit", "-F", path); err != nil {
 		return "", fmt.Errorf("session %s: %w", sessionID, err)
 	}

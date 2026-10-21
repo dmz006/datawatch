@@ -38,6 +38,7 @@ func TestPreSessionSnapshotNamesPRDAndTitle(t *testing.T) {
 		OneShot:   true,
 		PRDID:     prdID,
 		TaskTitle: "Add retry helper",
+		Git:       true, // git is opt-in
 	}); err != nil {
 		t.Fatalf("Start: %v", err)
 	}

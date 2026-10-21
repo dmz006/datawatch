@@ -189,8 +189,8 @@ func TestStart_TaskSessionStillSnapshotsWhenSkipSnapshotUnset(t *testing.T) {
 		if head := gitLine(t, projectDir, "rev-parse", "HEAD"); head == beforeHead {
 			t.Errorf("task session HEAD unchanged at launch: snapshot commit missing")
 		}
-		if got := headSubject(t, projectDir); !strings.HasPrefix(got, "pre-session[") {
-			t.Errorf("HEAD at launch = %q, want a pre-session[ snapshot commit", got)
+		if got := headSubject(t, projectDir); !strings.HasPrefix(got, "snapshot before ") {
+			t.Errorf("HEAD at launch = %q, want a snapshot-before-session commit", got)
 		}
 		// work.txt was absorbed into the snapshot commit — the normal
 		// PRD contract.
