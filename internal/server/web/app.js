@@ -403,6 +403,24 @@ function _wsIsStale(lastActivityAt, now) {
   return (now - lastActivityAt) > WS_STALE_MS;
 }
 
+// A live socket that has stopped delivering pane frames (the server only sends
+// on change, so a dropped frame is never resent) is healed by re-sending
+// `subscribe`, whose reply is a fresh full capture. Pure for unit-testing.
+const PANE_SILENCE_MS = 30000;
+function _paneNeedsResubscribe(lastFrameAt, now) {
+  return (now - lastFrameAt) > PANE_SILENCE_MS;
+}
+
+function _paneSilenceCheck() {
+  if (state.activeView !== 'session-detail' || !state.activeSession || !state.terminal || !state._termHasContent) return;
+  const now = Date.now();
+  if (!state._lastPaneFrameAt) { state._lastPaneFrameAt = now; return; }
+  if (_paneNeedsResubscribe(state._lastPaneFrameAt, now)) {
+    state._lastPaneFrameAt = now; // one re-subscribe per silence window
+    send('subscribe', { session_id: state.activeSession });
+  }
+}
+
 function startWsWatchdog() {
   stopWsWatchdog();
   state.wsLastActivityAt = Date.now();
@@ -416,6 +434,7 @@ function startWsWatchdog() {
       return;
     }
     _wsSendPing();
+    _paneSilenceCheck();
   }, WS_PING_INTERVAL_MS);
 }
 
@@ -858,94 +877,7 @@ function handleMessage(msg) {
       }
       break;
     case 'pane_capture':
-      // Write capture-pane snapshot to xterm.js.
-      // First frame uses reset() for a clean start.
-      // Subsequent frames use ESC[2J ESC[H (clear + home) to avoid visible flash —
-      // xterm.js batches these in a single render cycle so the clear and redraw
-      // appear as one atomic update.
-      // Buffer if terminal not ready yet (subscribe fires before initXterm)
-      if (msg.data && !state.terminal && state.activeView === 'session-detail' && state.activeSession === msg.data.session_id) {
-        state._pendingPaneCapture = msg.data;
-        break;
-      }
-      if (msg.data && state.terminal && state.activeView === 'session-detail' && state.activeSession === msg.data.session_id) {
-        // Throttle: max ~30fps to prevent xterm.js buffer overload
-        const now = performance.now();
-        if (state._lastPaneWrite && (now - state._lastPaneWrite) < 33) break; // skip frame
-        state._lastPaneWrite = now;
-        // v6.11.25 (BL266 follow-up) — REMOVED the terminal-state skip
-        // gate. It was a v6.11.12 bandaid for "shell prompt flashing
-        // after LLM exits but before tmux cleanup", and it kept causing
-        // splash-stuck regressions every time a stray Complete/Failed
-        // signal landed (most recently the NLP advisory promoting
-        // multi-sentence wraps to EventComplete in v6.11.24). With BL266
-        // Complete only fires on REAL signals (ACP session.completed,
-        // MCP DATAWATCH_COMPLETE marker, operator kill). When the
-        // operator returns to a truly-Complete session, showing the
-        // saved final frame is exactly what they want — operator
-        // 2026-05-05: "[the PWA] doesn't take the screenshot and send
-        // it showing the inactive screen instead of stays at loading
-        // session message".
-        const capLines = msg.data.lines || [];
-        // Strip completion-marker lines rather than dropping the whole frame.
-        // Prior behavior (break on any match) caused the loading splash to
-        // never dismiss when the fallback log-content frame contained the
-        // marker from a prior run (e.g. resumed session with completed history).
-        const filteredLines = capLines.filter(l => !l.includes('DATAWATCH_COMPLETE:'));
-        if (filteredLines.length === 0) break;
-        const capLines2 = filteredLines;
-        if (capLines2.length > 0) {
-          try {
-            if (!state.terminal) break; // guard: terminal may have been destroyed
-            if (!state._termHasContent || state._pendingPaneCaptureRefresh) {
-              // First frame OR a post-reconnect forced refresh —
-              // dismiss loading splash, reset for clean state. The
-              // refresh path heals any drift accumulated during a
-              // daemon-restart / WS-disconnect window without
-              // tearing down the toolbar (v5.26.35).
-              _dismissTermLoadingSplashWithMinDwell();
-              state.terminal.reset();
-              state.terminal.write(capLines2.join('\r\n'));
-              state._termHasContent = true;
-              state._pendingPaneCaptureRefresh = false;
-              // Seed capture history with the initial frame
-              if (!state._captureHistory) state._captureHistory = [];
-              state._captureHistory.push({ key: capLines2.join('\n'), lines: capLines2 });
-            } else {
-              // Accumulate client-side capture history (used for opencode TUI
-              // sessions that use in-place cursor rendering and produce zero
-              // tmux scrollback; shell and claude-code use tmux copy-mode).
-              const frameKey = capLines2.join('\n');
-              if (!state._captureHistory) state._captureHistory = [];
-              const lastKey = state._captureHistory.length > 0
-                ? state._captureHistory[state._captureHistory.length - 1].key : null;
-              if (frameKey !== lastKey) {
-                state._captureHistory.push({ key: frameKey, lines: capLines2 });
-                if (state._captureHistory.length > 300) state._captureHistory.shift();
-              }
-              if (state._scrollMode) {
-                if (state._scrollUseClientHistory) break; // client-side: freeze display
-                // Tmux copy-mode path: only redraw within the scroll refresh window
-                const inWindow = state._scrollPendingRefresh &&
-                  Date.now() < state._scrollPendingRefresh;
-                if (!inWindow) break;
-              } else {
-                // Live mode: xterm internal scrollback guard + identical-frame dedup
-                const buf = state.terminal.buffer && state.terminal.buffer.active;
-                if (buf && buf.viewportY < buf.baseY) break; // preserve xterm scroll position
-                if (frameKey === state._lastPaneFrame) break; // identical frame; skip flash
-              }
-              state._lastPaneFrame = frameKey;
-              // Clear screen + clear scrollback + home + redraw
-              state.terminal.write('\x1b[2J\x1b[3J\x1b[H' + capLines2.join('\r\n'));
-            }
-          } catch (e) {
-            console.error('[xterm] write failed, recovering:', e);
-            // Terminal in bad state — destroy and let next navigation recreate
-            destroyXterm();
-          }
-        }
-      }
+      handlePaneCapture(msg.data);
       break;
     case 'chat_message':
       if (msg.data) {
@@ -3948,6 +3880,152 @@ setInterval(() => {
   }
 }, 3000);
 
+// Trailing-edge throttle (max ~30fps): a frame arriving <33ms after the last
+// write is held in state._pendingPaneFrame and flushed from a timer, so the
+// final frame of a burst is always drawn (the server only sends on change).
+function handlePaneCapture(data) {
+  if (!data) return;
+  state._lastPaneFrameAt = Date.now();
+  if (!(state.activeView === 'session-detail' && state.activeSession === data.session_id)) return;
+  // Buffer if terminal not ready yet (subscribe fires before initXterm)
+  if (!state.terminal) { state._pendingPaneCapture = data; return; }
+  const now = performance.now();
+  if (state._lastPaneWrite && (now - state._lastPaneWrite) < 33) {
+    state._pendingPaneFrame = data;
+    if (!state._paneFlushTimer) {
+      state._paneFlushTimer = setTimeout(_paneFlushPending, 40);
+    }
+    return;
+  }
+  state._pendingPaneFrame = null;
+  renderPaneFrame(data);
+}
+
+function _paneFlushPending() {
+  state._paneFlushTimer = null;
+  const f = state._pendingPaneFrame;
+  if (!f) return;
+  if (!state.terminal || state.activeView !== 'session-detail' || state.activeSession !== f.session_id) {
+    state._pendingPaneFrame = null;
+    return;
+  }
+  state._pendingPaneFrame = null;
+  renderPaneFrame(f);
+}
+
+// "Jump to live": scroll xterm to the bottom and draw the frame held back
+// while the viewport was scrolled up. Also called when the operator sends input.
+function _paneJumpToLive() {
+  _paneShowJumpToLive(false);
+  if (!state.terminal) return;
+  try { state.terminal.scrollToBottom(); } catch (e) { /* terminal disposed */ }
+  const f = state._pendingPaneFrame;
+  state._pendingPaneFrame = null;
+  if (f && f.session_id === state.activeSession) renderPaneFrame(f);
+}
+
+function _paneShowJumpToLive(show) {
+  let btn = document.getElementById('termJumpLive');
+  if (!show) { if (btn) btn.style.display = 'none'; return; }
+  if (!btn) {
+    const host = state.terminal && state.terminal.element && state.terminal.element.parentNode;
+    if (!host) return;
+    btn = document.createElement('button');
+    btn.id = 'termJumpLive';
+    btn.textContent = '\u2193 Jump to live';
+    btn.style.cssText = 'position:absolute;right:12px;bottom:12px;z-index:5;padding:4px 10px;border-radius:12px;border:0;background:var(--accent,#7c3aed);color:#fff;cursor:pointer;';
+    btn.addEventListener('click', _paneJumpToLive);
+    host.appendChild(btn);
+  }
+  btn.style.display = '';
+}
+
+// Draw one pane_capture frame into xterm.js. Called from the throttle in
+// handlePaneCapture; frames dropped there are re-delivered, not lost.
+function renderPaneFrame(data) {
+      if (data && state.terminal && state.activeView === 'session-detail' && state.activeSession === data.session_id) {
+        state._lastPaneWrite = performance.now();
+        // v6.11.25 (BL266 follow-up) — REMOVED the terminal-state skip
+        // gate. It was a v6.11.12 bandaid for "shell prompt flashing
+        // after LLM exits but before tmux cleanup", and it kept causing
+        // splash-stuck regressions every time a stray Complete/Failed
+        // signal landed (most recently the NLP advisory promoting
+        // multi-sentence wraps to EventComplete in v6.11.24). With BL266
+        // Complete only fires on REAL signals (ACP session.completed,
+        // MCP DATAWATCH_COMPLETE marker, operator kill). When the
+        // operator returns to a truly-Complete session, showing the
+        // saved final frame is exactly what they want — operator
+        // 2026-05-05: "[the PWA] doesn't take the screenshot and send
+        // it showing the inactive screen instead of stays at loading
+        // session message".
+        const capLines = data.lines || [];
+        // Strip completion-marker lines rather than dropping the whole frame.
+        // Prior behavior (break on any match) caused the loading splash to
+        // never dismiss when the fallback log-content frame contained the
+        // marker from a prior run (e.g. resumed session with completed history).
+        const filteredLines = capLines.filter(l => !l.includes('DATAWATCH_COMPLETE:'));
+        if (filteredLines.length === 0) return;
+        const capLines2 = filteredLines;
+        if (capLines2.length > 0) {
+          try {
+            if (!state.terminal) return; // guard: terminal may have been destroyed
+            if (!state._termHasContent || state._pendingPaneCaptureRefresh) {
+              // First frame OR a post-reconnect forced refresh —
+              // dismiss loading splash, reset for clean state. The
+              // refresh path heals any drift accumulated during a
+              // daemon-restart / WS-disconnect window without
+              // tearing down the toolbar (v5.26.35).
+              _dismissTermLoadingSplashWithMinDwell();
+              state.terminal.reset();
+              state.terminal.write(capLines2.join('\r\n'));
+              state._termHasContent = true;
+              state._pendingPaneCaptureRefresh = false;
+              // Seed capture history with the initial frame
+              if (!state._captureHistory) state._captureHistory = [];
+              state._captureHistory.push({ key: capLines2.join('\n'), lines: capLines2 });
+            } else {
+              // Accumulate client-side capture history (used for opencode TUI
+              // sessions that use in-place cursor rendering and produce zero
+              // tmux scrollback; shell and claude-code use tmux copy-mode).
+              const frameKey = capLines2.join('\n');
+              if (!state._captureHistory) state._captureHistory = [];
+              const lastKey = state._captureHistory.length > 0
+                ? state._captureHistory[state._captureHistory.length - 1].key : null;
+              if (frameKey !== lastKey) {
+                state._captureHistory.push({ key: frameKey, lines: capLines2 });
+                if (state._captureHistory.length > 300) state._captureHistory.shift();
+              }
+              if (state._scrollMode) {
+                if (state._scrollUseClientHistory) return; // client-side: freeze display
+                // Tmux copy-mode path: only redraw within the scroll refresh window
+                const inWindow = state._scrollPendingRefresh &&
+                  Date.now() < state._scrollPendingRefresh;
+                if (!inWindow) return;
+              } else {
+                // Live mode: xterm internal scrollback guard + identical-frame dedup
+                const buf = state.terminal.buffer && state.terminal.buffer.active;
+                if (buf && buf.viewportY < buf.baseY) {
+                  // Scrolled up: keep the newest frame and offer "jump to live"
+                  // instead of dropping it (the server only resends on change).
+                  state._pendingPaneFrame = data;
+                  _paneShowJumpToLive(true);
+                  return;
+                }
+                if (frameKey === state._lastPaneFrame) return; // identical frame; skip flash
+              }
+              state._lastPaneFrame = frameKey;
+              // Clear screen + clear scrollback + home + redraw
+              state.terminal.write('\x1b[2J\x1b[3J\x1b[H' + capLines2.join('\r\n'));
+            }
+          } catch (e) {
+            console.error('[xterm] write failed, recovering:', e);
+            // Terminal in bad state — destroy and let next navigation recreate
+            destroyXterm();
+          }
+        }
+      }
+}
+
 function destroyXterm() {
   if (state._termWatchdog) { clearTimeout(state._termWatchdog); state._termWatchdog = null; }
   if (state._termResizeObserver) {
@@ -3965,6 +4043,9 @@ function destroyXterm() {
     state._termContainerRef.style.maxHeight = '';
     state._termContainerRef = null;
   }
+  if (state._paneFlushTimer) { clearTimeout(state._paneFlushTimer); state._paneFlushTimer = null; }
+  state._pendingPaneFrame = null;
+  _paneShowJumpToLive(false);
   if (state.terminal) {
     try { state.terminal.dispose(); } catch(e) { /* already disposed */ }
     state.terminal = null;
@@ -4152,12 +4233,22 @@ function initXterm(sessionId, bufferedLines, configCols, configRows) {
   // Interactive keyboard mode — keystrokes sent to tmux via sendkey
   term.onData(data => {
     if (state.activeSession) {
+      _paneJumpToLive(); // operator typed: return to the live screen
       send('send_input', { session_id: state.activeSession, text: data, raw: true });
     }
   });
 
   state.terminal = term;
   state.termFitAddon = fitAddon;
+
+  // Scrolling back to the bottom by hand releases the frame held back while
+  // the viewport was scrolled up.
+  if (typeof term.onScroll === 'function') {
+    term.onScroll(() => {
+      const buf = term.buffer && term.buffer.active;
+      if (state._pendingPaneFrame && buf && buf.viewportY >= buf.baseY) _paneJumpToLive();
+    });
+  }
 
   // Flush buffered pane capture that arrived before terminal was ready
   if (state._pendingPaneCapture) {
@@ -5473,6 +5564,7 @@ function sendSessionInput() {
     _clearAllAttachments();
   }
   const sendText = text || '\n'; // Empty input = send Enter key
+  _paneJumpToLive();
 
   if (state.activeSession) {
     const sess = state.sessions.find(s => s.full_id === state.activeSession);

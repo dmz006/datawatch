@@ -2806,6 +2806,14 @@ The terminal loads session content in ~30-80ms:
 
 Real-time output lines are batched per session at 100ms intervals before broadcasting via WebSocket. This reduces message count from 300+ to ~2-5 per batch, preventing send channel saturation.
 
+### Live-update delivery
+
+The PWA draws each `pane_capture` frame at most every 33 ms. A frame that arrives inside that window is held and drawn by a 40 ms trailing timer, so the newest frame always reaches the terminal (the daemon only resends a pane when it changes, so a dropped frame would otherwise leave the view stale).
+
+- While the terminal is scrolled up, the newest frame is held instead of drawn and a **Jump to live** button appears. Clicking it, typing, sending input, or scrolling back to the bottom scrolls to the end and draws the held frame.
+- If an open session view receives no `pane_capture` frame for 30 s, the 20 s WebSocket watchdog tick re-sends `subscribe` so the daemon sends a fresh frame.
+- Regression story: `TS-798` (`feature:terminal-live-update`) in `docs/testing/v9.0.0/cookbook.md`.
+
 ### Crash resilience
 
 - `pane_capture` writes wrapped in try/catch with auto-recovery
