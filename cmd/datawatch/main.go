@@ -9839,7 +9839,8 @@ func newSessionCmd() *cobra.Command {
 			killChildren, _ := cmd.Flags().GetBool("kill-children")
 			killChildrenRecursive, _ := cmd.Flags().GetBool("kill-children-recursive")
 			validate, _ := cmd.Flags().GetStringArray("validate")
-			return runSessionNew(cfg, task, dir, name, backend, llm, compute, chrome, parent, killChildren, killChildrenRecursive, validate)
+			git, _ := cmd.Flags().GetBool("git")
+			return runSessionNew(cfg, task, dir, name, backend, llm, compute, chrome, parent, killChildren, killChildrenRecursive, validate, git)
 		},
 	}
 	newCmd.Flags().StringP("dir", "d", "", "Project directory (default: current directory)")
@@ -9852,6 +9853,7 @@ func newSessionCmd() *cobra.Command {
 	newCmd.Flags().Bool("kill-children", false, "When set, killing this session will also kill direct child sessions it spawns.")
 	newCmd.Flags().StringArray("validate", nil, "Shell command run in the project dir before a one-shot may commit (repeatable). Ad-hoc one-shots with no --validate never auto-commit.")
 	newCmd.Flags().Bool("kill-children-recursive", false, "When set, killing this session kills ALL descendants recursively (BL351). Supersedes --kill-children.")
+	newCmd.Flags().Bool("git", false, "opt in to git init, snapshot and automatic commit")
 	sessionCmd.AddCommand(newCmd)
 
 	// session status <id>
@@ -10503,8 +10505,11 @@ func runSessionList(cfg *config.Config) error {
 	return w.Flush()
 }
 
-func runSessionNew(cfg *config.Config, task, dir, name, backend, llm, compute string, chrome bool, parent string, killChildren, killChildrenRecursive bool, validate []string) error {
-	// Try the structured HTTP API first
+// sessionNewStartBody builds the JSON request body the `session new` command
+// POSTs to /api/sessions/start. chrome is sent only when true; git (opt-in
+// to git init, snapshot and automatic commit) is sent only when true, matching
+// the `omitempty` field on the server's StartSession request struct.
+func sessionNewStartBody(task, dir, name, backend, llm, compute string, chrome bool, parent string, killChildren, killChildrenRecursive bool, validate []string, git bool) ([]byte, error) {
 	type startReq struct {
 		Task                  string   `json:"task"`
 		ProjectDir            string   `json:"project_dir,omitempty"`
@@ -10517,13 +10522,22 @@ func runSessionNew(cfg *config.Config, task, dir, name, backend, llm, compute st
 		KillChildren          bool     `json:"kill_children,omitempty"`
 		KillChildrenRecursive bool     `json:"kill_children_recursive,omitempty"`
 		ValidateCommands      []string `json:"validate_commands,omitempty"`
+		Git                   bool     `json:"git,omitempty"`
 	}
-	req := startReq{Task: task, ProjectDir: dir, Backend: backend, Name: name, LLM: llm, ComputeNode: compute, ParentID: parent, KillChildren: killChildren, KillChildrenRecursive: killChildrenRecursive, ValidateCommands: validate}
+	req := startReq{Task: task, ProjectDir: dir, Backend: backend, Name: name, LLM: llm, ComputeNode: compute, ParentID: parent, KillChildren: killChildren, KillChildrenRecursive: killChildrenRecursive, ValidateCommands: validate, Git: git}
 	if chrome {
 		t := true
 		req.Chrome = &t
 	}
-	body, _ := json.Marshal(req)
+	return json.Marshal(req)
+}
+
+func runSessionNew(cfg *config.Config, task, dir, name, backend, llm, compute string, chrome bool, parent string, killChildren, killChildrenRecursive bool, validate []string, git bool) error {
+	// Try the structured HTTP API first
+	body, err := sessionNewStartBody(task, dir, name, backend, llm, compute, chrome, parent, killChildren, killChildrenRecursive, validate, git)
+	if err != nil {
+		return err
+	}
 	httpReq, _ := http.NewRequest(http.MethodPost,
 		fmt.Sprintf("http://localhost:%d/api/sessions/start", cfg.Server.Port),
 		bytes.NewReader(body))
