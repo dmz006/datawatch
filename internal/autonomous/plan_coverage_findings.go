@@ -23,7 +23,32 @@
 //     a *declared output*, i.e. the source of the "created by a task"
 //     allowance — those entries are not treated as references, but
 //     every FilesGenerated entry of a story that no task in the plan
-//     generates is flagged;
+//     generates is flagged.
+//
+//     File-token recognition is deliberately conservative so that prose
+//     is not mistaken for paths:
+//
+//       a) a *bare* file name (no directory component, "executor.go")
+//          is a path only if it ends in a known file extension (an
+//          explicit allowlist — go, md, js, ts, tsx, jsx, json, yaml,
+//          yml, sh, py, html, css, txt, toml, sql, mod, sum, proto,
+//          svg, png, log, tf, mjs, cfg, conf, ini, xml) and it passes
+//          when a file with that base name exists *anywhere* under the
+//          project base dir (the tree is walked lazily, once per
+//          CheckPlanStructure call; .git, node_modules, vendor and
+//          .datawatch directories are skipped); dotted identifiers with
+//          non-file finals ("GuardrailVerdict.Issues", "json.Unmarshal")
+//          are therefore never candidates;
+//       b) a *slash-separated* token ("task/story/PRD", "absent/null/
+//          empty", "ollama/qwen3.8") is a path candidate only if its
+//          last segment has an allowlisted extension, or its *first*
+//          segment names an existing directory under the base dir —
+//          slash-containing word lists that satisfy neither are prose
+//          and ignored;
+//       c) runtime artifacts (output.log, *.log, *.pid, *.tmp, *.out)
+//          are ignored entirely if they are not present in the tree;
+//       d) pure-numeric tokens and traversal-looking paths ("..") are
+//          excluded, as before;
 //  4. verification — every task must carry a VerificationScript OR an
 //     explicit VerificationScriptReason (the B124 exemption: a task may
 //     legitimately have no script, but it must say why);
@@ -34,6 +59,7 @@
 package autonomous
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -97,14 +123,47 @@ func (r *PlanStructureReport) Count() int {
 }
 
 var (
-	// planFileRefRe — a file-like token in free text: either a
-	// slash-separated path ("reports/daily.txt",
-	// "pkg/util/helper.go") or a bare file name with a 2-6 letter
-	// alphabetic extension ("store.go", "README.md"). Pure-numeric
-	// finals ("v5.26.64", "5.2") and single-letter "extensions"
-	// ("e.g") do not match — both are filtered below as well.
+	// planFileRefRe — a *candidate* file-like token in free text: either
+	// a slash-separated potential path ("reports/daily.txt",
+	// "pkg/util/helper.go") or a bare name carrying a dotted final
+	// ("store.go", "README.md", "GuardrailVerdict.Issues"). This regex
+	// is deliberately permissive — the policy decision is made in
+	// fileLikeTokens / pathTokenCandidate against the file-extension
+	// allowlist, so dotted Go identifiers and slash-separated word
+	// lists are rejected there rather than by ad-hoc width limits here.
+	// Pure-numeric finals ("v5.26.64") and single-letter finals ("e.g")
+	// are filtered below as well.
 	planFileRefRe = regexp.MustCompile(
-		`(?:[A-Za-z0-9_+./-]+/)+[A-Za-z0-9_+.-]+|[A-Za-z0-9_][A-Za-z0-9_-]*\.[A-Za-z][A-Za-z0-9]{1,5}`)
+		`(?:[A-Za-z0-9_+./-]+/)+[A-Za-z0-9_+.-]+|[A-Za-z0-9_][A-Za-z0-9_-]*\.[A-Za-z][A-Za-z0-9]+`)
+
+	// allowedFileExts — the explicit extension allowlist a bare file
+	// name (and a slash-separated token's final segment) must end in to
+	// count as a file reference at all. Anything else — "Issues",
+	// "Unmarshal", "qwen3.8", "8" — is prose, not a path.
+	allowedFileExts = map[string]bool{
+		"go": true, "md": true, "js": true, "ts": true, "tsx": true,
+		"jsx": true, "json": true, "yaml": true, "yml": true, "sh": true,
+		"py": true, "html": true, "css": true, "txt": true, "toml": true,
+		"sql": true, "mod": true, "sum": true, "proto": true, "svg": true,
+		"png": true, "log": true, "tf": true, "mjs": true, "cfg": true,
+		"conf": true, "ini": true, "xml": true,
+	}
+
+	// runtimeFileExts — runtime artifact extensions (output.log,
+	// *.pid, *.tmp, *.out-style scratch files) that are almost never
+	// tracked in the repo: a token with one of these finals is a path
+	// candidate but is ignored (no finding) whenever it is not present
+	// in the tree.
+	runtimeFileExts = map[string]bool{
+		"log": true, "pid": true, "tmp": true, "out": true,
+	}
+
+	// skippedTreeDirs — directories excluded from the lazy base-name
+	// walk that resolves bare file names anywhere under the base dir.
+	skippedTreeDirs = map[string]bool{
+		".git": true, "node_modules": true, "vendor": true, ".datawatch": true,
+	}
+
 	// trackerIDRefRe — a tracker id: BL followed by one or more digits,
 	// case-insensitive ("BL124", "bl9"). Per the structural rule this
 	// is a plain containment match on task titles and generated names.
@@ -259,6 +318,33 @@ func CheckPlanStructure(prd *PRD, stories []Story) *PlanStructureReport {
 		_, err := os.Stat(filepath.Join(baseDir, p))
 		return err == nil
 	}
+	// basenameInTree reports whether a file with base name name exists
+	// anywhere under baseDir. The tree is walked lazily on first use
+	// (once per CheckPlanStructure call) and the base-name set is
+	// cached; .git, node_modules, vendor and .datawatch directories are
+	// pruned from the walk.
+	var baseNameSet map[string]bool
+	var baseNameSetBuilt bool
+	basenameInTree := func(name string) bool {
+		if !baseNameSetBuilt {
+			baseNameSetBuilt = true
+			baseNameSet = make(map[string]bool)
+			_ = filepath.WalkDir(baseDir, func(_ string, d fs.DirEntry, err error) error {
+				if err != nil {
+					return nil // unreadable entries are simply skipped
+				}
+				if d.IsDir() {
+					if skippedTreeDirs[d.Name()] {
+						return filepath.SkipDir
+					}
+					return nil
+				}
+				baseNameSet[d.Name()] = true
+				return nil
+			})
+		}
+		return baseNameSet[name]
+	}
 	// generatesAtOrBefore reports whether p is listed in the
 	// FilesGenerated of a task at or before the (si, maxTI) point in
 	// plan order; maxTI == -1 covers the whole story (story-level
@@ -284,11 +370,25 @@ func CheckPlanStructure(prd *PRD, stories []Story) *PlanStructureReport {
 	}
 	// checkFileTokens flags any file-like path named in title/spec that
 	// is neither in the tree nor produced by a task at or before the
-	// point. ti == -1 marks a story-level reference.
+	// point. ti == -1 marks a story-level reference. Tokens that are
+	// prose rather than paths (no allowlisted extension, slash word
+	// lists without a real directory head) are skipped entirely, and
+	// bare names (no directories) pass when a file of the same base
+	// name exists anywhere under the base dir. Runtime artifacts
+	// (*.log, *.pid, *.tmp, *.out) are ignored when absent.
 	checkFileTokens := func(where string, s *Story, si, ti int, texts ...string) {
 		for _, p := range fileLikeTokens(strings.Join(texts, "\n")) {
+			if !pathTokenCandidate(baseDir, p) {
+				continue
+			}
+			if isRuntimeFile(p) {
+				continue // absent runtime artifacts never count as misses
+			}
 			if existsInTree(p) || generatesAtOrBefore(si, ti, p) {
 				continue
+			}
+			if !strings.Contains(p, "/") && basenameInTree(p) {
+				continue // bare name resolving to a file somewhere in the tree
 			}
 			add(StructuralFinding{
 				Kind:    FindingUnresolvedFile,
@@ -416,13 +516,19 @@ func planStructureBaseDir(prd *PRD) string {
 
 // fileLikeTokens returns the deduplicated, appearance-ordered file-like
 // tokens in text (see planFileRefRe): slash-separated paths and bare
-// names with a plausible alphanumeric file extension. Pure-numeric
-// tokens ("10.20.30") and traversal-looking paths are excluded.
+// names. A bare name must end in an allowlisted file extension to
+// survive — dotted identifiers and version numbers do not. Pure-numeric
+// tokens ("10.20.30") and traversal-looking paths are excluded. Slash
+// tokens are kept here and adjudicated against the base directorium by
+// pathTokenCandidate, since that rule needs the tree context.
 func fileLikeTokens(text string) []string {
 	seen := make(map[string]bool)
 	var out []string
 	for _, tok := range planFileRefRe.FindAllString(text, -1) {
 		if len(tok) < 4 || isPureNumeric(tok) || strings.Contains(tok, "..") {
+			continue
+		}
+		if !strings.Contains(tok, "/") && !hasAllowedFileExt(tok) {
 			continue
 		}
 		if seen[tok] {
@@ -432,6 +538,52 @@ func fileLikeTokens(text string) []string {
 		out = append(out, tok)
 	}
 	return out
+}
+
+// hasAllowedFileExt reports whether name ends in an extension from the
+// explicit allowlist (case-insensitive). "store.go" / "README.MD" do;
+// "GuardrailVerdict.Issues", "json.Unmarshal" and "qwen3.8" do not.
+func hasAllowedFileExt(name string) bool {
+	i := strings.LastIndex(name, ".")
+	if i < 0 || i == len(name)-1 {
+		return false
+	}
+	return allowedFileExts[strings.ToLower(name[i+1:])]
+}
+
+// isRuntimeFile reports whether name ends in a runtime-artifact
+// extension (*.log, *.pid, *.tmp, *.out): such files are usually
+// untracked, so an absent one must not surface as an unresolved-file
+// miss — a present one still resolves exists normally.
+func isRuntimeFile(name string) bool {
+	i := strings.LastIndex(name, ".")
+	if i < 0 || i == len(name)-1 {
+		return false
+	}
+	return runtimeFileExts[strings.ToLower(name[i+1:])]
+}
+
+// pathTokenCandidate reports whether a bare or slash-separated token is
+// a path reference at all against baseDir: a bare name (already
+// allowlist-checked by fileLikeTokens) always is; a slash-separated
+// token is one only if its last segment has an allowlisted extension,
+// or its first segment names an existing directory under baseDir.
+// Slash word lists like "absent/null/empty" or "task/story/PRD" meet
+// neither bar and are prose, not paths.
+func pathTokenCandidate(baseDir, p string) bool {
+	if !strings.Contains(p, "/") {
+		return true
+	}
+	last := p[strings.LastIndex(p, "/")+1:]
+	if hasAllowedFileExt(last) {
+		return true
+	}
+	first, _, _ := strings.Cut(p, "/")
+	if first == "" {
+		return false
+	}
+	fi, err := os.Stat(filepath.Join(baseDir, first))
+	return err == nil && fi.IsDir()
 }
 
 // canonicalCycleKey is the dedup key for one discovered cycle: the

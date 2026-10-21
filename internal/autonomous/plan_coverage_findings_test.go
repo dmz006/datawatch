@@ -3,6 +3,7 @@ package autonomous
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -525,6 +526,94 @@ func TestPlanCoverageFindings_TrackerIDNaming(t *testing.T) {
 				t.Fatalf("unexpected tracker-id finding in %+v", report.Findings)
 			}
 		})
+	}
+}
+
+// TestPlanCoverageFindings_FalsePositiveTokens pins the conservative
+// file-token recognition rules: bare names that resolve somewhere in
+// the project tree, dotted identifiers, slash word lists without an
+// allowlisted final extension and a real directory head, and absent
+// runtime artifacts must never surface as unresolved_file findings —
+// while a genuinely missing bare name still does.
+func TestPlanCoverageFindings_FalsePositiveTokens(t *testing.T) {
+	dir := t.TempDir()
+	mk := func(rel ...string) {
+		t.Helper()
+		p := filepath.Join(append([]string{dir}, rel...)...)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// The three bare names each live in a *different* subdirectory of
+	// the temp tree: they must resolve by base name alone, wherever
+	// they sit under the project base dir. None of the false-positive
+	// tokens below has a matching file, and neither "task", "story",
+	// "ollama" nor "absent" exists here as a directory.
+	mk("pkg", "executor.go")
+	mk("web", "app.js")
+	mk("services", "manager.go")
+
+	tokens := []string{
+		"executor.go",
+		"app.js",
+		"manager.go",
+		"GuardrailVerdict.Issues",
+		"json.Unmarshal",
+		"absent/null/empty",
+		"task/story/PRD",
+		"ollama/qwen3.8",
+		"output.log",
+	}
+	for i, tok := range tokens {
+		t.Run("token "+strconv.Itoa(i)+":"+strings.ReplaceAll(tok, "/", "_"), func(t *testing.T) {
+			report := CheckPlanStructure(&PRD{ProjectDir: dir}, []Story{{
+				ID:    "s1",
+				Title: "Story one",
+				Tasks: []Task{{
+					ID:                         "t1",
+					Title:                      "Touch " + tok,
+					VerificationScriptReason:   exemption,
+				}},
+			}})
+			var misses []StructuralFinding
+			for _, f := range report.Findings {
+				if f.Kind == FindingUnresolvedFile {
+					misses = append(misses, f)
+				}
+			}
+			if len(misses) != 0 {
+				t.Fatalf("token %q produced unresolved_file findings: %+v", tok, misses)
+			}
+		})
+	}
+
+	// Guard against masking: a bare allowlisted name that exists
+	// nowhere in the tree must still be flagged.
+	report := CheckPlanStructure(&PRD{ProjectDir: dir}, []Story{{
+		ID:    "s1",
+		Title: "Story one",
+		Tasks: []Task{{
+			ID:                     "t1",
+			Title:                  "Touch definitely_missing_xyz.go",
+			VerificationScriptReason: exemption,
+		}},
+	}})
+	var f StructuralFinding
+	found := false
+	for _, x := range report.Findings {
+		if x.Kind == FindingUnresolvedFile {
+			found = true
+			f = x
+		}
+	}
+	if !found {
+		t.Fatalf("expected unresolved_file for genuinely missing bare name; got %+v", report.Findings)
+	}
+	if !strings.Contains(f.Detail, "definitely_missing_xyz.go") {
+		t.Fatalf("detail %q does not name the missing file", f.Detail)
 	}
 }
 
