@@ -2360,6 +2360,23 @@ func ValidateUndeclaredEditMode(mode string) error {
 // marshal and leaving the previous value untouched on unmarshal.
 type AutonomousNotifyConfig struct {
 	DefaultEvents []string `yaml:"default_events" json:"default_events"`
+	// PendingEventsMax bounds each mcp_queue subscription sink's
+	// in-memory pending-events queue; the oldest events are evicted
+	// first. Values below 1 fall back to 500. No omitempty, same
+	// reasoning as DefaultEvents.
+	PendingEventsMax int `yaml:"pending_events_max" json:"pending_events_max"`
+}
+
+// DefaultPendingEventsMax is the pending_events_max fallback.
+const DefaultPendingEventsMax = 500
+
+// EffectivePendingEventsMax returns PendingEventsMax, or the default
+// when it is below 1.
+func (n AutonomousNotifyConfig) EffectivePendingEventsMax() int {
+	if n.PendingEventsMax < 1 {
+		return DefaultPendingEventsMax
+	}
+	return n.PendingEventsMax
 }
 
 // ScanConfig — BL221 Phase 3 runtime config, mirrors

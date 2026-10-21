@@ -867,6 +867,11 @@ autonomous:
     #   [prd.updated, prd.completed, prd.failed, task.session_started,
     #    task.completed, task.failed]
     default_events: []
+    # Per-queue retention for the mcp_queue subscription sink: each named
+    # pending-events queue keeps at most this many events in memory and
+    # evicts the oldest first (a polling client then sees dropped=true).
+    # Values below 1 fall back to 500. Applied at daemon start.
+    pending_events_max: 500
   # Daemon-wide default for how many independent tasks of one Automaton run
   # at once. An Automaton's own max_concurrent_tasks overrides it. 1 = one
   # task at a time (sequential). Tasks of different Automata are not limited

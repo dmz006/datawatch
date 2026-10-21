@@ -7173,6 +7173,15 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			} else if s, ok := v.(string); ok {
 				cfg.Autonomous.Notify.DefaultEvents = splitCSV(s)
 			}
+		case "autonomous.notify.pending_events_max":
+			// Per-queue retention for the mcp_queue sink; < 1 stores the
+			// default. Takes effect on the next daemon start.
+			if n, ok := toInt(v); ok {
+				if n < 1 {
+					n = config.DefaultPendingEventsMax
+				}
+				cfg.Autonomous.Notify.PendingEventsMax = n
+			}
 		case "autonomous.planning_effort", "autonomous.decomposition_effort":
 			cfg.Autonomous.PlanningEffort = toString(v)
 		case "autonomous.verification_effort":
@@ -7911,7 +7920,10 @@ func defaultEventsNotifySurface(n config.AutonomousNotifyConfig) map[string]inte
 	if ev == nil {
 		ev = []string{}
 	}
-	return map[string]interface{}{"default_events": ev}
+	return map[string]interface{}{
+		"default_events":     ev,
+		"pending_events_max": n.EffectivePendingEventsMax(),
+	}
 }
 
 // ---- Proxy endpoint --------------------------------------------------------

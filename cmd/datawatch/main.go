@@ -5717,6 +5717,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 							})
 						}
 					},
+					PendingQueue: autonomouspkg.NewPendingEventQueue(cfg.Autonomous.Notify.EffectivePendingEventsMax()),
 				})
 				if err := lifeSubEngine.Start(); err != nil {
 					log.Printf("[warn] lifecycle subscription engine: %v", err)

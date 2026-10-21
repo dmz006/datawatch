@@ -8,26 +8,37 @@
 // and alert are accepted and validated; topic and alert are stored for
 // the existing Phase 2 sinks, and comm/session execution (including the
 // send_input action) happens when the daemon wires the store to the
-// dispatcher. The webhook and mcp_queue sink types are rejected with a
-// clear error — they arrive in later phases (outbound webhook delivery,
-// pending-events queue for generic MCP clients).
+// dispatcher. The mcp_queue sink appends to a named pending-events
+// queue that generic MCP clients poll. The webhook sink type is
+// rejected with a clear error — it arrives in a later phase (outbound
+// webhook delivery).
 
 package autonomous
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 	"unicode/utf8"
 )
 
-// Sink types. Only comm/session/topic/alert are accepted in this phase.
+// Sink types. comm/session/topic/alert/mcp_queue are accepted; webhook
+// is rejected until its phase ships.
 const (
 	SinkComm    = "comm"    // existing comm-router fan-out (routers, ntfy, email)
 	SinkSession = "session" // a datawatch-managed session, via SendInput / channel bridge
 	SinkTopic   = "topic"   // SSE / mobile push topic bus (server.PublishToTopic)
 	SinkAlert   = "alert"   // the in-app alert store (alerts.Store.Add)
+	// SinkMCPQueue appends to a named pending-events queue (Sink.Target)
+	// that generic MCP clients poll with a cursor.
+	SinkMCPQueue = "mcp_queue"
 )
+
+// MaxQueueNameLen caps an mcp_queue sink's queue name.
+const MaxQueueNameLen = 64
+
+var queueNameRe = regexp.MustCompile(`^[A-Za-z0-9._:-]+$`)
 
 // SinkActionSendInput is the only action type executed in this phase:
 // when a matching event fires, type Text into Sink.Target (the session
@@ -127,13 +138,24 @@ func ValidateSubscription(sub Subscription, now time.Time) error {
 	switch sub.Sink.Type {
 	case SinkComm, SinkSession, SinkTopic, SinkAlert:
 		// accepted in this phase
-	case "webhook", "mcp_queue":
+	case SinkMCPQueue:
+		name := strings.TrimSpace(sub.Sink.Target)
+		if name == "" {
+			return fmt.Errorf("sink target is required")
+		}
+		if len(name) > MaxQueueNameLen {
+			return fmt.Errorf("mcp_queue name is %d characters; limit is %d", len(name), MaxQueueNameLen)
+		}
+		if !queueNameRe.MatchString(name) {
+			return fmt.Errorf("mcp_queue name %q may contain only letters, digits and . _ : -", name)
+		}
+	case "webhook":
 		return fmt.Errorf(
-			"sink type %q is not available in this phase: outbound webhook delivery and the MCP pending-events queue arrive in later phases",
+			"sink type %q is not available in this phase: outbound webhook delivery arrives in a later phase",
 			sub.Sink.Type)
 	default:
-		return fmt.Errorf("unknown sink type %q (want one of %q, %q, %q, %q)",
-			sub.Sink.Type, SinkComm, SinkSession, SinkTopic, SinkAlert)
+		return fmt.Errorf("unknown sink type %q (want one of %q, %q, %q, %q, %q)",
+			sub.Sink.Type, SinkComm, SinkSession, SinkTopic, SinkAlert, SinkMCPQueue)
 	}
 	if strings.TrimSpace(sub.Sink.Target) == "" {
 		return fmt.Errorf("sink target is required")

@@ -97,6 +97,9 @@ type SessionPushConfig struct {
 	RecordAlert func(level, title, body string)
 	// PublishTopics drives topic-sink subscriptions (nil → disabled).
 	PublishTopics func(topics []string, title, message string)
+	// PendingQueue drives mcp_queue-sink subscriptions (nil → matching
+	// events are dropped silently).
+	PendingQueue *PendingEventQueue
 }
 
 // DefaultBridgePost POSTs text to the session channel bridge's
@@ -147,16 +150,24 @@ type LifecycleSubscriptionEngine struct {
 	cfg   SessionPushConfig
 	nowFn func() time.Time
 
-	mu      sync.Mutex
-	active  map[string]*activeSubscription
-	started bool
-	closed  bool
-	stop    chan struct{}
+	mu     sync.Mutex
+	active map[string]*activeSubscription
+	// keepQueues names pending queues whose one-shot subscription was
+	// just consumed: the next resync leaves them in place so the client
+	// can still read the event the one-shot delivered.
+	keepQueues map[string]bool
+	started    bool
+	closed     bool
+	stop       chan struct{}
 
 	// auditHook overrides the Manager's audit callback (tests capture
 	// the records without a file audit log).
 	auditHook func(action string, details map[string]any)
 }
+
+// PendingEvents returns the pending-events queue behind the mcp_queue
+// sink (nil when none was configured).
+func (e *LifecycleSubscriptionEngine) PendingEvents() *PendingEventQueue { return e.cfg.PendingQueue }
 
 // NewLifecycleSubscriptionEngine builds the engine over m's dispatcher
 // and the persisted subscriptions in store. cfg's nil PostBridge
@@ -289,6 +300,25 @@ func (e *LifecycleSubscriptionEngine) resync() {
 	e.active = next
 	e.mu.Unlock()
 
+	// Release pending queues no remaining subscription feeds.
+	if e.cfg.PendingQueue != nil {
+		live := make(map[string]bool)
+		for _, sub := range subs {
+			if sub.Sink.Type == SinkMCPQueue {
+				live[strings.TrimSpace(sub.Sink.Target)] = true
+			}
+		}
+		e.mu.Lock()
+		keep := e.keepQueues
+		e.keepQueues = nil
+		e.mu.Unlock()
+		for _, name := range e.cfg.PendingQueue.Names() {
+			if !live[name] && !keep[name] {
+				e.cfg.PendingQueue.Release(name)
+			}
+		}
+	}
+
 	// Tear the previous set down OUTSIDE e.mu: cancel may be called from
 	// any goroutine (dispatcher contract), and comm Close flushes
 	// pending lines through the injected comm send.
@@ -398,6 +428,23 @@ func (e *LifecycleSubscriptionEngine) handle(sub Subscription, ev LifecycleEvent
 			return
 		}
 		e.cfg.RecordAlert(sinkLevel(ev), ev.Kind, DescribeLifecycleEvent(ev))
+
+	case SinkMCPQueue:
+		if e.cfg.PendingQueue == nil {
+			return
+		}
+		e.cfg.PendingQueue.Append(strings.TrimSpace(sub.Sink.Target), ev)
+		if sub.OneShot {
+			e.mu.Lock()
+			if e.keepQueues == nil {
+				e.keepQueues = make(map[string]bool)
+			}
+			e.keepQueues[strings.TrimSpace(sub.Sink.Target)] = true
+			e.mu.Unlock()
+			if derr := e.store.Delete(sub.ID); derr != nil {
+				log.Printf("[autonomous] lifecycle sub %s: one-shot removal: %v", sub.ID, derr)
+			}
+		}
 	}
 }
 
