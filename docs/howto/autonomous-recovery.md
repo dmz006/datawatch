@@ -177,6 +177,29 @@ curl -sk -X POST https://HOST:PORT/api/autonomous/prds/<prd_id>/rejudge \
 autonomous_prd_rejudge(id="<prd_id>")
 ```
 
+## What happens to Automata when the daemon restarts
+
+When the daemon starts, it looks at every Automaton that was in flight and decides whether to pick it back up. Two kinds are considered:
+
+- a **running** Automaton, and
+- a **failed** Automaton whose failed tasks were all killed by the restart itself (as opposed to tasks that failed on their own merits).
+
+Each is checked against two things: its age, compared with `autonomous.resume_max_age_seconds`, and whether its project directory still exists.
+
+| `autonomous.resume_max_age_seconds` | Meaning |
+|---|---|
+| `3600` (default) | Resume only Automata that were active within the last hour |
+| `0` | Never auto-resume; every candidate is parked |
+| `-1` | No age limit (a missing project directory still parks it) |
+
+What happens next:
+
+- **Fresh** (within the limit, directory present): the Automaton is recovered and continues.
+- **Stale** (older than the limit, or directory missing): the Automaton is parked as `blocked` with a plain-English reason, an operator alert is raised, and an entry is added to the boot-resume report (`Status().BootResume`). Nothing runs on its own; review it and approve it manually if you still want it.
+- **Cancelled**: an Automaton you cancelled is never recovered.
+
+Old failed Automata are therefore no longer re-launched at every restart.
+
 ## Common pitfalls
 
 - **Cancelling a story mid-run and not restarting it.** The rest of the
