@@ -107,6 +107,12 @@ type LifecycleFilter struct {
 	Level  LifecycleLevel `json:"level,omitempty"`
 	PRDID  string         `json:"prd_id,omitempty"`
 	TaskID string         `json:"task_id,omitempty"`
+	// AutomationID optionally scopes the subscription to the Automata
+	// owned by one Automation (BL431). LifecycleEvent carries no
+	// Automation membership, so Matches treats a non-empty value as a
+	// wildcard; the resyncing engine resolves membership at dispatch
+	// time via AutomationStore.OwnerOf(prdID).
+	AutomationID string `json:"automation_id,omitempty"`
 }
 
 // Matches reports whether ev passes the filter.
