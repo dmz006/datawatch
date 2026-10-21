@@ -5,6 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.59 — PWA shows the datawatch eye during full-page refreshes
+
+### Fixed
+- **The PWA no longer cuts to a white screen during its full-page refresh transitions** — when the app reloads itself (switching locale, the reconnect-path daemon-version catch-up, a broadcast that detects a new daemon build, a service-worker asset update, a manual cache-bust, or the stale-version self-heal stamp), the animated datawatch eye now fills the screen for a short minimum window before the refreshed page takes over, so the transition reads as "the app is alive and swapping" instead of a dead page. The WS-reconnect daemon-version catch-up is the one case that also shows the pulsing bolt, matching the in-flight session-connect treatment; every other refresh shows the plain eye.
+- **The boot splash and the inline panel spinners are unchanged** — the initial launch Earthrise scene and the in-panel loading glyphs behave exactly as before; only the full-screen refresh transitions gain the new treatment.
+- **Reduced-motion users get a single static eye frame** instead of the animation during these transitions; the eye stays visible for the same window without motion.
+- Reuse audit: this extends the existing `DWSplashArt.startEyeOnly` / `DWSplashArt.startSessionLoading` primitives in `internal/server/web/splash-art.js` — no new animation code was added; the new behavior is a shared overlay + min-dwell dismissal in `app.js` around those exact primitives, per reuse-and-expand.
+
 ## v9.5.58 — PRD worktrees are buildable out of the box
 
 ### Fixed
