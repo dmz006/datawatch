@@ -62,11 +62,11 @@ func newStartupDialogSession(t *testing.T, mgr *Manager, backend string, oneShot
 	sess := &Session{
 		ID: "d7a1", FullID: "testhost-d7a1", Hostname: "testhost",
 		TmuxSession: "cs-d7a1", BackendFamily: backend,
-		OneShot:     oneShot,
-		State:       StateRunning,
-		Task:        "one-shot task",
-		CreatedAt:   time.Now(),
-		UpdatedAt:   time.Now(),
+		OneShot:   oneShot,
+		State:     StateRunning,
+		Task:      "one-shot task",
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
 	}
 	if err := mgr.SaveSession(sess); err != nil {
 		t.Fatalf("SaveSession: %v", err)
