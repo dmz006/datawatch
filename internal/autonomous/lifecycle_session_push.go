@@ -121,7 +121,7 @@ func DefaultBridgePost(port int, sessionID, text string) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		return fmt.Errorf("bridge /send: %s: %s", resp.Status, strings.TrimSpace(string(body)))

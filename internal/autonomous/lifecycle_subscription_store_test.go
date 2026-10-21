@@ -45,8 +45,7 @@ func testSubscriptionStore(t *testing.T) (*SubscriptionStore, string, []byte) {
 func TestSubscriptionStoreRoundTrip(t *testing.T) {
 	s, path, key := testSubscriptionStore(t)
 
-	var expiry time.Time
-	expiry = time.Now().Add(24 * time.Hour)
+	expiry := time.Now().Add(24 * time.Hour)
 	injected := &SubscriptionAction{Type: SinkActionSendInput, Text: "override timeout=300"}
 
 	subs := map[string]Subscription{}
@@ -426,9 +425,7 @@ func TestSubscriptionStoreChangedCallback(t *testing.T) {
 		mu.Unlock()
 		// The callback must be callable without deadlocking even when
 		// it re-enters the store.
-		if got := s.List(""); len(got) < 0 {
-			t.Error("reentrant List failed")
-		}
+		_ = s.List("")
 	})
 	if _, err := s.Add(testSubscriptionBase()); err != nil {
 		t.Fatalf("Add: %v", err)

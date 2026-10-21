@@ -55,7 +55,7 @@ func TestBL427_Subscribe_ShortKindBuildsSendInput(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
-		w.Write([]byte(`{"id":"sub-001"}`))
+		_, _ = w.Write([]byte(`{"id":"sub-001"}`))
 	}))
 	defer srv.Close()
 
@@ -116,7 +116,7 @@ func TestBL427_Subscribe_KindsAsArrayAndCSV(t *testing.T) {
 			t.Errorf("decode body: %v", err)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{"id": "sub-002"})
+		_ = json.NewEncoder(w).Encode(map[string]any{"id": "sub-002"})
 	}))
 	defer srv.Close()
 	s := &Server{webPort: bl427Port(t, srv)}
@@ -175,7 +175,7 @@ func TestBL427_Subscribe_KindsAsArrayAndCSV(t *testing.T) {
 func TestBL427_Subscribe_UpstreamErrorSurfaces(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
-		w.Write([]byte("filter must set at least one of kinds or level"))
+		_, _ = w.Write([]byte("filter must set at least one of kinds or level"))
 	}))
 	defer srv.Close()
 	s := &Server{webPort: bl427Port(t, srv)}
@@ -252,7 +252,7 @@ func TestBL427_Subscriptions_OwnerQuery(t *testing.T) {
 			t.Errorf("route = %s %s", r.Method, r.URL.Path)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(`[{"id":"sub-001","one_shot":true}]`))
+		_, _ = w.Write([]byte(`[{"id":"sub-001","one_shot":true}]`))
 	}))
 	defer srv.Close()
 	s := &Server{webPort: bl427Port(t, srv)}
@@ -278,7 +278,7 @@ func TestBL427_Subscriptions_OwnerQuery(t *testing.T) {
 		if r.URL.RawQuery != "" {
 			t.Errorf("query = %q, want empty", r.URL.RawQuery)
 		}
-		w.Write([]byte(`[]`))
+		_, _ = w.Write([]byte(`[]`))
 	}))
 	defer srv2.Close()
 	s2 := &Server{webPort: bl427Port(t, srv2)}

@@ -35,11 +35,6 @@ import (
 // autonomousSubscribePath is the REST route all three tools proxy.
 const autonomousSubscribePath = "/api/autonomous/subscriptions"
 
-// subscriptionSinkTypes mirrors autonomous.SinkComm/SinkSession/SinkTopic/
-// SinkAlert (the types accepted in the current phase) so tool descriptions
-// stay in sync with ValidateSubscription.
-var subscriptionSinkTypes = []string{"comm", "session", "topic", "alert"}
-
 // --- Tool definitions ------------------------------------------------------
 
 // toolAutonomousSubscribe registers a persisted lifecycle-event

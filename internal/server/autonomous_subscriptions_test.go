@@ -315,7 +315,7 @@ func TestSubscriptionsMuxRoutable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("POST via mux: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if got := resp.StatusCode; got != http.StatusCreated {
 		t.Fatalf("POST via mux: want 201, got %d", got)
 	}
@@ -331,7 +331,7 @@ func TestSubscriptionsMuxRoutable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DELETE via mux: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if got := resp.StatusCode; got != http.StatusNoContent {
 		t.Fatalf("DELETE /subscriptions/{id} via mux: want 204, got %d (the original bug)", got)
 	}

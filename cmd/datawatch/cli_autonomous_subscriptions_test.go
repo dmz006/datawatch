@@ -35,7 +35,7 @@ func (c *captureDaemon) handler() http.HandlerFunc {
 			w.WriteHeader(c.replyCode)
 		}
 		if c.replyBody != "" {
-			w.Write([]byte(c.replyBody))
+			_, _ = w.Write([]byte(c.replyBody))
 		}
 	}
 }
