@@ -471,6 +471,21 @@ alerts 10
 
 ---
 
+### `schedule-results`
+
+Read the **scheduled-job result panel** — the same data the PWA panel and the `datawatch schedule-results` CLI show (this channel command is read-only; posting is done by the job itself with `datawatch schedule-results post`).
+
+| Syntax | Description |
+|---|---|
+| `schedule-results` | One line per schedule: last status icon (✓ ok / ⚠ warn / ✗ error), one-line summary, elapsed time |
+| `schedule-results list` | Same as above |
+| `schedule-results <schedule_name>` | Recent history for that schedule, most recent first (up to 10 lines; the complete history is on the CLI/PWA) |
+| `schedule-results history <schedule_name>` | Alias for the previous one |
+
+Examples:
+- `schedule-results` → all schedules and their most recent result
+- `schedule-results imap-hourly-rules` → recent results for that one schedule
+
 ### `setup <service>`
 
 Start an interactive setup wizard for a backend or subsystem. Can be sent from any connected messaging channel.
@@ -830,6 +845,53 @@ datawatch schedule spawn --at 23:00 --shell "rsync -avz /data /backup"
 ```
 
 `schedule list` shows run history: FIRES / LAST-FIRE / LAST-RESULT columns (values: `spawned`, `skipped`, `failed`).
+
+### `datawatch schedule-results [list | history | post]`
+
+Read and post the structured result panel for scheduled jobs — the same data the PWA result panel and the MCP `post_result` / `schedule_results_list` tools operate on.
+
+| Subcommand | What it does |
+|---|---|
+| `datawatch schedule-results list` | Latest result per schedule: status, title, summary, posted time, retained count, recent-status sequence. `--json` prints the raw API response. |
+| `datawatch schedule-results history \<schedule_name\>` | Full retained history for one schedule, oldest first (e.g. `datawatch schedule-results history "imap-mcp run-rules"`). |
+| `datawatch schedule-results post …` | Post a structured result for a session (`POST /api/sessions/{id}/result`) |
+
+`post` flags:
+
+| Flag | Required | Description |
+|---|---|---|
+| `--title` | yes | Human-readable result title |
+| `--status` | no (default `ok`) | `ok`, `warn`, or `error` |
+| `--summary` | no | One-line summary |
+| `--metrics` | no | JSON object of scalar metrics, e.g. `{"active_rules": 40}` |
+| `--table` | no (repeatable) | JSON table: `{"title": "…", "columns": […], "rows": [[…]]}` |
+| `--markdown` | no | Longer markdown report / findings section |
+| `--file` | no | Seed the payload from a JSON file; individual flags override its fields |
+| `--session` | outside a spawned session | Session to post for; defaults to `DATAWATCH_SESSION_ID` inside a spawned scheduled-job session |
+
+```bash
+# From inside a spawned scheduled-job session (no --session needed;
+# the daemon injects DATAWATCH_SESSION_ID + DATAWATCH_RESULT_TOKEN):
+datawatch schedule-results post \
+  --title "40 active rules" \
+  --status ok \
+  --summary "2 messages actioned" \
+  --metrics '{"active_rules": 40, "actioned": 2}' \
+  --table '{"title":"Actions","columns":["action","count"],"rows":[["reply",1],["flag",1]]}'
+
+# From outside, on behalf of a session (needs an operator token):
+datawatch schedule-results post \
+  --session host-a1b2 \
+  --title "40 active rules" \
+  --status ok \
+  --file result.json
+
+# Inspect what the panel is showing:
+datawatch schedule-results list
+datawatch schedule-results history nightly-report
+```
+
+Payload rules (enforced client-side before any request and re-checked by the daemon): `title` required; `status` one of `ok`/`warn`/`error`; `metrics` a flat object of scalars; at most 20 tables of 100 rows each; long strings are truncated with a `…(truncated)` marker; the whole payload must serialize to ≤ 64 KB. A session that belongs to a named schedule keeps its last N results (default 20, `results.schedule_history_limit`); every post also updates the session's status-board result slot.
 
 ### `datawatch session schedule list`
 

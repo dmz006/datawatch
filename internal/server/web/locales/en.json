@@ -425,6 +425,14 @@
   "dash_expand_no_status": "No status data yet — hook events will populate this view.",
   "dash_expand_session": "Open in Dashboard",
   "dash_fed_error": "%1$s: %2$s",
+  "dash_integ_loading": "Loading results…",
+  "dash_integ_status": "Integration status",
+  "dash_integ_open": "Open the session that posted this result",
+  "dash_integ_empty_title": "No results yet",
+  "dash_integ_empty": "Scheduled jobs and integrations can post their results here: from inside such a session, POST /api/sessions/<id>/result with the job's own credential and a payload carrying a title, an ok/warn/error status and a summary.",
+  "dash_integ_empty_link": "See the result endpoint in the API reference",
+  "dash_integ_error": "Couldn't load the results yet — check that the daemon is reachable.",
+  "dash_integ_retained": "%1$s retained",
   "dash_no_sessions": "No active sessions",
   "dash_no_telemetry": "No telemetry yet",
   "dash_no_verdicts": "No verdicts yet",
@@ -1854,5 +1862,10 @@
   "lifecycle_sub_form_err_action_empty": "The send_input action needs text.",
   "lifecycle_sub_form_err_action_len": "Action text is %1$s characters; the limit is %2$s.",
   "lifecycle_sub_form_err_expiry": "Expiry must be a number of hours greater than zero.",
-  "lifecycle_sub_form_err_save": "Save failed."
+  "lifecycle_sub_form_err_save": "Save failed.",
+  "status_card_result": "Result",
+  "status_result_ok": "ok",
+  "status_result_warn": "warn",
+  "status_result_error": "error",
+  "status_result_rendering": "Rendering…"
 }

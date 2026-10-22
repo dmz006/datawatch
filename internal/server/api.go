@@ -217,10 +217,13 @@ type Server struct {
 	queueStore         *session.QueueStore         // BL357
 	discussionSubStore *session.DiscussionSubStore // BL358
 	resultStore        *session.ResultStore        // BL360
-	cmdLib             *session.CmdLibrary
-	alertStore         *alerts.Store
-	filterStore        *session.FilterStore
-	statsCollector     *stats.Collector
+	// scheduleResultStore — per-schedule structured result history backing
+	// the result panel (POST /api/sessions/{id}/result, GET /api/schedule-results*).
+	scheduleResultStore *session.ScheduleResultStore
+	cmdLib              *session.CmdLibrary
+	alertStore          *alerts.Store
+	filterStore         *session.FilterStore
+	statsCollector      *stats.Collector
 	// F10 sprint 2: profile stores. Wired from main.go via setters so
 	// unit tests can leave them nil (handlers return 503).
 	projectStore *profile.ProjectStore
@@ -3804,6 +3807,10 @@ func (s *Server) handleSessionSubpath(w http.ResponseWriter, r *http.Request) {
 		s.handleSessionChildren(w, r)
 		return
 	}
+	if strings.HasSuffix(path, "/result") {
+		s.handleSessionResultPost(w, r)
+		return
+	}
 	// BL359 — POST /api/sessions/{id}/restart
 	if strings.HasSuffix(path, "/restart") {
 		s.handleRestartSession(w, r)
@@ -5872,6 +5879,10 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"max_parallel":         s.cfg.Council.MaxParallel,
 			"comm_firehose":        s.cfg.Council.CommFirehose,
 		},
+		// scheduled-jobs results: per-schedule result history store.
+		"results": map[string]interface{}{
+			"schedule_history_limit": s.cfg.Results.EffectiveScheduleHistoryLimit(),
+		},
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(out) //nolint:errcheck
@@ -7557,6 +7568,13 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		case "session.quick_commands":
 			if cmds, ok := toQuickCommands(v); ok {
 				cfg.Session.QuickCommands = cmds
+			}
+		// Results — scheduled-jobs per-schedule result history. Unset or
+		// below 1 is rejected here; the getter always reports the
+		// effective value (default 20, min 1).
+		case "results.schedule_history_limit":
+			if n, ok := toInt(v); ok && n >= 1 {
+				cfg.Results.ScheduleHistoryLimit = n
 			}
 		default:
 			// Unknown keys are logged so future mobile/PWA schema

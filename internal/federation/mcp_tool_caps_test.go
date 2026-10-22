@@ -112,6 +112,53 @@ func TestMCPToolCap_EveryRegisteredToolHasAnEntry(t *testing.T) {
 	}
 }
 
+// TestMCPToolCaps pins the GH#204 result-panel MCP tool → capability
+// mapping, which the per-tool coverage tests only check structurally
+// ("has an entry") but not semantically ("the RIGHT entry"):
+//   - post_result          → sessions:result_write — deliberately NOT in any
+//     built-in group (it is minted explicitly into per-session tokens only,
+//     the same way every other write-class capability is least-privilege
+//     by default).
+//   - schedule_results_list→ autonomous:read — granted to the read-only and
+//     session-default groups, so peers that could read schedules before can
+//     read the panel with no new grant.
+func TestMCPToolCaps_ResultPanelTools(t *testing.T) {
+	cap, ok := federation.RequiredCapForMCPTool("post_result")
+	if !ok {
+		t.Fatal("MCPToolCap[\"post_result\"] missing")
+	}
+	if cap != federation.CapSessionsResultWrite {
+		t.Errorf("post_result mapped to %q, want %q", cap, federation.CapSessionsResultWrite)
+	}
+	for _, gname := range []string{"full-control", "session-default", "read-only", "monitor", "session-operator", "autonomous-operator"} {
+		g, ok := federation.BuiltinGroups[gname]
+		if !ok {
+			continue
+		}
+		if federation.Check(federation.Resolve(g.Caps, nil), federation.CapSessionsResultWrite) {
+			t.Errorf("federation.CapSessionsResultWrite must not be in built-in group %q (mint it per-session explicitly)", gname)
+		}
+	}
+
+	cap, ok = federation.RequiredCapForMCPTool("schedule_results_list")
+	if !ok {
+		t.Fatal("MCPToolCap[\"schedule_results_list\"] missing")
+	}
+	if cap != federation.CapAutonomousRead {
+		t.Errorf("schedule_results_list mapped to %q, want %q", cap, federation.CapAutonomousRead)
+	}
+	// Read-only peers (read-only / session-default) must be able to read the panel.
+	for _, gname := range []string{"read-only", "session-default"} {
+		g, ok := federation.BuiltinGroups[gname]
+		if !ok {
+			continue
+		}
+		if !federation.Check(federation.Resolve(g.Caps, nil), federation.CapAutonomousRead) {
+			t.Errorf("%q should be able to call schedule_results_list but lacks federation.CapAutonomousRead", gname)
+		}
+	}
+}
+
 func splitLines(s string) []string {
 	var out []string
 	start := 0

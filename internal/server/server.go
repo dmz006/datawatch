@@ -456,6 +456,9 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/templates/", api.handleTemplates) // BL5 (with name)
 	apiMux.HandleFunc("/api/proxy/", api.handleProxy)
 	apiMux.HandleFunc("/api/schedule", api.handleSchedule)
+	// Structured result panel — per-schedule result history.
+	apiMux.HandleFunc("/api/schedule-results", api.handleScheduleResultsList)
+	apiMux.HandleFunc("/api/schedule-results/", api.handleScheduleResultsDispatch)
 	apiMux.HandleFunc("/api/commands", api.handleCommands)
 	apiMux.HandleFunc("/api/filters", api.handleFilters)
 	apiMux.HandleFunc("/api/alerts/aggregated", api.handleAggregatedAlerts) // BL312 S5
@@ -529,9 +532,9 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/websearch/stats", api.handleWebSearchStatsV2)
 	apiMux.HandleFunc("/api/websearch/history", api.handleWebSearchHistory)
 	apiMux.HandleFunc("/api/sessions/aggregated", api.handleAggregatedSessions)
-	apiMux.HandleFunc("/api/sessions/self", api.handleSessionSelf)           // BL349
+	apiMux.HandleFunc("/api/sessions/self", api.handleSessionSelf)            // BL349
 	apiMux.HandleFunc("/api/sessions/self/scope", api.handleSessionSelfScope) // BL463
-	apiMux.HandleFunc("/api/sessions/orphaned", api.handleSessionsOrphaned) // BL350
+	apiMux.HandleFunc("/api/sessions/orphaned", api.handleSessionsOrphaned)   // BL350
 	apiMux.HandleFunc("/api/memory/stats", api.handleMemoryStats)
 	apiMux.HandleFunc("/api/memory/list", api.handleMemoryList)
 	apiMux.HandleFunc("/api/memory/search", api.handleMemorySearch)
@@ -751,6 +754,12 @@ func (s *HTTPServer) SetDiscussionSubStore(store *session.DiscussionSubStore) {
 // SetResultStore wires a result store into the server for /api/result-store (BL360).
 func (s *HTTPServer) SetResultStore(store *session.ResultStore) {
 	s.api.SetResultStore(store)
+}
+
+// SetScheduleResultStore wires the per-schedule result history store behind
+// the result panel endpoints (POST /api/sessions/{id}/result, GET /api/schedule-results*).
+func (s *HTTPServer) SetScheduleResultStore(store *session.ScheduleResultStore) {
+	s.api.SetScheduleResultStore(store)
 }
 
 // SetSessionTokenStore wires the Design A3 per-session scoped-credential

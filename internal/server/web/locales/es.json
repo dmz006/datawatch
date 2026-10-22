@@ -445,6 +445,14 @@
   "dash_expand_no_status": "Sin datos de estado aún — los eventos de hook poblarán esta vista.",
   "dash_expand_session": "Abrir en Panel",
   "dash_fed_error": "%1$s: %2$s",
+  "dash_integ_loading": "Cargando resultados…",
+  "dash_integ_status": "Estado de integraciones",
+  "dash_integ_open": "Abrir la sesión que envió este resultado",
+  "dash_integ_empty_title": "Aún no hay resultados",
+  "dash_integ_empty": "Los trabajos programados e integraciones pueden publicar sus resultados aquí: desde dentro de una de esas sesiones, haz una POST a /api/sessions/<id>/result con la credencial del propio trabajo y una carga con título, estado ok/warn/error y resumen.",
+  "dash_integ_empty_link": "Ver a la referencia de la API del endpoint de resultados",
+  "dash_integ_error": "No se pudieron cargar los resultados todavía — comprueba que el demonio es accesible.",
+  "dash_integ_retained": "%1$s conservados",
   "dash_no_sessions": "No hay sesiones activas",
   "dash_no_telemetry": "Sin telemetría aún",
   "dash_no_verdicts": "Sin veredictos aún",
@@ -1854,5 +1862,10 @@
   "lifecycle_sub_form_err_action_empty": "La acción send_input necesita texto.",
   "lifecycle_sub_form_err_action_len": "El texto de la acción tiene %1$s caracteres; el límite es %2$s.",
   "lifecycle_sub_form_err_expiry": "La caducidad debe ser un número de horas mayor que cero.",
-  "lifecycle_sub_form_err_save": "Error al guardar."
+  "lifecycle_sub_form_err_save": "Error al guardar.",
+  "status_card_result": "Resultado",
+  "status_result_ok": "OK",
+  "status_result_warn": "Advertencia",
+  "status_result_error": "Error",
+  "status_result_rendering": "Renderizando…"
 }

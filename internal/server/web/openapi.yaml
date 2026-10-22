@@ -565,6 +565,71 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
+  /api/sessions/{session_id}/result:
+    post:
+      summary: Post a session's structured result
+      description: |
+        A scheduled job posts the result of its run for this session.
+        Two gates apply: the caller needs the `sessions:result_write`
+        capability, and a session-scoped credential may only post for the
+        session it belongs to (posting for any other session returns 403).
+
+        The payload must carry a non-empty `title`; `status` is either
+        absent or one of `ok` / `warn` / `error`. When the session belongs
+        to a named schedule the entry is appended to that schedule's
+        retained history (oldest evicted first past
+        `results.schedule_history_limit`). The session's status board
+        always reflects the latest result, even for unscheduled sessions.
+      operationId: postSessionResult
+      tags: [Sessions]
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          description: Session ID (short or full)
+          schema:
+            type: string
+            example: "a3f2"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResultPayload"
+      responses:
+        "200":
+          description: Result accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  session_id:
+                    type: string
+                  full_id:
+                    type: string
+                  schedule_name:
+                    type: string
+                    description: Empty when the session is not bound to a named schedule
+                  stored:
+                    type: boolean
+                    description: True when the entry was written to the schedule history
+                  count:
+                    type: integer
+                    description: Number of schedule names with retained results
+        "400":
+          description: Invalid payload (typed validation error in the body)
+        "403":
+          description: Caller lacks `sessions:result_write`, or posted for a session it does not own
+        "404":
+          description: Session not found
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          description: Schedule result store not available
+
   /api/config:
     get:
       summary: Get configuration
@@ -715,6 +780,68 @@ paths:
           description: Not found
         "401":
           $ref: "#/components/responses/Unauthorized"
+
+  /api/schedule-results:
+    get:
+      summary: List retained results grouped by schedule
+      description: |
+        One entry per schedule name (sorted by name) with that
+        schedule's most recent posted result, how many results are
+        retained for it, and the recent `status` values in oldest →
+        newest order (capped at 50) to drive a status sparkline.
+        Requires the `autonomous:read` capability for federation peers;
+        the operator token is always allowed.
+      operationId: listScheduleResults
+      tags: [Schedule]
+      responses:
+        "200":
+          description: Array of per-schedule result summaries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ScheduleResultSummary"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Caller lacks the `autonomous:read` capability
+        "503":
+          description: Schedule result store not available
+
+  /api/schedule-results/{schedule_name}:
+    get:
+      summary: Full retained result history for one schedule
+      description: |
+        Every retained result for the named schedule, oldest first.
+        Returns 404 when the schedule has no recorded results.
+      operationId: getScheduleResultHistory
+      tags: [Schedule]
+      parameters:
+        - name: schedule_name
+          in: path
+          required: true
+          description: Schedule name results were posted under
+          schema:
+            type: string
+            example: "nightly-sweep"
+      responses:
+        "200":
+          description: Retained result entries, oldest to newest
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ScheduleResultEntry"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Caller lacks the `autonomous:read` capability
+        "404":
+          description: No results recorded for this schedule
+        "503":
+          description: Schedule result store not available
 
   /api/servers:
     get:
@@ -3697,6 +3824,83 @@ components:
         created_at:
           type: string
           format: date-time
+
+    ResultPayload:
+      type: object
+      required: [title]
+      properties:
+        title:
+          type: string
+          description: Required heading for the result
+          example: "Nightly sweep"
+        status:
+          type: string
+          description: Absent, `ok`, `warn`, or `error`
+          enum: ["", ok, warn, error]
+        summary:
+          type: string
+          description: One-paragraph human summary (strings over 2000 chars are truncated)
+        metrics:
+          type: object
+          additionalProperties: true
+          description: Free-form key/value metrics
+          example:
+            pass: 5
+            fail: 0
+        tables:
+          type: array
+          description: Up to 20 tables of at most 100 rows
+          items:
+            type: object
+            properties:
+              title:
+                type: string
+              columns:
+                type: array
+                items:
+                  type: string
+              rows:
+                type: array
+                items:
+                  type: array
+                  items:
+                    type: string
+        markdown:
+          type: string
+          description: Optional markdown report body
+
+    ScheduleResultEntry:
+      type: object
+      description: "One posted result — the payload plus its provenance"
+      properties:
+        payload:
+          $ref: "#/components/schemas/ResultPayload"
+        session_id:
+          type: string
+          description: Session that posted the result
+        schedule_name:
+          type: string
+          description: Schedule name the session belongs to
+        posted_at:
+          type: string
+          format: date-time
+
+    ScheduleResultSummary:
+      type: object
+      description: One grouped row of the schedule-results list
+      properties:
+        schedule_name:
+          type: string
+        latest:
+          $ref: "#/components/schemas/ScheduleResultEntry"
+        count:
+          type: integer
+          description: Number of retained entries for this schedule
+        recent_statuses:
+          type: array
+          description: Recent `status` values, oldest → newest (capped at 50); empty when unset
+          items:
+            type: string
 
     RemoteServer:
       type: object

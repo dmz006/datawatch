@@ -374,6 +374,7 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newQueueCmd(),         // BL357 — durable role-based work queue
 		newDiscussionSubCmd(), // BL358 — discussion push/subscribe
 		newResultCmd(),        // BL360 — structured agent result store
+		newScheduleResultsCmd(), // GH#204 — scheduled-job result panel CLI
 	)
 
 	if err := root.Execute(); err != nil {
@@ -1347,6 +1348,13 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		}
 	}
 
+	// GH#204 Phase 1 — subprocess sessions get their session identity,
+	// base URL, and a scoped result-posting credential (ONLY
+	// sessions:result_write, for exactly that session) in their child
+	// environment. nil-safe: no store here means no token variable.
+	mgr.SetSessionTokenMinter(sessionTokenStore)
+	mgr.SetSubprocessBaseURL(loopbackBaseURL(cfg))
+
 	// Per-session MCP channel registration for claude-code multi-session support.
 	if claudeChannelEnabled {
 		channelJSPath := filepath.Join(expandHome(cfg.DataDir), "channel", "channel.js")
@@ -1868,6 +1876,12 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	resultStore, err := session.NewResultStore(resultStorePath(cfg))
 	if err != nil {
 		return fmt.Errorf("open result store: %w", err)
+	}
+
+	// Structured result panel — per-schedule result history.
+	scheduleResultStore, err := session.NewScheduleResultStore(scheduleResultStorePath(cfg))
+	if err != nil {
+		return fmt.Errorf("open schedule result store: %w", err)
 	}
 
 	// Create command library
@@ -3175,7 +3189,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		httpServer.SetQueueStore(queueStore)                 // BL357
 		httpServer.SetDiscussionSubStore(discussionSubStore) // BL358
 		httpServer.SetResultStore(resultStore)               // BL360
-		httpServer.SetSessionTokenStore(sessionTokenStore)   // Design A3
+		httpServer.SetScheduleResultStore(scheduleResultStore)
+		httpServer.SetSessionTokenStore(sessionTokenStore) // Design A3
 		httpServer.SetCmdLibrary(cmdLib)
 		httpServer.SetAlertStore(alertStore)
 		httpServer.SetFilterStore(filterStore)
@@ -7402,17 +7417,19 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 
 	// Create MCP server (always — for tool docs; SSE transport only if configured)
 	mcpSrv := mcp.New(cfg.Hostname, mgr, &cfg.MCP, cfg.DataDir, mcp.Options{
-		AlertStore:    alertStore,
-		SchedStore:    schedStore,
-		ExitHookStore: exitHookStore,
-		QueueStore:    queueStore,         // BL357
-		SubStore:      discussionSubStore, // BL358
-		ResultStore:   resultStore,        // BL360
-		CmdLib:        cmdLib,
-		AcmeManager:   acmeMgr, // BL397
-		Version:       Version,
-		LatestVersion: fetchLatestVersion,
-		FallbackToken: cfg.Server.Token, // SEC-002
+		AlertStore:          alertStore,
+		SchedStore:          schedStore,
+		ExitHookStore:       exitHookStore,
+		QueueStore:          queueStore,          // BL357
+		SubStore:            discussionSubStore,  // BL358
+		ResultStore:         resultStore,         // BL360
+		ScheduleResultStore: scheduleResultStore, // result panel (GH#204)
+		ResultHistoryLimit:  cfg.Results.EffectiveScheduleHistoryLimit(),
+		CmdLib:              cmdLib,
+		AcmeManager:         acmeMgr, // BL397
+		Version:             Version,
+		LatestVersion:       fetchLatestVersion,
+		FallbackToken:       cfg.Server.Token, // SEC-002
 		RestartFn: func() {
 			selfPath, err2 := os.Executable()
 			if err2 == nil {
@@ -11626,6 +11643,10 @@ func resultStorePath(cfg *config.Config) string {
 	return filepath.Join(expandHome(cfg.DataDir), "result_store.json")
 }
 
+func scheduleResultStorePath(cfg *config.Config) string {
+	return filepath.Join(expandHome(cfg.DataDir), "schedule_results.json")
+}
+
 func runScheduleAdd(cfg *config.Config, sessionID, sessionName, command, at, cronExpr, scheduleName string) error {
 	store, err := session.NewScheduleStore(schedStorePath(cfg))
 	if err != nil {
@@ -12757,20 +12778,23 @@ func runMCP(cmd *cobra.Command, _ []string) error {
 	mcpSchedStore, _ := session.NewScheduleStore(schedStorePath(cfg))
 	mcpCmdLib, _ := session.NewCmdLibrary(cmdLibPath(cfg))
 	mcpAlertStore, _ := alertspkg.NewStore(filepath.Join(expandHome(cfg.DataDir), "alerts.json"))
-	mcpQueueStore, _ := session.NewQueueStore(queueStorePath(cfg))               // BL357
-	mcpSubStore, _ := session.NewDiscussionSubStore(discussionSubStorePath(cfg)) // BL358
-	mcpResultStore, _ := session.NewResultStore(resultStorePath(cfg))            // BL360
+	mcpQueueStore, _ := session.NewQueueStore(queueStorePath(cfg))                            // BL357
+	mcpSubStore, _ := session.NewDiscussionSubStore(discussionSubStorePath(cfg))              // BL358
+	mcpResultStore, _ := session.NewResultStore(resultStorePath(cfg))                         // BL360
+	mcpScheduleResultStore, _ := session.NewScheduleResultStore(scheduleResultStorePath(cfg)) // result panel (GH#204)
 
 	mcpSrv := mcp.New(cfg.Hostname, mgr, &cfg.MCP, cfg.DataDir, mcp.Options{
-		AlertStore:    mcpAlertStore,
-		SchedStore:    mcpSchedStore,
-		QueueStore:    mcpQueueStore,  // BL357
-		SubStore:      mcpSubStore,    // BL358
-		ResultStore:   mcpResultStore, // BL360
-		CmdLib:        mcpCmdLib,
-		Version:       Version,
-		LatestVersion: fetchLatestVersion,
-		FallbackToken: cfg.Server.Token, // SEC-002
+		AlertStore:          mcpAlertStore,
+		SchedStore:          mcpSchedStore,
+		QueueStore:          mcpQueueStore,  // BL357
+		SubStore:            mcpSubStore,    // BL358
+		ResultStore:         mcpResultStore, // BL360
+		ScheduleResultStore: mcpScheduleResultStore,
+		ResultHistoryLimit:  cfg.Results.EffectiveScheduleHistoryLimit(),
+		CmdLib:              mcpCmdLib,
+		Version:             Version,
+		LatestVersion:       fetchLatestVersion,
+		FallbackToken:       cfg.Server.Token, // SEC-002
 	})
 
 	// BL363 T3 — Goose channel: make the calling session ID available to the MCP

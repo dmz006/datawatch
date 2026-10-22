@@ -21,6 +21,14 @@ const (
 	CapSessionsWrite = "sessions:write"
 	CapSessionsKill  = "sessions:kill"
 	CapSessionsInput = "sessions:input"
+	// CapSessionsResultWrite (GH#204 Phase 1) — a session-scoped credential
+	// may POST its owning session's structured run result (a later phase).
+	// Deliberately NOT added to ANY built-in group's caps — not even
+	// allCaps/full-control: it is meant to be minted explicitly into a
+	// per-session token's caps (the session package's minter path, backed
+	// by internal/auth.SessionTokenStore.Mint), the same least-privilege
+	// default this file uses for every other write-class capability.
+	CapSessionsResultWrite = "sessions:result_write"
 
 	// agents
 	CapAgentsList      = "agents:list"

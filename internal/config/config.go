@@ -508,6 +508,11 @@ type Config struct {
 	// When enabled, auto-injects `datawatch mcp-search` as an MCP server so agents
 	// have a `web_search` tool backed by the configured SearXNG instance.
 	WebSearch WebSearchConfig `yaml:"web_search,omitempty" json:"web_search,omitempty"`
+
+	// Results — per-schedule result history store (scheduled jobs):
+	// how many latest posted results each schedule name retains before
+	// the oldest ones are evicted.
+	Results ResultsConfig `yaml:"results,omitempty" json:"results,omitempty"`
 }
 
 // SmokeConfig controls smoke-run cross-instance reporting (#54).
@@ -2778,6 +2783,32 @@ type VisionConfig struct {
 	MaxImageBytes int64 `yaml:"max_image_bytes,omitempty" json:"max_image_bytes,omitempty"`
 }
 
+// DefaultScheduleHistoryLimit is the per-schedule result history size
+// used when results.schedule_history_limit is unset.
+const DefaultScheduleHistoryLimit = 20
+
+// ResultsConfig controls the per-schedule result history of scheduled
+// jobs: every scheduled run posts a result payload, and each schedule
+// name retains the most recent `schedule_history_limit` of them
+// (oldest evicted first). The store is persisted under the data dir
+// and survives daemon restarts, independently of the spawning session.
+type ResultsConfig struct {
+	// ScheduleHistoryLimit is the number of latest result entries
+	// kept per schedule name. Unset (0) = 20; the effective value is
+	// clamped so it never drops below 1.
+	ScheduleHistoryLimit int `yaml:"schedule_history_limit,omitempty" json:"schedule_history_limit,omitempty"`
+}
+
+// EffectiveScheduleHistoryLimit returns the limit after defaulting and
+// clamping: unset/zero/negative → 20, otherwise the configured value
+// (minimum applied value is 1).
+func (c ResultsConfig) EffectiveScheduleHistoryLimit() int {
+	if c.ScheduleHistoryLimit < 1 {
+		return DefaultScheduleHistoryLimit
+	}
+	return c.ScheduleHistoryLimit
+}
+
 // DefaultConfig returns a Config with sensible defaults.
 func DefaultConfig() *Config {
 	hostname, _ := os.Hostname()
@@ -2855,20 +2886,20 @@ func DefaultConfig() *Config {
 			OllamaHeaderTimeoutSec: 900,
 		},
 		Autonomous: AutonomousConfig{
-			AutoFixRetries:     1,
-			MaxConcurrentTasks: 1,
+			AutoFixRetries:      1,
+			MaxConcurrentTasks:  1,
 			ResumeMaxAgeSeconds: 3600,
-			MaxEnginesPerNode:  1,
+			MaxEnginesPerNode:   1,
 			// Starting plan-tier table — operator policy, see the field
-		// doc on PlanTierMaxInflight. api=0 = unlimited; the dollar
-		// budget is a later phase.
+			// doc on PlanTierMaxInflight. api=0 = unlimited; the dollar
+			// budget is a later phase.
 			PlanTierMaxInflight: map[string]int{
-				"pro":      1,
-				"max_5x":   2,
-				"max_20x":  4,
-				"api":      0,
+				"pro":     1,
+				"max_5x":  2,
+				"max_20x": 4,
+				"api":     0,
 			},
-			StaleTaskSeconds:   900,
+			StaleTaskSeconds: 900,
 			// BL410 Phase 1 — see AutonomousConfig.RetryPolicy's doc
 			// comment for why "content"/"policy" are absent here.
 			RetryPolicy:             map[string]int{"infra": 4, "scope": 0},
@@ -2887,6 +2918,7 @@ func DefaultConfig() *Config {
 		Ntfy:          NtfyConfig{ServerURL: "https://ntfy.sh"},
 		Email:         EmailConfig{Port: 587},
 		ImapMcp:       ImapMcpConfig{SubjectPrefix: "datawatch"},
+		Results:       ResultsConfig{ScheduleHistoryLimit: DefaultScheduleHistoryLimit},
 		GitHubWebhook: GitHubWebhookConfig{Addr: "127.0.0.1:9001"},
 		Webhook:       WebhookConfig{Addr: "127.0.0.1:9002"},
 		Twilio:        TwilioConfig{WebhookAddr: "127.0.0.1:9003"},

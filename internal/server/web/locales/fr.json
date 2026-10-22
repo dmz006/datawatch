@@ -445,6 +445,14 @@
   "dash_expand_no_status": "Pas encore de données — les événements hook rempliront cette vue.",
   "dash_expand_session": "Ouvrir dans le tableau de bord",
   "dash_fed_error": "%1$s : %2$s",
+  "dash_integ_loading": "Chargement des résultats…",
+  "dash_integ_status": "Statut des intégrations",
+  "dash_integ_open": "Ouvrir la session qui a publié ce résultat",
+  "dash_integ_empty_title": "Aucun résultat pour l'instant",
+  "dash_integ_empty": "Les jobs planifiés et les intégrations peuvent publier leurs résultats ici : depuis l'intérieur d'une de ces sessions, faites un POST vers /api/sessions/<id>/result avec les identifiants du job et un payload contenant un titre, un statut ok/warn/error et un résumé.",
+  "dash_integ_empty_link": "Voir l'endpoint des résultats dans la référence API",
+  "dash_integ_error": "Impossible de charger les résultats pour l'instant — vérifiez que le démon est accessible.",
+  "dash_integ_retained": "%1$s conservés",
   "dash_no_sessions": "Aucune session active",
   "dash_no_telemetry": "Pas encore de télémétrie",
   "dash_no_verdicts": "Pas encore de verdicts",
@@ -1854,5 +1862,10 @@
   "lifecycle_sub_form_err_action_empty": "L'action send_input nécessite du texte.",
   "lifecycle_sub_form_err_action_len": "Le texte de l'action fait %1$s caractères ; la limite est %2$s.",
   "lifecycle_sub_form_err_expiry": "L'expiration doit être un nombre d'heures supérieur à zéro.",
-  "lifecycle_sub_form_err_save": "Échec de l'enregistrement."
+  "lifecycle_sub_form_err_save": "Échec de l'enregistrement.",
+  "status_card_result": "Résultat",
+  "status_result_ok": "ok",
+  "status_result_warn": "Avertissement",
+  "status_result_error": "Erreur",
+  "status_result_rendering": "Rendu…"
 }

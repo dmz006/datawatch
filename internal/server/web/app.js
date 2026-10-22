@@ -5329,6 +5329,111 @@ window.switchStatusSubtab = function(name) {
   }
 };
 
+// ---------------- Status-tab Result card (GH#204 phase 3) ----------------
+// Card for the latest structured result payload the agent posted for this
+// session (POST /api/sessions/{sid}/result — see docs/howto for the REST
+// contract). The board carries it as board.result (session.ResultPayload:
+// title, status ""|ok|warn|error, summary, metrics map, tables
+// [{title,columns,rows}], markdown), set by the server from both the REST
+// endpoint and the hook-event fallback; shared board slot, session-scoped.
+// Rendered after the git card, only when board.result is present.
+//
+// Security: every result string is untrusted agent output. title, summary,
+// metric labels/values, table titles/columns/cells are always injected via
+// escHtml — never raw — and markdown goes through the same
+// marked.js + DOMPurify.sanitize pipeline the file viewer and council live
+// log use (renderResultMarkdownInto below). marked.parse() alone passes
+// raw embedded HTML through unchanged, so DOMPurify.sanitize() is
+// mandatory before any innerHTML assignment (SEC-021 pattern).
+
+// renderResultPanelBody builds the card's inner HTML from one result
+// payload object. Markdown is a <div> slot filled async by
+// renderResultMarkdownInto after the board area receives this HTML.
+function renderResultPanelBody(r) {
+  const status = String(r.status || '').toLowerCase();
+  const statusInfo = ({
+    ok:    { label: t('status_result_ok') || 'ok', color: 'var(--success,#10b981)' },
+    warn:  { label: t('status_result_warn') || 'warn', color: 'var(--warning,#f59e0b)' },
+    error: { label: t('status_result_error') || 'error', color: 'var(--error,#ef4444)' },
+  })[status];
+  const statusClass = { ok: 'result-status-ok', warn: 'result-status-warn', error: 'result-status-error' }[status] || '';
+  const badge = statusInfo
+    ? `<span class="result-status-badge ${statusClass}" title="${escHtml(status)}">
+        <span class="result-status-dot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${statusInfo.color};margin-right:6px;vertical-align:middle;"></span>${escHtml(statusInfo.label)}
+      </span>`
+    : '';
+  let body = '<div class="result-panel" style="display:flex;flex-direction:column;gap:10px;">';
+  // Heading: title + status badge on one line (both escaped).
+  body += '<div class="result-panel-head" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;min-height:16px;">';
+  if (r.title) body += `<span class="result-title" style="font-size:13px;font-weight:700;overflow-wrap:anywhere;">${escHtml(r.title)}</span>`;
+  if (badge) body += badge;
+  body += '</div>';
+  // Summary — plain text, escaped.
+  if (r.summary) body += `<div class="result-summary" style="font-size:12px;line-height:1.5;overflow-wrap:anywhere;">${escHtml(r.summary)}</div>`;
+  // Metrics as label/value chips (object key order == insertion order).
+  const metrics = (r.metrics && typeof r.metrics === 'object' && !Array.isArray(r.metrics)) ? Object.entries(r.metrics) : [];
+  if (metrics.length) {
+    body += '<div class="result-metrics" style="display:flex;flex-wrap:wrap;gap:6px;">'
+      + metrics.map(([label, value]) =>
+        `<span class="result-metric-chip" style="display:inline-flex;align-items:baseline;gap:6px;padding:3px 10px;border:1px solid var(--border,#334155);border-radius:12px;background:var(--bg,#0f172a);font-size:11px;">
+           <span class="result-metric-label" style="color:var(--text2,#94a3b8);white-space:nowrap;">${escHtml(label)}</span>
+           <span class="result-metric-value" style="font-weight:700;overflow-wrap:anywhere;">${escHtml(value)}</span>
+         </span>`).join('') + '</div>';
+  }
+  // Tables — header row from columns, every cell escaped.
+  const tables = Array.isArray(r.tables) ? r.tables : [];
+  for (const tb of tables) {
+    if (!tb || typeof tb !== 'object') continue;
+    const columns = Array.isArray(tb.columns) ? tb.columns : [];
+    const rows = Array.isArray(tb.rows) ? tb.rows : [];
+    if (!columns.length && !rows.length) continue;
+    body += '<div class="result-table-wrap" style="overflow-x:auto;">';
+    if (tb.title) body += `<div class="result-table-title" style="font-size:10px;font-weight:700;color:var(--text2,#94a3b8);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px;">${escHtml(tb.title)}</div>`;
+    body += '<table class="result-table" style="width:100%;border-collapse:collapse;font-size:12px;">';
+    if (columns.length) {
+      body += '<thead><tr>' + columns.map(c =>
+        `<th class="result-th" style="text-align:left;padding:4px 10px;border-bottom:1px solid var(--border,#334155);color:var(--text2,#94a3b8);font-weight:600;white-space:nowrap;overflow-wrap:anywhere;">${escHtml(c)}</th>`).join('') + '</tr></thead>';
+    }
+    body += '<tbody>' + rows.map(row => {
+      const cells = Array.isArray(row) ? row : [row];
+      return '<tr class="result-tr">' + cells.map(cell =>
+        `<td class="result-td" style="padding:4px 10px;border-bottom:1px solid var(--border,#334155);overflow-wrap:anywhere;">${escHtml(cell)}</td>`).join('') + '</tr>';
+    }).join('') + '</tbody>';
+    body += '</table></div>';
+  }
+  // Markdown — empty slot; renderResultMarkdownInto fills it after the
+  // board area receives this HTML (found via its .result-markdown class).
+  if (r.markdown) body += '<div class="result-markdown md-content" style="font-size:12px;line-height:1.55;"></div>';
+  body += '</div>';
+  return body;
+}
+
+// renderResultPanelFromBoard returns the card() HTML for the board's
+// result payload, or '' when the board has none — that empty return is
+// the whole "render only when present" gate the status board applies.
+function renderResultPanelFromBoard(board, card) {
+  if (!board || !board.result || typeof board.result !== 'object') return '';
+  return card(t('status_card_result') || 'Result', renderResultPanelBody(board.result));
+}
+
+// renderResultMarkdownInto renders the result's markdown section into el
+// via the shared marked.js + DOMPurify.sanitize pipeline (_ensureMarkdownLibs
+// lazy-loads the pinned CDN libs; DOMPurify.sanitize is the security layer
+// because marked passes raw HTML through). If the libs fail to load
+// (offline/CSP) it degrades to the raw markdown as escaped plain text —
+// never unescaped.
+function renderResultMarkdownInto(el, md) {
+  if (!el) return;
+  const text = String(md || '');
+  const plain = () => `<pre class="result-markdown-plain" style="white-space:pre-wrap;word-break:break-word;margin:0;font-size:12px;line-height:1.5;">${escHtml(text)}</pre>`;
+  el.innerHTML = `<em style="color:var(--text2,#94a3b8);">${escHtml(t('status_result_rendering') || '…')}</em>`;
+  window._ensureMarkdownLibs().then(() => {
+    el.innerHTML = (typeof marked !== 'undefined' && typeof DOMPurify !== 'undefined')
+      ? DOMPurify.sanitize(window.marked.parse(text))
+      : plain();
+  }).catch(() => { el.innerHTML = plain(); });
+}
+
 function renderSessionStatusBoard(sessionId) {
   // GATE alpha.36 (operator 2026-05-10): Status pane is now a sub-pane
   // inside the combined Status+Stats panel. Render into the Status
@@ -5567,6 +5672,10 @@ function renderSessionStatusBoardInner(area, board, sessionId) {
     ? card(t('status_card_sprint') || 'Sprint / Automata', (auto ? '' : breadcrumb) + sprintBody)
     : '';
 
+  // Result card — only when the agent posted a structured result for this
+  // session (board.result); renderResultPanelFromBoard returns '' otherwise.
+  const resultCard = renderResultPanelFromBoard(board, card);
+
   area.innerHTML = `
     ${parentLink}
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap;justify-content:flex-end;">
@@ -5577,10 +5686,16 @@ function renderSessionStatusBoardInner(area, board, sessionId) {
     ${taskTreeCard}
     ${card(t('status_card_tests')||'Tests', testsBody)}
     ${card(t('status_card_git')||'Git', gitBody)}
+    ${resultCard}
     ${activityCard}
     ${costCard}
     <div style="font-size:11px;color:var(--text2);text-align:center;padding:8px;">${escHtml(t('status_followup_note')||'Council, Skills and Tracker summaries are not available on this tab yet.')}</div>
   `;
+  // Result markdown fills in async (marked.js + DOMPurify.sanitize);
+  // the .result-markdown slot only exists when the result payload
+  // actually carries markdown.
+  const resultMdSlot = area && typeof area.querySelector === 'function' ? area.querySelector('.result-markdown') : null;
+  if (resultMdSlot && board.result && board.result.markdown) renderResultMarkdownInto(resultMdSlot, board.result.markdown);
 }
 
 // Open an Automaton's detail view from the session Status tab.
@@ -14813,6 +14928,11 @@ const GENERAL_CONFIG_FIELDS = [
   { id: 'pipeline', section: 'Pipelines (Session Chaining)', docs: 'howto/pipeline-chaining.md', fields: [
     { key: 'pipeline.max_parallel', label: 'Max parallel tasks (0 = default 3)', type: 'number', placeholder: '3' },
     { key: 'pipeline.default_backend', label: 'Default backend (empty = session default)', type: 'text' },
+  ]},
+  // scheduled-jobs results: how many latest posted results each
+  // schedule name retains before the oldest are evicted.
+  { id: 'results', section: 'Scheduled Job Results', fields: [
+    { key: 'results.schedule_history_limit', label: 'Results kept per schedule (min 1, default 20)', type: 'number', min: 1, placeholder: '20' },
   ]},
   // v4.0.1 — feature toggles for autonomous / plugins / orchestrator.
   // Each feature's full surface is REST + MCP + CLI per parity rule;
@@ -26981,6 +27101,7 @@ function _dashLoop(ts) {
     _dashRenderGuardrails();
     _dashRenderMemoryScope();
     _dashRenderWebSearchUsage();
+    _dashRenderIntegrationStatus();
     _dashRenderPluginWidgets();
     _dashRenderSmoke();
   }
@@ -27346,7 +27467,27 @@ function _pwParseCardId(id) {
 
 // ── BL303 S5 — Dashboard Card Grid ───────────────────────────────────────────
 
+// Card labels: a card with a labelKey resolves it through t() at render time
+// so the Add-Card picker and the card header pick up the operator's locale;
+// the static `label` doubles as the English fallback (same as before, just now
+// optional per-card).
+function _dashDefLabel(def) {
+  if (!def) return '';
+  if (def.labelKey) {
+    const s = t(def.labelKey);
+    if (s && s !== def.labelKey) return s;
+  }
+  return def.label || '';
+}
+
 const DASH_CARD_DEFS = [
+  // GH#204 phase 4 — opt-in "Integration status" card: latest posted
+  // scheduled-job results, one row per schedule. Listed FIRST in
+  // DASH_CARD_DEFS so it sits at the very top of the Add-Card picker
+  // (prominent, not buried); deliberately NOT part of DASH_DEFAULT_LAYOUT —
+  // most installs have no named schedules and don't need it by default.
+  { id: 'integration-status', label: 'Integration status', labelKey: 'dash_integ_status', icon: '🔌', defaultCs: 6,
+    body: () => '<div id="dashIntegrationStatusCard" style="height:100%;overflow-y:auto;padding:6px 8px;font-size:11px;"></div>' },
   { id: 'tree',       label: 'Automata',       icon: '⣿',  defaultCs: 2,
     body: () => '<div id="dashTree" style="height:100%;overflow-y:auto;"></div>' },
   { id: 'orbital',    label: 'Network',         icon: '◎',  defaultCs: 6,
@@ -27452,7 +27593,7 @@ function _dashCardHTML(entry) {
     ondragend="window._dashDragEnd(event)">
     <div class="dboard-card-hdr">
       <span class="dboard-card-drag">⣿</span>
-      <span class="dboard-card-title">${def.icon} ${escHtml(def.label)}</span>
+      <span class="dboard-card-title">${def.icon} ${escHtml(_dashDefLabel(def))}</span>
       <span class="dboard-card-span" onclick="window._dashCycleSpan('${entry.id}')" title="Width (click to cycle)">${cs}w</span>
       <span class="dboard-card-span" onclick="window._dashCycleRows('${entry.id}')" title="Height (click to toggle 1/2 rows)">${rs}h</span>
       <button class="dboard-card-rm" onclick="window._dashRemoveCard('${entry.id}')" title="Remove">×</button>
@@ -27495,6 +27636,7 @@ function _dashBuildGrid(layout) {
   _dashRenderGuardrails();
   _dashRenderMemoryScope();
   _dashRenderWebSearchUsage();
+  _dashRenderIntegrationStatus();
   _dashRenderPluginWidgets();
   _drawGantt();
   _dashForceStep();
@@ -27539,7 +27681,7 @@ window._dashShowAddPanel = function() {
   for (const def of DASH_CARD_DEFS) {
     const used = existing.includes(def.id);
     html += `<div class="dboard-add-item${used ? ' dboard-add-used' : ''}"${used ? '' : ` onclick="window._dashAddCard('${def.id}');document.getElementById('dashAddPanel').remove();"`}>
-      <span>${def.icon}</span><span>${escHtml(def.label)}</span>
+      <span>${def.icon}</span><span>${escHtml(_dashDefLabel(def))}</span>
     </div>`;
   }
   html += `</div><div id="dashAddPluginSection"></div></div>`;
@@ -28023,6 +28165,173 @@ function _dashRenderWebSearchUsage() {
   }
   el.innerHTML = html;
 }
+
+// ── GH#204 phase 4 — "Integration status" card ──────────────────────────────
+// Opt-in dashboard card (NOT in DASH_DEFAULT_LAYOUT) surfacing the posted
+// results of scheduled jobs / external integrations: one row per schedule
+// with its latest status, escaped summary, posted time, an inline SVG
+// sparkline of its retained recent statuses (oldest → newest), the retained
+// count, and a click-through into the session that posted the latest result.
+//
+// Mechanism: same cadence and machinery as the other cached dashboard cards
+// (web-search usage, memory scope): render runs inside the shared
+// _dashLoop rAF cycle (same % 12 gate as _dashRenderWebSearchUsage), the
+// fetch is throttled to at most one per ~30s, and it (re)renders on
+// completion. No setInterval anywhere — nothing to stack, one loop only.
+//
+// Data: GET /api/schedule-results → [{ schedule_name, latest: { payload:
+//   { title, status, summary, … }, session_id, posted_at }, count,
+//   recent_statuses: […oldest→newest] }].
+//
+// Security: schedule_name / payload fields are agent- or operator-authored
+// and treated as untrusted — every interpolation goes through escHtml / 
+// escJsAttr, same discipline as the per-session result card (result_payload
+// tests) and the SEC-021 sanitize pipeline.
+const INTEG_MIN_REFETCH_MS = 30000;
+const INTEG_SPARK_MAX = 60; // sparkline dots are bounded even if a history is longer
+
+// Initialize once (the _dash object above is a plain literal; keep the extra
+// bookkeeping fields in one place).
+_dash._integResults = null;   // Array | null (null = not fetched yet)
+_dash._integError = null;     // string | null (last fetch failure)
+_dash._integFetchedAt = 0;    // Date.now() of the last attempted fetch
+
+function _integDotColor(status) {
+  const s = String(status || '').toLowerCase();
+  if (s === 'ok') return 'var(--success,#10b981)';
+  if (s === 'warn') return 'var(--warning,#f59e0b)';
+  if (s === 'error') return 'var(--error,#ef4444)';
+  return 'var(--text2,#94a3b8)';
+}
+
+// _integSparklineSVG renders the retained recent statuses (oldest → newest) as
+// a small inline SVG: one color-coded bar per result, bounded to
+// INTEG_SPARK_MAX (newest wins) so a long history can't produce a giant SVG.
+// Empty/unknown input → '' (no svg at all).
+function _integSparklineSVG(statuses) {
+  const list = (Array.isArray(statuses) ? statuses : []).slice(-INTEG_SPARK_MAX);
+  if (!list.length) return '';
+  const width = 160, height = 12;
+  const step = Math.min(6, width / list.length);
+  const bar = Math.min(4, Math.max(1.5, step * 0.6));
+  const bars = list.map((st, i) => {
+    const x = Math.max(0, i * step + (step - bar) / 2);
+    const title = escHtml(String(st == null ? '—' : st));
+    return `<rect x="${x.toFixed(1)}" y="1" width="${bar.toFixed(1)}" height="${height - 2}" rx="${(bar / 2).toFixed(1)}" fill="${_integDotColor(st)}" opacity="0.9"><title>${title}</title></rect>`;
+  }).join('');
+  return `<svg width="${width}" height="${height}" style="flex-shrink:0;display:block;" aria-hidden="true">${bars}</svg>`;
+}
+
+// _integRow renders one schedule's row. `item` is one element of the
+// /api/schedule-results list; every untrusted string is escaped; the row is
+// click-through into the posting session (status tab) when a session_id is
+// present. Defensive about every field: a missing latest/payload still
+// renders a name-only row instead of throwing.
+function _integRow(item) {
+  if (!item || typeof item !== 'object') return '';
+  const name = escHtml(item.schedule_name || '');
+  const latest = (item.latest && typeof item.latest === 'object') ? item.latest : null;
+  const payload = (latest && latest.payload && typeof latest.payload === 'object') ? latest.payload : {};
+  const st = String(payload.status || '').toLowerCase();
+  let badge = '';
+  if (st === 'ok' || st === 'warn' || st === 'error') {
+    // Closed status set (result contract) — reuse the status-tab keys, all
+    // present in the five locale bundles.
+    const label = st === 'ok' ? (t('status_result_ok') || 'ok')
+      : st === 'warn' ? (t('status_result_warn') || 'warn')
+      : (t('status_result_error') || 'error');
+    badge = `<span class="integ-badge" style="display:inline-flex;align-items:center;gap:4px;font-size:9px;font-weight:600;color:var(--text2);white-space:nowrap;flex-shrink:0;">` +
+      `<span class="integ-dot" style="width:8px;height:8px;border-radius:50%;flex-shrink:0;background:${_integDotColor(st)};"></span>${escHtml(label)}</span>`;
+  }
+  const summary = payload.summary ? `<span class="integ-summary" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text2,#94a3b8);" title="${escHtml(payload.summary)}">${escHtml(payload.summary)}</span>` : '';
+  const title = payload.title ? `<span class="integ-title" style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex-shrink:0;max-width:40%;">${escHtml(payload.title)}</span>` : '';
+  const when = (latest && latest.posted_at) ? timeAgo(latest.posted_at) : '';
+  const time = when ? `<span class="integ-time" style="font-size:10px;color:var(--text2,#94a3b8);white-space:nowrap;flex-shrink:0;">${escHtml(when)}</span>` : '';
+  const countN = Number(item.count) || 0;
+  let count = '';
+  if (countN > 1) {
+    const m = t('dash_integ_retained', [countN]);
+    count = `<span class="integ-count" style="font-size:10px;color:var(--text2,#94a3b8);white-space:nowrap;flex-shrink:0;">${escHtml(m !== 'dash_integ_retained' ? m : countN + ' retained')}</span>`;
+  }
+  const sid = (latest && latest.session_id) ? String(latest.session_id) : '';
+  const click = sid ? `onclick="window._integOpenSession('${escJsAttr(sid)}')"` : '';
+  return `<div class="integ-row" ${click} title="${escHtml(t('dash_integ_open') || 'Open the session that posted this result')}" style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-bottom:1px solid var(--border,#1e293b);${sid ? 'cursor:pointer;' : ''}">` +
+    `<span class="integ-name" style="font-weight:600;white-space:nowrap;flex-shrink:0;max-width:30%;overflow:hidden;text-overflow:ellipsis;" title="${name}">${name}</span>` +
+    badge + title + summary + time + _integSparklineSVG(item.recent_statuses) + count +
+    `</div>`;
+}
+
+// _integHowtoLink — the empty/error states point operators at the
+// API reference (POST /api/sessions/{session_id}/result is documented
+// there today; a dedicated result-posting howto is a follow-up item).
+function _integHowtoLink() {
+  const label = escHtml(t('dash_integ_empty_link', [])
+    ? t('dash_integ_empty_link') : 'See the result endpoint in the API reference');
+  return `<a href="/api/openapi.yaml" target="_blank" rel="noopener" style="color:var(--accent2,#60a5fa);text-decoration:underline;" title="API reference — POST /api/sessions/{session_id}/result">${label}</a>`;
+}
+
+function _integEmptyHTML() {
+  return `<div class="integ-empty" style="color:var(--text2,#94a3b8);padding:6px 2px;line-height:1.6;">
+    <div style="font-weight:700;color:var(--text);">${escHtml(t('dash_integ_empty_title') || 'No results yet')}</div>
+    <div style="margin-top:4px;">${escHtml(t('dash_integ_empty') || 'Scheduled jobs can post their results here. From inside one, POST /api/sessions/{id}/result with the job\'s own credential and a payload of title, status (ok/warn/error) and an optional summary.')}</div>
+    <div style="margin-top:6px;">${_integHowtoLink()}</div>
+  </div>`;
+}
+
+function _integErrorHTML() {
+  return `<div class="integ-error" style="color:var(--text2,#94a3b8);padding:6px 2px;line-height:1.6;">
+    <div style="font-weight:700;color:var(--text);">${escHtml(t('dash_integ_error') || "Couldn't load the results yet.")}</div>
+    <div style="margin-top:6px;">${_integHowtoLink()}</div>
+  </div>`;
+}
+
+// _dashFetchIntegStatus pulls the per-schedule summary list and re-renders.
+// Throttled: never more than one in-flight request, and re-fetches are only
+// attempted at most once per INTEG_MIN_REFETCH_MS (the "same cadence" rule,
+// without any extra timer).
+function _dashFetchIntegStatus() {
+  if (_dash._integFetching) return Promise.resolve();
+  _dash._integFetching = true;
+  _dash._integFetchedAt = Date.now();
+  return apiFetch('/api/schedule-results').then(d => {
+    _dash._integResults = Array.isArray(d) ? d : null;
+    _dash._integError = null;
+    _dashRenderIntegrationStatus();
+  }).catch(e => {
+    _dash._integError = String((e && e.message) || e || 'fetch failed');
+    if (!_dash._integResults) _dashRenderIntegrationStatus();
+  }).finally(() => { _dash._integFetching = false; });
+}
+
+// _dashRenderIntegrationStatus renders #dashIntegrationStatusCard from the
+// cached list. Runs on the shared loop gate; when the cache is cold it kicks
+// the (throttled) fetch itself so the first paint is never stuck at loading.
+function _dashRenderIntegrationStatus() {
+  const el = document.getElementById('dashIntegrationStatusCard');
+  if (!el) return;
+  const cold = !_dash._integResults && !_dash._integError;
+  const stale = Date.now() - (_dash._integFetchedAt || 0) >= INTEG_MIN_REFETCH_MS;
+  if (cold) {
+    el.innerHTML = `<div class="integ-loading" style="color:var(--text2,#94a3b8);font-size:10px;padding:4px 0;">${escHtml(t('dash_integ_loading') || 'Loading results…')}</div>`;
+    if (stale || !(_dash._integFetchedAt)) _dashFetchIntegStatus();
+    return;
+  }
+  if (_dash._integError && !_dash._integResults) {
+    el.innerHTML = _integErrorHTML();
+    if (stale) _dashFetchIntegStatus();
+    return;
+  }
+  el.innerHTML = _dash._integResults.length ? _dash._integResults.map(_integRow).join('') : _integEmptyHTML();
+  if (stale) _dashFetchIntegStatus();
+}
+
+// Click-through: open the posting session's Status tab (the per-session
+// result card) — same deep-link the status-tab result card uses for itself.
+window._integOpenSession = function(sessionId) {
+  if (!sessionId) return;
+  if (typeof window.gotoSessionStatus === 'function') window.gotoSessionStatus(sessionId);
+  else navigate('session-detail', sessionId);
+};
 
 // Smoke run progress card — multi-envelope (BL303 S5 rev2)
 // State: _dash._smokeEnvelopes (array), _dash._smokeExpandedId, _dash._smokeExpandedData, _dash._smokeFilter

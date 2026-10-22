@@ -141,6 +141,7 @@ Selected core tools:
 | `queue_push` / `queue_claim` / `queue_complete` / `queue_fail` / `queue_list` | Distributed work queue (BL357) |
 | `discussion_subscribe` / `discussion_unsubscribe` / `discussion_subscriptions` | Discussion subscriptions (BL358) |
 | `result_put` / `result_get` / `result_list` / `result_delete` | Result store (BL360) |
+| `post_result` / `schedule_results_list` | Scheduled-job result panel — post a session's structured result (same contract as `POST /api/sessions/{id}/result`) and list per-schedule retained history (same as `GET /api/schedule-results`) |
 | `channel_info` | Channel bridge status for the current session |
 | `channel_diagnostics` | Full MCP channel bridge health — all sessions, bridge kind/path, per-session liveness, hints (BL362) |
 | `get_my_scope` | Self-scope confirmation: own identity, per-session MCP server name, mode (host vs container), and every session's name/state (BL463) |

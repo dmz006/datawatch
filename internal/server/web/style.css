@@ -5800,3 +5800,47 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
 .badge-input-dropdown-item:hover,
 .badge-input-dropdown-item.focused { background: var(--bg3,#2d3148); }
 .badge-input-wrap-container { position: relative; width: 100%; }
+
+/* ---------------- Status tab — Result card (GH#204 phase 3) ------------ */
+/* The card body is built inline by renderResultPanelBody in app.js; these
+   class hooks give the status badge its ok/warn/error colors and make the
+   markdown/prose sections + tables themeable without inline edits. */
+.result-status-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 1px 8px;
+  border-radius: 10px;
+  border: 1px solid var(--border,#334155);
+}
+.result-status-ok    { color: var(--success,#10b981); border-color: var(--success,#10b981); background: rgba(16,185,129,0.12); }
+.result-status-warn  { color: var(--warning,#f59e0b); border-color: var(--warning,#f59e0b); background: rgba(245,158,11,0.12); }
+.result-status-error { color: var(--error,#ef4444);  border-color: var(--error,#ef4444);  background: rgba(239,68,68,0.12); }
+.result-status-dot   { flex-shrink: 0; }
+.result-markdown { overflow-wrap: anywhere; }
+.result-markdown h1, .result-markdown h2, .result-markdown h3 {
+  font-size: 12px;
+  margin: 8px 0 4px;
+}
+.result-markdown p { margin: 4px 0; }
+.result-markdown ul, .result-markdown ol { margin: 4px 0; padding-left: 18px; }
+.result-markdown code {
+  background: var(--bg,#0f172a);
+  border-radius: 3px;
+  padding: 0 3px;
+  font-size: 11px;
+}
+.result-markdown pre {
+  background: var(--bg,#0f172a);
+  border-radius: 4px;
+  padding: 8px;
+  overflow: auto;
+}
+.result-table th, .result-table td {
+  border-bottom: 1px solid var(--border,#334155);
+  overflow-wrap: anywhere;
+}
+.result-table tr:last-child td { border-bottom: none; }
