@@ -2149,4 +2149,15 @@ Changed behavior: the boot-resume age gate counts a live worker session as activ
 | PWA Resume button: rendered for a parked blocked PRD with the reason, not rendered for other PRDs | **Yes** (`internal/server/web/app-resume-parked.test.js`) | **Yes** | `node --test` green | Unit-level, no browser |
 | Parked PRD resume re-adopts a live worker end to end | **Yes** (`TestParkedPRDResumeAdoptsLiveWorkerLive` in `internal/session/parked_prd_resume_live_test.go`) | **No** | Opt-in live test, not yet run against a sandbox daemon | Stays No until run against a sandbox daemon |
 
+## PWA terminal disposed-guard and quiet service-worker line — unreleased
+
+Changed behavior: every fit/resize/scroll call into the PWA terminal is now checked against a disposed/unopened/hidden/zero-sized terminal (skipping safely instead of throwing xterm's `dimensions` TypeError), pending timers are cancelled on dispose so a stale callback can no longer fire the outgoing terminal, and a service-worker registration rejection on an untrusted (self-signed) certificate prints one quiet `console.info` pointing at `docs/operations.md` instead of an error-looking line.
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| Guard helpers return false for null/disposed/unopened/hidden/zero-sized terminal; fit/resize/scroll calls skip safely instead of throwing | **Yes** (`internal/server/web/app-xterm-guard.test.js`) | **Yes** | `node --test` green | Real app.js in a Node vm with a fake xterm that throws the real disposed-`dimensions` TypeError |
+| Timers cancelled on dispose and stale callbacks are no-ops; rapid re-init after dispose works | **Yes** (`internal/server/web/app-xterm-guard.test.js`) | **Yes** | `node --test` green | Recording timers in the stub; stale callbacks fired by hand to prove they no-op |
+| Service-worker-disabled line is a single `console.info`, no warn/error, printed at most once per page load | **Yes** (`internal/server/web/app-sw-disabled-info.test.js`) | **Yes** | `node --test` green | Asserts the exact info text ends at `docs/operations.md` and no error-looking line is emitted |
+| Rapid session switch: Playwright story seeds three sessions, switches between them and resizes the window, asserts no uncaught page error or `dimensions` console error | **Yes** (`scripts/test-stories/pwa/TS-800.mjs`; file parses and is listed by `run-all.mjs`) | **No** | Story exists and is discoverable by the runner; not yet executed against a live daemon | Stays No until run against a sandbox daemon (`make test-e2e-pwa` or `scripts/e2e-pwa.sh`) |
+
 ---

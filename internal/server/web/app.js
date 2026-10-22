@@ -4017,9 +4017,7 @@ function changeTermFontSize(delta) {
   });
   if (state.terminal) {
     state.terminal.options.fontSize = next;
-    if (state.termFitAddon) {
-      try { state.termFitAddon.fit(); } catch(e) {}
-    }
+    _termSafeFit(state.terminal, state.termFitAddon, document.getElementById('outputAreaTmux'));
   }
 }
 
@@ -4031,8 +4029,10 @@ function termFitToWidth() {
   const maxWidth = container.clientWidth - 16; // padding
   let fs = parseInt(localStorage.getItem('cs_term_font_size') || '9', 10);
   while (fs > 5) {
+    // Stop instead of looping on a terminal that just went away
+    if (!_termUsable(state.terminal, container)) break;
     state.terminal.options.fontSize = fs;
-    try { state.termFitAddon.fit(); } catch(e) {}
+    if (!_termSafeFit(state.terminal, state.termFitAddon, container)) break;
     // xterm viewport width is set by fit addon — check if scrollbar needed
     const viewport = container.querySelector('.xterm-viewport');
     if (viewport && viewport.scrollWidth <= viewport.clientWidth + 2) break;
@@ -4221,6 +4221,10 @@ function _paneFlushPending() {
 function _paneJumpToLive() {
   _paneShowJumpToLive(false);
   if (!state.terminal) return;
+  // Skip terminals we already tore down — scrollToBottom on a disposed
+  // terminal throws (render service gone); any other dead state falls back
+  // to that throw-and-recover path instead of crashing the caller.
+  if (_disposedTerms.has(state.terminal)) return;
   try { state.terminal.scrollToBottom(); } catch (e) { /* terminal disposed */ }
   const f = state._pendingPaneFrame;
   state._pendingPaneFrame = null;
@@ -4329,7 +4333,70 @@ function renderPaneFrame(data) {
       }
 }
 
+// Guards for fit/resize/scroll: xterm throws from these when the terminal
+// is disposed, never opened, or its container is hidden/zero-sized — the
+// exact situation during a rapid session switch where a fit, resize or
+// scroll sync still fires. None of these may themselves throw.
+const _disposedTerms = new WeakSet();
+
+// true only when the terminal is live, open, still the state's terminal
+// (unless it has not been published yet), and its container is actually
+// on-screen with non-zero size.
+function _termUsable(term, container, allowUnassigned) {
+  try {
+    if (!term || _disposedTerms.has(term)) return false;
+    if (state.terminal !== term) {
+      // allowUnassigned covers the initXterm window between term.open()
+      // and state.terminal = term, which is not a swapped-out terminal
+      if (state.terminal !== null || !allowUnassigned) return false;
+    }
+    if (!term.element) return false;
+    if (!container || !container.isConnected) return false;
+    return container.clientWidth > 0 && container.clientHeight > 0;
+  } catch (e) { return false; }
+}
+
+function _termSafeFit(term, fitAddon, container) {
+  if (!fitAddon || !_termUsable(term, container)) return false;
+  try {
+    fitAddon.fit();
+    return true;
+  } catch (e) { return false; }
+}
+
+// Run a fit/resize/scroll job a frame (or `ms` later) with its id tracked
+// so destroyXterm can cancel jobs queued by a terminal we're tearing down.
+// Bails if the terminal generation changed while the job was pending.
+function _termSchedule(fn, ms) {
+  if (!state._termTimers) state._termTimers = new Set();
+  const gen = state._termGen || 0;
+  let id;
+  const run = () => {
+    state._termTimers.delete(id);
+    if ((state._termGen || 0) !== gen) return; // terminal switched/destroyed meanwhile
+    try { fn(); } catch (e) {} // job is best-effort; never break the timer chain
+  };
+  id = (ms === undefined) ? requestAnimationFrame(run) : setTimeout(run, ms);
+  state._termTimers.add(id);
+  return id;
+}
+
 function destroyXterm() {
+  // Bump the generation and cancel pending fit/scroll jobs BEFORE dispose,
+  // so a job queued by the outgoing terminal can never fire on it again.
+  state._termGen = (state._termGen || 0) + 1;
+  if (state._termTimers && state._termTimers.size) {
+    state._termTimers.forEach(id => {
+      try { clearTimeout(id); } catch (e) {}          // may be an rAF id
+      try { cancelAnimationFrame(id); } catch (e) {}  // may be a timeout id
+    });
+    state._termTimers.clear();
+  }
+  if (state._termResizeTimer) {
+    try { clearTimeout(state._termResizeTimer); } catch (e) {}
+    try { cancelAnimationFrame(state._termResizeTimer); } catch (e) {}
+    state._termResizeTimer = null;
+  }
   if (state._termWatchdog) { clearTimeout(state._termWatchdog); state._termWatchdog = null; }
   if (state._termResizeObserver) {
     state._termResizeObserver.disconnect();
@@ -4350,6 +4417,7 @@ function destroyXterm() {
   state._pendingPaneFrame = null;
   _paneShowJumpToLive(false);
   if (state.terminal) {
+    _disposedTerms.add(state.terminal); // mark disposed before the real dispose
     try { state.terminal.dispose(); } catch(e) { /* already disposed */ }
     state.terminal = null;
     state.termFitAddon = null;
@@ -4450,20 +4518,21 @@ function initXterm(sessionId, bufferedLines, configCols, configRows) {
       container.style.maxHeight = avail + 'px';
     };
     const _fitAndScroll = () => {
-      if (!state.terminal) return;
-      if (fitAddon) { try { fitAddon.fit(); } catch(e) {} }
+      if (state.terminal !== term && state.terminal !== null) return; // terminal replaced/destroyed
+      if (!_termUsable(term, container, true)) return;
+      _termSafeFit(term, fitAddon, container);
       syncTmuxSize();
       try { term.scrollToBottom(); } catch(e) {}
     };
     const _vvResize = () => {
       _setContainerH();
       // First pass: rAF so the explicit height is applied before measuring.
-      requestAnimationFrame(() => {
+      _termSchedule(() => {
         _fitAndScroll();
         // Second pass: catch full iOS keyboard animation (~300 ms).
-        setTimeout(() => {
+        _termSchedule(() => {
           _setContainerH();
-          requestAnimationFrame(_fitAndScroll);
+          _termSchedule(_fitAndScroll);
         }, 350);
       });
     };
@@ -4476,6 +4545,9 @@ function initXterm(sessionId, bufferedLines, configCols, configRows) {
   // Sync tmux pane size with xterm.js terminal size.
   // After resize, the server sends a 'pane_capture' with fresh content at the correct width.
   function syncTmuxSize() {
+    // Don't send resize_term with cols/rows read from a disposed/swapped-out
+    // terminal or one mounted in a hidden/zero-sized container.
+    if (!_termUsable(term, container, true)) return;
     if (state.activeSession && term.cols && term.rows) {
       send('resize_term', { session_id: state.activeSession, cols: term.cols, rows: term.rows });
     }
@@ -4490,15 +4562,16 @@ function initXterm(sessionId, bufferedLines, configCols, configRows) {
   const fitsInContainer = (minCols * charEst) <= containerW;
 
   if (fitAddon) {
-    requestAnimationFrame(() => {
-      try { fitAddon.fit(); } catch(e) {}
+    _termSchedule(() => {
+      if (!_termUsable(term, container)) return;
+      _termSafeFit(term, fitAddon, container);
       // If configured cols DON'T fit, only enforce for backends that need it
       // (claude-code needs 120 — allow horizontal scroll)
       if (term.cols < minCols && fitsInContainer) {
-        term.resize(minCols, term.rows);
+        try { term.resize(minCols, term.rows); } catch (e) {}
       } else if (term.cols < minCols && configCols >= 120) {
         // Wide terminal required (claude) — force it, container scrolls horizontally
-        term.resize(minCols, term.rows);
+        try { term.resize(minCols, term.rows); } catch (e) {}
       }
       syncTmuxSize();
     });
@@ -4513,14 +4586,20 @@ function initXterm(sessionId, bufferedLines, configCols, configRows) {
   // Handle resize — debounced
   if (fitAddon) {
     let lastCols = term.cols, lastRows = term.rows;
-    let resizeTimer = null;
     const resizeObs = new ResizeObserver(() => {
-      if (resizeTimer) clearTimeout(resizeTimer);
-      resizeTimer = setTimeout(() => {
-        try { fitAddon.fit(); } catch(e) {}
+      // Debounce through _termSchedule so destroyXterm can cancel it
+      if (state._termResizeTimer) {
+        try { clearTimeout(state._termResizeTimer); } catch (e) {}
+        try { cancelAnimationFrame(state._termResizeTimer); } catch (e) {}
+        state._termResizeTimer = null;
+      }
+      state._termResizeTimer = _termSchedule(() => {
+        state._termResizeTimer = null;
+        if (!_termUsable(term, container)) return;
+        _termSafeFit(term, fitAddon, container);
         const nowFits = (minCols * charEst) <= (container.offsetWidth || 480);
         if (term.cols < minCols && (nowFits || configCols >= 120)) {
-          term.resize(minCols, term.rows);
+          try { term.resize(minCols, term.rows); } catch (e) {}
         }
         if (term.cols !== lastCols || term.rows !== lastRows) {
           lastCols = term.cols;
@@ -4535,6 +4614,7 @@ function initXterm(sessionId, bufferedLines, configCols, configRows) {
 
   // Interactive keyboard mode — keystrokes sent to tmux via sendkey
   term.onData(data => {
+    if (state.terminal !== term) return; // captured a switched/destroyed terminal
     if (state.activeSession) {
       _paneJumpToLive(); // operator typed: return to the live screen
       send('send_input', { session_id: state.activeSession, text: data, raw: true });
@@ -4548,6 +4628,7 @@ function initXterm(sessionId, bufferedLines, configCols, configRows) {
   // the viewport was scrolled up.
   if (typeof term.onScroll === 'function') {
     term.onScroll(() => {
+      if (state.terminal !== term) return;
       const buf = term.buffer && term.buffer.active;
       if (state._pendingPaneFrame && buf && buf.viewportY >= buf.baseY) _paneJumpToLive();
     });
@@ -19549,6 +19630,27 @@ if (window.matchMedia) {
   } catch (e) { /* Safari < 14 fallback: ignore */ }
 }
 
+// On an origin with an untrusted/self-signed TLS cert (or otherwise an
+// insecure context) Chrome/Firefox reject the /sw.js fetch during
+// registration with a SecurityError even though the page itself loads
+// fine. That's expected on such origins, not an operator-facing failure
+// (docs/operations.md covers enabling the SW with a trusted cert), so we
+// surface exactly one quiet info line instead of an error-looking one.
+// Pure helper (unit-testable in isolation) so the .catch above stays
+// small; returns a one-line info string for the trusted-cert case and
+// null for anything else (callers keep console.warn for real failures).
+const _SW_DISABLED_INFO = 'Service worker is off on this origin (the TLS certificate is not trusted). The app works normally; offline cache and push need a trusted certificate - see docs/operations.md.';
+function _swRegisterFailureMessage(err) {
+  try { if (typeof window !== 'undefined' && window.isSecureContext === false) return _SW_DISABLED_INFO; } catch (_) {}
+  if (err && err.name === 'SecurityError' && /SSL certificate|certificate error|insecure/i.test(String(err.message))) {
+    return _SW_DISABLED_INFO;
+  }
+  return null;
+}
+// Printed at most once per page load even if registerServiceWorker is
+// called again (e.g. a retry path), so the operator isn't spammed.
+let _swDisabledInfoShown = false;
+
 function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return;
   {
@@ -19583,17 +19685,14 @@ function registerServiceWorker() {
         });
       });
     }).catch(err => {
-      // Self-signed-cert origins (e.g. https://<hostname>:8443 with the
-      // auto-generated cert that the operator has merely click-throughs)
-      // are NOT a valid SW registration context even though the page
-      // loads. Chrome throws `SecurityError: An SSL certificate error
-      // occurred when fetching the script`. Demote to info — the PWA
-      // degrades gracefully (no offline cache, no push) and everything
-      // else works. Use https://localhost:8443 or install a trusted
-      // cert to enable SW.
-      const msg = String(err && err.message || err);
-      if (err && err.name === 'SecurityError' && /SSL certificate/i.test(msg)) {
-        console.info('SW disabled on this origin (untrusted TLS cert). Use https://localhost or install a trusted cert to enable PWA offline/push.');
+      // Trusted-cert / insecure-context case: emit exactly ONE quiet info
+      // line (at most once per page load) and return — no warn/error, no
+      // update interval set up (that only happens in the .then above on a
+      // live registration), and nothing else. Any other rejection is a
+      // genuine failure and keeps the console.warn below.
+      const info = _swRegisterFailureMessage(err);
+      if (info) {
+        if (!_swDisabledInfoShown) { _swDisabledInfoShown = true; console.info(_SW_DISABLED_INFO); }
         return;
       }
       console.warn('SW registration failed:', err);
@@ -32470,7 +32569,9 @@ function toggleFullscreen() {
   try { localStorage.setItem('cs_pwa_expanded', _pwaExpanded ? '1' : '0'); } catch (_) {}
   _applyPwaExpanded();
   // Notify xterm.js about the layout change so it re-fits to the new width.
-  if (state && state.termFitAddon) { try { state.termFitAddon.fit(); } catch(_) {} }
+  if (state && state.termFitAddon) {
+    _termSafeFit(state.terminal, state.termFitAddon, document.getElementById('outputAreaTmux'));
+  }
 }
 
 // ── BL315 — PWA install prompt (2026-10-07, reinstated) ─────────────────────
