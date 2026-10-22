@@ -146,7 +146,7 @@ func TestMCPAutonomousStatusCarriesAutomationBudget(t *testing.T) {
 	}
 
 	// The read tools proxy the REST views, which carry the same budget field.
-	s, rec = activateServer(t, http.StatusOK, `{"id":"ab12","budget":{"state":"within"}}`)
+	s, _ = activateServer(t, http.StatusOK, `{"id":"ab12","budget":{"state":"within"}}`)
 	for name, call := range map[string]func() (string, error){
 		"get": func() (string, error) {
 			r, err := s.handleAutomationGet(context.Background(), callReq(map[string]any{"id": "ab12"}))
