@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.80 — Workers that never got their task are retried and re-sent the task
+
+### Fixed
+
+- **A claude-code Automaton worker whose task was never typed in is now noticed and recovered.** If the wait for the worker's main prompt timed out (for example behind a startup banner or update notice), the task was never delivered, yet the worker sat idle for the whole task and the idle nudge only asked it for a completion line. Delivery now retries with bounded attempts and backoff, the main-prompt detection tolerates banner and notice lines on the pane, a delivery that still fails ends the session as a delivery failure so the executor retries the task with a fresh session (the reason is recorded on the task), and the idle nudge re-sends the task to a worker whose task was never delivered. Deterministic tests with a fake terminal multiplexer cover a late prompt, a prompt behind a banner, no prompt, and the nudge on an undelivered task.
+
 ## v9.5.79 — Tests and the pi backend no longer leak temp files into /tmp
 
 ### Fixed
