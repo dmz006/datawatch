@@ -23,7 +23,7 @@ import (
 
 func (s *Server) toolAutomationList() mcpsdk.Tool {
 	return mcpsdk.NewTool("automation_list",
-		mcpsdk.WithDescription("List all Automations. An Automation is a chain of Automatons (PRDs) connected by per-outcome edges. Activate a draft with automation_activate."),
+		mcpsdk.WithDescription("List all Automations. An Automation is a chain of Automatons (PRDs) connected by per-outcome edges. Each row carries its budget view (spend against the ceiling, window, reset time and whether it resumes by itself) when a budget policy is in play. Activate a draft with automation_activate."),
 	)
 }
 
@@ -117,7 +117,7 @@ func (s *Server) handleAutomationCreate(_ context.Context, req mcpsdk.CallToolRe
 
 func (s *Server) toolAutomationGet() mcpsdk.Tool {
 	return mcpsdk.NewTool("automation_get",
-		mcpsdk.WithDescription("Get an Automation by ID (status, members, edges, budget policy, execution defaults)."),
+		mcpsdk.WithDescription("Get an Automation by ID (status, members, edges, budget policy, execution defaults) together with its budget view: spend against the ceiling, the window and reset time, whether it resumes by itself, and the estimate and peer notes."),
 		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("Automation ID.")),
 	)
 }
@@ -400,4 +400,130 @@ func (s *Server) handleAutomationApproveInsert(_ context.Context, req mcpsdk.Cal
 	extra := map[string]any{}
 	optionalString(req, extra, "member_id")
 	return s.automationControlCall(req, "approve_insert", extra)
+}
+
+// ── automation_set_budget ───────────────────────────────────────────────
+
+const automationSetBudgetDesc = "Set, replace or clear the budget policy of an Automation, or the override of one member (member_id), as an operator control operation. " +
+	"The policy is a spend ceiling (ceiling_type and ceiling_value) over a window, with a pacing mode and an on_breach rule; the fields replace the whole policy, and clear=true removes it instead and cannot be combined with them. " +
+	"On a breach the Automation pauses and resumes by itself at the window rollover only when the reset time is known (a window the daemon defines itself, anchored at reset_time, reset_weekday, reset_day and reset_zone or at the calendar default, or a reset time parsed from a rate-limit message). When the reset time is unknown it goes to blocked and waits for the operator to resume it. An alert is raised either way. " +
+	"allocation_estimate is optional and off by default: it shows the spend as an estimated share of the plan allocation, is always labelled estimated, and never pauses or blocks. " +
+	"peer_window lists the peers whose spend counts toward the ceiling; another daemon's usage counts only for peers named there, it is off by default, and a shared account is not confirmed automatically. " +
+	"estimated_cost_usd (member only) declares the expected cost of the member's Automaton; on its own it changes only the estimate and 0 removes it. " +
+	"The Automation's status is not changed by this call. automation_get and automation_list return the computed budget view."
+
+func (s *Server) toolAutomationSetBudget() mcpsdk.Tool {
+	opts := append(automationControlBase(automationSetBudgetDesc),
+		mcpsdk.WithString("member_id", mcpsdk.Description("Set the override of this member instead of the Automation's own policy.")),
+		mcpsdk.WithString("ceiling_type", mcpsdk.Description("What the ceiling measures: dollar (a spend ceiling) or allocation_pct (an estimate only, never pauses or blocks).")),
+		mcpsdk.WithNumber("ceiling_value", mcpsdk.Description("The ceiling, a positive number in the unit of ceiling_type.")),
+		mcpsdk.WithString("window", mcpsdk.Description("The window the ceiling applies to: automation (the whole run), day, week or month.")),
+		mcpsdk.WithString("pacing", mcpsdk.Description("Pacing within the window: none (the default) or even.")),
+		mcpsdk.WithString("on_breach", mcpsdk.Description("What happens when the ceiling is reached: pause (the default) or block.")),
+		mcpsdk.WithString("backend", mcpsdk.Description("The LLM backend whose spend is measured; empty measures the Automation's members.")),
+		mcpsdk.WithBoolean("allocation_estimate", mcpsdk.Description("Show an estimated share of the plan allocation. An estimate only; it never pauses or blocks.")),
+		mcpsdk.WithArray("peer_window", mcpsdk.WithStringItems(), mcpsdk.Description("Peers whose spend counts toward the ceiling. Off by default; a shared account is not confirmed automatically.")),
+		mcpsdk.WithString("reset_time", mcpsdk.Description("Time of day the day, week or month window resets, such as 06:00, when the operator knows it.")),
+		mcpsdk.WithString("reset_weekday", mcpsdk.Description("Weekday the window resets, monday to sunday; week window only.")),
+		mcpsdk.WithNumber("reset_day", mcpsdk.Description("Day of the month the window resets, 1 to 28; month window only.")),
+		mcpsdk.WithString("reset_zone", mcpsdk.Description("IANA time zone of the reset, such as America/New_York; day, week or month window only.")),
+		mcpsdk.WithNumber("estimated_cost_usd", mcpsdk.Description("Member only: the expected cost in dollars of the member's Automaton. 0 removes the estimate.")),
+		mcpsdk.WithBoolean("clear", mcpsdk.Description("Remove the policy instead of setting one. Cannot be combined with the policy fields.")),
+	)
+	return mcpsdk.NewTool("automation_set_budget", opts...)
+}
+
+// budgetStringArgs, budgetNumberArgs and budgetBoolArgs name the set_budget
+// arguments forwarded as each JSON type.
+var (
+	budgetStringArgs = []string{"member_id", "ceiling_type", "window", "pacing", "on_breach", "backend", "reset_time", "reset_weekday", "reset_zone"}
+	budgetNumberArgs = []string{"ceiling_value", "reset_day", "estimated_cost_usd"}
+	budgetBoolArgs   = []string{"allocation_estimate", "clear"}
+)
+
+func (s *Server) handleAutomationSetBudget(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	args := req.GetArguments()
+	extra := map[string]any{}
+	for _, k := range budgetStringArgs {
+		v, present := args[k]
+		if !present || v == nil {
+			continue
+		}
+		str, ok := v.(string)
+		if !ok {
+			return mcpsdk.NewToolResultText("error: " + k + " must be a string"), nil
+		}
+		if str != "" {
+			extra[k] = str
+		}
+	}
+	for _, k := range budgetNumberArgs {
+		v, present := args[k]
+		if !present || v == nil {
+			continue
+		}
+		n, ok := controlNumber(v)
+		if !ok {
+			return mcpsdk.NewToolResultText("error: " + k + " must be a number"), nil
+		}
+		// Zero is a real value only for the estimate, where it removes it.
+		if n != 0 || k == "estimated_cost_usd" {
+			extra[k] = n
+		}
+	}
+	for _, k := range budgetBoolArgs {
+		v, present := args[k]
+		if !present || v == nil {
+			continue
+		}
+		b, ok := v.(bool)
+		if !ok {
+			return mcpsdk.NewToolResultText("error: " + k + " must be true or false"), nil
+		}
+		if b {
+			extra[k] = true
+		}
+	}
+	if v, present := args["peer_window"]; present && v != nil {
+		list, ok := v.([]any)
+		if !ok {
+			if strs, isStrs := v.([]string); isStrs {
+				for _, p := range strs {
+					list = append(list, p)
+				}
+				ok = true
+			}
+		}
+		if !ok {
+			return mcpsdk.NewToolResultText("error: peer_window must be an array of strings"), nil
+		}
+		peers := make([]string, 0, len(list))
+		for _, e := range list {
+			p, isStr := e.(string)
+			if !isStr {
+				return mcpsdk.NewToolResultText("error: peer_window must be an array of strings"), nil
+			}
+			peers = append(peers, p)
+		}
+		if len(peers) > 0 {
+			extra["peer_window"] = peers
+		}
+	}
+	return s.automationControlCall(req, "set_budget", extra)
+}
+
+// controlNumber reads a JSON number out of decoded tool arguments.
+func controlNumber(v any) (float64, bool) {
+	switch n := v.(type) {
+	case float64:
+		return n, true
+	case int:
+		return float64(n), true
+	case int64:
+		return float64(n), true
+	case json.Number:
+		f, err := n.Float64()
+		return f, err == nil
+	}
+	return 0, false
 }
