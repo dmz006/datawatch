@@ -153,6 +153,7 @@ var MCPToolCap = map[string]string{
 	"usage_backoff_recheck":           CapConfigWrite,
 	"usage_backoff_set":               CapConfigWrite,
 	"usage_backoff_status":            CapConfigRead,
+	"budget_status":                   CapAutonomousRead,
 	"cost_rates":                      CapAnalyticsRead,
 	"cost_summary":                    CapAnalyticsRead,
 	"cost_usage":                      CapAnalyticsRead,
