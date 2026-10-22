@@ -80,7 +80,7 @@ func rateLimitBackoffHandler(cfg *config.Config, bo *autonomouspkg.Backoff, now 
 			reason = "rate-limit — no reset time (max back-off)"
 			fmt.Printf("[backoff] %s paused until %s (rate limit, no reset time — max back-off)\n", backend, until.Format(time.RFC3339))
 		}
-		bo.Set(backend, until, reason, autonomouspkg.BackoffSourceRateLimit)
+		bo.SetWithReset(backend, until, reason, autonomouspkg.BackoffSourceRateLimit, hasReset)
 		audit(auditpkg.ActionUsageBackoffSet, map[string]any{
 			"backend": backend,
 			"until":   until.UTC().Format(time.RFC3339),

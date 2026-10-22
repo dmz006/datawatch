@@ -10,7 +10,6 @@
 package autonomous
 
 import (
-	"fmt"
 	"sort"
 	"sync"
 	"time"
@@ -30,6 +29,10 @@ type Entry struct {
 	Until   time.Time `json:"until"`
 	Reason  string    `json:"reason"`
 	Source  string    `json:"source"`
+	// ResetKnown is true when Until is a reset time the provider (or an
+	// operator) named, false when it is only the maximum back-off applied
+	// because the rate-limit message carried no reset time.
+	ResetKnown bool `json:"reset_known"`
 }
 
 // Backoff is a goroutine-safe in-memory registry of per-backend back-off
@@ -55,14 +58,21 @@ func (b *Backoff) now() time.Time {
 	return time.Now()
 }
 
-// Set records (or replaces) the back-off flag for backend.
+// Set records (or replaces) the back-off flag for backend, treating until as
+// a known reset time.
 func (b *Backoff) Set(backend string, until time.Time, reason string, source string) {
+	b.SetWithReset(backend, until, reason, source, true)
+}
+
+// SetWithReset is Set with an explicit flag for whether until is a known
+// reset time (false when it is the maximum back-off applied for lack of one).
+func (b *Backoff) SetWithReset(backend string, until time.Time, reason string, source string, resetKnown bool) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.entries == nil {
 		b.entries = map[string]Entry{}
 	}
-	b.entries[backend] = Entry{Backend: backend, Until: until, Reason: reason, Source: source}
+	b.entries[backend] = Entry{Backend: backend, Until: until, Reason: reason, Source: source, ResetKnown: resetKnown}
 }
 
 // Clear removes the flag for backend and reports whether one existed.
@@ -94,7 +104,11 @@ func (b *Backoff) Blocked(backend string) (bool, string) {
 	if !ok || !e.Until.After(now) {
 		return false, ""
 	}
-	return true, fmt.Sprintf("backend %s backed off until %s (%s)", backend, e.Until.Format("15:04 MST"), e.Reason)
+	note := ""
+	if e.Source == BackoffSourceOperator {
+		note = e.Reason
+	}
+	return true, BackoffWaitText(b.now, backend, e.Until, e.ResetKnown, note)
 }
 
 // Sweep removes entries whose deadline is at or before now and returns the

@@ -89,10 +89,10 @@ func (m *Manager) globalCooldownReason() string {
 	m.mu.Unlock()
 	if fn != nil {
 		if until := fn(); !until.IsZero() {
-			return "global cooldown until " + until.Format("15:04 MST")
+			return GlobalCooldownWaitText(m.spawnWaitClock().Now, until)
 		}
 	}
-	return "global cooldown active"
+	return GlobalCooldownWaitText(nil, time.Time{})
 }
 
 // Capacity returns the ledger (nil when not wired).
