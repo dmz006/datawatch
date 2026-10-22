@@ -870,7 +870,8 @@ autonomous:
     # Per-queue retention for the mcp_queue subscription sink: each named
     # pending-events queue keeps at most this many events in memory and
     # evicts the oldest first (a polling client then sees dropped=true).
-    # Values below 1 fall back to 500. Applied at daemon start.
+    # Values below 1 fall back to 500. Readable and settable as
+    # autonomous.notify.pending_events_max; applied at daemon start.
     pending_events_max: 500
   # Daemon-wide default for how many independent tasks of one Automaton run
   # at once. An Automaton's own max_concurrent_tasks overrides it. 1 = one

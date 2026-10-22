@@ -52,6 +52,9 @@ func (q *PendingEventQueue) Max() int { return q.max }
 // Append adds ev to the named queue, evicting the oldest entries when
 // the queue exceeds its maximum, and returns the entry's cursor.
 func (q *PendingEventQueue) Append(queue string, ev LifecycleEvent) uint64 {
+	if q == nil {
+		return 0
+	}
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	q.next++
@@ -82,6 +85,9 @@ func (q *PendingEventQueue) Append(queue string, ev LifecycleEvent) uint64 {
 // not seen were evicted (sinceCursor is older than the oldest retained
 // entry and entries were lost in between).
 func (q *PendingEventQueue) Pending(queue string, sinceCursor uint64, limit int) (events []LifecycleEvent, nextCursor uint64, dropped bool) {
+	if q == nil {
+		return nil, sinceCursor, false
+	}
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	nextCursor = sinceCursor
@@ -112,6 +118,9 @@ func (q *PendingEventQueue) Pending(queue string, sinceCursor uint64, limit int)
 // Release drops the named queue and its retained events (called when
 // its last subscription is deleted).
 func (q *PendingEventQueue) Release(queue string) {
+	if q == nil {
+		return
+	}
 	q.mu.Lock()
 	delete(q.queues, queue)
 	q.mu.Unlock()

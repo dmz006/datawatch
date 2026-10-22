@@ -210,3 +210,15 @@ func TestMCPQueueSinkWebhookStillRejected(t *testing.T) {
 		t.Errorf("webhook error = %v", err)
 	}
 }
+
+func TestPendingQueueNilReceiverIsInert(t *testing.T) {
+	var q *PendingEventQueue
+	if c := q.Append("a", LifecycleEvent{}); c != 0 {
+		t.Fatalf("nil Append cursor = %d, want 0", c)
+	}
+	evs, next, dropped := q.Pending("a", 7, 10)
+	if len(evs) != 0 || next != 7 || dropped {
+		t.Fatalf("nil Pending = %v,%d,%v", evs, next, dropped)
+	}
+	q.Release("a") // must not panic
+}
