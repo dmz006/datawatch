@@ -144,6 +144,8 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"plugin_widget_loading",
 		// v9.5.5 — autonomous settings card field for task_override_statuses.
 		"settings_task_override_statuses",
+		// session_start_confirm setting — autonomous settings card field label key.
+		"settings_session_start_confirm",
 	}
 	for _, lang := range requiredLocales {
 		bundle := loadLocaleBundle(t, lang)
