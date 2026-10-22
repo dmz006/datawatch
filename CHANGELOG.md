@@ -5,6 +5,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Security
+BL398 Phase 2 first tranche: reachability traces for 12 accepted-risks entries (libsqlite3-0 x3, zlib1g, curl, libldap, ncurses, perl, util-linux, libcups2, git-lfs, python3.11) are recorded in `security/accepted-risks.yml`, with removal recommendations in `docs/plans/2026-10-21-bl398-phase2-tranche1-recommendations.md`. 62 container entries remain untraced. No suppression was removed; the operator decides. Parity: this work touches no REST, MCP, CLI, comm channel or PWA interface.
+
 ## v9.5.61 — Automatic task commits use the task title as their subject
 
 ### Fixed
