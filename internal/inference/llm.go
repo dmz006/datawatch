@@ -160,6 +160,9 @@ type LLM struct {
 	// plan_tier_max_inflight). Unset falls back to conservative
 	// kind-based defaults (see EffectiveMaxInflight).
 	PlanTier PlanTier `yaml:"plan_tier,omitempty" json:"plan_tier,omitempty"`
+	// Budget is the optional dollar ceiling for this LLM entry over a rolling
+	// or weekly window. Nil means no budget.
+	Budget *BudgetWindow `yaml:"budget,omitempty" json:"budget,omitempty"`
 	Tags           []string `yaml:"tags,omitempty" json:"tags,omitempty"`
 	// AutoTags are daemon-applied internal markers. v7.0.0-alpha.23
 	// (Q7): PWA strips these from the user-visible tag list.
@@ -341,6 +344,11 @@ func (l *LLM) Validate() error {
 	if !ValidPlanTier(l.PlanTier) {
 		return fmt.Errorf("llm: unknown plan_tier %q (allowed: %s, %s, %s, %s, or empty for unset)",
 			string(l.PlanTier), PlanTierPro, PlanTierMax5x, PlanTierMax20x, PlanTierAPI)
+	}
+	if l.Budget != nil {
+		if err := l.Budget.Validate(); err != nil {
+			return fmt.Errorf("llm: %w", err)
+		}
 	}
 	if strings.TrimSpace(l.Name) == "" {
 		return errors.New("llm: name required")
