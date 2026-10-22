@@ -3028,16 +3028,19 @@ func (s *Server) handleAutomations(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleAutomationActivate serves POST /api/automations/{id}/activate.
-// Body {actor?, reason?}; actor defaults to "operator". Manager errors
-// carrying a "409: " / "404: " prefix map to 409 / 404.
+// Body {actor?, reason?, expected_version?}; actor defaults to "operator".
+// A non-zero expected_version that no longer matches the Automation's
+// version is a 409. Manager errors carrying a "409: " / "404: " prefix map
+// to 409 / 404.
 func (s *Server) handleAutomationActivate(w http.ResponseWriter, r *http.Request, id string) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 	var req struct {
-		Actor  string `json:"actor"`
-		Reason string `json:"reason"`
+		Actor           string `json:"actor"`
+		Reason          string `json:"reason"`
+		ExpectedVersion int64  `json:"expected_version"`
 	}
 	if r.Body != nil {
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
@@ -3048,7 +3051,7 @@ func (s *Server) handleAutomationActivate(w http.ResponseWriter, r *http.Request
 	if req.Actor == "" {
 		req.Actor = "operator"
 	}
-	a, err := s.autonomousMgr.ActivateAutomation(id, req.Actor)
+	a, err := s.autonomousMgr.ActivateAutomation(id, req.Actor, req.ExpectedVersion)
 	if err != nil {
 		code, msg := automationErrStatus(err)
 		http.Error(w, msg, code)

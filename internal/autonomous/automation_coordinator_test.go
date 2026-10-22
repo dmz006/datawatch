@@ -491,7 +491,7 @@ func TestAutomationCoordinator_ActivateStartsEntryMember(t *testing.T) {
 	defer h.c.Stop()
 	a := h.makeAuto([][3]string{{"m1", "", ""}}, 2)
 
-	got, err := h.m.ActivateAutomation(a.ID, "alice")
+	got, err := h.m.ActivateAutomation(a.ID, "alice", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -504,7 +504,7 @@ func TestAutomationCoordinator_ActivateStartsEntryMember(t *testing.T) {
 	if !h.hasAudit("automation_activate") || !hasCoordDecision(got.Decisions, "activate") {
 		t.Fatalf("audits=%v decisions=%+v", h.audits, got.Decisions)
 	}
-	if _, err := h.m.ActivateAutomation(a.ID, "alice"); err == nil {
+	if _, err := h.m.ActivateAutomation(a.ID, "alice", 0); err == nil {
 		t.Fatal("activating a non-draft Automation should fail")
 	}
 }
@@ -516,7 +516,7 @@ func TestAutomationCoordinator_ActivateBlocksOnUnapprovedEntry(t *testing.T) {
 	a := h.makeAuto([][3]string{{"m1", "", ""}}, 2)
 	h.setStatus(0, PRDNeedsReview)
 
-	got, err := h.m.ActivateAutomation(a.ID, "")
+	got, err := h.m.ActivateAutomation(a.ID, "", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -536,7 +536,7 @@ func TestAutomationCoordinator_ActivateWithoutCoordinator(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := m.ActivateAutomation("nope", "x"); err == nil {
+	if _, err := m.ActivateAutomation("nope", "x", 0); err == nil {
 		t.Fatal("expected an error without a running coordinator")
 	}
 }

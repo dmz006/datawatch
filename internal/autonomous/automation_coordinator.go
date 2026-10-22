@@ -606,9 +606,10 @@ func (c *Coordinator) memberDecision(prdID, note string) {
 // ActivateAutomation moves a draft Automation to active, validates it,
 // stamps StartedAt and starts the entry member through the same approval
 // gate the coordinator uses between members; if the entry member is not
-// startable the Automation goes blocked instead. It needs a started
-// Coordinator.
-func (m *Manager) ActivateAutomation(id, actor string) (*Automation, error) {
+// startable the Automation goes blocked instead. A non-zero expectedVersion
+// that no longer matches the stored Version is a 409 (zero skips the check).
+// It needs a started Coordinator.
+func (m *Manager) ActivateAutomation(id, actor string, expectedVersion int64) (*Automation, error) {
 	m.mu.Lock()
 	c := m.coordinator
 	m.mu.Unlock()
@@ -618,14 +619,17 @@ func (m *Manager) ActivateAutomation(id, actor string) (*Automation, error) {
 	if actor == "" {
 		actor = "operator"
 	}
-	return c.activate(id, actor)
+	return c.activate(id, actor, expectedVersion)
 }
 
-func (c *Coordinator) activate(id, actor string) (*Automation, error) {
+func (c *Coordinator) activate(id, actor string, expectedVersion int64) (*Automation, error) {
 	for attempt := 0; attempt < coordinatorCASRetries; attempt++ {
 		a, ok := c.m.automations.Get(id)
 		if !ok {
 			return nil, fmt.Errorf("404: automation %s not found", id)
+		}
+		if expectedVersion > 0 && a.Version != expectedVersion {
+			return nil, fmt.Errorf("409: version mismatch: current version is %d", a.Version)
 		}
 		if a.Status != AutomationDraft {
 			return nil, fmt.Errorf("409: automation %s is %s, only a draft can be activated", id, a.Status)
