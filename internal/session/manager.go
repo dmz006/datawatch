@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -438,6 +439,10 @@ type Manager struct {
 
 	// onNeedsInput is called when a session needs user input.
 	onNeedsInput func(sess *Session, prompt string)
+
+	// onTaskDeliveryFailed is called once DeliverOneShotTask gives up on a
+	// task: the worker session has already been ended by then.
+	onTaskDeliveryFailed func(fullID string, reason string)
 
 	// acpBusySeen marks ACP sessions that have had a working turn (see MarkACPEvent).
 	acpBusySeen map[string]bool
@@ -960,6 +965,15 @@ func (m *Manager) SetActivityHandler(fn func(*Session)) {
 // SetNeedsInputHandler sets the callback invoked when a session waits for input.
 func (m *Manager) SetNeedsInputHandler(fn func(*Session, string)) {
 	m.onNeedsInput = fn
+}
+
+// SetOnTaskDeliveryFailed sets the callback invoked when DeliverOneShotTask
+// exhausts its attempts and has ended the worker session. Guarded by m.mu so
+// it can be set while delivery runs on another goroutine.
+func (m *Manager) SetOnTaskDeliveryFailed(fn func(fullID string, reason string)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.onTaskDeliveryFailed = fn
 }
 
 // StateChangeHandler returns the currently registered state-change callback (may be nil).
@@ -4625,6 +4639,120 @@ func (m *Manager) GetActiveStartupPromptInput(fullID string) string {
 		return "1\n"
 	}
 	return ""
+}
+
+// ErrTaskUndelivered is returned by DeliverOneShotTask when the task never
+// reached the session's main prompt within every attempt.
+var ErrTaskUndelivered = errors.New("task never reached the session main prompt")
+
+// oneShotPromptWindow bounds how long one DeliverOneShotTask attempt waits
+// for the main prompt before it counts as a failed attempt.
+const oneShotPromptWindow = 15 * time.Second
+
+// activeChoiceDialogPhrases are the lowercase phrases of Claude Code startup
+// and choice dialogs that are still awaiting an answer. Any of them on
+// screen means the main prompt is not yet the place to type a task.
+var activeChoiceDialogPhrases = []string{
+	"yes, i accept",
+	"no, exit",
+	"quick safety check",
+	"trust this folder",
+	"yes, i trust",
+	"new mcp server found",
+	"use this mcp server",
+	"i am using this for local development",
+	"loading development channels",
+}
+
+// mainPromptLine matches a numbered choice row ("❯ 1. ...") that a dialog
+// draws with the same ❯ cursor as the main input prompt.
+var mainPromptLine = regexp.MustCompile(`^❯\s*\d+\.\s`)
+
+// MainPromptReady reports whether the live pane for fullID shows the
+// interactive main input prompt ("❯" input line) with no active choice
+// dialog on screen. Passive lines (a banner, an update notice, a doctor
+// hint) do not stop it from reporting ready. An empty or failed pane
+// capture reports not ready.
+func (m *Manager) MainPromptReady(fullID string) bool {
+	sess, ok := m.store.Get(fullID)
+	if !ok || sess.TmuxSession == "" {
+		return false
+	}
+	content, err := m.tmux.CapturePaneVisible(sess.TmuxSession)
+	if err != nil || content == "" {
+		return false
+	}
+	lower := strings.ToLower(StripANSI(content))
+	for _, phrase := range activeChoiceDialogPhrases {
+		if strings.Contains(lower, phrase) {
+			return false
+		}
+	}
+	for _, line := range strings.Split(StripANSI(content), "\n") {
+		t := strings.TrimSpace(line)
+		if strings.HasPrefix(t, "❯") && !mainPromptLine.MatchString(t) {
+			return true
+		}
+	}
+	return false
+}
+
+// awaitOneShotPrompt polls MainPromptReady on ~1 s ticks until the session is
+// waiting for input with its main prompt visible, or until window elapses.
+func (m *Manager) awaitOneShotPrompt(fullID string, window time.Duration) bool {
+	deadline := time.Now().Add(window)
+	for {
+		if sess, ok := m.store.Get(fullID); ok && sess.State == StateWaitingInput && m.MainPromptReady(fullID) {
+			return true
+		}
+		if !time.Now().Before(deadline) {
+			return false
+		}
+		time.Sleep(time.Second)
+	}
+}
+
+// DeliverOneShotTask types input into a OneShot session once its main prompt
+// is ready, then marks the task delivered. Each attempt waits up to
+// oneShotPromptWindow for the prompt; a missed prompt or a failed send is a
+// failed attempt, retried after a linear backoff (backoff * attempt). After
+// maxAttempts failures the claim is released and ErrTaskUndelivered is
+// returned. The caller must already hold the ClaimTaskDelivery claim.
+func (m *Manager) DeliverOneShotTask(fullID string, input string, maxAttempts int, backoff time.Duration) error {
+	if maxAttempts < 1 {
+		maxAttempts = 1
+	}
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		if m.awaitOneShotPrompt(fullID, oneShotPromptWindow) {
+			err := m.SendInput(fullID, input, "channel-task")
+			if err == nil {
+				m.MarkTaskDelivered(fullID)
+				return nil
+			}
+			m.debugf("DeliverOneShotTask: send_input for %s attempt %d/%d: %v", fullID, attempt, maxAttempts, err)
+		} else {
+			m.debugf("DeliverOneShotTask: no main prompt for %s attempt %d/%d", fullID, attempt, maxAttempts)
+		}
+		if attempt < maxAttempts {
+			time.Sleep(backoff * time.Duration(attempt))
+		}
+	}
+	m.ReleaseTaskDelivery(fullID)
+	reason := fmt.Sprintf("task delivery failed: main prompt never appeared after %d attempts — worker was never given its task", maxAttempts)
+	m.debugf("DeliverOneShotTask: %s: %s", fullID, reason)
+	// Ending the session lets the executor's worker wait loop observe a
+	// terminal state, so the task takes its normal retry path with a fresh
+	// session. This is the same session end path the stall handler uses.
+	if err := m.Kill(fullID); err != nil {
+		m.debugf("DeliverOneShotTask: session end path for %s: %v", fullID, err)
+	}
+	m.mu.Lock()
+	onFailed := m.onTaskDeliveryFailed
+	m.mu.Unlock()
+	if onFailed != nil {
+		onFailed(fullID, reason)
+	}
+	return ErrTaskUndelivered
 }
 
 // IsTrustDialogShowing returns true if the live tmux pane for the given

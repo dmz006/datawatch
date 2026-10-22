@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"github.com/dmz006/datawatch/internal/capacity"
 	"io"
@@ -9256,29 +9257,20 @@ func (s *Server) handleChannelReady(w http.ResponseWriter, r *http.Request) {
 		}
 		sessID := targetSess.FullID
 		go func() {
-			// Poll up to 60s for the session to reach the main ❯ prompt (no
-			// startup dialogs). The auto-accept goroutines dismiss the trust
-			// dialogs, so by the time GetActiveStartupPromptInput returns "" the
-			// session is interactive and ready to receive typed input.
-			for i := 0; i < 60; i++ {
-				time.Sleep(time.Second)
-				if dialog := s.manager.GetActiveStartupPromptInput(sessID); dialog == "" {
-					if sess, ok := s.manager.GetSession(sessID); ok && sess.State == session.StateWaitingInput {
-						if err := s.manager.SendInput(sessID, input, "channel-task"); err != nil {
-							fmt.Printf("[channel] task send_input for %s: %v\n", sessID, err)
-							s.manager.ReleaseTaskDelivery(sessID)
-						} else {
-							fmt.Printf("[channel] task delivered to %s via send_input\n", sessID)
-							// Record delivery time so processOutputLine can suppress
-							// the 5 s task-echo window (TUI re-renders task text).
-							s.manager.MarkTaskDelivered(sessID)
-						}
-						return
-					}
+			// Wait for the strict main-prompt check (❯ input line, no active
+			// choice dialog) and type the task. Each attempt waits up to 15 s;
+			// DeliverOneShotTask marks the task delivered only on success and
+			// releases the claim after its final failed attempt.
+			const attempts = 3
+			if err := s.manager.DeliverOneShotTask(sessID, input, attempts, 5*time.Second); err != nil {
+				if errors.Is(err, session.ErrTaskUndelivered) {
+					fmt.Printf("[channel] task delivery failed for %s: no main prompt after %d attempts\n", sessID, attempts)
+				} else {
+					fmt.Printf("[channel] task delivery failed for %s after %d attempts: %v\n", sessID, attempts, err)
 				}
+				return
 			}
-			fmt.Printf("[channel] task timeout waiting for main prompt on %s\n", sessID)
-			s.manager.ReleaseTaskDelivery(sessID)
+			fmt.Printf("[channel] task delivered to %s via send_input\n", sessID)
 		}()
 		// Broadcast task delivery to WS clients for the channel tab
 		s.recordChannelHistory(targetSess.FullID, targetSess.Task, "outgoing")

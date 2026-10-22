@@ -658,6 +658,13 @@ type NudgeEvent struct {
 	Outcome string    `json:"outcome,omitempty"`
 }
 
+// DeliveryFailureEvent records one task delivery that failed because the
+// worker session's main prompt never appeared within every attempt.
+type DeliveryFailureEvent struct {
+	At     time.Time `json:"at"`
+	Reason string    `json:"reason"`
+}
+
 // Task is a single unit of work — runs as a session under
 // session.Manager. Maps 1:1 to a pipeline.Task once enqueued.
 //
@@ -704,6 +711,10 @@ type Task struct {
 	// NudgeEvents records each one.
 	NudgeCount  int          `json:"nudge_count,omitempty"`
 	NudgeEvents []NudgeEvent `json:"nudge_events,omitempty"`
+	// DeliveryFailureEvents records each time the task's worker session never
+	// reached its main prompt, so the task was never given its work. Each
+	// event carries the reason logged at the time.
+	DeliveryFailureEvents []DeliveryFailureEvent `json:"delivery_failure_events,omitempty"`
 	// CleanRestart — set by an operator reset (ResetTaskWithOptions with
 	// cleanRestart=true) to ask that the next attempt start from the pre-task
 	// tree instead of restoring the last preserved attempt work (AttemptRefs).

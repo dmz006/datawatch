@@ -8,6 +8,19 @@ const WorkerNudgeText = "If you are finished, print DATAWATCH_COMPLETE followed 
 // WorkerNudgeFamily is the only backend family the nudge applies to.
 const WorkerNudgeFamily = "claude-code"
 
+// NudgeForDelivery picks the text for an idle-worker nudge. A worker whose
+// task was never typed into its session gets the task itself again, because
+// the completion-line prompt cannot help a worker that never received the
+// task. A delivered worker, or one with no task text to re-send, gets
+// WorkerNudgeText. It is pure: the caller supplies the delivery state and the
+// task text.
+func NudgeForDelivery(delivered bool, task string) (text string, isRedelivery bool) {
+	if !delivered && task != "" {
+		return task, true
+	}
+	return WorkerNudgeText, false
+}
+
 // WorkerNudgeAction is the decision returned by WorkerNudgeTracker.Observe.
 type WorkerNudgeAction string
 

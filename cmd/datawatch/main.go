@@ -341,39 +341,39 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		// BL220 — G13/G14 CLI surface parity.
 		newAnalyticsCmd(),
 		newProxyCmd(),
-		newToolingCmd(),       // BL219
-		newSecretsCmd(),       // BL242
-		newTailscaleCmd(),     // BL243
-		newSkillsCmd(),        // BL255
-		newIdentityCmd(),      // BL257 P1 v6.8.0
-		newAlgorithmCmd(),     // BL258 v6.9.0
-		newEvalsCmd(),         // BL259 P1 v6.10.0
-		newCouncilCmd(),       // BL260 v6.11.0
-		newDocsCmd(),          // BL274 v6.16.0
-		newComputeCmd(),       // v7.0.0 S1 — ComputeNode registry
-		newLLMCmd(),           // v7.0.0 S2 — LLM registry
-		newWebSearchCmd(),     // BL391 — multi-provider web search registry
-		newServerCmd(),        // BL312 S1 — multi-server registry
-		newFederationCmd(),    // BL316 S2 — federation peer and group registry
-		newCapacityCmd(),      // capacity admission ledger status
-		newAlertRulesCmd(),    // S14b — per-pod alert rules + observer-driven autoscaling
-		newMemoryCmd(),        // v7.0.0 S5 — scope-hierarchy memory
-		newMarketplaceCmd(),   // alpha.33 #244 — Ollama marketplace
-		newGuardrailCmd(),     // BL303 S2 — guardrail library + profiles
-		newRetryCmd(),         // BL410 Phase 1 — retry profiles + per-Automaton policy
-		newAutomationCmd(),    // Automation lifecycle (activate)
-		newDashboardCmd(),     // #57/#58 — dashboard card layout CRUD
-		newSmokeCmd(),         // #54 — smoke-run cross-instance forwarding
-		newFilterCmd(),        // top-level filter command
-		newScheduleTopCmd(),   // top-level schedule command (mirrors session schedule)
-		newPushCmd(),          // BL330 — UnifiedPush registration management
-		newFilesCmd(),         // BL333 — federated file service
-		newSecurityCmd(),      // BL334 — operational data encryption status + secure wipe
-		newMatrixCmd(),        // BL241 — Matrix backend status + test
-		newExitHookCmd(),      // BL356 — session crash/exit hooks
-		newQueueCmd(),         // BL357 — durable role-based work queue
-		newDiscussionSubCmd(), // BL358 — discussion push/subscribe
-		newResultCmd(),        // BL360 — structured agent result store
+		newToolingCmd(),         // BL219
+		newSecretsCmd(),         // BL242
+		newTailscaleCmd(),       // BL243
+		newSkillsCmd(),          // BL255
+		newIdentityCmd(),        // BL257 P1 v6.8.0
+		newAlgorithmCmd(),       // BL258 v6.9.0
+		newEvalsCmd(),           // BL259 P1 v6.10.0
+		newCouncilCmd(),         // BL260 v6.11.0
+		newDocsCmd(),            // BL274 v6.16.0
+		newComputeCmd(),         // v7.0.0 S1 — ComputeNode registry
+		newLLMCmd(),             // v7.0.0 S2 — LLM registry
+		newWebSearchCmd(),       // BL391 — multi-provider web search registry
+		newServerCmd(),          // BL312 S1 — multi-server registry
+		newFederationCmd(),      // BL316 S2 — federation peer and group registry
+		newCapacityCmd(),        // capacity admission ledger status
+		newAlertRulesCmd(),      // S14b — per-pod alert rules + observer-driven autoscaling
+		newMemoryCmd(),          // v7.0.0 S5 — scope-hierarchy memory
+		newMarketplaceCmd(),     // alpha.33 #244 — Ollama marketplace
+		newGuardrailCmd(),       // BL303 S2 — guardrail library + profiles
+		newRetryCmd(),           // BL410 Phase 1 — retry profiles + per-Automaton policy
+		newAutomationCmd(),      // Automation lifecycle (activate)
+		newDashboardCmd(),       // #57/#58 — dashboard card layout CRUD
+		newSmokeCmd(),           // #54 — smoke-run cross-instance forwarding
+		newFilterCmd(),          // top-level filter command
+		newScheduleTopCmd(),     // top-level schedule command (mirrors session schedule)
+		newPushCmd(),            // BL330 — UnifiedPush registration management
+		newFilesCmd(),           // BL333 — federated file service
+		newSecurityCmd(),        // BL334 — operational data encryption status + secure wipe
+		newMatrixCmd(),          // BL241 — Matrix backend status + test
+		newExitHookCmd(),        // BL356 — session crash/exit hooks
+		newQueueCmd(),           // BL357 — durable role-based work queue
+		newDiscussionSubCmd(),   // BL358 — discussion push/subscribe
+		newResultCmd(),          // BL360 — structured agent result store
 		newScheduleResultsCmd(), // GH#204 — scheduled-job result panel CLI
 	)
 
@@ -4756,9 +4756,22 @@ func runStart(cmd *cobra.Command, _ []string) error {
 								CompletionSeen:      session.ExtractCompletionSummary(nudgeTail) != "",
 							}) {
 							case autonomouspkg.WorkerNudgeSend:
-								log.Printf("[autonomous] idle worker %s task %s/%s: sending completion nudge",
-									task.SessionID, task.PRDID, task.ID)
-								if nerr := mgr.SendInput(task.SessionID, autonomouspkg.WorkerNudgeText, "idle-nudge"); nerr != nil {
+								nudgeDelivered, nudgeTask := false, ""
+								if nudgeSess, ok := mgr.GetSession(task.SessionID); ok {
+									nudgeDelivered = mgr.TaskDelivered(nudgeSess.FullID)
+									nudgeTask = nudgeSess.Task
+								}
+								nudgeText, nudgeRedelivery := autonomouspkg.NudgeForDelivery(nudgeDelivered, nudgeTask)
+								nudgeSource := "idle-nudge"
+								if nudgeRedelivery {
+									nudgeSource = "task-redelivery"
+									log.Printf("[autonomous] idle worker %s task %s/%s: task was never delivered — re-sending the task itself",
+										task.SessionID, task.PRDID, task.ID)
+								} else {
+									log.Printf("[autonomous] idle worker %s task %s/%s: sending completion nudge",
+										task.SessionID, task.PRDID, task.ID)
+								}
+								if nerr := mgr.SendInput(task.SessionID, nudgeText, nudgeSource); nerr != nil {
 									log.Printf("[autonomous] idle nudge send failed for %s: %v", task.SessionID, nerr)
 								}
 								if autonomousMgrRef != nil {
@@ -8093,6 +8106,25 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				}
 				needsInputFire(cur, prompt)
 			})
+	})
+
+	// A worker whose main prompt never appeared is ended on the session end
+	// path by DeliverOneShotTask; record that failure on the owning task so it
+	// is visible on the PRD. Wired once at startup, not per task launch.
+	mgr.SetOnTaskDeliveryFailed(func(fullID, reason string) {
+		if autonomousMgrRef == nil {
+			log.Printf("[autonomous] delivery failure for %s not recorded (no autonomous manager): %s", fullID, reason)
+			return
+		}
+		sess, ok := mgr.GetSession(fullID)
+		if !ok || sess.PRDID == "" || sess.TaskID == "" {
+			return
+		}
+		if rerr := autonomousMgrRef.RecordTaskDeliveryFailure(sess.PRDID, sess.TaskID, reason, time.Now()); rerr != nil {
+			log.Printf("[autonomous] record delivery failure for %s/%s: %v", sess.PRDID, sess.TaskID, rerr)
+			return
+		}
+		log.Printf("[autonomous] recorded delivery failure for %s/%s: %s", sess.PRDID, sess.TaskID, reason)
 	})
 
 	// BL355: zombie detection — alert when Claude process dies in active session.
