@@ -1613,6 +1613,7 @@ howto, and the `datawatch-app` issue where applicable.
    given that the subscription meter cannot be read (BL428 §4a)? It would be token
    usage priced at API rates against an operator-declared notional allocation per
    `plan_tier`. The alternative is to ship `dollar` only and defer `allocation_pct`.
+    **Decided by the operator 2026-10-22: ship both, estimate off by default.** The `dollar` ceiling is the real mechanism. `allocation_pct` also ships, opt-in per Automation, always labelled `estimated`, computed from token usage priced at API rates against an operator-declared notional allocation per `plan_tier`.
 10. **Fork/join inside one Automation.** Parallel work is currently expressed as
     separate concurrent Automations. Is a true parallel fork with a join member
     needed inside one Automation? That would need a multi-cursor model.
