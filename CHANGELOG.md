@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.94 — Automation BudgetPolicy: spending limits for Automations and members
+
+### Added
+
+- **A spending limit (BudgetPolicy) for Automations and their members.** An Automation, or one of its members, can carry a budget policy: a ceiling (a dollar amount, or an optional estimated share of the plan allocation) over a window (the whole run, a day, a week or a month), a pacing mode and an on-breach rule. An Automation's spend is the sum of its member Automata's cost records, built on the existing per-LLM spend ledger (no second ledger). The coordinator checks the policy at the advance, the entry and fork gates and the admission hook, and refuses to start a member whose declared estimated cost would cross the ceiling. On a breach the Automation pauses and resumes by itself at the window rollover only when the reset time is known (a window the daemon defines itself, anchored at a reset time, weekday and zone, or a reset time parsed from a rate-limit message); when the reset time is unknown it goes to blocked and waits for the operator, and an alert is raised either way. The `allocation_pct` estimate is opt-in, always labelled estimated, and never pauses or blocks anything. Another daemon's usage counts toward the ceiling only for peers explicitly named in `peer_window`, off by default; there is no automatic confirmation that a peer shares the account yet. New `set_budget` operation on REST (`POST /api/automations/{id}/set_budget`), MCP (`automation_set_budget`), the CLI (`automation set-budget`) and the chat commands, with a `budget` view in the Automation records and in `autonomous_status`.
+
 ## v9.5.93 — Hand-started prompt-style sessions are recorded as one-shot
 
 ### Fixed
