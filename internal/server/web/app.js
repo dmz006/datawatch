@@ -2216,8 +2216,8 @@ function navigate(view, sessionId, fromPopstate) {
       fab.classList.remove('hidden');
     } else if (view === 'autonomous') {
       fab.textContent = '⚡';
-      fab.title = t('fab_launch_auto')||'Launch Automation';
-      fab.setAttribute('aria-label', 'Launch Automation');
+      fab.title = t('fab_launch_auto')||'Launch Automaton';
+      fab.setAttribute('aria-label', t('fab_launch_auto')||'Launch Automaton');
       fab.onclick = openLaunchAutomatonWizard;
       fab.classList.remove('hidden');
     } else {
@@ -8175,7 +8175,7 @@ const DOCS_LINKS_BY_KEY = {
   view_new_session: 'howto/sessions-deep-dive.md#4b-happy-path-pwa',
   view_automata: DOCS_DEFINITIONS + '#automata',
   view_automaton_detail: DOCS_DEFINITIONS + '#automaton-detail',
-  view_automata_wizard: DOCS_DEFINITIONS + '#launch-automation-form',
+  view_automata_wizard: DOCS_DEFINITIONS + '#launch-automaton-form',
   view_observer: DOCS_DEFINITIONS + '#observer',
   view_alerts: 'howto/alerts-and-notifications.md',
   view_dashboard: 'howto/dashboard.md',
@@ -21028,8 +21028,8 @@ function switchAutomataTab(tab) {
       fab.classList.remove('hidden');
     } else {
       fab.textContent = '⚡';
-      fab.title = t('fab_launch_auto')||'Launch Automation';
-      fab.setAttribute('aria-label', 'Launch Automation');
+      fab.title = t('fab_launch_auto')||'Launch Automaton';
+      fab.setAttribute('aria-label', t('fab_launch_auto')||'Launch Automaton');
       fab.onclick = openLaunchAutomatonWizard;
       fab.classList.remove('hidden');
     }
@@ -21179,7 +21179,7 @@ function openLaunchAutomatonWizard() {
       <div class="response-modal-header" style="display:flex;align-items:center;gap:8px;">
         <strong>⚡ ${escHtml(t('automata_wizard_title'))}</strong>
         <span style="margin-left:auto;display:inline-flex;align-items:center;gap:4px;">
-          <a href="/diagrams.html#docs/datawatch-definitions.md#launch-automation-form" target="_blank" rel="noopener" title="${escHtml(t('automata_wizard_help_tip')||'Open the Launch Automaton howto — covers every wizard field including Advanced switches')}" style="color:inherit;text-decoration:none;font-size:18px;padding:4px 8px;cursor:pointer;line-height:1;" aria-label="Help">?</a>
+          <a href="/diagrams.html#docs/datawatch-definitions.md#launch-automaton-form" target="_blank" rel="noopener" title="${escHtml(t('automata_wizard_help_tip')||'Open the Launch Automaton howto — covers every wizard field including Advanced switches')}" style="color:inherit;text-decoration:none;font-size:18px;padding:4px 8px;cursor:pointer;line-height:1;" aria-label="Help">?</a>
           <button class="btn-icon" onclick="_prdCloseModal()" title="Close">&#10005;</button>
         </span>
       </div>

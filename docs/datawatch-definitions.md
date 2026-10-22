@@ -57,7 +57,7 @@ There's also a **Core feature reference matrix** further down, listing which fea
   - [Inside a session — stats tab](#inside-a-session--stats-tab)
 - [Automata](#automata)
   - [Automata list](#automata-list)
-  - [Launch Automation form](#launch-automation-form)
+  - [Launch Automaton form](#launch-automaton-form)
   - [Automaton detail — Overview / Stories / Decisions / Scan](#automaton-detail)
 - [Dashboard](#dashboard)
   - [Session constellation](#session-constellation)
@@ -557,7 +557,7 @@ For claude-code sessions, the daemon auto-installs a `.claude/sprint/post-event.
 
 Every PRD / autonomous workflow your daemon has spawned. Filtered by state pill (Running / Stopped / Failed / All).
 
-### Launch Automation form
+### Launch Automaton form
 
 The "+" FAB on the Automata view launches a wizard.
 
