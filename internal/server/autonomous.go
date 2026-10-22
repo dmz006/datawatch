@@ -2959,7 +2959,8 @@ func automationErrStatus(err error) (int, string) {
 //	DELETE /api/automations/{id}   — delete
 //	POST   /api/automations/{id}/activate — start a draft Automation
 //	POST   /api/automations/{id}/{pause|resume|cancel|skip_member|insert_member|
-//	       remove_member|reorder_edges|approve_insert} — operator control
+//	       remove_member|reorder_edges|approve_insert|set_llm|
+//	       set_verification_llm} — operator control
 func (s *Server) handleAutomations(w http.ResponseWriter, r *http.Request) {
 	rest := strings.TrimPrefix(r.URL.Path, "/api/automations")
 	rest = strings.Trim(rest, "/")
@@ -3103,7 +3104,7 @@ func (s *Server) handleAutomationActivate(w http.ResponseWriter, r *http.Request
 
 // automationControlOps lists the POST-only control sub-paths under
 // /api/automations/{id}/, one per operator action on a running Automation.
-var automationControlOps = []string{"pause", "resume", "cancel", "skip_member", "insert_member", "remove_member", "reorder_edges", "approve_insert"}
+var automationControlOps = []string{"pause", "resume", "cancel", "skip_member", "insert_member", "remove_member", "reorder_edges", "approve_insert", "set_llm", "set_verification_llm"}
 
 // automationControlRoute splits rest ("{id}/{op}") into the Automation ID and
 // one of automationControlOps.
@@ -3135,6 +3136,13 @@ type automationControlReq struct {
 	} `json:"member"`
 	Urgent bool   `json:"urgent"`
 	After  string `json:"after"`
+	// set_llm / set_verification_llm: presence-aware, absent = leave the
+	// field unchanged, "" = clear it.
+	Backend         *string `json:"backend"`
+	Model           *string `json:"model"`
+	Effort          *string `json:"effort"`
+	PlanningBackend *string `json:"planning_backend"`
+	PlanningModel   *string `json:"planning_model"`
 }
 
 // automationController is the optional AutonomousAPI extension carrying the
@@ -3148,6 +3156,8 @@ type automationController interface {
 	ReorderEdges(id, memberID, onCompleted, onBlocked, onFailed, actor string, expectedVersion int64) (any, error)
 	InsertMember(id string, in autonomous.InsertMemberInput) (any, error)
 	ApproveInsertedMember(id, memberID, actor string, expectedVersion int64) (any, error)
+	SetAutomationLLM(id string, backend, model, effort, planningBackend, planningModel *string, actor string, expectedVersion int64) (any, error)
+	SetAutomationVerificationLLM(id string, backend, model, effort *string, actor string, expectedVersion int64) (any, error)
 }
 
 // handleAutomationControl serves POST /api/automations/{id}/{op} for the ops in
@@ -3156,6 +3166,12 @@ type automationController interface {
 // expected_version is a 409 and so is a state conflict; cancel needs an explicit
 // cancel_in_flight. Success writes the updated Automation and one audit entry
 // automation_<op> (approve_insert is automation_approve_insert).
+//
+// set_llm takes backend, model, effort, planning_backend and planning_model;
+// set_verification_llm takes backend, model and effort (planning fields are a
+// 400 there). Both are presence-aware (absent leaves the field, "" clears it),
+// need at least one setting field, and treat expected_version 0 or omitted as
+// "skip the version check"; a stale positive value is a 409.
 func (s *Server) handleAutomationControl(w http.ResponseWriter, r *http.Request, id, op string) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -3230,6 +3246,44 @@ func (s *Server) handleAutomationControl(w http.ResponseWriter, r *http.Request,
 		action = "automation_approve_insert"
 		details["member_id"] = req.MemberID
 		a, err = ctl.ApproveInsertedMember(id, req.MemberID, req.Actor, req.ExpectedVersion)
+	case "set_llm", "set_verification_llm":
+		verification := op == "set_verification_llm"
+		action = "automation_" + op
+		if verification && (req.PlanningBackend != nil || req.PlanningModel != nil) {
+			http.Error(w, "planning_backend and planning_model are not accepted by set_verification_llm", http.StatusBadRequest)
+			return
+		}
+		allowed := "backend, model, effort, planning_backend, planning_model"
+		hasField := req.Backend != nil || req.Model != nil || req.Effort != nil || req.PlanningBackend != nil || req.PlanningModel != nil
+		if verification {
+			allowed = "backend, model, effort"
+			hasField = req.Backend != nil || req.Model != nil || req.Effort != nil
+		}
+		if !hasField {
+			http.Error(w, "supply at least one of: "+allowed, http.StatusBadRequest)
+			return
+		}
+		for _, f := range []struct {
+			label string
+			v     *string
+		}{{"LLM", req.Backend}, {"planning LLM", req.PlanningBackend}} {
+			if f.v != nil && *f.v != "" && s.inferenceReg != nil {
+				if _, gerr := s.inferenceReg.Get(*f.v); gerr != nil {
+					http.Error(w, "unknown "+f.label+" "+strconv.Quote(*f.v)+" — check /api/llms for valid names", http.StatusBadRequest)
+					return
+				}
+			}
+		}
+		for k, v := range map[string]*string{"backend": req.Backend, "model": req.Model, "effort": req.Effort, "planning_backend": req.PlanningBackend, "planning_model": req.PlanningModel} {
+			if v != nil {
+				details[k] = *v
+			}
+		}
+		if verification {
+			a, err = ctl.SetAutomationVerificationLLM(id, req.Backend, req.Model, req.Effort, req.Actor, req.ExpectedVersion)
+		} else {
+			a, err = ctl.SetAutomationLLM(id, req.Backend, req.Model, req.Effort, req.PlanningBackend, req.PlanningModel, req.Actor, req.ExpectedVersion)
+		}
 	default:
 		http.NotFound(w, r)
 		return
