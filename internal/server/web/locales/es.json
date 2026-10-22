@@ -1894,6 +1894,13 @@
   "capacity_budget_full": "ventana de presupuesto llena",
   "capacity_budget_allocation": "Asignación",
   "capacity_budget_estimated": "estimado",
+  "capacity_card_backoff_title": "Espera por límite de uso",
+  "capacity_card_backoff_resets": "Se restablece",
+  "capacity_card_backoff_reset_unknown": "hora de restablecimiento desconocida",
+  "capacity_card_budget_title": "Presupuestos de LLM",
+  "capacity_card_budget_estimate": "La parte de la asignación es una estimación basada en el plan, no un valor medido",
+  "capacity_card_holders": "Titulares",
+  "capacity_card_empty": "No hay límites de capacidad, esperas ni presupuestos que mostrar",
   "settings_plan_tier_allocation_usd": "Asignación por tier de plan (USD por tier; 0 = no declarada)",
   "settings_plan_tier_allocation_hint": "Solo alimenta la parte de asignación estimada que se muestra en un presupuesto; nunca bloquea nada. 0 o un tier vacío significa sin cifra."
 }

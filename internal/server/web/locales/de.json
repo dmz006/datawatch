@@ -1894,6 +1894,13 @@
   "capacity_budget_full": "Budgetfenster voll",
   "capacity_budget_allocation": "Zuteilung",
   "capacity_budget_estimated": "geschätzt",
+  "capacity_card_backoff_title": "Nutzungs-Backoff",
+  "capacity_card_backoff_resets": "Zurücksetzung",
+  "capacity_card_backoff_reset_unknown": "Zurücksetzzeit unbekannt",
+  "capacity_card_budget_title": "LLM-Budgets",
+  "capacity_card_budget_estimate": "Der Anteil an der Zuteilung ist eine Schätzung auf Basis des Tarifs, kein gemessener Wert",
+  "capacity_card_holders": "Halter",
+  "capacity_card_empty": "Keine Kapazitätsgrenzen, Backoffs oder Budgets anzuzeigen",
   "settings_plan_tier_allocation_usd": "Plan-Stufen-Zuteilung (USD pro Stufe; 0 = nicht angegeben)",
   "settings_plan_tier_allocation_hint": "Speist nur den geschätzten Zuteilungsanteil eines Budgets; blockiert nie etwas. 0 oder eine leere Stufe bedeutet keine Angabe."
 }

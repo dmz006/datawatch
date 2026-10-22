@@ -1894,6 +1894,13 @@
   "capacity_budget_full": "予算ウィンドウ満杯",
   "capacity_budget_allocation": "割り当て",
   "capacity_budget_estimated": "推定",
+  "capacity_card_backoff_title": "使用量バックオフ",
+  "capacity_card_backoff_resets": "リセット",
+  "capacity_card_backoff_reset_unknown": "リセット時刻は不明",
+  "capacity_card_budget_title": "LLM予算",
+  "capacity_card_budget_estimate": "割り当て比率はプランから算出した推定値であり、実測値ではありません",
+  "capacity_card_holders": "保持者",
+  "capacity_card_empty": "表示する容量上限、バックオフ、予算はありません",
   "settings_plan_tier_allocation_usd": "プラン階層の割り当て（階層ごとの USD、0 = 未設定）",
   "settings_plan_tier_allocation_hint": "予算に表示される推定割り当て割合にのみ使用され、何もブロックしません。0 または空の階層は数値なしを意味します。"
 }
