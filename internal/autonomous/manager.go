@@ -120,12 +120,6 @@ type Config struct {
 	// (internal/server/autonomous.go) does not drop the key.
 	SessionIdleTimeoutSeconds int `json:"session_idle_timeout_seconds,omitempty"`
 	// WorkerIdleNudgeSeconds and WorkerIdleNudgeStallSeconds mirror
-	// SessionStartConfirmSeconds mirrors autonomous.session_start_confirm_seconds
-	// in config. The manager does not consume it: the daemon's autonomous
-	// worker start-confirmation loop reads it from config.Config. The
-	// field exists so the handleAutonomousConfig live round-trip
-	// (internal/server/autonomous.go) does not drop the key.
-	SessionStartConfirmSeconds int `json:"session_start_confirm_seconds,omitempty"`
 	// autonomous.worker_idle_nudge_seconds and
 	// autonomous.worker_idle_nudge_stall_seconds in config. The manager does
 	// not consume them: the worker wait loop in cmd/datawatch/main.go reads
