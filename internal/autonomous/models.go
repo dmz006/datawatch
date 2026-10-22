@@ -754,6 +754,12 @@ type Task struct {
 	VerificationBackend string `json:"verification_backend,omitempty"`
 	VerificationModel   string `json:"verification_model,omitempty"`
 	VerificationEffort  Effort `json:"verification_effort,omitempty"`
+	// ExecutorSource is the level that supplied the execution backend for
+	// the most recent run attempt: "task", "story", "prd", "automation" or
+	// "global" (no level set one, so the fallback backend was used). Set by
+	// the dispatch loop before the session spawns and overwritten by each
+	// later attempt.
+	ExecutorSource string `json:"executor_source,omitempty"`
 	// LSPLanguage (v8.7.1) — per-task override; inherits PRD.LSPLanguage when empty.
 	LSPLanguage string `json:"lsp_language,omitempty"`
 	// PermissionMode (v5.27.5) — claude-code --permission-mode for

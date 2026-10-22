@@ -275,7 +275,7 @@ func (m *Manager) awaitReAdmit(ctx context.Context, prd *PRD, t *Task, condition
 	fallback := m.cfg.ExecutionBackend
 	m.mu.Unlock()
 	story := findStory(prd, t.StoryID)
-	backend, model := resolveTaskBackendModel(t, story, prd, fallback)
+	backend, model := resolveTaskBackendModel(t, story, prd, m.AutomationForPRD(prd), fallback)
 	pools, node := keysFn(backend, model)
 	if len(pools) == 0 {
 		return nil

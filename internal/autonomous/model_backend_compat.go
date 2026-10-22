@@ -55,6 +55,7 @@ func validateModelForBackend(backend, model string) error {
 // wrapping ErrModelBackendMismatch that names each offending task, or nil.
 func (m *Manager) preflightModelBackend(prdID string, prd *PRD) error {
 	var bad []string
+	auto := m.AutomationForPRD(prd)
 	for si := range prd.Story {
 		story := &prd.Story[si]
 		for ti := range story.Tasks {
@@ -62,7 +63,7 @@ func (m *Manager) preflightModelBackend(prdID string, prd *PRD) error {
 			if t.Status == TaskCompleted {
 				continue
 			}
-			backend, model := resolveTaskBackendModel(t, story, prd, m.cfg.ExecutionBackend)
+			backend, model := resolveTaskBackendModel(t, story, prd, auto, m.cfg.ExecutionBackend)
 			if err := validateModelForBackend(backend, model); err != nil {
 				bad = append(bad, fmt.Sprintf("task %s (backend %q, model %q): %v", t.ID, backend, model, err))
 			}

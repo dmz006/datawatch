@@ -3279,7 +3279,7 @@ func (m *Manager) SetStoryLLM(prdID, storyID, backend, effort, model, actor stri
 	}
 	// Refuse before any field changes: check the pair the story's tasks
 	// will resolve to, using the story's new values over the record's.
-	if err := checkResolvedLLMPair(prdID, &Task{}, &Story{Backend: backend, Model: model}, prd); err != nil {
+	if err := checkResolvedLLMPair(prdID, &Task{}, &Story{Backend: backend, Model: model}, prd, m.AutomationForPRD(prd)); err != nil {
 		return nil, err
 	}
 	story.Backend = backend
@@ -3319,7 +3319,7 @@ func (m *Manager) SetTaskLLM(prdID, taskID, backend, effort, model, actor string
 	// Refuse before any field changes: check the pair the task will run
 	// with, after the task's new values are applied over the story and
 	// PRD the executor falls back to.
-	if err := checkResolvedLLMPair(prdID, &Task{Backend: backend, Model: model}, story, prd); err != nil {
+	if err := checkResolvedLLMPair(prdID, &Task{Backend: backend, Model: model}, story, prd, m.AutomationForPRD(prd)); err != nil {
 		return nil, err
 	}
 	task.Backend = backend
@@ -3828,8 +3828,8 @@ func checkLevelPair(prdID string, backend, model *string, curBackend, curModel s
 // executor would run with. It resolves the effective backend and model
 // through resolveTaskBackendModel, so an empty backend inherits the story
 // or PRD backend exactly as a run does.
-func checkResolvedLLMPair(prdID string, task *Task, story *Story, prd *PRD) error {
-	backend, model := resolveTaskBackendModel(task, story, prd, "")
+func checkResolvedLLMPair(prdID string, task *Task, story *Story, prd *PRD, auto *Automation) error {
+	backend, model := resolveTaskBackendModel(task, story, prd, auto, "")
 	if err := validateModelForBackend(backend, model); err != nil {
 		return fmt.Errorf("prd %q: %w", prdID, err)
 	}
@@ -4132,7 +4132,7 @@ func (m *Manager) Status() LoopStatus {
 					}
 				}
 				if t.NudgeCount > 0 {
-					backend, _ := resolveTaskBackendModel(&t, &s, p, m.cfg.ExecutionBackend)
+					backend, _ := resolveTaskBackendModel(&t, &s, p, m.AutomationForPRD(p), m.cfg.ExecutionBackend)
 					if backend == "" {
 						backend = "unknown"
 					}
