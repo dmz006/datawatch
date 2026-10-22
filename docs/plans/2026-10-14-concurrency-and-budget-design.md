@@ -1294,6 +1294,7 @@ thing example (iii) could not see.
 2. **BL405 Phase 2 overlap.** Should the windowed-ceiling ledger dimension be
    built inside this doc's follow-up PRD (Phase 5) as the first slice of
    BL405 Phase 2, or should Phase 5 wait for BL405 Phase 2?
+   **Decided by the operator 2026-10-22: build it inside Phase 5** as the first slice of BL405 Phase 2; BL405 Phase 2 later builds on that ledger.
 3. **Pattern-list drift guard.** Do the screen-scraped pattern lists
    (`rateLimitPatterns`, and by extension `selfUpdatePatterns` and the
    prompt patterns) need a staleness-check mechanism of their own? This doc
