@@ -565,6 +565,71 @@ paths:
         "401":
           $ref: "#/components/responses/Unauthorized"
 
+  /api/sessions/{session_id}/result:
+    post:
+      summary: Post a session's structured result
+      description: |
+        A scheduled job posts the result of its run for this session.
+        Two gates apply: the caller needs the `sessions:result_write`
+        capability, and a session-scoped credential may only post for the
+        session it belongs to (posting for any other session returns 403).
+
+        The payload must carry a non-empty `title`; `status` is either
+        absent or one of `ok` / `warn` / `error`. When the session belongs
+        to a named schedule the entry is appended to that schedule's
+        retained history (oldest evicted first past
+        `results.schedule_history_limit`). The session's status board
+        always reflects the latest result, even for unscheduled sessions.
+      operationId: postSessionResult
+      tags: [Sessions]
+      parameters:
+        - name: session_id
+          in: path
+          required: true
+          description: Session ID (short or full)
+          schema:
+            type: string
+            example: "a3f2"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResultPayload"
+      responses:
+        "200":
+          description: Result accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  session_id:
+                    type: string
+                  full_id:
+                    type: string
+                  schedule_name:
+                    type: string
+                    description: Empty when the session is not bound to a named schedule
+                  stored:
+                    type: boolean
+                    description: True when the entry was written to the schedule history
+                  count:
+                    type: integer
+                    description: Number of schedule names with retained results
+        "400":
+          description: Invalid payload (typed validation error in the body)
+        "403":
+          description: Caller lacks `sessions:result_write`, or posted for a session it does not own
+        "404":
+          description: Session not found
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "503":
+          description: Schedule result store not available
+
   /api/config:
     get:
       summary: Get configuration
@@ -713,6 +778,68 @@ paths:
           description: Not found
         "401":
           $ref: "#/components/responses/Unauthorized"
+
+  /api/schedule-results:
+    get:
+      summary: List retained results grouped by schedule
+      description: |
+        One entry per schedule name (sorted by name) with that
+        schedule's most recent posted result, how many results are
+        retained for it, and the recent `status` values in oldest →
+        newest order (capped at 50) to drive a status sparkline.
+        Requires the `autonomous:read` capability for federation peers;
+        the operator token is always allowed.
+      operationId: listScheduleResults
+      tags: [Schedule]
+      responses:
+        "200":
+          description: Array of per-schedule result summaries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ScheduleResultSummary"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Caller lacks the `autonomous:read` capability
+        "503":
+          description: Schedule result store not available
+
+  /api/schedule-results/{schedule_name}:
+    get:
+      summary: Full retained result history for one schedule
+      description: |
+        Every retained result for the named schedule, oldest first.
+        Returns 404 when the schedule has no recorded results.
+      operationId: getScheduleResultHistory
+      tags: [Schedule]
+      parameters:
+        - name: schedule_name
+          in: path
+          required: true
+          description: Schedule name results were posted under
+          schema:
+            type: string
+            example: "nightly-sweep"
+      responses:
+        "200":
+          description: Retained result entries, oldest to newest
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ScheduleResultEntry"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          description: Caller lacks the `autonomous:read` capability
+        "404":
+          description: No results recorded for this schedule
+        "503":
+          description: Schedule result store not available
 
   /api/servers:
     get:
@@ -1463,7 +1590,7 @@ paths:
       tags: [Orchestrator]
       responses: {"200": {description: OK}}
     post:
-      summary: Create a graph from a set of BL24 PRD IDs
+      summary: Create a graph from a set of PRD IDs
       operationId: orchestratorGraphCreate
       tags: [Orchestrator]
       requestBody:
@@ -2517,7 +2644,7 @@ paths:
       responses: {"200": {description: Bound}, "404": {description: Session or agent not found}}
   /api/sessions/import:
     post:
-      summary: Import a single orphan session from disk (BL94)
+      summary: Import a single orphan session from disk
       operationId: sessionImport
       tags: [Sessions]
       requestBody: {required: true, content: {application/json: {schema: {type: object, required: [path], properties: {path: {type: string}}}}}}
@@ -2539,7 +2666,7 @@ paths:
       responses: {"200": {description: OK}, "404": {description: Not found}}
   /api/sessions/reconcile:
     get:
-      summary: List orphan session directories on disk that are missing from the registry (BL93)
+      summary: List orphan session directories on disk that are missing from the registry
       operationId: sessionReconcile
       tags: [Sessions]
       responses: {"200": {description: List of orphans}}
@@ -2553,7 +2680,7 @@ paths:
       responses: {"200": {description: OK}, "404": {description: Not found}}
   /api/sessions/stale:
     get:
-      summary: List running sessions stuck longer than session.stale_timeout_seconds (BL40)
+      summary: List running sessions stuck longer than session.stale_timeout_seconds
       operationId: sessionsStale
       tags: [Sessions]
       parameters:
@@ -2570,7 +2697,7 @@ paths:
   # Agents
   /api/agents:
     get:
-      summary: List ephemeral agent workers (F10 sprint 3+)
+      summary: List ephemeral agent workers
       operationId: agentsList
       tags: [Agents]
       responses: {"200": {description: OK}}
@@ -2582,7 +2709,7 @@ paths:
       responses: {"200": {description: Spawned}, "400": {description: Bad Request}}
   /api/agents/audit:
     get:
-      summary: Tail of the agent-audit log (BL107) — every spawn, terminate, bootstrap event
+      summary: Tail of the agent-audit log — every spawn, terminate, bootstrap event
       operationId: agentsAudit
       tags: [Agents]
       parameters:
@@ -2593,7 +2720,7 @@ paths:
   # Channel
   /api/channel/diagnostics:
     get:
-      summary: MCP channel bridge diagnostics — bridge kind/path, per-session port and liveness (BL362)
+      summary: MCP channel bridge diagnostics — bridge kind/path, per-session port and liveness
       operationId: channelDiagnostics
       tags: [Channel]
       responses:
@@ -2616,7 +2743,7 @@ paths:
   # Devices
   /api/devices:
     get:
-      summary: List registered devices (F17 mobile registry)
+      summary: List registered devices
       operationId: devicesList
       tags: [Devices]
       responses: {"200": {description: OK}}
@@ -2629,7 +2756,7 @@ paths:
       responses: {"200": {description: Registered}, "400": {description: Bad Request}}
   /api/device-aliases:
     get:
-      summary: "List device aliases for `new: @<alias>:` routing (BL31)"
+      summary: "List device aliases for `new: @<alias>:` routing"
       operationId: deviceAliasList
       tags: [Devices]
       responses: {"200": {description: OK}}
@@ -2816,7 +2943,7 @@ paths:
   # Operator-facing singletons
   /api/ask:
     post:
-      summary: Single-shot LLM ask — no session, no tmux (BL34)
+      summary: Single-shot LLM ask — no session, no tmux
       operationId: ask
       tags: [Singletons]
       requestBody:
@@ -2833,14 +2960,14 @@ paths:
       responses: {"200": {description: OK}, "503": {description: Backend not configured}}
   /api/assist:
     post:
-      summary: Quick-response assistant (BL42) — uses the configured assistant backend
+      summary: Quick-response assistant — uses the configured assistant backend
       operationId: assist
       tags: [Singletons]
       requestBody: {required: true, content: {application/json: {schema: {type: object, required: [text], properties: {text: {type: string}}}}}}
       responses: {"200": {description: OK}, "503": {description: Assistant backend not configured}}
   /api/audit:
     get:
-      summary: Query the operator-action audit log (BL9)
+      summary: Query the operator-action audit log
       operationId: auditQuery
       tags: [Singletons]
       parameters:
@@ -2853,7 +2980,7 @@ paths:
       responses: {"200": {description: OK}}
   /api/cooldown:
     get:
-      summary: Current global rate-limit cooldown state (BL30)
+      summary: Current global rate-limit cooldown state
       operationId: cooldownGet
       tags: [Singletons]
       responses: {"200": {description: OK}}
@@ -2865,25 +2992,25 @@ paths:
       responses: {"200": {description: OK}}
   /api/diagnose:
     get:
-      summary: Diagnostic snapshot — backend reachability, config validity, recent errors (BL37)
+      summary: Diagnostic snapshot — backend reachability, config validity, recent errors
       operationId: diagnose
       tags: [Singletons]
       responses: {"200": {description: OK}}
   /api/analytics:
     get:
-      summary: Aggregate analytics — session counts, backend distribution, cost summary (BL12)
+      summary: Aggregate analytics — session counts, backend distribution, cost summary
       operationId: analytics
       tags: [Singletons]
       responses: {"200": {description: OK}}
   /api/reload:
     post:
-      summary: Hot config reload (BL17) — equivalent to SIGHUP
+      summary: Hot config reload — equivalent to SIGHUP
       operationId: reload
       tags: [Singletons]
       responses: {"200": {description: Reloaded}, "400": {description: Config invalid}}
   /api/project/summary:
     get:
-      summary: Project overview — git status + sessions + stats (BL35)
+      summary: Project overview — git status + sessions + stats
       operationId: projectSummary
       tags: [Singletons]
       parameters:
@@ -3001,7 +3128,7 @@ paths:
 
   /api/projects:
     get:
-      summary: List project aliases (BL27)
+      summary: List project aliases
       operationId: projectsList
       tags: [Singletons]
       responses: {"200": {description: OK}}
@@ -3013,7 +3140,7 @@ paths:
       responses: {"200": {description: OK}}
   /api/templates:
     get:
-      summary: List session-start templates (BL5)
+      summary: List session-start templates
       operationId: templatesList
       tags: [Singletons]
       responses: {"200": {description: OK}}
@@ -3544,6 +3671,83 @@ components:
         created_at:
           type: string
           format: date-time
+
+    ResultPayload:
+      type: object
+      required: [title]
+      properties:
+        title:
+          type: string
+          description: Required heading for the result
+          example: "Nightly sweep"
+        status:
+          type: string
+          description: Absent, `ok`, `warn`, or `error`
+          enum: ["", ok, warn, error]
+        summary:
+          type: string
+          description: One-paragraph human summary (strings over 2000 chars are truncated)
+        metrics:
+          type: object
+          additionalProperties: true
+          description: Free-form key/value metrics
+          example:
+            pass: 5
+            fail: 0
+        tables:
+          type: array
+          description: Up to 20 tables of at most 100 rows
+          items:
+            type: object
+            properties:
+              title:
+                type: string
+              columns:
+                type: array
+                items:
+                  type: string
+              rows:
+                type: array
+                items:
+                  type: array
+                  items:
+                    type: string
+        markdown:
+          type: string
+          description: Optional markdown report body
+
+    ScheduleResultEntry:
+      type: object
+      description: "One posted result — the payload plus its provenance"
+      properties:
+        payload:
+          $ref: "#/components/schemas/ResultPayload"
+        session_id:
+          type: string
+          description: Session that posted the result
+        schedule_name:
+          type: string
+          description: Schedule name the session belongs to
+        posted_at:
+          type: string
+          format: date-time
+
+    ScheduleResultSummary:
+      type: object
+      description: One grouped row of the schedule-results list
+      properties:
+        schedule_name:
+          type: string
+        latest:
+          $ref: "#/components/schemas/ScheduleResultEntry"
+        count:
+          type: integer
+          description: Number of retained entries for this schedule
+        recent_statuses:
+          type: array
+          description: Recent `status` values, oldest → newest (capped at 50); empty when unset
+          items:
+            type: string
 
     RemoteServer:
       type: object

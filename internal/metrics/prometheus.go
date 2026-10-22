@@ -148,6 +148,16 @@ var (
 		Name: "datawatch_web_search_errors_total",
 		Help: "Total web search queries that returned an error",
 	})
+	// Session result endpoint metrics (scheduled-job structured results).
+	// Posted = accepted and recorded; rejected = failed authz/identity/validation.
+	SessionResultsPosted = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "datawatch_session_results_posted_total",
+		Help: "Session result payloads accepted by the result endpoint",
+	})
+	SessionResultsRejected = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "datawatch_session_results_rejected_total",
+		Help: "Session result payloads rejected by the result endpoint",
+	})
 )
 
 // Register registers all Prometheus metrics.
@@ -158,6 +168,7 @@ func Register() {
 		CPUUsage, MemoryUsed, DiskUsed, DaemonRSS, Goroutines, UptimeSeconds,
 		MessagesTotal, AlertsTotal,
 		AccessLogEventsTotal,
+		SessionResultsPosted, SessionResultsRejected,
 		RTKTokensSaved, RTKSavingsPct,
 		VerifierDiffInjectionsTotal,
 		InjectionGuardHitsTotal,

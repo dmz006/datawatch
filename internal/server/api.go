@@ -217,10 +217,13 @@ type Server struct {
 	queueStore         *session.QueueStore         // BL357
 	discussionSubStore *session.DiscussionSubStore // BL358
 	resultStore        *session.ResultStore        // BL360
-	cmdLib             *session.CmdLibrary
-	alertStore         *alerts.Store
-	filterStore        *session.FilterStore
-	statsCollector     *stats.Collector
+	// scheduleResultStore — per-schedule structured result history backing
+	// the result panel (POST /api/sessions/{id}/result, GET /api/schedule-results*).
+	scheduleResultStore *session.ScheduleResultStore
+	cmdLib              *session.CmdLibrary
+	alertStore          *alerts.Store
+	filterStore         *session.FilterStore
+	statsCollector      *stats.Collector
 	// F10 sprint 2: profile stores. Wired from main.go via setters so
 	// unit tests can leave them nil (handlers return 503).
 	projectStore *profile.ProjectStore
@@ -3794,6 +3797,10 @@ func (s *Server) handleSessionSubpath(w http.ResponseWriter, r *http.Request) {
 	}
 	if strings.HasSuffix(path, "/children") {
 		s.handleSessionChildren(w, r)
+		return
+	}
+	if strings.HasSuffix(path, "/result") {
+		s.handleSessionResultPost(w, r)
 		return
 	}
 	// BL359 — POST /api/sessions/{id}/restart

@@ -1876,6 +1876,12 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("open result store: %w", err)
 	}
 
+	// Structured result panel — per-schedule result history.
+	scheduleResultStore, err := session.NewScheduleResultStore(scheduleResultStorePath(cfg))
+	if err != nil {
+		return fmt.Errorf("open schedule result store: %w", err)
+	}
+
 	// Create command library
 	cmdLib, err := newCmdLibrary(filepath.Join(expandHome(cfg.DataDir), "commands.json"))
 	if err != nil {
@@ -3181,7 +3187,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		httpServer.SetQueueStore(queueStore)                 // BL357
 		httpServer.SetDiscussionSubStore(discussionSubStore) // BL358
 		httpServer.SetResultStore(resultStore)               // BL360
-		httpServer.SetSessionTokenStore(sessionTokenStore)   // Design A3
+		httpServer.SetScheduleResultStore(scheduleResultStore)
+		httpServer.SetSessionTokenStore(sessionTokenStore) // Design A3
 		httpServer.SetCmdLibrary(cmdLib)
 		httpServer.SetAlertStore(alertStore)
 		httpServer.SetFilterStore(filterStore)
@@ -4124,11 +4131,11 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			// 0 is meaningful (never resume) and -1 passes through as-is;
 			// 3600 arrives only if the daemon config itself supplied nothing
 			// (config.Load merges over DefaultConfig()).
-			ResumeMaxAgeSeconds:      acfgIn.ResumeMaxAgeSeconds,
-			StaleTaskSeconds:           acfgIn.StaleTaskSeconds,
-			AutoFixRetries:             acfgIn.AutoFixRetries,
-			VerifierDiffMaxBytes:       acfgIn.VerifierDiffMaxBytes,
-			SecurityScan:               acfgIn.SecurityScan,
+			ResumeMaxAgeSeconds:  acfgIn.ResumeMaxAgeSeconds,
+			StaleTaskSeconds:     acfgIn.StaleTaskSeconds,
+			AutoFixRetries:       acfgIn.AutoFixRetries,
+			VerifierDiffMaxBytes: acfgIn.VerifierDiffMaxBytes,
+			SecurityScan:         acfgIn.SecurityScan,
 			// v5.17.0 — BL191 Q4 + Q6 config bridge. The autonomous
 			// Manager has carried these fields since v5.9.0 / v5.10.0
 			// but the YAML + REST + PWA path didn't until now; pre-
@@ -11428,6 +11435,10 @@ func discussionSubStorePath(cfg *config.Config) string {
 
 func resultStorePath(cfg *config.Config) string {
 	return filepath.Join(expandHome(cfg.DataDir), "result_store.json")
+}
+
+func scheduleResultStorePath(cfg *config.Config) string {
+	return filepath.Join(expandHome(cfg.DataDir), "schedule_results.json")
 }
 
 func runScheduleAdd(cfg *config.Config, sessionID, sessionName, command, at, cronExpr, scheduleName string) error {

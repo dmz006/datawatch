@@ -35,6 +35,7 @@ import (
 	"time"
 
 	"github.com/dmz006/datawatch/internal/federation"
+	"github.com/dmz006/datawatch/internal/session"
 )
 
 // SessionHookEvent — one event from a session's hook script.
@@ -102,7 +103,10 @@ type SessionStatusBoard struct {
 	// Automaton — structured PRD/story/task detail for autonomous task
 	// sessions, built from daemon-side data (no hook payload needed).
 	Automaton *SessionAutomatonDetail `json:"automaton,omitempty"`
-	UpdatedAt time.Time               `json:"updated_at"`
+	// Result — latest structured result payload posted by the agent for
+	// this session (result panel; always set when a result is posted).
+	Result    *session.ResultPayload `json:"result,omitempty"`
+	UpdatedAt time.Time              `json:"updated_at"`
 }
 
 // hookEventStore — in-memory per-session hook state. Latest payload
@@ -112,6 +116,20 @@ type hookEventStore struct {
 	state     map[string]*SessionStatusBoard
 	history   map[string][]*SessionHookEvent
 	failedBuf map[string][]*SessionHookEvent // last 5 events before any task→failed
+}
+
+// setResult records the agent's latest structured result payload on the
+// session's status board (creates the board if it has no hook events yet).
+func (s *hookEventStore) setResult(sessionID string, p *session.ResultPayload) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	b, ok := s.state[sessionID]
+	if !ok {
+		b = &SessionStatusBoard{SessionID: sessionID, State: "unknown", HookHealth: "missing"}
+		s.state[sessionID] = b
+	}
+	b.Result = p
+	b.UpdatedAt = time.Now().UTC()
 }
 
 var globalHookStore = &hookEventStore{
