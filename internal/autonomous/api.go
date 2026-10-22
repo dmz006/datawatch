@@ -1429,6 +1429,19 @@ func (a *API) PauseAutomation(id, actor string, expectedVersion int64) (any, err
 	return controlResult(got, err)
 }
 
+// SetAutomationLLM overrides the Automation's execution and planning defaults.
+// A nil pointer leaves a field unchanged; expectedVersion 0 skips the version check.
+func (a *API) SetAutomationLLM(id string, backend, model, effort, planningBackend, planningModel *string, actor string, expectedVersion int64) (any, error) {
+	got, err := a.M.SetAutomationLLM(id, backend, model, effort, planningBackend, planningModel, actor, expectedVersion)
+	return controlResult(got, err)
+}
+
+// SetAutomationVerificationLLM overrides the Automation's verification defaults.
+func (a *API) SetAutomationVerificationLLM(id string, backend, model, effort *string, actor string, expectedVersion int64) (any, error) {
+	got, err := a.M.SetAutomationVerificationLLM(id, backend, model, effort, actor, expectedVersion)
+	return controlResult(got, err)
+}
+
 // ResumeAutomation moves a paused Automation back to active.
 func (a *API) ResumeAutomation(id, actor string, expectedVersion int64) (any, error) {
 	got, err := a.M.ResumeAutomation(id, actor, expectedVersion)
