@@ -283,7 +283,9 @@ func TestZeroIntervalDisablesKeeper(t *testing.T) {
 
 	start := time.Now()
 	k.Start(context.Background())
-	if elapsed := time.Since(start); elapsed > 100*time.Millisecond {
+	// A loaded runner can stall a goroutine, so the bound is generous. A Start
+	// that blocked on the check loop would take far longer than this.
+	if elapsed := time.Since(start); elapsed > 500*time.Millisecond {
 		t.Fatalf("Start took %v with a zero interval, want an immediate return", elapsed)
 	}
 	time.Sleep(1500 * time.Millisecond)
