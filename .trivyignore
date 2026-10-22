@@ -631,3 +631,22 @@ CVE-2026-19445
 # --entrypoint /bin/sh --network none) to find every real linker to libexpat1,
 # then traced each caller's actual invocation path
 CVE-2026-77214
+
+# openjdk-17-jre-headless -- CVE-2026-91403 and CVE-2026-91415
+# severity: critical and high; images: parent-full
+# CVE-2026-91403 distrusts eMudhra intermediate CA certificates; CVE-2026-91415
+# is a font-rendering hardening fix (Oracle CPU 2026-10). The JRE is installed
+# in parent-full for one reason only: to run signal-cli (see the comment above
+# the install line in Dockerfile.parent-full). A source trace of the repository
+# shows java is started only by internal/signal (signalcli.go, javafix.go). The
+# CA change affects signal-cli only if the Signal service chain used an eMudhra
+# intermediate; Signal pins its own trust root, so it does not. The font fix needs
+# AWT text rendering, and signal-cli is a headless messaging client that never
+# renders text. Both paths are unreachable from datawatch code.
+# No fix available in Debian bookworm (status "affected", no fixed version).
+# Found live by the Release workflow's blocking parent-full scan on the 9.5.93
+# tag. Re-check for a fix each cycle; re-trace only if signal-cli's use of the JRE changes.
+# TRACED: source grep of every java invocation in the repository (source trace;
+# not a container linker scan)
+CVE-2026-91403
+CVE-2026-91415
