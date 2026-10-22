@@ -588,9 +588,33 @@ voice/TTS strings, store listings, user-facing docs, release notes, error messag
   | fr | automate | automates |
   | ja | オートマトン | オートマタ |
   Never leave the English "Automaton/Automata" inside a translated string, and never
-  use "Automation" (a different word).
+  use "Automation" as a translation of Automaton; that word is reserved for the chain
+  object defined in the addendum below.
 - Before shipping UI copy, grep user-visible strings (string resources, `Text("…")`,
   locale files) for `\bPRDs?\b` and fix any hit.
+
+### Addendum — "Automation" is a different object
+
+- **Automation** is the chain object: a named graph of member Automata with per-outcome
+  edges, fork and join branches, nested Automations, control operations and an optional
+  budget policy (the top-level Automation tab in the PWA and the `/api/automations` REST
+  surface).
+- **Automaton** is one unit of autonomous work, which is internally a PRD.
+- Translations of the Automation word:
+  | locale | singular | plural |
+  |---|---|---|
+  | en | Automation | Automations |
+  | de | Automatisierung | Automatisierungen |
+  | es | automatización | automatizaciones |
+  | fr | automatisation | automatisations |
+  | ja | オートメーション | オートメーション (no plural form) |
+- The two words are never swapped. The Automaton/Automata table above is unchanged and
+  still applies to a single unit of work, including when a string names member Automata
+  inside an Automation.
+- Relabel decision: the floating action button that launches one Automaton (locale key
+  `fab_launch_auto`) reads "Launch Automaton" in every locale, never "Launch Automation".
+- Locale guard: keys named `nav_automation` or starting with `automation_` may use the
+  Automation words; every other key may not (a later task narrows the guard test to match).
 
 ## Localization Rule (BL214, v5.28.0)
 
