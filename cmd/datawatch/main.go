@@ -8095,6 +8095,25 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			})
 	})
 
+	// A worker whose main prompt never appeared is ended on the session end
+	// path by DeliverOneShotTask; record that failure on the owning task so it
+	// is visible on the PRD. Wired once at startup, not per task launch.
+	mgr.SetOnTaskDeliveryFailed(func(fullID, reason string) {
+		if autonomousMgrRef == nil {
+			log.Printf("[autonomous] delivery failure for %s not recorded (no autonomous manager): %s", fullID, reason)
+			return
+		}
+		sess, ok := mgr.GetSession(fullID)
+		if !ok || sess.PRDID == "" || sess.TaskID == "" {
+			return
+		}
+		if rerr := autonomousMgrRef.RecordTaskDeliveryFailure(sess.PRDID, sess.TaskID, reason, time.Now()); rerr != nil {
+			log.Printf("[autonomous] record delivery failure for %s/%s: %v", sess.PRDID, sess.TaskID, rerr)
+			return
+		}
+		log.Printf("[autonomous] recorded delivery failure for %s/%s: %s", sess.PRDID, sess.TaskID, reason)
+	})
+
 	// BL355: zombie detection — alert when Claude process dies in active session.
 	mgr.SetClaudeAliveChangeHandler(func(sess *session.Session) {
 		alertStore.Add(alertspkg.LevelWarn,

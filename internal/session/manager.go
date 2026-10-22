@@ -440,6 +440,10 @@ type Manager struct {
 	// onNeedsInput is called when a session needs user input.
 	onNeedsInput func(sess *Session, prompt string)
 
+	// onTaskDeliveryFailed is called once DeliverOneShotTask gives up on a
+	// task: the worker session has already been ended by then.
+	onTaskDeliveryFailed func(fullID string, reason string)
+
 	// acpBusySeen marks ACP sessions that have had a working turn (see MarkACPEvent).
 	acpBusySeen map[string]bool
 
@@ -961,6 +965,15 @@ func (m *Manager) SetActivityHandler(fn func(*Session)) {
 // SetNeedsInputHandler sets the callback invoked when a session waits for input.
 func (m *Manager) SetNeedsInputHandler(fn func(*Session, string)) {
 	m.onNeedsInput = fn
+}
+
+// SetOnTaskDeliveryFailed sets the callback invoked when DeliverOneShotTask
+// exhausts its attempts and has ended the worker session. Guarded by m.mu so
+// it can be set while delivery runs on another goroutine.
+func (m *Manager) SetOnTaskDeliveryFailed(fn func(fullID string, reason string)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.onTaskDeliveryFailed = fn
 }
 
 // StateChangeHandler returns the currently registered state-change callback (may be nil).
@@ -4725,6 +4738,20 @@ func (m *Manager) DeliverOneShotTask(fullID string, input string, maxAttempts in
 		}
 	}
 	m.ReleaseTaskDelivery(fullID)
+	reason := fmt.Sprintf("task delivery failed: main prompt never appeared after %d attempts — worker was never given its task", maxAttempts)
+	m.debugf("DeliverOneShotTask: %s: %s", fullID, reason)
+	// Ending the session lets the executor's worker wait loop observe a
+	// terminal state, so the task takes its normal retry path with a fresh
+	// session. This is the same session end path the stall handler uses.
+	if err := m.Kill(fullID); err != nil {
+		m.debugf("DeliverOneShotTask: session end path for %s: %v", fullID, err)
+	}
+	m.mu.Lock()
+	onFailed := m.onTaskDeliveryFailed
+	m.mu.Unlock()
+	if onFailed != nil {
+		onFailed(fullID, reason)
+	}
 	return ErrTaskUndelivered
 }
 
