@@ -244,9 +244,9 @@ func (p *PeerBudget) fetch(ctx context.Context, llm, peer string, start, end tim
 	if err != nil {
 		return peerSpendEntry{reason: peerReasonUnreach}
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
 		return peerSpendEntry{reason: fmt.Sprintf("%s: HTTP %d", peerReasonUnreach, resp.StatusCode)}
 	}
 	var body struct {

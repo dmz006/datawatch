@@ -122,7 +122,7 @@ func (b *BudgetLedger) ensureLoaded() {
 		}
 		return
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	cutoff := b.now().Add(-budgetRetention)
@@ -184,7 +184,7 @@ func (b *BudgetLedger) Record(llm string, at time.Time, usd float64, tokensIn, t
 		log.Printf("[budget] append %s: %v", b.path, err)
 		return
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	line, _ := json.Marshal(e)
 	if _, err := f.Write(append(line, '\n')); err != nil {
 		log.Printf("[budget] append %s: %v", b.path, err)
@@ -210,8 +210,8 @@ func (b *BudgetLedger) rewriteLocked() {
 	w := bufio.NewWriter(f)
 	for _, e := range b.entries {
 		line, _ := json.Marshal(e)
-		w.Write(line)
-		w.WriteByte('\n')
+		_, _ = w.Write(line)
+		_ = w.WriteByte('\n')
 	}
 	err = w.Flush()
 	if cerr := f.Close(); err == nil {
@@ -222,7 +222,7 @@ func (b *BudgetLedger) rewriteLocked() {
 	}
 	if err != nil {
 		log.Printf("[budget] rewrite %s: %v", b.path, err)
-		os.Remove(tmp)
+		_ = os.Remove(tmp)
 	}
 }
 

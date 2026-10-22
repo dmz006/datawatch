@@ -46,7 +46,7 @@ func newFakePeer(t *testing.T, spend float64) *fakePeer {
 			http.Error(w, "boom", p.status)
 			return
 		}
-		fmt.Fprintf(w, `{"llm":"claude","spend_usd":%v}`, p.spend)
+		_, _ = fmt.Fprintf(w, `{"llm":"claude","spend_usd":%v}`, p.spend)
 	}))
 	t.Cleanup(p.srv.Close)
 	return p
