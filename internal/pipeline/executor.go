@@ -131,7 +131,8 @@ func (e *Executor) run(p *Pipeline) {
 			if e.qualityGates.Enabled && e.qualityGates.TestCommand != "" && e.baseline != nil {
 				current := RunTests(e.qualityGates.TestCommand, p.ProjectDir,
 					e.qualityGates.Timeout)
-				compare := CompareResults(*e.baseline, current)
+				compare := EvaluateGate(*e.baseline, current, p.ProjectDir,
+					e.qualityGates.Timeout)
 				log.Printf("[pipeline] %s quality-gate: %s", p.ID, compare.Summary)
 				if compare.Regression && e.qualityGates.BlockOnRegression {
 					p.State = StateFailed

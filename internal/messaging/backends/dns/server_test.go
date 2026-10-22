@@ -13,25 +13,75 @@ import (
 	"github.com/dmz006/datawatch/internal/messaging"
 )
 
-// freeUDPPort finds an available UDP port on localhost.
-func freeUDPPort(t *testing.T) int {
+// serverReadyTimeout bounds how long waitForServer polls before failing a test.
+const serverReadyTimeout = 5 * time.Second
+
+// serverPollInterval is the pause between readiness probes.
+const serverPollInterval = 10 * time.Millisecond
+
+// listenLoopback binds UDP and TCP sockets on 127.0.0.1 with OS-assigned ports
+// and keeps them open. The server under test serves on these exact sockets, so
+// no port is ever closed and then rebound by another process or test.
+func listenLoopback(t *testing.T) (net.PacketConn, net.Listener) {
 	t.Helper()
-	addr, err := net.ResolveUDPAddr("udp", "127.0.0.1:0")
+	udpConn, err := net.ListenPacket("udp", "127.0.0.1:0")
 	if err != nil {
-		t.Fatalf("resolve: %v", err)
+		t.Fatalf("listen udp: %v", err)
 	}
-	conn, err := net.ListenUDP("udp", addr)
+	tcpLn, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		t.Fatalf("listen: %v", err)
+		udpConn.Close() //nolint:errcheck
+		t.Fatalf("listen tcp: %v", err)
 	}
-	port := conn.LocalAddr().(*net.UDPAddr).Port
-	conn.Close() //nolint:errcheck
-	return port
+	t.Cleanup(func() {
+		udpConn.Close() //nolint:errcheck
+		tcpLn.Close()   //nolint:errcheck
+	})
+	return udpConn, tcpLn
 }
 
+// waitForServer polls addr with a probe query until the server returns any DNS
+// reply. The probe uses a wrong secret, so the server answers REFUSED before it
+// reaches the handler or consumes a nonce. Any reply proves the server is
+// reading its socket. The test fails if Subscribe returns an error first or the
+// deadline passes.
+func waitForServer(t *testing.T, addr, domain string, serverErr <-chan error) {
+	t.Helper()
+	deadline := time.Now().Add(serverReadyTimeout)
+	for {
+		select {
+		case err := <-serverErr:
+			t.Fatalf("server failed to start: %v", err)
+		default:
+		}
+
+		qname, err := EncodeQuery("probe", "readiness-probe-secret", domain)
+		if err != nil {
+			t.Fatalf("EncodeQuery: %v", err)
+		}
+		msg := new(mdns.Msg)
+		msg.SetQuestion(qname, mdns.TypeTXT)
+		client := &mdns.Client{Timeout: 100 * time.Millisecond}
+		if _, _, err := client.Exchange(msg, addr); err == nil {
+			return
+		}
+
+		if time.Now().After(deadline) {
+			t.Fatalf("server at %s did not answer a probe within %s", addr, serverReadyTimeout)
+		}
+		time.Sleep(serverPollInterval)
+	}
+}
+
+// TestServerIntegration is deterministic because of three patterns, and these
+// must be preserved. (1) The server serves on a UDP and TCP listener the test
+// bound and kept open, so no port is closed and rebound. (2) Startup is awaited
+// with waitForServer, a bounded readiness probe, not a fixed sleep. (3) Subscribe
+// errors arrive on serverErr and fail the test at once, instead of showing up
+// later as a query timeout.
 func TestServerIntegration(t *testing.T) {
-	port := freeUDPPort(t)
-	listen := fmt.Sprintf("127.0.0.1:%d", port)
+	udpConn, tcpLn := listenLoopback(t)
+	listen := udpConn.LocalAddr().String()
 
 	cfg := config.DNSChannelConfig{
 		Enabled:         true,
@@ -44,6 +94,8 @@ func TestServerIntegration(t *testing.T) {
 	}
 
 	backend := NewServer(cfg)
+	backend.udpConn = udpConn
+	backend.tcpListener = tcpLn
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -57,13 +109,8 @@ func TestServerIntegration(t *testing.T) {
 		})
 	}()
 
-	// Wait for server to start and check for startup errors
-	time.Sleep(500 * time.Millisecond)
-	select {
-	case err := <-serverErr:
-		t.Fatalf("server failed to start: %v", err)
-	default:
-	}
+	// Wait until the server answers before sending any real traffic
+	waitForServer(t, listen, cfg.Domain, serverErr)
 
 	// Test 1: Valid query
 	t.Run("ValidQuery", func(t *testing.T) {
@@ -198,9 +245,14 @@ func TestServerIntegration(t *testing.T) {
 	cancel()
 }
 
+// TestClientExecute is deterministic because of three patterns, and these must
+// be preserved. (1) The server serves on a UDP and TCP listener the test bound
+// and kept open, so no port is closed and rebound. (2) Startup is awaited with
+// waitForServer, a bounded readiness probe, not a fixed sleep. (3) Subscribe
+// errors arrive on serverErr and fail the test at once.
 func TestClientExecute(t *testing.T) {
-	port := freeUDPPort(t)
-	listen := fmt.Sprintf("127.0.0.1:%d", port)
+	udpConn, tcpLn := listenLoopback(t)
+	listen := udpConn.LocalAddr().String()
 
 	cfg := config.DNSChannelConfig{
 		Enabled:         true,
@@ -213,13 +265,18 @@ func TestClientExecute(t *testing.T) {
 	}
 
 	backend := NewServer(cfg)
+	backend.udpConn = udpConn
+	backend.tcpListener = tcpLn
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	go backend.Subscribe(ctx, func(msg messaging.Message) { //nolint:errcheck
-		backend.Send(msg.GroupID, "response: "+msg.Text) //nolint:errcheck
-	})
-	time.Sleep(500 * time.Millisecond)
+	serverErr := make(chan error, 1)
+	go func() {
+		serverErr <- backend.Subscribe(ctx, func(msg messaging.Message) { //nolint:errcheck
+			backend.Send(msg.GroupID, "response: "+msg.Text) //nolint:errcheck
+		})
+	}()
+	waitForServer(t, listen, cfg.Domain, serverErr)
 
 	clientCfg := config.DNSChannelConfig{
 		Domain:   cfg.Domain,

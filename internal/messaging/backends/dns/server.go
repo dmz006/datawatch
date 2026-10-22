@@ -3,6 +3,7 @@ package dns
 import (
 	"context"
 	"fmt"
+	"net"
 	"strings"
 	"sync"
 	"time"
@@ -32,11 +33,17 @@ type ServerBackend struct {
 	rateMu    sync.Mutex
 	rateMap   map[string]*rateBucket
 	rateLimit int // max queries per IP per minute (0 = unlimited)
+
+	// Pre-bound sockets that Subscribe serves on instead of binding cfg.Listen.
+	// Nil in production. Tests inject live listeners so no port is ever closed
+	// and then rebound.
+	udpConn     net.PacketConn
+	tcpListener net.Listener
 }
 
 // rateBucket tracks query count per IP within a sliding window.
 type rateBucket struct {
-	count    int
+	count       int
 	windowStart time.Time
 }
 
@@ -58,9 +65,9 @@ func NewServer(cfg config.DNSChannelConfig) *ServerBackend {
 	}
 }
 
-func (b *ServerBackend) Name() string    { return "dns" }
-func (b *ServerBackend) SelfID() string  { return b.cfg.Domain }
-func (b *ServerBackend) Close() error    { return nil }
+func (b *ServerBackend) Name() string   { return "dns" }
+func (b *ServerBackend) SelfID() string { return b.cfg.Domain }
+func (b *ServerBackend) Close() error   { return nil }
 
 func (b *ServerBackend) Link(_ string, _ func(string)) error {
 	return nil // no linking needed for DNS
@@ -100,12 +107,12 @@ func (b *ServerBackend) Subscribe(ctx context.Context, handler func(messaging.Me
 	})
 
 	// Start UDP and TCP servers
-	udpServer := &mdns.Server{Addr: listen, Net: "udp", Handler: mux}
-	tcpServer := &mdns.Server{Addr: listen, Net: "tcp", Handler: mux}
+	udpServer := &mdns.Server{Addr: listen, Net: "udp", Handler: mux, PacketConn: b.udpConn}
+	tcpServer := &mdns.Server{Addr: listen, Net: "tcp", Handler: mux, Listener: b.tcpListener}
 
 	errCh := make(chan error, 2)
-	go func() { errCh <- udpServer.ListenAndServe() }()
-	go func() { errCh <- tcpServer.ListenAndServe() }()
+	go func() { errCh <- startServer(udpServer) }()
+	go func() { errCh <- startServer(tcpServer) }()
 
 	fmt.Printf("[dns] DNS channel server listening on %s (domain: %s)\n", listen, b.cfg.Domain)
 
@@ -115,14 +122,23 @@ func (b *ServerBackend) Subscribe(ctx context.Context, handler func(messaging.Me
 	// Wait for context cancellation or server error
 	select {
 	case <-ctx.Done():
-		udpServer.Shutdown()  //nolint:errcheck
-		tcpServer.Shutdown()  //nolint:errcheck
+		udpServer.Shutdown() //nolint:errcheck
+		tcpServer.Shutdown() //nolint:errcheck
 		return ctx.Err()
 	case err := <-errCh:
-		udpServer.Shutdown()  //nolint:errcheck
-		tcpServer.Shutdown()  //nolint:errcheck
+		udpServer.Shutdown() //nolint:errcheck
+		tcpServer.Shutdown() //nolint:errcheck
 		return fmt.Errorf("dns server: %w", err)
 	}
+}
+
+// startServer serves on the socket injected into srv if there is one,
+// otherwise binds srv.Addr itself.
+func startServer(srv *mdns.Server) error {
+	if srv.PacketConn != nil || srv.Listener != nil {
+		return srv.ActivateAndServe()
+	}
+	return srv.ListenAndServe()
 }
 
 func (b *ServerBackend) handleQuery(w mdns.ResponseWriter, r *mdns.Msg, domain string, handler func(messaging.Message)) {
