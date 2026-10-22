@@ -417,6 +417,29 @@ A named key-value store for passing structured results between agents.
 
 Entries with a TTL are automatically expired. Data survives daemon restarts.
 
+> Note: this is a generic named key-value store. The **scheduled-job result
+> panel** (below) is a different thing — structured per-session run results
+> with per-schedule history.
+
+---
+
+### Scheduled job result panel
+
+The structured result a session posts when its work finishes, plus the
+retained per-schedule history that powers the result panel.
+
+- **MCP:** `post_result(session_id="host-a1b2", title="Build succeeded", status="ok", metrics='{"score": 92.5}')`
+- **MCP:** `schedule_results_list()` — latest result per schedule, retained count, recent status sequence
+- **MCP:** `schedule_results_list(schedule_name="nightly-build")` — full retained history for one schedule
+- **REST:** `POST /api/sessions/{id}/result`, `GET /api/schedule-results`, `GET /api/schedule-results/{schedule_name}`
+- **Web:** the session status page renders each session's latest posted result in its result panel
+
+Shared payload contract: `title` (required), `status` (`ok` / `warn` /
+`error`), and optional `summary`, `metrics`, `tables`, `markdown`. A session
+that belongs to a named schedule keeps its last N results (default 20,
+config `results.schedule_history_limit`); every posted result is also
+reflected in the session's status-board result slot, scheduled or not.
+
 ---
 
 ### Structured session filters

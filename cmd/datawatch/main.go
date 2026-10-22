@@ -7213,17 +7213,19 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 
 	// Create MCP server (always — for tool docs; SSE transport only if configured)
 	mcpSrv := mcp.New(cfg.Hostname, mgr, &cfg.MCP, cfg.DataDir, mcp.Options{
-		AlertStore:    alertStore,
-		SchedStore:    schedStore,
-		ExitHookStore: exitHookStore,
-		QueueStore:    queueStore,         // BL357
-		SubStore:      discussionSubStore, // BL358
-		ResultStore:   resultStore,        // BL360
-		CmdLib:        cmdLib,
-		AcmeManager:   acmeMgr, // BL397
-		Version:       Version,
-		LatestVersion: fetchLatestVersion,
-		FallbackToken: cfg.Server.Token, // SEC-002
+		AlertStore:          alertStore,
+		SchedStore:          schedStore,
+		ExitHookStore:       exitHookStore,
+		QueueStore:          queueStore,          // BL357
+		SubStore:            discussionSubStore,  // BL358
+		ResultStore:         resultStore,         // BL360
+		ScheduleResultStore: scheduleResultStore, // result panel (GH#204)
+		ResultHistoryLimit:  cfg.Results.EffectiveScheduleHistoryLimit(),
+		CmdLib:              cmdLib,
+		AcmeManager:         acmeMgr, // BL397
+		Version:             Version,
+		LatestVersion:       fetchLatestVersion,
+		FallbackToken:       cfg.Server.Token, // SEC-002
 		RestartFn: func() {
 			selfPath, err2 := os.Executable()
 			if err2 == nil {
@@ -12572,20 +12574,23 @@ func runMCP(cmd *cobra.Command, _ []string) error {
 	mcpSchedStore, _ := session.NewScheduleStore(schedStorePath(cfg))
 	mcpCmdLib, _ := session.NewCmdLibrary(cmdLibPath(cfg))
 	mcpAlertStore, _ := alertspkg.NewStore(filepath.Join(expandHome(cfg.DataDir), "alerts.json"))
-	mcpQueueStore, _ := session.NewQueueStore(queueStorePath(cfg))               // BL357
-	mcpSubStore, _ := session.NewDiscussionSubStore(discussionSubStorePath(cfg)) // BL358
-	mcpResultStore, _ := session.NewResultStore(resultStorePath(cfg))            // BL360
+	mcpQueueStore, _ := session.NewQueueStore(queueStorePath(cfg))                            // BL357
+	mcpSubStore, _ := session.NewDiscussionSubStore(discussionSubStorePath(cfg))              // BL358
+	mcpResultStore, _ := session.NewResultStore(resultStorePath(cfg))                         // BL360
+	mcpScheduleResultStore, _ := session.NewScheduleResultStore(scheduleResultStorePath(cfg)) // result panel (GH#204)
 
 	mcpSrv := mcp.New(cfg.Hostname, mgr, &cfg.MCP, cfg.DataDir, mcp.Options{
-		AlertStore:    mcpAlertStore,
-		SchedStore:    mcpSchedStore,
-		QueueStore:    mcpQueueStore,  // BL357
-		SubStore:      mcpSubStore,    // BL358
-		ResultStore:   mcpResultStore, // BL360
-		CmdLib:        mcpCmdLib,
-		Version:       Version,
-		LatestVersion: fetchLatestVersion,
-		FallbackToken: cfg.Server.Token, // SEC-002
+		AlertStore:          mcpAlertStore,
+		SchedStore:          mcpSchedStore,
+		QueueStore:          mcpQueueStore,  // BL357
+		SubStore:            mcpSubStore,    // BL358
+		ResultStore:         mcpResultStore, // BL360
+		ScheduleResultStore: mcpScheduleResultStore,
+		ResultHistoryLimit:  cfg.Results.EffectiveScheduleHistoryLimit(),
+		CmdLib:              mcpCmdLib,
+		Version:             Version,
+		LatestVersion:       fetchLatestVersion,
+		FallbackToken:       cfg.Server.Token, // SEC-002
 	})
 
 	// BL363 T3 — Goose channel: make the calling session ID available to the MCP

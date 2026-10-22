@@ -66,19 +66,24 @@ type Server struct {
 	manager  *session.Manager
 	cfg      *config.MCPConfig
 	// fallbackToken is cfg.Server.Token (SEC-002) — see Options.FallbackToken.
-	fallbackToken string
-	dataDir       string
-	srv           *server.MCPServer
-	alertStore    *alerts.Store
-	schedStore    *session.ScheduleStore
-	exitHookStore *session.ExitHookStore      // BL356
-	queueStore    *session.QueueStore         // BL357
-	subStore      *session.DiscussionSubStore // BL358
-	resultStore   *session.ResultStore        // BL360
-	cmdLib        *session.CmdLibrary
-	restartFn     func()
-	acmeManager   *acme.Manager // BL397, nil when ACME is disabled
-	version       string
+	fallbackToken       string
+	dataDir             string
+	srv                 *server.MCPServer
+	alertStore          *alerts.Store
+	schedStore          *session.ScheduleStore
+	exitHookStore       *session.ExitHookStore       // BL356
+	queueStore          *session.QueueStore          // BL357
+	subStore            *session.DiscussionSubStore  // BL358
+	resultStore         *session.ResultStore         // BL360
+	scheduleResultStore *session.ScheduleResultStore // scheduled-job result panel (GH#204)
+	resultHistoryLimit  int                          // results.schedule_history_limit
+	// resultSessionLookup is an injectable session resolver used by
+	// post_result (defaults to the session manager; overridable in tests).
+	resultSessionLookup func(string) (*session.Session, bool)
+	cmdLib              *session.CmdLibrary
+	restartFn           func()
+	acmeManager         *acme.Manager // BL397, nil when ACME is disabled
+	version             string
 	// latestVersion returns the latest release tag (no "v" prefix). May be nil.
 	latestVersion func() (string, error)
 	// chanStats tracks MCP request/response counts
@@ -133,6 +138,16 @@ func (s *Server) SetVisioner(v VisionerMCP) { s.visioner = v }
 
 // SetResultStore wires a result store into the MCP server (BL360).
 func (s *Server) SetResultStore(store *session.ResultStore) { s.resultStore = store }
+
+// SetScheduleResultStore wires the scheduled-job result history store into
+// the MCP server (result-panel parity with the REST result endpoints).
+func (s *Server) SetScheduleResultStore(store *session.ScheduleResultStore) {
+	s.scheduleResultStore = store
+}
+
+// SetResultHistoryLimit sets the per-schedule retained-entry count used by
+// post_result (normally from results.schedule_history_limit).
+func (s *Server) SetResultHistoryLimit(n int) { s.resultHistoryLimit = n }
 
 // SetCallerSessionID stores the FullID of the session that launched this MCP
 // server (BL363 T3 — Goose channel). Tools can use it for session-aware routing
@@ -257,17 +272,19 @@ type KGMCP interface {
 
 // Options holds optional dependencies for the MCP server.
 type Options struct {
-	AlertStore    *alerts.Store
-	SchedStore    *session.ScheduleStore
-	ExitHookStore *session.ExitHookStore      // BL356
-	QueueStore    *session.QueueStore         // BL357
-	SubStore      *session.DiscussionSubStore // BL358
-	ResultStore   *session.ResultStore        // BL360
-	CmdLib        *session.CmdLibrary
-	RestartFn     func()
-	AcmeManager   *acme.Manager // BL397, nil when ACME is disabled
-	Version       string
-	LatestVersion func() (string, error)
+	AlertStore          *alerts.Store
+	SchedStore          *session.ScheduleStore
+	ExitHookStore       *session.ExitHookStore       // BL356
+	QueueStore          *session.QueueStore          // BL357
+	SubStore            *session.DiscussionSubStore  // BL358
+	ResultStore         *session.ResultStore         // BL360
+	ScheduleResultStore *session.ScheduleResultStore // scheduled-job result panel
+	ResultHistoryLimit  int                          // results.schedule_history_limit
+	CmdLib              *session.CmdLibrary
+	RestartFn           func()
+	AcmeManager         *acme.Manager // BL397, nil when ACME is disabled
+	Version             string
+	LatestVersion       func() (string, error)
 	// FallbackToken is cfg.Server.Token (SEC-002) — when mcp.token is
 	// empty, MCP SSE auth falls back to the admin server.token instead of
 	// opening unconditionally, so a daemon that protects REST doesn't
@@ -278,22 +295,24 @@ type Options struct {
 // New creates a new MCP server backed by the given session manager.
 func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataDir string, opts Options) *Server {
 	s := &Server{
-		hostname:      hostname,
-		manager:       manager,
-		cfg:           cfg,
-		dataDir:       dataDir,
-		alertStore:    opts.AlertStore,
-		schedStore:    opts.SchedStore,
-		exitHookStore: opts.ExitHookStore,
-		queueStore:    opts.QueueStore,
-		subStore:      opts.SubStore,    // BL358
-		resultStore:   opts.ResultStore, // BL360
-		cmdLib:        opts.CmdLib,
-		restartFn:     opts.RestartFn,
-		acmeManager:   opts.AcmeManager,
-		version:       opts.Version,
-		latestVersion: opts.LatestVersion,
-		fallbackToken: opts.FallbackToken,
+		hostname:            hostname,
+		manager:             manager,
+		cfg:                 cfg,
+		dataDir:             dataDir,
+		alertStore:          opts.AlertStore,
+		schedStore:          opts.SchedStore,
+		exitHookStore:       opts.ExitHookStore,
+		queueStore:          opts.QueueStore,
+		subStore:            opts.SubStore,    // BL358
+		resultStore:         opts.ResultStore, // BL360
+		scheduleResultStore: opts.ScheduleResultStore,
+		resultHistoryLimit:  opts.ResultHistoryLimit,
+		cmdLib:              opts.CmdLib,
+		restartFn:           opts.RestartFn,
+		acmeManager:         opts.AcmeManager,
+		version:             opts.Version,
+		latestVersion:       opts.LatestVersion,
+		fallbackToken:       opts.FallbackToken,
 	}
 	// SEC-002 — warn plainly about the resulting auth posture at startup,
 	// since which token (if any) actually gates MCP SSE is easy to get
@@ -414,6 +433,8 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolResultGet(), tracked(s.handleResultGet))
 	mcpSrv.AddTool(s.toolResultList(), tracked(s.handleResultList))
 	mcpSrv.AddTool(s.toolResultDelete(), tracked(s.handleResultDelete))
+	mcpSrv.AddTool(s.toolPostResult(), tracked(s.handlePostResult))
+	mcpSrv.AddTool(s.toolScheduleResultsList(), tracked(s.handleScheduleResultsList))
 
 	// Memory import, learnings, config set
 	mcpSrv.AddTool(s.toolMemoryImport(), tracked(s.handleMemoryImport))

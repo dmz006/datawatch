@@ -247,6 +247,7 @@ must stay strict JSON-RPC (release-smoke §7r asserts all of this).
 | Work Queue | `queue_push`, `queue_claim`, `queue_complete`, `queue_fail`, `queue_list` |
 | Discussion Subscribe | `discussion_subscribe`, `discussion_unsubscribe`, `discussion_subscriptions` |
 | Result Store | `result_put`, `result_get`, `result_list`, `result_delete` |
+| Scheduled Job Results | `post_result`, `schedule_results_list` |
 | Autonomous PRDs | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_list/create/get/decompose/approve/reject/request_revision/edit_task/instantiate/run/cancel/rejudge/set_llm/set_task_llm/set_task_verification_llm/set_story_verification_llm/set_verification_llm/children`, `autonomous_learnings`, `capacity_status` |
 | Orchestrator | `orchestrator_graph_create/plan/run/get/list/cancel`, `orchestrator_verdicts`, `orchestrator_config_get/set` |
 | Pipelines | `pipeline_start/list/status/cancel` |
@@ -329,6 +330,7 @@ Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
 - **`queue_push/claim/complete/fail/list`** (BL357) — durable role-based work queue for multi-agent coordination.
 - **`discussion_subscribe/unsubscribe/subscriptions`** (BL358) — subscribe sessions to discussions so new entries are forwarded via `send_input`.
 - **`result_put/get/list/delete`** (BL360) — structured named-result store for agents to share outputs without out-of-band coordination.
+- **`post_result` / `schedule_results_list`` (GH#204) — scheduled-job result panel: post the calling session's structured result (required `title`, `ok`/`warn`/`error` `status`, optional `summary`, `metrics`, `tables`, `markdown`) under the exact same payload contract and validation as `POST /api/sessions/{id}/result`, then read back per-schedule histories. A session belonging to a named schedule has its result appended to that schedule's retained history (`stored: true`); the session's status-board result slot is always updated either way. `schedule_results_list()` returns one summary per schedule (latest result, retained count, recent status sequence for a sparkline); `schedule_results_list(schedule_name=...)` returns the full retained history for one schedule — the same data as `GET /api/schedule-results` and `GET /api/schedule-results/{schedule_name}`.
 - **`channel_info`** (BL216) — daemon's resolved MCP bridge kind (go|js), path, ready state, stale .mcp.json detection. Read-only.
 - **`channel_diagnostics`** (BL362) — per-session bridge ports, live `/health` probe results, and actionable remediation hints. Use when sessions fail to connect or MCP errors appear with no clear cause.
 - **`get_my_scope`** (BL463) — self-scope confirmation for the session calling over its MCP bridge. Read-only (`health:read`), no session argument required — resolution order is `hint` (optional session ID or name) → the in-band caller scope carried by the session's MCP bridge token (HLLM-004) → the first channel-ready session (flagged as such in `resolved_via`). Returns the session's identity and mode ("host" vs "container(agent=<id>)" — F10 sessions), its per-session MCP server name (`datawatch-<FullID>`; the exact `<mcpServers>` key it was registered under in `~/.claude.json` / `.mcp.json`), `shared_entry_name` (the common `datawatch` entry in the per-project `.mcp.json` every host-mode session shares), its project dir + tmux identity, channel readiness, and `peers[]` — every other session's name, state, and MCP server name, so the caller can confirm its own name is distinct from each peer's. Use it to answer "which MCP server is actually mine, and which of these are peers I must not be using?" (the BL467 first-come bridge race, see [plans/2026-10-16-mcp-bridge-registration-race.md](plans/2026-10-16-mcp-bridge-registration-race.md); audit in [plans/2026-10-20-bl463-mcp-drop-findings.md](plans/2026-10-20-bl463-mcp-drop-findings.md)). Same data over REST: `GET /api/sessions/self/scope` (optional `?hint=<id>`).
@@ -1104,6 +1106,58 @@ Delete a named result from the agent result store.
 ```
 Deleted: build-result
 ```
+
+---
+
+## Scheduled Job Results (result panel)
+
+Parity tools for the scheduled-job result panel REST endpoints — same payload
+contract, same validation, and same store as
+`POST /api/sessions/{id}/result` and
+`GET /api/schedule-results[/{schedule_name}]`.
+
+### `post_result`
+
+Post the structured result for a session (normally the calling session itself).
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `session_id` | string | Yes | Session posting the result (its short ID or hostname-full-ID) |
+| `title` | string | Yes | One-line headline |
+| `status` | string | No | `ok`, `warn`, or `error` (default `ok`) |
+| `summary` | string | No | Short human-readable summary |
+| `metrics` | string | No | JSON object of free-form metrics, e.g. `{"score": 92.5}` |
+| `tables` | string | No | JSON array of `{columns, rows}` tables (max 20) |
+| `markdown` | string | No | Full markdown report |
+
+Returns the same JSON shape as the REST endpoint:
+`{ok, session_id, full_id, schedule_name, stored, count}`. When the session
+belongs to a named schedule the entry is appended to that schedule's retained
+history (`stored: true`); otherwise only the session's status-board result
+slot is updated (`stored: false`).
+
+**Example:**
+```json
+{
+  "session_id": "host-a1b2",
+  "title": "Build succeeded — 847 tests passed",
+  "status": "ok",
+  "metrics": "{\"score\": 92.5, \"builds\": 12}",
+  "markdown": "## Overview\n..."
+}
+```
+
+### `schedule_results_list`
+
+List the results posted by scheduled jobs.
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|---|---|---|---|
+| `schedule_name` | string | No | When set: the full retained history for just that schedule (oldest → newest). When omitted: one summary per schedule — latest result, retained entry count, and the recent status sequence that powers the sparkline. |
 
 ---
 

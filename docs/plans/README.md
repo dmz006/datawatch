@@ -167,7 +167,7 @@ advances it without hand sequencing.
 
 | # | Item | Status | Depends on |
 |---|---|---|---|
-| 24 | [BL402](2026-10-09-gh204-result-panel.md) Result panel for scheduled jobs and integrations | not started | - |
+| 24 | [BL402](2026-10-09-gh204-result-panel.md) Result panel for scheduled jobs and integrations | Phase 2 (config + REST) shipped as unreleased (`results.schedule_history_limit`, `POST /api/sessions/{id}/result`, `GET /api/schedule-results[/{name}]`); MCP parity (`post_result`, `schedule_results_list`) completed this session, 2026-10-22; Phase 5 howto + Phases 3–4 (PWA, with their own `datawatch-app` filings) remain | - |
 | 25 | BL459 datawatch-community skills catalog — research complete, build the catalog's proposed skills | research complete (`docs/catalog/skills-catalog.md`, `skill-specs.md`); easy, high-benefit — pulled forward from v11.0.0 (PRD `275ae17c`, draft) | - |
 | 26 | BL434 Splash animation on every full-screen refresh | completed (PRD `97fc0001`, finished 12:18; not yet trial-merged; expect the same version and changelog conflicts as BL497) | - |
 | 27 | BL435 Retry with already-correct output must not fail on empty diff | blocked (PRD `191d0c95`); likely fixed by the v9.5.2 retry gate: verify and close | - |

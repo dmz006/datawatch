@@ -132,6 +132,13 @@ func (s *hookEventStore) setResult(sessionID string, p *session.ResultPayload) {
 	b.UpdatedAt = time.Now().UTC()
 }
 
+// SetSessionResult records the agent's latest structured result payload on
+// the session's status board. Shared by the REST result endpoint and the
+// MCP post_result tool so both surfaces write the exact same board slot.
+func SetSessionResult(sessionID string, p *session.ResultPayload) {
+	globalHookStore.setResult(sessionID, p)
+}
+
 var globalHookStore = &hookEventStore{
 	state:     map[string]*SessionStatusBoard{},
 	history:   map[string][]*SessionHookEvent{},
