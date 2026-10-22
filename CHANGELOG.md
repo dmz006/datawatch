@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.77 — Boot-resume age gate counts live workers on verifying tasks
+
+### Fixed
+
+- **A daemon restart no longer parks an Automaton whose worker is still running on a task labelled verifying.** The boot-resume age gate counted a live worker session only on `in_progress` tasks, but a task labelled `verifying` while its worker still runs is the same situation. The live-session check, the last-output activity check and the never-park rule now treat `verifying` tasks with a live session exactly like `in_progress` ones; dead sessions and old activity are still parked. New tests cover a verifying task with a live and with a dead worker.
+
 ## v9.5.76 — BL398 phase 2 first tranche: reachability traces for 12 container CVE suppressions
 
 ### Security
