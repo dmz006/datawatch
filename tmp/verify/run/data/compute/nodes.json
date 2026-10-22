@@ -1,0 +1,14 @@
+[
+  {
+    "name": "datawatch-ollama",
+    "kind": "ollama",
+    "address": "http://127.0.0.1:18434",
+    "declared_capacity": {},
+    "permissions": {},
+    "node_pinned_model": "pinned-27b",
+    "scheduling_priority": 50,
+    "hardware": {},
+    "created_at": "2026-10-22T10:42:10.42610273Z",
+    "updated_at": "2026-10-22T10:42:20.816026346Z"
+  }
+]

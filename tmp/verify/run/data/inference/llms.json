@@ -1,0 +1,35 @@
+[
+  {
+    "name": "claude-code",
+    "kind": "claude-code",
+    "created_at": "2026-10-22T10:42:10.453635459Z",
+    "updated_at": "2026-10-22T10:42:32.845334372Z",
+    "auto_created": true,
+    "binary": "claude",
+    "output_mode": "terminal",
+    "input_mode": "tmux",
+    "skip_permissions": true,
+    "channel_enabled": true,
+    "auto_accept_disclaimer": true,
+    "default_effort": "normal"
+  },
+  {
+    "name": "ollama",
+    "kind": "ollama",
+    "model": "base-27b",
+    "compute_nodes": [
+      "datawatch-ollama"
+    ],
+    "models": [
+      {
+        "node": "datawatch-ollama",
+        "model": "base-27b"
+      }
+    ],
+    "created_at": "2026-10-22T10:42:10.44861635Z",
+    "updated_at": "2026-10-22T10:42:32.845334532Z",
+    "auto_created": true,
+    "output_mode": "chat",
+    "input_mode": "tmux"
+  }
+]

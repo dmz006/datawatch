@@ -1,35 +1,35 @@
 # model-pin smoke evidence (tmp/verify/model-pin-smoke.mjs)
 # fake ollama http://127.0.0.1:18434, daemon http://127.0.0.1:18733, node datawatch-ollama, pinned pinned-27b, config default base-27b, pin_check_seconds 5
-[10:33:18] fake ollama on http://127.0.0.1:18434 (pid 660274); daemon data_dir /home/dmz/.datawatch/prd-worktrees/de774e82/tmp/verify/run/data
-[10:33:18] daemon started on http://127.0.0.1:18733 (pid 660339), config /home/dmz/.datawatch/prd-worktrees/de774e82/tmp/verify/run/config.yaml
-[10:33:29] GET /api/config model_node_warnings: [{"node":"datawatch-ollama","models":["base-27b","pinned-27b"],"message":"models base-27b and pinned-27b target node datawatch-ollama — the node may not hold them all at once, so a call to one can evict the others"}]
-[10:33:29] GET /api/capacity warnings: [{"node":"datawatch-ollama","models":["base-27b","pinned-27b"],"message":"models base-27b and pinned-27b target node datawatch-ollama — the node may not hold them all at once, so a call to one can evict the others"}]
-[10:33:29] PASS collision-warning: both /api/config and /api/capacity name base-27b, pinned-27b and node datawatch-ollama
-[10:33:29] POST /api/ask (no model) -> HTTP 200: {"backend":"ollama","model":"pinned-27b","answer":"fake answer","duration_ms":0}
+[10:42:09] fake ollama on http://127.0.0.1:18434 (pid 768589); daemon data_dir /home/dmz/.datawatch/prd-worktrees/de774e82/tmp/verify/run/data
+[10:42:09] daemon started on http://127.0.0.1:18733 (pid 768632), config /home/dmz/.datawatch/prd-worktrees/de774e82/tmp/verify/run/config.yaml
+[10:42:20] GET /api/config model_node_warnings: [{"node":"datawatch-ollama","models":["base-27b","pinned-27b"],"message":"models base-27b and pinned-27b target node datawatch-ollama — the node may not hold them all at once, so a call to one can evict the others"}]
+[10:42:20] GET /api/capacity warnings: [{"node":"datawatch-ollama","models":["base-27b","pinned-27b"],"message":"models base-27b and pinned-27b target node datawatch-ollama — the node may not hold them all at once, so a call to one can evict the others"}]
+[10:42:20] PASS collision-warning: both /api/config and /api/capacity name base-27b, pinned-27b and node datawatch-ollama
+[10:42:20] POST /api/ask (no model) -> HTTP 200: {"backend":"ollama","model":"pinned-27b","answer":"fake answer","duration_ms":0}
 
-[10:33:29] fake /api/generate received: [{"model":"pinned-27b","keep_alive":null,"prompt":"ping-b"}]
-[10:33:29] PASS pin-substitution: implicit ask ran pinned-27b (config default base-27b never reached fake)
-[10:33:29] POST /api/ask model=other-70b (swap off) -> HTTP 409: {"error":"refused: node datawatch-ollama is pinned to pinned-27b; request for other-70b would evict it (set compute allow_model_swap for this node to allow)"}
-[10:33:29] fake received after refused request: []
-[10:33:29] refusal honored (409 + clear message + no other-70b request): true
-[10:33:29] PUT /api/compute/nodes/datawatch-ollama?probe=skip allow_model_swap=true -> HTTP 200
-[10:33:29] POST /api/ask model=other-70b (swap on) -> HTTP 200; fake received: [{"model":"other-70b","prompt":"ping-c2"}]
-[10:33:29] PUT /api/compute/nodes/datawatch-ollama?probe=skip allow_model_swap=false -> HTTP 200
-[10:33:29] PASS swap-refused: other-70b refused while swap off, honored once allow_model_swap=true; allow_model_swap restored to false
-[10:33:29] fake loaded list set to other-70b only (pinned pinned-27b unloaded); waiting 12s for one keeper interval (pin_check_seconds 5)
-[10:33:41] fake received 1 re-pin(s) in the window: [{"at":"2026-10-22T10:33:34.716Z","model":"pinned-27b","keep_alive":-1,"prompt":"","stream":false}]
-[10:33:42] GET /api/alerts contains "Repinned pinned-27b on datawatch-ollama": true
-[10:33:42] daemon [pin] log lines so far (log is append-only; includes a boot-time pin of the empty fake): ["[pin] node datawatch-ollama: re-pinned pinned-27b (it had been evicted)","[pin] node datawatch-ollama: re-pinned pinned-27b (it had been evicted)"]
-[10:33:42] PASS repin-alert: keep_alive -1 re-pin of pinned-27b arrived and eviction alert was raised
-[10:33:42] PUT /api/config pin_check_seconds=0 -> HTTP 200
-[10:33:42] saved config has pin_check_seconds: 0 -> true
-[10:33:42] daemon (restart to apply pin_check_seconds=0) stopped (pid 660339)
-[10:33:54] after restart GET /api/config pin_check_seconds: 0
-[10:34:06] fake requests after 12s with keeper off: []
-[10:34:06] daemon [pin] log lines: 2 before the restart, 2 after the keeper-off window
-[10:34:06] PASS keeper-off: pin_check_seconds=0, no keep_alive -1 request arrived
-[10:34:06] daemon stopped (pid 662700)
-[10:34:06] fake ollama stopped (pid 660274)
+[10:42:20] fake /api/generate received: [{"model":"pinned-27b","keep_alive":null,"prompt":"ping-b"}]
+[10:42:20] PASS pin-substitution: implicit ask ran pinned-27b (config default base-27b never reached fake)
+[10:42:20] POST /api/ask model=other-70b (swap off) -> HTTP 409: {"error":"refused: node datawatch-ollama is pinned to pinned-27b; request for other-70b would evict it (set compute allow_model_swap for this node to allow)"}
+[10:42:20] fake received after refused request: []
+[10:42:20] refusal honored (409 + clear message + no other-70b request): true
+[10:42:20] PUT /api/compute/nodes/datawatch-ollama?probe=skip allow_model_swap=true -> HTTP 200
+[10:42:20] POST /api/ask model=other-70b (swap on) -> HTTP 200; fake received: [{"model":"other-70b","prompt":"ping-c2"}]
+[10:42:20] PUT /api/compute/nodes/datawatch-ollama?probe=skip allow_model_swap=false -> HTTP 200
+[10:42:20] PASS swap-refused: other-70b refused while swap off, honored once allow_model_swap=true; allow_model_swap restored to false
+[10:42:20] fake loaded list set to other-70b only (pinned pinned-27b unloaded); waiting 12s for one keeper interval (pin_check_seconds 5)
+[10:42:32] fake received 1 re-pin(s) in the window: [{"at":"2026-10-22T10:42:25.464Z","model":"pinned-27b","keep_alive":-1,"prompt":"","stream":false}]
+[10:42:32] GET /api/alerts contains "Repinned pinned-27b on datawatch-ollama": true
+[10:42:32] daemon [pin] log lines so far (log is append-only; includes a boot-time pin of the empty fake): ["[pin] node datawatch-ollama: re-pinned pinned-27b (it had been evicted)","[pin] node datawatch-ollama: re-pinned pinned-27b (it had been evicted)"]
+[10:42:32] PASS repin-alert: keep_alive -1 re-pin of pinned-27b arrived and eviction alert was raised
+[10:42:32] PUT /api/config pin_check_seconds=0 -> HTTP 200
+[10:42:32] saved config has pin_check_seconds: 0 -> true
+[10:42:32] daemon (restart to apply pin_check_seconds=0) stopped (pid 768632)
+[10:42:44] after restart GET /api/config pin_check_seconds: 0
+[10:42:56] fake requests after 12s with keeper off: []
+[10:42:56] daemon [pin] log lines: 2 before the restart, 2 after the keeper-off window
+[10:42:56] PASS keeper-off: pin_check_seconds=0, no keep_alive -1 request arrived
+[10:42:56] daemon stopped (pid 770725)
+[10:42:56] fake ollama stopped (pid 768589)
 collision-warning: ok
 pin-substitution: ok
 swap-refused: ok
