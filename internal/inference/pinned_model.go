@@ -150,5 +150,76 @@ func pinnedModel(node *compute.Node, nodeName, requestedModel, explicitOverride 
 	if node.AllowModelSwap {
 		return target, nil
 	}
-	return "", fmt.Errorf("refused: node %s is pinned to %s; request for %s would evict it (set compute allow_model_swap for this node to allow)", nodeName, pinned, target)
+	return "", &PinRefusedError{Node: nodeName, Pinned: pinned, Requested: target}
+}
+
+// PinRefusedError reports a request refused because it would replace the
+// pinned model of a node that does not allow swapping.
+type PinRefusedError struct {
+	Node      string
+	Pinned    string
+	Requested string
+}
+
+func (e *PinRefusedError) Error() string {
+	return fmt.Sprintf("refused: node %s is pinned to %s; request for %s would evict it (set compute allow_model_swap for this node to allow)", e.Node, e.Pinned, e.Requested)
+}
+
+// PinRefusalMessage returns the plain-language refusal text when err is, or
+// wraps, a PinRefusedError. ok is false for any other error.
+func PinRefusalMessage(err error) (msg string, ok bool) {
+	var refusal *PinRefusedError
+	if errors.As(err, &refusal) {
+		return refusal.Error(), true
+	}
+	return "", false
+}
+
+// HostPins applies node pins to ollama requests by the address they are sent
+// to. The compute node whose address matches the host supplies the pin. A host
+// that no node has as its address passes through unpinned, because no node
+// carries a pin for it.
+type HostPins struct {
+	reg *compute.Registry
+}
+
+// NewHostPins builds a HostPins over the runtime compute registry. A nil
+// registry passes every request through unchanged.
+func NewHostPins(reg *compute.Registry) *HostPins {
+	return &HostPins{reg: reg}
+}
+
+// ResolveModel returns the model an ollama request sent to host should run.
+// requestedModel is the default for the caller and explicitOverride is a
+// model the caller asked for by name; both may be empty. An empty host means
+// the local ollama default. The error is a *PinRefusedError when the request
+// would evict a pinned model.
+func (p *HostPins) ResolveModel(host, requestedModel, explicitOverride string) (string, error) {
+	if strings.TrimSpace(host) == "" {
+		host = defaultOllamaHost
+	}
+	var node *compute.Node
+	if p != nil && p.reg != nil {
+		node = nodeForHost(p.reg.List(), host)
+	}
+	name := ""
+	if node != nil {
+		name = node.Name
+	}
+	return pinnedModel(node, name, requestedModel, explicitOverride)
+}
+
+// nodeForHost returns the node whose address equals host, or nil when none
+// does. Addresses compare the way the model-conflict check compares them.
+func nodeForHost(nodes []*compute.Node, host string) *compute.Node {
+	want := normalizeNodeAddress(host)
+	if want == "" {
+		return nil
+	}
+	for _, n := range nodes {
+		if normalizeNodeAddress(n.Address) == want {
+			return n
+		}
+	}
+	return nil
 }

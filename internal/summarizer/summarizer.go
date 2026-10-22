@@ -19,6 +19,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/dmz006/datawatch/internal/compute"
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/inference"
 )
@@ -54,6 +55,7 @@ Terminal output:
 type Service struct {
 	cfg               *config.Config
 	reg               *inference.Registry
+	pins              *inference.HostPins
 	contextLinesCache int
 }
 
@@ -61,6 +63,12 @@ type Service struct {
 // the service will fall back to direct Ollama calls based on cfg.Ollama.Host.
 func New(cfg *config.Config, reg *inference.Registry) *Service {
 	return &Service{cfg: cfg, reg: reg, contextLinesCache: -1}
+}
+
+// SetComputeRegistry wires the compute-node registry so Ollama calls honour
+// each node's model pin. Without it every call passes through unpinned.
+func (s *Service) SetComputeRegistry(reg *compute.Registry) {
+	s.pins = inference.NewHostPins(reg)
 }
 
 // Summarize sends text to the configured LLM and returns a short summary.
@@ -107,7 +115,12 @@ func (s *Service) Summarize(ctx context.Context, text string) (string, error) {
 
 	// Fallback: use cfg.Ollama.Host if configured.
 	if s.cfg.Ollama.Enabled && s.cfg.Ollama.Host != "" {
-		result, err := s.callOllamaRaw(ctx, s.cfg.Ollama.Host, s.cfg.Ollama.Model, fullPrompt)
+		model, pinErr := s.pins.ResolveModel(s.cfg.Ollama.Host, s.cfg.Ollama.Model, sc.Model)
+		if pinErr != nil {
+			log.Printf("[summarizer] Ollama fallback skipped: %v; returning stub", pinErr)
+			return "Summary unavailable — LLM offline.", nil
+		}
+		result, err := s.callOllamaRaw(ctx, s.cfg.Ollama.Host, model, fullPrompt)
 		if err != nil {
 			log.Printf("[summarizer] Ollama fallback failed: %v; returning stub", err)
 			return "Summary unavailable — LLM offline.", nil
@@ -196,7 +209,12 @@ func (s *Service) SummarizeDual(ctx context.Context, text string, prevShort stri
 
 	// Fallback: use cfg.Ollama.Host if configured.
 	if s.cfg.Ollama.Enabled && s.cfg.Ollama.Host != "" {
-		raw, err = s.callOllamaRaw(ctx, s.cfg.Ollama.Host, s.cfg.Ollama.Model, fullPrompt)
+		model, pinErr := s.pins.ResolveModel(s.cfg.Ollama.Host, s.cfg.Ollama.Model, sc.Model)
+		if pinErr != nil {
+			log.Printf("[summarizer] dual Ollama fallback skipped: %v; returning stub", pinErr)
+			return "Summary unavailable — LLM offline.", "", nil
+		}
+		raw, err = s.callOllamaRaw(ctx, s.cfg.Ollama.Host, model, fullPrompt)
 		if err != nil {
 			log.Printf("[summarizer] dual Ollama fallback failed: %v; returning stub", err)
 			return "Summary unavailable — LLM offline.", "", nil
@@ -241,13 +259,15 @@ func (s *Service) ContextLines() int {
 			if host == "" {
 				host = "http://localhost:11434"
 			}
-			model := ""
-			if s.cfg.Session.Summarizer.Model != "" {
-				model = s.cfg.Session.Summarizer.Model
-			} else if llm.Model != "" {
-				model = llm.Model
-			} else {
-				model = s.cfg.Ollama.Model
+			requested := llm.Model
+			if requested == "" {
+				requested = s.cfg.Ollama.Model
+			}
+			model, pinErr := s.pins.ResolveModel(host, requested, s.cfg.Session.Summarizer.Model)
+			if pinErr != nil {
+				log.Printf("[summarizer] context probe skipped: %v", pinErr)
+				s.contextLinesCache = 200
+				return s.contextLinesCache
 			}
 			contextLen := s.queryOllamaContextLen(host, model)
 			s.contextLinesCache = contextLinesToHistoryLines(contextLen)
@@ -853,13 +873,13 @@ func (s *Service) callOllama(ctx context.Context, llm *inference.LLM, prompt str
 		host = "http://localhost:11434"
 	}
 	// Model priority: explicit summarizer override > LLM entry default > global Ollama default.
-	model := ""
-	if s.cfg.Session.Summarizer.Model != "" {
-		model = s.cfg.Session.Summarizer.Model
-	} else if llm.Model != "" {
-		model = llm.Model
-	} else {
-		model = s.cfg.Ollama.Model
+	requested := llm.Model
+	if requested == "" {
+		requested = s.cfg.Ollama.Model
+	}
+	model, err := s.pins.ResolveModel(host, requested, s.cfg.Session.Summarizer.Model)
+	if err != nil {
+		return "", err
 	}
 	return s.callOllamaRaw(ctx, host, model, prompt)
 }

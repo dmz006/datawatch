@@ -3256,6 +3256,12 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		} else {
 			computeReg, computeInitErr = compute.NewRegistry(computeNodesPath)
 		}
+		// Hand-started Ollama chat sessions resolve their model through the
+		// node pins. A nil registry passes every model through unchanged.
+		chatPins := inference.NewHostPins(computeReg)
+		ollama.SetModelResolver(func(host, model string) (string, error) {
+			return chatPins.ResolveModel(host, model, "")
+		})
 		if computeInitErr == nil {
 			seed := make([]compute.Node, 0, len(cfg.ComputeNodes))
 			for _, c := range cfg.ComputeNodes {
@@ -3479,6 +3485,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				// BL-summarizer — wire dual-summary pipeline when enabled.
 				if cfg.Session.Summarizer.Enabled {
 					sumSvc := summarizerPkg.New(cfg, llmReg)
+					sumSvc.SetComputeRegistry(computeReg)
 					mgr.SetDualSummarizer(sumSvc.SummarizeDual, sumSvc.ContextLines)
 					httpServer.SetSummarizerSvc(sumSvc)
 				}

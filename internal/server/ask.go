@@ -112,6 +112,10 @@ func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
 				Consumer:      "ask",
 			})
 			if err != nil {
+				if msg, refused := inference.PinRefusalMessage(err); refused {
+					jsonError(w, http.StatusConflict, msg)
+					return
+				}
 				// 503 — LLM backend is unreachable, not a server bug.
 				jsonError(w, http.StatusServiceUnavailable, "LLM unavailable: "+err.Error())
 				return
@@ -144,6 +148,10 @@ func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
+		if msg, refused := inference.PinRefusalMessage(err); refused {
+			jsonError(w, http.StatusConflict, msg)
+			return
+		}
 		// 503 — LLM backend is unreachable, not a server bug.
 		jsonError(w, http.StatusServiceUnavailable, "LLM unavailable: "+err.Error())
 		return
@@ -158,15 +166,22 @@ func (s *Server) handleAsk(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// ollamaPins applies compute-node model pins to ollama requests by host.
+func (s *Server) ollamaPins() *inference.HostPins {
+	return inference.NewHostPins(s.computeReg)
+}
+
 // askOllama posts to the configured Ollama /api/generate endpoint
-// with stream=false, returning the response field.
+// with stream=false, returning the response field. The operator's model
+// is an explicit override; the configured default is implicit, so a
+// pinned node runs its pinned model for it.
 func askOllama(s *Server, req AskRequest) (string, error) {
 	if s.cfg == nil || s.cfg.Ollama.Host == "" {
 		return "", fmt.Errorf("ollama not configured (set ollama.host)")
 	}
-	model := req.Model
-	if model == "" {
-		model = s.cfg.Ollama.Model
+	model, err := s.ollamaPins().ResolveModel(s.cfg.Ollama.Host, s.cfg.Ollama.Model, req.Model)
+	if err != nil {
+		return "", err
 	}
 	if model == "" {
 		return "", fmt.Errorf("no model: pass `model` or set ollama.model")
