@@ -22,7 +22,7 @@ import (
 
 func (s *Server) toolAutonomousStatus() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_status",
-		mcpsdk.WithDescription("BL24 — return autonomous loop status (running, active PRDs, queued/running tasks) plus an `automations` array with one row per non-terminal Automation (status, current member and Automaton, pending members, idle time, blocked reason)."),
+		mcpsdk.WithDescription("BL24 — return autonomous loop status (running, active PRDs, queued/running tasks) plus an `automations` array with one row per non-terminal Automation (status, current member and Automaton, pending members, idle time, blocked reason). Each row carries `active_cursors` (one entry per live member: member_id, prd_id or automation_id, status; always present, empty when idle) and `join_wait` while a join waits on its branches (join_member_id, rule, pending_branches, failed_branches)."),
 	)
 }
 func (s *Server) handleAutonomousStatus(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
