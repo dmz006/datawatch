@@ -22,10 +22,23 @@ import (
 // (bl89_fake_tmux_test.go) and gives the manager a zero-value config: the
 // goose-family launch path in Start reads m.cfg unguarded, and a real daemon
 // always has one. Without it the manager still works for other backends, but the goose launch path panics.
+//
+// The tests start sessions with a context that is never cancelled, so the
+// helper also ends every monitor goroutine the manager kept when the test
+// finishes. Otherwise the opencode usage tracker outlives the test and its
+// first tick runs the real opencode program during a later test.
 func newPromptFamilyTestManager(t *testing.T) (*Manager, *FakeTmux) {
 	t.Helper()
 	mgr, fake := newTestManagerWithFake(t)
 	mgr.cfg = &config.Config{}
+	t.Cleanup(func() {
+		mgr.mu.Lock()
+		defer mgr.mu.Unlock()
+		for id, cancel := range mgr.monitors {
+			cancel()
+			delete(mgr.monitors, id)
+		}
+	})
 	return mgr, fake
 }
 
