@@ -2959,7 +2959,7 @@ func automationErrStatus(err error) (int, string) {
 //	DELETE /api/automations/{id}   — delete
 //	POST   /api/automations/{id}/activate — start a draft Automation
 //	POST   /api/automations/{id}/{pause|resume|cancel|skip_member|insert_member|
-//	       remove_member|reorder_edges|approve_insert} — operator control
+//	       remove_member|reorder_edges|approve_insert|set_budget} — operator control
 func (s *Server) handleAutomations(w http.ResponseWriter, r *http.Request) {
 	rest := strings.TrimPrefix(r.URL.Path, "/api/automations")
 	rest = strings.Trim(rest, "/")
@@ -3103,7 +3103,7 @@ func (s *Server) handleAutomationActivate(w http.ResponseWriter, r *http.Request
 
 // automationControlOps lists the POST-only control sub-paths under
 // /api/automations/{id}/, one per operator action on a running Automation.
-var automationControlOps = []string{"pause", "resume", "cancel", "skip_member", "insert_member", "remove_member", "reorder_edges", "approve_insert"}
+var automationControlOps = []string{"pause", "resume", "cancel", "skip_member", "insert_member", "remove_member", "reorder_edges", "approve_insert", "set_budget"}
 
 // automationControlRoute splits rest ("{id}/{op}") into the Automation ID and
 // one of automationControlOps.
@@ -3135,6 +3135,33 @@ type automationControlReq struct {
 	} `json:"member"`
 	Urgent bool   `json:"urgent"`
 	After  string `json:"after"`
+
+	// set_budget: the budget policy fields (see autonomous.BudgetSetRequest).
+	CeilingType        string   `json:"ceiling_type"`
+	CeilingValue       float64  `json:"ceiling_value"`
+	Window             string   `json:"window"`
+	Pacing             string   `json:"pacing"`
+	OnBreach           string   `json:"on_breach"`
+	Backend            string   `json:"backend"`
+	AllocationEstimate bool     `json:"allocation_estimate"`
+	PeerWindow         []string `json:"peer_window"`
+	ResetTime          string   `json:"reset_time"`
+	ResetWeekday       string   `json:"reset_weekday"`
+	ResetDay           int      `json:"reset_day"`
+	ResetZone          string   `json:"reset_zone"`
+	EstimatedCostUSD   *float64 `json:"estimated_cost_usd"`
+	Clear              bool     `json:"clear"`
+}
+
+// budgetSetRequest is the set_budget request the body carries.
+func (r automationControlReq) budgetSetRequest() autonomous.BudgetSetRequest {
+	return autonomous.BudgetSetRequest{
+		MemberID: r.MemberID, CeilingType: r.CeilingType, CeilingValue: r.CeilingValue,
+		Window: r.Window, Pacing: r.Pacing, OnBreach: r.OnBreach, Backend: r.Backend,
+		AllocationEstimate: r.AllocationEstimate, PeerWindow: r.PeerWindow,
+		ResetTime: r.ResetTime, ResetWeekday: r.ResetWeekday, ResetDay: r.ResetDay, ResetZone: r.ResetZone,
+		EstimatedCostUSD: r.EstimatedCostUSD, Clear: r.Clear, Reason: r.Reason,
+	}
 }
 
 // automationController is the optional AutonomousAPI extension carrying the
@@ -3148,6 +3175,7 @@ type automationController interface {
 	ReorderEdges(id, memberID, onCompleted, onBlocked, onFailed, actor string, expectedVersion int64) (any, error)
 	InsertMember(id string, in autonomous.InsertMemberInput) (any, error)
 	ApproveInsertedMember(id, memberID, actor string, expectedVersion int64) (any, error)
+	SetAutomationBudgetPolicy(id string, req autonomous.BudgetSetRequest, actor string, expectedVersion int64) (any, error)
 }
 
 // handleAutomationControl serves POST /api/automations/{id}/{op} for the ops in
@@ -3230,6 +3258,17 @@ func (s *Server) handleAutomationControl(w http.ResponseWriter, r *http.Request,
 		action = "automation_approve_insert"
 		details["member_id"] = req.MemberID
 		a, err = ctl.ApproveInsertedMember(id, req.MemberID, req.Actor, req.ExpectedVersion)
+	case "set_budget":
+		action = "automation_set_budget"
+		bs := req.budgetSetRequest()
+		details["member_id"], details["clear"] = bs.MemberID, bs.Clear
+		details["ceiling_type"], details["ceiling_value"], details["window"] = bs.CeilingType, bs.CeilingValue, bs.Window
+		details["pacing"], details["on_breach"], details["backend"] = bs.Pacing, bs.OnBreach, bs.Backend
+		details["allocation_estimate"], details["peer_window"] = bs.AllocationEstimate, bs.PeerWindow
+		if bs.EstimatedCostUSD != nil {
+			details["estimated_cost_usd"] = *bs.EstimatedCostUSD
+		}
+		a, err = ctl.SetAutomationBudgetPolicy(id, bs, req.Actor, req.ExpectedVersion)
 	default:
 		http.NotFound(w, r)
 		return

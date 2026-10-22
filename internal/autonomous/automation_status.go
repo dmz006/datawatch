@@ -68,6 +68,11 @@ func (m *Manager) automationStatusSummaries(now time.Time) []AutomationStatusSum
 		if a.Status == AutomationBlocked {
 			s.BlockedReason = latestBlockedReason(a.Decisions)
 		}
+		if bv := m.BudgetViewFor(a); bv != nil {
+			s.Budget = bv
+			s.SpentUSD = bv.SpentUSD
+			s.CeilingDisplay = bv.ceilingDisplay()
+		}
 		out = append(out, s)
 	}
 	return out
