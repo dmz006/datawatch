@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.74 — Needs-input detector ignores echoed task text on adopted sessions
+
+### Fixed
+
+- **A live adopted session is no longer flipped to waiting-for-input by the echoed task text after a restart.** The needs-input detector could read the instruction line inside the typed task ("print DATAWATCH_NEEDS_INPUT: <your question>") as a real request once the post-restart grace window ended, which failed the session tests intermittently under load and in the Release workflow. A needs-input marker counts only as a standalone line the worker printed after the task text; an instruction that is part of the echoed task never moves a running session. The grace and echo windows and the scan clock are now injectable, so the tests no longer depend on wall time or machine load.
+
 ## v9.5.73 — The PWA terminal no longer throws when xterm is used after dispose
 
 ### Fixed
