@@ -430,7 +430,18 @@ func rollingRollover(es []budgetEntry, total float64, bw *inference.BudgetWindow
 // allocation builds the estimated allocation figure, or nil unless the budget
 // opted in and the LLM's plan tier has a declared notional allocation.
 func (b *BudgetLedger) allocation(llm string, bw *inference.BudgetWindow, spend float64) *BudgetAllocation {
-	if !bw.AllocationPct || b.PlanTier == nil || b.PlanTierAllocations == nil {
+	if !bw.AllocationPct {
+		return nil
+	}
+	return b.AllocationFor(llm, spend)
+}
+
+// AllocationFor builds the estimated allocation figure for spend on llm, or
+// nil when the LLM's plan tier is unset or has no declared notional
+// allocation. The caller decides whether the figure was opted in to; it is
+// always an estimate and is never used to block.
+func (b *BudgetLedger) AllocationFor(llm string, spend float64) *BudgetAllocation {
+	if b == nil || b.PlanTier == nil || b.PlanTierAllocations == nil {
 		return nil
 	}
 	tier := string(b.PlanTier(llm))

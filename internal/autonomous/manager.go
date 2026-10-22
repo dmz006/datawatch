@@ -680,6 +680,10 @@ type Manager struct {
 	costLedger   *BudgetLedger
 	sessionTotal func(sessionID string) (usd float64, llm string, ok bool)
 
+	// autoBudget evaluates Automation and member budget policies (see
+	// automation_budget.go); nil means no policy is enforced.
+	autoBudget *AutomationBudget
+
 	// Capacity admission (see capacity.go).
 	capacity     *capacity.Ledger
 	capacityKeys CapacityKeysFn
