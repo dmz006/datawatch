@@ -31,6 +31,12 @@ package autonomous
 // The test only calls the REST API. It never touches tmux or any process on the
 // host. Everything it creates is an Automation (deleted in t.Cleanup) or a
 // draft smoke PRD (left in place and logged, since PRD deletion is out of scope).
+//
+// The activated fork/join Automation cannot be deleted: the store removes only
+// draft, completed and cancelled Automations, and Phase 3a adds no cancel route
+// (cancel_automation is a Phase 3b control op). Cleanup therefore deletes every
+// Automation the store allows, accepts exactly that 409 for an activated one,
+// and logs it as a leftover for the operator to clear from the sandbox.
 
 import (
 	"bytes"
@@ -245,18 +251,28 @@ func TestAutomationForkJoinLiveSmoke(t *testing.T) {
 	c := newSmokeClient(base, os.Getenv("DW_BASE_TOKEN"))
 	projectDir := os.Getenv("DW_LIVE_AUTOMATION_PROJECT_DIR")
 
-	// Automations are deleted children-last in cleanup, so the daemon is left
-	// as it was found whether the smoke passes or fails.
+	// Automations are deleted in reverse creation order, so a nested parent
+	// goes before the child it points at. The cleanup runs whether the smoke
+	// passes or fails.
 	var created []string
 	var prdIDs []string
 	t.Cleanup(func() {
+		var leftover []string
 		for i := len(created) - 1; i >= 0; i-- {
 			status, out := c.do(t, http.MethodDelete, "/api/automations/"+created[i], nil)
-			if status != http.StatusNoContent {
+			switch {
+			case status == http.StatusNoContent:
+			case status == http.StatusConflict && strings.Contains(string(out), "can be deleted"):
+				// Only an activated Automation is refused (active or blocked). No REST
+				// route cancels it in Phase 3a, so it stays on the sandbox.
+				leftover = append(leftover, created[i])
+			default:
 				t.Errorf("delete automation %s: status %d body=%s", created[i], status, out)
 			}
 		}
-		t.Logf("deleted %d smoke automations; draft smoke PRDs left for operator review: %v", len(created), prdIDs)
+		t.Logf("deleted %d of %d smoke automations; activated automations left on the sandbox (no cancel route until Phase 3b): %v",
+			len(created)-len(leftover), len(created), leftover)
+		t.Logf("draft smoke PRDs left for operator review: %v", prdIDs)
 	})
 
 	// Member PRDs: two fork/join branches and one child for the nested Automation.
