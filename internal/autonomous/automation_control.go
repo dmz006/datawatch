@@ -13,6 +13,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/audit"
 )
 
 // Control operation audit actions and Decision kinds (one string serves both).
@@ -139,18 +141,43 @@ func (m *Manager) PauseAutomation(id, actor string, expectedVersion int64) (*Aut
 // coordinator, which carries on from ActiveCursors: a cursor that moved while
 // paused and was never started is started, and a member that ended meanwhile is
 // routed. Finished members are not restarted.
+//
+// An Automation stopped by a budget breach may be resumed too: a blocked one
+// only by an operator, a paused one by the operator or by the daemon at the
+// window rollover (actor "budget"). The gate is re-evaluated first, and a
+// dollar ceiling that is still reached refuses the resume with a 409 error
+// carrying the reason.
 func (m *Manager) ResumeAutomation(id, actor string, expectedVersion int64) (*Automation, error) {
 	if actor == "" {
 		actor = "operator"
 	}
-	if _, err := m.loadForControl(id, expectedVersion, AutomationPaused); err != nil {
+	pre, ok := m.automations.Get(id)
+	if !ok {
+		return nil, fmt.Errorf("404: automation %s not found", id)
+	}
+	if _, err := m.loadForControl(id, expectedVersion, resumableStatuses(pre)...); err != nil {
 		return nil, err
 	}
+	if budgetEpisodeOpen(pre) {
+		if v, refused := m.budgetRefusal(pre); refused {
+			return nil, &budgetRefusedError{autoID: id, verdict: v}
+		}
+	}
+	var episode *BudgetState
 	updated, err := m.automations.Update(id, expectedVersion, func(a *Automation) error {
-		if err := checkControlStatus(a, []AutomationStatus{AutomationPaused}); err != nil {
+		if err := checkControlStatus(a, resumableStatuses(a)); err != nil {
 			return err
 		}
+		episode = nil
+		if budgetEpisodeOpen(a) {
+			st := *a.BudgetState
+			episode = &st
+		}
 		a.Status = AutomationActive
+		a.BudgetState = nil
+		if episode != nil {
+			a.IdleSince = nil
+		}
 		controlDecision(a, controlResume, actor, "resumed by "+actor)
 		return nil
 	})
@@ -163,6 +190,9 @@ func (m *Manager) ResumeAutomation(id, actor string, expectedVersion int64) (*Au
 	m.mu.Lock()
 	c := m.coordinator
 	m.mu.Unlock()
+	if episode != nil {
+		m.budgetResumed(c, updated, episode, actor)
+	}
 	if c != nil {
 		c.reconcileOne(updated)
 		if final, ok := m.automations.Get(id); ok {
@@ -599,4 +629,33 @@ func checkReorderable(a *Automation, memberID, onCompleted, onBlocked, onFailed 
 		}
 	}
 	return nil
+}
+
+// resumableStatuses are the statuses ResumeAutomation accepts for a: paused,
+// and blocked when a budget breach blocked it.
+func resumableStatuses(a *Automation) []AutomationStatus {
+	if budgetEpisodeOpen(a) && a.Status == AutomationBlocked {
+		return []AutomationStatus{AutomationPaused, AutomationBlocked}
+	}
+	return []AutomationStatus{AutomationPaused}
+}
+
+// budgetResumed audits the end of a budget episode and, when the daemon
+// resumed it by itself, raises an info alert.
+func (m *Manager) budgetResumed(c *Coordinator, a *Automation, ep *BudgetState, actor string) {
+	reason := fmt.Sprintf("budget %s lifted by %s", ep.Action, actor)
+	m.controlAudit(audit.ActionAutomationBudgetResumed, budgetAuditDetails(a, ep, ep.Action, actor, reason))
+	if actor != budgetActor {
+		return
+	}
+	title := "Automation resumed: budget available"
+	body := fmt.Sprintf("Automation %q (%s) resumed by itself: the budget window reset and the %s ceiling no longer stops it.", a.Name, a.ID, ep.Window)
+	switch {
+	case c != nil:
+		c.alert("info", title, body)
+	default:
+		if fn := m.AlertSink(); fn != nil {
+			fn("info", title, body)
+		}
+	}
 }

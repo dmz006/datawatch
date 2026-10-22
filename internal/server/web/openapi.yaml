@@ -1234,6 +1234,10 @@ paths:
         `current_prd_title`, `pending_members`, `idle_since` and
         `idle_seconds` (set while no member is running), and `blocked_reason`
         (blocked only). The array is omitted when there are none.
+        A row whose Automation has a budget policy also carries `spent_usd`,
+        `ceiling_display` (for example `$12.40 of $40.00 (week)`) and `budget`,
+        the computed budget view. The estimated allocation figure appears
+        only inside `budget.allocation_estimate`, always marked estimated.
       operationId: autonomousStatus
       tags: [Autonomous]
       responses:
@@ -1771,7 +1775,10 @@ paths:
   /api/automations:
     get:
       summary: List Automations
-      description: All Automation records, one object each, in store order.
+      description: |
+        All Automation records, one object each, in store order. A record
+        with a budget policy also carries a computed `budget` view; the view
+        is worked out on each read and is never stored.
       operationId: automationsList
       tags: [Automations]
       responses:
@@ -1821,6 +1828,11 @@ paths:
       - {name: id, in: path, required: true, schema: {type: string}, description: "Automation ID (8-hex)"}
     get:
       summary: Get an Automation
+      description: |
+        The stored record. When the Automation has a budget policy it also
+        carries a computed `budget` view (spend, remaining, window, reset
+        time, any hold, the stored breach state and the estimated allocation
+        figure); the view is worked out on each read and is never stored.
       operationId: automationsGet
       tags: [Automations]
       responses:
@@ -2227,6 +2239,60 @@ paths:
         "400": {description: "member_id missing"}
         "404": {description: Automation not found}
         "409": {description: "Stale expected_version (the Automation changed since it was read), or the Automation is not in a state this operation accepts"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "503": {description: "autonomous disabled"}
+
+  /api/automations/{id}/set_budget:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}, description: "Automation ID (8-hex)"}
+    post:
+      summary: Set or clear an Automation's budget policy
+      description: |
+        Sets, replaces or clears the budget policy of the Automation, or, with
+        `member_id`, the override of one member. The policy fields replace the
+        whole policy; `clear` removes the policy (or the member override) and
+        cannot be combined with them. For a member, `estimated_cost_usd`
+        declares what its Automaton is expected to cost; sent alone it changes
+        only that estimate, and 0 removes it.
+
+        Setting a policy never changes the Automation's status. A paused
+        Automation resumes through its own tick when the window resets, and a
+        blocked one when the operator resumes it. The Automation must not be
+        completed or cancelled, and a member must not have finished.
+
+        A dollar ceiling that is reached pauses the Automation and resumes it
+        by itself at the window rollover when the reset time is known (a day,
+        week or month window, anchored at `reset_time`, `reset_weekday`,
+        `reset_day` and `reset_zone` or at the calendar default, or a reset time
+        read from a rate-limit message). When the reset time is not known, or
+        `on_breach` is `block`, it is blocked and waits for the operator. An
+        alert is raised either way. An `allocation_pct` ceiling and
+        `allocation_estimate` only add an estimated figure and never pause or
+        block. Naming a peer in `peer_window` counts that peer's usage toward
+        the ceiling; this is opt-in per peer and nothing confirms
+        automatically that the peer shares the account.
+
+        Send the last `version` you saw as `expected_version`. `actor` defaults
+        to "operator"; `actor` and `reason` are recorded in the audit log as
+        `automation_set_budget`.
+      operationId: automationsSetBudget
+      tags: [Automations]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BudgetSetRequest"
+      responses:
+        "200":
+          description: The updated Automation, with its computed `budget` view
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Automation"
+        "400": {description: "Invalid input: an unknown ceiling type, window, pacing or on-breach rule, a ceiling that is not positive, a reset field that does not fit the window, clear combined with policy fields, a declared cost without a member, or a fork or join member"}
+        "404": {description: "Automation or member not found"}
+        "409": {description: "expected_version is stale, the Automation is completed or cancelled, or the member has already finished"}
         "401": {$ref: "#/components/responses/Unauthorized"}
         "503": {description: "autonomous disabled"}
 
@@ -4455,6 +4521,8 @@ components:
             $ref: "#/components/schemas/AutomationMember"
         version: {type: integer, description: "Bumped on every write; send back as expected_version on update"}
         budget_policy: {$ref: "#/components/schemas/BudgetPolicy"}
+        budget_state: {$ref: "#/components/schemas/BudgetState"}
+        budget: {$ref: "#/components/schemas/BudgetView"}
         backend: {type: string, description: "Execution backend default for member runs"}
         model: {type: string, description: "Execution model default for member runs"}
         effort: {type: string, description: "Execution effort default for member runs"}
@@ -4490,6 +4558,7 @@ components:
         outcome: {type: string, description: "Automaton status observed when this member last finished"}
         edge_taken: {type: string, description: "Edge followed at last finish: on_complete | on_blocked | on_failed | skip"}
         budget_policy: {$ref: "#/components/schemas/BudgetPolicy"}
+        estimated_cost_usd: {type: number, description: "Declared expected cost of a prd member's Automaton; checked against the ceiling before it starts"}
       required: [id, prd_id, status]
 
     BudgetPolicy:
@@ -4506,7 +4575,108 @@ components:
         pacing: {type: string, enum: [none, even], description: "How the ceiling is spent: up front, or spread evenly across the window"}
         on_breach: {type: string, enum: [pause, block], description: "What happens when the ceiling is hit"}
         backend: {type: string, description: "When set, the ceiling applies only to spend on this backend"}
+        allocation_estimate: {type: boolean, description: "Adds an estimated share of the plan allocation to the budget view; off by default and never used to pause or block"}
+        peer_window: {type: array, items: {type: string}, description: "Federation peers whose usage counts toward the ceiling. Opt-in per peer; nothing confirms automatically that a peer shares the account"}
+        reset_time: {type: string, description: "24h HH:MM at which a day, week or month window starts; default midnight"}
+        reset_weekday: {type: string, description: "Week windows: monday to sunday; default monday"}
+        reset_day: {type: integer, description: "Month windows: 1 to 28; default 1"}
+        reset_zone: {type: string, description: "IANA zone the reset fields are read in; default is the daemon's local zone"}
       required: [ceiling_type, ceiling_value, window, on_breach]
+
+    BudgetState:
+      type: object
+      description: "The stored record of the current budget breach or hold on an Automation. Written by the daemon; create and update ignore anything sent."
+      properties:
+        action: {type: string, enum: [paused, blocked, held], description: "paused: resumes by itself at resume_at; blocked: waits for the operator; held: a member is held back by pacing or its cost estimate and starts when the budget allows"}
+        breached_at: {type: string, format: date-time}
+        reason: {type: string}
+        scope: {type: string, description: "automation, or member:<id>"}
+        spent_usd: {type: number}
+        ceiling_usd: {type: number}
+        window: {type: string}
+        resume_at: {type: string, format: date-time, nullable: true}
+        reset_known: {type: boolean}
+        reset_source: {type: string, enum: [window, rate_limit, ""]}
+
+    BudgetAllocation:
+      type: object
+      description: "An estimated share of the plan allocation. Always an estimate; it is never used to pause or block."
+      properties:
+        allocation_pct: {type: number}
+        estimated: {type: boolean, description: "Always true"}
+        allocation_usd: {type: number}
+        plan_tier: {type: string}
+        basis: {type: string, description: "How the figure was worked out"}
+
+    BudgetPeerLine:
+      type: object
+      description: "One federation peer in a budget view: whether its usage is counted toward the ceiling, and why not when it is not."
+      properties:
+        peer: {type: string}
+        spend_usd: {type: number}
+        counted: {type: boolean}
+        reason: {type: string, description: "Why the peer is not counted"}
+        note: {type: string, description: "On what basis the peer is counted; states that nothing confirms automatically that the peer shares the account"}
+
+    BudgetView:
+      type: object
+      description: |
+        The budget position of an Automation, computed on every read and never
+        stored. It describes the policy with the least room left right now:
+        the Automation's own, or the override of the member that is next to
+        start. Dollar figures are actual spend; the allocation estimate is an
+        estimate.
+      properties:
+        scope: {type: string, description: "automation, or member:<id>"}
+        ceiling_type: {type: string, enum: [dollar, allocation_pct]}
+        ceiling_usd: {type: number, description: "0 for an allocation_pct policy, which has no dollar ceiling"}
+        spent_usd: {type: number, description: "Spend in the window, including opted-in peers"}
+        remaining_usd: {type: number}
+        window: {type: string, enum: [automation, day, week, month]}
+        window_start: {type: string, format: date-time}
+        window_end: {type: string, format: date-time, description: "Absent for the lifetime window (automation)"}
+        pacing: {type: string, enum: [none, even]}
+        pacing_allowed_usd: {type: number, description: "With even pacing, the spend allowed so far in the window"}
+        on_breach: {type: string, enum: [pause, block]}
+        ceiling_reached: {type: boolean, description: "True when the dollar ceiling stops members from starting"}
+        hold: {type: string, enum: [pacing, estimate], description: "Set while a member is held back without a breach"}
+        hold_reason: {type: string}
+        reset_at: {type: string, format: date-time, description: "When the window frees up again"}
+        reset_known: {type: boolean, description: "True when the daemon can act on reset_at by itself"}
+        reset_source: {type: string, enum: [window, rate_limit], description: "window: a window the daemon defines itself; rate_limit: a reset time read from a rate-limit message"}
+        state: {$ref: "#/components/schemas/BudgetState"}
+        allocation_estimate: {$ref: "#/components/schemas/BudgetAllocation"}
+        peers: {type: array, items: {$ref: "#/components/schemas/BudgetPeerLine"}}
+        peer_spend_usd: {type: number}
+        peer_basis: {type: string, description: "Present when peers are opted in: states that nothing confirms automatically that they share the account"}
+        peer_note: {type: string, description: "Why named peers could not be counted"}
+        note: {type: string, description: "Set when the policy is an estimate only"}
+      required: [scope, ceiling_usd, spent_usd, remaining_usd, ceiling_reached, reset_known]
+
+    BudgetSetRequest:
+      type: object
+      description: "Request body for POST /api/automations/{id}/set_budget."
+      required: [expected_version]
+      properties:
+        expected_version: {type: integer, description: "The `version` you last observed; a stale value is rejected with 409"}
+        member_id: {type: string, description: "Empty: the Automation's own policy. Set: that member's own override"}
+        ceiling_type: {type: string, enum: [dollar, allocation_pct]}
+        ceiling_value: {type: number, description: "Dollar limit, or percent for an allocation_pct estimate"}
+        window: {type: string, enum: [automation, day, week, month]}
+        pacing: {type: string, enum: [none, even]}
+        on_breach: {type: string, enum: [pause, block]}
+        backend: {type: string, description: "When set, only spend on this backend counts"}
+        allocation_estimate: {type: boolean, description: "Show an estimated share of the plan allocation; off by default and never used to pause or block"}
+        peer_window: {type: array, items: {type: string}, description: "Federation peers whose usage counts toward the ceiling (opt-in per peer)"}
+        reset_time: {type: string, description: "24h HH:MM at which a day, week or month window starts"}
+        reset_weekday: {type: string, description: "Week windows: monday to sunday"}
+        reset_day: {type: integer, description: "Month windows: 1 to 28"}
+        reset_zone: {type: string, description: "IANA zone the reset fields are read in; default is the daemon's local zone"}
+        estimated_cost_usd: {type: number, description: "Members only: the expected cost of the member's Automaton, checked against the ceiling before it starts; 0 removes it"}
+        clear: {type: boolean, description: "Remove the policy (or the member override); cannot be combined with other budget fields"}
+        actor: {type: string, description: "operator (default) or the acting session/agent; recorded in the audit log"}
+        reason: {type: string, description: "Why; recorded in the audit log"}
+
 
     AutomationCreate:
       type: object

@@ -675,6 +675,19 @@ type Manager struct {
 	// decomposeSessionsFn lists live planning sessions linked to a PRD.
 	decomposeSessionsFn func(prdID string) []string
 
+	// Cost sources (see automation_cost.go): the spend ledger and the
+	// per-session lifetime total used when a window predates the ledger.
+	costLedger   *BudgetLedger
+	sessionTotal func(sessionID string) (usd float64, llm string, ok bool)
+
+	// autoBudget evaluates Automation and member budget policies (see
+	// automation_budget.go); nil means no policy is enforced.
+	autoBudget *AutomationBudget
+	// autoBudgetPoll is how often a task held by an Automation budget
+	// re-checks the hold (see automation_budget_admit.go); zero means the
+	// default.
+	autoBudgetPoll time.Duration
+
 	// Capacity admission (see capacity.go).
 	capacity     *capacity.Ledger
 	capacityKeys CapacityKeysFn

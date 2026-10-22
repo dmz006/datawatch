@@ -17,7 +17,6 @@ import (
 	"fmt"
 	"log"
 	"strings"
-	"time"
 )
 
 // reconcile walks every active or paused Automation once and brings its
@@ -55,6 +54,11 @@ func (c *Coordinator) reconcileOne(a *Automation) {
 
 // reconcileCursor brings one live cursor in line with its member.
 func (c *Coordinator) reconcileCursor(a *Automation, mem *AutomationMember) {
+	if k := mem.kind(); (k == MemberKindAutomation || k == MemberKindFork) && memberUnstarted(mem) {
+		// A deferred member (the budget gate, or a pause, held it back).
+		c.startPending(a, mem)
+		return
+	}
 	if mem.kind() == MemberKindAutomation {
 		c.reconcileNested(a, mem)
 		return
@@ -177,14 +181,31 @@ func (c *Coordinator) retryPendingStart(a *Automation, mem *AutomationMember) {
 	if mode == "" {
 		reason = fmt.Sprintf("next member %s is %s", name, status)
 	}
-	release := c.beginStart(prdID, reason == "")
+	// The budget gate guards a retried start as it does every other start.
+	var verdict BudgetVerdict
+	if reason == "" {
+		verdict = c.m.budgetVerdictFor(a, mem)
+		if verdict.Gate && budgetNoChange(a, verdict) {
+			return // still held for the episode already recorded
+		}
+	}
+	release := c.beginStart(prdID, reason == "" && !verdict.Gate)
 	defer release()
+	var beff *budgetEffect
 	updated, err := c.m.automations.Update(a.ID, a.Version, func(a *Automation) error {
 		cur := automationMember(a, memID)
 		if a.Status != AutomationActive || !isLiveCursor(a, memID) || cur == nil || (cur.Status != MemberPending && cur.Status != "") {
 			return errors.New("409: member already handled")
 		}
-		now := time.Now()
+		now := c.now()
+		beff = nil
+		if reason == "" && verdict.Gate {
+			beff = applyBudgetGate(a, cur, verdict, now, false)
+			if beff.action == BudgetActionBlocked {
+				a.Decisions = trimDecisions(append(a.Decisions, Decision{At: now, Kind: "blocked", Actor: coordinatorActor, Note: beff.reason}))
+			}
+			return nil
+		}
 		if reason != "" {
 			a.Status = AutomationBlocked
 			a.IdleSince = &now
@@ -194,6 +215,7 @@ func (c *Coordinator) retryPendingStart(a *Automation, mem *AutomationMember) {
 		cur.Status = MemberRunning
 		cur.StartedAt = &now
 		a.IdleSince = nil
+		a.BudgetState = nil
 		a.Decisions = trimDecisions(append(a.Decisions, Decision{At: now, Kind: "advance", Actor: coordinatorActor, Note: fmt.Sprintf("restart: retried start of %s", name)}))
 		return nil
 	})
@@ -201,6 +223,10 @@ func (c *Coordinator) retryPendingStart(a *Automation, mem *AutomationMember) {
 		if !strings.HasPrefix(err.Error(), "409") {
 			log.Printf("[autonomous] automation %s reconcile start of member %s: %v", a.ID, memID, err)
 		}
+		return
+	}
+	if beff != nil {
+		c.budgetBlockedAlert(updated, beff, memID)
 		return
 	}
 	if reason != "" {

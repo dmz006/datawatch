@@ -72,6 +72,7 @@ PUT    /api/automations/{id}         update; body: create fields + expected_vers
 DELETE /api/automations/{id}         delete (draft/completed/cancelled only); body: {actor?, reason?}
 POST   /api/automations/{id}/set_llm               set the execution and planning defaults; body: {backend?, model?, effort?, planning_backend?, planning_model?, expected_version?, actor?, reason?}
 POST   /api/automations/{id}/set_verification_llm  set the verification default; body: {backend?, model?, effort?, expected_version?, actor?, reason?}
+POST   /api/automations/{id}/set_budget   set, replace or clear the spending limit of an Automation or one member (see "Spending limit" below); body: {member_id?, ceiling_type, ceiling_value, window, pacing?, on_breach?, backend?, allocation_estimate?, peer_window?, reset_time?, reset_weekday?, reset_day?, reset_zone?, estimated_cost_usd?, clear?, expected_version, actor?, reason?}
 
 # Lifecycle event subscriptions (BL427 — PRD lifecycle events, phase 3)
 GET    /api/autonomous/subscriptions        list persisted lifecycle event subscriptions (optional ?owner= lists only those created by the named owner)
@@ -466,7 +467,7 @@ The REST endpoints do not change. `GET/POST /api/automations` and
 ### Phase 3b — control operations
 
 An operator, or a session or agent acting through the API, can steer a
-running Automation with eight `POST` endpoints under
+running Automation with nine `POST` endpoints under
 `/api/automations/{id}/`. They need the autonomous write capability, like
 the other writes. A `GET`, `PUT` or `DELETE` on one of these paths is a
 `405`.
@@ -481,6 +482,7 @@ the other writes. A `GET`, `PUT` or `DELETE` on one of these paths is a
 | `POST /api/automations/{id}/remove_member` | `active`, `paused` | Removes a member that has not started and has no outgoing edges. Edges of other members that named it are cleared. |
 | `POST /api/automations/{id}/reorder_edges` | `active`, `paused` | Rewires the outgoing edges of a member that has not started. |
 | `POST /api/automations/{id}/approve_insert` | `draft`, `active`, `paused`, `blocked` | Promotes a pending insert into the graph (operator only). |
+| `POST /api/automations/{id}/set_budget` | `draft`, `active`, `paused`, `blocked` | Sets, replaces or clears the spending limit of the Automation, or of one member that has not finished (see "Spending limit"). Does not change the status. |
 
 **Request body.** Every endpoint takes a JSON object. All fields are
 optional on the wire, but each operation has the fields it needs.
@@ -491,12 +493,15 @@ optional on the wire, but each operation has the fields it needs.
 | `actor` | all | Who is acting, recorded in the audit trail. Defaults to `operator`. An agent or session passes `agent:<id>` or `session:<id>`. |
 | `reason` | all | Free text recorded with the audit entry and the Automation's decision log. Required by `insert_member`. |
 | `cancel_in_flight` | `cancel` | Boolean, required, no default. See below. |
-| `member_id` | `skip_member`, `remove_member`, `reorder_edges`, `approve_insert` | The member to act on. For `approve_insert` it is the pending insert's ID, which is also the ID the member gets once approved. For `skip_member` it names the branch to act on in a forked Automation (see "Branches"). |
+| `member_id` | `skip_member`, `remove_member`, `reorder_edges`, `approve_insert`, `set_budget` | The member to act on. For `approve_insert` it is the pending insert's ID, which is also the ID the member gets once approved. For `skip_member` it names the branch to act on in a forked Automation (see "Branches"). |
 | `edge` | `skip_member` | `on_complete` (default when omitted), `on_blocked` or `on_failed`. Any other value is a `400`. |
 | `on_complete`, `on_blocked`, `on_failed` | `reorder_edges` | The member ID each edge now names. An edge that is left out or empty becomes no next member, so send all three edges you want to keep. A target must exist and must not have started. |
 | `member` | `insert_member` | Object `{"prd_id": "...", "name": "..."}`. `prd_id` is required. `name` is an optional display name. |
 | `urgent` | `insert_member` | Boolean. `true` takes the next slot, `false` (default) goes to the end of the chain. |
 | `after` | `insert_member` | Member ID to insert directly after. Empty means the end of the chain. An urgent insert must leave it empty. |
+| `ceiling_type`, `ceiling_value`, `window`, `pacing`, `on_breach`, `backend`, `allocation_estimate`, `peer_window`, `reset_time`, `reset_weekday`, `reset_day`, `reset_zone` | `set_budget` | The spending limit. They replace the whole limit; see "Spending limit". |
+| `estimated_cost_usd` | `set_budget` | With `member_id`: the member's expected cost in dollars (a number, `0` removes it). Alone it changes only the estimate. |
+| `clear` | `set_budget` | Boolean. `true` removes the limit; it cannot be combined with any policy field or `estimated_cost_usd`. |
 
 **Responses.** `200` returns the updated Automation (same shape as
 `GET /api/automations/{id}`).
@@ -509,6 +514,65 @@ optional on the wire, but each operation has the fields it needs.
 | 409 | Stale or omitted `expected_version`. The Automation is in a state the operation does not allow (the message names the state and the states it needs). A draft that needs activating first. A member that has started and so cannot be removed or rewired. A PRD that is already a member, already pending, or owned by another Automation. A second urgent insert while one is pending. An `approve_insert` by anyone but the operator. |
 | 500 | `cancel` only: the Automation is cancelled, but ending one or more in-flight member sessions failed. The message names the members. |
 | 503 | Autonomous is disabled, or the daemon has no Automation control support. |
+
+#### Spending limit (`set_budget`)
+
+An Automation can carry a `budget_policy`: a dollar ceiling over a window.
+A member can carry one too, which narrows the Automation's and counts only
+that member's spend. `set_budget` sets, replaces or clears one of them.
+
+```json
+POST /api/automations/3fa9c2d1/set_budget
+{"expected_version": 7, "actor": "operator", "reason": "weekly cap",
+ "ceiling_type": "dollar", "ceiling_value": 40, "window": "week",
+ "pacing": "even", "on_breach": "pause", "backend": "claude-code",
+ "reset_weekday": "monday", "reset_time": "09:00", "reset_zone": "America/New_York"}
+```
+
+| Field | Meaning |
+|---|---|
+| `ceiling_type` | `dollar` or `allocation_pct`. Required. Only `dollar` can pause or block; `allocation_pct` is accepted but is an estimate only. |
+| `ceiling_value` | Number above zero (dollars). Required. |
+| `window` | `automation` (the whole life of the Automation, never resets), `day`, `week` or `month`. Required. |
+| `pacing` | `none` (default) or `even`. Even pacing holds a member start while spend is ahead of an even spread across the window. Ignored for the `automation` window. |
+| `on_breach` | `pause` (default) or `block`. See below. |
+| `backend` | Optional LLM whose spend is measured; empty counts every member's spend. Needed for `peer_window`. |
+| `allocation_estimate` | Boolean, default `false`. Adds an estimated share-of-allocation figure to the budget view, always labelled estimated, never used to pause or block. It uses `autonomous.plan_tier_allocation_usd`. |
+| `peer_window` | Array of peer names, default empty. Another daemon's usage counts toward the ceiling only for the peers named. There is no automatic confirmation that a peer shares the account. |
+| `reset_time`, `reset_weekday`, `reset_day`, `reset_zone` | Optional anchors for the day, week and month windows: 24h `HH:MM`, `monday`..`sunday` (week only), `1`..`28` (month only) and an IANA zone. Unset anchors default to local midnight, Monday and the first of the month in the daemon's zone. |
+
+The ceiling is checked before any member starts (activation, moving to the
+next member, a whole fork) and before a member's task starts a new session.
+Work already running is not interrupted. When a dollar ceiling is reached the
+Automation **pauses and resumes by itself at the window reset** when the reset
+time is known (a `day`, `week` or `month` window, or a reset time parsed from a
+rate-limit message) and `on_breach` is `pause`. When the reset time is unknown,
+or `on_breach` is `block`, it goes to `blocked` and waits for the operator; a
+`resume` is refused with a `409` carrying the reason while the ceiling is still
+reached. An alert is raised either way. A pacing or estimate hold is not a
+breach: the Automation stays `active` and the periodic check retries.
+
+`GET /api/automations/{id}` returns the stored record with the policy in
+`budget_policy` and the current breach, if any, in `budget_state`
+(`action`, `breached_at`, `reason`, `scope`, `spent_usd`, `ceiling_usd`,
+`window`, `resume_at`, `reset_known`, `reset_source`). It also returns a
+computed `budget` view, never stored: `scope`, `ceiling_type`, `ceiling_usd`,
+`spent_usd`, `remaining_usd`, `window`, `window_start`, `window_end`, `pacing`,
+`pacing_allowed_usd`, `on_breach`, `ceiling_reached`, `hold` and `hold_reason`,
+`reset_at`, `reset_known`, `reset_source` (`window` or `rate_limit`), `state`,
+`allocation_estimate`, and for opted-in peers `peers[]`, `peer_spend_usd`,
+`peer_basis` and `peer_note`. Each Automation row of `GET
+/api/autonomous/status` carries the same `budget` view plus `spent_usd` and
+`ceiling_display`. Spend is the sum, over every member Automaton (and nested
+Automation), of the cost of its task, planning and verification sessions.
+
+Errors specific to `set_budget`: `400` for an invalid policy (unknown type,
+window, pacing or `on_breach`; ceiling not above zero; an anchor that does not
+parse or does not fit the window; a repeated or empty peer name; `clear`
+combined with policy fields; `estimated_cost_usd` without `member_id` or
+negative; a fork or join member); `404` for an unknown Automation or member;
+`409` for a stale `expected_version`, an Automation that is `completed` or
+`cancelled`, or a member that has finished.
 
 #### `cancel` and the required `cancel_in_flight`
 
@@ -603,8 +667,13 @@ Every control operation writes an audit entry on the `automation`
 resource: `automation_pause`, `automation_resume`, `automation_cancel`
 (with `cancel_in_flight` and the members that were in flight),
 `automation_skip_member`, `automation_insert_member`,
-`automation_remove_member`, `automation_reorder_edges` and
-`automation_approve_insert`. The entry records the actor, the reason, the
+`automation_remove_member`, `automation_reorder_edges`,
+`automation_approve_insert` and `automation_set_budget` (with the policy
+that was set, or `clear`). The limit also writes `automation_budget_breach`
+(once per breach, again when a pause turns into a block; details: Automation,
+scope, spent, ceiling, window, what it did, and the reset time when known) and
+`automation_budget_resumed` (when a pause or block is lifted by the daemon at
+the window reset or by an operator). The entry records the actor, the reason, the
 `expected_version` the caller sent, the operation's own fields, and the new
 `version`. The Automation's `decisions` list gets a matching entry. A
 `cancel` that cancelled the Automation but could not end every member
@@ -613,12 +682,16 @@ session is audited with the error before the `500` is returned.
 The same operations are reachable as MCP tools (`automation_pause`,
 `automation_resume`, `automation_cancel`, `automation_skip_member`,
 `automation_insert_member`, `automation_remove_member`,
-`automation_reorder_edges`, `automation_approve_insert`; see
+`automation_reorder_edges`, `automation_approve_insert`,
+`automation_set_budget`; see
 [mcp.md](../mcp.md)), as `datawatch automation
-pause|resume|cancel|skip|insert|remove|edges|approve` (`cancel` requires
-`--cancel-in-flight <true|false>`), and as the comm verbs `automation
-pause|resume|cancel|skip|insert|remove|edges|approve` (`cancel` requires
-`in-flight=true` or `in-flight=false`). `openapi.yaml` documents the
+pause|resume|cancel|skip|insert|remove|edges|approve|set-budget` (`cancel`
+requires `--cancel-in-flight <true|false>`; `set-budget` takes
+`--ceiling-type`, `--ceiling-value`, `--window` and the optional flags, or
+`--clear`), and as the comm verbs `automation
+pause|resume|cancel|skip|insert|remove|edges|approve|set-budget` (`cancel`
+requires `in-flight=true` or `in-flight=false`; `set-budget <id>
+ceiling_type=dollar ceiling_value=40 window=week` or `clear=true`). `openapi.yaml` documents the
 endpoints.
 
 ### Model-tier defaults (`set_llm` and `set_verification_llm`)

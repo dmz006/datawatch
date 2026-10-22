@@ -68,6 +68,9 @@ type PeerBudgetStatus struct {
 	SpendUSD float64 `json:"spend_usd"`
 	Counted  bool    `json:"counted"`
 	Reason   string  `json:"reason,omitempty"`
+	// Note states on what basis the peer is counted; set on the lines of an
+	// Automation budget evaluation.
+	Note string `json:"note,omitempty"`
 }
 
 // peerSpendEntry is one cached fetch result.
@@ -104,6 +107,8 @@ type PeerBudget struct {
 	cache      map[string]peerSpendEntry // key: llm + "\x00" + peer
 	failing    map[string]bool           // keys in a failure episode, so each is logged once
 	refreshing bool
+	adhoc      map[string]peerAdhocEntry // SpendForPeers results, key: llm, peer and window start
+	adhocFail  map[string]bool           // peerKey values in a failure episode of SpendForPeers
 }
 
 func peerKey(llm, peer string) string { return llm + "\x00" + peer }

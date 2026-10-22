@@ -1393,8 +1393,12 @@ BL553 (docs/plans/README.md row 134).
 Phase 2 (development build) has shipped part of this table: activate on REST, MCP,
 CLI and comm channel; the `automations[]` array on `autonomous_status` (REST and MCP);
 and the `autonomous.automation.idle_alert_minutes` key on every config surface including
-the PWA Settings field. The rest of the table is still the plan for Phases 3-7, and the
-table below remains accurate as written. Every surface follows AGENT.md's
+the PWA Settings field. Phase 5 (development build) has shipped the budget slice: REST
+`set_budget`, MCP `automation_set_budget`, CLI `automation set-budget`, comm `automation
+set-budget` and the budget lines of `automation status`, and the `budget` view on the Automation
+read and on the status rows; it added no config key (see the YAML/config row). The rest of the
+table is still the plan for Phases 3-7, and the table below remains accurate as written, with the
+corrections in the rows themselves. Every surface follows AGENT.md's
 Configuration Accessibility Rule and the full parity-surface set.
 
 | Surface | Included? | Concrete design |
@@ -1402,11 +1406,11 @@ Configuration Accessibility Rule and the full parity-surface set.
 | **REST** | Yes | `GET/POST /api/automations`; `GET/PUT/DELETE /api/automations/{id}` (delete only in `draft` / terminal); `POST /api/automations/{id}/{activate\|pause\|resume\|cancel\|skip_member\|insert_member\|remove_member\|reorder_edges\|set_llm\|set_verification_llm\|set_budget}`; `POST /api/automations/import-graph/{graph_id}`. Same `fedCap` gating as the autonomous handlers (`CapAutonomousRead` / `Write` / `Run`). `409` on invalid state or version mismatch. Documented in `openapi.yaml`. |
 | **MCP** | Yes | `automation_list`, `automation_get`, `automation_create`, `automation_update`, `automation_activate`, `automation_pause`, `automation_resume`, `automation_cancel` (`cancel_in_flight` flag), `automation_skip_member`, `automation_insert_member`, `automation_remove_member`, `automation_reorder_edges`, `automation_set_llm`, `automation_set_verification_llm`, `automation_set_budget`, `automation_import_graph`. Each is added to `internal/federation/mcp_tool_caps.go`. `autonomous_status` is extended with `automations[]`. The `orchestrator_graph_*` tools are deprecated (see the BL117 recommendation). |
 | **CLI** | Yes | `datawatch automation list\|get\|create\|activate\|pause\|resume\|cancel [--cancel-in-flight]\|skip <member> --via on_failed --reason …\|insert <id> --after <member> --prd <id>[,<id>…] --reason …\|remove\|edges\|set-llm\|set-verification-llm\|set-budget\|import-graph`. |
-| **Comm channel** | Yes (control + status) | `automation list`, `automation status <id>`, `automation pause\|resume\|cancel <id> [reason]`, `automation skip <id> <member> <edge> <reason>`, `automation insert <id> after <member> <prd> <reason>`. Create and edge rewiring are excluded from comm because they are graph editing and do not fit one line; use the PWA, CLI or MCP. Advance, blocked and budget-breach notifications go through BL427's comm fan-out, not a separate path. |
-| **YAML/config** | Yes | Provisional keys under `autonomous.automation`: `enabled` (bool); `idle_alert_minutes` (int); `empty_edge_action` (`block`\|`pause`, Open question 6); `agent_insert_policy` (`allow`\|`require_operator`, Open question 8); `default_budget_on_breach` (`pause`\|`block`). Each is in `handleGetConfig` / `handlePutConfig`, `docs/config-reference.yaml`, `configure <key>=<value>` and `datawatch config set`. Automation objects themselves are runtime data in `automations.jsonl`, not YAML. |
+| **Comm channel** | Yes (control + status) | `automation list`, `automation status <id>`, `automation pause\|resume\|cancel <id> [reason]`, `automation skip <id> <member> <edge> <reason>`, `automation insert <id> after <member> <prd> <reason>`, `automation set-budget <id> key=value...` (built in Phase 5; `clear=true` removes the policy; the arguments are the REST fields). Create and edge rewiring are excluded from comm because they are graph editing and do not fit one line; use the PWA, CLI or MCP. Advance, blocked and budget-breach notifications go through BL427's comm fan-out, not a separate path. |
+| **YAML/config** | Yes | Provisional keys under `autonomous.automation`: `enabled` (bool); `idle_alert_minutes` (int); `empty_edge_action` (`block`\|`pause`, Open question 6); `agent_insert_policy` (`allow`\|`require_operator`, Open question 8); ~~`default_budget_on_breach` (`pause`\|`block`)~~ (not built: Phase 5 added no config key, and `on_breach` defaults to `pause` on the policy itself). Each is in `handleGetConfig` / `handlePutConfig`, `docs/config-reference.yaml`, `configure <key>=<value>` and `datawatch config set`. Automation objects themselves are runtime data in `automations.jsonl`, not YAML. |
 | **PWA** | Yes | The Automation tab left of Automata; list, pipeline-strip detail and create/edit (see **PWA**); the config fields in Settings → General (autonomous section); locale keys in all bundles. |
-| **Android** | Yes, via a parity issue | A `datawatch-app` issue: Automation list + strip detail + pause/resume/cancel/skip; create/edit may lag one release. Filed in the companion app repo by the implementation PRD, not here. |
-| **iPhone/iOS** | Yes, via a parity issue | Same scope as Android, in the companion app repo's iOS track. Advance and blocked push notifications ride on BL427's mobile topic sink (`PublishToTopic`), so APNs/FCM need no Automation-specific delivery. |
+| **Android** | Yes, via a parity issue | A `datawatch-app` issue: Automation list + strip detail + pause/resume/cancel/skip; create/edit may lag one release. Filed in the companion app repo by the implementation PRD, not here. Phase 5 adds: parse the `budget_policy` fields, the `budget` view, the status `budget` / `spent_usd` / `ceiling_display` fields and the paused or blocked budget reason. **Not filed yet** (cannot be filed from the implementing session). |
+| **iPhone/iOS** | Yes, via a parity issue | Same scope as Android, in the companion app repo's iOS track; the Phase 5 budget fields above are not filed yet either. Advance and blocked push notifications ride on BL427's mobile topic sink (`PublishToTopic`), so APNs/FCM need no Automation-specific delivery. |
 
 ---
 
@@ -1470,10 +1474,63 @@ howto, and the `datawatch-app` issue where applicable.
        `docs/config-reference.yaml` carries a comment block only.
      - The live smoke row is opt-in and still owed: see the Phase 4 section of
        `docs/testing-tracker.md`.
-5. **Phase 5 — BudgetPolicy.** Status: Planned.
+5. **Phase 5 — BudgetPolicy.** Status: Done (development build; released with the next release).
    - The shared `PRDCostUSD` rollup (with BL414 / BL428 Phase 5).
    - The advance gate and the `admit` hook.
    - Pacing, on-breach handling and the estimated `allocation_pct`.
+
+   **Phase 5 status note.** Built on the existing per-LLM spend ledger (no second ledger).
+   - Rollup and ledger: `internal/autonomous/automation_cost.go` (`PRDSessionIDs`, `PRDCostUSD`,
+     `AutomationSpendUSD`, `SetCostSources`); `internal/autonomous/budget.go` attributes each
+     ledger entry to its session (`SpendBySessions`); `cmd/datawatch/capacity_wiring.go` passes the
+     session ID and wires the evaluator and cost sources.
+   - Model: `internal/autonomous/automation.go` (`BudgetPolicy` gains `allocation_estimate`,
+     `peer_window`, `reset_time`, `reset_weekday`, `reset_day`, `reset_zone`; `AutomationMember`
+     gains `estimated_cost_usd`; `Automation.BudgetState` is the current breach episode).
+   - Evaluator: `automation_budget.go` (`AutomationBudget.Evaluate`: tightest of the Automation and
+     member policy, windows and anchors, even pacing, declared or prior-spend start estimate),
+     `automation_budget_reset.go` (reset known for day/week/month windows and for a parsed
+     rate-limit reset on the lifetime window), `peer_budget_spend.go` (`SpendForPeers`, opt-in
+     peers only, fails open), `automation_budget_view.go` (the computed `budget` view).
+   - Gate: `automation_budget_gate.go` and `automation_advance.go` / `automation_coordinator.go` /
+     `automation_control.go` / `automation_reconcile.go` (advance, activation entry and fork gates;
+     pause with automatic resume at a known reset; block at an unknown reset or `on_breach: block`;
+     one alert and one audit record per episode; the periodic budget pass; the operator resume
+     re-checks the ceiling and is refused with a 409 while it is reached).
+   - Admit hook: `automation_budget_admit.go` (a new member task waits at the dollar ceiling; tasks
+     in progress are never interrupted).
+   - Surfaces: REST `POST /api/automations/{id}/set_budget` and the `budget` view on the Automation
+     read and on each `automations[]` row of `GET /api/autonomous/status`
+     (`internal/server/autonomous.go`, `internal/autonomous/automation_status.go`); MCP `automation_set_budget`
+     (`internal/mcp/automation_tools.go`, `internal/federation/mcp_tool_caps.go`); CLI
+     `datawatch automation set-budget` (`cmd/datawatch/cli_automation.go`); comm
+     `automation set-budget` and the budget lines of `automation status`
+     (`internal/router/automation_cmd.go`, text from `budget_format.go`); audit events
+     `automation_set_budget`, `automation_budget_breach`, `automation_budget_resumed`
+     (`internal/audit/events.go`, `cef.go`); `docs/api/openapi.yaml`.
+   - Operator decisions applied: (1) on a breach the Automation pauses and resumes by itself at the
+     window rollover only when the reset time is known (a day, week or month window the daemon
+     defines itself, anchored at the declared reset or the calendar default, or a reset time parsed
+     from a rate-limit message); when it is unknown it goes to blocked and waits for the operator;
+     an alert is raised either way. (2) `allocation_pct` is an optional estimate, off by default,
+     always labelled estimated, and never pauses or blocks. (3) Another daemon's usage counts only
+     for peers explicitly opted in (`peer_window`), off by default; the resource fingerprint
+     exchange that would confirm a shared account does not exist yet, so peer counting has no
+     automatic confirmation and the status text says so.
+   - No new daemon config key: the policy is Automation data. `default_budget_on_breach` (listed as
+     provisional in the Parity surface table) was not built; `on_breach` defaults to `pause` on the
+     policy itself. The `budget_policy` object is documented in `docs/config-reference.yaml`.
+   - Not in this phase: the PWA display of the policy (Phase 6).
+   - Docs: `docs/howto/automata-capacity.md` and `docs/operations.md` (`Automation spending limit`),
+     `docs/commands.md`, `docs/api/autonomous.md`, `docs/api-mcp-mapping.md`, `docs/mcp.md`,
+     `docs/testing-tracker.md` (`BL431 Phase 5: Automation BudgetPolicy`).
+   - Live smoke against a real daemon: **No**, not run. Every Validated cell of the tracker section
+     stays No until a sandbox daemon run exercises the pause, the automatic resume and the block.
+   - `datawatch-app` parity: **not filed yet.** A companion-app issue is needed so Android and iOS
+     parse the `budget_policy` fields, the `budget` view, the `budget`, `spent_usd` and
+     `ceiling_display` status fields, and the paused or blocked budget reason. It cannot be filed
+     from the implementing session; the supervisor files it, and this note is updated with the
+     issue numbers when it is.
 6. **Phase 6 — PWA.** Status: Planned.
    - The nav tab, list, pipeline strip and v1 create/edit.
    - Locale keys in all bundles.

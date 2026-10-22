@@ -5,6 +5,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/inference"
 )
 
 // AutomationStatus is the lifecycle state of an Automation (see the
@@ -65,6 +67,10 @@ type Automation struct {
 	Version         int64              `json:"version"` // bumped on every write; optimistic concurrency
 
 	BudgetPolicy *BudgetPolicy `json:"budget_policy,omitempty"`
+	// BudgetState records the current budget breach episode, if any. It is
+	// runtime state written only by the coordinator; create and update ignore
+	// anything a caller sends and keep the stored value.
+	BudgetState *BudgetState `json:"budget_state,omitempty"`
 
 	// Execution defaults — new tier between PRD and global.
 	Backend string `json:"backend,omitempty"`
@@ -126,6 +132,10 @@ type AutomationMember struct {
 	EdgeTaken  string       `json:"edge_taken,omitempty"` // on_complete|on_blocked|on_failed|skip
 
 	BudgetPolicy *BudgetPolicy `json:"budget_policy,omitempty"` // explicit member override (narrows further)
+
+	// EstimatedCostUSD is the operator-declared expected cost of the member's
+	// Automaton; only valid on kind prd and never negative.
+	EstimatedCostUSD float64 `json:"estimated_cost_usd,omitempty"`
 }
 
 // kind returns the member's kind, treating the empty kind as MemberKindPRD.
@@ -418,6 +428,12 @@ func validateMemberKind(a *Automation, m AutomationMember) error {
 	if k != MemberKindAutomation && m.AutomationID != "" {
 		return fmt.Errorf("automation invalid: member %s: automation_id is only valid on kind automation", m.ID)
 	}
+	if m.EstimatedCostUSD < 0 {
+		return fmt.Errorf("automation invalid: member %s: estimated_cost_usd %v must not be negative", m.ID, m.EstimatedCostUSD)
+	}
+	if k != MemberKindPRD && m.EstimatedCostUSD != 0 {
+		return fmt.Errorf("automation invalid: member %s: estimated_cost_usd is only valid on kind prd", m.ID)
+	}
 	if k != MemberKindPRD && m.PRDID != "" {
 		return fmt.Errorf("automation invalid: member %s: kind %s must not carry prd_id", m.ID, k)
 	}
@@ -681,16 +697,137 @@ func validateBudgetPolicy(p *BudgetPolicy) error {
 	default:
 		return fmt.Errorf("automation invalid: budget on_breach %q", p.OnBreach)
 	}
+	return validateBudgetResetAnchor(p)
+}
+
+// validateBudgetResetAnchor checks the reset anchor and peer fields of a
+// budget policy: each anchor field must parse, and each only applies to the
+// windows that use it. The lifetime window has no reset.
+func validateBudgetResetAnchor(p *BudgetPolicy) error {
+	resets := p.Window == "day" || p.Window == "week" || p.Window == "month"
+	if p.ResetTime != "" {
+		if !resets {
+			return fmt.Errorf("automation invalid: budget reset_time only applies to a day, week or month window")
+		}
+		if _, _, err := inference.ParseBudgetClock(p.ResetTime); err != nil {
+			return fmt.Errorf("automation invalid: budget reset_%w", err)
+		}
+	}
+	if p.ResetZone != "" {
+		if !resets {
+			return fmt.Errorf("automation invalid: budget reset_zone only applies to a day, week or month window")
+		}
+		if _, err := time.LoadLocation(p.ResetZone); err != nil {
+			return fmt.Errorf("automation invalid: budget reset_zone %q is not a known IANA zone", p.ResetZone)
+		}
+	}
+	if p.ResetWeekday != "" {
+		if p.Window != "week" {
+			return fmt.Errorf("automation invalid: budget reset_weekday only applies to a week window")
+		}
+		if _, ok := inference.ParseBudgetWeekday(p.ResetWeekday); !ok {
+			return fmt.Errorf("automation invalid: budget reset_weekday %q (allowed: monday..sunday)", p.ResetWeekday)
+		}
+	}
+	if p.ResetDay != 0 {
+		if p.Window != "month" {
+			return fmt.Errorf("automation invalid: budget reset_day only applies to a month window")
+		}
+		if p.ResetDay < 1 || p.ResetDay > 28 {
+			return fmt.Errorf("automation invalid: budget reset_day %d out of range (1..28)", p.ResetDay)
+		}
+	}
+	seen := make(map[string]struct{}, len(p.PeerWindow))
+	for i, name := range p.PeerWindow {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			return fmt.Errorf("automation invalid: budget peer_window entries must be non-empty")
+		}
+		if _, dup := seen[name]; dup {
+			return fmt.Errorf("automation invalid: budget peer_window lists %q more than once", name)
+		}
+		seen[name] = struct{}{}
+		p.PeerWindow[i] = name
+	}
 	return nil
 }
 
 // BudgetPolicy is a narrower cost ceiling scoped to an Automation or one of
 // its members; it never widens the global ceiling, only narrows it.
 type BudgetPolicy struct {
+	// CeilingType "allocation_pct" is accepted for compatibility but is
+	// estimate-only: it can never pause or block (see Gates).
 	CeilingType  string  `json:"ceiling_type"`  // "dollar" | "allocation_pct"
 	CeilingValue float64 `json:"ceiling_value"` // USD, or percent (0-100) of the window's allocation
 	Window       string  `json:"window"`        // "automation" (lifetime) | "day" | "week" | "month" — BL428 llm.<name>.budget windows + lifetime
 	Pacing       string  `json:"pacing"`        // "none" | "even"
 	OnBreach     string  `json:"on_breach"`     // "pause" (default) | "block"
 	Backend      string  `json:"backend,omitempty"`
+
+	// AllocationEstimate adds an estimated share-of-allocation figure and
+	// nothing else; off by default and never used to pause or block.
+	AllocationEstimate bool `json:"allocation_estimate,omitempty"`
+	// PeerWindow names federation peers whose usage counts toward the ceiling;
+	// empty means none. Counting is opt-in per peer and is not confirmed
+	// automatically.
+	PeerWindow []string `json:"peer_window,omitempty"`
+
+	// Reset anchors for the day, week and month windows. Unset anchors default
+	// to local midnight (week: Monday, month: the first) in the daemon's zone.
+	// The lifetime window has no reset.
+	ResetTime    string `json:"reset_time,omitempty"`    // 24h HH:MM
+	ResetWeekday string `json:"reset_weekday,omitempty"` // week windows: monday..sunday
+	ResetDay     int    `json:"reset_day,omitempty"`     // month windows: 1..28
+	ResetZone    string `json:"reset_zone,omitempty"`    // IANA zone name
+}
+
+// EffectiveOnBreach returns the on-breach rule, treating empty as pause.
+func (p *BudgetPolicy) EffectiveOnBreach() string {
+	if p == nil || p.OnBreach == "" {
+		return "pause"
+	}
+	return p.OnBreach
+}
+
+// EffectivePacing returns the pacing mode, treating empty as none.
+func (p *BudgetPolicy) EffectivePacing() string {
+	if p == nil || p.Pacing == "" {
+		return "none"
+	}
+	return p.Pacing
+}
+
+// Gates reports whether the policy may pause or block an Automation. A
+// dollar ceiling gates; an allocation_pct ceiling is estimate-only and never
+// does.
+func (p *BudgetPolicy) Gates() bool {
+	return p != nil && p.CeilingType == "dollar"
+}
+
+// Budget state actions (BudgetState.Action).
+const (
+	BudgetActionPaused  = "paused"
+	BudgetActionBlocked = "blocked"
+	BudgetActionHeld    = "held"
+)
+
+// Budget reset sources (BudgetState.ResetSource).
+const (
+	BudgetResetWindow    = "window"
+	BudgetResetRateLimit = "rate_limit"
+)
+
+// BudgetState is the runtime record of one budget breach episode on an
+// Automation. Only the coordinator writes it.
+type BudgetState struct {
+	Action      string     `json:"action"`      // paused | blocked | held
+	BreachedAt  time.Time  `json:"breached_at"` // the episode key
+	Reason      string     `json:"reason,omitempty"`
+	Scope       string     `json:"scope"` // "automation" | "member:<id>"
+	SpentUSD    float64    `json:"spent_usd"`
+	CeilingUSD  float64    `json:"ceiling_usd"`
+	Window      string     `json:"window,omitempty"`
+	ResumeAt    *time.Time `json:"resume_at,omitempty"`
+	ResetKnown  bool       `json:"reset_known"`
+	ResetSource string     `json:"reset_source,omitempty"` // window | rate_limit | ""
 }

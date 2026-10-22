@@ -26,4 +26,17 @@ const (
 	// (it rolled over or spend aged out), so autonomous admission resumes.
 	// Emitted once per transition. Details: llm, spend_usd, ceiling_usd.
 	ActionBudgetWindowResumed = "autonomous_budget_window_resumed"
+
+	// ActionAutomationBudgetBreach — an Automation's budget policy refused a
+	// member start, so the Automation was paused, blocked or (for pacing and
+	// estimate holds, which are not audited) held. Emitted once per breach
+	// episode and again when a paused episode turns into a block.
+	// Details: automation_id, scope, spent_usd, ceiling_usd, window, action,
+	// reset_at (RFC 3339, when known), reset_known, actor, reason.
+	ActionAutomationBudgetBreach = "automation_budget_breach"
+	// ActionAutomationBudgetResumed — a budget pause or block was lifted, by the
+	// daemon at the window rollover or by an operator. Details: automation_id,
+	// scope, spent_usd, ceiling_usd, window, action (what was lifted),
+	// reset_at, reset_known, actor, reason.
+	ActionAutomationBudgetResumed = "automation_budget_resumed"
 )

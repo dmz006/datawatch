@@ -23,6 +23,7 @@ func (c *Coordinator) idleLoop(stop <-chan struct{}, tick time.Duration) {
 			return
 		case <-t.C:
 			c.checkIdle()
+			c.checkBudget()
 		}
 	}
 }

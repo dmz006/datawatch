@@ -1141,8 +1141,8 @@ type LoopStatus struct {
 	Automations []AutomationStatusSummary `json:"automations,omitempty"`
 }
 
-// AutomationStatusSummary is one Automation's row in LoopStatus. SpentUSD
-// and CeilingDisplay stay zero/empty until budgets are tracked.
+// AutomationStatusSummary is one Automation's row in LoopStatus. SpentUSD,
+// CeilingDisplay and Budget are filled when the Automation has a budget policy.
 type AutomationStatusSummary struct {
 	ID              string     `json:"id"`
 	Name            string     `json:"name"`
@@ -1156,6 +1156,9 @@ type AutomationStatusSummary struct {
 	BlockedReason   string     `json:"blocked_reason,omitempty"`
 	SpentUSD        float64    `json:"spent_usd,omitempty"`
 	CeilingDisplay  string     `json:"ceiling_display,omitempty"`
+	// Budget is the computed budget view: spend, window, reset, hold, the
+	// stored breach state and the estimated allocation figure.
+	Budget *BudgetView `json:"budget,omitempty"`
 
 	// ActiveCursors lists the Automation's live cursors, sorted by member ID;
 	// never nil, so an idle Automation reports []. JoinWait is set only while

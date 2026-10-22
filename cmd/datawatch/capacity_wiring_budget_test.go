@@ -218,3 +218,20 @@ func TestUsageSpendRecordedBeforeBudgetExists(t *testing.T) {
 		t.Errorf("spend recorded before the budget existed = %v, want 2", got)
 	}
 }
+
+func TestRecordUsageSpendCarriesSessionID(t *testing.T) {
+	clk := &budgetTestClock{now: time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC)}
+	bl := autonomous.NewBudgetLedger("")
+	bl.Clock = clk.Now
+	hook := recordUsageSpend(bl, func() *inference.Registry { return nil })
+
+	hook(session.UsageEvent{SessionID: "s1", Backend: "claude-code", At: clk.Now(), USD: 2})
+	hook(session.UsageEvent{SessionID: "s2", Backend: "claude-code", At: clk.Now(), USD: 3})
+
+	if got := bl.SpendBySessions([]string{"s1"}, "claude-code", time.Time{}); got != 2 {
+		t.Errorf("spend attributed to s1 = %v, want 2", got)
+	}
+	if got := bl.SpendBySessions([]string{"s1", "s2"}, "", time.Time{}); got != 5 {
+		t.Errorf("spend attributed to s1+s2 = %v, want 5", got)
+	}
+}

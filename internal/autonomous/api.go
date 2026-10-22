@@ -1383,7 +1383,7 @@ func (a *API) ListAutomations() []any {
 	src := a.M.ListAutomations()
 	out := make([]any, len(src))
 	for i, x := range src {
-		out[i] = x
+		out[i] = a.M.AutomationViewOf(x)
 	}
 	return out
 }
@@ -1393,7 +1393,7 @@ func (a *API) GetAutomation(id string) (any, bool) {
 	if !ok {
 		return nil, false
 	}
-	return got, true
+	return a.M.AutomationViewOf(got), true
 }
 
 // ActivateAutomation starts a draft Automation (in-process; never via REST).
@@ -1483,6 +1483,16 @@ func (a *API) InsertMember(id string, in InsertMemberInput) (any, error) {
 func (a *API) ApproveInsertedMember(id, memberID, actor string, expectedVersion int64) (any, error) {
 	got, err := a.M.ApproveInsertedMember(id, memberID, actor, expectedVersion)
 	return controlResult(got, err)
+}
+
+// SetAutomationBudgetPolicy sets or clears the budget policy of an Automation
+// or one member. The result is the updated record with its computed budget view.
+func (a *API) SetAutomationBudgetPolicy(id string, req BudgetSetRequest, actor string, expectedVersion int64) (any, error) {
+	got, err := a.M.SetAutomationBudgetPolicy(id, req, actor, expectedVersion)
+	if got == nil {
+		return nil, err
+	}
+	return a.M.AutomationViewOf(got), err
 }
 
 // controlResult widens a control operation's result. A non-nil Automation is
