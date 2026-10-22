@@ -166,7 +166,7 @@ Rows are in execution order; the numbers are stable ids, not positions. Operator
 | 12 | [BL428 Phase 3](2026-10-14-concurrency-and-budget-design.md) Inference-cap gap closure (includes §3c federation shared-compute-node detection) | Phase 3 core **done**, shipped in 9.5.68 (PRD `7da90001`: plan_tier caps, verify lease hand-off, decompose admission, await-external) — §3c federation detection not started; needs a datawatch-app Mobile-Parity issue (see the design doc's Parity surface) | 8 |
 | 13 | **done**: 3a shipped in 9.5.85 (PRD `b3ca0001`), 3b shipped in 9.5.87 (PRD `412a0001`) | not started | 10 |
 | 14 | BL422 Claude model and effort tiering eval | failed (PRD `f6a38c29` failed; resume needed) | - |
-| 15 | [BL431 Phase 4](2026-10-14-automation-orchestration-design.md) Model-tier defaults | not started | 14 |
+| 15 | draft PRD `332c0001` filed 2026-10-22 12:40 (Claude, claude-code decompose), decompose started; operator decisions Q11 and Q12 recorded 2026-10-22 | not started | 14 |
 | 16 | **done**, shipped in 9.5.88 (PRD `8afa0001`). Follow-up BL567: add the claude CLI version to the staleness fingerprint (operator decision Q3), PRD `ee760001` decompose started. | not started | 12 |
 | 17 | draft PRD `a8840001` filed 2026-10-22 11:27 (Claude worker, pi decompose), decompose started; operator decisions Q1, Q2, Q9, Q10 recorded 2026-10-22 | not started | 16 |
 | 18 | [BL431 Phase 5](2026-10-14-automation-orchestration-design.md) BudgetPolicy | not started | 17 |
