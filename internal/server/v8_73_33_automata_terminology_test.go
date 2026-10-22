@@ -6,10 +6,17 @@
 // "オートメーション" mistranslation for this feature; no locale value in any
 // of the 5 bundles (English included) may say the internal-only word
 // "PRD"/"PRDs".
+//
+// The wrong-word check no longer applies to the Automation object keys
+// (nav_automation and the automation_ prefix). Automation is now a separate,
+// defined object (see the addendum in AGENT.md), so its own keys legitimately
+// use Automatisierung/automatización/automatisation/オートメーション. The
+// untranslated-English check still applies to every key, those included.
 package server
 
 import (
 	"regexp"
+	"strings"
 	"testing"
 )
 
@@ -25,6 +32,12 @@ var perLocaleWrongWord = map[string]*regexp.Regexp{
 	"ja": regexp.MustCompile(`オートメーション`),
 }
 
+// isAutomationObjectKey reports whether a locale key belongs to the
+// Automation object rather than the Automaton feature.
+func isAutomationObjectKey(key string) bool {
+	return key == "nav_automation" || strings.HasPrefix(key, "automation_")
+}
+
 func TestLocales_AutomatonNeverUntranslatedOrMistranslated(t *testing.T) {
 	for _, lang := range []string{"de", "es", "fr", "ja"} {
 		bundle := loadLocaleBundle(t, lang)
@@ -33,9 +46,39 @@ func TestLocales_AutomatonNeverUntranslatedOrMistranslated(t *testing.T) {
 			if automatonLeakRe.MatchString(val) {
 				t.Errorf("locale %s key %q still has the untranslated English word: %q", lang, key, val)
 			}
-			if wrongWord != nil && wrongWord.MatchString(val) {
+			if wrongWord != nil && !isAutomationObjectKey(key) && wrongWord.MatchString(val) {
 				t.Errorf("locale %s key %q uses the wrong word for Automaton/Automata (automation, a different concept): %q", lang, key, val)
 			}
+		}
+	}
+}
+
+func TestLocales_AutomationKeyExemptionIsNarrow(t *testing.T) {
+	cases := []struct {
+		key  string
+		want bool
+	}{
+		{"nav_automation", true},
+		{"automation_pause", true},
+		{"fab_launch_auto", false},
+		{"automata_status_draft", false},
+		{"nav_automata", false},
+		{"automationish", false},
+	}
+	for _, c := range cases {
+		if got := isAutomationObjectKey(c.key); got != c.want {
+			t.Errorf("isAutomationObjectKey(%q) = %v, want %v", c.key, got, c.want)
+		}
+	}
+
+	for _, lang := range []string{"de", "es", "fr", "ja"} {
+		val := loadLocaleBundle(t, lang)["fab_launch_auto"]
+		if val == "" {
+			t.Errorf("locale %s has no fab_launch_auto value", lang)
+			continue
+		}
+		if perLocaleWrongWord[lang].MatchString(val) {
+			t.Errorf("locale %s key fab_launch_auto uses the Automation word instead of Automaton: %q", lang, val)
 		}
 	}
 }
