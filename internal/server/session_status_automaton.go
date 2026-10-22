@@ -24,26 +24,33 @@ const automatonDecisionLimit = 10
 // SessionAutomatonDetail is the `automaton` block on SessionStatusBoard.
 // Nil (omitted) for sessions that aren't linked to an autonomous task.
 type SessionAutomatonDetail struct {
-	PRDID             string                        `json:"prd_id"`
-	PRDTitle          string                        `json:"prd_title,omitempty"`
-	PRDStatus         string                        `json:"prd_status,omitempty"`
-	StoryID           string                        `json:"story_id,omitempty"`
-	StoryTitle        string                        `json:"story_title,omitempty"`
-	TaskID            string                        `json:"task_id,omitempty"`
-	TaskTitle         string                        `json:"task_title,omitempty"`
-	TaskSpec          string                        `json:"task_spec,omitempty"`
-	TaskSpecTruncated bool                          `json:"task_spec_truncated,omitempty"`
-	TaskStatus        string                        `json:"task_status,omitempty"`
-	WaitReason        string                        `json:"wait_reason,omitempty"`
-	StartedAt         *time.Time                    `json:"started_at,omitempty"`
-	CompletedAt       *time.Time                    `json:"completed_at,omitempty"`
-	RetryCount        int                           `json:"retry_count,omitempty"`
-	ExecutorSource    string                        `json:"executor_source,omitempty"`
-	Error             string                        `json:"error,omitempty"`
-	Verification      *SessionAutomatonVerification `json:"verification,omitempty"`
-	Git               *SessionAutomatonGit          `json:"git,omitempty"`
-	Decisions         []SessionAutomatonDecision    `json:"decisions,omitempty"`
-	Cost              SessionAutomatonCost          `json:"cost"`
+	PRDID             string `json:"prd_id"`
+	PRDTitle          string `json:"prd_title,omitempty"`
+	PRDStatus         string `json:"prd_status,omitempty"`
+	StoryID           string `json:"story_id,omitempty"`
+	StoryTitle        string `json:"story_title,omitempty"`
+	TaskID            string `json:"task_id,omitempty"`
+	TaskTitle         string `json:"task_title,omitempty"`
+	TaskSpec          string `json:"task_spec,omitempty"`
+	TaskSpecTruncated bool   `json:"task_spec_truncated,omitempty"`
+	TaskStatus        string `json:"task_status,omitempty"`
+	WaitReason        string `json:"wait_reason,omitempty"`
+	// WaitCause / WaitResetsAt classify the wait (pool_full, backoff, ...)
+	// and say when it ends, when known. Holds lists the pools and tree lock
+	// the task holds; HoldsNote is the sentence for a parked task.
+	WaitCause      string                        `json:"wait_cause,omitempty"`
+	WaitResetsAt   *time.Time                    `json:"wait_resets_at,omitempty"`
+	Holds          []string                      `json:"holds,omitempty"`
+	HoldsNote      string                        `json:"holds_note,omitempty"`
+	StartedAt      *time.Time                    `json:"started_at,omitempty"`
+	CompletedAt    *time.Time                    `json:"completed_at,omitempty"`
+	RetryCount     int                           `json:"retry_count,omitempty"`
+	ExecutorSource string                        `json:"executor_source,omitempty"`
+	Error          string                        `json:"error,omitempty"`
+	Verification   *SessionAutomatonVerification `json:"verification,omitempty"`
+	Git            *SessionAutomatonGit          `json:"git,omitempty"`
+	Decisions      []SessionAutomatonDecision    `json:"decisions,omitempty"`
+	Cost           SessionAutomatonCost          `json:"cost"`
 }
 
 // SessionAutomatonVerification mirrors the task's verifier verdict.
@@ -213,6 +220,9 @@ func (s *Server) buildSessionAutomatonDetail(sess *session.Session) *SessionAuto
 			}
 		}
 	}
+	if taskID != "" {
+		s.fillAutomatonVisibility(d, taskID)
+	}
 	// Planning (decompose) sessions have no linked task — surface the
 	// PRD-level planner wait reason (why the decompose is queued on
 	// capacity) in the same `wait_reason` slot a waiting task already uses.
@@ -229,6 +239,33 @@ func (s *Server) buildSessionAutomatonDetail(sess *session.Session) *SessionAuto
 		d.Decisions = append([]SessionAutomatonDecision(nil), prd.Decisions[start:]...)
 	}
 	return d
+}
+
+// fillAutomatonVisibility adds the wait cause, its reset time and the task's
+// holdings from the autonomous per-task views, when the manager supplies them.
+func (s *Server) fillAutomatonVisibility(d *SessionAutomatonDetail, taskID string) {
+	p, ok := s.autonomousMgr.(taskVisibilityProvider)
+	if !ok {
+		return
+	}
+	waiting, running := p.TaskVisibility()
+	for _, w := range waiting {
+		if w.TaskID == taskID {
+			d.WaitCause = string(w.Cause)
+			d.WaitResetsAt = w.ResetsAt
+			if d.WaitReason == "" {
+				d.WaitReason = w.Reason
+			}
+			break
+		}
+	}
+	for _, h := range running {
+		if h.TaskID == taskID {
+			d.Holds = h.Pools
+			d.HoldsNote = h.Note
+			break
+		}
+	}
 }
 
 // findAutomatonStoryTask locates the task by id (and its parent story);

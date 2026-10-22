@@ -1126,6 +1126,13 @@ type LoopStatus struct {
 	// Always an array, empty when none is wired or set.
 	Budgets []BudgetStatus `json:"budgets"`
 
+	// Queue lists every queued or capacity-waiting task with the plain-words
+	// reason it is waiting (and since when, when it resets, who holds what it
+	// needs). Holdings lists every running task with the pools, node and tree
+	// lock it holds. Both are omitted when empty.
+	Queue    []TaskWaitView `json:"queue,omitempty"`
+	Holdings []TaskHoldView `json:"holdings,omitempty"`
+
 	// Warnings are plain-language notices that a planning or verification
 	// model does not pair with the backend it is used with, so it will not
 	// reach its session. See PairingWarnings.
