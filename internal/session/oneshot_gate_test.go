@@ -75,8 +75,8 @@ func TestSessionRetentionDays_DefaultAndOverride(t *testing.T) {
 }
 
 func TestRemoveOneShotScratch_RemovesOnlyThatSession(t *testing.T) {
-	mine := "/tmp/datawatch-pi-task-cs-testhost-gate1-111.txt"
-	other := "/tmp/datawatch-pi-task-cs-testhost-gate2-222.txt"
+	mine := filepath.Join(os.TempDir(), "datawatch-pi-task-cs-testhost-gate1-111.txt")
+	other := filepath.Join(os.TempDir(), "datawatch-pi-task-cs-testhost-gate2-222.txt")
 	for _, f := range []string{mine, other} {
 		if err := os.WriteFile(f, []byte("x"), 0o600); err != nil {
 			t.Fatal(err)
