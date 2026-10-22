@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/dmz006/datawatch/internal/gitguard"
 )
 
 // SnapshotAttemptWork records the complete working state of dir (modified
@@ -16,7 +18,17 @@ import (
 // It works through a temporary index file, so the user's real index, working
 // tree and stash are never touched. When dir has no changes relative to HEAD,
 // it returns an empty ref, a nil error, and creates no ref.
+//
+// Only the candidate files are staged, never the whole tree. Candidates pass
+// through the gitguard.Default staging policy (size cap, ignored cache and
+// build directories, model-weight patterns) and a file-count limit. When the
+// limit is exceeded, the snapshot is refused with an error and no ref is
+// created.
 func SnapshotAttemptWork(ctx context.Context, dir, taskKey string, attempt int) (ref string, err error) {
+	if home, herr := gitguard.InHome(dir, nil); herr == nil && home {
+		fmt.Printf("[autonomous] WARNING: attempt snapshot is running in the user's home directory %s — staging is bounded by the staging guard (per-file size cap, ignored cache/build dirs, file-count limit); narrow the write scope to keep snapshots small\n", dir)
+	}
+
 	tmpDir, err := os.MkdirTemp("", "attempt-snapshot-")
 	if err != nil {
 		return "", fmt.Errorf("create snapshot temp dir: %w", err)
@@ -42,12 +54,40 @@ func SnapshotAttemptWork(ctx context.Context, dir, taskKey string, attempt int) 
 	if err != nil {
 		return "", err
 	}
+	// Staging runs from the repository top so that the repo-relative paths
+	// git reports are valid pathspecs, whichever subdirectory dir names.
+	top, err := snapshotGit(ctx, dir, env, "rev-parse", "--show-toplevel")
+	if err != nil {
+		return "", err
+	}
 	if _, err := snapshotGit(ctx, dir, env, "read-tree", head); err != nil {
 		return "", err
 	}
-	if _, err := snapshotGit(ctx, dir, env, "add", "-A"); err != nil {
+
+	p := gitguard.Default
+	candidates, err := snapshotCandidates(ctx, top)
+	if err != nil {
 		return "", err
 	}
+	kept, skipped := p.Keep(top, candidates)
+	kept, err = snapshotDropUnmatched(ctx, top, env, kept)
+	if err != nil {
+		return "", err
+	}
+	if len(skipped) > 0 {
+		fmt.Printf("[autonomous] attempt snapshot in %s skipped %d file(s) by the staging guard (%s)\n", dir, len(skipped), snapshotSkipSummary(skipped))
+	}
+	if p.RefuseReason(len(kept)) != "" {
+		return "", fmt.Errorf("attempt snapshot refused in %s: %d candidate file(s), %d to stage, exceeds the limit of %d (MaxStagedFiles); no ref was created", dir, len(candidates), len(kept), p.MaxStagedFiles)
+	}
+	// git add with no pathspec would stage the whole tree, so an empty kept
+	// list means nothing is staged and the temp index stays at HEAD.
+	if len(kept) > 0 {
+		if err := snapshotAdd(ctx, top, env, p, kept); err != nil {
+			return "", err
+		}
+	}
+
 	tree, err := snapshotGit(ctx, dir, env, "write-tree")
 	if err != nil {
 		return "", err
@@ -91,7 +131,18 @@ func sanitizeAttemptTaskKey(taskKey string) string {
 // snapshotGit runs a fixed git subcommand in dir with the given environment
 // and returns its trimmed stdout.
 func snapshotGit(ctx context.Context, dir string, env []string, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, "git", args...) // #nosec G204 -- fixed git subcommands; only the sanitized task key and git's own output are passed as arguments
+	out, err := snapshotGitRaw(ctx, dir, env, args...)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(out), nil
+}
+
+// snapshotGitRaw runs a fixed git subcommand in dir with the given environment
+// and returns its stdout unmodified. Use it where trimming would change the
+// output, such as NUL-separated path lists whose names may start with a space.
+func snapshotGitRaw(ctx context.Context, dir string, env []string, args ...string) (string, error) {
+	cmd := exec.CommandContext(ctx, "git", args...) // #nosec G204 -- fixed git subcommands; only the sanitized task key, repo-relative candidate paths and git's own output are passed as arguments
 	cmd.Dir = dir
 	cmd.Env = env
 	var stdout, stderr bytes.Buffer
@@ -100,5 +151,5 @@ func snapshotGit(ctx context.Context, dir string, env []string, args ...string) 
 	if err := cmd.Run(); err != nil {
 		return "", fmt.Errorf("git %s: %w: %s", args[0], err, strings.TrimSpace(stderr.String()))
 	}
-	return strings.TrimSpace(stdout.String()), nil
+	return stdout.String(), nil
 }
