@@ -317,6 +317,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/federation/peers/", api.handleFederationPeers)                     // BL316 S1
 	apiMux.HandleFunc("/api/federation/groups", api.handleFederationGroups)                    // BL316 S1
 	apiMux.HandleFunc("/api/federation/groups/", api.handleFederationGroups)                   // BL316 S1
+	apiMux.HandleFunc("/api/federation/fingerprints", api.handleFederationFingerprints)        // fingerprint exchange
 	apiMux.HandleFunc("/api/analytics", api.handleAnalytics)                                   // BL12
 	apiMux.HandleFunc("/api/dashboard/layout", api.handleDashboardLayout)                      // BL303 card layout
 	apiMux.HandleFunc("/api/dashboard/cards", api.handleDashboardCards)                        // #57 card CRUD (list + add)

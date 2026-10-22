@@ -3002,6 +3002,30 @@ paths:
       operationId: federationSessions
       tags: [Federation]
       responses: {"200": {description: OK}}
+  /api/federation/fingerprints:
+    get:
+      summary: This daemon's resource fingerprints for the calling peer — the operator's own labels and keyed hashes only, never the identity values behind them
+      operationId: federationFingerprints
+      tags: [Federation]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  fingerprints:
+                    type: array
+                    items:
+                      type: object
+                      required: [kind, name, hash]
+                      properties:
+                        kind: {type: string}
+                        name: {type: string}
+                        hash: {type: string}
+        "400": {description: No peer identity for this token — /fingerprints is for federation peer tokens, not the admin token}
+        "403": {description: Fingerprint exchange is not enabled for this peer}
 
   # Splash (BL69)
   /api/splash/info:
