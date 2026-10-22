@@ -1443,11 +1443,33 @@ howto, and the `datawatch-app` issue where applicable.
    - Every op names the branch (member ID) it acts on, per the Phase 3a naming convention.
    - The shared per-Automation lock, the `Version` check and `409`s.
    - Decisions and audit.
-4. **Phase 4 — Model-tier defaults.** Status: Planned.
+4. **Phase 4 — Model-tier defaults.** Status: Done (development build; released with the next release).
    - The Automation tier in `resolveTaskBackendModel`, the executor effort chain
      and `resolveVerificationLLM`.
    - `VerifierSourceAutomation`.
    - `automation_set_llm` / `_set_verification_llm`.
+   - Shipped notes:
+     - `executor_source` (`task` | `story` | `prd` | `automation` | `global`) is
+       recorded on the task run record beside `verifier_source`. It names the level
+       that supplied the execution backend for the latest attempt, is overwritten by
+       each later attempt, and `global` means no level named a backend. The session
+       status block and the PWA show it (an **Executor** line).
+     - `expected_version` is optional on both set operations (omitted or `0` skips
+       the check, a stale positive value is a `409`), unlike the Phase 3b control
+       operations where it is required. The fields are presence-aware (omitted keeps,
+       empty clears), and the operations are allowed while the Automation is
+       `draft`, `active`, `paused` or `blocked`.
+     - The planning pair (`planning_backend`, `planning_model`) is used for decompose
+       only: unset means the global planning backend, and it never changes the run
+       or verify default (and the run and verify defaults never change who plans).
+       `set_verification_llm` rejects the planning fields.
+     - Operator-facing docs: the model-tier section of `docs/api/autonomous.md`, the
+       Automation tools in `docs/mcp.md`, and the "Give an Automation its own model
+       defaults" section of `docs/howto/automation-queue-advance.md`. The Automation
+       defaults are runtime data on each Automation, not config keys, so
+       `docs/config-reference.yaml` carries a comment block only.
+     - The live smoke row is opt-in and still owed: see the Phase 4 section of
+       `docs/testing-tracker.md`.
 5. **Phase 5 — BudgetPolicy.** Status: Planned.
    - The shared `PRDCostUSD` rollup (with BL414 / BL428 Phase 5).
    - The advance gate and the `admit` hook.

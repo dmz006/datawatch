@@ -2096,12 +2096,31 @@ setting and remain locked to the 3 pre-Run statuses.
 **Verification LLM** — `verification_backend` / `verification_model` /
 `verification_effort` choose the LLM that verifies a task's work, per
 task, per story or per Automaton. Resolution: task → story → Automaton
-→ global `autonomous.verification_backend` / `verification_model` /
+→ Automation → global `autonomous.verification_backend` / `verification_model` /
 `verification_effort`; a backend set at any per-unit level bypasses the
 `autonomous.verification_backends` pool. Judge sessions (verifier and guardrail) are bounded by `autonomous.verification_timeout_seconds` (default 30m). If a `verifier(session):` or `guardrail(session):` failure names `backend=`, `model=` and `timed out after X`, raise that key rather than treating the model's output as a judgment. Same presence rules: omit to
 keep, `""` to clear. The task's `verification` result records
 `verifier_backend` / `verifier_model` / `verifier_effort` /
-`verifier_source`. Full reference: [`api/autonomous.md`](api/autonomous.md).
+`verifier_source` (`task`, `story`, `prd` for the Automaton level,
+`automation`, `global` or `pool`). The task itself records
+`executor_source` (`task`, `story`, `prd`, `automation` or `global`): the
+level that supplied the backend it ran on.
+
+**Automation model defaults.** An Automation can carry its own default
+execution, verification and planning LLM for the member Automata it runs.
+The Automation level sits between the Automaton and the global default for
+the execution backend, model and effort and for the verification LLM; backend
+and model come from the same level, and effort resolves independently. The
+planning pair (`planning_backend`, `planning_model`) is used only when a member
+is decomposed, and unset means the global planning backend. These are runtime
+data on each Automation rather than config keys: set them with
+`POST /api/automations/{id}/set_llm` and `/set_verification_llm`, the MCP tools
+`automation_set_llm` and `automation_set_verification_llm`, `datawatch
+automation set-llm` and `set-verification-llm`, or the comm verbs
+`automation set-llm` and `automation set-verification-llm`, while the
+Automation is draft, active, paused or blocked. Omitted fields are kept,
+empty ones are cleared, and `expected_version` is optional. Full reference:
+[`api/autonomous.md`](api/autonomous.md).
 
 ```
 # MCP

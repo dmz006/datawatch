@@ -9,6 +9,73 @@ Do not mark **Validated=Yes** based solely on unit tests.
 
 ---
 
+## Phase 4 - model-tier defaults
+
+An Automation carries default model settings for the member Automata it runs. The
+Automation tier sits between the Automaton and the global default for the execution
+backend, model and effort and for the verification LLM, `verifier_source` gains
+`automation`, task run records gain `executor_source`, and an optional planning pair
+is used only when a member is decomposed. Two set operations, `set_llm` and
+`set_verification_llm`, exist on the REST, MCP, CLI and comm surfaces. Design:
+`docs/plans/2026-10-14-automation-orchestration-design.md` (Phase 4).
+
+Each test row is built and unit-tested, and none is Validated. Validated is filled in by
+the operator's live run, with its date, per the rule at the top of this file. The live
+row is opt-in and is the run still owed.
+
+| Feature | Test Name | Test Conditions | Description | Test Type | Tested? | Pass/Fail? | Validated? | Notes |
+|---|---|---|---|---|---|---|---|---|
+| Verification LLM chain: the Automation tier and `verifier_source` = `automation` | `TestResolveVerificationLLMAutomationTier`, `TestResolveVerificationLLMAutomationLosesToMoreSpecificLevels`, `TestResolveVerificationLLMAutomationSameLevelModel`, `TestResolveVerificationLLMAutomationEffortChain`, `TestSelectVerifierLLMAutomationSourceBypassesPool` | `go test ./internal/autonomous/ -count=1 -run 'TestResolveVerificationLLMAutomation'` and `go test ./cmd/datawatch/ -count=1 -run 'TestSelectVerifierLLMAutomationSourceBypassesPool'` | The order is task, story, Automaton, Automation, global. With nothing set above it, the Automation's verification backend, model and effort win and the source is `automation`. A task, story or Automaton setting beats the Automation. Backend and model are taken from the same level, so an Automation model is never paired with another level's backend. Effort resolves on its own. A verification backend set at the Automation level bypasses the global verification pool, as the other per-unit levels do | Unit (resolver, selector) | **Yes** (`internal/autonomous/verification_llm_automation_test.go`, `cmd/datawatch/verification_llm_test.go`) | | No |  |
+| Execution chain: the Automation tier for backend, model and effort | `TestResolveTaskBackendModelAutomationTier`, `TestResolveTaskBackendModelAutomationLosesToMoreSpecificLevels`, `TestResolveTaskBackendModelAutomationSameLevelModel`, `TestResolveTaskEffortAutomationTier` | `go test ./internal/autonomous/ -count=1 -run 'TestResolveTaskBackendModelAutomation\|TestResolveTaskEffortAutomationTier'` | The order is task, story, Automaton, Automation, global. The Automation's backend and model apply when no more specific level names a backend, and a more specific level always wins. Backend and model come from the same level. The effort chain has the same order and resolves independently of backend and model. An Automation with no effort leaves the effort empty | Unit (resolver) | **Yes** (`internal/autonomous/executor_source_test.go`) | | No |  |
+| `executor_source` on task run records | `TestExecutorSourceValues`, `TestExecutorSourceRecordedOnTask`, `TestExecutorSourceJSONRoundTrip` | `go test ./internal/autonomous/ -count=1 -run 'TestExecutorSource'` | The values are `task`, `story`, `prd`, `automation` and `global`. A task of an Automation member that gets its backend from the Automation records `automation` and spawns with that backend and model. A standalone Automaton with no backend records `global` and spawns on the fallback backend. An Automaton-level backend records `prd`. The field survives a save and load and is omitted when empty | Unit (dispatch loop, fake spawn) | **Yes** (`internal/autonomous/executor_source_test.go`) | | No |  |
+| Session status and PWA show `executor_source` | `TestSessionAutomatonExecutorSource` | `go test ./internal/server/ -count=1 -run 'TestSessionAutomatonExecutorSource'` | The Automaton block of the session status carries `executor_source` for a task that has one and leaves it out for a task that has none. The PWA shows it as an Executor line on the task and on the session status card (new locale key `status_executor_label`) | Unit (in-process HTTP, `httptest`) | **Yes** (`internal/server/executor_source_view_test.go`) | | No | The PWA rendering has no browser test in this row |
+| Planning field does not affect execution or verification | `TestPlanningFieldDoesNotAffectExecution`, `TestResolveVerificationLLMPlanningFieldIgnored`, `TestAutomationPlanningLeavesRunAndVerifyDefaults` | `go test ./internal/autonomous/ -count=1 -run 'TestPlanningFieldDoesNotAffectExecution\|TestResolveVerificationLLMPlanningFieldIgnored\|TestAutomationPlanningLeavesRunAndVerifyDefaults'` | An Automation with only `planning_backend` and `planning_model` set leaves the execution backend, model and effort and the verification LLM exactly as they were, and the run and verify defaults do not change which LLM plans | Unit (resolver) | **Yes** (`internal/autonomous/executor_source_test.go`, `internal/autonomous/verification_llm_automation_test.go`, `internal/autonomous/automation_planning_test.go`) | | No |  |
+| Planning used for decompose | `TestEffectivePlanningAutomationTier`, `TestEffectivePlanningUnsetUsesGlobal`, `TestDecomposeUsesAutomationPlanning` | `go test ./internal/autonomous/ -count=1 -run 'TestEffectivePlanning\|TestDecomposeUsesAutomationPlanning'` | A planning backend and model on the Automation are used when a member Automaton is decomposed. A backend alone never takes the global model, a model alone pairs with the global planning backend, and unset (or no Automation) uses the global planning backend and model. The Automaton's own decomposition settings still come first | Unit (resolver, decompose with a fake planner) | **Yes** (`internal/autonomous/automation_planning_test.go`) | | No |  |
+| Automation fields and the member lookup | `TestAutomationPlanningFieldsRoundTrip`, `TestAutomationForPRDLookup` | `go test ./internal/autonomous/ -count=1 -run 'TestAutomationPlanningFieldsRoundTrip\|TestAutomationForPRDLookup'` | The planning, execution and verification fields survive create, update and reload, and an update can clear them. The lookup from a member Automaton to its Automation returns nothing for a standalone Automaton and a nil one | Unit (store round trip, Manager) | **Yes** (`internal/autonomous/automation_model_tier_test.go`) | | No |  |
+| Manager setters: `SetAutomationLLM` and `SetAutomationVerificationLLM` | `TestSetAutomationLLM`, `TestSetAutomationVerificationLLM`, `TestSetAutomationLLMRejections`, `TestSetAutomationLLMPresenceSemantics`, `TestSetAutomationLLMDecisionAndAudit` | `go test ./internal/autonomous/ -count=1 -run 'TestSetAutomationLLM\|TestSetAutomationVerificationLLM'` | Each setter writes only its own fields and bumps the version once. A `nil` field is kept and an empty one is cleared. A `completed` or `cancelled` Automation is a 409 and nothing is written, a bad effort and a backend and model pair that do not fit are refused without writing, and a stale positive `expected_version` is a 409 while `0` skips the check. One decision and one audit record are written per call. Allowed while draft, active, paused or blocked | Unit (Manager) | **Yes** (`internal/autonomous/automation_set_llm_test.go`) | | No |  |
+| REST `POST /api/automations/{id}/set_llm` and `/set_verification_llm` | `TestAutomationRESTSetLLM`, `TestAutomationRESTSetVerificationLLM`, `TestAutomationRESTSetLLMGuards` | `go test ./internal/server/ -count=1 -run 'TestAutomationRESTSet'` | Each returns 200 with the updated Automation and writes one audit entry. Omitted fields are kept and empty ones clear. No `expected_version` skips the check and a stale one is 409. A body with no setting field is 400 and names the allowed fields. A planning field on `set_verification_llm` is 400, and so is an unknown backend (an empty one clears and is not looked up). A malformed body is 400, an unknown Automation is 404, a GET is 405 and a caller without the write capability is 403 | Unit (in-process HTTP, `httptest`) | **Yes** (`internal/server/automation_set_llm_rest_test.go`) | | No |  |
+| MCP `automation_set_llm` and `automation_set_verification_llm` | `TestAutomationMCPSetLLM`, `TestAutomationMCPSetVerificationLLM` | `go test ./internal/mcp/ -count=1 -run 'TestAutomationMCPSet'` | Only `automation_id` is required. Each tool proxies to its REST path with the keys the caller passed, and an empty string is forwarded so it clears. `expected_version` is forwarded only when positive. A call with no setting field is refused before any request is sent, and `automation_set_verification_llm` never forwards the planning arguments. A server conflict comes back as an error result | Unit (fake REST sink) | **Yes** (`internal/mcp/automation_set_llm_test.go`) | | No |  |
+| Comm `automation set-llm` and `automation set-verification-llm` | `TestAutomationCommSetLLM`, `TestAutomationCommSetVerificationLLM` | `go test ./internal/router/ -count=1 -run 'TestAutomationCommSet'` | Each verb parses `key=value` pairs and posts them to the matching REST path. `model=` with an empty value clears. A missing ID, a missing pair, an unknown key, a token without `=` or (on `set-verification-llm`) a planning key replies with the usage line and sends nothing | Unit (comm router, fake daemon) | **Yes** (`internal/router/automation_set_llm_cmd_test.go`) | | No |  |
+| CLI `datawatch automation set-llm` and `set-verification-llm` | `TestAutomationCLISetLLM`, `TestAutomationCLISetVerificationLLM` | `go test ./cmd/datawatch/ -count=1 -run 'TestAutomationCLISet'` | Both subcommands are registered. Only the flags given are sent, an empty value clears, and a call with no setting flag fails before any request. `--expected-version`, `--actor` and `--reason` are forwarded when given. `set-verification-llm` has no planning flags | Unit (CLI, fake REST sink) | **Yes** (`cmd/datawatch/automation_set_llm_cli_test.go`) | | No |  |
+| Live: set the execution, planning and verification defaults on a sandbox Automation, run a member and read `executor_source` and `verifier_source` | `TestAutomationModelTierLiveSmoke` | Opt-in, against a sandbox daemon (TLS port 18443), never production. Skipped unless its environment variable names the sandbox daemon's base URL, following the control-operations live row above | Calls only the daemon's REST API: sets the defaults on a draft Automation, checks the fields and the 409 on a stale `expected_version`, then runs a member and checks that `executor_source` is `automation` and that a task-level setting still wins | Live (opt-in, sandbox daemon) | **No** (the test is not written in this build) | | **No** | Owed: the operator's live run, with date |
+
+**Mobile-Parity: owed, not yet filed.** Issues are not filed from this
+pipeline. File on `dmz006/datawatch-app` when the model-tier branch merges:
+
+> `feat(automation): model-tier defaults and executor_source`
+>
+> Server added two operations on an Automation:
+> `POST /api/automations/{id}/set_llm` (body `backend?`, `model?`, `effort?`,
+> `planning_backend?`, `planning_model?`) and
+> `POST /api/automations/{id}/set_verification_llm` (body `backend?`, `model?`,
+> `effort?`). Both also take `expected_version?`, `actor?` and `reason?`. Fields
+> are presence-aware: an omitted field is kept and an empty string clears it.
+> `expected_version` is optional (omitted or `0` skips the check, a stale
+> positive value is `409`). Allowed while the Automation is `draft`, `active`,
+> `paused` or `blocked` (otherwise `409`); `400` for no setting field, a planning
+> field on `set_verification_llm`, an unknown backend or a bad effort.
+> New Automation fields on `/api/automations`: `backend`, `model`, `effort`
+> (execution), `planning_backend`, `planning_model` (used only when decomposing
+> a member), `verification_backend`, `verification_model`, `verification_effort`.
+> Resolution order for the execution backend, model and effort and for the
+> verification LLM: task, story, Automaton, Automation, global.
+> The verifier source on a task's `verification` object gains the value
+> `automation` (`task | story | prd | automation | global | pool`). Task run
+> records gain `executor_source` (`task | story | prd | automation | global`),
+> also present in the session status Automaton block.
+> Acceptance: Android and iOS show `executor_source` beside the verifier source
+> on a task and on the session status view, treat an unknown value as plain text,
+> and, when they gain an Automation view, offer both set operations with an
+> explicit clear action and surface the `409` and `400` messages. The PWA shows
+> `executor_source` as an Executor line today and has no Automation view, so
+> setting the defaults stays API-only until the PWA Automation view exists.
+>
+> Localization Rule: new key `status_executor_label`, English "Executor". The
+> de, es, fr and ja bundles carry the English placeholder; please supply real
+> translations in the app's own bundles.
+
+---
+
 ## Phase 3b — control operations
 
 Operator control of a running Automation: `pause`, `resume`, `cancel` (with a required
