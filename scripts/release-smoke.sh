@@ -280,6 +280,9 @@ cleanup_all() {
         compute-node)    curl "${curl_args[@]}" -X DELETE "$BASE/api/compute/nodes/$id" >/dev/null 2>&1 && echo "  removed compute node $id" || echo "  (already gone) compute-node $id" ;;
         llm)             curl "${curl_args[@]}" -X DELETE "$BASE/api/llms/$id" >/dev/null 2>&1 && echo "  removed llm $id" || echo "  (already gone) llm $id" ;;
         smoke-file)      curl "${curl_args[@]}" -X DELETE -H "Content-Type: application/json" -d "{\"path\":\"$id\"}" "$BASE/api/files" >/dev/null 2>&1 && echo "  deleted file $id" || echo "  (already gone) file $id" ;;
+        # Clears only the named backend's flag (never "all"), so pre-existing
+        # operator flags survive the smoke run.
+        usage-backoff)   [[ -n "$id" ]] && curl "${curl_args[@]}" -X DELETE -H "Content-Type: application/json" -d "{\"backend\":\"$id\"}" "$BASE/api/usage-backoff" >/dev/null 2>&1 && echo "  cleared usage back-off $id" || echo "  (already gone) usage-backoff $id" ;;
         device)          curl "${curl_args[@]}" -X DELETE "$BASE/api/devices/$id" >/dev/null 2>&1 && echo "  removed device $id" || echo "  (already gone) device $id" ;;
         *)               echo "  (unknown kind) $kind $id" ;;
       esac
@@ -4083,6 +4086,36 @@ assert d[-1].get('session_id')" 2>/dev/null; then
       -d "{\"id\":\"$(cat \"$SRP_SCRATCH/$_f\" 2>/dev/null)\"}" "$BASE/api/sessions/kill" >/dev/null 2>&1 || true
   done
   rm -rf "$SRP_SCRATCH" 2>/dev/null || true
+fi
+
+H "76. Usage back-off — status, manual set, confirm active, clear, confirm empty"
+# Uses a unique backend name so it never touches a pre-existing operator
+# flag; cleanup clears exactly that backend (DELETE with a non-empty
+# backend), never "all".
+UB_BACKEND="smoke-backoff-$$-$(date +%s)"
+UB0=$(curl "${curl_args[@]}" "$BASE/api/usage-backoff" || true)
+if echo "$UB0" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert isinstance(d,dict)' 2>/dev/null; then
+  ok "GET /api/usage-backoff returns a JSON object"
+  add_cleanup usage-backoff "$UB_BACKEND"
+  UBS=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+    -d "{\"backend\":\"$UB_BACKEND\",\"minutes\":5,\"reason\":\"release smoke\"}" \
+    "$BASE/api/usage-backoff" || true)
+  UB1=$(curl "${curl_args[@]}" "$BASE/api/usage-backoff" || true)
+  if [[ -n "$UB1" ]] && echo "$UB1" | grep -q "$UB_BACKEND"; then
+    ok "POST /api/usage-backoff set a flag; GET shows it active"
+  else
+    ko "usage back-off flag not visible after set: ${UB1:0:160} (set: ${UBS:0:120})"
+  fi
+  curl "${curl_args[@]}" -X DELETE -H "Content-Type: application/json" \
+    -d "{\"backend\":\"$UB_BACKEND\"}" "$BASE/api/usage-backoff" >/dev/null 2>&1 || true
+  UB2=$(curl "${curl_args[@]}" "$BASE/api/usage-backoff" || true)
+  if [[ -n "$UB2" ]] && ! echo "$UB2" | grep -q "$UB_BACKEND"; then
+    ok "DELETE /api/usage-backoff cleared exactly the smoke flag; GET no longer lists it"
+  else
+    ko "smoke usage back-off flag still present after DELETE: ${UB2:0:160}"
+  fi
+else
+  skip "usage back-off: GET /api/usage-backoff unavailable (${UB0:0:80})"
 fi
 
 # ---------------------------------------------------------------------------

@@ -206,6 +206,87 @@ restarts.
 
 An alert is raised when a task has waited 30 minutes.
 
+## Reactive usage backoff
+
+When a backend runs out of usage (a rate limit or a weekly cap), starting
+more autonomous work on it only burns retries. A usage back-off flag holds
+autonomous dispatch to that one backend until the limit lifts. The flag is
+in memory and per backend: it is lost on a daemon restart, and backing off
+`claude-code` never affects `pi` or `ollama`. The implementation lives in
+`internal/autonomous/backoff.go`; the design is in
+`docs/plans/2026-10-14-concurrency-and-budget-design.md`.
+
+The flag only pauses autonomous dispatch. It never blocks an interactive
+session start, so you can still open a session on a backed-off backend by
+hand. While a flag is active, tasks and decompose runs that would use that
+backend wait with a visible wait reason (like any capacity wait) instead of
+failing or burning their retry budget, and they resume when it clears.
+
+### Automatic set and clear
+
+When a session on a backend reaches the rate-limited state
+(`StateRateLimited`, detected by `session.rate_limit_patterns` in
+`internal/session/manager.go`), datawatch sets the flag for that backend
+automatically. It clears itself at the reset time parsed from the backend's
+message. When no reset time can be parsed, it falls back to a maximum
+back-off of 60 minutes, set with `autonomous.backoff_max_wait_minutes`.
+
+The mode switch is `autonomous.usage_backoff`: `pause_backend` (the default)
+sets flags automatically, and `off` disables only the automatic path. A
+manual set still works in `off` mode, so you always keep an escape hatch.
+The global cooldown (`rate_limit_global_pause`) is separate: a spawn refused
+by it also waits rather than fails.
+
+### Max back-off with no reset time
+
+Some backends say only "usage limit reached" without telling you when it
+lifts. Then there is no reset time to parse, and datawatch holds the backend
+for `autonomous.backoff_max_wait_minutes` (default 60, whole minutes; a
+value below 1 is treated as 60) and then lets one autonomous attempt through.
+
+If that attempt is rate-limited again, the flag is set again for another
+full window, so a long outage costs one probe per window rather than a
+retry storm. If you know the real reset time, set the flag yourself with
+`until` or an exact number of minutes (below) instead of waiting for the
+maximum to expire.
+
+### Manual set, clear and status
+
+The same four operations exist on every surface, with the same names and
+arguments:
+
+- REST: `GET /api/usage-backoff` (status), `POST /api/usage-backoff` with
+  `{"backend": "claude-code", "minutes": 45, "reason": "weekly cap"}`
+  (`until`, an RFC3339 time, replaces `minutes`), and
+  `DELETE /api/usage-backoff` with `{"backend": "claude-code"}` (omit the
+  backend, or pass `all`, to clear every flag).
+- MCP: `usage_backoff_status`, `usage_backoff_set`, `usage_backoff_clear`.
+- CLI: `datawatch usage-backoff status`,
+  `datawatch usage-backoff set <backend> <minutes|until> [--reason text]`,
+  `datawatch usage-backoff clear [backend|all]`.
+- Comm channels: `usage_backoff status`,
+  `usage_backoff set <backend> <minutes> [reason]`, `usage_backoff clear`.
+
+Status lists each active flag (backend, until, reason, and whether it was
+set by a rate limit or by an operator) together with the effective mode and
+maximum wait. The capacity status (`datawatch capacity`, the PWA Capacity
+card) shows the same flags as the wait reason on blocked tasks.
+
+### Pattern staleness and manual recheck
+
+Automatic back-off only works while `session.rate_limit_patterns` still
+matches what each backend actually prints. Backends reword their limit
+messages, so the status output carries `patterns_version` (a fingerprint of
+the effective patterns) and `patterns_stale`, which turns true whenever the
+patterns change and have not been re-verified.
+
+Re-verify whenever the backend or its CLI version changes, and whenever you
+edit `session.rate_limit_patterns`: provoke or replay a fresh rate-limit
+response, confirm a session reaches the rate-limited state, then record it
+with `datawatch usage-backoff recheck` (REST `POST /api/usage-backoff/recheck`,
+MCP `usage_backoff_recheck`, comm `usage_backoff recheck`). That clears
+`patterns_stale` until the patterns change again.
+
 ## Common pitfalls
 
 - **Everything queues behind one big model.** That is the node limit

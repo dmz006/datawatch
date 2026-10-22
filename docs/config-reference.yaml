@@ -1136,6 +1136,20 @@ autonomous:
   # (settings_plan_coverage). See docs/operations.md (plan coverage gate)
   # and docs/plans/2026-10-20-plan-coverage-gate.md.
   plan_coverage_check: block
+  # Reactive usage back-off mode. pause_backend (default): when a session on
+  # a backend hits a rate/usage limit, autonomous dispatch to that backend is
+  # held until its reset time (or the max wait below). off: no automatic
+  # flags are set; an operator can still set one by hand. Interactive session
+  # starts are never blocked either way. Reachable via REST PUT /api/config
+  # (this dotted key), MCP autonomous_config_set, CLI `datawatch config set
+  # autonomous.usage_backoff=off`, comm `configure autonomous.usage_backoff=off`
+  # and the PWA Settings field. Manual flags: `datawatch usage-backoff`,
+  # /api/usage-backoff. See docs/howto/automata-capacity.md.
+  usage_backoff: pause_backend
+  # Longest an automatic back-off lasts, in whole minutes, when the backend's
+  # rate-limit message carries no parseable reset time. Default 60; a value
+  # below 1 is treated as 60. Same surfaces as autonomous.usage_backoff.
+  backoff_max_wait_minutes: 60
   # Minimum covered/extractable-requirement ratio a plan must meet for
   # coverage to pass. Value must be in (0,1]; zero or negative normalizes to
   # 1.0 (require full coverage) and values above 1 clamp to 1.0 (see
