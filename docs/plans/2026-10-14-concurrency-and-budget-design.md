@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-14
 **Version:** v9.0.75 at time of writing (`var Version` in `cmd/datawatch/main.go`); implementation target TBD / next minor
-**Status:** Phases 1–2 implemented (dead-knob removal + per-tree write lock, shipped in the v9.4.0/v9.5.0 development builds; live smoke 2026-10-18 in `tests/live-smoke/REPORT.md`); Phases 3–6 Planned (no implementation approved; this doc's design pass otherwise unchanged)
+**Status:** Phases 1–3 implemented (Phases 1–2 shipped in the v9.4.0/v9.5.0 development builds, live smoke 2026-10-18 in `tests/live-smoke/REPORT.md`; Phase 3 complete 2026-10-22 in the unreleased development build, checklist below §Phases); Phases 4–6 Planned (no implementation approved; this doc's design pass otherwise unchanged)
 
 Terminology note: operator-facing text says **Automaton/Automata**; the code
 and this plan say **PRD** for the same object (`internal/autonomous`). The
@@ -1002,8 +1002,8 @@ New and changed config keys:
 
 ## Phases
 
-These are the phases of the **follow-up implementation PRD**. Phase 1 and
-Phase 2 are **Done**; the rest are **Planned**, not approved. Every phase
+These are the phases of the **follow-up implementation PRD**. Phase 1, 2
+and 3 are **Done**; the rest are **Planned**, not approved. Every phase
 carries AGENT.md's Phase Completion Checklist, and none is done until that
 checklist is.
 
@@ -1087,10 +1087,78 @@ checklist is.
    - IDLE-EXTERNAL-WAIT lease release with an "await external" task result.
    - `plan_tier`-derived `max_inflight` defaults.
 
-   Status: Planned.
+   Status: **Done (unreleased development build, 2026-10-22)** —
+   `internal/inference/llm.go` (`PlanTier`, kind inflight class,
+   `EffectiveMaxInflight`, `InflightSource`), `internal/config/config.go`
+   (`autonomous.plan_tier_max_inflight`, default `pro: 1, max_5x: 2,
+   max_20x: 4, api: 0`, negative caps and unknown tiers rejected),
+   `internal/autonomous/capacity.go` (planner role + `decomposeAdmitted`
+   admission, `HandoffVerifyLease`), `internal/autonomous/await_external.go`
+   (`DATAWATCH_AWAIT_EXTERNAL:` cycle — park, lease release, tree lock
+   retained while unpushed, re-admit through the bounded wait, boot resume),
+   `cmd/datawatch/main.go` (marker detection, await re-prompt),
+   `cmd/datawatch/capacity_wiring.go` (hand-off wiring). Operator guide:
+   `docs/operations.md` → "Per-LLM concurrency limits and plan tiers" and
+   "Parking a task while waiting on an external condition"; howto:
+   `docs/howto/automata-capacity.md` (per-LLM caps, one slot from spawn
+   through verification, decompose waits, park on external condition);
+   flow: `docs/flow/automata-capacity-flow.md` (verify hand-off, planner
+   admission and await-external sequences). Tests:
+   `docs/testing-tracker.md` → "Inference-cap gap closure — per-LLM
+   `plan_tier` caps, verify lease hand-off, decompose admission,
+   await-external".
+
+   **Phase Completion Checklist (recorded 2026-10-22):**
+   - Functionality per §3b: ✅ the four bullets above, all in the files
+     listed in the status line.
+   - Unit tests: ✅ all new tests green on 2026-10-22 —
+     `internal/inference/plan_tier_test.go` (8), `plan_tier_source_test.go`
+     (1), `internal/config/plan_tier_max_inflight_test.go` (5),
+     `internal/server/plan_tier_api_test.go` (7),
+     `internal/mcp/plan_tier_tools_test.go` (6),
+     `cmd/datawatch/cli_llm_plan_tier_test.go` (5),
+     `internal/autonomous/decompose_admission_test.go` (7),
+     `capacity_handoff_test.go` (6), `await_external_test.go` (8), and the
+     PWA `app-plan-tier-fields.test.js` (8).
+   - Full suites: ✅ `go build ./...` clean; `go test ./internal/inference/...
+     ./internal/config/... ./internal/autonomous/... ./cmd/datawatch/...`
+     all pass (2026-10-22); `node --test internal/server/web/app-plan-tier-fields.test.js`
+     8/8 pass.
+   - Live smoke: No — this is an unreleased development build; the tracker's
+     live rows stay No until a sandbox daemon run (plan-tier table
+     round-trip and capacity-panel read-back, one full await-external
+     cycle, a decompose wait reason on a saturated pool).
+   - 8-item documentation checklist (2026-10-22): `CHANGELOG.md` ✅
+     (Unreleased entries: plan_tier caps + config validation + tests,
+     decompose capacity gating, verify lease hand-off, the await-external
+     cycle); `docs/config-reference.yaml` ✅ (`plan_tier_max_inflight` block,
+     LLM `plan_tier`/`max_inflight` fields, operator-policy caveat);
+     `docs/operations.md` ✅ (two new sections); `README.md` ✅ (one line
+     in Orchestration & autonomy); doc index N/A (no new top-level doc —
+     existing howto and flow sections were grown); `docs/testing-tracker.md`
+     ✅ (dedicated section added 2026-10-22); no leaked tracker IDs ✅
+     (`scripts/check-no-internal-refs.sh` passes — IDs appear only in
+     plans, CHANGELOG and reference docs, all of which are exempt); this
+     plan's Parity-surface section updated ✅.
+   - Conditional docs: ✅ howto and flow updated (above); the §Data-model
+     decision is recorded: await-external is a sub-reason under
+     `TaskWaitingCapacity`, not a new status.
+   - Mobile-Parity: a `datawatch-app` issue is needed — the LLM-edit
+     `plan_tier` / `max_inflight` fields and the new wait reasons
+     (`await_external: …`, `capacity: planner waiting …`) must parse and
+     display on Android/iOS. Not filed yet; tracked here and in
+     `docs/plans/README.md` row 12.
+   - Localization: ✅ the new PWA strings exist in all five locale bundles
+     (en/de/es/fr/ja — asserted by `app-plan-tier-fields.test.js`).
+   - Plans README line: ✅ row 12 status updated 2026-10-22.
+   - Version: in the unreleased development build; not in a public release
+     yet (the first complete release after v9.0.87 is tracked as 9.6.0 in
+     `docs/plans/README.md` row 9a).
 4. **Phase 4 — Reactive usage back-off (4d).** Backend-scoped back-off flag
    set from `StateRateLimited`; `admit` waits on it; `ErrGlobalCooldown` is
    classified as a wait; the pattern-drift guard is (a)+(b). Status: Planned.
+   (Not started — Phase 3 is complete; Phase 4 and later require operator
+   approval.)
 5. **Phase 5 — Dollar-window budget (4b/4c).** `llm.<name>.budget` enforced
    as a windowed ledger pool, coordinated with BL405 Phase 2. Status:
    Planned.
@@ -1112,7 +1180,8 @@ repeated here; only the dependency is named.
     right commit).
   - `WaitReason` already exists (`setWaiting`, capacity.go ~107). Extend its
     reason vocabulary with `tree_lock`, `usage_backoff`, `budget` and
-    `await_external`.
+    `await_external`. (Phase 3 resolved this: `await_external` is a
+    sub-reason under `TaskWaitingCapacity` — no new task status.)
   - New `TaskAwaitingExternal` status, or a sub-reason under
     `TaskWaitingCapacity` (decide in Phase 3).
 - `autonomous.PRD`: `ProjectWriteSerialization *string` and
@@ -1205,14 +1274,14 @@ thing example (iii) could not see.
 
 | Surface | Include / exclude | What |
 |---|---|---|
-| REST | Include | `GET/PUT /api/config` for every new key. `max_parallel_tasks` accepted-and-ignored with a deprecation note. Lock/back-off/budget state in `GET /api/capacity`, plus queued reasons in autonomous PRD JSON. |
-| MCP | Include | `autonomous_config_get`/`_set` with corrected descriptions (remove the false "Per-PRD worker cap (default 3)"). `capacity_status` gains `tree:`/`backoff:`/`budget:` pools. New read-only `autonomous_tree_locks`. `llm_update` gains `plan_tier`/`budget`. |
-| CLI | Include | `datawatch config set autonomous.project_write_serialization …` and the other keys. `datawatch autonomous tree-lock status`. |
-| comm channel | Include | `configure <key>=<value>` for every new key. A status verb reply shows queued reasons and the active back-off. |
+| REST | Include | `GET/PUT /api/config` for every new key. `max_parallel_tasks` accepted-and-ignored with a deprecation note. Lock/back-off/budget state in `GET /api/capacity`, plus queued reasons in autonomous PRD JSON. **(Phase 3, implemented)** `GET /api/llms` and the `llm:` pools of `GET /api/capacity` carry `plan_tier`, `max_inflight`, `effective_max_inflight` and `inflight_source`; `PUT /api/llms/{name}` and `PUT /api/config` (`autonomous.plan_tier_max_inflight`) accept them. |
+| MCP | Include | `autonomous_config_get`/`_set` with corrected descriptions (remove the false "Per-PRD worker cap (default 3)"). `capacity_status` gains `tree:`/`backoff:`/`budget:` pools. New read-only `autonomous_tree_locks`. **(Phase 3, implemented)** `llm_add`/`llm_update` carry `plan_tier` and `max_inflight`, `autonomous_config_set` accepts the tier table (object and pair forms); the `llm_update` `budget` field is still Phase 5. |
+| CLI | Include | `datawatch config set autonomous.project_write_serialization …` and the other keys. `datawatch autonomous tree-lock status`. **(Phase 3, implemented)** `datawatch llm add/update --plan-tier` (with `--max-inflight`); invalid tiers rejected before send. |
+| comm channel | Include | `configure <key>=<value>` for every new key. A status verb reply shows queued reasons and the active back-off. **(Phase 3, implemented)** `configure autonomous.plan_tier_max_inflight=…` through the generic configure path. |
 | YAML/config | Include | New keys in `config.AutonomousConfig` and in the LLM registry entry, annotated in `docs/config-reference.yaml`. `max_parallel_tasks` deprecation documented. The missing `max_concurrent_tasks` YAML field is added. |
-| PWA | Include | Settings fields for the new keys; the `max_parallel_tasks` field replaced by `max_concurrent_tasks` in Settings (General list and Autonomous card) in Phase 1 (v9.0.86); the PWA no longer edits `max_parallel_tasks`, while the server still accepts and ignores it until the deferred removal. Android/iOS mirror tracked in datawatch-app#261. Task chips for queued reasons. Automata list distinguishes approved-not-running. Capacity panel shows locks and back-off, plus (3c/4e) a per-peer "resource fingerprint sync" toggle and a confirmation list of detected shared-node/billing-group matches awaiting operator accept/reject. |
-| Android | Include, via a `datawatch-app` issue per the Mobile-Parity Rule | Queued-reason display and new config fields mirror the PWA. The REST contract change (new task wait reasons) must be parsed. |
-| iPhone/iOS | Include, via the same `datawatch-app` issue | Same as Android. No iOS-specific behavior. |
+| PWA | Include | Settings fields for the new keys; the `max_parallel_tasks` field replaced by `max_concurrent_tasks` in Settings (General list and Autonomous card) in Phase 1 (v9.0.86); the PWA no longer edits `max_parallel_tasks`, while the server still accepts and ignores it until the deferred removal. **(Phase 3, implemented)** LLM-edit *Plan tier* and *Max in flight* fields plus the autonomous *Plan tier caps* table setter (`app-plan-tier-fields.test.js`), all five locale bundles. Task chips for queued reasons. Automata list distinguishes approved-not-running. Capacity panel shows locks and back-off, plus (3c/4e) a per-peer "resource fingerprint sync" toggle and a confirmation list of detected shared-node/billing-group matches awaiting operator accept/reject. |
+| Android | Include, via a `datawatch-app` issue per the Mobile-Parity Rule | Queued-reason display and new config fields mirror the PWA. The REST contract change (new task wait reasons) must be parsed. **(Phase 3, needs a datawatch-app issue — not filed yet)** the LLM-edit `plan_tier`/`max_inflight` fields and the new wait reasons (`await_external: …`, `capacity: planner waiting …`) must parse and display. |
+| iPhone/iOS | Include, via the same `datawatch-app` issue | Same as Android, including the Phase 3 items. No iOS-specific behavior. |
 
 ## Open questions
 
@@ -1232,7 +1301,11 @@ thing example (iii) could not see.
    enough, or should the self-test be required?
 4. **Tier defaults.** What `max_inflight` value should each `plan_tier` map
    to for `claude-code` (`pro`, `max_5x`, `max_20x`, `api`)? Is `1` the
-   right conservative default for `unset`?
+   right conservative default for `unset`? — **Resolved (Phase 3,
+   2026-10-22):** the table is documented as operator policy, overridable
+   in one place (`autonomous.plan_tier_max_inflight`, default
+   `pro: 1, max_5x: 2, max_20x: 4, api: 0`); `unset` falls back to the kind
+   default, which is 1 for subscription kinds.
 5. **Default for `project_write_serialization`.** Should `per_project_dir`
    be on by default, which changes today's behavior by serializing
    same-tree PRDs, or opt-in for one release?
