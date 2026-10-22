@@ -426,14 +426,32 @@ func (c *Coordinator) beginStart(prdID string, on bool) func() {
 	c.mu.Lock()
 	c.starting[prdID]++
 	c.mu.Unlock()
-	return func() {
-		c.mu.Lock()
-		if c.starting[prdID] <= 1 {
-			delete(c.starting, prdID)
-		} else {
-			c.starting[prdID]--
-		}
-		c.mu.Unlock()
+	return func() { c.endStart(prdID) }
+}
+
+// claimStart is beginStart's check-and-set form, for the reconcile retries: it
+// marks key only when no start for it is in flight, so two overlapping passes
+// cannot both start the same member. ok is false when the claim was refused.
+func (c *Coordinator) claimStart(key string) (release func(), ok bool) {
+	if key == "" {
+		return nil, false
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.starting[key] > 0 {
+		return nil, false
+	}
+	c.starting[key]++
+	return func() { c.endStart(key) }, true
+}
+
+func (c *Coordinator) endStart(key string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.starting[key] <= 1 {
+		delete(c.starting, key)
+	} else {
+		c.starting[key]--
 	}
 }
 

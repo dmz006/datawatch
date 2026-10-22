@@ -1131,6 +1131,30 @@ type AutomationStatusSummary struct {
 	BlockedReason   string     `json:"blocked_reason,omitempty"`
 	SpentUSD        float64    `json:"spent_usd,omitempty"`
 	CeilingDisplay  string     `json:"ceiling_display,omitempty"`
+
+	// ActiveCursors lists the Automation's live cursors, sorted by member ID;
+	// never nil, so an idle Automation reports []. JoinWait is set only while
+	// the Automation waits on a join.
+	ActiveCursors []ActiveCursorSummary `json:"active_cursors"`
+	JoinWait      *JoinWaitSummary      `json:"join_wait,omitempty"`
+}
+
+// ActiveCursorSummary is one live cursor of an Automation in LoopStatus. PRDID
+// is set for a PRD member and AutomationID for a nested child Automation.
+type ActiveCursorSummary struct {
+	MemberID     string `json:"member_id"`
+	PRDID        string `json:"prd_id,omitempty"`
+	AutomationID string `json:"automation_id,omitempty"`
+	Status       string `json:"status"`
+}
+
+// JoinWaitSummary describes the join an Automation waits on: the rule it applies,
+// the branches still live, and the branches that ended without success.
+type JoinWaitSummary struct {
+	JoinMemberID    string   `json:"join_member_id"`
+	Rule            string   `json:"rule"`
+	PendingBranches []string `json:"pending_branches"`
+	FailedBranches  []string `json:"failed_branches"`
 }
 
 // TaskNudge is one task's idle-worker nudge count in LoopStatus.

@@ -78,6 +78,9 @@ type memberInfo struct {
 type stepInput struct {
 	memberID string
 	end      endOutcome
+	// reeval re-derives the join memberID with no branch ending: boot reconcile
+	// uses it for a join still waiting after every branch is terminal.
+	reeval bool
 }
 
 // memberStart is one member start to perform after the write wins.
@@ -129,6 +132,9 @@ type stepper struct {
 // It is pure given (a, in, snap). It returns errStaleStep when the member is not
 // a live cursor or the end no longer applies.
 func step(a *Automation, in stepInput, snap map[string]memberInfo) (*stepEffects, error) {
+	if in.reeval {
+		return stepJoinReeval(a, in.memberID, snap)
+	}
 	mem := automationMember(a, in.memberID)
 	if mem == nil || !isLiveCursor(a, mem.ID) {
 		return nil, errStaleStep
@@ -154,6 +160,26 @@ func step(a *Automation, in stepInput, snap map[string]memberInfo) (*stepEffects
 	} else {
 		st.finish(mem, in.end)
 		st.followEdge(mem, in.end)
+	}
+	st.finalize()
+	return st.eff, nil
+}
+
+// stepJoinReeval re-derives a join that is still waiting with no branch live:
+// the restart found every branch terminal but the join never fired or blocked
+// (the crash fell between the last branch's end and the join's write). It
+// applies the join rule once. A join that has left running, or one that a live
+// branch still holds, changes nothing and returns errStaleStep, so a replay
+// writes nothing.
+func stepJoinReeval(a *Automation, joinID string, snap map[string]memberInfo) (*stepEffects, error) {
+	j := automationMember(a, joinID)
+	if j == nil || j.kind() != MemberKindJoin || j.Status != MemberRunning {
+		return nil, errStaleStep
+	}
+	st := &stepper{a: a, snap: snap, eff: &stepEffects{details: map[string]any{}}, now: time.Now()}
+	st.evalJoin(j.ID)
+	if j.Status == MemberRunning {
+		return nil, errStaleStep
 	}
 	st.finalize()
 	return st.eff, nil
@@ -363,24 +389,8 @@ func (st *stepper) evalJoin(joinID string) {
 	if j == nil || j.Status != MemberRunning {
 		return
 	}
-	rule := j.OnBranchFailure
-	if rule == "" {
-		rule = BranchAllMustSucceed
-	}
-	var pending, failed, won []string
-	for _, bid := range sortedCopy(j.JoinMembers) {
-		b := automationMember(st.a, bid)
-		switch {
-		case b == nil:
-			failed = append(failed, bid)
-		case b.Status == MemberCompleted:
-			won = append(won, bid)
-		case b.Status == MemberRunning || b.Status == MemberPending:
-			pending = append(pending, bid)
-		default:
-			failed = append(failed, bid)
-		}
-	}
+	rule := joinRule(j)
+	won, pending, failed := classifyBranches(st.a, j)
 	switch rule {
 	case BranchAnyOneIsEnough:
 		if len(won) > 0 {
@@ -404,6 +414,34 @@ func (st *stepper) evalJoin(joinID string) {
 		}
 		st.blockJoin(j, rule, failed, fmt.Sprintf("join %s: not all branches succeeded (non-success: %s)", j.ID, strings.Join(failed, " ")))
 	}
+}
+
+// joinRule returns the join's branch-failure rule, the default when unset.
+func joinRule(j *AutomationMember) string {
+	if j.OnBranchFailure == "" {
+		return BranchAllMustSucceed
+	}
+	return j.OnBranchFailure
+}
+
+// classifyBranches sorts a join's branches by their live state: won completed,
+// pending still running or not started, failed ended non-successfully (a
+// missing branch counts as failed). Each list is sorted by member ID.
+func classifyBranches(a *Automation, j *AutomationMember) (won, pending, failed []string) {
+	for _, bid := range sortedCopy(j.JoinMembers) {
+		b := automationMember(a, bid)
+		switch {
+		case b == nil:
+			failed = append(failed, bid)
+		case b.Status == MemberCompleted:
+			won = append(won, bid)
+		case b.Status == MemberRunning || b.Status == MemberPending:
+			pending = append(pending, bid)
+		default:
+			failed = append(failed, bid)
+		}
+	}
+	return won, pending, failed
 }
 
 // fireJoin records the join as fired and follows its on_complete edge. Under
@@ -503,6 +541,18 @@ func isLiveCursor(a *Automation, id string) bool {
 		}
 	}
 	return false
+}
+
+// liveCursorIDs returns the Automation's live cursor member IDs, sorted and
+// unique: the single cursor of a linear Automation, else the cursor set.
+func liveCursorIDs(a *Automation) []string {
+	if automationIsLinear(a) {
+		if a.CurrentMemberID == "" {
+			return nil
+		}
+		return []string{a.CurrentMemberID}
+	}
+	return sortedUniqueStrings(a.ActiveCursors)
 }
 
 // addCursor puts member id in the cursor set. A linear Automation has no set:

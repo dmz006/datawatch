@@ -4,6 +4,11 @@
 // (design doc "Trigger mechanism"). It runs once, at the end of
 // API.resumeRunningPRDs, after the PRDFailed recovery pass, so a member the
 // daemon killed is not routed down its on_failed edge.
+//
+// For a multi-cursor Automation the pass covers every live cursor, every
+// waiting join and every nested child (design doc "Restart reconciliation
+// (multi-cursor)"). Each step re-derives its answer from stored member statuses,
+// so a second pass changes nothing.
 
 package autonomous
 
@@ -16,7 +21,7 @@ import (
 )
 
 // reconcile walks every active or paused Automation once and brings its
-// cursor in line with the member PRD. It marks the coordinator ready first, so
+// cursors in line with the member PRDs. It marks the coordinator ready first, so
 // failures deferred during boot are replayed, and is idempotent: a second run
 // finds each cursor member either running or already handled. It is nil-safe.
 func (c *Coordinator) reconcile() {
@@ -32,9 +37,26 @@ func (c *Coordinator) reconcile() {
 	}
 }
 
+// reconcileOne reconciles one Automation: each live cursor, then each join still
+// waiting. It re-reads the Automation before every cursor, so an advance made
+// earlier in the pass is seen, and a cursor that has already moved on is skipped.
 func (c *Coordinator) reconcileOne(a *Automation) {
-	mem := automationMember(a, a.CurrentMemberID)
-	if mem == nil {
+	for _, id := range liveCursorIDs(a) {
+		cur, ok := c.m.automations.Get(a.ID)
+		if !ok || (cur.Status != AutomationActive && cur.Status != AutomationPaused) || !isLiveCursor(cur, id) {
+			continue
+		}
+		if mem := automationMember(cur, id); mem != nil {
+			c.reconcileCursor(cur, mem)
+		}
+	}
+	c.reconcileJoins(a.ID)
+}
+
+// reconcileCursor brings one live cursor in line with its member.
+func (c *Coordinator) reconcileCursor(a *Automation, mem *AutomationMember) {
+	if mem.kind() == MemberKindAutomation {
+		c.reconcileNested(a, mem)
 		return
 	}
 	// Checked before the PRD status is read: a start in flight has marked the
@@ -44,6 +66,10 @@ func (c *Coordinator) reconcileOne(a *Automation) {
 	}
 	_, status, ok := c.prdState(mem.PRDID)
 	if !ok {
+		return
+	}
+	if mem.Status == MemberRunning && status == PRDApproved && joinOf(a, mem.ID) != nil {
+		c.retryBranchStart(a, mem)
 		return
 	}
 	switch mem.Status {
@@ -72,6 +98,73 @@ func (c *Coordinator) reconcileOne(a *Automation) {
 	}
 }
 
+// retryBranchStart gives a fork branch exactly one start attempt when the daemon
+// died after the fork's write and before the branch's start call: the branch is
+// marked running but its PRD is still approved. A branch whose PRD already runs
+// started before the restart and is left to boot-resume. The claim makes the
+// attempt happen once even if two passes overlap, and the attempt's outcome is
+// final: a refused start ends the branch as a failed branch, a successful one
+// leaves the PRD running, so the next pass sees a started branch.
+func (c *Coordinator) retryBranchStart(a *Automation, mem *AutomationMember) {
+	if a.Status != AutomationActive {
+		return // a paused Automation starts nothing
+	}
+	release, ok := c.claimStart(mem.PRDID)
+	if !ok {
+		return
+	}
+	defer release()
+	name, status, ok := c.prdState(mem.PRDID)
+	if !ok || status != PRDApproved {
+		return
+	}
+	c.reconcileAudit(a, mem, "retry branch start", string(status))
+	c.launch(a.ID, memberStart{memberID: mem.ID, kind: MemberKindPRD, prdID: mem.PRDID, name: name, branch: true})
+}
+
+// reconcileNested gives a nested member exactly one activation attempt when its
+// child Automation is still a draft: the daemon died after the member was marked
+// running and before the child was activated. A child that has left draft, or an
+// attempt another pass holds, is left alone.
+func (c *Coordinator) reconcileNested(a *Automation, mem *AutomationMember) {
+	if a.Status != AutomationActive || mem.Status != MemberRunning {
+		return // a paused Automation starts nothing
+	}
+	child, ok := c.m.automations.Get(mem.AutomationID)
+	if !ok || child.Status != AutomationDraft {
+		return
+	}
+	release, ok := c.claimStart("automation/" + child.ID)
+	if !ok {
+		return
+	}
+	defer release()
+	name := child.Name
+	if name == "" {
+		name = child.ID
+	}
+	c.reconcileAudit(a, mem, "retry nested activation", string(child.Status))
+	c.launch(a.ID, memberStart{
+		memberID: mem.ID, kind: MemberKindAutomation, childID: child.ID,
+		name: name, branch: joinOf(a, mem.ID) != nil,
+	})
+}
+
+// reconcileJoins re-derives every join still waiting. A join whose branches are
+// all terminal fires or blocks here, once: stepJoinReeval changes nothing after
+// the first apply, and a join with a live branch is left waiting.
+func (c *Coordinator) reconcileJoins(autoID string) {
+	a, ok := c.m.automations.Get(autoID)
+	if !ok {
+		return
+	}
+	for _, m := range a.Members {
+		if m.kind() == MemberKindJoin && m.Status == MemberRunning {
+			c.advance(autoID, stepInput{memberID: m.ID, reeval: true})
+		}
+	}
+}
+
 // retryPendingStart starts a cursor member that never got started, through
 // the same approval gate the coordinator uses between members. The member is
 // marked running by a compare-and-set before the start, so concurrent
@@ -88,7 +181,7 @@ func (c *Coordinator) retryPendingStart(a *Automation, mem *AutomationMember) {
 	defer release()
 	updated, err := c.m.automations.Update(a.ID, a.Version, func(a *Automation) error {
 		cur := automationMember(a, memID)
-		if a.Status != AutomationActive || a.CurrentMemberID != memID || cur == nil || (cur.Status != MemberPending && cur.Status != "") {
+		if a.Status != AutomationActive || !isLiveCursor(a, memID) || cur == nil || (cur.Status != MemberPending && cur.Status != "") {
 			return errors.New("409: member already handled")
 		}
 		now := time.Now()
