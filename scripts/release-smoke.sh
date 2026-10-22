@@ -4234,19 +4234,43 @@ sys.exit(0 if any(p.get("name") == os.environ["UC_POOL"] and p.get("limit") == 1
       fi
     fi
     if [[ "${UC_LIMIT_OK:-0}" == "1" ]]; then
+      # Create the way sections 6 and 7b do: spec + project_dir + backend,
+      # then decompose and approve. Decompose needs a reachable planner LLM;
+      # when it fails the section skips naming exactly that.
       UC_IDS=()
+      UC_PLAN_FAIL=""
       for UC_N in a b; do
         mkdir -p "$TMPD/uc-$UC_N"
-        UC_PB=$(printf '{"name":"smoke-cap-%s-%s","title":"smoke-cap-%s","goal":"capacity smoke","backend":"%s","project_dir":"%s","stories":[{"title":"S1","tasks":[{"title":"capacity smoke %s"}]}],"approved":true}' \
-          "$UC_N" "$UC_TAG" "$UC_N" "$UC_LLM" "$TMPD/uc-$UC_N" "$UC_N")
+        UC_PB=$(UC_N="$UC_N" UC_TAG="$UC_TAG" UC_LLM="$UC_LLM" UC_DIR="$TMPD/uc-$UC_N" python3 -c '
+import json, os
+n = os.environ["UC_N"]
+print(json.dumps({
+  "spec": "smoke probe - capacity visibility %s (%s): write one line to a scratch file" % (n, os.environ["UC_TAG"]),
+  "project_dir": os.environ["UC_DIR"],
+  "backend": os.environ["UC_LLM"],
+  "effort": "low"}))')
         UC_PID=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" -d "$UC_PB" "$BASE/api/autonomous/prds" 2>/dev/null \
           | python3 -c 'import json,sys;print(json.load(sys.stdin).get("id",""))' 2>/dev/null || true)
-        [[ -n "$UC_PID" ]] && add_cleanup prd "$UC_PID"
+        if [[ -z "$UC_PID" ]]; then
+          UC_IDS+=("")
+          continue
+        fi
+        add_cleanup prd "$UC_PID"
         UC_IDS+=("$UC_PID")
+        UC_DEC=$(curl "${curl_args[@]}" --max-time 300 -X POST -H "Content-Type: application/json" -d '{}' \
+          "$BASE/api/autonomous/prds/$UC_PID/decompose" -w "\n__HTTP_%{http_code}__" 2>/dev/null || true)
+        if ! echo "$UC_DEC" | grep -q "__HTTP_200__"; then
+          UC_PLAN_FAIL="decompose of $UC_PID failed"
+          continue
+        fi
+        curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+          -d '{"actor":"smoke","note":"capacity smoke"}' "$BASE/api/autonomous/prds/$UC_PID/approve" >/dev/null 2>&1 || true
       done
       UC_PA="${UC_IDS[0]:-}"; UC_PB_ID="${UC_IDS[1]:-}"
       if [[ -z "$UC_PA" || -z "$UC_PB_ID" ]]; then
         skip "capacity admission wait/release: could not create the two throwaway Automata (autonomous subsystem may be off)"
+      elif [[ -n "$UC_PLAN_FAIL" ]]; then
+        skip "capacity admission wait/release: $UC_PLAN_FAIL (planner LLM unreachable?); wait and release not exercised"
       else
         UC_TASK_A=$(curl "${curl_args[@]}" "$BASE/api/autonomous/prds/$UC_PA" 2>/dev/null | python3 -c 'import json,sys;print(json.load(sys.stdin)["stories"][0]["tasks"][0]["id"])' 2>/dev/null || true)
         UC_TASK_B2=$(curl "${curl_args[@]}" "$BASE/api/autonomous/prds/$UC_PB_ID" 2>/dev/null | python3 -c 'import json,sys;print(json.load(sys.stdin)["stories"][0]["tasks"][0]["id"])' 2>/dev/null || true)
