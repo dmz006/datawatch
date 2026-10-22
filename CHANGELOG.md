@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.79 — Tests and the pi backend no longer leak temp files into /tmp
+
+### Fixed
+
+- **Tests and the pi backend no longer leak temporary files into `/tmp`.** The home-isolation test setups, the plugin supervisor test and the schedule tests now use per-test temporary directories that are removed on exit, and the end-of-session cleanup of the pi backend now removes the task, output and status scratch files it creates (the older cleanup only removed the task file and used a hard-coded path). A new regression test fails if a run of the session package leaves new entries with the known prefixes behind. `/tmp` is memory-backed, so these leaks (about 9000 entries) had filled it during full test runs.
+
 ## v9.5.78 — The WebSocket output-scope unsubscribe test is deterministic
 
 ### Fixed
