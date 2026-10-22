@@ -120,21 +120,21 @@ func TestStatus_UsageBackoffCarriesPatternsFields(t *testing.T) {
 	}
 	// Not wired: the keys are still present, empty and not stale.
 	b, _ := json.Marshal(m.Status().UsageBackoff)
-	for _, key := range []string{`"patterns_version":""`, `"patterns_stale":false`} {
+	for _, key := range []string{`"patterns_version":""`, `"patterns_stale":false`, `"claude_cli_version":""`} {
 		if !strings.Contains(string(b), key) {
 			t.Errorf("unwired status lacks %s: %s", key, b)
 		}
 	}
 
 	stale := true
-	m.SetPatternsStatus(func() (string, bool) { return "abc123def456", stale })
+	m.SetPatternsStatus(func() (string, string, bool) { return "abc123def456", "1.2.3-test", stale })
 	st := m.Status().UsageBackoff
-	if st.PatternsVersion != "abc123def456" || !st.PatternsStale {
-		t.Errorf("status = %+v, want version abc123def456 stale", st)
+	if st.PatternsVersion != "abc123def456" || !st.PatternsStale || st.ClaudeCLIVersion != "1.2.3-test" {
+		t.Errorf("status = %+v, want version abc123def456, cli text 1.2.3-test, stale", st)
 	}
 	stale = false
 	b, _ = json.Marshal(m.Status())
-	for _, key := range []string{`"patterns_version":"abc123def456"`, `"patterns_stale":false`} {
+	for _, key := range []string{`"patterns_version":"abc123def456"`, `"patterns_stale":false`, `"claude_cli_version":"1.2.3-test"`} {
 		if !strings.Contains(string(b), key) {
 			t.Errorf("autonomous status JSON lacks %s: %s", key, b)
 		}

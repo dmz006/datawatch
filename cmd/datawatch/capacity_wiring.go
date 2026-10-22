@@ -169,7 +169,11 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 	}
 	amgr.SetCapacity(led, keys)
 	amgr.SetBackoff(autonomousBackoff)
-	amgr.SetPatternsStatus(mgr.RateLimitPatternsStatus)
+	amgr.SetPatternsStatus(mgr.RateLimitGuardStatus)
+	// Seed the claude CLI version cache once at daemon start so the first
+	// status read has the tool text without waiting on it: a slow or missing
+	// tool must never delay startup, so it runs off the hot path.
+	go func() { _ = mgr.RefreshClaudeCLIVersion() }()
 	httpServer.SetUsageBackoff(autonomousBackoff)
 	capacityTextFn = func() string { return capacity.FormatText(led.Snapshot()) }
 	httpServer.SetCapacity(led)

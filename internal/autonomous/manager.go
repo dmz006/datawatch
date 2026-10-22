@@ -905,7 +905,9 @@ func (m *Manager) SetBackoff(b *Backoff) {
 }
 
 // SetPatternsStatus wires the rate-limit pattern fingerprint reported in the
-// usage_backoff status (patterns_version, patterns_stale). Nil clears it.
+// usage_backoff status (patterns_version, patterns_stale, claude_cli_version
+// — the cached `claude --version` text mixed into the fingerprint).
+// Nil clears it.
 func (m *Manager) SetPatternsStatus(fn PatternsStatusFunc) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
