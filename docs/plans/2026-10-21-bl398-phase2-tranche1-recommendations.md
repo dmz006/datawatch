@@ -19,3 +19,15 @@ Removals suggested by reachability traces. The operator decides; no suppression 
 ## cve/CVE-2025-69720 (ncurses family)
 
 - Image: agent-base. No removal needed: the vulnerable `infocmp` binary (ncurses-bin) is already not installed; only the libraries libtinfo6/libncursesw6 remain, required by tmux, bash and less.
+
+## cve/CVE-2026-55453 (libcups2)
+
+- Image: parent-full. No removal possible: libcups2 is a hard Depends of `openjdk-17-jre-headless` (Dockerfile.parent-full), which signal-cli needs. Trace found no cupsd, cups-browsed, lp/lpr call or ipp:// use, so the vulnerable scheduler/backend path is unreachable. Keep the suppression until Debian ships a bookworm fix.
+
+## cve/CVE-2025-26625 (git-lfs)
+
+- Images: agent-base, agent-gemini, agent-aider, parent-full. No removal recommended: the trace found it reachable, because /etc/gitconfig wires the lfs smudge/clean filter (required=true) and internal/agents/worker_clone.go clones operator-configured remotes. If the operator never uses LFS-enabled remotes, dropping `git-lfs` from the agent-base `install_packages` list would clear it in all four images; that is an operator decision.
+
+## cve/CVE-2026-7210 (python3.11)
+
+- Image: agent-gemini. python3.11 is present only as a dependency of nodejs/rsync (apt-cache rdepends) and no Python application runs there, so it is dormant; it cannot be removed while nodejs depends on it. agent-aider: reachable through litellm/botocore ElementTree use, no removal.
