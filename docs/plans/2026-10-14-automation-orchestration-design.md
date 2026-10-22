@@ -1587,6 +1587,7 @@ howto, and the `datawatch-app` issue where applicable.
    `import-graph`, read-only history, and the create/plan/run tools deprecated then
    removed after one minor. Alternatives: extend BL117's Graph in place, or keep
    both permanently.
+   **Decided by the operator 2026-10-22: supersede.** Single-chain `import-graph`, read-only history, `orchestrator_graph_create/plan/run` deprecated then removed after one minor.
 5. **One implementation PRD or several, and in what order.** Should BL427's
    dispatcher, BL428's mechanics and this coordinator be separate implementation
    PRDs in the confirmed order BL427 → BL428 → BL431? Or should BL431 Phases 1-3
