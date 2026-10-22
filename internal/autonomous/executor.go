@@ -1291,7 +1291,7 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			qgDir := m.resolveTaskProjectDir(prd, t)
 			if base, ok := qgBaselines.forDir(qgDir); ok {
 				current := runQualityGateTests(qgCfg.TestCommand, qgDir, qgCfg.Timeout)
-				cmp := pipeline.CompareResults(base, current)
+				cmp := pipeline.EvaluateGate(base, current, qgDir, qgCfg.Timeout)
 				t.QualityGateResult = &cmp
 				log.Printf("[autonomous] %s/%s quality-gate: %s", prd.ID, t.ID, cmp.Summary)
 				metrics.QualityGateRunsTotal.Inc()
