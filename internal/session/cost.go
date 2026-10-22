@@ -14,6 +14,7 @@ package session
 import (
 	"errors"
 	"strings"
+	"time"
 )
 
 // ErrSessionNotFound is returned by helpers that require an existing
@@ -156,13 +157,58 @@ func (m *Manager) addUsage(sessID string, tokensIn, tokensOut int, override Cost
 			rate = r
 		}
 	}
+	deltaUSD := EstimateCost(rate, tokensIn, tokensOut)
 	sess.TokensIn += tokensIn
 	sess.TokensOut += tokensOut
-	sess.EstCostUSD += EstimateCost(rate, tokensIn, tokensOut)
+	sess.EstCostUSD += deltaUSD
 	if setTracker != nil {
 		setTracker(sess)
 	}
-	return m.SaveSession(sess)
+	if err := m.SaveSession(sess); err != nil {
+		return err
+	}
+	if tokensIn != 0 || tokensOut != 0 {
+		m.emitUsageEvent(UsageEvent{
+			SessionID: sess.FullID,
+			Backend:   sess.BackendFamily,
+			At:        time.Now(),
+			TokensIn:  tokensIn,
+			TokensOut: tokensOut,
+			USD:       deltaUSD,
+		})
+	}
+	return nil
+}
+
+// UsageEvent is one usage delta (not a cumulative total) priced at the
+// configured session.cost_rates. Backend is the session backend name, the
+// same name the capacity admission passes to the inference registry to build
+// its llm:<name> pool.
+type UsageEvent struct {
+	SessionID string
+	Backend   string
+	At        time.Time
+	TokensIn  int
+	TokensOut int
+	USD       float64
+}
+
+// SetUsageEventHook registers fn to be called after each saved usage delta.
+// A nil fn clears the hook. The hook runs on the caller's goroutine without
+// any manager lock held.
+func (m *Manager) SetUsageEventHook(fn func(UsageEvent)) {
+	m.usageHookMu.Lock()
+	m.usageHook = fn
+	m.usageHookMu.Unlock()
+}
+
+func (m *Manager) emitUsageEvent(ev UsageEvent) {
+	m.usageHookMu.RLock()
+	fn := m.usageHook
+	m.usageHookMu.RUnlock()
+	if fn != nil {
+		fn(ev)
+	}
 }
 
 // costRate returns the rate for backend, falling back to the matching

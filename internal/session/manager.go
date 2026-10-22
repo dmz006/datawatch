@@ -533,6 +533,11 @@ type Manager struct {
 	// costRates (BL6) — backend → CostRate. nil = DefaultCostRates().
 	costRates map[string]CostRate
 
+	// usageHook receives one UsageEvent per usage delta; guarded by its own
+	// lock so it can be read without holding m.mu.
+	usageHookMu sync.RWMutex
+	usageHook   func(UsageEvent)
+
 	// promptDebounce tracks per-session prompt debounce state.
 	// Key: fullID, Value: time when prompt was first detected in current window.
 	promptFirstSeen map[string]time.Time
