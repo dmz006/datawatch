@@ -235,7 +235,15 @@ func TestSubscriptionAddValidation(t *testing.T) {
 		{"unknown level kind status", func(su *Subscription) { su.Filter.Kinds = []string{"task.frobnicated"} }, "not a known event kind"},
 		{"missing sink type", func(su *Subscription) { su.Sink = SubscriptionSink{Target: "x"} }, "sink type is required"},
 		{"webhook sink rejected", func(su *Subscription) { su.Sink = SubscriptionSink{Type: "webhook", Target: "https://x.example"} }, "not available in this phase"},
-		{"mcp_queue sink rejected", func(su *Subscription) { su.Sink = SubscriptionSink{Type: "mcp_queue", Target: "me"} }, "not available in this phase"},
+		{"mcp_queue empty target", func(su *Subscription) { su.Sink = SubscriptionSink{Type: SinkMCPQueue, Target: "  "} }, "sink target is required"},
+		{"mcp_queue bad chars", func(su *Subscription) { su.Sink = SubscriptionSink{Type: SinkMCPQueue, Target: "my queue!"} }, "may contain only"},
+		{"mcp_queue name too long", func(su *Subscription) {
+			su.Sink = SubscriptionSink{Type: SinkMCPQueue, Target: strings.Repeat("q", 65)}
+		}, "limit is 64"},
+		{"mcp_queue with action", func(su *Subscription) {
+			su.Sink = SubscriptionSink{Type: SinkMCPQueue, Target: "me"}
+			su.Action = inject("hi")
+		}, "session sink"},
 		{"unknown sink type", func(su *Subscription) { su.Sink = SubscriptionSink{Type: "carrier-pigeon", Target: "x"} }, "unknown sink type"},
 		{"empty sink target", func(su *Subscription) { su.Sink = SubscriptionSink{Type: SinkComm} }, "sink target is required"},
 		{"action on comm sink", func(su *Subscription) { su.Sink.Type = comm; su.Action = inject("hi") }, "session sink"},
@@ -243,6 +251,7 @@ func TestSubscriptionAddValidation(t *testing.T) {
 		{"action empty text", func(su *Subscription) { su.Action = inject("   ") }, "requires non-empty text"},
 		{"action text over cap", func(su *Subscription) { su.Action = inject(longText) }, "limit is"},
 		{"expires in the past", func(su *Subscription) { su.ExpiresAt = &past }, "in the future"},
+		{"valid mcp_queue sink", func(su *Subscription) { su.Sink = SubscriptionSink{Type: SinkMCPQueue, Target: "agent-1.ops:prod_x"} }, ""},
 		{"valid topic sink", func(su *Subscription) { su.Sink = SubscriptionSink{Type: SinkTopic, Target: "ops-audience"} }, ""},
 	}
 	for _, tc := range cases {

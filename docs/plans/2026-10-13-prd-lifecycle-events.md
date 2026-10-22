@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-13 (investigation and writing finished 2026-10-14)
 **Version:** v9.0.75 (`var Version` in `cmd/datawatch/main.go` at time of writing)
-**Status:** Phase 1 Done (v9.0.85, 2026-10-14), Phase 2 Done (v9.3.0), Phase 3 Done (Unreleased, this build). Phases 4–5 Planned.
+**Status:** Phase 1 Done (v9.0.85, 2026-10-14), Phase 2 Done (v9.3.0), Phase 3 Done (Unreleased, this build), Phase 4 Done (Unreleased, this build — WS payload enrichment and live toasts carved out as follow-up). Phase 5 Planned.
 
 Terminology: this doc says **Automaton / Automata** in prose, per AGENT.md's
 terminology rule. The internal Go type is `PRD` (and identifiers such as
@@ -544,7 +544,7 @@ milliseconds. No polling, no scratchpad script, no 25 s race window.
 
 ## Phases
 
-Phase 1 is **Done** (v9.0.85); Phase 2 is **Done** (v9.3.0); Phase 3 is **Done** (Unreleased, this build); Phases 4–5 are **Planned**. Each phase's own checklist must include
+Phase 1 is **Done** (v9.0.85); Phase 2 is **Done** (v9.3.0); Phase 3 is **Done** (Unreleased, this build); Phase 4 is **Done** (Unreleased, this build, with WS payload enrichment and live toasts carved out as follow-up); Phase 5 is **Planned**. Each phase's own checklist must include
 AGENT.md's **Phase Completion Checklist** (functionality, unit tests, live
 smoke against a real daemon, full `go test ./...` + `node --test`, the
 8-item documentation checklist, conditional docs).
@@ -629,8 +629,75 @@ smoke against a real daemon, full `go test ./...` + `node --test`, the
    closed `KnownEventKinds` set (the emitted kind is `prd.updated`) — a
    subscription created with that shorthand is rejected at validation; use
    the full `prd.updated` until the shorthand mapping is fixed.
-4. **Phase 4 — Planned.** Pending-events MCP tool for generic MCP clients;
-   PWA subscription UI. *(Phase Completion Checklist applies.)*
+4. **Phase 4 — Done (Unreleased, this build).** Pending-events queue and
+   `mcp_queue` sink for generic MCP clients; subscription update and
+   test-fire on every surface; PWA Subscriptions tab. *(Phase Completion
+   Checklist applies.)* Shipped as
+   `internal/autonomous/lifecycle_pending_queue.go` (bounded in-memory
+   queue, monotonic cursors, `dropped` on eviction, released when the last
+   subscription for a queue is deleted),
+   `internal/autonomous/lifecycle_subscription_test_fire.go` (engine
+   `FireTest`) and the store `Update`
+   (`internal/autonomous/lifecycle_subscription_store.go`), plus the surfaces:
+   `internal/server/autonomous_events.go` (REST `GET
+   /api/autonomous/events`) and `internal/server/autonomous_subscriptions.go`
+   (`PUT` and `POST …/{id}/test`),
+   `internal/mcp/autonomous_events_tools.go` (`autonomous_events_pending`) and
+   `internal/mcp/autonomous_subscription_update_tools.go`
+   (`autonomous_subscription_update`, `autonomous_subscription_test`),
+   `cmd/datawatch/cli_autonomous_events.go` (`events`) and
+   `cmd/datawatch/cli_autonomous_subscription_update.go`
+   (`subscription-update`, `subscription-test`),
+   `internal/router/autonomous_events.go` and
+   `internal/router/autonomous_subscription_update.go` (owner-scoped comm
+   verbs), and the PWA Subscriptions tab with its add/edit form in
+   `internal/server/web/app.js` (strings in all five locale bundles).
+   Config: `autonomous.notify.pending_events_max` (default 500, applied at
+   daemon start). Checklist: unit tests added for every surface (Go tests in
+   the five packages above and `internal/server/web/app-lifecycle-subscriptions.test.js`);
+   **live tests Validated=No** — REST events/update/test against a running
+   daemon, an MCP `autonomous_events_pending` poll round trip with a real
+   event, and the PWA tab create/edit/delete/test in a browser are recorded
+   in `docs/testing-tracker.md` as LIVE pending; `CHANGELOG.md`
+   `[Unreleased]` entry, `docs/config-reference.yaml`, `docs/operations.md`
+   (events/update/test, polling procedure, queue size key), the howto
+   (PWA walkthrough, polling workflow, test-fire), the flow diagram
+   (pending-queue path), the glossary entry, `docs/mcp.md`,
+   `docs/api-mcp-mapping.md`, `docs/parity-status.md`, `README.md` feature
+   line and the doc indexes updated; Mobile-Parity: the app-side note
+   ([2026-10-21-datawatch-app-lifecycle-subscriptions-note.md](2026-10-21-datawatch-app-lifecycle-subscriptions-note.md))
+   now lists the update, test and events endpoints so the
+   `dmz006/datawatch-app` issue filed on merge is complete; Localization:
+   done (five bundles); version — Unreleased (final number set at merge).
+   **Carved out as follow-up (explicitly out of scope for this phase, not
+   done):** WS `MsgPRDUpdate` payload enrichment and PWA live toasts off an
+   enriched frame. **Known gap still present:** the CLI/comm shorthand
+   `prd_updated` still resolves to `task.prd_updated`, which is not in the
+   closed `KnownEventKinds` set — use the full `prd.updated`.
+   **Verification gate (2026-10-21, run with `env -u TMUX -u TMUX_TMPDIR`):**
+   `go build -o datawatch ./cmd/datawatch/`, `go vet ./...` and `go test ./...`
+   all pass (no failing package); `node --test internal/server/web/*.test.js`
+   = 374 pass, 0 fail; `scripts/check-docs-sync.sh` and
+   `scripts/check-howto-coverage.sh` pass. `scripts/check-no-internal-refs.sh`
+   still reports exactly the 19 pre-existing `openapi.yaml` summary leaks and
+   none from this phase's diff (the two `(BL427)` mentions on the CLI help
+   line and the `docs/mcp.md` table row were already there and only had the
+   new tool names or `mcp_queue` added; cleaning them is follow-up). Checked
+   against the phase text: the queue → REST → MCP cursor flow is covered by
+   unit tests (`TestMCPQueueSinkAppendsMatchingOnly`,
+   `TestPendingQueueLimitAndSinceExclusive` for the caught-up empty page,
+   `TestPendingQueueEvictionAndDropped`, `TestPendingEventsRESTDroppedFlagRoundTrip`
+   and the MCP proxy tests) but there is no single test chaining a real
+   subscription through the engine into a REST/MCP poll — that round trip is
+   one of the LIVE-pending tracker rows; all 59 `lifecycle_sub_` keys used by
+   `app.js` exist in en, de, es, fr and ja; REST, MCP, CLI, comm and PWA each
+   cover events-pending (PWA has no events view — it creates `mcp_queue`
+   subscriptions but does not poll them, an intentional gap) and update/test;
+   every live row in `docs/testing-tracker.md` is Validated=No; `CHANGELOG.md`
+   carries no version number; the `webhook` sink is still rejected
+   (`TestMCPQueueSinkWebhookStillRejected`) and no webhook or federation
+   forwarding code exists; `docs/config-reference.yaml` documents
+   `autonomous.notify.pending_events_max`.
 5. **Phase 5 — Planned.** Outbound webhook URL sink (HMAC, SSRF guard,
    retry/backoff), federation forwarding. *(Phase Completion Checklist
    applies.)*
@@ -707,34 +774,45 @@ smoke against a real daemon, full `go test ./...` + `node --test`, the
 Phase 1 (v9.0.85) adds **no** external surface: the dispatcher is
 in-process only, and the WS `MsgPRDUpdate` frame keeps its existing
 `{prd_id, status}` / `{prd_id, deleted:true}` shape (it is not yet
-enriched). **Phase 3 — implemented in this build** (Phase 2's sinks
+enriched). **Phases 3 and 4 — implemented in this build** (Phase 2's sinks
 shipped in v9.3.0). Current status of each intended surface:
 
 - **REST:** ✅ `GET/POST /api/autonomous/subscriptions` (list with
-  optional `?owner=` filter; create → 201) and
+  optional `?owner=` filter; create → 201),
+  `PUT /api/autonomous/subscriptions/{id}` (Phase 4),
+  `POST /api/autonomous/subscriptions/{id}/test` (Phase 4) and
   `DELETE /api/autonomous/subscriptions/{id}` (`autonomous:read` /
-  `autonomous:write`; `503` when the engine is not wired). ❌
-  `GET /api/autonomous/events?since=<cursor>` (Phase 4). ❌ WS
-  `MsgPRDUpdate` payload enrichment (Phase 4 scope).
+  `autonomous:write`; `503` when the engine is not wired). ✅
+  `GET /api/autonomous/events?queue=&since=<cursor>&limit=` (Phase 4). ❌ WS
+  `MsgPRDUpdate` payload enrichment (follow-up, explicitly out of scope for
+  Phase 4).
 - **MCP:** ✅ `autonomous_subscribe`, `autonomous_unsubscribe`,
-  `autonomous_subscriptions` (proxy the daemon REST on loopback; the daemon
-  store is the source of truth). ❌ `autonomous_events_pending` (Phase 4).
+  `autonomous_subscriptions`, `autonomous_subscription_update`,
+  `autonomous_subscription_test` (proxy the daemon REST on loopback; the
+  daemon store is the source of truth). ✅ `autonomous_events_pending`
+  (Phase 4).
 - **CLI:** ✅ `datawatch autonomous
-  subscribe|unsubscribe|subscriptions` (including `--task <id> --on
-  session_started --send "<text>"` for example 1). ❌ `events` (Phase 4).
-- **Comm channel:** ✅ verbs for subscribe/subscriptions/unsubscribe,
-  owner-scoped — the calling channel is the owner *and* the sink target.
-  Delivery fan-out uses the existing comm router.
+  subscribe|unsubscribe|subscriptions|subscription-update|subscription-test`
+  (including `--task <id> --on session_started --send "<text>"` for example
+  1). ✅ `datawatch autonomous events` (Phase 4).
+- **Comm channel:** ✅ verbs for subscribe/subscriptions/unsubscribe plus
+  subscription-update, subscription-test and events, owner-scoped — the
+  calling channel is the owner *and* the sink target, and may read only the
+  queues its own subscriptions feed. Delivery fan-out uses the existing comm
+  router.
 - **Session delivery:** ✅ session-push adapter — bridge
   `POST 127.0.0.1:<port>/send` (5 s timeout) preferred, `SendInput`
   fallback (source tag `lifecycle-sub`); one-shot removed only on success,
   one retry then log+drop on failure.
 - **YAML/config:** ✅ Phase 2's `autonomous.notify.default_events`
-  (v9.3.0). **No new keys in Phase 3** — subscriptions are data; per-
-  Automaton `notify_events` remains "only if approved" (open question 2).
-- **PWA:** ❌ subscription list/editor on the Automaton detail view; ❌ live
-  toasts off an enriched WS frame (both Phase 4). Event *delivery* works
-  today via the v9.3.0 topic-push path.
+  (v9.3.0). **No new keys in Phase 3** — subscriptions are data. ✅ Phase 4
+  adds `autonomous.notify.pending_events_max` (per-queue retention, default
+  500). Per-Automaton `notify_events` remains "only if approved" (open
+  question 2).
+- **PWA:** ✅ subscription list/editor on the Automaton detail view
+  (Subscriptions tab: list, add, edit, delete, test; Phase 4). ❌ live
+  toasts off an enriched WS frame (follow-up, explicitly out of scope for
+  Phase 4). Event *delivery* works today via the v9.3.0 topic-push path.
 - **Android:** ✅ receives events via the existing `PublishToTopic` →
   UnifiedPush path (no new daemon surface since v9.3.0). ⏳ Subscription
   *management* UI: [2026-10-21-datawatch-app-lifecycle-subscriptions-note.md](2026-10-21-datawatch-app-lifecycle-subscriptions-note.md)
@@ -744,8 +822,9 @@ shipped in v9.3.0). Current status of each intended surface:
   in this repo.
 
 **Phase 5 (not started):** outbound webhook URL sink (HMAC / SSRF guard /
-retry-backoff) and federation forwarding of the event stream. `webhook` / `mcp_queue`
-sink types are rejected at creation until then (clear phase error).
+retry-backoff) and federation forwarding of the event stream. The `webhook`
+sink type is rejected at creation until then (clear phase error); `mcp_queue`
+is accepted from Phase 4.
 
 ---
 

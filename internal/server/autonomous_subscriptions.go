@@ -7,6 +7,9 @@
 //	POST   /api/autonomous/subscriptions        — create (201 + the record)
 //	DELETE /api/autonomous/subscriptions/{id}   — delete (204)
 //	DELETE /api/autonomous/subscriptions?id=    — delete (204, same as above)
+//	PUT    /api/autonomous/subscriptions/{id}   — replace the mutable fields (200 + the record)
+//	POST   /api/autonomous/subscriptions/{id}/test — deliver a labelled test event to the sink
+//	                                                 (200 {"ok","sink","error"})
 //
 // The store's Add/Delete run ValidateSubscription, so malformed input is
 // a 400 carrying the store's message and an unknown id on delete is a
@@ -20,6 +23,7 @@ package server
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -35,6 +39,8 @@ type LifecycleSubscriptionsAPI interface {
 	List(owner string) []autonomous.Subscription
 	Get(id string) (autonomous.Subscription, bool)
 	Delete(id string) error
+	Update(id string, sub autonomous.Subscription) (autonomous.Subscription, error)
+	FireTest(id string) (autonomous.TestResult, error)
 }
 
 // SetAutonomousSubscriptions wires the lifecycle subscription store for
@@ -66,6 +72,11 @@ func (s *Server) handleAutonomousSubscriptions(w http.ResponseWriter, r *http.Re
 	rest := strings.TrimPrefix(r.URL.Path, "/api/autonomous/subscriptions")
 	rest = strings.Trim(rest, "/")
 	id := rest
+	testAction := false
+	if strings.HasSuffix(rest, "/test") {
+		id = strings.TrimSuffix(rest, "/test")
+		testAction = true
+	}
 	if id == "" {
 		id = r.URL.Query().Get("id") // delete also accepts ?id=
 	}
@@ -98,6 +109,49 @@ func (s *Server) handleAutonomousSubscriptions(w http.ResponseWriter, r *http.Re
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
+		return
+	}
+
+	if testAction {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		res, err := s.autonomousSubs.FireTest(id)
+		if errors.Is(err, autonomous.ErrSubscriptionNotFound) {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		if errors.Is(err, autonomous.ErrTestUnavailable) {
+			http.Error(w, err.Error(), http.StatusServiceUnavailable)
+			return
+		}
+		if err != nil && res.Error == "" {
+			res.Error = err.Error()
+		}
+		res.OK = err == nil
+		s.audit(r.Context(), "test", "lifecycle_subscription", id, nil)
+		writeJSONOK(w, res)
+		return
+	}
+
+	if r.Method == http.MethodPut {
+		var sub autonomous.Subscription
+		if err := json.NewDecoder(r.Body).Decode(&sub); err != nil {
+			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		updated, err := s.autonomousSubs.Update(id, sub)
+		if errors.Is(err, autonomous.ErrSubscriptionNotFound) {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		s.audit(r.Context(), "update", "lifecycle_subscription", id, nil)
+		writeJSONOK(w, updated)
 		return
 	}
 

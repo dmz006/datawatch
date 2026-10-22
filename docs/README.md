@@ -11,7 +11,7 @@ Complete reference for configuring, operating, and extending datawatch.
 | [setup.md](setup.md) | Full installation and initial configuration guide |
 | [commands.md](commands.md) | Complete command reference (messaging and CLI) |
 | [pwa-setup.md](pwa-setup.md) | Progressive Web App setup via Tailscale |
-| [howto/](howto/README.md) | Practical walkthroughs — autonomous planning, PRD-DAG, container workers, pipeline chaining, cross-agent memory, Automata lifecycle subscriptions |
+| [howto/](howto/README.md) | Practical walkthroughs — autonomous planning, PRD-DAG, container workers, pipeline chaining, cross-agent memory, Automata lifecycle subscriptions (incl. PWA tab and polling queue) |
 
 ## Backends
 
@@ -103,7 +103,7 @@ Complete reference for configuring, operating, and extending datawatch.
 | [flow/dns-channel-flow.md](flow/dns-channel-flow.md) | DNS TXT query encoding, HMAC auth, response fragmentation |
 | [flow/proxy-flow.md](flow/proxy-flow.md) | Proxy mode — remote routing, session discovery, command forwarding |
 | [flow/agent-spawn-flow.md](flow/agent-spawn-flow.md) | F10 agent lifecycle — profile → spawn → bootstrap → clone → terminate → revoke → sweep |
-| [flow/lifecycle-subscription-flow.md](flow/lifecycle-subscription-flow.md) | Automata lifecycle event → dispatcher → subscription engine → comm / session (bridge, SendInput) / topic / alert sinks |
+| [flow/lifecycle-subscription-flow.md](flow/lifecycle-subscription-flow.md) | Automata lifecycle event → dispatcher → subscription engine → comm / session (bridge, SendInput) / topic / alert / pending-events queue (`mcp_queue`) sinks; update + test-fire |
 
 ---
 

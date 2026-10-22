@@ -34,6 +34,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"reflect"
 	"sort"
 	"strings"
 	"sync"
@@ -62,6 +63,7 @@ const sessionPushJanitorInterval = 30 * time.Second
 const (
 	auditLifecycleSubCreate = "autonomous_lifecycle_subscription_create"
 	auditLifecycleSubRemove = "autonomous_lifecycle_subscription_remove"
+	auditLifecycleSubUpdate = "autonomous_lifecycle_subscription_update"
 )
 
 // CommSinkConfig drives the comm-sink delivery from persisted
@@ -97,6 +99,9 @@ type SessionPushConfig struct {
 	RecordAlert func(level, title, body string)
 	// PublishTopics drives topic-sink subscriptions (nil → disabled).
 	PublishTopics func(topics []string, title, message string)
+	// PendingQueue drives mcp_queue-sink subscriptions (nil → matching
+	// events are dropped silently).
+	PendingQueue *PendingEventQueue
 }
 
 // DefaultBridgePost POSTs text to the session channel bridge's
@@ -135,6 +140,7 @@ func DefaultBridgePost(port int, sessionID, text string) error {
 type activeSubscription struct {
 	cancel func()
 	comm   *CommFanoutSink
+	sub    Subscription // as registered, to detect an in-place update on resync
 }
 
 // LifecycleSubscriptionEngine wires persisted subscriptions from a
@@ -147,16 +153,24 @@ type LifecycleSubscriptionEngine struct {
 	cfg   SessionPushConfig
 	nowFn func() time.Time
 
-	mu      sync.Mutex
-	active  map[string]*activeSubscription
-	started bool
-	closed  bool
-	stop    chan struct{}
+	mu     sync.Mutex
+	active map[string]*activeSubscription
+	// keepQueues names pending queues whose one-shot subscription was
+	// just consumed: the next resync leaves them in place so the client
+	// can still read the event the one-shot delivered.
+	keepQueues map[string]bool
+	started    bool
+	closed     bool
+	stop       chan struct{}
 
 	// auditHook overrides the Manager's audit callback (tests capture
 	// the records without a file audit log).
 	auditHook func(action string, details map[string]any)
 }
+
+// PendingEvents returns the pending-events queue behind the mcp_queue
+// sink (nil when none was configured).
+func (e *LifecycleSubscriptionEngine) PendingEvents() *PendingEventQueue { return e.cfg.PendingQueue }
 
 // NewLifecycleSubscriptionEngine builds the engine over m's dispatcher
 // and the persisted subscriptions in store. cfg's nil PostBridge
@@ -264,13 +278,16 @@ func (e *LifecycleSubscriptionEngine) resync() {
 	}
 
 	next := make(map[string]*activeSubscription, len(subs))
-	var created, removed []string
+	var created, removed, updated []string
 	for _, sub := range subs {
 		if sub.ExpiresAt != nil && !sub.ExpiresAt.After(now) {
 			continue // expired: not registered; the janitor deletes it
 		}
 		if prevIDs[sub.ID] {
 			prevIDs[sub.ID] = false
+			if !reflect.DeepEqual(prevActive[sub.ID].sub, sub) {
+				updated = append(updated, sub.ID)
+			}
 		} else {
 			created = append(created, sub.ID)
 		}
@@ -279,7 +296,7 @@ func (e *LifecycleSubscriptionEngine) resync() {
 		if sub.Sink.Type == SinkComm && sub.Coalesce {
 			comm = NewCommFanoutSink(e.cfg.Comm.Send, e.cfg.Comm.Window)
 		}
-		next[sub.ID] = &activeSubscription{cancel: subCancel, comm: comm}
+		next[sub.ID] = &activeSubscription{cancel: subCancel, comm: comm, sub: sub}
 	}
 	for id := range prevIDs {
 		if prevIDs[id] {
@@ -288,6 +305,25 @@ func (e *LifecycleSubscriptionEngine) resync() {
 	}
 	e.active = next
 	e.mu.Unlock()
+
+	// Release pending queues no remaining subscription feeds.
+	if e.cfg.PendingQueue != nil {
+		live := make(map[string]bool)
+		for _, sub := range subs {
+			if sub.Sink.Type == SinkMCPQueue {
+				live[strings.TrimSpace(sub.Sink.Target)] = true
+			}
+		}
+		e.mu.Lock()
+		keep := e.keepQueues
+		e.keepQueues = nil
+		e.mu.Unlock()
+		for _, name := range e.cfg.PendingQueue.Names() {
+			if !live[name] && !keep[name] {
+				e.cfg.PendingQueue.Release(name)
+			}
+		}
+	}
 
 	// Tear the previous set down OUTSIDE e.mu: cancel may be called from
 	// any goroutine (dispatcher contract), and comm Close flushes
@@ -303,6 +339,10 @@ func (e *LifecycleSubscriptionEngine) resync() {
 
 	sort.Strings(created)
 	sort.Strings(removed)
+	sort.Strings(updated)
+	for _, id := range updated {
+		e.audit(auditLifecycleSubUpdate, subscriptionAuditDetails(subByID[id]))
+	}
 	for _, id := range created {
 		e.audit(auditLifecycleSubCreate, subscriptionAuditDetails(subByID[id]))
 	}
@@ -398,6 +438,23 @@ func (e *LifecycleSubscriptionEngine) handle(sub Subscription, ev LifecycleEvent
 			return
 		}
 		e.cfg.RecordAlert(sinkLevel(ev), ev.Kind, DescribeLifecycleEvent(ev))
+
+	case SinkMCPQueue:
+		if e.cfg.PendingQueue == nil {
+			return
+		}
+		e.cfg.PendingQueue.Append(strings.TrimSpace(sub.Sink.Target), ev)
+		if sub.OneShot {
+			e.mu.Lock()
+			if e.keepQueues == nil {
+				e.keepQueues = make(map[string]bool)
+			}
+			e.keepQueues[strings.TrimSpace(sub.Sink.Target)] = true
+			e.mu.Unlock()
+			if derr := e.store.Delete(sub.ID); derr != nil {
+				log.Printf("[autonomous] lifecycle sub %s: one-shot removal: %v", sub.ID, derr)
+			}
+		}
 	}
 }
 

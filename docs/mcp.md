@@ -248,7 +248,7 @@ must stay strict JSON-RPC (release-smoke §7r asserts all of this).
 | Discussion Subscribe | `discussion_subscribe`, `discussion_unsubscribe`, `discussion_subscriptions` |
 | Result Store | `result_put`, `result_get`, `result_list`, `result_delete` |
 | Autonomous PRDs | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_list/create/get/decompose/approve/resume/reject/request_revision/edit_task/instantiate/run/cancel/rejudge/set_llm/set_task_llm/set_task_verification_llm/set_story_verification_llm/set_verification_llm/children`, `autonomous_learnings`, `capacity_status` |
-| Lifecycle subscriptions (BL427) | `autonomous_subscribe`, `autonomous_unsubscribe`, `autonomous_subscriptions` |
+| Lifecycle subscriptions (BL427) | `autonomous_subscribe`, `autonomous_unsubscribe`, `autonomous_subscriptions`, `autonomous_subscription_update`, `autonomous_subscription_test`, `autonomous_events_pending` |
 | Orchestrator | `orchestrator_graph_create/plan/run/get/list/cancel`, `orchestrator_verdicts`, `orchestrator_config_get/set` |
 | Pipelines | `pipeline_start/list/status/cancel` |
 | Memory + KG | `memory_remember/recall/list/forget/export/import/reindex/stats/learnings`, `kg_add/query/timeline/stats/invalidate`, `research_sessions`, `get_prompt`, `copy_response` |
@@ -324,8 +324,8 @@ Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
   | `level` | one of `kinds`/`level` | Event level: `prd` or `task` |
   | `prd_id` | no | Scope to one Automaton (PRD) id |
   | `task_id` | no | Scope to one task id |
-  | `sink_type` | yes | `comm`, `session`, `topic` or `alert` |
-  | `sink_target` | yes | The sink's target (session id, topic, router/alert name) |
+  | `sink_type` | yes | `comm`, `session`, `topic`, `alert` or `mcp_queue` |
+  | `sink_target` | yes | The sink's target (session id, topic, router/alert name, or the `mcp_queue` queue name) |
   | `action_text` | no | Text typed into the sink session on every match (the `send_input` action — the only action in this phase; requires `sink_type` `session`) |
   | `one_shot` | no | Delete the subscription after its first delivery (default false) |
   | `coalesce` | no | Batch human-facing sink deliveries in quiet windows (default false) |
@@ -344,6 +344,28 @@ Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
   )
   → the stored subscription record (has an id you can pass to autonomous_unsubscribe)
   ```
+- **`autonomous_subscription_update` / `autonomous_subscription_test`** — change or check an existing lifecycle-event subscription by id.
+
+  `autonomous_subscription_update(id, ...)` takes `id` (required) plus the same optional fields as `autonomous_subscribe` (`kinds`, `level`, `prd_id`, `task_id`, `sink_type`, `sink_target`, `action_text`, `one_shot`, `coalesce`, `expires_in_seconds`) and **replaces** the subscription's mutable fields with them: a field left out is cleared, so pass the full desired configuration. The id and creation time are kept. `expires_in_seconds` must be positive when given and is converted to an absolute expiry, as for `autonomous_subscribe`. Returns the updated record. Proxies `PUT /api/autonomous/subscriptions/{id}`; the daemon's validation message comes back for a malformed configuration (400) and an unknown id is a 404.
+
+  `autonomous_subscription_test(id)` delivers one labelled test event to the subscription's sink so the route can be checked without waiting for a real event, and returns `{"ok","sink","error"}`. Proxies `POST /api/autonomous/subscriptions/{id}/test`; 404 for unknown ids.
+
+  The same surface over CLI:
+  ```
+  datawatch autonomous subscription-update <id> --on <kind> [--level prd|task] [--prd <id>] [--task <id>] --sink <type> --target <t> [--send <text>] [--one-shot] [--coalesce] [--expires <seconds>]
+  datawatch autonomous subscription-test <id>
+  ```
+  `subscription-update` takes the same flags as `subscribe` and replaces the configuration; unlike `subscribe`, `--task` does not imply `--one-shot`. From a comm channel: `autonomous subscription-update <id> key=value...` (keys `kinds`, `level`, `prd`, `task`, `coalesce`, `one_shot`, `expires`; unnamed fields keep their stored value) and `autonomous subscription-test <id>`. A channel can only update or test subscriptions it owns; any other id gets the same not-found answer.
+
+- **`autonomous_events_pending`** — poll the pending lifecycle events of a named queue, for a generic MCP client that cannot receive pushes. Create the queue by subscribing with `autonomous_subscribe` using `sink_type` `mcp_queue` and `sink_target` set to the queue name (letters, digits and `. _ : -`); matching events then accumulate there, bounded per queue (`autonomous.notify.pending_events_max`, default 500).
+
+  | Parameter | Required | Description |
+  |---|---|---|
+  | `queue` | yes | Queue name (the `mcp_queue` subscription's `sink_target`) |
+  | `since_cursor` | no | Return only events after this cursor (default 0) — pass back the previous call's `next_cursor` |
+  | `limit` | no | Maximum events (default 50, capped at 200) |
+
+  Returns `{"events":[...],"next_cursor":<n>,"dropped":<bool>}`. Pass `next_cursor` back as `since_cursor` on the next call; `dropped` is true when events you had not yet seen were evicted because the queue overflowed. Proxies `GET /api/autonomous/events`. The CLI equivalent is `datawatch autonomous events --queue <name> [--since <cursor>] [--limit n] [--json]`; over a comm channel it is `autonomous events [queue=<name>] [since=<cursor>]` (the queue defaults to one derived from the calling channel, and a channel can only read queues of its own subscriptions).
 - **`observer_envelopes_all_peers`** (v5.12.0, BL180 cross-host) — federation-aware envelope view; cross-peer caller attribution surfaces as `<peer>:<envelope-id>` rows on each matched server envelope.
 - **`session_bind_agent`** (v5.x) — bind a manual session to an existing agent record so observer/cost roll-ups attribute correctly.
 - **`session_import`** (v5.x) — import a foreign tmux session record into datawatch state without re-spawning.

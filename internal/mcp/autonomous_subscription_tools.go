@@ -41,7 +41,7 @@ const autonomousSubscribePath = "/api/autonomous/subscriptions"
 // subscription on the daemon.
 func (s *Server) toolAutonomousSubscribe() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_subscribe",
-		mcpsdk.WithDescription("Register a persisted subscription to Automaton (PRD/task) lifecycle events on this daemon so matching events (task.session_started, task.completed, prd.blocked, ...) are delivered to a chosen sink when they fire. kinds: comma-separated event kinds (at least one of kinds or level is required). level: \"prd\" or \"task\". prd_id/task_id: scope to one Automaton/task (omitted = any). sink_type + sink_target: comm|session|topic|alert plus its target (session id, topic, router/alert name). action_text (optional, requires sink_type \"session\"): text typed into the target session on every match (the send_input action — the only action in this phase). one_shot: delete after the first delivery. coalesce: batch human-facing sinks in quiet windows. expires_in_seconds: optional TTL. Returns the stored subscription record (with its id) as JSON. The CLI equivalent is `datawatch autonomous subscribe`."),
+		mcpsdk.WithDescription("Register a persisted subscription to Automaton (PRD/task) lifecycle events on this daemon so matching events (task.session_started, task.completed, prd.blocked, ...) are delivered to a chosen sink when they fire. kinds: comma-separated event kinds (at least one of kinds or level is required). level: \"prd\" or \"task\". prd_id/task_id: scope to one Automaton/task (omitted = any). sink_type + sink_target: comm|session|topic|alert|mcp_queue plus its target (session id, topic, router/alert name, or for mcp_queue the name of a pending-events queue that autonomous_events_pending polls). action_text (optional, requires sink_type \"session\"): text typed into the target session on every match (the send_input action — the only action in this phase). one_shot: delete after the first delivery. coalesce: batch human-facing sinks in quiet windows. expires_in_seconds: optional TTL. Returns the stored subscription record (with its id) as JSON. The CLI equivalent is `datawatch autonomous subscribe`."),
 		mcpsdk.WithString("kinds",
 			mcpsdk.Description("Comma-separated event kinds, e.g. \"task.session_started,prd.blocked\". A kind may also be passed as a JSON string array. At least one of kinds or level is required."),
 		),
@@ -56,11 +56,11 @@ func (s *Server) toolAutonomousSubscribe() mcpsdk.Tool {
 		),
 		mcpsdk.WithString("sink_type",
 			mcpsdk.Required(),
-			mcpsdk.Description("Sink type: \"comm\", \"session\", \"topic\" or \"alert\"."),
+			mcpsdk.Description("Sink type: \"comm\", \"session\", \"topic\", \"alert\" or \"mcp_queue\". mcp_queue appends matching events to the named pending-events queue (sink_target = queue name; letters, digits and . _ : - only) for a client that cannot receive pushes to poll with autonomous_events_pending."),
 		),
 		mcpsdk.WithString("sink_target",
 			mcpsdk.Required(),
-			mcpsdk.Description("Sink target (session id / topic / router or alert name)."),
+			mcpsdk.Description("Sink target (session id / topic / router or alert name / mcp_queue queue name)."),
 		),
 		mcpsdk.WithString("action_text",
 			mcpsdk.Description("Optional text typed into the sink session when the event fires (requires sink_type \"session\"); the only action supported in this phase is the send_input action."),

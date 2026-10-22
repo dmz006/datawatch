@@ -416,6 +416,8 @@ type Server struct {
 	// /api/autonomous/subscriptions. Wired from main.go alongside the
 	// subscription engine; nil (default) makes the handlers return 503.
 	autonomousSubs LifecycleSubscriptionsAPI
+	// mcp_queue sink read side for /api/autonomous/events; nil → 503.
+	autonomousEvents PendingEventsAPI
 
 	// BL328 — in-flight async decompose jobs. key=prdID (string),
 	// value=*decomposeJob. Jobs are in-memory only; not persisted across
@@ -7216,6 +7218,15 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			} else if s, ok := v.(string); ok {
 				cfg.Autonomous.Notify.DefaultEvents = splitCSV(s)
 			}
+		case "autonomous.notify.pending_events_max":
+			// Per-queue retention for the mcp_queue sink; < 1 stores the
+			// default. Takes effect on the next daemon start.
+			if n, ok := toInt(v); ok {
+				if n < 1 {
+					n = config.DefaultPendingEventsMax
+				}
+				cfg.Autonomous.Notify.PendingEventsMax = n
+			}
 		case "autonomous.planning_effort", "autonomous.decomposition_effort":
 			cfg.Autonomous.PlanningEffort = toString(v)
 		case "autonomous.verification_effort":
@@ -8073,7 +8084,10 @@ func defaultEventsNotifySurface(n config.AutonomousNotifyConfig) map[string]inte
 	if ev == nil {
 		ev = []string{}
 	}
-	return map[string]interface{}{"default_events": ev}
+	return map[string]interface{}{
+		"default_events":     ev,
+		"pending_events_max": n.EffectivePendingEventsMax(),
+	}
 }
 
 // ---- Proxy endpoint --------------------------------------------------------

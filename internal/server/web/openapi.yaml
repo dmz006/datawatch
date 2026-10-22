@@ -1331,6 +1331,79 @@ paths:
       operationId: autonomousLearnings
       tags: [Autonomous]
       responses: {"200": {description: OK}}
+  /api/autonomous/subscriptions/{id}:
+    put:
+      summary: Replace a lifecycle subscription's mutable fields
+      description: |
+        Full replace of filter, sink, action, coalesce, one_shot and expires_at;
+        owner is kept unless supplied. The id and created_at are kept. The
+        change takes effect live. Requires the `autonomous:write` capability.
+      operationId: autonomousSubscriptionUpdate
+      tags: [Autonomous]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object}
+      responses:
+        "200": {description: "The updated subscription record"}
+        "400": {description: "Malformed body or failed validation"}
+        "403": {description: "Caller lacks the autonomous:write capability"}
+        "404": {description: "Unknown subscription id"}
+        "503": {description: "Lifecycle subscriptions not wired"}
+  /api/autonomous/subscriptions/{id}/test:
+    post:
+      summary: Deliver a test event to a subscription's sink
+      description: |
+        Sends a synthetic prd.updated event whose message starts with `[test] `
+        to just this subscription's sink. The action text is never used and a
+        one-shot subscription is not consumed. Requires the `autonomous:write`
+        capability.
+      operationId: autonomousSubscriptionTest
+      tags: [Autonomous]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        "200":
+          description: Delivery outcome
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: {type: boolean}
+                  sink: {type: string}
+                  error: {type: string}
+        "403": {description: "Caller lacks the autonomous:write capability"}
+        "404": {description: "Unknown subscription id"}
+        "503": {description: "Test delivery not available"}
+  /api/autonomous/events:
+    get:
+      summary: Poll the pending lifecycle events of a named queue
+      description: |
+        Reads the bounded pending-events queue fed by an `mcp_queue` lifecycle
+        subscription sink (the queue name is the sink target). Returns the events
+        after `since`, oldest first; pass the returned `next_cursor` back as
+        `since` on the next call. `dropped` is true when events the caller had not
+        yet seen were evicted from the queue. Requires the `autonomous:read`
+        capability. 503 when the daemon runs without the subscription engine.
+      operationId: autonomousEventsPending
+      tags: [Autonomous]
+      parameters:
+        - {name: queue, in: query, required: true, schema: {type: string}, description: "Queue name (the target of an mcp_queue subscription)"}
+        - {name: since, in: query, required: false, schema: {type: integer, minimum: 0, default: 0}, description: "Return only events with a cursor greater than this"}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, default: 50, maximum: 200}, description: "Maximum events to return; values above 200 are capped"}
+      responses:
+        "200":
+          description: Pending events page
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/PendingEventsPage"}
+        "400": {description: "Missing queue, or non-numeric since/limit"}
+        "403": {description: "Caller lacks the autonomous:read capability"}
+        "503": {description: "Pending events queue not wired"}
 
   # ─── Plugin framework (BL33, v3.11.0) ──────────────────────────
   /api/plugins:
@@ -3141,6 +3214,20 @@ components:
             example: "unauthorized"
 
   schemas:
+    PendingEventsPage:
+      type: object
+      required: [events, next_cursor, dropped]
+      properties:
+        events:
+          type: array
+          description: Lifecycle events after the requested cursor, oldest first; never null
+          items: {type: object, additionalProperties: true}
+        next_cursor:
+          type: integer
+          description: Cursor to pass as `since` on the next call
+        dropped:
+          type: boolean
+          description: True when unseen events were evicted from the bounded queue
     PlanReviewVerdict:
       type: object
       description: |
