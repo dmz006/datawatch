@@ -369,6 +369,15 @@ type Manager struct {
 	// grace window while the resumed TUI re-renders prior conversation history.
 	restartedAt map[string]time.Time
 
+	// Scan timing seams. The zero values mean the production defaults (see
+	// scan_timing.go), so only tests set them: they let a test drive the
+	// post-restart grace, the task-echo window, the prompt debounce and the
+	// idle-scan cadence from a fake clock instead of wall time and machine load.
+	clock          func() time.Time
+	restartGrace   time.Duration
+	taskEchoWindow time.Duration
+	scanInterval   time.Duration
+
 	// restartTaskOverride marks sessions whose restart carried an explicit
 	// task override (RestartSession called with a non-empty task). Restart's
 	// relaunch block reads and clears the flag to decide whether a
@@ -2402,7 +2411,7 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 					m.noteSelfUpdateInLines(fullID, capLines)
 
 					// Check for prompt patterns in last 10 non-empty lines
-					matchedLine, promptCtx := m.matchPromptInLines(capLines, 10)
+					matchedLine, promptCtx := m.matchPromptForSession(current, capLines, 10)
 					if matchedLine != "" {
 						promptSeenCount++
 						// Always update PromptContext
@@ -2421,7 +2430,7 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 						}
 						if promptSeenCount >= minSeen {
 							wasRunning := current.State == StateRunning
-							if m.tryTransitionToWaiting(fullID, matchedLine, "", nil) {
+							if m.transitionOnPane(fullID, matchedLine, "", nil) {
 								// Capture last response on running→waiting_input
 								if wasRunning {
 									go func(s *Session) {
@@ -2662,8 +2671,8 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 					// the input-field rendering phase is also covered.
 					if completionDetected && !echoLocated {
 						deliveredAt, wasDelivered := m.taskDeliveredTime(sess)
-						if wasDelivered && time.Since(deliveredAt) < 5*time.Minute {
-							m.debugf("StartScreenCapture: suppressing completion within 5min task-echo window for %s (elapsed=%v)", sess.FullID, time.Since(deliveredAt).Round(time.Second))
+						if wasDelivered && m.now().Sub(deliveredAt) < 5*time.Minute {
+							m.debugf("StartScreenCapture: suppressing completion within 5min task-echo window for %s (elapsed=%v)", sess.FullID, m.now().Sub(deliveredAt).Round(time.Second))
 							completionDetected = false
 						}
 					}
@@ -3049,7 +3058,7 @@ func (m *Manager) MarkChannelActivity(fullID string) {
 // produce a false-positive completion before the LLM has had time to respond.
 func (m *Manager) MarkTaskDelivered(fullID string) {
 	m.mu.Lock()
-	m.taskDeliveredAt[fullID] = time.Now()
+	m.taskDeliveredAt[fullID] = m.now()
 	m.mu.Unlock()
 }
 
@@ -3082,7 +3091,7 @@ func (m *Manager) ClaimTaskDelivery(fullID string) bool {
 	if _, inMem := m.taskDeliveredAt[fullID]; inMem || sess.TaskDeliveredAt != nil {
 		return false
 	}
-	now := time.Now()
+	now := m.now()
 	sess.TaskDeliveredAt = &now
 	// Arm the task-echo suppression from the moment the claim is won, so the
 	// echo of the task while it is being typed cannot read as a completion.
@@ -3808,7 +3817,7 @@ func (m *Manager) Restart(ctx context.Context, fullID string) (*Session, error) 
 	m.monitors[sess.FullID] = cancel
 	// Record restart time so processOutputLine can ignore DATAWATCH_COMPLETE:
 	// replayed from prior conversation history during the TUI re-render window.
-	m.restartedAt[sess.FullID] = time.Now()
+	m.restartedAt[sess.FullID] = m.now()
 	m.mu.Unlock()
 	go m.monitorOutput(monCtx, sess, projGit)
 	if sess.OneShot && sess.TmuxSession != "" {
@@ -5171,7 +5180,7 @@ func (m *Manager) ResumeMonitors(ctx context.Context) {
 		if sess.TaskDeliveredAt != nil {
 			m.mu.Lock()
 			m.taskDeliveredAt[sess.FullID] = *sess.TaskDeliveredAt
-			m.restartedAt[sess.FullID] = time.Now()
+			m.restartedAt[sess.FullID] = m.now()
 			m.mu.Unlock()
 		}
 
@@ -5305,7 +5314,7 @@ func (m *Manager) tryTransitionToWaiting(fullID, matchedLine, promptCtx string, 
 		m.mu.Lock()
 		firstSeen, exists := m.promptFirstSeen[fullID]
 		if !exists {
-			m.promptFirstSeen[fullID] = time.Now()
+			m.promptFirstSeen[fullID] = m.now()
 			m.mu.Unlock()
 			m.debugf("prompt debounce started session=%s prompt=%q (waiting %v)", fullID, matchedLine, debounce)
 			return false
@@ -5313,7 +5322,7 @@ func (m *Manager) tryTransitionToWaiting(fullID, matchedLine, promptCtx string, 
 		m.mu.Unlock()
 
 		// Debounce period not yet elapsed
-		if time.Since(firstSeen) < debounce {
+		if m.now().Sub(firstSeen) < debounce {
 			return false
 		}
 	}
@@ -5387,6 +5396,14 @@ func (m *Manager) tryTransitionToWaiting(fullID, matchedLine, promptCtx string, 
 // matchPromptInLines checks the last N non-empty lines for a prompt pattern match.
 // Returns the matched line and context (surrounding non-empty lines) or empty strings.
 func (m *Manager) matchPromptInLines(lines []string, n int) (matched string, context string) {
+	return m.matchPromptLines(lines, n, true)
+}
+
+// matchPromptLines is matchPromptInLines with control over needs-input
+// markers. A line that merely mentions a marker (task text, wrapped
+// placeholder, shell echo) is never a prompt; a real standalone marker is
+// returned as the match only when markersTrusted.
+func (m *Manager) matchPromptLines(lines []string, n int, markersTrusted bool) (matched string, context string) {
 	// Check the status bar (last few lines) for active-processing indicators.
 	// "esc to interrupt" is the claude-code pattern; opencode shows "esc interrupt"
 	// (without "to"). Both mean the LLM is actively working — suppress detection.
@@ -5463,6 +5480,17 @@ func (m *Manager) matchPromptInLines(lines []string, n int) (matched string, con
 		// ends in ">" but is task text, never a prompt.
 		if isCompletionPlaceholder(l) {
 			continue
+		}
+		// Likewise an instruction that mentions DATAWATCH_NEEDS_INPUT ends in
+		// ">" ("<your question>") and would match the "> " prompt pattern.
+		switch kind, _ := classifyNeedsInput(l, m.effectiveInputNeededPatterns()); kind {
+		case needsInputInstruction:
+			continue
+		case needsInputReal:
+			if !markersTrusted {
+				continue
+			}
+			return l, extractPromptContext(lines, i, 10)
 		}
 		for _, pat := range m.effectivePromptPatterns() {
 			match := false
@@ -5854,7 +5882,7 @@ func (m *Manager) reconcileSessions(ctx context.Context) {
 				tracker := ResumeTracker(m.dataDir, sess)
 				m.mu.Lock()
 				m.trackers[sess.FullID] = tracker
-				m.restartedAt[sess.FullID] = time.Now()
+				m.restartedAt[sess.FullID] = m.now()
 				m.mu.Unlock()
 				projGit := NewProjectGit(sess.ProjectDir)
 				monCtx, cancel := context.WithCancel(ctx)
@@ -6185,7 +6213,7 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 	var pendingLines []string
 	var lastPromptMatchTime time.Time // tracks when we last saw a prompt pattern
 	var lastPartialDrain time.Time    // when we last drained partial (no-newline) data
-	idleCheckTicker := time.NewTicker(2 * time.Second)
+	idleCheckTicker := time.NewTicker(m.scanTick())
 	defer idleCheckTicker.Stop()
 	livenessTicker := time.NewTicker(30 * time.Second)
 	defer livenessTicker.Stop()
@@ -6272,8 +6300,8 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 					stripped := StripANSI(capture)
 					capLines := strings.Split(stripped, "\n")
 					if _, ok := m.store.Get(sess.FullID); ok {
-						if matchedLine, promptCtx := m.matchPromptInLines(capLines, 10); matchedLine != "" {
-							m.tryTransitionToWaiting(sess.FullID, matchedLine, promptCtx, getTracker)
+						if matchedLine, promptCtx := m.matchPromptForSession(sess, capLines, 10); matchedLine != "" {
+							m.transitionOnPane(sess.FullID, matchedLine, promptCtx, getTracker)
 						}
 					}
 				}
@@ -6290,9 +6318,9 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 					current, ok := m.store.Get(sess.FullID)
 					if ok {
 						// Check last 10 non-empty lines for prompt patterns
-						matchedLine, promptCtx := m.matchPromptInLines(capLines, 10)
+						matchedLine, promptCtx := m.matchPromptForSession(sess, capLines, 10)
 						if matchedLine != "" {
-							m.tryTransitionToWaiting(sess.FullID, matchedLine, promptCtx, getTracker)
+							m.transitionOnPane(sess.FullID, matchedLine, promptCtx, getTracker)
 						}
 						// Check for completion — scan all visible lines for one-shot
 						// sessions; limit to 5 for interactive ones (same rationale as
@@ -6366,7 +6394,7 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 						// (where DATAWATCH_COMPLETE: appears as plain text) cannot falsely trigger.
 						if completionFound && !chEchoLocated {
 							deliveredAt, wasDelivered := m.taskDeliveredTime(sess)
-							if wasDelivered && time.Since(deliveredAt) < 5*time.Minute {
+							if wasDelivered && m.now().Sub(deliveredAt) < 5*time.Minute {
 								m.debugf("monitorOutput structured-channel: suppressing completion within 5min task-echo window for %s", sess.FullID)
 								completionFound = false
 							}
@@ -6657,14 +6685,14 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 				restartTime, wasRestarted := m.restartedAt[sess.FullID]
 				m.mu.Unlock()
 				deliveredAt, wasDelivered := m.taskDeliveredTime(sess)
-				if wasRestarted && time.Since(restartTime) < 30*time.Second {
+				if wasRestarted && m.now().Sub(restartTime) < m.restartGraceWindow() {
 					m.debugf("processOutputLine: suppressing %q within 30s post-restart grace window for %s", pat, sess.FullID)
 					return
 				}
 				// Task-echo suppression: for 5 s after task delivery via send_input
 				// the TUI re-renders the task text (which may include DATAWATCH_COMPLETE:
 				// verbatim as instruction text). Skip until the echo window has passed.
-				if wasDelivered && time.Since(deliveredAt) < 5*time.Second {
+				if wasDelivered && m.now().Sub(deliveredAt) < m.echoWindow() {
 					m.debugf("processOutputLine: suppressing %q within 5s task-echo window for %s", pat, sess.FullID)
 					continue
 				}
@@ -6880,11 +6908,11 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 			restartTime, wasRestarted := m.restartedAt[sess.FullID]
 			m.mu.Unlock()
 			deliveredAt, wasDelivered := m.taskDeliveredTime(sess)
-			if wasRestarted && time.Since(restartTime) < 30*time.Second {
+			if wasRestarted && m.now().Sub(restartTime) < m.restartGraceWindow() {
 				m.debugf("processOutputLine: suppressing %q within 30s post-restart grace window for %s", pat, sess.FullID)
 				return
 			}
-			if wasDelivered && time.Since(deliveredAt) < 5*time.Second {
+			if wasDelivered && m.now().Sub(deliveredAt) < m.echoWindow() {
 				m.debugf("processOutputLine: suppressing %q within 5s task-echo window for %s", pat, sess.FullID)
 				continue
 			}
@@ -6932,14 +6960,19 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 
 	// Check for explicit input needed pattern (no debounce — explicit protocol marker)
 	// `line` is already StripANSI'd at function entry (line 3731).
-	for _, pat := range m.effectiveInputNeededPatterns() {
-		if strings.Contains(line, pat) {
-			idx := strings.Index(line, pat)
-			question := strings.TrimSpace(line[idx+len(pat):])
+	// Only a standalone marker line is a request: task text that merely
+	// mentions the marker ("When blocked, print DATAWATCH_NEEDS_INPUT: <q>"),
+	// a wrapped placeholder or a shell echo is plain output. A real marker is
+	// also ignored inside the post-restart grace and the task-echo window, when
+	// the TUI is replaying history or re-rendering the task.
+	if kind, question := classifyNeedsInput(line, m.effectiveInputNeededPatterns()); kind == needsInputReal {
+		if m.markersTrusted(sess) {
 			// Explicit markers bypass debounce but still respect notification cooldown
 			m.tryTransitionToWaiting(sess.FullID, question, "", getTracker, true)
-			return
+		} else {
+			m.debugf("processOutputLine: ignoring needs-input marker inside restart-grace/task-echo window for %s", sess.FullID)
 		}
+		return
 	}
 
 	// If we were waiting for input and see new output, transition back to running.
