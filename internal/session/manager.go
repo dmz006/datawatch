@@ -2174,6 +2174,36 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 			_ = m.tmux.KillSession(tmuxSession)
 			return nil, fmt.Errorf("send LLM command: %w", err)
 		}
+		// Right after the paste: confirm the prompt was actually submitted.
+		// Bracketed-paste TUIs (claude-code) can absorb the trailing Enter
+		// into the paste event, leaving the task sitting in the input line
+		// as a "[Pasted text #N]" placeholder while the operator waits.
+		// Only for claude-code sessions (this is the legacy claude-code
+		// fallback path); claude-code TUIs, not other backends, render the
+		// paste-placeholder marker.
+		if m.llmBackend == "claude-code" || strings.Contains(m.llmBin, "claude") {
+			// Assistant activity = the session already reports running, or
+			// the pane has moved past the pending paste (marker expanded /
+			// assistant output rendered). The monitor is not yet started at
+			// this point, so the pane is the ground truth.
+			assistantActive := func() bool {
+				if sess.State == StateRunning {
+					return true
+				}
+				cap, err := m.tmux.CapturePaneVisible(tmuxSession)
+				if err != nil {
+					return false
+				}
+				return !pastePending(cap)
+			}
+			if err := confirmPromptSubmitted(m.tmux, tmuxSession, assistantActive,
+				30*time.Second, time.Second); err != nil {
+				// Non-fatal: the session may still submit a moment later
+				// (operator press, TUI latency). Log and let the monitor
+				// and idle reaper handle a session that truly never starts.
+				fmt.Printf("[warn] confirm prompt submitted for %s: %v\n", fullID, err)
+			}
+		}
 	}
 
 	// Update pre-session commit to use proper session ID now that we have one.
