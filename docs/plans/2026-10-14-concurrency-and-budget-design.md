@@ -1299,6 +1299,7 @@ thing example (iii) could not see.
    recommends a manual recheck cadence plus a `claude --version`-change
    staleness flag, with a fixture self-test as a stretch (4d). Is that
    enough, or should the self-test be required?
+   **Decided by the operator 2026-10-22: recheck cadence plus a version-change staleness flag.** The fixture self-test stays a stretch item, not required for 10.0.0.
 4. **Tier defaults.** What `max_inflight` value should each `plan_tier` map
    to for `claude-code` (`pro`, `max_5x`, `max_20x`, `api`)? Is `1` the
    right conservative default for `unset`? — **Resolved (Phase 3,
