@@ -100,16 +100,27 @@ func (b *Backoff) Blocked(backend string) (bool, string) {
 // Sweep removes entries whose deadline is at or before now and returns the
 // backends that were cleared, sorted.
 func (b *Backoff) Sweep(now time.Time) []string {
+	var cleared []string
+	for _, e := range b.SweepExpired(now) {
+		cleared = append(cleared, e.Backend)
+	}
+	return cleared
+}
+
+// SweepExpired is Sweep returning the removed entries (backend and the
+// deadline that passed), sorted by backend, so callers can record what
+// expired.
+func (b *Backoff) SweepExpired(now time.Time) []Entry {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	var cleared []string
+	var cleared []Entry
 	for name, e := range b.entries {
 		if !e.Until.After(now) {
 			delete(b.entries, name)
-			cleared = append(cleared, name)
+			cleared = append(cleared, e)
 		}
 	}
-	sort.Strings(cleared)
+	sort.Slice(cleared, func(i, j int) bool { return cleared[i].Backend < cleared[j].Backend })
 	return cleared
 }
 
@@ -123,4 +134,44 @@ func (b *Backoff) Active() []Entry {
 	b.mu.Unlock()
 	sort.Slice(out, func(i, j int) bool { return out[i].Backend < out[j].Backend })
 	return out
+}
+
+// Live returns a snapshot of the entries whose deadline is still in the
+// future, ordered by backend name. Unlike Active it omits entries that
+// have expired but not yet been swept, so status surfaces never report a
+// flag the admission gate has already stopped honouring.
+func (b *Backoff) Live() []Entry {
+	now := b.now()
+	all := b.Active()
+	out := make([]Entry, 0, len(all))
+	for _, e := range all {
+		if e.Until.After(now) {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+// UsageBackoffConfig is the config half of the usage back-off status.
+type UsageBackoffConfig struct {
+	Mode           string `json:"mode"`
+	MaxWaitMinutes int    `json:"max_wait_minutes"`
+}
+
+// UsageBackoffStatus is the body shared by GET /api/usage-backoff and the
+// usage_backoff field of the autonomous status.
+type UsageBackoffStatus struct {
+	Active []Entry            `json:"active"`
+	Config UsageBackoffConfig `json:"config"`
+}
+
+// BuildUsageBackoffStatus snapshots the live flags of b (nil = none) with
+// the effective mode and maximum back-off. Active is never nil, so it
+// always marshals as an array.
+func BuildUsageBackoffStatus(b *Backoff, mode string, maxWaitMinutes int) UsageBackoffStatus {
+	st := UsageBackoffStatus{Active: []Entry{}, Config: UsageBackoffConfig{Mode: mode, MaxWaitMinutes: maxWaitMinutes}}
+	if b != nil {
+		st.Active = b.Live()
+	}
+	return st
 }

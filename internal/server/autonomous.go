@@ -87,6 +87,34 @@ func (s *Server) handleAutonomousConfig(w http.ResponseWriter, r *http.Request) 
 					return
 				}
 			}
+			// Usage back-off knobs: same rejection rule as PUT /api/config.
+			if raw, ok := top["usage_backoff"]; ok {
+				var mode interface{}
+				if json.Unmarshal(raw, &mode) != nil {
+					http.Error(w, "autonomous.usage_backoff: must be a string (\"pause_backend\" or \"off\")", http.StatusBadRequest)
+					return
+				}
+				// null is absent (merge-onto-current in SetConfig) and passes.
+				if mode != nil {
+					if verr := validateUsageBackoffMode(mode); verr != nil {
+						http.Error(w, "autonomous."+verr.Error(), http.StatusBadRequest)
+						return
+					}
+				}
+			}
+			if raw, ok := top["backoff_max_wait_minutes"]; ok {
+				var n interface{}
+				if json.Unmarshal(raw, &n) != nil {
+					http.Error(w, "autonomous.backoff_max_wait_minutes: must be a whole number of minutes", http.StatusBadRequest)
+					return
+				}
+				if n != nil {
+					if _, verr := parseBackoffMaxWaitMinutes(n); verr != nil {
+						http.Error(w, "autonomous."+verr.Error(), http.StatusBadRequest)
+						return
+					}
+				}
+			}
 			// automation.idle_alert_minutes: whole minutes >= 0 (0 = off).
 			if rawAuto, ok := top["automation"]; ok {
 				var auto struct {

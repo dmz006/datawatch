@@ -168,6 +168,8 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 		return pools, node
 	}
 	amgr.SetCapacity(led, keys)
+	amgr.SetBackoff(autonomousBackoff)
+	httpServer.SetUsageBackoff(autonomousBackoff)
 	capacityTextFn = func() string { return capacity.FormatText(led.Snapshot()) }
 	httpServer.SetCapacity(led)
 

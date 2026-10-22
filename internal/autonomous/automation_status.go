@@ -3,7 +3,23 @@
 
 package autonomous
 
-import "time"
+import (
+	"time"
+
+	"github.com/dmz006/datawatch/internal/config"
+)
+
+// usageBackoffSummary builds the usage_backoff block of the autonomous
+// status: the live per-backend back-off flags plus the effective mode and
+// maximum back-off. It takes m.mu itself, so Status calls it before locking.
+func (m *Manager) usageBackoffSummary() *UsageBackoffStatus {
+	m.mu.Lock()
+	bo := m.backoff
+	mode, maxWait := config.EffectiveUsageBackoff(m.cfg.UsageBackoff, m.cfg.BackoffMaxWaitMinutes)
+	m.mu.Unlock()
+	st := BuildUsageBackoffStatus(bo, mode, maxWait)
+	return &st
+}
 
 // automationStatusSummaries builds one summary per non-terminal Automation.
 // It takes no Manager lock: the Automation store hands back copies under its

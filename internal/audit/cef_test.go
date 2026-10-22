@@ -73,6 +73,9 @@ func TestCEF_SignatureSeverityTriples(t *testing.T) {
 		{"automation_create", 28, "AutomationCreated", 3},
 		{"automation_update", 29, "AutomationUpdated", 3},
 		{"automation_delete", 30, "AutomationDeleted", 5},
+		{"autonomous_usage_backoff_set", 31, "AutonomousUsageBackoffSet", 4},
+		{"autonomous_usage_backoff_cleared", 32, "AutonomousUsageBackoffCleared", 3},
+		{"autonomous_usage_backoff_auto_cleared", 33, "AutonomousUsageBackoffAutoCleared", 2},
 		{"some_unmapped_future_action", 0, "AuditEvent", 3},
 	}
 	for _, c := range cases {

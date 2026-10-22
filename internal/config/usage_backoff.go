@@ -53,3 +53,20 @@ func normalizeBackoffMaxWaitMinutes(v int) int {
 	}
 	return BackoffMaxWaitDefaultMinutes
 }
+
+// ValidateUsageBackoff reports an error for a value that is neither empty
+// (the default) nor a recognized mode. Surfaces that accept the key from an
+// operator call it so a typo is a 400 rather than a silent "off".
+func ValidateUsageBackoff(v string) error {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "", UsageBackoffPauseBackend, UsageBackoffOff:
+		return nil
+	}
+	return fmt.Errorf("invalid usage_backoff %q: must be %q or %q", v, UsageBackoffPauseBackend, UsageBackoffOff)
+}
+
+// EffectiveUsageBackoff returns the mode and maximum back-off minutes a
+// reader should act on, applying the same defaults as config load.
+func EffectiveUsageBackoff(mode string, maxWaitMinutes int) (string, int) {
+	return normalizeUsageBackoff(mode), normalizeBackoffMaxWaitMinutes(maxWaitMinutes)
+}

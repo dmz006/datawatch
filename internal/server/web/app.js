@@ -15042,6 +15042,13 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.plan_coverage_check', label: 'Plan coverage check (off | warn | block, default block)', labelKey: 'settings_plan_coverage', type: 'select', options: ['off', 'warn', 'block'], default: 'block' },
     { key: 'autonomous.undeclared_edit_mode', label: 'Undeclared edit mode (off | warn | block, default warn)', labelKey: 'settings_undeclared_edit_mode', type: 'select', options: ['off', 'warn', 'block'], default: 'warn' },
     { key: 'autonomous.plan_coverage_min_ratio', label: 'Plan coverage min ratio (requirement coverage 0-1, default 1.0)', labelKey: 'settings_plan_coverage_min_ratio', type: 'number', placeholder: '1.0', min: 0.1, max: 1, step: 0.1, default: '1' },
+    // Per-backend usage back-off — while one of a backend's sessions is
+    // rate-limited, autonomous dispatch to that backend waits until the
+    // parsed reset time (or the max back-off when the message has none).
+    // `off` disables only that automatic path; manual back-off still works
+    // and interactive session starts are never blocked.
+    { key: 'autonomous.usage_backoff', label: 'Usage back-off (pause_backend | off, default pause_backend)', labelKey: 'settings_usage_backoff', type: 'select', options: ['pause_backend', 'off'], default: 'pause_backend' },
+    { key: 'autonomous.backoff_max_wait_minutes', label: 'Usage back-off max wait (minutes when a rate limit has no reset time, default 60)', labelKey: 'settings_backoff_max_wait_minutes', type: 'number', placeholder: '60', min: 1, step: 1, default: '60' },
     { key: 'autonomous.automation.idle_alert_minutes', label: 'Automation idle alert (minutes idle before one alert, 0 = off)', labelKey: 'settings_automation_idle_alert_minutes', type: 'number', placeholder: '0', min: 0, step: 1, default: '0' },
     // Plan tier inflight caps — ties each subscription plan tier
     // (pro | max_5x | max_20x | api) to the inflight session count it may

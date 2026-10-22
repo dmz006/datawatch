@@ -87,7 +87,7 @@ func (s *Server) handleAutonomousPRDSetPriority(_ context.Context, req mcpsdk.Ca
 
 func (s *Server) toolCapacityStatus() mcpsdk.Tool {
 	return mcpsdk.NewTool("capacity_status",
-		mcpsdk.WithDescription("Read the capacity admission ledger: pools (host, node:<name>, llm:<name>) with limits and holders, active leases, and the queue of tasks waiting for capacity with reasons. Each node:<name> pool also reports queue_depth (waiters on that pool) and holder (comma-separated holder IDs occupying its slots, empty when none)."),
+		mcpsdk.WithDescription("Read the capacity admission ledger: pools (host, node:<name>, llm:<name>) with limits and holders, active leases, and the queue of tasks waiting for capacity with reasons. Each node:<name> pool also reports queue_depth (waiters on that pool) and holder (comma-separated holder IDs occupying its slots, empty when none). The backoff array lists active per-backend usage back-off flags (backend, until, reason) that hold autonomous dispatch."),
 		// v8.36.0 — scope the pool list to one PRD's own backend usage
 		// instead of the whole machine's ledger.
 		mcpsdk.WithString("prd_id", mcpsdk.Description("Optional — scope pools to this PRD's own backend/model usage (always includes host)")),

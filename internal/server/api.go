@@ -300,6 +300,8 @@ type Server struct {
 	// v7.0.0 S2 — LLM-inference registry + dispatcher (nil when disabled).
 	inferenceReg   *inference.Registry
 	capacityLedger *capacity.Ledger
+	// usageBackoff is the per-backend usage back-off registry (BL428 Phase 4).
+	usageBackoff *autonomous.Backoff
 	// capacityAdmit gates an interactive (non-autonomous) session start on
 	// the same node:/llm: capacity pools an autonomous task would use for
 	// the same backend+model — nil when capacity isn't wired at all.
@@ -5725,6 +5727,10 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			// defaults ("block", 1.0) rather than blanks.
 			"plan_coverage_check":     effectivePlanCoverageCheckForDisplay(s.cfg.Autonomous.PlanCoverageCheck),
 			"plan_coverage_min_ratio": config.NormalizePlanCoverageRatio(s.cfg.Autonomous.PlanCoverageMinRatio),
+			// Per-backend usage back-off — render the EFFECTIVE values so an
+			// unset config shows its defaults (pause_backend, 60).
+			"usage_backoff":            usageBackoffModeForDisplay(s.cfg.Autonomous.UsageBackoff),
+			"backoff_max_wait_minutes": usageBackoffMaxWaitForDisplay(s.cfg.Autonomous.BackoffMaxWaitMinutes),
 			// tier -> max-inflight table; a nil table renders as an empty
 			// object (rather than null) so clients treat "absent tier" and
 			// "empty table" the same way: kind defaults apply.
@@ -5965,6 +5971,21 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	if v, ok := patch["autonomous.plan_coverage_min_ratio"]; ok {
 		if _, verr := configPatchFloat(v); verr != nil {
+			http.Error(w, "autonomous."+verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	// Usage back-off knobs: an unrecognized mode would otherwise normalize to
+	// "off" and silently disable the automatic back-off, and a non-whole or
+	// sub-1 maximum would be clamped; reject the whole PUT instead.
+	if v, ok := patch["autonomous.usage_backoff"]; ok {
+		if verr := validateUsageBackoffMode(v); verr != nil {
+			http.Error(w, "autonomous."+verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	if v, ok := patch["autonomous.backoff_max_wait_minutes"]; ok {
+		if _, verr := parseBackoffMaxWaitMinutes(v); verr != nil {
 			http.Error(w, "autonomous."+verr.Error(), http.StatusBadRequest)
 			return
 		}
@@ -7245,6 +7266,15 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// non-numeric values loudly before applyConfigPatch runs.
 			if ratio, err := configPatchFloat(v); err == nil {
 				cfg.Autonomous.PlanCoverageMinRatio = config.NormalizePlanCoverageRatio(ratio)
+			}
+		case "autonomous.usage_backoff":
+			// Validated in handlePutConfig; stored lower-cased and trimmed.
+			if validateUsageBackoffMode(v) == nil {
+				cfg.Autonomous.UsageBackoff = strings.ToLower(strings.TrimSpace(toString(v)))
+			}
+		case "autonomous.backoff_max_wait_minutes":
+			if n, err := parseBackoffMaxWaitMinutes(v); err == nil {
+				cfg.Autonomous.BackoffMaxWaitMinutes = n
 			}
 		case "autonomous.automation.idle_alert_minutes":
 			// 0 = off; negative values are skipped, not stored.

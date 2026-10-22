@@ -175,6 +175,56 @@ func (r *Router) handleCooldown(cmd Command) {
 	}
 }
 
+// handleUsageBackoff serves "usage_backoff status|set|clear" through the
+// /api/usage-backoff loopback, mirroring the cooldown verbs.
+func (r *Router) handleUsageBackoff(cmd Command) {
+	const usage = "usage: usage_backoff [status | set <backend> <minutes> [reason] | clear [backend|all]]"
+	switch cmd.UsageBackoffVerb {
+	case "status", "":
+		body, err := r.commGet("/api/usage-backoff", nil)
+		if err != nil {
+			r.reply("usage_backoff status failed", err.Error())
+			return
+		}
+		r.reply("usage_backoff status", body)
+	case "set":
+		if cmd.UsageBackoffBackend == "" || (cmd.UsageBackoffMinutes < 1 && cmd.UsageBackoffUntil == "") {
+			r.reply("usage_backoff set failed", usage)
+			return
+		}
+		req := map[string]any{"backend": cmd.UsageBackoffBackend}
+		if cmd.UsageBackoffUntil != "" {
+			req["until"] = cmd.UsageBackoffUntil
+		} else {
+			req["minutes"] = cmd.UsageBackoffMinutes
+		}
+		if cmd.UsageBackoffReason != "" {
+			req["reason"] = cmd.UsageBackoffReason
+		}
+		payload, _ := json.Marshal(req)
+		out, err := r.commJSON(http.MethodPost, "/api/usage-backoff", string(payload))
+		if err != nil {
+			r.reply("usage_backoff set failed", err.Error())
+			return
+		}
+		r.reply("usage_backoff set", out)
+	case "clear":
+		payload := "{}"
+		if cmd.UsageBackoffBackend != "" {
+			b, _ := json.Marshal(map[string]any{"backend": cmd.UsageBackoffBackend})
+			payload = string(b)
+		}
+		out, err := r.commJSON(http.MethodDelete, "/api/usage-backoff", payload)
+		if err != nil {
+			r.reply("usage_backoff clear failed", err.Error())
+			return
+		}
+		r.reply("usage_backoff clear", out)
+	default:
+		r.reply("usage_backoff failed", usage)
+	}
+}
+
 func (r *Router) handleStale(cmd Command) {
 	q := url.Values{}
 	if s := strings.TrimSpace(cmd.Text); s != "" {
