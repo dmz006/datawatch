@@ -5485,26 +5485,28 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 		},
 		"session": func() map[string]interface{} {
 			m := map[string]interface{}{
-				"llm_backend":           s.cfg.Session.LLMBackend,
-				"max_sessions":          s.cfg.Session.MaxSessions,
-				"reserved_interactive":  s.cfg.Session.EffectiveReservedInteractive(),
-				"input_idle_timeout":    s.cfg.Session.InputIdleTimeout,
-				"tail_lines":            s.cfg.Session.TailLines,
-				"alert_context_lines":   s.cfg.Session.AlertContextLines,
-				"default_project_dir":   s.cfg.Session.DefaultProjectDir,
-				"workspace_root":        s.cfg.Session.WorkspaceRoot,
-				"claude_enabled":        s.cfg.Session.ClaudeEnabled,
-				"auto_git_commit":       s.cfg.Session.AutoGitCommit,
-				"auto_git_init":         s.cfg.Session.AutoGitInit,
-				"git_default":           s.cfg.Session.GitDefault,
-				"kill_sessions_on_exit": s.cfg.Session.KillSessionsOnExit,
-				"one_shot_sessions":     s.cfg.Session.OneShotSessions,
-				"root_path":             s.cfg.Session.RootPath,
-				"mcp_max_retries":       s.cfg.Session.MCPMaxRetries,
-				"schedule_settle_ms":    s.cfg.Session.ScheduleSettleMs,
-				"console_cols":          s.cfg.Session.ConsoleCols,
-				"console_rows":          s.cfg.Session.ConsoleRows,
-				"log_level":             s.cfg.Session.LogLevel,
+				"llm_backend":                  s.cfg.Session.LLMBackend,
+				"max_sessions":                 s.cfg.Session.MaxSessions,
+				"reserved_interactive":         s.cfg.Session.EffectiveReservedInteractive(),
+				"input_idle_timeout":           s.cfg.Session.InputIdleTimeout,
+				"tail_lines":                   s.cfg.Session.TailLines,
+				"alert_context_lines":          s.cfg.Session.AlertContextLines,
+				"task_delivery_window_seconds": int(s.cfg.Session.EffectiveTaskDeliveryWindow().Seconds()),
+				"task_delivery_attempts":       s.cfg.Session.EffectiveTaskDeliveryAttempts(),
+				"default_project_dir":          s.cfg.Session.DefaultProjectDir,
+				"workspace_root":               s.cfg.Session.WorkspaceRoot,
+				"claude_enabled":               s.cfg.Session.ClaudeEnabled,
+				"auto_git_commit":              s.cfg.Session.AutoGitCommit,
+				"auto_git_init":                s.cfg.Session.AutoGitInit,
+				"git_default":                  s.cfg.Session.GitDefault,
+				"kill_sessions_on_exit":        s.cfg.Session.KillSessionsOnExit,
+				"one_shot_sessions":            s.cfg.Session.OneShotSessions,
+				"root_path":                    s.cfg.Session.RootPath,
+				"mcp_max_retries":              s.cfg.Session.MCPMaxRetries,
+				"schedule_settle_ms":           s.cfg.Session.ScheduleSettleMs,
+				"console_cols":                 s.cfg.Session.ConsoleCols,
+				"console_rows":                 s.cfg.Session.ConsoleRows,
+				"log_level":                    s.cfg.Session.LogLevel,
 				"summarizer": map[string]interface{}{
 					"enabled": s.cfg.Session.Summarizer.Enabled,
 					"llm_ref": s.cfg.Session.Summarizer.LLMRef,
@@ -7423,6 +7425,20 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		case "session.capacity_wait_seconds":
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.Session.CapacityWaitSeconds = n
+			}
+		case "session.task_delivery_window_seconds":
+			// Read live at delivery time via
+			// SessionConfig.EffectiveTaskDeliveryWindow, so a patch takes
+			// effect on the next one-shot task delivery — no restart needed.
+			if n, ok := toInt(v); ok && n >= 1 {
+				cfg.Session.TaskDeliveryWindowSeconds = n
+			}
+		case "session.task_delivery_attempts":
+			// Read live at delivery time via
+			// SessionConfig.EffectiveTaskDeliveryAttempts, so a patch takes
+			// effect on the next one-shot task delivery — no restart needed.
+			if n, ok := toInt(v); ok && n >= 1 {
+				cfg.Session.TaskDeliveryAttempts = n
 			}
 		case "autonomous.stale_task_seconds":
 			if n, ok := toInt(v); ok && n >= 0 {
