@@ -1979,5 +1979,15 @@
   "automation_field_added_reason": "Motif",
   "automation_field_added_at": "Ajouté le",
   "automation_kind_prd": "Automate",
-  "automation_kind_automation": "Automatisation"
+  "automation_kind_automation": "Automatisation",
+  "automation_acting_on_branch": "Action sur la branche",
+  "automation_acting_on_all": "S'applique à toute l'automatisation",
+  "automation_cancel_dialog_title": "Annuler cette automatisation ?",
+  "automation_cancel_dialog_body": "Choisissez ce qui arrive au membre en cours d'exécution. Vous devez choisir une option.",
+  "automation_cancel_choice_stop_advance": "Ne plus avancer ; laisser le membre en cours se terminer",
+  "automation_cancel_choice_required": "Choisissez une option pour continuer",
+  "automation_cancel_confirm": "Annuler l'automatisation",
+  "automation_stale_title": "Obsolète",
+  "automation_stale_message": "Cette automatisation a été modifiée ailleurs. Rechargez-la avant de faire des modifications.",
+  "automation_stale_reload": "Recharger"
 }

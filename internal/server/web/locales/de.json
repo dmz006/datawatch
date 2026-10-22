@@ -1979,5 +1979,15 @@
   "automation_field_added_reason": "Grund",
   "automation_field_added_at": "Hinzugefügt am",
   "automation_kind_prd": "Automat",
-  "automation_kind_automation": "Automatisierung"
+  "automation_kind_automation": "Automatisierung",
+  "automation_acting_on_branch": "Aktiv auf Zweig",
+  "automation_acting_on_all": "Gilt für die gesamte Automatisierung",
+  "automation_cancel_dialog_title": "Diese Automatisierung abbrechen?",
+  "automation_cancel_dialog_body": "Wähle, was mit dem Mitglied passiert, das gerade läuft. Du musst eine Option wählen.",
+  "automation_cancel_choice_stop_advance": "Nicht weiter fortschreiten; das laufende Mitglied zu Ende laufen lassen",
+  "automation_cancel_choice_required": "Wähle eine Option, um fortzufahren",
+  "automation_cancel_confirm": "Automatisierung abbrechen",
+  "automation_stale_title": "Veraltet",
+  "automation_stale_message": "Diese Automatisierung wurde an anderer Stelle geändert. Lade sie neu, bevor du Änderungen vornimmst.",
+  "automation_stale_reload": "Neu laden"
 }

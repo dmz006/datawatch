@@ -1979,5 +1979,15 @@
   "automation_field_added_reason": "理由",
   "automation_field_added_at": "追加日時",
   "automation_kind_prd": "オートマトン",
-  "automation_kind_automation": "オートメーション"
+  "automation_kind_automation": "オートメーション",
+  "automation_acting_on_branch": "対象のブランチ",
+  "automation_acting_on_all": "オートメーション全体に適用されます",
+  "automation_cancel_dialog_title": "このオートメーションをキャンセルしますか?",
+  "automation_cancel_dialog_body": "現在実行中のメンバーをどうするか選んでください。いずれかを選ぶ必要があります。",
+  "automation_cancel_choice_stop_advance": "進行を止める。実行中のメンバーは完了させる",
+  "automation_cancel_choice_required": "続行するにはいずれかを選んでください",
+  "automation_cancel_confirm": "オートメーションをキャンセル",
+  "automation_stale_title": "最新ではありません",
+  "automation_stale_message": "このオートメーションは別の場所で変更されました。変更する前に再読み込みしてください。",
+  "automation_stale_reload": "再読み込み"
 }

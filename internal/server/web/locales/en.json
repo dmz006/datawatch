@@ -1979,5 +1979,15 @@
   "automation_field_added_reason": "Reason",
   "automation_field_added_at": "Added at",
   "automation_kind_prd": "Automaton",
-  "automation_kind_automation": "Automation"
+  "automation_kind_automation": "Automation",
+  "automation_acting_on_branch": "Acting on branch",
+  "automation_acting_on_all": "Applies to the whole Automation",
+  "automation_cancel_dialog_title": "Cancel this Automation?",
+  "automation_cancel_dialog_body": "Choose what happens to the member that is running now. You must pick one.",
+  "automation_cancel_choice_stop_advance": "Stop advancing; let the running member finish",
+  "automation_cancel_choice_required": "Choose one option to continue",
+  "automation_cancel_confirm": "Cancel Automation",
+  "automation_stale_title": "Out of date",
+  "automation_stale_message": "This Automation was changed elsewhere. Reload it before making changes.",
+  "automation_stale_reload": "Reload"
 }

@@ -23839,6 +23839,7 @@ const _automationState = {
   loadError: null,
   prdTitles: {},
   prdStatuses: {},
+  actingBranch: '',
 };
 
 // automationRequest is apiFetch with the HTTP status kept: a non-ok response
@@ -24646,8 +24647,7 @@ function renderAutomationDetail(id, opts) {
       return;
     }
     st.detail = res.data;
-    view.innerHTML = _automationDetailShell(buildAutomationDetailHTML(res.data, _automationStripContext()));
-    if (typeof renderAutomationControls === 'function') renderAutomationControls(res.data);
+    _automationDrawDetail(res.data);
   });
 }
 window.renderAutomationDetail = renderAutomationDetail;
@@ -24677,6 +24677,151 @@ function refreshAutomationView() {
   return loadAutomationList();
 }
 window.refreshAutomationView = refreshAutomationView;
+
+// ── Automation detail: control operations ────────────────────────────────────
+//
+// Pause, resume and cancel post to /api/automations/{id}/{op}. Every call
+// carries the loaded version, so a change made elsewhere answers 409 and the
+// operator reloads before acting. Cancel always asks which way to cancel.
+
+// automationActiveBranches lists the live branch members of an Automation:
+// those whose id is in active_cursors. Each entry carries the member id, the
+// Automaton or nested Automation id it points at, and a display title.
+function automationActiveBranches(automation) {
+  const a = automation || {};
+  const members = Array.isArray(a.members) ? a.members : [];
+  const cursors = Array.isArray(a.active_cursors) ? a.active_cursors : [];
+  const ctx = _automationStripContext();
+  return members.filter(m => m && cursors.includes(m.id)).map(m => ({
+    id: m.id,
+    prd_id: m.prd_id || '',
+    automation_id: m.automation_id || '',
+    title: _automationMemberTitle(m, ctx, _automationMemberRef(m).slice(0, 8)),
+  }));
+}
+window.automationActiveBranches = automationActiveBranches;
+
+// _automationDrawDetail paints the detail page for one loaded Automation and
+// fills its control area.
+function _automationDrawDetail(a) {
+  const view = document.getElementById('view');
+  if (view) view.innerHTML = _automationDetailShell(buildAutomationDetailHTML(a, _automationStripContext()));
+  renderAutomationControls(a);
+}
+
+// automationControl runs one control operation on the open Automation. A 409
+// (stale version or state conflict) opens the stale prompt and is never
+// retried; any other failure is a toast. Resolves the updated Automation, or
+// null on failure.
+function automationControl(id, op, body) {
+  const st = _automationState;
+  const payload = Object.assign({}, body || {}, {
+    expected_version: st.detail ? st.detail.version : 0,
+    actor: 'operator',
+  });
+  const path = '/api/automations/' + encodeURIComponent(id) + '/' + encodeURIComponent(op);
+  return automationRequest('POST', path, payload).then(data => {
+    if (data && typeof data === 'object' && st.detailId === id) {
+      st.detail = data;
+      _automationDrawDetail(data);
+    }
+    return data;
+  }, err => {
+    const message = String((err && err.message) || err || '');
+    if (err && err.status === 409) automationShowStalePrompt(message);
+    else showToast(message, 'error');
+    return null;
+  });
+}
+window.automationControl = automationControl;
+
+// automationSelectBranch remembers which active branch the per-branch buttons
+// act on; '' clears the choice.
+function automationSelectBranch(memberId) {
+  _automationState.actingBranch = String(memberId || '');
+  if (_automationState.detail) renderAutomationControls(_automationState.detail);
+}
+window.automationSelectBranch = automationSelectBranch;
+
+// renderAutomationControls fills #automationControls with the operations the
+// Automation's status allows. With several active branches it shows a branch
+// selector (per-branch buttons stay disabled until one is chosen) and says the
+// pause, resume and cancel buttons apply to the whole Automation; with one it
+// names that branch.
+function renderAutomationControls(automation) {
+  const el = document.getElementById('automationControls');
+  if (!el) return;
+  const a = automation || {};
+  const status = String(a.status || '');
+  const idArg = escJsAttr(a.id);
+  const button = (op, key, onclick) =>
+    `<button type="button" class="btn-secondary automation-control" data-op="${op}" onclick="${onclick}">${escHtml(t(key))}</button>`;
+  const buttons = [];
+  if (status === 'active') buttons.push(button('pause', 'automation_pause', `automationControl('${idArg}','pause')`));
+  if (status === 'paused' || status === 'blocked') buttons.push(button('resume', 'automation_resume', `automationControl('${idArg}','resume')`));
+  if (['draft', 'active', 'paused', 'blocked'].includes(status)) buttons.push(button('cancel', 'automation_cancel', `openAutomationCancelDialog('${idArg}')`));
+
+  const branches = automationActiveBranches(a);
+  let scope = '';
+  if (branches.length > 1) {
+    const st = _automationState;
+    if (!branches.some(b => b.id === st.actingBranch)) st.actingBranch = '';
+    const options = branches.map(b =>
+      `<option value="${escHtml(b.id)}"${b.id === st.actingBranch ? ' selected' : ''}>${escHtml(b.title + ' (' + b.id + ')')}</option>`).join('');
+    scope = `<label class="automation-branch-picker"><span class="automation-branch-label">${escHtml(t('automation_acting_on_branch'))}</span>`
+      + `<select class="automation-branch-select" onchange="automationSelectBranch(this.value)"><option value=""${st.actingBranch ? '' : ' selected'}>—</option>${options}</select></label>`
+      + (buttons.length ? `<span class="automation-acting-on">${escHtml(t('automation_acting_on_all'))}</span>` : '');
+  } else if (branches.length === 1) {
+    scope = `<span class="automation-acting-on"><span class="automation-branch-label">${escHtml(t('automation_acting_on_branch'))}</span> `
+      + `<strong class="automation-branch-name">${escHtml(branches[0].title + ' (' + branches[0].id + ')')}</strong></span>`;
+  }
+  el.innerHTML = buttons.length ? `<div class="automation-controls">${scope}${buttons.join('')}</div>` : '';
+}
+window.renderAutomationControls = renderAutomationControls;
+
+// openAutomationCancelDialog asks how to cancel. Neither choice is preselected
+// and there is no way around the dialog: confirming with no choice sends
+// nothing and keeps the dialog open.
+function openAutomationCancelDialog(id) {
+  const radio = (value, key) =>
+    `<label class="automation-cancel-choice" style="display:block;margin:6px 0;"><input type="radio" name="automationCancelChoice" value="${value}"> ${escHtml(t(key))}</label>`;
+  showModal({
+    title: t('automation_cancel_dialog_title'),
+    body: `<p class="automation-cancel-body">${escHtml(t('automation_cancel_dialog_body'))}</p>`
+      + radio('stop_advance', 'automation_cancel_choice_stop_advance')
+      + radio('in_flight', 'automation_cancel_in_flight')
+      + '<div id="automationCancelRequired" class="automation-cancel-required" role="alert" style="color:var(--error);font-size:12px;margin-top:6px;"></div>',
+    confirmLabel: t('automation_cancel_confirm'),
+    onConfirm: () => {
+      const picked = document.querySelector('input[name="automationCancelChoice"]:checked');
+      const value = picked ? picked.value : '';
+      if (value !== 'stop_advance' && value !== 'in_flight') {
+        const msg = document.getElementById('automationCancelRequired');
+        if (msg) msg.innerHTML = escHtml(t('automation_cancel_choice_required'));
+        return false;
+      }
+      automationControl(id, 'cancel', { cancel_in_flight: value === 'in_flight' });
+      return true;
+    },
+  });
+}
+window.openAutomationCancelDialog = openAutomationCancelDialog;
+
+// automationShowStalePrompt tells the operator the Automation changed
+// elsewhere and offers a reload; nothing is retried.
+function automationShowStalePrompt(message) {
+  showModal({
+    title: t('automation_stale_title'),
+    body: `<p class="automation-stale-message">${escHtml(t('automation_stale_message'))}</p>`
+      + `<p class="automation-stale-server-message">${escHtml(message)}</p>`,
+    confirmLabel: t('automation_stale_reload'),
+    onConfirm: () => {
+      renderAutomationDetail(_automationState.detailId);
+      return true;
+    },
+  });
+}
+window.automationShowStalePrompt = automationShowStalePrompt;
 
 // openAutomationMemberPRD opens the member Automaton's page from the Automata
 // tab. Its back control returns here: _backToAutomataList reads the id.
