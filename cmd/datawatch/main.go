@@ -1745,6 +1745,10 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	// BL428 Phase 4 — per-backend usage back-off: rate-limit detection sets
+	// flags on the shared registry, a lightweight sweeper clears them.
+	wireUsageBackoff(ctx, cfg, mgr, autonomousBackoff)
+
 	// Clean up PID file on exit
 	pidFilePath := filepath.Join(expandHome(cfg.DataDir), "daemon.pid")
 	defer func() { _ = os.Remove(pidFilePath) }()
@@ -17487,4 +17491,65 @@ func scanConfigIsUnset(c config.ScanConfig) bool {
 		c.FailOnSeverity == "" && c.MaxFindings == 0 &&
 		!c.RulesGraderEnabled && !c.FixLoopEnabled && c.FixLoopMaxRetries == 0 &&
 		len(c.ProjectRules) == 0
+}
+
+// autonomousBackoff is the daemon-wide per-backend back-off registry
+// (in-memory only; rebuilt from live sessions on start).
+var autonomousBackoff = autonomouspkg.NewBackoff()
+
+// backoffSweepInterval is how often expired back-off flags are cleared.
+const backoffSweepInterval = 15 * time.Second
+
+// wireUsageBackoff connects rate-limit detection to the back-off registry
+// when autonomous.usage_backoff is "pause_backend": it registers the
+// session manager's rate-limit listener, rebuilds in-flight flags from
+// sessions already rate-limited at daemon start, and runs a sweeper tied to
+// ctx that clears expired flags (logging each auto-clear). Audit events are
+// emitted by the surfaces layer; this only logs.
+func wireUsageBackoff(ctx context.Context, cfg *config.Config, mgr *session.Manager, bo *autonomouspkg.Backoff) {
+	if cfg.Autonomous.UsageBackoff != config.UsageBackoffPauseBackend {
+		return
+	}
+	maxWait := time.Duration(cfg.Autonomous.BackoffMaxWaitMinutes) * time.Minute
+	mgr.AddRateLimitListener(func(backend string, resetAt time.Time, hasReset bool) {
+		if hasReset {
+			bo.Set(backend, resetAt, "rate-limit — reset "+resetAt.Format("15:04"), autonomouspkg.BackoffSourceRateLimit)
+			fmt.Printf("[backoff] %s paused until %s (rate limit)\n", backend, resetAt.Format(time.RFC3339))
+			return
+		}
+		until := time.Now().Add(maxWait)
+		bo.Set(backend, until, "rate-limit — no reset time (max back-off)", autonomouspkg.BackoffSourceRateLimit)
+		fmt.Printf("[backoff] %s paused until %s (rate limit, no reset time — max back-off)\n", backend, until.Format(time.RFC3339))
+	})
+
+	// In-flight rebuild: sessions that were rate-limited before this start.
+	now := time.Now()
+	latest := map[string]time.Time{}
+	for _, s := range mgr.ListSessions() {
+		if s.State != session.StateRateLimited || s.RateLimitResetAt == nil || !s.RateLimitResetAt.After(now) {
+			continue
+		}
+		if s.RateLimitResetAt.After(latest[s.BackendFamily]) {
+			latest[s.BackendFamily] = *s.RateLimitResetAt
+		}
+	}
+	for backend, until := range latest {
+		bo.Set(backend, until, "rate-limit — reset "+until.Format("15:04"), autonomouspkg.BackoffSourceRateLimit)
+		fmt.Printf("[backoff] rebuilt: %s paused until %s\n", backend, until.Format(time.RFC3339))
+	}
+
+	go func() {
+		t := time.NewTicker(backoffSweepInterval)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				for _, name := range bo.Sweep(time.Now()) {
+					fmt.Printf("[backoff] %s back-off expired — cleared\n", name)
+				}
+			}
+		}
+	}()
 }
