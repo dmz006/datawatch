@@ -5735,7 +5735,10 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			// object (rather than null) so clients treat "absent tier" and
 			// "empty table" the same way: kind defaults apply.
 			"plan_tier_max_inflight": planTierTableForDisplay(s.cfg.Autonomous.PlanTierMaxInflight),
-			"execution_backend":      s.cfg.Autonomous.ExecutionBackend,
+			// tier -> notional dollar allocation per budget window; empty
+			// object when nothing is declared.
+			"plan_tier_allocation_usd": planTierAllocationForDisplay(s.cfg.Autonomous.PlanTierAllocationUSD),
+			"execution_backend":        s.cfg.Autonomous.ExecutionBackend,
 			// BL304: new key + legacy alias.
 			"planning_effort":                 s.cfg.Autonomous.PlanningEffort,
 			"decomposition_effort":            s.cfg.Autonomous.PlanningEffort,
@@ -6014,6 +6017,21 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 		if _, verr := parsePlanTierTable(v); verr != nil {
 			http.Error(w, "autonomous."+verr.Error(), http.StatusBadRequest)
 			return
+		}
+	}
+	// tier -> notional allocation table: same whole-PUT rejection, for both
+	// the whole-object form and the single autonomous.plan_tier_allocation_usd.<tier> pair.
+	for k, v := range patch {
+		if k == planTierAllocationKey {
+			if _, verr := parsePlanTierAllocationTable(v); verr != nil {
+				http.Error(w, "autonomous."+verr.Error(), http.StatusBadRequest)
+				return
+			}
+		} else if tier, ok := planTierAllocationPairTier(k); ok {
+			if _, verr := parsePlanTierAllocationPair(tier, v); verr != nil {
+				http.Error(w, "autonomous."+verr.Error(), http.StatusBadRequest)
+				return
+			}
 		}
 	}
 	// pin_check_seconds: whole seconds >= 0, 0 = pin keeper off. A negative
@@ -7313,6 +7331,13 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			if table, verr := parsePlanTierTable(v); verr == nil {
 				cfg.Autonomous.PlanTierMaxInflight = table
 			}
+		case planTierAllocationKey:
+			// tier -> notional dollar allocation (whole table). Validated in
+			// handlePutConfig; a value that fails the check here is left
+			// unchanged.
+			if table, verr := parsePlanTierAllocationTable(v); verr == nil {
+				cfg.Autonomous.PlanTierAllocationUSD = table
+			}
 		case "autonomous.notify.default_events":
 			// Default event kinds the built-in lifecycle sinks subscribe to.
 			// Accept array or comma-separated string, same as
@@ -7671,6 +7696,17 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 				cfg.Results.ScheduleHistoryLimit = n
 			}
 		default:
+			// Single-tier pair form: autonomous.plan_tier_allocation_usd.<tier>
+			// sets one tier and leaves the rest of the table alone.
+			if tier, ok := planTierAllocationPairTier(k); ok {
+				if usd, verr := parsePlanTierAllocationPair(tier, v); verr == nil {
+					if cfg.Autonomous.PlanTierAllocationUSD == nil {
+						cfg.Autonomous.PlanTierAllocationUSD = map[string]float64{}
+					}
+					cfg.Autonomous.PlanTierAllocationUSD[tier] = usd
+				}
+				continue
+			}
 			// Unknown keys are logged so future mobile/PWA schema
 			// drift surfaces instead of silent no-op'ing again.
 			// Clients still get 200 for now — returning 4xx would

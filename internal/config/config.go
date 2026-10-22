@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -2171,6 +2172,15 @@ type AutonomousConfig struct {
 	// tier to 0) must survive the JSON round-trip through
 	// handleAutonomousConfig, same gotcha as VerificationBackends above.
 	PlanTierMaxInflight map[string]int `yaml:"plan_tier_max_inflight" json:"plan_tier_max_inflight"`
+	// PlanTierAllocationUSD maps an inference.PlanTier (pro / max_5x /
+	// max_20x / api) to the operator-declared notional dollar allocation
+	// per budget window at API rates for that tier. Default is an empty
+	// map (nothing declared); zero for a tier also means not declared. It
+	// feeds only the estimated allocation_pct figure and never blocks or
+	// gates anything. Unknown tier keys or negative values are a config
+	// error (validateLoaded). No omitempty, for the same reason as
+	// PlanTierMaxInflight: an explicit clear must survive the round trip.
+	PlanTierAllocationUSD map[string]float64 `yaml:"plan_tier_allocation_usd" json:"plan_tier_allocation_usd"`
 	// StaleTaskSeconds — default 900 seconds. A zero or negative value
 	// inherits session.stale_timeout_seconds.
 	StaleTaskSeconds int `yaml:"stale_task_seconds,omitempty" json:"stale_task_seconds,omitempty"`
@@ -2960,7 +2970,9 @@ func DefaultConfig() *Config {
 				"max_20x": 4,
 				"api":     0,
 			},
-			StaleTaskSeconds: 900,
+			// Nothing declared until the operator sets a notional figure.
+			PlanTierAllocationUSD: map[string]float64{},
+			StaleTaskSeconds:      900,
 			// BL410 Phase 1 — see AutonomousConfig.RetryPolicy's doc
 			// comment for why "content"/"policy" are absent here.
 			RetryPolicy:             map[string]int{"infra": 4, "scope": 0},
@@ -3434,6 +3446,16 @@ func validateLoaded(cfg *Config) error {
 		}
 		if cap < 0 {
 			return fmt.Errorf("autonomous.plan_tier_max_inflight: tier %q cap %d must be >= 0", tier, cap)
+		}
+	}
+	// plan_tier_allocation_usd: every key must be a known tier and every
+	// value a finite, non-negative dollar figure (0 = not declared).
+	for tier, usd := range cfg.Autonomous.PlanTierAllocationUSD {
+		if !inference.ValidPlanTier(inference.PlanTier(tier)) {
+			return fmt.Errorf("autonomous.plan_tier_allocation_usd: unknown tier %q (allowed: pro, max_5x, max_20x, api)", tier)
+		}
+		if usd < 0 || math.IsNaN(usd) || math.IsInf(usd, 0) {
+			return fmt.Errorf("autonomous.plan_tier_allocation_usd: tier %q value %v must be a finite number >= 0", tier, usd)
 		}
 	}
 	return nil
