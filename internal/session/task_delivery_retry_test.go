@@ -7,8 +7,9 @@
 // prompt is drawn behind passive banner / update / doctor lines, and the
 // prompt never appears.
 //
-// The per-attempt prompt window is the production oneShotPromptWindow (15s),
-// so TestTaskDelivery_MainPromptNeverAppears takes about 30s of wall time with
+// The per-attempt prompt window is now explicit on each
+// DeliverOneShotTask call (these tests pass short windows for speed);
+// TestTaskDelivery_MainPromptNeverAppears burns ~2s per attempt with
 // maxAttempts=2.
 //
 // Run with: env -u TMUX -u TMUX_TMPDIR go test ./internal/session -run TestTaskDelivery_
@@ -76,7 +77,7 @@ func TestTaskDelivery_MainPromptAppearsLate(t *testing.T) {
 	if !mgr.ClaimTaskDelivery(sess.FullID) {
 		t.Fatal("ClaimTaskDelivery lost the claim")
 	}
-	err := mgr.DeliverOneShotTask(sess.FullID, tdTask, 3, 100*time.Millisecond)
+	err := mgr.DeliverOneShotTask(sess.FullID, tdTask, 3, 10*time.Second, 100*time.Millisecond)
 	<-lateReady
 	if err != nil {
 		t.Fatalf("DeliverOneShotTask: %v", err)
@@ -102,7 +103,7 @@ func TestTaskDelivery_MainPromptBehindBanner(t *testing.T) {
 	if !mgr.ClaimTaskDelivery(sess.FullID) {
 		t.Fatal("ClaimTaskDelivery lost the claim")
 	}
-	if err := mgr.DeliverOneShotTask(sess.FullID, tdTask, 2, 100*time.Millisecond); err != nil {
+	if err := mgr.DeliverOneShotTask(sess.FullID, tdTask, 2, 5*time.Second, 100*time.Millisecond); err != nil {
 		t.Fatalf("DeliverOneShotTask: %v", err)
 	}
 	if !mgr.TaskDelivered(sess.FullID) {
@@ -124,7 +125,7 @@ func TestTaskDelivery_MainPromptNeverAppears(t *testing.T) {
 	if !mgr.ClaimTaskDelivery(sess.FullID) {
 		t.Fatal("ClaimTaskDelivery lost the claim")
 	}
-	err := mgr.DeliverOneShotTask(sess.FullID, tdTask, 2, 100*time.Millisecond)
+	err := mgr.DeliverOneShotTask(sess.FullID, tdTask, 2, 2*time.Second, 100*time.Millisecond)
 	if !errors.Is(err, ErrTaskUndelivered) {
 		t.Fatalf("DeliverOneShotTask error = %v, want ErrTaskUndelivered", err)
 	}

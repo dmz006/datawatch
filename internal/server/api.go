@@ -9429,15 +9429,21 @@ func (s *Server) handleChannelReady(w http.ResponseWriter, r *http.Request) {
 		sessID := targetSess.FullID
 		go func() {
 			// Wait for the strict main-prompt check (❯ input line, no active
-			// choice dialog) and type the task. Each attempt waits up to 15 s;
-			// DeliverOneShotTask marks the task delivered only on success and
-			// releases the claim after its final failed attempt.
-			const attempts = 3
-			if err := s.manager.DeliverOneShotTask(sessID, input, attempts, 5*time.Second); err != nil {
+			// choice dialog) and type the task. Each attempt waits up to the
+			// configured delivery window (60 s default); DeliverOneShotTask
+			// marks the task delivered only on success and releases the claim
+			// after its final failed attempt.
+			attempts := 3 // production defaults used when s.cfg is nil
+			window := 60 * time.Second
+			if s.cfg != nil {
+				attempts = s.cfg.Session.EffectiveTaskDeliveryAttempts()
+				window = s.cfg.Session.EffectiveTaskDeliveryWindow()
+			}
+			if err := s.manager.DeliverOneShotTask(sessID, input, attempts, window, config.TaskDeliveryBackoff); err != nil {
 				if errors.Is(err, session.ErrTaskUndelivered) {
-					fmt.Printf("[channel] task delivery failed for %s: no main prompt after %d attempts\n", sessID, attempts)
+					fmt.Printf("[channel] task delivery failed for %s: no main prompt within %s across %d attempts\n", sessID, window, attempts)
 				} else {
-					fmt.Printf("[channel] task delivery failed for %s after %d attempts: %v\n", sessID, attempts, err)
+					fmt.Printf("[channel] task delivery failed for %s after %d attempts (window %s): %v\n", sessID, attempts, window, err)
 				}
 				return
 			}

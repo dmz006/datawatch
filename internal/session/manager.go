@@ -380,6 +380,7 @@ type Manager struct {
 	// post-restart grace, the task-echo window, the prompt debounce and the
 	// idle-scan cadence from a fake clock instead of wall time and machine load.
 	clock          func() time.Time
+	sleepFn        func(time.Duration)
 	restartGrace   time.Duration
 	taskEchoWindow time.Duration
 	scanInterval   time.Duration
@@ -4842,10 +4843,6 @@ func (m *Manager) GetActiveStartupPromptInput(fullID string) string {
 // reached the session's main prompt within every attempt.
 var ErrTaskUndelivered = errors.New("task never reached the session main prompt")
 
-// oneShotPromptWindow bounds how long one DeliverOneShotTask attempt waits
-// for the main prompt before it counts as a failed attempt.
-const oneShotPromptWindow = 15 * time.Second
-
 // activeChoiceDialogPhrases are the lowercase phrases of Claude Code startup
 // and choice dialogs that are still awaiting an answer. Any of them on
 // screen means the main prompt is not yet the place to type a task.
@@ -4894,55 +4891,90 @@ func (m *Manager) MainPromptReady(fullID string) bool {
 	return false
 }
 
-// awaitOneShotPrompt polls MainPromptReady on ~1 s ticks until the session is
-// waiting for input with its main prompt visible, or until window elapses.
-func (m *Manager) awaitOneShotPrompt(fullID string, window time.Duration) bool {
-	deadline := time.Now().Add(window)
+// awaitOneShotPrompt polls on ~1 s ticks (m.now()/m.sleep so a test can
+// drive it with virtual time) until the session is waiting for input with
+// its main prompt visible, until window elapses, or — checked on every
+// poll before the prompt check — until the session has exited: it is
+// missing from the store, in a terminal state, or its tmux session no
+// longer exists.
+func (m *Manager) awaitOneShotPrompt(fullID string, window time.Duration) oneShotPromptOutcome {
+	deadline := m.now().Add(window)
 	for {
-		if sess, ok := m.store.Get(fullID); ok && sess.State == StateWaitingInput && m.MainPromptReady(fullID) {
-			return true
+		sess, ok := m.store.Get(fullID)
+		if !ok || sess.State.IsTerminal() || (sess.TmuxSession != "" && !m.tmux.SessionExists(sess.TmuxSession)) {
+			return oneShotSessionExited
 		}
-		if !time.Now().Before(deadline) {
-			return false
+		if sess.State == StateWaitingInput && m.MainPromptReady(fullID) {
+			return oneShotReady
 		}
-		time.Sleep(time.Second)
+		if !m.now().Before(deadline) {
+			return oneShotTimedOut
+		}
+		m.sleep(time.Second)
 	}
 }
 
 // DeliverOneShotTask types input into a OneShot session once its main prompt
-// is ready, then marks the task delivered. Each attempt waits up to
-// oneShotPromptWindow for the prompt; a missed prompt or a failed send is a
-// failed attempt, retried after a linear backoff (backoff * attempt). After
-// maxAttempts failures the claim is released and ErrTaskUndelivered is
-// returned. The caller must already hold the ClaimTaskDelivery claim.
-func (m *Manager) DeliverOneShotTask(fullID string, input string, maxAttempts int, backoff time.Duration) error {
+// is ready, then marks the task delivered. Each attempt waits up to window
+// for the prompt (defaultTaskDeliveryWindow when window <= 0); a timed-out
+// attempt is retried after a linear backoff (backoff * attempt), and after
+// the last attempt the claim is released, the session is ended and
+// ErrTaskUndelivered is returned. If the worker session ends (or its tmux
+// session dies) before the prompt appears, no further attempts are made:
+// the claim is released — the already-finished session is not Killed again
+// — and ErrTaskUndelivered is returned. The caller must already hold the
+// ClaimTaskDelivery claim.
+func (m *Manager) DeliverOneShotTask(fullID string, input string, maxAttempts int, window, backoff time.Duration) error {
 	if maxAttempts < 1 {
 		maxAttempts = 1
 	}
+	if window <= 0 {
+		window = defaultTaskDeliveryWindow
+	}
+
+	exited := false
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		if m.awaitOneShotPrompt(fullID, oneShotPromptWindow) {
+		switch outcome := m.awaitOneShotPrompt(fullID, window); outcome {
+		case oneShotReady:
 			err := m.SendInput(fullID, input, "channel-task")
 			if err == nil {
 				m.MarkTaskDelivered(fullID)
 				return nil
 			}
-			m.debugf("DeliverOneShotTask: send_input for %s attempt %d/%d: %v", fullID, attempt, maxAttempts, err)
-		} else {
-			m.debugf("DeliverOneShotTask: no main prompt for %s attempt %d/%d", fullID, attempt, maxAttempts)
+			m.debugf("DeliverOneShotTask: send_input for %s attempt %d/%d (window %s): %v", fullID, attempt, maxAttempts, window, err)
+		case oneShotSessionExited:
+			m.debugf("DeliverOneShotTask: session for %s ended before attempt %d/%d could wait for its main prompt", fullID, attempt, maxAttempts)
+			exited = true
+		case oneShotTimedOut:
+			m.debugf("DeliverOneShotTask: no main prompt within %s for %s attempt %d/%d", window, fullID, attempt, maxAttempts)
+		}
+		if exited {
+			break
 		}
 		if attempt < maxAttempts {
-			time.Sleep(backoff * time.Duration(attempt))
+			m.sleep(backoff * time.Duration(attempt))
 		}
 	}
+
 	m.ReleaseTaskDelivery(fullID)
-	reason := fmt.Sprintf("task delivery failed: main prompt never appeared after %d attempts — worker was never given its task", maxAttempts)
-	m.debugf("DeliverOneShotTask: %s: %s", fullID, reason)
-	// Ending the session lets the executor's worker wait loop observe a
-	// terminal state, so the task takes its normal retry path with a fresh
-	// session. This is the same session end path the stall handler uses.
-	if err := m.Kill(fullID); err != nil {
-		m.debugf("DeliverOneShotTask: session end path for %s: %v", fullID, err)
+
+	var reason string
+	if exited {
+		reason = "task delivery failed: session ended before the task was delivered"
+	} else {
+		reason = fmt.Sprintf("task delivery failed: main prompt never appeared within %s across %d attempts — worker was never given its task", window, maxAttempts)
 	}
+	m.debugf("DeliverOneShotTask: %s: %s", fullID, reason)
+
+	if !exited {
+		// Ending the session lets the executor's worker wait loop observe a
+		// terminal state, so the task takes its normal retry path with a fresh
+		// session. This is the same session end path the stall handler uses.
+		if err := m.Kill(fullID); err != nil {
+			m.debugf("DeliverOneShotTask: session end path for %s: %v", fullID, err)
+		}
+	}
+
 	m.mu.Lock()
 	onFailed := m.onTaskDeliveryFailed
 	m.mu.Unlock()

@@ -115,7 +115,10 @@ func (f *FakeTmux) NewSessionWithSize(name string, cols, rows int) error {
 func (f *FakeTmux) SessionExists(name string) bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return f.sessions[name]
+	// A pane implies a live session in real tmux, so a session seeded via
+	// Pane (e.g. task-delivery tests) counts as existing; KillSession removes
+	// both.
+	return f.sessions[name] || f.Pane[name] != ""
 }
 
 func (f *FakeTmux) SendKeys(session, keys string) error {
@@ -207,6 +210,7 @@ func (f *FakeTmux) RepipeOutput(session, logFile string) error {
 func (f *FakeTmux) KillSession(name string) error {
 	f.mu.Lock()
 	delete(f.sessions, name)
+	delete(f.Pane, name)
 	f.mu.Unlock()
 	return f.record("kill", name)
 }

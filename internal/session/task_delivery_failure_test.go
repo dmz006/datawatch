@@ -11,8 +11,8 @@
 //
 // Run with: env -u TMUX -u TMUX_TMPDIR go test ./internal/session -run TestTaskDeliveryFailure_
 //
-// Each attempt waits the production oneShotPromptWindow (15s), so this test
-// takes about 30s of wall time with maxAttempts=2.
+// The per-attempt window is explicit on the DeliverOneShotTask call (3s
+// here), so this test takes about 7s of wall time with maxAttempts=2.
 
 package session
 
@@ -44,7 +44,7 @@ func TestTaskDeliveryFailure_CallsBackAndEndsSession(t *testing.T) {
 	if !mgr.ClaimTaskDelivery(sess.FullID) {
 		t.Fatal("ClaimTaskDelivery lost the claim")
 	}
-	err := mgr.DeliverOneShotTask(sess.FullID, tdTask, 2, 100*time.Millisecond)
+	err := mgr.DeliverOneShotTask(sess.FullID, tdTask, 2, 3*time.Second, 100*time.Millisecond)
 	if !errors.Is(err, ErrTaskUndelivered) {
 		t.Fatalf("DeliverOneShotTask error = %v, want ErrTaskUndelivered", err)
 	}
