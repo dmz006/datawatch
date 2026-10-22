@@ -27,6 +27,8 @@ func GenerateAnnotatedConfig(cfg *Config) string {
 	fieldi(&b, "input_idle_timeout", cfg.Session.InputIdleTimeout, "Seconds of idle output before declaring a session is waiting for input")
 	fieldi(&b, "tail_lines", cfg.Session.TailLines, "Default number of output lines returned by tail/status commands")
 	fieldi(&b, "alert_context_lines", cfg.Session.AlertContextLines, "Number of non-empty output lines included in prompt alerts (default 10)")
+	fieldi(&b, "task_delivery_window_seconds", cfg.Session.TaskDeliveryWindowSeconds, "How long one OneShot task delivery attempt waits for the Claude main prompt before trying again (default 60)")
+	fieldi(&b, "task_delivery_attempts", cfg.Session.TaskDeliveryAttempts, "How many delivery attempts are made before giving up (default 3)")
 	fieldi(&b, "default_project_dir", cfg.Session.DefaultProjectDir, "Default working directory for new sessions")
 	fieldi(&b, "root_path", cfg.Session.RootPath, "Restrict file browser to this directory tree (empty = no restriction)")
 	fieldi(&b, "claude_enabled", cfg.Session.ClaudeEnabled, "Enable the claude-code backend")
