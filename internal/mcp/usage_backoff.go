@@ -14,7 +14,7 @@ import (
 
 func (s *Server) toolUsageBackoffStatus() mcpsdk.Tool {
 	return mcpsdk.NewTool("usage_backoff_status",
-		mcpsdk.WithDescription("List the active per-backend usage back-off flags (backend, until, reason, source: rate_limit|operator) the effective config (mode, max_wait_minutes), and the rate-limit pattern-drift guard (patterns_version, patterns_stale). A backed-off backend receives no new autonomous dispatch until the flag clears; interactive session starts are never blocked."),
+		mcpsdk.WithDescription("List the active per-backend usage back-off flags (backend, until, reason, source: rate_limit|operator) the effective config (mode, max_wait_minutes), and the rate-limit pattern-drift guard (patterns_version, patterns_stale, claude_cli_version — the text printed by the claude tool's version command). patterns_stale turns true whenever the effective patterns change since the last operator recheck, and also when the claude tool version text changes. A backed-off backend receives no new autonomous dispatch until the flag clears; interactive session starts are never blocked."),
 	)
 }
 func (s *Server) handleUsageBackoffStatus(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
@@ -86,7 +86,7 @@ func (s *Server) handleUsageBackoffClear(_ context.Context, req mcpsdk.CallToolR
 
 func (s *Server) toolUsageBackoffRecheck() mcpsdk.Tool {
 	return mcpsdk.NewTool("usage_backoff_recheck",
-		mcpsdk.WithDescription("Record the current rate-limit detection pattern fingerprint (patterns_version) as rechecked by the operator, which clears patterns_stale. Run it after confirming the patterns still match what the backends print; patterns_stale turns true again whenever the effective patterns change."),
+		mcpsdk.WithDescription("Record the current rate-limit detection pattern fingerprint (patterns_version) and the claude tool version text (claude_cli_version) as rechecked by the operator, which clears patterns_stale; the recheck stores both. Run it after confirming the patterns still match what the backends print; patterns_stale turns true again whenever the effective patterns change or the claude tool version text changes since the last recheck."),
 	)
 }
 func (s *Server) handleUsageBackoffRecheck(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {

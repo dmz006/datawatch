@@ -48,10 +48,12 @@ func TestUsageBackoff_ToolNamesAndRequiredArgs(t *testing.T) {
 		t.Errorf("recheck tool = %q required=%v props=%v, want no args", rc.Name, rc.InputSchema.Required, rc.InputSchema.Properties)
 	}
 	for name, desc := range map[string]string{
-		"usage_backoff_status": s.toolUsageBackoffStatus().Description,
-		"capacity_status":      s.toolCapacityStatus().Description,
+		"usage_backoff_status":  s.toolUsageBackoffStatus().Description,
+		"usage_backoff_recheck": s.toolUsageBackoffRecheck().Description,
+		"capacity_status":       s.toolCapacityStatus().Description,
+		"autonomous_status":     s.toolAutonomousStatus().Description,
 	} {
-		for _, field := range []string{"patterns_version", "patterns_stale"} {
+		for _, field := range []string{"patterns_version", "patterns_stale", "claude_cli_version"} {
 			if !strings.Contains(desc, field) {
 				t.Errorf("%s description does not name %s", name, field)
 			}

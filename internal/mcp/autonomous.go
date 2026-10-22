@@ -22,8 +22,7 @@ import (
 
 func (s *Server) toolAutonomousStatus() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_status",
-		mcpsdk.WithDescription("BL24 — return autonomous loop status (running, active PRDs, queued/running tasks) plus an `automations` array with one row per non-terminal Automation (status, current member and Automaton, pending members, idle time, blocked reason). Each row carries `active_cursors` (one entry per live member: member_id, prd_id or automation_id, status; always present, empty when idle) and `join_wait` while a join waits on its branches (join_member_id, rule, pending_branches, failed_branches)."),
-	)
+		mcpsdk.WithDescription("BL24 — return autonomous loop status (running, active PRDs, queued/running tasks) plus an `automations` array with one row per non-terminal Automation (status, current member and Automaton, pending members, idle time, blocked reason). Each row carries `active_cursors` (one entry per live member: member_id, prd_id or automation_id, status; always present, empty when idle) and `join_wait` while a join waits on its branches (join_member_id, rule, pending_branches, failed_branches). The status also carries the per-backend usage_backoff section (back-off flags, effective config, and the patterns_version / patterns_stale / claude_cli_version pattern-drift guard); patterns_stale also turns true when the claude tool version text changes since the last recheck, and usage_backoff_recheck re-stores both."))
 }
 func (s *Server) handleAutonomousStatus(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	out, err := s.proxyGet("/api/autonomous/status", nil)

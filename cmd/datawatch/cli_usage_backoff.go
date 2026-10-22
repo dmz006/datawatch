@@ -24,19 +24,24 @@ func newUsageBackoffCmd() *cobra.Command {
 		Short: "Manage per-backend usage back-off (holds autonomous dispatch to a backend)",
 		Long: `A backed-off backend receives no new autonomous dispatch until its flag
 clears. Flags are set automatically when a session of that backend hits a
-rate/usage limit, or manually here. Interactive session starts are never blocked.`,
+rate/usage limit, or manually here. Interactive session starts are never blocked.
+
+The pattern-drift guard reports patterns_version, patterns_stale and
+claude_cli_version (the claude tool version text); patterns_stale also
+turns true when the patterns or the claude tool version text change since
+the last recheck, and recheck stores both.`,
 	}
 	cmd.AddCommand(
 		&cobra.Command{
 			Use:   "status",
-			Short: "Show active back-off flags, the effective config and the pattern-drift guard",
+			Short: "Show active back-off flags, the effective config and the pattern-drift guard (patterns_version, patterns_stale, claude_cli_version)",
 			Args:  cobra.NoArgs,
 			RunE:  func(*cobra.Command, []string) error { return daemonGet("/api/usage-backoff") },
 		},
 		newUsageBackoffSetCmd(),
 		&cobra.Command{
 			Use:   "recheck",
-			Short: "Record the current rate-limit patterns as rechecked (clears patterns_stale)",
+			Short: "Record the current rate-limit patterns and the claude tool version (claude_cli_version) as rechecked (clears patterns_stale)",
 			Args:  cobra.NoArgs,
 			RunE: func(*cobra.Command, []string) error {
 				return daemonJSON(http.MethodPost, "/api/usage-backoff/recheck", map[string]any{})
