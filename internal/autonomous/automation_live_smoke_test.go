@@ -103,7 +103,7 @@ func (c *smokeClient) do(t *testing.T, method, path string, body any) (int, []by
 	if err != nil {
 		t.Fatalf("%s %s: %v", method, path, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	out, err := io.ReadAll(resp.Body)
 	if err != nil {
 		t.Fatalf("read %s %s body: %v", method, path, err)

@@ -44,10 +44,10 @@ func TestAutomationCmdListAndGetVerbs(t *testing.T) {
 
 func TestAutomationCmdListGetUsageAndErrors(t *testing.T) {
 	_, port := newFakePeerParent(t, func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.URL.Path == "/api/automations/nope":
+		switch r.URL.Path {
+		case "/api/automations/nope":
 			http.Error(w, "not found", http.StatusNotFound)
-		case r.URL.Path == "/api/automations":
+		case "/api/automations":
 			http.Error(w, "autonomous disabled", http.StatusServiceUnavailable)
 		default:
 			http.NotFound(w, r)

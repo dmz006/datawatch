@@ -237,23 +237,23 @@ type automationMemberView struct {
 
 func printAutomationList(w io.Writer, list []automationView) error {
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tNAME\tSTATUS\tMEMBERS\tACTIVE")
+	_, _ = fmt.Fprintln(tw, "ID\tNAME\tSTATUS\tMEMBERS\tACTIVE")
 	for _, a := range list {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%s\n", a.ID, a.Name, a.Status, len(a.Members), activeCursorsText(a.ActiveCursors))
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%s\n", a.ID, a.Name, a.Status, len(a.Members), activeCursorsText(a.ActiveCursors))
 	}
 	return tw.Flush()
 }
 
 func printAutomation(w io.Writer, a automationView) error {
-	fmt.Fprintf(w, "ID:       %s\n", a.ID)
-	fmt.Fprintf(w, "Name:     %s\n", a.Name)
-	fmt.Fprintf(w, "Status:   %s\n", a.Status)
-	fmt.Fprintf(w, "Version:  %d\n", a.Version)
-	fmt.Fprintf(w, "Entry:    %s\n", dashIfEmpty(a.EntryMemberID))
+	_, _ = fmt.Fprintf(w, "ID:       %s\n", a.ID)
+	_, _ = fmt.Fprintf(w, "Name:     %s\n", a.Name)
+	_, _ = fmt.Fprintf(w, "Status:   %s\n", a.Status)
+	_, _ = fmt.Fprintf(w, "Version:  %d\n", a.Version)
+	_, _ = fmt.Fprintf(w, "Entry:    %s\n", dashIfEmpty(a.EntryMemberID))
 	fmt.Fprintf(w, "Active:   %s\n", activeCursorsText(a.ActiveCursors))
 	fmt.Fprintf(w, "Members:  %d\n", len(a.Members))
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "  MEMBER\tKIND\tTARGET\tON COMPLETE\tON BLOCKED\tON FAILED\tSTATUS")
+	_, _ = fmt.Fprintln(tw, "  MEMBER\tKIND\tTARGET\tON COMPLETE\tON BLOCKED\tON FAILED\tSTATUS")
 	for _, m := range a.Members {
 		fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			m.ID, memberKindText(m), memberTargetText(m),
