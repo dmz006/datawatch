@@ -5848,3 +5848,183 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
   overflow-wrap: anywhere;
 }
 .result-table tr:last-child td { border-bottom: none; }
+
+/* ── Automation pipeline strip ── */
+.automation-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 6px 0;
+}
+.automation-strip-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.automation-strip-row[data-row^="on_"] {
+  padding-left: 16px;
+  border-left: 2px solid var(--border);
+}
+.automation-strip-row[data-row="unlinked"] {
+  padding-top: 8px;
+  border-top: 1px dashed var(--border);
+}
+.automation-edge-label {
+  font-size: 11px;
+  color: var(--text2);
+  white-space: nowrap;
+}
+.automation-member {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 260px;
+  padding: 8px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  color: var(--text);
+}
+.automation-member-clickable { cursor: pointer; }
+.automation-member-clickable:hover { border-color: var(--accent); }
+.automation-member-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.automation-member-status {
+  font-size: 11px;
+  color: var(--text2);
+  white-space: nowrap;
+}
+.automation-member-ref {
+  display: inline-flex;
+  align-items: center;
+  max-width: 160px;
+  padding: 4px 8px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  color: var(--text2);
+}
+.automation-chip {
+  flex-shrink: 0;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--bg3);
+  color: var(--text2);
+  font-family: monospace;
+  font-size: 10px;
+}
+.automation-dot {
+  flex-shrink: 0;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--text2);
+}
+.automation-member-pending .automation-dot { background: var(--text2); }
+.automation-member-approved .automation-dot { background: var(--waiting); }
+.automation-member-running .automation-dot {
+  background: var(--success);
+  animation: dw-pulse 1.4s ease-in-out infinite;
+}
+.automation-member-blocked .automation-dot { background: var(--warning); }
+.automation-member-completed .automation-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  background: var(--success);
+  color: var(--bg);
+  font-size: 10px;
+  line-height: 1;
+}
+.automation-member-completed .automation-dot::before { content: "✓"; }
+.automation-member-failed .automation-dot { background: var(--error); }
+@media (prefers-reduced-motion: reduce) {
+  .automation-member-running .automation-dot { animation: none; }
+}
+.automation-member-active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent);
+}
+.automation-member-readonly { opacity: 0.85; }
+.automation-inserted-marker {
+  flex-shrink: 0;
+  padding: 0 5px;
+  border: 1px solid var(--warning);
+  border-radius: 4px;
+  color: var(--warning);
+  font-size: 10px;
+  white-space: nowrap;
+}
+.automation-fork-glyph {
+  margin-left: auto;
+  padding-left: 4px;
+  color: var(--accent);
+  font-size: 14px;
+}
+.automation-connector {
+  position: relative;
+  flex-shrink: 0;
+  width: 22px;
+  height: 2px;
+  background: var(--text2);
+}
+.automation-connector::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  top: -3px;
+  border-left: 6px solid var(--text2);
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+}
+.automation-connector-untaken {
+  opacity: 0.4;
+  background: none;
+  border-top: 2px dashed var(--text2);
+  height: 0;
+}
+@media (max-width: 520px) {
+  .automation-strip-row[data-row="main"],
+  .automation-strip-row[data-row="unlinked"] {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .automation-strip-row[data-row^="on_"] {
+    margin-left: 12px;
+    padding: 6px 0 6px 12px;
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .automation-member { max-width: none; }
+  .automation-connector {
+    align-self: center;
+    width: 2px;
+    height: 16px;
+  }
+  .automation-connector::after {
+    right: -3px;
+    top: auto;
+    bottom: 0;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 6px solid var(--text2);
+    border-bottom: 0;
+  }
+  .automation-connector-untaken {
+    width: 0;
+    height: 16px;
+    border-top: 0;
+    border-left: 2px dashed var(--text2);
+  }
+}

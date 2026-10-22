@@ -24128,6 +24128,201 @@ function buildAutomationCardHTML(automation, ctx) {
 }
 window.buildAutomationCardHTML = buildAutomationCardHTML;
 
+// ── Pipeline strip ──────────────────────────────────────────────────────────
+// The detail view of an Automation: member cards joined by connectors, laid
+// out from entry_member_id along on_complete. A member with more than one
+// outcome edge is a branch point; each extra edge (on_blocked, on_failed) gets
+// its own labelled sub-row below the main row. Everything here is pure: it
+// reads only its arguments and returns markup.
+
+const _AUTOMATION_FINISHED_STATUSES = ['completed', 'failed', 'skipped', 'cancelled'];
+const _AUTOMATION_READONLY_STATUSES = ['completed', 'failed', 'skipped'];
+const _AUTOMATION_OUTCOME_EDGES = ['on_complete', 'on_blocked', 'on_failed'];
+const _AUTOMATION_EXTRA_EDGES = ['on_blocked', 'on_failed'];
+
+// automationMemberDisplayStatus returns member.status, except that a pending
+// member (status pending or empty) whose Automaton is approved shows as
+// approved. prdStatusById maps an Automaton id to its status.
+function automationMemberDisplayStatus(member, prdStatusById) {
+  const status = member && member.status ? String(member.status) : '';
+  if ((status === '' || status === 'pending') && member && member.prd_id) {
+    const prdStatus = (prdStatusById || {})[member.prd_id];
+    if (prdStatus === 'approved') return 'approved';
+  }
+  return status;
+}
+window.automationMemberDisplayStatus = automationMemberDisplayStatus;
+
+// _automationLookup reads a string value from a plain {id: value} map, ignoring
+// inherited keys such as 'constructor'.
+function _automationLookup(map, key) {
+  if (!map || key === undefined || key === null) return '';
+  const k = String(key);
+  return Object.prototype.hasOwnProperty.call(map, k) && typeof map[k] === 'string' ? map[k] : '';
+}
+
+// _automationMemberInserted is true for a member added after the Automation
+// was first built: its added_by names someone other than the creating
+// operator or the first-time import, or it carries a reason.
+function _automationMemberInserted(m) {
+  const by = String(m.added_by || '');
+  const original = by === '' || by === 'operator' || by === 'import' || by.indexOf('import:') === 0;
+  return !original || String(m.added_reason || '') !== '';
+}
+
+function _automationInsertedTitle(m) {
+  const at = String(m.added_at || '');
+  return [
+    m.added_by ? t('automation_inserted_by', [m.added_by]) : '',
+    m.added_reason ? String(m.added_reason) : '',
+    at.indexOf('0001-') === 0 ? '' : at,
+  ].filter(Boolean).join(' · ');
+}
+
+// _automationStripActiveIds returns the ids drawn with the active ring: the
+// recorded cursors, or else the entry member while it has not finished.
+function _automationStripActiveIds(a, members) {
+  const cursors = Array.isArray(a.active_cursors) ? a.active_cursors : [];
+  if (cursors.length) return new Set(cursors);
+  if (a.status === 'completed' || a.status === 'cancelled') return new Set();
+  const entry = members.find(m => m.id === a.entry_member_id);
+  if (entry && !_AUTOMATION_FINISHED_STATUSES.includes(entry.status)) return new Set([entry.id]);
+  return new Set();
+}
+
+// _automationFollowChain walks on_complete from startId. A member already in
+// drawn ends the walk as a reference item, so a cycle cannot loop.
+function _automationFollowChain(startId, byId, drawn) {
+  const items = [];
+  let id = startId;
+  while (id) {
+    const m = byId.get(id);
+    if (!m) break;
+    if (drawn.has(id)) { items.push({ member: m, ref: true }); break; }
+    drawn.add(id);
+    items.push({ member: m, ref: false });
+    id = m.on_complete;
+  }
+  return items;
+}
+
+// _automationConnectorHTML draws one edge between two members. data-taken is
+// true when the from-member took this edge, false when it finished by another
+// edge, and unknown while it has not finished.
+function _automationConnectorHTML(from, edge, toId) {
+  const finished = !!from.edge_taken || !!from.finished_at || _AUTOMATION_FINISHED_STATUSES.includes(from.status);
+  const taken = from.edge_taken === edge ? 'true' : (finished ? 'false' : 'unknown');
+  const cls = 'automation-connector' + (taken === 'false' ? ' automation-connector-untaken' : '');
+  return `<span class="${cls}" data-edge="${escHtml(edge)}" data-from="${escHtml(from.id)}" data-to="${escHtml(toId)}" data-taken="${taken}"></span>`;
+}
+
+function _automationMemberRef(m) {
+  const kind = m.kind || 'prd';
+  if (kind === 'prd' && m.prd_id) return String(m.prd_id);
+  if (kind === 'automation' && m.automation_id) return String(m.automation_id);
+  return String(m.id);
+}
+
+function _automationMemberTitle(m, c, chip) {
+  const kind = m.kind || 'prd';
+  // EXTENSION POINT (fork, join, nested members): a fork or join card has no
+  // title of its own yet and shows its short id; a nested Automation shows the
+  // child's name when it is in ctx.automationsById.
+  if (kind === 'prd') return _automationLookup(c.prdTitles, m.prd_id) || chip;
+  if (kind === 'automation') {
+    const child = c.automationsById && Object.prototype.hasOwnProperty.call(c.automationsById, m.automation_id)
+      ? c.automationsById[m.automation_id] : null;
+    return (child && child.name ? String(child.name) : '') || chip;
+  }
+  return chip;
+}
+
+function _automationMemberCardHTML(m, c, active) {
+  const kind = String(m.kind || 'prd');
+  const status = automationMemberDisplayStatus(m, c.prdStatuses) || 'pending';
+  const statusClass = status.replace(/[^a-z_]/g, '') || 'pending';
+  const labelKey = 'automation_member_status_' + status;
+  const label = t(labelKey) !== labelKey ? t(labelKey) : status;
+  const chip = _automationMemberRef(m).slice(0, 8);
+  const inserted = _automationMemberInserted(m);
+  const isActive = active.has(m.id);
+  const clickable = kind === 'prd' && !!m.prd_id;
+  const edgeCount = _AUTOMATION_OUTCOME_EDGES.filter(e => m[e]).length;
+
+  let cls = 'automation-member automation-member-' + statusClass;
+  if (isActive) cls += ' automation-member-active';
+  if (_AUTOMATION_READONLY_STATUSES.includes(status)) cls += ' automation-member-readonly';
+  if (clickable) cls += ' automation-member-clickable';
+  const open = clickable
+    ? ` onclick="if (typeof openAutomationMemberPRD === 'function') openAutomationMemberPRD('${escJsAttr(m.prd_id)}')"`
+    : '';
+  const marker = inserted
+    ? `<span class="automation-inserted-marker" title="${escHtml(_automationInsertedTitle(m))}">${escHtml(t('automation_inserted_marker'))}</span>`
+    : '';
+  const fork = edgeCount > 1 ? '<span class="automation-fork-glyph" aria-hidden="true">⑂</span>' : '';
+  return `<div class="${cls}" data-member-id="${escHtml(m.id)}" data-kind="${escHtml(kind)}" data-status="${escHtml(status)}" data-active="${isActive}" data-inserted="${inserted}"${open}>`
+    + '<span class="automation-dot"></span>'
+    + `<span class="automation-member-title">${escHtml(_automationMemberTitle(m, c, chip))}</span>`
+    + `<span class="automation-chip">${escHtml(chip)}</span>`
+    + `<span class="automation-member-status">${escHtml(label)}</span>`
+    + marker + fork + '</div>';
+}
+
+// A member already drawn in an earlier row is shown as a short reference.
+function _automationMemberRefHTML(m, c) {
+  const title = _automationMemberTitle(m, c, _automationMemberRef(m).slice(0, 8));
+  return `<div class="automation-member-ref" data-ref-to="${escHtml(m.id)}"><span class="automation-member-title">${escHtml(title)}</span></div>`;
+}
+
+function _automationRowHTML(row, c, active) {
+  let html = '';
+  if (row.edge) {
+    const key = row.edge === 'on_blocked' ? 'automation_edge_if_blocked' : 'automation_edge_if_failed';
+    html += `<span class="automation-edge-label">${escHtml(t(key))}</span>`;
+    html += _automationConnectorHTML(row.parent, row.edge, row.items[0].member.id);
+  }
+  row.items.forEach((it, i) => {
+    if (row.linked && i > 0) html += _automationConnectorHTML(row.items[i - 1].member, 'on_complete', it.member.id);
+    html += it.ref ? _automationMemberRefHTML(it.member, c) : _automationMemberCardHTML(it.member, c, active);
+  });
+  return `<div class="automation-strip-row" data-row="${escHtml(row.key)}">${html}</div>`;
+}
+
+// buildAutomationStripHTML returns the strip markup for one Automation.
+// ctx = {prdTitles, prdStatuses, expanded, automationsById}; expanded and
+// automationsById are carried for nested members, which are not drawn yet.
+function buildAutomationStripHTML(automation, ctx) {
+  const a = automation || {};
+  const c = ctx || {};
+  const members = (Array.isArray(a.members) ? a.members : []).filter(m => m && m.id);
+  const byId = new Map();
+  members.forEach(m => { if (!byId.has(m.id)) byId.set(m.id, m); });
+  const drawn = new Set();
+  const active = _automationStripActiveIds(a, members);
+
+  const rows = [{ key: 'main', linked: true, items: _automationFollowChain(a.entry_member_id, byId, drawn) }];
+  // Rows grow while we iterate: each card that was drawn in full may add a
+  // sub-row per extra edge, and a sub-row's own cards may add more.
+  // EXTENSION POINT (fork, join, nested members): branch rows for a fork and
+  // the expanded body of a nested Automation are added in this loop.
+  for (let i = 0; i < rows.length; i++) {
+    rows[i].items.forEach(it => {
+      if (it.ref) return;
+      _AUTOMATION_EXTRA_EDGES.forEach(edge => {
+        if (!it.member[edge]) return;
+        const items = _automationFollowChain(it.member[edge], byId, drawn);
+        if (items.length) rows.push({ key: edge + ':' + it.member.id, edge, parent: it.member, linked: true, items });
+      });
+    });
+  }
+  const unlinked = members.filter(m => byId.get(m.id) === m && !drawn.has(m.id));
+  if (unlinked.length) rows.push({ key: 'unlinked', linked: false, items: unlinked.map(m => ({ member: m, ref: false })) });
+
+  const body = rows.filter(r => r.items.length).map(r => _automationRowHTML(r, c, active)).join('');
+  return `<div class="automation-strip" data-automation-id="${escHtml(a.id)}">${body}</div>`;
+}
+window.buildAutomationStripHTML = buildAutomationStripHTML;
+
 // alpha.30 #271 + #183 #4 — Alerts tab redesigned to mirror the dock UX:
 // top bar with per-category chips + ✕all + 🔕 + sort toggle + search,
 // then per-session summary cards with prompts highlighted distinct from
