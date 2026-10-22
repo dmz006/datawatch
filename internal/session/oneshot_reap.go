@@ -38,8 +38,12 @@ func (m *Manager) oneShotFinished(sess *Session) bool {
 	if err != nil {
 		return false
 	}
+	// The same real-completion rules as the pane scanners: the wrapped tail of
+	// the typed launch command ("...echo 'DATAWATCH_COMPLETE: claude done'")
+	// and an instruction placeholder are not the worker's own completion.
 	for _, line := range strings.Split(StripANSI(out), "\n") {
-		if strings.HasPrefix(strings.TrimSpace(line), oneShotCompletionMarker) {
+		l := strings.TrimSpace(line)
+		if strings.HasPrefix(l, oneShotCompletionMarker) && isRealCompletionLine(l, oneShotCompletionMarker) {
 			return true
 		}
 	}
