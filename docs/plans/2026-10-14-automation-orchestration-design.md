@@ -1617,7 +1617,7 @@ howto, and the `datawatch-app` issue where applicable.
     separate concurrent Automations. Is a true parallel fork with a join member
     needed inside one Automation? That would need a multi-cursor model.
     **Decided by the operator 2026-10-22: build fork/join now (in 10.0.0).** One Automation can contain a fork (start several member Automata at the same time) and a join (wait for all of them, with a per-join rule for what happens if one branch fails or is skipped) before continuing. This replaces the single cursor with a set of active cursors, so it lands as its own phase *before* the control operations: Phase 3a designs and builds the multi-cursor coordinator (data model, advance rule, restart reconciliation, `autonomous_status`, audit), then Phase 3b builds the control ops on top and every op names the branch it acts on. The PWA pipeline strip must draw parallel branches (Phase 6).
-    **Join failure rule decided by the operator 2026-10-22: set per join.** Each join member carries `on_branch_failure`: `all_must_succeed`, `any_one_is_enough` or `continue_anyway`. The default for a join that does not set it is still to be confirmed.
+    **Join failure rule decided by the operator 2026-10-22: set per join.** Each join member carries `on_branch_failure`: `all_must_succeed`, `any_one_is_enough` or `continue_anyway`. The default for a join that does not set it is `all_must_succeed` with wait-then-block: the join waits for the other branches to finish, then the Automation goes `blocked`, alerts, and names the failed branch.
 11. **Decompose tier.** Should the Automation-level model default also cover
     decomposition (`PRD.DecompositionModel` / the decompose backend), or only
     execution and verification?
