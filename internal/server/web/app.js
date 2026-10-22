@@ -21096,6 +21096,7 @@ function switchAutomataDetailTab(tab) {
       else if (tab === 'stories') html = _renderDetailStories(prd);
       else if (tab === 'decisions') html = _renderDetailDecisionsTab(prd);
       else if (tab === 'memory') html = _renderDetailMemoryTab(prd); // GH#192 D77a
+      else if (tab === 'subscriptions') html = _renderDetailSubscriptionsTab(prd);
       else if (tab === 'scan') html = _renderDetailScanTab(prd);
       else if (tab === 'rules') html = _renderDetailRulesTab(prd);
       else html = _renderDetailOverview(prd);
@@ -21105,6 +21106,7 @@ function switchAutomataDetailTab(tab) {
         if (['decomposing','running'].includes(prd.status || '')) _renderStatusGraphs(prd);
       }
       if (tab === 'memory') _loadPRDMemoryTab(prd); // GH#192 D77a
+      if (tab === 'subscriptions') _loadPRDSubscriptionsTab(prd);
     }
     return;
   }
@@ -21420,6 +21422,7 @@ function _renderDetailContent(prd) {
   else if (tab === 'stories') tabBody = _renderDetailStories(prd);
   else if (tab === 'decisions') tabBody = _renderDetailDecisionsTab(prd);
   else if (tab === 'memory') tabBody = _renderDetailMemoryTab(prd); // GH#192 D77a
+  else if (tab === 'subscriptions') tabBody = _renderDetailSubscriptionsTab(prd);
   else if (tab === 'scan') tabBody = _renderDetailScanTab(prd);
   else if (tab === 'rules') tabBody = _renderDetailRulesTab(prd);
   else tabBody = _renderDetailOverview(prd);
@@ -21464,6 +21467,7 @@ function _renderDetailContent(prd) {
   // Async load scan results when on Scan tab
   if (tab === 'scan') loadPRDScanResult(id);
   if (tab === 'memory') _loadPRDMemoryTab(prd); // GH#192 D77a
+  if (tab === 'subscriptions') _loadPRDSubscriptionsTab(prd);
   // GATE alpha.36 (operator 2026-05-10): inline active-session card
   // (#290). When the PRD is in an active state, surface the spawned
   // session(s) + hook status under "Next" hint, before the toolbar.
@@ -22398,6 +22402,7 @@ function _renderDetailTabStrip(prd, currentTab) {
     ['stories',   t('prd_tab_stories')   || 'Stories',  true],
     ['decisions', t('prd_tab_decisions') || 'Decisions', true],
     ['memory',    t('prd_tab_memory')    || 'Memory',    true], // GH#192 D77a
+    ['subscriptions', t('lifecycle_sub_tab') || 'Subscriptions', true],
     ['scan',      t('prd_tab_scan')      || 'Scan',      hasScan],
     ['rules',     t('prd_tab_rules')     || 'Rules',     hasRules],
   ];
@@ -22407,6 +22412,153 @@ function _renderDetailTabStrip(prd, currentTab) {
     `).join('')}
   </div>`;
 }
+
+// Subscriptions tab — the lifecycle event subscriptions that apply to this
+// Automaton: ones scoped to its id (filter.prd_id) plus unscoped ones that
+// fire for every Automaton. Loaded from GET /api/autonomous/subscriptions on
+// tab open and after each mutation (delete/test); never polled.
+let _prdSubsCache = {};   // prd id -> subscriptions last rendered, for row actions
+
+function _renderDetailSubscriptionsTab(prd) {
+  const id = prd.id || '';
+  const idJ = JSON.stringify(id);
+  return `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+      <div style="flex:1;font-size:11px;color:var(--text2);line-height:1.4;">
+        ${escHtml(t('lifecycle_sub_help')||'Lifecycle event subscriptions that fire for this Automaton.')}
+      </div>
+      <button class="btn-secondary" style="font-size:12px;padding:4px 12px;white-space:nowrap;" onclick="_lifecycleSubOpenForm(${escHtml(idJ)}, '')">${escHtml(t('lifecycle_sub_add')||'Add subscription')}</button>
+    </div>
+    <div id="prdSubsResult_${escHtml(id)}" style="font-size:12px;margin-bottom:6px;"></div>
+    <div id="prdSubsBody_${escHtml(id)}">${loadingEyeBlock()}</div>
+  `;
+}
+
+function _loadPRDSubscriptionsTab(prd) {
+  const id = prd.id || '';
+  if (!id) return Promise.resolve();
+  const bodyEl = document.getElementById('prdSubsBody_' + id);
+  if (!bodyEl) return Promise.resolve();
+  const msgStyle = 'color:var(--text2);font-size:12px;padding:8px;';
+  return apiFetch('/api/autonomous/subscriptions')
+    .then(data => {
+      const all = Array.isArray(data) ? data : [];
+      const subs = all.filter(sub => {
+        const scoped = sub && sub.filter && sub.filter.prd_id;
+        return !scoped || scoped === id;
+      });
+      _prdSubsCache[id] = subs;
+      bodyEl.innerHTML = _renderLifecycleSubList(id, subs);
+    })
+    .catch(e => {
+      const msg = String((e && e.message) || '');
+      if (/lifecycle subscriptions disabled/i.test(msg)) {
+        bodyEl.innerHTML = `<div style="${msgStyle}">${escHtml(t('lifecycle_sub_disabled')||'Lifecycle subscriptions are disabled on this server.')}</div>`;
+        return;
+      }
+      bodyEl.innerHTML = `<div style="color:var(--error);font-size:12px;padding:8px;">${escHtml(_fedMsg(e, t('lifecycle_sub_load_failed')||'Could not load subscriptions.'))}</div>`;
+    });
+}
+
+function _renderLifecycleSubList(prdId, subs) {
+  if (!subs.length) {
+    return `<div style="color:var(--text2);font-size:12px;padding:8px;">${escHtml(t('lifecycle_sub_empty')||'No subscriptions apply to this Automaton.')}</div>`;
+  }
+  return subs.map(sub => _renderLifecycleSubRow(prdId, sub)).join('');
+}
+
+function _renderLifecycleSubRow(prdId, sub) {
+  const f = sub.filter || {};
+  const sink = sub.sink || {};
+  const kinds = Array.isArray(f.kinds) ? f.kinds : [];
+  const what = kinds.length
+    ? kinds.map(k => `<span style="background:var(--bg3,#2a2a2a);font-size:10px;padding:1px 6px;border-radius:8px;margin-right:4px;display:inline-block;">${escHtml(k)}</span>`).join('')
+    : '';
+  const level = f.level ? `<span style="font-size:11px;color:var(--text2);">${escHtml(t('lifecycle_sub_level', [f.level])||('Level: '+f.level))}</span>` : '';
+  const scopeBadge = f.prd_id ? '' : `<span style="background:#7c3aed;color:#fff;font-size:10px;padding:1px 6px;border-radius:8px;margin-left:4px;">${escHtml(t('lifecycle_sub_all_automata')||'all automata')}</span>`;
+  const sinkTxt = escHtml(sink.type || '') + (sink.target ? ' → ' + escHtml(sink.target) : '');
+  const actionBadge = sub.action && sub.action.type
+    ? `<span style="background:#0369a1;color:#fff;font-size:10px;padding:1px 6px;border-radius:8px;margin-right:4px;">${escHtml(sub.action.type)}</span>`
+    : '';
+  const flags = [];
+  if (sub.one_shot) flags.push(t('lifecycle_sub_flag_one_shot')||'one-shot');
+  if (sub.coalesce) flags.push(t('lifecycle_sub_flag_coalesce')||'coalesce');
+  if (sub.expires_at) {
+    const d = new Date(sub.expires_at);
+    const when = isNaN(d.getTime()) ? String(sub.expires_at) : d.toLocaleString();
+    flags.push(t('lifecycle_sub_flag_expires', [when])||('expires '+when));
+  }
+  const flagHtml = flags.map(fl => `<span style="font-size:10px;color:var(--text2);border:1px solid var(--border,#444);padding:0 5px;border-radius:8px;margin-right:4px;">${escHtml(fl)}</span>`).join('');
+  const owner = sub.owner ? `<span style="font-size:11px;color:var(--text2);">${escHtml(t('lifecycle_sub_owner', [sub.owner])||('owner: '+sub.owner))}</span>` : '';
+  const prdJ = escHtml(JSON.stringify(prdId));
+  const subJ = escHtml(JSON.stringify(sub.id || ''));
+  return `<div class="prd-sub-row" style="border:1px solid var(--border,#444);border-radius:6px;padding:8px;margin-bottom:6px;">
+    <div style="margin-bottom:4px;">${what}${level}${scopeBadge}</div>
+    <div style="font-size:12px;margin-bottom:4px;">${actionBadge}<span style="color:var(--text2);">${escHtml(t('lifecycle_sub_sink')||'Sink')}:</span> ${sinkTxt}</div>
+    <div style="margin-bottom:4px;">${flagHtml}${owner}</div>
+    <div style="display:flex;gap:6px;align-items:center;">
+      <button class="btn-secondary" style="font-size:11px;padding:2px 10px;" onclick="_lifecycleSubOpenForm(${prdJ}, ${subJ})">${escHtml(t('lifecycle_sub_edit')||'Edit')}</button>
+      <button class="btn-secondary" style="font-size:11px;padding:2px 10px;" onclick="_lifecycleSubTest(${prdJ}, ${subJ})">${escHtml(t('lifecycle_sub_test')||'Test')}</button>
+      <button class="btn-stop" style="font-size:11px;padding:2px 10px;" onclick="_lifecycleSubDelete(${prdJ}, ${subJ})">${escHtml(t('lifecycle_sub_delete')||'Delete')}</button>
+    </div>
+  </div>`;
+}
+
+function _lifecycleSubResult(prdId, text, isError) {
+  const el = document.getElementById('prdSubsResult_' + prdId);
+  if (el) el.innerHTML = `<div style="color:${isError ? 'var(--error)' : 'var(--success,#16a34a)'};">${escHtml(text)}</div>`;
+  showToast(text, isError ? 'error' : 'success');
+}
+
+function _lifecycleSubReload(prdId) {
+  const prd = (_automataDetailPRD && _automataDetailPRD.id === prdId) ? _automataDetailPRD : { id: prdId };
+  return _loadPRDSubscriptionsTab(prd);
+}
+
+function _lifecycleSubDelete(prdId, subId) {
+  return new Promise(resolve => {
+    showConfirmModal(t('lifecycle_sub_delete_confirm')||'Delete this subscription?', () => {
+      apiFetch('/api/autonomous/subscriptions/' + encodeURIComponent(subId), { method: 'DELETE' })
+        .then(() => _lifecycleSubReload(prdId))
+        .catch(e => _lifecycleSubResult(prdId, (t('lifecycle_sub_delete_failed', [(e && e.message) || ''])||('Delete failed: '+((e && e.message) || ''))), true))
+        .then(resolve);
+    });
+  });
+}
+
+function _lifecycleSubTest(prdId, subId) {
+  return apiFetch('/api/autonomous/subscriptions/' + encodeURIComponent(subId) + '/test', { method: 'POST' })
+    .then(res => {
+      if (res && res.ok) {
+        _lifecycleSubResult(prdId, t('lifecycle_sub_test_ok', [res.sink || ''])||('Delivered via '+(res.sink || '')), false);
+      } else {
+        const why = (res && res.error) || '';
+        _lifecycleSubResult(prdId, t('lifecycle_sub_test_failed', [why])||('Test failed: '+why), true);
+      }
+    })
+    .catch(e => {
+      const why = String((e && e.message) || '').trim();
+      _lifecycleSubResult(prdId, t('lifecycle_sub_test_failed', [why])||('Test failed: '+why), true);
+    });
+}
+
+// Resolves the row's subscription (empty subId = a new one) and hands off to
+// the form hook below.
+function _lifecycleSubOpenForm(prdId, subId) {
+  const prd = (_automataDetailPRD && _automataDetailPRD.id === prdId) ? _automataDetailPRD : { id: prdId };
+  const sub = subId ? ((_prdSubsCache[prdId] || []).find(x => x.id === subId) || null) : null;
+  return _openLifecycleSubscriptionForm(prd, sub);
+}
+
+// Hook for the add/edit subscription form. Placeholder until the form lands:
+// it replaces this function body, nothing else calls into the form.
+function _openLifecycleSubscriptionForm(prd, subOrNull) {
+  showToast(t('lifecycle_sub_form_pending')||'The subscription form is not available yet.', 'info');
+}
+
+window._lifecycleSubOpenForm = _lifecycleSubOpenForm;
+window._lifecycleSubDelete = _lifecycleSubDelete;
+window._lifecycleSubTest = _lifecycleSubTest;
 
 // BL246 v6.6.0 — Overview tab: lifecycle strip, metadata, progress, verdicts.
 function _renderDetailOverview(prd) {
