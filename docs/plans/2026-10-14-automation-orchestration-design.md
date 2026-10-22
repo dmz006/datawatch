@@ -1621,6 +1621,7 @@ howto, and the `datawatch-app` issue where applicable.
 11. **Decompose tier.** Should the Automation-level model default also cover
     decomposition (`PRD.DecompositionModel` / the decompose backend), or only
     execution and verification?
+    **Decided by the operator 2026-10-22: separate planning setting.** The Automation model default covers execution and verification. Planning has its own optional field on the Automation (unset = the global planning backend); it does not change the run/verify default. Exposed on every surface like the other tier fields.
 12. **Execution provenance.** Should task run records gain an `executor_source`
     (`task|story|prd|automation|global`) mirroring `verifier_source`, so the
     Automation tier's effect is visible on execution too?
