@@ -1707,6 +1707,8 @@
   "settings_session_idle_timeout": "Tiempo de espera de sesión inactiva (seg, 0=15min)",
   "settings_worker_idle_nudge": "Aviso por inactividad del worker (seg, 0=3min)",
   "settings_worker_idle_nudge_stall": "Bloqueo del worker tras el aviso (seg, 0=10min)",
+  "settings_session_start_confirm": "Confirmación de inicio de sesión (segundos)",
+  "settings_session_start_confirm_help": "Una sesión sin salida del asistente tras ese tiempo se marca como fallo por sesión nunca iniciada y se reintenta.",
   "prd_action_repair_deps": "Repair deps",
   "memory_scope_inventory_failed": "Failed to load scope inventory",
   "memory_scope_recall_failed": "Recall failed",

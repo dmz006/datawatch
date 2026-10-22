@@ -1707,6 +1707,8 @@
   "settings_session_idle_timeout": "セッションアイドルタイムアウト（秒、0=15分）",
   "settings_worker_idle_nudge": "ワーカーのアイドル催促（秒、0=3分）",
   "settings_worker_idle_nudge_stall": "催促後のワーカー停止判定（秒、0=10分）",
+  "settings_session_start_confirm": "セッション開始確認（秒）",
+  "settings_session_start_confirm_help": "この時間が経過してもアシスタント出力のないセッションは「開始されなかった」として失敗扱いとなり、再試行されます。",
   "prd_action_repair_deps": "Repair deps",
   "memory_scope_inventory_failed": "Failed to load scope inventory",
   "memory_scope_recall_failed": "Recall failed",

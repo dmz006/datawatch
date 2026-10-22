@@ -1,0 +1,8 @@
+  ╭──────────────────────────────────────────────────────────────────────────╮
+  │                                                                          │
+  │  Context is 87% full.                                                    │
+  │                                                                          │
+  │  Summarise the earlier turns of this session to free up context?         │
+  │                                                                          │
+  ╰──────────────────────────────────────────────────────────────────────────╯
+       (Enter to confirm)                        (Esc to cancel)

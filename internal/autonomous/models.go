@@ -731,6 +731,23 @@ type Task struct {
 	// alongside Error (a bare string, left untouched for existing
 	// readers). Set on the task's last failed/blocked attempt.
 	FailureReason *FailureReason `json:"failure_reason,omitempty"`
+	// StartFailureTail — the last 20 non-empty lines of the visible tmux
+	// pane captured at failure time, set only when a spawned session never
+	// started (sat in waiting_input without any assistant output past the
+	// start-confirm bound). Retained on the task for post-mortem diagnosis
+	// (e.g. a startup dialog waiting on an operator action that no one
+	// dismissed); empty omitted on the wire for normal attempts.
+	StartFailureTail []string `json:"start_failure_tail,omitempty"`
+	// StartFailures — how many of this task's attempts failed the
+	// start-confirm bound (ErrSessionNeverStarted) and were re-queued. Each
+	// such failure re-runs the SAME attempt without consuming the PRD's
+	// normal auto-retry budget (RetryPolicy categories, RetryCeilingTotal
+	// and AutoFixRetries all untouched); once StartFailures exceeds
+	// SessionStartRetryBudget the task fails with the "session never
+	// started" reason. Persisted through the same task save path the
+	// executor uses for every attempt, so a daemon restart mid-streak keeps
+	// the count. JSON omitempty: 0 is invisible on the wire.
+	StartFailures int `json:"start_failures,omitempty"`
 	// Per-task LLM overrides — empty = inherit from PRD then global.
 	Backend string `json:"backend,omitempty"`
 	Effort  Effort `json:"effort,omitempty"`

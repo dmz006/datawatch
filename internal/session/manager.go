@@ -2357,6 +2357,36 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 			_ = m.tmux.KillSession(tmuxSession)
 			return nil, fmt.Errorf("send LLM command: %w", err)
 		}
+		// Right after the paste: confirm the prompt was actually submitted.
+		// Bracketed-paste TUIs (claude-code) can absorb the trailing Enter
+		// into the paste event, leaving the task sitting in the input line
+		// as a "[Pasted text #N]" placeholder while the operator waits.
+		// Only for claude-code sessions (this is the legacy claude-code
+		// fallback path); claude-code TUIs, not other backends, render the
+		// paste-placeholder marker.
+		if m.llmBackend == "claude-code" || strings.Contains(m.llmBin, "claude") {
+			// Assistant activity = the session already reports running, or
+			// the pane has moved past the pending paste (marker expanded /
+			// assistant output rendered). The monitor is not yet started at
+			// this point, so the pane is the ground truth.
+			assistantActive := func() bool {
+				if sess.State == StateRunning {
+					return true
+				}
+				cap, err := m.tmux.CapturePaneVisible(tmuxSession)
+				if err != nil {
+					return false
+				}
+				return !pastePending(cap)
+			}
+			if err := confirmPromptSubmitted(m.tmux, tmuxSession, assistantActive,
+				30*time.Second, time.Second); err != nil {
+				// Non-fatal: the session may still submit a moment later
+				// (operator press, TUI latency). Log and let the monitor
+				// and idle reaper handle a session that truly never starts.
+				fmt.Printf("[warn] confirm prompt submitted for %s: %v\n", fullID, err)
+			}
+		}
 	}
 
 	// Update pre-session commit to use proper session ID now that we have one.
@@ -3557,6 +3587,25 @@ func (m *Manager) CapturePaneScrollback(fullID string, lines int) (string, error
 		return "", nil
 	}
 	return m.tmux.CapturePaneScrollback(sess.TmuxSession, lines)
+}
+
+// CapturePaneVisible returns the currently visible pane content of a
+// session (ANSI codes stripped), resolved from fullID or short ID — the
+// same tmux-layer capture the UI display uses. The autonomous start-confirm
+// check captures with this to see the assistant's first response before any
+// state transition is visible in the session store.
+func (m *Manager) CapturePaneVisible(fullID string) (string, error) {
+	sess, ok := m.store.Get(fullID)
+	if !ok {
+		sess, ok = m.store.GetByShortID(fullID)
+		if !ok {
+			return "", fmt.Errorf("session not found: %s", fullID)
+		}
+	}
+	if sess.TmuxSession == "" {
+		return "", nil
+	}
+	return m.tmux.CapturePaneVisible(sess.TmuxSession)
 }
 
 // SendRawKeys sends literal bytes to the tmux session (for interactive terminal).
@@ -4797,45 +4846,33 @@ func (m *Manager) MarkWaitingInput(fullID, line string) {
 }
 
 // GetActiveStartupPromptInput captures the live tmux pane for sessID and
-// returns the appropriate auto-accept keystroke for whichever Claude Code
-// startup prompt is currently on screen, or "" if no known prompt is visible.
-//
-// Priority (checked in order):
-//  1. Bypass-permissions disclaimer ("Yes, I accept" + "No, exit") → "2\n"
-//  2. Trust-folder check ("Quick safety check" / "trust this folder")  → "1\n"
-//  3. MCP server trust prompt ("New MCP server found")                 → "1\n"
-//  4. Nothing recognisable                                             → ""
+// returns the auto-accept text payload (via StartupDialogSendText) for
+// whichever Claude Code startup prompt is currently on screen, or "" if no
+// SendInput-answerable prompt is visible. The decision is delegated to
+// classifyStartupDialog — see ActiveStartupDialog for the full action
+// (trust-folder arrow keys and Esc declines are not answerable with text
+// and therefore render as "").
 //
 // The "" return signals the caller to skip sending entirely — important when
 // this goroutine fires after all startup prompts have already been accepted.
 func (m *Manager) GetActiveStartupPromptInput(fullID string) string {
+	return StartupDialogSendText(m.ActiveStartupDialog(fullID))
+}
+
+// ActiveStartupDialog captures the live tmux pane for fullID and returns
+// the classifier's decision for the dialog currently on screen (kind, keys,
+// retry flag). It returns {Kind: StartupDialogNone} when the session is
+// unknown, the capture fails, or no recognised dialog is visible.
+func (m *Manager) ActiveStartupDialog(fullID string) StartupDialogAction {
 	sess, ok := m.store.Get(fullID)
 	if !ok {
-		return ""
+		return StartupDialogAction{Kind: StartupDialogNone}
 	}
 	content, err := m.tmux.CapturePaneVisible(sess.TmuxSession)
 	if err != nil || content == "" {
-		return ""
+		return StartupDialogAction{Kind: StartupDialogNone}
 	}
-	lower := strings.ToLower(StripANSI(content))
-	switch {
-	case strings.Contains(lower, "yes, i accept") && strings.Contains(lower, "no, exit"):
-		return "2\n"
-	case strings.Contains(lower, "quick safety check"),
-		strings.Contains(lower, "trust this folder"),
-		strings.Contains(lower, "yes, i trust"):
-		// Trust dialog is an arrow-key TUI ("❯ No, exit" pre-selected).
-		// Sending "1\n" here would type "1" and press Enter, confirming "No, exit".
-		// Callers must use SendTrustDialogAccept (Down+Enter) instead.
-		return ""
-	case strings.Contains(lower, "new mcp server found"),
-		strings.Contains(lower, "use this mcp server"):
-		return "1\n"
-	case strings.Contains(lower, "i am using this for local development"),
-		strings.Contains(lower, "loading development channels"):
-		return "1\n"
-	}
-	return ""
+	return classifyStartupDialog(content)
 }
 
 // ErrTaskUndelivered is returned by DeliverOneShotTask when the task never
@@ -4956,18 +4993,20 @@ func (m *Manager) DeliverOneShotTask(fullID string, input string, maxAttempts in
 // session is currently displaying Claude Code's workspace-trust dialog.
 // Used by the startup trust poller in main.go.
 func (m *Manager) IsTrustDialogShowing(fullID string) bool {
+	return m.ActiveStartupDialog(fullID).Kind == StartupDialogTrustFolder
+}
+
+// DeclineStartupDialog sends a single Esc to sessID's pane through the
+// tmux layer, declining a classifier-marked unsafe startup dialog
+// (StartupDialogConfirmUnsafe, StartupDialogUpdatePrompt). Callers must not
+// retry: the session stays in waiting_input, the silent-start detector
+// marks it a start failure and the start-failure budget re-tries it.
+func (m *Manager) DeclineStartupDialog(fullID string) error {
 	sess, ok := m.store.Get(fullID)
 	if !ok {
-		return false
+		return fmt.Errorf("session %s not found", fullID)
 	}
-	content, err := m.tmux.CapturePaneVisible(sess.TmuxSession)
-	if err != nil || content == "" {
-		return false
-	}
-	lower := strings.ToLower(StripANSI(content))
-	return strings.Contains(lower, "quick safety check") ||
-		strings.Contains(lower, "trust this folder") ||
-		strings.Contains(lower, "yes, i trust")
+	return m.tmux.SendKeysLiteral(sess.TmuxSession, "\x1b")
 }
 
 // IsOpenCodeAtPrompt returns true when the live pane for fullID shows

@@ -1350,3 +1350,15 @@ Response:
 - **How it works:** `ExitSilenceTracker` (`internal/autonomous/exit_silence.go`) is state-independent — it only counts silence after the runner process has stopped. The clock is advanced by a live runner child or log growth (non-zero log mtime), so a pane that has not yet launched pi, or a run still emitting output, is never flagged. `exitSilenceTick` (`cmd/datawatch/exit_silence_wait.go`) gates the tracker to the pi-prompt family and returns control to the existing detectors for every other backend.
 - **Config:** reuses `autonomous.session_idle_timeout_seconds` (same default, `NormalizeSessionIdleTimeoutSeconds`) — no new config field.
 - **Failure path:** the tripped bound stops the session, records the reason "pi print run exited without a completion or verdict" on the task, and re-enters the normal retry flow.
+
+## Session start confirm timeout (autonomous.session_start_confirm_seconds)
+
+- **Field:** `autonomous.session_start_confirm_seconds`, default `120` (2 minutes). Bounds a claude-code autonomous session that is still in `waiting_input` with no assistant output — i.e. started but never began working.
+- **Surfaces:**
+  - config YAML (`internal/config/config.go`, `Autonomous.SessionStartConfirmSeconds`);
+  - REST `GET` / `PUT` on the `autonomous.*` config (`internal/server/api.go`);
+  - MCP `autonomous_config_set` (`internal/mcp/autonomous.go`, `session_start_confirm_seconds` parameter; also round-trips through the manager config that `autonomous_config_get` serves);
+  - web settings card (`internal/server/web/app.js`) with strings in 5 locales (en, de, es, fr, ja);
+  - comm channels via `configure autonomous.session_start_confirm_seconds=<n>`, which the router forwards to the REST `PUT` config endpoint.
+- **Default:** `SessionStartConfirmDefaultSeconds = 120` and `NormalizeSessionStartConfirmSeconds` in `internal/config/session_start_confirm.go`. Zero or negative values normalize to the default.
+- **Failure path:** a tripped bound is reported as the infra failure `session never started`; the alert carries the last 20 lines of the session transcript as evidence. Up to 2 start failures are retried (start-failure budget) before the task stays failed. This budget is separate from `auto_fix_retries`.

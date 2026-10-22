@@ -1,0 +1,8 @@
+  ╭──────────────────────────────────────────────────────────────────────────╮
+  │                                                                          │
+  │  This workspace has channels enabled for every new session.              │
+  │                                                                          │
+  │  Proceed with these channels active?                                     │
+  │                                                                          │
+  ╰──────────────────────────────────────────────────────────────────────────╯
+       (Enter to confirm)                        (Esc to cancel)

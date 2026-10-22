@@ -154,6 +154,8 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"prd_plan_review_ok",
 		"prd_plan_review_fail",
 		"prd_plan_review_rerun",
+		// session_start_confirm setting — autonomous settings card field label key.
+		"settings_session_start_confirm",
 	}
 	for _, lang := range requiredLocales {
 		bundle := loadLocaleBundle(t, lang)

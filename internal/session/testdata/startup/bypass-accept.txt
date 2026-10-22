@@ -1,0 +1,10 @@
+  ╭──────────────────────────────────────────────────────────────────────────╮
+  │                                                                          │
+  │  ⚠ Bypassing permissions. Claude Code will act on your machine with      │
+  │    reduced safety guardrails.                                            │
+  │                                                                          │
+  │  Are you sure you want to do this?                                       │
+  │                                                                          │
+  ╰──────────────────────────────────────────────────────────────────────────╯
+  1. No, exit
+  ❯ 2. Yes, I accept

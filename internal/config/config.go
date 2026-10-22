@@ -2145,6 +2145,12 @@ type AutonomousConfig struct {
 	// worker may stay silent before it is declared stalled and retried.
 	// 0 or unset => 600 (see NormalizeWorkerIdleNudgeStallSeconds).
 	WorkerIdleNudgeStallSeconds int `yaml:"worker_idle_nudge_stall_seconds,omitempty" json:"worker_idle_nudge_stall_seconds,omitempty"`
+	// SessionStartConfirmSeconds bounds a claude-code autonomous session
+	// that is still in waiting_input with no assistant output: a session
+	// that produces no first assistant turn within this many seconds is a
+	// "session never started" failure. 0 or unset => 120
+	// (see NormalizeSessionStartConfirmSeconds).
+	SessionStartConfirmSeconds int `yaml:"session_start_confirm_seconds,omitempty" json:"session_start_confirm_seconds,omitempty"`
 	// CapacityEnabled turns capacity-aware admission on (default true when
 	// unset): tasks wait for a free host/node/LLM slot instead of failing.
 	CapacityEnabled *bool `yaml:"capacity_enabled,omitempty" json:"capacity_enabled,omitempty"`
