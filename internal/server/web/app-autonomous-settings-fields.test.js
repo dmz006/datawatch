@@ -79,6 +79,29 @@ test('autonomous settings expose session_idle_timeout_seconds as a number with a
     'settings_session_idle_timeout missing from en locale');
 });
 
+test('autonomous settings expose the worker idle nudge fields as numbers with locale labels in all 5 locales', () => {
+  const sandbox = buildSandbox();
+  vm.createContext(sandbox);
+  loadScript(path.join(__dirname, 'app.js'), sandbox);
+  const wanted = {
+    'autonomous.worker_idle_nudge_seconds': 'settings_worker_idle_nudge',
+    'autonomous.worker_idle_nudge_stall_seconds': 'settings_worker_idle_nudge_stall',
+  };
+  for (const [key, labelKey] of Object.entries(wanted)) {
+    const parsed = JSON.parse(vm.runInContext(
+      "JSON.stringify((GENERAL_CONFIG_FIELDS.find(s => s.id === 'autonomous') || {fields: []}).fields.find(f => f.key === '" + key + "') || null)",
+      sandbox));
+    assert.ok(parsed, key + ' missing from autonomous card fields');
+    assert.equal(parsed.type, 'number');
+    assert.equal(parsed.labelKey, labelKey);
+    for (const locale of ['en', 'de', 'es', 'fr', 'ja']) {
+      const bundle = JSON.parse(fs.readFileSync(path.join(__dirname, 'locales', locale + '.json'), 'utf8'));
+      assert.ok(typeof bundle[labelKey] === 'string' && bundle[labelKey].length > 0,
+        labelKey + ' missing or empty in ' + locale + ' locale');
+    }
+  }
+});
+
 // ── T2: plan-coverage gate — new Autonomous settings fields ─────────────────
 
 const APP_JS = path.join(__dirname, 'app.js');

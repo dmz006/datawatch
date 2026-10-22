@@ -4103,25 +4103,27 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			tierInflightBridge[k] = v
 		}
 		amgrCfg := autonomouspkg.Config{
-			Enabled:                    acfgIn.Enabled,
-			PollIntervalSeconds:        acfgIn.PollIntervalSeconds,
-			MaxParallelTasks:           acfgIn.MaxParallelTasks,
-			MaxConcurrentTasks:         acfgIn.MaxConcurrentTasks,
-			PlanningBackend:            acfgIn.PlanningBackend,
-			VerificationBackend:        acfgIn.VerificationBackend,
-			ExecutionBackend:           acfgIn.ExecutionBackend,
-			PlanningModel:              acfgIn.PlanningModel,
-			VerificationModel:          acfgIn.VerificationModel,
-			GuardrailModel:             acfgIn.GuardrailModel,
-			VerificationBackends:       append([]string(nil), acfgIn.VerificationBackends...),
-			TaskOverrideStatuses:       append([]string(nil), acfgIn.TaskOverrideStatuses...),
-			PlanningEffort:             acfgIn.PlanningEffort,
-			VerificationEffort:         acfgIn.VerificationEffort,
-			PlanningTimeoutSeconds:     acfgIn.PlanningTimeoutSeconds,
-			VerificationTimeoutSeconds: acfgIn.VerificationTimeoutSeconds,
-			SessionIdleTimeoutSeconds:  acfgIn.SessionIdleTimeoutSeconds,
-			CapacityEnabled:            acfgIn.CapacityEnabled,
-			CapacityWaitTimeoutSeconds: acfgIn.CapacityWaitTimeoutSeconds,
+			Enabled:                     acfgIn.Enabled,
+			PollIntervalSeconds:         acfgIn.PollIntervalSeconds,
+			MaxParallelTasks:            acfgIn.MaxParallelTasks,
+			MaxConcurrentTasks:          acfgIn.MaxConcurrentTasks,
+			PlanningBackend:             acfgIn.PlanningBackend,
+			VerificationBackend:         acfgIn.VerificationBackend,
+			ExecutionBackend:            acfgIn.ExecutionBackend,
+			PlanningModel:               acfgIn.PlanningModel,
+			VerificationModel:           acfgIn.VerificationModel,
+			GuardrailModel:              acfgIn.GuardrailModel,
+			VerificationBackends:        append([]string(nil), acfgIn.VerificationBackends...),
+			TaskOverrideStatuses:        append([]string(nil), acfgIn.TaskOverrideStatuses...),
+			PlanningEffort:              acfgIn.PlanningEffort,
+			VerificationEffort:          acfgIn.VerificationEffort,
+			PlanningTimeoutSeconds:      acfgIn.PlanningTimeoutSeconds,
+			VerificationTimeoutSeconds:  acfgIn.VerificationTimeoutSeconds,
+			SessionIdleTimeoutSeconds:   acfgIn.SessionIdleTimeoutSeconds,
+			WorkerIdleNudgeSeconds:      acfgIn.WorkerIdleNudgeSeconds,
+			WorkerIdleNudgeStallSeconds: acfgIn.WorkerIdleNudgeStallSeconds,
+			CapacityEnabled:             acfgIn.CapacityEnabled,
+			CapacityWaitTimeoutSeconds:  acfgIn.CapacityWaitTimeoutSeconds,
 			// 0 is meaningful (never resume) and -1 passes through as-is;
 			// 3600 arrives only if the daemon config itself supplied nothing
 			// (config.Load merges over DefaultConfig()).
@@ -4660,6 +4662,16 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					staleLogPath = s.LogFile
 					family = s.BackendFamily
 				}
+				// claude-code idle nudge: one nudge after worker_idle_nudge_seconds of
+				// idle, a stall after worker_idle_nudge_stall_seconds more. Both
+				// windows are shorter than the session idle timeout, so the nudge
+				// fires first. Nil for other families.
+				var nudgeTracker *autonomouspkg.WorkerNudgeTracker
+				if family == autonomouspkg.WorkerNudgeFamily {
+					nudgeTracker = autonomouspkg.NewWorkerNudgeTracker(
+						time.Duration(config.NormalizeWorkerIdleNudgeSeconds(liveCfg.WorkerIdleNudgeSeconds))*time.Second,
+						time.Duration(config.NormalizeWorkerIdleNudgeStallSeconds(liveCfg.WorkerIdleNudgeStallSeconds))*time.Second)
+				}
 				// pi-prompt exit-silence detector. One-shot `pi --print` runs write
 				// nothing to the log until they finish, so the log-mtime stall check
 				// is (correctly) disabled for this family — see staleWorkerAppliesTo.
@@ -4719,6 +4731,34 @@ func runStart(cmd *cobra.Command, _ []string) error {
 								}
 							}
 						}
+						if nudgeTracker != nil {
+							_, nudgeOutputAge, _ := staleWorkerCheck(staleLogPath, idleLimit, time.Now())
+							nudgeTail, _ := mgr.TailOutput(task.SessionID, 50)
+							switch nudgeTracker.Observe(time.Now(), s.BackendFamily, true, autonomouspkg.WorkerNudgeObservation{
+								State:               string(s.State),
+								OutputAge:           nudgeOutputAge,
+								HasLiveChildProcess: hasLiveChildProcess(s.TmuxSession),
+								CompletionSeen:      session.ExtractCompletionSummary(nudgeTail) != "",
+							}) {
+							case autonomouspkg.WorkerNudgeSend:
+								log.Printf("[autonomous] idle worker %s task %s/%s: sending completion nudge",
+									task.SessionID, task.PRDID, task.ID)
+								if nerr := mgr.SendInput(task.SessionID, autonomouspkg.WorkerNudgeText, "idle-nudge"); nerr != nil {
+									log.Printf("[autonomous] idle nudge send failed for %s: %v", task.SessionID, nerr)
+								}
+								if autonomousMgrRef != nil {
+									if rerr := autonomousMgrRef.RecordTaskNudge(task.PRDID, task.ID, time.Now()); rerr != nil {
+										log.Printf("[autonomous] record nudge for %s/%s: %v", task.PRDID, task.ID, rerr)
+									}
+								}
+							case autonomouspkg.WorkerNudgeStall:
+								log.Printf("[autonomous] idle worker %s task %s/%s still silent after nudge; killing for retry",
+									task.SessionID, task.PRDID, task.ID)
+								_ = mgr.Kill(task.SessionID)
+								stallErr = fmt.Errorf("worker idle after completion nudge (session=%s): %w", task.SessionID, autonomouspkg.ErrWorkerStalled)
+								break waitLoop
+							}
+						}
 						// v8.36.1 — every autonomous task session spawns with
 						// one_shot=true (it's expected to run to completion via
 						// the DATAWATCH_COMPLETE marker, never via a human
@@ -4750,7 +4790,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 						// validated against; other backends fall back to
 						// staleWorkerCheck's log-mtime staleness check below.
 						var stalled bool
-						if s.BackendFamily == "claude-code" {
+						// The nudge tracker owns claude-code idleness: the 3-tick
+						// debounce would kill the worker long before the nudge window.
+						if s.BackendFamily == "claude-code" && nudgeTracker == nil {
 							waitingInputTicks, stalled = waitingInputTick(waitingInputTicks, s.State)
 						}
 						if stalled {

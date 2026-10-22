@@ -651,6 +651,13 @@ type Story struct {
 	VerificationScript string `json:"verification_script,omitempty"`
 }
 
+// NudgeEvent records one idle-worker nudge sent to a task's session.
+type NudgeEvent struct {
+	At      time.Time `json:"at"`
+	Count   int       `json:"count"`
+	Outcome string    `json:"outcome,omitempty"`
+}
+
 // Task is a single unit of work — runs as a session under
 // session.Manager. Maps 1:1 to a pipeline.Task once enqueued.
 //
@@ -693,6 +700,10 @@ type Task struct {
 	// the first attempt (0) is invisible on the wire; no existing client
 	// relied on its absence to mean something.
 	PriorAttemptCount int `json:"prior_attempt_count,omitempty"`
+	// NudgeCount is how many idle-worker nudges were sent for this task, and
+	// NudgeEvents records each one.
+	NudgeCount  int          `json:"nudge_count,omitempty"`
+	NudgeEvents []NudgeEvent `json:"nudge_events,omitempty"`
 	// CleanRestart — set by an operator reset (ResetTaskWithOptions with
 	// cleanRestart=true) to ask that the next attempt start from the pre-task
 	// tree instead of restoring the last preserved attempt work (AttemptRefs).
@@ -1082,6 +1093,14 @@ type LoopStatus struct {
 	TasksCancelled   int64 `json:"tasks_cancelled,omitempty"`
 	TasksRequeued    int64 `json:"tasks_requeued,omitempty"`
 
+	// Idle-worker nudge observability. NudgesTotal is the sum of every
+	// task's NudgeCount; NudgeTasks lists each task that was nudged;
+	// NudgesByBackend sums the nudges per backend (the backend the task
+	// resolves to: task, story, PRD, then autonomous.execution_backend).
+	NudgesTotal     int            `json:"nudges_total,omitempty"`
+	NudgeTasks      []TaskNudge    `json:"nudge_tasks,omitempty"`
+	NudgesByBackend map[string]int `json:"nudges_by_backend,omitempty"`
+
 	// Warnings are plain-language notices that a planning or verification
 	// model does not pair with the backend it is used with, so it will not
 	// reach its session. See PairingWarnings.
@@ -1112,6 +1131,15 @@ type AutomationStatusSummary struct {
 	BlockedReason   string     `json:"blocked_reason,omitempty"`
 	SpentUSD        float64    `json:"spent_usd,omitempty"`
 	CeilingDisplay  string     `json:"ceiling_display,omitempty"`
+}
+
+// TaskNudge is one task's idle-worker nudge count in LoopStatus.
+type TaskNudge struct {
+	PRDID   string `json:"prd_id"`
+	StoryID string `json:"story_id,omitempty"`
+	TaskID  string `json:"task_id"`
+	Backend string `json:"backend,omitempty"`
+	Count   int    `json:"count"`
 }
 
 // CIWatchResult is an automaton's own record of whether the CI runs for

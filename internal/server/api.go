@@ -5698,18 +5698,20 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"plan_tier_max_inflight": planTierTableForDisplay(s.cfg.Autonomous.PlanTierMaxInflight),
 			"execution_backend":      s.cfg.Autonomous.ExecutionBackend,
 			// BL304: new key + legacy alias.
-			"planning_effort":               s.cfg.Autonomous.PlanningEffort,
-			"decomposition_effort":          s.cfg.Autonomous.PlanningEffort,
-			"verification_effort":           s.cfg.Autonomous.VerificationEffort,
-			"planning_timeout_seconds":      s.cfg.Autonomous.PlanningTimeoutSeconds,
-			"verification_timeout_seconds":  s.cfg.Autonomous.VerificationTimeoutSeconds,
-			"session_idle_timeout_seconds":  s.cfg.Autonomous.SessionIdleTimeoutSeconds,
-			"capacity_enabled":              s.cfg.Autonomous.CapacityEnabled == nil || *s.cfg.Autonomous.CapacityEnabled,
-			"capacity_wait_timeout_seconds": s.cfg.Autonomous.CapacityWaitTimeoutSeconds,
-			"capacity_gpu_util_pct":         s.cfg.Autonomous.CapacityGPUUtilPct,
-			"ci_watch_timeout_seconds":      s.cfg.Autonomous.CIWatchTimeoutSeconds,
-			"per_prd_guardrails":            s.cfg.Autonomous.PerPRDGuardrails, // rules-review, ci-watch
-			"block_on_file_drift":           s.cfg.Autonomous.BlockOnFileDrift, // strict foreign-file-drift enforcement
+			"planning_effort":                 s.cfg.Autonomous.PlanningEffort,
+			"decomposition_effort":            s.cfg.Autonomous.PlanningEffort,
+			"verification_effort":             s.cfg.Autonomous.VerificationEffort,
+			"planning_timeout_seconds":        s.cfg.Autonomous.PlanningTimeoutSeconds,
+			"verification_timeout_seconds":    s.cfg.Autonomous.VerificationTimeoutSeconds,
+			"session_idle_timeout_seconds":    s.cfg.Autonomous.SessionIdleTimeoutSeconds,
+			"worker_idle_nudge_seconds":       s.cfg.Autonomous.WorkerIdleNudgeSeconds,
+			"worker_idle_nudge_stall_seconds": s.cfg.Autonomous.WorkerIdleNudgeStallSeconds,
+			"capacity_enabled":                s.cfg.Autonomous.CapacityEnabled == nil || *s.cfg.Autonomous.CapacityEnabled,
+			"capacity_wait_timeout_seconds":   s.cfg.Autonomous.CapacityWaitTimeoutSeconds,
+			"capacity_gpu_util_pct":           s.cfg.Autonomous.CapacityGPUUtilPct,
+			"ci_watch_timeout_seconds":        s.cfg.Autonomous.CIWatchTimeoutSeconds,
+			"per_prd_guardrails":              s.cfg.Autonomous.PerPRDGuardrails, // rules-review, ci-watch
+			"block_on_file_drift":             s.cfg.Autonomous.BlockOnFileDrift, // strict foreign-file-drift enforcement
 			// Plan review gate + smoke verification settings.
 			"plan_review_backend":        s.cfg.Autonomous.PlanReviewBackend,
 			"plan_review_model":          s.cfg.Autonomous.PlanReviewModel,
@@ -7242,6 +7244,18 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// config.NormalizeSessionIdleTimeoutSeconds at read time.
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.Autonomous.SessionIdleTimeoutSeconds = n
+			}
+		case "autonomous.worker_idle_nudge_seconds":
+			// Zero falls back to the default via
+			// config.NormalizeWorkerIdleNudgeSeconds at read time.
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Autonomous.WorkerIdleNudgeSeconds = n
+			}
+		case "autonomous.worker_idle_nudge_stall_seconds":
+			// Zero falls back to the default via
+			// config.NormalizeWorkerIdleNudgeStallSeconds at read time.
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Autonomous.WorkerIdleNudgeStallSeconds = n
 			}
 		case "autonomous.capacity_enabled":
 			if b, ok := v.(bool); ok {

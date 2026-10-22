@@ -239,3 +239,21 @@ func TestAutonomousConfigSet_MaxParallelTasksDeprecatedNoteReturned(t *testing.T
 		t.Fatalf("max_parallel_tasks description must say DEPRECATED: %s", desc)
 	}
 }
+
+func TestAutonomousConfigSet_WorkerIdleNudgeFields(t *testing.T) {
+	var got map[string]any
+	s := capacityTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(b, &got)
+		_, _ = w.Write([]byte(`{}`))
+	})
+	if _, err := s.handleAutonomousConfigSet(context.Background(), callReq(map[string]any{
+		"worker_idle_nudge_seconds":       120,
+		"worker_idle_nudge_stall_seconds": 300,
+	})); err != nil {
+		t.Fatal(err)
+	}
+	if got["worker_idle_nudge_seconds"] != float64(120) || got["worker_idle_nudge_stall_seconds"] != float64(300) {
+		t.Fatalf("nudge fields not forwarded: %v", got)
+	}
+}

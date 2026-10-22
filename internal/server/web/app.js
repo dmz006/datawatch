@@ -14774,6 +14774,8 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.task_override_statuses', label: 'Automaton statuses that accept LLM overrides', labelKey: 'settings_task_override_statuses', type: 'text', placeholder: 'needs_review, revisions_asked, cancelled, blocked', csv: true },
     { key: 'autonomous.stale_task_seconds', label: 'Stale task timeout (sec, 0=inherit session default)', labelKey: 'settings_stale_task_seconds', type: 'number', placeholder: '0' },
     { key: 'autonomous.session_idle_timeout_seconds', label: 'Session idle timeout (sec, 0=15m)', labelKey: 'settings_session_idle_timeout', type: 'number', placeholder: '900' },
+    { key: 'autonomous.worker_idle_nudge_seconds', label: 'Worker idle nudge (sec, 0=3m)', labelKey: 'settings_worker_idle_nudge', type: 'number', placeholder: '180' },
+    { key: 'autonomous.worker_idle_nudge_stall_seconds', label: 'Worker stall after nudge (sec, 0=10m)', labelKey: 'settings_worker_idle_nudge_stall', type: 'number', placeholder: '600' },
     { key: 'autonomous.auto_fix_retries', label: 'Auto-fix retries', type: 'number', placeholder: '1' },
     // BL366 (v8.16.0) — git-diff grounding for the verifier.
     { key: 'autonomous.verifier_diff_max_bytes', label: 'Verifier diff max bytes', labelKey: 'settings_verifier_diff_max_bytes', type: 'number', placeholder: '0' },

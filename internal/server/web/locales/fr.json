@@ -1690,6 +1690,8 @@
   "settings_verification_timeout": "Délai de la session de vérification/garde-fou (sec, 0=30min)",
   "settings_stale_task_seconds": "Stale task timeout (sec, 0=inherit session default)",
   "settings_session_idle_timeout": "Délai de session inactive (sec, 0=15min)",
+  "settings_worker_idle_nudge": "Relance du worker inactif (sec, 0=3min)",
+  "settings_worker_idle_nudge_stall": "Blocage du worker après relance (sec, 0=10min)",
   "prd_action_repair_deps": "Repair deps",
   "memory_scope_inventory_failed": "Failed to load scope inventory",
   "memory_scope_recall_failed": "Recall failed",

@@ -2255,6 +2255,32 @@ autonomous:
   session_idle_timeout_seconds: 900
 ```
 
+### Worker idle nudge (autonomous.worker_idle_nudge_seconds, autonomous.worker_idle_nudge_stall_seconds)
+
+A claude-code worker that finishes a turn without printing its completion
+marker gets one nudge before the session idle timeout applies.
+
+- **`autonomous.worker_idle_nudge_seconds`** (default 180): how long the
+  worker may sit idle with no output before it is nudged once. No nudge is
+  sent while the session has a live child process.
+- **`autonomous.worker_idle_nudge_stall_seconds`** (default 600): how long,
+  counted from the nudge, the worker may stay silent before it is treated as
+  stalled and retried through the existing `auto_fix_retries` budget.
+- **Visibility:** each nudge is recorded on the task (`nudge_events`,
+  `nudge_count`); `autonomous_status` reports `nudges_total`, `nudge_tasks`
+  and `nudges_by_backend`.
+- **Setting them:** `config.yaml`, the web settings card, `PUT /api/config`,
+  MCP `autonomous_config_set`, or the `configure` chat command. Hot-applied;
+  `0` means "use the default".
+
+```yaml
+autonomous:
+  worker_idle_nudge_seconds: 180
+  worker_idle_nudge_stall_seconds: 600
+```
+
+See [howto/autonomous-recovery](howto/autonomous-recovery.md).
+
 ---
 
 ## Autonomous Plan Review before approval (optional, off by default)
