@@ -1625,6 +1625,7 @@ howto, and the `datawatch-app` issue where applicable.
 12. **Execution provenance.** Should task run records gain an `executor_source`
     (`task|story|prd|automation|global`) mirroring `verifier_source`, so the
     Automation tier's effect is visible on execution too?
+    **Decided by the operator 2026-10-22: yes.** Task run records gain `executor_source` (`task|story|prd|automation|global`) beside `verifier_source`.
 13. **Record `c187962a`'s title.** It says "BL430 — Automation…" while the backlog
     number is BL431. Should it be retitled, or left alone with this doc and the
     BL428 doc noting the collision?
