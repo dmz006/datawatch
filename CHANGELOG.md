@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.86 — A failed pi run no longer looks complete
+
+### Fixed
+
+- **A failed pi run no longer looks complete.** The interactive pi launch command printed the completion line unconditionally after pi returned, so a pi run that exited with an error could be taken for a finished task. The command now captures pi's exit status: it prints the completion line only on a zero exit, prints a distinct `DATAWATCH_PI_FAILED` line carrying the exit status on a non-zero exit, and exits with pi's own status. The session record stores a failure marker so a failed run is shown as failed with its exit code, and the one-shot cleanup path ignores the failure line. Deterministic tests run a stub pi under a real shell for the success and failure branches.
+
 ## v9.5.85 — Automations: fork, join and nested Automations
 
 ### Added
