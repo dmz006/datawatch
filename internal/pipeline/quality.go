@@ -239,9 +239,10 @@ func rerunFailing(current TestResult, fails []goTestFailure, projectDir string, 
 	return runTestCommand(strings.Join(parts, " "), parts, projectDir)
 }
 
-// EvaluateGate compares current against baseline like CompareResults, but an
-// apparent regression is only reported after the failing tests are re-run once
-// and still fail. A failure that does not reproduce is reported as STABLE, and
+// EvaluateGate is the re-confirming entry point for the quality gate. It
+// compares current against baseline like CompareResults, but an apparent
+// regression is only reported after the failing tests are re-run once
+// (Reconfirm) and still fail. A failure that does not reproduce is reported as STABLE, and
 // a confirmed regression names the failing tests.
 func EvaluateGate(baseline, current TestResult, projectDir string, timeout int) QualityGateResult {
 	result := CompareResults(baseline, current)
