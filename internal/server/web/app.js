@@ -5581,7 +5581,8 @@ function renderSessionStatusBoardInner(area, board, sessionId) {
     if (auto.task_title || auto.task_id) rows.push(kvRow(t('status_automaton_task')||'Task', escHtml(auto.task_title || auto.task_id)));
     if (auto.task_status) rows.push(kvRow(t('status_task_status')||'Task status', chip(auto.task_status, statusColor(auto.task_status))));
     if (auto.executor_source) rows.push(kvRow(t('status_executor_label')||'Executor', escHtml(auto.executor_source)));
-    if (auto.wait_reason) rows.push(kvRow(t('status_wait_reason')||'Waiting on', `<span style="color:var(--warning,#f59e0b);">${escHtml(auto.wait_reason)}</span>`));
+    if (auto.wait_reason) rows.push(kvRow(t('status_wait_reason')||'Waiting on', `<span style="color:var(--warning,#f59e0b);">${window.taskWaitHtml(auto)}</span>`));
+    { const holdsHtml = window.taskHoldsHtml(auto); if (holdsHtml) rows.push(holdsHtml); }
     if (auto.retry_count) rows.push(kvRow(t('status_retry_count')||'Retries', escHtml(auto.retry_count)));
     if (auto.started_at) rows.push(kvRow(t('status_started_at')||'Started', escHtml(fmtTs(auto.started_at))));
     if (auto.completed_at) rows.push(kvRow(t('status_completed_at')||'Completed', escHtml(fmtTs(auto.completed_at))));
@@ -13146,7 +13147,8 @@ function renderTask(prd, story, task, editable) {
   }
   const expandedBody = `<div class="prd-task-expanded-body"${isExpanded ? '' : ' hidden'}>
     ${task.spec ? `<div class="prd-task-spec">${escHtml(task.spec)}</div>` : ''}
-    ${task.status === 'waiting_capacity' ? `<div class="prd-task-wait-reason">&#9203; ${escHtml(t('prd_task_waiting_capacity')||'Waiting for capacity')}${task.wait_reason ? ': ' + escHtml(task.wait_reason) : ''}</div>` : ''}
+    ${task.status === 'waiting_capacity' ? `<div class="prd-task-wait-reason">&#9203; ${escHtml(t('prd_task_waiting_capacity')||'Waiting for capacity')}${task.wait_reason ? ': ' + window.taskWaitHtml(task) : ''}</div>` : ''}
+    ${window.taskHoldsHtml(task)}
     ${errRow}${verifRow}
     ${task.executor_source ? `<div style="font-size:10px;color:var(--text2);">${escHtml(t('status_executor_label')||'Executor')}: ${escHtml(task.executor_source)}</div>` : ''}
     ${renderTaskFileDrift(task)}
@@ -22040,6 +22042,54 @@ function capacityBackoffHtml(backoff) {
   }).join('');
   return `<div class="cap-backoff-list" style="margin-top:6px;"><div style="font-weight:600;color:var(--text2);">${escHtml(t('capacity_card_backoff_title')||'Usage back-off')}</div>${rows}</div>`;
 }
+// Wait and holdings rendering shared by the Automata task detail and the
+// session Status tab, so the two cannot drift. The daemon's reason text is
+// shown exactly as sent; the browser only adds a cause chip, the reset time
+// and the holdings line. Field names cover both payload shapes: the task
+// views (cause, resets_at, pools, node) and the session status automaton
+// block (wait_cause, wait_resets_at, holds).
+const _TASK_WAIT_CAUSES = {
+  pool_full: () => t('task_wait_cause_pool_full') || 'Pool full',
+  node_busy: () => t('task_wait_cause_node_busy') || 'Node busy',
+  backoff: () => t('task_wait_cause_backoff') || 'Back-off',
+  budget: () => t('task_wait_cause_budget') || 'Budget',
+  global_cooldown: () => t('task_wait_cause_global_cooldown') || 'Cool-down',
+  await_external: () => t('task_wait_cause_await_external') || 'Awaiting external',
+  tree_lock: () => t('task_wait_cause_tree_lock') || 'Tree lock',
+};
+window.taskWaitHtml = function(task) {
+  if (!task) return '';
+  const reason = task.wait_reason || task.reason || '';
+  const cause = task.wait_cause || task.cause || '';
+  const label = Object.prototype.hasOwnProperty.call(_TASK_WAIT_CAUSES, cause) ? _TASK_WAIT_CAUSES[cause]() : '';
+  const resetsRaw = task.wait_resets_at || task.resets_at || '';
+  const resetsMs = resetsRaw ? new Date(resetsRaw).getTime() : NaN;
+  const resets = Number.isNaN(resetsMs) ? '' : new Date(resetsMs).toLocaleString('en-GB', { hour12: false });
+  // An older daemon sends neither: the reason renders as plain text.
+  if (!label && !resets) return escHtml(reason);
+  const chip = label
+    ? `<span class="task-wait-chip" data-cause="${escHtml(cause)}" style="display:inline-block;font-size:10px;font-weight:700;padding:1px 6px;margin-right:4px;border-radius:8px;border:1px solid var(--warning,#f59e0b);color:var(--warning,#f59e0b);">${escHtml(label)}</span>`
+    : '';
+  const when = resets
+    ? ` <span class="task-wait-resets" style="color:var(--text2);">(${escHtml(t('task_wait_resets_at') || 'Resets at')} ${escHtml(resets)})</span>`
+    : '';
+  return `${chip}<span class="task-wait-text">${escHtml(reason)}</span>${when}`;
+};
+// A running task's pools and node. Tasks that report a status other than
+// running get nothing; a capacity entry has no status and always qualifies.
+window.taskHoldsHtml = function(task) {
+  if (!task) return '';
+  const status = task.status || task.task_status || '';
+  if (status && status !== 'running') return '';
+  const pools = Array.isArray(task.pools) ? task.pools : (Array.isArray(task.holds) ? task.holds : []);
+  const held = pools.slice();
+  if (task.node && !held.includes('node:' + task.node) && !held.includes(task.node)) held.push(task.node);
+  const note = task.holds_note || task.note || '';
+  if (held.length === 0 && !note) return '';
+  const list = held.length ? held.map(h => `<code>${escHtml(h)}</code>`).join(', ') : '';
+  return `<div class="task-holds" style="font-size:11px;color:var(--text2);"><span class="task-holds-label">${escHtml(t('task_holds_label') || 'Holds')}:</span> ${list}${note ? `${list ? ' · ' : ''}<span class="task-holds-note">${escHtml(note)}</span>` : ''}</div>`;
+};
+
 function capacityWaitingHtml(waiting, now) {
   if (!Array.isArray(waiting) || waiting.length === 0) return '';
   return `<div style="margin-top:6px;font-weight:600;color:var(--text2);">${escHtml(t('capacity_waiting')||'Waiting')} (${waiting.length})</div>` +

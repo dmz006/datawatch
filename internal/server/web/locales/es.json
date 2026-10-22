@@ -1902,5 +1902,14 @@
   "capacity_card_holders": "Titulares",
   "capacity_card_empty": "No hay límites de capacidad, esperas ni presupuestos que mostrar",
   "settings_plan_tier_allocation_usd": "Asignación por tier de plan (USD por tier; 0 = no declarada)",
-  "settings_plan_tier_allocation_hint": "Solo alimenta la parte de asignación estimada que se muestra en un presupuesto; nunca bloquea nada. 0 o un tier vacío significa sin cifra."
+  "settings_plan_tier_allocation_hint": "Solo alimenta la parte de asignación estimada que se muestra en un presupuesto; nunca bloquea nada. 0 o un tier vacío significa sin cifra.",
+  "task_wait_cause_pool_full": "Grupo lleno",
+  "task_wait_cause_node_busy": "Nodo ocupado",
+  "task_wait_cause_backoff": "Espera",
+  "task_wait_cause_budget": "Presupuesto",
+  "task_wait_cause_global_cooldown": "Enfriamiento",
+  "task_wait_cause_await_external": "Esperando externo",
+  "task_wait_cause_tree_lock": "Bloqueo del árbol",
+  "task_holds_label": "Retiene",
+  "task_wait_resets_at": "Se restablece a las"
 }

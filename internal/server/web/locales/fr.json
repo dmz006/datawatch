@@ -1902,5 +1902,14 @@
   "capacity_card_holders": "Détenteurs",
   "capacity_card_empty": "Aucune limite de capacité, attente ni budget à afficher",
   "settings_plan_tier_allocation_usd": "Allocation par niveau de forfait (USD par niveau ; 0 = non déclarée)",
-  "settings_plan_tier_allocation_hint": "Alimente uniquement la part d'allocation estimée affichée sur un budget ; ne bloque jamais rien. 0 ou un niveau vide signifie aucun chiffre."
+  "settings_plan_tier_allocation_hint": "Alimente uniquement la part d'allocation estimée affichée sur un budget ; ne bloque jamais rien. 0 ou un niveau vide signifie aucun chiffre.",
+  "task_wait_cause_pool_full": "Groupe plein",
+  "task_wait_cause_node_busy": "Nœud occupé",
+  "task_wait_cause_backoff": "Attente",
+  "task_wait_cause_budget": "Budget",
+  "task_wait_cause_global_cooldown": "Refroidissement",
+  "task_wait_cause_await_external": "Attente externe",
+  "task_wait_cause_tree_lock": "Verrou d'arbre",
+  "task_holds_label": "Détient",
+  "task_wait_resets_at": "Réinitialisation à"
 }

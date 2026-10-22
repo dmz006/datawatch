@@ -1902,5 +1902,14 @@
   "capacity_card_holders": "保持者",
   "capacity_card_empty": "表示する容量上限、バックオフ、予算はありません",
   "settings_plan_tier_allocation_usd": "プラン階層の割り当て（階層ごとの USD、0 = 未設定）",
-  "settings_plan_tier_allocation_hint": "予算に表示される推定割り当て割合にのみ使用され、何もブロックしません。0 または空の階層は数値なしを意味します。"
+  "settings_plan_tier_allocation_hint": "予算に表示される推定割り当て割合にのみ使用され、何もブロックしません。0 または空の階層は数値なしを意味します。",
+  "task_wait_cause_pool_full": "プール満杯",
+  "task_wait_cause_node_busy": "ノード使用中",
+  "task_wait_cause_backoff": "バックオフ",
+  "task_wait_cause_budget": "予算",
+  "task_wait_cause_global_cooldown": "クールダウン",
+  "task_wait_cause_await_external": "外部待ち",
+  "task_wait_cause_tree_lock": "ツリーロック",
+  "task_holds_label": "保持中",
+  "task_wait_resets_at": "リセット時刻"
 }

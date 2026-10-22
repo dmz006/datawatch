@@ -1902,5 +1902,14 @@
   "capacity_card_holders": "Holders",
   "capacity_card_empty": "No capacity limits, back-offs or budgets to show",
   "settings_plan_tier_allocation_usd": "Plan tier allocation (USD per tier; 0 = not declared)",
-  "settings_plan_tier_allocation_hint": "Only feeds the estimated allocation share shown on a budget; it never blocks anything. 0 or a blank tier means no figure."
+  "settings_plan_tier_allocation_hint": "Only feeds the estimated allocation share shown on a budget; it never blocks anything. 0 or a blank tier means no figure.",
+  "task_wait_cause_pool_full": "Pool full",
+  "task_wait_cause_node_busy": "Node busy",
+  "task_wait_cause_backoff": "Back-off",
+  "task_wait_cause_budget": "Budget",
+  "task_wait_cause_global_cooldown": "Cool-down",
+  "task_wait_cause_await_external": "Awaiting external",
+  "task_wait_cause_tree_lock": "Tree lock",
+  "task_holds_label": "Holds",
+  "task_wait_resets_at": "Resets at"
 }

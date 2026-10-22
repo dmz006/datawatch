@@ -1902,5 +1902,14 @@
   "capacity_card_holders": "Halter",
   "capacity_card_empty": "Keine Kapazitätsgrenzen, Backoffs oder Budgets anzuzeigen",
   "settings_plan_tier_allocation_usd": "Plan-Stufen-Zuteilung (USD pro Stufe; 0 = nicht angegeben)",
-  "settings_plan_tier_allocation_hint": "Speist nur den geschätzten Zuteilungsanteil eines Budgets; blockiert nie etwas. 0 oder eine leere Stufe bedeutet keine Angabe."
+  "settings_plan_tier_allocation_hint": "Speist nur den geschätzten Zuteilungsanteil eines Budgets; blockiert nie etwas. 0 oder eine leere Stufe bedeutet keine Angabe.",
+  "task_wait_cause_pool_full": "Pool voll",
+  "task_wait_cause_node_busy": "Node ausgelastet",
+  "task_wait_cause_backoff": "Backoff",
+  "task_wait_cause_budget": "Budget",
+  "task_wait_cause_global_cooldown": "Abkühlphase",
+  "task_wait_cause_await_external": "Wartet auf Extern",
+  "task_wait_cause_tree_lock": "Verzeichnissperre",
+  "task_holds_label": "Belegt",
+  "task_wait_resets_at": "Zurückgesetzt um"
 }
