@@ -22550,11 +22550,262 @@ function _lifecycleSubOpenForm(prdId, subId) {
   return _openLifecycleSubscriptionForm(prd, sub);
 }
 
-// Hook for the add/edit subscription form. Placeholder until the form lands:
-// it replaces this function body, nothing else calls into the form.
-function _openLifecycleSubscriptionForm(prd, subOrNull) {
-  showToast(t('lifecycle_sub_form_pending')||'The subscription form is not available yet.', 'info');
+// ── Add / edit subscription form ────────────────────────────────────────────
+// One modal for both create (POST) and edit (PUT). The event kinds are the
+// closed set the server accepts (internal/autonomous KnownEventKinds); they
+// are embedded here rather than fetched. The webhook sink is deliberately not
+// offered — the server rejects it.
+const _LIFECYCLE_SUB_KIND_GROUPS = [
+  ['lifecycle_sub_form_group_prd', 'PRD status', [
+    'prd.draft', 'prd.planning', 'prd.needs_review', 'prd.approved', 'prd.revisions_asked',
+    'prd.active', 'prd.running', 'prd.completed', 'prd.rejected', 'prd.cancelled',
+    'prd.archived', 'prd.blocked', 'prd.failed', 'prd.paused']],
+  ['lifecycle_sub_form_group_task', 'Task status', [
+    'task.pending', 'task.queued', 'task.in_progress', 'task.running_tests',
+    'task.verifying', 'task.completed', 'task.failed', 'task.blocked',
+    'task.cancelled', 'task.waiting_capacity', 'task.awaiting_approval']],
+  ['lifecycle_sub_form_group_other', 'Other', [
+    'task.session_started', 'task.session_cleared', 'prd.updated']],
+];
+const _LIFECYCLE_SUB_KINDS = _LIFECYCLE_SUB_KIND_GROUPS.reduce((all, g) => all.concat(g[2]), []);
+const _LIFECYCLE_SUB_SINKS = ['comm', 'session', 'topic', 'alert', 'mcp_queue'];
+const _LIFECYCLE_SUB_SINK_LABELS = {
+  comm: 'lifecycle_sub_form_sink_comm',
+  session: 'lifecycle_sub_form_sink_session',
+  topic: 'lifecycle_sub_form_sink_topic',
+  alert: 'lifecycle_sub_form_sink_alert',
+  mcp_queue: 'lifecycle_sub_form_sink_mcp_queue',
+};
+const _LIFECYCLE_SUB_TARGET_LABELS = {
+  comm: ['lifecycle_sub_form_target_comm', 'Channel'],
+  session: ['lifecycle_sub_form_target_session', 'Session name or id'],
+  topic: ['lifecycle_sub_form_target_topic', 'Topic name'],
+  alert: ['lifecycle_sub_form_target_alert', 'Alert label'],
+  mcp_queue: ['lifecycle_sub_form_target_mcp_queue', 'Queue name (letters, digits . _ : -; max 64)'],
+};
+const _LIFECYCLE_SUB_MAX_QUEUE_NAME = 64;
+const _LIFECYCLE_SUB_MAX_ACTION_TEXT = 4096;
+
+let _lifecycleSubFormCtx = null; // {prdId, subId, origExpiresAt, initialExpiry}
+
+function _lifecycleSubEl(id) { return document.getElementById(id) || {}; }
+
+// Hours left until an RFC3339 timestamp, as the string the expiry field shows
+// ('' when absent, unparseable or already past).
+function _lifecycleSubExpiryHours(expiresAt, nowMs) {
+  if (!expiresAt) return '';
+  const ms = new Date(expiresAt).getTime();
+  if (isNaN(ms) || ms <= nowMs) return '';
+  return String(Math.ceil((ms - nowMs) / 36000) / 100);
 }
+
+// Turns the form's values into the request body, or {error} mirroring
+// ValidateSubscription's checks. v.expiryHours is the raw field text.
+function _lifecycleSubBuild(v, nowMs) {
+  const kinds = (v.kinds || []).filter(k => _LIFECYCLE_SUB_KINDS.indexOf(k) >= 0);
+  const level = v.level || '';
+  if (!kinds.length && !level) {
+    return { error: t('lifecycle_sub_form_err_filter') || 'Choose at least one event kind or a level.' };
+  }
+  if (_LIFECYCLE_SUB_SINKS.indexOf(v.sinkType) < 0) {
+    return { error: t('lifecycle_sub_form_err_sink_type') || 'Choose a sink type.' };
+  }
+  const target = String(v.target || '').trim();
+  if (!target) {
+    return { error: t('lifecycle_sub_form_err_target') || 'A target is required.' };
+  }
+  if (v.sinkType === 'mcp_queue') {
+    if (target.length > _LIFECYCLE_SUB_MAX_QUEUE_NAME) {
+      return { error: t('lifecycle_sub_form_err_queue_len', [target.length, _LIFECYCLE_SUB_MAX_QUEUE_NAME]) || 'Queue name is too long.' };
+    }
+    if (!/^[A-Za-z0-9._:-]+$/.test(target)) {
+      return { error: t('lifecycle_sub_form_err_queue_chars') || 'Queue name may contain only letters, digits and . _ : -' };
+    }
+  }
+  const body = { filter: {}, sink: { type: v.sinkType, target } };
+  if (kinds.length) body.filter.kinds = kinds;
+  if (level) body.filter.level = level;
+  if (v.scope !== 'all' && v.prdId) body.filter.prd_id = v.prdId;
+  const taskId = String(v.taskId || '').trim();
+  if (taskId) body.filter.task_id = taskId;
+  if (v.automationId) body.filter.automation_id = v.automationId;
+  if (v.sinkType === 'session' && v.actionText) {
+    if (!String(v.actionText).trim()) {
+      return { error: t('lifecycle_sub_form_err_action_empty') || 'The send_input action needs text.' };
+    }
+    const n = Array.from(v.actionText).length;
+    if (n > _LIFECYCLE_SUB_MAX_ACTION_TEXT) {
+      return { error: t('lifecycle_sub_form_err_action_len', [n, _LIFECYCLE_SUB_MAX_ACTION_TEXT]) || 'Action text is too long.' };
+    }
+    body.action = { type: 'send_input', text: v.actionText };
+  }
+  if (v.oneShot) body.one_shot = true;
+  if (v.sinkType === 'comm' && v.coalesce) body.coalesce = true;
+  const hoursTxt = String(v.expiryHours || '').trim();
+  if (hoursTxt) {
+    if (v.origExpiresAt && hoursTxt === v.initialExpiry) {
+      body.expires_at = v.origExpiresAt; // untouched on edit: keep the stored instant
+    } else {
+      const hours = Number(hoursTxt);
+      if (!isFinite(hours) || hours <= 0) {
+        return { error: t('lifecycle_sub_form_err_expiry') || 'Expiry must be a number of hours greater than zero.' };
+      }
+      body.expires_at = new Date(nowMs + hours * 3600000).toISOString().replace(/\.\d{3}Z$/, 'Z');
+    }
+  }
+  return { body };
+}
+
+function _lifecycleSubReadForm() {
+  const ctx = _lifecycleSubFormCtx || {};
+  return {
+    kinds: _LIFECYCLE_SUB_KINDS.filter((k, i) => _lifecycleSubEl('lcSubKind_' + i).checked),
+    level: _lifecycleSubEl('lcSubLevel').value || '',
+    scope: _lifecycleSubEl('lcSubScope').value || 'this',
+    prdId: ctx.prdId || '',
+    taskId: _lifecycleSubEl('lcSubTaskId').value || '',
+    automationId: ctx.automationId || '',
+    sinkType: _lifecycleSubEl('lcSubSinkType').value || '',
+    target: _lifecycleSubEl('lcSubTarget').value || '',
+    actionText: _lifecycleSubEl('lcSubActionText').value || '',
+    oneShot: !!_lifecycleSubEl('lcSubOneShot').checked,
+    coalesce: !!_lifecycleSubEl('lcSubCoalesce').checked,
+    expiryHours: _lifecycleSubEl('lcSubExpiry').value || '',
+    origExpiresAt: ctx.origExpiresAt || '',
+    initialExpiry: ctx.initialExpiry || '',
+  };
+}
+
+function _lifecycleSubFormError(text) {
+  const el = document.getElementById('lcSubError');
+  if (el) el.innerHTML = text ? `<div style="color:var(--error);font-size:12px;">${escHtml(text)}</div>` : '';
+}
+
+// Re-labels the target field and enables/disables the session-only action
+// text and the comm-only coalesce box whenever the sink type changes.
+function _lifecycleSubSinkChanged() {
+  const type = _lifecycleSubEl('lcSubSinkType').value;
+  const lbl = _LIFECYCLE_SUB_TARGET_LABELS[type];
+  const labelEl = document.getElementById('lcSubTargetLabel');
+  if (labelEl && lbl) labelEl.textContent = t(lbl[0]) || lbl[1];
+  const action = document.getElementById('lcSubActionText');
+  if (action) action.disabled = type !== 'session';
+  const coalesce = document.getElementById('lcSubCoalesce');
+  if (coalesce) coalesce.disabled = type !== 'comm';
+}
+
+function _lifecycleSubCountChanged() {
+  const n = Array.from(_lifecycleSubEl('lcSubActionText').value || '').length;
+  const el = document.getElementById('lcSubActionCount');
+  if (el) el.textContent = n + ' / ' + _LIFECYCLE_SUB_MAX_ACTION_TEXT;
+}
+
+function _lifecycleSubSubmit() {
+  const ctx = _lifecycleSubFormCtx;
+  if (!ctx) return Promise.resolve();
+  const built = _lifecycleSubBuild(_lifecycleSubReadForm(), Date.now());
+  if (built.error) {
+    _lifecycleSubFormError(built.error);
+    return Promise.resolve();
+  }
+  _lifecycleSubFormError('');
+  const editing = !!ctx.subId;
+  const url = '/api/autonomous/subscriptions' + (editing ? '/' + encodeURIComponent(ctx.subId) : '');
+  return apiFetch(url, { method: editing ? 'PUT' : 'POST', body: JSON.stringify(built.body) })
+    .then(() => {
+      _prdCloseModal();
+      _lifecycleSubFormCtx = null;
+      return _lifecycleSubReload(ctx.prdId);
+    })
+    .catch(e => {
+      const msg = String((e && e.message) || '').trim();
+      _lifecycleSubFormError(msg || t('lifecycle_sub_form_err_save') || 'Save failed.');
+    });
+}
+
+function _lifecycleSubKindsHTML(selected) {
+  let idx = 0;
+  return _LIFECYCLE_SUB_KIND_GROUPS.map(([key, fallback, kinds]) => {
+    const boxes = kinds.map(k => {
+      const i = idx++;
+      return `<label style="display:flex;align-items:center;gap:4px;font-size:11px;"><input type="checkbox" id="lcSubKind_${i}"${selected.indexOf(k) >= 0 ? ' checked' : ''}> ${escHtml(k)}</label>`;
+    }).join('');
+    return `<div style="font-size:10px;color:var(--text2);margin:4px 0 2px;">${escHtml(t(key) || fallback)}</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:2px 8px;">${boxes}</div>`;
+  }).join('');
+}
+
+function _lifecycleSubSelectHTML(id, options, current, onchange) {
+  const opts = options.map(([val, label]) => `<option value="${escHtml(val)}"${val === current ? ' selected' : ''}>${escHtml(label)}</option>`).join('');
+  return `<select id="${id}" class="form-input"${onchange ? ` onchange="${onchange}"` : ''}>${opts}</select>`;
+}
+
+// Opens the add (subOrNull = null) or edit form for an Automaton.
+function _openLifecycleSubscriptionForm(prd, subOrNull) {
+  const sub = subOrNull || null;
+  const f = (sub && sub.filter) || {};
+  const sink = (sub && sub.sink) || {};
+  const action = (sub && sub.action) || null;
+  const prdId = (prd && prd.id) || '';
+  const sinkType = _LIFECYCLE_SUB_SINKS.indexOf(sink.type) >= 0 ? sink.type : 'comm';
+  const expiryHours = sub ? _lifecycleSubExpiryHours(sub.expires_at, Date.now()) : '';
+  _lifecycleSubFormCtx = {
+    prdId,
+    subId: sub ? (sub.id || '') : '',
+    automationId: f.automation_id || '',
+    origExpiresAt: sub && sub.expires_at ? String(sub.expires_at) : '',
+    initialExpiry: expiryHours,
+  };
+  const lbl = _LIFECYCLE_SUB_TARGET_LABELS[sinkType];
+  const actionText = action && action.type === 'send_input' ? (action.text || '') : '';
+  const small = 'font-size:11px;color:var(--text2);';
+  const title = sub ? (t('lifecycle_sub_form_title_edit') || 'Edit subscription') : (t('lifecycle_sub_form_title_add') || 'Add subscription');
+  _prdMountModal(`
+    <div class="response-modal-header">
+      <strong>${escHtml(title)}</strong>
+      <button class="btn-icon" onclick="_prdCloseModal()" title="${escHtml(t('btn_close')||'Close')}">&#10005;</button>
+    </div>
+    <form id="prdModalForm" class="response-modal-body" style="display:flex;flex-direction:column;gap:8px;max-height:70vh;overflow-y:auto;">
+      <label style="${small}">${escHtml(t('lifecycle_sub_form_kinds') || 'Event kinds')}</label>
+      <div style="${small}">${escHtml(t('lifecycle_sub_form_kinds_hint') || 'Pick at least one kind, or choose a level below.')}</div>
+      <div>${_lifecycleSubKindsHTML(Array.isArray(f.kinds) ? f.kinds : [])}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+        <div><label style="${small}">${escHtml(t('lifecycle_sub_form_level') || 'Level')}</label>
+          ${_lifecycleSubSelectHTML('lcSubLevel', [
+            ['', t('lifecycle_sub_form_level_any') || 'Any'],
+            ['prd', t('lifecycle_sub_form_level_prd') || 'Automaton'],
+            ['task', t('lifecycle_sub_form_level_task') || 'Task']], f.level || '')}</div>
+        <div><label style="${small}">${escHtml(t('lifecycle_sub_form_scope') || 'Scope')}</label>
+          ${_lifecycleSubSelectHTML('lcSubScope', [
+            ['this', t('lifecycle_sub_form_scope_this') || 'This Automaton'],
+            ['all', t('lifecycle_sub_form_scope_all') || 'All automata']], sub && !f.prd_id ? 'all' : 'this')}</div>
+      </div>
+      <label style="${small}">${escHtml(t('lifecycle_sub_form_task_id') || 'Task id (optional)')}</label>
+      <input id="lcSubTaskId" type="text" class="form-input" value="${escHtml(f.task_id || '')}" />
+      <div style="display:grid;grid-template-columns:1fr 2fr;gap:6px;">
+        <div><label style="${small}">${escHtml(t('lifecycle_sub_form_sink_type') || 'Sink type')}</label>
+          ${_lifecycleSubSelectHTML('lcSubSinkType', _LIFECYCLE_SUB_SINKS.map(s => [s, t(_LIFECYCLE_SUB_SINK_LABELS[s]) || s]), sinkType, '_lifecycleSubSinkChanged()')}</div>
+        <div><label id="lcSubTargetLabel" style="${small}">${escHtml(t(lbl[0]) || lbl[1])}</label>
+          <input id="lcSubTarget" type="text" class="form-input" value="${escHtml(sink.target || '')}" /></div>
+      </div>
+      <label style="${small}display:flex;justify-content:space-between;"><span>${escHtml(t('lifecycle_sub_form_action_text') || 'Send input text (session sink only)')}</span><span id="lcSubActionCount">${Array.from(actionText).length} / ${_LIFECYCLE_SUB_MAX_ACTION_TEXT}</span></label>
+      <textarea id="lcSubActionText" class="form-input" rows="3" oninput="_lifecycleSubCountChanged()"${sinkType === 'session' ? '' : ' disabled'} style="resize:vertical;font-family:inherit;">${escHtml(actionText)}</textarea>
+      <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;">
+        <label style="${small}display:flex;align-items:center;gap:4px;"><input type="checkbox" id="lcSubOneShot"${sub && sub.one_shot ? ' checked' : ''}> ${escHtml(t('lifecycle_sub_form_one_shot') || 'One-shot (delete after first fire)')}</label>
+        <label style="${small}display:flex;align-items:center;gap:4px;"><input type="checkbox" id="lcSubCoalesce"${sub && sub.coalesce ? ' checked' : ''}${sinkType === 'comm' ? '' : ' disabled'}> ${escHtml(t('lifecycle_sub_form_coalesce') || 'Coalesce bursts (comm only)')}</label>
+      </div>
+      <label style="${small}">${escHtml(t('lifecycle_sub_form_expiry') || 'Expires in hours (optional)')}</label>
+      <input id="lcSubExpiry" type="text" inputmode="decimal" class="form-input" value="${escHtml(expiryHours)}" />
+      <div id="lcSubError"></div>
+      <div style="display:flex;gap:6px;justify-content:flex-end;">
+        <button type="button" class="btn-secondary" onclick="_prdCloseModal()">${escHtml(t('btn_cancel')||'Cancel')}</button>
+        <button type="submit" class="btn-secondary" style="background:var(--accent2);color:#fff;">${escHtml(t('btn_save')||'Save')}</button>
+      </div>
+    </form>
+  `, () => { _lifecycleSubSubmit(); });
+}
+window._lifecycleSubSinkChanged = _lifecycleSubSinkChanged;
+window._lifecycleSubCountChanged = _lifecycleSubCountChanged;
 
 window._lifecycleSubOpenForm = _lifecycleSubOpenForm;
 window._lifecycleSubDelete = _lifecycleSubDelete;

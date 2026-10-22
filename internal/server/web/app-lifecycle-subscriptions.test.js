@@ -175,3 +175,252 @@ test('lifecycle subscriptions: Add and Edit go through the form hook with the ri
   run(sandbox, `_lifecycleSubOpenForm('p1', 's1')`);
   assert.deepEqual(seen, [['p1', null], ['p1', 's1']]);
 });
+
+// ── Add / edit form ─────────────────────────────────────────────────────────
+
+// Mounts the form and returns the captured modal HTML. fields maps element id
+// -> fake element ({value}/{checked}); anything else is a default stub.
+function formSetup(routes, fields) {
+  const s = setup(routes);
+  const { sandbox } = s;
+  const modals = [];
+  sandbox.document.createElement = () => {
+    const el = makeStubElement();
+    modals.push(el);
+    return el;
+  };
+  const byId = Object.assign({}, fields);
+  const baseGet = sandbox.document.getElementById;
+  sandbox.document.getElementById = (id) => (byId[id] !== undefined ? byId[id] : baseGet(id));
+  s.byId = byId;
+  s.html = () => modals.map(m => m.innerHTML).join('');
+  s.requests = [];
+  const origFetch = sandbox.fetch;
+  sandbox.fetch = (url, opts) => {
+    s.requests.push({ method: (opts && opts.method) || 'GET', url, body: opts && opts.body ? JSON.parse(opts.body) : undefined });
+    return origFetch(url, opts);
+  };
+  return s;
+}
+
+const kindIdx = (sandbox, kind) => run(sandbox, `_LIFECYCLE_SUB_KINDS.indexOf(${JSON.stringify(kind)})`);
+
+function fill(s, vals) {
+  const { sandbox, byId } = s;
+  for (const k of (vals.kinds || [])) byId['lcSubKind_' + kindIdx(sandbox, k)] = { checked: true };
+  const set = { level: 'lcSubLevel', scope: 'lcSubScope', taskId: 'lcSubTaskId', sinkType: 'lcSubSinkType', target: 'lcSubTarget', actionText: 'lcSubActionText', expiry: 'lcSubExpiry' };
+  for (const [k, id] of Object.entries(set)) if (vals[k] !== undefined) byId[id] = { value: vals[k] };
+  if (vals.oneShot) byId.lcSubOneShot = { checked: true };
+  if (vals.coalesce) byId.lcSubCoalesce = { checked: true };
+}
+
+const openForm = (sandbox, sub) => run(sandbox, `_openLifecycleSubscriptionForm({id:'p1'}, ${JSON.stringify(sub || null)})`);
+const submit = (sandbox) => run(sandbox, `_lifecycleSubSubmit()`);
+
+test('lifecycle subscriptions form: create sends the body for a session send_input one-shot', async () => {
+  const s = formSetup([
+    ['POST', /subscriptions$/, () => fakeResponse(201, { id: 'new' })],
+    ['GET', /subscriptions$/, () => fakeResponse(200, [])],
+  ]);
+  openForm(s.sandbox, null);
+  fill(s, { kinds: ['prd.completed', 'task.failed'], level: '', scope: 'this', sinkType: 'session', target: 'abcd', actionText: 'continue please', oneShot: true });
+  await submit(s.sandbox);
+  const post = s.requests.find(r => r.method === 'POST');
+  assert.equal(post.url, '/api/autonomous/subscriptions');
+  assert.deepEqual(JSON.parse(JSON.stringify(post.body)), {
+    filter: { kinds: ['prd.completed', 'task.failed'], prd_id: 'p1' },
+    sink: { type: 'session', target: 'abcd' },
+    action: { type: 'send_input', text: 'continue please' },
+    one_shot: true,
+  });
+  assert.equal(s.requests[s.requests.length - 1].method, 'GET', 'the tab list is reloaded after save');
+});
+
+test('lifecycle subscriptions form: create sends a comm coalesce subscription for all automata', async () => {
+  const s = formSetup([['POST', /subscriptions$/, () => fakeResponse(201, { id: 'n' })], ['GET', /subscriptions$/, () => fakeResponse(200, [])]]);
+  openForm(s.sandbox, null);
+  fill(s, { level: 'prd', scope: 'all', taskId: ' t9 ', sinkType: 'comm', target: 'signal', coalesce: true });
+  await submit(s.sandbox);
+  const post = s.requests.find(r => r.method === 'POST');
+  assert.deepEqual(JSON.parse(JSON.stringify(post.body)), {
+    filter: { level: 'prd', task_id: 't9' },
+    sink: { type: 'comm', target: 'signal' },
+    coalesce: true,
+  });
+});
+
+test('lifecycle subscriptions form: create sends an mcp_queue subscription', async () => {
+  const s = formSetup([['POST', /subscriptions$/, () => fakeResponse(201, { id: 'n' })], ['GET', /subscriptions$/, () => fakeResponse(200, [])]]);
+  openForm(s.sandbox, null);
+  fill(s, { kinds: ['prd.updated'], sinkType: 'mcp_queue', target: 'ci.events:main-1', actionText: 'ignored', coalesce: true });
+  await submit(s.sandbox);
+  const post = s.requests.find(r => r.method === 'POST');
+  assert.deepEqual(JSON.parse(JSON.stringify(post.body)), {
+    filter: { kinds: ['prd.updated'], prd_id: 'p1' },
+    sink: { type: 'mcp_queue', target: 'ci.events:main-1' },
+  }, 'action text and coalesce belong to other sink types and must be dropped');
+});
+
+test('lifecycle subscriptions form: the webhook sink is not offered and every kind is', () => {
+  const s = formSetup([]);
+  openForm(s.sandbox, null);
+  const html = s.html();
+  assert.ok(!/webhook/i.test(html), 'webhook must not appear in the form');
+  for (const sink of ['comm', 'session', 'topic', 'alert', 'mcp_queue']) {
+    assert.match(html, new RegExp(`<option value="${sink}"`));
+  }
+  const kinds = run(s.sandbox, `_LIFECYCLE_SUB_KINDS`);
+  assert.equal(kinds.length, 28);
+  for (const k of ['prd.draft', 'prd.paused', 'task.awaiting_approval', 'task.session_started', 'task.session_cleared', 'prd.updated']) {
+    assert.ok(kinds.includes(k), k);
+    assert.ok(html.includes(k), k);
+  }
+  assert.match(html, /Add subscription/);
+});
+
+test('lifecycle subscriptions form: edit is prefilled and saves with PUT', async () => {
+  const s = formSetup([
+    ['PUT', /subscriptions\/s-mine$/, () => fakeResponse(200, SUBS[0])],
+    ['GET', /subscriptions$/, () => fakeResponse(200, [])],
+  ]);
+  openForm(s.sandbox, SUBS[0]);
+  const html = s.html();
+  assert.match(html, /Edit subscription/);
+  assert.match(html, /value="abcd"/);
+  assert.match(html, /<option value="session" selected>/);
+  assert.match(html, />go<\/textarea>/);
+  assert.match(html, /id="lcSubOneShot" checked/);
+  assert.match(html, new RegExp(`id="lcSubKind_${kindIdx(s.sandbox, 'prd.completed')}" checked`));
+  assert.match(html, new RegExp(`id="lcSubKind_${kindIdx(s.sandbox, 'prd.failed')}" checked`));
+  assert.ok(!new RegExp(`id="lcSubKind_${kindIdx(s.sandbox, 'prd.draft')}" checked`).test(html));
+  // Read the form back as the browser would: the prefilled values.
+  fill(s, { kinds: ['prd.completed', 'prd.failed'], scope: 'this', sinkType: 'session', target: 'abcd2', actionText: 'go', oneShot: true, coalesce: true });
+  await submit(s.sandbox);
+  const put = s.requests.find(r => r.method === 'PUT');
+  assert.equal(put.url, '/api/autonomous/subscriptions/s-mine');
+  assert.equal(put.body.sink.target, 'abcd2');
+  assert.equal(put.body.filter.prd_id, 'p1');
+  assert.ok(!s.requests.some(r => r.method === 'POST'));
+});
+
+test('lifecycle subscriptions form: client validation blocks bad input without a request', async () => {
+  const cases = [
+    [{}, /Choose at least one event kind or a level/],
+    [{ kinds: ['prd.failed'], sinkType: 'comm', target: '   ' }, /A target is required/],
+    [{ level: 'task', sinkType: 'mcp_queue', target: 'bad name!' }, /Queue name may contain only letters, digits/],
+    [{ level: 'task', sinkType: 'mcp_queue', target: 'q'.repeat(65) }, /Queue name is 65 characters; the limit is 64/],
+    [{ level: 'task', sinkType: 'session', target: 'abcd', actionText: '    ' }, /send_input action needs text/],
+    [{ level: 'task', sinkType: 'session', target: 'abcd', actionText: 'x'.repeat(4097) }, /Action text is 4097 characters; the limit is 4096/],
+    [{ level: 'task', sinkType: 'comm', target: 'c', expiry: '0' }, /Expiry must be a number of hours greater than zero/],
+    [{ level: 'task', sinkType: 'comm', target: 'c', expiry: 'soon' }, /Expiry must be a number of hours/],
+  ];
+  for (const [vals, want] of cases) {
+    const errBox = makeStubElement();
+    const s = formSetup([], { lcSubError: errBox });
+    openForm(s.sandbox, null);
+    fill(s, vals);
+    await submit(s.sandbox);
+    assert.match(errBox.innerHTML, want, JSON.stringify(vals));
+    assert.deepEqual(s.requests, [], 'no request for ' + JSON.stringify(vals));
+  }
+});
+
+test('lifecycle subscriptions form: a 4096-character action text is accepted', () => {
+  const { sandbox } = setup([]);
+  const out = run(sandbox, `_lifecycleSubBuild({kinds:['prd.failed'], sinkType:'session', target:'s', actionText:'x'.repeat(4096), scope:'all'}, 0)`);
+  assert.equal(out.error, undefined);
+  assert.equal(out.body.action.text.length, 4096);
+});
+
+test('lifecycle subscriptions form: server 400 text is shown inline and the form stays open', async () => {
+  const errBox = makeStubElement();
+  const s = formSetup([['POST', /subscriptions$/, () => fakeResponse(400, 'filter kind "prd.bogus" is not a known event kind\n')]], { lcSubError: errBox });
+  openForm(s.sandbox, null);
+  fill(s, { level: 'prd', sinkType: 'alert', target: 'lbl' });
+  await submit(s.sandbox);
+  assert.match(errBox.innerHTML, /filter kind &quot;prd\.bogus&quot; is not a known event kind/);
+  assert.ok(!s.requests.some(r => r.method === 'GET'), 'the list is not reloaded on failure');
+});
+
+test('lifecycle subscriptions form: send_input and coalesce are only enabled for their sink types', () => {
+  const s = formSetup([]);
+  openForm(s.sandbox, null);
+  assert.match(s.html(), /<textarea id="lcSubActionText"[^>]* disabled/, 'comm is the default sink: action text off');
+  assert.match(s.html(), /id="lcSubCoalesce"[^>]*>/);
+  assert.ok(!/id="lcSubCoalesce"[^>]* disabled/.test(s.html()), 'coalesce on for comm');
+
+  const action = { disabled: true };
+  const coalesce = { disabled: false };
+  const label = { textContent: '' };
+  const type = { value: 'session' };
+  Object.assign(s.byId, { lcSubSinkType: type, lcSubActionText: action, lcSubCoalesce: coalesce, lcSubTargetLabel: label });
+  run(s.sandbox, `_lifecycleSubSinkChanged()`);
+  assert.equal(action.disabled, false);
+  assert.equal(coalesce.disabled, true);
+  assert.equal(label.textContent, 'Session name or id');
+  for (const [sink, text] of [['comm', 'Channel'], ['topic', 'Topic name'], ['alert', 'Alert label'], ['mcp_queue', /Queue name/]]) {
+    type.value = sink;
+    run(s.sandbox, `_lifecycleSubSinkChanged()`);
+    assert.equal(action.disabled, true, sink);
+    assert.equal(coalesce.disabled, sink !== 'comm', sink);
+    if (text instanceof RegExp) assert.match(label.textContent, text); else assert.equal(label.textContent, text);
+  }
+});
+
+test('lifecycle subscriptions form: editing a session subscription starts with the action text enabled and counted', () => {
+  const s = formSetup([]);
+  openForm(s.sandbox, SUBS[0]);
+  assert.ok(!/<textarea id="lcSubActionText"[^>]* disabled/.test(s.html()));
+  assert.match(s.html(), /id="lcSubActionCount">2 \/ 4096</);
+  const count = { textContent: '' };
+  Object.assign(s.byId, { lcSubActionText: { value: 'héllo' }, lcSubActionCount: count });
+  run(s.sandbox, `_lifecycleSubCountChanged()`);
+  assert.equal(count.textContent, '5 / 4096');
+});
+
+test('lifecycle subscriptions form: expiry hours become an RFC3339 expires_at', () => {
+  const { sandbox } = setup([]);
+  const now = Date.UTC(2030, 0, 1, 12, 0, 0);
+  const out = run(sandbox, `_lifecycleSubBuild({kinds:['prd.failed'], sinkType:'alert', target:'x', expiryHours:'36'}, ${now})`);
+  assert.equal(out.body.expires_at, '2030-01-03T00:00:00Z');
+  const frac = run(sandbox, `_lifecycleSubBuild({kinds:['prd.failed'], sinkType:'alert', target:'x', expiryHours:'0.5'}, ${now})`);
+  assert.equal(frac.body.expires_at, '2030-01-01T12:30:00Z');
+  const none = run(sandbox, `_lifecycleSubBuild({kinds:['prd.failed'], sinkType:'alert', target:'x', expiryHours:''}, ${now})`);
+  assert.equal(none.body.expires_at, undefined);
+});
+
+test('lifecycle subscriptions form: edit shows remaining hours and keeps an untouched expiry exactly', async () => {
+  const soon = new Date(Date.now() + 5 * 3600000 + 60000).toISOString();
+  const sub = { id: 's-exp', filter: { prd_id: 'p1', level: 'prd' }, sink: { type: 'alert', target: 'lbl' }, expires_at: soon };
+  const s = formSetup([['PUT', /s-exp$/, () => fakeResponse(200, sub)], ['GET', /subscriptions$/, () => fakeResponse(200, [])]]);
+  openForm(s.sandbox, sub);
+  const hours = run(s.sandbox, `_lifecycleSubFormCtx.initialExpiry`);
+  assert.ok(Number(hours) > 5 && Number(hours) < 5.1, hours);
+  assert.match(s.html(), new RegExp(`id="lcSubExpiry" type="text" inputmode="decimal" class="form-input" value="${hours}"`));
+  fill(s, { level: 'prd', scope: 'this', sinkType: 'alert', target: 'lbl', expiry: hours });
+  await submit(s.sandbox);
+  assert.equal(s.requests.find(r => r.method === 'PUT').body.expires_at, soon);
+  // An expired record shows an empty field.
+  assert.equal(run(s.sandbox, `_lifecycleSubExpiryHours('2000-01-01T00:00:00Z', Date.now())`), '');
+});
+
+test('lifecycle subscriptions form: dynamic values in the prefilled form are escaped', () => {
+  const evil = { id: 'x', filter: { prd_id: 'p1', level: 'prd', task_id: '"><script>alert(1)</script>' },
+    sink: { type: 'session', target: '"><img src=x onerror=alert(2)>' }, action: { type: 'send_input', text: '</textarea><script>alert(3)</script>' } };
+  const s = formSetup([]);
+  openForm(s.sandbox, evil);
+  const html = s.html();
+  assert.ok(!html.includes('<script>'), html);
+  assert.ok(!html.includes('<img src=x'), html);
+  assert.match(html, /&lt;\/textarea&gt;&lt;script&gt;/);
+});
+
+test('lifecycle subscriptions form: Add button and edit keep the owning Automaton in the request', async () => {
+  const s = formSetup([['POST', /subscriptions$/, () => fakeResponse(201, {})], ['GET', /subscriptions$/, () => fakeResponse(200, [])]]);
+  run(s.sandbox, `_lifecycleSubOpenForm('p1', '')`);
+  fill(s, { kinds: ['prd.running'], sinkType: 'topic', target: 'ops' });
+  await submit(s.sandbox);
+  const post = s.requests.find(r => r.method === 'POST');
+  assert.equal(post.body.filter.prd_id, 'p1');
+  assert.equal(post.body.sink.type, 'topic');
+});
