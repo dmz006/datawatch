@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.91 — go.mod lists pflag as a direct dependency so the release build passes its tidiness check
+
+### Fixed
+
+- **The release build failed its go.mod tidiness check.** The dollar-budget work imports `github.com/spf13/pflag` directly, but `go.mod` still listed it as an indirect dependency, so the release pipeline's "go.mod is tidy" step refused to build the 9.5.90 release. `go.mod` now lists it as a direct dependency. No code changes.
+
 ## v9.5.90 — Per-LLM dollar budget with a windowed ledger
 
 ### Added
