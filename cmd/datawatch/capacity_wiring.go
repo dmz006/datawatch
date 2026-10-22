@@ -16,6 +16,7 @@ import (
 	"github.com/dmz006/datawatch/internal/inference"
 	"github.com/dmz006/datawatch/internal/metrics"
 	"github.com/dmz006/datawatch/internal/server"
+	"github.com/dmz006/datawatch/internal/server/multiserver"
 	"github.com/dmz006/datawatch/internal/session"
 )
 
@@ -188,6 +189,61 @@ func newAutonomousBudget(cfg *config.Config, dataDir string, registry func() *in
 	return bl
 }
 
+// newPeerBudget builds the peer-spend cache for the budget ledger. Peers are
+// resolved through the live multiserver store at call time and counted only
+// when the LLM's peer_window lists them (the default confirmer), so no peer
+// is contacted unless the operator opted it in.
+func newPeerBudget(registry func() *inference.Registry, store func() *multiserver.Store) *autonomous.PeerBudget {
+	lookup := func(llm string) *inference.LLM {
+		reg := registry()
+		if reg == nil {
+			return nil
+		}
+		l, err := reg.Get(llm)
+		if err != nil {
+			return nil
+		}
+		return l
+	}
+	pb := &autonomous.PeerBudget{}
+	pb.Budgets = func(llm string) *inference.BudgetWindow {
+		if l := lookup(llm); l != nil {
+			return l.Budget
+		}
+		return nil
+	}
+	pb.LLMs = func() []string {
+		reg := registry()
+		if reg == nil {
+			return nil
+		}
+		var names []string
+		for _, l := range reg.List() {
+			names = append(names, l.Name)
+		}
+		return names
+	}
+	pb.Lookup = func(name string) (string, string, bool) {
+		st := store()
+		if st == nil {
+			return "", "", false
+		}
+		return st.GetByName(name)
+	}
+	pb.KnownPeers = func() []string {
+		st := store()
+		if st == nil {
+			return nil
+		}
+		var names []string
+		for _, e := range st.List() {
+			names = append(names, e.Name)
+		}
+		return names
+	}
+	return pb
+}
+
 // recordUsageSpend returns the session manager's usage listener: it records
 // every event with a positive dollar amount under the LLM the backend
 // resolves to in the inference registry (the backend name itself when it has
@@ -294,6 +350,9 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 	registry := httpServer.InferenceRegistry
 	autonomousBudget = newAutonomousBudget(cfg, expandHome(cfg.DataDir), registry)
 	mgr.SetUsageEventHook(recordUsageSpend(autonomousBudget, registry))
+	peerBudget := newPeerBudget(registry, httpServer.ServerStore)
+	autonomousBudget.PeerSpend = peerBudget.Spend
+	autonomousBudget.PeerBreakdown = peerBudget.Breakdown
 	led := capacity.New(capacity.Options{
 		External:     external,
 		Backpressure: backpressure,
@@ -492,6 +551,9 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 				return
 			case <-t.C:
 				syncPools()
+				// Peer spend is fetched off the tick so a slow peer never
+				// delays pool syncing; admission reads only the cache.
+				go peerBudget.Refresh(ctx)
 				auditBudgetTransitions(autonomousBudget, budgetFull, emitBackoffAudit)
 				threshold := 30 * time.Minute
 				seen := map[string]bool{}

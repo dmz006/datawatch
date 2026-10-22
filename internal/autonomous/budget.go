@@ -56,6 +56,9 @@ type BudgetStatus struct {
 	RollsOverAt  *time.Time        `json:"rolls_over_at,omitempty"`
 	Full         bool              `json:"full"`
 	Allocation   *BudgetAllocation `json:"allocation,omitempty"`
+	// Peers shows what peer spend is being counted: one line per opted-in
+	// peer, plus registered peers that are not opted in.
+	Peers []PeerBudgetStatus `json:"peers,omitempty"`
 }
 
 // BudgetLedger records dollar spend per LLM and answers whether an LLM's
@@ -79,6 +82,9 @@ type BudgetLedger struct {
 	// to this budget. Nil means no peer spend. Blocked adds it to the local
 	// spend; Status reports it separately.
 	PeerSpend func(llm string) float64
+	// PeerBreakdown lists the per-peer lines Status reports alongside
+	// PeerSpend. Nil means no breakdown.
+	PeerBreakdown func(llm string) []PeerBudgetStatus
 
 	path string
 
@@ -350,6 +356,9 @@ func (b *BudgetLedger) Status(llm string) (BudgetStatus, bool) {
 		st.RollsOverAt = &at
 	}
 	st.Allocation = b.allocation(llm, bw, local)
+	if b.PeerBreakdown != nil {
+		st.Peers = b.PeerBreakdown(llm)
+	}
 	return st, true
 }
 

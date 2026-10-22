@@ -54,6 +54,13 @@ func writeBudgetStatus(b *strings.Builder, st BudgetStatus) {
 	if st.PeerSpendUSD > 0 {
 		fmt.Fprintf(b, "  peer spend: $%.2f\n", st.PeerSpendUSD)
 	}
+	for _, p := range st.Peers {
+		if p.Counted {
+			fmt.Fprintf(b, "  peer %s: $%.2f (counted)\n", p.Peer, p.SpendUSD)
+		} else {
+			fmt.Fprintf(b, "  peer %s: not counted (%s)\n", p.Peer, p.Reason)
+		}
+	}
 	fmt.Fprintf(b, "  remaining: $%.2f\n", st.RemainingUSD)
 	fmt.Fprintf(b, "  window end: %s\n", st.WindowEnd.Format(time.RFC3339))
 	if st.RollsOverAt != nil {
