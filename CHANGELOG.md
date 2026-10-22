@@ -5,6 +5,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.67 — Boot-resume counts live workers; parked Automata can be resumed
+
+### Fixed
+
+- **Boot-resume no longer parks an Automaton whose worker session is still alive.** The age gate now counts a live worker session on an `in_progress` task (and that session's recent output) as activity, so an Automaton that is genuinely still working is never judged stale. Only an Automaton with no live worker and old activity is parked.
+
+### Added
+
+- **A parked Automaton can be resumed with an explicit resume action on every surface.** `POST /api/autonomous/prds/{id}/resume`, the `autonomous_prd_resume` MCP tool, the CLI `prd-resume <id> [--note ...]`, the chat command `autonomous resume <id> [note]` and a Resume button in the PWA (labelled in all five languages) put a PRD that the boot-resume gate parked back to running. Only a PRD parked by the gate can be resumed this way (any other state is rejected naming the allowed state), the resume is audit-logged, and a live worker session is re-adopted rather than respawned.
+- **Park reasons and the park alert now name the resume action.** They previously told the operator to approve the PRD, which does not apply to a parked one.
+- **The boot-resume report records a parked PRD that still has a live worker.** A parked entry in `Status().BootResume` carries `live_sessions`, and resuming adds a `resumed_by_operator` entry, so the operator can see that a resume will re-adopt the worker.
+
 ## v9.5.66 — A daemon restart no longer kills running claude-code workers
 
 ### Fixed
