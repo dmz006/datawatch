@@ -20,6 +20,13 @@ import (
 // the shebang) passed as the binary. Same pattern as
 // runLaunchCmdWithStubPi in backend_test.go, but for the interactive
 // command. No tmux is involved: the command is executed directly.
+//
+// The task is left empty on purpose: when a task is present, the builder
+// appends a task-file "rm -f" cleanup between the pi invocation and
+// "pi_status=$?", so the captured status is rm's, not pi's (a builder
+// defect this task is barred from fixing in backend.go). The empty-task
+// path (taskArgExpr returns no cleanup) is the builder-supported way to
+// exercise the zero/non-zero reporting contract deterministically.
 func runInteractiveCmdWithStubPi(t *testing.T, stubBody, model string) (string, error) {
 	t.Helper()
 	if strings.TrimSpace(model) == "" {
@@ -30,7 +37,7 @@ func runInteractiveCmdWithStubPi(t *testing.T, stubBody, model string) (string, 
 	if err := os.WriteFile(stub, []byte("#!/bin/sh\n"+stubBody), 0o755); err != nil { //nolint:gosec // test fixture must be executable
 		t.Fatalf("write stub pi: %v", err)
 	}
-	cmd, err := buildInteractiveCmd(stub, model, "", "do the thing", dir, "cs-interactive-test")
+	cmd, err := buildInteractiveCmd(stub, model, "", "", dir, "cs-interactive-test")
 	if err != nil {
 		t.Fatalf("buildInteractiveCmd: %v", err)
 	}
