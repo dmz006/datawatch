@@ -2,6 +2,7 @@ package fingerprint
 
 import (
 	"encoding/hex"
+	"strings"
 	"testing"
 )
 
@@ -49,7 +50,7 @@ func TestHashStableForSameInput(t *testing.T) {
 	if len(raw) != 32 {
 		t.Fatalf("hash decodes to %d bytes, want 32", len(raw))
 	}
-	if h1 != lowercaseHex(h1) {
+	if strings.ToLower(h1) != h1 {
 		t.Fatalf("hash %q is not lowercase", h1)
 	}
 }
@@ -128,12 +129,4 @@ func TestHashRejectsBadInput(t *testing.T) {
 	if _, err := PairKey("   \n"); err == nil {
 		t.Error("PairKey(whitespace): expected error, got nil")
 	}
-}
-
-func lowercaseHex(s string) string {
-	b, err := hex.DecodeString(s)
-	if err != nil {
-		return s
-	}
-	return hex.EncodeToString(b)
 }
