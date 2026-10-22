@@ -1,17 +1,15 @@
 package session
 
 import (
-	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
 
 func TestCancelBySession(t *testing.T) {
-	tmp, _ := os.CreateTemp("", "sched-test-*.json")
-	os.Remove(tmp.Name())       //nolint:errcheck // Remove so NewScheduleStore creates fresh
-	defer os.Remove(tmp.Name()) //nolint:errcheck
+	tmp := filepath.Join(t.TempDir(), "schedule-store.json")
 
-	store, err := NewScheduleStore(tmp.Name())
+	store, err := NewScheduleStore(tmp)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,11 +39,9 @@ func TestCancelBySession(t *testing.T) {
 }
 
 func TestCancelBySessionShortID(t *testing.T) {
-	tmp, _ := os.CreateTemp("", "sched-test-*.json")
-	os.Remove(tmp.Name())       //nolint:errcheck
-	defer os.Remove(tmp.Name()) //nolint:errcheck
+	tmp := filepath.Join(t.TempDir(), "schedule-store.json")
 
-	store, _ := NewScheduleStore(tmp.Name())
+	store, _ := NewScheduleStore(tmp)
 	store.Add("abc1", "cmd1", time.Time{}, "") //nolint:errcheck
 
 	// Cancel using full ID that contains the short ID
@@ -56,11 +52,9 @@ func TestCancelBySessionShortID(t *testing.T) {
 }
 
 func TestDelete(t *testing.T) {
-	tmp, _ := os.CreateTemp("", "sched-test-*.json")
-	os.Remove(tmp.Name())       //nolint:errcheck
-	defer os.Remove(tmp.Name()) //nolint:errcheck
+	tmp := filepath.Join(t.TempDir(), "schedule-store.json")
 
-	store, _ := NewScheduleStore(tmp.Name())
+	store, _ := NewScheduleStore(tmp)
 	sc, _ := store.Add("sess1", "cmd1", time.Time{}, "")
 
 	// Cancel it first (simulates done/cancelled state)
@@ -80,11 +74,9 @@ func TestDelete(t *testing.T) {
 }
 
 func TestAddSpawn(t *testing.T) {
-	tmp, _ := os.CreateTemp("", "sched-test-*.json")
-	os.Remove(tmp.Name())       //nolint:errcheck
-	defer os.Remove(tmp.Name()) //nolint:errcheck
+	tmp := filepath.Join(t.TempDir(), "schedule-store.json")
 
-	store, err := NewScheduleStore(tmp.Name())
+	store, err := NewScheduleStore(tmp)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -137,7 +129,7 @@ func TestAddSpawn(t *testing.T) {
 	}
 
 	// Reload from disk to verify persistence
-	store2, _ := NewScheduleStore(tmp.Name())
+	store2, _ := NewScheduleStore(tmp)
 	all := store2.List()
 	if len(all) != 1 {
 		t.Fatalf("expected 1 entry after reload, got %d", len(all))
@@ -152,11 +144,9 @@ func TestAddSpawn(t *testing.T) {
 }
 
 func TestDuePendingSessionsSpawn(t *testing.T) {
-	tmp, _ := os.CreateTemp("", "sched-test-*.json")
-	os.Remove(tmp.Name())       //nolint:errcheck
-	defer os.Remove(tmp.Name()) //nolint:errcheck
+	tmp := filepath.Join(t.TempDir(), "schedule-store.json")
 
-	store, _ := NewScheduleStore(tmp.Name())
+	store, _ := NewScheduleStore(tmp)
 
 	past := time.Now().Add(-time.Minute)
 	future := time.Now().Add(time.Hour)
@@ -188,11 +178,9 @@ func TestDuePendingSessionsSpawn(t *testing.T) {
 }
 
 func TestAddSpawnCronNextFire(t *testing.T) {
-	tmp, _ := os.CreateTemp("", "sched-test-*.json")
-	os.Remove(tmp.Name())       //nolint:errcheck
-	defer os.Remove(tmp.Name()) //nolint:errcheck
+	tmp := filepath.Join(t.TempDir(), "schedule-store.json")
 
-	store, _ := NewScheduleStore(tmp.Name())
+	store, _ := NewScheduleStore(tmp)
 
 	// every minute cron; RunAt should be set to next minute
 	sc, err := store.AddSpawn(AddSpawnOptions{
@@ -212,11 +200,9 @@ func TestAddSpawnCronNextFire(t *testing.T) {
 }
 
 func TestMarkDoneSpawnCronRecurrence(t *testing.T) {
-	tmp, _ := os.CreateTemp("", "sched-test-*.json")
-	os.Remove(tmp.Name())       //nolint:errcheck
-	defer os.Remove(tmp.Name()) //nolint:errcheck
+	tmp := filepath.Join(t.TempDir(), "schedule-store.json")
 
-	store, _ := NewScheduleStore(tmp.Name())
+	store, _ := NewScheduleStore(tmp)
 
 	sc, _ := store.AddSpawn(AddSpawnOptions{
 		Task:     "recurring",
@@ -247,11 +233,9 @@ func TestMarkDoneSpawnCronRecurrence(t *testing.T) {
 // called MarkDone(id, true) on them (session not found), marking them SchedFailed
 // before DuePendingSessions could process them.
 func TestDuePendingExcludesSpawnAndNewSession(t *testing.T) {
-	tmp, _ := os.CreateTemp("", "sched-test-*.json")
-	os.Remove(tmp.Name())       //nolint:errcheck
-	defer os.Remove(tmp.Name()) //nolint:errcheck
+	tmp := filepath.Join(t.TempDir(), "schedule-store.json")
 
-	store, _ := NewScheduleStore(tmp.Name())
+	store, _ := NewScheduleStore(tmp)
 
 	past := time.Now().Add(-time.Minute)
 
@@ -284,11 +268,9 @@ func TestDuePendingExcludesSpawnAndNewSession(t *testing.T) {
 // The bug was that manager.go set sc.SessionID = newSess.FullID on the spawn entry,
 // causing CancelBySession to cancel the re-armed schedule when the session ended.
 func TestCancelBySessionDoesNotAffectSpawnSchedule(t *testing.T) {
-	tmp, _ := os.CreateTemp("", "sched-test-*.json")
-	os.Remove(tmp.Name())       //nolint:errcheck
-	defer os.Remove(tmp.Name()) //nolint:errcheck
+	tmp := filepath.Join(t.TempDir(), "schedule-store.json")
 
-	store, _ := NewScheduleStore(tmp.Name())
+	store, _ := NewScheduleStore(tmp)
 
 	// Spawn schedule has no SessionID — it creates sessions, it doesn't belong to one
 	sc, _ := store.AddSpawn(AddSpawnOptions{
@@ -323,11 +305,9 @@ func TestCancelBySessionDoesNotAffectSpawnSchedule(t *testing.T) {
 // if a schedule is cancelled between DuePending and MarkDone (a race between
 // the scheduler tick and an explicit cancel), MarkDone must not re-arm it.
 func TestMarkDoneRespectsCancel(t *testing.T) {
-	tmp, _ := os.CreateTemp("", "sched-test-*.json")
-	os.Remove(tmp.Name())       //nolint:errcheck
-	defer os.Remove(tmp.Name()) //nolint:errcheck
+	tmp := filepath.Join(t.TempDir(), "schedule-store.json")
 
-	store, _ := NewScheduleStore(tmp.Name())
+	store, _ := NewScheduleStore(tmp)
 
 	sc, _ := store.AddSpawn(AddSpawnOptions{
 		Task:     "recurring",
@@ -358,11 +338,9 @@ func TestMarkDoneRespectsCancel(t *testing.T) {
 // TestMarkDoneRespectsCancel_CommandType tests the same cancel race for
 // regular command schedules (non-spawn, cron-based).
 func TestMarkDoneRespectsCancel_CommandType(t *testing.T) {
-	tmp, _ := os.CreateTemp("", "sched-test-*.json")
-	os.Remove(tmp.Name())       //nolint:errcheck
-	defer os.Remove(tmp.Name()) //nolint:errcheck
+	tmp := filepath.Join(t.TempDir(), "schedule-store.json")
 
-	store, _ := NewScheduleStore(tmp.Name())
+	store, _ := NewScheduleStore(tmp)
 
 	sc, err := store.AddFull(AddOptions{
 		SessionName:  "worker",
