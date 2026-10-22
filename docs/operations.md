@@ -3073,7 +3073,7 @@ autonomous:
     pro: 1        # one concurrent session
     max_5x: 2     # the plan tolerates two
     max_20x: 4
-    api: 0        # unlimited (until the dollar-budget phase lands)
+    api: 0        # unlimited (cap dollars with a per-LLM budget instead)
 ```
 
 An explicit `max_inflight` on the entry always beats the tier (a cap set
@@ -3145,6 +3145,111 @@ What the operator sees after:
 
 If the await-external cycle itself fails, the task is handed back to the
 normal retry machinery — it is never silently counted as a task failure.
+
+---
+
+## Per-LLM dollar-window budget
+
+A budget caps how many dollars autonomous work may spend on one LLM inside
+a window. It complements the in-flight caps above: the caps limit how many
+sessions run at once, the budget limits how much they may cost over time.
+An LLM with no budget is never limited by dollars.
+
+**Window styles.** Pick exactly one per LLM:
+
+- **Rolling** (`hours`, 1 to 720): the trailing N hours. Spend ages out one
+  entry at a time, so the window never "resets"; it frees up as old spend
+  leaves it.
+- **Weekly** (`weekday`, optional `time` as 24h `HH:MM`, default `00:00`,
+  and optional `zone`, an IANA zone, default UTC): the window starts at that
+  weekday and clock time and ends seven calendar days later. The clock time
+  is kept across a daylight-saving change. Use this to line the budget up
+  with a provider's weekly reset.
+
+A budget needs `ceiling_usd` greater than zero and one window style.
+Setting both styles, neither, or an unknown weekday or zone is rejected
+before anything is stored.
+
+### Setting it
+
+| Channel | How |
+|---|---|
+| PWA | Settings > Compute > LLM edit: the budget fields (ceiling, rolling hours or weekly weekday/time/zone, allocation estimate, peers); the Capacity card shows spend, window end and the full state; the allocation table is in Settings > Autonomous |
+| REST | `PUT /api/llms/{name}` with a `budget` object. It replaces the whole object, is kept when the member is absent, and is cleared by `null` or `{}` |
+| MCP | `llm_add` / `llm_update` with a `budget` object |
+| CLI | `datawatch llm add\|update <name> --budget-ceiling-usd 50 --budget-hours 168` (or `--budget-weekday monday --budget-time 09:00 --budget-zone America/New_York`); `--clear-budget` removes it |
+
+Reading it back, on every surface, gives the same fields:
+
+| Channel | How |
+|---|---|
+| REST | `GET /api/budget` (every budgeted LLM) or `GET /api/budget?llm=<name>` (one; 404 when it has no budget); the `budgets` array of `GET /api/capacity` and `GET /api/autonomous/status` |
+| MCP | `budget_status` (optional `llm`); `capacity_status` |
+| CLI | `datawatch budget status [--llm NAME]` |
+| Comm | `budget [status] [<llm>]` |
+
+Each entry shows spend, ceiling, remaining dollars, the window, when it
+rolls over (`rolls_over_at`) and `full`.
+
+### What "budget window full" means
+
+Once an LLM's spend in the window reaches its ceiling, autonomous work that
+needs that LLM waits instead of failing. The task shows
+`waiting_capacity` with a reason such as
+`budget window full: spent $50.12 of $50.00 ceiling; window rolls over at
+2026-10-26T09:00:00Z`. The wait uses no retry and burns no failure count.
+Only the `llm:` pool is gated: operator-started interactive sessions are
+never held back, and other LLMs keep running.
+
+The wait ends by itself. Admission re-checks on the capacity wait loop's
+next poll, so as soon as the window rolls over (weekly) or enough old spend
+ages out (rolling), the task is admitted and starts. Nothing needs to be
+cleared or re-run. If the task waits longer than
+`autonomous.capacity_wait_timeout_seconds`, the normal capacity-wait timeout
+applies. Each time a window fills and each time it frees up, an audit event
+is recorded once (`autonomous_budget_ceiling_wait`,
+`autonomous_budget_window_resumed`).
+
+The check happens when work is admitted, not while it runs, and admission
+cannot know in advance what a task will cost. Work already admitted when
+the ceiling is crossed runs to completion and can overshoot the ceiling.
+Set the ceiling a little below the figure you must not exceed.
+
+### Where spend comes from
+
+The daemon records the cost of every session on the LLM as it is reported,
+priced at the configured API rates, and keeps it in a ledger under
+`<data_dir>/autonomous/`. The ledger survives a daemon restart; entries
+older than 31 days are dropped. It counts this daemon's sessions only,
+unless peers are opted in (below).
+
+### The allocation estimate
+
+Set `allocation_pct: true` on the budget to add an estimated
+share-of-allocation figure to the status. It is this daemon's spend in the
+window divided by a notional dollar allocation that **you** declare per plan
+tier in `autonomous.plan_tier_allocation_usd` (for example
+`{max_5x: 100}`), with the LLM's `plan_tier` choosing the entry. It is
+always marked estimated, appears only when the tier and the allocation are
+both set, and **never blocks or throttles anything**; only `ceiling_usd`
+does. The table is operator policy, not a provider-published figure; the
+default is empty.
+
+### Counting a peer's spend
+
+By default only this daemon's own spend counts. If the same account is also
+used from another datawatch, name that peer in the budget's `peer_window`
+(CLI: `--budget-peer-window peerA,peerB`). Listing a peer is the explicit
+opt-in: only listed peers are asked, periodically in the background (never on
+the admission path), for their own spend through `GET /api/budget/usage`, which reports local spend
+only, so two daemons that count each other never count the same dollars
+twice. The status shows one line per peer with its spend and whether it is
+counted, and why not (`not opted in`, `not registered`, `unreachable`).
+
+A peer that cannot be reached is skipped, not treated as full: the local
+spend alone decides, and the failure is logged once per outage. Peer
+fingerprint matching is not part of this feature; the list you write is the
+confirmation.
 
 ---
 

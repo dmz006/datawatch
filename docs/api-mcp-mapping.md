@@ -119,9 +119,9 @@ documenting coverage gaps and the reasoning behind them.
 | `POST /api/autonomous/prds/{id}/decompose` | `autonomous_prd_decompose` | Complete | `?view=compact` (absent or `view=full` = full; MCP sends `view=compact`) |
 | `POST /api/autonomous/prds/{id}/set_priority` | `autonomous_prd_set_priority` | Complete | capacity-queue priority; higher runs first; `?view=compact` (absent or `view=full` = full; MCP sends `view=compact`) |
 | `POST /api/autonomous/prds/{id}/set_llm` | `autonomous_prd_set_llm` | Complete | Set the PRD's worker LLM fields; OMITTED fields stay unchanged, an empty value clears that field (falls back to global) |
-| `GET /api/capacity` | `capacity_status` | Complete | admission ledger: pools, leases, wait queue; each `llm:*` pool carries `effective_max_inflight` (cap admitted against) + `inflight_source` (`explicit` | `plan_tier` | `kind`) |
+| `GET /api/capacity` | `capacity_status` | Complete | admission ledger: pools, leases, wait queue; each `llm:*` pool carries `effective_max_inflight` (cap admitted against) + `inflight_source` (`explicit` | `plan_tier` | `kind`); the response also carries a `budgets` array (see Per-LLM dollar budget) |
 | `PUT /api/compute/nodes/{name}` (`max_concurrent_sessions`) | `compute_node_update` / `compute_node_add` | Complete | per-node cap on autonomous sessions |
-| `PUT /api/llms/{name}` (`max_inflight`, `plan_tier`) | `llm_update` / `llm_add` | Complete | per-LLM cap on autonomous sessions; `plan_tier` (`pro`/`max_5x`/`max_20x`/`api`) admits against that tier's `plan_tier_max_inflight` value unless an explicit `max_inflight > 0` overrides it; `GET /api/llms` responses carry both `effective_max_inflight` and `inflight_source` |
+| `PUT /api/llms/{name}` (`max_inflight`, `plan_tier`) | `llm_update` / `llm_add` | Complete | per-LLM cap on autonomous sessions; `plan_tier` (`pro`/`max_5x`/`max_20x`/`api`) admits against that tier's `plan_tier_max_inflight` value unless an explicit `max_inflight > 0` overrides it; `GET /api/llms` responses carry both `effective_max_inflight` and `inflight_source`; also carries the optional `budget` object (see Per-LLM dollar budget) |
 | `POST /api/autonomous/prds/{id}/run` | `autonomous_prd_run` | Complete | `?view=compact` (absent or `view=full` = full; MCP sends `view=compact`) |
 | `GET /api/autonomous/learnings` | `autonomous_learnings` | Complete | |
 | `GET /api/autonomous/subscriptions` | `autonomous_subscriptions` | Complete | list the operator's persisted lifecycle event subscriptions (optional `?owner=` filter) |
@@ -202,6 +202,16 @@ documenting coverage gaps and the reasoning behind them.
 | `POST /api/usage-backoff` | `usage_backoff_set` | Complete | Set a flag (`backend` + `minutes` or `until`, optional `reason`) |
 | `DELETE /api/usage-backoff` | `usage_backoff_clear` | Complete | Clear one backend, or all |
 | `POST /api/usage-backoff/recheck` | `usage_backoff_recheck` | Complete | Record rate-limit patterns as rechecked |
+
+### Per-LLM dollar budget
+
+| API Endpoint | MCP Tool | Status | Notes |
+|-------------|----------|--------|-------|
+| `GET /api/budget` | `budget_status` | Complete | `{"budgets": [...]}` for every LLM that has a budget (spend, ceiling, remaining, window, `rolls_over_at`, `full`, optional estimated `allocation`, per-peer lines); `?llm=<name>` returns one LLM (404 without a budget). CLI `datawatch budget status [--llm NAME]`; comm `budget [status] [<llm>]` |
+| `GET /api/budget/usage` | — | Complete | This daemon's own spend for `?llm=<name>`, never any peer spend; optional RFC 3339 `from`/`to` default to the local window. Read by a peer that lists this daemon in its `peer_window`; no MCP tool |
+| `PUT /api/llms/{name}` (`budget` object) | `llm_update` / `llm_add` (`budget`) | Complete | `budget` is `{ceiling_usd, hours` or `weekday`+`time`+`zone, allocation_pct, peer_window}`; replaced as a whole, kept when absent, cleared by `null` or `{}`. CLI `datawatch llm add/update --budget-ceiling-usd/--budget-hours/--budget-weekday/--budget-time/--budget-zone/--budget-allocation-pct/--budget-peer-window/--clear-budget` |
+| `GET /api/capacity` (`budgets` array) | `capacity_status` | Complete | Same budget states next to the pools; `GET /api/autonomous/status` carries the same `budgets` array |
+| `PUT /api/config` (`autonomous.plan_tier_allocation_usd`) | `autonomous_config_set` (`plan_tier_allocation_usd`) | Complete | Operator policy: notional per-window dollar allocation per plan tier; feeds only the estimated `allocation_pct` and never blocks |
 
 ### Routing rules
 

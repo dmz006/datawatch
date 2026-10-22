@@ -973,14 +973,56 @@ autonomous:
   # unlimited for local Ollama/OpenWebUI kinds — which stay governed by the
   # node: pools and max_engines_per_node — and for dollar-metered API kinds).
   # The default table is operator policy, not a technical limit: pro=1,
-  # max_5x=2, max_20x=4, api=0 (unlimited until the dollar-budget phase
-  # lands). Unknown tiers or negative caps are config errors — the daemon
+  # max_5x=2, max_20x=4, api=0 (unlimited; cap dollars instead with a
+  # per-LLM budget, see plan_tier_allocation_usd below). Unknown tiers or negative caps are config errors — the daemon
   # refuses to start naming the key. Same key over REST / MCP config_set.
   plan_tier_max_inflight:
     pro: 1
     max_5x: 2
     max_20x: 4
     api: 0
+  # Operator-declared notional dollar allocation per budget window, at API
+  # rates, for each plan tier (map tier -> dollars; pro | max_5x | max_20x |
+  # api; 0 or absent = not declared). This is operator policy, not a measured
+  # limit: you declare the figure you want the estimate measured
+  # against. It feeds only the
+  # allocation_pct estimate of an LLM budget (below) and never blocks, gates or
+  # throttles anything. Unknown tiers or negative values are config errors —
+  # the daemon refuses to start naming the key. Default is empty (nothing
+  # declared). Same key over REST / MCP config_set / the Settings page.
+  plan_tier_allocation_usd: {}
+  #   pro: 20
+  #   max_5x: 100
+  #   max_20x: 200
+  # Per-LLM dollar budget (LLM registry entry, not a config.yaml key). Every
+  # LLM entry may carry an optional "budget" object, set in Settings > Compute
+  # > LLM edit, or over REST PUT /api/llms/{name}, MCP llm_add / llm_update,
+  # CLI "datawatch llm add|update --budget-*". An LLM with no budget is never
+  # limited by dollars. Shape:
+  #
+  #   budget:
+  #     ceiling_usd: 50        # dollars one window may spend; required, > 0
+  #     # Pick exactly one window style:
+  #     hours: 168             # rolling window of the trailing N hours (1-720)
+  #     # weekday: monday      # weekly window that resets at this weekday...
+  #     # time: "09:00"        # ...at this 24h HH:MM clock time (default 00:00)
+  #     # zone: America/New_York  # ...read in this IANA zone (default UTC)
+  #     allocation_pct: false  # opt in to an estimated share-of-allocation
+  #                            # figure in the budget status. Always marked
+  #                            # estimated and never blocks anything. Needs the
+  #                            # LLM's plan_tier and plan_tier_allocation_usd.
+  #     peer_window: []        # federation peer names whose spend also counts
+  #                            # toward the ceiling. Empty and off by default;
+  #                            # only peers you list are counted, and an
+  #                            # unreachable peer is skipped, never a stall.
+  #
+  # While the window is full, autonomous work for that LLM waits with the
+  # reason "budget window full: ..." and resumes by itself when the window
+  # rolls over. Operator-started sessions are never held back. The check
+  # happens at admission, so work already admitted when the ceiling is crossed
+  # may overshoot it. Spend is persisted under <data_dir>/autonomous/ so a
+  # restart does not forget it. Read it with GET /api/budget, MCP
+  # budget_status, "datawatch budget status" or the comm "budget" command.
   # Hold new tasks while a node's busiest GPU is at/above this percent (0 = off).
   capacity_gpu_util_pct: 0
   # LLM backend used for the planning/decompose call. Any configured LLM name works:

@@ -275,6 +275,15 @@ dashboard/alert/scorecard has real data to show).
   the Scheduler UI to surface the operator warning/choice).
 
 ### Phase 2 — Ledger: rate-ceiling pools + informative admission (Decisions 2, 7)
+
+> **Update 2026-10-22:** the windowed ledger dimension of this phase landed
+> first, as the per-LLM dollar-window budget (BL428 Phase 5, unreleased
+> development build; see `2026-10-14-concurrency-and-budget-design.md`). It is
+> a dollar ceiling over a rolling or weekly window with a persisted spend
+> ledger, an admission wait, and an opt-in per-peer spend count. The rest of
+> this phase (requests/tokens ceilings, the `Decision` shape) builds on that
+> ledger and is still planned.
+
 - `internal/capacity/ledger.go`: new optional rate-ceiling dimension per
   pool (requests/tokens over a rolling window), alongside the existing
   concurrency `Limit`. Admission checks both dimensions when a ceiling is
