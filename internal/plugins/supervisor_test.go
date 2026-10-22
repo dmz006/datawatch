@@ -36,7 +36,7 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 	svcHelperDir = dir
-	defer os.RemoveAll(dir)
+	defer func() { _ = os.RemoveAll(dir) }()
 	code := m.Run()
 	_ = os.RemoveAll(dir)
 	os.Exit(code)

@@ -16,7 +16,7 @@ func TestRemoveOneShotScratchRemovesAllPiScratchPrefixes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MkdirTemp: %v", err)
 	}
-	defer os.RemoveAll(scratchRoot)
+	defer func() { _ = os.RemoveAll(scratchRoot) }()
 	t.Setenv("TMPDIR", scratchRoot)
 	scratch := os.TempDir()
 
@@ -57,7 +57,7 @@ func TestRemoveOneShotScratchSanitizesSessionName(t *testing.T) {
 	if err != nil {
 		t.Fatalf("MkdirTemp: %v", err)
 	}
-	defer os.RemoveAll(scratchRoot)
+	defer func() { _ = os.RemoveAll(scratchRoot) }()
 	t.Setenv("TMPDIR", scratchRoot)
 	scratch := os.TempDir()
 
