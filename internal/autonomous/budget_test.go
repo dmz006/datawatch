@@ -277,3 +277,44 @@ func TestBudgetPeerSpendCountsTowardBlocked(t *testing.T) {
 		t.Fatalf("StatusAll = %+v", all)
 	}
 }
+
+func TestBudgetLedgerSessionAttributionPersists(t *testing.T) {
+	clk := &budgetFakeClock{t: time.Date(2026, 10, 22, 9, 0, 0, 0, time.UTC)}
+	path := filepath.Join(t.TempDir(), "budget-ledger.jsonl")
+	l := NewBudgetLedger(path)
+	l.Clock = clk.Now
+	l.RecordSession("claude", "sess-a", clk.Now(), 4, 10, 5)
+	l.Record("claude", clk.Now(), 1, 1, 1)
+
+	l2 := NewBudgetLedger(path)
+	l2.Clock = clk.Now
+	if got := l2.SpendBySessions([]string{"sess-a"}, "claude", time.Time{}); got != 4 {
+		t.Fatalf("reloaded session spend = %v, want 4", got)
+	}
+	if got := l2.SpendBySessions([]string{"sess-a"}, "other", time.Time{}); got != 0 {
+		t.Fatalf("spend under another LLM = %v, want 0", got)
+	}
+	if got := l2.SpendBySessions([]string{""}, "", time.Time{}); got != 0 {
+		t.Fatalf("an empty session id must never match unattributed entries, got %v", got)
+	}
+	if got := l2.SpendBetween("claude", time.Time{}, clk.Now()); got != 5 {
+		t.Fatalf("total spend = %v, want 5", got)
+	}
+}
+
+func TestBudgetLedgerOldEntriesWithoutSessionStillLoad(t *testing.T) {
+	clk := &budgetFakeClock{t: time.Date(2026, 10, 22, 9, 0, 0, 0, time.UTC)}
+	path := filepath.Join(t.TempDir(), "budget-ledger.jsonl")
+	old := `{"llm":"claude","at":"2026-10-22T08:00:00Z","usd":2.5,"tokens_in":10,"tokens_out":5}` + "\n"
+	if err := os.WriteFile(path, []byte(old), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	l := NewBudgetLedger(path)
+	l.Clock = clk.Now
+	if got := l.SpendBetween("claude", time.Time{}, clk.Now()); got != 2.5 {
+		t.Fatalf("old entry spend = %v, want 2.5", got)
+	}
+	if got := l.SpendBySessions([]string{"anything"}, "", time.Time{}); got != 0 {
+		t.Fatalf("an old entry must not be attributed, got %v", got)
+	}
+}

@@ -675,6 +675,11 @@ type Manager struct {
 	// decomposeSessionsFn lists live planning sessions linked to a PRD.
 	decomposeSessionsFn func(prdID string) []string
 
+	// Cost sources (see automation_cost.go): the spend ledger and the
+	// per-session lifetime total used when a window predates the ledger.
+	costLedger   *BudgetLedger
+	sessionTotal func(sessionID string) (usd float64, llm string, ok bool)
+
 	// Capacity admission (see capacity.go).
 	capacity     *capacity.Ledger
 	capacityKeys CapacityKeysFn

@@ -254,13 +254,31 @@ func recordUsageSpend(bl *autonomous.BudgetLedger, registry func() *inference.Re
 		if bl == nil || ev.USD <= 0 {
 			return
 		}
-		name := ev.Backend
-		if reg := registry(); reg != nil {
-			if l, err := reg.Get(ev.Backend); err == nil && l != nil {
-				name = l.Name
-			}
+		bl.RecordSession(budgetLLMName(registry, ev.Backend), ev.SessionID, ev.At, ev.USD, ev.TokensIn, ev.TokensOut)
+	}
+}
+
+// budgetLLMName is the LLM a backend's spend is recorded under: the inference
+// registry's name for it, or the backend name itself when it has no entry.
+func budgetLLMName(registry func() *inference.Registry, backend string) string {
+	if reg := registry(); reg != nil {
+		if l, err := reg.Get(backend); err == nil && l != nil {
+			return l.Name
 		}
-		bl.Record(name, ev.At, ev.USD, ev.TokensIn, ev.TokensOut)
+	}
+	return backend
+}
+
+// sessionCostTotal returns the per-session lifetime cost source for the
+// autonomous manager: the session's estimated cost (the figure
+// session.SummaryFor sums) and the LLM name its spend is recorded under.
+func sessionCostTotal(get func(id string) (*session.Session, bool), registry func() *inference.Registry) func(string) (float64, string, bool) {
+	return func(id string) (float64, string, bool) {
+		s, ok := get(id)
+		if !ok || s == nil {
+			return 0, "", false
+		}
+		return s.EstCostUSD, budgetLLMName(registry, s.BackendFamily), true
 	}
 }
 
@@ -350,6 +368,7 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 	registry := httpServer.InferenceRegistry
 	autonomousBudget = newAutonomousBudget(cfg, expandHome(cfg.DataDir), registry)
 	mgr.SetUsageEventHook(recordUsageSpend(autonomousBudget, registry))
+	amgr.SetCostSources(autonomousBudget, sessionCostTotal(mgr.GetSession, registry))
 	peerBudget := newPeerBudget(registry, httpServer.ServerStore)
 	autonomousBudget.PeerSpend = peerBudget.Spend
 	autonomousBudget.PeerBreakdown = peerBudget.Breakdown

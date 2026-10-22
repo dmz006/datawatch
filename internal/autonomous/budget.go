@@ -30,6 +30,9 @@ type budgetEntry struct {
 	USD       float64   `json:"usd"`
 	TokensIn  int       `json:"tokens_in"`
 	TokensOut int       `json:"tokens_out"`
+	// Session is the id of the session that incurred the spend. Entries
+	// written before attribution existed have none and are never attributed.
+	Session string `json:"session,omitempty"`
 }
 
 // BudgetAllocation is the optional estimated share-of-allocation figure in a
@@ -148,15 +151,21 @@ func (b *BudgetLedger) ensureLoaded() {
 	}
 }
 
-// Record adds one spend entry in memory and appends it to the file.
+// Record adds one spend entry that is not attributed to a session.
 func (b *BudgetLedger) Record(llm string, at time.Time, usd float64, tokensIn, tokensOut int) {
+	b.RecordSession(llm, "", at, usd, tokensIn, tokensOut)
+}
+
+// RecordSession adds one spend entry attributed to sessionID (empty for none)
+// in memory and appends it to the file.
+func (b *BudgetLedger) RecordSession(llm, sessionID string, at time.Time, usd float64, tokensIn, tokensOut int) {
 	if llm == "" {
 		return
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.ensureLoaded()
-	e := budgetEntry{LLM: llm, At: at, USD: usd, TokensIn: tokensIn, TokensOut: tokensOut}
+	e := budgetEntry{LLM: llm, At: at, USD: usd, TokensIn: tokensIn, TokensOut: tokensOut, Session: sessionID}
 	b.entries = append(b.entries, e)
 
 	cutoff := b.now().Add(-budgetRetention)
@@ -296,6 +305,41 @@ func (b *BudgetLedger) SpendBetween(llm string, from, to time.Time) float64 {
 		if e.LLM == llm && !e.At.Before(from) && !e.At.After(to) {
 			total += e.USD
 		}
+	}
+	return total
+}
+
+// SpendBySessions sums this daemon's own recorded spend attributed to any of
+// sessionIDs, from from onward (a zero from means every retained entry). A
+// non-empty llm restricts the sum to that LLM. It never includes peer spend.
+func (b *BudgetLedger) SpendBySessions(sessionIDs []string, llm string, from time.Time) float64 {
+	if len(sessionIDs) == 0 {
+		return 0
+	}
+	set := make(map[string]struct{}, len(sessionIDs))
+	for _, id := range sessionIDs {
+		if id != "" {
+			set[id] = struct{}{}
+		}
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.ensureLoaded()
+	var total float64
+	for _, e := range b.entries {
+		if e.Session == "" {
+			continue
+		}
+		if _, ok := set[e.Session]; !ok {
+			continue
+		}
+		if llm != "" && e.LLM != llm {
+			continue
+		}
+		if !from.IsZero() && e.At.Before(from) {
+			continue
+		}
+		total += e.USD
 	}
 	return total
 }
