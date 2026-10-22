@@ -378,6 +378,110 @@ spend, so nothing is counted twice. A peer that cannot be reached is skipped
 and the local spend alone decides, so a peer outage never stalls your work.
 Status shows each peer, its spend and whether it is counted.
 
+## Automation spending limit
+
+A chain of Automata (an Automation) can spend a lot before you notice. Give
+the Automation a spending limit and datawatch stops starting its members when
+the limit is reached, tells you, and carries on by itself when it can. The
+limit covers the whole chain, whichever LLMs it uses, and works next to the
+per-LLM budget above: both apply and the tighter one decides. An Automation
+without a limit is never stopped by dollars.
+
+### Set it
+
+```bash
+# $40 per week, spread evenly, resetting Monday 09:00 New York time
+datawatch automation set-budget <id> --ceiling-type dollar --ceiling-value 40 \
+  --window week --pacing even \
+  --reset-weekday monday --reset-time 09:00 --reset-zone America/New_York
+
+# A tighter limit on one member, and what you expect it to cost
+datawatch automation set-budget <id> --member <member-id> \
+  --ceiling-type dollar --ceiling-value 10 --window automation
+datawatch automation set-budget <id> --member <member-id> --estimated-cost-usd 6
+
+# Remove it
+datawatch automation set-budget <id> --clear
+```
+
+From a chat channel: `automation set-budget <id> ceiling_type=dollar
+ceiling_value=40 window=week pacing=even`, or `automation set-budget <id>
+clear=true`. Over REST it is `POST /api/automations/{id}/set_budget` and over
+MCP `automation_set_budget`, with the same fields. Each call replaces the whole
+limit. It does not start, pause or resume anything by itself.
+
+The window is `day`, `week` or `month` (datawatch works out the reset itself,
+by default at local midnight, on Monday, or on the first of the month) or
+`automation` (the whole life of the Automation, which never resets). Set the
+reset anchors if you want the window to line up with a provider's reset.
+
+### How the spend is added up
+
+The limit counts every member Automaton of the Automation: the sessions that
+did the work, the planning sessions and the verification sessions, including
+members of any nested Automation. The numbers come from the same spend ledger
+as the per-LLM budget. A member's own limit counts only that member's spend.
+Set `backend` to count only one LLM.
+
+### Read it
+
+```bash
+datawatch automation get <id>
+```
+
+In chat, `automation status <id>`. The `budget` block shows spend against the
+ceiling, the window, when it resets (or that the reset time is unknown), what a
+breach will do, and any pacing hold. `datawatch autonomous status` and the
+`automations` rows of `GET /api/autonomous/status` carry the same block with a
+short figure such as `$12.40 of $40.00 (week)`.
+
+### Pacing
+
+`--pacing even` spreads the ceiling across the window. If spend is already ahead
+of an even spread, the next member waits until the window has caught up; the
+Automation stays active and checks again by itself. `--pacing none` (the default)
+spends up to the ceiling at any speed. A member with a declared expected cost
+also waits when starting it would take spend past the ceiling. Pacing does
+nothing on the `automation` window, which never ends.
+
+### When the ceiling is reached
+
+The ceiling is checked before each member starts (on activation, on moving to
+the next member, and before a whole fork) and before a member's task starts a
+new session. Work that is already running is not interrupted, so spend can end
+a little above the ceiling; leave some headroom.
+
+- **Reset time known** (a `day`, `week` or `month` window, or a reset time read
+  from a provider's rate-limit message): the Automation pauses and resumes by
+  itself when the window resets. You do nothing. If the ceiling is still
+  reached at that moment, it is blocked instead, so a pause never loops.
+- **Reset time unknown** (the `automation` window), or `--on-breach block`: the
+  Automation goes to blocked and waits for you. Raise the ceiling or wait for
+  your own budget, then resume it. Resume is refused, with the reason, while
+  the ceiling is still reached.
+- **Either way** you get an alert once per breach, the breach is audited, and
+  the `state` of the budget block says what it is doing and when it will
+  resume.
+
+### The estimate
+
+Add `--allocation-estimate` for an estimated share-of-allocation percentage.
+It uses a dollar figure you declare per plan tier in
+`autonomous.plan_tier_allocation_usd`, so it is only as good as that figure.
+It is labelled estimated, it is off by default, and it never pauses or blocks
+anything. A limit of type `allocation_pct` only shows this estimate; only a
+`dollar` ceiling stops work.
+
+### Count another daemon's usage
+
+If a second datawatch spends on the same account, name it with `--peer-window
+peerA` (and give the limit a `--backend`, because a peer reports usage per
+LLM). Only the peers you name are counted; the default is none. datawatch does
+not confirm automatically that a named peer shares the account, because the
+check that would do that does not exist yet, so the list you write is the
+confirmation, and the status says so next to each counted peer. A peer that
+cannot be reached counts as zero and never stalls your work.
+
 ## Common pitfalls
 
 - **Everything queues behind one big model.** That is the node limit

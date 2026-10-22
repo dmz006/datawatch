@@ -571,6 +571,50 @@ autonomous unsubscribe sub_a3f2
 > `datawatch autonomous subscribe/unsubscribe/subscriptions` (richer
 > flags, including session/topic/alert sinks).
 
+### `automation set-budget <id> key=value...`
+
+Set, replace or clear the spending limit of an Automation (a chain of
+Automata), or of one of its members. It does not start, pause or resume
+anything by itself. The arguments are `key=value` pairs; the policy keys
+replace the whole limit.
+
+**Syntax:**
+```
+automation set-budget <id> ceiling_type=dollar|allocation_pct ceiling_value=<n> window=automation|day|week|month
+    [pacing=none|even] [on_breach=pause|block] [backend=<llm>] [allocation_estimate=true]
+    [peer_window=<a,b>] [reset_time=HH:MM] [reset_weekday=<day>] [reset_day=1..28] [reset_zone=<zone>]
+    [member=<id>] [estimated_cost_usd=<n>] [expected_version=<n>]
+automation set-budget <id> clear=true [member=<id>] [expected_version=<n>]
+```
+
+- `ceiling_type`, `ceiling_value` and `window` are required together.
+  Only a `dollar` ceiling can stop work; `allocation_pct` shows an estimate
+  and never pauses or blocks.
+- `on_breach` defaults to `pause`: the Automation pauses and resumes by
+  itself at the window reset when the reset time is known, and is blocked
+  until you resume it when the reset time is unknown. `block` always blocks.
+  An alert is raised either way.
+- `peer_window` names, comma separated, the other daemons whose usage counts
+  toward the ceiling (off by default; no automatic confirmation that a peer
+  shares the account).
+- `member=<id>` targets that member's own limit; `estimated_cost_usd=<n>`
+  with `member` declares its expected cost (0 removes it).
+- `clear=true` removes the limit and cannot be combined with policy keys.
+- `expected_version=<n>` must match the Automation's current version or the
+  daemon refuses with a 409.
+
+**Example:**
+```
+automation set-budget ab12cd34 ceiling_type=dollar ceiling_value=40 window=week on_breach=pause
+```
+→ `automation ab12cd34 (nightly build): status active, version 8, 3 members`
+followed by the budget block: scope, `spent: $0.00 of $40.00 ceiling (week window)`, the
+window, the reset time, `on breach: pauses and resumes by itself at the reset`, and one
+line per counted peer.
+
+`automation status <id>` prints the same budget block. A mistake in the
+arguments is answered with the usage line and nothing is sent to the daemon.
+
 ---
 
 ## CLI Commands
@@ -990,6 +1034,40 @@ PRD lifecycle — full CRUD parity with the REST + MCP surfaces.
 | `prd children` | List child PRDs spawned via SpawnPRD (v5.9.0, BL191 Q4) |
 | `prd set-llm/set-task-llm` | Pin LLM backend/effort/model at PRD or task scope (v5.4.0, BL203) |
 | `prd-set-task-verification-llm <id> --task <task>` / `prd-set-story-verification-llm <id> --story <story>` / `prd-set-verification-llm <id>` | Pick the LLM that verifies one task / every task in a story / the whole Automaton. Flags `--backend` / `--model` / `--effort`; omitted flags are unchanged, `--backend ""` clears. Precedence task > story > Automaton > global `autonomous.verification_*` (v9.0.70) |
+
+### `datawatch automation <subcommand>`
+
+Automations: chains of Automata run one after another or in branches. Every
+control takes `--actor`, `--reason` and `--expected-version`; a stale expected
+version is refused with HTTP 409.
+
+| Subcommand | Description |
+|---|---|
+| `list`, `get <id>` | List Automations; show one (members, edges, active cursors, budget) |
+| `create`, `activate <id>` | Create a draft from JSON; start a draft |
+| `pause`, `resume`, `cancel <id>` | Operator control (`cancel` requires `--cancel-in-flight true\|false`) |
+| `skip`, `insert`, `remove`, `edges`, `approve` | Edit a running chain |
+| `set-budget <id>` | Set, replace or clear the spending limit of the Automation, or of one member with `--member` |
+
+`set-budget` flags: `--ceiling-type dollar|allocation_pct`, `--ceiling-value <n>`
+and `--window automation|day|week|month` (required together); optional
+`--pacing none|even`, `--on-breach pause|block`, `--backend <llm>`,
+`--allocation-estimate`, `--peer-window a,b`, `--reset-time HH:MM`,
+`--reset-weekday <day>`, `--reset-day 1..28`, `--reset-zone <zone>`;
+`--member <id>` with `--estimated-cost-usd <n>` declares a member's expected
+cost (0 removes it); `--clear` removes the limit and cannot be combined with
+the policy flags. The flags are checked against each other before any request
+is sent. On a breach the Automation pauses and resumes by itself at the window
+reset when the reset time is known, and is blocked until you resume it when it
+is unknown; an alert is raised either way. `--allocation-estimate` adds an
+estimated figure that never pauses or blocks, and `--peer-window` counts only
+the peers you name, with no automatic confirmation that they share the account.
+
+```bash
+datawatch automation set-budget ab12cd34 --ceiling-type dollar --ceiling-value 40 \
+  --window week --pacing even --reset-weekday monday --reset-time 09:00
+datawatch automation set-budget ab12cd34 --clear
+```
 
 ### `datawatch observer <subcommand>`
 

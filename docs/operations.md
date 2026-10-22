@@ -3281,6 +3281,128 @@ spend alone decides, and the failure is logged once per outage. Peer
 fingerprint matching is not part of this feature; the list you write is the
 confirmation.
 
+## Automation spending limit
+
+An Automation can carry a spending limit: a dollar ceiling over a window.
+It complements the per-LLM budget above. The per-LLM budget caps what one
+LLM may cost across everything; the Automation limit caps what one chain of
+Automata may cost, whichever LLMs they use. Both apply, and the tighter one
+decides. An Automation with no limit is never stopped by dollars.
+
+### What it covers
+
+The limit counts the cost of every member Automaton of the Automation: the
+sessions that did the tasks, the planning (decompose) sessions and the
+verification and judge sessions. A member that is itself a nested Automation
+counts the same way, down through its own members. Each session's cost is
+counted once even if it is reachable twice. The figures come from the same
+spend ledger the per-LLM budget uses, so there is no second set of numbers to
+reconcile. Set `backend` on the limit to count only one LLM's spend; leave it
+empty to count every member's spend.
+
+A member can carry its own limit as well. It narrows the Automation's limit
+and counts only that member's spend; it never widens it. When both apply, the
+one with the least room left decides.
+
+### Setting it
+
+| Channel | How |
+|---|---|
+| REST | `POST /api/automations/{id}/set_budget` with the policy fields (below), `expected_version`, `actor` and `reason`; `member_id` targets one member's limit; `clear: true` removes the limit |
+| MCP | `automation_set_budget` |
+| CLI | `datawatch automation set-budget <id> --ceiling-type dollar --ceiling-value 40 --window week --pacing even` (add `--member <id>` for one member; `--clear` removes it) |
+| Comm | `automation set-budget <id> ceiling_type=dollar ceiling_value=40 window=week pacing=even` (`member=<id>`; `clear=true`) |
+
+The fields replace the whole limit each time. `ceiling_type` is `dollar` (the
+only type that can stop work) or `allocation_pct` (an estimate, see below),
+`ceiling_value` is above zero, and `window` is `automation` (the whole life of
+the Automation), `day`, `week` or `month`. Optional: `pacing` (`none` or
+`even`), `on_breach` (`pause`, the default, or `block`), `backend`,
+`allocation_estimate`, `peer_window`, and the reset anchors `reset_time`
+(24h `HH:MM`), `reset_weekday`, `reset_day` (1 to 28) and `reset_zone`.
+A member's expected cost is set with `estimated_cost_usd` together with
+`member_id`. Setting a limit does not change the Automation's status. It can
+be set on a draft, active, paused or blocked Automation, and on a member that
+has not finished.
+
+Read it back from `GET /api/automations/{id}`, `automation_get`,
+`datawatch automation get <id>` or the comm command `automation status <id>`.
+Each Automation row of the autonomous status carries the same `budget` view
+with `spent_usd` and a short `ceiling_display` such as `$12.40 of $40.00
+(week)`. The view shows spend, ceiling, remaining dollars, the window, when it
+resets or that the reset time is unknown, what a breach will do, and any
+pacing hold.
+
+### Windows and when they reset
+
+A `day`, `week` or `month` window is one the daemon defines itself. It starts
+at the most recent reset and ends at the next. Unless you set anchors, a day
+resets at local midnight, a week on Monday and a month on the first, in the
+daemon's time zone. Set `reset_time`, `reset_weekday`, `reset_day` and
+`reset_zone` to line the window up with a provider's reset. The `automation`
+window never resets: it covers the whole life of the Automation.
+
+### Pacing
+
+`pacing: none` (the default) lets spend run up to the ceiling at any speed.
+`pacing: even` spreads the ceiling across the window: if spend is already
+ahead of an even spread, no new member starts until the window has caught up.
+Pacing needs a window that ends, so it does nothing on the `automation`
+window. A pacing hold is not a breach. The Automation stays active, one
+decision is recorded, and the periodic check retries.
+
+A member with a declared expected cost is held the same way when starting it
+would take spend past the ceiling. Without a declared cost a member starts
+whenever spend is below the ceiling, except that a member being resumed uses
+the spend it already had as its estimate.
+
+### What happens on a breach
+
+The ceiling is checked before any member starts: when the Automation is
+activated, when it moves on to the next member, and before a whole fork
+starts. It is also checked before a task of a member starts a new session.
+Work already running when the ceiling is crossed is never cut off and runs to
+completion, so spend can end a little above the ceiling. Set the ceiling a
+little below the figure you must not exceed.
+
+When the ceiling is reached:
+
+- **The reset time is known** (a day, week or month window, or a reset time
+  parsed from a provider's rate-limit message) and `on_breach` is `pause`.
+  The Automation pauses and resumes by itself at the reset, with no action
+  from you. If the ceiling is still reached when the time comes, it is
+  blocked instead, once, so a pause never loops.
+- **The reset time is unknown** (the `automation` window with no parsed
+  reset), or `on_breach` is `block`. The Automation is blocked and waits for
+  you. Raise the ceiling or wait for your own budget to refill, then resume
+  it. Resume checks the limit again and is refused with the reason while the
+  ceiling is still reached.
+- **Either way** an alert is raised once for the breach, the breach is
+  recorded in the audit trail, and the Automation's decision log says why.
+  Its current state (paused or blocked, since when, and the time it will
+  resume if it will) is in the `state` field of the budget view.
+
+### The estimate
+
+Set `allocation_estimate: true` to add an estimated share-of-allocation
+figure. It divides the spend by a notional dollar allocation you declare per
+plan tier in `autonomous.plan_tier_allocation_usd`. It is always labelled
+estimated, it is off by default, and it never pauses or blocks anything. A
+limit of type `allocation_pct` behaves the same way: it only shows the
+estimate. Only a `dollar` ceiling stops work.
+
+### Counting another daemon's usage
+
+By default only this daemon's spend counts. If another datawatch spends on the
+same account, name that peer in `peer_window` (and set `backend`, because peer
+usage is reported per LLM). Only the peers you name are asked, and only for
+their own local spend, so two daemons that count each other never count the
+same dollars twice. Nothing confirms automatically that a named peer really
+shares the account: the check that would confirm it (a resource fingerprint
+exchange) does not exist yet, so the list you write is the confirmation, and
+the status says so beside every counted peer. A peer that cannot be reached is
+skipped and counts as zero, so a peer outage never stalls your work.
+
 ---
 
 ## Terminal Performance

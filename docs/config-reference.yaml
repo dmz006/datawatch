@@ -892,6 +892,64 @@ autonomous:
   automation:
     idle_alert_minutes: 0
     agent_insert_policy: allow
+    # budget_policy — no daemon config key. The spending limit of an
+    # Automation is runtime data on the Automation record (and on a member as
+    # an override), set with POST /api/automations/{id}/set_budget, MCP
+    # automation_set_budget, `datawatch automation set-budget <id>` or comm
+    # `automation set-budget <id> key=value...`; it is not read from this file.
+    # Shape of the `budget_policy` object (a member's override has the same
+    # shape and narrows the Automation's, it never widens it):
+    #
+    #   ceiling_type:  dollar | allocation_pct. `dollar` is the only type that
+    #                  can stop work; `allocation_pct` is accepted but is an
+    #                  estimate only and never pauses or blocks. Required.
+    #   ceiling_value: number > 0, in dollars (or percent for allocation_pct).
+    #   window:        automation (lifetime of the Automation) | day | week |
+    #                  month. Required. The lifetime window has no reset.
+    #   pacing:        none (default) | even. `even` holds a member start while
+    #                  spend is ahead of an even spread across the window; it is
+    #                  a hold, not a breach, and is ignored for the lifetime
+    #                  window.
+    #   on_breach:     pause (default) | block. On a dollar breach the
+    #                  Automation pauses and resumes by itself at the window
+    #                  rollover only when the reset time is known (a day, week
+    #                  or month window the daemon defines itself, or a reset time
+    #                  parsed from a rate-limit message); when the reset time is
+    #                  unknown, or on_breach is `block`, it goes to blocked and
+    #                  waits for the operator. An alert is raised either way.
+    #   backend:       optional LLM whose spend is measured; empty = every
+    #                  member's spend. Needed for peer_window, and for the
+    #                  lifetime window to learn a reset time from a rate-limit
+    #                  message.
+    #   allocation_estimate: bool, default false. Adds an estimated
+    #                  share-of-allocation figure to the budget view. Always
+    #                  labelled estimated, never used to pause or block. The
+    #                  notional allocation comes from
+    #                  autonomous.plan_tier_allocation_usd (above) for the
+    #                  backend's plan tier; nothing is shown when it is unset.
+    #   peer_window:   list of federation peer names, default empty (none).
+    #                  Another daemon's usage of `backend` counts toward the
+    #                  ceiling only for the peers named here. There is no
+    #                  automatic confirmation that a peer shares the account
+    #                  (the resource fingerprint exchange does not exist yet),
+    #                  so the list is the operator's own opt-in. An unreachable
+    #                  peer counts as zero.
+    #   reset_time:    24h HH:MM. Day, week and month windows reset at this
+    #                  clock time; unset = local midnight in the daemon's zone.
+    #   reset_weekday: monday..sunday. Week windows only; unset = Monday.
+    #   reset_day:     1..28. Month windows only; unset = the 1st.
+    #   reset_zone:    IANA zone name for the anchors above; unset = the
+    #                  daemon's local zone.
+    #
+    # A member may also carry `estimated_cost_usd` (>= 0, members that run an
+    # Automaton only): the expected cost, used to hold a start that would cross
+    # the ceiling. Without it a member starts whenever spend is below the
+    # ceiling; a member being resumed uses its spend so far as the estimate.
+    # Example (set through the operation above, shown as JSON):
+    #   {"ceiling_type": "dollar", "ceiling_value": 40, "window": "week",
+    #    "pacing": "even", "on_breach": "pause", "backend": "claude-code",
+    #    "reset_weekday": "monday", "reset_time": "09:00",
+    #    "reset_zone": "America/New_York", "peer_window": ["edge"]}
   notify:
     # Built-in sinks (alert store, topic push, comm fan-out) act on the
     # lifecycle event kinds listed here. Empty list (the default) = nothing

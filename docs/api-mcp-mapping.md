@@ -135,11 +135,13 @@ documenting coverage gaps and the reasoning behind them.
 
 | API Endpoint | MCP Tool | Status | Notes |
 |-------------|----------|--------|-------|
-| `GET /api/automations` | `automation_list` | Complete | Data records only — no automatic advance yet |
+| `GET /api/automations` | `automation_list` | Complete | Data records only — no automatic advance yet; each record carries the computed `budget` view (see the Automation spending limit rows below) |
 | `POST /api/automations` | `automation_create` | Complete | body `{name, description, entry_member_id, members[], budget_policy, project_dir, backend, model, effort, verification_*}` |
-| `GET /api/automations/{id}` | `automation_get` | Complete | |
+| `GET /api/automations/{id}` | `automation_get` | Complete | the record plus a computed `budget` view (absent when the Automation has no budget policy in play): `scope`, `ceiling_type`, `ceiling_usd`, `spent_usd`, `remaining_usd`, `window`, `window_start`, `window_end`, `pacing`, `pacing_allowed_usd`, `on_breach`, `ceiling_reached`, `hold` / `hold_reason`, `reset_at` / `reset_known` / `reset_source`, `state` (the current breach), `allocation_estimate` (always estimated), `peers[]` with `peer_spend_usd`, `peer_basis` and `peer_note`. Computed on every read, never stored |
 | `PUT /api/automations/{id}` | `automation_update` | Complete | optional `expected_version` — optimistic concurrency, `409` if the record moved since |
 | `DELETE /api/automations/{id}` | `automation_delete` | Complete | member Automatons are unaffected — the back-reference is cleared |
+| `POST /api/automations/{id}/set_budget` | `automation_set_budget` | Complete | Automation spending limit. Body `{member_id?, ceiling_type, ceiling_value, window, pacing?, on_breach?, backend?, allocation_estimate?, peer_window?, reset_time?, reset_weekday?, reset_day?, reset_zone?, estimated_cost_usd?, clear?, expected_version, actor, reason}`. The policy fields replace the whole policy of the Automation, or of one member when `member_id` is given; `clear` removes it and cannot be combined with them; `estimated_cost_usd` (member only) declares the member's expected cost. Does not change the Automation's status. `400` invalid policy, `404` unknown Automation or member, `409` stale `expected_version`, a finished member or a finished Automation. Audit action `automation_set_budget`. CLI `datawatch automation set-budget <id>`; comm `automation set-budget <id> key=value...` |
+| `GET /api/autonomous/status` (`automations[].budget`) | `autonomous_status` | Complete | each Automation row carries the same `budget` view plus `spent_usd` and `ceiling_display` (for example `$12.40 of $40.00 (week)`); a block caused by the limit also shows as the row's blocked reason, and a pause or block is recorded in `budget.state` (`action`, `reason`, `resume_at`). CLI `datawatch autonomous status`; comm `automation status <id>` prints the budget lines |
 
 ### Observer peers
 
