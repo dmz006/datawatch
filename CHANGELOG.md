@@ -5,6 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.82 — Pinned models on GPU nodes are protected from silent eviction
+
+### Added
+
+- **Warning when two large models share one compute node.** When two different models are configured to run on the same node, datawatch warns at startup and shows the warning in the config response and the capacity status. The node may not hold both models at once, so a call to one can evict the other.
+- **Per-node pinned model.** A compute node can be pinned to one model. A request that does not name a model runs the pinned one. A request for a different model is refused with a clear message unless that node's allow-model-swap setting is enabled, so a pinned model is not swapped out by accident.
+- **Pin keeper.** A background check re-pins a pinned model that Ollama has evicted, every `pin_check_seconds` seconds (0 turns the check off), and raises an alert each time it had to.
+
 ## v9.5.81 — The quality gate confirms a regression by re-running before it reports
 
 ### Fixed
