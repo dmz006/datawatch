@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.72 — A daemon restart no longer ends live claude-code workers
+
+### Fixed
+
+- **A daemon restart no longer ends live claude-code Automaton workers.** After a restart the one-shot reaper and the pane scanners read the wrapped tail of the typed launch command (`... echo 'DATAWATCH_COMPLETE: claude done'`, whose last fragment starts with the marker and ends with the closing quote) as the worker's own completion line, and ended the session a few seconds after startup. A completion line now has to be a real summary line: the wrapped tail of a quoted shell argument is ignored, and the one-shot reaper applies the same real-completion rules as the pane scanners. New deterministic mid-task restart tests use a fake terminal multiplexer with realistic claude-code pane content.
+
 ## v9.5.71 — Lifecycle subscriptions: update, test-fire, pending-events queue and PWA tab
 
 ### Added
