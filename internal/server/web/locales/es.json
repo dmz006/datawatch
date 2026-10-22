@@ -1926,6 +1926,8 @@
   "automation_load_failed": "No se pudieron cargar las automatizaciones: %1$s",
   "automation_filter_search": "Buscar automatizaciones por nombre o ID",
   "automation_show_history": "Mostrar canceladas",
+  "automation_hide_history": "Ocultar canceladas",
+  "automation_filter_toggle": "Mostrar u ocultar los filtros de automatizaciones",
   "automation_budget_ceiling": "Límite",
   "automation_budget_window": "Ventana",
   "automation_budget_pacing": "Ritmo",

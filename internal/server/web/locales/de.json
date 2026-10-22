@@ -1926,6 +1926,8 @@
   "automation_load_failed": "Automatisierungen konnten nicht geladen werden: %1$s",
   "automation_filter_search": "Automatisierungen nach Name oder ID suchen",
   "automation_show_history": "Abgebrochene anzeigen",
+  "automation_hide_history": "Abgebrochene ausblenden",
+  "automation_filter_toggle": "Filter für Automatisierungen umschalten",
   "automation_budget_ceiling": "Obergrenze",
   "automation_budget_window": "Zeitfenster",
   "automation_budget_pacing": "Taktung",

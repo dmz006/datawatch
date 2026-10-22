@@ -740,6 +740,9 @@ function connect() {
       // but never actually re-fetched the PRD list -- nothing visibly
       // happened until navigating away and back.
       renderAutonomousView();
+    } else if (state.activeView === 'automation') {
+      // Same picker gap as the Automata case above.
+      renderAutomationView();
     } else if (state.activeView === 'dashboard') {
       // Same gap, found proactively while fixing the above (Dashboard
       // has the same picker, per BL312 S6) -- not yet operator-reported,
@@ -2256,6 +2259,7 @@ function navigate(view, sessionId, fromPopstate) {
       'sessions':       viewer + '#sessions-list',
       'session-detail': viewer + '#inside-a-session-terminal-area',
       'autonomous':     viewer + '#automata',
+      'automation':     viewer + '#automation',
       'observer':       viewer + '#observer',
       'settings':       viewer + '#settings',
     };
@@ -2316,7 +2320,7 @@ function navigate(view, sessionId, fromPopstate) {
 
     // GH#192 D6 — pulse the header refresh spinner for every real
     // view switch (not 'new'/'settings', which don't list-refresh data).
-    if (['sessions', 'alerts', 'autonomous', 'dashboard', 'observer'].includes(view)) {
+    if (['sessions', 'alerts', 'autonomous', 'automation', 'dashboard', 'observer'].includes(view)) {
       _showHeaderRefreshSpinner();
     }
     if (view === 'sessions') {
@@ -2337,6 +2341,10 @@ function navigate(view, sessionId, fromPopstate) {
       _automataDetailBreadcrumb = [];
       _automataDetailPRD = null;
       renderAutonomousView();
+    } else if (view === 'automation') {
+      headerTitle.textContent = t('nav_automation') || 'Automation';
+      _automationState.detailId = null;
+      renderAutomationView();
     } else if (view === 'dashboard') {
       // BL303 S4 — /dashboard Mission Control.
       headerTitle.textContent = t('nav_dashboard') || 'Dashboard';
@@ -23799,6 +23807,184 @@ function renderAutonomousView() {
 }
 window.renderAutonomousView = renderAutonomousView;
 
+// ════════════════════════════════════════════════════════════════════════════
+// Automation tab
+//
+// Top-level view for Automations (a named chain of member Automata). Sits left
+// of the Automata tab and is gated on the same autonomous.enabled flag. This
+// section holds the tab state, the status-aware request helper, the list view
+// and the card builder; the create/edit form and detail view live elsewhere.
+// ════════════════════════════════════════════════════════════════════════════
+const _automationState = {
+  list: [],
+  detailId: null,
+  detail: null,
+  search: '',
+  statusFilter: new Set(['draft', 'active', 'paused', 'blocked', 'completed']),
+  historyOn: false,
+  filterOpen: false,
+  expanded: new Set(),
+  loadError: null,
+};
+
+// automationRequest is apiFetch with the HTTP status kept: a non-ok response
+// rejects with an Error whose .status is the numeric code, so callers can tell
+// a stale-version 409 from any other failure. Same token and remote-server
+// proxy routing as apiFetch; resolves the parsed JSON body (null for 204/205).
+function automationRequest(method, path, body) {
+  const token = localStorage.getItem('cs_token') || '';
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = 'Bearer ' + token;
+  const srv = state.activeServer;
+  const isRemote = srv && srv !== 'local' && srv !== 'all';
+  const url = isRemote ? '/api/proxy/' + encodeURIComponent(srv) + path : path;
+  const opts = { method, headers };
+  if (body !== undefined && body !== null) opts.body = JSON.stringify(body);
+  return fetch(url, opts).then(r => {
+    if (r.status === 204 || r.status === 205) return null;
+    if (r.ok) return r.json();
+    return r.text().then(text => {
+      const err = new Error(text || r.statusText);
+      err.status = r.status;
+      return Promise.reject(err);
+    });
+  });
+}
+window.automationRequest = automationRequest;
+
+const _AUTOMATION_STATUSES = ['draft', 'active', 'paused', 'blocked', 'completed', 'cancelled'];
+
+function renderAutomationView() {
+  const view = document.getElementById('view');
+  if (!view) return;
+  const st = _automationState;
+  const statusBadges = _AUTOMATION_STATUSES.map(s => {
+    const active = st.statusFilter.has(s) ? 'active' : '';
+    const label = escHtml(t('automation_status_' + s));
+    return `<button class="automata-filter-badge status-${s} ${active}" onclick="toggleAutomationStatusFilter('${s}')">${label}</button>`;
+  }).join('');
+  const historyTitle = escHtml(st.historyOn ? t('automation_hide_history') : t('automation_show_history'));
+  view.innerHTML = `
+    <div class="sessions-watermark"><img src="/favicon.svg" alt="" /></div>
+    <div class="view-content" style="position:relative;">
+      <div class="output-tabs automata-tabs-bar">
+        <button class="output-tab active" data-tab="automation">${escHtml(t('nav_automation'))}</button>
+        <div style="flex:1;"></div>
+        <button id="automationFilterBtn" class="automata-action-btn ${st.filterOpen ? 'active' : ''}" onclick="toggleAutomationFilter()" title="${escHtml(t('automation_filter_toggle'))}" aria-label="${escHtml(t('automation_filter_toggle'))}">⊞</button>
+        <button id="automationHistoryBtn" class="automata-action-btn ${st.historyOn ? 'active' : ''}" onclick="toggleAutomationHistory()" title="${historyTitle}" aria-label="${historyTitle}">⏱</button>
+        <button id="automationNewBtn" class="btn-primary" style="font-size:12px;padding:5px 12px;" onclick="if (typeof openAutomationForm === 'function') openAutomationForm()">＋ ${escHtml(t('automation_new'))}</button>
+      </div>
+      <div id="automationFilterBar" class="automata-filter-bar" style="display:${st.filterOpen ? 'flex' : 'none'};">
+        <input id="automationSearch" type="text" class="form-input" placeholder="${escHtml(t('automation_filter_search'))}" aria-label="${escHtml(t('automation_filter_search'))}" value="${escHtml(st.search)}" oninput="onAutomationSearchChange(this.value)" style="flex:1;min-width:100px;font-size:12px;">
+        <div class="automata-badge-group">${statusBadges}</div>
+      </div>
+      <div id="automationPanel" style="font-size:13px;color:var(--text);padding:6px 8px;">
+        <div style="text-align:center;padding:32px;color:var(--text2);">${loadingEyeBlock()}</div>
+      </div>
+    </div>
+  `;
+  loadAutomationList();
+  _injectServerPickerBar(view, renderAutomationView);
+}
+window.renderAutomationView = renderAutomationView;
+
+function toggleAutomationFilter() {
+  _automationState.filterOpen = !_automationState.filterOpen;
+  const bar = document.getElementById('automationFilterBar');
+  if (bar) bar.style.display = _automationState.filterOpen ? 'flex' : 'none';
+  const btn = document.getElementById('automationFilterBtn');
+  if (btn) btn.classList.toggle('active', _automationState.filterOpen);
+}
+window.toggleAutomationFilter = toggleAutomationFilter;
+
+function toggleAutomationHistory() {
+  _automationState.historyOn = !_automationState.historyOn;
+  const btn = document.getElementById('automationHistoryBtn');
+  if (btn) {
+    const title = _automationState.historyOn ? t('automation_hide_history') : t('automation_show_history');
+    btn.classList.toggle('active', _automationState.historyOn);
+    btn.title = title;
+    btn.setAttribute('aria-label', title);
+  }
+  _automationRenderCards();
+}
+window.toggleAutomationHistory = toggleAutomationHistory;
+
+function toggleAutomationStatusFilter(s) {
+  const f = _automationState.statusFilter;
+  if (f.has(s)) f.delete(s); else f.add(s);
+  const btn = document.querySelector('.automata-filter-badge.status-' + s);
+  if (btn) btn.classList.toggle('active', f.has(s));
+  _automationRenderCards();
+}
+window.toggleAutomationStatusFilter = toggleAutomationStatusFilter;
+
+function onAutomationSearchChange(val) {
+  _automationState.search = val;
+  _automationRenderCards();
+}
+window.onAutomationSearchChange = onAutomationSearchChange;
+
+function loadAutomationList() {
+  return automationRequest('GET', '/api/automations')
+    .then(data => {
+      const list = Array.isArray(data) ? data : (data && Array.isArray(data.automations) ? data.automations : []);
+      _automationState.list = list;
+      _automationState.loadError = null;
+      _automationRenderCards();
+    })
+    .catch(e => {
+      _automationState.loadError = String((e && e.message) || e);
+      _automationRenderCards();
+    });
+}
+window.loadAutomationList = loadAutomationList;
+
+// _automationVisibleList applies the search box, the status badges and the
+// history toggle (cancelled Automations show only while history is on or the
+// cancelled badge is selected).
+function _automationVisibleList() {
+  const st = _automationState;
+  const q = st.search.trim().toLowerCase();
+  return st.list.filter(a => {
+    if (!a) return false;
+    const status = a.status || 'draft';
+    const show = st.statusFilter.has(status) || (st.historyOn && status === 'cancelled');
+    if (!show) return false;
+    if (!q) return true;
+    return String(a.name || '').toLowerCase().includes(q) || String(a.id || '').toLowerCase().includes(q);
+  });
+}
+
+function _automationRenderCards() {
+  const panel = document.getElementById('automationPanel');
+  if (!panel) return;
+  const st = _automationState;
+  if (st.loadError !== null) {
+    panel.innerHTML = `<div style="text-align:center;padding:32px;color:var(--error);">${escHtml(t('automation_load_failed', [st.loadError]))}</div>`;
+    return;
+  }
+  const items = _automationVisibleList();
+  if (!items.length) {
+    panel.innerHTML = `<div style="text-align:center;padding:32px;color:var(--text2);">${escHtml(t('automation_list_empty'))}</div>`;
+    return;
+  }
+  panel.innerHTML = items.map(a => buildAutomationCardHTML(a, {})).join('');
+}
+
+// buildAutomationCardHTML returns the markup for one Automation card. Pure:
+// it reads only its arguments and escapes every dynamic value.
+function buildAutomationCardHTML(automation, ctx) {
+  const a = automation || {};
+  const status = String(a.status || 'draft');
+  const statusClass = 'prd-card-status-' + status.replace(/[^a-z_]/g, '');
+  return `<div class="prd-row prd-card ${statusClass} automation-card" data-automation-id="${escHtml(a.id)}">
+    <div class="automation-card-title" style="font-weight:600;">${escHtml(a.name)}</div>
+    <div class="automation-card-status" style="font-size:11px;color:var(--text2);">${escHtml(t('automation_status_' + status))}</div>
+  </div>`;
+}
+window.buildAutomationCardHTML = buildAutomationCardHTML;
+
 // alpha.30 #271 + #183 #4 — Alerts tab redesigned to mirror the dock UX:
 // top bar with per-category chips + ✕all + 🔕 + sort toggle + search,
 // then per-session summary cards with prompts highlighted distinct from
@@ -26547,6 +26733,9 @@ document.addEventListener('DOMContentLoaded', () => {
       localStorage.setItem('cs_active_view', 'observer');
       localStorage.removeItem('cs_settings_tab');
     }
+    // The Automation tab is hidden while the autonomous subsystem is
+    // disabled; do not restore into a view with no tab.
+    if (_initView === 'automation' && state._autonomousEnabled === false) _initView = 'sessions';
     navigate(_initView || 'sessions', _initSession || undefined);
 
     // GH#182 — alert deep link. A browser rewrites a registered
@@ -26607,11 +26796,21 @@ document.addEventListener('DOMContentLoaded', () => {
     .then(cfg => {
       const btn = document.getElementById('navBtnAutonomous');
       if (btn && cfg && cfg.enabled === true) btn.style.display = '';
+      const automationBtn = document.getElementById('navBtnAutomation');
+      if (automationBtn && cfg && cfg.enabled === true) automationBtn.style.display = '';
+      // A restored Automation view falls back to Sessions when the
+      // subsystem is disabled (the tab stays hidden in that case).
+      state._autonomousEnabled = !!(cfg && cfg.enabled === true);
+      if (!state._autonomousEnabled && state.activeView === 'automation') navigate('sessions');
       // BL313 — Dashboard is part of the autonomous subsystem; gate it on the same flag.
       const dashBtn = document.getElementById('navBtnDashboard');
       if (dashBtn && cfg && cfg.enabled === true) dashBtn.style.display = '';
     })
-    .catch(() => {});
+    .catch(() => {
+      // Config unreachable: the tab stays hidden, so do not stay on it.
+      state._autonomousEnabled = false;
+      if (state.activeView === 'automation') navigate('sessions');
+    });
 
   // BL247-followup v6.7.2 — Observer view folded into Settings → Monitor
   // (Federated Peers card). The standalone nav button + view path were

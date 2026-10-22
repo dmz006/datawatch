@@ -1926,6 +1926,8 @@
   "automation_load_failed": "オートメーションを読み込めませんでした: %1$s",
   "automation_filter_search": "名前または ID でオートメーションを検索",
   "automation_show_history": "キャンセル済みを表示",
+  "automation_hide_history": "キャンセル済みを非表示",
+  "automation_filter_toggle": "オートメーションのフィルターを切り替え",
   "automation_budget_ceiling": "上限",
   "automation_budget_window": "期間",
   "automation_budget_pacing": "ペース配分",

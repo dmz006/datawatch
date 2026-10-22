@@ -1926,6 +1926,8 @@
   "automation_load_failed": "Impossible de charger les automatisations : %1$s",
   "automation_filter_search": "Rechercher des automatisations par nom ou ID",
   "automation_show_history": "Afficher les annulées",
+  "automation_hide_history": "Masquer les annulées",
+  "automation_filter_toggle": "Afficher ou masquer les filtres d'automatisations",
   "automation_budget_ceiling": "Plafond",
   "automation_budget_window": "Fenêtre",
   "automation_budget_pacing": "Rythme",

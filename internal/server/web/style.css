@@ -437,6 +437,7 @@ body {
 .prd-card-status-rejected      { border-left-color: var(--error); }
 .prd-card-status-cancelled     { border-left-color: var(--text2); }
 .prd-card-status-planning      { border-left-color: var(--accent2); }
+.prd-card-status-active        { border-left-color: var(--success); }
 
 /* BL221 (v6.2.0) — Automata tab redesign */
 
@@ -537,6 +538,9 @@ body {
 .automata-filter-badge.status-running.active       { background: #10b981; }
 .automata-filter-badge.status-paused.active        { background: #f59e0b; }
 .automata-filter-badge.status-blocked.active       { background: #ef4444; }
+.automata-filter-badge.status-active.active        { background: #10b981; }
+.automata-filter-badge.status-completed.active     { background: #6b7280; }
+.automata-filter-badge.status-cancelled.active     { background: #6b7280; }
 .automata-filter-badge.type-badge.active           { background: var(--accent2); }
 
 /* Progress bar inside card */

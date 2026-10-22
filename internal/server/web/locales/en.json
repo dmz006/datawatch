@@ -1926,6 +1926,8 @@
   "automation_load_failed": "Could not load Automations: %1$s",
   "automation_filter_search": "Search Automations by name or ID",
   "automation_show_history": "Show cancelled",
+  "automation_hide_history": "Hide cancelled",
+  "automation_filter_toggle": "Toggle Automation filters",
   "automation_budget_ceiling": "Ceiling",
   "automation_budget_window": "Window",
   "automation_budget_pacing": "Pacing",
