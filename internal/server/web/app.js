@@ -887,6 +887,7 @@ document.addEventListener('visibilitychange', () => {
     }
   } else {
     _wsWake();
+    if (state.activeView === 'automation') refreshAutomationView();
   }
 });
 
@@ -1192,6 +1193,9 @@ function handleMessage(msg) {
             loadAutomataPanel();
           }
         }, 250);
+      } else if (state.activeView === 'automation') {
+        clearTimeout(state._prdReloadTimer);
+        state._prdReloadTimer = setTimeout(() => refreshAutomationView(), 250);
       }
       break;
     case 'hook_update':
@@ -2191,6 +2195,7 @@ function navigate(view, sessionId, fromPopstate) {
   }
 
   state.activeView = view;
+  window._automationReturnId = null; // set again by openAutomationMemberPRD after it navigates
   // Persist view for refresh recovery
   localStorage.setItem('cs_active_view', view);
   if (sessionId) localStorage.setItem('cs_active_session', sessionId);
@@ -23682,6 +23687,8 @@ window.proposeScanRules = function(prdId) {
 };
 
 function _backToAutomataList() {
+  // An Automaton opened from an Automation goes back to that Automation.
+  const returnAutomationId = window._automationReturnId || null;
   // GATE alpha.36 (operator 2026-05-10): renderAutonomousView() alone
   // doesn't reset the PWA banner (back chevron, title, search icon)
   // OR the bottom-nav highlight. Operator hit "back goes to list but
@@ -23697,6 +23704,11 @@ function _backToAutomataList() {
   if (backBtn) { backBtn.style.display = 'none'; backBtn.onclick = null; }
   const searchBtn = document.getElementById('headerSearchBtn');
   if (searchBtn) searchBtn.style.display = 'inline-flex';
+  if (returnAutomationId) {
+    navigate('automation');
+    openAutomationDetail(returnAutomationId);
+    return;
+  }
   navigate('autonomous');
 }
 window._backToAutomataList = _backToAutomataList;
@@ -23826,6 +23838,7 @@ const _automationState = {
   expanded: new Set(),
   loadError: null,
   prdTitles: {},
+  prdStatuses: {},
 };
 
 // automationRequest is apiFetch with the HTTP status kept: a non-ok response
@@ -23939,6 +23952,8 @@ function loadAutomationList() {
       _automationState.loadError = null;
     }
     _automationRenderCards();
+    // The open detail draws nested Automations from this list.
+    if (_automationState.detailId) renderAutomationStrip();
   });
 }
 window.loadAutomationList = loadAutomationList;
@@ -23948,14 +23963,7 @@ window.loadAutomationList = loadAutomationList;
 // failed or oddly shaped response leaves the map empty and the cards fall back
 // to the short member id.
 function loadAutomationPrdTitles() {
-  return automationRequest('GET', '/api/autonomous/prds')
-    .then(data => {
-      const prds = Array.isArray(data) ? data : (data && Array.isArray(data.prds) ? data.prds : []);
-      const titles = {};
-      prds.forEach(p => { if (p && p.id && p.title) titles[p.id] = String(p.title); });
-      return titles;
-    })
-    .catch(() => ({}));
+  return loadAutomationPrdInfo().then(info => info.titles);
 }
 window.loadAutomationPrdTitles = loadAutomationPrdTitles;
 
@@ -24333,12 +24341,13 @@ function _automationMemberCardHTML(m, c, active) {
     if (childLabel && t(childLabel) !== childLabel) shownLabel = t(childLabel);
     extra = `<button type="button" class="automation-nested-toggle" data-member-id="${escHtml(m.id)}" aria-expanded="${expanded}" onclick="toggleAutomationNested('${escJsAttr(m.id)}')">${escHtml(t(expanded ? 'automation_nested_collapse' : 'automation_nested_expand'))}</button>`;
   }
+  const details = `<button type="button" class="automation-member-details-btn" data-details-for="${escHtml(m.id)}" onclick="event.stopPropagation(); if (typeof openAutomationMemberDrawer === 'function') openAutomationMemberDrawer('${escJsAttr(m.id)}')">${escHtml(t('automation_member_details'))}</button>`;
   return `<div class="${cls}" data-member-id="${escHtml(m.id)}" data-kind="${escHtml(kind)}" data-status="${escHtml(status)}" data-active="${isActive}" data-inserted="${inserted}"${attrs}${open}>`
     + '<span class="automation-dot"></span>'
     + `<span class="automation-member-title">${escHtml(_automationMemberTitle(m, c, chip))}</span>`
     + `<span class="automation-chip">${escHtml(chip)}</span>`
     + `<span class="automation-member-status">${escHtml(shownLabel)}</span>`
-    + extra + marker + fork + '</div>';
+    + extra + marker + fork + details + '</div>';
 }
 
 // _automationNestedHTML draws the expanded body of a nested member below its
@@ -24464,6 +24473,292 @@ function toggleAutomationNested(memberId) {
   if (_automationState.detailId && typeof renderAutomationStrip === 'function') renderAutomationStrip();
 }
 window.toggleAutomationNested = toggleAutomationNested;
+
+// ── Automation detail ───────────────────────────────────────────────────────
+// One Automation on a page of its own: header, blocked banner, budget line,
+// active members, the controls slot (filled by renderAutomationControls once
+// that exists), the pipeline strip, pending inserts and the latest decisions.
+
+const _AUTOMATION_DECISION_LIMIT = 20;
+let _automationDetailSeq = 0;
+
+// loadAutomationPrdInfo fetches the Automaton list once and resolves
+// {titles, statuses}, both keyed by Automaton id. It never rejects: a failed
+// or oddly shaped response leaves both maps empty.
+function loadAutomationPrdInfo() {
+  return automationRequest('GET', '/api/autonomous/prds')
+    .then(data => {
+      const prds = Array.isArray(data) ? data : (data && Array.isArray(data.prds) ? data.prds : []);
+      const titles = {}, statuses = {};
+      prds.forEach(p => {
+        if (!p || !p.id) return;
+        if (p.title) titles[p.id] = String(p.title);
+        if (p.status) statuses[p.id] = String(p.status);
+      });
+      return { titles, statuses };
+    })
+    .catch(() => ({ titles: {}, statuses: {} }));
+}
+window.loadAutomationPrdInfo = loadAutomationPrdInfo;
+
+// _automationStripContext is the ctx buildAutomationStripHTML wants, built from
+// the loaded state: nested Automations come from the already loaded list.
+function _automationStripContext() {
+  const st = _automationState;
+  const automationsById = {};
+  (Array.isArray(st.list) ? st.list : []).forEach(a => { if (a && a.id) automationsById[a.id] = a; });
+  return { prdTitles: st.prdTitles, prdStatuses: st.prdStatuses, expanded: st.expanded, automationsById };
+}
+
+// _automationJoinWait describes the join the chain is waiting on: the first
+// unfinished join member with at least one branch started or finished. Returns
+// {done, total} or null.
+function _automationJoinWait(a) {
+  const members = Array.isArray(a.members) ? a.members : [];
+  const byId = new Map();
+  members.forEach(m => { if (m && m.id) byId.set(m.id, m); });
+  for (const j of members) {
+    if (!j || j.kind !== 'join' || _AUTOMATION_FINISHED_STATUSES.includes(j.status)) continue;
+    const branches = _automationIdList(j.join_members).map(id => byId.get(id)).filter(Boolean);
+    if (!branches.length) continue;
+    const done = branches.filter(b => _AUTOMATION_FINISHED_STATUSES.includes(b.status)).length;
+    const started = branches.some(b => b.status === 'running' || _AUTOMATION_FINISHED_STATUSES.includes(b.status));
+    if (started && done < branches.length) return { done, total: branches.length };
+  }
+  return null;
+}
+
+function _automationTimeText(v) {
+  const s = String(v == null ? '' : v);
+  if (!s || s.indexOf('0001-') === 0) return '';
+  const ms = Date.parse(s);
+  return isNaN(ms) ? s : new Date(ms).toLocaleString();
+}
+
+function _automationDetailSection(titleKey, inner) {
+  return `<section class="automation-detail-section"><h3 class="automation-detail-section-title">${escHtml(t(titleKey))}</h3>${inner}</section>`;
+}
+
+function _automationPendingInsertsHTML(a) {
+  const pending = Array.isArray(a.pending_inserts) ? a.pending_inserts.filter(Boolean) : [];
+  if (!pending.length) return '';
+  const rows = pending.map(p => {
+    const label = String(p.name || p.prd_id || p.id || '');
+    const by = p.actor ? `<span class="automation-pending-insert-by">${escHtml(t('automation_pending_insert_by', [p.actor]))}</span>` : '';
+    const reason = p.reason ? `<span class="automation-pending-insert-reason">${escHtml(p.reason)}</span>` : '';
+    return `<li class="automation-pending-insert" data-insert-id="${escHtml(p.id)}"><span class="automation-pending-insert-name">${escHtml(label)}</span>${by}${reason}</li>`;
+  }).join('');
+  return _automationDetailSection('automation_pending_inserts', `<ul class="automation-pending-inserts">${rows}</ul>`);
+}
+
+function _automationDecisionsHTML(a) {
+  const decisions = Array.isArray(a.decisions) ? a.decisions.filter(Boolean) : [];
+  if (!decisions.length) return '';
+  const rows = decisions.slice(-_AUTOMATION_DECISION_LIMIT).reverse().map(d => {
+    const at = _automationTimeText(d.at);
+    const actor = d.actor ? `<span class="automation-decision-actor">${escHtml(d.actor)}</span>` : '';
+    const note = d.note ? `<span class="automation-decision-note">${escHtml(d.note)}</span>` : '';
+    return `<li class="automation-decision" data-kind="${escHtml(d.kind)}"><span class="automation-decision-kind">${escHtml(d.kind)}</span>${actor}${at ? `<span class="automation-decision-at">${escHtml(at)}</span>` : ''}${note}</li>`;
+  }).join('');
+  return _automationDetailSection('automation_decisions', `<ul class="automation-decisions">${rows}</ul>`);
+}
+
+// buildAutomationDetailHTML returns the page markup for one Automation. Pure:
+// it reads only its arguments and escapes every dynamic value. ctx is the
+// buildAutomationStripHTML ctx.
+function buildAutomationDetailHTML(automation, ctx) {
+  const a = automation || {};
+  const c = ctx || {};
+  const status = String(a.status || 'draft');
+  const statusKey = 'automation_status_' + status;
+  const statusLabel = t(statusKey) !== statusKey ? t(statusKey) : status;
+  const desc = a.description ? `<p class="automation-detail-desc">${escHtml(a.description)}</p>` : '';
+  const reason = status === 'blocked' ? automationBlockedReason(a) : '';
+  const banner = reason
+    ? `<div class="automation-blocked-banner" role="alert">${escHtml(t('automation_blocked_reason', [reason]))}</div>`
+    : '';
+  const budget = automationBudgetSummary(a) ? `<div class="automation-detail-budget">${_automationBudgetHTML(a)}</div>` : '';
+
+  const active = _automationActiveMembers(a).map(m => {
+    const chip = _automationMemberRef(m).slice(0, 8);
+    return `<li class="automation-active-member" data-member-id="${escHtml(m.id)}">${escHtml(_automationMemberTitle(m, c, chip))}</li>`;
+  }).join('');
+  const wait = _automationJoinWait(a);
+  const waitLine = wait ? `<div class="automation-join-wait">${escHtml(t('automation_join_waiting', [wait.done, wait.total]))}</div>` : '';
+  const activeBlock = active || waitLine
+    ? _automationDetailSection('automation_active_members', (active ? `<ul class="automation-active-members">${active}</ul>` : '') + waitLine)
+    : '';
+
+  return `<div class="automation-detail-header">
+      <button type="button" class="automation-detail-back" onclick="automationDetailBack()">← ${escHtml(t('automation_back'))}</button>
+      <h2 class="automation-detail-title">${escHtml(a.name)}</h2>
+      <span class="automation-detail-status automation-status-${escHtml(status.replace(/[^a-z_]/g, ''))}">${escHtml(statusLabel)}</span>
+      <span class="automation-detail-version">${escHtml(t('automation_version', [Number(a.version) || 0]))}</span>
+    </div>${desc}${banner}${budget}${activeBlock}
+    <div id="automationControls"></div>
+    <div id="automationStrip">${buildAutomationStripHTML(a, c)}</div>
+    ${_automationPendingInsertsHTML(a)}${_automationDecisionsHTML(a)}`;
+}
+window.buildAutomationDetailHTML = buildAutomationDetailHTML;
+
+function _automationDetailShell(inner) {
+  return `<div class="view-content automation-detail" style="position:relative;">${inner}</div>`;
+}
+
+function _automationDetailBackHTML() {
+  return `<div class="automation-detail-header"><button type="button" class="automation-detail-back" onclick="automationDetailBack()">← ${escHtml(t('automation_back'))}</button></div>`;
+}
+
+function openAutomationDetail(id) {
+  const st = _automationState;
+  if (st.detailId !== id) st.expanded.clear();
+  st.detailId = id;
+  return renderAutomationDetail(id);
+}
+window.openAutomationDetail = openAutomationDetail;
+
+// renderAutomationDetail loads one Automation and draws its page. opts.quiet
+// skips the loading block and keeps the page on a failed reload; live refresh
+// uses it.
+function renderAutomationDetail(id, opts) {
+  const view = document.getElementById('view');
+  if (!view) return Promise.resolve();
+  const st = _automationState;
+  const quiet = !!(opts && opts.quiet);
+  const seq = ++_automationDetailSeq;
+  if (!quiet) {
+    view.innerHTML = _automationDetailShell(_automationDetailBackHTML()
+      + `<div style="text-align:center;padding:32px;color:var(--text2);">${loadingEyeBlock()}</div>`);
+  }
+  const request = automationRequest('GET', '/api/automations/' + encodeURIComponent(id))
+    .then(data => ({ data }), error => ({ error }));
+  return Promise.all([request, loadAutomationPrdInfo()]).then(([res, info]) => {
+    // A newer load, or leaving the page, makes this answer stale.
+    if (seq !== _automationDetailSeq || st.detailId !== id) return;
+    st.prdTitles = info.titles;
+    st.prdStatuses = info.statuses;
+    if (res.error || !res.data || typeof res.data !== 'object') {
+      if (quiet) return;
+      st.detail = null;
+      const msg = String((res.error && res.error.message) || res.error || '');
+      view.innerHTML = _automationDetailShell(_automationDetailBackHTML()
+        + `<div class="automation-detail-error" style="text-align:center;padding:32px;color:var(--error);">${escHtml(t('automation_load_failed', [msg]))}</div>`);
+      return;
+    }
+    st.detail = res.data;
+    view.innerHTML = _automationDetailShell(buildAutomationDetailHTML(res.data, _automationStripContext()));
+    if (typeof renderAutomationControls === 'function') renderAutomationControls(res.data);
+  });
+}
+window.renderAutomationDetail = renderAutomationDetail;
+
+// renderAutomationStrip redraws only the strip from the loaded Automation.
+function renderAutomationStrip() {
+  const a = _automationState.detail;
+  const el = document.getElementById('automationStrip');
+  if (!a || !el) return;
+  el.innerHTML = buildAutomationStripHTML(a, _automationStripContext());
+}
+window.renderAutomationStrip = renderAutomationStrip;
+
+function automationDetailBack() {
+  _automationState.detailId = null;
+  _automationState.detail = null;
+  closeAutomationMemberDrawer();
+  renderAutomationView();
+}
+window.automationDetailBack = automationDetailBack;
+
+// refreshAutomationView reloads whatever the Automation tab shows: the open
+// detail, or else the list. Live updates and returning to the tab call it.
+function refreshAutomationView() {
+  const id = _automationState.detailId;
+  if (id) return renderAutomationDetail(id, { quiet: true });
+  return loadAutomationList();
+}
+window.refreshAutomationView = refreshAutomationView;
+
+// openAutomationMemberPRD opens the member Automaton's page from the Automata
+// tab. Its back control returns here: _backToAutomataList reads the id.
+function openAutomationMemberPRD(prdId) {
+  if (!prdId) return;
+  const returnId = _automationState.detailId;
+  navigate('autonomous');
+  window._automationReturnId = returnId;
+  renderPRDDetailView(prdId);
+}
+window.openAutomationMemberPRD = openAutomationMemberPRD;
+
+// _automationFindMember looks a member up in the open Automation, then in the
+// loaded list (nested Automations).
+function _automationFindMember(memberId) {
+  const st = _automationState;
+  const pools = [st.detail].concat(Array.isArray(st.list) ? st.list : []);
+  for (const a of pools) {
+    const m = a && Array.isArray(a.members) ? a.members.find(x => x && x.id === memberId) : null;
+    if (m) return m;
+  }
+  return null;
+}
+
+function _automationKindLabel(kind) {
+  if (kind === 'fork') return t('automation_fork_label');
+  if (kind === 'join') return t('automation_join_label');
+  const key = 'automation_kind_' + kind;
+  return t(key) !== key ? t(key) : kind;
+}
+
+// buildAutomationMemberDrawerHTML returns the drawer for one member. The
+// added_* fields show only for an inserted member.
+function buildAutomationMemberDrawerHTML(member, ctx) {
+  const m = member || {};
+  const kind = String(m.kind || 'prd');
+  const status = automationMemberDisplayStatus(m, (ctx || {}).prdStatuses) || 'pending';
+  const statusKey = 'automation_member_status_' + status;
+  const edge = String(m.edge_taken || '');
+  const edgeKey = 'automation_edge_' + edge;
+  const rows = [
+    ['automation_field_id', m.id],
+    ['automation_field_kind', _automationKindLabel(kind)],
+    ['automation_field_status', t(statusKey) !== statusKey ? t(statusKey) : status],
+    ['automation_field_outcome', m.outcome],
+    ['automation_field_edge_taken', edge && t(edgeKey) !== edgeKey ? t(edgeKey) : edge],
+    ['automation_field_started', _automationTimeText(m.started_at)],
+    ['automation_field_finished', _automationTimeText(m.finished_at)],
+  ];
+  if (_automationMemberInserted(m)) {
+    rows.push(['automation_field_added_by', m.added_by], ['automation_field_added_reason', m.added_reason],
+      ['automation_field_added_at', _automationTimeText(m.added_at)]);
+  }
+  const fields = rows.map(([key, v]) => `<dt>${escHtml(t(key))}</dt><dd>${escHtml(v == null || v === '' ? '—' : v)}</dd>`).join('');
+  return `<div class="automation-drawer-panel" data-member-id="${escHtml(m.id)}">
+    <div class="automation-drawer-head"><span class="automation-drawer-title">${escHtml(t('automation_member_drawer_title'))}</span><button type="button" class="automation-drawer-close" onclick="closeAutomationMemberDrawer()" aria-label="${escHtml(t('automation_drawer_close'))}" title="${escHtml(t('automation_drawer_close'))}">✕</button></div>
+    <dl class="automation-drawer-fields">${fields}</dl>
+  </div>`;
+}
+window.buildAutomationMemberDrawerHTML = buildAutomationMemberDrawerHTML;
+
+function closeAutomationMemberDrawer() {
+  const el = document.getElementById('automationMemberDrawer');
+  if (el && typeof el.remove === 'function') el.remove();
+}
+window.closeAutomationMemberDrawer = closeAutomationMemberDrawer;
+
+function openAutomationMemberDrawer(memberId) {
+  const m = _automationFindMember(memberId);
+  if (!m) return;
+  closeAutomationMemberDrawer();
+  const el = document.createElement('div');
+  el.id = 'automationMemberDrawer';
+  el.className = 'automation-drawer';
+  el.setAttribute('role', 'dialog');
+  el.setAttribute('aria-modal', 'true');
+  el.setAttribute('aria-label', t('automation_member_drawer_title'));
+  el.innerHTML = buildAutomationMemberDrawerHTML(m, { prdStatuses: _automationState.prdStatuses });
+  el.addEventListener('click', e => { if (e.target === el) closeAutomationMemberDrawer(); });
+  document.body.appendChild(el);
+}
+window.openAutomationMemberDrawer = openAutomationMemberDrawer;
 
 // alpha.30 #271 + #183 #4 — Alerts tab redesigned to mirror the dock UX:
 // top bar with per-category chips + ✕all + 🔕 + sort toggle + search,
