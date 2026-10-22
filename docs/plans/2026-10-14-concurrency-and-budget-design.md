@@ -1290,6 +1290,7 @@ thing example (iii) could not see.
    BL414 narrows to cost observability and Decision rollup (4c). Does the
    operator confirm this, and should BL414's backlog text be edited to say
    so?
+   **Decided by the operator 2026-10-22: absorb.** BL428 owns ceilings and hard stops; BL414 narrows to cost observability and the Decision rollup, and its backlog text is edited to say so.
 2. **BL405 Phase 2 overlap.** Should the windowed-ceiling ledger dimension be
    built inside this doc's follow-up PRD (Phase 5) as the first slice of
    BL405 Phase 2, or should Phase 5 wait for BL405 Phase 2?
