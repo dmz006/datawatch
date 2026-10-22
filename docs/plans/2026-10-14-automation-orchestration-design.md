@@ -1581,6 +1581,7 @@ howto, and the `datawatch-app` issue where applicable.
 3. **The cancel_automation default.** Recommended: halt future auto-advance only,
    and leave the in-flight member running; `cancel_in_flight: true` is opt-in.
    Should the default be reversed?
+   **Decided by the operator 2026-10-22: ask each time.** There is no default. `cancel_in_flight` is a required argument on every surface (REST, MCP, CLI, comm channel); a call that omits it is rejected with a message naming the two choices, and the PWA shows a confirm dialog that asks the same thing.
 4. **BL117 orchestrator.** Recommended: supersede, with a single-chain
    `import-graph`, read-only history, and the create/plan/run tools deprecated then
    removed after one minor. Alternatives: extend BL117's Graph in place, or keep
