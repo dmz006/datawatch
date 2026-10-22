@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.97 — Automation tab in the web UI
+
+### Added
+
+- **An Automation tab in the web UI.** It sits to the left of the Automata tab and lists each Automation as a card. A detail view draws the pipeline as a strip with fork lanes, joins and nested levels, and offers pause, resume, a cancel dialog that asks whether in-flight work stops, and skip, insert, remove and reorder for members. A create and edit form covers linear, fork, join and nested members, plus default model and budget policy fields. The labels exist in all five languages.
+- **The words Automation and Automaton are now defined side by side** in the operator guide, and the "Launch Automation" button is relabelled "Launch Automaton".
+
 ## v9.5.96 — Claude start-up confirmation dialogs answered or failed fast
 
 ### Fixed
