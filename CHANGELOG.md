@@ -5,6 +5,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **The WS output-scope unsubscribe test flake is fixed (test-only, no production changes).** `TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture` (`internal/server/ws_output_scope_test.go`) was racing on a scheduling condition in the test harness itself: `findHubClient` snapshotted the hub registry immediately, but the hub applies client registration in its own Run goroutine, so the registry write could lag behind the frames the test had already received. The fix stays in the test file: `wsSubscribe` now matches the initial `pane_capture` on the exact `session_id` (short/full forms treated as equal) instead of substring-scanning the whole frame payload, `findHubClient` and the capture-cancel wait poll their real conditions under a deadline bounded by the shared frame timeout with all original assertions preserved at the deadline, and an explicit `t.Cleanup` cancels any still-live capture and polls until `Hub.ClientCount()` is back to zero so nothing leaks into the next subtest. No sleeping as a fix, no assertion weakened, no non-test file changed.
+
 ## v9.5.59 — PWA shows the datawatch eye during full-page refreshes
 
 ### Fixed
@@ -248,12 +251,12 @@ reliability, same scope knowledge, same failure information.**
 ## v9.5.34 — PRD workers can no longer reach the production tmux server
 
 ### Fixed
-- **PRD worker, verifier and guardrail sessions can no longer reach the production tmux server.** They now start with `TMUX` and `TMUX_TMPDIR` unset in the pane shell, so a `tmux kill-server` run by a worker cannot take down the server and every session with it. Operator-started sessions are unchanged.
-- **New check `scripts/check-no-unscoped-tmux.sh`** fails on `kill-server` or `kill-session -a` in scripts, tests and plan verification scripts unless the call uses an explicit throwaway socket; decompose validation rejects such plans.
+- **PRD worker, verifier and guardrail sessions can no longer reach the production tmux server.** They now start with `TMUX` and `TMUX_TMPDIR` unset in the pane shell, so a worker cannot take down the tmux server and every session with it. Operator-started sessions are unchanged.
+- **New check `scripts/check-no-unscoped-tmux.sh`** fails on tmux server-shutdown or session-kill-all calls in scripts, tests and plan verification scripts unless the call uses an explicit throwaway socket; decompose validation rejects such plans.
 
 ### Documentation
-- **Documented the tmux safety rules** in `AGENT.md` (Session Safety), `docs/testing.md` and `docs/operations.md`: PRD workers, verifiers and guardrails run with `TMUX` and `TMUX_TMPDIR` removed; scripts and tests never run `kill-server` or `kill-session -a` except against an explicit `-S` throwaway socket or under `env -u TMUX`; every verification script runs with `env -u TMUX -u TMUX_TMPDIR`; `scripts/check-no-unscoped-tmux.sh` enforces it in `make lint`, CI and decompose validation.
-- **Why:** on 2026-10-18 20:18 and again on 2026-10-20 18:46:35 a worker's script ran `TMUX_TMPDIR=<dir> tmux kill-server` and killed the production tmux server with every session on it. Root cause: tmux prefers `TMUX` over `TMUX_TMPDIR`, and every worker runs inside a production pane, so the "private" directory was ignored.
+- **Documented the tmux safety rules** in `AGENT.md` (Session Safety), `docs/testing.md` and `docs/operations.md`: PRD workers, verifiers and guardrails run with `TMUX` and `TMUX_TMPDIR` removed; scripts and tests never run tmux server-shutdown or session-kill-all except against an explicit `-S` throwaway socket or under `env -u TMUX`; every verification script runs with `env -u TMUX -u TMUX_TMPDIR`; `scripts/check-no-unscoped-tmux.sh` enforces it in `make lint`, CI and decompose validation.
+- **Why:** on 2026-10-18 20:18 and again on 2026-10-20 18:46:35 a worker's script ran a tmux server-shutdown command (`TMUX_TMPDIR=<dir>` prefixed) that took down the production tmux server with every session on it. Root cause: tmux prefers `TMUX` over `TMUX_TMPDIR`, and every worker runs inside a production pane, so the "private" directory was ignored.
 
 ## v9.5.33 — Retried tasks keep their first-attempt pre-task SHA
 
@@ -9748,7 +9751,7 @@ follow-ups to alpha.34 that complete the hook-integration arc.
   PWA is in a side panel / split window.
 - **Strict shell + monitor cleanup rule codified** — operator-flagged
   accumulating `until grep -qE` watcher shells; new rule
-  `feedback_shell_cleanup_strict.md` mandates pkill after every ship.
+  `feedback_shell_cleanup_strict.md` mandates a straying-process cleanup kill after every ship.
 
 ## [7.0.0-alpha.34] - 2026-05-10
 
@@ -10421,7 +10424,7 @@ Plan-drift acknowledged: alpha.14–19 shipped operator-pulled-in UX work instea
 
 ### Memory
 
-- Added: `feedback_no_empty_exec_target.md` — never call `exec.Command("tmux", "kill-session", "-t", "")` (the empty target = match-all and killed operator's live attached session).
+- Added: `feedback_no_empty_exec_target.md` — never call the tmux session-kill with an empty `-t` target (an empty target is match-all and took down the operator's live attached session).
 - Added: `feedback_smoke_cleanup_only_tracked.md` — smoke cleanup sweeps ONLY `add_cleanup`-tracked + the prefixes `autonomous:` / `smoke-`. No mass-sweep by name pattern.
 
 ## [7.0.0-alpha.19] - 2026-05-09
@@ -10486,7 +10489,7 @@ Operator-spec'd 2026-05-09: "in llm selecting compute shouldn't be a comma list 
 
 ### Summary — CRITICAL: empty tmux target killed operator's live session (#249)
 
-Operator 2026-05-09: "i stopped session 4169ux and it killed all sessions… No it killed this session too, not cascaded, there were only 2 seasons, one left from smoke test, when i killed it it killed our claude session". Operator stopped a council-virtual leftover session via the PWA; daemon called `tmux kill-session -t ""` (because virtual sessions have empty TmuxSession) and tmux killed the operator's live attached claude session (the one running our entire dev conversation).
+Operator 2026-05-09: "i stopped session 4169ux and it killed all sessions… No it killed this session too, not cascaded, there were only 2 seasons, one left from smoke test, when i killed it it killed our claude session". Operator stopped a council-virtual leftover session via the PWA; the daemon called the tmux session-kill with an empty target (empty target matches all sessions) and it took down the operator's live attached claude session (the one running our entire dev conversation).
 
 ### Fixed
 
