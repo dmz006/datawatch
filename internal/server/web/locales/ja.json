@@ -1948,5 +1948,14 @@
   "automation_insert_after": "後ろに挿入",
   "automation_insert_reason_label": "挿入の理由",
   "automation_inserted_by": "%1$s が挿入",
-  "automation_inserted_marker": "挿入済み"
+  "automation_inserted_marker": "挿入済み",
+  "automation_fork_label": "分岐",
+  "automation_join_label": "合流",
+  "automation_join_rule_all_must_succeed": "すべてのブランチが成功する必要があります",
+  "automation_join_rule_any_one_is_enough": "1つのブランチで十分です",
+  "automation_join_rule_continue_anyway": "それでも続行",
+  "automation_branch_label": "ブランチ %1$s",
+  "automation_nested_expand": "ネストされたオートメーションを表示",
+  "automation_nested_collapse": "ネストされたオートメーションを非表示",
+  "automation_nested_missing": "ネストされたオートメーションが読み込まれていません"
 }

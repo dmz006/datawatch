@@ -1948,5 +1948,14 @@
   "automation_insert_after": "Insertar después",
   "automation_insert_reason_label": "Motivo de la inserción",
   "automation_inserted_by": "Insertado por %1$s",
-  "automation_inserted_marker": "insertado"
+  "automation_inserted_marker": "insertado",
+  "automation_fork_label": "Bifurcación",
+  "automation_join_label": "Unión",
+  "automation_join_rule_all_must_succeed": "Todas las ramas deben tener éxito",
+  "automation_join_rule_any_one_is_enough": "Basta con una rama",
+  "automation_join_rule_continue_anyway": "Continuar de todos modos",
+  "automation_branch_label": "Rama %1$s",
+  "automation_nested_expand": "Mostrar automatización anidada",
+  "automation_nested_collapse": "Ocultar automatización anidada",
+  "automation_nested_missing": "Automatización anidada no cargada"
 }

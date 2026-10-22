@@ -5994,6 +5994,53 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
   border-top: 2px dashed var(--text2);
   height: 0;
 }
+.automation-join-rule {
+  font-size: 11px;
+  color: var(--text2);
+  white-space: nowrap;
+}
+.automation-fork-group {
+  display: flex;
+  flex: 1 1 100%;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+}
+.automation-lane {
+  display: flex;
+  flex: 1 1 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.automation-lane .automation-member { max-width: none; flex: 1 1 auto; }
+.automation-nested {
+  flex: 1 1 100%;
+  min-width: 0;
+  margin: 6px 0 0 16px;
+  padding-left: 12px;
+  border-left: 2px solid var(--border);
+}
+.automation-nested-missing {
+  font-size: 11px;
+  color: var(--text2);
+}
+.automation-nested-toggle {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--accent);
+  font-size: 10px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.automation-nested-toggle:hover { border-color: var(--accent); }
 @media (max-width: 520px) {
   .automation-strip-row[data-row="main"],
   .automation-strip-row[data-row="unlinked"] {
@@ -6007,6 +6054,9 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
     align-items: stretch;
   }
   .automation-member { max-width: none; }
+  .automation-fork-group { flex-direction: column; align-items: stretch; }
+  .automation-lane { flex: 0 0 auto; }
+  .automation-nested { margin-left: 8px; padding-left: 8px; }
   .automation-connector {
     align-self: center;
     width: 2px;

@@ -24190,9 +24190,37 @@ function _automationStripActiveIds(a, members) {
   return new Set();
 }
 
+const _AUTOMATION_JOIN_RULES = ['all_must_succeed', 'any_one_is_enough', 'continue_anyway'];
+const _AUTOMATION_MAX_NESTED_DEPTH = 5;
+
+function _automationIdList(v) {
+  return Array.isArray(v) ? v.filter(x => typeof x === 'string' && x !== '') : [];
+}
+
+// _automationJoinRule is the effective rule of a join member: an empty or
+// unknown on_branch_failure means all_must_succeed.
+function _automationJoinRule(m) {
+  const rule = String((m && m.on_branch_failure) || '');
+  return _AUTOMATION_JOIN_RULES.includes(rule) ? rule : 'all_must_succeed';
+}
+
+// _automationPairedJoin returns the join member whose join_members set equals
+// the fork's fork_members set, or null.
+function _automationPairedJoin(fork, members) {
+  const want = new Set(_automationIdList(fork.fork_members));
+  return members.find(j => {
+    if (j.kind !== 'join') return false;
+    const have = new Set(_automationIdList(j.join_members));
+    return have.size === want.size && [...want].every(id => have.has(id));
+  }) || null;
+}
+
 // _automationFollowChain walks on_complete from startId. A member already in
-// drawn ends the walk as a reference item, so a cycle cannot loop.
-function _automationFollowChain(startId, byId, drawn) {
+// drawn ends the walk as a reference item, so a cycle cannot loop. A fork is
+// followed by one group item holding its branch members, then its paired join;
+// the walk continues from the join's on_complete. Branch members are marked
+// drawn up front so they appear only in their lane.
+function _automationFollowChain(startId, byId, drawn, members) {
   const items = [];
   let id = startId;
   while (id) {
@@ -24201,6 +24229,23 @@ function _automationFollowChain(startId, byId, drawn) {
     if (drawn.has(id)) { items.push({ member: m, ref: true }); break; }
     drawn.add(id);
     items.push({ member: m, ref: false });
+    if (m.kind === 'fork') {
+      const join = _automationPairedJoin(m, members || []);
+      const lanes = [];
+      _automationIdList(m.fork_members).forEach(bid => {
+        const b = byId.get(bid);
+        if (!b || lanes.some(l => l.member.id === bid)) return;
+        lanes.push({ member: b, ref: drawn.has(bid) });
+        drawn.add(bid);
+      });
+      if (lanes.length) items.push({ group: { fork: m, join, lanes } });
+      if (!join) break;
+      if (drawn.has(join.id)) { items.push({ member: join, ref: true }); break; }
+      drawn.add(join.id);
+      items.push({ member: join, ref: false });
+      id = join.on_complete;
+      continue;
+    }
     id = m.on_complete;
   }
   return items;
@@ -24223,15 +24268,28 @@ function _automationMemberRef(m) {
   return String(m.id);
 }
 
+// _automationChild returns the child Automation a nested member names, or null
+// while it is not in ctx.automationsById.
+function _automationChild(m, c) {
+  const map = c.automationsById;
+  if (!map || !m.automation_id || !Object.prototype.hasOwnProperty.call(map, m.automation_id)) return null;
+  const child = map[m.automation_id];
+  return child && typeof child === 'object' ? child : null;
+}
+
+function _automationIsExpanded(c, id) {
+  const ex = c.expanded;
+  if (!ex) return false;
+  return typeof ex.has === 'function' ? ex.has(id) : (Array.isArray(ex) && ex.includes(id));
+}
+
 function _automationMemberTitle(m, c, chip) {
   const kind = m.kind || 'prd';
-  // EXTENSION POINT (fork, join, nested members): a fork or join card has no
-  // title of its own yet and shows its short id; a nested Automation shows the
-  // child's name when it is in ctx.automationsById.
+  if (kind === 'fork') return t('automation_fork_label');
+  if (kind === 'join') return t('automation_join_label');
   if (kind === 'prd') return _automationLookup(c.prdTitles, m.prd_id) || chip;
   if (kind === 'automation') {
-    const child = c.automationsById && Object.prototype.hasOwnProperty.call(c.automationsById, m.automation_id)
-      ? c.automationsById[m.automation_id] : null;
+    const child = _automationChild(m, c);
     return (child && child.name ? String(child.name) : '') || chip;
   }
   return chip;
@@ -24260,12 +24318,70 @@ function _automationMemberCardHTML(m, c, active) {
     ? `<span class="automation-inserted-marker" title="${escHtml(_automationInsertedTitle(m))}">${escHtml(t('automation_inserted_marker'))}</span>`
     : '';
   const fork = edgeCount > 1 ? '<span class="automation-fork-glyph" aria-hidden="true">⑂</span>' : '';
-  return `<div class="${cls}" data-member-id="${escHtml(m.id)}" data-kind="${escHtml(kind)}" data-status="${escHtml(status)}" data-active="${isActive}" data-inserted="${inserted}"${open}>`
+  let attrs = '';
+  let extra = '';
+  let shownLabel = label;
+  if (kind === 'join') {
+    const rule = _automationJoinRule(m);
+    attrs = ` data-rule="${rule}"`;
+    extra = `<span class="automation-join-rule">${escHtml(t('automation_join_rule_' + rule))}</span>`;
+  } else if (kind === 'automation') {
+    const expanded = _automationIsExpanded(c, m.id);
+    attrs = ` data-expanded="${expanded}"`;
+    const child = _automationChild(m, c);
+    const childLabel = child && child.status ? 'automation_status_' + child.status : '';
+    if (childLabel && t(childLabel) !== childLabel) shownLabel = t(childLabel);
+    extra = `<button type="button" class="automation-nested-toggle" data-member-id="${escHtml(m.id)}" aria-expanded="${expanded}" onclick="toggleAutomationNested('${escJsAttr(m.id)}')">${escHtml(t(expanded ? 'automation_nested_collapse' : 'automation_nested_expand'))}</button>`;
+  }
+  return `<div class="${cls}" data-member-id="${escHtml(m.id)}" data-kind="${escHtml(kind)}" data-status="${escHtml(status)}" data-active="${isActive}" data-inserted="${inserted}"${attrs}${open}>`
     + '<span class="automation-dot"></span>'
     + `<span class="automation-member-title">${escHtml(_automationMemberTitle(m, c, chip))}</span>`
     + `<span class="automation-chip">${escHtml(chip)}</span>`
-    + `<span class="automation-member-status">${escHtml(label)}</span>`
-    + marker + fork + '</div>';
+    + `<span class="automation-member-status">${escHtml(shownLabel)}</span>`
+    + extra + marker + fork + '</div>';
+}
+
+// _automationNestedHTML draws the expanded body of a nested member below its
+// card: the child's own strip, or the not-loaded text. A child already on the
+// path from the root, or deeper than the depth limit, is left empty so a
+// malformed cycle cannot loop.
+function _automationNestedHTML(m, env) {
+  if (m.kind !== 'automation' || !_automationIsExpanded(env.c, m.id)) return '';
+  const child = _automationChild(m, env.c);
+  const id = escHtml(m.automation_id);
+  let inner;
+  if (!child) {
+    inner = `<span class="automation-nested-missing">${escHtml(t('automation_nested_missing'))}</span>`;
+  } else if (env.seen.has(m.automation_id) || env.depth + 1 > _AUTOMATION_MAX_NESTED_DEPTH) {
+    inner = '';
+  } else {
+    env.seen.add(m.automation_id);
+    inner = _automationStripBody(child, env.c, env.seen, env.depth + 1);
+    env.seen.delete(m.automation_id);
+  }
+  return `<div class="automation-nested" data-automation-id="${id}" data-expanded="true">${inner}</div>`;
+}
+
+// _automationBlockHTML is a member card plus its nested body, or a short
+// reference when the member was drawn before.
+function _automationBlockHTML(it, env) {
+  if (it.ref) return _automationMemberRefHTML(it.member, env.c);
+  return _automationMemberCardHTML(it.member, env.c, env.active) + _automationNestedHTML(it.member, env);
+}
+
+function _automationGroupHTML(g, env) {
+  const lanes = g.lanes.map(l => {
+    const id = escHtml(l.member.id);
+    return `<div class="automation-lane" data-lane="${id}" title="${escHtml(t('automation_branch_label', [l.member.id]))}">${_automationBlockHTML(l, env)}</div>`;
+  }).join('');
+  return `<div class="automation-fork-group" data-fork-id="${escHtml(g.fork.id)}" data-join-id="${escHtml(g.join ? g.join.id : '')}">${lanes}</div>`;
+}
+
+// _automationPairConnectorHTML joins a fork to its group and the group to its
+// join. Neither is an outcome edge: the link is the pairing.
+function _automationPairConnectorHTML(kind, from, toId) {
+  const finished = !!from.finished_at || _AUTOMATION_FINISHED_STATUSES.includes(from.status);
+  return `<span class="automation-connector automation-connector-pair" data-edge="${kind}" data-from="${escHtml(from.id)}" data-to="${escHtml(toId)}" data-taken="${finished ? 'true' : 'unknown'}"></span>`;
 }
 
 // A member already drawn in an earlier row is shown as a short reference.
@@ -24274,7 +24390,7 @@ function _automationMemberRefHTML(m, c) {
   return `<div class="automation-member-ref" data-ref-to="${escHtml(m.id)}"><span class="automation-member-title">${escHtml(title)}</span></div>`;
 }
 
-function _automationRowHTML(row, c, active) {
+function _automationRowHTML(row, env) {
   let html = '';
   if (row.edge) {
     const key = row.edge === 'on_blocked' ? 'automation_edge_if_blocked' : 'automation_edge_if_failed';
@@ -24282,35 +24398,41 @@ function _automationRowHTML(row, c, active) {
     html += _automationConnectorHTML(row.parent, row.edge, row.items[0].member.id);
   }
   row.items.forEach((it, i) => {
-    if (row.linked && i > 0) html += _automationConnectorHTML(row.items[i - 1].member, 'on_complete', it.member.id);
-    html += it.ref ? _automationMemberRefHTML(it.member, c) : _automationMemberCardHTML(it.member, c, active);
+    const prev = i > 0 ? row.items[i - 1] : null;
+    if (it.group) {
+      html += _automationPairConnectorHTML('fork', it.group.fork, it.group.lanes[0].member.id);
+      html += _automationGroupHTML(it.group, env);
+      return;
+    }
+    if (row.linked && prev) {
+      html += prev.group
+        ? _automationPairConnectorHTML('join', prev.group.fork, it.member.id)
+        : _automationConnectorHTML(prev.member, 'on_complete', it.member.id);
+    }
+    html += _automationBlockHTML(it, env);
   });
   return `<div class="automation-strip-row" data-row="${escHtml(row.key)}">${html}</div>`;
 }
 
-// buildAutomationStripHTML returns the strip markup for one Automation.
-// ctx = {prdTitles, prdStatuses, expanded, automationsById}; expanded and
-// automationsById are carried for nested members, which are not drawn yet.
-function buildAutomationStripHTML(automation, ctx) {
-  const a = automation || {};
-  const c = ctx || {};
+// _automationStripBody draws one Automation's strip. seen holds the ids of the
+// Automations on the path from the root and depth counts nesting levels.
+function _automationStripBody(a, c, seen, depth) {
   const members = (Array.isArray(a.members) ? a.members : []).filter(m => m && m.id);
   const byId = new Map();
   members.forEach(m => { if (!byId.has(m.id)) byId.set(m.id, m); });
   const drawn = new Set();
   const active = _automationStripActiveIds(a, members);
+  const env = { c, active, seen, depth };
 
-  const rows = [{ key: 'main', linked: true, items: _automationFollowChain(a.entry_member_id, byId, drawn) }];
+  const rows = [{ key: 'main', linked: true, items: _automationFollowChain(a.entry_member_id, byId, drawn, members) }];
   // Rows grow while we iterate: each card that was drawn in full may add a
   // sub-row per extra edge, and a sub-row's own cards may add more.
-  // EXTENSION POINT (fork, join, nested members): branch rows for a fork and
-  // the expanded body of a nested Automation are added in this loop.
   for (let i = 0; i < rows.length; i++) {
     rows[i].items.forEach(it => {
-      if (it.ref) return;
+      if (it.ref || it.group) return;
       _AUTOMATION_EXTRA_EDGES.forEach(edge => {
         if (!it.member[edge]) return;
-        const items = _automationFollowChain(it.member[edge], byId, drawn);
+        const items = _automationFollowChain(it.member[edge], byId, drawn, members);
         if (items.length) rows.push({ key: edge + ':' + it.member.id, edge, parent: it.member, linked: true, items });
       });
     });
@@ -24318,10 +24440,30 @@ function buildAutomationStripHTML(automation, ctx) {
   const unlinked = members.filter(m => byId.get(m.id) === m && !drawn.has(m.id));
   if (unlinked.length) rows.push({ key: 'unlinked', linked: false, items: unlinked.map(m => ({ member: m, ref: false })) });
 
-  const body = rows.filter(r => r.items.length).map(r => _automationRowHTML(r, c, active)).join('');
+  const body = rows.filter(r => r.items.length).map(r => _automationRowHTML(r, env)).join('');
   return `<div class="automation-strip" data-automation-id="${escHtml(a.id)}">${body}</div>`;
 }
+
+// buildAutomationStripHTML returns the strip markup for one Automation.
+// ctx = {prdTitles, prdStatuses, expanded, automationsById}: expanded is the
+// set of nested member ids shown open, automationsById maps an Automation id
+// to the Automation a nested member names.
+function buildAutomationStripHTML(automation, ctx) {
+  const a = automation || {};
+  const seen = new Set(a.id ? [a.id] : []);
+  return _automationStripBody(a, ctx || {}, seen, 0);
+}
 window.buildAutomationStripHTML = buildAutomationStripHTML;
+
+// toggleAutomationNested opens or closes the nested Automation under a member
+// card and redraws the detail strip when a detail view is open and the detail
+// task has defined renderAutomationStrip.
+function toggleAutomationNested(memberId) {
+  const ex = _automationState.expanded;
+  if (ex.has(memberId)) ex.delete(memberId); else ex.add(memberId);
+  if (_automationState.detailId && typeof renderAutomationStrip === 'function') renderAutomationStrip();
+}
+window.toggleAutomationNested = toggleAutomationNested;
 
 // alpha.30 #271 + #183 #4 — Alerts tab redesigned to mirror the dock UX:
 // top bar with per-category chips + ✕all + 🔕 + sort toggle + search,

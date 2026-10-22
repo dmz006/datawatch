@@ -299,3 +299,236 @@ test('a fork card has no click-through and shows its short member id', () => {
   assert.match(html, /<span class="automation-chip">f1234567<\/span>/);
   assert.ok(!html.includes('openAutomationMemberPRD'));
 });
+
+// ── Fork, join and nested members ───────────────────────────────────────────
+
+function ids(tags) {
+  return tags.map(c => c.match(/data-member-id="([^"]*)"/)[1]);
+}
+
+// lane returns the markup of the lane whose data-lane is id.
+function lane(html, id) {
+  const start = html.indexOf(`<div class="automation-lane" data-lane="${id}"`);
+  assert.notEqual(start, -1, 'lane ' + id + ' is present');
+  const next = html.indexOf('<div class="automation-lane"', start + 1);
+  return html.slice(start, next === -1 ? html.length : next);
+}
+
+function forked(rule, extraJoin) {
+  return {
+    id: 'fj1', status: 'active', entry_member_id: 'm1',
+    members: [
+      member('m1', 'completed', { on_complete: 'fk', edge_taken: 'on_complete' }),
+      { id: 'fk', kind: 'fork', status: 'running', fork_members: ['b1', 'b2', 'b3'] },
+      member('b1', 'running'),
+      member('b2', 'completed'),
+      member('b3', 'pending'),
+      Object.assign({ id: 'jn', kind: 'join', status: 'pending', join_members: ['b3', 'b1', 'b2'], on_complete: 'm9' }, rule ? { on_branch_failure: rule } : {}, extraJoin || {}),
+      member('m9', 'pending'),
+    ],
+  };
+}
+
+test('fork with three branches renders three lanes in one group in fork_members order, then the join and the rest of the chain', () => {
+  const sb = loadApp();
+  const html = sb.buildAutomationStripHTML(forked(), {});
+  assert.equal((html.match(/class="automation-fork-group"/g) || []).length, 1);
+  assert.match(html, /<div class="automation-fork-group" data-fork-id="fk" data-join-id="jn">/);
+  const lanes = (html.match(/<div class="automation-lane" data-lane="([^"]*)"/g) || []).map(l => l.match(/data-lane="([^"]*)"/)[1]);
+  assert.deepEqual(lanes, ['b1', 'b2', 'b3']);
+  const group = html.slice(html.indexOf('automation-fork-group'), html.indexOf('data-kind="join"'));
+  assert.equal((group.match(/class="automation-lane"/g) || []).length, 3);
+  assert.deepEqual(ids(cards(html)), ['m1', 'fk', 'b1', 'b2', 'b3', 'jn', 'm9']);
+  assert.ok(html.indexOf('data-kind="fork"') < html.indexOf('automation-fork-group'));
+  assert.ok(html.indexOf('automation-fork-group') < html.indexOf('data-kind="join"'));
+  assert.ok(html.indexOf('data-kind="join"') < html.indexOf('data-member-id="m9"'));
+  assert.match(html, /data-edge="on_complete" data-from="jn" data-to="m9"/);
+  assert.match(html, /data-kind="fork"[^>]*>(?:(?!<\/div>).)*<span class="automation-member-title">Fork<\/span>/);
+});
+
+test('branch members never appear outside their lane', () => {
+  const sb = loadApp();
+  const a = forked();
+  a.members.push(member('u1', 'pending'));
+  const html = sb.buildAutomationStripHTML(a, {});
+  ['b1', 'b2', 'b3'].forEach(id => {
+    assert.equal((html.match(new RegExp(`data-member-id="${id}"`, 'g')) || []).length, 1, id + ' drawn once');
+    assert.ok(lane(html, id).includes(`data-member-id="${id}"`));
+  });
+  assert.ok(!cards(row(html, 'main')).some(c => c.includes('data-member-id="u1"')));
+  const unlinked = row(html, 'unlinked');
+  assert.deepEqual(ids(cards(unlinked)), ['u1']);
+});
+
+test('two running branch lanes are both highlighted and carry the branch title', () => {
+  const sb = loadApp();
+  const a = forked();
+  a.active_cursors = ['b1', 'b3'];
+  a.members.find(m => m.id === 'b3').status = 'running';
+  const html = sb.buildAutomationStripHTML(a, {});
+  const l1 = lane(html, 'b1');
+  const l2 = lane(html, 'b2');
+  const l3 = lane(html, 'b3');
+  assert.match(l1, /automation-member-active/);
+  assert.match(l1, /data-active="true"/);
+  assert.match(l3, /automation-member-active/);
+  assert.ok(!/automation-member-active/.test(l2) && /data-active="false"/.test(l2));
+  assert.match(l1, /^<div class="automation-lane" data-lane="b1" title="Branch b1">/);
+  assert.match(l3, /title="Branch b3"/);
+  assert.equal(cards(html).filter(c => c.includes('automation-member-active')).length, 2);
+});
+
+test('each join rule produces the right data-rule and label, and an empty rule is all_must_succeed', () => {
+  const sb = loadApp();
+  const cases = [
+    ['', 'all_must_succeed', 'All branches must succeed'],
+    ['all_must_succeed', 'all_must_succeed', 'All branches must succeed'],
+    ['any_one_is_enough', 'any_one_is_enough', 'One branch is enough'],
+    ['continue_anyway', 'continue_anyway', 'Continue anyway'],
+    ['bogus', 'all_must_succeed', 'All branches must succeed'],
+  ];
+  cases.forEach(([rule, want, text]) => {
+    const html = sb.buildAutomationStripHTML(forked(rule), {});
+    const join = html.match(/<div class="automation-member [^>]*data-kind="join"[^>]*>.*?<\/div>/)[0];
+    assert.match(join, new RegExp(`data-rule="${want}"`));
+    assert.match(join, /<span class="automation-member-title">Join<\/span>/);
+    assert.match(join, new RegExp(`<span class="automation-join-rule">${text}</span>`));
+  });
+});
+
+test('a join whose members do not match the fork is not paired and the walk ends after the group', () => {
+  const sb = loadApp();
+  const a = forked('', { join_members: ['b1', 'b2'] });
+  const html = sb.buildAutomationStripHTML(a, {});
+  assert.match(html, /data-join-id=""/);
+  assert.deepEqual(ids(cards(row(html, 'unlinked'))), ['jn', 'm9']);
+  assert.equal(ids(cards(row(html, 'main'))).includes('jn'), false);
+});
+
+function nestedTree() {
+  const child = {
+    id: 'child001', name: 'Child chain', status: 'running', entry_member_id: 'c1',
+    members: [member('c1', 'running', { on_complete: 'c2' }), member('c2', 'pending')],
+  };
+  const parent = {
+    id: 'parent01', status: 'active', entry_member_id: 'n1',
+    members: [
+      { id: 'n1', kind: 'automation', automation_id: 'child001', status: 'running', on_complete: 'm2' },
+      member('m2', 'pending'),
+    ],
+  };
+  return { child, parent, byId: { child001: child, parent01: parent } };
+}
+
+test('a nested member renders collapsed by default with the child name, status and expand control', () => {
+  const sb = loadApp();
+  const { parent, byId } = nestedTree();
+  const html = sb.buildAutomationStripHTML(parent, { automationsById: byId, expanded: new Set() });
+  assert.match(html, /data-kind="automation"[^>]*data-expanded="false"/);
+  assert.match(html, /<span class="automation-member-title">Child chain<\/span>/);
+  assert.match(html, /<span class="automation-member-status">Running<\/span>/);
+  assert.match(html, /<button type="button" class="automation-nested-toggle" data-member-id="n1" aria-expanded="false" onclick="toggleAutomationNested\('n1'\)">Show nested Automation<\/button>/);
+  assert.ok(!html.includes('class="automation-nested"'));
+  assert.ok(!html.includes('data-member-id="c1"'));
+  assert.deepEqual(ids(cards(html)), ['n1', 'm2']);
+});
+
+test('a nested member falls back to the first eight characters of the child id when the child is not loaded', () => {
+  const sb = loadApp();
+  const { parent } = nestedTree();
+  const html = sb.buildAutomationStripHTML(parent, { automationsById: {}, expanded: new Set() });
+  assert.match(html, /<span class="automation-member-title">child001<\/span>/);
+});
+
+test('an expanded nested member renders the child members inside an automation-nested element', () => {
+  const sb = loadApp();
+  const { parent, byId } = nestedTree();
+  const html = sb.buildAutomationStripHTML(parent, { automationsById: byId, expanded: new Set(['n1']) });
+  assert.match(html, /data-kind="automation"[^>]*data-expanded="true"/);
+  assert.match(html, /aria-expanded="true"[^>]*>Hide nested Automation<\/button>/);
+  const start = html.indexOf('<div class="automation-nested" data-automation-id="child001" data-expanded="true">');
+  assert.notEqual(start, -1);
+  const nested = html.slice(start);
+  assert.match(nested, /<div class="automation-strip" data-automation-id="child001">/);
+  assert.ok(nested.includes('data-member-id="c1"') && nested.includes('data-member-id="c2"'));
+  assert.deepEqual(ids(cards(html)), ['n1', 'c1', 'c2', 'm2']);
+  assert.ok(html.indexOf('data-member-id="c2"') < html.indexOf('data-member-id="m2"'));
+});
+
+test('a two-deep nesting renders and a fork inside a child draws its lanes', () => {
+  const sb = loadApp();
+  const { parent, child, byId } = nestedTree();
+  const grand = {
+    id: 'grand001', name: 'Grand', status: 'active', entry_member_id: 'g1',
+    members: [
+      { id: 'g1', kind: 'fork', status: 'pending', fork_members: ['gb1', 'gb2'] },
+      member('gb1', 'pending'), member('gb2', 'pending'),
+      { id: 'gj', kind: 'join', status: 'pending', join_members: ['gb1', 'gb2'] },
+    ],
+  };
+  child.members[1] = { id: 'c2', kind: 'automation', automation_id: 'grand001', status: 'pending' };
+  byId.grand001 = grand;
+  const html = sb.buildAutomationStripHTML(parent, { automationsById: byId, expanded: new Set(['n1', 'c2']) });
+  assert.equal((html.match(/class="automation-nested"/g) || []).length, 2);
+  assert.match(html, /data-automation-id="grand001" data-expanded="true"/);
+  assert.match(html, /<span class="automation-member-title">Grand<\/span>/);
+  assert.equal((html.match(/class="automation-lane"/g) || []).length, 2);
+  assert.ok(html.includes('data-member-id="gb2"'));
+});
+
+test('a self-referencing nested Automation ends without looping', () => {
+  const sb = loadApp();
+  const a = {
+    id: 'self0001', name: 'Self', status: 'active', entry_member_id: 'n1',
+    members: [{ id: 'n1', kind: 'automation', automation_id: 'self0001', status: 'running' }],
+  };
+  const html = sb.buildAutomationStripHTML(a, { automationsById: { self0001: a }, expanded: new Set(['n1']) });
+  assert.equal(cards(html).length, 1);
+  assert.equal((html.match(/class="automation-nested"/g) || []).length, 1);
+
+  const x = { id: 'xx', entry_member_id: 'nx', members: [{ id: 'nx', kind: 'automation', automation_id: 'yy', status: 'running' }] };
+  const y = { id: 'yy', entry_member_id: 'ny', members: [{ id: 'ny', kind: 'automation', automation_id: 'xx', status: 'running' }] };
+  const mutual = sb.buildAutomationStripHTML(x, { automationsById: { xx: x, yy: y }, expanded: new Set(['nx', 'ny']) });
+  assert.deepEqual(ids(cards(mutual)), ['nx', 'ny']);
+});
+
+test('nesting stops at the maximum depth', () => {
+  const sb = loadApp();
+  const byId = {};
+  for (let i = 0; i < 9; i++) {
+    byId['lvl' + i] = {
+      id: 'lvl' + i, entry_member_id: 'n' + i,
+      members: [{ id: 'n' + i, kind: 'automation', automation_id: 'lvl' + (i + 1), status: 'running' }],
+    };
+  }
+  byId.lvl9 = { id: 'lvl9', entry_member_id: 'leaf', members: [member('leaf', 'pending')] };
+  const expanded = new Set(Object.keys(byId).map((k, i) => 'n' + i));
+  const html = sb.buildAutomationStripHTML(byId.lvl0, { automationsById: byId, expanded });
+  assert.equal((html.match(/class="automation-nested"/g) || []).length, 6);
+  assert.ok(!html.includes('data-member-id="leaf"'));
+});
+
+test('a missing child shows the not-loaded text when expanded', () => {
+  const sb = loadApp();
+  const { parent } = nestedTree();
+  const html = sb.buildAutomationStripHTML(parent, { automationsById: {}, expanded: new Set(['n1']) });
+  assert.match(html, /<div class="automation-nested" data-automation-id="child001" data-expanded="true"><span class="automation-nested-missing">Nested Automation not loaded<\/span><\/div>/);
+});
+
+test('toggleAutomationNested flips the id in the expanded set and redraws only when the detail task defined the renderer', () => {
+  const sb = loadApp();
+  assert.equal(typeof sb.toggleAutomationNested, 'function');
+  sb.toggleAutomationNested('n1');
+  const html = (set) => sb.buildAutomationStripHTML(nestedTree().parent, { automationsById: nestedTree().byId, expanded: set });
+  assert.ok(html(vm.runInContext('_automationState.expanded', sb)).includes('class="automation-nested"'));
+  sb.toggleAutomationNested('n1');
+  assert.equal(vm.runInContext('_automationState.expanded.has("n1")', sb), false);
+
+  let calls = 0;
+  sb.renderAutomationStrip = () => { calls++; };
+  sb.toggleAutomationNested('n1');
+  assert.equal(calls, 0, 'no detail view is open');
+  vm.runInContext('_automationState.detailId = "parent01"', sb);
+  sb.toggleAutomationNested('n1');
+  assert.equal(calls, 1);
+});

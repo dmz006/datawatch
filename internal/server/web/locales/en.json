@@ -1948,5 +1948,14 @@
   "automation_insert_after": "Insert after",
   "automation_insert_reason_label": "Reason for the insert",
   "automation_inserted_by": "Inserted by %1$s",
-  "automation_inserted_marker": "inserted"
+  "automation_inserted_marker": "inserted",
+  "automation_fork_label": "Fork",
+  "automation_join_label": "Join",
+  "automation_join_rule_all_must_succeed": "All branches must succeed",
+  "automation_join_rule_any_one_is_enough": "One branch is enough",
+  "automation_join_rule_continue_anyway": "Continue anyway",
+  "automation_branch_label": "Branch %1$s",
+  "automation_nested_expand": "Show nested Automation",
+  "automation_nested_collapse": "Hide nested Automation",
+  "automation_nested_missing": "Nested Automation not loaded"
 }

@@ -1948,5 +1948,14 @@
   "automation_insert_after": "Insérer après",
   "automation_insert_reason_label": "Motif de l'insertion",
   "automation_inserted_by": "Inséré par %1$s",
-  "automation_inserted_marker": "inséré"
+  "automation_inserted_marker": "inséré",
+  "automation_fork_label": "Bifurcation",
+  "automation_join_label": "Jonction",
+  "automation_join_rule_all_must_succeed": "Toutes les branches doivent réussir",
+  "automation_join_rule_any_one_is_enough": "Une seule branche suffit",
+  "automation_join_rule_continue_anyway": "Continuer quand même",
+  "automation_branch_label": "Branche %1$s",
+  "automation_nested_expand": "Afficher l'automatisation imbriquée",
+  "automation_nested_collapse": "Masquer l'automatisation imbriquée",
+  "automation_nested_missing": "Automatisation imbriquée non chargée"
 }

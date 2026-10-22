@@ -1948,5 +1948,14 @@
   "automation_insert_after": "Danach einfügen",
   "automation_insert_reason_label": "Grund für das Einfügen",
   "automation_inserted_by": "Eingefügt von %1$s",
-  "automation_inserted_marker": "eingefügt"
+  "automation_inserted_marker": "eingefügt",
+  "automation_fork_label": "Verzweigung",
+  "automation_join_label": "Zusammenführung",
+  "automation_join_rule_all_must_succeed": "Alle Zweige müssen erfolgreich sein",
+  "automation_join_rule_any_one_is_enough": "Ein Zweig genügt",
+  "automation_join_rule_continue_anyway": "Trotzdem fortfahren",
+  "automation_branch_label": "Zweig %1$s",
+  "automation_nested_expand": "Verschachtelte Automatisierung anzeigen",
+  "automation_nested_collapse": "Verschachtelte Automatisierung ausblenden",
+  "automation_nested_missing": "Verschachtelte Automatisierung nicht geladen"
 }
