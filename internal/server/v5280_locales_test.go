@@ -154,6 +154,13 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"prd_plan_review_ok",
 		"prd_plan_review_fail",
 		"prd_plan_review_rerun",
+		// The Automation tab keys.
+		"nav_automation",
+		"automation_new",
+		"automation_pause",
+		"automation_resume",
+		"automation_cancel",
+		"automation_cancel_in_flight",
 	}
 	for _, lang := range requiredLocales {
 		bundle := loadLocaleBundle(t, lang)
