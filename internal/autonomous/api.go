@@ -1418,3 +1418,66 @@ func (a *API) InvokeGuardrailByName(name, projectDir string) (any, error) {
 	}
 	return verdict, nil
 }
+
+// Automation control operations (in-process adapters for the REST handlers).
+// Each returns the updated Automation as any, or a nil any with the error;
+// a typed-nil *Automation must never reach the caller as a non-nil any.
+
+// PauseAutomation moves an active Automation to paused.
+func (a *API) PauseAutomation(id, actor string, expectedVersion int64) (any, error) {
+	got, err := a.M.PauseAutomation(id, actor, expectedVersion)
+	return controlResult(got, err)
+}
+
+// ResumeAutomation moves a paused Automation back to active.
+func (a *API) ResumeAutomation(id, actor string, expectedVersion int64) (any, error) {
+	got, err := a.M.ResumeAutomation(id, actor, expectedVersion)
+	return controlResult(got, err)
+}
+
+// CancelAutomation cancels an Automation. hasChoice reports whether the caller
+// supplied cancelInFlight; without it the Manager refuses the cancel.
+func (a *API) CancelAutomation(id, actor string, cancelInFlight, hasChoice bool, expectedVersion int64) (any, error) {
+	got, err := a.M.CancelAutomation(id, actor, cancelInFlight, hasChoice, expectedVersion)
+	return controlResult(got, err)
+}
+
+// SkipMember skips an active member along the named edge.
+func (a *API) SkipMember(id, memberID, edge, actor string, expectedVersion int64) (any, error) {
+	got, err := a.M.SkipMember(id, memberID, edge, actor, expectedVersion)
+	return controlResult(got, err)
+}
+
+// RemoveMember removes a member that has not started and has no outgoing edges.
+func (a *API) RemoveMember(id, memberID, actor string, expectedVersion int64) (any, error) {
+	got, err := a.M.RemoveMember(id, memberID, actor, expectedVersion)
+	return controlResult(got, err)
+}
+
+// ReorderEdges rewires the outgoing edges of a member that has not started.
+func (a *API) ReorderEdges(id, memberID, onCompleted, onBlocked, onFailed, actor string, expectedVersion int64) (any, error) {
+	got, err := a.M.ReorderEdges(id, memberID, onCompleted, onBlocked, onFailed, actor, expectedVersion)
+	return controlResult(got, err)
+}
+
+// InsertMember inserts a PRD member into an Automation.
+func (a *API) InsertMember(id string, in InsertMemberInput) (any, error) {
+	got, err := a.M.InsertMember(id, in)
+	return controlResult(got, err)
+}
+
+// ApproveInsertedMember promotes a pending insert into the graph.
+func (a *API) ApproveInsertedMember(id, memberID, actor string, expectedVersion int64) (any, error) {
+	got, err := a.M.ApproveInsertedMember(id, memberID, actor, expectedVersion)
+	return controlResult(got, err)
+}
+
+// controlResult widens a control operation's result. A non-nil Automation is
+// returned even alongside an error: a cancel whose in-flight session ends
+// failed still leaves the Automation cancelled.
+func controlResult(a *Automation, err error) (any, error) {
+	if a == nil {
+		return nil, err
+	}
+	return a, err
+}

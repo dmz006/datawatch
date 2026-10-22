@@ -2930,8 +2930,17 @@ func automationErrStatus(err error) (int, string) {
 //	PUT    /api/automations/{id}   — update
 //	DELETE /api/automations/{id}   — delete
 //	POST   /api/automations/{id}/activate — start a draft Automation
+//	POST   /api/automations/{id}/{pause|resume|cancel|skip_member|insert_member|
+//	       remove_member|reorder_edges|approve_insert} — operator control
 func (s *Server) handleAutomations(w http.ResponseWriter, r *http.Request) {
-	if r.Method == http.MethodGet {
+	rest := strings.TrimPrefix(r.URL.Path, "/api/automations")
+	rest = strings.Trim(rest, "/")
+	id := rest
+	ctlID, ctlOp, isControl := automationControlRoute(rest)
+
+	// The control sub-paths only ever write, so they need the write capability
+	// whatever the method (a GET to one is a 405 after the cap check).
+	if r.Method == http.MethodGet && !isControl {
 		if !s.fedCap(w, r, federation.CapAutonomousRead) {
 			return
 		}
@@ -2944,9 +2953,11 @@ func (s *Server) handleAutomations(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "autonomous disabled", http.StatusServiceUnavailable)
 		return
 	}
-	rest := strings.TrimPrefix(r.URL.Path, "/api/automations")
-	rest = strings.Trim(rest, "/")
-	id := rest
+
+	if isControl {
+		s.handleAutomationControl(w, r, ctlID, ctlOp)
+		return
+	}
 
 	if actID, ok := strings.CutSuffix(rest, "/activate"); ok && actID != "" && !strings.Contains(actID, "/") {
 		s.handleAutomationActivate(w, r, actID)
@@ -3059,6 +3070,160 @@ func (s *Server) handleAutomationActivate(w http.ResponseWriter, r *http.Request
 	}
 	s.audit(r.Context(), "automation_activate", "automation", id,
 		map[string]any{"actor": req.Actor, "reason": req.Reason})
+	writeJSONOK(w, a)
+}
+
+// automationControlOps lists the POST-only control sub-paths under
+// /api/automations/{id}/, one per operator action on a running Automation.
+var automationControlOps = []string{"pause", "resume", "cancel", "skip_member", "insert_member", "remove_member", "reorder_edges", "approve_insert"}
+
+// automationControlRoute splits rest ("{id}/{op}") into the Automation ID and
+// one of automationControlOps.
+func automationControlRoute(rest string) (id, op string, ok bool) {
+	for _, name := range automationControlOps {
+		if autoID, found := strings.CutSuffix(rest, "/"+name); found && autoID != "" && !strings.Contains(autoID, "/") {
+			return autoID, name, true
+		}
+	}
+	return "", "", false
+}
+
+// automationControlReq is the wire body shared by the control sub-paths; each
+// operation reads only its own fields. cancel_in_flight is a pointer so a
+// missing key is told apart from an explicit false.
+type automationControlReq struct {
+	ExpectedVersion int64  `json:"expected_version"`
+	Actor           string `json:"actor"`
+	Reason          string `json:"reason"`
+	CancelInFlight  *bool  `json:"cancel_in_flight"`
+	MemberID        string `json:"member_id"`
+	Edge            string `json:"edge"`
+	OnComplete      string `json:"on_complete"`
+	OnBlocked       string `json:"on_blocked"`
+	OnFailed        string `json:"on_failed"`
+	Member          struct {
+		PRDID string `json:"prd_id"`
+		Name  string `json:"name"`
+	} `json:"member"`
+	Urgent bool   `json:"urgent"`
+	After  string `json:"after"`
+}
+
+// automationController is the optional AutonomousAPI extension carrying the
+// operator control operations (autonomous.API implements it).
+type automationController interface {
+	PauseAutomation(id, actor string, expectedVersion int64) (any, error)
+	ResumeAutomation(id, actor string, expectedVersion int64) (any, error)
+	CancelAutomation(id, actor string, cancelInFlight, hasChoice bool, expectedVersion int64) (any, error)
+	SkipMember(id, memberID, edge, actor string, expectedVersion int64) (any, error)
+	RemoveMember(id, memberID, actor string, expectedVersion int64) (any, error)
+	ReorderEdges(id, memberID, onCompleted, onBlocked, onFailed, actor string, expectedVersion int64) (any, error)
+	InsertMember(id string, in autonomous.InsertMemberInput) (any, error)
+	ApproveInsertedMember(id, memberID, actor string, expectedVersion int64) (any, error)
+}
+
+// handleAutomationControl serves POST /api/automations/{id}/{op} for the ops in
+// automationControlOps. Body {expected_version, actor?, reason?} plus the
+// operation's own fields; actor defaults to "operator". A stale
+// expected_version is a 409 and so is a state conflict; cancel needs an explicit
+// cancel_in_flight. Success writes the updated Automation and one audit entry
+// automation_<op> (approve_insert is automation_approve_insert).
+func (s *Server) handleAutomationControl(w http.ResponseWriter, r *http.Request, id, op string) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	ctl, ok := s.autonomousMgr.(automationController)
+	if !ok {
+		http.Error(w, "automation control is not available", http.StatusServiceUnavailable)
+		return
+	}
+	var req automationControlReq
+	if r.Body != nil {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	if req.Actor == "" {
+		req.Actor = "operator"
+	}
+	details := map[string]any{"actor": req.Actor, "reason": req.Reason, "expected_version": req.ExpectedVersion}
+
+	var (
+		a      any
+		err    error
+		action string
+	)
+	switch op {
+	case "pause":
+		action = "automation_pause"
+		a, err = ctl.PauseAutomation(id, req.Actor, req.ExpectedVersion)
+	case "resume":
+		action = "automation_resume"
+		a, err = ctl.ResumeAutomation(id, req.Actor, req.ExpectedVersion)
+	case "cancel":
+		action = "automation_cancel"
+		hasChoice := req.CancelInFlight != nil
+		choice := hasChoice && *req.CancelInFlight
+		details["cancel_in_flight"] = choice
+		details["has_choice"] = hasChoice
+		a, err = ctl.CancelAutomation(id, req.Actor, choice, hasChoice, req.ExpectedVersion)
+	case "skip_member":
+		action = "automation_skip_member"
+		edge := req.Edge
+		if edge == "" {
+			edge = "on_complete"
+		}
+		details["member_id"], details["edge"] = req.MemberID, edge
+		a, err = ctl.SkipMember(id, req.MemberID, edge, req.Actor, req.ExpectedVersion)
+	case "remove_member":
+		action = "automation_remove_member"
+		details["member_id"] = req.MemberID
+		a, err = ctl.RemoveMember(id, req.MemberID, req.Actor, req.ExpectedVersion)
+	case "reorder_edges":
+		action = "automation_reorder_edges"
+		details["member_id"] = req.MemberID
+		details["on_complete"], details["on_blocked"], details["on_failed"] = req.OnComplete, req.OnBlocked, req.OnFailed
+		a, err = ctl.ReorderEdges(id, req.MemberID, req.OnComplete, req.OnBlocked, req.OnFailed, req.Actor, req.ExpectedVersion)
+	case "insert_member":
+		action = "automation_insert_member"
+		if strings.TrimSpace(req.Reason) == "" {
+			http.Error(w, "reason is required to insert a member", http.StatusBadRequest)
+			return
+		}
+		details["prd_id"], details["name"] = req.Member.PRDID, req.Member.Name
+		details["urgent"], details["after"] = req.Urgent, req.After
+		a, err = ctl.InsertMember(id, autonomous.InsertMemberInput{
+			PRDID: req.Member.PRDID, Name: req.Member.Name, AfterMemberID: req.After,
+			Urgent: req.Urgent, Actor: req.Actor, Reason: req.Reason, ExpectedVersion: req.ExpectedVersion,
+		})
+	case "approve_insert":
+		action = "automation_approve_insert"
+		details["member_id"] = req.MemberID
+		a, err = ctl.ApproveInsertedMember(id, req.MemberID, req.Actor, req.ExpectedVersion)
+	default:
+		http.NotFound(w, r)
+		return
+	}
+
+	if err != nil {
+		if a == nil {
+			code, msg := automationErrStatus(err)
+			http.Error(w, msg, code)
+			return
+		}
+		// The operation took effect but part of it failed (a cancel that could
+		// not end every in-flight member session): record it and say so.
+		details["error"] = err.Error()
+		s.audit(r.Context(), action, "automation", id, details)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if _, version := automationIdentity(a); version != 0 {
+		details["version"] = version
+	}
+	s.audit(r.Context(), action, "automation", id, details)
 	writeJSONOK(w, a)
 }
 

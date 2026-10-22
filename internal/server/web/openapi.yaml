@@ -1928,6 +1928,308 @@ paths:
         "401": {$ref: "#/components/responses/Unauthorized"}
         "503": {description: "autonomous disabled"}
 
+  /api/automations/{id}/pause:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}, description: "Automation ID (8-hex)"}
+    post:
+      summary: Pause an active Automation
+      description: |
+        Moves an active Automation to paused. Members already running keep running
+        and nothing is ended; a paused Automation moves on when a member finishes
+        but starts nothing until resumed. Body: `{expected_version, actor?, reason?}`.
+      operationId: automationsPause
+      tags: [Automations]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [expected_version]
+              properties:
+        expected_version: {type: integer, format: int64, description: "The Automation version the caller read; a different current version is a 409"}
+        actor: {type: string, description: "Who is acting (audit log); defaults to operator"}
+        reason: {type: string, description: "Why (audit log)"}
+      responses:
+        "200":
+          description: The Automation, now paused
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Automation"
+        "400": {description: "Malformed body"}
+        "404": {description: Automation not found}
+        "409": {description: "Stale expected_version (the Automation changed since it was read), or the Automation is not in a state this operation accepts"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "503": {description: "autonomous disabled"}
+
+  /api/automations/{id}/resume:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}, description: "Automation ID (8-hex)"}
+    post:
+      summary: Resume a paused Automation
+      description: |
+        Moves a paused Automation back to active; members that finished while it was
+        paused are routed on and the next member is started. Body:
+        `{expected_version, actor?, reason?}`.
+      operationId: automationsResume
+      tags: [Automations]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [expected_version]
+              properties:
+        expected_version: {type: integer, format: int64, description: "The Automation version the caller read; a different current version is a 409"}
+        actor: {type: string, description: "Who is acting (audit log); defaults to operator"}
+        reason: {type: string, description: "Why (audit log)"}
+      responses:
+        "200":
+          description: The Automation, now active
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Automation"
+        "400": {description: "Malformed body"}
+        "404": {description: Automation not found}
+        "409": {description: "Stale expected_version (the Automation changed since it was read), or the Automation is not in a state this operation accepts"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "503": {description: "autonomous disabled"}
+
+  /api/automations/{id}/cancel:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}, description: "Automation ID (8-hex)"}
+    post:
+      summary: Cancel an Automation
+      description: |
+        Cancels the Automation. `cancel_in_flight` is REQUIRED and has no default:
+        `true` ends the session of every in-flight member, `false` leaves in-flight
+        members running. A body without the key is a 400 naming both values. Members
+        not yet run become cancelled either way. If the Automation is cancelled but
+        ending an in-flight member session failed, the response is a 500 and the
+        Automation stays cancelled.
+      operationId: automationsCancel
+      tags: [Automations]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [expected_version, cancel_in_flight]
+              properties:
+        expected_version: {type: integer, format: int64, description: "The Automation version the caller read; a different current version is a 409"}
+        actor: {type: string, description: "Who is acting (audit log); defaults to operator"}
+        reason: {type: string, description: "Why (audit log)"}
+        cancel_in_flight: {type: boolean, description: "REQUIRED. true ends the session of every in-flight member; false leaves in-flight members running"}
+      responses:
+        "200":
+          description: The Automation, now cancelled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Automation"
+        "400": {description: "cancel_in_flight is missing (the message names cancel_in_flight=true and cancel_in_flight=false), or the body is malformed"}
+        "404": {description: Automation not found}
+        "409": {description: "Stale expected_version (the Automation changed since it was read), or the Automation is not in a state this operation accepts"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "503": {description: "autonomous disabled"}
+
+  /api/automations/{id}/skip_member:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}, description: "Automation ID (8-hex)"}
+    post:
+      summary: Skip an active member
+      description: |
+        Skips an active member and moves on along `edge`, as if the member had ended
+        that way. A session the member is running is not ended. In a forked
+        Automation with several active branches, `member_id` names the branch.
+      operationId: automationsSkipMember
+      tags: [Automations]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [expected_version]
+              properties:
+        expected_version: {type: integer, format: int64, description: "The Automation version the caller read; a different current version is a 409"}
+        actor: {type: string, description: "Who is acting (audit log); defaults to operator"}
+        reason: {type: string, description: "Why (audit log)"}
+        member_id: {type: string, description: "Member ID"}
+        edge: {type: string, enum: [on_complete, on_blocked, on_failed], default: on_complete}
+      responses:
+        "200":
+          description: The Automation after the skip
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Automation"
+        "400": {description: "Invalid edge, or member_id missing or not an active branch"}
+        "404": {description: Automation not found}
+        "409": {description: "Stale expected_version (the Automation changed since it was read), or the Automation is not in a state this operation accepts"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "503": {description: "autonomous disabled"}
+
+  /api/automations/{id}/insert_member:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}, description: "Automation ID (8-hex)"}
+    post:
+      summary: Insert a PRD member
+      description: |
+        Inserts a PRD as a new member. On a draft it lands in the graph at once; on a
+        running Automation it is held as a pending insert until an operator approves it
+        (`approve_insert`). `reason` is required. Only one urgent insert may be pending
+        at a time. An urgent insert takes the next slot and must leave `after` empty.
+      operationId: automationsInsertMember
+      tags: [Automations]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [expected_version, reason, member]
+              properties:
+        expected_version: {type: integer, format: int64, description: "The Automation version the caller read; a different current version is a 409"}
+        actor: {type: string, description: "Who is acting (audit log); defaults to operator"}
+        reason: {type: string, description: "Why (audit log)"}
+        member:
+          type: object
+          required: [prd_id]
+          properties:
+            prd_id: {type: string, description: "The member PRD to insert"}
+            name: {type: string, description: "Optional display name"}
+        urgent: {type: boolean, description: "Take the next slot instead of the end of the chain"}
+        after: {type: string, description: "Insert directly after this member ID; empty for the end of the chain"}
+      responses:
+        "200":
+          description: The Automation after the insert (the pending insert is on the record when it was held)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Automation"
+        "400": {description: "reason or member.prd_id missing, or an invalid position"}
+        "404": {description: Automation not found}
+        "409": {description: "Stale expected_version (the Automation changed since it was read), or the Automation is not in a state this operation accepts"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "503": {description: "autonomous disabled"}
+
+  /api/automations/{id}/remove_member:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}, description: "Automation ID (8-hex)"}
+    post:
+      summary: Remove a member
+      description: |
+        Removes a member that has not started and has no outgoing edges. The entry
+        member, running or finished members, forks, joins and fork or join branches are
+        refused with a 409.
+      operationId: automationsRemoveMember
+      tags: [Automations]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [expected_version, member_id]
+              properties:
+        expected_version: {type: integer, format: int64, description: "The Automation version the caller read; a different current version is a 409"}
+        actor: {type: string, description: "Who is acting (audit log); defaults to operator"}
+        reason: {type: string, description: "Why (audit log)"}
+        member_id: {type: string, description: "Member ID"}
+      responses:
+        "200":
+          description: The Automation without the member
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Automation"
+        "400": {description: "member_id missing"}
+        "404": {description: Automation not found}
+        "409": {description: "Stale expected_version (the Automation changed since it was read), or the Automation is not in a state this operation accepts"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "503": {description: "autonomous disabled"}
+
+  /api/automations/{id}/reorder_edges:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}, description: "Automation ID (8-hex)"}
+    post:
+      summary: Rewire a member's edges
+      description: |
+        Rewires the three outgoing edges of a member that has not started. Each edge
+        is the member ID it now names; empty or omitted clears it. A member that is
+        running or finished is refused with a 409; unknown targets, self-edges and
+        cycles are a 400.
+      operationId: automationsReorderEdges
+      tags: [Automations]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [expected_version, member_id]
+              properties:
+        expected_version: {type: integer, format: int64, description: "The Automation version the caller read; a different current version is a 409"}
+        actor: {type: string, description: "Who is acting (audit log); defaults to operator"}
+        reason: {type: string, description: "Why (audit log)"}
+        member_id: {type: string, description: "Member ID"}
+        on_complete: {type: string}
+        on_blocked: {type: string}
+        on_failed: {type: string}
+      responses:
+        "200":
+          description: The Automation with the new edges
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Automation"
+        "400": {description: "Unknown target, self-edge, cycle, or member_id missing"}
+        "404": {description: Automation not found}
+        "409": {description: "Stale expected_version (the Automation changed since it was read), or the Automation is not in a state this operation accepts"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "503": {description: "autonomous disabled"}
+
+  /api/automations/{id}/approve_insert:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}, description: "Automation ID (8-hex)"}
+    post:
+      summary: Approve a pending inserted member
+      description: |
+        Promotes a pending insert, named by `member_id` (the pending ID returned with
+        the insert), into the graph at its reserved position. Only the operator may
+        approve; an unknown pending ID is a 409.
+      operationId: automationsApproveInsert
+      tags: [Automations]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [expected_version, member_id]
+              properties:
+        expected_version: {type: integer, format: int64, description: "The Automation version the caller read; a different current version is a 409"}
+        actor: {type: string, description: "Who is acting (audit log); defaults to operator"}
+        reason: {type: string, description: "Why (audit log)"}
+        member_id: {type: string, description: "Member ID"}
+      responses:
+        "200":
+          description: The Automation with the member in the graph
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Automation"
+        "400": {description: "member_id missing"}
+        "404": {description: Automation not found}
+        "409": {description: "Stale expected_version (the Automation changed since it was read), or the Automation is not in a state this operation accepts"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "503": {description: "autonomous disabled"}
+
   # ─── Mobile-client parity endpoints (documented in v4.0.3) ────
   /api/backends/active:
     post:

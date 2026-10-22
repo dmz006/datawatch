@@ -5795,7 +5795,8 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			// same reason (see config.AutonomousNotifyConfig).
 			"notify": defaultEventsNotifySurface(s.cfg.Autonomous.Notify),
 			"automation": map[string]interface{}{
-				"idle_alert_minutes": s.cfg.Autonomous.Automation.IdleAlertMinutes,
+				"idle_alert_minutes":  s.cfg.Autonomous.Automation.IdleAlertMinutes,
+				"agent_insert_policy": s.cfg.Autonomous.Automation.EffectiveAgentInsertPolicy(),
 			},
 			"scan": map[string]interface{}{
 				"enabled":              s.cfg.Autonomous.Scan.Enabled,
@@ -5973,6 +5974,14 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	// non-integer value rejects the whole PUT rather than being skipped.
 	if v, ok := patch["autonomous.automation.idle_alert_minutes"]; ok {
 		if verr := validateIdleAlertMinutes(v); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	// Agent insert policy: allow | require_operator. Any other value rejects
+	// the whole PUT, same as idle_alert_minutes.
+	if v, ok := patch["autonomous.automation.agent_insert_policy"]; ok {
+		if verr := validateAgentInsertPolicy(v); verr != nil {
 			http.Error(w, verr.Error(), http.StatusBadRequest)
 			return
 		}
@@ -7251,6 +7260,12 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.Autonomous.Automation.IdleAlertMinutes = n
 			}
+		case "autonomous.automation.agent_insert_policy":
+			// Validated above in handlePutConfig; a value that fails the
+			// check here is left unchanged.
+			if validateAgentInsertPolicy(v) == nil {
+				cfg.Autonomous.Automation.AgentInsertPolicy = toString(v)
+			}
 		case "pin_check_seconds":
 			// Validated above in handlePutConfig; a value that fails the
 			// check here is left unchanged.
@@ -7814,6 +7829,17 @@ func validateIdleAlertMinutes(v interface{}) error {
 		return fmt.Errorf("autonomous.automation.idle_alert_minutes: must be a whole number >= 0 (0 = off)")
 	}
 	return nil
+}
+
+// validateAgentInsertPolicy checks autonomous.automation.agent_insert_policy:
+// a string that is "allow" or "require_operator" (empty is not accepted over
+// the wire; the default applies when the key is absent).
+func validateAgentInsertPolicy(v interface{}) error {
+	str, ok := v.(string)
+	if !ok || str == "" {
+		return fmt.Errorf("autonomous.automation.agent_insert_policy: must be %q or %q", config.AgentInsertPolicyAllow, config.AgentInsertPolicyRequireOperator)
+	}
+	return config.ValidateAgentInsertPolicy(str)
 }
 
 // planTierTableForDisplay renders the tier -> max-inflight table for the

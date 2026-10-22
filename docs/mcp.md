@@ -396,6 +396,7 @@ Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
 - **`retry_profile_list/create/get/update/delete`** (BL410 Phase 1) — manage named retry profiles (per-category retry budgets + behavior: ceiling, infra escalation threshold, content auto-fix, auto-fix approval-skip) — mirrors `guardrail_profile_*` exactly.
 - **`per_automaton_retry_policy_set`** (BL410 Phase 1) — override retry profile and per-category retry policy for a specific PRD.
 - **`automation_list/create/get/update/delete`** — manage Automation records: a named chain of member Automatons (PRDs) connected by per-outcome edges (`on_complete` / `on_blocked` / `on_failed`), with an entry member, an optional budget policy, and Automation-level execution/verification defaults. These tools manage the records. Activating a draft Automation is a separate action (`automation_activate`); from then on the daemon advances it through its members on its own. Tool shape mirrors `retry_profile_*` / `guardrail_profile_*`; same surface over REST at `GET/POST /api/automations` and `GET/PUT/DELETE /api/automations/{id}`.
+- **`automation_pause`, `automation_resume`, `automation_cancel`, `automation_skip_member`, `automation_insert_member`, `automation_remove_member`, `automation_reorder_edges`, `automation_approve_insert`** (Phase 3b) — operator control of a running Automation; see "Automation control tools" below. Over REST these are `POST /api/automations/{id}/{pause|resume|cancel|skip_member|insert_member|remove_member|reorder_edges|approve_insert}`.
 
   Parameters shared by the create/update family (`list` takes none; `get` and `delete` take only `id`; `update` sends only the fields to change):
 
@@ -444,6 +445,38 @@ Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
       {"id":"join1","kind":"join","join_members":["lint","tests"],"on_branch_failure":"any_one_is_enough"}
     ]'
   )
+  ```
+
+- **Automation control tools (Phase 3b).** Eight tools steer a running Automation. Each proxies to `POST /api/automations/{id}/<operation>` (see [api/autonomous.md](api/autonomous.md) for the full semantics, response codes and audit entries). Every tool takes these arguments, and a call that leaves out a required one is refused before any request is sent:
+
+  | Argument | Required | Description |
+  |---|---|---|
+  | `automation_id` | yes | Automation ID. |
+  | `expected_version` | yes | The `version` you read with `automation_get`. It must equal the stored version; a stale value comes back as a conflict error (`409`) and nothing changes. |
+  | `actor` | no | Who is acting, recorded in the audit trail. Defaults to `operator`. Use `agent:<id>` or `session:<id>` for an agent. |
+  | `reason` | no (see `automation_insert_member`) | Recorded with the audit entry and the Automation's decision log. |
+
+  | Tool | Extra arguments | What it does |
+  |---|---|---|
+  | `automation_pause` | none | Pauses an `active` Automation. Running members keep running and nothing is ended; nothing new starts until resume. |
+  | `automation_resume` | none | Resumes a `paused` Automation and starts the next member. |
+  | `automation_cancel` | `cancel_in_flight` (boolean, **required**, no default) | Cancels the Automation. `true` ends the session of every running member. `false` leaves running members alone. Members that had not started are cancelled either way. A missing, `null` or non-boolean value is refused with a message naming `cancel_in_flight=true` and `cancel_in_flight=false`. |
+  | `automation_skip_member` | `member_id`, `edge` (`on_complete` default, `on_blocked` or `on_failed`) | Skips an active member and follows that edge. A session the member is running is not ended. In a forked Automation with several active branches, `member_id` is required and must name an active branch; a rejection lists the active branch member IDs. |
+  | `automation_insert_member` | `prd_id` (**required**), `reason` (**required**), `name`, `urgent`, `after` | Inserts a PRD as a member. `urgent` takes the next slot and `false` appends to the end (or goes after `after`); an urgent insert must leave `after` empty. On a draft the member lands at once. On an `active`, `paused` or `blocked` Automation it is held as a pending insert until `automation_approve_insert`, and only one urgent insert may be pending at a time (`409` otherwise). |
+  | `automation_remove_member` | `member_id` (required) | Removes a member that has not started and has no outgoing edges. The entry member, forks, joins and branches are refused. |
+  | `automation_reorder_edges` | `member_id` (required), `on_complete`, `on_blocked`, `on_failed` | Rewires the edges of a member that has not started. Each argument is the member ID the edge now names; an edge left out is cleared, so pass every edge to keep. |
+  | `automation_approve_insert` | `member_id` (required) | Promotes a pending insert, named by the pending ID that `automation_insert_member` returned in `pending_inserts[].id`, into the graph. Only the operator may approve. |
+
+  The global setting `autonomous.automation.agent_insert_policy` (`allow`, the default, or `require_operator`) decides whether an insert by an agent or session into a draft Automation lands at once or is held for `automation_approve_insert`; every insert into a started Automation is held whatever the policy. Set it with `PUT /api/config`, the comm `configure` verb, or `config_set` when `mcp.allow_self_config` is on.
+
+  ```
+  automation_get(id="3fa9c2d1")                                    # read version, e.g. 7
+  automation_pause(automation_id="3fa9c2d1", expected_version=7, reason="review the plan")
+  automation_insert_member(automation_id="3fa9c2d1", expected_version=8, prd_id="c9d0e1f2",
+                           urgent=true, reason="tests found a gap")   # held: pending_inserts[0].id
+  automation_approve_insert(automation_id="3fa9c2d1", expected_version=9, member_id="<pending id>")
+  automation_resume(automation_id="3fa9c2d1", expected_version=10)
+  automation_cancel(automation_id="3fa9c2d1", expected_version=11, cancel_in_flight=false)
   ```
 
 - **`autonomous_status` — `automations[]` cursor fields (Phase 3a).** Each row keeps its existing fields and adds `active_cursors` and `join_wait`. `active_cursors` is one entry per in-flight member, sorted by `member_id`, with `member_id`, `prd_id` (a `prd` member) or `automation_id` (an `automation` member), and `status`. It is always present and `[]` when idle. `join_wait` is present only while a join waits on its branches, with `join_member_id`, `rule`, `pending_branches` and `failed_branches`. `current_member_id`, `current_prd_id` and `current_prd_title` are still returned and are derived from the first active cursor. Read `active_cursors` and `join_wait` to follow a fork/join Automation. See [docs/api/autonomous.md](api/autonomous.md) for the full semantics.

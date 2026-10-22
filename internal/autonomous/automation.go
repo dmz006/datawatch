@@ -83,6 +83,11 @@ type Automation struct {
 	FinishedAt *time.Time `json:"finished_at,omitempty"`
 	IdleSince  *time.Time `json:"idle_since,omitempty"` // set when a member finishes and no next member started
 	Decisions  []Decision `json:"decisions,omitempty"`  // same type as PRD.Decisions; same 200 trim
+
+	// PendingInserts are member inserts held for an operator's approval (agent
+	// inserts under agent_insert_policy=require_operator, and any insert into a
+	// non-draft Automation). They are not members yet and do not affect the graph.
+	PendingInserts []PendingInsert `json:"pending_inserts,omitempty"`
 }
 
 // AutomationMember is one member Automation (PRD) of an Automation, with

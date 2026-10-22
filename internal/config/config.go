@@ -2393,8 +2393,41 @@ func ValidateUndeclaredEditMode(mode string) error {
 // finished and no next member started) before the coordinator raises one
 // alert for that idle episode. 0 (the default) turns the alert off. Not
 // omitempty, so an explicit 0 survives a round trip.
+//
+// AgentInsertPolicy decides what happens when an agent session inserts a member
+// into an Automation: "allow" (the default) lets the insert land directly and
+// "require_operator" holds it as a pending insert until an operator approves it.
+// An empty value means "allow".
 type AutonomousAutomationConfig struct {
-	IdleAlertMinutes int `yaml:"idle_alert_minutes" json:"idle_alert_minutes"`
+	IdleAlertMinutes  int    `yaml:"idle_alert_minutes" json:"idle_alert_minutes"`
+	AgentInsertPolicy string `yaml:"agent_insert_policy" json:"agent_insert_policy"`
+}
+
+// autonomous.automation.agent_insert_policy values.
+const (
+	AgentInsertPolicyAllow           = "allow"
+	AgentInsertPolicyRequireOperator = "require_operator"
+)
+
+// ValidateAgentInsertPolicy accepts the empty string (the default, allow),
+// "allow" and "require_operator", and rejects every other value.
+func ValidateAgentInsertPolicy(policy string) error {
+	switch policy {
+	case "", AgentInsertPolicyAllow, AgentInsertPolicyRequireOperator:
+		return nil
+	default:
+		return fmt.Errorf("autonomous.automation.agent_insert_policy: %q is not a valid value (must be %q or %q)",
+			policy, AgentInsertPolicyAllow, AgentInsertPolicyRequireOperator)
+	}
+}
+
+// EffectiveAgentInsertPolicy returns the policy in effect: an empty value
+// means allow.
+func (c AutonomousAutomationConfig) EffectiveAgentInsertPolicy() string {
+	if c.AgentInsertPolicy == "" {
+		return AgentInsertPolicyAllow
+	}
+	return c.AgentInsertPolicy
 }
 
 // AutonomousNotifyConfig —autonomous.notify sub-config. DefaultEvents
@@ -2929,6 +2962,7 @@ func DefaultConfig() *Config {
 			BlockOnFileDrift:        false,   // opt-in strict drift enforcement
 			DriftMode:               "block", // pre-existing drift blocks by default; "warn" for flag-only
 			UndeclaredEditMode:      "warn",
+			Automation:              AutonomousAutomationConfig{AgentInsertPolicy: AgentInsertPolicyAllow},
 			// Notify is left as the zero value on purpose: an empty
 			// DefaultEvents list means the built-in lifecycle sinks
 			// subscribe to nothing — zero config = zero behavior change.
@@ -3324,6 +3358,9 @@ func applyDefaults(cfg *Config) {
 	if cfg.Autonomous.ProjectWriteSerialization == "" {
 		cfg.Autonomous.ProjectWriteSerialization = autonomousProjectWriteSerializationAdvisory
 	}
+	if cfg.Autonomous.Automation.AgentInsertPolicy == "" {
+		cfg.Autonomous.Automation.AgentInsertPolicy = AgentInsertPolicyAllow
+	}
 	// BL397 — native ACME subsystem defaults.
 	if cfg.Acme.Endpoint == "" {
 		cfg.Acme.Endpoint = "staging"
@@ -3365,6 +3402,9 @@ func validateLoaded(cfg *Config) error {
 		return fmt.Errorf("autonomous.project_write_serialization: invalid value %q (valid values: %q, %q)",
 			cfg.Autonomous.ProjectWriteSerialization,
 			autonomousProjectWriteSerializationAdvisory, autonomousProjectWriteSerializationParallel)
+	}
+	if err := ValidateAgentInsertPolicy(cfg.Autonomous.Automation.AgentInsertPolicy); err != nil {
+		return err
 	}
 	// 2026-10-17 plan-review gate: mode must be empty/off/warn/block.
 	switch cfg.Autonomous.PlanReviewMode {

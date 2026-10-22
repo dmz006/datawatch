@@ -646,6 +646,14 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutomationUpdate(), tracked(s.handleAutomationUpdate))
 	mcpSrv.AddTool(s.toolAutomationDelete(), tracked(s.handleAutomationDelete))
 	mcpSrv.AddTool(s.toolAutomationActivate(), tracked(s.handleAutomationActivate))
+	mcpSrv.AddTool(s.toolAutomationPause(), tracked(s.handleAutomationPause))
+	mcpSrv.AddTool(s.toolAutomationResume(), tracked(s.handleAutomationResume))
+	mcpSrv.AddTool(s.toolAutomationCancel(), tracked(s.handleAutomationCancel))
+	mcpSrv.AddTool(s.toolAutomationSkipMember(), tracked(s.handleAutomationSkipMember))
+	mcpSrv.AddTool(s.toolAutomationInsertMember(), tracked(s.handleAutomationInsertMember))
+	mcpSrv.AddTool(s.toolAutomationRemoveMember(), tracked(s.handleAutomationRemoveMember))
+	mcpSrv.AddTool(s.toolAutomationReorderEdges(), tracked(s.handleAutomationReorderEdges))
+	mcpSrv.AddTool(s.toolAutomationApproveInsert(), tracked(s.handleAutomationApproveInsert))
 	// BL221 (v6.2.0) Phase 5 — template store CRUD tools.
 	mcpSrv.AddTool(s.toolAutonomousTemplateList(), tracked(s.handleAutonomousTemplateList))
 	mcpSrv.AddTool(s.toolAutonomousTemplateCreate(), tracked(s.handleAutonomousTemplateCreate))
@@ -1332,6 +1340,14 @@ func (s *Server) ToolDocs() []ToolDoc {
 		{s.toolAutomationUpdate, "automation_update"},
 		{s.toolAutomationDelete, "automation_delete"},
 		{s.toolAutomationActivate, "automation_activate"},
+		{s.toolAutomationPause, "automation_pause"},
+		{s.toolAutomationResume, "automation_resume"},
+		{s.toolAutomationCancel, "automation_cancel"},
+		{s.toolAutomationSkipMember, "automation_skip_member"},
+		{s.toolAutomationInsertMember, "automation_insert_member"},
+		{s.toolAutomationRemoveMember, "automation_remove_member"},
+		{s.toolAutomationReorderEdges, "automation_reorder_edges"},
+		{s.toolAutomationApproveInsert, "automation_approve_insert"},
 		// BL349 — self-session discovery
 		{s.toolGetMySessionID, "get_my_session_id"},
 		{s.toolGetMyScope, "get_my_scope"},

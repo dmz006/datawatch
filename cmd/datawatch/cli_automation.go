@@ -1,7 +1,10 @@
-// `datawatch automation ...` CLI subcommands: list, get, create, activate.
-// Sibling of the automation_* MCP tools and the "automation" comm verbs.
-// list/get/create call GET and POST /api/automations; activate calls
-// POST /api/automations/{id}/activate.
+// `datawatch automation ...` CLI subcommands: list, get, create, activate and
+// the operator controls pause, resume, cancel, skip, insert, remove, edges and
+// approve. Sibling of the automation_* MCP tools and the "automation" comm
+// verbs. list/get/create call GET and POST /api/automations; activate calls
+// POST /api/automations/{id}/activate; each control calls its own
+// POST /api/automations/{id}/{pause,resume,cancel,skip_member,insert_member,
+// remove_member,reorder_edges,approve_insert} and prints the updated Automation.
 
 package main
 
@@ -13,6 +16,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 
@@ -29,12 +33,31 @@ Subcommands:
   list                List Automations
   get <id>            Show one Automation (members, edges, active cursors)
   create              Create a draft Automation (members from a JSON file or inline JSON)
-  activate <id>       Start a draft Automation`,
+  activate <id>       Start a draft Automation
+  pause <id>          Pause a running Automation
+  resume <id>         Resume a paused Automation
+  cancel <id>         Cancel an Automation (--cancel-in-flight true|false is required)
+  skip <id> <member>  Skip a member that has not started, following one edge
+  insert <id> <prd>   Insert a member (--reason is required; --urgent, --after)
+  remove <id> <member>  Remove a member that has not started
+  edges <id> <member> Rewire a member's on_complete, on_blocked and on_failed edges
+  approve <id> <member>  Approve an agent-inserted member
+
+Every control takes --actor, --reason and --expected-version; a stale
+expected version is refused with HTTP 409.`,
 	}
 	cmd.AddCommand(newAutomationListCmd())
 	cmd.AddCommand(newAutomationGetCmd())
 	cmd.AddCommand(newAutomationCreateCmd())
 	cmd.AddCommand(newAutomationActivateCmd())
+	cmd.AddCommand(newAutomationPauseCmd())
+	cmd.AddCommand(newAutomationResumeCmd())
+	cmd.AddCommand(newAutomationCancelCmd())
+	cmd.AddCommand(newAutomationSkipCmd())
+	cmd.AddCommand(newAutomationInsertCmd())
+	cmd.AddCommand(newAutomationRemoveCmd())
+	cmd.AddCommand(newAutomationEdgesCmd())
+	cmd.AddCommand(newAutomationApproveCmd())
 	return cmd
 }
 
@@ -154,6 +177,231 @@ func newAutomationActivateCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&actor, "actor", "", "Who is activating (default operator)")
 	cmd.Flags().StringVar(&reason, "reason", "", "Reason, recorded in the audit trail")
+	return cmd
+}
+
+// automationControlFlags holds the flags every control subcommand shares.
+type automationControlFlags struct {
+	actor, reason   string
+	expectedVersion int64
+}
+
+func (f *automationControlFlags) register(cmd *cobra.Command) {
+	cmd.Flags().StringVar(&f.actor, "actor", "", "Who is acting (default operator)")
+	cmd.Flags().StringVar(&f.reason, "reason", "", "Reason, recorded in the audit trail")
+	cmd.Flags().Int64Var(&f.expectedVersion, "expected-version", 0, "Refuse (HTTP 409) unless the Automation is at this version")
+}
+
+// body starts the request body with the shared fields that were set.
+func (f *automationControlFlags) body(cmd *cobra.Command) map[string]any {
+	body := map[string]any{}
+	if f.actor != "" {
+		body["actor"] = f.actor
+	}
+	if f.reason != "" {
+		body["reason"] = f.reason
+	}
+	if cmd.Flags().Changed("expected-version") {
+		body["expected_version"] = f.expectedVersion
+	}
+	return body
+}
+
+// automationControlOps maps each control subcommand to the REST sub-path it posts to.
+var automationControlOps = map[string]string{
+	"pause":   "pause",
+	"resume":  "resume",
+	"cancel":  "cancel",
+	"skip":    "skip_member",
+	"insert":  "insert_member",
+	"remove":  "remove_member",
+	"edges":   "reorder_edges",
+	"approve": "approve_insert",
+}
+
+// runAutomationControl posts a control request for a subcommand verb and
+// prints the updated Automation.
+func runAutomationControl(id, verb string, body map[string]any) error {
+	raw, err := automationAPI(http.MethodPost, "/api/automations/"+url.PathEscape(id)+"/"+automationControlOps[verb], body)
+	if err != nil {
+		return err
+	}
+	var a automationView
+	if err := json.Unmarshal(raw, &a); err != nil {
+		return fmt.Errorf("decode automation: %w", err)
+	}
+	return printAutomation(os.Stdout, a)
+}
+
+func newAutomationPauseCmd() *cobra.Command {
+	var f automationControlFlags
+	cmd := &cobra.Command{
+		Use:   "pause <id>",
+		Short: "Pause a running Automation",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runAutomationControl(args[0], "pause", f.body(cmd))
+		},
+	}
+	f.register(cmd)
+	return cmd
+}
+
+func newAutomationResumeCmd() *cobra.Command {
+	var f automationControlFlags
+	cmd := &cobra.Command{
+		Use:   "resume <id>",
+		Short: "Resume a paused Automation",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runAutomationControl(args[0], "resume", f.body(cmd))
+		},
+	}
+	f.register(cmd)
+	return cmd
+}
+
+func newAutomationCancelCmd() *cobra.Command {
+	var f automationControlFlags
+	var cancelInFlight string
+	cmd := &cobra.Command{
+		Use:   "cancel <id> --cancel-in-flight <true|false>",
+		Short: "Cancel an Automation; --cancel-in-flight says what happens to members already running",
+		Long: `Cancel an Automation. --cancel-in-flight is required and has no default:
+true ends the sessions of members that are running now, false lets them finish
+while no further member starts.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if !cmd.Flags().Changed("cancel-in-flight") {
+				return fmt.Errorf("--cancel-in-flight true|false is required: say whether members already running are cancelled")
+			}
+			choice, err := strconv.ParseBool(cancelInFlight)
+			if err != nil {
+				return fmt.Errorf("--cancel-in-flight must be true or false, got %q", cancelInFlight)
+			}
+			body := f.body(cmd)
+			body["cancel_in_flight"] = choice
+			return runAutomationControl(args[0], "cancel", body)
+		},
+	}
+	f.register(cmd)
+	cmd.Flags().StringVar(&cancelInFlight, "cancel-in-flight", "", "Required: true cancels members running now, false lets them finish")
+	return cmd
+}
+
+func newAutomationSkipCmd() *cobra.Command {
+	var f automationControlFlags
+	var edge string
+	cmd := &cobra.Command{
+		Use:   "skip <id> <member-id>",
+		Short: "Skip a member that has not started and follow one of its edges",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			switch edge {
+			case "on_complete", "on_blocked", "on_failed":
+			default:
+				return fmt.Errorf("--edge must be on_complete, on_blocked or on_failed, got %q", edge)
+			}
+			body := f.body(cmd)
+			body["member_id"] = args[1]
+			body["edge"] = edge
+			return runAutomationControl(args[0], "skip", body)
+		},
+	}
+	f.register(cmd)
+	cmd.Flags().StringVar(&edge, "edge", "on_complete", "Edge to follow after the skipped member: on_complete, on_blocked or on_failed")
+	return cmd
+}
+
+func newAutomationInsertCmd() *cobra.Command {
+	var f automationControlFlags
+	var urgent bool
+	var after string
+	cmd := &cobra.Command{
+		Use:   "insert <id> <prd-id>",
+		Short: "Insert a member into a running Automation",
+		Long: `Insert a member that runs the given Automaton (prd-id). --reason is required and
+becomes the member's added reason. --urgent takes the urgent lane (one urgent member
+at a time); --after places the member after the named member.`,
+		Args: cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if strings.TrimSpace(f.reason) == "" {
+				return fmt.Errorf("--reason is required to insert a member")
+			}
+			body := f.body(cmd)
+			body["member"] = map[string]any{"prd_id": args[1]}
+			body["urgent"] = urgent
+			if after != "" {
+				body["after"] = after
+			}
+			return runAutomationControl(args[0], "insert", body)
+		},
+	}
+	f.register(cmd)
+	cmd.Flags().BoolVar(&urgent, "urgent", false, "Use the urgent lane")
+	cmd.Flags().StringVar(&after, "after", "", "Member ID to insert after")
+	return cmd
+}
+
+func newAutomationRemoveCmd() *cobra.Command {
+	var f automationControlFlags
+	cmd := &cobra.Command{
+		Use:   "remove <id> <member-id>",
+		Short: "Remove a member that has not started",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			body := f.body(cmd)
+			body["member_id"] = args[1]
+			return runAutomationControl(args[0], "remove", body)
+		},
+	}
+	f.register(cmd)
+	return cmd
+}
+
+func newAutomationEdgesCmd() *cobra.Command {
+	var f automationControlFlags
+	var onComplete, onBlocked, onFailed string
+	cmd := &cobra.Command{
+		Use:   "edges <id> <member-id>",
+		Short: "Rewire the outgoing edges of a member that has not started",
+		Long: `Rewire a member's edges. At least one of --on-complete, --on-blocked and
+--on-failed is required. All three edges are rewritten: one that is not named is
+set to no next member (the chain stops there), so name every edge to keep.`,
+		Args: cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			fl := cmd.Flags()
+			if !fl.Changed("on-complete") && !fl.Changed("on-blocked") && !fl.Changed("on-failed") {
+				return fmt.Errorf("name at least one of --on-complete, --on-blocked, --on-failed")
+			}
+			body := f.body(cmd)
+			body["member_id"] = args[1]
+			body["on_complete"] = onComplete
+			body["on_blocked"] = onBlocked
+			body["on_failed"] = onFailed
+			return runAutomationControl(args[0], "edges", body)
+		},
+	}
+	f.register(cmd)
+	cmd.Flags().StringVar(&onComplete, "on-complete", "", "Member that runs when this one completes (empty: stop)")
+	cmd.Flags().StringVar(&onBlocked, "on-blocked", "", "Member that runs when this one is blocked (empty: stop)")
+	cmd.Flags().StringVar(&onFailed, "on-failed", "", "Member that runs when this one fails (empty: stop)")
+	return cmd
+}
+
+func newAutomationApproveCmd() *cobra.Command {
+	var f automationControlFlags
+	cmd := &cobra.Command{
+		Use:   "approve <id> <member-id>",
+		Short: "Approve a member an agent inserted",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			body := f.body(cmd)
+			body["member_id"] = args[1]
+			return runAutomationControl(args[0], "approve", body)
+		},
+	}
+	f.register(cmd)
 	return cmd
 }
 

@@ -873,8 +873,25 @@ autonomous:
   # autonomous.automation.idle_alert_minutes=30`, comm `configure
   # autonomous.automation.idle_alert_minutes=30`, and the PWA Settings field
   # (settings_automation_idle_alert_minutes).
+  #
+  # agent_insert_policy: string, `allow` (default) or `require_operator`; any
+  # other value is rejected (400 on PUT /api/config, an error on config load),
+  # and an empty value means allow. Decides what happens when a session or
+  # agent (an actor starting `session:` or `agent:`) calls insert_member on an
+  # Automation that is still a draft: `allow` adds the member at once, and
+  # `require_operator` holds it as a pending insert until the operator calls
+  # approve_insert. An insert into a started Automation (active, paused or
+  # blocked) is always held for approve_insert, whatever the policy, and only
+  # the operator may approve. At most one urgent insert may be pending per
+  # Automation. Settable on the same paths as idle_alert_minutes: PUT
+  # /api/config (key autonomous.automation.agent_insert_policy; GET /api/config
+  # shows the effective value), CLI `datawatch config set
+  # autonomous.automation.agent_insert_policy=require_operator`, comm
+  # `configure autonomous.automation.agent_insert_policy=require_operator`, and
+  # the MCP config_set tool when mcp.allow_self_config is on.
   automation:
     idle_alert_minutes: 0
+    agent_insert_policy: allow
   notify:
     # Built-in sinks (alert store, topic push, comm fan-out) act on the
     # lifecycle event kinds listed here. Empty list (the default) = nothing
