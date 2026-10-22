@@ -5,6 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.96 — Claude start-up confirmation dialogs answered or failed fast
+
+### Fixed
+
+- **A Claude session left at a start-up confirmation dialog is now answered or failed fast.** Start-up screens (trust folder, MCP trust, development channels, unsafe-continue, update prompt and others) are classified and routed through the existing handlers, and an unknown confirmation is reported instead of left waiting for the 30-minute limit.
+- **A pasted task prompt is confirmed as submitted** before the session counts as started, so a prompt pasted into a dialog is no longer lost silently.
+- **A session that never starts working now fails after a bounded wait and is retried on its own budget of two.** The bound is `autonomous.session_start_confirm_seconds` (default 120), shown on the web settings card in five languages and settable through the REST, MCP and chat config surfaces.
+
 ## v9.5.95 — Release scan unblocked for two OpenJDK findings
 
 ### Fixed
