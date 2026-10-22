@@ -278,6 +278,22 @@ func (b *BudgetLedger) SpendInWindow(llm string) float64 {
 	return sumUSD(es)
 }
 
+// SpendBetween sums this daemon's own recorded spend for llm from from to to,
+// both inclusive. It never includes peer spend and does not require the LLM
+// to have a budget, so a peer can ask for the spend inside its own window.
+func (b *BudgetLedger) SpendBetween(llm string, from, to time.Time) float64 {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.ensureLoaded()
+	var total float64
+	for _, e := range b.entries {
+		if e.LLM == llm && !e.At.Before(from) && !e.At.After(to) {
+			total += e.USD
+		}
+	}
+	return total
+}
+
 // Blocked reports whether llm has a budget and local-plus-peer spend is at or
 // above the ceiling. The reason starts with "budget window full:".
 //

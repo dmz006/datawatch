@@ -302,6 +302,8 @@ type Server struct {
 	capacityLedger *capacity.Ledger
 	// usageBackoff is the per-backend usage back-off registry (BL428 Phase 4).
 	usageBackoff *autonomous.Backoff
+	// budgetLedger is the per-LLM dollar budget ledger (nil = not wired).
+	budgetLedger *autonomous.BudgetLedger
 	// capacityAdmit gates an interactive (non-autonomous) session start on
 	// the same node:/llm: capacity pools an autonomous task would use for
 	// the same backend+model — nil when capacity isn't wired at all.

@@ -690,6 +690,9 @@ type Manager struct {
 	// patternsFn reports the rate-limit pattern fingerprint and staleness
 	// shown in the usage_backoff status (nil = not wired).
 	patternsFn PatternsStatusFunc
+	// budgetsFn reports the per-LLM dollar budget states shown in the
+	// autonomous status (nil = not wired).
+	budgetsFn BudgetsStatusFunc
 
 	// sessionDeleteFn — when set, called after a task reaches a terminal
 	// state (completed/failed/cancelled) to remove the ephemeral executor
@@ -910,6 +913,28 @@ func (m *Manager) SetPatternsStatus(fn PatternsStatusFunc) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.patternsFn = fn
+}
+
+// SetBudgetsStatus wires the source of the per-LLM budget states reported in
+// the autonomous status (budgets). Nil clears it.
+func (m *Manager) SetBudgetsStatus(fn BudgetsStatusFunc) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.budgetsFn = fn
+}
+
+// budgetsSummary returns the budget states for the status, never nil. The
+// function runs outside m.mu: it reads the LLM registry and the ledger.
+func (m *Manager) budgetsSummary() []BudgetStatus {
+	m.mu.Lock()
+	fn := m.budgetsFn
+	m.mu.Unlock()
+	if fn != nil {
+		if out := fn(); out != nil {
+			return out
+		}
+	}
+	return []BudgetStatus{}
 }
 
 // SetAlertSink wires the operator-facing alert callback. Nil disables.
@@ -4083,9 +4108,11 @@ func (m *Manager) Status() LoopStatus {
 	// and the PRD store, and neither may be entered while holding m.mu.
 	automations := m.automationStatusSummaries(time.Now())
 	usageBackoff := m.usageBackoffSummary()
+	budgets := m.budgetsSummary()
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	st := m.status
+	st.Budgets = budgets
 	st.BootResume = append([]BootResumeEntry(nil), m.bootResumeReport...)
 	st.UsageBackoff = usageBackoff
 	st.Running = m.ctx != nil && m.ctx.Err() == nil
