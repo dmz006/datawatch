@@ -1,6 +1,7 @@
 package session
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -8,6 +9,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/gitguard"
 )
 
 // ProjectGit manages git operations on the user's project directory.
@@ -17,11 +20,24 @@ type ProjectGit struct {
 	// whose mtime predates it are not considered part of this run
 	// (see unscopedChangedFiles). Zero means the run start is unknown.
 	runStart time.Time
+	// stagingPolicy bounds what an automatic commit may stage: per-file
+	// size, ignored cache/build directories, model-weight patterns, the
+	// file-count refusal, and the add timeout (see internal/gitguard).
+	// NewProjectGit sets gitguard.Default. A zero-value ProjectGit imposes
+	// no bounds, so construct through NewProjectGit for automatic commits.
+	stagingPolicy gitguard.Policy
 }
 
-// NewProjectGit creates a new ProjectGit for the given directory.
+// NewProjectGit creates a new ProjectGit for the given directory, bounded
+// by gitguard.Default.
 func NewProjectGit(dir string) *ProjectGit {
-	return &ProjectGit{dir: dir}
+	return &ProjectGit{dir: dir, stagingPolicy: gitguard.Default}
+}
+
+// SetStagingPolicy replaces the staging policy used by automatic commits.
+// Tests use it to tighten limits; future config wiring can call it too.
+func (g *ProjectGit) SetStagingPolicy(p gitguard.Policy) {
+	g.stagingPolicy = p
 }
 
 // IsRepo returns true if dir is inside a git repository.
@@ -54,8 +70,20 @@ func (g *ProjectGit) Init() error {
 // warning so the reduced staging stays visible in the log — the old
 // `git add -A` fallthrough swept pre-existing untracked files into the
 // session's commit (2026-10-19 incident) and must never return.
+//
+// Both branches never add a whole directory tree. A scoped commit used
+// to run `git add -- <scope dir>`, which staged everything under a scope
+// of the home directory (2026-10-19 and 2026-10-21 bloat incidents).
+// Candidates are now enumerated file by file and pass through the staging
+// guard (stageCandidates): size cap, ignored cache/build directories, a
+// file-count refusal, and a bounded add. Automatic commits in the user's
+// home directory are flagged with a warning, since the guard is what keeps
+// them from staging the whole home tree.
 func (g *ProjectGit) stageChanges(scope []string) error {
 	if len(scope) > 0 {
+		if home, herr := gitguard.InHome(g.dir, nil); herr == nil && home {
+			fmt.Printf("[datawatch] WARNING: automatic commit is running in the user's home directory %s — staging is bounded by the staging guard (per-file size cap, ignored cache/build dirs, file-count limit); narrow the write scope to keep commits small\n", g.dir)
+		}
 		absDir, err := filepath.Abs(g.dir)
 		if err != nil {
 			absDir = g.dir
@@ -84,11 +112,11 @@ func (g *ProjectGit) stageChanges(scope []string) error {
 			// exists to close.
 			return nil
 		}
-		args := append([]string{"add", "--"}, inside...)
-		if err := runGit(g.dir, args...); err != nil {
-			return fmt.Errorf("git add %v: %v", inside, err)
+		candidates, err := g.scopedCandidates(absDir, inside)
+		if err != nil {
+			return err
 		}
-		return nil
+		return g.stageCandidates(candidates)
 	}
 	files := g.unscopedChangedFiles(g.runStart)
 	if len(files) == 0 {
@@ -101,8 +129,142 @@ func (g *ProjectGit) stageChanges(scope []string) error {
 	}
 	fmt.Printf("[datawatch] warning: no write scope set for this session in %s — staging only the %d file(s) this run changed: %s\n",
 		g.dir, len(files), strings.Join(names, ", "))
-	if err := runGit(g.dir, append([]string{"add", "--"}, files...)...); err != nil {
-		return fmt.Errorf("git add %v: %v", names, err)
+	return g.stageCandidates(files)
+}
+
+// scopedCandidates lists the files a scoped commit may stage: tracked
+// modifications, staged changes, and untracked files, filtered to those at
+// or under one of inside (absolute scope directories within absDir). The
+// filter applies to all three sources, not just untracked files: a tracked
+// file outside the scope that was dirtied after the baseline must stay
+// out of the commit (see TestCommitSessionWork_ScopedOutOfScopeDirtyTree).
+// Paths are relative to g.dir, the directory git runs in. Sorted for
+// deterministic logs. A fresh repo with no HEAD yet has no diff output, so
+// that diff failure is not an error; the untracked listing must succeed.
+func (g *ProjectGit) scopedCandidates(absDir string, inside []string) ([]string, error) {
+	prefixes := make([]string, 0, len(inside))
+	for _, d := range inside {
+		rel, err := filepath.Rel(absDir, d)
+		if err != nil {
+			continue
+		}
+		prefixes = append(prefixes, filepath.ToSlash(rel))
+	}
+	seen := make(map[string]struct{})
+	add := func(out string) {
+		for _, l := range strings.Split(strings.TrimSpace(out), "\n") {
+			if l = strings.TrimSpace(l); l != "" && underAnyDir(l, prefixes) {
+				seen[l] = struct{}{}
+			}
+		}
+	}
+	if out, err := gitOutput(g.dir, "diff", "--name-only", "--relative", "HEAD"); err == nil {
+		add(out)
+	}
+	if out, err := gitOutput(g.dir, "diff", "--cached", "--name-only", "--relative"); err == nil {
+		add(out)
+	}
+	untracked, err := gitOutput(g.dir, "ls-files", "--others", "--exclude-standard")
+	if err != nil {
+		return nil, fmt.Errorf("list untracked files in %s: %w", g.dir, err)
+	}
+	add(untracked)
+	out := make([]string, 0, len(seen))
+	for f := range seen {
+		out = append(out, f)
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+// underAnyDir reports whether the repo-relative file path is one of dirs or
+// lies under one of them. A "." entry matches every file (scope is the repo
+// root).
+func underAnyDir(file string, dirs []string) bool {
+	for _, d := range dirs {
+		if d == "." || file == d || strings.HasPrefix(file, d+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+// stageCandidates runs candidates through the staging policy and adds the
+// survivors to the index. A candidate set the policy refuses (more files
+// than MaxStagedFiles) returns an error and stages nothing: it stops with a
+// clear message rather than adding part of a huge tree. Skipped files are
+// reported with the reason, so an operator can see why a changed file did
+// not reach the commit.
+func (g *ProjectGit) stageCandidates(candidates []string) error {
+	kept, skipped := g.stagingPolicy.Keep(g.dir, candidates)
+	if reason := g.stagingPolicy.RefuseReason(len(kept)); reason != "" {
+		return fmt.Errorf("%s: %s", g.dir, reason)
+	}
+	if len(skipped) > 0 {
+		fmt.Printf("[datawatch] warning: %s: staged %d, skipped %d (%s) — see staging guard\n",
+			g.dir, len(kept), len(skipped), skipSummary(skipped))
+	}
+	if len(kept) == 0 {
+		return nil
+	}
+	return g.addBounded(kept)
+}
+
+// skipSummary counts skipped candidates by reason, for example
+// "ignore-dir=3, size=1". Reasons are sorted so the log line is stable.
+func skipSummary(skipped []gitguard.Skip) string {
+	counts := make(map[string]int)
+	for _, s := range skipped {
+		counts[s.Reason]++
+	}
+	reasons := make([]string, 0, len(counts))
+	for r := range counts {
+		reasons = append(reasons, r)
+	}
+	sort.Strings(reasons)
+	parts := make([]string, 0, len(reasons))
+	for _, r := range reasons {
+		parts = append(parts, fmt.Sprintf("%s=%d", r, counts[r]))
+	}
+	return strings.Join(parts, ", ")
+}
+
+// addPathsChunk caps how many paths one git add invocation receives, so a
+// very long candidate list cannot exceed the OS argument limit.
+const addPathsChunk = 1000
+
+// addBounded stages paths with git add, all invocations sharing one deadline
+// of the policy's AddTimeout (zero means no deadline). If the add times out
+// or fails, the interrupted git process may leave temporary pack files behind,
+// so addBounded removes them with gitguard.CleanTempPacks and returns the
+// error. The success path never cleans: committed packs have .idx and .rev
+// siblings, and removing them is only for failure and interruption debris.
+func (g *ProjectGit) addBounded(paths []string) error {
+	ctx := context.Background()
+	if g.stagingPolicy.AddTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, g.stagingPolicy.AddTimeout)
+		defer cancel()
+	}
+	for start := 0; start < len(paths); start += addPathsChunk {
+		end := min(start+addPathsChunk, len(paths))
+		cmd := exec.CommandContext(ctx, "git", append([]string{"add", "--"}, paths[start:end]...)...)
+		cmd.Dir = g.dir
+		out, err := cmd.CombinedOutput()
+		if err == nil {
+			continue
+		}
+		cause := err
+		if ctx.Err() != nil {
+			cause = fmt.Errorf("timed out after %s: %w", g.stagingPolicy.AddTimeout, ctx.Err())
+		}
+		removed, cerr := gitguard.CleanTempPacks(g.dir)
+		if cerr != nil {
+			fmt.Printf("[datawatch] warning: cleaning interrupted pack files in %s: %v\n", g.dir, cerr)
+		} else if len(removed) > 0 {
+			fmt.Printf("[datawatch] removed %d interrupted pack file(s) in %s\n", len(removed), g.dir)
+		}
+		return fmt.Errorf("git add in %s: %w\n%s", g.dir, cause, out)
 	}
 	return nil
 }
