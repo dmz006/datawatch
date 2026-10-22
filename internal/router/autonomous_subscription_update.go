@@ -104,7 +104,7 @@ func parseCommSubUpdate(args []string) (commSubUpdate, error) {
 			return commSubUpdate{}, fmt.Errorf("unknown key %q  (%s)", key, commSubUpdateUsage)
 		}
 	}
-	if !(u.setKinds || u.setLevel || u.setPRD || u.setTask || u.setCoal || u.setOneShot || u.setExpires) {
+	if !u.setKinds && !u.setLevel && !u.setPRD && !u.setTask && !u.setCoal && !u.setOneShot && !u.setExpires {
 		return commSubUpdate{}, fmt.Errorf("nothing to change  (%s)", commSubUpdateUsage)
 	}
 	return u, nil
