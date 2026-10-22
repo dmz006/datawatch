@@ -1602,6 +1602,7 @@ howto, and the `datawatch-app` issue where applicable.
    (`fab_launch_auto`) launches an Automaton. Approve: (a) a Terminology Rule
    addendum that defines Automation as this object, with per-locale translations;
    (b) relabelling that FAB "Launch Automaton".
+   **Decided by the operator 2026-10-22: define both and relabel the button.** AGENT.md's Terminology Rule gets an addendum defining Automation (the chain object) and Automaton (one PRD) with per-locale translations; the `fab_launch_auto` button is relabelled "Launch Automaton" in all locales.
 8. **Agent and session inserts, and budget breach action.** May an agent or session
    (`AddedBy: session:<id>`) insert members without operator approval?
    Recommended: yes, because the inserted Automaton still has to pass its own
