@@ -454,7 +454,7 @@ operator nothing. The draft's `Mode` / `AdvancePolicy` collapse into the edges.
 an Automation has exactly one current member at a time. It is sequential, with
 conditional branches. **Parallelism is expressed by running several Automations
 concurrently**, not by fan-out inside one. That keeps the advance rule trivially
-deterministic. A parallel "fork/join" inside one Automation is Open question 10.
+deterministic. A parallel "fork/join" inside one Automation was Open question 10 and is now Phase 3a. The single-cursor rule above holds for linear Automations only; Phase 3a replaces it with a set of active cursors (see the Phase 3a section).
 
 ### Mapping PRD statuses onto the three edges
 
@@ -1433,7 +1433,7 @@ howto, and the `datawatch-app` issue where applicable.
    - The `autonomous_status` extension and idle alert.
 3a. **Phase 3a — Multi-cursor: fork/join branches + nested Automations.** Status: Planned (full design in the **Phase 3a** section below; the build follows that design).
    - The multi-cursor data model (`ActiveCursors` replacing the single cursor, load-time migration).
-   - Member kinds `prd` (default) / `automation` / `fork` / `join`; fork/join pairing and branch-edge pinning validation.
+   - Member kinds `prd` (default) / `automation` / `fork` / `join`; fork/join pairing validation, including the rule that branch members carry no outcome edges.
    - Per-join `on_branch_failure` rule (`all_must_succeed` default) and join firing/blocking.
    - Nested Automation members: ownership, cross-level cycle rejection, terminal-event routing.
    - The multi-cursor advance rule, mid-fork restart reconciliation, the `autonomous_status` extension (`active_cursors`, `join_wait`), and the new audit entries (`automation_fork`, `automation_join`, `automation_join_blocked`, `automation_nested_activate`).
@@ -1484,7 +1484,7 @@ names the branch it acts on** using the branch naming fixed in this section.
 Operator decision record (2026-10-22, recorded in this doc's Open questions
 and in the task notes):
 
-- **Nesting (OQ 2):** allowed in 10.0.0 — an Automation may contain another
+- **Nesting (OQ 2):** allowed (operator decision 2026-10-22) — an Automation may contain another
   Automation as a member, with cycle detection across levels and clear
   ownership.
 - **Fork/join (OQ 10):** build it — a fork starts several member Automata at
@@ -1516,6 +1516,33 @@ The single cursor becomes a **set of active cursors**:
   re-reads the record, re-evaluates, and no-ops if the state has already
   moved (the existing `coordinatorCASRetries` bounded retry applies per
   cursor). This is the stale-version rule the required test set exercises.
+
+### Active cursor set and advance rule
+
+On each terminal event for a member in `ActiveCursors` (a live PRD or child
+Automation reaching a terminal status, or a reconcile replay of one):
+
+1. Remove the member from `ActiveCursors`. Record its outcome on the member
+   (`Outcome`, `EdgeTaken`, `FinishedAt`).
+2. If the member is a **branch** (listed in a fork's `fork_members`), record its
+   success or non-success outcome on the paired join and evaluate the join rule.
+   Do **not** follow an edge: a branch has none.
+3. Otherwise follow the member's single outcome edge, per the edge mapping for
+   `prd` members and per the nested outcome mapping for `automation` members. An
+   edge to a `prd` or `automation` member starts it through the start gate and
+   adds it to `ActiveCursors`. An edge to a `fork` fires that fork. An empty edge
+   completes or blocks the Automation as the mapping says.
+4. A join that fires follows its `on_complete` exactly as step 3 does.
+5. Persist once with `UpdateAutomation(id, expectedVersion, …)`. A stale version
+   re-reads the record and re-evaluates, and it is a no-op if the state has
+   already moved. The `coordinatorCASRetries` bound applies per cursor.
+6. The Automation stays `active` while `ActiveCursors` is non-empty or a join is
+   waiting. It completes when `ActiveCursors` is empty, no join is waiting, and
+   every cursor's forward path ended in an empty `on_complete`. It blocks as
+   described under **Fork/join semantics**.
+
+A linear Automation takes steps 1, 3 and 5 with at most one cursor. Its behaviour
+is unchanged.
 
 ### Member kinds (fork/join + nested)
 
@@ -1576,11 +1603,22 @@ therefore terminates via `automation.*` events into the join exactly like a
   fork/join contract treats it like a branch that ended in failure; it does
   not block sibling branches. This is the only place a single branch's start
   failure does not block the Automation: the join rule is the decider.
-- **Branches are pinned to their join by validation**: every member listed in
-  a fork's `fork_members` must be a `prd` or `automation` member (control
-  nodes may not be branches), and its three outcome edges must all name the
-  paired join's ID. A branch is always terminal-reachable and always feeds
-  its join, so no branch can stall a join.
+- **Branches carry no outcome edges; the fork/join pairing is the only link.**
+  Every member listed in a fork's `fork_members` must be a `prd` or
+  `automation` member (control nodes may not be branches), and its
+  `on_complete`, `on_blocked` and `on_failed` must all be empty. The fork
+  itself carries no outcome edges: its forward path is its paired join. A
+  branch's terminal outcome reaches the join through the pairing (the join's
+  `join_members` set equal to the fork's `fork_members`), not through an edge.
+  So a join's only incoming link is its fork, and no branch can stall a join,
+  because every branch's terminal outcome is always delivered to it.
+- **Branch outcome mapping.** A branch's terminal status is recorded on the
+  join as success or non-success: `completed` (or `automation.completed` for a
+  nested branch) is success; `blocked`, `failed`, `cancelled` and `skipped` are
+  non-success. The data-model edge table (Mapping PRD statuses onto the three
+  edges) applies to linear members only. For a branch, the join rule, not an
+  edge, decides whether the Automation blocks, so a cancelled branch is named
+  in the join's block reason rather than blocking the Automation directly.
 - A **join** fires when its rule is satisfied by the branches' terminal
   outcomes. Rule evaluation is derived from branch member statuses (not event
   order), so it is replay-safe:
@@ -1649,11 +1687,14 @@ PRD ownership). 3a adds:
 2. A `join` pairs with **exactly one** `fork` of the same Automation whose
    `fork_members` equal its `join_members` (set equality), and no second
    join may share that branch set.
-3. Every branch's `on_complete`, `on_blocked` and `on_failed` equal the
-   paired join's ID (all three, non-empty).
-4. No outcome edge may name a `join` (joins are reached only as a paired
-   fork's branches). Outcome edges may name `fork`s. A `join` may not be the
-   entry member; a `fork` may be.
+3. Every branch's `on_complete`, `on_blocked` and `on_failed` are empty, and
+   the fork itself carries no outcome edges (see **Fork/join semantics**). A
+   `join` carries only `on_complete`; its `on_blocked` and `on_failed` must be
+   empty, because a join's rule failure blocks the Automation rather than
+   routing along an edge.
+4. No outcome edge may name a `join`. A join is reached only through the
+   pairing in rule 2, so its only incoming link is its fork. Outcome edges may
+   name `fork`s. A `join` may not be the entry member; a `fork` may be.
 5. `kind=automation`: the child exists, is not itself (no self-nesting), is
    not referenced by any other non-terminal Automation, and the parent does
    not reach itself through it (transitively).
@@ -1662,6 +1703,11 @@ PRD ownership). 3a adds:
 7. All errors are member-ID named, in the existing `validateAutomation`
    error style. Fork/join members may not carry `prd_id`; `prd` members may
    not carry `fork_members`/`join_members`/`on_branch_failure`.
+8. **Cycle detection covers the pairing.** The three-colour DFS (see **Data
+   model › Validation**) also walks the fork/join pairing: an edge from each
+   fork to each of its branches, and from each branch to its paired join. A
+   cycle that passes through a fork is therefore rejected with the member IDs
+   named, even though the branches carry no outcome edges.
 
 ### Restart reconciliation (multi-cursor)
 
@@ -1757,15 +1803,31 @@ The decisions themselves are recorded verbatim in the Open questions section
 
 | OQ | Decision | Status w.r.t. 3a |
 |---|---|---|
-| 2 — nested Automations | **Allowed in 10.0.0** | **Implemented in 3a**: member kind `automation`, ownership + cross-level cycle rejection above; "same control ops" and PWA visible nested levels land in 3b / Phase 6 |
+| 2 — nested Automations | **Allowed** (operator decision 2026-10-22) | **Implemented in 3a**: member kind `automation`, ownership + cross-level cycle rejection above; "same control ops" and PWA visible nested levels land in 3b / Phase 6 |
 | 3 — `cancel_in_flight` | **No default — required, ask each time** | 3a fixes per-branch cancel semantics; **3b** makes the argument required on REST/MCP/CLI/comm and the PWA confirm dialog |
 | 8 — agent insert + budget-on-breach | `agent_insert_policy` per Automation (default `allow`); pause only when a reset time is known, else block | **3b** (insert ops + budget `OnBreach`); 3a records the names and default so the branch-aware ops can key off them |
 | 10 — fork/join + per-join rule | **Build now; `on_branch_failure` per join, default `all_must_succeed` wait-then-block** | **Core of 3a** — fully this phase (data model, semantics, rules, reconciliation, status, audit); PWA branch drawing in Phase 6 |
 | 11 — planning setting | Separate optional per-Automation planning field, unset = global | Not 3a scope (Phase 4 tier work); a nested child carries its own field independently — no inheritance added by 3a |
 | 12 — `executor_source` | Yes, run records gain `executor_source` | Not 3a scope (run-record schema); 3a audit entries already carry actor |
-| 17 — advance gate + urgent lane | Diff-aware test check (BL413) in 10.0.0; urgent lane per the recorded cap | 3a keeps the existing per-branch start gate unchanged (approval/defer/start-failure per cursor); the BL413 gate hook and the 1-urgent-member cap land with their own work and are branch-aware under the naming above |
+| 17 — advance gate + urgent lane | Diff-aware test check (BL413) is in scope; urgent lane per the recorded cap | 3a keeps the existing per-branch start gate unchanged (approval/defer/start-failure per cursor); the BL413 gate hook and the 1-urgent-member cap land with their own work and are branch-aware under the naming above |
 
-### Parity surface delta (Phase 3a)
+### Phase 3a parity surface
+
+The table below is the Phase 3a slice of the **Parity surface** table above,
+for the surfaces the operator requires: REST, MCP, CLI, comm channel, PWA and
+the companion app. "In 3a" means the build ships it; "deferred" names the phase
+that does.
+
+| Surface | In 3a? | What 3a ships |
+|---|---|---|
+| **REST** | Yes | The existing `/api/automations` CRUD accepts the new member fields; `GET /api/autonomous/status` returns `active_cursors` and `join_wait`. No new endpoints. |
+| **MCP** | Yes | `automation_create` / `automation_update` forward the new member fields; `autonomous_status` carries the new fields. No new tools. |
+| **CLI** | Yes | `datawatch automation create` / `update` accept member JSON; `list` / `get` print `active_cursors`. |
+| **Comm channel** | Yes (read-only) | `automation list` and `automation get <id>`. Graph building stays off comm. |
+| **PWA** | Deferred to Phase 6 | No PWA view in 3a. The pipeline strip must draw parallel branches and nested levels (Open question 10). |
+| **datawatch-app (Android, iOS)** | Owed, filed at merge | Issue on `dmz006/datawatch-app`, filed when the 3a branch merges. Not filed in this build. |
+
+### Phase 3a parity deltas
 
 The Parity surface table above remains the plan of record. 3a's deltas:
 
@@ -1796,21 +1858,31 @@ The Parity surface table above remains the plan of record. 3a's deltas:
   Automation (Android + iOS tracks) must explicitly include **parallel
   branches and nested levels in the pipeline strip**, the `active_cursors`
   / `join_wait` status fields, and no client-side assumptions about
-  `current_member_id` alone. **Mobile parity: owed — file on
-  `dmz006/datawatch-app` at release** (the release pipeline files it, not
-  this build).
+  `current_member_id` alone. **Mobile parity: owed — file an issue on
+  `dmz006/datawatch-app` when the 3a branch merges.** It is not filed in this
+  build.
 
 ### Phase Completion Checklist (3a build)
 
-Per AGENT.md's Phase Completion Checklist, the 3a build includes: the
-functionality; the **required test set** (fork firing; the three join rules +
-default; join blocking; nested outcome mapping and cycle rejection;
-restart-mid-fork; stale-version apply no-op; `active_cursors`/`join_wait`
-status shape); `go test ./...` green; the `testing-tracker.md` section below;
-`docs/api/autonomous.md` and `docs/mcp.md` updates; `openapi.yaml` member
-fields; the datawatch-app parity note above. CHANGELOG and the version bump
-are release-pipeline work and are **out of scope for this build** (the build
-must not edit CHANGELOG.md).
+Per AGENT.md's Phase Completion Checklist, the 3a build includes the functionality
+and the **required test set** below, `go test ./...` green, a `docs/testing-tracker.md`
+section for 3a, `docs/api/autonomous.md` and `docs/mcp.md` updates, and `openapi.yaml`
+member fields. The datawatch-app issue is owed at merge (see **Phase 3a parity deltas**).
+CHANGELOG and the version bump are release-pipeline work and are **out of scope for
+this build** (the build must not edit CHANGELOG.md).
+
+**Required test set (3a build).** Each item is a named test; each must pass in the build:
+
+1. **Fork starts.** A fork fires every branch in sorted order. Each branch passes its own gate. A gate-denied or start-failed branch is recorded as a failed branch and does not block its siblings.
+2. **Join rules.** One test per rule: `all_must_succeed` (also the default when `on_branch_failure` is omitted), `any_one_is_enough`, and `continue_anyway`. Each asserts the fire condition, the edge taken and the join decision.
+3. **Join waits, then blocks.** With a non-success branch under `all_must_succeed`, the join does not fire while any branch is live. Once all branches are terminal it blocks with the named reason and emits `automation_join_blocked`.
+4. **Nested outcome mapping.** A child that ends `completed` takes `on_complete`, `blocked` takes `on_blocked`, and `cancelled` takes `on_failed`.
+5. **Nested cycle rejection.** Rejects direct self-reference, the two-cycle A → B → A, and a child that is already a member of another non-terminal Automation. Each error names the member ID.
+6. **Restart mid-fork.** Branches already running keep running, unstarted branches start, and the join is fed exactly once.
+7. **Restart mid-join.** Every branch is terminal before the crash. On replay the join fires or blocks exactly once, with the same decision as before the crash.
+8. **Stale-version no-op.** A stale-version apply re-reads the record, re-evaluates, and changes nothing if the state has already moved.
+9. **Status shape.** `active_cursors` lists in-flight members sorted by member ID. `join_wait` is present only while a join waits. The back-compat `current_member_id`, `current_prd_id` and `current_prd_title` derive from the first active cursor.
+10. **Validation shape.** A branch carrying any outcome edge is rejected. A join carrying `on_blocked` or `on_failed` is rejected. A `join` that is not paired with exactly one fork is rejected. Each error names the member ID.
 
 ---
 
@@ -1886,10 +1958,11 @@ must not edit CHANGELOG.md).
       fails on `automation.cancelled`; cross-level cycle rejection (A → B → A
       and self-reference) and one-child-of-one-parent ownership; restart
       mid-fork (started branches untouched, unstarted branches started, join
-      still fed once); a stale-version advance apply re-reads and no-ops;
+      still fed once); restart mid-join (all branches terminal before the crash;
+      the join fires or blocks exactly once on replay); a stale-version advance apply re-reads and no-ops;
       `active_cursors` and `join_wait` on the status shape, back-compat
       fields derived from the first active cursor; fork/join pairing and
-      branch-edge-pinning validation errors name the member.
+      pairing validation (including branches that carry outcome edges) errors name the member.
   - E2E story ideas (sandbox daemon, per the E2E rules):
     - **(1) Advance with zero LLM or chat involvement.** Two trivial approved
       Automata in a linear Automation. Assert the second reaches `running` within
