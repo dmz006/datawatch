@@ -23825,6 +23825,7 @@ const _automationState = {
   filterOpen: false,
   expanded: new Set(),
   loadError: null,
+  prdTitles: {},
 };
 
 // automationRequest is apiFetch with the HTTP status kept: a non-ok response
@@ -23926,35 +23927,119 @@ function onAutomationSearchChange(val) {
 window.onAutomationSearchChange = onAutomationSearchChange;
 
 function loadAutomationList() {
-  return automationRequest('GET', '/api/automations')
-    .then(data => {
-      const list = Array.isArray(data) ? data : (data && Array.isArray(data.automations) ? data.automations : []);
-      _automationState.list = list;
+  const request = automationRequest('GET', '/api/automations')
+    .then(data => ({ data }), error => ({ error }));
+  return Promise.all([request, loadAutomationPrdTitles()]).then(([res, titles]) => {
+    _automationState.prdTitles = titles;
+    if (res.error) {
+      _automationState.loadError = String((res.error && res.error.message) || res.error);
+    } else {
+      const data = res.data;
+      _automationState.list = Array.isArray(data) ? data : (data && Array.isArray(data.automations) ? data.automations : []);
       _automationState.loadError = null;
-      _automationRenderCards();
-    })
-    .catch(e => {
-      _automationState.loadError = String((e && e.message) || e);
-      _automationRenderCards();
-    });
+    }
+    _automationRenderCards();
+  });
 }
 window.loadAutomationList = loadAutomationList;
 
-// _automationVisibleList applies the search box, the status badges and the
-// history toggle (cancelled Automations show only while history is on or the
-// cancelled badge is selected).
-function _automationVisibleList() {
-  const st = _automationState;
-  const q = st.search.trim().toLowerCase();
-  return st.list.filter(a => {
+// loadAutomationPrdTitles fetches the Automaton list once and resolves a
+// {id: title} map for the member lines on the cards. It never rejects: a
+// failed or oddly shaped response leaves the map empty and the cards fall back
+// to the short member id.
+function loadAutomationPrdTitles() {
+  return automationRequest('GET', '/api/autonomous/prds')
+    .then(data => {
+      const prds = Array.isArray(data) ? data : (data && Array.isArray(data.prds) ? data.prds : []);
+      const titles = {};
+      prds.forEach(p => { if (p && p.id && p.title) titles[p.id] = String(p.title); });
+      return titles;
+    })
+    .catch(() => ({}));
+}
+window.loadAutomationPrdTitles = loadAutomationPrdTitles;
+
+const _AUTOMATION_STATUS_ORDER = ['active', 'blocked', 'paused', 'draft', 'completed', 'cancelled'];
+
+// A member counts toward progress when it runs an Automaton or a nested
+// Automation; fork and join members only steer the chain.
+function _automationCountsAsMember(m) {
+  return !!m && (!m.kind || m.kind === 'prd' || m.kind === 'automation');
+}
+
+// automationMemberProgress returns {done, total}: total counts the work
+// members, done those that completed or were skipped.
+function automationMemberProgress(automation) {
+  const members = automation && Array.isArray(automation.members) ? automation.members : [];
+  let done = 0, total = 0;
+  members.forEach(m => {
+    if (!_automationCountsAsMember(m)) return;
+    total++;
+    if (m.status === 'completed' || m.status === 'skipped') done++;
+  });
+  return { done, total };
+}
+window.automationMemberProgress = automationMemberProgress;
+
+// automationBlockedReason returns the note of the most recent 'blocked'
+// decision, or '' when the Automation is not blocked or has no such decision.
+function automationBlockedReason(automation) {
+  if (!automation || automation.status !== 'blocked') return '';
+  const decisions = Array.isArray(automation.decisions) ? automation.decisions : [];
+  let best = null, bestAt = -Infinity;
+  decisions.forEach(d => {
+    if (!d || d.kind !== 'blocked') return;
+    const at = Date.parse(d.at);
+    const ts = isNaN(at) ? -Infinity : at;
+    if (best === null || ts >= bestAt) { best = d; bestAt = ts; }
+  });
+  return best && best.note ? String(best.note) : '';
+}
+window.automationBlockedReason = automationBlockedReason;
+
+// automationBudgetSummary flattens budget_policy for the card. The record
+// carries no spend figure, so spent stays null until the daemon exposes one.
+function automationBudgetSummary(automation) {
+  const p = automation && automation.budget_policy;
+  if (!p) return null;
+  return {
+    ceilingType: p.ceiling_type,
+    ceilingValue: p.ceiling_value,
+    window: p.window,
+    pacing: p.pacing,
+    onBreach: p.on_breach,
+    estimated: p.ceiling_type === 'allocation_pct',
+    spent: null,
+  };
+}
+window.automationBudgetSummary = automationBudgetSummary;
+
+// automationListVisible applies the status badges, the history toggle and the
+// search box to list, then orders it by status and name. It does not modify
+// the list it is given.
+function automationListVisible(list, st) {
+  const f = st && st.statusFilter;
+  const inFilter = s => (f && typeof f.has === 'function' ? f.has(s) : Array.isArray(f) ? f.includes(s) : true);
+  const q = String((st && st.search) || '').trim().toLowerCase();
+  const rank = s => {
+    const i = _AUTOMATION_STATUS_ORDER.indexOf(s);
+    return i < 0 ? _AUTOMATION_STATUS_ORDER.length : i;
+  };
+  return (Array.isArray(list) ? list : []).filter(a => {
     if (!a) return false;
     const status = a.status || 'draft';
-    const show = st.statusFilter.has(status) || (st.historyOn && status === 'cancelled');
+    const show = status === 'cancelled' ? !!(st && st.historyOn) || inFilter(status) : inFilter(status);
     if (!show) return false;
     if (!q) return true;
     return String(a.name || '').toLowerCase().includes(q) || String(a.id || '').toLowerCase().includes(q);
+  }).sort((a, b) => {
+    const d = rank(a.status || 'draft') - rank(b.status || 'draft');
+    if (d !== 0) return d;
+    return String(a.name || '').toLowerCase().localeCompare(String(b.name || '').toLowerCase())
+      || String(a.id || '').localeCompare(String(b.id || ''));
   });
 }
+window.automationListVisible = automationListVisible;
 
 function _automationRenderCards() {
   const panel = document.getElementById('automationPanel');
@@ -23964,23 +24049,81 @@ function _automationRenderCards() {
     panel.innerHTML = `<div style="text-align:center;padding:32px;color:var(--error);">${escHtml(t('automation_load_failed', [st.loadError]))}</div>`;
     return;
   }
-  const items = _automationVisibleList();
+  const items = automationListVisible(st.list, st);
   if (!items.length) {
     panel.innerHTML = `<div style="text-align:center;padding:32px;color:var(--text2);">${escHtml(t('automation_list_empty'))}</div>`;
     return;
   }
-  panel.innerHTML = items.map(a => buildAutomationCardHTML(a, {})).join('');
+  const ctx = { prdTitles: st.prdTitles, now: Date.now() };
+  panel.innerHTML = items.map(a => buildAutomationCardHTML(a, ctx)).join('');
+}
+
+// _automationActiveMembers returns the work members in flight: those named in
+// active_cursors, or the one running member when no cursors are recorded.
+function _automationActiveMembers(a) {
+  const members = (Array.isArray(a.members) ? a.members : []).filter(_automationCountsAsMember);
+  const cursors = Array.isArray(a.active_cursors) ? a.active_cursors : [];
+  if (cursors.length) return members.filter(m => cursors.includes(m.id));
+  const running = members.filter(m => m.status === 'running');
+  return running.length === 1 ? running : [];
+}
+
+function _automationBudgetValue(b) {
+  const n = Number(b.ceilingValue);
+  const text = Number.isInteger(n) ? String(n) : n.toFixed(2);
+  return b.ceilingType === 'allocation_pct' ? text + '%' : '$' + text;
+}
+
+function _automationBudgetHTML(a) {
+  const b = automationBudgetSummary(a);
+  if (!b) return '';
+  const windowKey = 'automation_budget_window_' + b.window;
+  const windowLabel = t(windowKey) !== windowKey ? t(windowKey) : String(b.window || '');
+  const estimated = b.estimated ? ` <span class="automation-card-estimated">(${escHtml(t('automation_budget_estimated'))})</span>` : '';
+  const line = `<div class="automation-card-budget" style="font-size:12px;color:var(--text2);margin-top:6px;">${escHtml(t('automation_budget_ceiling'))}: ${escHtml(_automationBudgetValue(b))}${estimated} · ${escHtml(t('automation_budget_window'))}: ${escHtml(windowLabel)}</div>`;
+  if (typeof b.spent !== 'number' || !isFinite(b.spent) || !(b.ceilingValue > 0)) return line;
+  const pct = Math.max(0, Math.min(100, (b.spent / b.ceilingValue) * 100));
+  return line + `<div class="automation-card-spend-bar" role="progressbar" aria-label="${escHtml(t('automation_budget_ceiling'))}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(pct)}" style="height:4px;border-radius:2px;background:var(--border);margin-top:4px;overflow:hidden;"><div style="width:${pct}%;height:100%;background:var(--accent);"></div></div>`;
 }
 
 // buildAutomationCardHTML returns the markup for one Automation card. Pure:
-// it reads only its arguments and escapes every dynamic value.
+// it reads only its arguments and escapes every dynamic value. ctx carries
+// {prdTitles: {id: title}, now: milliseconds}.
 function buildAutomationCardHTML(automation, ctx) {
   const a = automation || {};
+  const c = ctx || {};
+  const titles = c.prdTitles || {};
+  const now = typeof c.now === 'number' ? c.now : Date.now();
   const status = String(a.status || 'draft');
   const statusClass = 'prd-card-status-' + status.replace(/[^a-z_]/g, '');
-  return `<div class="prd-row prd-card ${statusClass} automation-card" data-automation-id="${escHtml(a.id)}">
-    <div class="automation-card-title" style="font-weight:600;">${escHtml(a.name)}</div>
-    <div class="automation-card-status" style="font-size:11px;color:var(--text2);">${escHtml(t('automation_status_' + status))}</div>
+  const { done, total } = automationMemberProgress(a);
+  const meta = 'font-size:12px;color:var(--text2);margin-top:6px;';
+
+  const memberLines = _automationActiveMembers(a).map(m => {
+    const ref = String(m.prd_id || m.automation_id || m.id || '');
+    const title = titles[m.prd_id] || ref.slice(0, 8);
+    return `<div class="automation-card-member" style="${meta}">${escHtml(t('automation_current_member', [title]))}</div>`;
+  }).join('');
+
+  let idle = '';
+  const idleAt = a.idle_since ? Date.parse(a.idle_since) : NaN;
+  if (status === 'active' && !isNaN(idleAt)) {
+    idle = `<div class="automation-card-idle" style="${meta}">${escHtml(t('automation_idle_for', [formatElapsed(Math.max(0, now - idleAt))]))}</div>`;
+  }
+
+  const reason = status === 'blocked' ? automationBlockedReason(a) : '';
+  const blocked = reason
+    ? `<div class="automation-card-blocked" style="${meta}color:var(--error);">${escHtml(t('automation_blocked_reason', [reason]))}</div>`
+    : '';
+
+  const open = `if (typeof openAutomationDetail === 'function') openAutomationDetail('${escJsAttr(a.id)}')`;
+  return `<div class="prd-row prd-card ${statusClass} automation-card" data-automation-id="${escHtml(a.id)}" style="padding:14px;margin-bottom:14px;cursor:pointer;" onclick="${open}">
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+      <span class="automation-card-title" style="font-weight:700;font-size:15px;flex:1;min-width:0;">${escHtml(a.name)}</span>
+      <span class="automation-card-status" style="font-size:11px;color:var(--text2);flex-shrink:0;">${escHtml(t('automation_status_' + status))}</span>
+    </div>
+    <div class="automation-card-progress" style="${meta}">${escHtml(t('automation_members_progress', [done, total]))}</div>
+    ${memberLines}${idle}${blocked}${_automationBudgetHTML(a)}
   </div>`;
 }
 window.buildAutomationCardHTML = buildAutomationCardHTML;
