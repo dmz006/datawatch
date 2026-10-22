@@ -4364,63 +4364,53 @@ func (m *Manager) MarkWaitingInput(fullID, line string) {
 }
 
 // GetActiveStartupPromptInput captures the live tmux pane for sessID and
-// returns the appropriate auto-accept keystroke for whichever Claude Code
-// startup prompt is currently on screen, or "" if no known prompt is visible.
-//
-// Priority (checked in order):
-//  1. Bypass-permissions disclaimer ("Yes, I accept" + "No, exit") → "2\n"
-//  2. Trust-folder check ("Quick safety check" / "trust this folder")  → "1\n"
-//  3. MCP server trust prompt ("New MCP server found")                 → "1\n"
-//  4. Nothing recognisable                                             → ""
+// returns the auto-accept text payload (via StartupDialogSendText) for
+// whichever Claude Code startup prompt is currently on screen, or "" if no
+// SendInput-answerable prompt is visible. The decision is delegated to
+// classifyStartupDialog — see ActiveStartupDialog for the full action
+// (trust-folder arrow keys and Esc declines are not answerable with text
+// and therefore render as "").
 //
 // The "" return signals the caller to skip sending entirely — important when
 // this goroutine fires after all startup prompts have already been accepted.
 func (m *Manager) GetActiveStartupPromptInput(fullID string) string {
+	return StartupDialogSendText(m.ActiveStartupDialog(fullID))
+}
+
+// ActiveStartupDialog captures the live tmux pane for fullID and returns
+// the classifier's decision for the dialog currently on screen (kind, keys,
+// retry flag). It returns {Kind: StartupDialogNone} when the session is
+// unknown, the capture fails, or no recognised dialog is visible.
+func (m *Manager) ActiveStartupDialog(fullID string) StartupDialogAction {
 	sess, ok := m.store.Get(fullID)
 	if !ok {
-		return ""
+		return StartupDialogAction{Kind: StartupDialogNone}
 	}
 	content, err := m.tmux.CapturePaneVisible(sess.TmuxSession)
 	if err != nil || content == "" {
-		return ""
+		return StartupDialogAction{Kind: StartupDialogNone}
 	}
-	lower := strings.ToLower(StripANSI(content))
-	switch {
-	case strings.Contains(lower, "yes, i accept") && strings.Contains(lower, "no, exit"):
-		return "2\n"
-	case strings.Contains(lower, "quick safety check"),
-		strings.Contains(lower, "trust this folder"),
-		strings.Contains(lower, "yes, i trust"):
-		// Trust dialog is an arrow-key TUI ("❯ No, exit" pre-selected).
-		// Sending "1\n" here would type "1" and press Enter, confirming "No, exit".
-		// Callers must use SendTrustDialogAccept (Down+Enter) instead.
-		return ""
-	case strings.Contains(lower, "new mcp server found"),
-		strings.Contains(lower, "use this mcp server"):
-		return "1\n"
-	case strings.Contains(lower, "i am using this for local development"),
-		strings.Contains(lower, "loading development channels"):
-		return "1\n"
-	}
-	return ""
+	return classifyStartupDialog(content)
 }
 
 // IsTrustDialogShowing returns true if the live tmux pane for the given
 // session is currently displaying Claude Code's workspace-trust dialog.
 // Used by the startup trust poller in main.go.
 func (m *Manager) IsTrustDialogShowing(fullID string) bool {
+	return m.ActiveStartupDialog(fullID).Kind == StartupDialogTrustFolder
+}
+
+// DeclineStartupDialog sends a single Esc to sessID's pane through the
+// tmux layer, declining a classifier-marked unsafe startup dialog
+// (StartupDialogConfirmUnsafe, StartupDialogUpdatePrompt). Callers must not
+// retry: the session stays in waiting_input, the silent-start detector
+// marks it a start failure and the start-failure budget re-tries it.
+func (m *Manager) DeclineStartupDialog(fullID string) error {
 	sess, ok := m.store.Get(fullID)
 	if !ok {
-		return false
+		return fmt.Errorf("session %s not found", fullID)
 	}
-	content, err := m.tmux.CapturePaneVisible(sess.TmuxSession)
-	if err != nil || content == "" {
-		return false
-	}
-	lower := strings.ToLower(StripANSI(content))
-	return strings.Contains(lower, "quick safety check") ||
-		strings.Contains(lower, "trust this folder") ||
-		strings.Contains(lower, "yes, i trust")
+	return m.tmux.SendKeysLiteral(sess.TmuxSession, "\x1b")
 }
 
 // IsOpenCodeAtPrompt returns true when the live pane for fullID shows

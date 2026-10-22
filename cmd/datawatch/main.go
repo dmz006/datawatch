@@ -182,56 +182,97 @@ func autoLinkLegacyComputeNode(creg *compute.Registry, lreg *inference.Registry,
 	fmt.Printf("[inference] auto-linked llm/%s → compute/%s (%s)\n", llmName, nodeName, address)
 }
 
-// claudeDisclaimerResponse (v5.27.2) returns the input string the
-// daemon should send to auto-accept claude-code's startup
-// disclaimer / trust prompts when session.claude_auto_accept_disclaimer
-// is on. Returns "" when the line isn't a recognised disclaimer
-// (caller treats "" as no-op, never sends).
+// claudeDisclaimerResponse (v5.27.2) reports whether a line is a recognised
+// claude-code startup dialog and returns a tag naming how to answer it.
+// It delegates the recognition to the shared startup-dialog classifier
+// (session.ClassifyStartupDialog) instead of ad-hoc substring matching.
+// Returns "" when the classifier does not recognise the line (caller treats
+// "" as no-op, never sends).
 //
-// Patterns mirror the seed-filter list at the bottom of this file:
+// Tags returned:
 //
-//   - "trust this folder" / "Quick safety check" / "Yes, I trust"
-//     → "1\n"  (the numbered "Yes, I trust this folder" menu)
-//   - "Enter to confirm" / "Esc to cancel" → "\n" (option 1 pre-selected)
-//   - "I am using this for local development" /
-//     "Loading development channels"
-//     → "\n"   (Enter-to-confirm continuation)
+//   - "trust-dialog" → trust-folder arrow-key TUI (caller must use the
+//     SendTrustPromptAccept path, not SendInput text)
+//   - "esc"          → unsafe dialog (confirm-unsafe / update-prompt):
+//     decline with a single Esc, no retry here
+//   - "confirm"      → confirm footer with unrecognised wording: the
+//     classifier chose to send nothing (pane-level decision may still act
+//     if the live pane gives more context)
+//   - "2\n", "1\n", "\n" → Enter-type keys rendered as SendInput text
 //
-// Pure function — extracted from the DetectPrompt callback so unit
-// tests can exercise every disclaimer variant without spinning up a
-// session manager.
+// Pure function — extracted from the DetectPrompt callback so unit tests
+// can exercise every disclaimer variant without spinning up a session
+// manager.
 func claudeDisclaimerResponse(line string) string {
-	lower := strings.ToLower(line)
-	switch {
-	case strings.Contains(lower, "trust this folder"),
-		strings.Contains(lower, "quick safety check"),
-		strings.Contains(lower, "yes, i trust"):
-		// Trust dialog uses an arrow-key TUI ("❯ No, exit" pre-selected).
-		// Sending text input here would confirm "No, exit". The caller must
-		// use SendTrustDialogAccept (Down+Enter) instead. Return non-empty
-		// so the caller knows a trust-dialog goroutine is needed, but callers
-		// must check isTrustDialogLine before using this value as text input.
-		return "trust-dialog"
-	case strings.Contains(lower, "yes, i accept"):
-		// bypass-permissions disclaimer: "2. Yes, I accept" is option 2.
-		// Sending "2\n" selects it. Unique to the bypassPermissions flow.
-		return "2\n"
-	case strings.Contains(lower, "enter to confirm"),
-		strings.Contains(lower, "esc to cancel"),
-		strings.Contains(lower, "i am using this for local development"),
-		strings.Contains(lower, "loading development channels"):
-		return "\n"
+	a := session.ClassifyStartupDialog(line)
+	if a.Kind == session.StartupDialogNone {
+		return ""
 	}
-	return ""
+	switch a.Kind {
+	case session.StartupDialogTrustFolder:
+		return "trust-dialog"
+	case session.StartupDialogConfirmUnsafe, session.StartupDialogUpdatePrompt:
+		return "esc"
+	case session.StartupDialogUnknownConfirm:
+		return "confirm"
+	}
+	return session.StartupDialogSendText(a)
 }
 
-// isTrustDialogLine reports whether line came from Claude Code's workspace-trust
-// TUI dialog. These lines need Down+Enter (arrow-key navigation), not text input.
-func isTrustDialogLine(line string) bool {
-	lower := strings.ToLower(line)
-	return strings.Contains(lower, "trust this folder") ||
-		strings.Contains(lower, "quick safety check") ||
-		strings.Contains(lower, "yes, i trust")
+// respondStartupDialog is the handler decision function shared by the
+// DetectPrompt path, the state-change path and the start-up poller. It
+// captures the live pane once, classifies it, and answers the dialog the
+// classifier identified — exactly once, with the classifier's exact keys.
+//
+//   - trust-folder    → SendTrustPromptAccept (Down+Enter arrow-key path)
+//   - Enter-type keys → the rendered text via SendInput with source
+//     "auto-accept-disclaimer"
+//   - Retry dialogs   → a single Esc via the tmux layer (DeclineStartupDialog),
+//     logged with the dialog kind. No retry logic here: the session stays
+//     in waiting_input, the silent-start detector fails it and the
+//     start-failure budget owns the re-try.
+//   - none / unknown  → sends nothing (session stays in waiting_input)
+//
+// It reports whether a keystroke was answered. A "no keystroke" outcome
+// returns false so caller loops may re-capture later within their window.
+func respondStartupDialog(m *session.Manager, sessID string) bool {
+	a := m.ActiveStartupDialog(sessID)
+	switch a.Kind {
+	case session.StartupDialogNone:
+		return false
+	case session.StartupDialogTrustFolder:
+		// Arrow-key TUI ("❯ No, exit" pre-selected): Down moves the selector
+		// onto the accept option, Enter confirms.
+		if err := m.SendTrustDialogAccept(sessID); err != nil {
+			fmt.Printf("[claude] trust-dialog accept failed %s: %v\n", sessID, err)
+			return false
+		}
+		return true
+	case session.StartupDialogUnknownConfirm:
+		// The classifier declined to guess: send nothing and let the
+		// silent-start detector flag the session as a start failure.
+		fmt.Printf("[claude] unrecognised startup dialog on %s — sending nothing\n", sessID)
+		return false
+	}
+	if a.Retry {
+		// Unsafe dialog (confirm-unsafe / update-prompt): decline with
+		// exactly one Esc; the start-failure budget owns any re-try.
+		if err := m.DeclineStartupDialog(sessID); err != nil {
+			fmt.Printf("[claude] decline %q dialog send failed %s: %v\n", a.Kind, sessID, err)
+			return false
+		}
+		fmt.Printf("[claude] declined %q startup dialog on %s (sent esc)\n", a.Kind, sessID)
+		return true
+	}
+	text := session.StartupDialogSendText(a)
+	if text == "" {
+		return false
+	}
+	if err := m.SendInput(sessID, text, "auto-accept-disclaimer"); err != nil {
+		fmt.Printf("[claude] auto-accept disclaimer send failed for %s: %v\n", sessID, err)
+		return false
+	}
+	return true
 }
 
 // claudeStartupAccepted tracks sessions whose startup auto-accept goroutine
@@ -2211,31 +2252,20 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			// reading the live pane at t+750 ms is sufficient to accept
 			// whichever prompt is actually on screen. Subsequent filter
 			// callbacks are skipped via this LoadOrStore guard.
-			triggerLine := line
 			if _, loaded := claudeStartupAccepted.LoadOrStore(sessID, struct{}{}); loaded {
 				return
 			}
 			go func() {
 				defer claudeStartupAccepted.Delete(sessID)
 				time.Sleep(750 * time.Millisecond)
-				// Trust dialog is an arrow-key TUI ("❯ No, exit" pre-selected).
-				// Text input ("1\n") would confirm the wrong option. Send
-				// Down+Enter to navigate to "Yes, I trust this folder" instead.
-				if isTrustDialogLine(triggerLine) {
-					if err := mgr.SendTrustDialogAccept(sessID); err != nil {
-						fmt.Printf("[claude] trust-dialog accept failed %s: %v\n", sessID, err)
-					}
-					return
-				}
-				// Handle other startup prompts (bypass-permissions, channel MCP):
-				// check the live pane and send the appropriate text response.
+				// Classifier-driven: answers whichever startup dialog is
+				// actually on the live pane (trust arrow keys, Enter-type
+				// accepts, or a single Esc for unsafe dialogs). At most one
+				// answer per appearance; a few re-captures in case the TUI is
+				// still rendering.
 				for i := 0; i < 5; i++ {
-					liveResp := mgr.GetActiveStartupPromptInput(sessID)
-					if liveResp != "" {
-						if err := mgr.SendInput(sessID, liveResp, "auto-accept-disclaimer"); err != nil {
-							fmt.Printf("[claude] auto-accept disclaimer send failed for %s: %v\n", sessID, err)
-							break
-						}
+					if respondStartupDialog(mgr, sessID) {
+						break
 					}
 					time.Sleep(500 * time.Millisecond)
 				}
@@ -2269,22 +2299,22 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				}
 			}
 		}
-		// Startup trust-dialog poller — fires for every new claude-code session.
-		// Startup trust-dialog poller — backup for the DetectPrompt path.
-		// The DetectPrompt path fires from the log file and is the primary
-		// handler; this poller covers the window before the log pipe is
-		// established and sessions where Claude starts faster than the
-		// filter engine can process. Polls the tmux pane every 500ms for
-		// up to 45s (Claude can take 20-30s to start in loaded environments).
+		// Startup dialog poller — fires for every new claude-code session;
+		// backup for the DetectPrompt path. The DetectPrompt path fires from
+		// the log file and is the primary handler; this poller covers the
+		// window before the log pipe is established and sessions where
+		// Claude starts faster than the filter engine can process. Polls
+		// the tmux pane every 500ms for up to 45s (Claude can take 20-30s
+		// to start in loaded environments). Answers any dialog the
+		// classifier recognises — not only the trust dialog:
+		// trust arrow keys, Enter-type accepts, or a single Esc for unsafe
+		// dialogs.
 		if claudeAutoAccept && sess.BackendFamily == "claude-code" {
 			go func(sessID string) {
 				deadline := time.Now().Add(45 * time.Second)
 				for time.Now().Before(deadline) {
 					time.Sleep(500 * time.Millisecond)
-					if mgr.IsTrustDialogShowing(sessID) {
-						if err := mgr.SendTrustDialogAccept(sessID); err != nil {
-							fmt.Printf("[claude] trust-dialog accept failed %s: %v\n", sessID, err)
-						}
+					if respondStartupDialog(mgr, sessID) {
 						return
 					}
 				}
@@ -7376,25 +7406,19 @@ Return STRICT JSON:
 		if claudeAutoAccept && sess.State == session.StateWaitingInput &&
 			sess.BackendFamily == "claude-code" &&
 			claudeDisclaimerResponse(sess.LastPrompt) != "" {
-			lastPrompt := sess.LastPrompt
 			if _, loaded := claudeStartupAccepted.LoadOrStore(sess.FullID, struct{}{}); !loaded {
 				go func(sessID string) {
 					defer claudeStartupAccepted.Delete(sessID)
 					time.Sleep(750 * time.Millisecond)
-					// Trust dialog is an arrow-key TUI ("❯ No, exit" pre-selected).
-					if isTrustDialogLine(lastPrompt) {
-						if err := mgr.SendTrustDialogAccept(sessID); err != nil {
-							fmt.Printf("[claude] trust-dialog accept failed %s: %v\n", sessID, err)
-						}
-						return
-					}
+					// Classifier-driven: answers whichever startup dialog is
+					// on the live pane (trust arrow keys, Enter-type accepts,
+					// or a single Esc for unsafe dialogs), not only the one the
+					// prompt line named. At most one answer per appearance;
+					// re-capture a few times in case the TUI is still
+					// rendering.
 					for i := 0; i < 5; i++ {
-						liveResp := mgr.GetActiveStartupPromptInput(sessID)
-						if liveResp != "" {
-							if err := mgr.SendInput(sessID, liveResp, "auto-accept-disclaimer"); err != nil {
-								fmt.Printf("[claude] auto-accept disclaimer send failed for %s: %v\n", sessID, err)
-								break
-							}
+						if respondStartupDialog(mgr, sessID) {
+							break
 						}
 						time.Sleep(500 * time.Millisecond)
 					}

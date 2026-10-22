@@ -128,6 +128,38 @@ func containsAnyPhrase(text string, phrases ...string) bool {
 	return false
 }
 
+// ClassifyStartupDialog is the exported entry point for the pure startup
+// dialog classifier; it is identical to classifyStartupDialog.
+func ClassifyStartupDialog(pane string) StartupDialogAction {
+	return classifyStartupDialog(pane)
+}
+
+// StartupDialogSendText renders a classifier key sequence as the text
+// payload Manager.SendInput expects: every "Enter" becomes a newline and
+// any other key is its literal characters ("2" + Enter → "2\n").
+// Kinds that must not go through the SendInput path — the trust-folder
+// arrow-key TUI (caller must use SendTrustDialogAccept), the Esc decline
+// (caller must use DeclineStartupDialog), and unknown-confirm (send
+// nothing — the silent-start detector handles it) — render as "".
+func StartupDialogSendText(a StartupDialogAction) string {
+	switch a.Kind {
+	case StartupDialogNone, StartupDialogTrustFolder, StartupDialogUnknownConfirm:
+		return ""
+	}
+	if len(a.Keys) == 0 || a.Keys[0] == "Esc" {
+		return ""
+	}
+	var b strings.Builder
+	for _, k := range a.Keys {
+		if k == "Enter" {
+			b.WriteString("\n")
+			continue
+		}
+		b.WriteString(k)
+	}
+	return b.String()
+}
+
 // dialogBoxDrawing is the set of Unicode box-drawing and decorative
 // characters Claude Code frame lines are made of.
 const dialogBoxDrawing = "─━│┃┌┍┎┏┐┑┒┓└┕┖┗┘┙┚┛├┝┞┟┠┡┢┣┤┥┦┧┨┩┪┫┬┭┮┯┰┱┲┳┴┵┶┷┸┹┺┻┼┽┾┿╀╁╂╃╄╅╆╇╈╉╊╋╌╍╎╭╮╯╰❯✦·"
