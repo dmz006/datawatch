@@ -26253,6 +26253,7 @@ function _dashLoop(ts) {
     _dashRenderGuardrails();
     _dashRenderMemoryScope();
     _dashRenderWebSearchUsage();
+    _dashRenderIntegrationStatus();
     _dashRenderPluginWidgets();
     _dashRenderSmoke();
   }
@@ -26618,7 +26619,27 @@ function _pwParseCardId(id) {
 
 // ── BL303 S5 — Dashboard Card Grid ───────────────────────────────────────────
 
+// Card labels: a card with a labelKey resolves it through t() at render time
+// so the Add-Card picker and the card header pick up the operator's locale;
+// the static `label` doubles as the English fallback (same as before, just now
+// optional per-card).
+function _dashDefLabel(def) {
+  if (!def) return '';
+  if (def.labelKey) {
+    const s = t(def.labelKey);
+    if (s && s !== def.labelKey) return s;
+  }
+  return def.label || '';
+}
+
 const DASH_CARD_DEFS = [
+  // GH#204 phase 4 — opt-in "Integration status" card: latest posted
+  // scheduled-job results, one row per schedule. Listed FIRST in
+  // DASH_CARD_DEFS so it sits at the very top of the Add-Card picker
+  // (prominent, not buried); deliberately NOT part of DASH_DEFAULT_LAYOUT —
+  // most installs have no named schedules and don't need it by default.
+  { id: 'integration-status', label: 'Integration status', labelKey: 'dash_integ_status', icon: '🔌', defaultCs: 6,
+    body: () => '<div id="dashIntegrationStatusCard" style="height:100%;overflow-y:auto;padding:6px 8px;font-size:11px;"></div>' },
   { id: 'tree',       label: 'Automata',       icon: '⣿',  defaultCs: 2,
     body: () => '<div id="dashTree" style="height:100%;overflow-y:auto;"></div>' },
   { id: 'orbital',    label: 'Network',         icon: '◎',  defaultCs: 6,
@@ -26724,7 +26745,7 @@ function _dashCardHTML(entry) {
     ondragend="window._dashDragEnd(event)">
     <div class="dboard-card-hdr">
       <span class="dboard-card-drag">⣿</span>
-      <span class="dboard-card-title">${def.icon} ${escHtml(def.label)}</span>
+      <span class="dboard-card-title">${def.icon} ${escHtml(_dashDefLabel(def))}</span>
       <span class="dboard-card-span" onclick="window._dashCycleSpan('${entry.id}')" title="Width (click to cycle)">${cs}w</span>
       <span class="dboard-card-span" onclick="window._dashCycleRows('${entry.id}')" title="Height (click to toggle 1/2 rows)">${rs}h</span>
       <button class="dboard-card-rm" onclick="window._dashRemoveCard('${entry.id}')" title="Remove">×</button>
@@ -26767,6 +26788,7 @@ function _dashBuildGrid(layout) {
   _dashRenderGuardrails();
   _dashRenderMemoryScope();
   _dashRenderWebSearchUsage();
+  _dashRenderIntegrationStatus();
   _dashRenderPluginWidgets();
   _drawGantt();
   _dashForceStep();
@@ -26811,7 +26833,7 @@ window._dashShowAddPanel = function() {
   for (const def of DASH_CARD_DEFS) {
     const used = existing.includes(def.id);
     html += `<div class="dboard-add-item${used ? ' dboard-add-used' : ''}"${used ? '' : ` onclick="window._dashAddCard('${def.id}');document.getElementById('dashAddPanel').remove();"`}>
-      <span>${def.icon}</span><span>${escHtml(def.label)}</span>
+      <span>${def.icon}</span><span>${escHtml(_dashDefLabel(def))}</span>
     </div>`;
   }
   html += `</div><div id="dashAddPluginSection"></div></div>`;
@@ -27295,6 +27317,173 @@ function _dashRenderWebSearchUsage() {
   }
   el.innerHTML = html;
 }
+
+// ── GH#204 phase 4 — "Integration status" card ──────────────────────────────
+// Opt-in dashboard card (NOT in DASH_DEFAULT_LAYOUT) surfacing the posted
+// results of scheduled jobs / external integrations: one row per schedule
+// with its latest status, escaped summary, posted time, an inline SVG
+// sparkline of its retained recent statuses (oldest → newest), the retained
+// count, and a click-through into the session that posted the latest result.
+//
+// Mechanism: same cadence and machinery as the other cached dashboard cards
+// (web-search usage, memory scope): render runs inside the shared
+// _dashLoop rAF cycle (same % 12 gate as _dashRenderWebSearchUsage), the
+// fetch is throttled to at most one per ~30s, and it (re)renders on
+// completion. No setInterval anywhere — nothing to stack, one loop only.
+//
+// Data: GET /api/schedule-results → [{ schedule_name, latest: { payload:
+//   { title, status, summary, … }, session_id, posted_at }, count,
+//   recent_statuses: […oldest→newest] }].
+//
+// Security: schedule_name / payload fields are agent- or operator-authored
+// and treated as untrusted — every interpolation goes through escHtml / 
+// escJsAttr, same discipline as the per-session result card (result_payload
+// tests) and the SEC-021 sanitize pipeline.
+const INTEG_MIN_REFETCH_MS = 30000;
+const INTEG_SPARK_MAX = 60; // sparkline dots are bounded even if a history is longer
+
+// Initialize once (the _dash object above is a plain literal; keep the extra
+// bookkeeping fields in one place).
+_dash._integResults = null;   // Array | null (null = not fetched yet)
+_dash._integError = null;     // string | null (last fetch failure)
+_dash._integFetchedAt = 0;    // Date.now() of the last attempted fetch
+
+function _integDotColor(status) {
+  const s = String(status || '').toLowerCase();
+  if (s === 'ok') return 'var(--success,#10b981)';
+  if (s === 'warn') return 'var(--warning,#f59e0b)';
+  if (s === 'error') return 'var(--error,#ef4444)';
+  return 'var(--text2,#94a3b8)';
+}
+
+// _integSparklineSVG renders the retained recent statuses (oldest → newest) as
+// a small inline SVG: one color-coded bar per result, bounded to
+// INTEG_SPARK_MAX (newest wins) so a long history can't produce a giant SVG.
+// Empty/unknown input → '' (no svg at all).
+function _integSparklineSVG(statuses) {
+  const list = (Array.isArray(statuses) ? statuses : []).slice(-INTEG_SPARK_MAX);
+  if (!list.length) return '';
+  const width = 160, height = 12;
+  const step = Math.min(6, width / list.length);
+  const bar = Math.min(4, Math.max(1.5, step * 0.6));
+  const bars = list.map((st, i) => {
+    const x = Math.max(0, i * step + (step - bar) / 2);
+    const title = escHtml(String(st == null ? '—' : st));
+    return `<rect x="${x.toFixed(1)}" y="1" width="${bar.toFixed(1)}" height="${height - 2}" rx="${(bar / 2).toFixed(1)}" fill="${_integDotColor(st)}" opacity="0.9"><title>${title}</title></rect>`;
+  }).join('');
+  return `<svg width="${width}" height="${height}" style="flex-shrink:0;display:block;" aria-hidden="true">${bars}</svg>`;
+}
+
+// _integRow renders one schedule's row. `item` is one element of the
+// /api/schedule-results list; every untrusted string is escaped; the row is
+// click-through into the posting session (status tab) when a session_id is
+// present. Defensive about every field: a missing latest/payload still
+// renders a name-only row instead of throwing.
+function _integRow(item) {
+  if (!item || typeof item !== 'object') return '';
+  const name = escHtml(item.schedule_name || '');
+  const latest = (item.latest && typeof item.latest === 'object') ? item.latest : null;
+  const payload = (latest && latest.payload && typeof latest.payload === 'object') ? latest.payload : {};
+  const st = String(payload.status || '').toLowerCase();
+  let badge = '';
+  if (st === 'ok' || st === 'warn' || st === 'error') {
+    // Closed status set (result contract) — reuse the status-tab keys, all
+    // present in the five locale bundles.
+    const label = st === 'ok' ? (t('status_result_ok') || 'ok')
+      : st === 'warn' ? (t('status_result_warn') || 'warn')
+      : (t('status_result_error') || 'error');
+    badge = `<span class="integ-badge" style="display:inline-flex;align-items:center;gap:4px;font-size:9px;font-weight:600;color:var(--text2);white-space:nowrap;flex-shrink:0;">` +
+      `<span class="integ-dot" style="width:8px;height:8px;border-radius:50%;flex-shrink:0;background:${_integDotColor(st)};"></span>${escHtml(label)}</span>`;
+  }
+  const summary = payload.summary ? `<span class="integ-summary" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text2,#94a3b8);" title="${escHtml(payload.summary)}">${escHtml(payload.summary)}</span>` : '';
+  const title = payload.title ? `<span class="integ-title" style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex-shrink:0;max-width:40%;">${escHtml(payload.title)}</span>` : '';
+  const when = (latest && latest.posted_at) ? timeAgo(latest.posted_at) : '';
+  const time = when ? `<span class="integ-time" style="font-size:10px;color:var(--text2,#94a3b8);white-space:nowrap;flex-shrink:0;">${escHtml(when)}</span>` : '';
+  const countN = Number(item.count) || 0;
+  let count = '';
+  if (countN > 1) {
+    const m = t('dash_integ_retained', [countN]);
+    count = `<span class="integ-count" style="font-size:10px;color:var(--text2,#94a3b8);white-space:nowrap;flex-shrink:0;">${escHtml(m !== 'dash_integ_retained' ? m : countN + ' retained')}</span>`;
+  }
+  const sid = (latest && latest.session_id) ? String(latest.session_id) : '';
+  const click = sid ? `onclick="window._integOpenSession('${escJsAttr(sid)}')"` : '';
+  return `<div class="integ-row" ${click} title="${escHtml(t('dash_integ_open') || 'Open the session that posted this result')}" style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-bottom:1px solid var(--border,#1e293b);${sid ? 'cursor:pointer;' : ''}">` +
+    `<span class="integ-name" style="font-weight:600;white-space:nowrap;flex-shrink:0;max-width:30%;overflow:hidden;text-overflow:ellipsis;" title="${name}">${name}</span>` +
+    badge + title + summary + time + _integSparklineSVG(item.recent_statuses) + count +
+    `</div>`;
+}
+
+// _integHowtoLink — the empty/error states point operators at the
+// API reference (POST /api/sessions/{session_id}/result is documented
+// there today; a dedicated result-posting howto is a follow-up item).
+function _integHowtoLink() {
+  const label = escHtml(t('dash_integ_empty_link', [])
+    ? t('dash_integ_empty_link') : 'See the result endpoint in the API reference');
+  return `<a href="/api/openapi.yaml" target="_blank" rel="noopener" style="color:var(--accent2,#60a5fa);text-decoration:underline;" title="API reference — POST /api/sessions/{session_id}/result">${label}</a>`;
+}
+
+function _integEmptyHTML() {
+  return `<div class="integ-empty" style="color:var(--text2,#94a3b8);padding:6px 2px;line-height:1.6;">
+    <div style="font-weight:700;color:var(--text);">${escHtml(t('dash_integ_empty_title') || 'No results yet')}</div>
+    <div style="margin-top:4px;">${escHtml(t('dash_integ_empty') || 'Scheduled jobs can post their results here. From inside one, POST /api/sessions/{id}/result with the job\'s own credential and a payload of title, status (ok/warn/error) and an optional summary.')}</div>
+    <div style="margin-top:6px;">${_integHowtoLink()}</div>
+  </div>`;
+}
+
+function _integErrorHTML() {
+  return `<div class="integ-error" style="color:var(--text2,#94a3b8);padding:6px 2px;line-height:1.6;">
+    <div style="font-weight:700;color:var(--text);">${escHtml(t('dash_integ_error') || "Couldn't load the results yet.")}</div>
+    <div style="margin-top:6px;">${_integHowtoLink()}</div>
+  </div>`;
+}
+
+// _dashFetchIntegStatus pulls the per-schedule summary list and re-renders.
+// Throttled: never more than one in-flight request, and re-fetches are only
+// attempted at most once per INTEG_MIN_REFETCH_MS (the "same cadence" rule,
+// without any extra timer).
+function _dashFetchIntegStatus() {
+  if (_dash._integFetching) return Promise.resolve();
+  _dash._integFetching = true;
+  _dash._integFetchedAt = Date.now();
+  return apiFetch('/api/schedule-results').then(d => {
+    _dash._integResults = Array.isArray(d) ? d : null;
+    _dash._integError = null;
+    _dashRenderIntegrationStatus();
+  }).catch(e => {
+    _dash._integError = String((e && e.message) || e || 'fetch failed');
+    if (!_dash._integResults) _dashRenderIntegrationStatus();
+  }).finally(() => { _dash._integFetching = false; });
+}
+
+// _dashRenderIntegrationStatus renders #dashIntegrationStatusCard from the
+// cached list. Runs on the shared loop gate; when the cache is cold it kicks
+// the (throttled) fetch itself so the first paint is never stuck at loading.
+function _dashRenderIntegrationStatus() {
+  const el = document.getElementById('dashIntegrationStatusCard');
+  if (!el) return;
+  const cold = !_dash._integResults && !_dash._integError;
+  const stale = Date.now() - (_dash._integFetchedAt || 0) >= INTEG_MIN_REFETCH_MS;
+  if (cold) {
+    el.innerHTML = `<div class="integ-loading" style="color:var(--text2,#94a3b8);font-size:10px;padding:4px 0;">${escHtml(t('dash_integ_loading') || 'Loading results…')}</div>`;
+    if (stale || !(_dash._integFetchedAt)) _dashFetchIntegStatus();
+    return;
+  }
+  if (_dash._integError && !_dash._integResults) {
+    el.innerHTML = _integErrorHTML();
+    if (stale) _dashFetchIntegStatus();
+    return;
+  }
+  el.innerHTML = _dash._integResults.length ? _dash._integResults.map(_integRow).join('') : _integEmptyHTML();
+  if (stale) _dashFetchIntegStatus();
+}
+
+// Click-through: open the posting session's Status tab (the per-session
+// result card) — same deep-link the status-tab result card uses for itself.
+window._integOpenSession = function(sessionId) {
+  if (!sessionId) return;
+  if (typeof window.gotoSessionStatus === 'function') window.gotoSessionStatus(sessionId);
+  else navigate('session-detail', sessionId);
+};
 
 // Smoke run progress card — multi-envelope (BL303 S5 rev2)
 // State: _dash._smokeEnvelopes (array), _dash._smokeExpandedId, _dash._smokeExpandedData, _dash._smokeFilter
