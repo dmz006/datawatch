@@ -11,6 +11,10 @@ type NonceStore struct {
 	entries map[string]time.Time
 	maxSize int
 	ttl     time.Duration
+	// now is the clock Check reads. NewNonceStore sets it to time.Now; tests
+	// replace it with a manually advanced clock so TTL expiry does not depend
+	// on wall-clock sleeps.
+	now func() time.Time
 }
 
 // NewNonceStore creates a NonceStore with the given capacity and TTL.
@@ -25,6 +29,7 @@ func NewNonceStore(maxSize int, ttl time.Duration) *NonceStore {
 		entries: make(map[string]time.Time, maxSize),
 		maxSize: maxSize,
 		ttl:     ttl,
+		now:     time.Now,
 	}
 }
 
@@ -35,7 +40,7 @@ func (n *NonceStore) Check(nonce string) bool {
 	defer n.mu.Unlock()
 
 	// Evict expired entries
-	now := time.Now()
+	now := n.now()
 	for k, t := range n.entries {
 		if now.Sub(t) > n.ttl {
 			delete(n.entries, k)
