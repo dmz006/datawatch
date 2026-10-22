@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.95 — Release scan unblocked for two OpenJDK findings
+
+### Fixed
+
+- **Release scan no longer blocked by two OpenJDK findings in parent-full.** CVE-2026-91403 and CVE-2026-91415 in `openjdk-17-jre-headless` have no fix in Debian bookworm and are unreachable from datawatch (the JRE only runs signal-cli); both are traced and suppressed in `.trivyignore`. This also re-runs the release whose go test step failed on a temp-directory cleanup race.
+
 ## v9.5.94 — Automation BudgetPolicy: spending limits for Automations and members
 
 ### Added
