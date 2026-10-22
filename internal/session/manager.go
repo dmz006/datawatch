@@ -5163,6 +5163,18 @@ func (m *Manager) ResumeMonitors(ctx context.Context) {
 		sess.LastChannelEventAt = time.Now()
 		_ = m.store.Save(sess)
 
+		// A session whose task was already typed before the restart still has
+		// that task (and its verbatim DATAWATCH_COMPLETE instruction) on the
+		// pane. Rehydrate the in-memory delivery stamp from the persisted one
+		// and start the 30s post-restart grace so the re-rendered echo cannot
+		// read as a completion. Sessions with no delivered task are untouched.
+		if sess.TaskDeliveredAt != nil {
+			m.mu.Lock()
+			m.taskDeliveredAt[sess.FullID] = *sess.TaskDeliveredAt
+			m.restartedAt[sess.FullID] = time.Now()
+			m.mu.Unlock()
+		}
+
 		// Resume tracker for this session
 		tracker := ResumeTracker(m.dataDir, sess)
 		m.mu.Lock()
