@@ -983,8 +983,8 @@ type VerificationResult struct {
 	VerifierID string    `json:"verifier_id,omitempty"` // session ID of the verifier worker
 	// What the verifier ACTUALLY ran with, recorded per verification.
 	// VerifierSource names where the backend came from: "task",
-	// "story", "prd" (the Automaton level) or "global" per
-	// ResolveVerificationLLM, or "pool" when the backend was picked
+	// "story", "prd" (the Automaton level), "automation" (the Automation
+	// the Automaton belongs to) or "global" per ResolveVerificationLLM, or "pool" when the backend was picked
 	// from the global verification_backends capacity pool.
 	VerifierBackend string `json:"verifier_backend,omitempty"`
 	VerifierModel   string `json:"verifier_model,omitempty"`

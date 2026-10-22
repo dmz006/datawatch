@@ -91,12 +91,12 @@ func TestSmokeVerificationOverrides_TargetsGetOverride(t *testing.T) {
 	// chain (global level, nothing leaked onto it).
 	cfg := DefaultConfig()
 	plain := smokeTask(t, m, prd.ID, "t3")
-	if got := ResolveVerificationLLM(prd, plain, cfg); got.Source != VerifierSourceGlobal || got.Backend != "" || got.Model != "" {
+	if got := ResolveVerificationLLM(prd, plain, nil, cfg); got.Source != VerifierSourceGlobal || got.Backend != "" || got.Model != "" {
 		t.Errorf("ordinary task: resolved = %+v, want untouched global chain", got)
 	}
 	for _, id := range []string{"t1", "t2"} {
 		tk := smokeTask(t, m, prd.ID, id)
-		got := ResolveVerificationLLM(prd, tk, cfg)
+		got := ResolveVerificationLLM(prd, tk, nil, cfg)
 		if got.Source != VerifierSourceTask {
 			t.Errorf("task %s: source = %q, want task", id, got.Source)
 		}
@@ -153,7 +153,7 @@ func TestSmokeVerificationOverrides_NoClobberAndPartialApply(t *testing.T) {
 	if gate.VerificationModel != "picked-model" {
 		t.Errorf("gate task model = %q, want existing explicit picked-model", gate.VerificationModel)
 	}
-	got := ResolveVerificationLLM(prd, gate, DefaultConfig())
+	got := ResolveVerificationLLM(prd, gate, nil, DefaultConfig())
 	if got.Source != VerifierSourceTask || got.Backend != "claude-code" || got.Model != "picked-model" {
 		t.Errorf("gate task resolved = %+v, want task claude-code/picked-model", got)
 	}

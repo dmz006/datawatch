@@ -13,8 +13,8 @@ func selectInputFor(prd *autonomouspkg.PRD, task *autonomouspkg.Task, cfg autono
 	noEffort := cfg
 	noEffort.VerificationEffort = ""
 	return verifierSelectInput{
-		Resolved:       autonomouspkg.ResolveVerificationLLM(prd, task, cfg),
-		ExplicitEffort: autonomouspkg.ResolveVerificationLLM(prd, task, noEffort).Effort,
+		Resolved:       autonomouspkg.ResolveVerificationLLM(prd, task, nil, cfg),
+		ExplicitEffort: autonomouspkg.ResolveVerificationLLM(prd, task, nil, noEffort).Effort,
 		Pool:           cfg.VerificationBackends,
 		GlobalBackend:  cfg.VerificationBackend,
 		GlobalModel:    cfg.VerificationModel,
@@ -370,7 +370,7 @@ func TestPiFamilyClearModelConditionEquivalence(t *testing.T) {
 				for _, usesPRDBackend := range []bool{false, true} {
 					for _, prdModel := range []string{"", "sonnet-4"} {
 						cases = append(cases, operand{
-						name: fmt.Sprintf("piFamily=%v useSession=%v globalModel=%q usesPRDBackend=%v prdModel=%q",
+							name: fmt.Sprintf("piFamily=%v useSession=%v globalModel=%q usesPRDBackend=%v prdModel=%q",
 								piFamily, useSession, globalModel, usesPRDBackend, prdModel),
 							piFamily: piFamily, useSession: useSession, globalModel: globalModel,
 							usesPRDBackend: usesPRDBackend, prdModel: prdModel,
@@ -390,5 +390,45 @@ func TestPiFamilyClearModelConditionEquivalence(t *testing.T) {
 				t.Fatalf("De Morgan rewrite diverges from original: operand=%+v original=%v rewritten=%v", c, original(c), rewritten(c))
 			}
 		})
+	}
+}
+
+func TestSelectVerifierLLMAutomationSourceBypassesPool(t *testing.T) {
+	prd, task, cfg := overrideFixture()
+	auto := &autonomouspkg.Automation{
+		VerificationBackend: "openwebui",
+		VerificationModel:   "m-automation",
+		VerificationEffort:  "medium",
+	}
+	in := selectInputFor(prd, task, cfg)
+	in.Resolved = autonomouspkg.ResolveVerificationLLM(prd, task, auto, cfg)
+	noEffort := cfg
+	noEffort.VerificationEffort = ""
+	in.ExplicitEffort = autonomouspkg.ResolveVerificationLLM(prd, task, auto, noEffort).Effort
+	if in.Resolved.Source != autonomouspkg.VerifierSourceAutomation {
+		t.Fatalf("resolved source = %q, want automation", in.Resolved.Source)
+	}
+	if len(in.Pool) == 0 {
+		t.Fatal("fixture must carry a non-empty verification_backends pool")
+	}
+	resolve, compatible := fakeAskResolver(nil, nil)
+	pool := &poolAdmitter{}
+
+	sel := selectVerifierLLM(in, pool.tryAdmit, resolve, compatible, fakeIsSessionKind)
+
+	if len(pool.calls) != 0 {
+		t.Errorf("pool consulted for an Automation override: %v", pool.calls)
+	}
+	if sel.Release != nil {
+		t.Error("Release set without a pool admission")
+	}
+	if sel.Source != autonomouspkg.VerifierSourceAutomation {
+		t.Errorf("source = %q, want automation", sel.Source)
+	}
+	if sel.Backend != "openwebui" || sel.Kind != "openwebui" || sel.Model != "m-automation" || sel.UseSession {
+		t.Errorf("got %+v, want openwebui/m-automation ask call", sel)
+	}
+	if sel.Effort != "medium" {
+		t.Errorf("effort = %q, want medium", sel.Effort)
 	}
 }
