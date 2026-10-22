@@ -156,6 +156,13 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"prd_plan_review_rerun",
 		// session_start_confirm setting — autonomous settings card field label key.
 		"settings_session_start_confirm",
+		// The Automation tab keys.
+		"nav_automation",
+		"automation_new",
+		"automation_pause",
+		"automation_resume",
+		"automation_cancel",
+		"automation_cancel_in_flight",
 	}
 	for _, lang := range requiredLocales {
 		bundle := loadLocaleBundle(t, lang)

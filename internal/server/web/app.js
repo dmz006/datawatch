@@ -740,6 +740,9 @@ function connect() {
       // but never actually re-fetched the PRD list -- nothing visibly
       // happened until navigating away and back.
       renderAutonomousView();
+    } else if (state.activeView === 'automation') {
+      // Same picker gap as the Automata case above.
+      renderAutomationView();
     } else if (state.activeView === 'dashboard') {
       // Same gap, found proactively while fixing the above (Dashboard
       // has the same picker, per BL312 S6) -- not yet operator-reported,
@@ -884,6 +887,7 @@ document.addEventListener('visibilitychange', () => {
     }
   } else {
     _wsWake();
+    if (state.activeView === 'automation') refreshAutomationView();
   }
 });
 
@@ -1189,6 +1193,9 @@ function handleMessage(msg) {
             loadAutomataPanel();
           }
         }, 250);
+      } else if (state.activeView === 'automation') {
+        clearTimeout(state._prdReloadTimer);
+        state._prdReloadTimer = setTimeout(() => refreshAutomationView(), 250);
       }
       break;
     case 'hook_update':
@@ -2188,6 +2195,7 @@ function navigate(view, sessionId, fromPopstate) {
   }
 
   state.activeView = view;
+  window._automationReturnId = null; // set again by openAutomationMemberPRD after it navigates
   // Persist view for refresh recovery
   localStorage.setItem('cs_active_view', view);
   if (sessionId) localStorage.setItem('cs_active_session', sessionId);
@@ -2216,8 +2224,8 @@ function navigate(view, sessionId, fromPopstate) {
       fab.classList.remove('hidden');
     } else if (view === 'autonomous') {
       fab.textContent = '⚡';
-      fab.title = t('fab_launch_auto')||'Launch Automation';
-      fab.setAttribute('aria-label', 'Launch Automation');
+      fab.title = t('fab_launch_auto')||'Launch Automaton';
+      fab.setAttribute('aria-label', t('fab_launch_auto')||'Launch Automaton');
       fab.onclick = openLaunchAutomatonWizard;
       fab.classList.remove('hidden');
     } else {
@@ -2256,6 +2264,7 @@ function navigate(view, sessionId, fromPopstate) {
       'sessions':       viewer + '#sessions-list',
       'session-detail': viewer + '#inside-a-session-terminal-area',
       'autonomous':     viewer + '#automata',
+      'automation':     viewer + '#automation',
       'observer':       viewer + '#observer',
       'settings':       viewer + '#settings',
     };
@@ -2316,7 +2325,7 @@ function navigate(view, sessionId, fromPopstate) {
 
     // GH#192 D6 — pulse the header refresh spinner for every real
     // view switch (not 'new'/'settings', which don't list-refresh data).
-    if (['sessions', 'alerts', 'autonomous', 'dashboard', 'observer'].includes(view)) {
+    if (['sessions', 'alerts', 'autonomous', 'automation', 'dashboard', 'observer'].includes(view)) {
       _showHeaderRefreshSpinner();
     }
     if (view === 'sessions') {
@@ -2337,6 +2346,10 @@ function navigate(view, sessionId, fromPopstate) {
       _automataDetailBreadcrumb = [];
       _automataDetailPRD = null;
       renderAutonomousView();
+    } else if (view === 'automation') {
+      headerTitle.textContent = t('nav_automation') || 'Automation';
+      _automationState.detailId = null;
+      renderAutomationView();
     } else if (view === 'dashboard') {
       // BL303 S4 — /dashboard Mission Control.
       headerTitle.textContent = t('nav_dashboard') || 'Dashboard';
@@ -8175,7 +8188,7 @@ const DOCS_LINKS_BY_KEY = {
   view_new_session: 'howto/sessions-deep-dive.md#4b-happy-path-pwa',
   view_automata: DOCS_DEFINITIONS + '#automata',
   view_automaton_detail: DOCS_DEFINITIONS + '#automaton-detail',
-  view_automata_wizard: DOCS_DEFINITIONS + '#launch-automation-form',
+  view_automata_wizard: DOCS_DEFINITIONS + '#launch-automaton-form',
   view_observer: DOCS_DEFINITIONS + '#observer',
   view_alerts: 'howto/alerts-and-notifications.md',
   view_dashboard: 'howto/dashboard.md',
@@ -21029,8 +21042,8 @@ function switchAutomataTab(tab) {
       fab.classList.remove('hidden');
     } else {
       fab.textContent = '⚡';
-      fab.title = t('fab_launch_auto')||'Launch Automation';
-      fab.setAttribute('aria-label', 'Launch Automation');
+      fab.title = t('fab_launch_auto')||'Launch Automaton';
+      fab.setAttribute('aria-label', t('fab_launch_auto')||'Launch Automaton');
       fab.onclick = openLaunchAutomatonWizard;
       fab.classList.remove('hidden');
     }
@@ -21180,7 +21193,7 @@ function openLaunchAutomatonWizard() {
       <div class="response-modal-header" style="display:flex;align-items:center;gap:8px;">
         <strong>⚡ ${escHtml(t('automata_wizard_title'))}</strong>
         <span style="margin-left:auto;display:inline-flex;align-items:center;gap:4px;">
-          <a href="/diagrams.html#docs/datawatch-definitions.md#launch-automation-form" target="_blank" rel="noopener" title="${escHtml(t('automata_wizard_help_tip')||'Open the Launch Automaton howto — covers every wizard field including Advanced switches')}" style="color:inherit;text-decoration:none;font-size:18px;padding:4px 8px;cursor:pointer;line-height:1;" aria-label="Help">?</a>
+          <a href="/diagrams.html#docs/datawatch-definitions.md#launch-automaton-form" target="_blank" rel="noopener" title="${escHtml(t('automata_wizard_help_tip')||'Open the Launch Automaton howto — covers every wizard field including Advanced switches')}" style="color:inherit;text-decoration:none;font-size:18px;padding:4px 8px;cursor:pointer;line-height:1;" aria-label="Help">?</a>
           <button class="btn-icon" onclick="_prdCloseModal()" title="Close">&#10005;</button>
         </span>
       </div>
@@ -23675,6 +23688,8 @@ window.proposeScanRules = function(prdId) {
 };
 
 function _backToAutomataList() {
+  // An Automaton opened from an Automation goes back to that Automation.
+  const returnAutomationId = window._automationReturnId || null;
   // GATE alpha.36 (operator 2026-05-10): renderAutonomousView() alone
   // doesn't reset the PWA banner (back chevron, title, search icon)
   // OR the bottom-nav highlight. Operator hit "back goes to list but
@@ -23690,6 +23705,11 @@ function _backToAutomataList() {
   if (backBtn) { backBtn.style.display = 'none'; backBtn.onclick = null; }
   const searchBtn = document.getElementById('headerSearchBtn');
   if (searchBtn) searchBtn.style.display = 'inline-flex';
+  if (returnAutomationId) {
+    navigate('automation');
+    openAutomationDetail(returnAutomationId);
+    return;
+  }
   navigate('autonomous');
 }
 window._backToAutomataList = _backToAutomataList;
@@ -23799,6 +23819,2466 @@ function renderAutonomousView() {
   _injectServerPickerBar(view, renderAutonomousView); // BL312 S3
 }
 window.renderAutonomousView = renderAutonomousView;
+
+// ════════════════════════════════════════════════════════════════════════════
+// Automation tab
+//
+// Top-level view for Automations (a named chain of member Automata). Sits left
+// of the Automata tab and is gated on the same autonomous.enabled flag. This
+// section holds the tab state, the status-aware request helper, the list view
+// and the card builder; the create/edit form and detail view live elsewhere.
+// ════════════════════════════════════════════════════════════════════════════
+const _automationState = {
+  list: [],
+  detailId: null,
+  detail: null,
+  search: '',
+  statusFilter: new Set(['draft', 'active', 'paused', 'blocked', 'completed']),
+  historyOn: false,
+  filterOpen: false,
+  expanded: new Set(),
+  loadError: null,
+  prdTitles: {},
+  prdStatuses: {},
+  prdFlags: {},
+  actingBranch: '',
+};
+
+// automationRequest is apiFetch with the HTTP status kept: a non-ok response
+// rejects with an Error whose .status is the numeric code, so callers can tell
+// a stale-version 409 from any other failure. Same token and remote-server
+// proxy routing as apiFetch; resolves the parsed JSON body (null for 204/205).
+function automationRequest(method, path, body) {
+  const token = localStorage.getItem('cs_token') || '';
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = 'Bearer ' + token;
+  const srv = state.activeServer;
+  const isRemote = srv && srv !== 'local' && srv !== 'all';
+  const url = isRemote ? '/api/proxy/' + encodeURIComponent(srv) + path : path;
+  const opts = { method, headers };
+  if (body !== undefined && body !== null) opts.body = JSON.stringify(body);
+  return fetch(url, opts).then(r => {
+    if (r.status === 204 || r.status === 205) return null;
+    if (r.ok) return r.json();
+    return r.text().then(text => {
+      const err = new Error(text || r.statusText);
+      err.status = r.status;
+      return Promise.reject(err);
+    });
+  });
+}
+window.automationRequest = automationRequest;
+
+const _AUTOMATION_STATUSES = ['draft', 'active', 'paused', 'blocked', 'completed', 'cancelled'];
+
+function renderAutomationView() {
+  const view = document.getElementById('view');
+  if (!view) return;
+  const st = _automationState;
+  const statusBadges = _AUTOMATION_STATUSES.map(s => {
+    const active = st.statusFilter.has(s) ? 'active' : '';
+    const label = escHtml(t('automation_status_' + s));
+    return `<button class="automata-filter-badge status-${s} ${active}" onclick="toggleAutomationStatusFilter('${s}')">${label}</button>`;
+  }).join('');
+  const historyTitle = escHtml(st.historyOn ? t('automation_hide_history') : t('automation_show_history'));
+  view.innerHTML = `
+    <div class="sessions-watermark"><img src="/favicon.svg" alt="" /></div>
+    <div class="view-content" style="position:relative;">
+      <div class="output-tabs automata-tabs-bar">
+        <button class="output-tab active" data-tab="automation">${escHtml(t('nav_automation'))}</button>
+        <div style="flex:1;"></div>
+        <button id="automationFilterBtn" class="automata-action-btn ${st.filterOpen ? 'active' : ''}" onclick="toggleAutomationFilter()" title="${escHtml(t('automation_filter_toggle'))}" aria-label="${escHtml(t('automation_filter_toggle'))}">⊞</button>
+        <button id="automationHistoryBtn" class="automata-action-btn ${st.historyOn ? 'active' : ''}" onclick="toggleAutomationHistory()" title="${historyTitle}" aria-label="${historyTitle}">⏱</button>
+        <button id="automationNewBtn" class="btn-primary" style="font-size:12px;padding:5px 12px;" onclick="if (typeof openAutomationForm === 'function') openAutomationForm()">＋ ${escHtml(t('automation_new'))}</button>
+      </div>
+      <div id="automationFilterBar" class="automata-filter-bar" style="display:${st.filterOpen ? 'flex' : 'none'};">
+        <input id="automationSearch" type="text" class="form-input" placeholder="${escHtml(t('automation_filter_search'))}" aria-label="${escHtml(t('automation_filter_search'))}" value="${escHtml(st.search)}" oninput="onAutomationSearchChange(this.value)" style="flex:1;min-width:100px;font-size:12px;">
+        <div class="automata-badge-group">${statusBadges}</div>
+      </div>
+      <div id="automationPanel" style="font-size:13px;color:var(--text);padding:6px 8px;">
+        <div style="text-align:center;padding:32px;color:var(--text2);">${loadingEyeBlock()}</div>
+      </div>
+    </div>
+  `;
+  loadAutomationList();
+  _injectServerPickerBar(view, renderAutomationView);
+}
+window.renderAutomationView = renderAutomationView;
+
+function toggleAutomationFilter() {
+  _automationState.filterOpen = !_automationState.filterOpen;
+  const bar = document.getElementById('automationFilterBar');
+  if (bar) bar.style.display = _automationState.filterOpen ? 'flex' : 'none';
+  const btn = document.getElementById('automationFilterBtn');
+  if (btn) btn.classList.toggle('active', _automationState.filterOpen);
+}
+window.toggleAutomationFilter = toggleAutomationFilter;
+
+function toggleAutomationHistory() {
+  _automationState.historyOn = !_automationState.historyOn;
+  const btn = document.getElementById('automationHistoryBtn');
+  if (btn) {
+    const title = _automationState.historyOn ? t('automation_hide_history') : t('automation_show_history');
+    btn.classList.toggle('active', _automationState.historyOn);
+    btn.title = title;
+    btn.setAttribute('aria-label', title);
+  }
+  _automationRenderCards();
+}
+window.toggleAutomationHistory = toggleAutomationHistory;
+
+function toggleAutomationStatusFilter(s) {
+  const f = _automationState.statusFilter;
+  if (f.has(s)) f.delete(s); else f.add(s);
+  const btn = document.querySelector('.automata-filter-badge.status-' + s);
+  if (btn) btn.classList.toggle('active', f.has(s));
+  _automationRenderCards();
+}
+window.toggleAutomationStatusFilter = toggleAutomationStatusFilter;
+
+function onAutomationSearchChange(val) {
+  _automationState.search = val;
+  _automationRenderCards();
+}
+window.onAutomationSearchChange = onAutomationSearchChange;
+
+function loadAutomationList() {
+  const request = automationRequest('GET', '/api/automations')
+    .then(data => ({ data }), error => ({ error }));
+  return Promise.all([request, loadAutomationPrdTitles()]).then(([res, titles]) => {
+    _automationState.prdTitles = titles;
+    if (res.error) {
+      _automationState.loadError = String((res.error && res.error.message) || res.error);
+    } else {
+      const data = res.data;
+      _automationState.list = Array.isArray(data) ? data : (data && Array.isArray(data.automations) ? data.automations : []);
+      _automationState.loadError = null;
+    }
+    _automationRenderCards();
+    // The open detail draws nested Automations from this list.
+    if (_automationState.detailId) renderAutomationStrip();
+  });
+}
+window.loadAutomationList = loadAutomationList;
+
+// loadAutomationPrdTitles fetches the Automaton list once and resolves a
+// {id: title} map for the member lines on the cards. It never rejects: a
+// failed or oddly shaped response leaves the map empty and the cards fall back
+// to the short member id.
+function loadAutomationPrdTitles() {
+  return loadAutomationPrdInfo().then(info => info.titles);
+}
+window.loadAutomationPrdTitles = loadAutomationPrdTitles;
+
+const _AUTOMATION_STATUS_ORDER = ['active', 'blocked', 'paused', 'draft', 'completed', 'cancelled'];
+
+// A member counts toward progress when it runs an Automaton or a nested
+// Automation; fork and join members only steer the chain.
+function _automationCountsAsMember(m) {
+  return !!m && (!m.kind || m.kind === 'prd' || m.kind === 'automation');
+}
+
+// automationMemberProgress returns {done, total}: total counts the work
+// members, done those that completed or were skipped.
+function automationMemberProgress(automation) {
+  const members = automation && Array.isArray(automation.members) ? automation.members : [];
+  let done = 0, total = 0;
+  members.forEach(m => {
+    if (!_automationCountsAsMember(m)) return;
+    total++;
+    if (m.status === 'completed' || m.status === 'skipped') done++;
+  });
+  return { done, total };
+}
+window.automationMemberProgress = automationMemberProgress;
+
+// automationBlockedReason returns the note of the most recent 'blocked'
+// decision, or '' when the Automation is not blocked or has no such decision.
+function automationBlockedReason(automation) {
+  if (!automation || automation.status !== 'blocked') return '';
+  const decisions = Array.isArray(automation.decisions) ? automation.decisions : [];
+  let best = null, bestAt = -Infinity;
+  decisions.forEach(d => {
+    if (!d || d.kind !== 'blocked') return;
+    const at = Date.parse(d.at);
+    const ts = isNaN(at) ? -Infinity : at;
+    if (best === null || ts >= bestAt) { best = d; bestAt = ts; }
+  });
+  return best && best.note ? String(best.note) : '';
+}
+window.automationBlockedReason = automationBlockedReason;
+
+// automationBudgetSummary flattens budget_policy for the card. The record
+// carries no spend figure, so spent stays null until the daemon exposes one.
+function automationBudgetSummary(automation) {
+  const p = automation && automation.budget_policy;
+  if (!p) return null;
+  return {
+    ceilingType: p.ceiling_type,
+    ceilingValue: p.ceiling_value,
+    window: p.window,
+    pacing: p.pacing,
+    onBreach: p.on_breach,
+    estimated: p.ceiling_type === 'allocation_pct',
+    spent: null,
+  };
+}
+window.automationBudgetSummary = automationBudgetSummary;
+
+// automationListVisible applies the status badges, the history toggle and the
+// search box to list, then orders it by status and name. It does not modify
+// the list it is given.
+function automationListVisible(list, st) {
+  const f = st && st.statusFilter;
+  const inFilter = s => (f && typeof f.has === 'function' ? f.has(s) : Array.isArray(f) ? f.includes(s) : true);
+  const q = String((st && st.search) || '').trim().toLowerCase();
+  const rank = s => {
+    const i = _AUTOMATION_STATUS_ORDER.indexOf(s);
+    return i < 0 ? _AUTOMATION_STATUS_ORDER.length : i;
+  };
+  return (Array.isArray(list) ? list : []).filter(a => {
+    if (!a) return false;
+    const status = a.status || 'draft';
+    const show = status === 'cancelled' ? !!(st && st.historyOn) || inFilter(status) : inFilter(status);
+    if (!show) return false;
+    if (!q) return true;
+    return String(a.name || '').toLowerCase().includes(q) || String(a.id || '').toLowerCase().includes(q);
+  }).sort((a, b) => {
+    const d = rank(a.status || 'draft') - rank(b.status || 'draft');
+    if (d !== 0) return d;
+    return String(a.name || '').toLowerCase().localeCompare(String(b.name || '').toLowerCase())
+      || String(a.id || '').localeCompare(String(b.id || ''));
+  });
+}
+window.automationListVisible = automationListVisible;
+
+function _automationRenderCards() {
+  const panel = document.getElementById('automationPanel');
+  if (!panel) return;
+  const st = _automationState;
+  if (st.loadError !== null) {
+    panel.innerHTML = `<div style="text-align:center;padding:32px;color:var(--error);">${escHtml(t('automation_load_failed', [st.loadError]))}</div>`;
+    return;
+  }
+  const items = automationListVisible(st.list, st);
+  if (!items.length) {
+    panel.innerHTML = `<div style="text-align:center;padding:32px;color:var(--text2);">${escHtml(t('automation_list_empty'))}</div>`;
+    return;
+  }
+  const ctx = { prdTitles: st.prdTitles, now: Date.now() };
+  panel.innerHTML = items.map(a => buildAutomationCardHTML(a, ctx)).join('');
+}
+
+// _automationActiveMembers returns the work members in flight: those named in
+// active_cursors, or the one running member when no cursors are recorded.
+function _automationActiveMembers(a) {
+  const members = (Array.isArray(a.members) ? a.members : []).filter(_automationCountsAsMember);
+  const cursors = Array.isArray(a.active_cursors) ? a.active_cursors : [];
+  if (cursors.length) return members.filter(m => cursors.includes(m.id));
+  const running = members.filter(m => m.status === 'running');
+  return running.length === 1 ? running : [];
+}
+
+function _automationBudgetValue(b) {
+  const n = Number(b.ceilingValue);
+  const text = Number.isInteger(n) ? String(n) : n.toFixed(2);
+  return b.ceilingType === 'allocation_pct' ? text + '%' : '$' + text;
+}
+
+function _automationBudgetHTML(a) {
+  const b = automationBudgetSummary(a);
+  if (!b) return '';
+  const windowKey = 'automation_budget_window_' + b.window;
+  const windowLabel = t(windowKey) !== windowKey ? t(windowKey) : String(b.window || '');
+  const estimated = b.estimated ? ` <span class="automation-card-estimated">(${escHtml(t('automation_budget_estimated'))})</span>` : '';
+  const line = `<div class="automation-card-budget" style="font-size:12px;color:var(--text2);margin-top:6px;">${escHtml(t('automation_budget_ceiling'))}: ${escHtml(_automationBudgetValue(b))}${estimated} · ${escHtml(t('automation_budget_window'))}: ${escHtml(windowLabel)}</div>`;
+  if (typeof b.spent !== 'number' || !isFinite(b.spent) || !(b.ceilingValue > 0)) return line;
+  const pct = Math.max(0, Math.min(100, (b.spent / b.ceilingValue) * 100));
+  return line + `<div class="automation-card-spend-bar" role="progressbar" aria-label="${escHtml(t('automation_budget_ceiling'))}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(pct)}" style="height:4px;border-radius:2px;background:var(--border);margin-top:4px;overflow:hidden;"><div style="width:${pct}%;height:100%;background:var(--accent);"></div></div>`;
+}
+
+// buildAutomationCardHTML returns the markup for one Automation card. Pure:
+// it reads only its arguments and escapes every dynamic value. ctx carries
+// {prdTitles: {id: title}, now: milliseconds}.
+function buildAutomationCardHTML(automation, ctx) {
+  const a = automation || {};
+  const c = ctx || {};
+  const titles = c.prdTitles || {};
+  const now = typeof c.now === 'number' ? c.now : Date.now();
+  const status = String(a.status || 'draft');
+  const statusClass = 'prd-card-status-' + status.replace(/[^a-z_]/g, '');
+  const { done, total } = automationMemberProgress(a);
+  const meta = 'font-size:12px;color:var(--text2);margin-top:6px;';
+
+  const memberLines = _automationActiveMembers(a).map(m => {
+    const ref = String(m.prd_id || m.automation_id || m.id || '');
+    const title = titles[m.prd_id] || ref.slice(0, 8);
+    return `<div class="automation-card-member" style="${meta}">${escHtml(t('automation_current_member', [title]))}</div>`;
+  }).join('');
+
+  let idle = '';
+  const idleAt = a.idle_since ? Date.parse(a.idle_since) : NaN;
+  if (status === 'active' && !isNaN(idleAt)) {
+    idle = `<div class="automation-card-idle" style="${meta}">${escHtml(t('automation_idle_for', [formatElapsed(Math.max(0, now - idleAt))]))}</div>`;
+  }
+
+  const reason = status === 'blocked' ? automationBlockedReason(a) : '';
+  const blocked = reason
+    ? `<div class="automation-card-blocked" style="${meta}color:var(--error);">${escHtml(t('automation_blocked_reason', [reason]))}</div>`
+    : '';
+
+  const open = `if (typeof openAutomationDetail === 'function') openAutomationDetail('${escJsAttr(a.id)}')`;
+  return `<div class="prd-row prd-card ${statusClass} automation-card" data-automation-id="${escHtml(a.id)}" style="padding:14px;margin-bottom:14px;cursor:pointer;" onclick="${open}">
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+      <span class="automation-card-title" style="font-weight:700;font-size:15px;flex:1;min-width:0;">${escHtml(a.name)}</span>
+      <span class="automation-card-status" style="font-size:11px;color:var(--text2);flex-shrink:0;">${escHtml(t('automation_status_' + status))}</span>
+    </div>
+    <div class="automation-card-progress" style="${meta}">${escHtml(t('automation_members_progress', [done, total]))}</div>
+    ${memberLines}${idle}${blocked}${_automationBudgetHTML(a)}
+  </div>`;
+}
+window.buildAutomationCardHTML = buildAutomationCardHTML;
+
+// ── Pipeline strip ──────────────────────────────────────────────────────────
+// The detail view of an Automation: member cards joined by connectors, laid
+// out from entry_member_id along on_complete. A member with more than one
+// outcome edge is a branch point; each extra edge (on_blocked, on_failed) gets
+// its own labelled sub-row below the main row. Everything here is pure: it
+// reads only its arguments and returns markup.
+
+const _AUTOMATION_FINISHED_STATUSES = ['completed', 'failed', 'skipped', 'cancelled'];
+const _AUTOMATION_READONLY_STATUSES = ['completed', 'failed', 'skipped'];
+const _AUTOMATION_OUTCOME_EDGES = ['on_complete', 'on_blocked', 'on_failed'];
+const _AUTOMATION_EXTRA_EDGES = ['on_blocked', 'on_failed'];
+// Automation statuses that accept member edits (insert, skip, remove, edges).
+const _AUTOMATION_EDITABLE_STATUSES = ['draft', 'active', 'paused', 'blocked'];
+
+// automationMemberDisplayStatus returns member.status, except that a pending
+// member (status pending or empty) whose Automaton is approved shows as
+// approved. prdStatusById maps an Automaton id to its status.
+function automationMemberDisplayStatus(member, prdStatusById) {
+  const status = member && member.status ? String(member.status) : '';
+  if ((status === '' || status === 'pending') && member && member.prd_id) {
+    const prdStatus = (prdStatusById || {})[member.prd_id];
+    if (prdStatus === 'approved') return 'approved';
+  }
+  return status;
+}
+window.automationMemberDisplayStatus = automationMemberDisplayStatus;
+
+// _automationLookup reads a string value from a plain {id: value} map, ignoring
+// inherited keys such as 'constructor'.
+function _automationLookup(map, key) {
+  if (!map || key === undefined || key === null) return '';
+  const k = String(key);
+  return Object.prototype.hasOwnProperty.call(map, k) && typeof map[k] === 'string' ? map[k] : '';
+}
+
+// _automationMemberInserted is true for a member added after the Automation
+// was first built: its added_by names someone other than the creating
+// operator or the first-time import, or it carries a reason.
+function _automationMemberInserted(m) {
+  const by = String(m.added_by || '');
+  const original = by === '' || by === 'operator' || by === 'import' || by.indexOf('import:') === 0;
+  return !original || String(m.added_reason || '') !== '';
+}
+
+function _automationInsertedTitle(m) {
+  const at = String(m.added_at || '');
+  return [
+    m.added_by ? t('automation_inserted_by', [m.added_by]) : '',
+    m.added_reason ? String(m.added_reason) : '',
+    at.indexOf('0001-') === 0 ? '' : at,
+  ].filter(Boolean).join(' · ');
+}
+
+// _automationStripActiveIds returns the ids drawn with the active ring: the
+// recorded cursors, or else the entry member while it has not finished.
+function _automationStripActiveIds(a, members) {
+  const cursors = Array.isArray(a.active_cursors) ? a.active_cursors : [];
+  if (cursors.length) return new Set(cursors);
+  if (a.status === 'completed' || a.status === 'cancelled') return new Set();
+  const entry = members.find(m => m.id === a.entry_member_id);
+  if (entry && !_AUTOMATION_FINISHED_STATUSES.includes(entry.status)) return new Set([entry.id]);
+  return new Set();
+}
+
+const _AUTOMATION_JOIN_RULES = ['all_must_succeed', 'any_one_is_enough', 'continue_anyway'];
+const _AUTOMATION_MAX_NESTED_DEPTH = 5;
+
+function _automationIdList(v) {
+  return Array.isArray(v) ? v.filter(x => typeof x === 'string' && x !== '') : [];
+}
+
+// _automationJoinRule is the effective rule of a join member: an empty or
+// unknown on_branch_failure means all_must_succeed.
+function _automationJoinRule(m) {
+  const rule = String((m && m.on_branch_failure) || '');
+  return _AUTOMATION_JOIN_RULES.includes(rule) ? rule : 'all_must_succeed';
+}
+
+// _automationPairedJoin returns the join member whose join_members set equals
+// the fork's fork_members set, or null.
+function _automationPairedJoin(fork, members) {
+  const want = new Set(_automationIdList(fork.fork_members));
+  return members.find(j => {
+    if (j.kind !== 'join') return false;
+    const have = new Set(_automationIdList(j.join_members));
+    return have.size === want.size && [...want].every(id => have.has(id));
+  }) || null;
+}
+
+// _automationFollowChain walks on_complete from startId. A member already in
+// drawn ends the walk as a reference item, so a cycle cannot loop. A fork is
+// followed by one group item holding its branch members, then its paired join;
+// the walk continues from the join's on_complete. Branch members are marked
+// drawn up front so they appear only in their lane.
+function _automationFollowChain(startId, byId, drawn, members) {
+  const items = [];
+  let id = startId;
+  while (id) {
+    const m = byId.get(id);
+    if (!m) break;
+    if (drawn.has(id)) { items.push({ member: m, ref: true }); break; }
+    drawn.add(id);
+    items.push({ member: m, ref: false });
+    if (m.kind === 'fork') {
+      const join = _automationPairedJoin(m, members || []);
+      const lanes = [];
+      _automationIdList(m.fork_members).forEach(bid => {
+        const b = byId.get(bid);
+        if (!b || lanes.some(l => l.member.id === bid)) return;
+        lanes.push({ member: b, ref: drawn.has(bid) });
+        drawn.add(bid);
+      });
+      if (lanes.length) items.push({ group: { fork: m, join, lanes } });
+      if (!join) break;
+      if (drawn.has(join.id)) { items.push({ member: join, ref: true }); break; }
+      drawn.add(join.id);
+      items.push({ member: join, ref: false });
+      id = join.on_complete;
+      continue;
+    }
+    id = m.on_complete;
+  }
+  return items;
+}
+
+// _automationConnectorHTML draws one edge between two members. data-taken is
+// true when the from-member took this edge, false when it finished by another
+// edge, and unknown while it has not finished.
+function _automationConnectorHTML(from, edge, toId) {
+  const finished = !!from.edge_taken || !!from.finished_at || _AUTOMATION_FINISHED_STATUSES.includes(from.status);
+  const taken = from.edge_taken === edge ? 'true' : (finished ? 'false' : 'unknown');
+  const cls = 'automation-connector' + (taken === 'false' ? ' automation-connector-untaken' : '');
+  return `<span class="${cls}" data-edge="${escHtml(edge)}" data-from="${escHtml(from.id)}" data-to="${escHtml(toId)}" data-taken="${taken}"></span>`;
+}
+
+function _automationMemberRef(m) {
+  const kind = m.kind || 'prd';
+  if (kind === 'prd' && m.prd_id) return String(m.prd_id);
+  if (kind === 'automation' && m.automation_id) return String(m.automation_id);
+  return String(m.id);
+}
+
+// _automationChild returns the child Automation a nested member names, or null
+// while it is not in ctx.automationsById.
+function _automationChild(m, c) {
+  const map = c.automationsById;
+  if (!map || !m.automation_id || !Object.prototype.hasOwnProperty.call(map, m.automation_id)) return null;
+  const child = map[m.automation_id];
+  return child && typeof child === 'object' ? child : null;
+}
+
+function _automationIsExpanded(c, id) {
+  const ex = c.expanded;
+  if (!ex) return false;
+  return typeof ex.has === 'function' ? ex.has(id) : (Array.isArray(ex) && ex.includes(id));
+}
+
+function _automationMemberTitle(m, c, chip) {
+  const kind = m.kind || 'prd';
+  if (kind === 'fork') return t('automation_fork_label');
+  if (kind === 'join') return t('automation_join_label');
+  if (kind === 'prd') return _automationLookup(c.prdTitles, m.prd_id) || chip;
+  if (kind === 'automation') {
+    const child = _automationChild(m, c);
+    return (child && child.name ? String(child.name) : '') || chip;
+  }
+  return chip;
+}
+
+// _automationActionContext decides whether the strip of Automation a carries
+// per-member action buttons: only the top-level strip of an Automation that
+// still accepts edits does (a nested child is edited from its own page), and
+// ctx.readOnly turns them off. Returns null for no actions.
+function _automationActionContext(a, c, members) {
+  if (!a || !a.id || (c && c.readOnly)) return null;
+  const status = String(a.status || '');
+  if (!_AUTOMATION_EDITABLE_STATUSES.includes(status)) return null;
+  return { id: a.id, status, entry: a.entry_member_id || '', members };
+}
+
+// _automationInsertPlacement works out what the insert endpoint needs for a
+// button on member anchorId. The wire format has only `after`, so "after"
+// passes the anchor itself. "Before" passes the anchor's predecessor (the
+// member whose on_complete is the anchor), as the design doc's Insert rules
+// splice it: the predecessor's on_complete moves to the new head and the new
+// member points at the anchor. The entry member has no predecessor: on a draft
+// an urgent insert becomes the new entry, and anywhere else there is no slot
+// before it. Returns {after, urgent} or null when no slot exists.
+function _automationInsertPlacement(a, anchorId, position) {
+  if (position !== 'before') return { after: anchorId, urgent: false };
+  const members = Array.isArray(a && a.members) ? a.members : [];
+  const pred = members.find(x => x && x.on_complete === anchorId);
+  if (pred) {
+    const done = !!pred.status && !['pending', 'running'].includes(pred.status);
+    if (a.status !== 'draft' && done) return null;
+    return { after: pred.id, urgent: false };
+  }
+  if (a.entry_member_id === anchorId && a.status === 'draft') return { after: '', urgent: true };
+  return null;
+}
+
+// _automationMemberActionsHTML is the compact actions area of a member card.
+// A pending (or approved) member offers every operation; a running member only
+// edge editing and skip; a finished member, a fork and a join none.
+function _automationMemberActionsHTML(m, status, actions) {
+  if (!actions) return '';
+  const kind = String(m.kind || 'prd');
+  if (kind !== 'prd' && kind !== 'automation') return '';
+  const pending = status === 'pending' || status === 'approved';
+  if (!pending && status !== 'running') return '';
+  const idArg = escJsAttr(m.id);
+  const ops = [];
+  if (pending) {
+    const a = { status: actions.status, entry_member_id: actions.entry, members: actions.members };
+    if (_automationInsertPlacement(a, m.id, 'before')) ops.push(['insert_before', 'automation_insert_before', `openAutomationInsertDialog('${idArg}','before')`]);
+    ops.push(['insert_after', 'automation_insert_after', `openAutomationInsertDialog('${idArg}','after')`]);
+  }
+  ops.push(['reorder_edges', 'automation_reorder_edges', `openAutomationReorderDialog('${idArg}')`]);
+  ops.push(['skip_member', 'automation_skip_member', `openAutomationSkipDialog('${idArg}')`]);
+  if (pending) ops.push(['remove_member', 'automation_remove_member', `automationRemoveMember('${idArg}')`]);
+  const buttons = ops.map(([op, key, call]) =>
+    `<button type="button" class="automation-member-action-btn" data-member-op="${op}" data-action-for="${escHtml(m.id)}" onclick="event.stopPropagation(); if (typeof ${call.split('(')[0]} === 'function') ${call}">${escHtml(t(key))}</button>`).join('');
+  return `<span class="automation-member-actions" role="group" aria-label="${escHtml(t('automation_member_actions'))}">${buttons}</span>`;
+}
+
+function _automationMemberCardHTML(m, c, active, actions) {
+  const kind = String(m.kind || 'prd');
+  const status = automationMemberDisplayStatus(m, c.prdStatuses) || 'pending';
+  const statusClass = status.replace(/[^a-z_]/g, '') || 'pending';
+  const labelKey = 'automation_member_status_' + status;
+  const label = t(labelKey) !== labelKey ? t(labelKey) : status;
+  const chip = _automationMemberRef(m).slice(0, 8);
+  const inserted = _automationMemberInserted(m);
+  const isActive = active.has(m.id);
+  const clickable = kind === 'prd' && !!m.prd_id;
+  const edgeCount = _AUTOMATION_OUTCOME_EDGES.filter(e => m[e]).length;
+
+  let cls = 'automation-member automation-member-' + statusClass;
+  if (isActive) cls += ' automation-member-active';
+  if (_AUTOMATION_READONLY_STATUSES.includes(status)) cls += ' automation-member-readonly';
+  if (clickable) cls += ' automation-member-clickable';
+  const open = clickable
+    ? ` onclick="if (typeof openAutomationMemberPRD === 'function') openAutomationMemberPRD('${escJsAttr(m.prd_id)}')"`
+    : '';
+  const marker = inserted
+    ? `<span class="automation-inserted-marker" title="${escHtml(_automationInsertedTitle(m))}">${escHtml(t('automation_inserted_marker'))}</span>`
+    : '';
+  const fork = edgeCount > 1 ? '<span class="automation-fork-glyph" aria-hidden="true">⑂</span>' : '';
+  let attrs = '';
+  let extra = '';
+  let shownLabel = label;
+  if (kind === 'join') {
+    const rule = _automationJoinRule(m);
+    attrs = ` data-rule="${rule}"`;
+    extra = `<span class="automation-join-rule">${escHtml(t('automation_join_rule_' + rule))}</span>`;
+  } else if (kind === 'automation') {
+    const expanded = _automationIsExpanded(c, m.id);
+    attrs = ` data-expanded="${expanded}"`;
+    const child = _automationChild(m, c);
+    const childLabel = child && child.status ? 'automation_status_' + child.status : '';
+    if (childLabel && t(childLabel) !== childLabel) shownLabel = t(childLabel);
+    extra = `<button type="button" class="automation-nested-toggle" data-member-id="${escHtml(m.id)}" aria-expanded="${expanded}" onclick="toggleAutomationNested('${escJsAttr(m.id)}')">${escHtml(t(expanded ? 'automation_nested_collapse' : 'automation_nested_expand'))}</button>`;
+  }
+  const details = `<button type="button" class="automation-member-details-btn" data-details-for="${escHtml(m.id)}" onclick="event.stopPropagation(); if (typeof openAutomationMemberDrawer === 'function') openAutomationMemberDrawer('${escJsAttr(m.id)}')">${escHtml(t('automation_member_details'))}</button>`;
+  return `<div class="${cls}" data-member-id="${escHtml(m.id)}" data-kind="${escHtml(kind)}" data-status="${escHtml(status)}" data-active="${isActive}" data-inserted="${inserted}"${attrs}${open}>`
+    + '<span class="automation-dot"></span>'
+    + `<span class="automation-member-title">${escHtml(_automationMemberTitle(m, c, chip))}</span>`
+    + `<span class="automation-chip">${escHtml(chip)}</span>`
+    + `<span class="automation-member-status">${escHtml(shownLabel)}</span>`
+    + extra + marker + fork + details + _automationMemberActionsHTML(m, status, actions) + '</div>';
+}
+
+// _automationNestedHTML draws the expanded body of a nested member below its
+// card: the child's own strip, or the not-loaded text. A child already on the
+// path from the root, or deeper than the depth limit, is left empty so a
+// malformed cycle cannot loop.
+function _automationNestedHTML(m, env) {
+  if (m.kind !== 'automation' || !_automationIsExpanded(env.c, m.id)) return '';
+  const child = _automationChild(m, env.c);
+  const id = escHtml(m.automation_id);
+  let inner;
+  if (!child) {
+    inner = `<span class="automation-nested-missing">${escHtml(t('automation_nested_missing'))}</span>`;
+  } else if (env.seen.has(m.automation_id) || env.depth + 1 > _AUTOMATION_MAX_NESTED_DEPTH) {
+    inner = '';
+  } else {
+    env.seen.add(m.automation_id);
+    inner = _automationStripBody(child, env.c, env.seen, env.depth + 1);
+    env.seen.delete(m.automation_id);
+  }
+  return `<div class="automation-nested" data-automation-id="${id}" data-expanded="true">${inner}</div>`;
+}
+
+// _automationBlockHTML is a member card plus its nested body, or a short
+// reference when the member was drawn before.
+function _automationBlockHTML(it, env) {
+  if (it.ref) return _automationMemberRefHTML(it.member, env.c);
+  return _automationMemberCardHTML(it.member, env.c, env.active, env.actions) + _automationNestedHTML(it.member, env);
+}
+
+function _automationGroupHTML(g, env) {
+  const lanes = g.lanes.map(l => {
+    const id = escHtml(l.member.id);
+    return `<div class="automation-lane" data-lane="${id}" title="${escHtml(t('automation_branch_label', [l.member.id]))}">${_automationBlockHTML(l, env)}</div>`;
+  }).join('');
+  return `<div class="automation-fork-group" data-fork-id="${escHtml(g.fork.id)}" data-join-id="${escHtml(g.join ? g.join.id : '')}">${lanes}</div>`;
+}
+
+// _automationPairConnectorHTML joins a fork to its group and the group to its
+// join. Neither is an outcome edge: the link is the pairing.
+function _automationPairConnectorHTML(kind, from, toId) {
+  const finished = !!from.finished_at || _AUTOMATION_FINISHED_STATUSES.includes(from.status);
+  return `<span class="automation-connector automation-connector-pair" data-edge="${kind}" data-from="${escHtml(from.id)}" data-to="${escHtml(toId)}" data-taken="${finished ? 'true' : 'unknown'}"></span>`;
+}
+
+// A member already drawn in an earlier row is shown as a short reference.
+function _automationMemberRefHTML(m, c) {
+  const title = _automationMemberTitle(m, c, _automationMemberRef(m).slice(0, 8));
+  return `<div class="automation-member-ref" data-ref-to="${escHtml(m.id)}"><span class="automation-member-title">${escHtml(title)}</span></div>`;
+}
+
+function _automationRowHTML(row, env) {
+  let html = '';
+  if (row.edge) {
+    const key = row.edge === 'on_blocked' ? 'automation_edge_if_blocked' : 'automation_edge_if_failed';
+    html += `<span class="automation-edge-label">${escHtml(t(key))}</span>`;
+    html += _automationConnectorHTML(row.parent, row.edge, row.items[0].member.id);
+  }
+  row.items.forEach((it, i) => {
+    const prev = i > 0 ? row.items[i - 1] : null;
+    if (it.group) {
+      html += _automationPairConnectorHTML('fork', it.group.fork, it.group.lanes[0].member.id);
+      html += _automationGroupHTML(it.group, env);
+      return;
+    }
+    if (row.linked && prev) {
+      html += prev.group
+        ? _automationPairConnectorHTML('join', prev.group.fork, it.member.id)
+        : _automationConnectorHTML(prev.member, 'on_complete', it.member.id);
+    }
+    html += _automationBlockHTML(it, env);
+  });
+  return `<div class="automation-strip-row" data-row="${escHtml(row.key)}">${html}</div>`;
+}
+
+// _automationStripBody draws one Automation's strip. seen holds the ids of the
+// Automations on the path from the root and depth counts nesting levels.
+function _automationStripBody(a, c, seen, depth) {
+  const members = (Array.isArray(a.members) ? a.members : []).filter(m => m && m.id);
+  const byId = new Map();
+  members.forEach(m => { if (!byId.has(m.id)) byId.set(m.id, m); });
+  const drawn = new Set();
+  const active = _automationStripActiveIds(a, members);
+  const env = { c, active, seen, depth, actions: depth === 0 ? _automationActionContext(a, c, members) : null };
+
+  const rows = [{ key: 'main', linked: true, items: _automationFollowChain(a.entry_member_id, byId, drawn, members) }];
+  // Rows grow while we iterate: each card that was drawn in full may add a
+  // sub-row per extra edge, and a sub-row's own cards may add more.
+  for (let i = 0; i < rows.length; i++) {
+    rows[i].items.forEach(it => {
+      if (it.ref || it.group) return;
+      _AUTOMATION_EXTRA_EDGES.forEach(edge => {
+        if (!it.member[edge]) return;
+        const items = _automationFollowChain(it.member[edge], byId, drawn, members);
+        if (items.length) rows.push({ key: edge + ':' + it.member.id, edge, parent: it.member, linked: true, items });
+      });
+    });
+  }
+  const unlinked = members.filter(m => byId.get(m.id) === m && !drawn.has(m.id));
+  if (unlinked.length) rows.push({ key: 'unlinked', linked: false, items: unlinked.map(m => ({ member: m, ref: false })) });
+
+  const body = rows.filter(r => r.items.length).map(r => _automationRowHTML(r, env)).join('');
+  return `<div class="automation-strip" data-automation-id="${escHtml(a.id)}">${body}</div>`;
+}
+
+// buildAutomationStripHTML returns the strip markup for one Automation.
+// ctx = {prdTitles, prdStatuses, expanded, automationsById}: expanded is the
+// set of nested member ids shown open, automationsById maps an Automation id
+// to the Automation a nested member names.
+function buildAutomationStripHTML(automation, ctx) {
+  const a = automation || {};
+  const seen = new Set(a.id ? [a.id] : []);
+  return _automationStripBody(a, ctx || {}, seen, 0);
+}
+window.buildAutomationStripHTML = buildAutomationStripHTML;
+
+// toggleAutomationNested opens or closes the nested Automation under a member
+// card and redraws the detail strip when a detail view is open and the detail
+// task has defined renderAutomationStrip.
+function toggleAutomationNested(memberId) {
+  const ex = _automationState.expanded;
+  if (ex.has(memberId)) ex.delete(memberId); else ex.add(memberId);
+  if (_automationState.detailId && typeof renderAutomationStrip === 'function') renderAutomationStrip();
+}
+window.toggleAutomationNested = toggleAutomationNested;
+
+// ── Automation detail ───────────────────────────────────────────────────────
+// One Automation on a page of its own: header, blocked banner, budget line,
+// active members, the controls slot (filled by renderAutomationControls once
+// that exists), the pipeline strip, pending inserts and the latest decisions.
+
+const _AUTOMATION_DECISION_LIMIT = 20;
+let _automationDetailSeq = 0;
+
+// loadAutomationPrdInfo fetches the Automaton list once and resolves
+// {titles, statuses, flags}, all keyed by Automaton id; flags is
+// {template, child} and feeds the insert picker. It never rejects: a failed
+// or oddly shaped response leaves both maps empty.
+function loadAutomationPrdInfo() {
+  return automationRequest('GET', '/api/autonomous/prds')
+    .then(data => {
+      const prds = Array.isArray(data) ? data : (data && Array.isArray(data.prds) ? data.prds : []);
+      const titles = {}, statuses = {}, flags = {};
+      prds.forEach(p => {
+        if (!p || !p.id) return;
+        if (p.title) titles[p.id] = String(p.title);
+        if (p.status) statuses[p.id] = String(p.status);
+        flags[p.id] = { template: !!p.is_template, child: !!p.parent_prd_id };
+      });
+      return { titles, statuses, flags };
+    })
+    .catch(() => ({ titles: {}, statuses: {}, flags: {} }));
+}
+window.loadAutomationPrdInfo = loadAutomationPrdInfo;
+
+// _automationStripContext is the ctx buildAutomationStripHTML wants, built from
+// the loaded state: nested Automations come from the already loaded list.
+function _automationStripContext() {
+  const st = _automationState;
+  const automationsById = {};
+  (Array.isArray(st.list) ? st.list : []).forEach(a => { if (a && a.id) automationsById[a.id] = a; });
+  return { prdTitles: st.prdTitles, prdStatuses: st.prdStatuses, expanded: st.expanded, automationsById };
+}
+
+// _automationJoinWait describes the join the chain is waiting on: the first
+// unfinished join member with at least one branch started or finished. Returns
+// {done, total} or null.
+function _automationJoinWait(a) {
+  const members = Array.isArray(a.members) ? a.members : [];
+  const byId = new Map();
+  members.forEach(m => { if (m && m.id) byId.set(m.id, m); });
+  for (const j of members) {
+    if (!j || j.kind !== 'join' || _AUTOMATION_FINISHED_STATUSES.includes(j.status)) continue;
+    const branches = _automationIdList(j.join_members).map(id => byId.get(id)).filter(Boolean);
+    if (!branches.length) continue;
+    const done = branches.filter(b => _AUTOMATION_FINISHED_STATUSES.includes(b.status)).length;
+    const started = branches.some(b => b.status === 'running' || _AUTOMATION_FINISHED_STATUSES.includes(b.status));
+    if (started && done < branches.length) return { done, total: branches.length };
+  }
+  return null;
+}
+
+function _automationTimeText(v) {
+  const s = String(v == null ? '' : v);
+  if (!s || s.indexOf('0001-') === 0) return '';
+  const ms = Date.parse(s);
+  return isNaN(ms) ? s : new Date(ms).toLocaleString();
+}
+
+function _automationDetailSection(titleKey, inner) {
+  return `<section class="automation-detail-section"><h3 class="automation-detail-section-title">${escHtml(t(titleKey))}</h3>${inner}</section>`;
+}
+
+function _automationPendingInsertsHTML(a) {
+  const pending = Array.isArray(a.pending_inserts) ? a.pending_inserts.filter(Boolean) : [];
+  if (!pending.length) return '';
+  const rows = pending.map(p => {
+    const label = String(p.name || p.prd_id || p.id || '');
+    const by = p.actor ? `<span class="automation-pending-insert-by">${escHtml(t('automation_pending_insert_by', [p.actor]))}</span>` : '';
+    const reason = p.reason ? `<span class="automation-pending-insert-reason">${escHtml(p.reason)}</span>` : '';
+    const approve = _AUTOMATION_EDITABLE_STATUSES.includes(String(a.status || ''))
+      ? `<button type="button" class="btn-secondary automation-approve-insert" data-insert-id="${escHtml(p.id)}" onclick="automationApproveInsert('${escJsAttr(p.id)}')">${escHtml(t('automation_approve_insert'))}</button>`
+      : '';
+    return `<li class="automation-pending-insert" data-insert-id="${escHtml(p.id)}"><span class="automation-pending-insert-name">${escHtml(label)}</span>${by}${reason}${approve}</li>`;
+  }).join('');
+  return _automationDetailSection('automation_pending_inserts', `<ul class="automation-pending-inserts">${rows}</ul>`);
+}
+
+function _automationDecisionsHTML(a) {
+  const decisions = Array.isArray(a.decisions) ? a.decisions.filter(Boolean) : [];
+  if (!decisions.length) return '';
+  const rows = decisions.slice(-_AUTOMATION_DECISION_LIMIT).reverse().map(d => {
+    const at = _automationTimeText(d.at);
+    const actor = d.actor ? `<span class="automation-decision-actor">${escHtml(d.actor)}</span>` : '';
+    const note = d.note ? `<span class="automation-decision-note">${escHtml(d.note)}</span>` : '';
+    return `<li class="automation-decision" data-kind="${escHtml(d.kind)}"><span class="automation-decision-kind">${escHtml(d.kind)}</span>${actor}${at ? `<span class="automation-decision-at">${escHtml(at)}</span>` : ''}${note}</li>`;
+  }).join('');
+  return _automationDetailSection('automation_decisions', `<ul class="automation-decisions">${rows}</ul>`);
+}
+
+// buildAutomationDetailHTML returns the page markup for one Automation. Pure:
+// it reads only its arguments and escapes every dynamic value. ctx is the
+// buildAutomationStripHTML ctx.
+function buildAutomationDetailHTML(automation, ctx) {
+  const a = automation || {};
+  const c = ctx || {};
+  const status = String(a.status || 'draft');
+  const statusKey = 'automation_status_' + status;
+  const statusLabel = t(statusKey) !== statusKey ? t(statusKey) : status;
+  const desc = a.description ? `<p class="automation-detail-desc">${escHtml(a.description)}</p>` : '';
+  const reason = status === 'blocked' ? automationBlockedReason(a) : '';
+  const banner = reason
+    ? `<div class="automation-blocked-banner" role="alert">${escHtml(t('automation_blocked_reason', [reason]))}</div>`
+    : '';
+  const budget = automationBudgetSummary(a) ? `<div class="automation-detail-budget">${_automationBudgetHTML(a)}</div>` : '';
+
+  const active = _automationActiveMembers(a).map(m => {
+    const chip = _automationMemberRef(m).slice(0, 8);
+    return `<li class="automation-active-member" data-member-id="${escHtml(m.id)}">${escHtml(_automationMemberTitle(m, c, chip))}</li>`;
+  }).join('');
+  const wait = _automationJoinWait(a);
+  const waitLine = wait ? `<div class="automation-join-wait">${escHtml(t('automation_join_waiting', [wait.done, wait.total]))}</div>` : '';
+  const activeBlock = active || waitLine
+    ? _automationDetailSection('automation_active_members', (active ? `<ul class="automation-active-members">${active}</ul>` : '') + waitLine)
+    : '';
+
+  return `<div class="automation-detail-header">
+      <button type="button" class="automation-detail-back" onclick="automationDetailBack()">← ${escHtml(t('automation_back'))}</button>
+      <h2 class="automation-detail-title">${escHtml(a.name)}</h2>
+      <span class="automation-detail-status automation-status-${escHtml(status.replace(/[^a-z_]/g, ''))}">${escHtml(statusLabel)}</span>
+      <span class="automation-detail-version">${escHtml(t('automation_version', [Number(a.version) || 0]))}</span>
+    </div>${desc}${banner}${budget}${activeBlock}
+    <div id="automationControls"></div>
+    <div id="automationStrip">${buildAutomationStripHTML(a, c)}</div>
+    ${_automationPendingInsertsHTML(a)}${_automationDecisionsHTML(a)}`;
+}
+window.buildAutomationDetailHTML = buildAutomationDetailHTML;
+
+function _automationDetailShell(inner) {
+  return `<div class="view-content automation-detail" style="position:relative;">${inner}</div>`;
+}
+
+function _automationDetailBackHTML() {
+  return `<div class="automation-detail-header"><button type="button" class="automation-detail-back" onclick="automationDetailBack()">← ${escHtml(t('automation_back'))}</button></div>`;
+}
+
+function openAutomationDetail(id) {
+  const st = _automationState;
+  if (st.detailId !== id) st.expanded.clear();
+  st.detailId = id;
+  return renderAutomationDetail(id);
+}
+window.openAutomationDetail = openAutomationDetail;
+
+// renderAutomationDetail loads one Automation and draws its page. opts.quiet
+// skips the loading block and keeps the page on a failed reload; live refresh
+// uses it.
+function renderAutomationDetail(id, opts) {
+  const view = document.getElementById('view');
+  if (!view) return Promise.resolve();
+  const st = _automationState;
+  const quiet = !!(opts && opts.quiet);
+  const seq = ++_automationDetailSeq;
+  if (!quiet) {
+    view.innerHTML = _automationDetailShell(_automationDetailBackHTML()
+      + `<div style="text-align:center;padding:32px;color:var(--text2);">${loadingEyeBlock()}</div>`);
+  }
+  const request = automationRequest('GET', '/api/automations/' + encodeURIComponent(id))
+    .then(data => ({ data }), error => ({ error }));
+  return Promise.all([request, loadAutomationPrdInfo()]).then(([res, info]) => {
+    // A newer load, or leaving the page, makes this answer stale.
+    if (seq !== _automationDetailSeq || st.detailId !== id) return;
+    st.prdTitles = info.titles;
+    st.prdStatuses = info.statuses;
+    st.prdFlags = info.flags;
+    if (res.error || !res.data || typeof res.data !== 'object') {
+      if (quiet) return;
+      st.detail = null;
+      const msg = String((res.error && res.error.message) || res.error || '');
+      view.innerHTML = _automationDetailShell(_automationDetailBackHTML()
+        + `<div class="automation-detail-error" style="text-align:center;padding:32px;color:var(--error);">${escHtml(t('automation_load_failed', [msg]))}</div>`);
+      return;
+    }
+    st.detail = res.data;
+    _automationDrawDetail(res.data);
+  });
+}
+window.renderAutomationDetail = renderAutomationDetail;
+
+// renderAutomationStrip redraws only the strip from the loaded Automation.
+function renderAutomationStrip() {
+  const a = _automationState.detail;
+  const el = document.getElementById('automationStrip');
+  if (!a || !el) return;
+  el.innerHTML = buildAutomationStripHTML(a, _automationStripContext());
+}
+window.renderAutomationStrip = renderAutomationStrip;
+
+function automationDetailBack() {
+  _automationState.detailId = null;
+  _automationState.detail = null;
+  closeAutomationMemberDrawer();
+  renderAutomationView();
+}
+window.automationDetailBack = automationDetailBack;
+
+// refreshAutomationView reloads whatever the Automation tab shows: the open
+// detail, or else the list. Live updates and returning to the tab call it.
+function refreshAutomationView() {
+  const id = _automationState.detailId;
+  if (id) return renderAutomationDetail(id, { quiet: true });
+  return loadAutomationList();
+}
+window.refreshAutomationView = refreshAutomationView;
+
+// ── Automation detail: control operations ────────────────────────────────────
+//
+// Pause, resume and cancel post to /api/automations/{id}/{op}. Every call
+// carries the loaded version, so a change made elsewhere answers 409 and the
+// operator reloads before acting. Cancel always asks which way to cancel.
+
+// automationActiveBranches lists the live branch members of an Automation:
+// those whose id is in active_cursors. Each entry carries the member id, the
+// Automaton or nested Automation id it points at, and a display title.
+function automationActiveBranches(automation) {
+  const a = automation || {};
+  const members = Array.isArray(a.members) ? a.members : [];
+  const cursors = Array.isArray(a.active_cursors) ? a.active_cursors : [];
+  const ctx = _automationStripContext();
+  return members.filter(m => m && cursors.includes(m.id)).map(m => ({
+    id: m.id,
+    prd_id: m.prd_id || '',
+    automation_id: m.automation_id || '',
+    title: _automationMemberTitle(m, ctx, _automationMemberRef(m).slice(0, 8)),
+  }));
+}
+window.automationActiveBranches = automationActiveBranches;
+
+// _automationDrawDetail paints the detail page for one loaded Automation and
+// fills its control area.
+function _automationDrawDetail(a) {
+  const view = document.getElementById('view');
+  if (view) view.innerHTML = _automationDetailShell(buildAutomationDetailHTML(a, _automationStripContext()));
+  renderAutomationControls(a);
+}
+
+// automationControl runs one control operation on the open Automation. A 409
+// (stale version or state conflict) opens the stale prompt and is never
+// retried; any other failure is a toast. Resolves the updated Automation, or
+// null on failure.
+function automationControl(id, op, body) {
+  const st = _automationState;
+  const payload = Object.assign({}, body || {}, {
+    expected_version: st.detail ? st.detail.version : 0,
+    actor: 'operator',
+  });
+  const path = '/api/automations/' + encodeURIComponent(id) + '/' + encodeURIComponent(op);
+  return automationRequest('POST', path, payload).then(data => {
+    if (data && typeof data === 'object' && st.detailId === id) {
+      st.detail = data;
+      _automationDrawDetail(data);
+    }
+    return data;
+  }, err => {
+    const message = String((err && err.message) || err || '');
+    if (err && err.status === 409) automationShowStalePrompt(message);
+    else showToast(message, 'error');
+    return null;
+  });
+}
+window.automationControl = automationControl;
+
+// automationSelectBranch remembers which active branch the per-branch buttons
+// act on; '' clears the choice.
+function automationSelectBranch(memberId) {
+  _automationState.actingBranch = String(memberId || '');
+  if (_automationState.detail) renderAutomationControls(_automationState.detail);
+}
+window.automationSelectBranch = automationSelectBranch;
+
+// renderAutomationControls fills #automationControls with the operations the
+// Automation's status allows. With several active branches it shows a branch
+// selector (per-branch buttons stay disabled until one is chosen) and says the
+// pause, resume and cancel buttons apply to the whole Automation; with one it
+// names that branch.
+function renderAutomationControls(automation) {
+  const el = document.getElementById('automationControls');
+  if (!el) return;
+  const a = automation || {};
+  const status = String(a.status || '');
+  const idArg = escJsAttr(a.id);
+  const button = (op, key, onclick) =>
+    `<button type="button" class="btn-secondary automation-control" data-op="${op}" onclick="${onclick}">${escHtml(t(key))}</button>`;
+  const buttons = [];
+  if (status === 'active') buttons.push(button('pause', 'automation_pause', `automationControl('${idArg}','pause')`));
+  if (status === 'paused' || status === 'blocked') buttons.push(button('resume', 'automation_resume', `automationControl('${idArg}','resume')`));
+  if (['draft', 'active', 'paused', 'blocked'].includes(status)) buttons.push(button('cancel', 'automation_cancel', `openAutomationCancelDialog('${idArg}')`));
+
+  const branches = automationActiveBranches(a);
+  let scope = '';
+  if (branches.length > 1) {
+    const st = _automationState;
+    if (!branches.some(b => b.id === st.actingBranch)) st.actingBranch = '';
+    const options = branches.map(b =>
+      `<option value="${escHtml(b.id)}"${b.id === st.actingBranch ? ' selected' : ''}>${escHtml(b.title + ' (' + b.id + ')')}</option>`).join('');
+    scope = `<label class="automation-branch-picker"><span class="automation-branch-label">${escHtml(t('automation_acting_on_branch'))}</span>`
+      + `<select class="automation-branch-select" onchange="automationSelectBranch(this.value)"><option value=""${st.actingBranch ? '' : ' selected'}>—</option>${options}</select></label>`
+      + (buttons.length ? `<span class="automation-acting-on">${escHtml(t('automation_acting_on_all'))}</span>` : '');
+  } else if (branches.length === 1) {
+    scope = `<span class="automation-acting-on"><span class="automation-branch-label">${escHtml(t('automation_acting_on_branch'))}</span> `
+      + `<strong class="automation-branch-name">${escHtml(branches[0].title + ' (' + branches[0].id + ')')}</strong></span>`;
+  }
+  el.innerHTML = buttons.length ? `<div class="automation-controls">${scope}${buttons.join('')}</div>` : '';
+}
+window.renderAutomationControls = renderAutomationControls;
+
+// openAutomationCancelDialog asks how to cancel. Neither choice is preselected
+// and there is no way around the dialog: confirming with no choice sends
+// nothing and keeps the dialog open.
+function openAutomationCancelDialog(id) {
+  const radio = (value, key) =>
+    `<label class="automation-cancel-choice" style="display:block;margin:6px 0;"><input type="radio" name="automationCancelChoice" value="${value}"> ${escHtml(t(key))}</label>`;
+  showModal({
+    title: t('automation_cancel_dialog_title'),
+    body: `<p class="automation-cancel-body">${escHtml(t('automation_cancel_dialog_body'))}</p>`
+      + radio('stop_advance', 'automation_cancel_choice_stop_advance')
+      + radio('in_flight', 'automation_cancel_in_flight')
+      + '<div id="automationCancelRequired" class="automation-cancel-required" role="alert" style="color:var(--error);font-size:12px;margin-top:6px;"></div>',
+    confirmLabel: t('automation_cancel_confirm'),
+    onConfirm: () => {
+      const picked = document.querySelector('input[name="automationCancelChoice"]:checked');
+      const value = picked ? picked.value : '';
+      if (value !== 'stop_advance' && value !== 'in_flight') {
+        const msg = document.getElementById('automationCancelRequired');
+        if (msg) msg.innerHTML = escHtml(t('automation_cancel_choice_required'));
+        return false;
+      }
+      automationControl(id, 'cancel', { cancel_in_flight: value === 'in_flight' });
+      return true;
+    },
+  });
+}
+window.openAutomationCancelDialog = openAutomationCancelDialog;
+
+// automationShowStalePrompt tells the operator the Automation changed
+// elsewhere and offers a reload; nothing is retried.
+function automationShowStalePrompt(message) {
+  showModal({
+    title: t('automation_stale_title'),
+    body: `<p class="automation-stale-message">${escHtml(t('automation_stale_message'))}</p>`
+      + `<p class="automation-stale-server-message">${escHtml(message)}</p>`,
+    confirmLabel: t('automation_stale_reload'),
+    onConfirm: () => {
+      renderAutomationDetail(_automationState.detailId);
+      return true;
+    },
+  });
+}
+window.automationShowStalePrompt = automationShowStalePrompt;
+
+// ── Automation detail: member operations ─────────────────────────────────────
+//
+// Per-member skip, insert, remove and edge editing, plus approving a held
+// insert. Each goes through automationControl, so every call carries the
+// loaded version and a 409 opens the stale prompt. The buttons sit on the
+// member's own card, and each dialog title names the member it acts on.
+
+function _automationCurrentId() {
+  const st = _automationState;
+  return (st.detail && st.detail.id) || st.detailId || '';
+}
+
+function _automationFieldValue(id) {
+  const el = document.getElementById(id);
+  return el && el.value != null ? String(el.value) : '';
+}
+
+// _automationMemberLabel is "title (id)" for a member of the open Automation.
+function _automationMemberLabel(memberId) {
+  const m = _automationFindMember(memberId);
+  if (!m) return memberId;
+  return _automationMemberTitle(m, _automationStripContext(), _automationMemberRef(m).slice(0, 8)) + ' (' + m.id + ')';
+}
+
+// _automationActingTitle puts the member a dialog acts on into its title.
+function _automationActingTitle(titleKey, memberId) {
+  return t(titleKey) + ' — ' + t('automation_acting_on_branch') + ': ' + _automationMemberLabel(memberId);
+}
+
+function _automationSelectHTML(id, labelKey, options, current) {
+  const opts = options.map(([value, label]) =>
+    `<option value="${escHtml(value)}"${value === current ? ' selected' : ''}>${escHtml(label)}</option>`).join('');
+  return `<label class="automation-dialog-field" style="display:block;margin:8px 0;"><span class="automation-dialog-label" style="display:block;font-size:12px;color:var(--text2);">${escHtml(t(labelKey))}</span>`
+    + `<select id="${id}" class="automation-dialog-select" style="width:100%;">${opts}</select></label>`;
+}
+
+// openAutomationSkipDialog asks which outcome a skipped member takes and an
+// optional reason.
+function openAutomationSkipDialog(memberId) {
+  const id = _automationCurrentId();
+  const edges = _AUTOMATION_OUTCOME_EDGES.map(e => [e, t('automation_edge_' + e)]);
+  showModal({
+    title: _automationActingTitle('automation_skip_dialog_title', memberId),
+    body: _automationSelectHTML('automationSkipEdge', 'automation_skip_edge_label', edges, 'on_complete')
+      + `<label class="automation-dialog-field" style="display:block;margin:8px 0;"><span class="automation-dialog-label" style="display:block;font-size:12px;color:var(--text2);">${escHtml(t('automation_field_added_reason'))}</span>`
+      + '<input type="text" id="automationSkipReason" class="automation-dialog-input" style="width:100%;"></label>',
+    confirmLabel: t('automation_skip_member'),
+    onConfirm: () => {
+      const edge = _automationFieldValue('automationSkipEdge');
+      automationControl(id, 'skip_member', {
+        member_id: memberId,
+        edge: _AUTOMATION_OUTCOME_EDGES.includes(edge) ? edge : 'on_complete',
+        reason: _automationFieldValue('automationSkipReason').trim(),
+      });
+      return true;
+    },
+  });
+}
+window.openAutomationSkipDialog = openAutomationSkipDialog;
+
+// automationRemoveMember confirms, then removes a member that has not started.
+function automationRemoveMember(memberId) {
+  const id = _automationCurrentId();
+  showModal({
+    title: _automationActingTitle('automation_remove_member', memberId),
+    body: `<p class="automation-remove-confirm">${escHtml(t('automation_remove_confirm'))}</p>`,
+    confirmLabel: t('automation_remove_member'),
+    onConfirm: () => {
+      automationControl(id, 'remove_member', { member_id: memberId });
+      return true;
+    },
+  });
+}
+window.automationRemoveMember = automationRemoveMember;
+
+// openAutomationReorderDialog edits a member's three outgoing edges. Each
+// select offers every other member by title and "stop and alert" (empty).
+function openAutomationReorderDialog(memberId) {
+  const id = _automationCurrentId();
+  const cur = _automationFindMember(memberId) || {};
+  const detail = _automationState.detail;
+  const others = (detail && Array.isArray(detail.members) ? detail.members : [])
+    .filter(x => x && x.id && x.id !== memberId);
+  const options = [['', t('automation_edge_stop')]].concat(others.map(x => [x.id, _automationMemberLabel(x.id)]));
+  const fields = [['automationReorderComplete', 'on_complete'], ['automationReorderBlocked', 'on_blocked'], ['automationReorderFailed', 'on_failed']];
+  showModal({
+    title: _automationActingTitle('automation_reorder_dialog_title', memberId),
+    body: fields.map(([fid, edge]) => _automationSelectHTML(fid, 'automation_edge_' + edge, options, String(cur[edge] || ''))).join(''),
+    confirmLabel: t('automation_reorder_edges'),
+    onConfirm: () => {
+      automationControl(id, 'reorder_edges', {
+        member_id: memberId,
+        on_complete: _automationFieldValue('automationReorderComplete'),
+        on_blocked: _automationFieldValue('automationReorderBlocked'),
+        on_failed: _automationFieldValue('automationReorderFailed'),
+      });
+      return true;
+    },
+  });
+}
+window.openAutomationReorderDialog = openAutomationReorderDialog;
+
+// automationApproveInsert approves a held insert; the pending insert's id is
+// the member id it gets.
+function automationApproveInsert(memberId) {
+  return automationControl(_automationCurrentId(), 'approve_insert', { member_id: memberId });
+}
+window.automationApproveInsert = automationApproveInsert;
+
+// ── Insert picker ────────────────────────────────────────────────────────────
+// The insert dialog keeps its choice here: the picked Automaton and the rows
+// the picker can show, each with the reason it is unavailable ('' = pickable).
+const _automationInsert = { picked: '', rows: [] };
+
+// _automationOwners maps an Automaton id to the other non-finished Automation
+// that holds it (as a member or a held insert), from the loaded Automations.
+function _automationOwners(list, currentId) {
+  const owners = {};
+  (Array.isArray(list) ? list : []).forEach(x => {
+    if (!x || !x.id || x.id === currentId || ['completed', 'cancelled'].includes(x.status)) return;
+    const ids = (Array.isArray(x.members) ? x.members : []).map(m => m && m.prd_id)
+      .concat((Array.isArray(x.pending_inserts) ? x.pending_inserts : []).map(p => p && p.prd_id));
+    ids.forEach(prdId => { if (prdId && !owners[prdId]) owners[prdId] = x.name || x.id; });
+  });
+  return owners;
+}
+
+// _automationPickerRows lists every Automaton the state knows, with the reason
+// it cannot be inserted: a template, a child Automaton, a member of another
+// active Automation, or already in this one.
+function _automationPickerRows(list) {
+  const st = _automationState;
+  const a = st.detail || {};
+  const own = new Set((Array.isArray(a.members) ? a.members : []).map(m => m && m.prd_id)
+    .concat((Array.isArray(a.pending_inserts) ? a.pending_inserts : []).map(p => p && p.prd_id)).filter(Boolean));
+  const owners = _automationOwners(list, a.id);
+  const ids = new Set(Object.keys(st.prdTitles || {}).concat(Object.keys(st.prdFlags || {})));
+  return [...ids].map(prdId => {
+    const flags = (st.prdFlags || {})[prdId] || {};
+    let reason = '';
+    if (own.has(prdId)) reason = t('automation_picker_reason_member');
+    else if (flags.template) reason = t('automation_picker_reason_template');
+    else if (flags.child) reason = t('automation_picker_reason_child');
+    else if (owners[prdId]) reason = t('automation_picker_reason_owned', [owners[prdId]]);
+    return { id: prdId, title: (st.prdTitles || {})[prdId] || prdId, reason };
+  }).sort((x, y) => (x.reason ? 1 : 0) - (y.reason ? 1 : 0) || x.title.localeCompare(y.title));
+}
+
+function _automationPickerHTML(query) {
+  const q = String(query || '').trim().toLowerCase();
+  const rows = _automationInsert.rows.filter(r => !q || r.title.toLowerCase().includes(q) || r.id.toLowerCase().includes(q));
+  if (!rows.length) return `<div class="automation-picker-empty" style="color:var(--text2);padding:6px;">${escHtml(t('automation_picker_empty'))}</div>`;
+  return rows.map(r => {
+    const off = !!r.reason;
+    const note = off ? `<span class="automation-picker-reason" style="font-size:11px;">${escHtml(t('automation_picker_unavailable', [r.reason]))}</span>` : '';
+    return `<label class="automation-picker-item" data-prd-id="${escHtml(r.id)}" data-unavailable="${off}" style="display:flex;gap:6px;align-items:baseline;flex-wrap:wrap;padding:3px 0;${off ? 'opacity:0.5;' : ''}">`
+      + `<input type="radio" name="automationInsertPick" value="${escHtml(r.id)}"${off ? ' disabled' : ''}${r.id === _automationInsert.picked ? ' checked' : ''} onchange="automationPickInsertAutomaton('${escJsAttr(r.id)}')">`
+      + `<span class="automation-picker-title">${escHtml(r.title)}</span><span class="automation-chip">${escHtml(r.id.slice(0, 8))}</span>${note}</label>`;
+  }).join('');
+}
+
+// automationPickInsertAutomaton records the Automaton chosen in the picker; an
+// unavailable one is ignored.
+function automationPickInsertAutomaton(prdId) {
+  const row = _automationInsert.rows.find(r => r.id === prdId);
+  if (row && !row.reason) _automationInsert.picked = prdId;
+}
+window.automationPickInsertAutomaton = automationPickInsertAutomaton;
+
+// automationFilterInsertPicker redraws the picker list for the search text.
+function automationFilterInsertPicker() {
+  const el = document.getElementById('automationInsertPicker');
+  if (el) el.innerHTML = _automationPickerHTML(_automationFieldValue('automationInsertSearch'));
+}
+window.automationFilterInsertPicker = automationFilterInsertPicker;
+
+// openAutomationInsertDialog inserts an Automaton before or after the member
+// anchorMemberId (position 'before' or 'after'). It refreshes the Automaton
+// list and the Automations first, so the picker's unavailable reasons are
+// current, then opens the dialog. Resolves once it is open (or at once when
+// there is no slot for the position).
+function openAutomationInsertDialog(anchorMemberId, position) {
+  const id = _automationCurrentId();
+  const st = _automationState;
+  const pos = position === 'before' ? 'before' : 'after';
+  const placement = _automationInsertPlacement(st.detail || {}, anchorMemberId, pos);
+  if (!placement) return Promise.resolve();
+  const listRequest = automationRequest('GET', '/api/automations').then(
+    data => (Array.isArray(data) ? data : (data && Array.isArray(data.automations) ? data.automations : st.list)),
+    () => st.list);
+  return Promise.all([loadAutomationPrdInfo(), listRequest]).then(([info, list]) => {
+    st.prdTitles = info.titles;
+    st.prdStatuses = info.statuses;
+    st.prdFlags = info.flags;
+    _automationInsert.picked = '';
+    _automationInsert.rows = _automationPickerRows(list);
+    const field = (labelKey, input) =>
+      `<label class="automation-dialog-field" style="display:block;margin:8px 0;"><span class="automation-dialog-label" style="display:block;font-size:12px;color:var(--text2);">${escHtml(t(labelKey))}</span>${input}</label>`;
+    showModal({
+      title: _automationActingTitle(pos === 'before' ? 'automation_insert_before' : 'automation_insert_after', anchorMemberId),
+      body: `<input type="search" id="automationInsertSearch" class="automation-dialog-input" style="width:100%;" placeholder="${escHtml(t('automation_picker_search'))}" aria-label="${escHtml(t('automation_picker_search'))}" oninput="automationFilterInsertPicker()">`
+        + `<div id="automationInsertPicker" class="automation-picker" style="max-height:180px;overflow:auto;margin:6px 0;">${_automationPickerHTML('')}</div>`
+        + `<label class="automation-dialog-field" style="display:flex;gap:6px;align-items:center;margin:8px 0;"><input type="checkbox" id="automationInsertUrgent"${placement.urgent ? ' checked disabled' : ''}> ${escHtml(t('automation_insert_urgent'))}</label>`
+        + field('automation_insert_reason_label', '<textarea id="automationInsertReason" class="automation-dialog-input" rows="3" style="width:100%;" required></textarea>')
+        + '<div id="automationInsertError" class="automation-insert-error" role="alert" style="color:var(--error);font-size:12px;margin-top:6px;"></div>',
+      confirmLabel: t(pos === 'before' ? 'automation_insert_before' : 'automation_insert_after'),
+      onConfirm: () => {
+        const fail = key => {
+          const msg = document.getElementById('automationInsertError');
+          if (msg) msg.innerHTML = escHtml(t(key));
+          return false;
+        };
+        const reason = _automationFieldValue('automationInsertReason').trim();
+        if (!reason) return fail('automation_insert_reason_required');
+        if (!_automationInsert.picked) return fail('automation_picker_required');
+        const box = document.getElementById('automationInsertUrgent');
+        // An urgent insert takes the next slot, so the server needs `after` empty.
+        const urgent = placement.urgent || !!(box && box.checked);
+        automationControl(id, 'insert_member', {
+          member: { prd_id: _automationInsert.picked },
+          after: urgent ? '' : placement.after,
+          urgent,
+          reason,
+        });
+        return true;
+      },
+    });
+  });
+}
+window.openAutomationInsertDialog = openAutomationInsertDialog;
+
+// openAutomationMemberPRD opens the member Automaton's page from the Automata
+// tab. Its back control returns here: _backToAutomataList reads the id.
+function openAutomationMemberPRD(prdId) {
+  if (!prdId) return;
+  const returnId = _automationState.detailId;
+  navigate('autonomous');
+  window._automationReturnId = returnId;
+  renderPRDDetailView(prdId);
+}
+window.openAutomationMemberPRD = openAutomationMemberPRD;
+
+// _automationFindMember looks a member up in the open Automation, then in the
+// loaded list (nested Automations).
+function _automationFindMember(memberId) {
+  const st = _automationState;
+  const pools = [st.detail].concat(Array.isArray(st.list) ? st.list : []);
+  for (const a of pools) {
+    const m = a && Array.isArray(a.members) ? a.members.find(x => x && x.id === memberId) : null;
+    if (m) return m;
+  }
+  return null;
+}
+
+function _automationKindLabel(kind) {
+  if (kind === 'fork') return t('automation_fork_label');
+  if (kind === 'join') return t('automation_join_label');
+  const key = 'automation_kind_' + kind;
+  return t(key) !== key ? t(key) : kind;
+}
+
+// buildAutomationMemberDrawerHTML returns the drawer for one member. The
+// added_* fields show only for an inserted member.
+function buildAutomationMemberDrawerHTML(member, ctx) {
+  const m = member || {};
+  const kind = String(m.kind || 'prd');
+  const status = automationMemberDisplayStatus(m, (ctx || {}).prdStatuses) || 'pending';
+  const statusKey = 'automation_member_status_' + status;
+  const edge = String(m.edge_taken || '');
+  const edgeKey = 'automation_edge_' + edge;
+  const rows = [
+    ['automation_field_id', m.id],
+    ['automation_field_kind', _automationKindLabel(kind)],
+    ['automation_field_status', t(statusKey) !== statusKey ? t(statusKey) : status],
+    ['automation_field_outcome', m.outcome],
+    ['automation_field_edge_taken', edge && t(edgeKey) !== edgeKey ? t(edgeKey) : edge],
+    ['automation_field_started', _automationTimeText(m.started_at)],
+    ['automation_field_finished', _automationTimeText(m.finished_at)],
+  ];
+  if (_automationMemberInserted(m)) {
+    rows.push(['automation_field_added_by', m.added_by], ['automation_field_added_reason', m.added_reason],
+      ['automation_field_added_at', _automationTimeText(m.added_at)]);
+  }
+  const fields = rows.map(([key, v]) => `<dt>${escHtml(t(key))}</dt><dd>${escHtml(v == null || v === '' ? '—' : v)}</dd>`).join('');
+  return `<div class="automation-drawer-panel" data-member-id="${escHtml(m.id)}">
+    <div class="automation-drawer-head"><span class="automation-drawer-title">${escHtml(t('automation_member_drawer_title'))}</span><button type="button" class="automation-drawer-close" onclick="closeAutomationMemberDrawer()" aria-label="${escHtml(t('automation_drawer_close'))}" title="${escHtml(t('automation_drawer_close'))}">✕</button></div>
+    <dl class="automation-drawer-fields">${fields}</dl>
+  </div>`;
+}
+window.buildAutomationMemberDrawerHTML = buildAutomationMemberDrawerHTML;
+
+function closeAutomationMemberDrawer() {
+  const el = document.getElementById('automationMemberDrawer');
+  if (el && typeof el.remove === 'function') el.remove();
+}
+window.closeAutomationMemberDrawer = closeAutomationMemberDrawer;
+
+function openAutomationMemberDrawer(memberId) {
+  const m = _automationFindMember(memberId);
+  if (!m) return;
+  closeAutomationMemberDrawer();
+  const el = document.createElement('div');
+  el.id = 'automationMemberDrawer';
+  el.className = 'automation-drawer';
+  el.setAttribute('role', 'dialog');
+  el.setAttribute('aria-modal', 'true');
+  el.setAttribute('aria-label', t('automation_member_drawer_title'));
+  el.innerHTML = buildAutomationMemberDrawerHTML(m, { prdStatuses: _automationState.prdStatuses });
+  el.addEventListener('click', e => { if (e.target === el) closeAutomationMemberDrawer(); });
+  document.body.appendChild(el);
+}
+window.openAutomationMemberDrawer = openAutomationMemberDrawer;
+
+// ── Automation create and edit form ──────────────────────────────────────────
+//
+// One form for a new Automation and for editing a loaded one. Members are
+// linear: each picked Automaton is wired to the next through on_complete, and
+// the three edges of a member can be changed by hand. Only a draft (or a new
+// Automation) edits its members here; once an Automation has started, the
+// members are shown as they are and changes go through the insert, remove and
+// edge dialogs of the detail page, which the server accepts at that point.
+// The server assigns a member id only when none is sent, and the edges need
+// ids before the request, so new members get their 8-hex id here.
+
+const _automationForm = {
+  seq: 0,
+  source: null,
+  origin: 'list',
+  name: '',
+  description: '',
+  reason: '',
+  members: [],
+  entryMemberId: '',
+  picked: '',
+  search: '',
+  error: '',
+  saving: false,
+  prds: [],
+  automations: [],
+  titles: {},
+  panel: '',
+  forkBranches: [],
+  forkRule: 'all_must_succeed',
+  nestedChild: '',
+  defaultsEdited: false,
+};
+
+const _AUTOMATION_FORM_MEMBER_KEEP = ['kind', 'automation_id', 'fork_members', 'join_members', 'on_branch_failure', 'budget_policy', 'added_reason'];
+// The member fields only one kind may carry.
+const _AUTOMATION_FORM_KIND_FIELDS = { automation_id: 'automation', fork_members: 'fork', join_members: 'join', on_branch_failure: 'join' };
+const _AUTOMATION_FORM_BASE_KEEP = ['budget_policy', 'project_dir', 'backend', 'model', 'effort', 'verification_backend', 'verification_model', 'verification_effort'];
+// The default model keys of the create and update body. The planning pair is
+// not one of them: it goes through the set_llm request.
+const _AUTOMATION_FORM_MODEL_KEYS = ['backend', 'model', 'effort', 'verification_backend', 'verification_model', 'verification_effort'];
+
+function _automationNewMemberId(taken) {
+  for (;;) {
+    let id = '';
+    for (let i = 0; i < 8; i++) id += Math.floor(Math.random() * 16).toString(16);
+    if (!taken.includes(id)) return id;
+  }
+}
+
+// automationLinearWiring turns an ordered list of member ids into the default
+// chain: every member's on_complete names the next one and the last one's is
+// empty (stop). The entry member is the first id.
+function automationLinearWiring(memberIds) {
+  const ids = Array.isArray(memberIds) ? memberIds.map(String) : [];
+  return ids.map((id, i) => ({ id, on_complete: i + 1 < ids.length ? ids[i + 1] : '' }));
+}
+window.automationLinearWiring = automationLinearWiring;
+
+// automationPickerCandidates lists every loaded Automaton for the member
+// picker. An Automaton is unavailable (reason = the locale key that says why)
+// when it is a template, a child Automaton, or a member of another Automation
+// that is neither completed nor cancelled; the members of the Automation being
+// edited (currentAutomationId) stay available.
+function automationPickerCandidates(prds, automationsList, currentAutomationId) {
+  const owned = new Set();
+  (Array.isArray(automationsList) ? automationsList : []).forEach(a => {
+    if (!a || !a.id || a.id === currentAutomationId || ['completed', 'cancelled'].includes(a.status)) return;
+    (Array.isArray(a.members) ? a.members : []).forEach(m => { if (m && m.prd_id) owned.add(m.prd_id); });
+    (Array.isArray(a.pending_inserts) ? a.pending_inserts : []).forEach(p => { if (p && p.prd_id) owned.add(p.prd_id); });
+  });
+  return (Array.isArray(prds) ? prds : []).filter(p => p && p.id).map(p => {
+    let reason = '';
+    if (p.is_template) reason = 'automation_picker_unavailable_template';
+    else if (p.parent_prd_id) reason = 'automation_picker_unavailable_child';
+    else if (owned.has(p.id)) reason = 'automation_picker_unavailable_owned';
+    return { id: p.id, title: p.title ? String(p.title) : String(p.id), status: p.status ? String(p.status) : '', available: !reason, reason };
+  });
+}
+window.automationPickerCandidates = automationPickerCandidates;
+
+// ── Fork, join and nested members ────────────────────────────────────────────
+//
+// A fork lists its branch members (fork_members), its paired join lists the
+// same ids (join_members) and carries the rule for a failed branch. Branches
+// and forks carry no outcome edges; the join's on_complete is the way on. The
+// chain the operator wires is therefore the members that are neither a branch
+// nor a paired join, and a fork's exit is its join.
+
+const _AUTOMATION_NESTED_TERMINAL = ['completed', 'cancelled'];
+
+function _automationSameIds(a, b) {
+  const x = new Set(Array.isArray(a) ? a : []);
+  const y = new Set(Array.isArray(b) ? b : []);
+  return x.size === y.size && [...x].every(id => y.has(id));
+}
+
+function _automationFormBranchSet(members) {
+  const out = new Set();
+  members.forEach(m => {
+    if (m && m.kind === 'fork') (Array.isArray(m.fork_members) ? m.fork_members : []).forEach(id => out.add(id));
+  });
+  return out;
+}
+
+function _automationFormPairedJoin(members, fork) {
+  return members.find(j => j && j.kind === 'join' && _automationSameIds(j.join_members, fork.fork_members)) || null;
+}
+
+function _automationFormPairedJoinIds(members) {
+  const out = new Set();
+  members.forEach(m => {
+    if (!m || m.kind !== 'fork') return;
+    const join = _automationFormPairedJoin(members, m);
+    if (join) out.add(join.id);
+  });
+  return out;
+}
+
+// _automationFormChain lists the members the operator wires one after the
+// other, in list order: everything except branches and paired joins.
+function _automationFormChain(members) {
+  const branches = _automationFormBranchSet(members);
+  const joins = _automationFormPairedJoinIds(members);
+  return members.filter(m => m && !branches.has(m.id) && !joins.has(m.id));
+}
+
+// _automationFormExit is the member whose on_complete leads out of m: the
+// paired join for a fork, m itself otherwise.
+function _automationFormExit(members, m) {
+  return m.kind === 'fork' ? (_automationFormPairedJoin(members, m) || m) : m;
+}
+
+// _automationFormTailId is the id of the member the chain ends with, or ''.
+function _automationFormTailId(members) {
+  const chain = _automationFormChain(members);
+  return chain.length ? _automationFormExit(members, chain[chain.length - 1]).id : '';
+}
+
+function _automationCloneFormState(formState) {
+  const f = formState || {};
+  const members = (Array.isArray(f.members) ? f.members : []).filter(Boolean).map(m => {
+    const c = Object.assign({}, m);
+    if (Array.isArray(m.fork_members)) c.fork_members = m.fork_members.slice();
+    if (Array.isArray(m.join_members)) c.join_members = m.join_members.slice();
+    return c;
+  });
+  return Object.assign({}, f, { members, entryMemberId: f.entryMemberId || '' });
+}
+
+// _automationFormSkipGroups moves an insert index past the branches and join
+// of a group, so a new member never lands inside one.
+function _automationFormSkipGroups(members, index) {
+  const hidden = _automationFormBranchSet(members);
+  _automationFormPairedJoinIds(members).forEach(id => hidden.add(id));
+  let i = index;
+  while (i > 0 && i < members.length && hidden.has(members[i].id)) i++;
+  return i;
+}
+
+// _automationFormSpliceIn puts group (its first member is where the chain
+// enters, exit is the member that leads on) after the member named afterId,
+// or at the front when afterId is empty. The previous member's on_complete, or
+// the entry, points at the group; the exit takes over what it used to point at.
+function _automationFormSpliceIn(state, group, exit, afterId) {
+  const members = state.members;
+  const entry = state.entryMemberId || (members[0] ? members[0].id : '');
+  let prev = afterId ? members.find(m => m.id === afterId) : null;
+  if (afterId && !prev) {
+    const tail = _automationFormTailId(members);
+    prev = members.find(m => m.id === tail) || null;
+  }
+  if (prev && _automationFormBranchSet(members).has(prev.id)) {
+    prev = members.find(m => m.kind === 'fork' && (m.fork_members || []).includes(prev.id)) || prev;
+  }
+  if (prev && prev.kind === 'fork') prev = _automationFormPairedJoin(members, prev) || prev;
+  let index = 0;
+  if (prev) {
+    index = _automationFormSkipGroups(members, members.indexOf(prev) + 1);
+    exit.on_complete = prev.on_complete || '';
+    prev.on_complete = group[0].id;
+  } else {
+    exit.on_complete = entry;
+    state.entryMemberId = group[0].id;
+  }
+  members.splice(index, 0, ...group);
+  return state;
+}
+
+// automationAddForkJoin returns a new form state with a fork, one branch
+// member per picked Automaton and the paired join, linked after the member
+// named insertAfterMemberId (the front when empty). The branches carry no
+// edges. The rule defaults to all_must_succeed.
+function automationAddForkJoin(formState, branchPrdIds, joinRule, insertAfterMemberId) {
+  const prdIds = [...new Set((Array.isArray(branchPrdIds) ? branchPrdIds : []).map(String).filter(Boolean))];
+  if (prdIds.length < 2) throw new Error(t('automation_fork_min_branches'));
+  const rule = _AUTOMATION_JOIN_RULES.includes(joinRule) ? joinRule : _AUTOMATION_JOIN_RULES[0];
+  const state = _automationCloneFormState(formState);
+  const taken = state.members.map(m => m.id);
+  const newId = () => {
+    const id = _automationNewMemberId(taken);
+    taken.push(id);
+    return id;
+  };
+  const branches = prdIds.map(prdId => ({ id: newId(), prd_id: prdId, on_complete: '', on_blocked: '', on_failed: '' }));
+  const forkMembers = branches.map(b => b.id);
+  const fork = { id: newId(), kind: 'fork', fork_members: forkMembers, on_complete: '', on_blocked: '', on_failed: '' };
+  const join = { id: newId(), kind: 'join', join_members: forkMembers.slice(), on_branch_failure: rule, on_complete: '', on_blocked: '', on_failed: '' };
+  return _automationFormSpliceIn(state, [fork].concat(branches, [join]), join, insertAfterMemberId);
+}
+window.automationAddForkJoin = automationAddForkJoin;
+
+// automationAddNestedMember returns a new form state with a member that runs
+// another Automation, linked after the member named insertAfterMemberId. The
+// child may not be the Automation being edited, nor already sit inside another
+// Automation that has not finished (from the loaded list) or in this form.
+function automationAddNestedMember(formState, childAutomationId, insertAfterMemberId) {
+  const childId = String(childAutomationId || '');
+  if (!childId) throw new Error(t('automation_nested_choose'));
+  const state = _automationCloneFormState(formState);
+  const selfId = String(state.automationId || (state.source && state.source.id) || '');
+  if (childId === selfId) throw new Error(t('automation_nested_self'));
+  const list = Array.isArray(_automationState.list) ? _automationState.list : [];
+  const holds = m => !!m && m.automation_id === childId;
+  const owned = state.members.some(holds) || list.some(a => a && a.id && a.id !== selfId
+    && !_AUTOMATION_NESTED_TERMINAL.includes(a.status)
+    && ((Array.isArray(a.members) ? a.members : []).some(holds) || (Array.isArray(a.pending_inserts) ? a.pending_inserts : []).some(holds)));
+  if (owned) throw new Error(t('automation_nested_owned'));
+  const taken = state.members.map(m => m.id);
+  const member = { id: _automationNewMemberId(taken), kind: 'automation', automation_id: childId, on_complete: '', on_blocked: '', on_failed: '' };
+  return _automationFormSpliceIn(state, [member], member, insertAfterMemberId);
+}
+window.automationAddNestedMember = automationAddNestedMember;
+
+// automationRemoveForkGroup returns a new form state without the fork, its
+// branches and its paired join. Edges that led to the fork lead on to what the
+// join led to, and a removed entry hands over to that member.
+function automationRemoveForkGroup(formState, forkId) {
+  const state = _automationCloneFormState(formState);
+  const fork = state.members.find(m => m.id === forkId && m.kind === 'fork');
+  if (!fork) return state;
+  const join = _automationFormPairedJoin(state.members, fork);
+  const drop = new Set([fork.id].concat(fork.fork_members || [], join ? [join.id] : []));
+  const after = join ? (join.on_complete || '') : '';
+  const entry = state.entryMemberId || (state.members[0] ? state.members[0].id : '');
+  state.members = state.members.filter(m => !drop.has(m.id));
+  state.members.forEach(m => {
+    if (m.on_complete === fork.id) m.on_complete = after;
+    if (m.on_blocked === fork.id) m.on_blocked = '';
+    if (m.on_failed === fork.id) m.on_failed = '';
+  });
+  if (drop.has(entry)) state.entryMemberId = after || (state.members[0] ? state.members[0].id : '');
+  return state;
+}
+window.automationRemoveForkGroup = automationRemoveForkGroup;
+
+// buildAutomationFormPayload turns the form state into the request body. The
+// expected version is sent only when editing; empty edges and an empty reason
+// are left out. membersLocked leaves the member list out (a started Automation
+// takes member changes through the detail page), and base, the Automation being
+// edited, carries over the fields the form does not show, since an update
+// replaces them. modelDefaults (the six default model keys, an empty string
+// clears one) and budgetPolicy (null for none) replace what base carries once
+// the form has read them.
+function buildAutomationFormPayload(formState) {
+  const f = formState || {};
+  const body = { name: String(f.name || '').trim(), description: String(f.description || '') };
+  if (!f.membersLocked) {
+    const list = (Array.isArray(f.members) ? f.members : []).filter(Boolean);
+    const branches = _automationFormBranchSet(list);
+    const members = list.map(m => {
+      const kind = m.kind || 'prd';
+      const out = {};
+      if (m.id) out.id = m.id;
+      if (kind === 'prd') out.prd_id = m.prd_id || '';
+      _AUTOMATION_FORM_MEMBER_KEEP.forEach(k => {
+        if (k in _AUTOMATION_FORM_KIND_FIELDS && _AUTOMATION_FORM_KIND_FIELDS[k] !== kind) return;
+        const v = m[k];
+        if (v !== undefined && v !== null && v !== '' && !(Array.isArray(v) && !v.length)) out[k] = v;
+      });
+      if (kind === 'join' && !out.on_branch_failure) out.on_branch_failure = _AUTOMATION_JOIN_RULES[0];
+      const edges = kind === 'fork' || branches.has(m.id) ? [] : (kind === 'join' ? ['on_complete'] : _AUTOMATION_OUTCOME_EDGES);
+      edges.forEach(k => { if (m[k]) out[k] = m[k]; });
+      return out;
+    });
+    body.entry_member_id = f.entryMemberId || (members[0] && members[0].id) || '';
+    body.members = members;
+  }
+  const base = f.base || {};
+  _AUTOMATION_FORM_BASE_KEEP.forEach(k => {
+    const v = base[k];
+    if (v !== undefined && v !== null && v !== '') body[k] = v;
+  });
+  if (f.modelDefaults) {
+    _AUTOMATION_FORM_MODEL_KEYS.forEach(k => { body[k] = String(f.modelDefaults[k] || ''); });
+  }
+  if ('budgetPolicy' in f) {
+    if (f.budgetPolicy) body.budget_policy = f.budgetPolicy;
+    else delete body.budget_policy;
+  }
+  body.actor = 'operator';
+  if (f.expectedVersion !== undefined && f.expectedVersion !== null) body.expected_version = Number(f.expectedVersion);
+  const reason = String(f.reason || '').trim();
+  if (reason) body.reason = reason;
+  return body;
+}
+window.buildAutomationFormPayload = buildAutomationFormPayload;
+
+// ── Default models and budget policy ────────────────────────────────────────
+// The "Default models" section holds the execution and verification rows (the
+// same backend, effort and model controls the Launch Automaton wizard uses) and,
+// when editing, the planning pair. The "Budget policy" section holds the ceiling.
+// The planning pair is saved through set_llm and never sits in the create or
+// update body. Nothing here is sent until the operator has touched a field; an
+// untouched form carries over what the loaded Automation already had.
+
+const _AUTOMATION_BUDGET_TYPES = ['dollar', 'allocation_pct'];
+const _AUTOMATION_BUDGET_WINDOWS = ['automation', 'day', 'week', 'month'];
+const _AUTOMATION_BUDGET_PACINGS = ['none', 'even'];
+const _AUTOMATION_BUDGET_BREACHES = ['pause', 'block'];
+
+function _automationModelRowHTML(prefix, titleKey, cur) {
+  const labelStyle = 'font-size:11px;color:var(--text2);';
+  return `<div class="automation-form-model-row" data-model-row="${prefix}" style="margin-top:6px;">
+    <div class="automation-form-model-title" style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:2px;">${escHtml(t(titleKey))}</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">
+      <label style="${labelStyle}">${escHtml(t('prd_new_backend_label'))}${renderBackendSelect(prefix + 'Backend', cur.backend || '', `automationFormModelBackendChanged('${prefix}')`)}</label>
+      <label style="${labelStyle}">${escHtml(t('prd_new_effort_label'))}<span id="${prefix}EffortWrap">${renderEffortSelect(prefix + 'Effort', cur.effort || '', '', cur.backend || '')}</span></label>
+      <div id="${prefix}ModelWrap" style="display:none;"><label style="${labelStyle}">${escHtml(t('prd_new_model_label'))}<span id="${prefix}ModelInner"></span></label></div>
+    </div>
+  </div>`;
+}
+
+function _automationPlanningRowHTML(prefix, cur) {
+  const labelStyle = 'font-size:11px;color:var(--text2);';
+  return `<div class="automation-form-model-row" data-model-row="${prefix}" style="margin-top:6px;">
+    <div class="automation-form-model-title" style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:2px;">${escHtml(t('automation_model_planning'))}</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+      <label style="${labelStyle}">${escHtml(t('prd_new_backend_label'))}${renderBackendSelect(prefix + 'Backend', cur.backend || '', `automationFormModelBackendChanged('${prefix}')`, true)}</label>
+      <div id="${prefix}ModelWrap" style="display:none;"><label style="${labelStyle}">${escHtml(t('prd_new_model_label'))}<span id="${prefix}ModelInner"></span></label></div>
+    </div>
+  </div>`;
+}
+
+function _automationModelsSectionHTML(src) {
+  const s = src || {};
+  const anySet = ['backend', 'model', 'effort', 'verification_backend', 'verification_model', 'verification_effort', 'planning_backend', 'planning_model'].some(k => s[k]);
+  const planning = src ? _automationPlanningRowHTML('automation_plan', { backend: s.planning_backend }) : '';
+  return `<details id="automationFormModels" class="automation-form-collapsible"${anySet ? ' open' : ''} onchange="automationFormDefaultsChanged()" oninput="automationFormDefaultsChanged()">
+    <summary class="automation-form-section">${escHtml(t('automation_models_section'))}</summary>
+    ${_automationModelRowHTML('automation_exec', 'automation_model_execution', { backend: s.backend, effort: s.effort })}
+    ${planning}
+    ${_automationModelRowHTML('automation_verif', 'automation_model_verification', { backend: s.verification_backend, effort: s.verification_effort })}
+  </details>`;
+}
+
+function _automationBudgetSelectHTML(id, labelKey, values, current, optionKey) {
+  const opts = values.map(v => `<option value="${v}"${v === current ? ' selected' : ''}>${escHtml(t(optionKey(v)))}</option>`).join('');
+  return `<label class="automation-form-field"><span class="automation-form-label">${escHtml(t(labelKey))}</span><select id="${id}" class="form-select">${opts}</select></label>`;
+}
+
+function _automationBudgetSectionHTML(policy) {
+  const p = policy || {};
+  const type = _AUTOMATION_BUDGET_TYPES.includes(p.ceiling_type) ? p.ceiling_type : _AUTOMATION_BUDGET_TYPES[0];
+  const value = p.ceiling_value !== undefined && p.ceiling_value !== null ? String(p.ceiling_value) : '';
+  const hintHidden = type === 'allocation_pct' ? '' : 'display:none;';
+  return `<details id="automationFormBudget" class="automation-form-collapsible"${policy ? ' open' : ''} onchange="automationFormDefaultsChanged()" oninput="automationFormDefaultsChanged()">
+    <summary class="automation-form-section">${escHtml(t('automation_budget_section'))}</summary>
+    ${_automationBudgetSelectHTML('automationBudgetType', 'automation_budget_type', _AUTOMATION_BUDGET_TYPES, type, v => 'automation_budget_type_' + v)}
+    <label class="automation-form-field"><span class="automation-form-label">${escHtml(t('automation_budget_ceiling'))}</span><input type="number" id="automationBudgetValue" class="form-input" min="0" step="any" value="${escHtml(value)}"></label>
+    <div id="automationBudgetHint" class="automation-form-hint" style="font-size:11px;color:var(--text2);${hintHidden}">${escHtml(t('automation_budget_estimated'))}</div>
+    ${_automationBudgetSelectHTML('automationBudgetWindow', 'automation_budget_window', _AUTOMATION_BUDGET_WINDOWS, p.window || _AUTOMATION_BUDGET_WINDOWS[0], v => 'automation_budget_window_' + v)}
+    ${_automationBudgetSelectHTML('automationBudgetPacing', 'automation_budget_pacing', _AUTOMATION_BUDGET_PACINGS, p.pacing || _AUTOMATION_BUDGET_PACINGS[0], v => 'automation_budget_pacing_' + v)}
+    ${_automationBudgetSelectHTML('automationBudgetOnBreach', 'automation_budget_on_breach', _AUTOMATION_BUDGET_BREACHES, p.on_breach || _AUTOMATION_BUDGET_BREACHES[0], v => 'automation_budget_on_breach_' + v)}
+    <label class="automation-form-field"><span class="automation-form-label">${escHtml(t('prd_new_backend_label'))}</span>${renderBackendSelect('automationBudgetBackend', p.backend || '', '')}</label>
+  </details>`;
+}
+
+// automationFormDefaultsChanged notes that a model or budget field was
+// touched, and shows the estimate hint while the ceiling is a share of the
+// allocation.
+function automationFormDefaultsChanged() {
+  _automationForm.defaultsEdited = true;
+  const type = document.getElementById('automationBudgetType');
+  const hint = document.getElementById('automationBudgetHint');
+  if (type && hint && hint.style) hint.style.display = type.value === 'allocation_pct' ? '' : 'none';
+}
+window.automationFormDefaultsChanged = automationFormDefaultsChanged;
+
+// automationFormModelBackendChanged repaints the model field and the effort
+// choices of a row for the backend just picked.
+function automationFormModelBackendChanged(prefix) {
+  refreshLLMModelField(prefix + 'ModelWrap', prefix + 'ModelInner', prefix + 'Backend', '');
+  const effortWrap = document.getElementById(prefix + 'EffortWrap');
+  const backend = document.getElementById(prefix + 'Backend');
+  if (effortWrap && backend) effortWrap.innerHTML = renderEffortSelect(prefix + 'Effort', '', '', backend.value || '');
+}
+window.automationFormModelBackendChanged = automationFormModelBackendChanged;
+
+// _automationFormInitModelRows fills the model field of each row that holds a backend.
+function _automationFormInitModelRows(src) {
+  const s = src || {};
+  [['automation_exec', s.model], ['automation_verif', s.verification_model], ['automation_plan', s.planning_model]].forEach(([prefix, model]) => {
+    refreshLLMModelField(prefix + 'ModelWrap', prefix + 'ModelInner', prefix + 'Backend', model || '');
+  });
+}
+
+function _automationReadModelRow(prefix) {
+  const backendEl = document.getElementById(prefix + 'Backend');
+  const effortEl = document.getElementById(prefix + 'Effort');
+  const modelEl = document.getElementById(prefix + 'ModelInner');
+  const field = modelEl && modelEl.querySelector ? modelEl.querySelector('input,select') : null;
+  return {
+    backend: backendEl && backendEl.value != null ? String(backendEl.value) : '',
+    effort: effortEl && effortEl.value != null ? String(effortEl.value) : '',
+    model: field && field.value != null ? String(field.value).trim() : '',
+  };
+}
+
+// automationReadModelDefaults reads the execution and verification rows of the
+// open form. A row left alone or emptied gives empty strings, which clear the default.
+function automationReadModelDefaults() {
+  const exec = _automationReadModelRow('automation_exec');
+  const verif = _prdReadVerifLLM('automation_verif');
+  return {
+    backend: exec.backend,
+    model: exec.model,
+    effort: exec.effort,
+    verification_backend: verif.verification_backend || '',
+    verification_model: verif.verification_model || '',
+    verification_effort: verif.verification_effort || '',
+  };
+}
+window.automationReadModelDefaults = automationReadModelDefaults;
+
+// automationReadPlanning reads the planning pair of the open form.
+function automationReadPlanning() {
+  const row = _automationReadModelRow('automation_plan');
+  return { planning_backend: row.backend, planning_model: row.model };
+}
+window.automationReadPlanning = automationReadPlanning;
+
+// automationReadBudgetPolicy reads the budget fields into a budget_policy, or
+// null when the ceiling is empty (no policy). A ceiling that is not above zero,
+// a percent above 100, or a value outside the accepted lists gives
+// { error: <locale key> } so the form can show it without sending.
+function automationReadBudgetPolicy() {
+  const read = id => {
+    const el = document.getElementById(id);
+    return el && el.value != null ? String(el.value).trim() : '';
+  };
+  const raw = read('automationBudgetValue');
+  if (raw === '') return null;
+  const invalid = { error: 'automation_budget_invalid' };
+  const value = Number(raw);
+  const type = read('automationBudgetType');
+  const window_ = read('automationBudgetWindow');
+  const pacing = read('automationBudgetPacing');
+  const onBreach = read('automationBudgetOnBreach');
+  if (!Number.isFinite(value) || value <= 0) return invalid;
+  if (!_AUTOMATION_BUDGET_TYPES.includes(type)) return invalid;
+  if (type === 'allocation_pct' && value > 100) return invalid;
+  if (!_AUTOMATION_BUDGET_WINDOWS.includes(window_)) return invalid;
+  if (!_AUTOMATION_BUDGET_PACINGS.includes(pacing)) return invalid;
+  if (!_AUTOMATION_BUDGET_BREACHES.includes(onBreach)) return invalid;
+  const policy = { ceiling_type: type, ceiling_value: value, window: window_, pacing, on_breach: onBreach };
+  const backend = read('automationBudgetBackend');
+  if (backend) policy.backend = backend;
+  return policy;
+}
+window.automationReadBudgetPolicy = automationReadBudgetPolicy;
+
+// _automationFormSavePlanning sends the planning pair through set_llm after the
+// main save, and only when it differs from what the Automation had.
+function _automationFormSavePlanning(id) {
+  const src = _automationForm.source;
+  if (!src || !id) return Promise.resolve();
+  const planning = automationReadPlanning();
+  if (planning.planning_backend === String(src.planning_backend || '') && planning.planning_model === String(src.planning_model || '')) return Promise.resolve();
+  return automationRequest('POST', '/api/automations/' + encodeURIComponent(id) + '/set_llm', planning)
+    .then(() => {}, err => { showToast(_automationFormErrorText(err), 'error'); });
+}
+
+// A new Automation and a draft take member edits in the form; a started one does not.
+function _automationFormEditsMembers() {
+  const src = _automationForm.source;
+  return !src || src.status === 'draft';
+}
+
+function _automationFormErrorText(err) {
+  const raw = String((err && err.message) || err || '');
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object' && (parsed.error || parsed.message)) return String(parsed.error || parsed.message);
+  } catch (_) { /* a plain text body */ }
+  return raw;
+}
+
+function _automationFormMemberTitle(m) {
+  const f = _automationForm;
+  const byId = {};
+  f.automations.forEach(a => { if (a && a.id) byId[a.id] = a; });
+  return _automationMemberTitle(m, { prdTitles: f.titles, automationsById: byId }, _automationMemberRef(m).slice(0, 8));
+}
+
+function _automationEdgeKey(edge) {
+  return 'automation_edge_' + edge;
+}
+
+// _automationFormMemberStatusText is the label of a member's status.
+function _automationFormMemberStatusText(status) {
+  const key = 'automation_member_status_' + status;
+  return t(key) !== key ? t(key) : status;
+}
+
+function _automationFormStatusText(status) {
+  const key = 'automata_status_' + status;
+  return t(key) !== key ? t(key) : status;
+}
+
+// _automationFormCapture copies the typed fields into the form state before
+// anything redraws them.
+function _automationFormCapture() {
+  const f = _automationForm;
+  [['automationFormName', 'name'], ['automationFormDescription', 'description'], ['automationFormReason', 'reason']].forEach(([id, key]) => {
+    const el = document.getElementById(id);
+    if (el && el.value != null) f[key] = String(el.value);
+  });
+}
+
+function _automationFormShowError(message) {
+  const f = _automationForm;
+  f.error = message;
+  const el = document.getElementById('automationFormError');
+  if (el) el.innerHTML = escHtml(message);
+}
+
+function _automationFormEdgeSelectHTML(m, edge) {
+  // An edge never names a join or a branch, and a join never leads back to its own fork.
+  const all = _automationForm.members;
+  const branches = _automationFormBranchSet(all);
+  const own = m.kind === 'join' ? all.find(x => x.kind === 'fork' && _automationSameIds(x.fork_members, m.join_members)) : null;
+  const others = all.filter(x => x.id !== m.id && x.kind !== 'join' && !branches.has(x.id) && !(own && x.id === own.id));
+  const options = [['', t('automation_edge_stop')]].concat(others.map(x => [x.id, _automationFormMemberTitle(x)]));
+  const current = String(m[edge] || '');
+  const opts = options.map(([value, label]) =>
+    `<option value="${escHtml(value)}"${value === current ? ' selected' : ''}>${escHtml(label)}</option>`).join('');
+  return `<label class="automation-form-edge"><span class="automation-form-edge-label">${escHtml(t(_automationEdgeKey(edge)))}</span>`
+    + `<select class="automation-form-edge-select" data-edge="${edge}" onchange="automationFormSetEdge('${escJsAttr(m.id)}','${edge}',this.value)">${opts}</select></label>`;
+}
+
+function _automationFormEdgeTextHTML(m, edge) {
+  const target = _automationForm.members.find(x => x.id === m[edge]);
+  const text = target ? _automationFormMemberTitle(target) : t('automation_edge_stop');
+  return `<span class="automation-form-edge"><span class="automation-form-edge-label">${escHtml(t(_automationEdgeKey(edge)))}</span> ${escHtml(text)}</span>`;
+}
+
+function _automationFormJoinRuleHTML(m, editable) {
+  const rule = _AUTOMATION_JOIN_RULES.includes(m.on_branch_failure) ? m.on_branch_failure : _AUTOMATION_JOIN_RULES[0];
+  const label = `<span class="automation-form-edge-label">${escHtml(t('automation_join_failure_label'))}</span>`;
+  if (!editable) return `<span class="automation-form-edge automation-form-join-rule">${label} ${escHtml(t('automation_join_rule_' + rule))}</span>`;
+  const opts = _AUTOMATION_JOIN_RULES.map(r =>
+    `<option value="${r}"${r === rule ? ' selected' : ''}>${escHtml(t('automation_join_rule_' + r))}</option>`).join('');
+  return `<label class="automation-form-edge automation-form-join-rule">${label}`
+    + `<select class="automation-form-edge-select" data-join-rule="true" onchange="automationFormSetJoinRule('${escJsAttr(m.id)}',this.value)">${opts}</select></label>`;
+}
+
+// _automationFormMemberRowHTML draws one member. opts.branch marks a branch
+// row: it sits under its fork and has no edges and no buttons of its own.
+function _automationFormMemberRowHTML(m, opts) {
+  const f = _automationForm;
+  const branch = !!(opts && opts.branch);
+  const kind = String(m.kind || 'prd');
+  const status = String(m.status || 'pending');
+  const pending = status === 'pending';
+  const idArg = escJsAttr(m.id);
+  const editsMembers = _automationFormEditsMembers();
+  const editable = editsMembers && pending;
+  const actionable = pending && !branch && (kind === 'prd' || kind === 'automation');
+  const button = (op, key, call) =>
+    `<button type="button" class="automation-member-action-btn" data-op="${op}" onclick="${call}">${escHtml(t(key))}</button>`;
+  let edges = '';
+  if (branch || kind === 'fork') edges = '';
+  else if (kind === 'join') {
+    edges = _automationFormJoinRuleHTML(m, editable)
+      + (editable ? _automationFormEdgeSelectHTML(m, 'on_complete') : _automationFormEdgeTextHTML(m, 'on_complete'));
+  } else if (editable) {
+    edges = _AUTOMATION_OUTCOME_EDGES.map(e => _automationFormEdgeSelectHTML(m, e)).join('');
+  } else {
+    edges = _AUTOMATION_OUTCOME_EDGES.map(e => _automationFormEdgeTextHTML(m, e)).join('');
+  }
+  const ops = [];
+  if (actionable) {
+    const src = f.source;
+    const canBefore = editsMembers || !!_automationInsertPlacement(src || {}, m.id, 'before');
+    if (canBefore) ops.push(button('insert_before', 'automation_insert_before', `automationFormInsert('${idArg}','before')`));
+    ops.push(button('insert_after', 'automation_insert_after', `automationFormInsert('${idArg}','after')`));
+    if (editsMembers) ops.push(button('remove_member', 'automation_remove_member', `automationFormRemove('${idArg}')`));
+    else {
+      ops.push(button('reorder_edges', 'automation_reorder_edges', `openAutomationReorderDialog('${idArg}')`));
+      ops.push(button('remove_member', 'automation_remove_member', `automationRemoveMember('${idArg}')`));
+    }
+  } else if (kind === 'fork' && editable) {
+    ops.push(button('insert_before', 'automation_insert_before', `automationFormInsert('${idArg}','before')`));
+    ops.push(button('insert_after', 'automation_insert_after', `automationFormInsert('${idArg}','after')`));
+    ops.push(button('remove_group', 'automation_remove_member', `automationFormRemoveGroup('${idArg}')`));
+  }
+  const statusBadge = status === 'pending' ? ''
+    : `<span class="automation-chip automation-form-member-status">${escHtml(_automationFormMemberStatusText(status))}</span>`;
+  const kindChip = kind === 'automation'
+    ? `<span class="automation-chip automation-form-member-kind">${escHtml(t('automation_kind_automation'))}</span>`
+    : (branch ? `<span class="automation-chip automation-form-member-kind">${escHtml(t('automation_branch_label', [opts.index]))}</span>` : '');
+  const cls = 'automation-form-member' + (pending ? '' : ' readonly') + (branch ? ' automation-form-branch-row' : '');
+  return `<div class="${cls}" data-member-id="${escHtml(m.id)}" data-kind="${escHtml(kind)}" data-readonly="${!editable}">`
+    + `<div class="automation-form-member-head"><span class="automation-member-title">${escHtml(_automationFormMemberTitle(m))}</span>`
+    + `${kindChip}<span class="automation-chip">${escHtml(m.id)}</span>${statusBadge}</div>`
+    + (edges ? `<div class="automation-form-member-edges">${edges}</div>` : '')
+    + (ops.length ? `<div class="automation-member-actions">${ops.join('')}</div>` : '')
+    + '</div>';
+}
+
+// _automationFormForkGroupHTML draws a fork with its branches indented under
+// it and its paired join after them.
+function _automationFormForkGroupHTML(fork) {
+  const members = _automationForm.members;
+  const branches = (fork.fork_members || []).map((id, i) => {
+    const b = members.find(x => x.id === id);
+    return b ? `<div class="automation-form-branch" style="margin-left:24px;">${_automationFormMemberRowHTML(b, { branch: true, index: i + 1 })}</div>` : '';
+  }).join('');
+  const join = _automationFormPairedJoin(members, fork);
+  return `<div class="automation-form-group" data-fork-id="${escHtml(fork.id)}">${_automationFormMemberRowHTML(fork)}`
+    + `<div class="automation-form-branches">${branches}</div>${join ? _automationFormMemberRowHTML(join) : ''}</div>`;
+}
+
+function _automationFormMembersHTML() {
+  const members = _automationForm.members;
+  const hidden = _automationFormBranchSet(members);
+  _automationFormPairedJoinIds(members).forEach(id => hidden.add(id));
+  return members.filter(m => !hidden.has(m.id))
+    .map(m => (m.kind === 'fork' ? _automationFormForkGroupHTML(m) : _automationFormMemberRowHTML(m))).join('');
+}
+
+// _automationFormPanelHTML draws the small panel behind the 'Add fork and
+// join' and 'Add nested Automation' buttons, or nothing while none is open.
+function _automationFormPanelHTML() {
+  const f = _automationForm;
+  const buttons = apply => `<div class="automation-form-buttons">`
+    + `<button type="button" class="btn-primary" data-op="${apply[0]}" onclick="${apply[1]}">${escHtml(t('btn_add'))}</button>`
+    + `<button type="button" class="btn-secondary" data-op="close_panel" onclick="automationFormClosePanel()">${escHtml(t('btn_cancel'))}</button></div>`;
+  if (f.panel === 'fork') {
+    const used = new Set(f.members.map(m => m.prd_id).filter(Boolean));
+    const rows = automationPickerCandidates(f.prds, f.automations, f.source ? f.source.id : '').filter(r => r.available && !used.has(r.id));
+    const branchLabel = escHtml(t('automation_fork_branches_label'));
+    const picker = rows.length
+      ? `<select multiple size="${Math.min(Math.max(rows.length, 2), 6)}" id="automationForkBranches" class="form-input" aria-label="${branchLabel}" onchange="automationFormForkPick(this)">`
+        + rows.map(r => `<option value="${escHtml(r.id)}"${f.forkBranches.includes(r.id) ? ' selected' : ''}>${escHtml(r.title)} (${escHtml(r.id.slice(0, 8))})</option>`).join('') + '</select>'
+      : `<div class="automation-picker-empty" style="color:var(--text2);padding:6px;">${escHtml(t('automation_picker_empty'))}</div>`;
+    const rules = _AUTOMATION_JOIN_RULES.map(r =>
+      `<option value="${r}"${r === f.forkRule ? ' selected' : ''}>${escHtml(t('automation_join_rule_' + r))}</option>`).join('');
+    return `<div class="automation-form-panel" data-panel="fork">`
+      + `<label class="automation-form-field"><span class="automation-form-label">${branchLabel}</span>${picker}</label>`
+      + `<label class="automation-form-field"><span class="automation-form-label">${escHtml(t('automation_join_failure_label'))}</span>`
+      + `<select id="automationForkRule" class="form-input" onchange="automationFormSetForkRule(this.value)">${rules}</select></label>`
+      + buttons(['apply_fork', 'automationFormApplyFork()']) + '</div>';
+  }
+  if (f.panel === 'nested') {
+    const selfId = f.source ? f.source.id : '';
+    const others = f.automations.filter(a => a && a.id && a.id !== selfId);
+    const opts = [['', t('automation_nested_choose')]].concat(others.map(a => [a.id, a.name ? String(a.name) : String(a.id)]))
+      .map(([value, label]) => `<option value="${escHtml(value)}"${value === f.nestedChild ? ' selected' : ''}>${escHtml(label)}</option>`).join('');
+    return `<div class="automation-form-panel" data-panel="nested">`
+      + `<label class="automation-form-field"><span class="automation-form-label">${escHtml(t('automation_add_nested'))}</span>`
+      + `<select id="automationNestedChild" class="form-input" onchange="automationFormSetNestedChild(this.value)">${opts}</select></label>`
+      + buttons(['apply_nested', 'automationFormApplyNested()']) + '</div>';
+  }
+  return '';
+}
+
+function _automationFormPickerHTML() {
+  const f = _automationForm;
+  const q = f.search.trim().toLowerCase();
+  const used = new Set(f.members.map(m => m.prd_id).filter(Boolean));
+  const rows = automationPickerCandidates(f.prds, f.automations, f.source ? f.source.id : '')
+    .filter(r => !used.has(r.id))
+    .filter(r => !q || r.title.toLowerCase().includes(q) || r.id.toLowerCase().includes(q));
+  if (!rows.length) return `<div class="automation-picker-empty" style="color:var(--text2);padding:6px;">${escHtml(t('automation_picker_empty'))}</div>`;
+  return rows.map(r => {
+    const note = r.available ? '' : `<span class="automation-picker-reason" style="font-size:11px;">${escHtml(t(r.reason))}</span>`;
+    const status = r.status ? `<span class="automation-chip">${escHtml(_automationFormStatusText(r.status))}</span>` : '';
+    return `<label class="automation-picker-item" data-prd-id="${escHtml(r.id)}" data-unavailable="${!r.available}" style="display:flex;gap:6px;align-items:baseline;flex-wrap:wrap;padding:3px 0;${r.available ? '' : 'opacity:0.5;'}">`
+      + `<input type="radio" name="automationFormPick" value="${escHtml(r.id)}"${r.available ? '' : ' disabled'}${r.id === f.picked ? ' checked' : ''} onchange="automationFormPick('${escJsAttr(r.id)}')">`
+      + `<span class="automation-picker-title">${escHtml(r.title)}</span><span class="automation-chip">${escHtml(r.id.slice(0, 8))}</span>${status}${note}</label>`;
+  }).join('');
+}
+
+function _automationFormRedrawMembers() {
+  const members = document.getElementById('automationFormMembers');
+  if (members) members.innerHTML = _automationFormMembersHTML();
+  const picker = document.getElementById('automationFormPicker');
+  if (picker) picker.innerHTML = _automationFormPickerHTML();
+  const panel = document.getElementById('automationFormPanel');
+  if (panel) panel.innerHTML = _automationFormPanelHTML();
+}
+
+function _automationFormHTML() {
+  const f = _automationForm;
+  const editing = !!f.source;
+  const editsMembers = _automationFormEditsMembers();
+  const heading = t(editing ? 'automation_form_title_edit' : 'automation_form_title_new');
+  const field = (labelKey, input) =>
+    `<label class="automation-form-field"><span class="automation-form-label">${escHtml(t(labelKey))}</span>${input}</label>`;
+  const reason = editing && !editsMembers
+    ? field('automation_form_reason_label', `<textarea id="automationFormReason" class="form-input" rows="2" required>${escHtml(f.reason)}</textarea>`)
+    : '';
+  const picker = editsMembers
+    ? `<input type="search" id="automationFormSearch" class="form-input" placeholder="${escHtml(t('automation_picker_search'))}" aria-label="${escHtml(t('automation_picker_search'))}" value="${escHtml(f.search)}" oninput="automationFormSearch(this.value)">`
+      + `<div id="automationFormPicker" class="automation-picker" style="max-height:200px;overflow:auto;margin:6px 0;">${_automationFormPickerHTML()}</div>`
+    : '';
+  return `<div class="view-content automation-form" style="position:relative;">
+    <div class="automation-detail-header"><button type="button" class="automation-detail-back" onclick="automationFormCancel()">← ${escHtml(t('automation_back'))}</button></div>
+    <h2 class="automation-form-title">${escHtml(heading)}</h2>
+    <div id="automationFormError" class="automation-form-error" role="alert" style="color:var(--error);font-size:12px;">${escHtml(f.error)}</div>
+    ${field('automation_field_name', `<input type="text" id="automationFormName" class="form-input" value="${escHtml(f.name)}" required>`)}
+    ${field('automation_field_description', `<textarea id="automationFormDescription" class="form-input" rows="2">${escHtml(f.description)}</textarea>`)}
+    ${reason}
+    <h3 class="automation-form-section">${escHtml(t('automation_members_section'))}</h3>
+    <div id="automationFormMembers" class="automation-form-members">${_automationFormMembersHTML()}</div>
+    ${picker}
+    ${editsMembers ? `<div id="automationFormPanel" class="automation-form-panel-host">${_automationFormPanelHTML()}</div>` : ''}
+    ${_automationModelsSectionHTML(f.source)}
+    ${_automationBudgetSectionHTML(f.source && f.source.budget_policy)}
+    <div class="automation-form-buttons">
+      <button type="button" class="btn-secondary" data-op="add_member" onclick="automationFormAdd()">${escHtml(t('automation_add_member'))}</button>
+      ${editsMembers ? `<button type="button" class="btn-secondary" data-op="add_fork" onclick="automationFormOpenPanel('fork')">${escHtml(t('automation_add_fork'))}</button>
+      <button type="button" class="btn-secondary" data-op="add_nested" onclick="automationFormOpenPanel('nested')">${escHtml(t('automation_add_nested'))}</button>` : ''}
+      <span style="flex:1;"></span>
+      <button type="button" class="btn-secondary" data-op="cancel" onclick="automationFormCancel()">${escHtml(t('btn_cancel'))}</button>
+      <button type="button" id="automationFormSaveBtn" class="btn-primary" data-op="save" onclick="saveAutomationForm()">${escHtml(t('automation_form_save'))}</button>
+    </div>
+  </div>`;
+}
+
+function _automationFormDraw() {
+  const view = document.getElementById('view');
+  if (view) view.innerHTML = _automationFormHTML();
+  _automationFormInitModelRows(_automationForm.source);
+}
+
+// openAutomationForm shows the form in #view: a new Automation when called
+// with null, otherwise the given Automation for editing. It loads the Automata
+// and Automations the picker needs first; resolves once the form is drawn.
+function openAutomationForm(automation) {
+  const view = document.getElementById('view');
+  if (!view) return Promise.resolve();
+  const f = _automationForm;
+  const st = _automationState;
+  const src = automation && typeof automation === 'object' ? automation : null;
+  const seq = ++f.seq;
+  f.origin = st.detailId ? 'detail' : 'list';
+  f.source = src;
+  f.name = src ? String(src.name || '') : '';
+  f.description = src ? String(src.description || '') : '';
+  f.reason = '';
+  f.members = src && Array.isArray(src.members) ? src.members.filter(Boolean).map(m => Object.assign({}, m)) : [];
+  f.entryMemberId = src ? String(src.entry_member_id || '') : '';
+  f.picked = '';
+  f.search = '';
+  f.error = '';
+  f.saving = false;
+  f.prds = [];
+  f.automations = Array.isArray(st.list) ? st.list : [];
+  f.titles = {};
+  f.panel = '';
+  f.forkBranches = [];
+  f.forkRule = _AUTOMATION_JOIN_RULES[0];
+  f.nestedChild = '';
+  f.defaultsEdited = false;
+  // The detail dialogs (insert, remove, edges) and the stale prompt act on
+  // the open Automation.
+  if (src && src.id) {
+    st.detailId = src.id;
+    st.detail = src;
+  }
+  view.innerHTML = `<div class="view-content automation-form" style="position:relative;"><div style="text-align:center;padding:32px;color:var(--text2);">${loadingEyeBlock()}</div></div>`;
+  const prdsRequest = automationRequest('GET', '/api/autonomous/prds')
+    .then(data => (Array.isArray(data) ? data : (data && Array.isArray(data.prds) ? data.prds : [])), () => []);
+  const listRequest = automationRequest('GET', '/api/automations')
+    .then(data => (Array.isArray(data) ? data : (data && Array.isArray(data.automations) ? data.automations : f.automations)), () => f.automations);
+  const modelLists = Promise.resolve().then(() => ensureLLMModelLists()).catch(() => {});
+  return Promise.all([prdsRequest, listRequest, modelLists]).then(([prds, list]) => {
+    if (seq !== f.seq) return;
+    f.prds = prds;
+    f.automations = list;
+    prds.forEach(p => { if (p && p.id && p.title) f.titles[p.id] = String(p.title); });
+    _automationFormDraw();
+  });
+}
+window.openAutomationForm = openAutomationForm;
+
+// _automationFormRewire moves every chain member whose on_complete still holds
+// the default of the old order onto the default of the new order; an edge the
+// operator changed stays. oldIds and newIds are chain ids, and a fork's edge
+// lives on its paired join.
+function _automationFormRewire(oldIds, newIds) {
+  const members = _automationForm.members;
+  const oldNext = {}, newNext = {};
+  automationLinearWiring(oldIds).forEach(w => { oldNext[w.id] = w.on_complete; });
+  automationLinearWiring(newIds).forEach(w => { newNext[w.id] = w.on_complete; });
+  newIds.forEach(id => {
+    const node = members.find(m => m.id === id);
+    if (!node) return;
+    const owner = _automationFormExit(members, node);
+    if (owner.kind === 'fork') return;
+    if ((owner.on_complete || '') === (oldNext[id] || '')) owner.on_complete = newNext[id];
+  });
+}
+
+// _automationFormAddAt puts the picked Automaton into the member list at index.
+function _automationFormAddAt(index) {
+  const f = _automationForm;
+  const prdId = f.picked;
+  if (!prdId) {
+    _automationFormShowError(t('automation_picker_required'));
+    return false;
+  }
+  const row = automationPickerCandidates(f.prds, f.automations, f.source ? f.source.id : '').find(r => r.id === prdId);
+  if (!row || !row.available || f.members.some(m => m.prd_id === prdId)) {
+    _automationFormShowError(t('automation_picker_required'));
+    return false;
+  }
+  const oldIds = _automationFormChain(f.members).map(m => m.id);
+  const member = { id: _automationNewMemberId(f.members.map(m => m.id)), prd_id: prdId, on_complete: '', on_blocked: '', on_failed: '' };
+  const at = _automationFormSkipGroups(f.members, index);
+  f.members.splice(at, 0, member);
+  _automationFormRewire(oldIds, _automationFormChain(f.members).map(m => m.id));
+  if (at === 0 && (!f.entryMemberId || f.entryMemberId === oldIds[0])) f.entryMemberId = member.id;
+  else if (!f.entryMemberId) f.entryMemberId = f.members[0].id;
+  f.picked = '';
+  _automationFormShowError('');
+  _automationFormRedrawMembers();
+  return true;
+}
+
+// automationFormPick records the Automaton chosen in the picker; an
+// unavailable one is ignored.
+function automationFormPick(prdId) {
+  const f = _automationForm;
+  const row = automationPickerCandidates(f.prds, f.automations, f.source ? f.source.id : '').find(r => r.id === prdId);
+  if (row && row.available) f.picked = prdId;
+}
+window.automationFormPick = automationFormPick;
+
+function automationFormSearch(value) {
+  _automationForm.search = String(value || '');
+  const picker = document.getElementById('automationFormPicker');
+  if (picker) picker.innerHTML = _automationFormPickerHTML();
+}
+window.automationFormSearch = automationFormSearch;
+
+// automationFormAdd adds the picked Automaton at the end of the chain. A
+// started Automation opens the insert dialog after its last member instead.
+function automationFormAdd() {
+  const f = _automationForm;
+  if (!_automationFormEditsMembers()) {
+    const last = f.members[f.members.length - 1];
+    if (last) openAutomationInsertDialog(last.id, 'after');
+    return;
+  }
+  _automationFormAddAt(f.members.length);
+}
+window.automationFormAdd = automationFormAdd;
+
+// automationFormInsert adds the picked Automaton before or after a member.
+function automationFormInsert(memberId, position) {
+  const f = _automationForm;
+  if (!_automationFormEditsMembers()) {
+    openAutomationInsertDialog(memberId, position);
+    return;
+  }
+  const index = f.members.findIndex(m => m.id === memberId);
+  if (index < 0) return;
+  _automationFormAddAt(position === 'before' ? index : index + 1);
+}
+window.automationFormInsert = automationFormInsert;
+
+// automationFormRemove drops a member from a draft; the edges that led to it
+// lead on to whatever it led to, and a removed entry hands over to its successor.
+function automationFormRemove(memberId) {
+  const f = _automationForm;
+  const index = f.members.findIndex(m => m.id === memberId);
+  if (index < 0 || !_automationFormEditsMembers()) return;
+  const removed = f.members[index];
+  f.members.splice(index, 1);
+  f.members.forEach(m => {
+    if (m.on_complete === memberId) m.on_complete = removed.on_complete || '';
+    if (m.on_blocked === memberId) m.on_blocked = '';
+    if (m.on_failed === memberId) m.on_failed = '';
+  });
+  if (f.entryMemberId === memberId) f.entryMemberId = removed.on_complete || (f.members[0] ? f.members[0].id : '');
+  _automationFormRedrawMembers();
+}
+window.automationFormRemove = automationFormRemove;
+
+function automationFormSetEdge(memberId, edge, value) {
+  const f = _automationForm;
+  const m = f.members.find(x => x.id === memberId);
+  if (!m || !_AUTOMATION_OUTCOME_EDGES.includes(edge)) return;
+  const target = String(value || '');
+  if (target && !f.members.some(x => x.id === target && x.id !== memberId && x.kind !== 'join')) return;
+  m[edge] = target;
+}
+window.automationFormSetEdge = automationFormSetEdge;
+
+function automationFormSetJoinRule(joinId, value) {
+  const m = _automationForm.members.find(x => x.id === joinId);
+  if (!m || m.kind !== 'join' || !_AUTOMATION_JOIN_RULES.includes(value)) return;
+  m.on_branch_failure = value;
+}
+window.automationFormSetJoinRule = automationFormSetJoinRule;
+
+// automationFormRemoveGroup asks, then drops a fork with its branches and join.
+function automationFormRemoveGroup(forkId) {
+  if (!_automationFormEditsMembers()) return;
+  showConfirmModal(t('automation_remove_group_confirm'), () => {
+    const f = _automationForm;
+    const next = automationRemoveForkGroup(f, forkId);
+    f.members = next.members;
+    f.entryMemberId = next.entryMemberId;
+    _automationFormRedrawMembers();
+  });
+}
+window.automationFormRemoveGroup = automationFormRemoveGroup;
+
+function automationFormOpenPanel(panel) {
+  const f = _automationForm;
+  if (!_automationFormEditsMembers()) return;
+  f.panel = panel === 'nested' ? 'nested' : 'fork';
+  _automationFormShowError('');
+  _automationFormRedrawMembers();
+}
+window.automationFormOpenPanel = automationFormOpenPanel;
+
+function automationFormClosePanel() {
+  _automationForm.panel = '';
+  _automationFormRedrawMembers();
+}
+window.automationFormClosePanel = automationFormClosePanel;
+
+function automationFormSetForkBranches(prdIds) {
+  _automationForm.forkBranches = Array.isArray(prdIds) ? prdIds.map(String) : [];
+}
+window.automationFormSetForkBranches = automationFormSetForkBranches;
+
+// automationFormForkPick reads the branches ticked in the multi-select.
+function automationFormForkPick(selectEl) {
+  const options = selectEl && selectEl.options ? Array.from(selectEl.options) : [];
+  automationFormSetForkBranches(options.filter(o => o.selected).map(o => o.value));
+}
+window.automationFormForkPick = automationFormForkPick;
+
+function automationFormSetForkRule(value) {
+  if (_AUTOMATION_JOIN_RULES.includes(value)) _automationForm.forkRule = value;
+}
+window.automationFormSetForkRule = automationFormSetForkRule;
+
+function automationFormSetNestedChild(value) {
+  _automationForm.nestedChild = String(value || '');
+}
+window.automationFormSetNestedChild = automationFormSetNestedChild;
+
+// _automationFormApplyAdd runs one of the pure add functions on the form and
+// takes the result over; a rejection is shown above the form and changes nothing.
+function _automationFormApplyAdd(add) {
+  const f = _automationForm;
+  let next;
+  try {
+    next = add(_automationFormTailId(f.members));
+  } catch (err) {
+    _automationFormShowError(String((err && err.message) || err));
+    return false;
+  }
+  f.members = next.members;
+  f.entryMemberId = next.entryMemberId;
+  f.panel = '';
+  f.forkBranches = [];
+  f.nestedChild = '';
+  _automationFormShowError('');
+  _automationFormRedrawMembers();
+  return true;
+}
+
+// automationFormApplyFork adds the fork and join for the branches picked in
+// the panel at the end of the chain.
+function automationFormApplyFork() {
+  const f = _automationForm;
+  return _automationFormApplyAdd(tail => automationAddForkJoin(f, f.forkBranches, f.forkRule, tail));
+}
+window.automationFormApplyFork = automationFormApplyFork;
+
+function automationFormApplyNested() {
+  const f = _automationForm;
+  return _automationFormApplyAdd(tail => automationAddNestedMember(f, f.nestedChild, tail));
+}
+window.automationFormApplyNested = automationFormApplyNested;
+
+// automationFormCancel goes back to the Automation's page when the form was
+// opened from it, otherwise to the list.
+function automationFormCancel() {
+  const f = _automationForm;
+  const st = _automationState;
+  f.seq++;
+  if (f.source && f.source.id && f.origin === 'detail') return openAutomationDetail(f.source.id);
+  st.detailId = null;
+  st.detail = null;
+  return renderAutomationView();
+}
+window.automationFormCancel = automationFormCancel;
+
+// saveAutomationForm checks the form, then creates (POST) or updates (PUT) the
+// Automation. Success opens the returned Automation's page; a 409 opens the
+// stale prompt; any other failure is shown above the form.
+function saveAutomationForm() {
+  const f = _automationForm;
+  if (f.saving) return Promise.resolve(null);
+  _automationFormCapture();
+  const src = f.source;
+  const editsMembers = _automationFormEditsMembers();
+  let problem = '';
+  if (!f.name.trim()) problem = 'automation_form_name_required';
+  else if (!f.members.length) problem = 'automation_form_members_required';
+  else if (src && !editsMembers && !f.reason.trim()) problem = 'automation_form_reason_required';
+  if (problem) {
+    _automationFormShowError(t(problem));
+    return Promise.resolve(null);
+  }
+  const formState = {
+    name: f.name,
+    description: f.description,
+    members: f.members,
+    entryMemberId: f.entryMemberId,
+    expectedVersion: src ? Number(src.version) || 0 : undefined,
+    reason: f.reason,
+    base: src,
+    membersLocked: !editsMembers,
+  };
+  if (f.defaultsEdited) {
+    const budget = automationReadBudgetPolicy();
+    if (budget && budget.error) {
+      _automationFormShowError(t(budget.error));
+      return Promise.resolve(null);
+    }
+    formState.modelDefaults = automationReadModelDefaults();
+    formState.budgetPolicy = budget;
+  }
+  const payload = buildAutomationFormPayload(formState);
+  _automationFormShowError('');
+  f.saving = true;
+  const btn = document.getElementById('automationFormSaveBtn');
+  if (btn) btn.disabled = true;
+  const path = src ? '/api/automations/' + encodeURIComponent(src.id) : '/api/automations';
+  return automationRequest(src ? 'PUT' : 'POST', path, payload).then(data => {
+    f.saving = false;
+    const id = (data && data.id) || (src && src.id) || '';
+    return _automationFormSavePlanning(id).then(() => {
+      if (id) openAutomationDetail(id);
+      return data;
+    });
+  }, err => {
+    f.saving = false;
+    if (btn) btn.disabled = false;
+    const message = _automationFormErrorText(err);
+    if (err && err.status === 409) automationShowStalePrompt(message);
+    else _automationFormShowError(message);
+    return null;
+  });
+}
+window.saveAutomationForm = saveAutomationForm;
 
 // alpha.30 #271 + #183 #4 — Alerts tab redesigned to mirror the dock UX:
 // top bar with per-category chips + ✕all + 🔕 + sort toggle + search,
@@ -26548,6 +29028,9 @@ document.addEventListener('DOMContentLoaded', () => {
       localStorage.setItem('cs_active_view', 'observer');
       localStorage.removeItem('cs_settings_tab');
     }
+    // The Automation tab is hidden while the autonomous subsystem is
+    // disabled; do not restore into a view with no tab.
+    if (_initView === 'automation' && state._autonomousEnabled === false) _initView = 'sessions';
     navigate(_initView || 'sessions', _initSession || undefined);
 
     // GH#182 — alert deep link. A browser rewrites a registered
@@ -26608,11 +29091,21 @@ document.addEventListener('DOMContentLoaded', () => {
     .then(cfg => {
       const btn = document.getElementById('navBtnAutonomous');
       if (btn && cfg && cfg.enabled === true) btn.style.display = '';
+      const automationBtn = document.getElementById('navBtnAutomation');
+      if (automationBtn && cfg && cfg.enabled === true) automationBtn.style.display = '';
+      // A restored Automation view falls back to Sessions when the
+      // subsystem is disabled (the tab stays hidden in that case).
+      state._autonomousEnabled = !!(cfg && cfg.enabled === true);
+      if (!state._autonomousEnabled && state.activeView === 'automation') navigate('sessions');
       // BL313 — Dashboard is part of the autonomous subsystem; gate it on the same flag.
       const dashBtn = document.getElementById('navBtnDashboard');
       if (dashBtn && cfg && cfg.enabled === true) dashBtn.style.display = '';
     })
-    .catch(() => {});
+    .catch(() => {
+      // Config unreachable: the tab stays hidden, so do not stay on it.
+      state._autonomousEnabled = false;
+      if (state.activeView === 'automation') navigate('sessions');
+    });
 
   // BL247-followup v6.7.2 — Observer view folded into Settings → Monitor
   // (Federated Peers card). The standalone nav button + view path were
