@@ -1579,6 +1579,7 @@ howto, and the `datawatch-app` issue where applicable.
    contain Automations (an "Automation of Automations", or a separate
    "Initiative")? This is **not decided either way**. Today's model allows only
    Automata as members, and adding a `MemberKind` later would be additive.
+   **Decided by the operator 2026-10-22: allow nesting, in 10.0.0.** An Automation can contain another Automation as a member (a new `MemberKind`), with cycle detection across levels, clear ownership, and the same control ops. It is designed together with fork/join in Phase 3a, and the PWA pipeline strip must show nested levels.
 3. **The cancel_automation default.** Recommended: halt future auto-advance only,
    and leave the in-flight member running; `cancel_in_flight: true` is opt-in.
    Should the default be reversed?
