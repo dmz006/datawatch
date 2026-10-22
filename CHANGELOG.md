@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Idle nudge for claude-code workers** — a PRD-owned claude-code worker that sits idle with no output and no completion marker for `autonomous.worker_idle_nudge_seconds` (default 180) gets one nudge to print `DATAWATCH_COMPLETE`; if it is still silent `autonomous.worker_idle_nudge_stall_seconds` (default 600) after the nudge, it is killed and retried as a stall. Nudges are recorded on the task (`nudge_count`, `nudge_events`).
+
 ## v9.5.64 — Persisted lifecycle subscriptions with CRUD on every surface
 
 ### Added

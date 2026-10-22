@@ -2113,6 +2113,14 @@ type AutonomousConfig struct {
 	// process for longer than this is an infra failure. 0 or unset => 900
 	// (see NormalizeSessionIdleTimeoutSeconds).
 	SessionIdleTimeoutSeconds int `yaml:"session_idle_timeout_seconds,omitempty" json:"session_idle_timeout_seconds,omitempty"`
+	// WorkerIdleNudgeSeconds is how long a PRD-owned claude-code worker may sit
+	// idle with no output and no completion marker before it gets one nudge to
+	// finish. 0 or unset => 180 (see NormalizeWorkerIdleNudgeSeconds).
+	WorkerIdleNudgeSeconds int `yaml:"worker_idle_nudge_seconds,omitempty" json:"worker_idle_nudge_seconds,omitempty"`
+	// WorkerIdleNudgeStallSeconds is how long, counted from the nudge, the
+	// worker may stay silent before it is declared stalled and retried.
+	// 0 or unset => 600 (see NormalizeWorkerIdleNudgeStallSeconds).
+	WorkerIdleNudgeStallSeconds int `yaml:"worker_idle_nudge_stall_seconds,omitempty" json:"worker_idle_nudge_stall_seconds,omitempty"`
 	// CapacityEnabled turns capacity-aware admission on (default true when
 	// unset): tasks wait for a free host/node/LLM slot instead of failing.
 	CapacityEnabled *bool `yaml:"capacity_enabled,omitempty" json:"capacity_enabled,omitempty"`

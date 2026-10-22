@@ -4653,6 +4653,16 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				// same idleLimit budget and only fires after the runner process is
 				// gone and the log has not grown. Nil for other families, so
 				// exitSilenceTick is a no-op for them.
+				// claude-code idle nudge: one nudge after worker_idle_nudge_seconds of
+				// idle, a stall after worker_idle_nudge_stall_seconds more. Both
+				// windows are shorter than the session idle timeout, so the nudge
+				// fires first. Nil for other families.
+				var nudgeTracker *autonomouspkg.WorkerNudgeTracker
+				if family == autonomouspkg.WorkerNudgeFamily {
+					nudgeTracker = autonomouspkg.NewWorkerNudgeTracker(
+						time.Duration(config.NormalizeWorkerIdleNudgeSeconds(cfg.Autonomous.WorkerIdleNudgeSeconds))*time.Second,
+						time.Duration(config.NormalizeWorkerIdleNudgeStallSeconds(cfg.Autonomous.WorkerIdleNudgeStallSeconds))*time.Second)
+				}
 				var exitSilenceTracker *autonomouspkg.ExitSilenceTracker
 				if family == "pi-prompt" {
 					exitSilenceTracker = autonomouspkg.NewExitSilenceTracker(time.Now(), idleLimit)
@@ -4702,6 +4712,32 @@ func runStart(cmd *cobra.Command, _ []string) error {
 						// claude-code specifically, the only backend this was
 						// validated against; other backends fall back to
 						// staleWorkerCheck's log-mtime staleness check below.
+						if nudgeTracker != nil {
+							_, nudgeOutputAge, _ := staleWorkerCheck(staleLogPath, idleLimit, time.Now())
+							switch nudgeTracker.Observe(time.Now(), s.BackendFamily, true, autonomouspkg.WorkerNudgeObservation{
+								State:               string(s.State),
+								OutputAge:           nudgeOutputAge,
+								HasLiveChildProcess: hasLiveChildProcess(s.TmuxSession),
+							}) {
+							case autonomouspkg.WorkerNudgeSend:
+								log.Printf("[autonomous] idle worker %s task %s/%s: sending completion nudge",
+									task.SessionID, task.PRDID, task.ID)
+								if nerr := mgr.SendInput(task.SessionID, autonomouspkg.WorkerNudgeText, "idle-nudge"); nerr != nil {
+									log.Printf("[autonomous] idle nudge send failed for %s: %v", task.SessionID, nerr)
+								}
+								if autonomousMgrRef != nil {
+									if rerr := autonomousMgrRef.RecordTaskNudge(task.PRDID, task.ID, time.Now()); rerr != nil {
+										log.Printf("[autonomous] record nudge for %s/%s: %v", task.PRDID, task.ID, rerr)
+									}
+								}
+							case autonomouspkg.WorkerNudgeStall:
+								log.Printf("[autonomous] idle worker %s task %s/%s still silent after nudge; killing for retry",
+									task.SessionID, task.PRDID, task.ID)
+								_ = mgr.Kill(task.SessionID)
+								stallErr = fmt.Errorf("worker idle after completion nudge (session=%s): %w", task.SessionID, autonomouspkg.ErrWorkerStalled)
+								break waitLoop
+							}
+						}
 						var stalled bool
 						if s.BackendFamily == "claude-code" {
 							waitingInputTicks, stalled = waitingInputTick(waitingInputTicks, s.State)

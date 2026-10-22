@@ -3062,6 +3062,37 @@ func (m *Manager) RecordTaskAttemptCommit(prdID, taskID, sha string) error {
 	return m.store.SavePRD(prd)
 }
 
+// RecordTaskNudge records one idle-worker nudge on the task: bumps NudgeCount
+// and appends a NudgeEvent. Like RecordTaskAttemptCommit it fires from the
+// daemon while the worker runs, so there is no lock-after-approve gate.
+func (m *Manager) RecordTaskNudge(prdID, taskID string, at time.Time) error {
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return fmt.Errorf("prd %q not found", prdID)
+	}
+	found := false
+	for si := range prd.Story {
+		for ti := range prd.Story[si].Tasks {
+			t := &prd.Story[si].Tasks[ti]
+			if t.ID == taskID {
+				t.NudgeCount++
+				t.NudgeEvents = append(t.NudgeEvents, NudgeEvent{At: at, Count: t.NudgeCount, Outcome: "sent"})
+				t.UpdatedAt = at
+				found = true
+				break
+			}
+		}
+		if found {
+			break
+		}
+	}
+	if !found {
+		return fmt.Errorf("task %q not found in prd %q", taskID, prdID)
+	}
+	prd.UpdatedAt = at
+	return m.store.SavePRD(prd)
+}
+
 // SetStoryLLM (BL381) lets the operator override a story's worker LLM
 // (backend / effort / model). All tasks in this story inherit these
 // values unless overridden at the task level. Empty string clears the
