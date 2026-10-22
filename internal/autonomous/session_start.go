@@ -18,6 +18,15 @@ var ErrSessionNeverStarted = errors.New("session never started")
 // Error when a spawned session fails the start-confirm bound.
 const SessionStartFailureReason = "session never started"
 
+// SessionStartRetryBudget is the number of start-failure re-queues a task
+// gets before the start-failure retries stop and the task fails: with this
+// value at 2, the 1st and 2nd consecutive start failures re-queue the same
+// attempt and the 3rd fails the task. It is deliberately SEPARATE from the
+// PRD's normal auto-retry budget (RetryPolicy categories, RetryCeilingTotal,
+// AutoFixRetries) — a broken session-start path (never a verified failure)
+// must not consume the budget a task earns for genuine work retries.
+const SessionStartRetryBudget = 2
+
 // claudeCodeResponseBullet is the "•" bullet Claude Code renders at the
 // start of an assistant response line — the same marker the pane fixtures
 // under internal/session/testdata (e.g. paste/submitted_running.txt) use

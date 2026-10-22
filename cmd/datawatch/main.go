@@ -4921,7 +4921,11 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					return *doneVerdict, nil
 				}
 				if stallErr != nil {
-					return autonomouspkg.VerificationResult{}, stallErr
+					// Boundary mapping: a prompt-delivery failure from the
+					// session package (ErrPromptNotSubmitted) is surfaced to the
+					// autonomous executor as its own start-failure sentinel so
+					// it takes the start-failure budget path, not the stall path.
+					return autonomouspkg.VerificationResult{}, mapSessionStartError(stallErr)
 				}
 			}
 			// BL366 — git-diff grounding: capture the worker's actual change.

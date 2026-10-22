@@ -1117,6 +1117,52 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				if errors.Is(err, errCancelledWhileWaiting) {
 					return nil
 				}
+				// A spawned session that never produced its first assistant
+				// turn (or whose prompt was never submitted) is a START
+				// failure, not a verification failure — checked before the stall
+				// branch because the daemon's wait loop wraps BOTH sentinels in
+				// the same stall error (ErrSessionNeverStarted must win).
+				if errors.Is(err, ErrSessionNeverStarted) {
+					t.StartFailures++
+					if t.StartFailures > SessionStartRetryBudget {
+						// Start-failure budget exhausted: fail the task with the
+						// standard exhaustion shape, keeping StartFailureTail so
+						// the last 20 pane lines stay visible for post-mortem
+						// (the daemon's wait loop sets it on the task before the
+						// kill). Consuming no normal retry budget here either.
+						lastFailureCategory = "infra"
+						oldStatus := t.Status
+						t.Status = TaskFailed
+						t.Error = SessionStartFailureReason
+						t.FailureReason = &FailureReason{
+							Category:   "infra",
+							Detail:     fmt.Sprintf("%s (%d consecutive start failures)", SessionStartFailureReason, t.StartFailures),
+							Source:     "session-start",
+							Retryable:  false,
+							OccurredAt: time.Now(),
+						}
+						log.Printf("[autonomous] task %s failed: %s after %d consecutive start failures",
+							t.ID, SessionStartFailureReason, t.StartFailures)
+						m.recordFailureLearning(prd, t.ID, "infra", t.FailureReason.Detail)
+						m.relocateCheckpoint(prd, t)
+						if serr := m.store.SaveTask(t); serr != nil {
+							return serr
+						}
+						m.emitTaskStatus(prd, t, oldStatus, nil, nil)
+						m.deleteTaskSession(t.SessionID)
+						return nil
+					}
+					// Below budget: re-queue the SAME attempt. The normal retry
+					// budget is left untouched — the attempt offset below cancels
+					// the loop's post-iteration increment so the retry counter is
+					// not consumed, and no RetryPolicy category is recorded.
+					log.Printf("[autonomous] task %s start failure %d/%d — re-queueing without consuming the normal retry budget",
+						t.ID, t.StartFailures, SessionStartRetryBudget)
+					t.Error = err.Error()
+					_ = m.store.SaveTask(t)
+					attempt-- // offset the loop's post-iteration attempt++
+					continue
+				}
 				if errors.Is(err, ErrWorkerStalled) {
 					// A stall (SSE, or no log output past stale_task_seconds) is a
 					// retryable verification failure, not a fatal error — it consumes
