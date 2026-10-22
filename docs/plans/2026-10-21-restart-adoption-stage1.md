@@ -28,3 +28,12 @@ worker is alive.** Two P0 fixes filed:
 Stage 2 (restart while a task is verifying) and stage 3 (restart idle) wait for BL557 and BL558.
 `7da90001` stays parked until its pi worker ends, then is cancelled, its task reset (work preserved)
 and run.
+
+## Recovery of the parked PRD (7da90001), 20:25
+
+The pi worker (session aa3e) kept running for 87 minutes after the restart and finished its work (files
+modified up to 20:11). Resuming the parked PRD took four calls because the advertised action does not
+work: `prd-approve` and `prd-run` both fail on a blocked PRD. What worked: `prd-cancel` (PRD), then
+`autonomous_prd_cancel_task` on the in-flight task (a task in `verifying` cannot be reset, even with
+force), then `autonomous_prd_reset_task` with `force=true`, which put the PRD back to running with the
+preserved work restored. BL558 must make this one supported resume action.
