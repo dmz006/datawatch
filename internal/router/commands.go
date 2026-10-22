@@ -94,7 +94,10 @@ const (
 	// BL428 Phase 4 — per-backend usage back-off, same verbs and arguments
 	// as REST / MCP / CLI.
 	CmdUsageBackoff CommandType = "usage_backoff"
-	CmdAudit        CommandType = "audit"
+	// Per-LLM dollar budget status, same data and field names as REST /
+	// MCP / CLI.
+	CmdBudget CommandType = "budget"
+	CmdAudit  CommandType = "audit"
 
 	// BL172 (S11) — federated observer peers. List + show + register +
 	// delete a Shape B / C peer over chat. Mirror of the
@@ -475,6 +478,11 @@ type Command struct {
 	UsageBackoffMinutes int
 	UsageBackoffUntil   string
 	UsageBackoffReason  string
+
+	// CmdBudget fields. BudgetLLM names one LLM; empty = every budgeted LLM.
+	BudgetLLM string
+	// BudgetVerb is "invalid" when the arguments could not be parsed.
+	BudgetVerb string
 
 	// BL353 — schedule targeting fields.
 	SessionName  string // for schedule: resolve session by name at fire time
@@ -1274,6 +1282,9 @@ func Parse(text string) Command {
 		strings.HasPrefix(lower, "usage_backoff ") || strings.HasPrefix(lower, "usage-backoff "):
 		return parseUsageBackoff(strings.TrimSpace(text[len("usage_backoff"):]))
 
+	case lower == "budget" || strings.HasPrefix(lower, "budget "):
+		return parseBudget(strings.TrimSpace(text[len("budget"):]))
+
 	case strings.HasPrefix(lower, "cooldown"):
 		rest := strings.TrimSpace(text[len("cooldown"):])
 		cmd := Command{Type: CmdCooldown, CooldownVerb: "status"}
@@ -1788,6 +1799,7 @@ usage_backoff                    show per-backend usage back-off flags
 usage_backoff set <backend> <minutes> [reason]  hold autonomous dispatch to a backend
 usage_backoff clear [backend|all]  clear one back-off, or all (default)
 usage_backoff recheck            record current rate-limit patterns as rechecked
+budget [status] [<llm>]          per-LLM dollar spend, ceiling, window end and rollover
 stale [<seconds>]                list stale running sessions
 audit [actor=x action=y limit=N] query operator audit log
 rest <METHOD> <PATH> [json]      raw REST passthrough (e.g. rest GET /api/templates)
@@ -1813,6 +1825,26 @@ exit_hook add name=<n> action=notify notify_session=<s> [message=<m>]
 exit_hook delete id=<id>         delete a hook
 exit_hook enable id=<id>         enable a hook
 exit_hook disable id=<id>        disable a hook`, hostname)
+}
+
+// parseBudget parses the tail of "budget …": "status" (optional) followed by
+// an optional LLM name. A bare name is accepted so "budget claude" works. An
+// unrecognized verb keeps the verb "invalid" so the handler can answer with
+// usage instead of guessing.
+func parseBudget(rest string) Command {
+	cmd := Command{Type: CmdBudget}
+	fields := strings.Fields(rest)
+	if len(fields) > 0 && strings.EqualFold(fields[0], "status") {
+		fields = fields[1:]
+	}
+	if len(fields) > 1 {
+		cmd.BudgetVerb = "invalid"
+		return cmd
+	}
+	if len(fields) == 1 {
+		cmd.BudgetLLM = fields[0]
+	}
+	return cmd
 }
 
 // parseUsageBackoff parses the tail of "usage_backoff …":

@@ -1101,6 +1101,8 @@ func (r *Router) handleMessage(msg messaging.Message) {
 		r.handleCooldown(cmd)
 	case CmdUsageBackoff:
 		r.handleUsageBackoff(cmd)
+	case CmdBudget:
+		r.handleBudget(cmd)
 	case CmdStale:
 		r.handleStale(cmd)
 	case CmdPeers:

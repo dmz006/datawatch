@@ -12,7 +12,11 @@ package router
 
 import (
 	"encoding/json"
+	"fmt"
+	"strconv"
 	"strings"
+
+	"github.com/dmz006/datawatch/internal/inference"
 )
 
 const llmUsage = `Usage:
@@ -42,7 +46,16 @@ Common kv pairs:
                                       autonomous.plan_tier_max_inflight table then
                                       caps its inflight unless max_inflight>0 wins)
   max_inflight=<N>        (explicit inflight cap on the LLM; N>=0, 0=unlimited,
-                           wins over the plan_tier table and the kind default)`
+                           wins over the plan_tier table and the kind default)
+
+Budget kv pairs (a dollar ceiling over one window; the set is replaced as a whole):
+  budget_ceiling_usd=<N>  budget_hours=<N>         rolling window of N trailing hours (1-720)
+  budget_weekday=monday..sunday  budget_time=HH:MM  budget_zone=<IANA zone>
+                          weekly window; use budget_hours or budget_weekday, not both
+  budget_allocation_pct=true   also report an estimated share of the plan-tier allocation
+  budget_peer_window=<csv>     federation peers whose spend counts toward the ceiling
+  budget=clear                 remove the budget
+  (see "budget status [llm]" for spend, window end and rollover)`
 
 func (r *Router) handleLLMCmd(cmd Command) {
 	text := strings.TrimSpace(cmd.Text)
@@ -90,6 +103,14 @@ func (r *Router) handleLLMCmd(cmd Command) {
 		}
 		body := parseLLMKVPairs(kvText)
 		body["name"] = name
+		budget, budgetSet, berr := parseLLMBudgetKV(kvText)
+		if berr != nil {
+			r.reply("llm "+verb, berr.Error())
+			return
+		}
+		if budgetSet {
+			body["budget"] = budget
+		}
 		method := "POST"
 		path := "/api/llms"
 		if verb == "update" {
@@ -302,6 +323,10 @@ func parseLLMKVPairs(s string) map[string]any {
 			out[k] = strings.Split(v, ",")
 		case "timeout_seconds", "console_cols", "console_rows", "max_inflight":
 			out[k] = atoiOrZero(v)
+		case "budget", "budget_ceiling_usd", "budget_hours", "budget_weekday", "budget_time",
+			"budget_zone", "budget_allocation_pct", "budget_peer_window":
+			// Assembled into one "budget" object by parseLLMBudgetKV.
+			continue
 		case "plan_tier":
 			v = strings.TrimSpace(strings.ToLower(v))
 			if v == "" || v == "unset" || v == "none" {
@@ -316,4 +341,71 @@ func parseLLMKVPairs(s string) map[string]any {
 		}
 	}
 	return out
+}
+
+// parseLLMBudgetKV extracts the budget_* key=value pairs of an llm add/update
+// line into the "budget" request member. set is false when none were given,
+// so an update keeps the stored budget; budget=clear yields a nil value with
+// set true, which clears it. An invalid combination is rejected here, before
+// any request is sent, with the same BudgetWindow.Validate the daemon uses.
+func parseLLMBudgetKV(s string) (budget any, set bool, err error) {
+	var bw inference.BudgetWindow
+	var given []string
+	clear := false
+	for _, kv := range strings.Fields(s) {
+		eq := strings.IndexRune(kv, '=')
+		if eq < 0 {
+			continue
+		}
+		k := strings.ToLower(kv[:eq])
+		v := kv[eq+1:]
+		switch k {
+		case "budget":
+			if !strings.EqualFold(v, "clear") && !strings.EqualFold(v, "none") {
+				return nil, false, fmt.Errorf("budget=%s: only budget=clear is accepted; set a budget with budget_ceiling_usd and budget_hours or budget_weekday", v)
+			}
+			clear = true
+			continue
+		case "budget_ceiling_usd":
+			f, perr := strconv.ParseFloat(v, 64)
+			if perr != nil {
+				return nil, false, fmt.Errorf("budget_ceiling_usd=%q is not a number", v)
+			}
+			bw.CeilingUSD = f
+		case "budget_hours":
+			n, perr := strconv.Atoi(v)
+			if perr != nil {
+				return nil, false, fmt.Errorf("budget_hours=%q is not a whole number", v)
+			}
+			bw.Hours = n
+		case "budget_weekday":
+			bw.Weekday = v
+		case "budget_time":
+			bw.Time = v
+		case "budget_zone":
+			bw.Zone = v
+		case "budget_allocation_pct":
+			bw.AllocationPct = strings.EqualFold(v, "true") || v == "1"
+		case "budget_peer_window":
+			for _, p := range strings.Split(v, ",") {
+				bw.PeerWindow = append(bw.PeerWindow, strings.TrimSpace(p))
+			}
+		default:
+			continue
+		}
+		given = append(given, k)
+	}
+	if clear {
+		if len(given) > 0 {
+			return nil, false, fmt.Errorf("budget=clear cannot be combined with %s", strings.Join(given, ", "))
+		}
+		return nil, true, nil
+	}
+	if len(given) == 0 {
+		return nil, false, nil
+	}
+	if verr := bw.Validate(); verr != nil {
+		return nil, false, verr
+	}
+	return &bw, true, nil
 }
