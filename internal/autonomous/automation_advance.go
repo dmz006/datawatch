@@ -72,6 +72,10 @@ func childEnd(s AutomationStatus) (endOutcome, bool) {
 type memberInfo struct {
 	name      string
 	prdStatus PRDStatus // kind prd: the PRD's status, or "missing"
+	// verdict is the budget verdict for starting the member, read with the rest
+	// of the snapshot; the zero verdict gates nothing. A fork carries the
+	// Automation-level verdict.
+	verdict BudgetVerdict
 }
 
 // stepInput names the member that ended and how it ended.
@@ -81,6 +85,12 @@ type stepInput struct {
 	// reeval re-derives the join memberID with no branch ending: boot reconcile
 	// uses it for a join still waiting after every branch is terminal.
 	reeval bool
+	// startPending enters a cursor member (a nested Automation or a fork) that
+	// was deferred and never started, now that the budget gate may allow it.
+	startPending bool
+	// now is the step's clock reading, set by the coordinator so tests control
+	// time; zero means the wall clock.
+	now time.Time
 }
 
 // memberStart is one member start to perform after the write wins.
@@ -112,8 +122,9 @@ type stepEffects struct {
 	starts    []memberStart
 	audits    []coordAudit
 	notes     []memberNote
-	touched   []string // PRD IDs to announce after the write
-	blocked   string   // reason, when the step blocks the Automation
+	touched   []string      // PRD IDs to announce after the write
+	blocked   string        // reason, when the step blocks the Automation
+	budget    *budgetEffect // set when the budget gate refused a member start
 	completed bool
 	info      string // completion text, when the step completes the Automation
 }
@@ -133,7 +144,10 @@ type stepper struct {
 // a live cursor or the end no longer applies.
 func step(a *Automation, in stepInput, snap map[string]memberInfo) (*stepEffects, error) {
 	if in.reeval {
-		return stepJoinReeval(a, in.memberID, snap)
+		return stepJoinReeval(a, in, snap)
+	}
+	if in.startPending {
+		return stepStartPending(a, in, snap)
 	}
 	mem := automationMember(a, in.memberID)
 	if mem == nil || !isLiveCursor(a, mem.ID) {
@@ -142,7 +156,7 @@ func step(a *Automation, in stepInput, snap map[string]memberInfo) (*stepEffects
 	if in.end.revert && mem.Status != MemberRunning {
 		return nil, errStaleStep
 	}
-	st := &stepper{a: a, snap: snap, eff: &stepEffects{details: map[string]any{}}, now: time.Now()}
+	st := &stepper{a: a, snap: snap, eff: &stepEffects{details: map[string]any{}}, now: in.at()}
 	if join := joinOf(a, mem.ID); join != nil {
 		// A fork branch carries no outcome edge: its end is recorded on the join.
 		end := in.end
@@ -171,12 +185,12 @@ func step(a *Automation, in stepInput, snap map[string]memberInfo) (*stepEffects
 // applies the join rule once. A join that has left running, or one that a live
 // branch still holds, changes nothing and returns errStaleStep, so a replay
 // writes nothing.
-func stepJoinReeval(a *Automation, joinID string, snap map[string]memberInfo) (*stepEffects, error) {
-	j := automationMember(a, joinID)
+func stepJoinReeval(a *Automation, in stepInput, snap map[string]memberInfo) (*stepEffects, error) {
+	j := automationMember(a, in.memberID)
 	if j == nil || j.kind() != MemberKindJoin || j.Status != MemberRunning {
 		return nil, errStaleStep
 	}
-	st := &stepper{a: a, snap: snap, eff: &stepEffects{details: map[string]any{}}, now: time.Now()}
+	st := &stepper{a: a, snap: snap, eff: &stepEffects{details: map[string]any{}}, now: in.at()}
 	st.evalJoin(j.ID)
 	if j.Status == MemberRunning {
 		return nil, errStaleStep
@@ -273,12 +287,25 @@ func (st *stepper) block(reason string) {
 }
 
 // enter moves the cursor onto next and starts it, unless the Automation is
-// paused (then the cursor moves and nothing starts).
+// paused (then the cursor moves and nothing starts) or the budget gate refuses
+// the start (then the cursor moves, the Automation pauses, blocks or holds, and
+// nothing starts).
 func (st *stepper) enter(next *AutomationMember) {
 	if st.a.Status == AutomationPaused {
 		addCursor(st.a, next.ID)
 		st.idle = true
 		return
+	}
+	if next.kind() != MemberKindJoin {
+		if v := st.snap[next.ID].verdict; v.Gate {
+			st.budgetGate(next, v)
+			return
+		}
+		if st.a.BudgetState != nil {
+			// The held start is going ahead: the episode is over.
+			st.a.BudgetState = nil
+			st.a.IdleSince = nil
+		}
 	}
 	switch next.kind() {
 	case MemberKindPRD:

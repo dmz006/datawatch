@@ -287,6 +287,9 @@ func (c *Coordinator) onChildTerminal(ev LifecycleEvent) {
 // conflict re-reads and re-evaluates; a step whose precondition has moved on is
 // a no-op with no write.
 func (c *Coordinator) advance(autoID string, in stepInput) {
+	if in.now.IsZero() {
+		in.now = c.now()
+	}
 	for attempt := 0; attempt < coordinatorCASRetries; attempt++ {
 		a, ok := c.m.automations.Get(autoID)
 		if !ok || (a.Status != AutomationActive && a.Status != AutomationPaused) {
@@ -327,7 +330,7 @@ func (c *Coordinator) advance(autoID string, in stepInput) {
 // snapshotMembers reads every member's live facts once, for a step.
 func (c *Coordinator) snapshotMembers(a *Automation) map[string]memberInfo {
 	snap := make(map[string]memberInfo, len(a.Members))
-	for _, m := range a.Members {
+	for i, m := range a.Members {
 		switch m.kind() {
 		case MemberKindPRD:
 			name, status, ok := c.prdState(m.PRDID)
@@ -337,20 +340,29 @@ func (c *Coordinator) snapshotMembers(a *Automation) map[string]memberInfo {
 			if name == "" {
 				name = m.PRDID
 			}
-			snap[m.ID] = memberInfo{name: name, prdStatus: status}
+			snap[m.ID] = memberInfo{name: name, prdStatus: status, verdict: c.startVerdict(a, &a.Members[i])}
 		case MemberKindAutomation:
 			name := m.AutomationID
 			if child, ok := c.m.automations.Get(m.AutomationID); ok && child.Name != "" {
 				name = child.Name
 			}
-			snap[m.ID] = memberInfo{name: name}
+			snap[m.ID] = memberInfo{name: name, verdict: c.startVerdict(a, &a.Members[i])}
 		case MemberKindJoin:
 			snap[m.ID] = memberInfo{name: "join " + m.ID}
 		default:
-			snap[m.ID] = memberInfo{name: "fork " + m.ID}
+			snap[m.ID] = memberInfo{name: "fork " + m.ID, verdict: c.startVerdict(a, &a.Members[i])}
 		}
 	}
 	return snap
+}
+
+// startVerdict is the budget verdict for starting mem, read once with the
+// snapshot. A member already started or ended has nothing to gate.
+func (c *Coordinator) startVerdict(a *Automation, mem *AutomationMember) BudgetVerdict {
+	if !memberUnstarted(mem) {
+		return BudgetVerdict{}
+	}
+	return c.m.budgetVerdictFor(a, mem)
 }
 
 // afterAdvance performs the effects that follow a won write: membership release,
@@ -371,6 +383,7 @@ func (c *Coordinator) afterAdvance(a *Automation, eff *stepEffects) {
 	for _, id := range eff.touched {
 		c.m.EmitPRDUpdate(id)
 	}
+	c.afterBudget(a, eff.budget)
 	switch {
 	case eff.blocked != "":
 		c.blocked(a, eff.blocked, eff.details)
@@ -644,9 +657,18 @@ func (c *Coordinator) activate(id, actor string, expectedVersion int64) (*Automa
 		if mode == "" {
 			reason = fmt.Sprintf("next member %s is %s", name, status)
 		}
-		release := c.beginStart(entry.PRDID, reason == "")
+		// The same budget gate that guards every later member guards the entry
+		// member: a refused entry leaves the Automation paused, blocked or held
+		// with the cursor on it, and the starter is never called.
+		var verdict BudgetVerdict
+		if reason == "" {
+			verdict = c.m.budgetVerdictFor(a, entry)
+		}
+		release := c.beginStart(entry.PRDID, reason == "" && !verdict.Gate)
+		var beff *budgetEffect
 		updated, err := c.m.automations.Update(a.ID, a.Version, func(a *Automation) error {
-			now := time.Now()
+			now := c.now()
+			beff = nil
 			a.Status = AutomationActive
 			a.StartedAt = &now
 			addCursor(a, a.EntryMemberID)
@@ -655,6 +677,11 @@ func (c *Coordinator) activate(id, actor string, expectedVersion int64) (*Automa
 				a.Status = AutomationBlocked
 				a.IdleSince = &now
 				note = reason
+			} else if verdict.Gate {
+				beff = applyBudgetGate(a, entry, verdict, now, false)
+				if beff.action == BudgetActionBlocked {
+					note = beff.reason
+				}
 			} else if m := automationMember(a, a.EntryMemberID); m != nil {
 				m.Status = MemberRunning
 				m.StartedAt = &now
@@ -675,6 +702,11 @@ func (c *Coordinator) activate(id, actor string, expectedVersion int64) (*Automa
 		c.memberDecision(entry.PRDID, fmt.Sprintf("automation %s activated; entry member %s", updated.ID, name))
 		if reason != "" {
 			c.blocked(updated, reason, map[string]any{"to": entry.ID})
+			return updated, nil
+		}
+		if beff != nil {
+			release()
+			c.budgetBlockedAlert(updated, beff, entry.ID)
 			return updated, nil
 		}
 		c.startMember(updated.ID, entry.ID, entry.PRDID, name, mode == "resume")

@@ -3215,6 +3215,36 @@ cannot know in advance what a task will cost. Work already admitted when
 the ceiling is crossed runs to completion and can overshoot the ceiling.
 Set the ceiling a little below the figure you must not exceed.
 
+#### Automation budget policy at member start
+
+An Automation with a budget policy checks it before it starts any member,
+including the entry member on activation and a whole fork. What happens when
+the check refuses depends on why:
+
+- **Dollar ceiling reached.** The cursor stays on the member that was about to
+  start and nothing starts. If the window's reset time is known (a day, week or
+  month window the daemon defines itself, or a reset time parsed from a
+  rate-limit message) and `on_breach` is `pause`, the Automation pauses and
+  resumes by itself at that time. If the reset time is unknown (a lifetime
+  window with no parsed reset) or `on_breach` is `block`, the Automation is
+  blocked and waits for you. A warn alert is raised either way, once per
+  breach, and the breach is audited (`automation_budget_breach`).
+- **Pacing or start estimate.** This is a hold, not a breach: the Automation
+  stays active with the cursor on the member, one `budget_hold` decision is
+  recorded, and the periodic check retries until the pace or estimate allows
+  the start.
+- **allocation_pct estimate.** Never pauses or blocks; it is only a labelled
+  estimate.
+
+At the reset time the daemon checks the policy again. If the Automation may
+start it resumes (actor `budget`, audited as `automation_budget_resumed`, with
+an info alert). If the ceiling is still reached it is moved to blocked once, so
+a pause never loops. A blocked Automation never resumes by itself: raise the
+ceiling or wait for the window, then resume it. Resume re-checks the policy and
+refuses with a 409 that carries the reason while the ceiling is still reached.
+Another daemon's usage counts toward a ceiling only for peers you opted in, and
+that is not confirmed automatically.
+
 ### Where spend comes from
 
 The daemon records the cost of every session on the LLM as it is reported,
