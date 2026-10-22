@@ -2717,6 +2717,96 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 							completionDetected = false
 						}
 					}
+					// BL468 — symmetric failure branch: a one-shot session that never
+					// completed because pi exited non-zero shows the wrapper's
+					// "DATAWATCH_PI_FAILED: pi exited with status <N> [ (model <m>) ]"
+					// line in the pane. Scan the same way as the completion scans above
+					// (box-border guard, echoGate, scrollback fallback) and transition
+					// to StateFailed with the exit code recorded — not to StateComplete.
+					// The terminal-state guard (running/waiting_input only) means an
+					// already-failed (or complete/killed) session is never re-transitioned.
+					if !completionDetected && current.OneShot && (current.State == StateRunning || current.State == StateWaitingInput) {
+						failureLine := ""
+						failureEchoLocated := false
+						for i := len(capLines) - 1; i >= 0; i-- {
+							l := strings.TrimSpace(capLines[i])
+							if l == "" {
+								continue
+							}
+							// Same box-border guard as the completion scan above.
+							if strings.HasSuffix(l, "┃") || strings.HasSuffix(l, "│") {
+								continue
+							}
+							if !echoGate(i, echoEnd) {
+								break
+							}
+							if isRealFailureLine(l) {
+								failureEchoLocated = echoEnd >= 0
+								m.debugf("StartScreenCapture: failure-scan match line=%q session=%s", l, sess.FullID)
+								failureLine = l
+								break
+							}
+						}
+						// Scrollback fallback, mirroring the v8.20.11 completion fallback:
+						// the failure line may already have scrolled off the visible pane.
+						if failureLine == "" {
+							if sb, sbErr := m.tmux.CapturePaneScrollback(sess.TmuxSession, 500); sbErr == nil {
+								sbLines := strings.Split(StripANSI(sb), "\n")
+								sbEchoEnd := lastTaskEchoIndex(sbLines, current.Task)
+								for i, checked := len(sbLines)-1, 0; i >= 0 && checked < 500; i-- {
+									l := strings.TrimSpace(sbLines[i])
+									if l == "" {
+										continue
+									}
+									checked++
+									// Same box-border and echo guards as the visible scan.
+									if strings.HasSuffix(l, "┃") || strings.HasSuffix(l, "│") {
+										continue
+									}
+									if !echoGate(i, sbEchoEnd) {
+										break
+									}
+									if isRealFailureLine(l) {
+										failureEchoLocated = sbEchoEnd >= 0
+										m.debugf("StartScreenCapture: scrollback failure-scan match line=%q session=%s", l, sess.FullID)
+										failureLine = l
+										break
+									}
+								}
+							}
+						}
+						// Same task-echo suppression as the completion path above: if the
+						// echoed task text cannot be located and the task was delivered
+						// recently, the marker text still being rendered on screen cannot
+						// be the wrapper's own output — wait it out like the success path.
+						if failureLine != "" && !failureEchoLocated {
+							if deliveredAt, wasDelivered := m.taskDeliveredTime(sess); wasDelivered && m.now().Sub(deliveredAt) < 5*time.Minute {
+								m.debugf("StartScreenCapture: suppressing failure within 5min task-echo window for %s (elapsed=%v)", sess.FullID, m.now().Sub(deliveredAt).Round(time.Second))
+								failureLine = ""
+							}
+						}
+						if failureLine != "" {
+							failureExit := 0
+							if n, ok := parsePiFailureExit(failureLine); ok {
+								failureExit = n
+							}
+							oldState := current.State
+							// No commitOnCompletion here: the post-session commit belongs
+							// to the success path only; a failed run's changes stay
+							// uncommitted so an operator can inspect them.
+							current.State = StateFailed
+							current.FailureExitCode = failureExit
+							current.UpdatedAt = time.Now()
+							_ = m.store.Save(current)
+							if m.onStateChange != nil {
+								m.onStateChange(current, oldState)
+							}
+							if m.onSessionEnd != nil {
+								m.onSessionEnd(current)
+							}
+							return
+						}
+					}
 					if completionDetected {
 						if current.State == StateRunning || current.State == StateWaitingInput {
 							oldState := current.State
@@ -3159,6 +3249,60 @@ func isCompletionPlaceholder(l string) bool {
 	// Wrapped continuation of the placeholder ("summary of what was done>").
 	t := strings.TrimSpace(l)
 	return strings.HasSuffix(t, ">") && !strings.Contains(t, "<") && strings.Contains(t, "summary")
+}
+
+// BL468 — parsePiFailureExit parses the exit code <N> from a pi failure line
+// of the shape "DATAWATCH_PI_FAILED: pi exited with status <N>", where <N> is
+// a decimal integer and an optional trailing " (model <m>)" suffix (the
+// one-shot path's wording) is allowed. Anything else — including the other
+// DATAWATCH_PI_FAILED lines the pi wrapper prints for non-status failures —
+// yields ok=false.
+func parsePiFailureExit(line string) (int, bool) {
+	line = strings.TrimSpace(line)
+	if !strings.HasPrefix(line, piFailureMarker) {
+		return 0, false
+	}
+	rest := strings.TrimSpace(line[len(piFailureMarker):])
+	const statusPrefix = "pi exited with status "
+	if !strings.HasPrefix(rest, statusPrefix) {
+		return 0, false
+	}
+	rest = strings.TrimPrefix(rest, statusPrefix)
+	n, digits := 0, 0
+	for _, r := range rest {
+		if r < '0' || r > '9' {
+			break
+		}
+		n = n*10 + int(r-'0')
+		digits++
+	}
+	if digits == 0 {
+		return 0, false
+	}
+	// Everything after the integer must be the optional "(model ...)" suffix.
+	tail := strings.TrimSpace(rest[digits:]) // digits here are ASCII, so rune count = byte offset
+	if tail != "" && !strings.HasPrefix(tail, "(model ") {
+		return 0, false
+	}
+	return n, true
+}
+
+// BL468 — isRealFailureLine reports whether l is a genuine pi failure line
+// from the pi launch wrapper. Mirrors isRealCompletionLine's guards: the
+// line must carry a real exit code (parsePiFailureExit), the tail after the
+// marker must be non-empty, not an angle-bracket instruction placeholder,
+// and not the wrapped tail of the typed launch command (isShellSourceTail —
+// a line ending in a quote with an odd count of that quote, i.e. the echo of
+// a command that merely quoted the marker text rather than the wrapper's
+// own output). Scans additionally apply the box-border guard and echoGate
+// (lines at or before the echoed task text never count), same as the
+// completion scans.
+func isRealFailureLine(l string) bool {
+	if _, ok := parsePiFailureExit(l); !ok {
+		return false
+	}
+	tail := strings.TrimSpace(l[len(piFailureMarker):])
+	return tail != "" && !strings.HasPrefix(tail, "<") && !isShellSourceTail(tail)
 }
 
 // ReleaseTaskDelivery undoes a ClaimTaskDelivery whose send failed, so a

@@ -334,6 +334,13 @@ type Session struct {
 	// ClaudeAlive (BL355) — true when the AI process is alive in the tmux pane.
 	// nil means not yet probed. False for a running/waiting-input session means zombie.
 	ClaudeAlive *bool `json:"claude_alive,omitempty"`
+
+	// FailureExitCode (BL468) — exit code reported by the pi failure line
+	// (zero = no failure reported). Set when a one-shot session transitions
+	// to StateFailed on the pi launch wrapper's non-zero-exit
+	// DATAWATCH_PI_FAILED marker; the terminal state plus this code carry
+	// the exit status per the store's design (0 = complete, non-zero = failed).
+	FailureExitCode int `json:"failure_exit_code,omitempty"`
 }
 
 // UnmarshalJSON accepts both the v7.0.0-alpha.27 field name
