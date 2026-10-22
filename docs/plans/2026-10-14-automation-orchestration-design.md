@@ -1636,6 +1636,7 @@ howto, and the `datawatch-app` issue where applicable.
     should `BudgetPolicy`'s ceiling check read that peer's usage into the
     same `tightest-wins` math by default, or stay per-daemon unless the
     operator explicitly opts an Automation into federation-wide ceilings?
+    **Decided by the operator 2026-10-22: opt-in per peer.** A daemon counts only its own usage by default; shared counting is switched on per peer (and per Automation) after fingerprint-sync has confirmed the peer shares the billing account or node.
 15. **Local-model decision assistant (operator-raised 2026-10-14, see the
     section above).** Is the four-hook-point scope (empty-edge resolution,
     skip_member pre-screening, mid-flight insert triage, budget-breach
