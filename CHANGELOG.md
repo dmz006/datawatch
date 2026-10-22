@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.78 — The WebSocket output-scope unsubscribe test is deterministic
+
+### Fixed
+- **`TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture` (BL550) no longer flakes (test-only, no production behavior change).** Symptom: subtest `same_id` failed once in the Release `go test + lint` job (test finished in 0.01 s) and passed locally. Cause found: the test harness raced the hub's scheduling — the hub applies client registration in its own Run goroutine (unbuffered handoff, then map write), but `findHubClient` snapshotted the hub registry immediately, so the registry write could lag behind the frames the test had already observed; `wsSubscribe` also substring-scanned the whole frame payload, which another session's pane text could satisfy. Fix, entirely in `internal/server/ws_output_scope_test.go`: `findHubClient` and the capture-cancel wait now poll on their real conditions under a deadline bounded by the shared frame timeout, with all original assertions preserved and asserted at the deadline; `wsSubscribe` matches the initial `pane_capture` on the exact `session_id` (short/full forms treated as equal) instead of the payload substring; a `t.Cleanup` cancels any still-live capture and waits (bounded poll) until `Hub.ClientCount()` is back to zero, so neither the capture goroutine nor the hub client leaks into the next subtest. The other WS tests sharing the changed helpers were audited — `TestWSOutputScope_SubscribedModeFiltersTerminalFrames`, `TestWSOutputScope_ShortAndFullIDsMatch`, `TestWSOutputScope_ConfigDefaultSubscribedForNoHelloClient`, `TestClientUnsubscribe_Direct` and `TestSessionIDsMatch` — and needed no change; all pass at `-count=50`. There is no production behavior change: the `MsgUnsubscribe` path and the output-scope delivery code are untouched and no non-test file was modified.
+
 ## v9.5.77 — Boot-resume age gate counts live workers on verifying tasks
 
 ### Fixed
