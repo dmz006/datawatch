@@ -2868,20 +2868,20 @@ func DefaultConfig() *Config {
 			OllamaHeaderTimeoutSec: 900,
 		},
 		Autonomous: AutonomousConfig{
-			AutoFixRetries:     1,
-			MaxConcurrentTasks: 1,
+			AutoFixRetries:      1,
+			MaxConcurrentTasks:  1,
 			ResumeMaxAgeSeconds: 3600,
-			MaxEnginesPerNode:  1,
+			MaxEnginesPerNode:   1,
 			// Starting plan-tier table — operator policy, see the field
-		// doc on PlanTierMaxInflight. api=0 = unlimited; the dollar
-		// budget is a later phase.
+			// doc on PlanTierMaxInflight. api=0 = unlimited; the dollar
+			// budget is a later phase.
 			PlanTierMaxInflight: map[string]int{
-				"pro":      1,
-				"max_5x":   2,
-				"max_20x":  4,
-				"api":      0,
+				"pro":     1,
+				"max_5x":  2,
+				"max_20x": 4,
+				"api":     0,
 			},
-			StaleTaskSeconds:   900,
+			StaleTaskSeconds: 900,
 			// BL410 Phase 1 — see AutonomousConfig.RetryPolicy's doc
 			// comment for why "content"/"policy" are absent here.
 			RetryPolicy:             map[string]int{"infra": 4, "scope": 0},
