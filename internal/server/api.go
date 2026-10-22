@@ -196,12 +196,28 @@ var startTime = time.Now()
 // Version is set at build time. The server package uses this for /api/health and /api/info.
 var Version = "9.5.97"
 
+// broadcastSessionsAsync pushes the current session list to every client
+// without blocking the caller. The goroutine is tracked in broadcastWG so
+// a test can wait for it before mutating or tearing down the sessions it
+// marshals.
+func (s *Server) broadcastSessionsAsync() {
+	sessions := s.manager.ListSessions()
+	s.broadcastWG.Add(1)
+	go func() {
+		defer s.broadcastWG.Done()
+		s.hub.BroadcastSessions(sessions)
+	}()
+}
+
 // Server holds all HTTP handler dependencies
 type Server struct {
 	hub      *Hub
 	manager  *session.Manager
 	hostname string
 	token    string
+	// broadcastWG tracks the fire-and-forget sessions broadcasts started by
+	// broadcastSessionsAsync so a test can wait for them.
+	broadcastWG sync.WaitGroup
 	// SEC-016 — tokenMu guards token/oldToken/oldTokenExpiry, which
 	// POST /api/auth/rotate-token mutates live (hot-swap, no restart)
 	// while fedAuthMiddleware reads them on every request. oldToken stays
@@ -1998,7 +2014,7 @@ func (s *Server) executeCommand(cmd router.Command, raw string) string {
 			return fmt.Sprintf("Error: %v", err)
 		}
 		// Broadcast updated session list
-		go s.hub.BroadcastSessions(s.manager.ListSessions())
+		s.broadcastSessionsAsync()
 		return fmt.Sprintf("[%s][%s] Started: %s\nTmux: %s", s.hostname, sess.ID, cmd.Text, sess.TmuxSession)
 
 	case router.CmdList:
@@ -2024,7 +2040,7 @@ func (s *Server) executeCommand(cmd router.Command, raw string) string {
 		if err != nil {
 			return fmt.Sprintf("Error: %v", err)
 		}
-		go s.hub.BroadcastSessions(s.manager.ListSessions())
+		s.broadcastSessionsAsync()
 		return fmt.Sprintf("[%s] Input sent.", cmd.SessionID)
 
 	case router.CmdKill:
@@ -2032,7 +2048,7 @@ func (s *Server) executeCommand(cmd router.Command, raw string) string {
 		if err != nil {
 			return fmt.Sprintf("Error: %v", err)
 		}
-		go s.hub.BroadcastSessions(s.manager.ListSessions())
+		s.broadcastSessionsAsync()
 		return fmt.Sprintf("[%s] Killed.", cmd.SessionID)
 
 	case router.CmdTail:
@@ -4128,7 +4144,7 @@ func (s *Server) handleRenameSession(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
-	go s.hub.BroadcastSessions(s.manager.ListSessions())
+	s.broadcastSessionsAsync()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"}) //nolint:errcheck
 }
@@ -4179,7 +4195,7 @@ func (s *Server) handleBindSessionAgent(w http.ResponseWriter, r *http.Request) 
 		_ = s.agentMgr.MarkSessionBound(req.AgentID, req.ID)
 	}
 	if s.hub != nil {
-		go s.hub.BroadcastSessions(s.manager.ListSessions())
+		s.broadcastSessionsAsync()
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok", "agent_id": req.AgentID}) //nolint:errcheck
@@ -4232,7 +4248,7 @@ func (s *Server) handleSessionSend(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": err.Error()}) //nolint:errcheck
 		return
 	}
-	go s.hub.BroadcastSessions(s.manager.ListSessions())
+	s.broadcastSessionsAsync()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "session_id": body.SessionID}) //nolint:errcheck
 }
@@ -4263,7 +4279,7 @@ func (s *Server) handleSetSessionState(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
-	go s.hub.BroadcastSessions(s.manager.ListSessions())
+	s.broadcastSessionsAsync()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"}) //nolint:errcheck
 }
@@ -4294,7 +4310,7 @@ func (s *Server) handleSetSessionLLMRef(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
-	go s.hub.BroadcastSessions(s.manager.ListSessions())
+	s.broadcastSessionsAsync()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok", "id": req.ID, "llm_ref": req.LLMRef}) //nolint:errcheck
 }
@@ -4335,7 +4351,7 @@ func (s *Server) handleKillSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r.Context(), "kill", "session", targetID, nil) // GH#201 Phase 4
-	go s.hub.BroadcastSessions(s.manager.ListSessions())
+	s.broadcastSessionsAsync()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"}) //nolint:errcheck
 }
@@ -4400,7 +4416,7 @@ func (s *Server) handleDeleteSession(w http.ResponseWriter, r *http.Request) {
 		"delete_data":     req.DeleteData,
 		"memory_strategy": req.MemoryStrategy,
 	})
-	go s.hub.BroadcastSessions(s.manager.ListSessions())
+	s.broadcastSessionsAsync()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok"}) //nolint:errcheck
 }
@@ -4932,7 +4948,7 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		to := memory.ScopeRef{Scope: memory.ScopeSessionLocal, SessionID: sess.FullID}
 		_, _ = memory.Seed(s.memoryBackend, from, to, memory.SeedFilter{RolePrefix: rolePrefix}, seedMax)
 	}
-	go s.hub.BroadcastSessions(s.manager.ListSessions())
+	s.broadcastSessionsAsync()
 	// GH#201 Phase 4 — session lifecycle was the plan's own leading
 	// example of a state-changing action access-logging alone can't
 	// explain ("a PUT /api/config, session and Automata changes are
@@ -4996,7 +5012,7 @@ func (s *Server) handleRestartSession(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	go s.hub.BroadcastSessions(s.manager.ListSessions())
+	s.broadcastSessionsAsync()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(sess) //nolint:errcheck
 }

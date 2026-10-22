@@ -8,8 +8,12 @@ package server
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -38,6 +42,10 @@ func startTestSession(t *testing.T, srv *Server, projectDir string) string {
 	if w.Code != http.StatusOK {
 		t.Fatalf("handleStartSession: status %d body: %s", w.Code, w.Body.String())
 	}
+	// handleStartSession broadcasts the session list from an untracked
+	// goroutine that marshals the live *Session; wait for it now so the
+	// caller's own mutations (SendInput, Kill) cannot race with it.
+	srv.broadcastWG.Wait()
 	var resp struct {
 		FullID string `json:"full_id"`
 		ID     string `json:"id"`
@@ -59,8 +67,60 @@ func startTestSession(t *testing.T, srv *Server, projectDir string) string {
 	// leak is a real orphaned session on a live daemon, not just test
 	// noise. Every caller gets this for free now instead of each test
 	// needing to remember its own teardown.
-	t.Cleanup(func() { srv.manager.KillTmuxSession(fullID) })
+	t.Cleanup(func() { stopTestSession(t, srv, fullID) })
 	return fullID
+}
+
+// stopTestSession tears a startTestSession session down far enough that
+// nothing is still writing under the manager's data dir when t.TempDir's
+// RemoveAll runs. Cleanups run last-in-first-out and the TempDir removal
+// was registered first, so this always runs before it. Order matters:
+// Kill cancels the monitor goroutine and kills the pane (KillTmuxSession alone leaves the
+// monitor appending to the session log and saving the store), and only
+// then can we wait for the files under the data dir to stop changing.
+func stopTestSession(t *testing.T, srv *Server, fullID string) {
+	t.Helper()
+	srv.broadcastWG.Wait()
+	if sess, ok := srv.manager.GetSession(fullID); ok && sess.State != session.StateKilled {
+		_ = srv.manager.Kill(fullID)
+	}
+	srv.manager.KillTmuxSession(fullID)
+	waitDirQuiet(t, srv.manager.DataDir())
+}
+
+// waitDirQuiet polls dir until two consecutive snapshots of its files
+// (path, size, mtime) match, so a monitor or store write that was in
+// flight when the session was killed has finished. Bounded: fails the
+// test rather than waiting forever.
+func waitDirQuiet(t *testing.T, dir string) {
+	t.Helper()
+	snapshot := func() string {
+		var b strings.Builder
+		_ = filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() {
+				return nil
+			}
+			if info, ierr := d.Info(); ierr == nil {
+				fmt.Fprintf(&b, "%s %d %d\n", p, info.Size(), info.ModTime().UnixNano())
+			}
+			return nil
+		})
+		return b.String()
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	prev := snapshot()
+	for {
+		time.Sleep(50 * time.Millisecond)
+		cur := snapshot()
+		if cur == prev {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Errorf("files under %s were still changing 2s after the session was killed", dir)
+			return
+		}
+		prev = cur
+	}
 }
 
 // TestHandleDeleteSession_MemoryStrategyPurge verifies purge removes only
@@ -75,7 +135,10 @@ func TestHandleDeleteSession_MemoryStrategyPurge(t *testing.T) {
 	// sessA is deleted by the test itself below; sessB never is (it's the
 	// control used to verify the OTHER session's memory survives), so its
 	// spawned tmux session would otherwise leak on every run.
-	t.Cleanup(func() { _ = srv.manager.Delete(sessB, false) })
+	t.Cleanup(func() {
+		srv.broadcastWG.Wait() // handleDeleteSession's broadcast marshals sessB
+		_ = srv.manager.Delete(sessB, false)
+	})
 
 	_, _ = backend.Save(projectDir, "session A memory", "", "", sessA, nil)
 	_, _ = backend.Save(projectDir, "session B memory", "", "", sessB, nil)
