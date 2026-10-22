@@ -41,7 +41,7 @@ type BootResumeEntry struct {
 	Reason     string    `json:"reason"`
 	At         time.Time `json:"at"`
 	// LiveSessions lists the worker session ids still alive on the PRD's
-	// in_progress tasks at decision time. Set on a parked entry when a
+	// in_progress or verifying tasks at decision time. Set on a parked entry when a
 	// worker is alive while the PRD is parked (directory missing or limit
 	// 0), so the operator knows a resume will re-adopt it, not respawn.
 	LiveSessions []string `json:"live_sessions,omitempty"`
@@ -82,8 +82,16 @@ func (m *Manager) SetSessionLastOutputFn(fn func(sessionID string) (time.Time, b
 	m.sessionLastOutputFn = fn
 }
 
-// liveWorkerSession returns the session id of the first in_progress task
-// whose session is alive, or "".
+// isBootResumeLiveCandidate reports whether a task's status can carry a
+// live worker at boot: in_progress, or verifying. A verifying label while
+// the worker still runs is a known mislabel; the executor adopts such a
+// surviving session rather than respawning, so the gate must count it too.
+func isBootResumeLiveCandidate(t *Task) bool {
+	return t.Status == TaskInProgress || t.Status == TaskVerifying
+}
+
+// liveWorkerSession returns the session id of the first in_progress or
+// verifying task whose session is alive, or "".
 func liveWorkerSession(prd *PRD, h bootResumeHooks) string {
 	if h.alive == nil {
 		return ""
@@ -91,7 +99,7 @@ func liveWorkerSession(prd *PRD, h bootResumeHooks) string {
 	for i := range prd.Story {
 		for j := range prd.Story[i].Tasks {
 			t := &prd.Story[i].Tasks[j]
-			if t.Status == TaskInProgress && t.SessionID != "" && h.alive(t.SessionID) {
+			if isBootResumeLiveCandidate(t) && t.SessionID != "" && h.alive(t.SessionID) {
 				return t.SessionID
 			}
 		}
@@ -99,8 +107,8 @@ func liveWorkerSession(prd *PRD, h bootResumeHooks) string {
 	return ""
 }
 
-// liveWorkerSessions returns every in_progress task session id that is
-// alive, in task order, or nil.
+// liveWorkerSessions returns every in_progress or verifying task session
+// id that is alive, in task order, or nil.
 func liveWorkerSessions(prd *PRD, h bootResumeHooks) []string {
 	if h.alive == nil {
 		return nil
@@ -109,7 +117,7 @@ func liveWorkerSessions(prd *PRD, h bootResumeHooks) []string {
 	for i := range prd.Story {
 		for j := range prd.Story[i].Tasks {
 			t := &prd.Story[i].Tasks[j]
-			if t.Status == TaskInProgress && t.SessionID != "" && h.alive(t.SessionID) {
+			if isBootResumeLiveCandidate(t) && t.SessionID != "" && h.alive(t.SessionID) {
 				out = append(out, t.SessionID)
 			}
 		}
@@ -131,7 +139,7 @@ type bootResumeDecision struct {
 // Falls back to PRD.CreatedAt if the PRD somehow has no activity field
 // set at all (freshly-created records); still all-zero if that is
 // missing too, in which case the PRD is treated as age 0. For each
-// in_progress task with a session id, the live worker's last output time
+// in_progress or verifying task with a session id, the live worker's last output time
 // (h.lastOutput) also counts, so a long-running task whose record has not
 // changed since it started is not mistaken for stale.
 func newestActivity(prd *PRD, h bootResumeHooks) time.Time {
@@ -153,7 +161,7 @@ func newestActivity(prd *PRD, h bootResumeHooks) time.Time {
 			if t.StartedAt != nil {
 				upd(*t.StartedAt)
 			}
-			if h.lastOutput != nil && t.Status == TaskInProgress && t.SessionID != "" {
+			if h.lastOutput != nil && isBootResumeLiveCandidate(t) && t.SessionID != "" {
 				if ts, ok := h.lastOutput(t.SessionID); ok {
 					upd(ts)
 				}
@@ -192,7 +200,7 @@ func projectDirsForBootResume(prd *PRD) []string {
 // (never resume after a restart), -1 = no age limit (skip the age test
 // ONLY — missing project directories still park the PRD), positive N =
 // park when the newest activity is older than N seconds — except that a
-// PRD with an in_progress task whose worker session is alive is never
+// PRD with an in_progress or verifying task whose worker session is alive is never
 // stale (h.alive), whatever the record timestamps say.
 func decideBootResume(prd *PRD, now time.Time, maxAgeSec int, h bootResumeHooks) bootResumeDecision {
 	var ageSec int64
