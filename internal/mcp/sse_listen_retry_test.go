@@ -115,7 +115,7 @@ func TestSSEListenRetryImmediateSuccess(t *testing.T) {
 		if err != nil {
 			t.Fatalf("real net.Listen: %v", err)
 		}
-		defer _ = ln.Close()
+		defer func() { _ = ln.Close() }()
 
 		listeners, err := s.listenWithRetry(context.Background(),
 			[]string{"127.0.0.1:12345"}, 120*time.Second,
