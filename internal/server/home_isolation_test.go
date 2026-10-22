@@ -16,7 +16,8 @@ func TestMain(m *testing.M) {
 		fmt.Fprintln(os.Stderr, "home isolation:", err)
 		os.Exit(1)
 	}
-	os.Setenv("HOME", home) //nolint:errcheck
+	defer os.RemoveAll(home) //nolint:errcheck
+	os.Setenv("HOME", home)  //nolint:errcheck
 	code := m.Run()
 	os.RemoveAll(home) //nolint:errcheck
 	os.Exit(code)
