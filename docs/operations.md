@@ -3272,6 +3272,42 @@ confirmation.
 
 ---
 
+## Capacity visibility and audit trail
+
+Every task that waits says why, in the same words on every surface, and the
+waits, admissions, usage back-offs and budget transitions are written to the
+audit log.
+
+**Reading a wait.** `autonomous_status` (REST `GET /api/autonomous/status`)
+lists queued tasks under `queue` and running tasks under `holdings`;
+`GET /api/capacity` (MCP `capacity_status`, `datawatch capacity`, the `capacity`
+chat command) adds pools, holders, back-off flags and per-LLM budgets. The
+Automata task detail and the session Status tab show the same reason with a
+cause label (pool full, node busy, back-off, budget, cool-down, awaiting
+external, tree lock) and the time the wait ends, when known. The PWA Capacity
+card shows pools with limits and holders, back-off flags, and budget spend
+bars; its allocation share is an estimate and never blocks anything.
+
+**Reading the history.** Eight actions record the capacity and budget
+machinery: `autonomous_capacity_wait`, `autonomous_capacity_admitted`,
+`autonomous_usage_backoff_set`, `autonomous_usage_backoff_cleared`,
+`autonomous_usage_backoff_auto_cleared`, `autonomous_budget_ceiling_wait`,
+`autonomous_budget_window_resumed` and `autonomous_budget_window_rollover`.
+Each is written once per change, not once per poll. All four surfaces take
+the same filters (`actor`, `action`, `subject`, `session_id`, `since`,
+`until`, `limit`), and an `action` ending in `*` is a prefix match:
+
+```bash
+datawatch audit --action 'autonomous_budget_*' --subject claude-code --limit 20
+```
+
+REST `GET /api/audit`, MCP `audit_query` and the `audit` chat command
+(`audit action=autonomous_budget_* subject=claude-code`) take the same
+filters. The full table of causes, example texts, actors, subjects and values
+is in [howto/automata-capacity.md](howto/automata-capacity.md).
+
+---
+
 ## Terminal Performance
 
 ### xterm.js load time
