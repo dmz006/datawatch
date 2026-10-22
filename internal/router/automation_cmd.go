@@ -1,7 +1,8 @@
 // Comm-channel verbs for Automations: "automation activate <id>" starts a
 // draft Automation; "automation list" and "automation get <id>" read them;
 // pause, resume, cancel, skip, insert, remove, edges and approve are the
-// operator controls on a running one. Sibling of cmd/datawatch/cli_automation.go
+// operator controls on a running one, and set-llm and set-verification-llm
+// set its LLMs. Sibling of cmd/datawatch/cli_automation.go
 // and the automation_* MCP tools; activate calls
 // POST /api/automations/{id}/activate, list and get call GET /api/automations
 // and GET /api/automations/{id}, and each control calls its own
@@ -21,7 +22,9 @@ import (
 const (
 	automationUsage = "usage: automation activate <id> | list | get <id> | pause <id> [reason] | resume <id> [reason] | " +
 		"cancel <id> in-flight=true|false | skip <id> <member-id> [edge] | insert <id> <prd-id> [urgent] <reason> | " +
-		"remove <id> <member-id> | edges <id> <member-id> on_complete=<id> on_blocked=<id> on_failed=<id> | approve <id> <member-id>"
+		"remove <id> <member-id> | edges <id> <member-id> on_complete=<id> on_blocked=<id> on_failed=<id> | approve <id> <member-id> | " +
+		"set-llm <id> [backend=<b>] [model=<m>] [effort=<e>] [planning-backend=<b>] [planning-model=<m>] | " +
+		"set-verification-llm <id> [backend=<b>] [model=<m>] [effort=<e>]"
 	automationCancelUsage = "usage: automation cancel <id> in-flight=true|false. The choice is required: " +
 		"in-flight=true cancels members running now, in-flight=false lets them finish.\n" +
 		"examples:\n  automation cancel ab12 in-flight=true\n  automation cancel ab12 in-flight=false"
@@ -29,7 +32,11 @@ const (
 	automationInsertUsage  = "usage: automation insert <id> <prd-id> [urgent] <reason...>. A reason is required."
 	automationRemoveUsage  = "usage: automation remove <id> <member-id>"
 	automationApproveUsage = "usage: automation approve <id> <member-id>"
-	automationEdgesUsage   = "usage: automation edges <id> <member-id> on_complete=<id> on_blocked=<id> on_failed=<id> " +
+	automationSetLLMUsage  = "usage: automation set-llm <id> [backend=<b>] [model=<m>] [effort=<e>] [planning-backend=<b>] [planning-model=<m>] " +
+		"(name at least one; an empty value such as model= clears the field)"
+	automationSetVerificationLLMUsage = "usage: automation set-verification-llm <id> [backend=<b>] [model=<m>] [effort=<e>] " +
+		"(name at least one; an empty value such as model= clears the field)"
+	automationEdgesUsage = "usage: automation edges <id> <member-id> on_complete=<id> on_blocked=<id> on_failed=<id> " +
 		"(name at least one; an edge left out or given empty becomes no next member)"
 )
 
@@ -146,9 +153,38 @@ func (r *Router) handleAutomationCmd(cmd Command) {
 			return
 		}
 		r.automationControl("approve", args[1], "approve_insert", "member approved", map[string]any{"member_id": args[2]})
+	case "set-llm":
+		r.automationSetLLM(args, "set-llm", "set_llm", automationSetLLMUsage,
+			map[string]string{"backend": "backend", "model": "model", "effort": "effort",
+				"planning-backend": "planning_backend", "planning-model": "planning_model"})
+	case "set-verification-llm":
+		r.automationSetLLM(args, "set-verification-llm", "set_verification_llm", automationSetVerificationLLMUsage,
+			map[string]string{"backend": "backend", "model": "model", "effort": "effort"})
 	default:
-		r.send(fmt.Sprintf("automation: unknown subcommand %q. Try: activate, list, get, pause, resume, cancel, skip, insert, remove, edges, approve", args[0]))
+		r.send(fmt.Sprintf("automation: unknown subcommand %q. Try: activate, list, get, pause, resume, cancel, skip, insert, remove, edges, approve, set-llm, set-verification-llm", args[0]))
 	}
+}
+
+// automationSetLLM serves "set-llm <id> key=value..." and
+// "set-verification-llm <id> key=value...". keys maps each accepted token key
+// to its REST body key; an unknown key, a token without '=' or no pair at all
+// replies with the usage line. An empty value clears the field.
+func (r *Router) automationSetLLM(args []string, verb, op, usage string, keys map[string]string) {
+	if len(args) < 3 {
+		r.send(usage)
+		return
+	}
+	body := map[string]any{}
+	for _, tok := range args[2:] {
+		k, v, ok := strings.Cut(tok, "=")
+		bodyKey, known := keys[k]
+		if !ok || !known {
+			r.send(usage)
+			return
+		}
+		body[bodyKey] = v
+	}
+	r.automationControl(verb, args[1], op, "llm updated", body)
 }
 
 // automationPauseResume serves "pause <id> [reason...]" and "resume <id>

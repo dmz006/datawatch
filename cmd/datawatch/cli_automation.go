@@ -1,10 +1,11 @@
 // `datawatch automation ...` CLI subcommands: list, get, create, activate and
 // the operator controls pause, resume, cancel, skip, insert, remove, edges and
-// approve. Sibling of the automation_* MCP tools and the "automation" comm
+// approve, and the LLM settings set-llm and set-verification-llm. Sibling of the automation_* MCP tools and the "automation" comm
 // verbs. list/get/create call GET and POST /api/automations; activate calls
 // POST /api/automations/{id}/activate; each control calls its own
 // POST /api/automations/{id}/{pause,resume,cancel,skip_member,insert_member,
-// remove_member,reorder_edges,approve_insert} and prints the updated Automation.
+// remove_member,reorder_edges,approve_insert,set_llm,set_verification_llm} and
+// prints the updated Automation.
 
 package main
 
@@ -42,6 +43,10 @@ Subcommands:
   remove <id> <member>  Remove a member that has not started
   edges <id> <member> Rewire a member's on_complete, on_blocked and on_failed edges
   approve <id> <member>  Approve an agent-inserted member
+  set-llm <id>        Set the execution and planning LLM (--backend, --model, --effort,
+                      --planning-backend, --planning-model; an empty value clears)
+  set-verification-llm <id>  Set the verification LLM (--backend, --model, --effort;
+                      an empty value clears)
 
 Every control takes --actor, --reason and --expected-version; a stale
 expected version is refused with HTTP 409.`,
@@ -58,6 +63,8 @@ expected version is refused with HTTP 409.`,
 	cmd.AddCommand(newAutomationRemoveCmd())
 	cmd.AddCommand(newAutomationEdgesCmd())
 	cmd.AddCommand(newAutomationApproveCmd())
+	cmd.AddCommand(newAutomationSetLLMCmd())
+	cmd.AddCommand(newAutomationSetVerificationLLMCmd())
 	return cmd
 }
 
@@ -217,6 +224,9 @@ var automationControlOps = map[string]string{
 	"remove":  "remove_member",
 	"edges":   "reorder_edges",
 	"approve": "approve_insert",
+
+	"set-llm":              "set_llm",
+	"set-verification-llm": "set_verification_llm",
 }
 
 // runAutomationControl posts a control request for a subcommand verb and
@@ -402,6 +412,98 @@ func newAutomationApproveCmd() *cobra.Command {
 		},
 	}
 	f.register(cmd)
+	return cmd
+}
+
+// llmFlagKeys maps each LLM setting flag to its REST body key.
+var llmFlagKeys = []struct{ flag, key string }{
+	{"backend", "backend"},
+	{"model", "model"},
+	{"effort", "effort"},
+	{"planning-backend", "planning_backend"},
+	{"planning-model", "planning_model"},
+}
+
+// automationLLMBody builds the request body for set-llm and
+// set-verification-llm. A key is sent only when its flag was given, so an
+// empty value clears the field; at least one setting flag is required.
+func automationLLMBody(cmd *cobra.Command, f *automationControlFlags, flags []string) (map[string]any, error) {
+	body := f.body(cmd)
+	set := 0
+	for _, fk := range llmFlagKeys {
+		var present bool
+		for _, name := range flags {
+			present = present || name == fk.flag
+		}
+		if !present || !cmd.Flags().Changed(fk.flag) {
+			continue
+		}
+		v, _ := cmd.Flags().GetString(fk.flag)
+		body[fk.key] = v
+		set++
+	}
+	if set == 0 {
+		names := make([]string, len(flags))
+		for i, n := range flags {
+			names[i] = "--" + n
+		}
+		return nil, fmt.Errorf("name at least one of %s (an empty value clears the field)", strings.Join(names, ", "))
+	}
+	return body, nil
+}
+
+func newAutomationSetLLMCmd() *cobra.Command {
+	var f automationControlFlags
+	var backend, model, effort, planningBackend, planningModel string
+	flags := []string{"backend", "model", "effort", "planning-backend", "planning-model"}
+	cmd := &cobra.Command{
+		Use:   "set-llm <id>",
+		Short: "Set the execution and planning LLM of an Automation",
+		Long: `Set the LLM an Automation's members run with and the LLM that plans (decomposes)
+them. At least one of --backend, --model, --effort, --planning-backend and
+--planning-model is required. Only the flags given are sent; an empty value
+(for example --model "") clears that field.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			body, err := automationLLMBody(cmd, &f, flags)
+			if err != nil {
+				return err
+			}
+			return runAutomationControl(args[0], "set-llm", body)
+		},
+	}
+	f.register(cmd)
+	cmd.Flags().StringVar(&backend, "backend", "", "Execution LLM backend (empty: clear)")
+	cmd.Flags().StringVar(&model, "model", "", "Execution LLM model (empty: clear)")
+	cmd.Flags().StringVar(&effort, "effort", "", "Execution LLM effort (empty: clear)")
+	cmd.Flags().StringVar(&planningBackend, "planning-backend", "", "Planning LLM backend (empty: clear)")
+	cmd.Flags().StringVar(&planningModel, "planning-model", "", "Planning LLM model (empty: clear)")
+	return cmd
+}
+
+func newAutomationSetVerificationLLMCmd() *cobra.Command {
+	var f automationControlFlags
+	var backend, model, effort string
+	flags := []string{"backend", "model", "effort"}
+	cmd := &cobra.Command{
+		Use:   "set-verification-llm <id>",
+		Short: "Set the verification LLM of an Automation",
+		Long: `Set the LLM that verifies an Automation's members. At least one of --backend,
+--model and --effort is required. Only the flags given are sent; an empty value
+(for example --model "") clears that field.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			body, err := automationLLMBody(cmd, &f, flags)
+			if err != nil {
+				return err
+			}
+			return runAutomationControl(args[0], "set-verification-llm", body)
+		},
+	}
+	f.register(cmd)
+	cmd.Flags().StringVar(&backend, "backend", "", "Verification LLM backend (empty: clear)")
+	cmd.Flags().StringVar(&model, "model", "", "Verification LLM model (empty: clear)")
+	cmd.Flags().StringVar(&effort, "effort", "", "Verification LLM effort (empty: clear)")
 	return cmd
 }
 
