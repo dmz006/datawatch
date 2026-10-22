@@ -1703,6 +1703,7 @@ howto, and the `datawatch-app` issue where applicable.
     surface→test-suite mapping that doesn't exist anywhere today? Scoping
     this precisely is itself real design work, not a one-line addition.
     **Decided by the operator 2026-10-22 (advance gate): add the diff-aware test check, in 10.0.0.** Before advancing, the coordinator verifies the member's terminal status is trustworthy: guardrails and verification passed, loud alerts on any blocked or failed member, and new functionality must come with a specific new test. That check is BL413 (diff-aware project-rules enforcement), which is now in the 10.0.0 scope and needs its own design pass first.
+    **Decided by the operator 2026-10-22 (bug reprioritization), as recorded from the operator's free-text answer:** an arriving bug goes to a dedicated urgent lane (a separate Automation running alongside the main one) when that lane is available. If the urgent lane is not available and the bug is blocking the running Automation, it may be inserted ahead with `urgent` severity (audited). Otherwise it joins the regular queue, placed before the members it could block. Open detail for the operator to confirm: the cap on automatic urgent jumps per window.
 18. **Tree-conflict assessment is BL428 §3a's scope, not this doc's — the
     coordinator just has to consume it faithfully (operator-raised
     2026-10-15, see BL428's own open question 14 for the full write-up).**
