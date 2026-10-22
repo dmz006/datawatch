@@ -24,6 +24,10 @@ package session
 //	DW_LIVE_RESTART_PROJECT_DIR=... project_dir for the probe PRD (optional;
 //	                                default: the daemon's own project-dir
 //	                                policy, e.g. worktree mode)
+//	DW_LIVE_RESTART_BACKEND=...     worker backend for the claude-code variant
+//	                                (TestDaemonRestartAdoptsLiveClaudeCodeWorkerLive);
+//	                                default claude-code. Ignored by the default-
+//	                                backend test.
 //	DW_LIVE_RESTART_CMD='...'       shell command that restarts the daemon.
 //	                                Only for a sandbox daemon that systemd
 //	                                does not manage. When unset, the operator
@@ -42,6 +46,15 @@ package session
 //
 //	DW_LIVE_RESTART_TEST=1 DW_BASE=https://127.0.0.1:18443 \
 //	  go test -count=1 -timeout 25m -run TestDaemonRestartAdoptsLiveWorkerLive -v ./internal/session/
+//
+// The claude-code variant reproduces the field failure (a long-delivered
+// claude-code worker falsely completed/killed after a restart):
+//
+//	DW_LIVE_RESTART_TEST=1 DW_BASE=https://127.0.0.1:18443 \
+//	  env -u TMUX -u TMUX_TMPDIR go test -count=1 -timeout 25m \
+//	  -run TestDaemonRestartAdoptsLiveClaudeCodeWorkerLive -v ./internal/session/
+//
+// Cleanup only ever goes through the API; no test here stops a tmux server.
 
 import (
 	"fmt"
@@ -54,9 +67,12 @@ import (
 )
 
 const (
-	adoptLivePlanWait   = 8 * time.Minute // decompose is an LLM call
-	adoptLiveRunWait    = 5 * time.Minute // worker must start before we restart
-	adoptLiveSettleWait = 5 * time.Minute // adopted worker must finish after restart
+	adoptLivePlanWait   = 8 * time.Minute  // decompose is an LLM call
+	adoptLiveRunWait    = 5 * time.Minute  // worker must start before we restart
+	adoptLiveSettleWait = 5 * time.Minute  // adopted worker must finish after restart
+	adoptLiveEarlyWatch = 60 * time.Second // post-restart window of per-poll state checks
+	adoptLiveMinRunning = 45 * time.Second // claude-code: session must run this long before restart
+	adoptLiveTicks      = 85               // 85 * 2s ≈ 2.8min worker loop
 )
 
 // adoptLiveTask is one entry of the PRD's task tree as this test reads it.
@@ -113,6 +129,44 @@ func (c *bl462LiveClient) prdByID(id string) (adoptLivePRD, error) {
 }
 
 func TestDaemonRestartAdoptsLiveWorkerLive(t *testing.T) {
+	runDaemonRestartAdoptsLiveWorker(t, "", 0)
+}
+
+// TestDaemonRestartAdoptsLiveClaudeCodeWorkerLive runs the same scenario with
+// a claude-code worker that has been running well past the first 30s before
+// the restart, then also asserts the session is never marked complete/killed
+// while the worker is still running.
+func TestDaemonRestartAdoptsLiveClaudeCodeWorkerLive(t *testing.T) {
+	backend := os.Getenv("DW_LIVE_RESTART_BACKEND")
+	if backend == "" {
+		backend = "claude-code"
+	}
+	runDaemonRestartAdoptsLiveWorker(t, backend, adoptLiveMinRunning)
+}
+
+// sessionTimelineHasKilled reports whether the session's timeline records a
+// 'killed' entry.
+func (c *bl462LiveClient) sessionTimelineHasKilled(id string) (bool, error) {
+	var tl struct {
+		Lines []string `json:"lines"`
+	}
+	status, err := c.do(http.MethodGet, "/api/sessions/timeline?id="+id, nil, &tl)
+	if err != nil || status >= 300 {
+		return false, fmt.Errorf("GET timeline: HTTP %d, err %v", status, err)
+	}
+	for _, l := range tl.Lines {
+		if strings.Contains(strings.ToLower(l), "killed") {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// runDaemonRestartAdoptsLiveWorker is the shared body. backend "" uses the
+// daemon default; minRunning > 0 makes the test wait until the worker session
+// has been running that long before restarting (and enables the strict
+// post-restart watch for a premature complete/killed state).
+func runDaemonRestartAdoptsLiveWorker(t *testing.T, backend string, minRunning time.Duration) {
 	if os.Getenv("DW_LIVE_RESTART_TEST") != "1" {
 		t.Skip("set DW_LIVE_RESTART_TEST=1 to run against a live daemon")
 	}
@@ -124,13 +178,16 @@ func TestDaemonRestartAdoptsLiveWorkerLive(t *testing.T) {
 	// Unique token identifying this probe in logs and session task text.
 	token := fmt.Sprintf("adopt-live-%d", time.Now().UnixNano())
 	// A long single worker: run a ~3-minute bash loop, then complete.
-	ticks := 85 // 85 * 2s ≈ 2.8min, comfortably inside the wait windows.
+	ticks := adoptLiveTicks // ≈ 2.8min, comfortably inside the wait windows.
 	spec := fmt.Sprintf(
 		"Probe PRD %s. The whole story is ONE task. That task: run this bash command exactly, wait for it to finish, then reply DATAWATCH_COMPLETE: done.\n"+
 			"for i in $(seq 1 %d); do echo \"%s tick $i\"; sleep 2; done",
 		token, ticks, token)
 
 	startBody := map[string]any{"spec": spec}
+	if backend != "" {
+		startBody["backend"] = backend
+	}
 	if dir := os.Getenv("DW_LIVE_RESTART_PROJECT_DIR"); dir != "" {
 		startBody["project_dir"] = dir
 	}
@@ -248,6 +305,24 @@ func TestDaemonRestartAdoptsLiveWorkerLive(t *testing.T) {
 	}
 	lastSess = sess
 	t.Logf("worker session %s running (state=%q tmux=%q) before restart", sess.ID, sess.State, sess.TmuxSession)
+	capturedAt := time.Now()
+	if minRunning > 0 {
+		// Let the delivered task run well past the first 30s so the restart
+		// lands mid-work, as in the field failure.
+		if time.Since(capturedAt) < minRunning {
+			time.Sleep(minRunning)
+		}
+		sess, ok = c.sessionByID(taskSession)
+		if !ok {
+			t.Fatalf("worker session %s vanished before restart", taskSession)
+		}
+		lastSess = sess
+		if sess.State != "running" && sess.State != "waiting_input" {
+			t.Fatalf("worker session %s is %q before restart; want running/waiting_input (worker ended too early to test adoption)", sess.ID, sess.State)
+		}
+	}
+	// A worker whose loop needs ticks*2s cannot truly finish before this.
+	earliestFinish := capturedAt.Add(time.Duration(ticks)*2*time.Second - 30*time.Second)
 
 	// (e) restart the daemon the way the operator does.
 	preUptime, err := c.uptimeSeconds()
@@ -313,6 +388,36 @@ func TestDaemonRestartAdoptsLiveWorkerLive(t *testing.T) {
 		t.Errorf("BUG (duplicate worker): %d tasks share session %s; one PRD task should own it", n, taskSession)
 	}
 
+	// (g2) strict watch (minRunning > 0): for ~60s after restart the session
+	// must stay running/waiting_input and keep the same task->session link; a
+	// complete/killed state before the worker's loop could have ended is the
+	// false-completion regression.
+	if minRunning > 0 {
+		bl462PollUntil(adoptLiveEarlyWatch, func() bool {
+			s, ok := c.sessionByID(taskSession)
+			if !ok {
+				t.Errorf("worker session %s vanished after restart", taskSession)
+				return true
+			}
+			lastSess = s
+			if time.Now().Before(earliestFinish) && s.State != "running" && s.State != "waiting_input" {
+				t.Errorf("BUG: worker session %s is %q only %s after delivery; the worker is still running", s.ID, s.State, time.Since(capturedAt).Round(time.Second))
+				return true
+			}
+			if p, err := c.prdByID(prd.ID); err == nil {
+				if n := countTaskSessions(p, taskSession); n > 1 {
+					t.Errorf("BUG (duplicate worker): %d tasks share session %s", n, taskSession)
+				}
+				for _, tk := range p.tasks() {
+					if tk.SessionID != "" && tk.SessionID != taskSession {
+						t.Errorf("task %s re-assigned to session %q after restart (duplicate worker)", tk.ID, tk.SessionID)
+					}
+				}
+			}
+			return false
+		})
+	}
+
 	// (h) the adopted worker must finish and drive the task to verification /
 	// completion (never killed, never re-spawned).
 	deadline := false
@@ -341,6 +446,13 @@ func TestDaemonRestartAdoptsLiveWorkerLive(t *testing.T) {
 			t.Errorf("worker session %s ended as killed; adopt-live must never kill the surviving worker", s.ID)
 		}
 	}
+	if minRunning > 0 {
+		if killed, err := c.sessionTimelineHasKilled(taskSession); err != nil {
+			t.Logf("could not read timeline for %s: %v", taskSession, err)
+		} else if killed {
+			t.Errorf("BUG: session %s timeline has a 'killed' entry; the worker must never be killed", taskSession)
+		}
+	}
 	if !deadline {
 		p, _ := c.prdByID(prd.ID)
 		for _, tk := range p.tasks() {
@@ -356,8 +468,8 @@ func TestDaemonRestartAdoptsLiveWorkerLive(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, tk := range p.tasks() {
-		if tk.Status == "completed" {
-			t.Logf("task %s completed through the adopted session %s", tk.ID, taskSession)
+		if tk.Status == "completed" || (minRunning > 0 && tk.Status == "verifying") {
+			t.Logf("task %s reached %s through the adopted session %s", tk.ID, tk.Status, taskSession)
 			return
 		}
 	}

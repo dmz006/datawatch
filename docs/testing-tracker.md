@@ -9,6 +9,20 @@ Do not mark **Validated=Yes** based solely on unit tests.
 
 ---
 
+## Restart keeps claude-code workers — unreleased
+
+A daemon restart no longer ends in-flight claude-code Automaton workers: echo
+suppression uses the persisted task delivery time and task text, and live
+delivered-task sessions are adopted on resume.
+
+| Interface / Endpoint | Tested | Validated | Test Conditions | Notes |
+|---|---|---|---|---|
+| Restart echo repro/regression (post-restart false completion) | **Yes** (`internal/session/restart_echo_test.go`) | Yes (unit) | `env -u TMUX -u TMUX_TMPDIR go test ./internal/session/`; in-memory FakeTmux | Reproduces the typed task text and placeholder being read as a completion after a restart |
+| Completion-after-echo rules (marker counts only after the echoed task text, and only as a real summary line) | **Yes** (`internal/session/completion_after_echo_test.go`) | Yes (unit) | `env -u TMUX -u TMUX_TMPDIR go test ./internal/session/`; FakeTmux | Uses the persisted `TaskDeliveredAt` and task text |
+| `ResumeMonitors` adoption of live delivered-task sessions | **Yes** (`internal/session/resume_monitors_adopt_test.go`) | Yes (unit) | `env -u TMUX -u TMUX_TMPDIR go test ./internal/session/`; FakeTmux | |
+| Boot-resume claude-code adoption | **Yes** (`internal/autonomous/adopt_claude_code_restart_test.go`) | Yes (unit) | `env -u TMUX -u TMUX_TMPDIR go test ./internal/autonomous/` | Task keeps its session id and capacity slot |
+| Live restart of a sandbox daemon with a claude-code worker (`TestDaemonRestartAdoptsLiveClaudeCodeWorkerLive`) | **Yes** (opt-in, `DW_LIVE_RESTART_TEST=1`; skipped otherwise) | No | `env -u TMUX -u TMUX_TMPDIR DW_LIVE_RESTART_TEST=1 DW_BASE=... go test -run TestDaemonRestartAdoptsLiveClaudeCodeWorkerLive ./internal/session/` | Stays No until run against a sandbox daemon; never against production |
+
 ## PRD worktree buildability — `EnsureWorktree` docs-index placeholder
 
 When the daemon creates or reuses a PRD's git worktree, `EnsureWorktree`

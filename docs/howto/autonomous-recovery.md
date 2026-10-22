@@ -220,7 +220,10 @@ with a live worker session. On boot, the resumed run looks at each
   and kill the worker; that is no longer the case.
 
 This applies to every worker backend (`claude-code`, `opencode` and
-`pi-prompt`). The Automaton itself also stays `running` across the restart:
+`pi-prompt`). claude-code workers are adopted too: completion detection after
+a restart ignores the task text the daemon typed into the session and the
+input placeholder, so a restart does not make a running claude-code worker
+look finished. The Automaton itself also stays `running` across the restart:
 boot-resume recreates its executor under the same lock a manual run uses, so
 there is no gap in which another run request could start a second executor
 for the same Automaton.
@@ -248,6 +251,17 @@ DW_LIVE_RESTART_TEST=1 DW_BASE=https://127.0.0.1:18443 DW_BASE_TOKEN=... \
   DW_LIVE_RESTART_CMD='<command that restarts the sandbox daemon>' \
   go test -count=1 -timeout 25m -run TestDaemonRestartAdoptsLiveWorkerLive -v ./internal/session/
 ```
+
+The same check for a claude-code worker is a separate test:
+
+```sh
+env -u TMUX -u TMUX_TMPDIR \
+DW_LIVE_RESTART_TEST=1 DW_BASE=https://127.0.0.1:18443 DW_BASE_TOKEN=... \
+  go test -count=1 -timeout 25m -run TestDaemonRestartAdoptsLiveClaudeCodeWorkerLive -v ./internal/session/
+```
+
+`DW_LIVE_RESTART_BACKEND` selects the worker backend for that test (default
+`claude-code`); the default-backend test ignores it.
 
 Leave `DW_LIVE_RESTART_CMD` unset to restart through the operator path
 (`systemctl --user restart datawatch`, falling back to `datawatch restart`);
