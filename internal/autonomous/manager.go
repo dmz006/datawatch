@@ -627,6 +627,9 @@ type Manager struct {
 	// tasks whose session is still running (B90). Nil = conservative:
 	// all stuck tasks are failed regardless of session state.
 	sessionAliveFn func(sessionID string) bool
+	// sessionLastOutputFn — when set, the boot-resume age gate counts a live
+	// worker session's last output time as PRD activity. Nil = liveness only.
+	sessionLastOutputFn func(sessionID string) (time.Time, bool)
 	// sessionOutputFn — when set, boot-resume reads a dead session's recorded
 	// output to find a completion marker written while the daemon was down.
 	sessionOutputFn func(sessionID string) (output string, ok bool)

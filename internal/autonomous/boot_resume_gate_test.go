@@ -652,7 +652,7 @@ func TestDecideBootResumeUnit(t *testing.T) {
 			if tc.name == "missing-story-dir-parks" {
 				tc.prd.Story[0].Tasks[0].ProjectDir = missing
 			}
-			dec := decideBootResume(tc.prd, now, tc.maxAge)
+			dec := decideBootResume(tc.prd, now, tc.maxAge, bootResumeHooks{})
 			if dec.resume != tc.wantResume {
 				t.Fatalf("resume = %v (%q), want %v", dec.resume, dec.reason, tc.wantResume)
 			}

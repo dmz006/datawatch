@@ -5760,6 +5760,14 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 					s.State != session.StateFailed &&
 					s.State != session.StateKilled
 			})
+			// Boot-resume age gate: a live worker's last activity counts as PRD activity.
+			amgr.SetSessionLastOutputFn(func(sessionID string) (time.Time, bool) {
+				s, ok := mgr.GetSession(sessionID)
+				if !ok || s.UpdatedAt.IsZero() {
+					return time.Time{}, false
+				}
+				return s.UpdatedAt, true
+			})
 			// Boot-resume: recorded output of a session that ended while the daemon
 			// was down, so a finished worker is verified instead of redone.
 			amgr.SetSessionOutputFn(func(sessionID string) (string, bool) {

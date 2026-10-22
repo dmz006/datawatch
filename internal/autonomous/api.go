@@ -261,7 +261,7 @@ func (a *API) gateBootResume(prd *PRD, prior PRDStatus) (dec bootResumeDecision,
 	maxAge := a.M.cfg.ResumeMaxAgeSeconds
 	a.M.mu.Unlock()
 	now = time.Now()
-	dec = decideBootResume(prd, now, maxAge)
+	dec = decideBootResume(prd, now, maxAge, a.M.bootResumeHooks())
 	if dec.resume {
 		return dec, now, false
 	}

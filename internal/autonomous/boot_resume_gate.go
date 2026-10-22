@@ -42,6 +42,48 @@ type BootResumeEntry struct {
 	At         time.Time `json:"at"`
 }
 
+// bootResumeHooks lets decideBootResume consult live worker sessions.
+// Both fields are optional: a nil alive hook means liveness is unknown
+// (records only), a nil lastOutput hook means session output times are
+// unknown (liveness only).
+type bootResumeHooks struct {
+	alive      func(sessionID string) bool
+	lastOutput func(sessionID string) (time.Time, bool)
+}
+
+// hooks snapshots the manager's session hooks under mu.
+func (m *Manager) bootResumeHooks() bootResumeHooks {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return bootResumeHooks{alive: m.sessionAliveFn, lastOutput: m.sessionLastOutputFn}
+}
+
+// SetSessionLastOutputFn wires the reader for a worker session's last
+// output time, used by the boot-resume age gate. ok=false means unknown.
+// Nil falls back to liveness only.
+func (m *Manager) SetSessionLastOutputFn(fn func(sessionID string) (time.Time, bool)) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.sessionLastOutputFn = fn
+}
+
+// liveWorkerSession returns the session id of the first in_progress task
+// whose session is alive, or "".
+func liveWorkerSession(prd *PRD, h bootResumeHooks) string {
+	if h.alive == nil {
+		return ""
+	}
+	for i := range prd.Story {
+		for j := range prd.Story[i].Tasks {
+			t := &prd.Story[i].Tasks[j]
+			if t.Status == TaskInProgress && t.SessionID != "" && h.alive(t.SessionID) {
+				return t.SessionID
+			}
+		}
+	}
+	return ""
+}
+
 // bootResumeDecision is the result of decideBootResume.
 type bootResumeDecision struct {
 	resume bool
@@ -55,8 +97,11 @@ type bootResumeDecision struct {
 // session's start, the only session-activity moment the model tracks).
 // Falls back to PRD.CreatedAt if the PRD somehow has no activity field
 // set at all (freshly-created records); still all-zero if that is
-// missing too, in which case the PRD is treated as age 0.
-func newestActivity(prd *PRD) time.Time {
+// missing too, in which case the PRD is treated as age 0. For each
+// in_progress task with a session id, the live worker's last output time
+// (h.lastOutput) also counts, so a long-running task whose record has not
+// changed since it started is not mistaken for stale.
+func newestActivity(prd *PRD, h bootResumeHooks) time.Time {
 	var newest time.Time
 	if !prd.CreatedAt.IsZero() {
 		newest = prd.CreatedAt
@@ -74,6 +119,11 @@ func newestActivity(prd *PRD) time.Time {
 			upd(t.UpdatedAt)
 			if t.StartedAt != nil {
 				upd(*t.StartedAt)
+			}
+			if h.lastOutput != nil && t.Status == TaskInProgress && t.SessionID != "" {
+				if ts, ok := h.lastOutput(t.SessionID); ok {
+					upd(ts)
+				}
 			}
 		}
 	}
@@ -108,10 +158,12 @@ func projectDirsForBootResume(prd *PRD) []string {
 // (seconds) at decision time. maxAgeSec semantics: 0 = always park
 // (never resume after a restart), -1 = no age limit (skip the age test
 // ONLY — missing project directories still park the PRD), positive N =
-// park when the newest activity is older than N seconds.
-func decideBootResume(prd *PRD, now time.Time, maxAgeSec int) bootResumeDecision {
+// park when the newest activity is older than N seconds — except that a
+// PRD with an in_progress task whose worker session is alive is never
+// stale (h.alive), whatever the record timestamps say.
+func decideBootResume(prd *PRD, now time.Time, maxAgeSec int, h bootResumeHooks) bootResumeDecision {
 	var ageSec int64
-	if newest := newestActivity(prd); !newest.IsZero() {
+	if newest := newestActivity(prd, h); !newest.IsZero() {
 		ageSec = int64(now.Sub(newest).Seconds())
 		if ageSec < 0 {
 			ageSec = 0 // future-dated timestamps (clock skew) count as fresh
@@ -140,12 +192,19 @@ func decideBootResume(prd *PRD, now time.Time, maxAgeSec int) bootResumeDecision
 	}
 
 	// Age rule.
+	liveSess := liveWorkerSession(prd, h)
 	switch {
 	case maxAgeSec == 0:
 		return bootResumeDecision{
 			resume: false,
 			ageSec: ageSec,
 			reason: "boot-resume is disabled for this daemon (resume_max_age_seconds = 0): this PRD was left running or failed before the restart and needs manual review before it runs again",
+		}
+	case maxAgeSec != 0 && liveSess != "":
+		return bootResumeDecision{
+			resume: true,
+			ageSec: ageSec,
+			reason: fmt.Sprintf("worker session %s is alive, so the PRD is not stale (last recorded activity %d seconds ago) and its project directory still exists", liveSess, ageSec),
 		}
 	case maxAgeSec > 0 && ageSec > int64(maxAgeSec):
 		return bootResumeDecision{
