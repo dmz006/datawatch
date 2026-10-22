@@ -37,13 +37,18 @@ func (s *Server) handleAutomationList(_ context.Context, _ mcpsdk.CallToolReques
 
 // ── automation_create ───────────────────────────────────────────────────
 
+// automationMembersJSONDesc documents the members_json argument of
+// automation_create and automation_update: the linear member set plus the
+// Phase 3a kinds (fork, join, nested automation) and their own fields.
+const automationMembersJSONDesc = `JSON array of members. Each member has: id, prd_id, on_complete, on_blocked, on_failed (member IDs or "" = stop), added_reason. Optional kind picks the member shape: "" or "prd" (default) = a member Automaton named by prd_id; "automation" = a nested Automation named by automation_id; "fork" = starts the branch members listed in fork_members together (at least 2 member IDs); "join" = waits for the branch members listed in join_members, which must equal the paired fork's fork_members, then applies on_branch_failure: "all_must_succeed" (default), "any_one_is_enough" or "continue_anyway". Set only the fields that belong to a member's kind; fork_members and join_members are arrays of member IDs.`
+
 func (s *Server) toolAutomationCreate() mcpsdk.Tool {
 	return mcpsdk.NewTool("automation_create",
-		mcpsdk.WithDescription("Create a new Automation — a named chain of Automatons with per-outcome edges, an entry member, optional budgets and execution/verification defaults. The Automation stays a draft until automation_activate."),
+		mcpsdk.WithDescription("Create a new Automation — a named chain of Automatons with per-outcome edges, an entry member, optional budgets and execution/verification defaults. Members can also be fork/join control nodes or nested Automations. The Automation stays a draft until automation_activate."),
 		mcpsdk.WithString("name", mcpsdk.Required(), mcpsdk.Description("Automation name.")),
 		mcpsdk.WithString("description", mcpsdk.Description("Optional description.")),
 		mcpsdk.WithString("entry_member_id", mcpsdk.Description("Member ID where the chain starts.")),
-		mcpsdk.WithString("members_json", mcpsdk.Description(`JSON array of members; each member has: id, prd_id, on_complete, on_blocked, on_failed (member IDs or "" = stop), added_reason`)),
+		mcpsdk.WithString("members_json", mcpsdk.Description(automationMembersJSONDesc)),
 		mcpsdk.WithString("budget_policy_json", mcpsdk.Description("Optional JSON object — budget policy for this Automation.")),
 		mcpsdk.WithString("project_dir", mcpsdk.Description("Optional project directory (informational).")),
 		mcpsdk.WithString("backend", mcpsdk.Description("Optional execution backend default.")),
@@ -137,7 +142,7 @@ func (s *Server) toolAutomationUpdate() mcpsdk.Tool {
 		mcpsdk.WithString("name", mcpsdk.Description("New name.")),
 		mcpsdk.WithString("description", mcpsdk.Description("New description.")),
 		mcpsdk.WithString("entry_member_id", mcpsdk.Description("New entry member ID.")),
-		mcpsdk.WithString("members_json", mcpsdk.Description(`New members as a JSON array; each member has: id, prd_id, on_complete, on_blocked, on_failed (member IDs or "" = stop), added_reason`)),
+		mcpsdk.WithString("members_json", mcpsdk.Description("New members. "+automationMembersJSONDesc)),
 		mcpsdk.WithString("budget_policy_json", mcpsdk.Description("New budget policy as a JSON object.")),
 		mcpsdk.WithString("project_dir", mcpsdk.Description("New project directory.")),
 		mcpsdk.WithString("backend", mcpsdk.Description("New execution backend default.")),

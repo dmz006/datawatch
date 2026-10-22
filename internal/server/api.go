@@ -799,7 +799,7 @@ type AutonomousAPI interface {
 	DeleteAutomation(id string) error
 	ListAutomations() []any
 	GetAutomation(id string) (any, bool)
-	ActivateAutomation(id, actor string) (any, error)
+	ActivateAutomation(id, actor string, expectedVersion int64) (any, error)
 
 	// BL303 S3 T15 — on-demand guardrail invocation for a session.
 	// Runs the named guardrail against projectDir; result is appended to the

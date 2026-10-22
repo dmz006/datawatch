@@ -25,6 +25,11 @@ type LifecycleLevel string
 const (
 	LevelPRD  LifecycleLevel = "prd"
 	LevelTask LifecycleLevel = "task"
+	// LevelAutomation is the level of an Automation reaching a terminal
+	// status (kinds "automation.completed" / "automation.blocked" /
+	// "automation.cancelled"). The coordinator uses it to route a nested
+	// child's outcome back to the parent graph; AutomationID names the child.
+	LevelAutomation LifecycleLevel = "automation"
 )
 
 // Event kinds. Status-change kinds are "<level>.<new_status>" and are
@@ -46,6 +51,12 @@ const (
 // e.g. "prd.completed".
 func PRDStatusKind(s PRDStatus) string { return string(LevelPRD) + "." + string(s) }
 
+// AutomationStatusKind returns the event kind for an Automation entering status
+// s, e.g. "automation.completed".
+func AutomationStatusKind(s AutomationStatus) string {
+	return string(LevelAutomation) + "." + string(s)
+}
+
 // TaskStatusKind returns the event kind for a task entering status s,
 // e.g. "task.verifying".
 func TaskStatusKind(s TaskStatus) string { return string(LevelTask) + "." + string(s) }
@@ -64,20 +75,23 @@ func TerminalPRDKinds() []string {
 
 // LifecycleEvent is one Automaton or task lifecycle transition.
 type LifecycleEvent struct {
-	ID          string            `json:"id"`
-	At          time.Time         `json:"at"`
-	Kind        string            `json:"kind"`
-	Level       LifecycleLevel    `json:"level"`
-	PRDID       string            `json:"prd_id"`
-	ParentPRDID string            `json:"parent_prd_id,omitempty"`
-	StoryID     string            `json:"story_id,omitempty"`
-	TaskID      string            `json:"task_id,omitempty"`
-	OldStatus   string            `json:"old_status,omitempty"`
-	NewStatus   string            `json:"new_status,omitempty"`
-	SessionID   string            `json:"session_id,omitempty"`
-	Decision    *Decision         `json:"decision,omitempty"`
-	Verdict     *GuardrailVerdict `json:"verdict,omitempty"`
-	Host        string            `json:"host,omitempty"`
+	ID          string         `json:"id"`
+	At          time.Time      `json:"at"`
+	Kind        string         `json:"kind"`
+	Level       LifecycleLevel `json:"level"`
+	PRDID       string         `json:"prd_id"`
+	ParentPRDID string         `json:"parent_prd_id,omitempty"`
+	// AutomationID names the Automation an automation-level event is about
+	// (the child of a nested member). Empty for PRD and task events.
+	AutomationID string            `json:"automation_id,omitempty"`
+	StoryID      string            `json:"story_id,omitempty"`
+	TaskID       string            `json:"task_id,omitempty"`
+	OldStatus    string            `json:"old_status,omitempty"`
+	NewStatus    string            `json:"new_status,omitempty"`
+	SessionID    string            `json:"session_id,omitempty"`
+	Decision     *Decision         `json:"decision,omitempty"`
+	Verdict      *GuardrailVerdict `json:"verdict,omitempty"`
+	Host         string            `json:"host,omitempty"`
 	// Deleted is set only on KindPRDUpdated events for a PRD that no
 	// longer loads (deleted). The legacy WS prd_update frame carries
 	// {"deleted": true} in that case and NewStatus alone can't express

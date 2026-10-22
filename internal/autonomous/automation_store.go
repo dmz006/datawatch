@@ -63,6 +63,12 @@ func (s *AutomationStore) load() error {
 		if err := json.Unmarshal(line, &a); err != nil {
 			return err
 		}
+		// Legacy records carry only the single cursor; seed the cursor set
+		// from it so a linear Automation loads unchanged.
+		if len(a.ActiveCursors) == 0 && a.CurrentMemberID != "" {
+			a.ActiveCursors = []string{a.CurrentMemberID}
+		}
+		a.ActiveCursors = sortedUniqueStrings(a.ActiveCursors)
 		s.automations[a.ID] = &a
 		return nil
 	})
@@ -124,6 +130,26 @@ func (s *AutomationStore) OwnerOf(prdID string) string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.owner[prdID]
+}
+
+// nestingOwnerOf returns the ID of a non-terminal Automation that has a
+// kind=automation member naming childID, or "" if none does — the store-side
+// version of the nesting rule in validateAutomationNesting. It takes s.mu, so
+// callers must not hold it.
+func (s *AutomationStore) nestingOwnerOf(childID string) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, a := range s.automations {
+		if a.Status == AutomationCompleted || a.Status == AutomationCancelled {
+			continue
+		}
+		for _, m := range a.Members {
+			if m.kind() == MemberKindAutomation && m.AutomationID == childID {
+				return a.ID
+			}
+		}
+	}
+	return ""
 }
 
 // cloneAutomation returns a deep copy of a via a JSON round trip so
@@ -254,10 +280,14 @@ func (s *AutomationStore) Create(a *Automation) (*Automation, error) {
 	if a.EntryMemberID == "" && len(a.Members) > 0 {
 		a.EntryMemberID = a.Members[0].ID
 	}
+	normalizeActiveCursors(a)
 	if err := validateAutomation(a); err != nil {
 		return nil, err
 	}
 	if err := validateAutomationOwnership(a, s.lookupPRD, s.OwnerOf); err != nil {
+		return nil, err
+	}
+	if err := validateAutomationNesting(a, s.Get, s.nestingOwnerOf); err != nil {
 		return nil, err
 	}
 	err := s.WithLock(a.ID, func() error {
@@ -316,10 +346,14 @@ func (s *AutomationStore) Update(id string, expectedVersion int64, mutate func(*
 			}
 		}
 		clone.ID = id // the store's identity cannot be renamed through mutate
+		normalizeActiveCursors(clone)
 		if err := validateAutomation(clone); err != nil {
 			return err
 		}
 		if err := validateAutomationOwnership(clone, s.lookupPRD, s.OwnerOf); err != nil {
+			return err
+		}
+		if err := validateAutomationNesting(clone, s.Get, s.nestingOwnerOf); err != nil {
 			return err
 		}
 		clone.Version = existing.Version + 1
