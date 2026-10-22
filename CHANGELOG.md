@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.81 — The quality gate confirms a regression by re-running before it reports
+
+### Fixed
+
+- **The per-task quality gate no longer reports a regression from a one-off failure.** A reported regression is now re-run once and is reported only if the failing tests fail again, and the report names the failing tests. Earlier the gate compared failure counts only, so a single intermittent failure under load (counts such as "76 to 77") failed unrelated tasks that could not reproduce it. The DNS messaging backend tests are also hardened: the test server now binds an operating-system chosen port and reports it instead of a closed-then-rebound port helper, and the fixed startup sleeps are replaced by waiting for the listener to be ready. The scan that led here (eight full-suite runs and a DNS stress run, no intermittent failure found) is recorded in a plan note.
+
 ## v9.5.80 — Workers that never got their task are retried and re-sent the task
 
 ### Fixed
