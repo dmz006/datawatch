@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.83 — Automatic commits stage only changed files and refuse whole-home adds
+
+### Fixed
+
+- **Automatic commits and attempt snapshots can no longer stage a whole home directory.** Session snapshots and per-attempt snapshots used to run `git add` over a whole directory tree; in a project directory that was the user's home this staged hundreds of gigabytes and, when interrupted, left temporary pack files behind (one repository reached 843 GB). Staging now goes through a shared guard: it stages only the files the session changed or the declared write scope, skips any file over 50 MB and any cache, model or build-output directory, refuses an over-limit tree with a clear message instead of adding it, bounds the time a staging step may take, and removes its own temporary pack files if it is interrupted. Tests cover a home-like tree with a large file and a cache directory for both the session commit paths and the attempt snapshots; the guard is documented in the implementation and operations notes.
+
 ## v9.5.82 — Pinned models on GPU nodes are protected from silent eviction
 
 ### Added
