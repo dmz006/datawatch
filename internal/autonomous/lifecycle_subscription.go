@@ -121,8 +121,8 @@ func ValidateSubscription(sub Subscription, now time.Time) error {
 	if len(sub.Filter.Kinds) == 0 && sub.Filter.Level == "" {
 		return fmt.Errorf("filter must set at least one of kinds or level")
 	}
-	if sub.Filter.Level != "" && sub.Filter.Level != LevelPRD && sub.Filter.Level != LevelTask {
-		return fmt.Errorf("filter level must be %q or %q, got %q", LevelPRD, LevelTask, sub.Filter.Level)
+	if sub.Filter.Level != "" && sub.Filter.Level != LevelPRD && sub.Filter.Level != LevelTask && sub.Filter.Level != LevelAutomation {
+		return fmt.Errorf("filter level must be %q, %q or %q, got %q", LevelPRD, LevelTask, LevelAutomation, sub.Filter.Level)
 	}
 	for i, k := range sub.Filter.Kinds {
 		if strings.TrimSpace(k) == "" {

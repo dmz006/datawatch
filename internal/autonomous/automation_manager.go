@@ -201,6 +201,10 @@ func (m *Manager) DeleteAutomation(id string) error {
 // PRD setters (GetPRD + SavePRD); nothing reads AutomationID for
 // execution yet.
 func (m *Manager) syncAutomationMembership(automationID string, oldMembers, newMembers []AutomationMember, terminal bool) error {
+	// Only prd members own a PRD. Fork, join and nested members carry no
+	// PRD ID, so they take no part in PRD membership.
+	oldMembers = prdMembersOnly(oldMembers)
+	newMembers = prdMembersOnly(newMembers)
 	old := make(map[string]struct{}, len(oldMembers))
 	for _, mem := range oldMembers {
 		old[mem.PRDID] = struct{}{}

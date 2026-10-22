@@ -23,6 +23,13 @@ type AutomationStarter interface {
 	Resume(id, actor string) (any, error)
 }
 
+// nestedStarter is the optional part of a starter that activates a nested
+// child Automation (a kind=automation member). It is checked by type assertion,
+// so starters that predate nesting still satisfy AutomationStarter.
+type nestedStarter interface {
+	ActivateAutomation(id, actor string) (any, error)
+}
+
 const (
 	coordinatorActor = "automation"
 	// coordinatorCASRetries bounds the re-read/retry loop on a Version
@@ -61,6 +68,11 @@ type Coordinator struct {
 	idleTick time.Duration
 	idleStop chan struct{}
 	alerted  map[string]time.Time
+
+	// preApply is a test seam: when set, advance calls it after the step is
+	// computed and before the compare-and-set write, so a test can move the
+	// Automation underneath the step. Nil in production.
+	preApply func()
 }
 
 // NewCoordinator builds a coordinator over m that starts members through
@@ -84,6 +96,16 @@ func coordinatorKinds() []string {
 	return kinds
 }
 
+// automationTerminalKinds are the nested-child events the coordinator routes
+// back to the parent graph: the child reached a status that ends its run.
+func automationTerminalKinds() []string {
+	return []string{
+		AutomationStatusKind(AutomationCompleted),
+		AutomationStatusKind(AutomationBlocked),
+		AutomationStatusKind(AutomationCancelled),
+	}
+}
+
 // Start subscribes to member lifecycle events. Calling it twice is a no-op.
 func (c *Coordinator) Start() {
 	if c == nil {
@@ -94,7 +116,12 @@ func (c *Coordinator) Start() {
 		c.mu.Unlock()
 		return
 	}
-	c.cancel = c.m.Subscribe(LifecycleFilter{Level: LevelPRD, Kinds: coordinatorKinds()}, c.onMemberTerminal)
+	cancelPRD := c.m.Subscribe(LifecycleFilter{Level: LevelPRD, Kinds: coordinatorKinds()}, c.onMemberTerminal)
+	cancelChild := c.m.Subscribe(LifecycleFilter{Level: LevelAutomation, Kinds: automationTerminalKinds()}, c.onMemberTerminal)
+	c.cancel = func() {
+		cancelPRD()
+		cancelChild()
+	}
 	c.idleStop = make(chan struct{})
 	go c.idleLoop(c.idleStop, c.idleTick)
 	c.mu.Unlock()
@@ -192,27 +219,17 @@ func (c *Coordinator) prdState(prdID string) (name string, status PRDStatus, ok 
 	return name, status, true
 }
 
-// advancePlan is the outcome of evaluating one member event against an
-// Automation snapshot; apply mutates a clone of that snapshot.
-type advancePlan struct {
-	from, to  string // member IDs; to is "" when the cursor does not move
-	edge      string
-	outcome   string // PRD status observed
-	newStatus AutomationStatus
-	reason    string // set when the Automation goes blocked
-	info      string // set when the Automation completes
-	memStatus MemberStatus
-	start     bool
-	resume    bool // start via Resume instead of Run
-	toPRD     string
-	fromPRD   string
-	fromName  string
-	toName    string
-}
-
-// onMemberTerminal handles one member lifecycle event.
+// onMemberTerminal handles one lifecycle event: a member PRD's terminal status,
+// or an automation-level event for a nested child Automation (routed by its ID).
 func (c *Coordinator) onMemberTerminal(ev LifecycleEvent) {
-	if c == nil || ev.PRDID == "" {
+	if c == nil {
+		return
+	}
+	if ev.Level == LevelAutomation {
+		c.onChildTerminal(ev)
+		return
+	}
+	if ev.PRDID == "" {
 		return
 	}
 	prd, ok := c.m.store.GetPRD(ev.PRDID)
@@ -225,34 +242,177 @@ func (c *Coordinator) onMemberTerminal(ev LifecycleEvent) {
 		return
 	}
 	status := PRDStatus(ev.NewStatus)
+	end, ok := prdEnd(status)
+	if !ok {
+		return // a wait status: the member is still in progress
+	}
+	if status == PRDFailed && !c.Ready() {
+		c.mu.Lock()
+		c.deferred[ev.PRDID] = struct{}{}
+		c.mu.Unlock()
+		return
+	}
+	a, ok := c.m.automations.Get(autoID)
+	if !ok {
+		return
+	}
+	mem := memberByPRD(a, ev.PRDID)
+	if mem == nil {
+		return
+	}
+	c.advance(autoID, stepInput{memberID: mem.ID, end: end})
+}
+
+// onChildTerminal routes a nested child Automation's terminal status to every
+// parent that nests it, advancing the parent's nested member along its edge.
+func (c *Coordinator) onChildTerminal(ev LifecycleEvent) {
+	end, ok := childEnd(AutomationStatus(ev.NewStatus))
+	if !ok || ev.AutomationID == "" {
+		return
+	}
+	for _, parent := range c.m.automations.List() {
+		if parent.Status != AutomationActive && parent.Status != AutomationPaused {
+			continue
+		}
+		if mem := memberByChild(parent, ev.AutomationID); mem != nil {
+			c.advance(parent.ID, stepInput{memberID: mem.ID, end: end})
+		}
+	}
+}
+
+// advance applies one step to Automation autoID. The step is computed on the
+// current record, the member starts it implies are marked in flight before the
+// write (so boot reconcile never reads a just-marked member as errored), and the
+// write applies the same step to the version it was computed from. A version
+// conflict re-reads and re-evaluates; a step whose precondition has moved on is
+// a no-op with no write.
+func (c *Coordinator) advance(autoID string, in stepInput) {
 	for attempt := 0; attempt < coordinatorCASRetries; attempt++ {
 		a, ok := c.m.automations.Get(autoID)
 		if !ok || (a.Status != AutomationActive && a.Status != AutomationPaused) {
 			return
 		}
-		mem := automationMember(a, a.CurrentMemberID)
-		if mem == nil || mem.PRDID != ev.PRDID {
-			return // not the cursor member: stale or duplicate event
-		}
-		plan := c.plan(a, mem, status)
-		if plan == nil {
-			return
-		}
-		release := c.beginStart(plan.toPRD, plan.start)
-		updated, err := c.m.automations.Update(a.ID, a.Version, plan.apply)
+		snap := c.snapshotMembers(a)
+		dry, err := step(cloneAutomation(a), in, snap)
 		if err != nil {
-			release()
+			return // stale: the member is no longer a live cursor
+		}
+		releases := c.beginStarts(dry.starts)
+		if c.preApply != nil {
+			c.preApply()
+		}
+		var eff *stepEffects
+		updated, err := c.m.automations.Update(a.ID, a.Version, func(cur *Automation) error {
+			var serr error
+			eff, serr = step(cur, in, snap)
+			return serr
+		})
+		if err != nil {
+			releaseAll(releases)
 			if strings.HasPrefix(err.Error(), "409") {
-				continue // Version moved: re-read; the loser becomes a no-op
+				continue // version moved: re-read and re-evaluate
 			}
-			log.Printf("[autonomous] automation %s advance on prd %s: %v", a.ID, ev.PRDID, err)
+			if !errors.Is(err, errStaleStep) {
+				log.Printf("[autonomous] automation %s advance on member %s: %v", autoID, in.memberID, err)
+			}
 			return
 		}
-		c.afterAdvance(updated, plan)
-		release()
+		c.afterAdvance(updated, eff)
+		releaseAll(releases)
 		return
 	}
-	log.Printf("[autonomous] automation %s: advance on prd %s dropped after %d version conflicts", autoID, ev.PRDID, coordinatorCASRetries)
+	log.Printf("[autonomous] automation %s: advance on member %s dropped after %d version conflicts", autoID, in.memberID, coordinatorCASRetries)
+}
+
+// snapshotMembers reads every member's live facts once, for a step.
+func (c *Coordinator) snapshotMembers(a *Automation) map[string]memberInfo {
+	snap := make(map[string]memberInfo, len(a.Members))
+	for _, m := range a.Members {
+		switch m.kind() {
+		case MemberKindPRD:
+			name, status, ok := c.prdState(m.PRDID)
+			if !ok {
+				status = "missing"
+			}
+			if name == "" {
+				name = m.PRDID
+			}
+			snap[m.ID] = memberInfo{name: name, prdStatus: status}
+		case MemberKindAutomation:
+			name := m.AutomationID
+			if child, ok := c.m.automations.Get(m.AutomationID); ok && child.Name != "" {
+				name = child.Name
+			}
+			snap[m.ID] = memberInfo{name: name}
+		case MemberKindJoin:
+			snap[m.ID] = memberInfo{name: "join " + m.ID}
+		default:
+			snap[m.ID] = memberInfo{name: "fork " + m.ID}
+		}
+	}
+	return snap
+}
+
+// afterAdvance performs the effects that follow a won write: membership release,
+// audit, decisions, alerts and the member starts. The starts happen only here,
+// after the compare-and-set won, so one member is never started twice.
+func (c *Coordinator) afterAdvance(a *Automation, eff *stepEffects) {
+	if eff.completed {
+		if err := c.m.syncAutomationMembership(a.ID, a.Members, nil, true); err != nil {
+			log.Printf("[autonomous] automation %s: clear membership: %v", a.ID, err)
+		}
+	}
+	for _, au := range eff.audits {
+		c.audit(au.action, au.details)
+	}
+	for _, n := range eff.notes {
+		c.memberDecision(n.prdID, n.note)
+	}
+	for _, id := range eff.touched {
+		c.m.EmitPRDUpdate(id)
+	}
+	switch {
+	case eff.blocked != "":
+		c.blocked(a, eff.blocked, eff.details)
+		c.emitTerminal(a)
+	case eff.completed:
+		c.alert("info", "Automation completed", eff.info)
+		c.emitTerminal(a)
+	}
+	for _, s := range eff.starts {
+		c.launch(a.ID, s)
+	}
+}
+
+// emitTerminal publishes an Automation-level event when the Automation reaches a
+// terminal status, so a parent that nests it can route the outcome back.
+func (c *Coordinator) emitTerminal(a *Automation) {
+	switch a.Status {
+	case AutomationCompleted, AutomationBlocked:
+		c.m.emit(LifecycleEvent{
+			Kind:         AutomationStatusKind(a.Status),
+			Level:        LevelAutomation,
+			AutomationID: a.ID,
+			NewStatus:    string(a.Status),
+		})
+	}
+}
+
+// beginStarts marks each PRD start in flight and returns the releases.
+func (c *Coordinator) beginStarts(starts []memberStart) []func() {
+	var releases []func()
+	for _, s := range starts {
+		if s.kind == MemberKindPRD {
+			releases = append(releases, c.beginStart(s.prdID, true))
+		}
+	}
+	return releases
+}
+
+func releaseAll(releases []func()) {
+	for _, r := range releases {
+		r()
+	}
 }
 
 // beginStart marks prdID as being started (when on is true) and returns the
@@ -295,78 +455,6 @@ func automationMember(a *Automation, id string) *AutomationMember {
 	return nil
 }
 
-// plan maps the member's observed PRD status onto an advance, or returns
-// nil when the status means "wait" or the event is not actionable.
-func (c *Coordinator) plan(a *Automation, mem *AutomationMember, status PRDStatus) *advancePlan {
-	name, _, _ := c.prdState(mem.PRDID)
-	p := &advancePlan{from: mem.ID, fromPRD: mem.PRDID, fromName: name, outcome: string(status)}
-	var target string
-	switch status {
-	case PRDCompleted:
-		p.edge, target, p.memStatus = edgeOnComplete, mem.OnComplete, MemberCompleted
-	case PRDBlocked:
-		p.edge, target, p.memStatus = edgeOnBlocked, mem.OnBlocked, MemberBlocked
-	case PRDFailed:
-		if !c.Ready() {
-			c.mu.Lock()
-			c.deferred[mem.PRDID] = struct{}{}
-			c.mu.Unlock()
-			return nil
-		}
-		p.edge, target, p.memStatus = edgeOnFailed, mem.OnFailed, MemberFailed
-	case PRDCancelled, PRDArchived, PRDRejected:
-		p.memStatus = MemberBlocked
-		p.newStatus = AutomationBlocked
-		p.reason = "member cancelled outside the Automation"
-		return p
-	case PRDApproved:
-		if mem.Status != MemberRunning {
-			return nil
-		}
-		p.memStatus = MemberBlocked
-		p.newStatus = AutomationBlocked
-		p.reason = "member run errored"
-		return p
-	default:
-		return nil // needs_review, revisions_asked, planning, draft, paused: wait
-	}
-
-	if target == "" {
-		if status == PRDCompleted {
-			p.newStatus = AutomationCompleted
-			p.info = fmt.Sprintf("Automation %q completed: %s finished with no on_complete edge", a.Name, name)
-		} else {
-			p.newStatus = AutomationBlocked
-			p.reason = fmt.Sprintf("member %s %s and has no %s edge", name, status, p.edge)
-		}
-		return p
-	}
-
-	next := automationMember(a, target)
-	if next == nil {
-		p.newStatus = AutomationBlocked
-		p.reason = fmt.Sprintf("%s edge names unknown member %s", p.edge, target)
-		return p
-	}
-	p.to, p.toPRD = next.ID, next.PRDID
-	p.toName, _, _ = c.prdState(next.PRDID)
-	p.newStatus = a.Status // unchanged unless the gate fails
-	if a.Status == AutomationPaused {
-		return p // move the cursor, do not start
-	}
-	mode, nextStatus := c.startGate(next.PRDID)
-	switch mode {
-	case "run":
-		p.start = true
-	case "resume":
-		p.start, p.resume = true, true
-	default:
-		p.newStatus = AutomationBlocked
-		p.reason = fmt.Sprintf("next member %s is %s", p.toName, nextStatus)
-	}
-	return p
-}
-
 // startGate decides how a member PRD may be started: "run" when cleanly
 // approved, "resume" when paused, "" otherwise (with the observed status).
 func (c *Coordinator) startGate(prdID string) (mode string, status PRDStatus) {
@@ -374,105 +462,106 @@ func (c *Coordinator) startGate(prdID string) (mode string, status PRDStatus) {
 	if !ok {
 		return "", "missing"
 	}
-	switch status {
-	case PRDApproved:
-		return "run", status
-	case PRDPaused:
-		return "resume", status
-	}
-	return "", status
+	return gateMode(status), status
 }
 
-// apply records the plan on a clone of the Automation (called by the
-// store under the per-Automation lock, after the Version check).
-func (p *advancePlan) apply(a *Automation) error {
-	now := time.Now()
-	from := automationMember(a, p.from)
-	if from == nil {
-		return errors.New("409: cursor member vanished")
+// launch performs one member start after the write won. A failed start of a
+// fork branch ends that branch; a failed start of any other member blocks the
+// Automation.
+func (c *Coordinator) launch(autoID string, s memberStart) {
+	err := c.runStart(s)
+	if s.kind == MemberKindAutomation {
+		c.audit("automation_nested_activate", map[string]any{
+			"automation_id": autoID, "member": s.memberID, "child_automation_id": s.childID,
+			"result": startResult(err), "actor": coordinatorActor,
+		})
+	} else if s.branch {
+		c.audit("automation_fork", map[string]any{
+			"automation_id": autoID, "member": s.memberID, "prd_id": s.prdID,
+			"result": startResult(err), "actor": coordinatorActor,
+		})
 	}
-	from.Status = p.memStatus
-	from.FinishedAt = &now
-	from.Outcome = p.outcome
-	from.EdgeTaken = p.edge
-	a.IdleSince = nil
+	if err == nil {
+		return
+	}
+	if s.branch {
+		c.branchStartFailed(autoID, s, err)
+		return
+	}
+	c.startFailed(autoID, s, err)
+}
 
-	var kind, note string
-	switch {
-	case p.to != "":
-		a.CurrentMemberID = p.to
-		kind = "advance"
-		note = fmt.Sprintf("%s -> %s via %s (member %s)", p.fromName, p.toName, p.edge, p.outcome)
-		if p.start {
-			if next := automationMember(a, p.to); next != nil {
-				next.Status = MemberRunning
-				next.StartedAt = &now
-			}
-		} else if p.newStatus != AutomationBlocked {
-			a.IdleSince = &now // paused: cursor moved, nothing started
+func startResult(err error) string {
+	if err == nil {
+		return "started"
+	}
+	return "start-error: " + err.Error()
+}
+
+// runStart performs the start of one member: a PRD through Run or Resume, a
+// nested child Automation through the starter's ActivateAutomation.
+func (c *Coordinator) runStart(s memberStart) error {
+	if s.kind == MemberKindAutomation {
+		act, ok := c.starter.(nestedStarter)
+		if !ok {
+			return fmt.Errorf("starter cannot activate nested automation %s", s.childID)
 		}
-	case p.newStatus == AutomationCompleted:
-		a.CurrentMemberID = ""
-		kind = "advance"
-		note = p.info
+		_, err := act.ActivateAutomation(s.childID, coordinatorActor)
+		return err
 	}
-	if p.newStatus != "" && p.newStatus != a.Status {
-		a.Status = p.newStatus
+	var err error
+	if s.resume {
+		_, err = c.starter.Resume(s.prdID, coordinatorActor)
+	} else {
+		err = c.starter.Run(s.prdID)
 	}
-	switch a.Status {
-	case AutomationCompleted:
-		a.FinishedAt = &now
-	case AutomationBlocked:
-		kind, note = "blocked", p.reason
+	c.m.EmitPRDUpdate(s.prdID)
+	return err
+}
+
+// branchStartFailed ends a fork branch whose start errored. The join decides
+// what that means; the sibling branches keep running.
+func (c *Coordinator) branchStartFailed(autoID string, s memberStart, err error) {
+	c.advance(autoID, stepInput{memberID: s.memberID, end: endOutcome{
+		memStatus: MemberFailed,
+		outcome:   "start-error",
+		note:      fmt.Sprintf("branch %s failed to start: %v", s.name, err),
+	}})
+}
+
+// startMember starts a PRD member outside a step (the activation and boot
+// reconcile paths). A failure blocks the Automation.
+func (c *Coordinator) startMember(autoID, memID, prdID, name string, resume bool) {
+	s := memberStart{memberID: memID, kind: MemberKindPRD, prdID: prdID, name: name, resume: resume}
+	if err := c.runStart(s); err != nil {
+		c.startFailed(autoID, s, err)
+	}
+}
+
+// startFailed blocks the Automation when a non-branch member fails to start.
+func (c *Coordinator) startFailed(autoID string, s memberStart, err error) {
+	reason := fmt.Sprintf("next member %s failed to start: %v", s.name, err)
+	a, uerr := c.m.automations.Update(autoID, 0, func(a *Automation) error {
+		now := time.Now()
+		a.Status = AutomationBlocked
 		a.IdleSince = &now
-	}
-	if kind != "" {
-		a.Decisions = trimDecisions(append(a.Decisions, Decision{At: now, Kind: kind, Actor: coordinatorActor, Note: note}))
-	}
-	return nil
-}
-
-// afterAdvance performs the effects that follow a successful write: the
-// member-PRD decision, audit, alerts, PRD update, and the actual start.
-// The start happens only here, after the compare-and-set won, so one PRD
-// is never started twice.
-func (c *Coordinator) afterAdvance(a *Automation, p *advancePlan) {
-	if p.newStatus == AutomationCompleted {
-		if err := c.m.syncAutomationMembership(a.ID, a.Members, nil, true); err != nil {
-			log.Printf("[autonomous] automation %s: clear membership: %v", a.ID, err)
+		if mem := automationMember(a, s.memberID); mem != nil {
+			mem.Status = MemberPending
+			mem.StartedAt = nil
 		}
+		dropCursor(a, s.memberID)
+		a.Decisions = trimDecisions(append(a.Decisions, Decision{At: now, Kind: "blocked", Actor: coordinatorActor, Note: reason}))
+		return nil
+	})
+	if uerr != nil {
+		log.Printf("[autonomous] automation %s: block after start failure: %v", autoID, uerr)
+		return
 	}
-	details := map[string]any{
-		"automation_id": a.ID, "from": p.from, "to": p.to,
-		"edge": p.edge, "outcome": p.outcome, "actor": coordinatorActor,
-	}
-	decisionPRD := p.fromPRD
-	if p.to != "" {
-		decisionPRD = p.toPRD
-		c.audit("automation_advance", details)
-	}
-	if p.start {
-		decisionPRD = p.toPRD
-	}
-	note := fmt.Sprintf("automation %s: %s -> %s via %s", a.ID, p.fromName, p.toName, p.edge)
-	if p.to == "" {
-		note = fmt.Sprintf("automation %s: %s ended %s", a.ID, p.fromName, p.outcome)
-	}
-	c.memberDecision(decisionPRD, note)
-	c.m.EmitPRDUpdate(p.fromPRD)
-
-	switch {
-	case p.newStatus == AutomationBlocked && p.reason != "":
-		c.blocked(a, p.reason, details)
-	case p.newStatus == AutomationCompleted:
-		c.audit("automation_advance", details)
-		c.alert("info", "Automation completed", p.info)
-	}
-	if p.start {
-		c.startMember(a.ID, p.to, p.toPRD, p.toName, p.resume)
-	}
+	c.emitTerminal(a)
+	c.blocked(a, reason, map[string]any{"to": s.memberID})
 }
 
+// blocked records and alerts an Automation that has gone blocked.
 func (c *Coordinator) blocked(a *Automation, reason string, details map[string]any) {
 	d := map[string]any{}
 	for k, v := range details {
@@ -481,38 +570,6 @@ func (c *Coordinator) blocked(a *Automation, reason string, details map[string]a
 	d["automation_id"], d["reason"], d["actor"] = a.ID, reason, coordinatorActor
 	c.audit("automation_blocked", d)
 	c.alert("warn", "Automation blocked", fmt.Sprintf("Automation %q (%s): %s", a.Name, a.ID, reason))
-}
-
-// startMember starts a member PRD through the starter; a failure to start
-// blocks the Automation.
-func (c *Coordinator) startMember(autoID, memID, prdID, name string, resume bool) {
-	var err error
-	if resume {
-		_, err = c.starter.Resume(prdID, coordinatorActor)
-	} else {
-		err = c.starter.Run(prdID)
-	}
-	c.m.EmitPRDUpdate(prdID)
-	if err == nil {
-		return
-	}
-	reason := fmt.Sprintf("next member %s failed to start: %v", name, err)
-	a, uerr := c.m.automations.Update(autoID, 0, func(a *Automation) error {
-		now := time.Now()
-		a.Status = AutomationBlocked
-		a.IdleSince = &now
-		if mem := automationMember(a, memID); mem != nil {
-			mem.Status = MemberPending
-			mem.StartedAt = nil
-		}
-		a.Decisions = trimDecisions(append(a.Decisions, Decision{At: now, Kind: "blocked", Actor: coordinatorActor, Note: reason}))
-		return nil
-	})
-	if uerr != nil {
-		log.Printf("[autonomous] automation %s: block after start failure: %v", autoID, uerr)
-		return
-	}
-	c.blocked(a, reason, map[string]any{"to": memID})
 }
 
 // memberDecision appends an automation_advance Decision to a member PRD.
@@ -570,7 +627,7 @@ func (c *Coordinator) activate(id, actor string) (*Automation, error) {
 			now := time.Now()
 			a.Status = AutomationActive
 			a.StartedAt = &now
-			a.CurrentMemberID = a.EntryMemberID
+			addCursor(a, a.EntryMemberID)
 			note := "activated by " + actor
 			if reason != "" {
 				a.Status = AutomationBlocked
