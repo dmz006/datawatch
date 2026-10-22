@@ -773,6 +773,28 @@ Short IDs (`a3f2`) work if only one machine has a session with that ID. If both 
 
 ---
 
+### Auto-commit refused
+
+**Symptom:** An automatic commit fails with an error beginning `auto-commit refused:`, prefixed with the repository directory:
+
+```
+/home/you/project: auto-commit refused: 12504 files staged exceeds the limit of 10000 (MaxStagedFiles). Narrow the write scope (read_dirs/write_dirs) so the commit stages fewer files, or point the project directory at a repository rather than a home directory.
+```
+
+**What it means:** The commit would have staged more files than the staged-file limit allows (`MaxStagedFiles`, default 10000). Datawatch refused rather than commit a whole directory tree. The usual cause is a session write scope that covers a directory holding a large number of files, most often caches, dependency trees, or model weights inside the project directory.
+
+**Datawatch does not stage anything when it refuses.** Nothing is added to the index, so there is nothing to unstage and no partial commit exists.
+
+**How to fix it:**
+
+1. **Narrow the write scope.** Set the session's `read_dirs` and `write_dirs` to the directories the work actually touches, so the commit's files are the ones the session changed.
+2. **Move out-of-tree assets out of the project directory.** Keep caches (`.cache`, `.gradle`, `node_modules`, build output) and model weights (`*.gguf`, `*.safetensors`, and similar) in a location outside the project directory, and reference them by absolute path.
+3. **Check the project directory.** If it is your home directory, the log also carries a prominent home-directory warning. Point the project directory at the repository for the work instead.
+
+Retry the commit after the change. The guard evaluates each automatic commit against the current working tree.
+
+---
+
 ## 8. Monitoring
 
 ### Health and Readiness (Kubernetes probes)
