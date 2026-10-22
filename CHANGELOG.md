@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.88 — Reactive usage back-off for rate-limited backends
+
+### Added
+
+- **Reactive usage back-off.** When a session of a backend reaches the rate-limited state (detected from the screen-matched rate-limit messages), datawatch now sets a back-off flag for that backend. Capacity admission waits on the flag for autonomous dispatch of that backend and reports the wait reason, and a global cooldown is treated as a wait and not as a failure. The flag clears at the reset time parsed from the rate-limit message when there is one; otherwise it stays set until an operator clears it or the configurable maximum back-off passes (`autonomous.backoff_max_wait_minutes`, default 60). Interactive session starts are never blocked. `autonomous.usage_backoff` (`pause_backend` or `off`) turns the behaviour on or off. The back-off state (backend, since, reset time or unknown, source) appears in `autonomous_status` and the capacity API, with set and clear operations on REST, MCP, the CLI and the chat commands. A pattern-drift staleness flag (`patterns_version`, `patterns_stale`) is raised when the rate-limit pattern list changes since the last operator recheck, with a recheck operation on the same surfaces.
+
 ## v9.5.87 — Automation control operations: pause, resume, cancel, skip, insert, remove, reorder
 
 ### Added
