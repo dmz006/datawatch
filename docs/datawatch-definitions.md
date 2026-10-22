@@ -59,6 +59,9 @@ There's also a **Core feature reference matrix** further down, listing which fea
   - [Automata list](#automata-list)
   - [Launch Automaton form](#launch-automaton-form)
   - [Automaton detail — Overview / Stories / Decisions / Scan](#automaton-detail)
+- [Automation](#automation)
+  - [Automation list](#automation-list)
+  - [Automation detail and pipeline strip](#automation-detail-and-pipeline-strip)
 - [Dashboard](#dashboard)
   - [Session constellation](#session-constellation)
   - [EKG waveform](#ekg-waveform)
@@ -593,6 +596,24 @@ The header strip carries the **initial spec** (expandable — first 280 characte
 [howto/evals](howto/evals.md) ·
 [howto/council-mode](howto/council-mode.md) ·
 [howto/skills-sync](howto/skills-sync.md)
+
+---
+
+## Automation
+
+An **Automation** is a named chain of Automata: it decides which Automaton runs next when the current one completes, is blocked, or fails. An **Automaton** is one unit of work. The Automation is the chain; the Automaton is a link in it. The Automation tab sits to the left of the Automata tab, and a chain can include forks (members that run side by side), joins (where the branches meet again) and other Automations nested as a single member.
+
+### Automation list
+
+One card per Automation, ordered by status and then name. Each card shows the status, progress as completed members out of work members, the member (or members) running now, how long an active Automation has been idle, the reason a blocked one is blocked, and the budget ceiling with its window (marked estimated when the ceiling is a share of an allocation). Status badges, a search box and a history toggle for cancelled Automations narrow the list, and **＋ New Automation** opens the create and edit form: members, edges, fork and join, nested Automations, default models and a budget policy.
+
+### Automation detail and pipeline strip
+
+Opening a card draws the chain as a pipeline strip: a status dot on every member, an active ring on members in flight, "if blocked" and "if failed" outcomes as sub-rows, fork branches as side-by-side lanes joined by a join with its rule, nested Automations that expand one level at a time, an **inserted** marker on members added later, and dashed connectors for edges a finished member did not take. Above the strip are Pause, Resume and Cancel (cancel always asks whether the running member should be cancelled too); each member card carries Skip, Insert before / after, Remove and Edit edges, and held inserts wait under Pending inserts for approval. If another operator changed the Automation first, the page asks you to reload instead of overwriting their change.
+
+**See also:**
+[howto/automation-tab.md](howto/automation-tab.md) ·
+[howto/automation-queue-advance.md](howto/automation-queue-advance.md)
 
 ---
 

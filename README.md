@@ -143,7 +143,9 @@ these change v9.0.0's actual feature set, described below.
 An active Automation (a chain of Automata with next-step edges) now starts
 its next Automaton on its own when the current one finishes, and a draft one is
 activated from REST, MCP, the CLI or chat — see
-[automation-queue-advance.md](docs/howto/automation-queue-advance.md).
+[automation-queue-advance.md](docs/howto/automation-queue-advance.md). The
+Automation tab in the web app lists, draws and steers them — see
+[automation-tab.md](docs/howto/automation-tab.md).
 
 **v9.0.0 — Memory Lifecycle Complete.** The
 first major version since the memory-scope/lifecycle work landed:
