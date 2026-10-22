@@ -923,7 +923,9 @@ autonomous:
   # Capacity-aware admission: tasks wait for a free host / compute-node / LLM
   # slot (status waiting_capacity) instead of failing. Default true.
   # Per-node limit: compute node max_concurrent_sessions; per-LLM: max_inflight
-  # (0 = unlimited); per-Automaton queue order: priority (set_priority).
+  # (0 = unlimited) or, when an explicit max_inflight is absent, the LLM entry's
+  # plan_tier mapped through plan_tier_max_inflight below; per-Automaton queue
+  # order: priority (set_priority).
   # v8.36.0 — the same node:/llm: pools are now also enforced for: (1) an
   # interactive session start (see session.capacity_wait_seconds above —
   # short timeout, since that's a synchronous HTTP request, not a background
@@ -932,6 +934,25 @@ autonomous:
   capacity_enabled: true
   # Longest a task may wait for capacity before failing (seconds). Default 14400.
   capacity_wait_timeout_seconds: 14400
+  # LLM plan-tier inflight caps (map tier -> max concurrent autonomous
+  # sessions, 0 = unlimited). An LLM registry entry can carry a plan_tier
+  # (unset | pro | max_5x | max_20x | api — the operator's subscription tier
+  # for that LLM, editable in Settings > Compute > LLM edit, or via REST
+  # PUT /api/llms/{name} / MCP llm_update; see docs/api-mcp-mapping.md). Its
+  # llm:<name> pool limit is then the value mapped above, unless an explicit
+  # max_inflight > 0 on that entry wins outright. An entry with neither gets
+  # a conservative kind default (1 for subscription kinds such as claude-code,
+  # unlimited for local Ollama/OpenWebUI kinds — which stay governed by the
+  # node: pools and max_engines_per_node — and for dollar-metered API kinds).
+  # The default table is operator policy, not a technical limit: pro=1,
+  # max_5x=2, max_20x=4, api=0 (unlimited until the dollar-budget phase
+  # lands). Unknown tiers or negative caps are config errors — the daemon
+  # refuses to start naming the key. Same key over REST / MCP config_set.
+  plan_tier_max_inflight:
+    pro: 1
+    max_5x: 2
+    max_20x: 4
+    api: 0
   # Hold new tasks while a node's busiest GPU is at/above this percent (0 = off).
   capacity_gpu_util_pct: 0
   # LLM backend used for the planning/decompose call. Any configured LLM name works:

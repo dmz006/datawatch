@@ -2893,6 +2893,105 @@ sessions run.
 
 ---
 
+## Per-LLM concurrency limits and plan tiers
+
+Each LLM registry entry carries a concurrency cap for its `llm:<name>`
+pool. Where it comes from, in precedence order:
+
+1. **`max_inflight` > 0** on the LLM entry (explicit operator override);
+2. **`plan_tier` + the `autonomous.plan_tier_max_inflight` table** — the
+   entry's subscription tier (`unset`, `pro`, `max_5x`, `max_20x`, `api`)
+   mapped to a cap (default table: `pro: 1`, `max_5x: 2`, `max_20x: 4`,
+   `api: 0` / unlimited);
+3. **kind default** — 1 in-flight for subscription kinds (claude-code and
+   the other non-local, non-API kinds), unlimited for local
+   Ollama/OpenWebUI kinds (those stay governed by the `node:` pools and
+   `max_engines_per_node`) and for dollar-metered API kinds.
+
+The table is **operator policy, not a technical limit** — tune it to what
+your subscription plans actually allow, in one place:
+
+```yaml
+autonomous:
+  plan_tier_max_inflight:
+    pro: 1        # one concurrent session
+    max_5x: 2     # the plan tolerates two
+    max_20x: 4
+    api: 0        # unlimited (until the dollar-budget phase lands)
+```
+
+An explicit `max_inflight` on the entry always beats the tier (a cap set
+by mistake on one entry does not leak into every entry of that tier). The
+caps count simultaneous autonomous inflight sessions per LLM; they are not
+a rate limit, and they are only enforced when `autonomous.capacity_enabled`
+is on (default). Setting `max_inflight` and `plan_tier` to the same value
+is harmless (same limit, one source). Every value is visible: `GET /api/llms`
+and `GET /api/capacity` each carry `effective_max_inflight` plus
+`inflight_source` (`explicit` / `plan_tier` / `kind`), so you can see which
+rule is actually applying.
+
+### Setting it
+
+| Channel | How |
+|---|---|
+| YAML | `autonomous.plan_tier_max_inflight: {...}` (see above) |
+| PWA | Settings → Compute → LLM edit: *Plan tier* and *Max in flight* fields |
+| REST | `PUT /api/llms/{name}` with `plan_tier` and/or `max_inflight`; `GET /api/llms` to read them back |
+| MCP | `llm_update` / `llm_add`; `capacity_status` to see the effective limit |
+| CLI | `datawatch llm update <name> ...` (tier and explicit cap) |
+
+An unknown tier or a negative cap is a config error: the daemon refuses to
+start and names the key.
+
+---
+
+## Parking a task while waiting on an external condition
+
+A worker sitting on a long external event — a CI run, a deploy finishing,
+an upstream review — would otherwise pin its capacity slot (and, while it
+has work to do, its project-tree lock) for the whole wait. Instead, the
+worker emits one marker line and stops:
+
+```
+DATAWATCH_AWAIT_EXTERNAL: CI run on the branch
+```
+
+What the operator sees after:
+
+- **The slot frees immediately.** The task returns its capacity lease the
+  moment the marker is detected, so queued tasks move forward instead of
+  waiting behind a parked one. It is then re-admitted through the normal
+  bounded capacity wait (`capacity_wait_timeout_seconds`); when the slot
+  comes back, the parked session is re-prompted ("[automaton await-external]
+  Your await-external cycle is complete …") and continues on the **same
+  session** with its full context — no fresh spawn, and no retry or failure
+  is counted.
+- **The wait is visible, not a stall.** The task's `wait_reason` carries the
+  `await_external` sub-reason with the operator's condition (e.g. `await_external:
+  CI run on the branch`) on every status surface; the one-shot kill paths
+  (waiting-input, idle, stale-log) are suspended while parked, so the task
+  is neither killed nor auto-retried for waiting.
+- **The tree lock follows the work.** The project-tree write lock is
+  released with the slot — *unless the tree has uncommitted changes or
+  commits not reachable from a remote-tracking ref*, i.e. the branch is
+  ahead of its remote. Unpushed work keeps the lock (a sibling on the same
+  tree could still interleave), fully pushed-and-clean releases it so other
+  trees' work is not blocked by a parked task.
+- **Timeouts and restarts are safe.** Re-admission failure leaves the task
+  lease-free in its wait state and hands it back to the normal retry
+  machinery. A daemon restart re-adopts a parked task whose session
+  survived (or re-queues it if the session is dead), so a parked task never
+  leaks a slot across restarts.
+- **Every cycle is audited.** `autonomous_idle_wait_release` records which
+  capacity pools the task's lease was released from, plus the tree key
+  unlocked on the same cycle — a `null` tree key means the tree was held
+  for unpushed work.
+
+If the await-external cycle itself fails, the task is handed back to the
+normal retry machinery — it is never silently counted as a task failure.
+
+---
+
 ## Terminal Performance
 
 ### xterm.js load time

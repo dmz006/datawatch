@@ -308,7 +308,10 @@ func TestExecutor_WorkerStallRespectsRetryBudget(t *testing.T) {
 
 func TestExecutor_WorkerStallExhaustsRetriesLikeNormalFailure(t *testing.T) {
 	m, api, _, _ := apiFixture(t)
-	prd, _ := m.CreatePRD("s", "/w/proj", "opencode", "", EffortNormal)
+	// B165 — a real project dir: a fake one lets a concurrent boot-resume
+	// scan park this PRD (dir-missing) and clobber the PRDFailed state the
+	// test asserts.
+	prd, _ := m.CreatePRD("s", t.TempDir(), "opencode", "", EffortNormal)
 	_ = m.Store().SetStories(prd.ID, []Story{{Title: "S", Tasks: []Task{{Title: "T", Spec: "write docs/x.md"}}}})
 	p, _ := m.Store().GetPRD(prd.ID)
 	p.Status = PRDApproved

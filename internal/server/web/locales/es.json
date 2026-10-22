@@ -1785,5 +1785,13 @@
   "prd_plan_review_done": "Revisión del plan reejecutada",
   "plan_review_approve_blocked_tip": "La revisión del plan bloqueó esta aprobación — ",
   "prd_task_kind_tip": "Tarea objetivo de la verificación smoke",
-  "prd_task_smoke_verifier_tip": "LLM de verificación smoke para esta tarea"
+  "prd_task_smoke_verifier_tip": "LLM de verificación smoke para esta tarea",
+  "llm_field_plan_tier": "Plan tier (vacío = sin asignar)",
+  "llm_plan_tier_hint": "La tabla autonomous.plan_tier_max_inflight del demonio limita inflight por tier; un max_inflight explícito > 0 prevalece; en caso contrario, sin límite de tier (ilimitado).",
+  "llm_plan_tier_unset": "(sin asignar — sin límite de tier)",
+  "llm_effective_cap": "Límite efectivo de inflight",
+  "capacity_pool_llm_cap": "Límite efectivo",
+  "settings_plan_tier_max_inflight": "Límites inflight por tier de plan",
+  "settings_plan_tier_hint": "Límites inflight por tier; 0 o en blanco = ilimitado. Un max_inflight explícito > 0 gana.",
+  "settings_plan_tier_save": "Guardar"
 }

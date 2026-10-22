@@ -28,6 +28,7 @@ Subcommands:
                                   config-set '{"max_concurrent_tasks":2}'
                                   config-set '{"max_engines_per_node":2}'
                                   config-set '{"resume_max_age_seconds":1800}'
+                                  config-set '{"plan_tier_max_inflight":{"pro":1,"max_5x":2,"max_20x":4,"api":0}}' (tier inflight caps; 0 = unlimited; unknown tiers rejected)
   prd-list                        List all PRDs
   prd-create <spec>               Create a draft PRD (--type, --guided-mode, --skills)
   prd-get <id>                    Fetch one PRD with story+task tree
@@ -188,6 +189,12 @@ Example — make completed tasks older than 30 minutes no longer eligible
 for resume (default 3600; 0 = never resume, -1 = no age limit):
 
   datawatch autonomous config-set '{"resume_max_age_seconds":1800}'
+
+tier inflight-cap table (see "datawatch llm add|update --help" for --plan-tier/--max-inflight):
+  datawatch autonomous config-set '{"plan_tier_max_inflight":{"max_5x":2,"api":0}}'
+      Ties each subscription plan tier (pro | max_5x | max_20x | api) to an
+      inflight cap (0 = unlimited). An explicit per-LLM max_inflight > 0 wins
+      over the tier cap; clear the table with {}.
 
 max_parallel_tasks is deprecated and ignored; use max_concurrent_tasks.`,
 		Args: cobra.ExactArgs(1),

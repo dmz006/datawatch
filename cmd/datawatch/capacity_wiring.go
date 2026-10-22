@@ -30,12 +30,21 @@ var capacityTextFn func() string
 // correctly attributed to its PRD (previously always blank: found live
 // retrying PRD a2833a5e — /api/capacity?prd_id= and the capacity card
 // couldn't show this PRD had anything waiting at all).
-var verifierCapacityAdmit func(ctx context.Context, backend, model, holder, prdID string) (release func(), err error)
+//
+// taskID drives a capacity-lease hand-off (capacity lease hand-off):
+// when the verifier's backend+model resolves to exactly the pool set the
+// task's worker lease already covers, the worker lease is re-keyed to
+// "verify:<taskID>" atomically, so a task in verification holds exactly one
+// slot instead of two. Any other situation (different/zero pools, or no
+// worker lease left) falls back to the separate acquire — releasing the
+// task's worker lease FIRST, so the verifier can never wait behind, or
+// double-book with, its own task's slot.
+var verifierCapacityAdmit func(ctx context.Context, backend, model, taskID, prdID string) (release func(), err error)
 
 // verifierCapacityTryAdmit (v8.36.9) is verifierCapacityAdmit's
 // non-blocking sibling for probing autonomous.verification_backends
 // candidates — see its assignment in wireCapacity for why this exists.
-var verifierCapacityTryAdmit func(ctx context.Context, backend, model, holder, prdID string) (release func(), ok bool)
+var verifierCapacityTryAdmit func(ctx context.Context, backend, model, taskID, prdID string) (release func(), ok bool)
 
 // councilCapacityAdmit (v8.38.0, BL390) lets council persona/synthesis
 // calls acquire the same node:/llm: pools a PRD task on that
@@ -63,6 +72,20 @@ func engineNodes(reg *inference.Registry) map[string]string {
 		nodes[kind] = l.ComputeNodes[0]
 	}
 	return nodes
+}
+
+// syncLLMLimits sets the ledger limit for every LLM entry's pool
+// ("llm:<name>") from inference.EffectiveMaxInflight: the explicit
+// max_inflight override when > 0, else the autonomous.plan_tier_max_inflight
+// tier table, else the conservative kind-based default (1 for subscription
+// kinds like claude-code; 0/unlimited for local Ollama-protocol kinds, which
+// stay governed by the node: pools and the two-engines-per-GPU limit above).
+// Extracted from syncPools so it is unit-testable without a live daemon; the
+// 10s syncPools ticker re-runs it on registry change.
+func syncLLMLimits(cfg *config.Config, reg *inference.Registry, led *capacity.Ledger) {
+	for _, l := range reg.List() {
+		led.SetLimit("llm:"+l.Name, inference.EffectiveMaxInflight(*l, cfg.Autonomous.PlanTierMaxInflight))
+	}
 }
 
 // wireCapacity creates the admission ledger, connects it to the autonomous
@@ -138,7 +161,29 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 	httpServer.SetCapacityBind(func(holder, sessionID string) { led.Bind(holder, sessionID) })
 	httpServer.SetCapacityRelease(func(holder string) { led.Release(holder) })
 
-	verifierCapacityAdmit = func(ctx context.Context, backend, model, holder, prdID string) (func(), error) {
+	// verifyHandoff re-keys the task's worker lease (holder = the task id) to
+	// the verifier's "verify:<taskID>" lease when both resolve to the same
+	// pool set: one slot for the task from spawn through verification, with
+	// no release-and-re-wait window in which a sibling task can steal the
+	// slot. False means "no hand-off possible" and the caller must fall back
+	// to the separate acquire (releasing the worker lease first — no
+	// stacking, no deadlock).
+	verifyHandoff := func(taskID, backend, model string) bool {
+		return amgr.HandoffVerifyLease(taskID, backend, model)
+	}
+
+	verifierCapacityAdmit = func(ctx context.Context, backend, model, taskID, prdID string) (func(), error) {
+		holder := autonomous.VerifyHolder(taskID)
+		if verifyHandoff(taskID, backend, model) {
+			// The worker's slot is now the verifier's lease: release it by
+			// its new name; the executor's deferred release of the worker
+			// lease is a harmless no-op.
+			return func() { led.Release(holder) }, nil
+		}
+		// Fallback: the verifier resolves elsewhere (or the worker lease is
+		// already gone). Release the worker's slot first so it can neither
+		// wait behind its own task's lease nor hold two.
+		led.Release(taskID)
 		pools, node := keys(backend, model)
 		if len(pools) == 0 {
 			return func() {}, nil
@@ -175,15 +220,22 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 	// path already grants immediately when a pool has room, so this
 	// just bounds how long a genuinely-busy candidate is given before
 	// the caller moves on to the next one.
-	verifierCapacityTryAdmit = func(ctx context.Context, backend, model, holder, prdID string) (func(), bool) {
-		pools, node := keys(backend, model)
-		if len(pools) == 0 {
-			return func() {}, true
+	verifierCapacityTryAdmit = func(ctx context.Context, backend, model, taskID, prdID string) (func(), bool) {
+		holder := autonomous.VerifyHolder(taskID)
+		if verifyHandoff(taskID, backend, model) {
+			return func() { led.Release(holder) }, true
 		}
-		if err := led.Acquire(ctx, capacity.Request{Holder: holder, PRDID: prdID, Pools: pools, Node: node, Model: model, Role: capacity.RoleVerifier}, 150*time.Millisecond, func() bool { return false }, func(string) {}); err != nil {
-			return func() {}, false
+		if pools, node := keys(backend, model); len(pools) > 0 {
+			// Fallback probe. The worker lease is released first (idempotent)
+			// so this candidate either takes its own slot or does not — never
+			// a second slot on top of the worker's.
+			led.Release(taskID)
+			if err := led.Acquire(ctx, capacity.Request{Holder: holder, PRDID: prdID, Pools: pools, Node: node, Model: model, Role: capacity.RoleVerifier}, 150*time.Millisecond, func() bool { return false }, func(string) {}); err != nil {
+				return func() {}, false
+			}
+			return func() { led.Release(holder) }, true
 		}
-		return func() { led.Release(holder) }, true
+		return func() {}, true
 	}
 
 	syncPools := func() {
@@ -224,9 +276,7 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 			}
 		}
 		if reg := httpServer.InferenceRegistry(); reg != nil {
-			for _, l := range reg.List() {
-				led.SetLimit("llm:"+l.Name, l.MaxInflight)
-			}
+			syncLLMLimits(cfg, reg, led)
 		}
 		live := func(ls capacity.Lease) bool {
 			if ls.SessionID == "" {

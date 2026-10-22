@@ -5,6 +5,7 @@ package autonomous
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/dmz006/datawatch/internal/capacity"
 	"log"
@@ -82,6 +83,18 @@ type Config struct {
 	// >1 clamps to 1.0 (see config.NormalizePlanCoverageRatio). No
 	// omitempty for the same round-trip reason as PlanCoverageCheck.
 	PlanCoverageMinRatio float64 `json:"plan_coverage_min_ratio"`
+	// PlanTierMaxInflight mirrors the tier -> max-inflight table
+	// (autonomous.plan_tier_max_inflight) so the two autonomous config
+	// surfaces (/api/config and /api/autonomous/config) agree. The manager
+	// itself does not consume it: the daemon's capacity wiring
+	// (cmd/datawatch/capacity_wiring.go) reads it from config.Config and
+	// feeds EffectiveMaxInflight. The field exists so
+	// handleAutonomousConfig's live round-trip (internal/server/
+	// autonomous.go) does not drop the key — same role as
+	// VerificationTimeoutSeconds. omitempty, deliberately: a nil table on
+	// this mirror side must not marshal as null and clobber the table the
+	// daemon holds in config.Config during that same round-trip.
+	PlanTierMaxInflight map[string]int `json:"plan_tier_max_inflight,omitempty"`
 	// VerificationTimeoutSeconds is the sibling of PlanningTimeoutSeconds.
 	// Exposed as autonomous.verification_timeout_seconds in config. The
 	// manager itself does not consume it: the daemon's verifier/guardrail
@@ -665,6 +678,16 @@ type Manager struct {
 	// Guarded by mu. Nil = audit silently skipped.
 	auditFn func(action string, details map[string]any)
 
+	// sessionContinueFn — design §6.ii: sends a "resume" prompt to a parked
+	// worker session after an await-external cycle re-admits it. Optional.
+	sessionContinueFn func(sessionID string) error
+
+	// treeLockBox — task ID → pointer to the executor's task-tree-lock
+	// release closure, so an await-external cycle can release the lock while
+	// the task waits (tree fully pushed) and re-claim it on re-admission.
+	treeBoxMu   sync.Mutex
+	treeLockBox map[string]*func()
+
 	// alertSink — operator-facing alert callback (level, title, body).
 	// Guarded by mu. Nil = alerts silently skipped.
 	alertSink func(level, title, body string)
@@ -950,6 +973,34 @@ func (m *Manager) resetInProgressTasksForResume(prd *PRD) {
 			switch t.Status {
 			case TaskWaitingCapacity:
 				// Waiter died with the prior daemon; it holds no session.
+				//
+				// Design §6.ii exception — a task parked on an EXTERNAL
+				// condition (await_external sub-reason of waiting_capacity) may
+				// still have its worker session alive and parked at the prompt, and
+				// its capacity lease was released during the await cycle. Such a
+				// task must be RE-ADMITTED on restart, not lost:
+				// live session → re-take the lease (adopt, like the TaskInProgress
+				// live branch above) and prompt the worker to finish; dead/absent
+				// session → fall through to the plain re-queue below. Either way
+				// the task resumes without having counted a retry.
+				if IsAwaitExternalWaitReason(t.WaitReason) {
+					if t.SessionID != "" && aliveFn != nil && aliveFn(t.SessionID) {
+						if contFn := m.sessionContinueFnLocked(); contFn != nil {
+							if cerr := contFn(t.SessionID); cerr != nil {
+								log.Printf("[autonomous] boot-resume: await-external continue prompt to session %s: %v", t.SessionID, cerr)
+							}
+						}
+						m.adoptCapacity(prd, t)
+						t.Status = TaskInProgress
+						t.AdoptedSession = true
+						t.WaitReason = ""
+						t.UpdatedAt = time.Now()
+						reset = append(reset, pendingTaskEvent{t: t, oldStatus: prevStatus, oldSession: t.SessionID})
+						log.Printf("[autonomous] boot-resume: re-admitted await-external task %s on live session %s for prd=%s (no retry counted)", t.ID, t.SessionID, prd.ID)
+						continue
+					}
+					log.Printf("[autonomous] boot-resume: await-external task %s for prd=%s has no live session; re-queueing a fresh attempt", t.ID, prd.ID)
+				}
 			case TaskInProgress:
 				switch decideInProgressResume(aliveFn, outputFn, t.SessionID) {
 				case resumeAdopt:
@@ -1575,6 +1626,12 @@ func (m *Manager) Decompose(prdID string) (*PRD, error) {
 		}
 		r, derr := m.decomposeAdmitted(prd, backend, planModel, DecomposeRequest{Spec: attemptPrompt, Backend: backend, Effort: effort, Model: planModel, ProjectDir: prd.ProjectDir, ScopeBlock: ScopeBlock(prd), PRDID: prd.ID, TimeoutSeconds: m.cfg.PlanningTimeoutSeconds})
 		if derr != nil {
+			if errors.Is(derr, errDecomposeCancelled) {
+				// Operator cancel/reject dropped the planner from the queue:
+				// the PRD already holds a terminal status, so no retry budget
+				// and no draft rollback (failDecomposeAttempt would clobber it).
+				return nil, derr
+			}
 			if isOneShotNoOutput(derr) {
 				if m.noteDecomposeSessionFailure(prd, backend, planModel, derr) {
 					return nil, derr
@@ -1723,6 +1780,11 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (*PRD, 
 		}
 		r, derr := m.decomposeAdmitted(prd, backend, planModel2, DecomposeRequest{Spec: attemptPrompt, Backend: backend, Effort: effort, Model: planModel2, ProjectDir: prd.ProjectDir, ScopeBlock: ScopeBlock(prd), PRDID: prd.ID, TimeoutSeconds: m.cfg.PlanningTimeoutSeconds})
 		if derr != nil {
+			if errors.Is(derr, errDecomposeCancelled) {
+				// Same as Decompose() above: a cancelled/rejected PRD is not a
+				// decompose failure — keep its terminal status, don't retry.
+				return nil, derr
+			}
 			if isOneShotNoOutput(derr) {
 				if m.noteDecomposeSessionFailure(prd, backend, planModel2, derr) {
 					return nil, derr

@@ -1785,5 +1785,13 @@
   "prd_plan_review_done": "Relecture du plan relancée",
   "plan_review_approve_blocked_tip": "La relecture du plan a bloqué cette approbation — ",
   "prd_task_kind_tip": "Tâche cible de la vérification smoke",
-  "prd_task_smoke_verifier_tip": "LLM de vérification smoke pour cette tâche"
+  "prd_task_smoke_verifier_tip": "LLM de vérification smoke pour cette tâche",
+  "llm_field_plan_tier": "Niveau d'abonnement (vide = non défini)",
+  "llm_plan_tier_hint": "La table autonomous.plan_tier_max_inflight du démon limite l'inflight par niveau ; un max_inflight explicite > 0 prime ; sinon aucun plafond par niveau (illimité).",
+  "llm_plan_tier_unset": "(non défini — sans plafond de niveau)",
+  "llm_effective_cap": "Plafond d'inflight effectif",
+  "capacity_pool_llm_cap": "Plafond effectif",
+  "settings_plan_tier_max_inflight": "Plafonds d'inflight par niveau d'abonnement",
+  "settings_plan_tier_hint": "Plafonds d'inflight par niveau ; 0 ou vide = illimité. Un max_inflight explicite > 0 prime.",
+  "settings_plan_tier_save": "Enregistrer"
 }

@@ -10,6 +10,10 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
+	"strings"
+
+	"github.com/dmz006/datawatch/internal/inference"
 
 	mcpsdk "github.com/mark3labs/mcp-go/mcp"
 )
@@ -66,6 +70,7 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithString("plan_coverage_check", mcpsdk.Description("Plan requirement-coverage gate mode: off (no gate), warn (failing coverage is reported on the PRD but approval proceeds), block (the default: approving a PRD with a failing plan-coverage report is blocked until the operator acknowledges that exact failing surface with autonomous_prd_plan_coverage_acknowledge)")),
 		mcpsdk.WithNumber("automation_idle_alert_minutes", mcpsdk.Description("Minutes an active Automation may sit idle (a member finished and no next member started) before one idle alert is raised. Whole number >= 0; 0 turns the alert off.")),
 		mcpsdk.WithNumber("plan_coverage_min_ratio", mcpsdk.Description("Minimum covered/total requirement ratio for a plan to pass the coverage gate; a number in (0,1] (e.g. 0.9 = 90%). Zero/negative and values above 1 both clamp to 1.0 (require full coverage — the safe default). The gate also fails on any structural finding regardless of ratio.")),
+		mcpsdk.WithString("plan_tier_max_inflight", mcpsdk.Description("Subscription plan tier inflight caps — tiers pro|max_5x|max_20x|api mapped to integer >= 0 (0 = unlimited). A PRD (or LLM) on a tier is admission-capped by that tier's value unless it or its LLM carries an explicit max_inflight > 0, which wins. Accepts a JSON object (e.g. {\"max_5x\":2}) or tier=value pairs (e.g. 'max_5x=2,api=0').")),
 		mcpsdk.WithString("planning_effort", mcpsdk.Description("BL41 effort hint for planning; alias: decomposition_effort")),
 		mcpsdk.WithString("verification_effort", mcpsdk.Description("BL41 effort hint for verifier")),
 		mcpsdk.WithNumber("auto_fix_retries", mcpsdk.Description("Retries on verifier failure (default 1)")),
@@ -183,6 +188,17 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 		if _, ok := args["automation_idle_alert_minutes"]; ok {
 			body["automation"] = map[string]any{"idle_alert_minutes": req.GetFloat("automation_idle_alert_minutes", 0)}
 		}
+	}
+	// plan_tier_max_inflight — the per-tier inflight cap table (tier → integer).
+	// It is a table in the REST surface, so parse the tool's string argument to
+	// an object here; the /api/autonomous/config PUT guard rejects unknown
+	// tiers with an actionable message.
+	if v := req.GetString("plan_tier_max_inflight", ""); v != "" {
+		table, err := parseTierInflightTable(v)
+		if err != nil {
+			return toolError("autonomous_config_set", err), nil
+		}
+		body["plan_tier_max_inflight"] = table
 	}
 	// BL367 — default quality gates nested under default_quality_gates.
 	qg := map[string]any{}
@@ -1070,4 +1086,59 @@ func (s *Server) handleAutonomousPRDChildren(_ context.Context, req mcpsdk.CallT
 		return nil, err
 	}
 	return textOK(string(out)), nil
+}
+
+// parseTierInflightTable parses the plan_tier_max_inflight tool argument into
+// a tier → limit table. Accepted forms: a JSON object ({"max_5x":2}, any
+// value kind JSON accepts) or tier=value pairs ("max_5x=2,pro=1"). Keys must
+// be known plan tiers; values must be integers >= 0. Returns an actionable
+// error otherwise — the same contract the REST surface's parsePlanTierTable
+// enforces (kept local because the mcp package must not import internal/server).
+func parseTierInflightTable(v string) (map[string]int, error) {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return nil, fmt.Errorf("plan_tier_max_inflight: empty value; omit the argument to leave the stored table unchanged")
+	}
+	if strings.HasPrefix(v, "{") {
+		var raw map[string]json.Number
+		if err := json.Unmarshal([]byte(v), &raw); err != nil {
+			return nil, fmt.Errorf("plan_tier_max_inflight: JSON object parse: %v", err)
+		}
+		return finishTierTable(raw)
+	}
+	raw := map[string]json.Number{}
+	for _, pair := range strings.Split(v, ",") {
+		pair = strings.TrimSpace(pair)
+		if pair == "" {
+			continue
+		}
+		key, val, ok := strings.Cut(pair, "=")
+		if !ok {
+			return nil, fmt.Errorf("plan_tier_max_inflight: %q is not tier=value nor a JSON object", pair)
+		}
+		iv, err := strconv.Atoi(strings.TrimSpace(val))
+		if err != nil || iv < 0 {
+			return nil, fmt.Errorf("plan_tier_max_inflight: limit for tier %q must be an integer >= 0", strings.TrimSpace(key))
+		}
+		raw[strings.TrimSpace(key)] = json.Number(strconv.Itoa(iv))
+	}
+	if len(raw) == 0 {
+		return nil, fmt.Errorf("plan_tier_max_inflight: no tier=value pairs parsed from %q", v)
+	}
+	return finishTierTable(raw)
+}
+
+func finishTierTable(raw map[string]json.Number) (map[string]int, error) {
+	out := make(map[string]int, len(raw))
+	for k, n := range raw {
+		iv, err := strconv.Atoi(n.String())
+		if err != nil || iv < 0 {
+			return nil, fmt.Errorf("plan_tier_max_inflight: limit for tier %q must be an integer >= 0", k)
+		}
+		if !inference.ValidPlanTier(inference.PlanTier(k)) {
+			return nil, fmt.Errorf("plan_tier_max_inflight: unknown plan tier %q (expected pro, max_5x, max_20x, or api)", k)
+		}
+		out[k] = iv
+	}
+	return out, nil
 }

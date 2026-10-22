@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/dmz006/datawatch/internal/inference"
 	"github.com/spf13/cobra"
 )
 
@@ -99,6 +100,8 @@ func newLLMAddCmd(update bool) *cobra.Command {
 		autoGitInit, autoGitCommit                       bool
 		skipPerms, channelEnabled, autoAccept            bool
 		permMode, defaultEffort, fallbackChainCSV        string
+		planTier                                         string
+		maxInflight                                      int
 	)
 	use := "add <name>"
 	short := "Add a new LLM"
@@ -116,6 +119,20 @@ func newLLMAddCmd(update bool) *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(rcmd *cobra.Command, args []string) error {
 			body := map[string]any{"name": args[0]}
+			// plan_tier — validate locally so a typo fails fast with an
+			// actionable message instead of a 400 deep in the daemon.
+			if planTier != "" && !inference.ValidPlanTier(inference.PlanTier(planTier)) {
+				return fmt.Errorf("invalid --plan-tier %q (expected one of: pro, max_5x, max_20x, api; empty = unset)", planTier)
+			}
+			if planTier != "" {
+				body["plan_tier"] = planTier
+			}
+			if !update || rcmd.Flags().Changed("max-inflight") {
+				if maxInflight < 0 {
+					return fmt.Errorf("--max-inflight must be >= 0")
+				}
+				body["max_inflight"] = maxInflight
+			}
 			// kind/model/timeout_seconds get a sensible flag default
 			// ("ollama", "", 0) for `add`, where a brand-new entry needs
 			// some value for each — but that same default made every
@@ -223,6 +240,8 @@ func newLLMAddCmd(update bool) *cobra.Command {
 	cmd.Flags().StringVar(&permMode, "permission-mode", "", "permission mode: plan | acceptEdits | auto | bypassPermissions | dontAsk (claude-code only)")
 	cmd.Flags().StringVar(&defaultEffort, "default-effort", "", "default effort: quick | normal | thorough (claude-code only)")
 	cmd.Flags().StringVar(&fallbackChainCSV, "fallback-chain", "", "comma-separated profile fallback chain (claude-code only)")
+	cmd.Flags().StringVar(&planTier, "plan-tier", "", "subscription plan tier: pro | max_5x | max_20x | api (empty = unset; the daemon's autonomous.plan_tier_max_inflight table then caps this LLM's inflight unless --max-inflight > 0 wins)")
+	cmd.Flags().IntVar(&maxInflight, "max-inflight", 0, "explicit inflight cap on this LLM (>= 0; 0 = use the plan_tier table or the kind default; > 0 wins over both)")
 	return cmd
 }
 

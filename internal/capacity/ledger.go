@@ -436,6 +436,42 @@ func (l *Ledger) Held(holder string) bool {
 	return ok
 }
 
+// LeaseOf reports a copy of the lease holder currently holds, or nil if it
+// holds none. The copy lets callers inspect the lease (pools, node, session)
+// without racing the ledger's internals.
+func (l *Ledger) LeaseOf(holder string) *Lease {
+	l.mu.Lock()
+	ls := l.leases[holder]
+	l.mu.Unlock()
+	if ls == nil {
+		return nil
+	}
+	cp := *ls
+	return &cp
+}
+
+// Handoff re-keys from's held lease to to atomically: the slot from holds
+// becomes to's lease with no release-and-re-wait in between, so pool counts
+// do not change and no waiter ever sees the slot briefly free. The lease's
+// other fields (PRD, pools, node, session binding) travel with it. It
+// reports false, changing nothing, when from holds no lease, to already
+// holds one, or either name is empty (or the names are equal).
+func (l *Ledger) Handoff(from, to string) bool {
+	if from == "" || to == "" || from == to {
+		return false
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	ls := l.leases[from]
+	if ls == nil || l.leases[to] != nil {
+		return false
+	}
+	delete(l.leases, from)
+	l.leases[to] = ls
+	ls.Holder = to
+	return true
+}
+
 // Reap releases leases the callback reports as not live and returns the
 // released holders. Call periodically so a missed Release cannot leak
 // capacity. The callback runs WITHOUT the ledger lock held, so it may call back

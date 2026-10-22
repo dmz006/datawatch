@@ -4095,6 +4095,13 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		for k, v := range acfgIn.RetryPolicy {
 			retryPolicyBridge[k] = v
 		}
+		// plan_tier_max_inflight bridge — same copy-not-alias rationale as
+		// retryPolicyBridge: the daemon's capacity wiring reads
+		// cfg.Autonomous's map, the mirror copy lives on the manager.
+		tierInflightBridge := make(map[string]int, len(acfgIn.PlanTierMaxInflight))
+		for k, v := range acfgIn.PlanTierMaxInflight {
+			tierInflightBridge[k] = v
+		}
 		amgrCfg := autonomouspkg.Config{
 			Enabled:                    acfgIn.Enabled,
 			PollIntervalSeconds:        acfgIn.PollIntervalSeconds,
@@ -4136,6 +4143,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 
 			// BL410 Phase 1 — retry-policy bridge.
 			RetryPolicy:             retryPolicyBridge,
+			PlanTierMaxInflight:     tierInflightBridge,
 			RetryCeilingTotal:       acfgIn.RetryCeilingTotal,
 			InfraRetryEscalateAfter: acfgIn.InfraRetryEscalateAfter,
 			CIWatchTimeoutSeconds:   acfgIn.CIWatchTimeoutSeconds,
@@ -4630,6 +4638,10 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				var stallScriptOutput string
 				waitTick := 0
 				waitingInputTicks := 0
+				// awaitHandledLine — design §6.ii: line number of the last
+				// DATAWATCH_AWAIT_EXTERNAL marker line already processed this
+				// wait; the same stale marker line must not be re-handled.
+				awaitHandledLine := -1
 				// Session idle detector (autonomous.session_idle_timeout_seconds):
 				// idleSince is when the session was first seen parked in
 				// waiting_input in the current unbroken run; the probe only runs
@@ -4674,6 +4686,38 @@ func runStart(cmd *cobra.Command, _ []string) error {
 						}
 						if s.State == session.StateComplete || s.State == session.StateFailed || s.State == session.StateKilled {
 							break waitLoop
+						}
+						// Design §6.ii — await-external: the worker emitted a
+						// DATAWATCH_AWAIT_EXTERNAL marker and parked on an external
+						// condition (e.g. a long CI run). Handle this BEFORE any
+						// stall detector below: a parked pane is not stalled, and
+						// the one-shot kill paths (waiting_input kill, idle kill,
+						// stale-log kill) must not fire while the worker is parked
+						// by design. The cycle releases the task's inference slot,
+						// keeps the tree lock only if the tree has unpushed work,
+						// re-admits (bounded), then prompts the session to
+						// continue — no retry is counted.
+						if autonomousMgrRef != nil {
+							if tail, terr2 := mgr.TailOutput(s.FullID, 300); terr2 == nil {
+								if mline, cond, fresh := autonomouspkg.ExtractAwaitExternalCondition(tail); fresh && mline != awaitHandledLine {
+									log.Printf("[autonomous] verifier: task %s/%s parked on external condition (%q) — releasing its inference slot and re-admitting",
+										task.PRDID, task.ID, cond)
+									if aerr := autonomousMgrRef.AwaitExternal(ctx, prd, task, cond); aerr != nil {
+										log.Printf("[autonomous] verifier: await-external for task %s/%s failed: %v (handing back to the retry machinery)",
+											task.PRDID, task.ID, aerr)
+										stallErr = aerr
+										break waitLoop
+									}
+									awaitHandledLine = mline
+									// Suppress the stall detectors for the (parked) session.
+									waitingInputTicks = 0
+									idleSince = time.Time{}
+									if exitSilenceTracker != nil {
+										exitSilenceTracker.Reset(time.Now())
+									}
+									continue
+								}
+							}
 						}
 						// v8.36.1 — every autonomous task session spawns with
 						// one_shot=true (it's expected to run to completion via
@@ -5224,7 +5268,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			var verifierTryAdmit func(backend, model string) (func(), bool)
 			if verifierCapacityTryAdmit != nil {
 				verifierTryAdmit = func(backend, model string) (func(), bool) {
-					return verifierCapacityTryAdmit(ctx, backend, model, "verify:"+task.ID, prd.ID)
+					return verifierCapacityTryAdmit(ctx, backend, model, task.ID, prd.ID)
 				}
 			}
 			// BL-stale-config tests (live_autonomous_config_test.go) pin
@@ -5264,7 +5308,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			defer func() { vsel.stamp(&vres) }()
 			if release == nil {
 				if verifierCapacityAdmit != nil {
-					r, aerr := verifierCapacityAdmit(ctx, vbackend, verifyModel, "verify:"+task.ID, prd.ID)
+					r, aerr := verifierCapacityAdmit(ctx, vbackend, verifyModel, task.ID, prd.ID)
 					if aerr != nil {
 						// BL410 Phase 0 — resource contention/admission
 						// failure, not a content judgment.
@@ -5767,6 +5811,12 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 					return time.Time{}, false
 				}
 				return s.UpdatedAt, true
+			})
+			// Design §6.ii — await-external: resume a worker session parked on an
+			// external condition after its lease was re-admitted. The worker keeps
+			// its own context; it re-checks the condition and finishes the task.
+			amgr.SetSessionContinueFn(func(sessionID string) error {
+				return mgr.SendInput(sessionID, "[automaton await-external] Your await-external cycle is complete — your capacity slot is live again and you have the project tree. Re-check the external condition you were waiting on (CI run, deploy, upstream review, …) and, if it has resolved, continue the task from where you left off toward its DATAWATCH_COMPLETE marker. If it has NOT resolved yet, emit the "+autonomouspkg.AwaitExternalMarker+" marker again and stop.", "automaton")
 			})
 			// Boot-resume: recorded output of a session that ended while the daemon
 			// was down, so a finished worker is verified instead of redone.
