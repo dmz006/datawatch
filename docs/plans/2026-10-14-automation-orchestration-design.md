@@ -1176,8 +1176,9 @@ works unchanged, as in `renderAutomataCard` (`app.js:19150-19224`). A card shows
 - The optional BudgetPolicy fields are: type, value, window, pacing, on-breach.
 - The optional execution and verification model-default rows reuse the existing
   Verification LLM row components from the Automaton detail page.
-- Every edit sends `expected_version`. A `409` reloads the strip and shows a
-  "changed by <actor>" toast.
+- Every edit sends `expected_version`. A `409` shows a stale-version prompt with
+  the server's message and a reload button; nothing is retried, and the page
+  reloads only when the user chooses to.
 
 A **drag-and-drop graph canvas is explicitly NOT v1.** It is a possible v2
 enhancement once the edge model has been proven in use.
@@ -1474,7 +1475,9 @@ howto, and the `datawatch-app` issue where applicable.
    - The shared `PRDCostUSD` rollup (with BL414 / BL428 Phase 5).
    - The advance gate and the `admit` hook.
    - Pacing, on-breach handling and the estimated `allocation_pct`.
-6. **Phase 6 — PWA.** Status: Planned.
+6. **Phase 6 — PWA.** Status: Done (development build; released with the next release).
+   - The tab, list, pipeline strip, controls and forms are built in `internal/server/web` with node tests.
+   - The live browser smoke row is owed: see the Automation tab section of `docs/testing-tracker.md`.
    - The nav tab, list, pipeline strip and v1 create/edit.
    - Locale keys in all bundles.
    - The Terminology Rule addendum.
