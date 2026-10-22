@@ -1661,6 +1661,7 @@ howto, and the `datawatch-app` issue where applicable.
     in scope for v1 given it would have caught today's two silently-dropped
     PRDs, or is that premature before BL427's event dispatch can push the
     alert instead of requiring a poll?
+    **Decided by the operator 2026-10-22:** ship the `automation-summary` card and the Observer per-Automation rollup with the first Automation surfaces; idle/staleness alerting on the card is left until event push exists.
 17. **The coordinator as a real quality/regression gate, not just a status
     poll (operator-raised 2026-10-15, live incident: two PRD tasks failed
     and sat silently blocked for ~50 minutes before the operator noticed,
