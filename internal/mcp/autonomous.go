@@ -433,6 +433,23 @@ func (s *Server) handleAutonomousPRDApprove(_ context.Context, req mcpsdk.CallTo
 	return textOK(string(out)), nil
 }
 
+func (s *Server) toolAutonomousPRDResume() mcpsdk.Tool {
+	return mcpsdk.NewTool("autonomous_prd_resume",
+		mcpsdk.WithDescription("Resume a PRD the boot-resume gate parked after a daemon restart; errors if the PRD is not parked."),
+		mcpsdk.WithString("id", mcpsdk.Required(), mcpsdk.Description("PRD ID")),
+		mcpsdk.WithString("note", mcpsdk.Description("optional free-form note saved on the Decision row")),
+	)
+}
+func (s *Server) handleAutonomousPRDResume(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	id := req.GetString("id", "")
+	body, _ := json.Marshal(map[string]string{"actor": "operator", "note": req.GetString("note", "")})
+	out, err := s.proxyJSON(http.MethodPost, "/api/autonomous/prds/"+id+"/resume", body)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
 func (s *Server) toolAutonomousPRDReject() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_prd_reject",
 		mcpsdk.WithDescription("BL191 — reject a planned PRD; the plan stays for inspection but the loop won't run it."),

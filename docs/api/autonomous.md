@@ -38,6 +38,7 @@ DELETE /api/autonomous/prds/{id}?hard=true permanently delete the PRD + descenda
 POST   /api/autonomous/prds/{id}/plan      run LLM planning phase (creates stories+tasks) [BL304 canonical]
 POST   /api/autonomous/prds/{id}/decompose run LLM planning phase (back-compat alias for /plan)
 POST   /api/autonomous/prds/{id}/approve   review/approve gate                                                       [v5.2.0  / BL191 Q1]
+POST   /api/autonomous/prds/{id}/resume   resume a paused PRD, or one the boot-resume gate parked; body: {actor, note} (409-style 400 if neither)
 POST   /api/autonomous/prds/{id}/reject    operator rejects the plan; body: {actor, reason}                          [v5.2.0  / BL191 Q1]
 POST   /api/autonomous/prds/{id}/request_revision  ask for a re-plan; body: {actor, note}                            [v5.2.0  / BL191 Q1]
 POST   /api/autonomous/prds/{id}/edit_task per-task spec edit on needs_review/revisions_asked; body: {task_id, …}    [v5.2.0  / BL191 Q1]
