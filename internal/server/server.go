@@ -410,6 +410,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/autonomous/guardrail_profiles", api.handleAutonomousGuardrailProfiles)
 	apiMux.HandleFunc("/api/autonomous/subscriptions", api.handleAutonomousSubscriptions)
 	apiMux.HandleFunc("/api/autonomous/subscriptions/", api.handleAutonomousSubscriptions)
+	apiMux.HandleFunc("/api/autonomous/events", api.handleAutonomousEvents)
 	apiMux.HandleFunc("/api/autonomous/guardrail_profiles/", api.handleAutonomousGuardrailProfiles)
 	// BL410 Phase 1 — retry profile CRUD.
 	apiMux.HandleFunc("/api/autonomous/retry_profiles", api.handleAutonomousRetryProfiles)
@@ -1071,6 +1072,13 @@ func (s *HTTPServer) SetAutonomousAPI(api AutonomousAPI) {
 // endpoints (handlers return 503).
 func (s *HTTPServer) SetAutonomousSubscriptions(api LifecycleSubscriptionsAPI) {
 	s.api.SetAutonomousSubscriptions(api)
+}
+
+// SetAutonomousEvents wires the pending-events queue behind the mcp_queue
+// subscription sink for /api/autonomous/events. Nil disables the endpoint
+// (the handler returns 503).
+func (s *HTTPServer) SetAutonomousEvents(api PendingEventsAPI) {
+	s.api.SetAutonomousEvents(api)
 }
 
 // SetGitTokenMinter (v5.26.24) wires the BL113 token broker for

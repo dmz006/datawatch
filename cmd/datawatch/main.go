@@ -5730,6 +5730,10 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				// store change, so a subscription created or deleted over
 				// REST takes effect without a restart.
 				httpServer.SetAutonomousSubscriptions(lifeSubStore)
+				// The mcp_queue sink's read side: GET /api/autonomous/events.
+				if pq := lifeSubEngine.PendingEvents(); pq != nil {
+					httpServer.SetAutonomousEvents(pq)
+				}
 			}
 			wireCapacity(context.Background(), cfg, mgr, amgr, httpServer, func(title, body string) {
 				alertStore.AddSystem(alertspkg.LevelWarn, title, body)

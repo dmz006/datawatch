@@ -71,9 +71,10 @@ Subcommands:
   prd-instantiate <tmpl-id>       Instantiate legacy YAML template (BL191)
   learnings                       List extracted post-task learnings
   subscriptions [--owner X]       List persisted lifecycle event subscriptions (BL427)
-  subscribe --on <kind> ...       Subscribe to lifecycle events → sink: comm|session|topic|alert (BL427)
+  subscribe --on <kind> ...       Subscribe to lifecycle events → sink: comm|session|topic|alert|mcp_queue (BL427)
                                   shorthand: --task <id> --on session_started --send "<text>"
   unsubscribe <id>                Delete a lifecycle event subscription by id (BL427)
+  events --queue <name>           Read pending events from an mcp_queue queue [--since <cursor>] [--limit n] [--json]
 `,
 	}
 	cmd.AddCommand(
@@ -136,6 +137,7 @@ Subcommands:
 		newAutonomousSubscriptionsCmd(),
 		newAutonomousSubscribeCmd(),
 		newAutonomousUnsubscribeCmd(),
+		newAutonomousEventsCmd(),
 	)
 	return cmd
 }

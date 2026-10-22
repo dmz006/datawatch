@@ -125,8 +125,9 @@ documenting coverage gaps and the reasoning behind them.
 | `POST /api/autonomous/prds/{id}/run` | `autonomous_prd_run` | Complete | `?view=compact` (absent or `view=full` = full; MCP sends `view=compact`) |
 | `GET /api/autonomous/learnings` | `autonomous_learnings` | Complete | |
 | `GET /api/autonomous/subscriptions` | `autonomous_subscriptions` | Complete | list the operator's persisted lifecycle event subscriptions (optional `?owner=` filter) |
-| `POST /api/autonomous/subscriptions` | `autonomous_subscribe` | Complete | body `{filter:{kinds[], level?, prd_id?, task_id?, story_id?, owner?}, sink:{type, target}, action:{type, text}?, coalesce?, one_shot?, expires_at?}`; 400 with the validation message on bad input; sinks `comm`/`session`/`topic`/`alert` (webhook + mcp_queue deferred to later phases). MCP `expires_in_seconds` maps to `expires_at` |
+| `POST /api/autonomous/subscriptions` | `autonomous_subscribe` | Complete | body `{filter:{kinds[], level?, prd_id?, task_id?, story_id?, owner?}, sink:{type, target}, action:{type, text}?, coalesce?, one_shot?, expires_at?}`; 400 with the validation message on bad input; sinks `comm`/`session`/`topic`/`alert`/`mcp_queue` (the queue name is the sink target; webhook deferred to a later phase). MCP `expires_in_seconds` maps to `expires_at` |
 | `DELETE /api/autonomous/subscriptions/{id}` | `autonomous_unsubscribe` | Complete | 404 for unknown ids (also accepted as `DELETE ?id={id}`); one-shot subscriptions are also auto-deleted after first delivery; changes take effect live (engine re-attaches), no restart needed |
+| `GET /api/autonomous/events` | `autonomous_events_pending` | Complete | `?queue=` (required), `?since=` cursor (default 0), `?limit=` (default 50, capped at 200); returns `{events, next_cursor, dropped}` with `events` always an array; 400 for a missing queue or non-numeric since/limit, 503 when no queue is wired; reads the queue behind an `mcp_queue` subscription sink. CLI `datawatch autonomous events`; comm `autonomous events` |
 
 ### Automation records
 

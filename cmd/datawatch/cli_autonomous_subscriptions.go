@@ -29,10 +29,11 @@ import (
 // the current phase (mirrors autonomous.Sink* in
 // internal/autonomous/lifecycle_subscription.go).
 var lifecycleSubscriptionSinkTypes = map[string]bool{
-	"comm":    true,
-	"session": true,
-	"topic":   true,
-	"alert":   true,
+	"comm":      true,
+	"session":   true,
+	"topic":     true,
+	"alert":     true,
+	"mcp_queue": true,
 }
 
 // shortKindToTask maps the --on shorthand kinds (bare words like
@@ -84,6 +85,7 @@ fires the daemon delivers it to the chosen sink:
   --sink session  a datawatch session (SendInput, like discussion_subscribe)
   --sink topic    SSE / mobile push topic
   --sink alert    the in-app alert store
+  --sink mcp_queue  a named pending-events queue; read it with autonomous events
 
 --on <kind> is repeatable and takes event kinds; shorthand words map to
 task kinds (session_started = task.session_started) and full kinds pass
@@ -122,10 +124,10 @@ Example — notify a comm router whenever any PRD reaches blocked:
 				sink = "session" // --send implies a session sink
 			}
 			if sink == "" {
-				return fmt.Errorf("--sink is required (one of: comm, session, topic, alert)")
+				return fmt.Errorf("--sink is required (one of: comm, session, topic, alert, mcp_queue)")
 			}
 			if !lifecycleSubscriptionSinkTypes[sink] {
-				return fmt.Errorf("unknown --sink %q (want one of comm, session, topic, alert)", sink)
+				return fmt.Errorf("unknown --sink %q (want one of comm, session, topic, alert, mcp_queue)", sink)
 			}
 			tgt := strings.TrimSpace(target)
 			if tgt == "" && sink == "session" {
@@ -172,7 +174,7 @@ Example — notify a comm router whenever any PRD reaches blocked:
 	cmd.Flags().StringVar(&level, "level", "", "event level: prd or task (required with --on omitted)")
 	cmd.Flags().StringVar(&prdID, "prd", "", "only match events for this Automaton (PRD) id")
 	cmd.Flags().StringVar(&taskID, "task", "", "only match events for this task id (also implies --one-shot unless set explicitly)")
-	cmd.Flags().StringVar(&sinkType, "sink", "", "sink type: comm | session | topic | alert")
+	cmd.Flags().StringVar(&sinkType, "sink", "", "sink type: comm | session | topic | alert | mcp_queue")
 	cmd.Flags().StringVar(&target, "target", "", "sink target (session id / topic / router or alert name)")
 	cmd.Flags().StringVar(&sendText, "send", "", "text typed into the session sink on every match (requires --sink session)")
 	cmd.Flags().BoolVar(&oneShot, "one-shot", false, "delete the subscription after its first delivery (on by default when --task is given)")
