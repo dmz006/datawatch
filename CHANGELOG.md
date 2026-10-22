@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.84 — The MCP SSE listener retries a failed bind at boot
+
+### Fixed
+
+- **The MCP SSE listener now retries a failed bind at boot instead of giving up.** If the listen address could not be bound when the daemon started (for example the previous instance was still releasing its port after a restart, or the network was not up yet), the MCP endpoint stayed absent until the next restart. A failed bind is now logged once, retried with exponential backoff (1 s doubling to a 15 s cap) while the rest of the daemon keeps starting, and the final outcome is logged. The total retry time is `mcp.sse_bind_timeout` (default 120 s; zero or negative uses the default). The listener state (listening, retrying or failed) is reported in the health output. Deterministic tests use an injectable listen function and clock.
+
 ## v9.5.83 — Automatic commits stage only changed files and refuse whole-home adds
 
 ### Fixed
