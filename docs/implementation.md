@@ -360,6 +360,24 @@ and the live smoke `tests/live-smoke/tree-serialization-smoke.sh` (2026-10-18,
 v9.5.4; same-tree serialized PASS, cross-tree parallel PASS, loser
 auto-resume GAP documented in `tests/live-smoke/REPORT.md`).
 
+### Automatic commit staging guard
+
+Datawatch makes two kinds of automatic commit: the pre-session and post-session commits made by `stageChanges` in `internal/session/git.go`, and the attempt snapshots made by `SnapshotAttemptWork` in `internal/autonomous/attempt_snapshot.go`. Both stage through the `internal/gitguard` package, which holds the staging policy (`gitguard.Default`) and the checks that run around `git add`.
+
+The guard enforces these rules:
+
+1. **Named files only.** An automatic commit never stages more than the session's named files or its declared write scope. Files outside that set stay unstaged, even when they are dirty in the working tree.
+
+2. **Size cap.** A candidate file larger than 50 MB is skipped with a warning. The skip is recorded with reason `size`.
+
+3. **Ignored directories and model weights.** A candidate is skipped (reason `ignore-dir`) when one of its directory components, taken relative to the repository root, is one of `.cache`, `.ollama`, `.gradle`, `.android`, `go`, `snap`, `node_modules`, `model`, `models`, `build`, `dist`, `out`, or `target`. Relative matching means a repository that sits under a directory such as `~/go` is not rejected wholesale. A candidate is also skipped (reason `pattern`) when its base name matches a model-weight pattern: `*.gguf`, `*.safetensors`, `*.pt`, `*.pth`, `*.bin`, `*.ckpt`, `*.onnx`, or `*.tflite`.
+
+4. **Staged-file limit.** A commit whose candidate file count exceeds `MaxStagedFiles` (default 10000) is refused. The refusal is an operator-facing error whose text begins `auto-commit refused:` and states the file count and the limit. A refused commit stages nothing, and the guard never falls back to committing a whole directory tree. The operator fix is described in [operations.md](operations.md#auto-commit-refused).
+
+5. **Bounded staging.** `git add` runs under a timeout (`AddTimeout`, default 5 minutes). On a failed or interrupted add, the guard removes interrupted pack debris from `.git/objects/pack`: `tmp_pack_*` files, and `*.pack` files that have neither a sibling `*.idx` nor a sibling `*.rev`. No other file in that directory is touched.
+
+6. **Home-directory detection.** When the repository directory is the user's home directory or lies inside it, the guard logs a prominent warning. The check resolves symbolic links before comparing paths.
+
 ### Message Routing
 
 The router (`internal/router`) is stateless. It:
