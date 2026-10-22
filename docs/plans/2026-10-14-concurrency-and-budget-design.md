@@ -1316,6 +1316,7 @@ thing example (iii) could not see.
    claude-code session starts (which effectively turns on BL30's
    `rate_limit_global_pause` automatically), or gate autonomous dispatch
    only?
+   **Decided by the operator 2026-10-22: automatic work only.** Reactive back-off gates autonomous dispatch; interactive claude-code session starts are never blocked by it.
 8. **Sequencing with BL431.** Should this doc's follow-up implementation PRD
    land before BL431's Automation-coordinator implementation PRD? BL431's
    BudgetPolicy and its per-member execution depend on these mechanics
