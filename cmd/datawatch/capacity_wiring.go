@@ -382,6 +382,7 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 		return pools, node
 	}
 	amgr.SetCapacity(led, keys)
+	amgr.SetCapacityAudit(capacityAudit)
 	amgr.SetBackoff(autonomousBackoff)
 	amgr.SetPatternsStatus(mgr.RateLimitGuardStatus)
 	// Seed the claude CLI version cache once at daemon start so the first
@@ -547,6 +548,7 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 	go func() {
 		alerted := map[string]bool{}
 		budgetFull := map[string]bool{}
+		rollovers := &autonomous.BudgetRolloverWatcher{Audit: capacityAudit}
 		t := time.NewTicker(10 * time.Second)
 		defer t.Stop()
 		for {
@@ -559,6 +561,9 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 				// delays pool syncing; admission reads only the cache.
 				go peerBudget.Refresh(ctx)
 				auditBudgetTransitions(autonomousBudget, budgetFull, emitBackoffAudit)
+				if autonomousBudget != nil {
+					rollovers.Observe(autonomousBudget.StatusAll())
+				}
 				threshold := 30 * time.Minute
 				seen := map[string]bool{}
 				for _, w := range led.Snapshot().Waiting {

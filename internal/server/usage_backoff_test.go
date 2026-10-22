@@ -255,7 +255,7 @@ func TestUsageBackoff_AuditEvents(t *testing.T) {
 	if len(got) != 3 {
 		t.Fatalf("want 3 audit entries, got %d: %+v", len(got), got)
 	}
-	if got[0].Action != audit.ActionUsageBackoffSet || got[0].Actor != "operator" {
+	if got[0].Action != audit.ActionUsageBackoffSet || got[0].Actor != "operator" || got[0].Subject != got[0].Details["backend"] {
 		t.Errorf("entry 0 = %+v", got[0])
 	}
 	if got[0].Details["backend"] != "claude-code" || got[0].Details["source"] != "operator" {
@@ -264,10 +264,10 @@ func TestUsageBackoff_AuditEvents(t *testing.T) {
 	if _, err := time.Parse(time.RFC3339, got[0].Details["until"].(string)); err != nil {
 		t.Errorf("set until not RFC3339: %v", got[0].Details["until"])
 	}
-	if got[1].Action != audit.ActionUsageBackoffCleared || got[1].Details["backend"] != "claude-code" {
+	if got[1].Action != audit.ActionUsageBackoffCleared || got[1].Details["backend"] != "claude-code" || got[1].Subject != "claude-code" {
 		t.Errorf("entry 1 = %+v", got[1])
 	}
-	if got[2].Action != audit.ActionUsageBackoffCleared || got[2].Details["backend"] != "all" {
+	if got[2].Action != audit.ActionUsageBackoffCleared || got[2].Details["backend"] != "all" || got[2].Subject != "all" {
 		t.Errorf("entry 2 = %+v", got[2])
 	}
 }

@@ -25,6 +25,7 @@ type Entry struct {
 	Actor     string         `json:"actor"`  // who: "operator", "channel:signal", "mcp", "agent:<id>"
 	Action    string         `json:"action"` // start, kill, send_input, rollback, configure, ...
 	SessionID string         `json:"session_id,omitempty"`
+	Subject   string         `json:"subject,omitempty"` // what the event is about: task id, backend or LLM name
 	Details   map[string]any `json:"details,omitempty"`
 }
 
