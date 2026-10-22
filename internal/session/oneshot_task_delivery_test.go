@@ -99,7 +99,7 @@ func disclaimerSends(f *FakeTmux, tmuxSession string) int {
 	defer f.mu.Unlock()
 	n := 0
 	for _, c := range f.Calls {
-		if c.Session == tmuxSession && (c.Op == "send-keys" || c.Op == "send-keys-settle") && len(c.Args) > 0 && c.Args[0] == "1\n" {
+		if c.Session == tmuxSession && (c.Op == "send-keys" || c.Op == "send-keys-settle") && len(c.Args) > 0 && (c.Args[0] == "1\n" || c.Args[0] == "\n") { // the startup classifier answers the development-channels dialog with Enter alone
 			n++
 		}
 	}

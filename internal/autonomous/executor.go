@@ -1256,7 +1256,6 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 						// the last 20 pane lines stay visible for post-mortem
 						// (the daemon's wait loop sets it on the task before the
 						// kill). Consuming no normal retry budget here either.
-						lastFailureCategory = "infra"
 						oldStatus := t.Status
 						t.Status = TaskFailed
 						t.Error = SessionStartFailureReason
