@@ -29,6 +29,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 // Kind enumerates supported LLM protocols.
@@ -66,8 +68,8 @@ const (
 	KindShell          Kind = "shell"
 
 	// v8.0 BL321 — new inference adapter kinds.
-	KindGeminiAPI    Kind = "gemini-api"    // Google Generative Language v1beta
-	KindOpenCodeAPI  Kind = "opencode-api"  // opencode HTTP inference API (OpenAI-compat)
+	KindGeminiAPI   Kind = "gemini-api"   // Google Generative Language v1beta
+	KindOpenCodeAPI Kind = "opencode-api" // opencode HTTP inference API (OpenAI-compat)
 )
 
 // AllKinds is the set the operator can pick from + UI dropdowns.
@@ -118,9 +120,9 @@ type EnabledModel struct {
 
 // LLM is one named LLM definition in the registry.
 type LLM struct {
-	Name    string `yaml:"name" json:"name"`
-	Kind    Kind   `yaml:"kind" json:"kind"`
-	Model   string `yaml:"model,omitempty" json:"model,omitempty"`
+	Name  string `yaml:"name" json:"name"`
+	Kind  Kind   `yaml:"kind" json:"kind"`
+	Model string `yaml:"model,omitempty" json:"model,omitempty"`
 	// ComputeNodes is the operator-ordered failover list of
 	// ComputeNode names. Dispatcher walks left-to-right; first
 	// reachable Node wins. Empty list means "default to whatever the
@@ -149,7 +151,7 @@ type LLM struct {
 	APIKeyRefPrefix  string `yaml:"-" json:"api_key_ref_prefix,omitempty"`
 	// TimeoutSeconds overrides the adapter default (300s for ollama
 	// per v5.26.9 cold-model latency observation; 60s for claude).
-	TimeoutSeconds int      `yaml:"timeout_seconds,omitempty" json:"timeout_seconds,omitempty"`
+	TimeoutSeconds int `yaml:"timeout_seconds,omitempty" json:"timeout_seconds,omitempty"`
 	// MaxInflight caps autonomous sessions in flight on this LLM across all
 	// PRDs (0 = unlimited). Enforced by the capacity ledger.
 	MaxInflight int `yaml:"max_inflight,omitempty" json:"max_inflight,omitempty"`
@@ -163,10 +165,16 @@ type LLM struct {
 	// Budget is the optional dollar ceiling for this LLM entry over a rolling
 	// or weekly window. Nil means no budget.
 	Budget *BudgetWindow `yaml:"budget,omitempty" json:"budget,omitempty"`
-	Tags           []string `yaml:"tags,omitempty" json:"tags,omitempty"`
+	// BillingGroup is an operator-set label grouping LLM entries that share
+	// one cloud/billing account across federated peers. It is a label only:
+	// the value is hashed with the per-peer-pair key before it leaves the
+	// daemon, and a non-empty value is reconciled with the same operator
+	// confirm step as a shared compute node. Empty means "no group".
+	BillingGroup string   `yaml:"billing_group,omitempty" json:"billing_group,omitempty"`
+	Tags         []string `yaml:"tags,omitempty" json:"tags,omitempty"`
 	// AutoTags are daemon-applied internal markers. v7.0.0-alpha.23
 	// (Q7): PWA strips these from the user-visible tag list.
-	AutoTags       []string `yaml:"auto_tags,omitempty" json:"auto_tags,omitempty"`
+	AutoTags []string `yaml:"auto_tags,omitempty" json:"auto_tags,omitempty"`
 	// CostPer1kTokens (USD) — for SaaS cost tracking. Ignored for
 	// local kinds.
 	CostPer1kTokensInput  float64 `yaml:"cost_per_1k_input,omitempty" json:"cost_per_1k_input,omitempty"`
@@ -196,13 +204,13 @@ type LLM struct {
 
 	// Session-backend fields. Only applicable when Kind is a session-backend
 	// (claude-code, aider, goose, gemini, opencode, opencode-acp, opencode-prompt, shell).
-	Binary      string `yaml:"binary,omitempty" json:"binary,omitempty"`
-	ConsoleCols int    `yaml:"console_cols,omitempty" json:"console_cols,omitempty"`
-	ConsoleRows int    `yaml:"console_rows,omitempty" json:"console_rows,omitempty"`
-	OutputMode  string `yaml:"output_mode,omitempty" json:"output_mode,omitempty"`
-	InputMode   string `yaml:"input_mode,omitempty" json:"input_mode,omitempty"`
-	AutoGitInit   bool `yaml:"auto_git_init,omitempty" json:"auto_git_init,omitempty"`
-	AutoGitCommit bool `yaml:"auto_git_commit,omitempty" json:"auto_git_commit,omitempty"`
+	Binary        string `yaml:"binary,omitempty" json:"binary,omitempty"`
+	ConsoleCols   int    `yaml:"console_cols,omitempty" json:"console_cols,omitempty"`
+	ConsoleRows   int    `yaml:"console_rows,omitempty" json:"console_rows,omitempty"`
+	OutputMode    string `yaml:"output_mode,omitempty" json:"output_mode,omitempty"`
+	InputMode     string `yaml:"input_mode,omitempty" json:"input_mode,omitempty"`
+	AutoGitInit   bool   `yaml:"auto_git_init,omitempty" json:"auto_git_init,omitempty"`
+	AutoGitCommit bool   `yaml:"auto_git_commit,omitempty" json:"auto_git_commit,omitempty"`
 
 	// Claude-code-specific settings. Clean move from SessionConfig.
 	// Only meaningful when Kind == KindClaudeCode.
@@ -273,12 +281,12 @@ func (l LLM) kindInflight() kindInflightClass {
 //     present in the table.
 //  3. Otherwise a conservative kind default:
 //     - subscription kinds (claude-code and the other non-local,
-//       non-API kinds): 1 in-flight;
+//     non-API kinds): 1 in-flight;
 //     - local kinds (Ollama / OpenWebUI / opencode wrapping Ollama):
-//       0 (unlimited) — they stay governed by the node: pools and the
-//       hard two-engines-per-GPU-node limit in capacity_wiring;
+//     0 (unlimited) — they stay governed by the node: pools and the
+//     hard two-engines-per-GPU-node limit in capacity_wiring;
 //     - API kinds (dollar-metered): 0 (unlimited) — the dollar budget
-//       is a later phase; MaxInflight per LLM is the operator's tool.
+//     is a later phase; MaxInflight per LLM is the operator's tool.
 //
 // The starting table pro=1, max_5x=2, max_20x=4, api=0 is operator
 // policy, not a technical limit: it is overridable through
@@ -348,6 +356,17 @@ func (l *LLM) Validate() error {
 	if l.Budget != nil {
 		if err := l.Budget.Validate(); err != nil {
 			return fmt.Errorf("llm: %w", err)
+		}
+	}
+	// BillingGroup: trim on save, then check shape. Empty stays valid and
+	// means "no group".
+	l.BillingGroup = strings.TrimSpace(l.BillingGroup)
+	if utf8.RuneCountInString(l.BillingGroup) > 64 {
+		return errors.New("llm: billing_group must be at most 64 characters")
+	}
+	for _, r := range l.BillingGroup {
+		if unicode.IsControl(r) {
+			return errors.New("llm: billing_group must not contain control characters")
 		}
 	}
 	if strings.TrimSpace(l.Name) == "" {
