@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.27 — autonomous: a session that stops at start-up confirmation dialogs no longer waits out the 30-minute timeout
+
+- **Claude-code sessions that start but stop at a start-up confirmation dialog (for example the auto-mode or trust prompts) are now answered or failed quickly** — instead of sitting quietly until the 30-minute verification timeout runs out.
+- **A pasted prompt is submitted exactly once and the result is checked**, so the daemon never pastes the task a second time when the dialog steals the first send.
+- **A session that starts but never begins working now fails after a short, configurable wait instead of hours** — the bound is `autonomous.session_start_confirm_seconds` (default 120 seconds), the failure is named "session never started" (with the last lines of the transcript attached to the alert), and up to 2 starts are retried automatically before the task stays failed.
+- **The setting is configurable from every usual place** — the web settings card, the REST config endpoints, the MCP config tools, the `datawatch config set` CLI, and the comm channel (`configure autonomous.session_start_confirm_seconds=<seconds>`).
+
 ## v9.5.26 — autonomous: honor each backend's delivery mode when typing waiting tasks into tmux
 
 - **One-shot “send the task and wait for it to finish” sessions (pi --print, goose --print, aider) no longer get a second copy of the task typed into their shell (send_input)** — the daemon now asks each backend whether it accepts interactive input before typing a waiting task into the pane, so a backend that only takes its task once, at launch, can never be typed into, even if it is a brand-new backend never added to a list.
