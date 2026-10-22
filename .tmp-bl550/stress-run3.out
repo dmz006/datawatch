@@ -1,0 +1,256 @@
+FAILS=7 / 24
+/home/dmz/.datawatch/prd-worktrees/efed0001/.tmp-bl550/stress-logs/run-10.log
+/home/dmz/.datawatch/prd-worktrees/efed0001/.tmp-bl550/stress-logs/run-12.log
+/home/dmz/.datawatch/prd-worktrees/efed0001/.tmp-bl550/stress-logs/run-20.log
+/home/dmz/.datawatch/prd-worktrees/efed0001/.tmp-bl550/stress-logs/run-21.log
+/home/dmz/.datawatch/prd-worktrees/efed0001/.tmp-bl550/stress-logs/run-2.log
+/home/dmz/.datawatch/prd-worktrees/efed0001/.tmp-bl550/stress-logs/run-4.log
+/home/dmz/.datawatch/prd-worktrees/efed0001/.tmp-bl550/stress-logs/run-8.log
+=== /home/dmz/.datawatch/prd-worktrees/efed0001/.tmp-bl550/stress-logs/run-10.log ===
+=== RUN   TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/short_unsubscribes_full
+    ws_output_scope_test.go:246: diag: clients=1 sendLens=[0] pendingRegister=0 pendingUnregister=0 pendingBroadcast=0
+=== RUN   TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/full_unsubscribes_short
+    ws_output_scope_test.go:246: diag: clients=1 sendLens=[0] pendingRegister=0 pendingUnregister=0 pendingBroadcast=0
+--- FAIL: TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture (0.02s)
+    --- FAIL: TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/same_id (0.01s)
+    --- PASS: TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/short_unsubscribes_full (0.00s)
+    --- PASS: TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/full_unsubscribes_short (0.01s)
+=== RUN   TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture
+=== RUN   TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/same_id
+    ws_output_scope_test.go:246: diag: clients=1 sendLens=[0] pendingRegister=0 pendingUnregister=0 pendingBroadcast=0
+=== RUN   TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/short_unsubscribes_full
+    ws_output_scope_test.go:246: diag: clients=1 sendLens=[0] pendingRegister=0 pendingUnregister=0 pendingBroadcast=0
+=== RUN   TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/full_unsubscribes_short
+    ws_output_scope_test.go:246: diag: clients=1 sendLens=[0] pendingRegister=0 pendingUnregister=0 pendingBroadcast=0
+--- PASS: TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture (0.02s)
+    --- PASS: TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/same_id (0.01s)
+    --- PASS: TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/short_unsubscribes_full (0.00s)
+    --- PASS: TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/full_unsubscribes_short (0.01s)
+=== RUN   TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture
+=== RUN   TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/same_id
+    ws_output_scope_test.go:246: diag: clients=1 sendLens=[0] pendingRegister=0 pendingUnregister=0 pendingBroadcast=0
+=== RUN   TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/short_unsubscribes_full
+    ws_output_scope_test.go:246: diag: clients=1 sendLens=[0] pendingRegister=0 pendingUnregister=0 pendingBroadcast=0
+=== RUN   TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/full_unsubscribes_short
+    ws_output_scope_test.go:246: diag: clients=1 sendLens=[0] pendingRegister=0 pendingUnregister=0 pendingBroadcast=0
+=== /home/dmz/.datawatch/prd-worktrees/efed0001/.tmp-bl550/stress-logs/run-12.log ===
+    ws_output_scope_test.go:246: diag: clients=0 sendLens=[] pendingRegister=0 pendingUnregister=0 pendingBroadcast=0
+    ws_output_scope_test.go:246: hub has 0 clients, want 1
+=== RUN   TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/full_unsubscribes_short
+    ws_output_scope_test.go:246: diag: clients=1 sendLens=[0] pendingRegister=0 pendingUnregister=0 pendingBroadcast=0
+--- FAIL: TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture (0.01s)
+    --- PASS: TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/same_id (0.00s)
+    --- FAIL: TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/short_unsubscribes_full (0.01s)
+    --- PASS: TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/full_unsubscribes_short (0.01s)
+=== RUN   TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture
+=== RUN   TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/same_id
+    ws_output_scope_test.go:246: diag: clients=1 sendLens=[0] pendingRegister=0 pendingUnregister=0 pendingBroadcast=0
+=== RUN   TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/short_unsubscribes_full
+    ws_output_scope_test.go:246: diag: clients=1 sendLens=[0] pendingRegister=0 pendingUnregister=0 pendingBroadcast=0
+=== RUN   TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/full_unsubscribes_short
+    ws_output_scope_test.go:246: diag: clients=1 sendLens=[0] pendingRegister=0 pendingUnregister=0 pendingBroadcast=0
+--- PASS: TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture (0.02s)
+    --- PASS: TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/same_id (0.00s)
+    --- PASS: TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/short_unsubscribes_full (0.00s)
+    --- PASS: TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/full_unsubscribes_short (0.01s)
+=== RUN   TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture
+=== RUN   TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/same_id
+    ws_output_scope_test.go:246: diag: clients=1 sendLens=[0] pendingRegister=0 pendingUnregister=0 pendingBroadcast=0
+=== RUN   TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/short_unsubscribes_full
+    ws_output_scope_test.go:246: diag: clients=1 sendLens=[0] pendingRegister=0 pendingUnregister=0 pendingBroadcast=0
+=== RUN   TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/full_unsubscribes_short
+    ws_output_scope_test.go:246: diag: clients=1 sendLens=[0] pendingRegister=0 pendingUnregister=0 pendingBroadcast=0
+--- PASS: TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture (0.02s)
+--
+=== RUN   TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/short_unsubscribes_full
+    ws_output_scope_test.go:246: diag: clients=1 sendLens=[0] pendingRegister=0 pendingUnregister=0 pendingBroadcast=0
+=== RUN   TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/full_unsubscribes_short
+    ws_output_scope_test.go:246: diag: clients=1 sendLens=[0] pendingRegister=0 pendingUnregister=0 pendingBroadcast=0
+--- FAIL: TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture (0.01s)
+    --- FAIL: TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/same_id (0.01s)
+    --- PASS: TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/short_unsubscribes_full (0.00s)
+    --- PASS: TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/full_unsubscribes_short (0.01s)
+=== RUN   TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture
+=== RUN   TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/same_id
+    ws_output_scope_test.go:246: diag: clients=1 sendLens=[0] pendingRegister=0 pendingUnregister=0 pendingBroadcast=0
+=== RUN   TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/short_unsubscribes_full
+    ws_output_scope_test.go:246: diag: clients=1 sendLens=[0] pendingRegister=0 pendingUnregister=0 pendingBroadcast=0
+=== RUN   TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/full_unsubscribes_short
+    ws_output_scope_test.go:246: diag: clients=1 sendLens=[0] pendingRegister=0 pendingUnregister=0 pendingBroadcast=0
+--- PASS: TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture (0.01s)
+    --- PASS: TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/same_id (0.00s)
+    --- PASS: TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/short_unsubscribes_full (0.00s)
+    --- PASS: TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/full_unsubscribes_short (0.00s)
+=== RUN   TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture
+=== RUN   TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/same_id
+    ws_output_scope_test.go:246: diag: clients=1 sendLens=[0] pendingRegister=0 pendingUnregister=0 pendingBroadcast=0
+=== RUN   TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/short_unsubscribes_full
+    ws_output_scope_test.go:246: diag: clients=1 sendLens=[0] pendingRegister=0 pendingUnregister=0 pendingBroadcast=0
+=== RUN   TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/full_unsubscribes_short
+    ws_output_scope_test.go:246: diag: clients=1 sendLens=[0] pendingRegister=0 pendingUnregister=0 pendingBroadcast=0
+=== /home/dmz/.datawatch/prd-worktrees/efed0001/.tmp-bl550/stress-logs/run-20.log ===
+    ws_output_scope_test.go:246: diag: clients=0 sendLens=[] pendingRegister=0 pendingUnregister=0 pendingBroadcast=0
+    ws_output_scope_test.go:246: hub has 0 clients, want 1
+=== RUN   TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/full_unsubscribes_short
+    ws_output_scope_test.go:246: diag: clients=1 sendLens=[0] pendingRegister=0 pendingUnregister=0 pendingBroadcast=0
+--- FAIL: TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture (0.02s)
+    --- PASS: TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/same_id (0.00s)
+    --- FAIL: TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/short_unsubscribes_full (0.01s)
+    --- PASS: TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/full_unsubscribes_short (0.01s)
+=== RUN   TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture
+=== RUN   TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/same_id
+    ws_output_scope_test.go:246: diag: clients=1 sendLens=[0] pendingRegister=0 pendingUnregister=0 pendingBroadcast=0
+=== RUN   TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/short_unsubscribes_full
+    ws_output_scope_test.go:246: diag: clients=1 sendLens=[0] pendingRegister=0 pendingUnregister=0 pendingBroadcast=0
+=== RUN   TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/full_unsubscribes_short
+    ws_output_scope_test.go:246: diag: clients=1 sendLens=[0] pendingRegister=0 pendingUnregister=0 pendingBroadcast=0
+--- PASS: TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture (0.03s)
+    --- PASS: TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/same_id (0.01s)
+    --- PASS: TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/short_unsubscribes_full (0.01s)
+    --- PASS: TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/full_unsubscribes_short (0.00s)
+=== RUN   TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture
+=== RUN   TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/same_id
+    ws_output_scope_test.go:246: diag: clients=1 sendLens=[0] pendingRegister=0 pendingUnregister=0 pendingBroadcast=0
+=== RUN   TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/short_unsubscribes_full
+    ws_output_scope_test.go:246: diag: clients=1 sendLens=[0] pendingRegister=0 pendingUnregister=0 pendingBroadcast=0
+=== RUN   TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/full_unsubscribes_short
+    ws_output_scope_test.go:246: diag: clients=1 sendLens=[0] pendingRegister=0 pendingUnregister=0 pendingBroadcast=0
+--- PASS: TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture (0.01s)
+./.tmp-bl550/stress.sh: line 2: 2580645 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2580646 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2580647 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2580648 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2580649 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2580650 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2580651 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2580652 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2580653 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2580654 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2580636 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2580655 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2580656 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2580657 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2580658 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2580659 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2580660 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2580661 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2580662 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2580663 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2580664 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2580637 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2580665 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2580666 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2580667 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2580668 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2580669 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2580670 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2580672 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2580673 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2580674 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2580675 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2580638 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2580676 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2580677 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2580678 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2580679 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2580680 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2580681 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2580682 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2580683 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2580684 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2580639 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2580640 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2580641 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2580642 Killed                     ( while :; do
+    :;
+done )

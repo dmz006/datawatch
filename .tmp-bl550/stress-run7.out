@@ -1,0 +1,255 @@
+FAILS=5 / 24
+/home/dmz/.datawatch/prd-worktrees/efed0001/.tmp-bl550/stress-logs/run-10.log
+/home/dmz/.datawatch/prd-worktrees/efed0001/.tmp-bl550/stress-logs/run-1.log
+/home/dmz/.datawatch/prd-worktrees/efed0001/.tmp-bl550/stress-logs/run-20.log
+/home/dmz/.datawatch/prd-worktrees/efed0001/.tmp-bl550/stress-logs/run-23.log
+/home/dmz/.datawatch/prd-worktrees/efed0001/.tmp-bl550/stress-logs/run-6.log
+=== /home/dmz/.datawatch/prd-worktrees/efed0001/.tmp-bl550/stress-logs/run-10.log ===
+    ws_output_scope_test.go:281: diag: hub=0xc00017ef80 clients=1 sendLens=[0] pendingRegister=0 pendingUnregister=0 pendingBroadcast=0
+=== RUN   TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/full_unsubscribes_short
+    ws_output_scope_test.go:273: new server: 0xc0000fc008 hub=0xc00017f300 url=http://127.0.0.1:36323 (total hubs=42)
+    ws_output_scope_test.go:281: diag: hub=0xc00017f300 clients=1 sendLens=[0] pendingRegister=0 pendingUnregister=0 pendingBroadcast=0
+--- FAIL: TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture (0.32s)
+    --- FAIL: TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/same_id (0.32s)
+    --- PASS: TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/short_unsubscribes_full (0.00s)
+    --- PASS: TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/full_unsubscribes_short (0.00s)
+=== RUN   TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture
+=== RUN   TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/same_id
+    ws_output_scope_test.go:273: new server: 0xc0000fc508 hub=0xc00017eb80 url=http://127.0.0.1:46455 (total hubs=43)
+    ws_output_scope_test.go:281: diag: hub=0xc00017eb80 clients=1 sendLens=[0] pendingRegister=0 pendingUnregister=0 pendingBroadcast=0
+=== RUN   TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/short_unsubscribes_full
+    ws_output_scope_test.go:273: new server: 0xc0000fca08 hub=0xc00017f200 url=http://127.0.0.1:36795 (total hubs=44)
+    ws_output_scope_test.go:281: diag: hub=0xc00017f200 clients=1 sendLens=[0] pendingRegister=0 pendingUnregister=0 pendingBroadcast=0
+=== RUN   TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/full_unsubscribes_short
+    ws_output_scope_test.go:273: new server: 0xc0000fcf08 hub=0xc00017f500 url=http://127.0.0.1:37155 (total hubs=45)
+    ws_output_scope_test.go:281: diag: hub=0xc00017f500 clients=1 sendLens=[0] pendingRegister=0 pendingUnregister=0 pendingBroadcast=0
+--- PASS: TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture (0.02s)
+    --- PASS: TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/same_id (0.01s)
+    --- PASS: TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/short_unsubscribes_full (0.01s)
+    --- PASS: TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/full_unsubscribes_short (0.00s)
+=== RUN   TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture
+=== RUN   TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/same_id
+    ws_output_scope_test.go:273: new server: 0xc0000fd408 hub=0xc00017ed00 url=http://127.0.0.1:40721 (total hubs=46)
+    ws_output_scope_test.go:281: diag: hub=0xc00017ed00 clients=1 sendLens=[0] pendingRegister=0 pendingUnregister=0 pendingBroadcast=0
+--
+    ws_output_scope_test.go:281: diag: hub=0xc0001ed700 clients=1 sendLens=[0] pendingRegister=0 pendingUnregister=0 pendingBroadcast=0
+=== RUN   TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/full_unsubscribes_short
+    ws_output_scope_test.go:273: new server: 0xc00042cf08 hub=0xc0001edb80 url=http://127.0.0.1:37385 (total hubs=99)
+    ws_output_scope_test.go:281: diag: hub=0xc0001edb80 clients=1 sendLens=[0] pendingRegister=0 pendingUnregister=0 pendingBroadcast=0
+--- FAIL: TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture (0.33s)
+    --- FAIL: TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/same_id (0.33s)
+    --- PASS: TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/short_unsubscribes_full (0.00s)
+    --- PASS: TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/full_unsubscribes_short (0.00s)
+=== RUN   TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture
+=== RUN   TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/same_id
+    ws_output_scope_test.go:273: new server: 0xc00042d408 hub=0xc0001ed200 url=http://127.0.0.1:45873 (total hubs=100)
+    ws_output_scope_test.go:281: diag: hub=0xc0001ed200 clients=1 sendLens=[0] pendingRegister=0 pendingUnregister=0 pendingBroadcast=0
+=== RUN   TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/short_unsubscribes_full
+    ws_output_scope_test.go:273: new server: 0xc00042d908 hub=0xc0001edb00 url=http://127.0.0.1:33557 (total hubs=101)
+    ws_output_scope_test.go:281: diag: hub=0xc0001edb00 clients=1 sendLens=[0] pendingRegister=0 pendingUnregister=0 pendingBroadcast=0
+=== RUN   TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/full_unsubscribes_short
+    ws_output_scope_test.go:273: new server: 0xc000466008 hub=0xc00017fe80 url=http://127.0.0.1:34205 (total hubs=102)
+    ws_output_scope_test.go:281: diag: hub=0xc00017fe80 clients=1 sendLens=[0] pendingRegister=0 pendingUnregister=0 pendingBroadcast=0
+--- PASS: TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture (0.01s)
+    --- PASS: TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/same_id (0.00s)
+    --- PASS: TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/short_unsubscribes_full (0.00s)
+    --- PASS: TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/full_unsubscribes_short (0.00s)
+=== RUN   TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture
+=== RUN   TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/same_id
+    ws_output_scope_test.go:273: new server: 0xc000466508 hub=0xc0001ed600 url=http://127.0.0.1:42669 (total hubs=103)
+    ws_output_scope_test.go:281: diag: hub=0xc0001ed600 clients=1 sendLens=[0] pendingRegister=0 pendingUnregister=0 pendingBroadcast=0
+=== /home/dmz/.datawatch/prd-worktrees/efed0001/.tmp-bl550/stress-logs/run-1.log ===
+        	/home/dmz/.datawatch/prd-worktrees/efed0001/internal/server/ws_session_stream_test.go:35 +0x61a
+=== RUN   TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/full_unsubscribes_short
+    ws_output_scope_test.go:273: new server: 0xc000424508 hub=0xc000175b00 url=http://127.0.0.1:45595 (total hubs=81)
+    ws_output_scope_test.go:281: diag: hub=0xc000175b00 clients=1 sendLens=[0] pendingRegister=0 pendingUnregister=0 pendingBroadcast=0
+--- FAIL: TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture (0.35s)
+    --- PASS: TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/same_id (0.00s)
+    --- FAIL: TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/short_unsubscribes_full (0.34s)
+    --- PASS: TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/full_unsubscribes_short (0.01s)
+=== RUN   TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture
+=== RUN   TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/same_id
+    ws_output_scope_test.go:273: new server: 0xc000424a08 hub=0xc0000a5100 url=http://127.0.0.1:33187 (total hubs=82)
+    ws_output_scope_test.go:281: diag: hub=0xc0000a5100 clients=1 sendLens=[0] pendingRegister=0 pendingUnregister=0 pendingBroadcast=0
+=== RUN   TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/short_unsubscribes_full
+    ws_output_scope_test.go:273: new server: 0xc000424f08 hub=0xc0000a5400 url=http://127.0.0.1:34185 (total hubs=83)
+    ws_output_scope_test.go:281: diag: hub=0xc0000a5400 clients=1 sendLens=[0] pendingRegister=0 pendingUnregister=0 pendingBroadcast=0
+=== RUN   TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/full_unsubscribes_short
+    ws_output_scope_test.go:273: new server: 0xc000425408 hub=0xc0000a5780 url=http://127.0.0.1:32817 (total hubs=84)
+    ws_output_scope_test.go:281: diag: hub=0xc0000a5780 clients=1 sendLens=[0] pendingRegister=0 pendingUnregister=0 pendingBroadcast=0
+--- PASS: TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture (0.02s)
+    --- PASS: TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/same_id (0.01s)
+    --- PASS: TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/short_unsubscribes_full (0.00s)
+    --- PASS: TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/full_unsubscribes_short (0.01s)
+=== RUN   TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture
+=== RUN   TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/same_id
+    ws_output_scope_test.go:273: new server: 0xc000425908 hub=0xc0000a5200 url=http://127.0.0.1:32831 (total hubs=85)
+    ws_output_scope_test.go:281: diag: hub=0xc0000a5200 clients=1 sendLens=[0] pendingRegister=0 pendingUnregister=0 pendingBroadcast=0
+=== RUN   TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/short_unsubscribes_full
+=== /home/dmz/.datawatch/prd-worktrees/efed0001/.tmp-bl550/stress-logs/run-20.log ===
+        net/http.(*conn).serve(0xc0005a5320, {0x4194970, 0xc000424c30})
+        	/home/dmz/.local/go-1.27.2/src/net/http/server.go:2157 +0xedb
+        created by net/http.(*Server).Serve in goroutine 1001
+        	/home/dmz/.local/go-1.27.2/src/net/http/server.go:3604 +0x92a
+--- FAIL: TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture (0.33s)
+    --- PASS: TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/same_id (0.01s)
+    --- PASS: TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/short_unsubscribes_full (0.00s)
+    --- FAIL: TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/full_unsubscribes_short (0.33s)
+=== RUN   TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture
+=== RUN   TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/same_id
+    ws_output_scope_test.go:273: new server: 0xc000722508 hub=0xc00022e200 url=http://127.0.0.1:36335 (total hubs=157)
+    ws_output_scope_test.go:281: diag: hub=0xc00022e200 clients=1 sendLens=[0] pendingRegister=0 pendingUnregister=0 pendingBroadcast=0
+=== RUN   TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/short_unsubscribes_full
+    ws_output_scope_test.go:273: new server: 0xc000722a08 hub=0xc000239100 url=http://127.0.0.1:34027 (total hubs=158)
+    ws_output_scope_test.go:281: diag: hub=0xc000239100 clients=1 sendLens=[0] pendingRegister=0 pendingUnregister=0 pendingBroadcast=0
+=== RUN   TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/full_unsubscribes_short
+    ws_output_scope_test.go:273: new server: 0xc000722f08 hub=0xc000239400 url=http://127.0.0.1:43557 (total hubs=159)
+    ws_output_scope_test.go:281: diag: hub=0xc000239400 clients=1 sendLens=[0] pendingRegister=0 pendingUnregister=0 pendingBroadcast=0
+--- PASS: TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture (0.02s)
+    --- PASS: TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/same_id (0.01s)
+    --- PASS: TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/short_unsubscribes_full (0.00s)
+    --- PASS: TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/full_unsubscribes_short (0.00s)
+=== RUN   TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture
+=== RUN   TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/same_id
+    ws_output_scope_test.go:273: new server: 0xc000723408 hub=0xc000238e00 url=http://127.0.0.1:42655 (total hubs=160)
+    ws_output_scope_test.go:281: diag: hub=0xc000238e00 clients=1 sendLens=[0] pendingRegister=0 pendingUnregister=0 pendingBroadcast=0
+=== RUN   TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture/short_unsubscribes_full
+    ws_output_scope_test.go:273: new server: 0xc000723908 hub=0xc000239200 url=http://127.0.0.1:42845 (total hubs=161)
+./.tmp-bl550/stress.sh: line 2: 2851565 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2851566 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2851567 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2851568 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2851569 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2851570 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2851571 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2851572 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2851573 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2851574 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2851556 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2851575 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2851576 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2851577 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2851578 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2851579 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2851580 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2851581 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2851582 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2851583 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2851584 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2851557 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2851585 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2851586 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2851587 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2851588 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2851589 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2851590 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2851591 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2851592 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2851593 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2851594 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2851558 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2851595 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2851596 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2851597 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2851598 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2851599 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2851600 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2851601 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2851602 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2851603 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2851559 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2851560 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2851561 Killed                     ( while :; do
+    :;
+done )
+./.tmp-bl550/stress.sh: line 2: 2851562 Killed                     ( while :; do
+    :;
+done )
