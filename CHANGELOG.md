@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.69 — Internal-ref leak audit passes: tracker tags removed from OpenAPI summaries
+
+### Fixed
+
+- **Operator-facing OpenAPI summaries no longer contain internal tracker tags or sprint labels.** The 19 `summary:` lines in `internal/server/web/openapi.yaml` that carried `BL###`/`F##` tags (for example `BL42`, `F10 sprint 3+`) now read as plain descriptions, and the internal-ref leak audit (`scripts/check-no-internal-refs.sh`) passes again. Wording is otherwise unchanged; no API contract, config key or locale string changed.
+
 ## v9.5.68 — Inference-cap gap closure: plan-tier caps, verifier lease hand-off, decompose admission
 
 ### Added
