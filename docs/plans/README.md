@@ -166,7 +166,7 @@ Rows are in execution order; the numbers are stable ids, not positions. Operator
 | 13 | 3a **done**, shipped in 9.5.85 (PRD `b3ca0001`: fork, join, nested Automations). 3b PRD `412a0001` filed 2026-10-22 08:28 (Claude), decompose started. | not started | 10 |
 | 14 | BL422 Claude model and effort tiering eval | failed (PRD `f6a38c29` failed; resume needed) | - |
 | 15 | [BL431 Phase 4](2026-10-14-automation-orchestration-design.md) Model-tier defaults | not started | 14 |
-| 16 | [BL428 Phase 4](2026-10-14-concurrency-and-budget-design.md) Reactive usage back-off | not started | 12 |
+| 16 | draft PRD `8afa0001` filed 2026-10-22 09:37 (Claude worker, pi decompose), decompose started; operator decisions Q3 and Q7 recorded 2026-10-22 | not started | 12 |
 | 17 | [BL428 Phase 5](2026-10-14-concurrency-and-budget-design.md) Dollar-window budget (includes §4e federation shared-billing detection) | not started | 16 |
 | 18 | [BL431 Phase 5](2026-10-14-automation-orchestration-design.md) BudgetPolicy | not started | 17 |
 | 19 | [BL428 Phase 6](2026-10-14-concurrency-and-budget-design.md) Visibility, audit and parity close-out | not started | 17 |
