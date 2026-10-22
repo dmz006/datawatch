@@ -12,6 +12,12 @@ import (
 // worker has returned. See the pi backend's buildLaunchCmd.
 const oneShotCompletionMarker = "DATAWATCH_COMPLETE:"
 
+// BL468 — piFailureMarker is the line the pi launch wrapper prints when pi
+// exits non-zero ("DATAWATCH_PI_FAILED: pi exited with status <N>", with an
+// optional " (model <m>)" suffix on the one-shot path). It is a FAILURE
+// signal, never a completion; see isRealFailureLine/parsePiFailureExit.
+const piFailureMarker = "DATAWATCH_PI_FAILED:"
+
 // defaultSessionRetentionDays is used when session_retention_days is unset.
 const defaultSessionRetentionDays = 30
 
@@ -38,11 +44,19 @@ func (m *Manager) oneShotFinished(sess *Session) bool {
 	if err != nil {
 		return false
 	}
+	// BL468 — note the state guard above already leaves sessions in a
+	// terminal state (complete/failed/killed) alone, so a StateFailed
+	// record is never reaped or re-transitioned here.
 	// The same real-completion rules as the pane scanners: the wrapped tail of
 	// the typed launch command ("...echo 'DATAWATCH_COMPLETE: claude done'")
 	// and an instruction placeholder are not the worker's own completion.
+	// BL468 — the pi non-zero-exit failure marker is a failure signal, not a
+	// completion: even a malformed marker line must never satisfy this check.
 	for _, line := range strings.Split(StripANSI(out), "\n") {
 		l := strings.TrimSpace(line)
+		if strings.HasPrefix(l, piFailureMarker) {
+			continue
+		}
 		if strings.HasPrefix(l, oneShotCompletionMarker) && isRealCompletionLine(l, oneShotCompletionMarker) {
 			return true
 		}
@@ -66,6 +80,11 @@ func (m *Manager) FinishedOneShots() []*Session {
 // completion path, so the validation gate still decides whether anything is
 // committed, then it marks the session complete and closes its pane. Returns
 // the full IDs it completed. Safe to call repeatedly.
+//
+// BL468 — sessions already in StateFailed are never listed by
+// FinishedOneShots (oneShotFinished requires running/waiting_input), so a
+// recorded failure is left alone — its pane and scratch are the failure
+// path's problem, not the completion reaper's.
 func (m *Manager) ReapFinishedOneShots() []string {
 	var reaped []string
 	for _, sess := range m.FinishedOneShots() {

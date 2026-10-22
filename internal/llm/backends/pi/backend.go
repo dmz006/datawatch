@@ -168,6 +168,13 @@ func (b *Backend) Version() string { return versionOf(b.binary) }
 // Since v9.10.19 model is required: an interactive pi session without an
 // explicit --model runs on the host's own default model, which is exactly
 // the fallback every launch path must not take (ErrNoModel).
+//
+// BL468 — a failed interactive run must not look complete: the command
+// captures pi's exit status, prints DATAWATCH_COMPLETE only on a zero exit,
+// prints the distinct DATAWATCH_PI_FAILED line with the exit status on a
+// non-zero exit, and exits with that status. The format string is a raw
+// literal so "$pi_status" keeps real double quotes verbatim (the
+// acceptance gate matches it as a fixed string).
 func buildInteractiveCmd(binary, model, sessionID, task, projectDir, tmuxSession string) (string, error) {
 	if strings.TrimSpace(model) == "" {
 		return "", ErrNoModel
@@ -179,7 +186,7 @@ func buildInteractiveCmd(binary, model, sessionID, task, projectDir, tmuxSession
 		sessionFlag = fmt.Sprintf("--session-id '%s' ", shellEscape(sessionID))
 	}
 	argExpr, cleanup := taskArgExpr(tmuxSession, task)
-	return fmt.Sprintf("cd '%s' && %s --approve %s%s%s; %secho; echo 'DATAWATCH_COMPLETE: pi session ended'",
+	return fmt.Sprintf(`cd '%s' && %s --approve %s%s%s; %spi_status=$?; echo; if [ "$pi_status" -eq 0 ]; then echo 'DATAWATCH_COMPLETE: pi session ended'; else echo "DATAWATCH_PI_FAILED: pi exited with status $pi_status"; fi; exit "$pi_status"`,
 		escapedDir, binary, modelFlag, sessionFlag, argExpr, cleanup), nil
 }
 
