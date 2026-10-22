@@ -2983,12 +2983,13 @@ paths:
       tags: [Singletons]
       parameters:
         - {name: actor, in: query, required: false, schema: {type: string}}
-        - {name: action, in: query, required: false, schema: {type: string}}
+        - {name: action, in: query, required: false, description: "Exact match, or a prefix match when it ends in '*' (autonomous_budget_*, autonomous_*)", schema: {type: string}}
+        - {name: subject, in: query, required: false, description: Exact match on the entry subject (task id, backend or LLM name), schema: {type: string}}
         - {name: session_id, in: query, required: false, schema: {type: string}}
         - {name: since, in: query, required: false, schema: {type: string, format: date-time}}
         - {name: until, in: query, required: false, schema: {type: string, format: date-time}}
         - {name: limit, in: query, required: false, schema: {type: integer}}
-      responses: {"200": {description: OK}}
+      responses: {"200": {description: OK}, "400": {description: since or until is not RFC 3339}}
   /api/cooldown:
     get:
       summary: Current global rate-limit cooldown state (BL30)

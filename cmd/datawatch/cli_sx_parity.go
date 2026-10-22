@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -20,6 +21,8 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+
+	"github.com/dmz006/datawatch/internal/audit"
 )
 
 // daemonURL returns the base URL for the running local daemon, honoring
@@ -519,36 +522,55 @@ func newCostRatesCmd() *cobra.Command {
 // ----- BL9 audit -----------------------------------------------------------
 
 func newAuditCmd() *cobra.Command {
-	var actor, action, sessID, since, until string
+	var actor, action, subject, sessID, since, until string
 	var limit int
 	cmd := &cobra.Command{
 		Use:   "audit",
 		Short: "Query operator audit log",
+		Long: "Query the operator audit log, newest first.\n\n" +
+			"--action is an exact match, or a prefix match when it ends in '*' " +
+			"(--action 'autonomous_budget_*' or --action 'autonomous_*' lists a family).\n" +
+			"--subject is an exact match on what the event is about (task id, backend or LLM name).\n" +
+			"--since/--until must be RFC3339.",
 		RunE: func(*cobra.Command, []string) error {
-			path := "/api/audit?"
-			add := func(k, v string) {
-				if v != "" {
-					path += k + "=" + v + "&"
-				}
+			vals := map[string]string{
+				"actor": actor, "action": action, "subject": subject,
+				"session_id": sessID, "since": since, "until": until,
 			}
-			add("actor", actor)
-			add("action", action)
-			add("session_id", sessID)
-			add("since", since)
-			add("until", until)
 			if limit > 0 {
-				path += "limit=" + strconv.Itoa(limit)
+				vals["limit"] = strconv.Itoa(limit)
+			}
+			path, err := auditQueryPath(vals)
+			if err != nil {
+				return err
 			}
 			return daemonGet(path)
 		},
 	}
 	cmd.Flags().StringVar(&actor, "actor", "", "Filter by actor")
-	cmd.Flags().StringVar(&action, "action", "", "Filter by action")
+	cmd.Flags().StringVar(&action, "action", "", "Filter by action; exact, or a prefix when it ends in '*'")
+	cmd.Flags().StringVar(&subject, "subject", "", "Filter by subject (exact match)")
 	cmd.Flags().StringVar(&sessID, "session-id", "", "Filter by session")
 	cmd.Flags().StringVar(&since, "since", "", "RFC3339 lower bound")
 	cmd.Flags().StringVar(&until, "until", "", "RFC3339 upper bound")
-	cmd.Flags().IntVar(&limit, "limit", 100, "Max entries")
+	cmd.Flags().IntVar(&limit, "limit", audit.DefaultQueryLimit, "Max entries")
 	return cmd
+}
+
+// auditQueryPath validates vals (keyed by audit.QueryParamNames) with the
+// same rules the daemon applies and returns the /api/audit request path.
+func auditQueryPath(vals map[string]string) (string, error) {
+	get := func(name string) string { return vals[name] }
+	if _, err := audit.ParseQuery(get); err != nil {
+		return "", err
+	}
+	q := url.Values{}
+	for _, k := range audit.QueryParamNames {
+		if v := get(k); v != "" {
+			q.Set(k, v)
+		}
+	}
+	return "/api/audit?" + q.Encode(), nil
 }
 
 // ----- S4 (v3.8.0) ---------------------------------------------------------

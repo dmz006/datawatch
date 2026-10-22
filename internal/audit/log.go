@@ -197,7 +197,8 @@ type QueryFilter struct {
 	Since     time.Time // entries >= Since
 	Until     time.Time // entries < Until (zero = no cap)
 	Actor     string    // exact match (empty = any)
-	Action    string    // exact match (empty = any)
+	Action    string    // exact match, or a prefix match when it ends in '*' (empty = any)
+	Subject   string    // exact match on Entry.Subject (empty = any)
 	SessionID string    // exact match (empty = any)
 	Limit     int       // most-recent first; 0 = unlimited
 }
@@ -234,7 +235,10 @@ func (l *Log) Read(filter QueryFilter) ([]Entry, error) {
 		if filter.Actor != "" && e.Actor != filter.Actor {
 			continue
 		}
-		if filter.Action != "" && e.Action != filter.Action {
+		if !matchAction(filter.Action, e.Action) {
+			continue
+		}
+		if filter.Subject != "" && e.Subject != filter.Subject {
 			continue
 		}
 		if filter.SessionID != "" && e.SessionID != filter.SessionID {
@@ -250,4 +254,16 @@ func (l *Log) Read(filter QueryFilter) ([]Entry, error) {
 		matched = matched[:filter.Limit]
 	}
 	return matched, nil
+}
+
+// matchAction reports whether action satisfies want: an empty want matches
+// anything, a trailing '*' matches by prefix, anything else must be equal.
+func matchAction(want, action string) bool {
+	if want == "" {
+		return true
+	}
+	if prefix, ok := strings.CutSuffix(want, "*"); ok {
+		return strings.HasPrefix(action, prefix)
+	}
+	return action == want
 }
