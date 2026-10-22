@@ -283,6 +283,44 @@ docs-index` inside the worktree, or create
 placeholder `make docs-index` would seed). Then retry the task with
 `reset_task` (above) if it was left `failed`.
 
+## Worker finished a turn without the completion marker
+
+A claude-code worker sometimes finishes its turn, goes quiet at the prompt
+and never prints `DATAWATCH_COMPLETE`. Instead of waiting for the longer
+session idle timeout, datawatch sends the worker one nudge.
+
+- **When it fires:** the worker session has been in `waiting_input` or
+  `idle` with no new output for `autonomous.worker_idle_nudge_seconds`
+  (default `180`), and no completion marker has appeared.
+- **What it sends:** one message asking the worker to print its completion
+  line, or to continue if it is not finished. Only one nudge is ever sent
+  per task attempt.
+- **No nudge while work is running:** if the session has a live child
+  process (a build, a test run, a long command) it is not idle, so no
+  nudge is sent. The idle clock restarts once the child exits.
+- **What gets recorded:** each nudge is stored on the task as an event
+  (`nudge_events`: time, count, outcome) and the task's `nudge_count` goes
+  up. Both show in `autonomous_prd_get`.
+- **If the worker answers:** a completion marker or fresh output after the
+  nudge ends the wait normally and the task is verified like any other.
+- **If it stays silent:** after `autonomous.worker_idle_nudge_stall_seconds`
+  (default `600`, counted from the nudge) the worker is treated as stalled.
+  It goes through the existing retry path (`auto_fix_retries`), the same as
+  any other stalled worker; once that budget is spent the task fails.
+- **Where the counts show:** `GET /api/autonomous/status` and the MCP
+  `autonomous_status` tool report `nudges_total`, `nudge_tasks` (per-task
+  counts) and `nudges_by_backend`. The fields are omitted when no nudge has
+  been sent.
+- **Setting them:** both keys are hot-applied, no restart. Use `config.yaml`,
+  the web settings card, `PUT /api/config`, MCP `autonomous_config_set`, or
+  the `configure` chat command. A value of `0` means "use the default".
+
+```yaml
+autonomous:
+  worker_idle_nudge_seconds: 180
+  worker_idle_nudge_stall_seconds: 600
+```
+
 ## Common pitfalls
 
 - **Cancelling a story mid-run and not restarting it.** The rest of the
