@@ -40,9 +40,10 @@ entries:
       - agent-aider
       - parent-full
     impact:
-      traced: false
-      reachable: "unknown"
-      analysis: "Integer overflow in inflate(). Only exploitable processing attacker-controlled deflate streams with a specific window size. curl and git in this image decompress only trusted responses from operator-configured remotes; not network-exposed via datawatch APIs."
+      traced: true
+      reachable: "no"
+      method: "grep of docker/dockerfiles (agent-base, agent-gemini, agent-aider, parent-full) for minizip/zip tooling plus grep of internal/ and cmd/ Go sources for zlib/compress use; CVE description read"
+      analysis: "CVE-2023-45853 is an integer overflow in zlib's contrib MiniZip (zipOpenNewFileInZip4_64) when a caller passes an overlong filename, comment or extra field while WRITING a zip. It is not in inflate() (the earlier wording was wrong) and Debian ships MiniZip as separate libminizip packages, not in zlib1g. zlib1g stays installed only as an essential dependency of git, curl, libcurl4, openssh-client and tmux. grep of agent-base, agent-gemini, agent-aider and parent-full Dockerfiles finds no minizip/libminizip package; zip/unzip (Info-ZIP) bundle their own code and do not link MiniZip. datawatch Go sources use only the stdlib compress/gzip (server.go, api_gzip.go, main.go), which is pure Go and never calls libz. No MiniZip caller exists, so the vulnerable function is unreachable. zlib1g cannot be removed (essential)."
     first_added: "2026-05-19"
     added: "2026-05-19"
     expires: "2026-06-18"
@@ -60,9 +61,10 @@ entries:
       - agent-aider
       - parent-full
     impact:
-      traced: false
-      reachable: "unknown"
-      analysis: "SQLite used internally by the gh CLI binary; not exposed via datawatch REST/MCP APIs. CVE-2025-7458: integer overflow. CVE-2026-11822/11824: FTS5 full-text-search memory corruption via crafted database pages -- exploitable only against attacker-controlled SQLite databases; gh CLI processes only trusted local cached GitHub state, not attacker-supplied databases."
+      traced: true
+      reachable: "no"
+      method: "docker run --network none on a built agent-base image: dpkg Depends scan for libsqlite3-0 and ldd over /usr/bin, git-core and /usr/local/bin; Dockerfile and Go/script grep for sqlite, gpg and python use"
+      analysis: "CVE-2025-7458 is an integer overflow in SQLite core that needs attacker-supplied SQL text or a crafted database; The earlier claim that the gh CLI uses SQLite is wrong: gh is built from source in the ghbuilder stage with CGO_ENABLED=0 and is a statically linked Go ELF, so it links no libsqlite3. In agent-base the only installed package depending on libsqlite3-0 is gpg (ldd confirms /usr/bin/gpg is the only binary linking it, via its TOFU trust database); git, apt, curl, tmux and openssh do not link it, and agent-base has no python3. Nothing in datawatch Go sources, scripts or entrypoints invokes gpg; gnupg is only used at image build time for the nodesource apt key. datawatch itself uses the pure-Go modernc.org/sqlite driver (internal/memory, websearch, council, docsindex), built CGO_ENABLED=0, so it never loads the system library. agent-aider adds python3 whose _sqlite3 module links libsqlite3-0 (aider's diskcache and tags cache use fixed SQL, no FTS5, and no attacker-supplied SQL or FTS5 tables). agent-gemini adds only nodejs and gnupg. parent-full adds a headless JRE. No path reaches the vulnerable code with attacker input."
     first_added: "2026-05-19"
     added: "2026-05-19"
     expires: "2026-06-18"
@@ -80,9 +82,10 @@ entries:
       - agent-aider
       - parent-full
     impact:
-      traced: false
-      reachable: "unknown"
-      analysis: "SQLite used internally by the gh CLI binary; not exposed via datawatch REST/MCP APIs. CVE-2025-7458: integer overflow. CVE-2026-11822/11824: FTS5 full-text-search memory corruption via crafted database pages -- exploitable only against attacker-controlled SQLite databases; gh CLI processes only trusted local cached GitHub state, not attacker-supplied databases."
+      traced: true
+      reachable: "no"
+      method: "docker run --network none on a built agent-base image: dpkg Depends scan for libsqlite3-0 and ldd over /usr/bin, git-core and /usr/local/bin; Dockerfile and Go/script grep for sqlite, gpg and python use"
+      analysis: "CVE-2026-11822 is FTS5 memory corruption that needs an FTS5 virtual table in a crafted database file; The earlier claim that the gh CLI uses SQLite is wrong: gh is built from source in the ghbuilder stage with CGO_ENABLED=0 and is a statically linked Go ELF, so it links no libsqlite3. In agent-base the only installed package depending on libsqlite3-0 is gpg (ldd confirms /usr/bin/gpg is the only binary linking it, via its TOFU trust database); git, apt, curl, tmux and openssh do not link it, and agent-base has no python3. Nothing in datawatch Go sources, scripts or entrypoints invokes gpg; gnupg is only used at image build time for the nodesource apt key. datawatch itself uses the pure-Go modernc.org/sqlite driver (internal/memory, websearch, council, docsindex), built CGO_ENABLED=0, so it never loads the system library. agent-aider adds python3 whose _sqlite3 module links libsqlite3-0 (aider's diskcache and tags cache use fixed SQL, no FTS5, and no attacker-supplied SQL or FTS5 tables). agent-gemini adds only nodejs and gnupg. parent-full adds a headless JRE. No path reaches the vulnerable code with attacker input."
     first_added: "2026-06-25"
     added: "2026-06-25"
     expires: "2026-07-25"
@@ -100,9 +103,10 @@ entries:
       - agent-aider
       - parent-full
     impact:
-      traced: false
-      reachable: "unknown"
-      analysis: "SQLite used internally by the gh CLI binary; not exposed via datawatch REST/MCP APIs. CVE-2025-7458: integer overflow. CVE-2026-11822/11824: FTS5 full-text-search memory corruption via crafted database pages -- exploitable only against attacker-controlled SQLite databases; gh CLI processes only trusted local cached GitHub state, not attacker-supplied databases."
+      traced: true
+      reachable: "no"
+      method: "docker run --network none on a built agent-base image: dpkg Depends scan for libsqlite3-0 and ldd over /usr/bin, git-core and /usr/local/bin; Dockerfile and Go/script grep for sqlite, gpg and python use"
+      analysis: "CVE-2026-11824 is FTS5 memory corruption that needs an FTS5 virtual table in a crafted database file; The earlier claim that the gh CLI uses SQLite is wrong: gh is built from source in the ghbuilder stage with CGO_ENABLED=0 and is a statically linked Go ELF, so it links no libsqlite3. In agent-base the only installed package depending on libsqlite3-0 is gpg (ldd confirms /usr/bin/gpg is the only binary linking it, via its TOFU trust database); git, apt, curl, tmux and openssh do not link it, and agent-base has no python3. Nothing in datawatch Go sources, scripts or entrypoints invokes gpg; gnupg is only used at image build time for the nodesource apt key. datawatch itself uses the pure-Go modernc.org/sqlite driver (internal/memory, websearch, council, docsindex), built CGO_ENABLED=0, so it never loads the system library. agent-aider adds python3 whose _sqlite3 module links libsqlite3-0 (aider's diskcache and tags cache use fixed SQL, no FTS5, and no attacker-supplied SQL or FTS5 tables). agent-gemini adds only nodejs and gnupg. parent-full adds a headless JRE. No path reaches the vulnerable code with attacker input."
     first_added: "2026-06-25"
     added: "2026-06-25"
     expires: "2026-07-25"
@@ -120,9 +124,10 @@ entries:
       - agent-aider
       - parent-full
     impact:
-      traced: false
-      reachable: "unknown"
-      analysis: "Cookie leak on cross-origin redirect. curl is used by agent tooling for REST API calls to operator-configured endpoints."
+      traced: true
+      reachable: "no"
+      method: "grep of Go sources, hook/entrypoint scripts and image Dockerfiles for runtime curl invocations, checking each for redirect-following (-L) and cookie options (-b/-c)"
+      analysis: "Cookie leak on cross-origin redirect needs curl to both hold cookies (cookie engine enabled by -b/-c) and follow a redirect (-L) to another origin. Runtime curl callers in the repo: internal/hookinstaller/install.go POSTs to the local daemon with curl -ks and no -L/-b/-c; internal/memory/hooks.go does the same to DATAWATCH_URL; internal/llm/backends/openwebui/backend.go runs curl -s -N against the configured Open WebUI endpoint with a Bearer header, no cookie jar and no -L. docker/entrypoint.sh has no curl at all. Dockerfile curl -fsSL calls (agent-base rtk, agent-gemini nodesource, parent-full signal-cli) run at build time only, with no cookies, so nothing is leaked at runtime. No datawatch code path combines cookies with redirects, so the flaw is unreachable from datawatch itself. An agent could in theory run curl -b -L by hand; that is operator-trusted work, not an exposed path."
     first_added: "2026-05-19"
     added: "2026-05-19"
     expires: "2026-06-18"
@@ -140,9 +145,10 @@ entries:
       - agent-aider
       - parent-full
     impact:
-      traced: false
-      reachable: "unknown"
-      analysis: "Null pointer dereference in ber_memalloc_x via malformed LDAP response. OpenLDAP not directly used; pulled transitively by OpenSSH. No LDAP connections made from within the container."
+      traced: true
+      reachable: "no"
+      method: "grep of Go sources, scripts and Dockerfiles for ldap usage; apt dependency reasoning for how libldap-2.5-0 enters the images"
+      analysis: "Null pointer dereference in OpenLDAP ber_memalloc_x, triggered only when an LDAP client library parses a malformed response from an LDAP server. The earlier note blamed OpenSSH; in Debian bookworm libldap-2.5-0 is actually a dependency of libcurl4 and libcurl3-gnutls (curl is built with LDAP/LDAPS scheme support), which agent-base installs via curl and git. grep for ldap across internal/, cmd/, scripts/ and the agent-base, agent-gemini, agent-aider and parent-full Dockerfiles finds no LDAP use, no ldap URL, and no slapd or ldap-utils package. The only way to reach the code is curl being handed an ldap:// or ldaps:// URL pointing at a hostile server; every curl call in the repo targets http(s) endpoints (local daemon, operator-configured LLM URL, github/nodesource at build time). The library cannot be removed without removing curl and git, so no removal is recommended."
     first_added: "2026-05-19"
     added: "2026-05-19"
     expires: "2026-06-18"
@@ -160,9 +166,10 @@ entries:
       - agent-aider
       - parent-full
     impact:
-      traced: false
-      reachable: "unknown"
-      analysis: "Buffer overflow in terminal escape sequence parsing. Triggerable only by attacker-controlled terminal output inside a tmux session; requires prior container shell access."
+      traced: true
+      reachable: "no"
+      method: "docker run --network none on the built agent-base image: dpkg-query, apt-cache rdepends --installed, which infocmp/tic/tput; grep of Dockerfiles and internal/ cmd/ Go sources; CVE description read"
+      analysis: "CVE-2025-69720 is a stack buffer overflow in analyze_string() in progs/infocmp.c, i.e. in the infocmp command-line tool, not in the terminal escape-sequence parser the earlier wording described (ncurses before 6.5-20251213). Only the infocmp binary reaches that function, and infocmp ships in ncurses-bin, which is NOT installed in agent-base (dpkg-query finds no ncurses-bin; which infocmp tic toe tput clear finds nothing). The flagged packages are only libraries: libtinfo6 is linked by bash, tmux, less, util-linux, libreadline8 and procps, libncursesw6 by procps and pinentry-curses, ncurses-base is terminfo data. None of them contains analyze_string. No Dockerfile or entrypoint and no Go source under internal/ or cmd/ invokes infocmp, and the container runs as uid 10001. Unreachable; the libraries are required by tmux, bash and less."
     first_added: "2026-05-19"
     added: "2026-05-19"
     expires: "2026-06-18"
@@ -180,9 +187,10 @@ entries:
       - agent-aider
       - parent-full
     impact:
-      traced: false
-      reachable: "unknown"
-      analysis: "Archive::Tar memory corruption via crafted tar archive. Perl is a transitive dependency of git/gnupg; the datawatch service does not execute Perl scripts or call Archive::Tar, and does not extract tar archives at runtime."
+      traced: true
+      reachable: "no"
+      method: "docker run --network none on the built agent-base image: dpkg Depends of git, apt-cache rdepends --installed perl, grep for Archive::Tar in /usr/lib/git-core, dpkg -S /usr/bin/ptar; grep of Go sources and Dockerfiles; CVE description read"
+      analysis: "CVE-2026-9538 is a memory-exhaustion flaw in Perl's Archive::Tar before 3.10: the entry size is read from the 12-byte tar header with no upper bound, so a crafted archive makes Perl allocate a huge buffer (denial of service). It only triggers when a Perl program calls Archive::Tar on an untrusted archive. In agent-base, perl is needed by git (git Depends: perl, liberror-perl, so it cannot be dropped while git stays) and by debconf and adduser; git 2.39.5's Perl scripts do not use Archive::Tar (grep of /usr/lib/git-core finds none) and git archive and git clone are C code. The only Archive::Tar callers are the perl-provided ptar, ptardiff, ptargrep and instmodsh utilities in /usr/bin, which nothing runs. No datawatch Go source or image Dockerfile or entrypoint executes perl or those tools, and tar is extracted with GNU tar. The path is unreachable."
     first_added: "2026-05-31"
     added: "2026-05-31"
     expires: "2026-06-30"
@@ -197,9 +205,10 @@ entries:
     images:
       - agent-base
     impact:
-      traced: false
-      reachable: "unknown"
-      analysis: "libblkid parse_dos_extended() uses a 32-bit addition for the extended-partition start sector and skips bounds checks for the first two EBR entries; a crafted DOS extended-partition image can make libblkid report a false partition overlapping the MBR. Exploitation needs local libblkid probing of an attacker-crafted disk image or removable medium. Agent containers are not expected to probe untrusted block devices (not verified against the agent runtime configuration); not exposed via datawatch REST/MCP APIs. All eight packages are built from the single Debian source package util-linux."
+      traced: true
+      reachable: "no"
+      method: "docker run --network none on the built agent-base image: dpkg-query, apt-cache rdepends --installed for libblkid1/libmount1/mount, ldd of tmux and git, which blkid lsblk mount; grep of Go sources and Dockerfiles; CVE description read"
+      analysis: "CVE-2026-53615 is in libblkid's parse_dos_extended(): a 32-bit sum for the extended-partition start sector and missing bounds checks let a crafted DOS extended-partition table be misreported. It needs libblkid to probe a block device or disk image holding that table. In agent-base the library is pulled in by util-linux, mount and libmount1 (apt-cache rdepends); the blkid, lsblk, mount, umount, findmnt and wipefs binaries exist, but ldd shows neither tmux nor git links libblkid or libmount. No Dockerfile or entrypoint calls them, and no Go source under internal/ or cmd/ runs blkid, lsblk, mount or fdisk (internal/observer/disk_linux.go only parses /proc mount information and calls statfs). The container runs as uid 10001 with no /dev/sd*, nvme or loop devices, so nothing can probe a crafted partition table. Unreachable; util-linux is essential and cannot be removed."
     first_added: "2026-10-21"
     added: "2026-10-21"
     expires: "2026-11-20"
@@ -214,9 +223,10 @@ entries:
     images:
       - parent-full
     impact:
-      traced: false
-      reachable: "unknown"
-      analysis: "CUPS backend quote_string() in backend/ipp.c keeps CR/LF in a printer-supplied marker message, so a hostile or spoofed IPP printer can inject a newline that the scheduler reads as a separate PPD control line and saves an attacker-chosen PPD keyword; the reporter showed this can lead to arbitrary code execution as the lp user through a later print job on a Foomatic-backed queue. Exploitation needs a CUPS scheduler talking to an attacker-controlled IPP printer plus a later print job. parent-full pulls libcups2 only as a library dependency of the Java runtime (openjdk jre-headless) and is not expected to run a CUPS scheduler or print (not verified against the parent runtime configuration); not exposed via datawatch REST/MCP APIs. No other image's Trivy log lists libcups2."
+      traced: true
+      reachable: "no"
+      method: "grep of Dockerfiles, docker/entrypoint.sh and Go sources for cups/lp/lpr/ipp; dpkg and apt-cache inspection of the built agent-base image (docker run --network none); parent-full Dockerfile and internal/signal read; CVE description read"
+      analysis: "CVE-2026-55453 is in the CUPS scheduler/backend: quote_string() in backend/ipp.c keeps CR/LF in a printer-supplied marker message, so a hostile IPP printer can inject a PPD control line that cupsd saves, which only matters when cupsd later runs a print job on a Foomatic-backed queue. In parent-full the package is only the libcups2 client library, pulled in by Dockerfile.parent-full line 23 (install_packages openjdk-17-jre-headless) on top of agent-base, where dpkg shows no libcups2, no cups, cups-daemon, cups-browsed or cups-filters. So there is no scheduler, no backend/ipp binary, no queue and no PPD store in the image; the vulnerable function lives in the cups daemon backend, not in libcups2. The only Java program run is signal-cli (internal/signal/javafix.go runs signal-cli --version and the daemon); it is headless and never calls javax.print. grep of cmd/, internal/, docker/ and scripts/ finds no lp, lpr, lpstat, cupsd, ipp:// or .ppd use. Unreachable; libcups2 is a hard Depends of openjdk-17-jre-headless so it cannot be removed separately."
     first_added: "2026-10-21"
     added: "2026-10-21"
     expires: "2026-11-20"
@@ -234,9 +244,10 @@ entries:
       - agent-aider
       - parent-full
     impact:
-      traced: false
-      reachable: "unknown"
-      analysis: "git-lfs may write to arbitrary files via crafted LFS pointer refs from a malicious LFS server. Only exploitable when cloning/pulling from an attacker-controlled git remote. All git remotes in this image are operator-configured; no untrusted LFS servers are contacted."
+      traced: true
+      reachable: "yes"
+      method: "grep of Dockerfiles, entrypoint and Go sources for lfs and git clone/pull; docker run --network none on the built agent-base image to read /etc/gitconfig and git-lfs dpkg contents; internal/agents/worker_clone.go read; CVE description read"
+      analysis: "CVE-2025-26625: git-lfs can be made to write or read outside the repo through a crafted symlink/pointer when it checks out LFS objects from a hostile repository or LFS server. Dockerfile.agent-base line 146 installs git-lfs, so all four images carry it. Running the built image shows /etc/gitconfig already contains filter.lfs.clean, filter.lfs.smudge, filter.lfs.process and filter.lfs.required=true, so git invokes git-lfs automatically on any checkout of a repo whose .gitattributes marks files filter=lfs, without anyone typing git lfs. internal/agents/worker_clone.go runs git clone (optionally --branch) and git pull --ff-only into the worker workspace, and the agent sessions run git themselves, so the vulnerable code path is reachable. No datawatch Go source, script or entrypoint calls git lfs explicitly (grep for lfs in cmd/internal/scripts/docker found only the Dockerfile install line). Exposure is limited: the clone URL is the operator-configured project remote (resp.Git.URL), so exploitation needs an operator to point a project at an attacker-controlled LFS-enabled remote. Reachable but low likelihood; keep the suppression until Debian ships a bookworm fix."
     first_added: "2026-05-31"
     added: "2026-05-31"
     expires: "2026-06-30"
@@ -252,9 +263,10 @@ entries:
       - agent-gemini
       - agent-aider
     impact:
-      traced: false
-      reachable: "unknown"
-      analysis: "Python 3.11 installed in agent images for aider and other Python-based tools; the datawatch service itself is Go. CVE-2026-7210: xml.parsers.expat/ElementTree use-after-free via crafted XML -- agent tooling does not expose Python XML parsers to untrusted input. CVE-2025-69534: python-markdown DoS via malformed HTML-like input -- no untrusted content piped through python-markdown by the core service."
+      traced: true
+      reachable: "yes"
+      method: "docker run --network none on the built agent-gemini and agent-aider images: dpkg -l, apt-cache rdepends --installed python3.11-minimal, grep of the aider pipx venv site-packages for xml.etree/xml.dom/pyexpat imports, read of the litellm and botocore call sites; Dockerfile.agent-gemini/aider read"
+      analysis: "CVE-2026-7210 is a use-after-free in Python 3.11's expat bindings (xml.parsers.expat, used by xml.etree.ElementTree) triggered by crafted XML. agent-gemini: python3.11 is not installed by its Dockerfile; apt-cache rdepends lists nodejs and rsync as the dependents, there is no Python application in the image (gemini is a node program), and a grep finds no caller, so there it is dormant. agent-aider: Dockerfile.agent-aider installs python3 and runs aider from a pipx venv whose interpreter is /usr/bin/python3 (3.11.2), so the stdlib expat module is live. Grep of the venv shows ElementTree used by botocore (botocore/serialize.py and compat.py parse AWS service XML responses), by litellm (get_blog_posts.py calls ET.fromstring on an RSS feed fetched over httpx; prompt_templates/factory.py parse_xml_params calls ET.fromstring on model-produced function-call XML) and by networkx gexf. So untrusted XML from an LLM provider, AWS endpoint or remote feed can reach the vulnerable parser in agent-aider. Reachable in agent-aider, conditional on a hostile or compromised provider response; the datawatch Go service itself never parses XML in Python."
     first_added: "2026-05-31"
     added: "2026-05-31"
     expires: "2026-06-30"
