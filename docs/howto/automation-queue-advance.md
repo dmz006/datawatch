@@ -1,3 +1,22 @@
+---
+docs:
+  index: true
+  topics: [automation, autonomous, queue, chain]
+exec_steps:
+  - tool: automation_list
+    description: List the Automations and their status
+    args: {}
+    read_only: true
+  - tool: automation_get
+    description: Read one Automation (status, members, edges, execution defaults)
+    args: {id: "{{params.automation_id}}"}
+    read_only: true
+  - tool: autonomous_status
+    description: Read the status rows for the Automations, with the current member and idle time
+    args: {}
+    read_only: true
+---
+
 # Automation queue advance
 
 An **Automation** is a named chain of Automatons. Each member says what runs
