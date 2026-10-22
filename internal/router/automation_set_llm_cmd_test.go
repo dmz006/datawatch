@@ -82,6 +82,8 @@ func TestAutomationCommSetLLM(t *testing.T) {
 				"planning_backend": "claude-code", "planning_model": "opus"}},
 		{"one key", "automation set-llm ab12 model=sonnet", path,
 			map[string]any{"actor": "comm", "model": "sonnet"}},
+		{"underscore spelling", "automation set-llm ab12 planning_backend=pi planning_model=qwen3.8:27b", path,
+			map[string]any{"actor": "comm", "planning_backend": "pi", "planning_model": "qwen3.8:27b"}},
 		{"empty value clears", "automation set-llm ab12 model= planning-model=", path,
 			map[string]any{"actor": "comm", "model": "", "planning_model": ""}},
 	})

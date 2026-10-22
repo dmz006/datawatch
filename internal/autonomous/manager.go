@@ -1776,7 +1776,7 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (*PRD, 
 	}
 	// The Automation's planning fields sit between the PRD's own
 	// decomposition fields and the global planning config. Twin in
-	// decomposeStreamingCore(); keep both in sync.
+	// Decompose(); keep both in sync.
 	planBackend, planGlobalModel := effectivePlanning(m.AutomationForPRD(prd), m.cfg)
 	backend := prd.DecompositionProfile
 	if backend == "" {

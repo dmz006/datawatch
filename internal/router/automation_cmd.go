@@ -156,7 +156,8 @@ func (r *Router) handleAutomationCmd(cmd Command) {
 	case "set-llm":
 		r.automationSetLLM(args, "set-llm", "set_llm", automationSetLLMUsage,
 			map[string]string{"backend": "backend", "model": "model", "effort": "effort",
-				"planning-backend": "planning_backend", "planning-model": "planning_model"})
+				"planning-backend": "planning_backend", "planning-model": "planning_model",
+				"planning_backend": "planning_backend", "planning_model": "planning_model"})
 	case "set-verification-llm":
 		r.automationSetLLM(args, "set-verification-llm", "set_verification_llm", automationSetVerificationLLMUsage,
 			map[string]string{"backend": "backend", "model": "model", "effort": "effort"})
