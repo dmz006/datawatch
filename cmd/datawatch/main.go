@@ -341,39 +341,39 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		// BL220 — G13/G14 CLI surface parity.
 		newAnalyticsCmd(),
 		newProxyCmd(),
-		newToolingCmd(),       // BL219
-		newSecretsCmd(),       // BL242
-		newTailscaleCmd(),     // BL243
-		newSkillsCmd(),        // BL255
-		newIdentityCmd(),      // BL257 P1 v6.8.0
-		newAlgorithmCmd(),     // BL258 v6.9.0
-		newEvalsCmd(),         // BL259 P1 v6.10.0
-		newCouncilCmd(),       // BL260 v6.11.0
-		newDocsCmd(),          // BL274 v6.16.0
-		newComputeCmd(),       // v7.0.0 S1 — ComputeNode registry
-		newLLMCmd(),           // v7.0.0 S2 — LLM registry
-		newWebSearchCmd(),     // BL391 — multi-provider web search registry
-		newServerCmd(),        // BL312 S1 — multi-server registry
-		newFederationCmd(),    // BL316 S2 — federation peer and group registry
-		newCapacityCmd(),      // capacity admission ledger status
-		newAlertRulesCmd(),    // S14b — per-pod alert rules + observer-driven autoscaling
-		newMemoryCmd(),        // v7.0.0 S5 — scope-hierarchy memory
-		newMarketplaceCmd(),   // alpha.33 #244 — Ollama marketplace
-		newGuardrailCmd(),     // BL303 S2 — guardrail library + profiles
-		newRetryCmd(),         // BL410 Phase 1 — retry profiles + per-Automaton policy
-		newAutomationCmd(),    // Automation lifecycle (activate)
-		newDashboardCmd(),     // #57/#58 — dashboard card layout CRUD
-		newSmokeCmd(),         // #54 — smoke-run cross-instance forwarding
-		newFilterCmd(),        // top-level filter command
-		newScheduleTopCmd(),   // top-level schedule command (mirrors session schedule)
-		newPushCmd(),          // BL330 — UnifiedPush registration management
-		newFilesCmd(),         // BL333 — federated file service
-		newSecurityCmd(),      // BL334 — operational data encryption status + secure wipe
-		newMatrixCmd(),        // BL241 — Matrix backend status + test
-		newExitHookCmd(),      // BL356 — session crash/exit hooks
-		newQueueCmd(),         // BL357 — durable role-based work queue
-		newDiscussionSubCmd(), // BL358 — discussion push/subscribe
-		newResultCmd(),        // BL360 — structured agent result store
+		newToolingCmd(),         // BL219
+		newSecretsCmd(),         // BL242
+		newTailscaleCmd(),       // BL243
+		newSkillsCmd(),          // BL255
+		newIdentityCmd(),        // BL257 P1 v6.8.0
+		newAlgorithmCmd(),       // BL258 v6.9.0
+		newEvalsCmd(),           // BL259 P1 v6.10.0
+		newCouncilCmd(),         // BL260 v6.11.0
+		newDocsCmd(),            // BL274 v6.16.0
+		newComputeCmd(),         // v7.0.0 S1 — ComputeNode registry
+		newLLMCmd(),             // v7.0.0 S2 — LLM registry
+		newWebSearchCmd(),       // BL391 — multi-provider web search registry
+		newServerCmd(),          // BL312 S1 — multi-server registry
+		newFederationCmd(),      // BL316 S2 — federation peer and group registry
+		newCapacityCmd(),        // capacity admission ledger status
+		newAlertRulesCmd(),      // S14b — per-pod alert rules + observer-driven autoscaling
+		newMemoryCmd(),          // v7.0.0 S5 — scope-hierarchy memory
+		newMarketplaceCmd(),     // alpha.33 #244 — Ollama marketplace
+		newGuardrailCmd(),       // BL303 S2 — guardrail library + profiles
+		newRetryCmd(),           // BL410 Phase 1 — retry profiles + per-Automaton policy
+		newAutomationCmd(),      // Automation lifecycle (activate)
+		newDashboardCmd(),       // #57/#58 — dashboard card layout CRUD
+		newSmokeCmd(),           // #54 — smoke-run cross-instance forwarding
+		newFilterCmd(),          // top-level filter command
+		newScheduleTopCmd(),     // top-level schedule command (mirrors session schedule)
+		newPushCmd(),            // BL330 — UnifiedPush registration management
+		newFilesCmd(),           // BL333 — federated file service
+		newSecurityCmd(),        // BL334 — operational data encryption status + secure wipe
+		newMatrixCmd(),          // BL241 — Matrix backend status + test
+		newExitHookCmd(),        // BL356 — session crash/exit hooks
+		newQueueCmd(),           // BL357 — durable role-based work queue
+		newDiscussionSubCmd(),   // BL358 — discussion push/subscribe
+		newResultCmd(),          // BL360 — structured agent result store
 		newScheduleResultsCmd(), // GH#204 — scheduled-job result panel CLI
 	)
 
