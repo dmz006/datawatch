@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.93 — Hand-started prompt-style sessions are recorded as one-shot
+
+### Fixed
+
+- **Hand-started prompt-style sessions are now one-shot.** A session started by hand with a `-prompt` backend (for example `datawatch session new --backend pi-prompt`) was recorded as interactive, so the completion validation gate, the finished-session reaper and retention did not cover it and it sat in `waiting_input` after the worker exited. Every backend whose name ends in `-prompt` now gets `one_shot` set when a session is created; explicitly interactive backends stay interactive and existing session records are not changed. The scratch-removal test now uses the system temp directory instead of a hard-coded path. Deterministic tests cover the creation-time decision, the reaper ending a finished prompt-style session, and unchanged existing records.
+
 ## v9.5.92 — Automation model-tier defaults for execution, verification and planning
 
 ### Added
