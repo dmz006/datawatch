@@ -823,6 +823,9 @@ All fields in `~/.datawatch/config.yaml`:
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `hostname` | string | OS hostname | Identifies this machine in Signal messages and session IDs |
+| `pin_check_seconds` | int | `300` | How often the pin keeper re-verifies that each compute node with a `node_pinned_model` is still serving that model. `0` turns the check off. The value is written without `omitempty`, so an explicit `0` survives a save/load round trip. |
+| `compute_nodes[].node_pinned_model` | string | `""` | Keeps the node on one model. Requests with no explicit model run on the pin. An explicit request for the pinned model runs on it. An explicit request for a different model is refused unless `allow_model_swap` is true. Datawatch never swaps the pinned model implicitly. Resolved by `internal/inference/pinned_model.go`. |
+| `compute_nodes[].allow_model_swap` | bool | `false` | Lets an explicit request replace the node's pinned model. Ignored when the node has no `node_pinned_model`. |
 | `data_dir` | string | `~/.datawatch` | Root directory for sessions.json, logs/, and config |
 | `signal.account_number` | string | (required) | Signal phone number in E.164 format, e.g. `+12125551234` |
 | `signal.group_id` | string | (required) | Signal group ID in base64 format (from `signal-cli listGroups`) |

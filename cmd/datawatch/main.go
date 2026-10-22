@@ -3279,6 +3279,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 						AllowedConsumers: c.Permissions.AllowedConsumers,
 						DeniedConsumers:  c.Permissions.DeniedConsumers,
 					},
+					NodePinnedModel: c.NodePinnedModel,
+					AllowModelSwap:  c.AllowModelSwap,
 				}
 				seed = append(seed, n)
 			}
