@@ -247,8 +247,16 @@ func TestBuildInteractiveCmd_NoSessionWithModel(t *testing.T) {
 	if !strings.Contains(cmd, "--approve") {
 		t.Errorf("expected --approve flag, got: %s", cmd)
 	}
-	if !strings.HasSuffix(cmd, "echo 'DATAWATCH_COMPLETE: pi session ended'") {
-		t.Errorf("completion marker must always be echoed unconditionally, got: %s", cmd)
+	// BL468 — the completion marker is gated on pi's zero exit status; the
+	// command captures pi's status, gates the marker on it, and propagates it.
+	if !strings.Contains(cmd, "echo 'DATAWATCH_COMPLETE: pi session ended'") {
+		t.Errorf("expected the completion marker in the command, got: %s", cmd)
+	}
+	if !strings.Contains(cmd, `[ "$pi_status" -eq 0 ]`) {
+		t.Errorf("completion marker must be gated on pi's zero exit status, got: %s", cmd)
+	}
+	if !strings.HasSuffix(cmd, `exit "$pi_status"`) {
+		t.Errorf("command must exit with pi's own status, got: %s", cmd)
 	}
 }
 
