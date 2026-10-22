@@ -5059,6 +5059,111 @@ window.switchStatusSubtab = function(name) {
   }
 };
 
+// ---------------- Status-tab Result card (GH#204 phase 3) ----------------
+// Card for the latest structured result payload the agent posted for this
+// session (POST /api/sessions/{sid}/result — see docs/howto for the REST
+// contract). The board carries it as board.result (session.ResultPayload:
+// title, status ""|ok|warn|error, summary, metrics map, tables
+// [{title,columns,rows}], markdown), set by the server from both the REST
+// endpoint and the hook-event fallback; shared board slot, session-scoped.
+// Rendered after the git card, only when board.result is present.
+//
+// Security: every result string is untrusted agent output. title, summary,
+// metric labels/values, table titles/columns/cells are always injected via
+// escHtml — never raw — and markdown goes through the same
+// marked.js + DOMPurify.sanitize pipeline the file viewer and council live
+// log use (renderResultMarkdownInto below). marked.parse() alone passes
+// raw embedded HTML through unchanged, so DOMPurify.sanitize() is
+// mandatory before any innerHTML assignment (SEC-021 pattern).
+
+// renderResultPanelBody builds the card's inner HTML from one result
+// payload object. Markdown is a <div> slot filled async by
+// renderResultMarkdownInto after the board area receives this HTML.
+function renderResultPanelBody(r) {
+  const status = String(r.status || '').toLowerCase();
+  const statusInfo = ({
+    ok:    { label: t('status_result_ok') || 'ok', color: 'var(--success,#10b981)' },
+    warn:  { label: t('status_result_warn') || 'warn', color: 'var(--warning,#f59e0b)' },
+    error: { label: t('status_result_error') || 'error', color: 'var(--error,#ef4444)' },
+  })[status];
+  const statusClass = { ok: 'result-status-ok', warn: 'result-status-warn', error: 'result-status-error' }[status] || '';
+  const badge = statusInfo
+    ? `<span class="result-status-badge ${statusClass}" title="${escHtml(status)}">
+        <span class="result-status-dot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${statusInfo.color};margin-right:6px;vertical-align:middle;"></span>${escHtml(statusInfo.label)}
+      </span>`
+    : '';
+  let body = '<div class="result-panel" style="display:flex;flex-direction:column;gap:10px;">';
+  // Heading: title + status badge on one line (both escaped).
+  body += '<div class="result-panel-head" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;min-height:16px;">';
+  if (r.title) body += `<span class="result-title" style="font-size:13px;font-weight:700;overflow-wrap:anywhere;">${escHtml(r.title)}</span>`;
+  if (badge) body += badge;
+  body += '</div>';
+  // Summary — plain text, escaped.
+  if (r.summary) body += `<div class="result-summary" style="font-size:12px;line-height:1.5;overflow-wrap:anywhere;">${escHtml(r.summary)}</div>`;
+  // Metrics as label/value chips (object key order == insertion order).
+  const metrics = (r.metrics && typeof r.metrics === 'object' && !Array.isArray(r.metrics)) ? Object.entries(r.metrics) : [];
+  if (metrics.length) {
+    body += '<div class="result-metrics" style="display:flex;flex-wrap:wrap;gap:6px;">'
+      + metrics.map(([label, value]) =>
+        `<span class="result-metric-chip" style="display:inline-flex;align-items:baseline;gap:6px;padding:3px 10px;border:1px solid var(--border,#334155);border-radius:12px;background:var(--bg,#0f172a);font-size:11px;">
+           <span class="result-metric-label" style="color:var(--text2,#94a3b8);white-space:nowrap;">${escHtml(label)}</span>
+           <span class="result-metric-value" style="font-weight:700;overflow-wrap:anywhere;">${escHtml(value)}</span>
+         </span>`).join('') + '</div>';
+  }
+  // Tables — header row from columns, every cell escaped.
+  const tables = Array.isArray(r.tables) ? r.tables : [];
+  for (const tb of tables) {
+    if (!tb || typeof tb !== 'object') continue;
+    const columns = Array.isArray(tb.columns) ? tb.columns : [];
+    const rows = Array.isArray(tb.rows) ? tb.rows : [];
+    if (!columns.length && !rows.length) continue;
+    body += '<div class="result-table-wrap" style="overflow-x:auto;">';
+    if (tb.title) body += `<div class="result-table-title" style="font-size:10px;font-weight:700;color:var(--text2,#94a3b8);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px;">${escHtml(tb.title)}</div>`;
+    body += '<table class="result-table" style="width:100%;border-collapse:collapse;font-size:12px;">';
+    if (columns.length) {
+      body += '<thead><tr>' + columns.map(c =>
+        `<th class="result-th" style="text-align:left;padding:4px 10px;border-bottom:1px solid var(--border,#334155);color:var(--text2,#94a3b8);font-weight:600;white-space:nowrap;overflow-wrap:anywhere;">${escHtml(c)}</th>`).join('') + '</tr></thead>';
+    }
+    body += '<tbody>' + rows.map(row => {
+      const cells = Array.isArray(row) ? row : [row];
+      return '<tr class="result-tr">' + cells.map(cell =>
+        `<td class="result-td" style="padding:4px 10px;border-bottom:1px solid var(--border,#334155);overflow-wrap:anywhere;">${escHtml(cell)}</td>`).join('') + '</tr>';
+    }).join('') + '</tbody>';
+    body += '</table></div>';
+  }
+  // Markdown — empty slot; renderResultMarkdownInto fills it after the
+  // board area receives this HTML (found via its .result-markdown class).
+  if (r.markdown) body += '<div class="result-markdown md-content" style="font-size:12px;line-height:1.55;"></div>';
+  body += '</div>';
+  return body;
+}
+
+// renderResultPanelFromBoard returns the card() HTML for the board's
+// result payload, or '' when the board has none — that empty return is
+// the whole "render only when present" gate the status board applies.
+function renderResultPanelFromBoard(board, card) {
+  if (!board || !board.result || typeof board.result !== 'object') return '';
+  return card(t('status_card_result') || 'Result', renderResultPanelBody(board.result));
+}
+
+// renderResultMarkdownInto renders the result's markdown section into el
+// via the shared marked.js + DOMPurify.sanitize pipeline (_ensureMarkdownLibs
+// lazy-loads the pinned CDN libs; DOMPurify.sanitize is the security layer
+// because marked passes raw HTML through). If the libs fail to load
+// (offline/CSP) it degrades to the raw markdown as escaped plain text —
+// never unescaped.
+function renderResultMarkdownInto(el, md) {
+  if (!el) return;
+  const text = String(md || '');
+  const plain = () => `<pre class="result-markdown-plain" style="white-space:pre-wrap;word-break:break-word;margin:0;font-size:12px;line-height:1.5;">${escHtml(text)}</pre>`;
+  el.innerHTML = `<em style="color:var(--text2,#94a3b8);">${escHtml(t('status_result_rendering') || '…')}</em>`;
+  window._ensureMarkdownLibs().then(() => {
+    el.innerHTML = (typeof marked !== 'undefined' && typeof DOMPurify !== 'undefined')
+      ? DOMPurify.sanitize(window.marked.parse(text))
+      : plain();
+  }).catch(() => { el.innerHTML = plain(); });
+}
+
 function renderSessionStatusBoard(sessionId) {
   // GATE alpha.36 (operator 2026-05-10): Status pane is now a sub-pane
   // inside the combined Status+Stats panel. Render into the Status
@@ -5297,6 +5402,10 @@ function renderSessionStatusBoardInner(area, board, sessionId) {
     ? card(t('status_card_sprint') || 'Sprint / Automata', (auto ? '' : breadcrumb) + sprintBody)
     : '';
 
+  // Result card — only when the agent posted a structured result for this
+  // session (board.result); renderResultPanelFromBoard returns '' otherwise.
+  const resultCard = renderResultPanelFromBoard(board, card);
+
   area.innerHTML = `
     ${parentLink}
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap;justify-content:flex-end;">
@@ -5307,10 +5416,16 @@ function renderSessionStatusBoardInner(area, board, sessionId) {
     ${taskTreeCard}
     ${card(t('status_card_tests')||'Tests', testsBody)}
     ${card(t('status_card_git')||'Git', gitBody)}
+    ${resultCard}
     ${activityCard}
     ${costCard}
     <div style="font-size:11px;color:var(--text2);text-align:center;padding:8px;">${escHtml(t('status_followup_note')||'Council, Skills and Tracker summaries are not available on this tab yet.')}</div>
   `;
+  // Result markdown fills in async (marked.js + DOMPurify.sanitize);
+  // the .result-markdown slot only exists when the result payload
+  // actually carries markdown.
+  const resultMdSlot = area && typeof area.querySelector === 'function' ? area.querySelector('.result-markdown') : null;
+  if (resultMdSlot && board.result && board.result.markdown) renderResultMarkdownInto(resultMdSlot, board.result.markdown);
 }
 
 // Open an Automaton's detail view from the session Status tab.

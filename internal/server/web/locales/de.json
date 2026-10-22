@@ -1782,5 +1782,10 @@
   "prd_plan_review_done": "Plan-Review erneut ausgeführt",
   "plan_review_approve_blocked_tip": "Plan-Review hat diese Freigabe blockiert — ",
   "prd_task_kind_tip": "Zielaufgabe der Smoke-Verifikation",
-  "prd_task_smoke_verifier_tip": "Smoke-Verifikations-LLM für diese Aufgabe"
+  "prd_task_smoke_verifier_tip": "Smoke-Verifikations-LLM für diese Aufgabe",
+  "status_card_result": "Ergebnis",
+  "status_result_ok": "in Ordnung",
+  "status_result_warn": "Warnung",
+  "status_result_error": "Fehler",
+  "status_result_rendering": "Wird gerendert…"
 }

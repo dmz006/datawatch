@@ -1782,5 +1782,10 @@
   "prd_plan_review_done": "プランレビューの再実行が完了しました",
   "plan_review_approve_blocked_tip": "プランレビューによりこの承認はブロックされました — ",
   "prd_task_kind_tip": "スモーク検証の対象タスク",
-  "prd_task_smoke_verifier_tip": "このタスク用のスモーク検証LLM"
+  "prd_task_smoke_verifier_tip": "このタスク用のスモーク検証LLM",
+  "status_card_result": "結果",
+  "status_result_ok": "正常",
+  "status_result_warn": "警告",
+  "status_result_error": "エラー",
+  "status_result_rendering": "描画しています…"
 }

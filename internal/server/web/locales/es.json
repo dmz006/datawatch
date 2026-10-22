@@ -1782,5 +1782,10 @@
   "prd_plan_review_done": "Revisión del plan reejecutada",
   "plan_review_approve_blocked_tip": "La revisión del plan bloqueó esta aprobación — ",
   "prd_task_kind_tip": "Tarea objetivo de la verificación smoke",
-  "prd_task_smoke_verifier_tip": "LLM de verificación smoke para esta tarea"
+  "prd_task_smoke_verifier_tip": "LLM de verificación smoke para esta tarea",
+  "status_card_result": "Resultado",
+  "status_result_ok": "OK",
+  "status_result_warn": "Advertencia",
+  "status_result_error": "Error",
+  "status_result_rendering": "Renderizando…"
 }

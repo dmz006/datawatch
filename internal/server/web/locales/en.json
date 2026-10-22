@@ -1782,5 +1782,10 @@
   "prd_plan_review_done": "Plan review re-run complete",
   "plan_review_approve_blocked_tip": "Plan review blocked this approval — ",
   "prd_task_kind_tip": "Smoke-verification target task",
-  "prd_task_smoke_verifier_tip": "Smoke verification LLM override for this task"
+  "prd_task_smoke_verifier_tip": "Smoke verification LLM override for this task",
+  "status_card_result": "Result",
+  "status_result_ok": "ok",
+  "status_result_warn": "warn",
+  "status_result_error": "error",
+  "status_result_rendering": "Rendering…"
 }
