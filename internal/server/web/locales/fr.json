@@ -882,6 +882,8 @@
   "prd_btn_request_revision_title": "Renvoyer l'automate pour révision avec une note",
   "prd_btn_reset_to_draft": "Réinitialiser en Brouillon",
   "prd_btn_reset_to_draft_title": "Réinitialiser en brouillon pour reconfigurer le backend et relancer la décomposition",
+  "prd_btn_resume": "Reprendre",
+  "prd_btn_resume_title": "Reprendre l'exécution mise en pause après le redémarrage du démon",
   "prd_btn_run_rules": "Lancer les règles",
   "prd_btn_run_rules_title": "Lancer la vérification des règles (après scan)",
   "prd_btn_run_scan": "Lancer le scan",

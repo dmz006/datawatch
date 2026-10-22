@@ -882,6 +882,8 @@
   "prd_btn_request_revision_title": "メモを添えてオートマトンを修正のために差し戻す",
   "prd_btn_reset_to_draft": "ドラフトにリセット",
   "prd_btn_reset_to_draft_title": "バックエンドを再設定して再分解できるようにドラフトにリセット",
+  "prd_btn_resume": "再開",
+  "prd_btn_resume_title": "デーモン再起動後に保留された実行を再開",
   "prd_btn_run_rules": "ルール実行",
   "prd_btn_run_rules_title": "ルールチェックを実行 (スキャン後)",
   "prd_btn_run_scan": "スキャン実行",

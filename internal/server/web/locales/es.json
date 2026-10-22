@@ -882,6 +882,8 @@
   "prd_btn_request_revision_title": "Devolver el autómata para revisión con una nota",
   "prd_btn_reset_to_draft": "Reiniciar a Borrador",
   "prd_btn_reset_to_draft_title": "Reiniciar a borrador para reconfigurar el backend y volver a descomponer",
+  "prd_btn_resume": "Reanudar",
+  "prd_btn_resume_title": "Reanudar la ejecución detenida tras reiniciar el daemon",
   "prd_btn_run_rules": "Ejecutar reglas",
   "prd_btn_run_rules_title": "Ejecutar verificación de reglas (después del escaneo)",
   "prd_btn_run_scan": "Ejecutar escaneo",
