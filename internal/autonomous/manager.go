@@ -381,6 +381,11 @@ type AutomationConfig struct {
 	// IdleAlertMinutes: alert once when an active Automation stays idle
 	// this long. 0 = off.
 	IdleAlertMinutes int `json:"idle_alert_minutes"`
+
+	// AgentInsertPolicy: PolicyAllow (default, also the empty value) lets an
+	// agent insert a member directly; PolicyRequireOperator holds an agent's
+	// insert as a pending insert until an operator approves it.
+	AgentInsertPolicy string `json:"agent_insert_policy"`
 }
 
 // DefaultConfig returns sane defaults — autonomous OFF until operator opts in.
