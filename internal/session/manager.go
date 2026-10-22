@@ -3189,6 +3189,25 @@ func (m *Manager) CapturePaneScrollback(fullID string, lines int) (string, error
 	return m.tmux.CapturePaneScrollback(sess.TmuxSession, lines)
 }
 
+// CapturePaneVisible returns the currently visible pane content of a
+// session (ANSI codes stripped), resolved from fullID or short ID — the
+// same tmux-layer capture the UI display uses. The autonomous start-confirm
+// check captures with this to see the assistant's first response before any
+// state transition is visible in the session store.
+func (m *Manager) CapturePaneVisible(fullID string) (string, error) {
+	sess, ok := m.store.Get(fullID)
+	if !ok {
+		sess, ok = m.store.GetByShortID(fullID)
+		if !ok {
+			return "", fmt.Errorf("session not found: %s", fullID)
+		}
+	}
+	if sess.TmuxSession == "" {
+		return "", nil
+	}
+	return m.tmux.CapturePaneVisible(sess.TmuxSession)
+}
+
 // SendRawKeys sends literal bytes to the tmux session (for interactive terminal).
 // Unlike SendInput, this does not append Enter and uses send-keys -l for literal mode.
 func (m *Manager) SendRawKeys(fullID, data string) error {

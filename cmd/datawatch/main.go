@@ -4628,6 +4628,18 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				// once that run exceeds idleLimit.
 				idleLimit := time.Duration(config.NormalizeSessionIdleTimeoutSeconds(cfg.Autonomous.SessionIdleTimeoutSeconds)) * time.Second
 				var idleSince time.Time
+				// Start-confirm bound (autonomous.session_start_confirm_seconds,
+				// default 120): a claude-code session sitting in waiting_input
+				// without ever producing an assistant turn is "session never
+				// started" — e.g. parked on a startup/confirmation dialog that
+				// no one will ever dismiss (see
+				// internal/autonomous/session_start.go). startSilentSince is
+				// the clock moment the wait loop first saw that exact
+				// situation; zero means the session is active or no silent
+				// wait has been observed yet (the bound only bounds such
+				// sessions, nothing else).
+				sessionStartLimit := time.Duration(config.NormalizeSessionStartConfirmSeconds(cfg.Autonomous.SessionStartConfirmSeconds)) * time.Second
+				var startSilentSince time.Time
 				// Genuine worker-stall bound (see staleWorkerCheck): the log file's own
 				// mtime, not session liveness state, which a cosmetic pane change can
 				// refresh without any real output.
@@ -4685,11 +4697,56 @@ func runStart(cmd *cobra.Command, _ []string) error {
 						// claude-code specifically, the only backend this was
 						// validated against; other backends fall back to
 						// staleWorkerCheck's log-mtime staleness check below.
+						// Start-confirm check, evaluated before the debounced
+						// waiting_input stall below: while a claude-code session
+						// sits in waiting_input with no assistant turn in the
+						// pane it has never started — a slow, normally
+						// auto-dismissing startup dialog is NOT a worker asking
+						// an interactive question (there is no assistant output to
+						// point at), so the start-confirm bound arbitrates the
+						// whole window instead of the ~9s waiting_input kill.
+						// Sessions that do show a first assistant turn (or leave
+						// waiting_input) are left exactly as before.
+						startSupersedes := false
+						if s.BackendFamily == "claude-code" && sessionStartLimit > 0 {
+							if s.State != session.StateWaitingInput {
+								startSilentSince = time.Time{}
+							} else if pane, perr := mgr.CapturePaneVisible(s.FullID); perr == nil && pane != "" {
+								if autonomouspkg.HasAssistantOutput(pane) {
+									// First assistant turn rendered: the session
+									// is up and running — clear start tracking and
+									// change nothing else.
+									startSilentSince = time.Time{}
+								} else {
+									startSupersedes = true
+									now := time.Now()
+									if startSilentSince.IsZero() {
+										startSilentSince = now
+									}
+									obs, startStalled := evaluateSessionStart(now, startSilentSince, string(s.State), pane, sessionStartLimit)
+									if startStalled {
+										task.StartFailureTail = autonomouspkg.LastLines(pane, 20)
+										log.Printf("[autonomous] one-shot session %s task %s/%s never started: %s in waiting_input without assistant output for %s (limit %s); killing for retry",
+											task.SessionID, task.PRDID, task.ID, autonomouspkg.SessionStartFailureReason, obs.WaitingFor.Round(time.Second), sessionStartLimit)
+										_ = mgr.Kill(task.SessionID)
+										stallErr = fmt.Errorf("%s: no assistant output after %s (last %d pane line(s) recorded on the task) — %w; %w",
+											autonomouspkg.SessionStartFailureReason, obs.WaitingFor.Round(time.Second), len(task.StartFailureTail),
+											autonomouspkg.ErrSessionNeverStarted, autonomouspkg.ErrWorkerStalled)
+										break waitLoop
+									}
+								}
+							} else {
+								// Pane capture unavailable (or empty) — no
+								// silent-wait evidence; re-arm on the next
+								// observation.
+								startSilentSince = time.Time{}
+							}
+						}
 						var stalled bool
 						if s.BackendFamily == "claude-code" {
 							waitingInputTicks, stalled = waitingInputTick(waitingInputTicks, s.State)
 						}
-						if stalled {
+						if stalled && !startSupersedes {
 							log.Printf("[autonomous] one-shot session %s task %s/%s is waiting_input (not disclaimer-oscillation); killing for retry",
 								task.SessionID, task.PRDID, task.ID)
 							_ = mgr.Kill(task.SessionID)
@@ -17027,4 +17084,25 @@ func scanConfigIsUnset(c config.ScanConfig) bool {
 		c.FailOnSeverity == "" && c.MaxFindings == 0 &&
 		!c.RulesGraderEnabled && !c.FixLoopEnabled && c.FixLoopMaxRetries == 0 &&
 		len(c.ProjectRules) == 0
+}
+
+// evaluateSessionStart is the one-tick start-confirm decision of the
+// claude-code autonomous wait loop: build a
+// autonomous.SessionStartObservation from the pane captured this tick (the
+// pure paneHasAssistantOutput inside the autonomous package does the
+// assistant-turn scan) and report whether the session has exhausted the
+// bound sitting in waiting_input with no assistant output. now and
+// silentSince are the injected clock and the first silent tick; tests drive
+// this with a fake clock (see cmd/datawatch/session_start_wait_test.go).
+func evaluateSessionStart(now time.Time, silentSince time.Time, state, pane string, limit time.Duration) (autonomouspkg.SessionStartObservation, bool) {
+	obs := autonomouspkg.SessionStartObservation{
+		State:              state,
+		HasAssistantOutput: autonomouspkg.HasAssistantOutput(pane),
+		Limit:              limit,
+	}
+	if !obs.HasAssistantOutput && !silentSince.IsZero() && now.After(silentSince) {
+		obs.WaitingFor = now.Sub(silentSince)
+	}
+	stalled, _ := obs.Stalled()
+	return obs, stalled
 }
