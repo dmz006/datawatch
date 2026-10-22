@@ -560,14 +560,14 @@ func (l *Ledger) Snapshot() Status {
 	return st
 }
 
-// FormatText renders a compact human-readable summary of a Status: one line
-// per pool (used/limit with holders) followed by the wait queue.
-func FormatText(st Status) string {
+// FormatPools renders one line per pool: used/limit with holders, or a
+// "none configured" line when there are no pools.
+func FormatPools(pools []PoolStatus) string {
 	var b strings.Builder
-	if len(st.Pools) == 0 {
+	if len(pools) == 0 {
 		b.WriteString("Pools: none configured\n")
 	}
-	for _, p := range st.Pools {
+	for _, p := range pools {
 		lim := "unlimited"
 		if p.Limit > 0 {
 			lim = fmt.Sprintf("%d", p.Limit)
@@ -581,6 +581,14 @@ func FormatText(st Status) string {
 		}
 		b.WriteString("\n")
 	}
+	return b.String()
+}
+
+// FormatText renders a compact human-readable summary of a Status: one line
+// per pool (used/limit with holders) followed by the wait queue.
+func FormatText(st Status) string {
+	var b strings.Builder
+	b.WriteString(FormatPools(st.Pools))
 	if len(st.Waiting) == 0 {
 		b.WriteString("Waiting: none\n")
 		return b.String()
