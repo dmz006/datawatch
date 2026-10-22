@@ -33,7 +33,7 @@ var patternsRecheckMu sync.Mutex
 // lengthPrefix writes a 4-byte big-endian length so concatenated entries
 // cannot ambiguously re-parse ("ab","c" vs "a","bc").
 func lengthPrefix(h io.Writer, s string) {
-	h.Write([]byte{byte(len(s) >> 24), byte(len(s) >> 16), byte(len(s) >> 8), byte(len(s))})
+	_, _ = h.Write([]byte{byte(len(s) >> 24), byte(len(s) >> 16), byte(len(s) >> 8), byte(len(s))})
 }
 
 // writePatterns digests a pattern set into h, case-sensitive as written,
@@ -52,7 +52,7 @@ func writePatterns(h io.Writer, patterns []string) {
 	sort.Strings(uniq)
 	for _, p := range uniq {
 		lengthPrefix(h, p)
-		h.Write([]byte(p))
+		_, _ = h.Write([]byte(p))
 	}
 }
 
