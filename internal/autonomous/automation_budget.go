@@ -77,6 +77,8 @@ type BudgetVerdict struct {
 	// the ceiling; empty when no peer is opted in.
 	Peers        []PeerBudgetStatus `json:"peers,omitempty"`
 	PeerSpendUSD float64            `json:"peer_spend_usd,omitempty"`
+	// PeerNote explains why named peers were not counted.
+	PeerNote string `json:"peer_note,omitempty"`
 }
 
 // AutomationBudget is the pure policy evaluator behind the advance gate and
@@ -93,11 +95,15 @@ type AutomationBudget struct {
 	// the plan-tier inputs. Nil means the ledger's AllocationFor.
 	Allocation func(llm string, spend float64) *BudgetAllocation
 	// Resets reports what is known about when a breached window frees up.
-	// Nil means no reset knowledge.
+	// Nil means no reset knowledge; ResetFor is the built-in rules.
 	Resets func(p *BudgetPolicy, win BudgetWindowSpan, now time.Time) ResetInfo
+	// Backoffs lists the live back-off entries ResetFor reads; nil means none.
+	Backoffs func() []Entry
 	// PeerSpend returns the spend of the peers the policy opted in, and one
-	// line per peer. Nil means no peer spend.
+	// line per peer. Nil means the policy's peer_window is asked of Peers.
 	PeerSpend func(p *BudgetPolicy, from, to time.Time) (usd float64, lines []PeerBudgetStatus)
+	// Peers answers the built-in peer spend; nil means no peer spend.
+	Peers *PeerBudget
 
 	mgr    *Manager
 	ledger *BudgetLedger
@@ -243,8 +249,13 @@ func (b *AutomationBudget) evalPolicy(a *Automation, scoped, starting *Automatio
 	spent := b.spend(a, scoped, start, p.Backend)
 	var peerUSD float64
 	var peers []PeerBudgetStatus
-	if b.PeerSpend != nil && len(p.PeerWindow) > 0 {
-		peerUSD, peers = b.PeerSpend(p, start, now)
+	var peerNote string
+	if len(p.PeerWindow) > 0 {
+		if b.PeerSpend != nil {
+			peerUSD, peers = b.PeerSpend(p, start, now)
+		} else {
+			peerUSD, peers, peerNote = b.peerSpendFor(p, start, now)
+		}
 		spent += peerUSD
 	}
 
@@ -255,6 +266,7 @@ func (b *AutomationBudget) evalPolicy(a *Automation, scoped, starting *Automatio
 		WindowStart:  start,
 		Peers:        peers,
 		PeerSpendUSD: peerUSD,
+		PeerNote:     peerNote,
 	}
 	if hasEnd {
 		v.WindowEnd = end

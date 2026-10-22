@@ -369,8 +369,12 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 	autonomousBudget = newAutonomousBudget(cfg, expandHome(cfg.DataDir), registry)
 	mgr.SetUsageEventHook(recordUsageSpend(autonomousBudget, registry))
 	amgr.SetCostSources(autonomousBudget, sessionCostTotal(mgr.GetSession, registry))
-	amgr.SetAutomationBudget(autonomous.NewAutomationBudget(amgr, autonomousBudget))
 	peerBudget := newPeerBudget(registry, httpServer.ServerStore)
+	automationBudget := autonomous.NewAutomationBudget(amgr, autonomousBudget)
+	automationBudget.Backoffs = autonomousBackoff.Live
+	automationBudget.Peers = peerBudget
+	automationBudget.Resets = automationBudget.ResetFor
+	amgr.SetAutomationBudget(automationBudget)
 	autonomousBudget.PeerSpend = peerBudget.Spend
 	autonomousBudget.PeerBreakdown = peerBudget.Breakdown
 	led := capacity.New(capacity.Options{

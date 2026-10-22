@@ -24,6 +24,12 @@ const (
 	BackoffSourceOperator = "operator"
 )
 
+// BackoffReasonNoResetTime is the reason of a rate_limit entry whose
+// deadline is the configured maximum back-off, set because the rate-limit
+// message carried no reset time. Every other rate_limit entry's deadline was
+// parsed from the message.
+const BackoffReasonNoResetTime = "rate-limit — no reset time (max back-off)"
+
 // Entry is one active back-off flag for a backend.
 type Entry struct {
 	Backend string    `json:"backend"`
@@ -53,6 +59,13 @@ func (b *Backoff) now() time.Time {
 		return b.Clock()
 	}
 	return time.Now()
+}
+
+// ResetParsed reports whether the entry's deadline is a reset time parsed from
+// a rate-limit message, as opposed to an operator-set deadline or the
+// configured fallback used when the message carried no reset time.
+func (e Entry) ResetParsed() bool {
+	return e.Source == BackoffSourceRateLimit && e.Reason != BackoffReasonNoResetTime
 }
 
 // Set records (or replaces) the back-off flag for backend.
