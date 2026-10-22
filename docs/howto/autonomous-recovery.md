@@ -195,8 +195,14 @@ Each is checked against two things: its age, compared with `autonomous.resume_ma
 What happens next:
 
 - **Fresh** (within the limit, directory present): the Automaton is recovered and continues.
-- **Stale** (older than the limit, or directory missing): the Automaton is parked as `blocked` with a plain-English reason, an operator alert is raised, and an entry is added to the boot-resume report (`Status().BootResume`). Nothing runs on its own; review it and approve it manually if you still want it.
+- **Stale** (older than the limit, or directory missing): the Automaton is parked as `blocked` with a plain-English reason, an operator alert is raised, and an entry is added to the boot-resume report (`Status().BootResume`). Nothing runs on its own; review it and resume it with the resume action if you still want it.
+- **Live worker**: a worker session that is still alive on an `in_progress` task counts as activity, and so does its recent output. An Automaton with a live worker is never treated as stale just because its stored timestamps are old.
+- **Resuming a parked Automaton**: use the resume action, which is available everywhere. Approval is not the right action, because a parked Automaton is already approved. REST: `POST /api/autonomous/prds/{id}/resume` with an optional `note`. MCP: `autonomous_prd_resume`. CLI: `datawatch autonomous prd-resume <id> [--note "..."]`. Chat: `autonomous resume <id> [note]`. PWA: the Resume button on the parked Automaton, which shows the park reason. Only an Automaton parked by the boot-resume gate can be resumed this way; any other state is rejected with an error naming the allowed state. A live worker is re-adopted rather than respawned.
 - **Cancelled**: an Automaton you cancelled is never recovered.
+
+### Reading the boot-resume report
+
+Each decision is an entry in `Status().BootResume` with an `outcome` of `resumed`, `parked` or `resumed_by_operator`, the age in seconds and a reason. A `parked` entry that also has `live_sessions` means the Automaton was parked (for example its project directory was missing, or auto-resume is off) while a worker session was still alive. Nothing was killed: resuming it re-adopts those sessions instead of starting new ones. A `resumed_by_operator` entry records your resume action and lists the sessions that were adopted.
 
 Old failed Automata are therefore no longer re-launched at every restart.
 

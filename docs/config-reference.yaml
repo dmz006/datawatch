@@ -886,6 +886,10 @@ autonomous:
   # it automatically at startup (seconds). A PRD left in "running" state when
   # the daemon stopped is resumed on boot only if its newest activity is
   # within this many seconds — 0 = never auto-resume, -1 = no age limit.
+  # A live worker session on an in-progress task counts as activity, so an
+  # Automaton with a live worker is not treated as stale. A parked
+  # Automaton is resumed with the resume action (REST, MCP, CLI, chat or
+  # the PWA Resume button), not by approving it.
   # The resume also always requires the PRD's project directory to still
   # exist; a missing directory parks the PRD as blocked (with a reason) and
   # raises an operator alert either way. Default 3600.
