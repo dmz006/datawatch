@@ -91,15 +91,34 @@ func completionSummary(l, pat string) string {
 	return strings.TrimSpace(StripANSI(l[i+len(pat):]))
 }
 
+// isShellSourceTail reports whether s is the tail of a quoted shell argument
+// rather than program output: it ends with a quote character and holds an odd
+// number of that quote, so the opening quote is on an earlier line. The
+// backends type "...; echo 'DATAWATCH_COMPLETE: claude done'" into the pane,
+// and when the terminal wraps that line the last fragment starts with the
+// marker and ends with the closing quote.
+func isShellSourceTail(s string) bool {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return false
+	}
+	q := s[len(s)-1]
+	if q != '\'' && q != '"' {
+		return false
+	}
+	return strings.Count(s, string(q))%2 == 1
+}
+
 // isRealCompletionLine reports whether l is a genuine completion line for pat:
 // it matches the marker, is not an instruction placeholder, and carries a
-// non-empty summary that is not an angle-bracket placeholder.
+// non-empty summary that is not an angle-bracket placeholder or the wrapped
+// tail of the typed launch command.
 func isRealCompletionLine(l, pat string) bool {
 	if !matchesCompletionPattern(l, pat) || isCompletionPlaceholder(l) {
 		return false
 	}
 	s := completionSummary(l, pat)
-	return s != "" && !strings.HasPrefix(s, "<")
+	return s != "" && !strings.HasPrefix(s, "<") && !isShellSourceTail(s)
 }
 
 // echoGate decides whether a completion line at index i of a scanned capture
