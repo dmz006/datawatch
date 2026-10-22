@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.90 — Per-LLM dollar budget with a windowed ledger
+
+### Added
+
+- **Per-LLM dollar budget over a rolling or weekly window.** An LLM entry can carry a `budget`: a dollar ceiling and a window, either rolling hours or a weekly anchor (weekday, clock time and time zone). Spend is recorded from the existing per-call cost records at the configured rates and kept in a persisted windowed ledger. Capacity admission waits with the reason `budget window full` when a call would cross the ceiling, and resumes when the window rolls over. The status shows spend, ceiling, window end and the rollover time. An estimated share-of-allocation figure (`allocation_pct`) is available per LLM, opt-in, always labelled estimated, computed from token usage priced at API rates against an allocation you declare per plan tier, and it never blocks anything. Another daemon's usage counts toward a ceiling only for peers explicitly opted in (off by default for every peer). The budget configuration and ledger state are on REST (`/api/budget`), MCP, the CLI, the chat commands and the PWA, and appear in `autonomous_status` and the capacity API. The older cost-guardrail item is narrowed to reporting only; this ledger owns ceilings and hard stops.
+
 ## v9.5.89 — The pattern staleness flag follows the claude CLI version
 
 ### Fixed
