@@ -19630,6 +19630,27 @@ if (window.matchMedia) {
   } catch (e) { /* Safari < 14 fallback: ignore */ }
 }
 
+// On an origin with an untrusted/self-signed TLS cert (or otherwise an
+// insecure context) Chrome/Firefox reject the /sw.js fetch during
+// registration with a SecurityError even though the page itself loads
+// fine. That's expected on such origins, not an operator-facing failure
+// (docs/operations.md covers enabling the SW with a trusted cert), so we
+// surface exactly one quiet info line instead of an error-looking one.
+// Pure helper (unit-testable in isolation) so the .catch above stays
+// small; returns a one-line info string for the trusted-cert case and
+// null for anything else (callers keep console.warn for real failures).
+const _SW_DISABLED_INFO = 'Service worker is off on this origin (the TLS certificate is not trusted). The app works normally; offline cache and push need a trusted certificate - see docs/operations.md.';
+function _swRegisterFailureMessage(err) {
+  try { if (typeof window !== 'undefined' && window.isSecureContext === false) return _SW_DISABLED_INFO; } catch (_) {}
+  if (err && err.name === 'SecurityError' && /SSL certificate|certificate error|insecure/i.test(String(err.message))) {
+    return _SW_DISABLED_INFO;
+  }
+  return null;
+}
+// Printed at most once per page load even if registerServiceWorker is
+// called again (e.g. a retry path), so the operator isn't spammed.
+let _swDisabledInfoShown = false;
+
 function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return;
   {
@@ -19664,17 +19685,14 @@ function registerServiceWorker() {
         });
       });
     }).catch(err => {
-      // Self-signed-cert origins (e.g. https://<hostname>:8443 with the
-      // auto-generated cert that the operator has merely click-throughs)
-      // are NOT a valid SW registration context even though the page
-      // loads. Chrome throws `SecurityError: An SSL certificate error
-      // occurred when fetching the script`. Demote to info — the PWA
-      // degrades gracefully (no offline cache, no push) and everything
-      // else works. Use https://localhost:8443 or install a trusted
-      // cert to enable SW.
-      const msg = String(err && err.message || err);
-      if (err && err.name === 'SecurityError' && /SSL certificate/i.test(msg)) {
-        console.info('SW disabled on this origin (untrusted TLS cert). Use https://localhost or install a trusted cert to enable PWA offline/push.');
+      // Trusted-cert / insecure-context case: emit exactly ONE quiet info
+      // line (at most once per page load) and return — no warn/error, no
+      // update interval set up (that only happens in the .then above on a
+      // live registration), and nothing else. Any other rejection is a
+      // genuine failure and keeps the console.warn below.
+      const info = _swRegisterFailureMessage(err);
+      if (info) {
+        if (!_swDisabledInfoShown) { _swDisabledInfoShown = true; console.info(_SW_DISABLED_INFO); }
         return;
       }
       console.warn('SW registration failed:', err);
