@@ -36,11 +36,26 @@ const bootResumeDefaultMaxAgeSeconds = 3600
 // without digging through daemon logs.
 type BootResumeEntry struct {
 	PRDID      string    `json:"prd_id"`
-	Outcome    string    `json:"outcome"` // "resumed" | "parked"
+	Outcome    string    `json:"outcome"` // "resumed" | "parked" | "resumed_by_operator"
 	AgeSeconds int64     `json:"age_seconds"`
 	Reason     string    `json:"reason"`
 	At         time.Time `json:"at"`
+	// LiveSessions lists the worker session ids still alive on the PRD's
+	// in_progress tasks at decision time. Set on a parked entry when a
+	// worker is alive while the PRD is parked (directory missing or limit
+	// 0), so the operator knows a resume will re-adopt it, not respawn.
+	LiveSessions []string `json:"live_sessions,omitempty"`
 }
+
+// bootResumeParkedKind is the Decision kind parkPRDForBootResume appends.
+// It is the durable marker (persisted with the PRD, so it survives a
+// restart) that ResumeParked checks: only a blocked PRD whose newest
+// park/resume decision is this kind may be resumed by that action.
+const bootResumeParkedKind = "boot_resume_parked"
+
+// bootResumeActionHint names the operator action that actually resumes a
+// parked PRD. Every park reason and the park alert use it.
+const bootResumeActionHint = "resume it with the resume action (REST POST on the automaton resume endpoint, MCP autonomous_prd_resume, CLI, chat command or the PWA Resume button)"
 
 // bootResumeHooks lets decideBootResume consult live worker sessions.
 // Both fields are optional: a nil alive hook means liveness is unknown
@@ -82,6 +97,24 @@ func liveWorkerSession(prd *PRD, h bootResumeHooks) string {
 		}
 	}
 	return ""
+}
+
+// liveWorkerSessions returns every in_progress task session id that is
+// alive, in task order, or nil.
+func liveWorkerSessions(prd *PRD, h bootResumeHooks) []string {
+	if h.alive == nil {
+		return nil
+	}
+	var out []string
+	for i := range prd.Story {
+		for j := range prd.Story[i].Tasks {
+			t := &prd.Story[i].Tasks[j]
+			if t.Status == TaskInProgress && t.SessionID != "" && h.alive(t.SessionID) {
+				out = append(out, t.SessionID)
+			}
+		}
+	}
+	return out
 }
 
 // bootResumeDecision is the result of decideBootResume.
@@ -180,7 +213,7 @@ func decideBootResume(prd *PRD, now time.Time, maxAgeSec int, h bootResumeHooks)
 				return bootResumeDecision{
 					resume: false,
 					ageSec: ageSec,
-					reason: fmt.Sprintf("project directory %s no longer exists (it may have been a removed temp directory) — work cannot resume in place; re-point the PRD at a live directory or approve manually", dir),
+					reason: fmt.Sprintf("project directory %s no longer exists (it may have been a removed temp directory) — work cannot resume in place; re-point the PRD at a live directory, then %s", dir, bootResumeActionHint),
 				}
 			}
 			// Present-but-unreadable (permissions) or a file where a
@@ -198,7 +231,7 @@ func decideBootResume(prd *PRD, now time.Time, maxAgeSec int, h bootResumeHooks)
 		return bootResumeDecision{
 			resume: false,
 			ageSec: ageSec,
-			reason: "boot-resume is disabled for this daemon (resume_max_age_seconds = 0): this PRD was left running or failed before the restart and needs manual review before it runs again",
+			reason: fmt.Sprintf("boot-resume is disabled for this daemon (resume_max_age_seconds = 0): this PRD was left running or failed before the restart and needs manual review before it runs again; %s", bootResumeActionHint),
 		}
 	case maxAgeSec != 0 && liveSess != "":
 		return bootResumeDecision{
@@ -210,7 +243,7 @@ func decideBootResume(prd *PRD, now time.Time, maxAgeSec int, h bootResumeHooks)
 		return bootResumeDecision{
 			resume: false,
 			ageSec: ageSec,
-			reason: fmt.Sprintf("last activity was %d seconds ago (%s), older than the %d-second resume limit — work from before the restart may be stale, so it does not auto-resume; approve it manually if it should still run", ageSec, (time.Duration(ageSec) * time.Second).Round(time.Second).String(), maxAgeSec),
+			reason: fmt.Sprintf("last activity was %d seconds ago (%s), older than the %d-second resume limit — work from before the restart may be stale, so it does not auto-resume; if it should still run, %s", ageSec, (time.Duration(ageSec) * time.Second).Round(time.Second).String(), maxAgeSec, bootResumeActionHint),
 		}
 	case maxAgeSec < 0:
 		return bootResumeDecision{
@@ -262,13 +295,15 @@ func (m *Manager) parkPRDForBootResume(prd *PRD, prior PRDStatus, reason string)
 	m.mu.Lock()
 	prd.Status = PRDBlocked
 	prd.BlockedReason = reason
+	prd.UpdatedAt = time.Now()
+	prd.Decisions = append(prd.Decisions, Decision{At: time.Now(), Kind: bootResumeParkedKind, Actor: "autonomous", Note: reason})
 	alert := m.alertFn
 	m.mu.Unlock()
 
 	if err := m.store.SavePRD(prd); err != nil {
 		return err
 	}
-	m.emitPRDStatus(prd, prior, lastDecision(prd, "boot_resume_parked"), nil)
+	m.emitPRDStatus(prd, prior, lastDecision(prd, bootResumeParkedKind), nil)
 	m.EmitPRDUpdate(prd.ID)
 	if alert != nil {
 		was := "left running"
@@ -277,7 +312,7 @@ func (m *Manager) parkPRDForBootResume(prd *PRD, prior PRDStatus, reason string)
 		}
 		alert(
 			"Automaton parked at boot resume",
-			fmt.Sprintf("PRD %s %q was %s before the daemon restarted and did not auto-resume. Reason: %s. Approve it manually if it should still run.", prd.ID, prd.Title, was, reason),
+			fmt.Sprintf("PRD %s %q was %s before the daemon restarted and did not auto-resume. Reason: %s. To run it again, %s.", prd.ID, prd.Title, was, reason, bootResumeActionHint),
 		)
 	}
 	return nil

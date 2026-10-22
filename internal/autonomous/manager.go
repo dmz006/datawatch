@@ -3343,6 +3343,68 @@ func (m *Manager) Resume(prdID, actor string) (*PRD, error) {
 	return updated, nil
 }
 
+// ResumeParked resumes a PRD that the boot-resume gate parked. It accepts
+// ONLY a blocked PRD whose newest park/resume decision is
+// "boot_resume_parked" (the Decision parkPRDForBootResume persists, so the
+// marker survives a restart); any other state is an error naming the
+// allowed state. It clears BlockedReason, records Decision{Kind:"resume"},
+// sets the status back to running, persists, emits the status event and
+// records a "resumed_by_operator" boot-resume entry. It does not start the
+// executor; API.ResumeParked does that through runLocked.
+func (m *Manager) ResumeParked(prdID, actor, note string) (*PRD, error) {
+	prd, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return nil, fmt.Errorf("prd %q not found", prdID)
+	}
+	m.mu.Lock()
+	status := prd.Status
+	parked := status == PRDBlocked && isBootParked(prd)
+	m.mu.Unlock()
+	if !parked {
+		return nil, fmt.Errorf("prd %q status %q cannot be resumed this way; only a blocked PRD parked by the boot-resume gate can (status %q)", prdID, status, PRDBlocked)
+	}
+	h := m.bootResumeHooks()
+	now := time.Now()
+	ageSec := int64(0)
+	if newest := newestActivity(prd, h); !newest.IsZero() {
+		if d := int64(now.Sub(newest).Seconds()); d > 0 {
+			ageSec = d
+		}
+	}
+	live := liveWorkerSessions(prd, h)
+	m.mu.Lock()
+	prd.Status = PRDRunning
+	prd.BlockedReason = ""
+	prd.UpdatedAt = now
+	prd.Decisions = append(prd.Decisions, Decision{At: now, Kind: "resume", Actor: actor, Note: note})
+	m.mu.Unlock()
+	if err := m.store.SavePRD(prd); err != nil {
+		return nil, err
+	}
+	m.emitPRDStatus(prd, PRDBlocked, lastDecision(prd, "resume"), nil)
+	reason := "operator resumed the parked PRD"
+	if note != "" {
+		reason += ": " + note
+	}
+	m.recordBootResume(BootResumeEntry{PRDID: prdID, Outcome: "resumed_by_operator", AgeSeconds: ageSec, Reason: reason, At: now, LiveSessions: live})
+	updated, _ := m.store.GetPRD(prdID)
+	return updated, nil
+}
+
+// isBootParked reports whether the newest park/resume decision on prd is
+// the boot-resume park marker.
+func isBootParked(prd *PRD) bool {
+	for i := len(prd.Decisions) - 1; i >= 0; i-- {
+		switch prd.Decisions[i].Kind {
+		case bootResumeParkedKind:
+			return true
+		case "resume":
+			return false
+		}
+	}
+	return false
+}
+
 // SetMemoryHarvest (BL386 Phase 2) updates the PRD's harvest-on-completion config.
 func (m *Manager) SetMemoryHarvest(prdID string, cfg MemoryHarvestConfig, actor string) (*PRD, error) {
 	prd, ok := m.store.GetPRD(prdID)

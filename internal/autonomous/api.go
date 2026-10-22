@@ -269,7 +269,7 @@ func (a *API) gateBootResume(prd *PRD, prior PRDStatus) (dec bootResumeDecision,
 	if err := a.M.parkPRDForBootResume(prd, prior, dec.reason); err != nil {
 		fmt.Printf("[autonomous] boot-resume: prd=%s park save failed: %v\n", prd.ID, err)
 	}
-	a.M.recordBootResume(BootResumeEntry{PRDID: prd.ID, Outcome: "parked", AgeSeconds: dec.ageSec, Reason: dec.reason, At: now})
+	a.M.recordBootResume(BootResumeEntry{PRDID: prd.ID, Outcome: "parked", AgeSeconds: dec.ageSec, Reason: dec.reason, At: now, LiveSessions: liveWorkerSessions(prd, a.M.bootResumeHooks())})
 	return dec, now, true
 }
 
@@ -591,6 +591,26 @@ func (a *API) Resume(id, actor string) (any, error) {
 	}
 	a.M.EmitPRDUpdate(id)
 	if err := a.Run(id); err != nil {
+		return nil, err
+	}
+	return updated, nil
+}
+
+// ResumeParked is the operator action that resumes a PRD the boot-resume
+// gate parked. Manager.ResumeParked validates and flips it back to running;
+// the executor then starts through runLocked with the same prep as boot
+// resume, so a live in_progress worker session is re-adopted rather than
+// duplicated or killed.
+func (a *API) ResumeParked(id, actor, note string) (any, error) {
+	updated, err := a.M.ResumeParked(id, actor, note)
+	if err != nil {
+		return nil, err
+	}
+	a.M.EmitPRDUpdate(id)
+	if _, err := a.runLocked(id, func() bool {
+		a.M.resetInProgressTasksForResume(updated)
+		return true
+	}); err != nil {
 		return nil, err
 	}
 	return updated, nil
