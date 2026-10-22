@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.92 — Automation model-tier defaults for execution, verification and planning
+
+### Added
+
+- **An Automation can carry default model settings for its member Automata.** The Automation tier now sits in the resolution order between the Automaton level and the global default, for the execution backend, model and effort and for the verification LLM: task, story, Automaton, Automation, global. A new verifier source value `automation` shows when the Automation supplied the verification choice, and each task run record gains `executor_source` (`task`, `story`, `prd`, `automation` or `global`) beside `verifier_source`, shown wherever the verifier source is shown. Planning has its own optional pair on the Automation (`planning_backend`, `planning_model`; unset means the global planning backend); it is used only when a member is decomposed and never changes the run or verify default. New operations `automation_set_llm` and `automation_set_verification_llm` on REST (`POST /api/automations/{id}/set_llm` and `/set_verification_llm`), MCP, the CLI and the chat commands, allowed while the Automation is draft, active, paused or blocked. An opt-in live smoke test covers the defaults against a running daemon.
+
 ## v9.5.91 — go.mod lists pflag as a direct dependency so the release build passes its tidiness check
 
 ### Fixed
