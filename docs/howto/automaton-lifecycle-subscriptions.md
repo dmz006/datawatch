@@ -5,8 +5,8 @@ docs:
 exec_params:
   - {name: kinds, required: false, default: "task.session_started", description: "Comma-separated lifecycle event kinds to watch"}
   - {name: level, required: false, default: "task", description: "Event level: prd or task"}
-  - {name: sink, required: false, default: "topic", description: "Sink type: comm | session | topic | alert"}
-  - {name: target, required: false, default: "lifecycle-howto", description: "Sink target (session id, topic, router or alert name)"}
+  - {name: sink, required: false, default: "topic", description: "Sink type: comm | session | topic | alert | mcp_queue"}
+  - {name: target, required: false, default: "lifecycle-howto", description: "Sink target (session id, topic, router or alert name, or the mcp_queue queue name)"}
 exec_steps:
   - tool: autonomous_subscriptions
     description: List the currently persisted lifecycle event subscriptions
@@ -77,7 +77,7 @@ Every subscription is **filter → sink → optional action**:
 | Part | What it is |
 |---|---|
 | **Filter** | `kinds` (event kinds; repeatable) and/or `level` (`prd` or `task`), plus optional scope to one Automaton (`prd_id`) or one task (`task_id`). At least one of `kinds` / `level` is required. |
-| **Sink** | One of: `comm` (router fan-out), `session` (a datawatch session), `topic` (SSE / mobile-push topic bus), `alert` (in-app alert store). Each has a `target`. |
+| **Sink** | One of: `comm` (router fan-out), `session` (a datawatch session), `topic` (SSE / mobile-push topic bus), `alert` (in-app alert store), `mcp_queue` (a named pending-events queue that a client polls). Each has a `target`; for `mcp_queue` it is the queue name. |
 | **Action** *(optional)* | `send_input` with text (max 4096 chars), only with a `session` sink — the text is typed into the target session on every match. |
 | **Flags** | `one_shot` (delete after first *successful* delivery), `expires_at` (TTL), `coalesce` (batch human-facing deliveries in quiet windows). |
 
@@ -129,10 +129,109 @@ datawatch autonomous subscribe --on prd.blocked --sink comm --target my-router -
 # One Automaton's completions to the alert store:
 datawatch autonomous subscribe --on prd.completed --prd <prd-id> --sink alert --target system
 
-# List, then delete by id:
+# Park matching events in a queue a generic MCP client can poll:
+datawatch autonomous subscribe --on task.failed --on prd.blocked --sink mcp_queue --target ops-watch
+
+# List, change, test, then delete by id:
 datawatch autonomous subscriptions [--owner operator]
+datawatch autonomous subscription-update <subscription-id> --on prd.blocked --sink comm --target my-router
+datawatch autonomous subscription-test <subscription-id>
 datawatch autonomous unsubscribe <subscription-id>
 ```
+
+`subscription-update` takes the same flags as `subscribe` and **replaces**
+the whole configuration: anything you leave out is cleared, so pass
+everything you want to keep. Unlike `subscribe`, `--task` does not imply
+`--one-shot`.
+
+## Test a subscription before you rely on it
+
+A subscription that never fires is hard to tell from one that has
+nothing to fire on. **Test-fire** sends one labelled event to just that
+subscription's sink, now:
+
+```sh
+datawatch autonomous subscription-test <subscription-id>
+```
+
+The message text starts with `[test] ` and describes a synthetic
+`prd.updated` event, so you can see it arrive in the comm channel,
+session, topic, alert list or queue (in a queue it appears as an event
+with `"test": true`). A test never types the
+subscription's `send_input` action text and never uses up a one-shot, so
+it is safe on a live rule. The answer is `ok` with the sink type, or an
+error such as `sink not available` when that delivery path is not wired
+in this daemon.
+
+## PWA walkthrough
+
+Open an Automaton in the PWA (**Automata** → the Automaton) and choose the
+**Subscriptions** tab.
+
+1. **Read the list.** The tab shows every subscription that applies to this
+   Automaton: rules scoped to it, plus unscoped rules that fire for every
+   Automaton ("all automata"). Each row shows the event kinds or level, the
+   sink and target, and badges for one-shot, coalesce, expiry and owner.
+2. **Add.** Choose **Add subscription**. Tick at least one event kind (they
+   are grouped as Automaton status, Task status and Other) or pick a level.
+   Choose the scope (this Automaton or all automata), an optional task id,
+   the sink type and its target, and optionally send-input text (session
+   sink only), one-shot, coalesce and an expiry in hours. The form checks
+   the same limits as the daemon (queue name characters and length, 4096
+   characters of action text) before it saves.
+3. **Test.** Choose **Test** on a row. A line under the tab header reports
+   "Delivered via <sink>" or why the test failed.
+4. **Edit.** Choose **Edit**, change what you need and save. The edit
+   replaces the rule's configuration; the id is kept.
+5. **Delete.** Choose **Delete** and confirm.
+
+If the tab says "Lifecycle subscriptions are disabled on this server.",
+the daemon's subscription engine is not wired (see Troubleshooting). The
+tab is loaded when you open it and after each change; it does not poll.
+
+## A generic MCP client: the pending-events queue
+
+An MCP host that cannot receive pushes (no session to type into, no
+comm channel) can still follow Automaton events by **polling a queue**.
+
+1. **Register a queue subscription** (once). The sink target is the
+   queue name — letters, digits and `. _ : -`, at most 64 characters:
+
+   ```sh
+   datawatch autonomous subscribe --on task.completed --on task.failed \
+     --on prd.blocked --sink mcp_queue --target ops-watch
+   ```
+
+   From an MCP client: `autonomous_subscribe(kinds="task.completed,task.failed,prd.blocked", sink_type="mcp_queue", sink_target="ops-watch")`.
+
+2. **Poll with a cursor.** The first call uses cursor 0:
+
+   `autonomous_events_pending(queue="ops-watch", since_cursor=0)`
+
+   returns
+
+   ```json
+   {"events":[{"cursor":1,"event":{"kind":"task.completed","prd_id":"…"}}],"next_cursor":1,"dropped":false}
+   ```
+
+   (shape abbreviated). Handle the events, then pass `next_cursor` back as
+   `since_cursor` on the next call. `limit` defaults to 50 and is capped at
+   200. The same data is available over REST
+   (`GET /api/autonomous/events?queue=ops-watch&since=1`), the CLI
+   (`datawatch autonomous events --queue ops-watch --since 1 [--json]`) and a
+   comm channel (`autonomous events queue=ops-watch since=1`).
+
+3. **Watch for `dropped`.** Each queue is bounded
+   (`autonomous.notify.pending_events_max`, default 500) and evicts the
+   oldest events first. `dropped: true` means events you had not read yet
+   were evicted — re-read the Automaton's state instead of assuming the
+   history is complete. Queues live in memory only, so after a daemon
+   restart the queue is empty and cursors start again from 1; the
+   subscription itself survives. Deleting the last subscription that
+   feeds a queue discards the events it still held.
+
+Poll no faster than you need; there is no push. For immediate delivery
+use a `session`, `comm` or `topic` sink instead.
 
 ## MCP
 
@@ -147,6 +246,13 @@ restarts:
 - `autonomous_unsubscribe(id)`
 - `autonomous_subscriptions()` — list everything (filterable by owner
   on the REST route).
+- `autonomous_subscription_update(id, …)` — same optional fields as
+  `autonomous_subscribe`; replaces the configuration and returns the
+  updated record.
+- `autonomous_subscription_test(id)` — test-fire; returns
+  `{"ok","sink","error"}`.
+- `autonomous_events_pending(queue, since_cursor?, limit?)` — poll an
+  `mcp_queue` queue (see above).
 
 ## Comm channel (owner-scoped)
 
@@ -155,24 +261,36 @@ From any configured comm channel:
 ```
 autonomous subscribe task.session_started prd=<prd-id>
 autonomous subscriptions
+autonomous subscription-update <id> kinds=prd.blocked,prd.failed coalesce=true
+autonomous subscription-test <id>
+autonomous events [queue=<name>] [since=<cursor>]
 autonomous unsubscribe <id>
 ```
 
+In `subscription-update`, fields you do not name keep their stored value
+(keys: `kinds`, `level`, `prd`, `task`, `coalesce`, `one_shot`, `expires`;
+`prd=`, `task=` and `expires=0` clear). `events` defaults the queue to one
+derived from the calling channel.
+
 The calling channel is **both the owner and the sink target**. That is
 deliberate: a channel can only list and un-subscribe *its own*
-subscriptions — it can never see or remove another channel's.
+subscriptions — it can never see, change, test or remove another
+channel's, and it can only read queues its own subscriptions feed.
 
 ## REST
 
 ```
 GET    /api/autonomous/subscriptions[?owner=<owner>]   (autonomous:read)
 POST   /api/autonomous/subscriptions                    (autonomous:write) → 201 + record
+PUT    /api/autonomous/subscriptions/{id}               (autonomous:write) → 200 + record
+POST   /api/autonomous/subscriptions/{id}/test          (autonomous:write) → 200 {"ok","sink","error"}
 DELETE /api/autonomous/subscriptions/{id}               (autonomous:write)
+GET    /api/autonomous/events?queue=<name>[&since=<cursor>][&limit=<n>]   (autonomous:read)
 ```
 
 `503` when the lifecycle engine is not wired (bare daemon / unit test
-contexts). `400` on a malformed or unknown-kind payload, `404` on an
-unknown id.
+contexts). `400` on a malformed or unknown-kind payload (or a missing
+`queue`, non-numeric `since` / `limit` on events), `404` on an unknown id.
 
 Example create body:
 
@@ -220,7 +338,7 @@ holds a one-shot hostage to a dead target).
   rest with the daemon's secfile key (same treatment as channel
   routing rules). It survives daemon restarts — re-apply after
   migrating the data dir.
-- Create/delete are audit-logged. Per-event delivery is intentionally
+- Create/update/test/delete are audit-logged. Per-event delivery is intentionally
   not audited (high-frequency, same as discussion `subscribe`
   deliveries) — inspect the daemon log (`lifecycle-sub` lines) for
   delivery failures.
@@ -244,9 +362,16 @@ holds a one-shot hostage to a dead target).
 - **Text arrived but looks wrong** — verify the `lifecycle-sub`
   source tag in the session input history; `send_input` types verbatim,
   4096-char cap.
-- **`webhook` / `mcp_queue` sinks are refused** — by design in this
-  release; they arrive in a later phase (outbound webhooks, MCP
-  pending-events queue).
+- **`webhook` sink is refused** — by design in this release; outbound
+  webhooks arrive in a later phase.
+- **Polling a queue returns nothing** — confirm a subscription with sink
+  `mcp_queue` and the *same* queue name exists
+  (`datawatch autonomous subscriptions`), that the events you expect match
+  its filter, and that the `since` cursor is not from before a daemon
+  restart (cursors restart at 1).
+- **Test says `sink not available`** — that delivery path is not wired in
+  this daemon (for example no comm router is configured for a `comm`
+  sink).
 
 ## See also
 

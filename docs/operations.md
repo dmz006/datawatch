@@ -2919,22 +2919,23 @@ The PWA draws each `pane_capture` frame at most every 33 ms. A frame that arrive
 - ResizeObserver cleaned up on terminal dispose (prevents memory leak)
 - Frame rate capped at ~30fps to prevent xterm.js buffer overload
 
-## Managing Automata lifecycle event subscriptions (Unreleased — Phase 3 of [plans/2026-10-13-prd-lifecycle-events.md](plans/2026-10-13-prd-lifecycle-events.md))
+## Managing Automata lifecycle event subscriptions (Unreleased — Phases 3–4 of [plans/2026-10-13-prd-lifecycle-events.md](plans/2026-10-13-prd-lifecycle-events.md))
 
-**Operator workflow: no config, no restart.** Subscriptions are *data*, not config: create them from any surface, change them at any time, and the daemon's subscription engine re-attaches to the store immediately (`OnChanged`) — there is nothing to restart and nothing to restart-safe. `docs/config-reference.yaml` is therefore **N/A for this feature** (no new keys in this phase; the v9.3.0 `autonomous.notify.default_events` default-set key is the only lifecycle-related config).
+**Operator workflow: no config, no restart.** Subscriptions are *data*, not config: create them from any surface, change them at any time, and the daemon's subscription engine re-attaches to the store immediately (`OnChanged`) — there is nothing to restart and nothing to restart-safe. The only lifecycle-related config is the v9.3.0 `autonomous.notify.default_events` default-set key and `autonomous.notify.pending_events_max` (the per-queue size of the pending-events queue, below).
 
 ### What is where
 
 - Storage: `<data_dir>/lifecycle_subscriptions.json` — secfile-encrypted at rest (same treatment as `channel_routing.json`), modeled on the discussion-subscription store. Back up with the data dir; re-apply after migration.
-- Audit: create/delete are audit-logged. Per-event *delivery* is not audited (high-frequency, same convention as discussion `subscribe` deliveries) — the daemon log is the delivery ledger (`lifecycle-sub` lines).
+- Audit: create/update/test/delete are audit-logged. Per-event *delivery* is not audited (high-frequency, same convention as discussion `subscribe` deliveries) — the daemon log is the delivery ledger (`lifecycle-sub` lines).
 - Engine: in-daemon, wired in `cmd/datawatch/main.go` (store → engine → REST/MCP/CLI/comm all hit the same store). REST returns **503** in a context where the engine is not wired (unit-test / stripped-down daemons).
 
-### Managing — all four surfaces
+### Managing — every surface
 
-- **CLI** — `datawatch autonomous subscribe` (repeatable `--on <kind>`, `--level prd|task`, `--prd-id`, `--task-id`, `--sink-type`, `--sink-target`, `--send`, `--one-shot[=false]`, `--coalesce`, `--expires <seconds>`, `--owner`) · `datawatch autonomous unsubscribe <id>` · `datawatch autonomous subscriptions [--owner <owner>]`.
-- **MCP** — `autonomous_subscribe`, `autonomous_unsubscribe`, `autonomous_subscriptions`. The MCP server holds no state; it proxies the daemon's REST on loopback, so the daemon store remains the single source of truth across host restarts.
-- **Comm channel** — `autonomous subscribe <kinds…> [prd=<id>] [task=<id>]`, `autonomous subscriptions`, `autonomous unsubscribe <id>`. Owner-scoped: the calling channel is both the owner and the sink target; a channel can only ever see and remove *its own* records.
-- **REST** — `GET/POST /api/autonomous/subscriptions` (optional `?owner=`), `DELETE /api/autonomous/subscriptions/{id}`; auth `autonomous:read`/`autonomous:write`; `400` malformed/unknown kind, `404` unknown id, `503` engine not wired.
+- **CLI** — `datawatch autonomous subscribe` (repeatable `--on <kind>`, `--level prd|task`, `--prd`, `--task`, `--sink`, `--target`, `--send`, `--one-shot[=false]`, `--coalesce`, `--expires <seconds>`) · `datawatch autonomous unsubscribe <id>` · `datawatch autonomous subscriptions [--owner <owner>]` · `datawatch autonomous subscription-update <id> …` (same flags as `subscribe`; replaces the configuration) · `datawatch autonomous subscription-test <id>` · `datawatch autonomous events --queue <name> [--since <cursor>] [--limit n] [--json]`.
+- **MCP** — `autonomous_subscribe`, `autonomous_unsubscribe`, `autonomous_subscriptions`, `autonomous_subscription_update`, `autonomous_subscription_test`, `autonomous_events_pending`. The MCP server holds no state; it proxies the daemon's REST on loopback, so the daemon store remains the single source of truth across host restarts.
+- **Comm channel** — `autonomous subscribe <kinds…> [prd=<id>] [task=<id>]`, `autonomous subscriptions`, `autonomous unsubscribe <id>`, `autonomous subscription-update <id> key=value…`, `autonomous subscription-test <id>`, `autonomous events [queue=<name>] [since=<cursor>]`. Owner-scoped: the calling channel is both the owner and the sink target; a channel can only ever see, change, test and remove *its own* records, and read only the queues its own subscriptions feed.
+- **REST** — `GET/POST /api/autonomous/subscriptions` (optional `?owner=`), `PUT /api/autonomous/subscriptions/{id}` (replace the mutable fields → `200` + the record), `POST /api/autonomous/subscriptions/{id}/test` (→ `200 {"ok","sink","error"}`), `DELETE /api/autonomous/subscriptions/{id}`, `GET /api/autonomous/events?queue=<name>&since=<cursor>&limit=<n>`; auth `autonomous:read` (list, events) / `autonomous:write` (create, update, test, delete); `400` malformed/unknown kind (or a missing `queue` / non-numeric `since` / `limit` on events), `404` unknown id, `503` engine not wired.
+- **PWA** — Automaton detail → **Subscriptions** tab: lists the subscriptions that apply to that Automaton (scoped to it, or unscoped and so firing for every Automaton) with **Add subscription**, **Edit**, **Test** and **Delete**. The tab loads on open and after each change and does not poll. It shows "Lifecycle subscriptions are disabled on this server." when the engine is not wired (`503`).
 
 ### Session-sink delivery order (what the operator should expect)
 
@@ -2945,13 +2946,28 @@ Bridge first, then typed text: if the target session has a channel bridge with a
 - **One-shot** — removed only after *successful* delivery; failure → one retry → log + drop (the daemon never blocks on a dead target).
 - **Expiry** — `expires_at` is enforced by the janitor; the record stops matching once the timestamp elapses.
 - **Coalesce** — human-facing sink deliveries (comm/alert) are batched in quiet windows rather than one message per event.
+- **Update** — `PUT` replaces filter, sink, action, `coalesce`, `one_shot` and `expires_at` wholesale: a field left out is cleared, so send the full desired configuration. The id and creation time are kept, and the engine re-attaches immediately.
+- **Test-fire** — delivers one synthetic `prd.updated` event whose text starts with `[test] ` to just that subscription's sink, through the same sink wiring a real event uses. It never types the `send_input` action text, never consumes a one-shot and bypasses coalescing, so it is safe to run against a live rule. The reply is `{"ok":true,"sink":"<type>"}` or `{"ok":false,"sink":"<type>","error":"…"}` (for example `sink not available` when that delivery path is not wired in this daemon). Test-fire is audit-logged.
+
+### Pending-events queue (`mcp_queue` sink) and polling
+
+Clients that cannot receive pushes (a generic MCP host, a script) poll instead. Procedure:
+
+1. Create a subscription with sink type `mcp_queue`; the sink target is the **queue name** (letters, digits and `. _ : -`, at most 64 characters). Several subscriptions may feed one queue.
+2. Poll `autonomous_events_pending(queue, since_cursor?, limit?)` (or `GET /api/autonomous/events?queue=<name>&since=<cursor>`). The first call uses cursor `0`.
+3. Process `events` (oldest first), then pass the returned `next_cursor` back as `since_cursor` on the next poll. Each call returns `{"events":[...],"next_cursor":<n>,"dropped":<bool>}`; `events` is always an array and `limit` defaults to 50, capped at 200.
+4. If `dropped` is `true`, events you had not yet read were evicted because the queue was full — re-sync from the daemon's own state (for example `autonomous_prd_get`) rather than assuming a complete history.
+
+Queue contents are **in memory only**: they are bounded per queue, cursors restart at 1 when the daemon restarts, and nothing in a queue survives a restart (the subscription itself does). Deleting the last subscription that feeds a queue also discards its retained events. Size the bound with `autonomous.notify.pending_events_max` (default `500`, values below 1 fall back to 500; read and set it with `datawatch config get|set` or `config_set`; applied at daemon start). The oldest events are evicted first.
 
 ### Verification & troubleshooting
 
 - `datawatch autonomous subscriptions` (+ `--owner`) — the live list is the state of truth.
 - Confirm an injection actually typed text: check the target session's input history for the `lifecycle-sub` source tag.
 - `503` → engine not wired in that context (see above); unknown-kind rejection at creation ("not a known event kind") → use the full kind — e.g. **`prd.updated`**, *not* the `prd_updated` shorthand, which currently maps to `task.prd_updated` and is rejected at validation (known gap — see the design doc's Phase 3 notes).
-- `webhook` / `mcp_queue` sinks are refused by design in this release (Phase 5: outbound webhooks / MCP pending-events queue).
+- The `webhook` sink is refused by design in this release (a later phase adds outbound webhooks).
+- A test-fire that reports `ok:false` names the cause in `error`; check the sink's own prerequisites (a comm router configured, the target session exists, topic publishing wired).
+- A poll that always returns no events: confirm a subscription with sink type `mcp_queue` and the *same queue name* exists (`datawatch autonomous subscriptions`), and that you are not passing a `since` cursor from before a daemon restart (cursors restart at 1).
 
-**Checklist record:** `docs/config-reference.yaml` — N/A (no new keys); localization — N/A (no `app.js` strings in this phase); version — Unreleased (final number set at merge); Mobile-Parity — app-side UI tracked in [plans/2026-10-21-datawatch-app-lifecycle-subscriptions-note.md](plans/2026-10-21-datawatch-app-lifecycle-subscriptions-note.md);
- full checklist outcome recorded in the design doc's Phase 3 bullet.
+**Checklist record:** `docs/config-reference.yaml` — `autonomous.notify.pending_events_max` documented; localization — the Subscriptions tab strings are in all five locale bundles; version — Unreleased (final number set at merge); Mobile-Parity — app-side UI tracked in [plans/2026-10-21-datawatch-app-lifecycle-subscriptions-note.md](plans/2026-10-21-datawatch-app-lifecycle-subscriptions-note.md);
+ full checklist outcome recorded in the design doc's Phase 3 and Phase 4 bullets.

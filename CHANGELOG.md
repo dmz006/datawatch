@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Automata lifecycle event subscriptions — Phase 4 of the [lifecycle-events design](docs/plans/2026-10-13-prd-lifecycle-events.md): a pending-events queue for generic MCP clients, update and test-fire for subscriptions, and a PWA Subscriptions tab.**
+  - **Pending-events queue + `mcp_queue` sink** — a subscription whose sink type is `mcp_queue` (target = a queue name of letters, digits and `. _ : -`, max 64 characters) appends each matching event to a bounded in-memory queue instead of pushing it. Clients that cannot receive pushes poll it with a cursor: `autonomous_events_pending` (MCP), `GET /api/autonomous/events?queue=<name>&since=<cursor>&limit=<n>` (REST; limit default 50, capped at 200; returns `{events, next_cursor, dropped}`), `datawatch autonomous events --queue <name> [--since <cursor>] [--limit n] [--json]` (CLI) and `autonomous events [queue=<name>] [since=<cursor>]` (comm channel, owner-scoped). `dropped` is true when events the client had not yet read were evicted from a full queue. The `webhook` sink type is still rejected.
+  - **Subscription update + test-fire on every surface** — `PUT /api/autonomous/subscriptions/{id}` replaces a subscription's mutable fields (id and creation time are kept) and `POST /api/autonomous/subscriptions/{id}/test` delivers one labelled test event to just that subscription's sink; MCP `autonomous_subscription_update` / `autonomous_subscription_test`; CLI `datawatch autonomous subscription-update <id>` / `subscription-test <id>`; comm `autonomous subscription-update <id> key=value...` / `autonomous subscription-test <id>` (owner-scoped). A test never types the action text and never consumes a one-shot.
+  - **PWA Subscriptions tab** — a Subscriptions tab on the Automaton detail view lists the subscriptions that apply to the Automaton (scoped to it, or unscoped) with add, edit, delete and test. The add/edit form offers the closed event-kind set, level, scope, all five sink types, send-input text, one-shot, coalesce and an expiry in hours. Strings ship in all five locales (en, de, es, fr, ja).
+  - **Config** — `autonomous.notify.pending_events_max` (default 500, values below 1 fall back to 500) bounds each pending-events queue; applied at daemon start.
+  - **Not in this change** — WebSocket payload enrichment and live toasts, the outbound webhook sink and federation forwarding. App-side (Android/iOS) subscription UI is tracked in [docs/plans/2026-10-21-datawatch-app-lifecycle-subscriptions-note.md](docs/plans/2026-10-21-datawatch-app-lifecycle-subscriptions-note.md).
+
 ## v9.5.64 — Persisted lifecycle subscriptions with CRUD on every surface
 
 ### Added
