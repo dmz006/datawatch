@@ -1345,6 +1345,26 @@ orchestrator:
   # Max concurrent PRD nodes per graph.
   max_parallel_prds: 2
 
+# ── Compute pin keeper ──
+# Per-node model pins live on each compute node (compute_nodes[].node_pinned_model
+# and allow_model_swap; set with `datawatch compute node add|update`). The
+# keeper below is the one global setting. Runbook: docs/operations.md →
+# "Pinning a model on a GPU node".
+#
+# Ollama unloads models when a request loads a different one. Without a pin,
+# a datawatch caller (ask, session summaries, memory helpers) can evict the
+# model a build depends on. A pinned node runs requests with no explicit model
+# on its pin, and refuses an explicit request for another model unless the node
+# sets allow_model_swap.
+#
+# How often the pin keeper re-checks each pinned node. When the pinned model is
+# missing, the keeper loads it again and raises a warning alert. The check is
+# skipped while a session is working on the node. The keeper is started once at
+# daemon boot, so restart the daemon after changing this value. 0 = keeper off;
+# pins still refuse requests for other models.
+# Default 300.
+pin_check_seconds: 300
+
 # ── Observer (BL171 — v4.1.0) ──
 # Unified stats + process-tree + sub-process monitoring subsystem.
 # Shape A (in-process plugin) is the default; Shape B (standalone

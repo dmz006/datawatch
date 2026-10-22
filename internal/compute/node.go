@@ -379,6 +379,14 @@ func (n *Node) Validate() error {
 	if n.SchedulingPriority < 0 || n.SchedulingPriority > 100 {
 		return fmt.Errorf("compute node: scheduling_priority %d out of range [0,100]", n.SchedulingPriority)
 	}
+	// node_pinned_model, when present, must name a model. Whitespace-only
+	// is rejected rather than silently treated as no pin.
+	if n.NodePinnedModel != "" {
+		n.NodePinnedModel = strings.TrimSpace(n.NodePinnedModel)
+		if n.NodePinnedModel == "" {
+			return errors.New("compute node: node_pinned_model must be a non-empty model name")
+		}
+	}
 	if n.DeclaredCapacity.GPUs < 0 || n.DeclaredCapacity.GPUMemGB < 0 ||
 		n.DeclaredCapacity.RAMGB < 0 || n.DeclaredCapacity.MaxConcurrentModels < 0 {
 		return errors.New("compute node: declared_capacity fields must be >= 0")

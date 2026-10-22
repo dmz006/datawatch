@@ -11028,6 +11028,15 @@ window.openComputeAddPanel = function(existingNode) {
           <span id="computeNewMaxComputed" style="font-size:11px;color:var(--text2);" title="${escHtml(t('compute_computed_tip')||'Suggested from VRAM ÷ typical 8GB/model')}"></span>
         </div>
       </div>
+      <div class="wizard-field">
+        <label class="wizard-label">${escHtml(t('compute_field_pinned_model')||'Pinned model (empty = no pin)')}</label>
+        <input id="computeNewPinnedModel" class="form-input" placeholder="${escHtml(t('compute_pinned_model_ph')||'e.g. qwen3.8-64k:27b')}" value="${escHtml((existingNode && existingNode.node_pinned_model) || '')}" />
+        <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text2);margin-top:6px;">
+          <input id="computeNewAllowSwap" type="checkbox" ${existingNode && existingNode.allow_model_swap ? 'checked' : ''} />
+          ${escHtml(t('compute_field_allow_swap')||'Allow explicit requests to swap the pinned model')}
+        </label>
+        <div style="font-size:10px;color:var(--text3);margin-top:2px;">${escHtml(t('compute_pin_hint')||'Requests with no model run on the pin. An explicit request for another model is refused unless swap is allowed.')}</div>
+      </div>
       ${isEdit && existingNode && existingNode.kind === 'ollama' ? `
       <div style="border-top:1px solid var(--border);padding-top:10px;margin-top:6px;">
         <div style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:6px;display:flex;align-items:center;gap:8px;">
@@ -11274,6 +11283,8 @@ window.computeAddNode = function() {
       hardware,
       scheduling_priority: 50,
       observer_peer: ((document.getElementById('computeNewObserverPeer')||{}).value || '').trim(),
+      node_pinned_model: ((document.getElementById('computeNewPinnedModel')||{}).value || '').trim(),
+      allow_model_swap: !!((document.getElementById('computeNewAllowSwap')||{}).checked),
     }),
   }).then(() => {
     showToast(isEdit ? '✓ ComputeNode updated' : '✓ ComputeNode added', 'success', 2000);
@@ -14737,6 +14748,11 @@ const GENERAL_CONFIG_FIELDS = [
   // Each feature's full surface is REST + MCP + CLI per parity rule;
   // these Settings cards give the operator a one-click enable + links
   // to the operator docs. Field-level config stays YAML/REST/CLI.
+  // Pin keeper interval. One value for every pinned compute node; the
+  // per-node pin is set in the Compute node editor.
+  { id: 'compute_pin', section: 'Compute pin keeper', fields: [
+    { key: 'pin_check_seconds', label: 'Pin check interval (sec, 0 = keeper off)', labelKey: 'settings_pin_check_seconds', type: 'number', min: 0, placeholder: '300' },
+  ]},
   { id: 'autonomous', section: 'Autonomous Automata planning', docs: 'howto/autonomous-planning.md', fields: [
     { key: 'autonomous.enabled', label: 'Enable autonomous loop', type: 'toggle' },
     { key: 'autonomous.poll_interval_seconds', label: 'Poll interval (sec)', type: 'number', placeholder: '30' },
@@ -15155,7 +15171,7 @@ function loadCommsConfig() {
         } else {
           html += `<div class="settings-row" style="justify-content:space-between;">
             <div class="settings-label">${escHtml(f.label)}</div>
-            <input type="${f.type === 'number' ? 'number' : 'text'}" class="form-input general-cfg-input" value="${escHtml(String(val || ''))}"
+            <input type="${f.type === 'number' ? 'number' : 'text'}" class="form-input general-cfg-input" value="${escHtml(String(val === 0 ? 0 : (val || '')))}"
               placeholder="${escHtml(f.placeholder || '')}"${f.min !== undefined ? ` min="${f.min}"` : ''}
               onchange="saveGeneralField('${f.key}', this.value)" />
           </div>`;
@@ -15992,6 +16008,7 @@ function summarizerModelHint(modelName) {
 
 // Fields that require a daemon restart to take effect
 const RESTART_FIELDS = new Set([
+  'pin_check_seconds', // pin keepers are started once at daemon boot
   'server.host', 'server.port', 'server.tls', 'server.tls_auto_generate', 'server.tls_cert', 'server.tls_key',
   'acme.enabled', 'acme.endpoint', 'acme.domains', 'acme.method', 'acme.dns01.provider', 'acme.dns01.token_secret', 'acme.dns01.zone_id', // BL397 — Manager starts/stops only at daemon boot
   'mcp.enabled', 'mcp.sse_enabled', 'mcp.sse_host', 'mcp.sse_port', 'mcp.tls_enabled',
