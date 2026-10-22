@@ -33,6 +33,11 @@ type RemoteServerConfig struct {
 	// false. OK for a self-signed/local-dev peer on a trusted network only;
 	// document the risk. Same convention as VaultConfig.TLSSkipVerify below.
 	TLSSkipVerify bool `yaml:"tls_skip_verify,omitempty"`
+	// FingerprintSync opts THIS peer into the resource-fingerprint exchange.
+	// Opt-in per peer, default false — the operator decision recorded in
+	// docs/plans/2026-10-14-concurrency-and-budget-design.md (open question
+	// 10): control capability does not imply fingerprint trust.
+	FingerprintSync bool `yaml:"fingerprint_sync,omitempty"`
 }
 
 // MemoryConfig controls the episodic memory system — vector-indexed project

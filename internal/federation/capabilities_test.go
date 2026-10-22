@@ -209,3 +209,35 @@ func TestCapSessionsResultWrite_NotInAnyBuiltinGroup(t *testing.T) {
 		t.Errorf("standalone grant of %s should resolve to itself, got %v", federation.CapSessionsResultWrite, got)
 	}
 }
+
+// TestCapFederationFingerprintOnlyInFullControl — federation:fingerprint
+// gates the endpoint a peer calls to read this daemon's fingerprint hashes.
+// It must be held by full-control (allCaps) but by NO other built-in group
+// — a peer's control capability does not imply fingerprint trust (the
+// per-peer opt-in is the Entry's FingerprintSync flag, a separate
+// decision; docs/plans/2026-10-14-concurrency-and-budget-design.md, open
+// question 10). A standalone grant still resolves so it can be given to a
+// custom group explicitly.
+func TestCapFederationFingerprintOnlyInFullControl(t *testing.T) {
+	for _, g := range federation.ListBuiltinGroups() {
+		resolved := federation.Resolve([]string{g.Name}, nil)
+		if len(resolved) == 0 {
+			t.Fatalf("builtin group %q resolved to no caps at all", g.Name)
+		}
+		has := federation.Check(resolved, federation.CapFederationFingerprint)
+		if g.Name == "full-control" {
+			if !has {
+				t.Errorf("full-control must hold %s", federation.CapFederationFingerprint)
+			}
+			continue
+		}
+		if has {
+			t.Errorf("builtin group %q must NOT grant %s by default — it is opt-in per peer (FingerprintSync) and held only by full-control among builtins", g.Name, federation.CapFederationFingerprint)
+		}
+	}
+	// A standalone grant still resolves (the constant is live and grantable
+	// via a custom group).
+	if got := federation.Resolve([]string{federation.CapFederationFingerprint}, nil); len(got) != 1 || got[0] != federation.CapFederationFingerprint {
+		t.Errorf("standalone grant of %s should resolve to itself, got %v", federation.CapFederationFingerprint, got)
+	}
+}

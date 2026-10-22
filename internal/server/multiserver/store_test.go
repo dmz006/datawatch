@@ -380,3 +380,99 @@ func TestStore_GetByToken(t *testing.T) {
 		t.Error("GetByToken(\"\") matched a token-less entry -- empty bearer values must never resolve to a peer identity")
 	}
 }
+
+// TestFingerprintSyncDefaultsOff — the per-peer fingerprint-exchange opt-in
+// must be OFF unless explicitly set: a fresh Entry and a JSON-persisted
+// entry that predates the field (or was created without it) both read
+// back false. Opt-in per peer is the operator decision recorded in
+// docs/plans/2026-10-14-concurrency-and-budget-design.md (open question 10).
+func TestFingerprintSyncDefaultsOff(t *testing.T) {
+	e := &Entry{Name: "fresh", URL: "http://fresh.example.com:8080", Enabled: true}
+	if e.FingerprintSync {
+		t.Error("a new Entry must default to FingerprintSync=false")
+	}
+
+	// Simulate a pre-existing servers.json written before the field
+	// existed: decode it into a fresh store via a persisted file.
+	dir := t.TempDir()
+	legacyJSON := `[{"name":"legacy","url":"http://legacy.example.com:8080","enabled":true,"created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z"}]`
+	dataPath := filepath.Join(dir, "servers.json")
+	if err := os.WriteFile(dataPath, []byte(legacyJSON), 0o600); err != nil {
+		t.Fatalf("write legacy JSON: %v", err)
+	}
+	s2, err := NewStore(dir, nil)
+	if err != nil {
+		t.Fatalf("NewStore reload: %v", err)
+	}
+	got, ok := s2.Get("legacy")
+	if !ok {
+		t.Fatal("legacy entry not found after reload")
+	}
+	if got.FingerprintSync {
+		t.Error("an entry loaded from JSON without the field must read back FingerprintSync=false")
+	}
+}
+
+// TestFingerprintSyncStoreRoundTrip — an explicitly set FingerprintSync
+// survives Add/persist/reload and Update, and Redacted() keeps the value
+// in a copy while leaving the token logic untouched.
+func TestFingerprintSyncStoreRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	s, err := NewStore(dir, nil)
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+	if err := s.Add(&Entry{Name: "peer", URL: "http://peer.example.com:8080", Token: "tok", Enabled: true, FingerprintSync: true}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	// Redacted() must carry the flag across.
+	eg, ok := s.Get("peer")
+	if !ok {
+		t.Fatal("Get after Add: not found")
+	}
+	if rd := eg.Redacted(); rd == nil || !rd.FingerprintSync {
+		t.Error("Redacted() copy must keep FingerprintSync=true")
+	} else if rd.Token != "" {
+		t.Error("Redacted() copy must not keep the token")
+	}
+
+	// Update (partial-ish PUT merge is at the API layer; here a full store
+	// replace) must persist the flag as sent.
+	up, ok := s.Get("peer")
+	if !ok {
+		t.Fatal("Get before Update: not found")
+	}
+	up.FingerprintSync = false
+	if err := s.Update("peer", up); err != nil {
+		t.Fatalf("Update: %v", err)
+	}
+
+	// Reload from disk — the flag (both states) must round-trip.
+	s2, err := NewStore(dir, nil)
+	if err != nil {
+		t.Fatalf("NewStore reload: %v", err)
+	}
+	re, ok := s2.Get("peer")
+	if !ok {
+		t.Fatal("reload: peer not found")
+	}
+	if re.FingerprintSync {
+		t.Error("FingerprintSync=false must survive persist/reload")
+	}
+	re.FingerprintSync = true
+	if err := s2.Update("peer", re); err != nil {
+		t.Fatalf("Update to true: %v", err)
+	}
+	s3, err := NewStore(dir, nil)
+	if err != nil {
+		t.Fatalf("NewStore reload 2: %v", err)
+	}
+	fin, ok := s3.Get("peer")
+	if !ok {
+		t.Fatal("reload 2: peer not found")
+	}
+	if !fin.FingerprintSync {
+		t.Error("FingerprintSync=true must survive persist/reload")
+	}
+}

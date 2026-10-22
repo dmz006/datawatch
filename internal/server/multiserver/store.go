@@ -74,9 +74,15 @@ type Entry struct {
 	// TLSSkipVerify disables TLS cert validation for this peer only (every
 	// other peer keeps full verification). Default false. OK for a
 	// self-signed/local-dev peer on a trusted network; document the risk.
-	TLSSkipVerify bool      `json:"tls_skip_verify,omitempty"`
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	TLSSkipVerify bool `json:"tls_skip_verify,omitempty"`
+	// FingerprintSync opts THIS peer into the resource-fingerprint exchange
+	// with this daemon. Opt-in per peer, default false — the operator
+	// decision recorded in
+	// docs/plans/2026-10-14-concurrency-and-budget-design.md (open question
+	// 10) — a peer's control capability does not imply fingerprint trust.
+	FingerprintSync bool      `json:"fingerprint_sync,omitempty"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
 	// SEC-014 — populated only by Redacted(), never persisted or set from
 	// an inbound request body. TokenPrefix is the first 4 hex chars, enough
 	// for an operator to recognize which token is in use without being
@@ -153,17 +159,18 @@ func newStore(dataDir string, seeds []config.RemoteServerConfig, key []byte) (*S
 			continue // runtime entry wins
 		}
 		builtins = append(builtins, &Entry{
-			Name:          sc.Name,
-			URL:           sc.URL,
-			Token:         sc.Token,
-			Enabled:       sc.Enabled,
-			Builtin:       true,
-			Federated:     sc.Federated,
-			AuthType:      sc.AuthType,
-			Capabilities:  sc.Capabilities,
-			TLSSkipVerify: sc.TLSSkipVerify,
-			CreatedAt:     time.Time{},
-			UpdatedAt:     time.Time{},
+			Name:            sc.Name,
+			URL:             sc.URL,
+			Token:           sc.Token,
+			Enabled:         sc.Enabled,
+			Builtin:         true,
+			Federated:       sc.Federated,
+			AuthType:        sc.AuthType,
+			Capabilities:    sc.Capabilities,
+			TLSSkipVerify:   sc.TLSSkipVerify,
+			FingerprintSync: sc.FingerprintSync,
+			CreatedAt:       time.Time{},
+			UpdatedAt:       time.Time{},
 		})
 	}
 	// Builtins first so they appear at the top of the list.

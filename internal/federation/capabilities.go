@@ -108,6 +108,14 @@ const (
 	// Read which can enumerate every other peer's entry too. Part of the
 	// federation-peer default group; List/Read are not, as of v9.0.0.
 	CapFederationSelf = "federation:self"
+	// CapFederationFingerprint gates the endpoint a peer calls to read this
+	// daemon's fingerprint hashes (the resource-fingerprint exchange from
+	// docs/plans/2026-10-14-concurrency-and-budget-design.md). Deliberately
+	// added to allCaps only — full-control holds it, but it is in NO default
+	// group (not even federation-peer): a peer's control capability does not
+	// imply fingerprint trust, per that doc's open question 10 opt-in
+	// decision.
+	CapFederationFingerprint = "federation:fingerprint"
 
 	// docs
 	CapDocsRead = "docs:read"
@@ -169,7 +177,7 @@ var allCaps = []string{
 	CapPipelinesList, CapPipelinesRead, CapPipelinesStart, CapPipelinesCancel,
 	CapAutonomousList, CapAutonomousRead, CapAutonomousWrite, CapAutonomousRun,
 	CapCouncilList, CapCouncilRead, CapCouncilRun,
-	CapFederationList, CapFederationRead, CapFederationWrite, CapFederationSelf,
+	CapFederationList, CapFederationRead, CapFederationWrite, CapFederationSelf, CapFederationFingerprint,
 	CapDocsRead,
 	CapAuditRead,
 	CapCommRead, CapCommWrite,
