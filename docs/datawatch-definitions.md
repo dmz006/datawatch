@@ -431,6 +431,7 @@ retained per-schedule history that powers the result panel.
 - **MCP:** `post_result(session_id="host-a1b2", title="Build succeeded", status="ok", metrics='{"score": 92.5}')`
 - **MCP:** `schedule_results_list()` — latest result per schedule, retained count, recent status sequence
 - **MCP:** `schedule_results_list(schedule_name="nightly-build")` — full retained history for one schedule
+- **CLI:** `datawatch schedule-results list` — latest result per schedule, retained count, recent status sequence; `datawatch schedule-results history <schedule_name>` — full retained history for one schedule; `datawatch schedule-results post --title … [--status ok] [--summary …] [--metrics JSON] [--table JSON …] [--markdown …] [--file payload.json]` (outside a spawned session add `--session <id>`; inside one it defaults to the session's own ID and the spawn-scoped result credential is used)
 - **REST:** `POST /api/sessions/{id}/result`, `GET /api/schedule-results`, `GET /api/schedule-results/{schedule_name}`
 - **Web:** the session status page renders each session's latest posted result in its result panel
 

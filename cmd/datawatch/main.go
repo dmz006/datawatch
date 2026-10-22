@@ -373,6 +373,7 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newQueueCmd(),         // BL357 — durable role-based work queue
 		newDiscussionSubCmd(), // BL358 — discussion push/subscribe
 		newResultCmd(),        // BL360 — structured agent result store
+		newScheduleResultsCmd(), // GH#204 — scheduled-job result panel CLI
 	)
 
 	if err := root.Execute(); err != nil {
