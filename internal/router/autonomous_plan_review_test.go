@@ -141,3 +141,45 @@ func TestAutonomousConfigSet_PlanReviewAndSmokeKeys(t *testing.T) {
 		}
 	}
 }
+
+func TestAutonomousResume_PostsResumeEndpoint(t *testing.T) {
+	var reqs []capturedDaemonRequest
+	port, closeFn := fakeDaemonPlanReview(t, &reqs)
+	defer closeFn()
+
+	r := &Router{
+		hostname: "h",
+		backend:  &captureBackend{name: "test", capture: func(string) {}},
+	}
+	r.SetWebPort(port)
+
+	out := r.HandleTestMessage("autonomous resume prd_pr boot gate cleared")
+
+	if len(reqs) != 1 {
+		t.Fatalf("daemon requests = %d want 1 (%v)", len(reqs), reqs)
+	}
+	if reqs[0].method != http.MethodPost || reqs[0].path != "/api/autonomous/prds/prd_pr/resume" {
+		t.Errorf("request = %s %s", reqs[0].method, reqs[0].path)
+	}
+	var body map[string]string
+	if err := json.Unmarshal([]byte(reqs[0].body), &body); err != nil {
+		t.Fatalf("body is not valid JSON: %v", err)
+	}
+	if body["actor"] != "operator" || body["note"] != "boot gate cleared" {
+		t.Errorf("body = %v", body)
+	}
+	if !strings.Contains(strings.Join(out, "\n"), "autonomous resume") {
+		t.Errorf("reply missing title: %q", out)
+	}
+}
+
+func TestAutonomousResume_UsageWithoutID(t *testing.T) {
+	r := &Router{
+		hostname: "h",
+		backend:  &captureBackend{name: "test", capture: func(string) {}},
+	}
+	joined := strings.Join(r.HandleTestMessage("autonomous resume"), "\n")
+	if !strings.Contains(joined, "usage: autonomous resume <prd-id>") {
+		t.Errorf("expected usage hint, got: %q", joined)
+	}
+}

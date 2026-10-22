@@ -22,6 +22,7 @@ func TestParse_AutonomousVerbs(t *testing.T) {
 		{"autonomous run prd_a3f9", "run prd_a3f9"},
 		{"autonomous cancel prd_a3f9", "cancel prd_a3f9"},
 		{"autonomous approve prd_a3f9", "approve prd_a3f9"},
+		{"autonomous resume prd_a3f9 note", "resume prd_a3f9 note"},
 		{"autonomous plan-review prd_a3f9", "plan-review prd_a3f9"},
 		{"autonomous plan-review prd_a3f9 re-check story 2", "plan-review prd_a3f9 re-check story 2"},
 		{"autonomous config-set plan_review_mode=block", "config-set plan_review_mode=block"},
