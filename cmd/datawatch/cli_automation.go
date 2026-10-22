@@ -250,12 +250,12 @@ func printAutomation(w io.Writer, a automationView) error {
 	_, _ = fmt.Fprintf(w, "Status:   %s\n", a.Status)
 	_, _ = fmt.Fprintf(w, "Version:  %d\n", a.Version)
 	_, _ = fmt.Fprintf(w, "Entry:    %s\n", dashIfEmpty(a.EntryMemberID))
-	fmt.Fprintf(w, "Active:   %s\n", activeCursorsText(a.ActiveCursors))
-	fmt.Fprintf(w, "Members:  %d\n", len(a.Members))
+	_, _ = fmt.Fprintf(w, "Active:   %s\n", activeCursorsText(a.ActiveCursors))
+	_, _ = fmt.Fprintf(w, "Members:  %d\n", len(a.Members))
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	_, _ = fmt.Fprintln(tw, "  MEMBER\tKIND\tTARGET\tON COMPLETE\tON BLOCKED\tON FAILED\tSTATUS")
 	for _, m := range a.Members {
-		fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+		_, _ = fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			m.ID, memberKindText(m), memberTargetText(m),
 			edgeText(m.OnComplete), edgeText(m.OnBlocked), edgeText(m.OnFailed), dashIfEmpty(m.Status))
 	}
