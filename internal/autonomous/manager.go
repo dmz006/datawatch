@@ -683,6 +683,10 @@ type Manager struct {
 	// autoBudget evaluates Automation and member budget policies (see
 	// automation_budget.go); nil means no policy is enforced.
 	autoBudget *AutomationBudget
+	// autoBudgetPoll is how often a task held by an Automation budget
+	// re-checks the hold (see automation_budget_admit.go); zero means the
+	// default.
+	autoBudgetPoll time.Duration
 
 	// Capacity admission (see capacity.go).
 	capacity     *capacity.Ledger

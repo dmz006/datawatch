@@ -190,6 +190,11 @@ func (m *Manager) clearWaiting(t *Task) {
 // TaskWaitingCapacity and never counts as a retry or failure. role ranks the
 // request in the ledger's dispatch order (see capacity.Role).
 func (m *Manager) admit(ctx context.Context, prd *PRD, t *Task, backend, model string, role capacity.Role) error {
+	if role == capacity.RoleWorker {
+		if err := m.waitAutomationBudget(ctx, prd, t); err != nil {
+			return err
+		}
+	}
 	if !m.capacityOn() {
 		return nil
 	}
