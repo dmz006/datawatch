@@ -2019,5 +2019,14 @@
   "automation_form_reason_required": "A reason is required for this change",
   "automation_picker_unavailable_template": "This is a template",
   "automation_picker_unavailable_child": "This is a child Automaton",
-  "automation_picker_unavailable_owned": "Already in another Automation"
+  "automation_picker_unavailable_owned": "Already in another Automation",
+  "automation_add_fork": "Add fork and join",
+  "automation_add_nested": "Add nested Automation",
+  "automation_join_failure_label": "When a branch fails",
+  "automation_fork_min_branches": "A fork needs at least two branches",
+  "automation_nested_self": "An Automation cannot contain itself",
+  "automation_nested_owned": "That Automation is already inside another Automation",
+  "automation_remove_group_confirm": "Remove the fork, its branches and its join?",
+  "automation_fork_branches_label": "Branches",
+  "automation_nested_choose": "Choose an Automation"
 }

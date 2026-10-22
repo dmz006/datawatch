@@ -2019,5 +2019,14 @@
   "automation_form_reason_required": "Für diese Änderung ist ein Grund erforderlich",
   "automation_picker_unavailable_template": "Dies ist eine Vorlage",
   "automation_picker_unavailable_child": "Dies ist ein untergeordneter Automat",
-  "automation_picker_unavailable_owned": "Bereits in einer anderen Automatisierung"
+  "automation_picker_unavailable_owned": "Bereits in einer anderen Automatisierung",
+  "automation_add_fork": "Verzweigung und Zusammenführung hinzufügen",
+  "automation_add_nested": "Verschachtelte Automatisierung hinzufügen",
+  "automation_join_failure_label": "Wenn ein Zweig fehlschlägt",
+  "automation_fork_min_branches": "Eine Verzweigung braucht mindestens zwei Zweige",
+  "automation_nested_self": "Eine Automatisierung kann sich nicht selbst enthalten",
+  "automation_nested_owned": "Diese Automatisierung befindet sich bereits in einer anderen Automatisierung",
+  "automation_remove_group_confirm": "Verzweigung, ihre Zweige und die Zusammenführung entfernen?",
+  "automation_fork_branches_label": "Zweige",
+  "automation_nested_choose": "Automatisierung auswählen"
 }

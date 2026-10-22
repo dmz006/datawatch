@@ -2019,5 +2019,14 @@
   "automation_form_reason_required": "Un motif est requis pour cette modification",
   "automation_picker_unavailable_template": "Ceci est un modèle",
   "automation_picker_unavailable_child": "Ceci est un automate enfant",
-  "automation_picker_unavailable_owned": "Déjà dans une autre automatisation"
+  "automation_picker_unavailable_owned": "Déjà dans une autre automatisation",
+  "automation_add_fork": "Ajouter une bifurcation et une jonction",
+  "automation_add_nested": "Ajouter une automatisation imbriquée",
+  "automation_join_failure_label": "Quand une branche échoue",
+  "automation_fork_min_branches": "Une bifurcation nécessite au moins deux branches",
+  "automation_nested_self": "Une automatisation ne peut pas se contenir elle-même",
+  "automation_nested_owned": "Cette automatisation se trouve déjà dans une autre automatisation",
+  "automation_remove_group_confirm": "Supprimer la bifurcation, ses branches et sa jonction ?",
+  "automation_fork_branches_label": "Branches",
+  "automation_nested_choose": "Choisir une automatisation"
 }

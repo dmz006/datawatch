@@ -2019,5 +2019,14 @@
   "automation_form_reason_required": "この変更には理由が必要です",
   "automation_picker_unavailable_template": "これはテンプレートです",
   "automation_picker_unavailable_child": "これは子オートマトンです",
-  "automation_picker_unavailable_owned": "別のオートメーションに含まれています"
+  "automation_picker_unavailable_owned": "別のオートメーションに含まれています",
+  "automation_add_fork": "分岐と合流を追加",
+  "automation_add_nested": "ネストされたオートメーションを追加",
+  "automation_join_failure_label": "ブランチが失敗したとき",
+  "automation_fork_min_branches": "分岐には2つ以上のブランチが必要です",
+  "automation_nested_self": "オートメーションは自分自身を含めることはできません",
+  "automation_nested_owned": "そのオートメーションはすでに別のオートメーションの中にあります",
+  "automation_remove_group_confirm": "分岐、そのブランチ、合流を削除しますか?",
+  "automation_fork_branches_label": "ブランチ",
+  "automation_nested_choose": "オートメーションを選択"
 }

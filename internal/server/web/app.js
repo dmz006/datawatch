@@ -25228,9 +25228,15 @@ const _automationForm = {
   prds: [],
   automations: [],
   titles: {},
+  panel: '',
+  forkBranches: [],
+  forkRule: 'all_must_succeed',
+  nestedChild: '',
 };
 
 const _AUTOMATION_FORM_MEMBER_KEEP = ['kind', 'automation_id', 'fork_members', 'join_members', 'on_branch_failure', 'budget_policy', 'added_reason'];
+// The member fields only one kind may carry.
+const _AUTOMATION_FORM_KIND_FIELDS = { automation_id: 'automation', fork_members: 'fork', join_members: 'join', on_branch_failure: 'join' };
 const _AUTOMATION_FORM_BASE_KEEP = ['budget_policy', 'project_dir', 'backend', 'model', 'effort', 'verification_backend', 'verification_model', 'verification_effort'];
 
 function _automationNewMemberId(taken) {
@@ -25272,6 +25278,181 @@ function automationPickerCandidates(prds, automationsList, currentAutomationId) 
 }
 window.automationPickerCandidates = automationPickerCandidates;
 
+// ── Fork, join and nested members ────────────────────────────────────────────
+//
+// A fork lists its branch members (fork_members), its paired join lists the
+// same ids (join_members) and carries the rule for a failed branch. Branches
+// and forks carry no outcome edges; the join's on_complete is the way on. The
+// chain the operator wires is therefore the members that are neither a branch
+// nor a paired join, and a fork's exit is its join.
+
+const _AUTOMATION_NESTED_TERMINAL = ['completed', 'cancelled'];
+
+function _automationSameIds(a, b) {
+  const x = new Set(Array.isArray(a) ? a : []);
+  const y = new Set(Array.isArray(b) ? b : []);
+  return x.size === y.size && [...x].every(id => y.has(id));
+}
+
+function _automationFormBranchSet(members) {
+  const out = new Set();
+  members.forEach(m => {
+    if (m && m.kind === 'fork') (Array.isArray(m.fork_members) ? m.fork_members : []).forEach(id => out.add(id));
+  });
+  return out;
+}
+
+function _automationFormPairedJoin(members, fork) {
+  return members.find(j => j && j.kind === 'join' && _automationSameIds(j.join_members, fork.fork_members)) || null;
+}
+
+function _automationFormPairedJoinIds(members) {
+  const out = new Set();
+  members.forEach(m => {
+    if (!m || m.kind !== 'fork') return;
+    const join = _automationFormPairedJoin(members, m);
+    if (join) out.add(join.id);
+  });
+  return out;
+}
+
+// _automationFormChain lists the members the operator wires one after the
+// other, in list order: everything except branches and paired joins.
+function _automationFormChain(members) {
+  const branches = _automationFormBranchSet(members);
+  const joins = _automationFormPairedJoinIds(members);
+  return members.filter(m => m && !branches.has(m.id) && !joins.has(m.id));
+}
+
+// _automationFormExit is the member whose on_complete leads out of m: the
+// paired join for a fork, m itself otherwise.
+function _automationFormExit(members, m) {
+  return m.kind === 'fork' ? (_automationFormPairedJoin(members, m) || m) : m;
+}
+
+// _automationFormTailId is the id of the member the chain ends with, or ''.
+function _automationFormTailId(members) {
+  const chain = _automationFormChain(members);
+  return chain.length ? _automationFormExit(members, chain[chain.length - 1]).id : '';
+}
+
+function _automationCloneFormState(formState) {
+  const f = formState || {};
+  const members = (Array.isArray(f.members) ? f.members : []).filter(Boolean).map(m => {
+    const c = Object.assign({}, m);
+    if (Array.isArray(m.fork_members)) c.fork_members = m.fork_members.slice();
+    if (Array.isArray(m.join_members)) c.join_members = m.join_members.slice();
+    return c;
+  });
+  return Object.assign({}, f, { members, entryMemberId: f.entryMemberId || '' });
+}
+
+// _automationFormSkipGroups moves an insert index past the branches and join
+// of a group, so a new member never lands inside one.
+function _automationFormSkipGroups(members, index) {
+  const hidden = _automationFormBranchSet(members);
+  _automationFormPairedJoinIds(members).forEach(id => hidden.add(id));
+  let i = index;
+  while (i > 0 && i < members.length && hidden.has(members[i].id)) i++;
+  return i;
+}
+
+// _automationFormSpliceIn puts group (its first member is where the chain
+// enters, exit is the member that leads on) after the member named afterId,
+// or at the front when afterId is empty. The previous member's on_complete, or
+// the entry, points at the group; the exit takes over what it used to point at.
+function _automationFormSpliceIn(state, group, exit, afterId) {
+  const members = state.members;
+  const entry = state.entryMemberId || (members[0] ? members[0].id : '');
+  let prev = afterId ? members.find(m => m.id === afterId) : null;
+  if (afterId && !prev) {
+    const tail = _automationFormTailId(members);
+    prev = members.find(m => m.id === tail) || null;
+  }
+  if (prev && _automationFormBranchSet(members).has(prev.id)) {
+    prev = members.find(m => m.kind === 'fork' && (m.fork_members || []).includes(prev.id)) || prev;
+  }
+  if (prev && prev.kind === 'fork') prev = _automationFormPairedJoin(members, prev) || prev;
+  let index = 0;
+  if (prev) {
+    index = _automationFormSkipGroups(members, members.indexOf(prev) + 1);
+    exit.on_complete = prev.on_complete || '';
+    prev.on_complete = group[0].id;
+  } else {
+    exit.on_complete = entry;
+    state.entryMemberId = group[0].id;
+  }
+  members.splice(index, 0, ...group);
+  return state;
+}
+
+// automationAddForkJoin returns a new form state with a fork, one branch
+// member per picked Automaton and the paired join, linked after the member
+// named insertAfterMemberId (the front when empty). The branches carry no
+// edges. The rule defaults to all_must_succeed.
+function automationAddForkJoin(formState, branchPrdIds, joinRule, insertAfterMemberId) {
+  const prdIds = [...new Set((Array.isArray(branchPrdIds) ? branchPrdIds : []).map(String).filter(Boolean))];
+  if (prdIds.length < 2) throw new Error(t('automation_fork_min_branches'));
+  const rule = _AUTOMATION_JOIN_RULES.includes(joinRule) ? joinRule : _AUTOMATION_JOIN_RULES[0];
+  const state = _automationCloneFormState(formState);
+  const taken = state.members.map(m => m.id);
+  const newId = () => {
+    const id = _automationNewMemberId(taken);
+    taken.push(id);
+    return id;
+  };
+  const branches = prdIds.map(prdId => ({ id: newId(), prd_id: prdId, on_complete: '', on_blocked: '', on_failed: '' }));
+  const forkMembers = branches.map(b => b.id);
+  const fork = { id: newId(), kind: 'fork', fork_members: forkMembers, on_complete: '', on_blocked: '', on_failed: '' };
+  const join = { id: newId(), kind: 'join', join_members: forkMembers.slice(), on_branch_failure: rule, on_complete: '', on_blocked: '', on_failed: '' };
+  return _automationFormSpliceIn(state, [fork].concat(branches, [join]), join, insertAfterMemberId);
+}
+window.automationAddForkJoin = automationAddForkJoin;
+
+// automationAddNestedMember returns a new form state with a member that runs
+// another Automation, linked after the member named insertAfterMemberId. The
+// child may not be the Automation being edited, nor already sit inside another
+// Automation that has not finished (from the loaded list) or in this form.
+function automationAddNestedMember(formState, childAutomationId, insertAfterMemberId) {
+  const childId = String(childAutomationId || '');
+  if (!childId) throw new Error(t('automation_nested_choose'));
+  const state = _automationCloneFormState(formState);
+  const selfId = String(state.automationId || (state.source && state.source.id) || '');
+  if (childId === selfId) throw new Error(t('automation_nested_self'));
+  const list = Array.isArray(_automationState.list) ? _automationState.list : [];
+  const holds = m => !!m && m.automation_id === childId;
+  const owned = state.members.some(holds) || list.some(a => a && a.id && a.id !== selfId
+    && !_AUTOMATION_NESTED_TERMINAL.includes(a.status)
+    && ((Array.isArray(a.members) ? a.members : []).some(holds) || (Array.isArray(a.pending_inserts) ? a.pending_inserts : []).some(holds)));
+  if (owned) throw new Error(t('automation_nested_owned'));
+  const taken = state.members.map(m => m.id);
+  const member = { id: _automationNewMemberId(taken), kind: 'automation', automation_id: childId, on_complete: '', on_blocked: '', on_failed: '' };
+  return _automationFormSpliceIn(state, [member], member, insertAfterMemberId);
+}
+window.automationAddNestedMember = automationAddNestedMember;
+
+// automationRemoveForkGroup returns a new form state without the fork, its
+// branches and its paired join. Edges that led to the fork lead on to what the
+// join led to, and a removed entry hands over to that member.
+function automationRemoveForkGroup(formState, forkId) {
+  const state = _automationCloneFormState(formState);
+  const fork = state.members.find(m => m.id === forkId && m.kind === 'fork');
+  if (!fork) return state;
+  const join = _automationFormPairedJoin(state.members, fork);
+  const drop = new Set([fork.id].concat(fork.fork_members || [], join ? [join.id] : []));
+  const after = join ? (join.on_complete || '') : '';
+  const entry = state.entryMemberId || (state.members[0] ? state.members[0].id : '');
+  state.members = state.members.filter(m => !drop.has(m.id));
+  state.members.forEach(m => {
+    if (m.on_complete === fork.id) m.on_complete = after;
+    if (m.on_blocked === fork.id) m.on_blocked = '';
+    if (m.on_failed === fork.id) m.on_failed = '';
+  });
+  if (drop.has(entry)) state.entryMemberId = after || (state.members[0] ? state.members[0].id : '');
+  return state;
+}
+window.automationRemoveForkGroup = automationRemoveForkGroup;
+
 // buildAutomationFormPayload turns the form state into the request body. The
 // expected version is sent only when editing; empty edges and an empty reason
 // are left out. membersLocked leaves the member list out (a started Automation
@@ -25282,15 +25463,21 @@ function buildAutomationFormPayload(formState) {
   const f = formState || {};
   const body = { name: String(f.name || '').trim(), description: String(f.description || '') };
   if (!f.membersLocked) {
-    const members = (Array.isArray(f.members) ? f.members : []).map(m => {
+    const list = (Array.isArray(f.members) ? f.members : []).filter(Boolean);
+    const branches = _automationFormBranchSet(list);
+    const members = list.map(m => {
+      const kind = m.kind || 'prd';
       const out = {};
       if (m.id) out.id = m.id;
-      if (m.prd_id || !m.kind || m.kind === 'prd') out.prd_id = m.prd_id || '';
+      if (kind === 'prd') out.prd_id = m.prd_id || '';
       _AUTOMATION_FORM_MEMBER_KEEP.forEach(k => {
+        if (k in _AUTOMATION_FORM_KIND_FIELDS && _AUTOMATION_FORM_KIND_FIELDS[k] !== kind) return;
         const v = m[k];
         if (v !== undefined && v !== null && v !== '' && !(Array.isArray(v) && !v.length)) out[k] = v;
       });
-      _AUTOMATION_OUTCOME_EDGES.forEach(k => { if (m[k]) out[k] = m[k]; });
+      if (kind === 'join' && !out.on_branch_failure) out.on_branch_failure = _AUTOMATION_JOIN_RULES[0];
+      const edges = kind === 'fork' || branches.has(m.id) ? [] : (kind === 'join' ? ['on_complete'] : _AUTOMATION_OUTCOME_EDGES);
+      edges.forEach(k => { if (m[k]) out[k] = m[k]; });
       return out;
     });
     body.entry_member_id = f.entryMemberId || (members[0] && members[0].id) || '';
@@ -25364,7 +25551,11 @@ function _automationFormShowError(message) {
 }
 
 function _automationFormEdgeSelectHTML(m, edge) {
-  const others = _automationForm.members.filter(x => x.id !== m.id);
+  // An edge never names a join or a branch, and a join never leads back to its own fork.
+  const all = _automationForm.members;
+  const branches = _automationFormBranchSet(all);
+  const own = m.kind === 'join' ? all.find(x => x.kind === 'fork' && _automationSameIds(x.fork_members, m.join_members)) : null;
+  const others = all.filter(x => x.id !== m.id && x.kind !== 'join' && !branches.has(x.id) && !(own && x.id === own.id));
   const options = [['', t('automation_edge_stop')]].concat(others.map(x => [x.id, _automationFormMemberTitle(x)]));
   const current = String(m[edge] || '');
   const opts = options.map(([value, label]) =>
@@ -25379,18 +25570,36 @@ function _automationFormEdgeTextHTML(m, edge) {
   return `<span class="automation-form-edge"><span class="automation-form-edge-label">${escHtml(t(_automationEdgeKey(edge)))}</span> ${escHtml(text)}</span>`;
 }
 
-function _automationFormMemberRowHTML(m) {
+function _automationFormJoinRuleHTML(m, editable) {
+  const rule = _AUTOMATION_JOIN_RULES.includes(m.on_branch_failure) ? m.on_branch_failure : _AUTOMATION_JOIN_RULES[0];
+  const label = `<span class="automation-form-edge-label">${escHtml(t('automation_join_failure_label'))}</span>`;
+  if (!editable) return `<span class="automation-form-edge automation-form-join-rule">${label} ${escHtml(t('automation_join_rule_' + rule))}</span>`;
+  const opts = _AUTOMATION_JOIN_RULES.map(r =>
+    `<option value="${r}"${r === rule ? ' selected' : ''}>${escHtml(t('automation_join_rule_' + r))}</option>`).join('');
+  return `<label class="automation-form-edge automation-form-join-rule">${label}`
+    + `<select class="automation-form-edge-select" data-join-rule="true" onchange="automationFormSetJoinRule('${escJsAttr(m.id)}',this.value)">${opts}</select></label>`;
+}
+
+// _automationFormMemberRowHTML draws one member. opts.branch marks a branch
+// row: it sits under its fork and has no edges and no buttons of its own.
+function _automationFormMemberRowHTML(m, opts) {
   const f = _automationForm;
+  const branch = !!(opts && opts.branch);
   const kind = String(m.kind || 'prd');
   const status = String(m.status || 'pending');
   const pending = status === 'pending';
   const idArg = escJsAttr(m.id);
   const editsMembers = _automationFormEditsMembers();
-  const actionable = pending && (kind === 'prd' || kind === 'automation');
+  const editable = editsMembers && pending;
+  const actionable = pending && !branch && (kind === 'prd' || kind === 'automation');
   const button = (op, key, call) =>
     `<button type="button" class="automation-member-action-btn" data-op="${op}" onclick="${call}">${escHtml(t(key))}</button>`;
-  let edges;
-  if (editsMembers && pending && kind !== 'fork' && kind !== 'join') {
+  let edges = '';
+  if (branch || kind === 'fork') edges = '';
+  else if (kind === 'join') {
+    edges = _automationFormJoinRuleHTML(m, editable)
+      + (editable ? _automationFormEdgeSelectHTML(m, 'on_complete') : _automationFormEdgeTextHTML(m, 'on_complete'));
+  } else if (editable) {
     edges = _AUTOMATION_OUTCOME_EDGES.map(e => _automationFormEdgeSelectHTML(m, e)).join('');
   } else {
     edges = _AUTOMATION_OUTCOME_EDGES.map(e => _automationFormEdgeTextHTML(m, e)).join('');
@@ -25406,19 +25615,80 @@ function _automationFormMemberRowHTML(m) {
       ops.push(button('reorder_edges', 'automation_reorder_edges', `openAutomationReorderDialog('${idArg}')`));
       ops.push(button('remove_member', 'automation_remove_member', `automationRemoveMember('${idArg}')`));
     }
+  } else if (kind === 'fork' && editable) {
+    ops.push(button('insert_before', 'automation_insert_before', `automationFormInsert('${idArg}','before')`));
+    ops.push(button('insert_after', 'automation_insert_after', `automationFormInsert('${idArg}','after')`));
+    ops.push(button('remove_group', 'automation_remove_member', `automationFormRemoveGroup('${idArg}')`));
   }
   const statusBadge = status === 'pending' ? ''
     : `<span class="automation-chip automation-form-member-status">${escHtml(_automationFormMemberStatusText(status))}</span>`;
-  return `<div class="automation-form-member${pending ? '' : ' readonly'}" data-member-id="${escHtml(m.id)}" data-readonly="${!(editsMembers && pending)}">`
+  const kindChip = kind === 'automation'
+    ? `<span class="automation-chip automation-form-member-kind">${escHtml(t('automation_kind_automation'))}</span>`
+    : (branch ? `<span class="automation-chip automation-form-member-kind">${escHtml(t('automation_branch_label', [opts.index]))}</span>` : '');
+  const cls = 'automation-form-member' + (pending ? '' : ' readonly') + (branch ? ' automation-form-branch-row' : '');
+  return `<div class="${cls}" data-member-id="${escHtml(m.id)}" data-kind="${escHtml(kind)}" data-readonly="${!editable}">`
     + `<div class="automation-form-member-head"><span class="automation-member-title">${escHtml(_automationFormMemberTitle(m))}</span>`
-    + `<span class="automation-chip">${escHtml(m.id)}</span>${statusBadge}</div>`
-    + `<div class="automation-form-member-edges">${edges}</div>`
+    + `${kindChip}<span class="automation-chip">${escHtml(m.id)}</span>${statusBadge}</div>`
+    + (edges ? `<div class="automation-form-member-edges">${edges}</div>` : '')
     + (ops.length ? `<div class="automation-member-actions">${ops.join('')}</div>` : '')
     + '</div>';
 }
 
+// _automationFormForkGroupHTML draws a fork with its branches indented under
+// it and its paired join after them.
+function _automationFormForkGroupHTML(fork) {
+  const members = _automationForm.members;
+  const branches = (fork.fork_members || []).map((id, i) => {
+    const b = members.find(x => x.id === id);
+    return b ? `<div class="automation-form-branch" style="margin-left:24px;">${_automationFormMemberRowHTML(b, { branch: true, index: i + 1 })}</div>` : '';
+  }).join('');
+  const join = _automationFormPairedJoin(members, fork);
+  return `<div class="automation-form-group" data-fork-id="${escHtml(fork.id)}">${_automationFormMemberRowHTML(fork)}`
+    + `<div class="automation-form-branches">${branches}</div>${join ? _automationFormMemberRowHTML(join) : ''}</div>`;
+}
+
 function _automationFormMembersHTML() {
-  return _automationForm.members.map(_automationFormMemberRowHTML).join('');
+  const members = _automationForm.members;
+  const hidden = _automationFormBranchSet(members);
+  _automationFormPairedJoinIds(members).forEach(id => hidden.add(id));
+  return members.filter(m => !hidden.has(m.id))
+    .map(m => (m.kind === 'fork' ? _automationFormForkGroupHTML(m) : _automationFormMemberRowHTML(m))).join('');
+}
+
+// _automationFormPanelHTML draws the small panel behind the 'Add fork and
+// join' and 'Add nested Automation' buttons, or nothing while none is open.
+function _automationFormPanelHTML() {
+  const f = _automationForm;
+  const buttons = apply => `<div class="automation-form-buttons">`
+    + `<button type="button" class="btn-primary" data-op="${apply[0]}" onclick="${apply[1]}">${escHtml(t('btn_add'))}</button>`
+    + `<button type="button" class="btn-secondary" data-op="close_panel" onclick="automationFormClosePanel()">${escHtml(t('btn_cancel'))}</button></div>`;
+  if (f.panel === 'fork') {
+    const used = new Set(f.members.map(m => m.prd_id).filter(Boolean));
+    const rows = automationPickerCandidates(f.prds, f.automations, f.source ? f.source.id : '').filter(r => r.available && !used.has(r.id));
+    const branchLabel = escHtml(t('automation_fork_branches_label'));
+    const picker = rows.length
+      ? `<select multiple size="${Math.min(Math.max(rows.length, 2), 6)}" id="automationForkBranches" class="form-input" aria-label="${branchLabel}" onchange="automationFormForkPick(this)">`
+        + rows.map(r => `<option value="${escHtml(r.id)}"${f.forkBranches.includes(r.id) ? ' selected' : ''}>${escHtml(r.title)} (${escHtml(r.id.slice(0, 8))})</option>`).join('') + '</select>'
+      : `<div class="automation-picker-empty" style="color:var(--text2);padding:6px;">${escHtml(t('automation_picker_empty'))}</div>`;
+    const rules = _AUTOMATION_JOIN_RULES.map(r =>
+      `<option value="${r}"${r === f.forkRule ? ' selected' : ''}>${escHtml(t('automation_join_rule_' + r))}</option>`).join('');
+    return `<div class="automation-form-panel" data-panel="fork">`
+      + `<label class="automation-form-field"><span class="automation-form-label">${branchLabel}</span>${picker}</label>`
+      + `<label class="automation-form-field"><span class="automation-form-label">${escHtml(t('automation_join_failure_label'))}</span>`
+      + `<select id="automationForkRule" class="form-input" onchange="automationFormSetForkRule(this.value)">${rules}</select></label>`
+      + buttons(['apply_fork', 'automationFormApplyFork()']) + '</div>';
+  }
+  if (f.panel === 'nested') {
+    const selfId = f.source ? f.source.id : '';
+    const others = f.automations.filter(a => a && a.id && a.id !== selfId);
+    const opts = [['', t('automation_nested_choose')]].concat(others.map(a => [a.id, a.name ? String(a.name) : String(a.id)]))
+      .map(([value, label]) => `<option value="${escHtml(value)}"${value === f.nestedChild ? ' selected' : ''}>${escHtml(label)}</option>`).join('');
+    return `<div class="automation-form-panel" data-panel="nested">`
+      + `<label class="automation-form-field"><span class="automation-form-label">${escHtml(t('automation_add_nested'))}</span>`
+      + `<select id="automationNestedChild" class="form-input" onchange="automationFormSetNestedChild(this.value)">${opts}</select></label>`
+      + buttons(['apply_nested', 'automationFormApplyNested()']) + '</div>';
+  }
+  return '';
 }
 
 function _automationFormPickerHTML() {
@@ -25443,6 +25713,8 @@ function _automationFormRedrawMembers() {
   if (members) members.innerHTML = _automationFormMembersHTML();
   const picker = document.getElementById('automationFormPicker');
   if (picker) picker.innerHTML = _automationFormPickerHTML();
+  const panel = document.getElementById('automationFormPanel');
+  if (panel) panel.innerHTML = _automationFormPanelHTML();
 }
 
 function _automationFormHTML() {
@@ -25469,8 +25741,11 @@ function _automationFormHTML() {
     <h3 class="automation-form-section">${escHtml(t('automation_members_section'))}</h3>
     <div id="automationFormMembers" class="automation-form-members">${_automationFormMembersHTML()}</div>
     ${picker}
+    ${editsMembers ? `<div id="automationFormPanel" class="automation-form-panel-host">${_automationFormPanelHTML()}</div>` : ''}
     <div class="automation-form-buttons">
       <button type="button" class="btn-secondary" data-op="add_member" onclick="automationFormAdd()">${escHtml(t('automation_add_member'))}</button>
+      ${editsMembers ? `<button type="button" class="btn-secondary" data-op="add_fork" onclick="automationFormOpenPanel('fork')">${escHtml(t('automation_add_fork'))}</button>
+      <button type="button" class="btn-secondary" data-op="add_nested" onclick="automationFormOpenPanel('nested')">${escHtml(t('automation_add_nested'))}</button>` : ''}
       <span style="flex:1;"></span>
       <button type="button" class="btn-secondary" data-op="cancel" onclick="automationFormCancel()">${escHtml(t('btn_cancel'))}</button>
       <button type="button" id="automationFormSaveBtn" class="btn-primary" data-op="save" onclick="saveAutomationForm()">${escHtml(t('automation_form_save'))}</button>
@@ -25507,6 +25782,10 @@ function openAutomationForm(automation) {
   f.prds = [];
   f.automations = Array.isArray(st.list) ? st.list : [];
   f.titles = {};
+  f.panel = '';
+  f.forkBranches = [];
+  f.forkRule = _AUTOMATION_JOIN_RULES[0];
+  f.nestedChild = '';
   // The detail dialogs (insert, remove, edges) and the stale prompt act on
   // the open Automation.
   if (src && src.id) {
@@ -25528,15 +25807,21 @@ function openAutomationForm(automation) {
 }
 window.openAutomationForm = openAutomationForm;
 
-// _automationFormRewire moves every member whose on_complete still holds the
-// default of the old order onto the default of the new order; an edge the
-// operator changed stays.
+// _automationFormRewire moves every chain member whose on_complete still holds
+// the default of the old order onto the default of the new order; an edge the
+// operator changed stays. oldIds and newIds are chain ids, and a fork's edge
+// lives on its paired join.
 function _automationFormRewire(oldIds, newIds) {
+  const members = _automationForm.members;
   const oldNext = {}, newNext = {};
   automationLinearWiring(oldIds).forEach(w => { oldNext[w.id] = w.on_complete; });
   automationLinearWiring(newIds).forEach(w => { newNext[w.id] = w.on_complete; });
-  _automationForm.members.forEach(m => {
-    if (Object.prototype.hasOwnProperty.call(newNext, m.id) && (m.on_complete || '') === (oldNext[m.id] || '')) m.on_complete = newNext[m.id];
+  newIds.forEach(id => {
+    const node = members.find(m => m.id === id);
+    if (!node) return;
+    const owner = _automationFormExit(members, node);
+    if (owner.kind === 'fork') return;
+    if ((owner.on_complete || '') === (oldNext[id] || '')) owner.on_complete = newNext[id];
   });
 }
 
@@ -25553,11 +25838,12 @@ function _automationFormAddAt(index) {
     _automationFormShowError(t('automation_picker_required'));
     return false;
   }
-  const oldIds = f.members.map(m => m.id);
-  const member = { id: _automationNewMemberId(oldIds), prd_id: prdId, on_complete: '', on_blocked: '', on_failed: '' };
-  f.members.splice(index, 0, member);
-  _automationFormRewire(oldIds, f.members.map(m => m.id));
-  if (index === 0 && (!f.entryMemberId || f.entryMemberId === oldIds[0])) f.entryMemberId = member.id;
+  const oldIds = _automationFormChain(f.members).map(m => m.id);
+  const member = { id: _automationNewMemberId(f.members.map(m => m.id)), prd_id: prdId, on_complete: '', on_blocked: '', on_failed: '' };
+  const at = _automationFormSkipGroups(f.members, index);
+  f.members.splice(at, 0, member);
+  _automationFormRewire(oldIds, _automationFormChain(f.members).map(m => m.id));
+  if (at === 0 && (!f.entryMemberId || f.entryMemberId === oldIds[0])) f.entryMemberId = member.id;
   else if (!f.entryMemberId) f.entryMemberId = f.members[0].id;
   f.picked = '';
   _automationFormShowError('');
@@ -25630,10 +25916,102 @@ function automationFormSetEdge(memberId, edge, value) {
   const m = f.members.find(x => x.id === memberId);
   if (!m || !_AUTOMATION_OUTCOME_EDGES.includes(edge)) return;
   const target = String(value || '');
-  if (target && !f.members.some(x => x.id === target && x.id !== memberId)) return;
+  if (target && !f.members.some(x => x.id === target && x.id !== memberId && x.kind !== 'join')) return;
   m[edge] = target;
 }
 window.automationFormSetEdge = automationFormSetEdge;
+
+function automationFormSetJoinRule(joinId, value) {
+  const m = _automationForm.members.find(x => x.id === joinId);
+  if (!m || m.kind !== 'join' || !_AUTOMATION_JOIN_RULES.includes(value)) return;
+  m.on_branch_failure = value;
+}
+window.automationFormSetJoinRule = automationFormSetJoinRule;
+
+// automationFormRemoveGroup asks, then drops a fork with its branches and join.
+function automationFormRemoveGroup(forkId) {
+  if (!_automationFormEditsMembers()) return;
+  showConfirmModal(t('automation_remove_group_confirm'), () => {
+    const f = _automationForm;
+    const next = automationRemoveForkGroup(f, forkId);
+    f.members = next.members;
+    f.entryMemberId = next.entryMemberId;
+    _automationFormRedrawMembers();
+  });
+}
+window.automationFormRemoveGroup = automationFormRemoveGroup;
+
+function automationFormOpenPanel(panel) {
+  const f = _automationForm;
+  if (!_automationFormEditsMembers()) return;
+  f.panel = panel === 'nested' ? 'nested' : 'fork';
+  _automationFormShowError('');
+  _automationFormRedrawMembers();
+}
+window.automationFormOpenPanel = automationFormOpenPanel;
+
+function automationFormClosePanel() {
+  _automationForm.panel = '';
+  _automationFormRedrawMembers();
+}
+window.automationFormClosePanel = automationFormClosePanel;
+
+function automationFormSetForkBranches(prdIds) {
+  _automationForm.forkBranches = Array.isArray(prdIds) ? prdIds.map(String) : [];
+}
+window.automationFormSetForkBranches = automationFormSetForkBranches;
+
+// automationFormForkPick reads the branches ticked in the multi-select.
+function automationFormForkPick(selectEl) {
+  const options = selectEl && selectEl.options ? Array.from(selectEl.options) : [];
+  automationFormSetForkBranches(options.filter(o => o.selected).map(o => o.value));
+}
+window.automationFormForkPick = automationFormForkPick;
+
+function automationFormSetForkRule(value) {
+  if (_AUTOMATION_JOIN_RULES.includes(value)) _automationForm.forkRule = value;
+}
+window.automationFormSetForkRule = automationFormSetForkRule;
+
+function automationFormSetNestedChild(value) {
+  _automationForm.nestedChild = String(value || '');
+}
+window.automationFormSetNestedChild = automationFormSetNestedChild;
+
+// _automationFormApplyAdd runs one of the pure add functions on the form and
+// takes the result over; a rejection is shown above the form and changes nothing.
+function _automationFormApplyAdd(add) {
+  const f = _automationForm;
+  let next;
+  try {
+    next = add(_automationFormTailId(f.members));
+  } catch (err) {
+    _automationFormShowError(String((err && err.message) || err));
+    return false;
+  }
+  f.members = next.members;
+  f.entryMemberId = next.entryMemberId;
+  f.panel = '';
+  f.forkBranches = [];
+  f.nestedChild = '';
+  _automationFormShowError('');
+  _automationFormRedrawMembers();
+  return true;
+}
+
+// automationFormApplyFork adds the fork and join for the branches picked in
+// the panel at the end of the chain.
+function automationFormApplyFork() {
+  const f = _automationForm;
+  return _automationFormApplyAdd(tail => automationAddForkJoin(f, f.forkBranches, f.forkRule, tail));
+}
+window.automationFormApplyFork = automationFormApplyFork;
+
+function automationFormApplyNested() {
+  const f = _automationForm;
+  return _automationFormApplyAdd(tail => automationAddNestedMember(f, f.nestedChild, tail));
+}
+window.automationFormApplyNested = automationFormApplyNested;
 
 // automationFormCancel goes back to the Automation's page when the form was
 // opened from it, otherwise to the list.
