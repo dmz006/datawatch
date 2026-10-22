@@ -319,6 +319,40 @@ func TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture(t *testing.T) {
 			c.captureCancels[tc.subscribeAs] = func() { close(cancelled) }
 			c.mu.Unlock()
 
+			// BL550 — explicit teardown: stop any capture that is still
+			// running for this client (notably the other session's real
+			// StartScreenCapture goroutine) and wait for the hub to drop
+			// the client before the subtest ends, so neither leaks into a
+			// later test. Run first (LIFO), before dialSessionStream's
+			// conn.Close cleanup. Re-read the cancel map here (not at
+			// registration time): on the success path the production
+			// unsubscribe already fired and deleted the stub's entry, so
+			// only still-live captures are closed exactly once.
+			clientToClean := c
+			t.Cleanup(func() {
+				clientToClean.mu.Lock()
+				remaining := make(map[string]context.CancelFunc, len(clientToClean.captureCancels))
+				for id, fn := range clientToClean.captureCancels {
+					if fn != nil {
+						remaining[id] = fn
+					}
+				}
+				clientToClean.mu.Unlock()
+				for id, fn := range remaining {
+					t.Logf("cleanup: cancelling leftover capture %q", id)
+					fn()
+				}
+				_ = conn.Close()
+				// Poll on the real condition: hub registry empty again.
+				deadline := time.Now().Add(wsTestFrameTimeout)
+				for s.hub.ClientCount() != 0 && time.Now().Before(deadline) {
+					time.Sleep(5 * time.Millisecond)
+				}
+				if got := s.hub.ClientCount(); got != 0 {
+					t.Errorf("cleanup: hub still has %d clients, want 0", got)
+				}
+			})
+
 			s.hub.BroadcastOutput("testhost-a1b2", []string{"before"})
 			if got := frameSessions(t, drainUntilSentinel(t, s.hub, conn)[0])[MsgOutput]; len(got) != 1 {
 				t.Fatalf("before unsubscribe: output = %v", got)

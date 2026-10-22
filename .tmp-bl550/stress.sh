@@ -4,7 +4,7 @@ cd /home/dmz/.datawatch/prd-worktrees/efed0001
 export TMUX= TMUX_TMPDIR=
 NPROC=${1:-16}
 RUNS=${2:-15}
-BIN=$(pwd)/.tmp-bl550/test.bin5
+BIN=$(pwd)/.tmp-bl550/test.bin6
 OUT=$(pwd)/.tmp-bl550/stress-logs
 rm -rf "$OUT" && mkdir -p "$OUT"
 # CPU load generators
