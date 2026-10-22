@@ -110,6 +110,23 @@ task and exit when complete. For these:
 - Output filters and scheduled commands still fire normally
 - You can still view output with `status <id>` and `tail <id> [n]`
 
+### One-shot (`one_shot`) sessions
+
+All backends named `*-prompt` (`pi-prompt`, `goose-prompt`, `opencode-prompt`, …)
+are one-shot: the `one_shot` flag is recorded on the session at creation, even
+when the session is started by hand (PWA, REST, MCP) without a `one_shot` field
+in the request. Interactive backends (`claude-code`, `pi`, `aider`, `goose` TUI,
+`gemini`, `opencode`, `opencode-acp`, `shell`, chat-mode backends) are **not**
+flagged one-shot by default — `one_shot` only appears if a start request
+explicitly asks for it. The decision is made once, at session creation; existing
+session records are never rewritten retroactively.
+
+The PWA session list and detail views do not read the `one_shot` flag on a
+session: input boxes, reply prompts, and waiting-for-input affordances are
+offered only while the session is in a running or waiting state, so a finished
+prompt-style session renders as any other completed session (state badge,
+output viewable, no input affordances).
+
 ---
 
 ## Model/backend pairing

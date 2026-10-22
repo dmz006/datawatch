@@ -1881,8 +1881,20 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 	// snapshot commit, no checkpoint tag. Interactive (non-one-shot)
 	// sessions never auto-commit here, regardless of manager-level
 	// auto-git settings or per-session overrides.
+	// One-shot decision (BL474): resolve the effective backend name first
+	// (opt.Backend wins, else the manager default) so the check sees the
+	// real backend, not an alias. Prompt backends (<family>-prompt) are
+	// headless one-run adapters and run one-shot by default; interactive
+	// backends stay interactive. Decided once here for newly created
+	// sessions; stored sessions are never rewritten on load.
+	effectiveBackend := m.llmBackend
+	if opt != nil && opt.Backend != "" {
+		effectiveBackend = opt.Backend
+	}
+	effectiveOneShot := effectiveOneShot(opt, effectiveBackend)
+
 	projGit := NewProjectGit(projectDir)
-	if opt != nil && opt.OneShot && opt.Git {
+	if opt != nil && effectiveOneShot && opt.Git {
 		if !projGit.IsRepo() {
 			if err := projGit.Init(); err != nil {
 				fmt.Printf("[warn] git init %s: %v\n", projectDir, err)
@@ -1911,7 +1923,7 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 	tmuxHostname := strings.NewReplacer(".", "-", ":", "-").Replace(m.hostname)
 	tmuxSession := fmt.Sprintf("cs-%s-%s", tmuxHostname, id)
 
-	backendName := m.llmBackend
+	backendName := effectiveBackend
 	launchFn := m.launchFn
 	backendObj := m.backendObj
 	sessionName := ""
@@ -1979,7 +1991,7 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 	if opt != nil && opt.ComputeNodeRef != "" {
 		sess.ComputeNodeRef = opt.ComputeNodeRef
 	}
-	if opt != nil && opt.OneShot {
+	if effectiveOneShot {
 		sess.OneShot = true
 	}
 	if opt != nil && opt.SkipSnapshot {
