@@ -4756,9 +4756,22 @@ func runStart(cmd *cobra.Command, _ []string) error {
 								CompletionSeen:      session.ExtractCompletionSummary(nudgeTail) != "",
 							}) {
 							case autonomouspkg.WorkerNudgeSend:
-								log.Printf("[autonomous] idle worker %s task %s/%s: sending completion nudge",
-									task.SessionID, task.PRDID, task.ID)
-								if nerr := mgr.SendInput(task.SessionID, autonomouspkg.WorkerNudgeText, "idle-nudge"); nerr != nil {
+								nudgeDelivered, nudgeTask := false, ""
+								if nudgeSess, ok := mgr.GetSession(task.SessionID); ok {
+									nudgeDelivered = mgr.TaskDelivered(nudgeSess.FullID)
+									nudgeTask = nudgeSess.Task
+								}
+								nudgeText, nudgeRedelivery := autonomouspkg.NudgeForDelivery(nudgeDelivered, nudgeTask)
+								nudgeSource := "idle-nudge"
+								if nudgeRedelivery {
+									nudgeSource = "task-redelivery"
+									log.Printf("[autonomous] idle worker %s task %s/%s: task was never delivered — re-sending the task itself",
+										task.SessionID, task.PRDID, task.ID)
+								} else {
+									log.Printf("[autonomous] idle worker %s task %s/%s: sending completion nudge",
+										task.SessionID, task.PRDID, task.ID)
+								}
+								if nerr := mgr.SendInput(task.SessionID, nudgeText, nudgeSource); nerr != nil {
 									log.Printf("[autonomous] idle nudge send failed for %s: %v", task.SessionID, nerr)
 								}
 								if autonomousMgrRef != nil {
