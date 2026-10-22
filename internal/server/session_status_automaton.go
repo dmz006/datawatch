@@ -38,6 +38,7 @@ type SessionAutomatonDetail struct {
 	StartedAt         *time.Time                    `json:"started_at,omitempty"`
 	CompletedAt       *time.Time                    `json:"completed_at,omitempty"`
 	RetryCount        int                           `json:"retry_count,omitempty"`
+	ExecutorSource    string                        `json:"executor_source,omitempty"`
 	Error             string                        `json:"error,omitempty"`
 	Verification      *SessionAutomatonVerification `json:"verification,omitempty"`
 	Git               *SessionAutomatonGit          `json:"git,omitempty"`
@@ -114,6 +115,7 @@ type automatonTaskView struct {
 	CompletedAt       *time.Time                    `json:"completed_at"`
 	Error             string                        `json:"error"`
 	RetryCount        int                           `json:"retry_count"`
+	ExecutorSource    string                        `json:"executor_source"`
 	Verification      *SessionAutomatonVerification `json:"verification"`
 	PreTaskSHA        string                        `json:"pre_task_sha"`
 	BaseSHA           string                        `json:"base_sha"`
@@ -193,6 +195,7 @@ func (s *Server) buildSessionAutomatonDetail(sess *session.Session) *SessionAuto
 		d.StartedAt = task.StartedAt
 		d.CompletedAt = task.CompletedAt
 		d.RetryCount = task.RetryCount
+		d.ExecutorSource = task.ExecutorSource
 		d.Error = task.Error
 		d.Verification = task.Verification
 		planned := task.FilesPlanned

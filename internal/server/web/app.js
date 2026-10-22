@@ -5580,6 +5580,7 @@ function renderSessionStatusBoardInner(area, board, sessionId) {
     if (auto.story_title || auto.story_id) rows.push(kvRow(t('status_automaton_story')||'Story', escHtml(auto.story_title || auto.story_id)));
     if (auto.task_title || auto.task_id) rows.push(kvRow(t('status_automaton_task')||'Task', escHtml(auto.task_title || auto.task_id)));
     if (auto.task_status) rows.push(kvRow(t('status_task_status')||'Task status', chip(auto.task_status, statusColor(auto.task_status))));
+    if (auto.executor_source) rows.push(kvRow(t('status_executor_label')||'Executor', escHtml(auto.executor_source)));
     if (auto.wait_reason) rows.push(kvRow(t('status_wait_reason')||'Waiting on', `<span style="color:var(--warning,#f59e0b);">${escHtml(auto.wait_reason)}</span>`));
     if (auto.retry_count) rows.push(kvRow(t('status_retry_count')||'Retries', escHtml(auto.retry_count)));
     if (auto.started_at) rows.push(kvRow(t('status_started_at')||'Started', escHtml(fmtTs(auto.started_at))));
@@ -13085,6 +13086,7 @@ function renderTask(prd, story, task, editable) {
     ${task.spec ? `<div class="prd-task-spec">${escHtml(task.spec)}</div>` : ''}
     ${task.status === 'waiting_capacity' ? `<div class="prd-task-wait-reason">&#9203; ${escHtml(t('prd_task_waiting_capacity')||'Waiting for capacity')}${task.wait_reason ? ': ' + escHtml(task.wait_reason) : ''}</div>` : ''}
     ${errRow}${verifRow}
+    ${task.executor_source ? `<div style="font-size:10px;color:var(--text2);">${escHtml(t('status_executor_label')||'Executor')}: ${escHtml(task.executor_source)}</div>` : ''}
     ${renderTaskFileDrift(task)}
     ${renderTaskUndeclaredEdits(task)}
     ${filesP}
