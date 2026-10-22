@@ -3,6 +3,7 @@ package capacity
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -465,5 +466,25 @@ func TestBlockReasonHostPoolUnchanged(t *testing.T) {
 	want := "pool host full (1/1, held by t1)"
 	if reason != want {
 		t.Fatalf("reason = %q, want %q", reason, want)
+	}
+}
+
+func TestAutonomousBackpressureSkipsInteractive(t *testing.T) {
+	o := Options{PollInterval: time.Millisecond}
+	var block atomic.Bool
+	block.Store(true)
+	o.AutonomousBackpressure = func(p string) (bool, string) { return block.Load(), "backed off" }
+	l := New(o)
+
+	if err := l.Acquire(context.Background(), Request{Holder: "op", Pools: []string{"llm:a"}, Interactive: true}, time.Second, nil, nil); err != nil {
+		t.Fatalf("interactive request must skip autonomous backpressure: %v", err)
+	}
+	err := l.Acquire(context.Background(), Request{Holder: "task", Pools: []string{"llm:a"}}, 30*time.Millisecond, nil, nil)
+	if !errors.Is(err, ErrWaitTimeout) || !strings.Contains(err.Error(), "backed off") {
+		t.Fatalf("autonomous request should time out blocked by the back-off, got %v", err)
+	}
+	block.Store(false)
+	if err := l.Acquire(context.Background(), Request{Holder: "task", Pools: []string{"llm:a"}}, time.Second, nil, nil); err != nil {
+		t.Fatalf("admitted once the back-off clears: %v", err)
 	}
 }

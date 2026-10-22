@@ -665,6 +665,11 @@ type Manager struct {
 	// Capacity admission (see capacity.go).
 	capacity     *capacity.Ledger
 	capacityKeys CapacityKeysFn
+	// cooldownUntilFn reports when the BL30 global cooldown ends (zero when
+	// none is active); waitClock is the time source for the spawn-wait loop
+	// (nil = wall clock). Both are set via capacity.go.
+	cooldownUntilFn func() time.Time
+	waitClock       capacity.Clock
 
 	// sessionDeleteFn — when set, called after a task reaches a terminal
 	// state (completed/failed/cancelled) to remove the ephemeral executor
