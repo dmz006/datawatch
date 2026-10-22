@@ -3271,6 +3271,12 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		} else {
 			computeReg, computeInitErr = compute.NewRegistry(computeNodesPath)
 		}
+		// Hand-started Ollama chat sessions resolve their model through the
+		// node pins. A nil registry passes every model through unchanged.
+		chatPins := inference.NewHostPins(computeReg)
+		ollama.SetModelResolver(func(host, model string) (string, error) {
+			return chatPins.ResolveModel(host, model, "")
+		})
 		if computeInitErr == nil {
 			seed := make([]compute.Node, 0, len(cfg.ComputeNodes))
 			for _, c := range cfg.ComputeNodes {
@@ -3294,6 +3300,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 						AllowedConsumers: c.Permissions.AllowedConsumers,
 						DeniedConsumers:  c.Permissions.DeniedConsumers,
 					},
+					NodePinnedModel: c.NodePinnedModel,
+					AllowModelSwap:  c.AllowModelSwap,
 				}
 				seed = append(seed, n)
 			}
@@ -3492,6 +3500,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				// BL-summarizer — wire dual-summary pipeline when enabled.
 				if cfg.Session.Summarizer.Enabled {
 					sumSvc := summarizerPkg.New(cfg, llmReg)
+					sumSvc.SetComputeRegistry(computeReg)
 					mgr.SetDualSummarizer(sumSvc.SummarizeDual, sumSvc.ContextLines)
 					httpServer.SetSummarizerSvc(sumSvc)
 				}
@@ -3670,6 +3679,11 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			}
 		} else {
 			fmt.Printf("[warn] compute registry init: %v\n", computeInitErr)
+		}
+		// Two different models configured on one ollama node evict each
+		// other, so log each collision once at startup.
+		for _, warning := range inference.DetectModelNodeConflicts(cfg.ModelNodeInputs()) {
+			log.Printf("model-node collision: %s", warning.Message)
 		}
 		// AGENT.md's Audit Logging Rule — inject the real version into
 		// every CEF line this package writes (avoids an import cycle).
@@ -5855,9 +5869,15 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 					httpServer.SetAutonomousEvents(pq)
 				}
 			}
-			wireCapacity(context.Background(), cfg, mgr, amgr, httpServer, func(title, body string) {
+			capLedger := wireCapacity(context.Background(), cfg, mgr, amgr, httpServer, func(title, body string) {
 				alertStore.AddSystem(alertspkg.LevelWarn, title, body)
 			})
+			// Pin keepers re-pin each pinned compute node's model after ollama drops it.
+			stopPinKeepers := startPinKeepers(ctx, cfg, computeReg, alertStore, capLedger)
+			go func() {
+				<-ctx.Done()
+				stopPinKeepers()
+			}()
 			// Wire session killer so Cancel also terminates running task sessions.
 			amgr.SetSessionKillerFn(func(sessionID string) error {
 				return mgr.Kill(sessionID)

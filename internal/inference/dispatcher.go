@@ -165,6 +165,18 @@ func (d *Dispatcher) Call(ctx context.Context, llmName string, req Request) (Res
 			lastErr = fmt.Errorf("compute node %q: consumer %q denied", nodeName, req.Consumer)
 			continue
 		}
+		// Apply the node's model pin before anything is started or sent. An
+		// implicit call runs on the pinned model; an explicit call for another
+		// model is refused here and is final, not failed over. A datawatch-proxy
+		// node leaves the pin to the peer, so its request is passed on unchanged.
+		localReq := req
+		if node.Routing != compute.RoutingDatawatchProxy {
+			model, pinErr := pinnedModel(node, nodeName, llm.Model, req.ModelOverride)
+			if pinErr != nil {
+				return Response{}, fmt.Errorf("compute node %q: %w", nodeName, pinErr)
+			}
+			localReq.ModelOverride = model
+		}
 		// v8.0 BL319 — docker-network routing: ensure container is running
 		// and rewrite Address to the container's IP before dispatch.
 		if node.Routing == compute.RoutingDockerNetwork {
@@ -201,7 +213,7 @@ func (d *Dispatcher) Call(ctx context.Context, llmName string, req Request) (Res
 			return proxyResp, nil
 		}
 
-		resp, err := d.callOnce(ctx, adapter, node, llm, req)
+		resp, err := d.callOnce(ctx, adapter, node, llm, localReq)
 		if err == nil {
 			return resp, nil
 		}

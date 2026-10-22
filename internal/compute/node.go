@@ -223,6 +223,13 @@ type Node struct {
 	// RBAC.
 	Permissions Permissions `yaml:"permissions,omitempty" json:"permissions,omitempty"`
 
+	// NodePinnedModel keeps this node on one model. Requests without an
+	// explicit model run on it; an explicit request for another model is
+	// refused unless AllowModelSwap is set. Empty = no pin.
+	NodePinnedModel string `yaml:"node_pinned_model,omitempty" json:"node_pinned_model,omitempty"`
+	// AllowModelSwap lets an explicit request replace the pinned model.
+	AllowModelSwap bool `yaml:"allow_model_swap,omitempty" json:"allow_model_swap,omitempty"`
+
 	// Scheduler hint: 0..100, higher = preferred when multiple
 	// Nodes are eligible for the same workload. Default 50.
 	SchedulingPriority int `yaml:"scheduling_priority,omitempty" json:"scheduling_priority,omitempty"`
@@ -371,6 +378,14 @@ func (n *Node) Validate() error {
 	}
 	if n.SchedulingPriority < 0 || n.SchedulingPriority > 100 {
 		return fmt.Errorf("compute node: scheduling_priority %d out of range [0,100]", n.SchedulingPriority)
+	}
+	// node_pinned_model, when present, must name a model. Whitespace-only
+	// is rejected rather than silently treated as no pin.
+	if n.NodePinnedModel != "" {
+		n.NodePinnedModel = strings.TrimSpace(n.NodePinnedModel)
+		if n.NodePinnedModel == "" {
+			return errors.New("compute node: node_pinned_model must be a non-empty model name")
+		}
 	}
 	if n.DeclaredCapacity.GPUs < 0 || n.DeclaredCapacity.GPUMemGB < 0 ||
 		n.DeclaredCapacity.RAMGB < 0 || n.DeclaredCapacity.MaxConcurrentModels < 0 {

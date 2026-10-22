@@ -22,6 +22,26 @@ type Backend struct {
 	host   string // OLLAMA_HOST base URL, e.g. "http://localhost:11434"
 }
 
+// modelResolver applies a compute node's model pin to a model about to run on
+// host. The daemon registers it with SetModelResolver. Nil passes the model
+// through unchanged.
+var modelResolver func(host, model string) (string, error)
+
+// SetModelResolver registers the callback that applies compute-node model pins
+// to every model this backend runs.
+func SetModelResolver(fn func(host, model string) (string, error)) {
+	modelResolver = fn
+}
+
+// runModel returns the model this backend should run. A pinned node substitutes
+// its pinned model, and an error means the call would evict that model.
+func (b *Backend) runModel() (string, error) {
+	if modelResolver == nil {
+		return b.model, nil
+	}
+	return modelResolver(b.host, b.model)
+}
+
 // New creates a new Ollama backend. binary defaults to "ollama", model defaults to "llama3".
 func New(model, binary string) llm.Backend {
 	return NewWithHost(model, binary, "")
@@ -64,6 +84,10 @@ func (b *Backend) Version() string {
 // When the chat emitter is configured (output_mode=chat), routes to LaunchChat()
 // which uses the /api/chat HTTP endpoint for structured chat_message events.
 func (b *Backend) Launch(ctx context.Context, task, tmuxSession, projectDir, logFile string) error {
+	model, err := b.runModel()
+	if err != nil {
+		return err
+	}
 	// Always register for the conversation manager — the session manager's
 	// SendInput decides whether to use it based on sess.OutputMode == "chat".
 	registerBackend(tmuxSession, b)
@@ -83,7 +107,7 @@ func (b *Backend) Launch(ctx context.Context, task, tmuxSession, projectDir, log
 	// Start in interactive mode — send task as first prompt after launch.
 	// ollama shows ">>> " prompt when ready for input.
 	cmd := fmt.Sprintf("cd '%s' && %s%s run %s",
-		projEscaped, hostEnv, b.binary, b.model)
+		projEscaped, hostEnv, b.binary, model)
 	if err := exec.CommandContext(ctx, "tmux", "send-keys", "-t", tmuxSession, cmd, "Enter").Run(); err != nil {
 		return err
 	}

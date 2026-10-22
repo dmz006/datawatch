@@ -5,9 +5,13 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"math"
+	"net/http"
 	"strings"
 
+	"github.com/dmz006/datawatch/internal/federation"
 	mcpsdk "github.com/mark3labs/mcp-go/mcp"
 )
 
@@ -38,6 +42,8 @@ func (s *Server) toolComputeNodeAdd() mcpsdk.Tool {
 		mcpsdk.WithString("gpu_mem_gb", mcpsdk.Description("declared GPU memory in GB")),
 		mcpsdk.WithString("scheduling_priority", mcpsdk.Description("0-100, default 50")),
 		mcpsdk.WithString("tags", mcpsdk.Description("comma-separated tags")),
+		mcpsdk.WithString("node_pinned_model", mcpsdk.Description("pin this node to one model. Requests with no explicit model run on it; an explicit request for another model is refused unless allow_model_swap is true. Empty = no pin.")),
+		mcpsdk.WithBoolean("allow_model_swap", mcpsdk.Description("let an explicit request replace the pinned model. Default false. Ignored when no node_pinned_model is set.")),
 	)
 }
 
@@ -56,6 +62,17 @@ func (s *Server) toolComputeNodeUpdate() mcpsdk.Tool {
 		mcpsdk.WithString("scheduling_priority", mcpsdk.Description("0-100")),
 		mcpsdk.WithString("max_concurrent_sessions", mcpsdk.Description("cap on autonomous sessions in flight on this node (0 = unlimited)")),
 		mcpsdk.WithString("tags", mcpsdk.Description("comma-separated tags")),
+		mcpsdk.WithString("node_pinned_model", mcpsdk.Description("pin this node to one model. Update replaces the whole node, so omitting this clears the pin. Empty = no pin.")),
+		mcpsdk.WithBoolean("allow_model_swap", mcpsdk.Description("let an explicit request replace the pinned model. Default false. Update replaces the whole node, so omitting this resets it to false.")),
+	)
+}
+
+// compute_pin_settings reads or sets the pin keeper interval. It is the
+// one pin setting that is global rather than per node.
+func (s *Server) toolComputePinSettings() mcpsdk.Tool {
+	return mcpsdk.NewTool("compute_pin_settings",
+		mcpsdk.WithDescription("Read or set pin_check_seconds, how often the pin keeper re-verifies each pinned compute node. Omit pin_check_seconds to read it. Set it to a whole number of seconds >= 0 (0 turns the keeper off). Writing requires mcp.allow_self_config=true. A change takes effect after the next daemon restart. Per-node pins are set with compute_node_add / compute_node_update and read with compute_node_get."),
+		mcpsdk.WithNumber("pin_check_seconds", mcpsdk.Description("seconds between pin keeper checks. 0 = off. Omit to read the current value.")),
 	)
 }
 
@@ -102,6 +119,40 @@ func (s *Server) handleComputeNodeAddMCP(_ context.Context, req mcpsdk.CallToolR
 	if err != nil {
 		return nil, err
 	}
+	return textOK(string(out)), nil
+}
+
+func (s *Server) handleComputePinSettingsMCP(ctx context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	args, _ := req.Params.Arguments.(map[string]any)
+	if args["pin_check_seconds"] != nil {
+		if deny := mcpFedCap(ctx, federation.CapConfigWrite); deny != nil {
+			return deny, nil
+		}
+		if denied := s.allowSelfConfigCheck(); denied != nil {
+			return denied, nil
+		}
+		secs := req.GetFloat("pin_check_seconds", -1)
+		if secs < 0 || secs != math.Trunc(secs) {
+			return toolError("compute_pin_settings", errors.New("pin_check_seconds must be a whole number >= 0 (0 = pin keeper off)")), nil
+		}
+		if _, err := s.proxyJSON(http.MethodPut, "/api/config", map[string]any{"pin_check_seconds": int(secs)}); err != nil {
+			return toolError("compute_pin_settings", err), nil
+		}
+	}
+	raw, err := s.proxyGet("/api/config", nil)
+	if err != nil {
+		return toolError("compute_pin_settings", err), nil
+	}
+	var cfg struct {
+		PinCheckSeconds *int `json:"pin_check_seconds"`
+	}
+	if err := json.Unmarshal(raw, &cfg); err != nil {
+		return toolError("compute_pin_settings", err), nil
+	}
+	out, _ := json.Marshal(map[string]any{
+		"pin_check_seconds": cfg.PinCheckSeconds,
+		"note":              "0 = pin keeper off. Per-node pins: compute_node_get.",
+	})
 	return textOK(string(out)), nil
 }
 
@@ -334,6 +385,10 @@ func computeBodyFromReq(req mcpsdk.CallToolRequest) map[string]any {
 	if tags := optString(req, "tags"); tags != "" {
 		body["tags"] = strings.Split(tags, ",")
 	}
+	if v := optString(req, "node_pinned_model"); v != "" {
+		body["node_pinned_model"] = v
+	}
+	body["allow_model_swap"] = req.GetBool("allow_model_swap", false)
 	return body
 }
 

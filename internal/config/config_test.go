@@ -54,6 +54,78 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.Server.Port != 8080 {
 		t.Errorf("Server.Port = %d, want 8080", cfg.Server.Port)
 	}
+	if cfg.PinCheckSeconds != 300 {
+		t.Errorf("PinCheckSeconds = %d, want 300", cfg.PinCheckSeconds)
+	}
+	if len(cfg.ComputeNodes) != 0 {
+		t.Errorf("ComputeNodes = %d entries, want none by default", len(cfg.ComputeNodes))
+	}
+}
+
+func TestComputeNodeYAML_PinDefaults(t *testing.T) {
+	var node ComputeNodeYAML
+	if node.NodePinnedModel != "" {
+		t.Errorf("NodePinnedModel = %q, want empty (no pin)", node.NodePinnedModel)
+	}
+	if node.AllowModelSwap {
+		t.Error("AllowModelSwap should default to false")
+	}
+}
+
+func TestLoad_PinSettings(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	yaml := `
+pin_check_seconds: 0
+compute_nodes:
+  - name: gpu1
+    kind: ollama
+    address: http://gpu1:11434
+    node_pinned_model: qwen3.8-64k:27b
+    allow_model_swap: true
+  - name: gpu2
+    kind: ollama
+    address: http://gpu2:11434
+`
+	if err := os.WriteFile(path, []byte(yaml), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	// An explicit 0 means the pin check is off; it must not revert to the default.
+	if cfg.PinCheckSeconds != 0 {
+		t.Errorf("PinCheckSeconds = %d, want 0 (explicit off)", cfg.PinCheckSeconds)
+	}
+	if len(cfg.ComputeNodes) != 2 {
+		t.Fatalf("ComputeNodes = %d entries, want 2", len(cfg.ComputeNodes))
+	}
+	pinned := cfg.ComputeNodes[0]
+	if pinned.NodePinnedModel != "qwen3.8-64k:27b" || !pinned.AllowModelSwap {
+		t.Errorf("gpu1 pin = %q swap=%v, want qwen3.8-64k:27b swap=true", pinned.NodePinnedModel, pinned.AllowModelSwap)
+	}
+	unpinned := cfg.ComputeNodes[1]
+	if unpinned.NodePinnedModel != "" || unpinned.AllowModelSwap {
+		t.Errorf("gpu2 pin = %q swap=%v, want no pin and swap=false", unpinned.NodePinnedModel, unpinned.AllowModelSwap)
+	}
+}
+
+func TestSave_PinCheckSecondsZeroRoundTrips(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.PinCheckSeconds = 0
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := Save(cfg, path); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	loaded, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if loaded.PinCheckSeconds != 0 {
+		t.Errorf("PinCheckSeconds after round trip = %d, want 0", loaded.PinCheckSeconds)
+	}
 }
 
 func TestLoad_NonExistent(t *testing.T) {

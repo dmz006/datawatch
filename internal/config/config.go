@@ -504,6 +504,12 @@ type Config struct {
 	// Schema: see internal/compute/node.go::Node.
 	ComputeNodes []ComputeNodeYAML `yaml:"compute_nodes,omitempty" json:"compute_nodes,omitempty"`
 
+	// PinCheckSeconds is how often the pin keeper re-verifies that each
+	// compute node with a node_pinned_model is still serving that model.
+	// 0 turns the check off. Written without omitempty so an explicit 0
+	// survives a save/load round trip.
+	PinCheckSeconds int `yaml:"pin_check_seconds" json:"pin_check_seconds"`
+
 	// WebSearch (BL372) — web search MCP injection for opencode and goose sessions.
 	// When enabled, auto-injects `datawatch mcp-search` as an MCP server so agents
 	// have a `web_search` tool backed by the configured SearXNG instance.
@@ -548,6 +554,12 @@ type ComputeNodeYAML struct {
 		AllowedConsumers []string `yaml:"allowed_consumers,omitempty" json:"allowed_consumers,omitempty"`
 		DeniedConsumers  []string `yaml:"denied_consumers,omitempty" json:"denied_consumers,omitempty"`
 	} `yaml:"permissions,omitempty" json:"permissions,omitempty"`
+	// NodePinnedModel keeps this node on one model. Requests without an
+	// explicit model run on it; an explicit request for another model is
+	// refused unless AllowModelSwap is set. Empty = no pin.
+	NodePinnedModel string `yaml:"node_pinned_model,omitempty" json:"node_pinned_model,omitempty"`
+	// AllowModelSwap lets an explicit request replace the pinned model.
+	AllowModelSwap bool `yaml:"allow_model_swap,omitempty" json:"allow_model_swap,omitempty"`
 }
 
 // CouncilPersonaOverride allows operators to customize a persona's
@@ -2814,8 +2826,9 @@ func DefaultConfig() *Config {
 	hostname, _ := os.Hostname()
 	home, _ := os.UserHomeDir()
 	return &Config{
-		Hostname: hostname,
-		DataDir:  filepath.Join(home, ".datawatch"),
+		Hostname:        hostname,
+		DataDir:         filepath.Join(home, ".datawatch"),
+		PinCheckSeconds: 300,
 		Signal: SignalConfig{
 			ConfigDir:  filepath.Join(home, ".local", "share", "signal-cli"),
 			DeviceName: hostname,

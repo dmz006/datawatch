@@ -7,6 +7,8 @@
 //	datawatch compute node delete <name>
 //	datawatch compute node health <name>
 //	datawatch compute node detail <name>     (on-demand pull from monitoring sidecar)
+//	datawatch compute pin config-get
+//	datawatch compute pin config-set --seconds N   (pin keeper interval; 0 = off)
 
 package main
 
@@ -31,6 +33,45 @@ ordered failover. See docs/plans/2026-05-08-v7.0.0-plan.md § 5.`,
 	}
 	cmd.AddCommand(newComputeNodeCmd())
 	cmd.AddCommand(newComputeMigrateCmd())
+	cmd.AddCommand(newComputePinCmd())
+	return cmd
+}
+
+// newComputePinCmd exposes the global pin keeper interval
+// (pin_check_seconds). Per-node pins are flags on `compute node add|update`.
+func newComputePinCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "pin",
+		Short: "Pin keeper settings (pin_check_seconds)",
+	}
+	cmd.AddCommand(newComputePinConfigGetCmd(), newComputePinConfigSetCmd())
+	return cmd
+}
+
+func newComputePinConfigGetCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "config-get",
+		Short: "Show pin_check_seconds (0 = pin keeper off)",
+		RunE:  func(*cobra.Command, []string) error { return daemonGetSection("/api/config", "pin_check_seconds") },
+	}
+}
+
+func newComputePinConfigSetCmd() *cobra.Command {
+	var seconds int
+	cmd := &cobra.Command{
+		Use:   "config-set",
+		Short: "Set pin_check_seconds (takes effect after the next daemon restart)",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			if !cmd.Flags().Changed("seconds") {
+				return fmt.Errorf("--seconds is required")
+			}
+			if seconds < 0 {
+				return fmt.Errorf("--seconds must be a whole number >= 0 (0 = pin keeper off)")
+			}
+			return daemonJSON(http.MethodPut, "/api/config", map[string]any{"pin_check_seconds": seconds})
+		},
+	}
+	cmd.Flags().IntVar(&seconds, "seconds", 0, "seconds between pin keeper checks (0 = off, default 300)")
 	return cmd
 }
 
@@ -249,6 +290,8 @@ func newComputeNodeAddCmd(update bool) *cobra.Command {
 		maxModels, gpuMemGB, ramGB, gpus, priority             int
 		costPerHour                                            float64
 		tagsCSV, allowedCSV, deniedCSV                         string
+		pinnedModel                                            string
+		allowModelSwap                                         bool
 	)
 	use := "add <name>"
 	short := "Add a new ComputeNode"
@@ -291,6 +334,8 @@ func newComputeNodeAddCmd(update bool) *cobra.Command {
 					"gpu_vendor":            gpuVendor,
 					"gpu_model":             gpuModel,
 				},
+				"node_pinned_model": pinnedModel,
+				"allow_model_swap":  allowModelSwap,
 			}
 			if tagsCSV != "" {
 				body["tags"] = splitCSV(tagsCSV)
@@ -324,6 +369,8 @@ func newComputeNodeAddCmd(update bool) *cobra.Command {
 	cmd.Flags().StringVar(&tagsCSV, "tags", "", "comma-separated tags")
 	cmd.Flags().StringVar(&allowedCSV, "allowed-consumers", "", "comma-separated consumer names (council|ask|agent_spawn|session_spawn|*)")
 	cmd.Flags().StringVar(&deniedCSV, "denied-consumers", "", "comma-separated consumer names; denied always wins")
+	cmd.Flags().StringVar(&pinnedModel, "pinned-model", "", "pin this node to one model; other explicit models are refused unless --allow-model-swap (empty = no pin)")
+	cmd.Flags().BoolVar(&allowModelSwap, "allow-model-swap", false, "let an explicit request replace the pinned model (update replaces the whole node, so pass --pinned-model again to keep the pin)")
 	return cmd
 }
 

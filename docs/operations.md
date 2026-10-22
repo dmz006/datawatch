@@ -2937,6 +2937,96 @@ sessions run.
 
 ---
 
+## Pinning a model on a GPU node
+
+Ollama keeps a limited set of models loaded on each node. A request for a
+different model can unload the one your builds rely on. Datawatch's own
+callers (ask, session summaries, memory helpers) and hand-started ollama
+sessions can do this without anyone noticing. A pin stops it.
+
+A pin has three parts:
+
+| Setting | Scope | Default | Effect |
+|---|---|---|---|
+| `node_pinned_model` | per compute node | empty (no pin) | Requests with no explicit model run on the pin. An explicit request for the same model runs on it. An explicit request for a different model is refused. |
+| `allow_model_swap` | per compute node | `false` | Lets an explicit request for a different model run on the node and replace the pin. Ignored when the node has no pin. |
+| `pin_check_seconds` | global | `300` | How often the pin keeper checks that each pinned node still has its model loaded. If the model was evicted, the keeper loads it again and raises a warning alert. `0` turns the keeper off. |
+
+The refusal and the default-model rule apply to every request as soon as the
+pin is saved. The keeper's check loop is started once at daemon boot, so after
+you change `pin_check_seconds` or add a pin to a node, restart the daemon.
+On a systemd install, use `systemctl --user restart datawatch`.
+
+### Pin a model on a GPU node
+
+Pick the node and the model it must keep. The model name is the Ollama tag,
+for example `qwen3.8-64k:27b`.
+
+```bash
+datawatch compute node update gpu-1 --kind ollama --address http://gpu-1:11434 \
+  --pinned-model qwen3.8-64k:27b
+```
+
+`compute node update` replaces the whole node record. Pass `--pinned-model`
+every time you update the node, or the pin is cleared. The same change works
+through the other surfaces:
+
+- REST: `PUT /api/compute/nodes/gpu-1` with `"node_pinned_model": "qwen3.8-64k:27b"`
+- MCP: `compute_node_update` with `node_pinned_model`
+- Comm channel: `compute node update gpu-1 kind=ollama node_pinned_model=qwen3.8-64k:27b`
+- PWA: open gpu-1 in the Compute panel and edit it. Set **Pinned model** and **Allow explicit requests to swap the pinned model**.
+
+Check it with `datawatch compute node get gpu-1`, or the MCP `compute_node_get` tool.
+A whitespace-only pinned model is rejected with a 400 error.
+
+### Allow a model swap
+
+Set `allow_model_swap` only when you want an explicit request for another
+model to take over the node. Without it, that request is refused.
+
+```bash
+datawatch compute node update gpu-1 --kind ollama --address http://gpu-1:11434 \
+  --pinned-model qwen3.8-64k:27b --allow-model-swap
+```
+
+Requests with no model still run on the pinned model. To turn the swap off,
+run the update again without `--allow-model-swap`. Omitting the flag resets it
+to `false`.
+
+Caveat: the keeper does not know about `allow_model_swap`. After a swap, the
+next keeper check finds the pinned model missing and loads it again. That can
+evict the model the swap brought in. If swaps need to stay in place, set
+`pin_check_seconds` to `0` while you use them, and restore the value after.
+
+### Turn the keeper off
+
+Setting `pin_check_seconds` to `0` stops the re-pin loop. The pins still apply
+to requests, so requests for other models are still refused unless the node
+allows swaps.
+
+```bash
+datawatch compute pin config-set --seconds 0    # off
+datawatch compute pin config-set --seconds 300  # back to the default
+```
+
+Equivalent calls: comm channel `compute pin 0`, REST
+`PUT /api/config {"pin_check_seconds": 0}`, MCP `compute_pin_settings` with
+`pin_check_seconds: 0`. A value is a whole number of seconds, 0 or more.
+Read the current value with `datawatch compute pin config-get`, the comm
+channel's `compute pin`, or MCP `compute_pin_settings` with no argument.
+Restart the daemon after changing it.
+
+### Warnings
+
+- **Collision warning.** When two different model names that each run on the
+  same ollama node are configured, the daemon warns at startup, on every config
+  write, and in the config and capacity responses. The warning means a call to
+  one model can evict the other.
+- **Repin alert.** When the keeper reloads a pinned model that was evicted, it
+  raises a warning alert titled "Repinned … it had been evicted". A repeating
+  alert means something on the node keeps loading other models. Pin the
+  caller's model explicitly, or find the caller.
+
 ## Per-LLM concurrency limits and plan tiers
 
 Each LLM registry entry carries a concurrency cap for its `llm:<name>`

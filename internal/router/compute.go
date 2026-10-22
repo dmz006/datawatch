@@ -9,12 +9,15 @@
 //	compute node delete <name>
 //	compute node health <name>
 //	compute node detail <name>
+//	compute pin                   → show pin_check_seconds
+//	compute pin <seconds>         → set pin_check_seconds (0 = keeper off)
 
 package router
 
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -24,7 +27,10 @@ const computeUsage = `Usage:
   compute node list                                list nodes
   compute node get <name>                          fetch one
   compute node add <name> kind=<k> [k=v ...]       add (kind = ollama|openai-compat|gemini-api|opencode-api)
-  compute node update <name> [k=v ...]             update
+                                                   pin: node_pinned_model=<model> allow_model_swap=true|false
+  compute node update <name> [k=v ...]             update (replaces the node; repeat node_pinned_model to keep the pin)
+  compute pin                                      show pin_check_seconds (0 = keeper off)
+  compute pin <seconds>                            set pin_check_seconds
   compute node delete <name>                       remove
   compute node health <name>                       declared capacity + maintenance
   compute node detail <name>                       on-demand pull from monitoring sidecar
@@ -63,6 +69,14 @@ func (r *Router) handleComputeCmd(cmd Command) {
 	verb := strings.ToLower(parts[0])
 	if verb == "help" {
 		r.reply("compute", computeUsage)
+		return
+	}
+	if verb == "pin" {
+		arg := ""
+		if len(parts) > 1 {
+			arg = strings.TrimSpace(parts[1])
+		}
+		r.handleComputePinCmd(arg)
 		return
 	}
 	if verb != "node" {
@@ -237,6 +251,38 @@ func (r *Router) handleComputeCmd(cmd Command) {
 	}
 }
 
+// handleComputePinCmd reads or sets pin_check_seconds. With no argument it
+// replies with the current value; with a whole number it PUTs /api/config.
+func (r *Router) handleComputePinCmd(arg string) {
+	if arg == "" {
+		out, err := r.commGet("/api/config", nil)
+		if err != nil {
+			r.reply("compute pin", err.Error())
+			return
+		}
+		var cfg struct {
+			PinCheckSeconds *int `json:"pin_check_seconds"`
+		}
+		if err := json.Unmarshal([]byte(out), &cfg); err != nil || cfg.PinCheckSeconds == nil {
+			r.reply("compute pin", "pin_check_seconds is not reported by this daemon")
+			return
+		}
+		r.reply("compute pin", fmt.Sprintf("pin_check_seconds = %d (0 = pin keeper off)", *cfg.PinCheckSeconds))
+		return
+	}
+	secs, err := strconv.Atoi(arg)
+	if err != nil || secs < 0 {
+		r.reply("compute pin", "Usage: compute pin <seconds>  (whole number >= 0; 0 = pin keeper off)")
+		return
+	}
+	body, _ := json.Marshal(map[string]any{"pin_check_seconds": secs})
+	if _, err := r.commJSON("PUT", "/api/config", string(body)); err != nil {
+		r.reply("compute pin", err.Error())
+		return
+	}
+	r.reply("compute pin", fmt.Sprintf("pin_check_seconds = %d. Takes effect after the next daemon restart.", secs))
+}
+
 // parseKVPairs converts "kind=ollama routing=docker-network image=ollama/ollama" into a
 // map suitable for the REST POST/PUT body. Nested capacity fields are
 // recognized (max_concurrent_models, gpu_mem_gb, gpus, ram_gb,
@@ -264,6 +310,10 @@ func parseKVPairs(s string) map[string]any {
 			cap[k] = atoiOrZero(v)
 		case "gpu_vendor", "gpu_model":
 			cap[k] = v
+		case "node_pinned_model":
+			out[k] = strings.TrimSpace(v)
+		case "allow_model_swap":
+			out[k] = v == "true" || v == "1" || v == "yes"
 		case "scheduling_priority":
 			out[k] = atoiOrZero(v)
 		case "cost_per_hour":

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"github.com/dmz006/datawatch/internal/capacity"
 	"io"
+	"log"
 	"math"
 	"net"
 	"net/http"
@@ -5344,6 +5345,9 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 	out := map[string]interface{}{
 		"hostname":       s.cfg.Hostname,
 		"notify_exclude": s.cfg.NotifyExclude,
+		// Pin keeper interval (seconds); 0 = keeper off. Per-node pin fields
+		// (node_pinned_model, allow_model_swap) live on /api/compute/nodes.
+		"pin_check_seconds": s.cfg.PinCheckSeconds,
 		"server": map[string]interface{}{
 			"enabled":                        s.cfg.Server.Enabled,
 			"host":                           s.cfg.Server.Host,
@@ -5885,6 +5889,12 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"schedule_history_limit": s.cfg.Results.EffectiveScheduleHistoryLimit(),
 		},
 	}
+	// Model-to-node collisions: two different models configured on one
+	// ollama node. Omitted when there are none, so the PWA shows the banner
+	// only when it has something to say.
+	if warnings := s.modelNodeWarnings(); len(warnings) > 0 {
+		out["model_node_warnings"] = warnings
+	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(out) //nolint:errcheck
 }
@@ -5954,6 +5964,14 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	if v, ok := patch["autonomous.plan_tier_max_inflight"]; ok {
 		if _, verr := parsePlanTierTable(v); verr != nil {
 			http.Error(w, "autonomous."+verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	// pin_check_seconds: whole seconds >= 0, 0 = pin keeper off. A negative
+	// or non-integer value rejects the whole PUT, same as idle_alert_minutes.
+	if v, ok := patch["pin_check_seconds"]; ok {
+		if _, verr := parsePinCheckSeconds(v); verr != nil {
+			http.Error(w, verr.Error(), http.StatusBadRequest)
 			return
 		}
 	}
@@ -6038,6 +6056,11 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	if err := config.Save(s.cfg, s.cfgPath); err != nil {
 		http.Error(w, "save failed: "+err.Error(), http.StatusInternalServerError)
 		return
+	}
+	// A config write can create a model-to-node collision, so re-check and log
+	// every one that now exists.
+	for _, warning := range s.modelNodeWarnings() {
+		log.Printf("model-node collision: %s", warning.Message)
 	}
 	// SEC-017 — every config write, logged with the key names touched and
 	// a masked value for each (credential-shaped keys are masked outright;
@@ -7209,6 +7232,12 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.Autonomous.Automation.IdleAlertMinutes = n
 			}
+		case "pin_check_seconds":
+			// Validated above in handlePutConfig; a value that fails the
+			// check here is left unchanged.
+			if n, err := parsePinCheckSeconds(v); err == nil {
+				cfg.PinCheckSeconds = n
+			}
 		case "autonomous.plan_tier_max_inflight":
 			// tier -> max-inflight table (autonomous.plan_tier_max_inflight).
 			// Accepted shapes: a JSON object ({"pro":1}), the same object
@@ -7724,6 +7753,35 @@ func toString(v interface{}) string {
 		return s
 	}
 	return fmt.Sprintf("%v", v)
+}
+
+// parsePinCheckSeconds reads pin_check_seconds from a PUT /api/config
+// body. It accepts a JSON number, a numeric string (the CLI and comm
+// channel send strings), and must be a whole number >= 0 (0 = keeper off).
+func parsePinCheckSeconds(v interface{}) (int, error) {
+	const msg = "pin_check_seconds: must be a whole number of seconds >= 0 (0 = pin keeper off)"
+	var n int
+	switch x := v.(type) {
+	case float64:
+		if x != math.Trunc(x) || x > math.MaxInt32 {
+			return 0, errors.New(msg)
+		}
+		n = int(x)
+	case int:
+		n = x
+	case string:
+		i, err := strconv.Atoi(strings.TrimSpace(x))
+		if err != nil {
+			return 0, errors.New(msg)
+		}
+		n = i
+	default:
+		return 0, errors.New(msg)
+	}
+	if n < 0 {
+		return 0, errors.New(msg)
+	}
+	return n, nil
 }
 
 // validateIdleAlertMinutes checks autonomous.automation.idle_alert_minutes:
