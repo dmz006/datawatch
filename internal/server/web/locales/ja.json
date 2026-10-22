@@ -1687,6 +1687,8 @@
   "settings_verification_timeout": "検証/ガードレールセッションのタイムアウト（秒、0=30分）",
   "settings_stale_task_seconds": "Stale task timeout (sec, 0=inherit session default)",
   "settings_session_idle_timeout": "セッションアイドルタイムアウト（秒、0=15分）",
+  "settings_worker_idle_nudge": "ワーカーのアイドル催促（秒、0=3分）",
+  "settings_worker_idle_nudge_stall": "催促後のワーカー停止判定（秒、0=10分）",
   "prd_action_repair_deps": "Repair deps",
   "memory_scope_inventory_failed": "Failed to load scope inventory",
   "memory_scope_recall_failed": "Recall failed",

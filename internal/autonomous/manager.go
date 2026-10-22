@@ -97,8 +97,18 @@ type Config struct {
 	// cmd/datawatch/session_judgment.go read it from config.Config. The field
 	// exists so the handleAutonomousConfig live round-trip
 	// (internal/server/autonomous.go) does not drop the key.
-	SessionIdleTimeoutSeconds int    `json:"session_idle_timeout_seconds,omitempty"`
-	VerificationModel         string `json:"verification_model,omitempty"`
+	SessionIdleTimeoutSeconds int `json:"session_idle_timeout_seconds,omitempty"`
+	// WorkerIdleNudgeSeconds and WorkerIdleNudgeStallSeconds mirror
+	// autonomous.worker_idle_nudge_seconds and
+	// autonomous.worker_idle_nudge_stall_seconds in config. The manager does
+	// not consume them: the worker wait loop in cmd/datawatch/main.go reads
+	// them from the live Config() snapshot. Fields exist so the live
+	// round-trip does not drop the keys. 0 or unset means the defaults
+	// (config.NormalizeWorkerIdleNudgeSeconds /
+	// config.NormalizeWorkerIdleNudgeStallSeconds).
+	WorkerIdleNudgeSeconds      int    `json:"worker_idle_nudge_seconds,omitempty"`
+	WorkerIdleNudgeStallSeconds int    `json:"worker_idle_nudge_stall_seconds,omitempty"`
+	VerificationModel           string `json:"verification_model,omitempty"`
 	// GuardrailModel (v9.10.18) — pinned model for guardrail judge
 	// sessions (rules-review, ci-watch, per-task/per-story guardrails,
 	// rejudge). Tier 3 of ResolveGuardrailModel (guardrail_model.go):
@@ -3903,6 +3913,18 @@ func (m *Manager) Status() LoopStatus {
 					} else {
 						st.QualityGatePass++
 					}
+				}
+				if t.NudgeCount > 0 {
+					backend, _ := resolveTaskBackendModel(&t, &s, p, m.cfg.ExecutionBackend)
+					if backend == "" {
+						backend = "unknown"
+					}
+					st.NudgesTotal += t.NudgeCount
+					st.NudgeTasks = append(st.NudgeTasks, TaskNudge{PRDID: p.ID, StoryID: s.ID, TaskID: t.ID, Backend: backend, Count: t.NudgeCount})
+					if st.NudgesByBackend == nil {
+						st.NudgesByBackend = map[string]int{}
+					}
+					st.NudgesByBackend[backend] += t.NudgeCount
 				}
 				// BL382 — cancelled task count.
 				if t.Status == TaskCancelled {

@@ -1004,6 +1004,13 @@ autonomous:
   smoke_verification_backend: ""
   smoke_verification_model: ""
   # autonomous
+  # Idle nudge for PRD-owned claude-code workers: after this many seconds idle the
+  # worker is sent one message asking it to print its completion line or continue.
+  # 0 or unset => 180.
+  worker_idle_nudge_seconds: 180
+  # Seconds, counted from the nudge, a nudged worker may stay silent before it is
+  # stopped and retried. 0 or unset => 600.
+  worker_idle_nudge_stall_seconds: 600
   session_idle_timeout_seconds: 900   # bound on one worker/verifier session sitting in waiting_input/idle with no live child process; exceeded => infra failure 'session idle without completion', alert raised, auto_fix_retries budget handles the retry
   # Stall window for a running worker, in seconds. A worker counts as stalled
   # only when, for this many seconds, it has no output, no live child process,

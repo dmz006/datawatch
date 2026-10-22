@@ -4095,25 +4095,27 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			retryPolicyBridge[k] = v
 		}
 		amgrCfg := autonomouspkg.Config{
-			Enabled:                    acfgIn.Enabled,
-			PollIntervalSeconds:        acfgIn.PollIntervalSeconds,
-			MaxParallelTasks:           acfgIn.MaxParallelTasks,
-			MaxConcurrentTasks:         acfgIn.MaxConcurrentTasks,
-			PlanningBackend:            acfgIn.PlanningBackend,
-			VerificationBackend:        acfgIn.VerificationBackend,
-			ExecutionBackend:           acfgIn.ExecutionBackend,
-			PlanningModel:              acfgIn.PlanningModel,
-			VerificationModel:          acfgIn.VerificationModel,
-			GuardrailModel:             acfgIn.GuardrailModel,
-			VerificationBackends:       append([]string(nil), acfgIn.VerificationBackends...),
-			TaskOverrideStatuses:       append([]string(nil), acfgIn.TaskOverrideStatuses...),
-			PlanningEffort:             acfgIn.PlanningEffort,
-			VerificationEffort:         acfgIn.VerificationEffort,
-			PlanningTimeoutSeconds:     acfgIn.PlanningTimeoutSeconds,
-			VerificationTimeoutSeconds: acfgIn.VerificationTimeoutSeconds,
-			SessionIdleTimeoutSeconds:  acfgIn.SessionIdleTimeoutSeconds,
-			CapacityEnabled:            acfgIn.CapacityEnabled,
-			CapacityWaitTimeoutSeconds: acfgIn.CapacityWaitTimeoutSeconds,
+			Enabled:                     acfgIn.Enabled,
+			PollIntervalSeconds:         acfgIn.PollIntervalSeconds,
+			MaxParallelTasks:            acfgIn.MaxParallelTasks,
+			MaxConcurrentTasks:          acfgIn.MaxConcurrentTasks,
+			PlanningBackend:             acfgIn.PlanningBackend,
+			VerificationBackend:         acfgIn.VerificationBackend,
+			ExecutionBackend:            acfgIn.ExecutionBackend,
+			PlanningModel:               acfgIn.PlanningModel,
+			VerificationModel:           acfgIn.VerificationModel,
+			GuardrailModel:              acfgIn.GuardrailModel,
+			VerificationBackends:        append([]string(nil), acfgIn.VerificationBackends...),
+			TaskOverrideStatuses:        append([]string(nil), acfgIn.TaskOverrideStatuses...),
+			PlanningEffort:              acfgIn.PlanningEffort,
+			VerificationEffort:          acfgIn.VerificationEffort,
+			PlanningTimeoutSeconds:      acfgIn.PlanningTimeoutSeconds,
+			VerificationTimeoutSeconds:  acfgIn.VerificationTimeoutSeconds,
+			SessionIdleTimeoutSeconds:   acfgIn.SessionIdleTimeoutSeconds,
+			WorkerIdleNudgeSeconds:      acfgIn.WorkerIdleNudgeSeconds,
+			WorkerIdleNudgeStallSeconds: acfgIn.WorkerIdleNudgeStallSeconds,
+			CapacityEnabled:             acfgIn.CapacityEnabled,
+			CapacityWaitTimeoutSeconds:  acfgIn.CapacityWaitTimeoutSeconds,
 			// 0 is meaningful (never resume) and -1 passes through as-is;
 			// 3600 arrives only if the daemon config itself supplied nothing
 			// (config.Load merges over DefaultConfig()).
@@ -4652,8 +4654,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				var nudgeTracker *autonomouspkg.WorkerNudgeTracker
 				if family == autonomouspkg.WorkerNudgeFamily {
 					nudgeTracker = autonomouspkg.NewWorkerNudgeTracker(
-						time.Duration(config.NormalizeWorkerIdleNudgeSeconds(cfg.Autonomous.WorkerIdleNudgeSeconds))*time.Second,
-						time.Duration(config.NormalizeWorkerIdleNudgeStallSeconds(cfg.Autonomous.WorkerIdleNudgeStallSeconds))*time.Second)
+						time.Duration(config.NormalizeWorkerIdleNudgeSeconds(liveCfg.WorkerIdleNudgeSeconds))*time.Second,
+						time.Duration(config.NormalizeWorkerIdleNudgeStallSeconds(liveCfg.WorkerIdleNudgeStallSeconds))*time.Second)
 				}
 				// pi-prompt exit-silence detector. One-shot `pi --print` runs write
 				// nothing to the log until they finish, so the log-mtime stall check

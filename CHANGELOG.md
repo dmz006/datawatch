@@ -8,6 +8,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Added
 
 - **Idle nudge for claude-code workers** — a PRD-owned claude-code worker that sits idle with no output and no completion marker for `autonomous.worker_idle_nudge_seconds` (default 180) gets one nudge to print `DATAWATCH_COMPLETE`; if it is still silent `autonomous.worker_idle_nudge_stall_seconds` (default 600) after the nudge, it is killed and retried as a stall. Nudges are recorded on the task (`nudge_count`, `nudge_events`).
+- **Idle-nudge settings on every surface, and nudge counts in status** — `autonomous.worker_idle_nudge_seconds` and `autonomous.worker_idle_nudge_stall_seconds` are now set through the web settings card (all 5 locales), `PUT /api/config`, the MCP `autonomous_config_set` tool, the `configure` chat command and `docs/config-reference.yaml`, and take effect on the next worker without a restart. `GET /api/autonomous/status` and `autonomous_status` now report `nudges_total`, `nudge_tasks` (per-task counts) and `nudges_by_backend`.
 
 ## v9.5.64 — Persisted lifecycle subscriptions with CRUD on every surface
 

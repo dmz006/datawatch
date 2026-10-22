@@ -1087,6 +1087,14 @@ type LoopStatus struct {
 	TasksCancelled   int64 `json:"tasks_cancelled,omitempty"`
 	TasksRequeued    int64 `json:"tasks_requeued,omitempty"`
 
+	// Idle-worker nudge observability. NudgesTotal is the sum of every
+	// task's NudgeCount; NudgeTasks lists each task that was nudged;
+	// NudgesByBackend sums the nudges per backend (the backend the task
+	// resolves to: task, story, PRD, then autonomous.execution_backend).
+	NudgesTotal     int            `json:"nudges_total,omitempty"`
+	NudgeTasks      []TaskNudge    `json:"nudge_tasks,omitempty"`
+	NudgesByBackend map[string]int `json:"nudges_by_backend,omitempty"`
+
 	// Warnings are plain-language notices that a planning or verification
 	// model does not pair with the backend it is used with, so it will not
 	// reach its session. See PairingWarnings.
@@ -1096,6 +1104,15 @@ type LoopStatus struct {
 	// boot-resume scan at the end. Empty when boot-resume has never
 	// decided anything for a PRDRunning PRD. See BootResumeEntry.
 	BootResume []BootResumeEntry `json:"boot_resume,omitempty"`
+}
+
+// TaskNudge is one task's idle-worker nudge count in LoopStatus.
+type TaskNudge struct {
+	PRDID   string `json:"prd_id"`
+	StoryID string `json:"story_id,omitempty"`
+	TaskID  string `json:"task_id"`
+	Backend string `json:"backend,omitempty"`
+	Count   int    `json:"count"`
 }
 
 // CIWatchResult is an automaton's own record of whether the CI runs for

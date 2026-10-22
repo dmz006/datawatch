@@ -74,3 +74,43 @@ func TestApplyConfigPatch_CIWatchTimeoutRejectsNegative(t *testing.T) {
 		t.Fatalf("CIWatchTimeoutSeconds = %d, want 900", cfg.Autonomous.CIWatchTimeoutSeconds)
 	}
 }
+
+// The idle-nudge windows round-trip through PUT/GET /api/config and a
+// negative value is rejected.
+func TestConfigRoundTrip_WorkerIdleNudge(t *testing.T) {
+	s := &Server{
+		cfg:           &config.Config{},
+		cfgPath:       t.TempDir() + "/config.yaml",
+		autonomousMgr: &autonomousConfigPropagationSpy{},
+	}
+	b, _ := json.Marshal(map[string]any{
+		"autonomous.worker_idle_nudge_seconds":       120,
+		"autonomous.worker_idle_nudge_stall_seconds": 300,
+	})
+	rr := httptest.NewRecorder()
+	s.handlePutConfig(rr, httptest.NewRequest(http.MethodPut, "/api/config", bytes.NewReader(b)))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("PUT: want 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	rr = httptest.NewRecorder()
+	s.handleGetConfig(rr, httptest.NewRequest(http.MethodGet, "/api/config", nil))
+	var got struct {
+		Autonomous struct {
+			Nudge int `json:"worker_idle_nudge_seconds"`
+			Stall int `json:"worker_idle_nudge_stall_seconds"`
+		} `json:"autonomous"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode GET: %v", err)
+	}
+	if got.Autonomous.Nudge != 120 || got.Autonomous.Stall != 300 {
+		t.Fatalf("GET nudge/stall = %d/%d, want 120/300", got.Autonomous.Nudge, got.Autonomous.Stall)
+	}
+
+	cfg := &config.Config{}
+	applyConfigPatch(cfg, map[string]interface{}{"autonomous.worker_idle_nudge_seconds": 90})
+	applyConfigPatch(cfg, map[string]interface{}{"autonomous.worker_idle_nudge_seconds": -1})
+	if cfg.Autonomous.WorkerIdleNudgeSeconds != 90 {
+		t.Fatalf("WorkerIdleNudgeSeconds = %d, want 90", cfg.Autonomous.WorkerIdleNudgeSeconds)
+	}
+}
