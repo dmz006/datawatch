@@ -19,10 +19,10 @@ import (
 
 type llmViewDecoded struct {
 	inference.LLM
-	PlanTier             string      `json:"plan_tier"`
-	MaxInflight          *int        `json:"max_inflight"`
-	EffectiveMaxInflight int         `json:"effective_max_inflight"`
-	InflightSource       string      `json:"inflight_source"`
+	PlanTier             string `json:"plan_tier"`
+	MaxInflight          *int   `json:"max_inflight"`
+	EffectiveMaxInflight int    `json:"effective_max_inflight"`
+	InflightSource       string `json:"inflight_source"`
 }
 
 func TestREST_LLMSGetSurfacesPlanTierAndEffectiveInflight(t *testing.T) {
@@ -194,5 +194,65 @@ func TestApplyConfigPatch_PlanTierMaxInflight(t *testing.T) {
 	}
 	if _, err := parsePlanTierTable("pro=-1"); err == nil {
 		t.Fatal("parsePlanTierTable accepted negative limit, want error")
+	}
+}
+
+// REST /api/config round-trip for the tier table: PUT (object form) must be
+// accepted, readable back via GET, and a PUT with an unknown tier must be
+// rejected with 400 leaving the good value intact.
+func TestREST_ConfigRoundTrip_PlanTierMaxInflight(t *testing.T) {
+	s := &Server{cfg: &config.Config{}, cfgPath: t.TempDir() + "/config.yaml"}
+
+	b, _ := json.Marshal(map[string]any{"autonomous.plan_tier_max_inflight": map[string]any{"max_5x": 2, "api": 0}})
+	rr := httptest.NewRecorder()
+	s.handlePutConfig(rr, httptest.NewRequest(http.MethodPut, "/api/config", bytes.NewReader(b)))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("PUT: want 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+
+	// Bad tier in a second PUT: whole-PUT rejection, previous value intact.
+	bad, _ := json.Marshal(map[string]any{"autonomous.plan_tier_max_inflight": map[string]any{"platinum": 9}})
+	rr = httptest.NewRecorder()
+	s.handlePutConfig(rr, httptest.NewRequest(http.MethodPut, "/api/config", bytes.NewReader(bad)))
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("PUT bad tier: want 400, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	if s.cfg.Autonomous.PlanTierMaxInflight["platinum"] != 0 || len(s.cfg.Autonomous.PlanTierMaxInflight) != 2 {
+		t.Errorf("rejected PUT leaked into cfg: %v", s.cfg.Autonomous.PlanTierMaxInflight)
+	}
+	if s.cfg.Autonomous.PlanTierMaxInflight["max_5x"] != 2 {
+		t.Errorf("good value lost: %v", s.cfg.Autonomous.PlanTierMaxInflight)
+	}
+
+	rr = httptest.NewRecorder()
+	s.handleGetConfig(rr, httptest.NewRequest(http.MethodGet, "/api/config", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("GET: want 200, got %d", rr.Code)
+	}
+	var got struct {
+		Autonomous struct {
+			PlanTierMaxInflight map[string]int `json:"plan_tier_max_inflight"`
+		} `json:"autonomous"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode GET: %v", err)
+	}
+	if got.Autonomous.PlanTierMaxInflight["max_5x"] != 2 || got.Autonomous.PlanTierMaxInflight["api"] != 0 {
+		t.Errorf("GET table = %v, want max_5x:2 api:0", got.Autonomous.PlanTierMaxInflight)
+	}
+}
+
+// The compact "tier=N,tier=N" wire form (CLI / comm channel) must be
+// accepted by the same PUT surface and land as a real int table.
+func TestREST_ConfigPut_PlanTierTableCompactForm(t *testing.T) {
+	s := &Server{cfg: &config.Config{}, cfgPath: t.TempDir() + "/config.yaml"}
+	b, _ := json.Marshal(map[string]any{"autonomous.plan_tier_max_inflight": "pro=1,max_20x=4"})
+	rr := httptest.NewRecorder()
+	s.handlePutConfig(rr, httptest.NewRequest(http.MethodPut, "/api/config", bytes.NewReader(b)))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("PUT: want 200, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	if got := s.cfg.Autonomous.PlanTierMaxInflight; got["pro"] != 1 || got["max_20x"] != 4 {
+		t.Errorf("cfg table = %v, want pro:1 max_20x:4", got)
 	}
 }

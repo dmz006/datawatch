@@ -11,7 +11,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('path');
 const fs = require('fs');
-const { vm, buildSandbox, loadScript } = require('./testutil_browser_stub');
+const { vm, buildSandbox, loadScript, flushAsync } = require('./testutil_browser_stub');
 
 function loadApp() {
   const sandbox = buildSandbox();
@@ -93,4 +93,41 @@ test('all new plan-tier i18n keys exist in all five locale bundles', () => {
         k + ' missing or empty in ' + locale + ' locale');
     }
   }
+});
+
+test('savePlanTierTable PUTs the per-tier table (blank tier -> 0 = unlimited) to /api/config', async () => {
+  const sandbox = loadApp();
+  const captured = [];
+  sandbox.fetch = (url, opts) => {
+    captured.push({ url, opts });
+    return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve({}) });
+  };
+  // Fake the four per-tier inputs as rendered by the autonomous card:
+  // pro=1 filled, max_5x blank (operator wants "unlimited"), api=4 filled.
+  sandbox.document.querySelectorAll = (sel) => sel === 'input[data-plan-tier]' ? [
+    { value: '1', dataset: { planTier: 'pro' } },
+    { value: '', dataset: { planTier: 'max_5x' } },
+    { value: '', dataset: { planTier: 'max_20x' } },
+    { value: '4', dataset: { planTier: 'api' } },
+  ] : [];
+  vm.runInContext('savePlanTierTable()', sandbox);
+  await flushAsync();
+  const put = captured.find(c => c.url === '/api/config' && c.opts && c.opts.method === 'PUT');
+  assert.ok(put, 'no PUT /api/config captured — got: ' + JSON.stringify(captured.map(c => c.url)));
+  const body = JSON.parse(put.opts.body);
+  const table = body['autonomous.plan_tier_max_inflight'];
+  assert.deepEqual(table, { pro: 1, max_5x: 0, max_20x: 0, api: 4 },
+    'PUT body must carry the tier table; blank tier encodes 0 (unlimited)');
+});
+
+test('llmEffectiveCapLine covers explicit and none sources too', () => {
+  const sandbox = loadApp();
+  const explicit = vm.runInContext(
+    "llmEffectiveCapLine({effective_max_inflight: 3, inflight_source: 'explicit'})", sandbox);
+  assert.ok(explicit.includes(': 3'), 'cap value missing: ' + explicit);
+  assert.ok(explicit.includes('explicit'), 'source missing: ' + explicit);
+  const none = vm.runInContext(
+    "llmEffectiveCapLine({effective_max_inflight: 0, inflight_source: 'none'})", sandbox);
+  assert.ok(none.includes(': 0'), 'cap value missing: ' + none);
+  assert.ok(none.includes('none'), 'source missing: ' + none);
 });

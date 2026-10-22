@@ -9784,7 +9784,7 @@ window.ensureFreeObserversCached = ensureFreeObserversCached;
 // an actionable 400, so a fixed list is enough for the UI.
 const LLM_PLAN_TIERS = ['pro', 'max_5x', 'max_20x', 'api'];
 function planTierOptions(selected) {
-  const opts = [`<option value="" ${!selected ? 'selected' : ''}>${escHtml(t('llm_plan_tier_unset')||'(unset — kind default)')}</option>`];
+  const opts = [`<option value="" ${!selected ? 'selected' : ''}>${escHtml(t('llm_plan_tier_unset')||'(unset — no tier cap)')}</option>`];
   for (const v of LLM_PLAN_TIERS) opts.push(`<option value="${v}" ${selected === v ? 'selected' : ''}>${v}</option>`);
   return opts.join('');
 }
@@ -9817,7 +9817,7 @@ function buildLLMForm(l) {
     <input id="fe_llm_max_inflight" type="number" min="0" class="form-input" value="${l.max_inflight||''}" />
     <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('llm_field_plan_tier')||'Plan tier (empty = unset)')}</label>
     <select id="fe_llm_plan_tier" class="form-select">${planTierOptions(l.plan_tier)}</select>
-    <div style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(t('llm_plan_tier_hint')||"The daemon's autonomous.plan_tier_max_inflight table caps inflight per tier; an explicit max_inflight > 0 wins, otherwise the kind default applies.")}</div>
+    <div style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(t('llm_plan_tier_hint')||"The daemon's autonomous.plan_tier_max_inflight table caps inflight per tier; an explicit max_inflight > 0 wins; otherwise no tier cap (unlimited).")}</div>
     ${llmEffectiveCapLine(l)}
     <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('llm_field_tags')||'Tags')}</label>
     ${renderBadgeInput('fe_llm_tags', (l.tags||[]).join(', '), { freeform: true, placeholder: 'fast, coding…' })}
@@ -10048,7 +10048,7 @@ window._renderLLMEditPanel = function(existing) {
       <div class="wizard-field">
         <label class="wizard-label">${escHtml(t('llm_field_max_inflight')||'Max in-flight autonomous sessions (0 = unlimited)')}</label>
         <input id="llmEditMaxInflight" type="number" min="0" class="form-input" value="${existing.max_inflight||''}" placeholder="0" />
-        <div style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(t('llm_plan_tier_hint')||"The daemon's autonomous.plan_tier_max_inflight table caps inflight per tier; an explicit max_inflight > 0 wins, otherwise the kind default applies.")}</div>
+        <div style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(t('llm_plan_tier_hint')||"The daemon's autonomous.plan_tier_max_inflight table caps inflight per tier; an explicit max_inflight > 0 wins; otherwise no tier cap (unlimited).")}</div>
       </div>
       <div class="wizard-field">
         <label class="wizard-label">${escHtml(t('llm_field_plan_tier')||'Plan tier (empty = unset)')}</label>
@@ -14430,10 +14430,10 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.plan_coverage_min_ratio', label: 'Plan coverage min ratio (requirement coverage 0-1, default 1.0)', labelKey: 'settings_plan_coverage_min_ratio', type: 'number', placeholder: '1.0', min: 0.1, max: 1, step: 0.1, default: '1' },
     // Plan tier inflight caps — ties each subscription plan tier
     // (pro | max_5x | max_20x | api) to the inflight session count it may
-    // occupy (0 = unlimited; omitted tier = kind default applies). An
+    // occupy (0 leaves the tier unlimited; unset tier = no tier cap). An
     // explicit per-LLM max_inflight > 0 wins over the tier cap (priority:
     // explicit > tier > kind).
-    { key: 'autonomous.plan_tier_max_inflight', label: 'Plan tier inflight caps (per tier; 0 = unlimited; blank = kind default)', labelKey: 'settings_plan_tier_max_inflight', type: 'plan_tier_table', hint: 'An explicit per-LLM max_inflight > 0 wins over the tier cap; otherwise the kind default applies.' },
+    { key: 'autonomous.plan_tier_max_inflight', label: 'Plan tier inflight caps (per tier; 0 = unlimited)', labelKey: 'settings_plan_tier_max_inflight', type: 'plan_tier_table', hint: 'An explicit per-LLM max_inflight > 0 wins over the tier cap; 0 or a blank tier leaves that tier unlimited.' },
     // 2026-10-17 — plan review gate + smoke verification. All optional;
     // empty backend = feature off. Backend/model pairs follow the same
     // paired-model pattern as the guardrail fields above.
@@ -14623,7 +14623,7 @@ function loadCommsConfig() {
               ${tierInputs}
               <button class="btn-secondary" style="font-size:11px;" onclick="savePlanTierTable()">${escHtml(t('settings_plan_tier_save')||'Save')}</button>
             </div>
-            <div style="font-size:11px;color:var(--text2);margin-top:3px;">${escHtml(f.hint || (t('settings_plan_tier_hint')||'Per-tier inflight caps; 0 = unlimited; blank tier = kind default. An explicit per-LLM max_inflight > 0 wins.'))}</div>
+            <div style="font-size:11px;color:var(--text2);margin-top:3px;">${escHtml(f.hint || (t('settings_plan_tier_hint')||'Per-tier inflight caps; 0 or blank tier = unlimited; an explicit per-LLM max_inflight > 0 wins.'))}</div>
           </div>`;
         } else if (f.type === 'interface_select') {
           // v5.23.0 — operator-reported: comms interface_select wasn't
