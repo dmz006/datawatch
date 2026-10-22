@@ -1742,7 +1742,7 @@ back-compat):
 - `active_cursors: [{ member_id, prd_id?, automation_id?, status }]` — one
   entry per in-flight member; `prd_id` for kind `prd`, `automation_id` for
   kind `automation`; `status` the member status. Sorted by member ID.
-- `join_wait: { member_id, rule, pending: [member_id], failed: [member_id] }` —
+- `join_wait: { join_member_id, rule, pending_branches: [member_id], failed_branches: [member_id] }` —
   present (and non-null) while a join is waiting on branches: the join
   member, the applied rule, the branches still live, the branches ended
   non-successfully. Absent otherwise.

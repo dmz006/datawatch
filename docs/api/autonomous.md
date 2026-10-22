@@ -254,9 +254,11 @@ outcome:
 | `blocked` | `on_blocked` member (empty = the Automation is `blocked`) |
 | `failed` | `on_failed` member (empty = the Automation is `blocked`) |
 
-One cursor per Automation: members run one at a time — sequential
-steps with conditional branches, no fan-out. Records persist under
-`<data_dir>/autonomous/` and survive daemon restarts.
+A linear Automation has one cursor: members run one at a time, as
+sequential steps with conditional branches. An Automation can also fan
+out with `fork`/`join` members and nest other Automations; see the
+Phase 3a section below. Records persist under `<data_dir>/autonomous/`
+and survive daemon restarts.
 
 **Example — creating two members, the first handing off to the second
 on completion:**
@@ -290,21 +292,173 @@ the entry member may only actually change while an Automation is in
 
 | HTTP | Meaning |
 |------|---------|
-| 400 | validation: unknown member or edge target, cycle in the member graph, member PRD already owned by another Automation, or a template/owned PRD enrolled as a member |
+| 400 | validation: unknown member or edge target, cycle in the member graph (including a cycle across nested Automations), member PRD already owned by another Automation, a template/owned PRD enrolled as a member, or an invalid fork/join/nested member (the message names the member ID) |
 | 401 | missing token |
 | 404 | no Automation with that id |
 | 405 | wrong method (e.g. PATCH) |
 | 409 | `expected_version` stale; members/entry changed while not in draft; or delete of a non-deletable status |
 | 503 | the daemon runs with autonomous disabled |
 
-> **Stored records only, for now.** Creating an Automation stores its
-> definition, membership and any history — it does not kick anything
-> off, and nothing on the server advances from one member to the next
-> or starts the next Automaton automatically yet. Running a member
-> stays a normal run action on that PRD today.
+> **Creating stores; activating starts.** Creating an Automation stores
+> its definition, membership and any history. `POST
+> /api/automations/{id}/activate` starts a draft Automation at its entry
+> member, and from then on the daemon advances it: each finished member's
+> outcome edge starts the next member, or completes or blocks the
+> Automation.
 >
 > Full request/response schemas (`Automation`, `AutomationMember`,
 > `BudgetPolicy`) are in `openapi.yaml` next to this file.
+
+### Phase 3a — fork/join branches and nested Automations
+
+An Automation tracks a **set of active cursors** instead of one. A
+linear Automation (no `fork`, `join` or `automation` members) behaves
+exactly as described above.
+
+**Member fields.** Each member gains the fields below. All are optional,
+and `kind` defaults to `prd` when omitted or empty.
+
+| Field | Used by `kind` | Meaning |
+|---|---|---|
+| `kind` | all | `""` or `prd` (default): a member Automaton named by `prd_id`. `automation`: a nested Automation named by `automation_id`. `fork`: starts its branches together. `join`: collects its branches. |
+| `automation_id` | `automation` | The child Automation's ID. |
+| `fork_members` | `fork` | Branch member IDs started together. At least two, distinct, each a `prd` or `automation` member. |
+| `join_members` | `join` | Branch member IDs the join collects. Must be the same set as the paired fork's `fork_members`. |
+| `on_branch_failure` | `join` | `all_must_succeed` (default when omitted), `any_one_is_enough` or `continue_anyway`. See the join rules below. |
+
+Set only the fields that belong to a member's kind. Any other field is
+a `400` that names the member ID: a `prd` member cannot carry
+`fork_members`, `join_members` or `on_branch_failure`, and a `fork` or
+`join` member cannot carry `prd_id`.
+
+**Fork and branches.** When a fork is reached, through an incoming edge
+or as the entry member, every branch starts at once, in sorted member-ID
+order. Each branch goes through the normal start gate. A branch that the
+gate denies, or whose start fails, is recorded as a failed branch, and
+its siblings still start. Branches carry no outcome edges:
+`on_complete`, `on_blocked` and `on_failed` must all be empty. The fork
+has no outcome edges either. Its forward path is its paired join.
+
+**Join rules.** A join is reached only through its fork, so no outcome
+edge may name a join. Its only outgoing edge is `on_complete`.
+`on_blocked` and `on_failed` must be empty, because a join that cannot
+fire blocks the Automation rather than routing along an edge. A branch
+counts as successful only when it completes. Blocked, failed, cancelled
+and skipped branches count as not successful. Rule evaluation reads the
+branches' final statuses, not the order of events, so a replay gives the
+same result.
+
+- `all_must_succeed` (default): the join fires `on_complete` only when
+  every branch succeeded. While any branch is still live, the join waits.
+  Once every branch is final, a join with a non-success branch blocks the
+  Automation, with the reason `join <id>: not all branches succeeded
+  (non-success: <member IDs>)`.
+- `any_one_is_enough`: the join fires as soon as one branch succeeds.
+  Branches still running finish, and their later results are recorded
+  without firing the join again. If every branch ends without success,
+  the Automation blocks with the reason `join <id>: no branch succeeded`.
+- `continue_anyway`: the join fires once every branch is final, whatever
+  their outcomes. Non-success branches are named in the join's decision.
+
+An empty `on_complete` on the join completes the Automation when the join
+fires.
+
+**Nested Automations.** An `automation` member starts its child by
+activating it, and the child's entry member starts through the normal
+start gate. A child that is not a `draft` cannot be activated, so the
+start fails with a `409`. That counts as a failed start of the member: a
+failed branch inside a fork, and otherwise a blocked Automation, as for
+any start failure. The child's terminal status
+selects the nested member's edge:
+
+| Child ends | Edge followed |
+|---|---|
+| `completed` | `on_complete` |
+| `blocked` | `on_blocked` |
+| `cancelled` | `on_failed` |
+
+- **Ownership.** A child Automation may be a member of at most one
+  non-terminal Automation at a time. Non-terminal means `draft`, `active`,
+  `paused` or `blocked`. A write that would add the child to a second one
+  is a `400`. The child's PRDs belong to the child. The parent's member
+  list is the only record of the nesting, and the child has no parent
+  pointer. The child keeps its own budget policy, and the parent does not
+  cap it.
+- **Cycle rejection.** A create or update is a `400` when the Automation
+  can reach itself through its nested members, directly or transitively.
+  That covers a member that names its own Automation, and the two-cycle
+  A → B → A. The same check follows fork-to-branch and branch-to-join
+  pairings, so a loop through a fork is rejected too. The error names the
+  member ID.
+
+**Concurrency.** A stale `expected_version` on update returns `409`, and
+the record is left unchanged. Inside the daemon, a write that races
+another one re-reads the Automation, re-evaluates, and does nothing if
+the state has already moved.
+
+**Status.** `GET /api/autonomous/status` returns the following on each
+`automations[]` row. The existing fields are kept.
+
+- `active_cursors`: one entry per in-flight member, sorted by
+  `member_id`. Each entry has `member_id`, `prd_id` for a `prd` member or
+  `automation_id` for an `automation` member, and `status`. The list is
+  always present, and it is `[]` when the Automation is idle.
+- `join_wait`: present only while a join waits on its branches. It has
+  `join_member_id`, `rule`, `pending_branches` (still live) and
+  `failed_branches` (ended without success).
+- `current_member_id`, `current_prd_id` and `current_prd_title` are
+  derived from the first active cursor, sorted by member ID, and are empty
+  when no cursor is active. A client that draws a fork/join Automation
+  should read `active_cursors` and `join_wait`, not `current_member_id`
+  alone.
+
+```json
+{
+  "id": "3fa9c2d1",
+  "name": "parallel checks",
+  "status": "active",
+  "current_member_id": "tests",
+  "current_prd_id": "e5f6a7b8",
+  "current_prd_title": "unit test sweep",
+  "active_cursors": [
+    {"member_id": "tests", "prd_id": "e5f6a7b8", "status": "running"}
+  ],
+  "join_wait": {
+    "join_member_id": "join1",
+    "rule": "all_must_succeed",
+    "pending_branches": ["tests"],
+    "failed_branches": ["lint"]
+  }
+}
+```
+
+**Restart.** On daemon start, reconciliation runs once over the whole
+cursor set. A member that finished while the daemon was down replays its
+outcome. Unstarted branches of a fork start, and branches that were
+already running keep running. A waiting join fires or blocks exactly
+once, with the same decision it would have made before the restart.
+
+**Example — a fork with two branches, joined by any one success:**
+
+```json
+{
+  "name": "parallel checks",
+  "actor": "operator",
+  "reason": "run lint and tests side by side; join when either passes",
+  "entry_member_id": "fork1",
+  "members": [
+    {"id": "fork1", "kind": "fork", "fork_members": ["lint", "tests"]},
+    {"id": "lint",  "prd_id": "a1b2c3d4"},
+    {"id": "tests", "prd_id": "e5f6a7b8"},
+    {"id": "join1", "kind": "join", "join_members": ["lint", "tests"],
+     "on_branch_failure": "any_one_is_enough"}
+  ]
+}
+```
+
+The REST endpoints do not change. `GET/POST /api/automations` and
+`GET/PUT/DELETE /api/automations/{id}` accept the member fields above.
+`openapi.yaml` documents them.
 
 ---
 
