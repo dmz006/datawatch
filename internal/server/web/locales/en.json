@@ -2028,5 +2028,18 @@
   "automation_nested_owned": "That Automation is already inside another Automation",
   "automation_remove_group_confirm": "Remove the fork, its branches and its join?",
   "automation_fork_branches_label": "Branches",
-  "automation_nested_choose": "Choose an Automation"
+  "automation_nested_choose": "Choose an Automation",
+  "automation_models_section": "Default models",
+  "automation_model_execution": "Execution",
+  "automation_model_planning": "Planning",
+  "automation_model_verification": "Verification",
+  "automation_budget_section": "Budget policy",
+  "automation_budget_type": "Ceiling type",
+  "automation_budget_type_dollar": "Dollars",
+  "automation_budget_type_allocation_pct": "Share of allocation (estimated)",
+  "automation_budget_pacing_none": "Spend freely",
+  "automation_budget_pacing_even": "Pace evenly",
+  "automation_budget_on_breach_pause": "Pause",
+  "automation_budget_on_breach_block": "Block",
+  "automation_budget_invalid": "Enter a ceiling above zero (at most 100 for a percent)"
 }

@@ -2028,5 +2028,18 @@
   "automation_nested_owned": "Esa automatización ya está dentro de otra automatización",
   "automation_remove_group_confirm": "¿Eliminar la bifurcación, sus ramas y su unión?",
   "automation_fork_branches_label": "Ramas",
-  "automation_nested_choose": "Elegir una automatización"
+  "automation_nested_choose": "Elegir una automatización",
+  "automation_models_section": "Modelos predeterminados",
+  "automation_model_execution": "Ejecución",
+  "automation_model_planning": "Planificación",
+  "automation_model_verification": "Verificación",
+  "automation_budget_section": "Política de presupuesto",
+  "automation_budget_type": "Tipo de límite",
+  "automation_budget_type_dollar": "Dólares",
+  "automation_budget_type_allocation_pct": "Porcentaje de la asignación (estimado)",
+  "automation_budget_pacing_none": "Gastar sin restricciones",
+  "automation_budget_pacing_even": "Repartir de forma uniforme",
+  "automation_budget_on_breach_pause": "Pausar",
+  "automation_budget_on_breach_block": "Bloquear",
+  "automation_budget_invalid": "Introduce un límite mayor que cero (como máximo 100 si es un porcentaje)"
 }

@@ -2028,5 +2028,18 @@
   "automation_nested_owned": "そのオートメーションはすでに別のオートメーションの中にあります",
   "automation_remove_group_confirm": "分岐、そのブランチ、合流を削除しますか?",
   "automation_fork_branches_label": "ブランチ",
-  "automation_nested_choose": "オートメーションを選択"
+  "automation_nested_choose": "オートメーションを選択",
+  "automation_models_section": "既定のモデル",
+  "automation_model_execution": "実行",
+  "automation_model_planning": "計画",
+  "automation_model_verification": "検証",
+  "automation_budget_section": "予算ポリシー",
+  "automation_budget_type": "上限の種類",
+  "automation_budget_type_dollar": "ドル",
+  "automation_budget_type_allocation_pct": "割り当てに対する割合(推定)",
+  "automation_budget_pacing_none": "自由に使う",
+  "automation_budget_pacing_even": "均等に配分する",
+  "automation_budget_on_breach_pause": "一時停止",
+  "automation_budget_on_breach_block": "ブロック",
+  "automation_budget_invalid": "0より大きい上限を入力してください(割合は100まで)"
 }

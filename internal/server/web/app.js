@@ -25232,12 +25232,16 @@ const _automationForm = {
   forkBranches: [],
   forkRule: 'all_must_succeed',
   nestedChild: '',
+  defaultsEdited: false,
 };
 
 const _AUTOMATION_FORM_MEMBER_KEEP = ['kind', 'automation_id', 'fork_members', 'join_members', 'on_branch_failure', 'budget_policy', 'added_reason'];
 // The member fields only one kind may carry.
 const _AUTOMATION_FORM_KIND_FIELDS = { automation_id: 'automation', fork_members: 'fork', join_members: 'join', on_branch_failure: 'join' };
 const _AUTOMATION_FORM_BASE_KEEP = ['budget_policy', 'project_dir', 'backend', 'model', 'effort', 'verification_backend', 'verification_model', 'verification_effort'];
+// The default model keys of the create and update body. The planning pair is
+// not one of them: it goes through the set_llm request.
+const _AUTOMATION_FORM_MODEL_KEYS = ['backend', 'model', 'effort', 'verification_backend', 'verification_model', 'verification_effort'];
 
 function _automationNewMemberId(taken) {
   for (;;) {
@@ -25458,7 +25462,9 @@ window.automationRemoveForkGroup = automationRemoveForkGroup;
 // are left out. membersLocked leaves the member list out (a started Automation
 // takes member changes through the detail page), and base, the Automation being
 // edited, carries over the fields the form does not show, since an update
-// replaces them.
+// replaces them. modelDefaults (the six default model keys, an empty string
+// clears one) and budgetPolicy (null for none) replace what base carries once
+// the form has read them.
 function buildAutomationFormPayload(formState) {
   const f = formState || {};
   const body = { name: String(f.name || '').trim(), description: String(f.description || '') };
@@ -25488,6 +25494,13 @@ function buildAutomationFormPayload(formState) {
     const v = base[k];
     if (v !== undefined && v !== null && v !== '') body[k] = v;
   });
+  if (f.modelDefaults) {
+    _AUTOMATION_FORM_MODEL_KEYS.forEach(k => { body[k] = String(f.modelDefaults[k] || ''); });
+  }
+  if ('budgetPolicy' in f) {
+    if (f.budgetPolicy) body.budget_policy = f.budgetPolicy;
+    else delete body.budget_policy;
+  }
   body.actor = 'operator';
   if (f.expectedVersion !== undefined && f.expectedVersion !== null) body.expected_version = Number(f.expectedVersion);
   const reason = String(f.reason || '').trim();
@@ -25495,6 +25508,181 @@ function buildAutomationFormPayload(formState) {
   return body;
 }
 window.buildAutomationFormPayload = buildAutomationFormPayload;
+
+// ── Default models and budget policy ────────────────────────────────────────
+// The "Default models" section holds the execution and verification rows (the
+// same backend, effort and model controls the Launch Automaton wizard uses) and,
+// when editing, the planning pair. The "Budget policy" section holds the ceiling.
+// The planning pair is saved through set_llm and never sits in the create or
+// update body. Nothing here is sent until the operator has touched a field; an
+// untouched form carries over what the loaded Automation already had.
+
+const _AUTOMATION_BUDGET_TYPES = ['dollar', 'allocation_pct'];
+const _AUTOMATION_BUDGET_WINDOWS = ['automation', 'day', 'week', 'month'];
+const _AUTOMATION_BUDGET_PACINGS = ['none', 'even'];
+const _AUTOMATION_BUDGET_BREACHES = ['pause', 'block'];
+
+function _automationModelRowHTML(prefix, titleKey, cur) {
+  const labelStyle = 'font-size:11px;color:var(--text2);';
+  return `<div class="automation-form-model-row" data-model-row="${prefix}" style="margin-top:6px;">
+    <div class="automation-form-model-title" style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:2px;">${escHtml(t(titleKey))}</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">
+      <label style="${labelStyle}">${escHtml(t('prd_new_backend_label'))}${renderBackendSelect(prefix + 'Backend', cur.backend || '', `automationFormModelBackendChanged('${prefix}')`)}</label>
+      <label style="${labelStyle}">${escHtml(t('prd_new_effort_label'))}<span id="${prefix}EffortWrap">${renderEffortSelect(prefix + 'Effort', cur.effort || '', '', cur.backend || '')}</span></label>
+      <div id="${prefix}ModelWrap" style="display:none;"><label style="${labelStyle}">${escHtml(t('prd_new_model_label'))}<span id="${prefix}ModelInner"></span></label></div>
+    </div>
+  </div>`;
+}
+
+function _automationPlanningRowHTML(prefix, cur) {
+  const labelStyle = 'font-size:11px;color:var(--text2);';
+  return `<div class="automation-form-model-row" data-model-row="${prefix}" style="margin-top:6px;">
+    <div class="automation-form-model-title" style="font-size:11px;font-weight:600;color:var(--text2);margin-bottom:2px;">${escHtml(t('automation_model_planning'))}</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+      <label style="${labelStyle}">${escHtml(t('prd_new_backend_label'))}${renderBackendSelect(prefix + 'Backend', cur.backend || '', `automationFormModelBackendChanged('${prefix}')`, true)}</label>
+      <div id="${prefix}ModelWrap" style="display:none;"><label style="${labelStyle}">${escHtml(t('prd_new_model_label'))}<span id="${prefix}ModelInner"></span></label></div>
+    </div>
+  </div>`;
+}
+
+function _automationModelsSectionHTML(src) {
+  const s = src || {};
+  const anySet = ['backend', 'model', 'effort', 'verification_backend', 'verification_model', 'verification_effort', 'planning_backend', 'planning_model'].some(k => s[k]);
+  const planning = src ? _automationPlanningRowHTML('automation_plan', { backend: s.planning_backend }) : '';
+  return `<details id="automationFormModels" class="automation-form-collapsible"${anySet ? ' open' : ''} onchange="automationFormDefaultsChanged()" oninput="automationFormDefaultsChanged()">
+    <summary class="automation-form-section">${escHtml(t('automation_models_section'))}</summary>
+    ${_automationModelRowHTML('automation_exec', 'automation_model_execution', { backend: s.backend, effort: s.effort })}
+    ${planning}
+    ${_automationModelRowHTML('automation_verif', 'automation_model_verification', { backend: s.verification_backend, effort: s.verification_effort })}
+  </details>`;
+}
+
+function _automationBudgetSelectHTML(id, labelKey, values, current, optionKey) {
+  const opts = values.map(v => `<option value="${v}"${v === current ? ' selected' : ''}>${escHtml(t(optionKey(v)))}</option>`).join('');
+  return `<label class="automation-form-field"><span class="automation-form-label">${escHtml(t(labelKey))}</span><select id="${id}" class="form-select">${opts}</select></label>`;
+}
+
+function _automationBudgetSectionHTML(policy) {
+  const p = policy || {};
+  const type = _AUTOMATION_BUDGET_TYPES.includes(p.ceiling_type) ? p.ceiling_type : _AUTOMATION_BUDGET_TYPES[0];
+  const value = p.ceiling_value !== undefined && p.ceiling_value !== null ? String(p.ceiling_value) : '';
+  const hintHidden = type === 'allocation_pct' ? '' : 'display:none;';
+  return `<details id="automationFormBudget" class="automation-form-collapsible"${policy ? ' open' : ''} onchange="automationFormDefaultsChanged()" oninput="automationFormDefaultsChanged()">
+    <summary class="automation-form-section">${escHtml(t('automation_budget_section'))}</summary>
+    ${_automationBudgetSelectHTML('automationBudgetType', 'automation_budget_type', _AUTOMATION_BUDGET_TYPES, type, v => 'automation_budget_type_' + v)}
+    <label class="automation-form-field"><span class="automation-form-label">${escHtml(t('automation_budget_ceiling'))}</span><input type="number" id="automationBudgetValue" class="form-input" min="0" step="any" value="${escHtml(value)}"></label>
+    <div id="automationBudgetHint" class="automation-form-hint" style="font-size:11px;color:var(--text2);${hintHidden}">${escHtml(t('automation_budget_estimated'))}</div>
+    ${_automationBudgetSelectHTML('automationBudgetWindow', 'automation_budget_window', _AUTOMATION_BUDGET_WINDOWS, p.window || _AUTOMATION_BUDGET_WINDOWS[0], v => 'automation_budget_window_' + v)}
+    ${_automationBudgetSelectHTML('automationBudgetPacing', 'automation_budget_pacing', _AUTOMATION_BUDGET_PACINGS, p.pacing || _AUTOMATION_BUDGET_PACINGS[0], v => 'automation_budget_pacing_' + v)}
+    ${_automationBudgetSelectHTML('automationBudgetOnBreach', 'automation_budget_on_breach', _AUTOMATION_BUDGET_BREACHES, p.on_breach || _AUTOMATION_BUDGET_BREACHES[0], v => 'automation_budget_on_breach_' + v)}
+    <label class="automation-form-field"><span class="automation-form-label">${escHtml(t('prd_new_backend_label'))}</span>${renderBackendSelect('automationBudgetBackend', p.backend || '', '')}</label>
+  </details>`;
+}
+
+// automationFormDefaultsChanged notes that a model or budget field was
+// touched, and shows the estimate hint while the ceiling is a share of the
+// allocation.
+function automationFormDefaultsChanged() {
+  _automationForm.defaultsEdited = true;
+  const type = document.getElementById('automationBudgetType');
+  const hint = document.getElementById('automationBudgetHint');
+  if (type && hint && hint.style) hint.style.display = type.value === 'allocation_pct' ? '' : 'none';
+}
+window.automationFormDefaultsChanged = automationFormDefaultsChanged;
+
+// automationFormModelBackendChanged repaints the model field and the effort
+// choices of a row for the backend just picked.
+function automationFormModelBackendChanged(prefix) {
+  refreshLLMModelField(prefix + 'ModelWrap', prefix + 'ModelInner', prefix + 'Backend', '');
+  const effortWrap = document.getElementById(prefix + 'EffortWrap');
+  const backend = document.getElementById(prefix + 'Backend');
+  if (effortWrap && backend) effortWrap.innerHTML = renderEffortSelect(prefix + 'Effort', '', '', backend.value || '');
+}
+window.automationFormModelBackendChanged = automationFormModelBackendChanged;
+
+// _automationFormInitModelRows fills the model field of each row that holds a backend.
+function _automationFormInitModelRows(src) {
+  const s = src || {};
+  [['automation_exec', s.model], ['automation_verif', s.verification_model], ['automation_plan', s.planning_model]].forEach(([prefix, model]) => {
+    refreshLLMModelField(prefix + 'ModelWrap', prefix + 'ModelInner', prefix + 'Backend', model || '');
+  });
+}
+
+function _automationReadModelRow(prefix) {
+  const backendEl = document.getElementById(prefix + 'Backend');
+  const effortEl = document.getElementById(prefix + 'Effort');
+  const modelEl = document.getElementById(prefix + 'ModelInner');
+  const field = modelEl && modelEl.querySelector ? modelEl.querySelector('input,select') : null;
+  return {
+    backend: backendEl && backendEl.value != null ? String(backendEl.value) : '',
+    effort: effortEl && effortEl.value != null ? String(effortEl.value) : '',
+    model: field && field.value != null ? String(field.value).trim() : '',
+  };
+}
+
+// automationReadModelDefaults reads the execution and verification rows of the
+// open form. A row left alone or emptied gives empty strings, which clear the default.
+function automationReadModelDefaults() {
+  const exec = _automationReadModelRow('automation_exec');
+  const verif = _prdReadVerifLLM('automation_verif');
+  return {
+    backend: exec.backend,
+    model: exec.model,
+    effort: exec.effort,
+    verification_backend: verif.verification_backend || '',
+    verification_model: verif.verification_model || '',
+    verification_effort: verif.verification_effort || '',
+  };
+}
+window.automationReadModelDefaults = automationReadModelDefaults;
+
+// automationReadPlanning reads the planning pair of the open form.
+function automationReadPlanning() {
+  const row = _automationReadModelRow('automation_plan');
+  return { planning_backend: row.backend, planning_model: row.model };
+}
+window.automationReadPlanning = automationReadPlanning;
+
+// automationReadBudgetPolicy reads the budget fields into a budget_policy, or
+// null when the ceiling is empty (no policy). A ceiling that is not above zero,
+// a percent above 100, or a value outside the accepted lists gives
+// { error: <locale key> } so the form can show it without sending.
+function automationReadBudgetPolicy() {
+  const read = id => {
+    const el = document.getElementById(id);
+    return el && el.value != null ? String(el.value).trim() : '';
+  };
+  const raw = read('automationBudgetValue');
+  if (raw === '') return null;
+  const invalid = { error: 'automation_budget_invalid' };
+  const value = Number(raw);
+  const type = read('automationBudgetType');
+  const window_ = read('automationBudgetWindow');
+  const pacing = read('automationBudgetPacing');
+  const onBreach = read('automationBudgetOnBreach');
+  if (!Number.isFinite(value) || value <= 0) return invalid;
+  if (!_AUTOMATION_BUDGET_TYPES.includes(type)) return invalid;
+  if (type === 'allocation_pct' && value > 100) return invalid;
+  if (!_AUTOMATION_BUDGET_WINDOWS.includes(window_)) return invalid;
+  if (!_AUTOMATION_BUDGET_PACINGS.includes(pacing)) return invalid;
+  if (!_AUTOMATION_BUDGET_BREACHES.includes(onBreach)) return invalid;
+  const policy = { ceiling_type: type, ceiling_value: value, window: window_, pacing, on_breach: onBreach };
+  const backend = read('automationBudgetBackend');
+  if (backend) policy.backend = backend;
+  return policy;
+}
+window.automationReadBudgetPolicy = automationReadBudgetPolicy;
+
+// _automationFormSavePlanning sends the planning pair through set_llm after the
+// main save, and only when it differs from what the Automation had.
+function _automationFormSavePlanning(id) {
+  const src = _automationForm.source;
+  if (!src || !id) return Promise.resolve();
+  const planning = automationReadPlanning();
+  if (planning.planning_backend === String(src.planning_backend || '') && planning.planning_model === String(src.planning_model || '')) return Promise.resolve();
+  return automationRequest('POST', '/api/automations/' + encodeURIComponent(id) + '/set_llm', planning)
+    .then(() => {}, err => { showToast(_automationFormErrorText(err), 'error'); });
+}
 
 // A new Automation and a draft take member edits in the form; a started one does not.
 function _automationFormEditsMembers() {
@@ -25742,6 +25930,8 @@ function _automationFormHTML() {
     <div id="automationFormMembers" class="automation-form-members">${_automationFormMembersHTML()}</div>
     ${picker}
     ${editsMembers ? `<div id="automationFormPanel" class="automation-form-panel-host">${_automationFormPanelHTML()}</div>` : ''}
+    ${_automationModelsSectionHTML(f.source)}
+    ${_automationBudgetSectionHTML(f.source && f.source.budget_policy)}
     <div class="automation-form-buttons">
       <button type="button" class="btn-secondary" data-op="add_member" onclick="automationFormAdd()">${escHtml(t('automation_add_member'))}</button>
       ${editsMembers ? `<button type="button" class="btn-secondary" data-op="add_fork" onclick="automationFormOpenPanel('fork')">${escHtml(t('automation_add_fork'))}</button>
@@ -25756,6 +25946,7 @@ function _automationFormHTML() {
 function _automationFormDraw() {
   const view = document.getElementById('view');
   if (view) view.innerHTML = _automationFormHTML();
+  _automationFormInitModelRows(_automationForm.source);
 }
 
 // openAutomationForm shows the form in #view: a new Automation when called
@@ -25786,6 +25977,7 @@ function openAutomationForm(automation) {
   f.forkBranches = [];
   f.forkRule = _AUTOMATION_JOIN_RULES[0];
   f.nestedChild = '';
+  f.defaultsEdited = false;
   // The detail dialogs (insert, remove, edges) and the stale prompt act on
   // the open Automation.
   if (src && src.id) {
@@ -25797,7 +25989,8 @@ function openAutomationForm(automation) {
     .then(data => (Array.isArray(data) ? data : (data && Array.isArray(data.prds) ? data.prds : [])), () => []);
   const listRequest = automationRequest('GET', '/api/automations')
     .then(data => (Array.isArray(data) ? data : (data && Array.isArray(data.automations) ? data.automations : f.automations)), () => f.automations);
-  return Promise.all([prdsRequest, listRequest]).then(([prds, list]) => {
+  const modelLists = Promise.resolve().then(() => ensureLLMModelLists()).catch(() => {});
+  return Promise.all([prdsRequest, listRequest, modelLists]).then(([prds, list]) => {
     if (seq !== f.seq) return;
     f.prds = prds;
     f.automations = list;
@@ -26043,7 +26236,7 @@ function saveAutomationForm() {
     _automationFormShowError(t(problem));
     return Promise.resolve(null);
   }
-  const payload = buildAutomationFormPayload({
+  const formState = {
     name: f.name,
     description: f.description,
     members: f.members,
@@ -26052,7 +26245,17 @@ function saveAutomationForm() {
     reason: f.reason,
     base: src,
     membersLocked: !editsMembers,
-  });
+  };
+  if (f.defaultsEdited) {
+    const budget = automationReadBudgetPolicy();
+    if (budget && budget.error) {
+      _automationFormShowError(t(budget.error));
+      return Promise.resolve(null);
+    }
+    formState.modelDefaults = automationReadModelDefaults();
+    formState.budgetPolicy = budget;
+  }
+  const payload = buildAutomationFormPayload(formState);
   _automationFormShowError('');
   f.saving = true;
   const btn = document.getElementById('automationFormSaveBtn');
@@ -26061,8 +26264,10 @@ function saveAutomationForm() {
   return automationRequest(src ? 'PUT' : 'POST', path, payload).then(data => {
     f.saving = false;
     const id = (data && data.id) || (src && src.id) || '';
-    if (id) openAutomationDetail(id);
-    return data;
+    return _automationFormSavePlanning(id).then(() => {
+      if (id) openAutomationDetail(id);
+      return data;
+    });
   }, err => {
     f.saving = false;
     if (btn) btn.disabled = false;
