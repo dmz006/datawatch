@@ -8,7 +8,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -20,10 +22,17 @@ import (
 
 // newOutputScopeServer starts a hub + /ws endpoint with the given
 // server.ws_output_scope_default.
+var hubLogMu sync.Mutex
+var hubLog []*Hub
+
 func newOutputScopeServer(t *testing.T, scopeDefault string) (*Server, *httptest.Server) {
 	t.Helper()
 	s, srv := newSessionStreamServer(t, "")
 	s.cfg.Server.WSOutputScopeDefault = scopeDefault
+	hubLogMu.Lock()
+	hubLog = append(hubLog, s.hub)
+	hubLogMu.Unlock()
+	t.Logf("new server: %p hub=%p url=%s (total hubs=%d)", s, s.hub, srv.URL, len(hubLog))
 	return s, srv
 }
 
@@ -40,7 +49,20 @@ func wsSubscribe(t *testing.T, conn *websocket.Conn, id string) {
 	t.Helper()
 	wsSend(t, conn, MsgSubscribe, `{"session_id":"`+id+`"}`)
 	for {
-		if m := readWSFrame(t, conn); m.Type == "pane_capture" && strings.Contains(string(m.Data), `"`+id+`"`) {
+		m := readWSFrame(t, conn)
+		if m.Type != "pane_capture" {
+			continue
+		}
+		var d struct {
+			SessionID string `json:"session_id"`
+		}
+		if json.Unmarshal(m.Data, &d) != nil {
+			continue
+		}
+		// Exact session-ID match (short/full forms equivalent) instead of a
+		// substring scan of the whole frame payload, which unrelated
+		// sessions' frames can satisfy in their pane text.
+		if sessionIDsMatch(d.SessionID, id) {
 			return
 		}
 	}
@@ -206,18 +228,69 @@ func TestSessionIDsMatch(t *testing.T) {
 	}
 }
 
-// findHubClient returns the hub's only registered client.
-func findHubClient(t *testing.T, h *Hub) *client {
+// findHubClient returns the hub's only registered client, polling until
+// the registration lands or the frame deadline expires. The test only
+// knows the connection is set up from frames it has already received, but
+// the hub applies s.hub.register in its own Run goroutine (unbuffered
+// handoff, then map write), so under heavy scheduling pressure the map
+// write can lag behind the frame deliveries the test already observed;
+// an immediate snapshot assert flakes there. Bound the wait by deadline
+// instead (BL550). All original assertions are preserved at the deadline.
+func findHubClient(t *testing.T, h *Hub, conn *websocket.Conn) *client {
 	t.Helper()
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-	if len(h.clients) != 1 {
-		t.Fatalf("hub has %d clients, want 1", len(h.clients))
+	deadline := time.Now().Add(wsTestFrameTimeout)
+	ticker := time.NewTicker(5 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		h.mu.RLock()
+		clients := make([]*client, 0, len(h.clients))
+		for c := range h.clients {
+			clients = append(clients, c)
+		}
+		nSend := make([]int, 0, len(clients))
+		for c := range h.clients {
+			nSend = append(nSend, len(c.send))
+		}
+		h.mu.RUnlock()
+		if len(clients) == 1 {
+			return clients[0]
+		}
+		if time.Now().After(deadline) {
+			t.Logf("diag: hub=%p clients=%d sendLens=%v pendingRegister=%d pendingUnregister=%d pendingBroadcast=%d",
+				h, len(clients), nSend, len(h.register), len(h.unregister), len(h.broadcast))
+			hubLogMu.Lock()
+			for i, hh := range hubLog {
+				hh.mu.RLock()
+				t.Logf("hublog[%d]: hub=%p clients=%d regPending=%d unregPending=%d bcastPending=%d",
+					i, hh, len(hh.clients), len(hh.register), len(hh.unregister), len(hh.broadcast))
+				hh.mu.RUnlock()
+			}
+			hubLogMu.Unlock()
+			probeConn(t, conn)
+			buf := make([]byte, 1<<20)
+			n := runtime.Stack(buf, true)
+			t.Fatalf("hub has %d clients, want 1\n%s", len(clients), buf[:n])
+		}
+		select {
+		case <-ticker.C:
+		case <-time.After(time.Until(deadline)):
+		}
 	}
-	for c := range h.clients {
-		return c
-	}
-	return nil
+}
+
+// probeConn inspects the test-side socket state right before failing:
+// writes a PING (300 ms write deadline) and does one read (300 ms
+// deadline). If the server already closed/reset the socket, the write
+// fails (EPIPE/RST) or the read returns EOF/close-error; if the socket
+// is still open, the read returns a PONG or times out with no data.
+func probeConn(t *testing.T, conn *websocket.Conn) {
+	t.Helper()
+	wd := time.Now().Add(300 * time.Millisecond)
+	werr := conn.WriteControl(websocket.PingMessage, nil, wd)
+	_ = conn.SetReadDeadline(time.Now().Add(300 * time.Millisecond))
+	mt, b, rerr := conn.ReadMessage()
+	t.Logf("probe: writePing err=%v; read type=%d n=%d err=%v data=%.200q",
+		werr, mt, len(b), rerr, string(b))
 }
 
 func TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture(t *testing.T) {
@@ -236,7 +309,7 @@ func TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture(t *testing.T) {
 			wsSubscribe(t, conn, "testhost-other")
 
 			// Swap the real capture cancel for one the test can observe.
-			c := findHubClient(t, s.hub)
+			c := findHubClient(t, s.hub, conn)
 			cancelled := make(chan struct{})
 			c.mu.Lock()
 			if _, ok := c.captureCancels[tc.subscribeAs]; !ok {
@@ -245,6 +318,40 @@ func TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture(t *testing.T) {
 			}
 			c.captureCancels[tc.subscribeAs] = func() { close(cancelled) }
 			c.mu.Unlock()
+
+			// BL550 — explicit teardown: stop any capture that is still
+			// running for this client (notably the other session's real
+			// StartScreenCapture goroutine) and wait for the hub to drop
+			// the client before the subtest ends, so neither leaks into a
+			// later test. Run first (LIFO), before dialSessionStream's
+			// conn.Close cleanup. Re-read the cancel map here (not at
+			// registration time): on the success path the production
+			// unsubscribe already fired and deleted the stub's entry, so
+			// only still-live captures are closed exactly once.
+			clientToClean := c
+			t.Cleanup(func() {
+				clientToClean.mu.Lock()
+				remaining := make(map[string]context.CancelFunc, len(clientToClean.captureCancels))
+				for id, fn := range clientToClean.captureCancels {
+					if fn != nil {
+						remaining[id] = fn
+					}
+				}
+				clientToClean.mu.Unlock()
+				for id, fn := range remaining {
+					t.Logf("cleanup: cancelling leftover capture %q", id)
+					fn()
+				}
+				_ = conn.Close()
+				// Poll on the real condition: hub registry empty again.
+				deadline := time.Now().Add(wsTestFrameTimeout)
+				for s.hub.ClientCount() != 0 && time.Now().Before(deadline) {
+					time.Sleep(5 * time.Millisecond)
+				}
+				if got := s.hub.ClientCount(); got != 0 {
+					t.Errorf("cleanup: hub still has %d clients, want 0", got)
+				}
+			})
 
 			s.hub.BroadcastOutput("testhost-a1b2", []string{"before"})
 			if got := frameSessions(t, drainUntilSentinel(t, s.hub, conn)[0])[MsgOutput]; len(got) != 1 {
@@ -255,7 +362,7 @@ func TestWSOutputScope_UnsubscribeStopsDeliveryAndCancelsCapture(t *testing.T) {
 			wsSync(t, conn)
 			select {
 			case <-cancelled:
-			case <-time.After(2 * time.Second):
+			case <-time.After(wsTestFrameTimeout):
 				t.Fatal("unsubscribe did not cancel the screen capture")
 			}
 			c.mu.Lock()
