@@ -208,6 +208,9 @@ type capacityResponse struct {
 	Pools   []capacityPoolJSON `json:"pools"`
 	Leases  []capacity.Lease   `json:"leases"`
 	Waiting []capacity.Waiter  `json:"waiting"`
+	// Warnings are model-to-node collisions from the live config (see
+	// modelNodeWarnings). Omitted when there are none.
+	Warnings []inference.ModelNodeConflict `json:"warnings,omitempty"`
 }
 
 // handleCapacity serves GET /api/capacity: pools, limits, holders and the
@@ -225,8 +228,9 @@ func (s *Server) handleCapacity(w http.ResponseWriter, r *http.Request) {
 	if !s.fedCap(w, r, federation.CapAutonomousRead) {
 		return
 	}
+	warnings := s.modelNodeWarnings()
 	if s.capacityLedger == nil {
-		writeJSONOK(w, capacity.Status{Pools: []capacity.PoolStatus{}, Leases: []capacity.Lease{}, Waiting: []capacity.Waiter{}})
+		writeJSONOK(w, capacityResponse{Pools: []capacityPoolJSON{}, Leases: []capacity.Lease{}, Waiting: []capacity.Waiter{}, Warnings: warnings})
 		return
 	}
 	st := s.capacityLedger.Snapshot()
@@ -298,7 +302,7 @@ func (s *Server) handleCapacity(w http.ResponseWriter, r *http.Request) {
 
 	sort.Slice(st.Pools, func(i, j int) bool { return st.Pools[i].Name < st.Pools[j].Name })
 
-	out := capacityResponse{Pools: make([]capacityPoolJSON, 0, len(st.Pools)), Leases: st.Leases, Waiting: st.Waiting}
+	out := capacityResponse{Pools: make([]capacityPoolJSON, 0, len(st.Pools)), Leases: st.Leases, Waiting: st.Waiting, Warnings: warnings}
 	for _, p := range st.Pools {
 		pj := capacityPoolJSON{PoolStatus: p}
 		if strings.HasPrefix(p.Name, "node:") {

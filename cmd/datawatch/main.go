@@ -3656,6 +3656,11 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		} else {
 			fmt.Printf("[warn] compute registry init: %v\n", computeInitErr)
 		}
+		// Two different models configured on one ollama node evict each
+		// other, so log each collision once at startup.
+		for _, warning := range inference.DetectModelNodeConflicts(cfg.ModelNodeInputs()) {
+			log.Printf("model-node collision: %s", warning.Message)
+		}
 		// AGENT.md's Audit Logging Rule — inject the real version into
 		// every CEF line this package writes (avoids an import cycle).
 		auditpkg.SetCEFVersionFn(func() string { return Version })

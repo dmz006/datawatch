@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"github.com/dmz006/datawatch/internal/capacity"
 	"io"
+	"log"
 	"math"
 	"net"
 	"net/http"
@@ -5873,6 +5874,12 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"comm_firehose":        s.cfg.Council.CommFirehose,
 		},
 	}
+	// Model-to-node collisions: two different models configured on one
+	// ollama node. Omitted when there are none, so the PWA shows the banner
+	// only when it has something to say.
+	if warnings := s.modelNodeWarnings(); len(warnings) > 0 {
+		out["model_node_warnings"] = warnings
+	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(out) //nolint:errcheck
 }
@@ -6026,6 +6033,11 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	if err := config.Save(s.cfg, s.cfgPath); err != nil {
 		http.Error(w, "save failed: "+err.Error(), http.StatusInternalServerError)
 		return
+	}
+	// A config write can create a model-to-node collision, so re-check and log
+	// every one that now exists.
+	for _, warning := range s.modelNodeWarnings() {
+		log.Printf("model-node collision: %s", warning.Message)
 	}
 	// SEC-017 — every config write, logged with the key names touched and
 	// a masked value for each (credential-shaped keys are masked outright;
