@@ -249,6 +249,7 @@ must stay strict JSON-RPC (release-smoke §7r asserts all of this).
 | Result Store | `result_put`, `result_get`, `result_list`, `result_delete` |
 | Scheduled Job Results | `post_result`, `schedule_results_list` |
 | Autonomous PRDs | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_list/create/get/decompose/approve/resume/reject/request_revision/edit_task/instantiate/run/cancel/rejudge/set_llm/set_task_llm/set_task_verification_llm/set_story_verification_llm/set_verification_llm/children`, `autonomous_learnings`, `capacity_status` |
+| Usage back-off | `usage_backoff_status`, `usage_backoff_set`, `usage_backoff_clear`, `usage_backoff_recheck` |
 | Lifecycle subscriptions (BL427) | `autonomous_subscribe`, `autonomous_unsubscribe`, `autonomous_subscriptions`, `autonomous_subscription_update`, `autonomous_subscription_test`, `autonomous_events_pending` |
 | Orchestrator | `orchestrator_graph_create/plan/run/get/list/cancel`, `orchestrator_verdicts`, `orchestrator_config_get/set` |
 | Pipelines | `pipeline_start/list/status/cancel` |
@@ -478,6 +479,8 @@ Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
   automation_resume(automation_id="3fa9c2d1", expected_version=10)
   automation_cancel(automation_id="3fa9c2d1", expected_version=11, cancel_in_flight=false)
   ```
+
+- **`usage_backoff_status` / `usage_backoff_recheck` — pattern staleness fields.** The status response carries `patterns_version` (a fingerprint of the effective rate-limit patterns), `patterns_stale` (true when the effective patterns or the claude tool's version text changed since the last operator recheck) and `claude_cli_version` (the claude tool's version text, `unknown` when the tool is absent or its version command fails — which on its own never raises the flag). `usage_backoff_recheck` stores both the pattern fingerprint and the current version text as rechecked, clearing `patterns_stale`. `capacity_status` and `autonomous_status` carry the same three fields. See [howto/automata-capacity.md](howto/automata-capacity.md) (`### Pattern staleness and manual recheck`).
 
 - **`autonomous_status` — `automations[]` cursor fields (Phase 3a).** Each row keeps its existing fields and adds `active_cursors` and `join_wait`. `active_cursors` is one entry per in-flight member, sorted by `member_id`, with `member_id`, `prd_id` (a `prd` member) or `automation_id` (an `automation` member), and `status`. It is always present and `[]` when idle. `join_wait` is present only while a join waits on its branches, with `join_member_id`, `rule`, `pending_branches` and `failed_branches`. `current_member_id`, `current_prd_id` and `current_prd_title` are still returned and are derived from the first active cursor. Read `active_cursors` and `join_wait` to follow a fork/join Automation. See [docs/api/autonomous.md](api/autonomous.md) for the full semantics.
 
