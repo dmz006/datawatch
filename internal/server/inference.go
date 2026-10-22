@@ -12,8 +12,10 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"fmt"
 	"net/http"
 	"strings"
@@ -66,9 +68,18 @@ func (s *Server) handleLLMs(w http.ResponseWriter, r *http.Request) {
 		if !s.fedCap(w, r, federation.CapLLMsWrite) {
 			return
 		}
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
 		var l inference.LLM
-		if err := json.NewDecoder(r.Body).Decode(&l); err != nil {
+		if err := json.NewDecoder(bytes.NewReader(body)).Decode(&l); err != nil {
 			http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if err := applyBudgetField(body, &l, nil); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		l.ApplyModelMigration()
@@ -167,8 +178,21 @@ func (s *Server) handleLLMs(w http.ResponseWriter, r *http.Request) {
 		}
 		l := *existing
 		l.APIKeyRefPresent, l.APIKeyRefPrefix = false, ""
-		if err := json.NewDecoder(r.Body).Decode(&l); err != nil {
+		// The budget is replaced as a whole, never merged into the stored
+		// one, so detach it before decoding and let applyBudgetField decide.
+		prior := existing.Budget
+		l.Budget = nil
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if err := json.NewDecoder(bytes.NewReader(body)).Decode(&l); err != nil {
 			http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		if err := applyBudgetField(body, &l, prior); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 		l.ApplyModelMigration()

@@ -17,4 +17,13 @@ const (
 	// ActionUsageBackoffPatternsRechecked — an operator recorded the current
 	// rate-limit pattern fingerprint as rechecked. Details: patterns_version.
 	ActionUsageBackoffPatternsRechecked = "autonomous_usage_backoff_patterns_rechecked"
+
+	// ActionBudgetCeilingWait — an LLM's dollar budget window filled, so
+	// autonomous admission for it now waits. Emitted once per transition.
+	// Details: llm, spend_usd, ceiling_usd, rolls_over_at (RFC 3339, when known).
+	ActionBudgetCeilingWait = "autonomous_budget_ceiling_wait"
+	// ActionBudgetWindowResumed — an LLM's budget window is no longer full
+	// (it rolled over or spend aged out), so autonomous admission resumes.
+	// Emitted once per transition. Details: llm, spend_usd, ceiling_usd.
+	ActionBudgetWindowResumed = "autonomous_budget_window_resumed"
 )

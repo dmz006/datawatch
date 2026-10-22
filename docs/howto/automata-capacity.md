@@ -116,8 +116,8 @@ order:
 3. **conservative kind default** — 1 in-flight for subscription kinds
    (claude-code and the other non-local, non-API kinds), unlimited for
    local Ollama/OpenWebUI kinds (those stay governed by the `node:` pools
-   and `max_engines_per_node`) and for dollar-metered API kinds (the
-   dollar budget is a later phase).
+   and `max_engines_per_node`) and for dollar-metered API kinds (cap those
+   with a per-LLM dollar budget, below).
 
 The default table `pro: 1, max_5x: 2, max_20x: 4, api: 0` is **operator
 policy, not a technical limit** — change it in one place to match what
@@ -297,6 +297,86 @@ version text change again. The same three fields (`patterns_version`,
 `patterns_stale`, `claude_cli_version`) appear on the API status and
 recheck responses, the capacity status, the autonomous status, the MCP
 tools and the CLI status output.
+
+## Per-LLM dollar budget
+
+The in-flight caps limit how many sessions run at once. A dollar budget
+limits how much an LLM may spend inside a window. Give an LLM a ceiling and
+a window and datawatch stops starting autonomous work on it once the window
+is full, then resumes by itself when it rolls over. An LLM without a budget
+is never limited by dollars.
+
+### Set it
+
+Choose one window style: a rolling window of the last N hours (1 to 720), or
+a weekly window that resets on a weekday at a clock time in a zone.
+
+```bash
+# Rolling: $50 over any 168 hours
+datawatch llm update claude-code --budget-ceiling-usd 50 --budget-hours 168
+
+# Weekly: $80 per week, resetting Monday 09:00 New York time
+datawatch llm update claude-code --budget-ceiling-usd 80 \
+  --budget-weekday monday --budget-time 09:00 --budget-zone America/New_York
+
+# Remove it
+datawatch llm update claude-code --clear-budget
+```
+
+The same object is available everywhere: the PWA (Settings > Compute > LLM
+edit), REST `PUT /api/llms/{name}` with a `budget` object, and MCP
+`llm_add` / `llm_update` with `budget`. The object is replaced as a whole;
+leave it out to keep the stored one, send `null` or `{}` to clear it.
+
+### Read it
+
+```bash
+datawatch budget status              # every budgeted LLM
+datawatch budget status --llm claude-code
+```
+
+REST `GET /api/budget` (or `?llm=<name>`), MCP `budget_status`, and the comm
+command `budget [status] [<llm>]` return the same data; `GET /api/capacity`,
+`GET /api/autonomous/status`, MCP `capacity_status` and the PWA Capacity
+card carry the same `budgets` list. Each entry shows spend, ceiling, remaining, the window, when
+it rolls over and whether it is full.
+
+### What "budget window full" means
+
+When spend reaches the ceiling, any autonomous task that needs that LLM
+shows `waiting_capacity` with a reason that starts `budget window full:` and
+names the spend, the ceiling and the rollover time. It is a wait, not a
+failure: no retry is used and nothing is cancelled. Your own interactive
+sessions on that LLM still start, and other LLMs are unaffected.
+
+### How it resumes
+
+You do nothing. Admission re-checks on the wait loop's next poll. A weekly
+window frees up at its next anchor; a rolling window frees up as old spend
+ages out of the trailing hours. The next poll after that admits the task and
+it starts. An audit event is recorded when the window fills and again when
+it frees up.
+
+The check is made when work is admitted. Work that was already running when
+the ceiling was crossed finishes, so spend can end a little above the
+ceiling. Leave some headroom.
+
+### The estimate
+
+Setting `allocation_pct` on the budget adds an estimated share-of-allocation
+percentage to the status. It divides your spend by a dollar figure you
+declare per plan tier in `autonomous.plan_tier_allocation_usd`, so it is
+only as good as that figure. It is labelled estimated and never blocks
+anything; only the ceiling does.
+
+### Opt a peer in
+
+If a second datawatch spends on the same account, add its name to the
+budget's `peer_window` (`--budget-peer-window peerA`). Only the peers you
+list are counted; the default is none. Each listed peer reports just its own
+spend, so nothing is counted twice. A peer that cannot be reached is skipped
+and the local spend alone decides, so a peer outage never stalls your work.
+Status shows each peer, its spend and whether it is counted.
 
 ## Common pitfalls
 

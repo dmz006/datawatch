@@ -338,6 +338,8 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/cooldown", api.handleCooldown)                                     // BL30
 	apiMux.HandleFunc("/api/usage-backoff", api.handleUsageBackoff)                            // BL428 Phase 4
 	apiMux.HandleFunc("/api/usage-backoff/recheck", api.handleUsageBackoffRecheck)             // pattern-drift guard
+	apiMux.HandleFunc("/api/budget", api.handleBudget)                                         // per-LLM dollar budgets
+	apiMux.HandleFunc("/api/budget/usage", api.handleBudgetUsage)                              // this daemon's own spend only
 	apiMux.HandleFunc("/api/audit", api.handleAudit)                                           // BL9
 	apiMux.HandleFunc("/api/audit/access", api.handleAuditAccess)                              // GH#201
 	apiMux.HandleFunc("/api/secrets/service-tokens", api.handleSecretServiceTokens)            // GH#203 (list + mint)

@@ -145,6 +145,10 @@ func cefSignature(action string) (int, string, int) {
 		return 33, "AutonomousUsageBackoffAutoCleared", 2
 	case ActionUsageBackoffPatternsRechecked:
 		return 34, "AutonomousUsageBackoffPatternsRechecked", 3
+	case ActionBudgetCeilingWait:
+		return 35, "AutonomousBudgetCeilingWait", 4
+	case ActionBudgetWindowResumed:
+		return 36, "AutonomousBudgetWindowResumed", 2
 	default:
 		return 0, "AuditEvent", 3
 	}

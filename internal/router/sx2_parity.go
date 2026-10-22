@@ -17,6 +17,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/autonomous"
 )
 
 // commHTTP is the shared HTTP client for in-process REST calls.
@@ -230,6 +232,31 @@ func (r *Router) handleUsageBackoff(cmd Command) {
 	default:
 		r.reply("usage_backoff failed", usage)
 	}
+}
+
+// handleBudget serves "budget [status] [llm]" through the /api/budget
+// loopback and replies with the same text the CLI prints.
+func (r *Router) handleBudget(cmd Command) {
+	const usage = "usage: budget [status] [<llm>]"
+	if cmd.BudgetVerb == "invalid" {
+		r.reply("budget failed", usage)
+		return
+	}
+	var q url.Values
+	if cmd.BudgetLLM != "" {
+		q = url.Values{"llm": {cmd.BudgetLLM}}
+	}
+	body, err := r.commGet("/api/budget", q)
+	if err != nil {
+		r.reply("budget status failed", err.Error())
+		return
+	}
+	text, err := autonomous.FormatBudgetText([]byte(body))
+	if err != nil {
+		r.reply("budget status failed", err.Error())
+		return
+	}
+	r.reply("budget status", strings.TrimRight(text, "\n"))
 }
 
 func (r *Router) handleStale(cmd Command) {

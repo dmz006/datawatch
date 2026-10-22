@@ -22,7 +22,7 @@ import (
 
 func (s *Server) toolAutonomousStatus() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_status",
-		mcpsdk.WithDescription("BL24 — return autonomous loop status (running, active PRDs, queued/running tasks) plus an `automations` array with one row per non-terminal Automation (status, current member and Automaton, pending members, idle time, blocked reason). Each row carries `active_cursors` (one entry per live member: member_id, prd_id or automation_id, status; always present, empty when idle) and `join_wait` while a join waits on its branches (join_member_id, rule, pending_branches, failed_branches). The status also carries the per-backend usage_backoff section (back-off flags, effective config, and the patterns_version / patterns_stale / claude_cli_version pattern-drift guard); patterns_stale also turns true when the claude tool version text changes since the last recheck, and usage_backoff_recheck re-stores both."))
+		mcpsdk.WithDescription("BL24 — return autonomous loop status (running, active PRDs, queued/running tasks) plus an `automations` array with one row per non-terminal Automation (status, current member and Automaton, pending members, idle time, blocked reason). Each row carries `active_cursors` (one entry per live member: member_id, prd_id or automation_id, status; always present, empty when idle) and `join_wait` while a join waits on its branches (join_member_id, rule, pending_branches, failed_branches). The status also carries the per-backend usage_backoff section (back-off flags, effective config, and the patterns_version / patterns_stale / claude_cli_version pattern-drift guard); patterns_stale also turns true when the claude tool version text changes since the last recheck, and usage_backoff_recheck re-stores both. The `budgets` array carries the dollar budget state of every LLM that has a budget (same entries as budget_status; allocation_pct is an estimate that never blocks, peer_window is off by default)."))
 }
 func (s *Server) handleAutonomousStatus(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	out, err := s.proxyGet("/api/autonomous/status", nil)
@@ -72,6 +72,7 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithNumber("backoff_max_wait_minutes", mcpsdk.Description("Maximum usage back-off in whole minutes (>= 1, default 60), applied when a rate-limit message carries no reset time.")),
 		mcpsdk.WithNumber("plan_coverage_min_ratio", mcpsdk.Description("Minimum covered/total requirement ratio for a plan to pass the coverage gate; a number in (0,1] (e.g. 0.9 = 90%). Zero/negative and values above 1 both clamp to 1.0 (require full coverage — the safe default). The gate also fails on any structural finding regardless of ratio.")),
 		mcpsdk.WithString("plan_tier_max_inflight", mcpsdk.Description("Subscription plan tier inflight caps — tiers pro|max_5x|max_20x|api mapped to integer >= 0 (0 = unlimited). A PRD (or LLM) on a tier is admission-capped by that tier's value unless it or its LLM carries an explicit max_inflight > 0, which wins. Accepts a JSON object (e.g. {\"max_5x\":2}) or tier=value pairs (e.g. 'max_5x=2,api=0').")),
+		mcpsdk.WithString("plan_tier_allocation_usd", mcpsdk.Description("Notional dollar allocation per subscription plan tier (autonomous.plan_tier_allocation_usd) — tiers pro|max_5x|max_20x|api mapped to a number >= 0 (0 = not declared). It only feeds the allocation_pct estimate on a budget, which is informational and never blocks. A JSON object (e.g. {\"max_5x\":100}) replaces the whole table; tier=value pairs (e.g. 'pro=20,max_5x=100') set just those tiers and leave the others alone.")),
 		mcpsdk.WithString("planning_effort", mcpsdk.Description("BL41 effort hint for planning; alias: decomposition_effort")),
 		mcpsdk.WithString("verification_effort", mcpsdk.Description("BL41 effort hint for verifier")),
 		mcpsdk.WithNumber("auto_fix_retries", mcpsdk.Description("Retries on verifier failure (default 1)")),
@@ -214,6 +215,18 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 		}
 		body["plan_tier_max_inflight"] = table
 	}
+	// plan_tier_allocation_usd lives in the daemon config, not the Automata
+	// manager config, so it goes through the config endpoint (object form =
+	// whole table, pair form = single-tier keys). Parse it before anything is
+	// written so a bad value changes nothing.
+	var allocation map[string]any
+	if v := req.GetString("plan_tier_allocation_usd", ""); v != "" {
+		entries, err := parsePlanTierAllocationArg(v)
+		if err != nil {
+			return toolError("autonomous_config_set", err), nil
+		}
+		allocation = entries
+	}
 	// BL367 — default quality gates nested under default_quality_gates.
 	qg := map[string]any{}
 	if v := req.GetBool("quality_gates_enabled", false); v {
@@ -289,9 +302,21 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 			body["undeclared_edit_mode"] = req.GetString("undeclared_edit_mode", "")
 		}
 	}
+	if allocation != nil && len(body) == 0 {
+		out, err := s.putPlanTierAllocation(allocation)
+		if err != nil {
+			return nil, err
+		}
+		return textOK(string(out)), nil
+	}
 	out, err := s.proxyJSON(http.MethodPut, "/api/autonomous/config", body)
 	if err != nil {
 		return nil, err
+	}
+	if allocation != nil {
+		if _, err := s.putPlanTierAllocation(allocation); err != nil {
+			return nil, err
+		}
 	}
 	return textOK(string(out)), nil
 }

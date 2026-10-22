@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-14
 **Version:** v9.0.75 at time of writing (`var Version` in `cmd/datawatch/main.go`); implementation target TBD / next minor
-**Status:** Phases 1–3 implemented (Phases 1–2 shipped in the v9.4.0/v9.5.0 development builds, live smoke 2026-10-18 in `tests/live-smoke/REPORT.md`; Phase 3 complete 2026-10-22 in the unreleased development build, checklist below §Phases); Phases 4–6 Planned (no implementation approved; this doc's design pass otherwise unchanged)
+**Status:** Phases 1–3 and 5 implemented (Phases 1–2 shipped in the v9.4.0/v9.5.0 development builds, live smoke 2026-10-18 in `tests/live-smoke/REPORT.md`; Phase 3 complete 2026-10-22 in the unreleased development build; Phase 5 implemented 2026-10-22 in the unreleased development build, checklists below §Phases); Phases 4 and 6 not recorded as done in this doc (this doc's design pass otherwise unchanged)
 
 Terminology note: operator-facing text says **Automaton/Automata**; the code
 and this plan say **PRD** for the same object (`internal/autonomous`). The
@@ -1002,8 +1002,8 @@ New and changed config keys:
 
 ## Phases
 
-These are the phases of the **follow-up implementation PRD**. Phase 1, 2
-and 3 are **Done**; the rest are **Planned**, not approved. Every phase
+These are the phases of the **follow-up implementation PRD**. Phase 1, 2,
+3 and 5 are **Done**; the rest are **Planned**, not approved. Every phase
 carries AGENT.md's Phase Completion Checklist, and none is done until that
 checklist is.
 
@@ -1160,8 +1160,109 @@ checklist is.
    (Not started — Phase 3 is complete; Phase 4 and later require operator
    approval.)
 5. **Phase 5 — Dollar-window budget (4b/4c).** `llm.<name>.budget` enforced
-   as a windowed ledger pool, coordinated with BL405 Phase 2. Status:
-   Planned.
+   as a windowed ledger pool, coordinated with BL405 Phase 2.
+
+   Status: **Implemented (unreleased development build, 2026-10-22)** —
+   `internal/inference/budget.go` (`BudgetWindow`: rolling `hours` or weekly
+   `weekday` + `time` + `zone`, validation, window and rollover math) and
+   `llm.go` (`LLM.Budget`); `internal/config/config.go`
+   (`autonomous.plan_tier_allocation_usd`, unknown tiers and negative values
+   rejected); `internal/session/cost.go` + `manager.go` (usage-event hook);
+   `internal/autonomous/budget.go` (persisted spend ledger, `Blocked`
+   with the `budget window full:` reason, `Status`), `budget_format.go` (the
+   text the CLI and comm channel print), `peer_budget.go` (per-peer opt-in
+   spend counting behind `PeerShareConfirmer`), `manager.go` + `models.go`
+   (`budgets` in the autonomous status); `cmd/datawatch/capacity_wiring.go`
+   (budget gate composed with the usage back-off gate on `llm:` pools,
+   autonomous requests only; audit events on each fill and resume);
+   `internal/server/budget.go` (`GET /api/budget`, `GET /api/budget/usage`,
+   the LLM `budget` field), `plan_tier_allocation.go`, `capacity.go`
+   (`budgets` array); `internal/mcp/budget.go` (`budget_status`, the `budget`
+   argument on `llm_add`/`llm_update`, `plan_tier_allocation_usd` on
+   `autonomous_config_set`); `cmd/datawatch/cli_budget.go` (`datawatch budget
+   status`, `--budget-*` flags); `internal/router/` (`budget` comm command);
+   PWA `app.js` and all five locale bundles. Operator guide:
+   `docs/operations.md` → "Per-LLM dollar-window budget"; howto:
+   `docs/howto/automata-capacity.md` → "Per-LLM dollar budget"; config:
+   `docs/config-reference.yaml`; API: `docs/api-mcp-mapping.md`
+   ("Per-LLM dollar budget") and both OpenAPI specs. Tests:
+   `docs/testing-tracker.md` → "BL428 Phase 5 — per-LLM dollar-window
+   budget".
+
+   **Operator decisions recorded for this phase (2026-10-22):**
+   - The ledger is the first slice of the later shared usage work (BL405
+     Phase 2, which builds on it) and owns ceilings and hard stops. The older
+     cost-guardrail item (BL414) is narrowed to reporting and the Decision
+     rollup only.
+   - `allocation_pct` is opt-in per budget, always marked estimated, and never
+     blocks anything; only `ceiling_usd` does. The notional dollar figure per
+     plan tier is operator policy (`autonomous.plan_tier_allocation_usd`).
+   - Peer spend counting is opt-in per peer (`peer_window`), default off. An
+     unreachable peer fails open (the local spend alone decides).
+
+   **Finding:** the resource fingerprint exchange (§3c/§4e) does not exist in
+   code — there is no fingerprint protocol, `SharesHardwareWith` or
+   `billing_group` — so there is nothing for a peer match to be confirmed
+   against. Peer confirmation in this phase is the explicit opt-in list
+   behind `PeerShareConfirmer` (`PeerWindowConfirmer` trusts only the
+   operator's `peer_window`). A later fingerprint exchange plugs into the
+   same interface and can only veto, never add, a peer. §4e federation
+   shared-billing *detection* is therefore not delivered by this phase and
+   stays with the §3c/§4e follow-up.
+
+   **Phase Completion Checklist (recorded 2026-10-22):**
+   - Functionality per §4b/§4c: ✅ the budget model and window math, the
+     persisted ledger fed by the usage-event hook, the admission gate (a full
+     window is a wait with `budget window full: …`, resumed on rollover;
+     interactive starts never gated), the estimated allocation figure, the
+     per-peer opt-in, and the surfaces — all in the files listed in the
+     status line. Known limit: admission cannot know what a task will cost, so
+     work admitted just before the ceiling is crossed can overshoot it.
+   - Unit tests: ✅ the 27 tests named in `docs/testing-tracker.md` plus
+     `TestUsageEventHookNilSafe`, `TestBudgetPeerSpendCountsTowardBlocked`,
+     `TestBudgetTransitionsAuditedOncePerChange`,
+     `TestPeerBudgetConfirmerCanVeto`,
+     `TestPeerBudgetFailureLoggedOncePerEpisode`,
+     `TestPeerBudgetLocalOnlyNoLoop` and the PWA
+     `app-llm-budget.test.js` (14 tests, 14 pass 2026-10-22). The Go budget
+     tests pass across `internal/inference`, `config`, `session`,
+     `autonomous`, `server`, `mcp`, `router` and `cmd/datawatch`
+     (2026-10-22, `-run` filtered).
+   - Full suites: not re-run for this documentation pass; the supervisor runs
+     the full Go and node suites at merge.
+   - Live smoke: No — this is an unreleased development build; the tracker's
+     live rows stay No until a sandbox daemon run (a tiny ceiling on a sandbox
+     LLM filling and resuming, spend surviving a restart, a two-daemon peer
+     opt-in).
+   - 8-item documentation checklist (2026-10-22): `CHANGELOG.md` — left to
+     the supervisor at merge time, by instruction;
+     `docs/config-reference.yaml` ✅ (the `budget` block shape and
+     `plan_tier_allocation_usd`); `docs/operations.md` ✅ (new section);
+     `README.md` — not edited in this pass (the `check-no-internal-refs.sh`
+     audit already reports one earlier README line, not from this phase);
+     doc index N/A (no new top-level doc — existing howto and operations
+     sections were grown); `docs/testing-tracker.md` ✅ (dedicated section);
+     no leaked tracker IDs in operator-facing prose ✅ (IDs appear only in
+     plans, the tracker and reference-doc comments); this plan's
+     Parity-surface section updated ✅.
+   - Conditional docs: ✅ howto updated (`docs/howto/automata-capacity.md`);
+     `docs/api-mcp-mapping.md` rows added, and the OpenAPI specs
+     (`docs/api/openapi.yaml`, `internal/server/web/openapi.yaml`) already
+     carry the two routes; no per-route page exists for the usage back-off
+     routes under `docs/api/`, so none was added for these. The flow diagram
+     `docs/flow/automata-capacity-flow.md` is unchanged: it does not list the
+     back-off gate, so there was no gate list to extend.
+   - Mobile-Parity: a `datawatch-app` issue is needed — the LLM `budget`
+     object, the `budgets` arrays in the capacity API and the autonomous
+     status, and the `budget window full` wait reason must parse and display
+     on Android and iOS. Not filed yet (it cannot be filed from this
+     session); tracked here and in `docs/plans/README.md` row 17.
+   - Localization: ✅ the new PWA strings exist in all five locale bundles
+     (en/de/es/fr/ja — asserted by `app-llm-budget.test.js`).
+   - Plans README line: ✅ row 17 status updated and the cost-guardrail item
+     narrowed (2026-10-22).
+   - Version: in the unreleased development build; not in a public release
+     yet.
 6. **Phase 6 — Visibility, audit and parity close-out.** `autonomous_status`
    shows queued-vs-running with a reason; PWA; `datawatch-app` issue; howto;
    release-smoke section. Status: Planned.
@@ -1274,14 +1375,14 @@ thing example (iii) could not see.
 
 | Surface | Include / exclude | What |
 |---|---|---|
-| REST | Include | `GET/PUT /api/config` for every new key. `max_parallel_tasks` accepted-and-ignored with a deprecation note. Lock/back-off/budget state in `GET /api/capacity`, plus queued reasons in autonomous PRD JSON. **(Phase 3, implemented)** `GET /api/llms` and the `llm:` pools of `GET /api/capacity` carry `plan_tier`, `max_inflight`, `effective_max_inflight` and `inflight_source`; `PUT /api/llms/{name}` and `PUT /api/config` (`autonomous.plan_tier_max_inflight`) accept them. |
-| MCP | Include | `autonomous_config_get`/`_set` with corrected descriptions (remove the false "Per-PRD worker cap (default 3)"). `capacity_status` gains `tree:`/`backoff:`/`budget:` pools. New read-only `autonomous_tree_locks`. **(Phase 3, implemented)** `llm_add`/`llm_update` carry `plan_tier` and `max_inflight`, `autonomous_config_set` accepts the tier table (object and pair forms); the `llm_update` `budget` field is still Phase 5. |
-| CLI | Include | `datawatch config set autonomous.project_write_serialization …` and the other keys. `datawatch autonomous tree-lock status`. **(Phase 3, implemented)** `datawatch llm add/update --plan-tier` (with `--max-inflight`); invalid tiers rejected before send. |
-| comm channel | Include | `configure <key>=<value>` for every new key. A status verb reply shows queued reasons and the active back-off. **(Phase 3, implemented)** `configure autonomous.plan_tier_max_inflight=…` through the generic configure path. |
+| REST | Include | `GET/PUT /api/config` for every new key. `max_parallel_tasks` accepted-and-ignored with a deprecation note. Lock/back-off/budget state in `GET /api/capacity`, plus queued reasons in autonomous PRD JSON. **(Phase 3, implemented)** `GET /api/llms` and the `llm:` pools of `GET /api/capacity` carry `plan_tier`, `max_inflight`, `effective_max_inflight` and `inflight_source`; `PUT /api/llms/{name}` and `PUT /api/config` (`autonomous.plan_tier_max_inflight`) accept them. **(Phase 5, implemented)** `GET /api/budget` (and `?llm=`), `GET /api/budget/usage` (own spend only, used by a peer that opted this daemon in), the LLM `budget` object on `PUT /api/llms/{name}`, a `budgets` array in `GET /api/capacity` and `GET /api/autonomous/status`, and `autonomous.plan_tier_allocation_usd` on `PUT /api/config`. |
+| MCP | Include | `autonomous_config_get`/`_set` with corrected descriptions (remove the false "Per-PRD worker cap (default 3)"). `capacity_status` gains `tree:`/`backoff:`/`budget:` pools. New read-only `autonomous_tree_locks`. **(Phase 3, implemented)** `llm_add`/`llm_update` carry `plan_tier` and `max_inflight`, `autonomous_config_set` accepts the tier table (object and pair forms); the `llm_update` `budget` field is still Phase 5. **(Phase 5, implemented)** `budget_status`; `llm_add`/`llm_update` carry the `budget` object; `autonomous_config_set` accepts `plan_tier_allocation_usd`; `capacity_status` includes the budgets. |
+| CLI | Include | `datawatch config set autonomous.project_write_serialization …` and the other keys. `datawatch autonomous tree-lock status`. **(Phase 3, implemented)** `datawatch llm add/update --plan-tier` (with `--max-inflight`); invalid tiers rejected before send. **(Phase 5, implemented)** `datawatch budget status [--llm]`; `datawatch llm add/update --budget-*` and `--clear-budget`, invalid combinations rejected before send. |
+| comm channel | Include | `configure <key>=<value>` for every new key. A status verb reply shows queued reasons and the active back-off. **(Phase 3, implemented)** `configure autonomous.plan_tier_max_inflight=…` through the generic configure path. **(Phase 5, implemented)** `budget [status] [<llm>]` replies with the same text as the CLI; `configure autonomous.plan_tier_allocation_usd=…` through the generic path. |
 | YAML/config | Include | New keys in `config.AutonomousConfig` and in the LLM registry entry, annotated in `docs/config-reference.yaml`. `max_parallel_tasks` deprecation documented. The missing `max_concurrent_tasks` YAML field is added. |
-| PWA | Include | Settings fields for the new keys; the `max_parallel_tasks` field replaced by `max_concurrent_tasks` in Settings (General list and Autonomous card) in Phase 1 (v9.0.86); the PWA no longer edits `max_parallel_tasks`, while the server still accepts and ignores it until the deferred removal. **(Phase 3, implemented)** LLM-edit *Plan tier* and *Max in flight* fields plus the autonomous *Plan tier caps* table setter (`app-plan-tier-fields.test.js`), all five locale bundles. Task chips for queued reasons. Automata list distinguishes approved-not-running. Capacity panel shows locks and back-off, plus (3c/4e) a per-peer "resource fingerprint sync" toggle and a confirmation list of detected shared-node/billing-group matches awaiting operator accept/reject. |
-| Android | Include, via a `datawatch-app` issue per the Mobile-Parity Rule | Queued-reason display and new config fields mirror the PWA. The REST contract change (new task wait reasons) must be parsed. **(Phase 3, needs a datawatch-app issue — not filed yet)** the LLM-edit `plan_tier`/`max_inflight` fields and the new wait reasons (`await_external: …`, `capacity: planner waiting …`) must parse and display. |
-| iPhone/iOS | Include, via the same `datawatch-app` issue | Same as Android, including the Phase 3 items. No iOS-specific behavior. |
+| PWA | Include | Settings fields for the new keys; the `max_parallel_tasks` field replaced by `max_concurrent_tasks` in Settings (General list and Autonomous card) in Phase 1 (v9.0.86); the PWA no longer edits `max_parallel_tasks`, while the server still accepts and ignores it until the deferred removal. **(Phase 3, implemented)** LLM-edit *Plan tier* and *Max in flight* fields plus the autonomous *Plan tier caps* table setter (`app-plan-tier-fields.test.js`), all five locale bundles. Task chips for queued reasons. Automata list distinguishes approved-not-running. Capacity panel shows locks and back-off, plus (3c/4e) a per-peer "resource fingerprint sync" toggle and a confirmation list of detected shared-node/billing-group matches awaiting operator accept/reject. **(Phase 5, implemented)** LLM-edit budget group (ceiling, hours, weekday, time, zone, allocation estimate, peers), the Capacity card budget line (spend, window end, rollover, `budget window full`, estimated allocation) and the plan-tier allocation table in Settings (`app-llm-budget.test.js`), all five locale bundles. |
+| Android | Include, via a `datawatch-app` issue per the Mobile-Parity Rule | Queued-reason display and new config fields mirror the PWA. The REST contract change (new task wait reasons) must be parsed. **(Phase 3, needs a datawatch-app issue — not filed yet)** the LLM-edit `plan_tier`/`max_inflight` fields and the new wait reasons (`await_external: …`, `capacity: planner waiting …`) must parse and display. **(Phase 5, needs a datawatch-app issue — not filed yet)** the LLM `budget` object, the `budgets` arrays in the capacity API and the autonomous status, and the `budget window full` wait reason must parse and display. |
+| iPhone/iOS | Include, via the same `datawatch-app` issue | Same as Android, including the Phase 3 items. No iOS-specific behavior. Same Phase 5 items as Android (same issue, not filed yet). |
 
 ## Open questions
 

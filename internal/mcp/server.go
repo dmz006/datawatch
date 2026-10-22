@@ -541,6 +541,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolUsageBackoffSet(), tracked(s.handleUsageBackoffSet))         // BL428 Phase 4
 	mcpSrv.AddTool(s.toolUsageBackoffClear(), tracked(s.handleUsageBackoffClear))     // BL428 Phase 4
 	mcpSrv.AddTool(s.toolUsageBackoffRecheck(), tracked(s.handleUsageBackoffRecheck)) // pattern-drift guard
+	mcpSrv.AddTool(s.toolBudgetStatus(), tracked(s.handleBudgetStatus))               // per-LLM dollar budget
 	mcpSrv.AddTool(s.toolSessionsStale(), tracked(s.handleSessionsStale))             // BL40
 	mcpSrv.AddTool(s.toolCostSummary(), tracked(s.handleCostSummary))                 // BL6
 	mcpSrv.AddTool(s.toolCostUsage(), tracked(s.handleCostUsage))                     // BL6

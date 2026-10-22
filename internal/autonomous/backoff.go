@@ -178,6 +178,9 @@ type UsageBackoffStatus struct {
 // by an operator).
 type PatternsStatusFunc func() (version, claudeCLIVersion string, stale bool)
 
+// BudgetsStatusFunc reports the budget state of every LLM that has a budget.
+type BudgetsStatusFunc func() []BudgetStatus
+
 // BuildUsageBackoffStatus snapshots the live flags of b (nil = none) with
 // the effective mode and maximum back-off. Active is never nil, so it
 // always marshals as an array.

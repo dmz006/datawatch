@@ -13,20 +13,20 @@ import (
 
 func (s *Server) toolLLMList() mcpsdk.Tool {
 	return mcpsdk.NewTool("llm_list",
-		mcpsdk.WithDescription("v7.0.0 S2 — list every LLM in the registry. Redacted (API keys as prefix+marker). Each entry also carries effective_max_inflight (the limit the capacity ledger admits against) and inflight_source (\"explicit\" | \"plan_tier\" | \"kind\" — which rule produced it)."),
+		mcpsdk.WithDescription("v7.0.0 S2 — list every LLM in the registry. Redacted (API keys as prefix+marker). Each entry also carries effective_max_inflight (the limit the capacity ledger admits against) and inflight_source (\"explicit\" | \"plan_tier\" | \"kind\" — which rule produced it), and a budget object (ceiling_usd, hours, weekday, time, zone, allocation_pct, peer_window) when the LLM has a dollar budget."),
 	)
 }
 
 func (s *Server) toolLLMGet() mcpsdk.Tool {
 	return mcpsdk.NewTool("llm_get",
-		mcpsdk.WithDescription("v7.0.0 S2 — fetch one LLM by name. Redacted. Also carries effective_max_inflight + inflight_source (explicit|plan_tier|kind)."),
+		mcpsdk.WithDescription("v7.0.0 S2 — fetch one LLM by name. Redacted. Also carries effective_max_inflight + inflight_source (explicit|plan_tier|kind), and the budget object when the LLM has a dollar budget."),
 		mcpsdk.WithString("name", mcpsdk.Required()),
 	)
 }
 
 func (s *Server) toolLLMAdd() mcpsdk.Tool {
 	return mcpsdk.NewTool("llm_add",
-		mcpsdk.WithDescription("v7.0.0 S2 — register a new LLM. Kind: ollama|openwebui|opencode|claude|claude-code|aider|goose|gemini|shell. compute_nodes is comma-separated ordered failover list (local kinds). api_key_ref required for cloud (claude). Session-backend fields (binary, console_cols/rows, output_mode, input_mode, auto_git_init/commit) apply to coding-agent kinds. Claude-code fields (skip_permissions, channel_enabled, auto_accept_disclaimer, permission_mode, default_effort, fallback_chain) only apply to claude-code."),
+		mcpsdk.WithDescription("v7.0.0 S2 — register a new LLM. Kind: ollama|openwebui|opencode|claude|claude-code|aider|goose|gemini|shell. compute_nodes is comma-separated ordered failover list (local kinds). api_key_ref required for cloud (claude). Session-backend fields (binary, console_cols/rows, output_mode, input_mode, auto_git_init/commit) apply to coding-agent kinds. Claude-code fields (skip_permissions, channel_enabled, auto_accept_disclaimer, permission_mode, default_effort, fallback_chain) only apply to claude-code. The optional budget object sets a dollar ceiling over a rolling or weekly window; its allocation_pct flag is an estimate that never blocks, and peer_window is off by default."),
 		mcpsdk.WithString("name", mcpsdk.Required()),
 		mcpsdk.WithString("kind", mcpsdk.Required()),
 		mcpsdk.WithString("model", mcpsdk.Description("model name")),
@@ -37,6 +37,7 @@ func (s *Server) toolLLMAdd() mcpsdk.Tool {
 		mcpsdk.WithString("max_inflight", mcpsdk.Description("cap on autonomous sessions in flight on this LLM across all PRDs (0 = unlimited). An explicit value > 0 wins over the plan_tier table and the kind default")),
 		mcpsdk.WithString("tags", mcpsdk.Description("comma-separated user tags")),
 		mcpsdk.WithString("auto_add_models", mcpsdk.Description("true/false — auto-append newly-discovered models")),
+		llmBudgetOption(),
 		// Session-backend fields
 		mcpsdk.WithString("binary", mcpsdk.Description("path to CLI binary (session-backend kinds)")),
 		mcpsdk.WithString("console_cols", mcpsdk.Description("terminal width override")),
@@ -57,7 +58,7 @@ func (s *Server) toolLLMAdd() mcpsdk.Tool {
 
 func (s *Server) toolLLMUpdate() mcpsdk.Tool {
 	return mcpsdk.NewTool("llm_update",
-		mcpsdk.WithDescription("v7.0.0 S2 — replace an existing LLM. Supports all fields from llm_add."),
+		mcpsdk.WithDescription("v7.0.0 S2 — replace an existing LLM. Supports all fields from llm_add, including the budget object (replaced as a whole; allocation_pct is an estimate that never blocks, peer_window is off by default)."),
 		mcpsdk.WithString("name", mcpsdk.Required()),
 		mcpsdk.WithString("kind", mcpsdk.Required()),
 		mcpsdk.WithString("model", mcpsdk.Description("model name")),
@@ -68,6 +69,7 @@ func (s *Server) toolLLMUpdate() mcpsdk.Tool {
 		mcpsdk.WithString("max_inflight", mcpsdk.Description("cap on autonomous sessions in flight on this LLM across all PRDs (0 = unlimited). An explicit value > 0 wins over the plan_tier table and the kind default")),
 		mcpsdk.WithString("tags", mcpsdk.Description("comma-separated user tags")),
 		mcpsdk.WithString("auto_add_models", mcpsdk.Description("true/false — auto-append newly-discovered models")),
+		llmBudgetOption(),
 		// Session-backend fields
 		mcpsdk.WithString("binary", mcpsdk.Description("path to CLI binary (session-backend kinds)")),
 		mcpsdk.WithString("console_cols", mcpsdk.Description("terminal width override")),
@@ -119,6 +121,9 @@ func (s *Server) handleLLMGetMCP(_ context.Context, req mcpsdk.CallToolRequest) 
 
 func (s *Server) handleLLMAddMCP(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	body := llmBodyFromReq(req)
+	if err := attachBudget(body, req); err != nil {
+		return toolError("llm_add", err), nil
+	}
 	out, err := s.proxyJSON("POST", "/api/llms", body)
 	if err != nil {
 		return nil, err
@@ -128,6 +133,9 @@ func (s *Server) handleLLMAddMCP(_ context.Context, req mcpsdk.CallToolRequest) 
 
 func (s *Server) handleLLMUpdateMCP(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	body := llmBodyFromReq(req)
+	if err := attachBudget(body, req); err != nil {
+		return toolError("llm_update", err), nil
+	}
 	out, err := s.proxyJSON("PUT", "/api/llms/"+mustString(req, "name"), body)
 	if err != nil {
 		return nil, err

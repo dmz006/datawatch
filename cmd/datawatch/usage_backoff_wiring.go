@@ -21,6 +21,12 @@ import (
 // (in-memory only; rebuilt from live sessions on start).
 var autonomousBackoff = autonomouspkg.NewBackoff()
 
+// autonomousBudget is the daemon-wide dollar-spend ledger behind the per-LLM
+// budget windows. It is nil until wireCapacity constructs it with a
+// persistence file under the daemon data directory; budgetBackpressure and
+// the usage hook both treat nil as "no budgets".
+var autonomousBudget *autonomouspkg.BudgetLedger
+
 // backoffSweepInterval is how often expired back-off flags are cleared.
 const backoffSweepInterval = 15 * time.Second
 

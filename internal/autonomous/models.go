@@ -1116,6 +1116,10 @@ type LoopStatus struct {
 	// the effective back-off config. Always present in a Manager.Status().
 	UsageBackoff *UsageBackoffStatus `json:"usage_backoff,omitempty"`
 
+	// Budgets lists the dollar budget state of every LLM that has a budget.
+	// Always an array, empty when none is wired or set.
+	Budgets []BudgetStatus `json:"budgets"`
+
 	// Warnings are plain-language notices that a planning or verification
 	// model does not pair with the backend it is used with, so it will not
 	// reach its session. See PairingWarnings.

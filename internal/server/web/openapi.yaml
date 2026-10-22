@@ -3473,6 +3473,24 @@ paths:
       operationId: usageBackoffRecheck
       tags: [Singletons]
       responses: {"200": {description: OK}}
+  /api/budget:
+    get:
+      summary: Dollar budget state of every LLM that has a budget, or one LLM with ?llm=
+      operationId: budgetGet
+      tags: [Singletons]
+      parameters:
+        - {name: llm, in: query, required: false, schema: {type: string}}
+      responses: {"200": {description: OK}, "404": {description: The LLM has no budget}}
+  /api/budget/usage:
+    get:
+      summary: This daemon's own spend for an LLM, never including peer spend; from and to default to this daemon's window
+      operationId: budgetUsageGet
+      tags: [Singletons]
+      parameters:
+        - {name: llm, in: query, required: true, schema: {type: string}}
+        - {name: from, in: query, required: false, schema: {type: string, format: date-time}}
+        - {name: to, in: query, required: false, schema: {type: string, format: date-time}}
+      responses: {"200": {description: OK}, "400": {description: Invalid request}, "404": {description: No budget window to default to}}
   /api/diagnose:
     get:
       summary: Diagnostic snapshot — backend reachability, config validity, recent errors
