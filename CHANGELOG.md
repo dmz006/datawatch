@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.87 — Automation control operations: pause, resume, cancel, skip, insert, remove, reorder
+
+### Added
+
+- **Automation control operations and mid-flight editing.** A running Automation can now be paused, resumed, cancelled, have a member skipped, inserted, removed or reordered, on REST, MCP, the CLI and the chat commands with the same names and arguments. Cancel has no default: `cancel_in_flight` is a required argument on every surface, and a call that omits it is rejected with a message naming the two choices. Each Automation carries an `agent_insert_policy` (`allow` or `require_operator`; the global default is `allow`, set by a config key): an insert by an agent or session under `require_operator` is held pending until the operator approves it, and under `allow` the inserted Automaton still passes its own approval gate and the insert is audited. Every operation that acts on a position names the branch it acts on, and is rejected with a clear message when the Automation has several active branches and none is named. Operations are serialised by a per-Automation lock, edits carry the Automation Version and a stale version answers HTTP 409, and each operation records a decision and an audit entry. An insert marked urgent goes to a dedicated urgent Automation lane when one is available, otherwise it may be placed ahead of the current position when it blocks the running Automation, and only one urgent member can be active at a time. Documented in the API reference, the MCP tool list, the config reference and the testing tracker; an opt-in live smoke test drives the operations against a running daemon.
+
 ## v9.5.86 — A failed pi run no longer looks complete
 
 ### Fixed
