@@ -1312,6 +1312,7 @@ thing example (iii) could not see.
 5. **Default for `project_write_serialization`.** Should `per_project_dir`
    be on by default, which changes today's behavior by serializing
    same-tree PRDs, or opt-in for one release?
+   **Confirmed by the operator 2026-10-22: keep `advisory`** (the value shipped in BL428 Phase 1/2).
 6. **Shared lock for worktree PRDs on the main repo key.** Is a
    visible-but-non-blocking shared lock wanted, or should worktree PRDs be
    fully independent of the main checkout?
