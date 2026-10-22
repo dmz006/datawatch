@@ -111,16 +111,35 @@ func (m *Manager) StartOneShotReaper(ctx context.Context) {
 	}()
 }
 
-// removeOneShotScratch deletes the scratch task files the pi launch command
-// writes for one tmux session. The launch command removes its file itself
-// only when pi returns normally, so a zombie or a killed run leaves one behind.
+// piScratchNamePart sanitizes a tmux session name the same way the pi
+// backend's scratchNamePart does, so cleanup globs match the files buildLaunchCmd
+// reserved: every non-alphanumeric rune becomes '-'.
+func piScratchNamePart(s string) string {
+	b := make([]byte, 0, len(s))
+	for _, r := range s {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
+			b = append(b, byte(r))
+		} else {
+			b = append(b, '-')
+		}
+	}
+	return string(b)
+}
+
+// removeOneShotScratch deletes the scratch task, output and status files the pi
+// launch command writes for one tmux session. The launch command removes its
+// files itself only when pi returns normally, so a zombie or a killed run
+// leaves them behind.
 func removeOneShotScratch(tmuxSession string) {
 	if tmuxSession == "" {
 		return
 	}
-	matches, _ := filepath.Glob("/tmp/datawatch-pi-task-" + tmuxSession + "-*.txt")
-	for _, f := range matches {
-		_ = os.Remove(f)
+	session := piScratchNamePart(tmuxSession)
+	for _, prefix := range []string{"datawatch-pi-task-", "datawatch-pi-status-", "datawatch-pi-out-"} {
+		matches, _ := filepath.Glob(filepath.Join(os.TempDir(), prefix+session+"-*"))
+		for _, f := range matches {
+			_ = os.Remove(f)
+		}
 	}
 }
 
