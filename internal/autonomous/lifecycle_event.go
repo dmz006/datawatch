@@ -83,6 +83,9 @@ type LifecycleEvent struct {
 	// {"deleted": true} in that case and NewStatus alone can't express
 	// it (an existing PRD may legitimately have an empty status).
 	Deleted bool `json:"deleted,omitempty"`
+	// Test marks a synthetic event fired by a subscription test; it is
+	// never emitted by the executor.
+	Test bool `json:"test,omitempty"`
 }
 
 // PRDUpdatePayload maps a KindPRDUpdated event to the legacy WS

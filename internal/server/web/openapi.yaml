@@ -1300,6 +1300,54 @@ paths:
       operationId: autonomousLearnings
       tags: [Autonomous]
       responses: {"200": {description: OK}}
+  /api/autonomous/subscriptions/{id}:
+    put:
+      summary: Replace a lifecycle subscription's mutable fields
+      description: |
+        Full replace of filter, sink, action, coalesce, one_shot and expires_at;
+        owner is kept unless supplied. The id and created_at are kept. The
+        change takes effect live. Requires the `autonomous:write` capability.
+      operationId: autonomousSubscriptionUpdate
+      tags: [Autonomous]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object}
+      responses:
+        "200": {description: "The updated subscription record"}
+        "400": {description: "Malformed body or failed validation"}
+        "403": {description: "Caller lacks the autonomous:write capability"}
+        "404": {description: "Unknown subscription id"}
+        "503": {description: "Lifecycle subscriptions not wired"}
+  /api/autonomous/subscriptions/{id}/test:
+    post:
+      summary: Deliver a test event to a subscription's sink
+      description: |
+        Sends a synthetic prd.updated event whose message starts with `[test] `
+        to just this subscription's sink. The action text is never used and a
+        one-shot subscription is not consumed. Requires the `autonomous:write`
+        capability.
+      operationId: autonomousSubscriptionTest
+      tags: [Autonomous]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      responses:
+        "200":
+          description: Delivery outcome
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: {type: boolean}
+                  sink: {type: string}
+                  error: {type: string}
+        "403": {description: "Caller lacks the autonomous:write capability"}
+        "404": {description: "Unknown subscription id"}
+        "503": {description: "Test delivery not available"}
   /api/autonomous/events:
     get:
       summary: Poll the pending lifecycle events of a named queue

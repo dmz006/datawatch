@@ -34,6 +34,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"reflect"
 	"sort"
 	"strings"
 	"sync"
@@ -62,6 +63,7 @@ const sessionPushJanitorInterval = 30 * time.Second
 const (
 	auditLifecycleSubCreate = "autonomous_lifecycle_subscription_create"
 	auditLifecycleSubRemove = "autonomous_lifecycle_subscription_remove"
+	auditLifecycleSubUpdate = "autonomous_lifecycle_subscription_update"
 )
 
 // CommSinkConfig drives the comm-sink delivery from persisted
@@ -138,6 +140,7 @@ func DefaultBridgePost(port int, sessionID, text string) error {
 type activeSubscription struct {
 	cancel func()
 	comm   *CommFanoutSink
+	sub    Subscription // as registered, to detect an in-place update on resync
 }
 
 // LifecycleSubscriptionEngine wires persisted subscriptions from a
@@ -275,13 +278,16 @@ func (e *LifecycleSubscriptionEngine) resync() {
 	}
 
 	next := make(map[string]*activeSubscription, len(subs))
-	var created, removed []string
+	var created, removed, updated []string
 	for _, sub := range subs {
 		if sub.ExpiresAt != nil && !sub.ExpiresAt.After(now) {
 			continue // expired: not registered; the janitor deletes it
 		}
 		if prevIDs[sub.ID] {
 			prevIDs[sub.ID] = false
+			if !reflect.DeepEqual(prevActive[sub.ID].sub, sub) {
+				updated = append(updated, sub.ID)
+			}
 		} else {
 			created = append(created, sub.ID)
 		}
@@ -290,7 +296,7 @@ func (e *LifecycleSubscriptionEngine) resync() {
 		if sub.Sink.Type == SinkComm && sub.Coalesce {
 			comm = NewCommFanoutSink(e.cfg.Comm.Send, e.cfg.Comm.Window)
 		}
-		next[sub.ID] = &activeSubscription{cancel: subCancel, comm: comm}
+		next[sub.ID] = &activeSubscription{cancel: subCancel, comm: comm, sub: sub}
 	}
 	for id := range prevIDs {
 		if prevIDs[id] {
@@ -333,6 +339,10 @@ func (e *LifecycleSubscriptionEngine) resync() {
 
 	sort.Strings(created)
 	sort.Strings(removed)
+	sort.Strings(updated)
+	for _, id := range updated {
+		e.audit(auditLifecycleSubUpdate, subscriptionAuditDetails(subByID[id]))
+	}
 	for _, id := range created {
 		e.audit(auditLifecycleSubCreate, subscriptionAuditDetails(subByID[id]))
 	}

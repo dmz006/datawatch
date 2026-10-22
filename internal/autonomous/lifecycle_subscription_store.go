@@ -9,6 +9,7 @@ package autonomous
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"sort"
@@ -28,7 +29,16 @@ type SubscriptionStore struct {
 	encKey  []byte
 	subs    map[string]Subscription
 	changed func() // resync hook (engine re-attaches sinks after mutations)
+	tester  func(id string) (TestResult, error)
 }
+
+// ErrSubscriptionNotFound is returned (wrapped) when an operation names
+// a subscription id the store does not hold.
+var ErrSubscriptionNotFound = errors.New("subscription not found")
+
+// ErrTestUnavailable is returned by FireTest when no engine is attached
+// to deliver the synthetic test event.
+var ErrTestUnavailable = errors.New("subscription test delivery not available")
 
 // NewSubscriptionStore loads path, or starts an empty store when the
 // file does not exist (idempotent first boot). A corrupt file (failed
@@ -141,6 +151,58 @@ func (s *SubscriptionStore) Add(sub Subscription) (Subscription, error) {
 	return out, err
 }
 
+// Update replaces the mutable fields of an existing subscription (Filter,
+// Sink, Action, Coalesce, OneShot, ExpiresAt; Owner only when sub.Owner
+// is non-empty). ID and CreatedAt are kept. The result is validated
+// before anything is stored, so a failed update leaves the record
+// untouched. An unknown id is an ErrSubscriptionNotFound error.
+func (s *SubscriptionStore) Update(id string, sub Subscription) (Subscription, error) {
+	var out Subscription
+	err := s.mutate(func(now time.Time) error {
+		cur, ok := s.subs[id]
+		if !ok {
+			return fmt.Errorf("subscription %s: %w", id, ErrSubscriptionNotFound)
+		}
+		next := cur
+		next.Filter = sub.Filter
+		next.Sink = sub.Sink
+		next.Action = sub.Action
+		next.Coalesce = sub.Coalesce
+		next.OneShot = sub.OneShot
+		next.ExpiresAt = sub.ExpiresAt
+		if sub.Owner != "" {
+			next.Owner = sub.Owner
+		}
+		if err := ValidateSubscription(next, now); err != nil {
+			return err
+		}
+		s.subs[id] = next
+		out = next
+		return nil
+	})
+	return out, err
+}
+
+// SetTestFirer registers the function FireTest delegates to (the engine's
+// FireTest). Nil detaches it.
+func (s *SubscriptionStore) SetTestFirer(fn func(id string) (TestResult, error)) {
+	s.mu.Lock()
+	s.tester = fn
+	s.mu.Unlock()
+}
+
+// FireTest delivers a synthetic test event to subscription id's sink via
+// the attached engine. Without an engine it returns ErrTestUnavailable.
+func (s *SubscriptionStore) FireTest(id string) (TestResult, error) {
+	s.mu.RLock()
+	fn := s.tester
+	s.mu.RUnlock()
+	if fn == nil {
+		return TestResult{}, ErrTestUnavailable
+	}
+	return fn(id)
+}
+
 // List returns copies of all subscriptions, optionally narrowed to one
 // owner. An empty owner means all.
 func (s *SubscriptionStore) List(owner string) []Subscription {
@@ -175,7 +237,7 @@ func (s *SubscriptionStore) Get(id string) (Subscription, bool) {
 func (s *SubscriptionStore) Delete(id string) error {
 	return s.mutate(func(time.Time) error {
 		if _, ok := s.subs[id]; !ok {
-			return fmt.Errorf("subscription %s not found", id)
+			return fmt.Errorf("subscription %s: %w", id, ErrSubscriptionNotFound)
 		}
 		delete(s.subs, id)
 		return nil

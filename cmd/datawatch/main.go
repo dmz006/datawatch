@@ -5730,6 +5730,9 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				// store change, so a subscription created or deleted over
 				// REST takes effect without a restart.
 				httpServer.SetAutonomousSubscriptions(lifeSubStore)
+				// POST /api/autonomous/subscriptions/{id}/test delivers
+				// through the engine's own sink wiring.
+				lifeSubStore.SetTestFirer(lifeSubEngine.FireTest)
 				// The mcp_queue sink's read side: GET /api/autonomous/events.
 				if pq := lifeSubEngine.PendingEvents(); pq != nil {
 					httpServer.SetAutonomousEvents(pq)
