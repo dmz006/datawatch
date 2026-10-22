@@ -245,6 +245,11 @@ mcp:
   sse_host: 127.0.0.1
   # SSE listen port
   sse_port: 8081
+  # Max time to retry failed SSE TCP binds with exponential backoff
+  # (1s, 2s, 4s, ... capped at 15s between attempts), e.g. while a
+  # previous daemon instance is still releasing its port. Zero or
+  # negative values fall back to the 120s default.
+  sse_bind_timeout: 120s
   # Bearer token for SSE connections. Empty falls back to server.token
   # (SEC-002) — MCP SSE is open only when BOTH this and server.token
   # are empty.

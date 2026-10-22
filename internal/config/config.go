@@ -1617,6 +1617,11 @@ type MCPConfig struct {
 	SSEHost string `yaml:"sse_host"`
 	SSEPort int    `yaml:"sse_port"`
 
+	// SSEBindTimeout is how long ServeSSE retries a failed TCP bind with
+	// exponential backoff before giving up (BL444; default 120s, zero or
+	// negative is treated as the default).
+	SSEBindTimeout time.Duration `yaml:"sse_bind_timeout"`
+
 	// Token is a bearer token required for SSE connections.
 	// Remote AI clients must pass "Authorization: Bearer <token>".
 	Token string `yaml:"token"`
@@ -3226,6 +3231,9 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.MCP.SSEHost == "" {
 		cfg.MCP.SSEHost = "127.0.0.1"
+	}
+	if cfg.MCP.SSEBindTimeout <= 0 {
+		cfg.MCP.SSEBindTimeout = 120 * time.Second
 	}
 	if cfg.Session.LogLevel == "" {
 		cfg.Session.LogLevel = "info"
