@@ -1114,7 +1114,7 @@ checklist is.
    - Unit tests: ✅ all new tests green on 2026-10-22 —
      `internal/inference/plan_tier_test.go` (8), `plan_tier_source_test.go`
      (1), `internal/config/plan_tier_max_inflight_test.go` (5),
-     `internal/server/plan_tier_api_test.go` (7),
+     `internal/server/plan_tier_api_test.go` (6),
      `internal/mcp/plan_tier_tools_test.go` (6),
      `cmd/datawatch/cli_llm_plan_tier_test.go` (5),
      `internal/autonomous/decompose_admission_test.go` (7),
