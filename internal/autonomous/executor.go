@@ -303,14 +303,28 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 	qgCfg := m.resolveQualityGates(prd)
 	var qgBaseline *pipeline.TestResult
 	if qgCfg.Enabled && qgCfg.TestCommand != "" && prd.ProjectDir != "" {
-		r := runQualityGateTests(qgCfg.TestCommand, prd.ProjectDir, qgCfg.Timeout)
+		r := runQualityGateTests(qgCfg.TestCommand, prd.ProjectDir, qgCfg.EffectiveTimeout())
 		qgBaseline = &r
 		log.Printf("[autonomous] %s quality-gate baseline: %d pass / %d fail", prdID, r.PassCount, r.FailCount)
+		// Validate the baseline before trusting it. An invalid one
+		// (command/build/environment failure, e.g. a generated file missing
+		// from a worktree) is recorded on the PRD with the plain reason and
+		// logged as a warning; from here on the gate warns only and never
+		// blocks or retries a task on numbers we cannot trust.
+		if valid, reason := pipeline.ClassifyBaseline(r); !valid {
+			m.markGateInvalid(prdID, prd, reason)
+			log.Printf("[autonomous] %s WARNING: quality-gate baseline invalid (%s) — gate warns only and never blocks a task", prdID, reason)
+		}
 	}
 	// BL447: the PRD-level baseline is only comparable for tasks that run
 	// in prd.ProjectDir; tasks with another resolved dir get a lazily
 	// captured, per-dir baseline cached for the rest of this run.
 	qgBaselines := newQualityGateBaselines(qgCfg, prd.ProjectDir, qgBaseline)
+	// Lazily captured per-dir baselines get the same validation.
+	qgBaselines.onInvalid = func(dir, reason string) {
+		m.markGateInvalid(prdID, prd, fmt.Sprintf("task dir %s: %s", dir, reason))
+		log.Printf("[autonomous] %s WARNING: quality-gate baseline for dir %s invalid (%s) — gate warns only and never blocks a task", prdID, dir, reason)
+	}
 
 	// BL370 — resolve concurrency limit: per-PRD overrides global config.
 	// 0 or 1 = sequential (existing behaviour); > 1 = concurrent pool.
@@ -1335,34 +1349,84 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			// captured in that same dir (qualityGateBaselines.forDir).
 			qgDir := m.resolveTaskProjectDir(prd, t)
 			if base, ok := qgBaselines.forDir(qgDir); ok {
-				current := runQualityGateTests(qgCfg.TestCommand, qgDir, qgCfg.Timeout)
-				cmp := pipeline.EvaluateGate(base, current, qgDir, qgCfg.Timeout)
+				current := runQualityGateTests(qgCfg.TestCommand, qgDir, qgCfg.EffectiveTimeout())
+				cmp := pipeline.EvaluateGate(base, current, qgDir, qgCfg.EffectiveTimeout())
 				t.QualityGateResult = &cmp
 				log.Printf("[autonomous] %s/%s quality-gate: %s", prd.ID, t.ID, cmp.Summary)
 				metrics.QualityGateRunsTotal.Inc()
-				if cmp.Regression {
-					metrics.QualityGateRegressionTotal.Inc()
-				} else {
-					metrics.QualityGatePassTotal.Inc()
-				}
-				if cmp.Regression && qgCfg.BlockOnRegression {
-					lastFailureCategory = "policy" // BL410 Phase 3
-					oldStatus := t.Status
+				// The verifier PASSED, so whatever the gate reports
+				// (confirmed regression or unusable) is a disagreement the
+				// operator's gate_disagreement policy decides.
+				policy := m.gateDisagreementPolicy()
+				switch {
+				case cmp.Invalid:
+					// An unusable baseline or run never blocks under ANY
+					// policy: it warns only, and counts as neither a pass nor
+					// a regression in the metrics.
+					cmp.Summary = "gate invalid (warning): " + cmp.InvalidReason
 					m.store.WithLock(func() {
-						t.Status = TaskFailed
-						t.Error = "quality_gate_regression: " + cmp.Summary
+						t.QualityGateResult = &cmp
+						t.GateDisagreement = &GateDisagreement{
+							VerifierOK: true, GateInvalid: true,
+							Policy: policy, Summary: cmp.Summary,
+						}
 					})
-					if m.store.SaveTask(t) == nil {
-						m.emitTaskStatus(prd, t, oldStatus, nil, nil)
+					log.Printf("[autonomous] %s/%s WARNING: quality-gate invalid (policy=%s, never blocks): %s", prd.ID, t.ID, policy, cmp.InvalidReason)
+					m.recordGateDisagreementDecision(prd.ID, t.ID, policy, "invalid gate (never blocks): "+cmp.InvalidReason)
+				case cmp.Regression:
+					metrics.QualityGateRegressionTotal.Inc()
+					m.store.WithLock(func() {
+						t.GateDisagreement = &GateDisagreement{
+							VerifierOK: true, GateRegression: true,
+							Policy: policy, Summary: cmp.Summary,
+						}
+					})
+					if policy == "block" {
+						// Confirmed regression from a valid baseline: fail the
+						// task with no auto-fix retry. The operator chose block
+						// on this disagreement, so an automated rewrite must
+						// not get to re-pass the verifier with the gate still
+						// red. Run re-reads the stored task and rolls the
+						// Automaton up from the TaskFailed status.
+						lastFailureCategory = "policy"
+						m.recordGateDisagreementDecision(prd.ID, t.ID, policy, "blocked: verifier ok, gate regression — "+cmp.Summary)
+						oldStatus := t.Status
+						m.store.WithLock(func() {
+							t.Status = TaskFailed
+							t.Error = "gate_disagreement: " + cmp.Summary
+						})
+						m.releaseCapacity(t.ID)
+						if m.store.SaveTask(t) == nil {
+							m.emitTaskStatus(prd, t, oldStatus, nil, nil)
+						}
+						return nil
 					}
-					// Fold regression summary into retry hint so the next attempt
-					// knows what broke.
-					hint = "quality gate regression: " + cmp.Summary
-					if cp := m.relocateCheckpoint(prd, t); cp != "" {
-						hint += "\n\nCheckpoint from the previous attempt (context only):\n" + cp
+					// Policy "warn" (default): record and let the task
+					// complete, unless the per-Automaton knob below says
+					// regressions are fatal.
+					log.Printf("[autonomous] %s/%s WARNING: verifier passed but quality gate reports a regression (policy=%s): %s", prd.ID, t.ID, policy, cmp.Summary)
+					m.recordGateDisagreementDecision(prd.ID, t.ID, policy, "warn: verifier ok, gate regression — "+cmp.Summary)
+					if qgCfg.BlockOnRegression {
+						lastFailureCategory = "policy" // BL410 Phase 3
+						oldStatus := t.Status
+						m.store.WithLock(func() {
+							t.Status = TaskFailed
+							t.Error = "quality_gate_regression: " + cmp.Summary
+						})
+						if m.store.SaveTask(t) == nil {
+							m.emitTaskStatus(prd, t, oldStatus, nil, nil)
+						}
+						// Fold regression summary into retry hint so the next attempt
+						// knows what broke.
+						hint = "quality gate regression: " + cmp.Summary
+						if cp := m.relocateCheckpoint(prd, t); cp != "" {
+							hint += "\n\nCheckpoint from the previous attempt (context only):\n" + cp
+						}
+						_ = m.store.SaveTask(t)
+						continue // try auto-fix retry with regression context
 					}
-					_ = m.store.SaveTask(t)
-					continue // try auto-fix retry with regression context
+				default:
+					metrics.QualityGatePassTotal.Inc()
 				}
 			}
 			done := time.Now()
@@ -2312,6 +2376,30 @@ func (m *Manager) commitRollupStatus(prd *PRD, observed PRDStatus, expectedRev i
 		log.Printf("[autonomous] rollup commit: prd=%s: %v", prd.ID, err)
 	}
 	return "", false
+}
+
+// recordGateDisagreementDecision appends a gate_disagreement entry to the
+// PRD's decision log (append-only operator timeline) and saves the PRD.
+// The PRD is re-fetched from the store: the in-flight prd snapshot passed
+// by executeOne may not carry the task's latest saved state, and saving the
+// stale snapshot would clobber task rows. Never mutates task state — the
+// caller already recorded the outcome on the task itself.
+func (m *Manager) recordGateDisagreementDecision(prdID, taskID, policy, note string) {
+	p, ok := m.store.GetPRD(prdID)
+	if !ok {
+		return
+	}
+	m.store.WithLock(func() {
+		p.Decisions = append(p.Decisions, Decision{
+			At:    time.Now(),
+			Kind:  "gate_disagreement",
+			Actor: "autonomous",
+			Note:  fmt.Sprintf("task %s (policy=%s): %s", taskID, policy, note),
+		})
+	})
+	if err := m.store.SavePRD(p); err != nil {
+		log.Printf("[autonomous] prd=%s save gate_disagreement decision: %v", prdID, err)
+	}
 }
 
 // recordRollupAborted appends a rollup_aborted_stale decision to the

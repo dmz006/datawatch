@@ -214,3 +214,121 @@ func TestGateDisagreement_APISetConfigRejectsInvalid(t *testing.T) {
 		t.Fatalf("after SetConfig omitting gate_disagreement, value changed to %q, want \"block\"", got)
 	}
 }
+
+// TestGateDisagreement_VerdictPassRegression_Warn — verifier OK +
+// valid-baseline regression + policy "warn" (BlockOnRegression OFF):
+// the task COMPLETES with the disagreement recorded on the task and in
+// the decision log.
+func TestGateDisagreement_VerdictPassRegression_Warn(t *testing.T) {
+	projDir := goModuleFixture(t)
+	gate := pipeline.QualityGateConfig{
+		Enabled:           true,
+		TestCommand:       "go test ./...",
+		Timeout:           30,
+		BlockOnRegression: false,
+	}
+	cfg := Config{
+		Enabled:          true,
+		AutoFixRetries:   0,
+		GateDisagreement: "warn",
+	}
+	prd := gateDisagreementRun(t, projDir, gate, cfg, func(_ context.Context, _ SpawnRequest) (SpawnResult, error) {
+		breakProject(t, projDir, "broken_test.go")
+		return SpawnResult{SessionID: "sess-gd"}, nil
+	})
+
+	tk := findTask(t, prd)
+	if tk.Status != TaskCompleted {
+		t.Fatalf("warn policy: task = %s (err=%q), want completed", tk.Status, tk.Error)
+	}
+	if tk.QualityGateResult == nil || !tk.QualityGateResult.Regression {
+		t.Fatalf("warn policy: expected recorded regression, got %+v", tk.QualityGateResult)
+	}
+	gd := tk.GateDisagreement
+	if gd == nil {
+		t.Fatal("warn policy: task.GateDisagreement is nil, want recorded")
+	}
+	if !gd.VerifierOK || !gd.GateRegression || gd.GateInvalid {
+		t.Fatalf("warn policy: GateDisagreement = %+v, want verifier_ok=true gate_regression=true gate_invalid=false", gd)
+	}
+	if gd.Policy != "warn" {
+		t.Fatalf("warn policy: GateDisagreement.Policy = %q, want \"warn\"", gd.Policy)
+	}
+	assertGateDisagreementDecision(t, prd, "policy=warn")
+}
+
+// TestGateDisagreement_VerdictPassRegression_Block — verifier OK +
+// valid-baseline regression + policy "block" (BlockOnRegression OFF, so
+// the NEW policy — not the per-PRD knob — produces the failure): the
+// task FAILS with an error prefixed "gate_disagreement:".
+func TestGateDisagreement_VerdictPassRegression_Block(t *testing.T) {
+	projDir := goModuleFixture(t)
+	gate := pipeline.QualityGateConfig{
+		Enabled:           true,
+		TestCommand:       "go test ./...",
+		Timeout:           30,
+		BlockOnRegression: false,
+	}
+	cfg := Config{
+		Enabled:          true,
+		AutoFixRetries:   0,
+		GateDisagreement: "block",
+	}
+	prd := gateDisagreementRun(t, projDir, gate, cfg, func(_ context.Context, _ SpawnRequest) (SpawnResult, error) {
+		breakProject(t, projDir, "broken_test.go")
+		return SpawnResult{SessionID: "sess-gd"}, nil
+	})
+
+	tk := findTask(t, prd)
+	if tk.Status != TaskFailed {
+		t.Fatalf("block policy: task = %s, want failed (valid-baseline regression)", tk.Status)
+	}
+	if !strings.Contains(tk.Error, "gate_disagreement:") {
+		t.Fatalf("block policy: task.Error = %q, want prefix \"gate_disagreement:\"", tk.Error)
+	}
+	if tk.GateDisagreement == nil {
+		t.Fatal("block policy: task.GateDisagreement is nil, want recorded")
+	}
+	if tk.GateDisagreement.Policy != "block" {
+		t.Fatalf("block policy: GateDisagreement.Policy = %q, want \"block\"", tk.GateDisagreement.Policy)
+	}
+	if tk.GateDisagreement.GateInvalid {
+		t.Fatal("block policy: gate must read as a valid-baseline regression, not invalid")
+	}
+	assertGateDisagreementDecision(t, prd, "policy=block")
+}
+
+// TestGateDisagreement_InvalidGateNeverBlocks — verifier OK + INVALID
+// gate (no usable baseline) under policy "block": the gate must record
+// + warn and let the task complete; it never blocks.
+func TestGateDisagreement_InvalidGateNeverBlocks(t *testing.T) {
+	projDir := goModuleFixture(t)
+	gate := pipeline.QualityGateConfig{
+		Enabled:           true,
+		TestCommand:       "echo 'broken'", // nothing parseable as test output → invalid baseline
+		Timeout:           30,
+		BlockOnRegression: true, // even the strictest per-PRD setting must not block an unusable gate
+	}
+	cfg := Config{
+		Enabled:          true,
+		AutoFixRetries:   0,
+		GateDisagreement: "block",
+	}
+	prd := gateDisagreementRun(t, projDir, gate, cfg, nil)
+
+	tk := findTask(t, prd)
+	if tk.Status != TaskCompleted {
+		t.Fatalf("invalid gate: task = %s (err=%q), want completed (invalid gate never blocks)", tk.Status, tk.Error)
+	}
+	if tk.QualityGateResult == nil || !tk.QualityGateResult.Invalid {
+		t.Fatalf("invalid gate: expected invalid QualityGateResult, got %+v", tk.QualityGateResult)
+	}
+	gd := tk.GateDisagreement
+	if gd == nil {
+		t.Fatal("invalid gate: task.GateDisagreement is nil, want recorded (even when it cannot block)")
+	}
+	if !gd.GateInvalid || gd.GateRegression || !gd.VerifierOK {
+		t.Fatalf("invalid gate: GateDisagreement = %+v, want verifier_ok=true gate_invalid=true gate_regression=false", gd)
+	}
+	assertGateDisagreementDecision(t, prd, "invalid gate (never blocks)")
+}
