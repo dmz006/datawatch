@@ -224,7 +224,7 @@ func TestUsageBackoffComm_Recheck(t *testing.T) {
 	mux.HandleFunc("/api/usage-backoff/recheck", func(w http.ResponseWriter, r *http.Request) {
 		method, path = r.Method, r.URL.Path
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"active":[],"patterns_version":"abc123def456","patterns_stale":false}`))
+		_, _ = w.Write([]byte(`{"active":[],"patterns_version":"abc123def456","patterns_stale":false,"claude_cli_version":"1.2.3-test"}`))
 	})
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
@@ -234,7 +234,7 @@ func TestUsageBackoffComm_Recheck(t *testing.T) {
 	if method != http.MethodPost || path != "/api/usage-backoff/recheck" {
 		t.Errorf("recheck request = %s %s", method, path)
 	}
-	for _, want := range []string{"usage_backoff recheck", "patterns_version", "patterns_stale"} {
+	for _, want := range []string{"usage_backoff recheck", "patterns_version", "patterns_stale", "claude_cli_version"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("recheck reply lacks %q: %q", want, out)
 		}
@@ -250,12 +250,12 @@ func TestUsageBackoffComm_StatusShowsPatternsFields(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/usage-backoff", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"active":[],"patterns_version":"abc123def456","patterns_stale":true}`))
+		_, _ = w.Write([]byte(`{"active":[],"patterns_version":"abc123def456","patterns_stale":true,"claude_cli_version":"1.2.3-test"}`))
 	})
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 	out := strings.Join(loopbackRouter(t, srv).HandleTestMessage("usage_backoff status"), "\n")
-	for _, want := range []string{"patterns_version", "patterns_stale"} {
+	for _, want := range []string{"patterns_version", "patterns_stale", "claude_cli_version"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("status reply lacks %q: %q", want, out)
 		}

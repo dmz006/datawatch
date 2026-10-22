@@ -5,7 +5,9 @@ package server
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -321,13 +323,39 @@ func TestCapacity_ReportsBackoff(t *testing.T) {
 
 func patternsServer(t *testing.T) *Server {
 	t.Helper()
+	s, _ := patternsServerWithCLI(t, "9.9.9-test")
+	return s
+}
+
+// fakeCLIRunner stands in for `claude --version` so tests never depend on a
+// real claude binary (or PATH) being present.
+type fakeCLIRunner struct {
+	out string
+	err error
+}
+
+func (r *fakeCLIRunner) run(context.Context, string, ...string) ([]byte, error) {
+	if r.err != nil {
+		return nil, r.err
+	}
+	return []byte(r.out), nil
+}
+
+// patternsServerWithCLI builds a /api/usage-backoff server whose session
+// manager answers the claude version command with out (or err, simulating
+// an absent tool). The fake is returned so tests can mutate out mid-test
+// and observe the staleness guard.
+func patternsServerWithCLI(t *testing.T, out string) (*Server, *fakeCLIRunner) {
+	t.Helper()
 	sm, err := session.NewManager("h", t.TempDir(), "echo", 30*time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
+	fr := &fakeCLIRunner{out: out}
+	sm.SetClaudeCLIVersionRunner(fr.run)
 	s := usageBackoffServer(t)
 	s.manager = sm
-	return s
+	return s, fr
 }
 
 func ubRecheck(s *Server, method string) *httptest.ResponseRecorder {
@@ -340,7 +368,7 @@ func ubRecheck(s *Server, method string) *httptest.ResponseRecorder {
 func TestUsageBackoff_StatusCarriesPatternsFields(t *testing.T) {
 	s := patternsServer(t)
 	rr := ubDo(s, http.MethodGet, "")
-	for _, key := range []string{`"patterns_version":"`, `"patterns_stale":true`} {
+	for _, key := range []string{`"patterns_version":"`, `"patterns_stale":true`, `"claude_cli_version":"9.9.9-test"`} {
 		if !strings.Contains(rr.Body.String(), key) {
 			t.Errorf("GET /api/usage-backoff lacks %s: %s", key, rr.Body.String())
 		}
@@ -353,8 +381,10 @@ func TestUsageBackoff_StatusCarriesPatternsFields(t *testing.T) {
 	// Unwired manager: keys still present.
 	bare := usageBackoffServer(t)
 	body := ubDo(bare, http.MethodGet, "").Body.String()
-	if !strings.Contains(body, `"patterns_version":""`) || !strings.Contains(body, `"patterns_stale":false`) {
-		t.Errorf("no-manager status lacks patterns keys: %s", body)
+	for _, key := range []string{`"patterns_version":""`, `"patterns_stale":false`, `"claude_cli_version":""`} {
+		if !strings.Contains(body, key) {
+			t.Errorf("no-manager status lacks %s: %s", key, body)
+		}
 	}
 }
 
@@ -420,6 +450,7 @@ func TestUsageBackoff_RecheckCapabilityGate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	sm.SetClaudeCLIVersionRunner(func(context.Context, string, ...string) ([]byte, error) { return []byte("9.9.9-test"), nil })
 	s.manager = sm
 	capTest(t, s, http.MethodPost, "/api/usage-backoff/recheck", []byte(`{}`), s.handleUsageBackoffRecheck,
 		http.StatusOK, http.StatusOK, http.StatusForbidden)
@@ -430,7 +461,7 @@ func TestCapacity_ReportsPatternsFields(t *testing.T) {
 	for name, srv := range map[string]*Server{"with manager": s, "without manager": usageBackoffServer(t)} {
 		rr := httptest.NewRecorder()
 		srv.handleCapacity(rr, httptest.NewRequest(http.MethodGet, "/api/capacity", nil))
-		for _, key := range []string{`"patterns_version":`, `"patterns_stale":`} {
+		for _, key := range []string{`"patterns_version":`, `"patterns_stale":`, `"claude_cli_version":`} {
 			if !strings.Contains(rr.Body.String(), key) {
 				t.Errorf("%s: capacity lacks %s: %s", name, key, rr.Body.String())
 			}
@@ -441,11 +472,109 @@ func TestCapacity_ReportsPatternsFields(t *testing.T) {
 	var resp struct {
 		Version string `json:"patterns_version"`
 		Stale   bool   `json:"patterns_stale"`
+		CLI     string `json:"claude_cli_version"`
 	}
 	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
 		t.Fatal(err)
 	}
-	if resp.Version != s.manager.RateLimitPatternsVersion() || !resp.Stale {
+	if resp.Version != s.manager.RateLimitPatternsVersion() || !resp.Stale || resp.CLI != "9.9.9-test" {
 		t.Errorf("capacity patterns = %+v", resp)
+	}
+
+	// No manager: the key is still present and empty.
+	empty := usageBackoffServer(t)
+	rr = httptest.NewRecorder()
+	empty.handleCapacity(rr, httptest.NewRequest(http.MethodGet, "/api/capacity", nil))
+	if !strings.Contains(rr.Body.String(), `"claude_cli_version":""`) {
+		t.Errorf("no-manager capacity lacks claude_cli_version: %s", rr.Body.String())
+	}
+}
+
+func TestUsageBackoff_StatusCarriesClaudeCLIVersion(t *testing.T) {
+	s, _ := patternsServerWithCLI(t, "9.9.9-test")
+	st := ubStatus(t, ubDo(s, http.MethodGet, ""))
+	if st.ClaudeCLIVersion != "9.9.9-test" {
+		t.Errorf("claude_cli_version = %q, want 9.9.9-test", st.ClaudeCLIVersion)
+	}
+}
+
+func TestUsageBackoff_RecheckStaysFreshUntilVersionChanges(t *testing.T) {
+	s, fr := patternsServerWithCLI(t, "9.9.9-test")
+	rr := ubRecheck(s, http.MethodPost)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("recheck: %d %s", rr.Code, rr.Body.String())
+	}
+	st := ubStatus(t, rr)
+	if st.PatternsStale || st.PatternsVersion == "" || st.ClaudeCLIVersion != "9.9.9-test" {
+		t.Fatalf("recheck response = %+v, want not stale, version set, cli 9.9.9-test", st)
+	}
+	// Unchanged version: a plain re-check and GET stay not stale.
+	if got := ubStatus(t, ubRecheck(s, http.MethodPost)); got.PatternsStale {
+		t.Errorf("second recheck = %+v, want not stale", got)
+	}
+	if got := ubStatus(t, ubDo(s, http.MethodGet, "")); got.PatternsStale || got.ClaudeCLIVersion != "9.9.9-test" {
+		t.Fatalf("GET after recheck = %+v, want not stale", got)
+	}
+
+	// A claude version change (tool upgrade rewords output) flips the guard
+	// stale once the version is re-read, without any pattern change.
+	fr.out = "8.8.8-upgraded"
+	s.manager.RefreshClaudeCLIVersion()
+	got := ubStatus(t, ubDo(s, http.MethodGet, ""))
+	if !got.PatternsStale || got.ClaudeCLIVersion != "8.8.8-upgraded" || got.PatternsVersion == st.PatternsVersion {
+		t.Errorf("after version change = %+v, want stale with new cli text and version", got)
+	}
+
+	// Recheck clears the flag (recording the new tool text as approved).
+	got = ubStatus(t, ubRecheck(s, http.MethodPost))
+	if got.PatternsStale || got.ClaudeCLIVersion != "8.8.8-upgraded" {
+		t.Errorf("recheck after change = %+v, want cleared and cli 8.8.8-upgraded", got)
+	}
+}
+
+func TestUsageBackoff_AbsentToolReportsUnknownWithoutStale(t *testing.T) {
+	s, _ := patternsServerWithCLI(t, "")
+	s.manager.SetClaudeCLIVersionRunner(func(context.Context, string, ...string) ([]byte, error) {
+		return nil, errors.New("claude: not found")
+	})
+	rr := ubRecheck(s, http.MethodPost)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("recheck: %d %s", rr.Code, rr.Body.String())
+	}
+	st := ubStatus(t, rr)
+	if st.ClaudeCLIVersion != "unknown" || st.PatternsStale {
+		t.Errorf("recheck with absent tool = %+v, want unknown and not stale", st)
+	}
+	if st.PatternsVersion == "" {
+		t.Error("patterns_version = \"\", want the pattern-only fingerprint")
+	}
+	// A bare absence of the tool never raises patterns_stale on its own.
+	got := ubStatus(t, ubDo(s, http.MethodGet, ""))
+	if got.ClaudeCLIVersion != "unknown" || got.PatternsStale {
+		t.Errorf("GET with absent tool = %+v, want unknown and not stale", got)
+	}
+}
+
+func TestUsageBackoff_RecheckAuditIncludesClaudeCLIVersion(t *testing.T) {
+	dir := t.TempDir()
+	log, err := audit.New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, _ := patternsServerWithCLI(t, "9.9.9-test")
+	s.auditLog = log
+	rr := ubRecheck(s, http.MethodPost)
+	_ = log.Close()
+
+	got := readAuditLines(t, dir)
+	if len(got) != 1 {
+		t.Fatalf("want 1 audit entry, got %d: %+v", len(got), got)
+	}
+	st := ubStatus(t, rr)
+	if got[0].Details["patterns_version"] != st.PatternsVersion {
+		t.Errorf("details = %+v, want patterns_version %q", got[0].Details, st.PatternsVersion)
+	}
+	if got[0].Details["claude_cli_version"] != "9.9.9-test" {
+		t.Errorf("details = %+v, want claude_cli_version 9.9.9-test", got[0].Details)
 	}
 }

@@ -1784,10 +1784,10 @@ cost [<full_id>]                 token+USD rollup (or per-session)
 cooldown                         show global rate-limit cooldown
 cooldown set <seconds> [reason]  pause new sessions for N seconds
 cooldown clear                   clear active cooldown
-usage_backoff                    show per-backend usage back-off flags
+usage_backoff                    show per-backend usage back-off flags, config and the patterns_version/patterns_stale/claude_cli_version drift guard
 usage_backoff set <backend> <minutes> [reason]  hold autonomous dispatch to a backend
 usage_backoff clear [backend|all]  clear one back-off, or all (default)
-usage_backoff recheck            record current rate-limit patterns as rechecked
+usage_backoff recheck            record the rate-limit patterns and the claude tool version as rechecked
 stale [<seconds>]                list stale running sessions
 audit [actor=x action=y limit=N] query operator audit log
 rest <METHOD> <PATH> [json]      raw REST passthrough (e.g. rest GET /api/templates)

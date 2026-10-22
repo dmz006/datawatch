@@ -217,8 +217,11 @@ type capacityResponse struct {
 	Backoff []capacityBackoffJSON `json:"backoff"`
 	// PatternsVersion / PatternsStale mirror the usage back-off status: the
 	// rate-limit pattern fingerprint and whether an operator has rechecked it.
-	PatternsVersion string `json:"patterns_version"`
-	PatternsStale   bool   `json:"patterns_stale"`
+	// ClaudeCLIVersion is the cached `claude --version` text mixed into the
+	// fingerprint ("unknown" when the tool is absent).
+	PatternsVersion  string `json:"patterns_version"`
+	PatternsStale    bool   `json:"patterns_stale"`
+	ClaudeCLIVersion string `json:"claude_cli_version"`
 }
 
 // capacityBackoffJSON is one active usage back-off flag in the capacity
@@ -260,7 +263,7 @@ func (s *Server) handleCapacity(w http.ResponseWriter, r *http.Request) {
 	warnings := s.modelNodeWarnings()
 	if s.capacityLedger == nil {
 		empty := capacityResponse{Pools: []capacityPoolJSON{}, Leases: []capacity.Lease{}, Waiting: []capacity.Waiter{}, Warnings: warnings, Backoff: s.capacityBackoff()}
-		empty.PatternsVersion, empty.PatternsStale = s.rateLimitPatternsStatus()
+		empty.PatternsVersion, empty.ClaudeCLIVersion, empty.PatternsStale = s.rateLimitPatternsStatus()
 		writeJSONOK(w, empty)
 		return
 	}
@@ -334,7 +337,7 @@ func (s *Server) handleCapacity(w http.ResponseWriter, r *http.Request) {
 	sort.Slice(st.Pools, func(i, j int) bool { return st.Pools[i].Name < st.Pools[j].Name })
 
 	out := capacityResponse{Pools: make([]capacityPoolJSON, 0, len(st.Pools)), Leases: st.Leases, Waiting: st.Waiting, Warnings: warnings, Backoff: s.capacityBackoff()}
-	out.PatternsVersion, out.PatternsStale = s.rateLimitPatternsStatus()
+	out.PatternsVersion, out.ClaudeCLIVersion, out.PatternsStale = s.rateLimitPatternsStatus()
 	for _, p := range st.Pools {
 		pj := capacityPoolJSON{PoolStatus: p}
 		if strings.HasPrefix(p.Name, "node:") {

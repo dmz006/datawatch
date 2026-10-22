@@ -384,6 +384,12 @@ type Manager struct {
 	taskEchoWindow time.Duration
 	scanInterval   time.Duration
 
+	// claudeCli caches the `claude --version` text for the rate-limit drift
+	// guard fingerprint (see claude_cli_version.go). Zero value is
+	// production-ready (default runner, wall clock, never read); tests
+	// inject a runner and clock through the Manager setters.
+	claudeCli claudeCLIState
+
 	// restartTaskOverride marks sessions whose restart carried an explicit
 	// task override (RestartSession called with a non-empty task). Restart's
 	// relaunch block reads and clears the flag to decide whether a

@@ -2,6 +2,7 @@ package main
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -93,6 +94,19 @@ func TestUsageBackoffClearBody(t *testing.T) {
 	for _, c := range cases {
 		if got := usageBackoffClearBody(c.args); !reflect.DeepEqual(got, c.want) {
 			t.Errorf("usageBackoffClearBody(%v) = %v, want %v", c.args, got, c.want)
+		}
+	}
+}
+
+func TestUsageBackoffCLI_HelpMentionsCLIVersion(t *testing.T) {
+	c := newUsageBackoffCmd()
+	for _, sub := range []string{"status", "recheck"} {
+		cmd, _, err := c.Find([]string{sub})
+		if err != nil || cmd.Name() != sub {
+			t.Fatalf("find %s: %v %v", sub, cmd, err)
+		}
+		if !strings.Contains(cmd.Short, "claude_cli_version") && !strings.Contains(cmd.Long, "claude_cli_version") {
+			t.Errorf("%s help does not mention claude_cli_version: short=%q long=%q", sub, cmd.Short, cmd.Long)
 		}
 	}
 }

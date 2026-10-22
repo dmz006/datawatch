@@ -277,15 +277,26 @@ card) shows the same flags as the wait reason on blocked tasks.
 Automatic back-off only works while `session.rate_limit_patterns` still
 matches what each backend actually prints. Backends reword their limit
 messages, so the status output carries `patterns_version` (a fingerprint of
-the effective patterns) and `patterns_stale`, which turns true whenever the
-patterns change and have not been re-verified.
+the effective patterns), `patterns_stale`, which turns true whenever the
+patterns change and have not been re-verified, and `claude_cli_version` —
+the claude tool's own version text, which the status guard also
+fingerprints. The daemon reads it once at daemon start by running the
+tool's version command with a short timeout, and again on any status
+request when the cached read is older than 10 minutes. If the tool is
+absent or the command fails the value reports `unknown`, and that alone
+never raises `patterns_stale`; a *known* version that changes does.
 
 Re-verify whenever the backend or its CLI version changes, and whenever you
 edit `session.rate_limit_patterns`: provoke or replay a fresh rate-limit
 response, confirm a session reaches the rate-limited state, then record it
 with `datawatch usage-backoff recheck` (REST `POST /api/usage-backoff/recheck`,
-MCP `usage_backoff_recheck`, comm `usage_backoff recheck`). That clears
-`patterns_stale` until the patterns change again.
+MCP `usage_backoff_recheck`, comm `usage_backoff recheck`). The recheck
+stores both the pattern fingerprint and the current `claude_cli_version`
+as rechecked, and clears `patterns_stale` until the patterns or the
+version text change again. The same three fields (`patterns_version`,
+`patterns_stale`, `claude_cli_version`) appear on the API status and
+recheck responses, the capacity status, the autonomous status, the MCP
+tools and the CLI status output.
 
 ## Common pitfalls
 

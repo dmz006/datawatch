@@ -3003,7 +3003,7 @@ paths:
       responses: {"200": {description: OK}}
   /api/usage-backoff:
     get:
-      summary: Active per-backend usage back-off flags, effective config and pattern staleness
+      summary: Active per-backend usage back-off flags, effective config, pattern staleness (patterns_version, patterns_stale) and claude_cli_version
       operationId: usageBackoffGet
       tags: [Singletons]
       responses: {"200": {description: OK}}
@@ -3039,7 +3039,7 @@ paths:
       responses: {"200": {description: OK}}
   /api/usage-backoff/recheck:
     post:
-      summary: Record the current rate-limit patterns as rechecked (clears patterns_stale)
+      summary: Record the current rate-limit patterns and claude_cli_version as rechecked (clears patterns_stale)
       operationId: usageBackoffRecheck
       tags: [Singletons]
       responses: {"200": {description: OK}}

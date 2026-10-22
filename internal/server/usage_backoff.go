@@ -54,17 +54,18 @@ func (s *Server) usageBackoffStatus() autonomous.UsageBackoffStatus {
 	}
 	mode, maxWait = config.EffectiveUsageBackoff(mode, maxWait)
 	st := autonomous.BuildUsageBackoffStatus(s.usageBackoff, mode, maxWait)
-	st.PatternsVersion, st.PatternsStale = s.rateLimitPatternsStatus()
+	st.PatternsVersion, st.ClaudeCLIVersion, st.PatternsStale = s.rateLimitPatternsStatus()
 	return st
 }
 
-// rateLimitPatternsStatus reports the rate-limit pattern fingerprint and
-// whether it is stale; empty and not stale when no session manager is wired.
-func (s *Server) rateLimitPatternsStatus() (string, bool) {
+// rateLimitPatternsStatus reports the rate-limit pattern fingerprint, the
+// cached claude CLI version text, and whether the guard is stale; empty
+// strings and not stale when no session manager is wired.
+func (s *Server) rateLimitPatternsStatus() (version, claudeCLIVersion string, stale bool) {
 	if s.manager == nil {
-		return "", false
+		return "", "", false
 	}
-	return s.manager.RateLimitPatternsStatus()
+	return s.manager.RateLimitGuardStatus()
 }
 
 // handleUsageBackoffRecheck serves POST /api/usage-backoff/recheck: the
@@ -88,7 +89,8 @@ func (s *Server) handleUsageBackoffRecheck(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	s.audit(r.Context(), audit.ActionUsageBackoffPatternsRechecked, "usage_backoff", "patterns", map[string]any{
-		"patterns_version": version,
+		"patterns_version":   version,
+		"claude_cli_version": s.manager.ClaudeCLIVersion(),
 	})
 	writeJSONOK(w, s.usageBackoffStatus())
 }

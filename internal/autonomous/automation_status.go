@@ -19,7 +19,7 @@ func (m *Manager) usageBackoffSummary() *UsageBackoffStatus {
 	m.mu.Unlock()
 	st := BuildUsageBackoffStatus(bo, mode, maxWait)
 	if patterns != nil {
-		st.PatternsVersion, st.PatternsStale = patterns()
+		st.PatternsVersion, st.ClaudeCLIVersion, st.PatternsStale = patterns()
 	}
 	return &st
 }
