@@ -10387,6 +10387,66 @@ function llmEffectiveCapLine(l) {
   const src = l.inflight_source ? ` (${l.inflight_source})` : '';
   return `<div style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml((t('llm_effective_cap')||'Effective inflight cap')+': '+l.effective_max_inflight+src)}</div>`;
 }
+// Dollar budget group for the LLM edit form. Field names follow the REST
+// "budget" object (ceiling_usd, hours, weekday, time, zone, allocation_pct,
+// peer_window). The weekday enum is lowercase English on the daemon, so the
+// option text is the value itself, like the plan tier select.
+const LLM_BUDGET_WEEKDAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+function budgetWeekdayOptions(selected) {
+  const sel = String(selected || '').toLowerCase();
+  const opts = [`<option value="" ${!sel ? 'selected' : ''}>${escHtml(t('llm_budget_weekday_unset')||'(none — rolling window)')}</option>`];
+  for (const v of LLM_BUDGET_WEEKDAYS) opts.push(`<option value="${v}" ${sel === v ? 'selected' : ''}>${v}</option>`);
+  return opts.join('');
+}
+function buildLLMBudgetGroup(l) {
+  const b = (l && l.budget) || {};
+  const lbl = 'font-size:11px;color:var(--text2);margin-top:6px;';
+  const hint = 'font-size:11px;color:var(--text2);margin-top:2px;';
+  return `
+    <div style="margin-top:12px;padding-top:8px;border-top:1px solid var(--border);">
+    <div style="font-size:12px;font-weight:600;">${escHtml(t('llm_budget_group')||'Budget')}</div>
+    <div style="${hint}">${escHtml(t('llm_budget_hint')||'A dollar ceiling for one window. Pick either a rolling window in hours or a weekly window; an empty ceiling removes the budget.')}</div>
+    <label style="${lbl}">${escHtml(t('llm_field_budget_ceiling')||'Budget ceiling (USD per window; empty = no budget)')}</label>
+    <input id="fe_llm_budget_ceiling" type="number" min="0" step="any" class="form-input" value="${b.ceiling_usd ? escHtml(String(b.ceiling_usd)) : ''}" />
+    <label style="${lbl}">${escHtml(t('llm_field_budget_hours')||'Rolling window (hours, 1–720)')}</label>
+    <input id="fe_llm_budget_hours" type="number" min="1" max="720" step="1" class="form-input" value="${b.hours ? escHtml(String(b.hours)) : ''}" />
+    <label style="${lbl}">${escHtml(t('llm_field_budget_weekday')||'Weekly window starts on')}</label>
+    <select id="fe_llm_budget_weekday" class="form-select">${budgetWeekdayOptions(b.weekday)}</select>
+    <label style="${lbl}">${escHtml(t('llm_field_budget_time')||'Weekly window time (24h HH:MM, default 00:00)')}</label>
+    <input id="fe_llm_budget_time" class="form-input" placeholder="00:00" value="${escHtml(b.time||'')}" />
+    <label style="${lbl}">${escHtml(t('llm_field_budget_zone')||'Weekly window time zone (IANA name, default UTC)')}</label>
+    <input id="fe_llm_budget_zone" class="form-input" placeholder="UTC" value="${escHtml(b.zone||'')}" />
+    <label style="${lbl}display:flex;align-items:center;gap:6px;">
+      <input id="fe_llm_budget_allocation" type="checkbox" ${b.allocation_pct ? 'checked' : ''} />
+      <span>${escHtml(t('llm_field_budget_allocation')||'Show share of plan allocation (an estimate)')}</span>
+    </label>
+    <label style="${lbl}">${escHtml(t('llm_field_budget_peers')||'Peer window (comma-separated peer names)')}</label>
+    <input id="fe_llm_budget_peers" class="form-input" value="${escHtml((b.peer_window||[]).join(', '))}" />
+    <div style="${hint}">${escHtml(t('llm_budget_peers_hint')||'Federation peer spend is off for every peer unless the peer is listed here.')}</div>
+    </div>`;
+}
+// Reads the budget group back into the REST "budget" value. An empty
+// ceiling means "no budget" and yields null, which the daemon treats as
+// clearing the stored budget. Window fields are sent as typed; the daemon
+// validates them and returns an actionable error.
+function collectLLMBudget() {
+  const val = id => ((document.getElementById(id)||{}).value || '').trim();
+  const ceilingRaw = val('fe_llm_budget_ceiling');
+  if (ceilingRaw === '') return null;
+  const budget = { ceiling_usd: parseFloat(ceilingRaw) || 0 };
+  const hours = parseInt(val('fe_llm_budget_hours') || '0', 10) || 0;
+  if (hours) budget.hours = hours;
+  const weekday = val('fe_llm_budget_weekday');
+  if (weekday) budget.weekday = weekday;
+  const time = val('fe_llm_budget_time');
+  if (time) budget.time = time;
+  const zone = val('fe_llm_budget_zone');
+  if (zone) budget.zone = zone;
+  if ((document.getElementById('fe_llm_budget_allocation')||{}).checked) budget.allocation_pct = true;
+  const peers = val('fe_llm_budget_peers').split(',').map(s => s.trim()).filter(Boolean);
+  if (peers.length) budget.peer_window = peers;
+  return budget;
+}
 function buildLLMForm(l) {
   const nodes = (window._computeNodesCache||[]);
   const nodeOpts = nodes.map(n =>
@@ -10410,6 +10470,7 @@ function buildLLMForm(l) {
     <select id="fe_llm_plan_tier" class="form-select">${planTierOptions(l.plan_tier)}</select>
     <div style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(t('llm_plan_tier_hint')||"The daemon's autonomous.plan_tier_max_inflight table caps inflight per tier; an explicit max_inflight > 0 wins; otherwise no tier cap (unlimited).")}</div>
     ${llmEffectiveCapLine(l)}
+    ${buildLLMBudgetGroup(l)}
     <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('llm_field_tags')||'Tags')}</label>
     ${renderBadgeInput('fe_llm_tags', (l.tags||[]).join(', '), { freeform: true, placeholder: 'fast, coding…' })}
   `;
@@ -10430,6 +10491,7 @@ function collectLLMForm(originalRecord) {
   out.timeout_seconds = parseInt((document.getElementById('fe_llm_timeout')||{}).value || '0', 10) || 0;
   out.max_inflight = parseInt((document.getElementById('fe_llm_max_inflight')||{}).value || '0', 10) || 0;
   out.plan_tier = (document.getElementById('fe_llm_plan_tier')||{}).value || '';
+  out.budget = collectLLMBudget();
   out.tags = getBadgeInputValue('fe_llm_tags').split(',').map(s => s.trim()).filter(Boolean);
   return out;
 }
@@ -15056,6 +15118,9 @@ const GENERAL_CONFIG_FIELDS = [
     // explicit per-LLM max_inflight > 0 wins over the tier cap (priority:
     // explicit > tier > kind).
     { key: 'autonomous.plan_tier_max_inflight', label: 'Plan tier inflight caps (per tier; 0 = unlimited)', labelKey: 'settings_plan_tier_max_inflight', type: 'plan_tier_table', hint: 'An explicit per-LLM max_inflight > 0 wins over the tier cap; 0 or a blank tier leaves that tier unlimited.' },
+    // Notional dollar allocation per plan tier. Only feeds the estimated
+    // share-of-allocation figure on a budget; informational, never blocks.
+    { key: 'autonomous.plan_tier_allocation_usd', label: 'Plan tier allocation (USD per tier; 0 = not declared)', labelKey: 'settings_plan_tier_allocation_usd', type: 'plan_tier_allocation_table', hint: 'Only feeds the estimated allocation share shown on a budget; it never blocks anything. 0 or a blank tier means no figure.' },
     // 2026-10-17 — plan review gate + smoke verification. All optional;
     // empty backend = feature off. Backend/model pairs follow the same
     // paired-model pattern as the guardrail fields above.
@@ -15246,6 +15311,25 @@ function loadCommsConfig() {
               <button class="btn-secondary" style="font-size:11px;" onclick="savePlanTierTable()">${escHtml(t('settings_plan_tier_save')||'Save')}</button>
             </div>
             <div style="font-size:11px;color:var(--text2);margin-top:3px;">${escHtml(f.hint || (t('settings_plan_tier_hint')||'Per-tier inflight caps; 0 or blank tier = unlimited; an explicit per-LLM max_inflight > 0 wins.'))}</div>
+          </div>`;
+        } else if (f.type === 'plan_tier_allocation_table') {
+          // plan tier allocation: one dollar input per tier + Save, PUT as a
+          // JSON object like the inflight caps table above.
+          const table = (val && typeof val === 'object') ? val : {};
+          const tierInputs = ['pro', 'max_5x', 'max_20x', 'api'].map(tier => {
+            const v = parseFloat(table[tier]);
+            return `<label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--text2);">
+              <span>${tier}</span>
+              <input type="number" min="0" step="any" class="form-input" style="width:88px;" value="${isNaN(v) ? '' : v}" data-plan-tier-allocation="${tier}" />
+            </label>`;
+          }).join('');
+          html += `<div class="settings-row" style="flex-direction:column;align-items:stretch;">
+            <div class="settings-label">${escHtml(f.labelKey ? (t(f.labelKey)||f.label) : f.label)}</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:4px;padding:8px 10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;">
+              ${tierInputs}
+              <button class="btn-secondary" style="font-size:11px;" onclick="savePlanTierAllocationTable()">${escHtml(t('settings_plan_tier_save')||'Save')}</button>
+            </div>
+            <div style="font-size:11px;color:var(--text2);margin-top:3px;">${escHtml(t('settings_plan_tier_allocation_hint')||f.hint)}</div>
           </div>`;
         } else if (f.type === 'interface_select') {
           // v5.23.0 — operator-reported: comms interface_select wasn't
@@ -16267,6 +16351,32 @@ function savePlanTierTable() {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...tokenHeader() },
     body: JSON.stringify({ 'autonomous.plan_tier_max_inflight': table }),
+  })
+    .then(r => {
+      if (r.ok) {
+        showToast('Saved', 'success', 1500);
+        loadCommsConfig();
+      } else {
+        showToast('Save failed', 'error');
+      }
+    })
+    .catch(() => showToast('Save failed', 'error'));
+}
+
+// plan tier allocation — collects the per-tier dollar inputs into a JSON
+// object and PUTs it as autonomous.plan_tier_allocation_usd (a blank tier
+// is 0, meaning not declared).
+function savePlanTierAllocationTable() {
+  const table = {};
+  document.querySelectorAll('input[data-plan-tier-allocation]').forEach(inp => {
+    let v = parseFloat(inp.value || '0') || 0;
+    if (v < 0) v = 0;
+    table[inp.dataset.planTierAllocation] = v;
+  });
+  fetch('/api/config', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...tokenHeader() },
+    body: JSON.stringify({ 'autonomous.plan_tier_allocation_usd': table }),
   })
     .then(r => {
       if (r.ok) {
@@ -21812,6 +21922,37 @@ function _renderDetailContent(prd) {
 
 // BL380 — Enhanced active session card: shows story/task context per session
 // and embeds CPU/GPU/RAM resource bars. Refreshes every 5 seconds.
+// Dollar budget lines for the capacity card: one block per LLM that has a
+// budget (GET /api/capacity "budgets"). Shows spend of ceiling, when the
+// window ends and when it rolls over, a badge while the window is full, and
+// the share-of-allocation figure only when the daemon sent one — always
+// labelled as an estimate.
+function budgetUSD(n) { return '$' + (Number(n) || 0).toFixed(2); }
+function budgetTime(iso) {
+  const d = new Date(iso);
+  return isNaN(d.getTime()) ? String(iso) : d.toLocaleString();
+}
+function budgetCapacityLines(budgets) {
+  if (!Array.isArray(budgets) || budgets.length === 0) return '';
+  const rows = budgets.map(b => {
+    const spend = (Number(b.spend_usd) || 0) + (Number(b.peer_spend_usd) || 0);
+    const spendLine = (t('capacity_budget_spend')||'{spend} of {ceiling}')
+      .replace('{spend}', budgetUSD(spend)).replace('{ceiling}', budgetUSD(b.ceiling_usd));
+    const badge = b.full
+      ? ` <span style="font-size:10px;padding:1px 6px;border-radius:8px;background:var(--error,#ef4444);color:#fff;">${escHtml(t('capacity_budget_full')||'budget window full')}</span>`
+      : '';
+    const times = [];
+    if (b.window_end) times.push(`${escHtml(t('capacity_budget_window_end')||'Window ends')}: ${escHtml(budgetTime(b.window_end))}`);
+    if (b.rolls_over_at) times.push(`${escHtml(t('capacity_budget_rolls_over')||'Rolls over')}: ${escHtml(budgetTime(b.rolls_over_at))}`);
+    const timeLine = times.length ? `<div style="font-size:11px;color:var(--text2);">${times.join(' · ')}</div>` : '';
+    const alloc = b.allocation && b.allocation.allocation_pct != null
+      ? `<div style="font-size:11px;color:var(--text2);">${escHtml(t('capacity_budget_allocation')||'Allocation')}: ${escHtml(Number(b.allocation.allocation_pct).toFixed(1))}% (${escHtml(t('capacity_budget_estimated')||'estimated')})</div>`
+      : '';
+    return `<div style="margin-bottom:4px;"><div style="display:flex;justify-content:space-between;color:var(--text2);"><span>${escHtml(t('capacity_budget_label')||'Budget')}: ${escHtml(b.llm||'')}${badge}</span><span style="font-variant-numeric:tabular-nums;color:var(--text);">${escHtml(spendLine)}</span></div>${timeLine}${alloc}</div>`;
+  }).join('');
+  return `<div style="margin-top:6px;">${rows}</div>`;
+}
+
 // Capacity admission card: per-pool used/limit bars + wait queue. Polled every 5s;
 // the interval lives on window so re-renders never stack timers.
 window._loadPRDCapacityCard = function(prdId) {
@@ -21873,7 +22014,8 @@ window._loadPRDCapacityCard = function(prdId) {
       // because nobody capped it.
       const idleNodes = allPools.filter(p => p.name.startsWith('node:') && !(p.limit > 0) && ((p.held||0)+(p.external||0)) === 0)
         .map(p => `<div style="color:var(--text2);opacity:0.7;" title="${escHtml(poolTitle(p))}">${escHtml(poolLabel(p))}: ${escHtml(t('capacity_no_cap_configured')||'no cap configured')}</div>${nodeMeta(p)}`).join('');
-      if (pools.length === 0 && waiting.length === 0 && !idleNodes) { slot.style.display = 'none'; slot.innerHTML = ''; return; }
+      const budgetLines = budgetCapacityLines(cap && cap.budgets);
+      if (pools.length === 0 && waiting.length === 0 && !idleNodes && !budgetLines) { slot.style.display = 'none'; slot.innerHTML = ''; return; }
       const bars = pools.map(p => {
         const used = (p.held || 0) + (p.external || 0);
         const pct = Math.min(100, Math.round(100 * used / p.limit));
@@ -21887,7 +22029,7 @@ window._loadPRDCapacityCard = function(prdId) {
           waiting.map(w => `<div class="prd-capacity-wait" title="${escHtml(w.reason||'')}">&#9203; ${escHtml(w.holder.slice(0,8))} · PRD ${escHtml((w.prd_id||'').slice(0,8))} · ${escHtml(fmtWait(w.since))} — ${escHtml(w.reason||'')}</div>`).join('')
         : '';
       slot.style.display = 'block';
-      slot.innerHTML = `<div class="prd-capacity-card"><div class="cap-title">${escHtml(t('capacity_card_title')||'Capacity')}</div>${bars}${unlimited}${idleNodes}${queue}</div>`;
+      slot.innerHTML = `<div class="prd-capacity-card"><div class="cap-title">${escHtml(t('capacity_card_title')||'Capacity')}</div>${bars}${unlimited}${idleNodes}${budgetLines}${queue}</div>`;
     }).catch(() => {});
   };
   render();
