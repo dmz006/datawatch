@@ -30,6 +30,22 @@ var budgetWeekdays = map[string]time.Weekday{
 	"saturday":  time.Saturday,
 }
 
+// ParseBudgetWeekday resolves a weekday name (monday..sunday, case-insensitive,
+// surrounding space ignored) the same way a BudgetWindow does.
+func ParseBudgetWeekday(name string) (time.Weekday, bool) {
+	d, ok := budgetWeekdays[strings.ToLower(strings.TrimSpace(name))]
+	return d, ok
+}
+
+// ParseBudgetClock parses a 24h HH:MM anchor clock time into hour and minute.
+func ParseBudgetClock(s string) (hour, minute int, err error) {
+	t, perr := time.Parse("15:04", strings.TrimSpace(s))
+	if perr != nil {
+		return 0, 0, fmt.Errorf("time %q must be 24h HH:MM", s)
+	}
+	return t.Hour(), t.Minute(), nil
+}
+
 // BudgetWindow is a dollar ceiling over either a rolling trailing window or
 // a weekly window that resets at a fixed weekday and clock time. It is pure
 // data and window math; it holds no spend ledger and reads no clock.
