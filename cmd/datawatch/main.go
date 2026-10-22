@@ -5841,9 +5841,15 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 					httpServer.SetAutonomousEvents(pq)
 				}
 			}
-			wireCapacity(context.Background(), cfg, mgr, amgr, httpServer, func(title, body string) {
+			capLedger := wireCapacity(context.Background(), cfg, mgr, amgr, httpServer, func(title, body string) {
 				alertStore.AddSystem(alertspkg.LevelWarn, title, body)
 			})
+			// Pin keepers re-pin each pinned compute node's model after ollama drops it.
+			stopPinKeepers := startPinKeepers(ctx, cfg, computeReg, alertStore, capLedger)
+			go func() {
+				<-ctx.Done()
+				stopPinKeepers()
+			}()
 			// Wire session killer so Cancel also terminates running task sessions.
 			amgr.SetSessionKillerFn(func(sessionID string) error {
 				return mgr.Kill(sessionID)

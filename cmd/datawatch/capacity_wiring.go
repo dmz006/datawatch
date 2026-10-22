@@ -91,8 +91,9 @@ func syncLLMLimits(cfg *config.Config, reg *inference.Registry, led *capacity.Le
 // wireCapacity creates the admission ledger, connects it to the autonomous
 // manager and the REST surface, and starts the sync loop that keeps pool
 // limits current with config, compute nodes and LLMs, refreshes GPU
-// backpressure, reaps leaked leases and raises long-wait alerts.
-func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager, amgr *autonomous.Manager, httpServer *server.HTTPServer, alertFn func(title, body string)) {
+// backpressure, reaps leaked leases and raises long-wait alerts. It returns
+// the ledger so the pin keepers can tell when a node is in use.
+func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager, amgr *autonomous.Manager, httpServer *server.HTTPServer, alertFn func(title, body string)) *capacity.Ledger {
 	var gpuMu sync.Mutex
 	gpuUtil := map[string]float64{}
 
@@ -324,4 +325,5 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 			}
 		}
 	}()
+	return led
 }
