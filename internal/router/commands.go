@@ -465,7 +465,7 @@ type Command struct {
 	CooldownReason  string
 
 	// BL428 Phase 4 — CmdUsageBackoff fields.
-	//   UsageBackoffVerb: "status" | "set" | "clear"
+	//   UsageBackoffVerb: "status" | "set" | "clear" | "recheck"
 	//   UsageBackoffBackend: backend for set; for clear "" or "all" = every flag
 	//   UsageBackoffMinutes / UsageBackoffUntil: set deadline — minutes (>= 1)
 	//     or an RFC3339 time; the parser fills whichever the operator gave
@@ -1787,6 +1787,7 @@ cooldown clear                   clear active cooldown
 usage_backoff                    show per-backend usage back-off flags
 usage_backoff set <backend> <minutes> [reason]  hold autonomous dispatch to a backend
 usage_backoff clear [backend|all]  clear one back-off, or all (default)
+usage_backoff recheck            record current rate-limit patterns as rechecked
 stale [<seconds>]                list stale running sessions
 audit [actor=x action=y limit=N] query operator audit log
 rest <METHOD> <PATH> [json]      raw REST passthrough (e.g. rest GET /api/templates)
@@ -1819,6 +1820,7 @@ exit_hook disable id=<id>        disable a hook`, hostname)
 //	status
 //	set <backend> <minutes|RFC3339-until> [reason words…]
 //	clear [backend|all]
+//	recheck
 //
 // An unrecognized verb or a set without a usable deadline keeps the verb and
 // leaves the deadline fields zero, so the handler can answer with usage
@@ -1831,6 +1833,9 @@ func parseUsageBackoff(rest string) Command {
 	}
 	switch strings.ToLower(fields[0]) {
 	case "status":
+		return cmd
+	case "recheck":
+		cmd.UsageBackoffVerb = "recheck"
 		return cmd
 	case "clear":
 		cmd.UsageBackoffVerb = "clear"

@@ -17,6 +17,7 @@ import (
 	"github.com/dmz006/datawatch/internal/audit"
 	"github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/config"
+	"github.com/dmz006/datawatch/internal/session"
 )
 
 func usageBackoffServer(t *testing.T) *Server {
@@ -315,5 +316,136 @@ func TestCapacity_ReportsBackoff(t *testing.T) {
 	empty.handleCapacity(rr, httptest.NewRequest(http.MethodGet, "/api/capacity", bytes.NewReader(nil)))
 	if !strings.Contains(rr.Body.String(), `"backoff":[]`) {
 		t.Errorf("empty capacity must carry backoff:[] — %s", rr.Body.String())
+	}
+}
+
+func patternsServer(t *testing.T) *Server {
+	t.Helper()
+	sm, err := session.NewManager("h", t.TempDir(), "echo", 30*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := usageBackoffServer(t)
+	s.manager = sm
+	return s
+}
+
+func ubRecheck(s *Server, method string) *httptest.ResponseRecorder {
+	req := httptest.NewRequest(method, "/api/usage-backoff/recheck", strings.NewReader(""))
+	rr := httptest.NewRecorder()
+	s.handleUsageBackoffRecheck(rr, req)
+	return rr
+}
+
+func TestUsageBackoff_StatusCarriesPatternsFields(t *testing.T) {
+	s := patternsServer(t)
+	rr := ubDo(s, http.MethodGet, "")
+	for _, key := range []string{`"patterns_version":"`, `"patterns_stale":true`} {
+		if !strings.Contains(rr.Body.String(), key) {
+			t.Errorf("GET /api/usage-backoff lacks %s: %s", key, rr.Body.String())
+		}
+	}
+	st := ubStatus(t, rr)
+	if want := s.manager.RateLimitPatternsVersion(); st.PatternsVersion != want {
+		t.Errorf("patterns_version = %q, want %q", st.PatternsVersion, want)
+	}
+
+	// Unwired manager: keys still present.
+	bare := usageBackoffServer(t)
+	body := ubDo(bare, http.MethodGet, "").Body.String()
+	if !strings.Contains(body, `"patterns_version":""`) || !strings.Contains(body, `"patterns_stale":false`) {
+		t.Errorf("no-manager status lacks patterns keys: %s", body)
+	}
+}
+
+func TestUsageBackoff_RecheckClearsStaleAndFlipsBackOnChange(t *testing.T) {
+	s := patternsServer(t)
+	rr := ubRecheck(s, http.MethodPost)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("recheck: %d %s", rr.Code, rr.Body.String())
+	}
+	st := ubStatus(t, rr)
+	if st.PatternsStale || st.PatternsVersion == "" {
+		t.Errorf("recheck response = %+v, want version set and not stale", st)
+	}
+	if got := ubStatus(t, ubDo(s, http.MethodGet, "")); got.PatternsStale || got.PatternsVersion != st.PatternsVersion {
+		t.Errorf("GET after recheck = %+v", got)
+	}
+
+	s.manager.SetDetection(config.DetectionConfig{RateLimitPatterns: []string{"reworded limit"}})
+	got := ubStatus(t, ubDo(s, http.MethodGet, ""))
+	if !got.PatternsStale || got.PatternsVersion == st.PatternsVersion {
+		t.Errorf("after pattern change = %+v, want stale with a new version", got)
+	}
+}
+
+func TestUsageBackoff_RecheckMethodAndManager(t *testing.T) {
+	s := patternsServer(t)
+	if rr := ubRecheck(s, http.MethodGet); rr.Code != http.StatusMethodNotAllowed {
+		t.Errorf("GET recheck = %d, want 405", rr.Code)
+	}
+	if rr := ubRecheck(usageBackoffServer(t), http.MethodPost); rr.Code != http.StatusServiceUnavailable {
+		t.Errorf("recheck without manager = %d, want 503", rr.Code)
+	}
+}
+
+func TestUsageBackoff_RecheckAudited(t *testing.T) {
+	dir := t.TempDir()
+	log, err := audit.New(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := patternsServer(t)
+	s.auditLog = log
+	_ = ubRecheck(s, http.MethodGet) // rejected: not audited
+	rr := ubRecheck(s, http.MethodPost)
+	_ = log.Close()
+
+	got := readAuditLines(t, dir)
+	if len(got) != 1 {
+		t.Fatalf("want 1 audit entry, got %d: %+v", len(got), got)
+	}
+	if got[0].Action != "autonomous_usage_backoff_patterns_rechecked" || got[0].Actor != "operator" {
+		t.Errorf("entry = %+v", got[0])
+	}
+	if want := ubStatus(t, rr).PatternsVersion; got[0].Details["patterns_version"] != want {
+		t.Errorf("details = %+v, want patterns_version %q", got[0].Details, want)
+	}
+}
+
+func TestUsageBackoff_RecheckCapabilityGate(t *testing.T) {
+	s, _, _ := fedCapFixture(t)
+	s.cfg = &config.Config{}
+	sm, err := session.NewManager("h", t.TempDir(), "echo", 30*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.manager = sm
+	capTest(t, s, http.MethodPost, "/api/usage-backoff/recheck", []byte(`{}`), s.handleUsageBackoffRecheck,
+		http.StatusOK, http.StatusOK, http.StatusForbidden)
+}
+
+func TestCapacity_ReportsPatternsFields(t *testing.T) {
+	s := patternsServer(t)
+	for name, srv := range map[string]*Server{"with manager": s, "without manager": usageBackoffServer(t)} {
+		rr := httptest.NewRecorder()
+		srv.handleCapacity(rr, httptest.NewRequest(http.MethodGet, "/api/capacity", nil))
+		for _, key := range []string{`"patterns_version":`, `"patterns_stale":`} {
+			if !strings.Contains(rr.Body.String(), key) {
+				t.Errorf("%s: capacity lacks %s: %s", name, key, rr.Body.String())
+			}
+		}
+	}
+	rr := httptest.NewRecorder()
+	s.handleCapacity(rr, httptest.NewRequest(http.MethodGet, "/api/capacity", nil))
+	var resp struct {
+		Version string `json:"patterns_version"`
+		Stale   bool   `json:"patterns_stale"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp.Version != s.manager.RateLimitPatternsVersion() || !resp.Stale {
+		t.Errorf("capacity patterns = %+v", resp)
 	}
 }

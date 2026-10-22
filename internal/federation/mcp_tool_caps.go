@@ -142,6 +142,7 @@ var MCPToolCap = map[string]string{
 	"cooldown_set":                    CapConfigWrite,
 	"cooldown_status":                 CapHealthRead,
 	"usage_backoff_clear":             CapConfigWrite,
+	"usage_backoff_recheck":           CapConfigWrite,
 	"usage_backoff_set":               CapConfigWrite,
 	"usage_backoff_status":            CapConfigRead,
 	"cost_rates":                      CapAnalyticsRead,

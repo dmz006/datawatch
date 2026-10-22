@@ -112,3 +112,31 @@ func TestBackoff_LiveAndSweepExpired(t *testing.T) {
 		t.Errorf("second sweep = %+v, want none", got)
 	}
 }
+
+func TestStatus_UsageBackoffCarriesPatternsFields(t *testing.T) {
+	m, err := NewManager(t.TempDir(), DefaultConfig(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Not wired: the keys are still present, empty and not stale.
+	b, _ := json.Marshal(m.Status().UsageBackoff)
+	for _, key := range []string{`"patterns_version":""`, `"patterns_stale":false`} {
+		if !strings.Contains(string(b), key) {
+			t.Errorf("unwired status lacks %s: %s", key, b)
+		}
+	}
+
+	stale := true
+	m.SetPatternsStatus(func() (string, bool) { return "abc123def456", stale })
+	st := m.Status().UsageBackoff
+	if st.PatternsVersion != "abc123def456" || !st.PatternsStale {
+		t.Errorf("status = %+v, want version abc123def456 stale", st)
+	}
+	stale = false
+	b, _ = json.Marshal(m.Status())
+	for _, key := range []string{`"patterns_version":"abc123def456"`, `"patterns_stale":false`} {
+		if !strings.Contains(string(b), key) {
+			t.Errorf("autonomous status JSON lacks %s: %s", key, b)
+		}
+	}
+}

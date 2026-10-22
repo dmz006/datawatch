@@ -4,6 +4,7 @@
 //	datawatch usage-backoff status
 //	datawatch usage-backoff set <backend> <minutes|until> [--reason text]
 //	datawatch usage-backoff clear [backend|all]
+//	datawatch usage-backoff recheck
 
 package main
 
@@ -28,11 +29,19 @@ rate/usage limit, or manually here. Interactive session starts are never blocked
 	cmd.AddCommand(
 		&cobra.Command{
 			Use:   "status",
-			Short: "Show active back-off flags and the effective config",
+			Short: "Show active back-off flags, the effective config and the pattern-drift guard",
 			Args:  cobra.NoArgs,
 			RunE:  func(*cobra.Command, []string) error { return daemonGet("/api/usage-backoff") },
 		},
 		newUsageBackoffSetCmd(),
+		&cobra.Command{
+			Use:   "recheck",
+			Short: "Record the current rate-limit patterns as rechecked (clears patterns_stale)",
+			Args:  cobra.NoArgs,
+			RunE: func(*cobra.Command, []string) error {
+				return daemonJSON(http.MethodPost, "/api/usage-backoff/recheck", map[string]any{})
+			},
+		},
 		&cobra.Command{
 			Use:   "clear [backend|all]",
 			Short: "Clear one backend's back-off, or every flag (default)",

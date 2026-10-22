@@ -189,7 +189,7 @@ func TestUsageBackoffComm_UsageAndErrors(t *testing.T) {
 
 func TestUsageBackoffComm_HelpText(t *testing.T) {
 	help := HelpText("h")
-	for _, want := range []string{"usage_backoff set <backend> <minutes>", "usage_backoff clear [backend|all]"} {
+	for _, want := range []string{"usage_backoff set <backend> <minutes>", "usage_backoff clear [backend|all]", "usage_backoff recheck"} {
 		if !strings.Contains(help, want) {
 			t.Errorf("help text missing %q", want)
 		}
@@ -205,6 +205,59 @@ func TestConfigureHelpListsUsageBackoffKeys(t *testing.T) {
 			if !strings.Contains(out, key) {
 				t.Errorf("%q help missing %s:\n%s", in, key, out)
 			}
+		}
+	}
+}
+
+func TestParse_UsageBackoff_Recheck(t *testing.T) {
+	for _, in := range []string{"usage_backoff recheck", "usage-backoff RECHECK"} {
+		c := Parse(in)
+		if c.Type != CmdUsageBackoff || c.UsageBackoffVerb != "recheck" {
+			t.Errorf("Parse(%q) = %+v", in, c)
+		}
+	}
+}
+
+func TestUsageBackoffComm_Recheck(t *testing.T) {
+	var method, path string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/usage-backoff/recheck", func(w http.ResponseWriter, r *http.Request) {
+		method, path = r.Method, r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"active":[],"patterns_version":"abc123def456","patterns_stale":false}`))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	r := loopbackRouter(t, srv)
+
+	out := strings.Join(r.HandleTestMessage("usage_backoff recheck"), "\n")
+	if method != http.MethodPost || path != "/api/usage-backoff/recheck" {
+		t.Errorf("recheck request = %s %s", method, path)
+	}
+	for _, want := range []string{"usage_backoff recheck", "patterns_version", "patterns_stale"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("recheck reply lacks %q: %q", want, out)
+		}
+	}
+
+	bare := &Router{hostname: "h"}
+	if out := strings.Join(bare.HandleTestMessage("usage_backoff recheck"), "\n"); !strings.Contains(out, "usage_backoff recheck failed") {
+		t.Errorf("recheck without loopback = %q, want failure", out)
+	}
+}
+
+func TestUsageBackoffComm_StatusShowsPatternsFields(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/usage-backoff", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"active":[],"patterns_version":"abc123def456","patterns_stale":true}`))
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	out := strings.Join(loopbackRouter(t, srv).HandleTestMessage("usage_backoff status"), "\n")
+	for _, want := range []string{"patterns_version", "patterns_stale"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("status reply lacks %q: %q", want, out)
 		}
 	}
 }

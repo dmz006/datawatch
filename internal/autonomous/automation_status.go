@@ -14,10 +14,13 @@ import (
 // maximum back-off. It takes m.mu itself, so Status calls it before locking.
 func (m *Manager) usageBackoffSummary() *UsageBackoffStatus {
 	m.mu.Lock()
-	bo := m.backoff
+	bo, patterns := m.backoff, m.patternsFn
 	mode, maxWait := config.EffectiveUsageBackoff(m.cfg.UsageBackoff, m.cfg.BackoffMaxWaitMinutes)
 	m.mu.Unlock()
 	st := BuildUsageBackoffStatus(bo, mode, maxWait)
+	if patterns != nil {
+		st.PatternsVersion, st.PatternsStale = patterns()
+	}
 	return &st
 }
 

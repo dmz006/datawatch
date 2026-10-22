@@ -23,13 +23,15 @@ var usageBackoffEvents = []struct {
 	{ActionUsageBackoffSet, "31", "AutonomousUsageBackoffSet", "4"},
 	{ActionUsageBackoffCleared, "32", "AutonomousUsageBackoffCleared", "3"},
 	{ActionUsageBackoffAutoCleared, "33", "AutonomousUsageBackoffAutoCleared", "2"},
+	{ActionUsageBackoffPatternsRechecked, "34", "AutonomousUsageBackoffPatternsRechecked", "3"},
 }
 
 func TestUsageBackoffEvents_Names(t *testing.T) {
 	want := map[string]string{
-		ActionUsageBackoffSet:         "autonomous_usage_backoff_set",
-		ActionUsageBackoffCleared:     "autonomous_usage_backoff_cleared",
-		ActionUsageBackoffAutoCleared: "autonomous_usage_backoff_auto_cleared",
+		ActionUsageBackoffSet:               "autonomous_usage_backoff_set",
+		ActionUsageBackoffCleared:           "autonomous_usage_backoff_cleared",
+		ActionUsageBackoffAutoCleared:       "autonomous_usage_backoff_auto_cleared",
+		ActionUsageBackoffPatternsRechecked: "autonomous_usage_backoff_patterns_rechecked",
 	}
 	for got, w := range want {
 		if got != w {

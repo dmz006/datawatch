@@ -178,7 +178,7 @@ func (r *Router) handleCooldown(cmd Command) {
 // handleUsageBackoff serves "usage_backoff status|set|clear" through the
 // /api/usage-backoff loopback, mirroring the cooldown verbs.
 func (r *Router) handleUsageBackoff(cmd Command) {
-	const usage = "usage: usage_backoff [status | set <backend> <minutes> [reason] | clear [backend|all]]"
+	const usage = "usage: usage_backoff [status | set <backend> <minutes> [reason] | clear [backend|all] | recheck]"
 	switch cmd.UsageBackoffVerb {
 	case "status", "":
 		body, err := r.commGet("/api/usage-backoff", nil)
@@ -220,6 +220,13 @@ func (r *Router) handleUsageBackoff(cmd Command) {
 			return
 		}
 		r.reply("usage_backoff clear", out)
+	case "recheck":
+		out, err := r.commJSON(http.MethodPost, "/api/usage-backoff/recheck", "{}")
+		if err != nil {
+			r.reply("usage_backoff recheck failed", err.Error())
+			return
+		}
+		r.reply("usage_backoff recheck", out)
 	default:
 		r.reply("usage_backoff failed", usage)
 	}

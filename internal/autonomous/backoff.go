@@ -163,7 +163,16 @@ type UsageBackoffConfig struct {
 type UsageBackoffStatus struct {
 	Active []Entry            `json:"active"`
 	Config UsageBackoffConfig `json:"config"`
+	// PatternsVersion is the short fingerprint of the effective rate-limit
+	// detection patterns; PatternsStale is true when it differs from the one
+	// an operator last rechecked (pattern-drift guard).
+	PatternsVersion string `json:"patterns_version"`
+	PatternsStale   bool   `json:"patterns_stale"`
 }
+
+// PatternsStatusFunc reports the rate-limit pattern fingerprint and whether
+// it is stale (not yet rechecked by an operator).
+type PatternsStatusFunc func() (version string, stale bool)
 
 // BuildUsageBackoffStatus snapshots the live flags of b (nil = none) with
 // the effective mode and maximum back-off. Active is never nil, so it

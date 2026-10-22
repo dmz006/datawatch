@@ -14,7 +14,7 @@ import (
 
 func (s *Server) toolUsageBackoffStatus() mcpsdk.Tool {
 	return mcpsdk.NewTool("usage_backoff_status",
-		mcpsdk.WithDescription("List the active per-backend usage back-off flags (backend, until, reason, source: rate_limit|operator) and the effective config (mode, max_wait_minutes). A backed-off backend receives no new autonomous dispatch until the flag clears; interactive session starts are never blocked."),
+		mcpsdk.WithDescription("List the active per-backend usage back-off flags (backend, until, reason, source: rate_limit|operator) the effective config (mode, max_wait_minutes), and the rate-limit pattern-drift guard (patterns_version, patterns_stale). A backed-off backend receives no new autonomous dispatch until the flag clears; interactive session starts are never blocked."),
 	)
 }
 func (s *Server) handleUsageBackoffStatus(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
@@ -80,6 +80,19 @@ func (s *Server) handleUsageBackoffClear(_ context.Context, req mcpsdk.CallToolR
 	out, err := s.proxyJSON(http.MethodDelete, "/api/usage-backoff", body)
 	if err != nil {
 		return toolError("usage_backoff_clear", err), nil
+	}
+	return textOK(string(out)), nil
+}
+
+func (s *Server) toolUsageBackoffRecheck() mcpsdk.Tool {
+	return mcpsdk.NewTool("usage_backoff_recheck",
+		mcpsdk.WithDescription("Record the current rate-limit detection pattern fingerprint (patterns_version) as rechecked by the operator, which clears patterns_stale. Run it after confirming the patterns still match what the backends print; patterns_stale turns true again whenever the effective patterns change."),
+	)
+}
+func (s *Server) handleUsageBackoffRecheck(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	out, err := s.proxyJSON(http.MethodPost, "/api/usage-backoff/recheck", map[string]any{})
+	if err != nil {
+		return toolError("usage_backoff_recheck", err), nil
 	}
 	return textOK(string(out)), nil
 }

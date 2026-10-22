@@ -53,7 +53,44 @@ func (s *Server) usageBackoffStatus() autonomous.UsageBackoffStatus {
 		mode, maxWait = s.cfg.Autonomous.UsageBackoff, s.cfg.Autonomous.BackoffMaxWaitMinutes
 	}
 	mode, maxWait = config.EffectiveUsageBackoff(mode, maxWait)
-	return autonomous.BuildUsageBackoffStatus(s.usageBackoff, mode, maxWait)
+	st := autonomous.BuildUsageBackoffStatus(s.usageBackoff, mode, maxWait)
+	st.PatternsVersion, st.PatternsStale = s.rateLimitPatternsStatus()
+	return st
+}
+
+// rateLimitPatternsStatus reports the rate-limit pattern fingerprint and
+// whether it is stale; empty and not stale when no session manager is wired.
+func (s *Server) rateLimitPatternsStatus() (string, bool) {
+	if s.manager == nil {
+		return "", false
+	}
+	return s.manager.RateLimitPatternsStatus()
+}
+
+// handleUsageBackoffRecheck serves POST /api/usage-backoff/recheck: the
+// operator confirms the current rate-limit patterns still match what the
+// backends print, which records their fingerprint and clears patterns_stale.
+func (s *Server) handleUsageBackoffRecheck(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.fedCap(w, r, federation.CapConfigWrite) {
+		return
+	}
+	if s.manager == nil {
+		http.Error(w, "session manager not available", http.StatusServiceUnavailable)
+		return
+	}
+	version, err := s.manager.RecheckRateLimitPatterns()
+	if err != nil {
+		http.Error(w, "recheck failed: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	s.audit(r.Context(), audit.ActionUsageBackoffPatternsRechecked, "usage_backoff", "patterns", map[string]any{
+		"patterns_version": version,
+	})
+	writeJSONOK(w, s.usageBackoffStatus())
 }
 
 // usageBackoffSetRequest is the POST body.

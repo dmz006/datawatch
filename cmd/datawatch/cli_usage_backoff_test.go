@@ -11,7 +11,7 @@ func TestUsageBackoffCLI_HasSubs(t *testing.T) {
 	if c.Name() != "usage-backoff" {
 		t.Fatalf("name = %q", c.Name())
 	}
-	want := map[string]bool{"status": false, "set": false, "clear": false}
+	want := map[string]bool{"status": false, "set": false, "clear": false, "recheck": false}
 	for _, sub := range c.Commands() {
 		want[sub.Name()] = true
 	}
@@ -94,5 +94,19 @@ func TestUsageBackoffClearBody(t *testing.T) {
 		if got := usageBackoffClearBody(c.args); !reflect.DeepEqual(got, c.want) {
 			t.Errorf("usageBackoffClearBody(%v) = %v, want %v", c.args, got, c.want)
 		}
+	}
+}
+
+func TestUsageBackoffCLI_RecheckTakesNoArgs(t *testing.T) {
+	c := newUsageBackoffCmd()
+	rc, _, err := c.Find([]string{"recheck"})
+	if err != nil || rc.Name() != "recheck" {
+		t.Fatalf("find recheck: %v %v", rc, err)
+	}
+	if err := rc.Args(rc, []string{}); err != nil {
+		t.Errorf("recheck with no args: %v", err)
+	}
+	if err := rc.Args(rc, []string{"extra"}); err == nil {
+		t.Error("recheck must reject positional arguments")
 	}
 }

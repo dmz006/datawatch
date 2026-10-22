@@ -43,6 +43,20 @@ func TestUsageBackoff_ToolNamesAndRequiredArgs(t *testing.T) {
 			t.Errorf("usage_backoff_set missing %q argument", arg)
 		}
 	}
+	rc := s.toolUsageBackoffRecheck()
+	if rc.Name != "usage_backoff_recheck" || len(rc.InputSchema.Required) != 0 || len(rc.InputSchema.Properties) != 0 {
+		t.Errorf("recheck tool = %q required=%v props=%v, want no args", rc.Name, rc.InputSchema.Required, rc.InputSchema.Properties)
+	}
+	for name, desc := range map[string]string{
+		"usage_backoff_status": s.toolUsageBackoffStatus().Description,
+		"capacity_status":      s.toolCapacityStatus().Description,
+	} {
+		for _, field := range []string{"patterns_version", "patterns_stale"} {
+			if !strings.Contains(desc, field) {
+				t.Errorf("%s description does not name %s", name, field)
+			}
+		}
+	}
 	clr := s.toolUsageBackoffClear()
 	if clr.Name != "usage_backoff_clear" {
 		t.Errorf("clear name = %q", clr.Name)
@@ -137,6 +151,11 @@ func TestUsageBackoff_DispatchToREST(t *testing.T) {
 	}
 	if _, ok := body["minutes"]; ok {
 		t.Errorf("set-until body carried minutes: %v", body)
+	}
+
+	call(s.handleUsageBackoffRecheck, nil)
+	if method != "POST" || path != "/api/usage-backoff/recheck" {
+		t.Errorf("recheck -> %s %s", method, path)
 	}
 
 	call(s.handleUsageBackoffClear, map[string]any{"backend": "pi"})

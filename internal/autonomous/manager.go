@@ -682,6 +682,9 @@ type Manager struct {
 	// backoff is the per-backend usage back-off registry, shown in the
 	// autonomous status (nil = none wired).
 	backoff *Backoff
+	// patternsFn reports the rate-limit pattern fingerprint and staleness
+	// shown in the usage_backoff status (nil = not wired).
+	patternsFn PatternsStatusFunc
 
 	// sessionDeleteFn — when set, called after a task reaches a terminal
 	// state (completed/failed/cancelled) to remove the ephemeral executor
@@ -894,6 +897,14 @@ func (m *Manager) SetBackoff(b *Backoff) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.backoff = b
+}
+
+// SetPatternsStatus wires the rate-limit pattern fingerprint reported in the
+// usage_backoff status (patterns_version, patterns_stale). Nil clears it.
+func (m *Manager) SetPatternsStatus(fn PatternsStatusFunc) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.patternsFn = fn
 }
 
 // SetAlertSink wires the operator-facing alert callback. Nil disables.

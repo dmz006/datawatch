@@ -14,4 +14,7 @@ const (
 	// ActionUsageBackoffAutoCleared — a back-off flag expired and the
 	// sweeper cleared it. Details: backend, until (RFC 3339).
 	ActionUsageBackoffAutoCleared = "autonomous_usage_backoff_auto_cleared"
+	// ActionUsageBackoffPatternsRechecked — an operator recorded the current
+	// rate-limit pattern fingerprint as rechecked. Details: patterns_version.
+	ActionUsageBackoffPatternsRechecked = "autonomous_usage_backoff_patterns_rechecked"
 )
