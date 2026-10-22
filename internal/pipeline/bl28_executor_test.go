@@ -40,14 +40,19 @@ func TestBL28_SetQualityGates(t *testing.T) {
 func TestBL28_CompareResults_SummaryFormat(t *testing.T) {
 	// Regression summary mentions new failure count and both before
 	// and after values, so the operator sees the delta at a glance.
-	base := TestResult{PassCount: 10, FailCount: 2}
-	curr := TestResult{PassCount: 10, FailCount: 4}
+	base := TestResult{PassCount: 10, FailCount: 2, TestsFound: 12,
+		FailedTests: []string{"Alpha", "Beta"}}
+	curr := TestResult{PassCount: 10, FailCount: 4, TestsFound: 12,
+		FailedTests: []string{"Alpha", "Beta", "Gamma", "Delta"}}
 	r := CompareResults(base, curr)
 	if !r.Regression {
 		t.Fatal("expected regression")
 	}
 	if r.NewFailures != 2 {
 		t.Errorf("new failures=%d want 2", r.NewFailures)
+	}
+	if len(r.NewFailureNames) != 2 {
+		t.Errorf("new failure names=%v want 2 entries", r.NewFailureNames)
 	}
 	if r.Summary == "" {
 		t.Error("summary should not be empty")

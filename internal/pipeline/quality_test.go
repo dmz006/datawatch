@@ -258,3 +258,125 @@ func TestEffectiveTimeout(t *testing.T) {
 		t.Errorf("got %d want 7", got)
 	}
 }
+
+// baselineFrom builds a completed run whose failing tests are exactly names.
+func baselineFrom(names ...string) TestResult {
+	return TestResult{ExitCode: 1, FailedTests: names, FailCount: len(names),
+		PassCount: 10, TestsFound: 10 + len(names)}
+}
+
+// TestCompare_NewFailingNameIsRegression verifies a new failing test name
+// in the current run flags a regression against a valid baseline.
+func TestCompare_NewFailingNameIsRegression(t *testing.T) {
+	r := CompareResults(baselineFrom("Alpha", "Beta"), baselineFrom("Alpha", "Beta", "Gamma"))
+	if !r.Regression {
+		t.Fatal("expected regression")
+	}
+	if r.Invalid {
+		t.Fatal("gate must not be invalid")
+	}
+	if r.NewFailures != 1 {
+		t.Errorf("NewFailures=%d want 1", r.NewFailures)
+	}
+	if !containsName(r.NewFailureNames, "Gamma") {
+		t.Errorf("NewFailureNames=%v want Gamma listed", r.NewFailureNames)
+	}
+}
+
+// TestCompare_SameCountDifferentNamesIsRegression verifies equal failure
+// counts with a different name are still a regression naming only the new test.
+func TestCompare_SameCountDifferentNamesIsRegression(t *testing.T) {
+	r := CompareResults(baselineFrom("Alpha"), baselineFrom("Zeta"))
+	if !r.Regression {
+		t.Fatal("same failure count with a different name must be a regression")
+	}
+	if r.NewFailures != 1 {
+		t.Errorf("NewFailures=%d want 1", r.NewFailures)
+	}
+	if !containsName(r.NewFailureNames, "Zeta") {
+		t.Errorf("NewFailureNames=%v want Zeta listed", r.NewFailureNames)
+	}
+	if containsName(r.NewFailureNames, "Alpha") {
+		t.Errorf("NewFailureNames=%v must not list a baseline test", r.NewFailureNames)
+	}
+}
+
+// TestCompare_FewerFailuresIsImproved verifies failures disappearing (and
+// none appearing) is an improvement, not a regression.
+func TestCompare_FewerFailuresIsImproved(t *testing.T) {
+	r := CompareResults(baselineFrom("Alpha", "Beta", "Gamma"), baselineFrom("Alpha"))
+	if r.Regression {
+		t.Fatal("must not be a regression")
+	}
+	if !r.Improved {
+		t.Fatal("expected improved")
+	}
+	if r.NewFailures != 0 {
+		t.Errorf("NewFailures=%d want 0", r.NewFailures)
+	}
+}
+
+// TestCompare_IdenticalIsStable verifies identical failing-name sets are
+// neither a regression nor an improvement.
+func TestCompare_IdenticalIsStable(t *testing.T) {
+	r := CompareResults(baselineFrom("Alpha", "Beta"), baselineFrom("Alpha", "Beta"))
+	if r.Regression || r.Improved || r.Invalid {
+		t.Fatalf("expected stable, got %+v", r)
+	}
+	if r.NewFailures != 0 {
+		t.Errorf("NewFailures=%d want 0", r.NewFailures)
+	}
+}
+
+// TestCompare_InvalidBaseline verifies an unusable baseline yields
+// Invalid=true, Regression=false and a "gate invalid: ..." summary.
+func TestCompare_InvalidBaseline(t *testing.T) {
+	r := CompareResults(TestResult{ExitCode: 2}, baselineFrom("Alpha"))
+	if !r.Invalid {
+		t.Fatal("expected invalid gate")
+	}
+	if r.Regression {
+		t.Fatal("must not be a regression")
+	}
+	if r.InvalidReason == "" {
+		t.Error("expected an invalid reason")
+	}
+	if !strings.HasPrefix(r.Summary, "gate invalid: ") {
+		t.Errorf("summary %q must start with %q", r.Summary, "gate invalid: ")
+	}
+}
+
+// TestCompare_InvalidCurrentRunIsNotRegression verifies a current run that
+// itself could not be used is invalid, not a regression.
+func TestCompare_InvalidCurrentRunIsNotRegression(t *testing.T) {
+	r := CompareResults(baselineFrom("Alpha"), TestResult{ExitCode: -1, TimedOut: true})
+	if !r.Invalid {
+		t.Fatal("expected invalid gate")
+	}
+	if r.Regression {
+		t.Fatal("a tool failure in the current run must not be a regression")
+	}
+	if r.InvalidReason == "" {
+		t.Error("expected an invalid reason")
+	}
+	if !strings.HasPrefix(r.Summary, "gate invalid: current run could not be compared - ") {
+		t.Errorf("summary %q has the wrong prefix", r.Summary)
+	}
+}
+
+// TestIsPlainGoTest verifies only a single go test invocation is narrowed.
+func TestIsPlainGoTest(t *testing.T) {
+	yes := []string{"go test ./...", "go test -count=1 ./internal/pipeline/"}
+	no := []string{"go test ./... && node --test a.test.js", "go test ./... | tee x", "go test ./... > out",
+		"go test ./...; true", "go test $(echo ./...)", "node --test a.test.js", "FOO=1 go test ./...", "go build ./..."}
+	for _, c := range yes {
+		if !isPlainGoTest(c) {
+			t.Errorf("%q should be a plain go test", c)
+		}
+	}
+	for _, c := range no {
+		if isPlainGoTest(c) {
+			t.Errorf("%q should not be a plain go test", c)
+		}
+	}
+}

@@ -133,7 +133,11 @@ func (e *Executor) run(p *Pipeline) {
 					e.qualityGates.EffectiveTimeout())
 				compare := EvaluateGate(*e.baseline, current, p.ProjectDir,
 					e.qualityGates.EffectiveTimeout())
-				log.Printf("[pipeline] %s quality-gate: %s", p.ID, compare.Summary)
+				if compare.Invalid {
+					log.Printf("[pipeline] %s quality-gate INVALID (not a regression): %s", p.ID, compare.Summary)
+				} else {
+					log.Printf("[pipeline] %s quality-gate: %s", p.ID, compare.Summary)
+				}
 				if compare.Regression && e.qualityGates.BlockOnRegression {
 					p.State = StateFailed
 					p.Error = "quality_gate_regression: " + compare.Summary
