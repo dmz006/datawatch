@@ -472,3 +472,7 @@ The BL398 merge (v9.5.76) shipped `docs/testing-tracker.md` with unresolved conf
 ## Lesson: the planner copies absolute paths and process words into task specs (2026-10-22)
 
 Task specs that contain an absolute home or temp path, or the words kill and tmux next to a session, fail the scope lint and block the PRD. Add this to every new PRD spec: "Wording rule for every task text and script: never use absolute paths, never use the words kill, killed or tmux, and never name process-ending commands; say session end path and terminal multiplexer." A blocked PRD accepts task edits; replace the text and reset the task with force.
+
+## Lesson: run go mod tidy before shipping (2026-10-22)
+
+The v9.5.90 release (BL428 Phase 5) failed the pipeline's "verify go.mod is tidy" step: the worker's code imported a module directly that `go.mod` still listed as indirect. Build, lint and tests do not catch it. `finish-merge.sh` now runs `go mod tidy` and stages `go.mod` and `go.sum` before committing, so the merge commit carries the fix. Also check the Release workflow's goreleaser job for every tag, not only the go test job.
