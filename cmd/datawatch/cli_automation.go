@@ -4,7 +4,8 @@
 // verbs. list/get/create call GET and POST /api/automations; activate calls
 // POST /api/automations/{id}/activate; each control calls its own
 // POST /api/automations/{id}/{pause,resume,cancel,skip_member,insert_member,
-// remove_member,reorder_edges,approve_insert} and prints the updated Automation.
+// remove_member,reorder_edges,approve_insert,set_budget} and prints the updated
+// Automation, with its budget block when it has a budget policy.
 
 package main
 
@@ -19,8 +20,12 @@ import (
 	"strconv"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"github.com/spf13/cobra"
+
+	"github.com/dmz006/datawatch/internal/autonomous"
+	"github.com/dmz006/datawatch/internal/inference"
 )
 
 func newAutomationCmd() *cobra.Command {
@@ -31,7 +36,7 @@ func newAutomationCmd() *cobra.Command {
 
 Subcommands:
   list                List Automations
-  get <id>            Show one Automation (members, edges, active cursors)
+  get <id>            Show one Automation (members, edges, active cursors, budget)
   create              Create a draft Automation (members from a JSON file or inline JSON)
   activate <id>       Start a draft Automation
   pause <id>          Pause a running Automation
@@ -42,6 +47,7 @@ Subcommands:
   remove <id> <member>  Remove a member that has not started
   edges <id> <member> Rewire a member's on_complete, on_blocked and on_failed edges
   approve <id> <member>  Approve an agent-inserted member
+  set-budget <id>     Set, replace or clear the budget policy of an Automation or one member
 
 Every control takes --actor, --reason and --expected-version; a stale
 expected version is refused with HTTP 409.`,
@@ -58,6 +64,7 @@ expected version is refused with HTTP 409.`,
 	cmd.AddCommand(newAutomationRemoveCmd())
 	cmd.AddCommand(newAutomationEdgesCmd())
 	cmd.AddCommand(newAutomationApproveCmd())
+	cmd.AddCommand(newAutomationSetBudgetCmd())
 	return cmd
 }
 
@@ -209,14 +216,15 @@ func (f *automationControlFlags) body(cmd *cobra.Command) map[string]any {
 
 // automationControlOps maps each control subcommand to the REST sub-path it posts to.
 var automationControlOps = map[string]string{
-	"pause":   "pause",
-	"resume":  "resume",
-	"cancel":  "cancel",
-	"skip":    "skip_member",
-	"insert":  "insert_member",
-	"remove":  "remove_member",
-	"edges":   "reorder_edges",
-	"approve": "approve_insert",
+	"pause":      "pause",
+	"resume":     "resume",
+	"cancel":     "cancel",
+	"skip":       "skip_member",
+	"insert":     "insert_member",
+	"remove":     "remove_member",
+	"edges":      "reorder_edges",
+	"approve":    "approve_insert",
+	"set-budget": "set_budget",
 }
 
 // runAutomationControl posts a control request for a subcommand verb and
@@ -464,6 +472,9 @@ type automationView struct {
 	ActiveCursors []string               `json:"active_cursors"`
 	Version       int64                  `json:"version"`
 	Members       []automationMemberView `json:"members"`
+	// Budget is the computed budget view; absent when the Automation has no
+	// budget policy in play.
+	Budget *autonomous.BudgetView `json:"budget"`
 }
 
 // automationMemberView is one member of an Automation. The kind fields
@@ -507,7 +518,14 @@ func printAutomation(w io.Writer, a automationView) error {
 			m.ID, memberKindText(m), memberTargetText(m),
 			edgeText(m.OnComplete), edgeText(m.OnBlocked), edgeText(m.OnFailed), dashIfEmpty(m.Status))
 	}
-	return tw.Flush()
+	if err := tw.Flush(); err != nil {
+		return err
+	}
+	if a.Budget != nil {
+		_, err := fmt.Fprint(w, autonomous.FormatAutomationBudgetText(*a.Budget))
+		return err
+	}
+	return nil
 }
 
 func memberKindText(m automationMemberView) string {
@@ -555,4 +573,248 @@ func dashIfEmpty(s string) string {
 		return "-"
 	}
 	return s
+}
+
+// automationBudgetPolicyFlags are the flags that describe a budget policy;
+// --clear and a member's --estimated-cost-usd are checked against them.
+var automationBudgetPolicyFlags = []string{
+	"ceiling-type", "ceiling-value", "window", "pacing", "on-breach", "backend",
+	"allocation-estimate", "peer-window", "reset-time", "reset-weekday", "reset-day", "reset-zone",
+}
+
+func newAutomationSetBudgetCmd() *cobra.Command {
+	var f automationControlFlags
+	var member, ceilingType, window, pacing, onBreach, backend string
+	var peerWindow, resetTime, resetWeekday, resetZone string
+	var ceilingValue, estimatedCost float64
+	var resetDay int
+	var allocationEstimate, clear bool
+	cmd := &cobra.Command{
+		Use:   "set-budget <id>",
+		Short: "Set, replace or clear the budget policy of an Automation or one member",
+		Long: `Set the budget policy of an Automation, or of one member with --member. The
+policy flags replace the whole policy: --ceiling-type (dollar or allocation_pct),
+--ceiling-value and --window (automation, day, week or month) are required
+together; --pacing (none or even), --on-breach (pause or block), --backend,
+--allocation-estimate, --peer-window and the reset anchors are optional.
+--clear removes the policy and cannot be combined with them.
+
+On a breach the Automation pauses and resumes by itself at the window reset only
+when the reset time is known: a day, week or month window anchored at
+--reset-time, --reset-weekday, --reset-day and --reset-zone or at the calendar
+default, or a reset time read from a rate-limit message. When the reset time is
+unknown it goes to blocked and waits for the operator. An alert is raised either
+way.
+
+--allocation-estimate adds an estimated share of the plan allocation; it is
+always labelled estimated and never pauses or blocks. --peer-window names, comma
+separated, the peers whose spend counts toward the ceiling; it is off by default
+and a shared account is not confirmed automatically.
+
+--estimated-cost-usd (with --member) declares the expected cost of the member's
+Automaton; on its own it changes only the estimate and 0 removes it.
+
+Flags are checked before any request is sent. --expected-version must match the
+Automation's current version or the daemon refuses with HTTP 409.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			fl := cmd.Flags()
+			var peers []string
+			if fl.Changed("peer-window") {
+				for _, p := range strings.Split(peerWindow, ",") {
+					peers = append(peers, strings.TrimSpace(p))
+				}
+			}
+			in := automationBudgetFlagValues{
+				changed: fl.Changed, member: strings.TrimSpace(member),
+				ceilingType: ceilingType, ceilingValue: ceilingValue, window: window, pacing: pacing,
+				onBreach: onBreach, backend: backend, allocationEstimate: allocationEstimate, peerWindow: peers,
+				resetTime: resetTime, resetWeekday: resetWeekday, resetDay: resetDay, resetZone: resetZone,
+				estimatedCost: estimatedCost, clear: clear,
+			}
+			fields, err := in.fields()
+			if err != nil {
+				return err
+			}
+			body := f.body(cmd)
+			for k, v := range fields {
+				body[k] = v
+			}
+			return runAutomationControl(args[0], "set-budget", body)
+		},
+	}
+	f.register(cmd)
+	fl := cmd.Flags()
+	fl.StringVar(&member, "member", "", "Set the override of this member instead of the Automation's own policy")
+	fl.StringVar(&ceilingType, "ceiling-type", "", "What the ceiling measures: dollar, or allocation_pct (an estimate only)")
+	fl.Float64Var(&ceilingValue, "ceiling-value", 0, "The ceiling, a positive number in the unit of --ceiling-type")
+	fl.StringVar(&window, "window", "", "Window the ceiling applies to: automation, day, week or month")
+	fl.StringVar(&pacing, "pacing", "", "Pacing within the window: none (default) or even")
+	fl.StringVar(&onBreach, "on-breach", "", "When the ceiling is reached: pause (default) or block")
+	fl.StringVar(&backend, "backend", "", "LLM backend whose spend is measured (default: the members')")
+	fl.BoolVar(&allocationEstimate, "allocation-estimate", false, "Show an estimated share of the plan allocation (never pauses or blocks)")
+	fl.StringVar(&peerWindow, "peer-window", "", "Comma-separated peers whose spend counts toward the ceiling (off by default)")
+	fl.StringVar(&resetTime, "reset-time", "", "Time of day the day, week or month window resets, 24h HH:MM")
+	fl.StringVar(&resetWeekday, "reset-weekday", "", "Weekday a week window resets, monday..sunday")
+	fl.IntVar(&resetDay, "reset-day", 0, "Day of the month a month window resets, 1..28")
+	fl.StringVar(&resetZone, "reset-zone", "", "IANA zone of the reset, such as America/New_York")
+	fl.Float64Var(&estimatedCost, "estimated-cost-usd", 0, "With --member: expected cost in dollars of the member's Automaton (0 removes it)")
+	fl.BoolVar(&clear, "clear", false, "Remove the policy instead of setting one")
+	return cmd
+}
+
+// automationBudgetFlagValues carries the parsed set-budget flags; changed
+// reports whether a flag was given on the command line.
+type automationBudgetFlagValues struct {
+	changed func(name string) bool
+
+	member, ceilingType, window, pacing, onBreach, backend string
+	resetTime, resetWeekday, resetZone                     string
+	ceilingValue, estimatedCost                            float64
+	resetDay                                               int
+	allocationEstimate, clear                              bool
+	peerWindow                                             []string
+}
+
+// fields checks the flags against each other and returns the REST fields they
+// stand for. Every error names the flag at fault, and nothing is sent when one
+// is returned.
+func (v automationBudgetFlagValues) fields() (map[string]any, error) {
+	var given []string
+	for _, name := range automationBudgetPolicyFlags {
+		if v.changed(name) {
+			given = append(given, "--"+name)
+		}
+	}
+	costGiven := v.changed("estimated-cost-usd")
+	out := map[string]any{}
+	if v.member != "" {
+		out["member_id"] = v.member
+	}
+
+	if v.clear {
+		if costGiven {
+			given = append(given, "--estimated-cost-usd")
+		}
+		if len(given) > 0 {
+			return nil, fmt.Errorf("--clear removes the policy and cannot be combined with %s", strings.Join(given, ", "))
+		}
+		out["clear"] = true
+		return out, nil
+	}
+	if costGiven {
+		if v.member == "" {
+			return nil, fmt.Errorf("--estimated-cost-usd applies to a member; name it with --member")
+		}
+		if v.estimatedCost < 0 {
+			return nil, fmt.Errorf("--estimated-cost-usd %v must not be negative", v.estimatedCost)
+		}
+		out["estimated_cost_usd"] = v.estimatedCost
+	}
+	if len(given) == 0 {
+		if !costGiven {
+			return nil, fmt.Errorf("nothing to set: give --ceiling-type, --ceiling-value and --window, or --clear to remove the policy")
+		}
+		return out, nil
+	}
+
+	switch v.ceilingType {
+	case "dollar", "allocation_pct":
+	case "":
+		return nil, fmt.Errorf("--ceiling-type is required with the policy flags: dollar or allocation_pct")
+	default:
+		return nil, fmt.Errorf("--ceiling-type must be dollar or allocation_pct, got %q", v.ceilingType)
+	}
+	if v.ceilingValue <= 0 {
+		return nil, fmt.Errorf("--ceiling-value is required and must be positive, got %v", v.ceilingValue)
+	}
+	switch v.window {
+	case "automation", "day", "week", "month":
+	case "":
+		return nil, fmt.Errorf("--window is required with the policy flags: automation, day, week or month")
+	default:
+		return nil, fmt.Errorf("--window must be automation, day, week or month, got %q", v.window)
+	}
+	switch v.pacing {
+	case "", "none", "even":
+	default:
+		return nil, fmt.Errorf("--pacing must be none or even, got %q", v.pacing)
+	}
+	switch v.onBreach {
+	case "", "pause", "block":
+	default:
+		return nil, fmt.Errorf("--on-breach must be pause or block, got %q", v.onBreach)
+	}
+	if err := v.checkResetAnchor(); err != nil {
+		return nil, err
+	}
+	seen := map[string]bool{}
+	for _, p := range v.peerWindow {
+		switch {
+		case p == "":
+			return nil, fmt.Errorf("--peer-window entries must be non-empty")
+		case seen[p]:
+			return nil, fmt.Errorf("--peer-window lists %q more than once", p)
+		}
+		seen[p] = true
+	}
+
+	out["ceiling_type"], out["ceiling_value"], out["window"] = v.ceilingType, v.ceilingValue, v.window
+	for k, s := range map[string]string{
+		"pacing": v.pacing, "on_breach": v.onBreach, "backend": v.backend,
+		"reset_time": v.resetTime, "reset_weekday": v.resetWeekday, "reset_zone": v.resetZone,
+	} {
+		if s != "" {
+			out[k] = s
+		}
+	}
+	if v.resetDay != 0 {
+		out["reset_day"] = v.resetDay
+	}
+	if v.allocationEstimate {
+		out["allocation_estimate"] = true
+	}
+	if len(v.peerWindow) > 0 {
+		out["peer_window"] = v.peerWindow
+	}
+	return out, nil
+}
+
+// checkResetAnchor checks the reset flags: each must parse and each applies
+// only to the windows that use it. The lifetime window has no reset.
+func (v automationBudgetFlagValues) checkResetAnchor() error {
+	resets := v.window == "day" || v.window == "week" || v.window == "month"
+	if v.resetTime != "" {
+		if !resets {
+			return fmt.Errorf("--reset-time only applies to a day, week or month window")
+		}
+		if _, _, err := inference.ParseBudgetClock(v.resetTime); err != nil {
+			return fmt.Errorf("--reset-time: %w", err)
+		}
+	}
+	if v.resetZone != "" {
+		if !resets {
+			return fmt.Errorf("--reset-zone only applies to a day, week or month window")
+		}
+		if _, err := time.LoadLocation(v.resetZone); err != nil {
+			return fmt.Errorf("--reset-zone %q is not a known IANA zone", v.resetZone)
+		}
+	}
+	if v.resetWeekday != "" {
+		if v.window != "week" {
+			return fmt.Errorf("--reset-weekday only applies to a week window")
+		}
+		if _, ok := inference.ParseBudgetWeekday(v.resetWeekday); !ok {
+			return fmt.Errorf("--reset-weekday %q must be monday..sunday", v.resetWeekday)
+		}
+	}
+	if v.changed("reset-day") {
+		if v.window != "month" {
+			return fmt.Errorf("--reset-day only applies to a month window")
+		}
+		if v.resetDay < 1 || v.resetDay > 28 {
+			return fmt.Errorf("--reset-day %d must be 1..28", v.resetDay)
+		}
+	}
+	return nil
 }
