@@ -674,6 +674,30 @@ smoke against a real daemon, full `go test ./...` + `node --test`, the
    enriched frame. **Known gap still present:** the CLI/comm shorthand
    `prd_updated` still resolves to `task.prd_updated`, which is not in the
    closed `KnownEventKinds` set — use the full `prd.updated`.
+   **Verification gate (2026-10-21, run with `env -u TMUX -u TMUX_TMPDIR`):**
+   `go build -o datawatch ./cmd/datawatch/`, `go vet ./...` and `go test ./...`
+   all pass (no failing package); `node --test internal/server/web/*.test.js`
+   = 374 pass, 0 fail; `scripts/check-docs-sync.sh` and
+   `scripts/check-howto-coverage.sh` pass. `scripts/check-no-internal-refs.sh`
+   still reports exactly the 19 pre-existing `openapi.yaml` summary leaks and
+   none from this phase's diff (the two `(BL427)` mentions on the CLI help
+   line and the `docs/mcp.md` table row were already there and only had the
+   new tool names or `mcp_queue` added; cleaning them is follow-up). Checked
+   against the phase text: the queue → REST → MCP cursor flow is covered by
+   unit tests (`TestMCPQueueSinkAppendsMatchingOnly`,
+   `TestPendingQueueLimitAndSinceExclusive` for the caught-up empty page,
+   `TestPendingQueueEvictionAndDropped`, `TestPendingEventsRESTDroppedFlagRoundTrip`
+   and the MCP proxy tests) but there is no single test chaining a real
+   subscription through the engine into a REST/MCP poll — that round trip is
+   one of the LIVE-pending tracker rows; all 59 `lifecycle_sub_` keys used by
+   `app.js` exist in en, de, es, fr and ja; REST, MCP, CLI, comm and PWA each
+   cover events-pending (PWA has no events view — it creates `mcp_queue`
+   subscriptions but does not poll them, an intentional gap) and update/test;
+   every live row in `docs/testing-tracker.md` is Validated=No; `CHANGELOG.md`
+   carries no version number; the `webhook` sink is still rejected
+   (`TestMCPQueueSinkWebhookStillRejected`) and no webhook or federation
+   forwarding code exists; `docs/config-reference.yaml` documents
+   `autonomous.notify.pending_events_max`.
 5. **Phase 5 — Planned.** Outbound webhook URL sink (HMAC, SSRF guard,
    retry/backoff), federation forwarding. *(Phase Completion Checklist
    applies.)*
