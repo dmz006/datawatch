@@ -1574,6 +1574,7 @@ howto, and the `datawatch-app` issue where applicable.
 1. **PWA tab ordering.** Should the Automation tab sit to the **left of**
    Automata (working assumption: larger scale first)? Or should it sit to the
    right, or be a sub-tab inside the Automata view (next to Automata / Templates)?
+   **Decided by the operator 2026-10-22: left of Automata.**
 2. **Nested Automations / an Initiative object.** Should an Automation be able to
    contain Automations (an "Automation of Automations", or a separate
    "Initiative")? This is **not decided either way**. Today's model allows only

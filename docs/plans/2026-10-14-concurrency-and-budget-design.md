@@ -1371,6 +1371,7 @@ thing example (iii) could not see.
     (`onMemberTerminal`/advance logic) must consume faithfully — this
     judgment call should not keep being made ad hoc by whoever is driving
     PRDs by hand.
+    **Decided by the operator 2026-10-22: opt-in per peer.** Resource-fingerprint exchange and shared-budget counting are off for every peer until switched on for that peer.
 
 ### 4d. Verifier split (operator decision 2026-10-18)
 
