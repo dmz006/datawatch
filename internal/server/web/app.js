@@ -9779,6 +9779,23 @@ function ensureFreeObserversCached() {
 window.ensureFreeObserversCached = ensureFreeObserversCached;
 
 // LLM form builder.
+// plan_tier options for the LLM forms. The tier set is a closed enum on
+// the daemon (inference.PlanTier); the server rejects anything else with
+// an actionable 400, so a fixed list is enough for the UI.
+const LLM_PLAN_TIERS = ['pro', 'max_5x', 'max_20x', 'api'];
+function planTierOptions(selected) {
+  const opts = [`<option value="" ${!selected ? 'selected' : ''}>${escHtml(t('llm_plan_tier_unset')||'(unset — kind default)')}</option>`];
+  for (const v of LLM_PLAN_TIERS) opts.push(`<option value="${v}" ${selected === v ? 'selected' : ''}>${v}</option>`);
+  return opts.join('');
+}
+// One-line “effective inflight cap + source” display, present only when
+// the daemon returned the derived fields (effective_max_inflight /
+// inflight_source). Older daemons simply don't show the line.
+function llmEffectiveCapLine(l) {
+  if (!l || l.effective_max_inflight == null) return '';
+  const src = l.inflight_source ? ` (${l.inflight_source})` : '';
+  return `<div style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml((t('llm_effective_cap')||'Effective inflight cap')+': '+l.effective_max_inflight+src)}</div>`;
+}
 function buildLLMForm(l) {
   const nodes = (window._computeNodesCache||[]);
   const nodeOpts = nodes.map(n =>
@@ -9798,6 +9815,10 @@ function buildLLMForm(l) {
     <input id="fe_llm_timeout" type="number" min="0" class="form-input" value="${l.timeout_seconds||''}" />
     <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('llm_field_max_inflight')||'Max in-flight autonomous sessions (0 = unlimited)')}</label>
     <input id="fe_llm_max_inflight" type="number" min="0" class="form-input" value="${l.max_inflight||''}" />
+    <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('llm_field_plan_tier')||'Plan tier (empty = unset)')}</label>
+    <select id="fe_llm_plan_tier" class="form-select">${planTierOptions(l.plan_tier)}</select>
+    <div style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(t('llm_plan_tier_hint')||"The daemon's autonomous.plan_tier_max_inflight table caps inflight per tier; an explicit max_inflight > 0 wins, otherwise the kind default applies.")}</div>
+    ${llmEffectiveCapLine(l)}
     <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('llm_field_tags')||'Tags')}</label>
     ${renderBadgeInput('fe_llm_tags', (l.tags||[]).join(', '), { freeform: true, placeholder: 'fast, coding…' })}
   `;
@@ -9817,6 +9838,7 @@ function collectLLMForm(originalRecord) {
   else out.api_key_ref = '';
   out.timeout_seconds = parseInt((document.getElementById('fe_llm_timeout')||{}).value || '0', 10) || 0;
   out.max_inflight = parseInt((document.getElementById('fe_llm_max_inflight')||{}).value || '0', 10) || 0;
+  out.plan_tier = (document.getElementById('fe_llm_plan_tier')||{}).value || '';
   out.tags = getBadgeInputValue('fe_llm_tags').split(',').map(s => s.trim()).filter(Boolean);
   return out;
 }
@@ -10026,6 +10048,12 @@ window._renderLLMEditPanel = function(existing) {
       <div class="wizard-field">
         <label class="wizard-label">${escHtml(t('llm_field_max_inflight')||'Max in-flight autonomous sessions (0 = unlimited)')}</label>
         <input id="llmEditMaxInflight" type="number" min="0" class="form-input" value="${existing.max_inflight||''}" placeholder="0" />
+        <div style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(t('llm_plan_tier_hint')||"The daemon's autonomous.plan_tier_max_inflight table caps inflight per tier; an explicit max_inflight > 0 wins, otherwise the kind default applies.")}</div>
+      </div>
+      <div class="wizard-field">
+        <label class="wizard-label">${escHtml(t('llm_field_plan_tier')||'Plan tier (empty = unset)')}</label>
+        <select id="llmEditPlanTier" class="form-select">${planTierOptions(existing.plan_tier)}</select>
+        ${llmEffectiveCapLine(existing)}
       </div>
       <div class="wizard-field">
         <label class="wizard-label">${escHtml(t('llm_field_tags')||'Tags')}</label>
@@ -10305,6 +10333,7 @@ window._llmSaveDraft = function() {
   // Collect all new fields (B/C/D + claude-specific + fix A).
   const timeoutSec = parseInt((document.getElementById('llmEditTimeout')||{}).value||'0', 10) || 0;
   const maxInflight = parseInt((document.getElementById('llmEditMaxInflight')||{}).value||'0', 10) || 0;
+  const planTier = (document.getElementById('llmEditPlanTier')||{}).value||'';
   const tags = getBadgeInputValue('llmEditTags').split(',').map(s => s.trim()).filter(Boolean);
   const binary = (document.getElementById('llmEditBinary')||{}).value.trim();
   const consoleCols = parseInt((document.getElementById('llmEditCols')||{}).value||'0', 10) || 0;
@@ -10324,7 +10353,7 @@ window._llmSaveDraft = function() {
   const payload = {
     name: isEdit ? editName : name, kind, models, model: firstModel,
     auto_add_models: autoAddModels, compute_nodes: computeNodes, api_key_ref: apiKey,
-    timeout_seconds: timeoutSec, max_inflight: maxInflight, tags,
+    timeout_seconds: timeoutSec, max_inflight: maxInflight, plan_tier: planTier, tags,
     binary, console_cols: consoleCols, console_rows: consoleRows,
     output_mode: outputMode, input_mode: inputMode,
     auto_git_init: autoGitInit, auto_git_commit: autoGitCommit,
@@ -14399,6 +14428,12 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.plan_coverage_check', label: 'Plan coverage check (off | warn | block, default block)', labelKey: 'settings_plan_coverage', type: 'select', options: ['off', 'warn', 'block'], default: 'block' },
     { key: 'autonomous.undeclared_edit_mode', label: 'Undeclared edit mode (off | warn | block, default warn)', labelKey: 'settings_undeclared_edit_mode', type: 'select', options: ['off', 'warn', 'block'], default: 'warn' },
     { key: 'autonomous.plan_coverage_min_ratio', label: 'Plan coverage min ratio (requirement coverage 0-1, default 1.0)', labelKey: 'settings_plan_coverage_min_ratio', type: 'number', placeholder: '1.0', min: 0.1, max: 1, step: 0.1, default: '1' },
+    // Plan tier inflight caps — ties each subscription plan tier
+    // (pro | max_5x | max_20x | api) to the inflight session count it may
+    // occupy (0 = unlimited; omitted tier = kind default applies). An
+    // explicit per-LLM max_inflight > 0 wins over the tier cap (priority:
+    // explicit > tier > kind).
+    { key: 'autonomous.plan_tier_max_inflight', label: 'Plan tier inflight caps (per tier; 0 = unlimited; blank = kind default)', labelKey: 'settings_plan_tier_max_inflight', type: 'plan_tier_table', hint: 'An explicit per-LLM max_inflight > 0 wins over the tier cap; otherwise the kind default applies.' },
     // 2026-10-17 — plan review gate + smoke verification. All optional;
     // empty backend = feature off. Backend/model pairs follow the same
     // paired-model pattern as the guardrail fields above.
@@ -14569,6 +14604,26 @@ function loadCommsConfig() {
           html += `<div class="settings-row" style="justify-content:space-between;">
             <div class="settings-label">${escHtml(f.label)}</div>
             <select class="form-select general-cfg-input" onchange="saveGeneralField('${f.key}', this.value)">${opts}</select>
+          </div>`;
+        } else if (f.type === 'plan_tier_table') {
+          // plan tier inflight caps: one numeric input per tier + Save.
+          // PUTs the table as a JSON object (the daemon's PUT accepts
+          // object, JSON-string, or compact "tier=N,tier=N" forms).
+          const table = (val && typeof val === 'object') ? val : {};
+          const tierInputs = ['pro', 'max_5x', 'max_20x', 'api'].map(tier => {
+            const v = parseInt(table[tier], 10);
+            return `<label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--text2);">
+              <span>${tier}</span>
+              <input type="number" min="0" class="form-input" style="width:72px;" value="${isNaN(v) ? '' : v}" data-plan-tier="${tier}" />
+            </label>`;
+          }).join('');
+          html += `<div class="settings-row" style="flex-direction:column;align-items:stretch;">
+            <div class="settings-label">${escHtml(f.label)}</div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:4px;padding:8px 10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;">
+              ${tierInputs}
+              <button class="btn-secondary" style="font-size:11px;" onclick="savePlanTierTable()">${escHtml(t('settings_plan_tier_save')||'Save')}</button>
+            </div>
+            <div style="font-size:11px;color:var(--text2);margin-top:3px;">${escHtml(f.hint || (t('settings_plan_tier_hint')||'Per-tier inflight caps; 0 = unlimited; blank tier = kind default. An explicit per-LLM max_inflight > 0 wins.'))}</div>
           </div>`;
         } else if (f.type === 'interface_select') {
           // v5.23.0 — operator-reported: comms interface_select wasn't
@@ -15567,6 +15622,33 @@ function saveGeneralField(key, value) {
         if (state.autoRestartOnConfig && RESTART_FIELDS.has(key)) {
           triggerAutoRestart();
         }
+      } else {
+        showToast('Save failed', 'error');
+      }
+    })
+    .catch(() => showToast('Save failed', 'error'));
+}
+
+// plan tier inflight caps — collects the four per-tier inputs into a
+// JSON object and PUTs it as autonomous.plan_tier_max_inflight (the
+// daemon accepts object, JSON-string, or compact "tier=N,tier=N" forms;
+// unknown tiers are rejected with an actionable error).
+function savePlanTierTable() {
+  const table = {};
+  document.querySelectorAll('input[data-plan-tier]').forEach(inp => {
+    let v = parseInt(inp.value || '0', 10) || 0;
+    if (v < 0) v = 0;
+    table[inp.dataset.planTier] = v;
+  });
+  fetch('/api/config', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...tokenHeader() },
+    body: JSON.stringify({ 'autonomous.plan_tier_max_inflight': table }),
+  })
+    .then(r => {
+      if (r.ok) {
+        showToast('Saved', 'success', 1500);
+        loadCommsConfig();
       } else {
         showToast('Save failed', 'error');
       }
@@ -21065,7 +21147,13 @@ window._loadPRDCapacityCard = function(prdId) {
         ` (${p.held||0} ${t('capacity_held')||'held by autonomous tasks'}, ${p.external||0} ${t('capacity_external')||'other sessions on this host'})`;
     }
     if (p.name.startsWith('node:')) return t('capacity_pool_node_hint')||'Concurrent autonomous sessions this compute node will run at once.';
-    if (p.name.startsWith('llm:')) return t('capacity_pool_llm_hint')||'Concurrent in-flight requests this LLM backend will accept at once.';
+    if (p.name.startsWith('llm:')) {
+      const base = t('capacity_pool_llm_hint')||'Concurrent in-flight requests this LLM backend will accept at once.';
+      if (p.effective_max_inflight != null) return base + ' ' +
+        (t('capacity_pool_llm_cap')||'Effective cap') + ': ' + p.effective_max_inflight +
+        (p.inflight_source ? ' (' + p.inflight_source + ')' : '');
+      return base;
+    }
     return '';
   };
   // Node pools carry queue_depth and holder (GET /api/capacity). Show who

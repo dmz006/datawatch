@@ -1782,5 +1782,13 @@
   "prd_plan_review_done": "プランレビューの再実行が完了しました",
   "plan_review_approve_blocked_tip": "プランレビューによりこの承認はブロックされました — ",
   "prd_task_kind_tip": "スモーク検証の対象タスク",
-  "prd_task_smoke_verifier_tip": "このタスク用のスモーク検証LLM"
+  "prd_task_smoke_verifier_tip": "このタスク用のスモーク検証LLM",
+  "llm_field_plan_tier": "プラン階層（空欄 = 未設定）",
+  "llm_plan_tier_hint": "デーモンの autonomous.plan_tier_max_inflight テーブルが階層ごとに inflight を上限設定します。明示的な max_inflight > 0 が優先され、それ以外は既定値が適用されます。",
+  "llm_plan_tier_unset": "（未設定 — 既定値）",
+  "llm_effective_cap": "実際の inflight 上限",
+  "capacity_pool_llm_cap": "実際の上限",
+  "settings_plan_tier_max_inflight": "プラン階層別 inflight 上限",
+  "settings_plan_tier_hint": "階層ごとの inflight 上限。0 = 無制限、空白 = 既定値。明示的な max_inflight > 0 が優先されます。",
+  "settings_plan_tier_save": "保存"
 }

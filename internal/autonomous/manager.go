@@ -83,6 +83,18 @@ type Config struct {
 	// >1 clamps to 1.0 (see config.NormalizePlanCoverageRatio). No
 	// omitempty for the same round-trip reason as PlanCoverageCheck.
 	PlanCoverageMinRatio float64 `json:"plan_coverage_min_ratio"`
+	// PlanTierMaxInflight mirrors the tier -> max-inflight table
+	// (autonomous.plan_tier_max_inflight) so the two autonomous config
+	// surfaces (/api/config and /api/autonomous/config) agree. The manager
+	// itself does not consume it: the daemon's capacity wiring
+	// (cmd/datawatch/capacity_wiring.go) reads it from config.Config and
+	// feeds EffectiveMaxInflight. The field exists so
+	// handleAutonomousConfig's live round-trip (internal/server/
+	// autonomous.go) does not drop the key — same role as
+	// VerificationTimeoutSeconds. omitempty, deliberately: a nil table on
+	// this mirror side must not marshal as null and clobber the table the
+	// daemon holds in config.Config during that same round-trip.
+	PlanTierMaxInflight map[string]int `json:"plan_tier_max_inflight,omitempty"`
 	// VerificationTimeoutSeconds is the sibling of PlanningTimeoutSeconds.
 	// Exposed as autonomous.verification_timeout_seconds in config. The
 	// manager itself does not consume it: the daemon's verifier/guardrail

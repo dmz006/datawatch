@@ -5683,6 +5683,10 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			// defaults ("block", 1.0) rather than blanks.
 			"plan_coverage_check":     effectivePlanCoverageCheckForDisplay(s.cfg.Autonomous.PlanCoverageCheck),
 			"plan_coverage_min_ratio": config.NormalizePlanCoverageRatio(s.cfg.Autonomous.PlanCoverageMinRatio),
+			// tier -> max-inflight table; a nil table renders as an empty
+			// object (rather than null) so clients treat "absent tier" and
+			// "empty table" the same way: kind defaults apply.
+			"plan_tier_max_inflight": planTierTableForDisplay(s.cfg.Autonomous.PlanTierMaxInflight),
 			"execution_backend":       s.cfg.Autonomous.ExecutionBackend,
 			// BL304: new key + legacy alias.
 			"planning_effort":               s.cfg.Autonomous.PlanningEffort,
@@ -5904,6 +5908,15 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	}
 	if v, ok := patch["autonomous.plan_coverage_min_ratio"]; ok {
 		if _, verr := configPatchFloat(v); verr != nil {
+			http.Error(w, "autonomous."+verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	// tier -> max-inflight table: validate the whole value before anything
+	// is applied, so a bad tier key or negative limit rejects the PUT
+	// instead of being stored (same rule as the plan-coverage pair above).
+	if v, ok := patch["autonomous.plan_tier_max_inflight"]; ok {
+		if _, verr := parsePlanTierTable(v); verr != nil {
 			http.Error(w, "autonomous."+verr.Error(), http.StatusBadRequest)
 			return
 		}
@@ -7155,6 +7168,17 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			if ratio, err := configPatchFloat(v); err == nil {
 				cfg.Autonomous.PlanCoverageMinRatio = config.NormalizePlanCoverageRatio(ratio)
 			}
+		case "autonomous.plan_tier_max_inflight":
+			// tier -> max-inflight table (autonomous.plan_tier_max_inflight).
+			// Accepted shapes: a JSON object ({"pro":1}), the same object
+			// arriving as a string (CLI `config set` and the comm-channel
+			// `configure` verb quote their values), or `tier=limit,tier=limit`.
+			// Unknown tier keys and negative limits are rejected loudly by
+			// parsePlanTierTable; handlePutConfig runs the same check before
+			// apply, so a bad value never reaches here in the REST path.
+			if table, verr := parsePlanTierTable(v); verr == nil {
+				cfg.Autonomous.PlanTierMaxInflight = table
+			}
 		case "autonomous.notify.default_events":
 			// Default event kinds the built-in lifecycle sinks subscribe to.
 			// Accept array or comma-separated string, same as
@@ -7631,6 +7655,100 @@ func toString(v interface{}) string {
 		return s
 	}
 	return fmt.Sprintf("%v", v)
+}
+
+// planTierTableForDisplay renders the tier -> max-inflight table for the
+// config surface. A nil table (test servers, pre-default configs) renders
+// as an empty object rather than null.
+func planTierTableForDisplay(table map[string]int) map[string]int {
+	if table == nil {
+		return map[string]int{}
+	}
+	return table
+}
+
+// parsePlanTierTable validates a value destined for
+// autonomous.plan_tier_max_inflight and returns the table it represents.
+// Accepted shapes:
+//
+//   - an object: {"pro": 1, "max_5x": 2} (REST/PWA raw JSON),
+//   - that object as a string: '{"pro":1}' (CLI `config set` and the
+//     comm-channel `configure` verb quote their values),
+//   - a compact list: "pro=1,max_5x=2".
+//
+// Every key must be a known tier (pro|max_5x|max_20x|api); the empty
+// tier name is rejected because it would shadow EffectiveMaxInflight's
+// unset-tier fallback. Every limit must be an integer >= 0 (0 =
+// unlimited for that tier). Empty input is a valid "clear the table" edit
+// and returns an empty non-nil map so the clear round-trips (the config
+// struct field has no omitempty on purpose).
+func parsePlanTierTable(v any) (map[string]int, error) {
+	var raw map[string]any
+	switch x := v.(type) {
+	case map[string]any:
+		raw = x
+	case nil:
+		return map[string]int{}, nil
+	case string:
+		s := strings.TrimSpace(x)
+		if strings.HasPrefix(s, "{") {
+			if err := json.Unmarshal([]byte(s), &raw); err != nil {
+				return nil, fmt.Errorf("plan_tier_max_inflight: malformed JSON %q: %v", s, err)
+			}
+		} else if s == "" {
+			return map[string]int{}, nil
+		} else {
+			raw = map[string]any{}
+			for _, part := range strings.Split(s, ",") {
+				kv := strings.SplitN(strings.TrimSpace(part), "=", 2)
+				if len(kv) != 2 || strings.TrimSpace(kv[0]) == "" || strings.TrimSpace(kv[1]) == "" {
+					return nil, fmt.Errorf("plan_tier_max_inflight: expected an object, a JSON object string, or \"tier=limit,tier=limit\"; got %q", strings.TrimSpace(part))
+				}
+				raw[kv[0]] = strings.TrimSpace(kv[1])
+			}
+		}
+	default:
+		return nil, fmt.Errorf("plan_tier_max_inflight: expected an object (or a JSON object string); got %T", v)
+	}
+	out := make(map[string]int, len(raw))
+	for k, val := range raw {
+		if !inference.ValidPlanTier(inference.PlanTier(k)) {
+			return nil, fmt.Errorf("plan_tier_max_inflight: unknown tier %q (allowed: %s, %s, %s, %s)",
+				k, inference.PlanTierPro, inference.PlanTierMax5x, inference.PlanTierMax20x, inference.PlanTierAPI)
+		}
+		switch n := val.(type) {
+		case int:
+			if n < 0 {
+				return nil, fmt.Errorf("plan_tier_max_inflight: limit for %q must be an integer >= 0", k)
+			}
+			out[k] = n
+		case json.Number:
+			if iv, err := n.Int64(); err == nil {
+				if iv < 0 {
+					return nil, fmt.Errorf("plan_tier_max_inflight: limit for %q must be an integer >= 0", k)
+				}
+				out[k] = int(iv)
+				continue
+			}
+			return nil, fmt.Errorf("plan_tier_max_inflight: limit for %q must be an integer >= 0; got %v", k, val)
+		case float64:
+			if n < 0 || n != math.Trunc(n) {
+				return nil, fmt.Errorf("plan_tier_max_inflight: limit for %q must be an integer >= 0", k)
+			}
+			out[k] = int(n)
+		case string:
+			iv, err := strconv.Atoi(strings.TrimSpace(n))
+			if err != nil || iv < 0 {
+				return nil, fmt.Errorf("plan_tier_max_inflight: limit for %q must be an integer >= 0", k)
+			}
+			out[k] = iv
+		case bool:
+			return nil, fmt.Errorf("plan_tier_max_inflight: limit for %q must be an integer >= 0, not a boolean", k)
+		default:
+			return nil, fmt.Errorf("plan_tier_max_inflight: limit for %q must be an integer >= 0; got %v", k, val)
+		}
+	}
+	return out, nil
 }
 
 func toInt(v interface{}) (int, bool) {

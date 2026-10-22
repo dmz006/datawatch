@@ -55,7 +55,12 @@ func (s *Server) handleLLMs(w http.ResponseWriter, r *http.Request) {
 		if !s.fedCap(w, r, federation.CapLLMsList) {
 			return
 		}
-		writeJSONOK(w, map[string]any{"llms": inference.RedactedList(s.inferenceReg.List())})
+		llms := s.inferenceReg.List()
+		views := make([]llmView, 0, len(llms))
+		for _, l := range llms {
+			views = append(views, s.llmView(l.Redacted()))
+		}
+		writeJSONOK(w, map[string]any{"llms": views})
 
 	case rest == "" && r.Method == http.MethodPost:
 		if !s.fedCap(w, r, federation.CapLLMsWrite) {
@@ -144,7 +149,7 @@ func (s *Server) handleLLMs(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusNotFound)
 			return
 		}
-		writeJSONOK(w, l.Redacted())
+		writeJSONOK(w, s.llmView(l.Redacted()))
 
 	case rest != "" && r.Method == http.MethodPut:
 		if !s.fedCap(w, r, federation.CapLLMsWrite) {
@@ -205,6 +210,42 @@ func (s *Server) handleLLMs(w http.ResponseWriter, r *http.Request) {
 
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// llmView wraps a redacted LLM with the derived effective inflight limit
+// and the rule that produced it. The registry stores only the raw
+// fields (MaxInflight, PlanTier); EffectiveMaxInflight is a function of
+// those plus the daemon's live autonomous.plan_tier_max_inflight table,
+// so it is computed per-response here rather than stored. Outer
+// PlanTier / MaxInflight shadow the embedded fields by name so that a
+// zero MaxInflight still surfaces (as 0) while the embedded
+// omitempty-tagged fields would drop it.
+type llmView struct {
+	inference.LLM
+	PlanTier             string                     `json:"plan_tier"`
+	MaxInflight          *int                       `json:"max_inflight"`
+	EffectiveMaxInflight int                        `json:"effective_max_inflight"`
+	InflightSource       inference.InflightSource   `json:"inflight_source"`
+}
+
+// llmView builds the response view for one redacted LLM. The tier table
+// is read from the daemon's live config so a config PATCH shows up on the
+// very next GET without a registry mutation (s.cfg is always non-nil on a
+// running server; guarded anyway since llmView is a plain helper).
+func (s *Server) llmView(redacted *inference.LLM) llmView {
+	var table map[string]int
+	if s.cfg != nil {
+		table = s.cfg.Autonomous.PlanTierMaxInflight
+	}
+	raw := redacted.MaxInflight
+	val := *redacted
+	return llmView{
+		LLM:                  val,
+		PlanTier:             string(val.PlanTier),
+		MaxInflight:          &raw,
+		EffectiveMaxInflight: inference.EffectiveMaxInflight(val, table),
+		InflightSource:       inference.InflightSourceOf(val, table),
 	}
 }
 

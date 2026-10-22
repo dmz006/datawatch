@@ -37,7 +37,12 @@ Common kv pairs:
   console_cols=<N>        console_rows=<N>         output_mode=terminal|log|chat
   auto_git_init=true      auto_git_commit=true
   skip_permissions=true   channel_enabled=true     auto_accept_disclaimer=true
-  permission_mode=plan     default_effort=normal    fallback_chain=<csv>`
+  permission_mode=plan     default_effort=normal    fallback_chain=<csv>
+  plan_tier=pro|max_5x|max_20x|api   (LLM's subscription tier; the daemon's
+                                      autonomous.plan_tier_max_inflight table then
+                                      caps its inflight unless max_inflight>0 wins)
+  max_inflight=<N>        (explicit inflight cap on the LLM; N>=0, 0=unlimited,
+                           wins over the plan_tier table and the kind default)`
 
 func (r *Router) handleLLMCmd(cmd Command) {
 	text := strings.TrimSpace(cmd.Text)
@@ -295,8 +300,14 @@ func parseLLMKVPairs(s string) map[string]any {
 		switch k {
 		case "compute_nodes", "tags", "fallback_chain":
 			out[k] = strings.Split(v, ",")
-		case "timeout_seconds", "console_cols", "console_rows":
+		case "timeout_seconds", "console_cols", "console_rows", "max_inflight":
 			out[k] = atoiOrZero(v)
+		case "plan_tier":
+			v = strings.TrimSpace(strings.ToLower(v))
+			if v == "" || v == "unset" || v == "none" {
+				continue
+			}
+			out[k] = v
 		case "auto_git_init", "auto_git_commit", "skip_permissions",
 			"channel_enabled", "auto_accept_disclaimer", "auto_add_models":
 			out[k] = strings.EqualFold(v, "true") || v == "1"

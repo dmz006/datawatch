@@ -100,6 +100,24 @@ func (s *Server) handleAutonomousConfig(w http.ResponseWriter, r *http.Request) 
 					return
 				}
 			}
+			// plan_tier_max_inflight — validate tier keys at the API boundary so a
+			// bad key (e.g. "max-5x") gets an actionable 400 here instead of
+			// landing in the manager Config and being sync-baked into the daemon
+			// config, where it would fail validateLoaded on the next daemon start.
+			// An empty object is a valid "clear the table" edit and passes; null is
+			// absent (merge-onto-current in SetConfig) and passes.
+			if rawTier, ok := top["plan_tier_max_inflight"]; ok {
+				var rawTierValue any
+				if json.Unmarshal(rawTier, &rawTierValue) != nil {
+					http.Error(w, "plan_tier_max_inflight: expected an object (tier -> integer limit)",
+						http.StatusBadRequest)
+					return
+				}
+				if _, verr := parsePlanTierTable(rawTierValue); verr != nil {
+					http.Error(w, verr.Error(), http.StatusBadRequest)
+					return
+				}
+			}
 			// drift_mode accepts only "block" or "warn"; reject the whole
 			// PUT before SetConfig merges a bad value into the live
 			// manager (a null value is absent and passes through below).

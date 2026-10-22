@@ -4094,6 +4094,13 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		for k, v := range acfgIn.RetryPolicy {
 			retryPolicyBridge[k] = v
 		}
+		// plan_tier_max_inflight bridge — same copy-not-alias rationale as
+		// retryPolicyBridge: the daemon's capacity wiring reads
+		// cfg.Autonomous's map, the mirror copy lives on the manager.
+		tierInflightBridge := make(map[string]int, len(acfgIn.PlanTierMaxInflight))
+		for k, v := range acfgIn.PlanTierMaxInflight {
+			tierInflightBridge[k] = v
+		}
 		amgrCfg := autonomouspkg.Config{
 			Enabled:                    acfgIn.Enabled,
 			PollIntervalSeconds:        acfgIn.PollIntervalSeconds,
@@ -4135,6 +4142,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 
 			// BL410 Phase 1 — retry-policy bridge.
 			RetryPolicy:             retryPolicyBridge,
+			PlanTierMaxInflight:     tierInflightBridge,
 			RetryCeilingTotal:       acfgIn.RetryCeilingTotal,
 			InfraRetryEscalateAfter: acfgIn.InfraRetryEscalateAfter,
 			CIWatchTimeoutSeconds:   acfgIn.CIWatchTimeoutSeconds,

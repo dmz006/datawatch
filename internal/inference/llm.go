@@ -299,6 +299,40 @@ func EffectiveMaxInflight(l LLM, table map[string]int) int {
 	return 1
 }
 
+// InflightSource names the rule EffectiveMaxInflight applies for l, so a
+// surface (REST, MCP, PWA capacity card) can show not just the effective
+// limit but where it comes from. The three cases mirror
+// EffectiveMaxInflight's precedence exactly:
+//
+//   - InflightSourceExplicit: l.MaxInflight > 0 (an explicit operator
+//     override always wins);
+//   - InflightSourcePlanTier: l.PlanTier is set and present in the
+//     autonomous.plan_tier_max_inflight table;
+//   - InflightSourceKind: the conservative kind default (subscription → 1,
+//     local/API → unlimited).
+type InflightSource string
+
+const (
+	InflightSourceExplicit InflightSource = "explicit"
+	InflightSourcePlanTier InflightSource = "plan_tier"
+	InflightSourceKind     InflightSource = "kind"
+)
+
+// InflightSourceOf reports which rule EffectiveMaxInflight applies for l.
+// Always agrees with EffectiveMaxInflight: call both with the same table
+// and the source explains the value.
+func InflightSourceOf(l LLM, table map[string]int) InflightSource {
+	if l.MaxInflight > 0 {
+		return InflightSourceExplicit
+	}
+	if l.PlanTier != PlanTierUnset {
+		if _, ok := table[string(l.PlanTier)]; ok {
+			return InflightSourcePlanTier
+		}
+	}
+	return InflightSourceKind
+}
+
 // Validate returns the first reason this LLM is malformed, or nil.
 func (l *LLM) Validate() error {
 	if l.MaxInflight < 0 {

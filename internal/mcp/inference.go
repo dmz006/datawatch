@@ -13,13 +13,13 @@ import (
 
 func (s *Server) toolLLMList() mcpsdk.Tool {
 	return mcpsdk.NewTool("llm_list",
-		mcpsdk.WithDescription("v7.0.0 S2 — list every LLM in the registry."),
+		mcpsdk.WithDescription("v7.0.0 S2 — list every LLM in the registry. Redacted (API keys as prefix+marker). Each entry also carries effective_max_inflight (the limit the capacity ledger admits against) and inflight_source (\"explicit\" | \"plan_tier\" | \"kind\" — which rule produced it)."),
 	)
 }
 
 func (s *Server) toolLLMGet() mcpsdk.Tool {
 	return mcpsdk.NewTool("llm_get",
-		mcpsdk.WithDescription("v7.0.0 S2 — fetch one LLM by name."),
+		mcpsdk.WithDescription("v7.0.0 S2 — fetch one LLM by name. Redacted. Also carries effective_max_inflight + inflight_source (explicit|plan_tier|kind)."),
 		mcpsdk.WithString("name", mcpsdk.Required()),
 	)
 }
@@ -32,8 +32,9 @@ func (s *Server) toolLLMAdd() mcpsdk.Tool {
 		mcpsdk.WithString("model", mcpsdk.Description("model name")),
 		mcpsdk.WithString("compute_nodes", mcpsdk.Description("comma-separated ordered ComputeNode names")),
 		mcpsdk.WithString("api_key_ref", mcpsdk.Description("literal key OR ${secret:name}")),
+		mcpsdk.WithString("plan_tier", mcpsdk.Description("optional subscription plan tier: pro|max_5x|max_20x|api (empty = unset). autonomous.plan_tier_max_inflight then caps this LLM's inflight unless an explicit max_inflight > 0 overrides it")),
 		mcpsdk.WithString("timeout_seconds", mcpsdk.Description("per-call timeout (0=adapter default)")),
-		mcpsdk.WithString("max_inflight", mcpsdk.Description("cap on autonomous sessions in flight on this LLM across all PRDs (0 = unlimited)")),
+		mcpsdk.WithString("max_inflight", mcpsdk.Description("cap on autonomous sessions in flight on this LLM across all PRDs (0 = unlimited). An explicit value > 0 wins over the plan_tier table and the kind default")),
 		mcpsdk.WithString("tags", mcpsdk.Description("comma-separated user tags")),
 		mcpsdk.WithString("auto_add_models", mcpsdk.Description("true/false — auto-append newly-discovered models")),
 		// Session-backend fields
@@ -62,8 +63,9 @@ func (s *Server) toolLLMUpdate() mcpsdk.Tool {
 		mcpsdk.WithString("model", mcpsdk.Description("model name")),
 		mcpsdk.WithString("compute_nodes", mcpsdk.Description("comma-separated ordered ComputeNode names")),
 		mcpsdk.WithString("api_key_ref", mcpsdk.Description("literal key OR ${secret:name}")),
+		mcpsdk.WithString("plan_tier", mcpsdk.Description("subscription plan tier: pro|max_5x|max_20x|api (empty = unset)")),
 		mcpsdk.WithString("timeout_seconds", mcpsdk.Description("per-call timeout")),
-		mcpsdk.WithString("max_inflight", mcpsdk.Description("cap on autonomous sessions in flight on this LLM across all PRDs (0 = unlimited)")),
+		mcpsdk.WithString("max_inflight", mcpsdk.Description("cap on autonomous sessions in flight on this LLM across all PRDs (0 = unlimited). An explicit value > 0 wins over the plan_tier table and the kind default")),
 		mcpsdk.WithString("tags", mcpsdk.Description("comma-separated user tags")),
 		mcpsdk.WithString("auto_add_models", mcpsdk.Description("true/false — auto-append newly-discovered models")),
 		// Session-backend fields
@@ -206,6 +208,9 @@ func llmBodyFromReq(req mcpsdk.CallToolRequest) map[string]any {
 	}
 	if v := optString(req, "api_key_ref"); v != "" {
 		body["api_key_ref"] = v
+	}
+	if v := optString(req, "plan_tier"); v != "" {
+		body["plan_tier"] = v
 	}
 	if v := optString(req, "max_inflight"); v != "" {
 		var n int

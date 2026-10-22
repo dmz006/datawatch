@@ -193,6 +193,14 @@ type capacityPoolJSON struct {
 	capacity.PoolStatus
 	QueueDepth *int    `json:"queue_depth,omitempty"`
 	Holder     *string `json:"holder,omitempty"`
+	// For llm:<name> pools: the effective inflight limit and the rule that
+	// produced it ("explicit" | "plan_tier" | "kind") — the same
+	// inference.EffectiveMaxInflight the daemon's capacity wiring enforces,
+	// so the value shown here IS the value the ledger admits against.
+	// Nil on non-LLM pools (omitted from JSON). A present 0 means
+	// "unlimited by design" (local/API kinds or an explicit operator 0).
+	EffectiveMaxInflight *int    `json:"effective_max_inflight,omitempty"`
+	InflightSource       *string `json:"inflight_source,omitempty"`
 }
 
 // capacityResponse is the /api/capacity body.
@@ -298,6 +306,18 @@ func (s *Server) handleCapacity(w http.ResponseWriter, r *http.Request) {
 			holder := strings.Join(p.Holders, ",")
 			pj.QueueDepth = &depth
 			pj.Holder = &holder
+		}
+		if llmName := strings.TrimPrefix(p.Name, "llm:"); strings.HasPrefix(p.Name, "llm:") && s.inferenceReg != nil {
+			if l, err := s.inferenceReg.Get(llmName); err == nil && l != nil {
+				var table map[string]int
+				if s.cfg != nil {
+					table = s.cfg.Autonomous.PlanTierMaxInflight
+				}
+				effective := inference.EffectiveMaxInflight(*l, table)
+				source := string(inference.InflightSourceOf(*l, table))
+				pj.EffectiveMaxInflight = &effective
+				pj.InflightSource = &source
+			}
 		}
 		out.Pools = append(out.Pools, pj)
 	}
