@@ -248,7 +248,7 @@ must stay strict JSON-RPC (release-smoke §7r asserts all of this).
 | Discussion Subscribe | `discussion_subscribe`, `discussion_unsubscribe`, `discussion_subscriptions` |
 | Result Store | `result_put`, `result_get`, `result_list`, `result_delete` |
 | Autonomous PRDs | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_list/create/get/decompose/approve/reject/request_revision/edit_task/instantiate/run/cancel/rejudge/set_llm/set_task_llm/set_task_verification_llm/set_story_verification_llm/set_verification_llm/children`, `autonomous_learnings`, `capacity_status` |
-| Lifecycle subscriptions (BL427) | `autonomous_subscribe`, `autonomous_unsubscribe`, `autonomous_subscriptions`, `autonomous_events_pending` |
+| Lifecycle subscriptions (BL427) | `autonomous_subscribe`, `autonomous_unsubscribe`, `autonomous_subscriptions`, `autonomous_subscription_update`, `autonomous_subscription_test`, `autonomous_events_pending` |
 | Orchestrator | `orchestrator_graph_create/plan/run/get/list/cancel`, `orchestrator_verdicts`, `orchestrator_config_get/set` |
 | Pipelines | `pipeline_start/list/status/cancel` |
 | Memory + KG | `memory_remember/recall/list/forget/export/import/reindex/stats/learnings`, `kg_add/query/timeline/stats/invalidate`, `research_sessions`, `get_prompt`, `copy_response` |
@@ -343,6 +343,19 @@ Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
   )
   → the stored subscription record (has an id you can pass to autonomous_unsubscribe)
   ```
+- **`autonomous_subscription_update` / `autonomous_subscription_test`** — change or check an existing lifecycle-event subscription by id.
+
+  `autonomous_subscription_update(id, ...)` takes `id` (required) plus the same optional fields as `autonomous_subscribe` (`kinds`, `level`, `prd_id`, `task_id`, `sink_type`, `sink_target`, `action_text`, `one_shot`, `coalesce`, `expires_in_seconds`) and **replaces** the subscription's mutable fields with them: a field left out is cleared, so pass the full desired configuration. The id and creation time are kept. `expires_in_seconds` must be positive when given and is converted to an absolute expiry, as for `autonomous_subscribe`. Returns the updated record. Proxies `PUT /api/autonomous/subscriptions/{id}`; the daemon's validation message comes back for a malformed configuration (400) and an unknown id is a 404.
+
+  `autonomous_subscription_test(id)` delivers one labelled test event to the subscription's sink so the route can be checked without waiting for a real event, and returns `{"ok","sink","error"}`. Proxies `POST /api/autonomous/subscriptions/{id}/test`; 404 for unknown ids.
+
+  The same surface over CLI:
+  ```
+  datawatch autonomous subscription-update <id> --on <kind> [--level prd|task] [--prd <id>] [--task <id>] --sink <type> --target <t> [--send <text>] [--one-shot] [--coalesce] [--expires <seconds>]
+  datawatch autonomous subscription-test <id>
+  ```
+  `subscription-update` takes the same flags as `subscribe` and replaces the configuration; unlike `subscribe`, `--task` does not imply `--one-shot`. From a comm channel: `autonomous subscription-update <id> key=value...` (keys `kinds`, `level`, `prd`, `task`, `coalesce`, `one_shot`, `expires`; unnamed fields keep their stored value) and `autonomous subscription-test <id>`. A channel can only update or test subscriptions it owns; any other id gets the same not-found answer.
+
 - **`autonomous_events_pending`** — poll the pending lifecycle events of a named queue, for a generic MCP client that cannot receive pushes. Create the queue by subscribing with `autonomous_subscribe` using `sink_type` `mcp_queue` and `sink_target` set to the queue name (letters, digits and `. _ : -`); matching events then accumulate there, bounded per queue (`autonomous.notify.pending_events_max`, default 500).
 
   | Parameter | Required | Description |

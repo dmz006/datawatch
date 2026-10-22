@@ -571,6 +571,8 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutonomousSubscribe(), tracked(s.handleAutonomousSubscribe))
 	mcpSrv.AddTool(s.toolAutonomousUnsubscribe(), tracked(s.handleAutonomousUnsubscribe))
 	mcpSrv.AddTool(s.toolAutonomousSubscriptions(), tracked(s.handleAutonomousSubscriptions))
+	mcpSrv.AddTool(s.toolAutonomousSubscriptionUpdate(), tracked(s.handleAutonomousSubscriptionUpdate))
+	mcpSrv.AddTool(s.toolAutonomousSubscriptionTest(), tracked(s.handleAutonomousSubscriptionTest))
 	mcpSrv.AddTool(s.toolAutonomousEventsPending(), tracked(s.handleAutonomousEventsPending))
 	mcpSrv.AddTool(s.toolAutonomousLearnings(), tracked(s.handleAutonomousLearnings))
 	mcpSrv.AddTool(s.toolAutonomousPRDChildren(), tracked(s.handleAutonomousPRDChildren))

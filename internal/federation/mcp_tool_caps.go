@@ -101,6 +101,8 @@ var MCPToolCap = map[string]string{
 	"autonomous_subscribe":            CapAutonomousWrite,
 	"autonomous_unsubscribe":          CapAutonomousWrite,
 	"autonomous_subscriptions":        CapAutonomousRead,
+	"autonomous_subscription_update":  CapAutonomousWrite,
+	"autonomous_subscription_test":    CapAutonomousWrite,
 	"autonomous_events_pending":       CapAutonomousRead,
 	"autonomous_template_create":      CapAutonomousWrite,
 	"autonomous_template_delete":      CapAutonomousWrite,

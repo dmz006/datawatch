@@ -137,6 +137,8 @@ Subcommands:
 		newAutonomousSubscriptionsCmd(),
 		newAutonomousSubscribeCmd(),
 		newAutonomousUnsubscribeCmd(),
+		newAutonomousSubscriptionUpdateCmd(),
+		newAutonomousSubscriptionTestCmd(),
 		newAutonomousEventsCmd(),
 	)
 	return cmd
