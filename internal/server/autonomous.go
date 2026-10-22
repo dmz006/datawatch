@@ -2105,17 +2105,33 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		}
 		var req struct {
 			Actor string `json:"actor"`
+			Note  string `json:"note"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil && err != io.EOF {
 			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
 			return
 		}
-		updated, err := s.autonomousMgr.Resume(id, req.Actor)
+		if req.Actor == "" {
+			req.Actor = "operator"
+		}
+		// A PRD the boot-resume gate parked resumes through ResumeParked
+		// (optional interface, like plan-coverage ack); anything else
+		// falls through to the paused-PRD resume.
+		var updated any
+		var err error
+		if pr, ok := s.autonomousMgr.(parkedResumer); ok {
+			updated, err = pr.ResumeParked(id, req.Actor, req.Note)
+			if err != nil {
+				updated, err = s.autonomousMgr.Resume(id, req.Actor)
+			}
+		} else {
+			updated, err = s.autonomousMgr.Resume(id, req.Actor)
+		}
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		s.audit(r.Context(), "resume", "automaton", id, nil) // GH#201 Phase 4
+		s.audit(r.Context(), "resume", "automaton", id, map[string]any{"note": req.Note}) // GH#201 Phase 4
 		writeJSONOK(w, updated)
 
 	// BL303 S2 T06 — per-Automaton guardrail override.
@@ -3102,4 +3118,10 @@ func addGuardrailAuditDetail(detail map[string]any, backend, model *string) {
 func writeJSONOK(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+// parkedResumer is the optional AutonomousAPI extension that resumes a PRD
+// the boot-resume gate parked.
+type parkedResumer interface {
+	ResumeParked(id, actor, note string) (any, error)
 }

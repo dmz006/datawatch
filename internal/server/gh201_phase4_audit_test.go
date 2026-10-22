@@ -425,6 +425,9 @@ func (f *gh201FakeAutonomousForAudit) GetPRD(id string) (any, bool) {
 func (f *gh201FakeAutonomousForAudit) Approve(id, actor, note string) (any, error) {
 	return map[string]any{"id": id}, nil
 }
+func (f *gh201FakeAutonomousForAudit) ResumeParked(id, actor, note string) (any, error) {
+	return map[string]any{"id": id}, nil
+}
 func (f *gh201FakeAutonomousForAudit) DeletePRD(string) error { return nil }
 
 func TestGH201Phase4_Automaton_CreateApproveDelete_Audited(t *testing.T) {

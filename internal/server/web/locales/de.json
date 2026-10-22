@@ -882,6 +882,8 @@
   "prd_btn_request_revision_title": "Automaten mit einer Notiz zur Überarbeitung zurücksenden",
   "prd_btn_reset_to_draft": "Zu Entwurf zurücksetzen",
   "prd_btn_reset_to_draft_title": "Zu Entwurf zurücksetzen, um das Backend neu zu konfigurieren und erneut zu planen",
+  "prd_btn_resume": "Fortsetzen",
+  "prd_btn_resume_title": "Nach dem Daemon-Neustart angehaltenen Lauf fortsetzen",
   "prd_btn_run_rules": "Regeln ausführen",
   "prd_btn_run_rules_title": "Regelprüfung ausführen (nach Scan)",
   "prd_btn_run_scan": "Scan ausführen",

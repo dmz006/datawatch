@@ -22267,6 +22267,21 @@ window._toggleEditMenu = function(ev, btn) {
   }, 0);
 };
 
+// Boot-resume park marker: a blocked automaton whose newest park/resume
+// decision is boot_resume_parked was parked by the boot-resume gate and
+// can be resumed with the Resume action. Returns the park decision or null.
+function prdBootParkDecision(prd) {
+  if (!prd || prd.status !== 'blocked') return null;
+  const ds = prd.decisions || [];
+  for (let i = ds.length - 1; i >= 0; i--) {
+    const k = ds[i] && ds[i].kind;
+    if (k === 'boot_resume_parked') return ds[i];
+    if (k === 'resume') return null;
+  }
+  return null;
+}
+window.prdBootParkDecision = prdBootParkDecision;
+
 function _renderDetailHeader(prd, typeBadge, tplBadge) {
   const id = prd.id || '';
   const title = prd.title || '(no title)';
@@ -22326,6 +22341,12 @@ function _renderDetailHeader(prd, typeBadge, tplBadge) {
   const resetToDraftBtn = (['cancelled','failed','needs_review','approved','revisions_asked','completed','rejected','blocked','draft'].includes(status))
     ? `<button class="btn-secondary prd-action-btn" style="background:rgba(245,158,11,0.15);color:#f59e0b;font-weight:700;" onclick="prdAction(${escHtml(idJ)},'reset_to_draft','POST',{actor:'operator'})" title="${escHtml(t('prd_btn_reset_to_draft_title')||'Reset to draft so you can reconfigure the backend and re-decompose')}">↺ ${escHtml(t('prd_btn_reset_to_draft')||'Reset to Draft')}</button>`
     : '';
+  // Resume button — blocked automaton parked by the boot-resume gate.
+  const parkDec = prdBootParkDecision(prd);
+  const resumeBtn = parkDec
+    ? `<button class="btn-primary prd-action-btn prd-resume-btn" style="background:#10b981;color:#fff;font-weight:700;" onclick="prdAction(${escHtml(idJ)},'resume','POST',{actor:'operator'})" title="${escHtml(t('prd_btn_resume_title')||'Resume the run that the daemon restart parked')}">▶ ${escHtml(t('prd_btn_resume')||'Resume')}</button>` +
+      `<span class="prd-park-reason" style="font-size:11px;color:var(--text2);flex-basis:100%;">${escHtml(prd.blocked_reason || parkDec.note || '')}</span>`
+    : '';
   const editBtn = editMenuItems.length > 0
     ? `<div style="position:relative;display:inline-flex;"><button class="btn-icon prd-edit-overflow-btn" onclick="_toggleEditMenu(event,this)" title="${escHtml(t('prd_edit_menu_tip')||'Edit / Settings / Clone')}">⋯ ${escHtml(t('prd_btn_edit')||'Edit')}</button><div id="prdEditMenu" class="prd-edit-menu" style="display:none;">${editMenuItems.join('')}</div></div>`
     : '';
@@ -22377,7 +22398,7 @@ function _renderDetailHeader(prd, typeBadge, tplBadge) {
       <div id="prdStatusGraphsSlot" style="display:none;margin-top:8px;"></div>
       ${_prdPlanCoverageBlock(prd)}
       <div class="prd-detail-toolbar prd-detail-toolbar-v2" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;">
-        ${planBtn}${runBtn}${cancelBtn}${approveBtn}${resetToDraftBtn}${buttons.join('')}
+        ${planBtn}${runBtn}${cancelBtn}${approveBtn}${resumeBtn}${resetToDraftBtn}${buttons.join('')}
         <span style="margin-left:auto;display:inline-flex;gap:6px;align-items:center;">${editBtn}${deleteBtn}</span>
       </div>
       ${(terminal && status !== 'cancelled') ? `<div class="prd-detail-terminal-hint" style="font-size:11px;color:var(--text2);margin-top:6px;padding:0 2px;">${escHtml(t('prd_terminal_state_hint')||`This automaton is in terminal state (${status}). Only Clone-to-Template + Delete remain.`)}</div>` : ''}

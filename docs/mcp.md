@@ -247,7 +247,7 @@ must stay strict JSON-RPC (release-smoke §7r asserts all of this).
 | Work Queue | `queue_push`, `queue_claim`, `queue_complete`, `queue_fail`, `queue_list` |
 | Discussion Subscribe | `discussion_subscribe`, `discussion_unsubscribe`, `discussion_subscriptions` |
 | Result Store | `result_put`, `result_get`, `result_list`, `result_delete` |
-| Autonomous PRDs | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_list/create/get/decompose/approve/reject/request_revision/edit_task/instantiate/run/cancel/rejudge/set_llm/set_task_llm/set_task_verification_llm/set_story_verification_llm/set_verification_llm/children`, `autonomous_learnings`, `capacity_status` |
+| Autonomous PRDs | `autonomous_status`, `autonomous_config_get/set`, `autonomous_prd_list/create/get/decompose/approve/resume/reject/request_revision/edit_task/instantiate/run/cancel/rejudge/set_llm/set_task_llm/set_task_verification_llm/set_story_verification_llm/set_verification_llm/children`, `autonomous_learnings`, `capacity_status` |
 | Lifecycle subscriptions (BL427) | `autonomous_subscribe`, `autonomous_unsubscribe`, `autonomous_subscriptions` |
 | Orchestrator | `orchestrator_graph_create/plan/run/get/list/cancel`, `orchestrator_verdicts`, `orchestrator_config_get/set` |
 | Pipelines | `pipeline_start/list/status/cancel` |
@@ -274,6 +274,7 @@ Autonomous PRD reads and writes:
 
 Tools added in v5.9 → v5.26 (catch-up since the last doc sweep):
 
+- **`autonomous_prd_resume`** — resume a PRD the boot-resume gate parked after a daemon restart (also resumes a paused PRD). Takes `id` and an optional `note`; errors if the PRD is in neither state.
 - **`autonomous_prd_children`** (v5.9.0, BL191 Q4) — list child PRDs spawned from a parent's `Task.SpawnPRD` shortcuts.
 - **`autonomous_prd_edit_task`** (v5.9.0+) — edit a task's `spec` while a PRD is in `needs_review`, `revisions_asked`, `cancelled`, or `blocked` (per-task `backend` / `effort` / `model` go through `autonomous_prd_set_task_llm`). On a `blocked` PRD only the `failed`/`blocked` task that halted it can be edited, and a `completed` task's spec is immutable in every status. Recovery flow for a stuck task: `autonomous_prd_edit_task` to fix the spec, then `autonomous_prd_reset_task` to retry it — completed sibling tasks are left untouched, no re-decompose needed.
 - **`autonomous_prd_edit_story`** — rewrite a story's `title`/`description` while a PRD is in `needs_review` or `revisions_asked`.
