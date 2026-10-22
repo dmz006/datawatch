@@ -5,6 +5,11 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **The PWA terminal no longer throws "Cannot read properties of undefined (reading 'dimensions')" from xterm.** A session switch or reconnect could dispose the terminal while a scheduled fit/resize/scroll job was still pending, and the stale job crashed once xterm's render service was gone. Every fit, resize and scroll call is now guarded by a check that the terminal exists, is open and not disposed and that its container is visible and non-zero-sized, and pending resize/scroll timers are cancelled when the terminal is disposed. Tests: fake-xterm node tests (`internal/server/web/app-xterm-guard.test.js`) and a Playwright rapid-switch story (`scripts/test-stories/pwa/TS-800.mjs`).
+- **The service-worker-disabled console line on a self-signed certificate is now one quiet info line pointing at `docs/operations.md`.** Registration rejection due to an untrusted certificate is expected, not an operator-facing failure; the PWA now prints exactly one `console.info` (at most once per page load, no warn/error) and everything else keeps working normally. Enabling the service worker with a trusted certificate is documented in `docs/operations.md`.
+
 ## v9.5.71 — Lifecycle subscriptions: update, test-fire, pending-events queue and PWA tab
 
 ### Added

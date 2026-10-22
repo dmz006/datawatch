@@ -1196,6 +1196,24 @@ When using self-signed TLS (`tls_auto_generate: true`), install the CA cert so y
 
 > **Note:** Options A–C also enable service worker registration for PWA install-to-homescreen.
 
+### Service worker on a self-signed certificate
+
+When you browse the PWA with the self-signed certificate (`server.tls_auto_generate: true`) and accept the certificate warning, the browser rejects service worker registration because the origin's TLS is not trusted. That is expected, not a failure: the browser console shows one info line beginning "Service worker is off on this origin" (a quiet `console.info`, at most once per page load — not an error). The app works normally; only the offline cache, push and install-to-home-screen are unavailable on that origin.
+
+To enable the service worker, use a certificate the browser trusts:
+
+- **Install the daemon's CA certificate** into the OS/browser trust store —
+  Settings > Comms > Web Server > **Download CA Certificate**, or
+  `https://your-host:8443/api/cert?format=der` (the per-device install steps
+  above, *Option C: Install CA certificate on your device*). Or
+- **Use the native ACME / Let's Encrypt path** already documented in
+  [Native ACME / Let's Encrypt](#native-acme--lets-encrypt-bl397) below. Or
+- **Browse via `https://localhost:8443`** — the browser trusts localhost,
+  so the service worker registers there without extra steps.
+
+Then hard-reload the page (or run `forcePWAUpdate()` in the browser console)
+and the service worker registers normally.
+
 ---
 
 ### Prompt and Input Logging
