@@ -339,6 +339,21 @@ func (a *API) SetConfig(v any) error {
 			return verr
 		}
 	}
+	// gate_disagreement is write-validated here too: anything other than
+	// the strings "warn"/"block" is rejected; an omitted key leaves the
+	// current value untouched (the merge below only touches present keys).
+	var gateProbe map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &gateProbe); err == nil {
+		if b, present := gateProbe["gate_disagreement"]; present {
+			var gd string
+			if json.Unmarshal(b, &gd) != nil {
+				return fmt.Errorf("autonomous.gate_disagreement: must be the string \"warn\" or \"block\"")
+			}
+			if gd != "warn" && gd != "block" {
+				return fmt.Errorf("autonomous.gate_disagreement: invalid value %q (valid values: \"warn\", \"block\")", gd)
+			}
+		}
+	}
 	cfg := a.M.Config()
 	if err := json.Unmarshal(raw, &cfg); err != nil {
 		return fmt.Errorf("config: %w", err)
