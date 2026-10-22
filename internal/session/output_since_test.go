@@ -73,7 +73,7 @@ func TestOutputSince_Delta(t *testing.T) {
 	// Append new content.
 	f, _ := os.OpenFile(logPath, os.O_APPEND|os.O_WRONLY, 0600)
 	f.WriteString("new line alpha\nnew line beta\n") //nolint:errcheck
-	f.Close()                                         //nolint:errcheck
+	f.Close()                                        //nolint:errcheck
 
 	// Second read: delta only.
 	text, secondOffset, err := mgr.OutputSince(sess.FullID, firstOffset)

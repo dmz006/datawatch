@@ -17,8 +17,8 @@ import (
 type AnomalyKind string
 
 const (
-	AnomalyStuckLoop      AnomalyKind = "stuck_loop"
-	AnomalyLongInputWait  AnomalyKind = "long_input_wait"
+	AnomalyStuckLoop       AnomalyKind = "stuck_loop"
+	AnomalyLongInputWait   AnomalyKind = "long_input_wait"
 	AnomalyDurationOutlier AnomalyKind = "duration_outlier"
 )
 
@@ -99,9 +99,9 @@ func DetectDurationOutlier(sess *Session, historicalAvg time.Duration, multiplie
 		return nil
 	}
 	return &Anomaly{
-		Kind:       AnomalyDurationOutlier,
-		SessionID:  sess.FullID,
-		Detail:     "running for " + current.Truncate(time.Second).String() +
+		Kind:      AnomalyDurationOutlier,
+		SessionID: sess.FullID,
+		Detail: "running for " + current.Truncate(time.Second).String() +
 			" (avg=" + historicalAvg.Truncate(time.Second).String() +
 			", threshold=" + threshold.Truncate(time.Second).String() + ")",
 		DetectedAt: time.Now(),

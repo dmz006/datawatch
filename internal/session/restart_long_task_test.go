@@ -31,8 +31,8 @@ func longTask40KB(prefix string) string {
 // strings it is called with. It deliberately does NOT implement
 // llm.ResumeKeepsTask, so it models opencode/goose/pi/aider-style backends.
 type recordingBackend struct {
-	name string
-	mu   sync.Mutex
+	name  string
+	mu    sync.Mutex
 	tasks []string // task strings passed to LaunchResume
 }
 

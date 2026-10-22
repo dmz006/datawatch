@@ -1,0 +1,9 @@
+  ╭──────────────────────────────────────────────────────────────────────────╮
+  │                                                                          │
+  │  A newer settings bundle is available.                                   │
+  │                                                                          │
+  │  Continue? This will install the new settings and update                 │
+  │  your configuration.                                                     │
+  │                                                                          │
+  ╰──────────────────────────────────────────────────────────────────────────╯
+       (Enter to confirm)                        (Esc to cancel)

@@ -1,0 +1,13 @@
+  ╭──────────────────────────────────────────────────────────────────────────╮
+  │                                                                          │
+  │  New MCP server found                                                    │
+  │                                                                          │
+  │  server: filesystem  (npx -y @modelcontextprotocol/server-filesystem)    │
+  │                                                                          │
+  │  Do you want to use this MCP server?                                     │
+  │                                                                          │
+  │     1. Trust and continue                                                │
+  │     2. Skip                                                              │
+  │                                                                          │
+  ╰──────────────────────────────────────────────────────────────────────────╯
+  ❯ 1. Trust and continue

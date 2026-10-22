@@ -41,13 +41,13 @@ func bl361MakeManager(t *testing.T) *Manager {
 			ID: "aa04", FullID: "testhost-aa04",
 			Name: "agent-x", State: StateComplete,
 			BackendFamily: "opencode",
-			CreatedAt: time.Now(), UpdatedAt: time.Now(),
+			CreatedAt:     time.Now(), UpdatedAt: time.Now(),
 		},
 		{
 			ID: "aa05", FullID: "testhost-aa05",
 			Name: "worker-3", State: StateFailed,
 			BackendFamily: "claudecode",
-			CreatedAt: time.Now(), UpdatedAt: time.Now(),
+			CreatedAt:     time.Now(), UpdatedAt: time.Now(),
 		},
 	}
 

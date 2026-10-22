@@ -70,10 +70,10 @@ func TestRateLimitPatterns_NoFalsePositives(t *testing.T) {
 		"",
 		"echo hello",
 		"running tests",
-		"the file size limit is 10MB",                             // "limit" alone
-		"Calling api.example.com to fetch latest data",            // unrelated
+		"the file size limit is 10MB", // "limit" alone
+		"Calling api.example.com to fetch latest data", // unrelated
 		// Truncation guard: very long line shouldn't be checked
-		strings.Repeat("X ", 150),                                  // > 200 chars
+		strings.Repeat("X ", 150), // > 200 chars
 	}
 	for _, line := range misses {
 		if matchesRateLimit(line) {

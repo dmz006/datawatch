@@ -30,7 +30,7 @@ type CostRate struct {
 // override per-backend via SetCostRates.
 func DefaultCostRates() map[string]CostRate {
 	return map[string]CostRate{
-		"claude-code":     {InPerK: 0.003, OutPerK: 0.015},   // sonnet 4.x ballpark
+		"claude-code":     {InPerK: 0.003, OutPerK: 0.015}, // sonnet 4.x ballpark
 		"opencode":        {InPerK: 0.003, OutPerK: 0.015},
 		"opencode-acp":    {InPerK: 0.003, OutPerK: 0.015},
 		"opencode-prompt": {InPerK: 0.003, OutPerK: 0.015},
@@ -52,11 +52,11 @@ func EstimateCost(rate CostRate, tokensIn, tokensOut int) float64 {
 
 // CostSummary aggregates one or many sessions for reporting.
 type CostSummary struct {
-	Sessions    int                    `json:"sessions"`
-	TotalIn     int                    `json:"total_tokens_in"`
-	TotalOut    int                    `json:"total_tokens_out"`
-	TotalUSD    float64                `json:"total_usd"`
-	PerBackend  map[string]CostBucket  `json:"per_backend,omitempty"`
+	Sessions   int                   `json:"sessions"`
+	TotalIn    int                   `json:"total_tokens_in"`
+	TotalOut   int                   `json:"total_tokens_out"`
+	TotalUSD   float64               `json:"total_usd"`
+	PerBackend map[string]CostBucket `json:"per_backend,omitempty"`
 }
 
 // CostBucket is the per-backend breakdown.

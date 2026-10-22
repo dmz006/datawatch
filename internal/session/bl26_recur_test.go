@@ -46,7 +46,8 @@ func TestBL26_MarkDone_RecurringPastDeadlineCompletes(t *testing.T) {
 		RecurEverySeconds: 60,
 		RecurUntil:        time.Now().Add(-time.Hour),
 	}
-	store.entries = append(store.entries, cmd); _ = store.save()
+	store.entries = append(store.entries, cmd)
+	_ = store.save()
 	_ = store.MarkDone(cmd.ID, false)
 	got, _ := store.Get(cmd.ID)
 	if got.State != SchedDone {
@@ -61,7 +62,8 @@ func TestBL26_MarkDone_FailedRecurringStillFails(t *testing.T) {
 		ID: "fail1", SessionID: "h-aa", Command: "ping",
 		RunAt: time.Now(), State: SchedPending, RecurEverySeconds: 60,
 	}
-	store.entries = append(store.entries, cmd); _ = store.save()
+	store.entries = append(store.entries, cmd)
+	_ = store.save()
 	_ = store.MarkDone(cmd.ID, true)
 	got, _ := store.Get(cmd.ID)
 	if got.State != SchedFailed {
