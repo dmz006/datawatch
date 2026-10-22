@@ -44,6 +44,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	mcpsdk "github.com/mark3labs/mcp-go/mcp"
@@ -86,6 +87,9 @@ type Server struct {
 	version             string
 	// latestVersion returns the latest release tag (no "v" prefix). May be nil.
 	latestVersion func() (string, error)
+	// sseListenerState tracks the MCP SSE bind state (see SSEListenerState).
+	// 0=disabled (default), 1=retrying, 2=listening, 3=failed.
+	sseListenerState atomic.Int32
 	// chanStats tracks MCP request/response counts
 	chanStats *stats.ChannelCounters
 	// memoryAPI provides memory operations (nil when memory disabled)
@@ -1459,22 +1463,33 @@ func (s *Server) ServeSSE(ctx context.Context) error {
 		httpSrv.TLSConfig = tlsCfg
 	}
 
-	errCh := make(chan error, len(hosts))
+	// BL444 — retry failed TCP binds with exponential backoff instead of
+	// failing daemon startup on the first bind error.
+	addrs := make([]string, 0, len(hosts))
 	for _, host := range hosts {
 		host = strings.TrimSpace(host)
 		if host == "" {
 			continue
 		}
-		addr := fmt.Sprintf("%s:%d", host, s.cfg.SSEPort)
-		listener, err := net.Listen("tcp", addr)
-		if err != nil {
-			return fmt.Errorf("MCP SSE listen %s: %w", addr, err)
-		}
+		addrs = append(addrs, fmt.Sprintf("%s:%d", host, s.cfg.SSEPort))
+	}
+	timeout := s.cfg.SSEBindTimeout
+	if timeout <= 0 {
+		timeout = 120 * time.Second
+	}
+	listeners, err := s.listenWithRetry(ctx, addrs, timeout, nil)
+	if err != nil {
+		return err
+	}
+
+	errCh := make(chan error, len(listeners))
+	for i, listener := range listeners {
+		addr := addrs[i]
 		if tlsCfg != nil {
-			go func(l net.Listener, a string) { errCh <- httpSrv.ServeTLS(l, "", "") }(listener, addr)
+			go func(l net.Listener) { errCh <- httpSrv.ServeTLS(l, "", "") }(listener)
 			fmt.Printf("datawatch MCP SSE server listening on https://%s (TLS 1.3+)\n", addr)
 		} else {
-			go func(l net.Listener, a string) { errCh <- httpSrv.Serve(l) }(listener, addr)
+			go func(l net.Listener) { errCh <- httpSrv.Serve(l) }(listener)
 			fmt.Printf("datawatch MCP SSE server listening on http://%s\n", addr)
 		}
 	}

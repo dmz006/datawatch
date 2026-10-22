@@ -362,6 +362,13 @@ type Server struct {
 	// back to server.token when mcp.token is empty (see internal/mcp).
 	mcpTokenConfigured bool
 
+	// mcpSSEStateFn returns the MCP SSE listener state
+	// (disabled|retrying|listening|failed). Wired from main.go via
+	// SetMCPSSEStateFn; nil when SSE is off or never wired — /api/health
+	// reports "disabled" in that case so operators read state from the
+	// health endpoint rather than logs.
+	mcpSSEStateFn func() string
+
 	// nonces mints/consumes SEC-006 short-lived single-use nonces for
 	// browser requests that can't attach an Authorization header.
 	nonces *nonceStore
@@ -1011,6 +1018,10 @@ func (s *Server) SessionTokenStore() *auth.SessionTokenStore { return s.sessionT
 // SetMCPAuthRequired records whether mcp.token is configured (SEC-002),
 // for /api/health's mcp_auth_required field.
 func (s *Server) SetMCPAuthRequired(configured bool) { s.mcpTokenConfigured = configured }
+
+// SetMCPSSEStateFn wires the MCP SSE listener state reporter
+// (disabled|retrying|listening|failed) into /api/health's mcp_sse field.
+func (s *Server) SetMCPSSEStateFn(fn func() string) { s.mcpSSEStateFn = fn }
 
 // SetMCPSamplingDispatcher wires the sampling dispatcher for POST /api/mcp/sample (BL302 S3).
 func (s *Server) SetMCPSamplingDispatcher(d MCPSamplingAPI) { s.mcpSamplingDisp = d }
@@ -2385,6 +2396,13 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	uptime := int(time.Since(startTime).Seconds())
 	encrypted := s.manager.IsEncrypted()
 	hasEnvPassword := os.Getenv("DATAWATCH_SECURE_PASSWORD") != ""
+	// mcp_sse — live MCP SSE listener state (disabled|retrying|
+	// listening|failed). Always present; "disabled" when SSE is off or no
+	// reporter was wired, so operators don't need the server logs.
+	mcpSSE := "disabled"
+	if s.mcpSSEStateFn != nil {
+		mcpSSE = s.mcpSSEStateFn()
+	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{ //nolint:errcheck
 		"status":           "ok",
@@ -2397,6 +2415,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		// SEC-002 — MCP SSE's actual auth posture: gated if mcp.token is
 		// set, or (since mcp.New falls back) if server.token is set.
 		"mcp_auth_required": s.mcpTokenConfigured || s.token != "",
+		"mcp_sse":           mcpSSE,
 	})
 }
 

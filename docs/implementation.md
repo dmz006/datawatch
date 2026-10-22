@@ -1070,6 +1070,20 @@ server independently. The per-session servers are started automatically when a s
 launches and stopped when the session ends. The `mcp.max_retries` config field controls
 how many times a failed channel server connection is retried before giving up.
 
+### MCP SSE Bind Retry (BL444)
+
+The daemon's HTTP/SSE MCP server (`mcp.sse_enabled`) no longer aborts startup on the
+first failed TCP bind. `ServeSSE` (in `internal/mcp/server.go`, via
+`listenWithRetry` in `internal/mcp/sse_listen_retry.go`) tries every
+`mcp.sse_host` address once, logs each initial bind failure ONCE at info level, then
+retries the still-failing addresses with exponential backoff (1s, 2s, 4s, 8s, ...
+capped at 15s between attempts) until every address binds or the cumulative elapsed
+window of `mcp.sse_bind_timeout` (default `120s`; zero/negative also means 120s) is
+exhausted. If it gives up, any listeners that did bind are closed and the last bind
+error is returned; retry iterations log at debug level and the final outcome is logged
+ONCE at info level. The thread-safe reader `mcp.Server.SSEListenerState()` reports
+`disabled` (never attempted), `retrying`, `listening`, or `failed`.
+
 ### Data Files
 
 All persistent data is stored in `~/.datawatch/` (or `data_dir` if overridden):

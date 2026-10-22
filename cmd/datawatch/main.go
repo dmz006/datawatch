@@ -7583,6 +7583,15 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 		}()
 	}
 
+	// Wire the MCP SSE listener state into /api/health (mcp_sse) so
+	// operators read the bind state from the health endpoint rather
+	// than the server logs.
+	if cfg.MCP.SSEEnabled {
+		httpServer.SetMCPSSEStateFn(func() string { return mcpSrv.SSEListenerState() })
+	} else {
+		httpServer.SetMCPSSEStateFn(func() string { return "disabled" })
+	}
+
 	// Remote channel alert bundler: collects events per-session for 5s
 	// then sends a single bundled message to all remote channels.
 	// Each session gets a dedicated goroutine that waits for quiet period.
