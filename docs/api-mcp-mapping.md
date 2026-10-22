@@ -194,6 +194,15 @@ documenting coverage gaps and the reasoning behind them.
 | `PUT /api/cooldown` | `cooldown_set` | Complete | Set cooldown (G/P/D scopes) |
 | `DELETE /api/cooldown` | `cooldown_clear` | Complete | Clear cooldown |
 
+### Usage back-off
+
+| API Endpoint | MCP Tool | Status | Notes |
+|-------------|----------|--------|-------|
+| `GET /api/usage-backoff` | `usage_backoff_status` | Complete | Active per-backend flags, effective config, pattern staleness |
+| `POST /api/usage-backoff` | `usage_backoff_set` | Complete | Set a flag (`backend` + `minutes` or `until`, optional `reason`) |
+| `DELETE /api/usage-backoff` | `usage_backoff_clear` | Complete | Clear one backend, or all |
+| `POST /api/usage-backoff/recheck` | `usage_backoff_recheck` | Complete | Record rate-limit patterns as rechecked |
+
 ### Routing rules
 
 | API Endpoint | MCP Tool | Status | Notes |

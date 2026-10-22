@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/dmz006/datawatch/internal/capacity"
 	"github.com/dmz006/datawatch/internal/federation"
@@ -211,6 +212,34 @@ type capacityResponse struct {
 	// Warnings are model-to-node collisions from the live config (see
 	// modelNodeWarnings). Omitted when there are none.
 	Warnings []inference.ModelNodeConflict `json:"warnings,omitempty"`
+	// Backoff lists the live per-backend usage back-off flags that gate
+	// autonomous dispatch (BL428 Phase 4). Always an array, empty when none.
+	Backoff []capacityBackoffJSON `json:"backoff"`
+	// PatternsVersion / PatternsStale mirror the usage back-off status: the
+	// rate-limit pattern fingerprint and whether an operator has rechecked it.
+	PatternsVersion string `json:"patterns_version"`
+	PatternsStale   bool   `json:"patterns_stale"`
+}
+
+// capacityBackoffJSON is one active usage back-off flag in the capacity
+// response.
+type capacityBackoffJSON struct {
+	Backend string    `json:"backend"`
+	Until   time.Time `json:"until"`
+	Reason  string    `json:"reason"`
+}
+
+// capacityBackoff snapshots the live usage back-off flags for the capacity
+// response (empty, never nil, when none are wired or active).
+func (s *Server) capacityBackoff() []capacityBackoffJSON {
+	out := []capacityBackoffJSON{}
+	if s.usageBackoff == nil {
+		return out
+	}
+	for _, e := range s.usageBackoff.Live() {
+		out = append(out, capacityBackoffJSON{Backend: e.Backend, Until: e.Until, Reason: e.Reason})
+	}
+	return out
 }
 
 // handleCapacity serves GET /api/capacity: pools, limits, holders and the
@@ -230,7 +259,9 @@ func (s *Server) handleCapacity(w http.ResponseWriter, r *http.Request) {
 	}
 	warnings := s.modelNodeWarnings()
 	if s.capacityLedger == nil {
-		writeJSONOK(w, capacityResponse{Pools: []capacityPoolJSON{}, Leases: []capacity.Lease{}, Waiting: []capacity.Waiter{}, Warnings: warnings})
+		empty := capacityResponse{Pools: []capacityPoolJSON{}, Leases: []capacity.Lease{}, Waiting: []capacity.Waiter{}, Warnings: warnings, Backoff: s.capacityBackoff()}
+		empty.PatternsVersion, empty.PatternsStale = s.rateLimitPatternsStatus()
+		writeJSONOK(w, empty)
 		return
 	}
 	st := s.capacityLedger.Snapshot()
@@ -302,7 +333,8 @@ func (s *Server) handleCapacity(w http.ResponseWriter, r *http.Request) {
 
 	sort.Slice(st.Pools, func(i, j int) bool { return st.Pools[i].Name < st.Pools[j].Name })
 
-	out := capacityResponse{Pools: make([]capacityPoolJSON, 0, len(st.Pools)), Leases: st.Leases, Waiting: st.Waiting, Warnings: warnings}
+	out := capacityResponse{Pools: make([]capacityPoolJSON, 0, len(st.Pools)), Leases: st.Leases, Waiting: st.Waiting, Warnings: warnings, Backoff: s.capacityBackoff()}
+	out.PatternsVersion, out.PatternsStale = s.rateLimitPatternsStatus()
 	for _, p := range st.Pools {
 		pj := capacityPoolJSON{PoolStatus: p}
 		if strings.HasPrefix(p.Name, "node:") {

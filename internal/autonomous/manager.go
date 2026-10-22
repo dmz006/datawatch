@@ -83,6 +83,14 @@ type Config struct {
 	// >1 clamps to 1.0 (see config.NormalizePlanCoverageRatio). No
 	// omitempty for the same round-trip reason as PlanCoverageCheck.
 	PlanCoverageMinRatio float64 `json:"plan_coverage_min_ratio"`
+	// UsageBackoff and BackoffMaxWaitMinutes mirror the per-backend usage
+	// back-off knobs (autonomous.usage_backoff, autonomous.backoff_max_wait_minutes)
+	// so both autonomous config surfaces agree and handleAutonomousConfig's
+	// round-trip into config.AutonomousConfig keeps them. The registry
+	// itself is consulted through SetBackoff. omitempty, deliberately: an
+	// unset mirror must not overwrite the value held in config.Config.
+	UsageBackoff          string `json:"usage_backoff,omitempty"`
+	BackoffMaxWaitMinutes int    `json:"backoff_max_wait_minutes,omitempty"`
 	// PlanTierMaxInflight mirrors the tier -> max-inflight table
 	// (autonomous.plan_tier_max_inflight) so the two autonomous config
 	// surfaces (/api/config and /api/autonomous/config) agree. The manager
@@ -670,6 +678,18 @@ type Manager struct {
 	// Capacity admission (see capacity.go).
 	capacity     *capacity.Ledger
 	capacityKeys CapacityKeysFn
+	// cooldownUntilFn reports when the BL30 global cooldown ends (zero when
+	// none is active); waitClock is the time source for the spawn-wait loop
+	// (nil = wall clock). Both are set via capacity.go.
+	cooldownUntilFn func() time.Time
+	waitClock       capacity.Clock
+
+	// backoff is the per-backend usage back-off registry, shown in the
+	// autonomous status (nil = none wired).
+	backoff *Backoff
+	// patternsFn reports the rate-limit pattern fingerprint and staleness
+	// shown in the usage_backoff status (nil = not wired).
+	patternsFn PatternsStatusFunc
 
 	// sessionDeleteFn — when set, called after a task reaches a terminal
 	// state (completed/failed/cancelled) to remove the ephemeral executor
@@ -874,6 +894,22 @@ func (m *Manager) SetAuditFn(fn func(action string, details map[string]any)) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.auditFn = fn
+}
+
+// SetBackoff wires the per-backend usage back-off registry reported in
+// the autonomous status (usage_backoff). Nil clears it.
+func (m *Manager) SetBackoff(b *Backoff) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.backoff = b
+}
+
+// SetPatternsStatus wires the rate-limit pattern fingerprint reported in the
+// usage_backoff status (patterns_version, patterns_stale). Nil clears it.
+func (m *Manager) SetPatternsStatus(fn PatternsStatusFunc) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.patternsFn = fn
 }
 
 // SetAlertSink wires the operator-facing alert callback. Nil disables.
@@ -4046,10 +4082,12 @@ func (m *Manager) Status() LoopStatus {
 	// Built before m.mu is taken: the summaries read the Automation store
 	// and the PRD store, and neither may be entered while holding m.mu.
 	automations := m.automationStatusSummaries(time.Now())
+	usageBackoff := m.usageBackoffSummary()
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	st := m.status
 	st.BootResume = append([]BootResumeEntry(nil), m.bootResumeReport...)
+	st.UsageBackoff = usageBackoff
 	st.Running = m.ctx != nil && m.ctx.Err() == nil
 	verdictCounts := map[string]int{}
 	for _, p := range m.store.ListPRDs() {

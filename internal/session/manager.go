@@ -479,6 +479,12 @@ type Manager struct {
 	// is configured. The callback should start a new session with the next profile.
 	onRateLimitFallback func(sess *Session)
 
+	// rateLimitListeners are chainable observers of rate-limit state
+	// transitions (see AddRateLimitListener). Guarded by rateLimitMu so
+	// listeners can be added while output processing runs.
+	rateLimitMu        sync.RWMutex
+	rateLimitListeners []func(backend string, resetAt time.Time, hasReset bool)
+
 	// onClaudeAliveChange (BL355) — called when claude_alive transitions from true to false
 	// (AI process died but session still appears active — zombie).
 	onClaudeAliveChange func(sess *Session)
@@ -1591,6 +1597,30 @@ func (m *Manager) GetLastResponse(fullID string) string {
 // SetChatMemoryHandler sets a handler for memory commands in chat-mode sessions.
 func (m *Manager) SetChatMemoryHandler(fn func(tmuxSession, text string) (string, bool)) {
 	m.chatMemoryFn = fn
+}
+
+// AddRateLimitListener registers a callback invoked after a session
+// transitions to StateRateLimited. Unlike SetStateChangeHandler it is
+// chainable: every registered listener fires, and registering one never
+// replaces another. hasReset is false when the rate-limit pattern matched
+// but no reset time could be parsed (resetAt is then the zero time).
+func (m *Manager) AddRateLimitListener(fn func(backend string, resetAt time.Time, hasReset bool)) {
+	if fn == nil {
+		return
+	}
+	m.rateLimitMu.Lock()
+	defer m.rateLimitMu.Unlock()
+	m.rateLimitListeners = append(m.rateLimitListeners, fn)
+}
+
+// notifyRateLimit fires every registered rate-limit listener.
+func (m *Manager) notifyRateLimit(backend string, resetAt time.Time, hasReset bool) {
+	m.rateLimitMu.RLock()
+	ls := append([]func(string, time.Time, bool){}, m.rateLimitListeners...)
+	m.rateLimitMu.RUnlock()
+	for _, fn := range ls {
+		fn(backend, resetAt, hasReset)
+	}
 }
 
 // SetOnRateLimitFallback sets the callback for triggering fallback chain on rate limit.
@@ -7141,6 +7171,7 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 			if m.onStateChange != nil {
 				m.onStateChange(current, oldState)
 			}
+			m.notifyRateLimit(current.BackendFamily, resetAt, !resetAt.IsZero())
 
 			// Auto-accept the default wait option ("1. Stop and wait for limit to reset")
 			// by sending "1" + Enter to the tmux session after a brief delay.

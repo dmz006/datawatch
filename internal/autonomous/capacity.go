@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/dmz006/datawatch/internal/capacity"
+	"github.com/dmz006/datawatch/internal/session"
 )
 
 // CapacityKeysFn maps a task's backend and model to the capacity pools it
@@ -49,6 +50,49 @@ func (m *Manager) SetCapacity(l *capacity.Ledger, keys CapacityKeysFn) {
 	defer m.mu.Unlock()
 	m.capacity = l
 	m.capacityKeys = keys
+}
+
+// SetCooldownUntilFn wires the BL30 global-cooldown reset time (zero = none
+// active), used only to word the wait reason when a spawn hits
+// session.ErrGlobalCooldown.
+func (m *Manager) SetCooldownUntilFn(fn func() time.Time) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.cooldownUntilFn = fn
+}
+
+// SetWaitClock injects the time source for the spawn wait loop (tests).
+func (m *Manager) SetWaitClock(c capacity.Clock) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.waitClock = c
+}
+
+type realWaitClock struct{}
+
+func (realWaitClock) Now() time.Time                         { return time.Now() }
+func (realWaitClock) After(d time.Duration) <-chan time.Time { return time.After(d) }
+
+func (m *Manager) spawnWaitClock() capacity.Clock {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.waitClock != nil {
+		return m.waitClock
+	}
+	return realWaitClock{}
+}
+
+// globalCooldownReason words the wait reason for an ErrGlobalCooldown spawn.
+func (m *Manager) globalCooldownReason() string {
+	m.mu.Lock()
+	fn := m.cooldownUntilFn
+	m.mu.Unlock()
+	if fn != nil {
+		if until := fn(); !until.IsZero() {
+			return "global cooldown until " + until.Format("15:04 MST")
+		}
+	}
+	return "global cooldown active"
 }
 
 // Capacity returns the ledger (nil when not wired).
@@ -414,34 +458,48 @@ func IsWorkspaceLockError(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "workspace lock:")
 }
 
-// capacityRetrySpawn wraps a SpawnFn so a full session cap, or (BL407
-// Phase 4) a workspace-lock collision between two of the same PRD's
-// own cluster-dispatched tasks, is a wait rather than a hard failure:
-// it retries with a pause, showing the task as waiting_capacity.
+// capacityRetrySpawn wraps a SpawnFn so a full session cap, a workspace-lock
+// collision between two of the same PRD's own cluster-dispatched tasks
+// (BL407 Phase 4), or the BL30 global cooldown (session.ErrGlobalCooldown)
+// is a wait rather than a hard failure: it retries with a pause, showing
+// the task as waiting_capacity. None of these consume the auto-retry
+// budget; on autonomous.capacity_wait_timeout_seconds the wrapper returns a
+// capacity.ErrWaitTimeout error, the same path every other wait takes.
 func (m *Manager) capacityRetrySpawn(t *Task, spawn SpawnFn) SpawnFn {
 	return func(ctx context.Context, req SpawnRequest) (SpawnResult, error) {
-		start := time.Now()
+		clk := m.spawnWaitClock()
+		start := clk.Now()
 		waited := false
 		for {
 			sr, err := spawn(ctx, req)
-			if !IsCapacityError(err) && !IsWorkspaceLockError(err) {
+			cooldown := errors.Is(err, session.ErrGlobalCooldown)
+			if !IsCapacityError(err) && !IsWorkspaceLockError(err) && !cooldown {
 				if waited {
 					m.clearWaiting(t)
 				}
 				return sr, err
 			}
-			if time.Since(start) >= m.capacityWait() {
+			reason := ""
+			if cooldown {
+				reason = m.globalCooldownReason()
+			} else {
+				reason = err.Error()
+			}
+			if clk.Now().Sub(start) >= m.capacityWait() {
 				if IsWorkspaceLockError(err) {
 					return sr, fmt.Errorf("workspace lock: %w: %v", capacity.ErrWaitTimeout, err)
+				}
+				if cooldown {
+					return sr, fmt.Errorf("capacity: %w: %s", capacity.ErrWaitTimeout, reason)
 				}
 				return sr, fmt.Errorf("capacity: %w: %v", capacity.ErrWaitTimeout, err)
 			}
 			waited = true
-			m.setWaiting(t, err.Error())
+			m.setWaiting(t, reason)
 			select {
 			case <-ctx.Done():
 				return sr, ctx.Err()
-			case <-time.After(capRetryPause):
+			case <-clk.After(capRetryPause):
 			}
 			if m.taskCancelled(t.ID) {
 				return sr, errCancelledWhileWaiting

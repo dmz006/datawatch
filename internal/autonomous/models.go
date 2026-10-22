@@ -1112,6 +1112,10 @@ type LoopStatus struct {
 	NudgeTasks      []TaskNudge    `json:"nudge_tasks,omitempty"`
 	NudgesByBackend map[string]int `json:"nudges_by_backend,omitempty"`
 
+	// UsageBackoff reports the live per-backend usage back-off flags and
+	// the effective back-off config. Always present in a Manager.Status().
+	UsageBackoff *UsageBackoffStatus `json:"usage_backoff,omitempty"`
+
 	// Warnings are plain-language notices that a planning or verification
 	// model does not pair with the backend it is used with, so it will not
 	// reach its session. See PairingWarnings.

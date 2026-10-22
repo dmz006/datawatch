@@ -1267,6 +1267,8 @@
   "settings_plan_coverage_min_ratio": "プランカバレッジ最低比率（要件カバレッジ 0〜1、デフォルト 1.0）",
   "settings_automation_idle_alert_minutes": "Automation アイドルアラート（アラートまでのアイドル分数、0 = オフ）",
   "settings_undeclared_edit_mode": "未宣言の編集モード（off | warn | block、デフォルト: warn）",
+  "settings_usage_backoff": "使用量バックオフ（pause_backend | off、デフォルト: pause_backend）",
+  "settings_backoff_max_wait_minutes": "使用量バックオフの最大待機時間（レート制限にリセット時刻がない場合の分数、デフォルト 60）",
   "prd_plan_coverage_title": "プラン要件カバレッジ",
   "prd_plan_coverage_pass": "プランは仕様の要件をカバーしています",
   "prd_plan_coverage_warn": "プランカバレッジが閾値未満 — 警告モード",

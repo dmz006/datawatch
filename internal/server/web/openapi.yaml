@@ -3431,6 +3431,48 @@ paths:
       tags: [Singletons]
       requestBody: {required: true, content: {application/json: {schema: {type: object}}}}
       responses: {"200": {description: OK}}
+  /api/usage-backoff:
+    get:
+      summary: Active per-backend usage back-off flags, effective config and pattern staleness
+      operationId: usageBackoffGet
+      tags: [Singletons]
+      responses: {"200": {description: OK}}
+    post:
+      summary: Set a back-off flag for a backend (minutes or until, optional reason)
+      operationId: usageBackoffSet
+      tags: [Singletons]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [backend]
+              properties:
+                backend: {type: string}
+                minutes: {type: integer, minimum: 1}
+                until: {type: string, format: date-time}
+                reason: {type: string}
+      responses: {"200": {description: OK}, "400": {description: Invalid request}}
+    delete:
+      summary: Clear one backend's back-off flag, or all flags when no backend is given
+      operationId: usageBackoffClear
+      tags: [Singletons]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                backend: {type: string}
+      responses: {"200": {description: OK}}
+  /api/usage-backoff/recheck:
+    post:
+      summary: Record the current rate-limit patterns as rechecked (clears patterns_stale)
+      operationId: usageBackoffRecheck
+      tags: [Singletons]
+      responses: {"200": {description: OK}}
   /api/diagnose:
     get:
       summary: Diagnostic snapshot — backend reachability, config validity, recent errors

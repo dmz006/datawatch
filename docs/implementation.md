@@ -163,6 +163,14 @@ raises a 30-minute wait alert. Config: `autonomous.capacity_enabled`,
 `autonomous.capacity_wait_timeout_seconds`, `autonomous.capacity_gpu_util_pct`,
 `session.reserved_interactive`. See `docs/howto/automata-capacity.md`.
 
+Reactive usage back-off (`internal/autonomous/backoff.go`): an in-memory per-backend flag
+that holds autonomous dispatch (never interactive starts) after a rate/usage limit.
+Config: `autonomous.usage_backoff` (`pause_backend` | `off`, default `pause_backend`;
+`off` disables only the automatic path) and `autonomous.backoff_max_wait_minutes`
+(default 60; whole minutes, a value below 1 is treated as 60). Operator surfaces:
+`/api/usage-backoff`, `usage_backoff_*` MCP tools, `datawatch usage-backoff`, comm
+`usage_backoff`. See `docs/howto/automata-capacity.md`.
+
 `autonomous.ci_watch_timeout_seconds` (default 1500) bounds how long the optional
 `ci-watch` completion guardrail waits for the CI runs of the commit an Automaton
 pushed. It only applies when `ci-watch` is listed in `autonomous.per_prd_guardrails`

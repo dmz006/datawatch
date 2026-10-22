@@ -318,6 +318,7 @@ to AI coding tmux sessions. Send commands to start, monitor, and interact with A
 		newProjectsCmd(),       // BL27
 		newRollbackCmd(),       // BL29
 		newCooldownCmd(),       // BL30
+		newUsageBackoffCmd(),   // BL428 Phase 4
 		newStaleCmd(),          // BL40
 		newCostCmd(),           // BL6
 		newAuditCmd(),          // BL9
@@ -1744,6 +1745,10 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	// Handle SIGINT / SIGTERM gracefully
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	// BL428 Phase 4 — per-backend usage back-off: rate-limit detection sets
+	// flags on the shared registry, a lightweight sweeper clears them.
+	wireUsageBackoff(ctx, cfg, mgr, autonomousBackoff)
 
 	// Clean up PID file on exit
 	pidFilePath := filepath.Join(expandHome(cfg.DataDir), "daemon.pid")
@@ -3694,6 +3699,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		if auditLog, err := auditpkg.New(expandHome(cfg.DataDir)); err == nil {
 			httpServer.SetAuditLog(auditLog)
 			wiredAuditLog = auditLog
+			setBackoffAuditLog(auditLog) // BL428 Phase 4: automatic back-off set/auto-clear events
 			if cfg.Audit.CEFMirrorEnabled {
 				if err := auditLog.EnableCEFMirror(); err != nil {
 					fmt.Printf("[warn] audit log CEF mirror failed: %v\n", err)
@@ -4178,6 +4184,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			RetryCeilingTotal:       acfgIn.RetryCeilingTotal,
 			InfraRetryEscalateAfter: acfgIn.InfraRetryEscalateAfter,
 			CIWatchTimeoutSeconds:   acfgIn.CIWatchTimeoutSeconds,
+			UsageBackoff:            acfgIn.UsageBackoff,
+			BackoffMaxWaitMinutes:   acfgIn.BackoffMaxWaitMinutes,
 			ContentAutoFixEnabled:   acfgIn.ContentAutoFixEnabled,
 			AutoFixSkipApproval:     acfgIn.AutoFixSkipApproval,
 			BlockOnFileDrift:        acfgIn.BlockOnFileDrift,

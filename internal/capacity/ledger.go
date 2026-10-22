@@ -52,6 +52,9 @@ type Request struct {
 	Node     string   // primary compute node, for model affinity
 	Model    string   // model wanted, for model affinity
 	Role     Role     // dispatch rank; zero value means RoleWorker
+	// Interactive marks an operator-started session. Such a request is never
+	// held back by Options.AutonomousBackpressure.
+	Interactive bool
 }
 
 // Lease is a held slot set.
@@ -110,6 +113,10 @@ type Options struct {
 	External func(pool string) int
 	// Backpressure reports a soft block for a pool (for example GPU load).
 	Backpressure func(pool string) (blocked bool, reason string)
+	// AutonomousBackpressure is a soft block (for example a per-backend
+	// back-off) that applies to autonomous requests only; requests marked
+	// Interactive skip it.
+	AutonomousBackpressure func(pool string) (blocked bool, reason string)
 	// AgeOverride: waiters older than this jump ahead of model affinity.
 	AgeOverride time.Duration
 	// PollInterval is how often waiters re-check cancellation and
@@ -201,8 +208,8 @@ func (l *Ledger) usedLocked(pool string) int {
 
 // blockReasonLocked returns "" when every pool has room and is not
 // backpressured, otherwise a human-readable reason naming the pool.
-func (l *Ledger) blockReasonLocked(pools []string) string {
-	for _, p := range pools {
+func (l *Ledger) blockReasonLocked(req Request) string {
+	for _, p := range req.Pools {
 		if lim := l.limits[p]; lim > 0 && l.usedLocked(p) >= lim {
 			if name, ok := strings.CutPrefix(p, "node:"); ok {
 				return fmt.Sprintf("waiting for node %s: %d/%d engines in use, held by %s", name, l.usedLocked(p), lim, l.holdersLocked(p))
@@ -211,6 +218,11 @@ func (l *Ledger) blockReasonLocked(pools []string) string {
 		}
 		if l.opt.Backpressure != nil {
 			if blocked, why := l.opt.Backpressure(p); blocked {
+				return fmt.Sprintf("pool %s backpressure: %s", p, why)
+			}
+		}
+		if l.opt.AutonomousBackpressure != nil && !req.Interactive {
+			if blocked, why := l.opt.AutonomousBackpressure(p); blocked {
 				return fmt.Sprintf("pool %s backpressure: %s", p, why)
 			}
 		}
@@ -274,7 +286,7 @@ func (l *Ledger) dispatchLocked() {
 	}
 	now := l.opt.Clock.Now()
 	for _, w := range l.orderLocked(now) {
-		why := l.blockReasonLocked(w.req.Pools)
+		why := l.blockReasonLocked(w.req)
 		w.reason = why
 		if why != "" {
 			continue

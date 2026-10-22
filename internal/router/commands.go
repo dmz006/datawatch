@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // CommandType identifies the type of a parsed Signal command.
@@ -90,7 +91,10 @@ const (
 	CmdCost     CommandType = "cost"
 	CmdCooldown CommandType = "cooldown"
 	CmdStale    CommandType = "stale"
-	CmdAudit    CommandType = "audit"
+	// BL428 Phase 4 — per-backend usage back-off, same verbs and arguments
+	// as REST / MCP / CLI.
+	CmdUsageBackoff CommandType = "usage_backoff"
+	CmdAudit        CommandType = "audit"
 
 	// BL172 (S11) — federated observer peers. List + show + register +
 	// delete a Shape B / C peer over chat. Mirror of the
@@ -459,6 +463,18 @@ type Command struct {
 	CooldownVerb    string
 	CooldownSeconds int
 	CooldownReason  string
+
+	// BL428 Phase 4 — CmdUsageBackoff fields.
+	//   UsageBackoffVerb: "status" | "set" | "clear" | "recheck"
+	//   UsageBackoffBackend: backend for set; for clear "" or "all" = every flag
+	//   UsageBackoffMinutes / UsageBackoffUntil: set deadline — minutes (>= 1)
+	//     or an RFC3339 time; the parser fills whichever the operator gave
+	//   UsageBackoffReason: optional operator note for set
+	UsageBackoffVerb    string
+	UsageBackoffBackend string
+	UsageBackoffMinutes int
+	UsageBackoffUntil   string
+	UsageBackoffReason  string
 
 	// BL353 — schedule targeting fields.
 	SessionName  string // for schedule: resolve session by name at fire time
@@ -1254,6 +1270,10 @@ func Parse(text string) Command {
 		}
 		return Command{Type: CmdAutonomous, Text: rest}
 
+	case lower == "usage_backoff" || lower == "usage-backoff" ||
+		strings.HasPrefix(lower, "usage_backoff ") || strings.HasPrefix(lower, "usage-backoff "):
+		return parseUsageBackoff(strings.TrimSpace(text[len("usage_backoff"):]))
+
 	case strings.HasPrefix(lower, "cooldown"):
 		rest := strings.TrimSpace(text[len("cooldown"):])
 		cmd := Command{Type: CmdCooldown, CooldownVerb: "status"}
@@ -1764,6 +1784,10 @@ cost [<full_id>]                 token+USD rollup (or per-session)
 cooldown                         show global rate-limit cooldown
 cooldown set <seconds> [reason]  pause new sessions for N seconds
 cooldown clear                   clear active cooldown
+usage_backoff                    show per-backend usage back-off flags
+usage_backoff set <backend> <minutes> [reason]  hold autonomous dispatch to a backend
+usage_backoff clear [backend|all]  clear one back-off, or all (default)
+usage_backoff recheck            record current rate-limit patterns as rechecked
 stale [<seconds>]                list stale running sessions
 audit [actor=x action=y limit=N] query operator audit log
 rest <METHOD> <PATH> [json]      raw REST passthrough (e.g. rest GET /api/templates)
@@ -1789,4 +1813,53 @@ exit_hook add name=<n> action=notify notify_session=<s> [message=<m>]
 exit_hook delete id=<id>         delete a hook
 exit_hook enable id=<id>         enable a hook
 exit_hook disable id=<id>        disable a hook`, hostname)
+}
+
+// parseUsageBackoff parses the tail of "usage_backoff …":
+//
+//	status
+//	set <backend> <minutes|RFC3339-until> [reason words…]
+//	clear [backend|all]
+//	recheck
+//
+// An unrecognized verb or a set without a usable deadline keeps the verb and
+// leaves the deadline fields zero, so the handler can answer with usage
+// instead of guessing.
+func parseUsageBackoff(rest string) Command {
+	cmd := Command{Type: CmdUsageBackoff, UsageBackoffVerb: "status"}
+	fields := strings.Fields(rest)
+	if len(fields) == 0 {
+		return cmd
+	}
+	switch strings.ToLower(fields[0]) {
+	case "status":
+		return cmd
+	case "recheck":
+		cmd.UsageBackoffVerb = "recheck"
+		return cmd
+	case "clear":
+		cmd.UsageBackoffVerb = "clear"
+		if len(fields) > 1 && !strings.EqualFold(fields[1], "all") {
+			cmd.UsageBackoffBackend = fields[1]
+		}
+		return cmd
+	case "set":
+		cmd.UsageBackoffVerb = "set"
+		if len(fields) > 1 {
+			cmd.UsageBackoffBackend = fields[1]
+		}
+		if len(fields) > 2 {
+			if n, err := strconv.Atoi(fields[2]); err == nil {
+				cmd.UsageBackoffMinutes = n
+			} else if _, perr := time.Parse(time.RFC3339, fields[2]); perr == nil {
+				cmd.UsageBackoffUntil = fields[2]
+			}
+		}
+		if len(fields) > 3 {
+			cmd.UsageBackoffReason = strings.Join(fields[3:], " ")
+		}
+		return cmd
+	}
+	cmd.UsageBackoffVerb = "invalid"
+	return cmd
 }

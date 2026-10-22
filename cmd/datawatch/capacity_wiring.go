@@ -88,6 +88,26 @@ func syncLLMLimits(cfg *config.Config, reg *inference.Registry, led *capacity.Le
 	}
 }
 
+// backoffBackpressure reports an "llm:<backend>" pool as blocked while the
+// shared autonomous back-off registry holds an active flag for that backend,
+// so task, verifier and decompose admission wait in the capacity queue with
+// the back-off as their wait reason. Only llm: pools are gated — host, node:
+// and external pools are never blocked here. It is installed as the ledger's
+// AutonomousBackpressure, which requests marked Interactive skip, so operator
+// session starts are never held back by a back-off.
+func backoffBackpressure(bo *autonomous.Backoff) func(pool string) (bool, string) {
+	return func(pool string) (bool, string) {
+		backend, ok := strings.CutPrefix(pool, "llm:")
+		if !ok || bo == nil {
+			return false, ""
+		}
+		if blocked, why := bo.Blocked(backend); blocked {
+			return true, "backoff: " + why
+		}
+		return false, ""
+	}
+}
+
 // wireCapacity creates the admission ledger, connects it to the autonomous
 // manager and the REST surface, and starts the sync loop that keeps pool
 // limits current with config, compute nodes and LLMs, refreshes GPU
@@ -123,7 +143,10 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 		}
 		return false, ""
 	}
-	led := capacity.New(capacity.Options{External: external, Backpressure: backpressure})
+	// A spawn refused by the BL30 global cooldown waits instead of failing;
+	// the reset time words the task's wait reason.
+	amgr.SetCooldownUntilFn(func() time.Time { return mgr.CooldownStatus().Until })
+	led := capacity.New(capacity.Options{External: external, Backpressure: backpressure, AutonomousBackpressure: backoffBackpressure(autonomousBackoff)})
 
 	keys := func(backend, model string) ([]string, string) {
 		pools := []string{"host"}
@@ -145,6 +168,9 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 		return pools, node
 	}
 	amgr.SetCapacity(led, keys)
+	amgr.SetBackoff(autonomousBackoff)
+	amgr.SetPatternsStatus(mgr.RateLimitPatternsStatus)
+	httpServer.SetUsageBackoff(autonomousBackoff)
 	capacityTextFn = func() string { return capacity.FormatText(led.Snapshot()) }
 	httpServer.SetCapacity(led)
 
@@ -157,7 +183,7 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 		if len(pools) == 0 {
 			return nil
 		}
-		return led.Acquire(ctx, capacity.Request{Holder: holder, Pools: pools, Node: node, Model: model}, 0, func() bool { return false }, func(string) {})
+		return led.Acquire(ctx, capacity.Request{Holder: holder, Pools: pools, Node: node, Model: model, Interactive: true}, 0, func() bool { return false }, func(string) {})
 	})
 	httpServer.SetCapacityBind(func(holder, sessionID string) { led.Bind(holder, sessionID) })
 	httpServer.SetCapacityRelease(func(holder string) { led.Release(holder) })
