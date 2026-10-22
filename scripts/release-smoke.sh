@@ -3973,6 +3973,119 @@ else
 fi
 
 # ---------------------------------------------------------------------------
+H "75. Result panel — spawned subprocess posts its result; readable via schedule-results (GH#204)"
+# Spawns an ephemeral subprocess session through the schedules API (the
+# schedule timer ticks every 30 s; run_at=now fires on the first tick).
+# The task shell uses the daemon-injected scoped credential
+# (DATAWATCH_SESSION_ID / DATAWATCH_BASE_URL / DATAWATCH_RESULT_TOKEN)
+# to POST its own structured result; the operator token reads it back
+# through GET /api/schedule-results and /api/schedule-results/{name}.
+# A second (decoy) subprocess session plus the first session's scoped
+# token assert the 403 cross-session identity gate — that sub-check skips
+# when the smoke script and the daemon don't share a filesystem
+# (remote external-daemon mode), same as the other file-dependent sections.
+SRP_NAME="smoke-result-panel-$(date +%s)"
+SRP_SCRATCH="$(mktemp -u /tmp/datawatch-smoke-srp.XXXXXX)"
+SRP_BODY_A=$(SRP_NAME="$SRP_NAME" SRP_SCRATCH="$SRP_SCRATCH" python3 - <<'PY'
+import json, os
+name = os.environ["SRP_NAME"]
+scratch = os.environ["SRP_SCRATCH"]
+payload = json.dumps({"title": "Release smoke result", "status": "ok",
+                      "summary": "smoke run", "metrics": {"smoke": 1}})
+task = (
+    "sleep 1; "
+    "T=${DATAWATCH_RESULT_TOKEN:-}; S=${DATAWATCH_SESSION_ID:-}; B=${DATAWATCH_BASE_URL:-}; "
+    "mkdir -p __SCRATCH__ 2>/dev/null; "
+    "if [ -n \"$S\" ]; then printf %s \"$S\" > __SCRATCH__/sid_A; fi; "
+    "if [ -n \"$T\" ]; then printf %s \"$T\" > __SCRATCH__/tok_A; fi; "
+    "if [ -n \"$T\" ] && [ -n \"$S\" ] && [ -n \"$B\" ]; then "
+    "curl -sS -m 10 -X POST \"$B/api/sessions/$S/result\" "
+    '-H "Authorization: Bearer $T" -H "Content-Type: application/json" '
+    "-d '__PAYLOAD__' >/dev/null 2>&1; fi; exit 0"
+).replace("__SCRATCH__", scratch).replace("__PAYLOAD__", payload)
+print(json.dumps({"type": "spawn", "subprocess": True, "schedule_name": name,
+                  "name": name, "project_dir": "/tmp", "run_at": "now",
+                  "command": task}))
+PY
+) || true
+SRP_BODY_B=$(SRP_SCRATCH="$SRP_SCRATCH" python3 - <<'PY'
+import json, os
+scratch = os.environ["SRP_SCRATCH"]
+task = (
+    "sleep 1; S=${DATAWATCH_SESSION_ID:-}; "
+    "mkdir -p __SCRATCH__ 2>/dev/null; "
+    "if [ -n \"$S\" ]; then printf %s \"$S\" > __SCRATCH__/sid_B; fi; exit 0"
+).replace("__SCRATCH__", scratch)
+print(json.dumps({"type": "spawn", "subprocess": True,
+                  "name": "smoke-result-panel-decoy", "project_dir": "/tmp",
+                  "run_at": "now", "command": task}))
+PY
+) || true
+SRP_R=$(curl -s -X POST -H "Content-Type: application/json" -d "$SRP_BODY_A" \
+  "${curl_args[@]:+${curl_args[@]}}" "$BASE/api/schedules" -w "\n__HTTP_%{http_code}__" 2>/dev/null)
+if [[ "$SRP_R" != *"__HTTP_2"* ]]; then
+  skip "result panel spawn: POST /api/schedules rejected (${SRP_R:0:120})"
+else
+  # Decoy session for the cross-session identity check (best effort —
+  # the main assertions don't need it).
+  curl -s -X POST -H "Content-Type: application/json" -d "$SRP_BODY_B" \
+    "${curl_args[@]:+${curl_args[@]}}" "$BASE/api/schedules" >/dev/null 2>&1 || true
+  SRP_OK=0
+  for _i in $(seq 1 24); do
+    if SRP_NAME="$SRP_NAME" curl -s --max-time 10 "${curl_args[@]:+${curl_args[@]}}" "$BASE/api/schedule-results" 2>/dev/null \
+        | SRP_NAME="$SRP_NAME" python3 -c "
+import json, os, sys
+groups = json.load(sys.stdin)
+for g in (groups if isinstance(groups, list) else []):
+    if g.get('schedule_name') == os.environ['SRP_NAME']:
+        st = (g.get('latest') or {}).get('payload', {}).get('status')
+        if st == 'ok':
+            sys.exit(0)
+sys.exit(1)" 2>/dev/null; then
+      SRP_OK=1; break
+    fi
+    sleep 5
+  done
+  if [[ "$SRP_OK" -eq 1 ]]; then
+    ok "spawned subprocess posted its result with the scoped token; listed with status ok"
+    SRP_HIST=$(curl -s --max-time 10 "${curl_args[@]:+${curl_args[@]}}" "$BASE/api/schedule-results/$SRP_NAME" 2>/dev/null || echo "")
+    if echo "$SRP_HIST" | python3 -c "
+import json, sys
+d = json.load(sys.stdin)
+assert isinstance(d, list) and len(d) >= 1
+assert d[-1].get('payload', {}).get('status') in ('ok', 'warn', 'error')
+assert d[-1].get('session_id')" 2>/dev/null; then
+      ok "GET /api/schedule-results/{name} returns the retained history with provenance"
+    else
+      ko "GET /api/schedule-results/$SRP_NAME history malformed: ${SRP_HIST:0:120}"
+    fi
+    if [[ -s "$SRP_SCRATCH/tok_A" && -s "$SRP_SCRATCH/sid_B" ]]; then
+      SRP_TOK=$(cat "$SRP_SCRATCH/tok_A" 2>/dev/null || true)
+      SRP_SB=$(cat "$SRP_SCRATCH/sid_B" 2>/dev/null || true)
+      SRP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST \
+        -H "Authorization: Bearer $SRP_TOK" -H "Content-Type: application/json" \
+        -d '{"title":"must be rejected"}' \
+        "$BASE/api/sessions/$SRP_SB/result" 2>/dev/null || echo "000")
+      if [[ "$SRP_CODE" == "403" ]]; then
+        ok "cross-session post with a scoped token rejected (403)"
+      else
+        ko "cross-session post expected 403, got HTTP $SRP_CODE"
+      fi
+    else
+      skip "cross-session 403 gate (smoke script and daemon don't share a filesystem)"
+    fi
+  else
+    skip "result panel: posted result not observed within ~120 s (schedule 30 s tick + spawn latency)"
+  fi
+  # Best-effort teardown of the two spawned sessions.
+  for _f in sid_A sid_B; do
+    [[ -s "$SRP_SCRATCH/$_f" ]] && curl -s -X POST -H "Content-Type: application/json" \
+      -d "{\"id\":\"$(cat \"$SRP_SCRATCH/$_f\" 2>/dev/null)\"}" "$BASE/api/sessions/kill" >/dev/null 2>&1 || true
+  done
+  rm -rf "$SRP_SCRATCH" 2>/dev/null || true
+fi
+
+# ---------------------------------------------------------------------------
 H "Summary"
 echo "  Pass:  $PASS"
 echo "  Fail:  $FAIL"

@@ -2,7 +2,8 @@
 
 - **Date**: 2026-10-09
 - **Version at planning**: v8.79.0
-- **Status**: Planned — not started.
+- **Status**: **Complete** (Phases 1–5 shipped; see Status log at
+  bottom of this doc).
 - **Filed by**: a peer session, at the operator's request, as
   `dmz006/datawatch#204`.
 
@@ -235,14 +236,15 @@ not after. No exceptions this time.
   for reading results — `result_get`-shaped tools already exist on
   the generic BL360 surface; a `schedule_results_list` tool is added
   alongside the REST list endpoint for symmetry.
-- **CLI**: no new subcommand planned initially — the shell-wrapper use
-  case (imap-mcp's own wrapper) talks REST directly with its minted
-  token; revisit if an operator wants a `datawatch schedule-results`
-  CLI verb.
-- **Comm channel**: excluded, same reasoning as every other
-  operator-diagnostic surface this session has excluded it for — a
-  result payload isn't a chat-channel concern. Revisit only if
-  explicitly requested.
+- **CLI**: `datawatch schedule-results list` / `history <name>` /
+  `post --session <id> ...` shipped alongside the REST endpoints
+  (posting falls back to the ambient operator token outside a spawned
+  session; inside one it uses the injected scoped credential and
+  session, no flags needed).
+- **Comm channel**: the read surface is exposed as chat commands
+  (`schedule-results` and `schedule-results <name>`); posting stays
+  on REST/MCP/CLI — a chat channel isn't an agent's posting surface.
+  Revisit if explicitly requested for posting as well.
 - **YAML**: `results.schedule_history_limit`.
 - **PWA**: Phase 3 (Status tab Result panel) + Phase 4 (opt-in
   dashboard card) — both operator-visible, both get a same-session
@@ -295,8 +297,9 @@ for Rule Contract Work" as the exact file list per rule:
 
 - `ScheduleStore.Update()`'s `DeferredSession.Task` bug — tracked in
   GH#204 itself as a separate item; not fixed in this plan.
-- A CLI verb for posting/reading results — revisit if asked.
-- Comm-channel exposure — revisit if asked.
+- A CLI verb for posting/reading results — **shipped**
+  (`datawatch schedule-results`, see Parity surface).
+- Comm-channel *posting* — out of scope (read is exposed, see above).
 - Retrofitting the existing `/hook-event` endpoint's loose
   session-identity check — flagged as a precedent to not repeat, not
   a bug this plan fixes.
@@ -314,3 +317,22 @@ for Rule Contract Work" as the exact file list per rule:
   Status tab panel and — once added — the dashboard card render it),
   not unit tests alone, per this session's own standard for UI
   surfaces.
+
+## Status log
+
+- **2026-10-17 — Phase 5 complete; all phases shipped.**
+  - Howto `docs/howto/result-panel.md` (with `exec_steps:` covering
+    REST/CLI/MCP/chat channels) + `docs/howto/README.md` index entry;
+    cross-reference notes in `alerts-and-notifications.md` and
+    `alert-rules.md`.
+  - `CHANGELOG.md` entry (no internal tracker IDs in entry text).
+  - `docs/testing-tracker.md` entries per phase, incl. the new
+    `release-smoke.sh` H "75" section (spawn → scoped-token post →
+    schedule-results reads → 403 cross-session gate) — **authoring
+    complete; H 75 + TS-799 both marked Validated: No** until the
+    next release verification run.
+  - `scripts/release-smoke.sh` H "75" section added; `scripts/
+    test-stories/TS-799.sh` authored (not run this session).
+  - `docs/plans/gh204-datawatch-app-issue.md` — ready-to-file
+    `dmz006/datawatch-app` mobile-parity issue body (B4). The issue
+    itself is filed in the app repo, not this one.

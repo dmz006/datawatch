@@ -40,6 +40,14 @@ Alerts are stored server-side (`~/.datawatch/alerts.json`), survive
 daemon restarts, and are available over REST, MCP, and the comm
 channel — not just in the PWA.
 
+> **Alerts vs. results** — a *result* is what a scheduled job reports
+> about what it produced (its numbers and verdict, reviewed later); an
+> *alert* is a now-or-never signal that the operator should take
+> action. They are complementary, not interchangeable: a healthy run
+> posts an `ok` result without raising anything, while a rule fires an
+> alert when something needs attention. See
+> [result panel](result-panel.md).
+
 ## Base requirements
 
 - `datawatch` daemon running and reachable at `https://<host>:8443`.
