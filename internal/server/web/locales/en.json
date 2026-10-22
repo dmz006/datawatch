@@ -2005,5 +2005,19 @@
   "automation_picker_reason_child": "it is a child Automaton",
   "automation_picker_reason_owned": "it already belongs to Automation %1$s",
   "automation_picker_reason_member": "it is already in this Automation",
-  "automation_member_actions": "Member actions"
+  "automation_member_actions": "Member actions",
+  "automation_form_title_new": "New Automation",
+  "automation_form_title_edit": "Edit Automation",
+  "automation_field_name": "Name",
+  "automation_field_description": "Description",
+  "automation_form_save": "Save",
+  "automation_members_section": "Members",
+  "automation_add_member": "Add Automaton",
+  "automation_form_name_required": "A name is required",
+  "automation_form_members_required": "Add at least one member",
+  "automation_form_reason_label": "Reason for this change",
+  "automation_form_reason_required": "A reason is required for this change",
+  "automation_picker_unavailable_template": "This is a template",
+  "automation_picker_unavailable_child": "This is a child Automaton",
+  "automation_picker_unavailable_owned": "Already in another Automation"
 }

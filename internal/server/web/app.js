@@ -25201,6 +25201,501 @@ function openAutomationMemberDrawer(memberId) {
 }
 window.openAutomationMemberDrawer = openAutomationMemberDrawer;
 
+// ── Automation create and edit form ──────────────────────────────────────────
+//
+// One form for a new Automation and for editing a loaded one. Members are
+// linear: each picked Automaton is wired to the next through on_complete, and
+// the three edges of a member can be changed by hand. Only a draft (or a new
+// Automation) edits its members here; once an Automation has started, the
+// members are shown as they are and changes go through the insert, remove and
+// edge dialogs of the detail page, which the server accepts at that point.
+// The server assigns a member id only when none is sent, and the edges need
+// ids before the request, so new members get their 8-hex id here.
+
+const _automationForm = {
+  seq: 0,
+  source: null,
+  origin: 'list',
+  name: '',
+  description: '',
+  reason: '',
+  members: [],
+  entryMemberId: '',
+  picked: '',
+  search: '',
+  error: '',
+  saving: false,
+  prds: [],
+  automations: [],
+  titles: {},
+};
+
+const _AUTOMATION_FORM_MEMBER_KEEP = ['kind', 'automation_id', 'fork_members', 'join_members', 'on_branch_failure', 'budget_policy', 'added_reason'];
+const _AUTOMATION_FORM_BASE_KEEP = ['budget_policy', 'project_dir', 'backend', 'model', 'effort', 'verification_backend', 'verification_model', 'verification_effort'];
+
+function _automationNewMemberId(taken) {
+  for (;;) {
+    let id = '';
+    for (let i = 0; i < 8; i++) id += Math.floor(Math.random() * 16).toString(16);
+    if (!taken.includes(id)) return id;
+  }
+}
+
+// automationLinearWiring turns an ordered list of member ids into the default
+// chain: every member's on_complete names the next one and the last one's is
+// empty (stop). The entry member is the first id.
+function automationLinearWiring(memberIds) {
+  const ids = Array.isArray(memberIds) ? memberIds.map(String) : [];
+  return ids.map((id, i) => ({ id, on_complete: i + 1 < ids.length ? ids[i + 1] : '' }));
+}
+window.automationLinearWiring = automationLinearWiring;
+
+// automationPickerCandidates lists every loaded Automaton for the member
+// picker. An Automaton is unavailable (reason = the locale key that says why)
+// when it is a template, a child Automaton, or a member of another Automation
+// that is neither completed nor cancelled; the members of the Automation being
+// edited (currentAutomationId) stay available.
+function automationPickerCandidates(prds, automationsList, currentAutomationId) {
+  const owned = new Set();
+  (Array.isArray(automationsList) ? automationsList : []).forEach(a => {
+    if (!a || !a.id || a.id === currentAutomationId || ['completed', 'cancelled'].includes(a.status)) return;
+    (Array.isArray(a.members) ? a.members : []).forEach(m => { if (m && m.prd_id) owned.add(m.prd_id); });
+    (Array.isArray(a.pending_inserts) ? a.pending_inserts : []).forEach(p => { if (p && p.prd_id) owned.add(p.prd_id); });
+  });
+  return (Array.isArray(prds) ? prds : []).filter(p => p && p.id).map(p => {
+    let reason = '';
+    if (p.is_template) reason = 'automation_picker_unavailable_template';
+    else if (p.parent_prd_id) reason = 'automation_picker_unavailable_child';
+    else if (owned.has(p.id)) reason = 'automation_picker_unavailable_owned';
+    return { id: p.id, title: p.title ? String(p.title) : String(p.id), status: p.status ? String(p.status) : '', available: !reason, reason };
+  });
+}
+window.automationPickerCandidates = automationPickerCandidates;
+
+// buildAutomationFormPayload turns the form state into the request body. The
+// expected version is sent only when editing; empty edges and an empty reason
+// are left out. membersLocked leaves the member list out (a started Automation
+// takes member changes through the detail page), and base, the Automation being
+// edited, carries over the fields the form does not show, since an update
+// replaces them.
+function buildAutomationFormPayload(formState) {
+  const f = formState || {};
+  const body = { name: String(f.name || '').trim(), description: String(f.description || '') };
+  if (!f.membersLocked) {
+    const members = (Array.isArray(f.members) ? f.members : []).map(m => {
+      const out = {};
+      if (m.id) out.id = m.id;
+      if (m.prd_id || !m.kind || m.kind === 'prd') out.prd_id = m.prd_id || '';
+      _AUTOMATION_FORM_MEMBER_KEEP.forEach(k => {
+        const v = m[k];
+        if (v !== undefined && v !== null && v !== '' && !(Array.isArray(v) && !v.length)) out[k] = v;
+      });
+      _AUTOMATION_OUTCOME_EDGES.forEach(k => { if (m[k]) out[k] = m[k]; });
+      return out;
+    });
+    body.entry_member_id = f.entryMemberId || (members[0] && members[0].id) || '';
+    body.members = members;
+  }
+  const base = f.base || {};
+  _AUTOMATION_FORM_BASE_KEEP.forEach(k => {
+    const v = base[k];
+    if (v !== undefined && v !== null && v !== '') body[k] = v;
+  });
+  body.actor = 'operator';
+  if (f.expectedVersion !== undefined && f.expectedVersion !== null) body.expected_version = Number(f.expectedVersion);
+  const reason = String(f.reason || '').trim();
+  if (reason) body.reason = reason;
+  return body;
+}
+window.buildAutomationFormPayload = buildAutomationFormPayload;
+
+// A new Automation and a draft take member edits in the form; a started one does not.
+function _automationFormEditsMembers() {
+  const src = _automationForm.source;
+  return !src || src.status === 'draft';
+}
+
+function _automationFormErrorText(err) {
+  const raw = String((err && err.message) || err || '');
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === 'object' && (parsed.error || parsed.message)) return String(parsed.error || parsed.message);
+  } catch (_) { /* a plain text body */ }
+  return raw;
+}
+
+function _automationFormMemberTitle(m) {
+  const f = _automationForm;
+  const byId = {};
+  f.automations.forEach(a => { if (a && a.id) byId[a.id] = a; });
+  return _automationMemberTitle(m, { prdTitles: f.titles, automationsById: byId }, _automationMemberRef(m).slice(0, 8));
+}
+
+function _automationEdgeKey(edge) {
+  return 'automation_edge_' + edge;
+}
+
+// _automationFormMemberStatusText is the label of a member's status.
+function _automationFormMemberStatusText(status) {
+  const key = 'automation_member_status_' + status;
+  return t(key) !== key ? t(key) : status;
+}
+
+function _automationFormStatusText(status) {
+  const key = 'automata_status_' + status;
+  return t(key) !== key ? t(key) : status;
+}
+
+// _automationFormCapture copies the typed fields into the form state before
+// anything redraws them.
+function _automationFormCapture() {
+  const f = _automationForm;
+  [['automationFormName', 'name'], ['automationFormDescription', 'description'], ['automationFormReason', 'reason']].forEach(([id, key]) => {
+    const el = document.getElementById(id);
+    if (el && el.value != null) f[key] = String(el.value);
+  });
+}
+
+function _automationFormShowError(message) {
+  const f = _automationForm;
+  f.error = message;
+  const el = document.getElementById('automationFormError');
+  if (el) el.innerHTML = escHtml(message);
+}
+
+function _automationFormEdgeSelectHTML(m, edge) {
+  const others = _automationForm.members.filter(x => x.id !== m.id);
+  const options = [['', t('automation_edge_stop')]].concat(others.map(x => [x.id, _automationFormMemberTitle(x)]));
+  const current = String(m[edge] || '');
+  const opts = options.map(([value, label]) =>
+    `<option value="${escHtml(value)}"${value === current ? ' selected' : ''}>${escHtml(label)}</option>`).join('');
+  return `<label class="automation-form-edge"><span class="automation-form-edge-label">${escHtml(t(_automationEdgeKey(edge)))}</span>`
+    + `<select class="automation-form-edge-select" data-edge="${edge}" onchange="automationFormSetEdge('${escJsAttr(m.id)}','${edge}',this.value)">${opts}</select></label>`;
+}
+
+function _automationFormEdgeTextHTML(m, edge) {
+  const target = _automationForm.members.find(x => x.id === m[edge]);
+  const text = target ? _automationFormMemberTitle(target) : t('automation_edge_stop');
+  return `<span class="automation-form-edge"><span class="automation-form-edge-label">${escHtml(t(_automationEdgeKey(edge)))}</span> ${escHtml(text)}</span>`;
+}
+
+function _automationFormMemberRowHTML(m) {
+  const f = _automationForm;
+  const kind = String(m.kind || 'prd');
+  const status = String(m.status || 'pending');
+  const pending = status === 'pending';
+  const idArg = escJsAttr(m.id);
+  const editsMembers = _automationFormEditsMembers();
+  const actionable = pending && (kind === 'prd' || kind === 'automation');
+  const button = (op, key, call) =>
+    `<button type="button" class="automation-member-action-btn" data-op="${op}" onclick="${call}">${escHtml(t(key))}</button>`;
+  let edges;
+  if (editsMembers && pending && kind !== 'fork' && kind !== 'join') {
+    edges = _AUTOMATION_OUTCOME_EDGES.map(e => _automationFormEdgeSelectHTML(m, e)).join('');
+  } else {
+    edges = _AUTOMATION_OUTCOME_EDGES.map(e => _automationFormEdgeTextHTML(m, e)).join('');
+  }
+  const ops = [];
+  if (actionable) {
+    const src = f.source;
+    const canBefore = editsMembers || !!_automationInsertPlacement(src || {}, m.id, 'before');
+    if (canBefore) ops.push(button('insert_before', 'automation_insert_before', `automationFormInsert('${idArg}','before')`));
+    ops.push(button('insert_after', 'automation_insert_after', `automationFormInsert('${idArg}','after')`));
+    if (editsMembers) ops.push(button('remove_member', 'automation_remove_member', `automationFormRemove('${idArg}')`));
+    else {
+      ops.push(button('reorder_edges', 'automation_reorder_edges', `openAutomationReorderDialog('${idArg}')`));
+      ops.push(button('remove_member', 'automation_remove_member', `automationRemoveMember('${idArg}')`));
+    }
+  }
+  const statusBadge = status === 'pending' ? ''
+    : `<span class="automation-chip automation-form-member-status">${escHtml(_automationFormMemberStatusText(status))}</span>`;
+  return `<div class="automation-form-member${pending ? '' : ' readonly'}" data-member-id="${escHtml(m.id)}" data-readonly="${!(editsMembers && pending)}">`
+    + `<div class="automation-form-member-head"><span class="automation-member-title">${escHtml(_automationFormMemberTitle(m))}</span>`
+    + `<span class="automation-chip">${escHtml(m.id)}</span>${statusBadge}</div>`
+    + `<div class="automation-form-member-edges">${edges}</div>`
+    + (ops.length ? `<div class="automation-member-actions">${ops.join('')}</div>` : '')
+    + '</div>';
+}
+
+function _automationFormMembersHTML() {
+  return _automationForm.members.map(_automationFormMemberRowHTML).join('');
+}
+
+function _automationFormPickerHTML() {
+  const f = _automationForm;
+  const q = f.search.trim().toLowerCase();
+  const used = new Set(f.members.map(m => m.prd_id).filter(Boolean));
+  const rows = automationPickerCandidates(f.prds, f.automations, f.source ? f.source.id : '')
+    .filter(r => !used.has(r.id))
+    .filter(r => !q || r.title.toLowerCase().includes(q) || r.id.toLowerCase().includes(q));
+  if (!rows.length) return `<div class="automation-picker-empty" style="color:var(--text2);padding:6px;">${escHtml(t('automation_picker_empty'))}</div>`;
+  return rows.map(r => {
+    const note = r.available ? '' : `<span class="automation-picker-reason" style="font-size:11px;">${escHtml(t(r.reason))}</span>`;
+    const status = r.status ? `<span class="automation-chip">${escHtml(_automationFormStatusText(r.status))}</span>` : '';
+    return `<label class="automation-picker-item" data-prd-id="${escHtml(r.id)}" data-unavailable="${!r.available}" style="display:flex;gap:6px;align-items:baseline;flex-wrap:wrap;padding:3px 0;${r.available ? '' : 'opacity:0.5;'}">`
+      + `<input type="radio" name="automationFormPick" value="${escHtml(r.id)}"${r.available ? '' : ' disabled'}${r.id === f.picked ? ' checked' : ''} onchange="automationFormPick('${escJsAttr(r.id)}')">`
+      + `<span class="automation-picker-title">${escHtml(r.title)}</span><span class="automation-chip">${escHtml(r.id.slice(0, 8))}</span>${status}${note}</label>`;
+  }).join('');
+}
+
+function _automationFormRedrawMembers() {
+  const members = document.getElementById('automationFormMembers');
+  if (members) members.innerHTML = _automationFormMembersHTML();
+  const picker = document.getElementById('automationFormPicker');
+  if (picker) picker.innerHTML = _automationFormPickerHTML();
+}
+
+function _automationFormHTML() {
+  const f = _automationForm;
+  const editing = !!f.source;
+  const editsMembers = _automationFormEditsMembers();
+  const heading = t(editing ? 'automation_form_title_edit' : 'automation_form_title_new');
+  const field = (labelKey, input) =>
+    `<label class="automation-form-field"><span class="automation-form-label">${escHtml(t(labelKey))}</span>${input}</label>`;
+  const reason = editing && !editsMembers
+    ? field('automation_form_reason_label', `<textarea id="automationFormReason" class="form-input" rows="2" required>${escHtml(f.reason)}</textarea>`)
+    : '';
+  const picker = editsMembers
+    ? `<input type="search" id="automationFormSearch" class="form-input" placeholder="${escHtml(t('automation_picker_search'))}" aria-label="${escHtml(t('automation_picker_search'))}" value="${escHtml(f.search)}" oninput="automationFormSearch(this.value)">`
+      + `<div id="automationFormPicker" class="automation-picker" style="max-height:200px;overflow:auto;margin:6px 0;">${_automationFormPickerHTML()}</div>`
+    : '';
+  return `<div class="view-content automation-form" style="position:relative;">
+    <div class="automation-detail-header"><button type="button" class="automation-detail-back" onclick="automationFormCancel()">← ${escHtml(t('automation_back'))}</button></div>
+    <h2 class="automation-form-title">${escHtml(heading)}</h2>
+    <div id="automationFormError" class="automation-form-error" role="alert" style="color:var(--error);font-size:12px;">${escHtml(f.error)}</div>
+    ${field('automation_field_name', `<input type="text" id="automationFormName" class="form-input" value="${escHtml(f.name)}" required>`)}
+    ${field('automation_field_description', `<textarea id="automationFormDescription" class="form-input" rows="2">${escHtml(f.description)}</textarea>`)}
+    ${reason}
+    <h3 class="automation-form-section">${escHtml(t('automation_members_section'))}</h3>
+    <div id="automationFormMembers" class="automation-form-members">${_automationFormMembersHTML()}</div>
+    ${picker}
+    <div class="automation-form-buttons">
+      <button type="button" class="btn-secondary" data-op="add_member" onclick="automationFormAdd()">${escHtml(t('automation_add_member'))}</button>
+      <span style="flex:1;"></span>
+      <button type="button" class="btn-secondary" data-op="cancel" onclick="automationFormCancel()">${escHtml(t('btn_cancel'))}</button>
+      <button type="button" id="automationFormSaveBtn" class="btn-primary" data-op="save" onclick="saveAutomationForm()">${escHtml(t('automation_form_save'))}</button>
+    </div>
+  </div>`;
+}
+
+function _automationFormDraw() {
+  const view = document.getElementById('view');
+  if (view) view.innerHTML = _automationFormHTML();
+}
+
+// openAutomationForm shows the form in #view: a new Automation when called
+// with null, otherwise the given Automation for editing. It loads the Automata
+// and Automations the picker needs first; resolves once the form is drawn.
+function openAutomationForm(automation) {
+  const view = document.getElementById('view');
+  if (!view) return Promise.resolve();
+  const f = _automationForm;
+  const st = _automationState;
+  const src = automation && typeof automation === 'object' ? automation : null;
+  const seq = ++f.seq;
+  f.origin = st.detailId ? 'detail' : 'list';
+  f.source = src;
+  f.name = src ? String(src.name || '') : '';
+  f.description = src ? String(src.description || '') : '';
+  f.reason = '';
+  f.members = src && Array.isArray(src.members) ? src.members.filter(Boolean).map(m => Object.assign({}, m)) : [];
+  f.entryMemberId = src ? String(src.entry_member_id || '') : '';
+  f.picked = '';
+  f.search = '';
+  f.error = '';
+  f.saving = false;
+  f.prds = [];
+  f.automations = Array.isArray(st.list) ? st.list : [];
+  f.titles = {};
+  // The detail dialogs (insert, remove, edges) and the stale prompt act on
+  // the open Automation.
+  if (src && src.id) {
+    st.detailId = src.id;
+    st.detail = src;
+  }
+  view.innerHTML = `<div class="view-content automation-form" style="position:relative;"><div style="text-align:center;padding:32px;color:var(--text2);">${loadingEyeBlock()}</div></div>`;
+  const prdsRequest = automationRequest('GET', '/api/autonomous/prds')
+    .then(data => (Array.isArray(data) ? data : (data && Array.isArray(data.prds) ? data.prds : [])), () => []);
+  const listRequest = automationRequest('GET', '/api/automations')
+    .then(data => (Array.isArray(data) ? data : (data && Array.isArray(data.automations) ? data.automations : f.automations)), () => f.automations);
+  return Promise.all([prdsRequest, listRequest]).then(([prds, list]) => {
+    if (seq !== f.seq) return;
+    f.prds = prds;
+    f.automations = list;
+    prds.forEach(p => { if (p && p.id && p.title) f.titles[p.id] = String(p.title); });
+    _automationFormDraw();
+  });
+}
+window.openAutomationForm = openAutomationForm;
+
+// _automationFormRewire moves every member whose on_complete still holds the
+// default of the old order onto the default of the new order; an edge the
+// operator changed stays.
+function _automationFormRewire(oldIds, newIds) {
+  const oldNext = {}, newNext = {};
+  automationLinearWiring(oldIds).forEach(w => { oldNext[w.id] = w.on_complete; });
+  automationLinearWiring(newIds).forEach(w => { newNext[w.id] = w.on_complete; });
+  _automationForm.members.forEach(m => {
+    if (Object.prototype.hasOwnProperty.call(newNext, m.id) && (m.on_complete || '') === (oldNext[m.id] || '')) m.on_complete = newNext[m.id];
+  });
+}
+
+// _automationFormAddAt puts the picked Automaton into the member list at index.
+function _automationFormAddAt(index) {
+  const f = _automationForm;
+  const prdId = f.picked;
+  if (!prdId) {
+    _automationFormShowError(t('automation_picker_required'));
+    return false;
+  }
+  const row = automationPickerCandidates(f.prds, f.automations, f.source ? f.source.id : '').find(r => r.id === prdId);
+  if (!row || !row.available || f.members.some(m => m.prd_id === prdId)) {
+    _automationFormShowError(t('automation_picker_required'));
+    return false;
+  }
+  const oldIds = f.members.map(m => m.id);
+  const member = { id: _automationNewMemberId(oldIds), prd_id: prdId, on_complete: '', on_blocked: '', on_failed: '' };
+  f.members.splice(index, 0, member);
+  _automationFormRewire(oldIds, f.members.map(m => m.id));
+  if (index === 0 && (!f.entryMemberId || f.entryMemberId === oldIds[0])) f.entryMemberId = member.id;
+  else if (!f.entryMemberId) f.entryMemberId = f.members[0].id;
+  f.picked = '';
+  _automationFormShowError('');
+  _automationFormRedrawMembers();
+  return true;
+}
+
+// automationFormPick records the Automaton chosen in the picker; an
+// unavailable one is ignored.
+function automationFormPick(prdId) {
+  const f = _automationForm;
+  const row = automationPickerCandidates(f.prds, f.automations, f.source ? f.source.id : '').find(r => r.id === prdId);
+  if (row && row.available) f.picked = prdId;
+}
+window.automationFormPick = automationFormPick;
+
+function automationFormSearch(value) {
+  _automationForm.search = String(value || '');
+  const picker = document.getElementById('automationFormPicker');
+  if (picker) picker.innerHTML = _automationFormPickerHTML();
+}
+window.automationFormSearch = automationFormSearch;
+
+// automationFormAdd adds the picked Automaton at the end of the chain. A
+// started Automation opens the insert dialog after its last member instead.
+function automationFormAdd() {
+  const f = _automationForm;
+  if (!_automationFormEditsMembers()) {
+    const last = f.members[f.members.length - 1];
+    if (last) openAutomationInsertDialog(last.id, 'after');
+    return;
+  }
+  _automationFormAddAt(f.members.length);
+}
+window.automationFormAdd = automationFormAdd;
+
+// automationFormInsert adds the picked Automaton before or after a member.
+function automationFormInsert(memberId, position) {
+  const f = _automationForm;
+  if (!_automationFormEditsMembers()) {
+    openAutomationInsertDialog(memberId, position);
+    return;
+  }
+  const index = f.members.findIndex(m => m.id === memberId);
+  if (index < 0) return;
+  _automationFormAddAt(position === 'before' ? index : index + 1);
+}
+window.automationFormInsert = automationFormInsert;
+
+// automationFormRemove drops a member from a draft; the edges that led to it
+// lead on to whatever it led to, and a removed entry hands over to its successor.
+function automationFormRemove(memberId) {
+  const f = _automationForm;
+  const index = f.members.findIndex(m => m.id === memberId);
+  if (index < 0 || !_automationFormEditsMembers()) return;
+  const removed = f.members[index];
+  f.members.splice(index, 1);
+  f.members.forEach(m => {
+    if (m.on_complete === memberId) m.on_complete = removed.on_complete || '';
+    if (m.on_blocked === memberId) m.on_blocked = '';
+    if (m.on_failed === memberId) m.on_failed = '';
+  });
+  if (f.entryMemberId === memberId) f.entryMemberId = removed.on_complete || (f.members[0] ? f.members[0].id : '');
+  _automationFormRedrawMembers();
+}
+window.automationFormRemove = automationFormRemove;
+
+function automationFormSetEdge(memberId, edge, value) {
+  const f = _automationForm;
+  const m = f.members.find(x => x.id === memberId);
+  if (!m || !_AUTOMATION_OUTCOME_EDGES.includes(edge)) return;
+  const target = String(value || '');
+  if (target && !f.members.some(x => x.id === target && x.id !== memberId)) return;
+  m[edge] = target;
+}
+window.automationFormSetEdge = automationFormSetEdge;
+
+// automationFormCancel goes back to the Automation's page when the form was
+// opened from it, otherwise to the list.
+function automationFormCancel() {
+  const f = _automationForm;
+  const st = _automationState;
+  f.seq++;
+  if (f.source && f.source.id && f.origin === 'detail') return openAutomationDetail(f.source.id);
+  st.detailId = null;
+  st.detail = null;
+  return renderAutomationView();
+}
+window.automationFormCancel = automationFormCancel;
+
+// saveAutomationForm checks the form, then creates (POST) or updates (PUT) the
+// Automation. Success opens the returned Automation's page; a 409 opens the
+// stale prompt; any other failure is shown above the form.
+function saveAutomationForm() {
+  const f = _automationForm;
+  if (f.saving) return Promise.resolve(null);
+  _automationFormCapture();
+  const src = f.source;
+  const editsMembers = _automationFormEditsMembers();
+  let problem = '';
+  if (!f.name.trim()) problem = 'automation_form_name_required';
+  else if (!f.members.length) problem = 'automation_form_members_required';
+  else if (src && !editsMembers && !f.reason.trim()) problem = 'automation_form_reason_required';
+  if (problem) {
+    _automationFormShowError(t(problem));
+    return Promise.resolve(null);
+  }
+  const payload = buildAutomationFormPayload({
+    name: f.name,
+    description: f.description,
+    members: f.members,
+    entryMemberId: f.entryMemberId,
+    expectedVersion: src ? Number(src.version) || 0 : undefined,
+    reason: f.reason,
+    base: src,
+    membersLocked: !editsMembers,
+  });
+  _automationFormShowError('');
+  f.saving = true;
+  const btn = document.getElementById('automationFormSaveBtn');
+  if (btn) btn.disabled = true;
+  const path = src ? '/api/automations/' + encodeURIComponent(src.id) : '/api/automations';
+  return automationRequest(src ? 'PUT' : 'POST', path, payload).then(data => {
+    f.saving = false;
+    const id = (data && data.id) || (src && src.id) || '';
+    if (id) openAutomationDetail(id);
+    return data;
+  }, err => {
+    f.saving = false;
+    if (btn) btn.disabled = false;
+    const message = _automationFormErrorText(err);
+    if (err && err.status === 409) automationShowStalePrompt(message);
+    else _automationFormShowError(message);
+    return null;
+  });
+}
+window.saveAutomationForm = saveAutomationForm;
+
 // alpha.30 #271 + #183 #4 — Alerts tab redesigned to mirror the dock UX:
 // top bar with per-category chips + ✕all + 🔕 + sort toggle + search,
 // then per-session summary cards with prompts highlighted distinct from

@@ -2005,5 +2005,19 @@
   "automation_picker_reason_child": "es ist ein untergeordneter Automat",
   "automation_picker_reason_owned": "er gehört bereits zur Automatisierung %1$s",
   "automation_picker_reason_member": "er ist bereits in dieser Automatisierung",
-  "automation_member_actions": "Mitglied-Aktionen"
+  "automation_member_actions": "Mitglied-Aktionen",
+  "automation_form_title_new": "Neue Automatisierung",
+  "automation_form_title_edit": "Automatisierung bearbeiten",
+  "automation_field_name": "Name",
+  "automation_field_description": "Beschreibung",
+  "automation_form_save": "Speichern",
+  "automation_members_section": "Mitglieder",
+  "automation_add_member": "Automat hinzufügen",
+  "automation_form_name_required": "Ein Name ist erforderlich",
+  "automation_form_members_required": "Füge mindestens ein Mitglied hinzu",
+  "automation_form_reason_label": "Grund für diese Änderung",
+  "automation_form_reason_required": "Für diese Änderung ist ein Grund erforderlich",
+  "automation_picker_unavailable_template": "Dies ist eine Vorlage",
+  "automation_picker_unavailable_child": "Dies ist ein untergeordneter Automat",
+  "automation_picker_unavailable_owned": "Bereits in einer anderen Automatisierung"
 }

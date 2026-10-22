@@ -2005,5 +2005,19 @@
   "automation_picker_reason_child": "es un autómata hijo",
   "automation_picker_reason_owned": "ya pertenece a la automatización %1$s",
   "automation_picker_reason_member": "ya está en esta automatización",
-  "automation_member_actions": "Acciones del miembro"
+  "automation_member_actions": "Acciones del miembro",
+  "automation_form_title_new": "Nueva automatización",
+  "automation_form_title_edit": "Editar automatización",
+  "automation_field_name": "Nombre",
+  "automation_field_description": "Descripción",
+  "automation_form_save": "Guardar",
+  "automation_members_section": "Miembros",
+  "automation_add_member": "Añadir autómata",
+  "automation_form_name_required": "Se requiere un nombre",
+  "automation_form_members_required": "Añade al menos un miembro",
+  "automation_form_reason_label": "Motivo de este cambio",
+  "automation_form_reason_required": "Se requiere un motivo para este cambio",
+  "automation_picker_unavailable_template": "Esto es una plantilla",
+  "automation_picker_unavailable_child": "Esto es un autómata hijo",
+  "automation_picker_unavailable_owned": "Ya está en otra automatización"
 }

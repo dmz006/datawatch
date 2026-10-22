@@ -2005,5 +2005,19 @@
   "automation_picker_reason_child": "子オートマトンです",
   "automation_picker_reason_owned": "すでにオートメーション %1$s に属しています",
   "automation_picker_reason_member": "すでにこのオートメーションに含まれています",
-  "automation_member_actions": "メンバーの操作"
+  "automation_member_actions": "メンバーの操作",
+  "automation_form_title_new": "新規オートメーション",
+  "automation_form_title_edit": "オートメーションを編集",
+  "automation_field_name": "名前",
+  "automation_field_description": "説明",
+  "automation_form_save": "保存",
+  "automation_members_section": "メンバー",
+  "automation_add_member": "オートマトンを追加",
+  "automation_form_name_required": "名前は必須です",
+  "automation_form_members_required": "メンバーを1つ以上追加してください",
+  "automation_form_reason_label": "この変更の理由",
+  "automation_form_reason_required": "この変更には理由が必要です",
+  "automation_picker_unavailable_template": "これはテンプレートです",
+  "automation_picker_unavailable_child": "これは子オートマトンです",
+  "automation_picker_unavailable_owned": "別のオートメーションに含まれています"
 }
