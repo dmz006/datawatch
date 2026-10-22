@@ -1258,3 +1258,15 @@ Response:
   - `cmd/datawatch/main.go`, the worker wait loop, for task sessions;
   - `cmd/datawatch/session_judgment.go`, the verifier one-shot session.
 - **Failure path:** a tripped bound is reported as the infra failure `session idle without completion`, raises an alert, and is retried through the existing `auto_fix_retries` budget.
+
+## Session start confirm timeout (autonomous.session_start_confirm_seconds)
+
+- **Field:** `autonomous.session_start_confirm_seconds`, default `120` (2 minutes). Bounds a claude-code autonomous session that is still in `waiting_input` with no assistant output — i.e. started but never began working.
+- **Surfaces:**
+  - config YAML (`internal/config/config.go`, `Autonomous.SessionStartConfirmSeconds`);
+  - REST `GET` / `PUT` on the `autonomous.*` config (`internal/server/api.go`);
+  - MCP `autonomous_config_set` (`internal/mcp/autonomous.go`, `session_start_confirm_seconds` parameter; also round-trips through the manager config that `autonomous_config_get` serves);
+  - web settings card (`internal/server/web/app.js`) with strings in 5 locales (en, de, es, fr, ja);
+  - comm channels via `configure autonomous.session_start_confirm_seconds=<n>`, which the router forwards to the REST `PUT` config endpoint.
+- **Default:** `SessionStartConfirmDefaultSeconds = 120` and `NormalizeSessionStartConfirmSeconds` in `internal/config/session_start_confirm.go`. Zero or negative values normalize to the default.
+- **Failure path:** a tripped bound is reported as the infra failure `session never started`; the alert carries the last 20 lines of the session transcript as evidence. Up to 2 start failures are retried (start-failure budget) before the task stays failed. This budget is separate from `auto_fix_retries`.

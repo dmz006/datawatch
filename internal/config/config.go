@@ -2066,6 +2066,12 @@ type AutonomousConfig struct {
 	// process for longer than this is an infra failure. 0 or unset => 900
 	// (see NormalizeSessionIdleTimeoutSeconds).
 	SessionIdleTimeoutSeconds int `yaml:"session_idle_timeout_seconds,omitempty" json:"session_idle_timeout_seconds,omitempty"`
+	// SessionStartConfirmSeconds bounds a claude-code autonomous session
+	// that is still in waiting_input with no assistant output: a session
+	// that produces no first assistant turn within this many seconds is a
+	// "session never started" failure. 0 or unset => 120
+	// (see NormalizeSessionStartConfirmSeconds).
+	SessionStartConfirmSeconds int `yaml:"session_start_confirm_seconds,omitempty" json:"session_start_confirm_seconds,omitempty"`
 	// CapacityEnabled turns capacity-aware admission on (default true when
 	// unset): tasks wait for a free host/node/LLM slot instead of failing.
 	CapacityEnabled *bool `yaml:"capacity_enabled,omitempty" json:"capacity_enabled,omitempty"`

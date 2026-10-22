@@ -2041,6 +2041,39 @@ autonomous:
   session_idle_timeout_seconds: 900
 ```
 
+### Session start confirm timeout (autonomous.session_start_confirm_seconds)
+
+This bounds how long a claude-code autonomous session may sit in
+`waiting_input` with no assistant output after it has started. The default
+is 120 seconds (2 minutes). It exists because a session whose process is
+alive but that never actually begins working looks healthy to the plain
+idle detector and would otherwise sit there indefinitely.
+
+- **What it watches:** a claude-code task session that has started (the
+  process is running) but has produced no assistant output — it is still in
+  `waiting_input` instead of getting to work.
+- **When it fires:** the session stayed in that state without any assistant
+  output for longer than the bound.
+- **What you see:**
+  - a datawatch alert naming the session, with the last 20 lines of the
+    session transcript included so you can see why it never got going;
+  - the task failure reason `session never started`.
+- **Start-failure budget:** up to 2 start failures are retried
+  automatically before the task stays failed and is left for an operator.
+  This budget is separate from `auto_fix_retries`, which covers retries
+  after the verifier rejects finished work.
+- **Setting it:** `autonomous.session_start_confirm_seconds` in
+  `config.yaml`, or through the web settings card, the REST `autonomous.*`
+  config endpoints, the MCP `autonomous_config_set` tool, the
+  `datawatch config set` CLI, or a comm channel
+  (`configure autonomous.session_start_confirm_seconds=<seconds>`). A value
+  of `0` means "use the default 120".
+
+```yaml
+autonomous:
+  session_start_confirm_seconds: 120
+```
+
 ---
 
 ## Autonomous Prompt Injection Protection

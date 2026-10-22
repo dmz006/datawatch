@@ -945,6 +945,13 @@ autonomous:
   verification_timeout_seconds: 1800
   # autonomous
   session_idle_timeout_seconds: 900   # bound on one worker/verifier session sitting in waiting_input/idle with no live child process; exceeded => infra failure 'session idle without completion', alert raised, auto_fix_retries budget handles the retry
+  # A claude-code autonomous session must begin producing its first assistant
+  # turn within this many seconds of starting; still in waiting_input with no
+  # assistant output past this => 'session never started' failure (alert
+  # carries the last 20 transcript lines), up to 2 start failures retried
+  # before the task stays failed. 0 or unset falls back to the 120s default
+  # (NormalizeSessionStartConfirmSeconds).
+  session_start_confirm_seconds: 120
   # Stall window for a running worker, in seconds. A worker counts as stalled
   # only when, for this many seconds, it has no output, no live child process,
   # no backend activity, and no file change in its work directory. 0 or

@@ -82,8 +82,14 @@ type Config struct {
 	// cmd/datawatch/session_judgment.go read it from config.Config. The field
 	// exists so the handleAutonomousConfig live round-trip
 	// (internal/server/autonomous.go) does not drop the key.
-	SessionIdleTimeoutSeconds int    `json:"session_idle_timeout_seconds,omitempty"`
-	VerificationModel         string `json:"verification_model,omitempty"`
+	SessionIdleTimeoutSeconds int `json:"session_idle_timeout_seconds,omitempty"`
+	// SessionStartConfirmSeconds mirrors autonomous.session_start_confirm_seconds
+	// in config. The manager does not consume it: the daemon's autonomous
+	// worker start-confirmation loop reads it from config.Config. The
+	// field exists so the handleAutonomousConfig live round-trip
+	// (internal/server/autonomous.go) does not drop the key.
+	SessionStartConfirmSeconds int    `json:"session_start_confirm_seconds,omitempty"`
+	VerificationModel          string `json:"verification_model,omitempty"`
 	// VerificationBackends (v8.36.9) — see config.AutonomousConfig's doc
 	// comment. Ordered list of LLM registry names to load-balance
 	// verifier/guardrail capacity across; empty = single-backend
@@ -849,7 +855,7 @@ func (m *Manager) resetInProgressTasksForResume(prd *PRD) {
 			At:    now,
 			Kind:  verifyingResolution,
 			Actor: "autonomous",
-			Note: fmt.Sprintf("boot-resume resolved %d orphaned verifying task(s) to completed (recorded ok verification) and re-queued %d for retry", completedCount, requeuedCount),
+			Note:  fmt.Sprintf("boot-resume resolved %d orphaned verifying task(s) to completed (recorded ok verification) and re-queued %d for retry", completedCount, requeuedCount),
 		})
 	}
 	if err := m.store.SavePRD(prd); err != nil {
@@ -3615,7 +3621,7 @@ func (m *Manager) reconcileStuckTasks() {
 				At:    now,
 				Kind:  verifyingResolution,
 				Actor: "autonomous",
-				Note: fmt.Sprintf("boot pass resolved %d orphaned verifying task(s) to completed (recorded ok verification) and re-queued %d for retry", verdictCompleted, verdictRequeued),
+				Note:  fmt.Sprintf("boot pass resolved %d orphaned verifying task(s) to completed (recorded ok verification) and re-queued %d for retry", verdictCompleted, verdictRequeued),
 			})
 		}
 		if err := m.store.SavePRD(prd); err != nil {
