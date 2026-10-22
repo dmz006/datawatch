@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.89 — The pattern staleness flag follows the claude CLI version
+
+### Fixed
+
+- **The rate-limit pattern staleness flag now follows the Claude CLI version.** The flag (`patterns_stale`) fingerprinted only datawatch's own rate-limit pattern list, so an upgrade of the `claude` tool, the real cause of drifting screen text, never raised it. The fingerprint now includes the `claude` version text, read once at daemon start and refreshed on a status request when the cached value is more than 10 minutes old (an absent tool or a failing command records `unknown` and does not raise the flag by itself). The new `claude_cli_version` field appears beside `patterns_version` and `patterns_stale` on REST, MCP, the CLI, the chat commands, `autonomous_status` and the capacity status, and the recheck operation stores both. The command runner is injectable, so the tests use a fake.
+
 ## v9.5.88 — Reactive usage back-off for rate-limited backends
 
 ### Added
