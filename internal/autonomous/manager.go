@@ -1615,9 +1615,13 @@ func (m *Manager) Decompose(prdID string) (*PRD, error) {
 	// v8.20.0 — use the per-PRD planning backend (decomposition_profile) when
 	// set; otherwise fall back to the global planning_backend config. The
 	// execution backend (Backend) is reserved for task sessions only.
+	// The Automation's planning fields sit between the PRD's own
+	// decomposition fields and the global planning config. Twin in
+	// decomposeStreamingCore(); keep both in sync.
+	planBackend, planGlobalModel := effectivePlanning(m.AutomationForPRD(prd), m.cfg)
 	backend := prd.DecompositionProfile
 	if backend == "" {
-		backend = m.cfg.PlanningBackend
+		backend = planBackend
 	}
 	effort := prd.Effort
 	if effort == "" {
@@ -1648,7 +1652,7 @@ func (m *Manager) Decompose(prdID string) (*PRD, error) {
 	// BL416 Phase 2 — see verification_script_prompt.go. Twin call in decomposeStreamingCore(); keep both in sync.
 	prompt += m.verificationScriptSuffix(prd)
 
-	planModel := resolvePlannedModel(backend, prd.DecompositionModel, prd.Backend, prd.Model, m.cfg.PlanningBackend, m.cfg.PlanningModel, m.cfg.VerificationModel)
+	planModel := resolvePlannedModel(backend, prd.DecompositionModel, prd.Backend, prd.Model, planBackend, planGlobalModel, m.cfg.VerificationModel)
 	// v9.10.19 — a pi-family decompose session must launch with an explicit
 	// non-empty model — never its host's built-in default (on a federated
 	// peer that would be the operator-local node model the session exists
@@ -1770,9 +1774,13 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (*PRD, 
 	} else if created {
 		log.Printf("[autonomous] prd=%s worktree created at %s (branch=%s) for decompose", prdID, prd.ProjectDir, prd.Git.Branch)
 	}
+	// The Automation's planning fields sit between the PRD's own
+	// decomposition fields and the global planning config. Twin in
+	// decomposeStreamingCore(); keep both in sync.
+	planBackend, planGlobalModel := effectivePlanning(m.AutomationForPRD(prd), m.cfg)
 	backend := prd.DecompositionProfile
 	if backend == "" {
-		backend = m.cfg.PlanningBackend
+		backend = planBackend
 	}
 	effort := prd.Effort
 	if effort == "" {
@@ -1809,7 +1817,7 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (*PRD, 
 	// — backend resolution above was correct (so the claude CLI launched
 	// fine), but the --model argument fed into it was always wrong.
 	// Restored to the same tiered resolution Decompose() uses.
-	planModel2 := resolvePlannedModel(backend, prd.DecompositionModel, prd.Backend, prd.Model, m.cfg.PlanningBackend, m.cfg.PlanningModel, m.cfg.VerificationModel)
+	planModel2 := resolvePlannedModel(backend, prd.DecompositionModel, prd.Backend, prd.Model, planBackend, planGlobalModel, m.cfg.VerificationModel)
 	// v9.10.19 — pi-family decompose session: explicit non-empty model or
 	// loud failure, never the host's built-in default (see the twin check
 	// in Decompose above). Config failure: fail immediately, no retry budget.
