@@ -1989,5 +1989,21 @@
   "automation_cancel_confirm": "オートメーションをキャンセル",
   "automation_stale_title": "最新ではありません",
   "automation_stale_message": "このオートメーションは別の場所で変更されました。変更する前に再読み込みしてください。",
-  "automation_stale_reload": "再読み込み"
+  "automation_stale_reload": "再読み込み",
+  "automation_insert_reason_required": "メンバーを挿入するには理由が必要です",
+  "automation_insert_urgent": "緊急で挿入",
+  "automation_picker_search": "名前またはIDでオートマタを検索",
+  "automation_picker_unavailable": "利用できません: %1$s",
+  "automation_approve_insert": "挿入を承認",
+  "automation_skip_dialog_title": "このメンバーをスキップ",
+  "automation_skip_edge_label": "この結果を採用",
+  "automation_reorder_dialog_title": "出力エッジを編集",
+  "automation_remove_confirm": "このメンバーをオートメーションから削除しますか?",
+  "automation_picker_empty": "一致するオートマタがありません",
+  "automation_picker_required": "挿入するオートマトンを選択してください",
+  "automation_picker_reason_template": "テンプレートです",
+  "automation_picker_reason_child": "子オートマトンです",
+  "automation_picker_reason_owned": "すでにオートメーション %1$s に属しています",
+  "automation_picker_reason_member": "すでにこのオートメーションに含まれています",
+  "automation_member_actions": "メンバーの操作"
 }

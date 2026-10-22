@@ -6178,6 +6178,24 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
   padding: 1px 8px;
 }
 .automation-member-details-btn:hover { border-color: var(--accent); color: var(--text); }
+.automation-member-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  flex-basis: 100%;
+}
+.automation-member-action-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text2);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 1px 8px;
+}
+.automation-member-action-btn:hover { border-color: var(--accent); color: var(--text); }
+.automation-approve-insert { font-size: 11px; padding: 1px 8px; }
+.automation-picker-item input:disabled { cursor: not-allowed; }
 .automation-drawer {
   position: fixed;
   inset: 0;

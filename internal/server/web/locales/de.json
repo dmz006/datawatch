@@ -1989,5 +1989,21 @@
   "automation_cancel_confirm": "Automatisierung abbrechen",
   "automation_stale_title": "Veraltet",
   "automation_stale_message": "Diese Automatisierung wurde an anderer Stelle geändert. Lade sie neu, bevor du Änderungen vornimmst.",
-  "automation_stale_reload": "Neu laden"
+  "automation_stale_reload": "Neu laden",
+  "automation_insert_reason_required": "Zum Einfügen eines Mitglieds ist ein Grund erforderlich",
+  "automation_insert_urgent": "Dringend einfügen",
+  "automation_picker_search": "Automaten nach Name oder ID suchen",
+  "automation_picker_unavailable": "Nicht verfügbar: %1$s",
+  "automation_approve_insert": "Einfügen genehmigen",
+  "automation_skip_dialog_title": "Dieses Mitglied überspringen",
+  "automation_skip_edge_label": "Dieses Ergebnis verwenden",
+  "automation_reorder_dialog_title": "Ausgehende Kanten bearbeiten",
+  "automation_remove_confirm": "Dieses Mitglied aus der Automatisierung entfernen?",
+  "automation_picker_empty": "Keine passenden Automaten",
+  "automation_picker_required": "Wähle einen Automaten zum Einfügen",
+  "automation_picker_reason_template": "es ist eine Vorlage",
+  "automation_picker_reason_child": "es ist ein untergeordneter Automat",
+  "automation_picker_reason_owned": "er gehört bereits zur Automatisierung %1$s",
+  "automation_picker_reason_member": "er ist bereits in dieser Automatisierung",
+  "automation_member_actions": "Mitglied-Aktionen"
 }

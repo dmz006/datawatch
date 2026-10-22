@@ -1989,5 +1989,21 @@
   "automation_cancel_confirm": "Cancel Automation",
   "automation_stale_title": "Out of date",
   "automation_stale_message": "This Automation was changed elsewhere. Reload it before making changes.",
-  "automation_stale_reload": "Reload"
+  "automation_stale_reload": "Reload",
+  "automation_insert_reason_required": "A reason is required to insert a member",
+  "automation_insert_urgent": "Insert urgently",
+  "automation_picker_search": "Search Automata by name or ID",
+  "automation_picker_unavailable": "Not available: %1$s",
+  "automation_approve_insert": "Approve insert",
+  "automation_skip_dialog_title": "Skip this member",
+  "automation_skip_edge_label": "Take this outcome",
+  "automation_reorder_dialog_title": "Edit outgoing edges",
+  "automation_remove_confirm": "Remove this member from the Automation?",
+  "automation_picker_empty": "No Automata match",
+  "automation_picker_required": "Choose an Automaton to insert",
+  "automation_picker_reason_template": "it is a template",
+  "automation_picker_reason_child": "it is a child Automaton",
+  "automation_picker_reason_owned": "it already belongs to Automation %1$s",
+  "automation_picker_reason_member": "it is already in this Automation",
+  "automation_member_actions": "Member actions"
 }

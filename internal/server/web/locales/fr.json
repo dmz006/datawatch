@@ -1989,5 +1989,21 @@
   "automation_cancel_confirm": "Annuler l'automatisation",
   "automation_stale_title": "Obsolète",
   "automation_stale_message": "Cette automatisation a été modifiée ailleurs. Rechargez-la avant de faire des modifications.",
-  "automation_stale_reload": "Recharger"
+  "automation_stale_reload": "Recharger",
+  "automation_insert_reason_required": "Un motif est requis pour insérer un membre",
+  "automation_insert_urgent": "Insérer en urgence",
+  "automation_picker_search": "Rechercher des automates par nom ou ID",
+  "automation_picker_unavailable": "Indisponible : %1$s",
+  "automation_approve_insert": "Approuver l'insertion",
+  "automation_skip_dialog_title": "Ignorer ce membre",
+  "automation_skip_edge_label": "Prendre ce résultat",
+  "automation_reorder_dialog_title": "Modifier les liaisons sortantes",
+  "automation_remove_confirm": "Retirer ce membre de l'automatisation ?",
+  "automation_picker_empty": "Aucun automate ne correspond",
+  "automation_picker_required": "Choisissez un automate à insérer",
+  "automation_picker_reason_template": "c'est un modèle",
+  "automation_picker_reason_child": "c'est un automate enfant",
+  "automation_picker_reason_owned": "il appartient déjà à l'automatisation %1$s",
+  "automation_picker_reason_member": "il est déjà dans cette automatisation",
+  "automation_member_actions": "Actions du membre"
 }

@@ -23839,6 +23839,7 @@ const _automationState = {
   loadError: null,
   prdTitles: {},
   prdStatuses: {},
+  prdFlags: {},
   actingBranch: '',
 };
 
@@ -24148,6 +24149,8 @@ const _AUTOMATION_FINISHED_STATUSES = ['completed', 'failed', 'skipped', 'cancel
 const _AUTOMATION_READONLY_STATUSES = ['completed', 'failed', 'skipped'];
 const _AUTOMATION_OUTCOME_EDGES = ['on_complete', 'on_blocked', 'on_failed'];
 const _AUTOMATION_EXTRA_EDGES = ['on_blocked', 'on_failed'];
+// Automation statuses that accept member edits (insert, skip, remove, edges).
+const _AUTOMATION_EDITABLE_STATUSES = ['draft', 'active', 'paused', 'blocked'];
 
 // automationMemberDisplayStatus returns member.status, except that a pending
 // member (status pending or empty) whose Automaton is approved shows as
@@ -24304,7 +24307,63 @@ function _automationMemberTitle(m, c, chip) {
   return chip;
 }
 
-function _automationMemberCardHTML(m, c, active) {
+// _automationActionContext decides whether the strip of Automation a carries
+// per-member action buttons: only the top-level strip of an Automation that
+// still accepts edits does (a nested child is edited from its own page), and
+// ctx.readOnly turns them off. Returns null for no actions.
+function _automationActionContext(a, c, members) {
+  if (!a || !a.id || (c && c.readOnly)) return null;
+  const status = String(a.status || '');
+  if (!_AUTOMATION_EDITABLE_STATUSES.includes(status)) return null;
+  return { id: a.id, status, entry: a.entry_member_id || '', members };
+}
+
+// _automationInsertPlacement works out what the insert endpoint needs for a
+// button on member anchorId. The wire format has only `after`, so "after"
+// passes the anchor itself. "Before" passes the anchor's predecessor (the
+// member whose on_complete is the anchor), as the design doc's Insert rules
+// splice it: the predecessor's on_complete moves to the new head and the new
+// member points at the anchor. The entry member has no predecessor: on a draft
+// an urgent insert becomes the new entry, and anywhere else there is no slot
+// before it. Returns {after, urgent} or null when no slot exists.
+function _automationInsertPlacement(a, anchorId, position) {
+  if (position !== 'before') return { after: anchorId, urgent: false };
+  const members = Array.isArray(a && a.members) ? a.members : [];
+  const pred = members.find(x => x && x.on_complete === anchorId);
+  if (pred) {
+    const done = !!pred.status && !['pending', 'running'].includes(pred.status);
+    if (a.status !== 'draft' && done) return null;
+    return { after: pred.id, urgent: false };
+  }
+  if (a.entry_member_id === anchorId && a.status === 'draft') return { after: '', urgent: true };
+  return null;
+}
+
+// _automationMemberActionsHTML is the compact actions area of a member card.
+// A pending (or approved) member offers every operation; a running member only
+// edge editing and skip; a finished member, a fork and a join none.
+function _automationMemberActionsHTML(m, status, actions) {
+  if (!actions) return '';
+  const kind = String(m.kind || 'prd');
+  if (kind !== 'prd' && kind !== 'automation') return '';
+  const pending = status === 'pending' || status === 'approved';
+  if (!pending && status !== 'running') return '';
+  const idArg = escJsAttr(m.id);
+  const ops = [];
+  if (pending) {
+    const a = { status: actions.status, entry_member_id: actions.entry, members: actions.members };
+    if (_automationInsertPlacement(a, m.id, 'before')) ops.push(['insert_before', 'automation_insert_before', `openAutomationInsertDialog('${idArg}','before')`]);
+    ops.push(['insert_after', 'automation_insert_after', `openAutomationInsertDialog('${idArg}','after')`]);
+  }
+  ops.push(['reorder_edges', 'automation_reorder_edges', `openAutomationReorderDialog('${idArg}')`]);
+  ops.push(['skip_member', 'automation_skip_member', `openAutomationSkipDialog('${idArg}')`]);
+  if (pending) ops.push(['remove_member', 'automation_remove_member', `automationRemoveMember('${idArg}')`]);
+  const buttons = ops.map(([op, key, call]) =>
+    `<button type="button" class="automation-member-action-btn" data-member-op="${op}" data-action-for="${escHtml(m.id)}" onclick="event.stopPropagation(); if (typeof ${call.split('(')[0]} === 'function') ${call}">${escHtml(t(key))}</button>`).join('');
+  return `<span class="automation-member-actions" role="group" aria-label="${escHtml(t('automation_member_actions'))}">${buttons}</span>`;
+}
+
+function _automationMemberCardHTML(m, c, active, actions) {
   const kind = String(m.kind || 'prd');
   const status = automationMemberDisplayStatus(m, c.prdStatuses) || 'pending';
   const statusClass = status.replace(/[^a-z_]/g, '') || 'pending';
@@ -24348,7 +24407,7 @@ function _automationMemberCardHTML(m, c, active) {
     + `<span class="automation-member-title">${escHtml(_automationMemberTitle(m, c, chip))}</span>`
     + `<span class="automation-chip">${escHtml(chip)}</span>`
     + `<span class="automation-member-status">${escHtml(shownLabel)}</span>`
-    + extra + marker + fork + details + '</div>';
+    + extra + marker + fork + details + _automationMemberActionsHTML(m, status, actions) + '</div>';
 }
 
 // _automationNestedHTML draws the expanded body of a nested member below its
@@ -24376,7 +24435,7 @@ function _automationNestedHTML(m, env) {
 // reference when the member was drawn before.
 function _automationBlockHTML(it, env) {
   if (it.ref) return _automationMemberRefHTML(it.member, env.c);
-  return _automationMemberCardHTML(it.member, env.c, env.active) + _automationNestedHTML(it.member, env);
+  return _automationMemberCardHTML(it.member, env.c, env.active, env.actions) + _automationNestedHTML(it.member, env);
 }
 
 function _automationGroupHTML(g, env) {
@@ -24432,7 +24491,7 @@ function _automationStripBody(a, c, seen, depth) {
   members.forEach(m => { if (!byId.has(m.id)) byId.set(m.id, m); });
   const drawn = new Set();
   const active = _automationStripActiveIds(a, members);
-  const env = { c, active, seen, depth };
+  const env = { c, active, seen, depth, actions: depth === 0 ? _automationActionContext(a, c, members) : null };
 
   const rows = [{ key: 'main', linked: true, items: _automationFollowChain(a.entry_member_id, byId, drawn, members) }];
   // Rows grow while we iterate: each card that was drawn in full may add a
@@ -24484,21 +24543,23 @@ const _AUTOMATION_DECISION_LIMIT = 20;
 let _automationDetailSeq = 0;
 
 // loadAutomationPrdInfo fetches the Automaton list once and resolves
-// {titles, statuses}, both keyed by Automaton id. It never rejects: a failed
+// {titles, statuses, flags}, all keyed by Automaton id; flags is
+// {template, child} and feeds the insert picker. It never rejects: a failed
 // or oddly shaped response leaves both maps empty.
 function loadAutomationPrdInfo() {
   return automationRequest('GET', '/api/autonomous/prds')
     .then(data => {
       const prds = Array.isArray(data) ? data : (data && Array.isArray(data.prds) ? data.prds : []);
-      const titles = {}, statuses = {};
+      const titles = {}, statuses = {}, flags = {};
       prds.forEach(p => {
         if (!p || !p.id) return;
         if (p.title) titles[p.id] = String(p.title);
         if (p.status) statuses[p.id] = String(p.status);
+        flags[p.id] = { template: !!p.is_template, child: !!p.parent_prd_id };
       });
-      return { titles, statuses };
+      return { titles, statuses, flags };
     })
-    .catch(() => ({ titles: {}, statuses: {} }));
+    .catch(() => ({ titles: {}, statuses: {}, flags: {} }));
 }
 window.loadAutomationPrdInfo = loadAutomationPrdInfo;
 
@@ -24547,7 +24608,10 @@ function _automationPendingInsertsHTML(a) {
     const label = String(p.name || p.prd_id || p.id || '');
     const by = p.actor ? `<span class="automation-pending-insert-by">${escHtml(t('automation_pending_insert_by', [p.actor]))}</span>` : '';
     const reason = p.reason ? `<span class="automation-pending-insert-reason">${escHtml(p.reason)}</span>` : '';
-    return `<li class="automation-pending-insert" data-insert-id="${escHtml(p.id)}"><span class="automation-pending-insert-name">${escHtml(label)}</span>${by}${reason}</li>`;
+    const approve = _AUTOMATION_EDITABLE_STATUSES.includes(String(a.status || ''))
+      ? `<button type="button" class="btn-secondary automation-approve-insert" data-insert-id="${escHtml(p.id)}" onclick="automationApproveInsert('${escJsAttr(p.id)}')">${escHtml(t('automation_approve_insert'))}</button>`
+      : '';
+    return `<li class="automation-pending-insert" data-insert-id="${escHtml(p.id)}"><span class="automation-pending-insert-name">${escHtml(label)}</span>${by}${reason}${approve}</li>`;
   }).join('');
   return _automationDetailSection('automation_pending_inserts', `<ul class="automation-pending-inserts">${rows}</ul>`);
 }
@@ -24638,6 +24702,7 @@ function renderAutomationDetail(id, opts) {
     if (seq !== _automationDetailSeq || st.detailId !== id) return;
     st.prdTitles = info.titles;
     st.prdStatuses = info.statuses;
+    st.prdFlags = info.flags;
     if (res.error || !res.data || typeof res.data !== 'object') {
       if (quiet) return;
       st.detail = null;
@@ -24822,6 +24887,237 @@ function automationShowStalePrompt(message) {
   });
 }
 window.automationShowStalePrompt = automationShowStalePrompt;
+
+// ── Automation detail: member operations ─────────────────────────────────────
+//
+// Per-member skip, insert, remove and edge editing, plus approving a held
+// insert. Each goes through automationControl, so every call carries the
+// loaded version and a 409 opens the stale prompt. The buttons sit on the
+// member's own card, and each dialog title names the member it acts on.
+
+function _automationCurrentId() {
+  const st = _automationState;
+  return (st.detail && st.detail.id) || st.detailId || '';
+}
+
+function _automationFieldValue(id) {
+  const el = document.getElementById(id);
+  return el && el.value != null ? String(el.value) : '';
+}
+
+// _automationMemberLabel is "title (id)" for a member of the open Automation.
+function _automationMemberLabel(memberId) {
+  const m = _automationFindMember(memberId);
+  if (!m) return memberId;
+  return _automationMemberTitle(m, _automationStripContext(), _automationMemberRef(m).slice(0, 8)) + ' (' + m.id + ')';
+}
+
+// _automationActingTitle puts the member a dialog acts on into its title.
+function _automationActingTitle(titleKey, memberId) {
+  return t(titleKey) + ' — ' + t('automation_acting_on_branch') + ': ' + _automationMemberLabel(memberId);
+}
+
+function _automationSelectHTML(id, labelKey, options, current) {
+  const opts = options.map(([value, label]) =>
+    `<option value="${escHtml(value)}"${value === current ? ' selected' : ''}>${escHtml(label)}</option>`).join('');
+  return `<label class="automation-dialog-field" style="display:block;margin:8px 0;"><span class="automation-dialog-label" style="display:block;font-size:12px;color:var(--text2);">${escHtml(t(labelKey))}</span>`
+    + `<select id="${id}" class="automation-dialog-select" style="width:100%;">${opts}</select></label>`;
+}
+
+// openAutomationSkipDialog asks which outcome a skipped member takes and an
+// optional reason.
+function openAutomationSkipDialog(memberId) {
+  const id = _automationCurrentId();
+  const edges = _AUTOMATION_OUTCOME_EDGES.map(e => [e, t('automation_edge_' + e)]);
+  showModal({
+    title: _automationActingTitle('automation_skip_dialog_title', memberId),
+    body: _automationSelectHTML('automationSkipEdge', 'automation_skip_edge_label', edges, 'on_complete')
+      + `<label class="automation-dialog-field" style="display:block;margin:8px 0;"><span class="automation-dialog-label" style="display:block;font-size:12px;color:var(--text2);">${escHtml(t('automation_field_added_reason'))}</span>`
+      + '<input type="text" id="automationSkipReason" class="automation-dialog-input" style="width:100%;"></label>',
+    confirmLabel: t('automation_skip_member'),
+    onConfirm: () => {
+      const edge = _automationFieldValue('automationSkipEdge');
+      automationControl(id, 'skip_member', {
+        member_id: memberId,
+        edge: _AUTOMATION_OUTCOME_EDGES.includes(edge) ? edge : 'on_complete',
+        reason: _automationFieldValue('automationSkipReason').trim(),
+      });
+      return true;
+    },
+  });
+}
+window.openAutomationSkipDialog = openAutomationSkipDialog;
+
+// automationRemoveMember confirms, then removes a member that has not started.
+function automationRemoveMember(memberId) {
+  const id = _automationCurrentId();
+  showModal({
+    title: _automationActingTitle('automation_remove_member', memberId),
+    body: `<p class="automation-remove-confirm">${escHtml(t('automation_remove_confirm'))}</p>`,
+    confirmLabel: t('automation_remove_member'),
+    onConfirm: () => {
+      automationControl(id, 'remove_member', { member_id: memberId });
+      return true;
+    },
+  });
+}
+window.automationRemoveMember = automationRemoveMember;
+
+// openAutomationReorderDialog edits a member's three outgoing edges. Each
+// select offers every other member by title and "stop and alert" (empty).
+function openAutomationReorderDialog(memberId) {
+  const id = _automationCurrentId();
+  const cur = _automationFindMember(memberId) || {};
+  const detail = _automationState.detail;
+  const others = (detail && Array.isArray(detail.members) ? detail.members : [])
+    .filter(x => x && x.id && x.id !== memberId);
+  const options = [['', t('automation_edge_stop')]].concat(others.map(x => [x.id, _automationMemberLabel(x.id)]));
+  const fields = [['automationReorderComplete', 'on_complete'], ['automationReorderBlocked', 'on_blocked'], ['automationReorderFailed', 'on_failed']];
+  showModal({
+    title: _automationActingTitle('automation_reorder_dialog_title', memberId),
+    body: fields.map(([fid, edge]) => _automationSelectHTML(fid, 'automation_edge_' + edge, options, String(cur[edge] || ''))).join(''),
+    confirmLabel: t('automation_reorder_edges'),
+    onConfirm: () => {
+      automationControl(id, 'reorder_edges', {
+        member_id: memberId,
+        on_complete: _automationFieldValue('automationReorderComplete'),
+        on_blocked: _automationFieldValue('automationReorderBlocked'),
+        on_failed: _automationFieldValue('automationReorderFailed'),
+      });
+      return true;
+    },
+  });
+}
+window.openAutomationReorderDialog = openAutomationReorderDialog;
+
+// automationApproveInsert approves a held insert; the pending insert's id is
+// the member id it gets.
+function automationApproveInsert(memberId) {
+  return automationControl(_automationCurrentId(), 'approve_insert', { member_id: memberId });
+}
+window.automationApproveInsert = automationApproveInsert;
+
+// ── Insert picker ────────────────────────────────────────────────────────────
+// The insert dialog keeps its choice here: the picked Automaton and the rows
+// the picker can show, each with the reason it is unavailable ('' = pickable).
+const _automationInsert = { picked: '', rows: [] };
+
+// _automationOwners maps an Automaton id to the other non-finished Automation
+// that holds it (as a member or a held insert), from the loaded Automations.
+function _automationOwners(list, currentId) {
+  const owners = {};
+  (Array.isArray(list) ? list : []).forEach(x => {
+    if (!x || !x.id || x.id === currentId || ['completed', 'cancelled'].includes(x.status)) return;
+    const ids = (Array.isArray(x.members) ? x.members : []).map(m => m && m.prd_id)
+      .concat((Array.isArray(x.pending_inserts) ? x.pending_inserts : []).map(p => p && p.prd_id));
+    ids.forEach(prdId => { if (prdId && !owners[prdId]) owners[prdId] = x.name || x.id; });
+  });
+  return owners;
+}
+
+// _automationPickerRows lists every Automaton the state knows, with the reason
+// it cannot be inserted: a template, a child Automaton, a member of another
+// active Automation, or already in this one.
+function _automationPickerRows(list) {
+  const st = _automationState;
+  const a = st.detail || {};
+  const own = new Set((Array.isArray(a.members) ? a.members : []).map(m => m && m.prd_id)
+    .concat((Array.isArray(a.pending_inserts) ? a.pending_inserts : []).map(p => p && p.prd_id)).filter(Boolean));
+  const owners = _automationOwners(list, a.id);
+  const ids = new Set(Object.keys(st.prdTitles || {}).concat(Object.keys(st.prdFlags || {})));
+  return [...ids].map(prdId => {
+    const flags = (st.prdFlags || {})[prdId] || {};
+    let reason = '';
+    if (own.has(prdId)) reason = t('automation_picker_reason_member');
+    else if (flags.template) reason = t('automation_picker_reason_template');
+    else if (flags.child) reason = t('automation_picker_reason_child');
+    else if (owners[prdId]) reason = t('automation_picker_reason_owned', [owners[prdId]]);
+    return { id: prdId, title: (st.prdTitles || {})[prdId] || prdId, reason };
+  }).sort((x, y) => (x.reason ? 1 : 0) - (y.reason ? 1 : 0) || x.title.localeCompare(y.title));
+}
+
+function _automationPickerHTML(query) {
+  const q = String(query || '').trim().toLowerCase();
+  const rows = _automationInsert.rows.filter(r => !q || r.title.toLowerCase().includes(q) || r.id.toLowerCase().includes(q));
+  if (!rows.length) return `<div class="automation-picker-empty" style="color:var(--text2);padding:6px;">${escHtml(t('automation_picker_empty'))}</div>`;
+  return rows.map(r => {
+    const off = !!r.reason;
+    const note = off ? `<span class="automation-picker-reason" style="font-size:11px;">${escHtml(t('automation_picker_unavailable', [r.reason]))}</span>` : '';
+    return `<label class="automation-picker-item" data-prd-id="${escHtml(r.id)}" data-unavailable="${off}" style="display:flex;gap:6px;align-items:baseline;flex-wrap:wrap;padding:3px 0;${off ? 'opacity:0.5;' : ''}">`
+      + `<input type="radio" name="automationInsertPick" value="${escHtml(r.id)}"${off ? ' disabled' : ''}${r.id === _automationInsert.picked ? ' checked' : ''} onchange="automationPickInsertAutomaton('${escJsAttr(r.id)}')">`
+      + `<span class="automation-picker-title">${escHtml(r.title)}</span><span class="automation-chip">${escHtml(r.id.slice(0, 8))}</span>${note}</label>`;
+  }).join('');
+}
+
+// automationPickInsertAutomaton records the Automaton chosen in the picker; an
+// unavailable one is ignored.
+function automationPickInsertAutomaton(prdId) {
+  const row = _automationInsert.rows.find(r => r.id === prdId);
+  if (row && !row.reason) _automationInsert.picked = prdId;
+}
+window.automationPickInsertAutomaton = automationPickInsertAutomaton;
+
+// automationFilterInsertPicker redraws the picker list for the search text.
+function automationFilterInsertPicker() {
+  const el = document.getElementById('automationInsertPicker');
+  if (el) el.innerHTML = _automationPickerHTML(_automationFieldValue('automationInsertSearch'));
+}
+window.automationFilterInsertPicker = automationFilterInsertPicker;
+
+// openAutomationInsertDialog inserts an Automaton before or after the member
+// anchorMemberId (position 'before' or 'after'). It refreshes the Automaton
+// list and the Automations first, so the picker's unavailable reasons are
+// current, then opens the dialog. Resolves once it is open (or at once when
+// there is no slot for the position).
+function openAutomationInsertDialog(anchorMemberId, position) {
+  const id = _automationCurrentId();
+  const st = _automationState;
+  const pos = position === 'before' ? 'before' : 'after';
+  const placement = _automationInsertPlacement(st.detail || {}, anchorMemberId, pos);
+  if (!placement) return Promise.resolve();
+  const listRequest = automationRequest('GET', '/api/automations').then(
+    data => (Array.isArray(data) ? data : (data && Array.isArray(data.automations) ? data.automations : st.list)),
+    () => st.list);
+  return Promise.all([loadAutomationPrdInfo(), listRequest]).then(([info, list]) => {
+    st.prdTitles = info.titles;
+    st.prdStatuses = info.statuses;
+    st.prdFlags = info.flags;
+    _automationInsert.picked = '';
+    _automationInsert.rows = _automationPickerRows(list);
+    const field = (labelKey, input) =>
+      `<label class="automation-dialog-field" style="display:block;margin:8px 0;"><span class="automation-dialog-label" style="display:block;font-size:12px;color:var(--text2);">${escHtml(t(labelKey))}</span>${input}</label>`;
+    showModal({
+      title: _automationActingTitle(pos === 'before' ? 'automation_insert_before' : 'automation_insert_after', anchorMemberId),
+      body: `<input type="search" id="automationInsertSearch" class="automation-dialog-input" style="width:100%;" placeholder="${escHtml(t('automation_picker_search'))}" aria-label="${escHtml(t('automation_picker_search'))}" oninput="automationFilterInsertPicker()">`
+        + `<div id="automationInsertPicker" class="automation-picker" style="max-height:180px;overflow:auto;margin:6px 0;">${_automationPickerHTML('')}</div>`
+        + `<label class="automation-dialog-field" style="display:flex;gap:6px;align-items:center;margin:8px 0;"><input type="checkbox" id="automationInsertUrgent"${placement.urgent ? ' checked disabled' : ''}> ${escHtml(t('automation_insert_urgent'))}</label>`
+        + field('automation_insert_reason_label', '<textarea id="automationInsertReason" class="automation-dialog-input" rows="3" style="width:100%;" required></textarea>')
+        + '<div id="automationInsertError" class="automation-insert-error" role="alert" style="color:var(--error);font-size:12px;margin-top:6px;"></div>',
+      confirmLabel: t(pos === 'before' ? 'automation_insert_before' : 'automation_insert_after'),
+      onConfirm: () => {
+        const fail = key => {
+          const msg = document.getElementById('automationInsertError');
+          if (msg) msg.innerHTML = escHtml(t(key));
+          return false;
+        };
+        const reason = _automationFieldValue('automationInsertReason').trim();
+        if (!reason) return fail('automation_insert_reason_required');
+        if (!_automationInsert.picked) return fail('automation_picker_required');
+        const box = document.getElementById('automationInsertUrgent');
+        // An urgent insert takes the next slot, so the server needs `after` empty.
+        const urgent = placement.urgent || !!(box && box.checked);
+        automationControl(id, 'insert_member', {
+          member: { prd_id: _automationInsert.picked },
+          after: urgent ? '' : placement.after,
+          urgent,
+          reason,
+        });
+        return true;
+      },
+    });
+  });
+}
+window.openAutomationInsertDialog = openAutomationInsertDialog;
 
 // openAutomationMemberPRD opens the member Automaton's page from the Automata
 // tab. Its back control returns here: _backToAutomataList reads the id.

@@ -1989,5 +1989,21 @@
   "automation_cancel_confirm": "Cancelar automatización",
   "automation_stale_title": "Desactualizado",
   "automation_stale_message": "Esta automatización se cambió en otro lugar. Recárgala antes de hacer cambios.",
-  "automation_stale_reload": "Recargar"
+  "automation_stale_reload": "Recargar",
+  "automation_insert_reason_required": "Se requiere un motivo para insertar un miembro",
+  "automation_insert_urgent": "Insertar con urgencia",
+  "automation_picker_search": "Buscar autómatas por nombre o ID",
+  "automation_picker_unavailable": "No disponible: %1$s",
+  "automation_approve_insert": "Aprobar inserción",
+  "automation_skip_dialog_title": "Omitir este miembro",
+  "automation_skip_edge_label": "Tomar este resultado",
+  "automation_reorder_dialog_title": "Editar aristas salientes",
+  "automation_remove_confirm": "¿Quitar este miembro de la automatización?",
+  "automation_picker_empty": "Ningún autómata coincide",
+  "automation_picker_required": "Elige un autómata para insertar",
+  "automation_picker_reason_template": "es una plantilla",
+  "automation_picker_reason_child": "es un autómata hijo",
+  "automation_picker_reason_owned": "ya pertenece a la automatización %1$s",
+  "automation_picker_reason_member": "ya está en esta automatización",
+  "automation_member_actions": "Acciones del miembro"
 }
