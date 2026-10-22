@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.66 — A daemon restart no longer kills running claude-code workers
+
+### Fixed
+
+- **A daemon restart no longer ends in-flight claude-code Automaton workers.** Task-echo suppression now uses the persisted `TaskDeliveredAt` and the task text, so the task the daemon typed into the worker (and its placeholder) is not mistaken for a completion after a restart. A completion marker counts only after the echoed task text and only as a real summary line. Live delivered-task sessions are adopted on resume, and boot-resume adopts a claude-code worker the same way it already adopted other backends. New opt-in live test `TestDaemonRestartAdoptsLiveClaudeCodeWorkerLive` (`DW_LIVE_RESTART_TEST=1`, sandbox daemon only); walkthrough in `docs/howto/autonomous-recovery.md`. No config keys, REST/MCP/PWA contracts or locale strings changed, so `docs/config-reference.yaml`, `docs/operations.md`, Mobile-Parity and Localization are N/A.
+
 ## v9.5.65 — Automation coordinator: the queue advances itself
 
 ### Added
