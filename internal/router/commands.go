@@ -354,6 +354,14 @@ const (
 	//   "result delete name=<n>"
 	CmdResultStore CommandType = "result"
 
+	// CmdScheduleResults — read surface for scheduled jobs' structured
+	// result panel over chat (post stays on the CLI/MCP/API paths):
+	//   "schedule-results"                → one line per schedule: last status, summary, age
+	//   "schedule-results list"           → same as above
+	//   "schedule-results <name>"         → recent history for one schedule
+	//   "schedule-results history <name>" → same as above
+	CmdScheduleResults CommandType = "schedule_results"
+
 	CmdUnknown CommandType = "unknown"
 )
 
@@ -495,6 +503,10 @@ type Command struct {
 	ResultPayload string // for put: JSON payload string
 	ResultTTL     int    // for put: TTL in seconds (0=no expiry)
 	ResultPrefix  string // for list: prefix filter
+
+	// CmdScheduleResults fields.
+	ScheduleResultsVerb string // "" | "list" | "history"
+	ScheduleResultsName string // for history: schedule name
 }
 
 // SessionVerb values.
@@ -986,6 +998,9 @@ func Parse(text string) Command {
 			}
 		}
 		return cmd
+
+	case lower == "schedule-results" || lower == "schedule-results list" || strings.HasPrefix(lower, "schedule-results "):
+		return parseScheduleResultsCommand(text)
 
 	case strings.HasPrefix(lower, "schedule "):
 		// format: "schedule <id>: <when> <command>"
@@ -1644,6 +1659,32 @@ func parseResultStoreCommand(text string) Command {
 	return cmd
 }
 
+// parseScheduleResultsCommand parses a schedule-results command (read-only
+// list + per-schedule history of scheduled jobs' structured results).
+// Formats:
+//
+//	schedule-results
+//	schedule-results list
+//	schedule-results <name>
+//	schedule-results history <name>
+func parseScheduleResultsCommand(text string) Command {
+	parts := strings.Fields(text)
+	if len(parts) < 2 {
+		return Command{Type: CmdScheduleResults, ScheduleResultsVerb: "list"}
+	}
+	verb := strings.ToLower(parts[1])
+	if verb == "list" {
+		return Command{Type: CmdScheduleResults, ScheduleResultsVerb: "list"}
+	}
+	// Any other first token starts the schedule name. "history" is accepted
+	// as an alias so it reads naturally next to the CLI
+	// `datawatch schedule-results history <name>`.
+	if verb == "history" && len(parts) > 2 {
+		return Command{Type: CmdScheduleResults, ScheduleResultsVerb: "history", ScheduleResultsName: strings.Join(parts[2:], " ")}
+	}
+	return Command{Type: CmdScheduleResults, ScheduleResultsVerb: "history", ScheduleResultsName: strings.TrimSpace(text[len("schedule-results"):])}
+}
+
 // HelpText returns the help message sent back to the messaging backend.
 func HelpText(hostname string) string {
 	return fmt.Sprintf(`[%s] datawatch commands:
@@ -1660,6 +1701,9 @@ schedule <id>: <when> <cmd>     schedule a command (when: now, HH:MM, or cancel 
 schedule session_name=<n> command=<cmd> [cron=<expr>] [name=<sched-name>] [at=<HH:MM>]
 schedule spawn task=<t> [dir=<d>] [backend=<b>] [cron=<c>] [name=<n>]
 schedule cancel id=<id>|name=<sched-name>
+schedule-results               last status + summary per scheduled job
+schedule-results list           same as above
+schedule-results <name>         recent results history for one schedule
 alerts [n|system]               show last N alerts or system-only alerts
 stats                           show system statistics (CPU, memory, disk, sessions)
 capacity                        show Automata capacity pools, holders and wait queue

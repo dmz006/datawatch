@@ -471,6 +471,21 @@ alerts 10
 
 ---
 
+### `schedule-results`
+
+Read the **scheduled-job result panel** — the same data the PWA panel and the `datawatch schedule-results` CLI show (this channel command is read-only; posting is done by the job itself with `datawatch schedule-results post`).
+
+| Syntax | Description |
+|---|---|
+| `schedule-results` | One line per schedule: last status icon (✓ ok / ⚠ warn / ✗ error), one-line summary, elapsed time |
+| `schedule-results list` | Same as above |
+| `schedule-results <schedule_name>` | Recent history for that schedule, most recent first (up to 10 lines; the complete history is on the CLI/PWA) |
+| `schedule-results history <schedule_name>` | Alias for the previous one |
+
+Examples:
+- `schedule-results` → all schedules and their most recent result
+- `schedule-results imap-hourly-rules` → recent results for that one schedule
+
 ### `setup <service>`
 
 Start an interactive setup wizard for a backend or subsystem. Can be sent from any connected messaging channel.

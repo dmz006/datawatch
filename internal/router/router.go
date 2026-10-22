@@ -1176,6 +1176,8 @@ func (r *Router) handleMessage(msg messaging.Message) {
 		r.handleDiscussionSubCmd(cmd)
 	case CmdResultStore: // BL360
 		r.handleResultCmd(cmd)
+	case CmdScheduleResults:
+		r.handleScheduleResultsCmd(cmd)
 	case CmdHelp:
 		r.send(HelpText(r.hostname))
 	default:
