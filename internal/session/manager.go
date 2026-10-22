@@ -2554,6 +2554,8 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 					if current.OneShot {
 						visibleScanLimit = len(capLines)
 					}
+					echoEnd := lastTaskEchoIndex(capLines, current.Task)
+					echoLocated := false
 					for i, checked := len(capLines)-1, 0; i >= 0 && checked < visibleScanLimit; i-- {
 						l := strings.TrimSpace(capLines[i])
 						if l == "" {
@@ -2576,8 +2578,12 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 							m.debugf("StartScreenCapture: skipping placeholder line=%q session=%s", l, sess.FullID)
 							continue
 						}
+						if !echoGate(i, echoEnd) {
+							break
+						}
 						for _, pat := range m.effectiveCompletionPatterns() {
-							if matchesCompletionPattern(l, pat) {
+							if isRealCompletionLine(l, pat) {
+								echoLocated = echoEnd >= 0
 								lRunes := []rune(l)
 								lastR := ""
 								if len(lRunes) > 0 {
@@ -2605,6 +2611,7 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 					if !completionDetected && current.OneShot {
 						if sb, sbErr := m.tmux.CapturePaneScrollback(sess.TmuxSession, 500); sbErr == nil {
 							sbLines := strings.Split(StripANSI(sb), "\n")
+							sbEchoEnd := lastTaskEchoIndex(sbLines, current.Task)
 							for i, checked := len(sbLines)-1, 0; i >= 0 && checked < 500; i-- {
 								l := strings.TrimSpace(sbLines[i])
 								if l == "" {
@@ -2619,8 +2626,12 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 								if isCompletionPlaceholder(l) {
 									continue
 								}
+								if !echoGate(i, sbEchoEnd) {
+									break
+								}
 								for _, pat := range m.effectiveCompletionPatterns() {
-									if matchesCompletionPattern(l, pat) {
+									if isRealCompletionLine(l, pat) {
+										echoLocated = sbEchoEnd >= 0
 										sbRunes := []rune(l)
 										sbLast := ""
 										if len(sbRunes) > 0 {
@@ -2649,10 +2660,8 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 					// this guard; StartScreenCapture needs a longer window because the box
 					// stays on screen permanently, and needs to start BEFORE SendInput so
 					// the input-field rendering phase is also covered.
-					if completionDetected {
-						m.mu.Lock()
-						deliveredAt, wasDelivered := m.taskDeliveredAt[sess.FullID]
-						m.mu.Unlock()
+					if completionDetected && !echoLocated {
+						deliveredAt, wasDelivered := m.taskDeliveredTime(sess)
 						if wasDelivered && time.Since(deliveredAt) < 5*time.Minute {
 							m.debugf("StartScreenCapture: suppressing completion within 5min task-echo window for %s (elapsed=%v)", sess.FullID, time.Since(deliveredAt).Round(time.Second))
 							completionDetected = false
@@ -3087,12 +3096,19 @@ func (m *Manager) ClaimTaskDelivery(fullID string) bool {
 // summary ...>") rather than a real model completion: it contains the marker
 // followed by an angle-bracket placeholder mentioning "summary".
 func isCompletionPlaceholder(l string) bool {
-	i := strings.Index(l, "<")
-	if i < 0 {
-		return false
+	if i := strings.Index(l, "DATAWATCH_COMPLETE"); i >= 0 {
+		rest := l[i:]
+		if j := strings.Index(rest, ":"); j >= 0 && strings.HasPrefix(strings.TrimSpace(rest[j+1:]), "<") {
+			// "DATAWATCH_COMPLETE: <one-line plain-text ..." — also covers a
+			// placeholder wrapped before the word "summary".
+			return true
+		}
+		k := strings.Index(l, "<")
+		return k >= 0 && strings.Contains(l[k:], "summary")
 	}
-	rest := l[i:]
-	return strings.Contains(rest, "summary") && strings.Contains(l, "DATAWATCH_COMPLETE")
+	// Wrapped continuation of the placeholder ("summary of what was done>").
+	t := strings.TrimSpace(l)
+	return strings.HasSuffix(t, ">") && !strings.Contains(t, "<") && strings.Contains(t, "summary")
 }
 
 // ReleaseTaskDelivery undoes a ClaimTaskDelivery whose send failed, so a
@@ -5431,6 +5447,11 @@ func (m *Manager) matchPromptInLines(lines []string, n int) (matched string, con
 		if m.matchesSelfUpdateDialog(l) {
 			continue
 		}
+		// The echoed completion instruction ("DATAWATCH_COMPLETE: <one-line ...>")
+		// ends in ">" but is task text, never a prompt.
+		if isCompletionPlaceholder(l) {
+			continue
+		}
 		for _, pat := range m.effectivePromptPatterns() {
 			match := false
 			trimPat := strings.TrimRight(pat, " ")
@@ -6269,6 +6290,8 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 						if current.OneShot {
 							visibleScanLimitCh = len(capLines)
 						}
+						chEchoEnd := lastTaskEchoIndex(capLines, current.Task)
+						chEchoLocated := false
 						for ci, cc := len(capLines)-1, 0; ci >= 0 && cc < visibleScanLimitCh; ci-- {
 							cl := strings.TrimSpace(capLines[ci])
 							if cl == "" {
@@ -6281,9 +6304,13 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 							if strings.HasSuffix(cl, "┃") || strings.HasSuffix(cl, "│") {
 								continue
 							}
+							if !echoGate(ci, chEchoEnd) {
+								break
+							}
 							for _, pat := range m.effectiveCompletionPatterns() {
-								if strings.HasPrefix(cl, pat) {
+								if isRealCompletionLine(cl, pat) {
 									completionFound = true
+									chEchoLocated = chEchoEnd >= 0
 									break
 								}
 							}
@@ -6295,6 +6322,7 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 						if !completionFound && current.OneShot {
 							if sb, sbErr := m.tmux.CapturePaneScrollback(sess.TmuxSession, 50); sbErr == nil {
 								sbLines := strings.Split(StripANSI(sb), "\n")
+								sbChEchoEnd := lastTaskEchoIndex(sbLines, current.Task)
 								for ci, cc := len(sbLines)-1, 0; ci >= 0 && cc < 50; ci-- {
 									cl := strings.TrimSpace(sbLines[ci])
 									if cl == "" {
@@ -6305,9 +6333,13 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 									if strings.HasSuffix(cl, "┃") || strings.HasSuffix(cl, "│") {
 										continue
 									}
+									if !echoGate(ci, sbChEchoEnd) {
+										break
+									}
 									for _, pat := range m.effectiveCompletionPatterns() {
-										if strings.HasPrefix(cl, pat) {
+										if isRealCompletionLine(cl, pat) {
 											completionFound = true
+											chEchoLocated = sbChEchoEnd >= 0
 											break
 										}
 									}
@@ -6320,10 +6352,8 @@ func (m *Manager) monitorOutput(ctx context.Context, sess *Session, projGit *Pro
 						// Same task-echo suppression as StartScreenCapture: suppress completion
 						// for 5 minutes after task delivery so the input-field rendering phase
 						// (where DATAWATCH_COMPLETE: appears as plain text) cannot falsely trigger.
-						if completionFound {
-							m.mu.Lock()
-							deliveredAt, wasDelivered := m.taskDeliveredAt[sess.FullID]
-							m.mu.Unlock()
+						if completionFound && !chEchoLocated {
+							deliveredAt, wasDelivered := m.taskDeliveredTime(sess)
 							if wasDelivered && time.Since(deliveredAt) < 5*time.Minute {
 								m.debugf("monitorOutput structured-channel: suppressing completion within 5min task-echo window for %s", sess.FullID)
 								completionFound = false
@@ -6613,8 +6643,8 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 				// loop. Suppress completion detection for 30 s after restart.
 				m.mu.Lock()
 				restartTime, wasRestarted := m.restartedAt[sess.FullID]
-				deliveredAt, wasDelivered := m.taskDeliveredAt[sess.FullID]
 				m.mu.Unlock()
+				deliveredAt, wasDelivered := m.taskDeliveredTime(sess)
 				if wasRestarted && time.Since(restartTime) < 30*time.Second {
 					m.debugf("processOutputLine: suppressing %q within 30s post-restart grace window for %s", pat, sess.FullID)
 					return
@@ -6832,12 +6862,12 @@ func (m *Manager) processOutputLine(ctx context.Context, sess *Session, projGit 
 	// `line` is already StripANSI'd at function entry (line 3731).
 	completionLine := strings.TrimSpace(line)
 	for _, pat := range m.effectiveCompletionPatterns() {
-		if matchesCompletionPattern(completionLine, pat) {
+		if matchesCompletionPattern(completionLine, pat) && !isCompletionPlaceholder(completionLine) {
 			// Same post-restart grace window as the structured-channel path above.
 			m.mu.Lock()
 			restartTime, wasRestarted := m.restartedAt[sess.FullID]
-			deliveredAt, wasDelivered := m.taskDeliveredAt[sess.FullID]
 			m.mu.Unlock()
+			deliveredAt, wasDelivered := m.taskDeliveredTime(sess)
 			if wasRestarted && time.Since(restartTime) < 30*time.Second {
 				m.debugf("processOutputLine: suppressing %q within 30s post-restart grace window for %s", pat, sess.FullID)
 				return
