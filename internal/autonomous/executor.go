@@ -1082,9 +1082,10 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 			}
 
 			// BL203 (v5.4.0) + BL381 — most-specific LLM override wins.
-			// per-task → per-story → per-PRD → cfg.ExecutionBackend → global session.llm_backend.
+			// per-task → per-story → per-PRD → Automation → cfg.ExecutionBackend → global session.llm_backend.
 			story := findStory(prd, t.StoryID)
-			backend, model := resolveTaskBackendModel(t, story, prd, m.cfg.ExecutionBackend)
+			auto := m.AutomationForPRD(prd)
+			backend, model, execSource := resolveTaskExecutionLLM(t, story, prd, auto, m.cfg.ExecutionBackend)
 			// Backstop for the Run preflight: never spawn an invalid pair.
 			if merr := validateModelForBackend(backend, model); merr != nil {
 				mismatch := fmt.Errorf("task %s not spawned: %w", t.ID, merr)
@@ -1099,13 +1100,12 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				}
 				return mismatch
 			}
-			effort := t.Effort
-			if effort == "" && story != nil {
-				effort = story.Effort
-			}
-			if effort == "" {
-				effort = prd.Effort
-			}
+			// Record which level supplied the backend before the session is
+			// spawned, so it is visible while the task runs; a later attempt
+			// overwrites it.
+			m.store.WithLock(func() { t.ExecutorSource = execSource })
+			_ = m.store.SaveTask(t)
+			effort := resolveTaskEffort(t, story, prd, auto)
 			// v5.27.5 — most-specific permission-mode wins: per-task →
 			// per-PRD → SpawnFn falls through to session default.
 			permMode := t.PermissionMode
@@ -2119,8 +2119,29 @@ func findStory(prd *PRD, storyID string) *Story {
 	return nil
 }
 
-// resolveTaskBackendModel resolves a task's effective backend and model
-// (BL203 + BL381, most-specific wins: task → story → PRD → fallback).
+// Execution-source values: the level that supplied a task's execution
+// backend (recorded as Task.ExecutorSource). "global" means no level set a
+// backend and the fallback backend was used. Mirrors verifier_source.
+const (
+	ExecutorSourceTask       = "task"
+	ExecutorSourceStory      = "story"
+	ExecutorSourcePRD        = "prd"
+	ExecutorSourceAutomation = "automation"
+	ExecutorSourceGlobal     = "global"
+)
+
+// resolveTaskBackendModel resolves a task's effective backend and model.
+// It is resolveTaskExecutionLLM without the source.
+func resolveTaskBackendModel(t *Task, story *Story, prd *PRD, auto *Automation, fallbackBackend string) (backend, model string) {
+	backend, model, _ = resolveTaskExecutionLLM(t, story, prd, auto, fallbackBackend)
+	return backend, model
+}
+
+// resolveTaskExecutionLLM resolves a task's effective backend and model
+// (BL203 + BL381, most-specific wins: task → story → PRD → Automation →
+// fallback) and reports which level supplied the backend (one of the
+// ExecutorSource* values). auto is the Automation the task's PRD belongs
+// to, or nil for a standalone PRD.
 //
 // v8.37.2 — model is resolved from the SAME level backend was found at,
 // not independently. A model string belongs to whichever backend it was
@@ -2134,32 +2155,62 @@ func findStory(prd *PRD, storyID string) *Story {
 // stale "ollama/qwen3.8:27b" model string through to the claude-code
 // session, which doesn't understand it and got stuck on its own
 // interactive "unknown model" prompt instead of completing.
-func resolveTaskBackendModel(t *Task, story *Story, prd *PRD, fallbackBackend string) (backend, model string) {
+func resolveTaskExecutionLLM(t *Task, story *Story, prd *PRD, auto *Automation, fallbackBackend string) (backend, model, source string) {
 	backend, model = t.Backend, t.Model
 	switch {
 	case backend != "":
 		// task-level backend override: model is the task's own
 		// (possibly empty = that backend's default).
+		source = ExecutorSourceTask
 	case story != nil && story.Backend != "":
 		backend = story.Backend
+		source = ExecutorSourceStory
 		if model == "" {
 			model = story.Model
 		}
 	case prd.Backend != "":
 		backend = prd.Backend
+		source = ExecutorSourcePRD
 		if model == "" {
 			model = prd.Model
 		}
+	case auto != nil && auto.Backend != "":
+		backend = auto.Backend
+		source = ExecutorSourceAutomation
+		if model == "" {
+			model = auto.Model
+		}
 	default:
 		backend = fallbackBackend
+		source = ExecutorSourceGlobal
 		if model == "" && story != nil {
 			model = story.Model
 		}
 		if model == "" {
 			model = prd.Model
 		}
+		if model == "" && auto != nil {
+			model = auto.Model
+		}
 	}
-	return backend, model
+	return backend, model, source
+}
+
+// resolveTaskEffort resolves a task's execution effort: task → story → PRD →
+// Automation. Empty when no level sets one; the global effort fallback is
+// applied downstream.
+func resolveTaskEffort(t *Task, story *Story, prd *PRD, auto *Automation) Effort {
+	effort := t.Effort
+	if effort == "" && story != nil {
+		effort = story.Effort
+	}
+	if effort == "" {
+		effort = prd.Effort
+	}
+	if effort == "" && auto != nil {
+		effort = auto.Effort
+	}
+	return effort
 }
 
 // resolveGuardrailBackendModel (BL416 Phase 1) was removed in v9.10.18:

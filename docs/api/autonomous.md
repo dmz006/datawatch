@@ -70,6 +70,8 @@ POST   /api/automations              create (returns draft, version 1); body: {n
 GET    /api/automations/{id}         get one
 PUT    /api/automations/{id}         update; body: create fields + expected_version (required)
 DELETE /api/automations/{id}         delete (draft/completed/cancelled only); body: {actor?, reason?}
+POST   /api/automations/{id}/set_llm               set the execution and planning defaults; body: {backend?, model?, effort?, planning_backend?, planning_model?, expected_version?, actor?, reason?}
+POST   /api/automations/{id}/set_verification_llm  set the verification default; body: {backend?, model?, effort?, expected_version?, actor?, reason?}
 
 # Lifecycle event subscriptions (BL427 — PRD lifecycle events, phase 3)
 GET    /api/autonomous/subscriptions        list persisted lifecycle event subscriptions (optional ?owner= lists only those created by the named owner)
@@ -206,7 +208,7 @@ variants. `verification_backend` must be a configured LLM name (unknown
 Automaton is `needs_review`, `revisions_asked` or `cancelled`. The
 response is the updated Automaton.
 
-Resolution: task → story → Automaton → global
+Resolution: task → story → Automaton → Automation → global
 `autonomous.verification_backend` / `verification_model` /
 `verification_effort`. The model is taken from the same level the
 backend was found at; effort resolves independently. A backend set at
@@ -218,7 +220,8 @@ runs as a session.
 Each verification records what actually ran on the task's
 `verification` object: `verifier_backend`, `verifier_model`,
 `verifier_effort` and `verifier_source` (`task`, `story`, `prd` for the
-Automaton level, `global`, or `pool`).
+Automaton level, `automation` for the default set on the Automation the
+Automaton belongs to, `global`, or `pool`).
 
 ```bash
 # a stronger verifier for one risky task
@@ -617,6 +620,119 @@ pause|resume|cancel|skip|insert|remove|edges|approve` (`cancel` requires
 pause|resume|cancel|skip|insert|remove|edges|approve` (`cancel` requires
 `in-flight=true` or `in-flight=false`). `openapi.yaml` documents the
 endpoints.
+
+### Model-tier defaults (`set_llm` and `set_verification_llm`)
+
+An Automation can carry default model settings for the member Automata it
+runs, so a whole chain can be pointed at one backend, model and effort without
+editing every Automaton. Two more `POST` endpoints under
+`/api/automations/{id}/` set them. They need the autonomous write capability,
+like the control operations above, and a `GET`, `PUT` or `DELETE` on either
+path is a `405`.
+
+| Endpoint | Body fields | What it sets |
+|---|---|---|
+| `POST /api/automations/{id}/set_llm` | `backend`, `model`, `effort`, `planning_backend`, `planning_model` | The execution default (`backend`, `model`, `effort` on the Automation) and the planning default (`planning_backend`, `planning_model`). |
+| `POST /api/automations/{id}/set_verification_llm` | `backend`, `model`, `effort` | The verification default (`verification_backend`, `verification_model`, `verification_effort` on the Automation). |
+
+Both also take the optional `expected_version`, `actor` and `reason` fields
+described under "Request body" above. The response is the updated
+Automation.
+
+**Presence-aware fields.** A field that is left out is kept as it is, and a
+field sent as an empty string clears it. At least one setting field is
+required: a body with none is a `400` that names the fields the endpoint
+accepts. `planning_backend` and `planning_model` are not accepted by
+`set_verification_llm` (a `400`). `backend` and `planning_backend` must be a
+configured LLM name (an unknown name is a `400`; check `/api/llms`), and an
+empty value clears without a lookup. `effort` must be one of `low`, `medium`,
+`high`, `max`, `quick`, `normal` or `thorough`. A backend and model pair that
+cannot work together, as the Automation would hold it after the call, is a
+`400`.
+
+**`expected_version` is optional here.** Unlike the control operations
+above, an omitted `expected_version`, or `0`, skips the version check. A
+stale positive value is a `409` and nothing changes.
+
+**When.** Both endpoints are allowed while the Automation is `draft`,
+`active`, `paused` or `blocked`. A `completed` or `cancelled` Automation is a
+`409`. A change applies to member Automata that start afterwards. It does not
+change a task that is already running.
+
+**Resolution order.** For the execution backend, model and effort, and for
+the verification LLM, the first level that sets a value wins:
+
+1. the task
+2. the story
+3. the Automaton
+4. the Automation the Automaton belongs to (the new level)
+5. the global default
+
+Backend and model are taken from the same level, so a model set on a less
+specific level is never paired with a backend from a more specific one. Effort
+resolves independently of them. The Automation level sits between the
+Automaton and the global default, so it never overrides anything set on a
+task, story or Automaton.
+
+**Planning is separate.** `planning_backend` and `planning_model` are an
+optional pair used only when a member Automaton is decomposed into stories and
+tasks. Unset means the global planning backend and model. They never change
+the execution or verification default, and the execution and verification
+defaults never change which LLM plans.
+
+**What gets recorded.** Each task run record gains `executor_source`, beside
+the verification result's `verifier_source`:
+
+| Field | Where | Values |
+|---|---|---|
+| `executor_source` | the task, set when its run starts and overwritten by each later attempt | `task`, `story`, `prd` (the Automaton level), `automation`, `global` |
+| `verifier_source` | the task's `verification` object | `task`, `story`, `prd`, `automation`, `global`, `pool` |
+
+`executor_source` names the level that supplied the execution backend. The
+session status for a task shows it too, and so does the PWA.
+
+**Errors.**
+
+| HTTP | Meaning |
+|------|---------|
+| 400 | Malformed body, no setting field, a planning field sent to `set_verification_llm`, an unknown backend name, an invalid `effort`, or a backend and model pair that do not fit. |
+| 403 | The caller lacks the autonomous write capability. |
+| 404 | No Automation with that ID. |
+| 405 | A method other than `POST`. |
+| 409 | A stale positive `expected_version`, or an Automation in a status that does not allow the change. |
+| 503 | Autonomous is disabled, or the daemon has no Automation control support. |
+
+Each successful call writes one audit entry, `automation_set_llm` or
+`automation_set_verification_llm`, with the actor, the fields that were sent
+and the new `version`, and adds a matching entry to the Automation's
+`decisions` list.
+
+```bash
+# run every member on a stronger model unless it names its own
+curl -sX POST http://localhost:7433/api/automations/<id>/set_llm \
+  -H "Content-Type: application/json" \
+  -d '{"backend":"claude-code","model":"claude-opus-5-5","effort":"high"}'
+
+# a separate, cheaper planner for decomposing members, and clear the model
+curl -sX POST http://localhost:7433/api/automations/<id>/set_llm \
+  -H "Content-Type: application/json" \
+  -d '{"planning_backend":"pi-prompt","planning_model":"qwen3.8:27b","model":""}'
+
+# a different verifier, guarded by the version you read
+curl -sX POST http://localhost:7433/api/automations/<id>/set_verification_llm \
+  -H "Content-Type: application/json" \
+  -d '{"expected_version":7,"backend":"claude-code","model":"claude-sonnet-5-5"}'
+```
+
+The same operations are reachable as the MCP tools `automation_set_llm` and
+`automation_set_verification_llm` (see [mcp.md](../mcp.md)), as `datawatch
+automation set-llm <id>` and `datawatch automation set-verification-llm <id>`
+(flags `--backend`, `--model`, `--effort`, plus `--planning-backend` and
+`--planning-model` on `set-llm`; an empty value clears), and as the comm verbs
+`automation set-llm <id> backend=<b> model=<m> effort=<e>
+planning-backend=<b> planning-model=<m>` and `automation set-verification-llm
+<id> backend=<b> model=<m> effort=<e>` (name at least one; `model=` with an
+empty value clears).
 
 ---
 

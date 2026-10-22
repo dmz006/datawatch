@@ -8,6 +8,7 @@
 //   automation_update — update an Automation
 //   automation_delete — delete an Automation
 //   automation_activate — start a draft Automation
+//   automation_set_llm / automation_set_verification_llm — Automation LLM defaults
 
 package mcp
 
@@ -15,6 +16,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	mcpsdk "github.com/mark3labs/mcp-go/mcp"
 )
@@ -400,4 +402,81 @@ func (s *Server) handleAutomationApproveInsert(_ context.Context, req mcpsdk.Cal
 	extra := map[string]any{}
 	optionalString(req, extra, "member_id")
 	return s.automationControlCall(req, "approve_insert", extra)
+}
+
+// automationLLMBase returns the options the Automation LLM setters share.
+// expected_version is optional here (omitted or 0 skips the version check), so
+// automationControlBase is not used.
+func automationLLMBase(desc string) []mcpsdk.ToolOption {
+	return []mcpsdk.ToolOption{
+		mcpsdk.WithDescription(desc),
+		mcpsdk.WithString("automation_id", mcpsdk.Required(), mcpsdk.Description("Automation ID.")),
+		mcpsdk.WithNumber("expected_version", mcpsdk.Description("Optional. The Automation version you read (automation_get); a stale value is refused with a conflict. Omit or pass 0 to skip the check.")),
+		mcpsdk.WithString("actor", mcpsdk.Description("Who is acting (recorded in the audit trail). Defaults to operator.")),
+		mcpsdk.WithString("reason", mcpsdk.Description("Reason for the change (recorded alongside the audit entry).")),
+	}
+}
+
+// automationLLMCall posts an LLM setter to /api/automations/{automation_id}/{op}.
+// Only the keys the caller passed are forwarded, so an empty string clears a
+// field and an absent key leaves it unchanged. With none of fields present it
+// returns an error text and sends nothing.
+func (s *Server) automationLLMCall(req mcpsdk.CallToolRequest, op string, fields []string) (*mcpsdk.CallToolResult, error) {
+	id := req.GetString("automation_id", "")
+	if id == "" {
+		return mcpsdk.NewToolResultText("error: automation_id is required"), nil
+	}
+	args := req.GetArguments()
+	body := map[string]any{}
+	for _, k := range fields {
+		if v, ok := args[k].(string); ok {
+			body[k] = v
+		}
+	}
+	if len(body) == 0 {
+		return mcpsdk.NewToolResultText("error: supply at least one of: " + strings.Join(fields, ", ")), nil
+	}
+	if v, ok := controlVersion(args["expected_version"]); ok && v != 0 {
+		body["expected_version"] = v
+	}
+	optionalString(req, body, "actor")
+	optionalString(req, body, "reason")
+	data, err := s.proxyJSON(http.MethodPost, "/api/automations/"+id+"/"+op, body)
+	if err != nil {
+		return mcpsdk.NewToolResultText("error: " + err.Error()), nil
+	}
+	return mcpsdk.NewToolResultText(string(data)), nil
+}
+
+var (
+	automationLLMFields             = []string{"backend", "model", "effort", "planning_backend", "planning_model"}
+	automationVerificationLLMFields = []string{"backend", "model", "effort"}
+)
+
+func (s *Server) toolAutomationSetLLM() mcpsdk.Tool {
+	opts := append(automationLLMBase("Set the Automation-level execution and planning defaults used by members that name none of their own. Supply at least one of backend, model, effort, planning_backend, planning_model: an omitted field is left unchanged and an empty string clears it. Allowed while the Automation is draft, active, paused or blocked."),
+		mcpsdk.WithString("backend", mcpsdk.Description("Execution backend default; empty clears it.")),
+		mcpsdk.WithString("model", mcpsdk.Description("Execution model default; empty clears it.")),
+		mcpsdk.WithString("effort", mcpsdk.Description("Execution effort default; empty clears it.")),
+		mcpsdk.WithString("planning_backend", mcpsdk.Description("Planning (decompose) backend default; empty clears it.")),
+		mcpsdk.WithString("planning_model", mcpsdk.Description("Planning (decompose) model default; empty clears it.")),
+	)
+	return mcpsdk.NewTool("automation_set_llm", opts...)
+}
+
+func (s *Server) handleAutomationSetLLM(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	return s.automationLLMCall(req, "set_llm", automationLLMFields)
+}
+
+func (s *Server) toolAutomationSetVerificationLLM() mcpsdk.Tool {
+	opts := append(automationLLMBase("Set the Automation-level verification defaults used by members that name none of their own. Supply at least one of backend, model, effort: an omitted field is left unchanged and an empty string clears it. Allowed while the Automation is draft, active, paused or blocked."),
+		mcpsdk.WithString("backend", mcpsdk.Description("Verification backend default; empty clears it.")),
+		mcpsdk.WithString("model", mcpsdk.Description("Verification model default; empty clears it.")),
+		mcpsdk.WithString("effort", mcpsdk.Description("Verification effort default; empty clears it.")),
+	)
+	return mcpsdk.NewTool("automation_set_verification_llm", opts...)
+}
+
+func (s *Server) handleAutomationSetVerificationLLM(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	return s.automationLLMCall(req, "set_verification_llm", automationVerificationLLMFields)
 }

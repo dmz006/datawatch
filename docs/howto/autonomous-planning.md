@@ -284,7 +284,7 @@ When to use it:
 - **Independence:** use a different backend for verifying than for
   doing the work.
 
-Most specific wins: task → story → Automaton → global. Set a
+Most specific wins: task → story → Automaton → Automation → global. Set a
 **backend** at the level you want; a model or effort without any
 per-unit backend leaves the verifier on the global path. An explicit
 backend also skips the `verification_backends` pool. Send `""` (or an
@@ -316,9 +316,18 @@ REST: `POST /api/autonomous/prds/{id}/set_task_verification_llm`
 `GET /api/autonomous/prds/{id}`) carries `verifier_backend`,
 `verifier_model`, `verifier_effort` and `verifier_source`. The source
 tells you where the choice came from: `task`, `story`, `prd` (the
-Automaton level), `global`, or `pool`. In the PWA the verification
+Automaton level), `automation` (the default set on the Automation the
+Automaton belongs to), `global`, or `pool`. In the PWA the verification
 result shows a **Judged by** line. If you set an override and still see
 `global` or `pool`, check that a backend (not just a model) was set.
+
+**Read which backend ran the work.** The same way, each task carries an
+`executor_source` field: `task`, `story`, `prd` (the Automaton level),
+`automation`, or `global` when no level named a backend. It names the level
+that supplied the execution backend for the latest attempt. In the PWA it
+shows as an **Executor** line on the task and on the session's status card.
+To give a whole chain of Automata one set of defaults, see
+[Automation queue advance](automation-queue-advance.md).
 
 ## Diagram
 

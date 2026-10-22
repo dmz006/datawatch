@@ -889,6 +889,36 @@ autonomous:
   # autonomous.automation.agent_insert_policy=require_operator`, comm
   # `configure autonomous.automation.agent_insert_policy=require_operator`, and
   # the MCP config_set tool when mcp.allow_self_config is on.
+  #
+  # Automation-level model defaults are NOT YAML keys. The execution, verification
+  # and planning defaults an Automation hands to the member Automata it runs are
+  # runtime data stored on each Automation record (fields backend, model, effort,
+  # verification_backend, verification_model, verification_effort,
+  # planning_backend, planning_model), so nothing is set in this file. The
+  # Automation level sits between the Automaton and the global default:
+  #   execution backend, model and effort, and the verification LLM resolve
+  #   task -> story -> Automaton -> Automation -> global
+  # Backend and model come from the same level; effort resolves independently.
+  # The global default is autonomous.verification_backend / verification_model /
+  # verification_effort for verification, and the daemon's configured backend
+  # for execution. Planning has its own optional pair (planning_backend,
+  # planning_model); unset means the global autonomous.planning_backend /
+  # planning_model. It is used only when a member is decomposed and never
+  # changes the run or verify default. Each task run records executor_source
+  # (task | story | prd | automation | global) beside verifier_source.
+  # Set them while the Automation is draft, active, paused or blocked:
+  #   REST   POST /api/automations/{id}/set_llm
+  #          (backend, model, effort, planning_backend, planning_model) and
+  #          POST /api/automations/{id}/set_verification_llm
+  #          (backend, model, effort)
+  #   MCP    automation_set_llm and automation_set_verification_llm
+  #   CLI    `datawatch automation set-llm <id> --backend B --model M`
+  #          `datawatch automation set-verification-llm <id> --effort high`
+  #   comm   `automation set-llm <id> backend=B model=M effort=E`
+  #          `automation set-verification-llm <id> backend=B model=M`
+  # Fields are presence-aware (omitted keeps, empty clears). expected_version is
+  # optional (0 or omitted skips the check; a stale positive value is a 409).
+  # See docs/api/autonomous.md.
   automation:
     idle_alert_minutes: 0
     agent_insert_policy: allow

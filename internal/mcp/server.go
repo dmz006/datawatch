@@ -659,6 +659,8 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutomationRemoveMember(), tracked(s.handleAutomationRemoveMember))
 	mcpSrv.AddTool(s.toolAutomationReorderEdges(), tracked(s.handleAutomationReorderEdges))
 	mcpSrv.AddTool(s.toolAutomationApproveInsert(), tracked(s.handleAutomationApproveInsert))
+	mcpSrv.AddTool(s.toolAutomationSetLLM(), tracked(s.handleAutomationSetLLM))
+	mcpSrv.AddTool(s.toolAutomationSetVerificationLLM(), tracked(s.handleAutomationSetVerificationLLM))
 	// BL221 (v6.2.0) Phase 5 — template store CRUD tools.
 	mcpSrv.AddTool(s.toolAutonomousTemplateList(), tracked(s.handleAutonomousTemplateList))
 	mcpSrv.AddTool(s.toolAutonomousTemplateCreate(), tracked(s.handleAutonomousTemplateCreate))
@@ -1353,6 +1355,8 @@ func (s *Server) ToolDocs() []ToolDoc {
 		{s.toolAutomationRemoveMember, "automation_remove_member"},
 		{s.toolAutomationReorderEdges, "automation_reorder_edges"},
 		{s.toolAutomationApproveInsert, "automation_approve_insert"},
+		{s.toolAutomationSetLLM, "automation_set_llm"},
+		{s.toolAutomationSetVerificationLLM, "automation_set_verification_llm"},
 		// BL349 — self-session discovery
 		{s.toolGetMySessionID, "get_my_session_id"},
 		{s.toolGetMyScope, "get_my_scope"},

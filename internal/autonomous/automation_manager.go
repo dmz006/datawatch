@@ -20,6 +20,8 @@ type AutomationInput struct {
 	Backend             string             `json:"backend"`
 	Model               string             `json:"model"`
 	Effort              Effort             `json:"effort"`
+	PlanningBackend     string             `json:"planning_backend"`
+	PlanningModel       string             `json:"planning_model"`
 	VerificationBackend string             `json:"verification_backend"`
 	VerificationModel   string             `json:"verification_model"`
 	VerificationEffort  Effort             `json:"verification_effort"`
@@ -43,6 +45,8 @@ func (m *Manager) CreateAutomation(in AutomationInput, actor string) (*Automatio
 		Backend:             in.Backend,
 		Model:               in.Model,
 		Effort:              in.Effort,
+		PlanningBackend:     in.PlanningBackend,
+		PlanningModel:       in.PlanningModel,
 		VerificationBackend: in.VerificationBackend,
 		VerificationModel:   in.VerificationModel,
 		VerificationEffort:  in.VerificationEffort,
@@ -63,6 +67,28 @@ func (m *Manager) CreateAutomation(in AutomationInput, actor string) (*Automatio
 // GetAutomation returns one Automation by id.
 func (m *Manager) GetAutomation(id string) (*Automation, bool) {
 	return m.automations.Get(id)
+}
+
+// AutomationForPRD returns a copy of the Automation that prd is a member of,
+// or nil when prd is nil, the Manager has no Automation store, or prd is
+// standalone. A member of a nested child Automation resolves to that child
+// only; nothing is inherited from the parent.
+func (m *Manager) AutomationForPRD(prd *PRD) *Automation {
+	if prd == nil || m.automations == nil {
+		return nil
+	}
+	id := prd.AutomationID
+	if id == "" {
+		id = m.automations.OwnerOf(prd.ID)
+	}
+	if id == "" {
+		return nil
+	}
+	a, ok := m.automations.Get(id)
+	if !ok {
+		return nil
+	}
+	return a
 }
 
 // ListAutomations returns all Automations.
@@ -121,6 +147,8 @@ func (m *Manager) UpdateAutomation(id string, expectedVersion int64, in Automati
 		a.Backend = in.Backend
 		a.Model = in.Model
 		a.Effort = in.Effort
+		a.PlanningBackend = in.PlanningBackend
+		a.PlanningModel = in.PlanningModel
 		a.VerificationBackend = in.VerificationBackend
 		a.VerificationModel = in.VerificationModel
 		a.VerificationEffort = in.VerificationEffort

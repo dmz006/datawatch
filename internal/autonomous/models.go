@@ -754,6 +754,12 @@ type Task struct {
 	VerificationBackend string `json:"verification_backend,omitempty"`
 	VerificationModel   string `json:"verification_model,omitempty"`
 	VerificationEffort  Effort `json:"verification_effort,omitempty"`
+	// ExecutorSource is the level that supplied the execution backend for
+	// the most recent run attempt: "task", "story", "prd", "automation" or
+	// "global" (no level set one, so the fallback backend was used). Set by
+	// the dispatch loop before the session spawns and overwritten by each
+	// later attempt.
+	ExecutorSource string `json:"executor_source,omitempty"`
 	// LSPLanguage (v8.7.1) — per-task override; inherits PRD.LSPLanguage when empty.
 	LSPLanguage string `json:"lsp_language,omitempty"`
 	// PermissionMode (v5.27.5) — claude-code --permission-mode for
@@ -983,8 +989,8 @@ type VerificationResult struct {
 	VerifierID string    `json:"verifier_id,omitempty"` // session ID of the verifier worker
 	// What the verifier ACTUALLY ran with, recorded per verification.
 	// VerifierSource names where the backend came from: "task",
-	// "story", "prd" (the Automaton level) or "global" per
-	// ResolveVerificationLLM, or "pool" when the backend was picked
+	// "story", "prd" (the Automaton level), "automation" (the Automation
+	// the Automaton belongs to) or "global" per ResolveVerificationLLM, or "pool" when the backend was picked
 	// from the global verification_backends capacity pool.
 	VerifierBackend string `json:"verifier_backend,omitempty"`
 	VerifierModel   string `json:"verifier_model,omitempty"`

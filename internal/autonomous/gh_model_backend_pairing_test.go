@@ -17,7 +17,7 @@ func TestResolveTaskBackendModel_TaskBackendOverrideDropsStaleModel(t *testing.T
 	prd := &PRD{Backend: "opencode", Model: "ollama/qwen3.8:27b"}
 	task := &Task{Backend: "claude-code", Model: ""}
 
-	backend, model := resolveTaskBackendModel(task, nil, prd, "opencode")
+	backend, model := resolveTaskBackendModel(task, nil, prd, nil, "opencode")
 
 	if backend != "claude-code" {
 		t.Errorf("backend = %q, want claude-code", backend)
@@ -31,7 +31,7 @@ func TestResolveTaskBackendModel_TaskOwnModelWinsRegardlessOfBackendLevel(t *tes
 	prd := &PRD{Backend: "opencode", Model: "ollama/qwen3.8:27b"}
 	task := &Task{Backend: "", Model: "claude-opus-5"}
 
-	backend, model := resolveTaskBackendModel(task, nil, prd, "opencode")
+	backend, model := resolveTaskBackendModel(task, nil, prd, nil, "opencode")
 
 	if backend != "opencode" {
 		t.Errorf("backend = %q, want opencode (inherited)", backend)
@@ -46,7 +46,7 @@ func TestResolveTaskBackendModel_StoryOverridePairsItsOwnModel(t *testing.T) {
 	story := &Story{Backend: "claude-code", Model: "claude-sonnet-5"}
 	task := &Task{}
 
-	backend, model := resolveTaskBackendModel(task, story, prd, "opencode")
+	backend, model := resolveTaskBackendModel(task, story, prd, nil, "opencode")
 
 	if backend != "claude-code" || model != "claude-sonnet-5" {
 		t.Errorf("got backend=%q model=%q, want claude-code/claude-sonnet-5", backend, model)
@@ -57,7 +57,7 @@ func TestResolveTaskBackendModel_NothingSetFallsThroughToPRD(t *testing.T) {
 	prd := &PRD{Backend: "opencode", Model: "ollama/qwen3.8:27b"}
 	task := &Task{}
 
-	backend, model := resolveTaskBackendModel(task, nil, prd, "claude-code")
+	backend, model := resolveTaskBackendModel(task, nil, prd, nil, "claude-code")
 
 	if backend != "opencode" || model != "ollama/qwen3.8:27b" {
 		t.Errorf("got backend=%q model=%q, want opencode/ollama/qwen3.8:27b", backend, model)

@@ -1763,6 +1763,7 @@
   "status_card_activity": "Activity",
   "status_card_cost": "Cost",
   "status_verifier_label": "Verifier",
+  "status_executor_label": "Executor",
   "status_files_planned": "Files planned",
   "status_files_touched": "Files touched",
   "status_foreign_drift": "Changed outside this task",

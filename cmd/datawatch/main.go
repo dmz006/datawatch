@@ -5347,7 +5347,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// (non-blocking) before committing to the single-backend
 			// default's normal, potentially hours-long wait. See
 			// resolveVerifierCandidates' doc comment for why.
-			// Per-task / story / Automaton verification overrides: an
+			// Per-task / story / Automaton / Automation verification overrides: an
 			// explicit override skips the verification_backends pool and
 			// goes through resolveVerifierBackendModel's safety logic as
 			// the configured backend/model; with no override (Source
@@ -5355,7 +5355,11 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// before. Effort is applied only from an explicit override —
 			// the global verification_effort is still not consumed by
 			// verify (pre-existing gap, unchanged here).
-			resolvedVLLM := autonomouspkg.ResolveVerificationLLM(prd, task, liveCfg)
+			var vauto *autonomouspkg.Automation
+			if autonomousMgrRef != nil {
+				vauto = autonomousMgrRef.AutomationForPRD(prd)
+			}
+			resolvedVLLM := autonomouspkg.ResolveVerificationLLM(prd, task, vauto, liveCfg)
 			explicitEffortCfg := liveCfg
 			explicitEffortCfg.VerificationEffort = ""
 			var verifierTryAdmit func(backend, model string) (func(), bool)
@@ -5370,7 +5374,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			vpool, vglobalBackend, vglobalModel := effectiveVerifierSelection(liveCfg)
 			vsel := selectVerifierLLM(verifierSelectInput{
 				Resolved:       resolvedVLLM,
-				ExplicitEffort: autonomouspkg.ResolveVerificationLLM(prd, task, explicitEffortCfg).Effort,
+				ExplicitEffort: autonomouspkg.ResolveVerificationLLM(prd, task, vauto, explicitEffortCfg).Effort,
 				Pool:           vpool,
 				GlobalBackend:  vglobalBackend,
 				GlobalModel:    vglobalModel,

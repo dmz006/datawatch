@@ -70,6 +70,10 @@ type Automation struct {
 	Backend string `json:"backend,omitempty"`
 	Model   string `json:"model,omitempty"`
 	Effort  Effort `json:"effort,omitempty"`
+	// Planning default for member decomposition, separate from the run and
+	// verify defaults; unset means the global planning backend.
+	PlanningBackend string `json:"planning_backend,omitempty"`
+	PlanningModel   string `json:"planning_model,omitempty"`
 	// Verification defaults — new tier between Automaton (PRD) and global.
 	VerificationBackend string `json:"verification_backend,omitempty"`
 	VerificationModel   string `json:"verification_model,omitempty"`

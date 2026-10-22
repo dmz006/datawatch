@@ -5,10 +5,10 @@ import autonomouspkg "github.com/dmz006/datawatch/internal/autonomous"
 // verifierSelectInput is everything selectVerifierLLM needs to decide
 // which LLM the autonomous verifier runs on.
 type verifierSelectInput struct {
-	// Resolved is autonomouspkg.ResolveVerificationLLM(prd, task, cfg).
+	// Resolved is autonomouspkg.ResolveVerificationLLM(prd, task, automation, cfg).
 	Resolved autonomouspkg.VerificationLLM
-	// ExplicitEffort is the first effort set at task → story → Automaton
-	// level, without the global verification_effort fallback (resolve
+	// ExplicitEffort is the first effort set at task → story → Automaton →
+	// Automation level, without the global verification_effort fallback (resolve
 	// with a cfg whose VerificationEffort is cleared).
 	ExplicitEffort string
 	// Pool is autonomous.verification_backends; GlobalBackend /
@@ -24,7 +24,7 @@ type verifierSelection struct {
 	Backend, Kind, Model string
 	UseSession           bool
 	// Effort is the session effort to apply — set only for an explicit
-	// task/story/Automaton override, never from the global
+	// task/story/Automaton/Automation override, never from the global
 	// verification_effort.
 	Effort string
 	// Source is the VerifierSource* value recorded on the result.
@@ -37,7 +37,7 @@ type verifierSelection struct {
 // selectVerifierLLM decides the verifier backend/kind/model, whether the
 // call is session-routed, and where the choice came from.
 //
-//   - An explicit task/story/Automaton override (Resolved.Source !=
+//   - An explicit task/story/Automaton/Automation override (Resolved.Source !=
 //     global) skips the verification_backends capacity pool entirely —
 //     an explicit per-unit choice beats load-balancing — and is passed
 //     through resolveVerifierBackendModel's normal safety logic

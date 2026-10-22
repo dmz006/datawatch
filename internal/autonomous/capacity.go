@@ -359,7 +359,7 @@ func (m *Manager) adoptCapacity(prd *PRD, t *Task) {
 	fallback := m.cfg.ExecutionBackend
 	m.mu.Unlock()
 	story := findStory(prd, t.StoryID)
-	backend, model := resolveTaskBackendModel(t, story, prd, fallback)
+	backend, model := resolveTaskBackendModel(t, story, prd, m.AutomationForPRD(prd), fallback)
 	pools, node := keysFn(backend, model)
 	if len(pools) == 0 {
 		return

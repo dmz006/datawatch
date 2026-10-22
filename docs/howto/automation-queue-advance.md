@@ -79,9 +79,62 @@ task never routes the chain by mistake.
 | Activate | `POST /api/automations/{id}/activate` (body `{actor?, reason?}`) | `automation_activate` | `datawatch automation activate <id>` | `automation activate <id>` |
 | List / get | `GET /api/automations`, `GET /api/automations/{id}` | `automation_list`, `automation_get` | — (use REST or MCP) | — |
 | Status rows | `GET /api/autonomous/status` → `automations` | `autonomous_status` | `datawatch autonomous status` | — |
+| Set execution and planning defaults | `POST /api/automations/{id}/set_llm` | `automation_set_llm` | `datawatch automation set-llm <id>` | `automation set-llm <id> backend=<b> model=<m> ...` |
+| Set verification defaults | `POST /api/automations/{id}/set_verification_llm` | `automation_set_verification_llm` | `datawatch automation set-verification-llm <id>` | `automation set-verification-llm <id> backend=<b> model=<m> ...` |
 
 Activation only works on a draft (409 otherwise); an unknown ID is 404. Every
 activation, advance and block is written to the audit log with its actor
 (`operator`, or `automation` for the coordinator) and reason; see
 [audit logging](audit-logging.md). The PWA has no Automation view yet, so
 activation and status rows are API, MCP, CLI and chat only for now.
+
+## Give an Automation its own model defaults
+
+By default every member Automaton runs and is verified on the daemon's global
+backend and model. If a whole chain should use something else, for example a
+stronger model for a risky nightly job, set the defaults once on the
+Automation instead of editing each Automaton.
+
+The Automation's defaults sit between the Automaton and the global default.
+For the execution backend, model and effort, and for the verification LLM,
+the first level that sets a value wins: task, then story, then Automaton, then
+Automation, then global. Backend and model are taken from the same level;
+effort is resolved on its own. So an Automaton or task that names its own
+backend keeps it, and the Automation default only fills what they leave open.
+
+1. **Set the execution default** (while the Automation is draft, active,
+   paused or blocked):
+
+   ```bash
+   datawatch automation set-llm <id> --backend claude-code --model claude-opus-5-5 --effort high
+   ```
+
+   Chat: `automation set-llm <id> backend=claude-code model=claude-opus-5-5 effort=high`.
+   REST: `POST /api/automations/{id}/set_llm` with the same names in the body.
+   MCP: `automation_set_llm`.
+
+2. **Set the verification default** the same way:
+
+   ```bash
+   datawatch automation set-verification-llm <id> --backend claude-code --model claude-sonnet-5-5
+   ```
+
+3. **Optionally pick a planner.** `--planning-backend` and `--planning-model`
+   on `set-llm` choose the LLM that decomposes a member into stories and tasks.
+   Leave them unset and the global planning backend is used. They only affect
+   decomposing; they never change which LLM runs or verifies the work.
+
+4. **Clear a field** by sending it empty, for example `--model ""` or `model=`
+   in chat. A field you leave out is kept as it is. Name at least one field.
+
+`expected_version` is optional on both operations: leave it out (or send `0`)
+to skip the check, or send the version you read to be told with a 409 if
+someone else changed the Automation first.
+
+A change applies to members that start afterwards; a task already running is
+not touched. To see which level supplied the backend for a task, read its
+`executor_source` (and, after verification, `verifier_source`), which can be
+`task`, `story`, `prd`, `automation`, `global` (or `pool` for the verifier).
+The PWA shows `executor_source` as an **Executor** line on the task and on the
+session status card; there is no Automation view in the PWA yet, so setting the
+defaults is API, MCP, CLI and chat only for now.
