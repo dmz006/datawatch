@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.85 — Automations: fork, join and nested Automations
+
+### Added
+
+- **An Automation can now fork into parallel branches, join them, and contain other Automations.** An Automation's member list was a single chain with one current position; it now keeps a set of active positions. A fork member starts several member Automata at the same time; a join member waits for its branches and carries an `on_branch_failure` rule: `all_must_succeed` (the default: wait for the other branches, then block the Automation and name the failed branch), `any_one_is_enough`, or `continue_anyway`. A new nested member kind lets an Automation include another Automation, with cycle detection across levels and clear ownership. Old single-position Automations load unchanged. The coordinator advances every active branch, reconciles a fork that was running when the daemon restarted, rejects a stale edit with HTTP 409, and the status response (`autonomous_status`) and audit entries show the active positions. The fork, join and nested shapes are accepted in `members_json` on REST, MCP and the CLI and chat verbs, and are documented in the API reference, the MCP tool list, the testing tracker and the orchestration design notes. Unit tests cover every join rule, a nested cycle, a restart in the middle of a fork and a stale version; an opt-in live smoke test drives fork, join and nesting against a running daemon.
+
 ## v9.5.84 — The MCP SSE listener retries a failed bind at boot
 
 ### Fixed
