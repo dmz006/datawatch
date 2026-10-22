@@ -1650,6 +1650,7 @@ howto, and the `datawatch-app` issue where applicable.
     per-hook-point? Does this ship in BL431's own follow-up implementation
     PRD, or as its own later PRD once the Automation coordinator exists to
     attach it to?
+    **Decided by the operator 2026-10-22:** all four hook points (empty-edge resolution, skip_member pre-screening, mid-flight insert triage, budget-breach response) are in scope for the first version; the escalation confidence threshold is set per hook point with a conservative (high) default, all editable; it ships as its own PRD after Phase 3a/3b exist, and must be in 10.0.0.
 16. **Dashboard/Observer integration (operator-raised 2026-10-14, see the
     section above).** Should the `automation-summary` dashboard card and
     the Observer per-Automation rollup ship as part of BL431's own
