@@ -219,3 +219,32 @@ func TestSubscriptionFireTestUnavailableSinkAndErrors(t *testing.T) {
 		t.Errorf("unknown id: %v", err)
 	}
 }
+
+func TestSubscriptionUpdateReplacesOptionalFieldsAndPersists(t *testing.T) {
+	path := t.TempDir() + "/s.json"
+	store, _ := NewSubscriptionStore(path, nil)
+	exp := time.Now().Add(time.Hour)
+	first := updSub()
+	first.OneShot = true
+	first.ExpiresAt = &exp
+	first.Action = &SubscriptionAction{Type: SinkActionSendInput, Text: "go"}
+	orig, err := store.Add(first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.Update(orig.ID, updSub())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.OneShot || got.ExpiresAt != nil || got.Action != nil {
+		t.Fatalf("omitted fields were not cleared: %+v", got)
+	}
+	reloaded, err := NewSubscriptionStore(path, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored, ok := reloaded.Get(orig.ID)
+	if !ok || stored.OneShot || stored.ExpiresAt != nil || !stored.CreatedAt.Equal(orig.CreatedAt) {
+		t.Fatalf("update not persisted: %+v ok=%v", stored, ok)
+	}
+}
