@@ -460,6 +460,164 @@ The REST endpoints do not change. `GET/POST /api/automations` and
 `GET/PUT/DELETE /api/automations/{id}` accept the member fields above.
 `openapi.yaml` documents them.
 
+### Phase 3b — control operations
+
+An operator, or a session or agent acting through the API, can steer a
+running Automation with eight `POST` endpoints under
+`/api/automations/{id}/`. They need the autonomous write capability, like
+the other writes. A `GET`, `PUT` or `DELETE` on one of these paths is a
+`405`.
+
+| Endpoint | Allowed while the Automation is | What it does |
+|---|---|---|
+| `POST /api/automations/{id}/pause` | `active` | Moves it to `paused`. Members already running keep running and nothing is ended. A paused Automation moves its cursor on when a member finishes but starts nothing. |
+| `POST /api/automations/{id}/resume` | `paused` | Moves it back to `active`. Members that finished while paused are routed on and the next member is started. Finished members are not restarted. |
+| `POST /api/automations/{id}/cancel` | `active`, `paused`, `blocked` | Cancels it. Needs `cancel_in_flight` (below). |
+| `POST /api/automations/{id}/skip_member` | `active`, `paused` | Skips an active member and follows one of its edges, as if the member had ended that way. A session the skipped member is running is not ended. |
+| `POST /api/automations/{id}/insert_member` | `draft`, `active`, `paused`, `blocked` | Adds a member PRD to the chain (see "Inserting a member"). |
+| `POST /api/automations/{id}/remove_member` | `active`, `paused` | Removes a member that has not started and has no outgoing edges. Edges of other members that named it are cleared. |
+| `POST /api/automations/{id}/reorder_edges` | `active`, `paused` | Rewires the outgoing edges of a member that has not started. |
+| `POST /api/automations/{id}/approve_insert` | `draft`, `active`, `paused`, `blocked` | Promotes a pending insert into the graph (operator only). |
+
+**Request body.** Every endpoint takes a JSON object. All fields are
+optional on the wire, but each operation has the fields it needs.
+
+| Field | Used by | Meaning |
+|---|---|---|
+| `expected_version` | all | The Automation `version` you read. It must equal the stored version exactly. A stale value, or an omitted one (read as `0`), is a `409` and nothing changes, whatever the Automation's state. Read the Automation again and retry. |
+| `actor` | all | Who is acting, recorded in the audit trail. Defaults to `operator`. An agent or session passes `agent:<id>` or `session:<id>`. |
+| `reason` | all | Free text recorded with the audit entry and the Automation's decision log. Required by `insert_member`. |
+| `cancel_in_flight` | `cancel` | Boolean, required, no default. See below. |
+| `member_id` | `skip_member`, `remove_member`, `reorder_edges`, `approve_insert` | The member to act on. For `approve_insert` it is the pending insert's ID, which is also the ID the member gets once approved. For `skip_member` it names the branch to act on in a forked Automation (see "Branches"). |
+| `edge` | `skip_member` | `on_complete` (default when omitted), `on_blocked` or `on_failed`. Any other value is a `400`. |
+| `on_complete`, `on_blocked`, `on_failed` | `reorder_edges` | The member ID each edge now names. An edge that is left out or empty becomes no next member, so send all three edges you want to keep. A target must exist and must not have started. |
+| `member` | `insert_member` | Object `{"prd_id": "...", "name": "..."}`. `prd_id` is required. `name` is an optional display name. |
+| `urgent` | `insert_member` | Boolean. `true` takes the next slot, `false` (default) goes to the end of the chain. |
+| `after` | `insert_member` | Member ID to insert directly after. Empty means the end of the chain. An urgent insert must leave it empty. |
+
+**Responses.** `200` returns the updated Automation (same shape as
+`GET /api/automations/{id}`).
+
+| HTTP | Meaning |
+|------|---------|
+| 400 | Malformed body. `cancel` without `cancel_in_flight` (a missing value or `null`). `insert_member` without a `reason`, without `member.prd_id`, or naming an unknown PRD. An invalid `edge`. A bad edge target in `reorder_edges`. A branch-naming rejection (below). |
+| 404 | No Automation with that ID, no such member, or no such pending insert. |
+| 405 | A method other than `POST`. |
+| 409 | Stale or omitted `expected_version`. The Automation is in a state the operation does not allow (the message names the state and the states it needs). A draft that needs activating first. A member that has started and so cannot be removed or rewired. A PRD that is already a member, already pending, or owned by another Automation. A second urgent insert while one is pending. An `approve_insert` by anyone but the operator. |
+| 500 | `cancel` only: the Automation is cancelled, but ending one or more in-flight member sessions failed. The message names the members. |
+| 503 | Autonomous is disabled, or the daemon has no Automation control support. |
+
+#### `cancel` and the required `cancel_in_flight`
+
+`cancel` has no default for what happens to members that are running at
+that moment, so the request must say. `cancel_in_flight` is a boolean
+and **both values are valid**:
+
+- `"cancel_in_flight": true` ends the session of every in-flight member
+  and marks it cancelled, using the same path as cancelling the member's
+  Automaton on its own. A running nested Automation is cancelled the same
+  way.
+- `"cancel_in_flight": false` leaves running members alone. The Automation
+  is cancelled, and the later end of a running member is ignored because
+  the Automation is already cancelled.
+
+In both cases, members that had not started become cancelled, the
+Automation's status becomes `cancelled`, and the member Automatons are
+released from the Automation. A missing or `null` value is a `400` whose
+message names both allowed values: `cancel_in_flight=true` (end the
+session of every in-flight member) and `cancel_in_flight=false` (leave
+in-flight members running). If ending a session fails, the Automation
+stays cancelled, and the `500` message names the members it could not end.
+
+```json
+POST /api/automations/3fa9c2d1/cancel
+{"expected_version": 7, "cancel_in_flight": false, "actor": "operator", "reason": "superseded"}
+```
+
+#### Inserting a member
+
+`insert_member` adds `member.prd_id` to the chain. The PRD must exist, and
+it must not already be a member or a pending insert of this Automation or
+belong to another Automation that has not ended.
+
+- **Placement.** A normal insert goes to the end of the chain, or directly
+  after `after` when that is given. An urgent insert takes the next slot: on
+  a draft it becomes the entry member, and on a started Automation it goes
+  between the one running member and that member's `on_complete` target.
+  An urgent insert on a started Automation needs exactly one active member
+  to follow, so in a forked Automation with several branches active it is a
+  `409` that lists them.
+- **Draft.** On a draft Automation the member lands in the graph at once.
+- **Started Automation.** On an `active`, `paused` or `blocked` Automation
+  the insert is always held as a **pending insert**: it appears in the
+  Automation's `pending_inserts` (`id`, `prd_id`, `name`, `urgent`,
+  `after_member_id`, `actor`, `reason`, `added_at`, `status: pending`),
+  and the Automation keeps advancing without it. It enters the graph, at
+  the position reserved for it, when the operator calls `approve_insert`
+  with `member_id` set to the pending insert's `id`. The endpoint requires
+  a `reason`. A `completed` or `cancelled` Automation refuses an insert.
+- **Agent insert policy.** The global setting
+  `autonomous.automation.agent_insert_policy` decides whether an insert
+  from a session or agent (an `actor` that starts with `session:` or
+  `agent:`) may edit a draft directly:
+  - `allow` (default): the draft insert lands at once.
+  - `require_operator`: the draft insert is held as a pending insert too,
+    and needs `approve_insert`.
+
+  An insert from the operator on a draft always lands at once, and
+  every insert on a started Automation is held whatever the policy.
+- **One urgent insert at a time.** An Automation can have at most one
+  pending urgent insert. A second urgent `insert_member` is a `409` naming
+  the pending one. Once that insert is approved, another urgent insert is
+  accepted. `approve_insert` of a pending urgent insert is also a `409`
+  while a different urgent insert is pending.
+- **Approval.** Only the operator may approve (`actor` empty or
+  `operator`). Any other actor is a `409`.
+
+```json
+POST /api/automations/3fa9c2d1/insert_member
+{"expected_version": 8, "actor": "agent:ab12", "reason": "tests found a gap",
+ "member": {"prd_id": "c9d0e1f2", "name": "fix flaky step"}, "urgent": true}
+```
+
+#### Branches (active cursors)
+
+In a forked Automation, several members can be active at once. An
+operation that acts on a position must say which active cursor it means,
+by naming that branch member in `member_id`. `skip_member` is the
+operation that needs it. In a linear Automation, or when only one cursor is
+active, no name is needed. If it is needed and missing, the request is a
+`400` with a message that lists the active branch member IDs:
+`automation <id> has <n> active branches; name the branch member to act
+on, one of [<member IDs>]`. A `member_id` that is not an active branch is
+also a `400`: `member <member ID> is not an active branch of automation
+<id>; active branches are [<member IDs>]`. An Automation with no active
+member to act on is a `409`.
+
+#### Audit
+
+Every control operation writes an audit entry on the `automation`
+resource: `automation_pause`, `automation_resume`, `automation_cancel`
+(with `cancel_in_flight` and the members that were in flight),
+`automation_skip_member`, `automation_insert_member`,
+`automation_remove_member`, `automation_reorder_edges` and
+`automation_approve_insert`. The entry records the actor, the reason, the
+`expected_version` the caller sent, the operation's own fields, and the new
+`version`. The Automation's `decisions` list gets a matching entry. A
+`cancel` that cancelled the Automation but could not end every member
+session is audited with the error before the `500` is returned.
+
+The same operations are reachable as MCP tools (`automation_pause`,
+`automation_resume`, `automation_cancel`, `automation_skip_member`,
+`automation_insert_member`, `automation_remove_member`,
+`automation_reorder_edges`, `automation_approve_insert`; see
+[mcp.md](../mcp.md)), as `datawatch automation
+pause|resume|cancel|skip|insert|remove|edges|approve` (`cancel` requires
+`--cancel-in-flight <true|false>`), and as the comm verbs `automation
+pause|resume|cancel|skip|insert|remove|edges|approve` (`cancel` requires
+`in-flight=true` or `in-flight=false`). `openapi.yaml` documents the
+endpoints.
+
 ---
 
 ## Configuration
