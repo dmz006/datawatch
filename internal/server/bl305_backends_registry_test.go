@@ -22,6 +22,7 @@ func newBackendsServer(t *testing.T) *Server {
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
+	t.Cleanup(sm.WaitBackground)
 	hub := NewHub()
 	srv := NewServer(hub, sm, "h", "", nil, nil, "")
 	return srv

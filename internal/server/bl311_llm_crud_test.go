@@ -24,6 +24,7 @@ func newLLMServer(t *testing.T) *Server {
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
+	t.Cleanup(sm.WaitBackground)
 	hub := NewHub()
 	srv := NewServer(hub, sm, "h", "", nil, nil, "")
 	srv.inferenceReg = inference.NewRegistry()
@@ -186,6 +187,7 @@ func TestLLMEnabled_KnownAdapters(t *testing.T) {
 func TestHandleLLMs_DisabledRegistryReturns503(t *testing.T) {
 	dir := t.TempDir()
 	sm, _ := session.NewManager("h", dir, "echo", 30*time.Second)
+	t.Cleanup(sm.WaitBackground)
 	srv := NewServer(NewHub(), sm, "h", "", nil, nil, "")
 	// No inferenceReg — simulates a pre-migration or degraded install.
 

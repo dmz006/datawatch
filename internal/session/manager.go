@@ -554,6 +554,11 @@ type Manager struct {
 	// Key: fullID, Value: timestamps of recent running→waiting transitions.
 	promptOscillation map[string][]time.Time
 
+	// bg tracks the goroutines that write under the data dir after a
+	// call returns (output monitors, screen capture, send-queue drains);
+	// WaitBackground waits for them.
+	bg sync.WaitGroup
+
 	mu       sync.Mutex
 	monitors map[string]context.CancelFunc // fullID -> cancel func for monitor goroutine
 	trackers map[string]*Tracker           // fullID -> Tracker
@@ -2422,16 +2427,20 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		}
 	}
 
-	go m.monitorOutput(monCtx, sess, projGit)
+	m.goBG(func() { m.monitorOutput(monCtx, sess, projGit) })
 	// v8.21.4: one-shot sessions need pane-watcher for DATAWATCH_COMPLETE: detection.
 	// StartScreenCapture is normally called by PWA subscribers, but one-shot sessions
 	// run autonomously with no browser connection. Start it at creation so completion
 	// is detected regardless of whether any client is subscribed.
 	if sess.OneShot && sess.TmuxSession != "" {
-		go func() {
-			time.Sleep(2 * time.Second) // let the TUI initialize before first capture
+		m.goBG(func() {
+			select { // let the TUI initialize before first capture
+			case <-time.After(2 * time.Second):
+			case <-monCtx.Done():
+				return
+			}
 			m.StartScreenCapture(monCtx, sess.FullID, 500)
-		}()
+		})
 	}
 
 	if m.onSessionStart != nil {
@@ -2454,7 +2463,12 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 	if intervalMs <= 0 {
 		intervalMs = 200
 	}
+	// Started with a direct go statement (not goBG) so captureLoopCount in
+	// tests can still attribute the goroutine to StartScreenCapture's caller;
+	// the WaitGroup entry lets WaitBackground wait for it.
+	m.bg.Add(1)
 	go func() {
+		defer m.bg.Done()
 		ticker := time.NewTicker(time.Duration(intervalMs) * time.Millisecond)
 		defer ticker.Stop()
 		var lastCapture string
@@ -2935,6 +2949,36 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 	}()
 }
 
+// goBG runs fn on a goroutine that WaitBackground waits for.
+func (m *Manager) goBG(fn func()) {
+	m.bg.Add(1)
+	go func() {
+		defer m.bg.Done()
+		fn()
+	}()
+}
+
+// WaitBackground cancels every output monitor, closes every send queue and
+// blocks until all goroutines started via goBG have exited, so nothing is
+// still writing to the data dir afterwards. Intended for tests (call it before
+// the data dir is removed) and for orderly shutdown; the manager must not
+// start new sessions concurrently with it.
+func (m *Manager) WaitBackground() {
+	m.mu.Lock()
+	for id, cancel := range m.monitors {
+		cancel()
+		delete(m.monitors, id)
+	}
+	m.mu.Unlock()
+	m.sendQueuesMu.Lock()
+	for id, q := range m.sendQueues {
+		close(q.ch) // ends drainSessionSendQueue
+		delete(m.sendQueues, id)
+	}
+	m.sendQueuesMu.Unlock()
+	m.bg.Wait()
+}
+
 // KillTmuxSession terminates the tmux session for a datawatch session (e.g. after completion).
 func (m *Manager) KillTmuxSession(fullID string) {
 	sess, ok := m.store.Get(fullID)
@@ -2964,7 +3008,7 @@ func (m *Manager) getOrCreateSendQueue(fullID string) *sessionSendQueue {
 	}
 	q := &sessionSendQueue{ch: make(chan sessionSendItem, 256)}
 	m.sendQueues[fullID] = q
-	go m.drainSessionSendQueue(fullID, q)
+	m.goBG(func() { m.drainSessionSendQueue(fullID, q) })
 	return q
 }
 
@@ -4145,12 +4189,16 @@ func (m *Manager) Restart(ctx context.Context, fullID string) (*Session, error) 
 	// replayed from prior conversation history during the TUI re-render window.
 	m.restartedAt[sess.FullID] = m.now()
 	m.mu.Unlock()
-	go m.monitorOutput(monCtx, sess, projGit)
+	m.goBG(func() { m.monitorOutput(monCtx, sess, projGit) })
 	if sess.OneShot && sess.TmuxSession != "" {
-		go func() {
-			time.Sleep(2 * time.Second)
+		m.goBG(func() {
+			select {
+			case <-time.After(2 * time.Second):
+			case <-monCtx.Done():
+				return
+			}
 			m.StartScreenCapture(monCtx, sess.FullID, 500)
-		}()
+		})
 	}
 
 	if m.onStateChange != nil {
@@ -5703,7 +5751,7 @@ func (m *Manager) ResumeMonitors(ctx context.Context) {
 		m.mu.Unlock()
 
 		projGit := NewProjectGit(sess.ProjectDir)
-		go m.monitorOutput(monCtx, sess, projGit)
+		m.goBG(func() { m.monitorOutput(monCtx, sess, projGit) })
 	}
 }
 
@@ -6382,7 +6430,7 @@ func (m *Manager) reconcileSessions(ctx context.Context) {
 				m.mu.Lock()
 				m.monitors[sess.FullID] = cancel
 				m.mu.Unlock()
-				go m.monitorOutput(monCtx, sess, projGit)
+				m.goBG(func() { m.monitorOutput(monCtx, sess, projGit) })
 			}
 		}
 

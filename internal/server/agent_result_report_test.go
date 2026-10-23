@@ -26,6 +26,7 @@ func reportServerFixture(t *testing.T) (*Server, *agents.Manager, *session.Manag
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(sm.WaitBackground)
 	s.manager = sm
 	return s, m, sm
 }

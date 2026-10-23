@@ -48,6 +48,7 @@ func newCurrentStatusServer(t *testing.T, initialLog string, startOffset int64) 
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
+	t.Cleanup(sm.WaitBackground)
 	sess := &session.Session{
 		ID:               "ab01",
 		FullID:           "h-ab01",

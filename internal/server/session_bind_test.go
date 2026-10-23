@@ -33,6 +33,7 @@ func bindFixture(t *testing.T, workerHandler http.Handler) (*Server, *session.Se
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
+	t.Cleanup(sm.WaitBackground)
 
 	// Pre-populate a local session directly in the store.
 	sess := &session.Session{

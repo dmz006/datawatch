@@ -34,6 +34,7 @@ func newCancelTestServer(t *testing.T, ids []string) (*Server, *audit.Log) {
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
+	t.Cleanup(sm.WaitBackground)
 	al, err := audit.NewAt(t.TempDir() + "/audit.log")
 	if err != nil {
 		t.Fatal(err)

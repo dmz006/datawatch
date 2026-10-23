@@ -72,6 +72,7 @@ func automatonStatusServer(t *testing.T, api AutonomousAPI, sess *session.Sessio
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
+	t.Cleanup(sm.WaitBackground)
 	if sess != nil {
 		if err := sm.SaveSession(sess); err != nil {
 			t.Fatalf("SaveSession: %v", err)

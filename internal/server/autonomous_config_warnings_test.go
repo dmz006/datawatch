@@ -23,6 +23,7 @@ func TestHandleAutonomousConfig_PUT_ReturnsPairingWarning(t *testing.T) {
 	if err != nil {
 		t.Fatalf("session.NewManager: %v", err)
 	}
+	t.Cleanup(sm.WaitBackground)
 	mgr, err := autonomous.NewManager(t.TempDir(), autonomous.DefaultConfig(), nil)
 	if err != nil {
 		t.Fatalf("autonomous.NewManager: %v", err)

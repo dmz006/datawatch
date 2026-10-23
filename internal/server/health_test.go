@@ -73,6 +73,7 @@ func newTestServer(t *testing.T, mem MemoryAPI, mcpFn func() interface{}) *Serve
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
+	t.Cleanup(mgr.WaitBackground)
 	s := &Server{
 		manager:     mgr,
 		hostname:    "testhost",

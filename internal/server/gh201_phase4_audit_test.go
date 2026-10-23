@@ -36,7 +36,14 @@ func gh201Phase4Server(t *testing.T) (*Server, *audit.Log) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = al.Close() })
+	// Registered after both TempDirs, so it runs before their removal:
+	// stop the manager's background writers, then close the audit log
+	// (Close takes the write mutex, so it waits for in-flight Writes).
+	t.Cleanup(func() {
+		srv.broadcastWG.Wait()
+		sm.WaitBackground()
+		_ = al.Close()
+	})
 	srv.auditLog = al
 	return srv, al
 }
