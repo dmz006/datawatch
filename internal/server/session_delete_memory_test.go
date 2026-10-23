@@ -86,6 +86,11 @@ func stopTestSession(t *testing.T, srv *Server, fullID string) {
 		_ = srv.manager.Kill(fullID)
 	}
 	srv.manager.KillTmuxSession(fullID)
+	// Deterministic wait: monitors, screen capture and send-queue drains
+	// have exited, so no late writer remains under the data dir.
+	srv.manager.WaitBackground()
+	srv.broadcastWG.Wait()
+	// Final assertion only; the waits above are what make it stable.
 	waitDirQuiet(t, srv.manager.DataDir())
 }
 
