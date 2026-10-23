@@ -9,6 +9,24 @@ Do not mark **Validated=Yes** based solely on unit tests.
 
 ---
 
+## Observer mobile fit — full-profile matrix reproduces a failing baseline on the unfixed tree, 2026-10-22
+
+The Observer view has never been exercised at phone sizes. On the unfixed tree the
+full-profile matrix (16 Observer states × 12 viewports × 2 themes × 3 zooms + 3
+interaction loops, 284 runs) produces **29,968 findings — every run Fail** — in 68
+groups: one `page-scroll` (the named `system-stats-phone` scenario scrolls
+horizontally), 16 `clipped-text` groups (memory rows, audit details, peer/cluster
+hints, stat values, nav icons, header title), 45 `tap-target` groups (`.btn-secondary`,
+`.btn-icon`, form controls, header controls and inline anchors all < 40px), 4
+`overlap` groups and 2 `interaction` groups (request stacking 2→44 and layout drift
+129→131 on rerender). Each group is attributed to its source line in
+`docs/plans/2026-10-22-observer-mobile-fit.md`; reports are in
+docs/testing/runs/observer-mobile-fit/ (Fail baseline).
+
+| Feature | Test Name | Test Conditions | Description | Test Type | Tested? | Pass/Fail? | Validated? | Notes |
+|---|---|---|---|---|---|---|---|---|
+| Observer mobile fit, full profile | `mobile-fit.mjs --view observer --profile full` (284 runs, headless Chromium at widths 320–768) | Build the daemon, then `node scripts/test-stories/pwa/mobile-fit.mjs --view observer --profile full` | Every one of the 284 scenario runs reproduces at least one mobile-fit defect — 29,968 findings in 68 groups across all five check dimensions; the named `system-stats-phone` scenario fails with a page-level horizontal scroll plus sub-40px tap targets, clipped text and overlaps | Browser (Playwright, full matrix) | **Yes** (2026-10-22) | **Fail** (baseline, all 284 runs) | **Yes** (live daemon + real Chromium) | Reports: `docs/testing/runs/observer-mobile-fit/repro-report.{json,txt}`; per-group causes: `docs/plans/2026-10-22-observer-mobile-fit.md` |
+
 ## Phase 4 - model-tier defaults
 
 An Automation carries default model settings for the member Automata it runs. The
