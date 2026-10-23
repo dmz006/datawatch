@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.113 — Release scan unblocked for one Brotli finding in the agent image
+
+### Fixed
+
+- **Release scan no longer blocked by one Brotli finding in the agent image.** CVE-2026-111497 in `libbrotli1` has no fix in Debian bookworm. A scan of the built image found that only curl, libcurl and git's HTTP helpers link the decoder, and it can only be reached through a hostile git remote that the operator configured, so it is traced and suppressed in `.trivyignore`. This publishes the releases whose scan it blocked.
+
 ## v9.5.112 — Optional local-model decision assistant for Automations
 
 ### Added
