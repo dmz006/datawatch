@@ -98,7 +98,9 @@ func syncLLMLimits(cfg *config.Config, reg *inference.Registry, led *capacity.Le
 // the back-off as their wait reason. Only llm: pools are gated — host, node:
 // and external pools are never blocked here. It is installed as the ledger's
 // AutonomousBackpressure, which requests marked Interactive skip, so operator
-// session starts are never held back by a back-off.
+// session starts are never held back by a back-off. It runs under the capacity
+// ledger lock (rule on capacity.Options): Backoff.Blocked only reads an
+// in-memory map under its own short mutex.
 func backoffBackpressure(bo *autonomous.Backoff) func(pool string) (bool, string) {
 	return func(pool string) (bool, string) {
 		backend, ok := strings.CutPrefix(pool, "llm:")
@@ -118,7 +120,10 @@ func backoffBackpressure(bo *autonomous.Backoff) func(pool string) (bool, string
 // pools — host, node: and external pools are never blocked — and it is
 // consulted only for autonomous requests, so operator session starts are
 // never held back. Admission resumes on the wait loop's next poll once the
-// window rolls over.
+// window rolls over. It runs under the capacity ledger lock (rule on
+// capacity.Options): BudgetLedger.Blocked reads in-memory entries and the
+// peer-spend cache only; the budget file is preloaded at startup and its
+// writes happen outside the mutex Blocked takes.
 func budgetBackpressure(bl *autonomous.BudgetLedger) func(pool string) (bool, string) {
 	return func(pool string) (bool, string) {
 		name, ok := strings.CutPrefix(pool, "llm:")
@@ -139,7 +144,10 @@ func budgetBackpressure(bl *autonomous.BudgetLedger) func(pool string) (bool, st
 // external pools are never blocked by it). The gate itself fails open:
 // with no opted-in peer, no confirmed match, an unreachable peer, or no
 // gate wired at all, it reports not blocked and admission proceeds exactly
-// as if the fingerprint feature did not exist.
+// as if the fingerprint feature did not exist. It runs under the capacity
+// ledger lock (rule on capacity.Options): the gate reads its in-memory view
+// of peers and matches and the cached peer usage, never the stores or the
+// network, and never the ledger.
 func sharedNodeBackpressure() func(pool string, held, limit int) (bool, string) {
 	return func(pool string, held, limit int) (bool, string) {
 		node, ok := strings.CutPrefix(pool, "node:")
@@ -363,6 +371,9 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 	var gpuMu sync.Mutex
 	gpuUtil := map[string]float64{}
 
+	// external is called under the capacity ledger lock (rule on
+	// capacity.Options): Hostname is a field read and ListSessions copies the
+	// session store under its read lock, with no ledger call and no I/O.
 	external := func(pool string) int {
 		if pool != "host" {
 			return 0
@@ -376,6 +387,9 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 		}
 		return n
 	}
+	// backpressure is called under the capacity ledger lock (rule on
+	// capacity.Options): it reads the cached gpuUtil map, which the slow tick
+	// refreshes.
 	backpressure := func(pool string) (bool, string) {
 		limit := cfg.Autonomous.CapacityGPUUtilPct
 		if limit <= 0 || !strings.HasPrefix(pool, "node:") {
@@ -404,6 +418,8 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 	amgr.SetAutomationBudget(automationBudget)
 	autonomousBudget.PeerSpend = peerBudget.Spend
 	autonomousBudget.PeerBreakdown = peerBudget.Breakdown
+	// Load the budget file now so Blocked never reads it under the ledger lock.
+	autonomousBudget.Preload()
 	led := capacity.New(capacity.Options{
 		External:     external,
 		Backpressure: backpressure,

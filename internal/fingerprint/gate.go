@@ -8,7 +8,10 @@
 // open.
 package fingerprint
 
-import "fmt"
+import (
+	"fmt"
+	"sync/atomic"
+)
 
 // PeerRef is one federated peer as the gate sees it: its name (matching
 // Match.Peer), the base URL of its daemon, the bearer token to present,
@@ -40,6 +43,39 @@ type PeerGate struct {
 	Peers     func() []PeerRef
 	LocalHeld func(pool string) (held, limit int)
 	Usage     *PeerUsageCache // cached peer usage; nil = peers contribute zero
+
+	// view is the in-memory copy of the peer list and the confirmed node
+	// matches that ReasonWithHeld reads once RefreshView has run. The peer
+	// store and the match store both hold their locks across file writes, so
+	// the ledger (which calls ReasonWithHeld under its own lock) must not
+	// read them directly.
+	view atomic.Pointer[gateView]
+}
+
+// gateView is an immutable snapshot taken by RefreshView.
+type gateView struct {
+	peers  map[string]PeerRef
+	shared map[string][]Match // local node name -> confirmed node matches
+}
+
+// RefreshView re-reads the peer list and the confirmed node matches into the
+// in-memory view ReasonWithHeld uses. Call it off the admission path (at
+// startup and after each slow sync pass); a decision or peer change takes
+// effect at the next refresh.
+func (g *PeerGate) RefreshView() {
+	if g.Matches == nil || g.Peers == nil {
+		return
+	}
+	v := &gateView{peers: map[string]PeerRef{}, shared: map[string][]Match{}}
+	for _, p := range g.Peers() {
+		v.peers[p.Name] = p
+	}
+	for _, m := range g.Matches.List(StateConfirmed) {
+		if m.Kind == KindNode {
+			v.shared[m.LocalName] = append(v.shared[m.LocalName], m)
+		}
+	}
+	g.view.Store(v)
 }
 
 // Reason returns "" to admit the named local node, or a wait reason when
@@ -61,11 +97,19 @@ func (g *PeerGate) ReasonWithHeld(node string, held, limit int) string {
 	if g.Matches == nil || g.Peers == nil {
 		return ""
 	}
-	peers := make(map[string]PeerRef)
-	for _, p := range g.Peers() {
-		peers[p.Name] = p
+	var peers map[string]PeerRef
+	var shared []Match
+	if v := g.view.Load(); v != nil {
+		peers, shared = v.peers, v.shared[node]
+	} else {
+		// No view yet (RefreshView never ran): read the live stores.
+		peers = make(map[string]PeerRef)
+		for _, p := range g.Peers() {
+			peers[p.Name] = p
+		}
+		shared = g.Matches.SharedWith(KindNode, node)
 	}
-	for _, m := range g.Matches.SharedWith(KindNode, node) {
+	for _, m := range shared {
 		peer, ok := peers[m.Peer]
 		if !ok || !peer.OptedIn {
 			continue // unresolved or not opted in

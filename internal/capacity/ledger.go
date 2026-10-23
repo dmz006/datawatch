@@ -116,21 +116,34 @@ func (realClock) Now() time.Time                         { return time.Now() }
 func (realClock) After(d time.Duration) <-chan time.Time { return time.After(d) }
 
 // Options tune dispatch behaviour.
+//
+// LOCK RULE: every function in Options (External, Backpressure,
+// AutonomousBackpressure, HeldBackpressure) is invoked while the ledger lock is
+// held. Each must therefore be a fast in-memory read: it must never call back
+// into the ledger (Snapshot, Held, LeaseOf, Limit, Acquire and the like, which
+// would deadlock) or into the autonomous manager, never do network, file or
+// process I/O, and never block on a lock that a ledger caller could hold (or
+// that is held across such I/O). Slow data is cached and refreshed elsewhere.
+// The Clock's Now is also read under the lock, so it must be a plain read too.
 type Options struct {
 	// External reports slots in a pool used by work outside the ledger (for
-	// example operator sessions counting against the host pool).
+	// example operator sessions counting against the host pool). Called under
+	// the lock from usedLocked and Snapshot: an in-memory count only.
 	External func(pool string) int
 	// Backpressure reports a soft block for a pool (for example GPU load).
+	// Called under the lock: read cached figures, never probe the network or
+	// a process.
 	Backpressure func(pool string) (blocked bool, reason string)
 	// AutonomousBackpressure is a soft block (for example a per-backend
-	// back-off) that applies to autonomous requests only; requests marked
-	// Interactive skip it.
+	// back-off or a budget window) that applies to autonomous requests only;
+	// requests marked Interactive skip it. Called under the lock: in-memory
+	// state only.
 	AutonomousBackpressure func(pool string) (blocked bool, reason string)
 	// HeldBackpressure is a soft block for autonomous requests that needs the
-	// pool's current usage. The ledger calls it while it holds its own lock,
-	// so it receives the held count and the limit as arguments: it MUST NOT
-	// call back into the ledger (Snapshot, LeaseOf and the like), which
-	// would deadlock.
+	// pool's current usage. Both numbers come from the ledger itself: held is
+	// the count of leases naming the pool (l.leases) and limit is the value set
+	// by SetLimit (l.limits), passed as arguments so the function never reads
+	// the ledger back. Called under the lock, so the lock rule applies.
 	HeldBackpressure func(pool string, held, limit int) (blocked bool, reason string)
 	// AgeOverride: waiters older than this jump ahead of model affinity.
 	AgeOverride time.Duration
@@ -336,6 +349,9 @@ func (l *Ledger) grantLocked(w *waiter, now time.Time) {
 // Acquire blocks until the request is granted, ctx is done, cancelled()
 // returns true, or timeout (>0) elapses. onWait is called whenever the wait
 // reason changes (including the first time the request has to wait).
+// cancelled and onWait are always invoked WITHOUT the ledger lock held, so
+// they may call back into the ledger; the Options functions are not so
+// lucky (see Options).
 func (l *Ledger) Acquire(ctx context.Context, req Request, timeout time.Duration, cancelled func() bool, onWait func(reason string)) error {
 	l.mu.Lock()
 	if _, held := l.leases[req.Holder]; held {

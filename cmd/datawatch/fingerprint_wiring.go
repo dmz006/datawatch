@@ -72,7 +72,11 @@ func wireFingerprint(ctx context.Context, cfg *config.Config, httpServer *server
 		if ms := httpServer.ServerStore(); ms != nil {
 			syncer := newFingerprintSyncer(ms, exporter, store)
 			gate := newFingerprintGate(ms, store, fingerprintLocalHeld(led))
-			syncer.AfterPass = gate.Usage.RefreshAll
+			gate.RefreshView()
+			syncer.AfterPass = func(ctx context.Context) {
+				gate.RefreshView()
+				gate.Usage.RefreshAll(ctx)
+			}
 			fingerprintPeerGate = gate
 			go syncer.Run(ctx)
 		}

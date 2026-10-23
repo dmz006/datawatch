@@ -318,3 +318,37 @@ func TestBudgetLedgerOldEntriesWithoutSessionStillLoad(t *testing.T) {
 		t.Fatalf("an old entry must not be attributed, got %v", got)
 	}
 }
+
+// Blocked runs under the capacity ledger lock, so it must not wait on the
+// budget file's I/O lock: a slow write in progress must not stall it.
+func TestBudgetBlockedNotStalledByFileIO(t *testing.T) {
+	clk := &budgetFakeClock{t: time.Now()}
+	bl := newTestBudgetLedger(t, clk, &inference.BudgetWindow{CeilingUSD: 10, Hours: 24})
+	bl.Preload()
+	bl.ioMu.Lock() // simulate a file write in flight
+	done := make(chan struct{})
+	go func() {
+		bl.Blocked("claude")
+		bl.SpendBetween("claude", clk.Now().Add(-time.Hour), clk.Now())
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		bl.ioMu.Unlock()
+		t.Fatal("Blocked/SpendBetween waited on the file I/O lock")
+	}
+	bl.ioMu.Unlock()
+}
+
+func TestBudgetPreloadReadsFileOnce(t *testing.T) {
+	clk := &budgetFakeClock{t: time.Now()}
+	bl := newTestBudgetLedger(t, clk, &inference.BudgetWindow{CeilingUSD: 10, Hours: 24})
+	bl.Record("claude", clk.Now(), 4, 0, 0)
+	again := NewBudgetLedger(bl.path)
+	again.Clock = clk.Now
+	again.Preload()
+	if got := again.SpendBetween("claude", clk.Now().Add(-time.Hour), clk.Now().Add(time.Hour)); got != 4 {
+		t.Fatalf("spend after Preload = %v, want 4", got)
+	}
+}

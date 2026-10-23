@@ -208,3 +208,23 @@ func TestPeerGateIgnoresPeerNotOptedIn(t *testing.T) {
 		t.Fatalf("not-opted-in peer got %d HTTP calls, want 0", got)
 	}
 }
+
+// Once RefreshView has run, ReasonWithHeld answers from the in-memory view
+// and no longer reads the peer list or the match store.
+func TestReasonWithHeldUsesViewAfterRefresh(t *testing.T) {
+	var hits int32
+	srv := httptest.NewServer(serveCapacity(2))
+	defer srv.Close()
+	g := newPeerGate(t, srv.URL, true, true, 2, 2, &hits)
+	if err := g.Usage.Refresh(context.Background(), PeerRef{Name: "peer-a", URL: srv.URL, Token: "tok", OptedIn: true}); err != nil {
+		t.Fatal(err)
+	}
+	g.RefreshView()
+	if g.ReasonWithHeld("gpu-0", 2, 2) == "" {
+		t.Fatal("want a block from the view")
+	}
+	g.Peers = func() []PeerRef { t.Fatal("Peers read after RefreshView"); return nil }
+	if g.ReasonWithHeld("gpu-0", 2, 2) == "" {
+		t.Fatal("view answer changed after stores were removed")
+	}
+}
