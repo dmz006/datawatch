@@ -171,6 +171,15 @@ Config: `autonomous.usage_backoff` (`pause_backend` | `off`, default `pause_back
 `/api/usage-backoff`, `usage_backoff_*` MCP tools, `datawatch usage-backoff`, comm
 `usage_backoff`. See `docs/howto/automata-capacity.md`.
 
+LLM role tags (`internal/inference/role_resolve.go`, `role_contention.go`): `llms[].roles`
+is an open set of strings (trimmed, lower-cased, de-duplicated; empty rejected). An
+explicit per-call-site backend or model always wins; otherwise the entry claiming the role
+is used (several claimants resolve by name with an ambiguity warning). Contention (two
+entries claiming one role, or two roles converging on one entry) is checked on every llms
+write and by a periodic scan. Config: `autonomous.role_scan_interval_seconds` (default 300;
+a value below 1 is treated as 300). Warnings are audited as `llm_role_contention` and shown
+under `status.role_warnings` of the llm listing; they never fail a write.
+
 `autonomous.ci_watch_timeout_seconds` (default 1500) bounds how long the optional
 `ci-watch` completion guardrail waits for the CI runs of the commit an Automaton
 pushed. It only applies when `ci-watch` is listed in `autonomous.per_prd_guardrails`

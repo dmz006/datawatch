@@ -150,3 +150,25 @@ func wireUsageBackoff(ctx context.Context, cfg *config.Config, mgr *session.Mana
 		}
 	}()
 }
+
+// startRoleContentionScan checks LLM role tags for contention every
+// autonomous.role_scan_interval_seconds until ctx is cancelled. Warnings go to
+// the audit log and the llm listing status; the scan never fails the daemon.
+func startRoleContentionScan(ctx context.Context, cfg *config.Config, srv interface{ CheckRoleContention() []string }) {
+	interval := time.Duration(cfg.Autonomous.RoleScanIntervalSeconds) * time.Second
+	if interval < time.Second {
+		interval = time.Duration(config.RoleScanIntervalDefaultSeconds) * time.Second
+	}
+	go func() {
+		t := time.NewTicker(interval)
+		defer t.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-t.C:
+				srv.CheckRoleContention()
+			}
+		}
+	}()
+}

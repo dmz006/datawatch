@@ -868,6 +868,14 @@ func (s *HTTPServer) SetInference(reg *inference.Registry, disp *inference.Dispa
 	}
 }
 
+// CheckRoleContention runs the LLM role contention check (see Server.CheckRoleContention).
+func (s *HTTPServer) CheckRoleContention() []string {
+	if s.api == nil {
+		return nil
+	}
+	return s.api.CheckRoleContention()
+}
+
 // SetServerStore (BL312 S1) — wires the runtime multi-server registry.
 func (s *HTTPServer) SetServerStore(st *multiserver.Store) {
 	if s.api != nil {

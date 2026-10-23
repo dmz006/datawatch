@@ -3532,6 +3532,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					disp.SetServerStore(st)
 				}
 				httpServer.SetInference(llmReg, disp)
+				startRoleContentionScan(ctx, cfg, httpServer)
 
 				// BL-summarizer — wire dual-summary pipeline when enabled.
 				if cfg.Session.Summarizer.Enabled {

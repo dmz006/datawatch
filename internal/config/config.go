@@ -2213,6 +2213,10 @@ type AutonomousConfig struct {
 	// BackoffMaxWaitMinutes caps the back-off applied when a rate limit
 	// carries no parseable reset time. Unset => 60; values < 1 clamp to 60.
 	BackoffMaxWaitMinutes int `yaml:"backoff_max_wait_minutes,omitempty" json:"backoff_max_wait_minutes,omitempty"`
+	// RoleScanIntervalSeconds is how often the daemon re-checks LLM role
+	// tags for contention (two entries claiming one role, or two roles
+	// converging on one entry). Unset or < 1 => 300. Warnings only.
+	RoleScanIntervalSeconds int `yaml:"role_scan_interval_seconds,omitempty" json:"role_scan_interval_seconds,omitempty"`
 	// CapacityWaitTimeoutSeconds bounds one capacity wait (default 14400).
 	CapacityWaitTimeoutSeconds int `yaml:"capacity_wait_timeout_seconds,omitempty" json:"capacity_wait_timeout_seconds,omitempty"`
 	// CapacityGPUUtilPct holds new tasks back while a node's busiest GPU is at
@@ -3027,13 +3031,14 @@ func DefaultConfig() *Config {
 			OllamaHeaderTimeoutSec: 900,
 		},
 		Autonomous: AutonomousConfig{
-			AutoFixRetries:        1,
-			MaxConcurrentTasks:    1,
-			UsageBackoff:          UsageBackoffPauseBackend,
-			BackoffMaxWaitMinutes: BackoffMaxWaitDefaultMinutes,
-			ResumeMaxAgeSeconds:   3600,
-			MaxEnginesPerNode:     1,
-			GateDisagreement:      autonomousGateDisagreementWarn,
+			AutoFixRetries:          1,
+			MaxConcurrentTasks:      1,
+			UsageBackoff:            UsageBackoffPauseBackend,
+			BackoffMaxWaitMinutes:   BackoffMaxWaitDefaultMinutes,
+			RoleScanIntervalSeconds: RoleScanIntervalDefaultSeconds,
+			ResumeMaxAgeSeconds:     3600,
+			MaxEnginesPerNode:       1,
+			GateDisagreement:        autonomousGateDisagreementWarn,
 			// Starting plan-tier table — operator policy, see the field
 			// doc on PlanTierMaxInflight. api=0 = unlimited; the dollar
 			// budget is a later phase.
@@ -3445,6 +3450,9 @@ func applyDefaults(cfg *Config) {
 	}
 	cfg.Autonomous.UsageBackoff = normalizeUsageBackoff(cfg.Autonomous.UsageBackoff)
 	cfg.Autonomous.BackoffMaxWaitMinutes = normalizeBackoffMaxWaitMinutes(cfg.Autonomous.BackoffMaxWaitMinutes)
+	if cfg.Autonomous.RoleScanIntervalSeconds < 1 {
+		cfg.Autonomous.RoleScanIntervalSeconds = RoleScanIntervalDefaultSeconds
+	}
 	if cfg.Autonomous.MaxEnginesPerNode < 1 {
 		cfg.Autonomous.MaxEnginesPerNode = 1
 	}
@@ -3751,3 +3759,6 @@ func (c SessionConfig) EffectiveReservedInteractive() int {
 	}
 	return n
 }
+
+// RoleScanIntervalDefaultSeconds is the default autonomous.role_scan_interval_seconds.
+const RoleScanIntervalDefaultSeconds = 300

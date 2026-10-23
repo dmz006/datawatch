@@ -324,6 +324,7 @@ type Server struct {
 
 	// v7.0.0 S2 — LLM-inference registry + dispatcher (nil when disabled).
 	inferenceReg   *inference.Registry
+	roleMonitor    inference.RoleContentionMonitor
 	capacityLedger *capacity.Ledger
 	// usageBackoff is the per-backend usage back-off registry (BL428 Phase 4).
 	usageBackoff *autonomous.Backoff

@@ -15,8 +15,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"io"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -30,6 +30,30 @@ import (
 func (s *Server) SetInference(reg *inference.Registry, disp *inference.Dispatcher) {
 	s.inferenceReg = reg
 	s.inferenceDisp = disp
+}
+
+// CheckRoleContention runs the LLM role contention check against the live
+// registry, records each warning in the audit log and returns them. It never
+// fails: warnings are advisory. Called on every llms write and by the daemon's
+// periodic scan.
+func (s *Server) CheckRoleContention() []string {
+	if s.inferenceReg == nil {
+		return nil
+	}
+	warns := s.roleMonitor.Check(s.inferenceReg.List())
+	if s.auditLog != nil {
+		for _, w := range warns {
+			_ = s.auditLog.Write(audit.Entry{
+				Actor:  "daemon",
+				Action: "llm_role_contention",
+				Details: map[string]any{
+					"resource_type": "llm",
+					"warning":       w,
+				},
+			})
+		}
+	}
+	return warns
 }
 
 // Dispatcher returns the wired dispatcher (nil if none). Used by
@@ -62,7 +86,7 @@ func (s *Server) handleLLMs(w http.ResponseWriter, r *http.Request) {
 		for _, l := range llms {
 			views = append(views, s.llmView(l.Redacted()))
 		}
-		writeJSONOK(w, map[string]any{"llms": views})
+		writeJSONOK(w, map[string]any{"llms": views, "status": map[string]any{"role_warnings": s.roleMonitor.Warnings()}})
 
 	case rest == "" && r.Method == http.MethodPost:
 		if !s.fedCap(w, r, federation.CapLLMsWrite) {
@@ -92,6 +116,7 @@ func (s *Server) handleLLMs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.auditLLM(l.Name, "llm_add")
+		s.CheckRoleContention()
 		writeJSONOK(w, map[string]any{"name": l.Name, "ok": true})
 
 	case strings.HasSuffix(rest, "/test") && r.Method == http.MethodPost:
@@ -212,6 +237,7 @@ func (s *Server) handleLLMs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.auditLLM(l.Name, "llm_update")
+		s.CheckRoleContention()
 		writeJSONOK(w, map[string]any{"name": l.Name, "ok": true})
 
 	case rest != "" && r.Method == http.MethodDelete:
@@ -230,6 +256,7 @@ func (s *Server) handleLLMs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.auditLLM(rest, "llm_delete")
+		s.CheckRoleContention()
 		writeJSONOK(w, map[string]any{"name": rest, "ok": true})
 
 	default:
@@ -247,10 +274,10 @@ func (s *Server) handleLLMs(w http.ResponseWriter, r *http.Request) {
 // omitempty-tagged fields would drop it.
 type llmView struct {
 	inference.LLM
-	PlanTier             string                     `json:"plan_tier"`
-	MaxInflight          *int                       `json:"max_inflight"`
-	EffectiveMaxInflight int                        `json:"effective_max_inflight"`
-	InflightSource       inference.InflightSource   `json:"inflight_source"`
+	PlanTier             string                   `json:"plan_tier"`
+	MaxInflight          *int                     `json:"max_inflight"`
+	EffectiveMaxInflight int                      `json:"effective_max_inflight"`
+	InflightSource       inference.InflightSource `json:"inflight_source"`
 }
 
 // llmView builds the response view for one redacted LLM. The tier table
