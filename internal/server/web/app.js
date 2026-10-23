@@ -12326,7 +12326,7 @@ function loadPRDPanel() {
   const panel = document.getElementById('prdPanel');
   if (!panel) return;
   Promise.all([
-    apiFetch('/api/autonomous/prds').catch(() => ({ prds: [] })),
+    apiFetch('/api/autonomous/prds?full=1').catch(() => ({ prds: [] })),
     fetch('/api/llms', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).catch(() => null),
   ]).then(([data, backendsResp]) => {
     state._prdBackends = (backendsResp && backendsResp.llms || []).filter(l => !l.disabled);
@@ -20762,7 +20762,7 @@ function loadAutomataPanel() {
   });
   panel.innerHTML = `<div style="text-align:center;padding:32px;color:var(--text2);">${loadingEyeBlock()}</div>`;
   // BL312 S5 — use aggregated endpoint in all-servers mode
-  const prdsEndpoint = state.activeServer === 'all' ? '/api/autonomous/prds/aggregated' : '/api/autonomous/prds';
+  const prdsEndpoint = state.activeServer === 'all' ? '/api/autonomous/prds/aggregated' : '/api/autonomous/prds?full=1';
   Promise.all([
     // Coordinator-flagged (2026-10-08): this used to swallow EVERY
     // failure (including a federated 401/missing-token or 403/missing

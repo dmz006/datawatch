@@ -331,7 +331,7 @@ func TestPerfSeedCounts(t *testing.T) {
 
 func TestPerfSeedHeavyAutomataSize(t *testing.T) {
 	seed := SeedPerfServer(t, t.TempDir())
-	rr := perfGet(seed.Server.handleAutonomousPRDs, "/api/autonomous/prds")
+	rr := perfGet(seed.Server.handleAutonomousPRDs, "/api/autonomous/prds?full=1")
 	if rr.Code != http.StatusOK {
 		t.Fatalf("list prds: %d", rr.Code)
 	}

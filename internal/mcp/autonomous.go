@@ -340,7 +340,7 @@ func (s *Server) toolAutonomousPRDList() mcpsdk.Tool {
 	)
 }
 func (s *Server) handleAutonomousPRDList(_ context.Context, _ mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
-	out, err := s.proxyGet("/api/autonomous/prds", nil)
+	out, err := s.proxyGet("/api/autonomous/prds", url.Values{"full": {"1"}})
 	if err != nil {
 		return nil, err
 	}

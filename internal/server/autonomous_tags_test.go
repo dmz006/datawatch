@@ -218,7 +218,7 @@ func TestTagSetTagsAndListFilter(t *testing.T) {
 	}
 
 	// tag_ids appears on the PRD JSON and duplicates are collapsed.
-	rec := tagCall(t, s, http.MethodGet, "/api/autonomous/prds", "")
+	rec := tagCall(t, s, http.MethodGet, "/api/autonomous/prds?full=1", "")
 	var all struct {
 		PRDs []struct {
 			ID     string   `json:"id"`

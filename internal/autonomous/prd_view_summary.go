@@ -23,6 +23,21 @@ type SummaryView struct {
 	// CIWatch is copied unchanged from the PRD. It is small, and it is the
 	// automaton's own record of whether CI passed for its pushed commit.
 	CIWatch *CIWatchResult `json:"ci_watch,omitempty"`
+
+	// The fields below feed a collapsed Automata row. All are scalars, short
+	// lists or small count maps, so none grows with the amount of text the
+	// stories and tasks carry.
+	Type             string         `json:"type,omitempty"`
+	Backend          string         `json:"backend,omitempty"`
+	Tags             []string       `json:"tags,omitempty"`
+	Cost             float64        `json:"cost"`
+	ParentPRDID      string         `json:"parent_prd_id,omitempty"`
+	Priority         int            `json:"priority,omitempty"`
+	IsTemplate       bool           `json:"is_template,omitempty"`
+	AutomationID     string         `json:"automation_id,omitempty"`
+	BlockedReason    string         `json:"blocked_reason,omitempty"`
+	QualityGateState string         `json:"quality_gate_status,omitempty"`
+	TaskStatusCounts map[string]int `json:"task_status_counts"`
 }
 
 // StorySummary is one story's entry in a SummaryView. TaskStatusCounts maps
@@ -55,6 +70,20 @@ func BuildSummaryView(prd *PRD) SummaryView {
 		Stories:       make([]StorySummary, 0, len(prd.Story)),
 		StoryCount:    len(prd.Story),
 		CIWatch:       prd.CIWatch,
+
+		Type:             prd.Type,
+		Backend:          prd.Backend,
+		Tags:             prd.TagIDs,
+		ParentPRDID:      prd.ParentPRDID,
+		Priority:         prd.Priority,
+		IsTemplate:       prd.IsTemplate,
+		AutomationID:     prd.AutomationID,
+		BlockedReason:    prd.BlockedReason,
+		QualityGateState: prd.QualityGateStatus,
+		TaskStatusCounts: make(map[string]int),
+	}
+	for i := range prd.Decisions {
+		view.Cost += prd.Decisions[i].CostUSD
 	}
 
 	for i := range prd.Story {
@@ -68,9 +97,24 @@ func BuildSummaryView(prd *PRD) SummaryView {
 		}
 		for j := range story.Tasks {
 			summary.TaskStatusCounts[string(story.Tasks[j].Status)]++
+			view.TaskStatusCounts[string(story.Tasks[j].Status)]++
 		}
 		view.Stories = append(view.Stories, summary)
 		view.TaskCount += summary.TaskCount
 	}
 	return view
+}
+
+// SummaryRow is one row of the PRD list: a SummaryView without the
+// per-story breakdown. Its size depends on the PRD's identity fields and
+// the number of distinct task statuses, never on how many stories or tasks
+// the PRD holds.
+type SummaryRow struct {
+	SummaryView
+	Stories *struct{} `json:"stories,omitempty"`
+}
+
+// BuildSummaryRow builds the list row for prd from its SummaryView.
+func BuildSummaryRow(prd *PRD) SummaryRow {
+	return SummaryRow{SummaryView: BuildSummaryView(prd)}
 }

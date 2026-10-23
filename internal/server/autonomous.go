@@ -323,7 +323,7 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 				writeJSONOK(w, map[string]any{"prds": prds})
 				return
 			}
-			writeJSONOK(w, map[string]any{"prds": s.autonomousMgr.ListPRDs()})
+			s.writePRDList(w, r)
 		case http.MethodPost:
 			if !s.fedCap(w, r, federation.CapAutonomousWrite) {
 				return
