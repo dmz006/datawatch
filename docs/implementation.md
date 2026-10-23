@@ -251,6 +251,10 @@ nil-safe). `off` is a full no-op, `warn` never blocks, `block` sets
 `TaskBlocked` with `undeclared_edit: <files>` and halts the walk.
 Worktree-mode PRDs are skipped. Read-only git only.
 
+### Peer usage cache
+
+The shared-node gate (`fingerprint.PeerGate`) reads each opted-in peer's held counts from `fingerprint.PeerUsageCache`, an in-memory map of the last good `/api/capacity` answer per peer. `wireFingerprint` builds one cache, sets it as `PeerGate.Usage`, and sets `Syncer.AfterPass` to `RefreshAll`, so the cache is refreshed once at start and after every 15-minute sync pass. The ledger callback only reads memory; a missing or stale entry fails open and triggers a background refresh. Peers without fingerprint sync opted in get no HTTP call, and no config key is involved.
+
 ### Per-task project directory (Automata)
 
 `autonomous.Task.ProjectDir` (JSON `project_dir`) overrides the

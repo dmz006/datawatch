@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **The shared-node check now reads cached peer usage.** Federated peers' capacity counts are kept in memory and refreshed at the end of each fingerprint sync pass (and once at daemon start), so the admission path never makes a network call. Peers that have not opted in are never contacted. No new config key.
+
 ## v9.5.110 — Capacity admission no longer deadlocks on the shared-node check
 
 ### Fixed

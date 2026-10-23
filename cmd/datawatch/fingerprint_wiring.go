@@ -11,6 +11,10 @@
 // external pools, never interactive starts, and the gate itself fails open
 // on peer errors.
 //
+// The gate reads CACHED peer usage (fingerprint.PeerUsageCache) and never
+// makes a network call from the ledger callback: one cache is shared by the
+// gate and the syncer, which refreshes it at the end of every sync pass.
+//
 // Everything is opt-in in both directions: the syncer makes no HTTP call
 // for a peer whose entry is not FingerprintSync, and the gate blocks only
 // for a match an operator CONFIRMED. With no opted-in peers and no
@@ -67,8 +71,10 @@ func wireFingerprint(ctx context.Context, cfg *config.Config, httpServer *server
 
 		if ms := httpServer.ServerStore(); ms != nil {
 			syncer := newFingerprintSyncer(ms, exporter, store)
+			gate := newFingerprintGate(ms, store, fingerprintLocalHeld(led))
+			syncer.AfterPass = gate.Usage.RefreshAll
+			fingerprintPeerGate = gate
 			go syncer.Run(ctx)
-			fingerprintPeerGate = newFingerprintGate(ms, store, fingerprintLocalHeld(led))
 		}
 	}
 

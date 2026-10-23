@@ -299,3 +299,35 @@ func TestSyncNeverConfirms(t *testing.T) {
 		t.Error("sync.go must not contain a confirming code path")
 	}
 }
+
+// TestSyncAfterPassFiresPerPass — AfterPass runs once per pass of Run
+// (including the immediate first one), and a slow hook only delays the
+// loop: it neither panics nor stops it.
+func TestSyncAfterPassFiresPerPass(t *testing.T) {
+	var calls int64
+	s := testSyncer(nil, nodeExporter("gpu1", "GPU-1"), testStore(t))
+	s.Interval = 10 * time.Millisecond
+	s.AfterPass = func(ctx context.Context) {
+		atomic.AddInt64(&calls, 1)
+		time.Sleep(25 * time.Millisecond) // slower than the interval
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { s.Run(ctx); close(done) }()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for atomic.LoadInt64(&calls) < 3 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	cancel()
+	<-done
+	if n := atomic.LoadInt64(&calls); n < 3 {
+		t.Fatalf("AfterPass calls = %d, want at least 3 (first pass plus ticks)", n)
+	}
+
+	// Nil hook: unchanged behavior.
+	s2 := testSyncer(nil, nodeExporter("gpu1", "GPU-1"), testStore(t))
+	ctx2, cancel2 := context.WithCancel(context.Background())
+	cancel2()
+	s2.Run(ctx2)
+}
