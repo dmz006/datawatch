@@ -5,6 +5,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.106 — Automation close-out: import-graph, parity audit and deprecation of the old graph tools
+
+### Added
+
+- **`import-graph` turns an old orchestrator graph into a draft Automation.** Available as `POST /api/automations/import-graph/{graph_id}`, the `automation_import_graph` MCP tool, `datawatch automation import-graph <graph-id> [--dry-run]` and the comm `automation import-graph <graph-id> [dry-run]`. A dry run previews the Automation and any warnings and stores nothing; a graph that cannot be expressed as an Automation is refused with the reason. A real import writes one audit entry.
+
+### Changed
+
+- **The orchestrator graph create, plan and run operations now say they are deprecated.** `orchestrator_graph_create`, `orchestrator_graph_plan` and `orchestrator_graph_run`, and their REST, CLI and comm forms, keep working but carry a notice that names `import-graph`; REST responses add a `Deprecation: true` header and `deprecation` field, and the daemon logs the warning once per operation.
+- **Every Automation operation and config key now exists on every surface.** The verb, web control, audit event and config key gaps found by the new parity audit are closed, and a parity test keeps them closed.
+
 ## v9.5.105 — Automata tags: a nested tag tree to organise Automata
 
 ### Added
