@@ -781,7 +781,7 @@
   "new_session_v7_llm_default": "— select an LLM —",
   "new_session_v7_llm_label": "LLM",
   "new_session_v7_optional": "(optional — overrides backend above)",
-  "new_session_working_dir_hint": "Server path — e.g. /home/user/code",
+  "new_session_working_dir_hint": "Server path — e.g. ~/code",
   "new_session_working_dir_label": "Working directory (optional)",
   "observer_attached_to": "attached to ComputeNode",
   "observer_free": "free",
@@ -1196,6 +1196,8 @@
   "session_action_unmute": "Unmute notifications",
   "session_chrome_badge": "Chrome",
   "session_chrome_badge_tip": "Chrome DevTools Protocol browser automation enabled",
+  "session_priority_badge": "Priority %1$d",
+  "session_priority_badge_tip": "Capacity-queue priority: higher is admitted first when capacity is contended",
   "session_watch_filter_tip": "Show watched only",
   "sessions_disconnected_banner": "Not connected to the server — this list may be stale.",
   "session_council_badge": "Council",
@@ -2114,5 +2116,13 @@
   "tag_rename": "Rename",
   "tag_save": "Save",
   "tag_saved": "Tags saved",
-  "tag_suggest_hint": "Suggested from the project alias — change it if it is wrong"
+  "tag_suggest_hint": "Suggested from the project alias — change it if it is wrong",
+  "llm_field_roles": "Workload roles (comma-separated; empty = none)",
+  "llm_roles_hint": "Roles this entry serves. If several enabled entries claim one role, the first by name wins and a warning is shown.",
+  "workload_roles_title": "Workload Roles",
+  "workload_roles_desc": "Each role and the LLM entry it resolves to.",
+  "workload_roles_empty": "No LLM entry claims a workload role.",
+  "workload_roles_col_role": "Role",
+  "workload_roles_col_entry": "Resolves to",
+  "workload_roles_warnings": "Contention warnings"
 }

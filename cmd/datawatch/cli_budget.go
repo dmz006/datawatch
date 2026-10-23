@@ -109,3 +109,13 @@ func llmBudgetFromFlags(f *pflag.FlagSet) (value any, set bool, err error) {
 	}
 	return bw, true, nil
 }
+
+// llmRolesFromFlag turns the repeated --role values into the "roles" member of
+// an LLM request body. A lone empty value is the clear request and yields an
+// empty list; anything else is passed through for the daemon to validate.
+func llmRolesFromFlag(roles []string) []string {
+	if len(roles) == 1 && strings.TrimSpace(roles[0]) == "" {
+		return []string{}
+	}
+	return append([]string{}, roles...)
+}

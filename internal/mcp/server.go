@@ -389,6 +389,7 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolVisionDescribe(), tracked(s.handleVisionDescribe))
 	mcpSrv.AddTool(s.toolKillSession(), tracked(s.handleKillSession))
 	mcpSrv.AddTool(s.toolRenameSession(), tracked(s.handleRenameSession))
+	mcpSrv.AddTool(s.toolSetSessionPriority(), tracked(s.handleSetSessionPriority))
 	mcpSrv.AddTool(s.toolStopAllSessions(), tracked(s.handleStopAllSessions))
 	// BL93/BL94 — orphan session reconciliation + import.
 	mcpSrv.AddTool(s.toolSessionReconcile(), tracked(s.handleSessionReconcile))
@@ -1284,6 +1285,7 @@ func (s *Server) ToolDocs() []ToolDoc {
 		{s.toolVisionDescribe, "vision_describe"},
 		{s.toolKillSession, "kill_session"},
 		{s.toolRenameSession, "rename_session"},
+		{s.toolSetSessionPriority, "set_session_priority"},
 		{s.toolStopAllSessions, "stop_all_sessions"},
 		{s.toolSessionReconcile, "session_reconcile"},
 		{s.toolSessionImport, "session_import"},
@@ -1613,6 +1615,7 @@ func (s *Server) toolStartSession() mcpsdk.Tool {
 		mcpsdk.WithBoolean("kill_children_recursive",
 			mcpsdk.Description("BL351 — when true, killing this session kills ALL descendants recursively, regardless of their own kill_children settings. Supersedes kill_children when both are set."),
 		),
+		sessionPriorityOption(),
 		mcpsdk.WithArray("image_paths",
 			mcpsdk.Description("BL368 — local file paths to images (jpeg/png/webp/gif). Each image is described by the vision service and the description is prepended to the task as '[image: ...]'. Requires vision.enabled=true in config."),
 			mcpsdk.WithStringItems(),
@@ -2128,6 +2131,10 @@ func (s *Server) handleStartSession(ctx context.Context, req mcpsdk.CallToolRequ
 	killChildren := req.GetBool("kill_children", false)
 	killChildrenRecursive := req.GetBool("kill_children_recursive", false)
 	git := req.GetBool("git", false)
+	priority, hasPriority, perr := priorityFromReq(req)
+	if perr != nil {
+		return toolError("start_session", perr), nil
+	}
 
 	if pm != "" {
 		valid := map[string]bool{
@@ -2145,7 +2152,7 @@ func (s *Server) handleStartSession(ctx context.Context, req mcpsdk.CallToolRequ
 	// v8.8.3 — also forward when chrome=true so the flag reaches claudecode.Backend.
 	// v8.9.24 — also forward when permission_mode is set so the flag reaches
 	// claudecode.Backend.SetPermissionMode via the REST handler.
-	if (llmRef != "" || chrome || pm != "" || callerID != "" || killChildren || killChildrenRecursive || git) && s.webPort > 0 {
+	if (llmRef != "" || chrome || pm != "" || callerID != "" || killChildren || killChildrenRecursive || git || hasPriority) && s.webPort > 0 {
 		body := map[string]any{"task": task}
 		if llmRef != "" {
 			body["llm"] = llmRef
@@ -2173,6 +2180,9 @@ func (s *Server) handleStartSession(ctx context.Context, req mcpsdk.CallToolRequ
 		}
 		if git {
 			body["git"] = true
+		}
+		if hasPriority {
+			body["priority"] = priority
 		}
 		bodyJSON, _ := json.Marshal(body)
 		sreq, _ := http.NewRequestWithContext(ctx, http.MethodPost,
@@ -2216,6 +2226,7 @@ func (s *Server) handleStartSession(ctx context.Context, req mcpsdk.CallToolRequ
 		PermissionMode: pm,
 		ParentID:       callerID,
 		KillChildren:   killChildren,
+		Priority:       priority,
 	}
 	sess, err := s.manager.Start(startCtx, task, "mcp", projectDir, opts)
 	if err != nil {

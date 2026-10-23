@@ -3532,6 +3532,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 					disp.SetServerStore(st)
 				}
 				httpServer.SetInference(llmReg, disp)
+				startRoleContentionScan(ctx, cfg, httpServer)
 
 				// BL-summarizer — wire dual-summary pipeline when enabled.
 				if cfg.Session.Summarizer.Enabled {
@@ -5468,7 +5469,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			var verifierTryAdmit func(backend, model string) (func(), bool)
 			if verifierCapacityTryAdmit != nil {
 				verifierTryAdmit = func(backend, model string) (func(), bool) {
-					return verifierCapacityTryAdmit(ctx, backend, model, task.ID, prd.ID)
+					return verifierCapacityTryAdmit(ctx, backend, model, task.ID, prd.ID, task.SessionID)
 				}
 			}
 			// BL-stale-config tests (live_autonomous_config_test.go) pin
@@ -5508,7 +5509,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			defer func() { vsel.stamp(&vres) }()
 			if release == nil {
 				if verifierCapacityAdmit != nil {
-					r, aerr := verifierCapacityAdmit(ctx, vbackend, verifyModel, task.ID, prd.ID)
+					r, aerr := verifierCapacityAdmit(ctx, vbackend, verifyModel, task.ID, prd.ID, task.SessionID)
 					if aerr != nil {
 						// BL410 Phase 0 — resource contention/admission
 						// failure, not a content judgment.
@@ -10419,7 +10420,11 @@ func newSessionCmd() *cobra.Command {
 			killChildrenRecursive, _ := cmd.Flags().GetBool("kill-children-recursive")
 			validate, _ := cmd.Flags().GetStringArray("validate")
 			git, _ := cmd.Flags().GetBool("git")
-			return runSessionNew(cfg, task, dir, name, backend, llm, compute, chrome, parent, killChildren, killChildrenRecursive, validate, git)
+			priority, err := sessionPriorityFlag(cmd)
+			if err != nil {
+				return err
+			}
+			return runSessionNew(cfg, task, dir, name, backend, llm, compute, chrome, parent, killChildren, killChildrenRecursive, validate, git, priority)
 		},
 	}
 	newCmd.Flags().StringP("dir", "d", "", "Project directory (default: current directory)")
@@ -10433,6 +10438,7 @@ func newSessionCmd() *cobra.Command {
 	newCmd.Flags().StringArray("validate", nil, "Shell command run in the project dir before a one-shot may commit (repeatable). Ad-hoc one-shots with no --validate never auto-commit.")
 	newCmd.Flags().Bool("kill-children-recursive", false, "When set, killing this session kills ALL descendants recursively (BL351). Supersedes --kill-children.")
 	newCmd.Flags().Bool("git", false, "opt in to git init, snapshot and automatic commit")
+	newCmd.Flags().String("priority", "", "capacity-queue priority (integer; higher is admitted first when capacity is contended; default 0)")
 	sessionCmd.AddCommand(newCmd)
 
 	// session status <id>
@@ -10548,6 +10554,24 @@ func newSessionCmd() *cobra.Command {
 				return err
 			}
 			return runSessionRename(cfg, args[0], strings.Join(args[1:], " "))
+		},
+	})
+
+	// session priority <id> <n> — set a session's capacity-queue priority
+	sessionCmd.AddCommand(&cobra.Command{
+		Use:   "priority <id> <n>",
+		Short: "Set a session's capacity-queue priority (integer; higher is admitted first)",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			cfg, err := loadConfig()
+			if err != nil {
+				return err
+			}
+			p, err := session.ParsePriority(args[1])
+			if err != nil {
+				return err
+			}
+			return runSessionPriority(cfg, args[0], p)
 		},
 	})
 
@@ -11089,6 +11113,26 @@ func runSessionList(cfg *config.Config) error {
 // to git init, snapshot and automatic commit) is sent only when true, matching
 // the `omitempty` field on the server's StartSession request struct.
 func sessionNewStartBody(task, dir, name, backend, llm, compute string, chrome bool, parent string, killChildren, killChildrenRecursive bool, validate []string, git bool) ([]byte, error) {
+	return sessionNewStartBodyPriority(task, dir, name, backend, llm, compute, chrome, parent, killChildren, killChildrenRecursive, validate, git, nil)
+}
+
+// sessionPriorityFlag reads --priority from cmd. It returns nil when the flag
+// was not given and an error when the value is not an integer.
+func sessionPriorityFlag(cmd *cobra.Command) (*int, error) {
+	raw, _ := cmd.Flags().GetString("priority")
+	if !cmd.Flags().Changed("priority") {
+		return nil, nil
+	}
+	p, err := session.ParsePriority(raw)
+	if err != nil {
+		return nil, err
+	}
+	return &p, nil
+}
+
+// sessionNewStartBodyPriority is sessionNewStartBody plus the optional
+// capacity-queue priority, sent only when one was given.
+func sessionNewStartBodyPriority(task, dir, name, backend, llm, compute string, chrome bool, parent string, killChildren, killChildrenRecursive bool, validate []string, git bool, priority *int) ([]byte, error) {
 	type startReq struct {
 		Task                  string   `json:"task"`
 		ProjectDir            string   `json:"project_dir,omitempty"`
@@ -11102,8 +11146,9 @@ func sessionNewStartBody(task, dir, name, backend, llm, compute string, chrome b
 		KillChildrenRecursive bool     `json:"kill_children_recursive,omitempty"`
 		ValidateCommands      []string `json:"validate_commands,omitempty"`
 		Git                   bool     `json:"git,omitempty"`
+		Priority              *int     `json:"priority,omitempty"`
 	}
-	req := startReq{Task: task, ProjectDir: dir, Backend: backend, Name: name, LLM: llm, ComputeNode: compute, ParentID: parent, KillChildren: killChildren, KillChildrenRecursive: killChildrenRecursive, ValidateCommands: validate, Git: git}
+	req := startReq{Priority: priority, Task: task, ProjectDir: dir, Backend: backend, Name: name, LLM: llm, ComputeNode: compute, ParentID: parent, KillChildren: killChildren, KillChildrenRecursive: killChildrenRecursive, ValidateCommands: validate, Git: git}
 	if chrome {
 		t := true
 		req.Chrome = &t
@@ -11111,9 +11156,9 @@ func sessionNewStartBody(task, dir, name, backend, llm, compute string, chrome b
 	return json.Marshal(req)
 }
 
-func runSessionNew(cfg *config.Config, task, dir, name, backend, llm, compute string, chrome bool, parent string, killChildren, killChildrenRecursive bool, validate []string, git bool) error {
+func runSessionNew(cfg *config.Config, task, dir, name, backend, llm, compute string, chrome bool, parent string, killChildren, killChildrenRecursive bool, validate []string, git bool, priority *int) error {
 	// Try the structured HTTP API first
-	body, err := sessionNewStartBody(task, dir, name, backend, llm, compute, chrome, parent, killChildren, killChildrenRecursive, validate, git)
+	body, err := sessionNewStartBodyPriority(task, dir, name, backend, llm, compute, chrome, parent, killChildren, killChildrenRecursive, validate, git, priority)
 	if err != nil {
 		return err
 	}
@@ -11387,6 +11432,36 @@ func runSessionHistory(cfg *config.Config, id string) error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
+}
+
+// sessionPriorityBody builds the /api/sessions/set_priority request body.
+func sessionPriorityBody(id string, priority int) ([]byte, error) {
+	return json.Marshal(map[string]any{"id": id, "priority": priority})
+}
+
+func runSessionPriority(cfg *config.Config, id string, priority int) error {
+	body, err := sessionPriorityBody(id, priority)
+	if err != nil {
+		return err
+	}
+	httpReq, _ := http.NewRequest(http.MethodPost,
+		fmt.Sprintf("http://localhost:%d/api/sessions/set_priority", cfg.Server.Port),
+		bytes.NewReader(body))
+	httpReq.Header.Set("Content-Type", "application/json")
+	if cfg.Server.Token != "" {
+		httpReq.Header.Set("Authorization", "Bearer "+cfg.Server.Token)
+	}
+	resp, err := http.DefaultClient.Do(httpReq)
+	if err != nil {
+		return fmt.Errorf("daemon not reachable: %w", err)
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	if resp.StatusCode >= 300 {
+		msg, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("failed to set priority: %s", strings.TrimSpace(string(msg)))
+	}
+	fmt.Printf("Session %s priority set to %d\n", id, priority)
+	return nil
 }
 
 func runSessionRename(cfg *config.Config, id, name string) error {

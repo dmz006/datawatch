@@ -33,7 +33,7 @@ func (s *HTTPServer) SetCapacity(l *capacity.Ledger) {
 // the same ledger (see wireCapacity's admitInteractive closure) so the
 // existing Reap() cycle in capacity_wiring.go's syncPools releases it
 // automatically once the session ends — no separate release call needed.
-type CapacityAdmitFn func(ctx context.Context, backend, model, holder string) error
+type CapacityAdmitFn func(ctx context.Context, backend, model, holder string, priority int) error
 
 // SetCapacityAdmit wires interactive-session capacity gating (handleStartSession).
 func (s *Server) SetCapacityAdmit(fn CapacityAdmitFn) { s.capacityAdmit = fn }

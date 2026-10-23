@@ -812,7 +812,7 @@
   "new_session_v7_llm_default": "— selecciona un LLM —",
   "new_session_v7_llm_label": "LLM",
   "new_session_v7_optional": "(opcional — sustituye al backend de arriba)",
-  "new_session_working_dir_hint": "Ruta del servidor — p. ej. /home/usuario/codigo",
+  "new_session_working_dir_hint": "Ruta del servidor — p. ej. ~/codigo",
   "new_session_working_dir_label": "Directorio de trabajo (opcional)",
   "no_change_since_last_refresh": "sin cambios desde la última actualización",
   "obs_cn_card_title": "Nodo de cómputo",
@@ -1760,6 +1760,8 @@
   "prd_permission_mode_updated": "Permission mode updated",
   "session_chrome_badge": "Chrome",
   "session_chrome_badge_tip": "Chrome DevTools Protocol browser automation enabled",
+  "session_priority_badge": "Prioridad %1$d",
+  "session_priority_badge_tip": "Prioridad en la cola de capacidad: los valores más altos se admiten primero cuando hay contención",
   "rate_limit_banner_text": "Límite de uso alcanzado",
   "rate_limit_no_reset_time": "Esperando a que se levante el límite",
   "rate_limit_resets_at": "Se levanta a las",
@@ -2114,5 +2116,13 @@
   "tag_rename": "Renombrar",
   "tag_save": "Guardar",
   "tag_saved": "Etiquetas guardadas",
-  "tag_suggest_hint": "Sugerida a partir del alias del proyecto: cámbiala si no es correcta"
+  "tag_suggest_hint": "Sugerida a partir del alias del proyecto: cámbiala si no es correcta",
+  "llm_field_roles": "Roles de carga de trabajo (separados por coma; vacío = ninguno)",
+  "llm_roles_hint": "Roles que atiende esta entrada. Si varias entradas habilitadas reclaman un rol, gana la primera por nombre y se muestra una advertencia.",
+  "workload_roles_title": "Roles de carga de trabajo",
+  "workload_roles_desc": "Cada rol y la entrada LLM a la que se resuelve.",
+  "workload_roles_empty": "Ninguna entrada LLM reclama un rol de carga de trabajo.",
+  "workload_roles_col_role": "Rol",
+  "workload_roles_col_entry": "Se resuelve a",
+  "workload_roles_warnings": "Advertencias de conflicto"
 }

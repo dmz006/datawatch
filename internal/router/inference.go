@@ -41,6 +41,8 @@ Common kv pairs:
   console_cols=<N>        console_rows=<N>         output_mode=terminal|log|chat
   auto_git_init=true      auto_git_commit=true
   skip_permissions=true   channel_enabled=true     auto_accept_disclaimer=true
+  roles=<csv>             workload roles this LLM serves; update: omit keeps them,
+                          roles= (empty) clears them; "llm list"/"llm get" show them
   permission_mode=plan     default_effort=normal    fallback_chain=<csv>
   billing_group=<text>    operator label grouping LLMs that share one
                           cloud/billing account across federated peers
@@ -324,6 +326,14 @@ func parseLLMKVPairs(s string) map[string]any {
 		switch k {
 		case "compute_nodes", "tags", "fallback_chain":
 			out[k] = strings.Split(v, ",")
+		case "roles":
+			// An explicit empty value is an empty list (clears the stored
+			// roles); an absent key leaves them untouched.
+			if strings.TrimSpace(v) == "" {
+				out[k] = []string{}
+			} else {
+				out[k] = strings.Split(v, ",")
+			}
 		case "timeout_seconds", "console_cols", "console_rows", "max_inflight":
 			out[k] = atoiOrZero(v)
 		case "budget", "budget_ceiling_usd", "budget_hours", "budget_weekday", "budget_time",

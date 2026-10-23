@@ -13,20 +13,20 @@ import (
 
 func (s *Server) toolLLMList() mcpsdk.Tool {
 	return mcpsdk.NewTool("llm_list",
-		mcpsdk.WithDescription("v7.0.0 S2 — list every LLM in the registry. Redacted (API keys as prefix+marker). Each entry also carries effective_max_inflight (the limit the capacity ledger admits against) and inflight_source (\"explicit\" | \"plan_tier\" | \"kind\" — which rule produced it), and a budget object (ceiling_usd, hours, weekday, time, zone, allocation_pct, peer_window) when the LLM has a dollar budget."),
+		mcpsdk.WithDescription("v7.0.0 S2 — list every LLM in the registry. Redacted (API keys as prefix+marker). Each entry also carries effective_max_inflight (the limit the capacity ledger admits against) and inflight_source (\"explicit\" | \"plan_tier\" | \"kind\" — which rule produced it), and a budget object (ceiling_usd, hours, weekday, time, zone, allocation_pct, peer_window) when the LLM has a dollar budget. Each entry carries its roles list; status.role_warnings lists role-contention warnings."),
 	)
 }
 
 func (s *Server) toolLLMGet() mcpsdk.Tool {
 	return mcpsdk.NewTool("llm_get",
-		mcpsdk.WithDescription("v7.0.0 S2 — fetch one LLM by name. Redacted. Also carries effective_max_inflight + inflight_source (explicit|plan_tier|kind), and the budget object when the LLM has a dollar budget."),
+		mcpsdk.WithDescription("v7.0.0 S2 — fetch one LLM by name. Redacted. Also carries effective_max_inflight + inflight_source (explicit|plan_tier|kind), and the budget object when the LLM has a dollar budget. Also carries roles and role_warnings (contention warnings that name this LLM)."),
 		mcpsdk.WithString("name", mcpsdk.Required()),
 	)
 }
 
 func (s *Server) toolLLMAdd() mcpsdk.Tool {
 	return mcpsdk.NewTool("llm_add",
-		mcpsdk.WithDescription("v7.0.0 S2 — register a new LLM. Kind: ollama|openwebui|opencode|claude|claude-code|aider|goose|gemini|shell. compute_nodes is comma-separated ordered failover list (local kinds). api_key_ref required for cloud (claude). Session-backend fields (binary, console_cols/rows, output_mode, input_mode, auto_git_init/commit) apply to coding-agent kinds. Claude-code fields (skip_permissions, channel_enabled, auto_accept_disclaimer, permission_mode, default_effort, fallback_chain) only apply to claude-code. The optional budget object sets a dollar ceiling over a rolling or weekly window; its allocation_pct flag is an estimate that never blocks, and peer_window is off by default."),
+		mcpsdk.WithDescription("v7.0.0 S2 — register a new LLM. Kind: ollama|openwebui|opencode|claude|claude-code|aider|goose|gemini|shell. compute_nodes is comma-separated ordered failover list (local kinds). api_key_ref required for cloud (claude). Session-backend fields (binary, console_cols/rows, output_mode, input_mode, auto_git_init/commit) apply to coding-agent kinds. Claude-code fields (skip_permissions, channel_enabled, auto_accept_disclaimer, permission_mode, default_effort, fallback_chain) only apply to claude-code. The optional budget object sets a dollar ceiling over a rolling or weekly window; its allocation_pct flag is an estimate that never blocks, and peer_window is off by default. The optional roles list tags the workloads this entry serves."),
 		mcpsdk.WithString("name", mcpsdk.Required()),
 		mcpsdk.WithString("kind", mcpsdk.Required()),
 		mcpsdk.WithString("model", mcpsdk.Description("model name")),
@@ -38,6 +38,7 @@ func (s *Server) toolLLMAdd() mcpsdk.Tool {
 		mcpsdk.WithString("tags", mcpsdk.Description("comma-separated user tags")),
 		mcpsdk.WithString("auto_add_models", mcpsdk.Description("true/false — auto-append newly-discovered models")),
 		llmBudgetOption(),
+		llmRolesOption(),
 		// Session-backend fields
 		mcpsdk.WithString("binary", mcpsdk.Description("path to CLI binary (session-backend kinds)")),
 		mcpsdk.WithString("console_cols", mcpsdk.Description("terminal width override")),
@@ -59,7 +60,7 @@ func (s *Server) toolLLMAdd() mcpsdk.Tool {
 
 func (s *Server) toolLLMUpdate() mcpsdk.Tool {
 	return mcpsdk.NewTool("llm_update",
-		mcpsdk.WithDescription("v7.0.0 S2 — replace an existing LLM. Supports all fields from llm_add, including the budget object (replaced as a whole; allocation_pct is an estimate that never blocks, peer_window is off by default)."),
+		mcpsdk.WithDescription("v7.0.0 S2 — replace an existing LLM. Supports all fields from llm_add, including the budget object (replaced as a whole; allocation_pct is an estimate that never blocks, peer_window is off by default) and the roles list (omit to keep the stored roles; an empty list clears them)."),
 		mcpsdk.WithString("name", mcpsdk.Required()),
 		mcpsdk.WithString("kind", mcpsdk.Required()),
 		mcpsdk.WithString("model", mcpsdk.Description("model name")),
@@ -71,6 +72,7 @@ func (s *Server) toolLLMUpdate() mcpsdk.Tool {
 		mcpsdk.WithString("tags", mcpsdk.Description("comma-separated user tags")),
 		mcpsdk.WithString("auto_add_models", mcpsdk.Description("true/false — auto-append newly-discovered models")),
 		llmBudgetOption(),
+		llmRolesOption(),
 		// Session-backend fields
 		mcpsdk.WithString("binary", mcpsdk.Description("path to CLI binary (session-backend kinds)")),
 		mcpsdk.WithString("console_cols", mcpsdk.Description("terminal width override")),
@@ -126,6 +128,9 @@ func (s *Server) handleLLMAddMCP(_ context.Context, req mcpsdk.CallToolRequest) 
 	if err := attachBudget(body, req); err != nil {
 		return toolError("llm_add", err), nil
 	}
+	if err := attachRoles(body, req); err != nil {
+		return toolError("llm_add", err), nil
+	}
 	out, err := s.proxyJSON("POST", "/api/llms", body)
 	if err != nil {
 		return nil, err
@@ -136,6 +141,9 @@ func (s *Server) handleLLMAddMCP(_ context.Context, req mcpsdk.CallToolRequest) 
 func (s *Server) handleLLMUpdateMCP(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
 	body := llmBodyFromReq(req)
 	if err := attachBudget(body, req); err != nil {
+		return toolError("llm_update", err), nil
+	}
+	if err := attachRoles(body, req); err != nil {
 		return toolError("llm_update", err), nil
 	}
 	out, err := s.proxyJSON("PUT", "/api/llms/"+mustString(req, "name"), body)

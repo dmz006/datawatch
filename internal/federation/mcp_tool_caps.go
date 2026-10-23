@@ -390,6 +390,7 @@ var MCPToolCap = map[string]string{
 	"queue_push":                     CapQueueWrite,
 	"reload":                         CapConfigWrite,
 	"rename_session":                 CapSessionsWrite,
+	"set_session_priority":           CapSessionsWrite,
 	"reply_to_parent":                CapSessionsInput,
 	"restart_daemon":                 CapConfigWrite,
 	"acme_status":                    CapConfigRead,

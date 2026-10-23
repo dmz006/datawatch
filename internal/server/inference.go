@@ -15,9 +15,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"io"
 	"fmt"
+	"io"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -32,6 +33,30 @@ func (s *Server) SetInference(reg *inference.Registry, disp *inference.Dispatche
 	s.inferenceDisp = disp
 }
 
+// CheckRoleContention runs the LLM role contention check against the live
+// registry, records each warning in the audit log and returns them. It never
+// fails: warnings are advisory. Called on every llms write and by the daemon's
+// periodic scan.
+func (s *Server) CheckRoleContention() []string {
+	if s.inferenceReg == nil {
+		return nil
+	}
+	warns := s.roleMonitor.Check(s.inferenceReg.List())
+	if s.auditLog != nil {
+		for _, w := range warns {
+			_ = s.auditLog.Write(audit.Entry{
+				Actor:  "daemon",
+				Action: "llm_role_contention",
+				Details: map[string]any{
+					"resource_type": "llm",
+					"warning":       w,
+				},
+			})
+		}
+	}
+	return warns
+}
+
 // Dispatcher returns the wired dispatcher (nil if none). Used by
 // other server surfaces (ask, council_drafts) to route through the
 // registry instead of calling askOllama / askOpenWebUI directly.
@@ -39,6 +64,43 @@ func (s *Server) Dispatcher() *inference.Dispatcher { return s.inferenceDisp }
 
 // LLMRegistry returns the wired registry (nil if none).
 func (s *Server) LLMRegistry() *inference.Registry { return s.inferenceReg }
+
+// handleLLMRoles serves GET /api/llm-roles: the role table (each claimed role
+// and the registry entry it currently resolves to) plus the contention
+// warnings. It lives beside /api/llms because /api/llms/{name} would shadow a
+// literal "roles" sub-path.
+func (s *Server) handleLLMRoles(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapLLMsList) {
+		return
+	}
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.inferenceReg == nil {
+		http.Error(w, "llm registry disabled", http.StatusServiceUnavailable)
+		return
+	}
+	snap := inference.SnapshotRoles(s.inferenceReg.List())
+	names := make([]string, 0, len(snap))
+	for role := range snap {
+		names = append(names, role)
+	}
+	sort.Strings(names)
+	type roleRow struct {
+		Role  string `json:"role"`
+		Entry string `json:"entry"`
+	}
+	rows := make([]roleRow, 0, len(names))
+	for _, role := range names {
+		rows = append(rows, roleRow{Role: role, Entry: snap[role]})
+	}
+	warns := s.roleMonitor.Warnings()
+	if warns == nil {
+		warns = []string{}
+	}
+	writeJSONOK(w, map[string]any{"roles": rows, "warnings": warns})
+}
 
 func (s *Server) handleLLMs(w http.ResponseWriter, r *http.Request) {
 	// BL316 S3: cap check before nil guard so unauthorized peers get 403, not 503.
@@ -62,7 +124,7 @@ func (s *Server) handleLLMs(w http.ResponseWriter, r *http.Request) {
 		for _, l := range llms {
 			views = append(views, s.llmView(l.Redacted()))
 		}
-		writeJSONOK(w, map[string]any{"llms": views})
+		writeJSONOK(w, map[string]any{"llms": views, "status": map[string]any{"role_warnings": s.roleMonitor.Warnings()}})
 
 	case rest == "" && r.Method == http.MethodPost:
 		if !s.fedCap(w, r, federation.CapLLMsWrite) {
@@ -92,6 +154,7 @@ func (s *Server) handleLLMs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.auditLLM(l.Name, "llm_add")
+		s.CheckRoleContention()
 		writeJSONOK(w, map[string]any{"name": l.Name, "ok": true})
 
 	case strings.HasSuffix(rest, "/test") && r.Method == http.MethodPost:
@@ -160,7 +223,9 @@ func (s *Server) handleLLMs(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusNotFound)
 			return
 		}
-		writeJSONOK(w, s.llmView(l.Redacted()))
+		view := s.llmView(l.Redacted())
+		view.RoleWarnings = s.roleWarningsFor(l.Name)
+		writeJSONOK(w, view)
 
 	case rest != "" && r.Method == http.MethodPut:
 		if !s.fedCap(w, r, federation.CapLLMsWrite) {
@@ -212,6 +277,7 @@ func (s *Server) handleLLMs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.auditLLM(l.Name, "llm_update")
+		s.CheckRoleContention()
 		writeJSONOK(w, map[string]any{"name": l.Name, "ok": true})
 
 	case rest != "" && r.Method == http.MethodDelete:
@@ -230,6 +296,7 @@ func (s *Server) handleLLMs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.auditLLM(rest, "llm_delete")
+		s.CheckRoleContention()
 		writeJSONOK(w, map[string]any{"name": rest, "ok": true})
 
 	default:
@@ -247,10 +314,29 @@ func (s *Server) handleLLMs(w http.ResponseWriter, r *http.Request) {
 // omitempty-tagged fields would drop it.
 type llmView struct {
 	inference.LLM
-	PlanTier             string                     `json:"plan_tier"`
-	MaxInflight          *int                       `json:"max_inflight"`
-	EffectiveMaxInflight int                        `json:"effective_max_inflight"`
-	InflightSource       inference.InflightSource   `json:"inflight_source"`
+	PlanTier             string                   `json:"plan_tier"`
+	MaxInflight          *int                     `json:"max_inflight"`
+	EffectiveMaxInflight int                      `json:"effective_max_inflight"`
+	InflightSource       inference.InflightSource `json:"inflight_source"`
+	// RoleWarnings carries the role-contention warnings that name this entry.
+	// Set by the single-entry GET only; the listing reports all warnings once
+	// under status.role_warnings.
+	RoleWarnings []string `json:"role_warnings,omitempty"`
+}
+
+// roleWarningsFor returns the current role-contention warnings that mention the
+// named entry.
+func (s *Server) roleWarningsFor(name string) []string {
+	var out []string
+	quoted := fmt.Sprintf("%q", name)
+	for _, w := range s.roleMonitor.Warnings() {
+		if strings.Contains(w, quoted) || strings.Contains(w, "("+name+")") ||
+			strings.Contains(w, "("+name+",") || strings.Contains(w, ", "+name+",") ||
+			strings.Contains(w, ", "+name+")") {
+			out = append(out, w)
+		}
+	}
+	return out
 }
 
 // llmView builds the response view for one redacted LLM. The tier table

@@ -165,6 +165,10 @@ type LLM struct {
 	// Budget is the optional dollar ceiling for this LLM entry over a rolling
 	// or weekly window. Nil means no budget.
 	Budget *BudgetWindow `yaml:"budget,omitempty" json:"budget,omitempty"`
+	// Roles tags the workloads this entry serves (open set of strings,
+	// e.g. "planning", "verification"). Normalised on Validate: trimmed,
+	// lower-cased, de-duplicated, empties rejected.
+	Roles []string `yaml:"roles,omitempty" json:"roles,omitempty"`
 	// BillingGroup is an operator-set label grouping LLM entries that share
 	// one cloud/billing account across federated peers. It is a label only:
 	// the value is hashed with the per-peer-pair key before it leaves the
@@ -358,6 +362,11 @@ func (l *LLM) Validate() error {
 			return fmt.Errorf("llm: %w", err)
 		}
 	}
+	roles, err := NormalizeRoles(l.Roles)
+	if err != nil {
+		return fmt.Errorf("llm: %w", err)
+	}
+	l.Roles = roles
 	// BillingGroup: trim on save, then check shape. Empty stays valid and
 	// means "no group".
 	l.BillingGroup = strings.TrimSpace(l.BillingGroup)

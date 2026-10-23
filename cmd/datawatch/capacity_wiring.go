@@ -43,12 +43,12 @@ var capacityTextFn func() string
 // worker lease left) falls back to the separate acquire — releasing the
 // task's worker lease FIRST, so the verifier can never wait behind, or
 // double-book with, its own task's slot.
-var verifierCapacityAdmit func(ctx context.Context, backend, model, taskID, prdID string) (release func(), err error)
+var verifierCapacityAdmit func(ctx context.Context, backend, model, taskID, prdID, sessionID string) (release func(), err error)
 
 // verifierCapacityTryAdmit (v8.36.9) is verifierCapacityAdmit's
 // non-blocking sibling for probing autonomous.verification_backends
 // candidates — see its assignment in wireCapacity for why this exists.
-var verifierCapacityTryAdmit func(ctx context.Context, backend, model, taskID, prdID string) (release func(), ok bool)
+var verifierCapacityTryAdmit func(ctx context.Context, backend, model, taskID, prdID, sessionID string) (release func(), ok bool)
 
 // councilCapacityAdmit (v8.38.0, BL390) lets council persona/synthesis
 // calls acquire the same node:/llm: pools a PRD task on that
@@ -448,12 +448,12 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 	// the same node:/llm: pools an autonomous task would use for the same
 	// backend+model. See handleStartSession's req.OneShot check for why
 	// autonomous spawns skip this (they already admit via m.admit()).
-	httpServer.SetCapacityAdmit(func(ctx context.Context, backend, model, holder string) error {
+	httpServer.SetCapacityAdmit(func(ctx context.Context, backend, model, holder string, priority int) error {
 		pools, node := keys(backend, model)
 		if len(pools) == 0 {
 			return nil
 		}
-		return led.Acquire(ctx, capacity.Request{Holder: holder, Pools: pools, Node: node, Model: model, Interactive: true}, 0, func() bool { return false }, func(string) {})
+		return led.Acquire(ctx, interactiveAdmitRequest(holder, pools, node, model, priority), 0, func() bool { return false }, func(string) {})
 	})
 	httpServer.SetCapacityBind(func(holder, sessionID string) { led.Bind(holder, sessionID) })
 	httpServer.SetCapacityRelease(func(holder string) { led.Release(holder) })
@@ -469,7 +469,7 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 		return amgr.HandoffVerifyLease(taskID, backend, model)
 	}
 
-	verifierCapacityAdmit = func(ctx context.Context, backend, model, taskID, prdID string) (func(), error) {
+	verifierCapacityAdmit = func(ctx context.Context, backend, model, taskID, prdID, sessionID string) (func(), error) {
 		holder := autonomous.VerifyHolder(taskID)
 		if verifyHandoff(taskID, backend, model) {
 			// The worker's slot is now the verifier's lease: release it by
@@ -486,7 +486,7 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 			return func() {}, nil
 		}
 		waitDur := amgr.CapacityWaitDuration()
-		if err := led.Acquire(ctx, capacity.Request{Holder: holder, PRDID: prdID, Pools: pools, Node: node, Model: model, Role: capacity.RoleVerifier}, waitDur, func() bool { return false }, func(string) {}); err != nil {
+		if err := led.Acquire(ctx, verifierAdmitRequest(holder, prdID, pools, node, model, sessionPriority(mgr, sessionID)), waitDur, func() bool { return false }, func(string) {}); err != nil {
 			return func() {}, err
 		}
 		return func() { led.Release(holder) }, nil
@@ -503,7 +503,7 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 			return func() {}, nil
 		}
 		waitDur := amgr.CapacityWaitDuration()
-		if err := led.Acquire(ctx, capacity.Request{Holder: holder, PRDID: prdID, Pools: pools, Node: node, Model: model}, waitDur, func() bool { return false }, func(string) {}); err != nil {
+		if err := led.Acquire(ctx, councilAdmitRequest(holder, prdID, pools, node, model, sessionPriority(mgr, holder)), waitDur, func() bool { return false }, func(string) {}); err != nil {
 			return func() {}, err
 		}
 		return func() { led.Release(holder) }, nil
@@ -517,7 +517,7 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 	// path already grants immediately when a pool has room, so this
 	// just bounds how long a genuinely-busy candidate is given before
 	// the caller moves on to the next one.
-	verifierCapacityTryAdmit = func(ctx context.Context, backend, model, taskID, prdID string) (func(), bool) {
+	verifierCapacityTryAdmit = func(ctx context.Context, backend, model, taskID, prdID, sessionID string) (func(), bool) {
 		holder := autonomous.VerifyHolder(taskID)
 		if verifyHandoff(taskID, backend, model) {
 			return func() { led.Release(holder) }, true
@@ -527,7 +527,7 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 			// so this candidate either takes its own slot or does not — never
 			// a second slot on top of the worker's.
 			led.Release(taskID)
-			if err := led.Acquire(ctx, capacity.Request{Holder: holder, PRDID: prdID, Pools: pools, Node: node, Model: model, Role: capacity.RoleVerifier}, 150*time.Millisecond, func() bool { return false }, func(string) {}); err != nil {
+			if err := led.Acquire(ctx, verifierAdmitRequest(holder, prdID, pools, node, model, sessionPriority(mgr, sessionID)), 150*time.Millisecond, func() bool { return false }, func(string) {}); err != nil {
 				return func() {}, false
 			}
 			return func() { led.Release(holder) }, true
@@ -631,4 +631,28 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 		}
 	}()
 	return led
+}
+
+// sessionPriority returns the capacity priority of the session id, or 0 when
+// there is no such session (a council run or an unspawned task has none).
+func sessionPriority(mgr *session.Manager, id string) int {
+	if mgr == nil || id == "" {
+		return 0
+	}
+	if sess, ok := mgr.GetSession(id); ok && sess != nil {
+		return sess.Priority
+	}
+	return 0
+}
+
+func interactiveAdmitRequest(holder string, pools []string, node, model string, priority int) capacity.Request {
+	return capacity.Request{Holder: holder, Pools: pools, Node: node, Model: model, Interactive: true, Priority: priority}
+}
+
+func verifierAdmitRequest(holder, prdID string, pools []string, node, model string, priority int) capacity.Request {
+	return capacity.Request{Holder: holder, PRDID: prdID, Pools: pools, Node: node, Model: model, Role: capacity.RoleVerifier, Priority: priority}
+}
+
+func councilAdmitRequest(holder, prdID string, pools []string, node, model string, priority int) capacity.Request {
+	return capacity.Request{Holder: holder, PRDID: prdID, Pools: pools, Node: node, Model: model, Priority: priority}
 }

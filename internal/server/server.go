@@ -260,6 +260,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/sessions/send", api.handleSessionSend)
 	apiMux.HandleFunc("/api/sessions/state", api.handleSetSessionState)
 	apiMux.HandleFunc("/api/sessions/set_llm_ref", api.handleSetSessionLLMRef)
+	apiMux.HandleFunc("/api/sessions/set_priority", api.handleSetSessionPriority)
 	apiMux.HandleFunc("/api/sessions/response", api.handleSessionResponse)
 	apiMux.HandleFunc("/api/sessions/prompt", api.handleSessionPrompt)
 	apiMux.HandleFunc("/api/sessions/reconcile", api.handleSessionReconcile) // BL93
@@ -375,6 +376,7 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/compute/nodes/", api.handleComputeNodes)                           // v7.0.0 S1 — /name + /name/health + /name/detail
 	apiMux.HandleFunc("/api/llms", api.handleLLMs)                                             // v7.0.0 S2 — LLM registry CRUD
 	apiMux.HandleFunc("/api/llms/", api.handleLLMs)                                            // v7.0.0 S2 — /name + /name/test
+	apiMux.HandleFunc("/api/llm-roles", api.handleLLMRoles)                                    // workload role table + contention warnings
 	apiMux.HandleFunc("/api/memory/scopes/", api.handleMemoryScopes)                           // v7.0.0 S5 — recall/borrow/seed/promote
 	apiMux.HandleFunc("/api/memory/discussion", api.handleDiscussionScopeList)                 // BL332 T42a — discussion scope list
 	apiMux.HandleFunc("/api/memory/discussion/", api.handleDiscussionScope)                    // BL332 T42a — discussion scope CRUD + WAL
@@ -866,6 +868,14 @@ func (s *HTTPServer) SetInference(reg *inference.Registry, disp *inference.Dispa
 	if s.api != nil {
 		s.api.SetInference(reg, disp)
 	}
+}
+
+// CheckRoleContention runs the LLM role contention check (see Server.CheckRoleContention).
+func (s *HTTPServer) CheckRoleContention() []string {
+	if s.api == nil {
+		return nil
+	}
+	return s.api.CheckRoleContention()
 }
 
 // SetServerStore (BL312 S1) — wires the runtime multi-server registry.

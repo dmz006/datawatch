@@ -1777,6 +1777,10 @@ type StartOptions struct {
 	KillChildren          bool
 	KillChildrenRecursive bool
 
+	// Priority orders the session's calls in the capacity wait queue (higher
+	// first). Zero is the default and is not stored.
+	Priority int
+
 	// PRDID, TaskID, and StoryID link an autonomous task session to its executor
 	// so the PWA detail view can filter sessions by PRD and show which task is
 	// actively being worked on. StoryID added BL385 Phase 4 for memory scope routing.
@@ -2012,6 +2016,9 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 	}
 	if opt != nil && opt.ParentID != "" {
 		sess.ParentID = opt.ParentID
+	}
+	if opt != nil && opt.Priority != 0 {
+		sess.Priority = opt.Priority
 	}
 	if opt != nil && opt.KillChildren {
 		sess.KillChildren = true
@@ -4758,6 +4765,17 @@ func (m *Manager) Rename(id, name string) error {
 		return fmt.Errorf("session %s not found", id)
 	}
 	sess.Name = name
+	sess.UpdatedAt = time.Now()
+	return m.store.Save(sess)
+}
+
+// SetPriority sets the session's capacity-queue priority. Zero clears it.
+func (m *Manager) SetPriority(id string, priority int) error {
+	sess, ok := m.GetSession(id)
+	if !ok {
+		return fmt.Errorf("session %s not found", id)
+	}
+	sess.Priority = priority
 	sess.UpdatedAt = time.Now()
 	return m.store.Save(sess)
 }

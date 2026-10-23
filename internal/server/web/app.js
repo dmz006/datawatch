@@ -3105,6 +3105,11 @@ function sessionCard(sess, idx, total) {
 
   const showCheckbox = state.selectMode && !isActive;
   const isSelected = state.selectedSessions.has(fullId);
+  // Capacity-queue priority: hidden at the default 0, shown when non-zero.
+  const prioNum = Number(sess.priority);
+  const prioBadge = (Number.isFinite(prioNum) && Math.trunc(prioNum) !== 0)
+    ? `<span class="priority-badge" style="font-size:10px;padding:2px 7px;border-radius:8px;border:1px solid var(--text2);color:var(--text);background:var(--bg3,#1f2937);font-weight:600;" title="${escHtml(t('session_priority_badge_tip'))}">${escHtml(t('session_priority_badge', [String(Math.trunc(prioNum))]))}</span>`
+    : '';
 
   return `
     <div class="session-card ${stateClass}${isSelected ? ' selected' : ''}" draggable="${!showCheckbox}" data-full-id="${escHtml(fullId)}"
@@ -3134,6 +3139,7 @@ function sessionCard(sess, idx, total) {
             ${sess.server && sess.server !== 'local' ? `<span class="server-badge" style="font-size:10px;padding:2px 7px;border-radius:8px;border:1px solid var(--accent2);color:var(--accent2);background:rgba(96,165,250,0.12);font-weight:600;" title="Server: ${escHtml(sess.server)}">${escHtml(sess.server)}</span>` : ''}
             ${sess.agent_id ? `<span class="agent-badge" style="font-size:10px;padding:2px 7px;border-radius:8px;border:1px solid var(--accent2);color:var(--accent2);background:rgba(124,58,237,0.15);font-weight:600;" title="Container worker (agent ${escHtml(sess.agent_id)})">⬡ ${escHtml(sess.agent_id)}</span>` : ''}
             ${sess.chrome_enabled ? `<span class="chrome-badge" style="font-size:10px;padding:2px 7px;border-radius:8px;border:1px solid var(--success,#22c55e);color:var(--success,#22c55e);background:rgba(34,197,94,0.12);font-weight:600;" title="${escHtml(t('session_chrome_badge_tip')||'Chrome DevTools Protocol browser automation enabled')}">${escHtml(t('session_chrome_badge')||'Chrome')}</span>` : ''}
+            ${prioBadge}
             ${sess.parent_id ? `<span class="parent-badge" style="font-size:10px;padding:2px 7px;border-radius:8px;border:1px solid var(--text2);color:var(--text2);opacity:0.7;font-weight:500;" title="${t('session_child_of')||'Child of'} ${escHtml(sess.parent_id)}">↳ ${t('session_child_of')||'child of'} [${escHtml(sess.parent_id.split('-')[0])}]</span>` : ''}
             ${(sess.claude_alive === false) ? '<span style="color:#f59e0b;font-size:11px;padding:2px 7px;border-radius:8px;border:1px solid #f59e0b;background:rgba(245,158,11,0.12);font-weight:600;" title="Claude process not running — session may be a zombie">⚠ zombie</span>' : ''}
             <span style="margin-left:auto;display:inline-flex;align-items:center;gap:8px;">
@@ -9630,6 +9636,13 @@ function renderSettingsView() {
         </div>
 
         <div class="settings-section" data-group="automata" style="${stab!=='automata'?'display:none':''}">
+          ${settingsSectionHeader('automata_workload_roles', t('workload_roles_title')||'Workload Roles')}
+          <div id="settings-sec-automata_workload_roles" style="${secContent('automata_workload_roles')}">
+            <div id="workloadRolesPanel"><div style="text-align:center;padding:24px;color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div></div>
+          </div>
+        </div>
+
+        <div class="settings-section" data-group="automata" style="${stab!=='automata'?'display:none':''}">
           ${settingsSectionHeader('automata_tag_registry', _tagT('tag_registry_title', 'Tag Registry'))}
           <div id="settings-sec-automata_tag_registry" style="${secContent('automata_tag_registry')}">
             <div id="automataTagRegistryPanel"><div style="text-align:center;padding:24px;color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div></div>
@@ -9726,6 +9739,7 @@ function renderSettingsView() {
   loadRoutingPanel();
   loadChannelRoutingPanel(); // BL331 parity
   loadAutomataTypeRegistryPanel(); // BL221 parity
+  loadWorkloadRolesPanel();
   loadAutomataTagRegistryPanel();
   loadOrchestratorPanel();
   loadAutomataSettingsPanel(); // BL221 Phase 3
@@ -10504,6 +10518,10 @@ function buildLLMForm(l) {
     <div style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(t('llm_plan_tier_hint')||"The daemon's autonomous.plan_tier_max_inflight table caps inflight per tier; an explicit max_inflight > 0 wins; otherwise no tier cap (unlimited).")}</div>
     ${llmEffectiveCapLine(l)}
     ${buildLLMBudgetGroup(l)}
+    <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('llm_field_roles')||'Workload roles (comma-separated; empty = none)')}</label>
+    <input id="fe_llm_roles" class="form-input" placeholder="planning, review" value="${escHtml((l.roles||[]).join(', '))}" />
+    <div style="font-size:11px;color:var(--text2);margin-top:2px;">${escHtml(t('llm_roles_hint')||'Roles this entry serves. If several enabled entries claim one role, the first by name wins and a warning is shown.')}</div>
+    ${(l.role_warnings||[]).map(w => `<div class="llm-role-warning" style="font-size:11px;color:var(--warning,#d97706);margin-top:2px;">${escHtml(w)}</div>`).join('')}
     <label style="font-size:11px;color:var(--text2);margin-top:6px;">${escHtml(t('llm_field_tags')||'Tags')}</label>
     ${renderBadgeInput('fe_llm_tags', (l.tags||[]).join(', '), { freeform: true, placeholder: 'fast, coding…' })}
   `;
@@ -10525,6 +10543,9 @@ function collectLLMForm(originalRecord) {
   out.max_inflight = parseInt((document.getElementById('fe_llm_max_inflight')||{}).value || '0', 10) || 0;
   out.plan_tier = (document.getElementById('fe_llm_plan_tier')||{}).value || '';
   out.budget = collectLLMBudget();
+  // Roles: always sent, so clearing the box clears the stored list (an
+  // omitted field would keep it).
+  out.roles = String((document.getElementById('fe_llm_roles')||{}).value || '').split(',').map(r => r.trim()).filter(Boolean);
   // Billing group — free-text label on the LLM record (l.billing_group); an
   // empty value clears it (the daemon trims on save and omits it when blank).
   const billingGroup = String((document.getElementById('fe_llm_billing_group')||{}).value || '').trim();
@@ -33698,6 +33719,37 @@ function loadAutomataTypeRegistryPanel() {
   });
 }
 window.loadAutomataTypeRegistryPanel = loadAutomataTypeRegistryPanel;
+
+// Workload Roles card (Settings → Automate). GET /api/llm-roles returns
+// {roles:[{role, entry}], warnings:[...]}: the resolver's view of which
+// registry entry each claimed role currently lands on, plus contention
+// warnings. Every inserted value goes through escHtml.
+function buildWorkloadRolesHTML(data) {
+  const rows = (data && data.roles) || [];
+  const warns = (data && data.warnings) || [];
+  const warnHTML = warns.map(w => `<div class="workload-role-warning" style="font-size:12px;color:var(--warning,#d97706);padding:4px 0;">${escHtml(w)}</div>`).join('');
+  if (!rows.length) {
+    return `<div style="font-size:12px;color:var(--text2);padding:6px 0;">${escHtml(t('workload_roles_empty')||'No LLM entry claims a workload role.')}</div>${warnHTML}`;
+  }
+  const body = rows.map(r => `<tr><td style="padding:4px 8px;font-weight:600;">${escHtml(r.role)}</td><td style="padding:4px 8px;">${escHtml(r.entry)}</td></tr>`).join('');
+  return `<div style="font-size:11px;color:var(--text2);margin-bottom:6px;">${escHtml(t('workload_roles_desc')||'Each role and the LLM entry it resolves to.')}</div>
+    <table class="workload-roles-table" style="font-size:13px;border-collapse:collapse;">
+      <thead><tr><th style="text-align:left;padding:4px 8px;">${escHtml(t('workload_roles_col_role')||'Role')}</th><th style="text-align:left;padding:4px 8px;">${escHtml(t('workload_roles_col_entry')||'Resolves to')}</th></tr></thead>
+      <tbody>${body}</tbody></table>
+    ${warns.length ? `<div style="font-size:11px;font-weight:600;margin-top:8px;">${escHtml(t('workload_roles_warnings')||'Contention warnings')}</div>` : ''}${warnHTML}`;
+}
+function loadWorkloadRolesPanel() {
+  const el = document.getElementById('workloadRolesPanel');
+  if (!el) return Promise.resolve();
+  return apiFetch('/api/llm-roles').then(data => {
+    const panel = document.getElementById('workloadRolesPanel');
+    if (panel) panel.innerHTML = buildWorkloadRolesHTML(data);
+  }).catch(err => {
+    const panel = document.getElementById('workloadRolesPanel');
+    if (panel) panel.innerHTML = `<div style="color:var(--error);padding:16px;">${escHtml(String(err.message||err))}</div>`;
+  });
+}
+window.loadWorkloadRolesPanel = loadWorkloadRolesPanel;
 
 window.automataTypeRegister = function() {
   const id    = (document.getElementById('atrID')||{}).value||'';

@@ -103,6 +103,7 @@ func newLLMAddCmd(update bool) *cobra.Command {
 		planTier                                         string
 		billingGroup                                     string
 		maxInflight                                      int
+		roles                                            []string
 	)
 	use := "add <name>"
 	short := "Add a new LLM"
@@ -140,6 +141,9 @@ func newLLMAddCmd(update bool) *cobra.Command {
 			}
 			if budgetSet {
 				body["budget"] = budget
+			}
+			if rcmd.Flags().Changed("role") {
+				body["roles"] = llmRolesFromFlag(roles)
 			}
 			if !update || rcmd.Flags().Changed("max-inflight") {
 				if maxInflight < 0 {
@@ -257,6 +261,7 @@ func newLLMAddCmd(update bool) *cobra.Command {
 	cmd.Flags().StringVar(&planTier, "plan-tier", "", "subscription plan tier: pro | max_5x | max_20x | api (empty = unset; the daemon's autonomous.plan_tier_max_inflight table then caps this LLM's inflight unless --max-inflight > 0 wins)")
 	cmd.Flags().StringVar(&billingGroup, "billing-group", "", "label grouping LLM entries that share one cloud/billing account across federated peers (label only; empty = no group; empty = clears on update)")
 	addLLMBudgetFlags(cmd)
+	cmd.Flags().StringArrayVar(&roles, "role", nil, "workload role this LLM serves (repeatable). On update, omitting --role keeps the stored roles; a single empty --role=\"\" clears them")
 	cmd.Flags().IntVar(&maxInflight, "max-inflight", 0, "explicit inflight cap on this LLM (>= 0; 0 = use the plan_tier table or the kind default; > 0 wins over both)")
 	return cmd
 }
