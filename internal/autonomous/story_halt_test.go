@@ -96,7 +96,6 @@ func settlePRD(t *testing.T, m *Manager, api *API, id string, spawn SpawnFn, ver
 	return final
 }
 
-
 // waitForPRDStatus polls the store until the PRD reaches one of want or the
 // timeout elapses, failing with the last observed status.
 func waitForPRDStatus(t *testing.T, m *Manager, id string, timeout time.Duration, want ...PRDStatus) *PRD {
