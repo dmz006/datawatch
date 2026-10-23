@@ -31,6 +31,8 @@ const (
 		"remove <id> <member-id> | edges <id> <member-id> on_complete=<id> on_blocked=<id> on_failed=<id> | approve <id> <member-id> | " +
 		"set-llm <id> [backend=<b>] [model=<m>] [effort=<e>] [planning-backend=<b>] [planning-model=<m>] | " +
 		"set-verification-llm <id> [backend=<b>] [model=<m>] [effort=<e>] | " +
+		"set-decision-assistant <id> backend=<b> model=<m> [mode=shadow|live] [hooks=<a,b>] [threshold.<hook>=<n>] [member=<id>] | " +
+		"set-decision-assistant <id> clear=true [member=<id>] | " +
 		"set-budget <id> key=value... (ceiling_type, ceiling_value, window, pacing, on_breach, ...; clear=true removes the policy) | " +
 		"import-graph <graph-id> [dry-run] (turn an orchestrator graph into a draft Automation; dry-run previews it)"
 	automationCancelUsage = "usage: automation cancel <id> in-flight=true|false. The choice is required: " +
@@ -49,6 +51,9 @@ const (
 		"[pacing=none|even] [on_breach=pause|block] [backend=<llm>] [allocation_estimate=true] [peer_window=<a,b>] " +
 		"[reset_time=HH:MM] [reset_weekday=<day>] [reset_day=1..28] [reset_zone=<zone>] [member=<id>] [estimated_cost_usd=<n>] " +
 		"[expected_version=<n>] | automation set-budget <id> clear=true [member=<id>] [expected_version=<n>]"
+	automationSetDecisionAssistantUsage = "usage: automation set-decision-assistant <id> backend=<b> model=<m> [mode=shadow|live] " +
+		"[hooks=empty_edge,skip_member,insert_member,budget_breach] [threshold.<hook>=<0..1>] [member=<id>] [expected_version=<n>] | " +
+		"automation set-decision-assistant <id> clear=true [member=<id>]. Off by default; backend= (empty) or clear=true turns it off."
 	automationImportGraphUsage = "usage: automation import-graph <graph-id> [dry-run]. Turns an orchestrator graph into a draft " +
 		"Automation; dry-run shows what would be created and stores nothing."
 	automationEdgesUsage = "usage: automation edges <id> <member-id> on_complete=<id> on_blocked=<id> on_failed=<id> " +
@@ -59,7 +64,7 @@ const (
 // handleAutomationCmd. Keep it in step with that switch.
 func AutomationCommVerbs() []string {
 	return []string{"activate", "list", "get", "status", "set-budget", "pause", "resume", "cancel",
-		"skip", "insert", "remove", "edges", "approve", "set-llm", "set-verification-llm", "import-graph"}
+		"skip", "insert", "remove", "edges", "approve", "set-llm", "set-verification-llm", "set-decision-assistant", "import-graph"}
 }
 
 func (r *Router) handleAutomationCmd(cmd Command) {
@@ -194,11 +199,13 @@ func (r *Router) handleAutomationCmd(cmd Command) {
 			map[string]string{"backend": "backend", "model": "model", "effort": "effort",
 				"planning-backend": "planning_backend", "planning-model": "planning_model",
 				"planning_backend": "planning_backend", "planning_model": "planning_model"})
+	case "set-decision-assistant":
+		r.automationSetDecisionAssistant(args)
 	case "set-verification-llm":
 		r.automationSetLLM(args, "set-verification-llm", "set_verification_llm", automationSetVerificationLLMUsage,
 			map[string]string{"backend": "backend", "model": "model", "effort": "effort"})
 	default:
-		r.send(fmt.Sprintf("automation: unknown subcommand %q. Try: activate, list, get, status, pause, resume, cancel, skip, insert, remove, edges, approve, set-llm, set-verification-llm, set-budget, import-graph", args[0]))
+		r.send(fmt.Sprintf("automation: unknown subcommand %q. Try: activate, list, get, status, pause, resume, cancel, skip, insert, remove, edges, approve, set-llm, set-verification-llm, set-decision-assistant, set-budget, import-graph", args[0]))
 	}
 }
 
@@ -290,6 +297,97 @@ func (r *Router) automationSetLLM(args []string, verb, op, usage string, keys ma
 		body[bodyKey] = v
 	}
 	r.automationControl(verb, args[1], op, "llm updated", body)
+}
+
+// decisionAssistantBody turns the key=value tokens of set-decision-assistant
+// into a REST body. hooks is a comma list, threshold.<hook> sets one hook's
+// confidence threshold, clear is a boolean and member names a member. An unknown
+// key, a token without '=' or a value that cannot parse is an error.
+func decisionAssistantBody(tokens []string) (map[string]any, error) {
+	body := map[string]any{}
+	for _, tok := range tokens {
+		k, v, ok := strings.Cut(tok, "=")
+		if !ok {
+			return nil, fmt.Errorf("%q is not key=value", tok)
+		}
+		switch {
+		case k == "backend" || k == "model" || k == "mode":
+			body[k] = v
+		case k == "member" || k == "member_id":
+			body["member_id"] = v
+		case k == "hooks":
+			var hooks []string
+			for _, h := range strings.Split(v, ",") {
+				if h = strings.TrimSpace(h); h != "" {
+					hooks = append(hooks, h)
+				}
+			}
+			body["hooks"] = hooks
+		case k == "clear":
+			b, err := strconv.ParseBool(v)
+			if err != nil {
+				return nil, fmt.Errorf("clear must be true or false, got %q", v)
+			}
+			if b {
+				body["clear"] = true
+			}
+		case k == "expected_version" || k == "expected-version":
+			n, err := strconv.ParseInt(v, 10, 64)
+			if err != nil {
+				return nil, fmt.Errorf("expected_version must be a number, got %q", v)
+			}
+			body["expected_version"] = n
+		case strings.HasPrefix(k, "threshold."):
+			n, err := strconv.ParseFloat(v, 64)
+			if err != nil {
+				return nil, fmt.Errorf("%s must be a number, got %q", k, v)
+			}
+			th, _ := body["thresholds"].(map[string]float64)
+			if th == nil {
+				th = map[string]float64{}
+				body["thresholds"] = th
+			}
+			th[strings.TrimPrefix(k, "threshold.")] = n
+		default:
+			return nil, fmt.Errorf("unknown key %q", k)
+		}
+	}
+	return body, nil
+}
+
+// automationSetDecisionAssistant serves "set-decision-assistant <id>
+// key=value..." through POST /api/automations/{id}/set_decision_assistant. A
+// body that cannot be valid (no key, clear mixed with settings, a backend
+// without a model) is answered with the usage line and never reaches the daemon.
+func (r *Router) automationSetDecisionAssistant(args []string) {
+	if len(args) < 3 {
+		r.send(automationSetDecisionAssistantUsage)
+		return
+	}
+	body, err := decisionAssistantBody(args[2:])
+	if err != nil {
+		r.send(err.Error() + "\n" + automationSetDecisionAssistantUsage)
+		return
+	}
+	_, clear := body["clear"]
+	backend, hasBackend := body["backend"].(string)
+	_, hasModel := body["model"]
+	_, hasMode := body["mode"]
+	_, hasHooks := body["hooks"]
+	_, hasThresholds := body["thresholds"]
+	setting := hasBackend || hasModel || hasMode || hasHooks || hasThresholds
+	switch {
+	case clear && setting:
+		r.send("clear cannot be combined with backend, model, mode, hooks or thresholds\n" + automationSetDecisionAssistantUsage)
+		return
+	case !clear && !setting:
+		r.send(automationSetDecisionAssistantUsage)
+		return
+	case !clear && !(hasBackend && backend == "") && (!hasBackend || backend == "" || !hasModel || body["model"] == ""):
+		r.send("backend and model are required together\n" + automationSetDecisionAssistantUsage)
+		return
+	}
+	r.automationControl("set-decision-assistant", args[1], "set_decision_assistant", "decision assistant updated", body)
 }
 
 // automationPauseResume serves "pause <id> [reason...]" and "resume <id>

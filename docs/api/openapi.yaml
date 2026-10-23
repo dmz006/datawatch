@@ -1985,6 +1985,57 @@ paths:
         "401": {$ref: "#/components/responses/Unauthorized"}
         "503": {description: "autonomous disabled"}
 
+  /api/automations/{id}/set_decision_assistant:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string}, description: "Automation ID (8-hex)"}
+    post:
+      summary: Set or clear an Automation's decision assistant
+      description: |
+        Sets or clears the optional local-model decision assistant of the
+        Automation, or, with `member_id`, of one member. It is off by default.
+        The fields replace the whole setting; `clear`, or an empty `backend`,
+        turns it off, and `clear` cannot be combined with the setting fields.
+        `mode` is `shadow` (the default) or `live`; `hooks` are `empty_edge`,
+        `skip_member`, `insert_member` and `budget_breach`; `thresholds` map a
+        hook to a confidence in (0,1] (defaults 0.9, `budget_breach` 0.95).
+        The Automation's status is not changed. `actor` and `reason` are
+        recorded in the audit log as `automation_set_decision_assistant`.
+      operationId: automationsSetDecisionAssistant
+      tags: [Automations]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                member_id: {type: string}
+                backend: {type: string}
+                model: {type: string}
+                mode: {type: string, enum: [shadow, live]}
+                hooks:
+                  type: array
+                  items: {type: string, enum: [empty_edge, skip_member, insert_member, budget_breach]}
+                thresholds:
+                  type: object
+                  additionalProperties: {type: number, exclusiveMinimum: 0, maximum: 1}
+                clear: {type: boolean}
+                expected_version: {type: integer}
+                actor: {type: string}
+                reason: {type: string}
+      responses:
+        "200":
+          description: The updated Automation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Automation"
+        "400": {description: "Invalid setting, or nothing to set"}
+        "404": {description: Automation or member not found}
+        "409": {description: "expected_version is stale, or the Automation is completed or cancelled"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "503": {description: "autonomous disabled"}
+
   /api/automations/{id}/set_budget:
     parameters:
       - {name: id, in: path, required: true, schema: {type: string}, description: "Automation ID (8-hex)"}

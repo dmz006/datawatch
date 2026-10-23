@@ -968,6 +968,36 @@ autonomous:
   automation:
     idle_alert_minutes: 0
     agent_insert_policy: allow
+    # decision_assistant — no daemon config key; default OFF. The optional
+    # local-model decision assistant is runtime data on the Automation record
+    # (decision_assistant) and, as an override that wins over it, on a member.
+    # It is set while the Automation is draft, active, paused or blocked with
+    #   REST   POST /api/automations/{id}/set_decision_assistant
+    #   MCP    automation_set_decision_assistant
+    #   CLI    `datawatch automation set-decision-assistant <id> --backend B --model M`
+    #   comm   `automation set-decision-assistant <id> backend=B model=M`
+    # and read back as decision_assistant on automation get and on the status rows.
+    # Empty (no backend) means off, and `clear` (or an empty backend) turns it off
+    # again. Shape of the `decision_assistant` object; the fields replace the whole
+    # setting:
+    #
+    #   backend:    an LLM registry name (a compute_node/Ollama-style backend).
+    #               Required with model; empty = off.
+    #   model:      the model on that backend. Required with backend.
+    #   mode:       shadow (default) | live. `shadow` only records what the
+    #               assistant would have done; `live` acts on a decision at or
+    #               above the hook's threshold.
+    #   hooks:      list of enabled hook points, none by default:
+    #               empty_edge | skip_member | insert_member | budget_breach.
+    #   thresholds: per-hook confidence threshold, a number in (0,1]. Below it
+    #               the assistant must escalate to the operator. Defaults:
+    #               0.9 for empty_edge, skip_member and insert_member, 0.95 for
+    #               budget_breach.
+    #
+    # The assistant only picks among already-allowed options. Destroying state
+    # or history, raising a budget ceiling and anything a guardrail marks as
+    # needing human sign-off stay with the operator. Each change is audited as
+    # automation_set_decision_assistant. See docs/api/autonomous.md.
     # budget_policy — no daemon config key. The spending limit of an
     # Automation is runtime data on the Automation record (and on a member as
     # an override), set with POST /api/automations/{id}/set_budget, MCP

@@ -1239,6 +1239,10 @@ type AutomationStatusSummary struct {
 	// stored breach state and the estimated allocation figure.
 	Budget *BudgetView `json:"budget,omitempty"`
 
+	// DecisionAssistant is the Automation-level decision assistant setting;
+	// absent when the assistant is off.
+	DecisionAssistant *DecisionAssistant `json:"decision_assistant,omitempty"`
+
 	// ActiveCursors lists the Automation's live cursors, sorted by member ID;
 	// never nil, so an idle Automation reports []. JoinWait is set only while
 	// the Automation waits on a join.

@@ -3009,7 +3009,7 @@ func automationErrStatus(err error) (int, string) {
 //	POST   /api/automations/{id}/activate — start a draft Automation
 //	POST   /api/automations/{id}/{pause|resume|cancel|skip_member|insert_member|
 //	       remove_member|reorder_edges|approve_insert|set_llm|
-//	       set_verification_llm|set_budget} — operator control
+//	       set_verification_llm|set_budget|set_decision_assistant} — operator control
 func (s *Server) handleAutomations(w http.ResponseWriter, r *http.Request) {
 	rest := strings.TrimPrefix(r.URL.Path, "/api/automations")
 	rest = strings.Trim(rest, "/")
@@ -3199,6 +3199,14 @@ type automationControlReq struct {
 	PlanningBackend *string `json:"planning_backend"`
 	PlanningModel   *string `json:"planning_model"`
 
+	// set_decision_assistant: the fields replace the whole setting of the
+	// Automation, or of one member when member_id is given; an empty backend
+	// or clear=true turns the assistant off. Backend and Model are shared with
+	// set_llm.
+	Mode       string             `json:"mode"`
+	Hooks      []string           `json:"hooks"`
+	Thresholds map[string]float64 `json:"thresholds"`
+
 	// set_budget: the budget policy fields (see autonomous.BudgetSetRequest).
 	CeilingType        string   `json:"ceiling_type"`
 	CeilingValue       float64  `json:"ceiling_value"`
@@ -3226,6 +3234,31 @@ func (r automationControlReq) budgetSetRequest() autonomous.BudgetSetRequest {
 	}
 }
 
+// decisionAssistant is the set_decision_assistant setting the body carries:
+// nil to clear it (clear=true, or an empty backend), else the whole setting.
+// A body that names nothing is a 400, and so is a clear combined with a field
+// that would set it; the status is 0 when the body is acceptable.
+func (r automationControlReq) decisionAssistant() (da *autonomous.DecisionAssistant, status int, msg string) {
+	named := r.Backend != nil || r.Model != nil || r.Mode != "" || len(r.Hooks) > 0 || len(r.Thresholds) > 0
+	if !named && !r.Clear {
+		return nil, http.StatusBadRequest, "supply backend and model to set the decision assistant, or clear=true (or an empty backend) to turn it off"
+	}
+	backend := derefString(r.Backend)
+	if r.Clear {
+		if backend != "" || derefString(r.Model) != "" || r.Mode != "" || len(r.Hooks) > 0 || len(r.Thresholds) > 0 {
+			return nil, http.StatusBadRequest, "clear cannot be combined with backend, model, mode, hooks or thresholds"
+		}
+		return nil, 0, ""
+	}
+	if r.Backend != nil && backend == "" {
+		return nil, 0, ""
+	}
+	return &autonomous.DecisionAssistant{
+		Backend: backend, Model: derefString(r.Model), Mode: r.Mode,
+		Hooks: r.Hooks, Thresholds: r.Thresholds,
+	}, 0, ""
+}
+
 // automationController is the optional AutonomousAPI extension carrying the
 // operator control operations (autonomous.API implements it).
 type automationController interface {
@@ -3240,6 +3273,7 @@ type automationController interface {
 	SetAutomationLLM(id string, backend, model, effort, planningBackend, planningModel *string, actor string, expectedVersion int64) (any, error)
 	SetAutomationVerificationLLM(id string, backend, model, effort *string, actor string, expectedVersion int64) (any, error)
 	SetAutomationBudgetPolicy(id string, req autonomous.BudgetSetRequest, actor string, expectedVersion int64) (any, error)
+	SetAutomationDecisionAssistant(id, memberID, actor string, da *autonomous.DecisionAssistant, expectedVersion int64) (any, error)
 }
 
 // handleAutomationControl serves POST /api/automations/{id}/{op} for the ops in
@@ -3254,6 +3288,12 @@ type automationController interface {
 // 400 there). Both are presence-aware (absent leaves the field, "" clears it),
 // need at least one setting field, and treat expected_version 0 or omitted as
 // "skip the version check"; a stale positive value is a 409.
+//
+// set_decision_assistant takes backend, model, mode (shadow or live), hooks and
+// per-hook thresholds, for the Automation or for one member (member_id). The
+// fields replace the whole setting; clear=true or an empty backend turns the
+// assistant off. An unknown hook, mode or threshold is a 400 and an unknown
+// member a 404.
 func (s *Server) handleAutomationControl(w http.ResponseWriter, r *http.Request, id, op string) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -3366,6 +3406,25 @@ func (s *Server) handleAutomationControl(w http.ResponseWriter, r *http.Request,
 		} else {
 			a, err = ctl.SetAutomationLLM(id, req.Backend, req.Model, req.Effort, req.PlanningBackend, req.PlanningModel, req.Actor, req.ExpectedVersion)
 		}
+	case "set_decision_assistant":
+		action = "automation_set_decision_assistant"
+		da, status, msg := req.decisionAssistant()
+		if status != 0 {
+			http.Error(w, msg, status)
+			return
+		}
+		if da != nil && s.inferenceReg != nil {
+			if _, gerr := s.inferenceReg.Get(da.Backend); gerr != nil {
+				http.Error(w, "unknown decision assistant LLM "+strconv.Quote(da.Backend)+" — check /api/llms for valid names", http.StatusBadRequest)
+				return
+			}
+		}
+		details["member_id"], details["cleared"] = req.MemberID, da == nil
+		if da != nil {
+			details["backend"], details["model"], details["mode"] = da.Backend, da.Model, da.EffectiveMode()
+			details["hooks"], details["thresholds"] = da.Hooks, da.Thresholds
+		}
+		a, err = ctl.SetAutomationDecisionAssistant(id, req.MemberID, req.Actor, da, req.ExpectedVersion)
 	case "set_budget":
 		action = "automation_set_budget"
 		bs := req.budgetSetRequest()

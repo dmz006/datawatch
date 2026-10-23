@@ -30,6 +30,7 @@ var automationRESTOperations = []AutomationRESTOperation{
 	{"set_llm", http.MethodPost},
 	{"set_verification_llm", http.MethodPost},
 	{"set_budget", http.MethodPost},
+	{"set_decision_assistant", http.MethodPost},
 	{"status", http.MethodGet},
 	{"import-graph", http.MethodPost},
 }
