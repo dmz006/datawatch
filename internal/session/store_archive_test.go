@@ -231,12 +231,12 @@ func TestStoreArchiveTornLine(t *testing.T) {
 	s.ArchiveOnce(time.Now()) //nolint:errcheck
 	f, _ := os.OpenFile(filepath.Join(dir, archiveFileName), os.O_APPEND|os.O_WRONLY, 0600)
 	_, _ = f.WriteString(`{"id":"h-torn","ts":1,"rec":{"id`) // crash mid-append, no newline
-	f.Close()
+	_ = f.Close()
 	s2, err := NewStore(filepath.Join(dir, "sessions.json"), WithFlushInterval(0))
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s2.Close()
+	defer func() { _ = s2.Close() }()
 	_ = s2.Save(archSess("ee02", StateFailed, 30*day))
 	if n, err := s2.ArchiveOnce(time.Now()); err != nil || n != 1 {
 		t.Fatalf("archive after torn line: %d, %v", n, err)
@@ -292,7 +292,7 @@ func TestStoreFieldCapTruncatesWithMarker(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s2.Close()
+	defer func() { _ = s2.Close() }()
 	s2.SetFieldCap(1024)
 	got, _ := s2.Get("h-ff01")
 	_ = s2.Save(got)
