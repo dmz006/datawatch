@@ -25,20 +25,53 @@ import (
 // (two different PRs, ~15.0-15.1s each time, 0.07s locally every time) —
 // a real contention-driven slowdown under `go test ./...` running every
 // package in parallel, not flakiness. Bumped to 30s for more headroom.
+//
+// 2026-10-18 — shares its sequence with runToTerminal via settlePRD below:
+// drain the boot-resume scan before Run, then wait for the executor
+// goroutine to exit (a real condition, not a status poll).
 func runToTerminalOrBlocked(t *testing.T, m *Manager, api *API, id string, spawn SpawnFn, verify VerifyFn) *PRD {
+	t.Helper()
+	final := settlePRD(t, m, api, id, spawn, verify)
+	s := final.Status
+	if s != PRDCompleted && s != PRDFailed && s != PRDBlocked {
+		t.Fatalf("executor exited with non-terminal PRD status %q", s)
+	}
+	return final
+}
+
+// settlePRD is the shared approve/drain/Run/wait-exit sequence for
+// runToTerminal and runToTerminalOrBlocked (both thin wrappers that
+// accept a different terminal-status set). The key properties, each of
+// which fixes a real race:
+//
+//  1. The PRD is flipped to PRDApproved before SetExecutors, so the
+//     boot-resume scan it launches is a guaranteed no-op for this PRD —
+//     even against a fake (nonexistent) project dir it can neither park
+//     nor resurrect the PRD.
+//  2. api.WaitIdle drains that scan BEFORE api.Run. Without this the scan
+//     can run after a fast executor has already finished: against a fake
+//     (missing) project dir it parks the finished PRD as PRDBlocked, and
+//     for PRDFailed tasks with empty sessions it "recovers" them back to
+//     Running — clobbering the terminal state the test asserts (and
+//     tripping the 30s bound below while the resurrected run re-fails).
+//  3. We wait for the executor goroutine itself to exit (the api.execWG
+//     WaitGroup) rather than polling the PRD status. The terminal status
+//     is written inside the run; the goroutine's deferred cleanup
+//     (releaseRun + final EmitPRDUpdate) runs after it, so a status poll
+//     can observe the write while the goroutine is still live.
+//
+// The 30s bound is a hang detector only — every scenario this package
+// exercises settles in well under a second, so the bound is never
+// load-bearing (its original 5s/15s forms were the CI timeouts this
+// helper family kept hitting).
+func settlePRD(t *testing.T, m *Manager, api *API, id string, spawn SpawnFn, verify VerifyFn) *PRD {
 	t.Helper()
 	prd, _ := m.Store().GetPRD(id)
 	m.mu.Lock()
-	prd.Status = PRDApproved
+	m.Store().WithLock(func() { prd.Status = PRDApproved })
 	m.mu.Unlock()
 	_ = m.Store().SavePRD(prd)
 	api.SetExecutors(spawn, verify)
-	// SetExecutors launches the boot-resume scan. If it overlaps the
-	// executor it can observe the already-finished PRD as PRDFailed,
-	// "recover" it back to PRDRunning, and have its Run dropped because
-	// the finished executor's runCancels entry is not yet cleared —
-	// stranding the PRD Running with no executor. Let the scan finish
-	// (the PRD is Approved, so it is a no-op) before the explicit Run.
 	if err := api.WaitIdle(10 * time.Second); err != nil {
 		t.Fatal(err)
 	}
@@ -46,22 +79,20 @@ func runToTerminalOrBlocked(t *testing.T, m *Manager, api *API, id string, spawn
 		t.Fatal(err)
 	}
 	// Wait for the executor goroutine itself to exit (a real condition,
-	// not a status poll). Its tail has then fully run.
-	exited := make(chan struct{})
+	// not a status poll) with a generous hang-detector bound, then report
+	// the actual status if the caller doesn't accept it.
+	idleCh := make(chan struct{})
 	go func() {
 		api.execWG.Wait()
-		close(exited)
+		close(idleCh)
 	}()
 	select {
-	case <-exited:
+	case <-idleCh:
 	case <-time.After(30 * time.Second):
-		t.Fatal("PRD did not reach a terminal state")
+		final, _ := m.Store().SnapshotPRD(id)
+		t.Fatalf("PRD %s executor did not exit within 30s (hang detected); last status %q", id, final.Status)
 	}
 	final, _ := m.Store().SnapshotPRD(id)
-	status := final.Status
-	if status != PRDCompleted && status != PRDFailed && status != PRDBlocked {
-		t.Fatalf("executor exited with non-terminal PRD status %q", status)
-	}
 	return final
 }
 

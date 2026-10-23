@@ -333,33 +333,40 @@ func (m *Manager) plannerCancelled(prdID string) bool {
 // setPRDWaitReason persists why the planner is queued on the PRD and emits a
 // PRD update, so the status block / PWA show it without a poll. The reason
 // must name what the planner is waiting for (e.g. "llm:ollama at 1/1 (1
-// waiting)"). No-op when the reason is unchanged.
+// waiting)"). No-op when the reason is unchanged. The write goes through
+// MutatePRD (under the store lock) so it is ordered against concurrent
+// SnapshotPRD reads — the direct GetPRD-mutate-SavePRD form raced a poll
+// under -race the moment the planner queued while a status reader ran.
 func (m *Manager) setPRDWaitReason(prdID, reason string) {
-	prd, ok := m.store.GetPRD(prdID)
-	if !ok || prd.WaitReason == reason {
-		return
+	applied := m.store.MutatePRD(prdID, func(p *PRD) bool {
+		if p.WaitReason == reason {
+			return false
+		}
+		p.WaitReason = reason
+		return true
+	})
+	if applied {
+		m.EmitPRDUpdate(prdID)
 	}
-	prd.WaitReason = reason
-	if err := m.store.SavePRD(prd); err != nil {
-		return
-	}
-	m.EmitPRDUpdate(prdID)
 }
 
 // clearPRDWaitReason empties PRD.WaitReason once the wait is over — the
 // planner admitted, or the wait ended in timeout/cancel. A stale reason is
 // worse than none: an operator reading "waiting on node:alpha" after the
-// planner moved on would chase a queue that no longer exists.
+// planner moved on would chase a queue that no longer exists. Like
+// setPRDWaitReason this mutates under the store lock (MutatePRD) so it is
+// synchronized with concurrent SnapshotPRD readers.
 func (m *Manager) clearPRDWaitReason(prdID string) {
-	prd, ok := m.store.GetPRD(prdID)
-	if !ok || prd.WaitReason == "" {
-		return
+	applied := m.store.MutatePRD(prdID, func(p *PRD) bool {
+		if p.WaitReason == "" {
+			return false
+		}
+		p.WaitReason = ""
+		return true
+	})
+	if applied {
+		m.EmitPRDUpdate(prdID)
 	}
-	prd.WaitReason = ""
-	if err := m.store.SavePRD(prd); err != nil {
-		return
-	}
-	m.EmitPRDUpdate(prdID)
 }
 
 // adoptCapacity (BL462 F1) gives a task whose session survived a daemon

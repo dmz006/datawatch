@@ -834,6 +834,13 @@ type Manager struct {
 	// memory scope; the result is stored on PRD.MemoryReport. Nil = no report.
 	memoryReportFn func(ctx context.Context, prdID, projectDir string) (string, error)
 
+	// memoryReportWG (BL387 Phase 3) tracks in-flight memory-report goroutines
+	// so a caller (today: tests) can deterministically wait for the report to
+	// be fully written — reportFn ran AND the PRD mutation + SavePRD completed —
+	// before asserting or tearing down. A WaitGroup is self-synchronizing; it
+	// is not additionally guarded by mu.
+	memoryReportWG sync.WaitGroup
+
 	// loop state
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -1069,6 +1076,28 @@ func (m *Manager) SetMemoryReportFn(fn func(ctx context.Context, prdID, projectD
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.memoryReportFn = fn
+}
+
+// WaitMemoryReports (BL387 Phase 3) blocks until every in-flight
+// memory-report goroutine has finished — i.e. reportFn ran and the PRD write
+// (in-memory mutation + SavePRD) completed — or until timeout elapses, in
+// which case it returns an error. Tests that assert on PRD.MemoryReport should
+// wait on this real goroutine-exit condition instead of polling
+// PRD.MemoryReport within a fixed wall-clock deadline: the poll raced the
+// report goroutine (a known flake), whereas waiting on the goroutine's own
+// exit is deterministic.
+func (m *Manager) WaitMemoryReports(timeout time.Duration) error {
+	done := make(chan struct{})
+	go func() {
+		m.memoryReportWG.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return nil
+	case <-time.After(timeout):
+		return fmt.Errorf("autonomous: memory-report goroutine still running after %s", timeout)
+	}
 }
 
 // decisionKindExists reports whether prd.Decisions already carries a decision
@@ -1746,10 +1775,18 @@ func (m *Manager) Decompose(prdID string) (*PRD, error) {
 		effort = Effort(m.cfg.PlanningEffort)
 	}
 	// Mark in-flight so the operator can see it from /api/autonomous/prds/{id}.
-	// Also persists the worktree assignment above in the same write.
-	planOld := prd.Status
-	prd.Status = PRDPlanning
-	prd.UpdatedAt = time.Now()
+	// Also persists the worktree assignment above in the same write. The status
+	// bump is a plain field write on the store's shared *PRD, so it must run under
+	// the store lock to be ordered against a concurrent SnapshotPRD deep copy and
+	// persist's JSON encoding (see Store.WithLock); the prior value is captured in
+	// the same critical section. SavePRD below keeps its Rev bump, test hooks and
+	// decision trims unchanged.
+	var planOld PRDStatus
+	m.store.WithLock(func() {
+		planOld = prd.Status
+		prd.Status = PRDPlanning
+		prd.UpdatedAt = time.Now()
+	})
 	if m.store.SavePRD(prd) == nil {
 		m.emitPRDStatus(prd, planOld, nil, nil)
 	}
@@ -1905,9 +1942,14 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (*PRD, 
 		effort = Effort(m.cfg.PlanningEffort)
 	}
 	// Mark in-flight. Also persists the worktree assignment above.
-	planOld := prd.Status
-	prd.Status = PRDPlanning
-	prd.UpdatedAt = time.Now()
+	// Same lock-ordered status bump as Decompose() (see Store.WithLock); the
+	// prior value is captured in the same critical section.
+	var planOld PRDStatus
+	m.store.WithLock(func() {
+		planOld = prd.Status
+		prd.Status = PRDPlanning
+		prd.UpdatedAt = time.Now()
+	})
 	if m.store.SavePRD(prd) == nil {
 		m.emitPRDStatus(prd, planOld, nil, nil)
 	}

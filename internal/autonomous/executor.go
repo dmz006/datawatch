@@ -863,7 +863,12 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 	if reportFn != nil && prd.MemorySeed.Enabled {
 		prdID := prd.ID
 		projectDir := prd.ProjectDir
+		// Track the report goroutine so a caller can deterministically wait for
+		// it to finish (reportFn + PRD write) instead of racing it (BL387
+		// known flake: the report could still be writing when the test ended).
+		m.memoryReportWG.Add(1)
 		go func() { // #nosec G118 -- background report after PRD completion; request context already done
+			defer m.memoryReportWG.Done()
 			report, rerr := reportFn(context.Background(), prdID, projectDir)
 			if rerr != nil {
 				log.Printf("[autonomous] memory-report: prd=%s: %v", prdID, rerr)
@@ -1578,10 +1583,12 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 	// task.failurereason/story.failurereason?"). Same data
 	// recordFailureLearning already has, structured instead of a bare
 	// string, additive alongside the existing t.Error.
-	t.FailureReason = &FailureReason{
-		Category: orContentCategory(lastFailureCategory), Detail: hint,
-		Source: "task-exhausted", Retryable: false, OccurredAt: time.Now(),
-	}
+	m.store.WithLock(func() {
+		t.FailureReason = &FailureReason{
+			Category: orContentCategory(lastFailureCategory), Detail: hint,
+			Source: "task-exhausted", Retryable: false, OccurredAt: time.Now(),
+		}
+	})
 	// No more attempts coming — sweep any leftover CHECKPOINT.md too.
 	m.relocateCheckpoint(prd, t)
 	if err := m.store.SaveTask(t); err != nil {

@@ -23,12 +23,15 @@ func startErr(what string) error {
 	return fmt.Errorf("session never started: %s — %w; %w", what, ErrSessionNeverStarted, ErrWorkerStalled)
 }
 
-// waitForPRDTerminal polls the store until the PRD leaves PRDRunning.
+// waitForPRDTerminal polls the store until the PRD leaves PRDRunning. It reads
+// via SnapshotPRD (deep copy taken under the store lock), never GetPRD (the
+// live shared pointer): reading PRD fields off the live pointer outside the
+// lock races the executor goroutine's concurrent writes.
 func waitForPRDTerminal(t *testing.T, m *Manager, prdID string) *PRD {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
-		got, ok := m.Store().GetPRD(prdID)
+		got, ok := m.Store().SnapshotPRD(prdID)
 		if !ok {
 			t.Fatal("PRD disappeared")
 		}
