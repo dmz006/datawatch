@@ -994,6 +994,28 @@ dot — the raw id fields still carry the real id in the body.
   the `(untitled <short id>)` fallback above. The web tests asserting the
   rendering are in `internal/server/web/app-capacity-names.test.js`.
 
+### Rate ceilings
+
+A pool can carry a rolling-window rate ceiling (requests and/or tokens per
+window) on top of its concurrency limit. The fields below are pure additions;
+a pool without a ceiling serialises exactly as before.
+
+| Where | Field | Meaning |
+|---|---|---|
+| `pools[]` | `rate_requests`, `rate_tokens` | the ceilings (omitted when unset) |
+| `pools[]` | `rate_window_seconds` | rolling window length |
+| `pools[]` | `requests_in_window`, `tokens_in_window` | usage counted in the window now |
+| `pools[]` | `rate_resets_at` | when the window next frees usage (omitted when nothing is counted) |
+| `waiting[]` | `cause` | classified wait cause; `rate_ceiling` when a pool's rate ceiling blocks the waiter |
+| `waiting[]` | `resets_at` | when the window will free the waiter (rate-ceiling waits only, when known) |
+| `tasks.waiting[]`, `queue[]` in autonomous status | `cause`, `resets_at` | same `rate_ceiling` cause and reset time for a task waiting on the ceiling |
+
+The wait `reason` reads `pool <p> rate ceiling: <requests|tokens> <used>/<ceiling> in <window>, resets at <RFC3339>`
+(the reset part is left out when unknown). `readable_reason` words it as
+`pool <p> rate ceiling: requests 3/3 used, resets in 5m`. The audit log records
+the wait with the existing `autonomous_capacity_wait` action: `cause` is
+`rate_ceiling`, and `pool` and `resets_at` appear in the details.
+
 ---
 
 ## CLI

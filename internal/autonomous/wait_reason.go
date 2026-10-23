@@ -23,6 +23,9 @@ const (
 	WaitCauseGlobalCooldown WaitCause = "global_cooldown"
 	WaitCauseAwaitExternal  WaitCause = "await_external"
 	WaitCauseTreeLock       WaitCause = "tree_lock"
+	// WaitCauseRateCeiling is a wait on a pool's rolling-window rate ceiling
+	// (requests or tokens per window).
+	WaitCauseRateCeiling WaitCause = "rate_ceiling"
 )
 
 const (
@@ -35,6 +38,7 @@ const (
 	treeLockPrefix       = "tree lock:"
 	poolPrefix           = "pool "
 	backpressureInfix    = " backpressure: "
+	rateCeilingInfix     = " rate ceiling: "
 )
 
 // ClassifyWaitReason maps a wait reason produced anywhere in the daemon back
@@ -63,11 +67,78 @@ func ClassifyWaitReason(reason string) WaitCause {
 		if i := strings.Index(rest, backpressureInfix); i >= 0 {
 			return ClassifyWaitReason(rest[i+len(backpressureInfix):])
 		}
+		if strings.Contains(rest, rateCeilingInfix) {
+			return WaitCauseRateCeiling
+		}
 		if strings.Contains(rest, poolFullInfix) {
 			return WaitCausePoolFull
 		}
 	}
 	return ""
+}
+
+// RateCeilingWaitText words a wait on a pool's rate ceiling: the pool, the
+// dimension ("requests" or "tokens"), the usage against the ceiling, and when
+// the window frees up. A zero resetsAt means the reset is not known, and the
+// "resets in" part is left out. The "pool <p> rate ceiling: " prefix matches
+// the ledger's own reason so ClassifyWaitReason recognises both.
+func RateCeilingWaitText(now func() time.Time, pool, dimension string, used, ceiling int64, resetsAt time.Time) string {
+	text := fmt.Sprintf("pool %s rate ceiling: %s %d/%d used", pool, dimension, used, ceiling)
+	if !resetsAt.IsZero() {
+		text += ", resets " + relativeIn(now, resetsAt)
+	}
+	return text
+}
+
+// parseRateCeilingWait splits a rate-ceiling reason, bare or wrapped by the
+// backpressure path, into the pool, dimension, used and ceiling counts, and
+// the reset time when the reason names one (zero otherwise). ok is false when
+// the shape does not match. It reads both the ledger's wording ("requests 3/3
+// in 1m0s, resets at <RFC3339>") and RateCeilingWaitText's.
+func parseRateCeilingWait(reason string) (pool, dimension string, used, ceiling int64, resetsAt time.Time, ok bool) {
+	i := strings.Index(reason, rateCeilingInfix)
+	if i < 0 {
+		return
+	}
+	j := strings.LastIndex(reason[:i], poolPrefix)
+	if j < 0 {
+		return
+	}
+	pool = reason[j+len(poolPrefix) : i]
+	rest := reason[i+len(rateCeilingInfix):]
+	var dim string
+	var u, c int64
+	if n, err := fmt.Sscanf(rest, "%s %d/%d", &dim, &u, &c); n != 3 || err != nil {
+		return "", "", 0, 0, time.Time{}, false
+	}
+	const resetsAtMarker = ", resets at "
+	if k := strings.Index(rest, resetsAtMarker); k >= 0 {
+		ts := strings.TrimSpace(rest[k+len(resetsAtMarker):])
+		if sp := strings.IndexAny(ts, " ,"); sp >= 0 {
+			ts = ts[:sp]
+		}
+		if t, err := time.Parse(time.RFC3339, ts); err == nil {
+			resetsAt = t
+		}
+	}
+	return pool, dim, u, c, resetsAt, true
+}
+
+// rateCeilingResetsAt returns the reset time a rate-ceiling reason names, or
+// nil when it names none.
+func rateCeilingResetsAt(reason string) *time.Time {
+	if _, _, _, _, at, ok := parseRateCeilingWait(reason); ok && !at.IsZero() {
+		return &at
+	}
+	return nil
+}
+
+// RateCeilingWaitFacts returns the pool and reset time a rate-ceiling reason
+// names (zero time when none), for audit and view code. ok is false when the
+// reason is not a rate-ceiling one.
+func RateCeilingWaitFacts(reason string) (pool string, resetsAt time.Time, ok bool) {
+	pool, _, _, _, resetsAt, ok = parseRateCeilingWait(reason)
+	return
 }
 
 // PoolFullWaitText words a wait on a full capacity pool: the pool, its
@@ -118,6 +189,12 @@ func ReadableWaitText(reason string, holders []string, holderName func(holderID 
 			return reason
 		}
 		return fmt.Sprintf("waiting for node %s: %d/%d engines in use, held by %s", node, used, limit, readableHolderList(holders, holderName))
+	case WaitCauseRateCeiling:
+		pool, dim, used, ceiling, at, ok := parseRateCeilingWait(reason)
+		if !ok {
+			return reason
+		}
+		return RateCeilingWaitText(time.Now, pool, dim, used, ceiling, at)
 	}
 	return reason
 }

@@ -254,6 +254,11 @@ type capacityLeaseJSON struct {
 // the resolved readable form of the waiting holder.
 type capacityWaiterJSON struct {
 	capacity.Waiter
+	// Cause is the classified wait cause (rate_ceiling, pool_full, …); omitted
+	// when the reason is not a known one. ResetsAt is set when the window of a
+	// rate ceiling will free the waiter.
+	Cause      autonomous.WaitCause      `json:"cause,omitempty"`
+	ResetsAt   *time.Time                `json:"resets_at,omitempty"`
 	HolderName autonomous.HolderNameView `json:"holder_name,omitempty"`
 }
 
@@ -476,7 +481,10 @@ func (s *Server) handleCapacity(w http.ResponseWriter, r *http.Request) {
 	}
 	waitingJSON := make([]capacityWaiterJSON, 0, len(st.Waiting))
 	for _, wtr := range st.Waiting {
-		cj := capacityWaiterJSON{Waiter: wtr}
+		cj := capacityWaiterJSON{Waiter: wtr, Cause: autonomous.ClassifyWaitReason(wtr.Reason)}
+		if cj.Cause == autonomous.WaitCauseRateCeiling {
+			cj.ResetsAt = rateWaiterResetsAt(wtr.Reason, st.Pools)
+		}
 		if v := holderView(wtr.Holder); v != nil {
 			cj.HolderName = *v
 		}
@@ -516,4 +524,24 @@ func (s *Server) handleCapacity(w http.ResponseWriter, r *http.Request) {
 		out.Pools = append(out.Pools, pj)
 	}
 	writeJSONOK(w, out)
+}
+
+// rateWaiterResetsAt returns when the rate window will free a waiter blocked
+// by a rate ceiling: the reset the reason names, else the ceilinged pool's own
+// reset from the snapshot. Nil when neither is known.
+func rateWaiterResetsAt(reason string, pools []capacity.PoolStatus) *time.Time {
+	pool, at, ok := autonomous.RateCeilingWaitFacts(reason)
+	if !ok {
+		return nil
+	}
+	if !at.IsZero() {
+		return &at
+	}
+	for _, p := range pools {
+		if p.Name == pool && !p.RateResetsAt.IsZero() {
+			at := p.RateResetsAt
+			return &at
+		}
+	}
+	return nil
 }
