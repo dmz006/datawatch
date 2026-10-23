@@ -131,6 +131,43 @@ proves none of the heavy text reaches the list body.
   is 4096.
 - Tests: `TestPRDDetailCap*` in `internal/server/prd_detail_cap_test.go`.
 
+## After the fix
+
+Same seeded data, same in-process method, first page as the web UI requests it on
+load (`TestPerfBudgetFirstPage`, 2026-10-23). The baseline column is the Baseline
+table above.
+
+| Endpoint | Path (after) | Baseline raw | After raw | After gzip | Reduction (raw) |
+|---|---|---|---|---|---|
+| sessions | `/api/sessions?view=summary&limit=50` | 35,883,863 | 16,352 | 2,045 | 99.95% |
+| autonomous prds | `/api/autonomous/prds` | 82,960,495 | 57,411 | 3,476 | 99.93% |
+| automations | `/api/automations` | 9,230 | 9,229 | 1,246 | 0% |
+| alerts | `/api/alerts?limit=50` | 218,550 | 21,952 | 6,845 | 90% |
+
+The first-page Automata reply is 57 KB (about 3.5 KB gzipped), down from 83 MB, so at
+the slow-4G rate the transfer is well under a second instead of about 140 s. The
+explicit full forms (`/api/sessions`, `/api/autonomous/prds?full=1`) still return the
+complete objects, at the baseline sizes, for clients that ask for them.
+
+Server time for the Automata list fell from 124 ms to about 1 ms
+(`TestEndpointMeasureLoadPath`). The live browser pass of
+`scripts/perf-measure-tabs.mjs` is not recorded: no seeded daemon was available.
+
+## Budget guard
+
+- `internal/server/perf_budget_test.go`, `TestPerfBudget*`:
+  - `TestPerfBudgetFirstPage` fails when a first-page body exceeds 262,144 bytes
+    uncompressed.
+  - `TestPerfBudgetConditionalRepeat` fails when a repeat with `If-None-Match` does not
+    return 304 with an empty body (sessions, Automata, Automations, alerts all carry an
+    ETag; alerts gained one for this guard).
+  - `TestPerfBudgetFullFormStillComplete` fails when `?full=1` / the plain sessions list
+    stops returning complete objects.
+- `scripts/perf-budget.sh` runs the Go test and, when `TEST_HTTP` and `TEST_TOKEN` are
+  set and `node` is on the path, `scripts/perf-measure-tabs.mjs --slow-4g-only`, failing
+  when a tab's time to first content exceeds `PERF_TAB_BUDGET_MS` (default 3000). It
+  exits non-zero on any failure.
+
 ## Phases
 
 | Phase | Name | Status |
@@ -139,7 +176,7 @@ proves none of the heavy text reaches the list body.
 | 2 | Slim list payloads: sessions and Automata lists carry summary fields only, full record by id | Planned |
 | 3 | Response compression and conditional requests for bodies over a size threshold | Planned |
 | 4 | Load only what the visible tab needs; paginate or window the long lists in the UI | Planned |
-| 5 | Re-measure against the baseline and set regression budgets | Planned |
+| 5 | Re-measure against the baseline and set regression budgets | Done (budget guard and after-fix numbers above) |
 
 ### Phase 1: Seed and measurement (Done)
 
@@ -176,7 +213,7 @@ proves none of the heavy text reaches the list body.
 - Stop fetching data for tabs the user has not opened; page or window the long lists.
 - Checklist: same items as Phase 2.
 
-### Phase 5: Re-measure and budgets (Planned)
+### Phase 5: Re-measure and budgets (Done)
 
 - Re-run both tools, fill a before/after table here, and add a test that fails when a
   load-path endpoint exceeds its byte budget on the seeded data.

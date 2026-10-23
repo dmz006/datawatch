@@ -408,17 +408,23 @@ func MeasureLoadEndpoints(t testing.TB, s *Server) []PerfRow {
 		rr := perfGet(ep.Handler, ep.Path)
 		elapsed := time.Since(start)
 		body := rr.Body.Bytes()
-		var gz bytes.Buffer
-		zw := gzip.NewWriter(&gz)
-		_, _ = zw.Write(body)
-		_ = zw.Close()
-		row := PerfRow{Name: ep.Name, Path: ep.Path, Status: rr.Code, RawBytes: len(body), GzipBytes: gz.Len(), ServerMs: float64(elapsed.Microseconds()) / 1000}
+		gzLen := perfGzipLen(body)
+		row := PerfRow{Name: ep.Name, Path: ep.Path, Status: rr.Code, RawBytes: len(body), GzipBytes: gzLen, ServerMs: float64(elapsed.Microseconds()) / 1000}
 		if len(body) > 0 {
-			row.GzipRatioPc = 100 * float64(gz.Len()) / float64(len(body))
+			row.GzipRatioPc = 100 * float64(gzLen) / float64(len(body))
 		}
 		rows = append(rows, row)
 	}
 	return rows
+}
+
+// perfGzipLen is the size of body gzipped at Go's default level.
+func perfGzipLen(body []byte) int {
+	var gz bytes.Buffer
+	zw := gzip.NewWriter(&gz)
+	_, _ = zw.Write(body)
+	_ = zw.Close()
+	return gz.Len()
 }
 
 func perfLogTable(t testing.TB, rows []PerfRow) {

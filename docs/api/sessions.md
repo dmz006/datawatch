@@ -100,6 +100,37 @@ The same compact record is what WebSocket clients receive in
 `session_state` after negotiating `session_view: summary` — see
 [mobile-surface.md](mobile-surface.md#low-bandwidth-client-flow).
 
+#### Paged summary list (`limit`, `cursor`, `status`, `active`, `q`, `view`)
+
+`view=summary`, and any of `limit`, `cursor`, `status`, `active` and `q`, switch
+`GET /api/sessions` to a row-only list: `id`, `full_id`, `name`, `state`, `backend`,
+`project_dir`, `hostname`, `created_at`, `updated_at`, `last_activity`, `parent_id`,
+cost and token counts, `scheduled_count` and a one-line `status_line`. No task text,
+prompt context or summaries are included. A request with none of these parameters
+still returns the full legacy array.
+
+| Parameter | Effect |
+|---|---|
+| `view=summary` | Row-only list as above. Without `limit` or `cursor` the reply is a JSON array and terminal sessions are capped as described above. Any other `view` value returns 400. |
+| `limit=<n>` | Switches to the paged envelope `{"sessions": [...], "total": N, "next_cursor": "..."}`. Default 50, maximum 500; below 1 or not a number returns 400. |
+| `cursor=<opaque>` | The `next_cursor` of the previous page. Newest `updated_at` first, ties by `full_id`. An invalid cursor returns 400. |
+| `status=<list>` | Comma list of states, e.g. `running,waiting_input`. Unknown names return 400. |
+| `active=1` | Only non-terminal sessions. |
+| `q=<text>` | Case-insensitive match against name, ids and the first 256 characters of the task. |
+
+The filtered total is also sent as `X-Datawatch-Sessions-Total`.
+
+**ETag.** Row-only replies carry `ETag` and `Cache-Control: no-cache`. Send the value
+in `If-None-Match`; an unchanged list answers `304 Not Modified` with an empty body.
+The full legacy array has no ETag. Fetch a whole session with
+`GET /api/sessions/{id}`.
+
+```bash
+# First page of live work, then poll cheaply
+curl -si -H "Authorization: Bearer $TOKEN" "$BASE/api/sessions?limit=50&active=1"
+curl -si -H "Authorization: Bearer $TOKEN" -H 'If-None-Match: "<etag>"' "$BASE/api/sessions?limit=50&active=1"   # 304
+```
+
 #### GET /api/sessions/{id}/telemetry
 
 Returns structured telemetry accumulated from hook payloads for

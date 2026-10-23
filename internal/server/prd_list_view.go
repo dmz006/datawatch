@@ -112,6 +112,9 @@ func (s *Server) writePRDList(w http.ResponseWriter, r *http.Request) {
 	active := queryBool(r, "active", false)
 	needle := strings.ToLower(strings.TrimSpace(q.Get("q")))
 	tag := q.Get("tag_id")
+	if tag == "" {
+		tag = q.Get("tag")
+	}
 	filtered := len(statuses) > 0 || active || needle != "" || tag != ""
 
 	var rows []autonomous.SummaryRow

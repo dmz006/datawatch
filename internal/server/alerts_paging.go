@@ -75,8 +75,7 @@ func (s *Server) serveAlertsPage(w http.ResponseWriter, r *http.Request) {
 	if hasMore && len(items) > 0 {
 		resp.NextBefore = items[len(items)-1].ID
 	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp) //nolint:errcheck
+	writeJSONETag(w, r, resp)
 }
 
 // alertsTotal counts stored alerts, restricted to source when set.

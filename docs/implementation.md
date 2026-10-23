@@ -949,6 +949,13 @@ of them the response is exactly what it has always been.
   rate_limited). A comma list of explicit state names is also accepted,
   e.g. `states=complete,failed`; unknown names return 400.
 
+`view=summary` now returns row-only records, and `limit`, `cursor`, `status`,
+`active` and `q` page and filter them (envelope `{sessions, total, next_cursor}`)
+with an `ETag`; `GET /api/autonomous/prds` is likewise a paged summary list
+(`limit`, `cursor`, `status`, `active`, `q`, `tag`, `full=1`) with an `ETag`. See
+`docs/api/sessions.md` and `docs/api/autonomous.md`. `scripts/perf-budget.sh`
+enforces the first-page size budget (256 KB) and the 304 behaviour.
+
 `since` and `states` also work without `view=summary` (full records).
 `tree=1` and `orphaned=1` take precedence and ignore all three. Fetch
 the full record for one session with `GET /api/sessions/{id}`.

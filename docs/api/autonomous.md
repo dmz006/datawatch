@@ -30,7 +30,7 @@ GET    /api/autonomous/config              read current config
 PUT    /api/autonomous/config              replace config (full body)
 
 POST   /api/autonomous/prds                create PRD; body: {spec, project_dir, [backend], [effort]}
-GET    /api/autonomous/prds                list all PRDs newest-first
+GET    /api/autonomous/prds                summary list, newest-updated first, paged; ?full=1 for whole records (see "Automata list" below)
 GET    /api/autonomous/prds/{id}           one PRD with story+task tree
 PATCH  /api/autonomous/prds/{id}           edit PRD title + spec (non-running only); body: {title, spec, actor}     [v5.19.0]
 DELETE /api/autonomous/prds/{id}           cancel + archive (status → cancelled)
@@ -250,6 +250,32 @@ above, which pick the guardrail judge.
 system-populated and read-only — they appear in
 `GET /api/autonomous/prds/{id}` (and the MCP / CLI / comm `get`
 surfaces, which pass the same JSON through) but have no setter.
+
+### Automata list (`GET /api/autonomous/prds`)
+
+The default reply is a summary list, not whole records: each row carries ids,
+title, status, counts, tags and timestamps, and none of the story, task or
+verifier text. The body is `{"prds": [...], "total": N, "next_cursor": "..."}`.
+Fetch one Automaton in full with `GET /api/autonomous/prds/{id}`.
+
+| Parameter | Effect |
+|---|---|
+| `limit=<n>` | Rows per page. Default 50, maximum 500; anything below 1 or not a number returns 400. |
+| `cursor=<opaque>` | The `next_cursor` of the previous page. Pages run newest `updated_at` first, ties by id descending. An invalid cursor returns 400. `next_cursor` is absent on the last page. |
+| `status=<list>` | Comma list of statuses to keep, e.g. `running,blocked`. |
+| `active=1` | Keep only running, queued, waiting, approved, blocked and paused work. |
+| `q=<text>` | Case-insensitive match against title and id. |
+| `tag=<id>` | Keep Automata carrying that tag. `tag_id` is the same parameter. |
+| `full=1` | The original shape: every Automaton in full under `prds`, with stories and tasks. Ignores the paging and filter parameters. Can be tens of megabytes on a daemon with a long history. |
+
+With no filter, the first page holds every active Automaton plus the most recent
+`limit` others, so work in progress is never paged out of sight; `cursor` pages walk
+only the others. `total` is the number of rows matching the filters.
+
+**ETag.** The summary list carries `ETag` and `Cache-Control: no-cache`. Send the
+value back in `If-None-Match`; an unchanged page answers `304 Not Modified` with an
+empty body. The tag changes when a returned row's `rev` or `updated_at` changes, so
+a poll that finds nothing new costs a header exchange only. `full=1` has no ETag.
 
 ### Capped text in the by-id GET
 
