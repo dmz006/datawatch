@@ -93,6 +93,13 @@ type PoolStatus struct {
 	// HoldNames is the operator-readable form of Holders, in the same order
 	// (nil = unresolved; the renderer then shows the raw ids as before).
 	HoldNames []string `json:"hold_names,omitempty"`
+	// Rate ceiling fields appear only for pools that carry one.
+	RateRequests      int       `json:"rate_requests,omitempty"`
+	RateTokens        int64     `json:"rate_tokens,omitempty"`
+	RateWindowSeconds int64     `json:"rate_window_seconds,omitempty"`
+	RequestsInWindow  int       `json:"requests_in_window,omitempty"`
+	TokensInWindow    int64     `json:"tokens_in_window,omitempty"`
+	RateResetsAt      time.Time `json:"rate_resets_at,omitzero"`
 }
 
 // Status is a point-in-time view of the ledger.
@@ -152,6 +159,8 @@ type Ledger struct {
 	seq       uint64
 	lastGrant map[string]time.Time // PRD → last grant, for round-robin
 	lastModel map[string]string    // node → last granted model
+	rates     map[string]RateCeiling
+	rateUse   map[string][]rateEntry
 	opt       Options
 }
 
@@ -171,6 +180,8 @@ func New(opt Options) *Ledger {
 		leases:    map[string]*Lease{},
 		lastGrant: map[string]time.Time{},
 		lastModel: map[string]string{},
+		rates:     map[string]RateCeiling{},
+		rateUse:   map[string][]rateEntry{},
 		opt:       opt,
 	}
 }
@@ -218,12 +229,16 @@ func (l *Ledger) usedLocked(pool string) int {
 // blockReasonLocked returns "" when every pool has room and is not
 // backpressured, otherwise a human-readable reason naming the pool.
 func (l *Ledger) blockReasonLocked(req Request) string {
+	now := l.opt.Clock.Now()
 	for _, p := range req.Pools {
 		if lim := l.limits[p]; lim > 0 && l.usedLocked(p) >= lim {
 			if name, ok := strings.CutPrefix(p, "node:"); ok {
 				return fmt.Sprintf("waiting for node %s: %d/%d engines in use, held by %s", name, l.usedLocked(p), lim, l.holdersLocked(p))
 			}
 			return fmt.Sprintf("pool %s full (%d/%d, held by %s)", p, l.usedLocked(p), lim, l.holdersLocked(p))
+		}
+		if why := l.rateBlockLocked(p, now); why != "" {
+			return why
 		}
 		if l.opt.Backpressure != nil {
 			if blocked, why := l.opt.Backpressure(p); blocked {
@@ -310,6 +325,7 @@ func (l *Ledger) grantLocked(w *waiter, now time.Time) {
 		Node: w.req.Node, Model: w.req.Model, Acquired: now,
 	}
 	l.lastGrant[w.req.PRDID] = now
+	l.recordRequestsLocked(w.req.Pools, now)
 	if w.req.Node != "" && w.req.Model != "" {
 		l.lastModel[w.req.Node] = w.req.Model
 	}
@@ -351,7 +367,9 @@ func (l *Ledger) Acquire(ctx context.Context, req Request, timeout time.Duration
 	if timeout > 0 {
 		deadline = l.opt.Clock.After(timeout)
 	}
-	tick := l.opt.Clock.After(l.opt.PollInterval)
+	l.mu.Lock()
+	tick := l.opt.Clock.After(l.pollWaitLocked(w))
+	l.mu.Unlock()
 	for {
 		select {
 		case <-w.grant:
@@ -366,7 +384,6 @@ func (l *Ledger) Acquire(ctx context.Context, req Request, timeout time.Duration
 			l.remove(w)
 			return fmt.Errorf("%w: %s", ErrWaitTimeout, why)
 		case <-tick:
-			tick = l.opt.Clock.After(l.opt.PollInterval)
 			if cancelled != nil && cancelled() {
 				l.remove(w)
 				return context.Canceled
@@ -375,6 +392,7 @@ func (l *Ledger) Acquire(ctx context.Context, req Request, timeout time.Duration
 			prev := w.reason
 			l.dispatchLocked()
 			cur := w.reason
+			tick = l.opt.Clock.After(l.pollWaitLocked(w))
 			l.mu.Unlock()
 			select {
 			case <-w.grant:
@@ -386,6 +404,16 @@ func (l *Ledger) Acquire(ctx context.Context, req Request, timeout time.Duration
 			}
 		}
 	}
+}
+
+// pollWaitLocked is the delay to the next re-dispatch: the poll interval, or
+// less when a rate ceiling blocking the waiter resets sooner.
+func (l *Ledger) pollWaitLocked(w *waiter) time.Duration {
+	d := l.opt.PollInterval
+	if rd, ok := l.rateWakeLocked(w, l.opt.Clock.Now()); ok && rd < d {
+		d = rd
+	}
+	return d
 }
 
 func (l *Ledger) remove(w *waiter) {
@@ -425,6 +453,7 @@ func (l *Ledger) Adopt(req Request, sessionID string) {
 		Node: req.Node, Model: req.Model, Acquired: now, SessionID: sessionID,
 	}
 	l.lastGrant[req.PRDID] = now
+	l.recordRequestsLocked(req.Pools, l.opt.Clock.Now())
 	if req.Node != "" && req.Model != "" {
 		l.lastModel[req.Node] = req.Model
 	}
@@ -539,6 +568,9 @@ func (l *Ledger) Snapshot() Status {
 	for p := range l.limits {
 		names[p] = true
 	}
+	for p := range l.rates {
+		names[p] = true
+	}
 	var st Status
 	for _, ls := range l.leases {
 		st.Leases = append(st.Leases, *ls)
@@ -556,6 +588,16 @@ func (l *Ledger) Snapshot() Status {
 		ps := PoolStatus{Name: p, Limit: l.limits[p], Held: l.heldLocked(p)}
 		if l.opt.External != nil {
 			ps.External = l.opt.External(p)
+		}
+		if c, ok := l.rates[p]; ok {
+			now := l.opt.Clock.Now()
+			_, reqs, toks := l.rateWindowLocked(p, now)
+			ps.RateRequests, ps.RateTokens = c.Requests, c.Tokens
+			ps.RateWindowSeconds = int64(c.Window / time.Second)
+			ps.RequestsInWindow, ps.TokensInWindow = reqs, toks
+			if at, ok := l.rateResetLocked(p, now); ok {
+				ps.RateResetsAt = at
+			}
 		}
 		ps.Holders = strings.Split(strings.TrimPrefix(l.holdersLocked(p), "other sessions"), ",")
 		if ps.Holders[0] == "" {
@@ -592,6 +634,16 @@ func FormatPools(pools []PoolStatus) string {
 				holders = p.HoldNames
 			}
 			fmt.Fprintf(&b, " held by %s", strings.Join(holders, ","))
+		}
+		if p.RateRequests > 0 || p.RateTokens > 0 {
+			b.WriteString(" rate")
+			if p.RateRequests > 0 {
+				fmt.Fprintf(&b, " req %d/%d", p.RequestsInWindow, p.RateRequests)
+			}
+			if p.RateTokens > 0 {
+				fmt.Fprintf(&b, " tok %d/%d", p.TokensInWindow, p.RateTokens)
+			}
+			fmt.Fprintf(&b, " per %s", (time.Duration(p.RateWindowSeconds) * time.Second).String())
 		}
 		b.WriteString("\n")
 	}
