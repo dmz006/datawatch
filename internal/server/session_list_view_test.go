@@ -283,14 +283,13 @@ func TestHandleSessions_SummaryView(t *testing.T) {
 	if a == nil {
 		t.Fatal("running session missing")
 	}
-	if task := a["task"].(string); len([]rune(task)) != 21 || !strings.HasSuffix(task, "…") {
-		t.Errorf("task not truncated to 20 runes + ellipsis: %q", task)
+	for _, f := range []string{"task", "prompt_context", "last_response", "last_summary_long", "truncated_fields"} {
+		if _, ok := a[f]; ok {
+			t.Errorf("summary row must not carry %q", f)
+		}
 	}
-	if tf, _ := a["truncated_fields"].([]any); len(tf) != 1 || tf[0] != "task" {
-		t.Errorf("truncated_fields=%v want [task]", a["truncated_fields"])
-	}
-	if _, ok := byID["h-b2"]["truncated_fields"]; ok {
-		t.Error("truncated_fields must be omitted when nothing was cut")
+	if a["status_line"] != "fine" {
+		t.Errorf("status_line=%v want fine", a["status_line"])
 	}
 
 	// The manager's live record must still hold the full task.

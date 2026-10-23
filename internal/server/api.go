@@ -1758,6 +1758,12 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	pageOpts, err := parseSessionPageOptions(q)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 
 	// BL350 — ?orphaned=1 returns only sessions whose parent_id no longer exists.
@@ -1784,6 +1790,11 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 
 	// view / since / states apply to the flat list only; without them the
 	// legacy response below is emitted unchanged.
+	// limit / cursor / status / active / q imply the row-only summary view.
+	if listOpts.summary || pageOpts.any() {
+		s.writeSessionSummaryList(w, r, sessions, listOpts, pageOpts)
+		return
+	}
 	if listOpts.active() {
 		s.writeSessionListView(w, sessions, listOpts)
 		return

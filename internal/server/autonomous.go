@@ -3079,7 +3079,11 @@ func (s *Server) handleAutomations(w http.ResponseWriter, r *http.Request) {
 	if id == "" {
 		switch r.Method {
 		case http.MethodGet:
-			writeJSONOK(w, s.autonomousMgr.ListAutomations())
+			list := s.autonomousMgr.ListAutomations()
+			if list == nil {
+				list = []any{}
+			}
+			writeJSONETag(w, r, list)
 		case http.MethodPost:
 			var req automationReq
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
