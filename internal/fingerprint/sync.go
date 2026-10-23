@@ -167,11 +167,40 @@ func (s *Syncer) fetchPeer(ctx context.Context, e multiserver.Entry, key []byte)
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
 		return nil, fmt.Sprintf("unreachable: HTTP %d", resp.StatusCode)
 	}
-	var items []Item
-	if err := json.NewDecoder(io.LimitReader(resp.Body, syncBodyLimit)).Decode(&items); err != nil {
+	raw, readErr := io.ReadAll(io.LimitReader(resp.Body, syncBodyLimit))
+	items, err := decodeFingerprintList(raw, readErr)
+	if err != nil {
 		return nil, "bad response: " + err.Error()
 	}
 	return items, ""
+}
+
+// decodeFingerprintList accepts both wire shapes the fingerprint
+// endpoint has spoken: the envelope {"fingerprints":[...]} the daemon
+// handler answers with, and the bare array that raw exchanges (and
+// older peers) still emit. A body matching neither — or an envelope
+// whose fingerprints field is absent or null — is a protocol
+// violation and an error: a peer that authenticated but refused to
+// export must not be silently read as "zero items", which would be
+// indistinguishable from a valid empty array.
+func decodeFingerprintList(raw []byte, readErr error) ([]Item, error) {
+	if readErr != nil {
+		return nil, readErr
+	}
+	var env struct {
+		Fingerprints []Item `json:"fingerprints"`
+	}
+	if err := json.Unmarshal(raw, &env); err == nil {
+		if env.Fingerprints != nil {
+			return env.Fingerprints, nil
+		}
+		return nil, fmt.Errorf("fingerprints field missing or null")
+	}
+	var items []Item
+	if err := json.Unmarshal(raw, &items); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 // reconcile records one pending match for every (kind, hash) pair the
