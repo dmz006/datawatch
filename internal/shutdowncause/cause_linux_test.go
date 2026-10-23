@@ -66,8 +66,8 @@ func TestScanCandidates(t *testing.T) {
 		t.Fatalf("start positive: %v", err)
 	}
 	defer func() {
-		pos.Process.Kill()
-		pos.Wait()
+		_ = pos.Process.Kill()
+		_ = pos.Wait()
 	}()
 
 	// Negative controls: plain sleep, and a datawatch subcommand without a
@@ -77,16 +77,16 @@ func TestScanCandidates(t *testing.T) {
 		t.Fatalf("start negative: %v", err)
 	}
 	defer func() {
-		neg.Process.Kill()
-		neg.Wait()
+		_ = neg.Process.Kill()
+		_ = neg.Wait()
 	}()
 	neg2 := exec.Command(bash, "-c", `exec -a "datawatch serve" sleep 30`)
 	if err := neg2.Start(); err != nil {
 		t.Fatalf("start negative 2: %v", err)
 	}
 	defer func() {
-		neg2.Process.Kill()
-		neg2.Wait()
+		_ = neg2.Process.Kill()
+		_ = neg2.Wait()
 	}()
 
 	time.Sleep(150 * time.Millisecond) // let the children settle
@@ -190,5 +190,5 @@ func TestInstallBasics(t *testing.T) {
 	// Unmask immediately so normal test-run signal behavior is preserved.
 	set := unix.Sigset_t{}
 	set.Val[syscall.SIGINT/64] |= 1 << (uint32(syscall.SIGINT) % 64)
-	unix.PthreadSigmask(unix.SIG_UNBLOCK, &set, nil)
+	_ = unix.PthreadSigmask(unix.SIG_UNBLOCK, &set, nil)
 }

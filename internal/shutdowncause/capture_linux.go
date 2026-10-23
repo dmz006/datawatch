@@ -92,7 +92,7 @@ func Install(signals ...os.Signal) (<-chan os.Signal, error) {
 	ch := make(chan os.Signal, len(names)+1)
 	go func() {
 		defer close(ch)
-		defer unix.Close(fd)
+		defer func() { _ = unix.Close(fd) }()
 		infoSize := int(unsafe.Sizeof(linuxSiginfo{}))
 		buf := make([]byte, infoSize)
 		for {

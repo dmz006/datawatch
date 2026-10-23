@@ -147,15 +147,15 @@ func Write(dir string, c Cause) error {
 	}
 	tmpName := tmp.Name()
 	fail := func(cause string, inner error) error {
-		os.Remove(tmpName)
+		_ = os.Remove(tmpName)
 		return fmt.Errorf("shutdowncause: Write: %s: %w", cause, inner)
 	}
 	if _, werr := tmp.Write(data); werr != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return fail("write", werr)
 	}
 	if serr := tmp.Sync(); serr != nil {
-		tmp.Close()
+		_ = tmp.Close()
 		return fail("sync", serr)
 	}
 	if cerr := tmp.Close(); cerr != nil {
