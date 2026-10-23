@@ -15,8 +15,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"io"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -247,10 +247,10 @@ func (s *Server) handleLLMs(w http.ResponseWriter, r *http.Request) {
 // omitempty-tagged fields would drop it.
 type llmView struct {
 	inference.LLM
-	PlanTier             string                     `json:"plan_tier"`
-	MaxInflight          *int                       `json:"max_inflight"`
-	EffectiveMaxInflight int                        `json:"effective_max_inflight"`
-	InflightSource       inference.InflightSource   `json:"inflight_source"`
+	PlanTier             string                   `json:"plan_tier"`
+	MaxInflight          *int                     `json:"max_inflight"`
+	EffectiveMaxInflight int                      `json:"effective_max_inflight"`
+	InflightSource       inference.InflightSource `json:"inflight_source"`
 }
 
 // llmView builds the response view for one redacted LLM. The tier table

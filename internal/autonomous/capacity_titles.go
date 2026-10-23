@@ -168,6 +168,55 @@ func (m *Manager) TitlesLookup() TitleSnapshot {
 	return s
 }
 
+// HolderNameView is the JSON shape of a HolderName in API responses (the
+// /api/capacity pools/leases/waiting holder_name fields). Full carries the
+// never-truncated sentence and is only set when the caller asks for the long
+// form (?long=1); the web tooltip uses it.
+type HolderNameView struct {
+	ID        string     `json:"id"`
+	Kind      HolderKind `json:"kind"`
+	TaskTitle string     `json:"task_title,omitempty"`
+	PRDID     string     `json:"prd_id,omitempty"`
+	PRDTitle  string     `json:"prd_title,omitempty"`
+	ShortID   string     `json:"short_id"`
+	Readable  string     `json:"readable"`
+	Full      string     `json:"full,omitempty"`
+}
+
+// View renders the name for an API response. longForm=true keeps the
+// never-truncated Full sentence; otherwise Full is omitted so short polls
+// stay small.
+func (h HolderName) View(longForm bool) HolderNameView {
+	v := HolderNameView{
+		ID:        h.ID,
+		Kind:      h.Kind,
+		TaskTitle: h.TaskTitle,
+		PRDID:     h.PRDID,
+		PRDTitle:  h.PRDTitle,
+		ShortID:   h.ShortID,
+		Readable:  h.Readable,
+	}
+	if longForm {
+		v.Full = h.Full
+	}
+	return v
+}
+
+// ResolveHolder resolves one raw holder id to a HolderName through the
+// manager's lazily created resolver (one shared snapshot, so a response
+// that resolves many holders re-reads the store at most once).
+func (m *Manager) ResolveHolder(holderID string) HolderName {
+	r := m.holderResolverInstance()
+	return r.Resolve(holderID)
+}
+
+func (m *Manager) holderResolverInstance() *TitleResolver {
+	m.holderResolverOnce.Do(func() {
+		m.holderResolver = m.NewTitleResolverFor(TitleResolverOptions{})
+	})
+	return m.holderResolver
+}
+
 // Resolve turns one raw holder id into a HolderName. Cache hits within the
 // TTL (and snapshot refreshes within the TTL) cost no store lookups at all,
 // so a poll that resolves many holders re-reads the store at most once.

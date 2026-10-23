@@ -374,6 +374,11 @@ func (a *API) Status() any { return a.M.Status() }
 // so AutonomousAPI fakes need no change.
 func (a *API) TaskVisibility() ([]TaskWaitView, []TaskHoldView) { return a.M.TaskVisibility() }
 
+// ResolveHolder resolves a raw capacity holder id into an operator-readable
+// name (capacity_titles.go). Like TaskVisibility it is read through an
+// optional interface by the server, so AutonomousAPI fakes need no change.
+func (a *API) ResolveHolder(holderID string) HolderName { return a.M.ResolveHolder(holderID) }
+
 // ReportPairingWarnings returns the current planning/verification pairing
 // warnings and logs any not yet logged. The REST config set handler reads it
 // through an optional interface, so AutonomousAPI fakes need no change.
