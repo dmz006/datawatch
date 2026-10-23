@@ -3661,22 +3661,25 @@ func (m *Manager) SendInput(fullID, input, source string) error {
 		}
 		fullID = sess.FullID
 	}
+	// sess is shared with the monitor goroutines, so read it through a
+	// snapshot and write it through store.Mutate below.
+	snap := m.store.Snapshot(sess)
 	// Allow sending to running sessions too — the user may need to send input
 	// before the idle detector fires (or when the session accepted the input
 	// without transitioning states).
-	if sess.State != StateWaitingInput && sess.State != StateRunning && sess.State != StateRateLimited {
-		return fmt.Errorf("session %s cannot accept input (state: %s)", fullID, sess.State)
+	if snap.State != StateWaitingInput && snap.State != StateRunning && snap.State != StateRateLimited {
+		return fmt.Errorf("session %s cannot accept input (state: %s)", fullID, snap.State)
 	}
 
-	m.debugf("SendInput session=%s tmux=%s text=%q backend=%s", fullID, sess.TmuxSession, input, sess.BackendFamily)
+	m.debugf("SendInput session=%s tmux=%s text=%q backend=%s", fullID, snap.TmuxSession, input, snap.BackendFamily)
 
 	// For chat-mode sessions, intercept memory commands before sending to backend.
 	// This works for any backend with output_mode=chat (Ollama, OpenWebUI, etc.)
-	if sess.OutputMode == "chat" {
-		sessionID := strings.TrimPrefix(sess.TmuxSession, "cs-")
+	if snap.OutputMode == "chat" {
+		sessionID := strings.TrimPrefix(snap.TmuxSession, "cs-")
 		// Memory command interception
 		if m.chatMemoryFn != nil {
-			if response, handled := m.chatMemoryFn(sess.TmuxSession, input); handled {
+			if response, handled := m.chatMemoryFn(snap.TmuxSession, input); handled {
 				if m.onChatMessage != nil {
 					m.onChatMessage(sessionID, "user", input, false)
 					m.onChatMessage(sessionID, "system", response, false)
@@ -3692,24 +3695,24 @@ func (m *Manager) SendInput(fullID, input, source string) error {
 	}
 
 	// For opencode-acp sessions, route input via HTTP API if ACP session is active.
-	if sess.BackendFamily == "opencode-acp" {
-		if opencode.SendMessageACP(sess.TmuxSession, input) {
+	if snap.BackendFamily == "opencode-acp" {
+		if opencode.SendMessageACP(snap.TmuxSession, input) {
 			m.debugf("SendInput routed via opencode ACP HTTP")
 			return nil
 		}
 		m.debugf("SendInput ACP not active, falling back to tmux send-keys")
 	}
 	// For openwebui sessions, route through Go HTTP conversation manager.
-	if sess.BackendFamily == "openwebui" {
-		if openwebui.SendMessageOWUI(sess.TmuxSession, input) {
+	if snap.BackendFamily == "openwebui" {
+		if openwebui.SendMessageOWUI(snap.TmuxSession, input) {
 			m.debugf("SendInput routed via openwebui Go conversation manager")
 			return nil
 		}
 		m.debugf("SendInput openwebui conversation not active, falling back to tmux send-keys")
 	}
 	// For ollama chat-mode sessions, route through Go API conversation manager.
-	if sess.BackendFamily == "ollama" && sess.OutputMode == "chat" {
-		if ollama.SendMessageOllama(sess.TmuxSession, input) {
+	if snap.BackendFamily == "ollama" && snap.OutputMode == "chat" {
+		if ollama.SendMessageOllama(snap.TmuxSession, input) {
 			m.debugf("SendInput routed via ollama Go conversation manager")
 			return nil
 		}
@@ -3723,10 +3726,10 @@ func (m *Manager) SendInput(fullID, input, source string) error {
 	// not configured (scheduleSettleMs == 0).
 	var sendErr error
 	if m.scheduleSettleMs > 0 {
-		sendErr = m.tmux.SendKeysWithSettle(sess.TmuxSession, input,
+		sendErr = m.tmux.SendKeysWithSettle(snap.TmuxSession, input,
 			time.Duration(m.scheduleSettleMs)*time.Millisecond)
 	} else {
-		sendErr = m.tmux.SendKeys(sess.TmuxSession, input)
+		sendErr = m.tmux.SendKeys(snap.TmuxSession, input)
 	}
 	if sendErr != nil {
 		return fmt.Errorf("send input: %w", sendErr)
@@ -3734,7 +3737,7 @@ func (m *Manager) SendInput(fullID, input, source string) error {
 	m.debugf("SendInput OK")
 
 	// Increment input counter
-	sess.InputCount++
+	m.store.Mutate(func() { sess.InputCount++ })
 
 	// Record input in tracker
 	m.mu.Lock()
@@ -3747,11 +3750,14 @@ func (m *Manager) SendInput(fullID, input, source string) error {
 	}
 
 	// Transition back to running if we were waiting for input or rate limited
-	if sess.State == StateWaitingInput || sess.State == StateRateLimited {
-		oldState := sess.State
-		sess.State = StateRunning
-		sess.PendingInput = ""
-		sess.RateLimitResetAt = nil
+	var oldState State
+	m.store.Mutate(func() {
+		oldState = sess.State
+		if oldState == StateWaitingInput || oldState == StateRateLimited {
+			sess.State = StateRunning
+			sess.PendingInput = ""
+			sess.RateLimitResetAt = nil
+		}
 		sess.LastInput = truncateStr(input, 100) // for alert logging
 		sess.UpdatedAt = time.Now()
 		// BL266 / v6.11.24 — operator input counts as activity for the
@@ -3759,9 +3765,11 @@ func (m *Manager) SendInput(fullID, input, source string) error {
 		// flip Running → WaitingInput 15 s later if the LLM hasn't
 		// produced any pane changes yet.
 		sess.LastChannelEventAt = sess.UpdatedAt
-		if err := m.store.Save(sess); err != nil {
-			return fmt.Errorf("save session: %w", err)
-		}
+	})
+	if err := m.store.Save(sess); err != nil {
+		return fmt.Errorf("save session: %w", err)
+	}
+	if oldState == StateWaitingInput || oldState == StateRateLimited {
 		if m.onStateChange != nil {
 			m.onStateChange(sess, oldState)
 		}
@@ -3775,12 +3783,6 @@ func (m *Manager) SendInput(fullID, input, source string) error {
 		// the unrelated screen-capture poll. Record the activity and notify
 		// through the separate onActivity hook so every connected client's
 		// list view reflects it too, not just the one open pane.
-		sess.LastInput = truncateStr(input, 100)
-		sess.UpdatedAt = time.Now()
-		sess.LastChannelEventAt = sess.UpdatedAt
-		if err := m.store.Save(sess); err != nil {
-			return fmt.Errorf("save session: %w", err)
-		}
 		if m.onActivity != nil {
 			m.onActivity(sess)
 		}
@@ -3832,13 +3834,16 @@ func (m *Manager) Kill(fullID string) error {
 	// (operator-flagged 2026-05-09 as "stopped 4169ux and it killed
 	// all sessions"). Skip the tmux call entirely when there's no
 	// pane to kill.
-	if strings.TrimSpace(sess.TmuxSession) != "" {
-		_ = m.tmux.KillSession(sess.TmuxSession)
+	if tmuxName := m.store.Snapshot(sess).TmuxSession; strings.TrimSpace(tmuxName) != "" {
+		_ = m.tmux.KillSession(tmuxName)
 	}
 
-	oldState := sess.State
-	sess.State = StateKilled
-	sess.UpdatedAt = time.Now()
+	var oldState State
+	m.store.Mutate(func() {
+		oldState = sess.State
+		sess.State = StateKilled
+		sess.UpdatedAt = time.Now()
+	})
 	if err := m.store.Save(sess); err != nil {
 		return fmt.Errorf("save session: %w", err)
 	}
@@ -4695,6 +4700,12 @@ func (m *Manager) ReadTimeline(id string) ([]string, error) {
 	}
 	diskTracker := ResumeTracker(m.dataDir, &Session{FullID: fullID})
 	return diskTracker.ReadTimeline()
+}
+
+// SessionSnapshot returns a copy of sess that is safe to marshal while the
+// monitor goroutines keep updating the live session.
+func (m *Manager) SessionSnapshot(sess *Session) Session {
+	return m.store.Snapshot(sess)
 }
 
 // GetSession returns a session by full ID or short ID.

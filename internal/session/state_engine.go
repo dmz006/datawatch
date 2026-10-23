@@ -88,48 +88,58 @@ func (m *Manager) markChannelEventAt(fullID string, kind ChannelEventKind, ts ti
 	if ts.IsZero() {
 		ts = time.Now()
 	}
-	oldState := sess.State
-	sess.LastChannelEventAt = ts
+	var oldState, newState State
+	sticky := false
+	// Field writes go through store.Mutate so they cannot race with
+	// persist() marshalling this session on another goroutine.
+	m.store.Mutate(func() {
+		oldState = sess.State
+		sess.LastChannelEventAt = ts
 
-	// Sticky locks — never override these from a channel event. RateLimited
-	// is intentionally locked too: only the rate-limit cooldown timer (or
-	// an operator-issued resume) can leave that state, otherwise a benign
-	// channel keep-alive would silently kick us back into Running and
-	// re-trigger the rate-limit hammer.
-	if oldState == StateComplete || oldState == StateFailed || oldState == StateKilled || oldState == StateRateLimited {
-		_ = m.store.Save(sess)
+		// Sticky locks — never override these from a channel event. RateLimited
+		// is intentionally locked too: only the rate-limit cooldown timer (or
+		// an operator-issued resume) can leave that state, otherwise a benign
+		// channel keep-alive would silently kick us back into Running and
+		// re-trigger the rate-limit hammer.
+		if oldState == StateComplete || oldState == StateFailed || oldState == StateKilled || oldState == StateRateLimited {
+			sticky = true
+			return
+		}
+
+		defer func() { newState = sess.State }()
+		switch kind {
+		case EventRunning:
+			if oldState == StateWaitingInput {
+				sess.State = StateRunning
+				sess.UpdatedAt = ts
+				m.debugf("MarkChannelEvent(running): %s %s → Running", sess.FullID, oldState)
+			}
+		case EventIdle:
+			if oldState == StateRunning {
+				sess.State = StateWaitingInput
+				sess.UpdatedAt = ts
+				m.debugf("MarkChannelEvent(idle): %s Running → WaitingInput (structural)", sess.FullID)
+			}
+		case EventComplete:
+			if oldState == StateRunning || oldState == StateWaitingInput {
+				sess.State = StateComplete
+				sess.UpdatedAt = ts
+				m.debugf("MarkChannelEvent(complete): %s %s → Complete (structural)", sess.FullID, oldState)
+			}
+		}
+	})
+	_ = m.store.Save(sess)
+	if sticky {
 		return
 	}
-
-	switch kind {
-	case EventRunning:
-		if oldState == StateWaitingInput {
-			sess.State = StateRunning
-			sess.UpdatedAt = ts
-			m.debugf("MarkChannelEvent(running): %s %s → Running", sess.FullID, oldState)
-		}
-	case EventIdle:
-		if oldState == StateRunning {
-			sess.State = StateWaitingInput
-			sess.UpdatedAt = ts
-			m.debugf("MarkChannelEvent(idle): %s Running → WaitingInput (structural)", sess.FullID)
-		}
-	case EventComplete:
-		if oldState == StateRunning || oldState == StateWaitingInput {
-			sess.State = StateComplete
-			sess.UpdatedAt = ts
-			m.debugf("MarkChannelEvent(complete): %s %s → Complete (structural)", sess.FullID, oldState)
-		}
-	}
-	_ = m.store.Save(sess)
 	// Fire downstream hooks for state changes (mirrors the historical
 	// MarkChannelActivityFromText behaviour). onStateChange always; onSessionEnd
 	// only on the Running/WaitingInput → Complete transition.
-	if oldState != sess.State {
+	if oldState != newState {
 		if m.onStateChange != nil {
 			m.onStateChange(sess, oldState)
 		}
-		if sess.State == StateComplete && m.onSessionEnd != nil {
+		if newState == StateComplete && m.onSessionEnd != nil {
 			m.onSessionEnd(sess)
 		}
 	}

@@ -75,9 +75,10 @@ func startTestSession(t *testing.T, srv *Server, projectDir string) string {
 // nothing is still writing under the manager's data dir when t.TempDir's
 // RemoveAll runs. Cleanups run last-in-first-out and the TempDir removal
 // was registered first, so this always runs before it. Order matters:
-// Kill cancels the monitor goroutine and kills the pane (KillTmuxSession alone leaves the
-// monitor appending to the session log and saving the store), and only
-// then can we wait for the files under the data dir to stop changing.
+// Kill cancels the monitor goroutine and kills the pane (KillTmuxSession
+// alone leaves the monitor appending to the session log and saving the
+// store), and only then can we wait for the files under the data dir to
+// stop changing.
 func stopTestSession(t *testing.T, srv *Server, fullID string) {
 	t.Helper()
 	srv.broadcastWG.Wait()

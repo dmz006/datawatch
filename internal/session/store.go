@@ -568,6 +568,26 @@ func (s *Store) Save(sess *Session) error {
 	return s.persist()
 }
 
+// Mutate runs fn with the store's write lock held. Session pointers are
+// shared with the monitor goroutines, and persist() marshals them under
+// this same lock, so a field write made outside it races with the
+// marshal. Call Save after Mutate returns, not inside fn: Save takes
+// the same lock.
+func (s *Store) Mutate(fn func()) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	fn()
+}
+
+// Snapshot returns a copy of sess taken under the read lock, for readers
+// that must not race with Mutate (the copy is shallow; map fields are
+// shared).
+func (s *Store) Snapshot(sess *Session) Session {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return *sess
+}
+
 // Get returns a session by full ID.
 func (s *Store) Get(fullID string) (*Session, bool) {
 	s.mu.RLock()

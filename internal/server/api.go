@@ -4961,7 +4961,8 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		"parent_id":   req.ParentID,
 	})
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(sess) //nolint:errcheck
+	snap := s.manager.SessionSnapshot(sess) // the monitor goroutine is already updating sess
+	json.NewEncoder(w).Encode(&snap)        //nolint:errcheck
 }
 
 // handleRestartSession restarts a session from any state in-place (BL359),

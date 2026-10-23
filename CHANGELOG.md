@@ -7,7 +7,7 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 
-- **Session-list broadcasts are now tracked, which removes most of the flakiness in the session input audit test.** The background push of the session list that follows start, kill, delete and reconcile actions was started with an untracked goroutine, so a test could finish, or mutate a session, while the push was still reading it. Tests now wait for it, and the session helper stops the session monitor and waits for its files to settle before the temp directory is removed. Shipped in the next patch above main; no behaviour change outside tests.
+- **The session input audit test no longer flakes on temp-dir cleanup or under the race detector.** The background push of the session list that follows start, kill, delete and reconcile actions is now tracked so tests can wait for it, the test session helper stops the session monitor and waits for its files to settle before the temp directory is removed, and `SendInput`, `Kill`, the channel-event marker and the start response now write and read the shared session under the session store's lock instead of racing with the monitor goroutine's saves. Shipped in the next patch above main.
 
 ## v9.5.97 — Automation tab in the web UI
 
