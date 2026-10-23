@@ -29,11 +29,12 @@ test('fmtBytesCompact / fmtCountCompact exist and are exposed on window', () => 
 });
 
 // ── 2. fmtBytesCompact: compact base-1024 output across the full range ──────
-test('fmtBytesCompact matches the shared helper contract (B to TB)', () => {
+test('fmtBytesCompact matches the shared helper contract (B to EB)', () => {
   const sb = loadAppJS();
   const c = sb.fmtBytesCompact;
+  // Zero / missing / non-finite render as the '—' missing-value sentinel
+  assert.equal(c(0), '—');
   // Byte range
-  assert.equal(c(0), '0 B');
   assert.equal(c(512), '512 B');
   assert.equal(c(1023), '1023 B');
   // KB (base-1024, one decimal)
@@ -51,16 +52,28 @@ test('fmtBytesCompact matches the shared helper contract (B to TB)', () => {
   assert.equal(c(1024 ** 4), '1.0 TB');
   assert.equal(c(2 * 1024 ** 4), '2.0 TB');
   assert.equal(c(5 * 1024 ** 4), '5.0 TB');
-  // Defensive: non-finite / negative input must not leak NaN or '-'
+  // PB (1 PiB and up)
+  // PB (1 PiB and up) — 1024 TiB = 1 PiB, so 1023.0 TB is the TB ceiling
+  assert.equal(c(1023 * 1024 ** 4), '1023.0 TB');
+  assert.equal(c(1024 ** 5), '1.0 PB');
+  assert.equal(c(1.5 * 1024 ** 5), '1.5 PB');
+  assert.equal(c(5 * 1024 ** 5), '5.0 PB');
+  // EB (1 EiB and up) — big-end scale stays a short "x.x EB" (numbers-large seed class)
+  assert.equal(c(1023 * 1024 ** 5), '1023.0 PB');
+  assert.equal(c(1024 ** 6), '1.0 EB');
+  assert.equal(c(2 ** 61), '2.0 EB');
+  assert.equal(c(8 * 10 ** 15), '7.1 PB');
+  assert.equal(c(15 * 10 ** 17), '1.3 EB');
+  // Defensive: non-finite / negative input must not leak NaN or '-' — same '—' sentinel
   assert.equal(c(Infinity), c(0));
-  assert.equal(c(-9), '0 B');
+  assert.equal(c(-9), '—');
 });
 
 // ── 3. fmtCountCompact: exact counts under 1K, compact above ─────────────────
-test('fmtCountCompact: exact under 1000, K/M/B at and above', () => {
+test('fmtCountCompact: exact under 1000, K/M/B/T at and above', () => {
   const sb = loadAppJS();
   const c = sb.fmtCountCompact;
-  assert.equal(c(0), '0');
+  assert.equal(c(0), '—');
   assert.equal(c(1), '1');
   assert.equal(c(42), '42');
   assert.equal(c(999), '999');
@@ -69,6 +82,11 @@ test('fmtCountCompact: exact under 1000, K/M/B at and above', () => {
   assert.equal(c(12345), '12.3K');
   assert.equal(c(2000e3), '2.0M');
   assert.equal(c(3e9), '3.0B');
+  // T (1 trillion and up)
+  assert.equal(c(999 * 10 ** 9), '999.0B');
+  assert.equal(c(10 ** 12), '1.0T');
+  assert.equal(c(3 * 10 ** 12), '3.0T');
+  assert.equal(c(-7), '—');
   assert.equal(c(9.5), '10'); // rounds to an exact small count
 });
 
@@ -128,8 +146,8 @@ test('loadSystemStatsGrid renders .obs-sys-*/.obs-bar* classes and compact value
   assert.ok(html, 'innerHTML was written to #perSystemGrid');
 
   // Two cards: local host-a + peer host-b (synthesized self entry filtered out).
-  assert.match(html, /class="obs-sys-name">host-a</);
-  assert.match(html, /class="obs-sys-name">host-b</);
+  assert.match(html, /class="obs-sys-name" title="System name">host-a</);
+  assert.match(html, /class="obs-sys-name" title="System name">host-b</);
 
   // Shared CSS classes (deliverable 2: card layout comes from style.css).
   assert.match(html, /class="obs-sys-grid"/);

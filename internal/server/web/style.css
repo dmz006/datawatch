@@ -6295,7 +6295,7 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
 .obs-sys-card { background: var(--surface1, var(--bg2)); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; min-width: 0; }
 .obs-sys-head { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
 .obs-sys-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
-.obs-sys-name { font-size: 11px; font-weight: 600; color: var(--text); min-width: 0; overflow-wrap: anywhere; }
+.obs-sys-name { font-size: 11px; font-weight: 600; color: var(--text); min-width: 0; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .obs-bar { margin-bottom: 4px; }
 .obs-bar-head { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; font-size: 10px; color: var(--text2); margin-bottom: 2px; }
 .obs-bar-label { overflow-wrap: anywhere; }

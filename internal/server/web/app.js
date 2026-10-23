@@ -1499,26 +1499,34 @@ function fmtBytes(n) {
 // and clipped/wrapped at phone widths. These two helpers are the single source of
 // truth for compact byte and count values in that view; every caller must use them
 // (do not add new local copies). Exposed on window for unit tests.
-// fmtBytesCompact: B / KB / MB / GB / TB (base-1024, one decimal from KB up), so each
-// value stays short enough that a "33.5 / 65.5 GB" pair fits a card value row.
-// fmtCountCompact: exact integers under 1000, else one-decimal K / M / B compact
-// (small counts like 7, 6, 4 are unchanged). Non-finite / negative input renders as 0.
+// fmtBytesCompact: B / KB / MB / GB / TB / PB / EB (base-1024, one decimal from KB
+// up), so each value stays short enough that a "33.5 / 65.5 GB" pair fits a card
+// value row — exabyte-scale machines (10^17+ bytes) stay "x.x EB" instead of
+// "5859375.0 TB". Zero, missing (null / undefined) and non-finite input render as
+// the '—' (em dash) missing-value sentinel — never "0 B".
+// fmtCountCompact: exact integers under 1000, else one-decimal K / M / B / T
+// compact (base-1000; small counts like 7, 6, 4 are unchanged, trillion-scale
+// counts stay "x.xT" instead of thousands of billions). Zero, missing and
+// non-finite input render as the '—' sentinel.
 function fmtBytesCompact(n) {
-  let b = Number(n);
-  if (!Number.isFinite(b) || b < 0) b = 0;
+  const b = Number(n);
+  if (!Number.isFinite(b) || b <= 0) return '—';
   if (b < 1024) return Math.round(b) + ' B';
   if (b < 1024 * 1024) return (b / 1024).toFixed(1) + ' KB';
   if (b < 1024 * 1024 * 1024) return (b / 1024 / 1024).toFixed(1) + ' MB';
   if (b < 1024 * 1024 * 1024 * 1024) return (b / 1024 / 1024 / 1024).toFixed(1) + ' GB';
-  return (b / 1024 / 1024 / 1024 / 1024).toFixed(1) + ' TB';
+  if (b < 1024 * 1024 * 1024 * 1024 * 1024) return (b / 1024 / 1024 / 1024 / 1024).toFixed(1) + ' TB';
+  if (b < 1024 * 1024 * 1024 * 1024 * 1024 * 1024) return (b / 1024 / 1024 / 1024 / 1024 / 1024).toFixed(1) + ' PB';
+  return (b / 1024 / 1024 / 1024 / 1024 / 1024 / 1024).toFixed(1) + ' EB';
 }
 function fmtCountCompact(n) {
-  let c = Number(n);
-  if (!Number.isFinite(c) || c < 0) c = 0;
+  const c = Number(n);
+  if (!Number.isFinite(c) || c <= 0) return '—';
   if (c < 1000) return String(Math.round(c));
   if (c < 1000000) return (c / 1000).toFixed(1) + 'K';
   if (c < 1000000000) return (c / 1000000).toFixed(1) + 'M';
-  return (c / 1000000000).toFixed(1) + 'B';
+  if (c < 1000000000000) return (c / 1000000000).toFixed(1) + 'B';
+  return (c / 1000000000000).toFixed(1) + 'T';
 }
 window.fmtBytesCompact = fmtBytesCompact;
 window.fmtCountCompact = fmtCountCompact;
@@ -27229,7 +27237,7 @@ function loadPeerResourceOverview() {
     )).then(results => {
       // MOBILE-FIT: shared compact formatter (fmtBytesCompact, defined near
       // the module-level fmtBytes) replaces this duplicated local copy —
-      // same base-10 output, keeps the '—' missing-value sentinel.
+      // same base-1024 output, keeps the '—' missing-value sentinel.
       const fmtBytes = b => (b ? fmtBytesCompact(b) : '—');
       const now = Date.now();
       const rows = results.map(({ peer, snap }) => {
@@ -27286,7 +27294,7 @@ function loadSystemStatsGrid() {
   if (!el) return;
   // MOBILE-FIT: shared compact formatter (fmtBytesCompact, defined near
   // the module-level fmtBytes) replaces this duplicated local copy — same
-  // base-10 output, keeps the '—' missing-value sentinel.
+  // base-1024 output, keeps the '—' missing-value sentinel.
   const fmtBytes = b => (b ? fmtBytesCompact(b) : '—');
   // MOBILE-FIT: bar layout moved from inline styles to the shared .obs-bar*
   // rules in style.css — identical look at every width; label/value spans
@@ -27309,7 +27317,7 @@ function loadSystemStatsGrid() {
     <div class="obs-sys-card">
       <div class="obs-sys-head">
         <span class="obs-sys-dot" style="background:${dot};"></span>
-        <span class="obs-sys-name">${escHtml(name)}</span>
+        <span class="obs-sys-name" title="System name">${escHtml(name)}</span>
       </div>
       ${cpuHtml}${memHtml}${gpuHtml}
     </div>`;
@@ -27993,8 +28001,9 @@ function renderStatsData(el, data) {
     const pageScroll = window.scrollY;
     // MOBILE-FIT: shared compact formatter (fmtBytesCompact, defined near
     // the module-level fmtBytes) replaces this duplicated local copy — same
-    // base-10 output for every byte count the stats payload carries.
-    const fmt = (bytes) => (bytes ? fmtBytesCompact(bytes) : '0 B');
+    // base-1024 output for every byte count the stats payload carries; zero /
+    // missing values render as the '—' missing-value sentinel.
+    const fmt = (bytes) => fmtBytesCompact(bytes);
     const pct = (used, total) => total > 0 ? Math.round(100*used/total) : 0;
     const bar = (label, val, max, color, extra) => {
       const p = max > 0 ? Math.min(100, Math.round(100*val/max)) : 0;
