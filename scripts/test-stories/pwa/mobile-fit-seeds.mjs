@@ -757,7 +757,7 @@ function responseKeyFor(url) {
 
 export function buildRouteHandler(seed) {
   return async (route) => {
-    const key = responseKeyFor(route.request().url);
+    const key = responseKeyFor(route.request().url());
     const target = key ? seed.responses[key] : undefined;
     if (!target) {
       await route.fallback();
@@ -777,16 +777,64 @@ export function buildRouteHandler(seed) {
 export async function installSeed(page, state) {
   // replace any previous seed (route() without a handler would append)
   clearSeed(page);
+  // Defensively remove service-worker interference before seeding: block
+  // /sw.js at the context level, unregister anything already installed, and
+  // reload once so the page drops SW control. This keeps the app's API
+  // fetches on the plain network path that route interception sees.
+  await ensureNoServiceWorker(page);
   const handler = buildRouteHandler(buildSeed(state));
-  if (typeof page.route === 'function') {
+  // Register the seed at the CONTEXT level (page level as fallback).
+  // Context-level routing is strictly broader — it also covers any other
+  // page the app opens in the same context — and both levels were
+  // verified to intercept the app's apiFetch() calls in this PWA.
+  const context = typeof page.context === 'function' ? page.context() : null;
+  if (context && typeof context.route === 'function') {
+    await context.route(ROUTE_PATTERN, handler);
+  } else if (typeof page.route === 'function') {
     await page.route(ROUTE_PATTERN, handler);
   }
   return handler;
 }
 
+async function ensureNoServiceWorker(page) {
+  const context = typeof page.context === 'function' ? page.context() : null;
+  if (context && typeof context.route === 'function' && !context.__swBlockedByTest) {
+    context.__swBlockedByTest = true;
+    try {
+      await context.route('**/sw.js', (route) => route.abort());
+    } catch {
+      /* context unavailable — rely on the unregister below */
+    }
+  }
+  const hadController = await page
+    .evaluate(async () => {
+      if (!('serviceWorker' in navigator)) return false;
+      let controller = false;
+      try {
+        controller = !!navigator.serviceWorker.controller;
+        const regs = await navigator.serviceWorker.getRegistrations();
+        for (const reg of regs) {
+          try {
+            await reg.unregister();
+          } catch {}
+        }
+      } catch {
+        /* no SW available */
+      }
+      return controller;
+    })
+    .catch(() => false);
+  if (hadController) {
+    await page.reload({ waitUntil: 'domcontentloaded' }).catch(() => {});
+  }
+}
+
 export function clearSeed(page) {
-  if (page && typeof page.unroute === 'function') {
-    const result = page.unroute(ROUTE_PATTERN);
-    if (result && typeof result.catch === 'function') result.catch(() => {});
+  const unrouteAll = [page, (page && typeof page.context === 'function' ? page.context() : null)];
+  for (const target of unrouteAll) {
+    if (target && typeof target.unroute === 'function') {
+      const result = target.unroute(ROUTE_PATTERN);
+      if (result && typeof result.catch === 'function') result.catch(() => {});
+    }
   }
 }
