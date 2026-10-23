@@ -383,7 +383,7 @@ func (r *Router) automationSetDecisionAssistant(args []string) {
 	case !clear && !setting:
 		r.send(automationSetDecisionAssistantUsage)
 		return
-	case !clear && !(hasBackend && backend == "") && (!hasBackend || backend == "" || !hasModel || body["model"] == ""):
+	case !clear && (!hasBackend || backend != "") && (!hasBackend || backend == "" || !hasModel || body["model"] == ""):
 		r.send("backend and model are required together\n" + automationSetDecisionAssistantUsage)
 		return
 	}
