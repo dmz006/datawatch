@@ -1,3 +1,32 @@
+---
+docs:
+  index: true
+  topics: [autonomous, automation, automaton, queue, advance, alerts]
+exec_steps:
+  - tool: automation_activate
+    description: Activate a draft Automation so the coordinator runs its chain
+    args:
+      id: "{{params.automation_id}}"
+    read_only: false
+  - tool: autonomous_status
+    description: Read the status rows (current member, pending members, idle time, blocked reason)
+    read_only: true
+  - tool: automation_set_llm
+    description: Give the Automation its own execution backend/model/effort defaults
+    args:
+      id: "{{params.automation_id}}"
+      backend: "{{params.backend}}"
+      model: "{{params.model}}"
+    read_only: false
+  - tool: automation_set_verification_llm
+    description: Give the Automation its own verification LLM default
+    args:
+      id: "{{params.automation_id}}"
+      backend: "{{params.backend}}"
+      model: "{{params.model}}"
+    read_only: false
+---
+
 # Automation queue advance
 
 An **Automation** is a named chain of Automatons. Each member says what runs

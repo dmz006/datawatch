@@ -825,6 +825,30 @@ servers:
   #                               # only — every other peer keeps full
   #                               # verification. Only for a self-signed/
   #                               # local-dev peer on a trusted network.
+  # - name: gpu-twin
+  #   url: http://203.0.113.11:8080
+  #   enabled: true
+  #   fingerprint_sync: false     # opt THIS peer into the resource-fingerprint
+  #                               # exchange (the peer-side flag; the other
+  #                               # daemon must also opt you). Opt-in per peer
+  #                               # on BOTH sides, default false, and both
+  #                               # daemons need the `federation:fingerprint`
+  #                               # capability (full-control set only). Once
+  #                               # both sides are in they periodically (~10
+  #                               # min by default) exchange per-pair-hashed
+  #                               # node identities (the node's own GPU UUID or
+  #                               # cloud instance ID) and LLM billing-group
+  #                               # labels; a hit becomes a PENDING match that
+  #                               # only you can confirm or reject (CLI:
+  #                               # `datawatch federation fingerprint list`,
+  #                               # PWA Settings, comm
+  #                               # `federation fingerprint ...`) — never
+  #                               # automatic. A confirmed shared compute node
+  #                               # means the peer's admitted hold also counts
+  #                               # against local capacity; a peer outage
+  #                               # never stalls local work. No raw value ever
+  #                               # leaves the daemon — see
+  #                               # docs/howto/federation-fingerprint.md.
 # Requires daemon restart after changes. The proxy will:
 # - Forward HTTP API calls via /api/proxy/{server}/*
 # - Relay WebSocket connections via /api/proxy/{server}/ws
@@ -959,15 +983,28 @@ autonomous:
     #                  backend's plan tier; nothing is shown when it is unset.
     #   peer_window:   list of federation peer names, default empty (none).
     #                  Another daemon's usage of `backend` counts toward the
-    #                  ceiling only for the peers named here. There is no
-    #                  automatic confirmation that a peer shares the account
-    #                  (the resource fingerprint exchange does not exist yet),
-    #                  so the list is the operator's own opt-in. An unreachable
-    #                  peer counts as zero.
+    #                  ceiling only for the peers named here. Nothing writes
+    #                  to this list: a confirmed fingerprint match does not
+    #                  change it, so it stays your explicit choice (the
+    #                  exchange — the fingerprint_sync / billing_group fields
+    #                  below — can help you decide which peers truly share the
+    #                  account). An unreachable peer counts as zero.
     #   reset_time:    24h HH:MM. Day, week and month windows reset at this
     #                  clock time; unset = local midnight in the daemon's zone.
     #   reset_weekday: monday..sunday. Week windows only; unset = Monday.
     #   reset_day:     1..28. Month windows only; unset = the 1st.
+
+  # The LLM registry entry's `billing_group` field (set in PWA Settings →
+  # Compute → LLM edit, comm `llm add|update ... billing_group=<label>`, REST
+  # `PUT /api/llms/{name}`, MCP `llm_add`/`llm_update`, or `datawatch llm
+  # add|update --billing-group <label>`; 64 chars max, default empty, and an
+  # empty value on update clears it): a label on LLM entries that bill against
+  # one shared cloud/billing account across federated peers. Label only — the
+  # value is hashed with a per-peer-pair key before it ever leaves the daemon.
+  # When two daemons that opted each other in (the `fingerprint_sync` peer
+  # field above) both carry the same label, a pending "shared billing account"
+  # match appears that you confirm or reject; confirming changes nothing here.
+  # See docs/howto/federation-fingerprint.md.
     #   reset_zone:    IANA zone name for the anchors above; unset = the
     #                  daemon's local zone.
     #

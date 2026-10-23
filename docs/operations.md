@@ -3296,9 +3296,9 @@ twice. The status shows one line per peer with its spend and whether it is
 counted, and why not (`not opted in`, `not registered`, `unreachable`).
 
 A peer that cannot be reached is skipped, not treated as full: the local
-spend alone decides, and the failure is logged once per outage. Peer
-fingerprint matching is not part of this feature; the list you write is the
-confirmation.
+spend alone decides, and the failure is logged once per outage. The
+fingerprint exchange (below) can help you decide which peers truly share the
+account, but it never changes this list: it stays your explicit choice.
 
 ## Automation spending limit
 
@@ -3416,11 +3416,105 @@ By default only this daemon's spend counts. If another datawatch spends on the
 same account, name that peer in `peer_window` (and set `backend`, because peer
 usage is reported per LLM). Only the peers you name are asked, and only for
 their own local spend, so two daemons that count each other never count the
-same dollars twice. Nothing confirms automatically that a named peer really
-shares the account: the check that would confirm it (a resource fingerprint
-exchange) does not exist yet, so the list you write is the confirmation, and
-the status says so beside every counted peer. A peer that cannot be reached is
-skipped and counts as zero, so a peer outage never stalls your work.
+same dollars twice. Nothing writes to the list: even a confirmed fingerprint
+match (below) does not add the peer to it, so it stays your explicit choice,
+and the status says so beside every counted peer. A peer that cannot be
+reached is skipped and counts as zero, so a peer outage never stalls your
+work.
+
+---
+
+## Resource fingerprint exchange between federated peers
+
+When two daemons both opt the other in, they periodically exchange **hashes**
+of their shared-resource fingerprints and flag a hit as a **pending match** —
+you decide, nothing is automatic:
+
+- **Confirm** — the two daemons hold the *same underlying resource*. For a
+  compute node, this starts counting the peer's admitted work against your
+  admission capacity (one shared pool, not two); rejecting it again removes
+  the count.
+- **Reject** — the resources stay separate. A reject also undoes a prior
+  confirm, and the record then stays rejected.
+
+What's compared: the **compute node's own identity** as reported by the node
+itself (its GPU UUID, or the cloud instance ID the platform reports) and the
+**billing-group label** you set on LLM entries that bill against one shared
+account (the LLM's `billing_group` — a label, up to 64 characters, empty = no
+group). Node hostname, IP address and node names are never part of the
+comparison, and a node with no resolvable identity is skipped rather than
+matched against a guess.
+
+### Opting a peer in
+
+The flag is `fingerprint_sync` on the peer record. Opt-in is **per peer, on
+both sides** — here you opt the peer in *and* you must be opted in on the
+peer's own record of you; the default is `false` in both directions. The
+daemon also has to carry the `federation:fingerprint` capability (full-control
+set only) — a peer token without it cannot read the exchange endpoint at all.
+
+- **PWA**: Settings → Federation Peers → the opt-in toggle on the peer form,
+or the checkbox when adding a peer.
+- **CLI**: `datawatch federation peer add --name beta --url … --fingerprint-sync` /
+  `datawatch federation peer update beta --fingerprint-sync` — `--fingerprint-sync=false`
+  turns it off again (never send an empty value to "reset" it; unset means
+  unchanged).
+- **Comms**: `federation peer fingerprint <name> on|off`.
+- **MCP**: `federation_peer_add` / `federation_peer_update` with `fingerprint_sync`.
+- **REST**: `POST /api/federation/peers` / `PUT /api/federation/peers/<name>` with `fingerprint_sync`.
+
+To label an LLM entry: PWA Settings → Compute → the billing-group field on
+the LLM entry; `datawatch llm add|update … --billing-group <label>`; comms
+`llm add|update … billing_group=<label>`; or `llm_update` / `llm_add`
+(`billing_group`). Use the **same label on both daemons** for the entry that
+bills against the shared account.
+
+### Seeing matches and deciding
+
+A match appears as `pending` after the next reconciliation pass (the default
+interval is about 10 minutes, so not seconds). Where to act:
+
+- **PWA**: the pending panel in Settings → Federation Peers shows one row per
+  match (kind, both resource names) with *Confirm* / *Reject*; confirmed
+  matches stay listed (collapsed) and each row keeps a *Reject*.
+- **CLI**: `datawatch federation fingerprint list [--state pending|confirmed|rejected]`,
+  … `confirm <id>`, `reject <id>` — the id is the one in the first column.
+- **Comms**: `federation fingerprint list [state]`, `federation fingerprint confirm <id>`,
+  `reject <id>` — an unknown id gets the usage line back, nothing is sent.
+- **MCP**: `federation_fingerprint_matches` (list), `federation_fingerprint_confirm`,
+  `federation_fingerprint_reject`.
+- **REST**: `GET /api/federation/fingerprint-matches`,
+  …/{id}/confirm`, `/reject` (the decision routes echo back the updated record).
+
+Every confirm/reject is written to the audit log (`fingerprint_match_decision`).
+
+### What you are (not) sending
+
+The exchange never sends **raw values** — node names, addresses, the
+billing-group label, tokens, credentials, *never*. What goes on the wire are
+**per-peer-pair hashes**: the same value hashes to a different string for
+each peer pair, and each side's label/identity is hashed on its own daemon
+before it leaves. Neither side can reverse one hash into the other side's
+value, and a peer can't tell whether two of your entries share a label unless
+you confirm a match yourself.
+
+### Limits you should know about
+
+- A peer that is unreachable when the exchange runs is **skipped, not
+  treated as full**: the local decision alone proceeds, and the failure is
+  logged once per outage — a peer outage never stalls your daemon.
+- The **billing-group hash only proves that two daemons carry the same
+  label**; it does not prove the accounts are actually shared. Use it as a
+  strong hint to verify, not as verification itself.
+- A pending match is inert: only a confirmed one starts counting the peer's
+  admitted hold against local capacity.
+- This is not a new budget: confirming a shared node changes admission
+  (capacity), and a confirmed shared billing account is something you then
+  choose to add to a budget's `peer_window` yourself. The list never
+  changes on its own.
+
+The full operator walkthrough and security walkthrough, with a
+recommended two-daemon live test, is in `docs/howto/federation-fingerprint.md`.
 
 ---
 

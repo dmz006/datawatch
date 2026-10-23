@@ -215,6 +215,20 @@ documenting coverage gaps and the reasoning behind them.
 | `GET /api/capacity` (`budgets` array) | `capacity_status` | Complete | Same budget states next to the pools; `GET /api/autonomous/status` carries the same `budgets` array |
 | `PUT /api/config` (`autonomous.plan_tier_allocation_usd`) | `autonomous_config_set` (`plan_tier_allocation_usd`) | Complete | Operator policy: notional per-window dollar allocation per plan tier; feeds only the estimated `allocation_pct` and never blocks |
 
+### Resource fingerprint exchange between federated peers
+
+| API Endpoint | MCP Tool | Status | Notes |
+|-------------|----------|--------|-------|
+| `GET /api/federation/fingerprints` | — | Complete | Peer-facing responder: the **peer daemon** calls it (not the operator), so no MCP tool. Requires the `federation:fingerprint` capability **and** per-peer `fingerprint_sync` opt-in on both sides; a peer token without the capability gets no read access at all. Returns per-pair hashes only — node identities and billing-group labels, never raw values |
+| `GET /api/federation/fingerprint-matches[?state=pending\|confirmed\|rejected]` | `federation_fingerprint_matches` | Complete | Operator-facing match records; `state` maps to the REST parameter (omit for all states); each record has `id`, `peer`, `kind`, both resource names, state, and `shared_with` (confirmed peers only) |
+| `POST /api/federation/fingerprint-matches/{id}/confirm` | `federation_fingerprint_confirm` | Complete | Operator decision: the two resources become one shared pool — a confirmed shared compute node makes the peer's admitted hold count against local capacity; re-confirming is safe; echoes back the updated record |
+| `POST /api/federation/fingerprint-matches/{id}/reject` | `federation_fingerprint_reject` | Complete | Operator decision: the resources stay separate (undoes a prior confirm); the record stays rejected on later re-observation; unknown id is a 404 |
+
+Opt-in rides on the peer record (`federation_peer_add` / `federation_peer_update`
+`fingerprint_sync`, CLI `federation peer add|update --fingerprint-sync[=false]`),
+and the billing-group label on LLM entries (`llm_add` / `llm_update`
+`billing_group`). Decisions are audit-logged (`fingerprint_match_decision`).
+
 ### Routing rules
 
 | API Endpoint | MCP Tool | Status | Notes |
