@@ -661,6 +661,30 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 		return func() {}, true
 	}
 
+	// verifierBackendLoad feeds the verifier policy's balance mode: the
+	// highest used-over-limit among the backend's own pools. The shared
+	// host pool is left out, since every backend draws on it and it would
+	// make all of them read alike.
+	verifierBackendLoad = func(backend, model string) float64 {
+		pools, _ := keys(backend, model)
+		own := map[string]bool{}
+		for _, p := range pools {
+			if p != "host" {
+				own[p] = true
+			}
+		}
+		var worst float64
+		for _, ps := range led.Snapshot().Pools {
+			if !own[ps.Name] || ps.Limit <= 0 {
+				continue
+			}
+			if l := float64(ps.Held+ps.External) / float64(ps.Limit); l > worst {
+				worst = l
+			}
+		}
+		return worst
+	}
+
 	syncPools := func() {
 		max := cfg.Session.MaxSessions
 		if max > 0 {

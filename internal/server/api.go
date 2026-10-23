@@ -754,6 +754,10 @@ type AutonomousAPI interface {
 	SetTaskVerificationLLM(prdID, taskID string, backend, model, effort *string, actor string) (any, error)
 	SetStoryVerificationLLM(prdID, storyID string, backend, model, effort *string, actor string) (any, error)
 	SetPRDVerificationLLM(prdID string, backend, model, effort *string, actor string) (any, error)
+	// Verifier policy overrides (mode + backend list). nil = leave unchanged,
+	// "" / [] = clear. Precedence task > Automaton > global verifier_policy.
+	SetTaskVerifierPolicy(prdID, taskID string, mode *string, backends *[]string, actor string) (any, error)
+	SetPRDVerifierPolicy(prdID string, mode *string, backends *[]string, actor string) (any, error)
 
 	// BL386 Phase 1 + BL387 Phase 2b — per-PRD warm-start seed config.
 	SetMemorySeed(prdID string, enabled bool, maxPerScope int, roleFilter []string, fromPRDs []string, actor string) (any, error)
@@ -5869,6 +5873,10 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"decomposition_backend": s.cfg.Autonomous.PlanningBackend,
 			"verification_backend":  s.cfg.Autonomous.VerificationBackend,
 			"verification_backends": s.cfg.Autonomous.VerificationBackends,
+			// Verifier policy: mode, backend list, Claude session cap, and the
+			// stronger-verifier settings. Rendered whole so an unset policy
+			// shows its zero values rather than a missing object.
+			"verifier_policy": verifierPolicyForDisplay(s.cfg.Autonomous.VerifierPolicy),
 			// v9.5.5 — render the EFFECTIVE list so an unset value shows the
 			// 4-item default in the PWA rather than an empty field.
 			"task_override_statuses": autonomous.EffectiveTaskOverrideStatuses(s.cfg.Autonomous.TaskOverrideStatuses),
@@ -6153,6 +6161,12 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "autonomous."+verr.Error(), http.StatusBadRequest)
 			return
 		}
+	}
+	// Verifier policy: an unknown mode, an empty backend entry or a negative
+	// cap rejects the whole PUT.
+	if verr := validateVerifierPolicyPatch(patch); verr != nil {
+		http.Error(w, "autonomous."+verr.Error(), http.StatusBadRequest)
+		return
 	}
 	// Automation idle-alert threshold: whole minutes, 0 = off. A negative or
 	// non-integer value rejects the whole PUT rather than being skipped.
@@ -7478,6 +7492,13 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			if n, err := parseBackoffMaxWaitMinutes(v); err == nil {
 				cfg.Autonomous.BackoffMaxWaitMinutes = n
 			}
+		case "autonomous.verifier_policy.mode", "autonomous.verifier_policy.backends",
+			"autonomous.verifier_policy.claude_session_cap", "autonomous.verifier_policy.claude_cap_window_minutes",
+			"autonomous.verifier_policy.force_stronger_on_retry", "autonomous.verifier_policy.final_gate_stronger",
+			"autonomous.verifier_policy.stronger_backend", "autonomous.verifier_policy.stronger_model":
+			// Validated in handlePutConfig; a value that fails the check here
+			// is left unchanged.
+			applyVerifierPolicyPatchKey(&cfg.Autonomous.VerifierPolicy, k, v)
 		case "autonomous.automation.idle_alert_minutes":
 			// 0 = off; negative values are skipped, not stored.
 			if n, ok := toInt(v); ok && n >= 0 {

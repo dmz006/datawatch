@@ -2206,6 +2206,12 @@ type AutonomousConfig struct {
 	// config.yaml, found live immediately after fixing the MCP tool
 	// handler's own instance of the identical bug.
 	VerificationBackends []string `yaml:"verification_backends" json:"verification_backends"`
+	// VerifierPolicy chooses which verifier backend runs a verification:
+	// the mode, the eligible backend list, the Claude session cap and the
+	// stronger-verifier rules. The zero value keeps the existing behaviour
+	// (mode fixed). See VerifierPolicyConfig. No omitempty, same round-trip
+	// reason as VerificationBackends.
+	VerifierPolicy VerifierPolicyConfig `yaml:"verifier_policy" json:"verifier_policy"`
 	// TaskOverrideStatuses (v9.5.5) lists the PRD lifecycle statuses that accept
 	// task-level and story-level LLM override calls (set_task_llm, set_story_llm,
 	// set_task_guardrail_llm, set_task_verification_llm, set_story_verification_llm).
@@ -3655,6 +3661,9 @@ func validateLoaded(cfg *Config) error {
 		if usd < 0 || math.IsNaN(usd) || math.IsInf(usd, 0) {
 			return fmt.Errorf("autonomous.plan_tier_allocation_usd: tier %q value %v must be a finite number >= 0", tier, usd)
 		}
+	}
+	if err := cfg.Autonomous.VerifierPolicy.Validate(); err != nil {
+		return fmt.Errorf("autonomous.%w", err)
 	}
 	return nil
 }

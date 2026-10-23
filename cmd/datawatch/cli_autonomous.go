@@ -29,8 +29,13 @@ Subcommands:
                                   config-set '{"max_engines_per_node":2}'
                                   config-set '{"gate_disagreement":"block"}'
                                   config-set --capacity-rate-requests 60 --capacity-rate-tokens 2000000 --capacity-rate-window-seconds 3600
+                                  config-set --verifier-policy-mode prefer-free --verifier-policy-backends qwen,claude-code
                                   config-set '{"resume_max_age_seconds":1800}'
                                   config-set '{"plan_tier_max_inflight":{"pro":1,"max_5x":2,"max_20x":4,"api":0}}' (tier inflight caps; 0 = unlimited; unknown tiers rejected)
+  verifier-policy                 Show the global verifier routing policy
+  verifier-policy-set             Set it by flag (--verifier-policy-mode, --verifier-policy-backends, ...)
+  prd-set-verifier-policy <id>    Override verifier routing for one Automaton (--mode, --backends)
+  prd-set-task-verifier-policy <id> --task <task-id>  Override verifier routing for one task
   prd-list                        List all PRDs
   prd-create <spec>               Create a draft PRD (--type, --guided-mode, --skills)
   prd-get <id>                    Fetch one PRD with story+task tree
@@ -112,6 +117,10 @@ Subcommands:
 		newAutonomousPRDSetTaskVerificationLLMCmd(),
 		newAutonomousPRDSetStoryVerificationLLMCmd(),
 		newAutonomousPRDSetVerificationLLMCmd(),
+		newAutonomousVerifierPolicyCmd(),
+		newAutonomousVerifierPolicySetCmd(),
+		newAutonomousPRDSetVerifierPolicyCmd(),
+		newAutonomousPRDSetTaskVerifierPolicyCmd(),
 		newAutonomousLearningsCmd(),
 		newAutonomousPRDChildrenCmd(),
 		newAutonomousPRDDeleteCmd(),
@@ -211,6 +220,197 @@ func applyAutonomousRateFlags(cmd *cobra.Command, body map[string]any) error {
 	return nil
 }
 
+// verifierPolicyFlagDefs describes the verifier routing flags: the flag name,
+// the autonomous.verifier_policy field it writes and its kind. They are shared
+// by config-set and verifier-policy-set.
+var verifierPolicyFlagDefs = []struct{ flag, field, kind string }{
+	{"verifier-policy-mode", "mode", "string"},
+	{"verifier-policy-backends", "backends", "list"},
+	{"verifier-policy-claude-session-cap", "claude_session_cap", "int"},
+	{"verifier-policy-claude-cap-window-minutes", "claude_cap_window_minutes", "int"},
+	{"verifier-policy-force-stronger-on-retry", "force_stronger_on_retry", "bool"},
+	{"verifier-policy-final-gate-stronger", "final_gate_stronger", "bool"},
+	{"verifier-policy-stronger-backend", "stronger_backend", "string"},
+	{"verifier-policy-stronger-model", "stronger_model", "string"},
+}
+
+// addVerifierPolicyFlags registers the verifier routing flags on cmd.
+func addVerifierPolicyFlags(cmd *cobra.Command) {
+	cmd.Flags().String("verifier-policy-mode", "", "Verifier routing mode: fixed, prefer-free, balance, gpu-only or claude-only (empty = fixed)")
+	cmd.Flags().String("verifier-policy-backends", "", "Ordered comma list of eligible verifier backends (empty = use verification_backends)")
+	cmd.Flags().Int("verifier-policy-claude-session-cap", 0, "Most Claude verifier sessions started per window (0 = unlimited)")
+	cmd.Flags().Int("verifier-policy-claude-cap-window-minutes", 0, "Window length in minutes for the Claude session cap (0 = default 60)")
+	cmd.Flags().Bool("verifier-policy-force-stronger-on-retry", false, "Send a retried verification to the stronger verifier")
+	cmd.Flags().Bool("verifier-policy-final-gate-stronger", false, "Send the final verification gate to the stronger verifier")
+	cmd.Flags().String("verifier-policy-stronger-backend", "", "Stronger verifier backend (empty = claude-code)")
+	cmd.Flags().String("verifier-policy-stronger-model", "", "Stronger verifier model (empty = the default Sonnet model)")
+}
+
+// applyVerifierPolicyFlags collects the verifier routing flags that were set
+// into a verifier_policy object on body. An omitted flag leaves its field
+// unchanged and an explicit empty value, 0 or false clears it. A negative
+// number is rejected before anything is sent. Fields already in a JSON
+// verifier_policy object on body are kept.
+func applyVerifierPolicyFlags(cmd *cobra.Command, body map[string]any) error {
+	vp := map[string]any{}
+	if cur, ok := body["verifier_policy"].(map[string]any); ok {
+		vp = cur // flags win over the same field given in the JSON body
+	}
+	for _, d := range verifierPolicyFlagDefs {
+		if !cmd.Flags().Changed(d.flag) {
+			continue
+		}
+		switch d.kind {
+		case "int":
+			n, _ := cmd.Flags().GetInt(d.flag)
+			if n < 0 {
+				return fmt.Errorf("--%s must be >= 0", d.flag)
+			}
+			vp[d.field] = n
+		case "bool":
+			b, _ := cmd.Flags().GetBool(d.flag)
+			vp[d.field] = b
+		case "list":
+			s, _ := cmd.Flags().GetString(d.flag)
+			vp[d.field] = splitVerifierBackends(s)
+		default:
+			s, _ := cmd.Flags().GetString(d.flag)
+			vp[d.field] = s
+		}
+	}
+	if len(vp) > 0 {
+		body["verifier_policy"] = vp
+	}
+	return nil
+}
+
+// splitVerifierBackends splits a comma list of backend names. An empty string
+// is an empty list (clear); empty entries are kept so the daemon rejects them
+// rather than a stray comma quietly shrinking the list.
+func splitVerifierBackends(s string) []string {
+	if strings.TrimSpace(s) == "" {
+		return []string{}
+	}
+	parts := strings.Split(s, ",")
+	for i := range parts {
+		parts[i] = strings.TrimSpace(parts[i])
+	}
+	return parts
+}
+
+func newAutonomousVerifierPolicyCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "verifier-policy",
+		Short: "Show the global verifier routing policy (autonomous.verifier_policy)",
+		Args:  cobra.NoArgs,
+		RunE: func(*cobra.Command, []string) error {
+			raw, err := daemonJSONBody(http.MethodGet, "/api/autonomous/config", nil)
+			if err != nil {
+				return err
+			}
+			var cfg map[string]json.RawMessage
+			if json.Unmarshal(raw, &cfg) != nil {
+				prettyPrint(raw)
+				return nil
+			}
+			if vp, ok := cfg["verifier_policy"]; ok {
+				prettyPrint(vp)
+				return nil
+			}
+			fmt.Println("{}")
+			return nil
+		},
+	}
+}
+
+func newAutonomousVerifierPolicySetCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "verifier-policy-set",
+		Short: "Set the global verifier routing policy; only the flags you give change",
+		Long: `Set fields of autonomous.verifier_policy, which chooses the backend that
+runs each verification. Fields you do not give are left unchanged; an explicit
+empty value, 0 or false clears that field. The change takes effect on the next
+verification, with no restart.
+
+  datawatch autonomous verifier-policy-set --verifier-policy-mode prefer-free --verifier-policy-backends qwen,claude-code
+  datawatch autonomous verifier-policy-set --verifier-policy-claude-session-cap 6 --verifier-policy-claude-cap-window-minutes 60
+  datawatch autonomous verifier-policy-set --verifier-policy-final-gate-stronger --verifier-policy-stronger-backend claude-code
+
+Modes: fixed (first eligible backend only, the default), prefer-free (first
+backend with a free slot), balance (lowest relative load), gpu-only (local
+backends only), claude-only (Claude backends only).`,
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			body := map[string]any{}
+			if err := applyVerifierPolicyFlags(cmd, body); err != nil {
+				return err
+			}
+			if len(body) == 0 {
+				return fmt.Errorf("give at least one --verifier-policy-* flag")
+			}
+			return daemonJSON(http.MethodPut, "/api/autonomous/config", body)
+		},
+	}
+	addVerifierPolicyFlags(cmd)
+	return cmd
+}
+
+// verifierPolicyOverrideCLIBody builds a set_verifier_policy /
+// set_task_verifier_policy body. mode and backends are sent only when their
+// flag was set, so an omitted flag leaves the field unchanged and an explicit
+// empty value clears it.
+func verifierPolicyOverrideCLIBody(cmd *cobra.Command, base map[string]any) map[string]any {
+	body := map[string]any{}
+	for k, v := range base {
+		body[k] = v
+	}
+	if cmd.Flags().Changed("mode") {
+		v, _ := cmd.Flags().GetString("mode")
+		body["mode"] = v
+	}
+	if cmd.Flags().Changed("backends") {
+		v, _ := cmd.Flags().GetString("backends")
+		body["backends"] = splitVerifierBackends(v)
+	}
+	return body
+}
+
+func addVerifierPolicyOverrideFlags(cmd *cobra.Command, scope string) {
+	cmd.Flags().String("mode", "", "verifier routing mode for "+scope+" (fixed, prefer-free, balance, gpu-only, claude-only); empty = clear, omit = unchanged")
+	cmd.Flags().String("backends", "", "ordered comma list of verifier backends for "+scope+"; empty = clear, omit = unchanged")
+}
+
+func newAutonomousPRDSetVerifierPolicyCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "prd-set-verifier-policy <prd-id> [--mode M --backends a,b]",
+		Short: "Override the verifier routing of an Automaton. Precedence: task > Automaton > global verifier_policy. Omitted flags are unchanged; an empty value clears.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			body := verifierPolicyOverrideCLIBody(cmd, map[string]any{"actor": "operator"})
+			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/set_verifier_policy", body)
+		},
+	}
+	addVerifierPolicyOverrideFlags(cmd, "this Automaton")
+	return cmd
+}
+
+func newAutonomousPRDSetTaskVerifierPolicyCmd() *cobra.Command {
+	var taskID string
+	cmd := &cobra.Command{
+		Use:   "prd-set-task-verifier-policy <prd-id> --task <task-id> [--mode M --backends a,b]",
+		Short: "Override the verifier routing of one task. Precedence: task > Automaton > global verifier_policy. Omitted flags are unchanged; an empty value clears.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			body := verifierPolicyOverrideCLIBody(cmd, map[string]any{"task_id": taskID, "actor": "operator"})
+			return daemonJSON(http.MethodPost, "/api/autonomous/prds/"+args[0]+"/set_task_verifier_policy", body)
+		},
+	}
+	cmd.Flags().StringVar(&taskID, "task", "", "task ID to override (required)")
+	addVerifierPolicyOverrideFlags(cmd, "this task")
+	_ = cmd.MarkFlagRequired("task")
+	return cmd
+}
+
 func newAutonomousConfigSetCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "config-set [json-or-@file]",
@@ -254,6 +454,22 @@ the default; negative values are rejected):
   capacity_rate_tokens            most tokens per LLM per window
   capacity_rate_window_seconds    rolling window length (default 3600)
 
+Verifier routing, which chooses the backend that runs each verification, by
+flag or by the verifier_policy JSON object. Fields you do not give are left
+unchanged; the change takes effect on the next verification:
+
+  datawatch autonomous config-set --verifier-policy-mode prefer-free --verifier-policy-backends qwen,claude-code
+  datawatch autonomous config-set '{"verifier_policy":{"claude_session_cap":6}}'
+
+  verifier_policy.mode                       fixed (default), prefer-free, balance, gpu-only, claude-only
+  verifier_policy.backends                   ordered list of eligible verifier backends
+  verifier_policy.claude_session_cap         most Claude verifier sessions per window (0 = unlimited)
+  verifier_policy.claude_cap_window_minutes  window length for that cap (0 = default 60)
+  verifier_policy.force_stronger_on_retry    send a retried verification to the stronger verifier
+  verifier_policy.final_gate_stronger        send the final verification gate to the stronger verifier
+  verifier_policy.stronger_backend           stronger verifier backend (empty = claude-code)
+  verifier_policy.stronger_model             stronger verifier model (empty = the default Sonnet model)
+
 max_parallel_tasks is deprecated and ignored; use max_concurrent_tasks.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -274,6 +490,9 @@ max_parallel_tasks is deprecated and ignored; use max_concurrent_tasks.`,
 			if err := applyAutonomousRateFlags(cmd, body); err != nil {
 				return err
 			}
+			if err := applyVerifierPolicyFlags(cmd, body); err != nil {
+				return err
+			}
 			if len(body) == 0 {
 				return fmt.Errorf("give a JSON body or at least one flag")
 			}
@@ -289,6 +508,7 @@ max_parallel_tasks is deprecated and ignored; use max_concurrent_tasks.`,
 	cmd.Flags().Int("capacity-rate-requests", 0, "Most task/verifier starts per LLM pool per rolling window (0 = no requests ceiling)")
 	cmd.Flags().Int("capacity-rate-tokens", 0, "Most tokens per LLM pool per rolling window (0 = no tokens ceiling)")
 	cmd.Flags().Int("capacity-rate-window-seconds", 0, "Rolling window length in seconds for the rate ceilings (0 = default 3600)")
+	addVerifierPolicyFlags(cmd)
 	return cmd
 }
 

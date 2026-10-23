@@ -4251,6 +4251,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			VerificationModel:                acfgIn.VerificationModel,
 			GuardrailModel:                   acfgIn.GuardrailModel,
 			VerificationBackends:             append([]string(nil), acfgIn.VerificationBackends...),
+			VerifierPolicy:                   copyVerifierPolicy(acfgIn.VerifierPolicy),
 			TaskOverrideStatuses:             append([]string(nil), acfgIn.TaskOverrideStatuses...),
 			PlanningEffort:                   acfgIn.PlanningEffort,
 			VerificationEffort:               acfgIn.VerificationEffort,
@@ -5611,16 +5612,24 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// this exact projection: pool / global backend / global model
 			// always come from the live snapshot, never a captured value.
 			vpool, vglobalBackend, vglobalModel := effectiveVerifierSelection(liveCfg)
-			vsel := selectVerifierLLM(verifierSelectInput{
-				Resolved:       resolvedVLLM,
-				ExplicitEffort: autonomouspkg.ResolveVerificationLLM(prd, task, vauto, explicitEffortCfg).Effort,
-				Pool:           vpool,
-				GlobalBackend:  vglobalBackend,
-				GlobalModel:    vglobalModel,
-				PRDBackend:     prd.Backend,
-				PRDModel:       prd.Model,
-				ProjectDir:     taskDir,
-			}, verifierTryAdmit, resolveAskBackend, askCompatible, isInferenceSessionKind)
+			// Verifier policy: a non-fixed mode (or a stronger-verifier /
+			// Claude-cap trigger) picks the backend; otherwise, and when no
+			// backend is eligible, the selection below is unchanged. An infra
+			// escalation sets the source to task, so it keeps precedence.
+			vsel, policyDecided := policyVerifierSelection(autonomousMgrRef, prd, task, resolvedVLLM, liveCfg, taskDir,
+				verifierTryAdmit, resolveAskBackend, askCompatible, isInferenceSessionKind)
+			if !policyDecided {
+				vsel = selectVerifierLLM(verifierSelectInput{
+					Resolved:       resolvedVLLM,
+					ExplicitEffort: autonomouspkg.ResolveVerificationLLM(prd, task, vauto, explicitEffortCfg).Effort,
+					Pool:           vpool,
+					GlobalBackend:  vglobalBackend,
+					GlobalModel:    vglobalModel,
+					PRDBackend:     prd.Backend,
+					PRDModel:       prd.Model,
+					ProjectDir:     taskDir,
+				}, verifierTryAdmit, resolveAskBackend, askCompatible, isInferenceSessionKind)
+			}
 			vbackend, vkind, verifyModel, useSession := vsel.Backend, vsel.Kind, vsel.Model, vsel.UseSession
 			// v9.10.19 — a pi-family VERIFY session must be pinned to an
 			// explicit model; it must never run on pi's own host default.

@@ -49,6 +49,8 @@ POST   /api/autonomous/prds/{id}/set_task_project_dir  per-task project dir over
 POST   /api/autonomous/prds/{id}/set_task_verification_llm   per-task verifier LLM; body: {task_id, [verification_backend], [verification_model], [verification_effort], actor}   [v9.0.69]
 POST   /api/autonomous/prds/{id}/set_story_verification_llm  per-story verifier LLM; body: {story_id, [verification_backend], [verification_model], [verification_effort], actor} [v9.0.69]
 POST   /api/autonomous/prds/{id}/set_verification_llm        per-Automaton verifier LLM; body: {[verification_backend], [verification_model], [verification_effort], actor}       [v9.0.69]
+POST   /api/autonomous/prds/{id}/set_verifier_policy         per-Automaton verifier policy; body: {[mode], [backends[]], actor}
+POST   /api/autonomous/prds/{id}/set_task_verifier_policy    per-task verifier policy; body: {task_id, [mode], [backends[]], actor}
 POST   /api/autonomous/prds/{id}/set_dirs  directory scope; body: {write_dirs[], read_dirs[]} (absolute paths)
 POST   /api/autonomous/prds/{id}/set_tags  replace the Automaton's tags; body: {tag_ids[]} ([] clears)
 POST   /api/autonomous/prds/{id}/run       kick the executor for this PRD
@@ -250,6 +252,91 @@ above, which pick the guardrail judge.
 system-populated and read-only — they appear in
 `GET /api/autonomous/prds/{id}` (and the MCP / CLI / comm `get`
 surfaces, which pass the same JSON through) but have no setter.
+
+### Verifier policy (`set_task_verifier_policy` / `set_verifier_policy`)
+
+The verifier policy chooses **which backend runs a verification**, as
+opposed to the verification LLM override above, which names the LLM that
+judges. The global policy is `autonomous.verifier_policy`; an Automaton or
+a single task can override its **mode** and **backend list**.
+
+| Method | How |
+|--------|-----|
+| **YAML** | `autonomous.verifier_policy.*` in `~/.datawatch/config.yaml` (fields below) |
+| **REST** | `POST /api/autonomous/prds/{id}/set_verifier_policy` and `POST /api/autonomous/prds/{id}/set_task_verifier_policy`; global keys through `PUT /api/config` and `PUT /api/autonomous/config` |
+| **MCP** | `autonomous_prd_set_verifier_policy`, `autonomous_prd_set_task_verifier_policy`; the global keys are the `verifier_policy_*` arguments of `autonomous_config_set` |
+
+Modes:
+
+| Mode | Behaviour |
+|------|-----------|
+| `fixed` (default) | The first eligible backend only. |
+| `prefer-free` | The first backend that has a free slot; falls back down the list. |
+| `balance` | The backend with the lowest relative load. |
+| `gpu-only` | Keeps only local/GPU backends in the list. |
+| `claude-only` | Keeps only Claude backends in the list. |
+
+Global fields (`autonomous.verifier_policy.<field>` in `PUT /api/config`, or
+one `verifier_policy` object in `PUT /api/autonomous/config`):
+
+| Field | Meaning |
+|-------|---------|
+| `mode` | One of the modes above. Empty means `fixed`. |
+| `backends` | Ordered list of eligible verifier backends. Empty falls back to `autonomous.verification_backends`, then `autonomous.verification_backend`. |
+| `claude_session_cap` | Most Claude verifier sessions started per window. `0` = unlimited. |
+| `claude_cap_window_minutes` | Window length for the cap. `0` = 60. |
+| `force_stronger_on_retry` | Send a retried verification to the stronger verifier. |
+| `final_gate_stronger` | Send the final verification gate to the stronger verifier. |
+| `stronger_backend` / `stronger_model` | The stronger verifier. Empty means `claude-code` and the default Sonnet model. |
+
+A config write is validated before anything is stored: an unknown `mode`,
+an empty entry in `backends`, a negative `claude_session_cap` or
+`claude_cap_window_minutes`, a value of the wrong type, or an unknown field
+is a `400` and changes nothing. A valid write applies to the next
+verification with no restart, and is persisted to `config.yaml`.
+`PUT /api/autonomous/config` merges the `verifier_policy` object onto the
+current policy field by field, so a partial object leaves the other fields
+alone. `GET /api/config` and `GET /api/autonomous/config` return the policy
+under `verifier_policy`.
+
+Per-unit body keys are presence-aware like the verification LLM keys:
+**absent** leaves the field unchanged, **`""`** (mode) or **`[]`** (backends)
+clears it so the level inherits, a value sets it. Clearing both fields
+removes the override. `task_id` is required on the task variant. `mode`
+must be one of the modes above; every `backends` entry must be a non-empty,
+configured LLM name (an unknown name is a `400`). Resolution is task →
+Automaton → global; the mode and the backend list each resolve
+independently, so a task that sets only a mode still uses the Automaton's
+backend list. The other policy fields come from the global policy.
+
+Locking follows the verification LLM override: the Automaton variant is
+accepted while the Automaton is `needs_review`, `revisions_asked` or
+`cancelled`; the task variant while the Automaton's status is listed in
+`autonomous.task_override_statuses`. Any other status is a `400`. Each change
+is audit-logged and appended to the Automaton's decision log
+(`set_prd_verifier_policy` / `set_task_verifier_policy`). The response is the
+updated Automaton.
+
+Each verification records the backend the policy picked on the task's
+`verifier_policy_choice` (backend, model, reason, time) and in a
+`verifier_policy` decision on the Automaton.
+
+```bash
+# balance one risky task across two local backends
+curl -sX POST http://localhost:7433/api/autonomous/prds/<id>/set_task_verifier_policy \
+  -H "Content-Type: application/json" \
+  -d '{"task_id":"<task-id>","mode":"balance","backends":["ollama-a","ollama-b"]}'
+
+# clear the mode only; the backend list stays
+curl -sX POST http://localhost:7433/api/autonomous/prds/<id>/set_task_verifier_policy \
+  -H "Content-Type: application/json" \
+  -d '{"task_id":"<task-id>","mode":""}'
+
+# global policy: prefer a free local backend, cap Claude verifiers at 4 per hour
+curl -sX PUT http://localhost:7433/api/autonomous/config \
+  -H "Content-Type: application/json" \
+  -d '{"verifier_policy":{"mode":"prefer-free","backends":["ollama-a","claude-code"],"claude_session_cap":4,"claude_cap_window_minutes":60}}'
+```
 
 ### Automata list (`GET /api/autonomous/prds`)
 
@@ -960,6 +1047,15 @@ autonomous:
   preserve_attempt_work:  true        # save a killed attempt's uncommitted work to refs/datawatch/attempts/; restored on the next attempt unless clean_restart
   auto_fix_retries:       1           # re-prompt count on verifier failure
   security_scan:          true        # nightwire-port .py scanner before commit
+  verifier_policy:                    # which backend runs a verification (see "Verifier policy")
+    mode:                 fixed       # fixed | prefer-free | balance | gpu-only | claude-only
+    backends:             []          # ordered eligible backends; empty = verification_backends, then verification_backend
+    claude_session_cap:   0           # Claude verifier sessions per window; 0 = unlimited
+    claude_cap_window_minutes: 0      # window length; 0 = 60
+    force_stronger_on_retry: false    # retried verification goes to the stronger verifier
+    final_gate_stronger:  false       # final verification gate goes to the stronger verifier
+    stronger_backend:     ""          # empty = claude-code
+    stronger_model:       ""          # empty = the default Sonnet model
 ```
 
 ### Compute-node engine cap (`max_engines_per_node`)
@@ -1177,6 +1273,7 @@ operator-facing AI can drive the autonomous loop end-to-end:
 | `autonomous_tag_list` / `_tag_create` / `_tag_rename` / `_tag_set_parent` / `_tag_set_color` / `_tag_delete` | Automata tag registry; see [howto/automata-tags](../howto/automata-tags.md) |
 | `autonomous_prd_set_tags`   | replace an Automaton's tags (`tag_ids_json`) |
 | `autonomous_prd_set_task_verification_llm` / `_set_story_verification_llm` / `_set_verification_llm` | per-task / per-story / per-Automaton verifier LLM |
+| `autonomous_prd_set_verifier_policy` / `_set_task_verifier_policy` | per-Automaton / per-task verifier policy (`mode`, `backends`; `""` / `[]` clears, omit = unchanged) |
 | `autonomous_prd_set_task_project_dir` | per-task project dir override (empty = inherit Automaton dir) |
 
 Typical AI workflow:

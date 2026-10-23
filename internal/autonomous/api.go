@@ -368,6 +368,9 @@ func (a *API) SetConfig(v any) error {
 	if err := json.Unmarshal(raw, &cfg); err != nil {
 		return fmt.Errorf("config: %w", err)
 	}
+	if err := normalizeVerifierPolicyConfig(&cfg.VerifierPolicy); err != nil {
+		return err
+	}
 	if cfg.CapacityRateRequests < 0 || cfg.CapacityRateTokens < 0 || cfg.CapacityRateWindowSeconds < 0 {
 		return fmt.Errorf("config: capacity_rate_requests, capacity_rate_tokens and capacity_rate_window_seconds must be >= 0")
 	}
@@ -988,6 +991,22 @@ func (a *API) SetStoryVerificationLLM(prdID, storyID string, backend, model, eff
 }
 func (a *API) SetPRDVerificationLLM(prdID string, backend, model, effort *string, actor string) (any, error) {
 	out, err := a.M.SetPRDVerificationLLM(prdID, backend, model, effort, actor)
+	if err == nil {
+		a.M.EmitPRDUpdate(prdID)
+	}
+	return out, err
+}
+
+// Presence-aware verifier policy overrides at task and Automaton level.
+func (a *API) SetTaskVerifierPolicy(prdID, taskID string, mode *string, backends *[]string, actor string) (any, error) {
+	out, err := a.M.SetTaskVerifierPolicy(prdID, taskID, mode, backends, actor)
+	if err == nil {
+		a.M.EmitPRDUpdate(prdID)
+	}
+	return out, err
+}
+func (a *API) SetPRDVerifierPolicy(prdID string, mode *string, backends *[]string, actor string) (any, error) {
+	out, err := a.M.SetPRDVerifierPolicy(prdID, mode, backends, actor)
 	if err == nil {
 		a.M.EmitPRDUpdate(prdID)
 	}
