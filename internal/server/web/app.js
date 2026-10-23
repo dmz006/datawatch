@@ -9621,6 +9621,13 @@ function renderSettingsView() {
           </div>
         </div>
 
+        <div class="settings-section" data-group="automata" style="${stab!=='automata'?'display:none':''}">
+          ${settingsSectionHeader('automata_tag_registry', _tagT('tag_registry_title', 'Tag Registry'))}
+          <div id="settings-sec-automata_tag_registry" style="${secContent('automata_tag_registry')}">
+            <div id="automataTagRegistryPanel"><div style="text-align:center;padding:24px;color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div></div>
+          </div>
+        </div>
+
         <!-- BL303 S2 — Guardrail Profiles section -->
         <div class="settings-section" data-group="automata" style="${stab!=='automata'?'display:none':''}">
           ${settingsSectionHeader('automata_guardrail_profiles', t('guardrail_profile_title') || 'Guardrail Profiles')}
@@ -9711,6 +9718,7 @@ function renderSettingsView() {
   loadRoutingPanel();
   loadChannelRoutingPanel(); // BL331 parity
   loadAutomataTypeRegistryPanel(); // BL221 parity
+  loadAutomataTagRegistryPanel();
   loadOrchestratorPanel();
   loadAutomataSettingsPanel(); // BL221 Phase 3
   loadToolingPanel(); // BL219
@@ -13902,7 +13910,7 @@ function openPRDCreateModal() {
     state._prdProjectProfiles = projectsArr.map(p => p && (p.name || p)).filter(Boolean);
     state._prdClusterProfiles = clustersArr.map(c => c && (c.name || c)).filter(Boolean);
   });
-  Promise.all([ensureBackends, ensureModels, ensureProfiles]).then(() => {
+  Promise.all([ensureBackends, ensureModels, ensureProfiles, _tagsLoad()]).then(() => {
     // v5.26.30 — operator-asked: collapse the three separate fields
     // (project_dir / project_profile / cluster_profile) into a single
     // "Profile" dropdown. The first option is the explicit
@@ -13946,6 +13954,8 @@ function openPRDCreateModal() {
             <div id="dirBrowserContent"></div>
           </div>
         </div>
+        <label style="font-size:11px;color:var(--text2);">${escHtml(_tagT('tag_picker_label', 'Tags (optional)'))}</label>
+        <div id="prdNewTagsWrap">${_tagPickerHTML('prdNewTags', [])}</div>
         <div id="prdNewClusterRow" style="display:none;">
           <label style="font-size:11px;color:var(--text2);">${t('new_session_cluster_label')||'Cluster'}</label>
           <select id="prdNewClusterProfile" class="form-select" style="font-size:11px;padding:1px 4px;">${clusterProfileOpts.join('')}</select>
@@ -14016,10 +14026,13 @@ function openPRDCreateModal() {
       const decompositionProfile = document.getElementById('prdNewDecompositionProfile')?.value || '';
       const decompModelEl = document.getElementById('prdNewDecompModelInner')?.querySelector('input,select');
       const decompositionModel = decompModelEl ? decompModelEl.value.trim() : '';
+      const newTagIds = _tagPickerSelected('prdNewTags');
+      let createdPrdId = '';
       apiFetch('/api/autonomous/prds', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       }).then(prd => {
+        createdPrdId = prd.id;
         // PRD-level LLM (backend/effort already in create payload — model
         // and any consolidation goes through set_llm so the audit trail
         // gets the full triple).
@@ -14029,12 +14042,39 @@ function openPRDCreateModal() {
             body: JSON.stringify({ backend: body.backend, effort: body.effort, model, decomposition_profile: decompositionProfile, decomposition_model: decompositionModel, actor: 'operator' }),
           });
         }
+      }).then(() => {
+        if (newTagIds.length && createdPrdId) return _tagSetPrdTags(createdPrdId, newTagIds);
       }).then(() => { showToast('PRD created', 'success', 1500); _prdCloseModal(); _refreshAutomataOrPRD(); })
         .catch(err => showToast('Create failed: ' + String(err), 'error', 3000));
     });
+    _prdSuggestTagFromAlias();
   });
 }
 window.openPRDCreateModal = openPRDCreateModal;
+
+// Pre-check the tag named like the project alias the chosen directory
+// resolves to. Only an existing tag is ever suggested, and only until the
+// operator touches the picker; no tag is created.
+function _prdSuggestTagFromAlias() {
+  const picker = document.getElementById('prdNewTags');
+  const disp = document.getElementById('selectedDirDisplay');
+  if (!picker) return;
+  let touched = false;
+  picker.addEventListener('change', () => { touched = true; });
+  let projects = [];
+  const apply = () => {
+    if (touched) return;
+    const sel = (typeof newSessionState !== 'undefined' && newSessionState.selectedDir) || '';
+    const txt = disp ? disp.textContent.trim() : '';
+    const id = _tagSuggestFromAlias(sel || (txt !== '~/' ? txt : ''), projects, _tagsState.list);
+    picker.querySelectorAll('.tag-picker-cb').forEach(cb => { cb.checked = !!id && cb.value === id; });
+  };
+  _tagsLoad().then(() => apiFetch('/api/projects').catch(() => [])).then(list => {
+    projects = Array.isArray(list) ? list : [];
+    apply();
+    if (disp && typeof MutationObserver !== 'undefined') new MutationObserver(apply).observe(disp, { childList: true, characterData: true, subtree: true });
+  });
+}
 
 // v5.26.30 — toggle dir-vs-cluster row when the unified Profile
 // dropdown changes. Profile mode hides the path input + the
@@ -20132,6 +20172,9 @@ const _automataState = {
   // state needed — this is a personal marker, not shared/authoritative).
   watched: new Set(JSON.parse(localStorage.getItem('cs_automata_watched') || '[]')),
   watchFilter: false,
+  // Browse-by-tag: '' = All (unchanged behaviour); otherwise a tag id.
+  tagFilter: (() => { try { return localStorage.getItem('cs_automata_tag_filter') || ''; } catch (_) { return ''; } })(),
+  tagIncludeSub: (() => { try { return localStorage.getItem('cs_automata_tag_include_sub') !== '0'; } catch (_) { return true; } })(),
 };
 
 // BL303 S4 — /dashboard Mission Control state.
@@ -20239,6 +20282,7 @@ function _automataFilteredList() {
   if (st.statusFilter.size) list = list.filter(p => st.statusFilter.has(p.status || 'draft'));
   if (st.typeFilter.size) list = list.filter(p => st.typeFilter.has(p.type || ''));
   if (st.watchFilter) list = list.filter(p => st.watched.has(p.id)); // GH#172 D61
+  if (st.tagFilter) list = list.filter(p => _automataTagMatches(p, st.tagFilter, st.tagIncludeSub, _tagsState.byId));
   if (st.search) {
     const q = st.search.toLowerCase();
     list = list.filter(p => (p.title || '').toLowerCase().includes(q) || (p.id || '').toLowerCase().includes(q));
@@ -20308,6 +20352,7 @@ function _automataRenderBatchBar() {
     cancel:  p => !_AUTOMATA_HISTORY_STATUSES.has(p.status || 'draft'),
     archive: p => _AUTOMATA_HISTORY_STATUSES.has(p.status || 'draft'),
     delete:  p => _AUTOMATA_HISTORY_STATUSES.has(p.status || 'draft'),
+    tag:     p => true,
   };
   const tooltipFor = (action) => {
     const list = selectedPrds.filter(eligibilityByAction[action]);
@@ -20332,6 +20377,7 @@ function _automataRenderBatchBar() {
     actionBtn('approve', escHtml(t('automata_batch_approve')  || 'Approve')),
     actionBtn('cancel',  escHtml(t('automata_batch_cancel')   || 'Cancel run')),
     actionBtn('archive', escHtml(t('automata_batch_archive')  || 'Archive')),
+    actionBtn('tag',     escHtml(_tagT('tag_batch', 'Tag'))),
     actionBtn('delete',  '&#128465; ' + escHtml(t('automata_batch_delete') || 'Delete'), 'select-bar-delete'),
     `<button class="select-bar-btn" onclick="exitAutomataSelectMode()" title="Exit select mode">${escHtml(t('action_done')||'Done')}</button>`,
   ].join('');
@@ -20388,6 +20434,7 @@ window.batchAutomataAction = function(action) {
     cancel:  p => !_AUTOMATA_HISTORY_STATUSES.has(p.status || 'draft'),
     archive: p => _AUTOMATA_HISTORY_STATUSES.has(p.status || 'draft'),
     delete:  p => _AUTOMATA_HISTORY_STATUSES.has(p.status || 'draft'),
+    tag:     p => true,
   };
   const isEligible = eligibilityByAction[action] || (() => true);
   const eligible = _automataState.allPrds.filter(p => sel.has(p.id) && isEligible(p));
@@ -20396,6 +20443,7 @@ window.batchAutomataAction = function(action) {
     showToast(`No selected items match "${action}"`, 'info', 2500);
     return;
   }
+  if (action === 'tag') { _automataBatchTag(ids); return; }
   const _execBatch = () => {
     const reqs = ids.map(id => {
       if (action === 'run')     return apiFetch('/api/autonomous/prds/' + encodeURIComponent(id) + '/run', { method: 'POST' });
@@ -20550,7 +20598,7 @@ function renderAutomataCard(prd) {
       ${checkboxCell}
       <div style="flex:1;min-width:0;">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-          ${typeBadge}${tplBadge}${gateInvalidBadge}
+          ${typeBadge}${_tagChipsHTML(prd)}${tplBadge}${gateInvalidBadge}
           <span style="font-weight:700;font-size:15px;color:var(--text);flex:1;min-width:0;">${escHtml(title)}</span>
           <span style="margin-left:auto;flex-shrink:0;">${statusPill(status)}</span>
         </div>
@@ -20716,7 +20764,10 @@ function loadAutomataPanel() {
       (childIdx[pid] = childIdx[pid] || []).push(p);
     }
     state._prdChildIndex = childIdx;
-    _automataRenderCards(expandedCardIds);
+    _tagsLoad(true).then(() => {
+      _automataRenderTagFilter();
+      _automataRenderCards(expandedCardIds);
+    });
   }).catch(err => {
     if (panel) panel.innerHTML = `<span style="color:var(--error);">Load failed: ${escHtml(err.message || String(err))}</span>`;
   });
@@ -21887,7 +21938,7 @@ function _renderDetailContent(prd) {
 
   // BL246 v6.6.0 — persistent header toolbar across all sub-tabs.
   const tab = _automataDetailTab || 'overview';
-  const header = _renderDetailHeader(prd, typeBadge, tplBadge);
+  const header = _renderDetailHeader(prd, typeBadge, tplBadge + `<span id="prdDetailTagRow" data-prd="${escHtml(prd.id)}" style="display:inline-flex;gap:4px;align-items:center;flex-wrap:wrap;"></span>`);
   const tabStrip = _renderDetailTabStrip(prd, tab);
   let tabBody = '';
   if (tab === 'overview') tabBody = _renderDetailOverview(prd);
@@ -21906,6 +21957,7 @@ function _renderDetailContent(prd) {
     ${tabStrip}
     <div class="prd-detail-tab-body" style="margin-top:10px;">${tabBody}</div>
   </div>`;
+  _tagsLoad().then(() => _renderDetailTagRow(prd));
   // GATE alpha.36 (operator 2026-05-10): hoist the title + back into
   // the PWA banner header (matches session-detail behavior).
   // - backBtn shown with onclick=_backToAutomataList (chevron arrow,
@@ -23913,6 +23965,7 @@ function renderAutonomousView() {
         <input id="automataSearch" type="text" class="form-input" placeholder="${escHtml(t('automata_filter_search'))}" value="${escHtml(st.search)}" oninput="onAutomataSearchChange(this.value)" style="flex:1;min-width:100px;font-size:12px;">
         <div class="automata-badge-group">${statusBadges}</div>
         <div class="automata-badge-group">${typeBadges}</div>
+        <div id="automataTagFilterWrap" class="automata-badge-group" style="display:inline-flex;gap:6px;align-items:center;">${_automataTagFilterHTML()}</div>
         <label style="font-size:12px;display:inline-flex;gap:4px;align-items:center;white-space:nowrap;">
           <input type="checkbox" id="automataSelectAll" onchange="toggleAutomataSelectAll(this.checked)"> All
         </label>
@@ -33455,6 +33508,310 @@ window.automataTypeRegister = function() {
     .then(() => { showToast('Type registered', 'success', 2000); loadAutomataTypeRegistryPanel(); })
     .catch(e => showToast(String(e.message||e), 'error'));
 };
+
+// ── Automaton tags — registry, picker, browse filter ─────────────────────────
+// Tags are a managed tree (/api/autonomous/tags); an Automaton carries several
+// (prd.tag_ids). The matching/tree helpers below are pure so they can be
+// tested under node without a DOM.
+
+// _tagT resolves a tag_* string through t(), using the English fallback when
+// the key is not in the bundle yet (t() returns the key itself on a miss).
+function _tagT(key, fallback, vars) {
+  const s = t(key, vars);
+  return s === key ? fallback : s;
+}
+
+function _tagsById(tags) {
+  const m = {};
+  for (const tg of (tags || [])) m[tg.id] = tg;
+  return m;
+}
+
+// _tagTreeOrder flattens tags into depth-first display order with a depth per
+// row. Tags whose parent is missing are treated as roots.
+function _tagTreeOrder(tags) {
+  const byId = _tagsById(tags);
+  const kids = {};
+  const roots = [];
+  for (const tg of (tags || [])) {
+    if (tg.parent_id && byId[tg.parent_id]) (kids[tg.parent_id] = kids[tg.parent_id] || []).push(tg);
+    else roots.push(tg);
+  }
+  const byName = (a, b) => (a.name || '').localeCompare(b.name || '') || (a.id < b.id ? -1 : 1);
+  const out = [];
+  const seen = new Set();
+  const walk = (tg, depth) => {
+    if (seen.has(tg.id)) return;
+    seen.add(tg.id);
+    out.push({ tag: tg, depth });
+    (kids[tg.id] || []).sort(byName).forEach(c => walk(c, depth + 1));
+  };
+  roots.sort(byName).forEach(r => walk(r, 0));
+  return out;
+}
+
+// _tagSelfAndDescendants returns the id set of a tag and everything below it.
+function _tagSelfAndDescendants(tagId, tags) {
+  const ids = new Set([tagId]);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const tg of (tags || [])) {
+      if (tg.parent_id && ids.has(tg.parent_id) && !ids.has(tg.id)) { ids.add(tg.id); grew = true; }
+    }
+  }
+  return ids;
+}
+
+// _automataTagMatches: does prd carry tagId (or, with includeSub, any
+// descendant of it)? An empty tagId is the "All" entry and matches everything.
+function _automataTagMatches(prd, tagId, includeSub, tagsById) {
+  if (!tagId) return true;
+  const own = (prd && prd.tag_ids) || [];
+  if (own.includes(tagId)) return true;
+  if (!includeSub) return false;
+  const byId = tagsById || {};
+  for (const id of own) {
+    let cur = byId[id];
+    const seen = new Set();
+    while (cur && cur.parent_id && !seen.has(cur.id)) {
+      if (cur.parent_id === tagId) return true;
+      seen.add(cur.id);
+      cur = byId[cur.parent_id];
+    }
+  }
+  return false;
+}
+
+// _automataTagCount is the number of prds shown under a tag; with includeSub
+// the count rolls up the tag's descendants.
+function _automataTagCount(prds, tagId, includeSub, tagsById) {
+  let n = 0;
+  for (const p of (prds || [])) if (_automataTagMatches(p, tagId, includeSub, tagsById)) n++;
+  return n;
+}
+
+// _tagSuggestFromAlias: the id of an EXISTING tag whose name matches the
+// project alias that projectDir resolves to; '' when there is none. It never
+// creates a tag.
+function _tagSuggestFromAlias(projectDir, projects, tags) {
+  const dir = String(projectDir || '').replace(/\/+$/, '');
+  if (!dir) return '';
+  const alias = (projects || []).find(p => p && p.dir && String(p.dir).replace(/\/+$/, '') === dir);
+  if (!alias || !alias.name) return '';
+  const want = String(alias.name).toLowerCase();
+  const hit = (tags || []).find(tg => (tg.name || '').toLowerCase() === want);
+  return hit ? hit.id : '';
+}
+
+const _tagsState = { list: [], byId: {}, loaded: false };
+
+function _tagsLoad(force) {
+  if (_tagsState.loaded && !force) return Promise.resolve(_tagsState.list);
+  return apiFetch('/api/autonomous/tags').then(data => {
+    _tagsState.list = (data && data.tags) || [];
+    _tagsState.byId = _tagsById(_tagsState.list);
+    _tagsState.loaded = true;
+    return _tagsState.list;
+  }).catch(() => _tagsState.list);
+}
+
+// _tagErrorText turns an apiFetch rejection into operator text; the server's
+// 409 refusals carry {error, count}.
+function _tagErrorText(err) {
+  const raw = String((err && err.message) || err || '');
+  try {
+    const body = JSON.parse(raw);
+    if (body && body.count) return _tagT('tag_err_in_use', 'Tag is used by %1$d Automata — unassign it first', [body.count]);
+    if (body && body.error) return body.error;
+  } catch (_) { /* plain-text error */ }
+  return raw;
+}
+
+function _tagChipHTML(tg) {
+  const c = tg.color || 'var(--accent2,#60a5fa)';
+  return `<span class="tag-chip" data-tag-id="${escHtml(tg.id)}" style="font-size:10px;padding:1px 7px;border-radius:8px;background:${escHtml(c)}22;color:${escHtml(c)};border:1px solid ${escHtml(c)};font-weight:600;">${escHtml(tg.name)}</span>`;
+}
+
+function _tagChipsHTML(prd) {
+  return ((prd && prd.tag_ids) || []).map(id => _tagsState.byId[id]).filter(Boolean).map(_tagChipHTML).join('');
+}
+
+// Multi-select picker: a checkbox per tag, indented by depth.
+function _tagPickerHTML(pickerId, selectedIds) {
+  const sel = new Set(selectedIds || []);
+  const rows = _tagTreeOrder(_tagsState.list).map(({ tag, depth }) => {
+    const dot = tag.color ? `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${escHtml(tag.color)};margin-right:5px;"></span>` : '';
+    return `<label style="display:flex;align-items:center;gap:6px;font-size:12px;padding:2px 0;padding-left:${depth * 16}px;">
+      <input type="checkbox" class="tag-picker-cb" value="${escHtml(tag.id)}" ${sel.has(tag.id) ? 'checked' : ''}>${dot}${escHtml(tag.name)}
+    </label>`;
+  }).join('');
+  const empty = `<div style="font-size:12px;color:var(--text2);">${escHtml(_tagT('tag_picker_empty', 'No tags defined yet.'))}</div>`;
+  return `<div id="${escHtml(pickerId)}" class="tag-picker" style="max-height:220px;overflow:auto;border:1px solid var(--border);border-radius:6px;padding:6px 8px;">${rows || empty}</div>`;
+}
+
+function _tagPickerSelected(pickerId) {
+  const el = document.getElementById(pickerId);
+  if (!el) return [];
+  return Array.from(el.querySelectorAll('.tag-picker-cb')).filter(cb => cb.checked).map(cb => cb.value);
+}
+
+function _tagSetPrdTags(prdId, tagIds) {
+  return apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdId) + '/set_tags', {
+    method: 'POST', body: JSON.stringify({ tag_ids: tagIds }),
+  });
+}
+
+// Detail view: chips plus an edit button that opens the picker.
+function _renderDetailTagRow(prd) {
+  const el = document.getElementById('prdDetailTagRow');
+  if (!el || el.dataset.prd !== prd.id) return;
+  const idJ = escHtml(JSON.stringify(prd.id));
+  el.innerHTML = `${_tagChipsHTML(prd)}<button class="btn-secondary" style="font-size:10px;padding:1px 8px;margin-left:4px;" onclick="event.stopPropagation();openPRDTagsModal(${idJ})">${escHtml(_tagT('tag_edit', 'Tags'))}</button>`;
+}
+
+window.openPRDTagsModal = function(prdId) {
+  _tagsLoad().then(() => {
+    apiFetch('/api/autonomous/prds/' + encodeURIComponent(prdId)).then(prd => {
+      showModal({
+        title: _tagT('tag_edit_title', 'Automaton tags'),
+        body: _tagPickerHTML('prdTagsModalPicker', prd.tag_ids || []),
+        confirmLabel: _tagT('tag_save', 'Save'),
+        onConfirm: () => {
+          _tagSetPrdTags(prdId, _tagPickerSelected('prdTagsModalPicker'))
+            .then(() => { showToast(_tagT('tag_saved', 'Tags saved'), 'success', 1500); renderPRDDetailView(prdId); })
+            .catch(e => showToast(_tagErrorText(e), 'error', 4000));
+        },
+      });
+    }).catch(e => showToast(_tagErrorText(e), 'error', 4000));
+  });
+};
+
+// ── Browse-by-tag filter (Automata list) ─────────────────────────────────────
+
+function _automataTagFilterHTML() {
+  const st = _automataState;
+  const prds = st.allPrds.filter(p => !p.is_template);
+  const opts = [`<option value="">${escHtml(_tagT('tag_filter_all', 'All'))}</option>`].concat(
+    _tagTreeOrder(_tagsState.list).map(({ tag, depth }) => {
+      const n = _automataTagCount(prds, tag.id, st.tagIncludeSub, _tagsState.byId);
+      return `<option value="${escHtml(tag.id)}" ${st.tagFilter === tag.id ? 'selected' : ''}>${'  '.repeat(depth)}${escHtml(tag.name)} (${n})</option>`;
+    }));
+  return `<select id="automataTagSelect" class="form-select" style="font-size:12px;" title="${escHtml(_tagT('tag_filter_title', 'Browse by tag'))}" onchange="setAutomataTagFilter(this.value)">${opts.join('')}</select>
+    <label style="font-size:12px;display:inline-flex;gap:4px;align-items:center;white-space:nowrap;">
+      <input type="checkbox" id="automataTagSub" ${st.tagIncludeSub ? 'checked' : ''} onchange="setAutomataTagIncludeSub(this.checked)"> ${escHtml(_tagT('tag_include_sub', 'include sub-tags'))}
+    </label>`;
+}
+
+function _automataRenderTagFilter() {
+  const wrap = document.getElementById('automataTagFilterWrap');
+  if (wrap) wrap.innerHTML = _automataTagFilterHTML();
+}
+
+window.setAutomataTagFilter = function(id) {
+  _automataState.tagFilter = id || '';
+  try { localStorage.setItem('cs_automata_tag_filter', _automataState.tagFilter); } catch (_) {}
+  _automataRenderTagFilter();
+  _automataRenderCards();
+};
+
+window.setAutomataTagIncludeSub = function(on) {
+  _automataState.tagIncludeSub = !!on;
+  try { localStorage.setItem('cs_automata_tag_include_sub', on ? '1' : '0'); } catch (_) {}
+  _automataRenderTagFilter();
+  _automataRenderCards();
+};
+
+// ── Tag registry settings panel ──────────────────────────────────────────────
+
+function loadAutomataTagRegistryPanel() {
+  const el = document.getElementById('automataTagRegistryPanel');
+  if (!el) return;
+  _tagsLoad(true).then(tags => {
+    const panel = document.getElementById('automataTagRegistryPanel');
+    if (!panel) return;
+    const inp = 'font-size:12px;padding:4px 6px;background:var(--bg);border:1px solid var(--border);border-radius:6px;color:var(--text);';
+    const parentOpts = (selfId, current) => {
+      const banned = selfId ? _tagSelfAndDescendants(selfId, tags) : new Set();
+      return `<option value="">${escHtml(_tagT('tag_parent_none', '— top level —'))}</option>` +
+        _tagTreeOrder(tags).filter(r => !banned.has(r.tag.id)).map(r =>
+          `<option value="${escHtml(r.tag.id)}" ${current === r.tag.id ? 'selected' : ''}>${'  '.repeat(r.depth)}${escHtml(r.tag.name)}</option>`).join('');
+    };
+    const rows = _tagTreeOrder(tags).map(({ tag, depth }) => {
+      const idJ = escHtml(JSON.stringify(tag.id));
+      return `<div style="display:flex;align-items:center;gap:6px;padding:4px 0;padding-left:${depth * 18}px;border-bottom:1px solid var(--border);flex-wrap:wrap;">
+        <input type="color" value="${escHtml(/^#[0-9a-f]{6}$/i.test(tag.color || '') ? tag.color : '#6366f1')}" style="width:28px;height:24px;padding:0;border:none;background:none;cursor:pointer;" title="${escHtml(_tagT('tag_color', 'Color'))}" onchange="automataTagUpdate(${idJ},{color:this.value})">
+        <input type="text" value="${escHtml(tag.name)}" style="${inp}flex:1;min-width:90px;" title="${escHtml(_tagT('tag_rename', 'Rename'))}" onchange="automataTagUpdate(${idJ},{name:this.value})">
+        <select style="${inp}max-width:150px;" title="${escHtml(_tagT('tag_parent', 'Parent'))}" onchange="automataTagUpdate(${idJ},{parent_id:this.value})">${parentOpts(tag.id, tag.parent_id || '')}</select>
+        <span style="font-size:11px;opacity:0.6;">${tag.count || 0}</span>
+        <button class="btn-secondary" style="font-size:11px;padding:2px 8px;color:var(--error);" onclick="automataTagDelete(${idJ})">${escHtml(_tagT('tag_delete', 'Delete'))}</button>
+      </div>`;
+    }).join('');
+    const empty = `<div style="font-size:12px;color:var(--text2);padding:6px 0;">${escHtml(_tagT('tag_registry_empty', 'No tags defined yet.'))}</div>`;
+    panel.innerHTML = `
+      <div style="font-size:12px;color:var(--text2);margin-bottom:12px;">${escHtml(_tagT('tag_registry_desc', 'Organise Automata with nested tags. A tag with child tags or assigned Automata cannot be deleted.'))}</div>
+      <div style="margin-bottom:14px;">${rows || empty}</div>
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px 12px;">
+        <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;opacity:0.6;margin-bottom:8px;">${escHtml(_tagT('tag_create', 'Create tag'))}</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:6px;align-items:center;">
+          <input id="atgName" type="text" placeholder="${escHtml(_tagT('tag_name', 'Name'))}" style="${inp}flex:1;min-width:110px;">
+          <select id="atgParent" style="${inp}max-width:170px;">${parentOpts('', '')}</select>
+          <input id="atgColor" type="color" value="#6366f1" title="${escHtml(_tagT('tag_color', 'Color'))}" style="width:32px;height:28px;padding:0;border:none;background:none;cursor:pointer;">
+        </div>
+        <button class="btn-primary" style="font-size:12px;padding:5px 16px;" onclick="automataTagCreate()">${escHtml(_tagT('tag_create_btn', 'Create'))}</button>
+      </div>`;
+  });
+}
+window.loadAutomataTagRegistryPanel = loadAutomataTagRegistryPanel;
+
+window.automataTagCreate = function() {
+  const name = ((document.getElementById('atgName') || {}).value || '').trim();
+  const parent_id = (document.getElementById('atgParent') || {}).value || '';
+  const color = (document.getElementById('atgColor') || {}).value || '';
+  if (!name) { showToast(_tagT('tag_name_required', 'Tag name required'), 'error'); return; }
+  apiFetch('/api/autonomous/tags', { method: 'POST', body: JSON.stringify({ name, parent_id, color }) })
+    .then(() => { showToast(_tagT('tag_created', 'Tag created'), 'success', 2000); loadAutomataTagRegistryPanel(); })
+    .catch(e => showToast(_tagErrorText(e), 'error', 4000));
+};
+
+window.automataTagUpdate = function(id, patch) {
+  apiFetch('/api/autonomous/tags/' + encodeURIComponent(id), { method: 'PATCH', body: JSON.stringify(patch) })
+    .then(() => loadAutomataTagRegistryPanel())
+    .catch(e => { showToast(_tagErrorText(e), 'error', 4000); loadAutomataTagRegistryPanel(); });
+};
+
+window.automataTagDelete = function(id) {
+  showConfirmModal(_tagT('tag_confirm_delete', 'Delete this tag?'), () => {
+    apiFetch('/api/autonomous/tags/' + encodeURIComponent(id), { method: 'DELETE' })
+      .then(() => { showToast(_tagT('tag_deleted', 'Tag deleted'), 'success', 2000); loadAutomataTagRegistryPanel(); })
+      .catch(e => showToast(_tagErrorText(e), 'error', 5000));
+  });
+};
+
+// Batch bar: pick tags and add them to every selected Automaton (existing
+// tags on each Automaton are kept).
+function _automataBatchTag(ids) {
+  _tagsLoad().then(() => {
+    showModal({
+      title: _tagT('tag_batch_title', 'Add tags to %1$d Automata', [ids.length]),
+      body: _tagPickerHTML('automataBatchTagPicker', []),
+      confirmLabel: _tagT('tag_apply', 'Apply'),
+      onConfirm: () => {
+        const add = _tagPickerSelected('automataBatchTagPicker');
+        if (!add.length) return false;
+        const byPrd = {};
+        _automataState.allPrds.forEach(p => { byPrd[p.id] = p; });
+        Promise.all(ids.map(id => {
+          const merged = Array.from(new Set(((byPrd[id] && byPrd[id].tag_ids) || []).concat(add)));
+          return _tagSetPrdTags(id, merged);
+        })).then(() => {
+          loadAutomataPanel();
+          showToast(_tagT('tag_batch_done', 'tag: %1$d done', [ids.length]), 'success', 2000);
+        }).catch(e => showToast(_tagErrorText(e), 'error', 4000));
+      },
+    });
+  });
+}
 
 // ── BL303 S2 — Guardrail Library + Profiles panel (Settings → Automata) ──
 
