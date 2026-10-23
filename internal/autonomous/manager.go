@@ -214,6 +214,10 @@ type Config struct {
 	// before persisting — omitempty here would elide an explicit clear
 	// from that marshal, silently reverting it on the next load.
 	VerificationBackends []string `json:"verification_backends"`
+	// VerifierPolicy mirrors autonomous.verifier_policy in config. The live
+	// verifier selection reads it from the Config() snapshot. No omitempty,
+	// same round-trip reason as VerificationBackends.
+	VerifierPolicy config.VerifierPolicyConfig `json:"verifier_policy"`
 	// TaskOverrideStatuses (v9.5.5) — PRD statuses that accept task-level and
 	// story-level LLM overrides. Empty = default; see config.AutonomousConfig's doc comment.
 	// No omitempty, same round-trip reason as VerificationBackends.

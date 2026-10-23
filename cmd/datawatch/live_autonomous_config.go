@@ -2,6 +2,7 @@ package main
 
 import (
 	autonomouspkg "github.com/dmz006/datawatch/internal/autonomous"
+	"github.com/dmz006/datawatch/internal/config"
 )
 
 // effectiveAutonomousConfig is the single live read point the
@@ -36,4 +37,18 @@ func effectiveAutonomousConfig(ref *autonomouspkg.Manager, boot autonomouspkg.Co
 // at call time.
 func effectiveVerifierSelection(cfg autonomouspkg.Config) (pool []string, backend, model string) {
 	return cfg.VerificationBackends, cfg.VerificationBackend, cfg.VerificationModel
+}
+
+// effectiveVerifierPolicy projects one live config snapshot onto the
+// verifier policy the selector reads. The returned policy owns its backend
+// list.
+func effectiveVerifierPolicy(cfg autonomouspkg.Config) config.VerifierPolicyConfig {
+	return copyVerifierPolicy(cfg.VerifierPolicy)
+}
+
+// copyVerifierPolicy copies the policy so the backend list is not aliased
+// between the daemon config and the manager's mirror.
+func copyVerifierPolicy(p config.VerifierPolicyConfig) config.VerifierPolicyConfig {
+	p.Backends = append([]string(nil), p.Backends...)
+	return p
 }

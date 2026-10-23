@@ -4250,6 +4250,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			VerificationModel:                acfgIn.VerificationModel,
 			GuardrailModel:                   acfgIn.GuardrailModel,
 			VerificationBackends:             append([]string(nil), acfgIn.VerificationBackends...),
+			VerifierPolicy:                   copyVerifierPolicy(acfgIn.VerifierPolicy),
 			TaskOverrideStatuses:             append([]string(nil), acfgIn.TaskOverrideStatuses...),
 			PlanningEffort:                   acfgIn.PlanningEffort,
 			VerificationEffort:               acfgIn.VerificationEffort,

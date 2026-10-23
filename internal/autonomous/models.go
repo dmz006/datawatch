@@ -214,6 +214,10 @@ type PRD struct {
 	VerificationBackend string `json:"verification_backend,omitempty"`
 	VerificationModel   string `json:"verification_model,omitempty"`
 	VerificationEffort  Effort `json:"verification_effort,omitempty"`
+	// VerifierPolicy overrides the global verifier policy mode and backend
+	// list for this Automaton. Precedence: task → Automaton (here) → global
+	// autonomous.verifier_policy. Nil = inherit. See ResolveVerifierPolicy.
+	VerifierPolicy *VerifierPolicyOverride `json:"verifier_policy,omitempty"`
 	// LSPLanguage (v8.7.1) — language server preset for OpenCode-backed workers.
 	// Applies to all tasks unless overridden at the task level.
 	LSPLanguage string `json:"lsp_language,omitempty"`
@@ -828,6 +832,10 @@ type Task struct {
 	VerificationBackend string `json:"verification_backend,omitempty"`
 	VerificationModel   string `json:"verification_model,omitempty"`
 	VerificationEffort  Effort `json:"verification_effort,omitempty"`
+	// VerifierPolicy overrides the Automaton and global verifier policy mode
+	// and backend list for this task — the most specific level. Nil =
+	// inherit. See ResolveVerifierPolicy.
+	VerifierPolicy *VerifierPolicyOverride `json:"verifier_policy,omitempty"`
 	// ExecutorSource is the level that supplied the execution backend for
 	// the most recent run attempt: "task", "story", "prd", "automation" or
 	// "global" (no level set one, so the fallback backend was used). Set by
