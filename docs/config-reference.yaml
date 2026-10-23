@@ -97,7 +97,7 @@ session:
   # ${ENV_VAR} references in env values are expanded at spawn time.
   extra_mcp_servers:
     - name: imap-mcp           # Key name in .mcp.json mcpServers block
-      command: /home/user/imap-mcp/imap-mcp   # Executable path (absolute)
+      command: imap-mcp/imap-mcp   # Executable path
       args: []                 # Optional CLI arguments list
       env:                     # Optional environment variables
         GMAIL_APP_PASSWORD: "${GMAIL_APP_PASSWORD}"
@@ -1105,6 +1105,19 @@ autonomous:
   capacity_enabled: true
   # Longest a task may wait for capacity before failing (seconds). Default 14400.
   capacity_wait_timeout_seconds: 14400
+  # How often the daemon re-checks LLM role tags for contention (seconds):
+  # two enabled entries claiming one role, or two roles that have converged on
+  # one entry since the last check. Warnings only; nothing is blocked. Unset or
+  # < 1 => 300. Every llms write also runs the check immediately.
+  role_scan_interval_seconds: 300
+  # Session priority (a session field, not a config.yaml key): an integer that
+  # orders a session's calls in the capacity wait queue, higher first, default
+  # 0. Set it when starting a session (REST `priority`, MCP start_session,
+  # CLI `session new --priority`, comm `new: priority=<n>: <task>`) or later
+  # with POST /api/sessions/set_priority, MCP set_session_priority, CLI
+  # `session priority <id> <n>` or comm `priority <id> <n>`. A
+  # non-integer value is refused on every surface. Same ordering rule as the
+  # per-Automaton priority (set_priority) above.
   # LLM plan-tier inflight caps (map tier -> max concurrent autonomous
   # sessions, 0 = unlimited). An LLM registry entry can carry a plan_tier
   # (unset | pro | max_5x | max_20x | api — the operator's subscription tier
@@ -1137,6 +1150,23 @@ autonomous:
   #   pro: 20
   #   max_5x: 100
   #   max_20x: 200
+  # Per-LLM workload roles (LLM registry entry, not a config.yaml key). Every
+  # llms[] entry may carry an optional "roles" list naming the workloads it
+  # serves (open set of strings such as planning or verification). Set in
+  # Settings > Compute > LLM edit, or over REST PUT /api/llms/{name}, MCP
+  # llm_add / llm_update, CLI "datawatch llm add|update --role <role>"
+  # (repeatable), comm "llm add|update ... roles=<csv>". Roles are trimmed,
+  # lower-cased and de-duplicated; an empty role is refused. On update, omit
+  # the field to keep the stored roles and send an empty list to clear them.
+  # An explicit per-call-site backend or model always wins over a role lookup.
+  # Only enabled entries claim a role; when several do, the first by name is
+  # used and a contention warning is raised (see role_scan_interval_seconds
+  # above). Resolved table: GET /api/llm-roles. Shape:
+  #
+  #   llms:
+  #     - name: big-gpu
+  #       roles: [planning, verification]
+  #
   # Per-LLM dollar budget (LLM registry entry, not a config.yaml key). Every
   # LLM entry may carry an optional "budget" object, set in Settings > Compute
   # > LLM edit, or over REST PUT /api/llms/{name}, MCP llm_add / llm_update,

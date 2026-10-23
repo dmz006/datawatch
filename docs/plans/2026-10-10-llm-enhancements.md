@@ -23,7 +23,7 @@
 
 ## Context
 
-Source: `/home/dmz/workspace/llm-research/docs/07-datawatch-improvements.md`
+Source: `llm-research/docs/07-datawatch-improvements.md` (outside this repo)
 (dated 2026-09-30, pre-v9.0.0) — Part A (7 routing/tiering/compute-balancing
 proposals) and Part B (5 usage/cost/performance-tracking proposals). The
 source doc is stale against the live system in both directions: some of
@@ -269,7 +269,7 @@ failover ordering; the rate-ceiling pool type and informative-admission
 API before any UI can show it; per-call usage records before any
 dashboard/alert/scorecard has real data to show).
 
-### Phase 0 — Role tags on LLM registry entries (Decision 1) [not started]
+### Phase 0 — Role tags on LLM registry entries (Decision 1) [done]
 - `internal/llm` registry entry struct: new open-string `Roles []string`
   field (or per-call-site role key — see Decision 1's "tag existing
   entries" framing). `llm_add`/`llm_update` MCP tools + REST + CLI gain a
@@ -282,12 +282,12 @@ dashboard/alert/scorecard has real data to show).
 - PWA: new "Workload Roles" card, Settings → Automate.
 
 **Audit evidence** (audited against the current tree):
-- `Roles []string` registry field + `llm_add`/`llm_update`/REST/CLI role param — **remaining**: no roles field anywhere on LLM entries in `internal/llm/registry.go`; `llm_add`/`llm_update` only carry the shared budget object (`internal/mcp/budget.go`); the `llm add`/`llm update` CLI exposes `--budget-*` flags but no role flag (`cmd/datawatch/cli_budget.go`).
-- Resolution order (explicit per-call-site override wins over role lookup) — **remaining**: no role-lookup machinery exists in `internal/llm`, `internal/config`, or `internal/server` for the `llms[]` list.
-- Contention check (periodic reactive scan + config-write trigger) — **remaining**: no contention-check code in `internal/llm`, `internal/mcp`, `internal/server`, or `cmd/datawatch` (grep hits are limited to unrelated kernel headers under `internal/observer/ebpf`).
-- PWA "Workload Roles" card under Settings → Automate — **remaining**: no "Workload Roles" string in `internal/server/web/app.js` or `internal/server/web/locales/en.json`.
+- `Roles []string` registry field + `llm_add`/`llm_update`/REST/CLI/comm role param — **done**: `Roles` on the entry in `internal/inference/llm.go`, normalised by `NormalizeRoles` in `internal/inference/role_resolve.go`; `roles` on `llm_add`/`llm_update` in `internal/mcp/roles.go`, on `POST /api/llms` and `PUT /api/llms/{name}` in `internal/server/inference.go`, `--role` in `cmd/datawatch/cli_llm.go`, `roles=` in `internal/router/inference.go`. Omitting keeps, an empty list clears.
+- Resolution order (explicit per-call-site override wins over role lookup) — **done**: `ResolveRole` in `internal/inference/role_resolve.go`; an explicit backend or model skips the lookup, several enabled claimants pick the first by name and return an ambiguity warning.
+- Contention check (periodic reactive scan + config-write trigger) — **done**: `CheckRoleContention` and `RoleContentionMonitor` in `internal/inference/role_contention.go`; `autonomous.role_scan_interval_seconds` (default 300) drives `startRoleContentionScan` in `cmd/datawatch/main.go`; every llms write runs `Server.CheckRoleContention`, which audits each warning. `GET /api/llm-roles` returns the table and warnings.
+- PWA "Workload Roles" card under Settings → Automate — **done**: the card and the roles editor in `internal/server/web/app.js`, strings in all five locale files; tests `internal/server/web/app-llm-roles.test.js`, `internal/server/inference_roles_table_test.go`.
 
-### Phase 1 — Session priority wiring (Decision 5, mechanics only) [not started]
+### Phase 1 — Session priority wiring (Decision 5, mechanics only) [done]
 - `session.Session` struct: new `Priority int` field (mirrors
   `autonomous.PRD.Priority`'s shape exactly).
 - Wire into the 4 untouched admission call sites in
@@ -298,8 +298,8 @@ dashboard/alert/scorecard has real data to show).
   the Scheduler UI to surface the operator warning/choice).
 
 **Audit evidence** (audited against the current tree):
-- `Session.Priority int` field — **remaining**: no `Priority` field on the `Session` struct in `internal/session/store.go` (struct at line 49); no priority field anywhere in `internal/session/manager.go`.
-- Wire session priority into the 4 admission call sites — **remaining**: the four `ledger.Request` values in `cmd/datawatch/capacity_wiring.go` (lines 456, 489, 506, 530) never set `Priority`, even though the autonomous path does pass `prd.Priority` (`internal/autonomous/capacity.go:213`); the "independent sessions invisible to fairness" gap is unchanged.
+- `Session.Priority int` field — **done**: `Priority` on the session record in `internal/session/store.go`, validated by `ParsePriority` in `internal/session/priority.go` and set through `Manager.SetPriority`. Start accepts `priority`; `POST /api/sessions/set_priority` changes it; MCP (`set_session_priority`), CLI (`session new --priority`, `session priority`) and the comm channel carry it too, and the PWA session card shows a non-zero value.
+- Wire session priority into the admission call sites — **done**: the `ledger.Request` values in `cmd/datawatch/capacity_wiring.go` and the interactive start in `internal/server/api.go` now set `Priority` from the session; test `cmd/datawatch/capacity_priority_test.go`.
 - Default value + active "play well" computation — **remaining** (owned by Phase 6): no priority default, load-based computation, or operator warning exists in `internal/session` or `internal/server`.
 
 ### Phase 2 — Ledger: rate-ceiling pools + informative admission (Decisions 2, 7) [partly done]

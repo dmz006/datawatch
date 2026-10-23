@@ -350,7 +350,7 @@ paths:
           description: "Absolute path to browse (default: user home directory)"
           schema:
             type: string
-            example: "/home/user/projects"
+            example: "projects"
       responses:
         "200":
           description: Directory entries
@@ -486,7 +486,7 @@ paths:
                 value:
                   task: "refactor the auth module"
                   name: "auth refactor"
-                  project_dir: "/home/user/projects/myapp"
+                  project_dir: "projects/myapp"
                   backend: "aider"
       responses:
         "200":
@@ -2896,6 +2896,103 @@ paths:
       requestBody: {required: true, content: {application/json: {schema: {type: object, required: [id, state], properties: {id: {type: string}, state: {type: string, enum: [running, waiting_input, complete, killed, rate_limited]}}}}}}
       responses: {"200": {description: OK}, "400": {description: Bad state}, "404": {description: Not found}}
 
+  /api/sessions/set_priority:
+    post:
+      summary: Set a session's capacity-queue priority
+      description: Higher priority sessions are admitted first when capacity is contended. Default 0. Identify the session by id or session_name.
+      operationId: sessionSetPriority
+      tags: [Sessions]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [priority]
+              properties:
+                id: {type: string}
+                session_name: {type: string}
+                priority: {type: integer, description: "A whole number; anything else is a 400"}
+      responses:
+        "200": {description: "OK: {status, id, priority}"}
+        "400": {description: Priority is not an integer, or neither id nor session_name was given}
+        "404": {description: Session not found}
+        "409": {description: session_name matches more than one session}
+  /api/llms:
+    get:
+      summary: List LLM registry entries
+      description: Returns the entries plus a status object. status.role_warnings carries the current role-contention warnings.
+      operationId: llmsList
+      tags: [LLMs]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  llms: {type: array, items: {$ref: "#/components/schemas/LLMEntry"}}
+                  status:
+                    type: object
+                    properties:
+                      role_warnings: {type: array, items: {type: string}}
+    post:
+      summary: Create an LLM registry entry
+      description: Roles are trimmed, lower-cased and de-duplicated. An empty role string is a 400. Every write re-runs the role contention check.
+      operationId: llmsCreate
+      tags: [LLMs]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/LLMWriteBody"}
+      responses:
+        "200": {description: Created, content: {application/json: {schema: {$ref: "#/components/schemas/LLMEntry"}}}}
+        "400": {description: Invalid entry, including an empty role}
+  /api/llms/{name}:
+    parameters:
+      - {name: name, in: path, required: true, schema: {type: string}}
+    get:
+      summary: Get one LLM registry entry
+      description: The entry carries role_warnings, the contention warnings that name it.
+      operationId: llmsGet
+      tags: [LLMs]
+      responses:
+        "200": {description: OK, content: {application/json: {schema: {$ref: "#/components/schemas/LLMEntry"}}}}
+        "404": {description: Not found}
+    put:
+      summary: Update an LLM registry entry
+      description: A body that omits roles keeps the stored roles; an empty list clears them.
+      operationId: llmsUpdate
+      tags: [LLMs]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/LLMWriteBody"}
+      responses:
+        "200": {description: Updated, content: {application/json: {schema: {$ref: "#/components/schemas/LLMEntry"}}}}
+        "400": {description: Invalid entry, including an empty role}
+        "404": {description: Not found}
+  /api/llm-roles:
+    get:
+      summary: Resolved workload roles and contention warnings
+      description: |
+        Each claimed role with the registry entry it currently resolves to, plus the contention warnings.
+        Only enabled entries count. When several enabled entries claim one role the first by name wins and a warning says so.
+        It sits beside /api/llms because /api/llms/{name} would shadow a literal roles sub-path.
+      operationId: llmRolesGet
+      tags: [LLMs]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/LLMRoleTable"}
+        "405": {description: Method not allowed}
+        "503": {description: LLM registry disabled}
+
   # Agents
   /api/agents:
     get:
@@ -3758,6 +3855,10 @@ components:
           example: "hal9000-a3f2"
         name:
           type: string
+        priority:
+          type: integer
+          default: 0
+          description: Capacity-queue priority; higher is admitted first when capacity is contended
           description: Optional human-readable name (set at creation or via rename)
           example: "auth refactor"
         task:
@@ -3775,7 +3876,7 @@ components:
         log_file:
           type: string
           description: Path to the session's output log
-          example: "/home/user/.datawatch/logs/hal9000-a3f2.log"
+          example: ".datawatch/logs/hal9000-a3f2.log"
         state:
           $ref: "#/components/schemas/SessionState"
         created_at:
@@ -3807,6 +3908,49 @@ components:
         - `failed`: claude-code exited with error
         - `killed`: session was manually terminated
 
+    LLMEntry:
+      type: object
+      description: An LLM registry entry. Only the fields documented here are covered; the registry holds more (kind, models, compute nodes, budget).
+      properties:
+        name: {type: string}
+        kind: {type: string}
+        enabled: {type: boolean}
+        plan_tier: {type: string}
+        max_inflight: {type: integer, nullable: true}
+        roles:
+          type: array
+          items: {type: string}
+          description: Workloads this entry serves. Open set of strings, stored trimmed, lower-cased and de-duplicated.
+        role_warnings:
+          type: array
+          items: {type: string}
+          description: Contention warnings that name this entry. Set on the single-entry GET only.
+
+    LLMWriteBody:
+      type: object
+      description: Body of an LLM create or update. Only the fields documented here are covered; the other entry fields are accepted as on the entry.
+      properties:
+        name: {type: string}
+        kind: {type: string}
+        roles:
+          type: array
+          items: {type: string}
+          description: Workload roles this entry serves. On update, omit to keep the stored roles; an empty list clears them. An empty role string is rejected.
+
+    LLMRoleTable:
+      type: object
+      properties:
+        roles:
+          type: array
+          items:
+            type: object
+            properties:
+              role: {type: string}
+              entry: {type: string, description: Name of the registry entry the role resolves to}
+        warnings:
+          type: array
+          items: {type: string}
+
     StartSessionRequest:
       type: object
       required: [task]
@@ -3824,7 +3968,7 @@ components:
           description: |
             Absolute path to the project directory. The LLM will be constrained to this tree.
             Defaults to session.default_project_dir from config.
-          example: "/home/user/projects/myapp"
+          example: "projects/myapp"
         backend:
           type: string
           description: |
@@ -3836,6 +3980,10 @@ components:
           default: false
           description: Opt in to git init, snapshot and automatic commit.
           example: true
+        priority:
+          type: integer
+          default: 0
+          description: Capacity-queue priority; higher is admitted first when capacity is contended. A non-integer value is a 400.
 
     CommandRequest:
       type: object

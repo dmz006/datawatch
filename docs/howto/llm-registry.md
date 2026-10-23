@@ -175,6 +175,59 @@ datawatch llm models add claude-code --model claude-opus-4-5
 datawatch llm models add claude-code --model claude-sonnet-5
 ```
 
+## Tag roles on LLMs
+
+A role is a workload label on a registry entry, such as `planning` or
+`verification`. It lets a call site ask for "the LLM that does planning" and
+leaves the choice of entry to the registry. Roles are an open set of strings;
+they are trimmed, lower-cased and de-duplicated, and an empty role is refused.
+
+```sh
+# Tag at creation.
+datawatch llm add big-gpu --kind ollama --role planning --role verification
+
+# Change later. Omitting --role keeps the stored roles.
+datawatch llm update big-gpu --role planning
+
+# A single empty value clears them.
+datawatch llm update big-gpu --role ""
+```
+
+The same `roles` list is accepted by REST (`POST /api/llms`, `PUT
+/api/llms/{name}`), MCP (`llm_add`, `llm_update`), the comm channel
+(`llm add|update <name> roles=planning,verification`; `roles=` clears) and the
+Settings → Compute → LLM edit form.
+
+### How a role resolves
+
+1. **An explicit override wins.** A call site that names a backend or model
+   uses it, and the role lookup is skipped.
+2. **Otherwise the role lookup runs.** Only enabled entries count. One
+   claimant is used. Several claimants are ambiguous: the first by name is
+   used and a warning is raised.
+3. **No claimant** leaves the call site on its normal default.
+
+### The contention warning
+
+The daemon checks roles every `autonomous.role_scan_interval_seconds` (300 by
+default) and again on every LLM write. It warns when:
+
+- two or more enabled entries claim one role (the warning names the role, the
+  entries and the one being used), or
+- roles that pointed at different entries at the previous check now resolve to
+  the same one.
+
+Warnings are advisory and are written to the audit log. Nothing is blocked.
+`GET /api/llms` lists them under `status.role_warnings`, `GET /api/llms/{name}`
+shows the ones that name that entry as `role_warnings`, and `GET /api/llm-roles`
+returns the resolved table with them.
+
+### The Workload Roles card
+
+Settings → Automate has a Workload Roles card. It lists each claimed role and
+the entry it resolves to, with the contention warnings beside it. It reads
+`GET /api/llm-roles`, so it matches what the CLI and REST report.
+
 ## Dispatch by use case
 
 Instead of one flat registry entry per backend, you can define **use-case entries** — named LLMs whose compute node order and model choices are optimized for a specific workload type. Routing rules, session templates, and Automata PRDs can then reference the use-case name rather than a specific model or node.
