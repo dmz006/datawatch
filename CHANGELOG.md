@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.117 — Verifier watchdog, fallback verifier and a lease reaper that spares live verifiers
+
+### Fixed
+
+- **Verification no longer stalls the whole system when one verifier hangs.** A verifier session that produces no output file and no pane activity for a configurable time (`autonomous.verifier_no_progress_timeout_seconds`, default 10 minutes) is ended and recorded as an infra failure that names the watchdog, instead of waiting out the 30-minute limit. After a configurable number of consecutive infra failures on one task (`autonomous.verifier_infra_escalation_threshold`, default 2), the next verification for that task runs on `autonomous.fallback_verification_backend`, and the switch is recorded in the task and the audit log. The capacity lease reaper no longer frees the lease of a verifier that is still running, and after a daemon restart duplicate verifier sessions for one task are reconciled instead of left behind. Verifier queue wait, run time and failure counts are reported in the capacity API and the status text.
+
 ## v9.5.116 — Capacity ledger callbacks no longer wait on the network or the session store
 
 ### Added
