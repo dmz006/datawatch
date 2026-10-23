@@ -199,7 +199,12 @@ func BenchmarkStoreSaveBurst(b *testing.B) {
 }
 
 func TestStoreWriteBudget(t *testing.T) {
+	// Until the budget is enforced the full set only burns disk bandwidth
+	// (gigabytes rewritten) and starves concurrent suites, so use the small set.
 	n := storeBenchSessionCount()
+	if !storeWriteBudgetEnforced {
+		n = storeBenchSmallSessions
+	}
 	st, _ := seedBenchStore(t, t.TempDir(), n)
 	one, err := json.Marshal(st.sessions["bench-0001"])
 	if err != nil {
