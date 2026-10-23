@@ -16,11 +16,13 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"log"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/dmz006/datawatch/internal/federation"
+	"github.com/dmz006/datawatch/internal/orchestrator"
 )
 
 // OrchestratorAPI is the narrow interface the REST layer needs from
@@ -71,6 +73,25 @@ func (s *Server) handleOrchestratorConfig(w http.ResponseWriter, r *http.Request
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// writeOrchestratorDeprecated writes a create, plan or run response with the
+// existing body fields plus the deprecation notice, a Deprecation header, and
+// a once-per-process warning in the daemon log.
+func writeOrchestratorDeprecated(w http.ResponseWriter, tool string, body any) {
+	orchestrator.WarnDeprecatedOnce(tool, log.Printf)
+	notice := orchestrator.DeprecationNotice(tool)
+	w.Header().Set("Deprecation", "true")
+	var m map[string]any
+	if b, err := json.Marshal(body); err == nil {
+		_ = json.Unmarshal(b, &m)
+	}
+	if m == nil {
+		m = map[string]any{"result": body}
+	}
+	m["deprecated"] = true
+	m["deprecation"] = notice
+	writeJSONOK(w, m)
 }
 
 func (s *Server) handleOrchestratorGraphs(w http.ResponseWriter, r *http.Request) {
@@ -135,7 +156,7 @@ func (s *Server) handleOrchestratorGraphs(w http.ResponseWriter, r *http.Request
 				}
 			}
 			s.audit(r.Context(), "create", "orchestrator_graph", "", map[string]any{"title": req.Title, "prd_ids": req.PRDIDs}) // GH#201 Phase 4
-			writeJSONOK(w, g)
+			writeOrchestratorDeprecated(w, "orchestrator_graph_create", g)
 		default:
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
@@ -187,7 +208,7 @@ func (s *Server) handleOrchestratorGraphs(w http.ResponseWriter, r *http.Request
 			return
 		}
 		s.audit(r.Context(), "plan", "orchestrator_graph", id, nil) // GH#201 Phase 4
-		writeJSONOK(w, planned)
+		writeOrchestratorDeprecated(w, "orchestrator_graph_plan", planned)
 	case "run":
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -205,7 +226,7 @@ func (s *Server) handleOrchestratorGraphs(w http.ResponseWriter, r *http.Request
 		// — a false positive here, not a bug.
 		// #nosec G118 -- intentional fire-and-forget, see comment above
 		go s.orchestratorAPI.RunGraph(context.Background(), id) //nolint:errcheck
-		writeJSONOK(w, map[string]any{"status": "running", "id": id})
+		writeOrchestratorDeprecated(w, "orchestrator_graph_run", map[string]any{"status": "running", "id": id})
 	default:
 		http.Error(w, "unknown action: "+action, http.StatusBadRequest)
 	}
