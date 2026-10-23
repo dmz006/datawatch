@@ -1721,6 +1721,7 @@
   "settings_verification_timeout": "Verifizierungs-/Guardrail-Session-Timeout (Sek., 0=30min)",
   "settings_stale_task_seconds": "Stale task timeout (sec, 0=inherit session default)",
   "settings_session_idle_timeout": "Sitzungs-Idle-Timeout (Sek., 0=15min)",
+  "settings_verifier_no_progress_timeout": "Verifier-Timeout ohne Fortschritt (Sek., 0=10min)",
   "settings_worker_idle_nudge": "Worker-Leerlauf-Hinweis (Sek., 0=3min)",
   "settings_worker_idle_nudge_stall": "Worker-Stillstand nach Hinweis (Sek., 0=10min)",
   "settings_session_start_confirm": "Sitzungsstart-Bestätigung (Sekunden)",

@@ -160,6 +160,11 @@ type Config struct {
 	// exists so the handleAutonomousConfig live round-trip
 	// (internal/server/autonomous.go) does not drop the key.
 	SessionIdleTimeoutSeconds int `json:"session_idle_timeout_seconds,omitempty"`
+	// VerifierNoProgressTimeoutSeconds mirrors
+	// autonomous.verifier_no_progress_timeout_seconds in config; like
+	// SessionIdleTimeoutSeconds it is read from config.Config by the daemon
+	// and exists here so the live config round-trip does not drop the key.
+	VerifierNoProgressTimeoutSeconds int `json:"verifier_no_progress_timeout_seconds,omitempty"`
 	// WorkerIdleNudgeSeconds and WorkerIdleNudgeStallSeconds mirror
 	// autonomous.worker_idle_nudge_seconds and
 	// autonomous.worker_idle_nudge_stall_seconds in config. The manager does

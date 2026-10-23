@@ -5860,23 +5860,24 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"plan_tier_allocation_usd": planTierAllocationForDisplay(s.cfg.Autonomous.PlanTierAllocationUSD),
 			"execution_backend":        s.cfg.Autonomous.ExecutionBackend,
 			// BL304: new key + legacy alias.
-			"planning_effort":                 s.cfg.Autonomous.PlanningEffort,
-			"decomposition_effort":            s.cfg.Autonomous.PlanningEffort,
-			"verification_effort":             s.cfg.Autonomous.VerificationEffort,
-			"planning_timeout_seconds":        s.cfg.Autonomous.PlanningTimeoutSeconds,
-			"verification_timeout_seconds":    s.cfg.Autonomous.VerificationTimeoutSeconds,
-			"session_idle_timeout_seconds":    s.cfg.Autonomous.SessionIdleTimeoutSeconds,
-			"session_start_confirm_seconds":   s.cfg.Autonomous.SessionStartConfirmSeconds,
-			"worker_idle_nudge_seconds":       s.cfg.Autonomous.WorkerIdleNudgeSeconds,
-			"worker_idle_nudge_stall_seconds": s.cfg.Autonomous.WorkerIdleNudgeStallSeconds,
-			"capacity_enabled":                s.cfg.Autonomous.CapacityEnabled == nil || *s.cfg.Autonomous.CapacityEnabled,
-			"capacity_wait_timeout_seconds":   s.cfg.Autonomous.CapacityWaitTimeoutSeconds,
-			"capacity_gpu_util_pct":           s.cfg.Autonomous.CapacityGPUUtilPct,
-			"ci_watch_timeout_seconds":        s.cfg.Autonomous.CIWatchTimeoutSeconds,
-			"detail_text_cap_bytes":           s.cfg.Autonomous.DetailTextCapBytes,
-			"per_prd_guardrails":              s.cfg.Autonomous.PerPRDGuardrails, // rules-review, ci-watch
-			"block_on_file_drift":             s.cfg.Autonomous.BlockOnFileDrift, // strict foreign-file-drift enforcement
-			"gate_disagreement":               s.cfg.Autonomous.GateDisagreement, // verifier OK + gate regression: "warn" (default) or "block"
+			"planning_effort":                      s.cfg.Autonomous.PlanningEffort,
+			"decomposition_effort":                 s.cfg.Autonomous.PlanningEffort,
+			"verification_effort":                  s.cfg.Autonomous.VerificationEffort,
+			"planning_timeout_seconds":             s.cfg.Autonomous.PlanningTimeoutSeconds,
+			"verification_timeout_seconds":         s.cfg.Autonomous.VerificationTimeoutSeconds,
+			"session_idle_timeout_seconds":         s.cfg.Autonomous.SessionIdleTimeoutSeconds,
+			"verifier_no_progress_timeout_seconds": s.cfg.Autonomous.VerifierNoProgressTimeoutSeconds,
+			"session_start_confirm_seconds":        s.cfg.Autonomous.SessionStartConfirmSeconds,
+			"worker_idle_nudge_seconds":            s.cfg.Autonomous.WorkerIdleNudgeSeconds,
+			"worker_idle_nudge_stall_seconds":      s.cfg.Autonomous.WorkerIdleNudgeStallSeconds,
+			"capacity_enabled":                     s.cfg.Autonomous.CapacityEnabled == nil || *s.cfg.Autonomous.CapacityEnabled,
+			"capacity_wait_timeout_seconds":        s.cfg.Autonomous.CapacityWaitTimeoutSeconds,
+			"capacity_gpu_util_pct":                s.cfg.Autonomous.CapacityGPUUtilPct,
+			"ci_watch_timeout_seconds":             s.cfg.Autonomous.CIWatchTimeoutSeconds,
+			"detail_text_cap_bytes":                s.cfg.Autonomous.DetailTextCapBytes,
+			"per_prd_guardrails":                   s.cfg.Autonomous.PerPRDGuardrails, // rules-review, ci-watch
+			"block_on_file_drift":                  s.cfg.Autonomous.BlockOnFileDrift, // strict foreign-file-drift enforcement
+			"gate_disagreement":                    s.cfg.Autonomous.GateDisagreement, // verifier OK + gate regression: "warn" (default) or "block"
 			// Plan review gate + smoke verification settings.
 			"plan_review_backend":        s.cfg.Autonomous.PlanReviewBackend,
 			"plan_review_model":          s.cfg.Autonomous.PlanReviewModel,
@@ -7517,6 +7518,12 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// config.NormalizeSessionIdleTimeoutSeconds at read time.
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.Autonomous.SessionIdleTimeoutSeconds = n
+			}
+		case "autonomous.verifier_no_progress_timeout_seconds":
+			// Zero falls back to the default via
+			// config.NormalizeVerifierNoProgressTimeoutSeconds at read time.
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Autonomous.VerifierNoProgressTimeoutSeconds = n
 			}
 		case "autonomous.worker_idle_nudge_seconds":
 			// Zero falls back to the default via
