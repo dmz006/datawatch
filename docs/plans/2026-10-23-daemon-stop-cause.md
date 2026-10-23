@@ -76,13 +76,13 @@ run would be visible and is the last candidate.
 |---|------------------|---------|-----------------------------|---------------------------|
 | 1 | `datawatch stop` CLI — `cmd/datawatch/main.go:9311` (`runStop`), delegates to `systemctl --user stop datawatch` at `main.go:9338` when the unit is active, else raw `os.FindProcess(pid).Signal(syscall.SIGTERM)` at `main.go:9325-9341` | operator on the daemon host | **SIGTERM** (unit stop or direct) — logs `Shutting down... (signal=terminated)`, exits 0, unit left **inactive** | **Yes — full match** (log line + inactive + sessions survive) |
 | 2 | `datawatch restart` CLI — `cmd/datawatch/main.go:9362` (`runRestart`); delegates to `systemctl --user restart` at `main.go:9372`, else SIGTERM at `main.go:9376` then re-runs `datawatch start` | operator on the daemon host | **SIGTERM** (old instance) then a *new* instance started ⇒ unit ends **active** | Log line yes, but "left inactive" **no** (a restart would not leave the unit down) — **ruled out** by post-incident state |
-| 3 | `systemctl --user restart datawatch` as the test's operator path — `internal/session/restart_safety_live_test.go:229-233` (`bl462RestartCommand`, gate `DW_LIVE_RESTART_TEST=1` at `:281`), fired at `:345-348`; same helper used by `internal/session/parked_prd_resume_live_test.go:79` (gate `:106`) and `internal/session/restart_adopt_live_test.go:332` | **only** if someone ran the live tests with `DW_LIVE_RESTART_TEST=1` and `DW_BASE` pointed at the production daemon (explicitly warned at `restart_safety_live_test.go:27-28`: "never point this at production by accident") | **SIGTERM** (old) then systemd starts a new one ⇒ **active** | Log line yes; "left inactive" **no** — **ruled out** unless its exec also failed (not evidenced) |
-| 4 | `POST /api/restart` — `internal/server/api.go:9725` (`handleRestart`), declares `shutdowncause.MarkAPIInitiated("api-restart")` at `:9753`, then calls `s.restartFn()` (wired at `api.go:991-992`, daemon side `cmd/datawatch/main.go:7652-7660`, HTTP variant `:2876-2884`). Restart is **`syscall.Exec` of the daemon itself** (`main.go:7656`, `:2883`) | any API client with federation `config:write` cap (`api.go:9726`) | **No signal** — in-process `exec(2)` of the same PID; **no** `Shutting down...` line at all, unit stays **active** (same PID) | **No — mechanism mismatch** (incident produced the log line and an inactive unit) — **ruled out** |
-| 5 | MCP `restart_daemon` tool — `internal/mcp/server.go:2797` (`handleRestartDaemon`), `MarkAPIInitiated("mcp-restart")` at `:2812`, then `s.restartFn()` (same exec closures as #4; tool registered `server.go:1298`) | any MCP caller with `config:write` cap (`server.go:2798`) | **No signal** — in-process `exec(2)` | **No — mechanism mismatch** — **ruled out** |
+| 3 | `systemctl --user restart datawatch` as the test's operator path — `internal/session/restart_safety_live_test.go:229-233` (`bl462RestartCommand`, gate `DW_LIVE_RESTART_TEST=1` at `:281`), fired at `:345-348`; same helper used by `internal/session/parked_prd_resume_live_test.go:79` (gate `:106`) and `internal/session/restart_adopt_live_test.go:332` | **only** if someone ran the live tests with `DW_LIVE_RESTART_TEST=1` and `DW_BASE` pointed at the production daemon (explicitly warned at `restart_safety_live_test.go:29`: "never point this at production by accident") | **SIGTERM** (old) then systemd starts a new one ⇒ **active** | Log line yes; "left inactive" **no** — **ruled out** unless its exec also failed (not evidenced) |
+| 4 | `POST /api/restart` — `internal/server/api.go:9724` (`handleRestart`), declares `shutdowncause.MarkAPIInitiated("api-restart")` at `:9753`, then calls `s.restartFn()` (wired at `api.go:991-992`, daemon side `cmd/datawatch/main.go:7649-7659`, HTTP variant `:2876-2884`). Restart is **`syscall.Exec` of the daemon itself** (`main.go:7656`, `:2883`) | any API client with federation `config:write` cap (`api.go:9725`) | **No signal** — in-process `exec(2)` of the same PID; **no** `Shutting down...` line at all, unit stays **active** (same PID) | **No — mechanism mismatch** (incident produced the log line and an inactive unit) — **ruled out** |
+| 5 | MCP `restart_daemon` tool — `internal/mcp/server.go:2800` (`handleRestartDaemon`), `MarkAPIInitiated("mcp-restart")` at `:2812`, then `s.restartFn()` (same exec closures as #4; tool registered `server.go:1298`) | any MCP caller with `config:write` cap (`server.go:2801`) | **No signal** — in-process `exec(2)` | **No — mechanism mismatch** — **ruled out** |
 | 6 | Chat-command `restart` — `internal/router/router.go:1358` (`handleRestart`), calls `r.restartFn()` (same exec closure via `main.go:2876-2884`) | the daemon's own chat/pipe user | **No signal** — in-process `exec(2)` | **No — mechanism mismatch** — **ruled out** |
 | 7 | `uninstall.sh` — `install/uninstall.sh:13` (`sudo systemctl stop datawatch`), `:23` (`systemctl --user stop datawatch`), binary removal `:32-33` | operator on the daemon host | **SIGTERM** via unit stop, unit left **inactive** | **Yes** (log line + inactive) — **ruled out only if** the binary/units were still present afterwards (they were — the unit was later restarted, per the incident report) |
-| 8 | Test-daemon teardown — `scripts/run-tests.sh:326-340` (`wait_or_kill`: SIGTERM at `:328`, SIGKILL fallback at `:333`), `stop_test_daemon` at `:342` (kills its own `$DAEMON_PID`, spawned at `:218`); orphan reaper `_kill_orphan_daemon_for` at `:70-76` (`kill` any PID matching `pgrep -f "config.*${dir}/config.yaml"` for stale `/tmp/dw-*` and `datawatch-<hex>` test dirs older than 1 day, called from `:79` and `:85`); `scripts/e2e-pwa.sh:49` (`kill "$DAEMON_PID"`, daemon spawned at `:101`) | whoever ran `run-tests.sh`/`e2e-pwa.sh` | **SIGTERM** (or SIGKILL) — but only to **test daemons** whose cmdline contains a *test* `config.yaml` path (`run-tests.sh:73`) | Production daemon's cmdline contains the *production* config path, not a `/tmp/dw-*` or `datawatch-<hex>` test dir — **ruled out** by path, unless an operator deliberately pointed these at production (no evidence) |
-| 9 | Sandbox teardown — `scripts/sec-assess/sandbox.sh:114` (`kill "$pid"` from `$PIDF`, spawned at its own `start` around `:95`), SIGKILL fallback `:119`; self-describes as the only teardown path, `:19` | whoever ran `sandbox.sh wipe` | **SIGTERM** then SIGKILL — only for the sandbox's own PID | **No** — kills only the PID it spawned itself — **ruled out** |
+| 8 | Test-daemon teardown — `scripts/run-tests.sh:326-340` (`wait_or_kill`: SIGTERM at `:328`, SIGKILL fallback at `:333`), `stop_test_daemon` at `:342` (kills its own `$DAEMON_PID`, spawned at `:218`); orphan reaper `_kill_orphan_daemon_for` at `:70-76` (`kill` any PID matching `pgrep -f "config.*${dir}/config.yaml"` for stale `/tmp/dw-test-*` / `/tmp/dw-docker-sim-*` dirs older than 1 day (`:78`, called from `:79`) and `datawatch-<hex>` dirs under the repo parent older than 3 days (`:84`, called from `:85`)); `scripts/e2e-pwa.sh:49` (`kill "$DAEMON_PID"`, daemon spawned at `:101`) | whoever ran `run-tests.sh`/`e2e-pwa.sh` | **SIGTERM** (or SIGKILL) — but only to **test daemons** whose cmdline contains a *test* `config.yaml` path (`run-tests.sh:73`) | Production daemon's cmdline contains the *production* config path, not a `/tmp/dw-*` or `datawatch-<hex>` test dir — **ruled out** by path, unless an operator deliberately pointed these at production (no evidence) |
+| 9 | Sandbox teardown — `scripts/sec-assess/sandbox.sh:114` (`kill "$pid"` from `$PIDF`, spawned by its own `start` at `:98` (PID written at `:99`)), SIGKILL fallback `:119`; self-describes as the only teardown path, `:19` | whoever ran `sandbox.sh wipe` | **SIGTERM** then SIGKILL — only for the sandbox's own PID | **No** — kills only the PID it spawned itself — **ruled out** |
 | 10 | `scripts/eval-model-tiering.sh:270-271` — `kill -TERM` of its own per-tier child + mock task PID (`$tmp/task.pid`) during its SIGTERM self-test | whoever ran the tiering eval | **SIGTERM** — only its own subprocess tree | **No** — does not touch the daemon — **ruled out** |
 | 11 | Auto-updater — `cmd/datawatch/main.go:8480` (`runAutoUpdater`); on a new version it installs the binary then `syscall.Exec`s the daemon in place at `:8519` (same PID, **no** `Shutting down...` line, unit stays active); its exec-failure message at `:8520` says "run `datawatch stop && datawatch start`" | runs inside the daemon when `update.schedule` is set (default schedule string at `:8482-8490`, e.g. `daily`) | **No signal** — in-process `exec(2)` | **No — mechanism mismatch** — **ruled out** |
 | 12 | `datawatch update` (operator) — `cmd/datawatch/main.go:13248` (`runUpdate`); installs the new binary and **tells the operator** to run `datawatch stop && datawatch start` (messages at `:13284`, `:13296`); it never signals the daemon itself | operator on the daemon host | **None directly** — the *follow-up* `datawatch stop` is path #1 | The update itself is **ruled out**; a follow-up manual `datawatch stop` is path #1 |
@@ -154,8 +154,8 @@ daemon is either (a) scoped to test/sandbox daemons (#8/#9), (b) self-scoped
 (#4/#5/#6). Nothing in `scripts/`, `.github/`, `install/`, `Makefile`,
 `docker/`, `deploy/`, or the daemon itself schedules or automates a
 production SIGTERM stop, and no kill-by-name path exists in the tree. The new
-shutdown-cause recorder (`internal/shutdowncause/`, invoked at
-`cmd/datawatch/main.go:1812`, persisted as `last-shutdown.json` and surfaced
+shutdown-cause recorder (`internal/shutdowncause/`, defined and invoked from the signal handler at
+`cmd/datawatch/main.go:1811`/`:1856`, persisted as `last-shutdown.json` and surfaced
 at startup via `PreviousShutdownLine` at `main.go:958`) will attribute the
 *next* occurrence (it captures source, sender PID/uid/cmdline, and any
 systemd stop job — `internal/shutdowncause/cause.go:18-20`), but it was not in
@@ -180,7 +180,7 @@ grep -rn -E 'syscall.Kill|unix.Kill|os.FindProcess|SendSignal|Signal\(' \
 grep -rn -E 'restart_daemon|"/api/restart"|api/restart' \
   scripts/ tests/ internal/ cmd/ install/ .github/ Makefile docker/ deploy/
 
-grep -rn 'pkill|killall' scripts/ tests/ internal/ cmd/ install/ .github/ Makefile docker/ deploy/
+grep -rn -E 'pkill|killall' scripts/ tests/ internal/ cmd/ install/ .github/ Makefile docker/ deploy/
 
 grep -rn -E 'stop|restart|kill|update' .github/workflows/ | grep -iE 'datawatch|daemon'
 
@@ -200,15 +200,25 @@ cat install/uninstall.sh
 grep -n 'Restart=|ExecStart=' install/install.sh install/systemd/datawatch.service deploy/systemd/*.service
 ```
 
-Plus direct reads of: `cmd/datawatch/main.go:1812-1860` (handler),
-`:8480-8525` (auto-updater), `:9298-9400` (stop/restart CLI),
-`:13238-13300` (update), `:2876-2884`/`:7652-7660` (restart closures);
-`internal/server/api.go:9723-9761`; `internal/mcp/server.go:2797-2816`;
-`internal/router/router.go:1358-1368`;
-`internal/session/restart_safety_live_test.go:195-265`,
-`parked_prd_resume_live_test.go:1-60`, `restart_adopt_live_test.go:332`;
-`scripts/run-tests.sh:55-95`, `:305-400`; `scripts/e2e-pwa.sh:40-55`, `:101`;
-`scripts/sec-assess/sandbox.sh:95-125`; `scripts/eval-model-tiering.sh:235-280`;
-`.github/workflows/owasp-zap.yaml:140-185`, `:230-245`;
-`install/uninstall.sh` (full); `install/install.sh:488-545`;
-`internal/shutdowncause/cause.go:1-40`, `capture_linux.go:191-274`.
+Plus direct reads of: `cmd/datawatch/main.go:1840-1870` (signal handler),
+`:7645-7665` (server restart closure), `:8480-8525` (auto-updater),
+`:9231-9395` (`systemdMainPID`, `systemdUnitName` at `:9224`,
+`delegateToSystemd`, stop/restart CLI), `:13280-13300` (update),
+`:2870-2890` (router restart closure);
+`internal/server/api.go:9715-9765`; `internal/server/server.go:1062-1064`;
+`internal/mcp/server.go:2790-2820`; `internal/router/router.go:1039-1040,
+:1358-1363`;
+`internal/session/restart_safety_live_test.go:24-43, :213-282, :345`,
+`parked_prd_resume_live_test.go:79, :106-107`, `restart_adopt_live_test.go:332`;
+`scripts/run-tests.sh:70-86, :326-354`; `scripts/e2e-pwa.sh:48-50, :101`;
+`scripts/sec-assess/sandbox.sh:15-22, :88-100, :113-119`;
+`scripts/eval-model-tiering.sh:270-271`;
+`.github/workflows/owasp-zap.yaml:158-161, :238-241`;
+`install/uninstall.sh` (full); `install/install.sh:488-490, :510-512,
+:528-530, :543-545`; `install/systemd/datawatch.service:12-14`;
+`install/systemd/install-service.sh:13-15`; `Makefile:203-207`;
+`deploy/systemd/datawatch-stats.service:35-40`;
+`internal/shutdowncause/cause.go:14-24`, `capture_linux.go:188-195, :266-274`.
+
+All line numbers were re-verified with `grep -n`/`sed -n` against the
+current tree on 2026-10-23 (session h-87ec).
