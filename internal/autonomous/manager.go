@@ -824,6 +824,12 @@ type Manager struct {
 	// Nil = context enrichment silently skipped.
 	memoryContextFn func(ctx context.Context, projectDir, query string, topK int) (string, error)
 
+	// decisionModelFn and decisionTimeout back the decision assistant: the
+	// model call (nil = unreachable, every decision escalates) and its per-call
+	// timeout (zero = DefaultDecisionModelTimeout).
+	decisionModelFn func(ctx context.Context, backend, model, prompt string) (string, error)
+	decisionTimeout time.Duration
+
 	// memoryCrossSeedFn (BL387 Phase 2b) — when set, called at PRD first-run
 	// for each entry in MemorySeed.FromPRDs. Seeds the referenced PRD's
 	// prd-shared into this PRD's prd-shared. Nil = cross-PRD seeding skipped.
