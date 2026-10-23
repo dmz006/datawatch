@@ -9,6 +9,7 @@
 package autonomous
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -470,6 +471,46 @@ func (m *Manager) SkipMember(id, memberID, edge string, actor string, expectedVe
 		"automation_id": id, "actor": actor, "member": target, "edge": edge, "version": updated.Version,
 	})
 	return updated, nil
+}
+
+// AssistSkipStuckMember asks the decision assistant whether a stuck member
+// should be skipped, and skips it when the assistant is live, confident at the
+// hook's threshold, and picks skip_member:<edge>. stuck describes why the
+// member is stuck. Below the threshold, on any escalate result and in shadow
+// mode the member is left alone: nothing is skipped and the Automation is
+// unchanged apart from the recorded Decision. A started member is never
+// skipped on a low-confidence answer.
+func (m *Manager) AssistSkipStuckMember(ctx context.Context, id, memberID, stuck string) (AssistantResult, *Automation, error) {
+	a, err := m.loadForControl(id, m.currentVersion(id), AutomationActive, AutomationPaused)
+	if err != nil {
+		return AssistantResult{}, nil, err
+	}
+	target, err := resolveBranch(a, memberID)
+	if err != nil {
+		return AssistantResult{}, nil, err
+	}
+	mem := automationMember(a, target)
+	if mem == nil || !m.assistantHookOn(id, target, DecisionHookSkipMember) {
+		return AssistantResult{Outcome: AssistantEscalate, Hook: DecisionHookSkipMember, Reason: "decision assistant is off or the hook is disabled"}, a, nil
+	}
+	options := append(skipEdgeOptions(mem, ""), assistOptionKeepWaiting, assistOptionNeedsOperator)
+	res := m.decide(ctx, id, target, DecisionHookSkipMember, DecisionEvidence{
+		MemberID:      target,
+		FailureReason: stuck,
+		Progress:      automationProgress(a),
+	}, options)
+	if !res.Actionable() {
+		return res, a, nil
+	}
+	edge, ok := skipOptionEdge(res.Option)
+	if !ok {
+		return res, a, nil // keep_waiting or needs_operator: nothing to do
+	}
+	updated, err := m.SkipMember(id, target, edge, m.assistantActorFor(id, target), m.currentVersion(id))
+	if err != nil {
+		return res, a, err
+	}
+	return res, updated, nil
 }
 
 // RemoveMember removes a member that has not started and has no outgoing

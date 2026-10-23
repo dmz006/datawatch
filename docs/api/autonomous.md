@@ -535,6 +535,7 @@ the other writes. A `GET`, `PUT` or `DELETE` on one of these paths is a
 | `POST /api/automations/{id}/reorder_edges` | `active`, `paused` | Rewires the outgoing edges of a member that has not started. |
 | `POST /api/automations/{id}/approve_insert` | `draft`, `active`, `paused`, `blocked` | Promotes a pending insert into the graph (operator only). |
 | `POST /api/automations/{id}/set_budget` | `draft`, `active`, `paused`, `blocked` | Sets, replaces or clears the spending limit of the Automation, or of one member that has not finished (see "Spending limit"). Does not change the status. |
+| `POST /api/automations/{id}/set_decision_assistant` | `draft`, `active`, `paused`, `blocked` | Sets or clears the optional local-model decision assistant of the Automation, or of one member (default off; see "Decision assistant"). Does not change the status. |
 
 **Request body.** Every endpoint takes a JSON object. All fields are
 optional on the wire, but each operation has the fields it needs.
@@ -545,7 +546,7 @@ optional on the wire, but each operation has the fields it needs.
 | `actor` | all | Who is acting, recorded in the audit trail. Defaults to `operator`. An agent or session passes `agent:<id>` or `session:<id>`. |
 | `reason` | all | Free text recorded with the audit entry and the Automation's decision log. Required by `insert_member`. |
 | `cancel_in_flight` | `cancel` | Boolean, required, no default. See below. |
-| `member_id` | `skip_member`, `remove_member`, `reorder_edges`, `approve_insert`, `set_budget` | The member to act on. For `approve_insert` it is the pending insert's ID, which is also the ID the member gets once approved. For `skip_member` it names the branch to act on in a forked Automation (see "Branches"). |
+| `member_id` | `skip_member`, `remove_member`, `reorder_edges`, `approve_insert`, `set_budget`, `set_decision_assistant` | The member to act on. For `approve_insert` it is the pending insert's ID, which is also the ID the member gets once approved. For `skip_member` it names the branch to act on in a forked Automation (see "Branches"). |
 | `edge` | `skip_member` | `on_complete` (default when omitted), `on_blocked` or `on_failed`. Any other value is a `400`. |
 | `on_complete`, `on_blocked`, `on_failed` | `reorder_edges` | The member ID each edge now names. An edge that is left out or empty becomes no next member, so send all three edges you want to keep. A target must exist and must not have started. |
 | `member` | `insert_member` | Object `{"prd_id": "...", "name": "..."}`. `prd_id` is required. `name` is an optional display name. |
@@ -554,6 +555,8 @@ optional on the wire, but each operation has the fields it needs.
 | `ceiling_type`, `ceiling_value`, `window`, `pacing`, `on_breach`, `backend`, `allocation_estimate`, `peer_window`, `reset_time`, `reset_weekday`, `reset_day`, `reset_zone` | `set_budget` | The spending limit. They replace the whole limit; see "Spending limit". |
 | `estimated_cost_usd` | `set_budget` | With `member_id`: the member's expected cost in dollars (a number, `0` removes it). Alone it changes only the estimate. |
 | `clear` | `set_budget` | Boolean. `true` removes the limit; it cannot be combined with any policy field or `estimated_cost_usd`. |
+| `backend`, `model`, `mode`, `hooks`, `thresholds` | `set_decision_assistant` | The decision assistant. They replace the whole setting; see "Decision assistant". `backend` and `model` are required together; an empty `backend` turns it off. |
+| `clear` | `set_decision_assistant` | Boolean. `true` turns the assistant off; it cannot be combined with `backend`, `model`, `mode`, `hooks` or `thresholds`. |
 
 **Responses.** `200` returns the updated Automation (same shape as
 `GET /api/automations/{id}`).
@@ -566,6 +569,37 @@ optional on the wire, but each operation has the fields it needs.
 | 409 | Stale or omitted `expected_version`. The Automation is in a state the operation does not allow (the message names the state and the states it needs). A draft that needs activating first. A member that has started and so cannot be removed or rewired. A PRD that is already a member, already pending, or owned by another Automation. A second urgent insert while one is pending. An `approve_insert` by anyone but the operator. |
 | 500 | `cancel` only: the Automation is cancelled, but ending one or more in-flight member sessions failed. The message names the members. |
 | 503 | Autonomous is disabled, or the daemon has no Automation control support. |
+
+#### Decision assistant (`set_decision_assistant`)
+
+An Automation, or one of its members, can hand a bounded judgment call to a
+configured local model instead of a hardcoded default or an operator stop. It
+is **off by default**. The setting is `decision_assistant` on the record, and a
+member's setting wins over the Automation's.
+
+```
+POST /api/automations/3fa9c2d1/set_decision_assistant
+{"backend": "pi-prompt", "model": "qwen3.8:27b", "mode": "shadow",
+ "hooks": ["empty_edge", "budget_breach"], "thresholds": {"empty_edge": 0.85},
+ "expected_version": 4, "actor": "operator"}
+```
+
+`mode` is `shadow` (the default; records what the assistant would have done)
+or `live` (acts on a decision at or above the hook's threshold). `hooks` are
+`empty_edge`, `skip_member`, `insert_member` and `budget_breach`; none enabled
+means no hook consults the assistant. `thresholds` map a hook to a confidence
+in `(0,1]`; the defaults are `0.9`, and `0.95` for `budget_breach`. Below the
+threshold the assistant escalates to the operator. `member_id` targets one
+member; `{"clear": true}` or an empty `backend` turns the assistant off. The
+assistant only chooses among already-allowed options: destroying state or
+history, raising a budget ceiling and any action a guardrail marks as needing
+human sign-off stay with the operator.
+
+Errors: `400` for an unknown backend, hook or mode, a threshold outside
+`(0,1]`, a backend without a model, or `clear` combined with settings; `404`
+for an unknown Automation or member; `409` for a stale `expected_version` or a
+completed or cancelled Automation. The audit entry is
+`automation_set_decision_assistant`.
 
 #### Spending limit (`set_budget`)
 
@@ -720,7 +754,8 @@ resource: `automation_pause`, `automation_resume`, `automation_cancel`
 (with `cancel_in_flight` and the members that were in flight),
 `automation_skip_member`, `automation_insert_member`,
 `automation_remove_member`, `automation_reorder_edges`,
-`automation_approve_insert` and `automation_set_budget` (with the policy
+`automation_approve_insert`, `automation_set_decision_assistant` (with the
+backend, model, mode and hooks, or `cleared`) and `automation_set_budget` (with the policy
 that was set, or `clear`). The limit also writes `automation_budget_breach`
 (once per breach, again when a pause turns into a block; details: Automation,
 scope, spent, ceiling, window, what it did, and the reset time when known) and

@@ -1479,6 +1479,13 @@ func (a *API) SetAutomationVerificationLLM(id string, backend, model, effort *st
 	return controlResult(got, err)
 }
 
+// SetAutomationDecisionAssistant sets or clears (nil) the decision assistant of
+// an Automation (memberID "") or of one member.
+func (a *API) SetAutomationDecisionAssistant(id, memberID, actor string, da *DecisionAssistant, expectedVersion int64) (any, error) {
+	got, err := a.M.SetDecisionAssistant(id, memberID, actor, da, expectedVersion)
+	return controlResult(got, err)
+}
+
 // ResumeAutomation moves a paused Automation back to active.
 func (a *API) ResumeAutomation(id, actor string, expectedVersion int64) (any, error) {
 	got, err := a.M.ResumeAutomation(id, actor, expectedVersion)

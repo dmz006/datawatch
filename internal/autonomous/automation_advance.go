@@ -91,6 +91,12 @@ type stepInput struct {
 	// now is the step's clock reading, set by the coordinator so tests control
 	// time; zero means the wall clock.
 	now time.Time
+	// emptyEdgeAsked and breachAsked record that the decision assistant was
+	// already consulted for this event, so a retry does not ask again.
+	emptyEdgeAsked bool
+	breachAsked    bool
+	// breachChoice is the breach response the assistant chose: pause or block.
+	breachChoice string
 }
 
 // memberStart is one member start to perform after the write wins.
@@ -137,6 +143,9 @@ type stepper struct {
 	now     time.Time
 	advNote string // the advance Decision note for a cursor move or completion
 	idle    bool   // the cursor moved onto a member that was not started
+	// breachChoice overrides the budget policy's on_breach for a gate this step
+	// hits; empty keeps the policy.
+	breachChoice string
 }
 
 // step computes one advance on a for the ended member in, mutating a in place.
@@ -156,7 +165,7 @@ func step(a *Automation, in stepInput, snap map[string]memberInfo) (*stepEffects
 	if in.end.revert && mem.Status != MemberRunning {
 		return nil, errStaleStep
 	}
-	st := &stepper{a: a, snap: snap, eff: &stepEffects{details: map[string]any{}}, now: in.at()}
+	st := &stepper{a: a, snap: snap, eff: &stepEffects{details: map[string]any{}}, now: in.at(), breachChoice: in.breachChoice}
 	if join := joinOf(a, mem.ID); join != nil {
 		// A fork branch carries no outcome edge: its end is recorded on the join.
 		end := in.end

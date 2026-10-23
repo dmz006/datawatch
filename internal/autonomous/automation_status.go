@@ -45,6 +45,9 @@ func (m *Manager) automationStatusSummaries(now time.Time) []AutomationStatusSum
 			ActiveCursors: activeCursorSummaries(a),
 			JoinWait:      joinWaitSummary(a),
 		}
+		if a.DecisionAssistant.enabled() {
+			s.DecisionAssistant = cloneDecisionAssistant(a.DecisionAssistant)
+		}
 		if automationIsLinear(a) {
 			s.CurrentMemberID = a.CurrentMemberID
 		}

@@ -10,6 +10,7 @@
 //   automation_import_graph — convert an orchestrator graph to a draft Automation
 //   automation_activate — start a draft Automation
 //   automation_set_llm / automation_set_verification_llm — Automation LLM defaults
+//   automation_set_decision_assistant — optional local-model decision assistant
 
 package mcp
 
@@ -506,6 +507,107 @@ func (s *Server) handleAutomationSetVerificationLLM(_ context.Context, req mcpsd
 	return s.automationLLMCall(req, "set_verification_llm", automationVerificationLLMFields)
 }
 
+// ── automation_set_decision_assistant ───────────────────────────────────
+
+const automationSetDecisionAssistantDesc = "Set or clear the local-model decision assistant of an Automation, or of one member (member_id). " +
+	"The assistant is off by default. When set, a configured backend and model picks among already-allowed options at the enabled hook points " +
+	"(empty_edge, skip_member, insert_member, budget_breach); it never allows an action that is otherwise disallowed, and below a hook's confidence threshold it escalates to the operator. " +
+	"mode shadow (the default) only records what the assistant would have done; live acts on a decision at or above the threshold. " +
+	"The fields replace the whole setting; clear=true, or an empty backend, turns the assistant off. A member's setting wins over the Automation's. " +
+	"Allowed while the Automation is draft, active, paused or blocked. automation_get and the status rows return the setting as decision_assistant."
+
+func (s *Server) toolAutomationSetDecisionAssistant() mcpsdk.Tool {
+	opts := append(automationLLMBase(automationSetDecisionAssistantDesc),
+		mcpsdk.WithString("member_id", mcpsdk.Description("Set the override of this member instead of the Automation's own setting.")),
+		mcpsdk.WithString("backend", mcpsdk.Description("LLM backend of the assistant (an LLM registry name); empty turns the assistant off.")),
+		mcpsdk.WithString("model", mcpsdk.Description("Model of the assistant; required with a backend.")),
+		mcpsdk.WithString("mode", mcpsdk.Description("shadow (the default; record only) or live (act on decisions at or above the threshold).")),
+		mcpsdk.WithArray("hooks", mcpsdk.WithStringItems(), mcpsdk.Description("Hook points the assistant is enabled for: empty_edge, skip_member, insert_member, budget_breach. None enabled means no hook consults it.")),
+		mcpsdk.WithObject("thresholds", mcpsdk.Description("Per-hook confidence threshold overrides, hook name to a number in (0,1]. A hook without one uses its conservative default (0.9, budget_breach 0.95).")),
+		mcpsdk.WithBoolean("clear", mcpsdk.Description("Turn the assistant off. Cannot be combined with the setting fields.")),
+	)
+	return mcpsdk.NewTool("automation_set_decision_assistant", opts...)
+}
+
+func (s *Server) handleAutomationSetDecisionAssistant(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	id := req.GetString("automation_id", "")
+	if id == "" {
+		return mcpsdk.NewToolResultText("error: automation_id is required"), nil
+	}
+	args := req.GetArguments()
+	body := map[string]any{}
+	// backend and model are forwarded when present, so an empty backend clears.
+	for _, k := range []string{"backend", "model", "mode", "member_id"} {
+		v, present := args[k]
+		if !present || v == nil {
+			continue
+		}
+		str, ok := v.(string)
+		if !ok {
+			return mcpsdk.NewToolResultText("error: " + k + " must be a string"), nil
+		}
+		if k == "backend" || k == "model" || str != "" {
+			body[k] = str
+		}
+	}
+	if v, present := args["hooks"]; present && v != nil {
+		var hooks []string
+		switch list := v.(type) {
+		case []string:
+			hooks = list
+		case []any:
+			for _, e := range list {
+				h, isStr := e.(string)
+				if !isStr {
+					return mcpsdk.NewToolResultText("error: hooks must be an array of strings"), nil
+				}
+				hooks = append(hooks, h)
+			}
+		default:
+			return mcpsdk.NewToolResultText("error: hooks must be an array of strings"), nil
+		}
+		if len(hooks) > 0 {
+			body["hooks"] = hooks
+		}
+	}
+	if v, present := args["thresholds"]; present && v != nil {
+		obj, ok := v.(map[string]any)
+		if !ok {
+			return mcpsdk.NewToolResultText("error: thresholds must be an object of hook name to number"), nil
+		}
+		thresholds := make(map[string]float64, len(obj))
+		for hook, tv := range obj {
+			n, isNum := controlNumber(tv)
+			if !isNum {
+				return mcpsdk.NewToolResultText("error: threshold for " + hook + " must be a number"), nil
+			}
+			thresholds[hook] = n
+		}
+		if len(thresholds) > 0 {
+			body["thresholds"] = thresholds
+		}
+	}
+	if v, present := args["clear"]; present && v != nil {
+		b, ok := v.(bool)
+		if !ok {
+			return mcpsdk.NewToolResultText("error: clear must be true or false"), nil
+		}
+		if b {
+			body["clear"] = true
+		}
+	}
+	if v, ok := controlVersion(args["expected_version"]); ok && v != 0 {
+		body["expected_version"] = v
+	}
+	optionalString(req, body, "actor")
+	optionalString(req, body, "reason")
+	data, err := s.proxyJSON(http.MethodPost, "/api/automations/"+id+"/set_decision_assistant", body)
+	if err != nil {
+		return mcpsdk.NewToolResultText("error: " + err.Error()), nil
+	}
+	return mcpsdk.NewToolResultText(string(data)), nil
+}
+
 // ── automation_set_budget ───────────────────────────────────────────────
 
 const automationSetBudgetDesc = "Set, replace or clear the budget policy of an Automation, or the override of one member (member_id), as an operator control operation. " +
@@ -643,7 +745,7 @@ func AutomationToolNames() []string {
 		s.toolAutomationPause(), s.toolAutomationResume(), s.toolAutomationCancel(),
 		s.toolAutomationSkipMember(), s.toolAutomationInsertMember(), s.toolAutomationRemoveMember(),
 		s.toolAutomationReorderEdges(), s.toolAutomationApproveInsert(), s.toolAutomationSetLLM(),
-		s.toolAutomationSetVerificationLLM(), s.toolAutomationSetBudget(), s.toolAutomationImportGraph(),
+		s.toolAutomationSetVerificationLLM(), s.toolAutomationSetBudget(), s.toolAutomationSetDecisionAssistant(), s.toolAutomationImportGraph(),
 		// The automations[] array on the status response.
 		s.toolAutonomousStatus(),
 	}

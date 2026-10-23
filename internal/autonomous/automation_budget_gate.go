@@ -12,6 +12,7 @@
 package autonomous
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -36,6 +37,9 @@ type budgetEffect struct {
 	verdict BudgetVerdict
 	reason  string
 	changed bool
+	// memberID is the member whose start the gate refused; empty when only the
+	// Automation-level state was recorded.
+	memberID string
 }
 
 // budgetRefusedError is returned by ResumeAutomation while the Automation is
@@ -127,6 +131,9 @@ func applyBudgetGate(a *Automation, mem *AutomationMember, v BudgetVerdict, now 
 	}
 	prev := a.BudgetState
 	eff := &budgetEffect{verdict: v, reason: v.Reason}
+	if mem != nil {
+		eff.memberID = mem.ID
+	}
 
 	if v.Kind != BudgetKindCeiling {
 		eff.action = BudgetActionHeld
@@ -143,6 +150,9 @@ func applyBudgetGate(a *Automation, mem *AutomationMember, v BudgetVerdict, now 
 	onBreach := "pause"
 	if v.Policy != nil {
 		onBreach = v.Policy.EffectiveOnBreach()
+	}
+	if v.assistantOnBreach == assistBreachPause || v.assistantOnBreach == assistBreachBlock {
+		onBreach = v.assistantOnBreach
 	}
 	switch {
 	case noWait:
@@ -240,6 +250,35 @@ func (c *Coordinator) budgetBlockedAlert(a *Automation, eff *budgetEffect, memID
 	}
 	c.emitTerminal(a)
 	c.blocked(a, eff.reason, map[string]any{"to": memID})
+}
+
+// assistBreach consults the decision assistant when a step's budget gate hit a
+// dollar ceiling and would pause or block. It chooses only between those two
+// responses: a live pick sets in.breachChoice for the step to apply; the
+// ceiling is never touched and in-flight work is never cancelled. It reports
+// true when a Decision was written, so the caller re-reads the Automation.
+func (c *Coordinator) assistBreach(autoID string, eff *budgetEffect, in *stepInput) bool {
+	if eff == nil || !eff.changed || eff.verdict.Kind != BudgetKindCeiling || eff.action == BudgetActionHeld {
+		return false
+	}
+	if !c.m.assistantHookOn(autoID, eff.memberID, DecisionHookBudgetBreach) {
+		return false
+	}
+	in.breachAsked = true
+	a, ok := c.m.automations.Get(autoID)
+	if !ok {
+		return false
+	}
+	v := eff.verdict
+	res := c.m.decide(context.Background(), autoID, eff.memberID, DecisionHookBudgetBreach, DecisionEvidence{
+		MemberID: eff.memberID,
+		Progress: automationProgress(a),
+		Spend:    fmt.Sprintf("spent $%.2f of a $%.2f ceiling (%s); reset time known: %t", v.SpentUSD, v.CeilingUSD, v.Scope, v.ResetKnown),
+	}, []string{assistBreachPause, assistBreachBlock})
+	if res.Actionable() {
+		in.breachChoice = res.Option
+	}
+	return true
 }
 
 // checkBudget is the ticker's budget pass. It resumes a budget pause whose reset
@@ -368,6 +407,7 @@ func stepStartPending(a *Automation, in stepInput, snap map[string]memberInfo) (
 // budgetGate gates the start of next on its verdict v: the cursor moves onto
 // the member and nothing starts.
 func (st *stepper) budgetGate(next *AutomationMember, v BudgetVerdict) {
+	v.assistantOnBreach = st.breachChoice
 	eff := applyBudgetGate(st.a, next, v, st.now, false)
 	st.eff.budget = eff
 	if eff.action == BudgetActionBlocked {

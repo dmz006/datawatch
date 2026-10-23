@@ -55,6 +55,9 @@ Subcommands:
   set-verification-llm <id>  Set the verification LLM (--backend, --model, --effort;
                       an empty value clears)
   set-budget <id>     Set, replace or clear the budget policy of an Automation or one member
+  set-decision-assistant <id>  Set or clear the local-model decision assistant (off by default;
+                      --backend, --model, --mode shadow|live, --hooks, --threshold hook=value,
+                      --member, --clear)
   import-graph <graph-id>  Turn an orchestrator graph into a draft Automation (--dry-run previews it)
 
 Every control takes --actor, --reason and --expected-version; a stale
@@ -78,6 +81,7 @@ expected version is refused with HTTP 409.`,
 	cmd.AddCommand(newAutomationSetLLMCmd())
 	cmd.AddCommand(newAutomationSetVerificationLLMCmd())
 	cmd.AddCommand(newAutomationSetBudgetCmd())
+	cmd.AddCommand(newAutomationSetDecisionAssistantCmd())
 	cmd.AddCommand(newAutomationImportGraphCmd())
 	return cmd
 }
@@ -383,6 +387,8 @@ var automationControlOps = map[string]string{
 	"set-llm":              "set_llm",
 	"set-verification-llm": "set_verification_llm",
 	"set-budget":           "set_budget",
+
+	"set-decision-assistant": "set_decision_assistant",
 }
 
 // runAutomationControl posts a control request for a subcommand verb and
@@ -663,6 +669,118 @@ func newAutomationSetVerificationLLMCmd() *cobra.Command {
 	return cmd
 }
 
+// decisionAssistantThresholds parses repeated --threshold hook=value flags.
+func decisionAssistantThresholds(specs []string) (map[string]float64, error) {
+	if len(specs) == 0 {
+		return nil, nil
+	}
+	out := make(map[string]float64, len(specs))
+	for _, spec := range specs {
+		hook, val, ok := strings.Cut(spec, "=")
+		if !ok || strings.TrimSpace(hook) == "" {
+			return nil, fmt.Errorf("--threshold %q: want <hook>=<value>, such as budget_breach=0.95", spec)
+		}
+		n, err := strconv.ParseFloat(strings.TrimSpace(val), 64)
+		if err != nil {
+			return nil, fmt.Errorf("--threshold %q: %q is not a number", spec, val)
+		}
+		out[strings.TrimSpace(hook)] = n
+	}
+	return out, nil
+}
+
+func newAutomationSetDecisionAssistantCmd() *cobra.Command {
+	var f automationControlFlags
+	var member, backend, model, mode string
+	var hooks, thresholds []string
+	var clear bool
+	cmd := &cobra.Command{
+		Use:   "set-decision-assistant <id>",
+		Short: "Set or clear the local-model decision assistant of an Automation or one member",
+		Long: `Set the optional decision assistant of an Automation, or of one member with
+--member. It is off by default. The assistant is a configured backend and model
+that picks among already-allowed options at the enabled hook points (empty_edge,
+skip_member, insert_member, budget_breach); it never allows an action that is
+otherwise disallowed, and below a hook's confidence threshold it escalates to
+the operator.
+
+--backend and --model are required together. --mode is shadow (the default;
+records what the assistant would have done) or live (acts on a decision at or
+above the threshold). --hooks lists the enabled hook points, comma separated.
+--threshold hook=value (repeatable) overrides one hook's confidence threshold,
+a number in (0,1]; the defaults are 0.9 and 0.95 for budget_breach. The flags
+replace the whole setting. --clear, or an empty --backend, turns the assistant
+off; --clear cannot be combined with the setting flags.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			fl := cmd.Flags()
+			setting := []string{"backend", "model", "mode", "hooks", "threshold"}
+			named := false
+			for _, n := range setting {
+				named = named || fl.Changed(n)
+			}
+			if clear && named {
+				return fmt.Errorf("--clear cannot be combined with --backend, --model, --mode, --hooks or --threshold")
+			}
+			if !clear && !named {
+				return fmt.Errorf("name --backend and --model to set the decision assistant, or --clear to turn it off")
+			}
+			body := f.body(cmd)
+			if member != "" {
+				body["member_id"] = member
+			}
+			if clear {
+				body["clear"] = true
+				return runAutomationControl(args[0], "set-decision-assistant", body)
+			}
+			if fl.Changed("backend") && strings.TrimSpace(backend) == "" {
+				// An empty backend turns the assistant off.
+				body["backend"] = ""
+				return runAutomationControl(args[0], "set-decision-assistant", body)
+			}
+			if strings.TrimSpace(backend) == "" || strings.TrimSpace(model) == "" {
+				return fmt.Errorf("--backend and --model are required together (use --clear to turn the assistant off)")
+			}
+			body["backend"], body["model"] = backend, model
+			if mode != "" {
+				if mode != "shadow" && mode != "live" {
+					return fmt.Errorf("--mode %q: want shadow or live", mode)
+				}
+				body["mode"] = mode
+			}
+			if len(hooks) > 0 {
+				var list []string
+				for _, h := range hooks {
+					for _, p := range strings.Split(h, ",") {
+						if p = strings.TrimSpace(p); p != "" {
+							list = append(list, p)
+						}
+					}
+				}
+				body["hooks"] = list
+			}
+			th, err := decisionAssistantThresholds(thresholds)
+			if err != nil {
+				return err
+			}
+			if th != nil {
+				body["thresholds"] = th
+			}
+			return runAutomationControl(args[0], "set-decision-assistant", body)
+		},
+	}
+	f.register(cmd)
+	fl := cmd.Flags()
+	fl.StringVar(&member, "member", "", "Set the override of this member instead of the Automation's own setting")
+	fl.StringVar(&backend, "backend", "", "Assistant LLM backend (empty: turn the assistant off)")
+	fl.StringVar(&model, "model", "", "Assistant LLM model")
+	fl.StringVar(&mode, "mode", "", "shadow (default; record only) or live (act at or above the threshold)")
+	fl.StringSliceVar(&hooks, "hooks", nil, "Enabled hook points: empty_edge, skip_member, insert_member, budget_breach (comma separated)")
+	fl.StringArrayVar(&thresholds, "threshold", nil, "Per-hook confidence threshold as <hook>=<value> (repeatable)")
+	fl.BoolVar(&clear, "clear", false, "Turn the assistant off")
+	return cmd
+}
+
 // automationMembersArg reads the --members value: an inline JSON array when
 // it starts with "[", otherwise the path of a file that holds one.
 func automationMembersArg(v string) ([]map[string]any, error) {
@@ -725,6 +843,8 @@ type automationView struct {
 	// Budget is the computed budget view; absent when the Automation has no
 	// budget policy in play.
 	Budget *autonomous.BudgetView `json:"budget"`
+	// DecisionAssistant is the Automation-level decision assistant; absent when off.
+	DecisionAssistant *autonomous.DecisionAssistant `json:"decision_assistant"`
 }
 
 // automationMemberView is one member of an Automation. The kind fields
@@ -761,6 +881,7 @@ func printAutomation(w io.Writer, a automationView) error {
 	_, _ = fmt.Fprintf(w, "Entry:    %s\n", dashIfEmpty(a.EntryMemberID))
 	_, _ = fmt.Fprintf(w, "Active:   %s\n", activeCursorsText(a.ActiveCursors))
 	_, _ = fmt.Fprintf(w, "Members:  %d\n", len(a.Members))
+	_, _ = fmt.Fprintf(w, "Assistant: %s\n", decisionAssistantText(a.DecisionAssistant))
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	_, _ = fmt.Fprintln(tw, "  MEMBER\tKIND\tTARGET\tON COMPLETE\tON BLOCKED\tON FAILED\tSTATUS")
 	for _, m := range a.Members {
@@ -776,6 +897,19 @@ func printAutomation(w io.Writer, a automationView) error {
 		return err
 	}
 	return nil
+}
+
+// decisionAssistantText is the one-line summary of a decision assistant
+// setting: "off", or backend/model, the mode and the enabled hooks.
+func decisionAssistantText(d *autonomous.DecisionAssistant) string {
+	if d == nil || d.Backend == "" {
+		return "off"
+	}
+	hooks := "no hooks"
+	if len(d.Hooks) > 0 {
+		hooks = strings.Join(d.Hooks, ",")
+	}
+	return fmt.Sprintf("%s/%s (%s; %s)", d.Backend, d.Model, d.EffectiveMode(), hooks)
 }
 
 func memberKindText(m automationMemberView) string {

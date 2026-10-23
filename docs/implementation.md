@@ -1390,3 +1390,16 @@ Response:
   - comm channels via `configure autonomous.session_start_confirm_seconds=<n>`, which the router forwards to the REST `PUT` config endpoint.
 - **Default:** `SessionStartConfirmDefaultSeconds = 120` and `NormalizeSessionStartConfirmSeconds` in `internal/config/session_start_confirm.go`. Zero or negative values normalize to the default.
 - **Failure path:** a tripped bound is reported as the infra failure `session never started`; the alert carries the last 20 lines of the session transcript as evidence. Up to 2 start failures are retried (start-failure budget) before the task stays failed. This budget is separate from `auto_fix_retries`.
+
+## Automation decision assistant (set_decision_assistant)
+
+- **Setting:** `decision_assistant` on an Automation and on a member (`DecisionAssistant` in `internal/autonomous/decision_assistant.go`): `backend`, `model`, `mode` (`shadow` default, `live`), `hooks` (`empty_edge`, `skip_member`, `insert_member`, `budget_breach`) and per-hook `thresholds`. **Default: off** — an unset setting, or an empty backend, means no hook consults the assistant. A member's setting wins over the Automation's (`EffectiveDecisionAssistant`).
+- **Default thresholds:** `0.9` for `empty_edge`, `skip_member` and `insert_member`, `0.95` for `budget_breach`; each is overridable per hook and must lie in `(0,1]`. Below the threshold the assistant escalates to the operator.
+- **Operation:** `set_decision_assistant`, following the `set_llm` pattern. The fields replace the whole setting; `clear` (or an empty backend) turns it off. `member_id` targets one member. Allowed while the Automation is `draft`, `active`, `paused` or `blocked`; a stale `expected_version` is a `409`, an unknown member a `404`, an invalid setting a `400`. `Manager.SetDecisionAssistant` records a Decision and an `automation_set_decision_assistant` audit record.
+- **Surfaces:**
+  - REST `POST /api/automations/{id}/set_decision_assistant` (`internal/server/autonomous.go`, `internal/server/automation_ops.go`), audit action `automation_set_decision_assistant` with `resource_type` `automation`;
+  - MCP `automation_set_decision_assistant` (`internal/mcp/automation_tools.go`), federation capability `autonomous:write` (`internal/federation/mcp_tool_caps.go`);
+  - CLI `datawatch automation set-decision-assistant` (`cmd/datawatch/cli_automation.go`);
+  - comm `automation set-decision-assistant <id> key=value...` (`internal/router/automation_cmd.go`).
+- **Read side:** `decision_assistant` appears on `automation get` / `list` and on each `autonomous_status` Automation row (`AutomationStatusSummary`); `automation get` in the CLI prints an `Assistant:` line.
+- **Parity:** `cmd/datawatch/automation_parity_test.go` lists the operation, so the REST/MCP/CLI/comm parity test covers it.
