@@ -1491,6 +1491,38 @@ function fmtBytes(n) {
   return (n / 1024 / 1024).toFixed(1) + ' MB';
 }
 
+// MOBILE-FIT (Observer per-system cards / local system panel):
+// Shared compact formatters for the Observer Statistics view. Previously each render
+// path (the per-system stats grid, the peer resource overview, the local system
+// panel) duplicated its own bytes/count formatter — some capped at MB, some at GB/TB,
+// some counting raw toLocaleString — so large values rendered as e.g. "1073741824 B"
+// and clipped/wrapped at phone widths. These two helpers are the single source of
+// truth for compact byte and count values in that view; every caller must use them
+// (do not add new local copies). Exposed on window for unit tests.
+// fmtBytesCompact: B / KB / MB / GB / TB (base-1024, one decimal from KB up), so each
+// value stays short enough that a "33.5 / 65.5 GB" pair fits a card value row.
+// fmtCountCompact: exact integers under 1000, else one-decimal K / M / B compact
+// (small counts like 7, 6, 4 are unchanged). Non-finite / negative input renders as 0.
+function fmtBytesCompact(n) {
+  let b = Number(n);
+  if (!Number.isFinite(b) || b < 0) b = 0;
+  if (b < 1024) return Math.round(b) + ' B';
+  if (b < 1024 * 1024) return (b / 1024).toFixed(1) + ' KB';
+  if (b < 1024 * 1024 * 1024) return (b / 1024 / 1024).toFixed(1) + ' MB';
+  if (b < 1024 * 1024 * 1024 * 1024) return (b / 1024 / 1024 / 1024).toFixed(1) + ' GB';
+  return (b / 1024 / 1024 / 1024 / 1024).toFixed(1) + ' TB';
+}
+function fmtCountCompact(n) {
+  let c = Number(n);
+  if (!Number.isFinite(c) || c < 0) c = 0;
+  if (c < 1000) return String(Math.round(c));
+  if (c < 1000000) return (c / 1000).toFixed(1) + 'K';
+  if (c < 1000000000) return (c / 1000000).toFixed(1) + 'M';
+  return (c / 1000000000).toFixed(1) + 'B';
+}
+window.fmtBytesCompact = fmtBytesCompact;
+window.fmtCountCompact = fmtCountCompact;
+
 function handleChannelReadyEvent(sessionId) {
   state.channelReady[sessionId] = true;
   // If viewing this session, dismiss the connection banner and enable input
@@ -27195,13 +27227,10 @@ function loadPeerResourceOverview() {
         .then(snap => ({ peer: p, snap }))
         .catch(() => ({ peer: p, snap: null }))
     )).then(results => {
-      const fmtBytes = b => {
-        if (!b) return '—';
-        if (b >= 1e12) return (b/1e12).toFixed(1)+' TB';
-        if (b >= 1e9) return (b/1e9).toFixed(1)+' GB';
-        if (b >= 1e6) return (b/1e6).toFixed(1)+' MB';
-        return b+' B';
-      };
+      // MOBILE-FIT: shared compact formatter (fmtBytesCompact, defined near
+      // the module-level fmtBytes) replaces this duplicated local copy —
+      // same base-10 output, keeps the '—' missing-value sentinel.
+      const fmtBytes = b => (b ? fmtBytesCompact(b) : '—');
       const now = Date.now();
       const rows = results.map(({ peer, snap }) => {
         const lastPush = peer.last_push_at ? new Date(peer.last_push_at).getTime() : 0;
@@ -27255,32 +27284,32 @@ setInterval(() => {
 function loadSystemStatsGrid() {
   const el = document.getElementById('perSystemGrid');
   if (!el) return;
-  const fmtBytes = b => {
-    if (!b) return '—';
-    if (b >= 1e12) return (b/1e12).toFixed(1)+' TB';
-    if (b >= 1e9)  return (b/1e9).toFixed(1)+' GB';
-    if (b >= 1e6)  return (b/1e6).toFixed(1)+' MB';
-    return b+' B';
-  };
+  // MOBILE-FIT: shared compact formatter (fmtBytesCompact, defined near
+  // the module-level fmtBytes) replaces this duplicated local copy — same
+  // base-10 output, keeps the '—' missing-value sentinel.
+  const fmtBytes = b => (b ? fmtBytesCompact(b) : '—');
+  // MOBILE-FIT: bar layout moved from inline styles to the shared .obs-bar*
+  // rules in style.css — identical look at every width; label/value spans
+  // may wrap at narrow widths instead of clipping.
   const bar = (label, val, max, color, extraLabel) => {
     const p = max > 0 ? Math.min(100, Math.round(100*val/max)) : 0;
-    return `<div style="margin-bottom:4px;">
-      <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--text2);margin-bottom:2px;">
-        <span>${escHtml(label)}</span>
-        <span style="font-variant-numeric:tabular-nums;color:var(--text);">${escHtml(extraLabel||p+'%')}</span>
+    return `<div class="obs-bar">
+      <div class="obs-bar-head">
+        <span class="obs-bar-label">${escHtml(label)}</span>
+        <span class="obs-bar-val" title="${escHtml(extraLabel||p+'%')}">${escHtml(extraLabel||p+'%')}</span>
       </div>
-      <div style="height:5px;background:var(--bg);border-radius:3px;overflow:hidden;">
-        <div style="height:100%;width:${p}%;background:${color||'var(--accent)'};border-radius:3px;transition:width 0.3s;"></div>
+      <div class="obs-bar-track">
+        <div class="obs-bar-fill" style="width:${p}%;background:${color||'var(--accent)'};"></div>
       </div>
     </div>`;
   };
   // GH#194 -- no "local" tag/badge; the card's own name (the real
   // hostname) is label enough, and the word "local" never appears.
   const sysCard = (name, dot, cpuHtml, memHtml, gpuHtml) => `
-    <div style="background:var(--surface1,var(--bg2));border:1px solid var(--border);border-radius:8px;padding:10px 12px;min-width:0;">
-      <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;flex-wrap:wrap;">
-        <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${dot};flex-shrink:0;"></span>
-        <span style="font-size:11px;font-weight:600;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(name)}</span>
+    <div class="obs-sys-card">
+      <div class="obs-sys-head">
+        <span class="obs-sys-dot" style="background:${dot};"></span>
+        <span class="obs-sys-name">${escHtml(name)}</span>
       </div>
       ${cpuHtml}${memHtml}${gpuHtml}
     </div>`;
@@ -27358,7 +27387,7 @@ function loadSystemStatsGrid() {
               gpuHtml += bar(gLabel+' temp', g.temp_c, 100, tc, g.temp_c.toFixed(0)+'°C');
             }
             if (g.power_w != null) {
-              gpuHtml += `<div style="margin-bottom:4px;display:flex;justify-content:space-between;font-size:10px;"><span style="color:var(--text2);">${escHtml(gLabel+' power')}</span><span style="font-variant-numeric:tabular-nums;color:var(--text);">${g.power_w.toFixed(1)} W</span></div>`;
+              gpuHtml += `<div class="obs-kv"><span class="obs-kv-k">${escHtml(gLabel+' power')}</span><span class="obs-kv-v">${g.power_w.toFixed(1)} W</span></div>`;
             }
             if (g.mem_used_bytes && g.mem_total_bytes) {
               gpuHtml += bar(gLabel+' VRAM', g.mem_used_bytes, g.mem_total_bytes, 'var(--accent2,#60a5fa)',
@@ -27380,7 +27409,7 @@ function loadSystemStatsGrid() {
       el.innerHTML = '';
       return;
     }
-    el.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:8px;margin-bottom:4px;">${cards.join('')}</div>`;
+    el.innerHTML = `<div class="obs-sys-grid">${cards.join('')}</div>`;
   });
 }
 window.loadSystemStatsGrid = loadSystemStatsGrid;
@@ -27962,12 +27991,10 @@ function renderStatsData(el, data) {
     const scrollParent = el.closest('.settings-section') || el.parentElement;
     const savedScroll = scrollParent ? scrollParent.scrollTop : 0;
     const pageScroll = window.scrollY;
-    const fmt = (bytes) => {
-      if (bytes > 1e9) return (bytes/1e9).toFixed(1) + ' GB';
-      if (bytes > 1e6) return (bytes/1e6).toFixed(1) + ' MB';
-      if (bytes > 1e3) return (bytes/1e3).toFixed(1) + ' KB';
-      return bytes + ' B';
-    };
+    // MOBILE-FIT: shared compact formatter (fmtBytesCompact, defined near
+    // the module-level fmtBytes) replaces this duplicated local copy — same
+    // base-10 output for every byte count the stats payload carries.
+    const fmt = (bytes) => (bytes ? fmtBytesCompact(bytes) : '0 B');
     const pct = (used, total) => total > 0 ? Math.round(100*used/total) : 0;
     const bar = (label, val, max, color, extra) => {
       const p = max > 0 ? Math.min(100, Math.round(100*val/max)) : 0;
@@ -27978,7 +28005,10 @@ function renderStatsData(el, data) {
         </div>
       </div>`;
     };
-    let html = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;padding:8px;">';
+    // MOBILE-FIT: named class (style.css) instead of the inline grid
+    // declaration — same auto-fit columns on desktop/tablet; style.css
+    // collapses this panel to a single column at ≤600px.
+    let html = '<div class="stats-panel-grid" style="display:grid;gap:8px;padding:8px;">';
     // CPU (load as % of cores)
     const cpuPct = Math.min(100, Math.round(100 * data.cpu_load_avg_1 / data.cpu_cores));
     html += bar('CPU Load', data.cpu_load_avg_1, data.cpu_cores, cpuPct > 80 ? 'var(--error)' : cpuPct > 50 ? 'var(--warning)' : 'var(--success)', data.cpu_load_avg_1.toFixed(2) + ' / ' + data.cpu_cores + ' cores');
@@ -28108,7 +28138,7 @@ function renderStatsData(el, data) {
     // window._webSearchStatsInterval guard (same fix as the BL v8.33.5 "PWA
     // stats poll stacking" bug) ensures only one refresh timer ever exists
     // across repeated renderStatsData calls.
-    html += `<div class="stat-card" style="grid-column:span 2;min-width:260px;">
+    html += `<div class="stat-card stats-panel-wide">
       <div class="stat-label">${t('stats_web_search')||'Search Usage'}</div>
       <div id="websearchStatsCardBody" style="font-size:10px;font-family:monospace;color:var(--text);line-height:1.6;">${window._webSearchStatsHTML || ('<span style="color:var(--text2);">'+loadingEyeBlock()+'</span>')}</div>
     </div>`;
@@ -28139,7 +28169,7 @@ function renderStatsData(el, data) {
     const activePct = Math.min(100, Math.round(100 * active / maxSess));
     html += `<div style="display:flex;align-items:center;gap:12px;padding:4px 8px;">
       <div style="width:48px;height:48px;border-radius:50%;background:conic-gradient(var(--success) 0% ${activePct}%, var(--border) ${activePct}% 100%);display:flex;align-items:center;justify-content:center;">
-        <div style="width:32px;height:32px;border-radius:50%;background:var(--bg2);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--text);">${active}</div>
+        <div style="width:32px;height:32px;border-radius:50%;background:var(--bg2);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:var(--text);">${fmtCountCompact(active)}</div>
       </div>
       <div style="font-size:11px;color:var(--text2);">
         <div><span style="color:var(--success);font-weight:600;">${active}</span> of ${maxSess} max</div>
@@ -28174,7 +28204,7 @@ function renderStatsData(el, data) {
         const isOpen = _expandedSessions.has(sid);
         const memStr = s.rss_bytes > 1e6 ? (s.rss_bytes/1e6).toFixed(0) + ' MB' : Math.round(s.rss_bytes/1024) + ' KB';
         html += `<div style="border-bottom:1px solid var(--border);padding:4px 0;">
-          <div style="display:flex;align-items:center;gap:6px;cursor:pointer;" onclick="_expandedSessions.has('${sid}')?_expandedSessions.delete('${sid}'):_expandedSessions.add('${sid}');loadStatsPanel()">
+          <div class="stats-taprow" style="display:flex;align-items:center;gap:6px;cursor:pointer;" onclick="_expandedSessions.has('${sid}')?_expandedSessions.delete('${sid}'):_expandedSessions.add('${sid}');loadStatsPanel()">
             <span style="font-size:8px;color:var(--text2);width:10px;">${isOpen ? '▼' : '▶'}</span>
             <span style="font-size:11px;font-weight:${isDaemon?'700':'500'};flex:1;">${escHtml(s.name || sid)}${!isDaemon ? ' <span style="color:var(--text2);font-weight:400;">(#' + escHtml(sid) + ')</span>' : ''}</span>
             <span class="state-badge-${s.state}" style="font-size:9px;padding:1px 5px;border-radius:4px;">${s.state}</span>
@@ -28215,7 +28245,7 @@ function renderStatsData(el, data) {
         const safeCid = escJsAttr(cid);
         const isOpen = _expandedChannels.has(safeCid);
         return `<div style="border-bottom:1px solid var(--border);padding:4px 0;">
-          <div style="display:flex;align-items:center;gap:6px;cursor:pointer;" onclick="_expandedChannels.has('${safeCid}')?_expandedChannels.delete('${safeCid}'):_expandedChannels.add('${safeCid}');loadStatsPanel()">
+          <div class="stats-taprow" style="display:flex;align-items:center;gap:6px;cursor:pointer;" onclick="_expandedChannels.has('${safeCid}')?_expandedChannels.delete('${safeCid}'):_expandedChannels.add('${safeCid}');loadStatsPanel()">
             <span style="font-size:8px;color:var(--text2);width:10px;">${isOpen ? '▼' : '▶'}</span>
             <span style="font-size:11px;flex:1;">${escHtml(ch.name)}</span>
             ${ch.type === 'llm' && ch.active_sessions ? `<span style="font-size:9px;font-weight:700;color:var(--bg2);background:var(--success);padding:1px 6px;border-radius:8px;min-width:16px;text-align:center;">${ch.active_sessions}</span>` : ''}
