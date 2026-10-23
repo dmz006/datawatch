@@ -27,6 +27,9 @@ func newSessionDeleteTestServer(t *testing.T) (*Server, *scopeTestBackend) {
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
+	// In-memory tmux fake: startTestSession/handleStartSession then never
+	// touch a real multiplexer server, so the tests are hermetic.
+	sm.WithFakeTmux()
 	b := &scopeTestBackend{}
 	srv := NewServer(NewHub(), sm, "h", "", nil, nil, "")
 	// Registered after the TempDir, so it runs before its removal.
@@ -60,17 +63,11 @@ func startTestSession(t *testing.T, srv *Server, projectDir string) string {
 	if fullID == "" {
 		fullID = resp.ID
 	}
-	// Found 2026-10-09: handleStartSession is real end-to-end — it
-	// creates a genuine tmux-backed session via the manager, not a
-	// mock. A caller that exercises some other action (rollback,
-	// input, start itself) and never kills it left the tmux pane
-	// running forever: t.TempDir() wipes the test's on-disk session
-	// store at teardown, but the actual tmux pane lives on a separate,
-	// persistent tmux server process this test only *connects* to, not
-	// owns — and if that server happens to be the real production one
-	// (TMUX_TMPDIR inherited from the shell, not test-isolated), the
-	// leak is a real orphaned session on a live daemon, not just test
-	// noise. Every caller gets this for free now instead of each test
+	// handleStartSession runs the full manager path; the tmux layer is
+	// the in-memory FakeTmux swapped in by newSessionDeleteTestServer,
+	// so nothing real to leak. The Kill in stopTestSession still matters
+	// to stop the manager's own monitor goroutine before TempDir removal.
+	// Every caller gets this for free now instead of each test
 	// needing to remember its own teardown.
 	t.Cleanup(func() { stopTestSession(t, srv, fullID) })
 	return fullID
@@ -145,7 +142,7 @@ func TestHandleDeleteSession_MemoryStrategyPurge(t *testing.T) {
 	sessB := startTestSession(t, srv, projectDir)
 	// sessA is deleted by the test itself below; sessB never is (it's the
 	// control used to verify the OTHER session's memory survives), so its
-	// spawned tmux session would otherwise leak on every run.
+	// monitor goroutine would otherwise outlive the test on every run.
 	t.Cleanup(func() {
 		srv.broadcastWG.Wait() // handleDeleteSession's broadcast marshals sessB
 		_ = srv.manager.Delete(sessB, false)

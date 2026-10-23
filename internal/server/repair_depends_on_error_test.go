@@ -52,6 +52,8 @@ func newRepairErrorServer(t *testing.T, repairErr error) *Server {
 	sm, err := session.NewManager("h", dir, "echo", 30*time.Second)
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
+	// In-memory tmux fake: these tests never need a live multiplexer.
+	sm.WithFakeTmux()
 	}
 	t.Cleanup(sm.WaitBackground)
 	srv := NewServer(NewHub(), sm, "h", "", nil, &config.Config{}, filepath.Join(dir, "config.yaml"))

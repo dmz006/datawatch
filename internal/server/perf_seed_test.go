@@ -219,6 +219,8 @@ func SeedPerfServer(t testing.TB, dataDir string) *PerfSeed {
 	if err != nil {
 		t.Fatalf("session.NewManager: %v", err)
 	}
+	// In-memory tmux fake: these tests never need a live multiplexer.
+	mgr.WithFakeTmux()
 	amgr, err := autonomous.NewManager(dataDir, autonomous.DefaultConfig(), nil)
 	if err != nil {
 		t.Fatalf("autonomous.NewManager: %v", err)

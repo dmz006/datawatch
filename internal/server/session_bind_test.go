@@ -33,6 +33,8 @@ func bindFixture(t *testing.T, workerHandler http.Handler) (*Server, *session.Se
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
+	// In-memory tmux fake: these tests never need a live multiplexer.
+	sm.WithFakeTmux()
 	t.Cleanup(sm.WaitBackground)
 
 	// Pre-populate a local session directly in the store.

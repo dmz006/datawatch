@@ -351,6 +351,8 @@ func patternsServerWithCLI(t *testing.T, out string) (*Server, *fakeCLIRunner) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// In-memory tmux fake: these tests never need a live multiplexer.
+	sm.WithFakeTmux()
 	t.Cleanup(sm.WaitBackground)
 	fr := &fakeCLIRunner{out: out}
 	sm.SetClaudeCLIVersionRunner(fr.run)
@@ -451,6 +453,8 @@ func TestUsageBackoff_RecheckCapabilityGate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// In-memory tmux fake: these tests never need a live multiplexer.
+	sm.WithFakeTmux()
 	t.Cleanup(sm.WaitBackground)
 	sm.SetClaudeCLIVersionRunner(func(context.Context, string, ...string) ([]byte, error) { return []byte("9.9.9-test"), nil })
 	s.manager = sm

@@ -26,6 +26,9 @@ func startSessionWithBody(t *testing.T, srv *Server, payload map[string]any) *ht
 
 func TestSessionPriorityParityRESTCreateGetList(t *testing.T) {
 	srv := newLLMServer(t)
+	// In-memory tmux fake: handleStartSession then never touches a real
+	// multiplexer, so nothing real can leak on this host.
+	srv.manager.WithFakeTmux()
 	w := startSessionWithBody(t, srv, map[string]any{"task": "hello", "project_dir": t.TempDir(), "priority": 7})
 	if w.Code != http.StatusOK {
 		t.Fatalf("start: status %d body: %s", w.Code, w.Body.String())
@@ -75,6 +78,9 @@ func TestSessionPriorityParityRESTCreateGetList(t *testing.T) {
 
 func TestSessionPriorityParityRESTUpdate(t *testing.T) {
 	srv := newLLMServer(t)
+	// In-memory tmux fake: handleStartSession then never touches a real
+	// multiplexer, so nothing real can leak on this host.
+	srv.manager.WithFakeTmux()
 	w := startSessionWithBody(t, srv, map[string]any{"task": "hello", "project_dir": t.TempDir()})
 	if w.Code != http.StatusOK {
 		t.Fatalf("start: status %d body: %s", w.Code, w.Body.String())

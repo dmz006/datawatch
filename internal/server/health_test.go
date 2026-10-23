@@ -73,6 +73,8 @@ func newTestServer(t *testing.T, mem MemoryAPI, mcpFn func() interface{}) *Serve
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
+	// In-memory tmux fake: these tests never need a live multiplexer.
+	mgr.WithFakeTmux()
 	t.Cleanup(mgr.WaitBackground)
 	s := &Server{
 		manager:     mgr,

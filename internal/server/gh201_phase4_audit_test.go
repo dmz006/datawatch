@@ -31,6 +31,9 @@ func gh201Phase4Server(t *testing.T) (*Server, *audit.Log) {
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
+	// In-memory tmux fake: handleStartSession then never touches a real
+	// multiplexer server, so no tmux panes can leak on this host.
+	sm.WithFakeTmux()
 	srv := NewServer(NewHub(), sm, "h", "", nil, nil, "")
 	al, err := audit.NewAt(t.TempDir() + "/audit.log")
 	if err != nil {
@@ -71,10 +74,10 @@ func TestGH201Phase4_SessionStart_Audited(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("status %d: %s", w.Code, w.Body.String())
 	}
-	// This is a real tmux-backed session (handleStartSession isn't
-	// mocked) — found 2026-10-09 leaking 54 real orphaned tmux panes
-	// onto the production tmux server over a day of `go test` runs,
-	// because this host's TMUX_TMPDIR isn't test-isolated. Kill it.
+	// handleStartSession runs the full manager path; the tmux layer is
+	// the in-memory FakeTmux (see gh201Phase4Server), so nothing really
+	// to leak — but Kill still stops the manager's monitor goroutine,
+	// which must not outlive the test. Kill it.
 	srv.broadcastWG.Wait() // see startTestSession
 	var startResp struct {
 		FullID string `json:"full_id"`

@@ -35,6 +35,15 @@ func Run(m *testing.M) int {
 		fmt.Fprintln(os.Stderr, "home isolation:", err)
 		return 1
 	}
+	// Isolate the multiplexer too: without this, a test that spawns tmux
+	// inherits TMUX / TMUX_TMPDIR from the operator's shell and would talk
+	// to their live server. Deferred like the HOME cleanup above.
+	restoreTmux, err := TmuxIsolation()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "home isolation:", err)
+		return 1
+	}
+	defer restoreTmux()
 	return m.Run()
 }
 
@@ -126,4 +135,67 @@ func pinIfExists(env, dir string) {
 	if fi, err := os.Stat(dir); err == nil && fi.IsDir() {
 		os.Setenv(env, dir) //nolint:errcheck
 	}
+}
+
+// TmuxDirMarker is a file TmuxIsolation writes inside the throwaway
+// TMUX_TMPDIR, so a test can prove a candidate TMUX_TMPDIR was created for
+// this test run (and is therefore safe) rather than pointing at a live
+// socket directory.
+const TmuxDirMarker = "testhome-tmux-owned"
+
+// TmuxIsolation points the process at a throwaway tmux socket directory:
+// TMUX is unset (so tmux sees no attached client) and TMUX_TMPDIR is set
+// to a fresh os.MkdirTemp directory carrying TmuxDirMarker. Any tmux a test
+// spawns only ever binds its socket in that directory and can never reach
+// the operator's multiplexer server. It returns a cleanup func that deletes
+// the directory and restores both variables; call it before m.Run and
+// defer the cleanup. Setup failures print nothing themselves; the caller
+// reports the error.
+func TmuxIsolation() (func(), error) {
+	realTmux := os.Getenv("TMUX")
+	realTmp := os.Getenv("TMUX_TMPDIR")
+	dir, err := os.MkdirTemp("", "dw-test-tmux-")
+	if err != nil {
+		return nil, err
+	}
+	fail := func(err error) (func(), error) {
+		if remErr := os.RemoveAll(dir); remErr != nil {
+			fmt.Fprintf(os.Stderr, "home isolation: WARNING: could not remove %s: %v\n", dir, remErr)
+		}
+		return nil, err
+	}
+	if err := os.WriteFile(filepath.Join(dir, TmuxDirMarker),
+		[]byte("created by testhome for a single test run\n"), 0o600); err != nil {
+		return fail(err)
+	}
+	if err := os.Unsetenv("TMUX"); err != nil {
+		return fail(err)
+	}
+	if err := os.Setenv("TMUX_TMPDIR", dir); err != nil {
+		return fail(err)
+	}
+	return func() {
+		// Restore the ambient values: the test binary exits straight away,
+		// so this is belt-and-braces for anyone who reuses the process.
+		if realTmux == "" {
+			os.Unsetenv("TMUX")
+		} else {
+			os.Setenv("TMUX", realTmux) //nolint:errcheck
+		}
+		if realTmp == "" {
+			os.Unsetenv("TMUX_TMPDIR")
+		} else {
+			os.Setenv("TMUX_TMPDIR", realTmp) //nolint:errcheck
+		}
+		if err := Remove(dir); err != nil {
+			fmt.Fprintf(os.Stderr, "home isolation: WARNING: could not remove %s: %v\n", dir, err)
+		}
+	}, nil
+}
+
+// TmuxDirOwned reports whether dir carries TmuxDirMarker, i.e. it was
+// created by TmuxIsolation for this test run.
+func TmuxDirOwned(dir string) bool {
+	fi, err := os.Lstat(filepath.Join(dir, TmuxDirMarker))
+	return err == nil && fi.Mode().IsRegular()
 }

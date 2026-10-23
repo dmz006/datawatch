@@ -25,6 +25,8 @@ func TestFinishedOneShots_ListIsEmptyWhenNothingIsStuck(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// In-memory tmux fake: these tests never need a live multiplexer.
+	sm.WithFakeTmux()
 	t.Cleanup(sm.WaitBackground)
 	s := &Server{token: "admin-token", manager: sm}
 	rr := httptest.NewRecorder()
@@ -50,6 +52,8 @@ func TestFinishedOneShots_RejectsOtherMethods(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(sm.WaitBackground)
+	// In-memory tmux fake: these tests never need a live multiplexer.
+	sm.WithFakeTmux()
 	s := &Server{token: "admin-token", manager: sm}
 	rr := httptest.NewRecorder()
 	s.handleFinishedOneShots(rr, httptest.NewRequest(http.MethodDelete, "/api/sessions/finished-oneshots", nil))
