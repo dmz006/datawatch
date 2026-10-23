@@ -172,7 +172,17 @@ function runMobileFitChecks(opts) {
   const docEl = document.documentElement;
   if (docEl) {
     const sw = Math.max(docEl.scrollWidth || 0, (document.body && document.body.scrollWidth) || 0);
-    let show = sw > vw + 1;
+    // scrollWidth grows past the viewport even when the overflow is clipped
+    // (e.g. body { overflow-x: hidden }), in which case the page does NOT
+    // scroll horizontally — that is the edge-cross situation instead. The
+    // user agent propagates body's overflow to the viewport when the html
+    // element keeps its default, so the document only scrolls horizontally
+    // when neither one suppresses horizontal overflow.
+    const htmlOX = getComputedStyle(docEl).overflowX;
+    const bodyOX = document.body ? getComputedStyle(document.body).overflowX : 'visible';
+    const suppressed = (htmlOX === 'hidden' || htmlOX === 'clip') ||
+      (htmlOX === 'visible' && (bodyOX === 'hidden' || bodyOX === 'clip'));
+    let show = sw > vw + 1 && !suppressed;
     if (validScope.length) {
       // Scoped: document scrollWidth alone is not enough — some element
       // inside the scope must cross the right viewport edge.

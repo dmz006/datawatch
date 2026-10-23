@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Truncated text with ellipsis and tooltip</title>
+<style>
+  html, body { margin: 0; padding: 0; }
+  body { font: 16px/1.4 system-ui, sans-serif; background: #f4f5f7; }
+  p.mono { padding: 12px; }
+  .line {
+    display: inline-block; width: 120px; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; vertical-align: top;
+    font-size: 14px;
+  }
+</style>
+</head>
+<body>
+  <p class="mono">
+    <span class="line" title="Full value: release-datawatch-canary-2026-latest">release-datawatch-canary-2026-latest</span>
+  </p>
+</body>
+</html>

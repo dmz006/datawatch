@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Siblings overlap via negative margin</title>
+<style>
+  html, body { margin: 0; padding: 0; }
+  body { font: 16px/1.4 system-ui, sans-serif; background: #f4f5f7; padding: 12px; }
+  .block {
+    background: #fff; border: 1px solid #d9dde5; border-radius: 10px;
+    padding: 14px; box-sizing: border-box; min-height: 120px;
+  }
+  .second { margin-top: -40px; border-color: #e0447a; }
+</style>
+</head>
+<body>
+  <div class="block first">First card. The second card below is pulled up over this one with a negative margin.</div>
+  <div class="block second">Second card, overlapping the first card despite being a later sibling in the same parent.</div>
+</body>
+</html>
