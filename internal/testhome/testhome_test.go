@@ -3,6 +3,7 @@ package testhome
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -174,5 +175,17 @@ func TestPinGoEnvKeepsExisting(t *testing.T) {
 	}
 	if got := os.Getenv("GOCACHE"); got != "/already/set/build" {
 		t.Errorf("GOCACHE overridden: %q", got)
+	}
+}
+
+func TestDisableGoTelemetry(t *testing.T) {
+	home := fixture(t)
+	DisableGoTelemetry(home)
+	b, err := os.ReadFile(filepath.Join(home, ".config", "go", "telemetry", "mode"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Fields(string(b)); len(got) == 0 || got[0] != "off" {
+		t.Fatalf("mode file %q does not start with off", b)
 	}
 }

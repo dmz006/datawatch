@@ -30,6 +30,7 @@ func Run(m *testing.M) int {
 		}
 	}()
 	PinGoEnv(realHome)
+	DisableGoTelemetry(home)
 	if err := os.Setenv("HOME", home); err != nil {
 		fmt.Fprintln(os.Stderr, "home isolation:", err)
 		return 1
@@ -103,6 +104,21 @@ func PinGoEnv(realHome string) {
 		}
 		pinIfExists("GOCACHE", filepath.Join(cache, "go-build"))
 	}
+}
+
+// DisableGoTelemetry marks Go telemetry as off for a go tool that runs with
+// home as its HOME. With the default mode the go command writes counter files
+// under <home>/.config/go/telemetry and may leave a detached process behind
+// that writes there after the test process has already removed home, which
+// recreates a stray dw-test-home-* directory. The mode file is the go
+// tool's own switch (what "go telemetry off" writes); a failure here only
+// loses that protection, so it is ignored.
+func DisableGoTelemetry(home string) {
+	dir := filepath.Join(home, ".config", "go", "telemetry")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return
+	}
+	os.WriteFile(filepath.Join(dir, "mode"), []byte("off 2000-01-01\n"), 0o600) //nolint:errcheck,gosec
 }
 
 // pinIfExists sets the env var to dir only if dir is an existing directory.
