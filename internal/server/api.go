@@ -7427,16 +7427,16 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 				cfg.Session.CapacityWaitSeconds = n
 			}
 		case "session.task_delivery_window_seconds":
-			// Read live at delivery time via
-			// SessionConfig.EffectiveTaskDeliveryWindow, so a patch takes
-			// effect on the next one-shot task delivery — no restart needed.
+			// Delivered through SessionConfig.EffectiveTaskDeliveryWindow, which the delivery
+			// path reads live, so a patched value takes effect on the next one-shot task —
+			// no restart needed.
 			if n, ok := toInt(v); ok && n >= 1 {
 				cfg.Session.TaskDeliveryWindowSeconds = n
 			}
 		case "session.task_delivery_attempts":
-			// Read live at delivery time via
-			// SessionConfig.EffectiveTaskDeliveryAttempts, so a patch takes
-			// effect on the next one-shot task delivery — no restart needed.
+			// Delivered through SessionConfig.EffectiveTaskDeliveryAttempts, which the
+			// delivery path reads live, so a patched value takes effect on the next one-shot
+			// task — no restart needed.
 			if n, ok := toInt(v); ok && n >= 1 {
 				cfg.Session.TaskDeliveryAttempts = n
 			}
