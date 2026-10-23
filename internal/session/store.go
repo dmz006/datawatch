@@ -400,9 +400,21 @@ type Store struct {
 	dirty         atomic.Bool   // in-memory state not yet on disk
 	writes        atomic.Int64  // completed file writes (observed by tests)
 	writeMu       sync.Mutex    // serialises file writes (one temp file name)
-	wake          chan struct{} // cap 1: "store went dirty"
-	stopCh        chan struct{}
-	doneCh        chan struct{}
+
+	// Per-session record layout (store_records.go). records is fixed before
+	// the store is shared; the id sets and scan flag are guarded by mu,
+	// written and layoutReady by writeMu.
+	records      bool
+	dirtyIDs     map[string]struct{} // FullIDs to (re)write
+	deletedIDs   map[string]struct{} // FullIDs whose record must go
+	scan         bool                // a Mutate ran: compare every session to its last write
+	written      map[string][32]byte // FullID -> hash of the last persisted JSON
+	layoutReady  bool
+	bytesWritten atomic.Int64  // record bytes handed to the file system
+	recordWrites atomic.Int64  // record files written
+	wake         chan struct{} // cap 1: "store went dirty"
+	stopCh       chan struct{}
+	doneCh       chan struct{}
 }
 
 // DefaultFlushInterval is how long the background writer coalesces changes
@@ -437,6 +449,9 @@ func newStoreWithKey(path string, key []byte, opts ...StoreOption) (*Store, erro
 		lockPath:      filepath.Join(filepath.Dir(path), lockFileName),
 		encKey:        key,
 		sessions:      make(map[string]*Session),
+		dirtyIDs:      make(map[string]struct{}),
+		deletedIDs:    make(map[string]struct{}),
+		written:       make(map[string][32]byte),
 		flushInterval: DefaultFlushInterval,
 		wake:          make(chan struct{}, 1),
 		stopCh:        make(chan struct{}),
@@ -448,6 +463,16 @@ func newStoreWithKey(path string, key []byte, opts ...StoreOption) (*Store, erro
 
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return nil, fmt.Errorf("create store dir: %w", err)
+	}
+
+	// An existing record layout is authoritative; sessions.json is only read
+	// when there is none (the old format, migrated below).
+	if recordsLayoutPresent(s.recordsDir()) {
+		if err := s.openRecords(); err != nil {
+			return nil, err
+		}
+		s.mergeSessionDirsAndPersist(filepath.Dir(path))
+		return s, nil
 	}
 
 	data, err := secfile.ReadFile(path, key)
@@ -497,7 +522,50 @@ func newStoreWithKey(path string, key []byte, opts ...StoreOption) (*Store, erro
 		fmt.Fprintf(os.Stderr, "[recovery] merged %d session(s) from per-session subdirectories not present in sessions.json\n", added)
 	}
 
+	if err == nil {
+		// An old-format file exists: move it to the record layout. On failure
+		// the store keeps the old format and the file is left as it was.
+		if merr := s.migrateToRecords(); merr != nil {
+			s.records = false
+			fmt.Fprintf(os.Stderr, "[warn] sessions store: record migration skipped, staying on %s: %v\n", path, merr)
+		}
+	} else {
+		// No store yet: a new store starts in the record layout.
+		s.records = true
+		if len(s.sessions) > 0 { // recovered from per-session directories only
+			for id := range s.sessions {
+				s.dirtyIDs[id] = struct{}{}
+			}
+			s.dirty.Store(true)
+			if ferr := s.flush(false); ferr != nil {
+				fmt.Fprintf(os.Stderr, "[warn] sessions store flush: %v\n", ferr)
+			}
+		}
+	}
 	return s, nil
+}
+
+// mergeSessionDirsAndPersist is the per-session-directory merge for a store
+// already in the record layout: sessions it adds are written at once.
+func (s *Store) mergeSessionDirsAndPersist(dataDir string) {
+	before := make(map[string]struct{}, len(s.sessions))
+	for id := range s.sessions {
+		before[id] = struct{}{}
+	}
+	added := s.mergeFromSessionDirs(dataDir)
+	if added == 0 {
+		return
+	}
+	fmt.Fprintf(os.Stderr, "[recovery] merged %d session(s) from per-session subdirectories not present in the session records\n", added)
+	for id := range s.sessions {
+		if _, ok := before[id]; !ok {
+			s.dirtyIDs[id] = struct{}{}
+		}
+	}
+	s.dirty.Store(true)
+	if err := s.flush(false); err != nil {
+		fmt.Fprintf(os.Stderr, "[warn] sessions store flush: %v\n", err)
+	}
 }
 
 // mergeFromSessionDirs walks <dataDir>/sessions/<id>/session.json and
@@ -604,6 +672,7 @@ func recoverSessionStore(data []byte) ([]*Session, int, error) {
 func (s *Store) Save(sess *Session) error {
 	s.mu.Lock()
 	s.sessions[sess.FullID] = sess
+	s.markRecordDirtyLocked(sess.FullID)
 	inline := s.markDirtyLocked()
 	s.mu.Unlock()
 	if inline {
@@ -621,6 +690,7 @@ func (s *Store) Save(sess *Session) error {
 func (s *Store) Mutate(fn func()) {
 	s.mu.Lock()
 	fn()
+	s.scan = s.records // fn may have touched any session
 	s.markDirtyLocked()
 	s.mu.Unlock()
 }
@@ -735,6 +805,7 @@ func (s *Store) List() []*Session {
 func (s *Store) Delete(fullID string) error {
 	s.mu.Lock()
 	delete(s.sessions, fullID)
+	s.markRecordDeletedLocked(fullID)
 	inline := s.markDirtyLocked()
 	s.mu.Unlock()
 	if inline {
@@ -780,6 +851,9 @@ func (s *Store) Close() error {
 // shared with Mutate writers); the file write, flock and fsync happen
 // outside the store lock so API calls never wait on the disk.
 func (s *Store) flush(force bool) error {
+	if s.records {
+		return s.flushRecords(force)
+	}
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
 	if !s.dirty.Swap(false) && !force {

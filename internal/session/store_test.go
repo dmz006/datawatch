@@ -1,7 +1,6 @@
 package session
 
 import (
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"sync"
@@ -540,20 +539,13 @@ func TestStore_ConcurrentPersist_NoCorruption(t *testing.T) {
 	}()
 	wg.Wait()
 
-	// The file must be valid JSON (no corruption from torn writes).
-	raw, err := os.ReadFile(path)
+	// Each store persists its own records; no write can tear another's, so
+	// a reload sees every session from both.
+	re, err := NewStore(path)
 	if err != nil {
-		t.Fatalf("read sessions.json after concurrent persist: %v", err)
+		t.Fatalf("reload after concurrent persist: %v", err)
 	}
-	var sessions []*Session
-	if err := json.Unmarshal(raw, &sessions); err != nil {
-		t.Fatalf("sessions.json is not valid JSON after concurrent persist: %v\nbody: %s", err, raw)
-	}
-	// The last writer wins; it must have written a non-empty, structurally
-	// valid array — we already verified that above. No further assertion on
-	// which writer's sessions survived (last-writer-wins is acceptable for
-	// cross-process races; the boot ReconcileSessions recovers any gap).
-	if len(sessions) == 0 {
-		t.Errorf("sessions.json is empty after concurrent persist — expected at least one session")
+	if got := len(re.List()); got != 4 {
+		t.Errorf("reloaded %d sessions after concurrent persist, want 4", got)
 	}
 }

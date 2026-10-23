@@ -272,7 +272,7 @@ func TestTaskDelivery_ClaimedOnceAndSurvivesRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "sessions.json")); err != nil {
+	if _, err := os.Stat(filepath.Join(dir, recordsDirName, recordsLayoutFile)); err != nil {
 		t.Fatalf("store not persisted: %v", err)
 	}
 	if !mgr2.TaskDelivered(sess.FullID) {

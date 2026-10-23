@@ -22,7 +22,7 @@ import (
 const storeWriteBudgetEnforced = true
 
 // storeWriteBudgetFactor is the allowed multiple of the changed data.
-const storeWriteBudgetFactor = 20
+const storeWriteBudgetFactor = 3
 
 const (
 	storeBenchFullSessions  = 4000
@@ -113,7 +113,8 @@ type burstResult struct {
 // runChannelEventBurst mutates a session field under Store.Mutate then Save,
 // the way markChannelEventAt does, spread round-robin over the first
 // storeBenchBurstSessions sessions. Bytes written come from /proc/self/io,
-// falling back to the file size after each Save (every Save rewrites it all).
+// falling back to the store's own record byte counter. The window ends after a
+// Flush, so it includes the write the background writer would make.
 func runChannelEventBurst(tb testing.TB, st *Store, events int) burstResult {
 	tb.Helper()
 	targets := make([]*Session, 0, storeBenchBurstSessions)
@@ -125,7 +126,7 @@ func runChannelEventBurst(tb testing.TB, st *Store, events int) burstResult {
 		targets = append(targets, s)
 	}
 	w0 := procBytesWritten()
-	var statSum int64
+	b0 := st.bytesWritten.Load()
 	c0 := cpuTime()
 	t0 := time.Now()
 	for i := 0; i < events; i++ {
@@ -135,17 +136,18 @@ func runChannelEventBurst(tb testing.TB, st *Store, events int) burstResult {
 		if err := st.Save(s); err != nil {
 			tb.Fatalf("Save: %v", err)
 		}
-		if w0 < 0 {
-			if fi, err := os.Stat(st.path); err == nil {
-				statSum += fi.Size()
-			}
-		}
+	}
+	// The burst is only paid for once the writer has persisted it, so the
+	// measured window includes that write (the writer would do it one flush
+	// interval later; Flush runs the same code now).
+	if err := st.Flush(); err != nil {
+		tb.Fatalf("Flush: %v", err)
 	}
 	res := burstResult{elapsed: time.Since(t0), cpu: cpuTime() - c0}
 	if w0 >= 0 {
 		res.bytes = procBytesWritten() - w0
 	} else {
-		res.bytes = statSum
+		res.bytes = st.bytesWritten.Load() - b0
 	}
 	return res
 }
@@ -201,8 +203,6 @@ func BenchmarkStoreSaveBurst(b *testing.B) {
 }
 
 func TestStoreWriteBudget(t *testing.T) {
-	// While the budget is not enforced use the small set: the old whole-file
-	// rewrite burned gigabytes on the full one.
 	n := storeBenchSessionCount()
 	if !storeWriteBudgetEnforced {
 		n = storeBenchSmallSessions

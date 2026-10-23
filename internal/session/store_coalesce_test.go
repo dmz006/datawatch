@@ -70,8 +70,8 @@ func TestStoreFlushOnClose(t *testing.T) {
 	if err := st.Delete("co-0001"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(path); err == nil {
-		t.Fatal("file written before Close despite the long interval")
+	if len(recordFiles(t, st)) != 0 {
+		t.Fatal("records written before Close despite the long interval")
 	}
 	if err := st.Close(); err != nil {
 		t.Fatal(err)
@@ -112,9 +112,9 @@ func TestStoreFlushExplicit(t *testing.T) {
 		t.Fatal("Flush did not write the saved session")
 	}
 	// Compact output: no indentation.
-	data, _ := os.ReadFile(path)
+	data, _ := os.ReadFile(st.recordPath("co-0001"))
 	if strings.Contains(string(data), "\n  ") {
-		t.Fatal("sessions.json is indented")
+		t.Fatal("record is indented")
 	}
 }
 
@@ -228,28 +228,22 @@ func TestStoreCrashSafety(t *testing.T) {
 		_ = cmd.Process.Signal(syscall.SIGKILL)
 		_ = cmd.Wait()
 
-		raw, err := os.ReadFile(path)
-		if err != nil {
-			t.Fatalf("round %d: read: %v", round, err)
+		// Every record is a complete generation (records are atomic one by one).
+		recs, err := filepath.Glob(filepath.Join(dir, recordsDirName, "*"+recordExt))
+		if err != nil || len(recs) != crashSessions {
+			t.Fatalf("round %d: %d record files after kill, want %d (%v)", round, len(recs), crashSessions, err)
 		}
-		if _, err := os.Stat(path + ".corrupted-0"); err == nil {
-			t.Fatal("corrupted marker present")
-		}
-		sessions, err := loadStrict(raw)
-		if err != nil {
-			t.Fatalf("round %d: store file is not valid JSON after kill: %v", round, err)
-		}
-		if len(sessions) != crashSessions {
-			t.Fatalf("round %d: %d sessions after kill, want %d (truncated or partial state)", round, len(sessions), crashSessions)
-		}
-		marker := ""
-		for _, s := range sessions {
-			m, _, _ := strings.Cut(s.Task, "-"+strings.Repeat("p", 8))
-			if marker == "" {
-				marker = m
+		for _, f := range recs {
+			raw, err := os.ReadFile(f)
+			if err != nil {
+				t.Fatalf("round %d: read: %v", round, err)
 			}
-			if m != marker || len(s.Task) < crashPayload {
-				t.Fatalf("round %d: mixed or truncated records (%q vs %q)", round, m, marker)
+			var s Session
+			if err := json.Unmarshal(raw, &s); err != nil {
+				t.Fatalf("round %d: record %s is not valid JSON after kill: %v", round, filepath.Base(f), err)
+			}
+			if !strings.HasPrefix(s.Task, "gen-") || len(s.Task) < crashPayload {
+				t.Fatalf("round %d: truncated record %s", round, filepath.Base(f))
 			}
 		}
 		// The store itself must load the file without invoking recovery.
@@ -265,14 +259,6 @@ func TestStoreCrashSafety(t *testing.T) {
 			t.Fatalf("round %d: store needed corruption recovery: %v", round, matches)
 		}
 	}
-}
-
-func loadStrict(raw []byte) ([]*Session, error) {
-	var out []*Session
-	if err := json.Unmarshal(raw, &out); err != nil {
-		return nil, err
-	}
-	return out, nil
 }
 
 // TestStoreConcurrent hammers Save/Delete/Mutate/Get/List/Flush from many
