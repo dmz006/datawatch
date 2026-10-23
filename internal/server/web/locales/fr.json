@@ -812,7 +812,7 @@
   "new_session_v7_llm_default": "— sélectionner un LLM —",
   "new_session_v7_llm_label": "LLM",
   "new_session_v7_optional": "(facultatif — remplace le backend ci-dessus)",
-  "new_session_working_dir_hint": "Chemin serveur — ex : /home/user/code",
+  "new_session_working_dir_hint": "Chemin serveur — ex : ~/code",
   "new_session_working_dir_label": "Répertoire de travail (optionnel)",
   "no_change_since_last_refresh": "aucun changement depuis le dernier rafraîchissement",
   "obs_cn_card_title": "Nœud de calcul",
@@ -2107,5 +2107,13 @@
   "tag_rename": "Renommer",
   "tag_save": "Enregistrer",
   "tag_saved": "Étiquettes enregistrées",
-  "tag_suggest_hint": "Suggérée d'après l'alias du projet : modifiez-la si elle ne convient pas"
+  "tag_suggest_hint": "Suggérée d'après l'alias du projet : modifiez-la si elle ne convient pas",
+  "llm_field_roles": "Rôles de charge de travail (séparés par virgule ; vide = aucun)",
+  "llm_roles_hint": "Rôles assurés par cette entrée. Si plusieurs entrées activées revendiquent un rôle, la première par nom l'emporte et un avertissement s'affiche.",
+  "workload_roles_title": "Rôles de charge de travail",
+  "workload_roles_desc": "Chaque rôle et l'entrée LLM vers laquelle il est résolu.",
+  "workload_roles_empty": "Aucune entrée LLM ne revendique de rôle de charge de travail.",
+  "workload_roles_col_role": "Rôle",
+  "workload_roles_col_entry": "Résolu vers",
+  "workload_roles_warnings": "Avertissements de conflit"
 }

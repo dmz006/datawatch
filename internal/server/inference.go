@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -63,6 +64,43 @@ func (s *Server) Dispatcher() *inference.Dispatcher { return s.inferenceDisp }
 
 // LLMRegistry returns the wired registry (nil if none).
 func (s *Server) LLMRegistry() *inference.Registry { return s.inferenceReg }
+
+// handleLLMRoles serves GET /api/llm-roles: the role table (each claimed role
+// and the registry entry it currently resolves to) plus the contention
+// warnings. It lives beside /api/llms because /api/llms/{name} would shadow a
+// literal "roles" sub-path.
+func (s *Server) handleLLMRoles(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapLLMsList) {
+		return
+	}
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.inferenceReg == nil {
+		http.Error(w, "llm registry disabled", http.StatusServiceUnavailable)
+		return
+	}
+	snap := inference.SnapshotRoles(s.inferenceReg.List())
+	names := make([]string, 0, len(snap))
+	for role := range snap {
+		names = append(names, role)
+	}
+	sort.Strings(names)
+	type roleRow struct {
+		Role  string `json:"role"`
+		Entry string `json:"entry"`
+	}
+	rows := make([]roleRow, 0, len(names))
+	for _, role := range names {
+		rows = append(rows, roleRow{Role: role, Entry: snap[role]})
+	}
+	warns := s.roleMonitor.Warnings()
+	if warns == nil {
+		warns = []string{}
+	}
+	writeJSONOK(w, map[string]any{"roles": rows, "warnings": warns})
+}
 
 func (s *Server) handleLLMs(w http.ResponseWriter, r *http.Request) {
 	// BL316 S3: cap check before nil guard so unauthorized peers get 403, not 503.

@@ -812,7 +812,7 @@
   "new_session_v7_llm_default": "— LLMを選択 —",
   "new_session_v7_llm_label": "LLM",
   "new_session_v7_optional": "(任意 — 上のバックエンドを上書き)",
-  "new_session_working_dir_hint": "サーバーパス — 例：/home/user/code",
+  "new_session_working_dir_hint": "サーバーパス — 例：~/code",
   "new_session_working_dir_label": "作業ディレクトリ（任意）",
   "no_change_since_last_refresh": "前回の更新以来変更なし",
   "obs_cn_card_title": "コンピュートノード",
@@ -2107,5 +2107,13 @@
   "tag_rename": "名前を変更",
   "tag_save": "保存",
   "tag_saved": "タグを保存しました",
-  "tag_suggest_hint": "プロジェクトのエイリアスから提案されました。違う場合は変更してください"
+  "tag_suggest_hint": "プロジェクトのエイリアスから提案されました。違う場合は変更してください",
+  "llm_field_roles": "ワークロードロール（カンマ区切り；空 = なし）",
+  "llm_roles_hint": "このエントリが担当するロール。複数の有効なエントリが同じロールを主張した場合、名前順で最初のものが優先され、警告が表示されます。",
+  "workload_roles_title": "ワークロードロール",
+  "workload_roles_desc": "各ロールと、その解決先の LLM エントリ。",
+  "workload_roles_empty": "ワークロードロールを主張する LLM エントリはありません。",
+  "workload_roles_col_role": "ロール",
+  "workload_roles_col_entry": "解決先",
+  "workload_roles_warnings": "競合の警告"
 }

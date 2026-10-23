@@ -812,7 +812,7 @@
   "new_session_v7_llm_default": "— LLM auswählen —",
   "new_session_v7_llm_label": "LLM",
   "new_session_v7_optional": "(optional — überschreibt das Backend oben)",
-  "new_session_working_dir_hint": "Serverpfad — z. B. /home/user/code",
+  "new_session_working_dir_hint": "Serverpfad — z. B. ~/code",
   "new_session_working_dir_label": "Arbeitsverzeichnis (optional)",
   "no_change_since_last_refresh": "keine Änderung seit letztem Aktualisieren",
   "obs_cn_card_title": "Rechenknoten",
@@ -2107,5 +2107,13 @@
   "tag_rename": "Umbenennen",
   "tag_save": "Speichern",
   "tag_saved": "Tags gespeichert",
-  "tag_suggest_hint": "Vom Projektalias vorgeschlagen — ändere es, falls es nicht passt"
+  "tag_suggest_hint": "Vom Projektalias vorgeschlagen — ändere es, falls es nicht passt",
+  "llm_field_roles": "Workload-Rollen (kommagetrennt; leer = keine)",
+  "llm_roles_hint": "Rollen, die dieser Eintrag bedient. Beanspruchen mehrere aktive Einträge eine Rolle, gewinnt der erste nach Name und eine Warnung wird angezeigt.",
+  "workload_roles_title": "Workload-Rollen",
+  "workload_roles_desc": "Jede Rolle und der LLM-Eintrag, auf den sie aufgelöst wird.",
+  "workload_roles_empty": "Kein LLM-Eintrag beansprucht eine Workload-Rolle.",
+  "workload_roles_col_role": "Rolle",
+  "workload_roles_col_entry": "Aufgelöst zu",
+  "workload_roles_warnings": "Konfliktwarnungen"
 }
