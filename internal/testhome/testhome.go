@@ -178,12 +178,12 @@ func TmuxIsolation() (func(), error) {
 		// Restore the ambient values: the test binary exits straight away,
 		// so this is belt-and-braces for anyone who reuses the process.
 		if realTmux == "" {
-			os.Unsetenv("TMUX")
+			_ = os.Unsetenv("TMUX")
 		} else {
 			os.Setenv("TMUX", realTmux) //nolint:errcheck
 		}
 		if realTmp == "" {
-			os.Unsetenv("TMUX_TMPDIR")
+			_ = os.Unsetenv("TMUX_TMPDIR")
 		} else {
 			os.Setenv("TMUX_TMPDIR", realTmp) //nolint:errcheck
 		}
