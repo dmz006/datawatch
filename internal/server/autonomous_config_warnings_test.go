@@ -23,6 +23,8 @@ func TestHandleAutonomousConfig_PUT_ReturnsPairingWarning(t *testing.T) {
 	if err != nil {
 		t.Fatalf("session.NewManager: %v", err)
 	}
+	// In-memory tmux fake: these tests never need a live multiplexer.
+	sm.WithFakeTmux()
 	t.Cleanup(sm.WaitBackground)
 	mgr, err := autonomous.NewManager(t.TempDir(), autonomous.DefaultConfig(), nil)
 	if err != nil {

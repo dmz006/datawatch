@@ -65,6 +65,8 @@ func newAutonomousConfigSyncServer(t *testing.T) (*Server, string) {
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
+	// In-memory tmux fake: these tests never need a live multiplexer.
+	sm.WithFakeTmux()
 	t.Cleanup(sm.WaitBackground)
 	hub := NewHub()
 	cfg := &config.Config{}
@@ -164,6 +166,8 @@ func TestHandleAutonomousConfig_PUT_ClearsVerificationBackendsToServerConfig(t *
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
+	// In-memory tmux fake: these tests never need a live multiplexer.
+	sm.WithFakeTmux()
 	t.Cleanup(sm.WaitBackground)
 	hub := NewHub()
 	cfg := &config.Config{}

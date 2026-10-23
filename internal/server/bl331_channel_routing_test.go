@@ -166,6 +166,8 @@ func TestSession_OwnerPeer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("manager init: %v", err)
 	}
+	// In-memory tmux fake: these tests never need a live multiplexer.
+	mgr.WithFakeTmux()
 	t.Cleanup(mgr.WaitBackground)
 	_ = mgr // ensure manager wires up the store
 

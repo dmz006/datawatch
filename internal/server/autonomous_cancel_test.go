@@ -34,6 +34,8 @@ func newCancelTestServer(t *testing.T, ids []string) (*Server, *audit.Log) {
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
+	// In-memory tmux fake: these tests never need a live multiplexer.
+	sm.WithFakeTmux()
 	t.Cleanup(sm.WaitBackground)
 	al, err := audit.NewAt(t.TempDir() + "/audit.log")
 	if err != nil {

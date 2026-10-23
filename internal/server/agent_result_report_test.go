@@ -26,6 +26,8 @@ func reportServerFixture(t *testing.T) (*Server, *agents.Manager, *session.Manag
 	if err != nil {
 		t.Fatal(err)
 	}
+	// In-memory tmux fake: these tests never need a live multiplexer.
+	sm.WithFakeTmux()
 	t.Cleanup(sm.WaitBackground)
 	s.manager = sm
 	return s, m, sm
