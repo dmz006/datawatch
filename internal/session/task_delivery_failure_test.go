@@ -11,8 +11,9 @@
 //
 // Run with: env -u TMUX -u TMUX_TMPDIR go test ./internal/session -run TestTaskDeliveryFailure_
 //
-// Each attempt waits the production oneShotPromptWindow (15s), so this test
-// takes about 30s of wall time with maxAttempts=2.
+// The per-attempt window is explicit on the DeliverOneShotTask call (3s
+// here); the whole budget is driven on a fake clock (tdrInstallFakeClock),
+// so this test burns no wall time with maxAttempts=2.
 
 package session
 
@@ -27,6 +28,8 @@ import (
 func TestTaskDeliveryFailure_CallsBackAndEndsSession(t *testing.T) {
 	mgr, fake := newTestManagerWithFake(t)
 	sess := tdrSaveWaiting(t, mgr, "tdf1")
+	start := time.Unix(0, 0).UTC()
+	c := tdrInstallFakeClock(t, mgr, start)
 	tdrSetPane(fake, sess.TmuxSession, tdDisclaimerPane)
 
 	var (
@@ -44,7 +47,7 @@ func TestTaskDeliveryFailure_CallsBackAndEndsSession(t *testing.T) {
 	if !mgr.ClaimTaskDelivery(sess.FullID) {
 		t.Fatal("ClaimTaskDelivery lost the claim")
 	}
-	err := mgr.DeliverOneShotTask(sess.FullID, tdTask, 2, 100*time.Millisecond)
+	err := mgr.DeliverOneShotTask(sess.FullID, tdTask, 2, 3*time.Second, 100*time.Millisecond)
 	if !errors.Is(err, ErrTaskUndelivered) {
 		t.Fatalf("DeliverOneShotTask error = %v, want ErrTaskUndelivered", err)
 	}
@@ -78,5 +81,10 @@ func TestTaskDeliveryFailure_CallsBackAndEndsSession(t *testing.T) {
 	}
 	if !mgr.ClaimTaskDelivery(sess.FullID) {
 		t.Error("claim was not released; a later ready cannot deliver the task")
+	}
+	// No real waiting: with a 3s window, 2 attempts and a 100ms first backoff
+	// the full budget is 3 + 0.1 + 3 = 6.1s of virtual time.
+	if elapsed := c.elapsed(start); elapsed < 6*time.Second || elapsed > 7*time.Second {
+		t.Errorf("virtual time consumed = %v, want ~6.1s (3s window x2 + 100ms backoff)", elapsed)
 	}
 }

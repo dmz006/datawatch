@@ -4352,6 +4352,10 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			outputFile := filepath.Join(req.ProjectDir, ".decompose-output-"+hex.EncodeToString(specHash[:8])+".json")
 			sessionTask := fmt.Sprintf(autonomouspkg.PlanningPromptSession, req.ScopeBlock, outputFile, req.Spec)
 
+			// 60 min comfortably exceeds the task-delivery grace
+			// (decomposeDeliveryGrace defaults to ~195 s) plus a realistic
+			// decompose run time, so the delivery-window waiting_input
+			// exemption can never push the session past its timeout.
 			timeout := 60 * time.Minute
 			if req.TimeoutSeconds > 0 {
 				timeout = time.Duration(req.TimeoutSeconds) * time.Second
@@ -4939,7 +4943,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 						// The nudge tracker owns claude-code idleness: the 3-tick
 						// debounce would kill the worker long before the nudge window.
 						if s.BackendFamily == "claude-code" && nudgeTracker == nil {
-							waitingInputTicks, stalled = waitingInputTick(waitingInputTicks, s.State)
+							waitingInputTicks, stalled = decomposeWaitingInputTick(waitingInputTicks, s.State, time.Since(s.CreatedAt), decomposeDeliveryGrace(cfg))
 						}
 						if stalled && !startSupersedes {
 							log.Printf("[autonomous] one-shot session %s task %s/%s is waiting_input (not disclaimer-oscillation); killing for retry",

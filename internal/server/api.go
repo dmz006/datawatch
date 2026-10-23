@@ -5485,26 +5485,28 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 		},
 		"session": func() map[string]interface{} {
 			m := map[string]interface{}{
-				"llm_backend":           s.cfg.Session.LLMBackend,
-				"max_sessions":          s.cfg.Session.MaxSessions,
-				"reserved_interactive":  s.cfg.Session.EffectiveReservedInteractive(),
-				"input_idle_timeout":    s.cfg.Session.InputIdleTimeout,
-				"tail_lines":            s.cfg.Session.TailLines,
-				"alert_context_lines":   s.cfg.Session.AlertContextLines,
-				"default_project_dir":   s.cfg.Session.DefaultProjectDir,
-				"workspace_root":        s.cfg.Session.WorkspaceRoot,
-				"claude_enabled":        s.cfg.Session.ClaudeEnabled,
-				"auto_git_commit":       s.cfg.Session.AutoGitCommit,
-				"auto_git_init":         s.cfg.Session.AutoGitInit,
-				"git_default":           s.cfg.Session.GitDefault,
-				"kill_sessions_on_exit": s.cfg.Session.KillSessionsOnExit,
-				"one_shot_sessions":     s.cfg.Session.OneShotSessions,
-				"root_path":             s.cfg.Session.RootPath,
-				"mcp_max_retries":       s.cfg.Session.MCPMaxRetries,
-				"schedule_settle_ms":    s.cfg.Session.ScheduleSettleMs,
-				"console_cols":          s.cfg.Session.ConsoleCols,
-				"console_rows":          s.cfg.Session.ConsoleRows,
-				"log_level":             s.cfg.Session.LogLevel,
+				"llm_backend":                  s.cfg.Session.LLMBackend,
+				"max_sessions":                 s.cfg.Session.MaxSessions,
+				"reserved_interactive":         s.cfg.Session.EffectiveReservedInteractive(),
+				"input_idle_timeout":           s.cfg.Session.InputIdleTimeout,
+				"tail_lines":                   s.cfg.Session.TailLines,
+				"alert_context_lines":          s.cfg.Session.AlertContextLines,
+				"task_delivery_window_seconds": int(s.cfg.Session.EffectiveTaskDeliveryWindow().Seconds()),
+				"task_delivery_attempts":       s.cfg.Session.EffectiveTaskDeliveryAttempts(),
+				"default_project_dir":          s.cfg.Session.DefaultProjectDir,
+				"workspace_root":               s.cfg.Session.WorkspaceRoot,
+				"claude_enabled":               s.cfg.Session.ClaudeEnabled,
+				"auto_git_commit":              s.cfg.Session.AutoGitCommit,
+				"auto_git_init":                s.cfg.Session.AutoGitInit,
+				"git_default":                  s.cfg.Session.GitDefault,
+				"kill_sessions_on_exit":        s.cfg.Session.KillSessionsOnExit,
+				"one_shot_sessions":            s.cfg.Session.OneShotSessions,
+				"root_path":                    s.cfg.Session.RootPath,
+				"mcp_max_retries":              s.cfg.Session.MCPMaxRetries,
+				"schedule_settle_ms":           s.cfg.Session.ScheduleSettleMs,
+				"console_cols":                 s.cfg.Session.ConsoleCols,
+				"console_rows":                 s.cfg.Session.ConsoleRows,
+				"log_level":                    s.cfg.Session.LogLevel,
 				"summarizer": map[string]interface{}{
 					"enabled": s.cfg.Session.Summarizer.Enabled,
 					"llm_ref": s.cfg.Session.Summarizer.LLMRef,
@@ -7440,6 +7442,20 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		case "session.capacity_wait_seconds":
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.Session.CapacityWaitSeconds = n
+			}
+		case "session.task_delivery_window_seconds":
+			// Delivered through SessionConfig.EffectiveTaskDeliveryWindow, which the delivery
+			// path reads live, so a patched value takes effect on the next one-shot task —
+			// no restart needed.
+			if n, ok := toInt(v); ok && n >= 1 {
+				cfg.Session.TaskDeliveryWindowSeconds = n
+			}
+		case "session.task_delivery_attempts":
+			// Delivered through SessionConfig.EffectiveTaskDeliveryAttempts, which the
+			// delivery path reads live, so a patched value takes effect on the next one-shot
+			// task — no restart needed.
+			if n, ok := toInt(v); ok && n >= 1 {
+				cfg.Session.TaskDeliveryAttempts = n
 			}
 		case "autonomous.stale_task_seconds":
 			if n, ok := toInt(v); ok && n >= 0 {
@@ -9454,15 +9470,21 @@ func (s *Server) handleChannelReady(w http.ResponseWriter, r *http.Request) {
 		sessID := targetSess.FullID
 		go func() {
 			// Wait for the strict main-prompt check (❯ input line, no active
-			// choice dialog) and type the task. Each attempt waits up to 15 s;
-			// DeliverOneShotTask marks the task delivered only on success and
-			// releases the claim after its final failed attempt.
-			const attempts = 3
-			if err := s.manager.DeliverOneShotTask(sessID, input, attempts, 5*time.Second); err != nil {
+			// choice dialog) and type the task. Each attempt waits up to the
+			// configured delivery window (60 s default); DeliverOneShotTask
+			// marks the task delivered only on success and releases the claim
+			// after its final failed attempt.
+			attempts := 3 // production defaults used when s.cfg is nil
+			window := 60 * time.Second
+			if s.cfg != nil {
+				attempts = s.cfg.Session.EffectiveTaskDeliveryAttempts()
+				window = s.cfg.Session.EffectiveTaskDeliveryWindow()
+			}
+			if err := s.manager.DeliverOneShotTask(sessID, input, attempts, window, config.TaskDeliveryBackoff); err != nil {
 				if errors.Is(err, session.ErrTaskUndelivered) {
-					fmt.Printf("[channel] task delivery failed for %s: no main prompt after %d attempts\n", sessID, attempts)
+					fmt.Printf("[channel] task delivery failed for %s: no main prompt within %s across %d attempts\n", sessID, window, attempts)
 				} else {
-					fmt.Printf("[channel] task delivery failed for %s after %d attempts: %v\n", sessID, attempts, err)
+					fmt.Printf("[channel] task delivery failed for %s after %d attempts (window %s): %v\n", sessID, attempts, window, err)
 				}
 				return
 			}

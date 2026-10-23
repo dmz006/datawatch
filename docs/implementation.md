@@ -862,6 +862,8 @@ All fields in `~/.datawatch/config.yaml`:
 | `session.input_idle_timeout` | int | `10` | Seconds of idle output before declaring a session is waiting for input |
 | `session.tail_lines` | int | `20` | Default number of lines returned by `tail` and `status` commands |
 | `session.claude_code_bin` | string | `claude` | Path to the claude-code binary (can be absolute or a `PATH`-relative name) |
+| `session.task_delivery_window_seconds` | int | `60` | How long one OneShot task-delivery attempt waits for the Claude main prompt to appear (the session must start its channel and tool servers before the prompt shows) before trying again |
+| `session.task_delivery_attempts` | int | `3` | How many delivery attempts are made before the task fails as undelivered; between attempts a 5s then 10s backoff pause is waited, so the total wait is attempts × window + 15s (about 195s with the defaults). A session whose process has already exited still fails at once |
 | `server.enabled` | bool | `true` | Whether to start the HTTP/WebSocket server |
 | `server.host` | string | `0.0.0.0` | Bind address. Use `0.0.0.0` for all interfaces (including Tailscale) |
 | `server.port` | int | `8080` | HTTP/WebSocket listen port |

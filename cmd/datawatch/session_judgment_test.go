@@ -494,6 +494,12 @@ func TestRunOneShotJSONSession_DecomposeWaitingInputIsKilledBeforeTimeout(t *tes
 
 	cfg := &config.Config{}
 	cfg.DataDir = dataDir
+	// Shrink the task-delivery grace (decomposeWaitingInputTick exempts the
+	// stall check for the delivery window; the default budget is ~195 s and
+	// would outlast the timeout below): window=1 s, attempts=1 gives a 1 s
+	// grace, so the debounce still fires after a few 3 s ticks.
+	cfg.Session.TaskDeliveryWindowSeconds = 1
+	cfg.Session.TaskDeliveryAttempts = 1
 
 	const timeout = 60 * time.Second
 	start := time.Now()

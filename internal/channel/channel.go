@@ -422,6 +422,30 @@ func BridgeKind() string {
 // v5.27.10.
 func BridgePath() string { return channelBinPathForReg }
 
+// duplicate-bridge: the "stray duplicate" bridge that announces ready for
+// the same session from a different random port is started by ANY OTHER
+// CLAUDE PROCESS RUNNING ON THE SAME HOST (other datawatch worker sessions,
+// decompose sessions, operator Claude Code instances) — not by the daemon.
+// RegisterSessionMCP writes the per-session entry ("datawatch-<session id>",
+// with CLAUDE_SESSION_ID baked into the entry's environment and
+// DATAWATCH_CHANNEL_PORT=0 for a random port) at `claude mcp add --scope
+// user`, i.e. into the host's shared user-scope MCP config. Every Claude
+// process on that host loads every user-scope entry and spawns its own
+// copy of that session's bridge; each copy therefore calls ready with
+// the same session id but its own random port (DATAWATCH_CHANNEL_PORT=0).
+// This is harmless in the steady state: the ready handler
+// (handleChannelReady, GH#202) keeps the session on its already
+// registered port while that bridge still answers and rejects the
+// duplicate's announce with "ignored_existing_alive"; a duplicate can
+// only win when the real bridge hasn't announced yet (or has gone quiet),
+// and once the real bridge (re)announces while its port still answers it
+// takes the session back. The session-scoped entry must stay user scope:
+// a per-session CLAUDE_CONFIG_DIR (local/project scope) broke auth and
+// onboarding worse than the duplicate (see the GH#202 comment in the
+// ready handler). The legacy global "datawatch" entry (RegisterMCP) can
+// no longer start a second bridge: per-session registration only,
+// UnregisterGlobalMCP runs on every daemon start, and the pre-launch
+// path removes any stale project-scoped "datawatch" .mcp.json entry.
 func registerMCPNamed(name, channelJSPath string, env map[string]string) error {
 	// Remove existing entry (ignore errors — may not exist).
 	claudeCmd("mcp", "remove", name, "-s", "user").Run() //nolint:errcheck

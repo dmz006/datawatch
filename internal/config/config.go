@@ -1725,6 +1725,15 @@ type SessionConfig struct {
 	// bounds a background task retry loop instead.
 	CapacityWaitSeconds int `yaml:"capacity_wait_seconds,omitempty" json:"capacity_wait_seconds,omitempty"`
 
+	// TaskDeliveryWindowSeconds bounds how long one OneShot task delivery
+	// attempt waits for the Claude main prompt before trying again
+	// (default 60).
+	TaskDeliveryWindowSeconds int `yaml:"task_delivery_window_seconds,omitempty" json:"task_delivery_window_seconds,omitempty"`
+
+	// TaskDeliveryAttempts is how many delivery attempts DeliverOneShotTask
+	// makes before giving up (default 3).
+	TaskDeliveryAttempts int `yaml:"task_delivery_attempts,omitempty" json:"task_delivery_attempts,omitempty"`
+
 	// AutoInstallHooks (alpha.34a #202) — when true (default), the daemon
 	// auto-writes .claude/sprint/{post-event.sh, .dw-env} into project_dir
 	// at session spawn for claude-code sessions. The hook scripts then POST
@@ -1937,6 +1946,43 @@ type SessionConfig struct {
 	// peer's Capabilities field (builtin group names, individual
 	// "surface:action" strings). See docs/howto/federation-cbac.md.
 	Capabilities []string `yaml:"capabilities,omitempty"`
+}
+
+// TaskDeliveryBackoff is the linear backoff step between OneShot task
+// delivery attempts; DeliverOneShotTask sleeps TaskDeliveryBackoff * i
+// after the i-th failed attempt before trying again.
+const TaskDeliveryBackoff = 5 * time.Second
+
+// EffectiveTaskDeliveryWindow returns TaskDeliveryWindowSeconds as a
+// duration, falling back to the 60 s default when the value is <= 0.
+func (s *SessionConfig) EffectiveTaskDeliveryWindow() time.Duration {
+	if s.TaskDeliveryWindowSeconds <= 0 {
+		return 60 * time.Second
+	}
+	return time.Duration(s.TaskDeliveryWindowSeconds) * time.Second
+}
+
+// EffectiveTaskDeliveryAttempts returns TaskDeliveryAttempts, falling
+// back to the 3-attempt default when the value is <= 0.
+func (s *SessionConfig) EffectiveTaskDeliveryAttempts() int {
+	if s.TaskDeliveryAttempts <= 0 {
+		return 3
+	}
+	return s.TaskDeliveryAttempts
+}
+
+// TaskDeliveryBudgetTotal is the worst-case wall-clock time one OneShot
+// task delivery takes: attempts * window plus the backoff sleeps
+// DeliverOneShotTask performs between attempts (TaskDeliveryBackoff * 1,
+// * 2, ..., * (attempts-1)). With the defaults this is 3*60 s + 15 s =
+// 195 s.
+func (s *SessionConfig) TaskDeliveryBudgetTotal() time.Duration {
+	attempts := s.EffectiveTaskDeliveryAttempts()
+	total := time.Duration(attempts) * s.EffectiveTaskDeliveryWindow()
+	for i := 1; i < attempts; i++ {
+		total += TaskDeliveryBackoff * time.Duration(i)
+	}
+	return total
 }
 
 // ExtraMCPServer is one entry in session.extra_mcp_servers (BL344 / GH#118).

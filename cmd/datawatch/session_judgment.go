@@ -288,6 +288,12 @@ func runOneShotJSONSessionWithReader(cfg *config.Config, prdID, projectDir, back
 	}
 	sessionID = startOut.ID
 	fmt.Printf("[%s] spawned %s (backend=%s, output=%s)\n", sessionName, startOut.ID, backend, outputFile)
+	// Record the spawn time as soon as the session id is known: while the
+	// daemon is still delivering the task within its delivery budget the
+	// session can sit in waiting_input before the Claude main prompt is
+	// ready, so the waiting_input stall check is exempt during that window
+	// (see decomposeWaitingInputTick).
+	spawnedAt := time.Now()
 
 	// Best-effort: kill the session when this function returns (handles
 	// TUI sessions that land in waiting_input after writing the output).
@@ -367,7 +373,16 @@ func runOneShotJSONSessionWithReader(cfg *config.Config, prdID, projectDir, back
 			// that would be misread as waiting_input.
 			var stalled bool
 			if sessionName == decomposeSessionName && backend == "claude-code" {
-				waitingInputTicks, stalled = waitingInputTick(waitingInputTicks, session.State(s.State))
+				// The decompose launch uses the same
+				// session.task_delivery_window_seconds and
+				// session.task_delivery_attempts keys as every other one-shot
+				// session (decomposeDeliveryGrace wraps
+				// cfg.Session.TaskDeliveryBudgetTotal(), nil-safe). The daemon
+				// can still be delivering the task for the whole of that budget,
+				// so waiting_input inside it is normal and must not fire the
+				// stall check; failed/killed/cancelled states below still end the
+				// wait at once.
+				waitingInputTicks, stalled = decomposeWaitingInputTick(waitingInputTicks, session.State(s.State), time.Since(spawnedAt), decomposeDeliveryGrace(cfg))
 			}
 			if stalled {
 				fmt.Printf("[%s] %s state=waiting_input for %d ticks — killing; one-shot session cannot answer\n", sessionName, startOut.ID, waitingInputTicks)
