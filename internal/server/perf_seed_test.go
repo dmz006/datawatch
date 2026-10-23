@@ -15,6 +15,7 @@ package server
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"encoding/json"
 	"fmt"
 	"math/rand"
@@ -121,6 +122,16 @@ func (o perfStubObserver) Envelopes() any {
 	}
 	return out
 }
+
+// Remaining ObserverAPI methods: no-op stubs so any observer endpoint the
+// PWA fans out to answers instead of panicking (the seed fixture has no
+// real observer).
+func (o perfStubObserver) Config() any                                    { return map[string]any{"enabled": false} }
+func (o perfStubObserver) SetConfig(any) error                            { return nil }
+func (o perfStubObserver) EnvelopeTree(string) any                        { return map[string]any{"envelopes": []any{}} }
+func (o perfStubObserver) Start(context.Context)                          {}
+func (o perfStubObserver) Stop()                                          {}
+func (o perfStubObserver) EnvelopeSummary(string) (float64, uint64, bool) { return 0, 0, false }
 
 // SeedPerfServer seeds dataDir deterministically and returns a Server wired
 // to it. Sessions and Automata are written straight to their store files

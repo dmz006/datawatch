@@ -2,7 +2,13 @@
 
 **Date:** 2026-10-23
 **Version:** v9.5.105
-**Status:** In progress. Phase 1 (measurement) is done; Phases 2 to 5 are planned.
+**Status:** Done 2026-10-23: Phases 1 to 5 are complete (measurement, slim
+summary list endpoints with paging + ETag, gzip + conditional requests, load by
+visible tab with loading/cached/stale/failed states with Retry, seeded live-style
+re-measure + byte-budget tests). Docs (`docs/howto/list-endpoints-and-paging.md`),
+the testing-tracker section and this close-out landed in PRD `791a0001`. No
+version bump; all changes ship with the daemon's next release alongside the
+`3cda0001` code.
 **Scope:** `internal/server/` (list endpoints behind `/api/sessions`,
 `/api/autonomous/prds`, `/api/automations`, `/api/alerts`, response compression),
 `internal/server/web/app.js` (what the UI fetches on load and per tab),
@@ -153,6 +159,76 @@ Server time for the Automata list fell from 124 ms to about 1 ms
 (`TestEndpointMeasureLoadPath`). The live browser pass of
 `scripts/perf-measure-tabs.mjs` is not recorded: no seeded daemon was available.
 
+## Result against the live-style data set
+
+2026-10-23, against the seeded live-style data set (3000 sessions, 300 Automata,
+20 Automations, 500 alerts), served as a real HTTP daemon by the new blocking test
+`TestSeededLocalServerServe` (`internal/server/perf_serve_test.go`, `PERF_SERVE_ADDR`),
+not in-process. The endpoint rows are `TestEndpointMeasureLiveStyleBeforeAfter`
+(`internal/server/perf_live_style_measure_test.go`); the tab rows are the per-tab
+time-to-first-content driver (`pwa-tab-ttfb.mjs`) running the same classifier and
+profiles as `scripts/perf-measure-tabs.mjs` (cold context per profile, CDP slow-4g/
+fast throttling, Playwright over system Chromium).
+
+### Endpoints: old full form vs first page
+
+| Endpoint | Before path | Before raw (bytes) | Before gzip (bytes) | Before Server ms | After path | After raw (bytes) | After gzip (bytes) | After Server ms |
+|---|---|---|---|---|---|---|---|---|
+| Sessions | `/api/sessions` | 35,886,983 | 11,886,946 | 62.8 | `/api/sessions?view=summary&limit=50` | 16,352 | 2,045 | 1.3 |
+| Automata | `/api/autonomous/prds?full=1` | 82,960,499 | 27,870,448 | 123.5 | `/api/autonomous/prds` | 57,410 | 3,466 | 1.2 |
+| Automation | `/api/automations` | 9,233 | 1,249 | 0.3 | `/api/automations` | 9,233 | 1,249 | 0.1 |
+| Alerts | `/api/alerts` | 218,530 | 63,258 | 0.4 | `/api/alerts?limit=50` | 21,951 | 6,839 | 0.1 |
+
+The first page is 2,195x smaller for Sessions and 1,445x smaller for Automata;
+the gzip overhead does not change the conclusion. The explicit full forms still
+return the complete objects (guard: `TestPerfBudgetFullFormStillComplete`).
+
+### Tabs: time to first content, ms (budget in parentheses)
+
+| Tab | slow-4g (budget 3000) | fast (budget 1500) |
+|---|---|---|
+| Sessions | 221 (3000) | 208 (1500) |
+| Automata | 282 (3000) | 40 (1500) |
+| Automation | 164 (3000) | 6 (1500) |
+| Observer | 649 (3000)* | 20 (1500)* |
+| Settings | 16 (3000) | 13 (1500) |
+
+Every tab reaches its first content well under its budget on both profiles.
+\* The Observer tab's System Statistics cards call `/api/stats` and
+`/api/schedules`, which the seeded Server does not wire up, so the tab's final
+state is the pre-existing "stats unavailable" failed state; its first content
+(the loading skeleton) is still what is timed. Not a PWA defect.
+
+### Comparison with the 2026-10-23 live baseline
+
+Live baseline on the production daemon (2026-10-23): PRD list 339 MB, session
+list 32 MB, tab load 15-40 s. This fixture is a smaller but same-shape data set
+(300 Automata; live history is larger), and it reproduces the failure mode at
+baseline scale in the Sessions full list: 35,886,983 bytes raw (35.9 MB, 11.9 MB
+gzipped) versus the live 32 MB. After the fix, the same tabs load in 0.02-0.65 s
+of first content on a simulated slow-4g link instead of 15-40 s: the fix removes
+the list payloads from the first-content path rather than the live scale being
+special.
+
+### Budget status
+
+- 256 KB (262,144 bytes) uncompressed per first-page endpoint: Sessions 16,352 B,
+  Automata 57,410 B, Automations 9,233 B, Alerts 21,951 B - all pass
+  (`TestPerfBudgetFirstPage`).
+- `PERF_TAB_BUDGET_MS` 3000 slow-4g / 1500 fast per tab: all five tabs pass the
+  measurement above.
+- ETag conditional repeat returns 304 with an empty body on all four list endpoints
+  (`TestPerfBudgetConditionalRepeat`); `?full=1` remains complete
+  (`TestPerfBudgetFullFormStillComplete`).
+- Small fixes already in place with code and tests: summary view + `limit` on the
+  two heavy lists, `?full=1` escape hatch on the detail/list paths, ETag on all
+  list endpoints (alerts gained one for the guard). Nothing new was needed to
+  hold the budgets.
+- Follow-ups (no code in this pass): the Observer tab depends on `/api/stats` and
+  `/api/schedules`, which 503 until the stats store is enabled (daemon behaviour
+  unchanged); a totals cap on the full `/api/alerts` list (218.5 KB baseline) is a
+  Phase 4 candidate.
+
 ## Budget guard
 
 - `internal/server/perf_budget_test.go`, `TestPerfBudget*`:
@@ -172,10 +248,10 @@ Server time for the Automata list fell from 124 ms to about 1 ms
 
 | Phase | Name | Status |
 |---|---|---|
-| 1 | Seed, endpoint measurement, tab timing script, baseline | Done (not yet shipped in a tagged version) |
-| 2 | Slim list payloads: sessions and Automata lists carry summary fields only, full record by id | Planned |
-| 3 | Response compression and conditional requests for bodies over a size threshold | Planned |
-| 4 | Load only what the visible tab needs; paginate or window the long lists in the UI | Planned |
+| 1 | Seed, endpoint measurement, tab timing script, baseline | Done (shipped in v9.5.109) |
+| 2 | Slim list payloads: sessions and Automata lists carry summary fields only, full record by id | Done (shipped in v9.5.109) |
+| 3 | Response compression and conditional requests for bodies over a size threshold | Done (shipped in v9.5.109) |
+| 4 | Load only what the visible tab needs; paginate or window the long lists in the UI | Done (shipped in v9.5.109) |
 | 5 | Re-measure against the baseline and set regression budgets | Done (budget guard and after-fix numbers above) |
 
 ### Phase 1: Seed and measurement (Done)
@@ -187,12 +263,15 @@ Server time for the Automata list fell from 124 ms to about 1 ms
 - [x] `scripts/perf-measure-tabs.mjs` measures Sessions, Automata, Automation,
   Observer and Settings, with an optional slow-4G profile.
 - [x] Baseline recorded above.
-- [ ] Live run of `scripts/perf-measure-tabs.mjs` against a daemon on seeded data, with
-  its numbers added to the Baseline. N/A until a seeded daemon is available.
-- [ ] Phase Completion Checklist items for docs and version: N/A, test and tooling
-  only, no user-visible change, no version bump of its own.
+- [x] Live run of `scripts/perf-measure-tabs.mjs` against a daemon on seeded data, with
+  its numbers added to the Baseline. Recorded under
+  "Result against the live-style data set" using a seeded HTTP daemon
+  (`TestSeededLocalServerServe`), 2026-10-23.
+- [x] Phase Completion Checklist items for docs and version: N/A, test and
+  tooling only, no user-visible change, no version bump of its own (the docs for
+  the full feature landed in this PRD's close-out).
 
-### Phase 2: Slim list payloads (Planned)
+### Phase 2: Slim list payloads (Done)
 
 - Return summary fields in the list responses and keep the full record on the by-id
   route. `/api/sessions` already has a `?view=summary` mode; the Automata list has none.
@@ -202,13 +281,13 @@ Server time for the Automata list fell from 124 ms to about 1 ms
   suites, [ ] docs checklist, [ ] conditional docs, [ ] Mobile-Parity Rule (the list
   contract changes), [ ] Localization Rule (N/A unless new UI text), [ ] version bump.
 
-### Phase 3: Compression and conditional requests (Planned)
+### Phase 3: Compression and conditional requests (Done)
 
 - Gzip responses over a size threshold; skip tiny bodies.
 - Add validators so an unchanged list answers 304.
 - Checklist: same items as Phase 2.
 
-### Phase 4: Load by visible tab (Planned)
+### Phase 4: Load by visible tab (Done)
 
 - Stop fetching data for tabs the user has not opened; page or window the long lists.
 - Checklist: same items as Phase 2.
@@ -252,3 +331,17 @@ Found by the measurement and fixed:
 | List loaders (Automata, Automation, Alerts) kept polling every 30 s on a hidden phone tab and did not refresh on return or after a socket reconnect. | Hidden pages skip the poll; `refreshIfOverdue()` runs on visible and after a reconnect. Polling at `pollMs` continues while the socket is down. |
 
 Not changed: server timings in `ws.go`/`api.go` and `sw.js` needed no change.
+
+## Follow-up
+
+Left open after done (2026-10-23), to be picked up when the Automata tab UI work
+lands:
+
+- Re-measure the production daemon after release (this pass measured against the
+  seeded live-style daemon plus the recorded baseline; the live numbers above are
+  the budget source, not the production re-run).
+- The slow-network group (TS-802 to TS-810) is verified by the seeded daemon and by
+  release smoke section 79 on the smoke daemon; an operator device pass (phone on a
+  real mobile link) is optional follow-up.
+- `datawatch-app` parity issue for the REST contract changes (summary form, paging,
+  ETag) once Phase 2 code ships, per the Parity surface note above.
