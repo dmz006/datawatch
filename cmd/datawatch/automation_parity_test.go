@@ -47,10 +47,7 @@ var commExempt = map[string]string{
 // "<operation>/<surface>": "<reason>". The test fails for a missing
 // counterpart that is not listed, and for a listed entry that is no longer a
 // gap.
-var knownParityGaps = map[string]string{
-	"import-graph/cli":  "built by the import-graph tasks",
-	"import-graph/comm": "built by the import-graph tasks",
-}
+var knownParityGaps = map[string]string{}
 
 func toSet(names []string) map[string]bool {
 	m := make(map[string]bool, len(names))

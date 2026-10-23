@@ -31,7 +31,8 @@ const (
 		"remove <id> <member-id> | edges <id> <member-id> on_complete=<id> on_blocked=<id> on_failed=<id> | approve <id> <member-id> | " +
 		"set-llm <id> [backend=<b>] [model=<m>] [effort=<e>] [planning-backend=<b>] [planning-model=<m>] | " +
 		"set-verification-llm <id> [backend=<b>] [model=<m>] [effort=<e>] | " +
-		"set-budget <id> key=value... (ceiling_type, ceiling_value, window, pacing, on_breach, ...; clear=true removes the policy)"
+		"set-budget <id> key=value... (ceiling_type, ceiling_value, window, pacing, on_breach, ...; clear=true removes the policy) | " +
+		"import-graph <graph-id> [dry-run] (turn an orchestrator graph into a draft Automation; dry-run previews it)"
 	automationCancelUsage = "usage: automation cancel <id> in-flight=true|false. The choice is required: " +
 		"in-flight=true cancels members running now, in-flight=false lets them finish.\n" +
 		"examples:\n  automation cancel ab12 in-flight=true\n  automation cancel ab12 in-flight=false"
@@ -48,6 +49,8 @@ const (
 		"[pacing=none|even] [on_breach=pause|block] [backend=<llm>] [allocation_estimate=true] [peer_window=<a,b>] " +
 		"[reset_time=HH:MM] [reset_weekday=<day>] [reset_day=1..28] [reset_zone=<zone>] [member=<id>] [estimated_cost_usd=<n>] " +
 		"[expected_version=<n>] | automation set-budget <id> clear=true [member=<id>] [expected_version=<n>]"
+	automationImportGraphUsage = "usage: automation import-graph <graph-id> [dry-run]. Turns an orchestrator graph into a draft " +
+		"Automation; dry-run shows what would be created and stores nothing."
 	automationEdgesUsage = "usage: automation edges <id> <member-id> on_complete=<id> on_blocked=<id> on_failed=<id> " +
 		"(name at least one; an edge left out or given empty becomes no next member)"
 )
@@ -56,7 +59,7 @@ const (
 // handleAutomationCmd. Keep it in step with that switch.
 func AutomationCommVerbs() []string {
 	return []string{"activate", "list", "get", "status", "set-budget", "pause", "resume", "cancel",
-		"skip", "insert", "remove", "edges", "approve", "set-llm", "set-verification-llm"}
+		"skip", "insert", "remove", "edges", "approve", "set-llm", "set-verification-llm", "import-graph"}
 }
 
 func (r *Router) handleAutomationCmd(cmd Command) {
@@ -104,6 +107,12 @@ func (r *Router) handleAutomationCmd(cmd Command) {
 		r.automationStatus(args[1])
 	case "set-budget":
 		r.automationSetBudget(args)
+	case "import-graph":
+		if len(args) < 2 || len(args) > 3 || (len(args) == 3 && args[2] != "dry-run") {
+			r.send(automationImportGraphUsage)
+			return
+		}
+		r.automationImportGraph(args[1], len(args) == 3)
 	case "pause":
 		r.automationPauseResume(args, "pause", "paused")
 	case "resume":
@@ -189,8 +198,76 @@ func (r *Router) handleAutomationCmd(cmd Command) {
 		r.automationSetLLM(args, "set-verification-llm", "set_verification_llm", automationSetVerificationLLMUsage,
 			map[string]string{"backend": "backend", "model": "model", "effort": "effort"})
 	default:
-		r.send(fmt.Sprintf("automation: unknown subcommand %q. Try: activate, list, get, status, pause, resume, cancel, skip, insert, remove, edges, approve, set-llm, set-verification-llm, set-budget", args[0]))
+		r.send(fmt.Sprintf("automation: unknown subcommand %q. Try: activate, list, get, status, pause, resume, cancel, skip, insert, remove, edges, approve, set-llm, set-verification-llm, set-budget, import-graph", args[0]))
 	}
+}
+
+// automationImportGraph serves "import-graph <graph-id> [dry-run]" through
+// POST /api/automations/import-graph/{graph_id} and replies with a short
+// summary: member, fork and join counts and the warnings, or the reason the
+// graph was refused (HTTP 422).
+func (r *Router) automationImportGraph(graphID string, dryRun bool) {
+	b, _ := json.Marshal(map[string]any{"dry_run": dryRun})
+	resp, err := r.commJSON(http.MethodPost, "/api/automations/import-graph/"+url.PathEscape(graphID), string(b))
+	if err != nil {
+		if reason, ok := strings.CutPrefix(err.Error(), "HTTP 422: "); ok {
+			r.send(fmt.Sprintf("graph %s cannot be imported: %s", graphID, strings.TrimSpace(reason)))
+			return
+		}
+		r.send("automation import-graph error: " + err.Error())
+		return
+	}
+	type member struct {
+		Kind string `json:"kind"`
+	}
+	var out struct {
+		ID         string   `json:"id"`
+		Members    []member `json:"members"`
+		Warnings   []string `json:"warnings"`
+		Automation *struct {
+			ID      string   `json:"id"`
+			Members []member `json:"members"`
+		} `json:"automation"`
+		Input *struct {
+			Members []member `json:"members"`
+		} `json:"input"`
+	}
+	if json.Unmarshal([]byte(resp), &out) != nil {
+		r.send(resp)
+		return
+	}
+	id, members := out.ID, out.Members
+	switch {
+	case out.Input != nil:
+		members = out.Input.Members
+	case out.Automation != nil:
+		id, members = out.Automation.ID, out.Automation.Members
+	}
+	forks, joins := 0, 0
+	for _, m := range members {
+		switch m.Kind {
+		case "fork":
+			forks++
+		case "join":
+			joins++
+		}
+	}
+	var sb strings.Builder
+	if dryRun {
+		fmt.Fprintf(&sb, "graph %s dry run: would create a draft Automation\n", graphID)
+	} else {
+		fmt.Fprintf(&sb, "graph %s imported as Automation %s (draft)\n", graphID, id)
+	}
+	fmt.Fprintf(&sb, "members: %d, forks: %d, joins: %d\n", len(members), forks, joins)
+	if len(out.Warnings) == 0 {
+		sb.WriteString("warnings: none")
+	} else {
+		fmt.Fprintf(&sb, "warnings: %d", len(out.Warnings))
+		for _, w := range out.Warnings {
+			sb.WriteString("\n- " + w)
+		}
+	}
+	r.send(sb.String())
 }
 
 // automationSetLLM serves "set-llm <id> key=value..." and

@@ -55,6 +55,7 @@ Subcommands:
   set-verification-llm <id>  Set the verification LLM (--backend, --model, --effort;
                       an empty value clears)
   set-budget <id>     Set, replace or clear the budget policy of an Automation or one member
+  import-graph <graph-id>  Turn an orchestrator graph into a draft Automation (--dry-run previews it)
 
 Every control takes --actor, --reason and --expected-version; a stale
 expected version is refused with HTTP 409.`,
@@ -77,6 +78,7 @@ expected version is refused with HTTP 409.`,
 	cmd.AddCommand(newAutomationSetLLMCmd())
 	cmd.AddCommand(newAutomationSetVerificationLLMCmd())
 	cmd.AddCommand(newAutomationSetBudgetCmd())
+	cmd.AddCommand(newAutomationImportGraphCmd())
 	return cmd
 }
 
@@ -1065,4 +1067,47 @@ func (v automationBudgetFlagValues) checkResetAnchor() error {
 		}
 	}
 	return nil
+}
+
+func newAutomationImportGraphCmd() *cobra.Command {
+	var dryRun bool
+	cmd := &cobra.Command{
+		Use:   "import-graph <graph-id>",
+		Short: "Turn an orchestrator graph into a draft Automation",
+		Long: `Convert an orchestrator graph into a draft Automation through
+POST /api/automations/import-graph/{graph_id}. The graph is only read.
+Prints the new Automation id; with --dry-run nothing is stored and the
+Automation that would be created is printed as indented JSON. A graph that
+cannot be expressed as an Automation is refused with the reason and a
+non-zero exit.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			raw, err := automationAPI(http.MethodPost, "/api/automations/import-graph/"+url.PathEscape(args[0]),
+				map[string]any{"dry_run": dryRun})
+			if err != nil {
+				if reason, ok := strings.CutPrefix(err.Error(), "HTTP 422: "); ok {
+					return fmt.Errorf("graph %s cannot be imported: %s", args[0], reason)
+				}
+				return err
+			}
+			if dryRun {
+				var pretty bytes.Buffer
+				if err := json.Indent(&pretty, raw, "", "  "); err != nil {
+					return fmt.Errorf("unreadable reply: %w", err)
+				}
+				fmt.Println(pretty.String())
+				return nil
+			}
+			var a struct {
+				ID string `json:"id"`
+			}
+			if err := json.Unmarshal(raw, &a); err != nil || a.ID == "" {
+				return fmt.Errorf("unreadable reply: %s", strings.TrimSpace(string(raw)))
+			}
+			fmt.Println(a.ID)
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Show the Automation that would be created and store nothing")
+	return cmd
 }
