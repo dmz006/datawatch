@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.103 — Federated daemons detect a shared compute node or billing account by hashed fingerprint
+
+### Added
+
+- **Federated daemons can now find out whether they share a compute node or a billing account, without revealing either.** Each side asks its compute nodes for their own stable identity (a GPU UUID where available, otherwise a locally stored node id) and hashes it with a key shared only by that pair of peers; an LLM entry can also carry a `billing_group` label that is hashed the same way. Only the hashes cross the wire, on a slow periodic sync, and only for peers you have switched on for fingerprint exchange (off by default).
+- **A match is never trusted automatically.** It becomes a pending match that you confirm or reject on REST, MCP, the CLI, chat or the web federation view; a confirmed shared compute node is then counted toward local admission capacity. If a peer is unreachable at admission time, admission fails open and carries on locally. Confirm and reject are audited (signature numbers 42 and 43).
+
 ## v9.5.102 — The session input audit test no longer flakes
 
 ### Fixed
