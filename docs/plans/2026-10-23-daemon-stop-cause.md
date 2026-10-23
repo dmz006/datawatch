@@ -1,6 +1,6 @@
 # 2026-10-23 datawatch daemon stop — sender attribution audit
 
-Status: **findings recorded; actual sender unexplained** (see §6)
+Status: **findings recorded; actual sender unexplained** (see §6); **e2e verification gate passed 2026-10-23** (see §9)
 Date: 2026-10-23
 Scope: repo-wide verification of every path that can stop or restart the
 production `datawatch` daemon, cross-referenced against the 05:33:03 incident.
@@ -346,3 +346,30 @@ shows both checkers in the prerequisite chain.
   changed no behavior).
 - Live restart tests: skip (not run) in all contract-incomplete states, per
   #8.1 — i.e., they cannot be the sender of any production SIGTERM.
+
+## 9. E2E verification gate — throwaway instance, all forms (session h-9e56, 2026-10-23, PASS)
+
+Executed against **throwaway instances only** (binary built under
+`.tmp-evidence/`, isolated data dir + config bound to 127.0.0.1 on one
+free port; no production service started, signalled, or touched):
+
+| Gate step | Expected | Observed |
+|-----------|----------|----------|
+| `go build -o datawatch ./cmd/datawatch/` | exit 0 | exit 0 (4 s) |
+| start instance-1 (pid 3741884, 127.0.0.1:19487) | healthy | "datawatch server listening … 19487", loopback ok |
+| child-shell `kill -TERM` | log "shutdown cause:" + audit `shutdown` entry with signal + `last-shutdown.json` | all three: `shutdown cause: … signal=terminated source=procscan sender_pid=3744119 sender_user=dmz`; audit `action=shutdown subject=terminated, details.signal=terminated`; JSON present at 0600 |
+| second start, same data dir | "previous shutdown: signal terminated from …" | exact line with child-shell cmdline + timestamp; record consumed |
+| SIGKILL fresh start; start again | "previous shutdown: unknown/crash" | exact line (no record readable) |
+| `POST /api/restart` | API-initiated form | `shutdown cause: signal= source=api-restart via="api-restart"`; audit entry `via=api-restart`; `last-shutdown.json` `source=api-restart`; next start prints `previous shutdown: api-restart at 2026-10-23T12:07:40-04:00` |
+| `go vet` + `go test` `internal/shutdowncause` & `internal/audit` (TMUX unset) | pass | vet clean; 96 tests passed |
+| `scripts/check-no-production-service-control.sh`, `scripts/check-no-unscoped-tmux.sh` (TMUX/TMUX_TMPDIR unset) | pass | both `OK`, exit 0 |
+
+One environmental note: in this harness every process inherits
+`INVOCATION_ID` (the shell tree runs under `systemd --user`), so after the
+API-marked cause was fully attributed and persisted, instance-3 took the
+*systemd-exit recovery* branch of `daemonRestartFn` ("exiting for
+Restart=") instead of the `selfRestart` shell-spawn branch. That branch
+choice is the intended production behavior for a supervised daemon, and
+either way the cause was written before the exit — which is the property
+this gate verifies. All scratch instances were killed afterwards; no
+scratch processes remain.

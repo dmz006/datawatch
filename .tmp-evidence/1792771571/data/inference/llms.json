@@ -1,0 +1,16 @@
+[
+  {
+    "name": "claude-code",
+    "kind": "claude-code",
+    "created_at": "2026-10-23T16:06:33.549105305Z",
+    "updated_at": "2026-10-23T16:06:54.154435763Z",
+    "auto_created": true,
+    "binary": "claude",
+    "output_mode": "terminal",
+    "input_mode": "tmux",
+    "skip_permissions": true,
+    "channel_enabled": true,
+    "auto_accept_disclaimer": true,
+    "default_effort": "normal"
+  }
+]
