@@ -150,9 +150,6 @@ func TestPRDListFilters(t *testing.T) {
 	if n := count("?q=AUTOMATON%2012"); n != 1 {
 		t.Fatalf("q title: %d", n)
 	}
-	if n := count("?q=0000001"); n != 15 {
-
-	}
 	if n := count("?tag_id=tag1"); n != 10 {
 		t.Fatalf("tag filter: %d", n)
 	}
