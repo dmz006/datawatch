@@ -34,6 +34,25 @@ that connect them.
 Open the Automation tab to see one card per Automation, ordered by status
 (active, blocked, paused, draft, completed, cancelled) and then by name.
 
+### Capacity and queue card
+
+Above the list sits the same capacity and queue summary card the Automata tab
+shows: the pools and their usage, any usage back-off, budgets, and the
+Automata waiting for capacity. It loads in parallel with the list and has its
+own loading skeleton and, if the request fails, its own error with a Retry
+button; a failed card never blanks the list, and a failed list never blanks the
+card.
+
+### The empty state
+
+When the list loads successfully and there are no Automations at all, the tab
+shows **No Automations yet**, a one-line explanation (an Automation chains
+Automata; an Automaton is a single planned unit of work) and a **Create
+Automation** button that opens the same form as **＋ New Automation**. It never
+appears while the list is still loading or after a load that failed; a failed
+load shows the error and Retry instead. If Automations exist but the filters
+hide them all, you see the plain "No Automations yet" line without the button.
+
 ### Filtering
 
 - **Status badges.** Draft, Active, Paused, Blocked, Completed and Cancelled.

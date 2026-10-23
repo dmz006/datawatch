@@ -24456,6 +24456,7 @@ window.renderAutonomousView = renderAutonomousView;
 // ════════════════════════════════════════════════════════════════════════════
 const _automationState = {
   list: [],
+  loaded: false,
   detailId: null,
   detail: null,
   search: '',
@@ -24521,12 +24522,18 @@ function renderAutomationView() {
         <input id="automationSearch" type="text" class="form-input" placeholder="${escHtml(t('automation_filter_search'))}" aria-label="${escHtml(t('automation_filter_search'))}" value="${escHtml(st.search)}" oninput="onAutomationSearchChange(this.value)" style="flex:1;min-width:100px;font-size:12px;">
         <div class="automata-badge-group">${statusBadges}</div>
       </div>
+      <div id="automationCapacityCard" class="prd-capacity-slot" style="margin:6px 8px 0;"></div>
       <div id="automationPanel" style="font-size:13px;color:var(--text);padding:6px 8px;">
         <div style="text-align:center;padding:32px;color:var(--text2);">${loadingEyeBlock()}</div>
       </div>
     </div>
   `;
-  loadAutomationList();
+  // A fresh render has not loaded anything yet: the empty state waits for a
+  // load that succeeds after this point.
+  st.loaded = false;
+  // The capacity card and the list load in parallel; each loader owns its
+  // own loading and failed states, so one failing never blanks the other.
+  listLoaderAll([_automationCapacityLoader(), _automationLoader()]);
   _injectServerPickerBar(view, renderAutomationView);
 }
 window.renderAutomationView = renderAutomationView;
@@ -24568,6 +24575,36 @@ function onAutomationSearchChange(val) {
 }
 window.onAutomationSearchChange = onAutomationSearchChange;
 
+// The capacity and queue summary card: the same capacityCardHtml component the
+// Automata tab uses, behind its own loader (skeleton while loading, a failed
+// banner with Retry on error).
+function _automationCapacityLoader() {
+  return window._listLoaders.automation_capacity || listLoader({
+    key: 'automation_capacity', el: 'automationCapacityCard', url: '/api/capacity', pollMs: 5000,
+    failedText: msg => t('automation_capacity_failed', [msg]),
+    active: () => !!document.getElementById('automationCapacityCard'),
+    render: cap => window.capacityCardHtml(cap, { showEmpty: true }),
+  });
+}
+
+// The empty state shows only after a load that succeeded with zero
+// Automations: not before the first load completes, not from cached data, and
+// not while the last load failed.
+function _automationEmptyAllowed() {
+  const st = _automationState;
+  if (!st.loaded || st.loadError) return false;
+  const ctl = window._listLoaders && window._listLoaders.automation;
+  return !(ctl && (ctl.state.error || ctl.state.fromCache));
+}
+function automationEmptyStateHtml() {
+  return `<div class="automation-empty-state list-state-empty" style="text-align:center;padding:32px;color:var(--text2);">` +
+    `<h3 class="automation-empty-title" style="margin:0 0 8px;color:var(--text);">${escHtml(t('automation_empty_title'))}</h3>` +
+    `<p class="automation-empty-explain" style="margin:0 0 14px;">${escHtml(t('automation_empty_explain'))}</p>` +
+    `<button type="button" id="automationEmptyCreateBtn" class="btn-primary" style="font-size:12px;padding:5px 12px;" onclick="if (typeof openAutomationForm === 'function') openAutomationForm()">＋ ${escHtml(t('automation_empty_create'))}</button>` +
+    `</div>`;
+}
+window.automationEmptyStateHtml = automationEmptyStateHtml;
+
 function _automationFetchAll() {
   const request = automationRequest('GET', '/api/automations');
   return Promise.all([request, loadAutomationPrdInfo()]).then(([data, info]) => ({
@@ -24577,6 +24614,7 @@ function _automationFetchAll() {
     _automationState.list = d.list;
     _automationState.prdTitles = d.titles;
     _automationState.loadError = null;
+    _automationState.loaded = true;
     return d;
   });
 }
@@ -24591,6 +24629,7 @@ function _automationLoader() {
       _automationState.prdTitles = d.titles;
       _automationState.loadError = null;
       const items = automationListVisible(d.list, _automationState);
+      if (!d.list.length) return _automationEmptyAllowed() ? automationEmptyStateHtml() : '';
       if (!items.length) return `<div class="list-state-empty" style="text-align:center;padding:32px;color:var(--text2);">${escHtml(t('automation_list_empty'))}</div>`;
       const ctx = { prdTitles: d.titles, now: Date.now() };
       return items.map(a => buildAutomationCardHTML(a, ctx)).join('');
@@ -24710,6 +24749,10 @@ function _automationRenderCards() {
     return;
   }
   const items = automationListVisible(st.list, st);
+  if (!st.list.length) {
+    if (_automationEmptyAllowed()) panel.innerHTML = automationEmptyStateHtml();
+    return;
+  }
   if (!items.length) {
     panel.innerHTML = `<div style="text-align:center;padding:32px;color:var(--text2);">${escHtml(t('automation_list_empty'))}</div>`;
     return;
