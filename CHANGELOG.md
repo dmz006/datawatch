@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.108 — The capacity view names what is running and waiting
+
+### Changed
+
+- **The capacity view now names what is running and what is waiting, instead of showing raw ids.** Pool holders, waiting tasks and PRDs in the capacity API, the wait-reason text, the capacity text on the CLI, chat and MCP, the audit details for admission waits, and the Automata and Automation capacity cards show the PRD title and task title first, with the short id as a secondary reference. For example "Observer mobile fit / Record the desktop and tablet layout baseline (dbd50015)", "Verifying: <task title>" and "Planning: <PRD title>". The existing id fields stay in the API for scripts. Long titles are shortened with the full text in a tooltip, a deleted PRD shows as untitled, and one cached title lookup keeps the polled capacity call fast.
+
 ## v9.5.107 — Role tags on LLM entries and session priority in admission
 
 ### Added
