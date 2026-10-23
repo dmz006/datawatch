@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.109 — Fast web UI loading with summary lists and loading states
+
+### Changed
+
+- **The web UI loads fast and says what it is doing.** The Automata and Sessions lists no longer return every PRD's full stories and every session's full task text: the list endpoints return summaries with paging, filters and an ETag, so an unchanged list costs a few bytes, and full objects load on demand when a row is opened (the old full form stays behind an explicit query flag for the CLI and MCP). On the live system the PRD list was 339 MB and the session list 32 MB; the data that made one PRD 13 MB is moved off the list path. A performance budget test with a seeded large data set fails the build if a list response grows past its limit.
+- **Every list shows a loading state, a failed state with Retry, and a real stale warning.** The Sessions, Automata, Automation, Observer and Alerts tabs show a skeleton and a "last updated" line, render the last good response instantly from cache while the fresh one loads, ignore superseded responses, and fetch their endpoints in parallel. The live-update connection and its reconnect are reviewed and fixed.
+- **The Automation tab has an empty state and the capacity card.** With no Automations it shows a clear "No Automations yet" message with a Create button, and it now shows the same capacity and queue card as the Automata tab.
+- The slow-network end-to-end scenarios for these tabs are written; wiring them into the release smoke is a follow-up.
+
 ## v9.5.108 — The capacity view names what is running and waiting
 
 ### Changed
