@@ -7,6 +7,7 @@
 package autonomous
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log"
@@ -290,6 +291,9 @@ func (c *Coordinator) advance(autoID string, in stepInput) {
 	if in.now.IsZero() {
 		in.now = c.now()
 	}
+	if c.assistEmptyEdge(autoID, &in) {
+		return // the assistant paused the Automation
+	}
 	for attempt := 0; attempt < coordinatorCASRetries; attempt++ {
 		a, ok := c.m.automations.Get(autoID)
 		if !ok || (a.Status != AutomationActive && a.Status != AutomationPaused) {
@@ -299,6 +303,9 @@ func (c *Coordinator) advance(autoID string, in stepInput) {
 		dry, err := step(cloneAutomation(a), in, snap)
 		if err != nil {
 			return // stale: the member is no longer a live cursor
+		}
+		if !in.breachAsked && c.assistBreach(autoID, dry.budget, &in) {
+			continue // the consultation wrote a Decision: re-read the new version
 		}
 		releases := c.beginStarts(dry.starts)
 		if c.preApply != nil {
@@ -325,6 +332,52 @@ func (c *Coordinator) advance(autoID string, in stepInput) {
 		return
 	}
 	log.Printf("[autonomous] automation %s: advance on member %s dropped after %d version conflicts", autoID, in.memberID, coordinatorCASRetries)
+}
+
+// assistEmptyEdge consults the decision assistant when the member that ended
+// blocked or failed has no edge to follow, where today the Automation stops
+// and alerts. A live pick of skip_member:<edge> rewrites in.end to skip the
+// member down that existing edge; pause_automation pauses the Automation and
+// reports true so the caller stops. Anything else (needs_operator, escalate,
+// shadow mode, no assistant) leaves the event to the existing stop-and-alert.
+func (c *Coordinator) assistEmptyEdge(autoID string, in *stepInput) (paused bool) {
+	if in.emptyEdgeAsked || in.reeval || in.startPending || in.end.direct != "" ||
+		(in.end.edge != edgeOnBlocked && in.end.edge != edgeOnFailed) {
+		return false
+	}
+	in.emptyEdgeAsked = true
+	a, ok := c.m.automations.Get(autoID)
+	if !ok || a.Status != AutomationActive {
+		return false
+	}
+	mem := automationMember(a, in.memberID)
+	if mem == nil || !isLiveCursor(a, mem.ID) || joinOf(a, mem.ID) != nil || edgeTarget(mem, in.end.edge) != "" {
+		return false
+	}
+	if !c.m.assistantHookOn(autoID, mem.ID, DecisionHookEmptyEdge) {
+		return false
+	}
+	options := append(skipEdgeOptions(mem, in.end.edge), assistOptionPause, assistOptionNeedsOperator)
+	res := c.m.decide(context.Background(), autoID, mem.ID, DecisionHookEmptyEdge, DecisionEvidence{
+		MemberID:      mem.ID,
+		FailureReason: fmt.Sprintf("member %s ended %s and has no %s edge", mem.ID, in.end.outcome, in.end.edge),
+		Progress:      automationProgress(a),
+	}, options)
+	if !res.Actionable() {
+		return false
+	}
+	if res.Option == assistOptionPause {
+		actor := c.m.assistantActorFor(autoID, mem.ID)
+		if _, err := c.m.PauseAutomation(autoID, actor, c.m.currentVersion(autoID)); err != nil {
+			log.Printf("[autonomous] automation %s: assistant pause: %v", autoID, err)
+			return false
+		}
+		return true
+	}
+	if edge, ok := skipOptionEdge(res.Option); ok {
+		in.end = endOutcome{edge: edge, memStatus: MemberSkipped, outcome: "skipped by " + c.m.assistantActorFor(autoID, mem.ID), success: edge == edgeOnComplete}
+	}
+	return false
 }
 
 // snapshotMembers reads every member's live facts once, for a step.

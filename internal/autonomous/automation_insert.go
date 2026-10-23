@@ -9,6 +9,7 @@
 package autonomous
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -59,7 +60,7 @@ type PendingInsert struct {
 
 // isAgentActor reports whether actor is an agent or session rather than a person.
 func isAgentActor(actor string) bool {
-	return strings.HasPrefix(actor, "session:") || strings.HasPrefix(actor, "agent:")
+	return strings.HasPrefix(actor, "session:") || strings.HasPrefix(actor, "agent:") || strings.HasPrefix(actor, "assistant:")
 }
 
 // agentInsertPolicy returns the policy in effect; empty means allow.
@@ -164,6 +165,59 @@ func (m *Manager) InsertMember(id string, in InsertMemberInput) (*Automation, er
 		"version": updated.Version,
 	})
 	return updated, nil
+}
+
+// AssistInsertCandidate is a corrective PRD the assistant may propose inserting.
+type AssistInsertCandidate struct {
+	PRDID string
+	Name  string
+}
+
+// AssistInsertTriage asks the decision assistant whether to insert one of the
+// candidate corrective PRDs after memberID. A live, confident pick of
+// insert:<prd_id> goes through InsertMember with actor "assistant:<model>" and
+// the assistant's reason as AddedReason. The insert is held as a PendingInsert
+// and needs the operator's approval before it joins the graph, so it never
+// runs unapproved; a draft Automation (where an insert would land at once) is
+// refused. Escalate results and shadow mode insert nothing.
+func (m *Manager) AssistInsertTriage(ctx context.Context, id, memberID string, candidates []AssistInsertCandidate) (AssistantResult, *Automation, error) {
+	a, err := m.loadForControl(id, m.currentVersion(id), AutomationActive, AutomationPaused, AutomationBlocked)
+	if err != nil {
+		return AssistantResult{}, nil, err
+	}
+	if automationMember(a, memberID) == nil {
+		return AssistantResult{}, nil, fmt.Errorf("404: automation %s has no member %s", id, memberID)
+	}
+	if !m.assistantHookOn(id, memberID, DecisionHookInsertMember) {
+		return AssistantResult{Outcome: AssistantEscalate, Hook: DecisionHookInsertMember, Reason: "decision assistant is off or the hook is disabled"}, a, nil
+	}
+	options := make([]string, 0, len(candidates)+1)
+	byOption := make(map[string]AssistInsertCandidate, len(candidates))
+	for _, c := range candidates {
+		o := assistOptionInsertPrefix + c.PRDID
+		options = append(options, o)
+		byOption[o] = c
+	}
+	options = append(options, assistOptionNeedsOperator)
+	res := m.decide(ctx, id, memberID, DecisionHookInsertMember, DecisionEvidence{
+		MemberID: memberID,
+		Progress: automationProgress(a),
+	}, options)
+	if !res.Actionable() {
+		return res, a, nil
+	}
+	c, ok := byOption[res.Option]
+	if !ok {
+		return res, a, nil // needs_operator
+	}
+	updated, err := m.InsertMember(id, InsertMemberInput{
+		PRDID: c.PRDID, Name: c.Name, AfterMemberID: memberID,
+		Actor: m.assistantActorFor(id, memberID), Reason: res.Reason, ExpectedVersion: m.currentVersion(id),
+	})
+	if err != nil {
+		return res, a, err
+	}
+	return res, updated, nil
 }
 
 func insertNote(what, memberID string, in InsertMemberInput) string {

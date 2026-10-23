@@ -53,6 +53,11 @@ type BudgetVerdict struct {
 	Scope  string        `json:"scope,omitempty"`
 	Policy *BudgetPolicy `json:"policy,omitempty"`
 
+	// assistantOnBreach is the breach response the decision assistant chose
+	// (pause or block) for this one gate. It only picks between the responses
+	// already allowed; the ceiling itself is never touched.
+	assistantOnBreach string
+
 	SpentUSD     float64   `json:"spent_usd"`
 	CeilingUSD   float64   `json:"ceiling_usd"`
 	RemainingUSD float64   `json:"remaining_usd"`
