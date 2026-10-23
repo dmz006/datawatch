@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.110 — Capacity admission no longer deadlocks on the shared-node check
+
+### Fixed
+
+- **Capacity admission no longer deadlocks when a federated shared-node check runs.** The shared-node fingerprint check asked the capacity ledger for its pool usage while the ledger was already holding its own lock to decide whether a waiting task could start, so the first task that had to wait on a node pool froze the ledger: `/api/capacity` and `/api/autonomous/status` hung, no waiting task was ever admitted, and the daemon sat near 100 percent CPU. The ledger now hands the check the held count and limit, and a regression test fails if a ledger callback can read the ledger back.
+
 ## v9.5.109 — Fast web UI loading with summary lists and loading states
 
 ### Changed
