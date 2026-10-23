@@ -1744,7 +1744,9 @@ paths:
       responses: {"200": {description: OK}}
     post:
       summary: Create a graph from a set of PRD IDs
+      description: "Deprecated: use 'automation import-graph' (POST /api/automations/import-graph/{graph_id}); the response carries a Deprecation header and a deprecation field."
       operationId: orchestratorGraphCreate
+      deprecated: true
       tags: [Orchestrator]
       requestBody:
         required: true
@@ -1780,7 +1782,9 @@ paths:
   /api/orchestrator/graphs/{id}/plan:
     post:
       summary: (Re)build the node tree for a graph
+      description: "Deprecated: use 'automation import-graph' (POST /api/automations/import-graph/{graph_id}); the response carries a Deprecation header and a deprecation field."
       operationId: orchestratorGraphPlan
+      deprecated: true
       tags: [Orchestrator]
       parameters: [{name: id, in: path, required: true, schema: {type: string}}]
       requestBody:
@@ -1798,7 +1802,9 @@ paths:
   /api/orchestrator/graphs/{id}/run:
     post:
       summary: Fire-and-forget runner kick
+      description: "Deprecated: use 'automation import-graph' (POST /api/automations/import-graph/{graph_id}); the response carries a Deprecation header and a deprecation field."
       operationId: orchestratorGraphRun
+      deprecated: true
       tags: [Orchestrator]
       parameters: [{name: id, in: path, required: true, schema: {type: string}}]
       responses: {"200": {description: OK}}

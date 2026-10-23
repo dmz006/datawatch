@@ -1043,6 +1043,7 @@ version is refused with HTTP 409.
 
 | Subcommand | Description |
 |---|---|
+| `import-graph <graph-id>` | Turn an orchestrator graph into a draft Automation (`--dry-run` previews it, nothing stored). The comm verb is `automation import-graph <graph-id> [dry-run]` |
 | `list`, `get <id>` | List Automations; show one (members, edges, active cursors, budget) |
 | `create`, `activate <id>` | Create a draft from JSON; start a draft |
 | `pause`, `resume`, `cancel <id>` | Operator control (`cancel` requires `--cancel-in-flight true\|false`) |
@@ -1092,6 +1093,8 @@ PRD-DAG orchestrator (BL117).
 | `graph create/get/list/run/cancel/plan` | DAG CRUD + execution |
 | `verdicts <graph-id>` | Aggregate guardrail verdicts |
 | `config get/set` | Orchestrator config |
+
+**Deprecated:** `orchestrator create`, `orchestrator plan` and `orchestrator run` (CLI and comm channel) still work but print a deprecation notice; use `datawatch automation import-graph <graph-id>` instead.
 
 ### `datawatch agent <subcommand>`
 

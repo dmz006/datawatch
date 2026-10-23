@@ -694,6 +694,50 @@ requires `in-flight=true` or `in-flight=false`; `set-budget <id>
 ceiling_type=dollar ceiling_value=40 window=week` or `clear=true`). `openapi.yaml` documents the
 endpoints.
 
+### Converting an orchestrator graph (`import-graph`)
+
+`POST /api/automations/import-graph/{graph_id}` reads an orchestrator graph and
+creates a draft Automation from it. Automaton nodes become members, a fan-out
+and its fan-in become a paired fork and join, and guardrail nodes are dropped
+with a warning. The graph is only read, never changed. Body: `{"dry_run": bool}`
+(optional).
+
+| Status | Meaning |
+|---|---|
+| `200` | The new draft Automation; with `dry_run` true, `{input, warnings, dry_run: true}` and nothing is stored or audited |
+| `404` | Unknown graph |
+| `409` | A member Automaton already belongs to another Automation |
+| `422` | The graph cannot be expressed as an Automation; the body gives the reason |
+| `503` | The orchestrator or the automation manager is not available |
+
+Preview first with a dry run:
+
+```
+curl -sk -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"dry_run": true}' https://localhost:8443/api/automations/import-graph/3fa9c2d1
+```
+
+A real import writes one `automation_import_graph` audit entry. The same verb
+is the MCP tool `automation_import_graph`, the CLI `datawatch automation
+import-graph <graph-id> [--dry-run]` and the comm verb `automation import-graph
+<graph-id> [dry-run]`.
+
+#### Deprecation
+
+The three orchestrator graph operations that build and start a graph are
+deprecated and keep working until a later release removes them:
+
+| Operation | REST | MCP tool | CLI / comm |
+|---|---|---|---|
+| Create | `POST /api/orchestrator/graphs` | `orchestrator_graph_create` | `orchestrator create` |
+| Plan | `POST /api/orchestrator/graphs/{id}/plan` | `orchestrator_graph_plan` | `orchestrator plan` |
+| Run | `POST /api/orchestrator/graphs/{id}/run` | `orchestrator_graph_run` | `orchestrator run` |
+
+Each response carries a `Deprecation: true` header and a `deprecation` field (REST),
+or a trailing notice (MCP, CLI, comm) that names `automation import-graph`. The daemon
+logs the warning once per operation per process. Migrate existing graphs with
+`import-graph`; see [howto/automation-chains](../howto/automation-chains.md).
+
 ### Model-tier defaults (`set_llm` and `set_verification_llm`)
 
 An Automation can carry default model settings for the member Automata it
