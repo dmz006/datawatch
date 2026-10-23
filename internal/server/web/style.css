@@ -6449,3 +6449,44 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
     min-width: 40px;
   }
 }
+
+/* Observer sections below System Statistics: fluid rows, wrapping text and
+   40px tap targets at phone widths. The classes carry no rule above the
+   breakpoint except the flex-row defaults, so 768px and wider is unchanged. */
+.obs-row { display: flex; gap: 6px; padding: 4px 12px; flex-wrap: wrap; align-items: center; }
+.obs-row-nowrap { flex-wrap: nowrap; }
+.obs-row-flush { padding-left: 0; padding-right: 0; gap: 4px; }
+.obs-fluid { min-width: 0; max-width: 100%; box-sizing: border-box; }
+.obs-search { min-width: 120px; }
+.obs-select { width: auto; }
+.obs-scope-input { width: 110px; }
+.obs-maint-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 6px 12px; }
+.obs-maint-sweep { display: flex; gap: 4px; flex-wrap: wrap; }
+.obs-sweep-days { width: 80px; }
+.obs-log-actions { padding: 6px 0; gap: 8px; }
+.obs-table-scroll { overflow-x: auto; max-width: 100%; }
+.obs-audit-details { overflow-wrap: anywhere; word-break: break-word; }
+.obs-kg-triple { overflow-wrap: anywhere; }
+.obs-sched-meta { flex-shrink: 0; }
+
+@media (max-width: 768px) {
+  .obs-tap { min-height: 40px; min-width: 40px; box-sizing: border-box; }
+  .obs-maint-grid { grid-template-columns: 1fr; }
+  .obs-row > .obs-fluid,
+  .obs-row > .obs-select { flex: 1 1 140px; width: auto; min-width: 0; max-width: 100%; }
+  .obs-row-nowrap > .obs-fluid { flex: 1 1 0; }
+  .obs-search { flex: 1 1 100%; min-width: 0; }
+  .obs-scope-input { flex: 1 1 120px; width: auto; min-width: 0; max-width: 100%; }
+  .obs-sweep-days { flex: 0 1 96px; min-width: 0; }
+  .obs-log { max-height: 240px; overflow-wrap: anywhere; max-width: 100%; box-sizing: border-box; }
+  .obs-log-actions { padding: 6px 0; }
+  .obs-mem-row, .obs-sched-row { flex-wrap: wrap; }
+  .obs-mem-body { overflow-wrap: anywhere; }
+  .obs-sched-row > div:first-of-type { min-width: 0; flex: 1 1 140px; }
+  .obs-sched-meta { flex-wrap: wrap; flex-shrink: 1; }
+  .obs-panel { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+  .obs-panel select, .obs-panel input:not([type=checkbox]), .obs-panel button { min-height: 40px; }
+  .obs-peer-row { gap: 4px; overflow-wrap: anywhere; }
+  .obs-kg-results { overflow-wrap: anywhere; }
+  .obs-list { overflow-wrap: anywhere; }
+}

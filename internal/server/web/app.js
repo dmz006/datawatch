@@ -17509,12 +17509,12 @@ function listMemories() {
       const content = (m.content || '').length > 200 ? m.content.slice(0, 200) + '…' : (m.content || '');
       const sim = m.similarity ? ` <span style="color:var(--accent2);">[${Math.round(m.similarity*100)}%]</span>` : '';
       const tags = _renderMemoryTagChips(m.tags); // GH#192 D78a
-      return `<div class="settings-row" style="justify-content:space-between;align-items:flex-start;gap:8px;">
+      return `<div class="settings-row obs-mem-row" style="justify-content:space-between;align-items:flex-start;gap:8px;">
         <div style="flex:1;min-width:0;">
           <span style="font-size:10px;color:var(--text2);">#${m.id} ${m.role} ${date}${sim}</span>${tags}
-          <div style="font-size:12px;white-space:pre-wrap;word-break:break-word;max-height:60px;overflow:hidden;">${escHtml(content)}</div>
+          <div class="obs-mem-body" title="${escHtml(m.content || '')}" style="font-size:12px;white-space:pre-wrap;word-break:break-word;max-height:60px;overflow:hidden;">${escHtml(content)}</div>
         </div>
-        <button class="btn-icon" style="font-size:10px;color:var(--error);" onclick="deleteMemory(${m.id})" title="Delete">&#128465;</button>
+        <button class="btn-icon obs-tap" style="font-size:10px;color:var(--error);" onclick="deleteMemory(${m.id})" title="Delete">&#128465;</button>
       </div>`;
     }).join('');
   }).catch(() => { if (el) el.textContent = t('memory_failed_load') || 'Failed to load memories'; });
@@ -17547,12 +17547,12 @@ function searchMemories() {
       const content = (m.content || '').length > 200 ? m.content.slice(0, 200) + '…' : (m.content || '');
       const sim = m.similarity ? ` [${Math.round(m.similarity*100)}%]` : '';
       const tags = _renderMemoryTagChips(m.tags); // GH#192 D78a
-      return `<div class="settings-row" style="justify-content:space-between;align-items:flex-start;gap:8px;">
+      return `<div class="settings-row obs-mem-row" style="justify-content:space-between;align-items:flex-start;gap:8px;">
         <div style="flex:1;min-width:0;">
           <span style="font-size:10px;color:var(--text2);">#${m.id} ${m.role}${sim}</span>${tags}
-          <div style="font-size:12px;white-space:pre-wrap;word-break:break-word;max-height:60px;overflow:hidden;">${escHtml(content)}</div>
+          <div class="obs-mem-body" title="${escHtml(m.content || '')}" style="font-size:12px;white-space:pre-wrap;word-break:break-word;max-height:60px;overflow:hidden;">${escHtml(content)}</div>
         </div>
-        <button class="btn-icon" style="font-size:10px;color:var(--error);" onclick="deleteMemory(${m.id})" title="Delete">&#128465;</button>
+        <button class="btn-icon obs-tap" style="font-size:10px;color:var(--error);" onclick="deleteMemory(${m.id})" title="Delete">&#128465;</button>
       </div>`;
     }).join('');
   }).catch(() => { if (el) el.textContent = t('memory_search_failed') || 'Search failed'; });
@@ -28488,7 +28488,7 @@ function loadSchedulesList() {
     const hasMultiple = pageItems.length > 1;
     let html = hasMultiple ? `<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 8px;border-bottom:1px solid var(--border);">
       <label style="font-size:10px;display:flex;align-items:center;gap:4px;color:var(--text2);"><input type="checkbox" id="schedSelectAll" onchange="toggleAllScheduleCheckboxes(this.checked)"> Select all</label>
-      <button class="btn-secondary" style="font-size:10px;padding:2px 8px;" onclick="deleteSelectedSchedules()">Delete selected</button>
+      <button class="btn-secondary obs-tap" style="font-size:10px;padding:2px 8px;" onclick="deleteSelectedSchedules()">Delete selected</button>
     </div>` : '';
     html += pageItems.map(sc => {
       const when = _fmtScheduleTime(sc.run_at);
@@ -28501,13 +28501,13 @@ function loadSchedulesList() {
         : sessionRef + schedRef + ': ' + escHtml(sc.command) + cronBadge;
       const actions = [];
       if (sc.state === 'pending') {
-        actions.push(`<button class="btn-icon" style="font-size:10px;" onclick="editSchedulePrompt('${escJsAttr(sc.id)}','${escJsAttr(sc.command)}','${escJsAttr(sc.run_at||'')}')" title="Edit">&#9998;</button>`);
+        actions.push(`<button class="btn-icon obs-tap" style="font-size:10px;" onclick="editSchedulePrompt('${escJsAttr(sc.id)}','${escJsAttr(sc.command)}','${escJsAttr(sc.run_at||'')}')" title="Edit">&#9998;</button>`);
       }
-      actions.push(`<button class="btn-icon" style="font-size:10px;color:var(--error);" onclick="deleteScheduleEntry('${escJsAttr(sc.id)}')" title="Delete">&#128465;</button>`);
-      return `<div class="settings-row" style="justify-content:space-between;font-size:12px;">
+      actions.push(`<button class="btn-icon obs-tap" style="font-size:10px;color:var(--error);" onclick="deleteScheduleEntry('${escJsAttr(sc.id)}')" title="Delete">&#128465;</button>`);
+      return `<div class="settings-row obs-sched-row" style="justify-content:space-between;font-size:12px;">
         ${hasMultiple ? `<input type="checkbox" class="sched-checkbox" data-id="${sc.id}" style="margin-right:6px;">` : ''}
         <div style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escHtml(sc.command)}">${label}</div>
-        <div style="display:flex;align-items:center;gap:6px;">
+        <div class="obs-sched-meta" style="display:flex;align-items:center;gap:6px;">
           <span style="font-size:10px;color:var(--text2);">${when}</span>
           <span style="font-size:10px;${stateClass};font-weight:600;text-transform:uppercase;">${escHtml(sc.state)}</span>
           ${actions.join('')}
@@ -28516,9 +28516,9 @@ function loadSchedulesList() {
     }).join('');
     if (totalPages > 1) {
       html += `<div style="display:flex;justify-content:center;gap:8px;padding:6px;">
-        ${page > 0 ? `<button class="btn-link" style="font-size:11px;" onclick="settingsPagination.schedules=${page - 1};loadSchedulesList()">&#9664; Prev</button>` : ''}
+        ${page > 0 ? `<button class="btn-link obs-tap" style="font-size:11px;" onclick="settingsPagination.schedules=${page - 1};loadSchedulesList()">&#9664; Prev</button>` : ''}
         <span style="font-size:11px;color:var(--text2);">Page ${page + 1}/${totalPages}</span>
-        ${page < totalPages - 1 ? `<button class="btn-link" style="font-size:11px;" onclick="settingsPagination.schedules=${page + 1};loadSchedulesList()">Next &#9654;</button>` : ''}
+        ${page < totalPages - 1 ? `<button class="btn-link obs-tap" style="font-size:11px;" onclick="settingsPagination.schedules=${page + 1};loadSchedulesList()">Next &#9654;</button>` : ''}
       </div>`;
     }
     el.innerHTML = html;
@@ -31955,9 +31955,9 @@ function renderObserverView() {
           <!-- GH#172 D78 — quick add-memory (Android parity): manual save
                straight from the Observer tab, no separate memory_remember
                call site needed. -->
-          <div style="display:flex;gap:6px;padding:4px 12px;">
-            <input type="text" id="memoryQuickAddInput" class="form-input" style="flex:1;" placeholder="${escHtml(t('obs_add_memory_placeholder')||'Add a memory…')}" onkeydown="if(event.key==='Enter')addMemoryQuick()" />
-            <button class="btn-primary" style="font-size:11px;" onclick="addMemoryQuick()">${escHtml(t('obs_add_memory')||'Add')}</button>
+          <div class="obs-row obs-row-nowrap">
+            <input type="text" id="memoryQuickAddInput" class="form-input obs-fluid" style="flex:1;" placeholder="${escHtml(t('obs_add_memory_placeholder')||'Add a memory…')}" onkeydown="if(event.key==='Enter')addMemoryQuick()" />
+            <button class="btn-primary obs-tap" style="font-size:11px;" onclick="addMemoryQuick()">${escHtml(t('obs_add_memory')||'Add')}</button>
           </div>
           <!-- GH#192 D78a — tags, optional, comma-separated. Checked
                server-side first before assuming front-end-only: no tags
@@ -31965,28 +31965,28 @@ function renderObserverView() {
                added end-to-end; this input sends it in the same
                POST /api/memory/save addMemoryQuick already calls. -->
           <div style="padding:0 12px 4px;">
-            <input type="text" id="memoryQuickAddTags" class="form-input" style="width:100%;font-size:11px;" placeholder="${escHtml(t('obs_add_memory_tags_placeholder')||'Tags (comma-separated, optional)')}" onkeydown="if(event.key==='Enter')addMemoryQuick()" />
+            <input type="text" id="memoryQuickAddTags" class="form-input obs-fluid" style="width:100%;font-size:11px;" placeholder="${escHtml(t('obs_add_memory_tags_placeholder')||'Tags (comma-separated, optional)')}" onkeydown="if(event.key==='Enter')addMemoryQuick()" />
           </div>
-          <div style="display:flex;gap:6px;padding:4px 12px;flex-wrap:wrap;">
-            <input type="text" id="memorySearchInput" class="form-input" style="flex:1;min-width:120px;" placeholder="Search memories…" />
-            <select id="memoryRoleFilter" class="form-select" style="font-size:11px;width:auto;">
+          <div class="obs-row obs-filter-row">
+            <input type="text" id="memorySearchInput" class="form-input obs-fluid obs-search" style="flex:1;" placeholder="Search memories…" />
+            <select id="memoryRoleFilter" class="form-select obs-tap obs-select" style="font-size:11px;">
               <option value="">All roles</option>
               <option value="manual">Manual</option>
               <option value="session">Session</option>
               <option value="learning">Learning</option>
               <option value="output_chunk">Chunks</option>
             </select>
-            <select id="memorySinceFilter" class="form-select" style="font-size:11px;width:auto;">
+            <select id="memorySinceFilter" class="form-select obs-tap obs-select" style="font-size:11px;">
               <option value="">All time</option>
               <option value="7">Last 7 days</option>
               <option value="30">Last 30 days</option>
               <option value="90">Last 90 days</option>
             </select>
-            <button class="btn-secondary" style="font-size:11px;" onclick="searchMemories()">Search</button>
-            <button class="btn-secondary" style="font-size:11px;" onclick="listMemories()">List</button>
-            <button class="btn-secondary" style="font-size:11px;" onclick="exportMemories()" title="Download JSON backup">Export</button>
+            <button class="btn-secondary obs-tap" style="font-size:11px;" onclick="searchMemories()">Search</button>
+            <button class="btn-secondary obs-tap" style="font-size:11px;" onclick="listMemories()">List</button>
+            <button class="btn-secondary obs-tap" style="font-size:11px;" onclick="exportMemories()" title="Download JSON backup">Export</button>
           </div>
-          <div id="memoryBrowserList" style="padding:4px 12px;max-height:400px;overflow-y:auto;"></div>
+          <div id="memoryBrowserList" class="obs-list" style="padding:4px 12px;max-height:400px;overflow-y:auto;"></div>
         </div>
       </div>
 
@@ -31995,8 +31995,8 @@ function renderObserverView() {
         <div id="settings-sec-memscopes" style="${secContent('memscopes')}">
           <div style="font-size:10px;color:var(--text2);padding:0 12px 6px;">Recall walks every scope layer top-down and merges the hits — the dropdown below isn't a recall filter, it's the default target when you promote an entry. See <a href="/diagrams.html#docs/memory.md" target="_blank" rel="noopener">docs/memory.md</a> for the full model.</div>
           <div id="memScopeInventory" style="padding:4px 12px;margin-bottom:8px;"><em style="color:var(--text2);">${loadingEyeBlock('Loading inventory…')}</em></div>
-          <div style="display:flex;gap:6px;padding:0 12px 6px;flex-wrap:wrap;align-items:center;">
-            <select id="memScopeSelect" class="form-select" style="font-size:11px;width:auto;">
+          <div class="obs-row obs-scope-row">
+            <select id="memScopeSelect" class="form-select obs-tap obs-select" style="font-size:11px;">
               <option value="session-local">session-local</option>
               <option value="story-shared">story-shared</option>
               <option value="prd-shared">prd-shared</option>
@@ -32004,48 +32004,48 @@ function renderObserverView() {
               <option value="persona-in-project">persona-in-project</option>
               <option value="persona-global">persona-global</option>
             </select>
-            <input type="text" id="memScopePRDID" class="form-input" style="width:100px;font-size:11px;" placeholder="prd_id" />
-            <input type="text" id="memScopeStoryID" class="form-input" style="width:100px;font-size:11px;" placeholder="story_id" />
-            <input type="text" id="memScopePersona" class="form-input" style="width:110px;font-size:11px;" placeholder="persona" />
-            <input type="text" id="memScopeProject" class="form-input" style="width:120px;font-size:11px;" placeholder="project dir" onchange="loadMemoryScopeInventory()" />
-            <button class="btn-secondary" style="font-size:11px;" onclick="memoryScopeRecall()">Recall</button>
+            <input type="text" id="memScopePRDID" class="form-input obs-tap obs-scope-input" style="font-size:11px;" placeholder="prd_id" />
+            <input type="text" id="memScopeStoryID" class="form-input obs-tap obs-scope-input" style="font-size:11px;" placeholder="story_id" />
+            <input type="text" id="memScopePersona" class="form-input obs-tap obs-scope-input" style="font-size:11px;" placeholder="persona" />
+            <input type="text" id="memScopeProject" class="form-input obs-tap obs-scope-input" style="font-size:11px;" placeholder="project dir" onchange="loadMemoryScopeInventory()" />
+            <button class="btn-secondary obs-tap" style="font-size:11px;" onclick="memoryScopeRecall()">Recall</button>
           </div>
-          <div id="memScopeRecallList" style="padding:4px 12px;max-height:300px;overflow-y:auto;"></div>
+          <div id="memScopeRecallList" class="obs-list" style="padding:4px 12px;max-height:300px;overflow-y:auto;"></div>
         </div>
       </div>
 
       <div class="settings-section">
         ${settingsSectionHeader('memmaint', 'Memory Maintenance', 'memory.md')}
         <div id="settings-sec-memmaint" style="${secContent('memmaint')}">
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:6px 12px;">
+          <div class="obs-maint-grid">
             <div>
               <div style="font-size:11px;font-weight:600;margin-bottom:4px;">Similarity-stale eviction <span style="color:var(--text2);font-weight:normal;font-size:10px;">(sweeper.py)</span></div>
               <div style="font-size:10px;color:var(--text2);margin-bottom:4px;">Drops rows that never surface in any search and are older than the cutoff. Manual + pinned rows exempt.</div>
-              <div style="display:flex;gap:4px;">
-                <input type="number" id="memSweepDays" class="form-input" style="width:80px;font-size:11px;" placeholder="days" value="90" min="1" />
-                <button class="btn-secondary" style="font-size:11px;" onclick="memorySweepStale(true)">Dry-run</button>
-                <button class="btn-secondary" style="font-size:11px;background:rgba(239,68,68,0.18);color:#ef4444;" onclick="memorySweepStale(false)" title="Actually delete eviction candidates">Apply</button>
+              <div class="obs-maint-sweep">
+                <input type="number" id="memSweepDays" class="form-input obs-tap obs-sweep-days" style="font-size:11px;" placeholder="days" value="90" min="1" />
+                <button class="btn-secondary obs-tap" style="font-size:11px;" onclick="memorySweepStale(true)">Dry-run</button>
+                <button class="btn-secondary obs-tap" style="font-size:11px;background:rgba(239,68,68,0.18);color:#ef4444;" onclick="memorySweepStale(false)" title="Actually delete eviction candidates">Apply</button>
               </div>
               <div id="memSweepResult" style="font-size:10px;color:var(--text2);margin-top:4px;"></div>
             </div>
             <div>
               <div style="font-size:11px;font-weight:600;margin-bottom:4px;">Spellcheck <span style="color:var(--text2);font-weight:normal;font-size:10px;">(spellcheck.py)</span></div>
               <div style="font-size:10px;color:var(--text2);margin-bottom:4px;">Conservative Levenshtein-based suggestions on text. Never rewrites — preview only.</div>
-              <textarea id="memSpellInput" class="form-input" rows="2" style="font-size:11px;width:100%;" placeholder="Paste text to check…"></textarea>
-              <button class="btn-secondary" style="font-size:11px;margin-top:4px;" onclick="memorySpellCheck()">Run spellcheck</button>
+              <textarea id="memSpellInput" class="form-input obs-fluid" rows="2" style="font-size:11px;width:100%;" placeholder="Paste text to check…"></textarea>
+              <button class="btn-secondary obs-tap" style="font-size:11px;margin-top:4px;" onclick="memorySpellCheck()">Run spellcheck</button>
               <div id="memSpellResult" style="font-size:10px;color:var(--text2);margin-top:4px;"></div>
             </div>
             <div>
               <div style="font-size:11px;font-weight:600;margin-bottom:4px;">Extract facts <span style="color:var(--text2);font-weight:normal;font-size:10px;">(general_extractor.py)</span></div>
               <div style="font-size:10px;color:var(--text2);margin-bottom:4px;">Heuristic schema-free SVO triple extraction. Useful for KG pre-population.</div>
-              <textarea id="memExtractInput" class="form-input" rows="2" style="font-size:11px;width:100%;" placeholder="Paste text to extract triples from…"></textarea>
-              <button class="btn-secondary" style="font-size:11px;margin-top:4px;" onclick="memoryExtractFacts()">Extract triples</button>
+              <textarea id="memExtractInput" class="form-input obs-fluid" rows="2" style="font-size:11px;width:100%;" placeholder="Paste text to extract triples from…"></textarea>
+              <button class="btn-secondary obs-tap" style="font-size:11px;margin-top:4px;" onclick="memoryExtractFacts()">Extract triples</button>
               <div id="memExtractResult" style="font-size:10px;color:var(--text2);margin-top:4px;"></div>
             </div>
             <div>
               <div style="font-size:11px;font-weight:600;margin-bottom:4px;">Schema version <span style="color:var(--text2);font-weight:normal;font-size:10px;">(migrate.py)</span></div>
               <div style="font-size:10px;color:var(--text2);margin-bottom:4px;">Highest schema_version row applied to the active memory backend.</div>
-              <button class="btn-secondary" style="font-size:11px;" onclick="memorySchemaVersion()">Check schema</button>
+              <button class="btn-secondary obs-tap" style="font-size:11px;" onclick="memorySchemaVersion()">Check schema</button>
               <div id="memSchemaResult" style="font-size:10px;color:var(--text2);margin-top:4px;"></div>
             </div>
           </div>
@@ -32055,45 +32055,45 @@ function renderObserverView() {
       <div class="settings-section">
         ${settingsSectionHeader('schedules', 'Scheduled Events')}
         <div id="settings-sec-schedules" style="${secContent('schedules')}">
-          <div id="schedulesList"><div style="color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div></div>
+          <div id="schedulesList" class="obs-panel"><div style="color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div></div>
         </div>
       </div>
 
       <div class="settings-section">
         ${settingsSectionHeader('cooldown', 'Global Cooldown', 'api/sessions.md')}
         <div id="settings-sec-cooldown" style="${secContent('cooldown')}">
-          <div id="cooldownStatus"><div style="color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div></div>
+          <div id="cooldownStatus" class="obs-panel"><div style="color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div></div>
         </div>
       </div>
 
       <div class="settings-section">
         ${settingsSectionHeader('analytics', 'Session Analytics', 'api/sessions.md')}
         <div id="settings-sec-analytics" style="${secContent('analytics')}">
-          <div id="analyticsPanel"><div style="color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div></div>
+          <div id="analyticsPanel" class="obs-panel"><div style="color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div></div>
         </div>
       </div>
 
       <div class="settings-section">
         ${settingsSectionHeader('audit', 'Audit Log', 'architecture.md')}
         <div id="settings-sec-audit" style="${secContent('audit')}">
-          <div id="auditPanel"><div style="color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div></div>
+          <div id="auditPanel" class="obs-panel"><div style="color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div></div>
         </div>
       </div>
 
       <div class="settings-section">
         ${settingsSectionHeader('kg', 'Knowledge Graph', 'memory.md')}
         <div id="settings-sec-kg" style="${secContent('kg')}">
-          <div id="kgPanel"><div style="color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div></div>
+          <div id="kgPanel" class="obs-panel"><div style="color:var(--text2);font-size:13px;">${loadingEyeBlock()}</div></div>
         </div>
       </div>
 
       <div class="settings-section">
         ${settingsSectionHeader('daemonlog', 'Daemon Log')}
         <div id="settings-sec-daemonlog" style="${secContent('daemonlog')}">
-          <div id="daemonLogPanel" style="font-size:11px;font-family:monospace;color:var(--text2);max-height:300px;overflow-y:auto;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:6px;">${loadingEyeBlock()}</div>
-          <div style="display:flex;gap:8px;padding:6px 0;align-items:center;">
-            <button class="btn-secondary" style="font-size:11px;" onclick="loadDaemonLog(0)">Newest</button>
-            <button class="btn-secondary" style="font-size:11px;" onclick="loadDaemonLog((state._logOffset||0)+50)">Older</button>
+          <div id="daemonLogPanel" class="obs-log" style="font-size:11px;font-family:monospace;color:var(--text2);max-height:300px;overflow-y:auto;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:6px;">${loadingEyeBlock()}</div>
+          <div class="obs-row obs-log-actions">
+            <button class="btn-secondary obs-tap" style="font-size:11px;" onclick="loadDaemonLog(0)">Newest</button>
+            <button class="btn-secondary obs-tap" style="font-size:11px;" onclick="loadDaemonLog((state._logOffset||0)+50)">Older</button>
             <span id="daemonLogInfo" style="font-size:10px;color:var(--text2);"></span>
           </div>
         </div>
@@ -32104,7 +32104,7 @@ function renderObserverView() {
       <div class="settings-section">
         ${settingsSectionHeader('observer_peers', t('monitor_section_observer_peers') || 'Federated Peers', 'flow/observer-flow.md')}
         <div id="settings-sec-observer_peers" style="${secContent('observer_peers')}">
-          <div id="observerPeersPanel" style="font-size:12px;color:var(--text2);">${loadingEyeBlock()}</div>
+          <div id="observerPeersPanel" class="obs-panel" style="font-size:12px;color:var(--text2);">${loadingEyeBlock()}</div>
         </div>
       </div>
 
@@ -32319,7 +32319,7 @@ function renderObserverPeersCard(targetId) {
     const peers = (peersData && peersData.peers) || [];
     const statsRow = stats ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">${
       Object.entries(stats).filter(([,v]) => typeof v !== 'object').map(([k, v]) =>
-        `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:8px 12px;font-size:12px;min-width:80px;">
+        `<div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:8px 12px;font-size:12px;">
           <div style="opacity:0.6;font-size:10px;text-transform:uppercase;letter-spacing:0.5px;">${escHtml(k)}</div>
           <div style="font-weight:600;">${escHtml(String(v))}</div>
         </div>`).join('')
@@ -32343,14 +32343,14 @@ function renderObserverPeersCard(targetId) {
           const shapeText = ({A:'agent',B:'standalone',C:'cluster'}[(p.shape||'').toUpperCase()]) || (p.shape||'?');
           const ageLabel = lastPush ? observerPeerAgo(ageMs) : 'never';
           const safeName = JSON.stringify(p.name || '');
-          return `<div style="padding:6px 0;border-top:1px solid var(--border);display:flex;align-items:center;flex-wrap:wrap;">
+          return `<div class="obs-peer-row" style="padding:6px 0;border-top:1px solid var(--border);display:flex;align-items:center;flex-wrap:wrap;">
             <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${dotColor};margin-right:6px;flex-shrink:0;"></span>
             <strong>${escHtml(p.name)}</strong>
             <span style="opacity:0.55;font-size:10px;border:1px solid var(--text2);border-radius:3px;padding:0 4px;margin-left:4px;">${escHtml(shapeText)}</span>
             <span style="opacity:0.6;font-size:11px;margin-left:6px;">${escHtml(ageLabel)}</span>
             <div style="margin-left:auto;">
-              <button class="btn-icon" style="font-size:11px;padding:1px 6px;" onclick='showObserverPeerSnapshot(${safeName})' title="Snapshot">&#128202;</button>
-              <button class="btn-icon" style="font-size:11px;padding:1px 6px;" onclick='removeObserverPeer(${safeName})' title="Remove">&times;</button>
+              <button class="btn-icon obs-tap" style="font-size:11px;padding:1px 6px;" onclick='showObserverPeerSnapshot(${safeName})' title="Snapshot">&#128202;</button>
+              <button class="btn-icon obs-tap" style="font-size:11px;padding:1px 6px;" onclick='removeObserverPeer(${safeName})' title="Remove">&times;</button>
             </div>
           </div>`;
         }).join('');
@@ -34164,12 +34164,12 @@ function loadCooldownStatus() {
       <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:8px;">
         <span style="font-size:11px;color:var(--text2);white-space:nowrap;">Set for:</span>
         ${[15, 30, 60, 240, 480, 1440].map(m =>
-          `<button class="btn-secondary" style="font-size:11px;" onclick="setCooldown(${m})">${m >= 60 ? (m / 60) + 'h' : m + 'm'}</button>`
+          `<button class="btn-secondary obs-tap" style="font-size:11px;" onclick="setCooldown(${m})">${m >= 60 ? (m / 60) + 'h' : m + 'm'}</button>`
         ).join('')}
       </div>
       <div style="display:flex;gap:6px;align-items:center;">
-        <input type="text" id="cooldownReason" class="form-input" style="flex:1;font-size:11px;" placeholder="Reason (optional)" />
-        ${active ? `<button class="btn-secondary" style="font-size:12px;background:rgba(239,68,68,0.15);color:#ef4444;" onclick="clearCooldown()">Clear</button>` : ''}
+        <input type="text" id="cooldownReason" class="form-input obs-tap obs-fluid" style="flex:1;font-size:11px;" placeholder="Reason (optional)" />
+        ${active ? `<button class="btn-secondary obs-tap" style="font-size:12px;background:rgba(239,68,68,0.15);color:#ef4444;" onclick="clearCooldown()">Clear</button>` : ''}
       </div>`;
   }).catch(() => { el.innerHTML = '<span style="color:var(--error);font-size:12px;">Failed to load cooldown status.</span>'; });
 }
@@ -34353,9 +34353,9 @@ function loadAnalyticsPanel() {
   if (!el) return;
   const ranges = [7, 14, 30, 90];
   const selId = 'analyticsRange';
-  el.innerHTML = `<div style="display:flex;gap:6px;align-items:center;margin-bottom:8px;">
+  el.innerHTML = `<div class="obs-row obs-row-flush" style="margin-bottom:8px;">
     <label style="font-size:11px;">Range:</label>
-    <select id="${selId}" onchange="loadAnalyticsPanel()" style="font-size:11px;background:var(--bg2);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:2px 4px;">
+    <select id="${selId}" class="obs-tap" onchange="loadAnalyticsPanel()" style="font-size:11px;background:var(--bg2);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:2px 4px;">
       ${ranges.map(d => `<option value="${d}"${d===7?' selected':''}>${d}d</option>`).join('')}
     </select>
     <span id="analyticsSuccessRate" style="font-size:11px;color:var(--text2);margin-left:4px;"></span>
@@ -34372,7 +34372,7 @@ function loadAnalyticsPanel() {
     if (buckets.length === 0) { bucketsEl.textContent = t('stats_no_sessions_range') || 'No sessions in range.'; return; }
     // API fields: session_count, completed, failed, killed (not total/errors)
     const maxTotal = Math.max(...buckets.map(b => b.session_count || 0), 1);
-    bucketsEl.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:11px;">
+    bucketsEl.innerHTML = `<div class="obs-table-scroll"><table style="width:100%;border-collapse:collapse;font-size:11px;">
       <thead><tr style="opacity:0.5;">
         <th style="text-align:left;padding:2px 4px;">Date</th>
         <th style="text-align:right;padding:2px 4px;">Total</th>
@@ -34394,7 +34394,7 @@ function loadAnalyticsPanel() {
           <td style="text-align:right;padding:3px 4px;color:var(--error,#ef4444);">${errors}</td>
           <td style="padding:3px 4px 3px 8px;"><div style="height:8px;width:${pct}%;background:${barColor};border-radius:2px;max-width:120px;"></div></td>
         </tr>`;
-      }).join('')}</tbody></table>`;
+      }).join('')}</tbody></table></div>`;
   }).catch(() => {
     const bucketsEl = document.getElementById('analyticsBuckets');
     if (bucketsEl) bucketsEl.innerHTML = '<span style="color:var(--error);">Failed to load analytics.</span>';
@@ -34414,13 +34414,13 @@ function loadAuditPanel() {
   if (actor) qp.set('actor', actor);
   if (action) qp.set('action', action);
   const loadingHtml = el._filters ? '' : `
-    <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:8px;align-items:center;">
-      <input id="auditActorFilter" type="text" placeholder="Actor filter" style="flex:1;min-width:70px;font-size:11px;padding:3px 6px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);" />
-      <input id="auditActionFilter" type="text" placeholder="Action filter" style="flex:1;min-width:70px;font-size:11px;padding:3px 6px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);" />
-      <select id="auditLimitFilter" style="font-size:11px;background:var(--bg2);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:3px 4px;">
+    <div class="obs-row obs-row-flush" style="margin-bottom:8px;">
+      <input id="auditActorFilter" type="text" placeholder="Actor filter" class="obs-tap obs-fluid" style="flex:1;font-size:11px;padding:3px 6px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);" />
+      <input id="auditActionFilter" type="text" placeholder="Action filter" class="obs-tap obs-fluid" style="flex:1;font-size:11px;padding:3px 6px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);" />
+      <select id="auditLimitFilter" class="obs-tap" style="font-size:11px;background:var(--bg2);border:1px solid var(--border);border-radius:4px;color:var(--text);padding:3px 4px;">
         <option value="5" selected>5</option><option value="20">20</option><option value="50">50</option><option value="100">100</option>
       </select>
-      <button class="btn-secondary" style="font-size:11px;" onclick="loadAuditPanel()">Load</button>
+      <button class="btn-secondary obs-tap" style="font-size:11px;" onclick="loadAuditPanel()">Load</button>
     </div>
     <div id="auditEntries" style="font-size:11px;color:var(--text2);">${loadingEyeBlock()}</div>`;
   if (!el._filters) { el.innerHTML = loadingHtml; el._filters = true; }
@@ -34434,7 +34434,7 @@ function loadAuditPanel() {
     target.innerHTML = entries.map(e => {
       const ts = e.ts ? new Date(e.ts).toLocaleString() : '';
       const details = e.details && Object.keys(e.details).length
-        ? `<div style="opacity:0.6;margin-top:1px;font-family:monospace;">${escHtml(JSON.stringify(e.details))}</div>` : '';
+        ? `<div class="obs-audit-details" title="${escHtml(JSON.stringify(e.details))}" style="opacity:0.6;margin-top:1px;font-family:monospace;">${escHtml(JSON.stringify(e.details))}</div>` : '';
       const sessLink = e.session_id
         ? `<span style="opacity:0.5;font-size:10px;font-family:monospace;margin-left:4px;">${escHtml(e.session_id.slice(-8))}</span>` : '';
       return `<div style="padding:4px 0;border-top:1px solid var(--border);">
@@ -34503,17 +34503,17 @@ function loadKgPanel() {
   if (!el._init) {
     el._init = true;
     el.innerHTML = `
-      <div style="display:flex;gap:4px;margin-bottom:8px;align-items:center;">
-        <input id="kgEntityInput" type="text" placeholder="Entity to query…" class="form-input" style="flex:1;font-size:11px;" />
-        <button class="btn-primary" style="font-size:11px;" onclick="kgQuery()">Query</button>
+      <div class="obs-row obs-row-flush" style="margin-bottom:8px;">
+        <input id="kgEntityInput" type="text" placeholder="Entity to query…" class="form-input obs-tap obs-fluid" style="flex:1;font-size:11px;" />
+        <button class="btn-primary obs-tap" style="font-size:11px;" onclick="kgQuery()">Query</button>
       </div>
-      <div style="display:flex;gap:4px;margin-bottom:10px;align-items:center;">
-        <input id="kgSubject" type="text" placeholder="Subject" class="form-input" style="flex:1;font-size:11px;" />
-        <input id="kgPredicate" type="text" placeholder="Predicate" class="form-input" style="flex:1;font-size:11px;" />
-        <input id="kgObject" type="text" placeholder="Object" class="form-input" style="flex:1;font-size:11px;" />
-        <button class="btn-secondary" style="font-size:11px;" onclick="kgAddTriple()">Add triple</button>
+      <div class="obs-row obs-row-flush" style="margin-bottom:10px;">
+        <input id="kgSubject" type="text" placeholder="Subject" class="form-input obs-tap obs-fluid" style="flex:1;font-size:11px;" />
+        <input id="kgPredicate" type="text" placeholder="Predicate" class="form-input obs-tap obs-fluid" style="flex:1;font-size:11px;" />
+        <input id="kgObject" type="text" placeholder="Object" class="form-input obs-tap obs-fluid" style="flex:1;font-size:11px;" />
+        <button class="btn-secondary obs-tap" style="font-size:11px;" onclick="kgAddTriple()">Add triple</button>
       </div>
-      <div id="kgResults" style="font-size:11px;color:var(--text2);"></div>`;
+      <div id="kgResults" class="obs-kg-results" style="font-size:11px;color:var(--text2);"></div>`;
   }
 }
 window.loadKgPanel = loadKgPanel;
@@ -34527,7 +34527,7 @@ window.kgQuery = function() {
     const triples = Array.isArray(data) ? data : (data?.triples || []);
     if (triples.length === 0) { res.textContent = t('kg_no_triples_for_entity') || 'No triples found for this entity.'; return; }
     res.innerHTML = `<div style="font-size:10px;opacity:0.6;margin-bottom:4px;">${triples.length} triple${triples.length===1?'':'s'}</div>`
-      + triples.map(t => `<div style="padding:3px 0;border-top:1px solid var(--border);font-family:monospace;">
+      + triples.map(t => `<div class="obs-kg-triple" style="padding:3px 0;border-top:1px solid var(--border);font-family:monospace;">
         <span style="color:var(--accent);">${escHtml(t.subject||'')}</span>
         <span style="opacity:0.6;margin:0 4px;">${escHtml(t.predicate||'')}</span>
         <span>${escHtml(t.object||'')}</span>
