@@ -14068,6 +14068,14 @@ function _prdSuggestTagFromAlias() {
     const txt = disp ? disp.textContent.trim() : '';
     const id = _tagSuggestFromAlias(sel || (txt !== '~/' ? txt : ''), projects, _tagsState.list);
     picker.querySelectorAll('.tag-picker-cb').forEach(cb => { cb.checked = !!id && cb.value === id; });
+    let hint = document.getElementById('prdNewTagsHint');
+    if (!hint) {
+      hint = document.createElement('div');
+      hint.id = 'prdNewTagsHint';
+      hint.style.cssText = 'font-size:11px;color:var(--text2);margin-top:4px;';
+      picker.insertAdjacentElement('afterend', hint);
+    }
+    hint.textContent = id ? _tagT('tag_suggest_hint', 'Suggested from the project alias — change it if it is wrong') : '';
   };
   _tagsLoad().then(() => apiFetch('/api/projects').catch(() => [])).then(list => {
     projects = Array.isArray(list) ? list : [];
@@ -33623,7 +33631,11 @@ function _tagErrorText(err) {
   try {
     const body = JSON.parse(raw);
     if (body && body.count) return _tagT('tag_err_in_use', 'Tag is used by %1$d Automata — unassign it first', [body.count]);
-    if (body && body.error) return body.error;
+    if (body && body.error) {
+      if (/child tags/.test(body.error)) return _tagT('tag_err_has_children', 'Tag has child tags — move or delete them first');
+      if (/cycle/.test(body.error)) return _tagT('tag_err_cycle', 'A tag cannot be moved under itself or its own sub-tags');
+      return body.error;
+    }
   } catch (_) { /* plain-text error */ }
   return raw;
 }
