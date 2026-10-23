@@ -6312,25 +6312,30 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
    ≤600px rule below stack the cards. .stats-panel-wide mirrors the old
    inline `grid-column:span 2;min-width:260px` so the Search-Usage card
    looks unchanged, and drops back to a normal single-column card on phones.
-   .stats-taprow / the anchor & button minima are the ≥40×40px tap-target
-   requirements (mobile-fit-lib.mjs TAP_MIN=40) for the session/channel
-   expand rows, the "sessions in store" link and the History button. */
+   The ≥40×40px tap-target requirements (mobile-fit-lib.mjs TAP_MIN=40)
+   for the session/channel expand rows, the "sessions in store" link and
+   the History button are applied in the ≤600px block below ONLY: as
+   unconditional rules they inflated #statsPanel by ~200px at every
+   width and failed TS-803 (desktop must stay baseline-identical). */
 .stats-panel-grid { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
 /* Cards must stay shrinkable: an unbreakable long value must wrap instead of
    forcing the grid track (and the whole page) wider than the viewport. */
 .stats-panel-grid .stat-card { min-width: 0; overflow-wrap: anywhere; }
 .stats-panel-grid .stat-label, .stats-panel-grid .stat-value { overflow-wrap: anywhere; }
 .stats-panel-wide { grid-column: span 2; min-width: 260px; }
-.stats-taprow { min-height: 40px; }
-#statsPanel a[href] { display: inline-block; min-height: 40px; line-height: 38px; padding: 0 6px; }
-#statsPanel button { min-height: 40px; min-width: 40px; }
+.stats-taprow { cursor: pointer; user-select: none; -webkit-user-select: none; }
 
 @media (max-width: 600px) {
   .obs-sys-grid { grid-template-columns: 1fr; }
   .stats-panel-grid { grid-template-columns: minmax(0, 1fr); }
   .stats-panel-wide { grid-column: auto; min-width: 0; }
-  /* At extreme narrowness (e.g. 360px at 200% zoom = 180px) the session &
-     channel rows' fixed badges (state, memory, uptime, in/out) don't fit
-     one line — let them wrap to the next line instead of overflowing. */
-  .stats-taprow { flex-wrap: wrap; }
+  /* ≥40px tap-target floors (mobile-fit TAP_MIN=40) for the session/channel
+     expand rows, the "sessions in store" link and the History button —
+     phone-width only; desktop/tablet keep their baseline heights. At
+     extreme narrowness (e.g. 360px at 200% zoom = 180px) the rows' fixed
+     badges (state, memory, uptime, in/out) don't fit one line — let them
+     wrap to the next line instead of overflowing. */
+  .stats-taprow { min-height: 40px; flex-wrap: wrap; }
+  #statsPanel a[href] { display: inline-block; min-height: 40px; line-height: 38px; padding: 0 6px; }
+  #statsPanel button { min-height: 40px; min-width: 40px; }
 }
