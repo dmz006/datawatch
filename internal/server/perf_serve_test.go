@@ -94,7 +94,7 @@ func TestSeededLocalServerServe(t *testing.T) {
 	leaky := func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/api/") {
 			w.Header().Set("Content-Type", "application/json")
-			fmt.Fprint(w, `{"ok":true,"sessions":[],"items":[],"data":[],"prds":[],"nodes":[],"llms":[],"schedules":[],"rules":[],"plugins":[],"stats":{},"count":0,"unread_count":0,"total":0,"enabled":false,"name":"","graph":[]}`)
+			_, _ = fmt.Fprint(w, `{"ok":true,"sessions":[],"items":[],"data":[],"prds":[],"nodes":[],"llms":[],"schedules":[],"rules":[],"plugins":[],"stats":{},"count":0,"unread_count":0,"total":0,"enabled":false,"name":"","graph":[]}`)
 			return
 		}
 		// Static PWA (index.html gets the same version substitution the
@@ -106,7 +106,7 @@ func TestSeededLocalServerServe(t *testing.T) {
 				return
 			}
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			fmt.Fprint(w, strings.ReplaceAll(string(body), "%%DW_VERSION%%", Version))
+			_, _ = fmt.Fprint(w, strings.ReplaceAll(string(body), "%%DW_VERSION%%", Version))
 			return
 		}
 		http.FileServer(http.FS(webSub)).ServeHTTP(w, r)
