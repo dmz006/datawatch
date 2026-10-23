@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.98 — Capacity waits say why; admission and budget events audited
+
+### Added
+
+- **Capacity, back-off and budget waits now say why, and every admission and budget event is audited.** A queued task, session status, the capacity API and the CLI and chat text show the wait cause (pool full, node busy, back-off, budget window), the reset time when known, who holds the pool, and what is running. New audit events record a task starting to wait, being admitted, and an LLM budget window rolling over; a single audit query with a subject filter and an action-prefix match works on REST, MCP, the CLI and chat.
+- **A web capacity and budget card, an operator guide and a release smoke section** cover the new visibility, with the audit events carrying their own signature numbers (39 to 41) that do not collide with the Automation budget events.
+
 ## v9.5.97 — Automation tab in the web UI
 
 ### Added
