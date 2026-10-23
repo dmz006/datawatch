@@ -4,6 +4,19 @@
 - **Version at planning**: v9.0.10
 - **Status**: Planned — not started
 
+## Phase status
+
+| Phase | Status | Evidence |
+|---|---|---|
+| 0 | not started | no roles field on LLM entries in `internal/llm/registry.go`; `llm_add` / `llm_update` only extend the budget object (`internal/mcp/budget.go`); no "Workload Roles" card in `internal/server/web/app.js` or `internal/server/web/locales/en.json`; no contention-check code in `internal/llm` or `cmd/datawatch` |
+| 1 | not started | no `Priority` field on `Session` (`internal/session/store.go`); admission requests in `cmd/datawatch/capacity_wiring.go` (e.g. line 456) never set `Priority`, while the autonomous path does set `prd.Priority` (`internal/autonomous/capacity.go:213`) |
+| 2 | partly done | windowed ceiling landed as the per-LLM dollar-window budget: `internal/autonomous/budget.go`, `internal/server/budget.go` (`GET /api/budget`), `internal/mcp/budget.go` (`budget_status`), `cmd/datawatch/cli_budget.go` (`--budget-ceiling-usd` / `--budget-hours`), `internal/autonomous/peer_budget.go`, test `internal/autonomous/budget_test.go`; requests/tokens ceilings and the `Decision` shape still absent from `internal/capacity/ledger.go` |
+| 3 | not started | `KnownStates()` in `internal/session/store.go` has no preempted state; `internal/capacity/ledger.go` has no preemption path; `internal/autonomous/manager.go` `Pause`/`Resume` remain soft pauses, no checkpoint-driven preemption resume |
+| 4 | not started | no per-call usage record store in `internal/session`, `internal/llm`, or `internal/stats` (no `ttft` / `queue_wait` / `usageRecord`); the ollama `usageFn` still feeds only the session aggregate (`internal/llm/backends/ollama/conversation.go:239-240`) |
+| 5 | partly done | flat per-hour node field exists: `internal/compute/node.go:221` (`cost_per_hour`), `internal/config/config.go:549`; but local backends are still zero-cost in `DefaultCostRates()` (`internal/session/cost.go`) and `CostPerHour` is copied, never multiplied into a call cost |
+
+> Rows 6-10 will be added by the next audit task; this task covers phases 0-5 only.
+
 ## Context
 
 Source: `/home/dmz/workspace/llm-research/docs/07-datawatch-improvements.md`
@@ -252,7 +265,7 @@ failover ordering; the rate-ceiling pool type and informative-admission
 API before any UI can show it; per-call usage records before any
 dashboard/alert/scorecard has real data to show).
 
-### Phase 0 — Role tags on LLM registry entries (Decision 1)
+### Phase 0 — Role tags on LLM registry entries (Decision 1) [not started]
 - `internal/llm` registry entry struct: new open-string `Roles []string`
   field (or per-call-site role key — see Decision 1's "tag existing
   entries" framing). `llm_add`/`llm_update` MCP tools + REST + CLI gain a
@@ -264,7 +277,13 @@ dashboard/alert/scorecard has real data to show).
   config-write time.
 - PWA: new "Workload Roles" card, Settings → Automate.
 
-### Phase 1 — Session priority wiring (Decision 5, mechanics only)
+**Audit evidence** (audited against the current tree):
+- `Roles []string` registry field + `llm_add`/`llm_update`/REST/CLI role param — **remaining**: no roles field anywhere on LLM entries in `internal/llm/registry.go`; `llm_add`/`llm_update` only carry the shared budget object (`internal/mcp/budget.go`); the `llm add`/`llm update` CLI exposes `--budget-*` flags but no role flag (`cmd/datawatch/cli_budget.go`).
+- Resolution order (explicit per-call-site override wins over role lookup) — **remaining**: no role-lookup machinery exists in `internal/llm`, `internal/config`, or `internal/server` for the `llms[]` list.
+- Contention check (periodic reactive scan + config-write trigger) — **remaining**: no contention-check code in `internal/llm`, `internal/mcp`, `internal/server`, or `cmd/datawatch` (grep hits are limited to unrelated kernel headers under `internal/observer/ebpf`).
+- PWA "Workload Roles" card under Settings → Automate — **remaining**: no "Workload Roles" string in `internal/server/web/app.js` or `internal/server/web/locales/en.json`.
+
+### Phase 1 — Session priority wiring (Decision 5, mechanics only) [not started]
 - `session.Session` struct: new `Priority int` field (mirrors
   `autonomous.PRD.Priority`'s shape exactly).
 - Wire into the 4 untouched admission call sites in
@@ -274,7 +293,12 @@ dashboard/alert/scorecard has real data to show).
 - Default value and the active "play well" computation are Phase 6 (needs
   the Scheduler UI to surface the operator warning/choice).
 
-### Phase 2 — Ledger: rate-ceiling pools + informative admission (Decisions 2, 7)
+**Audit evidence** (audited against the current tree):
+- `Session.Priority int` field — **remaining**: no `Priority` field on the `Session` struct in `internal/session/store.go` (struct at line 49); no priority field anywhere in `internal/session/manager.go`.
+- Wire session priority into the 4 admission call sites — **remaining**: the four `ledger.Request` values in `cmd/datawatch/capacity_wiring.go` (lines 456, 489, 506, 530) never set `Priority`, even though the autonomous path does pass `prd.Priority` (`internal/autonomous/capacity.go:213`); the "independent sessions invisible to fairness" gap is unchanged.
+- Default value + active "play well" computation — **remaining** (owned by Phase 6): no priority default, load-based computation, or operator warning exists in `internal/session` or `internal/server`.
+
+### Phase 2 — Ledger: rate-ceiling pools + informative admission (Decisions 2, 7) [partly done]
 
 > **Update 2026-10-22:** the windowed ledger dimension of this phase landed
 > first, as the per-LLM dollar-window budget (BL428 Phase 5, unreleased
@@ -300,7 +324,12 @@ dashboard/alert/scorecard has real data to show).
   existing `verifierCapacityTryAdmit` precedent (v8.36.9) but returning the
   richer `Decision` instead of a bare bool.
 
-### Phase 3 — Preemption + resume (Decision 4)
+**Audit evidence** (audited against the current tree):
+- Rate-ceiling dimension per pool — **partly done**: the windowed ceiling dimension landed as the per-LLM dollar-window budget (shipped only in an unreleased dev build, i.e. next patch above main): persisted spend ledger, admission gate and wait in `internal/autonomous/budget.go` (with `automation_budget_admit.go`, `automation_budget_gate.go`), `GET /api/budget` in `internal/server/budget.go`, `budget_status` MCP tool in `internal/mcp/budget.go`, CLI in `cmd/datawatch/cli_budget.go` (`--budget-ceiling-usd`, `--budget-hours`, `--budget-weekday`), opt-in per-peer spend counting in `internal/autonomous/peer_budget.go`; tests `internal/autonomous/budget_test.go`, `internal/autonomous/automation_budget_admit_test.go`. Requests/tokens ceilings over the ledger's concurrent `Limit` are still **remaining** — `internal/capacity/ledger.go` has only pool concurrency `SetLimit`/`Limit`.
+- `Decision` enum (`admit`/`queued`/`alternate_available`) + `QueuePosition` + `Alternates` — **remaining**: `internal/capacity/ledger.go` still reports only the `Waiter{Holder,PRDID,Pools,Since,Reason}` shape inside `Status`; no decision enum, no computed queue position, no idle-capacity-elsewhere signal.
+- Non-blocking informative admission query beside blocking `Acquire` — **remaining**: `internal/capacity/ledger.go` exposes `Acquire` (blocking), `Adopt`, `Snapshot`; no `Status(req)`-style decision query exists.
+
+### Phase 3 — Preemption + resume (Decision 4) [not started]
 - New `StatePreempted` session state, same trigger/resume shape as
   `StateRateLimited` (`schedStore`-driven auto-resume).
 - Reactive preemption: fairness ordering alone decides who yields when a
@@ -312,7 +341,13 @@ dashboard/alert/scorecard has real data to show).
   (read `CHECKPOINT.md`, relocate, fold into the next attempt's retry hint)
   rather than inventing a new resume primitive.
 
-### Phase 4 — Per-call usage record store (B1, richer record)
+**Audit evidence** (audited against the current tree):
+- `StatePreempted` session state (same shape as `StateRateLimited`) — **remaining**: `KnownStates()` in `internal/session/store.go` lists only `StateRunning`, `StateWaitingInput`, `StateComplete`, `StateFailed`, `StateKilled`, `StateRateLimited`; `grep -ri preempt internal/` yields only unrelated kernel headers under `internal/observer/ebpf` and the native-bridge test `internal/channel/probe_test.go`.
+- Reactive preemption (fairness ordering decides who yields) — **remaining**: `internal/capacity/ledger.go` only ever grants or blocks; release paths (`Release`, `Reap`) never displace a live lease for a higher-priority waiter.
+- Active preemption with operator confirmation/notification — **remaining**: no operator-triggered preemption path or confirmation flow in `internal/autonomous`, `internal/session`, `internal/server`, or `internal/mcp`.
+- Autonomous-task resume via the checkpoint precedent — **remaining**: `Pause`/`Resume` in `internal/autonomous/manager.go` remain soft pauses (no in-flight task is yielded); nothing reads `CHECKPOINT.md` into a next-attempt retry hint on preemption.
+
+### Phase 4 — Per-call usage record store (B1, richer record) [not started]
 - New record shape (role, node, model, backend, ttft_ms,
   decode_tokens_per_sec, queue_wait_ms, success/retry, tokens in/out, est.
   cost) appended per LLM call, distinct from the existing session-level
@@ -332,7 +367,12 @@ dashboard/alert/scorecard has real data to show).
   (local-compute cost), Phase 8 (B5 scorecard), and Phase 9 (alert
   metrics) — built once, consumed by all four.
 
-### Phase 5 — Local-compute cost model (B2)
+**Audit evidence** (audited against the current tree):
+- Rich per-call record shape (role, node, model, backend, ttft_ms, decode_tokens_per_sec, queue_wait_ms, success/retry, tokens in/out, est. cost) — **remaining**: no per-call usage record type or store exists in `internal/session`, `internal/llm`, or `internal/stats` (no `usageRecord`, `ttft`, or `queue_wait` anywhere); the only token data that persists is the session-level aggregate (`TokensIn`/`TokensOut`/`EstCostUSD`) in `internal/session/store.go` / `internal/session/cost.go`, plus the per-backend parser helpers (`internal/session/claude_usage.go`, `internal/session/aider_usage.go`).
+- Wire the existing `usageFn` token callbacks into the record for every backend — **remaining**: the ollama backend still reports per-turn `prompt_eval_count`/`eval_count` straight to the session aggregate via `usageFn` (`internal/llm/backends/ollama/conversation.go:239-240`); the openwebui (`internal/llm/backends/openwebui/conversation.go`) and gemini backends have the same shape, and no record store consumes any of them.
+- Shared data feed for the Scheduler dashboards, local-compute cost, B5 scorecard, and alert metrics — **remaining**: all four consumers are unbuilt, so there is nothing to feed them (depends on the two items above).
+
+### Phase 5 — Local-compute cost model (B2) [partly done]
 - New compute-node field: flat `$/GPU-hour` rate, operator-set.
 - Cost computation for a local LLM call = node rate × wall-clock duration
   of the call (from Phase 4's record), joined the same way cloud $/token
@@ -345,6 +385,11 @@ dashboard/alert/scorecard has real data to show).
   underlying local cost unit being time-based, and giving Phase 8's B5
   scorecard real throughput numbers for local models, not just cloud
   ones.
+
+**Audit evidence** (audited against the current tree):
+- Flat per-hour operator-set compute-node field — **done**: `CostPerHour float64` (`yaml:"cost_per_hour,omitempty"`) exists on the compute node at `internal/compute/node.go:221` and in the config type at `internal/config/config.go:549`. A partial item, not a full phase win — see the remaining two bullets.
+- Local-call cost = node rate × wall-clock duration — **remaining**: `CostPerHour` is only copied from config into the node (`cmd/datawatch/main.go:3325`); no code multiplies it by call duration, and local/open backends are still hardwired to zero in `DefaultCostRates()` at `internal/session/cost.go` (`ollama`, `shell`, `openwebui` → `{InPerK: 0, OutPerK: 0}`).
+- Side-by-side $ cost and token-throughput view for local vs. cloud — **remaining**: no such view in `internal/server`, `internal/mcp`, or `internal/server/web`; `internal/session/cost.go`'s `CostSummary` is tokens/dollars from `$`/1K-token rates only.
 
 ### Phase 6 — New top-level Scheduler surface (Decision 7, UI half)
 - New top-level nav surface (own entry, not nested under Automaton or
