@@ -709,6 +709,12 @@ pipeline:
   quality_gates:
     enabled: false
     # Test command to run for baseline + post-pipeline comparison.
+    # ONE string, run through a shell (`sh -c`) in the project directory, so
+    # compound commands such as "go test ./... && node --test web/*.test.js"
+    # work. A baseline that cannot produce usable results (could not start,
+    # timed out, non-zero exit with no named failing test, no tests found)
+    # is invalid and only warns. Regressions are compared by failing test
+    # name. Operators guide: docs/operations.md -> "Quality gate".
     # Examples: "go test ./...", "pytest", "npm test", "cargo test"
     test_command: ""
     # Seconds before the test command is killed (default 300).
@@ -1401,9 +1407,28 @@ autonomous:
   # block_on_regression is true. 0 timeout = no per-command cap.
   default_quality_gates:
     enabled: false
+    # ONE string, run through a shell (`sh -c`) in the Automaton's project
+    # directory, so compound commands ("a && b") work. The baseline is
+    # validated when the gate is set and when the Automaton starts; a
+    # baseline that cannot produce usable results is marked invalid
+    # (quality_gate_status: "invalid") and the gate then only warns - it
+    # never blocks. Regressions are compared by failing test name and
+    # confirmed by one re-run. Operators guide: docs/operations.md
+    # -> "Quality gate".
     test_command: ""
     timeout: 0
     block_on_regression: false
+
+  # What happens when a task's own verification PASSED but the quality gate
+  # found a confirmed regression from a VALID baseline:
+  #   warn  (default) - the task completes; the disagreement is recorded on
+  #                     the task (gate_disagreement) and in the decision log.
+  #   block           - the task fails with a "gate_disagreement: ..." error
+  #                     naming the new failing tests.
+  # Only "warn" and "block" are accepted; anything else is rejected when it
+  # is written. This never applies to an INVALID gate: an unusable baseline
+  # warns only and never blocks under either value.
+  gate_disagreement: warn
 
   # ── Prompt injection guard (v8.18.0) ──
   # Scans user-supplied PRD/task specs for known prompt injection phrases

@@ -5,6 +5,18 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **The quality-gate test command now runs through a shell, in the project directory.** `test_command` is one string run with `sh -c`, so compound commands such as `go test ./... && node --test internal/server/web/*.test.js` work instead of breaking the gate.
+- **A gate baseline that cannot produce usable results is marked invalid, never trusted, and never blocks.** A command that could not start or timed out, a non-zero exit that names no failing test (a build or setup problem) and a run that found no tests are recorded on the Automaton as `quality_gate_status: "invalid"` with a plain `quality_gate_invalid_reason` and a `quality_gate_invalid` decision. The baseline is checked when the gate is set and when the Automaton starts, and from then on the gate only warns. An unusable run is reported as an invalid gate, never as a regression.
+- **Regressions are compared by failing test name, not by count, and confirmed by one re-run.** A new failing test name is a regression even when the failure count is unchanged, and tests that now pass are reported as an improvement. A regression is confirmed by one re-run, and only the tests that fail again are reported; a failure that does not reproduce is treated as stable.
+
+### Added
+
+- **`autonomous.gate_disagreement` (`warn` by default, or `block`) on every surface.** It decides what happens when a task's own verification passed but the gate confirmed a regression from a valid baseline: `warn` records the disagreement and the task completes, `block` fails the task with a `gate_disagreement: …` error. An invalid gate never blocks. Set it with `PUT /api/config` (`autonomous.gate_disagreement`, any other value is a 400), MCP `autonomous_config_set` (`gate_disagreement`), `datawatch autonomous config-set '{"gate_disagreement":"block"}'`, `configure autonomous.gate_disagreement=block`, or the Settings selector in the web UI.
+- **The web UI shows an invalid gate.** An amber "Quality gate invalid" badge with the reason appears on the Automaton card and list row, and the Monitor's quality-gate card gets an invalid line. The new strings are in all five locale bundles.
+- Operator guide: `docs/operations.md` → "Quality gate (test baseline + regression check)".
+
 ## v9.5.96 — Claude start-up confirmation dialogs answered or failed fast
 
 ### Fixed

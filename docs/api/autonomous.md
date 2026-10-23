@@ -855,6 +855,27 @@ priority, is in `docs/operations.md` → "Compute-node queue".
 - **Comm:** `configure autonomous.max_engines_per_node=2` (any channel that
   accepts `configure`; the key is listed in the usage help).
 
+### Quality-gate disagreement policy
+
+`autonomous.gate_disagreement` (`warn` by default, or `block`) decides what
+happens when a task's own verifier passed but the quality gate confirmed a
+regression from a valid baseline: `warn` records the disagreement on the task
+and in the decision log and the task completes; `block` fails the task with a
+`gate_disagreement: …` error. An invalid gate (unusable baseline) never
+blocks under either value. Any other value is rejected. The operator guide is
+`docs/operations.md` → "Quality gate".
+
+- **REST:** `PUT /api/config` with `{"autonomous.gate_disagreement": "block"}`
+  (`400` for any other value); `PUT /api/autonomous/config` with
+  `{"gate_disagreement": "block"}`. Read back from `GET /api/config` and
+  `GET /api/autonomous/config`. `GET /api/autonomous/prds/{id}` returns
+  `quality_gate_status` / `quality_gate_invalid_reason` on the Automaton and
+  `gate_disagreement` on a task.
+- **MCP:** `autonomous_config_set` with `gate_disagreement`;
+  `autonomous_config_get` returns it.
+- **CLI:** `datawatch autonomous config-set '{"gate_disagreement":"block"}'`.
+- **Comm:** `configure autonomous.gate_disagreement=block`.
+
 ### Model pairing warnings
 
 A model only reaches its session when it pairs with that session's backend.
@@ -879,6 +900,7 @@ datawatch autonomous status
 datawatch autonomous config-get
 datawatch autonomous config-set '{"enabled":true,"max_concurrent_tasks":2}'   # merges; any deprecated_fields note goes to stderr
 datawatch autonomous config-set '{"max_engines_per_node":2}'                  # local-model sessions per compute node (default 1)
+datawatch autonomous config-set '{"gate_disagreement":"block"}'                 # fail a verifier-passed task on a confirmed gate regression (default warn)
 datawatch autonomous prd-list
 datawatch autonomous prd-create "Add OAuth login with Google + GitHub"
 datawatch autonomous prd-get <id>
@@ -904,7 +926,7 @@ operator-facing AI can drive the autonomous loop end-to-end:
 |---|---|
 | `autonomous_status`         | loop snapshot |
 | `autonomous_config_get`     | read config |
-| `autonomous_config_set`     | merge fields into config (incl. `max_concurrent_tasks` and `max_engines_per_node`) |
+| `autonomous_config_set`     | merge fields into config (incl. `max_concurrent_tasks`, `max_engines_per_node` and `gate_disagreement`) |
 | `autonomous_prd_list`       | list all PRDs |
 | `autonomous_prd_create`     | create draft PRD |
 | `autonomous_prd_get`        | fetch one PRD with tree |
