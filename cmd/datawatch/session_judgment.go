@@ -320,6 +320,9 @@ func runOneShotJSONSessionWithReader(cfg *config.Config, prdID, projectDir, back
 		return "", "", fmt.Errorf("%s session start: no id in response: %s", sessionName, string(rb))
 	}
 	sessionID = startOut.ID
+	if verifierSessionStarted != nil {
+		verifierSessionStarted(sessionName, sessionID)
+	}
 	fmt.Printf("[%s] spawned %s (backend=%s, output=%s)\n", sessionName, startOut.ID, backend, outputFile)
 	// Record the spawn time as soon as the session id is known: while the
 	// daemon is still delivering the task within its delivery budget the
