@@ -15141,6 +15141,7 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.usage_backoff', label: 'Usage back-off (pause_backend | off, default pause_backend)', labelKey: 'settings_usage_backoff', type: 'select', options: ['pause_backend', 'off'], default: 'pause_backend' },
     { key: 'autonomous.backoff_max_wait_minutes', label: 'Usage back-off max wait (minutes when a rate limit has no reset time, default 60)', labelKey: 'settings_backoff_max_wait_minutes', type: 'number', placeholder: '60', min: 1, step: 1, default: '60' },
     { key: 'autonomous.automation.idle_alert_minutes', label: 'Automation idle alert (minutes idle before one alert, 0 = off)', labelKey: 'settings_automation_idle_alert_minutes', type: 'number', placeholder: '0', min: 0, step: 1, default: '0' },
+    { key: 'autonomous.automation.agent_insert_policy', label: 'Automation agent insert policy (allow | require_operator, default allow)', labelKey: 'settings_automation_agent_insert_policy', type: 'select', options: ['allow', 'require_operator'], default: 'allow' },
     // Plan tier inflight caps — ties each subscription plan tier
     // (pro | max_5x | max_20x | api) to the inflight session count it may
     // occupy (0 leaves the tier unlimited; unset tier = no tier cap). An

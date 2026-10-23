@@ -1266,6 +1266,7 @@
   "settings_plan_coverage": "Comprobación de cobertura del plan (off | warn | block, predeterminado: block)",
   "settings_plan_coverage_min_ratio": "Ratio mínimo de cobertura del plan (cobertura de requisitos 0–1, predeterminado 1.0)",
   "settings_automation_idle_alert_minutes": "Alerta de inactividad de Automation (minutos inactiva antes de una alerta, 0 = desactivada)",
+  "settings_automation_agent_insert_policy": "Política de inserción de agentes en Automation (allow | require_operator, por defecto allow)",
   "settings_undeclared_edit_mode": "Modo de ediciones no declaradas (off | warn | block, predeterminado: warn)",
   "settings_usage_backoff": "Espera por uso (pause_backend | off, predeterminado: pause_backend)",
   "settings_backoff_max_wait_minutes": "Espera máxima por uso (minutos cuando un límite de tasa no indica hora de reinicio, predeterminado 60)",

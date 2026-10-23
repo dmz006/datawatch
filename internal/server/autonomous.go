@@ -118,7 +118,8 @@ func (s *Server) handleAutonomousConfig(w http.ResponseWriter, r *http.Request) 
 			// automation.idle_alert_minutes: whole minutes >= 0 (0 = off).
 			if rawAuto, ok := top["automation"]; ok {
 				var auto struct {
-					IdleAlertMinutes *float64 `json:"idle_alert_minutes"`
+					IdleAlertMinutes  *float64 `json:"idle_alert_minutes"`
+					AgentInsertPolicy *string  `json:"agent_insert_policy"`
 				}
 				if json.Unmarshal(rawAuto, &auto) != nil {
 					http.Error(w, "automation: must be an object", http.StatusBadRequest)
@@ -126,6 +127,12 @@ func (s *Server) handleAutonomousConfig(w http.ResponseWriter, r *http.Request) 
 				}
 				if auto.IdleAlertMinutes != nil {
 					if verr := validateIdleAlertMinutes(*auto.IdleAlertMinutes); verr != nil {
+						http.Error(w, verr.Error(), http.StatusBadRequest)
+						return
+					}
+				}
+				if auto.AgentInsertPolicy != nil {
+					if verr := validateAgentInsertPolicy(*auto.AgentInsertPolicy); verr != nil {
 						http.Error(w, verr.Error(), http.StatusBadRequest)
 						return
 					}

@@ -2481,8 +2481,8 @@ design (the test's `commExempt` map holds the reasons), so the comm cell for tho
 
 | Key | Config file | REST config | MCP config | CLI `config set` | Comm `configure` | Web Settings field | en | de | es | fr | ja |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| idle_alert_minutes | Present: `internal/config/config.go` | Present: `internal/server/api.go` | Present: `autonomous_config_set` (automation_idle_alert_minutes) and `config_set` | Present: generic `datawatch config set` | Present: `internal/router/router.go` | Present: `app.js` settings_automation_idle_alert_minutes | Present: `locales/en.json` | Present: `locales/de.json` | Present: `locales/es.json` | Present: `locales/fr.json` | Present: `locales/ja.json` |
-| agent_insert_policy | Present: `internal/config/config.go` | Present: `internal/server/api.go` | Gap: `config_set` works, but `autonomous_config_set` has no parameter for it | Present: generic `datawatch config set` | Present: `internal/router/router.go` | Gap: no Settings field in `app.js` | Gap: no key | Gap: no key | Gap: no key | Gap: no key | Gap: no key |
+| idle_alert_minutes | Present: `internal/config/config.go`, `docs/config-reference.yaml` | Present: `internal/server/api.go` | Present: `autonomous_config_set` (automation_idle_alert_minutes) and `config_set` | Present: generic `datawatch config set` | Present: `internal/router/router.go` | Present: `app.js` settings_automation_idle_alert_minutes | Present: `locales/en.json` | Present: `locales/de.json` | Present: `locales/es.json` | Present: `locales/fr.json` | Present: `locales/ja.json` |
+| agent_insert_policy | Present: `internal/config/config.go` | Present: `internal/server/api.go` | Present: `autonomous_config_set` (automation_agent_insert_policy) and `config_set` | Present: generic `datawatch config set` | Present: `internal/router/router.go` | Present: `app.js` settings_automation_agent_insert_policy | Present: `locales/en.json` | Present: `locales/de.json` | Present: `locales/es.json` | Present: `locales/fr.json` | Present: `locales/ja.json` |
 
 ### Gaps for the next tasks
 
@@ -2490,6 +2490,9 @@ The verb-surface and web gaps of the operations table are closed. The test's
 `knownParityGaps` map now holds only the four `import-graph` entries, which the
 import-graph tasks remove when they build that operation. The audit column found no
 gap for the read operations (list, get, status): they change nothing, so they emit
-no audit event. The config gap that remains is the `agent_insert_policy` Settings
-field with its key in all five locale bundles, and an `autonomous_config_set`
-parameter for it.
+no audit event. The config rows are all Present, and
+`TestAutomationConfigKeysEverySurface` in `internal/server/automation_config_surfaces_test.go`
+covers the REST and comm `configure` round trips for both keys.
+
+The design's provisional keys `enabled` and `empty_edge_action` were not built; they are
+not built, no surface owed.
