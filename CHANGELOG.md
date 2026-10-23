@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.112 — Optional local-model decision assistant for Automations
+
+### Added
+
+- **An optional local-model decision assistant for Automations.** An Automation, or one of its members, can name a backend and model from the LLM registry and enable any of four hook points: resolving an empty blocked or failed edge, pre-screening a skip, triaging a mid-flight insert, and choosing between pausing and blocking at a budget breach. At each enabled hook the coordinator gives the assistant a bounded evidence packet and gets back a chosen option, a confidence and a one-sentence reason. A confidence below the per-hook-point threshold, an unparseable answer, a timeout or an unreachable model always escalates to the operator exactly as before, and a hard guard stops the assistant from ever cancelling in-flight work, removing a started member, raising a budget ceiling or overriding a human sign-off. Every decision is recorded with the actor `assistant:<model>`, and a shadow mode records what it would have decided without acting. It is off by default, settable on REST, MCP, the CLI and chat, and shown in the web Automation detail view.
+
 ## v9.5.111 — The session input audit test no longer fails on temp-directory cleanup
 
 ### Fixed
