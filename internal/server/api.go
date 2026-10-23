@@ -5870,6 +5870,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"verification_timeout_seconds":         s.cfg.Autonomous.VerificationTimeoutSeconds,
 			"session_idle_timeout_seconds":         s.cfg.Autonomous.SessionIdleTimeoutSeconds,
 			"session_start_confirm_seconds":        s.cfg.Autonomous.SessionStartConfirmSeconds,
+			"orphan_grace_seconds":                 s.cfg.Autonomous.OrphanGraceSeconds,
 			"worker_idle_nudge_seconds":            s.cfg.Autonomous.WorkerIdleNudgeSeconds,
 			"worker_idle_nudge_stall_seconds":      s.cfg.Autonomous.WorkerIdleNudgeStallSeconds,
 			"capacity_enabled":                     s.cfg.Autonomous.CapacityEnabled == nil || *s.cfg.Autonomous.CapacityEnabled,
@@ -7558,6 +7559,12 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// config.NormalizeSessionStartConfirmSeconds at read time.
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.Autonomous.SessionStartConfirmSeconds = n
+			}
+		case "autonomous.orphan_grace_seconds":
+			// Stored as-is; zero falls back to the default via
+			// config.NormalizeOrphanGraceSeconds at read time.
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Autonomous.OrphanGraceSeconds = n
 			}
 		case "autonomous.capacity_enabled":
 			if b, ok := v.(bool); ok {

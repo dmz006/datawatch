@@ -714,6 +714,13 @@ type DeliveryFailureEvent struct {
 // specific wins:
 //
 //	per-task → per-story (BL381) → per-PRD → per-stage (autonomous.{planning,verification}_backend) → global session.llm_backend
+//
+// TaskHistoryEntry is one note in a task's history.
+type TaskHistoryEntry struct {
+	At   time.Time `json:"at"`
+	Note string    `json:"note"`
+}
+
 type Task struct {
 	ID         string     `json:"id"`
 	StoryID    string     `json:"story_id"`
@@ -762,6 +769,9 @@ type Task struct {
 	// reached its main prompt, so the task was never given its work. Each
 	// event carries the reason logged at the time.
 	DeliveryFailureEvents []DeliveryFailureEvent `json:"delivery_failure_events,omitempty"`
+	// History is a short audit trail of task-level events that have no field of
+	// their own, e.g. live sessions ended before a replacement launched.
+	History []TaskHistoryEntry `json:"history,omitempty"`
 	// CleanRestart — set by an operator reset (ResetTaskWithOptions with
 	// cleanRestart=true) to ask that the next attempt start from the pre-task
 	// tree instead of restoring the last preserved attempt work (AttemptRefs).

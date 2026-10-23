@@ -241,6 +241,38 @@ worker session continuing to run. A reset task is the one to question —
 check the session's log for why it died (crash, OOM, operator kill) before
 resetting it again.
 
+### How a task stays tied to its worker session
+
+- **The link is saved at launch.** The link between a task and its worker
+  session is written to disk when the session is created, before the first
+  prompt is delivered. A restart at any point after launch therefore still
+  knows which session belongs to the task.
+- **Boot reconcile adopts an unlinked live session.** If the link is empty
+  (for example the daemon stopped between creating the session and saving the
+  link), boot reconcile still looks for a live session that belongs to the
+  task and adopts it instead of starting a second worker.
+- **A reset ends every live session first.** When a task is reset and
+  relaunched, every live session of that task and of its worktree is ended
+  before the new worker starts, so two workers never write to the same
+  worktree. The task history records which sessions were ended.
+
+### Orphan session sweep
+
+A periodic sweep looks for live task worker sessions that are bound to no
+non-terminal task. A session is given a grace period before anything is done
+to it; the period is `autonomous.orphan_grace_seconds` (default `300`; `0` or
+unset uses the default).
+
+1. **Report.** The first time a session is seen unbound, the sweep records a
+   note in the Automaton's decision history and writes an audit entry
+   (`autonomous_orphan_session_seen`).
+2. **End.** If the session is still unbound after the grace period, the sweep
+   ends it, records the outcome in the history and writes an audit entry
+   (`autonomous_orphan_session_ended`).
+
+A session that gets bound to a task again within the grace period is left
+alone.
+
 ### Checking this against a sandbox daemon (opt-in live test)
 
 The deterministic tests run with `go test ./internal/autonomous/`. The live

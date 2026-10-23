@@ -4192,6 +4192,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			VerifierInfraEscalationThreshold: acfgIn.VerifierInfraEscalationThreshold,
 			FallbackVerificationBackend:      acfgIn.FallbackVerificationBackend,
 			SessionStartConfirmSeconds:       acfgIn.SessionStartConfirmSeconds,
+			OrphanGraceSeconds:               acfgIn.OrphanGraceSeconds,
 			WorkerIdleNudgeSeconds:           acfgIn.WorkerIdleNudgeSeconds,
 			WorkerIdleNudgeStallSeconds:      acfgIn.WorkerIdleNudgeStallSeconds,
 			CapacityEnabled:                  acfgIn.CapacityEnabled,
@@ -6077,6 +6078,10 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				}
 				return ids
 			})
+			// Make the task->session link durable before the task text is delivered.
+			mgr.SetOnSessionCreated(func(s *session.Session) {
+				amgr.LinkTaskSession(s.PRDID, s.TaskID, s.FullID)
+			})
 			// Wire liveness check for boot-time stuck-task reconciliation (B90).
 			amgr.SetSessionAliveFn(func(sessionID string) bool {
 				s, ok := mgr.GetSession(sessionID)
@@ -6086,6 +6091,18 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				return s.State != session.StateComplete &&
 					s.State != session.StateFailed &&
 					s.State != session.StateKilled
+			})
+			// Boot reconcile adoption: find a live session for a task with no session link.
+			amgr.SetSessionListerFn(func() []autonomouspkg.SessionInfo {
+				var out []autonomouspkg.SessionInfo
+				for _, s := range mgr.ListSessions() {
+					out = append(out, autonomouspkg.SessionInfo{
+						ID: s.FullID, Name: s.Name, TaskID: s.TaskID, PRDID: s.PRDID, Task: s.Task,
+						ProjectDir: s.ProjectDir, CreatedAt: s.CreatedAt,
+						Alive: s.State != session.StateComplete && s.State != session.StateFailed && s.State != session.StateKilled,
+					})
+				}
+				return out
 			})
 			// Boot-resume age gate: a live worker's last activity counts as PRD activity.
 			amgr.SetSessionLastOutputFn(func(sessionID string) (time.Time, bool) {

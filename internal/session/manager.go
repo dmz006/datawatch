@@ -466,6 +466,10 @@ type Manager struct {
 	// onSessionStart is called immediately after a session is successfully started.
 	onSessionStart func(sess *Session)
 
+	// onSessionCreated is called for PRD task sessions once the new session
+	// record is persisted and before the task text is delivered into it.
+	onSessionCreated func(sess *Session)
+
 	// onPreLaunch is called just before the LLM backend is launched (for per-session setup like MCP registration).
 	onPreLaunch func(sess *Session)
 
@@ -1027,6 +1031,27 @@ func (m *Manager) SetScreenCaptureHandler(fn func(*Session, []string)) {
 // SetOnSessionStart sets the callback invoked immediately after a session starts successfully.
 func (m *Manager) SetOnSessionStart(fn func(*Session)) {
 	m.onSessionStart = fn
+}
+
+// SetOnSessionCreated sets the callback invoked after a PRD/task session record
+// is persisted and before the task is delivered into it, so the owner can make
+// the task-to-session link durable ahead of delivery.
+func (m *Manager) SetOnSessionCreated(fn func(*Session)) {
+	m.onSessionCreated = fn
+}
+
+// notifySessionCreated persists the fresh record and fires onSessionCreated for
+// sessions that belong to a PRD task. Persist failure is non-fatal here; the
+// final save after launch still reports it.
+func (m *Manager) notifySessionCreated(sess *Session) {
+	if m.onSessionCreated == nil || sess.PRDID == "" || sess.TaskID == "" {
+		return
+	}
+	if err := m.store.Save(sess); err != nil {
+		fmt.Printf("[warn] early save of session %s: %v\n", sess.FullID, err)
+		return
+	}
+	m.onSessionCreated(sess)
 }
 
 // SetOnPreLaunch sets a callback invoked just before the LLM backend is launched.
@@ -2103,6 +2128,7 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		if err := m.store.Save(sess); err != nil {
 			return nil, fmt.Errorf("save subprocess session: %w", err)
 		}
+		m.notifySessionCreated(sess)
 		go m.runSubprocess(sess)
 		if m.onSessionStart != nil {
 			m.onSessionStart(sess)
@@ -2335,6 +2361,7 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		launchTask = task + `; echo "DATAWATCH_COMPLETE: shell task done"`
 	}
 	m.scrubPaneTmuxEnv(sess)
+	m.notifySessionCreated(sess)
 	if launchFn != nil {
 		var launchErr error
 		if resumeID != "" {

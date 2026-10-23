@@ -186,6 +186,11 @@ type Config struct {
 	// field exists so the handleAutonomousConfig live round-trip
 	// (internal/server/autonomous.go) does not drop the key.
 	SessionStartConfirmSeconds int    `json:"session_start_confirm_seconds,omitempty"`
+	// OrphanGraceSeconds mirrors autonomous.orphan_grace_seconds: how long a
+	// live task worker session may stay unbound to any non-terminal task
+	// before the orphan sweep ends it. 0 or unset => 300
+	// (config.NormalizeOrphanGraceSeconds).
+	OrphanGraceSeconds int `json:"orphan_grace_seconds,omitempty"`
 	VerificationModel          string `json:"verification_model,omitempty"`
 	// GuardrailModel (v9.10.18) — pinned model for guardrail judge
 	// sessions (rules-review, ci-watch, per-task/per-story guardrails,
@@ -741,6 +746,9 @@ type Manager struct {
 	// tasks whose session is still running (B90). Nil = conservative:
 	// all stuck tasks are failed regardless of session state.
 	sessionAliveFn func(sessionID string) bool
+	// sessionListerFn — when set, reconcileStuckTasks looks for a live session
+	// belonging to a task with an empty or dead session link before resetting it.
+	sessionListerFn func() []SessionInfo
 	// sessionLastOutputFn — when set, the boot-resume age gate counts a live
 	// worker session's last output time as PRD activity. Nil = liveness only.
 	sessionLastOutputFn func(sessionID string) (time.Time, bool)
@@ -810,6 +818,11 @@ type Manager struct {
 	// verifierHost — session/lease access for the startup verifier
 	// reconcile. Guarded by mu. Nil = reconcile skipped.
 	verifierHost VerifierHost
+
+	// orphanSeen records when the orphan sweep first saw each unbound worker
+	// session; orphanNow is the sweep's clock (nil = time.Now). Guarded by mu.
+	orphanSeen map[string]time.Time
+	orphanNow  func() time.Time
 
 	// sessionContinueFn — design §6.ii: sends a "resume" prompt to a parked
 	// worker session after an await-external cycle re-admits it. Optional.
@@ -949,6 +962,28 @@ func (m *Manager) SetSessionAliveFn(fn func(sessionID string) bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.sessionAliveFn = fn
+}
+
+// LinkTaskSession records sessionID on the task before the worker receives its
+// prompt, saves the task and binds the capacity ledger entry. It is the callback
+// the session manager invokes once a new session record is persisted. Unknown
+// PRD/task pairs are ignored; the post-spawn assignment in the executor remains
+// as an idempotent fallback.
+func (m *Manager) LinkTaskSession(prdID, taskID, sessionID string) {
+	if m == nil || m.store == nil || taskID == "" || sessionID == "" {
+		return
+	}
+	linked := m.store.MutateTask(taskID, func(t *Task) {
+		if prdID == "" || t.PRDID == prdID {
+			t.SessionID = sessionID
+		}
+	})
+	if !linked {
+		return
+	}
+	if led := m.Capacity(); led != nil {
+		led.Bind(taskID, sessionID)
+	}
 }
 
 // SetSessionOutputFn wires the recorded-output reader used at boot-resume to
@@ -4410,6 +4445,7 @@ func (m *Manager) reconcileStuckTasks() {
 	m.mu.Lock()
 	aliveFn := m.sessionAliveFn
 	killerFn := m.sessionKillerFn
+	listFn := m.sessionListerFn
 	m.mu.Unlock()
 
 	prds := m.store.ListPRDs()
@@ -4418,6 +4454,7 @@ func (m *Manager) reconcileStuckTasks() {
 			continue
 		}
 		changed := false
+		adoptedAny := false
 		verdictCompleted, verdictRequeued := 0, 0
 		var reset []pendingTaskEvent
 		for si := range prd.Story {
@@ -4440,6 +4477,18 @@ func (m *Manager) reconcileStuckTasks() {
 				} else if aliveFn != nil && t.SessionID != "" && aliveFn(t.SessionID) {
 					continue // session still live; leave it (TaskInProgress)
 				}
+				// A live session may belong to this task even though its link is
+				// empty or dead (created just before the restart): adopt it
+				// instead of resetting. Extra live matches are left to the
+				// reset-cleanup path.
+				if !completing {
+					if id, _ := m.adoptUnlinkedSession(prd, t, listFn); id != "" {
+						// Older live matches would run beside the adopted session.
+						recordEndedSessions(prd, t, m.endLiveSessionsOfTask(prd, t, id), "older duplicate of the session adopted on daemon restart")
+						adoptedAny = true
+						continue
+					}
+				}
 				// Kill any surviving tmux session so the new executor doesn't
 				// spawn alongside it.
 				if killerFn != nil && t.SessionID != "" {
@@ -4455,6 +4504,9 @@ func (m *Manager) reconcileStuckTasks() {
 						verdictRequeued++
 					}
 				}
+				// Every other live session of this task or its worktree must end
+				// before the replacement launches.
+				recordEndedSessions(prd, t, m.endLiveSessionsOfTask(prd, t, ""), "task reset on daemon restart")
 				now := time.Now()
 				if completing {
 					log.Printf("[autonomous] boot-reconcile: prd=%s task=%s status=%s session=%s → TaskCompleted (recorded ok verification, dead session)",
@@ -4481,17 +4533,19 @@ func (m *Manager) reconcileStuckTasks() {
 				changed = true
 			}
 		}
-		if !changed {
+		if !changed && !adoptedAny {
 			continue
 		}
 		now := time.Now()
 		prd.UpdatedAt = now
-		prd.Decisions = append(prd.Decisions, Decision{
-			At:    now,
-			Kind:  "boot_reconcile",
-			Actor: "autonomous",
-			Note:  "orphaned task(s) resolved to completed (recorded ok verification) or pending on daemon restart",
-		})
+		if changed {
+			prd.Decisions = append(prd.Decisions, Decision{
+				At:    now,
+				Kind:  "boot_reconcile",
+				Actor: "autonomous",
+				Note:  "orphaned task(s) resolved to completed (recorded ok verification) or pending on daemon restart",
+			})
+		}
 		// Auditable verification of the orphaned-verifying resolutions: record
 		// how many verifying tasks completed from a recorded ok verdict vs how
 		// many were re-queued for retry. Guarded so a PRD saved twice in the
@@ -4534,7 +4588,7 @@ func (m *Manager) run() {
 			m.mu.Lock()
 			m.status.LastTickAt = time.Now()
 			m.mu.Unlock()
-			// Future: scan for stuck tasks and surface to operator.
+			m.sweepOrphanSessions()
 		}
 	}
 }
