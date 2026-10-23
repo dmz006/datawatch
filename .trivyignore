@@ -650,3 +650,24 @@ CVE-2026-77214
 # not a container linker scan)
 CVE-2026-91403
 CVE-2026-91415
+
+# libbrotli1 -- CVE-2026-111497
+# severity: critical; images: agent-base (and every image built on it)
+# A buffer overflow in the Brotli decoder, reachable only when something decodes
+# attacker-supplied Brotli data. ldd scan of every executable and shared library
+# in the agent-base image (docker run --entrypoint /bin/sh --network none) found
+# exactly these linkers to libbrotlidec: /usr/bin/curl, libcurl and
+# libcurl-gnutls, and git's HTTP helpers (git-remote-http, git-http-fetch,
+# git-http-push, git-imap-send). Nothing else in the image, and no datawatch code,
+# decodes Brotli. The data reaches the decoder only if an HTTP server the tool
+# talks to answers with Content-Encoding br: curl asks for it only with
+# --compressed (no datawatch script uses it) and git's HTTP transport accepts
+# whatever libcurl supports, so the exposure is a git remote that the operator
+# configured and that is controlled by an attacker, over a TLS connection the
+# attacker cannot alter in transit. The remotes agents use are the operator's own
+# (GitHub and local mirrors). Not exploitable without a hostile remote.
+# No fix available in Debian bookworm (status "affected"). Found live by the
+# Release workflow's blocking agent-base scan on the 9.5.111 tag. Re-check for a
+# fix each cycle; re-trace only if a new Brotli-linked tool is added to the image.
+# TRACED: ldd scan in a networkless container of the built agent-base image.
+CVE-2026-111497
