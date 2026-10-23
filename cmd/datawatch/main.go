@@ -6015,6 +6015,10 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				}
 				return ids
 			})
+			// Make the task->session link durable before the task text is delivered.
+			mgr.SetOnSessionCreated(func(s *session.Session) {
+				amgr.LinkTaskSession(s.PRDID, s.TaskID, s.FullID)
+			})
 			// Wire liveness check for boot-time stuck-task reconciliation (B90).
 			amgr.SetSessionAliveFn(func(sessionID string) bool {
 				s, ok := mgr.GetSession(sessionID)

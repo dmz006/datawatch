@@ -938,6 +938,28 @@ func (m *Manager) SetSessionAliveFn(fn func(sessionID string) bool) {
 	m.sessionAliveFn = fn
 }
 
+// LinkTaskSession records sessionID on the task before the worker receives its
+// prompt, saves the task and binds the capacity ledger entry. It is the callback
+// the session manager invokes once a new session record is persisted. Unknown
+// PRD/task pairs are ignored; the post-spawn assignment in the executor remains
+// as an idempotent fallback.
+func (m *Manager) LinkTaskSession(prdID, taskID, sessionID string) {
+	if m == nil || m.store == nil || taskID == "" || sessionID == "" {
+		return
+	}
+	linked := m.store.MutateTask(taskID, func(t *Task) {
+		if prdID == "" || t.PRDID == prdID {
+			t.SessionID = sessionID
+		}
+	})
+	if !linked {
+		return
+	}
+	if led := m.Capacity(); led != nil {
+		led.Bind(taskID, sessionID)
+	}
+}
+
 // SetSessionOutputFn wires the recorded-output reader used at boot-resume to
 // detect a worker that finished while the daemon was down. ok=false means the
 // session record or its output is unavailable. Nil disables the check.
