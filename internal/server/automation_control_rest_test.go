@@ -214,7 +214,7 @@ func TestAutomationRESTControl(t *testing.T) {
 
 	t.Run("routing", func(t *testing.T) {
 		s, _, _, a := newActiveAutomation(t)
-		for _, op := range automationControlOps {
+		for _, op := range automationControlOps() {
 			doAutomation(t, s, http.MethodGet, "/api/automations/"+a.ID+"/"+op, nil, http.StatusMethodNotAllowed)
 			doAutomation(t, s, http.MethodDelete, "/api/automations/"+a.ID+"/"+op, nil, http.StatusMethodNotAllowed)
 		}

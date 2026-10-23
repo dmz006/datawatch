@@ -606,3 +606,25 @@ func controlNumber(v any) (float64, bool) {
 	}
 	return 0, false
 }
+
+// AutomationToolNames returns the name of every Automation MCP tool, plus
+// autonomous_status, which carries the automations[] array. It reads
+// the names from the tool definitions, so it lists what is registered.
+func AutomationToolNames() []string {
+	s := &Server{}
+	tools := []mcpsdk.Tool{
+		s.toolAutomationList(), s.toolAutomationGet(), s.toolAutomationCreate(),
+		s.toolAutomationUpdate(), s.toolAutomationDelete(), s.toolAutomationActivate(),
+		s.toolAutomationPause(), s.toolAutomationResume(), s.toolAutomationCancel(),
+		s.toolAutomationSkipMember(), s.toolAutomationInsertMember(), s.toolAutomationRemoveMember(),
+		s.toolAutomationReorderEdges(), s.toolAutomationApproveInsert(), s.toolAutomationSetLLM(),
+		s.toolAutomationSetVerificationLLM(), s.toolAutomationSetBudget(),
+		// The automations[] array on the status response.
+		s.toolAutonomousStatus(),
+	}
+	names := make([]string, 0, len(tools))
+	for _, t := range tools {
+		names = append(names, t.Name)
+	}
+	return names
+}

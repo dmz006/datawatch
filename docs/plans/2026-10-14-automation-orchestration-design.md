@@ -2441,3 +2441,55 @@ session (bounded), and only a pass commits and completes it.
 work through datawatch's completion path without running validation,
 and a broken build went into history. Completion commits must be gated
 by validation, not by the session finishing.
+
+## Phase 7 parity audit
+
+Audit of every Automation operation and every `autonomous.automation` config key
+against each parity surface. `TestAutomationParity` in
+`cmd/datawatch/automation_parity_test.go` enforces the REST, MCP, CLI and comm
+columns; the web and audit columns are audited by hand. The REST operation list is
+`AutomationRESTOperations()` in `internal/server/automation_ops.go`, and the control
+router uses the same list. Create, update and delete are kept off the comm channel by
+design (the test's `commExempt` map holds the reasons), so the comm cell for those is
+`Exempt`.
+
+### Operations
+
+| Operation | REST | MCP | CLI | Comm | Web | Audit |
+|---|---|---|---|---|---|---|
+| list | Present: `internal/server/autonomous.go` | Present: `internal/mcp/automation_tools.go` | Present: `cmd/datawatch/cli_automation.go` | Present: `internal/router/automation_cmd.go` | Present: `app.js` automation list | Gap: read-only, no audit event |
+| get | Present: `internal/server/autonomous.go` | Present: `automation_tools.go` | Present: `cli_automation.go` | Present: `automation_cmd.go` | Present: `app.js` member drawer | Gap: read-only, no audit event |
+| create | Present: `autonomous.go` | Present: `automation_tools.go` | Present: `cli_automation.go` | Exempt: member list does not fit a chat message | Present: `app.js` create form | Present: `automation_create` |
+| update | Present: `autonomous.go` | Present: `automation_tools.go` | Gap: no CLI verb | Exempt: member list does not fit a chat message | Present: `app.js` edit form | Present: `automation_update` |
+| delete | Present: `autonomous.go` | Present: `automation_tools.go` | Gap: no CLI verb | Exempt: destructive, not offered from chat | Present: `app.js` remove control | Present: `automation_delete` |
+| activate | Present: `autonomous.go` | Present: `automation_tools.go` | Present: `cli_automation.go` | Present: `automation_cmd.go` | Gap: no activate button in `app.js` | Present: `automation_activate` |
+| pause | Present: `autonomous.go` | Present: `automation_tools.go` | Present: `cli_automation.go` | Present: `automation_cmd.go` | Present: `app.js` automation_pause | Present: `automation_pause` |
+| resume | Present: `autonomous.go` | Present: `automation_tools.go` | Present: `cli_automation.go` | Present: `automation_cmd.go` | Present: `app.js` automation_resume | Present: `automation_resume` |
+| cancel | Present: `autonomous.go` | Present: `automation_tools.go` | Present: `cli_automation.go` | Present: `automation_cmd.go` | Present: `app.js` automation_cancel | Present: `automation_cancel` |
+| skip_member | Present: `autonomous.go` | Present: `automation_tools.go` | Present: `cli_automation.go` (skip) | Present: `automation_cmd.go` (skip) | Present: `app.js` automation_skip_member | Present: `automation_skip_member` |
+| insert_member | Present: `autonomous.go` | Present: `automation_tools.go` | Present: `cli_automation.go` (insert) | Present: `automation_cmd.go` (insert) | Present: `app.js` insert dialog | Present: `automation_insert_member` |
+| remove_member | Present: `autonomous.go` | Present: `automation_tools.go` | Present: `cli_automation.go` (remove) | Present: `automation_cmd.go` (remove) | Present: `app.js` automation_remove_member | Present: `automation_remove_member` |
+| reorder_edges | Present: `autonomous.go` | Present: `automation_tools.go` | Present: `cli_automation.go` (edges) | Present: `automation_cmd.go` (edges) | Present: `app.js` automation_reorder_edges | Present: `automation_reorder_edges` |
+| approve_insert | Present: `autonomous.go` | Present: `automation_tools.go` | Present: `cli_automation.go` (approve) | Present: `automation_cmd.go` (approve) | Present: `app.js` automation_approve_insert | Present: `automation_approve_insert` |
+| set_llm | Present: `autonomous.go` | Present: `automation_tools.go` | Present: `cli_automation.go` (set-llm) | Present: `automation_cmd.go` (set-llm) | Present: `app.js` planning pair saved through set_llm | Present: `automation_set_llm` |
+| set_verification_llm | Present: `autonomous.go` | Present: `automation_tools.go` | Present: `cli_automation.go` (set-verification-llm) | Present: `automation_cmd.go` (set-verification-llm) | Gap: web saves the verification LLM through the edit form (PUT), not this operation | Present: `automation_set_verification_llm` |
+| set_budget | Present: `autonomous.go` | Present: `automation_tools.go` | Present: `cli_automation.go` (set-budget) | Present: `automation_cmd.go` (set-budget) | Gap: no set_budget call in `app.js` | Present: `automation_set_budget` |
+| status | Present: `GET /api/autonomous/status` automations[] | Present: `internal/mcp/autonomous.go` (autonomous_status) | Gap: no CLI verb prints the automations[] rows | Present: `automation_cmd.go` (status) | Gap: web reads `GET /api/automations`, not the status array | Gap: read-only, no audit event |
+| import-graph | Gap: built by the import-graph tasks | Gap: built by the import-graph tasks | Gap: built by the import-graph tasks | Gap: built by the import-graph tasks | Gap: built by the import-graph tasks | Gap: built by the import-graph tasks |
+
+### Config keys under `autonomous.automation`
+
+| Key | Config file | REST config | MCP config | CLI `config set` | Comm `configure` | Web Settings field | en | de | es | fr | ja |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| idle_alert_minutes | Present: `internal/config/config.go` | Present: `internal/server/api.go` | Present: `autonomous_config_set` (automation_idle_alert_minutes) and `config_set` | Present: generic `datawatch config set` | Present: `internal/router/router.go` | Present: `app.js` settings_automation_idle_alert_minutes | Present: `locales/en.json` | Present: `locales/de.json` | Present: `locales/es.json` | Present: `locales/fr.json` | Present: `locales/ja.json` |
+| agent_insert_policy | Present: `internal/config/config.go` | Present: `internal/server/api.go` | Gap: `config_set` works, but `autonomous_config_set` has no parameter for it | Present: generic `datawatch config set` | Present: `internal/router/router.go` | Gap: no Settings field in `app.js` | Gap: no key | Gap: no key | Gap: no key | Gap: no key | Gap: no key |
+
+### Gaps for the next two tasks
+
+The test's `knownParityGaps` map holds the verb-surface gaps: `update/cli`,
+`delete/cli` and `status/cli`, plus the four `import-graph` entries that the
+import-graph tasks remove when they build that operation. The next two tasks fix the
+CLI verbs for update, delete and status, then the remaining web and config gaps:
+a web activate button, the verification LLM and set_budget calls from the web, a web
+status read of automations[], the `agent_insert_policy` Settings field with its key in
+all five locale bundles, and an `autonomous_config_set` parameter for it.

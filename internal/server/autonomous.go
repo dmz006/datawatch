@@ -3102,14 +3102,10 @@ func (s *Server) handleAutomationActivate(w http.ResponseWriter, r *http.Request
 	writeJSONOK(w, a)
 }
 
-// automationControlOps lists the POST-only control sub-paths under
-// /api/automations/{id}/, one per operator action on a running Automation.
-var automationControlOps = []string{"pause", "resume", "cancel", "skip_member", "insert_member", "remove_member", "reorder_edges", "approve_insert", "set_llm", "set_verification_llm", "set_budget"}
-
 // automationControlRoute splits rest ("{id}/{op}") into the Automation ID and
 // one of automationControlOps.
 func automationControlRoute(rest string) (id, op string, ok bool) {
-	for _, name := range automationControlOps {
+	for _, name := range automationControlOps() {
 		if autoID, found := strings.CutSuffix(rest, "/"+name); found && autoID != "" && !strings.Contains(autoID, "/") {
 			return autoID, name, true
 		}

@@ -52,6 +52,13 @@ const (
 		"(name at least one; an edge left out or given empty becomes no next member)"
 )
 
+// AutomationCommVerbs lists the verbs handled by the switch in
+// handleAutomationCmd. Keep it in step with that switch.
+func AutomationCommVerbs() []string {
+	return []string{"activate", "list", "get", "status", "set-budget", "pause", "resume", "cancel",
+		"skip", "insert", "remove", "edges", "approve", "set-llm", "set-verification-llm"}
+}
+
 func (r *Router) handleAutomationCmd(cmd Command) {
 	args := strings.Fields(cmd.Text)
 	if len(args) == 0 {
