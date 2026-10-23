@@ -168,6 +168,22 @@ func (m *Manager) TitlesLookup() TitleSnapshot {
 	return s
 }
 
+// DisplayHolderName renders one resolved HolderName as operator-facing text:
+// the readable form as the primary reference, with the short id in
+// parentheses beside it when it is not already in the sentence (task, verifier
+// and decompose readables end in "(<short id>)" already; a bare id readable
+// and the short id are the same string, so nothing is appended). An empty
+// Readable falls back to the raw id, exactly as before the names existed.
+func DisplayHolderName(n HolderName) string {
+	if n.Readable == "" {
+		return n.ID
+	}
+	if n.ShortID != "" && n.Readable != n.ShortID && !strings.Contains(n.Readable, n.ShortID) {
+		return n.Readable + " (" + n.ShortID + ")"
+	}
+	return n.Readable
+}
+
 // HolderNameView is the JSON shape of a HolderName in API responses (the
 // /api/capacity pools/leases/waiting holder_name fields). Full carries the
 // never-truncated sentence and is only set when the caller asks for the long
