@@ -1154,6 +1154,49 @@ All persistent data is stored in `~/.datawatch/` (or `data_dir` if overridden):
 | `tls/server/` | Auto-generated TLS certificate/key (when `tls_auto_generate: true`) |
 | `daemon.pid` | PID file written in daemon mode |
 | `daemon.log` | Daemon log in daemon mode |
+| `last-shutdown.json` | Most recent shutdown cause (see Shutdown Cause capture below) |
+
+### Shutdown Cause Capture
+
+When the daemon stops, `cmd/datawatch` records why (package `internal/shutdowncause`, file `<data_dir>/last-shutdown.json`):
+
+- **Signal path (SIGINT/SIGTERM):** on the moment the signal is received the
+  cause is captured (`Capture`, best-effort sender PID/UID/cmdline + systemd
+  stop-job detection on Linux), a `shutdown cause: ...` line is printed next
+  to the existing “Shutting down...” line, and the daemon tears down as
+  before (`kill_sessions_on_exit`, `cancel`).
+- **API / MCP / update restart paths** (these exit without a signal):
+  `handleRestart` (REST) declares `via=api-restart`, the update-install path
+  `via=update-restart`, and the `restart_daemon` MCP tool `via=mcp-restart`
+  (`shutdowncause.MarkAPIInitiated`). The restart function in `main.go`
+  captures + records the cause before `syscall.Exec` / `os.Exit`.
+- **Audit entry:** every path writes one entry to `audit.log` —
+  `actor="daemon"`, `action="shutdown"`, `subject` = the signal name
+  (or the `via` string on non-signal paths), `details` = the full Cause
+  fields (`signal`, `sender_pid`, `sender_uid`, `sender_user`, `cmdline`,
+  `parent_chain`, `source`, `service_stop_job`, `time`, `via`). The write is
+  synchronous, so the entry is on disk before teardown or exec/exit.
+- `source` values: `signalinfo`, `procscan`, `service-manager`, `api-restart`
+  (via contains “restart”), `api-stop`, `unknown`. The file is written
+  atomically (temp file + rename) and read back with
+  `shutdowncause.ReadLast`.
+- **Startup report:** at daemon startup, right after the data dir is known
+  and the logger is ready, `cmd/datawatch` calls
+  `shutdowncause.PreviousShutdownLine` once and prints the previous run’s
+  cause — `previous shutdown: signal <name> from <command> <pid> at <time>`
+  (signal stop), `previous shutdown: <via> at <time>` (API-initiated stop),
+  or `previous shutdown: unknown/crash` (record missing/unreadable). The
+  record is then consumed (renamed to `last-shutdown.json.consumed`, removed
+  if the rename fails) so a later crash after a clean start is never
+  misreported as an already-shown stop.
+- **Regression test:** `internal/shutdowncause/signal_child_test.go`
+  (`TestSignalChildProcScan`) re-executes the test binary as a child
+  (TestMain helper-env pattern); the child sends SIGTERM to the parent by
+  the exact PID it was passed. It asserts `Signal=terminated`; on the siginfo
+  path `SenderPID` must equal the child’s PID, on the /proc fallback the
+  child must appear among `CandidatesFor` results with the test binary in
+  its cmdline. Skips with a message on non-Linux; signals only its own
+  process via the child it started.
 
 ---
 

@@ -99,6 +99,7 @@ import (
 	"github.com/dmz006/datawatch/internal/server/multiserver"
 	"github.com/dmz006/datawatch/internal/session"
 	signalpkg "github.com/dmz006/datawatch/internal/signal"
+	shutdowncause "github.com/dmz006/datawatch/internal/shutdowncause"
 	"github.com/dmz006/datawatch/internal/skills"
 	statspkg "github.com/dmz006/datawatch/internal/stats"
 	summarizerPkg "github.com/dmz006/datawatch/internal/summarizer"
@@ -951,6 +952,11 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		}
 	}
 
+	// Report the cause of the previous run (if any) now that the data dir
+	// is known and the logger is ready, then consume the record so a crash
+	// after a later clean start cannot be misreported as that previous stop.
+	fmt.Println(shutdowncause.PreviousShutdownLine(expandHome(cfg.DataDir)))
+
 	// Apply flag overrides
 	if v, _ := cmd.Flags().GetString("llm-backend"); v != "" {
 		cfg.Session.LLMBackend = v
@@ -1788,6 +1794,52 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	// shutdownAudit holds the operator audit log once it is wired up below
+	// (auditpkg.New, the same log the REST/MCP handlers write to). The signal
+	// handler and the restart closures reference it so the shutdown entry is
+	// written before teardown (KillSessionsOnExit / cancel) or before the
+	// process execs/exits.
+	var shutdownAudit *auditpkg.Log
+
+	// recordShutdownCause captures what caused this daemon to go away
+	// (os/signal on the SIGINT/SIGTERM path, or the via string declared by
+	// shutdowncause.MarkAPIInitiated for API/MCP/update-initiated restarts),
+	// prints a 'shutdown cause: ...' line, writes the audit entry (Actor
+	// "daemon", Action "shutdown", full Cause fields in Details), and persists
+	// the cause as <data_dir>/last-shutdown.json. All writes are synchronous
+	// so they are on disk before any subsequent teardown.
+	recordShutdownCause := func(sig os.Signal) {
+		c := shutdowncause.Capture(sig)
+		fmt.Println("shutdown cause: " + c.String())
+		subject := c.Signal
+		if subject == "" {
+			subject = c.Via
+		}
+		if shutdownAudit != nil {
+			_ = shutdownAudit.Write(auditpkg.Entry{
+				Timestamp: time.Now(),
+				Actor:     "daemon",
+				Action:    "shutdown",
+				Subject:   subject,
+				Details:   map[string]any{
+					"signal":           c.Signal,
+					"sender_pid":       c.SenderPID,
+					"sender_uid":       c.SenderUID,
+					"sender_user":      c.SenderUser,
+					"cmdline":          c.Cmdline,
+					"parent_chain":     c.ParentChain,
+					"source":           c.Source,
+					"service_stop_job": c.ServiceStopJob,
+					"time":             c.Time.Format(time.RFC3339),
+					"via":              c.Via,
+				},
+			})
+		}
+		if werr := shutdowncause.Write(expandHome(cfg.DataDir), c); werr != nil {
+			fmt.Printf("[warn] persist shutdown cause: %v\n", werr)
+		}
+	}
+
 	// BL428 Phase 4 — per-backend usage back-off: rate-limit detection sets
 	// flags on the shared registry, a lightweight sweeper clears them.
 	wireUsageBackoff(ctx, cfg, mgr, autonomousBackoff)
@@ -1801,6 +1853,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	go func() {
 		sig := <-sigCh
 		fmt.Printf("\nShutting down... (signal=%v)\n", sig)
+		recordShutdownCause(sig)
 		if cfg.Session.KillSessionsOnExit {
 			fmt.Println("Killing active sessions...")
 			if err := mgr.KillAll(); err != nil {
@@ -2821,6 +2874,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			return v
 		})
 		r.SetRestartFunc(func() {
+			// Record the shutdown cause (audit + last-shutdown.json) before we
+			// exec/exit below and lose the ability to write.
+			recordShutdownCause(nil)
 			selfPath, err2 := os.Executable()
 			if err2 == nil {
 				selfPath, _ = filepath.EvalSymlinks(selfPath)
@@ -3731,6 +3787,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		if auditLog, err := auditpkg.New(expandHome(cfg.DataDir)); err == nil {
 			httpServer.SetAuditLog(auditLog)
 			wiredAuditLog = auditLog
+			shutdownAudit = auditLog
 			setBackoffAuditLog(auditLog) // BL428 Phase 4: automatic back-off set/auto-clear events
 			if cfg.Audit.CEFMirrorEnabled {
 				if err := auditLog.EnableCEFMirror(); err != nil {
@@ -7405,6 +7462,9 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 		})
 
 		daemonRestartFn := func() {
+			// Record the shutdown cause (API-marked via is picked up by
+			// shutdowncause.Capture) before either exit path below.
+			recordShutdownCause(nil)
 			// Under systemd, let its own Restart= policy bring the service
 			// back up — exiting non-zero so Restart=on-failure fires —
 			// rather than spawning selfRestart's detached shell chain,
@@ -7666,6 +7726,9 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 		LatestVersion:       fetchLatestVersion,
 		FallbackToken:       cfg.Server.Token, // SEC-002
 		RestartFn: func() {
+			// Record the shutdown cause (audit + last-shutdown.json) before we
+			// exec/exit below and lose the ability to write.
+			recordShutdownCause(nil)
 			selfPath, err2 := os.Executable()
 			if err2 == nil {
 				selfPath, _ = filepath.EvalSymlinks(selfPath)

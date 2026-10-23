@@ -57,6 +57,7 @@ import (
 	"github.com/dmz006/datawatch/internal/federation"
 	dwserver "github.com/dmz006/datawatch/internal/server"
 	"github.com/dmz006/datawatch/internal/session"
+	"github.com/dmz006/datawatch/internal/shutdowncause"
 	"github.com/dmz006/datawatch/internal/stats"
 	"github.com/dmz006/datawatch/internal/tlsutil"
 )
@@ -2808,6 +2809,10 @@ func (s *Server) handleRestartDaemon(ctx context.Context, _ mcpsdk.CallToolReque
 	}
 	go func() {
 		time.Sleep(500 * time.Millisecond)
+		// Declare the shutdown as MCP-initiated so the cause record shows
+		// source=api-restart via=mcp-restart (picked up by the daemon's
+		// Capture when it writes the audit entry + last-shutdown.json).
+		shutdowncause.MarkAPIInitiated("mcp-restart")
 		s.restartFn()
 	}()
 	return mcpsdk.NewToolResultText("Restarting daemon… active tmux sessions will be preserved."), nil

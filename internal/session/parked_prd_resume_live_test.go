@@ -12,28 +12,31 @@ package session
 // (restart_safety_live_test.go): bl462LiveClient, bl462RestartCommand,
 // bl462PollUntil, bl462TmuxHasSession, adoptLivePRD and the adoptLive* waits.
 //
-// It is skipped unless DW_LIVE_RESTART_TEST=1, so `go test ./...` in CI skips
-// it. Environment:
+// It is skipped unless the full sandbox contract holds (see below), so
+// `go test ./...` in CI skips it. Environment:
 //
 //	DW_LIVE_RESTART_TEST=1          gate (required)
-//	DW_BASE=https://host:port       daemon under test (required, no default:
-//	                                never point this at production by accident)
+//	DW_BASE=https://host:port       sandbox daemon under test (required, no
+//	                                default: never point this at production by
+//	                                accident)
 //	DW_BASE_TOKEN=...               bearer token, if the daemon has one
 //	DW_BASE_INSECURE=0              verify TLS (default: skip verify, as the
 //	                                other DW_BASE scripts do)
 //	DW_LIVE_RESTART_PROJECT_DIR=... project_dir for the probe PRD (optional;
 //	                                default: the daemon's own project-dir
 //	                                policy, e.g. worktree mode)
-//	DW_LIVE_RESTART_CMD='...'       shell command that restarts the daemon.
-//	                                Only for a sandbox daemon that systemd
-//	                                does not manage. When unset, the operator
-//	                                path (systemctl --user / datawatch CLI)
-//	                                is used, same as the BL462 test.
+//	DW_LIVE_SANDBOX_PID=<pid>       numeric pid of that sandbox daemon (required;
+//	                                verified live and datawatch before any restart)
+//	DW_LIVE_RESTART_CMD='...'       shell command that restarts exactly that pid.
+//	                                Only for a sandbox daemon this suite owns.
+//	                                Required — there is no default path (see
+//	                                restart_safety_live_test.go for the
+//	                                production guard).
 //
 // The restart subprocess runs with TMUX and TMUX_TMPDIR removed from its
-// environment (see bl462RestartEnv in restart_safety_live_test.go), except on
-// the `datawatch restart` CLI fallback, which keeps TMUX_TMPDIR so the
-// restarted daemon keeps its tmux socket. The test never stops a tmux server.
+// environment (see bl462RestartEnv in restart_safety_live_test.go), no
+// exceptions. The test itself never stops a tmux server and never restarts a
+// production datawatch unit or runs the datawatch CLI stop/restart command.
 // The test changes autonomous.resume_max_age_seconds on the daemon under test
 // and restores the original value on exit.
 //
@@ -77,7 +80,7 @@ func (c *bl462LiveClient) restartDaemon(t *testing.T) {
 		t.Fatalf("read daemon uptime before restart: %v", err)
 	}
 	cmd, label := bl462RestartCommand(t)
-	t.Logf("restart path: %s (Env is set by bl462RestartEnv: TMUX and, except on the CLI fallback, TMUX_TMPDIR are stripped)", label)
+	t.Logf("restart path: %s (Env is set by bl462RestartEnv: TMUX and TMUX_TMPDIR are stripped)", label)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("restart via %s failed: %v\n%s", label, err, out)
 	}
@@ -106,6 +109,10 @@ func TestParkedPRDResumeAdoptsLiveWorkerLive(t *testing.T) {
 	if os.Getenv("DW_LIVE_RESTART_TEST") != "1" {
 		t.Skip("set DW_LIVE_RESTART_TEST=1 to run against a live daemon")
 	}
+	// Production guard: without the full sandbox contract the shared
+	// bl462RestartCommand path skips; check it here so the test does not
+	// set up a probe PRD before discovering it cannot restart the daemon.
+	bl462SandboxRestartContract(t)
 	c := newBL462LiveClient(t)
 	if _, err := exec.LookPath("tmux"); err != nil {
 		t.Fatalf("tmux is required on the test host: %v", err)

@@ -51,7 +51,23 @@ export GIT_COMMITTER_NAME=dw-smoke GIT_COMMITTER_EMAIL=smoke@local
 
 log(){ printf '[%s] %s\n' "$(date '+%H:%M:%S')" "$*"; }
 die(){ printf '!! %s\n' "$*" >&2; exit 1; }
-cleanup(){ log "cleaning up scratch daemon (if any)"; [ -f "$ROOT/sandbox/daemon.pid" ] && kill "$(cat "$ROOT/sandbox/daemon.pid")" 2>/dev/null; true; }
+cleanup(){
+  # Only kill the pid this script recorded AND whose live cmdline still says
+  # it is our scratch datawatch daemon — a recycled pidfile pid is never
+  # signaled.
+  log "cleaning up scratch daemon (if any)"
+  if [ -f "$ROOT/sandbox/daemon.pid" ]; then
+    p=$(cat "$ROOT/sandbox/daemon.pid" 2>/dev/null || true)
+    if [ -n "$p" ] && kill -0 "$p" 2>/dev/null; then
+      cmd=$(tr '\0' ' ' < "/proc/$p/cmdline" 2>/dev/null || true)
+      case "$cmd" in
+        *datawatch*config.yaml*serve*) kill "$p" 2>/dev/null || true;;
+        *) log "daemon.pid pid $p cmdline ('$cmd') is not this script's scratch daemon; not killing";;
+      esac
+    fi
+  fi
+  return 0
+}
 trap cleanup EXIT
 
 get(){ # get <id> -> prd/story/task[/reason]

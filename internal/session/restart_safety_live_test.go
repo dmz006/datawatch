@@ -9,7 +9,9 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -21,41 +23,59 @@ import (
 // session record is not failed. This test repeats that sequence against a
 // real daemon so it can be re-run after changes.
 //
-// It is skipped unless DW_LIVE_RESTART_TEST=1, so `go test ./...` in CI skips
-// it. Environment:
+// It is skipped unless the full sandbox contract below holds, so `go test
+// ./...` in CI skips it. Environment:
 //
 //	DW_LIVE_RESTART_TEST=1          gate (required)
-//	DW_BASE=https://host:port       daemon under test (required, no default:
-//	                                never point this at production by accident)
+//	DW_BASE=https://host:port       sandbox daemon under test (required, no
+//	                                default: never point this at production by
+//	                                accident)
 //	DW_BASE_TOKEN=...               bearer token, if the daemon has one
 //	DW_BASE_INSECURE=0              verify TLS (default: skip verify, as the
 //	                                other DW_BASE scripts do)
 //	DW_LIVE_RESTART_PROJECT_DIR=... project_dir for the probe session (optional)
-//	DW_LIVE_RESTART_CMD='...'       shell command that restarts the daemon. Only
-//	                                for a sandbox daemon that systemd does not
-//	                                manage. When unset, the operator path is used.
+//	DW_LIVE_SANDBOX_PID=<pid>       numeric pid of that sandbox daemon (required;
+//	                                verified live and datawatch before any restart)
+//	DW_LIVE_RESTART_CMD='...'       shell command that restarts exactly that pid.
+//	                                Only for a sandbox daemon this suite owns.
+//	                                Required — there is no default path.
+//
+// Production guard (docs/plans/2026-10-23-daemon-stop-cause.md, finding #3
+// remediation): this test may only restart a sandbox daemon the operator
+// started and identified by pid. The earlier defaults — service-manager
+// restart of the datawatch unit, and the datawatch CLI stop/restart command
+// — could have signalled the operator's production daemon, so they are
+// removed. Without DW_LIVE_RESTART_CMD and DW_LIVE_SANDBOX_PID the test
+// t.Skip()s with an explanatory message and never falls back to
+// production (enforced again by scripts/check-no-production-service-control.sh).
 //
 // The test must run on the daemon's host with the same TMUX_TMPDIR as the
 // daemon, because it checks the tmux session and reads the session log file.
 //
-// Restart path: when DW_LIVE_RESTART_CMD is unset, the test resolves systemctl
-// with `command -v`. If `systemctl --user` works, it runs
-// `systemctl --user restart datawatch`, the documented operator command. If
-// not, it falls back to the repo's `datawatch restart` CLI, which needs
-// TMUX_TMPDIR set (the test refuses to run it without, since a restart that
-// drops the tmux socket would fake the failure under test). Which path ran is
-// logged with t.Log. Run the default path only from an operator shell whose
-// `datawatch` unit is the daemon behind DW_BASE. It restarts that unit.
+// Restart path: the operator starts the sandbox daemon themselves (e.g.
+// scripts/sec-assess/sandbox.sh) and passes both its pid and the restart
+// command, e.g.
+//
+//	DW_LIVE_SANDBOX_PID=12345 \
+//	DW_LIVE_RESTART_CMD='sh -c "kill 12345; exec /sb/bin/datawatch start --foreground --config /sb/config.yaml >/sb/daemon.log 2>&1 &"'
+//
+// The command may restart anything inside the sandbox it owns — as long as
+// the pid it signals is the one passed in DW_LIVE_SANDBOX_PID. Before
+// anything runs, bl462SandboxRestartContract verifies that pid is a live
+// process and — on Linux, via /proc/<pid>/cmdline — a datawatch daemon, so
+// the pid a restart would signal is a real sandbox datawatch process, not a
+// recycled pid number.
+//
+// The test itself never calls a service manager, never signals a process by
+// itself — it only runs the operator-supplied restart command from
+// DW_LIVE_RESTART_CMD, which it refuses to run unless the pid contract above
+// holds.
 //
 // Restart subprocess environment: per the restart-safety spec, the restart
-// command runs with TMUX and TMUX_TMPDIR removed from its environment (see
-// bl462RestartEnv). The single documented exception is the `datawatch
-// restart` CLI fallback, which re-execs the daemon in the ambient
-// environment and therefore keeps TMUX_TMPDIR — without it the restarted
-// daemon would lose its tmux socket (the failure this test family exists to
-// catch). An operator-supplied DW_LIVE_RESTART_CMD is responsible for giving
-// the restarted daemon the socket dir it needs (e.g. export TMUX_TMPDIR
-// inside the command).
+// command's environment is built by bl462RestartEnv (TMUX and TMUX_TMPDIR
+// stripped, no exceptions). An operator-supplied DW_LIVE_RESTART_CMD is
+// responsible for giving the restarted daemon the socket dir it needs (e.g.
+// export TMUX_TMPDIR inside the command).
 //
 // Run with a timeout above the default 10 minute test timeout:
 //
@@ -190,19 +210,14 @@ func bl462TmuxHasSession(name string) bool {
 // restart-safety spec requires restart subprocesses to run without TMUX or
 // TMUX_TMPDIR: inheriting TMUX would point tmux clients at the parent test
 // shell's server, and the restart command must not depend on ambient session
-// variables. keepTmuxTmpdir is the documented exception for the
-// `datawatch restart` CLI fallback: it re-execs the daemon in the ambient
-// environment, so stripping TMUX_TMPDIR would make the restarted daemon lose
-// its tmux socket — exactly the failure this test family catches. An
-// operator-supplied DW_LIVE_RESTART_CMD must instead export whatever its
-// daemon needs inside the command itself.
-func bl462RestartEnv(keepTmuxTmpdir bool) []string {
+// variables. There is no exception: the CLI-fallback exception that kept
+// TMUX_TMPDIR was removed with the fallback it served. An operator-supplied
+// DW_LIVE_RESTART_CMD must export whatever its daemon needs inside the
+// command itself.
+func bl462RestartEnv() []string {
 	env := make([]string, 0, len(os.Environ()))
 	for _, kv := range os.Environ() {
-		if strings.HasPrefix(kv, "TMUX=") {
-			continue
-		}
-		if !keepTmuxTmpdir && strings.HasPrefix(kv, "TMUX_TMPDIR=") {
+		if strings.HasPrefix(kv, "TMUX=") || strings.HasPrefix(kv, "TMUX_TMPDIR=") {
 			continue
 		}
 		env = append(env, kv)
@@ -210,45 +225,61 @@ func bl462RestartEnv(keepTmuxTmpdir bool) []string {
 	return env
 }
 
-// bl462RestartCommand returns the restart command and a label for the path it
-// took. The command's Env is set by bl462RestartEnv: TMUX and TMUX_TMPDIR are
-// removed except on the datawatch-CLI fallback, which keeps TMUX_TMPDIR (see
-// bl462RestartEnv for the documented exception).
+// bl462SandboxRestartContract enforces the production guard shared by all
+// live-restart tests in this package and returns the sandbox daemon pid that
+// is allowed to be restarted. It skips (rather than fails) when the operator
+// has not supplied the sandbox contract, and fails hard when the pid a
+// restart would signal cannot be verified as a live datawatch daemon — in
+// that case a restart command would be signalling a pid this suite does not
+// own.
+func bl462SandboxRestartContract(t *testing.T) int {
+	t.Helper()
+	if os.Getenv("DW_LIVE_RESTART_TEST") != "1" {
+		t.Skip("set DW_LIVE_RESTART_TEST=1 to run against a live daemon")
+	}
+	if os.Getenv("DW_BASE") == "" {
+		t.Skip("DW_BASE must point at the sandbox daemon under test; these tests never fall back to a default URL or a production daemon")
+	}
+	if strings.TrimSpace(os.Getenv("DW_LIVE_RESTART_CMD")) == "" {
+		t.Skip("DW_LIVE_RESTART_CMD is required, and it must restart only the sandbox daemon you started. There is no default: these tests do not restart a production datawatch unit and do not run the datawatch CLI stop/restart command. Set DW_BASE to the sandbox daemon URL, DW_LIVE_SANDBOX_PID to its pid, and DW_LIVE_RESTART_CMD to a command that restarts exactly that pid")
+	}
+	pidStr := strings.TrimSpace(os.Getenv("DW_LIVE_SANDBOX_PID"))
+	pid, err := strconv.Atoi(pidStr)
+	if err != nil || pid <= 0 {
+		t.Skipf("DW_LIVE_SANDBOX_PID must be the numeric pid of the sandbox daemon this test may restart (got %q); the test verifies the pid a restart would signal and refuses to run without it", pidStr)
+	}
+	if err := syscall.Kill(pid, 0); err == syscall.ESRCH {
+		t.Fatalf("DW_LIVE_SANDBOX_PID=%d is not a live process; refusing to run a restart command targeting a pid this suite does not own (the number may be recycled)", pid)
+	}
+	if b, rerr := os.ReadFile(fmt.Sprintf("/proc/%d/cmdline", pid)); rerr == nil {
+		joined := strings.TrimSpace(strings.ReplaceAll(string(b), "\x00", " "))
+		if !strings.Contains(joined, "datawatch") {
+			t.Fatalf("pid %d does not look like a datawatch daemon (cmdline=%q); refusing to let a restart command signal it — point DW_LIVE_SANDBOX_PID at the sandbox daemon this suite owns", pid, joined)
+		}
+		t.Logf("verified: pid %d is a live datawatch daemon (cmdline=%q); restart confined to this sandbox pid", pid, joined)
+	} else {
+		t.Logf("/proc/%d/cmdline not readable (%v): liveness verified only; DW_LIVE_RESTART_CMD must signal exactly pid %d", pid, rerr, pid)
+	}
+	return pid
+}
+
+// bl462RestartCommand returns the restart command and a label. The command's
+// Env is built by bl462RestartEnv (TMUX and TMUX_TMPDIR stripped).
+//
+// Only DW_LIVE_RESTART_CMD is honored. The earlier defaults — a
+// service-manager restart of the datawatch unit, then the datawatch CLI
+// stop/restart command — were removed (docs/plans/
+// 2026-10-23-daemon-stop-cause.md, finding #3): they could have signalled the
+// operator's production daemon.
 func bl462RestartCommand(t *testing.T) (*exec.Cmd, string) {
 	t.Helper()
-	if override := os.Getenv("DW_LIVE_RESTART_CMD"); override != "" {
-		cmd := exec.Command("sh", "-c", override) // #nosec G204 -- operator-supplied restart command
-		cmd.Env = bl462RestartEnv(false)
-		label := "DW_LIVE_RESTART_CMD override (sandbox), env: TMUX+TMUX_TMPDIR stripped"
-		t.Logf("restart env: TMUX=%q -> stripped, TMUX_TMPDIR=%q -> stripped", os.Getenv("TMUX"), os.Getenv("TMUX_TMPDIR"))
-		return cmd, label
-	}
-	// Resolve systemctl at runtime, not from a hard-coded absolute path.
-	if out, err := exec.Command("sh", "-c", "command -v systemctl").Output(); err == nil && len(bytes.TrimSpace(out)) > 0 {
-		// systemd --user must be reachable. Otherwise fall through to the CLI.
-		if exec.Command("systemctl", "--user", "show-environment").Run() == nil { // #nosec G204 -- fixed arguments
-			cmd := exec.Command("systemctl", "--user", "restart", "datawatch") // #nosec G204 -- fixed arguments
-			cmd.Env = bl462RestartEnv(false)
-			t.Logf("restart env: TMUX=%q -> stripped, TMUX_TMPDIR=%q -> stripped", os.Getenv("TMUX"), os.Getenv("TMUX_TMPDIR"))
-			return cmd, "systemctl --user restart datawatch, env: TMUX+TMUX_TMPDIR stripped" // #nosec G204 -- fixed arguments
-		}
-	}
-	if out, err := exec.Command("sh", "-c", "command -v datawatch").Output(); err == nil && len(bytes.TrimSpace(out)) > 0 {
-		// The CLI restart re-execs the daemon in this environment. Without the
-		// daemon's TMUX_TMPDIR the new daemon cannot see its tmux sessions and
-		// marks them failed, which is the bug this test exists to catch.
-		if os.Getenv("TMUX_TMPDIR") == "" {
-			t.Fatal("datawatch restart CLI fallback needs TMUX_TMPDIR set to the daemon's tmux socket dir; otherwise the restarted daemon loses its tmux sessions. Set it, or use DW_LIVE_RESTART_CMD")
-		}
-		cmd := exec.Command("datawatch", "restart") // #nosec G204 -- fixed arguments
-		// Documented exception: the CLI re-execs the daemon in the ambient env,
-		// so TMUX_TMPDIR must survive here; only TMUX is stripped.
-		cmd.Env = bl462RestartEnv(true)
-		t.Logf("restart env: TMUX=%q -> stripped, TMUX_TMPDIR=%q -> KEPT (datawatch restart CLI re-execs the daemon; documented exception)", os.Getenv("TMUX"), os.Getenv("TMUX_TMPDIR"))
-		return cmd, "datawatch restart CLI (systemd --user unavailable), env: TMUX stripped, TMUX_TMPDIR kept (exception)" // #nosec G204 -- fixed arguments
-	}
-	t.Fatal("no restart path: systemctl --user is unavailable and datawatch is not on PATH; set DW_LIVE_RESTART_CMD")
-	return nil, ""
+	pid := bl462SandboxRestartContract(t) // guard: skip/fatal unless the contract holds
+	override := os.Getenv("DW_LIVE_RESTART_CMD")
+	cmd := exec.Command("sh", "-c", override) // #nosec G204 -- operator-supplied restart command; contract above limits it to the sandbox pid
+	cmd.Env = bl462RestartEnv()
+	label := fmt.Sprintf("DW_LIVE_RESTART_CMD override (sandbox pid %d verified live at contract check), env: TMUX+TMUX_TMPDIR stripped", pid)
+	t.Logf("restart env: TMUX=%q -> stripped, TMUX_TMPDIR=%q -> stripped", os.Getenv("TMUX"), os.Getenv("TMUX_TMPDIR"))
+	return cmd, label
 }
 
 func bl462PollUntil(d time.Duration, fn func() bool) bool {
@@ -278,9 +309,10 @@ func bl462IsTerminal(state string) bool {
 // scope for this task is the repo. The skip path is verified by a plain run:
 // `go test -run TestBL462_DaemonRestartSurvivesLive -v ./internal/session/`.
 func TestBL462_DaemonRestartSurvivesLive(t *testing.T) {
-	if os.Getenv("DW_LIVE_RESTART_TEST") != "1" {
-		t.Skip("set DW_LIVE_RESTART_TEST=1 to run against a live daemon")
-	}
+	// Production guard: without the sandbox contract (DW_BASE +
+	// DW_LIVE_SANDBOX_PID + DW_LIVE_RESTART_CMD) this test skips and never
+	// falls back to a production unit.
+	bl462SandboxRestartContract(t)
 	c := newBL462LiveClient(t)
 	if _, err := exec.LookPath("tmux"); err != nil {
 		t.Fatalf("tmux is required on the test host: %v", err)
