@@ -819,6 +819,22 @@ Short IDs (`a3f2`) work if only one machine has a session with that ID. If both 
 
 Retry the commit after the change. The guard evaluates each automatic commit against the current working tree.
 
+### Automatic commit refused in a non-project directory
+
+**Symptom:** A session ends without a commit, and the audit log carries a single line saying the automatic commit was refused because the directory is not a project. The refusal is not retried.
+
+**What it means:** Automatic commits are refused for the home directory, a filesystem root, or a directory that has no repository and no project marker. Datawatch will not create or commit into such a directory.
+
+**How to fix it:** Point the session's project directory at the repository or project folder for the work (or initialise a repository there), then start the session again.
+
+### Worker commit fails with "the harness commits after validation"
+
+**Symptom:** A `git commit` run inside a session fails with a message saying the harness commits after validation.
+
+**What it means:** This is expected. Only the harness commits, and only after the session's validation passes. The refusal is enforced by hooks in a harness-owned temporary directory outside the worktree. Those hooks are removed at session end and when the daemon adopts sessions on startup.
+
+**How to fix it:** Nothing is needed. Leave the changes in the working tree and finish the task; the harness commits after validation. If validation fails, no commit is made, so fix the failure and let the session complete again.
+
 ---
 
 ## 8. Monitoring
