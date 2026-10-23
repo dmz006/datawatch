@@ -1410,8 +1410,8 @@ Configuration Accessibility Rule and the full parity-surface set.
 | **Comm channel** | Yes (control + status) | `automation list`, `automation status <id>`, `automation pause\|resume\|cancel <id> [reason]`, `automation skip <id> <member> <edge> <reason>`, `automation insert <id> after <member> <prd> <reason>`, `automation set-budget <id> key=value...` (built in Phase 5; `clear=true` removes the policy; the arguments are the REST fields). Create and edge rewiring are excluded from comm because they are graph editing and do not fit one line; use the PWA, CLI or MCP. Advance, blocked and budget-breach notifications go through BL427's comm fan-out, not a separate path. |
 | **YAML/config** | Yes | Provisional keys under `autonomous.automation`: `enabled` (bool); `idle_alert_minutes` (int); `empty_edge_action` (`block`\|`pause`, Open question 6); `agent_insert_policy` (`allow`\|`require_operator`, Open question 8); ~~`default_budget_on_breach` (`pause`\|`block`)~~ (not built: Phase 5 added no config key, and `on_breach` defaults to `pause` on the policy itself). Each is in `handleGetConfig` / `handlePutConfig`, `docs/config-reference.yaml`, `configure <key>=<value>` and `datawatch config set`. Automation objects themselves are runtime data in `automations.jsonl`, not YAML. |
 | **PWA** | Yes | The Automation tab left of Automata; list, pipeline-strip detail and create/edit (see **PWA**); the config fields in Settings → General (autonomous section); locale keys in all bundles. |
-| **Android** | Yes, via a parity issue | A `datawatch-app` issue: Automation list + strip detail + pause/resume/cancel/skip; create/edit may lag one release. Filed in the companion app repo by the implementation PRD, not here. Phase 5 adds: parse the `budget_policy` fields, the `budget` view, the status `budget` / `spent_usd` / `ceiling_display` fields and the paused or blocked budget reason. **Not filed yet** (cannot be filed from the implementing session). |
-| **iPhone/iOS** | Yes, via a parity issue | Same scope as Android, in the companion app repo's iOS track; the Phase 5 budget fields above are not filed yet either. Advance and blocked push notifications ride on BL427's mobile topic sink (`PublishToTopic`), so APNs/FCM need no Automation-specific delivery. |
+| **Android** | Yes, via a parity issue | A `datawatch-app` issue: Automation list + strip detail + pause/resume/cancel/skip; create/edit may lag one release. Filed in the companion app repo by the implementation PRD, not here. Phase 5 adds: parse the `budget_policy` fields, the `budget` view, the status `budget` / `spent_usd` / `ceiling_display` fields and the paused or blocked budget reason. **Not filed yet** (cannot be filed from the implementing session). Phase 7: the ready-to-file text is under `### Phase 7 companion apps` (Android issue); still **not filed**. |
+| **iPhone/iOS** | Yes, via a parity issue | Same scope as Android, in the companion app repo's iOS track; the Phase 5 budget fields above are not filed yet either. Advance and blocked push notifications ride on BL427's mobile topic sink (`PublishToTopic`), so APNs/FCM need no Automation-specific delivery. Phase 7: the ready-to-file text is under `### Phase 7 companion apps` (iOS issue); still **not filed**. |
 
 ---
 
@@ -1540,12 +1540,65 @@ howto, and the `datawatch-app` issue where applicable.
    - The nav tab, list, pipeline strip and v1 create/edit.
    - Locale keys in all bundles.
    - The Terminology Rule addendum.
-7. **Phase 7 — Remaining parity, BL117 migration, close-out.** Status: Planned.
-   - CLI and comm verbs, plus config keys on every surface.
-   - `import-graph`, and deprecation notices on `orchestrator_graph_create/plan/run`.
-   - The howto (`docs/howto/automation-*.md`, no BL ids).
-   - The release-smoke section.
-   - The `datawatch-app` Android and iOS issues.
+7. **Phase 7 — Remaining parity, BL117 migration, close-out.** Status: Done (development build; released with the next release).
+   - The parity audit table and `TestAutomationParity`; the verb, web control, audit event and config key gaps are closed on every surface.
+   - `import-graph` on REST, MCP, CLI and comm, with the converter that turns an orchestrator graph into a draft Automation.
+   - Deprecation notices on `orchestrator_graph_create/plan/run` (REST, MCP, CLI and comm), with a once-per-process daemon warning.
+   - The howto `docs/howto/automation-chains.md` (no BL ids).
+   - The release-smoke section 78.
+   - The `datawatch-app` Android and iOS issues are written as ready-to-file text (see Phase 7 companion apps); **not filed yet**.
+
+### Phase 7 status note
+
+   **Phase 7 status note.** What shipped:
+   - Parity audit: the table is the `Phase 7 parity audit` section near the end of this file;
+     `TestAutomationParity` (`cmd/datawatch/automation_parity_test.go`) enforces the REST, MCP, CLI and comm columns.
+   - import-graph: REST `POST /api/automations/import-graph/{graph_id}` (`internal/server/automation_import_graph.go`,
+     body `{"dry_run": bool}`; 422 carries the refusal reason); MCP tool `automation_import_graph`
+     (`internal/mcp/automation_tools.go`); CLI `datawatch automation import-graph <graph-id> [--dry-run]`
+     (`cmd/datawatch/cli_automation.go`); comm `automation import-graph <graph-id> [dry-run]`
+     (`internal/router/automation_cmd.go`); audit event `automation_import_graph` on a real import.
+   - Converter: `internal/autonomous/automation_import_graph.go` (`ImportGraphToInput`).
+   - Deprecation helper: `internal/orchestrator/deprecation.go` (`DeprecationNotice`, `WarnDeprecatedOnce`) on the
+     three tools `orchestrator_graph_create`, `orchestrator_graph_plan` and `orchestrator_graph_run` and their REST,
+     CLI and comm equivalents; responses carry a `Deprecation: true` header and a `deprecation` field.
+   - Howto: `docs/howto/automation-chains.md`.
+   - Tracker section: `Automation parity, import-graph and deprecation — unreleased` in `docs/testing-tracker.md`.
+   - Release smoke: section 78 of `scripts/release-smoke.sh`.
+
+   Still owed:
+   - The live smoke result: section 78 and the tracker section have not been run against a real daemon, so every
+     Validated cell of the tracker section stays No until a sandbox run exercises them.
+   - The mobile apps: no mobile code is in this phase; see Phase 7 companion apps.
+
+### Phase 7 companion apps
+
+   **`datawatch-app` parity: not filed yet.** The two issues below are ready to file in `dmz006/datawatch-app`.
+   They cannot be filed from the implementing session; the supervisor files them and this note is updated
+   with the issue numbers. No mobile code is in this phase.
+
+   **Issue 1 — Android: Automation tab and Phase 7 fields**
+   - Scope: an Automation tab with the list; the pipeline strip detail for one Automation; the controls pause,
+     resume, cancel (with the `cancel_in_flight` option), skip and insert. Add the new verbs. Show the
+     import-graph dry-run result (the preview input and the warnings) and, on a refusal (HTTP 422), the refusal
+     reason. Render the `fork` and `join` member kinds in the strip. Parse the budget fields (`budget_policy`,
+     the `budget` view, `spent_usd`, `ceiling_display`, and the paused or blocked budget reason) and the
+     `deprecated` and `deprecation` fields now present on old orchestrator graph responses, showing the notice.
+   - Acceptance criteria:
+     1. The tab lists Automations and opens a pipeline strip detail with the current state of each member.
+     2. Pause, resume, cancel (with and without cancel-in-flight), skip and insert each call the REST route and show the result or the error.
+     3. import-graph with dry run shows the previewed Automation and warnings and stores nothing; a refused graph shows the reason text.
+     4. Fork and join members draw as parallel branches without breaking the strip.
+     5. Budget fields parse and display, and a response missing them does not crash the screen.
+     6. A graph response with `deprecated` and `deprecation` shows the notice; one without them is unchanged.
+
+   **Issue 2 — iOS: Automation tab and Phase 7 fields**
+   - Scope: the same as the Android issue, in the companion app repo's iOS track: the Automation tab (list,
+     pipeline strip detail, pause, resume, cancel with cancel-in-flight, skip, insert), the new verbs,
+     import-graph (dry run result display and the refusal reason), the `fork` and `join` member kinds, the budget
+     fields, and the `deprecated` and `deprecation` fields on old orchestrator graph responses.
+   - Acceptance criteria: 1 to 6 of the Android issue, verified on iOS.
+   - Advance and blocked push notifications ride on BL427's mobile topic sink, so no Automation-specific APNs work is needed.
 8. **Phase 8 — Progress, estimates and running dashboard (BL553).** Status: Planned.
    - The metrics engine (counts by kind and state, correct time and throughput, utilization,
      remaining work split known vs estimated, completion range) with REST, MCP, CLI and comm verb.

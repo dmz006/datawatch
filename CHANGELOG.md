@@ -5,6 +5,19 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **`import-graph` turns an old orchestrator graph into a draft Automation.** Available as `POST /api/automations/import-graph/{graph_id}`, the `automation_import_graph` MCP tool, `datawatch automation import-graph <graph-id> [--dry-run]` and the comm `automation import-graph <graph-id> [dry-run]`. A dry run previews the Automation and any warnings and stores nothing; a graph that cannot be expressed as an Automation is refused with the reason. A real import writes one audit entry.
+
+### Changed
+
+- **The orchestrator graph create, plan and run operations now say they are deprecated.** `orchestrator_graph_create`, `orchestrator_graph_plan` and `orchestrator_graph_run`, and their REST, CLI and comm forms, keep working but carry a notice that names `import-graph`; REST responses add a `Deprecation: true` header and `deprecation` field, and the daemon logs the warning once per operation.
+- **Every Automation operation and config key now exists on every surface.** The verb, web control, audit event and config key gaps found by the new parity audit are closed, and a parity test keeps them closed.
+
+### Documentation
+
+- **A new Automation howto and a release smoke section.** `docs/howto/automation-chains.md` walks through chains, fork and join, and migrating a graph; section 78 of the release smoke exercises an Automation chain end to end. The live smoke result is still owed.
+
 ## v9.5.102 — The session input audit test no longer flakes
 
 ### Fixed
