@@ -21,6 +21,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/dmz006/datawatch/internal/session"
 	"github.com/dmz006/datawatch/internal/testhome"
@@ -58,9 +59,18 @@ func TestLiveTmuxSessionStartDelete(t *testing.T) {
 		t.Fatalf("refusing: TMUX_TMPDIR %q was not created by this test run (missing testhome marker)", tmpdir)
 	}
 
-	// Start a real session through the handler. Deliberately no
-	// WithFakeTmux here: the whole point is a real socket.
-	srv := newLLMServer(t)
+	// Start a real session through the handler. Build the manager and
+	// server here rather than via newLLMServer — newLLMServer swaps in
+	// the in-memory fake multiplexer, and the whole point of this test is
+	// a real tmux socket (the isolated per-run one).
+	sm, err := session.NewManager("h", t.TempDir(), "echo", 30*time.Second)
+	if err != nil {
+		t.Fatalf("NewManager: %v", err)
+	}
+	// Deliberately no WithFakeTmux here: the manager keeps its real tmux
+	// backend and talks only to the throwaway TMUX_TMPDIR server.
+	t.Cleanup(sm.WaitBackground)
+	srv := NewServer(NewHub(), sm, "h", "", nil, nil, "")
 
 	payload := map[string]any{
 		"task":        "live-tmux start/delete round-trip",
