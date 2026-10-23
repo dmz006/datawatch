@@ -60,7 +60,8 @@ func TestScanCandidates(t *testing.T) {
 	ownPID := os.Getpid()
 
 	// Positive: a live process that looks like the systemctl stop of datawatch.
-	pos := exec.Command(bash, "-c", `exec -a "systemctl --user stop datawatch" sleep 30`)
+	// service-scope-ok: the cmdline is faked with `exec -a` on a child of this test; no service manager is ever invoked.
+	pos := exec.Command(bash, "-c", `exec -a "systemctl --user stop datawatch" sleep 30`) // service-scope-ok fake cmdline child of this test, never touches a unit
 	if err := pos.Start(); err != nil {
 		t.Fatalf("start positive: %v", err)
 	}

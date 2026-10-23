@@ -222,3 +222,127 @@ Plus direct reads of: `cmd/datawatch/main.go:1840-1870` (signal handler),
 
 All line numbers were re-verified with `grep -n`/`sed -n` against the
 current tree on 2026-10-23 (session h-87ec).
+
+## 8. Remediation — closing the daemon-reachable paths (session h-7959, 2026-10-23)
+
+The audit above proved that three classes of in-repo code are reachable by a
+live daemon (tests #10, scripts #9, and pidfile restores). This section
+records the fixes applied afterward, each with the code change and the
+evidence that the daemon can no longer cause a production stop through it.
+Nothing in this section touched a running service; all verification is
+static, unit-level, or against throwaway processes the verifying command
+itself started.
+
+### 8.1 Live restart tests can no longer fall back to production (#10)
+
+**Changed** — `internal/session/restart_safety_live_test.go`:
+
+- `bl462RestartCommand(t)` now has exactly one path: `DW_LIVE_RESTART_CMD`,
+  passed through `bl462RestartEnv`. The default `systemctl --user restart
+  datawatch` fallback and the `datawatch restart` CLI fallback are DELETED.
+- New `bl462SandboxRestartContract(t) int` gate (called by
+  `TestBL462_DaemonRestartSurvivesLive` and, via `bl462RestartCommand`, by the
+  two companion tests): requires `DW_BASE`, `DW_LIVE_RESTART_CMD`, and
+  `DW_LIVE_SANDBOX_PID` to be set and numeric; verifies the pid is a live
+  process (`kill -0`) and that its `/proc/<pid>/cmdline` is a datawatch
+  daemon; `t.Skip`s with an explicit message when the contract is unmet and
+  `t.Fatal`s (refuse to run) when the pid is dead or not a datawatch binary,
+  so a recycled pid number can never be signaled.
+- `bl462RestartEnv` no longer has the CLI exception that kept `TMUX_TMPDIR`;
+  both `TMUX` and `TMUX_TMPDIR` are now always stripped (they were only an
+  optimization for the deleted CLI path).
+
+**Changed** — `internal/session/parked_prd_resume_live_test.go:` and
+`restart_adopt_live_test.go` — doc headers updated to the contract, and both
+test bodies call `bl462SandboxRestartContract(t)` after the opt-in gate so
+they fail fast in the safe (skip) state.
+
+**Evidence the daemon can no longer execute this path:**
+
+- `go vet ./internal/session/` clean; `golangci-lint run ./internal/session/`
+  reports 0 issues; gofmt clean.
+- Behavior matrix (observed, 2026-10-23):
+  - no `DW_LIVE_RESTART_TEST` → all four live tests `--- SKIP` (0.00s, no
+    command run);
+  - `DW_LIVE_RESTART_TEST=1` without `DW_BASE`/cmd/pid → `--- SKIP`
+    ("DW_LIVE_RESTART_TEST=1 is set but the sandbox daemon contract is not —
+    set DW_BASE, DW_LIVE_RESTART_CMD and DW_LIVE_SANDBOX_PID");
+  - full contract but `DW_LIVE_SANDBOX_PID=999999` (dead pid) → `--- FAIL`
+    with "is not a live process; refusing to run a restart command targeting
+    a pid this suite does not own (the number may be recycled)"; the
+    `DW_LIVE_RESTART_CMD` value (`echo should-not-run`) never executed.
+- `grep` of the tree for the deleted defaults: the only remaining
+  `systemctl --user ... datawatch` text outside docs is fixture data in
+  `internal/shutdowncause/*_test.go` (annotated `service-scope-ok`; it is
+  expected-value strings, never executed).
+
+### 8.2 Other daemon-reachable hits: pid-from-file kills now verify ownership
+
+The rule: a script that signals a pid read from a file (or a pattern) must
+first verify the pid is alive AND that its cmdline is the daemon that script
+harness started.
+
+| Site | Before | After |
+|---|---|---|
+| `scripts/run-tests.sh` `_kill_orphan_daemon_for` | `pgrep -f "config.*${dir}/config.yaml"` → `kill $pid` | each candidate pid re-verified: `/proc/$pid/cmdline` must contain `datawatch` AND `${dir}/config.yaml`, else skip with a log line |
+| `scripts/run-tests.sh` `stop_second_test_daemon` | `kill -0` only, then `wait_or_kill` | cmdline must contain `datawatch` AND this run's own `<FED_PEER_DATA|dirname pidfile>/config.yaml` (the exact config TS-785 started the peer against), else don't kill |
+| `scripts/eval-model-tiering.sh` SIGTERM self-test | `kill -TERM $(cat $tmp/task.pid)` blind | new `_dw_ppid`/`_dw_is_descendant` helpers: the task.pid value must be alive AND a /proc-verified descendant of the bg job the script started (`$bgpid`), else don't signal |
+| `tests/live-smoke/tree-serialization-smoke.sh` cleanup | `kill $(cat daemon.pid)` blind | pid must be alive AND its cmdline must be `*datawatch*config.yaml*serve*` (the scratch daemon this script started), else don't kill |
+
+**Evidence:** `bash -n` clean on all four scripts; the matching patterns are
+pure local pid-ownership checks (liveness + `/proc/<pid>/cmdline`
+membership against the harness's own startup marker) — no service-manager
+invocation remains on any kill path, and none of these paths runs without
+the script having started the process first (each site is in a script the
+daemon spawns as a child; the production daemon, by contrast, is a
+`systemd`-managed unit whose pid never appears in any of these pidfiles —
+`install/systemd/datawatch.service` uses the default cgroup placement, and
+the pidfiles named above are only ever written by
+`scripts/run-tests.sh`/`TS-785.sh`, the tiering self-test's own bg job, and
+the smoke script's own `echo $!`).
+
+### 8.3 New checker: `scripts/check-no-production-service-control.sh`
+
+- `set -euo pipefail`; scans `scripts/`, `tests/`, `.datawatch/verify/`
+  (when present) plus every `*_test.go` in the tree (vendor/ and .git/
+  excluded); never executes any service command — it only greps.
+- Flags, family by family, with `file:line` and a non-zero exit:
+  1. `(systemctl|smctl|launchctl|systemd) ... stop|restart|reload|kill|off ... datawatch`;
+  2. `datawatch stop` / `datawatch restart` as CLI commands (word-boundary
+     safe: `mydatawatch stop`, `datawatch start`, and `datawatch
+     restarted` do NOT match);
+  3. `pkill`/`killall ... datawatch` (comment text after `#` does not make
+     an unrelated kill match).
+- Exemptions, line-level: comment-only lines (`#`/`//`), lines carrying the
+  `service-scope-ok` marker (fixture strings in `internal/shutdowncause`
+  tests that assert on expected `cause.String()` text), and the checker
+  itself. Read-only verbs (`status`, `is-active`, `show-environment`, ...)
+  and `datawatch start` are intentionally not violations.
+- `CHECK_ROOT` overrides the scanned root so tests can point it at a fixture
+  tree (done: a planted-violation fixture fails with exactly the 5 planted
+  hits and none of the 4 legitimate exceptions; the real tree passes).
+- Wired into `make lint`: new `check-service-scope` target beside
+  `check-tmux` (`lint: check-tmux check-service-scope check-go-pins`), and
+  `.datawatch/verify/production-service-guard.sh` already required it and
+  now passes (it runs this checker, the tmux checker, `go vet`, and greps
+  the Makefile for the wiring).
+
+**Evidence:** `bash scripts/check-no-production-service-control.sh` → `OK:
+no production service-control hits` (exit 0) on the tree; the planted
+fixture (see above) → `FAIL: 5 production service-control hit(s)` (exit 1)
+with the expected `file:line` rows; `bash
+.datawatch/verify/production-service-guard.sh` → all green; `make -n lint`
+shows both checkers in the prerequisite chain.
+
+### 8.4 Test status after remediation
+
+- `go vet ./internal/session/` — clean.
+- `golangci-lint run ./internal/session/` — 0 issues. (Pre-existing
+  `errcheck` findings in `internal/shutdowncause/{capture_linux.go,
+  cause.go, cause_linux_test.go}` date from before this session — untouched
+  by #8.1–#8.3's code changes; they make `make lint` fail on the whole
+  package, which is the pre-existing state of this worktree.)
+- `go test ./internal/shutdowncause/` — 20 pass (fixture-string annotation
+  changed no behavior).
+- Live restart tests: skip (not run) in all contract-incomplete states, per
+  #8.1 — i.e., they cannot be the sender of any production SIGTERM.

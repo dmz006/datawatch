@@ -68,10 +68,19 @@ DAEMON_PID=""
 # so give a real resume window before auto-reaping them) is fair game;
 # active runs are always recent.
 _kill_orphan_daemon_for() {
-  local dir="$1"
-  local pid
-  pid=$(pgrep -f "config.*${dir}/config.yaml" 2>/dev/null || true)
-  [[ -n "$pid" ]] && kill $pid 2>/dev/null || true
+  local dir="$1" pid cmd
+  # pgrep candidates are matched to THIS dir's config path (the marker of a
+  # daemon this harness started); before signaling, re-verify the live pid's
+  # cmdline still carries it and points at a datawatch binary — a recycled
+  # pid must never be signaled from a file or pattern alone.
+  while IFS= read -r pid; do
+    [[ -n "$pid" ]] || continue
+    cmd=$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)
+    case "$cmd" in
+      *datawatch*"${dir}/config.yaml"*) kill "$pid" 2>/dev/null || true;;
+      *) echo "  [cleanup] skipping pid $pid: cmdline ('$cmd') is not a datawatch daemon for ${dir}" >&2;;
+    esac
+  done < <(pgrep -f "config.*${dir}/config.yaml" 2>/dev/null || true)
 }
 for d in /tmp/dw-docker-sim-* /tmp/dw-test-[0-9]* /tmp/dw-test-sandbox-*; do
   [[ -e "$d" ]] || continue
@@ -361,10 +370,18 @@ stop_second_test_daemon() {
   # cleaned up instead of leaking a second live daemon process.
   local pidfile="$TEST_DIR/fed-peer-daemon.pid"
   if [[ -f "$pidfile" ]]; then
-    local pid
+    local pid cmd
     pid=$(cat "$pidfile" 2>/dev/null || true)
     if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
-      wait_or_kill "$pid" 10
+      # Recovered from a file: re-verify before signaling that this live pid
+      # is the TS-785 federation daemon (a datawatch binary started against
+      # this run's own config) — never kill an unrelated or recycled pid.
+      local marker="${FED_PEER_DATA:-$(dirname "$pidfile")}/config.yaml"
+      cmd=$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)
+      case "$cmd" in
+        *datawatch*"$marker"*) wait_or_kill "$pid" 10;;
+        *) echo "  [cleanup] $pidfile points at pid $pid but its cmdline ('$cmd') is not the TS-785 daemon; not killing" >&2;;
+      esac
     fi
   fi
   if [[ -n "${FED_PEER_DATA:-}" ]]; then

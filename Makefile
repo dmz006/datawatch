@@ -232,10 +232,13 @@ clean:
 check-tmux:
 	bash scripts/check-no-unscoped-tmux.sh
 
+check-service-scope:
+	bash scripts/check-no-production-service-control.sh
+
 check-go-pins:
 	bash scripts/check-go-toolchain-pins.sh
 
-lint: check-tmux check-go-pins
+lint: check-tmux check-service-scope check-go-pins
 	golangci-lint run ./...
 
 test:

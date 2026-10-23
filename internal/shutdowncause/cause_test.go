@@ -30,7 +30,7 @@ func sampleCause() Cause {
 		SenderPID:      4242,
 		SenderUID:      "0",
 		SenderUser:     "root",
-		Cmdline:        "systemctl --user stop datawatch",
+		Cmdline:        "systemctl --user stop datawatch", // service-scope-ok fixture string: expected value in Cause parsing tests, never executed
 		ParentChain:    []ProcInfo{{PID: 1, Cmdline: "/sbin/init", User: "root"}},
 		Source:         SourceProcScan,
 		ServiceStopJob: "datawatch: stop",
@@ -138,13 +138,14 @@ func TestString(t *testing.T) {
 		SenderPID:      4242,
 		SenderUID:      "0",
 		SenderUser:     "root",
-		Cmdline:        "systemctl --user stop datawatch",
+		Cmdline:        "systemctl --user stop datawatch", // service-scope-ok fixture string: expected-value test data, never executed
 		Source:         SourceProcScan,
 		ServiceStopJob: "datawatch: stop",
 		Time:           tm,
 		Via:            "procscan: 2 candidates",
 	}
-	want := `shutdown: signal=SIGTERM source=procscan sender_pid=4242 sender_user=root cmdline="systemctl --user stop datawatch" service_stop_job=datawatch: stop via="procscan: 2 candidates" at 2006-01-02T15:04:05Z`
+	// service-scope-ok fixture string: expected String() output, never executed
+	want := `shutdown: signal=SIGTERM source=procscan sender_pid=4242 sender_user=root cmdline="systemctl --user stop datawatch" service_stop_job=datawatch: stop via="procscan: 2 candidates" at 2006-01-02T15:04:05Z` // service-scope-ok
 	if got := c.String(); got != want {
 		t.Fatalf("String() = %q\nwant        %q", got, want)
 	}

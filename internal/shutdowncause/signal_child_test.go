@@ -145,14 +145,15 @@ func TestPreviousShutdownLine(t *testing.T) {
 		c := Cause{
 			Signal:    "terminated",
 			SenderPID: 4242,
-			Cmdline:   "systemctl --user stop datawatch",
+			Cmdline:   "systemctl --user stop datawatch", // service-scope-ok fixture string: expected-value test data, never executed
 			Source:    SourceProcScan,
 			Time:      tm,
 		}
 		if err := Write(dir, c); err != nil {
 			t.Fatalf("Write: %v", err)
 		}
-		want := "previous shutdown: signal terminated from systemctl --user stop datawatch 4242 at 2006-01-02T15:04:05Z"
+		// service-scope-ok fixture string: expected previous-shutdown line text, never executed
+		want := "previous shutdown: signal terminated from systemctl --user stop datawatch 4242 at 2006-01-02T15:04:05Z" // service-scope-ok
 		if got := PreviousShutdownLine(dir); got != want {
 			t.Fatalf("line = %q\nwant %q", got, want)
 		}
