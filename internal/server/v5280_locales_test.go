@@ -89,6 +89,7 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"action_cancel",
 		"action_save",
 		"action_delete",
+		"settings_gate_disagreement",
 		// v5.28.1 — universal yes/no + loading + no-alerts placeholder.
 		// Datawatch-specific keys not yet in Android — pending mirror
 		// pull (see datawatch-app#39).
