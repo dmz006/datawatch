@@ -18,9 +18,8 @@ import (
 // docs/plans/2026-10-23-session-store-write-amplification.md.
 
 // storeWriteBudgetEnforced gates the budget assertion in TestStoreWriteBudget.
-// The whole-file rewrite cannot meet the budget, so it stays false until the
-// store persists incrementally; flip it to true together with that change.
-const storeWriteBudgetEnforced = false
+// Enforced since the store coalesces writes in a background writer.
+const storeWriteBudgetEnforced = true
 
 // storeWriteBudgetFactor is the allowed multiple of the changed data.
 const storeWriteBudgetFactor = 20
@@ -42,7 +41,8 @@ func storeBenchSmall() bool {
 // carries a 100 KB task field (bigTask of them in total, returned).
 func seedBenchStore(tb testing.TB, dir string, n int) (*Store, int) {
 	tb.Helper()
-	st, err := NewStore(filepath.Join(dir, "sessions.json"))
+	// Seed write-through so no writer goroutine is armed before the burst.
+	st, err := NewStore(filepath.Join(dir, "sessions.json"), WithFlushInterval(0))
 	if err != nil {
 		tb.Fatalf("NewStore: %v", err)
 	}
@@ -72,6 +72,8 @@ func seedBenchStore(tb testing.TB, dir string, n int) (*Store, int) {
 	if err := st.Flush(); err != nil {
 		tb.Fatalf("Flush: %v", err)
 	}
+	// The burst runs against the production, coalescing configuration.
+	st.SetFlushInterval(time.Second)
 	return st, bigCount
 }
 
@@ -199,8 +201,8 @@ func BenchmarkStoreSaveBurst(b *testing.B) {
 }
 
 func TestStoreWriteBudget(t *testing.T) {
-	// Until the budget is enforced the full set only burns disk bandwidth
-	// (gigabytes rewritten) and starves concurrent suites, so use the small set.
+	// While the budget is not enforced use the small set: the old whole-file
+	// rewrite burned gigabytes on the full one.
 	n := storeBenchSessionCount()
 	if !storeWriteBudgetEnforced {
 		n = storeBenchSmallSessions

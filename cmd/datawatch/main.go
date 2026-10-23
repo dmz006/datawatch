@@ -1059,6 +1059,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return fmt.Errorf("create session manager: %w", err)
 	}
+	// Session store writes are coalesced by a background writer; flush and
+	// stop it on every exit path.
+	defer func() { _ = mgr.Close() }()
 	if cfg.Session.MaxSessions > 0 {
 		mgr.SetMaxSessions(cfg.Session.MaxSessions)
 	}
@@ -1807,6 +1810,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				fmt.Printf("[warn] kill sessions on exit: %v\n", err)
 			}
 		}
+		_ = mgr.Close() // flush deferred session-store writes before exit
 		cancel()
 	}()
 
@@ -2821,6 +2825,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			return v
 		})
 		r.SetRestartFunc(func() {
+			_ = mgr.Close()
 			selfPath, err2 := os.Executable()
 			if err2 == nil {
 				selfPath, _ = filepath.EvalSymlinks(selfPath)
@@ -7326,6 +7331,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 		})
 
 		daemonRestartFn := func() {
+			_ = mgr.Close()
 			// Under systemd, let its own Restart= policy bring the service
 			// back up — exiting non-zero so Restart=on-failure fires —
 			// rather than spawning selfRestart's detached shell chain,
@@ -7587,6 +7593,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 		LatestVersion:       fetchLatestVersion,
 		FallbackToken:       cfg.Server.Token, // SEC-002
 		RestartFn: func() {
+			_ = mgr.Close()
 			selfPath, err2 := os.Executable()
 			if err2 == nil {
 				selfPath, _ = filepath.EvalSymlinks(selfPath)

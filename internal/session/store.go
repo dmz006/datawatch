@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/dmz006/datawatch/internal/secfile"
@@ -389,26 +390,60 @@ type Store struct {
 	lockPath string              // advisory lock sidecar file (sessions.json.lock)
 	encKey   []byte              // nil = no encryption
 	sessions map[string]*Session // key: full ID
+
+	// Deferred persistence. Save/Delete/Mutate mark the store dirty and wake
+	// one background writer, which writes at most once per flushInterval.
+	// flushInterval <= 0 means write-through (every Save writes inline).
+	flushInterval time.Duration // guarded by mu
+	closed        bool          // guarded by mu; true after Close, writes go inline
+	started       bool          // guarded by mu; writer goroutine launched
+	dirty         atomic.Bool   // in-memory state not yet on disk
+	writes        atomic.Int64  // completed file writes (observed by tests)
+	writeMu       sync.Mutex    // serialises file writes (one temp file name)
+	wake          chan struct{} // cap 1: "store went dirty"
+	stopCh        chan struct{}
+	doneCh        chan struct{}
+}
+
+// DefaultFlushInterval is how long the background writer coalesces changes
+// before writing sessions.json. A variable so the package tests can run
+// write-through; production never changes it.
+var DefaultFlushInterval = time.Second
+
+// StoreOption configures a Store at construction.
+type StoreOption func(*Store)
+
+// WithFlushInterval sets the write-coalescing interval. Zero or negative
+// means write-through: every Save/Delete writes synchronously (tests).
+func WithFlushInterval(d time.Duration) StoreOption {
+	return func(s *Store) { s.flushInterval = d }
 }
 
 // NewStore creates a new Store backed by the file at path (no encryption).
 // If the file does not exist, an empty store is created.
-func NewStore(path string) (*Store, error) {
-	return newStoreWithKey(path, nil)
+func NewStore(path string, opts ...StoreOption) (*Store, error) {
+	return newStoreWithKey(path, nil, opts...)
 }
 
 // NewStoreEncrypted creates a Store with AES-256-GCM encryption at rest.
 // key must be exactly 32 bytes (use config.DeriveKey to produce one).
-func NewStoreEncrypted(path string, key []byte) (*Store, error) {
-	return newStoreWithKey(path, key)
+func NewStoreEncrypted(path string, key []byte, opts ...StoreOption) (*Store, error) {
+	return newStoreWithKey(path, key, opts...)
 }
 
-func newStoreWithKey(path string, key []byte) (*Store, error) {
+func newStoreWithKey(path string, key []byte, opts ...StoreOption) (*Store, error) {
 	s := &Store{
-		path:     path,
-		lockPath: filepath.Join(filepath.Dir(path), lockFileName),
-		encKey:   key,
-		sessions: make(map[string]*Session),
+		path:          path,
+		lockPath:      filepath.Join(filepath.Dir(path), lockFileName),
+		encKey:        key,
+		sessions:      make(map[string]*Session),
+		flushInterval: DefaultFlushInterval,
+		wake:          make(chan struct{}, 1),
+		stopCh:        make(chan struct{}),
+		doneCh:        make(chan struct{}),
+	}
+	for _, o := range opts {
+		o(s)
 	}
 
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
@@ -563,23 +598,94 @@ func recoverSessionStore(data []byte) ([]*Session, int, error) {
 	return sessions, len(sessions), nil
 }
 
-// Save stores or updates a session.
+// Save stores or updates a session. The write to disk is deferred to the
+// background writer (see SetFlushInterval); with a non-positive interval or
+// after Close it happens before Save returns.
 func (s *Store) Save(sess *Session) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.sessions[sess.FullID] = sess
-	return s.persist()
+	inline := s.markDirtyLocked()
+	s.mu.Unlock()
+	if inline {
+		return s.flush(false)
+	}
+	return nil
 }
 
 // Mutate runs fn with the store's write lock held. Session pointers are
-// shared with the monitor goroutines, and persist() marshals them under
-// this same lock, so a field write made outside it races with the
-// marshal. Call Save after Mutate returns, not inside fn: Save takes
-// the same lock.
+// shared with the monitor goroutines, and the writer marshals them under
+// the read lock, so a field write made outside it races with the marshal.
+// Call Save after Mutate returns, not inside fn: Save takes the same lock.
+// Mutate marks the store dirty, so the change reaches disk on the next
+// flush even when no Save follows.
 func (s *Store) Mutate(fn func()) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	fn()
+	s.markDirtyLocked()
+	s.mu.Unlock()
+}
+
+// SetFlushInterval changes the write-coalescing interval. Zero or negative
+// switches to write-through. Pending changes are flushed by the writer on
+// its next cycle (or immediately by the next Save in write-through mode).
+func (s *Store) SetFlushInterval(d time.Duration) {
+	s.mu.Lock()
+	s.flushInterval = d
+	s.mu.Unlock()
+}
+
+// markDirtyLocked records an unwritten change and, in deferred mode, wakes
+// the writer (starting it on first use so read-only users never spawn one).
+// It reports whether the caller must write inline. Call with mu held.
+func (s *Store) markDirtyLocked() (inline bool) {
+	s.dirty.Store(true)
+	if s.closed || s.flushInterval <= 0 {
+		return true
+	}
+	if !s.started {
+		s.started = true
+		go s.writer()
+	}
+	select {
+	case s.wake <- struct{}{}:
+	default:
+	}
+	return false
+}
+
+// writer is the single background goroutine. After a change wakes it, it
+// waits one flush interval so a burst coalesces, then writes once.
+func (s *Store) writer() {
+	defer close(s.doneCh)
+	for {
+		select {
+		case <-s.wake:
+		case <-s.stopCh:
+			return
+		}
+		s.mu.RLock()
+		d := s.flushInterval
+		s.mu.RUnlock()
+		if d > 0 {
+			t := time.NewTimer(d)
+			select {
+			case <-t.C:
+			case <-s.stopCh:
+				t.Stop()
+				return
+			}
+		}
+		if err := s.flush(false); err != nil {
+			fmt.Fprintf(os.Stderr, "[warn] sessions store flush: %v\n", err)
+		}
+		if d > 0 && s.dirty.Load() {
+			// Write failed or was skipped (lock timeout): retry next cycle.
+			select {
+			case s.wake <- struct{}{}:
+			default:
+			}
+		}
+	}
 }
 
 // Snapshot returns a copy of sess taken under the read lock, for readers
@@ -624,61 +730,103 @@ func (s *Store) List() []*Session {
 	return out
 }
 
-// Delete removes a session from the store.
+// Delete removes a session from the store. Like Save, the write to disk is
+// deferred to the background writer.
 func (s *Store) Delete(fullID string) error {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	delete(s.sessions, fullID)
-	return s.persist()
-}
-
-// Flush forces an immediate write of the current in-memory session
-// set to disk. Save/Delete already write through synchronously so
-// callers normally do not need to call Flush; it exists so external
-// reconcilers (BL93/BL94) and shutdown hooks can guarantee the file
-// reflects the in-memory state without performing another mutation.
-func (s *Store) Flush() error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.persist()
-}
-
-// persist writes the current sessions to disk.
-// Must be called with mu held.
-//
-// BL294 — an exclusive advisory flock on sessions.json.lock serialises
-// concurrent persist() calls from two Manager instances that briefly
-// co-exist during the daemon re-exec path (capability elevation).
-// The lock is held only for the duration of the atomic write and
-// released immediately after. A 5-second timeout prevents deadlock:
-// if the lock cannot be acquired within that window the persist is
-// skipped (the ReconcileSessions boot call recovers any missed writes).
-func (s *Store) persist() error {
-	// Acquire cross-process advisory lock on the sidecar lock file.
-	// flockAcquire returns (nil, nil) on timeout — caller skips the persist.
-	lockFile, lockErr := flockAcquire(s.lockPath)
-	if lockErr != nil {
-		return fmt.Errorf("acquire sessions lock: %w", lockErr)
+	inline := s.markDirtyLocked()
+	s.mu.Unlock()
+	if inline {
+		return s.flush(false)
 	}
-	if lockFile == nil {
-		// Timed out — skip this persist cycle rather than risk a deadlock.
-		// The warning was already printed by flockAcquire.
+	return nil
+}
+
+// Flush synchronously writes the current in-memory session set to disk,
+// waiting for any write the background writer has in progress. Callers
+// that are about to read the file (or exit) use it so the file reflects
+// the in-memory state.
+func (s *Store) Flush() error {
+	return s.flush(true)
+}
+
+// FlushIfDirty is Flush that skips the write when nothing changed since the
+// last one.
+func (s *Store) FlushIfDirty() error {
+	return s.flush(false)
+}
+
+// Close flushes pending changes and stops the background writer. The store
+// stays usable afterwards: later Saves write through synchronously.
+func (s *Store) Close() error {
+	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
 		return nil
 	}
-	defer flockRelease(lockFile)
+	s.closed = true
+	started := s.started
+	s.mu.Unlock()
+	close(s.stopCh)
+	if started {
+		<-s.doneCh
+	}
+	return s.flush(false)
+}
 
+// flush writes the store to disk. force writes even when not dirty.
+// The marshal happens under the read lock only (session pointers are
+// shared with Mutate writers); the file write, flock and fsync happen
+// outside the store lock so API calls never wait on the disk.
+func (s *Store) flush(force bool) error {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	if !s.dirty.Swap(false) && !force {
+		return nil
+	}
+	s.mu.RLock()
 	sessions := make([]*Session, 0, len(s.sessions))
 	for _, sess := range s.sessions {
 		sessions = append(sessions, sess)
 	}
-
-	data, err := json.MarshalIndent(sessions, "", "  ")
+	data, err := json.Marshal(sessions)
+	s.mu.RUnlock()
 	if err != nil {
+		s.dirty.Store(true)
 		return fmt.Errorf("marshal sessions: %w", err)
 	}
+	wrote, err := s.writeFile(data)
+	if err != nil || !wrote {
+		s.dirty.Store(true)
+	}
+	return err
+}
+
+// writeFile writes data to the store file under the cross-process flock.
+//
+// BL294 — an exclusive advisory flock on sessions.json.lock serialises
+// concurrent writes from two Manager instances that briefly co-exist
+// during the daemon re-exec path (capability elevation). The lock is
+// held only for the duration of the atomic write (temp file in the same
+// directory + rename, via secfile.WriteFile) and released immediately
+// after. A 5-second timeout prevents deadlock: if the lock cannot be
+// acquired within that window the write is skipped and reported as not
+// written, so the caller keeps the store dirty and retries.
+func (s *Store) writeFile(data []byte) (bool, error) {
+	// flockAcquire returns (nil, nil) on timeout.
+	lockFile, lockErr := flockAcquire(s.lockPath)
+	if lockErr != nil {
+		return false, fmt.Errorf("acquire sessions lock: %w", lockErr)
+	}
+	if lockFile == nil {
+		return false, nil
+	}
+	defer flockRelease(lockFile)
 
 	if err := secfile.WriteFile(s.path, data, 0644, s.encKey); err != nil {
-		return fmt.Errorf("write sessions %s: %w", s.path, err)
+		return false, fmt.Errorf("write sessions %s: %w", s.path, err)
 	}
-	return nil
+	s.writes.Add(1)
+	return true, nil
 }

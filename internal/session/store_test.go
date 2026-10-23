@@ -528,18 +528,14 @@ func TestStore_ConcurrentPersist_NoCorruption(t *testing.T) {
 	wg.Add(2)
 	go func() {
 		defer wg.Done()
-		s1.mu.Lock()
-		defer s1.mu.Unlock()
-		if err := s1.persist(); err != nil {
-			t.Errorf("s1.persist: %v", err)
+		if err := s1.Flush(); err != nil {
+			t.Errorf("s1.Flush: %v", err)
 		}
 	}()
 	go func() {
 		defer wg.Done()
-		s2.mu.Lock()
-		defer s2.mu.Unlock()
-		if err := s2.persist(); err != nil {
-			t.Errorf("s2.persist: %v", err)
+		if err := s2.Flush(); err != nil {
+			t.Errorf("s2.Flush: %v", err)
 		}
 	}()
 	wg.Wait()

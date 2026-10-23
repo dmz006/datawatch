@@ -21,5 +21,8 @@ var realHome string
 
 func TestMain(m *testing.M) {
 	realHome = os.Getenv("HOME")
+	// Most tests read sessions.json straight after a Save; run them
+	// write-through. Tests of the deferred writer pass an explicit interval.
+	DefaultFlushInterval = 0
 	os.Exit(testhome.Run(m))
 }

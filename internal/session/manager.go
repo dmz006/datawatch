@@ -5402,6 +5402,16 @@ func (m *Manager) saveBackendState(sess *Session) {
 	}
 }
 
+// Close flushes the session store and stops its background writer. Call it
+// on daemon shutdown and before a process re-exec; the store stays usable
+// (writing through) afterwards.
+func (m *Manager) Close() error {
+	if m == nil || m.store == nil {
+		return nil
+	}
+	return m.store.Close()
+}
+
 func (m *Manager) KillAll() error {
 	var errs []string
 	for _, sess := range m.store.List() {

@@ -9,8 +9,9 @@
 | Phase | Description | Status |
 |---|---|---|
 | 1 | Measurement harness: `internal/session/store_bench_test.go` (seed helper, 200-event burst, benchmark, write-budget test) and baseline numbers | Done |
-| 2 | Incremental storage: persist only changed session records; keep the on-disk format readable by older daemons or provide a migration | Not started |
-| 3 | Enable the budget assertion (`storeWriteBudgetEnforced = true`) and re-record the numbers in this document | Not started |
+| 2 | Write coalescing: `Save`/`Delete`/`Mutate` mark the store dirty and wake one background writer that writes at most once per flush interval (default 1 s, `SetFlushInterval` / `WithFlushInterval`, <= 0 = write-through); compact `json.Marshal`; marshal under the read lock, file write and flock outside the store lock; `Flush`/`Close` write synchronously; daemon shutdown and restart paths call `Manager.Close` | Done |
+| 3 | Enable the budget assertion (`storeWriteBudgetEnforced = true`) and re-record the numbers in this document | Done (after-coalescing numbers below) |
+| 4 | Incremental storage: persist only changed session records, so the one trailing write per interval stops scaling with total store size; keep the on-disk format readable by older daemons or provide a migration | Not started |
 
 ## Baseline
 
@@ -23,7 +24,22 @@ Seed: sessions in a `t.TempDir()` store, every tenth session carrying a 100 KB t
 | 400 (reduced, `-short` or `STORE_BENCH_SMALL=1`) | 200 | 1.45 s | 2.15 s | 858,404,761 (about 819 MiB) | 78,000 | 1,560,000 |
 | 4000 (full) | 200 | 13.75 s | 17.68 s | 8,585,293,803 (about 8.0 GiB) | 78,000 | 1,560,000 |
 
-The burst writes about 110,000 times the changed data, against a budget of 20 times. `TestStoreWriteBudget` currently measures and logs these numbers and skips, because `storeWriteBudgetEnforced` is `false`. It must pass, with the constant set to `true`, once Phase 2 lands.
+The burst writes about 110,000 times the changed data, against a budget of 20 times. At baseline `TestStoreWriteBudget` measured and logged these numbers and skipped, because `storeWriteBudgetEnforced` was `false`.
+
+## After coalescing
+
+Measured the same way (same seed, same 200-event burst, `TestStoreWriteBudget` with `storeWriteBudgetEnforced = true`, passing), 2026-10-23.
+
+| Sessions | Burst size | Elapsed | CPU | Bytes written inside the burst | Budget (20x) |
+|---|---|---|---|---|---|
+| 400 (reduced) | 200 | 44 us | 49 us | 0 | 1,560,000 |
+| 4000 (full) | 200 | 36 us | 44 us | 0 | 1,560,000 |
+
+Before: 1.45 s / 819 MiB (400 sessions) and 13.75 s / 8.0 GiB (4000 sessions). Each `Save` now costs a map update and a channel send, so the caller no longer waits on marshal or disk.
+
+The burst window records 0 bytes because the writer waits one flush interval after the first change, then writes once. That trailing write is still a full rewrite of the store (compact JSON, no indentation), so the cost of a burst is now one store-size write per interval instead of one per event: 200 saves become 1 write (`TestStoreCoalesce` asserts at most 20 file writes for 200 saves). The write budget therefore holds for a burst shorter than the flush interval; a sustained stream of changes still writes the whole file once per second. Phase 4 removes that remaining size dependence.
+
+Crash behaviour: a change is at risk for at most one flush interval; `Close` (daemon shutdown, restart and re-exec paths) and `Flush` write synchronously. Writes remain temp-file-plus-rename under the cross-process flock, and `TestStoreCrashSafety` SIGKILLs a writer subprocess mid-write five times and reloads a complete previous or new state each time.
 
 ## Parity surface
 

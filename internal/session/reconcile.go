@@ -38,6 +38,11 @@ type ReconcileResult struct {
 // (BL94) so an operator can trigger a reconcile on demand without a
 // daemon restart.
 func (m *Manager) ReconcileSessions(autoImport bool) (*ReconcileResult, error) {
+	// Saves are deferred to the store's writer; settle the file before
+	// comparing it against the session directories.
+	if err := m.store.FlushIfDirty(); err != nil {
+		return nil, fmt.Errorf("flush session store: %w", err)
+	}
 	root := filepath.Join(m.dataDir, "sessions")
 	entries, err := os.ReadDir(root)
 	if err != nil {
@@ -163,6 +168,9 @@ func (m *Manager) ReconcileLiveSessions() (*ReconcileResult, error) {
 // the existing session is returned. This is the BL94 single-dir entry
 // point used by `datawatch session import`.
 func (m *Manager) ImportSessionDir(dir string) (*Session, bool, error) {
+	if err := m.store.FlushIfDirty(); err != nil {
+		return nil, false, fmt.Errorf("flush session store: %w", err)
+	}
 	sess, err := readSessionFile(dir)
 	if err != nil {
 		return nil, false, err
