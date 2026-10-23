@@ -78,14 +78,13 @@ func TestBL451RevCommitMutateFalseDoesNotPersist(t *testing.T) {
 	s, dir := newBL451Store(t)
 	p, _ := s.CreatePRD("spec", "/tmp/x", "", "", "")
 	rev := p.Rev
-	path := filepath.Join(dir, "autonomous", "prds.jsonl")
-	before, _ := os.ReadFile(path)
+	before := persistedPRDRecords(t, dir)
 	err := s.CommitPRDIfRev(p.ID, rev, func(p *PRD) bool { return false })
 	if !errors.Is(err, ErrPRDStale) {
 		t.Fatalf("err = %v, want ErrPRDStale", err)
 	}
-	after, _ := os.ReadFile(path)
-	if string(before) != string(after) {
+	after := persistedPRDRecords(t, dir)
+	if before != after {
 		t.Fatal("store persisted despite mutate=false")
 	}
 	if r, _ := s.PRDRev(p.ID); r != rev {

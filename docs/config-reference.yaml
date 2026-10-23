@@ -46,6 +46,22 @@ session:
   # defaults (3 * 60s + 15s). A session whose process has already exited
   # still fails at once, without waiting out the budget.
   task_delivery_attempts: 3
+  # Milliseconds the session store batches changes before its background
+  # writer saves them to sessions. 0 saves on every change. Applies live when
+  # changed through the API, web UI, comm channel, CLI or MCP.
+  # Default: 1000.
+  store_flush_interval: 1000
+  # Days after its last update that a finished session moves from the active
+  # session store into the archive file. 0 turns archiving off.
+  # Default: 14.
+  store_archive_after_days: 14
+  # Largest session text field, in KB, kept inline in the session store.
+  # Longer text is cut with a marker and the full text goes to a side file.
+  # Default: 256.
+  store_field_cap_kb: 256
+  # Automaton (PRD) text longer than this many KB is stored in a side file next
+  # to its record instead of inline. Default: 64.
+  store_side_file_cap_kb: 64
   # Seconds of idle output before declaring a session is waiting for input
   input_idle_timeout: 10
   # Default number of output lines returned by tail/status commands

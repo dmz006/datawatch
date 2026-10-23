@@ -426,6 +426,10 @@ func (a *API) FindTaskBySessionID(sessionID string) (prdID, taskID string) {
 	return a.M.FindTaskBySessionID(sessionID)
 }
 
+// SetStoreSideFileCapKB sets the PRD store's side-file threshold in KB
+// (session.store_side_file_cap_kb). n <= 0 restores the default.
+func (a *API) SetStoreSideFileCapKB(n int) { a.M.Store().SetSideFileCap(n << 10) }
+
 // SessionIDsForPRD walks the PRD's stories + tasks and returns every
 // non-empty Task.SessionID. Used by the orchestrator REST handler
 // (S13 follow-up) to join graph nodes against observer envelopes.

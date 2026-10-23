@@ -98,8 +98,8 @@ import (
 	"github.com/dmz006/datawatch/internal/server"
 	"github.com/dmz006/datawatch/internal/server/multiserver"
 	"github.com/dmz006/datawatch/internal/session"
-	signalpkg "github.com/dmz006/datawatch/internal/signal"
 	shutdowncause "github.com/dmz006/datawatch/internal/shutdowncause"
+	signalpkg "github.com/dmz006/datawatch/internal/signal"
 	"github.com/dmz006/datawatch/internal/skills"
 	statspkg "github.com/dmz006/datawatch/internal/stats"
 	summarizerPkg "github.com/dmz006/datawatch/internal/summarizer"
@@ -1065,6 +1065,15 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return fmt.Errorf("create session manager: %w", err)
 	}
+	// Session store writes are coalesced by a background writer; flush and
+	// stop it on every exit path.
+	defer func() { _ = mgr.Close() }()
+	// Old terminal sessions move to the archive file (age and field cap are
+	// the store defaults until the config wiring sets them).
+	mgr.SetFlushInterval(cfg.Session.EffectiveStoreFlushInterval())
+	mgr.SetArchiveAfter(time.Duration(cfg.Session.EffectiveStoreArchiveAfterDays()) * 24 * time.Hour)
+	mgr.SetFieldCap(cfg.Session.EffectiveStoreFieldCapKB() << 10)
+	mgr.StartArchiver(session.DefaultArchiveInterval)
 	if cfg.Session.MaxSessions > 0 {
 		mgr.SetMaxSessions(cfg.Session.MaxSessions)
 	}
@@ -1821,7 +1830,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				Actor:     "daemon",
 				Action:    "shutdown",
 				Subject:   subject,
-				Details:   map[string]any{
+				Details: map[string]any{
 					"signal":           c.Signal,
 					"sender_pid":       c.SenderPID,
 					"sender_uid":       c.SenderUID,
@@ -1860,6 +1869,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 				fmt.Printf("[warn] kill sessions on exit: %v\n", err)
 			}
 		}
+		_ = mgr.Close() // flush deferred session-store writes before exit
 		cancel()
 	}()
 
@@ -2877,6 +2887,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			// Record the shutdown cause (audit + last-shutdown.json) before we
 			// exec/exit below and lose the ability to write.
 			recordShutdownCause(nil)
+			_ = mgr.Close()
 			selfPath, err2 := os.Executable()
 			if err2 == nil {
 				selfPath, _ = filepath.EvalSymlinks(selfPath)
@@ -6251,6 +6262,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				})
 			}
 			aAPI := autonomouspkg.NewAPI(amgr)
+			aAPI.SetStoreSideFileCapKB(cfg.Session.EffectiveStoreSideFileCapKB())
 			// Automation coordinator: advances an Automation's cursor from
 			// member lifecycle events (nil-safe if it could not be built).
 			autoCoord := autonomouspkg.NewCoordinator(amgr, aAPI)
@@ -7465,6 +7477,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// Record the shutdown cause (API-marked via is picked up by
 			// shutdowncause.Capture) before either exit path below.
 			recordShutdownCause(nil)
+			_ = mgr.Close()
 			// Under systemd, let its own Restart= policy bring the service
 			// back up — exiting non-zero so Restart=on-failure fires —
 			// rather than spawning selfRestart's detached shell chain,
@@ -7729,6 +7742,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			// Record the shutdown cause (audit + last-shutdown.json) before we
 			// exec/exit below and lose the ability to write.
 			recordShutdownCause(nil)
+			_ = mgr.Close()
 			selfPath, err2 := os.Executable()
 			if err2 == nil {
 				selfPath, _ = filepath.EvalSymlinks(selfPath)
@@ -13155,6 +13169,9 @@ func runMCP(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return fmt.Errorf("create session manager: %w", err)
 	}
+	mgr.SetFlushInterval(cfg.Session.EffectiveStoreFlushInterval())
+	mgr.SetArchiveAfter(time.Duration(cfg.Session.EffectiveStoreArchiveAfterDays()) * 24 * time.Hour)
+	mgr.SetFieldCap(cfg.Session.EffectiveStoreFieldCapKB() << 10)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

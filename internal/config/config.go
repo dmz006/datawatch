@@ -1739,6 +1739,24 @@ type SessionConfig struct {
 	// makes before giving up (default 3).
 	TaskDeliveryAttempts int `yaml:"task_delivery_attempts,omitempty" json:"task_delivery_attempts,omitempty"`
 
+	// StoreFlushInterval is how long the session store coalesces changes
+	// before the background writer saves them, in milliseconds. Unset means
+	// the 1000 ms default; 0 writes through on every change.
+	StoreFlushInterval *int `yaml:"store_flush_interval,omitempty" json:"store_flush_interval,omitempty"`
+
+	// StoreArchiveAfterDays is how many days after its last update a finished
+	// session moves to the archive file. Unset means 14; 0 disables archiving.
+	StoreArchiveAfterDays *int `yaml:"store_archive_after_days,omitempty" json:"store_archive_after_days,omitempty"`
+
+	// StoreFieldCapKB is the largest session text field kept inline in the
+	// session store, in KB; longer text is cut and the full text goes to a
+	// side file (default 256).
+	StoreFieldCapKB int `yaml:"store_field_cap_kb,omitempty" json:"store_field_cap_kb,omitempty"`
+
+	// StoreSideFileCapKB is the length in KB above which an Automaton (PRD)
+	// text field moves into a side file next to its record (default 64).
+	StoreSideFileCapKB int `yaml:"store_side_file_cap_kb,omitempty" json:"store_side_file_cap_kb,omitempty"`
+
 	// AutoInstallHooks (alpha.34a #202) — when true (default), the daemon
 	// auto-writes .claude/sprint/{post-event.sh, .dw-env} into project_dir
 	// at session spawn for claude-code sessions. The hook scripts then POST
@@ -1965,6 +1983,49 @@ func (s *SessionConfig) EffectiveTaskDeliveryWindow() time.Duration {
 		return 60 * time.Second
 	}
 	return time.Duration(s.TaskDeliveryWindowSeconds) * time.Second
+}
+
+// EffectiveStoreFlushInterval returns the session store write-coalescing
+// interval: the configured milliseconds, or 1 s when unset. Zero means
+// write-through.
+func (s *SessionConfig) EffectiveStoreFlushInterval() time.Duration {
+	if s.StoreFlushInterval == nil {
+		return time.Second
+	}
+	if *s.StoreFlushInterval < 0 {
+		return 0
+	}
+	return time.Duration(*s.StoreFlushInterval) * time.Millisecond
+}
+
+// EffectiveStoreArchiveAfterDays returns the archive age in days: the
+// configured value, or 14 when unset. Zero disables archiving.
+func (s *SessionConfig) EffectiveStoreArchiveAfterDays() int {
+	if s.StoreArchiveAfterDays == nil {
+		return 14
+	}
+	if *s.StoreArchiveAfterDays < 0 {
+		return 0
+	}
+	return *s.StoreArchiveAfterDays
+}
+
+// EffectiveStoreFieldCapKB returns the session field cap in KB, falling back
+// to 256 when the value is <= 0.
+func (s *SessionConfig) EffectiveStoreFieldCapKB() int {
+	if s.StoreFieldCapKB <= 0 {
+		return 256
+	}
+	return s.StoreFieldCapKB
+}
+
+// EffectiveStoreSideFileCapKB returns the PRD side-file threshold in KB,
+// falling back to 64 when the value is <= 0.
+func (s *SessionConfig) EffectiveStoreSideFileCapKB() int {
+	if s.StoreSideFileCapKB <= 0 {
+		return 64
+	}
+	return s.StoreSideFileCapKB
 }
 
 // EffectiveTaskDeliveryAttempts returns TaskDeliveryAttempts, falling
