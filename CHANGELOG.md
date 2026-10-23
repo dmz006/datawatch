@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Automata tags: organise Automata in a nested tag tree.** Tags are managed objects (`id`, `name`, `parent_id`, `color`, `description`) saved to `tags.jsonl`, so they survive a restart; an Automaton carries several (`tag_ids`). Browse by tag in the web UI with an **include sub-tags** switch (on by default), assign from the Automaton detail view or the create dialog, and bulk tag from the action bar. A project-alias suggestion pre-ticks an existing tag but never creates one. Deleting a tag with child tags is refused; deleting a tag still assigned to Automata is refused with the count of Automata using it; moving a tag under itself or its own sub-tags is refused. Parity: REST (`/api/autonomous/tags`, `set_tags`, `GET /api/autonomous/prds?tag=`), MCP (`autonomous_tag_*`, `autonomous_prd_set_tags`), CLI (`datawatch autonomous tag-*`, `prd-set-tags`), comm channel (`tags`, `tag-*`, `set-tags`) and the web UI are covered; YAML config does not apply (tags are operator data). Android and iPhone (datawatch-app) need an issue filed at merge — spec in `docs/plans/2026-10-23-datawatch-app-tags-note.md`. How-to: `docs/howto/automata-tags.md`.
+
 ## v9.5.102 — The session input audit test no longer flakes
 
 ### Fixed

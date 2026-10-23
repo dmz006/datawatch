@@ -9,6 +9,33 @@ Do not mark **Validated=Yes** based solely on unit tests.
 
 ---
 
+## Automata tags: nested tag registry, per-Automaton assignment, browse and bulk tag
+
+Tags are managed objects (`id`, `name`, `parent_id`, `color`, `description`) persisted to `tags.jsonl`; an
+Automaton carries several (`tag_ids`). Deleting a tag with child tags is refused, deleting a tag still assigned
+to Automata is refused with a count, and a move that would make a tag its own ancestor is refused. Operator
+guide: `docs/howto/automata-tags.md`.
+
+Both validation levels are listed. Each unit row is Tested; none is Validated: a live run against a sandbox
+daemon, through each surface, is still owed, and the live rows below say exactly what that run must show.
+
+| Feature | Test Name | Test Conditions | Description | Test Type | Tested? | Pass/Fail? | Validated? | Notes |
+|---|---|---|---|---|---|---|---|---|
+| Store and manager: persistence, cycle guard, both refused deletes, descendant filter | `TestTagPersistRoundTrip`, `TestTagDeletePersists`, `TestTagSetParentCycleGuard`, `TestTagDeleteRefusedWithChildren`, `TestTagDeleteRefusedWhenAssigned`, `TestTagSetPRDTagsValidatesAndDedupes`, `TestTagDescendantFilter` | `go test ./internal/autonomous/ -count=1 -run 'TestTag'` | A tag tree survives a store restart (the registry is not memory-only), a refused delete or move changes nothing, the assigned refusal carries the count, and the descendant filter matches the tag and every tag below it. | Unit | **Yes** (`internal/autonomous/tags_test.go`) | | **No** — live daemon run pending | |
+| REST: list, create, patch, delete, `set_tags`, list by tag | `TestTagCreateListUpdateRoundTrip`, `TestTagPatchCycleRefused`, `TestTagDeleteRefusedWithChildren`, `TestTagDeleteRefusedWhileAssignedReportsCount`, `TestTagSetTagsAndListFilter` | `go test ./internal/server/ -count=1 -run 'TestTag'` | Each write is read back; refusals return 409 and the assigned refusal returns `count`. | Unit (httptest) | **Yes** (`internal/server/autonomous_tags_test.go`) | | **No** — live daemon run pending | |
+| MCP: tag tools and refusals | `TestTagToolsRoundTrip`, `TestTagToolsRefusals`, `TestTagToolDefinitions` | `go test ./internal/mcp/ -count=1 -run 'TestTag'` | The seven tools are registered and drive the REST handlers; refusals come back as tool errors. | Unit | **Yes** (`internal/mcp/tags_test.go`) | | **No** — live MCP client run pending | |
+| CLI: `tag-*` and `prd-set-tags` | `TestTagCLIRegistered`, `TestTagCLIRequests`, `TestTagCLIArgumentErrors` | `go test ./cmd/datawatch/ -count=1 -run 'TestTagCLI'` | Each subcommand builds the right request; bad arguments print usage and send nothing. | Unit | **Yes** (`cmd/datawatch/cli_autonomous_tags_test.go`) | | **No** — live CLI run against a daemon pending | |
+| Comm channel: `tags`, `tag-*`, `set-tags` | `TestTagBuildRequest`, `TestTagBuildRequestUsage`, `TestTagVerbDispatch`, `TestTagHelpMentionsVerbs` | `go test ./internal/router/ -count=1 -run 'TestTag'` | Each verb maps to its REST call; bad arguments reply with usage. | Unit | **Yes** (`internal/router/autonomous_tags_test.go`) | | **No** — live chat-channel run pending | |
+| PWA: tree order, include sub-tags, roll-up counts, multi-tag sections, alias suggestion, persisted filter, five-locale keys | `internal/server/web/app-automation-tags.test.js` (11 tests) | `node --test internal/server/web/app-automation-tags.test.js` | Pure logic over the bundle source; the alias suggestion only picks an existing tag. | Node test | **Yes** | | **No** — sandbox PWA click-through pending | |
+| Live: create a 3-level tree, tag one Automaton with two leaf tags under different parents, browse by each parent with the switch on and off | N/A (manual, sandbox daemon only) | Sandbox daemon on the TLS test port, PWA in a browser | The Automaton shows under both parents; with the switch off a parent lists only exact matches; counts roll up only when on. | Live | | | **No** — owed | Do not mark Validated until observed |
+| Live: both refused deletes and the cycle refusal through REST, MCP, CLI and comm | N/A (manual, sandbox daemon only) | Sandbox daemon; `curl`, an MCP client, `datawatch autonomous tag-delete`, a chat channel | Each surface refuses, reports the count for the assigned case, and a follow-up list shows nothing changed. | Live | | | **No** — owed | |
+| Live: restart the daemon and list tags | N/A (manual, sandbox daemon only) | Sandbox daemon restarted with the tag tree present | The tree and every Automaton's `tag_ids` are intact after the restart. | Live | | | **No** — owed | |
+
+**Mobile-Parity: owed, not yet filed.** The app issue text is the note in
+`docs/plans/2026-10-23-datawatch-app-tags-note.md`; it must be filed on `dmz006/datawatch-app` at merge.
+
+---
+
 ## Quality gate: shell-run command, invalid baselines, name-based regression, gate_disagreement
 
 The gate's test command runs through a shell in the project directory, a baseline that cannot produce

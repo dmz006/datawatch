@@ -50,7 +50,14 @@ POST   /api/autonomous/prds/{id}/set_task_verification_llm   per-task verifier L
 POST   /api/autonomous/prds/{id}/set_story_verification_llm  per-story verifier LLM; body: {story_id, [verification_backend], [verification_model], [verification_effort], actor} [v9.0.69]
 POST   /api/autonomous/prds/{id}/set_verification_llm        per-Automaton verifier LLM; body: {[verification_backend], [verification_model], [verification_effort], actor}       [v9.0.69]
 POST   /api/autonomous/prds/{id}/set_dirs  directory scope; body: {write_dirs[], read_dirs[]} (absolute paths)
+POST   /api/autonomous/prds/{id}/set_tags  replace the Automaton's tags; body: {tag_ids[]} ([] clears)
 POST   /api/autonomous/prds/{id}/run       kick the executor for this PRD
+GET    /api/autonomous/prds?tag={id}[&include_sub=false]  Automata carrying a tag (and, by default, any descendant tag)
+
+GET    /api/autonomous/tags[?include_sub=]  tag tree (parent_id) with Automata counts
+POST   /api/autonomous/tags                 create; body: {name, [parent_id], [color], [description]}
+PATCH  /api/autonomous/tags/{id}            rename / recolor / describe / reparent; 409 if the move makes a cycle
+DELETE /api/autonomous/tags/{id}            409 while the tag has child tags, 409 with {count} while Automata carry it
 GET    /api/autonomous/prds/{id}/children  list child PRDs spawned via SpawnPRD                                      [v5.9.0  / BL191 Q4]
 
 GET    /api/autonomous/learnings           extracted post-task learnings
@@ -912,6 +919,12 @@ datawatch autonomous prd-set-task-llm <id> --task <task-id> --guardrail-backend 
 datawatch autonomous prd-set-task-verification-llm <id> --task <task-id> --backend claude-code --model opus --effort high
 datawatch autonomous prd-set-story-verification-llm <id> --story <story-id> --backend ollama --model qwen3:8b
 datawatch autonomous prd-set-verification-llm <id> --model ""   # clear the Automaton-level verifier model
+datawatch autonomous tag-list [--include-sub]
+datawatch autonomous tag-create "Mobile App" --parent <id> --color "#6366f1"
+datawatch autonomous tag-rename <id> <new-name>
+datawatch autonomous tag-move <id> --parent <new-parent-id|root>
+datawatch autonomous tag-delete <id>
+datawatch autonomous prd-set-tags <prd-id> --tags <id1,id2>   # empty value clears
 datawatch autonomous learnings
 ```
 
@@ -934,6 +947,8 @@ operator-facing AI can drive the autonomous loop end-to-end:
 | `autonomous_prd_run`        | kick executor |
 | `autonomous_prd_cancel`     | cancel + archive |
 | `autonomous_learnings`      | list learnings |
+| `autonomous_tag_list` / `_tag_create` / `_tag_rename` / `_tag_set_parent` / `_tag_set_color` / `_tag_delete` | Automata tag registry; see [howto/automata-tags](../howto/automata-tags.md) |
+| `autonomous_prd_set_tags`   | replace an Automaton's tags (`tag_ids_json`) |
 | `autonomous_prd_set_task_verification_llm` / `_set_story_verification_llm` / `_set_verification_llm` | per-task / per-story / per-Automaton verifier LLM |
 | `autonomous_prd_set_task_project_dir` | per-task project dir override (empty = inherit Automaton dir) |
 
@@ -962,6 +977,9 @@ autonomous set-task-llm abcd1234 t1 claude-code high guardrail_backend=ollama
 autonomous set-task-verification-llm abcd1234 t1 backend=claude-code model=opus effort=high
 autonomous set-story-verification-llm abcd1234 s1 backend=ollama model=qwen3:8b
 autonomous set-verification-llm abcd1234 model=
+autonomous tags
+autonomous tag-create "Mobile App" parent=1a2b3c4d
+autonomous set-tags abcd1234 1a2b3c4d,5e6f7a8b
 ```
 
 `guardrail_backend=` / `guardrail_model=` tokens can be appended to
