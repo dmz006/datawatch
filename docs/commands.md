@@ -1034,6 +1034,15 @@ PRD lifecycle — full CRUD parity with the REST + MCP surfaces.
 | `prd children` | List child PRDs spawned via SpawnPRD (v5.9.0, BL191 Q4) |
 | `prd set-llm/set-task-llm` | Pin LLM backend/effort/model at PRD or task scope (v5.4.0, BL203) |
 | `prd-set-task-verification-llm <id> --task <task>` / `prd-set-story-verification-llm <id> --story <story>` / `prd-set-verification-llm <id>` | Pick the LLM that verifies one task / every task in a story / the whole Automaton. Flags `--backend` / `--model` / `--effort`; omitted flags are unchanged, `--backend ""` clears. Precedence task > story > Automaton > global `autonomous.verification_*` (v9.0.70) |
+| `tag-list [--include-sub]` | List Automata tags as a tree (`parent_id`) with the number of Automata carrying each; `GET /api/autonomous/tags` |
+| `tag-create <name> [--parent <id>] [--color <hex>] [--description <text>]` | Create a tag, optionally nested under a parent; `POST /api/autonomous/tags` |
+| `tag-rename <id> <new-name>`, `tag-color <id> <color>`, `tag-move <id> --parent <new-parent-id\|root>` | Edit a tag; `PATCH /api/autonomous/tags/{id}`. A move that would make a tag its own ancestor is refused |
+| `tag-delete <id>` | Delete a tag; refused while it has child tags, and refused with a count while Automata still carry it |
+| `prd-set-tags <prd-id> --tags <id1,id2,...>` | Replace the tags on an Automaton; an empty `--tags` value clears them; `POST /api/autonomous/prds/{id}/set_tags` |
+
+Comm channels: `autonomous tags`, `tag-create <name> [parent=<id>] [color=<hex>] [description=<text>]`,
+`tag-rename <id> <new-name>`, `tag-move <id> <parent-id|root>`, `tag-color <id> <color>`,
+`tag-delete <id>`, and `set-tags <prd-id> <tag-id1,tag-id2,...>` (omit the list to clear).
 
 ### `datawatch automation <subcommand>`
 

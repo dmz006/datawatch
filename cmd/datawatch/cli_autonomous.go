@@ -124,6 +124,13 @@ Subcommands:
 		newAutonomousScanConfigSetCmd(),
 		// BL221 Phase 4 — type registry, Guided Mode, skills.
 		newAutonomousPRDSetTypeCmd(),
+		newAutonomousTagListCmd(),
+		newAutonomousTagCreateCmd(),
+		newAutonomousTagRenameCmd(),
+		newAutonomousTagMoveCmd(),
+		newAutonomousTagColorCmd(),
+		newAutonomousTagDeleteCmd(),
+		newAutonomousPRDSetTagsCmd(),
 		newAutonomousPRDSetGuidedModeCmd(),
 		newAutonomousPRDSetGitCmd(),
 		newAutonomousPRDSetSkillsCmd(),
