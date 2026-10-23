@@ -794,8 +794,9 @@ export async function runCli(argv = process.argv.slice(2), { stdout = process.st
     reportOnly: config.reportOnly,
     scope: config.scope,
   });
-  // 0 when no findings (report-only never renders, hence never reports
-  // findings in a fresh run dir); 1 when findings exist.
+  // --report-only always exits 0 (it just re-renders a saved report, even
+  // one with findings); otherwise 1 when findings exist, 0 when none.
+  if (config.reportOnly) return 0;
   return report.summary.total > 0 ? 1 : 0;
 }
 
