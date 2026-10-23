@@ -1083,6 +1083,12 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 				}
 				m.store.WithLock(func() { t.SessionID = "" })
 			}
+			// End every other live session of this task or its worktree so the
+			// replacement is the only one.
+			if ended := m.endLiveSessionsOfTask(prd, t, ""); len(ended) > 0 {
+				m.store.WithLock(func() { recordEndedSessions(prd, t, ended, "replacement session launching") })
+				_ = m.store.SavePRD(prd)
+			}
 			now := time.Now()
 			m.store.WithLock(func() {
 				t.StartedAt = &now

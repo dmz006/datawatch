@@ -4460,6 +4460,8 @@ func (m *Manager) reconcileStuckTasks() {
 				// reset-cleanup path.
 				if !completing {
 					if id, _ := m.adoptUnlinkedSession(prd, t, listFn); id != "" {
+						// Older live matches would run beside the adopted session.
+						recordEndedSessions(prd, t, m.endLiveSessionsOfTask(prd, t, id), "older duplicate of the session adopted on daemon restart")
 						adoptedAny = true
 						continue
 					}
@@ -4479,6 +4481,9 @@ func (m *Manager) reconcileStuckTasks() {
 						verdictRequeued++
 					}
 				}
+				// Every other live session of this task or its worktree must end
+				// before the replacement launches.
+				recordEndedSessions(prd, t, m.endLiveSessionsOfTask(prd, t, ""), "task reset on daemon restart")
 				now := time.Now()
 				if completing {
 					log.Printf("[autonomous] boot-reconcile: prd=%s task=%s status=%s session=%s → TaskCompleted (recorded ok verification, dead session)",
