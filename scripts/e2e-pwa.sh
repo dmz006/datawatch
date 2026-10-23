@@ -4,6 +4,7 @@
 #
 # Usage:
 #   bash scripts/e2e-pwa.sh [story-base-name]        # default: schedule-flood
+#   bash scripts/e2e-pwa.sh load | group:load        # the `load` group (TS-802..TS-810)
 #   TEST_TRUSTED_TLS=https://127.0.0.1:2443 bash scripts/e2e-pwa.sh
 #
 # What it does (local mode):
@@ -12,18 +13,27 @@
 #   2. starts the daemon (bin/datawatch, TEST_BINARY, PATH, or `go build`),
 #   3. `npm ci` in scripts/test-stories/pwa,
 #   4. runs `node <story>.mjs` with TEST_HTTP / TEST_TLS / TEST_TOKEN (and
-#      TEST_TRUSTED_TLS when set),
+#      TEST_TRUSTED_TLS when set) — or, for a group argument (e.g. `load`),
+#      `node run-all.mjs --group load` instead of a single story file,
 #   5. stops the daemon; the per-run dir (evidence + daemon log) is kept on
 #      non-zero exit.
 #
 # External-daemon mode: if TEST_HTTP, TEST_TLS and TEST_TOKEN are all set, the
 # already-running daemon at those origins is used and no daemon is started.
 #
-# Exit code: the story's own exit code — 0 pass · 1 fail · 2 skip.
+# Exit code: single story — the story's own exit code (0 pass · 1 fail · 2
+# skip). Group — run-all.mjs's exit code (0 pass, 1 fail; stories that exit
+# 2 are counted as skipped and do not fail the run).
 
 set -u
 
-STORY="${1:-schedule-flood}"
+ARG="${1:-schedule-flood}"
+GROUP=""
+case "$ARG" in
+  group:*) GROUP="${ARG#group:}" ;;
+esac
+if [[ "$ARG" == "load" ]]; then GROUP="load"; fi
+STORY="${GROUP:-$ARG}"
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 REPO_DIR=$(cd "$SCRIPT_DIR/.." && pwd)
 PWA_DIR="$REPO_DIR/scripts/test-stories/pwa"
@@ -34,7 +44,12 @@ RUN_DIR=""
 
 fail() { echo "e2e-pwa: $*" >&2; exit 1; }
 
-[[ -f "$STORY_FILE" ]] || fail "story not found: $STORY_FILE"
+if [[ -z "$GROUP" ]]; then
+  [[ -f "$STORY_FILE" ]] || fail "story not found: $STORY_FILE"
+else
+  ( cd "$PWA_DIR" && node run-all.mjs --dry-run --group "$GROUP" ) >/dev/null \
+    || fail "unknown story group: $GROUP"
+fi
 command -v node >/dev/null 2>&1 || fail "node not found (install Node.js or add it to PATH)"
 command -v npm  >/dev/null 2>&1 || fail "npm not found (install Node.js with npm)"
 
@@ -133,14 +148,20 @@ else
     || fail "npm install failed in $PWA_DIR"
 fi
 
-echo "e2e-pwa: running node ${STORY}.mjs (evidence: $EVIDENCE_DIR/$STORY)"
 export TEST_HTTP TEST_TLS TEST_TOKEN="${TEST_TOKEN:-dw-e2e-pwa-token}" EVIDENCE_DIR
-export CURRENT_STORY="$STORY"
 [[ -n "${TEST_TRUSTED_TLS:-}" ]] && export TEST_TRUSTED_TLS
 
-( cd "$PWA_DIR" && node "${STORY}.mjs" )
-rc=$?
+if [[ -n "$GROUP" ]]; then
+  echo "e2e-pwa: running node run-all.mjs --group $GROUP (evidence: $EVIDENCE_DIR/$STORY)"
+  ( cd "$PWA_DIR" && node run-all.mjs --group "$GROUP" )
+  rc=$?
+else
+  echo "e2e-pwa: running node ${STORY}.mjs (evidence: $EVIDENCE_DIR/$STORY)"
+  export CURRENT_STORY="$STORY"
+  ( cd "$PWA_DIR" && node "${STORY}.mjs" )
+  rc=$?
+fi
 if [[ $rc -ne 0 && $rc -ne 2 ]]; then
-  echo "e2e-pwa: story $STORY FAILED (exit $rc) — see $EVIDENCE_DIR/$STORY" >&2
+  echo "e2e-pwa: $STORY FAILED (exit $rc) — see $EVIDENCE_DIR/$STORY" >&2
 fi
 exit $rc

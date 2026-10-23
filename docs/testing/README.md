@@ -45,6 +45,13 @@ make test-e2e-pwa                    # isolated local daemon, fresh 127.0.0.1 po
 TEST_TRUSTED_TLS=https://127.0.0.1:2443 make test-e2e-pwa   # fixed trusted origin
 ```
 
+**Load group** — `scripts/e2e-pwa.sh` also accepts a story *group*: `load`
+(or `group:load`) runs the slow-network load scenarios TS-802..TS-810 via
+`node run-all.mjs --group load` (see `scripts/test-stories/pwa/run-all.mjs`;
+Makefile target `make test-e2e-pwa-load`). Stories that exit 2 (skip — e.g. no
+seeded fixture or no Chrome) are counted as skipped in the runner's summary
+and do not fail the run.
+
 What the target does (`scripts/e2e-pwa.sh`):
 
 1. Picks free 127.0.0.1 ports, generates an isolated config from

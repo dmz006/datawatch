@@ -8,7 +8,7 @@ LDFLAGS=-X main.Version=$(VERSION) -X github.com/dmz006/datawatch/internal/serve
         container-agent-base container-parent-full _container-build \
         registry-up registry-down sync-docs \
         security-registry-gen security-registry-check \
-        test-e2e-docker test-e2e-pwa test-e2e-all test-e2e-clean
+        test-e2e-docker test-e2e-pwa test-e2e-pwa-load test-e2e-all test-e2e-clean
 
 # Sync docs/ into internal/server/web/docs/ so the embedded web FS
 # carries the markdown files the in-PWA viewer renders. Run before
@@ -354,6 +354,10 @@ test-e2e-pwa:
 	@echo "Waiting for daemon healthy..."
 	until docker compose -f $(E2E_COMPOSE) ps datawatch | grep -q healthy; do sleep 2; done
 	docker compose -f $(E2E_COMPOSE) run --rm playwright
+
+# PWA slow-network load group (TS-802..TS-810) via run-all.mjs --group load.
+test-e2e-pwa-load:
+	bash scripts/e2e-pwa.sh load
 
 test-e2e-all: test-e2e-docker test-e2e-pwa
 
