@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **A flaky server test no longer fails on temp directory cleanup.** Late writers in the affected test and every test sharing its fixture are now stopped or waited for in a registered cleanup before the temp directory is removed. Test-only change; no behavior change.
+
 ## v9.5.108 — The capacity view names what is running and waiting
 
 ### Changed
