@@ -248,10 +248,10 @@ special.
 
 | Phase | Name | Status |
 |---|---|---|
-| 1 | Seed, endpoint measurement, tab timing script, baseline | Done (not yet shipped in a tagged version) |
-| 2 | Slim list payloads: sessions and Automata lists carry summary fields only, full record by id | Planned |
-| 3 | Response compression and conditional requests for bodies over a size threshold | Planned |
-| 4 | Load only what the visible tab needs; paginate or window the long lists in the UI | Planned |
+| 1 | Seed, endpoint measurement, tab timing script, baseline | Done (shipped in v9.5.109) |
+| 2 | Slim list payloads: sessions and Automata lists carry summary fields only, full record by id | Done (shipped in v9.5.109) |
+| 3 | Response compression and conditional requests for bodies over a size threshold | Done (shipped in v9.5.109) |
+| 4 | Load only what the visible tab needs; paginate or window the long lists in the UI | Done (shipped in v9.5.109) |
 | 5 | Re-measure against the baseline and set regression budgets | Done (budget guard and after-fix numbers above) |
 
 ### Phase 1: Seed and measurement (Done)
@@ -267,8 +267,9 @@ special.
   its numbers added to the Baseline. Recorded under
   "Result against the live-style data set" using a seeded HTTP daemon
   (`TestSeededLocalServerServe`), 2026-10-23.
-- [ ] Phase Completion Checklist items for docs and version: N/A, test and tooling
-  only, no user-visible change, no version bump of its own.
+- [x] Phase Completion Checklist items for docs and version: N/A, test and
+  tooling only, no user-visible change, no version bump of its own (the docs for
+  the full feature landed in this PRD's close-out).
 
 ### Phase 2: Slim list payloads (Done)
 

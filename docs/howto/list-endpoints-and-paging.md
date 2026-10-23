@@ -118,7 +118,7 @@ curl -sS "$DW/api/autonomous/prds?limit=50&cursor=$NEXT"
 |---|---|
 | One session in full | `GET /api/sessions/{id}` |
 | One Automaton in full | `GET /api/autonomous/prds/{id}?full=1` |
-| One Automaton, c…nd | `GET /api/autonomous/prds/{id}` |
+| One Automaton, with the heavy text fields capped | `GET /api/autonomous/prds/{id}` |
 | The heavy text of an Automaton (checks, results, outputs, verifier transcript) | `GET /api/autonomous/prds/{id}/outputs` |
 
 The capped by-id form keeps each long text field under a 4 KB cap and marks
@@ -209,5 +209,5 @@ release smoke §79 run them against the smoke daemon.
   Automation chains in the tab.
 - [automata-tags.md](automata-tags.md) — tagging Automata (the tag filter
   above uses the tag name).
-- [session-state-and-status.md](session-state-and-status.md) — the state and
-  status words the `status` and `q` filters match.
+- [sessions-deep-dive.md](sessions-deep-dive.md) — the session states and
+  record fields the `status` and `q` filters match.
