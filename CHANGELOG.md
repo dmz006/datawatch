@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.111 — The session input audit test no longer fails on temp-directory cleanup
+
+### Fixed
+
+- **The session input audit test no longer fails on temp-directory cleanup.** `TestGH201Phase4_SessionInput_Audited_NeverLogsTheText` still failed now and then because a goroutine kept writing into the test's temporary directory while the cleanup removed it. Every late writer the test fixture starts is now stopped or waited for in a cleanup that runs before the directory removal, the same fix is applied to the other tests that use the fixture, and a gate shows 100 of 100 pinned, loaded runs passing.
+
 ## v9.5.110 — Capacity admission no longer deadlocks on the shared-node check
 
 ### Fixed
