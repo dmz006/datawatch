@@ -38,6 +38,9 @@ Subcommands:
   list                List Automations
   get <id>            Show one Automation (members, edges, active cursors, budget)
   create              Create a draft Automation (members from a JSON file or inline JSON)
+  update <id>         Update an Automation (--name, --description, --entry-member, --members)
+  delete <id>         Delete an Automation
+  status              Show the Automation rows of the loop status (current member, idle time, spend)
   activate <id>       Start a draft Automation
   pause <id>          Pause a running Automation
   resume <id>         Resume a paused Automation
@@ -59,6 +62,9 @@ expected version is refused with HTTP 409.`,
 	cmd.AddCommand(newAutomationListCmd())
 	cmd.AddCommand(newAutomationGetCmd())
 	cmd.AddCommand(newAutomationCreateCmd())
+	cmd.AddCommand(newAutomationUpdateCmd())
+	cmd.AddCommand(newAutomationDeleteCmd())
+	cmd.AddCommand(newAutomationStatusCmd())
 	cmd.AddCommand(newAutomationActivateCmd())
 	cmd.AddCommand(newAutomationPauseCmd())
 	cmd.AddCommand(newAutomationResumeCmd())
@@ -169,6 +175,147 @@ MCP tool documents each member field. The Automation stays a draft until activat
 	cmd.Flags().StringVar(&members, "members", "", "Members as a JSON array: inline, or the path of a file")
 	_ = cmd.MarkFlagRequired("name")
 	return cmd
+}
+
+func newAutomationUpdateCmd() *cobra.Command {
+	var f automationControlFlags
+	var name, description, entry, members string
+	cmd := &cobra.Command{
+		Use:   "update <id>",
+		Short: "Update an Automation (name, description, entry member, members)",
+		Long: `Update an Automation. Only the flags that are set are sent, so every other
+field stays as it is. --members takes a JSON array, either inline (the value
+starts with "[") or as the path of a file that holds it; it replaces the member set.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			body := f.body(cmd)
+			if cmd.Flags().Changed("name") {
+				body["name"] = name
+			}
+			if cmd.Flags().Changed("description") {
+				body["description"] = description
+			}
+			if cmd.Flags().Changed("entry-member") {
+				body["entry_member_id"] = entry
+			}
+			if cmd.Flags().Changed("members") {
+				parsed, err := automationMembersArg(members)
+				if err != nil {
+					return err
+				}
+				body["members"] = parsed
+			}
+			raw, err := automationAPI(http.MethodPut, "/api/automations/"+url.PathEscape(args[0]), body)
+			if err != nil {
+				return err
+			}
+			var a automationView
+			if err := json.Unmarshal(raw, &a); err != nil {
+				return fmt.Errorf("decode automation: %w", err)
+			}
+			return printAutomation(os.Stdout, a)
+		},
+	}
+	f.register(cmd)
+	cmd.Flags().StringVar(&name, "name", "", "New name")
+	cmd.Flags().StringVar(&description, "description", "", "New description")
+	cmd.Flags().StringVar(&entry, "entry-member", "", "New entry member ID")
+	cmd.Flags().StringVar(&members, "members", "", "New members as a JSON array: inline, or the path of a file")
+	return cmd
+}
+
+func newAutomationDeleteCmd() *cobra.Command {
+	var actor, reason string
+	cmd := &cobra.Command{
+		Use:   "delete <id>",
+		Short: "Delete an Automation",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			body := map[string]any{}
+			if actor != "" {
+				body["actor"] = actor
+			}
+			if reason != "" {
+				body["reason"] = reason
+			}
+			if _, err := automationAPI(http.MethodDelete, "/api/automations/"+url.PathEscape(args[0]), body); err != nil {
+				return err
+			}
+			fmt.Printf("deleted automation %s\n", args[0])
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&actor, "actor", "", "Who is deleting (default operator)")
+	cmd.Flags().StringVar(&reason, "reason", "", "Reason, recorded in the audit trail")
+	return cmd
+}
+
+func newAutomationStatusCmd() *cobra.Command {
+	var asJSON bool
+	cmd := &cobra.Command{
+		Use:   "status",
+		Short: "Show the Automation rows of the loop status",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			raw, err := automationAPI(http.MethodGet, "/api/autonomous/status", nil)
+			if err != nil {
+				return err
+			}
+			var st struct {
+				Automations []automationStatusRow `json:"automations"`
+			}
+			if err := json.Unmarshal(raw, &st); err != nil {
+				return fmt.Errorf("decode status: %w", err)
+			}
+			if asJSON {
+				out, _ := json.MarshalIndent(st.Automations, "", "  ")
+				fmt.Println(string(out))
+				return nil
+			}
+			return printAutomationStatus(os.Stdout, st.Automations)
+		},
+	}
+	cmd.Flags().BoolVar(&asJSON, "json", false, "Print the automations rows as JSON")
+	return cmd
+}
+
+// automationStatusRow is one entry of automations[] in GET /api/autonomous/status.
+type automationStatusRow struct {
+	ID              string  `json:"id"`
+	Name            string  `json:"name"`
+	Status          string  `json:"status"`
+	CurrentMemberID string  `json:"current_member_id"`
+	CurrentPRDTitle string  `json:"current_prd_title"`
+	PendingMembers  int     `json:"pending_members"`
+	IdleSeconds     int64   `json:"idle_seconds"`
+	BlockedReason   string  `json:"blocked_reason"`
+	SpentUSD        float64 `json:"spent_usd"`
+	CeilingDisplay  string  `json:"ceiling_display"`
+}
+
+func printAutomationStatus(w io.Writer, rows []automationStatusRow) error {
+	if len(rows) == 0 {
+		_, err := fmt.Fprintln(w, "no Automations")
+		return err
+	}
+	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "ID\tNAME\tSTATUS\tCURRENT\tPENDING\tIDLE\tSPEND\tBLOCKED")
+	for _, r := range rows {
+		current := dashIfEmpty(r.CurrentMemberID)
+		if r.CurrentPRDTitle != "" {
+			current = r.CurrentMemberID + " (" + r.CurrentPRDTitle + ")"
+		}
+		idle := "-"
+		if r.IdleSeconds > 0 {
+			idle = (time.Duration(r.IdleSeconds) * time.Second).String()
+		}
+		spend := "-"
+		if r.CeilingDisplay != "" {
+			spend = fmt.Sprintf("$%.2f / %s", r.SpentUSD, r.CeilingDisplay)
+		}
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%d\t%s\t%s\t%s\n", r.ID, r.Name, r.Status, current, r.PendingMembers, idle, spend, dashIfEmpty(r.BlockedReason))
+	}
+	return tw.Flush()
 }
 
 func newAutomationActivateCmd() *cobra.Command {

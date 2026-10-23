@@ -24771,6 +24771,7 @@ function buildAutomationDetailHTML(automation, ctx) {
       <span class="automation-detail-version">${escHtml(t('automation_version', [Number(a.version) || 0]))}</span>
     </div>${desc}${banner}${budget}${activeBlock}
     <div id="automationControls"></div>
+    <div id="automationLiveStatus" class="automation-live-status" style="font-size:11px;color:var(--text2);margin:4px 0;"></div>
     <div id="automationStrip">${buildAutomationStripHTML(a, c)}</div>
     ${_automationPendingInsertsHTML(a)}${_automationDecisionsHTML(a)}`;
 }
@@ -24882,6 +24883,7 @@ function _automationDrawDetail(a) {
   const view = document.getElementById('view');
   if (view) view.innerHTML = _automationDetailShell(buildAutomationDetailHTML(a, _automationStripContext()));
   renderAutomationControls(a);
+  if (a && a.id) loadAutomationLiveStatus(a.id);
 }
 
 // automationControl runs one control operation on the open Automation. A 409
@@ -24932,8 +24934,13 @@ function renderAutomationControls(automation) {
   const button = (op, key, onclick) =>
     `<button type="button" class="btn-secondary automation-control" data-op="${op}" onclick="${onclick}">${escHtml(t(key))}</button>`;
   const buttons = [];
+  if (status === 'draft') buttons.push(button('activate', 'automation_activate', `automationControl('${idArg}','activate')`));
   if (status === 'active') buttons.push(button('pause', 'automation_pause', `automationControl('${idArg}','pause')`));
   if (status === 'paused' || status === 'blocked') buttons.push(button('resume', 'automation_resume', `automationControl('${idArg}','resume')`));
+  if (['draft', 'active', 'paused', 'blocked'].includes(status)) {
+    buttons.push(button('set_verification_llm', 'automation_set_verification_llm', `openAutomationVerificationLLMDialog('${idArg}')`));
+    buttons.push(button('set_budget', 'automation_set_budget', `openAutomationBudgetDialog('${idArg}')`));
+  }
   if (['draft', 'active', 'paused', 'blocked'].includes(status)) buttons.push(button('cancel', 'automation_cancel', `openAutomationCancelDialog('${idArg}')`));
 
   const branches = automationActiveBranches(a);
@@ -24981,6 +24988,77 @@ function openAutomationCancelDialog(id) {
   });
 }
 window.openAutomationCancelDialog = openAutomationCancelDialog;
+
+// openAutomationVerificationLLMDialog edits the verification LLM of the open
+// Automation and posts it through set_verification_llm. An empty value clears
+// that field.
+function openAutomationVerificationLLMDialog(id) {
+  const a = _automationState.detail || {};
+  const cur = { verification_backend: a.verification_backend, verification_model: a.verification_model, verification_effort: a.verification_effort };
+  showModal({
+    title: t('automation_set_verification_llm'),
+    body: _prdVerifLLMSectionHTML('automationSetVerif', cur, 'automation_verification_llm_hint', ''),
+    confirmLabel: t('automation_save'),
+    onConfirm: () => {
+      const v = _prdReadVerifLLM('automationSetVerif');
+      automationControl(id, 'set_verification_llm', {
+        backend: v.verification_backend,
+        model: v.verification_model,
+        effort: v.verification_effort,
+      });
+      return true;
+    },
+  });
+  refreshLLMModelField('automationSetVerifModelWrap', 'automationSetVerifModelInner', 'automationSetVerifBackend', cur.verification_model || '');
+}
+window.openAutomationVerificationLLMDialog = openAutomationVerificationLLMDialog;
+
+// openAutomationBudgetDialog edits the budget policy of the open Automation
+// and posts it through set_budget. An empty ceiling clears the policy.
+function openAutomationBudgetDialog(id) {
+  const a = _automationState.detail || {};
+  showModal({
+    title: t('automation_set_budget'),
+    body: _automationBudgetSectionHTML(a.budget_policy || { ceiling_type: _AUTOMATION_BUDGET_TYPES[0] }).replace('<details ', '<details open '),
+    confirmLabel: t('automation_save'),
+    onConfirm: () => {
+      const policy = automationReadBudgetPolicy();
+      if (policy && policy.error) {
+        showToast(t(policy.error), 'error');
+        return false;
+      }
+      const body = policy
+        ? { ceiling_type: policy.ceiling_type, ceiling_value: policy.ceiling_value, window: policy.window, pacing: policy.pacing, on_breach: policy.on_breach }
+        : { clear: true };
+      automationControl(id, 'set_budget', body);
+      return true;
+    },
+  });
+}
+window.openAutomationBudgetDialog = openAutomationBudgetDialog;
+
+// automationStatusLine words one automations[] row of the loop status: the
+// member running now, the members still waiting and how long it has been idle.
+function automationStatusLine(row) {
+  if (!row) return '';
+  const current = row.current_prd_title || row.current_member_id || '-';
+  const idle = row.idle_seconds ? Math.round(row.idle_seconds / 60) + 'm' : '-';
+  return t('automation_live_status', [current, Number(row.pending_members) || 0, idle]);
+}
+window.automationStatusLine = automationStatusLine;
+
+// loadAutomationLiveStatus reads automations[] from the loop status and shows
+// the row of the open Automation under its controls.
+function loadAutomationLiveStatus(id) {
+  return automationRequest('GET', '/api/autonomous/status').then(st => {
+    const el = document.getElementById('automationLiveStatus');
+    if (!el || _automationState.detailId !== id) return;
+    const rows = st && Array.isArray(st.automations) ? st.automations : [];
+    const line = automationStatusLine(rows.find(r => r && r.id === id));
+    el.innerHTML = line ? escHtml(line) : '';
+  }, () => {});
+}
+window.loadAutomationLiveStatus = loadAutomationLiveStatus;
 
 // automationShowStalePrompt tells the operator the Automation changed
 // elsewhere and offers a reload; nothing is retried.

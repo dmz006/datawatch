@@ -47,9 +47,6 @@ var commExempt = map[string]string{
 // counterpart that is not listed, and for a listed entry that is no longer a
 // gap.
 var knownParityGaps = map[string]string{
-	"update/cli":        "no CLI verb to update an Automation yet; fixed by the parity gap tasks",
-	"delete/cli":        "no CLI verb to delete an Automation yet; fixed by the parity gap tasks",
-	"status/cli":        "no CLI verb prints the automations[] status rows yet; fixed by the parity gap tasks",
 	"import-graph/rest": "built by the import-graph tasks",
 	"import-graph/mcp":  "built by the import-graph tasks",
 	"import-graph/cli":  "built by the import-graph tasks",
