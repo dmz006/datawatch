@@ -36,6 +36,7 @@ func newFederationCmd() *cobra.Command {
 			token, _ := cmd.Flags().GetString("token")
 			capsStr, _ := cmd.Flags().GetString("capabilities")
 			tlsSkipVerify, _ := cmd.Flags().GetBool("tls-skip-verify")
+			fingerprintSync, _ := cmd.Flags().GetBool("fingerprint-sync")
 
 			if name == "" {
 				return fmt.Errorf("--name is required")
@@ -53,6 +54,9 @@ func newFederationCmd() *cobra.Command {
 			}
 			if tlsSkipVerify {
 				body["tls_skip_verify"] = true
+			}
+			if fingerprintSync {
+				body["fingerprint_sync"] = true
 			}
 			if capsStr != "" {
 				var caps []string
@@ -82,6 +86,7 @@ func newFederationCmd() *cobra.Command {
 	peerAddCmd.Flags().String("capabilities", "", "comma-separated capabilities or group names (optional)")
 	peerAddCmd.Flags().String("channel-identity", "", "comma-separated channel identity patterns (e.g. telegram:group:-123,signal:+1555)")
 	peerAddCmd.Flags().Bool("tls-skip-verify", false, "skip TLS certificate verification for this peer only (self-signed/local-dev peer on a trusted network)")
+	peerAddCmd.Flags().Bool("fingerprint-sync", false, "opt this peer into the resource-fingerprint exchange (opt-in per peer; default false; true = explicit)")
 	peerCmd.AddCommand(peerAddCmd)
 
 	peerCmd.AddCommand(&cobra.Command{
@@ -109,12 +114,16 @@ func newFederationCmd() *cobra.Command {
 			if token != "" {
 				body["token"] = token
 			}
-			// Only include tls_skip_verify if the flag was explicitly set —
-			// otherwise an update that doesn't mention it would silently
-			// reset an existing true value back to false.
+			// Only include tls_skip_verify / fingerprint_sync if the flag was
+			// explicitly set — otherwise an update that doesn't mention it would
+			// silently reset an existing true value back to false.
 			if cmd.Flags().Changed("tls-skip-verify") {
 				tlsSkipVerify, _ := cmd.Flags().GetBool("tls-skip-verify")
 				body["tls_skip_verify"] = tlsSkipVerify
+			}
+			if cmd.Flags().Changed("fingerprint-sync") {
+				fingerprintSync, _ := cmd.Flags().GetBool("fingerprint-sync")
+				body["fingerprint_sync"] = fingerprintSync
 			}
 			if capsStr != "" {
 				var caps []string
@@ -143,6 +152,7 @@ func newFederationCmd() *cobra.Command {
 	peerUpdateCmd.Flags().String("capabilities", "", "comma-separated capabilities or group names")
 	peerUpdateCmd.Flags().String("channel-identity", "", "comma-separated channel identity patterns")
 	peerUpdateCmd.Flags().Bool("tls-skip-verify", false, "skip TLS certificate verification for this peer only")
+	peerUpdateCmd.Flags().Bool("fingerprint-sync", false, "opt the peer into the resource-fingerprint exchange (pass true to turn on, --fingerprint-sync=false to turn off; unset = unchanged)")
 	peerCmd.AddCommand(peerUpdateCmd)
 
 	peerCmd.AddCommand(&cobra.Command{

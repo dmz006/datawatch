@@ -4,6 +4,7 @@
 //	federation peer add <name> <url> [token=<t>]   → register peer
 //	federation peer delete <name>                  → remove peer
 //	federation peer test <name>                    → ping peer /api/health
+//	federation peer fingerprint <name> on|off      → toggle fingerprint exchange
 //	federation groups                              → list builtin + custom groups
 
 package router
@@ -19,6 +20,7 @@ const federationUsage = `Usage:
   federation peer add <name> <url> [token=<t>]        register a peer
   federation peer delete <name>                       remove a peer
   federation peer test <name>                         ping peer /api/health
+  federation peer fingerprint <name> on|off           opt the peer into / out of the resource-fingerprint exchange
   federation groups                                   list groups (builtins + custom)`
 
 func (r *Router) handleFederationCmd(cmd Command) {
@@ -102,6 +104,37 @@ func (r *Router) handleFederationCmd(cmd Command) {
 			return
 		}
 		r.reply("federation peer test: "+name, prettyJSON(out))
+		return
+	}
+
+	// "federation peer fingerprint <name> on|off" — opt the peer into (on)
+	// or out of (off) the resource-fingerprint exchange. fingerprint_sync
+	// is boolean, so the verb takes an explicit on/off: "off" sends an
+	// explicit false, which would be indistinguishable from "unset" (no
+	// change) if the key were simply dropped from the body.
+	if strings.HasPrefix(lower, "peer fingerprint ") {
+		bits := strings.Fields(text[len("peer fingerprint "):])
+		if len(bits) != 2 {
+			r.reply("federation peer fingerprint", "Usage: federation peer fingerprint <name> on|off")
+			return
+		}
+		on := false
+		switch strings.ToLower(bits[1]) {
+		case "on", "true", "1", "yes", "enable":
+			on = true
+		case "off", "false", "0", "no", "disable":
+			on = false
+		default:
+			r.reply("federation peer fingerprint", "fingerprint: expected on or off, got "+bits[1])
+			return
+		}
+		body, _ := json.Marshal(map[string]any{"name": bits[0], "fingerprint_sync": on})
+		out, err := r.commJSON(http.MethodPut, "/api/federation/peers/"+bits[0], string(body))
+		if err != nil {
+			r.reply("federation peer fingerprint failed", err.Error())
+			return
+		}
+		r.reply("federation peer fingerprint", prettyJSON(out))
 		return
 	}
 

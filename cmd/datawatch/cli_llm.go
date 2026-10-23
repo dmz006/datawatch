@@ -101,6 +101,7 @@ func newLLMAddCmd(update bool) *cobra.Command {
 		skipPerms, channelEnabled, autoAccept            bool
 		permMode, defaultEffort, fallbackChainCSV        string
 		planTier                                         string
+		billingGroup                                     string
 		maxInflight                                      int
 	)
 	use := "add <name>"
@@ -126,6 +127,12 @@ func newLLMAddCmd(update bool) *cobra.Command {
 			}
 			if planTier != "" {
 				body["plan_tier"] = planTier
+			}
+			// billing_group — operator label grouping LLM entries that share
+			// one cloud/billing account. Only sent when the operator passed
+			// the flag: absent = keep the stored value, empty string = clear.
+			if rcmd.Flags().Changed("billing-group") {
+				body["billing_group"] = billingGroup
 			}
 			budget, budgetSet, err := llmBudgetFromFlags(rcmd.Flags())
 			if err != nil {
@@ -248,6 +255,7 @@ func newLLMAddCmd(update bool) *cobra.Command {
 	cmd.Flags().StringVar(&defaultEffort, "default-effort", "", "default effort: quick | normal | thorough (claude-code only)")
 	cmd.Flags().StringVar(&fallbackChainCSV, "fallback-chain", "", "comma-separated profile fallback chain (claude-code only)")
 	cmd.Flags().StringVar(&planTier, "plan-tier", "", "subscription plan tier: pro | max_5x | max_20x | api (empty = unset; the daemon's autonomous.plan_tier_max_inflight table then caps this LLM's inflight unless --max-inflight > 0 wins)")
+	cmd.Flags().StringVar(&billingGroup, "billing-group", "", "label grouping LLM entries that share one cloud/billing account across federated peers (label only; empty = no group; empty = clears on update)")
 	addLLMBudgetFlags(cmd)
 	cmd.Flags().IntVar(&maxInflight, "max-inflight", 0, "explicit inflight cap on this LLM (>= 0; 0 = use the plan_tier table or the kind default; > 0 wins over both)")
 	return cmd
