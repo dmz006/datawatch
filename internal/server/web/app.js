@@ -24802,10 +24802,83 @@ function _automationPendingInsertsHTML(a) {
   return _automationDetailSection('automation_pending_inserts', `<ul class="automation-pending-inserts">${rows}</ul>`);
 }
 
+const _AUTOMATION_ASSISTANT_HOOKS = ['empty_edge', 'skip_member', 'insert_member', 'budget_breach'];
+const _AUTOMATION_ASSISTANT_MODES = ['shadow', 'live'];
+const _ASSISTANT_HOOK_KEY = 'automation_assistant_hook_';
+const _ASSISTANT_MODE_KEY = 'automation_assistant_mode_';
+
+// automationAssistantNoteParts splits the note of an assistant decision into
+// its shadow flag, outcome, option, confidence, evidence and reason. Fields
+// the note does not carry come back empty.
+function automationAssistantNoteParts(note) {
+  const s = String(note == null ? '' : note);
+  const pick = re => { const m = re.exec(s); return m ? m[1] : ''; };
+  const evidence = /evidence:\s*([\s\S]*?)(?:\s+reason:|$)/.exec(s);
+  const reason = /reason:\s*([\s\S]*)$/.exec(s);
+  return {
+    shadow: s.indexOf('[SHADOW') !== -1,
+    outcome: pick(/outcome=(\w+)/),
+    option: pick(/option="((?:[^"\\]|\\.)*)"/),
+    confidence: pick(/confidence=([0-9.]+)/),
+    evidence: evidence ? evidence[1] : '',
+    reason: reason ? reason[1] : '',
+  };
+}
+window.automationAssistantNoteParts = automationAssistantNoteParts;
+
+function _automationIsAssistantDecision(d) {
+  return String((d && d.actor) || '').indexOf('assistant:') === 0;
+}
+
+// _automationAssistantDecisionHTML renders the note of an assistant decision:
+// a shadow entry reads "would have <option>", a live one "decided <option>".
+function _automationAssistantDecisionHTML(d) {
+  const p = automationAssistantNoteParts(d.note);
+  const label = p.shadow
+    ? t('automation_assistant_would_have', [p.option])
+    : t('automation_assistant_decided', [p.option]);
+  const badge = p.shadow ? t('automation_assistant_mode_shadow') : t('automation_assistant_mode_live');
+  const parts = [`<span class="automation-assistant-choice">${escHtml(label)}</span>`];
+  if (p.confidence) parts.push(`<span class="automation-assistant-confidence">${escHtml(t('automation_assistant_confidence', [p.confidence]))}</span>`);
+  if (p.evidence) parts.push(`<span class="automation-assistant-evidence">${escHtml(t('automation_assistant_evidence', [p.evidence]))}</span>`);
+  if (p.reason) parts.push(`<span class="automation-assistant-reason">${escHtml(p.reason)}</span>`);
+  return `<span class="automation-assistant-label">${escHtml(t('automation_assistant_label'))}</span><span class="automation-assistant-mode">${escHtml(badge)}</span>${parts.join('')}`;
+}
+
+// _automationDecisionAssistantHTML shows the Automation's decision assistant
+// setting, or that it is off.
+function _automationDecisionAssistantHTML(a) {
+  const da = a.decision_assistant;
+  if (!da || !da.backend) {
+    return _automationDetailSection('automation_assistant_title', `<div class="automation-assistant-off">${escHtml(t('automation_assistant_off'))}</div>`);
+  }
+  const mode = da.mode === 'live' ? 'live' : 'shadow';
+  const hooks = Array.isArray(da.hooks) ? da.hooks.filter(Boolean) : [];
+  const hookText = hooks.length
+    ? hooks.map(h => { const k = _ASSISTANT_HOOK_KEY + h; return t(k) !== k ? t(k) : String(h); }).join(', ')
+    : t('automation_assistant_no_hooks');
+  const th = da.thresholds && typeof da.thresholds === 'object' ? da.thresholds : {};
+  const thKeys = Object.keys(th);
+  const thText = thKeys.length
+    ? thKeys.map(h => { const k = _ASSISTANT_HOOK_KEY + h; return (t(k) !== k ? t(k) : h) + ' ' + th[h]; }).join(', ')
+    : t('automation_assistant_default_thresholds');
+  const model = da.model ? ` / ${escHtml(da.model)}` : '';
+  const row = (key, inner) => `<div class="automation-assistant-row"><span class="automation-assistant-key">${escHtml(t(key))}</span> ${inner}</div>`;
+  return _automationDetailSection('automation_assistant_title',
+    row('automation_assistant_backend_model', `<span class="automation-assistant-backend">${escHtml(da.backend)}${model}</span>`)
+    + row('automation_assistant_mode', `<span class="automation-assistant-mode-value" data-mode="${mode}">${escHtml(t(_ASSISTANT_MODE_KEY + mode))}</span>`)
+    + row('automation_assistant_hooks', `<span class="automation-assistant-hooks">${escHtml(hookText)}</span>`)
+    + row('automation_assistant_thresholds', `<span class="automation-assistant-thresholds">${escHtml(thText)}</span>`));
+}
+
 function _automationDecisionsHTML(a) {
   const decisions = Array.isArray(a.decisions) ? a.decisions.filter(Boolean) : [];
   if (!decisions.length) return '';
   const rows = decisions.slice(-_AUTOMATION_DECISION_LIMIT).reverse().map(d => {
+    if (_automationIsAssistantDecision(d)) {
+      const at = _automationTimeText(d.at);
+      return `<li class="automation-decision automation-decision-assistant" data-kind="${escHtml(d.kind)}"><span class="automation-decision-kind">${escHtml(d.kind)}</span><span class="automation-decision-actor">${escHtml(d.actor)}</span>${at ? `<span class="automation-decision-at">${escHtml(at)}</span>` : ''}${_automationAssistantDecisionHTML(d)}</li>`;
+    }
     const at = _automationTimeText(d.at);
     const actor = d.actor ? `<span class="automation-decision-actor">${escHtml(d.actor)}</span>` : '';
     const note = d.note ? `<span class="automation-decision-note">${escHtml(d.note)}</span>` : '';
@@ -24845,7 +24918,7 @@ function buildAutomationDetailHTML(automation, ctx) {
       <h2 class="automation-detail-title">${escHtml(a.name)}</h2>
       <span class="automation-detail-status automation-status-${escHtml(status.replace(/[^a-z_]/g, ''))}">${escHtml(statusLabel)}</span>
       <span class="automation-detail-version">${escHtml(t('automation_version', [Number(a.version) || 0]))}</span>
-    </div>${desc}${banner}${budget}${activeBlock}
+    </div>${desc}${banner}${budget}${_automationDecisionAssistantHTML(a)}${activeBlock}
     <div id="automationControls"></div>
     <div id="automationLiveStatus" class="automation-live-status" style="font-size:11px;color:var(--text2);margin:4px 0;"></div>
     <div id="automationStrip">${buildAutomationStripHTML(a, c)}</div>
@@ -25016,6 +25089,7 @@ function renderAutomationControls(automation) {
   if (['draft', 'active', 'paused', 'blocked'].includes(status)) {
     buttons.push(button('set_verification_llm', 'automation_set_verification_llm', `openAutomationVerificationLLMDialog('${idArg}')`));
     buttons.push(button('set_budget', 'automation_set_budget', `openAutomationBudgetDialog('${idArg}')`));
+    buttons.push(button('set_decision_assistant', 'automation_assistant_edit', `openAutomationDecisionAssistantDialog('${idArg}')`));
   }
   if (['draft', 'active', 'paused', 'blocked'].includes(status)) buttons.push(button('cancel', 'automation_cancel', `openAutomationCancelDialog('${idArg}')`));
 
@@ -25112,6 +25186,63 @@ function openAutomationBudgetDialog(id) {
   });
 }
 window.openAutomationBudgetDialog = openAutomationBudgetDialog;
+
+// automationDecisionAssistantBody builds the set_decision_assistant request
+// body from the dialog values. An empty backend turns the assistant off.
+function automationDecisionAssistantBody(v) {
+  if (!v || !v.backend) return { clear: true };
+  const hooks = _AUTOMATION_ASSISTANT_HOOKS.filter(h => v.hooks && v.hooks.indexOf(h) !== -1);
+  const thresholds = {};
+  hooks.forEach(h => {
+    const n = parseFloat(v.thresholds && v.thresholds[h]);
+    if (!isNaN(n)) thresholds[h] = n;
+  });
+  const body = { backend: v.backend, model: v.model || '', mode: v.mode === 'live' ? 'live' : 'shadow', hooks };
+  if (Object.keys(thresholds).length) body.thresholds = thresholds;
+  return body;
+}
+window.automationDecisionAssistantBody = automationDecisionAssistantBody;
+
+// openAutomationDecisionAssistantDialog edits the decision assistant of the
+// open Automation and posts it through set_decision_assistant.
+function openAutomationDecisionAssistantDialog(id) {
+  const a = _automationState.detail || {};
+  const da = a.decision_assistant || {};
+  const mode = da.mode === 'live' ? 'live' : 'shadow';
+  const hooks = Array.isArray(da.hooks) ? da.hooks : [];
+  const th = da.thresholds || {};
+  const modeOpts = _AUTOMATION_ASSISTANT_MODES.map(m =>
+    `<option value="${m}"${m === mode ? ' selected' : ''}>${escHtml(t(_ASSISTANT_MODE_KEY + m))}</option>`).join('');
+  const hookRows = _AUTOMATION_ASSISTANT_HOOKS.map(h =>
+    `<div class="automation-assistant-hook-row"><label><input type="checkbox" class="automation-assistant-hook" value="${h}"${hooks.indexOf(h) !== -1 ? ' checked' : ''}> ${escHtml(t(_ASSISTANT_HOOK_KEY + h))}</label>`
+    + ` <input type="number" class="form-input automation-assistant-threshold" data-hook="${h}" min="0" max="1" step="0.01" value="${escHtml(th[h] == null ? '' : th[h])}" placeholder="${escHtml(t('automation_assistant_default_thresholds'))}"></div>`).join('');
+  showModal({
+    title: t('automation_assistant_dialog_title'),
+    body: `<p class="automation-assistant-hint" style="font-size:12px;color:var(--text2);">${escHtml(t('automation_assistant_hint'))}</p>`
+      + `<label class="automation-form-field"><span class="automation-form-label">${escHtml(t('prd_new_backend_label'))}</span>${renderBackendSelect('automationAssistantBackend', da.backend || '', '')}</label>`
+      + `<label class="automation-form-field"><span class="automation-form-label">${escHtml(t('automation_assistant_model'))}</span><input type="text" id="automationAssistantModel" class="form-input" value="${escHtml(da.model || '')}"></label>`
+      + `<label class="automation-form-field"><span class="automation-form-label">${escHtml(t('automation_assistant_mode'))}</span><select id="automationAssistantMode" class="form-input">${modeOpts}</select></label>`
+      + `<div class="automation-form-label">${escHtml(t('automation_assistant_hooks'))} / ${escHtml(t('automation_assistant_thresholds'))}</div>${hookRows}`,
+    confirmLabel: t('automation_save'),
+    onConfirm: () => {
+      const val = el => (el ? el.value : '');
+      const picked = Array.prototype.slice.call(document.querySelectorAll('.automation-assistant-hook'))
+        .filter(c => c.checked).map(c => c.value);
+      const thresholds = {};
+      Array.prototype.slice.call(document.querySelectorAll('.automation-assistant-threshold'))
+        .forEach(i => { thresholds[i.getAttribute('data-hook')] = i.value; });
+      automationControl(id, 'set_decision_assistant', automationDecisionAssistantBody({
+        backend: val(document.getElementById('automationAssistantBackend')),
+        model: val(document.getElementById('automationAssistantModel')).trim(),
+        mode: val(document.getElementById('automationAssistantMode')),
+        hooks: picked,
+        thresholds,
+      }));
+      return true;
+    },
+  });
+}
+window.openAutomationDecisionAssistantDialog = openAutomationDecisionAssistantDialog;
 
 // automationStatusLine words one automations[] row of the loop status: the
 // member running now, the members still waiting and how long it has been idle.
