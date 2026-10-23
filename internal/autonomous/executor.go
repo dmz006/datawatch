@@ -1578,10 +1578,12 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 	// task.failurereason/story.failurereason?"). Same data
 	// recordFailureLearning already has, structured instead of a bare
 	// string, additive alongside the existing t.Error.
-	t.FailureReason = &FailureReason{
-		Category: orContentCategory(lastFailureCategory), Detail: hint,
-		Source: "task-exhausted", Retryable: false, OccurredAt: time.Now(),
-	}
+	m.store.WithLock(func() {
+		t.FailureReason = &FailureReason{
+			Category: orContentCategory(lastFailureCategory), Detail: hint,
+			Source: "task-exhausted", Retryable: false, OccurredAt: time.Now(),
+		}
+	})
 	// No more attempts coming — sweep any leftover CHECKPOINT.md too.
 	m.relocateCheckpoint(prd, t)
 	if err := m.store.SaveTask(t); err != nil {
