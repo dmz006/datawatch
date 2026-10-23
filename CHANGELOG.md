@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.120 — Web UI load checks and list-endpoint guide
+
+Adds the load-performance checks and documentation for the web UI list endpoints.
+
+- The PWA runner and the release smoke now include web UI load scenarios.
+- List endpoints and tabs are measured against a live-style data set of thousands of sessions and hundreds of Automata, with the results recorded in the plan note.
+- New how-to `list-endpoints-and-paging` explains summary views, paging, ETag and 304, gzip, and the loading, cached, stale and failed states.
+- Testing tracker rows added for the new scenarios.
+
 ## v9.5.119 — Daemon stop-cause recording
 
 Records why the daemon stops, so a stop with no known sender can be traced.
