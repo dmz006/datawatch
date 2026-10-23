@@ -10,7 +10,7 @@
 |---|---|---|
 | 0 | not started | no roles field on LLM entries in `internal/llm/registry.go`; `llm_add` / `llm_update` only extend the budget object (`internal/mcp/budget.go`); no "Workload Roles" card in `internal/server/web/app.js` or `internal/server/web/locales/en.json`; no contention-check code in `internal/llm` or `cmd/datawatch` |
 | 1 | not started | no `Priority` field on `Session` (`internal/session/store.go`); admission requests in `cmd/datawatch/capacity_wiring.go` (e.g. line 456) never set `Priority`, while the autonomous path does set `prd.Priority` (`internal/autonomous/capacity.go:213`) |
-| 2 | partly done | windowed ceiling landed as the per-LLM dollar-window budget: `internal/autonomous/budget.go`, `internal/server/budget.go` (`GET /api/budget`), `internal/mcp/budget.go` (`budget_status`), `cmd/datawatch/cli_budget.go` (`--budget-ceiling-usd` / `--budget-hours`), `internal/autonomous/peer_budget.go`, test `internal/autonomous/budget_test.go`; requests/tokens ceilings and the `Decision` shape still absent from `internal/capacity/ledger.go` |
+| 2 | done | rate-ceiling dimension `internal/capacity/rate_ceiling.go`; `Decision` enum and non-blocking `Ledger.Check` in `internal/capacity/decision.go`; REST `GET /api/capacity/admission` and the rate fields in `internal/server/capacity.go`; MCP `capacity_admission` (`internal/mcp/bl221_types.go`; the plan's `capacity_admission.go` name was not used); CLI `datawatch capacity admission` in `cmd/datawatch/cli_capacity.go`; the windowed dollar budget landed earlier (`internal/autonomous/budget.go`). Next patch above main (unreleased development build) |
 | 3 | not started | `KnownStates()` in `internal/session/store.go` has no preempted state; `internal/capacity/ledger.go` has no preemption path; `internal/autonomous/manager.go` `Pause`/`Resume` remain soft pauses, no checkpoint-driven preemption resume |
 | 4 | not started | no per-call usage record store in `internal/session`, `internal/llm`, or `internal/stats` (no `ttft` / `queue_wait` / `usageRecord`); the ollama `usageFn` still feeds only the session aggregate (`internal/llm/backends/ollama/conversation.go:239-240`) |
 | 5 | partly done | flat per-hour node field exists: `internal/compute/node.go:221` (`cost_per_hour`), `internal/config/config.go:549`; but local backends are still zero-cost in `DefaultCostRates()` (`internal/session/cost.go`) and `CostPerHour` is copied, never multiplied into a call cost |
@@ -302,15 +302,12 @@ dashboard/alert/scorecard has real data to show).
 - Wire session priority into the admission call sites — **done**: the `ledger.Request` values in `cmd/datawatch/capacity_wiring.go` and the interactive start in `internal/server/api.go` now set `Priority` from the session; test `cmd/datawatch/capacity_priority_test.go`.
 - Default value + active "play well" computation — **remaining** (owned by Phase 6): no priority default, load-based computation, or operator warning exists in `internal/session` or `internal/server`.
 
-### Phase 2 — Ledger: rate-ceiling pools + informative admission (Decisions 2, 7) [partly done]
+### Phase 2 — Ledger: rate-ceiling pools + informative admission (Decisions 2, 7) [done]
 
-> **Update 2026-10-22:** the windowed ledger dimension of this phase landed
-> first, as the per-LLM dollar-window budget (BL428 Phase 5, unreleased
-> development build; see `2026-10-14-concurrency-and-budget-design.md`). It is
-> a dollar ceiling over a rolling or weekly window with a persisted spend
-> ledger, an admission wait, and an opt-in per-peer spend count. The rest of
-> this phase (requests/tokens ceilings, the `Decision` shape) builds on that
-> ledger and is still planned.
+> **Done 2026-10-23:** the rate-ceiling dimension, the `Decision` shape and the
+> non-blocking query are implemented on all surfaces (next patch above main,
+> unreleased development build). The earlier dollar-window budget landed first
+> (BL428 Phase 5). Live contended-queue validation is still owed.
 
 - `internal/capacity/ledger.go`: new optional rate-ceiling dimension per
   pool (requests/tokens over a rolling window), alongside the existing
@@ -329,9 +326,9 @@ dashboard/alert/scorecard has real data to show).
   richer `Decision` instead of a bare bool.
 
 **Audit evidence** (audited against the current tree):
-- Rate-ceiling dimension per pool — **partly done**: the windowed ceiling dimension landed as the per-LLM dollar-window budget (shipped only in an unreleased dev build, i.e. next patch above main): persisted spend ledger, admission gate and wait in `internal/autonomous/budget.go` (with `automation_budget_admit.go`, `automation_budget_gate.go`), `GET /api/budget` in `internal/server/budget.go`, `budget_status` MCP tool in `internal/mcp/budget.go`, CLI in `cmd/datawatch/cli_budget.go` (`--budget-ceiling-usd`, `--budget-hours`, `--budget-weekday`), opt-in per-peer spend counting in `internal/autonomous/peer_budget.go`; tests `internal/autonomous/budget_test.go`, `internal/autonomous/automation_budget_admit_test.go`. Requests/tokens ceilings over the ledger's concurrent `Limit` are still **remaining** — `internal/capacity/ledger.go` has only pool concurrency `SetLimit`/`Limit`.
-- `Decision` enum (`admit`/`queued`/`alternate_available`) + `QueuePosition` + `Alternates` — **remaining**: `internal/capacity/ledger.go` still reports only the `Waiter{Holder,PRDID,Pools,Since,Reason}` shape inside `Status`; no decision enum, no computed queue position, no idle-capacity-elsewhere signal.
-- Non-blocking informative admission query beside blocking `Acquire` — **remaining**: `internal/capacity/ledger.go` exposes `Acquire` (blocking), `Adopt`, `Snapshot`; no `Status(req)`-style decision query exists.
+- Rate-ceiling dimension per pool — **done**: requests/tokens over a rolling window per pool in `internal/capacity/rate_ceiling.go` (`SetRate`, `RecordTokens`, `RateResetAt`), checked beside the concurrency `Limit`; unset keeps concurrency-only behavior. Config keys `capacity_rate_requests`, `capacity_rate_tokens`, `capacity_rate_window_seconds`; the wait carries cause `rate_ceiling` and a reset time through `internal/server/capacity.go`. The dollar-window budget (`internal/autonomous/budget.go`) landed earlier and stays separate.
+- `Decision` enum (`admit`/`queued`/`alternate_available`) + `QueuePosition` + `Alternates` — **done**: `internal/capacity/decision.go` (`Decision`, `Alternate`, `FormatDecision`); queue position reuses the existing waiter ordering.
+- Non-blocking informative admission query beside blocking `Acquire` — **done**: `Ledger.Check(req) Decision` in `internal/capacity/decision.go`; REST `GET /api/capacity/admission` (`internal/server/capacity_admission.go`, wired with `internal/server/capacity.go`), MCP `capacity_admission` (defined in `internal/mcp/bl221_types.go`), CLI `datawatch capacity admission` (`cmd/datawatch/cli_capacity.go`), comm `capacity admission` (`internal/router/commands.go`).
 
 ### Phase 3 — Preemption + resume (Decision 4) [not started]
 - New `StatePreempted` session state, same trigger/resume shape as
@@ -409,7 +406,7 @@ dashboard/alert/scorecard has real data to show).
 
 **Audit evidence** (audited against the current tree):
 - Top-level Scheduler nav surface (own entry, live pool view) — **remaining**: no `internal/server/scheduler.go` file, no `/api/scheduler` route register in `internal/server`, and no Scheduler nav entry in `internal/server/web/app.js` or `internal/server/web/locales/en.json`; the only capacity UI is the buried per-task `waiting_capacity` badge (`internal/server/web/app.js:13131`).
-- Live queue with computed positions and rate-ceiling state (Phase 2's `Decision`) — **remaining**: upstream dependency absent; `internal/capacity/ledger.go` still reports only the `Waiter` shape, so there is nothing for a Scheduler view to render.
+- Live queue with computed positions and rate-ceiling state (Phase 2's `Decision`) — **remaining**: the upstream data now exists (`Ledger.Check`, `GET /api/capacity/admission`, the rate fields on `GET /api/capacity`); the Scheduler view that renders it is not built.
 - Session-creation "play well" warning/choice (Decision 5c) — **remaining**: no priority default, load check, or warning/choice dialog anywhere in `internal/session`, `internal/server`, or `internal/server/web/app.js` (the only `priority` UI in `app.js` is the compute-node `scheduling_priority` field and the PRD wizard's `prd.priority`).
 - Full parity set (REST/MCP/CLI/comm/YAML/PWA) — **remaining**: none of the Parity-surface-table Phase 6 cells exist; the closest shipped work is the BL428 budget surfaces (`internal/server/budget.go`, `internal/mcp/budget.go`, `cmd/datawatch/cli_budget.go`), which are Phase 2 items, and the BL431 automation files (`internal/autonomous/automation_advance.go`, `internal/autonomous/automation_control.go`, `internal/autonomous/automation_insert.go`) contain no scheduler/priority/session-creation surface under another name.
 

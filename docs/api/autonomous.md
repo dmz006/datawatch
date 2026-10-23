@@ -1016,6 +1016,35 @@ The wait `reason` reads `pool <p> rate ceiling: <requests|tokens> <used>/<ceilin
 the wait with the existing `autonomous_capacity_wait` action: `cause` is
 `rate_ceiling`, and `pool` and `resets_at` appear in the details.
 
+### Admission query
+
+`GET /api/capacity/admission` answers "would a start of this backend be
+admitted now?" without starting anything. It takes no lease, adds no waiter
+and changes no state. It resolves the same `host`, `llm:<name>` and
+`node:<name>` pools a real start uses.
+
+| Query parameter | Meaning |
+|---|---|
+| `backend` (or `llm`) | backend or named LLM to start; required |
+| `node`, `model` | compute node and model wanted |
+| `role` | `worker` (default), `verifier`, `planner` or `interactive` |
+| `priority` | integer queue priority, higher first (default 0) |
+| `prd_id` | Automaton the start would belong to (fairness group) |
+
+The response is a Decision:
+
+```json
+{"kind": "queued", "queue_position": 1, "reason": "pool llm:x rate ceiling: requests 3/3 in 1h0m0s, resets at 2026-10-23T11:00:00Z", "resets_at": "2026-10-23T11:00:00Z", "alternates": [{"pool": "llm:y", "node": "", "model": ""}]}
+```
+
+`kind` is `admit`, `queued` or `alternate_available`; `queue_position` is
+1-based (0 when admitted); `resets_at` is present only when a rate ceiling is
+the blocker and the time is known; `alternates` lists pools of the same kind
+elsewhere with room. A missing or unknown backend, a non-integer priority or
+an unknown role returns 400. The same query is the MCP tool
+`capacity_admission` (read-only), `datawatch capacity admission --backend <b>`
+and the chat command `capacity admission <backend> [node] [model]`.
+
 ---
 
 ## CLI

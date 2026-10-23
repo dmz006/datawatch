@@ -901,7 +901,10 @@ paths:
               schema:
                 type: object
                 properties:
-                  pools: {type: array, items: {type: object}}
+                  pools:
+                    type: array
+                    description: Pool rows. A pool with a rate ceiling also carries rate_requests, rate_tokens, rate_window_seconds, requests_in_window, tokens_in_window and rate_resets_at; a pool without one serialises as before.
+                    items: {type: object}
                   leases: {type: array, items: {type: object}}
                   waiting: {type: array, items: {type: object}}
                   backoff:
@@ -929,7 +932,7 @@ paths:
                             prd_id: {type: string}
                             prd_title: {type: string}
                             task_title: {type: string}
-                            cause: {type: string, enum: [pool_full, node_busy, backoff, budget, global_cooldown, await_external, tree_lock]}
+                            cause: {type: string, enum: [pool_full, node_busy, backoff, budget, global_cooldown, await_external, tree_lock, rate_ceiling]}
                             reason: {type: string, description: Plain-language wait reason}
                             since: {type: string, format: date-time}
                             resets_at: {type: string, format: date-time, description: Present only when the daemon knows when the wait ends}
