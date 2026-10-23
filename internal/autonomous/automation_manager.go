@@ -25,6 +25,9 @@ type AutomationInput struct {
 	VerificationBackend string             `json:"verification_backend"`
 	VerificationModel   string             `json:"verification_model"`
 	VerificationEffort  Effort             `json:"verification_effort"`
+	// DecisionAssistant is optional; an update that omits it keeps the stored
+	// setting (SetDecisionAssistant clears it).
+	DecisionAssistant *DecisionAssistant `json:"decision_assistant,omitempty"`
 }
 
 // CreateAutomation creates a new draft Automation from operator input,
@@ -50,6 +53,7 @@ func (m *Manager) CreateAutomation(in AutomationInput, actor string) (*Automatio
 		VerificationBackend: in.VerificationBackend,
 		VerificationModel:   in.VerificationModel,
 		VerificationEffort:  in.VerificationEffort,
+		DecisionAssistant:   in.DecisionAssistant,
 	}
 	for i := range a.Members {
 		a.Members[i].AddedBy = actor
@@ -152,6 +156,9 @@ func (m *Manager) UpdateAutomation(id string, expectedVersion int64, in Automati
 		a.VerificationBackend = in.VerificationBackend
 		a.VerificationModel = in.VerificationModel
 		a.VerificationEffort = in.VerificationEffort
+		if in.DecisionAssistant != nil {
+			a.DecisionAssistant = in.DecisionAssistant
+		}
 		if in.EntryMemberID != "" {
 			a.EntryMemberID = in.EntryMemberID
 		}
@@ -176,12 +183,18 @@ func (m *Manager) UpdateAutomation(id string, expectedVersion int64, in Automati
 				im.AddedAt = em.AddedAt
 				im.AddedBy = em.AddedBy
 				im.AddedReason = em.AddedReason
+				if im.DecisionAssistant == nil {
+					im.DecisionAssistant = em.DecisionAssistant
+				}
 			} else if im.ID == "" && im.PRDID != "" {
 				if em, ok := byPRD[im.PRDID]; ok {
 					im.ID = em.ID
 					im.AddedAt = em.AddedAt
 					im.AddedBy = em.AddedBy
 					im.AddedReason = em.AddedReason
+					if im.DecisionAssistant == nil {
+						im.DecisionAssistant = em.DecisionAssistant
+					}
 				}
 			}
 			if im.ID == "" {

@@ -85,6 +85,10 @@ type Automation struct {
 	VerificationModel   string `json:"verification_model,omitempty"`
 	VerificationEffort  Effort `json:"verification_effort,omitempty"`
 
+	// DecisionAssistant is the optional local-model decision assistant for the
+	// whole Automation; nil = off. A member's own setting wins over it.
+	DecisionAssistant *DecisionAssistant `json:"decision_assistant,omitempty"`
+
 	ProjectDir string `json:"project_dir,omitempty"` // informational; BL428 3a keys on each member's own tree
 
 	CreatedAt  time.Time  `json:"created_at"`
@@ -132,6 +136,10 @@ type AutomationMember struct {
 	EdgeTaken  string       `json:"edge_taken,omitempty"` // on_complete|on_blocked|on_failed|skip
 
 	BudgetPolicy *BudgetPolicy `json:"budget_policy,omitempty"` // explicit member override (narrows further)
+
+	// DecisionAssistant overrides the Automation's decision assistant for this
+	// member; nil = inherit.
+	DecisionAssistant *DecisionAssistant `json:"decision_assistant,omitempty"`
 
 	// EstimatedCostUSD is the operator-declared expected cost of the member's
 	// Automaton; only valid on kind prd and never negative.
@@ -379,9 +387,15 @@ func validateAutomation(a *Automation) error {
 		if err := validateBudgetPolicy(m.BudgetPolicy); err != nil {
 			return fmt.Errorf("automation invalid: member %s: %w", m.ID, err)
 		}
+		if err := validateDecisionAssistant(m.DecisionAssistant); err != nil {
+			return fmt.Errorf("automation invalid: member %s: %w", m.ID, err)
+		}
 	}
 	if err := validateBudgetPolicy(a.BudgetPolicy); err != nil {
 		return err
+	}
+	if err := validateDecisionAssistant(a.DecisionAssistant); err != nil {
+		return fmt.Errorf("automation invalid: %w", err)
 	}
 	if !automationIsLinear(a) {
 		seen := make(map[string]struct{}, len(a.ActiveCursors))
