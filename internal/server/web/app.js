@@ -27076,7 +27076,7 @@ function loadAcmeHealthCard() {
       if (d.issued && daysLeft !== null) {
         dotColor = daysLeft > 14 ? 'var(--success,#10b981)' : 'var(--warning,#f59e0b)';
       }
-      const dot = `<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${dotColor};margin-right:6px;flex-shrink:0;"></span>`;
+      const dot = `<span class="obs-dot" style="background:${dotColor};margin-right:6px;"></span>`;
       const label = d.in_flight ? 'issuing…' : (d.issued ? `expires in ${daysLeft}d` : 'not issued');
       const err = d.last_error ? ` <span style="color:var(--error);">(${escHtml(d.last_error)})</span>` : '';
       return `<div style="display:flex;align-items:center;padding:2px 0;">${dot}<span>${escHtml(d.domain)}</span> <span style="opacity:0.6;">— ${escHtml(label)}</span>${err}</div>`;
@@ -27108,7 +27108,7 @@ function loadBackendHealthCard() {
     el.innerHTML = backends.map(b => {
       const name = typeof b === 'string' ? b : (b.name || '?');
       const available = typeof b === 'string' ? true : !!b.available;
-      const dot = `<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${available ? 'var(--success,#10b981)' : 'var(--error,#ef4444)'};margin-right:6px;flex-shrink:0;"></span>`;
+      const dot = `<span class="obs-dot" style="background:${available ? 'var(--success,#10b981)' : 'var(--error,#ef4444)'};margin-right:6px;"></span>`;
       const version = (b && b.version) ? ` <span style="opacity:0.6;">${escHtml(b.version)}</span>` : '';
       const nodes = (b && Array.isArray(b.compute_nodes) && b.compute_nodes.length) ? ` <span style="opacity:0.6;">(${b.compute_nodes.map(escHtml).join(', ')})</span>` : '';
       return `<div style="display:flex;align-items:center;padding:2px 0;">${dot}<span>${escHtml(name)}</span>${version}${nodes}</div>`;
@@ -27129,13 +27129,10 @@ function loadObserverEnvelopesCard() {
       el.innerHTML = `<span style="opacity:0.6;">${escHtml(t('obs_envelopes_none')||'no envelopes tracked')}</span>`;
       return;
     }
-    const fmtBytes = b => {
-      if (!b) return '—';
-      if (b >= 1e9) return (b/1e9).toFixed(1)+' GB';
-      if (b >= 1e6) return (b/1e6).toFixed(1)+' MB';
-      if (b >= 1e3) return (b/1e3).toFixed(1)+' KB';
-      return b+' B';
-    };
+    // MOBILE-FIT: shared compact formatter (fmtBytesCompact) replaces the
+    // duplicated base-10 local copy — '—' is the missing-value sentinel,
+    // same as the peer-resources / per-system grid formatters.
+    const fmtBytes = b => (b ? fmtBytesCompact(b) : '—');
     const kindColor = { session: 'var(--accent)', backend: 'var(--accent2)', container: 'var(--warning)' };
     el.innerHTML = envs.slice(0, 20).map(e => {
       const color = kindColor[e.kind] || 'var(--text2)';
@@ -27270,7 +27267,7 @@ function loadPeerResourceOverview() {
         const lastPush = peer.last_push_at ? new Date(peer.last_push_at).getTime() : 0;
         const ageMs = lastPush ? (now - lastPush) : Infinity;
         const dotColor = lastPush ? (ageMs < 15000 ? 'var(--success,#10b981)' : ageMs < 60000 ? 'var(--warning,#f59e0b)' : 'var(--error,#ef4444)') : 'var(--text2)';
-        const dot = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${dotColor};margin-right:5px;flex-shrink:0;"></span>`;
+        const dot = `<span class="obs-dot" style="background:${dotColor};margin-right:5px;"></span>`;
         const cpu = (snap && snap.cpu) || null;
         const mem = (snap && snap.mem) || null;
         const gpus = (snap && snap.gpu) || [];
@@ -27296,8 +27293,8 @@ function loadPeerResourceOverview() {
         const chips = noData ? '<span style="opacity:0.5;font-size:10px;">no snapshot</span>' : (hostChips + gpuChips);
         const shapeTag = `<span style="opacity:0.45;font-size:10px;border:1px solid var(--text2);border-radius:3px;padding:0 3px;margin-right:4px;">${escHtml((peer.shape||'?').toLowerCase())}</span>`;
         return `<div style="padding:4px 0;border-top:1px solid var(--border);display:flex;align-items:flex-start;gap:6px;flex-wrap:wrap;">
-          <div style="display:flex;align-items:center;min-width:90px;flex-shrink:0;">${dot}${shapeTag}<strong style="font-size:12px;">${escHtml(peer.name)}</strong></div>
-          <div style="display:flex;gap:4px;flex-wrap:wrap;font-size:11px;">${chips}</div>
+          <div class="peer-name-cell">${dot}${shapeTag}<strong style="font-size:12px;" title="${escHtml(peer.name)}">${escHtml(peer.name)}</strong></div>
+          <div style="display:flex;gap:4px;flex-wrap:wrap;font-size:11px;min-width:0;">${chips}</div>
         </div>`;
       }).join('');
       el.innerHTML = rows || '<span style="opacity:0.6;">no peer data</span>';
@@ -27514,8 +27511,8 @@ function loadEBPFNetworkTraffic() {
       const name = escHtml(p.comm || ('PID ' + p.pid));
       html += `<tr style="border-top:1px solid var(--border);">
         <td style="padding:3px 4px 3px 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:120px;" title="${name}">${name}</td>
-        <td style="padding:3px 4px;text-align:right;color:var(--success,#10b981);">${formatBytes(p.rx_bps || 0)}/s</td>
-        <td style="padding:3px 0 3px 4px;text-align:right;color:var(--accent,#60a5fa);">${formatBytes(p.tx_bps || 0)}/s</td>
+        <td style="padding:3px 4px;text-align:right;color:var(--success,#10b981);">${fmtBytesCompact(p.rx_bps || 0)}/s</td>
+        <td style="padding:3px 0 3px 4px;text-align:right;color:var(--accent,#60a5fa);">${fmtBytesCompact(p.tx_bps || 0)}/s</td>
       </tr>`;
     }
     html += '</table>';
@@ -27533,24 +27530,28 @@ function loadPluginsStatus() {
   apiFetch('/api/plugins').then(data => {
     const plugins = (data && data.plugins) || [];
     const native = (data && data.native) || [];
+    // MOBILE-FIT: row is a flex-wrap chip line (.plugin-row in style.css)
+    // instead of inline flow — with inline flow, a chip span that wraps
+    // stays one union bounding box covering the status dot (an
+    // overlapping sibling pair at phone widths). Title attributes carry
+    // the full text when a chip truncates.
     const nativeRows = native.map(p => {
       const on = !!p.enabled;
-      const dot = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${on?'var(--success,#10b981)':'var(--text2)'};margin-right:6px;"></span>`;
-      const tag = ` <span style="opacity:0.55;font-size:11px;border:1px solid var(--text2);border-radius:3px;padding:0 4px;margin-left:4px;">native</span>`;
-      const ver = p.version ? ` <span style="opacity:0.6;">v${escHtml(p.version)}</span>` : '';
-      const desc = p.description ? ` &middot; <span style="opacity:0.7;">${escHtml(p.description)}</span>` : '';
-      const msg = p.message ? ` &middot; <span style="opacity:0.6;font-size:12px;">${escHtml(p.message)}</span>` : '';
-      return `<div style="padding:3px 0;">${dot}<strong>${escHtml(p.name)}</strong>${tag}${ver}${desc}${msg}</div>`;
+      const dot = `<span class="obs-dot" style="background:${on?'var(--success,#10b981)':'var(--text2)'};margin-right:6px;"></span>`;
+      const ver = p.version ? `<span class="plugin-note" style="opacity:0.6;" title="v${escHtml(p.version)}">v${escHtml(p.version)}</span>` : '';
+      const desc = p.description ? `<span class="plugin-note" title="${escHtml(p.description)}">${escHtml(p.description)}</span>` : '';
+      const msg = p.message ? `<span class="plugin-note" title="${escHtml(p.message)}">${escHtml(p.message)}</span>` : '';
+      return `<div class="plugin-row">${dot}<strong class="plugin-name" title="${escHtml(p.name)}">${escHtml(p.name)}</strong><span class="plugin-tag">native</span>${ver}${desc}${msg}</div>`;
     }).join('');
     const subRows = plugins.map(p => {
       const on = !!p.enabled;
-      const dot = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${on?'var(--success,#10b981)':'var(--text2)'};margin-right:6px;"></span>`;
+      const dot = `<span class="obs-dot" style="background:${on?'var(--success,#10b981)':'var(--text2)'};margin-right:6px;"></span>`;
       const hooks = Array.isArray(p.hooks) && p.hooks.length
-        ? ` &middot; <span style="opacity:0.7;">${p.hooks.join(', ')}</span>` : '';
+        ? `<span class="plugin-note" title="${escHtml(p.hooks.join(', '))}">${escHtml(p.hooks.join(', '))}</span>` : '';
       const invokes = (typeof p.invoke_count === 'number' && p.invoke_count > 0)
-        ? ` &middot; <span style="opacity:0.7;">${p.invoke_count} invoke${p.invoke_count===1?'':'s'}</span>` : '';
-      const err = p.last_error ? ` &middot; <span style="color:var(--error);" title="${escHtml(p.last_error)}">last-error</span>` : '';
-      return `<div style="padding:3px 0;">${dot}<strong>${escHtml(p.name)}</strong>${p.version?` <span style="opacity:0.6;">v${escHtml(p.version)}</span>`:''} &middot; ${on?'enabled':'disabled'}${hooks}${invokes}${err}</div>`;
+        ? `<span class="plugin-note" title="invokes: ${p.invoke_count}">${p.invoke_count} invoke${p.invoke_count===1?'':'s'}</span>` : '';
+      const err = p.last_error ? `<span class="plugin-err" title="${escHtml(p.last_error)}">last-error</span>` : '';
+      return `<div class="plugin-row">${dot}<strong class="plugin-name" title="${escHtml(p.name)}">${escHtml(p.name)}</strong>${p.version?`<span class="plugin-note" style="opacity:0.6;" title="v${escHtml(p.version)}">v${escHtml(p.version)}</span>`:''}<span class="plugin-state">${on?'enabled':'disabled'}</span>${hooks}${invokes}${err}</div>`;
     }).join('');
     if (!nativeRows && !subRows) {
       list.innerHTML = '<span style="opacity:0.7;">none installed</span> &middot; <a href="/docs/api/plugins.md" style="color:var(--accent2);">plugin docs</a>';
@@ -27657,7 +27658,7 @@ function loadObserverPeers() {
         else dotColor = 'var(--error,#ef4444)';
         ageLabel = 'last push ' + observerPeerAgo(ageMs);
       }
-      const dot = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${dotColor};margin-right:6px;"></span>`;
+      const dot = `<span class="obs-dot" style="background:${dotColor};margin-right:6px;"></span>`;
       // S13 — friendlier shape labels.
       const shapeLabels = { A: 'agent', B: 'standalone', C: 'cluster' };
       const shapeKey = (p.shape || '?').toUpperCase();
@@ -27944,7 +27945,7 @@ function loadObserverClusterNodes() {
       const cpuPct = Math.round(n.cpu_pct || 0);
       const memPct = Math.round(n.mem_pct || 0);
       const ready = n.ready !== false;
-      const dot = `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${ready?'var(--success,#10b981)':'var(--error,#ef4444)'};margin-right:6px;"></span>`;
+      const dot = `<span class="obs-dot" style="background:${ready?'var(--success,#10b981)':'var(--error,#ef4444)'};margin-right:6px;"></span>`;
       const pressure = (n.pressure && n.pressure.length)
         ? ` <span style="opacity:0.7;color:var(--warning,#f59e0b);font-size:11px;">[${(n.pressure||[]).join(',')}]</span>` : '';
       const pods = (typeof n.pod_count === 'number') ? ` &middot; <span style="opacity:0.7;">${n.pod_count} pods</span>` : '';
@@ -27956,7 +27957,7 @@ function loadObserverClusterNodes() {
           </span>
           <span style="font-size:11px;opacity:0.7;">${p}%</span>
         </span>`;
-      return `<div style="padding:4px 0;display:flex;align-items:center;flex-wrap:wrap;">${dot}<strong>${escHtml(n.name)}</strong>${pressure}${pods}${bar('cpu', cpuPct, 'var(--accent)')}${bar('mem', memPct, 'var(--accent2)')}</div>`;
+      return `<div style="padding:4px 0;display:flex;align-items:center;flex-wrap:wrap;">${dot}<strong title="${escHtml(n.name)}">${escHtml(n.name)}</strong>${pressure}${pods}${bar('cpu', cpuPct, 'var(--accent)')}${bar('mem', memPct, 'var(--accent2)')}</div>`;
     }).join('');
   }).catch(e => {
     // GH#194/coordinator-flagged (2026-10-08): same fix as the ACME

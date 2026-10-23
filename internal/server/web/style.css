@@ -6357,3 +6357,95 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
   .stats-panel-grid { grid-template-columns: minmax(0, 1fr); }
   .stats-panel-wide { grid-column: auto; min-width: 0; }
 }
+
+/* ── MOBILE-FIT: Observer "#settings-sec-stats" System Statistics blocks
+   (eBPF status/network, installed plugins, backend health, certificates,
+   envelopes, peer resources, federated peers, cluster nodes, channel
+   bridge/diagnostics, communication backends) ─────────────────────────
+   Same contracts as the #perSystemGrid / #statsPanel blocks above:
+   shrinkable + wrappable text is unconditional (overflow-wrap inherits
+   into every descendant; layout-neutral on desktop because it only
+   matters for unbreakable tokens); >=40x40px tap targets (mobile-fit-
+   lib.mjs TAP_MIN=40) apply only inside the <=768px media query so the
+   1280/1920 desktop baseline stays unchanged.
+   Plugin rows go inline-flow -> flex-wrap: with inline flow a wrapped
+   chip span keeps one union bounding box that swallows the row's status
+   dot (overlapping sibling pair for the mobile-fit overlap check); flex
+   items own their own box, so a chip that wraps still stays to the
+   right of the dot. The dot keeps its size under space pressure with
+   flex: 0 0 auto (.obs-dot). */
+#settings-sec-stats { min-width: 0; overflow-wrap: anywhere; }
+.obs-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: 0 0 auto; /* keep the dot's size under space pressure */
+}
+.plugin-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 3px 6px;
+  padding: 3px 0;
+  min-width: 0;
+}
+.plugin-name { min-width: 0; }
+.plugin-tag {
+  opacity: 0.55;
+  font-size: 11px;
+  border: 1px solid var(--text2);
+  border-radius: 3px;
+  padding: 0 4px;
+  white-space: nowrap;
+}
+.plugin-state { opacity: 0.6; white-space: nowrap; }
+.plugin-note { opacity: 0.7; min-width: 0; }
+.plugin-err { color: var(--error); }
+.peer-name-cell {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
+}
+.peer-name-cell strong { min-width: 0; }
+/* Flex rows in this section must shrink below their content-based
+   automatic minimum (min-width:0) so long tokens (peer names, bound
+   ComputeNode lists, hostnames, service names) wrap inside their chip
+   instead of clipping the row or pushing the page past the viewport
+   (page-scroll findings). Dots and short tags opt out of shrinking. */
+#pluginsStatusList .plugin-row > *,
+#peerResourceList > div > *,
+#observerPeersList > div > *,
+#observerClusterList > div > *,
+#backendHealthList > div > *,
+#acmeHealthList > div > *,
+#envelopesList > div > * { min-width: 0; }
+#pluginsStatusList .plugin-tag { flex: 0 0 auto; }
+/* These rows used inline display:flex without wrap; a long token would
+   then blow the row's width (clip) — allow the chip line to wrap. */
+#backendHealthList > div,
+#acmeHealthList > div,
+#envelopesList > div { flex-wrap: wrap; }
+
+/* Touch viewports (phones portrait + 768 portrait tablet quick cells)
+   need >=40x40px tap targets for every interactive element in this
+   section: filter pills, peer action buttons (btn-icon), channel bridge
+   "help" link and diagnostics refresh button, the two collapsible block
+   headers (toggled via onclick) and the hints <summary>; the
+   communication-backends Test buttons sit here too. Scoped to the block
+   so out-of-section buttons keep the desktop baseline. */
+@media (max-width: 768px) {
+  #settings-sec-stats button { min-height: 40px; min-width: 40px; }
+  #channelBridgeBlock > div:first-child,
+  #channelDiagBlock > div:first-child { min-height: 40px; }
+  #channelBridgeBlock a,
+  #channelDiagBlock a,
+  #channelDiagBlock summary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 40px;
+    min-width: 40px;
+  }
+}
