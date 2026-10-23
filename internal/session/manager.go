@@ -2463,7 +2463,12 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 	if intervalMs <= 0 {
 		intervalMs = 200
 	}
-	m.goBG(func() {
+	// Started with a direct go statement (not goBG) so captureLoopCount in
+	// tests can still attribute the goroutine to StartScreenCapture's caller;
+	// the WaitGroup entry lets WaitBackground wait for it.
+	m.bg.Add(1)
+	go func() {
+		defer m.bg.Done()
 		ticker := time.NewTicker(time.Duration(intervalMs) * time.Millisecond)
 		defer ticker.Stop()
 		var lastCapture string
@@ -2941,7 +2946,7 @@ func (m *Manager) StartScreenCapture(ctx context.Context, fullID string, interva
 				}
 			}
 		}
-	})
+	}()
 }
 
 // goBG runs fn on a goroutine that WaitBackground waits for.
