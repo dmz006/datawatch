@@ -1354,6 +1354,13 @@ autonomous:
   # before the task stays failed. 0 or unset falls back to the 120s default
   # (NormalizeSessionStartConfirmSeconds).
   session_start_confirm_seconds: 120
+  # Orphan sweep grace period, in seconds. A live task worker session
+  # (name "autonomous:<title>", with a PRD/task link) that is not the current
+  # session of any non-terminal task is reported when first seen and ended once
+  # it has stayed orphaned longer than this. Verifier, decompose, guardrail
+  # judge, council and eval sessions are never swept. 0 or unset falls back to
+  # the 300s default (NormalizeOrphanGraceSeconds).
+  orphan_grace_seconds: 300
   # Stall window for a running worker, in seconds. A worker counts as stalled
   # only when, for this many seconds, it has no output, no live child process,
   # no backend activity, and no file change in its work directory. 0 or

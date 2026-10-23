@@ -2202,6 +2202,10 @@ type AutonomousConfig struct {
 	// "session never started" failure. 0 or unset => 120
 	// (see NormalizeSessionStartConfirmSeconds).
 	SessionStartConfirmSeconds int `yaml:"session_start_confirm_seconds,omitempty" json:"session_start_confirm_seconds,omitempty"`
+	// OrphanGraceSeconds is how long a live task worker session may stay
+	// unbound to any non-terminal task before the orphan sweep ends it. 0 or
+	// unset => 300 (see NormalizeOrphanGraceSeconds).
+	OrphanGraceSeconds int `yaml:"orphan_grace_seconds,omitempty" json:"orphan_grace_seconds,omitempty"`
 	// CapacityEnabled turns capacity-aware admission on (default true when
 	// unset): tasks wait for a free host/node/LLM slot instead of failing.
 	CapacityEnabled *bool `yaml:"capacity_enabled,omitempty" json:"capacity_enabled,omitempty"`

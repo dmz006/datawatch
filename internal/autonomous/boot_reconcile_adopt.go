@@ -14,6 +14,7 @@ import (
 // is empty or dead.
 type SessionInfo struct {
 	ID         string
+	Name       string // the session's name ("autonomous:<title>" for task workers)
 	TaskID     string
 	PRDID      string
 	Task       string // the session's task text

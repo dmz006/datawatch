@@ -176,6 +176,11 @@ type Config struct {
 	// field exists so the handleAutonomousConfig live round-trip
 	// (internal/server/autonomous.go) does not drop the key.
 	SessionStartConfirmSeconds int    `json:"session_start_confirm_seconds,omitempty"`
+	// OrphanGraceSeconds mirrors autonomous.orphan_grace_seconds: how long a
+	// live task worker session may stay unbound to any non-terminal task
+	// before the orphan sweep ends it. 0 or unset => 300
+	// (config.NormalizeOrphanGraceSeconds).
+	OrphanGraceSeconds int `json:"orphan_grace_seconds,omitempty"`
 	VerificationModel          string `json:"verification_model,omitempty"`
 	// GuardrailModel (v9.10.18) — pinned model for guardrail judge
 	// sessions (rules-review, ci-watch, per-task/per-story guardrails,
@@ -800,6 +805,11 @@ type Manager struct {
 	// operator audit log so the event lands in both JSON-lines and CEF.
 	// Guarded by mu. Nil = audit silently skipped.
 	auditFn func(action string, details map[string]any)
+
+	// orphanSeen records when the orphan sweep first saw each unbound worker
+	// session; orphanNow is the sweep's clock (nil = time.Now). Guarded by mu.
+	orphanSeen map[string]time.Time
+	orphanNow  func() time.Time
 
 	// sessionContinueFn — design §6.ii: sends a "resume" prompt to a parked
 	// worker session after an await-external cycle re-admits it. Optional.
@@ -4565,7 +4575,7 @@ func (m *Manager) run() {
 			m.mu.Lock()
 			m.status.LastTickAt = time.Now()
 			m.mu.Unlock()
-			// Future: scan for stuck tasks and surface to operator.
+			m.sweepOrphanSessions()
 		}
 	}
 }
