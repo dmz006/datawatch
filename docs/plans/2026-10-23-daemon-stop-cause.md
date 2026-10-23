@@ -1,6 +1,6 @@
 # 2026-10-23 datawatch daemon stop — sender attribution audit
 
-Status: **findings recorded; actual sender unexplained** (see §6); **e2e verification gate passed 2026-10-23** (see §9); **gate re-executed and re-passed 2026-10-23 (session h-e570)** — all forms re-observed live, vet/tests/checkers green (see §9 re-verification note)
+Status: **findings recorded; actual sender unexplained** (see §6); **e2e verification gate passed 2026-10-23** (see §9); **gate re-executed and re-passed 2026-10-23 (session h-e570)** — all forms re-observed live, vet/tests/checkers green (see §9 re-verification note); **gate re-executed a third time 2026-10-23 (session h-6c4b, clean worktree build)** — all four forms re-observed live, vet clean, 96 tests/0 fail, both checkers `OK` (see §9 third re-verification note)
 Date: 2026-10-23
 Scope: repo-wide verification of every path that can stop or restart the
 production `datawatch` daemon, cross-referenced against the 05:33:03 incident.
@@ -403,3 +403,25 @@ Residual observation (out of this gate's scope): a scratch daemon from an
 *earlier* gate run was found still running
 (`/tmp/dw-verify/bin/datawatch start --config /tmp/dw-verify/home/.datawatch/config.yaml
 --foreground`, pre-existing — not started or signalled by this session).
+
+**Third re-verification (session h-6c4b, 2026-10-23, PASS):** the full gate
+was executed a third time from a clean worktree build
+(`go build -o <tmp>/datawatch ./cmd/datawatch/`, exit 0) against a fresh
+throwaway instance (`/tmp/dwgate-F90RBl/data`, 127.0.0.1:57581, TMUX/
+TMUX_TMPDIR unset for every invocation):
+
+| Step | Observed |
+|------|----------|
+| child-shell `kill -TERM` (killer keeps `kill`+pid live in cmdline) | `shutdown cause: … signal=terminated source=procscan sender_pid=4184253 sender_user=dmz cmdline="bash -c kill -TERM 4180452; sleep 8; echo killed"`; audit `action=shutdown subject=terminated details{signal:terminated,source:procscan,sender_pid:4184253}`; `last-shutdown.json` present at **0600** with signal/sender_pid/sender_uid/sender_user/parent_chain/source=procscan — all three as before |
+| second start, same data dir, attributable sender | exact `previous shutdown: signal terminated from bash -c kill -TERM 4180452; sleep 8; echo killed 4184253 at 2026-10-23T12:50:57-04:00`; record renamed to `last-shutdown.json.consumed` |
+| `POST /api/restart` (HTTP 200 body `{status:restarting}`) | `shutdown cause: … signal= source=api-restart via="api-restart" at 2026-10-23T12:51:23-04:00`; audit `action=shutdown subject=api-restart details.via=api-restart`; `last-shutdown.json source=api-restart` (0600); next start → `previous shutdown: api-restart at 2026-10-23T12:51:23-04:00` |
+| `kill -9` of the running scratch instance; start again | `previous shutdown: unknown/crash` |
+| `go vet ./internal/shutdowncause/ ./internal/audit/` (TMUX/TMUX_TMPDIR unset) | clean, exit 0 |
+| `go test ./internal/shutdowncause/ ./internal/audit/` (TMUX/TMUX_TMPDIR unset) | 96 passed, 0 failed |
+| `scripts/check-no-production-service-control.sh`, `scripts/check-no-unscoped-tmux.sh` (TMUX/TMUX_TMPDIR unset) | both `OK`, exit 0 |
+
+All four stop-cause forms (SIGTERM-attributed, API-initiated, and crash)
+were re-observed live against throwaway instances only; no production
+service was started, signalled, or touched. All scratch instances killed
+afterwards; no scratch processes remain. The pre-existing scratch daemon
+from an earlier gate run (noted above) was left untouched — out of scope.
