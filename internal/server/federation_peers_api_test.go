@@ -29,6 +29,9 @@ func newFedTestServer(t *testing.T) (*Server, *multiserver.Store, *federation.Gr
 	if err != nil {
 		t.Fatalf("manager init: %v", err)
 	}
+	// In-memory tmux fake: handleStartSession then never touches a real
+	// multiplexer, so nothing real can leak on this host.
+	mgr.WithFakeTmux()
 	t.Cleanup(mgr.WaitBackground)
 	s := &Server{
 		manager:       mgr,

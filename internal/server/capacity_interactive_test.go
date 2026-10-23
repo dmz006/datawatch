@@ -22,6 +22,9 @@ import (
 // ledger's reaper can find and release it once the session ends.
 func TestHandleStartSession_CapacityAdmit_Gated(t *testing.T) {
 	srv := newLLMServer(t)
+	// In-memory tmux fake: handleStartSession then never touches a real
+	// multiplexer, so nothing real can leak on this host.
+	srv.manager.WithFakeTmux()
 
 	var admitCalls, bindCalls int
 	var boundHolder, boundSessionID string
@@ -71,6 +74,9 @@ func TestHandleStartSession_CapacityAdmit_Gated(t *testing.T) {
 // again here would double-acquire the same node:/llm: pool.
 func TestHandleStartSession_CapacityAdmit_SkippedForOneShot(t *testing.T) {
 	srv := newLLMServer(t)
+	// In-memory tmux fake: handleStartSession then never touches a real
+	// multiplexer, so nothing real can leak on this host.
+	srv.manager.WithFakeTmux()
 
 	admitCalls := 0
 	srv.SetCapacityAdmit(func(_ context.Context, _, _, _ string, _ int) error {
@@ -96,6 +102,9 @@ func TestHandleStartSession_CapacityAdmit_SkippedForOneShot(t *testing.T) {
 // a session.
 func TestHandleStartSession_CapacityAdmit_DeniedReturns503(t *testing.T) {
 	srv := newLLMServer(t)
+	// In-memory tmux fake: handleStartSession then never touches a real
+	// multiplexer, so nothing real can leak on this host.
+	srv.manager.WithFakeTmux()
 
 	srv.SetCapacityAdmit(func(_ context.Context, _, _, _ string, _ int) error {
 		return errCapacityDenied
@@ -121,16 +130,11 @@ func TestHandleStartSession_CapacityAdmit_DeniedReturns503(t *testing.T) {
 
 var errCapacityDenied = &capacityDeniedErr{}
 
-// cleanupStartedSession (v8.36.12) tears down a session spawned via a raw
-// handleStartSession call in a test, once the test finishes. Found live:
-// internal/session.Manager.Start spawns a REAL tmux session (named
-// cs-<hostname>-<id>) even in these unit tests — nothing about the test
-// environment mocks the tmux layer — and none of this package's
-// handleStartSession-calling tests ever killed what they started. Every
-// `go test ./...` run leaked one tmux session per uncleaned call site,
-// accumulating (confirmed live: 197 such orphaned sessions going back to
-// May, none present in the session store since Manager.Delete's kill-first
-// logic was simply never reached for them). w is the httptest.ResponseRecorder
+// cleanupStartedSession tears down a session spawned via a raw
+// handleStartSession call in a test, once the test finishes. It keeps the
+// kill-first, then WaitBackground ordering: stop the monitor, kill the pane,
+// and wait for late writers before the manager's TempDir removal runs, so no
+// writer can race the data dir. w is the httptest.ResponseRecorder
 // handleStartSession wrote its JSON response to.
 func cleanupStartedSession(t *testing.T, srv *Server, w *httptest.ResponseRecorder) {
 	t.Helper()

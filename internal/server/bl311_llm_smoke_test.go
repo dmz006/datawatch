@@ -222,6 +222,9 @@ func TestNamedLLMInBackendsWhenRegistryWired(t *testing.T) {
 // When the name is absent from the registry, a 400 is returned immediately.
 func TestSessionStart_WithNamedLLM(t *testing.T) {
 	srv := newLLMServer(t)
+	// In-memory tmux fake: handleStartSession then never touches a real
+	// multiplexer, so nothing real can leak on this host.
+	srv.manager.WithFakeTmux()
 
 	// Register a named session-backend LLM (claude-code kind is a session backend).
 	_ = srv.inferenceReg.Add(&inference.LLM{Name: "named-test", Kind: inference.KindClaudeCode})
@@ -252,6 +255,9 @@ func TestSessionStart_WithNamedLLM(t *testing.T) {
 // that doesn't exist in the registry is rejected with 400 immediately.
 func TestSessionStart_UnknownNamedLLM(t *testing.T) {
 	srv := newLLMServer(t)
+	// In-memory tmux fake: handleStartSession then never touches a real
+	// multiplexer, so nothing real can leak on this host.
+	srv.manager.WithFakeTmux()
 	// Registry is empty — "does-not-exist" is unknown.
 
 	body, _ := json.Marshal(map[string]any{
@@ -280,6 +286,9 @@ func TestSessionStart_UnknownNamedLLM(t *testing.T) {
 // the backend path must NOT 400 on registry grounds (it may 500 from exec).
 func TestSessionStart_NamedVsAdapterType(t *testing.T) {
 	srv := newLLMServer(t)
+	// In-memory tmux fake: handleStartSession then never touches a real
+	// multiplexer, so nothing real can leak on this host.
+	srv.manager.WithFakeTmux()
 
 	// --- Request A: legacy backend field (adapter-type path) ---
 	bodyA, _ := json.Marshal(map[string]any{
