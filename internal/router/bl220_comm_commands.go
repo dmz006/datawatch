@@ -20,10 +20,23 @@ package router
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/dmz006/datawatch/internal/orchestrator"
 )
+
+// replyOrchestratorDeprecated sends a create, plan or run reply with the
+// deprecation notice appended, and logs the once-per-start warning.
+func (r *Router) replyOrchestratorDeprecated(label, tool, body string) {
+	orchestrator.WarnDeprecatedOnce(tool, log.Printf)
+	if body == "" {
+		body = "(empty)"
+	}
+	r.reply(label, body+"\n\n"+orchestrator.DeprecationNotice(tool))
+}
 
 // handleOrchestrator — BL220-G4.
 //
@@ -34,9 +47,13 @@ import (
 //	orchestrator create <title> <proj>  → POST /api/orchestrator/graphs
 //	orchestrator plan <id>              → POST .../plan
 //	orchestrator run <id>               → POST .../run
+//
+// create, plan and run are deprecated; their replies carry the notice naming
+// 'automation import-graph'.
+//
 //	orchestrator delete <id>            → DELETE .../graphs/<id>
 func (r *Router) handleOrchestrator(cmd Command) {
-	const help = "usage: orchestrator [config|verdicts|get <id>|create <title> <project>|plan <id>|run <id>|delete <id>]"
+	const help = "usage: orchestrator [config|verdicts|get <id>|create <title> <project> (deprecated)|plan <id> (deprecated)|run <id> (deprecated)|delete <id>]"
 	args := strings.Fields(strings.TrimSpace(cmd.Text))
 
 	if len(args) == 0 {
@@ -89,7 +106,7 @@ func (r *Router) handleOrchestrator(cmd Command) {
 			r.reply("orchestrator create failed", err.Error())
 			return
 		}
-		r.reply("orchestrator create", prettyJSON(out))
+		r.replyOrchestratorDeprecated("orchestrator create", "orchestrator_graph_create", prettyJSON(out))
 	case "plan":
 		if len(args) < 2 {
 			r.reply("orchestrator plan failed", "usage: orchestrator plan <id>")
@@ -100,7 +117,7 @@ func (r *Router) handleOrchestrator(cmd Command) {
 			r.reply("orchestrator plan failed", err.Error())
 			return
 		}
-		r.reply("orchestrator plan", prettyJSON(out))
+		r.replyOrchestratorDeprecated("orchestrator plan", "orchestrator_graph_plan", prettyJSON(out))
 	case "run":
 		if len(args) < 2 {
 			r.reply("orchestrator run failed", "usage: orchestrator run <id>")
@@ -111,7 +128,7 @@ func (r *Router) handleOrchestrator(cmd Command) {
 			r.reply("orchestrator run failed", err.Error())
 			return
 		}
-		r.reply("orchestrator run", prettyJSON(out))
+		r.replyOrchestratorDeprecated("orchestrator run", "orchestrator_graph_run", prettyJSON(out))
 	case "delete":
 		if len(args) < 2 {
 			r.reply("orchestrator delete failed", "usage: orchestrator delete <id>")
