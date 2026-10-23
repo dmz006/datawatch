@@ -133,11 +133,11 @@ func TestResolvePlannedModel(t *testing.T) {
 			want:                    "ollama/qwen3.8:27b",
 		},
 		{
-			name:                  "tier 4 loses to the explicit PRD decomposition model",
-			backend:               "pi",
-			prdDecompositionModel: "prov/decomp",
+			name:                    "tier 4 loses to the explicit PRD decomposition model",
+			backend:                 "pi",
+			prdDecompositionModel:   "prov/decomp",
 			globalVerificationModel: "ollama/qwen3.8:27b",
-			want:                  "prov/decomp",
+			want:                    "prov/decomp",
 		},
 	}
 

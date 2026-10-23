@@ -30,7 +30,28 @@ type CapacityAudit struct {
 	Clock func() time.Time
 	// Sink receives each finished entry; nil drops it.
 	Sink func(audit.Entry)
+	// Names supplies the readable names for admission entries: the waiting
+	// task's title, its PRD's title, and the wait reason spoken readably.
+	// nil leaves those details as their "(untitled <short id>)" or empty
+	// fallbacks.
+	Names AdmissionNamesFn
 }
+
+// AdmissionNames is the readable naming for one admission entry: the waiting
+// task's title, its PRD's title, and the readable wording of the wait reason
+// ("pool <p> full (u/l), held by <PRD title> / <task title> (<short id>)
+// and …").
+type AdmissionNames struct {
+	TaskTitle string
+	PRDTitle  string
+	Readable  string
+}
+
+// AdmissionNamesFn resolves the readable names for one admission entry: the
+// ids of the waiting task and its PRD, plus the wait reason being named
+// ("" for an admission that is not waiting). It should resolve through the
+// shared holder-title resolver (capacity_titles.go).
+type AdmissionNamesFn func(taskID, prdID, reason string) AdmissionNames
 
 // NewCapacityAudit returns a recorder writing to sink on the wall clock.
 func NewCapacityAudit(sink func(audit.Entry)) *CapacityAudit {
@@ -55,23 +76,46 @@ func (r *CapacityAudit) Record(actor, action, subject string, details map[string
 
 // AdmissionWait records that a task started waiting for admission, or that
 // its wait cause changed. cause is the classified cause (empty when the
-// reason is not a known one); reason is the full wait text.
+// reason is not a known one); reason is the full wait text. The details keep
+// their existing keys and add task_id, task_title, prd_title and readable
+// names, resolved through Names (the shared holder-title resolver) when it
+// is set, falling back to "(untitled <short id>)" when a title is missing.
 func (r *CapacityAudit) AdmissionWait(taskID, prdID string, cause WaitCause, reason string, pools []string) {
+	names := r.admissionNames(taskID, prdID, reason)
 	r.Record(AuditActorAutonomous, audit.ActionCapacityWait, taskID, map[string]any{
-		"prd_id": prdID,
-		"cause":  string(cause),
-		"reason": reason,
-		"pools":  sortedPools(pools),
+		"prd_id":     prdID,
+		"cause":      string(cause),
+		"reason":     reason,
+		"pools":      sortedPools(pools),
+		"task_id":    taskID,
+		"task_title": titleOrUntitled(names.TaskTitle, shortID(taskID)),
+		"prd_title":  titleOrUntitled(names.PRDTitle, shortID(prdID)),
+		"readable":   names.Readable,
 	})
 }
 
 // AdmissionAdmitted records that a waiting task was admitted after waiting
-// since the given time.
+// since the given time, with the same readable naming added.
 func (r *CapacityAudit) AdmissionAdmitted(taskID string, since time.Time, pools []string) {
+	names := r.admissionNames(taskID, "", "")
 	r.Record(AuditActorAutonomous, audit.ActionCapacityAdmitted, taskID, map[string]any{
 		"waited_seconds": r.Now().Sub(since).Seconds(),
 		"pools":          sortedPools(pools),
+		"task_id":        taskID,
+		"task_title":     titleOrUntitled(names.TaskTitle, shortID(taskID)),
+		"prd_title":      titleOrUntitled(names.PRDTitle, shortID(taskID)),
+		"readable":       names.Readable,
 	})
+}
+
+// admissionNames resolves the readable names through the configured Names
+// function; a nil recorder or no Names (a standalone recorder) leaves them
+// unset so the recorded keys take their fallbacks.
+func (r *CapacityAudit) admissionNames(taskID, prdID, reason string) AdmissionNames {
+	if r == nil || r.Names == nil {
+		return AdmissionNames{}
+	}
+	return r.Names(taskID, prdID, reason)
 }
 
 // BackoffSet records a back-off flag set on backend until the given time. The
@@ -137,11 +181,36 @@ func sortedPools(pools []string) []string {
 }
 
 // SetCapacityAudit wires the recorder admit uses for admission waits and
-// releases (nil drops them).
+// releases (nil drops them). It also gives the recorder the manager's
+// holder-title resolver, so admission entries carry readable names.
 func (m *Manager) SetCapacityAudit(a *CapacityAudit) {
+	if a != nil && a.Names == nil {
+		a.Names = m.AdmissionNames
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.capAudit = a
+}
+
+// AdmissionNames resolves the readable names for one admission entry through
+// the shared holder-title resolver (capacity_titles.go): the waiting task's
+// title, its PRD's, and the wait reason spoken readably with the holders
+// named. A blank reason (an admission event) leaves Readable empty; unknown
+// titles stay blank so the recorders take their fallbacks.
+func (m *Manager) AdmissionNames(taskID, prdID, reason string) AdmissionNames {
+	out := AdmissionNames{}
+	if holder := m.ResolveHolder(taskID); holder.PRDID != "" {
+		out.TaskTitle, out.PRDTitle = holder.TaskTitle, holder.PRDTitle
+	}
+	if out.PRDTitle == "" && prdID != "" && m.store != nil {
+		if p, ok := m.store.GetPRD(prdID); ok {
+			out.PRDTitle = p.Title
+		}
+	}
+	if reason != "" {
+		out.Readable = m.ReadableWaitSentence(reason)
+	}
+	return out
 }
 
 func (m *Manager) capacityAudit() *CapacityAudit {

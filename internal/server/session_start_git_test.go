@@ -18,9 +18,9 @@ import (
 
 func TestHandleStartSession_GitFlagPassthrough(t *testing.T) {
 	for _, tc := range []struct {
-		name   string
-		git    bool
-		omit   bool
+		name    string
+		git     bool
+		omit    bool
 		wantGit bool
 	}{
 		{name: "explicit true", git: true, wantGit: true},
@@ -80,10 +80,10 @@ func TestHandleStartSession_GitFlagPassthrough(t *testing.T) {
 // explicit request value (true or false) always wins.
 func TestHandleStartSession_GitDefaultConfigFallback(t *testing.T) {
 	for _, tc := range []struct {
-		name      string
+		name       string
 		cfgDefault bool
 		payloadGit any // omitempty when nil
-		wantGit   bool
+		wantGit    bool
 	}{
 		{name: "omitted with git_default true", cfgDefault: true, payloadGit: nil, wantGit: true},
 		{name: "omitted with git_default false", cfgDefault: false, payloadGit: nil, wantGit: false},

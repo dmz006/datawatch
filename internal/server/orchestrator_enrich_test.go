@@ -50,7 +50,7 @@ func (f *fakeOrchAutonomous) ResetTaskWithOptions(string, string, string, bool, 
 	return nil, nil
 }
 func (f *fakeOrchAutonomous) RejudgeCompletionGuardrail(string, string) (any, error) { return nil, nil }
-func (f *fakeOrchAutonomous) RepairDependsOn(string, string) (any, error)         { return nil, nil }
+func (f *fakeOrchAutonomous) RepairDependsOn(string, string) (any, error)            { return nil, nil }
 func (f *fakeOrchAutonomous) CancelStory(string, string, string, string) (any, error) {
 	return nil, nil
 }

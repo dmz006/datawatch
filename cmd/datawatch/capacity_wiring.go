@@ -441,7 +441,35 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 	amgr.SetBudgetsStatus(autonomousBudget.StatusAll)
 	httpServer.SetUsageBackoff(autonomousBackoff)
 	httpServer.SetBudgetLedger(autonomousBudget)
-	capacityTextFn = func() string { return capacity.FormatText(led.Snapshot()) }
+	// The in-process text path resolves every holder and the holders named in
+	// each wait reason through the shared autonomous resolver when it is wired
+	// (amgr), so the comm `capacity` reply (and the session capacity command)
+	// shows readable holder names with short ids instead of raw ids: the
+	// resolved forms are folded into the snapshot's display fields, which
+	// capacity.FormatText prefers over the raw ids (nil amgr keeps the raw ids).
+	capacityTextFn = func() string {
+		st := led.Snapshot()
+		if amgr == nil {
+			return capacity.FormatText(st)
+		}
+		for i := range st.Pools {
+			if len(st.Pools[i].Holders) == 0 {
+				continue
+			}
+			names := make([]string, 0, len(st.Pools[i].Holders))
+			for _, h := range st.Pools[i].Holders {
+				names = append(names, autonomous.DisplayHolderName(amgr.ResolveHolder(h)))
+			}
+			st.Pools[i].HoldNames = names
+		}
+		for i := range st.Waiting {
+			st.Waiting[i].HoldName = autonomous.DisplayHolderName(amgr.ResolveHolder(st.Waiting[i].Holder))
+			if r := amgr.ReadableWaitSentence(st.Waiting[i].Reason); r != st.Waiting[i].Reason {
+				st.Waiting[i].ReadReason = r
+			}
+		}
+		return capacity.FormatText(st)
+	}
 	httpServer.SetCapacity(led)
 
 	// v8.36.0 — interactive (non-autonomous) session starts also admit on

@@ -13208,7 +13208,7 @@ function renderTask(prd, story, task, editable) {
   }
   const expandedBody = `<div class="prd-task-expanded-body"${isExpanded ? '' : ' hidden'}>
     ${task.spec ? `<div class="prd-task-spec">${escHtml(task.spec)}</div>` : ''}
-    ${task.status === 'waiting_capacity' ? `<div class="prd-task-wait-reason">&#9203; ${escHtml(t('prd_task_waiting_capacity')||'Waiting for capacity')}${task.wait_reason ? ': ' + window.taskWaitHtml(task) : ''}</div>` : ''}
+    ${task.status === 'waiting_capacity' ? `<div class="prd-task-wait-reason" style="min-width:0;overflow-wrap:anywhere;">&#9203; ${escHtml(t('prd_task_waiting_capacity')||'Waiting for capacity')}${task.wait_reason ? ': ' + window.taskWaitHtml(task) : ''}</div>` : ''}
     ${window.taskHoldsHtml(task)}
     ${errRow}${verifRow}
     ${task.executor_source ? `<div style="font-size:10px;color:var(--text2);">${escHtml(t('status_executor_label')||'Executor')}: ${escHtml(task.executor_source)}</div>` : ''}
@@ -22121,6 +22121,60 @@ function capacityPoolTitle(p) {
   }
   return '';
 }
+// --- Readable capacity names -------------------------------------------------
+// The capacity API resolves holder ids to operator-readable names ("PRD title / task title") when the daemon has a resolver wired.
+// Render the readable name first and the short id in a smaller secondary span; when the name is long, middle-truncate it (keeping both ends)
+// and keep the full text in an escaped title tooltip, with a min-width:0 / overflow:hidden / text-overflow clamp so nothing overflows a 360px
+// card. Old daemon bodies without name resolution fall back to the raw id exactly as before.
+function capacityMiddleEllipsis(text, max) {
+  const s = String(text == null ? '' : text);
+  if (max <= 1 || s.length <= max) return s;
+  const middle = max - 1;
+  const head = Math.max(1, Math.ceil(middle * 3 / 4));
+  const tail = Math.max(1, middle - head);
+  return s.slice(0, head) + '\u2026' + s.slice(s.length - tail);
+}
+const CAPACITY_NAME_CLAMP = 'display:inline-block;max-width:100%;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:bottom;';
+const CAPACITY_NAME_SMALL = 'font-size:10px;color:var(--text2);font-family:var(--mono,monospace);';
+const CAPACITY_NAME_MAX = 40;
+// capacityNameHtml(nm, rawId): nm is the new-body holder-name object
+// ({readable, short_id, full, ...}) or an older body's hold_name string;
+// when nm is absent it returns '' and the caller falls back to the raw id
+// exactly as before (so old-body payloads render plain text, no styling).
+window.capacityNameHtml = function(nm, rawId) {
+  if (nm == null) return '';
+  const isObj = typeof nm === 'object';
+  const text = isObj ? String(nm.readable || '') : String(nm);
+  const short = isObj
+    ? (nm.short_id ? String(nm.short_id) : (nm.id ? String(nm.id).slice(0, 8) : String(rawId || '').slice(0, 8)))
+    : String(rawId || '').slice(0, 8);
+  if (!text && !short) return '';
+  let label;
+  if (text) {
+    label = capacityMiddleEllipsis(text, CAPACITY_NAME_MAX);
+  } else {
+    label = short ? (t('capacity_name_untitled') || '(untitled {id})').replace('{id}', short) : '';
+  }
+  if (!label) return '';
+  const full = (isObj && (nm.full || nm.readable)) || text || short;
+  const secondary = (text && short && short !== text)
+    ? ` <span class="cap-name-id" style="${CAPACITY_NAME_SMALL}">${escHtml(short)}</span>`
+    : '';
+  return `<span class="cap-name" style="${CAPACITY_NAME_CLAMP}" title="${escHtml(full)}">${escHtml(label)}${secondary}</span>`;
+};
+// One PRD cell for a waiting row: the PRD title first (clamped, tooltip
+// with the full text) with its short id as a secondary span; just
+// 'PRD <short id>' when the body has no title.
+function capacityPrdCellHtml(prdTitle, prdId) {
+  const short = String(prdId || '').slice(0, 8);
+  if (prdTitle) {
+    let cell = `<span class="cap-name" style="${CAPACITY_NAME_CLAMP}" title="${escHtml(prdTitle)}">${escHtml(capacityMiddleEllipsis(prdTitle, CAPACITY_NAME_MAX))}</span>`;
+    if (short) cell += ` <span class="cap-name-id" style="${CAPACITY_NAME_SMALL}">${escHtml(short)}</span>`;
+    return cell;
+  }
+  if (!short) return '';
+  return `${escHtml(t('capacity_name_prd') || 'Automaton')} <span class="cap-name-id" style="${CAPACITY_NAME_SMALL}">${escHtml(short)}</span>`;
+}
 // Holders of a pool by short id: the pool's own holder field (a comma list),
 // else every lease that names the pool.
 function capacityHolders(p, leases) {
@@ -22131,11 +22185,18 @@ function capacityHolders(p, leases) {
 }
 function capacityHoldersLine(p, leases) {
   const ids = capacityHolders(p, leases);
+  const names = Array.isArray(p.holder_names) ? p.holder_names
+    : (Array.isArray(p.hold_names) ? p.hold_names : null);
   const queued = p.name.startsWith('node:') && p.queue_depth > 0
     ? `${escHtml(t('capacity_waiting_for_node')||'waiting for node')} ${escHtml(p.name.slice(5))}` : '';
-  const holders = ids.length ? `${escHtml(t('capacity_card_holders')||'Holders')}: ${escHtml(ids.join(', '))}` : '';
+  const holders = ids.length
+    ? `${escHtml(t('capacity_card_holders')||'Holders')}: ${ids.map((id, i) => {
+        const h = (names && names[i] != null) ? window.capacityNameHtml(names[i], id) : '';
+        return h || escHtml(id);
+      }).join(', ')}`
+    : '';
   const parts = [holders, queued].filter(Boolean).join(' · ');
-  return parts ? `<div class="cap-holders" style="font-size:11px;color:var(--text2);">${parts}</div>` : '';
+  return parts ? `<div class="cap-holders" style="font-size:11px;color:var(--text2);min-width:0;">${parts}</div>` : '';
 }
 function capacityPoolsHtml(cap) {
   const allPools = (cap && cap.pools) || [];
@@ -22185,21 +22246,32 @@ const _TASK_WAIT_CAUSES = {
 };
 window.taskWaitHtml = function(task) {
   if (!task) return '';
-  const reason = task.wait_reason || task.reason || '';
+  // wait_reason_readable / readable_reason hold the same reason with the
+  // holders it names resolved to readable names; wait_reason / reason keep
+  // the raw daemon text — readable first, raw text as fallback.
+  const reason = task.wait_reason_readable || task.readable_reason || task.wait_reason || task.reason || '';
   const cause = task.wait_cause || task.cause || '';
+  // The waiting task's own readable name first ("PRD title / task title"),
+  // short id as a secondary span. Absent on older bodies and when the
+  // surface names no holders — the line then renders exactly as before.
+  const nameText = task.readable
+    || ((task.prd_title || task.task_title) ? [task.prd_title, task.task_title].filter(Boolean).join(' / ') : '');
+  const name = nameText
+    ? ` ${window.capacityNameHtml(nameText, task.short_id || task.id || task.task_id || '')}`
+    : '';
   const label = Object.prototype.hasOwnProperty.call(_TASK_WAIT_CAUSES, cause) ? _TASK_WAIT_CAUSES[cause]() : '';
   const resetsRaw = task.wait_resets_at || task.resets_at || '';
   const resetsMs = resetsRaw ? new Date(resetsRaw).getTime() : NaN;
   const resets = Number.isNaN(resetsMs) ? '' : new Date(resetsMs).toLocaleString('en-GB', { hour12: false });
   // An older daemon sends neither: the reason renders as plain text.
-  if (!label && !resets) return escHtml(reason);
+  if (!label && !resets) return name + escHtml(reason);
   const chip = label
     ? `<span class="task-wait-chip" data-cause="${escHtml(cause)}" style="display:inline-block;font-size:10px;font-weight:700;padding:1px 6px;margin-right:4px;border-radius:8px;border:1px solid var(--warning,#f59e0b);color:var(--warning,#f59e0b);">${escHtml(label)}</span>`
     : '';
   const when = resets
     ? ` <span class="task-wait-resets" style="color:var(--text2);">(${escHtml(t('task_wait_resets_at') || 'Resets at')} ${escHtml(resets)})</span>`
     : '';
-  return `${chip}<span class="task-wait-text">${escHtml(reason)}</span>${when}`;
+  return name + `${chip}<span class="task-wait-text">${escHtml(reason)}</span>${when}`;
 };
 // A running task's pools and node. Tasks that report a status other than
 // running get nothing; a capacity entry has no status and always qualifies.
@@ -22218,8 +22290,22 @@ window.taskHoldsHtml = function(task) {
 
 function capacityWaitingHtml(waiting, now) {
   if (!Array.isArray(waiting) || waiting.length === 0) return '';
-  return `<div style="margin-top:6px;font-weight:600;color:var(--text2);">${escHtml(t('capacity_waiting')||'Waiting')} (${waiting.length})</div>` +
-    waiting.map(w => `<div class="prd-capacity-wait" title="${escHtml(w.reason||'')}">&#9203; ${escHtml((w.holder||'').slice(0,8))} · PRD ${escHtml((w.prd_id||'').slice(0,8))} · ${escHtml(capacityFmtWait(w.since, now))} — ${escHtml(w.reason||'')}</div>`).join('');
+  const rows = waiting.map(w => {
+    // holder_name is the new-body readable holder view; hold_name is the
+    // older-body plain string; neither → raw id fallback inside
+    // capacityNameHtml.
+    const nm = (w.holder_name != null) ? w.holder_name : w.hold_name;
+    const holder = nm == null
+    ? escHtml(String(w.holder || '').slice(0, 8))   // old body: raw short id, as before
+    : window.capacityNameHtml(nm, w.holder);
+    const prdTitle = w.prd_title || (w.holder_name && w.holder_name.prd_title) || '';
+    const prd = capacityPrdCellHtml(prdTitle, w.prd_id || (w.holder_name && w.holder_name.prd_id));
+    // read_reason resolves the holders it names; reason is the raw text.
+    const reason = w.read_reason || w.reason || '';
+    const head = [holder, prd].filter(Boolean).join(' · ');
+    return `<div class="prd-capacity-wait" style="min-width:0;overflow-wrap:anywhere;" title="${escHtml(reason)}">&#9203; ${head}${head ? ' · ' : ''}${escHtml(capacityFmtWait(w.since, now))}${reason ? ` — ${escHtml(reason)}` : ''}</div>`;
+  });
+  return `<div style="margin-top:6px;font-weight:600;color:var(--text2);min-width:0;">${escHtml(t('capacity_waiting')||'Waiting')} (${waiting.length})</div>` + rows.join('');
 }
 // capacityCardHtml(cap, opts): cap is the decoded /api/capacity response.
 // opts.now (ms) pins the clock for wait times; opts.showEmpty renders a

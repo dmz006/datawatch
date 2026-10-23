@@ -24,10 +24,26 @@ type capacityBackoffView struct {
 	ResetKnown bool      `json:"reset_known"`
 }
 
+// capacityPoolView is one /api/capacity pool entry: the base PoolStatus plus
+// HolderNames (node pools), the resolved readable form of the raw holder ids
+// in Holders. Absent on older daemons.
+type capacityPoolView struct {
+	capacity.PoolStatus
+	HolderNames []HolderNameView `json:"holder_names"`
+}
+
+// capacityWaiterView is one ledger waiter as /api/capacity carries it, plus
+// HolderName (the resolved readable form of the raw holder id). Absent on
+// older daemons.
+type capacityWaiterView struct {
+	capacity.Waiter
+	HolderName HolderNameView `json:"holder_name"`
+}
+
 // capacityBody is the part of the /api/capacity response the text needs.
 type capacityBody struct {
-	Pools   []capacity.PoolStatus `json:"pools"`
-	Waiting []capacity.Waiter     `json:"waiting"`
+	Pools   []capacityPoolView    `json:"pools"`
+	Waiting []capacityWaiterView  `json:"waiting"`
 	Backoff []capacityBackoffView `json:"backoff"`
 	Budgets []BudgetStatus        `json:"budgets"`
 	Tasks   struct {
@@ -37,10 +53,13 @@ type capacityBody struct {
 }
 
 // FormatCapacityText renders a GET /api/capacity body as text: each pool as
-// used/limit with holders, each queued task with its reason and how long it
-// has waited, each running task with what it holds, each active back-off flag
-// and each budget. The budget lines are the ones FormatBudgetText prints.
-// Ledger waiters are listed only when the response carries no queued tasks.
+// used/limit with holders (their readable form and short id when the response
+// carries holder names, otherwise the raw ids), each queued task with
+// readable name, its readable reason (falling back to the raw reason) and
+// how long it has waited, each running task with what it holds, each active
+// back-off flag and each budget. The budget lines are the ones
+// FormatBudgetText prints. Ledger waiters are listed only when the response
+// carries no queued tasks.
 func FormatCapacityText(body []byte) (string, error) {
 	var c capacityBody
 	if err := json.Unmarshal(body, &c); err != nil {
@@ -48,19 +67,21 @@ func FormatCapacityText(body []byte) (string, error) {
 	}
 	now := CapacityTextClock()
 	var b strings.Builder
-	b.WriteString(capacity.FormatPools(c.Pools))
+	b.WriteString(capacity.FormatPools(capacityPoolsForText(c.Pools)))
 
 	switch {
 	case len(c.Tasks.Waiting) > 0:
 		fmt.Fprintf(&b, "Queued tasks (%d):\n", len(c.Tasks.Waiting))
 		for _, w := range c.Tasks.Waiting {
-			fmt.Fprintf(&b, "  %s (PRD %s): %s - waiting %s\n",
-				firstNonEmpty(w.TaskTitle, w.TaskID), firstNonEmpty(w.PRDTitle, w.PRDID), w.Reason, waitedFor(now, w.Since))
+			fmt.Fprintf(&b, "  %s: %s - waiting %s\n",
+				taskLine(w.Readable, w.ShortID, w.TaskTitle, w.TaskID, firstNonEmpty(w.PRDTitle, w.PRDID)),
+				firstNonEmpty(w.ReadableReason, w.Reason), waitedFor(now, w.Since))
 		}
 	case len(c.Waiting) > 0:
 		fmt.Fprintf(&b, "Waiting (%d):\n", len(c.Waiting))
 		for _, w := range c.Waiting {
-			fmt.Fprintf(&b, "  %s (PRD %s) %s: %s\n", w.Holder, w.PRDID, waitedFor(now, w.Since), w.Reason)
+			fmt.Fprintf(&b, "  %s (PRD %s) %s: %s\n",
+				holderDisplay(w.HolderName, w.Holder), w.PRDID, waitedFor(now, w.Since), w.Reason)
 		}
 	default:
 		b.WriteString("Queued tasks: none\n")
@@ -71,7 +92,9 @@ func FormatCapacityText(body []byte) (string, error) {
 	} else {
 		fmt.Fprintf(&b, "Running tasks (%d):\n", len(c.Tasks.Running))
 		for _, h := range c.Tasks.Running {
-			fmt.Fprintf(&b, "  %s (PRD %s): holds %s", firstNonEmpty(h.TaskTitle, h.TaskID), h.PRDID, holdList(h.Pools))
+			fmt.Fprintf(&b, "  %s: holds %s",
+				taskLine(h.Readable, h.ShortID, h.TaskTitle, h.TaskID, h.PRDID),
+				holdList(h.Pools))
 			if h.Node != "" {
 				fmt.Fprintf(&b, ", node %s", h.Node)
 			}
@@ -121,6 +144,70 @@ func firstNonEmpty(vals ...string) string {
 		}
 	}
 	return ""
+}
+
+// capacityPoolsForText folds each pool entry down to the base PoolStatus, and
+// when the entry carries the new holder_names array beside the raw Holder
+// list, resolves each holder to the readable form with the short id as the
+// secondary reference. Entries without a matching readable list (older daemon,
+// or a holder the resolver could not name) keep their raw ids exactly as before.
+func capacityPoolsForText(views []capacityPoolView) []capacity.PoolStatus {
+	out := make([]capacity.PoolStatus, 0, len(views))
+	for _, v := range views {
+		ps := v.PoolStatus
+		if len(v.HolderNames) == len(ps.Holders) && len(v.HolderNames) > 0 {
+			names := make([]string, len(v.HolderNames))
+			for i, n := range v.HolderNames {
+				names[i] = holderNameDisplay(n)
+			}
+			ps.HoldNames = names
+		}
+		out = append(out, ps)
+	}
+	return out
+}
+
+// holderNameDisplay renders one resolved holder from the API's holder_names
+// array: readable form first, short id in parentheses as the secondary
+// reference when the readable does not already carry it. Bodies without the
+// new fields (older daemon) fall back to the raw holder id, unchanged.
+func holderNameDisplay(v HolderNameView) string {
+	if v.Readable == "" {
+		return v.ID
+	}
+	if v.ShortID != "" && v.Readable != v.ShortID && !strings.Contains(v.Readable, v.ShortID) {
+		return v.Readable + " (" + v.ShortID + ")"
+	}
+	return v.Readable
+}
+
+// holderDisplay renders a ledger waiter's holder: the readable form from the
+// response's holder_name field when present, else the raw holder id
+// (older daemon).
+func holderDisplay(v HolderNameView, raw string) string {
+	if d := holderNameDisplay(v); d != "" {
+		return d
+	}
+	return raw
+}
+
+// taskLine renders one queued/running task: the operator-readable sentence
+// (<PRD title> / <task title> (<short id>)) when the response carries the
+// new readable field, with the short id in parentheses as the secondary
+// reference when the sentence does not already carry it; for bodies with
+// only the old fields (older daemon) the raw title/id plus the PRD reference
+// in the previous format (prdRef is the PRD title for queued tasks and the
+// PRD id for running tasks, exactly as before).
+func taskLine(readable, shortID, taskTitle, taskID, prdRef string) string {
+	if readable != "" {
+		// The sentence already ends in a parenthetical ("… (untitled xxx)",
+		// "… (xxx)") or names the short id: no second parenthesization.
+		if shortID != "" && !strings.Contains(readable, shortID) && !strings.HasSuffix(readable, ")") {
+			return readable + " (" + shortID + ")"
+		}
+		return readable
+	}
+	return firstNonEmpty(taskTitle, taskID) + " (PRD " + prdRef + ")"
 }
 
 func holdList(pools []string) string {

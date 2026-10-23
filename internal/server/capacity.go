@@ -190,11 +190,15 @@ func (s *Server) prdRelevantPools(prdID string) (relevant map[string]bool, ok bo
 // capacityPoolJSON is one pool in the /api/capacity response. queue_depth and
 // holder are only set on node:<name> pools; they are pointers so every node
 // pool reports them (zero / empty when idle) while other pools keep the
-// plain PoolStatus shape.
+// plain PoolStatus shape. HolderNames is the readable, resolved form of the
+// same holders (holders stays a raw id array, unchanged for scripts).
 type capacityPoolJSON struct {
 	capacity.PoolStatus
 	QueueDepth *int    `json:"queue_depth,omitempty"`
 	Holder     *string `json:"holder,omitempty"`
+	// HolderNames is the parallel readable list of Holders (node pools only,
+	// mirroring Holder). Always an array there — empty when idle.
+	HolderNames []autonomous.HolderNameView `json:"holder_names,omitempty"`
 	// For llm:<name> pools: the effective inflight limit and the rule that
 	// produced it ("explicit" | "plan_tier" | "kind") — the same
 	// inference.EffectiveMaxInflight the daemon's capacity wiring enforces,
@@ -207,9 +211,9 @@ type capacityPoolJSON struct {
 
 // capacityResponse is the /api/capacity body.
 type capacityResponse struct {
-	Pools   []capacityPoolJSON `json:"pools"`
-	Leases  []capacity.Lease   `json:"leases"`
-	Waiting []capacity.Waiter  `json:"waiting"`
+	Pools   []capacityPoolJSON   `json:"pools"`
+	Leases  []capacityLeaseJSON  `json:"leases"`
+	Waiting []capacityWaiterJSON `json:"waiting"`
 	// Warnings are model-to-node collisions from the live config (see
 	// modelNodeWarnings). Omitted when there are none.
 	Warnings []inference.ModelNodeConflict `json:"warnings,omitempty"`
@@ -237,6 +241,22 @@ type capacityTasksJSON struct {
 	Running []autonomous.TaskHoldView `json:"running"`
 }
 
+// capacityLeaseJSON is one lease in the capacity response: the raw id
+// fields (holder, prd_id, …) untouched, plus holder_name — the resolved
+// readable form of that holder. Omitted when no name resolver is wired.
+type capacityLeaseJSON struct {
+	capacity.Lease
+	HolderName autonomous.HolderNameView `json:"holder_name,omitempty"`
+}
+
+// capacityWaiterJSON is one waiting request in the capacity response: the
+// raw id fields (holder, prd_id, pools, reason) untouched, plus holder_name —
+// the resolved readable form of the waiting holder.
+type capacityWaiterJSON struct {
+	capacity.Waiter
+	HolderName autonomous.HolderNameView `json:"holder_name,omitempty"`
+}
+
 // capacityBackoffJSON is one active usage back-off flag in the capacity
 // response. ResetKnown is false when Until is only the maximum back-off
 // applied because the rate-limit message named no reset time.
@@ -254,6 +274,44 @@ type taskVisibilityProvider interface {
 	TaskVisibility() ([]autonomous.TaskWaitView, []autonomous.TaskHoldView)
 }
 
+// holderNameProvider is the optional autonomous-manager capability that
+// resolves raw holder ids into readable names (autonomous/capacity_titles.go).
+// Same optional-interface pattern as taskVisibilityProvider: fakes that
+// don't know about names simply leave the holder_name fields out.
+type holderNameProvider interface {
+	ResolveHolder(holderID string) autonomous.HolderName
+}
+
+// readableWaitReasoner is the optional autonomous-manager capability that
+// words a wait reason readably with the holders named (autonomous/
+// capacity_titles.go). Same optional-interface pattern as
+// holderNameProvider: fakes without it get raw-holder-id wording instead.
+type readableWaitReasoner interface {
+	ReadableWaitSentence(reason string) string
+}
+
+// readableWaitSentence returns the readable wording of a wait reason: the
+// manager's resolver names the holders when it can, otherwise the holders
+// appear with their raw ids. Empty reason stays empty.
+func readableWaitSentence(mgr AutonomousAPI, reason string) string {
+	if reason == "" {
+		return ""
+	}
+	if r, ok := mgr.(readableWaitReasoner); ok {
+		return r.ReadableWaitSentence(reason)
+	}
+	return autonomous.ReadableWaitText(reason, autonomous.WaitReasonHolders(reason), nil)
+}
+
+// holderNames returns the manager's holder-name resolver, or nil when the
+// wired manager doesn't provide one.
+func (s *Server) holderNames() holderNameProvider {
+	if p, ok := s.autonomousMgr.(holderNameProvider); ok {
+		return p
+	}
+	return nil
+}
+
 // taskVisibility returns the waiting and running task views (empty, never
 // nil, when the autonomous subsystem is not wired or has none). With prdID
 // set, only that PRD's tasks.
@@ -263,16 +321,29 @@ func (s *Server) taskVisibility(prdID string) capacityTasksJSON {
 	if !ok {
 		return out
 	}
+	res := s.holderNames()
 	waiting, running := p.TaskVisibility()
 	for _, w := range waiting {
-		if prdID == "" || w.PRDID == prdID {
-			out.Waiting = append(out.Waiting, w)
+		if prdID != "" && w.PRDID != prdID {
+			continue
 		}
+		if res != nil && w.Readable == "" {
+			n := res.ResolveHolder(w.TaskID)
+			w.Readable = n.Readable
+			w.ShortID = n.ShortID
+		}
+		out.Waiting = append(out.Waiting, w)
 	}
 	for _, h := range running {
-		if prdID == "" || h.PRDID == prdID {
-			out.Running = append(out.Running, h)
+		if prdID != "" && h.PRDID != prdID {
+			continue
 		}
+		if res != nil && h.Readable == "" {
+			n := res.ResolveHolder(h.TaskID)
+			h.Readable = n.Readable
+			h.ShortID = n.ShortID
+		}
+		out.Running = append(out.Running, h)
 	}
 	return out
 }
@@ -306,8 +377,22 @@ func (s *Server) handleCapacity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	warnings := s.modelNodeWarnings()
+	// long=1 switches on the never-truncated "full" sentence in the resolved
+	// holder names (the web tooltip reads it); short form is the default.
+	long := r.URL.Query().Get("long") == "1"
+	res := s.holderNames()
+	// holderView resolves one raw holder id through the manager's shared
+	// snapshot (one store read per batch). Nil when no resolver is wired — the
+	// holder_name fields are then simply left out, the raw ids still stand.
+	holderView := func(id string) *autonomous.HolderNameView {
+		if res == nil || id == "" {
+			return nil
+		}
+		v := res.ResolveHolder(id).View(long)
+		return &v
+	}
 	if s.capacityLedger == nil {
-		empty := capacityResponse{Pools: []capacityPoolJSON{}, Leases: []capacity.Lease{}, Waiting: []capacity.Waiter{}, Warnings: warnings, Backoff: s.capacityBackoff(), Budgets: s.budgetStatuses(), Tasks: s.taskVisibility(r.URL.Query().Get("prd_id"))}
+		empty := capacityResponse{Pools: []capacityPoolJSON{}, Leases: []capacityLeaseJSON{}, Waiting: []capacityWaiterJSON{}, Warnings: warnings, Backoff: s.capacityBackoff(), Budgets: s.budgetStatuses(), Tasks: s.taskVisibility(r.URL.Query().Get("prd_id"))}
 		empty.PatternsVersion, empty.ClaudeCLIVersion, empty.PatternsStale = s.rateLimitPatternsStatus()
 		writeJSONOK(w, empty)
 		return
@@ -381,7 +466,24 @@ func (s *Server) handleCapacity(w http.ResponseWriter, r *http.Request) {
 
 	sort.Slice(st.Pools, func(i, j int) bool { return st.Pools[i].Name < st.Pools[j].Name })
 
-	out := capacityResponse{Pools: make([]capacityPoolJSON, 0, len(st.Pools)), Leases: st.Leases, Waiting: st.Waiting, Warnings: warnings, Backoff: s.capacityBackoff(), Budgets: s.budgetStatuses(), Tasks: s.taskVisibility(r.URL.Query().Get("prd_id"))}
+	leases := make([]capacityLeaseJSON, 0, len(st.Leases))
+	for _, l := range st.Leases {
+		cj := capacityLeaseJSON{Lease: l}
+		if v := holderView(l.Holder); v != nil {
+			cj.HolderName = *v
+		}
+		leases = append(leases, cj)
+	}
+	waitingJSON := make([]capacityWaiterJSON, 0, len(st.Waiting))
+	for _, wtr := range st.Waiting {
+		cj := capacityWaiterJSON{Waiter: wtr}
+		if v := holderView(wtr.Holder); v != nil {
+			cj.HolderName = *v
+		}
+		waitingJSON = append(waitingJSON, cj)
+	}
+
+	out := capacityResponse{Pools: make([]capacityPoolJSON, 0, len(st.Pools)), Leases: leases, Waiting: waitingJSON, Warnings: warnings, Backoff: s.capacityBackoff(), Budgets: s.budgetStatuses(), Tasks: s.taskVisibility(r.URL.Query().Get("prd_id"))}
 	out.PatternsVersion, out.ClaudeCLIVersion, out.PatternsStale = s.rateLimitPatternsStatus()
 	for _, p := range st.Pools {
 		pj := capacityPoolJSON{PoolStatus: p}
@@ -390,6 +492,14 @@ func (s *Server) handleCapacity(w http.ResponseWriter, r *http.Request) {
 			holder := strings.Join(p.Holders, ",")
 			pj.QueueDepth = &depth
 			pj.Holder = &holder
+			// holder_names: the same holders as readable objects, alongside the
+			// untouched comma-string and the raw holders array.
+			pj.HolderNames = make([]autonomous.HolderNameView, 0, len(p.Holders))
+			for _, h := range p.Holders {
+				if v := holderView(h); v != nil {
+					pj.HolderNames = append(pj.HolderNames, *v)
+				}
+			}
 		}
 		if llmName := strings.TrimPrefix(p.Name, "llm:"); strings.HasPrefix(p.Name, "llm:") && s.inferenceReg != nil {
 			if l, err := s.inferenceReg.Get(llmName); err == nil && l != nil {

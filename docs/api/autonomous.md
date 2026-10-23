@@ -944,6 +944,58 @@ cancelled, rejected and archived PRDs are not checked.
 
 ---
 
+## Capacity (`GET /api/capacity`) readable holder names
+
+`GET /api/capacity` resolves raw holder ids (task ids, PRD ids) into
+operator-readable names — "PRD title / task title (short id)" — and adds the
+resolved form **beside** the raw id fields, never in place of them. Scripts
+that read `holder`, `prd_id`, `task_id`, `pools` or `reason` see exactly what
+they always saw; the name fields are pure additions and are simply absent
+when the daemon has no name resolver wired (older daemons, or a build
+without the autonomous manager).
+
+| Where | New field(s) | Meaning, beside the unchanged id field |
+|---|---|---|
+| `pools[]` on `node:<name>` pools | `holder_names` (array) | the same holders as name objects, parallel to the untouched `holders` array and `holder` comma string. Always present on node pools — empty when idle. A name object can be omitted there only when the resolver can't resolve that one id. |
+| `leases[]` | `holder_name` (object) | the resolved readable form of that lease's `holder`; `holder` untouched. Omitted when unresolvable. |
+| `waiting[]` | `holder_name` (object) | the resolved readable form of the waiting `holder`; `holder`, `prd_id`, `pools`, `reason` untouched. |
+| `tasks.waiting[]` | `readable`, `short_id`, `prd_title`, `task_title`, `readable_reason` | the task line in readable form beside `task_id` (omitted pair when the resolver gives no title); `prd_title`/`task_title` are the source titles; `readable_reason` is the same `reason` with holder ids replaced by names — empty for reasons that name no holders (back-off, budget waits). |
+| `tasks.running[]` | `readable`, `short_id`, `prd_title`, `task_title` | the running task line beside `task_id`. |
+| Session status `automaton` block | `wait_reason_readable` | the wait reason worded with names, beside the raw `wait_reason`. Same text, one source. |
+
+Every name object (`holder_name`, each `holder_names[]` entry) has the same
+shape:
+
+| Field | Notes |
+|---|---|
+| `id` | the raw holder id (task or PRD id) — the same value the old fields carried |
+| `kind` | `session` or `task` |
+| `task_title`, `prd_title` | the source titles when known (omitted when not) |
+| `prd_id` | the owning PRD id when known (omitted when not) |
+| `short_id` | first 8 chars of the task or PRD id; what the UI shows as the secondary label |
+| `readable` | the short form: each title capped and middle-truncated (…); falls back to the raw id when no title exists |
+| `full` | the long form: the same sentence, titles never truncated. **Omitted by default**; add `?long=1` to the request and every name object carries it (the PWA tooltip reads it for long names) |
+
+The short form is the default so cheap polls stay small; `?long=1` is purely
+additive. When a resolved holder has a short id but no title, every surface
+renders the fallback label **`(untitled <short id>)`** (localized via the
+`capacity_name_untitled` PWA key) so a titleless task never shows as a bare
+dot — the raw id fields still carry the real id in the body.
+
+- **REST:** `GET /api/capacity` (bearer-authenticated). Query: `?prd_id=<id>`
+  scopes the pools/leases/waiting/tasks lists to one Automaton (all four
+  surfaces); `?long=1` includes the never-truncated `full` field in every
+  name object.
+- **MCP:** `capacity_status` — same body; the readable fields appear when
+  the daemon resolves names.
+- **CLI:** `datawatch capacity --json` — same body as the REST endpoint.
+- **PWA:** the capacity card and task details render `readable` first with
+  `short_id` as a smaller secondary label, the full text in a tooltip, and
+  the `(untitled <short id>)` fallback above. The web tests asserting the
+  rendering are in `internal/server/web/app-capacity-names.test.js`.
+
+---
+
 ## CLI
 
 ```

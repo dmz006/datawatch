@@ -164,8 +164,8 @@ func TestJudgeKeepsPinnedModel_PRDShape(t *testing.T) {
 func TestGuardrailJudgeModel_PathTierTable(t *testing.T) {
 	ctx := context.Background()
 	scenarios := []struct {
-		name string
-		prepare func(m *Manager, prd *PRD, story *Story, task *Task)
+		name     string
+		prepare  func(m *Manager, prd *PRD, story *Story, task *Task)
 		taskWant string // what the per-task judge must get
 		unitWant string // what the per-story / PRD-level judges must get
 	}{
@@ -381,12 +381,12 @@ func assertJudgePathFailsLoudly(t *testing.T, blocked bool, err error, rec *mode
 // tier precedence, backend-unservable skip, and the loud empty result.
 func TestResolveGuardrailModel_TierTable(t *testing.T) {
 	tests := []struct {
-		name     string
-		backend  string
-		prd, task string
+		name                      string
+		backend                   string
+		prd, task                 string
 		cfgGuard, cfgVer, cfgPlan string
-		want     string
-		wantErr  error
+		want                      string
+		wantErr                   error
 	}{
 		{"PRD tier wins on pi", "pi", "pi/prd:27b", "pi/task:27b", "g/guard:27b", "g/verify:27b", "g/plan:27b", "pi/prd:27b", nil},
 		{"task tier next", "pi", "", "pi/task:27b", "g/guard:27b", "g/verify:27b", "g/plan:27b", "pi/task:27b", nil},
@@ -488,7 +488,7 @@ func TestPinnedModelHelpers_EdgeBranches(t *testing.T) {
 // that callers must fail loudly on for pi-family backends.
 func TestResolvePlannedModel_Tiers(t *testing.T) {
 	tests := []struct {
-		name string
+		name                                                               string
 		backend, prdDecomp, prdBack, prdModel, gBack, gPlan, gVerify, want string
 	}{
 		{"prd decomposition_model wins", "pi", "decomp:27b", "pi", "prd:27b", "pi", "plan:27b", "ver:27b", "decomp:27b"},

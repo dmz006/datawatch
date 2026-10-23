@@ -75,6 +75,12 @@ type Waiter struct {
 	Pools  []string  `json:"pools"`
 	Since  time.Time `json:"since"`
 	Reason string    `json:"reason"`
+	// HoldName is the operator-readable form of Holder ("" = unresolved; the
+	// renderer then shows the raw id exactly as before).
+	HoldName string `json:"hold_name,omitempty"`
+	// ReadReason is the same Reason with the holders it names resolved to
+	// readable forms ("" = no resolution available).
+	ReadReason string `json:"read_reason,omitempty"`
 }
 
 // PoolStatus is one pool in a snapshot.
@@ -84,6 +90,9 @@ type PoolStatus struct {
 	External int      `json:"external"`
 	Held     int      `json:"held"`
 	Holders  []string `json:"holders"`
+	// HoldNames is the operator-readable form of Holders, in the same order
+	// (nil = unresolved; the renderer then shows the raw ids as before).
+	HoldNames []string `json:"hold_names,omitempty"`
 }
 
 // Status is a point-in-time view of the ledger.
@@ -560,7 +569,8 @@ func (l *Ledger) Snapshot() Status {
 	return st
 }
 
-// FormatPools renders one line per pool: used/limit with holders, or a
+// FormatPools renders one line per pool: used/limit with holders (readable
+// forms when the pool carries them, otherwise the raw ids), or a
 // "none configured" line when there are no pools.
 func FormatPools(pools []PoolStatus) string {
 	var b strings.Builder
@@ -577,7 +587,11 @@ func FormatPools(pools []PoolStatus) string {
 			fmt.Fprintf(&b, " (%d external)", p.External)
 		}
 		if len(p.Holders) > 0 {
-			fmt.Fprintf(&b, " held by %s", strings.Join(p.Holders, ","))
+			holders := p.Holders
+			if len(p.HoldNames) == len(p.Holders) {
+				holders = p.HoldNames
+			}
+			fmt.Fprintf(&b, " held by %s", strings.Join(holders, ","))
 		}
 		b.WriteString("\n")
 	}
@@ -585,7 +599,9 @@ func FormatPools(pools []PoolStatus) string {
 }
 
 // FormatText renders a compact human-readable summary of a Status: one line
-// per pool (used/limit with holders) followed by the wait queue.
+// per pool (used/limit with holders) followed by the wait queue. A waiter
+// shows its readable holder form and readable reason when the snapshot
+// carries them, otherwise the raw holder id and reason.
 func FormatText(st Status) string {
 	var b strings.Builder
 	b.WriteString(FormatPools(st.Pools))
@@ -595,7 +611,14 @@ func FormatText(st Status) string {
 	}
 	fmt.Fprintf(&b, "Waiting (%d):\n", len(st.Waiting))
 	for _, w := range st.Waiting {
-		fmt.Fprintf(&b, "  %s (PRD %s) %s: %s\n", w.Holder, w.PRDID, time.Since(w.Since).Round(time.Second), w.Reason)
+		holder, reason := w.Holder, w.Reason
+		if w.HoldName != "" {
+			holder = w.HoldName
+		}
+		if w.ReadReason != "" {
+			reason = w.ReadReason
+		}
+		fmt.Fprintf(&b, "  %s (PRD %s) %s: %s\n", holder, w.PRDID, time.Since(w.Since).Round(time.Second), reason)
 	}
 	return b.String()
 }

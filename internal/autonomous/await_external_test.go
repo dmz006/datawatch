@@ -27,9 +27,9 @@ import (
 
 func TestAwaitExternal_MarkerParsing(t *testing.T) {
 	cases := []struct {
-		name     string
-		out      string
-		wantCond string
+		name      string
+		out       string
+		wantCond  string
 		wantFresh bool
 	}{
 		{"none", "did some work\nDATAWATCH_COMPLETE: ok", "", false},
@@ -505,4 +505,3 @@ func TestAwaitExternal_BootResumeDeadSessionRequeued(t *testing.T) {
 	default:
 	}
 }
-

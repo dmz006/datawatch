@@ -35,7 +35,7 @@ func selfScopeSave(t *testing.T, s *Server, id, fullID string, ready bool) {
 		Name: "n-" + id, Task: "t", ProjectDir: "/tmp/" + id,
 		TmuxSession: "cs-h1-" + id, State: session.StateRunning,
 		ChannelReady: ready,
-		CreatedAt: now, UpdatedAt: now,
+		CreatedAt:    now, UpdatedAt: now,
 	}
 	if err := s.manager.SaveSession(sess); err != nil { //nolint:errcheck
 		t.Fatalf("SaveSession: %v", err)

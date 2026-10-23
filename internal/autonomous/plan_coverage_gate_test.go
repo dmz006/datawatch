@@ -368,7 +368,7 @@ func TestPlanCoverage_IsFailingAndFingerprint(t *testing.T) {
 	b := &PlanCoverage{
 		Mode:     "block",
 		MinRatio: 1.0,
-		Report:   PlanCoverageReport{Covered: 1, Missing: 1, Weakened: 1,
+		Report: PlanCoverageReport{Covered: 1, Missing: 1, Weakened: 1,
 			Unmatched: []RequirementVerdict{reqs[1], reqs[0]}}, // reversed order
 	}
 	if !a.IsFailing() || !b.IsFailing() {
@@ -381,7 +381,7 @@ func TestPlanCoverage_IsFailingAndFingerprint(t *testing.T) {
 	diff := &PlanCoverage{
 		Mode:     "block",
 		MinRatio: 1.0,
-		Report:   PlanCoverageReport{Covered: 1, Missing: 1, Weakened: 1,
+		Report: PlanCoverageReport{Covered: 1, Missing: 1, Weakened: 1,
 			Unmatched: []RequirementVerdict{
 				{Requirement: "implement login form", Verdict: CoverageMissing},
 				{Requirement: "emit audit trail entries", Verdict: CoverageWeakened},
@@ -419,7 +419,7 @@ func TestPlanCoverage_IsFailingAndFingerprint(t *testing.T) {
 	partial := &PlanCoverage{
 		Mode:     "block",
 		MinRatio: 0.5,
-		Report:   PlanCoverageReport{Covered: 2, Missing: 1,
+		Report: PlanCoverageReport{Covered: 2, Missing: 1,
 			Unmatched: []RequirementVerdict{{Requirement: "x", Verdict: CoverageMissing}}},
 	}
 	if partial.IsFailing() {

@@ -50,10 +50,10 @@ const (
 
 	// REST acknowledgement action (subpath of /api/autonomous/prds/{id}/
 	//), the ack tool name, and the CLI verbs.
-	pcAckAction  = "plan_coverage/acknowledge"
-	pcAckTool    = "autonomous_prd_plan_coverage_acknowledge"
-	pcCLIVerb    = "prd-coverage"
-	pcAckCLI     = "prd-ack-coverage"
+	pcAckAction = "plan_coverage/acknowledge"
+	pcAckTool   = "autonomous_prd_plan_coverage_acknowledge"
+	pcCLIVerb   = "prd-coverage"
+	pcAckCLI    = "prd-ack-coverage"
 )
 
 // gateSpec / gateFailingPlan mirror the internal/autonomous gate
@@ -264,8 +264,8 @@ func TestPlanCoverage_SurfacesParity(t *testing.T) {
 			// Both settings reach the REST config surface MCP proxies.
 			"/api/autonomous/config",
 			// The ack tool: exact tool name + the exact REST ack path.
-			`"` + pcAckTool + `"`,
-			`"+id+"/` + pcAckAction + `"`,
+			`"`+pcAckTool+`"`,
+			`"+id+"/`+pcAckAction+`"`,
 			// Report visibility: the PRD tool advertises plan_coverage
 			// on the detail=full path.
 			"plan_coverage",
@@ -283,7 +283,7 @@ func TestPlanCoverage_SurfacesParity(t *testing.T) {
 			"prd-coverage <id>",
 			"prd-ack-coverage <id>",
 			"detail=full",
-			`"/api/autonomous/prds/"+args[0]+` + `"/` + pcAckAction + `"`,
+			`"/api/autonomous/prds/"+args[0]+`+`"/`+pcAckAction+`"`,
 		)
 		// Generic config set (the `config set <key> <value>` pass-through
 		// that carries both dash-prefixed keys to /api/config).

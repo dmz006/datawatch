@@ -89,6 +89,134 @@ func holderList(holders []string) string {
 	return strings.Join(holders, ",")
 }
 
+// ReadableWaitText turns a wait reason plus the holder ids it names into an
+// operator-readable sentence: the same fact worded the same way, but with
+// the holder names ("<PRD title> / <task title> (<short id>)", "Verifying:
+// <task title> (<short id>)") instead of raw holder ids. holderName maps a
+// raw holder id to its readable form; a nil or empty result falls back to
+// the raw id (the shared holder-title resolver, capacity_titles.go, already
+// falls back to "(untitled <short id>)" when a title is missing). An empty
+// holder list reads "other sessions", same as the raw text. Only reasons
+// that name holders — a full pool and a busy node — are reworded; every
+// other reason is returned unchanged. The original reason text and its
+// prefix stay intact; this is a companion sentence for operator-facing
+// views, not a replacement.
+func ReadableWaitText(reason string, holders []string, holderName func(holderID string) string) string {
+	if holderName == nil {
+		holderName = func(holderID string) string { return holderID }
+	}
+	switch ClassifyWaitReason(reason) {
+	case WaitCausePoolFull:
+		pool, used, limit, ok := parsePoolWait(reason)
+		if !ok {
+			return reason
+		}
+		return fmt.Sprintf("pool %s full (%d/%d), held by %s", pool, used, limit, readableHolderList(holders, holderName))
+	case WaitCauseNodeBusy:
+		node, used, limit, ok := parseNodeWait(reason)
+		if !ok {
+			return reason
+		}
+		return fmt.Sprintf("waiting for node %s: %d/%d engines in use, held by %s", node, used, limit, readableHolderList(holders, holderName))
+	}
+	return reason
+}
+
+// WaitReasonHolders returns the raw holder ids a reason names (a full pool
+// or a busy node), in listing order. Nil when the reason names no holders at
+// all — the other reasons never do — so the caller can skip re-wording.
+func WaitReasonHolders(reason string) []string {
+	switch ClassifyWaitReason(reason) {
+	case WaitCausePoolFull, WaitCauseNodeBusy:
+	default:
+		return nil
+	}
+	const marker = "held by "
+	i := strings.Index(reason, marker)
+	if i < 0 {
+		return nil
+	}
+	rest := strings.TrimSpace(reason[i+len(marker):])
+	if ClassifyWaitReason(reason) == WaitCausePoolFull {
+		// The holder list is the tail of the last "(u/l, held by …)" group.
+		if j := strings.LastIndex(rest, ")"); j >= 0 {
+			rest = rest[:j]
+		}
+	}
+	rest = strings.TrimSpace(rest)
+	if rest == "" || rest == holderList(nil) {
+		return nil
+	}
+	return strings.Split(rest, ",")
+}
+
+// parsePoolWait splits a pool-full reason ("pool <p> full (<u>/<l> …") into
+// the pool name, used and limit. ok is false when the shape does not match.
+func parsePoolWait(reason string) (pool string, used, limit int, ok bool) {
+	rest := strings.TrimSpace(reason)
+	if !strings.HasPrefix(rest, poolPrefix) {
+		return
+	}
+	rest = rest[len(poolPrefix):]
+	i := strings.Index(rest, poolFullInfix)
+	if i < 0 {
+		return
+	}
+	pool = rest[:i]
+	nums := rest[i+len(poolFullInfix):]
+	if j := strings.Index(nums, ")"); j >= 0 {
+		nums = nums[:j]
+	}
+	if n, err := fmt.Sscanf(nums, "%d/%d", &used, &limit); n != 2 || err != nil {
+		return "", 0, 0, false
+	}
+	return pool, used, limit, true
+}
+
+// parseNodeWait splits a node-busy reason ("waiting for node <n>: <u>/<l>
+// engines …") into the node name, used and limit. ok is false when the shape
+// does not match.
+func parseNodeWait(reason string) (node string, used, limit int, ok bool) {
+	rest := strings.TrimSpace(reason)
+	if !strings.HasPrefix(rest, nodeBusyPrefix) {
+		return
+	}
+	rest = rest[len(nodeBusyPrefix):]
+	name, rest, found := strings.Cut(rest, ": ")
+	if !found {
+		return
+	}
+	node = name
+	if j := strings.Index(rest, " engines"); j >= 0 {
+		rest = rest[:j]
+	}
+	if n, err := fmt.Sscanf(strings.TrimSpace(rest), "%d/%d", &used, &limit); n != 2 || err != nil {
+		return "", 0, 0, false
+	}
+	return node, used, limit, true
+}
+
+// readableHolderList renders a wait reason's holder list readably: one name
+// alone, two as "A and B", three or more as "A, B and C". An empty list
+// reads "other sessions", like the raw text does. Blank names fall back to
+// the raw holder id.
+func readableHolderList(holders []string, holderName func(holderID string) string) string {
+	if len(holders) == 0 {
+		return holderList(nil)
+	}
+	named := make([]string, len(holders))
+	for i, id := range holders {
+		named[i] = strings.TrimSpace(id)
+		if s := strings.TrimSpace(holderName(id)); s != "" {
+			named[i] = s
+		}
+	}
+	if len(named) < 3 {
+		return strings.Join(named, " and ")
+	}
+	return strings.Join(named[:len(named)-1], ", ") + " and " + named[len(named)-1]
+}
+
 // BackoffWaitText words a wait on a backed-off backend. With a known reset it
 // shows the reset time and how long away it is; with an unknown one it says
 // so plainly and shows when the next attempt is allowed. note is optional

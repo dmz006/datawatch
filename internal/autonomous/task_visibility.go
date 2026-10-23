@@ -29,15 +29,25 @@ const (
 // why it is waiting, since when, and (when the reason names them) when the
 // wait ends and who holds what it needs.
 type TaskWaitView struct {
-	TaskID    string     `json:"task_id"`
-	PRDID     string     `json:"prd_id"`
-	PRDTitle  string     `json:"prd_title,omitempty"`
-	TaskTitle string     `json:"task_title,omitempty"`
-	Cause     WaitCause  `json:"cause,omitempty"`
-	Reason    string     `json:"reason"`
-	Since     time.Time  `json:"since"`
-	ResetsAt  *time.Time `json:"resets_at,omitempty"`
-	Holder    string     `json:"holder,omitempty"`
+	TaskID    string    `json:"task_id"`
+	PRDID     string    `json:"prd_id"`
+	PRDTitle  string    `json:"prd_title,omitempty"`
+	TaskTitle string    `json:"task_title,omitempty"`
+	Cause     WaitCause `json:"cause,omitempty"`
+	Reason    string    `json:"reason"`
+	// ReadableReason is the same reason with operator-readable holder names
+	// ("<pool> full (u/l), held by <PRD title> / <task title> (<short id>) and
+	// …"), resolved through the shared holder-title resolver; empty when the
+	// reason names no holders, such as a backoff or budget wait.
+	ReadableReason string     `json:"readable_reason,omitempty"`
+	Since          time.Time  `json:"since"`
+	ResetsAt       *time.Time `json:"resets_at,omitempty"`
+	Holder         string     `json:"holder,omitempty"`
+	// Readable is the operator-readable sentence for the waiting task
+	// ("<PRD title> / <task title> (<short id>)"), ShortID the first 8 chars
+	// of the task id. Both are added beside, never instead of, the id fields.
+	Readable string `json:"readable,omitempty"`
+	ShortID  string `json:"short_id,omitempty"`
 }
 
 // TaskHoldView is one running task in the status and capacity responses:
@@ -46,6 +56,7 @@ type TaskWaitView struct {
 type TaskHoldView struct {
 	TaskID    string    `json:"task_id"`
 	PRDID     string    `json:"prd_id"`
+	PRDTitle  string    `json:"prd_title,omitempty"`
 	TaskTitle string    `json:"task_title,omitempty"`
 	Pools     []string  `json:"pools"`
 	Node      string    `json:"node,omitempty"`
@@ -54,6 +65,11 @@ type TaskHoldView struct {
 	// Note is set when the holdings need a sentence: a task parked on an
 	// external condition has released its inference slot.
 	Note string `json:"note,omitempty"`
+	// Readable is the operator-readable sentence for the running task
+	// ("<PRD title> / <task title> (<short id>)"), ShortID the first 8 chars
+	// of the task id.
+	Readable string `json:"readable,omitempty"`
+	ShortID  string `json:"short_id,omitempty"`
 }
 
 // visTask is the slice of a task the views need, copied under the store lock
@@ -160,7 +176,41 @@ func (m *Manager) buildTaskVisibility(budgets []BudgetStatus) ([]TaskWaitView, [
 			}
 		}
 	}
+	// Name every view through the shared holder resolver (capacity_titles.go): one
+	// snapshot for the whole batch, so the status and capacity responses stay
+	// fast even with many tasks.
+	for i := range queue {
+		queue[i].Readable, queue[i].ShortID = m.holderNames(queue[i].TaskID)
+		if queue[i].Reason != "" {
+			queue[i].ReadableReason = m.ReadableWaitSentence(queue[i].Reason)
+		}
+	}
+	for i := range holdings {
+		holdings[i].Readable, holdings[i].ShortID = m.holderNames(holdings[i].TaskID)
+	}
 	return queue, holdings
+}
+
+// holderNames returns the readable sentence and short id for one task id
+// (the resolved view of the task's own lease), resolved through the shared
+// cached resolver.
+func (m *Manager) holderNames(taskID string) (string, string) {
+	n := m.ResolveHolder(taskID)
+	return n.Readable, n.ShortID
+}
+
+// ReadableWaitSentence words a wait reason readably for operators: the holder
+// ids it names are resolved through the shared holder-title resolver, so a
+// wait shows who is actually holding the slot ("<PRD title> /
+// <task title> (<short id>)", "Verifying: <task title> (<short id>)"). Reasons
+// that name no holders are returned unchanged, exactly as recorded.
+func (m *Manager) ReadableWaitSentence(reason string) string {
+	if reason == "" {
+		return ""
+	}
+	return ReadableWaitText(reason, WaitReasonHolders(reason), func(holderID string) string {
+		return m.ResolveHolder(holderID).Full
+	})
 }
 
 // waitingTaskView words a task in waiting_capacity from its persisted reason,
@@ -240,7 +290,7 @@ func queuedTaskView(p visPRD, t *visTask, byID map[string]*visTask, ahead int) (
 // lease while verifying) and the tree lock key when the executor holds one.
 func (m *Manager) runningHoldView(p visPRD, t *visTask, led *capacity.Ledger) TaskHoldView {
 	h := TaskHoldView{
-		TaskID: t.id, PRDID: p.id, TaskTitle: t.title, SessionID: t.sessionID,
+		TaskID: t.id, PRDID: p.id, PRDTitle: p.title, TaskTitle: t.title, SessionID: t.sessionID,
 		Pools: []string{}, Since: t.updatedAt,
 	}
 	if t.startedAt != nil {
@@ -280,7 +330,7 @@ func (m *Manager) runningHoldView(p visPRD, t *visTask, led *capacity.Ledger) Ta
 // inference slot is released; the tree lock is kept unless the park released it.
 func (m *Manager) awaitHoldView(p visPRD, t *visTask) TaskHoldView {
 	h := TaskHoldView{
-		TaskID: t.id, PRDID: p.id, TaskTitle: t.title, SessionID: t.sessionID,
+		TaskID: t.id, PRDID: p.id, PRDTitle: p.title, TaskTitle: t.title, SessionID: t.sessionID,
 		Pools: []string{}, Since: t.updatedAt,
 	}
 	if key := m.heldTreeKey(p, t); key != "" {

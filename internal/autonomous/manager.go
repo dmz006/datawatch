@@ -649,6 +649,11 @@ type Manager struct {
 	lifecycleHost string
 	lifecycleOnce sync.Once
 
+	// Holder-name resolver (capacity_titles.go) — lazily created, one shared
+	// title snapshot so a whole capacity response resolves in one store read.
+	holderResolverOnce sync.Once
+	holderResolver     *TitleResolver
+
 	// BL221 (v6.2.0) Phase 3 — scan framework
 	graderFn     scan.GraderFn
 	ruleEditorFn scan.RuleEditorFn

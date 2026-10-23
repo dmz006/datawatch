@@ -1921,6 +1921,8 @@
   "capacity_card_budget_title": "LLM-Budgets",
   "capacity_card_budget_estimate": "Der Anteil an der Zuteilung ist eine Schätzung auf Basis des Tarifs, kein gemessener Wert",
   "capacity_card_holders": "Halter",
+  "capacity_name_untitled": "(ohne Titel {id})",
+  "capacity_name_prd": "Automat",
   "capacity_card_empty": "Keine Kapazitätsgrenzen, Backoffs oder Budgets anzuzeigen",
   "settings_plan_tier_allocation_usd": "Plan-Stufen-Zuteilung (USD pro Stufe; 0 = nicht angegeben)",
   "settings_plan_tier_allocation_hint": "Speist nur den geschätzten Zuteilungsanteil eines Budgets; blockiert nie etwas. 0 oder eine leere Stufe bedeutet keine Angabe.",
