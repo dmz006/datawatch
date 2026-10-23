@@ -2,12 +2,16 @@ package session
 
 import (
 	"context"
+	"errors"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/testhome"
 )
 
 // watchedLeakPrefixes are the datawatch test-harness temp prefixes that have
@@ -42,6 +46,10 @@ var watchedLeakPrefixes = []string{
 // concurrent activity (other sessions, the daemon) writing to the shared
 // system temp dir can no longer produce false positives here, because it
 // cannot see this private directory.
+//
+// The inner run's throwaway homes are removed even when the go tool created
+// read-only module cache files in them (testhome.Remove plus -modcacherw), so
+// the exclusive dir stays empty after a clean run.
 //
 // The inner run covers the packages that use the shared temp dir
 // (mcp, server, plugins) and deliberately does not include ./internal/session/
@@ -124,4 +132,142 @@ func TestNoNewTmpLeakEntries(t *testing.T) {
 		fresh,
 		strings.Join(watchedLeakPrefixes, ", "),
 		strings.Join(leaked, "; "))
+}
+
+// buildReadOnlyModTree creates a throwaway home under the current temp dir
+// shaped like what the go tool leaves behind: go/pkg/mod/example.com/mod@v1.0.0/sub/file.go
+// with the file mode 0444 and every directory below the root mode 0555. All
+// content is created first and the directories are chmod'ed last, deepest first.
+func buildReadOnlyModTree(t *testing.T) string {
+	t.Helper()
+	root, err := os.MkdirTemp("", "dw-test-home-")
+	if err != nil {
+		t.Fatalf("create test home: %v", err)
+	}
+	// Registered first so it runs last: a failed test must not leave a
+	// read-only tree behind.
+	t.Cleanup(func() { _ = testhome.Remove(root) }) //nolint:errcheck
+
+	rel := filepath.Join("go", "pkg", "mod", "example.com", "mod@v1.0.0", "sub")
+	if err := os.MkdirAll(filepath.Join(root, rel), 0o755); err != nil {
+		t.Fatalf("create module tree: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, rel, "file.go"), []byte("package sub\n"), 0o444); err != nil {
+		t.Fatalf("write module file: %v", err)
+	}
+	if err := os.Chmod(filepath.Join(root, rel, "file.go"), 0o444); err != nil {
+		t.Fatalf("chmod module file: %v", err)
+	}
+	// Deepest first: a 0555 parent would not stop chmod of its child, but this
+	// mirrors the order in which the go tool seals the tree.
+	dirs := []string{rel}
+	for d := filepath.Dir(rel); d != "."; d = filepath.Dir(d) {
+		dirs = append(dirs, d)
+	}
+	for _, d := range dirs {
+		if err := os.Chmod(filepath.Join(root, d), 0o555); err != nil {
+			t.Fatalf("chmod %s: %v", d, err)
+		}
+	}
+	return root
+}
+
+// TestHomeCleanupRemovesReadOnlyTree proves testhome.Remove deletes a
+// TestMain-style home holding a read-only module cache tree, which a plain
+// os.RemoveAll cannot.
+func TestHomeCleanupRemovesReadOnlyTree(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("permissions do not block root, so the read-only tree proves nothing")
+	}
+
+	// Private temp dir so the dw-test-home-* check sees only this test's homes
+	// and not the package's own TestMain home or other concurrent runs.
+	private := t.TempDir()
+	// Runs before TempDir's own removal, which could not delete a read-only tree.
+	t.Cleanup(func() { _ = testhome.Remove(private) }) //nolint:errcheck
+	t.Setenv("TMPDIR", private)
+
+	root := buildReadOnlyModTree(t)
+	control := buildReadOnlyModTree(t)
+
+	// Control: the bug. A plain RemoveAll cannot unlink files from a 0555 directory.
+	if err := os.RemoveAll(control); err == nil {
+		if _, lerr := os.Lstat(control); errors.Is(lerr, fs.ErrNotExist) {
+			t.Fatalf("control: os.RemoveAll removed the read-only tree; the fixture is not read-only")
+		}
+	}
+	if _, err := os.Lstat(control); err != nil {
+		t.Fatalf("control: expected the read-only tree to survive os.RemoveAll: %v", err)
+	}
+
+	if err := testhome.Remove(root); err != nil {
+		t.Fatalf("testhome.Remove(%s): %v", root, err)
+	}
+	if _, err := os.Lstat(root); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("home %s still exists after testhome.Remove: lstat err=%v", root, err)
+	}
+
+	left, err := filepath.Glob(filepath.Join(private, "dw-test-home-*"))
+	if err != nil {
+		t.Fatalf("glob %s: %v", private, err)
+	}
+	for _, e := range left {
+		if e != control {
+			t.Errorf("leftover test home %s after testhome.Remove", e)
+		}
+	}
+}
+
+// TestHomeEnvPinsGoModuleCache checks the live process: TestMain applied
+// testhome.PinGoEnv, so go children must write a writable module cache and,
+// when one exists, reuse the real module cache instead of the throwaway HOME.
+func TestHomeEnvPinsGoModuleCache(t *testing.T) {
+	if !hasModcacherw(os.Getenv("GOFLAGS")) {
+		t.Errorf("GOFLAGS=%q does not contain -modcacherw", os.Getenv("GOFLAGS"))
+	}
+
+	if _, err := exec.LookPath("go"); err != nil {
+		t.Skipf("go toolchain not found on PATH: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, "go", "env", "GOFLAGS", "GOMODCACHE").Output()
+	if err != nil {
+		t.Fatalf("go env GOFLAGS GOMODCACHE: %v", err)
+	}
+	lines := strings.Split(strings.TrimRight(string(out), "\n"), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("go env printed %d lines, want 2: %q", len(lines), out)
+	}
+	goflags, modcache := lines[0], lines[1]
+	if !hasModcacherw(goflags) {
+		t.Errorf("go env GOFLAGS=%q does not contain -modcacherw", goflags)
+	}
+
+	// Same derivation as testhome.PinGoEnv: GOPATH's first entry, else <realHome>/go.
+	gopath := filepath.Join(realHome, "go")
+	if gp := filepath.SplitList(os.Getenv("GOPATH")); len(gp) > 0 && gp[0] != "" {
+		gopath = gp[0]
+	}
+	realModCache := filepath.Join(gopath, "pkg", "mod")
+	if fi, err := os.Stat(realModCache); err != nil || !fi.IsDir() {
+		t.Logf("real module cache %s does not exist; nothing to pin", realModCache)
+		return
+	}
+	home := os.Getenv("HOME")
+	if home == "" {
+		t.Fatal("HOME is empty in the test process")
+	}
+	if rel, err := filepath.Rel(home, modcache); err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		t.Errorf("GOMODCACHE %s is under the throwaway HOME %s; want the real cache %s", modcache, home, realModCache)
+	}
+}
+
+func hasModcacherw(goflags string) bool {
+	for _, f := range strings.Fields(goflags) {
+		if f == "-modcacherw" {
+			return true
+		}
+	}
+	return false
 }
