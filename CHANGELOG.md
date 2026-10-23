@@ -5,6 +5,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.118 — Restart-safe task sessions and orphan sweep
+
+Fixes a restart-time duplicate-worker defect where a daemon restart could leave a second worker session running for the same task in the same worktree.
+
+- The task-to-session link is now saved at launch, before the first prompt is sent.
+- Boot reconcile adopts a matching live session instead of starting another one.
+- Resetting or relaunching a task ends every live session that belongs to the task and its worktree first.
+- A periodic sweep ends orphaned automation sessions. It leaves verifier, decompose and judge sessions alone.
+- New setting `autonomous.orphan_grace_seconds` controls how long a session may be unclaimed before the sweep ends it.
+
 ## v9.5.117 — Verifier watchdog, fallback verifier and a lease reaper that spares live verifiers
 
 ### Fixed
