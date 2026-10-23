@@ -201,7 +201,15 @@ var Version = "9.5.97"
 // a test can wait for it before mutating or tearing down the sessions it
 // marshals.
 func (s *Server) broadcastSessionsAsync() {
-	sessions := s.manager.ListSessions()
+	live := s.manager.ListSessions()
+	// Copy under the store lock here, on the caller's goroutine: the monitor
+	// goroutines keep writing the live sessions, and marshalling them from
+	// the broadcast goroutine would race with those writes.
+	sessions := make([]*session.Session, len(live))
+	for i, sess := range live {
+		snap := s.manager.SessionSnapshot(sess)
+		sessions[i] = &snap
+	}
 	s.broadcastWG.Add(1)
 	go func() {
 		defer s.broadcastWG.Done()

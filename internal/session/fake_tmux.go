@@ -77,6 +77,14 @@ func (f *FakeTmux) record(op, session string, args ...string) error {
 	return nil
 }
 
+// CallsSnapshot returns a copy of the recorded calls, safe to read while
+// other goroutines keep recording.
+func (f *FakeTmux) CallsSnapshot() []FakeTmuxCall {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]FakeTmuxCall(nil), f.Calls...)
+}
+
 // Count returns the number of calls with the given op.
 func (f *FakeTmux) Count(op string) int {
 	f.mu.Lock()
