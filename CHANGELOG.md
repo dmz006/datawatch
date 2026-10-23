@@ -5,6 +5,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.116 — Capacity ledger callbacks no longer wait on the network or the session store
+
+### Added
+
+- **A stuck capacity ledger now reports itself.** If `/api/capacity` or the comm `capacity` reply waits more than 5 seconds for the ledger lock, the daemon logs `capacity ledger lock held for N seconds` once, with the stacks of the goroutines inside the capacity package, so the holder is visible without a debugger. No new config key.
+
+### Changed
+
+- **The shared-node check now reads cached peer usage.** Federated peers' capacity counts are kept in memory and refreshed at the end of each fingerprint sync pass (and once at daemon start), so the admission path never makes a network call. Peers that have not opted in are never contacted. No new config key.
+
 ## v9.5.115 — The session list legacy-shape test no longer flakes under load
 
 ### Fixed
