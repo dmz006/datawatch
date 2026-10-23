@@ -26,6 +26,11 @@
 //   --list                       print the run plan as ONE JSON document on
 //       stdout and exit 0, without launching a browser
 //
+// Exit codes: 0 on success (including --list), 1 when browser execution was
+// requested but is still the 'not implemented' stub (next task), 2 on bad
+// arguments (unknown flag, unknown view or profile, --exhaustive without
+// --profile full, or a matrix state-list error).
+//
 // Plan document printed by --list:
 //   { profile, views, viewports (unique {width,height,orientation} used),
 //     themes (unique), zooms (unique), states, interactions,
