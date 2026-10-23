@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.114 — Capacity rate ceilings and a non-blocking admission query
+
+### Added
+
+- **Capacity pools can carry requests-per-window and tokens-per-window ceilings.** A pool may now limit the number of requests and the number of tokens over a rolling window in addition to its concurrency limit, reusing the window mechanism of the dollar budget. Admission checks every dimension that is set; a pool with no ceiling behaves exactly as before. The keys are on every config surface, and a wait caused by a rate ceiling shows in the capacity API, the wait-reason text and the audit events with the reset time when known.
+- **Admission can be asked without waiting.** A new `Decision` result (admit, queued, or alternate available) reports a waiting request's queue position and idle capacity found elsewhere, and a non-blocking `Status` query returns it without taking a lease or changing state. It is available on REST and MCP read endpoints and in the CLI and chat capacity text; the blocking `Acquire` that existing callers use is unchanged.
+
 ## v9.5.113 — Release scan unblocked for one Brotli finding in the agent image
 
 ### Fixed
