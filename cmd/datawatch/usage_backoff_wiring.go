@@ -54,7 +54,7 @@ func setBackoffAuditLog(l *auditpkg.Log) {
 		auditEntrySink.Store(nil)
 		return
 	}
-	var fn func(auditpkg.Entry) = func(e auditpkg.Entry) { _ = l.Write(e) }
+	fn := func(e auditpkg.Entry) { _ = l.Write(e) }
 	auditEntrySink.Store(&fn)
 }
 

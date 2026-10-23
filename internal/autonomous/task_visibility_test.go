@@ -128,7 +128,7 @@ func TestTaskVisibility_RunningTaskCarriesHoldings(t *testing.T) {
 	}, time.Second, nil, nil); err != nil {
 		t.Fatalf("acquire: %v", err)
 	}
-	var release func() = func() {}
+	release := func() {}
 	m.attachTreeRelease(ids[0], &release)
 
 	_, holdings := m.TaskVisibility()
