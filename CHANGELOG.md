@@ -7,6 +7,8 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## v9.5.99 — The quality gate runs through a shell and compares by test name
 
+### Fixed
+
 - **The quality-gate test command now runs through a shell, in the project directory.** `test_command` is one string run with `sh -c`, so compound commands such as `go test ./... && node --test internal/server/web/*.test.js` work instead of breaking the gate.
 - **A gate baseline that cannot produce usable results is marked invalid, never trusted, and never blocks.** A command that could not start or timed out, a non-zero exit that names no failing test (a build or setup problem) and a run that found no tests are recorded on the Automaton as `quality_gate_status: "invalid"` with a plain `quality_gate_invalid_reason` and a `quality_gate_invalid` decision. The baseline is checked when the gate is set and when the Automaton starts, and from then on the gate only warns. An unusable run is reported as an invalid gate, never as a regression.
 - **Regressions are compared by failing test name, not by count, and confirmed by one re-run.** A new failing test name is a regression even when the failure count is unchanged, and tests that now pass are reported as an improvement. A regression is confirmed by one re-run, and only the tests that fail again are reported; a failure that does not reproduce is treated as stable.

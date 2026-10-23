@@ -1388,7 +1388,6 @@ func (m *Manager) executeOne(ctx context.Context, prd *PRD, t *Task, spawn Spawn
 						// not get to re-pass the verifier with the gate still
 						// red. Run re-reads the stored task and rolls the
 						// Automaton up from the TaskFailed status.
-						lastFailureCategory = "policy"
 						m.recordGateDisagreementDecision(prd.ID, t.ID, policy, "blocked: verifier ok, gate regression — "+cmp.Summary)
 						oldStatus := t.Status
 						m.store.WithLock(func() {
