@@ -84,7 +84,7 @@ func TestStoreArchiveMovesOldTerminal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s2.Close()
+	defer func() { _ = s2.Close() }()
 	if len(s2.List()) != 1 {
 		t.Fatalf("reopened active set has %d sessions, want 1", len(s2.List()))
 	}
@@ -178,7 +178,7 @@ func TestStoreRestoreFromArchive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s2.Close()
+	defer func() { _ = s2.Close() }()
 	if _, ok := s2.Get("h-cc01"); !ok {
 		t.Fatal("restored session lost on reopen")
 	}
@@ -209,7 +209,7 @@ func TestStoreArchiveEncrypted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s2.Close()
+	defer func() { _ = s2.Close() }()
 	if res, total, _ := s2.ListArchived("secret", 0, 5); total != 1 || len(res) != 1 {
 		t.Fatalf("search over encrypted archive: total=%d", total)
 	}
@@ -218,7 +218,7 @@ func TestStoreArchiveEncrypted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer s3.Close()
+	defer func() { _ = s3.Close() }()
 	_ = os.Rename(filepath.Join(dir, archiveFileName), filepath.Join(dir, "x", archiveFileName))
 	if _, ok := s3.GetArchived("h-dd01"); ok {
 		t.Fatal("encrypted archive read without a key")

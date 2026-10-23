@@ -490,7 +490,7 @@ func TestPRDStoreCrashSafety(t *testing.T) {
 	}
 	dir := t.TempDir()
 	for round := 0; round < 5; round++ {
-		os.Remove(filepath.Join(dir, "ready"))
+		_ = os.Remove(filepath.Join(dir, "ready"))
 		cmd := exec.Command(os.Args[0], "-test.run=^TestPRDStoreCrashHelper$")
 		cmd.Env = append(os.Environ(), "DW_PRD_CRASH_DIR="+dir)
 		if err := cmd.Start(); err != nil {

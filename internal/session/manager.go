@@ -5582,11 +5582,12 @@ func (f SessionFilter) matches(sess *Session) bool {
 	if f.Backend != "" && sess.BackendFamily != f.Backend {
 		return false
 	}
-	if f.Alive == "true" {
+	switch f.Alive {
+	case "true":
 		if sess.ClaudeAlive == nil || !*sess.ClaudeAlive {
 			return false
 		}
-	} else if f.Alive == "false" {
+	case "false":
 		if sess.ClaudeAlive == nil || *sess.ClaudeAlive {
 			return false
 		}

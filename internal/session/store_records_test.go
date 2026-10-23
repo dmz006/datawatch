@@ -158,7 +158,7 @@ func TestStoreDirtySetCoalesces(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer st.Close()
+	defer func() { _ = st.Close() }()
 	a, b := recSession(1, "a"), recSession(2, "b")
 	_ = st.Save(a)
 	_ = st.Save(b)

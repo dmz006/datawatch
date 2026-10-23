@@ -27,7 +27,7 @@ func TestStoreCoalesce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer st.Close()
+	defer func() { _ = st.Close() }()
 	sess := coalesceSession(1, "t")
 	const saves = 200
 	for i := 0; i < saves; i++ {
@@ -102,7 +102,7 @@ func TestStoreFlushOnClose(t *testing.T) {
 func TestStoreFlushExplicit(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "sessions.json")
 	st, _ := NewStore(path, WithFlushInterval(time.Hour))
-	defer st.Close()
+	defer func() { _ = st.Close() }()
 	_ = st.Save(coalesceSession(1, "x"))
 	if err := st.Flush(); err != nil {
 		t.Fatal(err)

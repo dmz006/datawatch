@@ -124,7 +124,7 @@ func (s *Store) loadArchiveIndexLocked() error {
 		}
 		return fmt.Errorf("open archive: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	br := bufio.NewReaderSize(f, 1<<20)
 	var off int64
 	for {
@@ -160,7 +160,7 @@ func (s *Store) appendArchiveLocked(lines []archiveLine) error {
 	if err != nil {
 		return fmt.Errorf("open archive: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	var buf bytes.Buffer
 	if s.arc.size > 0 {
 		last := make([]byte, 1)
@@ -243,7 +243,7 @@ func (s *Store) readArchivedLocked(ref archiveRef) (*Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	buf := make([]byte, ref.n)
 	if _, err := f.ReadAt(buf, ref.off); err != nil {
 		return nil, err
