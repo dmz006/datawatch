@@ -176,6 +176,15 @@ Config: `autonomous.usage_backoff` (`pause_backend` | `off`, default `pause_back
 pushed. It only applies when `ci-watch` is listed in `autonomous.per_prd_guardrails`
 (or an Automaton's own PRD-level guardrails); the list is empty by default.
 
+`autonomous.detail_text_cap_bytes` (default 4096; 0 = default, negative = off) caps each
+long text field in the default `GET /api/autonomous/prds/{id}` reply
+(`internal/autonomous/prd_view_cap.go`, `CapPRDText`). Capped fields end with a
+`[truncated ...]` marker and are listed in the record's `truncated` array with the URL of the
+full text. The store is never cut. `?full=1` returns the whole record, and
+`GET /api/autonomous/prds/{id}/outputs` (optionally `?task=<id>`, or
+`/tasks/{task_id}/outputs`) returns the heavy fields byte for byte. The list summary
+(`BuildSummaryView`) does not read these fields.
+
 Foreign-file drift is checked for direct-mode (non-worktree) Automata only. The
 capture point is the worker spawn in `cmd/datawatch/main.go`: alongside the pre-task
 `HEAD` SHA and untracked files it calls `autonomous.CapturePreTaskDirtyFiles`

@@ -5796,6 +5796,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"capacity_wait_timeout_seconds":   s.cfg.Autonomous.CapacityWaitTimeoutSeconds,
 			"capacity_gpu_util_pct":           s.cfg.Autonomous.CapacityGPUUtilPct,
 			"ci_watch_timeout_seconds":        s.cfg.Autonomous.CIWatchTimeoutSeconds,
+			"detail_text_cap_bytes":           s.cfg.Autonomous.DetailTextCapBytes,
 			"per_prd_guardrails":              s.cfg.Autonomous.PerPRDGuardrails, // rules-review, ci-watch
 			"block_on_file_drift":             s.cfg.Autonomous.BlockOnFileDrift, // strict foreign-file-drift enforcement
 			"gate_disagreement":               s.cfg.Autonomous.GateDisagreement, // verifier OK + gate regression: "warn" (default) or "block"
@@ -7465,6 +7466,10 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		case "autonomous.capacity_wait_timeout_seconds":
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.Autonomous.CapacityWaitTimeoutSeconds = n
+			}
+		case "autonomous.detail_text_cap_bytes":
+			if n, ok := toInt(v); ok {
+				cfg.Autonomous.DetailTextCapBytes = n
 			}
 		case "autonomous.ci_watch_timeout_seconds":
 			if n, ok := toInt(v); ok && n >= 0 {

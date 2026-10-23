@@ -162,10 +162,13 @@ const (
 
 // PRD is the operator-supplied feature description.
 type PRD struct {
-	ID         string `json:"id"`   // 8-hex
-	Spec       string `json:"spec"` // raw operator input
-	Title      string `json:"title,omitempty"`
-	ProjectDir string `json:"project_dir"`
+	// Truncated is set only on the capped copy the default detail GET
+	// returns (see CapPRDText). It is never stored.
+	Truncated  []TruncatedField `json:"truncated,omitempty"`
+	ID         string           `json:"id"`   // 8-hex
+	Spec       string           `json:"spec"` // raw operator input
+	Title      string           `json:"title,omitempty"`
+	ProjectDir string           `json:"project_dir"`
 	// v5.26.19 — operator-reported: "Prd should be based on directory or
 	// profile, should be able to check out repo and do work" + "Prd
 	// should also support using cluster profiles". When ProjectProfile
@@ -683,6 +686,10 @@ type Story struct {
 	// none; the legacy judgment-only guardrail behavior is the
 	// fallback. Inert today: nothing writes or reads it yet.
 	VerificationScript string `json:"verification_script,omitempty"`
+
+	// Truncated is set only on the capped copy the default detail GET
+	// returns (see CapPRDText). It is never stored.
+	Truncated []TruncatedField `json:"truncated,omitempty"`
 }
 
 // NudgeEvent records one idle-worker nudge sent to a task's session.
@@ -968,6 +975,10 @@ type Task struct {
 	// VerificationScript behavior — it is purely metadata consumed by the
 	// structural check and surfaced in reports.
 	VerificationScriptReason string `json:"verification_script_reason,omitempty"`
+
+	// Truncated is set only on the capped copy the default detail GET
+	// returns (see CapPRDText). It is never stored.
+	Truncated []TruncatedField `json:"truncated,omitempty"`
 }
 
 // UndeclaredEdit records one file a task's worker edited without declaring

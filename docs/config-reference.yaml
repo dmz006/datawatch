@@ -1414,6 +1414,13 @@ autonomous:
   # to per_prd_guardrails) waits for the CI runs of the commit an
   # Automaton pushed (seconds). Default 1500 (25 minutes).
   ci_watch_timeout_seconds: 1500
+  # Byte cap for each long text field (task spec, error, verifier text,
+  # start-failure tail, story description, Automaton spec) in the default
+  # GET /api/autonomous/prds/{id} reply. Capped fields end with a marker and
+  # are listed in "truncated" with the URL of the full text. Stored data is
+  # never cut; ?full=1 and GET .../prds/{id}/outputs return everything.
+  # Default 4096; 0 uses the default; a negative value turns the cap off.
+  detail_text_cap_bytes: 4096
   # Whether a content-category guardrail block (a real judgment, e.g.
   # rules-review finding a real issue) gets auto-corrective retry.
   # Default true.

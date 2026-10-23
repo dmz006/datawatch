@@ -251,6 +251,25 @@ system-populated and read-only — they appear in
 `GET /api/autonomous/prds/{id}` (and the MCP / CLI / comm `get`
 surfaces, which pass the same JSON through) but have no setter.
 
+### Capped text in the by-id GET
+
+`GET /api/autonomous/prds/{id}` cuts each long text field (Automaton `spec` and
+`memory_report`, story `description`, task `spec`, `error`, `prior_attempt_hint`,
+`start_failure_tail[]`, `attempt_refs[]`, `verification.raw_judge`, `verification.summary`,
+`verification.issues[]`, and verdict text) to `autonomous.detail_text_cap_bytes` (default
+4096). A cut field ends with `\n…[truncated: kept N of M bytes]`, and the record carries a
+`truncated` array of `{field, bytes, kept, ref}` where `ref` is the URL of the full text.
+The store is never cut. To get everything:
+
+- `?full=1` returns the record uncapped, as before.
+- `GET /api/autonomous/prds/{id}/outputs` returns the heavy fields of every task, uncapped;
+  `?task=<task_id>` or `GET /api/autonomous/prds/{id}/tasks/{task_id}/outputs` returns one
+  task (404 for an unknown task).
+
+`detail=tasks` applies the same cap to the task `error`. `POST .../edit_task` refuses a
+`new_spec` that still ends with a truncation marker. The list (`GET /api/autonomous/prds`)
+never reads these fields.
+
 ---
 
 ## Automations (orchestration records)

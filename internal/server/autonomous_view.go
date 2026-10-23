@@ -67,9 +67,25 @@ func parsePRDDetail(r *http.Request) (string, bool) {
 	}
 }
 
-// writePRDDetail writes prd at the given detail level. full writes prd as it
-// is, summary writes its summary view, and tasks writes its task listing.
-func writePRDDetail(w http.ResponseWriter, prd any, detail string) {
+// prdDetailCap returns the per-field byte cap for the default PRD detail
+// reply: 0 (no cap) when the request carries full=1, otherwise the
+// autonomous.detail_text_cap_bytes setting.
+func (s *Server) prdDetailCap(r *http.Request) int {
+	if queryBool(r, "full", false) {
+		return 0
+	}
+	configured := 0
+	if s.cfg != nil {
+		configured = s.cfg.Autonomous.DetailTextCapBytes
+	}
+	return autonomous.ResolveDetailTextCap(configured)
+}
+
+// writePRDDetail writes prd at the given detail level. full writes prd with
+// its long text fields cut to textCap bytes each (textCap 0 writes it as it
+// is), summary writes its summary view, and tasks writes its task listing.
+// The stored record is never changed: the cap works on a copy.
+func writePRDDetail(w http.ResponseWriter, prd any, detail string, textCap int) {
 	switch detail {
 	case "summary", "tasks":
 		p, err := toPRD(prd)
@@ -81,9 +97,18 @@ func writePRDDetail(w http.ResponseWriter, prd any, detail string) {
 			writeJSONOK(w, autonomous.BuildSummaryView(p))
 			return
 		}
-		writeJSONOK(w, autonomous.BuildTasksView(p))
+		writeJSONOK(w, autonomous.BuildTasksView(autonomous.CapPRDText(p, textCap)))
 	default:
-		writeJSONOK(w, prd)
+		if textCap <= 0 {
+			writeJSONOK(w, prd)
+			return
+		}
+		p, err := toPRD(prd)
+		if err != nil {
+			http.Error(w, "detail view: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSONOK(w, autonomous.CapPRDText(p, textCap))
 	}
 }
 

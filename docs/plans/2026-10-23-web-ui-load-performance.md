@@ -65,6 +65,72 @@ Reading the numbers:
 - The observer stats and llms bodies are tiny, so gzip overhead makes them larger.
   Compression should skip small bodies.
 
+## Root cause of oversized Automata
+
+An Automaton is one JSON object (`autonomous.PRD`, `internal/autonomous/models.go`)
+holding `Story[]`, each with `Tasks[]`. Everything is stored whole and returned whole,
+so the record's size is the sum of the text its tasks carry. Nothing in the record is a
+byte-bounded log; the 13 MB case is many tasks times several text fields each.
+
+Per-task size measured on the seeded data (`perfBuildAutomaton`; the six heavy Automata
+have 8 stories x 12 tasks = 96 tasks; each of the five heavy fields below gets about a
+fifth of the per-task budget):
+
+| Automaton (story data) | Bytes per heavy field, all 96 tasks | Per task, per field | Rest of the record (ids, titles, timestamps) |
+|---|---|---|---|
+| 7 MB | 1,467,936 | 15,291 | 174,226 |
+| 8 MB | 1,677,696 | 17,476 | 192,680 |
+| 9 MB | 1,887,360 | 19,660 | 211,695 |
+| 10 MB | 2,097,120 | 21,845 | 230,432 |
+| 11 MB | 2,306,784 | 24,029 | 248,888 |
+| 13 MB | 2,726,208 | 28,398 | 286,736 |
+
+For the 13 MB case, 13,918,160 bytes of story JSON are 5 x 2.73 MB of text plus 0.29 MB
+of structure: 98% is text.
+
+Field by field, what grows and what the code bounds:
+
+| Field | Where | Bounded by the code? | Notes |
+|---|---|---|---|
+| `Task.Spec` | `models.go` Task | No | Written by the decomposer or an operator edit; one copy per task, grows with how much context a spec carries. |
+| `Task.Error` | Task | No | Set on each failed attempt from the failure text; a long traceback or tool output lands here whole. Overwritten, not appended, but unbounded in length. |
+| `Task.StartFailureTail` | Task | By line count only (last 20 non-empty lines) | A line can be long, so 20 lines is not a byte bound. |
+| `Task.AttemptRefs` | `attempt_record.go`, `attempt_snapshot.go` | Entries are short git ref names | `refs/datawatch/attempts/<task>/<n>`, about 40 bytes each, one per killed attempt. The snapshot content lives in git, not in the record. The seed stores payload text here as a stand-in for the heavy attempt data. |
+| `Task.Verification.RawJudge` | `VerificationResult` | Yes, 16 KiB at write | Truncated by the verifier before it is stored. Still 16 KiB x tasks. |
+| `Task.Verification.Summary` / `Issues` | `VerificationResult` | No | Free text from the verifier. |
+| `Task.Verdicts[].RawJudge` / `Summary` / `Issues` | `GuardrailVerdict` | RawJudge 16 KiB | One verdict per guardrail per task and story. |
+| `Task.PriorAttemptHint` | Task | No | Copy of the outgoing attempt's error and verification, per reset; single-use. |
+| `Story.Description`, `PRD.Spec`, `PRD.MemoryReport` | Story, PRD | No | One per story or Automaton; small next to the per-task fields. |
+| `PRD.Decisions[].Note` | PRD | No | Appended on every decision; grows with age. Not capped in this change; the summary carries only `decision_count`. |
+| Checkpoints (`CHECKPOINT.md`) | `checkpoint_done.go` | n/a | A file in the worker's directory that `checkpointSaysAllDone` reads. It is never copied into the Automaton record. |
+| Learnings (`autonomous.Learning`) | `models.go` | n/a | Saved to datawatch memory, not stored on the PRD. |
+
+So the unbounded growth is task text, multiplied by the task count and by retries
+(each retry rewrites `Error`, appends to `AttemptRefs`, `AttemptCommitSHAs`, `NudgeEvents`
+and `DeliveryFailureEvents`). The only byte bound anywhere is the 16 KiB on judge text,
+which is itself 1.5 MB at 96 tasks.
+
+The list is not affected by these fields: `BuildSummaryView` and `BuildSummaryRow`
+copy scalars and counts only, and `TestPRDDetailCapListSummaryDoesNotReadHeavyFields`
+proves none of the heavy text reaches the list body.
+
+### Fix: cap the by-id view, keep the store whole
+
+- `GET /api/autonomous/prds/{id}` caps each text field above at
+  `autonomous.detail_text_cap_bytes` (default 4096; 0 = default; negative = off). A cut
+  field ends with `…[truncated: kept N of M bytes]`, and the record carries a `truncated`
+  list of `{field, bytes, kept, ref}`, where `ref` is the URL of the full text.
+- `?full=1` returns the whole record, as before.
+- New sub-resource `GET /api/autonomous/prds/{id}/outputs[?task=<id>]` and
+  `GET /api/autonomous/prds/{id}/tasks/{task_id}/outputs` return the heavy fields uncapped.
+- The cap works on a copy; the store is never modified. `edit_task` refuses a spec that
+  still carries a truncation marker so a capped copy cannot overwrite the stored text.
+- Effect on the 13 MB seeded Automaton at the 4096 default: the five heavy fields drop
+  from 28,398 to at most 4,096 + 40 bytes each, so the by-id reply falls from about
+  13.9 MB to about 2.1 MB. At a 16 KiB cap it was still 8.1 MB, which is why the default
+  is 4096.
+- Tests: `TestPRDDetailCap*` in `internal/server/prd_detail_cap_test.go`.
+
 ## Phases
 
 | Phase | Name | Status |
