@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/dmz006/datawatch/internal/session"
 )
 
 // CommandType identifies the type of a parsed Signal command.
@@ -16,6 +18,7 @@ const (
 	CmdStatus        CommandType = "status"
 	CmdSend          CommandType = "send"
 	CmdKill          CommandType = "kill"
+	CmdPriority      CommandType = "priority"
 	CmdTail          CommandType = "tail"
 	CmdAttach        CommandType = "attach"
 	CmdHistory       CommandType = "history"
@@ -429,6 +432,13 @@ type Command struct {
 	KillChildren          bool
 	KillChildrenRecursive bool
 
+	// Priority — capacity-queue priority. Parsed from "new: priority=<int>: <task>"
+	// and from "priority <session-id> <int>". HasPriority is true when a value
+	// was given; PriorityErr is the validation message for a non-integer value.
+	Priority    int
+	HasPriority bool
+	PriorityErr string
+
 	// F10 sprint 2 — CmdProfile fields.
 	ProfileKind string // "project" | "cluster"
 	ProfileVerb string // "list" | "show" | "smoke"
@@ -683,7 +693,7 @@ func Parse(text string) Command {
 		// Recognised keys: llm, compute, chrome, git, parent, kill_children, kill_children_recursive.
 		// Unknown keys are left alone (the entire prefix becomes part of the
 		// task), preserving back-compat.
-		knownPrefixes := []string{"llm=", "compute=", "chrome=", "git=", "parent=", "kill_children=", "kill_children_recursive="}
+		knownPrefixes := []string{"llm=", "compute=", "chrome=", "git=", "parent=", "kill_children=", "kill_children_recursive=", "priority="}
 		hasKnown := false
 		for _, p := range knownPrefixes {
 			if strings.HasPrefix(rest, p) {
@@ -697,6 +707,7 @@ func Parse(text string) Command {
 			tail := strings.TrimSpace(rest[idx+2:])
 			llmRef, computeRef, parentID := "", "", ""
 			chrome, git, killChildren, killChildrenRecursive := false, false, false, false
+			priority, hasPriority, priorityErr := 0, false, ""
 			ok := true
 			for _, tok := range strings.Fields(prefix) {
 				switch {
@@ -714,6 +725,13 @@ func Parse(text string) Command {
 					// explicit false → leave git=false, still valid
 				case strings.HasPrefix(tok, "parent="):
 					parentID = strings.TrimPrefix(tok, "parent=")
+				case strings.HasPrefix(tok, "priority="):
+					hasPriority = true
+					p, perr := session.ParsePriority(strings.TrimPrefix(tok, "priority="))
+					if perr != nil {
+						priorityErr = perr.Error()
+					}
+					priority = p
 				case tok == "kill_children=true":
 					killChildren = true
 				case tok == "kill_children=false":
@@ -726,7 +744,7 @@ func Parse(text string) Command {
 					ok = false
 				}
 			}
-			if ok && (llmRef != "" || chrome || git || parentID != "" || killChildren || killChildrenRecursive) {
+			if ok && (llmRef != "" || chrome || git || parentID != "" || killChildren || killChildrenRecursive || hasPriority) {
 				return Command{
 					Type:                  CmdNew,
 					Text:                  tail,
@@ -737,6 +755,9 @@ func Parse(text string) Command {
 					ParentID:              parentID,
 					KillChildren:          killChildren,
 					KillChildrenRecursive: killChildrenRecursive,
+					Priority:              priority,
+					HasPriority:           hasPriority,
+					PriorityErr:           priorityErr,
 				}
 			}
 		}
@@ -806,6 +827,22 @@ func Parse(text string) Command {
 
 	case strings.HasPrefix(lower, "kill "):
 		return Command{Type: CmdKill, SessionID: strings.TrimSpace(text[5:])}
+
+	case lower == "priority" || strings.HasPrefix(lower, "priority "):
+		// format: "priority <session-id> <int>"
+		cmd := Command{Type: CmdPriority}
+		if fields := strings.Fields(text); len(fields) > 1 {
+			cmd.SessionID = fields[1]
+			if len(fields) > 2 {
+				cmd.HasPriority = true
+				p, perr := session.ParsePriority(fields[2])
+				if perr != nil {
+					cmd.PriorityErr = perr.Error()
+				}
+				cmd.Priority = p
+			}
+		}
+		return cmd
 
 	case strings.HasPrefix(lower, "bind "):
 		// format: "bind <session-id> <agent-id>" ; "-" or omitted
@@ -1736,6 +1773,7 @@ list [--active|--inactive|--all] list sessions (default: all)
 status <id>                     recent output from session
 send <id>: <msg>                send input to waiting session
 kill <id>                       terminate session
+priority <id> <n>               set a session's capacity-queue priority (integer, default 0)
 tail <id> [n]                   last N lines of output (default 20)
 attach <id>                     get tmux attach command
 history <id>                    git log of session tracking folder

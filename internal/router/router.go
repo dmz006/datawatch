@@ -1026,6 +1026,8 @@ func (r *Router) handleMessage(msg messaging.Message) {
 		r.handleSend(cmd)
 	case CmdKill:
 		r.handleKill(cmd)
+	case CmdPriority:
+		r.handlePriority(cmd)
 	case CmdTail:
 		r.handleTail(cmd)
 	case CmdAttach:
@@ -1641,7 +1643,11 @@ func (r *Router) handleNew(cmd Command) {
 	// v8.8.3 — also forward when chrome=true is set.
 	// v8.10.0 — also forward when parent/kill_children are set.
 	// Otherwise fall through to the direct manager.Start (legacy path).
-	if (cmd.LLMRef != "" || cmd.Chrome || cmd.ParentID != "" || cmd.KillChildren) && r.webPort > 0 {
+	if cmd.PriorityErr != "" {
+		r.send(fmt.Sprintf("[%s] Failed to start session: %s", r.hostname, cmd.PriorityErr))
+		return
+	}
+	if (cmd.LLMRef != "" || cmd.Chrome || cmd.ParentID != "" || cmd.KillChildren || cmd.HasPriority) && r.webPort > 0 {
 		body := map[string]any{"task": cmd.Text, "llm": cmd.LLMRef}
 		if cmd.ComputeNodeRef != "" {
 			body["compute_node"] = cmd.ComputeNodeRef
@@ -1660,6 +1666,9 @@ func (r *Router) handleNew(cmd Command) {
 		}
 		if cmd.KillChildren {
 			body["kill_children"] = true
+		}
+		if cmd.HasPriority {
+			body["priority"] = cmd.Priority
 		}
 		bodyJSON, _ := json.Marshal(body)
 		out, err := r.commJSON("POST", "/api/sessions/start", string(bodyJSON))
@@ -1696,6 +1705,7 @@ func (r *Router) handleNew(cmd Command) {
 	if cmd.KillChildren {
 		startOpts.KillChildren = true
 	}
+	startOpts.Priority = cmd.Priority
 	sess, err := r.manager.Start(ctx, cmd.Text, r.groupID, cmd.ProjectDir, startOpts)
 	if err != nil {
 		r.send(fmt.Sprintf("[%s] Failed to start session: %v", r.hostname, err))
@@ -1959,6 +1969,30 @@ func (r *Router) handleKill(cmd Command) {
 		return
 	}
 	r.send(fmt.Sprintf("[%s][%s] Session killed.", r.hostname, sess.ID))
+}
+
+func (r *Router) handlePriority(cmd Command) {
+	if cmd.SessionID == "" || !cmd.HasPriority {
+		r.send(fmt.Sprintf("[%s] Usage: priority <id> <integer>", r.hostname))
+		return
+	}
+	if cmd.PriorityErr != "" {
+		r.send(fmt.Sprintf("[%s] Failed to set priority: %s", r.hostname, cmd.PriorityErr))
+		return
+	}
+	sess, ok := r.manager.GetSession(cmd.SessionID)
+	if !ok {
+		if r.tryRemoteCommand(cmd.SessionID, fmt.Sprintf("priority %s %d", cmd.SessionID, cmd.Priority)) {
+			return
+		}
+		r.send(fmt.Sprintf("[%s] Session %s not found.", r.hostname, cmd.SessionID))
+		return
+	}
+	if err := r.manager.SetPriority(sess.FullID, cmd.Priority); err != nil {
+		r.send(fmt.Sprintf("[%s][%s] Failed to set priority: %v", r.hostname, sess.ID, err))
+		return
+	}
+	r.send(fmt.Sprintf("[%s][%s] Priority set to %d.", r.hostname, sess.ID, cmd.Priority))
 }
 
 func (r *Router) handleTail(cmd Command) {

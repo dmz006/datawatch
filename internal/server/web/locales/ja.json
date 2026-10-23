@@ -1759,6 +1759,8 @@
   "prd_permission_mode_updated": "Permission mode updated",
   "session_chrome_badge": "Chrome",
   "session_chrome_badge_tip": "Chrome DevTools Protocol browser automation enabled",
+  "session_priority_badge": "優先度 %1$d",
+  "session_priority_badge_tip": "容量キューの優先度: 容量が逼迫したとき、値が大きいほど先に受け付けられます",
   "rate_limit_banner_text": "レート制限中",
   "rate_limit_no_reset_time": "制限解除を待っています",
   "rate_limit_resets_at": "解除予定",

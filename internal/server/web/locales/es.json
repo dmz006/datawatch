@@ -1759,6 +1759,8 @@
   "prd_permission_mode_updated": "Permission mode updated",
   "session_chrome_badge": "Chrome",
   "session_chrome_badge_tip": "Chrome DevTools Protocol browser automation enabled",
+  "session_priority_badge": "Prioridad %1$d",
+  "session_priority_badge_tip": "Prioridad en la cola de capacidad: los valores más altos se admiten primero cuando hay contención",
   "rate_limit_banner_text": "Límite de uso alcanzado",
   "rate_limit_no_reset_time": "Esperando a que se levante el límite",
   "rate_limit_resets_at": "Se levanta a las",

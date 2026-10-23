@@ -4338,6 +4338,57 @@ func (s *Server) handleSetSessionLLMRef(w http.ResponseWriter, r *http.Request) 
 	json.NewEncoder(w).Encode(map[string]string{"status": "ok", "id": req.ID, "llm_ref": req.LLMRef}) //nolint:errcheck
 }
 
+// handleSetSessionPriority sets a session's capacity-queue priority.
+//
+// POST /api/sessions/set_priority {"id":"<session>"|"session_name":"<name>","priority":<int>}
+func (s *Server) handleSetSessionPriority(w http.ResponseWriter, r *http.Request) {
+	if !s.fedCap(w, r, federation.CapSessionsWrite) {
+		return
+	}
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		ID          string `json:"id"`
+		SessionName string `json:"session_name"`
+		Priority    any    `json:"priority"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	priority, perr := session.ParsePriority(req.Priority)
+	if perr != nil {
+		http.Error(w, perr.Error(), http.StatusBadRequest)
+		return
+	}
+	targetID := req.ID
+	if targetID == "" && req.SessionName != "" {
+		sess, resolveErr := s.resolveSessionAny("", req.SessionName)
+		if resolveErr != nil {
+			http.Error(w, resolveErr.Error(), http.StatusConflict)
+			return
+		}
+		if sess == nil {
+			http.Error(w, "session not found", http.StatusNotFound)
+			return
+		}
+		targetID = sess.FullID
+	}
+	if targetID == "" {
+		http.Error(w, "id or session_name required", http.StatusBadRequest)
+		return
+	}
+	if err := s.manager.SetPriority(targetID, priority); err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+	s.broadcastSessionsAsync()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{"status": "ok", "id": targetID, "priority": priority}) //nolint:errcheck
+}
+
 // handleKillSession terminates a running or waiting session.
 func (s *Server) handleKillSession(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
@@ -4548,10 +4599,23 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 			Max        int      `json:"max,omitempty"`
 			RoleFilter []string `json:"role_filter,omitempty"`
 		} `json:"memory_seed,omitempty"`
+		// Priority — capacity-queue priority for the session (integer,
+		// higher first, default 0). Kept untyped so a non-integer value is
+		// rejected with a priority-specific error.
+		Priority any `json:"priority,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "bad request", http.StatusBadRequest)
 		return
+	}
+	startPriority := 0
+	if req.Priority != nil {
+		p, perr := session.ParsePriority(req.Priority)
+		if perr != nil {
+			http.Error(w, perr.Error(), http.StatusBadRequest)
+			return
+		}
+		startPriority = p
 	}
 	// v7.0.0-alpha.21 (#259) — resolve operator's {compute_node, llm} pick
 	// from the v7 unified registries. Lookup happens BEFORE template/profile
@@ -4866,6 +4930,7 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 		SkipSnapshot:          req.SkipSnapshot,
 		ScrubTmuxEnv:          req.ScrubTmuxEnv,
 		Git:                   gitFlag,
+		Priority:              startPriority,
 	}
 	// Empty per-request overrides fall through to LLM registry (v7.0.0 clean move).
 	if opts.PermissionMode == "" && s.inferenceReg != nil {
@@ -4938,8 +5003,7 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 			waitSecs = s.cfg.Session.CapacityWaitSeconds
 		}
 		admitCtx, cancel := context.WithTimeout(r.Context(), time.Duration(waitSecs)*time.Second)
-		// The session does not exist yet, so it admits at the default priority 0.
-		aerr := s.capacityAdmit(admitCtx, resolvedLLMRef, req.Model, holder, 0)
+		aerr := s.capacityAdmit(admitCtx, resolvedLLMRef, req.Model, holder, startPriority)
 		cancel()
 		if aerr != nil {
 			jsonError(w, http.StatusServiceUnavailable, "capacity: "+aerr.Error())
