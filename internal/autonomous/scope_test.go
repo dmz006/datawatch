@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestScope_EffectiveDirsAndPathInDirs(t *testing.T) {
@@ -126,26 +125,19 @@ func TestScope_SetPRDDirsValidatesAndRelints(t *testing.T) {
 	}
 }
 
+// runToTerminal approves the PRD, wires executors, runs it, and returns the
+// final PRD once the executor has fully exited. It shares the
+// approve/drain/Run/wait-exit sequence with runToTerminalOrBlocked (both
+// call settlePRD in story_halt_test.go) so the boot-resume scan never
+// overlaps the executor — a fake (nonexistent) project dir lets the scan
+// park a finished PRD as PRDBlocked and clobber the asserted terminal state.
 func runToTerminal(t *testing.T, m *Manager, api *API, id string, spawn SpawnFn, verify VerifyFn) *PRD {
 	t.Helper()
-	prd, _ := m.Store().GetPRD(id)
-	m.mu.Lock()
-	m.Store().WithLock(func() { prd.Status = PRDApproved })
-	m.mu.Unlock()
-	_ = m.Store().SavePRD(prd)
-	api.SetExecutors(spawn, verify)
-	if err := api.Run(id); err != nil {
-		t.Fatal(err)
+	final := settlePRD(t, m, api, id, spawn, verify)
+	if final.Status != PRDCompleted && final.Status != PRDFailed {
+		t.Fatalf("PRD %s ended %q, want completed or failed", id, final.Status)
 	}
-	pollPRDTerminal(t, m, id, 5*time.Second)
-	// The executor goroutine writes the terminal status inside Manager.Run,
-	// then still has its deferred cleanup and a final EmitPRDUpdate to run.
-	// Drain it before the caller reads the PRD.
-	if err := api.WaitIdle(10 * time.Second); err != nil {
-		t.Fatal(err)
-	}
-	got, _ := m.Store().SnapshotPRD(id)
-	return got
+	return final
 }
 
 func TestScope_ExecutorBlocksOutOfScopeTaskWithoutSpawning(t *testing.T) {

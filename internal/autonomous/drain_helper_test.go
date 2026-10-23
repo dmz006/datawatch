@@ -34,11 +34,26 @@ func pollUntil(t *testing.T, timeout time.Duration, what string, cond func() boo
 	}
 }
 
-// pollPRDTerminal waits until the PRD is completed or failed.
+// pollPRDTerminal waits until the PRD is completed or failed. On timeout it
+// reports the last observed status, so a CI failure shows exactly where the
+// PRD got stuck (e.g. "stuck at PRDBlocked — the boot-resume scan parked it")
+// instead of a bare deadline-missed message.
 func pollPRDTerminal(t *testing.T, m *Manager, id string, timeout time.Duration) {
 	t.Helper()
-	pollUntil(t, timeout, "PRD "+id+" terminal status", func() bool {
-		got, ok := m.Store().SnapshotPRD(id)
-		return ok && (got.Status == PRDCompleted || got.Status == PRDFailed)
-	})
+	deadline := time.Now().Add(timeout)
+	var last string
+	for {
+		if got, ok := m.Store().SnapshotPRD(id); ok {
+			last = string(got.Status)
+			if got.Status == PRDCompleted || got.Status == PRDFailed {
+				return
+			}
+		} else if last == "" {
+			last = "<missing>"
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("pollPRDTerminal: PRD %s not terminal within %s (last observed status: %s)", id, timeout, last)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
 }
