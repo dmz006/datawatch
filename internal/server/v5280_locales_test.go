@@ -164,6 +164,16 @@ func TestLocales_CommonNavKeysPresent(t *testing.T) {
 		"automation_resume",
 		"automation_cancel",
 		"automation_cancel_in_flight",
+		// 2026-10-19 — federation resource fingerprint exchange (peer toggle +
+		// pending-match list with confirm/reject) + LLM billing group label.
+		"federation_fingerprint_sync_label",
+		"federation_fingerprint_matches_title",
+		"federation_fingerprint_matches_empty",
+		"federation_fingerprint_confirm_btn",
+		"federation_fingerprint_reject_btn",
+		"federation_fingerprint_kind_node",
+		"federation_fingerprint_kind_billing",
+		"llm_billing_group_label",
 	}
 	for _, lang := range requiredLocales {
 		bundle := loadLocaleBundle(t, lang)

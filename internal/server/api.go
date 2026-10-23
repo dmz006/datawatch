@@ -39,6 +39,7 @@ import (
 	"github.com/dmz006/datawatch/internal/council"
 	"github.com/dmz006/datawatch/internal/devices"
 	"github.com/dmz006/datawatch/internal/federation"
+	"github.com/dmz006/datawatch/internal/fingerprint"
 	"github.com/dmz006/datawatch/internal/inference"
 	"github.com/dmz006/datawatch/internal/llm"
 	"github.com/dmz006/datawatch/internal/llm/backends/ollama"
@@ -530,6 +531,19 @@ type Server struct {
 	// BL316 — custom federation capability groups store.
 	// Nil when not wired; group endpoints return builtin-only lists.
 	fedGroupStore *federation.GroupStore
+
+	// Fingerprint exchange (docs/plans/2026-10-14-concurrency-and
+	// budget-design.md §3c) — the exporter behind
+	// GET /api/federation/fingerprints, wired from main.go when the
+	// compute/inference registries exist. Nil (unwired) answers an
+	// empty list.
+	fingerprintExporter *fingerprint.Exporter
+
+	// Fingerprint match records surfaced for operator decision
+	// (docs/plans/2026-10-14-concurrency-and-budget-design.md §3c) —
+	// behind /api/federation/fingerprint-matches. Nil (unwired) answers
+	// 503.
+	fingerprintMatchStore *fingerprint.MatchStore
 
 	// S14b — per-pod alert rules + observer-driven autoscaling store.
 	// Nil when not wired; handlers return 503.

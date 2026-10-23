@@ -172,6 +172,10 @@ func cefSignature(action string) (int, string, int) {
 		return 40, "AutonomousCapacityAdmitted", 2
 	case ActionBudgetWindowRollover:
 		return 41, "AutonomousBudgetWindowRollover", 2
+	case ActionFingerprintMatchConfirmed:
+		return 42, "FingerprintMatchConfirmed", 4
+	case ActionFingerprintMatchRejected:
+		return 43, "FingerprintMatchRejected", 2
 	default:
 		return 0, "AuditEvent", 3
 	}

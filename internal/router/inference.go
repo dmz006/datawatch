@@ -42,6 +42,9 @@ Common kv pairs:
   auto_git_init=true      auto_git_commit=true
   skip_permissions=true   channel_enabled=true     auto_accept_disclaimer=true
   permission_mode=plan     default_effort=normal    fallback_chain=<csv>
+  billing_group=<text>    operator label grouping LLMs that share one
+                          cloud/billing account across federated peers
+                          (label only; empty = no group)
   plan_tier=pro|max_5x|max_20x|api   (LLM's subscription tier; the daemon's
                                       autonomous.plan_tier_max_inflight table then
                                       caps its inflight unless max_inflight>0 wins)
@@ -333,6 +336,11 @@ func parseLLMKVPairs(s string) map[string]any {
 				continue
 			}
 			out[k] = v
+		case "billing_group":
+			// Operator label for LLMs sharing one cloud/billing account.
+			// Pass-through string; an explicit empty value clears it on the
+			// daemon while an absent key leaves the stored value untouched.
+			out[k] = strings.TrimSpace(v)
 		case "auto_git_init", "auto_git_commit", "skip_permissions",
 			"channel_enabled", "auto_accept_disclaimer", "auto_add_models":
 			out[k] = strings.EqualFold(v, "true") || v == "1"

@@ -256,6 +256,124 @@ func TestFedPeer_DefaultCapabilities(t *testing.T) {
 	}
 }
 
+// TestFederationPeerAddedWithoutFingerprintSyncIsOff — a peer added (or
+// seeded) without the field must read back FingerprintSync=false: the
+// fingerprint exchange is opt-in per peer, never default on
+// (docs/plans/2026-10-14-concurrency-and-budget-design.md, open question 10).
+func TestFederationPeerAddedWithoutFingerprintSyncIsOff(t *testing.T) {
+	s, _, _ := newFedTestServer(t)
+
+	body, _ := json.Marshal(map[string]any{
+		"name": "peer-nofs", "url": "http://peer-nofs:8080", "token": "tok", "enabled": true,
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/federation/peers", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer admin-token")
+	rr := httptest.NewRecorder()
+	s.handleFederationPeers(rr, req)
+	if rr.Code != http.StatusCreated {
+		t.Fatalf("add: expected 201, got %d body=%s", rr.Code, rr.Body.String())
+	}
+	var created multiserver.Entry
+	if err := json.NewDecoder(rr.Body).Decode(&created); err != nil {
+		t.Fatalf("decode created: %v", err)
+	}
+	if created.FingerprintSync {
+		t.Error("a peer added without fingerprint_sync must read back FingerprintSync=false")
+	}
+
+	// Get by name must agree.
+	getReq := httptest.NewRequest(http.MethodGet, "/api/federation/peers/peer-nofs", nil)
+	getReq.URL.Path = "/api/federation/peers/peer-nofs"
+	getReq.Header.Set("Authorization", "Bearer admin-token")
+	getRR := httptest.NewRecorder()
+	s.handleFederationPeers(getRR, getReq)
+	if getRR.Code != http.StatusOK {
+		t.Fatalf("get: expected 200, got %d", getRR.Code)
+	}
+	var fetched multiserver.Entry
+	if err := json.NewDecoder(getRR.Body).Decode(&fetched); err != nil {
+		t.Fatalf("decode get: %v", err)
+	}
+	if fetched.FingerprintSync {
+		t.Error("GET of a peer added without fingerprint_sync must read back FingerprintSync=false")
+	}
+	if fetched.Token != "" {
+		t.Error("GET must not echo the real token (SEC-014)")
+	}
+}
+
+// TestFederationPeerUpdateFingerprintSync — toggling via PUT:
+// on, then a partial update that OMITS the field must keep it on (PUT
+// merges onto the existing entry, Fix #80), then explicitly off.
+func TestFederationPeerUpdateFingerprintSync(t *testing.T) {
+	s, _, _ := newFedTestServer(t)
+	adminReq := func(method, path string, body []byte) *http.Request {
+		var r *http.Request
+		if body != nil {
+			r = httptest.NewRequest(method, path, bytes.NewReader(body))
+		} else {
+			r = httptest.NewRequest(method, path, nil)
+		}
+		r.Header.Set("Authorization", "Bearer admin-token")
+		return r
+	}
+	get := func(t *testing.T) multiserver.Entry {
+		t.Helper()
+		req := adminReq(http.MethodGet, "/api/federation/peers/peer-fs", nil)
+		req.URL.Path = "/api/federation/peers/peer-fs"
+		rr := httptest.NewRecorder()
+		s.handleFederationPeers(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("get: expected 200, got %d body=%s", rr.Code, rr.Body.String())
+		}
+		var e multiserver.Entry
+		if err := json.NewDecoder(rr.Body).Decode(&e); err != nil {
+			t.Fatalf("decode get: %v", err)
+		}
+		return e
+	}
+	put := func(t *testing.T, body map[string]any) {
+		t.Helper()
+		b, _ := json.Marshal(body)
+		req := adminReq(http.MethodPut, "/api/federation/peers/peer-fs", b)
+		req.URL.Path = "/api/federation/peers/peer-fs"
+		rr := httptest.NewRecorder()
+		s.handleFederationPeers(rr, req)
+		if rr.Code != http.StatusOK {
+			t.Fatalf("put %v: expected 200, got %d body=%s", body, rr.Code, rr.Body.String())
+		}
+	}
+
+	// Start off (added without the field).
+	if err := s.serverStore.Add(&multiserver.Entry{
+		Name: "peer-fs", URL: "http://peer-fs:8080", Token: "tok", Enabled: true, Federated: true,
+	}); err != nil {
+		t.Fatalf("seed peer: %v", err)
+	}
+
+	// Turn on.
+	put(t, map[string]any{"fingerprint_sync": true})
+	if e := get(t); !e.FingerprintSync {
+		t.Fatal("PUT fingerprint_sync=true must leave the peer with FingerprintSync=true")
+	}
+
+	// Partial update that omits the field — must keep it ON (PUT merges
+	// onto the existing entry, so absent keys are left unchanged).
+	put(t, map[string]any{"label": "renamed"})
+	if e := get(t); !e.FingerprintSync {
+		t.Error("a partial PUT that omits fingerprint_sync must keep it true")
+	}
+	if e := get(t); e.Label != "renamed" {
+		t.Errorf("the provided label must still have been applied, got %q", e.Label)
+	}
+
+	// Turn off.
+	put(t, map[string]any{"fingerprint_sync": false})
+	if e := get(t); e.FingerprintSync {
+		t.Error("PUT fingerprint_sync=false must leave the peer with FingerprintSync=false")
+	}
+}
+
 func TestFedPeer_Conflict(t *testing.T) {
 	s, _, _ := newFedTestServer(t)
 	add := func() int {

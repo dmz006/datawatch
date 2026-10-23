@@ -53,6 +53,7 @@ func (s *Server) toolLLMAdd() mcpsdk.Tool {
 		mcpsdk.WithString("permission_mode", mcpsdk.Description("--permission-mode value: default|plan|acceptEdits|auto|bypassPermissions|dontAsk (claude-code only)")),
 		mcpsdk.WithString("default_effort", mcpsdk.Description("per-session effort hint: quick|normal|thorough (claude-code only)")),
 		mcpsdk.WithString("fallback_chain", mcpsdk.Description("comma-separated ordered profile fallback chain (claude-code only)")),
+		mcpsdk.WithString("billing_group", mcpsdk.Description("operator-set label grouping LLM entries that share one cloud/billing account across federated peers (label only; empty = no group)")),
 	)
 }
 
@@ -85,6 +86,7 @@ func (s *Server) toolLLMUpdate() mcpsdk.Tool {
 		mcpsdk.WithString("permission_mode", mcpsdk.Description("--permission-mode value (claude-code only)")),
 		mcpsdk.WithString("default_effort", mcpsdk.Description("per-session effort hint: quick|normal|thorough (claude-code only)")),
 		mcpsdk.WithString("fallback_chain", mcpsdk.Description("comma-separated ordered profile fallback chain (claude-code only)")),
+		mcpsdk.WithString("billing_group", mcpsdk.Description("operator-set label grouping LLM entries that share one cloud/billing account across federated peers (empty = no group)")),
 	)
 }
 
@@ -219,6 +221,9 @@ func llmBodyFromReq(req mcpsdk.CallToolRequest) map[string]any {
 	}
 	if v := optString(req, "plan_tier"); v != "" {
 		body["plan_tier"] = v
+	}
+	if v := optString(req, "billing_group"); v != "" {
+		body["billing_group"] = v
 	}
 	if v := optString(req, "max_inflight"); v != "" {
 		var n int

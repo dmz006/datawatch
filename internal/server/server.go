@@ -32,6 +32,7 @@ import (
 	"github.com/dmz006/datawatch/internal/council"
 	"github.com/dmz006/datawatch/internal/devices"
 	"github.com/dmz006/datawatch/internal/federation"
+	"github.com/dmz006/datawatch/internal/fingerprint"
 	"github.com/dmz006/datawatch/internal/inference"
 	"github.com/dmz006/datawatch/internal/memory"
 	"github.com/dmz006/datawatch/internal/messaging"
@@ -302,21 +303,24 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/servers", api.handleBL312Servers)
 	apiMux.HandleFunc("/api/servers/health", api.handleServerHealth)
 	apiMux.HandleFunc("/api/servers/", api.handleBL312Servers)
-	apiMux.HandleFunc("/api/proxy/llm/", api.handleProxyLLM)                                   // BL320 — inference proxy endpoint
-	apiMux.HandleFunc("/api/proxy/comm/", api.handleCommProxySend)                             // BL102
-	apiMux.HandleFunc("/api/devices/register", api.handleDevicesRegister)                      // issue #1
-	apiMux.HandleFunc("/api/devices", api.handleDevicesList)                                   // issue #1 (list)
-	apiMux.HandleFunc("/api/devices/", api.handleDevicesList)                                  // issue #1 (delete by id)
-	apiMux.HandleFunc("/api/voice/transcribe", api.handleVoiceTranscribe)                      // issue #2
-	apiMux.HandleFunc("/api/whisper/transcribe", api.handleVoiceTranscribe)                    // issue #113 alias
-	apiMux.HandleFunc("/api/voice/test", api.handleVoiceTest)                                  // BL289 — Settings test button
-	apiMux.HandleFunc("/api/vision/describe", api.handleVisionDescribe)                        // BL368
-	apiMux.HandleFunc("/api/summarizer/test", api.handleSummarizerTest)                        // v8.9.5 — settings health check
-	apiMux.HandleFunc("/api/federation/sessions", api.handleFederationSessions)                // issue #3
-	apiMux.HandleFunc("/api/federation/peers", api.handleFederationPeers)                      // BL316 S1
-	apiMux.HandleFunc("/api/federation/peers/", api.handleFederationPeers)                     // BL316 S1
-	apiMux.HandleFunc("/api/federation/groups", api.handleFederationGroups)                    // BL316 S1
-	apiMux.HandleFunc("/api/federation/groups/", api.handleFederationGroups)                   // BL316 S1
+	apiMux.HandleFunc("/api/proxy/llm/", api.handleProxyLLM)                            // BL320 — inference proxy endpoint
+	apiMux.HandleFunc("/api/proxy/comm/", api.handleCommProxySend)                      // BL102
+	apiMux.HandleFunc("/api/devices/register", api.handleDevicesRegister)               // issue #1
+	apiMux.HandleFunc("/api/devices", api.handleDevicesList)                            // issue #1 (list)
+	apiMux.HandleFunc("/api/devices/", api.handleDevicesList)                           // issue #1 (delete by id)
+	apiMux.HandleFunc("/api/voice/transcribe", api.handleVoiceTranscribe)               // issue #2
+	apiMux.HandleFunc("/api/whisper/transcribe", api.handleVoiceTranscribe)             // issue #113 alias
+	apiMux.HandleFunc("/api/voice/test", api.handleVoiceTest)                           // BL289 — Settings test button
+	apiMux.HandleFunc("/api/vision/describe", api.handleVisionDescribe)                 // BL368
+	apiMux.HandleFunc("/api/summarizer/test", api.handleSummarizerTest)                 // v8.9.5 — settings health check
+	apiMux.HandleFunc("/api/federation/sessions", api.handleFederationSessions)         // issue #3
+	apiMux.HandleFunc("/api/federation/peers", api.handleFederationPeers)               // BL316 S1
+	apiMux.HandleFunc("/api/federation/peers/", api.handleFederationPeers)              // BL316 S1
+	apiMux.HandleFunc("/api/federation/groups", api.handleFederationGroups)             // BL316 S1
+	apiMux.HandleFunc("/api/federation/groups/", api.handleFederationGroups)            // BL316 S1
+	apiMux.HandleFunc("/api/federation/fingerprints", api.handleFederationFingerprints) // fingerprint exchange
+	apiMux.HandleFunc("/api/federation/fingerprint-matches", api.handleFingerprintMatches)
+	apiMux.HandleFunc("/api/federation/fingerprint-matches/", api.handleFingerprintMatchDecision)
 	apiMux.HandleFunc("/api/analytics", api.handleAnalytics)                                   // BL12
 	apiMux.HandleFunc("/api/dashboard/layout", api.handleDashboardLayout)                      // BL303 card layout
 	apiMux.HandleFunc("/api/dashboard/cards", api.handleDashboardCards)                        // #57 card CRUD (list + add)
@@ -876,6 +880,22 @@ func (s *HTTPServer) ServerStore() *multiserver.Store {
 	return s.api.serverStore
 }
 
+// SetFingerprintExporter wires the fingerprint reconciliation exporter
+// (design §3c) behind GET /api/federation/fingerprints.
+func (s *HTTPServer) SetFingerprintExporter(x *fingerprint.Exporter) {
+	if s.api != nil {
+		s.api.SetFingerprintExporter(x)
+	}
+}
+
+// SetFingerprintMatchStore wires the match store behind the
+// /api/federation/fingerprint-matches handlers.
+func (s *HTTPServer) SetFingerprintMatchStore(ms *fingerprint.MatchStore) {
+	if s.api != nil {
+		s.api.SetFingerprintMatchStore(ms)
+	}
+}
+
 // SetFedGroupStore (BL316) — wires the custom capability group store.
 func (s *HTTPServer) SetFedGroupStore(gs *federation.GroupStore) {
 	if s.api != nil {
@@ -1163,6 +1183,16 @@ func (s *HTTPServer) RegisterNativePlugin(p NativePlugin) {
 // disables /api/observer/peers/* (handlers return 503).
 func (s *HTTPServer) SetPeerRegistry(r PeerRegistryAPI) {
 	s.api.SetPeerRegistry(r)
+}
+
+// PeerRegistry returns the wired Shape B/C peer registry (nil when not
+// set). Lazy readers such as fingerprint identity resolution call this at
+// request time, so a registry wired after server.New still reaches them.
+func (s *HTTPServer) PeerRegistry() PeerRegistryAPI {
+	if s.api == nil {
+		return nil
+	}
+	return s.api.peerRegistry
 }
 
 // SetFederationSelfName — S14a (v4.8.0) loop-prevention: the

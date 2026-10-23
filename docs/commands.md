@@ -617,6 +617,32 @@ arguments is answered with the usage line and nothing is sent to the daemon.
 
 ---
 
+### `federation fingerprint list [state]` / `federation fingerprint confirm <id>` / `federation fingerprint reject <id>`
+
+List the **pending matches** this daemon found while reconciling resource fingerprints with its federation peers, and **decide** them yourself. A match means the two daemons appear to be holding the *same underlying resource* — a compute node (e.g. the same GPU), or an LLM entry billed to a shared account. **Confirm** makes those two resources one shared pool (for a compute node, the peer's admitted work now also counts against our admission capacity; rejecting again stops that). **Reject** keeps them as separate things (and undoes a prior confirmation). Nothing is confirmed automatically: a match stays pending until we decide.
+
+```
+federation fingerprint list [pending|confirmed|rejected]      # default: all states
+federation fingerprint confirm <id>                            # shared pool from now on
+federation fingerprint reject <id>                             # keep separate
+```
+
+→ `mm2f8c01  pending  node  local=node-a  peer=beta  peer_name=node-b`
+followed by one line noting what confirm/reject do. A bad state word, or an unknown id, is replied with a usage line and nothing is sent to the daemon.
+
+### `federation peer fingerprint <name> on|off`
+
+Opt a peer **in or out** of the fingerprint exchange. The flag is `fingerprint_sync` on the peer record: per-peer, off by default, and it needs to be on **both sides** — we must also be opted in on that peer's own copy of us. (The LLM-entry side of the exchange is a label, not a toggle: set `billing_group=<label>` in `llm add|update`.)
+
+```
+federation peer fingerprint beta on
+```
+→ the peer's record in JSON, now with `fingerprint_sync: true`.
+
+> The exchange never sends raw values — only per-peer-pair **hashes** of the node's own identity (or an LLM entry's billing-group label), keyed on the peer pair — so neither peer can learn our value from the other's hash, and a peer token without federation control capabilities cannot even read the exchange endpoint at all. See `docs/howto/federation-fingerprint.md`.
+
+---
+
 ## CLI Commands
 
 In addition to the messaging interface, datawatch has a full CLI for local session management. These run against the data directory directly (or talk to the running daemon via HTTP).

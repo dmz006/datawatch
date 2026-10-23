@@ -70,6 +70,114 @@ func TestRedactedList(t *testing.T) {
 	}
 }
 
+func TestLLMBillingGroupRoundTrip(t *testing.T) {
+	l := LLM{Name: "cc", Kind: KindClaudeCode, BillingGroup: "shared-plan-a"}
+
+	t.Run("json", func(t *testing.T) {
+		raw, err := json.Marshal(l)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(raw), `"billing_group":"shared-plan-a"`) {
+			t.Fatalf("json missing billing_group: %s", raw)
+		}
+		var got LLM
+		if err := json.Unmarshal(raw, &got); err != nil {
+			t.Fatal(err)
+		}
+		if got.BillingGroup != "shared-plan-a" {
+			t.Fatalf("json round trip = %q, want %q", got.BillingGroup, "shared-plan-a")
+		}
+	})
+
+	t.Run("yaml", func(t *testing.T) {
+		raw, err := yaml.Marshal(l)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(raw), "billing_group: shared-plan-a") {
+			t.Fatalf("yaml missing billing_group: %s", raw)
+		}
+		var got LLM
+		if err := yaml.Unmarshal(raw, &got); err != nil {
+			t.Fatal(err)
+		}
+		if got.BillingGroup != "shared-plan-a" {
+			t.Fatalf("yaml round trip = %q, want %q", got.BillingGroup, "shared-plan-a")
+		}
+	})
+
+	t.Run("absent stays empty", func(t *testing.T) {
+		none := LLM{Name: "cc", Kind: KindClaudeCode}
+		// Marshalled output must omit the field entirely (omitempty).
+		raw, _ := json.Marshal(none)
+		if strings.Contains(string(raw), "billing_group") {
+			t.Errorf("json should omit empty billing_group: %s", raw)
+		}
+		raw, _ = yaml.Marshal(none)
+		if strings.Contains(string(raw), "billing_group") {
+			t.Errorf("yaml should omit empty billing_group: %s", raw)
+		}
+		// Unmarshalling a document without the field must leave it empty.
+		var got LLM
+		if err := json.Unmarshal([]byte(`{"name":"cc","kind":"claude-code"}`), &got); err != nil {
+			t.Fatal(err)
+		}
+		if got.BillingGroup != "" {
+			t.Fatalf("unmarshal without billing_group = %q, want empty", got.BillingGroup)
+		}
+		if err := got.Validate(); err != nil {
+			t.Errorf("empty billing_group must validate: %v", err)
+		}
+	})
+}
+
+func TestLLMBillingGroupValidate(t *testing.T) {
+	base := func(bg string) *LLM {
+		return &LLM{Name: "cc", Kind: KindClaudeCode, BillingGroup: bg}
+	}
+
+	t.Run("trim on save", func(t *testing.T) {
+		l := base("  shared-plan-a  ")
+		if err := l.Validate(); err != nil {
+			t.Fatalf("valid label failed: %v", err)
+		}
+		if l.BillingGroup != "shared-plan-a" {
+			t.Fatalf("Validate should trim whitespace, got %q", l.BillingGroup)
+		}
+	})
+
+	t.Run("length limit", func(t *testing.T) {
+		if err := base(strings.Repeat("a", 64)).Validate(); err != nil {
+			t.Errorf("64-char label must validate: %v", err)
+		}
+		if err := base(strings.Repeat("a", 65)).Validate(); err == nil {
+			t.Error("65-char label must be rejected")
+		}
+		// Whitespace padding doesn't smuggle a long label past the limit.
+		if err := base(strings.Repeat("a", 60) + "     ").Validate(); err != nil {
+			t.Errorf("trimmed length is what counts: %v", err)
+		}
+	})
+
+	t.Run("control characters", func(t *testing.T) {
+		for _, bg := range []string{"shared\x00plan", "shared\tplan", "shared\nplan"} {
+			if err := base(bg).Validate(); err == nil {
+				t.Errorf("label with control character %q must be rejected", bg)
+			}
+		}
+	})
+
+	t.Run("empty ok", func(t *testing.T) {
+		if err := base("").Validate(); err != nil {
+			t.Errorf("empty billing_group is valid (no group): %v", err)
+		}
+		if err := base("   ").Validate(); err != nil {
+			t.Errorf("all-whitespace trims to empty, which is valid: %v", err)
+		}
+	})
+}
+
 func TestLLMBudgetRoundTrip(t *testing.T) {
 	budget := &BudgetWindow{
 		CeilingUSD:    75.5,

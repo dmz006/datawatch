@@ -234,6 +234,16 @@ var MCPToolCap = map[string]string{
 	"federation_group_list_builtins": CapFederationList,
 	"federation_group_update":        CapFederationWrite,
 	"federation_meta_peers":          CapFederationList,
+
+	// Fingerprint match records — operator decision over the match
+	// records that /api/federation/fingerprints reconciliation surfaces.
+	// Listing is the list capability; confirm and reject mutate record
+	// state, so both are writes. The three tools register
+	// unconditionally (internal/mcp/server.go), so the coverage test
+	// requires all three entries.
+	"federation_fingerprint_matches": CapFederationList,
+	"federation_fingerprint_confirm": CapFederationWrite,
+	"federation_fingerprint_reject":  CapFederationWrite,
 	"federation_peer_add":            CapFederationWrite,
 	"federation_peer_delete":         CapFederationWrite,
 	"federation_peer_get":            CapFederationList,

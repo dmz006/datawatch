@@ -5988,6 +5988,12 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 			capLedger := wireCapacity(context.Background(), cfg, mgr, amgr, httpServer, func(title, body string) {
 				alertStore.AddSystem(alertspkg.LevelWarn, title, body)
 			})
+			// Resource-fingerprint reconciliation (§3c): match store under the
+			// data dir, exporter + matches wired to the server, slow syncer
+			// over opted-in peers, and the shared-node admission gate composed
+			// into the ledger above. Idle (no HTTP, no blocking) unless a peer
+			// opted in AND a match was confirmed by the operator.
+			wireFingerprint(ctx, cfg, httpServer, capLedger)
 			// Pin keepers re-pin each pinned compute node's model after ollama drops it.
 			stopPinKeepers := startPinKeepers(ctx, cfg, computeReg, alertStore, capLedger)
 			go func() {
