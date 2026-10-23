@@ -177,8 +177,32 @@ func TestSessionListPageLegacyUnchanged(t *testing.T) {
 		&session.Session{ID: "b2", FullID: "h-b2", State: session.StateComplete, Task: task, UpdatedAt: time.Now().Add(-time.Hour)},
 	)
 	rr := getSessions(t, s, "")
-	if got, want := rr.Body.String(), legacySessionsBody(t, s, s.manager.ListSessions()); got != want {
-		t.Errorf("legacy body changed:\n got %s\nwant %s", got, want)
+	// ListSessions order is map-iteration order, so compare per-id.
+	byID := func(body string) map[string]string {
+		var raw []json.RawMessage
+		if err := json.Unmarshal([]byte(body), &raw); err != nil {
+			t.Fatal(err)
+		}
+		m := map[string]string{}
+		for _, r := range raw {
+			var h struct {
+				ID string `json:"id"`
+			}
+			if err := json.Unmarshal(r, &h); err != nil {
+				t.Fatal(err)
+			}
+			m[h.ID] = string(r)
+		}
+		return m
+	}
+	got, want := byID(rr.Body.String()), byID(legacySessionsBody(t, s, s.manager.ListSessions()))
+	if len(got) != len(want) {
+		t.Errorf("legacy body changed:\n got %v\nwant %v", got, want)
+	}
+	for id, w := range want {
+		if got[id] != w {
+			t.Errorf("legacy body changed for %s:\n got %s\nwant %s", id, got[id], w)
+		}
 	}
 	if rr.Header().Get("ETag") != "" {
 		t.Error("legacy response must not carry an ETag")
