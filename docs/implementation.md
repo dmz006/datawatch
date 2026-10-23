@@ -1149,6 +1149,23 @@ When the daemon stops, `cmd/datawatch` records why (package `internal/shutdownca
   (via contains “restart”), `api-stop`, `unknown`. The file is written
   atomically (temp file + rename) and read back with
   `shutdowncause.ReadLast`.
+- **Startup report:** at daemon startup, right after the data dir is known
+  and the logger is ready, `cmd/datawatch` calls
+  `shutdowncause.PreviousShutdownLine` once and prints the previous run’s
+  cause — `previous shutdown: signal <name> from <command> <pid> at <time>`
+  (signal stop), `previous shutdown: <via> at <time>` (API-initiated stop),
+  or `previous shutdown: unknown/crash` (record missing/unreadable). The
+  record is then consumed (renamed to `last-shutdown.json.consumed`, removed
+  if the rename fails) so a later crash after a clean start is never
+  misreported as an already-shown stop.
+- **Regression test:** `internal/shutdowncause/signal_child_test.go`
+  (`TestSignalChildProcScan`) re-executes the test binary as a child
+  (TestMain helper-env pattern); the child sends SIGTERM to the parent by
+  the exact PID it was passed. It asserts `Signal=terminated`; on the siginfo
+  path `SenderPID` must equal the child’s PID, on the /proc fallback the
+  child must appear among `CandidatesFor` results with the test binary in
+  its cmdline. Skips with a message on non-Linux; signals only its own
+  process via the child it started.
 
 ---
 
