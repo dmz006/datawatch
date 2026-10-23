@@ -4189,6 +4189,8 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			VerificationTimeoutSeconds:       acfgIn.VerificationTimeoutSeconds,
 			SessionIdleTimeoutSeconds:        acfgIn.SessionIdleTimeoutSeconds,
 			VerifierNoProgressTimeoutSeconds: acfgIn.VerifierNoProgressTimeoutSeconds,
+			VerifierInfraEscalationThreshold: acfgIn.VerifierInfraEscalationThreshold,
+			FallbackVerificationBackend:      acfgIn.FallbackVerificationBackend,
 			SessionStartConfirmSeconds:       acfgIn.SessionStartConfirmSeconds,
 			WorkerIdleNudgeSeconds:           acfgIn.WorkerIdleNudgeSeconds,
 			WorkerIdleNudgeStallSeconds:      acfgIn.WorkerIdleNudgeStallSeconds,
@@ -5465,6 +5467,35 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				vauto = autonomousMgrRef.AutomationForPRD(prd)
 			}
 			resolvedVLLM := autonomouspkg.ResolveVerificationLLM(prd, task, vauto, liveCfg)
+			// Infra escalation: after enough consecutive infra verifier
+			// failures on this task, this one verification runs on the
+			// fallback backend; the count resets when it finishes.
+			verifierEscalated := false
+			if autonomousMgrRef != nil {
+				configuredVBackend := resolvedVLLM.Backend
+				if configuredVBackend == "" && len(liveCfg.VerificationBackends) > 0 {
+					configuredVBackend = liveCfg.VerificationBackends[0]
+				}
+				if configuredVBackend == "" {
+					configuredVBackend = liveCfg.VerificationBackend
+				}
+				if to, esc := autonomouspkg.DecideVerifierBackend(task.VerifierInfraFailures,
+					config.NormalizeVerifierInfraEscalationThreshold(liveCfg.VerifierInfraEscalationThreshold),
+					configuredVBackend,
+					config.NormalizeFallbackVerificationBackend(liveCfg.FallbackVerificationBackend)); esc {
+					verifierEscalated = true
+					if rerr := autonomousMgrRef.RecordVerifierEscalation(prd.ID, task.ID, configuredVBackend, to, task.VerifierInfraFailures); rerr != nil {
+						log.Printf("[autonomous] verifier: RecordVerifierEscalation(%s/%s): %v", prd.ID, task.ID, rerr)
+					}
+					resolvedVLLM.Backend, resolvedVLLM.Model, resolvedVLLM.Source = to, "", autonomouspkg.VerifierSourceTask
+				}
+				defer func() {
+					infra := verr == nil && !vres.OK && vres.Category == "infra"
+					if rerr := autonomousMgrRef.RecordVerifierOutcome(prd.ID, task.ID, infra, verifierEscalated); rerr != nil {
+						log.Printf("[autonomous] verifier: RecordVerifierOutcome(%s/%s): %v", prd.ID, task.ID, rerr)
+					}
+				}()
+			}
 			explicitEffortCfg := liveCfg
 			explicitEffortCfg.VerificationEffort = ""
 			var verifierTryAdmit func(backend, model string) (func(), bool)

@@ -5866,6 +5866,8 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"planning_timeout_seconds":             s.cfg.Autonomous.PlanningTimeoutSeconds,
 			"verification_timeout_seconds":         s.cfg.Autonomous.VerificationTimeoutSeconds,
 			"session_idle_timeout_seconds":         s.cfg.Autonomous.SessionIdleTimeoutSeconds,
+			"verifier_infra_escalation_threshold":  s.cfg.Autonomous.VerifierInfraEscalationThreshold,
+			"fallback_verification_backend":        s.cfg.Autonomous.FallbackVerificationBackend,
 			"verifier_no_progress_timeout_seconds": s.cfg.Autonomous.VerifierNoProgressTimeoutSeconds,
 			"session_start_confirm_seconds":        s.cfg.Autonomous.SessionStartConfirmSeconds,
 			"worker_idle_nudge_seconds":            s.cfg.Autonomous.WorkerIdleNudgeSeconds,
@@ -7519,6 +7521,14 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.Autonomous.SessionIdleTimeoutSeconds = n
 			}
+		case "autonomous.verifier_infra_escalation_threshold":
+			// Zero falls back to the default via
+			// config.NormalizeVerifierInfraEscalationThreshold at read time.
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Autonomous.VerifierInfraEscalationThreshold = n
+			}
+		case "autonomous.fallback_verification_backend":
+			cfg.Autonomous.FallbackVerificationBackend = toString(v)
 		case "autonomous.verifier_no_progress_timeout_seconds":
 			// Zero falls back to the default via
 			// config.NormalizeVerifierNoProgressTimeoutSeconds at read time.

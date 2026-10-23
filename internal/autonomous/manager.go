@@ -160,6 +160,11 @@ type Config struct {
 	// exists so the handleAutonomousConfig live round-trip
 	// (internal/server/autonomous.go) does not drop the key.
 	SessionIdleTimeoutSeconds int `json:"session_idle_timeout_seconds,omitempty"`
+	// VerifierInfraEscalationThreshold and FallbackVerificationBackend mirror
+	// the autonomous.* keys of the same names in config; the daemon reads them
+	// from config.Config. They exist so the live config round-trip keeps them.
+	VerifierInfraEscalationThreshold int    `json:"verifier_infra_escalation_threshold,omitempty"`
+	FallbackVerificationBackend      string `json:"fallback_verification_backend,omitempty"`
 	// VerifierNoProgressTimeoutSeconds mirrors
 	// autonomous.verifier_no_progress_timeout_seconds in config; like
 	// SessionIdleTimeoutSeconds it is read from config.Config by the daemon

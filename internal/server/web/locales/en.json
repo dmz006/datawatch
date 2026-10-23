@@ -1699,6 +1699,8 @@
   "settings_verification_timeout": "Verifier/guardrail session timeout (sec, 0=30m)",
   "settings_stale_task_seconds": "Stale task timeout (sec, 0=inherit session default)",
   "settings_session_idle_timeout": "Session idle timeout (sec, 0=15min)",
+  "settings_verifier_infra_escalation_threshold": "Verifier infra escalation threshold (0=2)",
+  "settings_fallback_verification_backend": "Fallback verification backend (empty=claude-code)",
   "settings_verifier_no_progress_timeout": "Verifier no-progress timeout (sec, 0=10min)",
   "settings_worker_idle_nudge": "Worker idle nudge (sec, 0=3min)",
   "settings_worker_idle_nudge_stall": "Worker stall after nudge (sec, 0=10min)",

@@ -1396,3 +1396,11 @@ Response:
   - comm channels via `configure autonomous.session_start_confirm_seconds=<n>`, which the router forwards to the REST `PUT` config endpoint.
 - **Default:** `SessionStartConfirmDefaultSeconds = 120` and `NormalizeSessionStartConfirmSeconds` in `internal/config/session_start_confirm.go`. Zero or negative values normalize to the default.
 - **Failure path:** a tripped bound is reported as the infra failure `session never started`; the alert carries the last 20 lines of the session transcript as evidence. Up to 2 start failures are retried (start-failure budget) before the task stays failed. This budget is separate from `auto_fix_retries`.
+
+## Verifier infra escalation (autonomous.verifier_infra_escalation_threshold, autonomous.fallback_verification_backend)
+
+- **Fields:** `autonomous.verifier_infra_escalation_threshold` (default `2`; zero or negative means the default) and `autonomous.fallback_verification_backend` (default `claude-code`; empty means the default). Normalizers: `NormalizeVerifierInfraEscalationThreshold` and `NormalizeFallbackVerificationBackend` in `internal/config/verifier_escalation.go`.
+- **Surfaces:** config YAML (`Autonomous` struct), REST config GET/PUT (`internal/server/api.go`), MCP `autonomous_config_set`, the manager `Config` mirror, and the web settings card with strings in 5 locales.
+- **Tracking:** `Task.VerifierInfraFailures` counts consecutive infra verifier results, persisted with the task; any non-infra result resets it.
+- **Decision:** `DecideVerifierBackend` in `internal/autonomous/verifier_escalation.go` is a pure function. When the count reaches the threshold and the configured backend differs from the fallback, the next verification of that task runs on the fallback backend. The switch is recorded as a `verifier_escalation` decision on the PRD and as an `autonomous.verifier_escalation` audit event. After that run, pass or fail, the count resets; no other task and no global setting changes.
+- **Hook point:** the verifier closure in `cmd/datawatch/main.go`.
