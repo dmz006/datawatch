@@ -39,4 +39,15 @@ const (
 	// scope, spent_usd, ceiling_usd, window, action (what was lifted),
 	// reset_at, reset_known, actor, reason.
 	ActionAutomationBudgetResumed = "automation_budget_resumed"
+
+	// ActionFingerprintMatchConfirmed — an operator CONFIRMED a fingerprint
+	// reconciliation match (a peer reported the same keyed fingerprint as one of
+	// this daemon's resources), so admission now treats the two resources as one
+	// shared pool. Details: kind (compute_node|billing_group), local (this
+	// daemon's resource name), peer (the reporting peer's name).
+	ActionFingerprintMatchConfirmed = "fingerprint_match_confirmed"
+	// ActionFingerprintMatchRejected — an operator REJECTED a fingerprint
+	// reconciliation match (or un-confirmed a prior one), so admission no longer
+	// pools it with the peer. Details: kind, local, peer.
+	ActionFingerprintMatchRejected = "fingerprint_match_rejected"
 )

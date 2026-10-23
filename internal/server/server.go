@@ -32,6 +32,7 @@ import (
 	"github.com/dmz006/datawatch/internal/council"
 	"github.com/dmz006/datawatch/internal/devices"
 	"github.com/dmz006/datawatch/internal/federation"
+	"github.com/dmz006/datawatch/internal/fingerprint"
 	"github.com/dmz006/datawatch/internal/inference"
 	"github.com/dmz006/datawatch/internal/memory"
 	"github.com/dmz006/datawatch/internal/messaging"
@@ -879,6 +880,22 @@ func (s *HTTPServer) ServerStore() *multiserver.Store {
 	return s.api.serverStore
 }
 
+// SetFingerprintExporter wires the fingerprint reconciliation exporter
+// (design §3c) behind GET /api/federation/fingerprints.
+func (s *HTTPServer) SetFingerprintExporter(x *fingerprint.Exporter) {
+	if s.api != nil {
+		s.api.SetFingerprintExporter(x)
+	}
+}
+
+// SetFingerprintMatchStore wires the match store behind the
+// /api/federation/fingerprint-matches handlers.
+func (s *HTTPServer) SetFingerprintMatchStore(ms *fingerprint.MatchStore) {
+	if s.api != nil {
+		s.api.SetFingerprintMatchStore(ms)
+	}
+}
+
 // SetFedGroupStore (BL316) — wires the custom capability group store.
 func (s *HTTPServer) SetFedGroupStore(gs *federation.GroupStore) {
 	if s.api != nil {
@@ -1166,6 +1183,16 @@ func (s *HTTPServer) RegisterNativePlugin(p NativePlugin) {
 // disables /api/observer/peers/* (handlers return 503).
 func (s *HTTPServer) SetPeerRegistry(r PeerRegistryAPI) {
 	s.api.SetPeerRegistry(r)
+}
+
+// PeerRegistry returns the wired Shape B/C peer registry (nil when not
+// set). Lazy readers such as fingerprint identity resolution call this at
+// request time, so a registry wired after server.New still reaches them.
+func (s *HTTPServer) PeerRegistry() PeerRegistryAPI {
+	if s.api == nil {
+		return nil
+	}
+	return s.api.peerRegistry
 }
 
 // SetFederationSelfName — S14a (v4.8.0) loop-prevention: the

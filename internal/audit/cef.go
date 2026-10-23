@@ -153,6 +153,10 @@ func cefSignature(action string) (int, string, int) {
 		return 37, "AutomationBudgetBreach", 5
 	case ActionAutomationBudgetResumed:
 		return 38, "AutomationBudgetResumed", 2
+	case ActionFingerprintMatchConfirmed:
+		return 39, "FingerprintMatchConfirmed", 4
+	case ActionFingerprintMatchRejected:
+		return 40, "FingerprintMatchRejected", 2
 	default:
 		return 0, "AuditEvent", 3
 	}

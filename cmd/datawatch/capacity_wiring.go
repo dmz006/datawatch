@@ -129,6 +129,30 @@ func budgetBackpressure(bl *autonomous.BudgetLedger) func(pool string) (bool, st
 	}
 }
 
+// sharedNodeBackpressure reports a "node:<name>" pool as blocked while the
+// fingerprint gate (wired by wireFingerprint, see
+// cmd/datawatch/fingerprint_wiring.go) says a CONFIRMED shared-node match
+// means the peer's concurrent usage of the same underlying node pushes the
+// pool past its local limit. Like the other backpressure gates it is
+// consulted by the ledger only for autonomous requests — operator starts
+// are never held — and for no pool kind other than node: (host, llm: and
+// external pools are never blocked by it). The gate itself fails open:
+// with no opted-in peer, no confirmed match, an unreachable peer, or no
+// gate wired at all, it reports not blocked and admission proceeds exactly
+// as if the fingerprint feature did not exist.
+func sharedNodeBackpressure() func(pool string) (bool, string) {
+	return func(pool string) (bool, string) {
+		node, ok := strings.CutPrefix(pool, "node:")
+		if !ok || fingerprintPeerGate == nil {
+			return false, ""
+		}
+		if why := fingerprintPeerGate.Reason(node); why != "" {
+			return true, "shared node: " + why
+		}
+		return false, ""
+	}
+}
+
 // composeBackpressure returns a gate that answers with the first blocked
 // answer of fns, in order, and reports not blocked when none block. Nil
 // functions are skipped.
@@ -383,6 +407,7 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 		AutonomousBackpressure: composeBackpressure(
 			backoffBackpressure(autonomousBackoff),
 			budgetBackpressure(autonomousBudget),
+			sharedNodeBackpressure(),
 		),
 	})
 
