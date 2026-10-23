@@ -96,6 +96,9 @@ func (g *ProjectGit) Init() error {
 // home directory are flagged with a warning, since the guard is what keeps
 // them from staging the whole home tree.
 func (g *ProjectGit) stageChanges(scope []string) error {
+	if err := gitguard.RefuseNonProject(g.dir); err != nil {
+		return err
+	}
 	if len(scope) > 0 {
 		if home, herr := gitguard.InHome(g.dir, nil); herr == nil && home {
 			fmt.Printf("[datawatch] WARNING: automatic commit is running in the user's home directory %s — staging is bounded by the staging guard (per-file size cap, ignored cache/build dirs, file-count limit); narrow the write scope to keep commits small\n", g.dir)
