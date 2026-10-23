@@ -160,6 +160,16 @@ type Config struct {
 	// exists so the handleAutonomousConfig live round-trip
 	// (internal/server/autonomous.go) does not drop the key.
 	SessionIdleTimeoutSeconds int `json:"session_idle_timeout_seconds,omitempty"`
+	// VerifierInfraEscalationThreshold and FallbackVerificationBackend mirror
+	// the autonomous.* keys of the same names in config; the daemon reads them
+	// from config.Config. They exist so the live config round-trip keeps them.
+	VerifierInfraEscalationThreshold int    `json:"verifier_infra_escalation_threshold,omitempty"`
+	FallbackVerificationBackend      string `json:"fallback_verification_backend,omitempty"`
+	// VerifierNoProgressTimeoutSeconds mirrors
+	// autonomous.verifier_no_progress_timeout_seconds in config; like
+	// SessionIdleTimeoutSeconds it is read from config.Config by the daemon
+	// and exists here so the live config round-trip does not drop the key.
+	VerifierNoProgressTimeoutSeconds int `json:"verifier_no_progress_timeout_seconds,omitempty"`
 	// WorkerIdleNudgeSeconds and WorkerIdleNudgeStallSeconds mirror
 	// autonomous.worker_idle_nudge_seconds and
 	// autonomous.worker_idle_nudge_stall_seconds in config. The manager does
@@ -797,6 +807,9 @@ type Manager struct {
 	// operator audit log so the event lands in both JSON-lines and CEF.
 	// Guarded by mu. Nil = audit silently skipped.
 	auditFn func(action string, details map[string]any)
+	// verifierHost — session/lease access for the startup verifier
+	// reconcile. Guarded by mu. Nil = reconcile skipped.
+	verifierHost VerifierHost
 
 	// sessionContinueFn — design §6.ii: sends a "resume" prompt to a parked
 	// worker session after an await-external cycle re-admits it. Optional.

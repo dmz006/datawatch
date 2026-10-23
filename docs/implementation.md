@@ -1387,6 +1387,12 @@ Response:
   - `cmd/datawatch/session_judgment.go`, the verifier one-shot session.
 - **Failure path:** a tripped bound is reported as the infra failure `session idle without completion`, raises an alert, and is retried through the existing `auto_fix_retries` budget.
 
+### Verifier no-progress watchdog (autonomous.verifier_no_progress_timeout_seconds)
+
+- **Field:** `autonomous.verifier_no_progress_timeout_seconds`, default `600` (10 minutes); zero or negative normalizes to the default (`NormalizeVerifierNoProgressTimeoutSeconds` in `internal/config/verifier_no_progress_timeout.go`). Surfaces mirror the session idle timeout: config YAML, REST `GET`/`PUT`, MCP `autonomous_config_set`, the web settings card (5 locales, label key `settings_verifier_no_progress_timeout`).
+- **Decision:** `VerifierWatchdog` (`internal/autonomous/verifier_watchdog.go`) is fed the output-file presence and a fingerprint of the captured pane output on each poll; either one appearing or changing resets the timer. A session that keeps producing output is never ended.
+- **Hook point:** the poll loop in `cmd/datawatch/session_judgment.go`, verifier sessions only (`autonomous:verify:*`). A trip ends the session through the deferred kill and returns an `OneShotNoOutputError` reading `verifier no-progress watchdog: no output file or pane activity for 10m0s`, which classifies as infra like the timeout.
+
 ### Post-exit silence check (one-shot pi runs that exits without verdict)
 
 - **Scope:** applies only to the `pi-prompt` backend family. One-shot `pi --print` runs write nothing to the session log until they finish, so the existing log-mtime stall check deliberately excludes pi-prompt (`staleWorkerAppliesTo`); a pi process that **exits without** writing a completion or a verdict was previously invisible, especially when the pane state flickers and never settles into `waiting_input`/`idle`.
@@ -1418,3 +1424,11 @@ Response:
   - comm `automation set-decision-assistant <id> key=value...` (`internal/router/automation_cmd.go`).
 - **Read side:** `decision_assistant` appears on `automation get` / `list` and on each `autonomous_status` Automation row (`AutomationStatusSummary`); `automation get` in the CLI prints an `Assistant:` line.
 - **Parity:** `cmd/datawatch/automation_parity_test.go` lists the operation, so the REST/MCP/CLI/comm parity test covers it.
+
+## Verifier infra escalation (autonomous.verifier_infra_escalation_threshold, autonomous.fallback_verification_backend)
+
+- **Fields:** `autonomous.verifier_infra_escalation_threshold` (default `2`; zero or negative means the default) and `autonomous.fallback_verification_backend` (default `claude-code`; empty means the default). Normalizers: `NormalizeVerifierInfraEscalationThreshold` and `NormalizeFallbackVerificationBackend` in `internal/config/verifier_escalation.go`.
+- **Surfaces:** config YAML (`Autonomous` struct), REST config GET/PUT (`internal/server/api.go`), MCP `autonomous_config_set`, the manager `Config` mirror, and the web settings card with strings in 5 locales.
+- **Tracking:** `Task.VerifierInfraFailures` counts consecutive infra verifier results, persisted with the task; any non-infra result resets it.
+- **Decision:** `DecideVerifierBackend` in `internal/autonomous/verifier_escalation.go` is a pure function. When the count reaches the threshold and the configured backend differs from the fallback, the next verification of that task runs on the fallback backend. The switch is recorded as a `verifier_escalation` decision on the PRD and as an `autonomous.verifier_escalation` audit event. After that run, pass or fail, the count resets; no other task and no global setting changes.
+- **Hook point:** the verifier closure in `cmd/datawatch/main.go`.

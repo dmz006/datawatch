@@ -3,10 +3,13 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -203,6 +206,36 @@ func peekJudgeOutput(projectDir, srcName, scratchDir, destName string) (string, 
 	return content, true
 }
 
+// verifierSessionNamePrefix is the sessionName prefix of the PRD task
+// verifier one-shot session ("autonomous:verify:<task id>").
+const verifierSessionNamePrefix = "autonomous:verify"
+
+// sessionPaneMarker returns a fingerprint of the session's captured pane
+// output tail, or "" when it cannot be read. A read failure yields an
+// unchanged marker, which counts as no activity.
+func sessionPaneMarker(cfg *config.Config, id string) string {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, loopbackBaseURL(cfg)+"/api/output?n=50&id="+url.QueryEscape(id), nil)
+	if err != nil {
+		return ""
+	}
+	if cfg.Server.Token != "" {
+		req.Header.Set("Authorization", "Bearer "+cfg.Server.Token)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close() //nolint:errcheck
+	if resp.StatusCode != http.StatusOK {
+		return ""
+	}
+	b, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
+}
+
 // runOneShotJSONSessionWithReader is the spawn / poll / kill body shared by
 // runOneShotJSONSessionCaptureID and runOneShotJudgeSessionCaptureID. readOutput
 // decides how the output file is read, and whether it is removed from the
@@ -287,6 +320,9 @@ func runOneShotJSONSessionWithReader(cfg *config.Config, prdID, projectDir, back
 		return "", "", fmt.Errorf("%s session start: no id in response: %s", sessionName, string(rb))
 	}
 	sessionID = startOut.ID
+	if verifierSessionStarted != nil {
+		verifierSessionStarted(sessionName, sessionID)
+	}
 	fmt.Printf("[%s] spawned %s (backend=%s, output=%s)\n", sessionName, startOut.ID, backend, outputFile)
 	// Record the spawn time as soon as the session id is known: while the
 	// daemon is still delivering the task within its delivery budget the
@@ -329,6 +365,14 @@ func runOneShotJSONSessionWithReader(cfg *config.Config, prdID, projectDir, back
 	// the current unbroken run.
 	idleLimit := time.Duration(config.NormalizeSessionIdleTimeoutSeconds(cfg.Autonomous.SessionIdleTimeoutSeconds)) * time.Second
 	var idleSince time.Time
+	// Verifier no-progress watchdog (autonomous.verifier_no_progress_timeout_seconds):
+	// verifier sessions only; decompose and worker sessions are untouched.
+	var verifierWatchdog *autonomouspkg.VerifierWatchdog
+	var watchdogLimit time.Duration
+	if strings.HasPrefix(sessionName, verifierSessionNamePrefix) {
+		watchdogLimit = time.Duration(config.NormalizeVerifierNoProgressTimeoutSeconds(cfg.Autonomous.VerifierNoProgressTimeoutSeconds)) * time.Second
+		verifierWatchdog = autonomouspkg.NewVerifierWatchdog(spawnedAt, watchdogLimit)
+	}
 	for {
 		select {
 		case <-ctx.Done():
@@ -362,6 +406,13 @@ func runOneShotJSONSessionWithReader(cfg *config.Config, prdID, projectDir, back
 			if content, ok := relocate(); ok {
 				fmt.Printf("[%s] %s state=%q, output file ready (%d bytes) — treating as complete\n", sessionName, startOut.ID, s.State, len(content))
 				return content, sessionID, nil
+			}
+			if verifierWatchdog != nil {
+				marker := sessionPaneMarker(cfg, startOut.ID)
+				if verifierWatchdog.Observe(time.Now(), false, marker) {
+					fmt.Printf("[%s] %s no output file or pane activity for %v — ending session\n", sessionName, startOut.ID, watchdogLimit)
+					return "", sessionID, &autonomouspkg.OneShotNoOutputError{Msg: autonomouspkg.VerifierWatchdogMessage(watchdogLimit)}
+				}
 			}
 			// waiting_input debounce, mirroring the task executor's
 			// stall check (see waitingInputTick). A one-shot decompose

@@ -1346,6 +1346,12 @@ autonomous:
   # Seconds, counted from the nudge, a nudged worker may stay silent before it is
   # stopped and retried. 0 or unset => 600.
   worker_idle_nudge_stall_seconds: 600
+  # Consecutive infra verifier failures on one task after which that task's next
+  # verification runs on fallback_verification_backend (then the count resets).
+  # 0 or unset => 2.
+  verifier_infra_escalation_threshold: 2
+  # Backend used for that one escalated verification. Empty => claude-code.
+  fallback_verification_backend: claude-code
   session_idle_timeout_seconds: 900   # bound on one worker/verifier session sitting in waiting_input/idle with no live child process; exceeded => infra failure 'session idle without completion', alert raised, auto_fix_retries budget handles the retry
   # A claude-code autonomous session must begin producing its first assistant
   # turn within this many seconds of starting; still in waiting_input with no
@@ -1353,6 +1359,7 @@ autonomous:
   # carries the last 20 transcript lines), up to 2 start failures retried
   # before the task stays failed. 0 or unset falls back to the 120s default
   # (NormalizeSessionStartConfirmSeconds).
+  verifier_no_progress_timeout_seconds: 600   # a verifier session with no output file and no pane activity for this long is ended as an infra failure ('verifier no-progress watchdog'); 0 or negative => 600
   session_start_confirm_seconds: 120
   # Stall window for a running worker, in seconds. A worker counts as stalled
   # only when, for this many seconds, it has no output, no live child process,

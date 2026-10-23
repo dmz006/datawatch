@@ -233,6 +233,9 @@ type capacityResponse struct {
 	// Tasks lists, for every queued task, the reason it is waiting, and for
 	// every running task what it holds. Both are always arrays.
 	Tasks capacityTasksJSON `json:"tasks"`
+	// Verifier carries the rolling verifier cost aggregates: queue wait, run
+	// time and outcome category counts.
+	Verifier autonomous.VerifierStatsView `json:"verifier"`
 }
 
 // capacityTasksJSON is the per-task part of the capacity response.
@@ -397,7 +400,7 @@ func (s *Server) handleCapacity(w http.ResponseWriter, r *http.Request) {
 		return &v
 	}
 	if s.capacityLedger == nil {
-		empty := capacityResponse{Pools: []capacityPoolJSON{}, Leases: []capacityLeaseJSON{}, Waiting: []capacityWaiterJSON{}, Warnings: warnings, Backoff: s.capacityBackoff(), Budgets: s.budgetStatuses(), Tasks: s.taskVisibility(r.URL.Query().Get("prd_id"))}
+		empty := capacityResponse{Pools: []capacityPoolJSON{}, Leases: []capacityLeaseJSON{}, Waiting: []capacityWaiterJSON{}, Warnings: warnings, Backoff: s.capacityBackoff(), Budgets: s.budgetStatuses(), Tasks: s.taskVisibility(r.URL.Query().Get("prd_id")), Verifier: autonomous.DefaultVerifierStats.Snapshot()}
 		empty.PatternsVersion, empty.ClaudeCLIVersion, empty.PatternsStale = s.rateLimitPatternsStatus()
 		writeJSONOK(w, empty)
 		return
@@ -491,7 +494,7 @@ func (s *Server) handleCapacity(w http.ResponseWriter, r *http.Request) {
 		waitingJSON = append(waitingJSON, cj)
 	}
 
-	out := capacityResponse{Pools: make([]capacityPoolJSON, 0, len(st.Pools)), Leases: leases, Waiting: waitingJSON, Warnings: warnings, Backoff: s.capacityBackoff(), Budgets: s.budgetStatuses(), Tasks: s.taskVisibility(r.URL.Query().Get("prd_id"))}
+	out := capacityResponse{Pools: make([]capacityPoolJSON, 0, len(st.Pools)), Leases: leases, Waiting: waitingJSON, Warnings: warnings, Backoff: s.capacityBackoff(), Budgets: s.budgetStatuses(), Tasks: s.taskVisibility(r.URL.Query().Get("prd_id")), Verifier: autonomous.DefaultVerifierStats.Snapshot()}
 	out.PatternsVersion, out.ClaudeCLIVersion, out.PatternsStale = s.rateLimitPatternsStatus()
 	for _, p := range st.Pools {
 		pj := capacityPoolJSON{PoolStatus: p}

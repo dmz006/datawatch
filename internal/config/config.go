@@ -2188,6 +2188,17 @@ type AutonomousConfig struct {
 	// process for longer than this is an infra failure. 0 or unset => 900
 	// (see NormalizeSessionIdleTimeoutSeconds).
 	SessionIdleTimeoutSeconds int `yaml:"session_idle_timeout_seconds,omitempty" json:"session_idle_timeout_seconds,omitempty"`
+	// VerifierInfraEscalationThreshold is the count of consecutive infra
+	// verifier failures on one task after which its next verification runs on
+	// FallbackVerificationBackend. 0 or unset => 2.
+	VerifierInfraEscalationThreshold int `yaml:"verifier_infra_escalation_threshold,omitempty" json:"verifier_infra_escalation_threshold,omitempty"`
+	// FallbackVerificationBackend is the backend used for that one
+	// verification. Empty => claude-code.
+	FallbackVerificationBackend string `yaml:"fallback_verification_backend,omitempty" json:"fallback_verification_backend,omitempty"`
+	// VerifierNoProgressTimeoutSeconds ends a verifier session that shows no
+	// output file and no pane activity for this long. 0 or unset => 600
+	// (see NormalizeVerifierNoProgressTimeoutSeconds).
+	VerifierNoProgressTimeoutSeconds int `yaml:"verifier_no_progress_timeout_seconds,omitempty" json:"verifier_no_progress_timeout_seconds,omitempty"`
 	// WorkerIdleNudgeSeconds is how long a PRD-owned claude-code worker may sit
 	// idle with no output and no completion marker before it gets one nudge to
 	// finish. 0 or unset => 180 (see NormalizeWorkerIdleNudgeSeconds).

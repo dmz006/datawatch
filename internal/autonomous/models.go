@@ -724,6 +724,12 @@ type Task struct {
 	DependsOn  []string   `json:"depends_on,omitempty"`  // other Task IDs
 	SessionID  string     `json:"session_id,omitempty"`  // datawatch session ID once running
 	WaitReason string     `json:"wait_reason,omitempty"` // why the task is waiting_capacity
+	// VerifierSessionID is the live verifier session adopted at boot, so the
+	// resumed verification waits for it instead of spawning a second one.
+	VerifierSessionID string `json:"verifier_session_id,omitempty"`
+	// VerifierInfraFailures counts consecutive infra verifier failures on this
+	// task; reset by any non-infra result and after an escalated run.
+	VerifierInfraFailures int `json:"verifier_infra_failures,omitempty"`
 	// Kind classifies the task for the smoke-verification feature story
 	// (independent deliverable; this task only adds the field): "smoke" |
 	// "final_gate" | "" (ordinary). Empty = ordinary task; readers must

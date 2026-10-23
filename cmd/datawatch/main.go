@@ -4170,29 +4170,32 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			tierInflightBridge[k] = v
 		}
 		amgrCfg := autonomouspkg.Config{
-			Enabled:                     acfgIn.Enabled,
-			PollIntervalSeconds:         acfgIn.PollIntervalSeconds,
-			MaxParallelTasks:            acfgIn.MaxParallelTasks,
-			MaxConcurrentTasks:          acfgIn.MaxConcurrentTasks,
-			GateDisagreement:            acfgIn.GateDisagreement,
-			PlanningBackend:             acfgIn.PlanningBackend,
-			VerificationBackend:         acfgIn.VerificationBackend,
-			ExecutionBackend:            acfgIn.ExecutionBackend,
-			PlanningModel:               acfgIn.PlanningModel,
-			VerificationModel:           acfgIn.VerificationModel,
-			GuardrailModel:              acfgIn.GuardrailModel,
-			VerificationBackends:        append([]string(nil), acfgIn.VerificationBackends...),
-			TaskOverrideStatuses:        append([]string(nil), acfgIn.TaskOverrideStatuses...),
-			PlanningEffort:              acfgIn.PlanningEffort,
-			VerificationEffort:          acfgIn.VerificationEffort,
-			PlanningTimeoutSeconds:      acfgIn.PlanningTimeoutSeconds,
-			VerificationTimeoutSeconds:  acfgIn.VerificationTimeoutSeconds,
-			SessionIdleTimeoutSeconds:   acfgIn.SessionIdleTimeoutSeconds,
-			SessionStartConfirmSeconds:  acfgIn.SessionStartConfirmSeconds,
-			WorkerIdleNudgeSeconds:      acfgIn.WorkerIdleNudgeSeconds,
-			WorkerIdleNudgeStallSeconds: acfgIn.WorkerIdleNudgeStallSeconds,
-			CapacityEnabled:             acfgIn.CapacityEnabled,
-			CapacityWaitTimeoutSeconds:  acfgIn.CapacityWaitTimeoutSeconds,
+			Enabled:                          acfgIn.Enabled,
+			PollIntervalSeconds:              acfgIn.PollIntervalSeconds,
+			MaxParallelTasks:                 acfgIn.MaxParallelTasks,
+			MaxConcurrentTasks:               acfgIn.MaxConcurrentTasks,
+			GateDisagreement:                 acfgIn.GateDisagreement,
+			PlanningBackend:                  acfgIn.PlanningBackend,
+			VerificationBackend:              acfgIn.VerificationBackend,
+			ExecutionBackend:                 acfgIn.ExecutionBackend,
+			PlanningModel:                    acfgIn.PlanningModel,
+			VerificationModel:                acfgIn.VerificationModel,
+			GuardrailModel:                   acfgIn.GuardrailModel,
+			VerificationBackends:             append([]string(nil), acfgIn.VerificationBackends...),
+			TaskOverrideStatuses:             append([]string(nil), acfgIn.TaskOverrideStatuses...),
+			PlanningEffort:                   acfgIn.PlanningEffort,
+			VerificationEffort:               acfgIn.VerificationEffort,
+			PlanningTimeoutSeconds:           acfgIn.PlanningTimeoutSeconds,
+			VerificationTimeoutSeconds:       acfgIn.VerificationTimeoutSeconds,
+			SessionIdleTimeoutSeconds:        acfgIn.SessionIdleTimeoutSeconds,
+			VerifierNoProgressTimeoutSeconds: acfgIn.VerifierNoProgressTimeoutSeconds,
+			VerifierInfraEscalationThreshold: acfgIn.VerifierInfraEscalationThreshold,
+			FallbackVerificationBackend:      acfgIn.FallbackVerificationBackend,
+			SessionStartConfirmSeconds:       acfgIn.SessionStartConfirmSeconds,
+			WorkerIdleNudgeSeconds:           acfgIn.WorkerIdleNudgeSeconds,
+			WorkerIdleNudgeStallSeconds:      acfgIn.WorkerIdleNudgeStallSeconds,
+			CapacityEnabled:                  acfgIn.CapacityEnabled,
+			CapacityWaitTimeoutSeconds:       acfgIn.CapacityWaitTimeoutSeconds,
 			// 0 is meaningful (never resume) and -1 passes through as-is;
 			// 3600 arrives only if the daemon config itself supplied nothing
 			// (config.Load merges over DefaultConfig()).
@@ -5464,6 +5467,61 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				vauto = autonomousMgrRef.AutomationForPRD(prd)
 			}
 			resolvedVLLM := autonomouspkg.ResolveVerificationLLM(prd, task, vauto, liveCfg)
+			// Infra escalation: after enough consecutive infra verifier
+			// failures on this task, this one verification runs on the
+			// fallback backend; the count resets when it finishes.
+			verifierEscalated := false
+			if autonomousMgrRef != nil {
+				configuredVBackend := resolvedVLLM.Backend
+				if configuredVBackend == "" && len(liveCfg.VerificationBackends) > 0 {
+					configuredVBackend = liveCfg.VerificationBackends[0]
+				}
+				if configuredVBackend == "" {
+					configuredVBackend = liveCfg.VerificationBackend
+				}
+				if to, esc := autonomouspkg.DecideVerifierBackend(task.VerifierInfraFailures,
+					config.NormalizeVerifierInfraEscalationThreshold(liveCfg.VerifierInfraEscalationThreshold),
+					configuredVBackend,
+					config.NormalizeFallbackVerificationBackend(liveCfg.FallbackVerificationBackend)); esc {
+					verifierEscalated = true
+					if rerr := autonomousMgrRef.RecordVerifierEscalation(prd.ID, task.ID, configuredVBackend, to, task.VerifierInfraFailures); rerr != nil {
+						log.Printf("[autonomous] verifier: RecordVerifierEscalation(%s/%s): %v", prd.ID, task.ID, rerr)
+					}
+					resolvedVLLM.Backend, resolvedVLLM.Model, resolvedVLLM.Source = to, "", autonomouspkg.VerifierSourceTask
+				}
+				defer func() {
+					infra := verr == nil && !vres.OK && vres.Category == "infra"
+					if rerr := autonomousMgrRef.RecordVerifierOutcome(prd.ID, task.ID, infra, verifierEscalated); rerr != nil {
+						log.Printf("[autonomous] verifier: RecordVerifierOutcome(%s/%s): %v", prd.ID, task.ID, rerr)
+					}
+				}()
+			}
+			// Cost metrics: queue wait runs from here until the lease is
+			// granted, run time from the grant to the verifier result.
+			vRequestedAt := time.Now()
+			var vGrantedAt time.Time
+			defer func() {
+				end := time.Now()
+				var wait, run time.Duration
+				if vGrantedAt.IsZero() {
+					wait = end.Sub(vRequestedAt)
+				} else {
+					wait, run = vGrantedAt.Sub(vRequestedAt), end.Sub(vGrantedAt)
+				}
+				summary := vres.Summary
+				if verr != nil {
+					summary += " " + verr.Error()
+				}
+				ok := verr == nil && vres.OK
+				cat := autonomouspkg.VerifierCategoryFor(ok, vres.Category, summary, verifierEscalated)
+				if verr != nil && cat == autonomouspkg.VerifierCatContent {
+					cat = autonomouspkg.VerifierCatInfra
+				}
+				autonomouspkg.DefaultVerifierStats.Record(wait, run, cat)
+				metricsPkg.VerifierRuns.WithLabelValues(cat).Inc()
+				metricsPkg.VerifierWaitSeconds.Add(wait.Seconds())
+				metricsPkg.VerifierRunSeconds.Add(run.Seconds())
+			}()
 			explicitEffortCfg := liveCfg
 			explicitEffortCfg.VerificationEffort = ""
 			var verifierTryAdmit func(backend, model string) (func(), bool)
@@ -5505,6 +5563,9 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				}
 			}
 			release := vsel.Release
+			if release != nil {
+				vGrantedAt = time.Now()
+			}
 			// Every result returned from here on records which LLM judged it.
 			defer func() { vsel.stamp(&vres) }()
 			if release == nil {
@@ -5521,6 +5582,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 						}, nil
 					}
 					release = r
+					vGrantedAt = time.Now()
 				}
 			}
 			if release != nil {

@@ -580,13 +580,25 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 		return amgr.HandoffVerifyLease(taskID, backend, model)
 	}
 
+	verifiers := newVerifierRegistry()
+	verifierSessionStarted = func(name, sessionID string) {
+		if taskID, ok := verifierTaskFromSessionName(name); ok {
+			holder := autonomous.VerifyHolder(taskID)
+			verifiers.bindSession(holder, sessionID)
+			led.Bind(holder, sessionID)
+		}
+	}
+
+	amgr.SetVerifierHost(&verifierReconcileHost{mgr: mgr, led: led, reg: verifiers})
+
 	verifierCapacityAdmit = func(ctx context.Context, backend, model, taskID, prdID, sessionID string) (func(), error) {
 		holder := autonomous.VerifyHolder(taskID)
 		if verifyHandoff(taskID, backend, model) {
 			// The worker's slot is now the verifier's lease: release it by
 			// its new name; the executor's deferred release of the worker
 			// lease is a harmless no-op.
-			return func() { led.Release(holder) }, nil
+			end := verifiers.begin(holder)
+			return func() { end(); led.Release(holder) }, nil
 		}
 		// Fallback: the verifier resolves elsewhere (or the worker lease is
 		// already gone). Release the worker's slot first so it can neither
@@ -600,7 +612,8 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 		if err := led.Acquire(ctx, verifierAdmitRequest(holder, prdID, pools, node, model, sessionPriority(mgr, sessionID)), waitDur, func() bool { return false }, func(string) {}); err != nil {
 			return func() {}, err
 		}
-		return func() { led.Release(holder) }, nil
+		end := verifiers.begin(holder)
+		return func() { end(); led.Release(holder) }, nil
 	}
 
 	// councilCapacityAdmit (v8.38.0, BL390) — same shape and wait-duration
@@ -631,7 +644,8 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 	verifierCapacityTryAdmit = func(ctx context.Context, backend, model, taskID, prdID, sessionID string) (func(), bool) {
 		holder := autonomous.VerifyHolder(taskID)
 		if verifyHandoff(taskID, backend, model) {
-			return func() { led.Release(holder) }, true
+			end := verifiers.begin(holder)
+			return func() { end(); led.Release(holder) }, true
 		}
 		if pools, node := keys(backend, model); len(pools) > 0 {
 			// Fallback probe. The worker lease is released first (idempotent)
@@ -641,7 +655,8 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 			if err := led.Acquire(ctx, verifierAdmitRequest(holder, prdID, pools, node, model, sessionPriority(mgr, sessionID)), 150*time.Millisecond, func() bool { return false }, func(string) {}); err != nil {
 				return func() {}, false
 			}
-			return func() { led.Release(holder) }, true
+			end := verifiers.begin(holder)
+			return func() { end(); led.Release(holder) }, true
 		}
 		return func() {}, true
 	}
@@ -688,11 +703,7 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 			syncLLMRates(cfg, reg, led)
 		}
 		live := func(ls capacity.Lease) bool {
-			if ls.SessionID == "" {
-				return time.Since(ls.Acquired) < 10*time.Minute // spawn in progress
-			}
-			s, ok := mgr.GetSession(ls.SessionID)
-			return ok && s.State != session.StateComplete && s.State != session.StateFailed && s.State != session.StateKilled
+			return leaseHolderLive(ls, verifiers, func(id string) bool { return sessionRunning(mgr, id) }, time.Now())
 		}
 		for _, h := range led.Reap(live) {
 			fmt.Printf("[capacity] reaped leaked lease holder=%s\n", h)
