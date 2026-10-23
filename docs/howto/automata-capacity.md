@@ -551,6 +551,37 @@ A task parked on an external condition also appears under running tasks with
 a note: either the inference slot is released and the tree lock is kept, or
 both are released.
 
+## Readable holder names
+
+You don't need to keep a task-id diary. Wherever the capacity surfaces used
+to show a raw id — a pool's holders, a lease, a waiting row, a task line —
+they now show you **who** holds it: the Automaton's title and the task's
+title, with the familiar short id in a smaller secondary label right after,
+so nothing is hidden and nothing is lost. What you see:
+
+- **Capacity card pools.** A node pool's `Holders:` line lists each holder as
+  *PRD title / task title (short id)* instead of a bare short id. A long
+  title is cut in the middle ("Fix the login flow and…") and the full text is
+  in the tooltip — the card never overflows. The same name shows in each
+  pool's tooltip.
+- **Waiting and running task lines.** A queued task reads as *PRD title /
+  task title (short id)* first, then its reason; a running task shows its
+  `Holds:` line with the same readable holders.
+- **Wait reasons.** When a reason names holders — a full pool or a busy node
+  — you see their titles, e.g. `pool llm:claude-code full (2/2, held by
+  "Ship the beta" / "Write the migration" (t-3f9a1c))`. Reasons that name no
+  holders (back-off, budget) read exactly as before. The session status tab
+  shows the same readable sentence next to the raw one.
+- **One that has no title.** A holder the daemon resolved but that has no
+  PRD or task title is shown as *`(untitled t-3f9a1c)`* instead of an empty
+  cell — and the raw id is still in the API body for scripts.
+- **The API body is additive.** `holder_names` (pools), `holder_name`
+  (leases and waiting), and `readable`/`short_id` (tasks) sit **beside** the
+  unchanged `holder`, `prd_id`, `task_id` and `reason` fields; scripts that
+  read the ids are unaffected. `full` on a name is the never-truncated
+  sentence and only appears with `?long=1` (the PWA tooltip uses it). The
+  readable text is HTML-escaped before it reaches the page.
+
 ## Capacity and budget card
 
 The PWA shows one Capacity card, built from `GET /api/capacity` and refreshed
