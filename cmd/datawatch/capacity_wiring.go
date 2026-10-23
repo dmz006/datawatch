@@ -140,13 +140,16 @@ func budgetBackpressure(bl *autonomous.BudgetLedger) func(pool string) (bool, st
 // with no opted-in peer, no confirmed match, an unreachable peer, or no
 // gate wired at all, it reports not blocked and admission proceeds exactly
 // as if the fingerprint feature did not exist.
-func sharedNodeBackpressure() func(pool string) (bool, string) {
-	return func(pool string) (bool, string) {
+func sharedNodeBackpressure() func(pool string, held, limit int) (bool, string) {
+	return func(pool string, held, limit int) (bool, string) {
 		node, ok := strings.CutPrefix(pool, "node:")
 		if !ok || fingerprintPeerGate == nil {
 			return false, ""
 		}
-		if why := fingerprintPeerGate.Reason(node); why != "" {
+		// The ledger calls this while holding its own lock, so the held and
+		// limit come from the ledger as arguments; reading the ledger back
+		// here would deadlock it.
+		if why := fingerprintPeerGate.ReasonWithHeld(node, held, limit); why != "" {
 			return true, "shared node: " + why
 		}
 		return false, ""
@@ -407,8 +410,8 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 		AutonomousBackpressure: composeBackpressure(
 			backoffBackpressure(autonomousBackoff),
 			budgetBackpressure(autonomousBudget),
-			sharedNodeBackpressure(),
 		),
+		HeldBackpressure: sharedNodeBackpressure(),
 	})
 
 	keys := func(backend, model string) ([]string, string) {

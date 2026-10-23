@@ -147,7 +147,7 @@ func TestFingerprintWiringIdleWithoutOptIn(t *testing.T) {
 	// The gate is nil (no wiring ran with a store in this setup) and,
 	// when consulted, admits everything.
 	for _, pool := range []string{"node:gpu1", "host", "llm:gpt", "external:1"} {
-		blocked, why := sharedNodeBackpressure()(pool)
+		blocked, why := sharedNodeBackpressure()(pool, 0, 1)
 		if blocked || why != "" {
 			t.Errorf("gate blocked %s: %q, want not blocked (no opt-in)", pool, why)
 		}
@@ -186,7 +186,8 @@ func TestCapacityGateComposesPeerGate(t *testing.T) {
 	}
 
 	composed := sharedNodeBackpressure()
-	blocked, why := composed("node:gpu1")
+	heldNow, limitNow := localHeld("node:gpu1")
+	blocked, why := composed("node:gpu1", heldNow, limitNow)
 	if !blocked || why == "" {
 		t.Fatalf("composed gate admitted node:gpu1 (blocked=%v why=%q), want blocked", blocked, why)
 	}
@@ -194,7 +195,7 @@ func TestCapacityGateComposesPeerGate(t *testing.T) {
 		t.Errorf("wait reason = %q, want it to carry the shared-node wording", why)
 	}
 	for _, pool := range []string{"host", "llm:zeta", "external:pool-9"} {
-		blocked, why := composed(pool)
+		blocked, why := composed(pool, 0, 1)
 		if blocked || why != "" {
 			t.Errorf("composed gate blocked %s: %q, want not blocked (wrong pool kind)", pool, why)
 		}
@@ -230,7 +231,8 @@ func TestCapacityGateFailsOpenOnPeerError(t *testing.T) {
 	if why := gate.Reason("gpu1"); why != "" {
 		t.Fatalf("gate blocked on an unreachable peer: %q, want fail-open (admit)", why)
 	}
-	blocked, _ := sharedNodeBackpressure()("node:gpu1")
+	heldNow, limitNow := localHeld("node:gpu1")
+	blocked, _ := sharedNodeBackpressure()("node:gpu1", heldNow, limitNow)
 	if blocked {
 		t.Errorf("composed gate blocked on peer error, want fail-open")
 	}

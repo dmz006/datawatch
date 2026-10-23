@@ -61,7 +61,18 @@ type PeerGate struct {
 // local limit. It never returns a block for a peer that could not be
 // reached: such a peer contributes zero.
 func (g *PeerGate) Reason(node string) string {
-	if g.Matches == nil || g.Peers == nil || g.LocalHeld == nil {
+	if g.LocalHeld == nil {
+		return ""
+	}
+	held, limit := g.LocalHeld("node:" + node)
+	return g.ReasonWithHeld(node, held, limit)
+}
+
+// ReasonWithHeld is Reason with the local held count and limit supplied by
+// the caller. The capacity ledger uses it because it already holds its own
+// lock when it asks the gate, so the gate must not read the ledger back.
+func (g *PeerGate) ReasonWithHeld(node string, held, limit int) string {
+	if g.Matches == nil || g.Peers == nil {
 		return ""
 	}
 	client := g.Client
@@ -72,7 +83,6 @@ func (g *PeerGate) Reason(node string) string {
 	for _, p := range g.Peers() {
 		peers[p.Name] = p
 	}
-	held, limit := g.LocalHeld("node:" + node)
 	for _, m := range g.Matches.SharedWith(KindNode, node) {
 		peer, ok := peers[m.Peer]
 		if !ok || !peer.OptedIn {

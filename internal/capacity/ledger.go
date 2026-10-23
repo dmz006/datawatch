@@ -126,6 +126,12 @@ type Options struct {
 	// back-off) that applies to autonomous requests only; requests marked
 	// Interactive skip it.
 	AutonomousBackpressure func(pool string) (blocked bool, reason string)
+	// HeldBackpressure is a soft block for autonomous requests that needs the
+	// pool's current usage. The ledger calls it while it holds its own lock,
+	// so it receives the held count and the limit as arguments: it MUST NOT
+	// call back into the ledger (Snapshot, LeaseOf and the like), which
+	// would deadlock.
+	HeldBackpressure func(pool string, held, limit int) (blocked bool, reason string)
 	// AgeOverride: waiters older than this jump ahead of model affinity.
 	AgeOverride time.Duration
 	// PollInterval is how often waiters re-check cancellation and
@@ -232,6 +238,11 @@ func (l *Ledger) blockReasonLocked(req Request) string {
 		}
 		if l.opt.AutonomousBackpressure != nil && !req.Interactive {
 			if blocked, why := l.opt.AutonomousBackpressure(p); blocked {
+				return fmt.Sprintf("pool %s backpressure: %s", p, why)
+			}
+		}
+		if l.opt.HeldBackpressure != nil && !req.Interactive {
+			if blocked, why := l.opt.HeldBackpressure(p, l.heldLocked(p), l.limits[p]); blocked {
 				return fmt.Sprintf("pool %s backpressure: %s", p, why)
 			}
 		}
