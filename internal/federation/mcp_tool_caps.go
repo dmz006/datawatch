@@ -108,6 +108,8 @@ var MCPToolCap = map[string]string{
 	"autonomous_prd_set_task_verification_llm":     CapAutonomousWrite,
 	"autonomous_prd_set_story_verification_llm":    CapAutonomousWrite,
 	"autonomous_prd_set_verification_llm":          CapAutonomousWrite,
+	"autonomous_prd_set_verifier_policy":           CapAutonomousWrite,
+	"autonomous_prd_set_task_verifier_policy":      CapAutonomousWrite,
 	"autonomous_prd_set_type":                      CapAutonomousWrite,
 	"autonomous_scan_config_get":                   CapAutonomousRead,
 	"autonomous_scan_config_set":                   CapAutonomousWrite,

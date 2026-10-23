@@ -115,6 +115,14 @@ func (s *Server) handleAutonomousConfig(w http.ResponseWriter, r *http.Request) 
 					}
 				}
 			}
+			// verifier_policy: an unknown mode, an empty backend entry or a
+			// negative cap rejects the whole PUT. null is absent and passes.
+			if raw, ok := top["verifier_policy"]; ok && string(raw) != "null" {
+				if verr := validateVerifierPolicyObject(raw); verr != nil {
+					http.Error(w, "autonomous."+verr.Error(), http.StatusBadRequest)
+					return
+				}
+			}
 			// automation.idle_alert_minutes: whole minutes >= 0 (0 = off).
 			if rawAuto, ok := top["automation"]; ok {
 				var auto struct {
@@ -1854,6 +1862,10 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		default:
 			s.writeAutonomousResult(w, r, updated, "", "", "")
 		}
+	// Per-unit verifier policy overrides (mode + backend list). Precedence:
+	// task > Automaton > global autonomous.verifier_policy.
+	case "set_task_verifier_policy", "set_verifier_policy":
+		s.handleVerifierPolicyAction(w, r, id, action)
 	case "profiles":
 		// v5.26.20 — post-create profile attachment for PRDs that
 		// were created via project_dir but later need to be tied to

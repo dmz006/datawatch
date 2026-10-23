@@ -598,7 +598,19 @@ paths:
         off; a negative or non-integer value is rejected with 400),
         `autonomous.plan_review_backend`, `autonomous.plan_review_model`,
         `autonomous.plan_review_mode` (off | warn | block),
-        `autonomous.smoke_verification_backend`, `autonomous.smoke_verification_model`.
+        `autonomous.smoke_verification_backend`, `autonomous.smoke_verification_model`,
+        `autonomous.verifier_policy.mode` (fixed | prefer-free | balance | gpu-only |
+        claude-only; empty = fixed), `autonomous.verifier_policy.backends` (ordered
+        list, or comma-separated), `autonomous.verifier_policy.claude_session_cap`
+        (whole number >= 0, 0 = unlimited),
+        `autonomous.verifier_policy.claude_cap_window_minutes` (whole number >= 0,
+        0 = 60), `autonomous.verifier_policy.force_stronger_on_retry`,
+        `autonomous.verifier_policy.final_gate_stronger`,
+        `autonomous.verifier_policy.stronger_backend` and
+        `autonomous.verifier_policy.stronger_model`. An unknown mode, an empty
+        backend entry, a negative number or an unknown `verifier_policy` key rejects
+        the whole PUT with 400. The policy applies to the next verification with no
+        restart.
       operationId: updateConfig
       tags: [System]
       requestBody:
@@ -1329,6 +1341,10 @@ paths:
         report, 0-1, default 1.0). Both are settable here and via /api/config PUT.
         It also carries `undeclared_edit_mode` (off|warn|block, default warn), the
         enforcement for files a task's worker edited without declaring them.
+        The `verifier_policy` object holds the global verifier policy: `mode`,
+        `backends`, `claude_session_cap`, `claude_cap_window_minutes`,
+        `force_stronger_on_retry`, `final_gate_stronger`, `stronger_backend` and
+        `stronger_model`.
       operationId: autonomousConfigGet
       tags: [Autonomous]
       responses: {"200": {description: OK}}
@@ -1340,6 +1356,14 @@ paths:
         default 1.0). Values outside the allowed range are rejected with 400.
         `undeclared_edit_mode` (off|warn|block, default warn) is also accepted;
         any other value is rejected with 400.
+        `verifier_policy` is an object merged onto the current policy field by
+        field: `mode` (fixed | prefer-free | balance | gpu-only | claude-only),
+        `backends` (array of backend names; an empty list clears it),
+        `claude_session_cap` and `claude_cap_window_minutes` (whole numbers >= 0),
+        `force_stronger_on_retry`, `final_gate_stronger` (booleans),
+        `stronger_backend` and `stronger_model` (strings). An unknown mode, an empty
+        backend entry, a negative number or an unknown key is rejected with 400 and
+        changes nothing. The policy applies to the next verification with no restart.
       operationId: autonomousConfigSet
       tags: [Autonomous]
       requestBody:
@@ -1525,6 +1549,58 @@ paths:
                 guardrail_model: {type: string, description: "Optional; omitted = unchanged; empty string = cleared"}
       responses:
         "200": {description: Updated PRD}
+  /api/autonomous/prds/{id}/set_verifier_policy:
+    post:
+      summary: Set an Automaton's verifier policy override
+      description: |
+        Overrides the verifier policy mode and backend list for every task of the
+        Automaton that has no task-level override. Precedence is task, then
+        Automaton, then the global `autonomous.verifier_policy`; the mode and the
+        backend list resolve independently. Fields the caller omits are left
+        unchanged; an empty `mode` or an empty `backends` list clears that field,
+        and clearing both makes the Automaton inherit again. Accepted only while the
+        Automaton is `needs_review`, `revisions_asked` or `cancelled`; any other
+        status is rejected with 400. Applied settings are audit-logged and appended
+        to the Automaton's decision log.
+      operationId: autonomousPRDSetVerifierPolicy
+      tags: [Autonomous]
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/VerifierPolicyOverrideRequest"}
+      responses:
+        "200": {description: Updated Automaton}
+        "400": {description: Unknown mode, empty or unknown backend entry, or the Automaton is locked}
+        "403": {description: "Federation peer or scoped session token lacks the autonomous-write capability"}
+  /api/autonomous/prds/{id}/set_task_verifier_policy:
+    post:
+      summary: Set a task's verifier policy override
+      description: |
+        Overrides the verifier policy mode and backend list for one task, the most
+        specific level. Presence-aware like `set_verifier_policy`. Accepted while
+        the Automaton's status is listed in `autonomous.task_override_statuses`;
+        any other status is rejected with 400. Applied settings are audit-logged and
+        appended to the Automaton's decision log.
+      operationId: autonomousPRDSetTaskVerifierPolicy
+      tags: [Autonomous]
+      parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - {$ref: "#/components/schemas/VerifierPolicyOverrideRequest"}
+                - type: object
+                  required: [task_id]
+                  properties:
+                    task_id: {type: string, description: "Task to override"}
+      responses:
+        "200": {description: Updated task}
+        "400": {description: Missing task_id, unknown mode, empty or unknown backend entry, or the Automaton is locked}
+        "403": {description: "Federation peer or scoped session token lacks the autonomous-write capability"}
   /api/autonomous/learnings:
     get:
       summary: List extracted post-task learnings
@@ -3791,6 +3867,20 @@ components:
             example: "unauthorized"
 
   schemas:
+    VerifierPolicyOverrideRequest:
+      type: object
+      description: |
+        Presence-aware verifier policy override. Omitting a field leaves it
+        unchanged; an empty `mode` or an empty `backends` list clears it.
+      properties:
+        mode:
+          type: string
+          description: "fixed | prefer-free | balance | gpu-only | claude-only. Empty string = clear (inherit). Any other value is rejected with 400."
+        backends:
+          type: array
+          items: {type: string}
+          description: "Ordered list of eligible verifier backends (LLM registry names). Empty list = clear (inherit). An empty entry or an unknown LLM name is rejected with 400."
+        actor: {type: string, description: "Who made the change (default `operator`)"}
     PlanReviewVerdict:
       type: object
       description: |

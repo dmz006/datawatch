@@ -123,6 +123,14 @@ func (f *fakeOrchAutonomous) SetPRDVerificationLLM(string, *string, *string, *st
 	return nil, nil
 }
 
+// Verifier policy override stubs.
+func (f *fakeOrchAutonomous) SetTaskVerifierPolicy(string, string, *string, *[]string, string) (any, error) {
+	return nil, nil
+}
+func (f *fakeOrchAutonomous) SetPRDVerifierPolicy(string, *string, *[]string, string) (any, error) {
+	return nil, nil
+}
+
 // BL191 Q4 (v5.9.0) — child PRD list stub.
 func (f *fakeOrchAutonomous) ListChildPRDs(string) []any { return nil }
 

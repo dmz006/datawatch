@@ -600,6 +600,8 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	mcpSrv.AddTool(s.toolAutonomousPRDSetVerificationLLM(), tracked(s.handleAutonomousPRDSetVerificationLLM))
 	mcpSrv.AddTool(s.toolAutonomousPRDSetStoryVerificationLLM(), tracked(s.handleAutonomousPRDSetStoryVerificationLLM))
 	mcpSrv.AddTool(s.toolAutonomousPRDSetTaskVerificationLLM(), tracked(s.handleAutonomousPRDSetTaskVerificationLLM))
+	mcpSrv.AddTool(s.toolAutonomousPRDSetVerifierPolicy(), tracked(s.handleAutonomousPRDSetVerifierPolicy))
+	mcpSrv.AddTool(s.toolAutonomousPRDSetTaskVerifierPolicy(), tracked(s.handleAutonomousPRDSetTaskVerifierPolicy))
 	// BL427 lifecycle-event subscriptions (proxy /api/autonomous/subscriptions).
 	mcpSrv.AddTool(s.toolAutonomousSubscribe(), tracked(s.handleAutonomousSubscribe))
 	mcpSrv.AddTool(s.toolAutonomousUnsubscribe(), tracked(s.handleAutonomousUnsubscribe))
