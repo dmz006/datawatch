@@ -5496,6 +5496,32 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 					}
 				}()
 			}
+			// Cost metrics: queue wait runs from here until the lease is
+			// granted, run time from the grant to the verifier result.
+			vRequestedAt := time.Now()
+			var vGrantedAt time.Time
+			defer func() {
+				end := time.Now()
+				var wait, run time.Duration
+				if vGrantedAt.IsZero() {
+					wait = end.Sub(vRequestedAt)
+				} else {
+					wait, run = vGrantedAt.Sub(vRequestedAt), end.Sub(vGrantedAt)
+				}
+				summary := vres.Summary
+				if verr != nil {
+					summary += " " + verr.Error()
+				}
+				ok := verr == nil && vres.OK
+				cat := autonomouspkg.VerifierCategoryFor(ok, vres.Category, summary, verifierEscalated)
+				if verr != nil && cat == autonomouspkg.VerifierCatContent {
+					cat = autonomouspkg.VerifierCatInfra
+				}
+				autonomouspkg.DefaultVerifierStats.Record(wait, run, cat)
+				metricsPkg.VerifierRuns.WithLabelValues(cat).Inc()
+				metricsPkg.VerifierWaitSeconds.Add(wait.Seconds())
+				metricsPkg.VerifierRunSeconds.Add(run.Seconds())
+			}()
 			explicitEffortCfg := liveCfg
 			explicitEffortCfg.VerificationEffort = ""
 			var verifierTryAdmit func(backend, model string) (func(), bool)
@@ -5537,6 +5563,9 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				}
 			}
 			release := vsel.Release
+			if release != nil {
+				vGrantedAt = time.Now()
+			}
 			// Every result returned from here on records which LLM judged it.
 			defer func() { vsel.stamp(&vres) }()
 			if release == nil {
@@ -5553,6 +5582,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 						}, nil
 					}
 					release = r
+					vGrantedAt = time.Now()
 				}
 			}
 			if release != nil {

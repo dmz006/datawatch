@@ -42,6 +42,20 @@ var (
 		Help: "Leaked capacity leases reclaimed by the reaper",
 	})
 
+	// Verifier cost metrics
+	VerifierRuns = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "datawatch_verifier_runs_total",
+		Help: "Verifier runs by outcome category",
+	}, []string{"category"})
+	VerifierWaitSeconds = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "datawatch_verifier_wait_seconds_total",
+		Help: "Total seconds verifiers waited for a capacity lease",
+	})
+	VerifierRunSeconds = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "datawatch_verifier_run_seconds_total",
+		Help: "Total seconds verifiers ran after their lease was granted",
+	})
+
 	// System metrics
 	CPUUsage = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "datawatch_cpu_load_avg_1",
@@ -164,6 +178,7 @@ var (
 func Register() {
 	prometheus.MustRegister(
 		CapacityHeld, CapacityLimit, CapacityWaiting, CapacityLeasesReaped,
+		VerifierRuns, VerifierWaitSeconds, VerifierRunSeconds,
 		SessionsActive, SessionsTotal,
 		CPUUsage, MemoryUsed, DiskUsed, DaemonRSS, Goroutines, UptimeSeconds,
 		MessagesTotal, AlertsTotal,

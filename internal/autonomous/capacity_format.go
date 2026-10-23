@@ -50,6 +50,7 @@ type capacityBody struct {
 		Waiting []TaskWaitView `json:"waiting"`
 		Running []TaskHoldView `json:"running"`
 	} `json:"tasks"`
+	Verifier *VerifierStatsView `json:"verifier"`
 }
 
 // FormatCapacityText renders a GET /api/capacity body as text: each pool as
@@ -124,6 +125,10 @@ func FormatCapacityText(body []byte) (string, error) {
 			}
 			b.WriteString("\n")
 		}
+	}
+
+	if c.Verifier != nil {
+		b.WriteString(FormatVerifierLine(*c.Verifier))
 	}
 
 	if len(c.Budgets) == 0 {

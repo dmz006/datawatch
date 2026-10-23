@@ -510,6 +510,14 @@ signal:
 
 ---
 
+### Verifier node limit
+
+Verifier runs take a lease on the same node pool as the worker they check, and a node that hosts local engines gets its pool limit from `autonomous.max_engines_per_node` (default 1), capped by the compute node's own `max_concurrent_sessions` when that is smaller (see `syncPools` in `cmd/datawatch/capacity_wiring.go`). In practice a verifier on such a node therefore runs one at a time, and a verification can queue behind another task's lease.
+
+Assessment: the limit should not rise on a guess. One slot is the right default while the GPU is the bottleneck, because a second concurrent judge slows both runs. It becomes too tight only when verifiers spend a large share of their time waiting rather than running. This work does **not** change the limit; it adds the counters that decide the question.
+
+Read `verifier` in `GET /api/capacity` (also `capacity_status` over MCP and the CLI status text, and the `datawatch_verifier_*` Prometheus counters). Raise the limit only if the average queue wait (`wait_avg_seconds`) stays well above the average run time (`run_avg_seconds`, for example wait over half of run) across a representative window, and the node has idle GPU headroom while verifiers queue. If waits are short, or `infra`, `watchdog` and `timeout` counts are high, a higher limit would not help: fix the failures first.
+
 ## 5. Signal Account Management
 
 ### Find your group ID
