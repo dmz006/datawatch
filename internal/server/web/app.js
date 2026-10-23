@@ -22151,7 +22151,7 @@ function capacityPrdCellHtml(prdTitle, prdId) {
     return cell;
   }
   if (!short) return '';
-  return `${escHtml(t('capacity_name_prd') || 'PRD')} <span class="cap-name-id" style="${CAPACITY_NAME_SMALL}">${escHtml(short)}</span>`;
+  return `${escHtml(t('capacity_name_prd') || 'Automaton')} <span class="cap-name-id" style="${CAPACITY_NAME_SMALL}">${escHtml(short)}</span>`;
 }
 // Holders of a pool by short id: the pool's own holder field (a comma list),
 // else every lease that names the pool.

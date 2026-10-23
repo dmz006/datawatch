@@ -1919,7 +1919,7 @@
   "capacity_card_budget_estimate": "The allocation share is an estimate derived from the plan tier, not a measured figure",
   "capacity_card_holders": "Holders",
   "capacity_name_untitled": "(untitled {id})",
-  "capacity_name_prd": "PRD",
+  "capacity_name_prd": "Automaton",
   "capacity_card_empty": "No capacity limits, back-offs or budgets to show",
   "settings_plan_tier_allocation_usd": "Plan tier allocation (USD per tier; 0 = not declared)",
   "settings_plan_tier_allocation_hint": "Only feeds the estimated allocation share shown on a budget; it never blocks anything. 0 or a blank tier means no figure.",
