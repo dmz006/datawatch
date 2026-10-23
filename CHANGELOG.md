@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **A restart or reset no longer leaves a task with two worker sessions.** The task-to-session link is now saved at launch before the first prompt, boot reconcile adopts a live session that belongs to the task even when the link was empty, and a reset ends every live session of the task and its worktree first and records it in the task history. A periodic sweep reports and then ends worker sessions bound to no task after a grace period (`autonomous.orphan_grace_seconds`, default 300), with an audit entry for each step.
+
 ## v9.5.114 — Capacity rate ceilings and a non-blocking admission query
 
 ### Added
