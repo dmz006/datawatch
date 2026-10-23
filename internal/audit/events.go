@@ -50,4 +50,8 @@ const (
 	// its spend reset. Subject: the LLM. Details: previous_spend_usd,
 	// ceiling_usd, new_window_start (RFC 3339).
 	ActionBudgetWindowRollover = "autonomous_budget_window_rollover"
+	// ActionAutomationImportGraph — an orchestrator graph was converted into a
+	// new Automation. A dry run is not audited. Subject: the Automation.
+	// Details: graph_id, automation_id, member_count.
+	ActionAutomationImportGraph = "automation_import_graph"
 )

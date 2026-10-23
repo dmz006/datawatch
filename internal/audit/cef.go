@@ -172,6 +172,8 @@ func cefSignature(action string) (int, string, int) {
 		return 40, "AutonomousCapacityAdmitted", 2
 	case ActionBudgetWindowRollover:
 		return 41, "AutonomousBudgetWindowRollover", 2
+	case ActionAutomationImportGraph:
+		return 42, "AutomationImportGraph", 3
 	default:
 		return 0, "AuditEvent", 3
 	}

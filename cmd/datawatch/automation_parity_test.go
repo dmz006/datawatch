@@ -32,6 +32,7 @@ var parityMap = map[string]parityNames{
 	"set_verification_llm": {"automation_set_verification_llm", "set-verification-llm", "set-verification-llm"},
 	"set_budget":           {"automation_set_budget", "set-budget", "set-budget"},
 	"status":               {"autonomous_status", "status", "status"},
+	"import-graph":         {"automation_import_graph", "import-graph", "import-graph"},
 }
 
 // commExempt lists the operations kept off the comm channel by design (see the
@@ -47,8 +48,6 @@ var commExempt = map[string]string{
 // counterpart that is not listed, and for a listed entry that is no longer a
 // gap.
 var knownParityGaps = map[string]string{
-	"import-graph/rest": "built by the import-graph tasks",
-	"import-graph/mcp":  "built by the import-graph tasks",
 	"import-graph/cli":  "built by the import-graph tasks",
 	"import-graph/comm": "built by the import-graph tasks",
 }
@@ -99,19 +98,9 @@ func TestAutomationParity(t *testing.T) {
 		check(op.Name, "comm", commVerbs[names.comm])
 	}
 
-	// import-graph is not built yet; its entries stay until the REST
-	// operation joins the list.
-	restOps := map[string]bool{}
-	for _, op := range server.AutomationRESTOperations() {
-		restOps[op.Name] = true
-	}
-	if restOps["import-graph"] {
-		t.Errorf("import-graph is now a REST operation; add it to parityMap and drop the import-graph/* entries from knownParityGaps")
-	}
-
 	var stale []string
 	for key := range knownParityGaps {
-		if !seen[key] && !(len(key) > 12 && key[:12] == "import-graph") {
+		if !seen[key] {
 			stale = append(stale, key)
 		}
 	}

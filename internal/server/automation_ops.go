@@ -31,13 +31,14 @@ var automationRESTOperations = []AutomationRESTOperation{
 	{"set_verification_llm", http.MethodPost},
 	{"set_budget", http.MethodPost},
 	{"status", http.MethodGet},
+	{"import-graph", http.MethodPost},
 }
 
 // automationNonControlOps are the operations that are not sub-paths of
 // /api/automations/{id}/ handled by handleAutomationControl.
 var automationNonControlOps = map[string]bool{
 	"list": true, "get": true, "create": true, "update": true, "delete": true,
-	"activate": true, "status": true,
+	"activate": true, "status": true, "import-graph": true,
 }
 
 // AutomationRESTOperations returns the Automation REST operations.

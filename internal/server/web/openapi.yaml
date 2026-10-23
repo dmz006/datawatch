@@ -1950,6 +1950,48 @@ paths:
         "401": {$ref: "#/components/responses/Unauthorized"}
         "503": {description: "autonomous disabled"}
 
+  /api/automations/import-graph/{graph_id}:
+    parameters:
+      - {name: graph_id, in: path, required: true, schema: {type: string}, description: "Orchestrator graph ID"}
+    post:
+      summary: Convert an orchestrator graph into a draft Automation
+      description: |
+        Reads the orchestrator graph and creates a draft Automation from it:
+        Automaton nodes become members, a fan-out and its fan-in become a paired
+        fork and join, and guardrail nodes are dropped with a warning. The graph
+        is never changed. With `dry_run` true nothing is created or audited and
+        the response carries the `input` that a real run would create, the
+        `warnings` and `dry_run: true`. A real import writes one
+        `automation_import_graph` audit entry.
+      operationId: automationsImportGraph
+      tags: [Automations]
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                dry_run: {type: boolean}
+      responses:
+        "200":
+          description: The new Automation, or for a dry run the converted input with warnings
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/Automation"
+                  - type: object
+                    properties:
+                      input: {type: object}
+                      warnings: {type: array, items: {type: string}}
+                      dry_run: {type: boolean}
+        "404": {description: Graph not found}
+        "409": {description: "A member Automaton already belongs to another Automation"}
+        "422": {description: "The graph cannot be expressed as an Automation; the body gives the reason"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "503": {description: "autonomous or orchestrator disabled"}
+
   /api/automations/{id}/activate:
     parameters:
       - {name: id, in: path, required: true, schema: {type: string}, description: "Automation ID (8-hex)"}

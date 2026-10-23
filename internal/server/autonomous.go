@@ -2964,6 +2964,7 @@ func automationErrStatus(err error) (int, string) {
 //	GET    /api/automations/{id}   — get
 //	PUT    /api/automations/{id}   — update
 //	DELETE /api/automations/{id}   — delete
+//	POST   /api/automations/import-graph/{graph_id} — convert an orchestrator graph
 //	POST   /api/automations/{id}/activate — start a draft Automation
 //	POST   /api/automations/{id}/{pause|resume|cancel|skip_member|insert_member|
 //	       remove_member|reorder_edges|approve_insert|set_llm|
@@ -2972,11 +2973,16 @@ func (s *Server) handleAutomations(w http.ResponseWriter, r *http.Request) {
 	rest := strings.TrimPrefix(r.URL.Path, "/api/automations")
 	rest = strings.Trim(rest, "/")
 	id := rest
+	graphID, isImport := strings.CutPrefix(rest, "import-graph/")
+	isImport = isImport && graphID != "" && !strings.Contains(graphID, "/")
 	ctlID, ctlOp, isControl := automationControlRoute(rest)
+	if isImport {
+		isControl = false
+	}
 
 	// The control sub-paths only ever write, so they need the write capability
 	// whatever the method (a GET to one is a 405 after the cap check).
-	if r.Method == http.MethodGet && !isControl {
+	if r.Method == http.MethodGet && !isControl && !isImport {
 		if !s.fedCap(w, r, federation.CapAutonomousRead) {
 			return
 		}
@@ -2987,6 +2993,11 @@ func (s *Server) handleAutomations(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.autonomousMgr == nil {
 		http.Error(w, "autonomous disabled", http.StatusServiceUnavailable)
+		return
+	}
+
+	if isImport {
+		s.handleAutomationImportGraph(w, r, graphID)
 		return
 	}
 
