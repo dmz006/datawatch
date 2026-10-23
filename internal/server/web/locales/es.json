@@ -2107,5 +2107,10 @@
   "tag_rename": "Renombrar",
   "tag_save": "Guardar",
   "tag_saved": "Etiquetas guardadas",
-  "tag_suggest_hint": "Sugerida a partir del alias del proyecto: cámbiala si no es correcta"
+  "tag_suggest_hint": "Sugerida a partir del alias del proyecto: cámbiala si no es correcta",
+  "last_updated_ago": "Actualizado hace %1$d s",
+  "cached": "En caché",
+  "load_failed": "No se pudo cargar esta lista",
+  "retry": "Reintentar",
+  "stale_data": "Los datos pueden estar desactualizados"
 }

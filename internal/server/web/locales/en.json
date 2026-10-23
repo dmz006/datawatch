@@ -2107,5 +2107,10 @@
   "tag_rename": "Rename",
   "tag_save": "Save",
   "tag_saved": "Tags saved",
-  "tag_suggest_hint": "Suggested from the project alias — change it if it is wrong"
+  "tag_suggest_hint": "Suggested from the project alias — change it if it is wrong",
+  "last_updated_ago": "Last updated %1$d s ago",
+  "cached": "Cached",
+  "load_failed": "Could not load this list",
+  "retry": "Retry",
+  "stale_data": "Data may be out of date"
 }

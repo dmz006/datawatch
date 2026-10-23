@@ -940,6 +940,152 @@ function apiFetch(path, opts = {}) {
     });
 }
 
+// ── listLoader: shared load-state helper for list views ─────────────────────
+// listLoader({key, url, render, el, pollMs, timeoutMs}) owns the whole
+// loading lifecycle of one list: an immediate skeleton + localized "Loading"
+// label, the last good response for `key` from localStorage (badged "cached"
+// with its age) while the fresh request runs, a ticking "Last updated N s
+// ago" line, a distinct failed banner with Retry (cached data stays visible
+// beneath it) on error or timeout, and a stale warning only once the data is
+// older than pollMs and no first load is in flight. A superseded request is
+// aborted (AbortController) and a sequence number guards late responses.
+// render(data) must return an HTML string; el is an element or element id.
+// Each loader is independent, so listLoaderAll([a, b]) loads several in
+// parallel and one failure never blanks the others (load() never rejects).
+const LIST_CACHE_PREFIX = 'cs_list_';
+const LIST_CACHE_MAX = 512 * 1024;
+const _listLoaders = {};
+function _listCacheRead(key) {
+  try {
+    const raw = localStorage.getItem(LIST_CACHE_PREFIX + key);
+    if (!raw) return null;
+    const o = JSON.parse(raw);
+    return (o && typeof o.t === 'number' && 'data' in o) ? o : null;
+  } catch (e) { return null; }
+}
+function _listCacheWrite(key, at, data) {
+  try {
+    const s = JSON.stringify({ t: at, data });
+    if (s.length > LIST_CACHE_MAX) { localStorage.removeItem(LIST_CACHE_PREFIX + key); return false; }
+    localStorage.setItem(LIST_CACHE_PREFIX + key, s);
+    return true;
+  } catch (e) { return false; }
+}
+function listLoader(opts) {
+  const key = String(opts.key);
+  const timeoutMs = opts.timeoutMs > 0 ? opts.timeoutMs : 15000;
+  const pollMs = opts.pollMs > 0 ? opts.pollMs : 0;
+  const now = opts.now || (() => Date.now());
+  const doFetch = opts.fetch || ((u, o) => apiFetch(u, o));
+  const st = {
+    key, seq: 0, ctrl: null, loading: false, loadedOnce: false, data: null, hasData: false,
+    at: 0, fromCache: false, error: '', pollTimer: null, tickTimer: null, stopped: false,
+  };
+  const cached = _listCacheRead(key);
+  if (cached) { st.data = cached.data; st.hasData = true; st.at = cached.t; st.fromCache = true; }
+  const target = () => (typeof opts.el === 'string') ? document.getElementById(opts.el) : opts.el;
+  const ageSec = () => Math.max(0, Math.floor((now() - st.at) / 1000));
+  const ageText = () => t('last_updated_ago', [ageSec()]);
+  const isStale = () => st.hasData && !st.fromCache && !st.loading && st.loadedOnce && pollMs > 0 && (now() - st.at) > pollMs;
+  function html() {
+    let h = '';
+    if (st.error) {
+      h += `<div class="list-state-failed" role="alert"><span class="list-state-failed-msg">${escHtml(t('load_failed'))}: ${escHtml(st.error)}</span>` +
+        `<button type="button" class="btn-secondary list-state-retry" onclick="window._listLoaders[${escHtml(JSON.stringify(key))}].retry()">${escHtml(t('retry'))}</button></div>`;
+    }
+    if (st.loading && !st.hasData) {
+      h += `<div class="list-state-skeleton" role="status" aria-label="${escHtml(t('loading'))}"><span class="list-state-loading-label">${escHtml(t('loading'))}</span>` +
+        '<div class="list-skel-row"></div><div class="list-skel-row"></div><div class="list-skel-row"></div></div>';
+    }
+    if (st.hasData) {
+      let meta = '';
+      if (st.fromCache) meta += `<span class="list-state-cached">${escHtml(t('cached'))}</span> `;
+      meta += `<span class="list-state-age" data-list-age="1">${escHtml(ageText())}</span>`;
+      if (st.loading) meta += ` <span class="list-state-refreshing">${escHtml(t('loading'))}</span>`;
+      if (isStale()) meta += ` <span class="list-state-stale">${escHtml(t('stale_data'))}</span>`;
+      h += `<div class="list-state-meta">${meta}</div><div class="list-state-body">${opts.render(st.data) || ''}</div>`;
+    }
+    return h;
+  }
+  function paint() {
+    const el = target();
+    if (el) el.innerHTML = html();
+  }
+  function tick() {
+    if (!st.hasData || st.stopped) return;
+    const el = target();
+    const span = el && el.querySelector && el.querySelector('[data-list-age]');
+    if (span && !isStale() === !(el.querySelector('.list-state-stale'))) span.textContent = ageText();
+    else paint();
+  }
+  function schedule() {
+    if (st.pollTimer) clearTimeout(st.pollTimer);
+    st.pollTimer = (pollMs && !st.stopped) ? setTimeout(() => { ctl.load(); }, pollMs) : null;
+  }
+  const ctl = {
+    state: st,
+    html,
+    ageText,
+    isStale,
+    load() {
+      if (st.stopped) { st.stopped = false; }
+      const mySeq = ++st.seq;
+      if (st.ctrl) { try { st.ctrl.abort(); } catch (e) { /* ignore */ } }
+      const ac = (typeof AbortController === 'function') ? new AbortController() : null;
+      st.ctrl = ac;
+      st.loading = true;
+      st.error = '';
+      paint();
+      if (!st.tickTimer) st.tickTimer = setInterval(tick, 1000);
+      let timer = null;
+      let timedOut = false;
+      const timeout = new Promise((_, rej) => {
+        timer = setTimeout(() => {
+          timedOut = true;
+          if (ac) { try { ac.abort(); } catch (e) { /* ignore */ } }
+          rej(new Error('timeout'));
+        }, timeoutMs);
+      });
+      let req;
+      try { req = Promise.resolve(doFetch(opts.url, ac ? { signal: ac.signal } : {})); } catch (e) { req = Promise.reject(e); }
+      return Promise.race([req, timeout]).then(data => {
+        if (mySeq !== st.seq) return;
+        st.data = data; st.hasData = true; st.at = now(); st.fromCache = false;
+        st.loadedOnce = true; st.loading = false; st.error = '';
+        _listCacheWrite(key, st.at, data);
+      }).catch(err => {
+        if (mySeq !== st.seq) return;
+        st.loading = false; st.loadedOnce = true;
+        st.error = timedOut ? 'timeout (' + Math.round(timeoutMs / 1000) + ' s)' : ((err && err.message) || String(err));
+      }).then(() => {
+        if (timer) clearTimeout(timer);
+        if (mySeq !== st.seq) return;
+        paint();
+        schedule();
+      });
+    },
+    retry() { return ctl.load(); },
+    stop() {
+      st.stopped = true; st.seq++;
+      if (st.ctrl) { try { st.ctrl.abort(); } catch (e) { /* ignore */ } }
+      if (st.pollTimer) clearTimeout(st.pollTimer);
+      if (st.tickTimer) clearInterval(st.tickTimer);
+      st.pollTimer = st.tickTimer = null; st.loading = false;
+    },
+  };
+  if (_listLoaders[key] && _listLoaders[key] !== ctl) _listLoaders[key].stop();
+  _listLoaders[key] = ctl;
+  return ctl;
+}
+// listLoaderAll starts several loaders of one tab in parallel. load() never
+// rejects, so one failed loader leaves the others rendered.
+function listLoaderAll(loaders) {
+  return Promise.all(loaders.map(l => l.load()));
+}
+window.listLoader = listLoader;
+window.listLoaderAll = listLoaderAll;
+window._listLoaders = _listLoaders;
+
 // ── Message handlers ─────────────────────────────────────────────────────────
 function handleMessage(msg) {
   switch (msg.type) {

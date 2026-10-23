@@ -2107,5 +2107,10 @@
   "tag_rename": "Umbenennen",
   "tag_save": "Speichern",
   "tag_saved": "Tags gespeichert",
-  "tag_suggest_hint": "Vom Projektalias vorgeschlagen — ändere es, falls es nicht passt"
+  "tag_suggest_hint": "Vom Projektalias vorgeschlagen — ändere es, falls es nicht passt",
+  "last_updated_ago": "Zuletzt aktualisiert vor %1$d s",
+  "cached": "Zwischengespeichert",
+  "load_failed": "Diese Liste konnte nicht geladen werden",
+  "retry": "Erneut versuchen",
+  "stale_data": "Daten sind möglicherweise veraltet"
 }

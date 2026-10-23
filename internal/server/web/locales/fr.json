@@ -2107,5 +2107,10 @@
   "tag_rename": "Renommer",
   "tag_save": "Enregistrer",
   "tag_saved": "Étiquettes enregistrées",
-  "tag_suggest_hint": "Suggérée d'après l'alias du projet : modifiez-la si elle ne convient pas"
+  "tag_suggest_hint": "Suggérée d'après l'alias du projet : modifiez-la si elle ne convient pas",
+  "last_updated_ago": "Dernière mise à jour il y a %1$d s",
+  "cached": "En cache",
+  "load_failed": "Impossible de charger cette liste",
+  "retry": "Réessayer",
+  "stale_data": "Les données sont peut-être obsolètes"
 }
