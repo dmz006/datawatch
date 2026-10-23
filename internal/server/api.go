@@ -1759,6 +1759,12 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	pageOpts, err := parseSessionPageOptions(q)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 
 	// BL350 — ?orphaned=1 returns only sessions whose parent_id no longer exists.
@@ -1785,6 +1791,11 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 
 	// view / since / states apply to the flat list only; without them the
 	// legacy response below is emitted unchanged.
+	// limit / cursor / status / active / q imply the row-only summary view.
+	if listOpts.summary || pageOpts.any() {
+		s.writeSessionSummaryList(w, r, sessions, listOpts, pageOpts)
+		return
+	}
 	if listOpts.active() {
 		s.writeSessionListView(w, sessions, listOpts)
 		return
@@ -5862,6 +5873,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"capacity_wait_timeout_seconds":   s.cfg.Autonomous.CapacityWaitTimeoutSeconds,
 			"capacity_gpu_util_pct":           s.cfg.Autonomous.CapacityGPUUtilPct,
 			"ci_watch_timeout_seconds":        s.cfg.Autonomous.CIWatchTimeoutSeconds,
+			"detail_text_cap_bytes":           s.cfg.Autonomous.DetailTextCapBytes,
 			"per_prd_guardrails":              s.cfg.Autonomous.PerPRDGuardrails, // rules-review, ci-watch
 			"block_on_file_drift":             s.cfg.Autonomous.BlockOnFileDrift, // strict foreign-file-drift enforcement
 			"gate_disagreement":               s.cfg.Autonomous.GateDisagreement, // verifier OK + gate regression: "warn" (default) or "block"
@@ -7531,6 +7543,10 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		case "autonomous.capacity_wait_timeout_seconds":
 			if n, ok := toInt(v); ok && n >= 0 {
 				cfg.Autonomous.CapacityWaitTimeoutSeconds = n
+			}
+		case "autonomous.detail_text_cap_bytes":
+			if n, ok := toInt(v); ok {
+				cfg.Autonomous.DetailTextCapBytes = n
 			}
 		case "autonomous.ci_watch_timeout_seconds":
 			if n, ok := toInt(v); ok && n >= 0 {

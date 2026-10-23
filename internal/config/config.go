@@ -2307,6 +2307,14 @@ type AutonomousConfig struct {
 	// giving up (default 1500 = 25 minutes: the slowest real release
 	// workflow run here took ~18 minutes, ordinary push workflows 1-11).
 	CIWatchTimeoutSeconds int `yaml:"ci_watch_timeout_seconds,omitempty" json:"ci_watch_timeout_seconds,omitempty"`
+	// DetailTextCapBytes caps each long text field (task spec, error,
+	// verifier text, start-failure tail, story description, Automaton spec)
+	// in the default GET /api/autonomous/prds/{id} reply. A capped field
+	// ends with a marker and is named in the record's "truncated" list with
+	// the URL of the full text. The store always keeps the full text;
+	// ?full=1 and the outputs sub-resource return it. 0 means the default
+	// (4096); a negative value turns the cap off.
+	DetailTextCapBytes int `yaml:"detail_text_cap_bytes,omitempty" json:"detail_text_cap_bytes,omitempty"`
 	// ContentAutoFixEnabled/AutoFixSkipApproval have no omitempty —
 	// see AutoApproveChildren's comment below for why a bool config
 	// field needs the explicit-clear discipline. Defaults: both true.
@@ -3057,6 +3065,7 @@ func DefaultConfig() *Config {
 			RetryCeilingTotal:       5,
 			InfraRetryEscalateAfter: 2,
 			CIWatchTimeoutSeconds:   1500,
+			DetailTextCapBytes:      4096,
 			ContentAutoFixEnabled:   true,
 			AutoFixSkipApproval:     true,
 			BlockOnFileDrift:        false,   // opt-in strict drift enforcement

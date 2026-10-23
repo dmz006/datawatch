@@ -1954,6 +1954,10 @@
   "automation_current_member": "Running: %1$s",
   "automation_list_empty": "No Automations yet",
   "automation_load_failed": "Could not load Automations: %1$s",
+  "automation_empty_title": "No Automations yet",
+  "automation_empty_create": "Create Automation",
+  "automation_empty_explain": "An Automation chains Automata in order; an Automaton is a single planned unit of work.",
+  "automation_capacity_failed": "Could not load capacity and queue: %1$s",
   "automation_filter_search": "Search Automations by name or ID",
   "automation_show_history": "Show cancelled",
   "automation_hide_history": "Hide cancelled",
@@ -2126,5 +2130,12 @@
   "workload_roles_empty": "No LLM entry claims a workload role.",
   "workload_roles_col_role": "Role",
   "workload_roles_col_entry": "Resolves to",
-  "workload_roles_warnings": "Contention warnings"
+  "workload_roles_warnings": "Contention warnings",
+  "last_updated_ago": "Last updated %1$d s ago",
+  "cached": "Cached",
+  "load_failed": "Could not load this list",
+  "retry": "Retry",
+  "stale_data": "Data may be out of date",
+  "load_more": "Load more",
+  "automata_open_to_load": "Open to load stories and tasks"
 }

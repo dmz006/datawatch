@@ -330,7 +330,7 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 				writeJSONOK(w, map[string]any{"prds": prds})
 				return
 			}
-			writeJSONOK(w, map[string]any{"prds": s.autonomousMgr.ListPRDs()})
+			s.writePRDList(w, r)
 		case http.MethodPost:
 			if !s.fedCap(w, r, federation.CapAutonomousWrite) {
 				return
@@ -473,7 +473,45 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 	if len(parts) == 2 {
 		action = parts[1]
 	}
+	// GET .../outputs and .../tasks/{task_id}/outputs return the heavy text
+	// fields the default detail reply caps.
+	taskForOutputs := ""
+	if strings.HasPrefix(action, "tasks/") && strings.HasSuffix(action, "/outputs") {
+		taskForOutputs = strings.TrimSuffix(strings.TrimPrefix(action, "tasks/"), "/outputs")
+		if taskForOutputs == "" || strings.Contains(taskForOutputs, "/") {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		action = "outputs"
+	}
 	switch action {
+	case "outputs":
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapAutonomousRead) {
+			return
+		}
+		raw, ok := s.autonomousMgr.GetPRD(id)
+		if !ok {
+			http.Error(w, "not found", http.StatusNotFound)
+			return
+		}
+		prd, err := toPRD(raw)
+		if err != nil {
+			http.Error(w, "outputs view: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if taskForOutputs == "" {
+			taskForOutputs = r.URL.Query().Get("task")
+		}
+		view, found := autonomous.BuildOutputsView(prd, taskForOutputs)
+		if !found {
+			http.Error(w, "task not found", http.StatusNotFound)
+			return
+		}
+		writeJSONOK(w, view)
 	case "":
 		switch r.Method {
 		case http.MethodGet:
@@ -490,7 +528,7 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "invalid detail: accepted values are full, summary, tasks", http.StatusBadRequest)
 				return
 			}
-			writePRDDetail(w, prd, detail)
+			writePRDDetail(w, prd, detail, s.prdDetailCap(r))
 		case http.MethodDelete:
 			if !s.fedCap(w, r, federation.CapAutonomousRun) {
 				return
@@ -879,6 +917,10 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 		}
 		if req.TaskID == "" || req.NewSpec == "" {
 			http.Error(w, "task_id and new_spec required", http.StatusBadRequest)
+			return
+		}
+		if autonomous.HasTruncationMarker(req.NewSpec) {
+			http.Error(w, "new_spec ends with a truncation marker: it was copied from a capped view; fetch the full text with ?full=1 or GET .../outputs and edit that", http.StatusBadRequest)
 			return
 		}
 		if req.Actor == "" {
@@ -3055,7 +3097,11 @@ func (s *Server) handleAutomations(w http.ResponseWriter, r *http.Request) {
 	if id == "" {
 		switch r.Method {
 		case http.MethodGet:
-			writeJSONOK(w, s.autonomousMgr.ListAutomations())
+			list := s.autonomousMgr.ListAutomations()
+			if list == nil {
+				list = []any{}
+			}
+			writeJSONETag(w, r, list)
 		case http.MethodPost:
 			var req automationReq
 			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {

@@ -185,6 +185,15 @@ under `status.role_warnings` of the llm listing; they never fail a write.
 pushed. It only applies when `ci-watch` is listed in `autonomous.per_prd_guardrails`
 (or an Automaton's own PRD-level guardrails); the list is empty by default.
 
+`autonomous.detail_text_cap_bytes` (default 4096; 0 = default, negative = off) caps each
+long text field in the default `GET /api/autonomous/prds/{id}` reply
+(`internal/autonomous/prd_view_cap.go`, `CapPRDText`). Capped fields end with a
+`[truncated ...]` marker and are listed in the record's `truncated` array with the URL of the
+full text. The store is never cut. `?full=1` returns the whole record, and
+`GET /api/autonomous/prds/{id}/outputs` (optionally `?task=<id>`, or
+`/tasks/{task_id}/outputs`) returns the heavy fields byte for byte. The list summary
+(`BuildSummaryView`) does not read these fields.
+
 Foreign-file drift is checked for direct-mode (non-worktree) Automata only. The
 capture point is the worker spawn in `cmd/datawatch/main.go`: alongside the pre-task
 `HEAD` SHA and untracked files it calls `autonomous.CapturePreTaskDirtyFiles`
@@ -948,6 +957,13 @@ of them the response is exactly what it has always been.
 - `states=active` — only non-terminal sessions (running, waiting_input,
   rate_limited). A comma list of explicit state names is also accepted,
   e.g. `states=complete,failed`; unknown names return 400.
+
+`view=summary` now returns row-only records, and `limit`, `cursor`, `status`,
+`active` and `q` page and filter them (envelope `{sessions, total, next_cursor}`)
+with an `ETag`; `GET /api/autonomous/prds` is likewise a paged summary list
+(`limit`, `cursor`, `status`, `active`, `q`, `tag`, `full=1`) with an `ETag`. See
+`docs/api/sessions.md` and `docs/api/autonomous.md`. `scripts/perf-budget.sh`
+enforces the first-page size budget (256 KB) and the 304 behaviour.
 
 `since` and `states` also work without `view=summary` (full records).
 `tree=1` and `orphaned=1` take precedence and ignore all three. Fetch

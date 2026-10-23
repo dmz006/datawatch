@@ -93,6 +93,45 @@ paths:
           schema:
             type: string
             enum: [summary]
+        - name: limit
+          in: query
+          required: false
+          description: "Page size (1-500). Supplying `limit` or `cursor` implies `view=summary` and returns the paged envelope `{sessions, next_cursor, total}`. Rows are ordered by `updated_at` desc, then `full_id`."
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+        - name: cursor
+          in: query
+          required: false
+          description: Opaque `next_cursor` from the previous page. Stable across inserts; no gaps or duplicates.
+          schema:
+            type: string
+        - name: status
+          in: query
+          required: false
+          description: Comma list of states to include (`active` expands to every non-terminal state). Implies `view=summary`.
+          schema:
+            type: string
+        - name: active
+          in: query
+          required: false
+          description: "`1` keeps only non-terminal sessions. Implies `view=summary`."
+          schema:
+            type: string
+            enum: ["1"]
+        - name: q
+          in: query
+          required: false
+          description: Case-insensitive substring match on name, id, full id and the first 256 characters of the task. Implies `view=summary`.
+          schema:
+            type: string
+        - name: If-None-Match
+          in: header
+          required: false
+          description: ETag from a previous summary or paged response; a match returns 304 with no body. The legacy full array carries no ETag.
+          schema:
+            type: string
         - name: since
           in: query
           required: false
@@ -109,8 +148,16 @@ paths:
             example: "active"
       responses:
         "200":
-          description: Array of sessions
+          description: "Array of sessions. `view=summary` (or any paging/filter parameter) returns row-only summaries (id, full_id, name, state, backend, llm_ref, project_dir, hostname, created_at, updated_at, last_activity, parent_id, est_cost_usd, tokens, scheduled_count, status_line) with no task, output, transcript or prompt context; with `limit`/`cursor` the body is `{sessions, next_cursor, total}` instead of an array. `GET /api/sessions/{id}` returns the full record."
           headers:
+            ETag:
+              description: Hash of the body (summary and paged responses only).
+              schema:
+                type: string
+            X-Datawatch-Sessions-Total:
+              description: Filtered row count (summary and paged responses).
+              schema:
+                type: integer
             X-Datawatch-Sessions-Omitted:
               description: "`view=summary` only — number of older terminal sessions dropped by the cap. Absent when nothing was dropped."
               schema:
@@ -132,8 +179,10 @@ paths:
                           items:
                             type: string
                           description: "`view=summary` only — fields that were cut. Fetch `/api/sessions/{id}` for the full record."
+        "304":
+          description: "`If-None-Match` matched the current ETag."
         "400":
-          description: Unknown `view`, unparseable `since`, or unknown/empty `states`.
+          description: Unknown `view`, unparseable `since`, unknown/empty `states` or `status`, bad `limit` or `cursor`.
         "401":
           $ref: "#/components/responses/Unauthorized"
 
@@ -1830,11 +1879,25 @@ paths:
         All Automation records, one object each, in store order. A record
         with a budget policy also carries a computed `budget` view; the view
         is worked out on each read and is never stored.
+        An empty store returns `[]`, never `null`. The response carries an
+        `ETag`; a matching `If-None-Match` returns 304.
       operationId: automationsList
       tags: [Automations]
+      parameters:
+        - name: If-None-Match
+          in: header
+          required: false
+          schema:
+            type: string
       responses:
+        "304":
+          description: "`If-None-Match` matched the current ETag."
         "200":
           description: Array of Automations
+          headers:
+            ETag:
+              schema:
+                type: string
           content:
             application/json:
               schema:

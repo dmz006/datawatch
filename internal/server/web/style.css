@@ -6283,3 +6283,28 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
   .automation-drawer-fields { grid-template-columns: 1fr; gap: 2px 0; }
   .automation-drawer-fields dd { margin-bottom: 8px; }
 }
+
+/* ── listLoader states (skeleton, failed banner, cached badge) ───────────── */
+.list-state-skeleton { padding: 8px 0; }
+.list-state-loading-label { display: block; color: var(--text2); font-size: 12px; margin-bottom: 8px; }
+.list-skel-row {
+  height: 44px; margin-bottom: 8px; border-radius: var(--radius-sm);
+  background: linear-gradient(90deg, var(--bg2) 25%, var(--bg3) 50%, var(--bg2) 75%);
+  background-size: 200% 100%;
+  animation: list-skel-shimmer 1.4s linear infinite;
+}
+@keyframes list-skel-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+.list-state-failed {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 8px 12px; margin-bottom: 8px; border-radius: var(--radius-sm);
+  border: 1px solid var(--error); color: var(--error); background: var(--bg2);
+}
+.list-state-meta { font-size: 12px; color: var(--text2); margin-bottom: 6px; }
+.list-state-cached {
+  display: inline-block; padding: 0 6px; border-radius: 999px;
+  border: 1px solid var(--border); background: var(--bg3); color: var(--text2);
+}
+.list-state-stale { color: var(--warning); }
+@media (prefers-reduced-motion: reduce) {
+  .list-skel-row { animation: none; }
+}

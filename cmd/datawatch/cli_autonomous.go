@@ -263,7 +263,7 @@ func newAutonomousPRDListCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "prd-list",
 		Short: "List all PRDs (newest first)",
-		RunE:  func(*cobra.Command, []string) error { return daemonGet("/api/autonomous/prds") },
+		RunE:  func(*cobra.Command, []string) error { return daemonGet("/api/autonomous/prds?full=1") },
 	}
 }
 

@@ -1954,6 +1954,10 @@
   "automation_current_member": "実行中: %1$s",
   "automation_list_empty": "オートメーションはまだありません",
   "automation_load_failed": "オートメーションを読み込めませんでした: %1$s",
+  "automation_empty_title": "オートメーションはまだありません",
+  "automation_empty_create": "オートメーションを作成",
+  "automation_empty_explain": "オートメーションは複数のオートマタを連結します。オートマトンは計画された1つの作業単位です。",
+  "automation_capacity_failed": "容量とキューを読み込めませんでした: %1$s",
   "automation_filter_search": "名前または ID でオートメーションを検索",
   "automation_show_history": "キャンセル済みを表示",
   "automation_hide_history": "キャンセル済みを非表示",
@@ -2126,5 +2130,12 @@
   "workload_roles_empty": "ワークロードロールを主張する LLM エントリはありません。",
   "workload_roles_col_role": "ロール",
   "workload_roles_col_entry": "解決先",
-  "workload_roles_warnings": "競合の警告"
+  "workload_roles_warnings": "競合の警告",
+  "last_updated_ago": "%1$d 秒前に更新",
+  "cached": "キャッシュ",
+  "load_failed": "この一覧を読み込めませんでした",
+  "retry": "再試行",
+  "stale_data": "データが古い可能性があります",
+  "load_more": "さらに読み込む",
+  "automata_open_to_load": "開くとストーリーとタスクを読み込みます"
 }

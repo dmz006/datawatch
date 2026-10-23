@@ -492,7 +492,7 @@ func (r *Router) handleAutonomous(cmd Command) {
 		}
 		r.reply("autonomous config-set", prettyJSON(out))
 	case "list":
-		out, err := r.commGet("/api/autonomous/prds", nil)
+		out, err := r.commGet("/api/autonomous/prds", url.Values{"full": {"1"}})
 		if err != nil {
 			r.reply("autonomous list failed", err.Error())
 			return
