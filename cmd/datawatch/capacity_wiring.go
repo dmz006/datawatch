@@ -362,19 +362,19 @@ func auditBudgetTransitions(bl *autonomous.BudgetLedger, full map[string]bool, a
 	}
 }
 
-// wireCapacity creates the admission ledger, connects it to the autonomous
-// manager and the REST surface, and starts the sync loop that keeps pool
-// limits current with config, compute nodes and LLMs, refreshes GPU
-// backpressure, reaps leaked leases and raises long-wait alerts. It returns
-// the ledger so the pin keepers can tell when a node is in use.
-func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager, amgr *autonomous.Manager, httpServer *server.HTTPServer, alertFn func(title, body string)) *capacity.Ledger {
-	var gpuMu sync.Mutex
-	gpuUtil := map[string]float64{}
+// sessionLister is the part of the session manager hostExternalCount reads.
+type sessionLister interface {
+	Hostname() string
+	ListSessions() []*session.Session
+}
 
-	// external is called under the capacity ledger lock (rule on
-	// capacity.Options): Hostname is a field read and ListSessions copies the
-	// session store under its read lock, with no ledger call and no I/O.
-	external := func(pool string) int {
+// hostExternalCount is the ledger's External callback: it counts operator and
+// decompose sessions on this host against the "host" pool. It is called under
+// the capacity ledger lock (rule on capacity.Options): Hostname is a field
+// read and ListSessions copies the session store under its read lock, with no
+// ledger call and no I/O.
+func hostExternalCount(mgr sessionLister) func(pool string) int {
+	return func(pool string) int {
 		if pool != "host" {
 			return 0
 		}
@@ -387,22 +387,40 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 		}
 		return n
 	}
-	// backpressure is called under the capacity ledger lock (rule on
-	// capacity.Options): it reads the cached gpuUtil map, which the slow tick
-	// refreshes.
-	backpressure := func(pool string) (bool, string) {
-		limit := cfg.Autonomous.CapacityGPUUtilPct
+}
+
+// gpuNodeBackpressure is the ledger's Backpressure callback: a node: pool is
+// blocked while its cached GPU utilisation is at or over the configured
+// percentage. It is called under the capacity ledger lock (rule on
+// capacity.Options): it reads the cached util map, which the slow tick
+// refreshes.
+func gpuNodeBackpressure(limitPct func() int, mu *sync.Mutex, util map[string]float64) func(pool string) (bool, string) {
+	return func(pool string) (bool, string) {
+		limit := limitPct()
 		if limit <= 0 || !strings.HasPrefix(pool, "node:") {
 			return false, ""
 		}
-		gpuMu.Lock()
-		u, ok := gpuUtil[strings.TrimPrefix(pool, "node:")]
-		gpuMu.Unlock()
+		mu.Lock()
+		u, ok := util[strings.TrimPrefix(pool, "node:")]
+		mu.Unlock()
 		if ok && u >= float64(limit) {
 			return true, fmt.Sprintf("GPU %.0f%% busy (limit %d%%)", u, limit)
 		}
 		return false, ""
 	}
+}
+
+// wireCapacity creates the admission ledger, connects it to the autonomous
+// manager and the REST surface, and starts the sync loop that keeps pool
+// limits current with config, compute nodes and LLMs, refreshes GPU
+// backpressure, reaps leaked leases and raises long-wait alerts. It returns
+// the ledger so the pin keepers can tell when a node is in use.
+func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager, amgr *autonomous.Manager, httpServer *server.HTTPServer, alertFn func(title, body string)) *capacity.Ledger {
+	var gpuMu sync.Mutex
+	gpuUtil := map[string]float64{}
+
+	external := hostExternalCount(mgr)
+	backpressure := gpuNodeBackpressure(func() int { return cfg.Autonomous.CapacityGPUUtilPct }, &gpuMu, gpuUtil)
 	// A spawn refused by the BL30 global cooldown waits instead of failing;
 	// the reset time words the task's wait reason.
 	amgr.SetCooldownUntilFn(func() time.Time { return mgr.CooldownStatus().Until })
