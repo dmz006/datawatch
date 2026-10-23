@@ -283,6 +283,8 @@ cleanup_all() {
         # Clears only the named backend's flag (never "all"), so pre-existing
         # operator flags survive the smoke run.
         usage-backoff)   [[ -n "$id" ]] && curl "${curl_args[@]}" -X DELETE -H "Content-Type: application/json" -d "{\"backend\":\"$id\"}" "$BASE/api/usage-backoff" >/dev/null 2>&1 && echo "  cleared usage back-off $id" || echo "  (already gone) usage-backoff $id" ;;
+        # Cancel first (a draft refuses it, which is fine), then delete.
+        automation)      curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" -d '{"cancel_in_flight":true}' "$BASE/api/automations/$id/cancel" >/dev/null 2>&1; curl "${curl_args[@]}" -X DELETE "$BASE/api/automations/$id" >/dev/null 2>&1 && echo "  removed automation $id" || echo "  (already gone) automation $id" ;;
         device)          curl "${curl_args[@]}" -X DELETE "$BASE/api/devices/$id" >/dev/null 2>&1 && echo "  removed device $id" || echo "  (already gone) device $id" ;;
         *)               echo "  (unknown kind) $kind $id" ;;
       esac
@@ -4462,6 +4464,208 @@ sys.exit(0 if any(b.get("llm") == os.environ["UC_L"] and b.get("ceiling_usd") ==
     fi
   else
     skip "autonomous_* prefix filter not asserted for part (b): the back-off set entry was not seen"
+  fi
+fi
+
+H "78. Automation chain, fork and join - create, pause, resume, skip, audit, cleanup"
+# Sandbox daemon, REST only, no real LLM work: the Automata are drafts that are
+# never approved or run, and the Automation is never activated. Every throwaway
+# is registered for cleanup right after it is created. A control step the
+# Automation state does not allow is a skip that names the reason, never a pass.
+AU_TAG="$$-$(date +%s)"
+AU_PRD_A=""; AU_PRD_B=""; AU_PRD_G=""; AU_ID=""; AU_GRAPH=""
+
+# au_json <python expr over d>: read JSON on stdin, print the expression.
+au_json() { python3 -c "import json,sys
+try:
+  d=json.load(sys.stdin); print($1)
+except Exception:
+  print('')" 2>/dev/null; }
+
+# au_code <method> <path> [json body]: print the HTTP status only.
+au_code() {
+  if [[ -n "${3:-}" ]]; then
+    curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X "$1" -H "Content-Type: application/json" -d "$3" "$BASE$2" 2>/dev/null
+  else
+    curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' -X "$1" "$BASE$2" 2>/dev/null
+  fi
+}
+
+# au_audit_has <action> <subject>: succeed when GET /api/audit?action=<action>
+# lists an entry with that subject (retried, the audit line lands just after
+# the state change).
+au_audit_has() {
+  local i
+  for i in 1 2 3; do
+    curl "${curl_args[@]}" "$BASE/api/audit?action=$1&limit=500" 2>/dev/null | AU_SUBJ="$2" python3 -c '
+import json, os, sys
+try:
+  d = json.load(sys.stdin)
+  sys.exit(0 if any(e.get("subject") == os.environ["AU_SUBJ"] for e in (d.get("entries") or [])) else 1)
+except Exception:
+  sys.exit(1)' && return 0
+    sleep 1
+  done
+  return 1
+}
+
+# au_new_prd <label>: create a draft Automaton and print its id.
+au_new_prd() {
+  curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+    -d "{\"spec\":\"smoke probe - automation chain $1 $AU_TAG\",\"project_dir\":\"/tmp\",\"effort\":\"low\"}" \
+    "$BASE/api/autonomous/prds" 2>/dev/null | au_json 'd.get("id","")'
+}
+
+AU_PROBE=$(au_code GET /api/automations)
+if [[ "$AU_PROBE" == "503" ]]; then
+  skip "Automation chain: autonomous manager disabled (GET /api/automations 503)"
+elif [[ "$AU_PROBE" != "200" ]]; then
+  skip "Automation chain: GET /api/automations unavailable (HTTP $AU_PROBE)"
+else
+  ok "GET /api/automations answers"
+  AU_PRD_A=$(au_new_prd a); [[ -n "$AU_PRD_A" ]] && add_cleanup prd "$AU_PRD_A"
+  AU_PRD_B=$(au_new_prd b); [[ -n "$AU_PRD_B" ]] && add_cleanup prd "$AU_PRD_B"
+  if [[ -n "$AU_PRD_A" && -n "$AU_PRD_B" ]]; then
+    ok "created two throwaway Automata: $AU_PRD_A, $AU_PRD_B"
+  else
+    ko "could not create the two throwaway Automata (a='$AU_PRD_A' b='$AU_PRD_B')"
+  fi
+fi
+
+if [[ -n "$AU_PRD_A" && -n "$AU_PRD_B" ]]; then
+  # Members: branches ba and bb, a fork (entry) over them, a join paired to it.
+  AU_BODY=$(cat <<JSON
+{"name":"smoke-automation-$AU_TAG","description":"release smoke fork and join","entry_member_id":"aaaa0001",
+ "actor":"operator","reason":"release smoke",
+ "members":[
+  {"id":"aaaa0001","kind":"fork","fork_members":["aaaa0002","aaaa0003"]},
+  {"id":"aaaa0002","prd_id":"$AU_PRD_A"},
+  {"id":"aaaa0003","prd_id":"$AU_PRD_B"},
+  {"id":"aaaa0004","kind":"join","join_members":["aaaa0002","aaaa0003"],"on_branch_failure":"all_must_succeed"}]}
+JSON
+)
+  AU_RESP=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" -d "$AU_BODY" "$BASE/api/automations" 2>/dev/null || true)
+  AU_ID=$(echo "$AU_RESP" | au_json 'd.get("id","")')
+  if [[ -n "$AU_ID" ]]; then
+    add_cleanup automation "$AU_ID"
+    ok "created Automation with a fork and join over the two Automata: $AU_ID"
+  else
+    ko "Automation create failed: ${AU_RESP:0:200}"
+  fi
+fi
+
+if [[ -n "$AU_ID" ]]; then
+  AU_GET=$(curl "${curl_args[@]}" "$BASE/api/automations/$AU_ID" 2>/dev/null || true)
+  if echo "$AU_GET" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+ms = {m["id"]: m for m in d["members"]}
+f = ms["aaaa0001"]; j = ms["aaaa0004"]
+assert d["entry_member_id"] == "aaaa0001"
+assert f.get("kind") == "fork" and j.get("kind") == "join"
+assert sorted(f["fork_members"]) == sorted(j["join_members"]) == ["aaaa0002", "aaaa0003"]
+' 2>/dev/null; then
+    ok "GET /api/automations/$AU_ID shows fork and join members with paired sets"
+  else
+    ko "Automation $AU_ID does not show a fork and join with paired sets: ${AU_GET:0:200}"
+  fi
+  AU_STATUS=$(echo "$AU_GET" | au_json 'd.get("status","")')
+
+  # import-graph, dry run, on a throwaway one-node orchestrator graph.
+  AU_O=$(curl "${curl_args[@]}" "$BASE/api/orchestrator/config" 2>/dev/null | au_json '"yes" if d.get("enabled") else "no"')
+  if [[ "$AU_O" != "yes" ]]; then
+    skip "Automation import-graph dry run not exercised: the orchestrator is disabled, so no throwaway graph can be created"
+  else
+    AU_PRD_G=$(au_new_prd graph); [[ -n "$AU_PRD_G" ]] && add_cleanup prd "$AU_PRD_G"
+    AU_GR=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+      -d "{\"name\":\"smoke-import-$AU_TAG\",\"prds\":[\"$AU_PRD_G\"]}" "$BASE/api/orchestrator/graphs" 2>/dev/null || true)
+    AU_GRAPH=$(echo "$AU_GR" | au_json 'd.get("id","")')
+    if [[ -z "$AU_GRAPH" ]]; then
+      skip "Automation import-graph dry run not exercised: the throwaway orchestrator graph could not be created (${AU_GR:0:100})"
+    else
+      add_cleanup graph "$AU_GRAPH"
+      AU_IMP=$(curl "${curl_args[@]}" -w '\n%{http_code}' -X POST -H "Content-Type: application/json" \
+        -d '{"dry_run":true}' "$BASE/api/automations/import-graph/$AU_GRAPH" 2>/dev/null || true)
+      AU_IMP_CODE="${AU_IMP##*$'\n'}"
+      case "$AU_IMP_CODE" in
+        200) if echo "${AU_IMP%$'\n'*}" | python3 -c 'import json,sys;assert json.load(sys.stdin).get("dry_run") is True' 2>/dev/null; then
+               ok "import-graph dry run on the one-node graph succeeded and reported dry_run"
+             else
+               ko "import-graph dry run answered 200 without dry_run true: ${AU_IMP:0:160}"
+             fi ;;
+        422) ok "import-graph dry run refused the one-node graph as not representable (HTTP 422)" ;;
+        503) skip "Automation import-graph dry run not exercised: graph import unavailable (HTTP 503)" ;;
+        *)   ko "import-graph dry run answered HTTP $AU_IMP_CODE: ${AU_IMP:0:160}" ;;
+      esac
+      if au_code GET "/api/orchestrator/graphs/$AU_GRAPH" | grep -q '^200$'; then
+        ok "source orchestrator graph $AU_GRAPH is still present after the dry run"
+      else
+        ko "source orchestrator graph $AU_GRAPH is gone after the dry run"
+      fi
+      if curl "${curl_args[@]}" "$BASE/api/automations" 2>/dev/null | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+xs = d.get("automations") if isinstance(d, dict) else d
+sys.exit(0 if len(xs or []) >= 1 else 1)' 2>/dev/null; then
+        ok "import-graph dry run left the Automation list intact"
+      fi
+    fi
+  fi
+
+  # Control steps. They need an active (pause, skip_member) or paused (resume)
+  # Automation; activating would start real work, so a draft is only exercised
+  # as far as its state allows.
+  AU_RAN=""
+  if [[ "$AU_STATUS" == "draft" ]]; then
+    skip "Automation pause not exercised: the Automation is a draft and only an active one can be paused; activating it would start member work"
+    skip "Automation resume not exercised: nothing was paused, and a draft cannot be resumed"
+    skip "Automation skip_member not exercised: the Automation is a draft with no running member to skip; activating it would start member work"
+  else
+    AU_PC=$(au_code POST "/api/automations/$AU_ID/pause" '{"actor":"operator","reason":"release smoke"}')
+    if [[ "$AU_PC" == "200" ]]; then ok "POST pause accepted"; AU_RAN="$AU_RAN pause"
+    else skip "Automation pause not exercised: HTTP $AU_PC in state $AU_STATUS"; fi
+    AU_RC=$(au_code POST "/api/automations/$AU_ID/resume" '{"actor":"operator","reason":"release smoke"}')
+    if [[ "$AU_RC" == "200" ]]; then ok "POST resume accepted"; AU_RAN="$AU_RAN resume"
+    else skip "Automation resume not exercised: HTTP $AU_RC in state $AU_STATUS"; fi
+    AU_SC=$(au_code POST "/api/automations/$AU_ID/skip_member" '{"actor":"operator","member_id":"aaaa0002","edge":"on_complete"}')
+    if [[ "$AU_SC" == "200" ]]; then ok "POST skip_member accepted"; AU_RAN="$AU_RAN skip_member"
+    else skip "Automation skip_member not exercised: HTTP $AU_SC in state $AU_STATUS"; fi
+  fi
+
+  # Audit: each event that was produced carries the Automation id as subject.
+  AU_AC=$(au_code GET "/api/audit?limit=1")
+  if [[ "$AU_AC" != "200" ]]; then
+    skip "Automation audit events not asserted: GET /api/audit unavailable (audit log not enabled)"
+  else
+    if au_audit_has "automation_*" "$AU_ID"; then
+      ok "GET /api/audit?action=automation_* lists entries for the Automation"
+    else
+      ko "GET /api/audit?action=automation_* has no entry with subject $AU_ID"
+    fi
+    if au_audit_has automation_create "$AU_ID"; then
+      ok "audit automation_create has the Automation id as subject"
+    else
+      ko "audit automation_create missing for $AU_ID"
+    fi
+    for AU_PAIR in pause:automation_pause resume:automation_resume skip_member:automation_skip_member; do
+      AU_OP="${AU_PAIR%%:*}"; AU_ACT="${AU_PAIR#*:}"
+      if [[ " $AU_RAN " == *" $AU_OP "* ]]; then
+        if au_audit_has "$AU_ACT" "$AU_ID"; then
+          ok "audit $AU_ACT has the Automation id as subject"
+        else
+          ko "audit $AU_ACT missing for $AU_ID"
+        fi
+      else
+        skip "Automation audit $AU_ACT not asserted: the $AU_OP step did not run (see above)"
+      fi
+    done
+    for AU_EV in automation_fork automation_join; do
+      if au_audit_has "$AU_EV" "$AU_ID"; then
+        ok "audit $AU_EV has the Automation id as subject"
+      else
+        skip "audit $AU_EV not asserted: it is written only when the coordinator advances an active Automation, which this section never starts"
+      fi
+    done
   fi
 fi
 
