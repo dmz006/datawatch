@@ -36,6 +36,9 @@ type Store struct {
 	// managed tags
 	tags map[string]*Tag
 
+	// rec is the per-PRD record layout state (store_records.go).
+	rec prdRecords
+
 	// SavePRDFailHook is test-only: when set and it returns true for a PRD,
 	// SavePRD rejects the save with an error. Nil in production — behavior
 	// is unchanged when unset.
@@ -56,6 +59,7 @@ func NewStore(dataDir string) (*Store, error) {
 		profiles:      map[string]*GuardrailProfile{},
 		retryProfiles: map[string]*RetryProfile{},
 		tags:          map[string]*Tag{},
+		rec:           newPRDRecords(),
 	}
 	if err := s.load(); err != nil {
 		return nil, err
@@ -93,7 +97,7 @@ func (s *Store) CreatePRDWithParent(spec, projectDir, backend, model string, eff
 		Depth:        depth,
 	}
 	s.prds[prd.ID] = prd
-	if err := s.persist(); err != nil {
+	if err := s.persistPRD(prd.ID); err != nil {
 		return nil, err
 	}
 	return prd, nil
@@ -171,7 +175,7 @@ func (s *Store) DeletePRD(id string) error {
 			}
 		}
 	}
-	return s.persist()
+	return s.persistDeleted(toRemove...)
 }
 
 // UpdatePRDFields (v5.19.0) edits PRD-level fields (Title, Spec) on
@@ -196,7 +200,7 @@ func (s *Store) UpdatePRDFields(id, title, spec string) (*PRD, error) {
 		p.Spec = spec
 	}
 	p.UpdatedAt = time.Now()
-	if err := s.persist(); err != nil {
+	if err := s.persistPRD(id); err != nil {
 		return nil, err
 	}
 	return p, nil
@@ -219,7 +223,7 @@ func (s *Store) SavePRD(p *PRD) error {
 	clearStaleBlockedReason(p)
 	p.Rev++
 	s.prds[p.ID] = p
-	return s.persist()
+	return s.persistPRD(p.ID)
 }
 
 // ErrPRDStale (BL451) is returned by CommitPRDIfRev when the PRD's Rev
@@ -249,7 +253,7 @@ func (s *Store) CommitPRDIfRev(id string, expectedRev int, mutate func(p *PRD) b
 	p.Decisions = trimDecisions(p.Decisions)
 	clearStaleBlockedReason(p)
 	p.Rev++
-	return s.persist()
+	return s.persistPRD(id)
 }
 
 // clearStaleBlockedReason empties BlockedReason unless the PRD is blocked,
@@ -443,7 +447,7 @@ func (s *Store) SetStories(prdID string, stories []Story) error {
 	}
 	prd.Story = stories
 	prd.UpdatedAt = time.Now()
-	return s.persist()
+	return s.persistPRD(prdID)
 }
 
 // dependsOnReStoryTask matches a positional "sN-tM" reference (the Mth task
@@ -674,7 +678,7 @@ func (s *Store) RepairDependsOn(prdID string) (*PRD, error) {
 		return nil, err
 	}
 	prd.UpdatedAt = time.Now()
-	if err := s.persist(); err != nil {
+	if err := s.persistPRD(prdID); err != nil {
 		return nil, err
 	}
 	return prd, nil
@@ -686,7 +690,7 @@ func (s *Store) SaveTask(t *Task) error {
 	defer s.mu.Unlock()
 	t.UpdatedAt = time.Now()
 	s.tasks[t.ID] = t
-	return s.persist()
+	return s.persistPRD(t.PRDID)
 }
 
 // GetTask by ID.
@@ -737,7 +741,7 @@ func (s *Store) MutateTask(id string, f func(*Task)) bool {
 	}
 	f(t)
 	t.UpdatedAt = time.Now()
-	_ = s.persist()
+	_ = s.persistPRD(t.PRDID)
 	return true
 }
 
@@ -759,7 +763,7 @@ func (s *Store) MutatePRD(id string, f func(p *PRD) bool) bool {
 		return false
 	}
 	p.UpdatedAt = time.Now()
-	_ = s.persist()
+	_ = s.persistPRD(id)
 	return true
 }
 
@@ -802,7 +806,7 @@ func (s *Store) AddStory(prdID, title, description string) (*Story, error) {
 	prd.Story = append(prd.Story, story)
 	prd.UpdatedAt = time.Now()
 	s.reindexPRDLocked(prd)
-	if err := s.persist(); err != nil {
+	if err := s.persistPRD(prdID); err != nil {
 		return nil, err
 	}
 	return &prd.Story[len(prd.Story)-1], nil
@@ -833,7 +837,7 @@ func (s *Store) RemoveStory(prdID, storyID string) error {
 	prd.Story = append(prd.Story[:idx], prd.Story[idx+1:]...)
 	prd.UpdatedAt = time.Now()
 	s.reindexPRDLocked(prd)
-	return s.persist()
+	return s.persistPRD(prdID)
 }
 
 // AddTask appends a new task to an existing story.
@@ -875,7 +879,7 @@ func (s *Store) AddTask(prdID, storyID, title, spec string, dependsOn []string) 
 		prd.Story[i].UpdatedAt = time.Now()
 		prd.UpdatedAt = time.Now()
 		s.reindexPRDLocked(prd)
-		if err := s.persist(); err != nil {
+		if err := s.persistPRD(prdID); err != nil {
 			return nil, err
 		}
 		return &prd.Story[i].Tasks[len(prd.Story[i].Tasks)-1], nil
@@ -910,7 +914,7 @@ func (s *Store) RemoveTask(prdID, storyID, taskID string) error {
 		prd.Story[i].UpdatedAt = time.Now()
 		prd.UpdatedAt = time.Now()
 		s.reindexPRDLocked(prd)
-		return s.persist()
+		return s.persistPRD(prdID)
 	}
 	return fmt.Errorf("story %q not found in prd %q", storyID, prdID)
 }
@@ -937,7 +941,7 @@ func (s *Store) AddLearning(l Learning) error {
 	if len(s.learnings) > maxLearnings {
 		s.learnings = s.learnings[len(s.learnings)-maxLearnings:]
 	}
-	return s.persist()
+	return s.persistOthers()
 }
 
 // ListLearnings returns all stored learnings.
@@ -955,7 +959,7 @@ func (s *Store) SaveGuardrailProfile(p *GuardrailProfile) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.profiles[p.ID] = p
-	return s.persist()
+	return s.persistOthers()
 }
 
 // GetGuardrailProfile returns a profile by ID (BL303 S2).
@@ -993,7 +997,7 @@ func (s *Store) DeleteGuardrailProfile(id string) error {
 		return fmt.Errorf("guardrail profile %q not found", id)
 	}
 	delete(s.profiles, id)
-	return s.persist()
+	return s.persistOthers()
 }
 
 // SaveTag upserts a tag.
@@ -1001,7 +1005,7 @@ func (s *Store) SaveTag(t *Tag) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.tags[t.ID] = t
-	return s.persist()
+	return s.persistOthers()
 }
 
 // GetTag returns a tag by ID.
@@ -1037,7 +1041,7 @@ func (s *Store) DeleteTag(id string) error {
 		return fmt.Errorf("tag %q not found", id)
 	}
 	delete(s.tags, id)
-	return s.persist()
+	return s.persistOthers()
 }
 
 // SaveRetryProfile upserts a profile (BL410 Phase 1).
@@ -1045,7 +1049,7 @@ func (s *Store) SaveRetryProfile(p *RetryProfile) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.retryProfiles[p.ID] = p
-	return s.persist()
+	return s.persistOthers()
 }
 
 // GetRetryProfile returns a profile by ID (BL410 Phase 1).
@@ -1082,28 +1086,11 @@ func (s *Store) DeleteRetryProfile(id string) error {
 		return fmt.Errorf("retry profile %q not found", id)
 	}
 	delete(s.retryProfiles, id)
-	return s.persist()
+	return s.persistOthers()
 }
 
 func (s *Store) load() error {
-	if err := loadJSONL(filepath.Join(s.dir, "prds.jsonl"), func(line []byte) error {
-		var p PRD
-		if err := json.Unmarshal(line, &p); err != nil {
-			return err
-		}
-		p.Status = NormalizePRDStatus(p.Status)
-		migrateGuidedMode(&p) // BL406 Phase 5 — B111's real fix
-		s.prds[p.ID] = &p
-		// rebuild story/task indexes
-		for i := range p.Story {
-			st := &p.Story[i]
-			s.stories[st.ID] = st
-			for j := range st.Tasks {
-				s.tasks[st.Tasks[j].ID] = &st.Tasks[j]
-			}
-		}
-		return nil
-	}); err != nil {
+	if err := s.loadPRDs(); err != nil {
 		return err
 	}
 	if err := loadJSONL(filepath.Join(s.dir, "learnings.jsonl"), func(line []byte) error {
@@ -1149,18 +1136,10 @@ func (s *Store) load() error {
 	return nil
 }
 
-// persist writes the in-memory state back as JSON-lines (full rewrite).
-func (s *Store) persist() error {
-	if err := writeJSONL(filepath.Join(s.dir, "prds.jsonl"), len(s.prds), func(emit func(any) error) error {
-		for _, p := range s.prds {
-			if err := emit(p); err != nil {
-				return err
-			}
-		}
-		return nil
-	}); err != nil {
-		return err
-	}
+// persistOthers rewrites the learnings, guardrail profile, tag and retry
+// profile files. PRDs are written one record at a time by persistPRD and
+// are not touched here.
+func (s *Store) persistOthers() error {
 	if err := writeJSONL(filepath.Join(s.dir, "learnings.jsonl"), len(s.learnings), func(emit func(any) error) error {
 		for _, l := range s.learnings {
 			if err := emit(l); err != nil {

@@ -76,6 +76,23 @@ On open, if `sessions.d/LAYOUT` is absent and `sessions.json` exists, the store 
 
 Rollback: an older daemon does not know `sessions.d` and would start empty. To go back, stop the daemon, copy `sessions.json.pre-records.bak` to `sessions.json`, and remove `sessions.d/`; sessions created after the migration are not in the backup.
 
+## Autonomous PRD store
+
+`internal/autonomous/store.go` had the same shape: `persist()` rewrote `prds.jsonl` in full (every PRD, one PRD up to 13 MB) on every `SavePRD`, `SaveTask`, `MutateTask`, `MutatePRD` and `CommitPRDIfRev`, and rewrote the learnings, profile, tag and retry-profile files with it.
+
+Change (`internal/autonomous/store_records.go`): one record per PRD at `autonomous/prds/<id>.json`, a dirty set marked by each mutator, and only dirty PRDs written, each through a temp file, fsync and rename. A string field over 64 KB (`SetSideFileCap`), and bulky output fields (`RawJudge`, `Output`, `Checkpoint`, `Transcript`, `Error`, `Spec`) over 4 KB, move to content-addressed side files under `prds/<id>.files/`; the record keeps a `datawatch-side-file:v1:` reference that is resolved on load, so `GetPRD`, `SnapshotPRD`, `deepCopyPRD` and every API shape are unchanged. Text over 32 MB (`SetSideFileMax`) is cut and ends with a truncation marker. A record whose bytes equal the last write is skipped. PRD changes no longer touch the other jsonl files. The write still happens under `Store.mu`, as before; it no longer takes any other lock.
+
+Migration: a store with `prds.jsonl` and no `prds/LAYOUT` loads the old file, copies it to `prds.jsonl.pre-records.bak` (a later copy gets `.1`, `.2`; never overwritten), writes every record, reads them back and requires byte-identical re-encoding, writes `LAYOUT`, then removes `prds.jsonl`. Any failure leaves `prds.jsonl` in place and the store on the old whole-file format. An old file next to an existing layout is imported for PRDs the records lack, then renamed `.imported`. Rollback: stop the daemon, copy the `.bak` over `prds.jsonl` and remove `autonomous/prds/`.
+
+Measured 2026-10-23, `go test ./internal/autonomous -run TestPRDStoreIncremental -v`: seed through `CreatePRD` + `SetStories`, then one `MutateTask` status change on one task.
+
+| Seed | PRDs | Old: bytes per change (whole `prds.jsonl`) | New: bytes per change | Files written | Total record bytes on disk |
+|---|---|---|---|---|---|
+| reduced (`STORE_BENCH_SMALL=1`, 3x4 tasks, 20 KB judge text) | 30 | 7,862,997 | 5,921 | 1 | 177,353 |
+| full (5 stories x 6 tasks, 40 KB judge text per task) | 300 | 389,427,723 | 13,982 | 1 | 4,191,719 |
+
+One change writes one PRD record (13,978 bytes before the change, 13,982 after), about 1/27,800 of the old rewrite at 300 PRDs. Tests: `TestPRDStoreIncremental`, `TestPRDStoreMigrateOldFormat`, `TestPRDStoreSideFile`, `TestPRDStoreConcurrent` (`-race`), `TestPRDStoreCrashSafety` (SIGKILL five times, reload each time).
+
 ## Parity surface
 
 This is an internal storage change with no new user-facing setting. Each surface keeps its current behavior; the intent or exclusion reason is recorded for each.

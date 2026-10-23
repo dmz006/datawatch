@@ -7,8 +7,6 @@
 package autonomous
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -20,11 +18,7 @@ import (
 // file must not have changed at all (no persist() call on the error path).
 func persistedPRDFile(t *testing.T, dir string) string {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join(dir, "autonomous", "prds.jsonl"))
-	if err != nil {
-		t.Fatalf("read persisted prds.jsonl: %v", err)
-	}
-	return string(data)
+	return persistedPRDRecords(t, dir)
 }
 
 // seedReprSeedPRD builds a PRD with explicit story/task IDs and raw
