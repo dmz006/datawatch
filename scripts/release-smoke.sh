@@ -49,9 +49,7 @@
 # variable name. See docs/howto/testing-against-a-running-daemon.md
 # for the full reference (both mechanisms, side by side).
 #
-# §79 runs the nine PWA slow-network load scenarios (scripts/test-stories/pwa,
-# TS-802..TS-810) against this smoke daemon itself — they never start a
-# second daemon.
+# §79 runs the nine PWA slow-network load scenarios (TS-802..TS-810) against this smoke daemon itself (never a second daemon).
 #
 # Returns 0 on success, non-zero on first failure.
 
@@ -4708,7 +4706,7 @@ else
   LOAD_RC=$?
   tail -20 "$LOAD_OUT_FILE"
   LOAD_SUMMARY="$(grep -E '^summary: ' "$LOAD_OUT_FILE" | tail -1)"
-  LOAD_PASSED="$(printf '%s' "$LOAD_SUMMARY" | awk '{print $3}')"
+  LOAD_PASSED="$(printf '%s' "$LOAD_SUMMARY" | awk '{print $2}')"
   if [[ "$LOAD_RC" -eq 0 ]]; then
     if [[ "${LOAD_PASSED:-""}" == "0" ]]; then
       skip "load scenarios: runner exited 0 but every scenario was skipped ($LOAD_SUMMARY)"
