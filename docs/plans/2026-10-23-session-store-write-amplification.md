@@ -12,6 +12,11 @@
 | 2 | Write coalescing: `Save`/`Delete`/`Mutate` mark the store dirty and wake one background writer that writes at most once per flush interval (default 1 s, `SetFlushInterval` / `WithFlushInterval`, <= 0 = write-through); compact `json.Marshal`; marshal under the read lock, file write and flock outside the store lock; `Flush`/`Close` write synchronously; daemon shutdown and restart paths call `Manager.Close` | Done |
 | 3 | Enable the budget assertion (`storeWriteBudgetEnforced = true`) and re-record the numbers in this document | Done (after-coalescing numbers below) |
 | 4 | Incremental storage: one encrypted record file per session under `sessions.d/`, a dirty/deleted set driving the background writer, one-time verified migration of `sessions.json` (`internal/session/store_records.go`); the budget factor is tightened to 3x | Done (numbers below) |
+| 5 | PRD store: one record per PRD with side files for large text, verified migration of `prds.jsonl` (`internal/autonomous/store_records.go`) | Done (numbers below) |
+| 6 | Session archive and per-field size cap: terminal sessions older than the archive age move to `sessions-archive.jsonl`; oversized session fields are cut with a marker and a side file | Done |
+| 7 | Config surfaces for the four new settings, documentation, tracker rows, live validation against a sandbox daemon | Done (2026-10-23) |
+
+Shipped in the next patch above `main`.
 
 ## Baseline
 
@@ -93,17 +98,34 @@ Measured 2026-10-23, `go test ./internal/autonomous -run TestPRDStoreIncremental
 
 One change writes one PRD record (13,978 bytes before the change, 13,982 after), about 1/27,800 of the old rewrite at 300 PRDs. Tests: `TestPRDStoreIncremental`, `TestPRDStoreMigrateOldFormat`, `TestPRDStoreSideFile`, `TestPRDStoreConcurrent` (`-race`), `TestPRDStoreCrashSafety` (SIGKILL five times, reload each time).
 
+## Final result
+
+Baseline (whole-file rewrite of `sessions.json` and `prds.jsonl`) against the shipped record layout, same seed and same 200-event burst, 2026-10-23, `STORE_BENCH_SMALL=1` where marked.
+
+| Measure | Baseline | After | Change |
+|---|---|---|---|
+| Session burst, 400 sessions: bytes written | 858,404,761 (819 MiB) | 106,449 | about 1/8,000 |
+| Session burst, 400 sessions: elapsed (after: including the flush) | 1.45 s | 5 ms | about 1/290 |
+| Session burst, 4000 sessions: bytes written | 8,585,293,803 (8.0 GiB) | 106,468 | about 1/80,000 |
+| Session burst, 4000 sessions: elapsed (after: including the flush) | 13.75 s | 61 ms | about 1/225 |
+| Bytes written vs changed data (78,000) | about 110,000x | about 1.4x | budget 3x, enforced |
+| Bytes written depend on store size | yes | no (400 and 4000 sessions write the same 10 records) | |
+| One PRD change, 300 PRDs | 389,427,723 | 13,982 | about 1/27,800 |
+| One PRD change, 30 PRDs (`STORE_BENCH_SMALL=1`) | 7,862,997 | 5,921 | about 1/1,330 |
+
+Latest verification run: see the testing tracker section "Session store and PRD store" for the exact commands and results. `docs/operations.md` section "Session and PRD storage layout" is the operator guide.
+
 ## Parity surface
 
-This is an internal storage change with no new user-facing setting. Each surface keeps its current behavior; the intent or exclusion reason is recorded for each.
+The storage change adds four settings (`session.store_flush_interval`, `session.store_archive_after_days`, `session.store_field_cap_kb`, `session.store_side_file_cap_kb`). They are wired through every config surface (commit "Wire store settings through every config surface"; test `internal/server/store_config_surfaces_test.go`). The session and PRD data shapes are unchanged. The intent or exclusion reason is recorded for each surface.
 
 | Surface | Intent or exclusion |
 |---|---|
-| REST | Exclusion: no endpoint changes. Existing session endpoints read the same in-memory store. |
-| MCP | Exclusion: no tool changes; same reason as REST. |
-| CLI | Exclusion: no command changes. Intent: `datawatch` startup must load the old file format unchanged. |
-| Comm channel | Exclusion: no command changes; channel events only become cheaper. |
-| YAML/config | Exclusion: no new config field planned. If a field is added, it goes in `docs/implementation.md`. |
-| PWA | Exclusion: no UI change; session lists come from the same API. |
+| REST | Intent: the four settings read and write through `GET`/`PUT /api/config` and apply live. `GET /api/sessions?history=1` or `?q=` also returns archived sessions, and `GET /api/sessions/<id>` falls back to the archive. No other endpoint changes. |
+| MCP | Intent: `config_set` and `get_config` carry the four settings. Exclusion: no new tool; archived sessions are reached through the existing session tools. |
+| CLI | Intent: `datawatch config set session.store_*` and `datawatch config get`. Startup loads the old file formats and migrates them once. Exclusion: no command to restore an archived session (see operations.md). |
+| Comm channel | Intent: `configure session.store_*` sets the four settings. Exclusion: no new command; channel events only become cheaper. |
+| YAML/config | Intent: the four fields are in `docs/config-reference.yaml`, `docs/implementation.md` and the generated template. |
+| PWA | Intent: the four settings appear in the Settings page with all five locales. The History view reloads the session list so archived sessions are included. |
 | Android | Exclusion: no client change; API unchanged. |
 | iPhone | Exclusion: no client change; API unchanged. |

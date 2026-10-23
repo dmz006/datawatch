@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **The session and Automaton stores write only what changed.** A session change used to rewrite the whole `sessions.json` and a PRD change the whole `prds.jsonl`: 200 channel events over 4,000 sessions wrote 8.0 GiB in 13.7 s, and one task change over 300 PRDs wrote 389 MB. Sessions are now one record each under `sessions.d/`, saved by a background writer that batches changes for `session.store_flush_interval` milliseconds (default 1000; 0 writes at once), and PRDs are one record each under `autonomous/prds/`. The same burst now writes 106 KB in 61 ms whatever the store size, and one PRD change writes 14 KB. Large PRD text moves to side files, and finished sessions older than `session.store_archive_after_days` days (default 14) move to the append-only `sessions-archive.jsonl`, still readable by id, in History and in search. Session fields longer than `session.store_field_cap_kb` KB (default 256) are cut with a marker and the full text goes to a side file. The first start converts the old files and keeps `sessions.json.pre-records.bak` and `prds.jsonl.pre-records.bak`; see [operations](docs/operations.md#session-and-prd-storage-layout) for the layout and rollback. The four settings work in config, web UI, CLI, comm channel and MCP.
+
 ## v9.5.110 — Capacity admission no longer deadlocks on the shared-node check
 
 ### Fixed

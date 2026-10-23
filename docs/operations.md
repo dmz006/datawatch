@@ -3774,3 +3774,83 @@ Queue contents are **in memory only**: they are bounded per queue, cursors resta
 
 **Checklist record:** `docs/config-reference.yaml` — `autonomous.notify.pending_events_max` documented; localization — the Subscriptions tab strings are in all five locale bundles; version — Unreleased (final number set at merge); Mobile-Parity — app-side UI tracked in [plans/2026-10-21-datawatch-app-lifecycle-subscriptions-note.md](plans/2026-10-21-datawatch-app-lifecycle-subscriptions-note.md);
  full checklist outcome recorded in the design doc's Phase 3 and Phase 4 bullets.
+
+
+## Session and PRD storage layout
+
+The session store and the Automaton (PRD) store write only what changed. Before this change every update rewrote the whole `sessions.json` and `prds.jsonl`; 200 channel events over 4,000 sessions wrote 8.0 GiB. The same burst now writes about 106 KB. Design and measurements: [plans/2026-10-23-session-store-write-amplification.md](plans/2026-10-23-session-store-write-amplification.md).
+
+### Coalesced writer and flush interval
+
+A session change marks the session dirty and wakes one background writer. The writer waits one flush interval, then writes every dirty session in one batch, so 200 changes inside the interval cost one write per changed session. `session.store_flush_interval` sets the interval in milliseconds (default 1000). `0` writes on every change. A change is at risk for at most one interval if the process is killed; a clean stop, a restart and a re-exec flush synchronously first.
+
+### Per-session records
+
+```
+<data_dir>/sessions.d/LAYOUT                      marker; its presence selects this layout
+<data_dir>/sessions.d/p.<FullID>.rec              one session, compact JSON
+<data_dir>/sessions.d/x.<sha256 of FullID>.rec    same, for a FullID with unusual characters or a long one
+<data_dir>/sessions/<FullID>/session.json         per-session working data (unchanged)
+<data_dir>/sessions/<FullID>/fields/<field>.txt   full text of a truncated field
+<data_dir>/sessions-archive.jsonl                 archived sessions
+```
+
+Each record is written alone through a temp file, fsync and rename, so a crash leaves each record at its old or new version and never half written. A record that cannot be read is skipped with a warning and restored from `sessions/<FullID>/session.json` when that file exists.
+
+### Per-PRD records and side files
+
+```
+<data_dir>/autonomous/prds/LAYOUT                         marker
+<data_dir>/autonomous/prds/<id>.json                      one PRD with its stories and tasks
+<data_dir>/autonomous/prds/<id>.files/<sha256>.txt        side file for large text
+```
+
+Only PRDs changed since the last write are written, and a record whose bytes are unchanged is skipped. Text longer than `session.store_side_file_cap_kb` (default 64 KB) moves to a content-addressed side file and the record keeps a `datawatch-side-file:v1:<hash>` reference that is resolved on load, so the API shows the full text. Bulky output fields (judge output, task output, checkpoints, transcripts, errors, specs) move to a side file above 4 KB. Text over 32 MB is cut and ends with `[datawatch: truncated, <n> bytes dropped at the <limit> byte limit]`. Changing a PRD no longer rewrites the learnings, profile, tag or retry-profile files.
+
+### Backups made during migration
+
+On the first start of a build with these stores, each old file is converted once:
+
+| Old file | Backup | New layout |
+|---|---|---|
+| `sessions.json` | `sessions.json.pre-records.bak` | `sessions.d/` |
+| `autonomous/prds.jsonl` | `autonomous/prds.jsonl.pre-records.bak` | `autonomous/prds/` |
+
+The migration copies the old file to the backup (an existing backup is never overwritten; a later copy gets `.1`, `.2`), writes every record, reads them back and requires the same sessions or PRDs, writes the `LAYOUT` marker last, and only then removes the old file. A failure before the marker leaves the old file in place and the daemon on the old format; the next start retries. An old file found next to an existing layout is imported for the entries the layout lacks, then renamed `.imported`.
+
+To roll back to an older daemon: stop the daemon, copy the backup over `sessions.json` (or `prds.jsonl`), and remove `sessions.d/` (or `autonomous/prds/`). Sessions and PRDs created after the migration are not in the backup.
+
+### Archive
+
+Every hour, and once at start, a finished session (complete, failed or killed) that has not been updated for `session.store_archive_after_days` days (default 14, `0` turns archiving off) moves from the active store to `sessions-archive.jsonl`. Running and waiting sessions are never archived.
+
+- The file is append-only: one JSON line per session, with its id and update time readable and the record after them. Restoring appends a tombstone line. Nothing in it is rewritten or deleted.
+- The daemon keeps only an index of id to file offset in memory, so an archive of thousands of sessions costs little.
+- Archived sessions stay readable. `GET /api/sessions/<id>` falls back to the archive. `GET /api/sessions?history=1` and `?q=<text>` add archived sessions to the list, newest first, with paging (up to 500 per request); the web UI History view reloads the list to include them. The default list and `active=1` never include them.
+- Restore moves a session back to the active store and out of the archive index (`Manager.RestoreArchivedSession`, used by the server code and the tests). There is no REST, CLI or comm-channel command for it yet.
+- A torn last line (a crash during append) is ignored on load.
+
+### Field size cap and truncation markers
+
+A session text field (task, prompts, summaries and similar) longer than `session.store_field_cap_kb` KB (default 256) is stored in its record cut at the cap and ending with
+
+```
+[truncated <n> bytes, full text in side file sessions/<FullID>/fields/<field>.txt]
+```
+
+The full text is in that side file, written before the record. The in-memory session keeps the full text; a session loaded after a restart shows the cut text and the marker. `0` disables the cap.
+
+### Encryption
+
+When the store has an encryption key (secure mode), each session record and each archive line is encrypted on its own, the same as `sessions.json` was; the archive keeps only the id and update time in clear. The `LAYOUT` markers are plain text and hold no session data. An encrypted `sessions.json` is read with the key during migration and its backup stays encrypted. An archive line encrypted with a key the daemon does not have is reported as unreadable instead of being skipped silently. Session field side files are encrypted the same way. PRD records and PRD side files are plain JSON and text, as `prds.jsonl` was.
+
+### Configuration keys
+
+| Key | Default | Meaning |
+|---|---|---|
+| `session.store_flush_interval` | `1000` | Milliseconds the writer batches session changes; `0` writes on every change. Applies live. |
+| `session.store_archive_after_days` | `14` | Days after its last update that a finished session is archived; `0` turns it off. Applies live. |
+| `session.store_field_cap_kb` | `256` | Largest session text field kept inline, in KB. Applies to later writes. |
+| `session.store_side_file_cap_kb` | `64` | PRD text above this many KB goes to a side file. A PRD is rewritten with the new value when it next changes. |
+
+All four are available in `config.yaml`, the web UI Settings, `datawatch config set`, the comm channel `configure` command, MCP `config_set` and `PUT /api/config`.
