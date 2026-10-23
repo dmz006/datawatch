@@ -5,6 +5,17 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.119 — Daemon stop-cause recording
+
+Records why the daemon stops, so a stop with no known sender can be traced.
+
+- A new `shutdowncause` package captures the signal, its sender where the platform reports it, and the parent process, then writes `last-shutdown.json` as the daemon shuts down.
+- The next start prints a startup line that names the previous stop cause, then marks the record consumed.
+- A regression test sends a signal from a child process and checks the recorded sender.
+- New `make lint` check `check-service-scope` fails any test or script that stops or restarts the production service.
+- Test and live-smoke scripts now run against their own isolated daemon instead of the production one.
+- The investigation of the 2026-10-23 05:33 stop is written up with cited evidence in `docs/plans/2026-10-23-daemon-stop-cause.md`. The actual sender is still unexplained.
+
 ## v9.5.118 — Restart-safe task sessions and orphan sweep
 
 Fixes a restart-time duplicate-worker defect where a daemon restart could leave a second worker session running for the same task in the same worktree.
