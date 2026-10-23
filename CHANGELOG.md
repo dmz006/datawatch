@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.102 — The session input audit test no longer flakes
+
+### Fixed
+
+
+- **The session input audit test no longer flakes on temp-dir cleanup or under the race detector.** The background push of the session list that follows start, kill, delete and reconcile actions is now tracked so tests can wait for it, the test session helper stops the session monitor and waits for its files to settle before the temp directory is removed, and `SendInput`, `Kill`, the channel-event marker and the start response now write and read the shared session under the session store's lock instead of racing with the monitor goroutine's saves. Shipped in the next patch above main.
+
 ## v9.5.101 — Task delivery waits for slow-starting Claude sessions
 
 ### Fixed
