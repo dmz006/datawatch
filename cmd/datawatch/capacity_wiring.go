@@ -92,6 +92,38 @@ func syncLLMLimits(cfg *config.Config, reg *inference.Registry, led *capacity.Le
 	}
 }
 
+// rateWindowDefault is the rolling window used when a rate ceiling is set
+// but autonomous.capacity_rate_window_seconds is 0.
+const rateWindowDefault = time.Hour
+
+// llmRateCeiling is the rate ceiling autonomous.capacity_rate_* describes:
+// the zero value (no ceiling) when both requests and tokens are 0.
+func llmRateCeiling(cfg *config.Config) capacity.RateCeiling {
+	a := cfg.Autonomous
+	if a.CapacityRateRequests <= 0 && a.CapacityRateTokens <= 0 {
+		return capacity.RateCeiling{}
+	}
+	w := time.Duration(a.CapacityRateWindowSeconds) * time.Second
+	if w <= 0 {
+		w = rateWindowDefault
+	}
+	return capacity.RateCeiling{Requests: max(a.CapacityRateRequests, 0), Tokens: int64(max(a.CapacityRateTokens, 0)), Window: w}
+}
+
+// syncLLMRates applies the configured rate ceiling to every LLM entry's pool
+// ("llm:<name>"). It runs on startup and on each syncPools tick, so a config
+// change (including clearing the ceiling) takes effect without a restart. An
+// unchanged ceiling is left alone so its recorded usage is kept.
+func syncLLMRates(cfg *config.Config, reg *inference.Registry, led *capacity.Ledger) {
+	want := llmRateCeiling(cfg)
+	for _, l := range reg.List() {
+		pool := "llm:" + l.Name
+		if led.RateOf(pool) != want {
+			led.SetRate(pool, want)
+		}
+	}
+}
+
 // backoffBackpressure reports an "llm:<backend>" pool as blocked while the
 // shared autonomous back-off registry holds an active flag for that backend,
 // so task, verifier and decompose admission wait in the capacity queue with
@@ -274,11 +306,23 @@ func newPeerBudget(registry func() *inference.Registry, store func() *multiserve
 // no entry), whether or not that LLM has a budget yet, so history exists when
 // a budget is switched on later.
 func recordUsageSpend(bl *autonomous.BudgetLedger, registry func() *inference.Registry) func(session.UsageEvent) {
+	return recordUsage(bl, registry, nil)
+}
+
+// recordUsage is recordUsageSpend plus the capacity ledger: every event's
+// tokens (in and out) count against its LLM pool's token rate ceiling. Unlike
+// the dollar record, tokens count even when the event carries no dollar
+// amount. A nil ledger skips the token record.
+func recordUsage(bl *autonomous.BudgetLedger, registry func() *inference.Registry, led *capacity.Ledger) func(session.UsageEvent) {
 	return func(ev session.UsageEvent) {
+		name := budgetLLMName(registry, ev.Backend)
+		if led != nil {
+			led.RecordTokens("llm:"+name, int64(ev.TokensIn)+int64(ev.TokensOut))
+		}
 		if bl == nil || ev.USD <= 0 {
 			return
 		}
-		bl.RecordSession(budgetLLMName(registry, ev.Backend), ev.SessionID, ev.At, ev.USD, ev.TokensIn, ev.TokensOut)
+		bl.RecordSession(name, ev.SessionID, ev.At, ev.USD, ev.TokensIn, ev.TokensOut)
 	}
 }
 
@@ -391,7 +435,6 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 	amgr.SetCooldownUntilFn(func() time.Time { return mgr.CooldownStatus().Until })
 	registry := httpServer.InferenceRegistry
 	autonomousBudget = newAutonomousBudget(cfg, expandHome(cfg.DataDir), registry)
-	mgr.SetUsageEventHook(recordUsageSpend(autonomousBudget, registry))
 	amgr.SetCostSources(autonomousBudget, sessionCostTotal(mgr.GetSession, registry))
 	peerBudget := newPeerBudget(registry, httpServer.ServerStore)
 	automationBudget := autonomous.NewAutomationBudget(amgr, autonomousBudget)
@@ -410,6 +453,9 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 			sharedNodeBackpressure(),
 		),
 	})
+
+	// Usage deltas feed both the dollar budget and the token rate ceilings.
+	mgr.SetUsageEventHook(recordUsage(autonomousBudget, registry, led))
 
 	keys := func(backend, model string) ([]string, string) {
 		pools := []string{"host"}
@@ -602,6 +648,7 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 		}
 		if reg := httpServer.InferenceRegistry(); reg != nil {
 			syncLLMLimits(cfg, reg, led)
+			syncLLMRates(cfg, reg, led)
 		}
 		live := func(ls capacity.Lease) bool {
 			if ls.SessionID == "" {

@@ -176,3 +176,36 @@ func TestHandleConfigure_AcceptsGateDisagreement(t *testing.T) {
 		t.Fatalf("configureFn got key=%q value=%q", gotKey, gotValue)
 	}
 }
+
+func TestRateCeilingComm_ConfigureAndHelp(t *testing.T) {
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	var sent []string
+	capture := func(s string) {
+		mu.Lock()
+		sent = append(sent, s)
+		mu.Unlock()
+		wg.Done()
+	}
+	got := map[string]string{}
+	r := &Router{hostname: "h", backend: &captureBackend{name: "test", capture: capture}}
+	r.SetConfigureFunc(func(k, v string) error { got[k] = v; return nil })
+
+	for _, kv := range []string{"autonomous.capacity_rate_requests=60", "autonomous.capacity_rate_tokens=2000000", "autonomous.capacity_rate_window_seconds=1800", "help", "list"} {
+		wg.Add(1)
+		r.handleConfigure(Command{Type: CmdConfigure, Text: kv})
+		wg.Wait()
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if got["autonomous.capacity_rate_requests"] != "60" || got["autonomous.capacity_rate_tokens"] != "2000000" || got["autonomous.capacity_rate_window_seconds"] != "1800" {
+		t.Fatalf("configureFn got %v", got)
+	}
+	for _, s := range sent[3:] {
+		for _, k := range []string{"capacity_rate_requests", "capacity_rate_tokens", "capacity_rate_window_seconds"} {
+			if !strings.Contains(s, "autonomous."+k) {
+				t.Errorf("help/list reply lacks autonomous.%s: %q", k, s)
+			}
+		}
+	}
+}

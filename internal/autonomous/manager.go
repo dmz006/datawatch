@@ -409,6 +409,11 @@ type Config struct {
 	CapacityEnabled *bool `json:"capacity_enabled,omitempty"`
 	// CapacityWaitTimeoutSeconds bounds a capacity wait (default 14400).
 	CapacityWaitTimeoutSeconds int `json:"capacity_wait_timeout_seconds,omitempty"`
+	// CapacityRate* mirror config.AutonomousConfig: a per-llm: pool rolling
+	// ceiling on lease grants and recorded tokens (0 = none; window 0 = 3600).
+	CapacityRateRequests      int `json:"capacity_rate_requests,omitempty"`
+	CapacityRateTokens        int `json:"capacity_rate_tokens,omitempty"`
+	CapacityRateWindowSeconds int `json:"capacity_rate_window_seconds,omitempty"`
 	// ResumeMaxAgeSeconds is how old (in seconds) a completed task may be
 	// before it is no longer eligible for resume (default 3600). 0 is
 	// meaningful: never resume.

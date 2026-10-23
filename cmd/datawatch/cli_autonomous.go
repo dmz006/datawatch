@@ -28,6 +28,7 @@ Subcommands:
                                   config-set '{"max_concurrent_tasks":2}'
                                   config-set '{"max_engines_per_node":2}'
                                   config-set '{"gate_disagreement":"block"}'
+                                  config-set --capacity-rate-requests 60 --capacity-rate-tokens 2000000 --capacity-rate-window-seconds 3600
                                   config-set '{"resume_max_age_seconds":1800}'
                                   config-set '{"plan_tier_max_inflight":{"pro":1,"max_5x":2,"max_20x":4,"api":0}}' (tier inflight caps; 0 = unlimited; unknown tiers rejected)
   prd-list                        List all PRDs
@@ -185,9 +186,34 @@ task with a "gate_disagreement: …" error. An invalid gate never blocks.`,
 	}
 }
 
+// autonomousRateFlags maps each rate-ceiling flag of config-set to the config
+// key it writes. The flags are sent only when set, so an omitted flag leaves
+// the key unchanged and an explicit 0 clears that ceiling.
+var autonomousRateFlags = map[string]string{
+	"capacity-rate-requests":       "capacity_rate_requests",
+	"capacity-rate-tokens":         "capacity_rate_tokens",
+	"capacity-rate-window-seconds": "capacity_rate_window_seconds",
+}
+
+// applyAutonomousRateFlags copies the rate-ceiling flags that were set onto
+// body, rejecting negative values before anything is sent.
+func applyAutonomousRateFlags(cmd *cobra.Command, body map[string]any) error {
+	for flag, key := range autonomousRateFlags {
+		if !cmd.Flags().Changed(flag) {
+			continue
+		}
+		n, _ := cmd.Flags().GetInt(flag)
+		if n < 0 {
+			return fmt.Errorf("--%s must be >= 0", flag)
+		}
+		body[key] = n
+	}
+	return nil
+}
+
 func newAutonomousConfigSetCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "config-set <json-or-@file>",
+	cmd := &cobra.Command{
+		Use:   "config-set [json-or-@file]",
 		Short: "Merge fields into autonomous config",
 		Long: `Merge the given JSON fields onto the current autonomous config; fields
 not given are left unchanged.
@@ -219,20 +245,37 @@ tier inflight-cap table (see "datawatch llm add|update --help" for --plan-tier/-
       inflight cap (0 = unlimited). An explicit per-LLM max_inflight > 0 wins
       over the tier cap; clear the table with {}.
 
+Rate ceiling on each LLM's pool, by flag or by JSON key (0 = no ceiling,
+the default; negative values are rejected):
+
+  datawatch autonomous config-set --capacity-rate-requests 60 --capacity-rate-tokens 2000000 --capacity-rate-window-seconds 3600
+
+  capacity_rate_requests          most task/verifier starts per LLM per window
+  capacity_rate_tokens            most tokens per LLM per window
+  capacity_rate_window_seconds    rolling window length (default 3600)
+
 max_parallel_tasks is deprecated and ignored; use max_concurrent_tasks.`,
-		Args: cobra.ExactArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
-			raw := args[0]
-			if len(raw) > 1 && raw[0] == '@' {
-				b, err := os.ReadFile(raw[1:])
-				if err != nil {
-					return err
+		Args: cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			body := map[string]any{}
+			if len(args) == 1 {
+				raw := args[0]
+				if len(raw) > 1 && raw[0] == '@' {
+					b, err := os.ReadFile(raw[1:])
+					if err != nil {
+						return err
+					}
+					raw = string(b)
 				}
-				raw = string(b)
+				if err := json.Unmarshal([]byte(raw), &body); err != nil {
+					return fmt.Errorf("parse JSON: %w", err)
+				}
 			}
-			var body any
-			if err := json.Unmarshal([]byte(raw), &body); err != nil {
-				return fmt.Errorf("parse JSON: %w", err)
+			if err := applyAutonomousRateFlags(cmd, body); err != nil {
+				return err
+			}
+			if len(body) == 0 {
+				return fmt.Errorf("give a JSON body or at least one flag")
 			}
 			resp, err := daemonJSONBody(http.MethodPut, "/api/autonomous/config", body)
 			if err != nil {
@@ -243,6 +286,10 @@ max_parallel_tasks is deprecated and ignored; use max_concurrent_tasks.`,
 			return nil
 		},
 	}
+	cmd.Flags().Int("capacity-rate-requests", 0, "Most task/verifier starts per LLM pool per rolling window (0 = no requests ceiling)")
+	cmd.Flags().Int("capacity-rate-tokens", 0, "Most tokens per LLM pool per rolling window (0 = no tokens ceiling)")
+	cmd.Flags().Int("capacity-rate-window-seconds", 0, "Rolling window length in seconds for the rate ceilings (0 = default 3600)")
+	return cmd
 }
 
 // printDeprecatedFields writes any deprecated_fields note from a config

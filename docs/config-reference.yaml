@@ -1214,6 +1214,17 @@ autonomous:
   # added for this: the events follow the settings above.
   # Hold new tasks while a node's busiest GPU is at/above this percent (0 = off).
   capacity_gpu_util_pct: 0
+  # Rate ceiling applied to each llm: pool, on top of its concurrency limit.
+  # capacity_rate_requests caps lease grants (task and verifier starts) per
+  # rolling window; capacity_rate_tokens caps the tokens recorded from session
+  # usage per window. 0 = no ceiling on that dimension (the default, so
+  # existing installs are unchanged); negative values are rejected.
+  # capacity_rate_window_seconds is the window length; 0 = 3600, and it only
+  # matters when a ceiling is set. A pool at its ceiling makes new work wait
+  # until the oldest counted use leaves the window.
+  capacity_rate_requests: 0
+  capacity_rate_tokens: 0
+  capacity_rate_window_seconds: 0
   # LLM backend used for the planning/decompose call. Any configured LLM name works:
   # opencode/claude-code spawn a full session with codebase tool access (recommended);
   # ollama/openwebui run headless via /api/ask. Old key "decomposition_backend" accepted on read.

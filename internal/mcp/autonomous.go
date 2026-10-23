@@ -99,6 +99,9 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithNumber("session_start_confirm_seconds", mcpsdk.Description("Bound in seconds for a claude-code autonomous session to produce its first assistant output after start — a session still in waiting_input with no assistant output longer than this is a 'session never started' failure (default 120 = 2m; 0 or negative means use the default)")),
 		mcpsdk.WithBoolean("capacity_enabled", mcpsdk.Description("Capacity-aware admission: tasks wait for a free host/node/LLM slot instead of failing (default true)")),
 		mcpsdk.WithNumber("capacity_wait_timeout_seconds", mcpsdk.Description("Maximum seconds a task waits for capacity (default 14400)")),
+		mcpsdk.WithNumber("capacity_rate_requests", mcpsdk.Description("Rate ceiling on each LLM: most task/verifier starts it may take per rolling window; 0 = no requests ceiling (default); negative values are rejected")),
+		mcpsdk.WithNumber("capacity_rate_tokens", mcpsdk.Description("Rate ceiling on each LLM: most tokens it may use per rolling window; 0 = no tokens ceiling (default); negative values are rejected")),
+		mcpsdk.WithNumber("capacity_rate_window_seconds", mcpsdk.Description("Rolling window length in seconds for the two rate ceilings (0 = default 3600)")),
 		mcpsdk.WithNumber("ci_watch_timeout_seconds", mcpsdk.Description("Maximum seconds the ci-watch completion guardrail waits for the CI runs of an automaton's own pushed commit (default 1500). Runs still unfinished at the deadline leave the automaton complete with ci_watch.status \"pending\".")),
 		mcpsdk.WithArray("per_prd_guardrails", mcpsdk.Description("Daemon-wide default guardrails run once when an automaton completes. Accepts \"rules-review\" (judge the automaton's diff against the project's rules file) and \"ci-watch\" (wait for and judge the CI runs of the commit it pushed). Empty list (the default) turns both off; an automaton's own list or guardrail profile overrides this. The value replaces the whole list, so read it with autonomous_config_get first and include the entries you want to keep."), mcpsdk.WithStringItems()),
 		mcpsdk.WithBoolean("continue_on_story_failure", mcpsdk.Description("Daemon-wide default: false (halt) stops a PRD as soon as any story fails instead of continuing into later, independent stories; true restores the old continue-regardless behavior. Per-PRD override takes precedence.")),
@@ -295,6 +298,15 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 	if args := req.GetArguments(); args != nil {
 		if _, ok := args["capacity_enabled"]; ok {
 			body["capacity_enabled"] = req.GetBool("capacity_enabled", true)
+		}
+	}
+	// Presence-aware and forwarded as given (negatives included) so the REST
+	// write is the one place that rejects them.
+	if args := req.GetArguments(); args != nil {
+		for _, k := range []string{"capacity_rate_requests", "capacity_rate_tokens", "capacity_rate_window_seconds"} {
+			if _, ok := args[k]; ok {
+				body[k] = int(req.GetFloat(k, 0))
+			}
 		}
 	}
 	if v := req.GetFloat("capacity_wait_timeout_seconds", -1); v >= 0 {
