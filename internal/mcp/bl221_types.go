@@ -105,6 +105,33 @@ func (s *Server) handleCapacityStatus(_ context.Context, req mcpsdk.CallToolRequ
 	return textOK(string(out)), nil
 }
 
+func (s *Server) toolCapacityAdmission() mcpsdk.Tool {
+	return mcpsdk.NewTool("capacity_admission",
+		mcpsdk.WithDescription("Ask whether a start of a backend would be admitted now, without starting anything. Resolves the same host, llm:<name> and node:<name> pools a real start would use and returns the decision: kind (admit | queued | alternate_available), queue_position (1-based; 0 when admitted), reason, resets_at (when a rate ceiling frees it) and alternates (pools of the same kind elsewhere with room, each with pool, node and model). Read-only: takes no lease, adds no waiter and changes no state."),
+		mcpsdk.WithString("backend", mcpsdk.Required(), mcpsdk.Description("Backend or named LLM to start (llm is accepted as an alias)")),
+		mcpsdk.WithString("llm", mcpsdk.Description("Alias for backend")),
+		mcpsdk.WithString("node", mcpsdk.Description("Compute node the start would use")),
+		mcpsdk.WithString("model", mcpsdk.Description("Model wanted, for node model affinity")),
+		mcpsdk.WithString("role", mcpsdk.Description("worker (default), verifier, planner or interactive")),
+		mcpsdk.WithString("priority", mcpsdk.Description("Integer queue priority; higher runs first (default 0)")),
+		mcpsdk.WithString("prd_id", mcpsdk.Description("Automaton the start would belong to (fairness group)")),
+		mcpsdk.WithReadOnlyHintAnnotation(true),
+	)
+}
+func (s *Server) handleCapacityAdmission(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	q := url.Values{}
+	for _, k := range []string{"backend", "llm", "node", "model", "role", "priority", "prd_id"} {
+		if v := req.GetString(k, ""); v != "" {
+			q.Set(k, v)
+		}
+	}
+	out, err := s.proxyGet("/api/capacity/admission", q)
+	if err != nil {
+		return nil, err
+	}
+	return textOK(string(out)), nil
+}
+
 func (s *Server) toolAutonomousPRDSetGuidedMode() mcpsdk.Tool {
 	return mcpsdk.NewTool("autonomous_prd_set_guided_mode",
 		mcpsdk.WithDescription("BL221 Phase 4 — enable or disable Guided Mode on a PRD (step-by-step operator checkpoints)."),

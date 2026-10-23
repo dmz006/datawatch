@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"github.com/dmz006/datawatch/internal/agents"
 	"github.com/dmz006/datawatch/internal/alerts"
 	"github.com/dmz006/datawatch/internal/autonomous"
+	"github.com/dmz006/datawatch/internal/capacity"
 	"github.com/dmz006/datawatch/internal/messaging"
 	"github.com/dmz006/datawatch/internal/profile"
 	"github.com/dmz006/datawatch/internal/proxy"
@@ -894,6 +896,34 @@ func (r *Router) handleCapacity() {
 	r.send(fmt.Sprintf("[%s] Capacity:\n%s", r.hostname, r.capacityFn()))
 }
 
+// handleCapacityAdmission answers "capacity admission <backend> [node] [model]"
+// through the REST loopback, with the text the CLI prints.
+func (r *Router) handleCapacityAdmission(args string) {
+	f := strings.Fields(args)
+	if len(f) == 0 || len(f) > 3 {
+		r.send(fmt.Sprintf("[%s] Usage: capacity admission <backend> [node] [model]", r.hostname))
+		return
+	}
+	q := url.Values{"backend": {f[0]}}
+	if len(f) > 1 {
+		q.Set("node", f[1])
+	}
+	if len(f) > 2 {
+		q.Set("model", f[2])
+	}
+	body, err := r.commGet("/api/capacity/admission", q)
+	if err != nil {
+		r.reply("capacity admission failed", err.Error())
+		return
+	}
+	text, err := capacity.FormatDecisionJSON([]byte(body))
+	if err != nil {
+		r.reply("capacity admission failed", err.Error())
+		return
+	}
+	r.reply("Capacity admission:", text)
+}
+
 func (r *Router) handleStats() {
 	if r.statsFn == nil {
 		r.send(fmt.Sprintf("[%s] Stats not available.", r.hostname))
@@ -1050,6 +1080,8 @@ func (r *Router) handleMessage(msg messaging.Message) {
 		r.handleStats()
 	case CmdCapacity:
 		r.handleCapacity()
+	case CmdCapacityAdmission:
+		r.handleCapacityAdmission(cmd.Text)
 	case CmdConfigure:
 		r.handleConfigure(cmd)
 	case CmdCopy:

@@ -948,6 +948,42 @@ paths:
                             since: {type: string, format: date-time}
                             note: {type: string, description: Sentence for a task parked while holding resources}
 
+  /api/capacity/admission:
+    get:
+      summary: Capacity admission query
+      description: Whether a start of the given backend would be admitted now, queued (with its position) or could use an alternate pool. Resolves the same host, llm and node pools a real start uses. Read-only - takes no lease and changes no state.
+      operationId: capacityAdmission
+      tags: [Autonomous]
+      parameters:
+        - {name: backend, in: query, required: true, description: Backend or named LLM to start (llm is accepted as an alias), schema: {type: string}}
+        - {name: llm, in: query, required: false, description: Alias for backend, schema: {type: string}}
+        - {name: node, in: query, required: false, description: Compute node the start would use, schema: {type: string}}
+        - {name: model, in: query, required: false, description: Model wanted, schema: {type: string}}
+        - {name: role, in: query, required: false, description: Dispatch role, schema: {type: string, enum: [worker, verifier, planner, interactive]}}
+        - {name: priority, in: query, required: false, description: Integer queue priority; higher runs first, schema: {type: integer}}
+        - {name: prd_id, in: query, required: false, description: Automaton the start would belong to, schema: {type: string}}
+      responses:
+        "200":
+          description: Admission decision
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  kind: {type: string, enum: [admit, queued, alternate_available]}
+                  queue_position: {type: integer, description: 1-based; 0 when admitted}
+                  reason: {type: string}
+                  resets_at: {type: string, format: date-time}
+                  alternates:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        pool: {type: string}
+                        node: {type: string}
+                        model: {type: string}
+        "400":
+          description: Missing or unknown backend, or an invalid priority or role
   /api/autonomous/prds/{id}/set_priority:
     post:
       summary: Set a PRD's capacity-queue priority

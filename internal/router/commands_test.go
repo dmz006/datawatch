@@ -1,6 +1,9 @@
 package router
 
 import (
+	"net/http"
+	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -517,5 +520,36 @@ func TestHandleCapacity_UsesCapacityFn(t *testing.T) {
 	mu.Unlock()
 	if !strings.Contains(joined, "not available") || !strings.Contains(joined, "host: 1/2") {
 		t.Fatalf("sent=%q", joined)
+	}
+}
+
+func TestParse_CapacityAdmission(t *testing.T) {
+	cmd := Parse("capacity admission x n1 m1")
+	if cmd.Type != CmdCapacityAdmission || cmd.Text != "x n1 m1" {
+		t.Fatalf("Parse = %+v", cmd)
+	}
+	if !strings.Contains(HelpText("h"), "capacity admission <backend> [node] [model]") {
+		t.Fatal("help text must list capacity admission")
+	}
+}
+
+func TestCapacityAdmission_CommUsageAndReply(t *testing.T) {
+	r := NewRouter("h", "g", nil, nil, 0, nil)
+	if got := r.HandleTestMessage("capacity admission"); len(got) != 1 || !strings.Contains(got[0], "Usage: capacity admission") {
+		t.Fatalf("usage reply %q", got)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, q *http.Request) {
+		if q.URL.Path != "/api/capacity/admission" || q.URL.Query().Get("backend") != "x" || q.URL.Query().Get("node") != "n1" || q.URL.Query().Get("model") != "m1" {
+			http.Error(w, "bad "+q.URL.String(), 400)
+			return
+		}
+		_, _ = w.Write([]byte(`{"kind":"queued","queue_position":2,"reason":"pool full"}`))
+	}))
+	defer srv.Close()
+	port, _ := strconv.Atoi(srv.URL[strings.LastIndexByte(srv.URL, ':')+1:])
+	r.SetWebPort(port)
+	got := r.HandleTestMessage("capacity admission x n1 m1")
+	if len(got) != 1 || !strings.Contains(got[0], "would be queued at position 2: pool full") {
+		t.Fatalf("reply %q", got)
 	}
 }

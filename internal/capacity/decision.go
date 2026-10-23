@@ -1,6 +1,7 @@
 package capacity
 
 import (
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -193,4 +194,14 @@ func FormatDecision(d Decision) string {
 		fmt.Fprintf(&b, "\nalternate available: %s", strings.Join(names, ", "))
 	}
 	return b.String()
+}
+
+// FormatDecisionJSON decodes a Decision JSON body and renders it with
+// FormatDecision, so every surface prints the same text for the same answer.
+func FormatDecisionJSON(body []byte) (string, error) {
+	var d Decision
+	if err := json.Unmarshal(body, &d); err != nil {
+		return "", fmt.Errorf("admission response: %w", err)
+	}
+	return FormatDecision(d), nil
 }

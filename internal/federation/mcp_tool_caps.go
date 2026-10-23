@@ -136,6 +136,7 @@ var MCPToolCap = map[string]string{
 	"backends_active":                 CapHealthRead,
 	"backends_list":                   CapHealthRead,
 	"capacity_status":                 CapAutonomousRead,
+	"capacity_admission":              CapAutonomousRead,
 	"channel_diagnostics":             CapCommRead,
 	"channel_info":                    CapCommRead,
 	"channel_routing_config_get":      CapConfigRead,

@@ -13,35 +13,36 @@ import (
 type CommandType string
 
 const (
-	CmdNew           CommandType = "new"
-	CmdList          CommandType = "list"
-	CmdStatus        CommandType = "status"
-	CmdSend          CommandType = "send"
-	CmdKill          CommandType = "kill"
-	CmdPriority      CommandType = "priority"
-	CmdTail          CommandType = "tail"
-	CmdAttach        CommandType = "attach"
-	CmdHistory       CommandType = "history"
-	CmdSetup         CommandType = "setup"
-	CmdVersion       CommandType = "version"
-	CmdUpdateCheck   CommandType = "update"
-	CmdRestart       CommandType = "restart"
-	CmdSchedule      CommandType = "schedule"
-	CmdScheduleSpawn CommandType = "schedule_spawn" // GH#128
-	CmdAlerts        CommandType = "alerts"
-	CmdStats         CommandType = "stats"
-	CmdCapacity      CommandType = "capacity"
-	CmdConfigure     CommandType = "configure"
-	CmdCopy          CommandType = "copy"
-	CmdPrompt        CommandType = "prompt"
-	CmdRemember      CommandType = "remember"
-	CmdRecall        CommandType = "recall"
-	CmdMemories      CommandType = "memories"
-	CmdForget        CommandType = "forget"
-	CmdLearnings     CommandType = "learnings"
-	CmdKG            CommandType = "kg"
-	CmdMemReindex    CommandType = "mem_reindex"
-	CmdResearch      CommandType = "research"
+	CmdNew               CommandType = "new"
+	CmdList              CommandType = "list"
+	CmdStatus            CommandType = "status"
+	CmdSend              CommandType = "send"
+	CmdKill              CommandType = "kill"
+	CmdPriority          CommandType = "priority"
+	CmdTail              CommandType = "tail"
+	CmdAttach            CommandType = "attach"
+	CmdHistory           CommandType = "history"
+	CmdSetup             CommandType = "setup"
+	CmdVersion           CommandType = "version"
+	CmdUpdateCheck       CommandType = "update"
+	CmdRestart           CommandType = "restart"
+	CmdSchedule          CommandType = "schedule"
+	CmdScheduleSpawn     CommandType = "schedule_spawn" // GH#128
+	CmdAlerts            CommandType = "alerts"
+	CmdStats             CommandType = "stats"
+	CmdCapacity          CommandType = "capacity"
+	CmdCapacityAdmission CommandType = "capacity-admission"
+	CmdConfigure         CommandType = "configure"
+	CmdCopy              CommandType = "copy"
+	CmdPrompt            CommandType = "prompt"
+	CmdRemember          CommandType = "remember"
+	CmdRecall            CommandType = "recall"
+	CmdMemories          CommandType = "memories"
+	CmdForget            CommandType = "forget"
+	CmdLearnings         CommandType = "learnings"
+	CmdKG                CommandType = "kg"
+	CmdMemReindex        CommandType = "mem_reindex"
+	CmdResearch          CommandType = "research"
 	// v5.27.0 — mempalace alignment surfaces over chat (parity rule).
 	//   "memory pin <id>"                — toggle pinned flag
 	//   "memory sweep"                   — dry-run similarity-stale eviction
@@ -1155,6 +1156,9 @@ func Parse(text string) Command {
 	case lower == "capacity":
 		return Command{Type: CmdCapacity}
 
+	case lower == "capacity admission" || strings.HasPrefix(lower, "capacity admission "):
+		return Command{Type: CmdCapacityAdmission, Text: strings.TrimSpace(text[len("capacity admission"):])}
+
 	case strings.HasPrefix(lower, "configure ") || strings.HasPrefix(lower, "config ") || strings.HasPrefix(lower, "set "):
 		rest := text[strings.Index(lower, " ")+1:]
 		return Command{Type: CmdConfigure, Text: strings.TrimSpace(rest)}
@@ -1787,6 +1791,7 @@ schedule-results <name>         recent results history for one schedule
 alerts [n|system]               show last N alerts or system-only alerts
 stats                           show system statistics (CPU, memory, disk, sessions)
 capacity                        show Automata capacity pools, holders and wait queue
+capacity admission <backend> [node] [model]  would a start be admitted now, queued or moved elsewhere (changes nothing)
 configure <key>=<value>         set a config value (e.g. session.console_cols=120)
 configure list                  show common configurable settings
 setup <service>                 configure a backend (telegram/discord/.../llm/session/mcp)
