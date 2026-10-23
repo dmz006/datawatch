@@ -696,6 +696,15 @@ type Story struct {
 	Truncated []TruncatedField `json:"truncated,omitempty"`
 }
 
+// VerifierPolicyChoice records which verifier backend the verifier policy
+// picked for one verification and why.
+type VerifierPolicyChoice struct {
+	Backend string    `json:"backend"`
+	Model   string    `json:"model,omitempty"`
+	Reason  string    `json:"reason,omitempty"`
+	At      time.Time `json:"at"`
+}
+
 // NudgeEvent records one idle-worker nudge sent to a task's session.
 type NudgeEvent struct {
 	At      time.Time `json:"at"`
@@ -741,6 +750,10 @@ type Task struct {
 	// VerifierInfraFailures counts consecutive infra verifier failures on this
 	// task; reset by any non-infra result and after an escalated run.
 	VerifierInfraFailures int `json:"verifier_infra_failures,omitempty"`
+	// VerifierPolicyChoice is the backend the verifier policy picked for this
+	// task's latest verification, with the model and the reason. Nil when the
+	// policy did not decide (mode fixed, no override).
+	VerifierPolicyChoice *VerifierPolicyChoice `json:"verifier_policy_choice,omitempty"`
 	// Kind classifies the task for the smoke-verification feature story
 	// (independent deliverable; this task only adds the field): "smoke" |
 	// "final_gate" | "" (ordinary). Empty = ordinary task; readers must

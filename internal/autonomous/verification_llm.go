@@ -26,6 +26,9 @@ const (
 	// verification_backends capacity pool rather than by the
 	// task → story → Automaton → global chain.
 	VerifierSourcePool = "pool"
+	// VerifierSourcePolicy marks a backend picked by the verifier policy
+	// (autonomous.verifier_policy) rather than by the chain or the pool.
+	VerifierSourcePolicy = "policy"
 )
 
 // ResolveVerificationLLM resolves the verifier LLM for task within prd.
