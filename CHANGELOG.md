@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.100 — Test homes no longer leak a Go module cache into the temp directory
+
+### Fixed
+
+- **The Go test packages no longer leave a 500 MB throwaway home behind each run.** The test home that `internal/session`, `internal/server` and `internal/mcp` create gets a read-only Go module cache whenever a test runs the go tool, and the old cleanup silently failed on it, so a PRD's repeated test runs filled the temporary directory with dozens of `dw-test-home-*` directories (28 GB in one afternoon). The three packages now share one helper that makes the tree writable before removing it, and a regression test and a leak gate fail the build if any such directory is left behind.
+
 ## v9.5.99 — The quality gate runs through a shell and compares by test name
 
 ### Fixed
