@@ -1618,6 +1618,8 @@
   "prd_settings_priority_hint": "Used when tasks wait for free capacity.",
   "settings_reserved_interactive": "Slots reserved for interactive sessions",
   "settings_session_capacity_wait": "Interactive session capacity wait (sec)",
+  "settings_session_task_delivery_window": "Task delivery wait per attempt (sec)",
+  "settings_session_task_delivery_attempts": "Task delivery attempts",
   "settings_session_summary_terminal_limit": "Résumé des sessions : sessions terminées conservées (0 = toutes)",
   "settings_session_summary_text_chars": "Résumé des sessions : longueur du texte (caractères)",
   "settings_ws_session_list_default": "Mises à jour des sessions en direct (clients sans hello)",

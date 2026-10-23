@@ -34,6 +34,18 @@ session:
   # autonomous.capacity_wait_timeout_seconds below, which bounds a
   # background task's retry loop instead.
   capacity_wait_seconds: 8
+  # How long one OneShot task-delivery attempt waits for the Claude main prompt
+  # to appear (disclaimer banner, model selection, etc.) before trying again.
+  # A Claude session must finish starting its channel and tool servers before
+  # the prompt shows, so the task text can take a while to become deliverable.
+  # Default: 60.
+  task_delivery_window_seconds: 60
+  # How many delivery attempts are made before the task fails as undelivered;
+  # between attempts a backoff pause (5s, then 10s) is waited. The total wait
+  # is attempts * window plus that backoff — about 195 seconds with the
+  # defaults (3 * 60s + 15s). A session whose process has already exited
+  # still fails at once, without waiting out the budget.
+  task_delivery_attempts: 3
   # Seconds of idle output before declaring a session is waiting for input
   input_idle_timeout: 10
   # Default number of output lines returned by tail/status commands

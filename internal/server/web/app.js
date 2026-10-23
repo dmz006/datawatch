@@ -14963,6 +14963,8 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'session.max_sessions', label: 'Max concurrent sessions', type: 'number' },
     { key: 'session.reserved_interactive', label: 'Slots reserved for interactive sessions', labelKey: 'settings_reserved_interactive', type: 'number', placeholder: '1' },
     { key: 'session.capacity_wait_seconds', label: 'Interactive session capacity wait (sec)', labelKey: 'settings_session_capacity_wait', type: 'number', placeholder: '8' },
+    { key: 'session.task_delivery_window_seconds', label: 'Task delivery wait per attempt (sec)', labelKey: 'settings_session_task_delivery_window', type: 'number', placeholder: '60' },
+    { key: 'session.task_delivery_attempts', label: 'Task delivery attempts', labelKey: 'settings_session_task_delivery_attempts', type: 'number', placeholder: '3' },
     { key: 'session.input_idle_timeout', label: 'Input idle timeout (sec)', type: 'number' },
     { key: 'session.tail_lines', label: 'Tail lines', type: 'number' },
     { key: 'session.alert_context_lines', label: 'Alert context lines', type: 'number', placeholder: '10' },
