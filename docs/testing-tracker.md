@@ -480,6 +480,40 @@ and the server's 30 s protocol-ping ticker (`internal/server/ws.go` `writePump`)
 separate, legitimate disconnect/reconnect mechanisms, recorded for the record and not
 fixed in this pass. See CHANGELOG.md [Unreleased].
 
+## Observer mobile-fit regression guard — `scripts/test-stories/pwa/TS-802.mjs` (TS-802, wrapper `scripts/test-stories/TS-802.sh`) + desktop guard `scripts/test-stories/pwa/TS-803.mjs` (TS-803)
+
+BL572 (Observer System Statistics does not fit on a phone): the two regression
+stories lock the unfixed-layout baselines so the layout fix can be validated
+against recorded evidence.
+
+TS-802 replays the recorded scenario set from
+`docs/testing/runs/observer-mobile-fit/repro-report.json` (29,968 findings in 68
+groups, 2026-10-23) — every scenario name in
+`scripts/test-stories/pwa/mobile-fit-observer-regressions.json` (one entry per
+group, `failed_before_fix: true`), the full Observer `quick` profile matrix
+(14 states x 320x568 / 360x740 / 390x844 / 768x1024 dark + 360x740 landscape +
+360x740 light + z200 first state), the recorded zoom cells (three-peers
+320x568 z130/z200, three-peers 390x844 z200, no-peers 568x320), the named
+`system-stats-phone` scenario at its recorded scope `#settings-sec-stats`, and
+the three interactions (section-collapse-expand, refresh, rerender-timers).
+It then re-emits the mobile-fit report into the story evidence directory and
+FAILS (exit 1) while any of the 68 recorded group ids still produces findings —
+so on the unfixed tree it MUST fail (that is its job); after the Observer /
+System Statistics layout fix lands it must pass with none of the 68 groups
+reproducing. Runs through the shared runStory wrapper (single retry on
+transient navigation errors).
+
+TS-803 (`pwa/TS-803.mjs`) is the desktop/tablet counterpart: it records
+Observer tracked-selector rects at 1280x800, 1920x1080 and 768x1024 and asserts
+they stay within `max(2px, 1%)` tolerance of the unfixed-layout baseline
+(`pwa/mobile-fit-desktop-baseline.json`), so the mobile fix does not move
+tracked desktop values.
+
+| Story | Replay set | Verdict on unfixed tree | Verdict after fix | Notes |
+|---|---|---|---|---|
+| `pwa/TS-802.mjs` (TS-802) | 61 recorded cells + quick matrix + 3 zoom/landscape cells + `system-stats-phone` + 3 interactions | MUST FAIL (68 recorded groups still present) | Pass (0 of 68 reproduce) | Report + screenshots under `$EVIDENCE_DIR/TS-802/`; data: `pwa/mobile-fit-observer-regressions.json` |
+| `pwa/TS-803.mjs` (TS-803) | three-peers at 1280x800, 1920x1080, 768x1024 | Pass (within tolerance of unfixed baseline) | Still pass; update baseline only for deliberate desktop changes | Baseline: `pwa/mobile-fit-desktop-baseline.json` |
+
 ## PWA connection stability — `scripts/test-stories/pwa/TS-799.mjs` (TS-799, wrapper `scripts/test-stories/TS-799.sh`)
 
 Story TS-799: with an open session terminal, the connection is flapped 6 times
