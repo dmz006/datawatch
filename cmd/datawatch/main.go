@@ -1064,6 +1064,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	defer func() { _ = mgr.Close() }()
 	// Old terminal sessions move to the archive file (age and field cap are
 	// the store defaults until the config wiring sets them).
+	mgr.SetFlushInterval(cfg.Session.EffectiveStoreFlushInterval())
+	mgr.SetArchiveAfter(time.Duration(cfg.Session.EffectiveStoreArchiveAfterDays()) * 24 * time.Hour)
+	mgr.SetFieldCap(cfg.Session.EffectiveStoreFieldCapKB() << 10)
 	mgr.StartArchiver(session.DefaultArchiveInterval)
 	if cfg.Session.MaxSessions > 0 {
 		mgr.SetMaxSessions(cfg.Session.MaxSessions)
@@ -6123,6 +6126,7 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				})
 			}
 			aAPI := autonomouspkg.NewAPI(amgr)
+			aAPI.SetStoreSideFileCapKB(cfg.Session.EffectiveStoreSideFileCapKB())
 			// Automation coordinator: advances an Automation's cursor from
 			// member lifecycle events (nil-safe if it could not be built).
 			autoCoord := autonomouspkg.NewCoordinator(amgr, aAPI)
@@ -13023,6 +13027,9 @@ func runMCP(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return fmt.Errorf("create session manager: %w", err)
 	}
+	mgr.SetFlushInterval(cfg.Session.EffectiveStoreFlushInterval())
+	mgr.SetArchiveAfter(time.Duration(cfg.Session.EffectiveStoreArchiveAfterDays()) * 24 * time.Hour)
+	mgr.SetFieldCap(cfg.Session.EffectiveStoreFieldCapKB() << 10)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

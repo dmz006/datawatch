@@ -5475,6 +5475,10 @@ func (m *Manager) StartArchiver(interval time.Duration) { m.store.StartArchiver(
 // moved. The background pass does the same on a timer.
 func (m *Manager) ArchiveSessions(now time.Time) (int, error) { return m.store.ArchiveOnce(now) }
 
+// SetFlushInterval sets how long the session store coalesces changes before
+// writing them (<= 0 writes through on every change).
+func (m *Manager) SetFlushInterval(d time.Duration) { m.store.SetFlushInterval(d) }
+
 // SetFieldCap sets the per-field size cap in bytes for persisted sessions
 // (<= 0 disables it).
 func (m *Manager) SetFieldCap(n int) { m.store.SetFieldCap(n) }

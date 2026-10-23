@@ -15408,6 +15408,10 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'session.capacity_wait_seconds', label: 'Interactive session capacity wait (sec)', labelKey: 'settings_session_capacity_wait', type: 'number', placeholder: '8' },
     { key: 'session.task_delivery_window_seconds', label: 'Task delivery wait per attempt (sec)', labelKey: 'settings_session_task_delivery_window', type: 'number', placeholder: '60' },
     { key: 'session.task_delivery_attempts', label: 'Task delivery attempts', labelKey: 'settings_session_task_delivery_attempts', type: 'number', placeholder: '3' },
+    { key: 'session.store_flush_interval', label: 'Session store write delay (ms; 0 = write through)', labelKey: 'settings_session_store_flush_interval', helpKey: 'settings_session_store_flush_interval_help', type: 'number', placeholder: '1000' },
+    { key: 'session.store_archive_after_days', label: 'Archive finished sessions after (days; 0 = never)', labelKey: 'settings_session_store_archive_after_days', helpKey: 'settings_session_store_archive_after_days_help', type: 'number', placeholder: '14' },
+    { key: 'session.store_field_cap_kb', label: 'Session store inline field cap (KB)', labelKey: 'settings_session_store_field_cap_kb', helpKey: 'settings_session_store_field_cap_kb_help', type: 'number', placeholder: '256' },
+    { key: 'session.store_side_file_cap_kb', label: 'Automaton store side-file threshold (KB)', labelKey: 'settings_session_store_side_file_cap_kb', helpKey: 'settings_session_store_side_file_cap_kb_help', type: 'number', placeholder: '64' },
     { key: 'session.input_idle_timeout', label: 'Input idle timeout (sec)', type: 'number' },
     { key: 'session.tail_lines', label: 'Tail lines', type: 'number' },
     { key: 'session.alert_context_lines', label: 'Alert context lines', type: 'number', placeholder: '10' },
@@ -15915,7 +15919,7 @@ function loadCommsConfig() {
           </div>`;
         } else {
           html += `<div class="settings-row" style="justify-content:space-between;">
-            <div class="settings-label">${escHtml(f.label)}</div>
+            <div class="settings-label"${f.helpKey ? ` title="${escHtml(t(f.helpKey) || '')}"` : ''}>${escHtml(f.label)}</div>
             <input type="${f.type === 'number' ? 'number' : 'text'}" class="form-input general-cfg-input" value="${escHtml(String(val === 0 ? 0 : (val || '')))}"
               placeholder="${escHtml(f.placeholder || '')}"${f.min !== undefined ? ` min="${f.min}"` : ''}
               onchange="saveGeneralField('${f.key}', this.value)" />
@@ -16090,7 +16094,7 @@ function loadLLMTabConfig() {
           const displayVal = effectiveVal !== undefined && effectiveVal !== null ? String(effectiveVal) : '';
           const inputId = 'gcfg-input-' + f.key.replace(/[^a-z0-9_-]/gi, '-');
           html += `<div class="settings-row" style="justify-content:space-between;">
-            <div class="settings-label">${escHtml(f.label)}</div>
+            <div class="settings-label"${f.helpKey ? ` title="${escHtml(t(f.helpKey) || '')}"` : ''}>${escHtml(f.label)}</div>
             <span style="display:flex;align-items:center;flex:1;justify-content:flex-end;">
               <input id="${inputId}" type="${f.type === 'number' ? 'number' : 'text'}" class="form-input general-cfg-input" value="${escHtml(displayVal)}"
                 placeholder="${escHtml(effectivePlaceholder)}"

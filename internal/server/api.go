@@ -850,6 +850,25 @@ type AutonomousAPI interface {
 	InvokeGuardrailByName(name, projectDir string) (any, error)
 }
 
+// storeSideFileCapSetter is implemented by autonomous APIs whose PRD store
+// takes a live side-file threshold.
+type storeSideFileCapSetter interface{ SetStoreSideFileCapKB(kb int) }
+
+// applyStoreConfig pushes the session.store_* settings to the live session
+// and PRD stores. The daemon calls it at startup and a config write calls it
+// again, so a change takes effect without a restart.
+func (s *Server) applyStoreConfig() {
+	sc := &s.cfg.Session
+	if s.manager != nil {
+		s.manager.SetFlushInterval(sc.EffectiveStoreFlushInterval())
+		s.manager.SetArchiveAfter(time.Duration(sc.EffectiveStoreArchiveAfterDays()) * 24 * time.Hour)
+		s.manager.SetFieldCap(sc.EffectiveStoreFieldCapKB() << 10)
+	}
+	if setter, ok := s.autonomousMgr.(storeSideFileCapSetter); ok {
+		setter.SetStoreSideFileCapKB(sc.EffectiveStoreSideFileCapKB())
+	}
+}
+
 // SetAutonomousAPI is the wiring entry point used by main.go.
 func (s *Server) SetAutonomousAPI(a AutonomousAPI) { s.autonomousMgr = a }
 
@@ -5612,6 +5631,10 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 				"alert_context_lines":          s.cfg.Session.AlertContextLines,
 				"task_delivery_window_seconds": int(s.cfg.Session.EffectiveTaskDeliveryWindow().Seconds()),
 				"task_delivery_attempts":       s.cfg.Session.EffectiveTaskDeliveryAttempts(),
+				"store_flush_interval":         int(s.cfg.Session.EffectiveStoreFlushInterval().Milliseconds()),
+				"store_archive_after_days":     s.cfg.Session.EffectiveStoreArchiveAfterDays(),
+				"store_field_cap_kb":           s.cfg.Session.EffectiveStoreFieldCapKB(),
+				"store_side_file_cap_kb":       s.cfg.Session.EffectiveStoreSideFileCapKB(),
 				"default_project_dir":          s.cfg.Session.DefaultProjectDir,
 				"workspace_root":               s.cfg.Session.WorkspaceRoot,
 				"claude_enabled":               s.cfg.Session.ClaudeEnabled,
@@ -6232,6 +6255,12 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	// B30: apply hot-reloadable session knobs to live manager.
 	if s.manager != nil {
 		s.manager.SetScheduleSettleMs(s.cfg.Session.ScheduleSettleMs)
+	}
+	for k := range patch {
+		if strings.HasPrefix(k, "session.store_") {
+			s.applyStoreConfig()
+			break
+		}
 	}
 	// BL394 -- re-sync the live push-SSRF-guard config on any push.* change.
 	for k := range patch {
@@ -7580,6 +7609,24 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			// task — no restart needed.
 			if n, ok := toInt(v); ok && n >= 1 {
 				cfg.Session.TaskDeliveryAttempts = n
+			}
+		case "session.store_flush_interval":
+			// Milliseconds; 0 writes through. Applied to the live store by the daemon's
+			// config-apply hook, so no restart is needed.
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Session.StoreFlushInterval = &n
+			}
+		case "session.store_archive_after_days":
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Session.StoreArchiveAfterDays = &n
+			}
+		case "session.store_field_cap_kb":
+			if n, ok := toInt(v); ok && n >= 1 {
+				cfg.Session.StoreFieldCapKB = n
+			}
+		case "session.store_side_file_cap_kb":
+			if n, ok := toInt(v); ok && n >= 1 {
+				cfg.Session.StoreSideFileCapKB = n
 			}
 		case "autonomous.stale_task_seconds":
 			if n, ok := toInt(v); ok && n >= 0 {

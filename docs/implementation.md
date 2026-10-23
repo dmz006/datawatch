@@ -882,6 +882,10 @@ All fields in `~/.datawatch/config.yaml`:
 | `session.claude_code_bin` | string | `claude` | Path to the claude-code binary (can be absolute or a `PATH`-relative name) |
 | `session.task_delivery_window_seconds` | int | `60` | How long one OneShot task-delivery attempt waits for the Claude main prompt to appear (the session must start its channel and tool servers before the prompt shows) before trying again |
 | `session.task_delivery_attempts` | int | `3` | How many delivery attempts are made before the task fails as undelivered; between attempts a 5s then 10s backoff pause is waited, so the total wait is attempts × window + 15s (about 195s with the defaults). A session whose process has already exited still fails at once |
+| `session.store_flush_interval` | int | `1000` | Milliseconds the session store batches changes before the background writer saves them; `0` saves on every change. Applies live on any config write (`PUT /api/config`, web UI, `configure`, `datawatch config set`, MCP `config_set`) |
+| `session.store_archive_after_days` | int | `14` | Days after its last update that a finished session moves to the archive file; `0` disables archiving. Applies live |
+| `session.store_field_cap_kb` | int | `256` | Largest session text field kept inline in the session store, in KB; longer text is cut with a marker and the full text goes to a side file. Applies to later writes |
+| `session.store_side_file_cap_kb` | int | `64` | Automaton (PRD) text longer than this many KB is stored in a side file next to its record. Existing records are rewritten with the new value when their Automaton next changes |
 | `server.enabled` | bool | `true` | Whether to start the HTTP/WebSocket server |
 | `server.host` | string | `0.0.0.0` | Bind address. Use `0.0.0.0` for all interfaces (including Tailscale) |
 | `server.port` | int | `8080` | HTTP/WebSocket listen port |
