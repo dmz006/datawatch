@@ -358,6 +358,9 @@ func (a *API) SetConfig(v any) error {
 	if err := json.Unmarshal(raw, &cfg); err != nil {
 		return fmt.Errorf("config: %w", err)
 	}
+	if cfg.CapacityRateRequests < 0 || cfg.CapacityRateTokens < 0 || cfg.CapacityRateWindowSeconds < 0 {
+		return fmt.Errorf("config: capacity_rate_requests, capacity_rate_tokens and capacity_rate_window_seconds must be >= 0")
+	}
 	// max_engines_per_node is clamped to 1 the same way config load does
 	// (config.Load normalizes anything below 1), so every write path agrees.
 	if cfg.MaxEnginesPerNode < 1 {

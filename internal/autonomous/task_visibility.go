@@ -382,6 +382,8 @@ func waitResetsAt(cause WaitCause, reason string, bo *Backoff, cooldownFn func()
 				return &at
 			}
 		}
+	case WaitCauseRateCeiling:
+		return rateCeilingResetsAt(reason)
 	case WaitCauseGlobalCooldown:
 		if cooldownFn != nil {
 			if until := cooldownFn(); !until.IsZero() {

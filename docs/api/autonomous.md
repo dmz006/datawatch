@@ -1074,6 +1074,57 @@ dot — the raw id fields still carry the real id in the body.
   the `(untitled <short id>)` fallback above. The web tests asserting the
   rendering are in `internal/server/web/app-capacity-names.test.js`.
 
+### Rate ceilings
+
+A pool can carry a rolling-window rate ceiling (requests and/or tokens per
+window) on top of its concurrency limit. The fields below are pure additions;
+a pool without a ceiling serialises exactly as before.
+
+| Where | Field | Meaning |
+|---|---|---|
+| `pools[]` | `rate_requests`, `rate_tokens` | the ceilings (omitted when unset) |
+| `pools[]` | `rate_window_seconds` | rolling window length |
+| `pools[]` | `requests_in_window`, `tokens_in_window` | usage counted in the window now |
+| `pools[]` | `rate_resets_at` | when the window next frees usage (omitted when nothing is counted) |
+| `waiting[]` | `cause` | classified wait cause; `rate_ceiling` when a pool's rate ceiling blocks the waiter |
+| `waiting[]` | `resets_at` | when the window will free the waiter (rate-ceiling waits only, when known) |
+| `tasks.waiting[]`, `queue[]` in autonomous status | `cause`, `resets_at` | same `rate_ceiling` cause and reset time for a task waiting on the ceiling |
+
+The wait `reason` reads `pool <p> rate ceiling: <requests|tokens> <used>/<ceiling> in <window>, resets at <RFC3339>`
+(the reset part is left out when unknown). `readable_reason` words it as
+`pool <p> rate ceiling: requests 3/3 used, resets in 5m`. The audit log records
+the wait with the existing `autonomous_capacity_wait` action: `cause` is
+`rate_ceiling`, and `pool` and `resets_at` appear in the details.
+
+### Admission query
+
+`GET /api/capacity/admission` answers "would a start of this backend be
+admitted now?" without starting anything. It takes no lease, adds no waiter
+and changes no state. It resolves the same `host`, `llm:<name>` and
+`node:<name>` pools a real start uses.
+
+| Query parameter | Meaning |
+|---|---|
+| `backend` (or `llm`) | backend or named LLM to start; required |
+| `node`, `model` | compute node and model wanted |
+| `role` | `worker` (default), `verifier`, `planner` or `interactive` |
+| `priority` | integer queue priority, higher first (default 0) |
+| `prd_id` | Automaton the start would belong to (fairness group) |
+
+The response is a Decision:
+
+```json
+{"kind": "queued", "queue_position": 1, "reason": "pool llm:x rate ceiling: requests 3/3 in 1h0m0s, resets at 2026-10-23T11:00:00Z", "resets_at": "2026-10-23T11:00:00Z", "alternates": [{"pool": "llm:y", "node": "", "model": ""}]}
+```
+
+`kind` is `admit`, `queued` or `alternate_available`; `queue_position` is
+1-based (0 when admitted); `resets_at` is present only when a rate ceiling is
+the blocker and the time is known; `alternates` lists pools of the same kind
+elsewhere with room. A missing or unknown backend, a non-integer priority or
+an unknown role returns 400. The same query is the MCP tool
+`capacity_admission` (read-only), `datawatch capacity admission --backend <b>`
+and the chat command `capacity admission <backend> [node] [model]`.
+
 ---
 
 ## CLI

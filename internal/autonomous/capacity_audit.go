@@ -82,7 +82,7 @@ func (r *CapacityAudit) Record(actor, action, subject string, details map[string
 // is set, falling back to "(untitled <short id>)" when a title is missing.
 func (r *CapacityAudit) AdmissionWait(taskID, prdID string, cause WaitCause, reason string, pools []string) {
 	names := r.admissionNames(taskID, prdID, reason)
-	r.Record(AuditActorAutonomous, audit.ActionCapacityWait, taskID, map[string]any{
+	details := map[string]any{
 		"prd_id":     prdID,
 		"cause":      string(cause),
 		"reason":     reason,
@@ -91,7 +91,18 @@ func (r *CapacityAudit) AdmissionWait(taskID, prdID string, cause WaitCause, rea
 		"task_title": titleOrUntitled(names.TaskTitle, shortID(taskID)),
 		"prd_title":  titleOrUntitled(names.PRDTitle, shortID(prdID)),
 		"readable":   names.Readable,
-	})
+	}
+	// A rate-ceiling wait also names the ceilinged pool and, when the window
+	// will free it, the reset time.
+	if cause == WaitCauseRateCeiling {
+		if pool, at, ok := RateCeilingWaitFacts(reason); ok {
+			details["pool"] = pool
+			if !at.IsZero() {
+				details["resets_at"] = at.UTC().Format(time.RFC3339)
+			}
+		}
+	}
+	r.Record(AuditActorAutonomous, audit.ActionCapacityWait, taskID, details)
 }
 
 // AdmissionAdmitted records that a waiting task was admitted after waiting

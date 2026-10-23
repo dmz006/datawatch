@@ -15,6 +15,10 @@ exec_steps:
     description: List every budget audit event (the trailing * makes the action a prefix match)
     args: {action: "autonomous_budget_*", limit: 20}
     read_only: true
+  - tool: capacity_admission
+    description: Ask whether a start of a backend would be admitted now, queued or moved elsewhere (changes nothing)
+    args: {backend: "ollama"}
+    read_only: true
 ---
 
 # Automata capacity: waiting instead of failing
@@ -489,6 +493,84 @@ not confirm automatically that a named peer shares the account, because the
 check that would do that does not exist yet, so the list you write is the
 confirmation, and the status says so next to each counted peer. A peer that
 cannot be reached counts as zero and never stalls your work.
+
+## Rate ceilings
+
+A pool can also carry a **rate ceiling**: a cap on how many requests or
+tokens it may use in a rolling window, on top of the concurrency limit. It
+is for plans that meter usage per hour. With no ceiling set, nothing
+changes.
+
+### Set it
+
+Three `autonomous` keys control it. Each applies to every `llm:<name>` pool
+and takes effect within about ten seconds, with no restart:
+
+| Key | Meaning |
+|---|---|
+| `capacity_rate_requests` | lease grants allowed per window; `0` = no requests ceiling |
+| `capacity_rate_tokens` | tokens allowed per window; `0` = no tokens ceiling |
+| `capacity_rate_window_seconds` | window length; `0` = one hour |
+
+```bash
+# CLI: 60 requests and 2,000,000 tokens per 30 minutes
+datawatch autonomous config-set --capacity-rate-requests 60 \
+  --capacity-rate-tokens 2000000 --capacity-rate-window-seconds 1800
+
+# Remove the ceilings
+datawatch autonomous config-set --capacity-rate-requests 0 --capacity-rate-tokens 0
+
+# REST
+curl -sk -X PUT -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"capacity_rate_requests":60}' https://localhost:8443/api/autonomous/config
+```
+
+The same keys are available from the MCP tool `autonomous_config_set`, the
+chat command `configure autonomous.capacity_rate_requests=60` and the
+Settings → Autonomous card. Negative values are refused.
+
+### What a wait looks like
+
+A task that hits the ceiling waits instead of failing, the same as any full
+pool. The reason names the pool, the dimension, the usage and the reset time:
+
+```
+pool llm:ollama rate ceiling: requests 60/60 in 30m0s, resets at 2026-10-23T11:00:00Z
+```
+
+The readable form says `resets in 5m`. In `datawatch capacity` the pool
+row shows the usage in the window, and the wait row shows the cause
+`rate_ceiling` and the reset time. The task starts by itself when the
+window frees enough usage; the reset time is when the oldest counted usage
+leaves the window. If the daemon cannot tell when that is, no reset time is
+shown.
+
+### Would this start be admitted?
+
+Ask before you start anything. The query takes no lease, adds nothing to
+the queue and changes no state. The answer is **admit**, **queued** (with
+your position, the reason and, for a rate ceiling, the reset time) or
+**alternate_available** (another pool of the same kind has room).
+
+```bash
+# CLI
+datawatch capacity admission --backend ollama --node gpu1 --model qwen3.8:27b
+datawatch capacity admission --backend ollama --json
+
+# REST
+curl -sk -H "Authorization: Bearer $TOKEN" \
+  'https://localhost:8443/api/capacity/admission?backend=ollama&role=worker&priority=5'
+
+# MCP: capacity_admission with the same arguments (backend, node, model, role, priority, prd_id)
+
+# Chat channels
+capacity admission ollama gpu1 qwen3.8:27b
+```
+
+Text answers read `would be admitted now`, or `would be queued at position
+2: <reason>; resets at <time>` followed by `alternate available: <pool>`
+when there is one. All four surfaces give the same answer for the same
+state.
 
 ## Why a task is waiting
 

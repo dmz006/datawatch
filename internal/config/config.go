@@ -2222,6 +2222,16 @@ type AutonomousConfig struct {
 	// CapacityGPUUtilPct holds new tasks back while a node's busiest GPU is at
 	// or above this utilisation percent (0 = off).
 	CapacityGPUUtilPct int `yaml:"capacity_gpu_util_pct,omitempty" json:"capacity_gpu_util_pct,omitempty"`
+	// CapacityRateRequests caps the lease grants each llm: pool may make in
+	// one rolling window (CapacityRateWindowSeconds). 0 = no requests ceiling.
+	CapacityRateRequests int `yaml:"capacity_rate_requests,omitempty" json:"capacity_rate_requests,omitempty"`
+	// CapacityRateTokens caps the tokens each llm: pool may record in one
+	// rolling window. 0 = no tokens ceiling.
+	CapacityRateTokens int `yaml:"capacity_rate_tokens,omitempty" json:"capacity_rate_tokens,omitempty"`
+	// CapacityRateWindowSeconds is the rolling window length for the two
+	// ceilings above. 0 means the default of 3600 and matters only when a
+	// ceiling is set.
+	CapacityRateWindowSeconds int `yaml:"capacity_rate_window_seconds,omitempty" json:"capacity_rate_window_seconds,omitempty"`
 	// PlanTierMaxInflight maps an inference.PlanTier (pro / max_5x /
 	// max_20x / api) to the per-LLM inflight cap the capacity ledger
 	// enforces when an LLM entry sets that plan_tier and no explicit
@@ -3522,6 +3532,15 @@ const (
 // validateLoaded rejects misconfigured values that applyDefaults left in
 // place. Run after applyDefaults in Load and LoadSecure.
 func validateLoaded(cfg *Config) error {
+	for k, v := range map[string]int{
+		"capacity_rate_requests":       cfg.Autonomous.CapacityRateRequests,
+		"capacity_rate_tokens":         cfg.Autonomous.CapacityRateTokens,
+		"capacity_rate_window_seconds": cfg.Autonomous.CapacityRateWindowSeconds,
+	} {
+		if v < 0 {
+			return fmt.Errorf("autonomous.%s: %d must be >= 0", k, v)
+		}
+	}
 	switch cfg.Autonomous.ProjectWriteSerialization {
 	case autonomousProjectWriteSerializationAdvisory, autonomousProjectWriteSerializationParallel:
 		// ok

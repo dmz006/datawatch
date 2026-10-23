@@ -5872,6 +5872,9 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"capacity_enabled":                s.cfg.Autonomous.CapacityEnabled == nil || *s.cfg.Autonomous.CapacityEnabled,
 			"capacity_wait_timeout_seconds":   s.cfg.Autonomous.CapacityWaitTimeoutSeconds,
 			"capacity_gpu_util_pct":           s.cfg.Autonomous.CapacityGPUUtilPct,
+			"capacity_rate_requests":          s.cfg.Autonomous.CapacityRateRequests,
+			"capacity_rate_tokens":            s.cfg.Autonomous.CapacityRateTokens,
+			"capacity_rate_window_seconds":    s.cfg.Autonomous.CapacityRateWindowSeconds,
 			"ci_watch_timeout_seconds":        s.cfg.Autonomous.CIWatchTimeoutSeconds,
 			"detail_text_cap_bytes":           s.cfg.Autonomous.DetailTextCapBytes,
 			"per_prd_guardrails":              s.cfg.Autonomous.PerPRDGuardrails, // rules-review, ci-watch
@@ -7555,6 +7558,18 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 		case "autonomous.capacity_gpu_util_pct":
 			if n, ok := toInt(v); ok && n >= 0 && n <= 100 {
 				cfg.Autonomous.CapacityGPUUtilPct = n
+			}
+		case "autonomous.capacity_rate_requests":
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Autonomous.CapacityRateRequests = n
+			}
+		case "autonomous.capacity_rate_tokens":
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Autonomous.CapacityRateTokens = n
+			}
+		case "autonomous.capacity_rate_window_seconds":
+			if n, ok := toInt(v); ok && n >= 0 {
+				cfg.Autonomous.CapacityRateWindowSeconds = n
 			}
 		case "session.reserved_interactive":
 			if n, ok := toInt(v); ok && n >= 0 {

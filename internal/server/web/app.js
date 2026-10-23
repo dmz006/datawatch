@@ -15470,6 +15470,9 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.capacity_wait_timeout_seconds', label: 'Capacity wait timeout (sec, 0=4h)', labelKey: 'settings_capacity_wait_timeout', type: 'number', placeholder: '14400' },
     { key: 'autonomous.ci_watch_timeout_seconds', label: 'CI watch timeout (sec, 0=25m)', labelKey: 'settings_ci_watch_timeout', type: 'number', placeholder: '1500' },
     { key: 'autonomous.capacity_gpu_util_pct', label: 'Hold tasks while node GPU is above (% util, 0=off)', labelKey: 'settings_capacity_gpu_util', type: 'number', placeholder: '0' },
+    { key: 'autonomous.capacity_rate_requests', label: 'Rate ceiling per LLM: requests per window (0 = none)', labelKey: 'capacity_rate_requests_label', type: 'number', min: 0, placeholder: '0' },
+    { key: 'autonomous.capacity_rate_tokens', label: 'Rate ceiling per LLM: tokens per window (0 = none)', labelKey: 'capacity_rate_tokens_label', type: 'number', min: 0, placeholder: '0' },
+    { key: 'autonomous.capacity_rate_window_seconds', label: 'Rate ceiling window (sec, 0 = 3600)', labelKey: 'capacity_rate_window_seconds_label', type: 'number', min: 0, placeholder: '3600' },
     // v5.26.16 — operator-reported: backend fields should be the
     // same dropdown as the New PRD modal (enabled+available, no
     // shell), with a paired model dropdown that refreshes on backend
@@ -34364,6 +34367,21 @@ function loadAutomataSettingsPanel() {
           <div class="settings-label">${escHtml(t('max_engines_per_node')||'Max engines per node (1 = one at a time)')}</div>
           <input type="number" min="1" value="${ac.max_engines_per_node||1}" style="width:80px;font-size:12px;" class="form-input"
             onchange="saveGeneralField('autonomous.max_engines_per_node',+this.value)">
+        </div>
+        <div class="settings-row" style="justify-content:space-between;">
+          <div class="settings-label" title="${escHtml(t('capacity_rate_requests_help')||'')}">${escHtml(t('capacity_rate_requests_label')||'Rate ceiling per LLM: requests per window (0 = none)')}</div>
+          <input type="number" min="0" value="${ac.capacity_rate_requests||0}" style="width:80px;font-size:12px;" class="form-input"
+            onchange="saveGeneralField('autonomous.capacity_rate_requests',+this.value)">
+        </div>
+        <div class="settings-row" style="justify-content:space-between;">
+          <div class="settings-label" title="${escHtml(t('capacity_rate_tokens_help')||'')}">${escHtml(t('capacity_rate_tokens_label')||'Rate ceiling per LLM: tokens per window (0 = none)')}</div>
+          <input type="number" min="0" value="${ac.capacity_rate_tokens||0}" style="width:80px;font-size:12px;" class="form-input"
+            onchange="saveGeneralField('autonomous.capacity_rate_tokens',+this.value)">
+        </div>
+        <div class="settings-row" style="justify-content:space-between;">
+          <div class="settings-label" title="${escHtml(t('capacity_rate_window_seconds_help')||'')}">${escHtml(t('capacity_rate_window_seconds_label')||'Rate ceiling window (sec, 0 = 3600)')}</div>
+          <input type="number" min="0" value="${ac.capacity_rate_window_seconds||0}" style="width:80px;font-size:12px;" class="form-input"
+            onchange="saveGeneralField('autonomous.capacity_rate_window_seconds',+this.value)">
         </div>
         <div class="settings-row" style="justify-content:space-between;">
           <div class="settings-label">Auto-fix retries</div>
