@@ -56,6 +56,7 @@ import (
 	"github.com/dmz006/datawatch/internal/secrets"
 	"github.com/dmz006/datawatch/internal/server/multiserver"
 	"github.com/dmz006/datawatch/internal/session"
+	"github.com/dmz006/datawatch/internal/shutdowncause"
 	"github.com/dmz006/datawatch/internal/stats"
 	"github.com/dmz006/datawatch/internal/tooling"
 	"github.com/dmz006/datawatch/internal/vision"
@@ -9746,6 +9747,10 @@ func (s *Server) handleRestart(w http.ResponseWriter, r *http.Request) {
 	s.hub.Broadcast(MsgNotification, map[string]string{"message": "Daemon restarting…"})
 	go func() {
 		time.Sleep(500 * time.Millisecond)
+		// Declare the shutdown as API-initiated so the restarted process
+		// records source=api-restart with via in the audit entry +
+		// last-shutdown.json (picked up by the daemon's Capture).
+		shutdowncause.MarkAPIInitiated("api-restart")
 		s.restartFn()
 	}()
 }
@@ -10037,6 +10042,9 @@ func (s *Server) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		})
 		time.Sleep(800 * time.Millisecond)
 		if s.restartFn != nil {
+			// Mark as update-initiated so the cause record shows
+			// source=api-restart via=update-restart.
+			shutdowncause.MarkAPIInitiated("update-restart")
 			s.restartFn() // calls os.Exit(0); never returns
 		}
 		// Fallback if restartFn is nil.
