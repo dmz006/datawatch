@@ -97,6 +97,7 @@ import (
 	secretspkg "github.com/dmz006/datawatch/internal/secrets"
 	"github.com/dmz006/datawatch/internal/server"
 	"github.com/dmz006/datawatch/internal/server/multiserver"
+	"github.com/dmz006/datawatch/internal/gitguard"
 	"github.com/dmz006/datawatch/internal/session"
 	shutdowncause "github.com/dmz006/datawatch/internal/shutdowncause"
 	signalpkg "github.com/dmz006/datawatch/internal/signal"
@@ -5135,6 +5136,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 										if !s.CreatedAt.IsZero() {
 											pg.SetRunStart(s.CreatedAt)
 										}
+										// Verification has passed, so the commit may carry the
+										// session's commit token.
+										mgr.AuthorizeCommit(s.FullID, pg)
 										// The checkpoint verification script passed before this
 										// closure runs, so the commit body records it as passed.
 										sha, cerr := pg.CommitTaskWork(s.ID, session.TaskCommitLabel{
@@ -5144,6 +5148,10 @@ func runStart(cmd *cobra.Command, _ []string) error {
 											Summary:      summary,
 											Verification: "passed",
 										}, s.WriteScope)
+										if gitguard.IsNonProject(cerr) {
+											// Refused once and audited; retrying cannot help.
+											return nil
+										}
 										if cerr != nil {
 											return cerr
 										}

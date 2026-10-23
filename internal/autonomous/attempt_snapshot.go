@@ -25,6 +25,9 @@ import (
 // limit is exceeded, the snapshot is refused with an error and no ref is
 // created.
 func SnapshotAttemptWork(ctx context.Context, dir, taskKey string, attempt int) (ref string, err error) {
+	if rerr := gitguard.RefuseNonProject(dir); rerr != nil {
+		return "", rerr
+	}
 	if home, herr := gitguard.InHome(dir, nil); herr == nil && home {
 		fmt.Printf("[autonomous] WARNING: attempt snapshot is running in the user's home directory %s — staging is bounded by the staging guard (per-file size cap, ignored cache/build dirs, file-count limit); narrow the write scope to keep snapshots small\n", dir)
 	}

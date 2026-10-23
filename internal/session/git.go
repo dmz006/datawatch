@@ -26,6 +26,11 @@ type ProjectGit struct {
 	// NewProjectGit sets gitguard.Default. A zero-value ProjectGit imposes
 	// no bounds, so construct through NewProjectGit for automatic commits.
 	stagingPolicy gitguard.Policy
+	// commitEnv, when set, is appended to the environment of every git
+	// commit this ProjectGit runs. It carries the commit token that lets
+	// the harness commit through a CommitGuard's hooks; set it only after
+	// validation has passed.
+	commitEnv []string
 }
 
 // NewProjectGit creates a new ProjectGit for the given directory, bounded
@@ -38,6 +43,17 @@ func NewProjectGit(dir string) *ProjectGit {
 // Tests use it to tighten limits; future config wiring can call it too.
 func (g *ProjectGit) SetStagingPolicy(p gitguard.Policy) {
 	g.stagingPolicy = p
+}
+
+// SetCommitEnv makes the commit calls of this ProjectGit run git with env
+// appended (typically CommitGuard.CommitEnv()). Nil clears it.
+func (g *ProjectGit) SetCommitEnv(env []string) {
+	g.commitEnv = env
+}
+
+// commit runs git commit with the commit environment, if any.
+func (g *ProjectGit) commit(args ...string) error {
+	return runGitEnv(g.dir, g.commitEnv, append([]string{"commit"}, args...)...)
 }
 
 // IsRepo returns true if dir is inside a git repository.
@@ -80,6 +96,9 @@ func (g *ProjectGit) Init() error {
 // home directory are flagged with a warning, since the guard is what keeps
 // them from staging the whole home tree.
 func (g *ProjectGit) stageChanges(scope []string) error {
+	if err := gitguard.RefuseNonProject(g.dir); err != nil {
+		return err
+	}
 	if len(scope) > 0 {
 		if home, herr := gitguard.InHome(g.dir, nil); herr == nil && home {
 			fmt.Printf("[datawatch] WARNING: automatic commit is running in the user's home directory %s — staging is bounded by the staging guard (per-file size cap, ignored cache/build dirs, file-count limit); narrow the write scope to keep commits small\n", g.dir)
@@ -361,7 +380,7 @@ func (g *ProjectGit) PreSessionCommit(prdID, taskTitle string, scope []string) e
 	if !g.stagedOnly() {
 		return nil // nothing to commit
 	}
-	return runGit(g.dir, "commit", "-m", snapshotSubject(prdID, taskTitle))
+	return g.commit("-m", snapshotSubject(prdID, taskTitle))
 }
 
 // PostSessionCommit creates a final commit after the session ends.
@@ -376,7 +395,7 @@ func (g *ProjectGit) PostSessionCommit(sessionID, task string, state State, scop
 		return nil
 	}
 	msg := fmt.Sprintf("session[%s](%s): %s", sessionID, state, truncateStr(task, 60))
-	return runGit(g.dir, "commit", "-m", msg)
+	return g.commit("-m", msg)
 }
 
 // CommitSessionWork stages changes (scoped to the session's write
@@ -395,7 +414,7 @@ func (g *ProjectGit) CommitSessionWork(sessionID, task, summary string, scope []
 	if !g.stagedOnly() {
 		return "", nil
 	}
-	if err := runGit(g.dir, "commit", "-m", buildCommitMessage(sessionID, summary, task)); err != nil {
+	if err := g.commit("-m", buildCommitMessage(sessionID, summary, task)); err != nil {
 		return "", err
 	}
 	return g.headSHA()
@@ -442,7 +461,7 @@ func (g *ProjectGit) CommitTaskWork(sessionID string, label TaskCommitLabel, sco
 		return "", err
 	}
 	defer func() { _ = os.Remove(path) }()
-	if err := runGit(g.dir, "commit", "-F", path); err != nil {
+	if err := g.commit("-F", path); err != nil {
 		return "", fmt.Errorf("session %s: %w", sessionID, err)
 	}
 	return g.headSHA()
@@ -798,8 +817,17 @@ func injectTokenIntoHTTPS(rawURL, token string) string {
 }
 
 func runGit(dir string, args ...string) error {
+	return runGitEnv(dir, nil, args...)
+}
+
+// runGitEnv is runGit with extra environment entries appended to the
+// process environment.
+func runGitEnv(dir string, env []string, args ...string) error {
 	cmd := exec.Command("git", args...)
 	cmd.Dir = dir
+	if len(env) > 0 {
+		cmd.Env = append(os.Environ(), env...)
+	}
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("git %v in %s: %w\n%s", args, dir, err, out)

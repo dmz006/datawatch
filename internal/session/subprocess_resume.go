@@ -130,6 +130,7 @@ func (m *Manager) finishDetachedSubprocess(sess *Session, rc int) {
 		runErr = fmt.Errorf("exit status %d", rc)
 	}
 	m.subprocessFinish(sess, runErr)
+	m.releaseCommitGuard(sess.FullID, sess.ProjectDir)
 }
 
 func (m *Manager) finishDetachedSubprocessUnknown(sess *Session) {
@@ -140,4 +141,5 @@ func (m *Manager) finishDetachedSubprocessUnknown(sess *Session) {
 	}
 	_ = os.Remove(subprocessFile(sess, subprocessPIDFile))
 	m.subprocessFinish(sess, fmt.Errorf("exit status unknown after daemon restart"))
+	m.releaseCommitGuard(sess.FullID, sess.ProjectDir)
 }

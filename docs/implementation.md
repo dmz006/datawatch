@@ -416,6 +416,10 @@ The guard enforces these rules:
 
 6. **Home-directory detection.** When the repository directory is the user's home directory or lies inside it, the guard logs a prominent warning. The check resolves symbolic links before comparing paths.
 
+7. **Only the harness commits, and only after validation.** A worker session cannot commit. A `git commit` run by a worker fails with a message saying the harness commits after validation. The harness commits once the session's validation has passed; when validation fails, nothing is committed. The commit refusal comes from hooks that live in a harness-owned temporary directory outside the worktree, so a worker has nothing in its tree to edit or bypass. The hooks are removed when the session ends and again when the daemon adopts sessions on startup (stale hook directories left by a dead daemon are reaped, live ones are kept).
+
+8. **Non-project directories.** Automatic commits are refused when the directory is the home directory, a filesystem root, or a directory with no repository and no project marker. The refusal writes one audit line and is not retried. The operator fix is described in [operations.md](operations.md#automatic-commit-refused-in-a-non-project-directory).
+
 ### Message Routing
 
 The router (`internal/router`) is stateless. It:
