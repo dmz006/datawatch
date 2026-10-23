@@ -65,7 +65,9 @@ test('fmtBytesCompact matches the shared helper contract (B to EB)', () => {
   assert.equal(c(8 * 10 ** 15), '7.1 PB');
   assert.equal(c(15 * 10 ** 17), '1.3 EB');
   // Defensive: non-finite / negative input must not leak NaN or '-' — same '—' sentinel
+  assert.equal(c(NaN), '—');
   assert.equal(c(Infinity), c(0));
+  assert.equal(c(-Infinity), c(0));
   assert.equal(c(-9), '—');
 });
 
