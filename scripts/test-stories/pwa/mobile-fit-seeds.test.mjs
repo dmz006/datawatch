@@ -348,7 +348,18 @@ test('error states fulfill with 5xx status and error body', async () => {
   assert.ok(out.fulfilled.body.error.length > 100);
 });
 
-// ── /api/observer/peers self entry (GH#194: identity is the hostname) ───────
+// ── /api/observer/peers self entry (identity is the hostname) ──────────────
+
+test('every seed builds /api/observer/peers/free with a peers array', () => {
+  for (const name of STATE_NAMES) {
+    const seed = buildSeed(name);
+    const entry = seed.responses['/api/observer/peers/free'];
+    assert.ok(entry, name + ': has /api/observer/peers/free');
+    assert.ok(Array.isArray(entry.body.peers), name + ': free body has a peers array');
+    // the self entry never counts as a free observer
+    assert.ok(entry.body.peers.every((p) => !p.is_self), name + ': no self entry in free list');
+  }
+});
 
 test('peers list always has exactly one is_self entry named after the host', () => {
   for (const name of STATE_NAMES) {

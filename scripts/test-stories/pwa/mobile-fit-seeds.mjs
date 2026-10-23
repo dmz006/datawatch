@@ -347,6 +347,10 @@ function baseSeed({ peers = [], local = {}, clusterNames = null } = {}) {
     ],
   });
 
+  // Free-observer list (ensureFreeObserversCached pre-fetches this before
+  // the compute-node form opens; body shape is { peers: [...] })
+  responses['/api/observer/peers/free'] = responseOk({ peers: [...peers] });
+
   // Compute nodes + federation mapping (loadPeerResourceOverview)
   responses['/api/compute/nodes'] = responseOk({
     nodes: peers.map((p) => ({
