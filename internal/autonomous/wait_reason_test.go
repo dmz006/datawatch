@@ -121,3 +121,111 @@ func TestWaitReason_AwaitExternal(t *testing.T) {
 		t.Errorf("unknown reason classified %q, want empty", c)
 	}
 }
+
+// readableHolderNames is the test holder resolver: a handful of well-known
+// ids map to their operator-readable names, everything else maps to "".
+// ("Verifying: …" is how a verifying holder is worded.)
+func readableHolderNames(id string) string {
+	switch id {
+	case "task-a":
+		return "Fix crash / Handle panics (c3e70011)"
+	case "task-b":
+		return "Verifying: Handle panics (49890003)"
+	case "task-c":
+		return "Deploy / Wire API (a1b2c3d4)"
+	case "task-d":
+		return "Docs / Write README (deadbeef)"
+	}
+	return ""
+}
+
+func TestReadableWaitText_PoolFullNamesHolders(t *testing.T) {
+	reason := PoolFullWaitText("llm:pi-prompt", 2, 2, []string{"task-a", "task-b"})
+	got := ReadableWaitText(reason, WaitReasonHolders(reason), readableHolderNames)
+	want := "pool llm:pi-prompt full (2/2), held by Fix crash / Handle panics (c3e70011) and Verifying: Handle panics (49890003)"
+	if got != want {
+		t.Errorf("readable = %q\nwant    %q", got, want)
+	}
+	// The raw sentence is untouched and still classifies the same way.
+	if ClassifyWaitReason(reason) != WaitCausePoolFull {
+		t.Errorf("raw reason reclassified: %q", reason)
+	}
+	if ReadableWaitText(reason, []string{"task-a", "task-b"}, nil) !=
+		"pool llm:pi-prompt full (2/2), held by task-a and task-b" {
+		t.Errorf("no resolver: want raw ids in the readable shape")
+	}
+
+	// Three holders list as "A, B and C".
+	three := PoolFullWaitText("llm:pi-prompt", 3, 3, []string{"task-a", "task-b", "task-d"})
+	got = ReadableWaitText(three, WaitReasonHolders(three), readableHolderNames)
+	want = "pool llm:pi-prompt full (3/3), held by Fix crash / Handle panics (c3e70011), Verifying: Handle panics (49890003) and Docs / Write README (deadbeef)"
+	if got != want {
+		t.Errorf("three holders readable = %q\nwant          %q", got, want)
+	}
+}
+
+func TestReadableWaitText_NodeBusyNamesHolders(t *testing.T) {
+	reason := NodeBusyWaitText("gpu-box", 1, 1, []string{"task-c"})
+	if got, want := ReadableWaitText(reason, WaitReasonHolders(reason), readableHolderNames),
+		"waiting for node gpu-box: 1/1 engines in use, held by Deploy / Wire API (a1b2c3d4)"; got != want {
+		t.Errorf("readable = %q\nwant    %q", got, want)
+	}
+}
+
+func TestReadableWaitText_NoHoldersOrUnknownReasonsPassThrough(t *testing.T) {
+	// A full pool with no known holder keeps "other sessions".
+	none := PoolFullWaitText("llm:pi-prompt", 1, 1, nil)
+	if got, want := ReadableWaitText(none, WaitReasonHolders(none), readableHolderNames),
+		"pool llm:pi-prompt full (1/1), held by other sessions"; got != want {
+		t.Errorf("no holders readable = %q, want %q", got, want)
+	}
+
+	// Reasons that name no holders come back unchanged.
+	until := time.Date(2026, 10, 22, 12, 42, 0, 0, time.UTC)
+	bo := BackoffWaitText(waitReasonClock(), "claude-code", until, true, "")
+	if ReadableWaitText(bo, WaitReasonHolders(bo), readableHolderNames) != bo {
+		t.Errorf("backoff reason changed: %q", bo)
+	}
+	tlock := TreeLockWaitText("/work/repo", "t1", "prd9", time.Now().Unix())
+	if ReadableWaitText(tlock, WaitReasonHolders(tlock), readableHolderNames) != tlock {
+		t.Errorf("tree-lock reason changed: %q", tlock)
+	}
+	if ReadableWaitText("unknown reason", nil, readableHolderNames) != "unknown reason" {
+		t.Errorf("unknown reason changed")
+	}
+	// Malformed pool text is returned unchanged rather than re-worded half-wrong.
+	if ReadableWaitText("pool x full (bad)", nil, readableHolderNames) != "pool x full (bad)" {
+		t.Errorf("malformed pool reason changed")
+	}
+	if ReadableWaitText("waiting for node x: bad engines in use", nil, readableHolderNames) != "waiting for node x: bad engines in use" {
+		t.Errorf("malformed node reason changed")
+	}
+	if ReadableWaitText("", nil, readableHolderNames) != "" {
+		t.Errorf("empty reason not preserved")
+	}
+	// A blank resolved name falls back to the raw holder id.
+	mixed := PoolFullWaitText("llm:pi-prompt", 2, 2, []string{"task-a", "ghost"})
+	got := ReadableWaitText(mixed, WaitReasonHolders(mixed), readableHolderNames)
+	if want := "pool llm:pi-prompt full (2/2), held by Fix crash / Handle panics (c3e70011) and ghost"; got != want {
+		t.Errorf("mixed holders readable = %q, want %q", got, want)
+	}
+}
+
+func TestWaitReasonHolders_ExtractsRawIds(t *testing.T) {
+	if got := WaitReasonHolders(PoolFullWaitText("llm:pi-prompt", 2, 2, []string{"task-a", "task-b"})); len(got) != 2 || got[0] != "task-a" || got[1] != "task-b" {
+		t.Errorf("pool holders = %v, want [task-a task-b]", got)
+	}
+	if got := WaitReasonHolders(NodeBusyWaitText("gpu-box", 1, 1, []string{"task-c"})); len(got) != 1 || got[0] != "task-c" {
+		t.Errorf("node holders = %v, want [task-c]", got)
+	}
+	if got := WaitReasonHolders(PoolFullWaitText("llm:pi-prompt", 1, 1, nil)); got != nil {
+		t.Errorf("no holders = %v, want nil", got)
+	}
+	if got := WaitReasonHolders(BackoffWaitText(waitReasonClock(), "claude-code",
+		time.Date(2026, 10, 22, 12, 42, 0, 0, time.UTC), true, "")); got != nil {
+		t.Errorf("backoff holders = %v, want nil", got)
+	}
+	if got := WaitReasonHolders("mystery"); got != nil {
+		t.Errorf("unknown holders = %v, want nil", got)
+	}
+}

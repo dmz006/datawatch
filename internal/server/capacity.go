@@ -282,6 +282,27 @@ type holderNameProvider interface {
 	ResolveHolder(holderID string) autonomous.HolderName
 }
 
+// readableWaitReasoner is the optional autonomous-manager capability that
+// words a wait reason readably with the holders named (autonomous/
+// capacity_titles.go). Same optional-interface pattern as
+// holderNameProvider: fakes without it get raw-holder-id wording instead.
+type readableWaitReasoner interface {
+	ReadableWaitSentence(reason string) string
+}
+
+// readableWaitSentence returns the readable wording of a wait reason: the
+// manager's resolver names the holders when it can, otherwise the holders
+// appear with their raw ids. Empty reason stays empty.
+func readableWaitSentence(mgr AutonomousAPI, reason string) string {
+	if reason == "" {
+		return ""
+	}
+	if r, ok := mgr.(readableWaitReasoner); ok {
+		return r.ReadableWaitSentence(reason)
+	}
+	return autonomous.ReadableWaitText(reason, autonomous.WaitReasonHolders(reason), nil)
+}
+
 // holderNames returns the manager's holder-name resolver, or nil when the
 // wired manager doesn't provide one.
 func (s *Server) holderNames() holderNameProvider {

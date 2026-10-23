@@ -2,6 +2,7 @@ package autonomous
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -101,6 +102,18 @@ func TestCapacityAudit_AdmissionWaitAndRelease(t *testing.T) {
 	if pools, _ := wait.Details["pools"].([]string); len(pools) != 1 || pools[0] != "node:n1" {
 		t.Errorf("pools = %v, want [node:n1]", wait.Details["pools"])
 	}
+	// The readable keys sit beside the existing ones, never replacing them.
+	if wait.Details["task_id"] != queued.ID {
+		t.Errorf("task_id = %v, want %s", wait.Details["task_id"], queued.ID)
+	}
+	if want, got := m.ResolveHolder(queued.ID).TaskTitle, wait.Details["task_title"].(string); want != "" && got != want {
+		t.Errorf("task_title = %q, want %q", got, want)
+	}
+	if want, got := " held by "+m.ResolveHolder(holder.ID).Full, wait.Details["readable"].(string); !strings.HasSuffix(got, want) {
+		t.Errorf("readable = %q, want a sentence ending in %q", got, want)
+	} else if !strings.Contains(got, "waiting for node n1: 1/1 engines in use") {
+		t.Errorf("readable = %q, want the node-busy wording", got)
+	}
 
 	ac.Advance(90 * time.Second)
 	led.Release(holder.ID)
@@ -117,6 +130,13 @@ func TestCapacityAudit_AdmissionWaitAndRelease(t *testing.T) {
 	}
 	if pools, _ := es[1].Details["pools"].([]string); len(pools) != 1 || pools[0] != "node:n1" {
 		t.Errorf("pools = %v, want [node:n1]", es[1].Details["pools"])
+	}
+	if es[1].Details["task_id"] != queued.ID {
+		t.Errorf("admitted task_id = %v, want %s", es[1].Details["task_id"], queued.ID)
+	}
+	// The admission is not waiting, so its reason is not re-worded.
+	if got, _ := es[1].Details["readable"].(string); got != "" {
+		t.Errorf("admitted readable = %q, want \"\"", got)
 	}
 }
 
@@ -241,4 +261,84 @@ func TestCapacityAudit_NilRecorderAndSinkDropEvents(t *testing.T) {
 	var nilRec *CapacityAudit
 	nilRec.BackoffCleared("operator", "x") // must not panic
 	(&CapacityAudit{}).AdmissionWait("t", "p", WaitCauseNodeBusy, "r", nil)
+}
+
+// A standalone recorder (no Names wired) leaves the readable names at their
+// "(untitled <short id>)" fallbacks.
+func TestCapacityAudit_AdmissionWaitReadableFallbacks(t *testing.T) {
+	ac := newAuditCapture()
+	rec := ac.recorder()
+	rec.AdmissionWait("ab12cd34ef56aabbccdd", "pr99zz77aa00b1c2d3", WaitCauseNodeBusy,
+		NodeBusyWaitText("n1", 1, 1, []string{"ab12cd34"}), []string{"node:n1"})
+	e := ac.only(t)
+	wantEntry(t, e, "autonomous", audit.ActionCapacityWait, "ab12cd34ef56aabbccdd", ac.Now())
+	if e.Details["task_title"] != "(untitled ab12cd34)" {
+		t.Errorf("task_title = %v, want %q", e.Details["task_title"], "(untitled ab12cd34)")
+	}
+	if e.Details["prd_title"] != "(untitled pr99zz77)" {
+		t.Errorf("prd_title = %v, want %q", e.Details["prd_title"], "(untitled pr99zz77)")
+	}
+	if got, _ := e.Details["readable"].(string); got != "" {
+		t.Errorf("readable = %q, want \"\" with no resolver", got)
+	}
+
+	// With a Names function wired, its values pass through untouched.
+	ac = newAuditCapture()
+	rec = ac.recorder()
+	rec.Names = func(taskID, prdID, reason string) AdmissionNames {
+		if reason == "" {
+			return AdmissionNames{TaskTitle: "T1", PRDTitle: "s"}
+		}
+		return AdmissionNames{TaskTitle: "T1", PRDTitle: "s",
+			Readable: "waiting for node n1: 1/1 engines in use, held by s / T0 (c3e70011)"}
+	}
+	rec.AdmissionWait("ab12cd34", "pr99zz77", WaitCauseNodeBusy, NodeBusyWaitText("n1", 1, 1, []string{"x"}), nil)
+	e = ac.all()[0]
+	if e.Details["task_title"] != "T1" || e.Details["prd_title"] != "s" {
+		t.Errorf("names = %v %v, want T1 s", e.Details["task_title"], e.Details["prd_title"])
+	}
+	if got := e.Details["readable"].(string); got != "waiting for node n1: 1/1 engines in use, held by s / T0 (c3e70011)" {
+		t.Errorf("readable = %q, want the resolved sentence", got)
+	}
+	rec.AdmissionAdmitted("ab12cd34", ac.Now().Add(-30*time.Second), nil)
+	e = ac.all()[1]
+	if e.Details["task_title"] != "T1" {
+		t.Errorf("admitted task_title = %v, want T1", e.Details["task_title"])
+	}
+	if got, _ := e.Details["readable"].(string); got != "" {
+		t.Errorf("admitted readable = %q, want \"\" with no wait reason", got)
+	}
+}
+
+// Manager.AdmissionNames resolves through the shared holder-title resolver,
+// so an admission entry's readable sentence names the real holder task.
+func TestManager_AdmissionNamesResolvesHolders(t *testing.T) {
+	m, _, _ := capFixtureFakeClock(t, 1)
+	prd := newPRDWithTasks(t, m, 2)
+	cur, _ := m.Store().GetPRD(prd.ID)
+	holderID, queuedID := cur.Story[0].Tasks[0].ID, cur.Story[0].Tasks[1].ID
+
+	names := m.AdmissionNames(queuedID, prd.ID, "")
+	if names.TaskTitle != "T1" {
+		t.Errorf("TaskTitle = %q, want T1", names.TaskTitle)
+	}
+	if names.PRDTitle != cur.Title {
+		t.Errorf("PRDTitle = %q, want %q", names.PRDTitle, cur.Title)
+	}
+	if names.Readable != "" {
+		t.Errorf("Readable = %q, want \"\" with no reason", names.Readable)
+	}
+
+	reason := NodeBusyWaitText("n1", 1, 1, []string{holderID})
+	names = m.AdmissionNames(queuedID, prd.ID, reason)
+	want := m.ReadableWaitSentence(reason)
+	if want == "" {
+		t.Fatal("want a readable sentence, got \"\"")
+	}
+	if names.Readable != want {
+		t.Errorf("readable = %q, want %q", names.Readable, want)
+	}
+	if !strings.Contains(want, "held by "+m.ResolveHolder(holderID).Full) {
+		t.Errorf("readable = %q, want the holder named %q", want, m.ResolveHolder(holderID).Full)
+	}
 }

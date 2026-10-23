@@ -35,6 +35,12 @@ type SessionAutomatonDetail struct {
 	TaskSpecTruncated bool   `json:"task_spec_truncated,omitempty"`
 	TaskStatus        string `json:"task_status,omitempty"`
 	WaitReason        string `json:"wait_reason,omitempty"`
+	// WaitReasonReadable is the same wait reason with the holders it names
+	// shown as operator-readable names ("pool <p> full (u/l), held by
+	// <PRD title> / <task title> (<short id>) and …"). wait_reason keeps the
+	// raw text; this is beside it, not a replacement, and is empty when the
+	// reason names no holders.
+	WaitReasonReadable string `json:"wait_reason_readable,omitempty"`
 	// WaitCause / WaitResetsAt classify the wait (pool_full, backoff, ...)
 	// and say when it ends, when known. Holds lists the pools and tree lock
 	// the task holds; HoldsNote is the sentence for a parked task.
@@ -228,6 +234,9 @@ func (s *Server) buildSessionAutomatonDetail(sess *session.Session) *SessionAuto
 	// capacity) in the same `wait_reason` slot a waiting task already uses.
 	if d.WaitReason == "" {
 		d.WaitReason = prd.WaitReason
+	}
+	if d.WaitReason != "" {
+		d.WaitReasonReadable = readableWaitSentence(s.autonomousMgr, d.WaitReason)
 	}
 	// Decisions carry no story/task id, so the block shows the most recent
 	// PRD-level entries.
