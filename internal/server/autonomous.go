@@ -309,6 +309,20 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			if !s.fedCap(w, r, federation.CapAutonomousList) {
 				return
 			}
+			if tagID := r.URL.Query().Get("tag"); tagID != "" {
+				api, ok := s.tagAPI()
+				if !ok {
+					http.Error(w, "tags not supported", http.StatusNotImplemented)
+					return
+				}
+				prds, err := api.ListPRDsByTag(tagID, queryBool(r, "include_sub", true))
+				if err != nil {
+					writeTagError(w, err)
+					return
+				}
+				writeJSONOK(w, map[string]any{"prds": prds})
+				return
+			}
 			writeJSONOK(w, map[string]any{"prds": s.autonomousMgr.ListPRDs()})
 		case http.MethodPost:
 			if !s.fedCap(w, r, federation.CapAutonomousWrite) {
@@ -1839,6 +1853,33 @@ func (s *Server) handleAutonomousPRDs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.audit(r.Context(), "set_type", "automaton", id, map[string]any{"type": req.Type}) // GH#201 Phase 4
+		s.writeAutonomousResult(w, r, updated, "", "", "")
+	case "set_tags":
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if !s.fedCap(w, r, federation.CapAutonomousWrite) {
+			return
+		}
+		api, ok := s.tagAPI()
+		if !ok {
+			http.Error(w, "tags not supported", http.StatusNotImplemented)
+			return
+		}
+		var req struct {
+			TagIDs []string `json:"tag_ids"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		updated, err := api.SetPRDTags(id, req.TagIDs)
+		if err != nil {
+			writeTagError(w, err)
+			return
+		}
+		s.audit(r.Context(), "set_tags", "automaton", id, map[string]any{"tag_ids": req.TagIDs})
 		s.writeAutonomousResult(w, r, updated, "", "", "")
 	case "set_guided_mode":
 		if r.Method != http.MethodPost {

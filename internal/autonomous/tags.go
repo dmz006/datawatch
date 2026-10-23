@@ -254,3 +254,17 @@ func (m *Manager) tagUseCounts(includeSub bool) map[string]int {
 	}
 	return counts
 }
+
+// SetTagDescription sets a tag's description.
+func (m *Manager) SetTagDescription(id, description string) (*Tag, error) {
+	t, err := m.requireTag(id)
+	if err != nil {
+		return nil, err
+	}
+	t.Description = description
+	t.UpdatedAt = time.Now()
+	if err := m.store.SaveTag(t); err != nil {
+		return nil, err
+	}
+	return t, nil
+}
