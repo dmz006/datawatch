@@ -127,10 +127,9 @@ func TestPeerGateLogsOncePerEpisode(t *testing.T) {
 
 	ctx := context.Background()
 	srv.fail.Store(true)
+	// Reason is not called while the entry is missing: it would start a
+	// background refresh and make the request count nondeterministic.
 	g.Usage.RefreshAll(ctx)
-	if got := g.Reason("gpu-0"); got != "" {
-		t.Fatalf("failure must fail open, got %q", got)
-	}
 	g.Usage.RefreshAll(ctx)
 	g.Usage.RefreshAll(ctx)
 	if got := countLogLines(&logBuf); got != 1 {
