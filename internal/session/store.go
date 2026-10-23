@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -797,6 +798,9 @@ func (s *Store) List() []*Session {
 	for _, sess := range s.sessions {
 		out = append(out, sess)
 	}
+	// Map iteration order is random; a stable order keeps list responses
+	// reproducible between calls.
+	sort.Slice(out, func(i, j int) bool { return out[i].FullID < out[j].FullID })
 	return out
 }
 
