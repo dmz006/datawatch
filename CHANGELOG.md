@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.122 — Harness-only commits and non-project refusal
+
+Only the harness commits, and only after validation passes. A worker can no longer bypass the validation gate by running git commit itself.
+
+- Sessions started by the harness for an automation task or a validated one-shot get a per-session git hook set, installed through a harness-owned hooks directory outside the worktree. A commit without the harness token for that session is rejected with a message saying the harness commits after validation.
+- The hook set is removed when the session ends and when the daemon adopts or reaps the session, so a restart leaves no hooks path behind in a worktree.
+- Automatic commits are refused in a directory that is not a project: the home directory, a filesystem root, or a directory with no repository and no project marker. One audit line is logged and nothing retries.
+- Tests cover a rejected worker commit, a harness commit after validation, a failed validation leaving no commit, cleanup on session end and on restart adoption, and the home directory refusal. A live check runs in a throwaway repository.
+
 ## v9.5.121 — Per-record session and PRD stores
 
 Stops the daemon from rewriting its whole session and PRD files on every change, which kept a CPU core busy and made API calls take seconds.
