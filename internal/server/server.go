@@ -413,6 +413,9 @@ func New(cfg *config.ServerConfig, fullCfg *config.Config, cfgPath string, dataD
 	apiMux.HandleFunc("/api/autonomous/scan/config", api.handleAutonomousScanConfig)
 	// BL221 (v6.2.0) Phase 4 — type registry endpoint.
 	apiMux.HandleFunc("/api/autonomous/types", api.handleAutonomousTypes)
+	// Tag registry endpoints.
+	apiMux.HandleFunc("/api/autonomous/tags", api.handleAutonomousTags)
+	apiMux.HandleFunc("/api/autonomous/tags/", api.handleAutonomousTags)
 	// BL303 S2 — guardrail library + profile CRUD.
 	apiMux.HandleFunc("/api/autonomous/guardrails", api.handleAutonomousGuardrails)
 	apiMux.HandleFunc("/api/autonomous/guardrail_profiles", api.handleAutonomousGuardrailProfiles)

@@ -968,6 +968,83 @@ paths:
       responses:
         "200": {description: Updated PRD}
 
+  /api/autonomous/prds/{id}/set_tags:
+    post:
+      summary: Replace the tags on an Automaton
+      description: Replaces the full list; an empty array clears it. Every ID must be an existing tag.
+      operationId: autonomousPRDSetTags
+      tags: [Autonomous]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tag_ids]
+              properties:
+                tag_ids: {type: array, items: {type: string}}
+      responses:
+        "200": {description: Updated PRD, carries tag_ids}
+        "404": {description: Unknown tag}
+
+  /api/autonomous/tags:
+    get:
+      summary: List Automata tags
+      description: Returns every tag (a tree via parent_id) with the number of Automata carrying it.
+      operationId: autonomousTagList
+      tags: [Autonomous]
+      parameters:
+        - {name: include_sub, in: query, required: false, schema: {type: boolean, default: false}, description: "Roll counts up to include descendant tags"}
+      responses: {"200": {description: "{tags:[{id,name,parent_id,color,description,created_at,updated_at,count}]}"}}
+    post:
+      summary: Create a tag
+      operationId: autonomousTagCreate
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: {type: string}
+                parent_id: {type: string}
+                color: {type: string}
+                description: {type: string}
+      responses: {"200": {description: Created tag}, "400": {description: Invalid name or unknown parent}}
+
+  /api/autonomous/tags/{id}:
+    parameters: [{name: id, in: path, required: true, schema: {type: string}}]
+    patch:
+      summary: Rename, recolor, describe or reparent a tag
+      description: Omitted fields are unchanged. A parent_id of "" makes the tag a root. A move that would make a tag its own ancestor is refused with 409 and nothing is changed.
+      operationId: autonomousTagUpdate
+      tags: [Autonomous]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: {type: string}
+                parent_id: {type: string}
+                color: {type: string}
+                description: {type: string}
+      responses: {"200": {description: Updated tag}, "404": {description: Unknown tag}, "409": {description: Cycle}}
+    delete:
+      summary: Delete a tag
+      description: Refused with 409 while the tag has child tags, and refused with 409 plus a count of Automata using it while it is still assigned. Nothing is changed on a refusal.
+      operationId: autonomousTagDelete
+      tags: [Autonomous]
+      responses:
+        "200": {description: "{deleted: id}"}
+        "404": {description: Unknown tag}
+        "409": {description: "Has child tags, or assigned to Automata (body carries count)"}
+
   /api/alerts:
     get:
       summary: List alerts
@@ -1237,7 +1314,10 @@ paths:
       summary: List PRDs (newest first)
       operationId: autonomousPRDList
       tags: [Autonomous]
-      responses: {"200": {description: OK}}
+      parameters:
+        - {name: tag, in: query, required: false, schema: {type: string}, description: "Only Automata carrying this tag ID"}
+        - {name: include_sub, in: query, required: false, schema: {type: boolean, default: true}, description: "With tag: also include Automata carrying any descendant tag"}
+      responses: {"200": {description: OK}, "404": {description: Unknown tag}}
     post:
       summary: Create a draft PRD
       operationId: autonomousPRDCreate

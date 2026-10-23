@@ -1,9 +1,10 @@
 # BL393 — Nested tags for Automata/PRD organization
 
 **Date:** 2026-10-03
-**Status:** plan only. No code written, no settings changed. Operator asked
-for a plan following this repo's `docs/plans/` structure — this doc is that
-plan, nothing has been implemented.
+**Status:** implemented. The registry, assignment, browse, bulk tag and the
+REST, MCP, CLI and comm surfaces are built; the section 8 answers below are decided
+and were followed. The Android and iOS work is a filed note only
+(`docs/plans/2026-10-23-datawatch-app-tags-note.md`); no mobile code.
 
 ## 1. Problem
 
@@ -20,6 +21,12 @@ mechanism today to visually section Automatons into operator-defined projects
 or efforts.
 
 ## 2. Decisions already made (operator, this session — not open for revision in this plan)
+
+**Status: implemented.** All five decisions below shipped as written, and the four section 8 answers
+are recorded as decided: (1) deleting a tag with children is refused; (2) deleting a tag still
+assigned to Automata is refused with a count; (3) browsing a parent tag includes descendants, with an
+"include sub-tags" switch that defaults to on; (4) the alias-derived suggestion only suggests an
+existing tag and never creates one.
 
 Three design forks were raised and decided directly by the operator via
 explicit choice, before any code was written:

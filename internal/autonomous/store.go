@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -32,6 +33,8 @@ type Store struct {
 	profiles map[string]*GuardrailProfile
 	// BL410 Phase 1 — retry profiles
 	retryProfiles map[string]*RetryProfile
+	// managed tags
+	tags map[string]*Tag
 
 	// SavePRDFailHook is test-only: when set and it returns true for a PRD,
 	// SavePRD rejects the save with an error. Nil in production — behavior
@@ -52,6 +55,7 @@ func NewStore(dataDir string) (*Store, error) {
 		tasks:         map[string]*Task{},
 		profiles:      map[string]*GuardrailProfile{},
 		retryProfiles: map[string]*RetryProfile{},
+		tags:          map[string]*Tag{},
 	}
 	if err := s.load(); err != nil {
 		return nil, err
@@ -992,6 +996,50 @@ func (s *Store) DeleteGuardrailProfile(id string) error {
 	return s.persist()
 }
 
+// SaveTag upserts a tag.
+func (s *Store) SaveTag(t *Tag) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.tags[t.ID] = t
+	return s.persist()
+}
+
+// GetTag returns a tag by ID.
+func (s *Store) GetTag(id string) (*Tag, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	t, ok := s.tags[id]
+	return t, ok
+}
+
+// ListTags returns all tags sorted by name (ID as tiebreak).
+func (s *Store) ListTags() []*Tag {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := make([]*Tag, 0, len(s.tags))
+	for _, t := range s.tags {
+		out = append(out, t)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Name != out[j].Name {
+			return out[i].Name < out[j].Name
+		}
+		return out[i].ID < out[j].ID
+	})
+	return out
+}
+
+// DeleteTag removes a tag by ID.
+func (s *Store) DeleteTag(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.tags[id]; !ok {
+		return fmt.Errorf("tag %q not found", id)
+	}
+	delete(s.tags, id)
+	return s.persist()
+}
+
 // SaveRetryProfile upserts a profile (BL410 Phase 1).
 func (s *Store) SaveRetryProfile(p *RetryProfile) error {
 	s.mu.Lock()
@@ -1078,6 +1126,16 @@ func (s *Store) load() error {
 	}); err != nil {
 		return err
 	}
+	if err := loadJSONL(filepath.Join(s.dir, "tags.jsonl"), func(line []byte) error {
+		var t Tag
+		if err := json.Unmarshal(line, &t); err != nil {
+			return err
+		}
+		s.tags[t.ID] = &t
+		return nil
+	}); err != nil {
+		return err
+	}
 	if err := loadJSONL(filepath.Join(s.dir, "retry_profiles.jsonl"), func(line []byte) error {
 		var p RetryProfile
 		if err := json.Unmarshal(line, &p); err != nil {
@@ -1116,6 +1174,16 @@ func (s *Store) persist() error {
 	if err := writeJSONL(filepath.Join(s.dir, "guardrail_profiles.jsonl"), len(s.profiles), func(emit func(any) error) error {
 		for _, p := range s.profiles {
 			if err := emit(p); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	if err := writeJSONL(filepath.Join(s.dir, "tags.jsonl"), len(s.tags), func(emit func(any) error) error {
+		for _, t := range s.tags {
+			if err := emit(t); err != nil {
 				return err
 			}
 		}
