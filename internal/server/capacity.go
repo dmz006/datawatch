@@ -226,14 +226,55 @@ type capacityResponse struct {
 	// Budgets lists the dollar budget state of every LLM that has a budget.
 	// Always an array, empty when none.
 	Budgets []autonomous.BudgetStatus `json:"budgets"`
+	// Tasks lists, for every queued task, the reason it is waiting, and for
+	// every running task what it holds. Both are always arrays.
+	Tasks capacityTasksJSON `json:"tasks"`
+}
+
+// capacityTasksJSON is the per-task part of the capacity response.
+type capacityTasksJSON struct {
+	Waiting []autonomous.TaskWaitView `json:"waiting"`
+	Running []autonomous.TaskHoldView `json:"running"`
 }
 
 // capacityBackoffJSON is one active usage back-off flag in the capacity
-// response.
+// response. ResetKnown is false when Until is only the maximum back-off
+// applied because the rate-limit message named no reset time.
 type capacityBackoffJSON struct {
-	Backend string    `json:"backend"`
-	Until   time.Time `json:"until"`
-	Reason  string    `json:"reason"`
+	Backend    string    `json:"backend"`
+	Until      time.Time `json:"until"`
+	Reason     string    `json:"reason"`
+	ResetKnown bool      `json:"reset_known"`
+}
+
+// taskVisibilityProvider is the optional autonomous-manager capability that
+// supplies the per-task wait and hold views. Kept off AutonomousAPI so test
+// fakes don't all need it.
+type taskVisibilityProvider interface {
+	TaskVisibility() ([]autonomous.TaskWaitView, []autonomous.TaskHoldView)
+}
+
+// taskVisibility returns the waiting and running task views (empty, never
+// nil, when the autonomous subsystem is not wired or has none). With prdID
+// set, only that PRD's tasks.
+func (s *Server) taskVisibility(prdID string) capacityTasksJSON {
+	out := capacityTasksJSON{Waiting: []autonomous.TaskWaitView{}, Running: []autonomous.TaskHoldView{}}
+	p, ok := s.autonomousMgr.(taskVisibilityProvider)
+	if !ok {
+		return out
+	}
+	waiting, running := p.TaskVisibility()
+	for _, w := range waiting {
+		if prdID == "" || w.PRDID == prdID {
+			out.Waiting = append(out.Waiting, w)
+		}
+	}
+	for _, h := range running {
+		if prdID == "" || h.PRDID == prdID {
+			out.Running = append(out.Running, h)
+		}
+	}
+	return out
 }
 
 // capacityBackoff snapshots the live usage back-off flags for the capacity
@@ -244,7 +285,7 @@ func (s *Server) capacityBackoff() []capacityBackoffJSON {
 		return out
 	}
 	for _, e := range s.usageBackoff.Live() {
-		out = append(out, capacityBackoffJSON{Backend: e.Backend, Until: e.Until, Reason: e.Reason})
+		out = append(out, capacityBackoffJSON{Backend: e.Backend, Until: e.Until, Reason: e.Reason, ResetKnown: e.ResetKnown})
 	}
 	return out
 }
@@ -266,7 +307,7 @@ func (s *Server) handleCapacity(w http.ResponseWriter, r *http.Request) {
 	}
 	warnings := s.modelNodeWarnings()
 	if s.capacityLedger == nil {
-		empty := capacityResponse{Pools: []capacityPoolJSON{}, Leases: []capacity.Lease{}, Waiting: []capacity.Waiter{}, Warnings: warnings, Backoff: s.capacityBackoff(), Budgets: s.budgetStatuses()}
+		empty := capacityResponse{Pools: []capacityPoolJSON{}, Leases: []capacity.Lease{}, Waiting: []capacity.Waiter{}, Warnings: warnings, Backoff: s.capacityBackoff(), Budgets: s.budgetStatuses(), Tasks: s.taskVisibility(r.URL.Query().Get("prd_id"))}
 		empty.PatternsVersion, empty.ClaudeCLIVersion, empty.PatternsStale = s.rateLimitPatternsStatus()
 		writeJSONOK(w, empty)
 		return
@@ -340,7 +381,7 @@ func (s *Server) handleCapacity(w http.ResponseWriter, r *http.Request) {
 
 	sort.Slice(st.Pools, func(i, j int) bool { return st.Pools[i].Name < st.Pools[j].Name })
 
-	out := capacityResponse{Pools: make([]capacityPoolJSON, 0, len(st.Pools)), Leases: st.Leases, Waiting: st.Waiting, Warnings: warnings, Backoff: s.capacityBackoff(), Budgets: s.budgetStatuses()}
+	out := capacityResponse{Pools: make([]capacityPoolJSON, 0, len(st.Pools)), Leases: st.Leases, Waiting: st.Waiting, Warnings: warnings, Backoff: s.capacityBackoff(), Budgets: s.budgetStatuses(), Tasks: s.taskVisibility(r.URL.Query().Get("prd_id"))}
 	out.PatternsVersion, out.ClaudeCLIVersion, out.PatternsStale = s.rateLimitPatternsStatus()
 	for _, p := range st.Pools {
 		pj := capacityPoolJSON{PoolStatus: p}

@@ -354,6 +354,11 @@ func (a *API) SetConfig(v any) error {
 
 func (a *API) Status() any { return a.M.Status() }
 
+// TaskVisibility returns the waiting and running task views (see
+// Manager.TaskVisibility). The server reads it through an optional interface,
+// so AutonomousAPI fakes need no change.
+func (a *API) TaskVisibility() ([]TaskWaitView, []TaskHoldView) { return a.M.TaskVisibility() }
+
 // ReportPairingWarnings returns the current planning/verification pairing
 // warnings and logs any not yet logged. The REST config set handler reads it
 // through an optional interface, so AutonomousAPI fakes need no change.

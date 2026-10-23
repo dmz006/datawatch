@@ -39,4 +39,15 @@ const (
 	// scope, spent_usd, ceiling_usd, window, action (what was lifted),
 	// reset_at, reset_known, actor, reason.
 	ActionAutomationBudgetResumed = "automation_budget_resumed"
+	// ActionCapacityWait — an autonomous task started waiting for admission,
+	// or its wait cause changed. Emitted once per cause change, never per
+	// poll. Subject: task id. Details: prd_id, cause, reason, pools.
+	ActionCapacityWait = "autonomous_capacity_wait"
+	// ActionCapacityAdmitted — a waiting task was admitted. Subject: task id.
+	// Details: waited_seconds, pools.
+	ActionCapacityAdmitted = "autonomous_capacity_admitted"
+	// ActionBudgetWindowRollover — an LLM's budget window boundary passed and
+	// its spend reset. Subject: the LLM. Details: previous_spend_usd,
+	// ceiling_usd, new_window_start (RFC 3339).
+	ActionBudgetWindowRollover = "autonomous_budget_window_rollover"
 )

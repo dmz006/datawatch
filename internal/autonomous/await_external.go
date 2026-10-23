@@ -63,14 +63,7 @@ const (
 // AwaitExternalWaitReasonFor renders the wait reason for a task parked on
 // the given external condition.
 func AwaitExternalWaitReasonFor(condition string) string {
-	cond := strings.TrimSpace(condition)
-	if cond == "" {
-		return AwaitExternalWaitReason
-	}
-	if len(cond) > maxAwaitExternalConditionChars {
-		cond = cond[:maxAwaitExternalConditionChars] + "…"
-	}
-	return AwaitExternalWaitReasonPrefix + ": " + cond
+	return AwaitExternalWaitText(condition)
 }
 
 // IsAwaitExternalWaitReason reports whether a Task.WaitReason value is the
@@ -356,4 +349,3 @@ func (m *Manager) emitAwaitReleaseAudit(prd *PRD, t *Task, releasedPools []strin
 	}
 	m.auditFn("autonomous_idle_wait_release", details)
 }
-

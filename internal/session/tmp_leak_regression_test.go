@@ -76,6 +76,14 @@ func TestNoNewTmpLeakEntries(t *testing.T) {
 	cmd := exec.CommandContext(ctx, "go", "test", "-count=1",
 		"./internal/mcp/", "./internal/server/", "./internal/plugins/")
 	cmd.Dir = root
+	// This process runs with the package's throwaway HOME (see TestMain). The
+	// child go toolchain must use the real one, otherwise it downloads the whole
+	// module cache and builds from scratch inside the throwaway HOME, which
+	// is created before TMPDIR is redirected, is outside the exclusive dir
+	// asserted on below, and cannot be removed (the module cache is read-only).
+	if realHome != "" {
+		cmd.Env = append(os.Environ(), "HOME="+realHome)
+	}
 	out, err := cmd.CombinedOutput()
 	t.Logf("inner go test output:\n%s", out)
 	if ctx.Err() != nil {

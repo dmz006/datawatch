@@ -55,6 +55,13 @@ func FormatCEFLine(e Entry) string {
 			"deviceCustomString2="+cefExtEscape(e.SessionID))
 	}
 
+	if e.Subject != "" {
+		// Fixed at cs6 so the detail slots below keep their positions whether
+		// or not an event carries a subject.
+		ext = append(ext, "deviceCustomString6Label=subject",
+			"deviceCustomString6="+cefExtEscape(e.Subject))
+	}
+
 	// Known Details keys map to real CEF standard keys where one fits;
 	// everything else falls back to numbered custom strings, sorted for
 	// deterministic output (Details is a map).
@@ -86,13 +93,19 @@ func FormatCEFLine(e Entry) string {
 		ext = append(ext, "deviceCustomNumber1Label=status",
 			fmt.Sprintf("deviceCustomNumber1=%v", v))
 	}
+	var overflow []string // details past the three custom-string slots
 	for _, k := range rest {
 		if csSlot > 5 {
-			break // CEF custom strings only go to cs6; cs1/cs2 already used above
+			overflow = append(overflow, k+"="+fmt.Sprintf("%v", e.Details[k]))
+			continue // cs1/cs2 are taken above and cs6 carries the subject
 		}
 		ext = append(ext, fmt.Sprintf("deviceCustomString%dLabel=%s", csSlot, cefExtEscape(k)),
 			fmt.Sprintf("deviceCustomString%d=%s", csSlot, cefExtEscape(fmt.Sprintf("%v", e.Details[k]))))
 		csSlot++
+	}
+
+	if len(overflow) > 0 {
+		ext = append(ext, "msg="+cefExtEscape(strings.Join(overflow, "; ")))
 	}
 
 	return header + strings.Join(ext, " ")
@@ -153,6 +166,12 @@ func cefSignature(action string) (int, string, int) {
 		return 37, "AutomationBudgetBreach", 5
 	case ActionAutomationBudgetResumed:
 		return 38, "AutomationBudgetResumed", 2
+	case ActionCapacityWait:
+		return 39, "AutonomousCapacityWait", 3
+	case ActionCapacityAdmitted:
+		return 40, "AutonomousCapacityAdmitted", 2
+	case ActionBudgetWindowRollover:
+		return 41, "AutonomousBudgetWindowRollover", 2
 	default:
 		return 0, "AuditEvent", 3
 	}

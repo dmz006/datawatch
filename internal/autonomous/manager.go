@@ -696,6 +696,7 @@ type Manager struct {
 
 	// Capacity admission (see capacity.go).
 	capacity     *capacity.Ledger
+	capAudit     *CapacityAudit // admission wait/release audit recorder (nil drops)
 	capacityKeys CapacityKeysFn
 	// cooldownUntilFn reports when the BL30 global cooldown ends (zero when
 	// none is active); waitClock is the time source for the spawn-wait loop
@@ -4138,10 +4139,13 @@ func (m *Manager) Status() LoopStatus {
 	automations := m.automationStatusSummaries(time.Now())
 	usageBackoff := m.usageBackoffSummary()
 	budgets := m.budgetsSummary()
+	// Same rule for the task views: they read the PRD store and the ledger.
+	queue, holdings := m.buildTaskVisibility(budgets)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	st := m.status
 	st.Budgets = budgets
+	st.Queue, st.Holdings = queue, holdings
 	st.BootResume = append([]BootResumeEntry(nil), m.bootResumeReport...)
 	st.UsageBackoff = usageBackoff
 	st.Running = m.ctx != nil && m.ctx.Err() == nil

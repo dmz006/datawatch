@@ -1111,6 +1111,18 @@ autonomous:
   # may overshoot it. Spend is persisted under <data_dir>/autonomous/ so a
   # restart does not forget it. Read it with GET /api/budget, MCP
   # budget_status, "datawatch budget status" or the comm "budget" command.
+  #
+  # Audit events. The capacity gate, the usage back-off (usage_backoff and
+  # backoff_max_wait_minutes) and the budget write these audit actions, each
+  # once per change and never per poll: autonomous_capacity_wait,
+  # autonomous_capacity_admitted, autonomous_usage_backoff_set,
+  # autonomous_usage_backoff_cleared, autonomous_usage_backoff_auto_cleared,
+  # autonomous_usage_backoff_patterns_rechecked, autonomous_budget_ceiling_wait,
+  # autonomous_budget_window_resumed and autonomous_budget_window_rollover.
+  # Read them with GET /api/audit (action=autonomous_* lists the family;
+  # subject= narrows to one task, backend or LLM), MCP audit_query,
+  # "datawatch audit" or the comm "audit" command. No new config keys were
+  # added for this: the events follow the settings above.
   # Hold new tasks while a node's busiest GPU is at/above this percent (0 = off).
   capacity_gpu_util_pct: 0
   # LLM backend used for the planning/decompose call. Any configured LLM name works:

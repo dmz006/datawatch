@@ -1,5 +1,6 @@
 // datawatch capacity [--json] — show the capacity admission ledger: pools,
-// limits, holders and the queue of tasks waiting for capacity.
+// limits, holders, queued tasks with their reasons, running holdings,
+// back-off flags and budgets.
 
 package main
 
@@ -11,7 +12,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/dmz006/datawatch/internal/capacity"
+	"github.com/dmz006/datawatch/internal/autonomous"
 )
 
 func newCapacityCmd() *cobra.Command {
@@ -54,10 +55,10 @@ func renderCapacity(w io.Writer, body []byte, asJSON bool) error {
 		_, err := fmt.Fprintln(w, string(out))
 		return err
 	}
-	var st capacity.Status
-	if err := json.Unmarshal(body, &st); err != nil {
+	text, err := autonomous.FormatCapacityText(body)
+	if err != nil {
 		return err
 	}
-	_, err := fmt.Fprint(w, capacity.FormatText(st))
+	_, err = fmt.Fprint(w, text)
 	return err
 }

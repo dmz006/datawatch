@@ -95,6 +95,23 @@ func (s *Server) handleUsageBackoffRecheck(w http.ResponseWriter, r *http.Reques
 	writeJSONOK(w, s.usageBackoffStatus())
 }
 
+// backoffAudit returns the recorder for operator-driven back-off events. The
+// REST, MCP, CLI and comm-channel surfaces all reach the back-off through
+// this handler, so the actor is derived once here (auditActor: "operator" for
+// an operator, "session:<id>" or "peer:<name>" for the others). Entries keep
+// the resource_type/resource_id details every handler audit carries, and gain
+// the subject.
+func (s *Server) backoffAudit() *autonomous.CapacityAudit {
+	return autonomous.NewCapacityAudit(func(e audit.Entry) {
+		if s.auditLog == nil {
+			return
+		}
+		e.Details["resource_type"] = "usage_backoff"
+		e.Details["resource_id"] = e.Subject
+		_ = s.auditLog.Write(e)
+	})
+}
+
 // usageBackoffSetRequest is the POST body.
 type usageBackoffSetRequest struct {
 	Backend string `json:"backend"`
@@ -168,11 +185,7 @@ func (s *Server) handleUsageBackoff(w http.ResponseWriter, r *http.Request) {
 			reason = "operator back-off until " + until.Format("15:04 MST")
 		}
 		s.usageBackoff.Set(backend, until, reason, autonomous.BackoffSourceOperator)
-		s.audit(r.Context(), audit.ActionUsageBackoffSet, "usage_backoff", backend, map[string]any{
-			"backend": backend,
-			"until":   until.UTC().Format(time.RFC3339),
-			"source":  autonomous.BackoffSourceOperator,
-		})
+		s.backoffAudit().BackoffSet(s.auditActor(r.Context()), backend, until, autonomous.BackoffSourceOperator)
 		writeJSONOK(w, s.usageBackoffStatus())
 	case http.MethodDelete:
 		if !s.fedCap(w, r, federation.CapConfigWrite) {
@@ -198,9 +211,7 @@ func (s *Server) handleUsageBackoff(w http.ResponseWriter, r *http.Request) {
 		} else if s.usageBackoff.Clear(backend) {
 			cleared = 1
 		}
-		s.audit(r.Context(), audit.ActionUsageBackoffCleared, "usage_backoff", target, map[string]any{
-			"backend": target,
-		})
+		s.backoffAudit().BackoffCleared(s.auditActor(r.Context()), target)
 		st := s.usageBackoffStatus()
 		writeJSONOK(w, struct {
 			Cleared int `json:"cleared"`

@@ -4118,6 +4118,353 @@ else
   skip "usage back-off: GET /api/usage-backoff unavailable (${UB0:0:80})"
 fi
 
+H "77. Capacity visibility and audit - admission wait and release, back-off set and clear, budget wait and rollover"
+# Sandbox daemon only, REST only. Every throwaway name carries the process id
+# and a timestamp, and its cleanup is registered before the change is made.
+# No config value is changed: the throwaway LLM entries are created and then
+# deleted by the cleanup mechanism, and the back-off cleanup clears exactly the
+# unique backend, never "all". A step the public surface cannot produce is a
+# skip that names it; the unit tests with an injectable clock cover it.
+UC_TAG="$$-$(date +%s)"
+UC_LLM="smoke-cap-llm-$UC_TAG"
+UC_BUD="smoke-cap-bud-$UC_TAG"
+UC_BO="smoke-cap-backoff-$UC_TAG"
+UC_TASK_B=""   # task id of the second (waiting) task, when part (a) produced one
+UC_BO_SET=0    # 1 when part (b) saw the back-off set entry
+
+# uc_cap_find <waiting|running> <task id>: print that task's view from
+# GET /api/capacity tasks.<list>; exit 1 when it is not listed.
+uc_cap_find() {
+  curl "${curl_args[@]}" "$BASE/api/capacity" 2>/dev/null | UC_LIST="$1" UC_TID="$2" python3 -c '
+import json, os, sys
+try:
+  d = json.load(sys.stdin)
+  for t in ((d.get("tasks") or {}).get(os.environ["UC_LIST"]) or []):
+    if t.get("task_id") == os.environ["UC_TID"]:
+      print(json.dumps(t)); sys.exit(0)
+except Exception:
+  pass
+sys.exit(1)'
+}
+
+# uc_audit_has <query> [actor] [subject]: succeed when GET /api/audit?<query>
+# returns an entry with that actor and subject (each optional).
+uc_audit_has() {
+  curl "${curl_args[@]}" "$BASE/api/audit?$1&limit=500" 2>/dev/null | UC_ACTOR="${2:-}" UC_SUBJ="${3:-}" python3 -c '
+import json, os, sys
+try:
+  d = json.load(sys.stdin)
+  a = os.environ.get("UC_ACTOR", ""); s = os.environ.get("UC_SUBJ", "")
+  es = d.get("entries") or []
+  sys.exit(0 if any((not a or e.get("actor") == a) and (not s or e.get("subject") == s) for e in es) else 1)
+except Exception:
+  sys.exit(1)'
+}
+
+# uc_audit_wait <tries> <query> [actor] [subject]: uc_audit_has, retried once
+# a second, because the audit line is written just after the state change.
+uc_audit_wait() {
+  local n="$1"; shift
+  local i
+  for ((i = 0; i < n; i++)); do
+    uc_audit_has "$@" && return 0
+    sleep 1
+  done
+  return 1
+}
+
+UC_CAP0=$(curl "${curl_args[@]}" "$BASE/api/capacity" 2>/dev/null || true)
+if ! echo "$UC_CAP0" | python3 -c 'import json,sys;d=json.load(sys.stdin);assert isinstance(d.get("tasks"),dict) and isinstance(d.get("backoff"),list) and isinstance(d.get("budgets"),list)' 2>/dev/null; then
+  skip "capacity visibility: GET /api/capacity has no tasks/backoff/budgets (${UC_CAP0:0:80})"
+elif ! curl "${curl_args[@]}" -o /dev/null -w '%{http_code}' "$BASE/api/audit?limit=1" 2>/dev/null | grep -q '^200$'; then
+  skip "capacity visibility: GET /api/audit unavailable (audit log not enabled)"
+else
+  ok "GET /api/capacity carries tasks, backoff and budgets; GET /api/audit answers"
+
+  # (a) Admission wait and release.
+  # A throwaway LLM entry capped at one in-flight session is the throwaway
+  # pool (llm:<name>); the entry copies the kind, nodes and models of an
+  # enabled LLM already in the sandbox (local ollama preferred, the least
+  # invasive), and two throwaway Automata name it as their backend.
+  UC_SRC=$(curl "${curl_args[@]}" "$BASE/api/llms" 2>/dev/null | python3 -c '
+import json, sys
+try:
+  d = json.load(sys.stdin)
+  ls = [l for l in (d.get("llms") or []) if not l.get("disabled")]
+  ls.sort(key=lambda l: 0 if l.get("kind") == "ollama" else 1)
+  if ls:
+    l = ls[0]
+    out = {"kind": l.get("kind", "ollama")}
+    if l.get("compute_nodes"): out["compute_nodes"] = l["compute_nodes"]
+    if l.get("models"): out["models"] = l["models"]
+    print(json.dumps(out))
+except Exception:
+  pass' || true)
+  if [[ -z "$UC_SRC" ]]; then
+    skip "capacity admission wait/release: no enabled LLM entry to copy for a throwaway pool"
+  else
+    UC_BODY=$(echo "$UC_SRC" | UC_NAME="$UC_LLM" python3 -c '
+import json, os, sys
+d = json.load(sys.stdin); d["name"] = os.environ["UC_NAME"]; d["max_inflight"] = 1
+print(json.dumps(d))')
+    UC_MODEL=$(echo "$UC_SRC" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+print(((d.get("models") or [{}])[0]).get("model", ""))' 2>/dev/null || true)
+    add_cleanup llm "$UC_LLM"
+    UC_MK=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" -d "$UC_BODY" "$BASE/api/llms" 2>/dev/null || true)
+    if ! echo "$UC_MK" | python3 -c 'import json,sys;assert json.load(sys.stdin).get("ok")==True' 2>/dev/null; then
+      skip "capacity admission wait/release: throwaway LLM create refused (${UC_MK:0:100})"
+    else
+      # The ledger limit follows the registry on a short ticker; wait for it.
+      UC_LIMIT_OK=0
+      for _ in $(seq 1 30); do
+        if curl "${curl_args[@]}" "$BASE/api/capacity" 2>/dev/null | UC_POOL="llm:$UC_LLM" python3 -c '
+import json, os, sys
+d = json.load(sys.stdin)
+sys.exit(0 if any(p.get("name") == os.environ["UC_POOL"] and p.get("limit") == 1 for p in (d.get("pools") or [])) else 1)' 2>/dev/null; then
+          UC_LIMIT_OK=1; break
+        fi
+        sleep 1
+      done
+      if [[ "$UC_LIMIT_OK" == "1" ]]; then
+        ok "throwaway pool llm:$UC_LLM limited to one slot in GET /api/capacity pools"
+      else
+        skip "throwaway pool llm:$UC_LLM never showed limit 1 in /api/capacity (ledger sync not observed); admission wait not exercised"
+      fi
+    fi
+    if [[ "${UC_LIMIT_OK:-0}" == "1" ]]; then
+      # Create the way sections 6 and 7b do: spec + project_dir + backend,
+      # then decompose and approve. Decompose needs a reachable planner LLM;
+      # when it fails the section skips naming exactly that.
+      UC_IDS=()
+      UC_PLAN_FAIL=""
+      for UC_N in a b; do
+        mkdir -p "$TMPD/uc-$UC_N"
+        UC_PB=$(UC_N="$UC_N" UC_TAG="$UC_TAG" UC_LLM="$UC_LLM" UC_DIR="$TMPD/uc-$UC_N" python3 -c '
+import json, os
+n = os.environ["UC_N"]
+print(json.dumps({
+  "spec": "smoke probe - capacity visibility %s (%s): write one line to a scratch file" % (n, os.environ["UC_TAG"]),
+  "project_dir": os.environ["UC_DIR"],
+  "backend": os.environ["UC_LLM"],
+  "effort": "low"}))')
+        UC_PID=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" -d "$UC_PB" "$BASE/api/autonomous/prds" 2>/dev/null \
+          | python3 -c 'import json,sys;print(json.load(sys.stdin).get("id",""))' 2>/dev/null || true)
+        if [[ -z "$UC_PID" ]]; then
+          UC_IDS+=("")
+          continue
+        fi
+        add_cleanup prd "$UC_PID"
+        UC_IDS+=("$UC_PID")
+        UC_DEC=$(curl "${curl_args[@]}" --max-time 300 -X POST -H "Content-Type: application/json" -d '{}' \
+          "$BASE/api/autonomous/prds/$UC_PID/decompose" -w "\n__HTTP_%{http_code}__" 2>/dev/null || true)
+        if ! echo "$UC_DEC" | grep -q "__HTTP_200__"; then
+          UC_PLAN_FAIL="decompose of $UC_PID failed"
+          continue
+        fi
+        curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+          -d '{"actor":"smoke","note":"capacity smoke"}' "$BASE/api/autonomous/prds/$UC_PID/approve" >/dev/null 2>&1 || true
+      done
+      UC_PA="${UC_IDS[0]:-}"; UC_PB_ID="${UC_IDS[1]:-}"
+      if [[ -z "$UC_PA" || -z "$UC_PB_ID" ]]; then
+        skip "capacity admission wait/release: could not create the two throwaway Automata (autonomous subsystem may be off)"
+      elif [[ -n "$UC_PLAN_FAIL" ]]; then
+        skip "capacity admission wait/release: $UC_PLAN_FAIL (planner LLM unreachable?); wait and release not exercised"
+      else
+        UC_TASK_A=$(curl "${curl_args[@]}" "$BASE/api/autonomous/prds/$UC_PA" 2>/dev/null | python3 -c 'import json,sys;print(json.load(sys.stdin)["stories"][0]["tasks"][0]["id"])' 2>/dev/null || true)
+        UC_TASK_B2=$(curl "${curl_args[@]}" "$BASE/api/autonomous/prds/$UC_PB_ID" 2>/dev/null | python3 -c 'import json,sys;print(json.load(sys.stdin)["stories"][0]["tasks"][0]["id"])' 2>/dev/null || true)
+        # Pin the backend (and model) explicitly, as section 6 does.
+        for UC_X in "$UC_PA" "$UC_PB_ID"; do
+          curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+            -d "{\"backend\":\"$UC_LLM\",\"effort\":\"low\",\"model\":\"$UC_MODEL\",\"actor\":\"smoke\"}" \
+            "$BASE/api/autonomous/prds/$UC_X/set_llm" >/dev/null 2>&1 || true
+        done
+        if [[ -z "$UC_TASK_A" || -z "$UC_TASK_B2" ]]; then
+          skip "capacity admission wait/release: throwaway Automata have no task ids to follow"
+        else
+          curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" -d '{}' "$BASE/api/autonomous/prds/$UC_PA/run" >/dev/null 2>&1 || true
+          UC_A_RUN=0
+          for _ in $(seq 1 90); do
+            if uc_cap_find running "$UC_TASK_A" >/dev/null; then UC_A_RUN=1; break; fi
+            sleep 1
+          done
+          if [[ "$UC_A_RUN" != "1" ]]; then
+            skip "capacity admission wait/release: first task $UC_TASK_A never showed as running holding llm:$UC_LLM; waiting and release not exercised"
+          else
+            curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" -d '{}' "$BASE/api/autonomous/prds/$UC_PB_ID/run" >/dev/null 2>&1 || true
+            UC_B_VIEW=""
+            for _ in $(seq 1 60); do
+              UC_B_VIEW=$(uc_cap_find waiting "$UC_TASK_B2" || true)
+              [[ -n "$UC_B_VIEW" ]] && break
+              sleep 1
+            done
+            if [[ -z "$UC_B_VIEW" ]]; then
+              skip "capacity admission wait/release: second task $UC_TASK_B2 never listed under tasks.waiting (first task may have ended already); wait text not exercised"
+            else
+              UC_B_REASON=$(echo "$UC_B_VIEW" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("reason",""))' 2>/dev/null || true)
+              if echo "$UC_B_VIEW" | UC_HOLD="$UC_TASK_A" python3 -c '
+import json, os, sys
+v = json.load(sys.stdin); r = v.get("reason", ""); h = v.get("holder", "")
+sys.exit(0 if r and "held by" in r and (os.environ["UC_HOLD"] in r or (h and h in r)) else 1)' 2>/dev/null; then
+                ok "GET /api/capacity tasks.waiting lists the second task with a reason naming the holder: ${UC_B_REASON:0:120}"
+              else
+                ko "waiting task reason is empty or does not name the holder $UC_TASK_A: ${UC_B_REASON:0:160}"
+              fi
+              UC_ST_REASON=$(curl "${curl_args[@]}" "$BASE/api/autonomous/status" 2>/dev/null | UC_TID="$UC_TASK_B2" python3 -c '
+import json, os, sys
+try:
+  d = json.load(sys.stdin)
+  for t in (d.get("queue") or []):
+    if t.get("task_id") == os.environ["UC_TID"]:
+      print(t.get("reason", "")); break
+except Exception:
+  pass' || true)
+              if [[ -n "$UC_ST_REASON" && "$UC_ST_REASON" == "$UC_B_REASON" ]]; then
+                ok "GET /api/autonomous/status queue carries the same wait reason"
+              else
+                ko "autonomous status reason differs from capacity reason: status='${UC_ST_REASON:0:100}' capacity='${UC_B_REASON:0:100}'"
+              fi
+              # Release: cancel the first task and expect the second admitted.
+              curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+                -d "{\"task_id\":\"$UC_TASK_A\",\"actor\":\"smoke\",\"reason\":\"capacity smoke release\"}" \
+                "$BASE/api/autonomous/prds/$UC_PA/cancel_task" >/dev/null 2>&1 || true
+              UC_B_ADMIT=0
+              for _ in $(seq 1 120); do
+                if ! uc_cap_find waiting "$UC_TASK_B2" >/dev/null; then UC_B_ADMIT=1; break; fi
+                sleep 1
+              done
+              if [[ "$UC_B_ADMIT" == "1" ]]; then
+                ok "second task left tasks.waiting once the first task released the slot"
+                UC_TASK_B="$UC_TASK_B2"
+              else
+                ko "second task $UC_TASK_B2 still waiting 120s after the first task was cancelled"
+              fi
+              if uc_audit_wait 15 "action=autonomous_capacity_wait&subject=$UC_TASK_B2"; then
+                ok "GET /api/audit?action=autonomous_capacity_wait returns an entry for the waiting task"
+              else
+                ko "no autonomous_capacity_wait audit entry with subject $UC_TASK_B2"
+              fi
+              if [[ "$UC_B_ADMIT" == "1" ]]; then
+                if uc_audit_wait 15 "action=autonomous_capacity_admitted&subject=$UC_TASK_B2"; then
+                  ok "GET /api/audit?action=autonomous_capacity_admitted returns an entry for the admitted task"
+                else
+                  ko "no autonomous_capacity_admitted audit entry with subject $UC_TASK_B2"
+                fi
+              else
+                skip "autonomous_capacity_admitted audit entry not asserted: the second task was never admitted"
+              fi
+            fi
+          fi
+          # Stop whatever the throwaway Automata still run; hard delete is in cleanup.
+          for UC_X in "$UC_PA" "$UC_PB_ID"; do
+            curl "${curl_args[@]}" -X POST "$BASE/api/autonomous/prds/$UC_X/cancel" >/dev/null 2>&1 || true
+          done
+        fi
+      fi
+    fi
+  fi
+
+  # (b) Back-off set and clear, on a unique backend.
+  add_cleanup usage-backoff "$UC_BO"
+  curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+    -d "{\"backend\":\"$UC_BO\",\"minutes\":5,\"reason\":\"release smoke capacity audit\"}" \
+    "$BASE/api/usage-backoff" >/dev/null 2>&1 || true
+  if curl "${curl_args[@]}" "$BASE/api/capacity" 2>/dev/null | UC_B="$UC_BO" python3 -c '
+import json, os, sys
+d = json.load(sys.stdin)
+sys.exit(0 if any(b.get("backend") == os.environ["UC_B"] and b.get("until") and b.get("reason") for b in (d.get("backoff") or [])) else 1)' 2>/dev/null; then
+    ok "GET /api/capacity backoff lists the set flag with an until time and its reason"
+  else
+    ko "capacity backoff does not list $UC_BO with until and reason after POST /api/usage-backoff"
+  fi
+  if uc_audit_wait 10 "action=autonomous_usage_backoff_set&subject=$UC_BO" operator "$UC_BO"; then
+    ok "audit autonomous_usage_backoff_set for $UC_BO has actor operator"
+    UC_BO_SET=1
+  else
+    ko "no autonomous_usage_backoff_set audit entry with actor operator for $UC_BO"
+  fi
+  curl "${curl_args[@]}" -X DELETE -H "Content-Type: application/json" \
+    -d "{\"backend\":\"$UC_BO\"}" "$BASE/api/usage-backoff" >/dev/null 2>&1 || true
+  if curl "${curl_args[@]}" "$BASE/api/capacity" 2>/dev/null | UC_B="$UC_BO" python3 -c '
+import json, os, sys
+d = json.load(sys.stdin)
+sys.exit(1 if any(b.get("backend") == os.environ["UC_B"] for b in (d.get("backoff") or [])) else 0)' 2>/dev/null; then
+    ok "DELETE /api/usage-backoff for exactly $UC_BO removed it from capacity backoff"
+  else
+    ko "capacity backoff still lists $UC_BO after DELETE"
+  fi
+  if uc_audit_wait 10 "action=autonomous_usage_backoff_cleared&subject=$UC_BO" operator "$UC_BO"; then
+    ok "audit autonomous_usage_backoff_cleared for $UC_BO has actor operator"
+  else
+    ko "no autonomous_usage_backoff_cleared audit entry for $UC_BO"
+  fi
+
+  # (c) Budget wait and rollover, on a throwaway LLM with a tiny rolling ceiling.
+  add_cleanup llm "$UC_BUD"
+  UC_BMK=$(curl "${curl_args[@]}" -X POST -H "Content-Type: application/json" \
+    -d "{\"name\":\"$UC_BUD\",\"kind\":\"ollama\",\"models\":[{\"model\":\"llama3\"}]}" "$BASE/api/llms" 2>/dev/null || true)
+  if ! echo "$UC_BMK" | python3 -c 'import json,sys;assert json.load(sys.stdin).get("ok")==True' 2>/dev/null; then
+    skip "capacity budget: throwaway LLM create refused (${UC_BMK:0:100})"
+  else
+    UC_BPUT=$(curl "${curl_args[@]}" -X PUT -H "Content-Type: application/json" \
+      -d "{\"name\":\"$UC_BUD\",\"kind\":\"ollama\",\"models\":[{\"model\":\"llama3\"}],\"budget\":{\"ceiling_usd\":0.01,\"hours\":1}}" \
+      "$BASE/api/llms/$UC_BUD" 2>/dev/null || true)
+    UC_BST=$(curl "${curl_args[@]}" "$BASE/api/budget?llm=$UC_BUD" 2>/dev/null || true)
+    if echo "$UC_BST" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+assert d.get("ceiling_usd") == 0.01 and isinstance(d.get("spend_usd"), (int, float)) and d.get("window_end") and d.get("window") and d.get("full") is False' 2>/dev/null; then
+      ok "GET /api/budget?llm= shows spend, ceiling and window end for the throwaway budget"
+      if echo "$UC_BST" | python3 -c 'import json,sys;assert json.load(sys.stdin).get("rolls_over_at")' 2>/dev/null; then
+        ok "GET /api/budget shows the rollover time"
+      else
+        skip "budget rollover time not asserted: a rolling window with no recorded spend has no rolls_over_at until it fills"
+      fi
+    else
+      ko "GET /api/budget?llm=$UC_BUD does not show the budget (PUT: ${UC_BPUT:0:80}) got ${UC_BST:0:160}"
+    fi
+    if curl "${curl_args[@]}" "$BASE/api/budget" 2>/dev/null | UC_L="$UC_BUD" python3 -c '
+import json, os, sys
+d = json.load(sys.stdin)
+sys.exit(0 if any(b.get("llm") == os.environ["UC_L"] and b.get("ceiling_usd") == 0.01 for b in (d.get("budgets") or [])) else 1)' 2>/dev/null; then
+      ok "GET /api/budget lists the throwaway budget"
+    else
+      ko "GET /api/budget does not list $UC_BUD"
+    fi
+    if curl "${curl_args[@]}" "$BASE/api/capacity" 2>/dev/null | UC_L="$UC_BUD" python3 -c '
+import json, os, sys
+d = json.load(sys.stdin)
+sys.exit(0 if any(b.get("llm") == os.environ["UC_L"] and b.get("ceiling_usd") == 0.01 and "spend_usd" in b and b.get("window_end") for b in (d.get("budgets") or [])) else 1)' 2>/dev/null; then
+      ok "GET /api/capacity budgets array carries the throwaway budget with spend, ceiling and window end"
+    else
+      ko "GET /api/capacity budgets array does not carry $UC_BUD"
+    fi
+    skip "budget window full reason and autonomous_budget_ceiling_wait audit entry not exercised: the public REST surface has no way to record spend (GET /api/budget is read-only, spend comes only from real session usage); unit tests with an injectable clock cover it"
+    skip "autonomous_budget_window_rollover audit entry not exercised: it needs a filled window and a boundary passing, which cannot be produced without recording spend; unit tests with an injectable clock cover it"
+  fi
+
+  # Prefix filter: autonomous_* returns the entries from (a) and (b).
+  if [[ -n "$UC_TASK_B" ]]; then
+    if uc_audit_has "action=autonomous_*" "" "$UC_TASK_B"; then
+      ok "GET /api/audit?action=autonomous_* includes the admission entries for the task from (a)"
+    else
+      ko "autonomous_* prefix query returned no entry for task $UC_TASK_B"
+    fi
+  else
+    skip "autonomous_* prefix filter not asserted for part (a): no admitted task id was produced"
+  fi
+  if [[ "$UC_BO_SET" == "1" ]]; then
+    if uc_audit_has "action=autonomous_*" operator "$UC_BO"; then
+      ok "GET /api/audit?action=autonomous_* includes the back-off entries for the backend from (b)"
+    else
+      ko "autonomous_* prefix query returned no entry for backend $UC_BO"
+    fi
+  else
+    skip "autonomous_* prefix filter not asserted for part (b): the back-off set entry was not seen"
+  fi
+fi
+
 # ---------------------------------------------------------------------------
 H "Summary"
 echo "  Pass:  $PASS"

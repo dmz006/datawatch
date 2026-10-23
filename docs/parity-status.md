@@ -48,6 +48,7 @@ Legend:
 | Orchestrator graphs | ✅ | ✅ | ✅ (app CHANGELOG 2026-10-04: "orchestrator graphs" in the three-way parity Automata list) |
 | Capacity admission (pools, wait queue, priority, per-node/LLM limits) | ✅ | ✅ (app v1.23.83, 2026-09-29: "Capacity card showing pools, limits and the wait queue") | ✅ |
 | Usage back-off (capacity panel wait-reason chip + `autonomous.usage_backoff` / `autonomous.backoff_max_wait_minutes` settings fields + status display) | ✅ | ❌ — datawatch-app item: mirror the capacity-panel back-off display and the two settings fields | ❌ — datawatch-app item, same scope |
+| Capacity visibility (task wait cause chip, reason, reset time and Holds line; capacity card back-off reset label, budget spend bars with the estimate label; audit query `subject` filter and `action` prefix) | ✅ | ❌ — pending the datawatch-app issue written up in `plans/2026-10-22-datawatch-app-capacity-visibility-note.md` (not filed yet) | ❌ — same issue, same scope |
 | Compute nodes | ✅ | ✅ | ✅ |
 | Summarize last response | ✅ | ✅ | ✅ |
 | Chrome session flag | ✅ | ✅ | ✅ |

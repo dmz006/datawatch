@@ -1018,6 +1018,8 @@ paths:
       description: Pools (host, node:<name>, llm:<name>) with limits and holders, active leases, and the queue of Automata tasks waiting for capacity with reasons.
       operationId: capacityStatus
       tags: [Autonomous]
+      parameters:
+        - {name: prd_id, in: query, required: false, description: Limit the tasks object to one Automaton, schema: {type: string}}
       responses:
         "200":
           description: Ledger snapshot
@@ -1029,6 +1031,49 @@ paths:
                   pools: {type: array, items: {type: object}}
                   leases: {type: array, items: {type: object}}
                   waiting: {type: array, items: {type: object}}
+                  backoff:
+                    type: array
+                    description: Active usage back-off flags.
+                    items:
+                      type: object
+                      properties:
+                        backend: {type: string}
+                        until: {type: string, format: date-time}
+                        reason: {type: string}
+                        reset_known:
+                          type: boolean
+                          description: False when the rate-limit message named no reset time and until is only the maximum back-off applied.
+                  tasks:
+                    type: object
+                    description: Why each queued task is waiting and what each running task holds. Both arrays are always present.
+                    properties:
+                      waiting:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            task_id: {type: string}
+                            prd_id: {type: string}
+                            prd_title: {type: string}
+                            task_title: {type: string}
+                            cause: {type: string, enum: [pool_full, node_busy, backoff, budget, global_cooldown, await_external, tree_lock]}
+                            reason: {type: string, description: Plain-language wait reason}
+                            since: {type: string, format: date-time}
+                            resets_at: {type: string, format: date-time, description: Present only when the daemon knows when the wait ends}
+                            holder: {type: string, description: The task or session the wait depends on, when there is one}
+                      running:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            task_id: {type: string}
+                            prd_id: {type: string}
+                            task_title: {type: string}
+                            pools: {type: array, items: {type: string}}
+                            node: {type: string}
+                            session_id: {type: string}
+                            since: {type: string, format: date-time}
+                            note: {type: string, description: Sentence for a task parked while holding resources}
 
   /api/autonomous/prds/{id}/set_priority:
     post:
@@ -3479,12 +3524,13 @@ paths:
       tags: [Singletons]
       parameters:
         - {name: actor, in: query, required: false, schema: {type: string}}
-        - {name: action, in: query, required: false, schema: {type: string}}
+        - {name: action, in: query, required: false, description: "Exact match, or a prefix match when it ends in '*' (autonomous_budget_*, autonomous_*)", schema: {type: string}}
+        - {name: subject, in: query, required: false, description: Exact match on the entry subject (task id, backend or LLM name), schema: {type: string}}
         - {name: session_id, in: query, required: false, schema: {type: string}}
         - {name: since, in: query, required: false, schema: {type: string, format: date-time}}
         - {name: until, in: query, required: false, schema: {type: string, format: date-time}}
         - {name: limit, in: query, required: false, schema: {type: integer}}
-      responses: {"200": {description: OK}}
+      responses: {"200": {description: OK}, "400": {description: since or until is not RFC 3339}}
   /api/cooldown:
     get:
       summary: Current global rate-limit cooldown state

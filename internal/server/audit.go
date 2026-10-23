@@ -1,22 +1,30 @@
 // BL9 — operator audit log REST.
 //
-//   GET /api/audit?since=<RFC3339>&actor=&action=&session_id=&limit=N
+//   GET /api/audit?actor=&action=&subject=&session_id=&since=<RFC3339>&until=<RFC3339>&limit=N
 //
 // Returns audit-log entries newest-first. Without a query, returns
 // the most recent 100 entries. Filtering happens server-side; the
-// log file is full-scanned (file is line-oriented JSON).
+// log file is full-scanned (file is line-oriented JSON). action matches
+// exactly, or by prefix when it ends in '*'. A since/until that is not
+// RFC 3339 is a 400, never a silently dropped bound.
 
 package server
 
 import (
 	"encoding/json"
 	"net/http"
-	"strconv"
-	"time"
+	"slices"
 
 	"github.com/dmz006/datawatch/internal/audit"
 	"github.com/dmz006/datawatch/internal/federation"
 )
+
+// auditQueryParams are the query parameters /api/audit reads — the shared
+// filter set every audit surface exposes.
+var auditQueryParams = audit.QueryParamNames
+
+// AuditQueryParams returns the query parameter names /api/audit accepts.
+func AuditQueryParams() []string { return slices.Clone(auditQueryParams) }
 
 // SetAuditLog wires the operator audit log used by /api/audit.
 func (s *Server) SetAuditLog(l *audit.Log) { s.auditLog = l }
@@ -37,26 +45,15 @@ func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := r.URL.Query()
-	filter := audit.QueryFilter{
-		Actor:     q.Get("actor"),
-		Action:    q.Get("action"),
-		SessionID: q.Get("session_id"),
-		Limit:     100,
-	}
-	if v := q.Get("limit"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			filter.Limit = n
+	filter, err := audit.ParseQuery(func(name string) string {
+		if !slices.Contains(auditQueryParams, name) {
+			return ""
 		}
-	}
-	if v := q.Get("since"); v != "" {
-		if t, err := time.Parse(time.RFC3339, v); err == nil {
-			filter.Since = t
-		}
-	}
-	if v := q.Get("until"); v != "" {
-		if t, err := time.Parse(time.RFC3339, v); err == nil {
-			filter.Until = t
-		}
+		return q.Get(name)
+	})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
 	entries, err := s.auditLog.Read(filter)
 	if err != nil {

@@ -7,6 +7,14 @@ exec_steps:
     description: Show capacity pools, limits, holders and the wait queue
     args: {}
     read_only: true
+  - tool: autonomous_status
+    description: Show the queued tasks with their wait reasons, what running tasks hold, back-off flags and budgets
+    args: {}
+    read_only: true
+  - tool: audit_query
+    description: List every budget audit event (the trailing * makes the action a prefix match)
+    args: {action: "autonomous_budget_*", limit: 20}
+    read_only: true
 ---
 
 # Automata capacity: waiting instead of failing
@@ -481,6 +489,169 @@ not confirm automatically that a named peer shares the account, because the
 check that would do that does not exist yet, so the list you write is the
 confirmation, and the status says so next to each counted peer. A peer that
 cannot be reached counts as zero and never stalls your work.
+
+## Why a task is waiting
+
+A waiting task always says why. The text below is what the product shows,
+word for word; only the names, numbers and times change. Each reason also
+carries a cause label (shown as a small chip in the PWA) and, when the end
+of the wait is known, the time it ends.
+
+| Cause label | Exact text shown | Meaning |
+|---|---|---|
+| Pool full | `pool llm:claude-code full (2/2, held by t-3f9a1c, t-8b20de)` | A pool the task needs is at its limit. The holders are the sessions using the slots. With no holder to name, it reads `held by other sessions`. |
+| Node busy | `waiting for node gpu-1: 1/1 engines in use, held by t-3f9a1c` | Every engine on the compute node is in use. |
+| Back-off, reset time known | `backend claude-code backed off until 14:30 UTC (resets in 42m)` | The backend ran out of usage and told datawatch when it lifts. |
+| Back-off, reset time unknown | `backend claude-code backed off until 15:12 UTC (reset time unknown; next attempt allowed then, in 1h)` | The backend gave no reset time, so datawatch holds it for the maximum back-off and then lets one attempt through. |
+| Budget window full | `budget window full: claude-code spent $50.12 of $50.00 ceiling; window rolls over at 2026-10-26T09:00:00-04:00 (in 86h20m)` | The LLM's dollar window is full. With a peer's spend counted, the text splits it: `spent $52.40 (local $50.12, peers $2.28) of $50.00 ceiling`. If the window frees up only as spend ages out, it ends `window rolls over at when peer spend ages out`. |
+| Global cooldown | `global cooldown until 14:30 UTC (in 12m)` | The daemon-wide rate-limit cooldown is active. When its end is not known the text is `global cooldown active`. |
+| Awaiting external | `await_external: CI run on the branch` | The worker parked itself on an outside condition (see "Park on an external condition"). A bare `await_external` means it gave no condition. A long condition is cut at 400 characters. |
+| Tree lock | `tree lock: tree:/home/me/project held by task t-7c1d44 (PRD 4e2a9b10) since 2026-10-22T18:10:00Z` | Another task holds the write lock on the same project tree. If the lock record cannot be read: `tree lock: <key> held by unknown holder (record unreadable)`. |
+
+Two more reasons are not capacity at all, but they show up in the same
+queue: a task whose dependencies are unfinished (`waiting for unfinished
+dependencies: <task titles>`), and a task that is ready but is simply next
+in line (`next in line to start`, or `in line to start, 2 ready task(s)
+ahead in this Automaton`). A task in an approved or paused Automaton says
+so: `its Automaton is approved but has not been started`, or `its Automaton
+is paused, so no new tasks start`. When GPU backpressure holds a task, the
+reason reads `pool <name> backpressure: <why>` and is labelled by the
+underlying cause.
+
+Times are shown with their zone (`14:30 UTC`), and "in 42m" or "in 2h05m"
+counts down from the moment you read it. A wait that has no reason recorded
+yet reads `waiting for a capacity slot`.
+
+### Where the reason appears
+
+The same text, from the same source, on every surface:
+
+- **`autonomous_status`** (MCP; REST `GET /api/autonomous/status`): `queue`
+  lists each queued or waiting task with `reason`, `cause`, `since`,
+  `resets_at` (when known) and `holder`; `holdings` lists each running task
+  with the pools, node and session it holds; `usage_backoff` and `budgets`
+  carry the flags and the dollar windows.
+- **`GET /api/capacity`** (MCP `capacity_status`): the same task views under
+  `tasks.waiting` and `tasks.running`, next to `pools`, `leases`, `waiting`
+  (the raw ledger queue), `backoff` (each flag with `until`, `reason` and
+  `reset_known`) and `budgets`. Add `?prd_id=<id>` to scope it to one
+  Automaton.
+- **Automata task detail (PWA):** a waiting task shows the cause chip, the
+  reason text and, when known, `(Resets at <time>)`; a running task shows a
+  `Holds:` line with its pools and node.
+- **Status tab (PWA, session view):** the same wait row, labelled
+  *Waiting on*, and the same `Holds:` line, for a session that belongs to an
+  Automaton task.
+- **`datawatch capacity`** (add `--json` for the raw body): prints
+  `Queued tasks (n):` with each reason and how long it has waited,
+  `Running tasks (n):` with what each holds, `Back-off:` and `Budgets:`.
+- **`capacity`** (chat command): the same text as the CLI.
+
+A task parked on an external condition also appears under running tasks with
+a note: either the inference slot is released and the tree lock is kept, or
+both are released.
+
+## Capacity and budget card
+
+The PWA shows one Capacity card, built from `GET /api/capacity` and refreshed
+every five seconds. On the Automata list it is the machine-wide view; inside
+an Automaton it is scoped to that Automaton's own backends (the `host` pool is
+always included). The card is left out when there is nothing to show.
+
+- **Pools.** One bar per pool that has a limit, as used / limit, green below
+  75%, amber from 75% and red when full. Hover a pool for what it means; an
+  LLM pool also shows its effective limit and where that came from
+  (`explicit`, `plan_tier` or `kind`). Each pool lists its **holders** (short
+  ids of the sessions using it) and, for a compute node, that tasks are
+  waiting for the node. A pool with no limit appears only while something
+  holds it, marked *no limit*. A registered compute node with no cap and no
+  activity is listed as *no cap configured*, so real hardware is not hidden.
+- **Usage back-off.** One row per active flag: the backend, `Resets: <time>`
+  when the reset time is known or *reset time unknown* when it is only the
+  maximum back-off, and the reason underneath.
+- **LLM budgets.** One block per LLM that has a budget: a spend bar
+  (`$spend of $ceiling`, with peer spend added), a *budget window full* badge
+  when it is full, when the window ends, and when it rolls over. The bar is
+  green, amber from 75% and red when full.
+- **Allocation share.** When a budget has `allocation_pct` set, the block
+  adds `Allocation: n% (estimated)`. It is spend divided by the dollar figure
+  you declared for the LLM's plan tier, so it is an estimate and never blocks
+  anything; only the ceiling does.
+- **Waiting.** The queue of capacity waits, each with the holder, the
+  Automaton, how long it has waited and the reason.
+
+## Audit trail
+
+Waits, admissions, back-off changes and budget transitions are written to the
+audit log, so you can see afterwards what held a task up and for how long.
+Each event is written once per change, never once per poll: a task that waits
+on the same cause for an hour produces one wait event, and a second only if
+the cause changes.
+
+| Action | Actor | Subject | Values |
+|---|---|---|---|
+| `autonomous_capacity_wait` | `autonomous` | the task id | `prd_id`, `cause`, `reason` (the full wait text), `pools` (sorted) |
+| `autonomous_capacity_admitted` | `autonomous` | the task id | `waited_seconds`, `pools` |
+| `autonomous_usage_backoff_set` | `autonomous` for a rate limit, `operator` (or the caller's own actor) for a flag set by hand | the backend | `backend`, `until` (RFC 3339), `source` (`rate_limit` or `operator`) |
+| `autonomous_usage_backoff_cleared` | `operator` (or the caller's own actor) | the backend, or `all` | `backend` |
+| `autonomous_usage_backoff_auto_cleared` | `autonomous` | the backend | `backend`, `until` (RFC 3339) |
+| `autonomous_budget_ceiling_wait` | `autonomous` | the LLM | `llm`, `spend_usd`, `ceiling_usd`, `rolls_over_at` (RFC 3339, only when known) |
+| `autonomous_budget_window_resumed` | `autonomous` | the LLM | `llm`, `spend_usd`, `ceiling_usd` |
+| `autonomous_budget_window_rollover` | `autonomous` | the LLM | `previous_spend_usd`, `ceiling_usd`, `new_window_start` (RFC 3339) |
+
+Notes on reading them:
+
+- `spend_usd` includes the spend of any peers you opted in.
+- `autonomous_budget_window_rollover` is recorded for weekly windows, whose
+  boundary passes at a fixed time; a rolling window slides continuously and
+  has no boundary. `previous_spend_usd` is the spend seen at the last check
+  before the boundary.
+- `autonomous_budget_window_resumed` with only `llm` means the LLM's budget
+  was removed while its window was full.
+- A manual back-off set or clear is attributed to whoever made the call:
+  `operator`, or a more specific actor such as `session:<id>` or
+  `peer:<name>` when the call came from a session or a federated peer.
+- `autonomous_usage_backoff_patterns_rechecked` (details: `patterns_version`)
+  is recorded when you record a pattern recheck; it belongs to the same
+  family and shows in an `autonomous_usage_backoff_*` query.
+
+### The same query on all four surfaces
+
+Every surface takes the same seven filters: `actor`, `action`, `subject`,
+`session_id`, `since`, `until` and `limit` (default 100). Results are
+newest first. `since` and `until` must be RFC 3339 (for example
+`2026-10-22T15:04:05Z`); anything else is rejected rather than ignored.
+`subject` is an exact match on what the event is about: a task id, a backend
+or an LLM name.
+
+`action` is an exact match, or a **prefix match when it ends in `*`**:
+
+- `action=autonomous_budget_*` lists the whole budget family (wait, resumed
+  and rollover);
+- `action=autonomous_usage_backoff_*` lists every back-off change;
+- `action=autonomous_*` lists every capacity, back-off and budget event.
+
+```bash
+# REST
+curl -sk "https://localhost:8443/api/audit?action=autonomous_budget_*&subject=claude-code&since=2026-10-20T00:00:00Z&limit=20"
+
+# CLI (the session filter is --session-id)
+datawatch audit --action 'autonomous_budget_*' --subject claude-code \
+  --since 2026-10-20T00:00:00Z --limit 20
+```
+
+```text
+# MCP: audit_query with the same arguments
+{"action": "autonomous_budget_*", "subject": "claude-code", "since": "2026-10-20T00:00:00Z", "limit": 20}
+
+# Chat channels: key=value words, no spaces around the =
+audit action=autonomous_budget_* subject=claude-code since=2026-10-20T00:00:00Z limit=20
+```
+
+To follow one task, filter on its id: `datawatch audit --subject t-3f9a1c`
+shows when it started waiting, why, and when it was admitted. To see who set
+or cleared a back-off by hand: `datawatch audit --action
+'autonomous_usage_backoff_*' --actor operator`.
 
 ## Common pitfalls
 

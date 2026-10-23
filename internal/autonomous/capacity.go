@@ -89,10 +89,10 @@ func (m *Manager) globalCooldownReason() string {
 	m.mu.Unlock()
 	if fn != nil {
 		if until := fn(); !until.IsZero() {
-			return "global cooldown until " + until.Format("15:04 MST")
+			return GlobalCooldownWaitText(m.spawnWaitClock().Now, until)
 		}
 	}
-	return "global cooldown active"
+	return GlobalCooldownWaitText(nil, time.Time{})
 }
 
 // Capacity returns the ledger (nil when not wired).
@@ -206,15 +206,28 @@ func (m *Manager) admit(ctx context.Context, prd *PRD, t *Task, backend, model s
 		return nil
 	}
 	waited := false
+	rec := m.capacityAudit()
+	var waitStart time.Time
+	var lastCause WaitCause
 	err := led.Acquire(ctx, capacity.Request{
 		Holder: t.ID, PRDID: prd.ID, Priority: prd.Priority, Pools: pools, Node: node, Model: model, Role: role,
 	}, m.capacityWait(), func() bool { return m.taskCancelled(t.ID) }, func(reason string) {
+		if !waited {
+			waitStart = rec.Now()
+		}
+		// The ledger reports every change of reason text (a holder joining a
+		// pool, a count moving); the audit log records only a change of cause.
+		if cause := ClassifyWaitReason(reason); !waited || cause != lastCause {
+			rec.AdmissionWait(t.ID, prd.ID, cause, reason, pools)
+			lastCause = cause
+		}
 		waited = true
 		m.setWaiting(t, reason)
 	})
 	switch {
 	case err == nil:
 		if waited {
+			rec.AdmissionAdmitted(t.ID, waitStart, pools)
 			m.clearWaiting(t)
 		}
 		return nil

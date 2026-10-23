@@ -1,7 +1,7 @@
 // BL428 Phase 4 — daemon wiring for the per-backend usage back-off: rate-limit
 // detection sets flags on the shared registry, a sweeper clears expired ones,
 // and every automatic set/clear is recorded in the operator audit log.
-// Operator-driven set/clear is audited by the REST surface.
+// Operator-driven set/clear is audited by the REST surface (actor "operator").
 
 package main
 
@@ -33,29 +33,39 @@ const backoffSweepInterval = 15 * time.Second
 // backoffAuditFunc records one audit event.
 type backoffAuditFunc func(action string, details map[string]any)
 
-// backoffAuditSink is the audit writer for automatic back-off events. It is
-// installed once the operator audit log is open (after wireUsageBackoff has
-// already started), so it is an atomic pointer; nil means no log is open and
-// events are dropped.
-var backoffAuditSink atomic.Pointer[backoffAuditFunc]
+// auditEntrySink is the operator audit log writer behind capacityAudit. The
+// log is opened after wireUsageBackoff has already started, so it is an atomic
+// pointer; nil means no log is open and events are dropped.
+var auditEntrySink atomic.Pointer[func(auditpkg.Entry)]
 
-// setBackoffAuditLog routes automatic back-off audit events to l (nil
-// detaches).
+// capacityAudit is the daemon-wide recorder for capacity, back-off and budget
+// audit events. Every event it writes is attributed to actor "autonomous"
+// unless the caller names another.
+var capacityAudit = autonomouspkg.NewCapacityAudit(func(e auditpkg.Entry) {
+	if fn := auditEntrySink.Load(); fn != nil {
+		(*fn)(e)
+	}
+})
+
+// setBackoffAuditLog routes automatic back-off, capacity and budget audit
+// events to l (nil detaches).
 func setBackoffAuditLog(l *auditpkg.Log) {
 	if l == nil {
-		backoffAuditSink.Store(nil)
+		auditEntrySink.Store(nil)
 		return
 	}
-	var fn backoffAuditFunc = func(action string, details map[string]any) {
-		_ = l.Write(auditpkg.Entry{Timestamp: time.Now(), Actor: "autonomous", Action: action, Details: details})
-	}
-	backoffAuditSink.Store(&fn)
+	var fn func(auditpkg.Entry) = func(e auditpkg.Entry) { _ = l.Write(e) }
+	auditEntrySink.Store(&fn)
 }
 
+// emitBackoffAudit records a daemon-driven event as actor "autonomous". The
+// subject is the backend or LLM the event is about, taken from its details.
 func emitBackoffAudit(action string, details map[string]any) {
-	if fn := backoffAuditSink.Load(); fn != nil {
-		(*fn)(action, details)
+	subject, _ := details["backend"].(string)
+	if subject == "" {
+		subject, _ = details["llm"].(string)
 	}
+	capacityAudit.Record(autonomouspkg.AuditActorAutonomous, action, subject, details)
 }
 
 // rateLimitBackoffHandler returns the session manager's rate-limit listener:
@@ -80,7 +90,7 @@ func rateLimitBackoffHandler(cfg *config.Config, bo *autonomouspkg.Backoff, now 
 			reason = autonomouspkg.BackoffReasonNoResetTime
 			fmt.Printf("[backoff] %s paused until %s (rate limit, no reset time — max back-off)\n", backend, until.Format(time.RFC3339))
 		}
-		bo.Set(backend, until, reason, autonomouspkg.BackoffSourceRateLimit)
+		bo.SetWithReset(backend, until, reason, autonomouspkg.BackoffSourceRateLimit, hasReset)
 		audit(auditpkg.ActionUsageBackoffSet, map[string]any{
 			"backend": backend,
 			"until":   until.UTC().Format(time.RFC3339),

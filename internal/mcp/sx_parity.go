@@ -17,11 +17,14 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	mcpsdk "github.com/mark3labs/mcp-go/mcp"
+
+	"github.com/dmz006/datawatch/internal/audit"
 )
 
 // httpProxy is the shared HTTP client for in-process REST calls.
@@ -439,24 +442,51 @@ func (s *Server) handleCostRates(_ context.Context, _ mcpsdk.CallToolRequest) (*
 
 func (s *Server) toolAuditQuery() mcpsdk.Tool {
 	return mcpsdk.NewTool("audit_query",
-		mcpsdk.WithDescription("Query the operator audit log (BL9). Newest-first."),
+		mcpsdk.WithDescription("Query the operator audit log (BL9). Newest-first. "+
+			"The action filter is an exact match by default and a prefix match when it ends in '*', "+
+			"so action=autonomous_budget_* or action=autonomous_* lists a whole family. "+
+			"The subject filter is an exact match on what the event is about (a task id, backend or LLM name). "+
+			"Capacity events: "+strings.Join(audit.CapacityActions, ", ")+". "+
+			"since/until must be RFC3339 or the call is rejected."),
 		mcpsdk.WithString("actor", mcpsdk.Description("Filter by actor (e.g. 'operator', 'channel:signal', 'mcp')")),
-		mcpsdk.WithString("action", mcpsdk.Description("Filter by action (start, kill, send_input, configure, ...)")),
+		mcpsdk.WithString("action", mcpsdk.Description(audit.QueryActionHelp())),
+		mcpsdk.WithString("subject", mcpsdk.Description("Filter by subject, exact match (task id, backend or LLM name)")),
 		mcpsdk.WithString("session_id", mcpsdk.Description("Filter by session_id")),
 		mcpsdk.WithString("since", mcpsdk.Description("RFC3339 lower bound")),
 		mcpsdk.WithString("until", mcpsdk.Description("RFC3339 upper bound")),
 		mcpsdk.WithNumber("limit", mcpsdk.Description("Max entries (default 100)")),
 	)
 }
+
+// AuditQueryToolArgs returns the argument names the audit_query tool declares.
+func AuditQueryToolArgs() []string {
+	props := (&Server{}).toolAuditQuery().InputSchema.Properties
+	names := make([]string, 0, len(props))
+	for name := range props {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
 func (s *Server) handleAuditQuery(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	get := func(name string) string {
+		if name == "limit" {
+			if n := int(req.GetFloat("limit", 0)); n > 0 {
+				return strconv.Itoa(n)
+			}
+			return ""
+		}
+		return req.GetString(name, "")
+	}
+	if _, err := audit.ParseQuery(get); err != nil {
+		return toolError("audit_query", err), nil
+	}
 	q := url.Values{}
-	for _, k := range []string{"actor", "action", "session_id", "since", "until"} {
-		if v := req.GetString(k, ""); v != "" {
+	for _, k := range audit.QueryParamNames {
+		if v := get(k); v != "" {
 			q.Set(k, v)
 		}
-	}
-	if n := int(req.GetFloat("limit", 0)); n > 0 {
-		q.Set("limit", strconv.Itoa(n))
 	}
 	out, err := s.proxyGet("/api/audit", q)
 	if err != nil {

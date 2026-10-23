@@ -404,13 +404,9 @@ func newTreeLockRelease(path, holder string) func() {
 // blocked on a live holder.
 func treeWaitReason(key string, rec *LockRecord, readErr error) string {
 	if readErr != nil || rec == nil {
-		return fmt.Sprintf("tree lock: %s held by unknown holder (record unreadable)", key)
+		return TreeLockWaitText(key, "", "", 0)
 	}
-	since := "unknown time"
-	if rec.AcquiredAt > 0 {
-		since = time.Unix(rec.AcquiredAt, 0).UTC().Format(time.RFC3339)
-	}
-	return fmt.Sprintf("tree lock: %s held by task %s (PRD %s) since %s", key, rec.HolderTaskID, rec.HolderPRDID, since)
+	return TreeLockWaitText(key, rec.HolderTaskID, rec.HolderPRDID, rec.AcquiredAt)
 }
 
 // AcquireTreeLock acquires the advisory project-tree write lock for key

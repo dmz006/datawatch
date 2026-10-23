@@ -5594,7 +5594,8 @@ function renderSessionStatusBoardInner(area, board, sessionId) {
     if (auto.task_title || auto.task_id) rows.push(kvRow(t('status_automaton_task')||'Task', escHtml(auto.task_title || auto.task_id)));
     if (auto.task_status) rows.push(kvRow(t('status_task_status')||'Task status', chip(auto.task_status, statusColor(auto.task_status))));
     if (auto.executor_source) rows.push(kvRow(t('status_executor_label')||'Executor', escHtml(auto.executor_source)));
-    if (auto.wait_reason) rows.push(kvRow(t('status_wait_reason')||'Waiting on', `<span style="color:var(--warning,#f59e0b);">${escHtml(auto.wait_reason)}</span>`));
+    if (auto.wait_reason) rows.push(kvRow(t('status_wait_reason')||'Waiting on', `<span style="color:var(--warning,#f59e0b);">${window.taskWaitHtml(auto)}</span>`));
+    { const holdsHtml = window.taskHoldsHtml(auto); if (holdsHtml) rows.push(holdsHtml); }
     if (auto.retry_count) rows.push(kvRow(t('status_retry_count')||'Retries', escHtml(auto.retry_count)));
     if (auto.started_at) rows.push(kvRow(t('status_started_at')||'Started', escHtml(fmtTs(auto.started_at))));
     if (auto.completed_at) rows.push(kvRow(t('status_completed_at')||'Completed', escHtml(fmtTs(auto.completed_at))));
@@ -13159,7 +13160,8 @@ function renderTask(prd, story, task, editable) {
   }
   const expandedBody = `<div class="prd-task-expanded-body"${isExpanded ? '' : ' hidden'}>
     ${task.spec ? `<div class="prd-task-spec">${escHtml(task.spec)}</div>` : ''}
-    ${task.status === 'waiting_capacity' ? `<div class="prd-task-wait-reason">&#9203; ${escHtml(t('prd_task_waiting_capacity')||'Waiting for capacity')}${task.wait_reason ? ': ' + escHtml(task.wait_reason) : ''}</div>` : ''}
+    ${task.status === 'waiting_capacity' ? `<div class="prd-task-wait-reason">&#9203; ${escHtml(t('prd_task_waiting_capacity')||'Waiting for capacity')}${task.wait_reason ? ': ' + window.taskWaitHtml(task) : ''}</div>` : ''}
+    ${window.taskHoldsHtml(task)}
     ${errRow}${verifRow}
     ${task.executor_source ? `<div style="font-size:10px;color:var(--text2);">${escHtml(t('status_executor_label')||'Executor')}: ${escHtml(task.executor_source)}</div>` : ''}
     ${renderTaskFileDrift(task)}
@@ -21962,90 +21964,179 @@ function budgetCapacityLines(budgets) {
     if (b.rolls_over_at) times.push(`${escHtml(t('capacity_budget_rolls_over')||'Rolls over')}: ${escHtml(budgetTime(b.rolls_over_at))}`);
     const timeLine = times.length ? `<div style="font-size:11px;color:var(--text2);">${times.join(' · ')}</div>` : '';
     const alloc = b.allocation && b.allocation.allocation_pct != null
-      ? `<div style="font-size:11px;color:var(--text2);">${escHtml(t('capacity_budget_allocation')||'Allocation')}: ${escHtml(Number(b.allocation.allocation_pct).toFixed(1))}% (${escHtml(t('capacity_budget_estimated')||'estimated')})</div>`
+      ? `<div class="cap-budget-alloc" style="font-size:11px;color:var(--text2);" title="${escHtml(t('capacity_card_budget_estimate')||'An estimate from the plan tier, not a measured figure')}">${escHtml(t('capacity_budget_allocation')||'Allocation')}: ${escHtml(Number(b.allocation.allocation_pct).toFixed(1))}% (${escHtml(t('capacity_budget_estimated')||'estimated')})</div>`
       : '';
-    return `<div style="margin-bottom:4px;"><div style="display:flex;justify-content:space-between;color:var(--text2);"><span>${escHtml(t('capacity_budget_label')||'Budget')}: ${escHtml(b.llm||'')}${badge}</span><span style="font-variant-numeric:tabular-nums;color:var(--text);">${escHtml(spendLine)}</span></div>${timeLine}${alloc}</div>`;
+    const ceiling = Number(b.ceiling_usd) || 0;
+    const pct = ceiling > 0 ? Math.min(100, Math.round(100 * spend / ceiling)) : (b.full ? 100 : 0);
+    const color = b.full || pct >= 100 ? 'var(--error,#ef4444)' : pct >= 75 ? 'var(--warning,#f59e0b)' : 'var(--success,#22c55e)';
+    const bar = `<div class="cap-budget-bar" style="height:4px;background:var(--bg3,rgba(0,0,0,0.2));border-radius:2px;overflow:hidden;"><div style="height:100%;width:${pct}%;background:${color};"></div></div>`;
+    return `<div class="cap-budget" style="margin-bottom:4px;"><div style="display:flex;justify-content:space-between;color:var(--text2);"><span>${escHtml(t('capacity_budget_label')||'Budget')}: ${escHtml(b.llm||'')}${badge}</span><span style="font-variant-numeric:tabular-nums;color:var(--text);">${escHtml(spendLine)}</span></div>${bar}${timeLine}${alloc}</div>`;
   }).join('');
-  return `<div style="margin-top:6px;">${rows}</div>`;
+  return `<div style="margin-top:6px;"><div style="font-weight:600;color:var(--text2);">${escHtml(t('capacity_card_budget_title')||'LLM budgets')}</div>${rows}</div>`;
 }
 
-// Capacity admission card: per-pool used/limit bars + wait queue. Polled every 5s;
-// the interval lives on window so re-renders never stack timers.
+// Capacity admission card, built from the decoded GET /api/capacity body.
+// Pure helpers: they take data and return an HTML string (empty when there is
+// nothing to show), so the poller below and the tests share one renderer.
+function capacityFmtWait(since, now) {
+  const s = Math.max(0, Math.round(((now == null ? Date.now() : now) - new Date(since).getTime()) / 1000));
+  return s >= 3600 ? Math.floor(s/3600) + 'h ' + Math.floor((s%3600)/60) + 'm' : s >= 60 ? Math.floor(s/60) + 'm ' + (s%60) + 's' : s + 's';
+}
+// Pool names are internal ledger keys ("host", "node:<name>", "llm:<name>")
+// that don't explain themselves — operator-reported confusion: seeing
+// "host: 3/9" on a PRD card reads as if it were this PRD's own LLM/compute
+// capacity, when it's actually a machine-wide session cap shared with
+// unrelated interactive sessions. Label + tooltip make the distinction
+// explicit instead of showing the raw pool key.
+function capacityPoolLabel(p) {
+  if (p.name === 'host') return t('capacity_pool_host')||'Host sessions (all tasks + interactive)';
+  if (p.name.startsWith('node:')) return (t('capacity_pool_node')||'Compute node') + ': ' + p.name.slice(5);
+  if (p.name.startsWith('llm:')) return (t('capacity_pool_llm')||'LLM') + ': ' + p.name.slice(4);
+  return p.name;
+}
+function capacityPoolTitle(p) {
+  if (p.name === 'host') {
+    return (t('capacity_pool_host_hint')||'Machine-wide session limit, shared with interactive sessions — not specific to this PRD.') +
+      ` (${p.held||0} ${t('capacity_held')||'held by autonomous tasks'}, ${p.external||0} ${t('capacity_external')||'other sessions on this host'})`;
+  }
+  if (p.name.startsWith('node:')) return t('capacity_pool_node_hint')||'Concurrent autonomous sessions this compute node will run at once.';
+  if (p.name.startsWith('llm:')) {
+    const base = t('capacity_pool_llm_hint')||'Concurrent in-flight requests this LLM backend will accept at once.';
+    if (p.effective_max_inflight != null) return base + ' ' +
+      (t('capacity_pool_llm_cap')||'Effective cap') + ': ' + p.effective_max_inflight +
+      (p.inflight_source ? ' (' + p.inflight_source + ')' : '');
+    return base;
+  }
+  return '';
+}
+// Holders of a pool by short id: the pool's own holder field (a comma list),
+// else every lease that names the pool.
+function capacityHolders(p, leases) {
+  let ids = [];
+  if (p.holder) ids = String(p.holder).split(',');
+  else if (Array.isArray(leases)) ids = leases.filter(l => l && Array.isArray(l.pools) && l.pools.includes(p.name)).map(l => l.holder);
+  return ids.map(h => String(h||'').trim().slice(0, 8)).filter(Boolean);
+}
+function capacityHoldersLine(p, leases) {
+  const ids = capacityHolders(p, leases);
+  const queued = p.name.startsWith('node:') && p.queue_depth > 0
+    ? `${escHtml(t('capacity_waiting_for_node')||'waiting for node')} ${escHtml(p.name.slice(5))}` : '';
+  const holders = ids.length ? `${escHtml(t('capacity_card_holders')||'Holders')}: ${escHtml(ids.join(', '))}` : '';
+  const parts = [holders, queued].filter(Boolean).join(' · ');
+  return parts ? `<div class="cap-holders" style="font-size:11px;color:var(--text2);">${parts}</div>` : '';
+}
+function capacityPoolsHtml(cap) {
+  const allPools = (cap && cap.pools) || [];
+  const leases = cap && cap.leases;
+  const limited = allPools.filter(p => p.limit > 0).map(p => {
+    const used = (p.held || 0) + (p.external || 0);
+    const pct = Math.min(100, Math.round(100 * used / p.limit));
+    const color = pct >= 100 ? 'var(--error,#ef4444)' : pct >= 75 ? 'var(--warning,#f59e0b)' : 'var(--success,#22c55e)';
+    return `<div class="cap-pool" style="margin-bottom:4px;" title="${escHtml(capacityPoolTitle(p))}"><div style="display:flex;justify-content:space-between;color:var(--text2);"><span>${escHtml(capacityPoolLabel(p))}</span><span style="font-variant-numeric:tabular-nums;color:var(--text);">${used} / ${p.limit}</span></div><div style="height:4px;background:var(--bg3,rgba(0,0,0,0.2));border-radius:2px;overflow:hidden;"><div style="height:100%;width:${pct}%;background:${color};"></div></div>${capacityHoldersLine(p, leases)}</div>`;
+  }).join('');
+  const unlimited = allPools.filter(p => !(p.limit > 0) && ((p.held||0)+(p.external||0)) > 0)
+    .map(p => `<div class="cap-pool" style="color:var(--text2);" title="${escHtml(capacityPoolTitle(p))}">${escHtml(capacityPoolLabel(p))}: ${(p.held||0)+(p.external||0)} · ${escHtml(t('capacity_no_limit')||'no limit')}</div>${capacityHoldersLine(p, leases)}`).join('');
+  // v8.36.0 — a registered compute node with no configured session cap and no
+  // current activity used to be entirely invisible. List it plainly so real
+  // hardware isn't hidden just because nobody capped it.
+  const idleNodes = allPools.filter(p => p.name.startsWith('node:') && !(p.limit > 0) && ((p.held||0)+(p.external||0)) === 0)
+    .map(p => `<div class="cap-pool" style="color:var(--text2);opacity:0.7;" title="${escHtml(capacityPoolTitle(p))}">${escHtml(capacityPoolLabel(p))}: ${escHtml(t('capacity_no_cap_configured')||'no cap configured')}</div>${capacityHoldersLine(p, leases)}`).join('');
+  return limited + unlimited + idleNodes;
+}
+// One row per active back-off flag: backend, when it resets (or the label for
+// an unknown reset time), and the reason.
+function capacityBackoffHtml(backoff) {
+  if (!Array.isArray(backoff) || backoff.length === 0) return '';
+  const rows = backoff.map(b => {
+    const reset = b.reset_known
+      ? `${escHtml(t('capacity_card_backoff_resets')||'Resets')}: ${escHtml(budgetTime(b.until))}`
+      : escHtml(t('capacity_card_backoff_reset_unknown')||'reset time unknown');
+    const reason = b.reason ? `<div style="font-size:11px;color:var(--text2);">${escHtml(b.reason)}</div>` : '';
+    return `<div class="cap-backoff" style="margin-bottom:4px;"><div style="display:flex;justify-content:space-between;color:var(--text2);"><span style="color:var(--warning,#f59e0b);">&#9208; ${escHtml(b.backend||'')}</span><span style="color:var(--text);">${reset}</span></div>${reason}</div>`;
+  }).join('');
+  return `<div class="cap-backoff-list" style="margin-top:6px;"><div style="font-weight:600;color:var(--text2);">${escHtml(t('capacity_card_backoff_title')||'Usage back-off')}</div>${rows}</div>`;
+}
+// Wait and holdings rendering shared by the Automata task detail and the
+// session Status tab, so the two cannot drift. The daemon's reason text is
+// shown exactly as sent; the browser only adds a cause chip, the reset time
+// and the holdings line. Field names cover both payload shapes: the task
+// views (cause, resets_at, pools, node) and the session status automaton
+// block (wait_cause, wait_resets_at, holds).
+const _TASK_WAIT_CAUSES = {
+  pool_full: () => t('task_wait_cause_pool_full') || 'Pool full',
+  node_busy: () => t('task_wait_cause_node_busy') || 'Node busy',
+  backoff: () => t('task_wait_cause_backoff') || 'Back-off',
+  budget: () => t('task_wait_cause_budget') || 'Budget',
+  global_cooldown: () => t('task_wait_cause_global_cooldown') || 'Cool-down',
+  await_external: () => t('task_wait_cause_await_external') || 'Awaiting external',
+  tree_lock: () => t('task_wait_cause_tree_lock') || 'Tree lock',
+};
+window.taskWaitHtml = function(task) {
+  if (!task) return '';
+  const reason = task.wait_reason || task.reason || '';
+  const cause = task.wait_cause || task.cause || '';
+  const label = Object.prototype.hasOwnProperty.call(_TASK_WAIT_CAUSES, cause) ? _TASK_WAIT_CAUSES[cause]() : '';
+  const resetsRaw = task.wait_resets_at || task.resets_at || '';
+  const resetsMs = resetsRaw ? new Date(resetsRaw).getTime() : NaN;
+  const resets = Number.isNaN(resetsMs) ? '' : new Date(resetsMs).toLocaleString('en-GB', { hour12: false });
+  // An older daemon sends neither: the reason renders as plain text.
+  if (!label && !resets) return escHtml(reason);
+  const chip = label
+    ? `<span class="task-wait-chip" data-cause="${escHtml(cause)}" style="display:inline-block;font-size:10px;font-weight:700;padding:1px 6px;margin-right:4px;border-radius:8px;border:1px solid var(--warning,#f59e0b);color:var(--warning,#f59e0b);">${escHtml(label)}</span>`
+    : '';
+  const when = resets
+    ? ` <span class="task-wait-resets" style="color:var(--text2);">(${escHtml(t('task_wait_resets_at') || 'Resets at')} ${escHtml(resets)})</span>`
+    : '';
+  return `${chip}<span class="task-wait-text">${escHtml(reason)}</span>${when}`;
+};
+// A running task's pools and node. Tasks that report a status other than
+// running get nothing; a capacity entry has no status and always qualifies.
+window.taskHoldsHtml = function(task) {
+  if (!task) return '';
+  const status = task.status || task.task_status || '';
+  if (status && status !== 'running') return '';
+  const pools = Array.isArray(task.pools) ? task.pools : (Array.isArray(task.holds) ? task.holds : []);
+  const held = pools.slice();
+  if (task.node && !held.includes('node:' + task.node) && !held.includes(task.node)) held.push(task.node);
+  const note = task.holds_note || task.note || '';
+  if (held.length === 0 && !note) return '';
+  const list = held.length ? held.map(h => `<code>${escHtml(h)}</code>`).join(', ') : '';
+  return `<div class="task-holds" style="font-size:11px;color:var(--text2);"><span class="task-holds-label">${escHtml(t('task_holds_label') || 'Holds')}:</span> ${list}${note ? `${list ? ' · ' : ''}<span class="task-holds-note">${escHtml(note)}</span>` : ''}</div>`;
+};
+
+function capacityWaitingHtml(waiting, now) {
+  if (!Array.isArray(waiting) || waiting.length === 0) return '';
+  return `<div style="margin-top:6px;font-weight:600;color:var(--text2);">${escHtml(t('capacity_waiting')||'Waiting')} (${waiting.length})</div>` +
+    waiting.map(w => `<div class="prd-capacity-wait" title="${escHtml(w.reason||'')}">&#9203; ${escHtml((w.holder||'').slice(0,8))} · PRD ${escHtml((w.prd_id||'').slice(0,8))} · ${escHtml(capacityFmtWait(w.since, now))} — ${escHtml(w.reason||'')}</div>`).join('');
+}
+// capacityCardHtml(cap, opts): cap is the decoded /api/capacity response.
+// opts.now (ms) pins the clock for wait times; opts.showEmpty renders a
+// placeholder instead of an empty string when there is nothing to show.
+window.capacityCardHtml = function(cap, opts) {
+  opts = opts || {};
+  const pools = capacityPoolsHtml(cap);
+  const backoff = capacityBackoffHtml(cap && cap.backoff);
+  const budgetLines = budgetCapacityLines(cap && cap.budgets);
+  const queue = capacityWaitingHtml(cap && cap.waiting, opts.now);
+  if (!pools && !backoff && !budgetLines && !queue) {
+    return opts.showEmpty ? `<div class="prd-capacity-card"><div class="cap-title">${escHtml(t('capacity_card_title')||'Capacity')}</div><div style="color:var(--text2);">${escHtml(t('capacity_card_empty')||'No capacity limits, back-offs or budgets to show')}</div></div>` : '';
+  }
+  return `<div class="prd-capacity-card"><div class="cap-title">${escHtml(t('capacity_card_title')||'Capacity')}</div>${pools}${backoff}${budgetLines}${queue}</div>`;
+};
+
+// Polled every 5s; the interval lives on window so re-renders never stack
+// timers. With no prdId the card is the machine-wide view (Automata list).
 window._loadPRDCapacityCard = function(prdId) {
   const slot = document.getElementById('prdCapacityCard');
   if (!slot) return;
   if (window._prdCapacityInterval) clearInterval(window._prdCapacityInterval);
-  const fmtWait = since => {
-    const s = Math.max(0, Math.round((Date.now() - new Date(since).getTime()) / 1000));
-    return s >= 3600 ? Math.floor(s/3600) + 'h ' + Math.floor((s%3600)/60) + 'm' : s >= 60 ? Math.floor(s/60) + 'm ' + (s%60) + 's' : s + 's';
-  };
-  // Pool names are internal ledger keys ("host", "node:<name>", "llm:<name>")
-  // that don't explain themselves — operator-reported confusion: seeing
-  // "host: 3/9" on a PRD card reads as if it were this PRD's own LLM/compute
-  // capacity, when it's actually a machine-wide session cap shared with
-  // unrelated interactive sessions. Label + tooltip make the distinction
-  // explicit instead of showing the raw pool key.
-  const poolLabel = p => {
-    if (p.name === 'host') return t('capacity_pool_host')||'Host sessions (all tasks + interactive)';
-    if (p.name.startsWith('node:')) return (t('capacity_pool_node')||'Compute node') + ': ' + p.name.slice(5);
-    if (p.name.startsWith('llm:')) return (t('capacity_pool_llm')||'LLM') + ': ' + p.name.slice(4);
-    return p.name;
-  };
-  const poolTitle = p => {
-    if (p.name === 'host') {
-      return (t('capacity_pool_host_hint')||'Machine-wide session limit, shared with interactive sessions — not specific to this PRD.') +
-        ` (${p.held||0} ${t('capacity_held')||'held by autonomous tasks'}, ${p.external||0} ${t('capacity_external')||'other sessions on this host'})`;
-    }
-    if (p.name.startsWith('node:')) return t('capacity_pool_node_hint')||'Concurrent autonomous sessions this compute node will run at once.';
-    if (p.name.startsWith('llm:')) {
-      const base = t('capacity_pool_llm_hint')||'Concurrent in-flight requests this LLM backend will accept at once.';
-      if (p.effective_max_inflight != null) return base + ' ' +
-        (t('capacity_pool_llm_cap')||'Effective cap') + ': ' + p.effective_max_inflight +
-        (p.inflight_source ? ' (' + p.inflight_source + ')' : '');
-      return base;
-    }
-    return '';
-  };
-  // Node pools carry queue_depth and holder (GET /api/capacity). Show who
-  // holds the node and, when work is queued behind it, say so by name.
-  const nodeMeta = p => {
-    if (!p.name.startsWith('node:') || p.queue_depth === undefined) return '';
-    const holder = p.holder ? `${escHtml(t('capacity_node_holder')||'holder')}: ${escHtml(p.holder.split(',').map(h => h.slice(0,8)).join(', '))}` : '';
-    const waiting = p.queue_depth > 0 ? `${escHtml(t('capacity_waiting_for_node')||'waiting for node')} ${escHtml(p.name.slice(5))}` : '';
-    const parts = [holder, waiting].filter(Boolean).join(' · ');
-    return parts ? `<div style="font-size:11px;color:var(--text2);">${parts}</div>` : '';
-  };
   const render = () => {
     if (!document.getElementById('prdCapacityCard')) { clearInterval(window._prdCapacityInterval); return; }
     const url = '/api/capacity' + (prdId ? '?prd_id=' + encodeURIComponent(prdId) : '');
     apiFetch(url).then(cap => {
-      const allPools = (cap && cap.pools) || [];
-      const pools = allPools.filter(p => p.limit > 0);
-      const waiting = (cap && cap.waiting) || [];
-      // v8.36.0 — a registered compute node with no configured session cap
-      // and no current activity used to be entirely invisible (the server
-      // always includes every registered node now, but with limit=0 and no
-      // held/external it fell through both the bars and the "unlimited"
-      // bucket below). List it plainly so real hardware isn't hidden just
-      // because nobody capped it.
-      const idleNodes = allPools.filter(p => p.name.startsWith('node:') && !(p.limit > 0) && ((p.held||0)+(p.external||0)) === 0)
-        .map(p => `<div style="color:var(--text2);opacity:0.7;" title="${escHtml(poolTitle(p))}">${escHtml(poolLabel(p))}: ${escHtml(t('capacity_no_cap_configured')||'no cap configured')}</div>${nodeMeta(p)}`).join('');
-      const budgetLines = budgetCapacityLines(cap && cap.budgets);
-      if (pools.length === 0 && waiting.length === 0 && !idleNodes && !budgetLines) { slot.style.display = 'none'; slot.innerHTML = ''; return; }
-      const bars = pools.map(p => {
-        const used = (p.held || 0) + (p.external || 0);
-        const pct = Math.min(100, Math.round(100 * used / p.limit));
-        const color = pct >= 100 ? 'var(--error,#ef4444)' : pct >= 75 ? 'var(--warning,#f59e0b)' : 'var(--success,#22c55e)';
-        return `<div style="margin-bottom:4px;" title="${escHtml(poolTitle(p))}"><div style="display:flex;justify-content:space-between;color:var(--text2);"><span>${escHtml(poolLabel(p))}</span><span style="font-variant-numeric:tabular-nums;color:var(--text);">${used} / ${p.limit}</span></div><div style="height:4px;background:var(--bg3,rgba(0,0,0,0.2));border-radius:2px;overflow:hidden;"><div style="height:100%;width:${pct}%;background:${color};"></div></div>${nodeMeta(p)}</div>`;
-      }).join('');
-      const unlimited = allPools.filter(p => !(p.limit > 0) && ((p.held||0)+(p.external||0)) > 0)
-        .map(p => `<div style="color:var(--text2);" title="${escHtml(poolTitle(p))}">${escHtml(poolLabel(p))}: ${(p.held||0)+(p.external||0)} · ${escHtml(t('capacity_no_limit')||'no limit')}</div>${nodeMeta(p)}`).join('');
-      const queue = waiting.length
-        ? `<div style="margin-top:6px;font-weight:600;color:var(--text2);">${escHtml(t('capacity_waiting')||'Waiting')} (${waiting.length})</div>` +
-          waiting.map(w => `<div class="prd-capacity-wait" title="${escHtml(w.reason||'')}">&#9203; ${escHtml(w.holder.slice(0,8))} · PRD ${escHtml((w.prd_id||'').slice(0,8))} · ${escHtml(fmtWait(w.since))} — ${escHtml(w.reason||'')}</div>`).join('')
-        : '';
-      slot.style.display = 'block';
-      slot.innerHTML = `<div class="prd-capacity-card"><div class="cap-title">${escHtml(t('capacity_card_title')||'Capacity')}</div>${bars}${unlimited}${idleNodes}${budgetLines}${queue}</div>`;
+      const html = window.capacityCardHtml(cap);
+      slot.style.display = html ? 'block' : 'none';
+      slot.innerHTML = html;
     }).catch(() => {});
   };
   render();
@@ -23810,12 +23901,14 @@ function renderAutonomousView() {
           <input type="checkbox" id="automataSelectAll" onchange="toggleAutomataSelectAll(this.checked)"> All
         </label>
       </div>
+      <div id="prdCapacityCard" class="prd-capacity-slot" style="display:none;margin:6px 8px 0;"></div>
       <div id="automataPanel" style="font-size:13px;color:var(--text);padding:6px 8px;">
         <div style="text-align:center;padding:32px;color:var(--text2);">${loadingEyeBlock()}</div>
       </div>
     </div>
   `;
   loadAutomataPanel();
+  window._loadPRDCapacityCard();
   _injectServerPickerBar(view, renderAutonomousView); // BL312 S3
 }
 window.renderAutonomousView = renderAutonomousView;

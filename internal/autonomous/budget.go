@@ -3,7 +3,6 @@ package autonomous
 import (
 	"bufio"
 	"encoding/json"
-	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -355,17 +354,7 @@ func (b *BudgetLedger) Blocked(llm string) (bool, string) {
 	if !ok || !st.Full {
 		return false, ""
 	}
-	total := st.SpendUSD + st.PeerSpendUSD
-	when := "when peer spend ages out"
-	if st.RollsOverAt != nil {
-		when = st.RollsOverAt.Format(time.RFC3339)
-	}
-	if st.PeerSpendUSD > 0 {
-		return true, fmt.Sprintf("budget window full: spent $%.2f (local $%.2f, peers $%.2f) of $%.2f ceiling; window rolls over at %s",
-			total, st.SpendUSD, st.PeerSpendUSD, st.CeilingUSD, when)
-	}
-	return true, fmt.Sprintf("budget window full: spent $%.2f of $%.2f ceiling; window rolls over at %s",
-		total, st.CeilingUSD, when)
+	return true, BudgetWaitText(b.now, llm, st.SpendUSD, st.PeerSpendUSD, st.CeilingUSD, st.RollsOverAt)
 }
 
 // Status returns llm's budget state; false when the LLM has no budget.

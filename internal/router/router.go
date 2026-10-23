@@ -13,6 +13,7 @@ import (
 
 	"github.com/dmz006/datawatch/internal/agents"
 	"github.com/dmz006/datawatch/internal/alerts"
+	"github.com/dmz006/datawatch/internal/autonomous"
 	"github.com/dmz006/datawatch/internal/messaging"
 	"github.com/dmz006/datawatch/internal/profile"
 	"github.com/dmz006/datawatch/internal/proxy"
@@ -871,6 +872,21 @@ func (r *Router) handleConfigure(cmd Command) {
 }
 
 func (r *Router) handleCapacity() {
+	// Through the REST loopback the reply is the same text the CLI prints.
+	if r.webPort != 0 {
+		body, err := r.commGet("/api/capacity", nil)
+		if err != nil {
+			r.reply("capacity failed", err.Error())
+			return
+		}
+		text, err := autonomous.FormatCapacityText([]byte(body))
+		if err != nil {
+			r.reply("capacity failed", err.Error())
+			return
+		}
+		r.reply("Capacity:", strings.TrimRight(text, "\n"))
+		return
+	}
 	if r.capacityFn == nil {
 		r.send(fmt.Sprintf("[%s] Capacity admission not available.", r.hostname))
 		return

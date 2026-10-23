@@ -14,10 +14,12 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/dmz006/datawatch/internal/audit"
 	"github.com/dmz006/datawatch/internal/autonomous"
 )
 
@@ -274,8 +276,15 @@ func (r *Router) handleStale(cmd Command) {
 	r.reply("stale", body)
 }
 
+// auditCommKeys are the key=value words "audit" accepts — the shared
+// filter set every audit surface exposes.
+var auditCommKeys = audit.QueryParamNames
+
+// AuditCommKeys returns the key=value words the "audit" command accepts.
+func AuditCommKeys() []string { return slices.Clone(auditCommKeys) }
+
 func (r *Router) handleAudit(cmd Command) {
-	// Allow "audit actor=<x> action=<y> session_id=<z> limit=<n>"
+	// "audit actor=<x> action=<y|prefix*> subject=<z> session_id=<s> since=<t> until=<t> limit=<n>"
 	q := url.Values{}
 	for _, kv := range strings.Fields(cmd.Text) {
 		i := strings.IndexByte(kv, '=')
@@ -283,10 +292,13 @@ func (r *Router) handleAudit(cmd Command) {
 			continue
 		}
 		k, v := kv[:i], kv[i+1:]
-		switch k {
-		case "actor", "action", "session_id", "since", "until", "limit":
+		if slices.Contains(auditCommKeys, k) {
 			q.Set(k, v)
 		}
+	}
+	if _, err := audit.ParseQuery(q.Get); err != nil {
+		r.reply("audit failed", err.Error())
+		return
 	}
 	body, err := r.commGet("/api/audit", q)
 	if err != nil {
