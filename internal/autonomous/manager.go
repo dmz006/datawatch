@@ -802,6 +802,9 @@ type Manager struct {
 	// operator audit log so the event lands in both JSON-lines and CEF.
 	// Guarded by mu. Nil = audit silently skipped.
 	auditFn func(action string, details map[string]any)
+	// verifierHost — session/lease access for the startup verifier
+	// reconcile. Guarded by mu. Nil = reconcile skipped.
+	verifierHost VerifierHost
 
 	// sessionContinueFn — design §6.ii: sends a "resume" prompt to a parked
 	// worker session after an await-external cycle re-admits it. Optional.

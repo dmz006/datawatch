@@ -506,6 +506,8 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 		}
 	}
 
+	amgr.SetVerifierHost(&verifierReconcileHost{mgr: mgr, led: led, reg: verifiers})
+
 	verifierCapacityAdmit = func(ctx context.Context, backend, model, taskID, prdID, sessionID string) (func(), error) {
 		holder := autonomous.VerifyHolder(taskID)
 		if verifyHandoff(taskID, backend, model) {

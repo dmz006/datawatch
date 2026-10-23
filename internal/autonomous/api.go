@@ -127,6 +127,16 @@ func (a *API) resumeRunningPRDs() {
 		<-ch
 	}
 
+	// Verifier sessions left from before the restart are reconciled once,
+	// before any task resumes verification, so a resumed flow waits for the
+	// surviving verifier instead of spawning a second one.
+	a.M.mu.Lock()
+	vhost := a.M.verifierHost
+	a.M.mu.Unlock()
+	if n := len(a.M.ReconcileVerifiers(vhost)); n > 0 {
+		fmt.Printf("[autonomous] boot-resume: reconciled %d verifier session(s)\n", n)
+	}
+
 	// B165 — counts for the per-PRD decision log + summary line.
 	resumed, parked := 0, 0
 
