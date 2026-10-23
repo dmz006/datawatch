@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.115 — The session list legacy-shape test no longer flakes under load
+
+### Fixed
+
+- **The session list legacy-shape test no longer fails sometimes under load.** `TestSessionListPageLegacyUnchanged` compared a response built from wall-clock timestamps with one rebuilt a moment later, and it depended on state shared with earlier tests. The test now uses fixed timestamps and builds the expected body from the same snapshot, and the sibling tests got the same treatment. This was the last known cause of release test-step failures.
+
 ## v9.5.114 — Capacity rate ceilings and a non-blocking admission query
 
 ### Added

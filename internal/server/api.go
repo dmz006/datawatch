@@ -195,7 +195,7 @@ type mcpBridgeAPI interface {
 var startTime = time.Now()
 
 // Version is set at build time. The server package uses this for /api/health and /api/info.
-var Version = "9.5.114"
+var Version = "9.5.115"
 
 // broadcastSessionsAsync pushes the current session list to every client
 // without blocking the caller. The goroutine is tracked in broadcastWG so
