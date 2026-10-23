@@ -5,6 +5,15 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.101 — Task delivery waits for slow-starting Claude sessions
+
+### Fixed
+
+
+- **Task delivery to a slow-starting Claude session now waits instead of failing early.** A one-shot task's text used to be delivered as soon as the session first looked ready, but a Claude session can still be starting its channel and tool servers — and only then show its main prompt — so the delivery could race the startup and the task failed before the prompt ever appeared. Delivery of a one-shot task now waits at least 180 seconds by default for the main prompt before giving up: `session.task_delivery_window_seconds` (default `60`) bounds each attempt's wait and `session.task_delivery_attempts` (default `3`) bounds the number of attempts, with 5s and 10s backoff pauses between them (total budget = attempts × window + backoff, about 195 seconds with the defaults). The decompose session follows the same budget. A session whose process has already exited still fails at once, without waiting out the budget. Parity: REST config, MCP `config_set`, CLI `datawatch config set`, the comm channel `configure`, YAML config and the PWA settings are covered; Android and iPhone (datawatch-app) need a datawatch-app issue filed by the operator at merge.
+
+## v9.5.94 — Automation BudgetPolicy: spending limits for Automations and members
+
 ## v9.5.100 — Test homes no longer leak a Go module cache into the temp directory
 
 ### Fixed
