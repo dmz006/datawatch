@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -172,6 +173,8 @@ type Ledger struct {
 	lastGrant map[string]time.Time // PRD → last grant, for round-robin
 	lastModel map[string]string    // node → last granted model
 	opt       Options
+
+	wedgeReported atomic.Bool // set while a lock wedge has been reported; see SnapshotWatched
 }
 
 // New creates a ledger.
