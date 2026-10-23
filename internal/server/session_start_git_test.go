@@ -29,6 +29,9 @@ func TestHandleStartSession_GitFlagPassthrough(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			srv := newLLMServer(t)
+			// In-memory tmux fake: handleStartSession then never touches a real
+			// multiplexer, so nothing real can leak on this host.
+			srv.manager.WithFakeTmux()
 
 			payload := map[string]any{"task": "hello", "project_dir": t.TempDir()}
 			if !tc.omit {
@@ -92,6 +95,9 @@ func TestHandleStartSession_GitDefaultConfigFallback(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			srv := newLLMServer(t)
+			// In-memory tmux fake: handleStartSession then never touches a real
+			// multiplexer, so nothing real can leak on this host.
+			srv.manager.WithFakeTmux()
 			srv.cfg = &config.Config{Session: config.SessionConfig{GitDefault: tc.cfgDefault}}
 
 			payload := map[string]any{"task": "hello", "project_dir": t.TempDir()}
