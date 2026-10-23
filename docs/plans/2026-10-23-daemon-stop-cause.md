@@ -1,6 +1,6 @@
 # 2026-10-23 datawatch daemon stop — sender attribution audit
 
-Status: **findings recorded; actual sender unexplained** (see §6); **e2e verification gate passed 2026-10-23** (see §9)
+Status: **findings recorded; actual sender unexplained** (see §6); **e2e verification gate passed 2026-10-23** (see §9); **gate re-executed and re-passed 2026-10-23 (session h-e570)** — all forms re-observed live, vet/tests/checkers green (see §9 re-verification note)
 Date: 2026-10-23
 Scope: repo-wide verification of every path that can stop or restart the
 production `datawatch` daemon, cross-referenced against the 05:33:03 incident.
@@ -373,3 +373,33 @@ choice is the intended production behavior for a supervised daemon, and
 either way the cause was written before the exit — which is the property
 this gate verifies. All scratch instances were killed afterwards; no
 scratch processes remain.
+
+**Re-verification (session h-e570, 2026-10-23, PASS):** the full gate was
+executed again from a clean worktree build (`go build -o <tmp>/datawatch
+./cmd/datawatch/`, exit 0) against a fresh throwaway instance
+(data dir `/tmp/dw-verify-3983072/data`, 127.0.0.1:41233, TMUX/
+TMUX_TMPDIR inherited state as before):
+
+| Step | Observed |
+|------|----------|
+| child-shell `kill -TERM` | `shutdown cause: … signal=terminated source=procscan …`; audit entry `action=shutdown subject=terminated details.signal=terminated`; `last-shutdown.json` at 0600 — all three as before |
+| second start, attributable sender (killer shell lingers: `kill -TERM <pid> ; sleep 8 ; …`) | exact `previous shutdown: signal terminated from bash -c kill -TERM 4012109 ; sleep 8 ; echo killed >/dev/null 4020517 at 2026-10-23T12:31:07-04:00` |
+| `POST /api/restart` (TLS port; HTTP POST 307-redirects to TLS) | `shutdown cause: … signal= source=api-restart via="api-restart"`; audit `via=api-restart`; `last-shutdown.json source=api-restart`; next start → `previous shutdown: api-restart at 2026-10-23T12:33:08-04:00` |
+| `kill -9` of the running scratch instance; start again | `previous shutdown: unknown/crash` |
+| `go vet` + `go test ./internal/shutdowncause/ ./internal/audit/` (TMUX/TMUX_TMPDIR unset) | vet clean; 48 tests pass, 0 fail |
+| `scripts/check-no-production-service-control.sh`, `scripts/check-no-unscoped-tmux.sh` (TMUX/TMUX_TMPDIR unset) | both `OK`, exit 0 |
+
+Behavior note (not a defect): sender attribution for a `kill` from a
+child shell only lands when the killer's process is **still live with
+`kill`+daemon-pid in its cmdline at the moment the handler scans
+`/proc`** (procscan design, never invents data). A one-liner
+`bash -c 'kill -TERM $pid'` (and bash's tail-exec optimization of a
+trailing `sleep`) exits before the scan, so the line degrades to
+`previous shutdown: signal terminated at <time>` — the `from <cmdline>
+<pid>` parts are omitted only when they were not captured, exactly as
+documented on `PreviousShutdownLine` (`internal/shutdowncause/startup.go`).
+
+Residual observation (out of this gate's scope): a scratch daemon from an
+*earlier* gate run was found still running
+(`/tmp/dw-verify/bin/datawatch start --config /tmp/dw-verify/home/.datawatch/config.yaml
+--foreground`, pre-existing — not started or signalled by this session).
