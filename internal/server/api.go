@@ -326,6 +326,9 @@ type Server struct {
 	inferenceReg   *inference.Registry
 	roleMonitor    inference.RoleContentionMonitor
 	capacityLedger *capacity.Ledger
+	// capacityWatchdogThreshold lowers the ledger lock watchdog threshold in
+	// tests; zero uses capacity.DefaultLockWatchdogThreshold.
+	capacityWatchdogThreshold time.Duration
 	// usageBackoff is the per-backend usage back-off registry (BL428 Phase 4).
 	usageBackoff *autonomous.Backoff
 	// budgetLedger is the per-LLM dollar budget ledger (nil = not wired).

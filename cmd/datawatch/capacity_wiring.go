@@ -485,7 +485,7 @@ func wireCapacity(ctx context.Context, cfg *config.Config, mgr *session.Manager,
 	// resolved forms are folded into the snapshot's display fields, which
 	// capacity.FormatText prefers over the raw ids (nil amgr keeps the raw ids).
 	capacityTextFn = func() string {
-		st := led.Snapshot()
+		st := led.SnapshotWatched(capacity.DefaultLockWatchdogThreshold, capacity.LogLockWedge)
 		if amgr == nil {
 			return capacity.FormatText(st)
 		}

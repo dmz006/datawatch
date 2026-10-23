@@ -163,6 +163,14 @@ raises a 30-minute wait alert. Config: `autonomous.capacity_enabled`,
 `autonomous.capacity_wait_timeout_seconds`, `autonomous.capacity_gpu_util_pct`,
 `session.reserved_interactive`. See `docs/howto/automata-capacity.md`.
 
+Ledger lock watchdog (`internal/capacity/watchdog.go`): `Ledger.SnapshotWatched` wraps
+`Snapshot` for request paths (`/api/capacity`, the comm `capacity` reply). If the snapshot
+has not returned after 5 seconds (`DefaultLockWatchdogThreshold`) `LogLockWedge` logs
+`capacity ledger lock held for N seconds` once per wedge episode, however many callers
+are waiting, followed by the stacks of goroutines inside `internal/capacity`, which include
+the lock holder. The watched call keeps waiting and returns normally once the lock frees.
+Internal loops (reaper, limit sync) use plain `Snapshot`.
+
 Reactive usage back-off (`internal/autonomous/backoff.go`): an in-memory per-backend flag
 that holds autonomous dispatch (never interactive starts) after a rate/usage limit.
 Config: `autonomous.usage_backoff` (`pause_backend` | `off`, default `pause_backend`;

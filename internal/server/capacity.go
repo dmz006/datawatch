@@ -397,7 +397,7 @@ func (s *Server) handleCapacity(w http.ResponseWriter, r *http.Request) {
 		writeJSONOK(w, empty)
 		return
 	}
-	st := s.capacityLedger.Snapshot()
+	st := s.capacityLedger.SnapshotWatched(s.capacityWatchdogThreshold, capacity.LogLockWedge)
 	if st.Pools == nil {
 		st.Pools = []capacity.PoolStatus{}
 	}
