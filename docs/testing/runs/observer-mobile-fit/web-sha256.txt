@@ -1,0 +1,2 @@
+c1a9dfac1144633fd7ed57df479b1649a20169646eb240a03dde58c715390177  internal/server/web/app.js
+4271e152bcdb5e870921b8c296d2c9e9dcc7d1cb662d65c277b9a0214662c066  internal/server/web/style.css

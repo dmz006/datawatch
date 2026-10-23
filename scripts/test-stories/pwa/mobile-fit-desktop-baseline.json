@@ -472,71 +472,71 @@
         "x": 156,
         "y": 56,
         "width": 456,
-        "height": 6258
+        "height": 6457
       },
       ".settings-section[0]": {
         "x": 172,
         "y": 76,
         "width": 424,
-        "height": 3090
+        "height": 3289
       },
       ".settings-section[1]": {
         "x": 172,
-        "y": 3192,
+        "y": 3391,
         "width": 424,
         "height": 560
       },
       ".settings-section[2]": {
         "x": 172,
-        "y": 3778,
+        "y": 3977,
         "width": 424,
         "height": 274
       },
       ".settings-section[3]": {
         "x": 172,
-        "y": 4078,
+        "y": 4277,
         "width": 424,
         "height": 395
       },
       ".settings-section[4]": {
         "x": 172,
-        "y": 4499,
+        "y": 4698,
         "width": 424,
         "height": 90
       },
       ".settings-section[5]": {
         "x": 172,
-        "y": 4615,
+        "y": 4814,
         "width": 424,
         "height": 170
       },
       ".settings-section[6]": {
         "x": 172,
-        "y": 4811,
+        "y": 5010,
         "width": 424,
         "height": 412
       },
       ".settings-section[7]": {
         "x": 172,
-        "y": 5249,
+        "y": 5448,
         "width": 424,
         "height": 236
       },
       ".settings-section[8]": {
         "x": 172,
-        "y": 5511,
+        "y": 5710,
         "width": 424,
         "height": 155
       },
       ".settings-section[9]": {
         "x": 172,
-        "y": 5692,
+        "y": 5891,
         "width": 424,
         "height": 195
       },
       ".settings-section[10]": {
         "x": 172,
-        "y": 5913,
+        "y": 6112,
         "width": 424,
         "height": 381
       },
@@ -548,61 +548,61 @@
       },
       ".settings-section-title[1]": {
         "x": 172,
-        "y": 3192,
+        "y": 3391,
         "width": 424,
         "height": 35
       },
       ".settings-section-title[2]": {
         "x": 172,
-        "y": 3778,
+        "y": 3977,
         "width": 424,
         "height": 35
       },
       ".settings-section-title[3]": {
         "x": 172,
-        "y": 4078,
+        "y": 4277,
         "width": 424,
         "height": 35
       },
       ".settings-section-title[4]": {
         "x": 172,
-        "y": 4499,
+        "y": 4698,
         "width": 424,
         "height": 35
       },
       ".settings-section-title[5]": {
         "x": 172,
-        "y": 4615,
+        "y": 4814,
         "width": 424,
         "height": 35
       },
       ".settings-section-title[6]": {
         "x": 172,
-        "y": 4811,
+        "y": 5010,
         "width": 424,
         "height": 35
       },
       ".settings-section-title[7]": {
         "x": 172,
-        "y": 5249,
+        "y": 5448,
         "width": 424,
         "height": 35
       },
       ".settings-section-title[8]": {
         "x": 172,
-        "y": 5511,
+        "y": 5710,
         "width": 424,
         "height": 35
       },
       ".settings-section-title[9]": {
         "x": 172,
-        "y": 5692,
+        "y": 5891,
         "width": 424,
         "height": 35
       },
       ".settings-section-title[10]": {
         "x": 172,
-        "y": 5913,
+        "y": 6112,
         "width": 424,
         "height": 35
       },
@@ -640,59 +640,59 @@
         "x": 186,
         "y": 814,
         "width": 396,
-        "height": 926
+        "height": 1125
       },
       "#ebpfStatusBlock": {
         "x": 186,
-        "y": 1748,
+        "y": 1947,
         "width": 396,
         "height": 53
       },
       "#ebpfNetworkBlock": {
         "x": 186,
-        "y": 1809,
+        "y": 2008,
         "width": 396,
         "height": 200
       },
       "#peerResourceBlock": {
         "x": 186,
-        "y": 2365,
+        "y": 2564,
         "width": 396,
         "height": 286
       },
       "#observerPeersBlock": {
         "x": 186,
-        "y": 2659,
+        "y": 2858,
         "width": 396,
         "height": 193
       },
       "#envelopesBlock": {
         "x": 186,
-        "y": 2258,
+        "y": 2457,
         "width": 396,
         "height": 99
       },
       "#backendHealthBlock": {
         "x": 186,
-        "y": 2107,
+        "y": 2306,
         "width": 396,
         "height": 78
       },
       "#commBackendsBlock": {
         "x": 186,
-        "y": 3099,
+        "y": 3298,
         "width": 396,
         "height": 53
       },
       "#settings-sec-membrowser": {
         "x": 172,
-        "y": 3227,
+        "y": 3426,
         "width": 424,
         "height": 519
       },
       "#memoryBrowserList": {
         "x": 186,
-        "y": 3419,
+        "y": 3618,
         "width": 396,
         "height": 319
       }

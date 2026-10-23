@@ -91,12 +91,15 @@ function cssBlock(css, selector) {
   return m ? m[1] : null;
 }
 
-// Find the @media (max-width: 600px) block that contains `mustContain`
-// (style.css has several 600px blocks; we want the MOBILE-FIT one).
-function mediaBlock600(css, mustContain) {
+// Find the @media (max-width: <widthPx>px) block that contains
+// `mustContain` (style.css has several media blocks at these widths; the
+// mustContain anchor pins us to the MOBILE-FIT one rather than an
+// unrelated block that happens to share the breakpoint).
+function mediaBlock(css, widthPx, mustContain) {
+  const marker = `@media (max-width: ${widthPx}px) {`;
   let searchFrom = 0;
   for (;;) {
-    const start = css.indexOf('@media (max-width: 600px) {', searchFrom);
+    const start = css.indexOf(marker, searchFrom);
     if (start === -1) return null;
     let depth = 0;
     for (let i = css.indexOf('{', start); i < css.length; i += 1) {
@@ -153,7 +156,14 @@ test('style.css pins the phone-width grid layout: ellipsis names, min-width:0 ca
   assert.ok(card, '.obs-sys-card rule must exist');
   assert.match(card, /min-width:\s*0/, 'card must be shrinkable (min-width:0)');
 
-  const media = mediaBlock600(css, '.obs-sys-grid');
+  // The per-system grid track must be shrinkable (min(200px,100%)) so a card
+  // can fit an 180px effective viewport (360 @ z200) instead of hard-forcing
+  // 200px and overflowing past the right edge. The shrinkable track lives on
+  // the base .obs-sys-grid rule (distinct from the ≤600 single-column one).
+  assert.match(css, /\.obs-sys-grid \{[^}]*minmax\(min\(200px,\s*100%\),\s*1fr\)[^}]*\}/,
+    'base .obs-sys-grid track must be able to shrink below 200px to fit narrow viewports');
+
+  const media = mediaBlock(css, 600, '.obs-sys-grid');
   assert.ok(media, '@media (max-width: 600px) block with the grid rule must exist');
   assert.match(media, /\.obs-sys-grid \{ grid-template-columns: 1fr; \}/,
     'phone widths collapse the grid to one full-width column');
@@ -169,22 +179,26 @@ test('style.css pins the #statsPanel no-clip contract: wrapping text, ≥40px ph
   assert.match(panel, /min-width:\s*0/,
     'panel must be allowed to shrink with the viewport');
 
-  // Desktop baseline: the .stats-taprow rule exists and stays a compact,
-  // cursor-pointer row — the ≥40px tap floors below are phone-width ONLY,
-  // so desktop heights are untouched (TS-803 desktop-baseline check).
+  // Desktop baseline: the .stats-taprow base rule exists and stays a compact,
+  // cursor-pointer row — the ≥40px tap floors live in the ≤768px touch block
+  // only, so the true desktop (1280/1920) heights stay in the TS-803 baseline.
   const tap = cssBlock(css, '.stats-taprow');
   assert.ok(tap, '.stats-taprow rule must exist');
   assert.match(tap, /cursor:\s*pointer/, 'tap rows stay pointer rows on desktop');
   assert.doesNotMatch(tap, /min-height:\s*40px/, 'the 40px tap floor must not leak into the desktop baseline');
 
-  const media = mediaBlock600(css, '.stats-taprow');
-  assert.ok(media, '@media (max-width: 600px) block with the tap-row rules must exist');
+  // The mobile-fit harness flags tap targets at every quick-profile touch
+  // viewport — 320/360/390 and the 768 tablet portrait, plus the 740
+  // (360-landscape) width — so the ≥40px floors must apply at ≤768px, not
+  // just ≤600px. 740 and 768 both satisfy max-width:768px; 1280/1920 do not.
+  const media = mediaBlock(css, 768, '.stats-taprow');
+  assert.ok(media, '@media (max-width: 768px) block with the tap-row rules must exist');
   assert.match(media, /\.stats-taprow \{ min-height: 40px; flex-wrap: wrap; \}/,
-    'phone rows need a 40px tap floor and must WRAP their badges rather than clip them');
+    'touch rows need a 40px tap floor and must WRAP their badges rather than clip them');
   assert.match(media, /#statsPanel a\[href\] \{ display: inline-block; min-height: 40px;/,
-    'the "sessions in store" link needs a 40px tap floor on phones');
+    'the "sessions in store" link needs a 40px tap floor on touch viewports');
   assert.match(media, /#statsPanel button \{ min-height: 40px; min-width: 40px; \}/,
-    'panel buttons (e.g. History) need 40×40px tap floors on phones');
+    'panel buttons (e.g. History) need 40×40px tap floors on touch viewports');
 });
 
 test('rendered stats panel: session rows use the stats-taprow hook and no inline pixel width anywhere in the panel', async () => {

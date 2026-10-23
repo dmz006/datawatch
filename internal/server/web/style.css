@@ -6298,7 +6298,11 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
    span is allowed to wrap (or shows an ellipsis with a matching title
    tooltip) instead of clipping. Desktop/tablet renders are pixel-identical
    to the old inline styles. */
-.obs-sys-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 8px; margin-bottom: 4px; }
+/* Track min uses min(200px,100%) so a card can shrink to fit the container
+   (e.g. 180px effective viewport at 360/z200) instead of forcing 200px and
+   overflowing the page. On desktop/tablet (container >= 200px) this resolves
+   to 200px, so wide renders are pixel-identical. */
+.obs-sys-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr)); gap: 8px; margin-bottom: 4px; }
 .obs-sys-card { background: var(--surface1, var(--bg2)); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; min-width: 0; }
 .obs-sys-head { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
 .obs-sys-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
@@ -6338,10 +6342,18 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
 .stats-panel-wide { grid-column: span 2; min-width: 260px; }
 .stats-taprow { cursor: pointer; user-select: none; -webkit-user-select: none; }
 
-@media (max-width: 600px) {
+/* Touch viewports (phones in portrait and landscape, and 768-portrait
+   tablets) need >=40x40px tap targets per the mobile-fit harness (TAP_MIN=40).
+   max-width:768px covers the 740 (360-landscape) and 768 (tablet) quick
+   profile cells while leaving true desktop 1280/1920 baselined unchanged.
+   Grid stacking below stays at <=600px so tablet desktop multi-column layout
+   is not collapsed. */
+@media (max-width: 768px) {
   .stats-taprow { min-height: 40px; flex-wrap: wrap; }
   #statsPanel a[href] { display: inline-block; min-height: 40px; line-height: 38px; padding: 0 6px; }
   #statsPanel button { min-height: 40px; min-width: 40px; }
+}
+@media (max-width: 600px) {
   .stats-panel-grid { grid-template-columns: minmax(0, 1fr); }
   .stats-panel-wide { grid-column: auto; min-width: 0; }
 }
