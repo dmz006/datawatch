@@ -69,6 +69,31 @@ type Decision struct {
 	FailureCategory string `json:"failure_category,omitempty"`
 }
 
+// GateDisagreement is the record of a verifier/quality-gate disagreement
+// (verifier passed, quality gate disagrees), captured on the task by the
+// executor under the autonomous.gate_disagreement policy:
+//
+//   - VerifierOK is always true when this field is set — a disagreement
+//     only exists because the verifier passed.
+//   - GateRegression is true for a real regression from a VALID baseline;
+//     gate_disagreement=block fails the task in this case.
+//   - GateInvalid is true when the gate has no usable baseline; an invalid
+//     gate NEVER blocks under any policy.
+//   - Policy is the effective gate_disagreement policy in force ("warn"|
+//     "block"); Summary is the gate's own one-line summary/regression reason.
+//
+// Nil (absent in JSON) when no disagreement was recorded or quality gates
+// were not running. Mutually exclusive with FailureReason in intent: this
+// can be present on a completed task (warn policy) and must not read as a
+// failure.
+type GateDisagreement struct {
+	VerifierOK     bool   `json:"verifier_ok"`
+	GateRegression bool   `json:"gate_regression"`
+	GateInvalid    bool   `json:"gate_invalid"`
+	Policy         string `json:"policy"`            // "warn" or "block" as in force
+	Summary        string `json:"summary,omitempty"` // gate summary / invalid reason
+}
+
 // verifyingResolution is the Decision.Kind for the boot-time audit entry
 // appended to prd.Decisions whenever an orphaned TaskVerifying /
 // TaskRunningTests task is resolved on daemon restart — either completed from
@@ -356,6 +381,13 @@ type PRD struct {
 	// task and trigger auto-fix retries (same as verifier failure). Empty
 	// value inherits autonomous.default_quality_gates from daemon config.
 	QualityGates *pipeline.QualityGateConfig `json:"quality_gates,omitempty"`
+	// Verdict of the latest quality-gate baseline validation:
+	// "valid" | "invalid" ("", with omitempty, when never checked or the
+	// gates are off). An invalid baseline (command/build/environment
+	// failure) is logged as a warning and NEVER blocks or retries tasks;
+	// QualityGateInvalidReason carries the plain-language why.
+	QualityGateStatus        string `json:"quality_gate_status,omitempty"`
+	QualityGateInvalidReason string `json:"quality_gate_invalid_reason,omitempty"`
 
 	// BL370 — per-PRD task concurrency override. When > 0 overrides
 	// autonomous.max_concurrent_tasks for this specific PRD. 0 = use
@@ -852,6 +884,14 @@ type Task struct {
 	// Nil when quality gates are disabled for this PRD.
 	QualityGateResult *pipeline.QualityGateResult `json:"quality_gate_result,omitempty"`
 
+	// GateDisagreement — set when the verifier PASSED but the quality gate
+	// disagreed (valid-baseline regression, or invalid gate). Recorded
+	// under every policy (warn and block); under "warn" the task completes
+	// and this is the only trace of the disagreement on the task, under
+	// "block" (regression only) it rides along on the failed task. See
+	// GateDisagreement for the field semantics.
+	GateDisagreement *GateDisagreement `json:"gate_disagreement,omitempty"`
+
 	// PriorAttemptHint (v8.36.1) — set by ResetTask from the outgoing
 	// Error/Verification of the attempt it's about to clear, so a fresh
 	// Run() after an operator-triggered retry seeds executeOne's RetryHint
@@ -1121,6 +1161,7 @@ type LoopStatus struct {
 	QualityGatePass        int `json:"quality_gate_pass,omitempty"`        // gate ran and no regression
 	QualityGateFail        int `json:"quality_gate_fail,omitempty"`        // gate ran and regression detected
 	QualityGateRegressions int `json:"quality_gate_regressions,omitempty"` // alias for fail for clarity
+	QualityGateInvalid     int `json:"quality_gate_invalid,omitempty"`     // invalid baseline; gate warned, never blocked
 
 	// BL382 — cancel/requeue lifecycle operation totals (across all stored PRDs).
 	StoriesCancelled int64 `json:"stories_cancelled,omitempty"`

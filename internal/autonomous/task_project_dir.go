@@ -89,11 +89,15 @@ var runQualityGateTests = pipeline.RunTests
 // dir gets its own baseline captured lazily on first use. A nil receiver
 // (gates off) reports no baseline.
 type qualityGateBaselines struct {
-	mu      sync.Mutex
-	cfg     pipeline.QualityGateConfig
-	prdDir  string
-	byDir   map[string]pipeline.TestResult
-	enabled bool
+	mu     sync.Mutex
+	cfg    pipeline.QualityGateConfig
+	prdDir string
+	byDir  map[string]pipeline.TestResult
+	// onInvalid is invoked when a lazily captured per-dir baseline
+	// classifies as unusable; the executor wires it to the PRD-level invalid
+	// marking and warning. nil is a no-op.
+	onInvalid func(dir, reason string)
+	enabled   bool
 }
 
 func newQualityGateBaselines(cfg pipeline.QualityGateConfig, prdDir string, prdBaseline *pipeline.TestResult) *qualityGateBaselines {
@@ -121,9 +125,12 @@ func (b *qualityGateBaselines) forDir(dir string) (pipeline.TestResult, bool) {
 	if dir == b.prdDir {
 		return pipeline.TestResult{}, false
 	}
-	r := runQualityGateTests(b.cfg.TestCommand, dir, b.cfg.Timeout)
+	r := runQualityGateTests(b.cfg.TestCommand, dir, b.cfg.EffectiveTimeout())
 	log.Printf("[autonomous] quality-gate baseline for task dir %s: %d pass / %d fail", dir, r.PassCount, r.FailCount)
 	b.byDir[dir] = r
+	if valid, reason := pipeline.ClassifyBaseline(r); !valid && b.onInvalid != nil {
+		b.onInvalid(dir, reason)
+	}
 	return r, true
 }
 

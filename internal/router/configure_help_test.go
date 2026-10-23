@@ -128,3 +128,51 @@ func TestHandleConfigure_AcceptsMaxEnginesPerNodeNumeric(t *testing.T) {
 		t.Fatalf("sent=%q", sent)
 	}
 }
+
+func TestHandleConfigure_HelpAndListMentionGateDisagreement(t *testing.T) {
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	var sent []string
+	capture := func(s string) {
+		mu.Lock()
+		sent = append(sent, s)
+		mu.Unlock()
+		wg.Done()
+	}
+	r := &Router{hostname: "h", backend: &captureBackend{name: "test", capture: capture}}
+	r.SetConfigureFunc(func(string, string) error { return nil })
+
+	for _, text := range []string{"help", "list"} {
+		wg.Add(1)
+		r.handleConfigure(Command{Type: CmdConfigure, Text: text})
+		wg.Wait()
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(sent) != 2 {
+		t.Fatalf("sent=%q", sent)
+	}
+	for i, s := range sent {
+		if !strings.Contains(s, "autonomous.gate_disagreement") {
+			t.Errorf("reply %d lacks autonomous.gate_disagreement: %q", i, s)
+		}
+	}
+}
+
+func TestHandleConfigure_AcceptsGateDisagreement(t *testing.T) {
+	var wg sync.WaitGroup
+	capture := func(s string) { wg.Done() }
+	var gotKey, gotValue string
+	r := &Router{hostname: "h", backend: &captureBackend{name: "test", capture: capture}}
+	r.SetConfigureFunc(func(key, value string) error {
+		gotKey, gotValue = key, value
+		return nil
+	})
+
+	wg.Add(1)
+	r.handleConfigure(Command{Type: CmdConfigure, Text: "autonomous.gate_disagreement=block"})
+	wg.Wait()
+	if gotKey != "autonomous.gate_disagreement" || gotValue != "block" {
+		t.Fatalf("configureFn got key=%q value=%q", gotKey, gotValue)
+	}
+}

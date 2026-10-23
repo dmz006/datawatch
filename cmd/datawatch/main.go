@@ -4173,6 +4173,7 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			PollIntervalSeconds:         acfgIn.PollIntervalSeconds,
 			MaxParallelTasks:            acfgIn.MaxParallelTasks,
 			MaxConcurrentTasks:          acfgIn.MaxConcurrentTasks,
+			GateDisagreement:            acfgIn.GateDisagreement,
 			PlanningBackend:             acfgIn.PlanningBackend,
 			VerificationBackend:         acfgIn.VerificationBackend,
 			ExecutionBackend:            acfgIn.ExecutionBackend,
@@ -4284,6 +4285,12 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		}
 		if amgrCfg.MaxConcurrentTasks <= 0 {
 			amgrCfg.MaxConcurrentTasks = 1
+		}
+		// gate_disagreement: default "warn" when unset (unrecognized values
+		// are rejected on the config write paths and read back as "warn"
+		// by Manager.SetConfig and the executor policy helper anyway).
+		if amgrCfg.GateDisagreement != "block" && amgrCfg.GateDisagreement != "warn" {
+			amgrCfg.GateDisagreement = "warn"
 		}
 		// The autonomous config-set path (REST PUT /api/autonomous/config
 		// → autonomous.API.SetConfig; MCP autonomous_config_set) merges

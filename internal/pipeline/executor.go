@@ -60,7 +60,7 @@ func (e *Executor) Start(p *Pipeline) error {
 	// BL28 — capture pre-pipeline baseline when enabled.
 	if e.qualityGates.Enabled && e.qualityGates.TestCommand != "" {
 		result := RunTests(e.qualityGates.TestCommand, p.ProjectDir,
-			e.qualityGates.Timeout)
+			e.qualityGates.EffectiveTimeout())
 		e.mu.Lock()
 		e.baseline = &result
 		e.mu.Unlock()
@@ -130,10 +130,14 @@ func (e *Executor) run(p *Pipeline) {
 			// BL28 — compare post-pipeline test run against baseline.
 			if e.qualityGates.Enabled && e.qualityGates.TestCommand != "" && e.baseline != nil {
 				current := RunTests(e.qualityGates.TestCommand, p.ProjectDir,
-					e.qualityGates.Timeout)
+					e.qualityGates.EffectiveTimeout())
 				compare := EvaluateGate(*e.baseline, current, p.ProjectDir,
-					e.qualityGates.Timeout)
-				log.Printf("[pipeline] %s quality-gate: %s", p.ID, compare.Summary)
+					e.qualityGates.EffectiveTimeout())
+				if compare.Invalid {
+					log.Printf("[pipeline] %s quality-gate INVALID (not a regression): %s", p.ID, compare.Summary)
+				} else {
+					log.Printf("[pipeline] %s quality-gate: %s", p.ID, compare.Summary)
+				}
 				if compare.Regression && e.qualityGates.BlockOnRegression {
 					p.State = StateFailed
 					p.Error = "quality_gate_regression: " + compare.Summary

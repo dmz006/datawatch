@@ -113,8 +113,10 @@ func TestPipelineCancel(t *testing.T) {
 }
 
 func TestQualityGate_CompareResults(t *testing.T) {
-	baseline := TestResult{PassCount: 10, FailCount: 2}
-	current := TestResult{PassCount: 10, FailCount: 4}
+	baseline := TestResult{PassCount: 10, FailCount: 2, TestsFound: 12,
+		FailedTests: []string{"A", "B"}}
+	current := TestResult{PassCount: 10, FailCount: 4, TestsFound: 12,
+		FailedTests: []string{"A", "B", "C", "D"}}
 
 	result := CompareResults(baseline, current)
 	if !result.Regression {
@@ -126,8 +128,10 @@ func TestQualityGate_CompareResults(t *testing.T) {
 }
 
 func TestQualityGate_Improved(t *testing.T) {
-	baseline := TestResult{PassCount: 10, FailCount: 3}
-	current := TestResult{PassCount: 12, FailCount: 1}
+	baseline := TestResult{PassCount: 10, FailCount: 3, TestsFound: 13,
+		FailedTests: []string{"A", "B", "C"}}
+	current := TestResult{PassCount: 12, FailCount: 1, TestsFound: 13,
+		FailedTests: []string{"A"}}
 
 	result := CompareResults(baseline, current)
 	if !result.Improved {
@@ -139,8 +143,8 @@ func TestQualityGate_Improved(t *testing.T) {
 }
 
 func TestQualityGate_Stable(t *testing.T) {
-	baseline := TestResult{PassCount: 10, FailCount: 0}
-	current := TestResult{PassCount: 10, FailCount: 0}
+	baseline := TestResult{PassCount: 10, FailCount: 0, TestsFound: 10}
+	current := TestResult{PassCount: 10, FailCount: 0, TestsFound: 10}
 
 	result := CompareResults(baseline, current)
 	if result.Regression || result.Improved {

@@ -5757,6 +5757,7 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, _ *http.Request) {
 			"ci_watch_timeout_seconds":        s.cfg.Autonomous.CIWatchTimeoutSeconds,
 			"per_prd_guardrails":              s.cfg.Autonomous.PerPRDGuardrails, // rules-review, ci-watch
 			"block_on_file_drift":             s.cfg.Autonomous.BlockOnFileDrift, // strict foreign-file-drift enforcement
+			"gate_disagreement":               s.cfg.Autonomous.GateDisagreement, // verifier OK + gate regression: "warn" (default) or "block"
 			// Plan review gate + smoke verification settings.
 			"plan_review_backend":        s.cfg.Autonomous.PlanReviewBackend,
 			"plan_review_model":          s.cfg.Autonomous.PlanReviewModel,
@@ -6069,6 +6070,15 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	if v, ok := patch["autonomous.undeclared_edit_mode"]; ok {
 		if verr := config.ValidateUndeclaredEditMode(toString(v)); verr != nil {
 			http.Error(w, verr.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	// gate_disagreement accepts only "warn" or "block"; the whole PUT is
+	// rejected before anything is applied (the default is "warn", so an
+	// explicit empty string is also invalid).
+	if v, ok := patch["autonomous.gate_disagreement"]; ok {
+		if str, ok := v.(string); !ok || (str != "warn" && str != "block") {
+			http.Error(w, `autonomous.gate_disagreement: must be "warn" or "block"`, http.StatusBadRequest)
 			return
 		}
 	}
@@ -7519,6 +7529,14 @@ func applyConfigPatch(cfg *config.Config, patch map[string]interface{}) []string
 			cfg.Autonomous.AutoFixSkipApproval = toBool(v)
 		case "autonomous.block_on_file_drift":
 			cfg.Autonomous.BlockOnFileDrift = toBool(v)
+		// Verifier/quality-gate disagreement policy. "warn" (default)
+		// records the disagreement and completes the task; "block" fails
+		// it with a "gate_disagreement: …" error. Invalid values are
+		// rejected upstream in handlePutConfig with a 400.
+		case "autonomous.gate_disagreement":
+			if gd := toString(v); gd == "warn" || gd == "block" {
+				cfg.Autonomous.GateDisagreement = gd
+			}
 		// Plan review gate (plan_review_mode is pre-validated in
 		// handlePutConfig) and smoke-verification reviewer override.
 		case "autonomous.plan_review_backend":

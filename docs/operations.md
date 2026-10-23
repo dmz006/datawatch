@@ -2485,6 +2485,112 @@ autonomous:
 
 ---
 
+## Quality gate (test baseline + regression check)
+
+An Automaton can carry a quality gate: a test command that runs once as a
+baseline before the first task, then again after each task. The gate compares
+the two runs by failing test name and reports a regression, an improvement,
+or no change. Set it per Automaton (`quality_gates` on the Automaton, or
+`autonomous.default_quality_gates` for every Automaton that sets none).
+
+**Where the command runs.** `test_command` is ONE shell string, run through
+`sh -c` in the Automaton's project directory (the task's own directory when a
+task sets one). Compound commands work, for example
+`go test ./... && node --test internal/server/web/*.test.js`. The same
+applies to `pipeline.quality_gates.test_command`. `timeout` is in seconds;
+`0` means no limit.
+
+### Valid and invalid runs
+
+Every run is classified before it is trusted. A run is **invalid** when any
+of these is true:
+
+- **Could not start** — the project directory is missing, there is no `sh`,
+  or the command string is empty.
+- **Timed out** — the command was killed at the configured timeout.
+- **Non-zero exit, no named failing test** — the run ended with an error but
+  did not name a single failing test. That is a build, setup or environment
+  problem (a missing generated file, a compile error), not a test failure.
+- **No tests found** — the output held no recognizable tests.
+
+A run that finished, found tests and names some failing ones is **valid**,
+even when those failures were already there before the work started.
+
+### What an invalid baseline does
+
+The baseline is validated at two moments: when the gate is set (creating the
+Automaton with a gate, or changing it later) and when the Automaton starts.
+An invalid baseline is recorded on the Automaton as
+`quality_gate_status: "invalid"` with the plain-language reason in
+`quality_gate_invalid_reason`, plus a `quality_gate_invalid` entry in the
+decision log, and the daemon logs a warning. Setting a usable command later
+clears the stale verdict.
+
+**An invalid gate never blocks.** From then on the gate only warns: it does
+not fail a task, does not trigger an auto-fix retry, and is not counted as a
+pass or a regression, whatever `block_on_regression` or `gate_disagreement`
+say. An unusable run is always reported as an *invalid gate*, never as a
+regression.
+
+The web UI shows an amber "Quality gate invalid" badge with the reason on the
+Automaton card and the Automata list row, and the Monitor's quality-gate card
+gets an invalid line with the count.
+
+### Regression: compared by test name
+
+The gate compares the set of failing test *names*, not counts. A test that
+fails now and did not fail in the baseline is a regression even when the
+total number of failures is unchanged. Tests that failed in the baseline and
+pass now are reported as `IMPROVED`.
+
+A regression is **confirmed by one re-run** before it is reported:
+
+- For a plain `go test` command, only the new failing tests are re-run, in
+  their packages.
+- For any other command (compound commands, `node --test`, `pytest`), the
+  whole command is re-run once.
+
+Only the tests that fail again, by name, count as the regression and are
+listed in `failing_tests`. If none fails again the result is `STABLE` (a
+flaky failure). If the re-run itself is unusable, the gate is invalid, not a
+regression.
+
+### gate_disagreement (default `warn`)
+
+When the task's own verifier **passed** but the gate found a confirmed
+regression from a **valid** baseline, `autonomous.gate_disagreement` decides
+what happens:
+
+| Value | Outcome |
+|---|---|
+| `warn` (default) | The task completes. The disagreement is recorded on the task (`gate_disagreement`) and as a `gate_disagreement` decision-log entry, with a logged warning. |
+| `block` | The task fails with a `gate_disagreement: …` error that names the new failing tests. It is not auto-fix retried. |
+
+Only `warn` and `block` are accepted; any other value is rejected when it is
+written (REST answers `400`). The policy applies to a valid-baseline
+regression only. For an invalid gate the task still records
+`gate_disagreement` with `gate_invalid: true`, and nothing is blocked under
+either value. With `warn`, an Automaton whose `block_on_regression` is on
+still fails the task and retries it as before.
+
+### Setting gate_disagreement, per surface
+
+| Surface | How |
+|---|---|
+| REST | `PUT /api/config` with `{"autonomous.gate_disagreement": "block"}`; read it back from `GET /api/config` (`autonomous.gate_disagreement`). `PUT /api/autonomous/config` accepts `gate_disagreement`. |
+| MCP | `autonomous_config_set` with parameter `gate_disagreement` (`autonomous_config_get` returns it) |
+| CLI | `datawatch autonomous config-set '{"gate_disagreement":"block"}'` (`config-get` shows it) |
+| Comm | `configure autonomous.gate_disagreement=block` |
+| PWA | Settings → General → Autonomous: "When the gate disagrees with a passing verifier" (warn / block) |
+| YAML | `autonomous.gate_disagreement: warn` in `~/.datawatch/config.yaml` |
+
+On the Automaton JSON (`GET /api/autonomous/prds/{id}`) look at
+`quality_gate_status` and `quality_gate_invalid_reason`; on a task, at
+`gate_disagreement` (`verifier_ok`, `gate_regression`, `gate_invalid`,
+`policy`, `summary`) and `quality_gate_result`.
+
+---
+
 ## Autonomous Prompt Injection Protection
 
 When using autonomous PRDs with user-supplied specs (especially via federation peers, comm channels, or operator-created tasks), enable the injection guard to detect and optionally block known prompt injection patterns before they reach the LLM:

@@ -26,6 +26,41 @@ test('autonomous settings expose max_concurrent_tasks, not max_parallel_tasks', 
   assert.ok(!keys.includes('autonomous.max_parallel_tasks'), 'deprecated autonomous.max_parallel_tasks still editable');
 });
 
+test('autonomous settings expose gate_disagreement as a select with warn/block options and a label key', () => {
+  const sandbox = buildSandbox();
+  vm.createContext(sandbox);
+  loadScript(path.join(__dirname, 'app.js'), sandbox);
+  const field = vm.runInContext(
+    "JSON.stringify((GENERAL_CONFIG_FIELDS.find(s => s.id === 'autonomous') || {fields: []}).fields.find(f => f.key === 'autonomous.gate_disagreement') || null)",
+    sandbox);
+  const parsed = JSON.parse(field);
+  assert.ok(parsed, 'autonomous.gate_disagreement missing from autonomous card fields');
+  assert.equal(parsed.type, 'select');
+  assert.deepEqual(parsed.options, ['warn', 'block']);
+  assert.equal(parsed.labelKey, 'settings_gate_disagreement');
+  const en = JSON.parse(fs.readFileSync(path.join(__dirname, 'locales', 'en.json'), 'utf8'));
+  assert.ok(typeof en.settings_gate_disagreement === 'string' && en.settings_gate_disagreement.length > 0,
+    'settings_gate_disagreement missing from en locale');
+});
+
+test('gate_disagreement settings and PRD invalid-gate keys exist in all five locale bundles', () => {
+  const keys = [
+    'settings_gate_disagreement',
+    'settings_gate_disagreement_hint',
+    'settings_gate_disagreement_block',
+    'settings_gate_disagreement_warn',
+    'prd_gate_invalid',
+    'prd_gate_invalid_reason',
+  ];
+  for (const locale of ['en', 'de', 'es', 'fr', 'ja']) {
+    const bundle = JSON.parse(fs.readFileSync(path.join(__dirname, 'locales', locale + '.json'), 'utf8'));
+    for (const k of keys) {
+      assert.ok(typeof bundle[k] === 'string' && bundle[k].length > 0,
+        k + ' missing or empty in ' + locale + ' locale');
+    }
+  }
+});
+
 test('autonomous settings expose verification_timeout_seconds with an en label key', () => {
   const sandbox = buildSandbox();
   vm.createContext(sandbox);

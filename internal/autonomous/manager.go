@@ -38,6 +38,47 @@ func trimDecisions(ds []Decision) []Decision {
 	return ds[len(ds)-maxDecisionsPerPRD:]
 }
 
+// markGateInvalid records an unusable quality-gate baseline on the PRD:
+// status + plain reason, a decision-log entry, and a store save so it
+// survives a restart. It never fails, blocks, or retries anything — a gate
+// we cannot trust warns only.
+func (m *Manager) markGateInvalid(prdID string, prd *PRD, reason string) {
+	prd.QualityGateStatus = "invalid"
+	prd.QualityGateInvalidReason = reason
+	prd.Decisions = trimDecisions(append(prd.Decisions, Decision{
+		At:    time.Now(),
+		Kind:  "quality_gate_invalid",
+		Actor: "autonomous",
+		Note:  reason,
+	}))
+	prd.UpdatedAt = time.Now()
+	if err := m.store.SavePRD(prd); err != nil {
+		log.Printf("[autonomous] %s markGateInvalid: save: %v", prdID, err)
+	}
+}
+
+// checkGateBaseline runs the gate's test command once as a baseline in dir
+// and classifies the result:
+//
+//	("", "")       — nothing to check (gates off / no command) or dir is empty
+//	("valid", "")  — the command completed and produced a usable baseline
+//	("invalid", r) — unusable; r is the plain-language reason
+//
+// It does not mutate the PRD; callers record the verdict.
+func (m *Manager) checkGateBaseline(dir string, cfg pipeline.QualityGateConfig) (string, string) {
+	if !cfg.Enabled || strings.TrimSpace(cfg.TestCommand) == "" {
+		return "", ""
+	}
+	if strings.TrimSpace(dir) == "" {
+		return "", ""
+	}
+	r := runQualityGateTests(cfg.TestCommand, dir, cfg.EffectiveTimeout())
+	if valid, reason := pipeline.ClassifyBaseline(r); !valid {
+		return "invalid", reason
+	}
+	return "valid", ""
+}
+
 // Config is the operator-tunable knobs for the autonomous system.
 // Mirrors session.* config fields per the no-hard-coded-config rule.
 // JSON tags use snake_case so REST + YAML payloads can be applied
@@ -332,6 +373,16 @@ type Config struct {
 	// independent (no-dependency) tasks up to the specified limit. Per-PRD
 	// MaxConcurrentTasks overrides this global default.
 	MaxConcurrentTasks int `json:"max_concurrent_tasks,omitempty"`
+
+	// GateDisagreement — verifier/quality-gate disagreement policy. When
+	// a task's verifier PASSES but the quality gate disagrees (a
+	// valid-baseline regression, or an invalid gate), "warn" (default)
+	// lets the task complete while recording the disagreement (task
+	// gate_disagreement field + decision-log entry + warning); "block"
+	// fails the task with a "gate_disagreement: …" error for a real
+	// regression from a VALID baseline (an invalid gate never blocks
+	// under any policy). Unset or unrecognized values read as "warn".
+	GateDisagreement string `json:"gate_disagreement,omitempty"`
 	// MaxEnginesPerNode is how many local-model engine sessions one
 	// compute node may run at once. 1 = one per node (default). Mirrors
 	// config.AutonomousConfig.MaxEnginesPerNode; the runtime copy is what
@@ -409,6 +460,7 @@ func DefaultConfig() Config {
 		PollIntervalSeconds: 30,
 		MaxConcurrentTasks:  1,
 		MaxEnginesPerNode:   1,
+		GateDisagreement:    "warn",
 		AutoFixRetries:      1,
 		SecurityScan:        true,
 		MaxRecursionDepth:   5,
@@ -1393,6 +1445,12 @@ func (m *Manager) Templates() *TemplateStore { return m.templates }
 func (m *Manager) SetConfig(cfg Config) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	// gate_disagreement: unset or unrecognized reads as "warn" (writes are
+	// rejected upstream in API.SetConfig); persist the canonical value so
+	// GET exposes it.
+	if cfg.GateDisagreement != "warn" && cfg.GateDisagreement != "block" {
+		cfg.GateDisagreement = "warn"
+	}
 	m.cfg = cfg
 }
 
@@ -1580,6 +1638,19 @@ func (m *Manager) finalizeDecomposedPlan(prd *PRD, prdID, backend, prompt, raw, 
 	m.emitPRDStatus(prd, reviewOld, lastDecision(prd, "decompose"), nil)
 	updated, _ := m.store.GetPRD(prdID)
 	return updated, nil
+}
+
+// gateDisagreementPolicy returns the effective autonomous.gate_disagreement
+// policy read by the executor: "block" when configured, "warn" otherwise
+// (unset or unrecognized values read as "warn").
+func (m *Manager) gateDisagreementPolicy() string {
+	m.mu.Lock()
+	p := m.cfg.GateDisagreement
+	m.mu.Unlock()
+	if p == "block" {
+		return "block"
+	}
+	return "warn"
 }
 
 // Store exposes the underlying store (REST handlers and tests use it).
@@ -4184,7 +4255,9 @@ func (m *Manager) Status() LoopStatus {
 				// BL367 — quality gate counters.
 				if t.QualityGateResult != nil {
 					st.QualityGateRuns++
-					if t.QualityGateResult.Regression {
+					if t.QualityGateResult.Invalid {
+						st.QualityGateInvalid++ // invalid baseline: neither pass nor regression
+					} else if t.QualityGateResult.Regression {
 						st.QualityGateFail++
 						st.QualityGateRegressions++
 					} else {
@@ -4720,6 +4793,25 @@ func (m *Manager) SetPRDQualityGates(prdID string, enabled bool, testCommand str
 		TestCommand:       testCommand,
 		Timeout:           timeout,
 		BlockOnRegression: blockOnRegression,
+	}
+	// Re-validate whenever the gate command changes: run it once as a
+	// baseline in the PRD's project dir (skipped when the PRD has no dir)
+	// and record the verdict. An invalid baseline is stored with its plain
+	// reason and logs a warning; it never fails this call or blocks work.
+	if status, reason := m.checkGateBaseline(prd.ProjectDir, *prd.QualityGates); status == "invalid" {
+		prd.QualityGateStatus = "invalid"
+		prd.QualityGateInvalidReason = reason
+		prd.Decisions = trimDecisions(append(prd.Decisions, Decision{
+			At:    time.Now(),
+			Kind:  "quality_gate_invalid",
+			Actor: "operator",
+			Note:  reason,
+		}))
+		log.Printf("[autonomous] prd=%s WARNING: quality-gate baseline invalid (%s) — gate will warn only, never block a task", prdID, reason)
+	} else {
+		// "valid" (or nothing to check / no dir): drop any stale verdict.
+		prd.QualityGateStatus = ""
+		prd.QualityGateInvalidReason = ""
 	}
 	prd.UpdatedAt = time.Now()
 	return prd, m.store.SavePRD(prd)

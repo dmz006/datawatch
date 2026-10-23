@@ -2302,6 +2302,18 @@ type AutonomousConfig struct {
 	// quality_gates field is nil. Disabled (Enabled: false) by default
 	// to preserve v8.15.x behavior. Per-PRD quality_gates field overrides.
 	DefaultQualityGates QualityGateConfig `yaml:"default_quality_gates,omitempty" json:"default_quality_gates,omitempty"`
+	// GateDisagreement — verifier/quality-gate disagreement policy. When a
+	// task's verifier PASSES but the quality gate disagrees (a
+	// valid-baseline regression, or an invalid gate), "warn" (default) lets
+	// the task complete while recording the disagreement on the task
+	// (gate_disagreement field), the PRD decision log, and a warning log
+	// line; "block" fails the task with an error prefixed
+	// "gate_disagreement: …" for a real regression from a VALID baseline
+	// (an invalid gate never blocks under any policy). The per-PRD
+	// quality-gates block_on_regression keeps its current meaning in the
+	// no-disagreement case. Any other value is rejected on write and
+	// treated as "warn" on read.
+	GateDisagreement string `yaml:"gate_disagreement,omitempty" json:"gate_disagreement,omitempty"`
 
 	// BL369 — prompt injection guard. When InjectionGuard is true, user-
 	// supplied PRD/task specs are scanned for known injection phrases at
@@ -2769,7 +2781,10 @@ type PipelineConfig struct {
 // but lives in the top-level config struct for YAML round-trip without an
 // import cycle.
 type QualityGateConfig struct {
-	Enabled           bool   `yaml:"enabled" json:"enabled"`
+	Enabled bool `yaml:"enabled" json:"enabled"`
+	// TestCommand is ONE shell string executed via `sh -c` — compound
+	// commands are fine, e.g.
+	// "go test ./... && node --test internal/server/web/*.test.js".
 	TestCommand       string `yaml:"test_command" json:"test_command"`
 	Timeout           int    `yaml:"timeout" json:"timeout"`
 	BlockOnRegression bool   `yaml:"block_on_regression" json:"block_on_regression"`
@@ -2967,6 +2982,7 @@ func DefaultConfig() *Config {
 			BackoffMaxWaitMinutes: BackoffMaxWaitDefaultMinutes,
 			ResumeMaxAgeSeconds:   3600,
 			MaxEnginesPerNode:     1,
+			GateDisagreement:      autonomousGateDisagreementWarn,
 			// Starting plan-tier table — operator policy, see the field
 			// doc on PlanTierMaxInflight. api=0 = unlimited; the dollar
 			// budget is a later phase.
@@ -3381,6 +3397,12 @@ func applyDefaults(cfg *Config) {
 	if cfg.Autonomous.MaxEnginesPerNode < 1 {
 		cfg.Autonomous.MaxEnginesPerNode = 1
 	}
+	// gate_disagreement defaults to "warn"; an unrecognized value is left
+	// here and rejected by validateGateDisagreement on the load paths, or
+	// treated as "warn" by the runtime readers.
+	if cfg.Autonomous.GateDisagreement == "" {
+		cfg.Autonomous.GateDisagreement = autonomousGateDisagreementWarn
+	}
 	// BL428 §3a — autonomous.project_write_serialization defaults to
 	// "advisory"; "parallel" is reserved-but-disabled (recognized,
 	// still enforced advisory, startup warning). validateLoaded
@@ -3420,6 +3442,13 @@ const (
 	// autonomousProjectWriteSerializationParallel is reserved but
 	// DISABLED: recognized at load time, still advisory in practice.
 	autonomousProjectWriteSerializationParallel = "parallel"
+)
+
+// gate_disagreement policy values (verifier pass vs. quality-gate
+// disagreement; see AutonomousConfig.GateDisagreement).
+const (
+	autonomousGateDisagreementWarn  = "warn"
+	autonomousGateDisagreementBlock = "block"
 )
 
 // validateLoaded rejects misconfigured values that applyDefaults left in
@@ -3478,6 +3507,20 @@ func detectDeprecatedKeys(cfg *Config) []string {
 	return keys
 }
 
+// validateGateDisagreement rejects an unrecognized
+// autonomous.gate_disagreement value; run from the config load paths so
+// anything but "warn"/"block" (or unset) is rejected. Runtime readers
+// treat an unrecognized value as "warn" so an existing config can never
+// wedge the daemon.
+func validateGateDisagreement(v string) error {
+	switch v {
+	case autonomousGateDisagreementWarn, autonomousGateDisagreementBlock, "":
+		return nil
+	}
+	return fmt.Errorf("autonomous.gate_disagreement: invalid value %q (valid values: %q, %q)",
+		v, autonomousGateDisagreementWarn, autonomousGateDisagreementBlock)
+}
+
 // normalizeBooleanFields fixes YAML representation inconsistencies where
 // boolean-like strings are quoted (e.g. "true" instead of true). This happens
 // when a field is defined as string but written from a boolean value.
@@ -3516,6 +3559,9 @@ func Load(path string) (*Config, error) {
 	if err := validateLoaded(cfg); err != nil {
 		return nil, err
 	}
+	if err := validateGateDisagreement(cfg.Autonomous.GateDisagreement); err != nil {
+		return nil, err
+	}
 	normalizeBooleanFields(cfg)
 	return cfg, nil
 }
@@ -3548,6 +3594,9 @@ func LoadSecure(path string, password []byte) (*Config, error) {
 	cfg.DeprecatedKeys = detectDeprecatedKeys(cfg)
 	applyDefaults(cfg)
 	if err := validateLoaded(cfg); err != nil {
+		return nil, err
+	}
+	if err := validateGateDisagreement(cfg.Autonomous.GateDisagreement); err != nil {
 		return nil, err
 	}
 	normalizeBooleanFields(cfg)

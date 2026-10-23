@@ -12548,6 +12548,11 @@ function renderPRDRow(prd) {
   const depthBadge = prd.depth
     ? `<span style="font-size:10px;color:var(--text);margin-left:4px;background:rgba(255,255,255,0.08);padding:1px 6px;border-radius:6px;" title="recursion depth from a root automaton">depth ${prd.depth}</span>`
     : '';
+  // Invalid quality-gate baseline: the gate skips and never blocks, so show
+  // a warning badge on the row header with the plain reason.
+  const gateInvalidBadge = prd.quality_gate_status === 'invalid'
+    ? `<span class="gate-invalid-badge" style="font-size:10px;padding:1px 6px;border-radius:6px;margin-left:4px;background:rgba(245,158,11,0.15);color:#f59e0b;border:1px solid #f59e0b;font-weight:700;" title="${escHtml(prd.quality_gate_invalid_reason || t('prd_gate_invalid_reason') || '')}">${escHtml(t('prd_gate_invalid') || 'Quality gate invalid')}${prd.quality_gate_invalid_reason ? ' · ' + escHtml(prd.quality_gate_invalid_reason) : ''}</span>`
+    : '';
   const actions = renderPRDActions(prd);
   // BL303 S4 T10 — maximize button opens automaton in dashboard expand mode.
   const dashExpandBtn = `<button class="sess-maximize-btn" onclick="${escHtml(`event.stopPropagation();window.openDashExpand(${JSON.stringify(id)})`)}" title="${escHtml(t('dash_expand_session') || 'Open in Dashboard')}">&#9783;</button>`;
@@ -12564,7 +12569,7 @@ function renderPRDRow(prd) {
   return `<div class="prd-row prd-card ${statusClass}">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap;">
       <div style="flex:1;min-width:0;">
-        <code style="font-size:11px;color:var(--text2);">${escHtml(id)}</code> ${statusPill(prd.status)}${serverBadge}${tplBadge}${tplOf}${llmBadge}${parentBadge}${depthBadge}
+        <code style="font-size:11px;color:var(--text2);">${escHtml(id)}</code> ${statusPill(prd.status)}${serverBadge}${tplBadge}${tplOf}${llmBadge}${parentBadge}${depthBadge}${gateInvalidBadge}
         <div style="margin-top:2px;color:var(--text);font-weight:600;">${escHtml(prd.title || '(no title)')}</div>
         <div style="font-size:10px;color:var(--text2);">${stories.length} stories &middot; ${taskCount} tasks &middot; ${prd.decisions ? prd.decisions.length : 0} decisions</div>
         ${renderPRDDecomposeFailure(prd)}
@@ -15113,6 +15118,10 @@ const GENERAL_CONFIG_FIELDS = [
     { key: 'autonomous.default_quality_gates.test_command', label: 'Quality gate test command', labelKey: 'settings_quality_gates_test_command', type: 'text', placeholder: 'go test ./...' },
     { key: 'autonomous.default_quality_gates.timeout', label: 'Quality gate timeout (seconds, 0=no limit)', labelKey: 'settings_quality_gates_timeout', type: 'number', placeholder: '0' },
     { key: 'autonomous.default_quality_gates.block_on_regression', label: 'Block task on test regression', labelKey: 'settings_quality_gates_block_on_regression', type: 'toggle' },
+    // What happens when the verifier passed a task but the quality gate found
+    // a regression: warn records both results and the task still finishes,
+    // block fails the task. An invalid gate never blocks.
+    { key: 'autonomous.gate_disagreement', label: 'When the gate disagrees with a passing verifier', labelKey: 'settings_gate_disagreement', type: 'select', options: ['warn', 'block'] },
     { key: 'autonomous.injection_guard', label: 'Prompt injection guard (warn on suspicious PRD/task specs)', labelKey: 'settings_injection_guard', type: 'toggle' },
     { key: 'autonomous.block_on_injection', label: 'Block PRD/task create when injection phrases detected', labelKey: 'settings_block_on_injection', type: 'toggle' },
     // Plan-coverage gate — how strictly decompose must cover the spec's
@@ -20475,6 +20484,11 @@ function renderAutomataCard(prd) {
   const tplBadge = prd.is_template
     ? `<span style="background:#7c3aed;color:#fff;font-size:11px;padding:2px 8px;border-radius:8px;font-weight:700;">template</span>`
     : '';
+  // Invalid quality-gate baseline: the gate skips and never blocks, so say
+  // so on the card with the plain reason.
+  const gateInvalidBadge = prd.quality_gate_status === 'invalid'
+    ? `<span class="gate-invalid-badge" style="font-size:11px;padding:2px 8px;border-radius:8px;font-weight:700;background:rgba(245,158,11,0.15);color:#f59e0b;border:1px solid #f59e0b;" title="${escHtml(prd.quality_gate_invalid_reason || t('prd_gate_invalid_reason') || '')}">${escHtml(t('prd_gate_invalid') || 'Quality gate invalid')}${prd.quality_gate_invalid_reason ? ' · ' + escHtml(prd.quality_gate_invalid_reason) : ''}</span>`
+    : '';
   const progress = renderProgressBar(prd);
   const position = renderCurrentPosition(prd);
   const escId = escHtml(JSON.stringify(id));
@@ -20534,7 +20548,7 @@ function renderAutomataCard(prd) {
       ${checkboxCell}
       <div style="flex:1;min-width:0;">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-          ${typeBadge}${tplBadge}
+          ${typeBadge}${tplBadge}${gateInvalidBadge}
           <span style="font-weight:700;font-size:15px;color:var(--text);flex:1;min-width:0;">${escHtml(title)}</span>
           <span style="margin-left:auto;flex-shrink:0;">${statusPill(status)}</span>
         </div>
@@ -28122,11 +28136,18 @@ function renderStatsData(el, data) {
       const qgFail = data.quality_gate_fail || 0;
       const qgTotal = data.quality_gate_runs || 0;
       const passColor = qgFail > 0 ? 'var(--error)' : 'var(--success)';
+      // Invalid baselines are counted apart from pass and regression: the
+      // gate warned but never blocked.
+      const qgInvalid = data.quality_gate_invalid || 0;
+      const qgInvalidLine = qgInvalid > 0
+        ? `<div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">${escHtml(t('prd_gate_invalid')||'Quality gate invalid')}</span><span style="color:var(--warning);">${qgInvalid}</span></div>`
+        : '';
       html += `<div class="stat-card"><div class="stat-label">${t('stats_quality_gates')||'Quality Gates'}</div>
         <div style="font-size:10px;font-family:monospace;color:var(--text);line-height:1.6;">
           <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Runs</span><span>${qgTotal}</span></div>
           <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Pass</span><span style="color:var(--success);">${qgPass}</span></div>
           <div style="display:flex;justify-content:space-between;"><span style="color:var(--text2);">Regressions</span><span style="color:${passColor};">${qgFail}</span></div>
+          ${qgInvalidLine}
         </div></div>`;
     }
     html += '</div>';
@@ -33304,6 +33325,13 @@ function loadAutomataSettingsPanel() {
           <div class="settings-label" title="${escHtml(t('settings_max_concurrent_tasks_hint')||'Daemon-wide default. An Automaton\'s own setting overrides it.')}">${escHtml(t('settings_max_concurrent_tasks')||'Max concurrent tasks per Automaton (1 = one at a time)')}</div>
           <input type="number" min="1" value="${ac.max_concurrent_tasks||1}" style="width:80px;font-size:12px;" class="form-input"
             onchange="saveGeneralField('autonomous.max_concurrent_tasks',+this.value)">
+        </div>
+        <div class="settings-row" style="justify-content:space-between;">
+          <div class="settings-label" title="${escHtml(t('settings_gate_disagreement_hint')||'warn records both results and lets the task finish; block fails the task on a real regression from a valid baseline. An invalid gate never blocks.')}">${escHtml(t('settings_gate_disagreement')||'When the gate disagrees with a passing verifier')}</div>
+          <select class="form-input" style="width:auto;font-size:12px;" onchange="saveGeneralField('autonomous.gate_disagreement',this.value)">
+            <option value="warn" ${(!ac.gate_disagreement||ac.gate_disagreement==='warn')?'selected':''}>${escHtml(t('settings_gate_disagreement_warn')||'warn')}</option>
+            <option value="block" ${ac.gate_disagreement==='block'?'selected':''}>${escHtml(t('settings_gate_disagreement_block')||'block')}</option>
+          </select>
         </div>
         <div class="settings-row" style="justify-content:space-between;">
           <div class="settings-label" title="${escHtml(t('settings_resume_max_age_hint')||'Applies when the daemon restarts: an Automaton left running is resumed only if its newest activity is within this many seconds. 0 = never auto-resume, -1 = no age limit. Automata that do not auto-resume are parked as blocked with a reason and raise an alert.')}">${escHtml(t('settings_resume_max_age')||'Resume stale Automata at startup only if active within (sec; 0 = never, -1 = always)')}</div>

@@ -1,7 +1,9 @@
 package pipeline
 
 import (
+	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"regexp"
 	"sort"
@@ -9,12 +11,26 @@ import (
 	"time"
 )
 
+// defaultTimeoutSec is applied when the quality gate config does not set a
+// timeout. A zero or negative value passed directly to RunTests means no
+// time limit.
+const defaultTimeoutSec = 300
+
 // QualityGateConfig controls test regression detection.
 type QualityGateConfig struct {
 	Enabled           bool   `yaml:"enabled" json:"enabled"`
-	TestCommand       string `yaml:"test_command" json:"test_command"` // e.g. "go test ./..."
-	Timeout           int    `yaml:"timeout" json:"timeout"`           // seconds, default 300
+	TestCommand       string `yaml:"test_command" json:"test_command"` // ONE shell string run via sh -c; compound commands such as "a && b" are fine
+	Timeout           int    `yaml:"timeout" json:"timeout"`           // seconds, 0/unset = default 300
 	BlockOnRegression bool   `yaml:"block_on_regression" json:"block_on_regression"`
+}
+
+// EffectiveTimeout returns the timeout in seconds the gate should use: the
+// configured value when positive, else the default.
+func (c QualityGateConfig) EffectiveTimeout() int {
+	if c.Timeout > 0 {
+		return c.Timeout
+	}
+	return defaultTimeoutSec
 }
 
 // TestResult holds the result of running a test command.
@@ -26,6 +42,15 @@ type TestResult struct {
 	FailCount int       `json:"fail_count"`
 	Duration  float64   `json:"duration_sec"`
 	RunAt     time.Time `json:"run_at"`
+	// FailedTests names the failing tests (go: "pkg.Test", node: the plain
+	// test name); a go package that failed without naming a test is its
+	// import path.
+	FailedTests []string `json:"failed_tests,omitempty"`
+	// PackageFailures is the subset of FailedTests that are package-level
+	// failures (build or setup failure, panic) rather than individual tests.
+	PackageFailures []string `json:"package_failures,omitempty"`
+	TestsFound      int      `json:"tests_found"`         // individual pass/fail results seen
+	TimedOut        bool     `json:"timed_out,omitempty"` // true when killed by the deadline
 }
 
 // QualityGateResult is the comparison between baseline and current test runs.
@@ -39,76 +64,249 @@ type QualityGateResult struct {
 	// FailingTests names the tests that failed again on the confirming
 	// re-run; empty unless a regression was confirmed.
 	FailingTests []string `json:"failing_tests,omitempty"`
+	// NewFailureNames lists the tests failing now that were not failing in
+	// the baseline.
+	NewFailureNames []string `json:"new_failure_names,omitempty"`
+	// Invalid is true when a run was unusable for comparison (could not
+	// start, timed out, or failed without naming a test); an invalid gate is
+	// never a regression.
+	Invalid       bool   `json:"invalid"`
+	InvalidReason string `json:"invalid_reason,omitempty"`
 }
 
-// RunTests executes the test command and parses results.
+// RunTests executes command through `sh -c` in projectDir and parses the
+// output into pass/fail counts and failing test names. timeout is in
+// seconds; <= 0 means no limit. A run that could not be started or was
+// killed by the deadline has ExitCode -1.
 func RunTests(command, projectDir string, timeout int) TestResult {
-	_ = timeout // reserved for future context-based cancellation
-
-	return runTestCommand(command, strings.Fields(command), projectDir)
-}
-
-// runTestCommand executes parts in projectDir and parses the result; command
-// is the label recorded on the TestResult.
-func runTestCommand(command string, parts []string, projectDir string) TestResult {
 	start := time.Now()
-	if len(parts) == 0 {
-		return TestResult{Command: command, ExitCode: -1, Output: "empty command"}
+	result := TestResult{Command: command, RunAt: start}
+
+	unusable := func(reason string) TestResult {
+		result.ExitCode = -1
+		result.Output = reason
+		result.Duration = time.Since(start).Seconds()
+		return result
 	}
 
-	cmd := exec.Command(parts[0], parts[1:]...) //nolint:gosec
+	trimmed := strings.TrimSpace(command)
+	if trimmed == "" {
+		return unusable("empty test command")
+	}
+	if fi, err := os.Stat(projectDir); err != nil || !fi.IsDir() {
+		return unusable("project directory does not exist: " + projectDir)
+	}
+	shPath, err := exec.LookPath("sh")
+	if err != nil {
+		return unusable("no shell executable 'sh' found on PATH")
+	}
+
+	ctx := context.Background()
+	if timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
+		defer cancel()
+	}
+
+	cmd := exec.CommandContext(ctx, shPath, "-c", trimmed) //nolint:gosec
 	cmd.Dir = projectDir
+	cmd.WaitDelay = 2 * time.Second // do not wait on pipes held open by orphaned children
 	out, err := cmd.CombinedOutput()
 
-	result := TestResult{
-		Command:  command,
-		Output:   string(out),
-		Duration: time.Since(start).Seconds(),
-		RunAt:    time.Now(),
-	}
+	result.Output = string(out)
+	result.Duration = time.Since(start).Seconds()
 
 	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
+		if exitErr, ok := err.(*exec.ExitError); ok && ctx.Err() == nil {
 			result.ExitCode = exitErr.ExitCode()
 		} else {
 			result.ExitCode = -1
+			if ctx.Err() == context.DeadlineExceeded {
+				result.TimedOut = true
+				result.Output += "\n[timeout] the command was killed after it did not finish in time\n"
+			}
 		}
 	}
 
-	// Parse pass/fail counts from output (Go test format)
-	for _, line := range strings.Split(result.Output, "\n") {
-		if strings.Contains(line, "PASS") {
-			result.PassCount++
-		}
-		if strings.Contains(line, "FAIL") {
-			result.FailCount++
-		}
-	}
-
+	parseTestOutput(&result)
 	return result
 }
 
-// CompareResults compares baseline and current test results.
-func CompareResults(baseline, current TestResult) QualityGateResult {
-	result := QualityGateResult{
-		Baseline: baseline,
-		Current:  current,
+var (
+	nodeOKLine   = regexp.MustCompile(`^ok\s+\d+(\s|$)`) // node TAP: "ok 1 - name"
+	nodeFailLine = regexp.MustCompile(`^not ok\s+\d+`)   // node TAP: "not ok 1 - name"
+)
+
+// parseTestOutput fills PassCount, FailCount, FailedTests, PackageFailures
+// and TestsFound from the runner output. Recognized formats:
+//
+//	go test:     failing names from parseGoTestFailures, passes from
+//	             "--- PASS: Name" and "ok  \tpkg"
+//	node --test: "ok 1 - name", "not ok 1 - name", "✖ name (...ms)"
+func parseTestOutput(r *TestResult) {
+	seen := make(map[string]bool)
+	addFailed := func(name string) bool {
+		if name == "" || seen[name] {
+			return false
+		}
+		seen[name] = true
+		r.FailedTests = append(r.FailedTests, name)
+		return true
 	}
 
-	if current.FailCount > baseline.FailCount {
-		result.NewFailures = current.FailCount - baseline.FailCount
-		result.Regression = true
-		result.Summary = fmt.Sprintf("REGRESSION: %d new test failures (%d → %d)",
-			result.NewFailures, baseline.FailCount, current.FailCount)
-	} else if current.FailCount < baseline.FailCount {
-		result.Improved = true
-		result.Summary = fmt.Sprintf("IMPROVED: %d fewer failures (%d → %d)",
-			baseline.FailCount-current.FailCount, baseline.FailCount, current.FailCount)
+	for _, f := range parseGoTestFailures(r.Output) {
+		if !addFailed(f.String()) {
+			continue
+		}
+		if f.test == "" {
+			r.PackageFailures = append(r.PackageFailures, f.String())
+		} else {
+			r.TestsFound++
+		}
+	}
+
+	for _, raw := range strings.Split(r.Output, "\n") {
+		line := strings.TrimSpace(raw)
+		switch {
+		case strings.HasPrefix(line, "--- PASS:"),
+			nodeOKLine.MatchString(line),
+			strings.HasPrefix(line, "ok\t"),
+			strings.HasPrefix(line, "ok  "):
+			r.PassCount++
+			r.TestsFound++
+
+		case nodeFailLine.MatchString(line):
+			if addFailed(nodeTestName(line)) {
+				r.TestsFound++
+			}
+
+		case strings.HasPrefix(line, "✖"):
+			name := strings.TrimSpace(strings.TrimPrefix(line, "✖"))
+			if i := strings.LastIndex(name, " ("); i >= 0 {
+				name = strings.TrimSpace(name[:i])
+			}
+			if addFailed(name) {
+				r.TestsFound++
+			}
+		}
+	}
+
+	r.FailCount = len(r.FailedTests)
+}
+
+// nodeTestName extracts a readable test name from a node --test failure
+// line such as "not ok 3 - my test [FAIL]".
+func nodeTestName(line string) string {
+	name := strings.TrimSpace(line)
+	if i := strings.Index(name, " - "); i >= 0 {
+		name = strings.TrimSpace(name[i+len(" - "):])
 	} else {
-		result.Summary = fmt.Sprintf("STABLE: %d pass, %d fail (unchanged)",
-			current.PassCount, current.FailCount)
+		name = strings.TrimSpace(strings.TrimPrefix(name, "not ok"))
+		name = strings.TrimLeft(name, "0123456789 \t")
+	}
+	if i := strings.Index(name, " ["); i >= 0 {
+		name = name[:i]
+	}
+	return strings.TrimSpace(name)
+}
+
+// testLevelFailures counts failing names that are individual tests rather
+// than package-level failures.
+func (r TestResult) testLevelFailures() int {
+	pkg := make(map[string]bool, len(r.PackageFailures))
+	for _, n := range r.PackageFailures {
+		pkg[n] = true
+	}
+	n := 0
+	for _, name := range r.FailedTests {
+		if !pkg[name] {
+			n++
+		}
+	}
+	return n
+}
+
+// ClassifyBaseline reports whether r is a usable run for regression
+// comparison. A run that completed, reported tests and names at least one
+// failing test is valid (some failures are normal baseline state); a run
+// that could not start, timed out, or failed without naming any individual
+// test is not.
+func ClassifyBaseline(r TestResult) (valid bool, reason string) {
+	if r.ExitCode == -1 {
+		if r.TimedOut {
+			return false, "the test command timed out and was killed before finishing"
+		}
+		return false, "the test command could not be started"
+	}
+	if r.ExitCode != 0 && r.testLevelFailures() == 0 {
+		return false, "the test run ended with an error but did not report any failing test (command, build or environment problem)"
+	}
+	if r.TestsFound == 0 {
+		return false, "no tests were found in the test output"
+	}
+	return true, ""
+}
+
+// invalidGate returns result marked invalid (never a regression) with the
+// given reason; summary is the text after "gate invalid: ".
+func invalidGate(result QualityGateResult, reason, summary string) QualityGateResult {
+	result.Invalid = true
+	result.InvalidReason = reason
+	result.Regression = false
+	result.Summary = "gate invalid: " + summary
+	return result
+}
+
+// CompareResults compares baseline and current test results by failing test
+// name. A name failing now that is not failing in the baseline is a
+// regression even when the failure counts are equal. A baseline or current
+// run that is not usable makes the gate invalid, never a regression.
+func CompareResults(baseline, current TestResult) QualityGateResult {
+	result := QualityGateResult{Baseline: baseline, Current: current}
+
+	if valid, reason := ClassifyBaseline(baseline); !valid {
+		return invalidGate(result, reason, reason)
+	}
+	if valid, reason := ClassifyBaseline(current); !valid {
+		return invalidGate(result, reason, "current run could not be compared - "+reason)
 	}
 
+	baseSet := make(map[string]bool, len(baseline.FailedTests))
+	for _, n := range baseline.FailedTests {
+		baseSet[n] = true
+	}
+	curSet := make(map[string]bool, len(current.FailedTests))
+	for _, n := range current.FailedTests {
+		curSet[n] = true
+	}
+
+	var newNames, fixedNames []string
+	for _, n := range current.FailedTests {
+		if !baseSet[n] {
+			newNames = append(newNames, n)
+		}
+	}
+	for _, n := range baseline.FailedTests {
+		if !curSet[n] {
+			fixedNames = append(fixedNames, n)
+		}
+	}
+
+	result.NewFailureNames = newNames
+	result.NewFailures = len(newNames)
+
+	switch {
+	case len(newNames) > 0:
+		result.Regression = true
+		result.Summary = fmt.Sprintf("REGRESSION: %d new failing test(s) not in baseline: %s (failures %d → %d)",
+			len(newNames), strings.Join(newNames, ", "), len(baseline.FailedTests), len(current.FailedTests))
+	case len(fixedNames) > 0:
+		result.Improved = true
+		result.Summary = fmt.Sprintf("IMPROVED: %d previously failing test(s) now pass: %s (failures %d → %d)",
+			len(fixedNames), strings.Join(fixedNames, ", "), len(baseline.FailedTests), len(current.FailedTests))
+	default:
+		result.Summary = fmt.Sprintf("STABLE: %d pass, %d fail (unchanged)", current.PassCount, current.FailCount)
+	}
 	return result
 }
 
@@ -179,14 +377,20 @@ func FailingTests(output string) []string {
 	return names
 }
 
-// isGoTest reports whether command is a "go test" invocation.
-func isGoTest(command string) bool {
+// isPlainGoTest reports whether command is exactly one `go test` invocation:
+// no shell operators (&&, ||, ;, |, redirects, &, command substitution,
+// backticks, newlines) and nothing before the go binary.
+func isPlainGoTest(command string) bool {
+	if strings.ContainsAny(command, "&|;<>`\n") || strings.Contains(command, "$(") {
+		return false
+	}
 	f := strings.Fields(command)
 	return len(f) >= 2 && f[0] == "go" && f[1] == "test"
 }
 
-// commandPackages returns the package arguments already present in a go test
-// command (non-flag args after "test" that look like package patterns).
+// commandPackages returns the package arguments already present in a plain
+// go test command (non-flag args after "test" that look like package
+// patterns).
 func commandPackages(command string) []string {
 	var pkgs []string
 	for _, a := range strings.Fields(command)[2:] {
@@ -200,23 +404,35 @@ func commandPackages(command string) []string {
 	return pkgs
 }
 
-// rerunFailing re-runs only the given failures when current.Command is a go
-// test invocation naming them, otherwise the whole command once.
-func rerunFailing(current TestResult, fails []goTestFailure, projectDir string, timeout int) TestResult {
-	if !isGoTest(current.Command) {
+// rerunCandidates re-runs the candidate failures once. When current.Command
+// is a plain go test invocation and every candidate is a named go test, only
+// those tests (in their packages) are re-run; any other command, and any
+// package-level candidate, re-runs the whole command through RunTests.
+func rerunCandidates(current TestResult, candidates []string, projectDir string, timeout int) TestResult {
+	if !isPlainGoTest(current.Command) {
 		return RunTests(current.Command, projectDir, timeout)
+	}
+	want := make(map[string]bool, len(candidates))
+	for _, c := range candidates {
+		want[c] = true
 	}
 	tops := map[string]bool{}
 	pkgSet := map[string]bool{}
-	for _, f := range fails {
-		if f.test != "" {
-			tops[regexp.QuoteMeta(strings.SplitN(f.test, "/", 2)[0])] = true
+	matched := 0
+	for _, f := range parseGoTestFailures(current.Output) {
+		if !want[f.String()] {
+			continue
 		}
+		matched++
+		if f.test == "" { // package-level failure: nothing to narrow to
+			return RunTests(current.Command, projectDir, timeout)
+		}
+		tops[regexp.QuoteMeta(strings.SplitN(f.test, "/", 2)[0])] = true
 		if f.pkg != "" {
 			pkgSet[f.pkg] = true
 		}
 	}
-	if len(tops) == 0 { // package-level failure only: nothing to narrow to
+	if matched < len(want) || len(tops) == 0 {
 		return RunTests(current.Command, projectDir, timeout)
 	}
 	var pkgs []string
@@ -236,57 +452,59 @@ func rerunFailing(current TestResult, fails []goTestFailure, projectDir string, 
 	}
 	sort.Strings(alts)
 	parts := append([]string{"go", "test", "-count=1", "-run", "^(" + strings.Join(alts, "|") + ")$"}, pkgs...)
-	return runTestCommand(strings.Join(parts, " "), parts, projectDir)
+	quoted := make([]string, len(parts))
+	for i, p := range parts {
+		quoted[i] = shellQuote(p)
+	}
+	return RunTests(strings.Join(quoted, " "), projectDir, timeout)
 }
 
-// EvaluateGate is the re-confirming entry point for the quality gate. It
-// compares current against baseline like CompareResults, but an apparent
-// regression is only reported after the failing tests are re-run once
-// (Reconfirm) and still fail. A failure that does not reproduce is reported as STABLE, and
-// a confirmed regression names the failing tests.
+// shellQuote wraps s in single quotes for sh, escaping embedded single quotes.
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// EvaluateGate is the entry point for the quality gate. It compares current
+// against baseline with CompareResults; only a name-based regression is
+// re-run, once, and only the new failing names are candidates. A candidate
+// that fails again is confirmed; a candidate that does not is reported
+// STABLE. An unusable re-run makes the gate invalid, never a regression.
 func EvaluateGate(baseline, current TestResult, projectDir string, timeout int) QualityGateResult {
 	result := CompareResults(baseline, current)
-	if !result.Regression {
+	if result.Invalid || !result.Regression {
 		return result
 	}
 
-	first := parseGoTestFailures(current.Output)
-	rerun := rerunFailing(current, first, projectDir, timeout)
-
-	var still []string
-	if len(first) == 0 {
-		// Nothing nameable in the first run (non-go output): confirm by
-		// repeating the comparison on the re-run.
-		if !CompareResults(baseline, rerun).Regression {
-			result.Regression = false
-			result.NewFailures = 0
-			result.Summary = fmt.Sprintf("STABLE: %d apparent new failure(s) did not reproduce on re-run", current.FailCount-baseline.FailCount)
-			return result
-		}
-		result.Summary = "REGRESSION (confirmed on re-run): " + strings.TrimPrefix(result.Summary, "REGRESSION: ")
-		return result
+	candidates := result.NewFailureNames
+	rerun := rerunCandidates(current, candidates, projectDir, timeout)
+	if valid, reason := ClassifyBaseline(rerun); !valid {
+		return invalidGate(result, "confirming re-run unusable: "+reason,
+			"confirming re-run unusable: "+reason)
 	}
 
-	firstNames := map[string]bool{}
-	for _, f := range first {
-		firstNames[f.test+"|"+f.pkg] = true
+	failedAgain := make(map[string]bool, len(rerun.FailedTests))
+	for _, n := range rerun.FailedTests {
+		failedAgain[n] = true
 	}
-	for _, f := range parseGoTestFailures(rerun.Output) {
-		if firstNames[f.test+"|"+f.pkg] {
-			still = append(still, f.String())
+	var confirmed []string
+	for _, n := range candidates {
+		if failedAgain[n] {
+			confirmed = append(confirmed, n)
 		}
 	}
 
-	if len(still) == 0 {
+	if len(confirmed) == 0 {
 		result.Regression = false
 		result.NewFailures = 0
+		result.NewFailureNames = nil
 		result.Summary = fmt.Sprintf("STABLE: %d failing test(s) did not reproduce on re-run: %s",
-			len(first), strings.Join(FailingTests(current.Output), ", "))
+			len(candidates), strings.Join(candidates, ", "))
 		return result
 	}
 	result.Regression = true
-	result.NewFailures = len(still)
-	result.FailingTests = still
-	result.Summary = "REGRESSION (confirmed on re-run): " + strings.Join(still, ", ")
+	result.NewFailures = len(confirmed)
+	result.FailingTests = confirmed
+	result.NewFailureNames = confirmed
+	result.Summary = "REGRESSION (confirmed on re-run): " + strings.Join(confirmed, ", ")
 	return result
 }
