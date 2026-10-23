@@ -149,7 +149,7 @@ test('loadSystemStatsGrid renders .obs-sys-*/.obs-bar* classes and compact value
 
   // Two cards: local host-a + peer host-b (synthesized self entry filtered out).
   assert.match(html, /class="obs-sys-name" title="System name">host-a</);
-  assert.match(html, /class="obs-sys-name" title="System name">host-b</);
+  assert.match(html, /class="obs-sys-name" title="host-b">host-b</);
 
   // Shared CSS classes (deliverable 2: card layout comes from style.css).
   assert.match(html, /class="obs-sys-grid"/);

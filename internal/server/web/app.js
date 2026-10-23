@@ -940,6 +940,29 @@ function apiFetch(path, opts = {}) {
     });
 }
 
+// MOBILE-FIT (plan fix item 5, "coalesce the sub-loaders"): the Observer
+// sub-loaders (loadStatsPanel, loadSystemStatsGrid) each fired their own
+// /api/stats request on every Observer render and on every 8s poll tick —
+// renderObserverView calls them back-to-back and the 8s pollers fire in
+// the same second, so re-render passes (navigating sessions→observer
+// repeatedly) stacked duplicate /api/stats pairs (F-10191: 2 → 44
+// requests in the rerender-timers scenario). Concurrent fetches of the
+// same endpoint now share one in-flight request. The entry is removed as
+// soon as the request settles, so nothing is ever cached past the
+// in-flight window: data is never stale and any repeated call issues a
+// fresh request (the 8s pollers and the one-shot render loaders only
+// coalesce when they actually overlap).
+const _sharedFetchInflight = {};
+function sharedFetch(url) {
+  if (!Object.prototype.hasOwnProperty.call(_sharedFetchInflight, url)) {
+    _sharedFetchInflight[url] = apiFetch(url).then(
+      d => { delete _sharedFetchInflight[url]; return d; },
+      e => { delete _sharedFetchInflight[url]; return Promise.reject(e); });
+  }
+  return _sharedFetchInflight[url];
+}
+window.sharedFetch = sharedFetch;
+
 // ── Message handlers ─────────────────────────────────────────────────────────
 function handleMessage(msg) {
   switch (msg.type) {
@@ -27000,7 +27023,10 @@ function _fedMsg(e, fallback) {
 function loadStatsPanel() {
   const el = document.getElementById('statsPanel');
   if (!el) return;
-  apiFetch('/api/stats').then(data => {
+  // MOBILE-FIT: shared in-flight /api/stats request (see sharedFetch) —
+  // the local system panel and the per-system grid load together on
+  // every Observer render; one request goes out instead of two.
+  sharedFetch('/api/stats').then(data => {
     renderStatsData(el, data);
   }).catch(e => {
     el.innerHTML = `<div style="color:var(--text2);font-size:12px;padding:8px;">${escHtml(_fedMsg(e, t('stats_unavailable')||'Stats unavailable.'))}</div>`;
@@ -27313,16 +27339,23 @@ function loadSystemStatsGrid() {
   };
   // GH#194 -- no "local" tag/badge; the card's own name (the real
   // hostname) is label enough, and the word "local" never appears.
-  const sysCard = (name, dot, cpuHtml, memHtml, gpuHtml) => `
-    <div class="obs-sys-card">
+  // `title` carries the accessibility clip-target: peer cards get their
+  // full hostname (stats-scroll contract: ellipsis clip + full name in
+  // title); the local card keeps the literal "System name" label so the
+  // local hostname renders exactly once (identity-label contract).
+  const sysCard = (name, dot, cpuHtml, memHtml, gpuHtml, title = name) => `
+    <div class="obs-sys-card" style="flex:1 1 200px;min-width:0;">
       <div class="obs-sys-head">
         <span class="obs-sys-dot" style="background:${dot};"></span>
-        <span class="obs-sys-name" title="System name">${escHtml(name)}</span>
+        <span class="obs-sys-name" title="${escHtml(title)}">${escHtml(name)}</span>
       </div>
       ${cpuHtml}${memHtml}${gpuHtml}
     </div>`;
 
-  const localP = apiFetch('/api/stats').then(d => {
+  // MOBILE-FIT: shared in-flight /api/stats request (see sharedFetch) —
+  // coalesces with loadStatsPanel's fetch when both run on the same
+  // Observer render pass (renderObserverView fires them back-to-back).
+  const localP = sharedFetch('/api/stats').then(d => {
     if (!d || !d.timestamp) return null;
     const cpuPct = d.cpu_cores > 0 ? Math.min(100, Math.round(100*d.cpu_load_avg_1/d.cpu_cores)) : 0;
     const cpuColor = cpuPct > 80 ? 'var(--error)' : cpuPct > 50 ? 'var(--warning)' : 'var(--success)';
@@ -27411,7 +27444,7 @@ function loadSystemStatsGrid() {
 
   Promise.all([localP, peersP]).then(([local, peers]) => {
     const cards = [];
-    if (local) cards.push(sysCard(local.name, local.dot, local.cpuHtml, local.memHtml, local.gpuHtml));
+    if (local) cards.push(sysCard(local.name, local.dot, local.cpuHtml, local.memHtml, local.gpuHtml, 'System name'));
     peers.forEach(p => cards.push(sysCard(p.name, p.dot, p.cpuHtml, p.memHtml, p.gpuHtml)));
     if (!cards.length) {
       el.innerHTML = '';
@@ -27996,7 +28029,10 @@ function webSearchOpenHistoryView() {
 function renderStatsData(el, data) {
     if (!data || !data.timestamp) { el.innerHTML = `<div style="color:var(--text2);font-size:12px;padding:8px;">${t('stats_not_available')||'Stats not available.'}</div>`; return; }
     // Preserve scroll position to prevent visible jump on real-time updates
-    const scrollParent = el.closest('.settings-section') || el.parentElement;
+    // Defensive guard: vm/test sandboxes may expose a plain stub without
+    // Element.prototype.closest (mirrors the existing el.closest guard in
+    // isConnectionIndicator). Browsers always have it; fallback = parent.
+    const scrollParent = (el.closest && el.closest('.settings-section')) || el.parentElement;
     const savedScroll = scrollParent ? scrollParent.scrollTop : 0;
     const pageScroll = window.scrollY;
     // MOBILE-FIT: shared compact formatter (fmtBytesCompact, defined near
@@ -28309,7 +28345,9 @@ function renderStatsData(el, data) {
     el.innerHTML = html;
     // Restore scroll position after DOM update
     if (scrollParent) scrollParent.scrollTop = savedScroll;
-    window.scrollTo(0, pageScroll);
+    // Defensive guard: vm/test sandboxes may not expose scrollTo (browsers
+    // always do) — skip the restore in that case instead of throwing.
+    if (typeof window.scrollTo === 'function') window.scrollTo(0, pageScroll);
     // BL223 — wire RTK copy buttons after innerHTML (avoids inline onclick+JSON.stringify)
     el.querySelectorAll('.rtk-update-badge, .rtk-cmd-copy').forEach(node => {
       node.addEventListener('click', function() {
