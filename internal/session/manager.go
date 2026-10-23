@@ -25,6 +25,7 @@ import (
 
 	"github.com/dmz006/datawatch/internal/config"
 	"github.com/dmz006/datawatch/internal/federation"
+	"github.com/dmz006/datawatch/internal/gitguard"
 	"github.com/dmz006/datawatch/internal/llm"
 	"github.com/dmz006/datawatch/internal/llm/backends/ollama"
 	"github.com/dmz006/datawatch/internal/llm/backends/opencode"
@@ -366,6 +367,11 @@ type Manager struct {
 	// GH#204 Phase 1 — subprocess result-posting credential wiring.
 	resultTokenMinter SessionTokenMinter // mints the per-session scoped token (nil = no token env var)
 	subprocessBaseURL string             // daemon base URL injected as DATAWATCH_BASE_URL
+
+	// commitGuards holds the commit guard of each guarded session, keyed by
+	// session full ID. Guarded by guardMu.
+	guardMu      sync.Mutex
+	commitGuards map[string]*gitguard.CommitGuard
 
 	// mcpRetryCounts tracks per-session MCP retry attempts.
 	mcpRetryCounts map[string]int
@@ -2352,6 +2358,11 @@ func (m *Manager) Start(ctx context.Context, task, groupID, projectDir string, o
 		}
 	}
 
+	// Guarded sessions (autonomous task, or one-shot with validation
+	// commands): a worker git commit hits the guard hooks; the harness
+	// commits after validation. Nothing is written to the worktree config.
+	m.armCommitGuard(sess, tmuxSession)
+
 	// Launch the LLM backend in the tmux session.
 	// GH#128: OneShot + bare shell task — wrap to emit DATAWATCH_COMPLETE: so
 	// the one-shot reaper can kill the session after the command exits.
@@ -3576,6 +3587,7 @@ func (m *Manager) subprocessFinish(sess *Session, runErr error) {
 	}
 	snap.UpdatedAt = time.Now()
 	_ = m.store.Save(&snap)
+	m.releaseCommitGuard(snap.FullID, snap.ProjectDir)
 	if m.onStateChange != nil {
 		m.onStateChange(&snap, oldState)
 	}
@@ -3917,6 +3929,8 @@ func (m *Manager) Kill(fullID string) error {
 		_ = m.tmux.KillSession(tmuxName)
 	}
 
+	m.releaseCommitGuard(fullID, m.store.Snapshot(sess).ProjectDir)
+
 	var oldState State
 	m.store.Mutate(func() {
 		oldState = sess.State
@@ -4081,6 +4095,7 @@ func (m *Manager) Restart(ctx context.Context, fullID string) (*Session, error) 
 	case "opencode", "opencode-acp":
 		_ = m.tmux.DisableAlternateScreen(sess.TmuxSession)
 	}
+	m.armCommitGuard(sess, sess.TmuxSession)
 
 	// Pipe output
 	logFile := sess.LogFile
@@ -4556,6 +4571,12 @@ func (m *Manager) commitOnCompletion(current *Session, projGit *ProjectGit) {
 			return
 		}
 	}
+
+	// Validation passed (or, for a PRD task, the verifier already passed):
+	// only now does the harness commit carry the guard's commit token, and
+	// the guard is released once the commit attempt is over.
+	m.AuthorizeCommit(current.FullID, projGit)
+	defer m.releaseCommitGuard(current.FullID, current.ProjectDir)
 
 	// Best-effort summary from the worker's recent output; a read failure
 	// just falls back to "" (CommitSessionWork falls back to the task).
@@ -5500,6 +5521,7 @@ func (m *Manager) KillAll() error {
 			errs = append(errs, fmt.Sprintf("%s: %v", sess.ID, err))
 		}
 	}
+	m.releaseAllCommitGuards()
 	if len(errs) > 0 {
 		return fmt.Errorf("errors killing sessions: %s", strings.Join(errs, "; "))
 	}
@@ -5651,6 +5673,19 @@ func (m *Manager) getTracker(fullID string) *Tracker {
 
 // ResumeMonitors restores monitoring for sessions that were running when the daemon last stopped.
 func (m *Manager) ResumeMonitors(ctx context.Context) {
+	var liveForGuards []*Session
+	for _, sess := range m.store.List() {
+		if sess.Hostname != m.hostname || sess.TmuxSession == "" {
+			continue
+		}
+		if sess.State != StateRunning && sess.State != StateWaitingInput && sess.State != StateRateLimited {
+			continue
+		}
+		if m.tmux.SessionExists(sess.TmuxSession) {
+			liveForGuards = append(liveForGuards, sess)
+		}
+	}
+	m.adoptCommitGuards(liveForGuards)
 	for _, sess := range m.store.List() {
 		if sess.Hostname != m.hostname {
 			continue

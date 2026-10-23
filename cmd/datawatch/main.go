@@ -5135,6 +5135,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 										if !s.CreatedAt.IsZero() {
 											pg.SetRunStart(s.CreatedAt)
 										}
+										// Verification has passed, so the commit may carry the
+										// session's commit token.
+										mgr.AuthorizeCommit(s.FullID, pg)
 										// The checkpoint verification script passed before this
 										// closure runs, so the commit body records it as passed.
 										sha, cerr := pg.CommitTaskWork(s.ID, session.TaskCommitLabel{

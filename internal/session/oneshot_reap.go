@@ -93,6 +93,7 @@ func (m *Manager) ReapFinishedOneShots() []string {
 		sess.State = StateComplete
 		sess.UpdatedAt = time.Now()
 		_ = m.store.Save(sess)
+		m.releaseCommitGuard(sess.FullID, sess.ProjectDir)
 		if m.onStateChange != nil {
 			m.onStateChange(sess, oldState)
 		}

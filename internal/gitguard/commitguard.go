@@ -192,3 +192,45 @@ func ReapStaleGuardDirs(sessionIDs map[string]bool) {
 		_ = os.RemoveAll(filepath.Join(tmp, name))
 	}
 }
+
+// AdoptCommitGuard re-attaches to the guard directory an earlier daemon
+// generation created for sessionID, reading the token back from the hook
+// script. The worker's environment still points at that directory, so a
+// fresh directory would not guard it. When no directory exists it creates a
+// new guard.
+func AdoptCommitGuard(sessionID string) (*CommitGuard, error) {
+	tmp := os.TempDir()
+	prefix := guardDirPrefix + sanitizeSessionID(sessionID) + "-"
+	entries, err := os.ReadDir(tmp)
+	if err == nil {
+		for _, e := range entries {
+			if !e.IsDir() || !strings.HasPrefix(e.Name(), prefix) {
+				continue
+			}
+			dir := filepath.Join(tmp, e.Name())
+			b, rerr := os.ReadFile(filepath.Join(dir, guardHooks[0])) // #nosec G304 -- path under the OS temp dir, harness-named
+			if rerr != nil {
+				continue
+			}
+			if token := tokenFromHook(string(b)); token != "" {
+				return &CommitGuard{dir: dir, token: token}, nil
+			}
+		}
+	}
+	return NewCommitGuard(sessionID)
+}
+
+// tokenFromHook extracts the token written by hookScript.
+func tokenFromHook(script string) string {
+	const mid = `" != "`
+	i := strings.Index(script, mid)
+	if i < 0 {
+		return ""
+	}
+	rest := script[i+len(mid):]
+	j := strings.Index(rest, `"`)
+	if j < 0 {
+		return ""
+	}
+	return rest[:j]
+}
