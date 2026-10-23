@@ -235,7 +235,7 @@ this planning session:
    `Work/Mobile App/iOS`)? This is a real UX choice, not just an
    implementation detail — affects whether tagging something only at a
    leaf is enough or whether operators will expect to also tag it at
-   intermediate levels. --- lets iterate and discuss this; give me examples of what the options are and what that will change for both configuration, browsing, managing, ec
+   intermediate levels. --- **Decided by the operator 2026-10-22: include descendants, with a toggle.** Selecting a parent tag shows items tagged with it or any descendant, and the browse view has an "include sub-tags" switch to restrict it to the exact tag. The switch defaults to on (the recommendation given when asked; the operator did not name a default). Counts roll up when the switch is on.
 4. **Suggested-tag-from-alias behavior (§7.2):** pre-check a suggested tag
    derived from the BL27 alias as proposed, or go further and
    auto-*create* that tag if it doesn't exist yet (vs. only suggesting
