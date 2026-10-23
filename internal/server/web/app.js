@@ -576,6 +576,7 @@ function _loadUiConfig() {
 // 'subscribe' so the daemon sends a fresh capture. The terminal is left
 // intact when the same session is still active and already has content.
 function _resyncAfterReconnect() {
+  _refreshOverdueLoaders();
   const view = state.activeView;
   const sid = state.activeSession;
   const detail = view === 'session-detail' && !!sid;
@@ -589,10 +590,10 @@ function _resyncAfterReconnect() {
   };
   const resync = _sessionsLocalMode()
     ? loadSessionsList().then(rows => (_sl().error ? null : rows))
-    : fetch('/api/sessions', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).then(rows => {
-      if (rows) { rows.forEach(s => applySessionUpdate(s)); onSessionsUpdated(); }
-      return rows;
-    });
+    : _sessionsFetchPage('').then(page => {
+      page.rows.forEach(_mergeSessionRow); onSessionsUpdated();
+      return page.rows;
+    }).catch(() => null);
   resync
     .then(sessions => {
       if (!detail || state.activeView !== 'session-detail' || state.activeSession !== sid) {
@@ -635,6 +636,7 @@ function connect() {
   state.ws = ws;
 
   ws.addEventListener('open', () => {
+    if (state.ws !== ws) { try { ws.close(); } catch (e) { /* superseded */ } return; }
     state.connected = true;
     // Not reset here: the attempt counter only clears once the socket has
     // stayed open past WS_STABLE_MS (watchdog tick / close handler).
@@ -814,6 +816,7 @@ function connect() {
   });
 
   ws.addEventListener('message', e => {
+    if (state.ws !== ws) return;
     state.wsLastActivityAt = Date.now();
     let msg;
     try { msg = JSON.parse(e.data); } catch { return; }
@@ -822,6 +825,9 @@ function connect() {
 
   ws.addEventListener('close', (e) => {
     _dbg('WS', `closed code=${e.code}`);
+    // A superseded socket (watchdog close, server switch) closing late must
+    // not null the newer socket, stop its watchdog or schedule a duplicate.
+    if (state.ws !== ws) return;
     stopWsWatchdog();
     _wsResetAttemptIfStable();
     state.wsOpenedAt = 0;
@@ -866,16 +872,40 @@ function scheduleReconnect() {
   }, delay);
 }
 
+function _refreshOverdueLoaders() {
+  Object.keys(_listLoaders).forEach(k => { try { _listLoaders[k].refreshIfOverdue(); } catch (e) { /* ignore */ } });
+}
+
 // Reconnect immediately when the network returns or the tab becomes visible;
 // ping an already-open socket so a dead mapping is detected without waiting.
+// A socket that was OPEN while the page slept may be dead with no event. The
+// wake path pings it and gives it WS_WAKE_GRACE_MS to answer instead of
+// resetting the activity clock (which would hide it for another 35-50 s).
+const WS_WAKE_GRACE_MS = 5000;
 function _wsWake() {
   if (state.reconnectTimer) {
     clearTimeout(state.reconnectTimer);
     state.reconnectTimer = null;
   }
   if (state.ws && state.ws.readyState === WebSocket.OPEN) {
+    const ws = state.ws;
+    const probeAt = Date.now();
     startWsWatchdog();
+    state.wsLastActivityAt = probeAt - WS_STALE_MS - 1; // unproven until a frame arrives
     _wsSendPing();
+    if (state.wsWakeTimer) clearTimeout(state.wsWakeTimer);
+    state.wsWakeTimer = setTimeout(() => {
+      state.wsWakeTimer = null;
+      if (state.ws === ws && ws.readyState === WebSocket.OPEN && state.wsLastActivityAt < probeAt) {
+        _dbg('WS', 'wake probe: no frame after ping — forcing reconnect');
+        ws.close();
+      }
+    }, WS_WAKE_GRACE_MS);
+  } else if (!state.ws || state.ws.readyState >= WebSocket.CLOSING) {
+    // The network or page just came back: the old backoff no longer applies.
+    state.reconnectAttempt = 0;
+    state.ws = null;
+    connect();
   } else {
     connect();
   }
@@ -892,6 +922,7 @@ document.addEventListener('visibilitychange', () => {
     }
   } else {
     _wsWake();
+    _refreshOverdueLoaders();
     if (state.activeView === 'automation') refreshAutomationView();
   }
 });
@@ -1029,7 +1060,12 @@ function listLoader(opts) {
   }
   function schedule() {
     if (st.pollTimer) clearTimeout(st.pollTimer);
-    st.pollTimer = (pollMs && !st.stopped) ? setTimeout(() => { if (!opts.active || opts.active()) ctl.load(); else schedule(); }, pollMs) : null;
+    st.pollTimer = (pollMs && !st.stopped) ? setTimeout(() => {
+      // A hidden page does not poll (phone battery); the visibility handler
+      // refreshes overdue loaders on return.
+      if (_wsHidden()) { st.pollTimer = null; return; }
+      if (!opts.active || opts.active()) ctl.load(); else schedule();
+    }, pollMs) : null;
   }
   const ctl = {
     state: st,
@@ -1076,6 +1112,13 @@ function listLoader(opts) {
       });
     },
     retry() { return ctl.load(); },
+    // Called when the page becomes visible or the socket reconnects: load
+    // now when the data is older than the polling interval or polling paused.
+    refreshIfOverdue() {
+      if (st.stopped || st.loading || !pollMs) return;
+      if (opts.active && !opts.active()) return;
+      if (!st.pollTimer || !st.hasData || st.fromCache || (now() - st.at) >= pollMs) ctl.load();
+    },
     stop() {
       st.stopped = true; st.seq++;
       if (st.ctrl) { try { st.ctrl.abort(); } catch (e) { /* ignore */ } }

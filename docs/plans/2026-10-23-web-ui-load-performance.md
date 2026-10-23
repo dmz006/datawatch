@@ -223,3 +223,32 @@ Server time for the Automata list fell from 124 ms to about 1 ms
 
 REST contract changes in Phase 2 affect mobile clients that parse `/api/sessions` and
 `/api/autonomous/prds`. A `datawatch-app` issue is required then.
+
+## Live-update connection review
+
+Scope: the WebSocket client in `internal/server/web/app.js` (backoff, watchdog, wake,
+resync), the decompose `EventSource`, `sw.js` and `internal/server/ws.go` /
+`api.go`. Measured first with `internal/server/web/live-update.test.js` (fake clock,
+fake socket, fake visibility/online events; 14 tests, run with `node --test`).
+
+Already sound, kept (tests assert it): full-jitter exponential backoff capped at 30 s;
+a flapping socket does not reset the backoff, a socket stable for 15 s does; a quiet
+but healthy socket is never closed (client pings every 15 s, the server answers each
+ping with a `pong` frame, so the 35 s stale limit only trips on a dead path); no
+reconnect while the page is hidden; one socket for a simultaneous visible + online.
+The service worker never intercepts `/api/*` or `/ws`. The server sends a protocol
+ping every 30 s with a 60 s read deadline and a pong handler. The decompose
+`EventSource` closes while hidden, retries with capped backoff and then polls.
+Low-power behaviour (no hidden-tab reconnects) is unchanged.
+
+Found by the measurement and fixed:
+
+| Finding | Fix |
+|---|---|
+| A superseded socket's late `close` (watchdog close, server switch, wake while CLOSING) nulled `state.ws`, set `connected=false`, stopped the new socket's watchdog and scheduled another reconnect, so the next wake opened a duplicate socket. | `open`/`message`/`close` handlers ignore events from any socket that is not `state.ws`. |
+| Returning from background reset the activity clock, hiding a socket killed while asleep for another 35-50 s. | `_wsWake` pings and marks the socket unproven; no frame within `WS_WAKE_GRACE_MS` (5 s) closes it and the normal reconnect runs. |
+| After a long outage the backoff counter stayed high, so a reconnect that failed right after the network returned waited up to 30 s. | Wake (online / visible) with no open socket restarts the counter at 0 for the immediate attempt. |
+| Federated-server resync fetched the full unpaged `/api/sessions`. | Both resync paths use the summary form (`/api/sessions?view=summary&limit=50`). |
+| List loaders (Automata, Automation, Alerts) kept polling every 30 s on a hidden phone tab and did not refresh on return or after a socket reconnect. | Hidden pages skip the poll; `refreshIfOverdue()` runs on visible and after a reconnect. Polling at `pollMs` continues while the socket is down. |
+
+Not changed: server timings in `ws.go`/`api.go` and `sw.js` needed no change.
