@@ -29,6 +29,11 @@ func newSessionDeleteTestServer(t *testing.T) (*Server, *scopeTestBackend) {
 	}
 	b := &scopeTestBackend{}
 	srv := NewServer(NewHub(), sm, "h", "", nil, nil, "")
+	// Registered after the TempDir, so it runs before its removal.
+	t.Cleanup(func() {
+		srv.broadcastWG.Wait()
+		sm.WaitBackground()
+	})
 	srv.memoryBackend = b
 	return srv, b
 }

@@ -29,6 +29,7 @@ func newFedTestServer(t *testing.T) (*Server, *multiserver.Store, *federation.Gr
 	if err != nil {
 		t.Fatalf("manager init: %v", err)
 	}
+	t.Cleanup(mgr.WaitBackground)
 	s := &Server{
 		manager:       mgr,
 		hostname:      "test-host",

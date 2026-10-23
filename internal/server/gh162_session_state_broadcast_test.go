@@ -52,6 +52,7 @@ func TestGH162_NotifyStateChange_EmitsBothMessages(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
+	t.Cleanup(mgr.WaitBackground)
 
 	hub := NewHub()
 	fakeCh := make(chan []byte, 16)

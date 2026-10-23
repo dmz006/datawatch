@@ -33,6 +33,7 @@ func channelReadyServer(t *testing.T, dir string) (*Server, *session.FakeTmux) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(mgr.WaitBackground)
 	fake := mgr.WithFakeTmux()
 	s := &Server{
 		manager:  mgr,

@@ -53,6 +53,7 @@ func newRepairErrorServer(t *testing.T, repairErr error) *Server {
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
+	t.Cleanup(sm.WaitBackground)
 	srv := NewServer(NewHub(), sm, "h", "", nil, &config.Config{}, filepath.Join(dir, "config.yaml"))
 	srv.SetAutonomousAPI(&fakeRepairError{repairErr: repairErr})
 	return srv

@@ -23,6 +23,7 @@ func selfScopeServer(t *testing.T) *Server {
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
+	t.Cleanup(mgr.WaitBackground)
 	mgr.WithFakeTmux()
 	return &Server{hostname: "h1", manager: mgr}
 }

@@ -22,6 +22,7 @@ func newReconcileServer(t *testing.T) (*Server, string) {
 	if err != nil {
 		t.Fatalf("NewManager: %v", err)
 	}
+	t.Cleanup(sm.WaitBackground)
 	hub := NewHub()
 	srv := NewServer(hub, sm, "h", "", nil, nil, "")
 	return srv, dir

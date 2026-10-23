@@ -21,6 +21,7 @@ func federationFixture(t *testing.T) *Server {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(mgr.WaitBackground)
 	return &Server{
 		manager: mgr,
 		cfg:     &config.Config{},

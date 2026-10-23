@@ -25,6 +25,7 @@ func TestFinishedOneShots_ListIsEmptyWhenNothingIsStuck(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(sm.WaitBackground)
 	s := &Server{token: "admin-token", manager: sm}
 	rr := httptest.NewRecorder()
 	s.handleFinishedOneShots(rr, httptest.NewRequest(http.MethodGet, "/api/sessions/finished-oneshots", nil))
@@ -48,6 +49,7 @@ func TestFinishedOneShots_RejectsOtherMethods(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(sm.WaitBackground)
 	s := &Server{token: "admin-token", manager: sm}
 	rr := httptest.NewRecorder()
 	s.handleFinishedOneShots(rr, httptest.NewRequest(http.MethodDelete, "/api/sessions/finished-oneshots", nil))

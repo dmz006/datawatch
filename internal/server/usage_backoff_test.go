@@ -351,6 +351,7 @@ func patternsServerWithCLI(t *testing.T, out string) (*Server, *fakeCLIRunner) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(sm.WaitBackground)
 	fr := &fakeCLIRunner{out: out}
 	sm.SetClaudeCLIVersionRunner(fr.run)
 	s := usageBackoffServer(t)
@@ -450,6 +451,7 @@ func TestUsageBackoff_RecheckCapabilityGate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(sm.WaitBackground)
 	sm.SetClaudeCLIVersionRunner(func(context.Context, string, ...string) ([]byte, error) { return []byte("9.9.9-test"), nil })
 	s.manager = sm
 	capTest(t, s, http.MethodPost, "/api/usage-backoff/recheck", []byte(`{}`), s.handleUsageBackoffRecheck,

@@ -166,6 +166,7 @@ func TestSession_OwnerPeer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("manager init: %v", err)
 	}
+	t.Cleanup(mgr.WaitBackground)
 	_ = mgr // ensure manager wires up the store
 
 	sess := &session.Session{
