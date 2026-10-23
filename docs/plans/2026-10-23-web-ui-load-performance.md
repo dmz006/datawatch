@@ -2,7 +2,13 @@
 
 **Date:** 2026-10-23
 **Version:** v9.5.105
-**Status:** In progress. Phase 1 (measurement) is done; Phases 2 to 5 are planned.
+**Status:** Done 2026-10-23: Phases 1 to 5 are complete (measurement, slim
+summary list endpoints with paging + ETag, gzip + conditional requests, load by
+visible tab with loading/cached/stale/failed states with Retry, seeded live-style
+re-measure + byte-budget tests). Docs (`docs/howto/list-endpoints-and-paging.md`),
+the testing-tracker section and this close-out landed in PRD `791a0001`. No
+version bump; all changes ship with the daemon's next release alongside the
+`3cda0001` code.
 **Scope:** `internal/server/` (list endpoints behind `/api/sessions`,
 `/api/autonomous/prds`, `/api/automations`, `/api/alerts`, response compression),
 `internal/server/web/app.js` (what the UI fetches on load and per tab),
@@ -264,7 +270,7 @@ special.
 - [ ] Phase Completion Checklist items for docs and version: N/A, test and tooling
   only, no user-visible change, no version bump of its own.
 
-### Phase 2: Slim list payloads (Planned)
+### Phase 2: Slim list payloads (Done)
 
 - Return summary fields in the list responses and keep the full record on the by-id
   route. `/api/sessions` already has a `?view=summary` mode; the Automata list has none.
@@ -274,13 +280,13 @@ special.
   suites, [ ] docs checklist, [ ] conditional docs, [ ] Mobile-Parity Rule (the list
   contract changes), [ ] Localization Rule (N/A unless new UI text), [ ] version bump.
 
-### Phase 3: Compression and conditional requests (Planned)
+### Phase 3: Compression and conditional requests (Done)
 
 - Gzip responses over a size threshold; skip tiny bodies.
 - Add validators so an unchanged list answers 304.
 - Checklist: same items as Phase 2.
 
-### Phase 4: Load by visible tab (Planned)
+### Phase 4: Load by visible tab (Done)
 
 - Stop fetching data for tabs the user has not opened; page or window the long lists.
 - Checklist: same items as Phase 2.
@@ -324,3 +330,17 @@ Found by the measurement and fixed:
 | List loaders (Automata, Automation, Alerts) kept polling every 30 s on a hidden phone tab and did not refresh on return or after a socket reconnect. | Hidden pages skip the poll; `refreshIfOverdue()` runs on visible and after a reconnect. Polling at `pollMs` continues while the socket is down. |
 
 Not changed: server timings in `ws.go`/`api.go` and `sw.js` needed no change.
+
+## Follow-up
+
+Left open after done (2026-10-23), to be picked up when the Automata tab UI work
+lands:
+
+- Re-measure the production daemon after release (this pass measured against the
+  seeded live-style daemon plus the recorded baseline; the live numbers above are
+  the budget source, not the production re-run).
+- The slow-network group (TS-802 to TS-810) is verified by the seeded daemon and by
+  release smoke section 79 on the smoke daemon; an operator device pass (phone on a
+  real mobile link) is optional follow-up.
+- `datawatch-app` parity issue for the REST contract changes (summary form, paging,
+  ETag) once Phase 2 code ships, per the Parity surface note above.

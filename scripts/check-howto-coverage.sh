@@ -26,6 +26,7 @@ LLM_ONLY=(
     discussion-scopes   # conceptual reference for WAL-backed discussion memory model; operator steps via memory_* MCP tools
     testing-against-a-running-daemon  # dev/CI reference for shell-script env vars (DW_BASE, TEST_BASE); no MCP-callable steps
     automation-tab      # PWA-only view; nothing callable from MCP (like dashboard) — reference/conceptual doc
+    list-endpoints-and-paging  # curl-based API reference + PWA presentation states; running a daemon is in testing-against-a-running-daemon
 )
 
 ERRORS=0

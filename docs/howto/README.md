@@ -38,6 +38,7 @@ you already have a daemon you can talk to.
 | [Automata DAG orchestrator](automata-orchestrator.md) | Compose multiple Automata into a graph with guardrails (rules, security, release-readiness, docs integrity) |
 | [Automation queue advance](automation-queue-advance.md) | Chain Automatons in an Automation: activate, automatic advance on completion, blocked/idle alerts, restart behaviour |
 | [Automation tab](automation-tab.md) | The Automation tab: list and filters, pipeline strip (branches, forks, joins, nested), create and edit form, pause / resume / cancel / skip / insert / remove controls |
+| [List endpoints + paging](list-endpoints-and-paging.md) | Why list endpoints are small: `view=summary`, `limit`/`cursor` paging, ETag / 304, gzip, and the web UI's loading / cached / stale / failed states |
 | [Guardrail Library](guardrail-library.md) | Named guardrail registry, profiles, per-Automaton overrides, skill-declared guardrails, scan unification |
 | [Retry Policy](retry-policy.md) | Failure categories (infra/content/scope/policy), bounded auto-retry budgets, content auto-fix, retry profiles |
 | [File Drift Guardrail](file-drift-guardrail.md) | Foreign-file drift for direct-mode Automata: a task whose commit swept in someone else's pre-existing uncommitted edit **blocks by default** (`autonomous.drift_mode: block`; set `warn` to flag-only) — the task's own in-run edits only ever warn — worktree mode skipped |
