@@ -518,6 +518,24 @@ Assessment: the limit should not rise on a guess. One slot is the right default 
 
 Read `verifier` in `GET /api/capacity` (also `capacity_status` over MCP and the CLI status text, and the `datawatch_verifier_*` Prometheus counters). Raise the limit only if the average queue wait (`wait_avg_seconds`) stays well above the average run time (`run_avg_seconds`, for example wait over half of run) across a representative window, and the node has idle GPU headroom while verifiers queue. If waits are short, or `infra`, `watchdog` and `timeout` counts are high, a higher limit would not help: fix the failures first.
 
+### Verifier throughput
+
+Verification is the throughput limit of the Automata pipeline, so the verifier path has four guards and a set of counters. Assessment of how many verifiers a node should run is in [Verifier node limit](#verifier-node-limit).
+
+**No-progress watchdog.** A verifier session that shows neither an output file nor any change in its pane output for `autonomous.verifier_no_progress_timeout_seconds` (default 600, ten minutes; unset or non-positive uses the default) is ended instead of waiting out the long verifier timeout. Any output file or pane change resets the timer, the first pane capture is only the baseline. The end is recorded as a failed verification whose summary reads `verifier no-progress watchdog: no output file or pane activity for <limit>`, and it is counted under `watchdog` in the verifier counters below.
+
+**Lease reaper.** The capacity lease reaper never frees the lease of a verifier that is still running. A verifier lease is judged by the verifier session it started, and while the verifier is registered as running it stays live whatever the bound worker session or the lease age says. Leases whose verifier session has finished, and leaked leases with no live holder, are still reclaimed, so a pool never goes over its limit while verifiers run.
+
+**Restart reconcile.** When the daemon starts it lists the verifier sessions that survived the restart and reconciles them against the task store: verifiers of a task that no longer awaits verification are ended, when several verifiers exist for one task the newest is kept and the others ended, and a single surviving verifier is adopted and its lease re-bound to it. Running the reconcile again changes nothing.
+
+**Infra-failure escalation.** After `autonomous.verifier_infra_escalation_threshold` consecutive infra verifier failures on one task (default 2), the next verification of that task runs on `autonomous.fallback_verification_backend` (default the Claude backend, `claude-code`). The escalation is per task only: the count lives on the task, a pass or content result resets it, the end of the escalated run resets it, and other tasks keep using the configured verifier. It does nothing when the fallback equals the configured backend. Each escalation is recorded as a `verifier_escalation` decision on the PRD, as an `autonomous.verifier_escalation` entry in the audit log, and under `escalated` in the counters.
+
+All three keys can be read and set through the autonomous config on REST, MCP (`autonomous_config_set`), the CLI and the PWA settings.
+
+**Counters.** `GET /api/capacity` carries a `verifier` object (`capacity_status` over MCP returns it too) with `runs`, queue wait and run time totals, averages and maxima in seconds, `categories` (`pass`, `content`, `infra`, `watchdog`, `timeout`, `capacity`, `escalated`), `watchdog_ends`, `escalations` and `since`. The CLI and comm channel status text adds one line, for example `verifiers: 12 runs, avg wait 38s, avg run 6m, infra 3, watchdog 1`, or `verifiers: no runs yet`. Prometheus exposes `datawatch_verifier_runs_total{category}`, `datawatch_verifier_wait_seconds_total` and `datawatch_verifier_run_seconds_total`. The aggregates are kept since the daemon started.
+
+---
+
 ## 5. Signal Account Management
 
 ### Find your group ID
