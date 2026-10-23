@@ -185,7 +185,9 @@ func (s *Server) handleLLMs(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusNotFound)
 			return
 		}
-		writeJSONOK(w, s.llmView(l.Redacted()))
+		view := s.llmView(l.Redacted())
+		view.RoleWarnings = s.roleWarningsFor(l.Name)
+		writeJSONOK(w, view)
 
 	case rest != "" && r.Method == http.MethodPut:
 		if !s.fedCap(w, r, federation.CapLLMsWrite) {
@@ -278,6 +280,25 @@ type llmView struct {
 	MaxInflight          *int                     `json:"max_inflight"`
 	EffectiveMaxInflight int                      `json:"effective_max_inflight"`
 	InflightSource       inference.InflightSource `json:"inflight_source"`
+	// RoleWarnings carries the role-contention warnings that name this entry.
+	// Set by the single-entry GET only; the listing reports all warnings once
+	// under status.role_warnings.
+	RoleWarnings []string `json:"role_warnings,omitempty"`
+}
+
+// roleWarningsFor returns the current role-contention warnings that mention the
+// named entry.
+func (s *Server) roleWarningsFor(name string) []string {
+	var out []string
+	quoted := fmt.Sprintf("%q", name)
+	for _, w := range s.roleMonitor.Warnings() {
+		if strings.Contains(w, quoted) || strings.Contains(w, "("+name+")") ||
+			strings.Contains(w, "("+name+",") || strings.Contains(w, ", "+name+",") ||
+			strings.Contains(w, ", "+name+")") {
+			out = append(out, w)
+		}
+	}
+	return out
 }
 
 // llmView builds the response view for one redacted LLM. The tier table
