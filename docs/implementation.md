@@ -163,6 +163,14 @@ raises a 30-minute wait alert. Config: `autonomous.capacity_enabled`,
 `autonomous.capacity_wait_timeout_seconds`, `autonomous.capacity_gpu_util_pct`,
 `session.reserved_interactive`. See `docs/howto/automata-capacity.md`.
 
+Ledger lock watchdog (`internal/capacity/watchdog.go`): `Ledger.SnapshotWatched` wraps
+`Snapshot` for request paths (`/api/capacity`, the comm `capacity` reply). If the snapshot
+has not returned after 5 seconds (`DefaultLockWatchdogThreshold`) `LogLockWedge` logs
+`capacity ledger lock held for N seconds` once per wedge episode, however many callers
+are waiting, followed by the stacks of goroutines inside `internal/capacity`, which include
+the lock holder. The watched call keeps waiting and returns normally once the lock frees.
+Internal loops (reaper, limit sync) use plain `Snapshot`.
+
 Reactive usage back-off (`internal/autonomous/backoff.go`): an in-memory per-backend flag
 that holds autonomous dispatch (never interactive starts) after a rate/usage limit.
 Config: `autonomous.usage_backoff` (`pause_backend` | `off`, default `pause_backend`;
@@ -250,6 +258,10 @@ retries), an `undeclared_edit_detected` decision, an
 nil-safe). `off` is a full no-op, `warn` never blocks, `block` sets
 `TaskBlocked` with `undeclared_edit: <files>` and halts the walk.
 Worktree-mode PRDs are skipped. Read-only git only.
+
+### Peer usage cache
+
+The shared-node gate (`fingerprint.PeerGate`) reads each opted-in peer's held counts from `fingerprint.PeerUsageCache`, an in-memory map of the last good `/api/capacity` answer per peer. `wireFingerprint` builds one cache, sets it as `PeerGate.Usage`, and sets `Syncer.AfterPass` to `RefreshAll`, so the cache is refreshed once at start and after every 15-minute sync pass. The ledger callback only reads memory; a missing or stale entry fails open and triggers a background refresh. Peers without fingerprint sync opted in get no HTTP call, and no config key is involved.
 
 ### Per-task project directory (Automata)
 

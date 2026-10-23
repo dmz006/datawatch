@@ -90,7 +90,12 @@ type BudgetLedger struct {
 
 	path string
 
+	// mu guards loaded and entries and is only ever held for in-memory work,
+	// because Blocked takes it while the capacity ledger holds its own lock
+	// (see capacity.Options). ioMu serializes the file reads and writes and is
+	// never taken by a read-only accessor once the file is loaded.
 	mu      sync.Mutex
+	ioMu    sync.Mutex
 	loaded  bool
 	entries []budgetEntry
 }
@@ -108,27 +113,54 @@ func (b *BudgetLedger) now() time.Time {
 	return b.Clock()
 }
 
-// ensureLoaded reads the persistence file once. Caller holds b.mu.
-func (b *BudgetLedger) ensureLoaded() {
-	if b.loaded {
+// Preload reads the persistence file now. The daemon calls it at startup so
+// the read never happens lazily inside a ledger callback.
+func (b *BudgetLedger) Preload() { b.load() }
+
+// load reads the persistence file once. Callers must not hold b.mu or b.ioMu.
+// After the first call it is a single in-memory check.
+func (b *BudgetLedger) load() {
+	b.mu.Lock()
+	done := b.loaded
+	b.mu.Unlock()
+	if done {
 		return
 	}
-	b.loaded = true
-	if b.path == "" {
+	b.ioMu.Lock()
+	defer b.ioMu.Unlock()
+	b.mu.Lock()
+	done = b.loaded
+	b.mu.Unlock()
+	if done {
 		return
+	}
+	entries, pruned := b.readFile()
+	b.mu.Lock()
+	b.entries = entries
+	b.loaded = true
+	b.mu.Unlock()
+	if pruned {
+		b.rewrite(entries)
+	}
+}
+
+// readFile parses the persistence file, dropping bad and expired lines.
+// Caller holds b.ioMu.
+func (b *BudgetLedger) readFile() (entries []budgetEntry, pruned bool) {
+	if b.path == "" {
+		return nil, false
 	}
 	f, err := os.Open(b.path)
 	if err != nil {
 		if !os.IsNotExist(err) {
 			log.Printf("[budget] read %s: %v", b.path, err)
 		}
-		return
+		return nil, false
 	}
 	defer func() { _ = f.Close() }()
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	cutoff := b.now().Add(-budgetRetention)
-	pruned := false
 	for sc.Scan() {
 		line := sc.Bytes()
 		if len(line) == 0 {
@@ -143,11 +175,9 @@ func (b *BudgetLedger) ensureLoaded() {
 			pruned = true
 			continue
 		}
-		b.entries = append(b.entries, e)
+		entries = append(entries, e)
 	}
-	if pruned {
-		b.rewriteLocked()
-	}
+	return entries, pruned
 }
 
 // Record adds one spend entry that is not attributed to a session.
@@ -161,9 +191,10 @@ func (b *BudgetLedger) RecordSession(llm, sessionID string, at time.Time, usd fl
 	if llm == "" {
 		return
 	}
+	b.load()
+	b.ioMu.Lock()
+	defer b.ioMu.Unlock()
 	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.ensureLoaded()
 	e := budgetEntry{LLM: llm, At: at, USD: usd, TokensIn: tokensIn, TokensOut: tokensOut, Session: sessionID}
 	b.entries = append(b.entries, e)
 
@@ -176,11 +207,16 @@ func (b *BudgetLedger) RecordSession(llm, sessionID string, at time.Time, usd fl
 	}
 	dropped := len(kept) != len(b.entries)
 	b.entries = kept
+	var snapshot []budgetEntry
+	if dropped {
+		snapshot = append(snapshot, kept...)
+	}
+	b.mu.Unlock()
 	if b.path == "" {
 		return
 	}
 	if dropped {
-		b.rewriteLocked()
+		b.rewrite(snapshot)
 		return
 	}
 	if err := os.MkdirAll(filepath.Dir(b.path), 0o700); err != nil {
@@ -199,9 +235,8 @@ func (b *BudgetLedger) RecordSession(llm, sessionID string, at time.Time, usd fl
 	}
 }
 
-// rewriteLocked replaces the file with the in-memory entries. Caller holds
-// b.mu.
-func (b *BudgetLedger) rewriteLocked() {
+// rewrite replaces the file with entries. Caller holds b.ioMu and not b.mu.
+func (b *BudgetLedger) rewrite(entries []budgetEntry) {
 	if b.path == "" {
 		return
 	}
@@ -216,7 +251,7 @@ func (b *BudgetLedger) rewriteLocked() {
 		return
 	}
 	w := bufio.NewWriter(f)
-	for _, e := range b.entries {
+	for _, e := range entries {
 		line, _ := json.Marshal(e)
 		_, _ = w.Write(line)
 		_ = w.WriteByte('\n')
@@ -239,9 +274,9 @@ func (b *BudgetLedger) rewriteLocked() {
 func (b *BudgetLedger) windowEntries(llm string, bw *inference.BudgetWindow, now time.Time) (es []budgetEntry, start, end time.Time) {
 	start, end = bw.WindowAt(now)
 	weekly := bw.Mode() == inference.BudgetModeWeekly
+	b.load()
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.ensureLoaded()
 	for _, e := range b.entries {
 		if e.LLM != llm {
 			continue
@@ -296,9 +331,9 @@ func (b *BudgetLedger) SpendInWindow(llm string) float64 {
 // both inclusive. It never includes peer spend and does not require the LLM
 // to have a budget, so a peer can ask for the spend inside its own window.
 func (b *BudgetLedger) SpendBetween(llm string, from, to time.Time) float64 {
+	b.load()
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.ensureLoaded()
 	var total float64
 	for _, e := range b.entries {
 		if e.LLM == llm && !e.At.Before(from) && !e.At.After(to) {
@@ -321,9 +356,9 @@ func (b *BudgetLedger) SpendBySessions(sessionIDs []string, llm string, from tim
 			set[id] = struct{}{}
 		}
 	}
+	b.load()
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.ensureLoaded()
 	var total float64
 	for _, e := range b.entries {
 		if e.Session == "" {

@@ -177,7 +177,8 @@ func TestCapacityGateComposesPeerGate(t *testing.T) {
 		return 0, 0
 	}
 	gate := newFingerprintGate(st, store, localHeld)
-	fingerprintPeerGate = gate // sharedNodeBackpressure consults the package gate
+	fingerprintPeerGate = gate                  // sharedNodeBackpressure consults the package gate
+	gate.Usage.RefreshAll(context.Background()) // the gate reads cached usage only
 	if why := gate.Reason("gpu1"); why == "" {
 		t.Fatalf("gate admitted shared node with confirmed match; want blocked")
 	}

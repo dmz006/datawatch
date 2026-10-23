@@ -56,6 +56,11 @@ type Syncer struct {
 	Client *http.Client
 	// Interval between passes; zero means DefaultSyncInterval.
 	Interval time.Duration
+	// AfterPass, when set, runs at the end of every pass of Run —
+	// including the immediate first one, so caches it warms are ready
+	// shortly after daemon start. Nil changes nothing. It runs inline on
+	// the loop goroutine, so a slow call only delays the next tick.
+	AfterPass func(ctx context.Context)
 
 	mu      sync.Mutex
 	failing map[string]bool // peers in a failure episode, so each is logged once
@@ -129,13 +134,21 @@ func (s *Syncer) SyncOnce(ctx context.Context) {
 	s.noteFailures(jobs, results)
 }
 
+// pass is one SyncOnce followed by the optional AfterPass hook.
+func (s *Syncer) pass(ctx context.Context) {
+	s.SyncOnce(ctx)
+	if s.AfterPass != nil {
+		s.AfterPass(ctx)
+	}
+}
+
 // Run is the single tick for the exchange: one immediate pass, then
 // one pass per Interval, until ctx is done.
 func (s *Syncer) Run(ctx context.Context) {
 	if s == nil {
 		return
 	}
-	s.SyncOnce(ctx)
+	s.pass(ctx)
 	t := time.NewTicker(s.interval())
 	defer t.Stop()
 	for {
@@ -143,7 +156,7 @@ func (s *Syncer) Run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			s.SyncOnce(ctx)
+			s.pass(ctx)
 		}
 	}
 }
