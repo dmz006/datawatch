@@ -5,6 +5,12 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.104 — The launch-failure retry test no longer flakes
+
+### Fixed
+
+- **The launch-failure retry test no longer depends on real timers, and a data race behind it is fixed.** `TestLaunchFailureRetry_BoundedAndFailsInfra` waited a fixed five seconds on real retry timers and failed about half the time on a loaded runner, which stopped four releases from publishing. The task-exhausted failure reason in the executor was also written without the store lock; it is now set under the lock. The test and the sibling tests that waited on real backoff timers now run deterministically, and a repeat-run gate under the race detector and CPU contention guards them.
+
 ## v9.5.103 — Federated daemons detect a shared compute node or billing account by hashed fingerprint
 
 ### Added
