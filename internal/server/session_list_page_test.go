@@ -13,9 +13,13 @@ import (
 	"github.com/dmz006/datawatch/internal/session"
 )
 
+// listPageBase is the fixed clock for the list-page tests so ordering and the
+// terminal cap never depend on how recent the seeded sessions are.
+var listPageBase = time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+
 func pagedServer(t *testing.T, n int) *Server {
 	t.Helper()
-	base := time.Now().Add(-time.Hour)
+	base := listPageBase.Add(-time.Hour)
 	var sessions []*session.Session
 	for i := 0; i < n; i++ {
 		st := session.StateComplete
@@ -91,7 +95,7 @@ func TestSessionListPageStableAcrossInsert(t *testing.T) {
 	s := pagedServer(t, 10)
 	first := decodePage(t, getSessions(t, s, "limit=4"))
 	// A newer session appears between pages; later pages must not repeat rows.
-	if err := s.manager.SaveSession(&session.Session{ID: "ffff", FullID: "h-ffff", State: session.StateRunning, UpdatedAt: time.Now()}); err != nil {
+	if err := s.manager.SaveSession(&session.Session{ID: "ffff", FullID: "h-ffff", State: session.StateRunning, UpdatedAt: listPageBase.Add(time.Hour)}); err != nil {
 		t.Fatal(err)
 	}
 	second := decodePage(t, getSessions(t, s, "limit=100&cursor="+first.NextCursor))
@@ -143,7 +147,7 @@ func TestSessionListPageSummaryDropsHeavyFields(t *testing.T) {
 	huge := strings.Repeat("A", 128*1024)
 	s := sessionViewServer(t, 50, 200, &session.Session{
 		ID: "a1", FullID: "h-a1", Name: "big", State: session.StateRunning, Task: huge,
-		PromptContext: huge, LastSummaryLong: huge, LastResponse: "first line\nsecond", UpdatedAt: time.Now(),
+		PromptContext: huge, LastSummaryLong: huge, LastResponse: "first line\nsecond", UpdatedAt: listPageBase,
 	})
 	for _, q := range []string{"view=summary", "limit=10"} {
 		rr := getSessions(t, s, q)
@@ -173,11 +177,34 @@ func TestSessionListPageSummaryDropsHeavyFields(t *testing.T) {
 func TestSessionListPageLegacyUnchanged(t *testing.T) {
 	task := strings.Repeat("t", 5000)
 	s := sessionViewServer(t, 1, 20,
-		&session.Session{ID: "a1", FullID: "h-a1", State: session.StateComplete, Task: task, UpdatedAt: time.Now()},
-		&session.Session{ID: "b2", FullID: "h-b2", State: session.StateComplete, Task: task, UpdatedAt: time.Now().Add(-time.Hour)},
+		&session.Session{ID: "a1", FullID: "h-a1", State: session.StateComplete, Task: task, UpdatedAt: listPageBase},
+		&session.Session{ID: "b2", FullID: "h-b2", State: session.StateComplete, Task: task, UpdatedAt: listPageBase.Add(-time.Hour)},
 	)
 	rr := getSessions(t, s, "")
-	if got, want := rr.Body.String(), legacySessionsBody(t, s, s.manager.ListSessions()); got != want {
+	// Store.List ranges over a map, so the handler's order is random. Snapshot
+	// the sessions once and arrange them in the order the handler returned.
+	var order []struct {
+		FullID string `json:"full_id"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &order); err != nil {
+		t.Fatal(err)
+	}
+	byID := map[string]*session.Session{}
+	for _, sess := range s.manager.ListSessions() {
+		byID[sess.FullID] = sess
+	}
+	if len(order) != len(byID) {
+		t.Fatalf("handler returned %d sessions, store holds %d", len(order), len(byID))
+	}
+	snapshot := make([]*session.Session, 0, len(order))
+	for _, o := range order {
+		sess, ok := byID[o.FullID]
+		if !ok {
+			t.Fatalf("handler returned unknown session %q", o.FullID)
+		}
+		snapshot = append(snapshot, sess)
+	}
+	if got, want := rr.Body.String(), legacySessionsBody(t, s, snapshot); got != want {
 		t.Errorf("legacy body changed:\n got %s\nwant %s", got, want)
 	}
 	if rr.Header().Get("ETag") != "" {
@@ -217,7 +244,7 @@ func TestSessionsListETagNotModified(t *testing.T) {
 		}
 	}
 	before := getSessions(t, s, "view=summary").Header().Get("ETag")
-	if err := s.manager.SaveSession(&session.Session{ID: "zz", FullID: "h-zz", State: session.StateRunning, UpdatedAt: time.Now()}); err != nil {
+	if err := s.manager.SaveSession(&session.Session{ID: "zz", FullID: "h-zz", State: session.StateRunning, UpdatedAt: listPageBase.Add(time.Hour)}); err != nil {
 		t.Fatal(err)
 	}
 	if after := getSessions(t, s, "view=summary").Header().Get("ETag"); after == before {
