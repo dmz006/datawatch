@@ -731,6 +731,9 @@ type Manager struct {
 	// tasks whose session is still running (B90). Nil = conservative:
 	// all stuck tasks are failed regardless of session state.
 	sessionAliveFn func(sessionID string) bool
+	// sessionListerFn — when set, reconcileStuckTasks looks for a live session
+	// belonging to a task with an empty or dead session link before resetting it.
+	sessionListerFn func() []SessionInfo
 	// sessionLastOutputFn — when set, the boot-resume age gate counts a live
 	// worker session's last output time as PRD activity. Nil = liveness only.
 	sessionLastOutputFn func(sessionID string) (time.Time, bool)
@@ -4419,6 +4422,7 @@ func (m *Manager) reconcileStuckTasks() {
 	m.mu.Lock()
 	aliveFn := m.sessionAliveFn
 	killerFn := m.sessionKillerFn
+	listFn := m.sessionListerFn
 	m.mu.Unlock()
 
 	prds := m.store.ListPRDs()
@@ -4427,6 +4431,7 @@ func (m *Manager) reconcileStuckTasks() {
 			continue
 		}
 		changed := false
+		adoptedAny := false
 		verdictCompleted, verdictRequeued := 0, 0
 		var reset []pendingTaskEvent
 		for si := range prd.Story {
@@ -4448,6 +4453,16 @@ func (m *Manager) reconcileStuckTasks() {
 					}
 				} else if aliveFn != nil && t.SessionID != "" && aliveFn(t.SessionID) {
 					continue // session still live; leave it (TaskInProgress)
+				}
+				// A live session may belong to this task even though its link is
+				// empty or dead (created just before the restart): adopt it
+				// instead of resetting. Extra live matches are left to the
+				// reset-cleanup path.
+				if !completing {
+					if id, _ := m.adoptUnlinkedSession(prd, t, listFn); id != "" {
+						adoptedAny = true
+						continue
+					}
 				}
 				// Kill any surviving tmux session so the new executor doesn't
 				// spawn alongside it.
@@ -4490,17 +4505,19 @@ func (m *Manager) reconcileStuckTasks() {
 				changed = true
 			}
 		}
-		if !changed {
+		if !changed && !adoptedAny {
 			continue
 		}
 		now := time.Now()
 		prd.UpdatedAt = now
-		prd.Decisions = append(prd.Decisions, Decision{
-			At:    now,
-			Kind:  "boot_reconcile",
-			Actor: "autonomous",
-			Note:  "orphaned task(s) resolved to completed (recorded ok verification) or pending on daemon restart",
-		})
+		if changed {
+			prd.Decisions = append(prd.Decisions, Decision{
+				At:    now,
+				Kind:  "boot_reconcile",
+				Actor: "autonomous",
+				Note:  "orphaned task(s) resolved to completed (recorded ok verification) or pending on daemon restart",
+			})
+		}
 		// Auditable verification of the orphaned-verifying resolutions: record
 		// how many verifying tasks completed from a recorded ok verdict vs how
 		// many were re-queued for retry. Guarded so a PRD saved twice in the

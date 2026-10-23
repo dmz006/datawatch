@@ -6029,6 +6029,18 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 					s.State != session.StateFailed &&
 					s.State != session.StateKilled
 			})
+			// Boot reconcile adoption: find a live session for a task with no session link.
+			amgr.SetSessionListerFn(func() []autonomouspkg.SessionInfo {
+				var out []autonomouspkg.SessionInfo
+				for _, s := range mgr.ListSessions() {
+					out = append(out, autonomouspkg.SessionInfo{
+						ID: s.FullID, TaskID: s.TaskID, PRDID: s.PRDID, Task: s.Task,
+						ProjectDir: s.ProjectDir, CreatedAt: s.CreatedAt,
+						Alive: s.State != session.StateComplete && s.State != session.StateFailed && s.State != session.StateKilled,
+					})
+				}
+				return out
+			})
 			// Boot-resume age gate: a live worker's last activity counts as PRD activity.
 			amgr.SetSessionLastOutputFn(func(sessionID string) (time.Time, bool) {
 				s, ok := mgr.GetSession(sessionID)
