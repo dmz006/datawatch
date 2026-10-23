@@ -5,6 +5,14 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.123 — Hermetic session-starting server tests
+
+Makes the session-starting server tests hermetic so they no longer fail when the host terminal multiplexer is busy.
+
+- The server tests that start sessions through the handler now use the package's fake multiplexer instead of a real one, so a loaded host can no longer make `TestHandleDeleteSession_MemoryStrategyPurge` fail with "create tmux session: exit status 1".
+- The server test binary can no longer reach the operator's multiplexer: `TMUX` is cleared and `TMUX_TMPDIR` points at a fresh temporary directory for the whole run, checked by `TestTmuxEnvIsolated`.
+- One explicitly named live test, `TestLiveTmuxSessionStartDelete`, starts and deletes a real session. It is behind the `livetmux` build tag and `DATAWATCH_LIVE_TMUX=1`, and refuses to run unless the multiplexer is isolated.
+
 ## v9.5.122 — Harness-only commits and non-project refusal
 
 Only the harness commits, and only after validation passes. A worker can no longer bypass the validation gate by running git commit itself.
