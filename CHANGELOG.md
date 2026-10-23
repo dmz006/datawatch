@@ -5,6 +5,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.121 — Per-record session and PRD stores
+
+Stops the daemon from rewriting its whole session and PRD files on every change, which kept a CPU core busy and made API calls take seconds.
+
+- Each session is stored in its own record file and each PRD in its own record, with large text moved to side files. An old `sessions.json` or `prds.jsonl` is migrated once and the original is kept as a backup.
+- A background writer coalesces bursts of updates into one write and flushes on close.
+- Old finished sessions can move to an archive file, and oversized stored fields are cut with a marker.
+- New settings: `session.store_flush_interval`, `session.store_archive_after_days`, `session.store_field_cap_kb` and `session.store_side_file_cap_kb`, on every config surface.
+- A benchmark and a write-budget test guard against the problem returning.
+
 ## v9.5.120 — Web UI load checks and list-endpoint guide
 
 Adds the load-performance checks and documentation for the web UI list endpoints.
