@@ -1775,10 +1775,18 @@ func (m *Manager) Decompose(prdID string) (*PRD, error) {
 		effort = Effort(m.cfg.PlanningEffort)
 	}
 	// Mark in-flight so the operator can see it from /api/autonomous/prds/{id}.
-	// Also persists the worktree assignment above in the same write.
-	planOld := prd.Status
-	prd.Status = PRDPlanning
-	prd.UpdatedAt = time.Now()
+	// Also persists the worktree assignment above in the same write. The status
+	// bump is a plain field write on the store's shared *PRD, so it must run under
+	// the store lock to be ordered against a concurrent SnapshotPRD deep copy and
+	// persist's JSON encoding (see Store.WithLock); the prior value is captured in
+	// the same critical section. SavePRD below keeps its Rev bump, test hooks and
+	// decision trims unchanged.
+	var planOld PRDStatus
+	m.store.WithLock(func() {
+		planOld = prd.Status
+		prd.Status = PRDPlanning
+		prd.UpdatedAt = time.Now()
+	})
 	if m.store.SavePRD(prd) == nil {
 		m.emitPRDStatus(prd, planOld, nil, nil)
 	}
@@ -1934,9 +1942,14 @@ func (m *Manager) decomposeStreamingCore(prdID string, cb StoryCallback) (*PRD, 
 		effort = Effort(m.cfg.PlanningEffort)
 	}
 	// Mark in-flight. Also persists the worktree assignment above.
-	planOld := prd.Status
-	prd.Status = PRDPlanning
-	prd.UpdatedAt = time.Now()
+	// Same lock-ordered status bump as Decompose() (see Store.WithLock); the
+	// prior value is captured in the same critical section.
+	var planOld PRDStatus
+	m.store.WithLock(func() {
+		planOld = prd.Status
+		prd.Status = PRDPlanning
+		prd.UpdatedAt = time.Now()
+	})
 	if m.store.SavePRD(prd) == nil {
 		m.emitPRDStatus(prd, planOld, nil, nil)
 	}

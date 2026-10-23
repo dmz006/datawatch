@@ -654,11 +654,15 @@ func (m *Manager) acquireTreeWritersLock(ctx context.Context, prd *PRD, task *Ta
 	waited := false
 	release, err := AcquireTreeLock(waitCtx, key, treeRoot, task.ID, task.PRDID,
 		func(holderID string) (TaskStatus, bool) {
-			cur, ok := m.store.GetTask(holderID)
+			// TaskSnapshot (value copy under the store lock), not GetTask's shared
+			// pointer + out-of-lock .Status read: that read raced a concurrent
+			// store-locked Status write (executeOne advancing a holder to
+			// TaskVerifying) and failed -race in concurrent same-tree runs.
+			snap, ok := m.store.TaskSnapshot(holderID)
 			if !ok {
 				return "", false
 			}
-			return cur.Status, true
+			return snap.Status, true
 		},
 		func(reason string) {
 			waited = true
