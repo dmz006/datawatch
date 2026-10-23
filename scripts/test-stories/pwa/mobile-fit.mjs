@@ -26,10 +26,12 @@
 //   --list                       print the run plan as ONE JSON document on
 //       stdout and exit 0, without launching a browser
 //
-// Exit codes: 0 on success (including --list), 1 when browser execution was
-// requested but is still the 'not implemented' stub (next task), 2 on bad
-// arguments (unknown flag, unknown view or profile, --exhaustive without
-// --profile full, or a matrix state-list error).
+// Exit codes: 0 on success (including --list and --report-only), including
+// a browser run with no findings; 1 when a browser run produced findings or
+// when the harness itself failed; 2 when no browser could be launched
+// (prints 'SKIP: no browser') or on bad arguments (unknown flag, unknown
+// view or profile, --exhaustive without --profile full, or a matrix
+// state-list error).
 //
 // Plan document printed by --list:
 //   { profile, views, viewports (unique {width,height,orientation} used),
@@ -65,12 +67,16 @@
 // view falls back to the defaults (this is how views work before their
 // provider module exists).
 //
-// Browser execution lands in the next task, in runBrowser() below.
+// // Browser execution lives in runMobileFit(options) below. It returns the
+// report object (see mobile-fit-report.mjs for its shape), so other stories
+// can import it and drive the same harness programmatically.
 
 import path from 'node:path';
 import { existsSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { buildMatrix } from './mobile-fit-matrix.mjs';
+import { buildMatrix, cssViewportForZoom } from './mobile-fit-matrix.mjs';
+import { collectFindings } from './mobile-fit-lib.mjs';
+import { buildReport, writeReport } from './mobile-fit-report.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -253,6 +259,7 @@ async function viewPlan(view) {
     : fb;
   const states = stateList(provider.states, DEFAULT_VIEW_PLAN.states);
   return {
+    provider,
     states,
     quickStates: stateList(provider.quickStates, states),
     zoomStates: stateList(provider.zoomStates, states),
@@ -323,31 +330,473 @@ export async function buildPlan(config) {
 }
 
 // ---------------------------------------------------------------------------
-// Browser execution — STUB
-//
-// The real driver (per-cell open/seed/settle phases, interaction replay,
-// finding collection via mobile-fit-lib.mjs, screenshots, and report
-// assembly via mobile-fit-report.mjs) is added by the next task. It replaces
-// this stub; the CLI in main() already hands it the resolved configuration.
+// Browser execution
 // ---------------------------------------------------------------------------
-export async function runBrowser(/* config */) {
-  throw new Error('not implemented');
+// runMobileFit(options) drives the real run and returns the report object
+// (see mobile-fit-report.mjs for its shape), so other stories can import it
+// and drive the same harness programmatically. options mirror the CLI flags:
+// views (id, comma list or array), profile, exhaustive, out, reportOnly,
+// scope.
+//
+// Behaviour:
+//   * one browser; one context per distinct (viewport, theme, zoom). The
+//     context gets ignoreHTTPSErrors, the viewport + deviceScaleFactor from
+//     cssViewportForZoom(), and an init script that pre-seeds
+//     localStorage's 'cs_theme' and 'cs_token' so the very first paint is in
+//     the right theme with a valid token; connectToPWA runs once per context
+//     and the page is then reused for every state in that combination;
+//   * per state: provider.seed(page, state) (a no-op without a provider
+//     module), the view is re-opened so it re-renders (bottom nav button if
+//     visible, otherwise window.navigate(id) — no full page reload), it is
+//     waited on until settled, then collectFindings() runs;
+//   * provider phases: each state runs provider.phases(state) (default
+//     ['settled']); phases other than 'settled' append '#<phase>' to the
+//     scenario name, and provider.settle() is the wait for that phase;
+//   * provider interactions, when present, run ONCE per profile at the first
+//     matrix cell as 'interaction:<id>' scenarios; they are skipped
+//     entirely when a scope option is set (flag or MOBILE_FIT_SCOPE);
+//   * provider named scenarios run in every profile, in addition to the
+//     matrix cells, each with its own viewport/theme/zoom/state/scope;
+//     an explicit scope option overrides the named scenario's own scope;
+//   * a view that fails to open produces a run with an error string and one
+//     finding of check 'open-failed' — the harness does not abort;
+//   * a run with findings gets a full-page screenshot at
+//     <out>/screenshots/<sanitised-scenario>.png, the path (relative to
+//     <out>) attached to the run;
+//   * always writes mobile-fit-report.json + .txt under <out>, then prints
+//     one summary line and the first 20 group lines.
+
+// Loading UI that says "not settled yet": spinners, skeleton blocks, inline
+// loading placeholders. The default settle waits for these to go away, up to
+// SETTLE_TIMEOUT_MS, after which the view counts as settled anyway.
+const LOADING_PLACEHOLDERS = '.spinner, .skeleton, .skeleton-line, .skeleton-card, .integ-loading, .loading-eye-block';
+const SETTLE_TIMEOUT_MS = 10000;
+
+function messageOf(err) {
+  return err && err.message ? err.message : String(err);
 }
 
-// CLI entry: parse + resolve, then either print the plan (--list) or run the
-// browser. Returns the process exit code (main() itself never throws on the
-// --list path; on the run path the runBrowser stub throws until the next
-// task implements it).
+function toList(v) {
+  if (v == null) return [];
+  const arr = Array.isArray(v) ? v : splitList(v);
+  return arr
+    .filter((x) => typeof x === 'string' && x.trim() !== '')
+    .map((x) => x.trim());
+}
+
+function sanitiseScenario(name) {
+  let s = String(name).replace(/[^A-Za-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '');
+  if (!s) s = 'scenario';
+  return s.slice(0, 80);
+}
+
+function scopeOpts(scopeList) {
+  return scopeList && scopeList.length > 0 ? { scope: scopeList } : {};
+}
+
+function phasesFor(provider, state) {
+  if (provider && typeof provider.phases === 'function') {
+    try {
+      const p = provider.phases(state);
+      if (Array.isArray(p) && p.length > 0 && p.every((x) => typeof x === 'string' && x.trim() !== '')) return p;
+    } catch { /* provider error - default phases */ }
+  }
+  return ['settled'];
+}
+
+function openFailedFinding(view, err) {
+  return {
+    check: 'open-failed',
+    selector: `[data-view="${view}"]`,
+    detail: `could not open view '${view}': ${messageOf(err)}`,
+  };
+}
+
+async function defaultSettle(page) {
+  try {
+    await page.waitForFunction(
+      (sel) => Array.from(document.querySelectorAll(sel)).every((el) => el.offsetWidth === 0 || el.offsetHeight === 0),
+      LOADING_PLACEHOLDERS,
+      { timeout: SETTLE_TIMEOUT_MS, polling: 250 },
+    );
+  } catch { /* settle cap expired - count the view as settled and go on */ }
+}
+
+async function openView(page, view, lib) {
+  const btn = page.locator(`[data-view="${view}"]`).first();
+  if (await btn.isVisible().catch(() => false)) {
+    await lib.navigateTo(page, view); // click + wait for the view to be active
+    return;
+  }
+  await page.evaluate((v) => {
+    if (typeof window.navigate !== 'function') throw new Error('window.navigate is not available');
+    window.navigate(v);
+  }, view);
+  await page.waitForTimeout(250); // let the first render pass finish
+}
+
+async function attachScreenshot(page, outDir, run) {
+  const { mkdir } = await import('node:fs/promises');
+  const rel = `screenshots/${sanitiseScenario(run.scenario)}.png`;
+  const abs = path.join(outDir, rel);
+  await mkdir(path.dirname(abs), { recursive: true });
+  await page.screenshot({ path: abs, fullPage: true, animations: 'disabled' });
+  run.screenshot = rel;
+}
+
+// One context per distinct (viewport, theme, zoom), shared across all views
+// and states that land on the same combination.
+function createContextFactory(browser, lib, consoleErrors) {
+  const contexts = new Map();
+  const keyOf = (vp, theme, zoom) =>
+    `${vp.width}x${vp.height}x${vp.orientation || 'portrait'}/${theme}/z${zoom}`;
+  return async function getContext(vp, theme, zoom) {
+    const key = keyOf(vp, theme, zoom);
+    if (contexts.has(key)) return contexts.get(key);
+    const css = cssViewportForZoom(vp, zoom);
+    const context = await browser.newContext({
+      ignoreHTTPSErrors: true,
+      viewport: { width: css.width, height: css.height },
+      deviceScaleFactor: css.deviceScaleFactor,
+    });
+    await context.addInitScript((args) => {
+      try {
+        localStorage.setItem('cs_theme', args[0]);
+        localStorage.setItem('cs_token', args[1]);
+      } catch { /* storage not usable before the page has an origin */ }
+    }, [theme, lib.env.token]);
+    const page = await context.newPage();
+    page.on('console', (msg) => {
+      if (msg.type() === 'error') {
+        try { consoleErrors.push(msg.text()); } catch { /* ignore */ }
+      }
+    });
+    page.on('pageerror', (err) => { consoleErrors.push(`pageerror: ${err.message}`); });
+    contexts.set(key, { context, page });
+    try {
+      await lib.connectToPWA(page);
+    } catch (err) {
+      contexts.delete(key);
+      await context.close().catch(() => {});
+      throw err;
+    }
+    return contexts.get(key);
+  };
+}
+
+async function runCell(view, provider, cell, dep) {
+  const { scenario, viewport, theme, zoom, state } = cell;
+  const base = { scenario, view, state, theme, zoom, viewport };
+  let page;
+  try {
+    page = (await dep.getContext(viewport, theme, zoom)).page;
+  } catch (err) {
+    base.error = `context setup failed: ${messageOf(err)}`;
+    base.findings = [openFailedFinding(view, err)];
+    return [base];
+  }
+  try {
+    if (provider && typeof provider.seed === 'function') await provider.seed(page, state);
+  } catch (err) {
+    base.error = `seed failed: ${messageOf(err)}`;
+    base.findings = [openFailedFinding(view, err)];
+    return [base];
+  }
+  try {
+    if (provider && typeof provider.open === 'function') await provider.open(page);
+    else await dep.open(page, view);
+  } catch (err) {
+    base.error = messageOf(err);
+    base.findings = [openFailedFinding(view, err)];
+    return [base];
+  }
+  const runs = [];
+  for (const phase of phasesFor(provider, state)) {
+    const run = {
+      ...base,
+      scenario: phase === 'settled' ? scenario : `${scenario}#${phase}`,
+      findings: [],
+    };
+    try {
+      if (provider && typeof provider.settle === 'function') await provider.settle(page, state, phase);
+      else await dep.settle(page);
+      run.findings = await collectFindings(page, scopeOpts(dep.scopeList));
+      if (run.findings.length > 0) await dep.screenshot(page, run).catch(() => {});
+    } catch (err) {
+      run.error = messageOf(err);
+      run.findings = [];
+    }
+    runs.push(run);
+  }
+  return runs;
+}
+
+function shouldRunInteractions(config, plan) {
+  return config.scope.length === 0
+    && plan.interactions.length > 0
+    && plan.provider
+    && typeof plan.provider.runInteraction === 'function';
+}
+
+async function runInteractions(view, plan, cell, dep) {
+  const provider = plan.provider;
+  const out = [];
+  for (const id of plan.interactions) {
+    const run = {
+      scenario: `interaction:${id}`,
+      view,
+      state: cell.state,
+      theme: cell.theme,
+      zoom: cell.zoom,
+      viewport: cell.viewport,
+      findings: [],
+    };
+    let page;
+    try {
+      page = (await dep.getContext(cell.viewport, cell.theme, cell.zoom)).page;
+    } catch (err) {
+      run.error = `context setup failed: ${messageOf(err)}`;
+      out.push(run);
+      continue;
+    }
+    try {
+      const extra = await provider.runInteraction(page, id);
+      run.findings = Array.isArray(extra) ? extra.filter((f) => f && typeof f === 'object') : [];
+      if (run.findings.length > 0) await dep.screenshot(page, run).catch(() => {});
+    } catch (err) {
+      run.error = messageOf(err);
+      run.findings = [];
+    }
+    out.push(run);
+  }
+  return out;
+}
+
+const FALLBACK_VIEWPORT = { width: 390, height: 844, orientation: 'portrait' };
+
+async function runNamedScenario(view, provider, entry, dep) {
+  if (!entry || typeof entry !== 'object') return null;
+  const name = typeof entry.name === 'string' ? entry.name.trim() : '';
+  if (!name) return null;
+  const state = typeof entry.state === 'string' && entry.state.trim() ? entry.state.trim() : 'default';
+  const vp = entry.viewport && Number.isFinite(entry.viewport.width) && Number.isFinite(entry.viewport.height) && entry.viewport.width > 0
+    ? { width: entry.viewport.width, height: entry.viewport.height, orientation: entry.viewport.orientation || 'portrait' }
+    : FALLBACK_VIEWPORT;
+  const theme = entry.theme === 'light' || entry.theme === 'dark' ? entry.theme : 'dark';
+  const zoom = Number.isFinite(Number(entry.zoom)) && Number(entry.zoom) > 0 ? Number(entry.zoom) : 100;
+  const scopeList = dep.scopeList.length > 0 ? dep.scopeList : toList(entry.scope);
+  const run = { scenario: name, view, state, theme, zoom, viewport: vp, findings: [] };
+  let page;
+  try {
+    page = (await dep.getContext(vp, theme, zoom)).page;
+  } catch (err) {
+    run.error = `context setup failed: ${messageOf(err)}`;
+    run.findings = [openFailedFinding(view, err)];
+    return run;
+  }
+  try {
+    if (provider && typeof provider.seed === 'function') await provider.seed(page, state);
+    if (provider && typeof provider.open === 'function') await provider.open(page);
+    else await dep.open(page, view);
+    if (provider && typeof provider.settle === 'function') await provider.settle(page, state, 'settled');
+    else await dep.settle(page);
+    run.findings = await collectFindings(page, scopeOpts(scopeList));
+    if (run.findings.length > 0) await dep.screenshot(page, run).catch(() => {});
+  } catch (err) {
+    run.error = messageOf(err);
+    if (run.findings.length === 0) run.findings = [openFailedFinding(view, err)];
+  }
+  return run;
+}
+
+async function runView(config, view, dep) {
+  const plan = await viewPlan(view);
+  const provider = plan.provider || null;
+  const cells = buildMatrix({
+    profile: config.profile,
+    states: plan.states,
+    quickStates: plan.quickStates,
+    zoomStates: plan.zoomStates,
+    exhaustive: config.exhaustive,
+  });
+  const out = [];
+  let interactionsRun = false;
+  for (const cell of cells) {
+    out.push(...await runCell(view, provider, cell, dep));
+    if (!interactionsRun) {
+      interactionsRun = true;
+      if (shouldRunInteractions(config, plan)) {
+        out.push(...await runInteractions(view, plan, cell, dep));
+      }
+    }
+  }
+  for (const ns of plan.named) {
+    const namedRun = await runNamedScenario(view, provider, ns, dep);
+    if (namedRun) out.push(namedRun);
+  }
+  return out;
+}
+
+async function collectBrowserRuns(config) {
+  const lib = await import('./lib.mjs');
+  let browser;
+  try {
+    browser = await lib.launchBrowser();
+  } catch (err) {
+    const e = new Error(`no browser could be launched: ${messageOf(err)}`);
+    e.code = 'NO_BROWSER';
+    throw e;
+  }
+  const consoleErrors = [];
+  const runs = [];
+  const dep = {
+    getContext: createContextFactory(browser, lib, consoleErrors),
+    open: (page, view) => openView(page, view, lib),
+    settle: (page) => defaultSettle(page),
+    screenshot: (page, run) => attachScreenshot(page, config.out, run),
+    scopeList: config.scope,
+  };
+  try {
+    for (const view of config.views) {
+      runs.push(...await runView(config, view, dep));
+    }
+  } finally {
+    if (consoleErrors.length > 0) {
+      const body = consoleErrors.join('\n') + '\n';
+      const { mkdir, writeFile } = await import('node:fs/promises');
+      await mkdir(config.out, { recursive: true }).catch(() => {});
+      await writeFile(path.join(config.out, 'console-errors.txt'), body).catch(() => {});
+      await lib.saveLog('console-errors', body).catch(() => {});
+    }
+    await browser.close().catch(() => {});
+  }
+  return runs;
+}
+
+// --report-only rebuilds the report FROM SAVED RUNS WITHOUT RENDERING
+// ANYTHING under <out>: the previously written mobile-fit-report.json if it
+// exists, otherwise the planned scenarios (one run each, no findings).
+async function collectSavedRuns(config) {
+  const savedFile = path.join(config.out, 'mobile-fit-report.json');
+  if (existsSync(savedFile)) {
+    try {
+      const { readFile } = await import('node:fs/promises');
+      const saved = JSON.parse(await readFile(savedFile, 'utf8'));
+      if (saved && Array.isArray(saved.runs) && saved.runs.length > 0) return saved.runs;
+    } catch { /* unreadable saved report - fall back to the plan */ }
+  }
+  const runs = [];
+  for (const view of config.views) {
+    const plan = await viewPlan(view);
+    const cells = buildMatrix({
+      profile: config.profile,
+      states: plan.states,
+      quickStates: plan.quickStates,
+      zoomStates: plan.zoomStates,
+      exhaustive: config.exhaustive,
+    });
+    for (const cell of cells) {
+      runs.push({ scenario: cell.scenario, view, state: cell.state, theme: cell.theme, zoom: cell.zoom, viewport: cell.viewport, findings: [] });
+    }
+    if (config.scope.length === 0 && plan.interactions.length > 0) {
+      const first = cells.length > 0 ? cells[0] : null;
+      for (const id of plan.interactions) {
+        runs.push({
+          scenario: `interaction:${id}`,
+          view,
+          state: first ? first.state : 'default',
+          theme: first ? first.theme : 'dark',
+          zoom: first ? first.zoom : 100,
+          viewport: first ? first.viewport : FALLBACK_VIEWPORT,
+          findings: [],
+        });
+      }
+    }
+    for (const ns of plan.named) {
+      const name = ns && typeof ns.name === 'string' ? ns.name.trim() : '';
+      if (!name) continue;
+      runs.push({
+        scenario: name,
+        view,
+        state: ns && typeof ns.state === 'string' && ns.state ? ns.state : 'default',
+        theme: ns && (ns.theme === 'light' || ns.theme === 'dark') ? ns.theme : 'dark',
+        zoom: ns && Number.isFinite(Number(ns.zoom)) && Number(ns.zoom) > 0 ? Number(ns.zoom) : 100,
+        viewport: ns && ns.viewport && Number.isFinite(ns.viewport.width) && Number.isFinite(ns.viewport.height) ? ns.viewport : FALLBACK_VIEWPORT,
+        findings: [],
+      });
+    }
+  }
+  return runs;
+}
+
+function printSummary(report, jsonPath) {
+  const s = report.summary;
+  console.log(`mobile-fit: ${s.scenarios} scenarios, ${s.total} findings in ${s.groups} groups; report: ${jsonPath}`);
+  for (const g of report.groups.slice(0, 20)) {
+    console.log(`  ${g.id} [${g.check}] ${g.selector} - ${g.count} ${g.count === 1 ? 'finding' : 'findings'}`);
+  }
+}
+
+export async function runMobileFit(options = {}) {
+  let config;
+  try {
+    config = resolveConfig({
+      view: options.views,
+      profile: options.profile,
+      exhaustive: options.exhaustive === true,
+      out: options.out,
+      reportOnly: options.reportOnly === true,
+      scope: options.scope,
+    });
+  } catch (err) {
+    err.code = 'BAD_ARGS';
+    throw err;
+  }
+  if (!config.out) config.out = await defaultOutDir();
+  const meta = {
+    views: config.views,
+    profile: config.profile,
+    scope: config.scope,
+    report_only: config.reportOnly,
+    exhaustive: config.exhaustive,
+  };
+  const runs = config.reportOnly ? await collectSavedRuns(config) : await collectBrowserRuns(config);
+  const report = buildReport(runs, meta);
+  const { json } = await writeReport(report, config.out);
+  printSummary(report, json);
+  return report;
+}
+
+// CLI entry: parse + resolve, then either print the plan (--list), rebuild
+// the report (--report-only) or run the browser. Returns the process exit
+// code; main() maps thrown errors onto exit codes (2 for bad arguments and
+// 'no browser', 1 for harness failures).
 export async function runCli(argv = process.argv.slice(2), { stdout = process.stdout } = {}) {
-  const config = resolveConfig(parseArgs(argv));
+  let config;
+  try {
+    config = resolveConfig(parseArgs(argv));
+  } catch (err) {
+    err.code = 'BAD_ARGS';
+    throw err;
+  }
   if (config.list) {
     const plan = await buildPlan(config);
-    stdout.write(JSON.stringify(plan, null, 2) + '\n');
+    const text = JSON.stringify(plan, null, 2) + '\n';
+    stdout.write(text);
     return 0;
   }
   if (!config.out) config.out = await defaultOutDir();
-  await runBrowser(config);
-  return 0;
+  const report = await runMobileFit({
+    views: config.views,
+    profile: config.profile,
+    exhaustive: config.exhaustive,
+    out: config.out,
+    reportOnly: config.reportOnly,
+    scope: config.scope,
+  });
+  // 0 when no findings (report-only never renders, hence never reports
+  // findings in a fresh run dir); 1 when findings exist.
+  return report.summary.total > 0 ? 1 : 0;
 }
 
 function isMain() {
@@ -364,11 +813,15 @@ if (isMain()) {
     .then((code) => process.exit(code))
     .catch((err) => {
       const msg = err && err.message ? err.message : String(err);
-      if (msg === 'not implemented') {
-        process.stderr.write('mobile-fit: browser execution is not implemented yet (use --list for the plan)\n');
-      } else {
-        process.stderr.write(`mobile-fit: ${msg}\n`);
+      if (err && err.code === 'NO_BROWSER') {
+        process.stderr.write('SKIP: no browser\n');
+        process.exit(2);
       }
-      process.exit(msg === 'not implemented' ? 1 : 2);
+      if (err && err.code === 'BAD_ARGS') {
+        process.stderr.write(`mobile-fit: ${msg}\n`);
+        process.exit(2);
+      }
+      process.stderr.write(`mobile-fit: ${msg}\n`);
+      process.exit(1);
     });
 }
