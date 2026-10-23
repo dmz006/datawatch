@@ -2112,5 +2112,7 @@
   "cached": "キャッシュ",
   "load_failed": "この一覧を読み込めませんでした",
   "retry": "再試行",
-  "stale_data": "データが古い可能性があります"
+  "stale_data": "データが古い可能性があります",
+  "load_more": "さらに読み込む",
+  "automata_open_to_load": "開くとストーリーとタスクを読み込みます"
 }

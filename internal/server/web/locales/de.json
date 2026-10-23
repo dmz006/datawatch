@@ -2112,5 +2112,7 @@
   "cached": "Zwischengespeichert",
   "load_failed": "Diese Liste konnte nicht geladen werden",
   "retry": "Erneut versuchen",
-  "stale_data": "Daten sind möglicherweise veraltet"
+  "stale_data": "Daten sind möglicherweise veraltet",
+  "load_more": "Mehr laden",
+  "automata_open_to_load": "Öffnen, um Stories und Aufgaben zu laden"
 }

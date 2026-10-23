@@ -587,18 +587,19 @@ function _resyncAfterReconnect() {
       renderSessionDetail(sid);
     }
   };
-  fetch('/api/sessions', { headers: tokenHeader() })
-    .then(r => r.ok ? r.json() : null)
+  const resync = _sessionsLocalMode()
+    ? loadSessionsList().then(rows => (_sl().error ? null : rows))
+    : fetch('/api/sessions', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null).then(rows => {
+      if (rows) { rows.forEach(s => applySessionUpdate(s)); onSessionsUpdated(); }
+      return rows;
+    });
+  resync
     .then(sessions => {
-      if (sessions) {
-        sessions.forEach(s => applySessionUpdate(s));
-        onSessionsUpdated();
-      }
       if (!detail || state.activeView !== 'session-detail' || state.activeSession !== sid) {
         if (view === 'alerts') renderAlertsView();
         return;
       }
-      const exists = !sessions || sessions.some(s => s.full_id === sid || s.id === sid);
+      const exists = !sessions || sessions.some(s => s.full_id === sid || s.id === sid) || state.sessions.some(s => s.full_id === sid || s.id === sid);
       if (exists && termLive()) {
         // Keep the terminal on screen; the fresh capture redraws it.
         send('subscribe', { session_id: sid });
@@ -775,10 +776,14 @@ function connect() {
       // now happens inside renderSessionDetail (see line ~2200) which
       // also clears _termHasContent so the splash placement + initXterm
       // path runs cleanly and a fresh subscribe is sent.
-      fetch('/api/sessions', { headers: tokenHeader() })
-        .then(r => r.ok ? r.json() : null)
+      (_sessionsLocalMode()
+        ? loadSessionsList().then(rows => (_sl().error ? null : rows))
+        : fetch('/api/sessions', { headers: tokenHeader() }).then(r => r.ok ? r.json() : null))
         .then(sessions => {
-          if (sessions) {
+          if (sessions && _sessionsLocalMode()) {
+            // loadSessionsList already merged the rows and notified.
+            if (state.activeView === 'alerts') renderAlertsView();
+          } else if (sessions) {
             // Batch the reconnect refresh: apply ALL session updates to
             // state first, then notify once — instead of updateSession() per
             // session, which ran onSessionsUpdated (and, before the
@@ -990,7 +995,8 @@ function listLoader(opts) {
   function html() {
     let h = '';
     if (st.error) {
-      h += `<div class="list-state-failed" role="alert"><span class="list-state-failed-msg">${escHtml(t('load_failed'))}: ${escHtml(st.error)}</span>` +
+      const failMsg = opts.failedText ? opts.failedText(st.error) : `${t('load_failed')}: ${st.error}`;
+      h += `<div class="list-state-failed" role="alert"><span class="list-state-failed-msg">${escHtml(failMsg)}</span>` +
         `<button type="button" class="btn-secondary list-state-retry" onclick="window._listLoaders[${escHtml(JSON.stringify(key))}].retry()">${escHtml(t('retry'))}</button></div>`;
     }
     if (st.loading && !st.hasData) {
@@ -1009,7 +1015,10 @@ function listLoader(opts) {
   }
   function paint() {
     const el = target();
-    if (el) el.innerHTML = html();
+    if (!el || (opts.active && !opts.active())) return;
+    const keep = opts.beforePaint ? opts.beforePaint(el) : null;
+    el.innerHTML = html();
+    if (opts.afterPaint) opts.afterPaint(el, keep, st.data);
   }
   function tick() {
     if (!st.hasData || st.stopped) return;
@@ -1020,11 +1029,12 @@ function listLoader(opts) {
   }
   function schedule() {
     if (st.pollTimer) clearTimeout(st.pollTimer);
-    st.pollTimer = (pollMs && !st.stopped) ? setTimeout(() => { ctl.load(); }, pollMs) : null;
+    st.pollTimer = (pollMs && !st.stopped) ? setTimeout(() => { if (!opts.active || opts.active()) ctl.load(); else schedule(); }, pollMs) : null;
   }
   const ctl = {
     state: st,
     html,
+    paint,
     ageText,
     isStale,
     load() {
@@ -1056,7 +1066,8 @@ function listLoader(opts) {
       }).catch(err => {
         if (mySeq !== st.seq) return;
         st.loading = false; st.loadedOnce = true;
-        st.error = timedOut ? 'timeout (' + Math.round(timeoutMs / 1000) + ' s)' : ((err && err.message) || String(err));
+        st.error = timedOut ? 'timeout (' + Math.round(timeoutMs / 1000) + ' s)'
+          : (opts.errorText ? opts.errorText(err) : ((err && err.message) || String(err)));
       }).then(() => {
         if (timer) clearTimeout(timer);
         if (mySeq !== st.seq) return;
@@ -1106,9 +1117,12 @@ function handleMessage(msg) {
         _loadAllServersSessions();
       } else if (msg.data && msg.data.sessions) {
         state.sessions = msg.data.sessions || [];
+        _sessionsMarkFresh();
       } else {
         state.sessions = msg.data || [];
+        _sessionsMarkFresh();
       }
+      if (_sl().next && state.sessions.length >= _sl().total) _sl().next = '';
       // Initialize channel_ready state from session data
       for (const s of state.sessions) {
         if (s.channel_ready) state.channelReady[s.full_id] = true;
@@ -1214,7 +1228,7 @@ function handleMessage(msg) {
         state.statsData = msg.data;
         if (state.activeView === 'settings') {
           const el = document.getElementById('statsPanel');
-          if (el) renderStatsData(el, msg.data);
+          if (el) renderStatsData(el.querySelector('#statsBody') || el, msg.data);
         }
         if (state.activeView === 'session-detail' && state.activeOutputTab === 'stats') {
           renderSessionStats(state.activeSession);
@@ -2593,6 +2607,119 @@ function cancelHeaderRename(sessionId) {
 // ── Session list view ─────────────────────────────────────────────────────────
 const DONE_STATES = new Set(['complete', 'failed', 'killed']);
 
+// ── Sessions list load state ────────────────────────────────────────────────
+// The sessions tab is fed by the WebSocket and by the summary list
+// (GET /api/sessions?view=summary&limit=N, paged with a cursor). This record
+// says whether the first data has arrived, when it last did and whether the
+// last fetch failed, so the view can show a loading skeleton, a failed state
+// with Retry, or the "may be stale" banner at the right moments only.
+const SESSIONS_PAGE = 50;
+const SESSIONS_POLL_MS = 30000;
+function _sl() {
+  return state._sessionsLoad || (state._sessionsLoad = {
+    loading: false, loaded: false, at: 0, error: '', next: '', total: 0,
+    loadingMore: false, moreError: '', timer: null,
+  });
+}
+function _sessionsMarkFresh() {
+  const l = _sl();
+  l.loaded = true; l.at = Date.now(); l.error = '';
+}
+window._sessionsMarkFresh = _sessionsMarkFresh;
+// Genuinely stale: the connection is down once the first load has settled,
+// or the last refresh failed and the data is older than the polling interval.
+// Never while the first load is still in flight.
+function _sessionsStale() {
+  const l = _sl();
+  if (!l.loaded && !l.error) return false;
+  if (!state.connected) return true;
+  return !!l.error && (Date.now() - l.at) > SESSIONS_POLL_MS;
+}
+// A summary row cut some text fields; keep the full text we already hold
+// when it is the same record.
+function _mergeSessionRow(row) {
+  if (!row) return;
+  const cur = state.sessions.find(s => s.full_id === row.full_id);
+  if (cur && Array.isArray(row.truncated_fields)) {
+    const still = [];
+    for (const f of row.truncated_fields) {
+      const prefix = String(row[f] || '').replace(/…$/, '');
+      if (cur[f] && !(cur.truncated_fields || []).includes(f) && String(cur[f]).startsWith(prefix)) row[f] = cur[f];
+      else still.push(f);
+    }
+    if (still.length) row.truncated_fields = still; else delete row.truncated_fields;
+  }
+  applySessionUpdate(row);
+}
+function _sessionsLocalMode() {
+  return !state.activeServer || state.activeServer === 'local';
+}
+function _sessionsFetchPage(cursor) {
+  const ac = (typeof AbortController === 'function') ? new AbortController() : null;
+  const timer = setTimeout(() => { if (ac) { try { ac.abort(); } catch (e) { /* ignore */ } } }, 15000);
+  const q = '/api/sessions?view=summary&limit=' + SESSIONS_PAGE + (cursor ? '&cursor=' + encodeURIComponent(cursor) : '');
+  const init = { headers: tokenHeader() };
+  if (ac) init.signal = ac.signal;
+  return fetch(q, init).then(r => (r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))).then(data => {
+    clearTimeout(timer);
+    const rows = Array.isArray(data) ? data : ((data && data.sessions) || []);
+    return { rows, next: (data && data.next_cursor) || '', total: (data && data.total) || rows.length };
+  }, err => { clearTimeout(timer); throw err; });
+}
+// loadSessionsList fetches the first summary page. Rows merge into
+// state.sessions, so open detail views and WebSocket data are kept. The
+// reconnect resync uses this too.
+function loadSessionsList() {
+  if (!_sessionsLocalMode()) return Promise.resolve([]); // federation modes keep their own paths
+  const l = _sl();
+  if (l.loading) return l.promise || Promise.resolve([]);
+  l.loading = true; l.error = '';
+  if (state.activeView === 'sessions' && !l.loaded) renderSessionsView();
+  l.promise = _sessionsFetchPage('').then(page => {
+    page.rows.forEach(_mergeSessionRow);
+    l.next = page.next; l.total = page.total;
+    _sessionsMarkFresh();
+    return page.rows;
+  }).catch(err => {
+    l.error = (err && err.name === 'AbortError') ? 'timeout' : ((err && err.message) || String(err));
+    return [];
+  }).then(rows => {
+    l.loading = false;
+    clearTimeout(l.timer);
+    if (l.error || !state.connected) l.timer = setTimeout(() => { if (state.activeView === 'sessions') loadSessionsList(); }, SESSIONS_POLL_MS);
+    if (rows.length) onSessionsUpdated();
+    if (state.activeView === 'sessions') renderSessionsView();
+    return rows;
+  });
+  return l.promise;
+}
+window.loadSessionsList = loadSessionsList;
+window.sessionsLoadMore = function() {
+  const l = _sl();
+  if (!l.next || l.loadingMore) return;
+  l.loadingMore = true; l.moreError = '';
+  renderSessionsView();
+  _sessionsFetchPage(l.next).then(page => {
+    page.rows.forEach(_mergeSessionRow);
+    l.next = page.next; l.total = page.total;
+  }).catch(err => { l.moreError = (err && err.message) || String(err); })
+    .then(() => { l.loadingMore = false; renderSessionsView(); });
+};
+// A summary row cut some text; the full record comes from GET /api/sessions/{id}.
+function _ensureFullSession(sessionId, sess) {
+  if (!sess || !(sess.truncated_fields || []).length) return;
+  state._fullSessionFetch = state._fullSessionFetch || {};
+  if (state._fullSessionFetch[sess.full_id]) return;
+  state._fullSessionFetch[sess.full_id] = true;
+  apiFetch('/api/sessions/' + encodeURIComponent(sess.full_id)).then(full => {
+    if (full && full.full_id) {
+      delete full.truncated_fields;
+      applySessionUpdate(full);
+      if (state.activeView === 'session-detail' && state.activeSession === sessionId) renderSessionDetail(sessionId);
+    }
+  }).catch(() => { delete state._fullSessionFetch[sess.full_id]; });
+}
+
 function renderSessionsView() {
   const view = document.getElementById('view');
   if (state.activeView !== 'sessions') return;
@@ -2601,7 +2728,7 @@ function renderSessionsView() {
   // (Android already shows this). The header's small status dot is easy
   // to miss; this is a visible inline warning on the list itself, so the
   // operator knows the list below may be stale.
-  const disconnectedBannerHtml = !state.connected
+  const disconnectedBannerHtml = _sessionsStale()
     ? `<div class="sessions-disconnected-banner" style="background:rgba(239,68,68,0.12);border:1px solid var(--error,#ef4444);color:var(--error,#ef4444);border-radius:6px;padding:8px 12px;margin:0 12px 10px;font-size:12px;font-weight:600;display:flex;align-items:center;gap:6px;">
         <span>&#9888;</span><span>${escHtml(t('sessions_disconnected_banner')||'Not connected to the server — this list may be stale.')}</span>
       </div>`
@@ -2789,17 +2916,24 @@ function renderSessionsView() {
       _injectServerPickerBar(view, renderSessionsView);
       return;
     }
-    // GH#172 D60 — while the first WS "sessions" push hasn't landed
-    // yet, an empty state looks identical to "genuinely no sessions".
-    // Show shimmer placeholders instead until we actually know.
-    if (!state.connected) {
+    // GH#172 D60 — until the first data arrives an empty state looks like
+    // "genuinely no sessions". Show a labelled skeleton while the first load
+    // is in flight, and a failed state with Retry when it did not work, so
+    // the tab is never blank without saying why.
+    const sl = _sl();
+    if (!sl.loaded && _sessionsLocalMode()) {
       const skeletonCard = `<div class="skeleton-card"><div class="skeleton-line short"></div><div class="skeleton-line medium"></div><div class="skeleton-line long"></div></div>`;
+      const failed = sl.error
+        ? `<div class="list-state-failed" role="alert"><span class="list-state-failed-msg">${escHtml(t('load_failed'))}: ${escHtml(sl.error)}</span><button type="button" class="btn-secondary list-state-retry" onclick="loadSessionsList()">${escHtml(t('retry'))}</button></div>`
+        : `<div class="list-state-loading-label" role="status">${escHtml(t('loading'))}</div>`;
       view.innerHTML = `
         <div class="view-content" style="position:relative;">
           <div class="sessions-watermark"><img src="/favicon.svg" alt="" /></div>
-          <div class="session-list">${skeletonCard.repeat(3)}</div>
+          ${failed}
+          <div class="session-list">${sl.error ? '' : skeletonCard.repeat(3)}</div>
         </div>`;
       _injectServerPickerBar(view, renderSessionsView);
+      if (!sl.error && !sl.loading) loadSessionsList();
       return;
     }
     view.innerHTML = `
@@ -2824,7 +2958,7 @@ function renderSessionsView() {
   view.innerHTML = `<div class="view-content" style="position:relative;">
     <div class="sessions-watermark"><img src="/favicon.svg" alt="" /></div>
     ${disconnectedBannerHtml}
-    ${toggleBtn}<div class="session-list">${cards}</div></div>`;
+    ${toggleBtn}<div class="session-list">${cards}</div>${_sessionsLoadMoreHtml()}</div>`;
 
   // Restore filter input focus and cursor position
   if (filterText) {
@@ -2855,6 +2989,19 @@ function renderSessionsView() {
   }
   // BL312 S3 — prepend server picker bar if remote servers are registered
   _injectServerPickerBar(view, renderSessionsView);
+}
+
+function _sessionsLoadMoreHtml() {
+  const l = _sl();
+  if (!_sessionsLocalMode()) return '';
+  let h = '';
+  if (l.error) h += `<div class="list-state-failed" role="alert"><span class="list-state-failed-msg">${escHtml(t('load_failed'))}: ${escHtml(l.error)}</span><button type="button" class="btn-secondary list-state-retry" onclick="loadSessionsList()">${escHtml(t('retry'))}</button></div>`;
+  if (l.next && state.sessions.length < l.total) {
+    const label = `${t('load_more') || 'Load more'} (${state.sessions.length}/${l.total})`;
+    h += `<div class="list-load-more" style="text-align:center;padding:8px;"><button type="button" class="btn-secondary" id="sessionsLoadMore" ${l.loadingMore ? 'disabled' : ''} onclick="sessionsLoadMore()">${escHtml(l.loadingMore ? t('loading') : label)}</button>` +
+      (l.moreError ? ` <span class="list-state-failed-msg">${escHtml(t('load_failed'))}: ${escHtml(l.moreError)}</span>` : '') + '</div>';
+  }
+  return h;
 }
 
 function loadGlobalScheduleBadge() {
@@ -3514,6 +3661,7 @@ function renderSessionDetail(sessionId) {
   }
   const view = document.getElementById('view');
   const sess = state.sessions.find(s => s.full_id === sessionId || s.id === sessionId);
+  _ensureFullSession(sessionId, sess);
 
   const taskText = sess ? (sess.task || '') : '';
   const stateText = sess ? (sess.state || 'unknown') : 'unknown';
@@ -20331,6 +20479,8 @@ const _automataState = {
   search: '',
   selected: new Set(),       // Set<prd.id> — checked cards
   allPrds: [],               // last fetched flat list
+  detail: {},                // id -> {prd, loading, error}: per-item GET, fetched when a card opens
+  pageSize: 50, total: 0, nextCursor: '', loadingMore: false, moreError: '', capacity: null,
   allTemplates: [],          // BL221 — last fetched TemplateStore list
   tmplSearch: '',            // BL221 — template search query
   // alpha.31 #272 — operator-pin overrides sort. Persisted in localStorage.
@@ -20653,9 +20803,13 @@ window.exitAutomataSelectMode = function() {
 function renderProgressBar(prd) {
   if (!prd) return '';
   const stories = prd.stories || [];
-  const total = stories.reduce((n, s) => n + (s.tasks || []).length, 0);
+  let total = stories.reduce((n, s) => n + (s.tasks || []).length, 0);
+  let done = stories.reduce((n, s) => n + (s.tasks || []).filter(t => t.status === 'completed').length, 0);
+  if (!stories.length && prd.task_count) { // summary row: counts only
+    total = prd.task_count;
+    done = (prd.task_status_counts || {}).completed || 0;
+  }
   if (total === 0) return '';
-  const done = stories.reduce((n, s) => n + (s.tasks || []).filter(t => t.status === 'completed').length, 0);
   const pct = Math.round((done / total) * 100);
   const fillClass = pct === 100 ? 'automata-progress-fill complete' : 'automata-progress-fill';
   return `<div class="automata-progress-wrap"><div class="${fillClass}" style="width:${pct}%;"></div></div>
@@ -20760,7 +20914,8 @@ function renderAutomataCard(prd) {
   const parentLink = prd.parent_prd_id
     ? `<a href="#" style="color:var(--accent2,#60a5fa);text-decoration:none;" title="${escHtml(t('automata_parent_link_tip')||'Open parent automaton')}" onclick="event.stopPropagation();event.preventDefault();renderPRDDetailView(${escHtml(JSON.stringify(prd.parent_prd_id))})">↗ ${escHtml(t('automata_parent_link')||'parent')}</a>`
     : '';
-  const storyCount = (prd.stories || []).length;
+  const storyCount = (prd.stories || []).length || prd.story_count || 0;
+  const full = _automataFullPrd(prd);
   return `<div class="prd-row prd-card ${statusClass}" id="prd-${escHtml(id)}" style="padding:14px;margin-bottom:14px;cursor:pointer;" onclick="renderPRDDetailView(${escId})">
     <div style="display:flex;align-items:flex-start;gap:10px;">
       ${checkboxCell}
@@ -20784,14 +20939,14 @@ function renderAutomataCard(prd) {
         </div>
       </div>
     </div>
-    <details style="margin-top:8px;" onclick="event.stopPropagation()"><summary style="cursor:pointer;font-size:12px;color:var(--accent);">${t('prd_stories_tasks')||'Stories & tasks'} (${storyCount})</summary>
-      <div style="margin-top:6px;" onclick="event.stopPropagation()">${renderDetailStoriesTree(prd) || '<em style="color:var(--text2);">no stories yet</em>'}</div>
+    <details style="margin-top:8px;" onclick="event.stopPropagation()" ontoggle="_automataCardToggle(${escId},this)"><summary style="cursor:pointer;font-size:12px;color:var(--accent);">${t('prd_stories_tasks')||'Stories & tasks'} (${storyCount})</summary>
+      <div class="prd-card-detail" data-prd-detail="${escHtml(id)}" style="margin-top:6px;" onclick="event.stopPropagation()">${_automataCardDetailHtml(prd)}</div>
     </details>
     <!-- GH#182 — Automaton dependency graph (DAG) card. No graph library
          in this repo (zero-heavy-dependency footprint); hand-rolled SVG
          is plenty for the handful of stories/tasks a real Automaton has. -->
-    ${storyCount > 0 ? `<details style="margin-top:8px;" onclick="event.stopPropagation()"><summary style="cursor:pointer;font-size:12px;color:var(--accent);">${t('prd_dependency_graph')||'Dependency graph'}</summary>
-      <div style="margin-top:6px;overflow-x:auto;" onclick="event.stopPropagation()">${renderDependencyGraph(prd)}</div>
+    ${(storyCount > 0 && full) ? `<details style="margin-top:8px;" onclick="event.stopPropagation()"><summary style="cursor:pointer;font-size:12px;color:var(--accent);">${t('prd_dependency_graph')||'Dependency graph'}</summary>
+      <div style="margin-top:6px;overflow-x:auto;" onclick="event.stopPropagation()">${renderDependencyGraph(full)}</div>
     </details>` : ''}
   </div>`;
 }
@@ -20896,49 +21051,183 @@ window.automataCancel = function(id, status) {
   });
 };
 
-function loadAutomataPanel() {
-  const panel = document.getElementById('automataPanel');
-  if (!panel) return;
-  // Save expanded <details> state before wiping for loading spinner so
-  // WS-triggered refreshes don't collapse cards the user has opened.
-  const expandedCardIds = new Set();
+
+// Automata cards come from the summary list (counts only). Stories and tasks
+// are fetched per item, on demand, when a card is opened; the result is kept
+// in _automataState.detail so refreshes do not lose it or refetch it.
+function _automataFullPrd(prd) {
+  if (prd.stories && prd.stories.length) return prd;
+  const d = _automataState.detail[prd.id];
+  return (d && d.prd) ? d.prd : null;
+}
+function _automataCardDetailHtml(prd) {
+  const full = _automataFullPrd(prd);
+  if (full) return renderDetailStoriesTree(full) || `<em style="color:var(--text2);">${escHtml(t('prd_no_stories')||'No stories yet.')}</em>`;
+  const d = _automataState.detail[prd.id];
+  if (d && d.error) {
+    return `<div class="list-state-failed" role="alert"><span class="list-state-failed-msg">${escHtml(t('load_failed'))}: ${escHtml(d.error)}</span>` +
+      `<button type="button" class="btn-secondary list-state-retry" onclick="_automataLoadDetail(${escHtml(JSON.stringify(prd.id))},true)">${escHtml(t('retry'))}</button></div>`;
+  }
+  if (d && d.loading) return `<div class="list-state-skeleton" role="status"><span class="list-state-loading-label">${escHtml(t('loading'))}</span></div>`;
+  if (!(prd.story_count > 0)) return `<em style="color:var(--text2);">${escHtml(t('prd_no_stories')||'No stories yet.')}</em>`;
+  return `<span style="color:var(--text2);font-size:12px;">${escHtml(t('automata_open_to_load')||'Open to load stories and tasks')}</span>`;
+}
+function _automataRepaintDetail(id) {
+  const prd = _automataState.allPrds.find(p => p.id === id);
+  document.querySelectorAll('[data-prd-detail]').forEach(el => {
+    if (prd && el.getAttribute('data-prd-detail') === id) el.innerHTML = _automataCardDetailHtml(prd);
+  });
+}
+function _automataLoadDetail(id, force) {
+  const cur = _automataState.detail[id];
+  if (cur && cur.loading) return Promise.resolve();
+  if (cur && cur.prd && !force) return Promise.resolve();
+  _automataState.detail[id] = { loading: true, prd: cur && cur.prd };
+  _automataRepaintDetail(id);
+  return apiFetch('/api/autonomous/prds/' + encodeURIComponent(id)).then(prd => {
+    _automataState.detail[id] = { prd };
+  }).catch(err => {
+    _automataState.detail[id] = { error: (err && err.message) || String(err), prd: cur && cur.prd };
+  }).then(() => _automataRepaintDetail(id));
+}
+window._automataCardToggle = function(id, det) {
+  if (det && det.open) _automataLoadDetail(id);
+};
+window._automataLoadDetail = _automataLoadDetail;
+
+// _automataFetchAll gathers everything the Automata tab needs in parallel:
+// the summary page (or the aggregated list in all-servers mode, which keeps
+// its own unpaged path), the worker LLMs, the tags and the capacity card.
+// Only the list itself may fail the load; the rest is best-effort.
+function _automataQuery(cursor) {
+  const st = _automataState;
+  const q = ['limit=' + st.pageSize];
+  if (cursor) q.push('cursor=' + encodeURIComponent(cursor));
+  if (st.statusFilter.size) q.push('status=' + encodeURIComponent([...st.statusFilter].join(',')));
+  else if (!st.historyOn) q.push('active=1');
+  if (st.search) q.push('q=' + encodeURIComponent(st.search));
+  return '/api/autonomous/prds?' + q.join('&');
+}
+function _automataFetchAll(url, o) {
+  const aggregated = state.activeServer === 'all';
+  const opts = o || {};
+  return Promise.all([
+    apiFetch(aggregated ? '/api/autonomous/prds/aggregated' : _automataQuery(''), opts),
+    apiFetch('/api/llms', opts).catch(() => null),
+    _tagsLoad(true).catch(() => null),
+    apiFetch('/api/capacity', opts).catch(() => null),
+  ]).then(([data, llms, , cap]) => {
+    const prds = Array.isArray(data) ? data : ((data && data.prds) || []);
+    return {
+      prds, total: (data && data.total) || prds.length,
+      next: (data && data.next_cursor) || '',
+      llms: (llms && llms.llms) || [], capacity: cap,
+    };
+  });
+}
+function _automataApplyData(d) {
+  state._prdBackends = (d.llms || []).filter(l => !l.disabled);
+  _automataState.allPrds = d.prds || [];
+  _automataState.total = d.total || _automataState.allPrds.length;
+  _automataState.nextCursor = d.next || '';
+  _automataState.capacity = d.capacity || null;
+  const childIdx = {};
+  for (const p of _automataState.allPrds) {
+    const pid = p.parent_prd_id || '';
+    if (!pid) continue;
+    (childIdx[pid] = childIdx[pid] || []).push(p);
+  }
+  state._prdChildIndex = childIdx;
+}
+function _automataActive() {
+  return _automataState.tab === 'automata' && !!document.getElementById('automataPanel');
+}
+function _automataOpenIds(panel) {
+  const ids = new Set();
   panel.querySelectorAll('.prd-row.prd-card[id]').forEach(card => {
     const det = card.querySelector(':scope > details');
-    if (det && det.open) expandedCardIds.add(card.id);
+    if (det && det.open) ids.add(card.id);
   });
-  panel.innerHTML = `<div style="text-align:center;padding:32px;color:var(--text2);">${loadingEyeBlock()}</div>`;
-  // BL312 S5 — use aggregated endpoint in all-servers mode
-  const prdsEndpoint = state.activeServer === 'all' ? '/api/autonomous/prds/aggregated' : '/api/autonomous/prds?full=1';
-  Promise.all([
-    // Coordinator-flagged (2026-10-08): this used to swallow EVERY
-    // failure (including a federated 401/missing-token or 403/missing
-    // autonomous:list) into an empty list, before the real error-message
-    // handler below ever saw it -- a denied federated peer looked
-    // identical to "this Automaton list is genuinely empty". Let the
-    // primary data fetch's rejection propagate to the outer .catch();
-    // /api/llms stays best-effort (it only feeds the worker-LLM dropdown,
-    // not the core list).
-    apiFetch(prdsEndpoint),
-    apiFetch('/api/llms').catch(() => null),
-  ]).then(([data, backendsResp]) => {
-    state._prdBackends = (backendsResp && backendsResp.llms || []).filter(l => !l.disabled);
-    // Aggregated returns array; single-server returns {prds:[...]}
-    _automataState.allPrds = Array.isArray(data) ? data : ((data && data.prds) || []);
-    // rebuild child index for renderPRDRow child sections
-    const childIdx = {};
-    for (const p of _automataState.allPrds) {
-      const pid = p.parent_prd_id || '';
-      if (!pid) continue;
-      (childIdx[pid] = childIdx[pid] || []).push(p);
-    }
-    state._prdChildIndex = childIdx;
-    _tagsLoad(true).then(() => {
-      _automataRenderTagFilter();
-      _automataRenderCards(expandedCardIds);
+  return ids;
+}
+function _automataLoadMoreHtml() {
+  const st = _automataState;
+  if (!st.nextCursor) return '';
+  const shown = st.allPrds.length;
+  const label = (st.total > shown) ? `${t('load_more') || 'Load more'} (${shown}/${st.total})` : (t('load_more') || 'Load more');
+  return `<div class="list-load-more" style="text-align:center;padding:8px;"><button type="button" class="btn-secondary" id="automataLoadMore" ${st.loadingMore ? 'disabled' : ''} onclick="automataLoadMore()">${escHtml(st.loadingMore ? t('loading') : label)}</button>` +
+    (st.moreError ? ` <span class="list-state-failed-msg">${escHtml(t('load_failed'))}: ${escHtml(st.moreError)}</span>` : '') + '</div>';
+}
+function _automataCardsHtml() {
+  const filtered = _automataFilteredList();
+  if (filtered.length === 0) {
+    const key = _automataState.historyOn ? 'automata_empty_history' : 'automata_empty_active';
+    return `<div class="list-state-empty" style="text-align:center;color:var(--text2);padding:32px;">${escHtml(t(key))}</div>` + _automataLoadMoreHtml();
+  }
+  return filtered.map(renderAutomataCard).join('') + _automataLoadMoreHtml();
+}
+function _automataAfterPaint(panel, openIds) {
+  if (openIds && openIds.size) {
+    openIds.forEach(cardId => {
+      const card = document.getElementById(cardId);
+      const det = card && card.querySelector(':scope > details');
+      if (det) det.open = true;
     });
-  }).catch(err => {
-    if (panel) panel.innerHTML = `<span style="color:var(--error);">Load failed: ${escHtml(err.message || String(err))}</span>`;
+  }
+  // Open cards: fetch the per-item detail when it is missing or its revision moved.
+  panel.querySelectorAll('.prd-row.prd-card[id]').forEach(card => {
+    const det = card.querySelector(':scope > details');
+    if (!det || !det.open) return;
+    const id = card.id.replace(/^prd-/, '');
+    const row = _automataState.allPrds.find(p => p.id === id);
+    const d = _automataState.detail[id];
+    if (row && !(row.stories && row.stories.length) && (!d || !d.prd || d.prd.rev !== row.rev || d.prd.updated_at !== row.updated_at)) _automataLoadDetail(id, true);
   });
+  const allCb = document.getElementById('automataSelectAll');
+  if (allCb) {
+    const ids = _automataFilteredList().map(p => p.id);
+    allCb.checked = ids.length > 0 && ids.every(i => _automataState.selected.has(i));
+    allCb.indeterminate = !allCb.checked && ids.some(i => _automataState.selected.has(i));
+  }
+  _automataRenderTagFilter();
+  _automataRenderBatchBar();
+}
+function _automataLoader() {
+  const cur = window._listLoaders && window._listLoaders.automata;
+  if (cur) return cur;
+  return listLoader({
+    key: 'automata', el: 'automataPanel', pollMs: 30000,
+    fetch: _automataFetchAll,
+    active: _automataActive,
+    render: d => { _automataApplyData(d); return _automataCardsHtml(); },
+    beforePaint: _automataOpenIds,
+    afterPaint: _automataAfterPaint,
+  });
+}
+window.automataLoadMore = function() {
+  const st = _automataState;
+  const ctl = window._listLoaders.automata;
+  if (!st.nextCursor || st.loadingMore || !ctl) return;
+  st.loadingMore = true; st.moreError = '';
+  ctl.paint();
+  apiFetch(_automataQuery(st.nextCursor)).then(data => {
+    const d = ctl.state.data;
+    const seen = new Set(d.prds.map(p => p.id));
+    (data.prds || []).forEach(p => { if (!seen.has(p.id)) d.prds.push(p); });
+    d.next = data.next_cursor || '';
+    d.total = data.total || d.total;
+  }).catch(err => {
+    st.moreError = (err && err.message) || String(err);
+  }).then(() => { st.loadingMore = false; ctl.paint(); });
+};
+
+function loadAutomataPanel() {
+  const panel = document.getElementById('automataPanel');
+  if (!panel) return Promise.resolve();
+  // Same loader for first load, filter changes, polling and WebSocket
+  // refreshes: after the first response the spinner never returns and open
+  // cards stay open.
+  return _automataLoader().load();
 }
 window.loadAutomataPanel = loadAutomataPanel;
 
@@ -21208,49 +21497,9 @@ window.openTemplateInstantiateModal = function(id) {
     .catch(e => showToast(String(e.message||e), 'error'));
 };
 
-function _automataRenderCards(savedExpandedIds) {
-  const panel = document.getElementById('automataPanel');
-  if (!panel) return;
-  const filtered = _automataFilteredList();
-
-  // Save open <details> state for direct calls (loadAutomataPanel passes savedExpandedIds)
-  const expandedCardIds = savedExpandedIds || new Set();
-  if (!savedExpandedIds) {
-    panel.querySelectorAll('.prd-row.prd-card[id]').forEach(card => {
-      const det = card.querySelector(':scope > details');
-      if (det && det.open) expandedCardIds.add(card.id);
-    });
-  }
-
-  // Update select-all checkbox state
-  const allCb = document.getElementById('automataSelectAll');
-  if (allCb) {
-    const ids = filtered.map(p => p.id);
-    allCb.checked = ids.length > 0 && ids.every(i => _automataState.selected.has(i));
-    allCb.indeterminate = !allCb.checked && ids.some(i => _automataState.selected.has(i));
-  }
-
-  if (filtered.length === 0) {
-    const key = _automataState.tab === 'templates'
-      ? 'automata_empty_templates'
-      : (_automataState.historyOn ? 'automata_empty_history' : 'automata_empty_active');
-    panel.innerHTML = `<div style="text-align:center;color:var(--text2);padding:32px;">${escHtml(t(key))}</div>`;
-    return;
-  }
-  panel.innerHTML = filtered.map(renderAutomataCard).join('');
-
-  // Restore previously-open <details> so WS refreshes don't collapse expanded cards
-  if (expandedCardIds.size > 0) {
-    expandedCardIds.forEach(cardId => {
-      const card = document.getElementById(cardId);
-      if (card) {
-        const det = card.querySelector(':scope > details');
-        if (det) det.open = true;
-      }
-    });
-  }
-
-  _automataRenderBatchBar();
+function _automataRenderCards() {
+  const ctl = window._listLoaders && window._listLoaders.automata;
+  if (ctl && ctl.state.hasData) ctl.paint();
 }
 
 function switchAutomataTab(tab) {
@@ -21330,6 +21579,7 @@ function toggleAutomataHistory() {
     btn.title = _automataState.historyOn ? t('automata_history_on') : t('automata_history_off');
   }
   _automataRenderCards();
+  loadAutomataPanel(); // history / active is a server-side filter now
 }
 window.toggleAutomataHistory = toggleAutomataHistory;
 
@@ -21339,6 +21589,7 @@ function toggleAutomataStatusFilter(s) {
   const btn = document.querySelector(`.automata-filter-badge.status-${s}`);
   if (btn) btn.classList.toggle('active', _automataState.statusFilter.has(s));
   _automataRenderCards();
+  loadAutomataPanel();
 }
 window.toggleAutomataStatusFilter = toggleAutomataStatusFilter;
 
@@ -21355,6 +21606,8 @@ window.toggleAutomataTypeFilter = toggleAutomataTypeFilter;
 function onAutomataSearchChange(val) {
   _automataState.search = val;
   _automataRenderCards();
+  clearTimeout(_automataState._searchTimer);
+  _automataState._searchTimer = setTimeout(loadAutomataPanel, 300);
 }
 window.onAutomataSearchChange = onAutomataSearchChange;
 
@@ -24272,21 +24525,42 @@ function onAutomationSearchChange(val) {
 }
 window.onAutomationSearchChange = onAutomationSearchChange;
 
-function loadAutomationList() {
-  const request = automationRequest('GET', '/api/automations')
-    .then(data => ({ data }), error => ({ error }));
-  return Promise.all([request, loadAutomationPrdTitles()]).then(([res, titles]) => {
-    _automationState.prdTitles = titles;
-    if (res.error) {
-      _automationState.loadError = String((res.error && res.error.message) || res.error);
-    } else {
-      const data = res.data;
-      _automationState.list = Array.isArray(data) ? data : (data && Array.isArray(data.automations) ? data.automations : []);
+function _automationFetchAll() {
+  const request = automationRequest('GET', '/api/automations');
+  return Promise.all([request, loadAutomationPrdInfo()]).then(([data, info]) => ({
+    list: Array.isArray(data) ? data : (data && Array.isArray(data.automations) ? data.automations : []),
+    titles: info.titles,
+  })).then(d => {
+    _automationState.list = d.list;
+    _automationState.prdTitles = d.titles;
+    _automationState.loadError = null;
+    return d;
+  });
+}
+function _automationLoader() {
+  return window._listLoaders.automation || listLoader({
+    key: 'automation', el: 'automationPanel', pollMs: 30000,
+    fetch: _automationFetchAll,
+    failedText: msg => t('automation_load_failed', [msg]),
+    active: () => !!document.getElementById('automationPanel'),
+    render: d => {
+      _automationState.list = d.list;
+      _automationState.prdTitles = d.titles;
       _automationState.loadError = null;
-    }
-    _automationRenderCards();
-    // The open detail draws nested Automations from this list.
-    if (_automationState.detailId) renderAutomationStrip();
+      const items = automationListVisible(d.list, _automationState);
+      if (!items.length) return `<div class="list-state-empty" style="text-align:center;padding:32px;color:var(--text2);">${escHtml(t('automation_list_empty'))}</div>`;
+      const ctx = { prdTitles: d.titles, now: Date.now() };
+      return items.map(a => buildAutomationCardHTML(a, ctx)).join('');
+    },
+    afterPaint: () => { if (_automationState.detailId) renderAutomationStrip(); },
+  });
+}
+function loadAutomationList() {
+  // Automations and the Automaton titles load in parallel, once, through the
+  // shared loader: the first load shows a skeleton, later ones keep the cards.
+  return _automationLoader().load().then(() => {
+    const ctl = window._listLoaders.automation;
+    if (ctl && ctl.state.error) _automationState.loadError = ctl.state.error;
   });
 }
 window.loadAutomationList = loadAutomationList;
@@ -24385,6 +24659,8 @@ window.automationListVisible = automationListVisible;
 function _automationRenderCards() {
   const panel = document.getElementById('automationPanel');
   if (!panel) return;
+  const ctl = window._listLoaders && window._listLoaders.automation;
+  if (ctl && ctl.state.hasData && ctl.state.data && ctl.state.data.list === _automationState.list) { ctl.paint(); return; }
   const st = _automationState;
   if (st.loadError !== null) {
     panel.innerHTML = `<div style="text-align:center;padding:32px;color:var(--error);">${escHtml(t('automation_load_failed', [st.loadError]))}</div>`;
@@ -26748,16 +27024,14 @@ function renderAlertCard(a, sessState, isFirst, cmds) {
   setTimeout(() => el.classList.remove('alert-deep-link-highlight'), 2000);
 }
 
-function renderAlertsView() {
-  const view = document.getElementById('view');
-  if (!view) return;
-  view.innerHTML = `<div class="view-content">
-    <div style="display:flex;justify-content:flex-end;padding:6px 12px 0;">
-      <a href="/diagrams.html#docs/howto/alerts-and-notifications.md" target="_blank" rel="noopener" title="${escHtml(t('alerts_help_tip')||'Open the Alerts howto — explains alert rules, quick replies, and notifications')}" aria-label="Help" style="color:var(--text2);text-decoration:none;font-size:11px;border:1px solid var(--border);border-radius:50%;width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;line-height:1;">?</a>
-    </div>
-    <div id="alertsList" style="padding:12px;"><div class="spinner" style="text-align:center;padding:32px;">${loadingEyeBlock()}</div></div></div>`;
-  _injectServerPickerBar(view, renderAlertsView); // BL312 S3
-
+// _alertsFetch loads the alerts, the quick-reply commands and the sessions the
+// alerts are classified against, in parallel. A failed alerts response rejects,
+// so the loader shows a failed state with Retry instead of an empty list.
+function _alertsFetch() {
+  const _alertsSrv = state.activeServer;
+  const _alertsIsRemote = _alertsSrv && _alertsSrv !== 'all' && _alertsSrv !== 'local';
+  const _alertsProxyPrefix = _alertsIsRemote ? '/api/proxy/' + encodeURIComponent(_alertsSrv) : '';
+  const alertsEndpoint = _alertsSrv === 'all' ? '/api/alerts/aggregated' : _alertsProxyPrefix + '/api/alerts';
   // BL312 S5 — use aggregated endpoint in all-servers mode.
   // Operator-reported (2026-10-08): selecting a SPECIFIC federated host
   // did nothing here -- only 'all' mode was special-cased; any other
@@ -26765,11 +27039,7 @@ function renderAlertsView() {
   // /api/alerts, so the Alerts tab silently ignored the picker entirely
   // for a single named remote. Proxy through /api/proxy/<name>/... the
   // same way Sessions does.
-  const _alertsSrv = state.activeServer;
-  const _alertsIsRemote = _alertsSrv && _alertsSrv !== 'all' && _alertsSrv !== 'local';
-  const _alertsProxyPrefix = _alertsIsRemote ? '/api/proxy/' + encodeURIComponent(_alertsSrv) : '';
-  const alertsEndpoint = _alertsSrv === 'all' ? '/api/alerts/aggregated' : _alertsProxyPrefix + '/api/alerts';
-  Promise.all([
+  return Promise.all([
     // Coordinator-flagged (2026-10-08): this had no error handling at
     // all -- a 401/403 from a remote peer (missing token, or a valid
     // token lacking alerts:list) silently resolved to `null` and looked
@@ -26778,8 +27048,8 @@ function renderAlertsView() {
     // (unauthenticated-to-self and aggregated mode don't need this).
     _alertsIsRemote
       ? fetch(alertsEndpoint, { headers: tokenHeader() }).then(r => (r.status === 401 || r.status === 403 || r.status === 502) ? _fedFetchError(r) : (r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status))))
-      : fetch(alertsEndpoint, { headers: tokenHeader() }).then(r => r.ok ? r.json() : null),
-    fetch('/api/commands', { headers: tokenHeader() }).then(r => r.ok ? r.json() : []),
+      : fetch(alertsEndpoint, { headers: tokenHeader() }).then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status))),
+    fetch('/api/commands', { headers: tokenHeader() }).then(r => r.ok ? r.json() : []).catch(() => []),
     // Same "All" clobbering bug just fixed in handleMessage's 'sessions'
     // case, a separate instance of it: this used to always fetch the
     // LOCAL /api/sessions and unconditionally overwrite state.sessions,
@@ -26790,328 +27060,342 @@ function renderAlertsView() {
     // current elsewhere); proxy it for a specific remote.
     _alertsSrv === 'all'
       ? Promise.resolve(null)
-      : fetch(_alertsProxyPrefix + '/api/sessions', { headers: tokenHeader() }).then(r => r.ok ? r.json() : [])
-  ]).catch(e => {
-    const el = document.getElementById('alertsList');
-    if (!el || !_alertsIsRemote) return;
-    el.innerHTML = `<div style="text-align:center;color:var(--error,#ef4444);padding:32px;">${escHtml((e && e.message) || 'Failed to load alerts')}</div>`;
-  }).then(result => {
-    if (!result) return; // the .catch() above already rendered the error, or there's truly nothing
-    const [data, cmds, freshSessions] = result;
-    // Update state.sessions with fresh data so active/inactive classification is accurate
-    if (freshSessions && freshSessions.length > 0) {
-      state.sessions = freshSessions;
+      : fetch(_alertsProxyPrefix + '/api/sessions', { headers: tokenHeader() }).then(r => r.ok ? r.json() : []).catch(() => [])
+  ]).then(([data, cmds, fresh]) => {
+    // Active/inactive classification needs the live sessions: merge them in.
+    if (Array.isArray(fresh) && fresh.length > 0) state.sessions = fresh;
+    const list = Array.isArray(data) ? data : (data && data.alerts ? data.alerts : null);
+    if (list && list.length > 0) {
+      state.alertUnread = 0;
+      state.alertSystemUnread = 0;
+      state.alertWatchedUnread = 0;
+      updateAlertBadge();
+      fetch('/api/alerts', { method: 'POST', headers: { 'Content-Type': 'application/json', ...tokenHeader() }, body: JSON.stringify({ all: true }) });
     }
-    const el = document.getElementById('alertsList');
-    if (!el) return;
-    // Normalise: aggregated returns array, single-server returns {alerts:[...]}
-    const alertList = Array.isArray(data) ? data : (data && data.alerts ? data.alerts : null);
-    if (!alertList || alertList.length === 0) {
-      el.innerHTML = `<div style="text-align:center;color:var(--text2);padding:32px;">${escHtml(t('common_no_alerts'))}</div>`;
-      return;
-    }
+    return { data, cmds };
+  });
+}
 
-    state.alertUnread = 0;
-    state.alertSystemUnread = 0;
-    state.alertWatchedUnread = 0;
-    updateAlertBadge();
-    fetch('/api/alerts', { method: 'POST', headers: { 'Content-Type': 'application/json', ...tokenHeader() }, body: JSON.stringify({ all: true }) });
+function _alertsBuildHtml(result) {
+  const { data, cmds } = result;
+  // Normalise: aggregated returns array, single-server returns {alerts:[...]}
+  const alertList = Array.isArray(data) ? data : (data && data.alerts ? data.alerts : null);
+  if (!alertList || alertList.length === 0) {
+    return `<div class="list-state-empty" style="text-align:center;color:var(--text2);padding:32px;">${escHtml(t('common_no_alerts'))}</div>`;
+  }
 
-    // Group by session (BL226: source=system or no session_id → __system__)
-    const groups = new Map();
-    for (const a of alertList) {
-      const key = (a.source === 'system' || !a.session_id) ? '__system__' : a.session_id;
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key).push(a);
-    }
 
-    const liveSessions = state.sessions || [];
-    const DONE = new Set(['complete', 'failed', 'killed']);
+  // Group by session (BL226: source=system or no session_id → __system__)
+  const groups = new Map();
+  for (const a of alertList) {
+    const key = (a.source === 'system' || !a.session_id) ? '__system__' : a.session_id;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(a);
+  }
 
-    // Separate active vs inactive session groups
-    const activeTabs = [];
-    const inactiveTabs = [];
-    const systemAlerts = groups.get('__system__') || [];
-    groups.delete('__system__');
+  const liveSessions = state.sessions || [];
+  const DONE = new Set(['complete', 'failed', 'killed']);
 
-    for (const [sessID, alerts] of groups) {
-      const sess = liveSessions.find(s => s.full_id === sessID || s.id === sessID);
-      const sessState = sess ? sess.state : 'unknown';
-      // Sessions not found in live list or in terminal states are inactive
-      const isActive = sess && !DONE.has(sessState);
-      const entry = { sessID, alerts, sess, sessState, isActive };
-      if (isActive) activeTabs.push(entry);
-      else inactiveTabs.push(entry);
-    }
+  // Separate active vs inactive session groups
+  const activeTabs = [];
+  const inactiveTabs = [];
+  const systemAlerts = groups.get('__system__') || [];
+  groups.delete('__system__');
 
-    const renderAlert = (a, sessState, isFirst) => renderAlertCard(a, sessState, isFirst, cmds);
+  for (const [sessID, alerts] of groups) {
+    const sess = liveSessions.find(s => s.full_id === sessID || s.id === sessID);
+    const sessState = sess ? sess.state : 'unknown';
+    // Sessions not found in live list or in terminal states are inactive
+    const isActive = sess && !DONE.has(sessState);
+    const entry = { sessID, alerts, sess, sessState, isActive };
+    if (isActive) activeTabs.push(entry);
+    else inactiveTabs.push(entry);
+  }
 
-    const renderSessionSection = (entry, collapsed) => {
-      const { sessID, alerts, sess, sessState } = entry;
-      const label = sess ? (sess.name || sess.id) : sessID.split('-').pop();
-      const stateColor = sessState === 'waiting_input' ? 'var(--warning,#f59e0b)' : sessState === 'running' ? 'var(--success)' : 'var(--text2)';
-      const stateText = sessState === 'waiting_input' ? 'waiting input' : sessState;
-      const sessLink = sess ? `<span style="cursor:pointer;text-decoration:underline;" onclick="${escHtml(`navigate('session-detail',${JSON.stringify(sessID)})`)}">${escHtml(label)}</span>` : escHtml(label);
-      const badge = `<span class="state" style="font-size:10px;color:${stateColor};">${stateText}</span>`;
-      const count = `<span style="font-size:11px;color:var(--text2);">${alerts.length} alert${alerts.length !== 1 ? 's' : ''}</span>`;
-      const toggleId = 'alert-grp-' + sessID.replace(/[^a-z0-9]/gi, '-');
+  const renderAlert = (a, sessState, isFirst) => renderAlertCard(a, sessState, isFirst, cmds);
 
-      if (collapsed) {
-        return `<div class="alert-session-group" style="margin-bottom:8px;">
-          <div class="settings-section-toggle" onclick="document.getElementById('${toggleId}').style.display=document.getElementById('${toggleId}').style.display==='none'?'':'none'" style="padding:8px 12px;background:var(--bg2);border-radius:var(--radius-sm);cursor:pointer;">
-            <span class="settings-chevron" id="${toggleId}-chev">▶</span>
-            ${sessLink} ${badge} ${count}
-          </div>
-          <div id="${toggleId}" style="display:none;">
-            ${alerts.map((a, i) => renderAlert(a, sessState, i === 0)).join('')}
-          </div>
-        </div>`;
-      }
-      return `<div class="alert-session-group" style="margin-bottom:12px;">
-        <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--bg2);border-radius:var(--radius-sm) var(--radius-sm) 0 0;border-bottom:1px solid var(--border);">
+  const renderSessionSection = (entry, collapsed) => {
+    const { sessID, alerts, sess, sessState } = entry;
+    const label = sess ? (sess.name || sess.id) : sessID.split('-').pop();
+    const stateColor = sessState === 'waiting_input' ? 'var(--warning,#f59e0b)' : sessState === 'running' ? 'var(--success)' : 'var(--text2)';
+    const stateText = sessState === 'waiting_input' ? 'waiting input' : sessState;
+    const sessLink = sess ? `<span style="cursor:pointer;text-decoration:underline;" onclick="${escHtml(`navigate('session-detail',${JSON.stringify(sessID)})`)}">${escHtml(label)}</span>` : escHtml(label);
+    const badge = `<span class="state" style="font-size:10px;color:${stateColor};">${stateText}</span>`;
+    const count = `<span style="font-size:11px;color:var(--text2);">${alerts.length} alert${alerts.length !== 1 ? 's' : ''}</span>`;
+    const toggleId = 'alert-grp-' + sessID.replace(/[^a-z0-9]/gi, '-');
+
+    if (collapsed) {
+      return `<div class="alert-session-group" style="margin-bottom:8px;">
+        <div class="settings-section-toggle" onclick="document.getElementById('${toggleId}').style.display=document.getElementById('${toggleId}').style.display==='none'?'':'none'" style="padding:8px 12px;background:var(--bg2);border-radius:var(--radius-sm);cursor:pointer;">
+          <span class="settings-chevron" id="${toggleId}-chev">▶</span>
           ${sessLink} ${badge} ${count}
         </div>
-        <div style="padding:4px 0;">
+        <div id="${toggleId}" style="display:none;">
           ${alerts.map((a, i) => renderAlert(a, sessState, i === 0)).join('')}
         </div>
       </div>`;
-    };
-
-    const activeCount = activeTabs.length;
-    const inactiveCount = inactiveTabs.length;
-    const systemCount = systemAlerts.length;
-    const defaultTab = activeCount > 0 ? 'active' : (inactiveCount > 0 ? 'inactive' : 'system');
-
-    // Build active content — sub-tabs per session, showing one at a time
-    let activeHtml = '';
-    if (activeTabs.length === 0) {
-      activeHtml = `<div style="text-align:center;color:var(--text2);padding:24px;">${t('alerts_no_active')||'No active session alerts.'}</div>`;
-    } else {
-      // Sub-tabs row for each active session
-      let subTabsHtml = '<div style="display:flex;gap:0;margin-bottom:8px;flex-wrap:wrap;">';
-      for (let i = 0; i < activeTabs.length; i++) {
-        const entry = activeTabs[i];
-        const label = entry.sess ? (entry.sess.name || entry.sess.id) : entry.sessID.split('-').pop();
-        const isFirst = i === 0;
-        subTabsHtml += `<button class="output-tab${isFirst ? ' active' : ''}" id="alertSessTab-${i}" onclick="switchAlertSessionTab(${i}, ${activeTabs.length})">${escHtml(label)}</button>`;
-      }
-      subTabsHtml += '</div>';
-      activeHtml += subTabsHtml;
-
-      // One panel per active session, only first visible
-      for (let i = 0; i < activeTabs.length; i++) {
-        const entry = activeTabs[i];
-        activeHtml += `<div id="alertSessPanel-${i}" style="${i === 0 ? '' : 'display:none'}">
-          ${renderSessionSection(entry, false)}
-        </div>`;
-      }
     }
-
-    // Build inactive content — all collapsed
-    let inactiveHtml = '';
-    if (inactiveTabs.length === 0) {
-      inactiveHtml = `<div style="text-align:center;color:var(--text2);padding:24px;">${t('alerts_no_inactive')||'No inactive alerts.'}</div>`;
-    } else {
-      for (const entry of inactiveTabs) {
-        inactiveHtml += renderSessionSection(entry, true);
-      }
-    }
-
-    // Build system tab content — BL226: pipeline/plugin/eBPF failures
-    let systemHtml = '';
-    if (systemAlerts.length === 0) {
-      systemHtml = `<div style="text-align:center;color:var(--text2);padding:24px;">${t('alerts_no_system')||'No system alerts.'}</div>`;
-    } else {
-      systemHtml = systemAlerts.map((a, i) => renderAlert(a, '', i === 0)).join('');
-    }
-    const sysBadge = systemCount > 0
-      ? `<span style="background:var(--error);color:#fff;border-radius:10px;font-size:10px;padding:1px 5px;margin-left:4px;">${systemCount > 99 ? '99+' : systemCount}</span>`
-      : '';
-
-    // alpha.30 #271 + #183 #4 — redesigned: top bar mirrors dock,
-    // sessions as cards with summary header, prompts highlighted
-    // distinct from alerts and responses.
-    // alpha.33 (operator 2026-05-10): Active / Historical / System
-    // tabs restored at top with per-tab filter persistence.
-    const tabSel = window._alertsTabSel;
-    const filt = _alertsCurrentFilter();
-    // Slice the data per the selected tab.
-    let allEntries;
-    let systemForTab;
-    if (tabSel === 'active') { allEntries = activeTabs.slice(); systemForTab = []; }
-    else if (tabSel === 'historical') { allEntries = inactiveTabs.slice(); systemForTab = []; }
-    else { allEntries = []; systemForTab = systemAlerts; }
-    const tabBtn = (tabId, label, count) => {
-      const isActive = tabSel === tabId;
-      return `<button onclick="setAlertsTab('${tabId}')" class="output-tab ${isActive?'active':''}" style="font-size:13px;padding:6px 14px;">${escHtml(label)} (${count})</button>`;
-    };
-    const tabsRow = `<div style="display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:8px;">
-      ${tabBtn('active', t('alerts_active_tab_label')||'Active', activeTabs.length)}
-      ${tabBtn('historical', t('alerts_historical_tab_label')||'Historical', inactiveTabs.length)}
-      ${tabBtn('system', t('alerts_system_tab_label')||'System', systemAlerts.length)}
+    return `<div class="alert-session-group" style="margin-bottom:12px;">
+      <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--bg2);border-radius:var(--radius-sm) var(--radius-sm) 0 0;border-bottom:1px solid var(--border);">
+        ${sessLink} ${badge} ${count}
+      </div>
+      <div style="padding:4px 0;">
+        ${alerts.map((a, i) => renderAlert(a, sessState, i === 0)).join('')}
+      </div>
     </div>`;
+  };
 
-    // Categorize each alert. `prompt` = needs-input session OR title
-    // mentions "needs input"/"prompt"/"waiting"; else use level.
-    const catOf = (a, sessState) => {
-      if (sessState === 'waiting_input' || /\b(needs input|prompt|waiting)\b/i.test(a.title || '')) return 'prompt';
-      if (a.level === 'error') return 'error';
-      if (a.level === 'warn') return 'warn';
-      return 'info';
-    };
-    const catCounts = { all: 0, prompt: 0, error: 0, warn: 0, info: 0 };
-    for (const e of allEntries) {
-      for (const a of e.alerts) {
-        const c = catOf(a, e.sessState);
-        catCounts[c]++;
-        catCounts.all++;
-      }
+  const activeCount = activeTabs.length;
+  const inactiveCount = inactiveTabs.length;
+  const systemCount = systemAlerts.length;
+  const defaultTab = activeCount > 0 ? 'active' : (inactiveCount > 0 ? 'inactive' : 'system');
+
+  // Build active content — sub-tabs per session, showing one at a time
+  let activeHtml = '';
+  if (activeTabs.length === 0) {
+    activeHtml = `<div style="text-align:center;color:var(--text2);padding:24px;">${t('alerts_no_active')||'No active session alerts.'}</div>`;
+  } else {
+    // Sub-tabs row for each active session
+    let subTabsHtml = '<div style="display:flex;gap:0;margin-bottom:8px;flex-wrap:wrap;">';
+    for (let i = 0; i < activeTabs.length; i++) {
+      const entry = activeTabs[i];
+      const label = entry.sess ? (entry.sess.name || entry.sess.id) : entry.sessID.split('-').pop();
+      const isFirst = i === 0;
+      subTabsHtml += `<button class="output-tab${isFirst ? ' active' : ''}" id="alertSessTab-${i}" onclick="switchAlertSessionTab(${i}, ${activeTabs.length})">${escHtml(label)}</button>`;
     }
-    for (const a of systemForTab) {
-      const c = catOf(a, '');
+    subTabsHtml += '</div>';
+    activeHtml += subTabsHtml;
+
+    // One panel per active session, only first visible
+    for (let i = 0; i < activeTabs.length; i++) {
+      const entry = activeTabs[i];
+      activeHtml += `<div id="alertSessPanel-${i}" style="${i === 0 ? '' : 'display:none'}">
+        ${renderSessionSection(entry, false)}
+      </div>`;
+    }
+  }
+
+  // Build inactive content — all collapsed
+  let inactiveHtml = '';
+  if (inactiveTabs.length === 0) {
+    inactiveHtml = `<div style="text-align:center;color:var(--text2);padding:24px;">${t('alerts_no_inactive')||'No inactive alerts.'}</div>`;
+  } else {
+    for (const entry of inactiveTabs) {
+      inactiveHtml += renderSessionSection(entry, true);
+    }
+  }
+
+  // Build system tab content — BL226: pipeline/plugin/eBPF failures
+  let systemHtml = '';
+  if (systemAlerts.length === 0) {
+    systemHtml = `<div style="text-align:center;color:var(--text2);padding:24px;">${t('alerts_no_system')||'No system alerts.'}</div>`;
+  } else {
+    systemHtml = systemAlerts.map((a, i) => renderAlert(a, '', i === 0)).join('');
+  }
+  const sysBadge = systemCount > 0
+    ? `<span style="background:var(--error);color:#fff;border-radius:10px;font-size:10px;padding:1px 5px;margin-left:4px;">${systemCount > 99 ? '99+' : systemCount}</span>`
+    : '';
+
+  // alpha.30 #271 + #183 #4 — redesigned: top bar mirrors dock,
+  // sessions as cards with summary header, prompts highlighted
+  // distinct from alerts and responses.
+  // alpha.33 (operator 2026-05-10): Active / Historical / System
+  // tabs restored at top with per-tab filter persistence.
+  const tabSel = window._alertsTabSel;
+  const filt = _alertsCurrentFilter();
+  // Slice the data per the selected tab.
+  let allEntries;
+  let systemForTab;
+  if (tabSel === 'active') { allEntries = activeTabs.slice(); systemForTab = []; }
+  else if (tabSel === 'historical') { allEntries = inactiveTabs.slice(); systemForTab = []; }
+  else { allEntries = []; systemForTab = systemAlerts; }
+  const tabBtn = (tabId, label, count) => {
+    const isActive = tabSel === tabId;
+    return `<button onclick="setAlertsTab('${tabId}')" class="output-tab ${isActive?'active':''}" style="font-size:13px;padding:6px 14px;">${escHtml(label)} (${count})</button>`;
+  };
+  const tabsRow = `<div style="display:flex;gap:0;border-bottom:1px solid var(--border);margin-bottom:8px;">
+    ${tabBtn('active', t('alerts_active_tab_label')||'Active', activeTabs.length)}
+    ${tabBtn('historical', t('alerts_historical_tab_label')||'Historical', inactiveTabs.length)}
+    ${tabBtn('system', t('alerts_system_tab_label')||'System', systemAlerts.length)}
+  </div>`;
+
+  // Categorize each alert. `prompt` = needs-input session OR title
+  // mentions "needs input"/"prompt"/"waiting"; else use level.
+  const catOf = (a, sessState) => {
+    if (sessState === 'waiting_input' || /\b(needs input|prompt|waiting)\b/i.test(a.title || '')) return 'prompt';
+    if (a.level === 'error') return 'error';
+    if (a.level === 'warn') return 'warn';
+    return 'info';
+  };
+  const catCounts = { all: 0, prompt: 0, error: 0, warn: 0, info: 0 };
+  for (const e of allEntries) {
+    for (const a of e.alerts) {
+      const c = catOf(a, e.sessState);
       catCounts[c]++;
       catCounts.all++;
     }
+  }
+  for (const a of systemForTab) {
+    const c = catOf(a, '');
+    catCounts[c]++;
+    catCounts.all++;
+  }
 
-    const matchesFilter = (a, sessState) => {
-      if (filt.active !== 'all' && catOf(a, sessState) !== filt.active) return false;
-      if (filt.search) {
-        const s = filt.search.toLowerCase();
-        const hay = (a.title + ' ' + (a.body || '')).toLowerCase();
-        if (!hay.includes(s)) return false;
-      }
-      return true;
-    };
+  const matchesFilter = (a, sessState) => {
+    if (filt.active !== 'all' && catOf(a, sessState) !== filt.active) return false;
+    if (filt.search) {
+      const s = filt.search.toLowerCase();
+      const hay = (a.title + ' ' + (a.body || '')).toLowerCase();
+      if (!hay.includes(s)) return false;
+    }
+    return true;
+  };
 
-    const chipBtn = (key, label, n, color) => {
-      const isActive = filt.active === key;
-      const bg = isActive ? color : 'var(--bg2)';
-      const fg = isActive ? 'var(--bg)' : 'var(--text)';
-      return `<button onclick="setAlertsFilter('${key}')" style="background:${bg};color:${fg};border:1px solid ${color};border-radius:10px;padding:3px 10px;font-size:12px;margin-right:4px;cursor:pointer;">${escHtml(label)} ×${n}</button>`;
-    };
+  const chipBtn = (key, label, n, color) => {
+    const isActive = filt.active === key;
+    const bg = isActive ? color : 'var(--bg2)';
+    const fg = isActive ? 'var(--bg)' : 'var(--text)';
+    return `<button onclick="setAlertsFilter('${key}')" style="background:${bg};color:${fg};border:1px solid ${color};border-radius:10px;padding:3px 10px;font-size:12px;margin-right:4px;cursor:pointer;">${escHtml(label)} ×${n}</button>`;
+  };
 
-    const topBar = `
-      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 0;border-bottom:1px solid var(--border);margin-bottom:8px;">
-        <span style="font-weight:700;font-size:14px;">🔔 ${catCounts.all} ${catCounts.all === 1 ? 'alert' : 'alerts'}</span>
-        <span style="display:flex;gap:0;flex-wrap:wrap;">
-          ${chipBtn('all', t('alert_chip_all')||'all', catCounts.all, 'var(--text2)')}
-          ${chipBtn('prompt', '🟡 ' + (t('alert_chip_prompt')||'prompts'), catCounts.prompt, 'var(--warning,#f59e0b)')}
-          ${chipBtn('error', '🔴 ' + (t('alert_chip_error')||'errors'), catCounts.error, 'var(--error,#ef4444)')}
-          ${chipBtn('warn', '🟠 ' + (t('alert_chip_warn')||'warn'), catCounts.warn, 'var(--warning,#f59e0b)')}
-          ${chipBtn('info', '⚪ ' + (t('alert_chip_info')||'info'), catCounts.info, 'var(--text2)')}
-        </span>
-        <span style="margin-left:auto;display:flex;gap:6px;align-items:center;">
-          <input id="alertsSearchInput" type="search" placeholder="${escHtml(t('alert_search_ph')||'Search alerts…')}" value="${escHtml(filt.search)}"
-                 oninput="(function(v){const f=_alertsCurrentFilter();f.search=v;_alertsPersistTabState(window._alertsTabSel,f);renderAlertsView();})(this.value)" style="padding:3px 8px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text);width:160px;" />
-          <button onclick="setAlertsSort('${filt.sort === 'session' ? 'chrono' : 'session'}')" title="${escHtml(t('alert_sort_tip')||'Toggle sort: by session ↔ chronological')}" style="padding:3px 8px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text);cursor:pointer;">${filt.sort === 'session' ? '⏷ ' + (t('alert_sort_session')||'by session') : '🕒 ' + (t('alert_sort_chrono')||'chronological')}</button>
-          <button onclick="dismissAlertsAll()" title="${escHtml(t('alert_dismiss_all_tip')||'Dismiss all alerts (server-side acked already)')}" style="padding:3px 8px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text);cursor:pointer;">✕</button>
-          <button onclick="muteAlertDock()" title="${escHtml(t('alert_dock_mute')||'Mute alerts for this session')}" style="padding:3px 8px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text);cursor:pointer;">🔕</button>
-          <button onclick="renderAlertsView()" title="${escHtml(t('alerts_refresh_btn')||'Refresh')}" style="padding:3px 8px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text);cursor:pointer;">↻</button>
-        </span>
-      </div>`;
+  const topBar = `
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 0;border-bottom:1px solid var(--border);margin-bottom:8px;">
+      <span style="font-weight:700;font-size:14px;">🔔 ${catCounts.all} ${catCounts.all === 1 ? 'alert' : 'alerts'}</span>
+      <span style="display:flex;gap:0;flex-wrap:wrap;">
+        ${chipBtn('all', t('alert_chip_all')||'all', catCounts.all, 'var(--text2)')}
+        ${chipBtn('prompt', '🟡 ' + (t('alert_chip_prompt')||'prompts'), catCounts.prompt, 'var(--warning,#f59e0b)')}
+        ${chipBtn('error', '🔴 ' + (t('alert_chip_error')||'errors'), catCounts.error, 'var(--error,#ef4444)')}
+        ${chipBtn('warn', '🟠 ' + (t('alert_chip_warn')||'warn'), catCounts.warn, 'var(--warning,#f59e0b)')}
+        ${chipBtn('info', '⚪ ' + (t('alert_chip_info')||'info'), catCounts.info, 'var(--text2)')}
+      </span>
+      <span style="margin-left:auto;display:flex;gap:6px;align-items:center;">
+        <input id="alertsSearchInput" type="search" placeholder="${escHtml(t('alert_search_ph')||'Search alerts…')}" value="${escHtml(filt.search)}"
+               oninput="(function(v){const f=_alertsCurrentFilter();f.search=v;_alertsPersistTabState(window._alertsTabSel,f);renderAlertsView();})(this.value)" style="padding:3px 8px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text);width:160px;" />
+        <button onclick="setAlertsSort('${filt.sort === 'session' ? 'chrono' : 'session'}')" title="${escHtml(t('alert_sort_tip')||'Toggle sort: by session ↔ chronological')}" style="padding:3px 8px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text);cursor:pointer;">${filt.sort === 'session' ? '⏷ ' + (t('alert_sort_session')||'by session') : '🕒 ' + (t('alert_sort_chrono')||'chronological')}</button>
+        <button onclick="dismissAlertsAll()" title="${escHtml(t('alert_dismiss_all_tip')||'Dismiss all alerts (server-side acked already)')}" style="padding:3px 8px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text);cursor:pointer;">✕</button>
+        <button onclick="muteAlertDock()" title="${escHtml(t('alert_dock_mute')||'Mute alerts for this session')}" style="padding:3px 8px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text);cursor:pointer;">🔕</button>
+        <button onclick="renderAlertsView()" title="${escHtml(t('alerts_refresh_btn')||'Refresh')}" style="padding:3px 8px;font-size:12px;border:1px solid var(--border);border-radius:6px;background:var(--bg2);color:var(--text);cursor:pointer;">↻</button>
+      </span>
+    </div>`;
 
-    // Per-session card render with prompts highlighted distinctly.
-    const renderRow = (a, sessState) => {
-      const cat = catOf(a, sessState);
-      const time = new Date(a.created_at).toLocaleTimeString('en-GB', { hour12: false });
-      let kindBadge, borderColor, bg;
-      if (cat === 'prompt') {
-        kindBadge = `<span style="background:var(--warning,#f59e0b);color:var(--bg);font-weight:700;padding:1px 6px;border-radius:3px;font-size:10px;">🟡 PROMPT</span>`;
-        borderColor = 'var(--warning,#f59e0b)';
-        bg = 'rgba(245,158,11,0.08)';
-      } else if (cat === 'error') {
-        kindBadge = `<span style="background:var(--error);color:#fff;font-weight:700;padding:1px 6px;border-radius:3px;font-size:10px;">🔴 ERROR</span>`;
-        borderColor = 'var(--error)';
-        bg = 'rgba(239,68,68,0.06)';
-      } else {
-        kindBadge = `<span style="background:var(--bg2);padding:1px 6px;border-radius:3px;font-size:10px;color:var(--text2);">⚪ ${escHtml(a.level)}</span>`;
-        borderColor = 'var(--border)';
-        bg = 'transparent';
-      }
-      let replyBtns = '';
-      if (cat === 'prompt' && a.session_id && cmds && cmds.length > 0) {
-        const sessId = JSON.stringify(a.session_id);
-        const opts = cmds.map(c => `<option value="${escHtml(c.command)}">${escHtml(c.name)}</option>`).join('');
-        replyBtns = `<select class="quick-cmd-select" onchange="if(this.value){alertSendCmd(${sessId},this.value);this.selectedIndex=0;}" style="margin-top:4px;font-size:11px;">
-          <option value="">${escHtml(t('alerts_quick_reply_ph')||'Quick reply…')}</option>${opts}
-        </select>`;
-      }
-      return `<div style="border-left:3px solid ${borderColor};background:${bg};padding:6px 10px;margin:4px 0;border-radius:0 4px 4px 0;">
-        <div style="display:flex;gap:8px;align-items:center;margin-bottom:2px;">
-          ${kindBadge}
-          <span style="opacity:0.55;font-family:var(--mono,monospace);font-size:11px;">${time}</span>
-          <span style="font-weight:600;font-size:13px;">${escHtml(a.title)}</span>
-        </div>
-        ${a.body ? `<div style="font-size:12px;color:var(--text2);">${escHtml(a.body)}</div>` : ''}
-        ${replyBtns}
-      </div>`;
-    };
-
-    // Sort sessions: waiting_input first, then running, then everything else.
-    const stateRank = s => s === 'waiting_input' ? 0 : s === 'running' ? 1 : 2;
-    const sortedEntries = [...allEntries].sort((a, b) => stateRank(a.sessState) - stateRank(b.sessState));
-
-    let bodyHTML = '';
-    if (filt.sort === 'chrono') {
-      // Flat chronological — newest first across all sessions.
-      const flat = [];
-      for (const e of allEntries) {
-        for (const a of e.alerts) {
-          if (matchesFilter(a, e.sessState)) flat.push({ a, sessState: e.sessState, sess: e.sess, sessID: e.sessID });
-        }
-      }
-      for (const a of systemForTab) if (matchesFilter(a, '')) flat.push({ a, sessState: '', sess: null, sessID: '__system__' });
-      flat.sort((x, y) => new Date(y.a.created_at) - new Date(x.a.created_at));
-      if (flat.length === 0) {
-        bodyHTML = `<div style="text-align:center;color:var(--text2);padding:32px;">${escHtml(t('common_no_alerts'))}</div>`;
-      } else {
-        bodyHTML = flat.map(item => {
-          const label = item.sess ? (item.sess.name || item.sess.id) : (item.sessID === '__system__' ? 'system' : item.sessID.split('-').pop());
-          const sessLink = item.sess ? `<a onclick="${escHtml(`navigate('session-detail',${JSON.stringify(item.sessID)})`)}" style="color:var(--accent2);cursor:pointer;text-decoration:underline;">${escHtml(label)}</a>` : `<span style="color:var(--text2);">${escHtml(label)}</span>`;
-          return `<div style="margin-bottom:2px;"><span style="font-size:10px;color:var(--text2);">${sessLink}</span>${renderRow(item.a, item.sessState)}</div>`;
-        }).join('');
-      }
+  // Per-session card render with prompts highlighted distinctly.
+  const renderRow = (a, sessState) => {
+    const cat = catOf(a, sessState);
+    const time = new Date(a.created_at).toLocaleTimeString('en-GB', { hour12: false });
+    let kindBadge, borderColor, bg;
+    if (cat === 'prompt') {
+      kindBadge = `<span style="background:var(--warning,#f59e0b);color:var(--bg);font-weight:700;padding:1px 6px;border-radius:3px;font-size:10px;">🟡 PROMPT</span>`;
+      borderColor = 'var(--warning,#f59e0b)';
+      bg = 'rgba(245,158,11,0.08)';
+    } else if (cat === 'error') {
+      kindBadge = `<span style="background:var(--error);color:#fff;font-weight:700;padding:1px 6px;border-radius:3px;font-size:10px;">🔴 ERROR</span>`;
+      borderColor = 'var(--error)';
+      bg = 'rgba(239,68,68,0.06)';
     } else {
-      // By session — summary card per session.
-      const renderSessionCard = (entry, isSystem) => {
-        const visible = entry.alerts.filter(a => matchesFilter(a, entry.sessState || ''));
-        if (visible.length === 0) return '';
-        const label = isSystem ? (t('alert_session_system')||'System')
-          : (entry.sess ? (entry.sess.name || entry.sess.id) : entry.sessID.split('-').pop());
-        const stateColor = entry.sessState === 'waiting_input' ? 'var(--warning,#f59e0b)' : entry.sessState === 'running' ? 'var(--success)' : 'var(--text2)';
-        const stateText = entry.sessState === 'waiting_input' ? '🟠 waiting input' : entry.sessState === 'running' ? '🟢 running' : entry.sessState ? '✅ ' + entry.sessState : '';
-        const lastTime = visible.length > 0 ? new Date(visible[0].created_at).toLocaleTimeString('en-GB', { hour12: false }) : '—';
-        const promptCount = visible.filter(a => catOf(a, entry.sessState) === 'prompt').length;
-        const promptHint = promptCount > 0 ? ` · <span style="color:var(--warning,#f59e0b);font-weight:700;">🟡 ${promptCount}</span>` : '';
-        const sessLink = (!isSystem && entry.sess) ? `<a onclick="${escHtml(`navigate('session-detail',${JSON.stringify(entry.sessID)})`)}" style="color:var(--accent2);cursor:pointer;text-decoration:underline;">${escHtml(label)}</a>` : escHtml(label);
-        const grpId = 'alert-grp-' + (entry.sessID || 'sys').replace(/[^a-z0-9]/gi, '-');
-        return `<div style="border:1px solid var(--border);border-radius:6px;margin-bottom:10px;overflow:hidden;">
-          <div onclick="document.getElementById('${grpId}').style.display=document.getElementById('${grpId}').style.display==='none'?'':'none'"
-               style="padding:8px 12px;background:var(--bg2);cursor:pointer;display:flex;align-items:center;gap:8px;font-size:13px;">
-            <span style="font-weight:700;">${sessLink}</span>
-            ${stateText ? `<span style="color:${stateColor};font-size:11px;">${stateText}</span>` : ''}
-            <span style="color:var(--text2);font-size:11px;">${visible.length} ${visible.length === 1 ? (t('alert_dock_one')||'alert') : (t('alert_dock_many')||'alerts')}${promptHint}</span>
-            <span style="margin-left:auto;color:var(--text2);font-family:var(--mono,monospace);font-size:11px;">last ${lastTime}</span>
-          </div>
-          <div id="${grpId}" style="padding:6px 10px;">
-            ${visible.map(a => renderRow(a, entry.sessState || '')).join('')}
-          </div>
-        </div>`;
-      };
-      bodyHTML = sortedEntries.map(e => renderSessionCard(e, false)).join('');
-      if (systemForTab.length > 0) {
-        bodyHTML += renderSessionCard({ sessID: '__system__', alerts: systemForTab, sess: null, sessState: '' }, true);
-      }
-      if (!bodyHTML) {
-        bodyHTML = `<div style="text-align:center;color:var(--text2);padding:32px;">${escHtml(t('common_no_alerts'))}</div>`;
+      kindBadge = `<span style="background:var(--bg2);padding:1px 6px;border-radius:3px;font-size:10px;color:var(--text2);">⚪ ${escHtml(a.level)}</span>`;
+      borderColor = 'var(--border)';
+      bg = 'transparent';
+    }
+    let replyBtns = '';
+    if (cat === 'prompt' && a.session_id && cmds && cmds.length > 0) {
+      const sessId = JSON.stringify(a.session_id);
+      const opts = cmds.map(c => `<option value="${escHtml(c.command)}">${escHtml(c.name)}</option>`).join('');
+      replyBtns = `<select class="quick-cmd-select" onchange="if(this.value){alertSendCmd(${sessId},this.value);this.selectedIndex=0;}" style="margin-top:4px;font-size:11px;">
+        <option value="">${escHtml(t('alerts_quick_reply_ph')||'Quick reply…')}</option>${opts}
+      </select>`;
+    }
+    return `<div style="border-left:3px solid ${borderColor};background:${bg};padding:6px 10px;margin:4px 0;border-radius:0 4px 4px 0;">
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:2px;">
+        ${kindBadge}
+        <span style="opacity:0.55;font-family:var(--mono,monospace);font-size:11px;">${time}</span>
+        <span style="font-weight:600;font-size:13px;">${escHtml(a.title)}</span>
+      </div>
+      ${a.body ? `<div style="font-size:12px;color:var(--text2);">${escHtml(a.body)}</div>` : ''}
+      ${replyBtns}
+    </div>`;
+  };
+
+  // Sort sessions: waiting_input first, then running, then everything else.
+  const stateRank = s => s === 'waiting_input' ? 0 : s === 'running' ? 1 : 2;
+  const sortedEntries = [...allEntries].sort((a, b) => stateRank(a.sessState) - stateRank(b.sessState));
+
+  let bodyHTML = '';
+  if (filt.sort === 'chrono') {
+    // Flat chronological — newest first across all sessions.
+    const flat = [];
+    for (const e of allEntries) {
+      for (const a of e.alerts) {
+        if (matchesFilter(a, e.sessState)) flat.push({ a, sessState: e.sessState, sess: e.sess, sessID: e.sessID });
       }
     }
+    for (const a of systemForTab) if (matchesFilter(a, '')) flat.push({ a, sessState: '', sess: null, sessID: '__system__' });
+    flat.sort((x, y) => new Date(y.a.created_at) - new Date(x.a.created_at));
+    if (flat.length === 0) {
+      bodyHTML = `<div style="text-align:center;color:var(--text2);padding:32px;">${escHtml(t('common_no_alerts'))}</div>`;
+    } else {
+      bodyHTML = flat.map(item => {
+        const label = item.sess ? (item.sess.name || item.sess.id) : (item.sessID === '__system__' ? 'system' : item.sessID.split('-').pop());
+        const sessLink = item.sess ? `<a onclick="${escHtml(`navigate('session-detail',${JSON.stringify(item.sessID)})`)}" style="color:var(--accent2);cursor:pointer;text-decoration:underline;">${escHtml(label)}</a>` : `<span style="color:var(--text2);">${escHtml(label)}</span>`;
+        return `<div style="margin-bottom:2px;"><span style="font-size:10px;color:var(--text2);">${sessLink}</span>${renderRow(item.a, item.sessState)}</div>`;
+      }).join('');
+    }
+  } else {
+    // By session — summary card per session.
+    const renderSessionCard = (entry, isSystem) => {
+      const visible = entry.alerts.filter(a => matchesFilter(a, entry.sessState || ''));
+      if (visible.length === 0) return '';
+      const label = isSystem ? (t('alert_session_system')||'System')
+        : (entry.sess ? (entry.sess.name || entry.sess.id) : entry.sessID.split('-').pop());
+      const stateColor = entry.sessState === 'waiting_input' ? 'var(--warning,#f59e0b)' : entry.sessState === 'running' ? 'var(--success)' : 'var(--text2)';
+      const stateText = entry.sessState === 'waiting_input' ? '🟠 waiting input' : entry.sessState === 'running' ? '🟢 running' : entry.sessState ? '✅ ' + entry.sessState : '';
+      const lastTime = visible.length > 0 ? new Date(visible[0].created_at).toLocaleTimeString('en-GB', { hour12: false }) : '—';
+      const promptCount = visible.filter(a => catOf(a, entry.sessState) === 'prompt').length;
+      const promptHint = promptCount > 0 ? ` · <span style="color:var(--warning,#f59e0b);font-weight:700;">🟡 ${promptCount}</span>` : '';
+      const sessLink = (!isSystem && entry.sess) ? `<a onclick="${escHtml(`navigate('session-detail',${JSON.stringify(entry.sessID)})`)}" style="color:var(--accent2);cursor:pointer;text-decoration:underline;">${escHtml(label)}</a>` : escHtml(label);
+      const grpId = 'alert-grp-' + (entry.sessID || 'sys').replace(/[^a-z0-9]/gi, '-');
+      return `<div style="border:1px solid var(--border);border-radius:6px;margin-bottom:10px;overflow:hidden;">
+        <div onclick="document.getElementById('${grpId}').style.display=document.getElementById('${grpId}').style.display==='none'?'':'none'"
+             style="padding:8px 12px;background:var(--bg2);cursor:pointer;display:flex;align-items:center;gap:8px;font-size:13px;">
+          <span style="font-weight:700;">${sessLink}</span>
+          ${stateText ? `<span style="color:${stateColor};font-size:11px;">${stateText}</span>` : ''}
+          <span style="color:var(--text2);font-size:11px;">${visible.length} ${visible.length === 1 ? (t('alert_dock_one')||'alert') : (t('alert_dock_many')||'alerts')}${promptHint}</span>
+          <span style="margin-left:auto;color:var(--text2);font-family:var(--mono,monospace);font-size:11px;">last ${lastTime}</span>
+        </div>
+        <div id="${grpId}" style="padding:6px 10px;">
+          ${visible.map(a => renderRow(a, entry.sessState || '')).join('')}
+        </div>
+      </div>`;
+    };
+    bodyHTML = sortedEntries.map(e => renderSessionCard(e, false)).join('');
+    if (systemForTab.length > 0) {
+      bodyHTML += renderSessionCard({ sessID: '__system__', alerts: systemForTab, sess: null, sessState: '' }, true);
+    }
+    if (!bodyHTML) {
+      bodyHTML = `<div style="text-align:center;color:var(--text2);padding:32px;">${escHtml(t('common_no_alerts'))}</div>`;
+    }
+  }
 
-    el.innerHTML = tabsRow + topBar + bodyHTML;
-  }).catch(() => {
-    const el = document.getElementById('alertsList');
-    if (el) el.innerHTML = `<div style="color:var(--error);padding:16px;">${t('alerts_load_error')||'Failed to load alerts.'}</div>`;
+  return tabsRow + topBar + bodyHTML;
+}
+
+function renderAlertsView() {
+  const view = document.getElementById('view');
+  if (!view) return;
+  view.innerHTML = `<div class="view-content">
+    <div style="display:flex;justify-content:flex-end;padding:6px 12px 0;">
+      <a href="/diagrams.html#docs/howto/alerts-and-notifications.md" target="_blank" rel="noopener" title="${escHtml(t('alerts_help_tip')||'Open the Alerts howto — explains alert rules, quick replies, and notifications')}" aria-label="Help" style="color:var(--text2);text-decoration:none;font-size:11px;border:1px solid var(--border);border-radius:50%;width:16px;height:16px;display:inline-flex;align-items:center;justify-content:center;line-height:1;">?</a>
+    </div>
+    <div id="alertsList" style="padding:12px;"></div></div>`;
+  _injectServerPickerBar(view, renderAlertsView); // BL312 S3
+  // Cached alerts paint at once with a "Cached" badge; the fetch runs behind
+  // them and a failure shows a banner with Retry above whatever is cached.
+  const lkey = 'alerts:' + (state.activeServer || 'local');
+  const ctl = window._listLoaders[lkey] || listLoader({
+    key: lkey, el: 'alertsList', pollMs: 30000,
+    fetch: _alertsFetch, render: _alertsBuildHtml,
+    active: () => !!document.getElementById('alertsList'),
   });
+  ctl.load();
 }
 
 // alpha.30 #271 + alpha.33 tabs restoration — per-tab persistence.
@@ -27197,11 +27481,22 @@ function _fedMsg(e, fallback) {
 function loadStatsPanel() {
   const el = document.getElementById('statsPanel');
   if (!el) return;
-  apiFetch('/api/stats').then(data => {
-    renderStatsData(el, data);
-  }).catch(e => {
-    el.innerHTML = `<div style="color:var(--text2);font-size:12px;padding:8px;">${escHtml(_fedMsg(e, t('stats_unavailable')||'Stats unavailable.'))}</div>`;
+  // Shared loader: skeleton on first load, cached stats at once on a revisit,
+  // a failed banner with Retry (cached stats stay beneath it), and a stale
+  // warning only once the numbers are older than the poll interval.
+  const lkey = 'observer-stats:' + (state.activeServer || 'local');
+  const ctl = window._listLoaders[lkey] || listLoader({
+    key: lkey, el: 'statsPanel', pollMs: 60000,
+    fetch: () => apiFetch('/api/stats'),
+    active: () => !!document.getElementById('statsPanel'),
+    render: () => '<div id="statsBody"></div>',
+    errorText: e => _fedMsg(e, t('stats_unavailable') || 'Stats unavailable.'),
+    afterPaint: (panel, keep, data) => {
+      const body = panel.querySelector('#statsBody');
+      if (body) renderStatsData(body, (state.statsData && state.statsData.timestamp > ((data && data.timestamp) || '')) ? state.statsData : data);
+    },
   });
+  ctl.load();
   // v4.1.0 — load installed-plugins status strip into the card footer.
   loadPluginsStatus();
   // v4.1.1 — load eBPF status strip just above plugins.

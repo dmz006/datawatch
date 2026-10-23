@@ -2112,5 +2112,7 @@
   "cached": "En caché",
   "load_failed": "No se pudo cargar esta lista",
   "retry": "Reintentar",
-  "stale_data": "Los datos pueden estar desactualizados"
+  "stale_data": "Los datos pueden estar desactualizados",
+  "load_more": "Cargar más",
+  "automata_open_to_load": "Abra para cargar historias y tareas"
 }

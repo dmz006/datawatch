@@ -2112,5 +2112,7 @@
   "cached": "Cached",
   "load_failed": "Could not load this list",
   "retry": "Retry",
-  "stale_data": "Data may be out of date"
+  "stale_data": "Data may be out of date",
+  "load_more": "Load more",
+  "automata_open_to_load": "Open to load stories and tasks"
 }
