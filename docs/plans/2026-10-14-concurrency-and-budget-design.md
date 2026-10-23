@@ -1200,15 +1200,17 @@ checklist is.
    - Peer spend counting is opt-in per peer (`peer_window`), default off. An
      unreachable peer fails open (the local spend alone decides).
 
-   **Finding:** the resource fingerprint exchange (§3c/§4e) does not exist in
-   code — there is no fingerprint protocol, `SharesHardwareWith` or
-   `billing_group` — so there is nothing for a peer match to be confirmed
-   against. Peer confirmation in this phase is the explicit opt-in list
-   behind `PeerShareConfirmer` (`PeerWindowConfirmer` trusts only the
-   operator's `peer_window`). A later fingerprint exchange plugs into the
-   same interface and can only veto, never add, a peer. §4e federation
-   shared-billing *detection* is therefore not delivered by this phase and
-   stays with the §3c/§4e follow-up.
+   **Finding (updated 2026-10-22):** the resource fingerprint exchange
+   (§3c/§4e) now exists in code — it was built on this branch (unreleased),
+   see "Resource fingerprint exchange (sections 3c and 4e) — shipped"
+   below the phase list. The Phase 5 ledger interface is unchanged: peer
+   spend still counts only via the operator's explicit `peer_window` list
+   (`PeerWindowConfirmer` remains the default `PeerShareConfirmer`). A
+   *confirmed* fingerprint match does not add a peer to the ledger by
+   itself — it tells the operator which peer to put in `peer_window`
+   (billing-group detection, §4e) and drives the §3c shared-node pool gate
+   directly. The two surfaces stay separate and are connected only at the
+   level of operator judgment.
 
    **Phase Completion Checklist (recorded 2026-10-22):**
    - Functionality per §4b/§4c: ✅ the budget model and window math, the
@@ -1266,6 +1268,115 @@ checklist is.
 6. **Phase 6 — Visibility, audit and parity close-out.** `autonomous_status`
    shows queued-vs-running with a reason; PWA; `datawatch-app` issue; howto;
    release-smoke section. Status: Planned.
+
+### Resource fingerprint exchange (sections 3c and 4e) — shipped
+
+**Status: built on this branch, unreleased (2026-10-22).** The §3c
+reconciliation loop and the §4e `billing_group` detection went from design
+to code in the same branch work as Phase 5. Open questions 10–13 below were
+decided in the operator conversation of 2026-10-22 and are implemented as
+documented here. Operator guide: `docs/howto/federation-fingerprint.md`;
+status and test inventory in `docs/testing-tracker.md` (the BL568 section);
+endpoints and MCP tools in `docs/api-mcp-mapping.md`.
+
+**Implementing files:**
+
+- `internal/fingerprint/` — the testable core, no daemon imports:
+  `hash.go` (pair key = HMAC-SHA256 of the shared bearer token over
+  `datawatch-fingerprint-v1`; item hash = HMAC-SHA256 of kind + value under
+  that key, so the same two resources collide for exactly one peer pair),
+  `identity.go` (node identity value: GPU UUID, else instance ID; names and
+  addresses never count), `export.go` (responder's own hash list — one item
+  per resolvable node, one per LLM with a non-empty `billing_group`; the
+  operator's local label is the only plain-text field), `sync.go` (the
+  reconciliation loop: pull each opted-in peer every 15 minutes, a code
+  constant; exact collisions become `pending` matches; a rejection sticks;
+  a peer outage fails soft and logs once per episode; it **never
+  confirms**), `matches.go` (the persisted MatchStore, atomic JSON under
+  `<data_dir>/autonomous/fingerprint/matches.json`, pending/confirmed/
+  rejected transitions are idempotent at the target and 404 on unknown id,
+  `OnDecision` hook), `gate.go` (the admission-time shared-node check,
+  fail-open).
+- `internal/server/federation_fingerprints.go` —
+  `GET /api/federation/fingerprints` (method → `federation:fingerprint`
+  capability → registered peer identity, admin token gets 400 → the peer
+  record's `fingerprint_sync`, off gets 403; the answer is keyed to the
+  caller's bearer token).
+- `internal/server/federation_fingerprint_matches.go` (+ tests) —
+  `GET /api/federation/fingerprint-matches[?state=]`,
+  `POST …/{id}/confirm`, `POST …/{id}/reject`.
+- `internal/federation/capabilities.go` — `federation:fingerprint` is
+  granted only by full-control (`FULL_CONTROL`) control groups
+  (`TestCapFederationFingerprintOnlyInFullControl`).
+- `cmd/datawatch/fingerprint_wiring.go` — daemon wiring: one MatchStore
+  under the data dir, the exporter behind the endpoint, the slow Syncer,
+  the gate, and the `OnDecision` audit hook (the
+  `fingerprint_match_confirmed` / `fingerprint_match_rejected` audit
+  events of `internal/audit/events.go`).
+- `cmd/datawatch/capacity_wiring.go` — `sharedNodeBackpressure()` composes
+  the gate into `node:` pool admission for autonomous work only; never
+  `host`/`llm:`/`external` pools, never interactive session starts; a
+  daemon with no opted-in peers and no confirmed matches is fully idle.
+- Surfaces: `cmd/datawatch/cli_fingerprint.go` (`datawatch fingerprint
+  list|confirm|reject`), `cli_federation.go` (`--fingerprint-sync` on
+  `federation peer add/update`), `cli_llm.go` (`--billing-group` on
+  `llm add/update`), `internal/router/bl316_federation.go` (the
+  `federation peer fingerprint …` / `federation fingerprint …` comm verbs),
+  `internal/mcp/federation_fingerprint.go` (`federation_fingerprint_matches`,
+  `federation_fingerprint_confirm`, `federation_fingerprint_reject`; the
+  `fingerprint_sync` and `billing_group` arguments ride the peer and LLM
+  tools), `internal/config/config.go` (peer entry `fingerprint_sync`),
+  `internal/inference/llm.go` (LLM entry `billing_group`), PWA
+  `internal/server/web/app.js` (+ `app-fingerprint.test.js`): the
+  pending-match panel under Settings → Comms → Federation Peers with
+  per-row confirm/reject, the peer form's `fingerprint_sync` toggle, the
+  LLM form's billing-group field, and seven new keys in all five locale
+  bundles (en/de/es/fr/ja) — the bundles currently carry English
+  placeholders for those, awaiting translation.
+
+**Operator decisions implemented (2026-10-22):**
+
+1. Off by default; opt-in is per peer and must be set on **both** daemons
+   (the caller's peer entry and the responder's record of that peer) —
+   question 10's recommendation, as built.
+2. Key material: the pair's existing federation bearer token, with
+   fingerprint-specific HMAC domain separation — no separately exchanged
+   pairing secret (question 11 resolved in favor of reuse plus
+   domain-separation).
+3. Always confirm, never auto-accept — question 12 as recommended: the
+   loop only ever creates `pending` records and the operator decides on
+   any surface; a rejection sticks across syncs and a rejection after a
+   confirmation un-merges; every decision is audited.
+4. Fail-open in both cases — question 13 as recommended, one shared
+   behavior rather than two settings: an unreachable or malformed peer
+   contributes zero to the shared-node gate and is logged once per failure
+   episode, so a peer outage never stalls local work.
+5. Wire minimality: only keyed hashes plus the operators' own local
+   resource labels cross the wire — never the identity value, a node
+   address, a billing label, or a credential (`TestExportItemsCarryNoRawValues`;
+   the endpoint is keyed per caller — `TestFingerprintEndpointKeyedPerCaller`).
+6. The Phase 5 ledger interface is untouched: `PeerShareConfirmer` still
+   confirms exactly the operator's `peer_window` list; a confirmed
+   billing-group match informs that list, it does not modify it.
+
+**Not delivered (intentional):**
+
+- No peer spend rollup: a peer's spend still enters a Phase 5 ceiling only
+  through the explicit `peer_window` opt-in; the exchange informs that
+  decision, it does not wire it.
+- No enforcement of a billing-group match: the shared-node gate is the
+  one enforcement surface; a billing match is decision context for the
+  operator's windows.
+- The sync interval (15 minutes), the poll timeout (5 s) and the 64 KiB
+  body cap are code constants, not config keys — deliberate for this
+  slice.
+- `datawatch-app` parity and the live two-daemon smoke are the open rows
+  in `docs/testing-tracker.md` (Tested=Yes, Validated=No for this
+  unreleased build).
+- `docs/operations.md` and the budget-facing prose that still say the
+  exchange "does not exist yet" (e.g. the `peer_window` caveat sentence)
+  remain worded for the ledger caveat, which is still true: confirmation
+  never modifies `peer_window`.
 
 ## Follow-up implementation PRD — what to build
 
@@ -1439,22 +1550,44 @@ thing example (iii) could not see.
     today, like `ralfthewise`, is not automatically the right trust level for
     resource fingerprinting, which is a separate decision from control
     capability)?
+    **Decided 2026-10-22, as recommended and as built:** opt-in per peer,
+    off by default, on both daemons — the peer entry's `fingerprint_sync`
+    plus the responder's record of that peer; the `federation:fingerprint`
+    capability (full-control only) is a precondition, not the trust decision.
 11. **Hash key material (3c/4e).** Should the per-peer-pair HMAC key reuse
     existing federation auth/TLS material directly, or be a separately
     exchanged pairing secret generated once at opt-in time? The latter is
     more work but avoids coupling resource-fingerprinting security to
     whatever the control-plane auth happens to be.
+    **Decided 2026-10-22, as built:** reuse the pair's existing federation
+    bearer token as key material, with fingerprint-specific HMAC domain
+    separation (the `datawatch-fingerprint-v1` tag) so fingerprint hashing
+    stays distinct from control-plane auth; no separately exchanged pairing
+    secret.
 12. **Auto-accept vs. always-confirm for a fingerprint match.** This doc
     recommends surfacing every match for explicit operator confirmation
     before the ledger treats two resources as one pool. Is there a safe
     auto-accept case (e.g., only when both sides are on `full-control`
     federation already), or should confirmation always be manual?
+    **Decided 2026-10-22, as recommended and as built:** always confirm,
+    never auto-accept — the reconciliation loop only ever creates `pending`
+    records; the operator confirms or rejects on any surface (PWA / CLI /
+    comm / REST / MCP); each decision is a one-way audit event and a
+    rejection sticks across syncs.
 13. **Fail-open vs. fail-closed on an unreachable billing-group/shared-node
     peer at admission time (3c/4e).** This doc recommends fail-open (log and
     admit locally) so a peer outage never stalls local work. An operator
     managing a hard subscription ceiling may prefer fail-closed for the
     billing-group case specifically, even if 3c's hardware case stays
     fail-open. Should this be one shared setting or two independent ones?
+    **Decided 2026-10-22, as recommended and as built:** fail-open, one
+    shared behavior rather than two settings — an unreachable peer
+    contributes zero to the shared-node gate and is logged once per
+    failure episode; there is no fail-closed option in this slice, and the
+    billing-group case enforces nothing at admission at all. See the
+    "Resource fingerprint exchange (sections 3c and 4e) — shipped" section
+    above for the shipped status, and `docs/howto/federation-fingerprint.md`
+    for the operator guide.
 14. **The tree lock (3a) should assess real conflict, not just same-tree
     exclusivity (operator-raised 2026-10-15, live judgment call this doc's
     own 3a doesn't currently cover).** Live example: two PRDs both
