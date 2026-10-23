@@ -919,6 +919,9 @@ func New(hostname string, manager *session.Manager, cfg *config.MCPConfig, dataD
 	// BL316 S2 — federation peer and group tools.
 	s.RegisterFederationTools()
 
+	// Fingerprint match records — operator decision over /api/federation/fingerprint-matches.
+	s.RegisterFederationFingerprintTools()
+
 	// BL241 P1 — Matrix backend status + test.
 	mcpSrv.AddTool(s.toolMatrixStatus(), tracked(s.handleMatrixStatus))
 	mcpSrv.AddTool(s.toolMatrixTest(), tracked(s.handleMatrixTest))

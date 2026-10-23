@@ -3457,6 +3457,73 @@ paths:
         "400": {description: No peer identity for this token — /fingerprints is for federation peer tokens, not the admin token}
         "403": {description: Fingerprint exchange is not enabled for this peer}
 
+  /api/federation/fingerprint-matches:
+    get:
+      summary: Fingerprint match records surfaced during reconciliation, for operator decision — each proposes that this daemon and a peer hold the same resource; identities travel as 8-char hash prefixes, never full values
+      operationId: federationFingerprintMatches
+      tags: [Federation]
+      parameters:
+        - name: state
+          in: query
+          required: false
+          description: Optional filter — pending, confirmed or rejected
+          schema: {type: string, enum: [pending, confirmed, rejected]}
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  matches:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, peer, kind, local_name, peer_name, state]
+                      properties:
+                        id: {type: string}
+                        peer: {type: string}
+                        kind: {type: string}
+                        local_name: {type: string}
+                        peer_name: {type: string}
+                        hash_prefix: {type: string}
+                        state: {type: string, enum: [pending, confirmed, rejected]}
+                        first_seen: {type: string}
+                        updated_at: {type: string}
+        "403": {description: The caller lacks the federation:list capability}
+        "503": {description: Fingerprint match store not configured on this daemon}
+  /api/federation/fingerprint-matches/{id}/confirm:
+    post:
+      summary: Confirm one fingerprint match record (operator decision) — once confirmed, matching budget pools may be treated as the same resource
+      operationId: federationFingerprintMatchConfirm
+      tags: [Federation]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        "200": {description: The updated match record}
+        "403": {description: The caller lacks the federation:write capability}
+        "404": {description: No such match record}
+        "503": {description: Fingerprint match store not configured on this daemon}
+  /api/federation/fingerprint-matches/{id}/reject:
+    post:
+      summary: Reject one fingerprint match record (operator decision) — rejecting a previously confirmed match takes its resource pools back apart
+      operationId: federationFingerprintMatchReject
+      tags: [Federation]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        "200": {description: The updated match record}
+        "403": {description: The caller lacks the federation:write capability}
+        "404": {description: No such match record}
+        "503": {description: Fingerprint match store not configured on this daemon}
+
   # Splash (BL69)
   /api/splash/info:
     get:

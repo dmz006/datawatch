@@ -515,6 +515,12 @@ type Server struct {
 	// empty list.
 	fingerprintExporter *fingerprint.Exporter
 
+	// Fingerprint match records surfaced for operator decision
+	// (docs/plans/2026-10-14-concurrency-and-budget-design.md §3c) —
+	// behind /api/federation/fingerprint-matches. Nil (unwired) answers
+	// 503.
+	fingerprintMatchStore *fingerprint.MatchStore
+
 	// S14b — per-pod alert rules + observer-driven autoscaling store.
 	// Nil when not wired; handlers return 503.
 	alertRulesAPI AlertRulesAPI
