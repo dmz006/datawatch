@@ -4938,7 +4938,8 @@ func (s *Server) handleStartSession(w http.ResponseWriter, r *http.Request) {
 			waitSecs = s.cfg.Session.CapacityWaitSeconds
 		}
 		admitCtx, cancel := context.WithTimeout(r.Context(), time.Duration(waitSecs)*time.Second)
-		aerr := s.capacityAdmit(admitCtx, resolvedLLMRef, req.Model, holder)
+		// The session does not exist yet, so it admits at the default priority 0.
+		aerr := s.capacityAdmit(admitCtx, resolvedLLMRef, req.Model, holder, 0)
 		cancel()
 		if aerr != nil {
 			jsonError(w, http.StatusServiceUnavailable, "capacity: "+aerr.Error())

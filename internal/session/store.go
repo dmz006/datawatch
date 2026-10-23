@@ -79,6 +79,9 @@ type Session struct {
 	// Empty for legacy sessions and for kinds that don't bind to a node
 	// (e.g. claude-code on local host).
 	ComputeNodeRef string `json:"compute_node_ref,omitempty"`
+	// Priority orders this session's calls in the capacity wait queue (higher
+	// first; default 0). Same shape as autonomous.PRD.Priority.
+	Priority int `json:"priority,omitempty"`
 	// PendingInput is set when the session is waiting for user input
 	PendingInput string `json:"pending_input,omitempty"`
 	// LastPrompt is the last prompt text that triggered waiting_input

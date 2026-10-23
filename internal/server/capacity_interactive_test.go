@@ -25,7 +25,7 @@ func TestHandleStartSession_CapacityAdmit_Gated(t *testing.T) {
 
 	var admitCalls, bindCalls int
 	var boundHolder, boundSessionID string
-	srv.SetCapacityAdmit(func(_ context.Context, backend, model, holder string) error {
+	srv.SetCapacityAdmit(func(_ context.Context, backend, model, holder string, _ int) error {
 		admitCalls++
 		return nil
 	})
@@ -73,7 +73,7 @@ func TestHandleStartSession_CapacityAdmit_SkippedForOneShot(t *testing.T) {
 	srv := newLLMServer(t)
 
 	admitCalls := 0
-	srv.SetCapacityAdmit(func(_ context.Context, _, _, _ string) error {
+	srv.SetCapacityAdmit(func(_ context.Context, _, _, _ string, _ int) error {
 		admitCalls++
 		return nil
 	})
@@ -97,7 +97,7 @@ func TestHandleStartSession_CapacityAdmit_SkippedForOneShot(t *testing.T) {
 func TestHandleStartSession_CapacityAdmit_DeniedReturns503(t *testing.T) {
 	srv := newLLMServer(t)
 
-	srv.SetCapacityAdmit(func(_ context.Context, _, _, _ string) error {
+	srv.SetCapacityAdmit(func(_ context.Context, _, _, _ string, _ int) error {
 		return errCapacityDenied
 	})
 	releaseCalls := 0
