@@ -304,6 +304,8 @@ type PRD struct {
 	// spawn requests so workers can load the appropriate skill context.
 	Type   string   `json:"type,omitempty"`
 	Skills []string `json:"skills,omitempty"`
+	// TagIDs lists the managed Tag IDs assigned to this automaton.
+	TagIDs []string `json:"tag_ids,omitempty"`
 
 	// GuidedMode (BL221 v6.2.0) was originally documented as pausing
 	// before each task — confirmed never implemented (B111, found
@@ -1084,6 +1086,18 @@ type GuardrailEntry struct {
 	Description string `json:"description,omitempty"`
 	Type        string `json:"type"`                // "scan" | "custom" | "skill"
 	ScanType    string `json:"scan_type,omitempty"` // "sast" | "secrets" | "deps" (scan entries only)
+}
+
+// Tag is a managed label that can be nested as a tree and assigned to
+// several Automata via PRD.TagIDs.
+type Tag struct {
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	ParentID    string    `json:"parent_id,omitempty"` // "" = root tag
+	Color       string    `json:"color,omitempty"`
+	Description string    `json:"description,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 // GuardrailProfile (BL303 S2) is a named collection of guardrails that can
