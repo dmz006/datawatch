@@ -5,6 +5,13 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.107 — Role tags on LLM entries and session priority in admission
+
+### Added
+
+- **LLM registry entries can carry role tags.** An entry has an open list of roles (for example planning, verification, council), set with a `roles` parameter on `llm_add` and `llm_update` over MCP, REST, the CLI and chat, and edited in the web LLM editor. A call site with an explicit backend or model always wins; the role is looked up only when there is none, and an ambiguous role resolves deterministically with a warning. A contention check reports when two roles have silently converged on one entry, both on a periodic scan and when configuration is written. A Workload Roles card under Settings, Automate lists each role, its entry and any warning.
+- **Sessions carry a priority.** A session has an integer priority, set on REST, MCP, the CLI and chat and shown on the session card, and it is now passed to all four capacity admission requests that used to omit it, so independent sessions take part in the fairness ordering. The default stays 0.
+
 ## v9.5.106 — Automation close-out: import-graph, parity audit and deprecation of the old graph tools
 
 ### Added
