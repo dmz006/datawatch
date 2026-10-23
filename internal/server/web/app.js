@@ -8516,7 +8516,7 @@ function switchSettingsTab(tab) {
     b.classList.toggle('active', b.dataset.tab === tab);
   });
   _applyCardOrderForTab(tab);
-  if (tab === 'comms' || tab === 'servers') { loadServersList(); loadFederationPeersPanel(); loadPushPanel(); }
+  if (tab === 'comms' || tab === 'servers') { loadServersList(); loadFederationPeersPanel(); loadFingerprintMatchesPanel(); loadPushPanel(); }
 }
 window.switchSettingsTab = switchSettingsTab;
 
@@ -9378,6 +9378,13 @@ function renderSettingsView() {
               <button class="btn-secondary" style="font-size:11px;" onclick="showFedPeerForm()">${t('federation_peer_add_btn') || 'Add Peer'}</button>
             </div>
             <div id="fedPeersList" style="padding:0 12px;"></div>
+            <!-- Resource fingerprint exchange — pending match suggestions surfaced by
+                 reconciliation, with per-row confirm/reject. Confirmed matches sit in a
+                 collapsed list underneath so an operator can undo one. -->
+            <div id="fedFingerprintMatchesWrap" style="padding:8px 12px;border-top:1px solid var(--border);margin-top:8px;">
+              <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;opacity:0.6;margin-bottom:6px;">${t('federation_fingerprint_matches_title')||'Pending resource matches'}</div>
+              <div id="fedFingerprintMatchesList" style="padding:0;"></div>
+            </div>
             <div id="fedPeerFormWrap" style="display:none;padding:8px 12px;border-top:1px solid var(--border);margin-top:8px;">
               <div style="font-size:12px;font-weight:600;margin-bottom:8px;">Add Federation Peer</div>
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px;">
@@ -9385,6 +9392,7 @@ function renderSettingsView() {
                 <div><label style="font-size:11px;color:var(--text2);">URL</label><input id="fedPeerFormURL" class="form-input" style="width:100%;font-size:11px;" placeholder="http://198.51.100.2:8080" /></div>
                 <div><label style="font-size:11px;color:var(--text2);">Token</label><input id="fedPeerFormToken" class="form-input" style="width:100%;font-size:11px;" placeholder="(optional bearer token)" /></div>
                 <div style="grid-column:1/-1;display:flex;align-items:center;gap:6px;"><label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:6px;" title="${t('server_tls_skip_verify_tip')||'Only for a self-signed/local-dev peer on a trusted network'}"><input type="checkbox" id="fedPeerFormTLSSkipVerify" />${t('server_tls_skip_verify_label')||'Skip TLS certificate verification'}</label></div>
+                <div style="grid-column:1/-1;display:flex;align-items:center;gap:6px;"><label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:6px;" title="Opt this peer into the resource-fingerprint exchange so matching resources surface as confirm/reject suggestions (off by default)"><input type="checkbox" id="fedPeerFormFingerprintSync" />${t('federation_fingerprint_sync_label')||'Resource fingerprint exchange'}</label></div>
                 <div style="grid-column:1/-1;"><label style="font-size:11px;color:var(--text2);">${t('federation_cap_group_label') || 'Capabilities'}</label>${renderBadgeInput('fedPeerFormCaps', '', { freeform: true, placeholder: 'federation-peer…' })}</div>
                 <div style="grid-column:1/-1;"><label style="font-size:11px;color:var(--text2);">${t('channel_identity_label') || 'Channel Identity'}</label><input id="fedPeerFormChannelIdentity" class="form-input" style="width:100%;font-size:11px;" placeholder="${t('channel_identity_placeholder') || 'channel-id-or-pattern'}" title="Comma-separated channel addresses this peer monitors" /></div>
               </div>
@@ -9705,7 +9713,7 @@ function renderSettingsView() {
   loadSecretsPanel();   // BL242
   loadDocsTrustPanel(); // BL274
   loadTailscaleConfig(); // BL243
-  if (_settingsTab === 'comms' || _settingsTab === 'servers') { loadServersList(); loadFederationPeersPanel(); loadPushPanel(); } // BL312 S2 / BL316 S2 / BL330
+  if (_settingsTab === 'comms' || _settingsTab === 'servers') { loadServersList(); loadFederationPeersPanel(); loadFingerprintMatchesPanel(); loadPushPanel(); } // BL312 S2 / BL316 S2 / BL330
   // v5.28.0 (BL214) — sync language picker to the active override
   // (or 'auto' when no localStorage value is set). Two pickers live
   // on the page: Settings → General → Language (legacy spot) AND
@@ -10424,6 +10432,8 @@ function buildLLMBudgetGroup(l) {
     <label style="${lbl}">${escHtml(t('llm_field_budget_peers')||'Peer window (comma-separated peer names)')}</label>
     <input id="fe_llm_budget_peers" class="form-input" value="${escHtml((b.peer_window||[]).join(', '))}" />
     <div style="${hint}">${escHtml(t('llm_budget_peers_hint')||'Federation peer spend is off for every peer unless the peer is listed here.')}</div>
+    <label style="${lbl}">${escHtml(t('llm_billing_group_label')||'Billing group')}</label>
+    <input id="fe_llm_billing_group" class="form-input" value="${escHtml(l.billing_group||'')}" title="Free-text label grouping LLM entries that share a billing account / plan" />
     </div>`;
 }
 // Reads the budget group back into the REST "budget" value. An empty
@@ -10493,6 +10503,10 @@ function collectLLMForm(originalRecord) {
   out.max_inflight = parseInt((document.getElementById('fe_llm_max_inflight')||{}).value || '0', 10) || 0;
   out.plan_tier = (document.getElementById('fe_llm_plan_tier')||{}).value || '';
   out.budget = collectLLMBudget();
+  // Billing group — free-text label on the LLM record (l.billing_group); an
+  // empty value clears it (the daemon trims on save and omits it when blank).
+  const billingGroup = String((document.getElementById('fe_llm_billing_group')||{}).value || '').trim();
+  if (billingGroup) out.billing_group = billingGroup; else delete out.billing_group;
   out.tags = getBadgeInputValue('fe_llm_tags').split(',').map(s => s.trim()).filter(Boolean);
   return out;
 }
@@ -29545,7 +29559,82 @@ function loadFederationPeersPanel() {
 }
 window.loadFederationPeersPanel = loadFederationPeersPanel;
 
+// Resource fingerprint exchange — pending match suggestions.
+// A row is one suggestion that this daemon and a peer hold the same resource
+// (a compute node by identity, or a billing account/plan by label). Confirm /
+// reject is the only thing that moves a match's state; the server keeps a
+// suggestion as long as it has not accepted or rejected it.
+function fingerprintMatchKindLabel(m) {
+  if (m.kind === 'node') return escHtml(t('federation_fingerprint_kind_node') || 'node');
+  if (m.kind === 'billing') return escHtml(t('federation_fingerprint_kind_billing') || 'billing');
+  return escHtml(m.kind || '?');
+}
+function fingerprintMatchRow(m) {
+  const safeId = JSON.stringify(m.id || '');
+  const btn = (action) => {
+    const label = (action === 'confirm') ? (t('federation_fingerprint_confirm_btn') || 'Confirm')
+                                         : (t('federation_fingerprint_reject_btn') || 'Reject');
+    const extra = (action === 'reject') ? 'color:#ef4444;' : '';
+    return `<button class="btn-secondary" style="font-size:10px;padding:2px 7px;${extra}" onclick="${escHtml(`fedMatchDecision(${safeId},'${action}')`)}">${escHtml(label)}</button>`;
+  };
+  return `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--border);font-size:12px;flex-wrap:wrap;">
+    <span style="font-size:10px;background:var(--bg3,#2d3148);padding:1px 6px;border-radius:10px;" title="${escHtml(t('federation_cap_group_label')||'Capability Group')}">${fingerprintMatchKindLabel(m)}</span>
+    <span><strong>${escHtml(m.local_name || '')}</strong>
+      <span style="color:var(--text2);" title="${escHtml(m.peer || '')}">↔ ${escHtml(m.peer_name || '')} (${escHtml(m.peer || '')})</span>
+    </span>
+    <div style="margin-left:auto;display:flex;gap:4px;">
+      ${btn('confirm')}
+      ${btn('reject')}
+    </div>
+  </div>`;
+}
+function loadFingerprintMatchesPanel() {
+  const list = document.getElementById('fedFingerprintMatchesList');
+  if (!list) return;
+  list.innerHTML = `<div style="color:var(--text2);font-size:12px;padding:4px 0;">${loadingEyeBlock()}</div>`;
+  Promise.all([
+    apiFetch('/api/federation/fingerprint-matches?state=pending').catch(() => null),
+    apiFetch('/api/federation/fingerprint-matches?state=confirmed').catch(() => null),
+  ]).then(([pendingRes, confirmedRes]) => {
+    const pending = (pendingRes && Array.isArray(pendingRes.matches)) ? pendingRes.matches : [];
+    const confirmed = (confirmedRes && Array.isArray(confirmedRes.matches)) ? confirmedRes.matches : [];
+    const pendingHtml = pending.length
+      ? pending.map(m => fingerprintMatchRow(m)).join('')
+      : `<div style="color:var(--text2);font-size:12px;padding:4px 0;">${escHtml(t('federation_fingerprint_matches_empty') || 'No pending resource matches')}</div>`;
+    // Confirmed matches live in a collapsed secondary list; each row keeps
+    // its Reject button so an operator can still undo a confirmation.
+    let confirmedHtml = '';
+    if (confirmed.length) {
+      const stateLabel = escHtml((confirmed[0] && confirmed[0].state) || 'confirmed');
+      confirmedHtml = `<details style="margin-top:8px;">
+        <summary style="cursor:pointer;font-size:11px;color:var(--text2);">${stateLabel} (${confirmed.length})</summary>
+        ${confirmed.map(m => fingerprintMatchRow(m)).join('')}
+      </details>`;
+    }
+    list.innerHTML = pendingHtml + confirmedHtml;
+  }).catch(() => {
+    list.innerHTML = `<div style="color:var(--text2);font-size:12px;padding:4px 0;">${escHtml(t('federation_fingerprint_matches_empty') || 'No pending resource matches')}</div>`;
+  });
+}
+window.loadFingerprintMatchesPanel = loadFingerprintMatchesPanel;
+// POST one decision (confirm or reject — same route, the tail segment picks
+// the state move). The panel reloads, so the handled row leaves the pending
+// list.
+function fedMatchDecision(id, action) {
+  if (action !== 'confirm' && action !== 'reject') return;
+  apiFetch('/api/federation/fingerprint-matches/' + encodeURIComponent(id) + '/' + action, { method: 'POST' })
+    .then(() => {
+      showToast('✓ ' + (action === 'confirm' ? 'confirmed' : 'rejected') + ': ' + id, 'success', 2000);
+      loadFingerprintMatchesPanel();
+    })
+    .catch(e => showToast('✕ ' + (e.message || e), 'error', 3000));
+}
+window.fedMatchDecision = fedMatchDecision;
+
 function showFedPeerForm(entry) {
+  // Remember which peer (if any) the form is editing — the submit path
+  // routes edits through the PUT on the peer's own path.
+  window._fedPeerFormEntry = entry || null;
   const wrap = document.getElementById('fedPeerFormWrap');
   if (!wrap) return;
   wrap.style.display = '';
@@ -29558,6 +29647,12 @@ function showFedPeerForm(entry) {
   }).catch(() => {
     initBadgeInput('fedPeerFormCaps', { freeform: true, placeholder: 'federation-peer…' });
   });
+  // Resource-fingerprint exchange — defaults off. When editing, set from the
+  // saved record so a submit that never touches the toggle round-trips the
+  // peer's existing value; for a new peer, explicitly cleared so a stale
+  // DOM state from a previous edit can't carry over.
+  const fpEl = document.getElementById('fedPeerFormFingerprintSync');
+  if (fpEl) fpEl.checked = !!(entry && entry.fingerprint_sync);
   if (entry) {
     const nameEl = document.getElementById('fedPeerFormName');
     const urlEl = document.getElementById('fedPeerFormURL');
@@ -29573,6 +29668,7 @@ function showFedPeerForm(entry) {
 window.showFedPeerForm = showFedPeerForm;
 
 function hideFedPeerForm() {
+  window._fedPeerFormEntry = null;
   const wrap = document.getElementById('fedPeerFormWrap');
   if (wrap) wrap.style.display = 'none';
   const errEl = document.getElementById('fedPeerFormError');
@@ -29592,11 +29688,29 @@ function submitFedPeerForm() {
 
   const channelIdentityRaw = (document.getElementById('fedPeerFormChannelIdentity') || {}).value || '';
   const tlsSkipVerify = !!(document.getElementById('fedPeerFormTLSSkipVerify') || {}).checked;
+  const fingerprintSync = !!(document.getElementById('fedPeerFormFingerprintSync') || {}).checked;
+
+  // Editing an existing peer — PUT the named fields to the peer's own path.
+  // fingerprint_sync is always sent explicitly (a submit that didn't touch
+  // the toggle still round-trips the saved value); the other fields are only
+  // included when the operator typed something.
+  if (window._fedPeerFormEntry) {
+    const editBody = { url, enabled: true, tls_skip_verify: tlsSkipVerify, fingerprint_sync: fingerprintSync };
+    if (token) editBody.token = token;
+    if (capsRaw.trim()) editBody.capabilities = capsRaw.split(',').map(s => s.trim()).filter(Boolean);
+    if (channelIdentityRaw.trim()) editBody.channel_identity = channelIdentityRaw.split(',').map(s => s.trim()).filter(Boolean);
+    apiFetch('/api/federation/peers/' + encodeURIComponent(name), { method: 'PUT', body: JSON.stringify(editBody) })
+      .then(() => { hideFedPeerForm(); loadFederationPeersPanel(); })
+      .catch(err => { if (errEl) { errEl.textContent = err.message || String(err); errEl.style.display = ''; } });
+    return;
+  }
+
   const body = { name, url, enabled: true, tls_skip_verify: tlsSkipVerify };
   if (token) body.token = token;
   if (capsRaw.trim()) body.capabilities = capsRaw.split(',').map(s => s.trim()).filter(Boolean);
   // BL331 — serialize channel_identity as []string for the backend
   if (channelIdentityRaw.trim()) body.channel_identity = channelIdentityRaw.split(',').map(s => s.trim()).filter(Boolean);
+  if (fingerprintSync) body.fingerprint_sync = true; // off by default; opt in explicitly
 
   fetch('/api/federation/peers', {
     method: 'POST',
