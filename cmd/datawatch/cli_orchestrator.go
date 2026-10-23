@@ -17,7 +17,7 @@ import (
 // process is short-lived, so the once-per-start daemon log line is skipped.
 func warnOrchestratorDeprecated(cmd *cobra.Command, tool string) {
 	orchestrator.WarnDeprecatedOnce(tool, nil)
-	fmt.Fprintln(cmd.ErrOrStderr(), orchestrator.DeprecationNotice(tool))
+	_, _ = fmt.Fprintln(cmd.ErrOrStderr(), orchestrator.DeprecationNotice(tool))
 }
 
 func newOrchestratorCmd() *cobra.Command {
