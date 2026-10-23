@@ -118,7 +118,8 @@ func (s *Server) handleAutonomousConfig(w http.ResponseWriter, r *http.Request) 
 			// automation.idle_alert_minutes: whole minutes >= 0 (0 = off).
 			if rawAuto, ok := top["automation"]; ok {
 				var auto struct {
-					IdleAlertMinutes *float64 `json:"idle_alert_minutes"`
+					IdleAlertMinutes  *float64 `json:"idle_alert_minutes"`
+					AgentInsertPolicy *string  `json:"agent_insert_policy"`
 				}
 				if json.Unmarshal(rawAuto, &auto) != nil {
 					http.Error(w, "automation: must be an object", http.StatusBadRequest)
@@ -126,6 +127,12 @@ func (s *Server) handleAutonomousConfig(w http.ResponseWriter, r *http.Request) 
 				}
 				if auto.IdleAlertMinutes != nil {
 					if verr := validateIdleAlertMinutes(*auto.IdleAlertMinutes); verr != nil {
+						http.Error(w, verr.Error(), http.StatusBadRequest)
+						return
+					}
+				}
+				if auto.AgentInsertPolicy != nil {
+					if verr := validateAgentInsertPolicy(*auto.AgentInsertPolicy); verr != nil {
 						http.Error(w, verr.Error(), http.StatusBadRequest)
 						return
 					}
@@ -2998,6 +3005,7 @@ func automationErrStatus(err error) (int, string) {
 //	GET    /api/automations/{id}   — get
 //	PUT    /api/automations/{id}   — update
 //	DELETE /api/automations/{id}   — delete
+//	POST   /api/automations/import-graph/{graph_id} — convert an orchestrator graph
 //	POST   /api/automations/{id}/activate — start a draft Automation
 //	POST   /api/automations/{id}/{pause|resume|cancel|skip_member|insert_member|
 //	       remove_member|reorder_edges|approve_insert|set_llm|
@@ -3006,11 +3014,16 @@ func (s *Server) handleAutomations(w http.ResponseWriter, r *http.Request) {
 	rest := strings.TrimPrefix(r.URL.Path, "/api/automations")
 	rest = strings.Trim(rest, "/")
 	id := rest
+	graphID, isImport := strings.CutPrefix(rest, "import-graph/")
+	isImport = isImport && graphID != "" && !strings.Contains(graphID, "/")
 	ctlID, ctlOp, isControl := automationControlRoute(rest)
+	if isImport {
+		isControl = false
+	}
 
 	// The control sub-paths only ever write, so they need the write capability
 	// whatever the method (a GET to one is a 405 after the cap check).
-	if r.Method == http.MethodGet && !isControl {
+	if r.Method == http.MethodGet && !isControl && !isImport {
 		if !s.fedCap(w, r, federation.CapAutonomousRead) {
 			return
 		}
@@ -3021,6 +3034,11 @@ func (s *Server) handleAutomations(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.autonomousMgr == nil {
 		http.Error(w, "autonomous disabled", http.StatusServiceUnavailable)
+		return
+	}
+
+	if isImport {
+		s.handleAutomationImportGraph(w, r, graphID)
 		return
 	}
 
@@ -3143,14 +3161,10 @@ func (s *Server) handleAutomationActivate(w http.ResponseWriter, r *http.Request
 	writeJSONOK(w, a)
 }
 
-// automationControlOps lists the POST-only control sub-paths under
-// /api/automations/{id}/, one per operator action on a running Automation.
-var automationControlOps = []string{"pause", "resume", "cancel", "skip_member", "insert_member", "remove_member", "reorder_edges", "approve_insert", "set_llm", "set_verification_llm", "set_budget"}
-
 // automationControlRoute splits rest ("{id}/{op}") into the Automation ID and
 // one of automationControlOps.
 func automationControlRoute(rest string) (id, op string, ok bool) {
-	for _, name := range automationControlOps {
+	for _, name := range automationControlOps() {
 		if autoID, found := strings.CutSuffix(rest, "/"+name); found && autoID != "" && !strings.Contains(autoID, "/") {
 			return autoID, name, true
 		}

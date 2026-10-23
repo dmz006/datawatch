@@ -69,6 +69,7 @@ func (s *Server) toolAutonomousConfigSet() mcpsdk.Tool {
 		mcpsdk.WithArray("task_override_statuses", mcpsdk.Description("PRD statuses that accept task/story-level LLM overrides; names: draft, planning, needs_review, approved, revisions_asked, active, running, completed, rejected, cancelled, archived, blocked, failed, paused; empty array restores the defaults (needs_review, revisions_asked, cancelled, blocked)")),
 		mcpsdk.WithString("plan_coverage_check", mcpsdk.Description("Plan requirement-coverage gate mode: off (no gate), warn (failing coverage is reported on the PRD but approval proceeds), block (the default: approving a PRD with a failing plan-coverage report is blocked until the operator acknowledges that exact failing surface with autonomous_prd_plan_coverage_acknowledge)")),
 		mcpsdk.WithNumber("automation_idle_alert_minutes", mcpsdk.Description("Minutes an active Automation may sit idle (a member finished and no next member started) before one idle alert is raised. Whole number >= 0; 0 turns the alert off.")),
+		mcpsdk.WithString("automation_agent_insert_policy", mcpsdk.Description("What happens when an agent session inserts a member into an Automation: allow (the default) lets a draft insert land at once, require_operator holds every agent insert until an operator approves it.")),
 		mcpsdk.WithString("usage_backoff", mcpsdk.Description("Per-backend usage back-off mode: pause_backend (the default) holds autonomous dispatch to a backend while one of its sessions is rate-limited, until the parsed reset time or the maximum back-off; off disables only that automatic path (manual usage_backoff_set still works). Interactive session starts are never blocked.")),
 		mcpsdk.WithNumber("backoff_max_wait_minutes", mcpsdk.Description("Maximum usage back-off in whole minutes (>= 1, default 60), applied when a rate-limit message carries no reset time.")),
 		mcpsdk.WithNumber("plan_coverage_min_ratio", mcpsdk.Description("Minimum covered/total requirement ratio for a plan to pass the coverage gate; a number in (0,1] (e.g. 0.9 = 90%). Zero/negative and values above 1 both clamp to 1.0 (require full coverage — the safe default). The gate also fails on any structural finding regardless of ratio.")),
@@ -206,11 +207,19 @@ func (s *Server) handleAutonomousConfigSet(_ context.Context, req mcpsdk.CallToo
 		}
 	}
 	// Automation idle-alert threshold (autonomous.automation.idle_alert_minutes);
-	// presence-aware so an explicit 0 (off) is sent.
+	// presence-aware so an explicit 0 (off) is sent. The agent insert policy
+	// (autonomous.automation.agent_insert_policy) rides in the same object.
+	auto := map[string]any{}
 	if args := req.GetArguments(); args != nil {
 		if _, ok := args["automation_idle_alert_minutes"]; ok {
-			body["automation"] = map[string]any{"idle_alert_minutes": req.GetFloat("automation_idle_alert_minutes", 0)}
+			auto["idle_alert_minutes"] = req.GetFloat("automation_idle_alert_minutes", 0)
 		}
+	}
+	if v := req.GetString("automation_agent_insert_policy", ""); v != "" {
+		auto["agent_insert_policy"] = v
+	}
+	if len(auto) > 0 {
+		body["automation"] = auto
 	}
 	// plan_tier_max_inflight — the per-tier inflight cap table (tier → integer).
 	// It is a table in the REST surface, so parse the tool's string argument to

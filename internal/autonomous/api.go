@@ -1391,6 +1391,12 @@ func (a *API) CreateAutomation(in AutomationInput, actor string) (any, error) {
 	return a.M.CreateAutomation(in, actor)
 }
 
+// ImportGraph converts an orchestrator graph into an Automation draft (or, with
+// dryRun, the input a real run would use).
+func (a *API) ImportGraph(src ImportGraphSource, dryRun bool) (*ImportGraphResult, error) {
+	return a.M.ImportGraph(src, dryRun)
+}
+
 func (a *API) UpdateAutomation(id string, expectedVersion int64, in AutomationInput, actor string) (any, error) {
 	return a.M.UpdateAutomation(id, expectedVersion, in, actor)
 }

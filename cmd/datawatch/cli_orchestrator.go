@@ -8,7 +8,17 @@ import (
 	"net/http"
 
 	"github.com/spf13/cobra"
+
+	"github.com/dmz006/datawatch/internal/orchestrator"
 )
+
+// warnOrchestratorDeprecated prints the deprecation notice for a graph
+// create, plan or run tool to stderr, so stdout stays parseable. The CLI
+// process is short-lived, so the once-per-start daemon log line is skipped.
+func warnOrchestratorDeprecated(cmd *cobra.Command, tool string) {
+	orchestrator.WarnDeprecatedOnce(tool, nil)
+	fmt.Fprintln(cmd.ErrOrStderr(), orchestrator.DeprecationNotice(tool))
+}
 
 func newOrchestratorCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -22,10 +32,10 @@ Subcommands:
   config-get
   config-set <json>
   graph-list
-  graph-create <title> <prd_ids_json> [<deps_json>]
+  graph-create <title> <prd_ids_json> [<deps_json>]   (deprecated: use 'automation import-graph')
   graph-get <id>
-  graph-plan <id> [<deps_json>]
-  graph-run <id>
+  graph-plan <id> [<deps_json>]   (deprecated: use 'automation import-graph')
+  graph-run <id>   (deprecated: use 'automation import-graph')
   graph-cancel <id>
   verdicts`,
 	}
@@ -75,9 +85,10 @@ func newOrchestratorGraphCreateCmd() *cobra.Command {
 	var projectDir string
 	cmd := &cobra.Command{
 		Use:   "graph-create <title> <prd_ids_json> [<deps_json>]",
-		Short: "Create a PRD-DAG graph",
+		Short: "Deprecated: create a PRD-DAG graph; use 'automation import-graph'",
 		Args:  cobra.RangeArgs(2, 3),
-		RunE: func(_ *cobra.Command, args []string) error {
+		RunE: func(c *cobra.Command, args []string) error {
+			warnOrchestratorDeprecated(c, "orchestrator_graph_create")
 			var prdIDs []string
 			if err := json.Unmarshal([]byte(args[1]), &prdIDs); err != nil {
 				return fmt.Errorf("parse prd_ids JSON: %w", err)
@@ -113,9 +124,10 @@ func newOrchestratorGraphGetCmd() *cobra.Command {
 
 func newOrchestratorGraphPlanCmd() *cobra.Command {
 	return &cobra.Command{
-		Use: "graph-plan <id> [<deps_json>]", Short: "Rebuild node tree for a graph",
+		Use: "graph-plan <id> [<deps_json>]", Short: "Deprecated: rebuild node tree for a graph; use 'automation import-graph'",
 		Args: cobra.RangeArgs(1, 2),
-		RunE: func(_ *cobra.Command, args []string) error {
+		RunE: func(c *cobra.Command, args []string) error {
+			warnOrchestratorDeprecated(c, "orchestrator_graph_plan")
 			body := map[string]any{}
 			if len(args) == 2 {
 				var deps map[string][]string
@@ -131,9 +143,10 @@ func newOrchestratorGraphPlanCmd() *cobra.Command {
 
 func newOrchestratorGraphRunCmd() *cobra.Command {
 	return &cobra.Command{
-		Use: "graph-run <id>", Short: "Kick the runner (fire-and-forget)",
+		Use: "graph-run <id>", Short: "Deprecated: kick the runner; use 'automation import-graph'",
 		Args: cobra.ExactArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
+		RunE: func(c *cobra.Command, args []string) error {
+			warnOrchestratorDeprecated(c, "orchestrator_graph_run")
 			return daemonJSON(http.MethodPost, "/api/orchestrator/graphs/"+args[0]+"/run", nil)
 		},
 	}

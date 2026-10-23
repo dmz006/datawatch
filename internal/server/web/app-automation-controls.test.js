@@ -123,10 +123,10 @@ const PAUSE_OK = {
 
 test('each status offers the right operations and never more', () => {
   const expected = {
-    draft: ['cancel'],
-    active: ['pause', 'cancel'],
-    paused: ['resume', 'cancel'],
-    blocked: ['resume', 'cancel'],
+    draft: ['activate', 'set_verification_llm', 'set_budget', 'cancel'],
+    active: ['pause', 'set_verification_llm', 'set_budget', 'cancel'],
+    paused: ['resume', 'set_verification_llm', 'set_budget', 'cancel'],
+    blocked: ['resume', 'set_verification_llm', 'set_budget', 'cancel'],
     completed: [],
     cancelled: [],
   };
@@ -151,7 +151,7 @@ test('a finished Automation leaves the control area empty', () => {
 
 test('the detail page fills the control area for the loaded status', async () => {
   const { controls } = await openDetail(automation({ status: 'paused' }));
-  assert.deepEqual(opsIn(controls.innerHTML), ['resume', 'cancel']);
+  assert.deepEqual(opsIn(controls.innerHTML), ['resume', 'set_verification_llm', 'set_budget', 'cancel']);
 });
 
 test('pause posts to the pause path with expected_version from the loaded version and actor operator', async () => {
@@ -165,7 +165,7 @@ test('pause posts to the pause path with expected_version from the loaded versio
   // The returned Automation becomes the detail and the page and controls redraw.
   assert.equal(stateOf(sb).detail.version, 8);
   assert.match(view.innerHTML, />Version 8<\/span>/);
-  assert.deepEqual(opsIn(controls.innerHTML), ['resume', 'cancel']);
+  assert.deepEqual(opsIn(controls.innerHTML), ['resume', 'set_verification_llm', 'set_budget', 'cancel']);
 });
 
 test('a caller cannot override the version or actor', async () => {
@@ -295,7 +295,7 @@ test('with two active branches the selector and the whole-Automation scope text 
   assert.match(html, /<option value="b1">Build \(b1\)<\/option>/);
   assert.match(html, /<option value="b2">Test \(b2\)<\/option>/);
   assert.match(html, /Applies to the whole Automation/);
-  assert.deepEqual(opsIn(html), ['pause', 'cancel']);
+  assert.deepEqual(opsIn(html), ['pause', 'set_verification_llm', 'set_budget', 'cancel']);
 });
 
 test('the branch selector starts with no branch chosen and remembers a choice', () => {

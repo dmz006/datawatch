@@ -7,6 +7,7 @@
 //   automation_create — create an Automation
 //   automation_update — update an Automation
 //   automation_delete — delete an Automation
+//   automation_import_graph — convert an orchestrator graph to a draft Automation
 //   automation_activate — start a draft Automation
 //   automation_set_llm / automation_set_verification_llm — Automation LLM defaults
 
@@ -16,6 +17,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"strings"
 
 	mcpsdk "github.com/mark3labs/mcp-go/mcp"
@@ -205,6 +207,29 @@ func (s *Server) handleAutomationActivate(_ context.Context, req mcpsdk.CallTool
 		body["reason"] = v
 	}
 	data, err := s.proxyJSON(http.MethodPost, "/api/automations/"+id+"/activate", body)
+	if err != nil {
+		return mcpsdk.NewToolResultText("error: " + err.Error()), nil
+	}
+	return mcpsdk.NewToolResultText(string(data)), nil
+}
+
+// ── automation_import_graph ─────────────────────────────────────────────
+
+func (s *Server) toolAutomationImportGraph() mcpsdk.Tool {
+	return mcpsdk.NewTool("automation_import_graph",
+		mcpsdk.WithDescription("Convert an orchestrator graph into a new draft Automation. The graph is only read, never changed. With dry_run the converted Automation input and any warnings are returned and nothing is created. A graph an Automation cannot express is refused with the reason."),
+		mcpsdk.WithString("graph_id", mcpsdk.Required(), mcpsdk.Description("Orchestrator graph ID.")),
+		mcpsdk.WithBoolean("dry_run", mcpsdk.Description("Return what would be created without creating it.")),
+	)
+}
+
+func (s *Server) handleAutomationImportGraph(_ context.Context, req mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+	id := req.GetString("graph_id", "")
+	if id == "" {
+		return mcpsdk.NewToolResultText("error: graph_id is required"), nil
+	}
+	body := map[string]any{"dry_run": req.GetBool("dry_run", false)}
+	data, err := s.proxyJSON(http.MethodPost, "/api/automations/import-graph/"+url.PathEscape(id), body)
 	if err != nil {
 		return mcpsdk.NewToolResultText("error: " + err.Error()), nil
 	}
@@ -605,4 +630,26 @@ func controlNumber(v any) (float64, bool) {
 		return f, err == nil
 	}
 	return 0, false
+}
+
+// AutomationToolNames returns the name of every Automation MCP tool, plus
+// autonomous_status, which carries the automations[] array. It reads
+// the names from the tool definitions, so it lists what is registered.
+func AutomationToolNames() []string {
+	s := &Server{}
+	tools := []mcpsdk.Tool{
+		s.toolAutomationList(), s.toolAutomationGet(), s.toolAutomationCreate(),
+		s.toolAutomationUpdate(), s.toolAutomationDelete(), s.toolAutomationActivate(),
+		s.toolAutomationPause(), s.toolAutomationResume(), s.toolAutomationCancel(),
+		s.toolAutomationSkipMember(), s.toolAutomationInsertMember(), s.toolAutomationRemoveMember(),
+		s.toolAutomationReorderEdges(), s.toolAutomationApproveInsert(), s.toolAutomationSetLLM(),
+		s.toolAutomationSetVerificationLLM(), s.toolAutomationSetBudget(), s.toolAutomationImportGraph(),
+		// The automations[] array on the status response.
+		s.toolAutonomousStatus(),
+	}
+	names := make([]string, 0, len(tools))
+	for _, t := range tools {
+		names = append(names, t.Name)
+	}
+	return names
 }

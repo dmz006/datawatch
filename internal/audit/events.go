@@ -61,4 +61,8 @@ const (
 	// reconciliation match (or un-confirmed a prior one), so admission no longer
 	// pools it with the peer. Details: kind, local, peer.
 	ActionFingerprintMatchRejected = "fingerprint_match_rejected"
+	// ActionAutomationImportGraph — an orchestrator graph was converted into a
+	// new Automation. A dry run is not audited. Subject: the Automation.
+	// Details: graph_id, automation_id, member_count.
+	ActionAutomationImportGraph = "automation_import_graph"
 )
