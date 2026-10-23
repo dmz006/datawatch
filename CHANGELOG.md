@@ -5,6 +5,16 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.5.124 — Flexible verifier routing
+
+Verifier backend selection is now a policy instead of a fixed global setting, so verification can use whichever backend has a free slot, all local, all Claude, or a mix.
+
+- New `autonomous.verifier_policy` with an ordered list of eligible backends and a mode: `fixed` (default, the previous behaviour), `prefer-free`, `balance`, `gpu-only` or `claude-only`. It can be overridden per PRD and per task.
+- The backend is picked at verifier launch through the capacity ledger, so a verifier does not wait on a busy backend when another eligible one is free. The chosen backend and the reason are written to the task record and the audit log.
+- A retry after a local verifier failure, or a final gate, can force a stronger verifier (default Claude Sonnet).
+- A per-window cap on Claude verifier sessions limits usage, and an active usage hold removes Claude backends from the list.
+- The policy is available over YAML, REST, MCP, the CLI, the comm channel and the PWA settings, with parity tests, plus an operator how-to and testing tracker rows.
+
 ## v9.5.123 — Hermetic session-starting server tests
 
 Makes the session-starting server tests hermetic so they no longer fail when the host terminal multiplexer is busy.
