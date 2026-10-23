@@ -57,9 +57,7 @@ func callFingerprints(t *testing.T, s *Server, peer *multiserver.Entry, method, 
 
 func fingerprintPeer(name, token string, opts ...string) *multiserver.Entry {
 	caps := []string{"federation-peer"}
-	for _, cap := range opts {
-		caps = append(caps, cap)
-	}
+	caps = append(caps, opts...)
 	return &multiserver.Entry{
 		Name:            name,
 		URL:             "http://" + name + ":8080",

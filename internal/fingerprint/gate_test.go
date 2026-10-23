@@ -54,7 +54,7 @@ func serveCapacity(held int) http.HandlerFunc {
 		}
 		body := `{"pools":[{"name":"node:peer-node","held":` + strconv.Itoa(held) + `,"limit":4}]}`
 		w.Header().Set("Content-Type", "application/json")
-		w.Write([]byte(body))
+		_, _ = w.Write([]byte(body))
 	}
 }
 

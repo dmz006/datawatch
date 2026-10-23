@@ -110,9 +110,9 @@ func (g *PeerGate) pollPeer(client *http.Client, peer PeerRef, pool string) (int
 		g.failOnce(peer.Name, err)
 		return 0, false
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		io.Copy(io.Discard, resp.Body)
+		_, _ = io.Copy(io.Discard, resp.Body)
 		g.failOnce(peer.Name, fmt.Errorf("status %d", resp.StatusCode))
 		return 0, false
 	}

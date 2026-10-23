@@ -158,11 +158,11 @@ func (s *MatchStore) save() {
 		werr = ferr
 	}
 	if werr != nil {
-		os.Remove(tmpName)
+		_ = os.Remove(tmpName)
 		return
 	}
 	if err := os.Rename(tmpName, s.path); err != nil {
-		os.Remove(tmpName)
+		_ = os.Remove(tmpName)
 	}
 }
 

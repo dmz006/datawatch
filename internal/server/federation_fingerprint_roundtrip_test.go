@@ -286,7 +286,7 @@ func (d *fpDaemon) adminCall(t *testing.T, method, path string) (int, []byte) {
 	if err != nil {
 		t.Fatalf("%s: %s %s: %v", d.name, method, path, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	body, _ := io.ReadAll(resp.Body)
 	return resp.StatusCode, body
 }

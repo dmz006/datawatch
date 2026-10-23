@@ -47,9 +47,7 @@ func testMatchStore(t *testing.T) *fingerprint.MatchStore {
 
 func matchesPeer(name string, opts ...string) *multiserver.Entry {
 	caps := []string{"federation-peer"}
-	for _, cap := range opts {
-		caps = append(caps, cap)
-	}
+	caps = append(caps, opts...)
 	return &multiserver.Entry{
 		Name:         name,
 		URL:          "http://" + name + ":8080",
