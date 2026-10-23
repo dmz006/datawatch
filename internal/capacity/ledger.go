@@ -275,7 +275,13 @@ func (l *Ledger) holdersLocked(pool string) string {
 // planner), priority, aged waiters, model affinity, least-recently-served
 // PRD, then FIFO.
 func (l *Ledger) orderLocked(now time.Time) []*waiter {
-	ws := append([]*waiter(nil), l.waiters...)
+	return l.orderListLocked(l.waiters, now)
+}
+
+// orderListLocked is orderLocked over an arbitrary waiter list; it sorts a
+// copy and leaves the argument alone.
+func (l *Ledger) orderListLocked(list []*waiter, now time.Time) []*waiter {
+	ws := append([]*waiter(nil), list...)
 	aged := func(w *waiter) bool { return now.Sub(w.since) >= l.opt.AgeOverride }
 	affine := func(w *waiter) bool {
 		return w.req.Node != "" && w.req.Model != "" && l.lastModel[w.req.Node] == w.req.Model
