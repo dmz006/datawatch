@@ -3115,6 +3115,9 @@ function toggleHistory() {
   if (!state.showHistory) {
     state.selectMode = false;
     state.selectedSessions.clear();
+  } else if (typeof loadSessionsList === 'function') {
+    // History includes archived sessions, which the server only sends on request.
+    loadSessionsList();
   }
   renderSessionsView();
 }

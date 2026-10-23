@@ -1765,6 +1765,9 @@ func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// History / search requests also cover the archive (store_archive.go).
+	sessions = append(sessions, s.archivedForList(q, filter, pageOpts)...)
+
 	w.Header().Set("Content-Type", "application/json")
 
 	// BL350 — ?orphaned=1 returns only sessions whose parent_id no longer exists.
@@ -3858,7 +3861,7 @@ func (s *Server) handleSessionSubpath(w http.ResponseWriter, r *http.Request) {
 		if !s.fedCap(w, r, federation.CapSessionsRead) {
 			return
 		}
-		sess, ok := s.manager.GetSession(path)
+		sess, ok := s.manager.GetSessionOrArchived(path)
 		if !ok {
 			http.NotFound(w, r)
 			return

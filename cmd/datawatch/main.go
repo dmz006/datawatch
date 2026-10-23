@@ -1062,6 +1062,9 @@ func runStart(cmd *cobra.Command, _ []string) error {
 	// Session store writes are coalesced by a background writer; flush and
 	// stop it on every exit path.
 	defer func() { _ = mgr.Close() }()
+	// Old terminal sessions move to the archive file (age and field cap are
+	// the store defaults until the config wiring sets them).
+	mgr.StartArchiver(session.DefaultArchiveInterval)
 	if cfg.Session.MaxSessions > 0 {
 		mgr.SetMaxSessions(cfg.Session.MaxSessions)
 	}

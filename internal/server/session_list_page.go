@@ -279,3 +279,41 @@ func (s *Server) writeSessionSummaryList(w http.ResponseWriter, r *http.Request,
 	}
 	writeJSONETag(w, r, rows)
 }
+
+// maxArchivedPerList caps how many archived sessions one list request reads.
+const maxArchivedPerList = 500
+
+// wantsArchived reports whether a list request covers the archive: it asks for
+// history (?history=1) or searches (?q=).
+func wantsArchived(q url.Values, p sessionPageOptions) bool {
+	if p.active {
+		return false
+	}
+	switch strings.ToLower(q.Get("history")) {
+	case "1", "true", "yes":
+		return true
+	}
+	return p.q != ""
+}
+
+// archivedForList returns the archived sessions a list request should add to
+// the live ones. A cursor limits the read to rows at or before its position and
+// a page limit to the rows that page can need.
+func (s *Server) archivedForList(q url.Values, f session.SessionFilter, p sessionPageOptions) []*session.Session {
+	if !wantsArchived(q, p) {
+		return nil
+	}
+	var before time.Time
+	limit := maxArchivedPerList
+	if p.after != nil {
+		before = time.Unix(0, p.after.T)
+	}
+	if p.paged && p.limit+1 < limit {
+		limit = p.limit + 1
+	}
+	var status func(*session.Session) bool
+	if p.statuses != nil {
+		status = func(sess *session.Session) bool { return p.statuses[sess.State] }
+	}
+	return s.manager.ListArchivedSessions(f, status, p.q, before, limit)
+}

@@ -413,6 +413,7 @@ type Store struct {
 	layoutReady  bool
 	bytesWritten atomic.Int64  // record bytes handed to the file system
 	recordWrites atomic.Int64  // record files written
+	arc          archiveState  // archive file and per-field cap (store_archive.go)
 	wake         chan struct{} // cap 1: "store went dirty"
 	stopCh       chan struct{}
 	doneCh       chan struct{}
@@ -458,6 +459,8 @@ func newStoreWithKey(path string, key []byte, opts ...StoreOption) (*Store, erro
 		stopCh:        make(chan struct{}),
 		doneCh:        make(chan struct{}),
 	}
+	s.SetArchiveAfter(DefaultArchiveAfter)
+	s.SetFieldCap(DefaultFieldCap)
 	for _, o := range opts {
 		o(s)
 	}
@@ -586,6 +589,9 @@ func (s *Store) mergeFromSessionDirs(dataDir string) int {
 		}
 		fullID := ent.Name()
 		if _, exists := s.sessions[fullID]; exists {
+			continue
+		}
+		if s.IsArchived(fullID) { // archived on purpose, not lost
 			continue
 		}
 		metaPath := filepath.Join(sessRoot, fullID, "session.json")
@@ -847,6 +853,7 @@ func (s *Store) Close() error {
 	if started {
 		<-s.doneCh
 	}
+	s.arc.wg.Wait()
 	return s.flush(false)
 }
 

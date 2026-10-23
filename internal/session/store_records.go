@@ -341,6 +341,7 @@ func (s *Store) flushRecords(force bool) error {
 		id   string
 		data []byte
 		sum  [32]byte
+		side []sideFile
 	}
 	var puts []put
 	var dels []string
@@ -348,7 +349,7 @@ func (s *Store) flushRecords(force bool) error {
 	s.mu.RLock()
 	var merr error
 	collect := func(id string, sess *Session) {
-		data, err := json.Marshal(sess)
+		data, side, err := s.marshalCapped(sess)
 		if err != nil {
 			merr = fmt.Errorf("marshal session %s: %w", id, err)
 			return
@@ -357,7 +358,7 @@ func (s *Store) flushRecords(force bool) error {
 		if old, ok := s.written[id]; ok && old == sum {
 			return
 		}
-		puts = append(puts, put{id, data, sum})
+		puts = append(puts, put{id, data, sum, side})
 	}
 	for id := range dirtyIDs {
 		if sess, ok := s.sessions[id]; ok {
@@ -425,6 +426,10 @@ func (s *Store) flushRecords(force bool) error {
 		return err
 	}
 	for i, p := range puts {
+		if err := s.writeSideFiles(p.side); err != nil {
+			requeue(puts[i:], dels)
+			return err
+		}
 		if err := s.writeRecord(p.id, p.data); err != nil {
 			requeue(puts[i:], dels)
 			return err

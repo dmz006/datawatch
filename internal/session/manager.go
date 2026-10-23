@@ -5436,6 +5436,49 @@ func (m *Manager) ListSessions() []*Session {
 	return m.store.List()
 }
 
+// GetSessionOrArchived is GetSession with a fallback to the archive.
+func (m *Manager) GetSessionOrArchived(id string) (*Session, bool) {
+	if sess, ok := m.GetSession(id); ok {
+		return sess, true
+	}
+	return m.store.GetArchived(id)
+}
+
+// ListArchivedSessions returns archived sessions matching f, extra (nil = any) and text (the
+// ArchivedQuery.Text rules), newest first, updated at or before before (zero =
+// no limit), at most limit (<= 0 = all).
+func (m *Manager) ListArchivedSessions(f SessionFilter, extra func(*Session) bool, text string, before time.Time, limit int) []*Session {
+	out, _, err := m.store.ListArchivedFiltered(ArchivedQuery{
+		Text: text, Before: before, Limit: limit,
+		Match: func(sess *Session) bool { return f.matches(sess) && (extra == nil || extra(sess)) },
+	})
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[warn] list archived sessions: %v\n", err)
+	}
+	return out
+}
+
+// RestoreArchivedSession moves an archived session back to the active set.
+func (m *Manager) RestoreArchivedSession(id string) (*Session, error) {
+	return m.store.RestoreFromArchive(id)
+}
+
+// SetArchiveAfter sets the age after which terminal sessions are archived
+// (<= 0 disables archiving).
+func (m *Manager) SetArchiveAfter(d time.Duration) { m.store.SetArchiveAfter(d) }
+
+// StartArchiver runs an archive pass now and then every interval (<= 0 means
+// hourly) until the store closes.
+func (m *Manager) StartArchiver(interval time.Duration) { m.store.StartArchiver(interval) }
+
+// ArchiveSessions runs one archive pass at now and returns how many sessions
+// moved. The background pass does the same on a timer.
+func (m *Manager) ArchiveSessions(now time.Time) (int, error) { return m.store.ArchiveOnce(now) }
+
+// SetFieldCap sets the per-field size cap in bytes for persisted sessions
+// (<= 0 disables it).
+func (m *Manager) SetFieldCap(n int) { m.store.SetFieldCap(n) }
+
 // SessionFilter holds optional filter criteria for BL361 structured session listing.
 // All non-empty fields are ANDed together. Empty/zero values mean "no filter on
 // this field". Alive is a tri-state: "true", "false", or "" / "any" = no filter.
@@ -5444,6 +5487,32 @@ type SessionFilter struct {
 	State   string // exact State match, empty = all
 	Backend string // exact BackendFamily match, empty = all
 	Alive   string // "true", "false", "" or "any" = no filter
+}
+
+// matches reports whether sess passes every non-empty criterion in f.
+func (f SessionFilter) matches(sess *Session) bool {
+	if f.Name != "" {
+		matched, err := path.Match(f.Name, sess.Name)
+		if err != nil || !matched {
+			return false
+		}
+	}
+	if f.State != "" && string(sess.State) != f.State {
+		return false
+	}
+	if f.Backend != "" && sess.BackendFamily != f.Backend {
+		return false
+	}
+	if f.Alive == "true" {
+		if sess.ClaudeAlive == nil || !*sess.ClaudeAlive {
+			return false
+		}
+	} else if f.Alive == "false" {
+		if sess.ClaudeAlive == nil || *sess.ClaudeAlive {
+			return false
+		}
+	}
+	return true
 }
 
 // ListSessionsFiltered returns sessions that match all non-empty fields in f.
@@ -5455,28 +5524,9 @@ func (m *Manager) ListSessionsFiltered(f SessionFilter) []*Session {
 	}
 	out := make([]*Session, 0, len(all))
 	for _, sess := range all {
-		if f.Name != "" {
-			matched, err := path.Match(f.Name, sess.Name)
-			if err != nil || !matched {
-				continue
-			}
+		if f.matches(sess) {
+			out = append(out, sess)
 		}
-		if f.State != "" && string(sess.State) != f.State {
-			continue
-		}
-		if f.Backend != "" && sess.BackendFamily != f.Backend {
-			continue
-		}
-		if f.Alive == "true" {
-			if sess.ClaudeAlive == nil || !*sess.ClaudeAlive {
-				continue
-			}
-		} else if f.Alive == "false" {
-			if sess.ClaudeAlive == nil || *sess.ClaudeAlive {
-				continue
-			}
-		}
-		out = append(out, sess)
 	}
 	return out
 }

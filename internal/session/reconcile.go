@@ -63,7 +63,7 @@ func (m *Manager) ReconcileSessions(autoImport bool) (*ReconcileResult, error) {
 			continue
 		}
 		fullID := e.Name()
-		if known[fullID] {
+		if known[fullID] || m.store.IsArchived(fullID) {
 			continue
 		}
 		dir := filepath.Join(root, fullID)
