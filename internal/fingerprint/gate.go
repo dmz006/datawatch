@@ -8,17 +8,7 @@
 // open.
 package fingerprint
 
-import (
-	"context"
-	"encoding/json"
-	"fmt"
-	"io"
-	"log"
-	"net/http"
-	"strings"
-	"sync"
-	"time"
-)
+import "fmt"
 
 // PeerRef is one federated peer as the gate sees it: its name (matching
 // Match.Peer), the base URL of its daemon, the bearer token to present,
@@ -42,18 +32,14 @@ type capacityPoolView struct {
 
 // PeerGate is the admission-time check: for a local node, each confirmed
 // shared peer's held count on its "node:"+<peer name> pool is added to
-// the local held count before the local limit is tested. A confirmed
-// match with an opted-in peer is the only thing that makes an HTTP call;
-// pending and rejected matches and peers that are not opted in make none
-// at all.
+// the local held count before the local limit is tested. The peer
+// counts come from Usage, an in-memory cache refreshed in the background,
+// so the gate itself never makes a network call.
 type PeerGate struct {
 	Matches   *MatchStore
 	Peers     func() []PeerRef
 	LocalHeld func(pool string) (held, limit int)
-	Client    *http.Client // nil = a client with a 3-second timeout
-
-	mu          sync.Mutex
-	unreachable map[string]bool // peers currently in a failure episode
+	Usage     *PeerUsageCache // cached peer usage; nil = peers contribute zero
 }
 
 // Reason returns "" to admit the named local node, or a wait reason when
@@ -75,10 +61,6 @@ func (g *PeerGate) ReasonWithHeld(node string, held, limit int) string {
 	if g.Matches == nil || g.Peers == nil {
 		return ""
 	}
-	client := g.Client
-	if client == nil {
-		client = &http.Client{Timeout: 3 * time.Second}
-	}
 	peers := make(map[string]PeerRef)
 	for _, p := range g.Peers() {
 		peers[p.Name] = p
@@ -86,88 +68,24 @@ func (g *PeerGate) ReasonWithHeld(node string, held, limit int) string {
 	for _, m := range g.Matches.SharedWith(KindNode, node) {
 		peer, ok := peers[m.Peer]
 		if !ok || !peer.OptedIn {
-			continue // unresolved or not opted in: no HTTP call
+			continue // unresolved or not opted in
 		}
 		if limit <= 0 {
 			continue // 0 = unlimited, same convention as the ledger
 		}
-		peerHeld, ok := g.pollPeer(client, peer, "node:"+m.PeerName)
+		if g.Usage == nil {
+			continue // no cache: fail open
+		}
+		peerHeld, ok := g.Usage.Held(peer.Name, "node:"+m.PeerName)
+		if !ok || g.Usage.stale(peer.Name) {
+			g.Usage.Request(peer) // a later call sees fresh data
+		}
 		if !ok {
-			continue // unreachable or bad body: contributes zero
+			continue // missing or expired: contributes zero
 		}
 		if combined := held + peerHeld; combined >= limit {
 			return fmt.Sprintf("shared node busy on peer %s: %d of %d in use across both daemons", peer.Name, combined, limit)
 		}
 	}
 	return ""
-}
-
-// pollPeer asks peer for its capacity and returns the held count of the
-// named pool. Any failure — connection error, non-200, unparseable body,
-// or the pool missing — is reported through failOnce and contributes zero.
-func (g *PeerGate) pollPeer(client *http.Client, peer PeerRef, pool string) (int, bool) {
-	url := strings.TrimSuffix(peer.URL, "/") + "/api/capacity"
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil)
-	if err != nil {
-		g.failOnce(peer.Name, err)
-		return 0, false
-	}
-	if peer.Token != "" {
-		req.Header.Set("Authorization", "Bearer "+peer.Token)
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		g.failOnce(peer.Name, err)
-		return 0, false
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		_, _ = io.Copy(io.Discard, resp.Body)
-		g.failOnce(peer.Name, fmt.Errorf("status %d", resp.StatusCode))
-		return 0, false
-	}
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		g.failOnce(peer.Name, err)
-		return 0, false
-	}
-	var view struct {
-		Pools []capacityPoolView `json:"pools"`
-	}
-	if err := json.Unmarshal(body, &view); err != nil {
-		g.failOnce(peer.Name, err)
-		return 0, false
-	}
-	for _, p := range view.Pools {
-		if p.Name == pool {
-			g.clearFailure(peer.Name)
-			return p.Held, true
-		}
-	}
-	g.failOnce(peer.Name, fmt.Errorf("pool %s not reported", pool))
-	return 0, false
-}
-
-// failOnce marks peer as being in a failure episode and logs it the
-// first time the episode is seen; repeated failures of the same peer stay
-// silent until the peer answers successfully again.
-func (g *PeerGate) failOnce(peer string, why error) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	if g.unreachable == nil {
-		g.unreachable = make(map[string]bool)
-	}
-	if g.unreachable[peer] {
-		return
-	}
-	g.unreachable[peer] = true
-	log.Printf("[fingerprint] peer %s shared-pool check failed (%v); failing open, silencing until it answers again", peer, why)
-}
-
-// clearFailure ends the failure episode now that peer answered again, so
-// a later failure logs afresh.
-func (g *PeerGate) clearFailure(peer string) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	delete(g.unreachable, peer)
 }

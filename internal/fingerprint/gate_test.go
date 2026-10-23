@@ -2,6 +2,7 @@ package fingerprint
 
 import (
 	"bytes"
+	"context"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -29,11 +30,13 @@ func newPeerGate(t *testing.T, url string, holdsConfirmed, holdsOptedIn bool, he
 			t.Fatalf("Confirm: %v", err)
 		}
 	}
+	peers := func() []PeerRef {
+		return []PeerRef{{Name: "peer-a", URL: url, Token: "tok", OptedIn: holdsOptedIn}}
+	}
 	return &PeerGate{
 		Matches: s,
-		Peers: func() []PeerRef {
-			return []PeerRef{{Name: "peer-a", URL: url, Token: "tok", OptedIn: holdsOptedIn}}
-		},
+		Peers:   peers,
+		Usage:   &PeerUsageCache{Peers: peers},
 		LocalHeld: func(pool string) (int, int) {
 			if pool != "node:gpu-0" {
 				t.Fatalf("LocalHeld called with pool %q, want %q", pool, "node:gpu-0")
@@ -104,6 +107,7 @@ func TestPeerGateUnreachableFailsOpen(t *testing.T) {
 	// The local node alone fits under its limit; only the peer's (never
 	// reachable) usage would have pushed it over.
 	g := newPeerGate(t, url, true, true, 0, 1, &hits)
+	g.Usage.RefreshAll(context.Background())
 	if got := g.Reason("gpu-0"); got != "" {
 		t.Fatalf("unreachable peer must fail open, got reason %q", got)
 	}
@@ -121,17 +125,20 @@ func TestPeerGateLogsOncePerEpisode(t *testing.T) {
 	srv := newFailablePeerServer(t, &hits)
 	g := newPeerGate(t, srv.URL, true, true, 0, 4, nil)
 
+	ctx := context.Background()
 	srv.fail.Store(true)
+	g.Usage.RefreshAll(ctx)
 	if got := g.Reason("gpu-0"); got != "" {
 		t.Fatalf("failure must fail open, got %q", got)
 	}
-	g.Reason("gpu-0")
-	g.Reason("gpu-0")
+	g.Usage.RefreshAll(ctx)
+	g.Usage.RefreshAll(ctx)
 	if got := countLogLines(&logBuf); got != 1 {
 		t.Fatalf("three failures in one episode logged %d times, want 1", got)
 	}
 
 	srv.fail.Store(false) // recovery clears the episode
+	g.Usage.RefreshAll(ctx)
 	if got := g.Reason("gpu-0"); got != "" {
 		t.Fatalf("healthy peer below limit must admit, got %q", got)
 	}
@@ -143,7 +150,7 @@ func TestPeerGateLogsOncePerEpisode(t *testing.T) {
 	}
 
 	srv.fail.Store(true) // a new episode logs afresh
-	g.Reason("gpu-0")
+	g.Usage.RefreshAll(ctx)
 	if got := countLogLines(&logBuf); got != 2 {
 		t.Fatalf("second episode logged, %d total lines, want 2", got)
 	}
@@ -158,6 +165,7 @@ func TestPeerGateBlocksWhenCombinedHeldReachesLimit(t *testing.T) {
 	defer srv.Close()
 
 	g := newPeerGate(t, srv.URL, true, true, 1, 2, &hits)
+	g.Usage.RefreshAll(context.Background())
 	want := "shared node busy on peer peer-a: 2 of 2 in use across both daemons"
 	if got := g.Reason("gpu-0"); got != want {
 		t.Fatalf("Reason = %q, want %q", got, want)
@@ -193,6 +201,7 @@ func TestPeerGateIgnoresPeerNotOptedIn(t *testing.T) {
 	defer srv.Close()
 
 	g := newPeerGate(t, srv.URL, true, false, 0, 1, &hits)
+	g.Usage.RefreshAll(context.Background())
 	if got := g.Reason("gpu-0"); got != "" {
 		t.Fatalf("peer not opted in must not block, got %q", got)
 	}

@@ -262,16 +262,18 @@ func (d *fpDaemon) closePeer() { d.ts.Close() }
 // gate mirrors the wiring in cmd/datawatch/fingerprint_wiring.go: the
 // per-node local held/limit comes from capacityState().
 func (d *fpDaemon) gate(localHeld func(pool string) (int, int)) *fingerprint.PeerGate {
+	peers := func() []fingerprint.PeerRef {
+		out := []fingerprint.PeerRef{}
+		for _, e := range d.store.ListFederated() {
+			out = append(out, fingerprint.PeerRef{Name: e.Name, URL: e.URL, Token: e.Token, OptedIn: e.FingerprintSync})
+		}
+		return out
+	}
 	return &fingerprint.PeerGate{
-		Matches: d.matches,
-		Peers: func() []fingerprint.PeerRef {
-			out := []fingerprint.PeerRef{}
-			for _, e := range d.store.ListFederated() {
-				out = append(out, fingerprint.PeerRef{Name: e.Name, URL: e.URL, Token: e.Token, OptedIn: e.FingerprintSync})
-			}
-			return out
-		},
+		Matches:   d.matches,
+		Peers:     peers,
 		LocalHeld: localHeld,
+		Usage:     &fingerprint.PeerUsageCache{Peers: peers},
 	}
 }
 
@@ -573,6 +575,7 @@ func TestFingerprintRoundTripPeerDownFailsOpen(t *testing.T) {
 	// held (3) + limit (4) would be over the limit if even one peer slot
 	// counted — a blocking misimplementation would produce a reason here.
 	g := a.gate(func(pool string) (int, int) { return 3, 4 })
+	g.Usage.RefreshAll(context.Background()) // the failing fetch logs the episode once
 	if reason := g.Reason("shared-a"); reason != "" {
 		t.Fatalf("gate must FAIL OPEN while the peer is down, got %q", reason)
 	}

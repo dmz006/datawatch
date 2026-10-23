@@ -241,6 +241,7 @@ func newFingerprintGate(store *multiserver.Store, matches *fingerprint.MatchStor
 		Matches:   matches,
 		Peers:     fingerprintPeerRefs(store),
 		LocalHeld: localHeld,
+		Usage:     &fingerprint.PeerUsageCache{Peers: fingerprintPeerRefs(store)},
 	}
 }
 
