@@ -47,3 +47,26 @@ func TestAutonomousConfigGetHelp_MentionsResumeMaxAge(t *testing.T) {
 		t.Fatalf("config-get help lacks resume_max_age_seconds:\n%s", help)
 	}
 }
+
+// gate_disagreement (warn|block) is a first-class config key; the CLI
+// help must name it and show a config-set example, next to
+// max_concurrent_tasks / max_engines_per_node.
+func TestAutonomousConfigSetHelp_MentionsGateDisagreement(t *testing.T) {
+	help := newAutonomousConfigSetCmd().Long
+	if !strings.Contains(help, "gate_disagreement") {
+		t.Fatalf("config-set help lacks gate_disagreement:\n%s", help)
+	}
+	if !strings.Contains(help, `{"gate_disagreement":"block"}`) {
+		t.Errorf("config-set help lacks a gate_disagreement example:\n%s", help)
+	}
+	if !strings.Contains(help, `"warn"`) || !strings.Contains(help, `"block"`) {
+		t.Errorf("config-set help should name the accepted values \"warn\" and \"block\":\n%s", help)
+	}
+}
+
+func TestAutonomousConfigGetHelp_MentionsGateDisagreement(t *testing.T) {
+	help := newAutonomousConfigGetCmd().Long
+	if !strings.Contains(help, "gate_disagreement") {
+		t.Fatalf("config-get help lacks gate_disagreement:\n%s", help)
+	}
+}
