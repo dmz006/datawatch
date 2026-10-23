@@ -74,6 +74,13 @@ type Cause struct {
 
 var apiVia atomic.Value // string
 
+// Candidate is one process a procscan-based fallback may attribute the
+// stop to.
+type Candidate struct {
+	PID     int
+	Cmdline string
+}
+
 // MarkAPIInitiated declares that the current shutdown is being initiated
 // through the daemon's own API. Pass a short descriptor such as "restart"
 // or "stop" (any text works; "restart" yields Source api-restart,

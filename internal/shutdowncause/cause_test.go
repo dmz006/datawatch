@@ -14,6 +14,12 @@ import (
 
 func TestMain(m *testing.M) {
 	MarkAPIInitiated("") // ensure a clean slate before any test
+	// Re-exec helper role: TestSignalChildProcScan starts a copy of this
+	// test binary; it signals its parent (this process) by PID. Exiting
+	// here keeps the helper from running the real test suite.
+	if os.Getenv("DW_SHUTDOWNCAUSE_ROLE") == signalChildRole {
+		os.Exit(runSignalParentRole())
+	}
 	os.Exit(m.Run())
 }
 

@@ -952,6 +952,11 @@ func runStart(cmd *cobra.Command, _ []string) error {
 		}
 	}
 
+	// Report the cause of the previous run (if any) now that the data dir
+	// is known and the logger is ready, then consume the record so a crash
+	// after a later clean start cannot be misreported as that previous stop.
+	fmt.Println(shutdowncause.PreviousShutdownLine(expandHome(cfg.DataDir)))
+
 	// Apply flag overrides
 	if v, _ := cmd.Flags().GetString("llm-backend"); v != "" {
 		cfg.Session.LLMBackend = v

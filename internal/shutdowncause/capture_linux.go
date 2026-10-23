@@ -171,6 +171,18 @@ func capturePlatform(sig os.Signal) Cause {
 	return c
 }
 
+// CandidatesFor re-runs the live procscan for the given daemon pid and
+// returns the candidate processes, for tests that verify (without a live
+// signal) whether a process would be attributed as the stop sender.
+func CandidatesFor(daemonPID int) []Candidate {
+	raw := scanCandidates(daemonPID)
+	out := make([]Candidate, 0, len(raw))
+	for _, r := range raw {
+		out = append(out, Candidate{PID: r.pid, Cmdline: r.cmdline})
+	}
+	return out
+}
+
 // candidateVerbs are command names treated as plausible stop senders.
 var candidateVerbs = map[string]bool{
 	"systemctl": true,
