@@ -1,0 +1,377 @@
+mobile-fit report
+generated_at: 2026-10-23T20:23:49.100Z
+meta.views: ["observer"]
+meta.profile: full
+meta.scope: []
+meta.report_only: false
+meta.exhaustive: false
+
+totals: 11028 finding(s) in 284 scenario run(s), 55 group(s)
+  clipped-text: 722
+  interaction: 2
+  overlap: 8
+  tap-target: 10296
+
+G-d38d89e4 [clipped-text] #memoryBrowserList > div.settings-row.obs-mem-row:nth(*) > div:nth(*) > div.obs-mem-body:nth(*) - 432 findings
+  viewport 320x568 portrait, dark, zoom100%, no-peers: scrollHeight 119 > clientHeight 60 — missing text-overflow: ellipsis -> screenshots/no-peers-320x568-dark-z100.png
+  viewport 320x568 portrait, dark, zoom100%, no-peers: scrollHeight 119 > clientHeight 60 — missing text-overflow: ellipsis -> screenshots/no-peers-320x568-dark-z100.png
+  viewport 320x568 portrait, dark, zoom100%, no-peers: scrollHeight 119 > clientHeight 60 — missing text-overflow: ellipsis -> screenshots/no-peers-320x568-dark-z100.png
+  viewport 320x568 portrait, dark, zoom100%, no-peers: scrollHeight 119 > clientHeight 60 — missing text-overflow: ellipsis -> screenshots/interaction-section-collapse-expand.png
+  viewport 320x568 portrait, dark, zoom100%, no-peers: scrollHeight 119 > clientHeight 60 — missing text-overflow: ellipsis -> screenshots/interaction-section-collapse-expand.png
+
+G-3f4cac4d [tap-target] #headerHelpLink - 297 findings
+  viewport 320x568 portrait, dark, zoom100%, no-peers: tap target 27x29 below minimum 40px (width 27 < 40, height 29 < 40) -> screenshots/no-peers-320x568-dark-z100.png
+  viewport 320x568 portrait, dark, zoom100%, no-peers: tap target 27x29 below minimum 40px (width 27 < 40, height 29 < 40) -> screenshots/interaction-section-collapse-expand.png
+  viewport 320x568 portrait, dark, zoom100%, no-peers: tap target 27x29 below minimum 40px (width 27 < 40, height 29 < 40) -> screenshots/interaction-section-collapse-expand.png
+  viewport 320x568 portrait, dark, zoom100%, no-peers: tap target 27x29 below minimum 40px (width 27 < 40, height 29 < 40) -> screenshots/interaction-section-collapse-expand.png
+  viewport 320x568 portrait, dark, zoom100%, no-peers: tap target 27x29 below minimum 40px (width 27 < 40, height 29 < 40) -> screenshots/interaction-section-collapse-expand.png
+
+G-ab12e474 [tap-target] #view > div.view-content:nth(*) > div.settings-view:nth(*) > div.settings-section:nth(*) > div.settings-section-title.settings-section-toggle:nth(*) > a.docs-link:nth(*) - 3267 findings
+  viewport 320x568 portrait, dark, zoom100%, no-peers: tap target 38x19 below minimum 40px (width 38 < 40, height 19 < 40) -> screenshots/no-peers-320x568-dark-z100.png
+  viewport 320x568 portrait, dark, zoom100%, no-peers: tap target 38x19 below minimum 40px (width 38 < 40, height 19 < 40) -> screenshots/no-peers-320x568-dark-z100.png
+  viewport 320x568 portrait, dark, zoom100%, no-peers: tap target 38x19 below minimum 40px (width 38 < 40, height 19 < 40) -> screenshots/no-peers-320x568-dark-z100.png
+  viewport 320x568 portrait, dark, zoom100%, no-peers: tap target 38x19 below minimum 40px (width 38 < 40, height 19 < 40) -> screenshots/no-peers-320x568-dark-z100.png
+  viewport 320x568 portrait, dark, zoom100%, no-peers: tap target 38x19 below minimum 40px (width 38 < 40, height 19 < 40) -> screenshots/no-peers-320x568-dark-z100.png
+
+G-25f58ef5 [tap-target] #memoryQuickAddTags - 297 findings
+  viewport 320x568 portrait, dark, zoom100%, no-peers: tap target 212x37 below minimum 40px (height 37 < 40) -> screenshots/no-peers-320x568-dark-z100.png
+  viewport 320x568 portrait, dark, zoom100%, no-peers: tap target 212x37 below minimum 40px (height 37 < 40) -> screenshots/interaction-section-collapse-expand.png
+  viewport 320x568 portrait, dark, zoom100%, no-peers: tap target 212x37 below minimum 40px (height 37 < 40) -> screenshots/interaction-section-collapse-expand.png
+  viewport 320x568 portrait, dark, zoom100%, no-peers: tap target 212x37 below minimum 40px (height 37 < 40) -> screenshots/interaction-section-collapse-expand.png
+  viewport 320x568 portrait, dark, zoom100%, no-peers: tap target 212x37 below minimum 40px (height 37 < 40) -> screenshots/interaction-section-collapse-expand.png
+
+G-25a994a0 [tap-target] #headerAlertPill - 297 findings
+  viewport 320x568 portrait, dark, zoom100%, no-peers: tap target 50x21 below minimum 40px (height 21 < 40) -> screenshots/no-peers-320x568-dark-z100.png
+  viewport 320x568 portrait, dark, zoom100%, no-peers: tap target 50x21 below minimum 40px (height 21 < 40) -> screenshots/interaction-section-collapse-expand.png
+  viewport 320x568 portrait, dark, zoom100%, no-peers: tap target 50x21 below minimum 40px (height 21 < 40) -> screenshots/interaction-section-collapse-expand.png
+  viewport 320x568 portrait, dark, zoom100%, no-peers: tap target 50x21 below minimum 40px (height 21 < 40) -> screenshots/interaction-section-collapse-expand.png
+  viewport 320x568 portrait, dark, zoom100%, no-peers: tap target 50x21 below minimum 40px (height 21 < 40) -> screenshots/interaction-section-collapse-expand.png
+
+G-fe0ab882 [tap-target] #view > div.view-content:nth(*) > div.settings-view:nth(*) > div.settings-section:nth(*) > div.settings-section-title.settings-section-toggle:nth(*) - 3190 findings
+  viewport 320x568 portrait, dark, zoom100%, no-peers: tap target 264x35 below minimum 40px (height 35 < 40) -> screenshots/no-peers-320x568-dark-z100.png
+  viewport 320x568 portrait, dark, zoom100%, no-peers: tap target 264x35 below minimum 40px (height 35 < 40) -> screenshots/no-peers-320x568-dark-z100.png
+  viewport 320x568 portrait, dark, zoom100%, no-peers: tap target 264x35 below minimum 40px (height 35 < 40) -> screenshots/no-peers-320x568-dark-z100.png
+  viewport 320x568 portrait, dark, zoom100%, no-peers: tap target 264x35 below minimum 40px (height 35 < 40) -> screenshots/no-peers-320x568-dark-z100.png
+  viewport 320x568 portrait, dark, zoom100%, no-peers: tap target 264x35 below minimum 40px (height 35 < 40) -> screenshots/no-peers-320x568-dark-z100.png
+
+G-80adcd2a [overlap] #channelDiagStatus > div:nth(*) > span:nth(*) - 2 findings
+  viewport 320x568 portrait, dark, zoom100%, no-peers: sibling overlap with #channelDiagStatus > div:nth-child(2) > span:nth-child(1): 171px² shared (100% of smaller rect) -> screenshots/interaction-section-collapse-expand.png
+  viewport 320x568 portrait, dark, zoom100%, no-peers: sibling overlap with #channelDiagStatus > div:nth-child(2) > span:nth-child(2): 880px² shared (100% of smaller rect) -> screenshots/interaction-section-collapse-expand.png
+
+G-31b381fd [clipped-text] #nav > button.nav-btn:nth(*) > span.nav-icon:nth(*) - 250 findings
+  viewport 320x568 portrait, dark, zoom100%, no-peers: scrollWidth 26 > clientWidth 18 — missing text-overflow: ellipsis + tooltip (title or aria-label) -> screenshots/interaction-refresh.png
+  viewport 320x568 portrait, dark, zoom100%, no-peers: scrollWidth 26 > clientWidth 18 — missing text-overflow: ellipsis + tooltip (title or aria-label) -> screenshots/interaction-refresh.png
+  viewport 320x568 portrait, dark, zoom100%, no-peers: scrollWidth 26 > clientWidth 18 — missing text-overflow: ellipsis + tooltip (title or aria-label) -> screenshots/interaction-refresh.png
+  viewport 320x568 portrait, dark, zoom100%, no-peers: scrollWidth 26 > clientWidth 18 — missing text-overflow: ellipsis + tooltip (title or aria-label) -> screenshots/interaction-refresh.png
+  viewport 320x568 portrait, dark, zoom100%, no-peers: scrollWidth 26 > clientWidth 18 — missing text-overflow: ellipsis + tooltip (title or aria-label) -> screenshots/interaction-refresh.png
+
+G-be8b4967 [tap-target] #peerStaleBadge - 248 findings
+  viewport 320x568 portrait, dark, zoom100%, no-peers: tap target 17x15 below minimum 40px (width 17 < 40, height 15 < 40) -> screenshots/interaction-refresh.png
+  viewport 320x568 portrait, dark, zoom100%, no-peers: tap target 17x15 below minimum 40px (width 17 < 40, height 15 < 40) -> screenshots/interaction-refresh.png
+  viewport 320x568 portrait, dark, zoom100%, no-peers: tap target 17x15 below minimum 40px (width 17 < 40, height 15 < 40) -> screenshots/interaction-refresh.png
+  viewport 320x568 portrait, dark, zoom100%, no-peers: tap target 17x15 below minimum 40px (width 17 < 40, height 15 < 40) -> screenshots/interaction-refresh.png
+  viewport 320x568 portrait, dark, zoom100%, no-peers: tap target 17x15 below minimum 40px (width 17 < 40, height 15 < 40) -> screenshots/interaction-refresh.png
+
+G-4f4b0701 [interaction] #perSystemGrid - 1 finding
+  viewport 320x568 portrait, dark, zoom100%, no-peers: auto-refresh stacking: /api/stats requests grew from 2 (before re-renders) to 34 (after) — delta 32 exceeds tolerance 1 -> screenshots/interaction-rerender-timers.png
+
+G-929e9bfc [interaction] #settings-sec-stats - 1 finding
+  viewport 320x568 portrait, dark, zoom100%, no-peers: layout drifted after the rerender loop: 28 layout finding(s) before, 30 after -> screenshots/interaction-rerender-timers.png
+
+G-104e495e [tap-target] #headerFullscreenBtn - 119 findings
+  viewport 768x1024 portrait, dark, zoom100%, no-peers: tap target 24x28 below minimum 40px (width 24 < 40, height 28 < 40) -> screenshots/no-peers-768x1024-dark-z100.png
+  viewport 740x360 landscape, dark, zoom100%, no-peers: tap target 24x28 below minimum 40px (width 24 < 40, height 28 < 40) -> screenshots/no-peers-740x360-dark-z100.png
+  viewport 667x375 landscape, dark, zoom100%, no-peers: tap target 24x28 below minimum 40px (width 24 < 40, height 28 < 40) -> screenshots/no-peers-667x375-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, no-peers: tap target 24x28 below minimum 40px (width 24 < 40, height 28 < 40) -> screenshots/no-peers-844x390-dark-z100.png
+  viewport 915x412 landscape, dark, zoom100%, no-peers: tap target 24x28 below minimum 40px (width 24 < 40, height 28 < 40) -> screenshots/no-peers-915x412-dark-z100.png
+
+G-371bc753 [tap-target] #memorySearchInput - 18 findings
+  viewport 568x320 landscape, dark, zoom100%, no-peers: tap target 32x41 below minimum 40px (width 32 < 40) -> screenshots/no-peers-568x320-dark-z100.png
+  viewport 568x320 landscape, dark, zoom100%, one-peer: tap target 32x41 below minimum 40px (width 32 < 40) -> screenshots/one-peer-568x320-dark-z100.png
+  viewport 568x320 landscape, dark, zoom100%, three-peers: tap target 32x41 below minimum 40px (width 32 < 40) -> screenshots/three-peers-568x320-dark-z100.png
+  viewport 568x320 landscape, dark, zoom100%, ten-peers: tap target 32x41 below minimum 40px (width 32 < 40) -> screenshots/ten-peers-568x320-dark-z100.png
+  viewport 568x320 landscape, dark, zoom100%, long-hostname: tap target 32x41 below minimum 40px (width 32 < 40) -> screenshots/long-hostname-568x320-dark-z100.png
+
+G-14fdde2f [tap-target] #statsPanel > div:nth(*) > div:nth(*) > a:nth(*) - 32 findings
+  viewport 844x390 landscape, dark, zoom100%, no-peers: tap target 92x14 below minimum 40px (height 14 < 40) -> screenshots/no-peers-844x390-dark-z100.png
+  viewport 915x412 landscape, dark, zoom100%, no-peers: tap target 92x14 below minimum 40px (height 14 < 40) -> screenshots/no-peers-915x412-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, one-peer: tap target 92x14 below minimum 40px (height 14 < 40) -> screenshots/one-peer-844x390-dark-z100.png
+  viewport 915x412 landscape, dark, zoom100%, one-peer: tap target 92x14 below minimum 40px (height 14 < 40) -> screenshots/one-peer-915x412-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, three-peers: tap target 92x14 below minimum 40px (height 14 < 40) -> screenshots/three-peers-844x390-dark-z100.png
+
+G-90e1cd98 [tap-target] #channelBridgeBlock > div:nth(*) > a:nth(*) - 34 findings
+  viewport 844x390 landscape, dark, zoom100%, no-peers: tap target 23x15 below minimum 40px (width 23 < 40, height 15 < 40) -> screenshots/no-peers-844x390-dark-z100.png
+  viewport 915x412 landscape, dark, zoom100%, no-peers: tap target 23x15 below minimum 40px (width 23 < 40, height 15 < 40) -> screenshots/no-peers-915x412-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, one-peer: tap target 23x15 below minimum 40px (width 23 < 40, height 15 < 40) -> screenshots/one-peer-844x390-dark-z100.png
+  viewport 915x412 landscape, dark, zoom100%, one-peer: tap target 23x15 below minimum 40px (width 23 < 40, height 15 < 40) -> screenshots/one-peer-915x412-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, three-peers: tap target 23x15 below minimum 40px (width 23 < 40, height 15 < 40) -> screenshots/three-peers-844x390-dark-z100.png
+
+G-7fe448cb [tap-target] #websearchStatsCardBody > button:nth(*) - 32 findings
+  viewport 844x390 landscape, dark, zoom100%, no-peers: tap target 49x17 below minimum 40px (height 17 < 40) -> screenshots/no-peers-844x390-dark-z100.png
+  viewport 915x412 landscape, dark, zoom100%, no-peers: tap target 49x17 below minimum 40px (height 17 < 40) -> screenshots/no-peers-915x412-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, one-peer: tap target 49x17 below minimum 40px (height 17 < 40) -> screenshots/one-peer-844x390-dark-z100.png
+  viewport 915x412 landscape, dark, zoom100%, one-peer: tap target 49x17 below minimum 40px (height 17 < 40) -> screenshots/one-peer-915x412-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, three-peers: tap target 49x17 below minimum 40px (height 17 < 40) -> screenshots/three-peers-844x390-dark-z100.png
+
+G-12393df6 [tap-target] #observerPeersList > div:nth(*) > button.filter-toggle-btn:nth(*) - 192 findings
+  viewport 844x390 landscape, dark, zoom100%, no-peers: tap target 47x18 below minimum 40px (height 18 < 40) -> screenshots/no-peers-844x390-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, no-peers: tap target 69x18 below minimum 40px (height 18 < 40) -> screenshots/no-peers-844x390-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, no-peers: tap target 90x18 below minimum 40px (height 18 < 40) -> screenshots/no-peers-844x390-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, no-peers: tap target 69x18 below minimum 40px (height 18 < 40) -> screenshots/no-peers-844x390-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, no-peers: tap target 149x23 below minimum 40px (height 23 < 40) -> screenshots/no-peers-844x390-dark-z100.png
+
+G-2b7f2105 [tap-target] #observerPeersList > div:nth(*) > button.btn-icon:nth(*) - 204 findings
+  viewport 844x390 landscape, dark, zoom100%, no-peers: tap target 28x17 below minimum 40px (width 28 < 40, height 17 < 40) -> screenshots/no-peers-844x390-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, no-peers: tap target 20x16 below minimum 40px (width 20 < 40, height 16 < 40) -> screenshots/no-peers-844x390-dark-z100.png
+  viewport 915x412 landscape, dark, zoom100%, no-peers: tap target 28x17 below minimum 40px (width 28 < 40, height 17 < 40) -> screenshots/no-peers-915x412-dark-z100.png
+  viewport 915x412 landscape, dark, zoom100%, no-peers: tap target 20x16 below minimum 40px (width 20 < 40, height 16 < 40) -> screenshots/no-peers-915x412-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, one-peer: tap target 28x17 below minimum 40px (width 28 < 40, height 17 < 40) -> screenshots/one-peer-844x390-dark-z100.png
+
+G-3593ef37 [tap-target] #channelDiagBlock > div:nth(*) > button:nth(*) - 34 findings
+  viewport 844x390 landscape, dark, zoom100%, no-peers: tap target 45x15 below minimum 40px (height 15 < 40) -> screenshots/no-peers-844x390-dark-z100.png
+  viewport 915x412 landscape, dark, zoom100%, no-peers: tap target 45x15 below minimum 40px (height 15 < 40) -> screenshots/no-peers-915x412-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, one-peer: tap target 45x15 below minimum 40px (height 15 < 40) -> screenshots/one-peer-844x390-dark-z100.png
+  viewport 915x412 landscape, dark, zoom100%, one-peer: tap target 45x15 below minimum 40px (height 15 < 40) -> screenshots/one-peer-915x412-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, three-peers: tap target 45x15 below minimum 40px (height 15 < 40) -> screenshots/three-peers-844x390-dark-z100.png
+
+G-54e2c130 [tap-target] #settings-sec-membrowser > div.obs-row.obs-filter-row:nth(*) > button.btn-secondary.obs-tap:nth(*) - 102 findings
+  viewport 844x390 landscape, dark, zoom100%, no-peers: tap target 69x37 below minimum 40px (height 37 < 40) -> screenshots/no-peers-844x390-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, no-peers: tap target 52x37 below minimum 40px (height 37 < 40) -> screenshots/no-peers-844x390-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, no-peers: tap target 68x37 below minimum 40px (height 37 < 40) -> screenshots/no-peers-844x390-dark-z100.png
+  viewport 915x412 landscape, dark, zoom100%, no-peers: tap target 69x37 below minimum 40px (height 37 < 40) -> screenshots/no-peers-915x412-dark-z100.png
+  viewport 915x412 landscape, dark, zoom100%, no-peers: tap target 52x37 below minimum 40px (height 37 < 40) -> screenshots/no-peers-915x412-dark-z100.png
+
+G-48944bcb [tap-target] #memoryBrowserList > div.settings-row.obs-mem-row:nth(*) > button.btn-icon.obs-tap:nth(*) - 102 findings
+  viewport 844x390 landscape, dark, zoom100%, no-peers: tap target 27x27 below minimum 40px (width 27 < 40, height 27 < 40) -> screenshots/no-peers-844x390-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, no-peers: tap target 27x27 below minimum 40px (width 27 < 40, height 27 < 40) -> screenshots/no-peers-844x390-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, no-peers: tap target 27x27 below minimum 40px (width 27 < 40, height 27 < 40) -> screenshots/no-peers-844x390-dark-z100.png
+  viewport 915x412 landscape, dark, zoom100%, no-peers: tap target 27x27 below minimum 40px (width 27 < 40, height 27 < 40) -> screenshots/no-peers-915x412-dark-z100.png
+  viewport 915x412 landscape, dark, zoom100%, no-peers: tap target 27x27 below minimum 40px (width 27 < 40, height 27 < 40) -> screenshots/no-peers-915x412-dark-z100.png
+
+G-2e853007 [tap-target] #settings-sec-memscopes > div.obs-row.obs-scope-row:nth(*) > button.btn-secondary.obs-tap:nth(*) - 34 findings
+  viewport 844x390 landscape, dark, zoom100%, no-peers: tap target 64x37 below minimum 40px (height 37 < 40) -> screenshots/no-peers-844x390-dark-z100.png
+  viewport 915x412 landscape, dark, zoom100%, no-peers: tap target 64x37 below minimum 40px (height 37 < 40) -> screenshots/no-peers-915x412-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, one-peer: tap target 64x37 below minimum 40px (height 37 < 40) -> screenshots/one-peer-844x390-dark-z100.png
+  viewport 915x412 landscape, dark, zoom100%, one-peer: tap target 64x37 below minimum 40px (height 37 < 40) -> screenshots/one-peer-915x412-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, three-peers: tap target 64x37 below minimum 40px (height 37 < 40) -> screenshots/three-peers-844x390-dark-z100.png
+
+G-793d0fcd [tap-target] #settings-sec-memmaint > div.obs-maint-grid:nth(*) > div:nth(*) > div.obs-maint-sweep:nth(*) > button.btn-secondary.obs-tap:nth(*) - 68 findings
+  viewport 844x390 landscape, dark, zoom100%, no-peers: tap target 74x37 below minimum 40px (height 37 < 40) -> screenshots/no-peers-844x390-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, no-peers: tap target 63x37 below minimum 40px (height 37 < 40) -> screenshots/no-peers-844x390-dark-z100.png
+  viewport 915x412 landscape, dark, zoom100%, no-peers: tap target 74x37 below minimum 40px (height 37 < 40) -> screenshots/no-peers-915x412-dark-z100.png
+  viewport 915x412 landscape, dark, zoom100%, no-peers: tap target 63x37 below minimum 40px (height 37 < 40) -> screenshots/no-peers-915x412-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, one-peer: tap target 74x37 below minimum 40px (height 37 < 40) -> screenshots/one-peer-844x390-dark-z100.png
+
+G-ec9af5d5 [tap-target] #settings-sec-memmaint > div.obs-maint-grid:nth(*) > div:nth(*) > button.btn-secondary.obs-tap:nth(*) - 102 findings
+  viewport 844x390 landscape, dark, zoom100%, no-peers: tap target 111x37 below minimum 40px (height 37 < 40) -> screenshots/no-peers-844x390-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, no-peers: tap target 105x37 below minimum 40px (height 37 < 40) -> screenshots/no-peers-844x390-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, no-peers: tap target 108x37 below minimum 40px (height 37 < 40) -> screenshots/no-peers-844x390-dark-z100.png
+  viewport 915x412 landscape, dark, zoom100%, no-peers: tap target 111x37 below minimum 40px (height 37 < 40) -> screenshots/no-peers-915x412-dark-z100.png
+  viewport 915x412 landscape, dark, zoom100%, no-peers: tap target 105x37 below minimum 40px (height 37 < 40) -> screenshots/no-peers-915x412-dark-z100.png
+
+G-962bf919 [tap-target] #cooldownStatus > div:nth(*) > button.btn-secondary.obs-tap:nth(*) - 204 findings
+  viewport 844x390 landscape, dark, zoom100%, no-peers: tap target 57x37 below minimum 40px (height 37 < 40) -> screenshots/no-peers-844x390-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, no-peers: tap target 57x37 below minimum 40px (height 37 < 40) -> screenshots/no-peers-844x390-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, no-peers: tap target 47x37 below minimum 40px (height 37 < 40) -> screenshots/no-peers-844x390-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, no-peers: tap target 47x37 below minimum 40px (height 37 < 40) -> screenshots/no-peers-844x390-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, no-peers: tap target 47x37 below minimum 40px (height 37 < 40) -> screenshots/no-peers-844x390-dark-z100.png
+
+G-eceb5495 [tap-target] #auditPanel > div.obs-row.obs-row-flush:nth(*) > button.btn-secondary.obs-tap:nth(*) - 34 findings
+  viewport 844x390 landscape, dark, zoom100%, no-peers: tap target 59x37 below minimum 40px (height 37 < 40) -> screenshots/no-peers-844x390-dark-z100.png
+  viewport 915x412 landscape, dark, zoom100%, no-peers: tap target 59x37 below minimum 40px (height 37 < 40) -> screenshots/no-peers-915x412-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, one-peer: tap target 59x37 below minimum 40px (height 37 < 40) -> screenshots/one-peer-844x390-dark-z100.png
+  viewport 915x412 landscape, dark, zoom100%, one-peer: tap target 59x37 below minimum 40px (height 37 < 40) -> screenshots/one-peer-915x412-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, three-peers: tap target 59x37 below minimum 40px (height 37 < 40) -> screenshots/three-peers-844x390-dark-z100.png
+
+G-9e0b0a5b [tap-target] #kgPanel > div.obs-row.obs-row-flush:nth(*) > button.btn-secondary.obs-tap:nth(*) - 34 findings
+  viewport 844x390 landscape, dark, zoom100%, no-peers: tap target 85x37 below minimum 40px (height 37 < 40) -> screenshots/no-peers-844x390-dark-z100.png
+  viewport 915x412 landscape, dark, zoom100%, no-peers: tap target 85x37 below minimum 40px (height 37 < 40) -> screenshots/no-peers-915x412-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, one-peer: tap target 85x37 below minimum 40px (height 37 < 40) -> screenshots/one-peer-844x390-dark-z100.png
+  viewport 915x412 landscape, dark, zoom100%, one-peer: tap target 85x37 below minimum 40px (height 37 < 40) -> screenshots/one-peer-915x412-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, three-peers: tap target 85x37 below minimum 40px (height 37 < 40) -> screenshots/three-peers-844x390-dark-z100.png
+
+G-7ad69f93 [tap-target] #settings-sec-daemonlog > div.obs-row.obs-log-actions:nth(*) > button.btn-secondary.obs-tap:nth(*) - 68 findings
+  viewport 844x390 landscape, dark, zoom100%, no-peers: tap target 72x37 below minimum 40px (height 37 < 40) -> screenshots/no-peers-844x390-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, no-peers: tap target 63x37 below minimum 40px (height 37 < 40) -> screenshots/no-peers-844x390-dark-z100.png
+  viewport 915x412 landscape, dark, zoom100%, no-peers: tap target 72x37 below minimum 40px (height 37 < 40) -> screenshots/no-peers-915x412-dark-z100.png
+  viewport 915x412 landscape, dark, zoom100%, no-peers: tap target 63x37 below minimum 40px (height 37 < 40) -> screenshots/no-peers-915x412-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, one-peer: tap target 72x37 below minimum 40px (height 37 < 40) -> screenshots/one-peer-844x390-dark-z100.png
+
+G-eeae7ba5 [tap-target] #observerPeersPanel > div.obs-peer-row:nth(*) > div:nth(*) > button.btn-icon.obs-tap:nth(*) - 204 findings
+  viewport 844x390 landscape, dark, zoom100%, no-peers: tap target 28x17 below minimum 40px (width 28 < 40, height 17 < 40) -> screenshots/no-peers-844x390-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, no-peers: tap target 20x16 below minimum 40px (width 20 < 40, height 16 < 40) -> screenshots/no-peers-844x390-dark-z100.png
+  viewport 915x412 landscape, dark, zoom100%, no-peers: tap target 28x17 below minimum 40px (width 28 < 40, height 17 < 40) -> screenshots/no-peers-915x412-dark-z100.png
+  viewport 915x412 landscape, dark, zoom100%, no-peers: tap target 20x16 below minimum 40px (width 20 < 40, height 16 < 40) -> screenshots/no-peers-915x412-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, one-peer: tap target 28x17 below minimum 40px (width 28 < 40, height 17 < 40) -> screenshots/one-peer-844x390-dark-z100.png
+
+G-316ddee2 [tap-target] #memoryRoleFilter - 34 findings
+  viewport 844x390 landscape, dark, zoom100%, no-peers: tap target 96x39 below minimum 40px (height 39 < 40) -> screenshots/no-peers-844x390-dark-z100.png
+  viewport 915x412 landscape, dark, zoom100%, no-peers: tap target 96x39 below minimum 40px (height 39 < 40) -> screenshots/no-peers-915x412-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, one-peer: tap target 96x39 below minimum 40px (height 39 < 40) -> screenshots/one-peer-844x390-dark-z100.png
+  viewport 915x412 landscape, dark, zoom100%, one-peer: tap target 96x39 below minimum 40px (height 39 < 40) -> screenshots/one-peer-915x412-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, three-peers: tap target 96x39 below minimum 40px (height 39 < 40) -> screenshots/three-peers-844x390-dark-z100.png
+
+G-92888624 [tap-target] #memorySinceFilter - 34 findings
+  viewport 844x390 landscape, dark, zoom100%, no-peers: tap target 114x39 below minimum 40px (height 39 < 40) -> screenshots/no-peers-844x390-dark-z100.png
+  viewport 915x412 landscape, dark, zoom100%, no-peers: tap target 114x39 below minimum 40px (height 39 < 40) -> screenshots/no-peers-915x412-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, one-peer: tap target 114x39 below minimum 40px (height 39 < 40) -> screenshots/one-peer-844x390-dark-z100.png
+  viewport 915x412 landscape, dark, zoom100%, one-peer: tap target 114x39 below minimum 40px (height 39 < 40) -> screenshots/one-peer-915x412-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, three-peers: tap target 114x39 below minimum 40px (height 39 < 40) -> screenshots/three-peers-844x390-dark-z100.png
+
+G-34e9ec29 [tap-target] #memScopeSelect - 34 findings
+  viewport 844x390 landscape, dark, zoom100%, no-peers: tap target 146x39 below minimum 40px (height 39 < 40) -> screenshots/no-peers-844x390-dark-z100.png
+  viewport 915x412 landscape, dark, zoom100%, no-peers: tap target 146x39 below minimum 40px (height 39 < 40) -> screenshots/no-peers-915x412-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, one-peer: tap target 146x39 below minimum 40px (height 39 < 40) -> screenshots/one-peer-844x390-dark-z100.png
+  viewport 915x412 landscape, dark, zoom100%, one-peer: tap target 146x39 below minimum 40px (height 39 < 40) -> screenshots/one-peer-915x412-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, three-peers: tap target 146x39 below minimum 40px (height 39 < 40) -> screenshots/three-peers-844x390-dark-z100.png
+
+G-8008e9ca [tap-target] #analyticsRange - 34 findings
+  viewport 844x390 landscape, dark, zoom100%, no-peers: tap target 49x20 below minimum 40px (height 20 < 40) -> screenshots/no-peers-844x390-dark-z100.png
+  viewport 915x412 landscape, dark, zoom100%, no-peers: tap target 49x20 below minimum 40px (height 20 < 40) -> screenshots/no-peers-915x412-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, one-peer: tap target 49x20 below minimum 40px (height 20 < 40) -> screenshots/one-peer-844x390-dark-z100.png
+  viewport 915x412 landscape, dark, zoom100%, one-peer: tap target 49x20 below minimum 40px (height 20 < 40) -> screenshots/one-peer-915x412-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, three-peers: tap target 49x20 below minimum 40px (height 20 < 40) -> screenshots/three-peers-844x390-dark-z100.png
+
+G-01a3acda [tap-target] #auditLimitFilter - 34 findings
+  viewport 844x390 landscape, dark, zoom100%, no-peers: tap target 49x22 below minimum 40px (height 22 < 40) -> screenshots/no-peers-844x390-dark-z100.png
+  viewport 915x412 landscape, dark, zoom100%, no-peers: tap target 49x22 below minimum 40px (height 22 < 40) -> screenshots/no-peers-915x412-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, one-peer: tap target 49x22 below minimum 40px (height 22 < 40) -> screenshots/one-peer-844x390-dark-z100.png
+  viewport 915x412 landscape, dark, zoom100%, one-peer: tap target 49x22 below minimum 40px (height 22 < 40) -> screenshots/one-peer-915x412-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, three-peers: tap target 49x22 below minimum 40px (height 22 < 40) -> screenshots/three-peers-844x390-dark-z100.png
+
+G-c6a8ba90 [tap-target] #memScopePRDID - 34 findings
+  viewport 844x390 landscape, dark, zoom100%, no-peers: tap target 110x37 below minimum 40px (height 37 < 40) -> screenshots/no-peers-844x390-dark-z100.png
+  viewport 915x412 landscape, dark, zoom100%, no-peers: tap target 110x37 below minimum 40px (height 37 < 40) -> screenshots/no-peers-915x412-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, one-peer: tap target 110x37 below minimum 40px (height 37 < 40) -> screenshots/one-peer-844x390-dark-z100.png
+  viewport 915x412 landscape, dark, zoom100%, one-peer: tap target 110x37 below minimum 40px (height 37 < 40) -> screenshots/one-peer-915x412-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, three-peers: tap target 110x37 below minimum 40px (height 37 < 40) -> screenshots/three-peers-844x390-dark-z100.png
+
+G-506de02c [tap-target] #memScopeStoryID - 34 findings
+  viewport 844x390 landscape, dark, zoom100%, no-peers: tap target 110x37 below minimum 40px (height 37 < 40) -> screenshots/no-peers-844x390-dark-z100.png
+  viewport 915x412 landscape, dark, zoom100%, no-peers: tap target 110x37 below minimum 40px (height 37 < 40) -> screenshots/no-peers-915x412-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, one-peer: tap target 110x37 below minimum 40px (height 37 < 40) -> screenshots/one-peer-844x390-dark-z100.png
+  viewport 915x412 landscape, dark, zoom100%, one-peer: tap target 110x37 below minimum 40px (height 37 < 40) -> screenshots/one-peer-915x412-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, three-peers: tap target 110x37 below minimum 40px (height 37 < 40) -> screenshots/three-peers-844x390-dark-z100.png
+
+G-557470b3 [tap-target] #memScopePersona - 34 findings
+  viewport 844x390 landscape, dark, zoom100%, no-peers: tap target 110x37 below minimum 40px (height 37 < 40) -> screenshots/no-peers-844x390-dark-z100.png
+  viewport 915x412 landscape, dark, zoom100%, no-peers: tap target 110x37 below minimum 40px (height 37 < 40) -> screenshots/no-peers-915x412-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, one-peer: tap target 110x37 below minimum 40px (height 37 < 40) -> screenshots/one-peer-844x390-dark-z100.png
+  viewport 915x412 landscape, dark, zoom100%, one-peer: tap target 110x37 below minimum 40px (height 37 < 40) -> screenshots/one-peer-915x412-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, three-peers: tap target 110x37 below minimum 40px (height 37 < 40) -> screenshots/three-peers-844x390-dark-z100.png
+
+G-c147e779 [tap-target] #memScopeProject - 34 findings
+  viewport 844x390 landscape, dark, zoom100%, no-peers: tap target 110x37 below minimum 40px (height 37 < 40) -> screenshots/no-peers-844x390-dark-z100.png
+  viewport 915x412 landscape, dark, zoom100%, no-peers: tap target 110x37 below minimum 40px (height 37 < 40) -> screenshots/no-peers-915x412-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, one-peer: tap target 110x37 below minimum 40px (height 37 < 40) -> screenshots/one-peer-844x390-dark-z100.png
+  viewport 915x412 landscape, dark, zoom100%, one-peer: tap target 110x37 below minimum 40px (height 37 < 40) -> screenshots/one-peer-915x412-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, three-peers: tap target 110x37 below minimum 40px (height 37 < 40) -> screenshots/three-peers-844x390-dark-z100.png
+
+G-50d22ee3 [tap-target] #memSweepDays - 34 findings
+  viewport 844x390 landscape, dark, zoom100%, no-peers: tap target 80x37 below minimum 40px (height 37 < 40) -> screenshots/no-peers-844x390-dark-z100.png
+  viewport 915x412 landscape, dark, zoom100%, no-peers: tap target 80x37 below minimum 40px (height 37 < 40) -> screenshots/no-peers-915x412-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, one-peer: tap target 80x37 below minimum 40px (height 37 < 40) -> screenshots/one-peer-844x390-dark-z100.png
+  viewport 915x412 landscape, dark, zoom100%, one-peer: tap target 80x37 below minimum 40px (height 37 < 40) -> screenshots/one-peer-915x412-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, three-peers: tap target 80x37 below minimum 40px (height 37 < 40) -> screenshots/three-peers-844x390-dark-z100.png
+
+G-e7fd60fd [tap-target] #cooldownReason - 34 findings
+  viewport 844x390 landscape, dark, zoom100%, no-peers: tap target 396x37 below minimum 40px (height 37 < 40) -> screenshots/no-peers-844x390-dark-z100.png
+  viewport 915x412 landscape, dark, zoom100%, no-peers: tap target 396x37 below minimum 40px (height 37 < 40) -> screenshots/no-peers-915x412-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, one-peer: tap target 396x37 below minimum 40px (height 37 < 40) -> screenshots/one-peer-844x390-dark-z100.png
+  viewport 915x412 landscape, dark, zoom100%, one-peer: tap target 396x37 below minimum 40px (height 37 < 40) -> screenshots/one-peer-915x412-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, three-peers: tap target 396x37 below minimum 40px (height 37 < 40) -> screenshots/three-peers-844x390-dark-z100.png
+
+G-cc4d63c1 [tap-target] #auditActorFilter - 40 findings
+  viewport 844x390 landscape, dark, zoom100%, no-peers: tap target 138x20 below minimum 40px (height 20 < 40) -> screenshots/no-peers-844x390-dark-z100.png
+  viewport 915x412 landscape, dark, zoom100%, no-peers: tap target 138x20 below minimum 40px (height 20 < 40) -> screenshots/no-peers-915x412-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, one-peer: tap target 138x20 below minimum 40px (height 20 < 40) -> screenshots/one-peer-844x390-dark-z100.png
+  viewport 915x412 landscape, dark, zoom100%, one-peer: tap target 138x20 below minimum 40px (height 20 < 40) -> screenshots/one-peer-915x412-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, three-peers: tap target 138x20 below minimum 40px (height 20 < 40) -> screenshots/three-peers-844x390-dark-z100.png
+
+G-26aaef56 [tap-target] #auditActionFilter - 40 findings
+  viewport 844x390 landscape, dark, zoom100%, no-peers: tap target 138x20 below minimum 40px (height 20 < 40) -> screenshots/no-peers-844x390-dark-z100.png
+  viewport 915x412 landscape, dark, zoom100%, no-peers: tap target 138x20 below minimum 40px (height 20 < 40) -> screenshots/no-peers-915x412-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, one-peer: tap target 138x20 below minimum 40px (height 20 < 40) -> screenshots/one-peer-844x390-dark-z100.png
+  viewport 915x412 landscape, dark, zoom100%, one-peer: tap target 138x20 below minimum 40px (height 20 < 40) -> screenshots/one-peer-915x412-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, three-peers: tap target 138x20 below minimum 40px (height 20 < 40) -> screenshots/three-peers-844x390-dark-z100.png
+
+G-6d841193 [tap-target] #kgEntityInput - 35 findings
+  viewport 844x390 landscape, dark, zoom100%, no-peers: tap target 318x37 below minimum 40px (height 37 < 40) -> screenshots/no-peers-844x390-dark-z100.png
+  viewport 915x412 landscape, dark, zoom100%, no-peers: tap target 318x37 below minimum 40px (height 37 < 40) -> screenshots/no-peers-915x412-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, one-peer: tap target 318x37 below minimum 40px (height 37 < 40) -> screenshots/one-peer-844x390-dark-z100.png
+  viewport 915x412 landscape, dark, zoom100%, one-peer: tap target 318x37 below minimum 40px (height 37 < 40) -> screenshots/one-peer-915x412-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, three-peers: tap target 318x37 below minimum 40px (height 37 < 40) -> screenshots/three-peers-844x390-dark-z100.png
+
+G-84643ef6 [tap-target] #kgSubject - 39 findings
+  viewport 844x390 landscape, dark, zoom100%, no-peers: tap target 100x37 below minimum 40px (height 37 < 40) -> screenshots/no-peers-844x390-dark-z100.png
+  viewport 915x412 landscape, dark, zoom100%, no-peers: tap target 100x37 below minimum 40px (height 37 < 40) -> screenshots/no-peers-915x412-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, one-peer: tap target 100x37 below minimum 40px (height 37 < 40) -> screenshots/one-peer-844x390-dark-z100.png
+  viewport 915x412 landscape, dark, zoom100%, one-peer: tap target 100x37 below minimum 40px (height 37 < 40) -> screenshots/one-peer-915x412-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, three-peers: tap target 100x37 below minimum 40px (height 37 < 40) -> screenshots/three-peers-844x390-dark-z100.png
+
+G-3cfa91ba [tap-target] #kgPredicate - 39 findings
+  viewport 844x390 landscape, dark, zoom100%, no-peers: tap target 100x37 below minimum 40px (height 37 < 40) -> screenshots/no-peers-844x390-dark-z100.png
+  viewport 915x412 landscape, dark, zoom100%, no-peers: tap target 100x37 below minimum 40px (height 37 < 40) -> screenshots/no-peers-915x412-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, one-peer: tap target 100x37 below minimum 40px (height 37 < 40) -> screenshots/one-peer-844x390-dark-z100.png
+  viewport 915x412 landscape, dark, zoom100%, one-peer: tap target 100x37 below minimum 40px (height 37 < 40) -> screenshots/one-peer-915x412-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, three-peers: tap target 100x37 below minimum 40px (height 37 < 40) -> screenshots/three-peers-844x390-dark-z100.png
+
+G-1a3c6ff1 [tap-target] #kgObject - 38 findings
+  viewport 844x390 landscape, dark, zoom100%, no-peers: tap target 100x37 below minimum 40px (height 37 < 40) -> screenshots/no-peers-844x390-dark-z100.png
+  viewport 915x412 landscape, dark, zoom100%, no-peers: tap target 100x37 below minimum 40px (height 37 < 40) -> screenshots/no-peers-915x412-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, one-peer: tap target 100x37 below minimum 40px (height 37 < 40) -> screenshots/one-peer-844x390-dark-z100.png
+  viewport 915x412 landscape, dark, zoom100%, one-peer: tap target 100x37 below minimum 40px (height 37 < 40) -> screenshots/one-peer-915x412-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, three-peers: tap target 100x37 below minimum 40px (height 37 < 40) -> screenshots/three-peers-844x390-dark-z100.png
+
+G-ab9c8548 [tap-target] #statsPanel > div:nth(*) > div:nth(*) > div.stats-taprow:nth(*) - 410 findings
+  viewport 844x390 landscape, dark, zoom100%, no-peers: tap target 380x15 below minimum 40px (height 15 < 40) -> screenshots/no-peers-844x390-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, no-peers: tap target 380x15 below minimum 40px (height 15 < 40) -> screenshots/no-peers-844x390-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, no-peers: tap target 380x15 below minimum 40px (height 15 < 40) -> screenshots/no-peers-844x390-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, no-peers: tap target 380x15 below minimum 40px (height 15 < 40) -> screenshots/no-peers-844x390-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, no-peers: tap target 380x15 below minimum 40px (height 15 < 40) -> screenshots/no-peers-844x390-dark-z100.png
+
+G-1e7b545d [tap-target] #channelBridgeBlock > div:nth(*) - 32 findings
+  viewport 844x390 landscape, dark, zoom100%, no-peers: tap target 396x21 below minimum 40px (height 21 < 40) -> screenshots/no-peers-844x390-dark-z100.png
+  viewport 915x412 landscape, dark, zoom100%, no-peers: tap target 396x21 below minimum 40px (height 21 < 40) -> screenshots/no-peers-915x412-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, one-peer: tap target 396x21 below minimum 40px (height 21 < 40) -> screenshots/one-peer-844x390-dark-z100.png
+  viewport 915x412 landscape, dark, zoom100%, one-peer: tap target 396x21 below minimum 40px (height 21 < 40) -> screenshots/one-peer-915x412-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, three-peers: tap target 396x21 below minimum 40px (height 21 < 40) -> screenshots/three-peers-844x390-dark-z100.png
+
+G-9f85f18a [tap-target] #channelDiagBlock > div:nth(*) - 32 findings
+  viewport 844x390 landscape, dark, zoom100%, no-peers: tap target 396x21 below minimum 40px (height 21 < 40) -> screenshots/no-peers-844x390-dark-z100.png
+  viewport 915x412 landscape, dark, zoom100%, no-peers: tap target 396x21 below minimum 40px (height 21 < 40) -> screenshots/no-peers-915x412-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, one-peer: tap target 396x21 below minimum 40px (height 21 < 40) -> screenshots/one-peer-844x390-dark-z100.png
+  viewport 915x412 landscape, dark, zoom100%, one-peer: tap target 396x21 below minimum 40px (height 21 < 40) -> screenshots/one-peer-915x412-dark-z100.png
+  viewport 844x390 landscape, dark, zoom100%, three-peers: tap target 396x21 below minimum 40px (height 21 < 40) -> screenshots/three-peers-844x390-dark-z100.png
+
+G-6502e162 [clipped-text] #headerTitle - 3 findings
+  viewport 320x568 portrait, dark, zoom130%, three-peers: scrollWidth 75 > clientWidth 51 — missing text-overflow: ellipsis + tooltip (title or aria-label) -> screenshots/three-peers-320x568-dark-z130.png
+  viewport 390x844 portrait, dark, zoom200%, three-peers: scrollWidth 75 > clientWidth 0 — missing text-overflow: ellipsis + tooltip (title or aria-label) -> screenshots/three-peers-390x844-dark-z200.png
+  viewport 412x915 portrait, dark, zoom200%, three-peers: scrollWidth 75 > clientWidth 11 — missing text-overflow: ellipsis + tooltip (title or aria-label) -> screenshots/three-peers-412x915-dark-z200.png
+
+G-4c70c439 [overlap] #memoryBrowserList > div.settings-row.obs-mem-row:nth(*) > div:nth(*) > div:nth(*) > span:nth(*) - 6 findings
+  viewport 360x740 portrait, dark, zoom130%, three-peers: sibling overlap with #memoryBrowserList > div.settings-row.obs-mem-row:nth-child(1) > div:nth-child(1) > div:nth-child(2) > span:nth-child(1): 875px² shared (100% of smaller rect) -> screenshots/three-peers-360x740-dark-z130.png
+  viewport 360x740 portrait, dark, zoom130%, three-peers: sibling overlap with #memoryBrowserList > div.settings-row.obs-mem-row:nth-child(2) > div:nth-child(1) > div:nth-child(2) > span:nth-child(1): 875px² shared (100% of smaller rect) -> screenshots/three-peers-360x740-dark-z130.png
+  viewport 360x740 portrait, dark, zoom130%, three-peers: sibling overlap with #memoryBrowserList > div.settings-row.obs-mem-row:nth-child(3) > div:nth-child(1) > div:nth-child(2) > span:nth-child(1): 875px² shared (100% of smaller rect) -> screenshots/three-peers-360x740-dark-z130.png
+  viewport 360x740 portrait, dark, zoom200%, three-peers: sibling overlap with #memoryBrowserList > div.settings-row.obs-mem-row:nth-child(1) > div:nth-child(1) > div:nth-child(2) > span:nth-child(1): 692px² shared (47% of smaller rect) -> screenshots/three-peers-360x740-dark-z200.png
+  viewport 360x740 portrait, dark, zoom200%, three-peers: sibling overlap with #memoryBrowserList > div.settings-row.obs-mem-row:nth-child(2) > div:nth-child(1) > div:nth-child(2) > span:nth-child(1): 692px² shared (47% of smaller rect) -> screenshots/three-peers-360x740-dark-z200.png
+
+G-5406eafe [clipped-text] #view > div.view-content:nth(*) > div.settings-view:nth(*) > div.settings-section:nth(*) > div.settings-section-title.settings-section-toggle:nth(*) - 34 findings
+  viewport 320x568 portrait, dark, zoom200%, three-peers: scrollWidth 150 > clientWidth 104 — missing text-overflow: ellipsis + tooltip (title or aria-label) -> screenshots/three-peers-320x568-dark-z200.png
+  viewport 320x568 portrait, dark, zoom200%, three-peers: scrollWidth 143 > clientWidth 104 — missing text-overflow: ellipsis + tooltip (title or aria-label) -> screenshots/three-peers-320x568-dark-z200.png
+  viewport 320x568 portrait, dark, zoom200%, three-peers: scrollWidth 139 > clientWidth 104 — missing text-overflow: ellipsis + tooltip (title or aria-label) -> screenshots/three-peers-320x568-dark-z200.png
+  viewport 320x568 portrait, dark, zoom200%, three-peers: scrollWidth 173 > clientWidth 104 — missing text-overflow: ellipsis + tooltip (title or aria-label) -> screenshots/three-peers-320x568-dark-z200.png
+  viewport 320x568 portrait, dark, zoom200%, three-peers: scrollWidth 156 > clientWidth 104 — missing text-overflow: ellipsis + tooltip (title or aria-label) -> screenshots/three-peers-320x568-dark-z200.png
+
+G-8a757b3e [clipped-text] #settings-sec-membrowser > div.obs-row.obs-row-nowrap:nth(*) > button.btn-primary.obs-tap:nth(*) - 2 findings
+  viewport 320x568 portrait, dark, zoom200%, three-peers: scrollWidth 42 > clientWidth 40 — missing text-overflow: ellipsis + tooltip (title or aria-label) -> screenshots/three-peers-320x568-dark-z200.png
+  viewport 360x740 portrait, dark, zoom200%, three-peers: scrollWidth 42 > clientWidth 40 — missing text-overflow: ellipsis + tooltip (title or aria-label) -> screenshots/three-peers-360x740-dark-z200.png
+
+G-37cc0d29 [clipped-text] #settings-sec-memscopes > div:nth(*) - 1 finding
+  viewport 320x568 portrait, dark, zoom200%, three-peers: scrollWidth 95 > clientWidth 76 — missing text-overflow: ellipsis + tooltip (title or aria-label) -> screenshots/three-peers-320x568-dark-z200.png
+
+G-ff3cb8eb [tap-target] #memoryQuickAddInput - 4 findings
+  viewport 320x568 portrait, dark, zoom200%, three-peers: tap target 30x41 below minimum 40px (width 30 < 40) -> screenshots/three-peers-320x568-dark-z200.png
+  viewport 360x740 portrait, dark, zoom200%, three-peers: tap target 30x41 below minimum 40px (width 30 < 40) -> screenshots/three-peers-360x740-dark-z200.png
+  viewport 390x844 portrait, dark, zoom200%, three-peers: tap target 30x41 below minimum 40px (width 30 < 40) -> screenshots/three-peers-390x844-dark-z200.png
+  viewport 412x915 portrait, dark, zoom200%, three-peers: tap target 30x41 below minimum 40px (width 30 < 40) -> screenshots/three-peers-412x915-dark-z200.png
