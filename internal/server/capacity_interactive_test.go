@@ -141,9 +141,14 @@ func cleanupStartedSession(t *testing.T, srv *Server, w *httptest.ResponseRecord
 		if id == "" {
 			id = r.ID
 		}
-		if id != "" {
-			_ = srv.manager.Delete(id, false)
+		if id == "" {
+			srv.broadcastWG.Wait()
+			return
 		}
+		// Stop the monitor, kill the pane and wait for late writers
+		// before the manager's TempDir removal runs (see stopTestSession).
+		stopTestSession(t, srv, id)
+		_ = srv.manager.Delete(id, false)
 	})
 }
 

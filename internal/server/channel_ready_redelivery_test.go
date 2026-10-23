@@ -50,8 +50,7 @@ func channelReadyServer(t *testing.T, dir string) (*Server, *session.FakeTmux) {
 // taskSends counts send-keys calls that carried the task text.
 func taskSends(f *session.FakeTmux) int {
 	n := 0
-	for i := range f.Calls {
-		c := f.Calls[i]
+	for _, c := range f.CallsSnapshot() {
 		if !strings.HasPrefix(c.Op, "send-keys") {
 			continue
 		}

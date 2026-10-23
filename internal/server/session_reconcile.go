@@ -39,7 +39,7 @@ func (s *Server) handleSessionReconcile(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if req.AutoImport && len(res.Imported) > 0 {
-		go s.hub.BroadcastSessions(s.manager.ListSessions())
+		s.broadcastSessionsAsync()
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(res)
@@ -79,7 +79,7 @@ func (s *Server) handleSessionImport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if imported {
-		go s.hub.BroadcastSessions(s.manager.ListSessions())
+		s.broadcastSessionsAsync()
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
