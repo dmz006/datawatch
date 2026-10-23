@@ -1918,6 +1918,8 @@
   "capacity_card_budget_title": "Budgets LLM",
   "capacity_card_budget_estimate": "La part d'allocation est une estimation fondée sur l'offre, pas une valeur mesurée",
   "capacity_card_holders": "Détenteurs",
+  "capacity_name_untitled": "(sans titre {id})",
+  "capacity_name_prd": "PRD",
   "capacity_card_empty": "Aucune limite de capacité, attente ni budget à afficher",
   "settings_plan_tier_allocation_usd": "Allocation par niveau de forfait (USD par niveau ; 0 = non déclarée)",
   "settings_plan_tier_allocation_hint": "Alimente uniquement la part d'allocation estimée affichée sur un budget ; ne bloque jamais rien. 0 ou un niveau vide signifie aucun chiffre.",
