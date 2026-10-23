@@ -863,7 +863,12 @@ func (m *Manager) Run(ctx context.Context, prdID string, spawn SpawnFn, verify V
 	if reportFn != nil && prd.MemorySeed.Enabled {
 		prdID := prd.ID
 		projectDir := prd.ProjectDir
+		// Track the report goroutine so a caller can deterministically wait for
+		// it to finish (reportFn + PRD write) instead of racing it (BL387
+		// known flake: the report could still be writing when the test ended).
+		m.memoryReportWG.Add(1)
 		go func() { // #nosec G118 -- background report after PRD completion; request context already done
+			defer m.memoryReportWG.Done()
 			report, rerr := reportFn(context.Background(), prdID, projectDir)
 			if rerr != nil {
 				log.Printf("[autonomous] memory-report: prd=%s: %v", prdID, rerr)

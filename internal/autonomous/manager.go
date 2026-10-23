@@ -834,6 +834,13 @@ type Manager struct {
 	// memory scope; the result is stored on PRD.MemoryReport. Nil = no report.
 	memoryReportFn func(ctx context.Context, prdID, projectDir string) (string, error)
 
+	// memoryReportWG (BL387 Phase 3) tracks in-flight memory-report goroutines
+	// so a caller (today: tests) can deterministically wait for the report to
+	// be fully written — reportFn ran AND the PRD mutation + SavePRD completed —
+	// before asserting or tearing down. A WaitGroup is self-synchronizing; it
+	// is not additionally guarded by mu.
+	memoryReportWG sync.WaitGroup
+
 	// loop state
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -1069,6 +1076,28 @@ func (m *Manager) SetMemoryReportFn(fn func(ctx context.Context, prdID, projectD
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.memoryReportFn = fn
+}
+
+// WaitMemoryReports (BL387 Phase 3) blocks until every in-flight
+// memory-report goroutine has finished — i.e. reportFn ran and the PRD write
+// (in-memory mutation + SavePRD) completed — or until timeout elapses, in
+// which case it returns an error. Tests that assert on PRD.MemoryReport should
+// wait on this real goroutine-exit condition instead of polling
+// PRD.MemoryReport within a fixed wall-clock deadline: the poll raced the
+// report goroutine (a known flake), whereas waiting on the goroutine's own
+// exit is deterministic.
+func (m *Manager) WaitMemoryReports(timeout time.Duration) error {
+	done := make(chan struct{})
+	go func() {
+		m.memoryReportWG.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return nil
+	case <-time.After(timeout):
+		return fmt.Errorf("autonomous: memory-report goroutine still running after %s", timeout)
+	}
 }
 
 // decisionKindExists reports whether prd.Decisions already carries a decision

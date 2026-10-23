@@ -46,18 +46,6 @@ func bl387Phase3Setup(t *testing.T) (*Manager, *PRD, SpawnFn, VerifyFn) {
 	return m, prd, spawn, verify
 }
 
-// waitForMemoryReport polls PRD.MemoryReport until non-empty or timeout.
-func waitForMemoryReport(t *testing.T, m *Manager, prdID string) *PRD {
-	t.Helper()
-	var p *PRD
-	pollUntil(t, 3*time.Second, "PRD memory report", func() bool {
-		var ok bool
-		p, ok = m.Store().SnapshotPRD(prdID)
-		return ok && p.MemoryReport != ""
-	})
-	return p
-}
-
 // TestBL387_AutoReport_CalledOnCompletion verifies that memoryReportFn fires
 // after Run() when all tasks succeed and MemorySeed.Enabled=true.
 func TestBL387_AutoReport_CalledOnCompletion(t *testing.T) {
@@ -75,8 +63,13 @@ func TestBL387_AutoReport_CalledOnCompletion(t *testing.T) {
 	if err := m.Run(context.Background(), prd.ID, spawn, verify); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	// Report fires in a goroutine — wait briefly.
-	waitForMemoryReport(t, m, prd.ID)
+	// Report fires in a goroutine — wait on that goroutine's own exit (a real
+	// condition), not a wall-clock poll. The previous poll raced the report
+	// goroutine (a known flake: the report could still be writing when the
+	// test ended).
+	if err := m.WaitMemoryReports(5 * time.Second); err != nil {
+		t.Fatalf("WaitMemoryReports: %v", err)
+	}
 
 	mu.Lock()
 	n := len(reportCalls)
@@ -145,7 +138,18 @@ func TestBL387_AutoReport_StoredOnPRD(t *testing.T) {
 	if err := m.Run(context.Background(), prd.ID, spawn, verify); err != nil {
 		t.Fatalf("Run: %v", err)
 	}
-	p := waitForMemoryReport(t, m, prd.ID)
+	// Wait on the report goroutine's own exit (a real condition) so the PRD
+	// write (MemoryReport + MemoryReportAt) is fully landed before asserting,
+	// then read a snapshot. The previous wall-clock poll raced the report
+	// goroutine (a known flake: the report could still be writing when the
+	// test ended).
+	if err := m.WaitMemoryReports(5 * time.Second); err != nil {
+		t.Fatalf("WaitMemoryReports: %v", err)
+	}
+	p, pOK := m.Store().SnapshotPRD(prd.ID)
+	if !pOK {
+		t.Fatal("PRD missing after completion")
+	}
 
 	if p.MemoryReport == "" {
 		t.Error("expected PRD.MemoryReport to be populated, got empty string")

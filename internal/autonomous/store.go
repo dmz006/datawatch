@@ -737,6 +737,28 @@ func (s *Store) MutateTask(id string, f func(*Task)) bool {
 	return true
 }
 
+// MutatePRD applies f to one canonical PRD under the store lock and persists
+// the result only when f returns true (a no-op reports false and leaves the
+// stored PRD untouched). Field mutations made this way are synchronized with
+// SnapshotPRD reads from other goroutines, unlike direct field writes on
+// GetPRD's shared pointer (a pattern that is race-unsafe the moment a
+// concurrent reader is involved — e.g. setPRDWaitReason racing a status poll
+// during a run). Mirrors MutateTask at the PRD level.
+func (s *Store) MutatePRD(id string, f func(p *PRD) bool) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	p, ok := s.prds[id]
+	if !ok {
+		return false
+	}
+	if !f(p) {
+		return false
+	}
+	p.UpdatedAt = time.Now()
+	_ = s.persist()
+	return true
+}
+
 // reindexPRDLocked rebuilds the s.stories/s.tasks lookup maps for every
 // story/task currently in prd.Story. Callers must hold s.mu. Required after
 // any append/remove on prd.Story or a nested Tasks slice: Go's append can
