@@ -280,5 +280,9 @@ func newFederationCmd() *cobra.Command {
 
 	cmd.AddCommand(groupCmd)
 
+	// Fingerprint match records — list / confirm / reject the pairs the
+	// daemon detected across peers (operator-decided).
+	cmd.AddCommand(newFingerprintCmd())
+
 	return cmd
 }
