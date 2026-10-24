@@ -2267,6 +2267,15 @@ function navigate(view, sessionId, fromPopstate) {
   const backBtn = document.getElementById('backBtn');
   const nav = document.getElementById('nav');
   const headerTitle = document.getElementById('headerTitle');
+  // mobile-fit gate 2026-10-22: the header title truncates with overflow:
+  // hidden + text-overflow: ellipsis (style.css); keep a title= tooltip
+  // synced to whatever text the view sets so the full label stays
+  // reachable on hover. MutationObserver covers every assignment site
+  // instead of touching each t(...) line.
+  if (headerTitle && typeof MutationObserver !== 'undefined') {
+    new MutationObserver(() => { headerTitle.title = headerTitle.textContent; })
+      .observe(headerTitle, { childList: true, characterData: true, subtree: true });
+  }
 
   // Update nav button active states; scroll active tab into view for overflow nav
   document.querySelectorAll('.nav-btn').forEach(btn => {
@@ -20112,7 +20121,10 @@ function updatePeerStaleBadge() {
     }
     if (stale > 0) {
       badge.textContent = stale > 99 ? '99+' : String(stale);
-      badge.style.display = 'inline';
+      // 'flex' (not 'inline') so the 44x44 badge centers its count — the
+      // element is a position:absolute 44x44 box (see index.html) and an
+      // inline display would ignore the box sizing.
+      badge.style.display = 'flex';
       badge.title = `${stale} federated peer(s) stale (>60s since last push)`;
     } else {
       badge.style.display = 'none';
@@ -32711,19 +32723,25 @@ window.loadVaultStatusRow = loadVaultStatusRow;
 // active backend AND unreachable. Re-uses the existing peerStaleBadge
 // element shape (red circle, top-right of the nav button).
 function _setVaultBadge(unreachable, errMsg) {
-  const settingsNav = document.querySelector('[data-view="settings"] .nav-icon');
-  if (!settingsNav) return;
+  // Anchor at the settings nav BUTTON (not the .nav-icon span): an
+  // absolutely positioned badge inside the icon span inflates the span's
+  // scrollWidth (clipped-text finding), and the old 17x15 pill is below
+  // the 40px tap-target floor — same root cause as peerStaleBadge,
+  // fixed the same way by the mobile-fit gate 2026-10-22.
+  const settingsBtn = document.querySelector('.nav-btn[data-view="settings"]');
+  if (!settingsBtn) return;
   let badge = document.getElementById('vaultUnreachableBadge');
   if (unreachable) {
     if (!badge) {
       badge = document.createElement('span');
       badge.id = 'vaultUnreachableBadge';
-      badge.style.cssText = 'position:absolute;top:-6px;right:-8px;background:var(--error,#ef4444);color:#fff;font-size:9px;border-radius:8px;padding:1px 4px;line-height:1.4;cursor:pointer;';
+      badge.style.cssText = 'position:absolute;top:0;right:0;width:44px;height:44px;background:var(--error,#ef4444);color:#fff;font-size:14px;border-radius:50%;align-items:center;justify-content:center;line-height:1;cursor:pointer;';
       badge.title = 'Vault unreachable';
       badge.innerHTML = '!';
       badge.onclick = (e) => { e.stopPropagation(); navigate('settings'); };
-      settingsNav.appendChild(badge);
+      settingsBtn.appendChild(badge);
     }
+    badge.style.display = 'flex';
     if (errMsg) badge.title = 'Vault unreachable: ' + errMsg;
   } else if (badge) {
     badge.remove();

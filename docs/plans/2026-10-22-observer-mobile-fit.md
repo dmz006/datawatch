@@ -278,3 +278,59 @@ findings (runner exit 1) as a failure; the fix makes it pass when the suite ran
 to completion and wrote a usable report, and fail (exit 1) only when no usable
 report was produced or a scenario could not even open its view
 (`open-failed`). Exit 2/skip semantics unchanged.
+
+## Gate results
+
+2026-10-24 — end-to-end gate, strict order, every failure fixed at root cause
+(this session; isolated loopback daemons freshly built from this tree, never
+the production daemon):
+
+| Step | Command | Result |
+|---|---|---|
+| 1 — JS syntax | `node --check internal/server/web/app.js` | **PASS** |
+| 2 — web unit tests | `node --test internal/server/web/*.test.js` | **PASS** — 717 pass, 0 fail |
+| 3 — PWA report/seed tests | `scripts/test-stories/pwa` report+seed suite | **PASS** — 34 pass, 0 fail |
+| 4 — detector self-test | `mobile-fit-selftest.mjs` | **PASS** — 9/9 scenarios |
+| 5 — check scripts | docs-sync, no-internal-refs, + 3 more | **PASS** (see fixes below) |
+| 6 — Go | `go vet ./…` then `go test ./…` | **PASS** — vet clean; 7641 tests, 87 packages, 0 fail |
+| 7a — Observer full profile | `mobile-fit.mjs --view observer --profile full` (16:06→16:14) | **PASS** — 284 scenarios, 0 findings, exit 0 |
+| 7b — TS-802 regression guard | `MOBILE_FIT_SCOPE=#view bash scripts/e2e-pwa.sh TS-802` | **PASS** — 99 scenarios, 0 findings; none of the 68 recorded groups reproduce |
+| 7c — TS-803 baseline guard | `bash scripts/e2e-pwa.sh TS-803` | **PASS** — 38 tracked selectors × 3 viewports, 0 outside tolerance |
+| 7d — release smoke | `scripts/release-smoke-mobile-fit.sh` | **PASS** — 95 scenarios, 0 findings, exit 0 |
+
+### Fixes made in this gate
+
+All layout fixes are in `internal/server/web/app.js`, `style.css`,
+`index.html` — no check-script edits, no version bump:
+
+- **`#peerStaleBadge` / `#vaultUnreachableBadge` (tap-target + clipped-text)** —
+  both badges lived inside `.nav-icon` as `position:absolute` 17×15 pills; an
+  absolutely-positioned descendant inflates the icon span's `scrollWidth`
+  (clipped-text) and the pill itself sits below the 40px floor (tap-target).
+  Re-anchored at the `.nav-btn` box as 44×44 rounded badges (index.html for the
+  static badge, app.js `_setVaultBadge` for the dynamic one, `display:flex` in
+  `updatePeerStaleBadge`).
+- **`#headerTitle` (clipped-text)** — added the declared truncation model
+  (`white-space:nowrap; text-overflow:ellipsis`) in style.css and a
+  MutationObserver in `navigate()` (app.js) keeping `title=` synced so the
+  full label stays reachable on hover.
+- **`#headerHelpLink` / `#headerAlertPill` / `#headerFullscreenBtn`
+  (tap-target then edge-cross)** — their inline padding (4px 8px etc.) plus
+  border made the boxes 60–62px: below-40px tall as inline boxes, and wide
+  enough at 130%/200% zoom to push `#statusDot` / the pill off the right edge
+  (measured: at z130 the 320 cell, header row = 32px padding + 60 + 62 + 10
+  + gaps). Now: `box-sizing:content-box; min-width/min-height:44px`, inline
+  padding stripped (`padding:0 !important`), 46px max box for the bordered
+  pill — and at ≤219 CSS px (200% zoom on phones, where even 44px controls
+  can't all fit) the help + fullscreen toggles hide so the title, alert pill
+  and status dot stay on screen. `#headerRefreshSpinner` findings cleared
+  with the same row-budget fix.
+- **`.toast-error-close` (tap-target)** — 28×28 → 44×44 (style.css).
+- **check-docs-sync** — mechanical re-sync via `make sync-docs` (no content
+  edits in the mirror tree).
+- **check-no-internal-refs** — removed three BL tracker tags that had leaked
+  into README.md (the script only allows refs in docs/testing-tracker.md,
+  plans, changelog files).
+
+Provenance pin regenerated with the final `app.js`/`style.css`:
+`docs/testing/runs/observer-mobile-fit/web-sha256.txt`.

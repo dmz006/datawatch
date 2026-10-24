@@ -173,6 +173,63 @@ body {
   align-items: center;
   gap: 4px;
   overflow: hidden;
+  /* mobile-fit gate 2026-10-22: at narrow widths / high zoom the title
+     overflows; keep the overflow:hidden clipping but declare the text
+     overflow model (and a synced title= tooltip, see app.js) so it is a
+     declared truncation, not an accident. */
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* mobile-fit gate 2026-10-22: the header's clickable controls carry only
+   display/padding inline styles — their boxes came out 21-62px across
+   viewports: 28px tap targets below the 40px floor, and (oversized at
+   extreme zoom) still pushing #statusDot / the pill off the right edge —
+   measured at z130: help link 60px, alert pill 62px. Root cause: their
+   inline padding + borders + the <a> underline add on top of any min-size.
+   Fix: declare the 44px minimum on the CONTENT box (border-box + the
+   inline border/padding would let the UA box grow past the budget), and
+   strip the inline padding so the hit area lands on exactly 44px (help
+   link / fullscreen) or 46px (alert pill, 1px border) — both fit the 56px
+   header (var(--header-h)) and keep the z200 row total (160 CSS px) inside
+   the viewport. At ≤219 CSS px (200% zoom on phones) even 44px controls
+   can't all fit, so the least-essential ones (help toggle, fullscreen
+   toggle) are hidden there — status dot, alert pill and the title keep the
+   row inside the viewport. */
+.header > #headerHelpLink,
+.header > #headerAlertPill,
+.header > #headerFullscreenBtn {
+  box-sizing: content-box;
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+.header > #headerHelpLink {
+  padding: 0 !important;      /* inline 4px 8px padding pushed the box to 60px (measured) */
+  text-decoration: none;
+  border: none;
+  text-align: center;
+}
+.header > #headerAlertPill {
+  padding: 0 !important;      /* inline 2px 8px + 1px border pushed the box to 62px (measured) */
+  cursor: pointer;
+}
+.header > #headerFullscreenBtn {
+  padding: 0 !important;      /* inline 4px 6px */
+}
+
+/* Extreme zoom (200% on a 320px phone = 160 CSS px): even 44px controls
+   can't all fit (44×3 + 10px dot + gaps + padding > 160). The spec floor
+   is 40px and the fullscreen/help affordances are the least essential —
+   hide them below 220 CSS px so #statusDot and the alert pill stay on
+   screen. (The matrix's z130 cells: 320→246, 360→277 … z200: 320→160,
+   360→180, 390→195, 412→206 CSS px.) */
+@media (max-width: 219px) {
+  .header > #headerHelpLink,
+  .header > #headerFullscreenBtn { display: none !important; }
 }
 
 .back-btn {
@@ -4406,8 +4463,11 @@ body:has(.select-bar-fixed) .new-session-fab { display: none; }
   background: transparent;
   border: 1px solid var(--border);
   color: var(--text);
-  width: 28px;
-  height: 28px;
+  /* mobile-fit gate 2026-10-22: 28x28 was below the 40px tap-target floor
+     (TAP_MIN); 44x44 matches the app's other touch targets. The 16px
+     glyph stays centered via the flex layout below. */
+  width: 44px;
+  height: 44px;
   border-radius: 4px;
   cursor: pointer;
   font-size: 16px;
