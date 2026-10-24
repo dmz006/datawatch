@@ -2632,15 +2632,23 @@ func (c AutonomousAutomationConfig) EffectiveAgentInsertPolicy() string {
 }
 
 // AutonomousNotifyConfig —autonomous.notify sub-config. DefaultEvents
-// is the global default set of lifecycle event kinds the built-in
-// lifecycle sinks subscribe to (see
+// is the global default set of lifecycle event kinds (see
 // internal/autonomous/lifecycle_event.go: KindPRDUpdated
 // "prd.updated", PRDStatusKind(prd.*) — e.g. "prd.completed",
 // "prd.failed" — KindTaskSessionStarted "task.session_started",
 // TaskStatusKind(task.*) — e.g. "task.completed", "task.failed").
-// An empty list means the built-in lifecycle sinks subscribe to
-// nothing, which is exactly the current behavior; an operator opts
-// in by listing the event kinds they want notified.
+//
+// Resolution precedence (internal/autonomous.ResolveNotifyEvents):
+// the Automaton's own notify_events list, then its assigned guardrail
+// profile's notify_events list, then this global list. At the global
+// tier the value distinguishes unset (nil — DefaultConfig() supplies
+// the five-kind baseline: prd.needs_review, prd.blocked, prd.failed,
+// prd.completed, prd.cancelled) from an explicit empty list
+// (default_events: [] — the operator opted out, and the global tier
+// resolves to no kinds). An operator's non-empty list replaces the
+// baseline. The daemon bridge (cmd/datawatch) copies this slice into
+// the autonomous Manager's NotifyDefaultEvents at boot and the live
+// PUT /api/config path keeps it in sync without a restart.
 // DefaultEvents has NO omitempty on either tag (the B124
 // no-omitempty pattern already used for the autonomous.* fields in
 // internal/server/api.go, see the comment block near api.go:5802):
@@ -3174,9 +3182,23 @@ func DefaultConfig() *Config {
 			DriftMode:               "block", // pre-existing drift blocks by default; "warn" for flag-only
 			UndeclaredEditMode:      "warn",
 			Automation:              AutonomousAutomationConfig{AgentInsertPolicy: AgentInsertPolicyAllow},
-			// Notify is left as the zero value on purpose: an empty
-			// DefaultEvents list means the built-in lifecycle sinks
-			// subscribe to nothing — zero config = zero behavior change.
+			// Notify — global baseline for the notify event kinds
+			// (autonomous.notify.default_events). Written as literals,
+			// not the internal/autonomous constants: the config package
+			// must not import that one (the daemon bridges it). A YAML
+			// file that omits the key keeps these five (config.Load merges
+			// over this value); an explicit `default_events: []` is the
+			// operator opt-out and loads as empty, non-nil — the global
+			// tier then resolves to no kinds.
+			Notify: AutonomousNotifyConfig{
+				DefaultEvents: []string{
+					"prd.needs_review",
+					"prd.blocked",
+					"prd.failed",
+					"prd.completed",
+					"prd.cancelled",
+				},
+			},
 		},
 		Ntfy:          NtfyConfig{ServerURL: "https://ntfy.sh"},
 		Email:         EmailConfig{Port: 587},

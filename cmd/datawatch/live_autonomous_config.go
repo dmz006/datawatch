@@ -52,3 +52,18 @@ func copyVerifierPolicy(p config.VerifierPolicyConfig) config.VerifierPolicyConf
 	p.Backends = append([]string(nil), p.Backends...)
 	return p
 }
+
+// cloneNotifyDefaultEvents copies the autonomous.notify.default_events
+// slice, preserving nil (unset — resolution falls back to the built-in
+// DefaultNotifyEvents set) vs a non-nil empty slice (explicitly turned
+// off). Like the sibling append-based bridges, a nil input must stay nil;
+// unlike them, a non-nil empty input must stay non-nil empty, which
+// `append([]string(nil), in...)` would collapse to nil.
+func cloneNotifyDefaultEvents(in []string) []string {
+	if in == nil {
+		return nil
+	}
+	out := make([]string, len(in))
+	copy(out, in)
+	return out
+}

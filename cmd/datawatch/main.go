@@ -54,6 +54,7 @@ import (
 	"github.com/dmz006/datawatch/internal/evals"
 	"github.com/dmz006/datawatch/internal/federation"
 	gitpkg "github.com/dmz006/datawatch/internal/git"
+	"github.com/dmz006/datawatch/internal/gitguard"
 	"github.com/dmz006/datawatch/internal/hookinstaller"
 	"github.com/dmz006/datawatch/internal/identity"
 	"github.com/dmz006/datawatch/internal/inference"
@@ -97,7 +98,6 @@ import (
 	secretspkg "github.com/dmz006/datawatch/internal/secrets"
 	"github.com/dmz006/datawatch/internal/server"
 	"github.com/dmz006/datawatch/internal/server/multiserver"
-	"github.com/dmz006/datawatch/internal/gitguard"
 	"github.com/dmz006/datawatch/internal/session"
 	shutdowncause "github.com/dmz006/datawatch/internal/shutdowncause"
 	signalpkg "github.com/dmz006/datawatch/internal/signal"
@@ -4325,6 +4325,12 @@ func runStart(cmd *cobra.Command, _ []string) error {
 			DefaultAutoPR: acfgIn.DefaultAutoPR,
 			// Automation idle-alert threshold (autonomous.automation.*).
 			Automation: autonomouspkg.AutomationConfig{IdleAlertMinutes: acfgIn.Automation.IdleAlertMinutes},
+			// Global tier of the notify event kinds
+			// (autonomous.notify.default_events). Preserve nil (unset —
+			// resolves to the built-in default set) vs a non-nil empty
+			// list (explicitly turned off): a plain `append([]string(nil),
+			// in...)` would collapse empty into nil.
+			NotifyDefaultEvents: cloneNotifyDefaultEvents(acfgIn.Notify.DefaultEvents),
 		}
 		// BL191 Q4 defaults — preserve the autonomouspkg defaults when
 		// the operator hasn't explicitly configured these.
@@ -5987,9 +5993,11 @@ issues must be an array of plain strings, one sentence each, never objects.`,
 				httpServer.BroadcastPRDUpdate(autonomouspkg.PRDUpdatePayload(ev))
 			})
 			// Built-in lifecycle-event sinks (alert store + topic push) plus the
-			// comm fan-out. They act on exactly the kinds the operator enabled
-			// via autonomous.notify.default_events; an empty list (the default)
-			// makes this a no-op, so the default behavior is unchanged.
+			// comm fan-out. They act on exactly the kinds listed in
+			// autonomous.notify.default_events — shipped default is the
+			// five-kind baseline (autonomouspkg.DefaultNotifyEvents); operator
+			// can list custom kinds there, or set `default_events: []` to turn
+			// the built-in sinks off (nothing subscribed = no-op).
 			// InstallLifecycleSinks wraps the CommSink below in a comm fan-out
 			// sink (autonomouspkg.NewCommFanoutSink) that coalesces events
 			// within CommWindow — the same 5s quiet window as the remote-alert

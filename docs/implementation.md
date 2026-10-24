@@ -944,7 +944,7 @@ All fields in `~/.datawatch/config.yaml`:
 | `autonomous.capacity_rate_window_seconds` | int | `0` | Rolling window length for the two ceilings above; `0` = `3600`. Matters only when a ceiling is set. Surfaces: `GET/PUT /api/config` and `/api/autonomous/config`, MCP `autonomous_config_get/set`, CLI `autonomous config-set --capacity-rate-requests/--capacity-rate-tokens/--capacity-rate-window-seconds`, comm `configure autonomous.capacity_rate_*`, Settings → Autonomous. |
 | `autonomous.injection_guard` | bool | `false` | Scan user-supplied PRD/task specs for prompt injection phrases at the API boundary on create and edit. Findings are always logged. |
 | `autonomous.block_on_injection` | bool | `false` | When true (requires `injection_guard: true`), requests containing injection phrases are rejected with HTTP 400 instead of warn-only. |
-| `autonomous.notify.default_events` | []string | `[]` | Lifecycle event kinds the built-in sinks (alert-store write, topic push to `alerts` + `automaton-<id>`, comm fan-out) act on. Empty list (the default) = nothing new is sent. The global `notify_exclude` still applies to the comm fan-out |
+| `autonomous.notify.default_events` | []string | `[prd.needs_review, prd.blocked, prd.failed, prd.completed, prd.cancelled]` | Global default set of lifecycle event kinds (see `autonomous.DefaultNotifyEvents`) — the third tier of the notify-event resolution, after an Automaton's own `notify_events` list and its guardrail profile's `notify_events` list (internal/autonomous/notify_events_resolve.go). Unset = the shipped five-kind baseline; an explicit empty list (`default_events: []`) is the operator opt-out (the global tier then resolves to no kinds). Lifecycle sinks (alert-store write, topic push to `alerts` + `automaton-<id>`, comm fan-out) act on the kinds listed. The global `notify_exclude` still applies to the comm fan-out |
 | `autonomous.project_write_serialization` | string | `advisory` | BL428 §3a (docs/plans/2026-10-14-concurrency-and-budget-design.md): how Automaton task writes targeting the same project tree are serialized. `advisory` (default) = exclusive per-canonical-tree lock at admission — same-tree tasks queue, different trees run in parallel. `parallel` = RESERVED but DISABLED — recognized and accepted until the mechanism lands in the follow-up implementation PRD; the daemon still enforces the advisory lock and logs a startup warning. Any other value is a config error and the daemon refuses to start |
 | `autonomous.refuse_dirty_tree_start` | bool | `false` | BL428 §3a ii admission-time companion: when true, task admission hard-fails if the PRD's project tree has uncommitted changes (`git status --porcelain` non-empty). The error names the dirty file count and the options: commit or stash first, `git clean`, or set this key back to `false` |
 | `autonomous.stale_task_seconds` | int | `900` | Stall window for a running worker, in seconds. Activity-based: a worker counts as stalled only when it has no output, no live child process, no backend activity, and no file change in its work directory for this many seconds. `0` or negative inherits `session.stale_timeout_seconds`. |
@@ -1097,9 +1097,16 @@ kinds (e.g. `prd.updated`, `prd.completed`, `prd.failed`,
 sinks act on. The daemon-wide list enables each kind only when it is
 explicitly present.
 
-**The default is off.** An empty list — the shipped default — means
-nothing new is sent and the daemon behaves exactly as it always has.
-Enabling a kind is always an explicit operator decision, per kind.
+**The shipped default is the five-kind baseline**
+(`prd.needs_review`, `prd.blocked`, `prd.failed`, `prd.completed`,
+`prd.cancelled`; see `DefaultNotifyEvents`). An operator sets a custom
+list to replace it, or an explicit empty list (`default_events: []`)
+to turn the built-in set off — with no kinds listed nothing new is
+sent and the daemon behaves as it did before this default. This list is
+also the global tier of the notify-event resolution: each Automaton's
+own `notify_events` list and its guardrail profile's `notify_events`
+list take precedence over it (internal/autonomous/
+notify_events_resolve.go).
 
 The key is enforced at the autonomous sink installer + daemon wiring
 (`internal/autonomous`): each sink subscribes only to the lifecycle event

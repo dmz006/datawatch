@@ -54,14 +54,20 @@ func getNotifyDefaultEvents(t *testing.T, s *Server) []string {
 func TestAutonomousNotifyConfigSurfaces(t *testing.T) {
 	s, _ := newNotifyDefaultEventsServer(t)
 
-	// Default: key present on GET with an empty list (not null, not
-	// absent) so the PWA settings card renders the field.
+	// Default: key present on GET with the five-kind baseline (non-nil)
+	// so the PWA settings card renders the field.
 	got := getNotifyDefaultEvents(t, s)
 	if got == nil {
-		t.Fatalf("GET /api/config autonomous.notify.default_events = nil, want empty list (key must always be present)")
+		t.Fatalf("GET /api/config autonomous.notify.default_events = nil, want the baseline list (key must always be present)")
 	}
-	if len(got) != 0 {
-		t.Fatalf("GET default = %v, want empty", got)
+	wantBaseline := []string{"prd.needs_review", "prd.blocked", "prd.failed", "prd.completed", "prd.cancelled"}
+	if len(got) != len(wantBaseline) {
+		t.Fatalf("GET default = %v, want baseline %v", got, wantBaseline)
+	}
+	for i := range wantBaseline {
+		if got[i] != wantBaseline[i] {
+			t.Fatalf("GET default = %v, want baseline %v", got, wantBaseline)
+		}
 	}
 
 	// PUT with an array persists.

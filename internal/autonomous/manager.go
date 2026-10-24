@@ -462,6 +462,25 @@ type Config struct {
 
 	// Automation holds the autonomous.automation.* knobs.
 	Automation AutomationConfig `json:"automation"`
+
+	// NotifyDefaultEvents — the most general (global) tier of notify
+	// event-kind resolution (ResolveNotifyEvents): the Automaton's own
+	// notify_events list wins, then the assigned guardrail profile's list,
+	// then this list. Sourced from the autonomous.notify.default_events
+	// config key: the daemon bridge (cmd/datawatch) copies it here at boot
+	// and the live PUT /api/config path (API.SetConfig merge) lands it
+	// here on change, so no restart is needed.
+	//
+	// Nil vs empty matters and is preserved on purpose:
+	//   nil            = unset → ResolveNotifyEvents uses the built-in
+	//                    DefaultNotifyEvents set (the five default kinds)
+	//   non-nil, empty = operator explicitly turned notifications off;
+	//                    ResolveNotifyEvents returns no events
+	// In either case Source stays "global". Not omitempty: an explicit
+	// empty list must survive the merge-based partial unmarshals
+	// (API.SetConfig) and manager↔config round-trips without collapsing
+	// back to nil.
+	NotifyDefaultEvents []string `json:"notify_default_events"`
 }
 
 // AutomationConfig carries the Automation coordination knobs

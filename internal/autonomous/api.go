@@ -318,6 +318,28 @@ func (a *API) SetConfig(v any) error {
 				changed = true
 			}
 		}
+		// autonomous.notify — the REST partial write (PUT /api/config
+		// autonomous.notify.*) sends the global notify default as a nested
+		// "notify" object, but the Manager carries the flat
+		// NotifyDefaultEvents field, so lift default_events out of the
+		// object into its field key before the merge below. An explicit
+		// empty default_events list (notifications off) must survive as [] —
+		// the merge unmarshal preserves it against NotifyDefaultEvents,
+		// which is deliberately not omitempty.
+		if rawNotify, hasNotify := m["notify"]; hasNotify {
+			var notifySub map[string]json.RawMessage
+			if json.Unmarshal(rawNotify, &notifySub) == nil {
+				if de, okK := notifySub["default_events"]; okK {
+					if _, exists := m["notify_default_events"]; !exists {
+						m["notify_default_events"] = de
+					}
+					changed = true
+				}
+			}
+			// Drop the nested object either way: it has no flat field to
+			// merge into and must not leak into the config as an unknown key.
+			delete(m, "notify")
+		}
 		if changed {
 			if b, err := json.Marshal(m); err == nil {
 				raw = b

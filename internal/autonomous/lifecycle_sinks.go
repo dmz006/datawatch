@@ -16,9 +16,10 @@ import (
 	"unicode/utf8"
 )
 
-// SinkConfig — wired once at daemon startup. Empty Kinds = nothing is
-// subscribed at all (the default: zero behavior change until the
-// operator enables kinds via autonomous.notify.default_events).
+// SinkConfig — wired once at daemon startup. The Kinds list comes from
+// autonomous.notify.default_events (shipped default: the five-kind
+// baseline, see DefaultNotifyEvents); Empty Kinds = nothing is
+// subscribed at all (the explicit `default_events: []` opt-out).
 type SinkConfig struct {
 	Kinds []string
 	// RecordAlert is called per matched event. level is one of
