@@ -231,7 +231,7 @@ test('renderAlertsView() proxies through /api/proxy/<name>/... for a specific na
   vm.runInContext('renderAlertsView()', sandbox);
   const alertsUrl = fetchedUrls.find(u => u.includes('/alerts') && !u.includes('/commands'));
   const sessionsUrl = fetchedUrls.find(u => u.includes('/sessions'));
-  assert.equal(alertsUrl, '/api/proxy/host-a/api/alerts', `alerts fetch should proxy through host-a, got: ${alertsUrl}`);
+  assert.equal(alertsUrl, '/api/proxy/host-a/api/alerts?limit=100', `alerts fetch should proxy through host-a, got: ${alertsUrl}`);
   assert.equal(sessionsUrl, '/api/proxy/host-a/api/sessions?view=summary&limit=50', `sessions fetch should be the first summary page through host-a, got: ${sessionsUrl}`);
 });
 
@@ -262,7 +262,7 @@ test('renderAlertsView() uses plain local endpoints when no federated server is 
   vm.runInContext('renderAlertsView()', sandbox);
   const alertsUrl = fetchedUrls.find(u => u.includes('/alerts') && !u.includes('/commands'));
   const sessionsUrl = fetchedUrls.find(u => u.includes('/sessions'));
-  assert.equal(alertsUrl, '/api/alerts');
+  assert.equal(alertsUrl, '/api/alerts?limit=100');
   assert.equal(sessionsUrl, '/api/sessions?view=summary&limit=50');
 });
 

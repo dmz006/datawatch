@@ -349,7 +349,10 @@ function _fedFetchError(resp) {
 function _checkFederatedConnection(serverName) {
   state._fedConnStatus = { server: serverName, phase: 'connecting' };
   if (state.activeView === 'sessions') renderSessionsView();
-  fetch('/api/proxy/' + encodeURIComponent(serverName) + '/api/sessions', { headers: tokenHeader() })
+  // First summary page only (rows, not whole records); Load more walks the rest.
+  const lState = _sl();
+  lState.next = ''; lState.total = 0; lState.moreError = '';
+  fetch(_sessionsProxyPrefix(serverName) + '/api/sessions?view=summary&limit=' + SESSIONS_PAGE, { headers: tokenHeader() })
     .then(r => {
       if (r.status === 401 || r.status === 403 || r.status === 502) return _fedFetchError(r);
       if (!r.ok) return Promise.reject(new Error('HTTP ' + r.status));
@@ -367,7 +370,10 @@ function _checkFederatedConnection(serverName) {
     .then(sessions => {
       if (state.activeServer !== serverName) return; // switched away while this was in flight
       state._fedConnStatus = null; // real data is in state.sessions now, no status banner needed
-      state.sessions = sessions || [];
+      const rows = Array.isArray(sessions) ? sessions : ((sessions && sessions.sessions) || []);
+      lState.next = (sessions && !Array.isArray(sessions) && sessions.next_cursor) || '';
+      lState.total = (sessions && !Array.isArray(sessions) && sessions.total) || rows.length;
+      state.sessions = rows;
       if (state.activeView === 'sessions') { onSessionsUpdated(); renderSessionsView(); }
     })
     .catch(e => {
@@ -2761,7 +2767,9 @@ window.sessionsLoadMore = function() {
   if (!l.next || l.loadingMore) return;
   l.loadingMore = true; l.moreError = '';
   renderSessionsView();
-  _sessionsFetchPage(l.next).then(page => {
+  const server = state.activeServer;
+  _sessionsFetchPage(l.next, _sessionsLocalMode() ? '' : server).then(page => {
+    if (state.activeServer !== server) return; // switched away while this was in flight
     page.rows.forEach(_mergeSessionRow);
     l.next = page.next; l.total = page.total;
   }).catch(err => { l.moreError = (err && err.message) || String(err); })
@@ -3055,7 +3063,7 @@ function renderSessionsView() {
 
 function _sessionsLoadMoreHtml() {
   const l = _sl();
-  if (!_sessionsLocalMode()) return '';
+  if (state.activeServer === 'all') return '';
   let h = '';
   if (l.error) h += `<div class="list-state-failed" role="alert"><span class="list-state-failed-msg">${escHtml(t('load_failed'))}: ${escHtml(l.error)}</span><button type="button" class="btn-secondary list-state-retry" onclick="loadSessionsList()">${escHtml(t('retry'))}</button></div>`;
   if (l.next && state.sessions.length < l.total) {
@@ -18357,6 +18365,7 @@ function _loadAllServersSessions() {
       if (!data) return;
       // data is [{...session, server:"name"}, ...] — merge with local sessions already in state
       state.sessions = data;
+      _sl().next = '';
       if (state.activeView === 'sessions') renderSessionsView();
     })
     .catch(() => {});
@@ -23072,7 +23081,9 @@ window._loadPRDActiveSessionCard = function(prd) {
       clearInterval(window._prdActiveSessionInterval);
       return;
     }
-    apiFetch('/api/sessions').then(allSessions => {
+    // 5s timer: only live sessions are matched below (terminal ones are dropped),
+    // and the match reads prd_id / compute_node_ref, which summary rows omit.
+    apiFetch('/api/sessions?states=active').then(allSessions => {
       const list = Array.isArray(allSessions) ? allSessions : (allSessions.sessions || []);
       const taskSessionIds = new Set(Object.keys(sessionTaskMap));
       const terminalStates = new Set(['killed','complete','completed','failed','cancelled','stopped','error']);
@@ -27634,11 +27645,29 @@ function renderAlertCard(a, sessState, isFirst, cmds) {
 // _alertsFetch loads the alerts, the quick-reply commands and the sessions the
 // alerts are classified against, in parallel. A failed alerts response rejects,
 // so the loader shows a failed state with Retry instead of an empty list.
+// The Alerts tab loads the newest ALERTS_PAGE alerts and a Load more button
+// widens that window by one page. A refresh re-requests the whole window in
+// one call, so a poll never drops what was already loaded. The aggregated
+// (all servers) endpoint has no paged form and stays whole.
+const ALERTS_PAGE = 100;
+function _alertsWindow() {
+  const srv = String(state.activeServer || 'local');
+  const w = state._alertsWin;
+  if (w && w.server === srv) return w;
+  return (state._alertsWin = { server: srv, limit: ALERTS_PAGE });
+}
+window.alertsLoadMore = function() {
+  _alertsWindow().limit += ALERTS_PAGE;
+  const ctl = window._listLoaders['alerts:' + (state.activeServer || 'local')];
+  if (ctl) ctl.load();
+};
 function _alertsFetch() {
   const _alertsSrv = state.activeServer;
   const _alertsIsRemote = _alertsSrv && _alertsSrv !== 'all' && _alertsSrv !== 'local';
   const _alertsProxyPrefix = _alertsIsRemote ? '/api/proxy/' + encodeURIComponent(_alertsSrv) : '';
-  const alertsEndpoint = _alertsSrv === 'all' ? '/api/alerts/aggregated' : _alertsProxyPrefix + '/api/alerts';
+  const alertsEndpoint = _alertsSrv === 'all'
+    ? '/api/alerts/aggregated'
+    : _alertsProxyPrefix + '/api/alerts?limit=' + _alertsWindow().limit;
   // BL312 S5 — use aggregated endpoint in all-servers mode.
   // Operator-reported (2026-10-08): selecting a SPECIFIC federated host
   // did nothing here -- only 'all' mode was special-cased; any other
@@ -27680,7 +27709,8 @@ function _alertsFetch() {
       updateAlertBadge();
       fetch('/api/alerts', { method: 'POST', headers: { 'Content-Type': 'application/json', ...tokenHeader() }, body: JSON.stringify({ all: true }) });
     }
-    return { data, cmds };
+    const paged = data && !Array.isArray(data);
+    return { data, cmds, hasMore: !!(paged && data.has_more), total: (paged && data.total) || 0 };
   });
 }
 
@@ -27983,7 +28013,15 @@ function _alertsBuildHtml(result) {
     }
   }
 
-  return tabsRow + topBar + bodyHTML;
+  // More alerts exist past the loaded window: a button widens it by one page.
+  let moreHTML = '';
+  if (result.hasMore) {
+    const shown = alertList.length;
+    const label = `${t('load_more') || 'Load more'} (${shown}${result.total ? '/' + result.total : ''})`;
+    moreHTML = `<div class="list-load-more" style="text-align:center;padding:8px;"><button type="button" class="btn-secondary" id="alertsLoadMore" onclick="alertsLoadMore()">${escHtml(label)}</button></div>`;
+  }
+
+  return tabsRow + topBar + bodyHTML + moreHTML;
 }
 
 function renderAlertsView() {
@@ -30293,14 +30331,15 @@ document.addEventListener('DOMContentLoaded', () => {
   // than waiting for the first view that happens to need it.
   loadServerListEager();
 
-  // Load initial unread alert count
-  fetch('/api/alerts', { headers: tokenHeader() })
+  // Load initial unread alert count. unread=1 returns only the unread alerts
+  // (plus unread_count), which is all the badge and the watched-only seed read.
+  fetch('/api/alerts?unread=1', { headers: tokenHeader() })
     .then(r => r.ok ? r.json() : null)
     .then(data => {
       if (!data) return;
       state.alertUnread = data.unread_count || 0;
       // GH#192 D61a — the plain unread_count field has no per-session
-      // breakdown; derive the watched-only seed from the full alerts
+      // breakdown; derive the watched-only seed from the unread alerts
       // array the same endpoint already returns.
       state.alertWatchedUnread = (data.alerts || []).filter(a =>
         !a.read && a.session_id && state.watchedSessions.has(a.session_id)
@@ -32454,7 +32493,9 @@ function _runtimeBadge(sess) {
 // two copies for as long as it did).
 function _dashFetchPRDs() {
   const isAllServers = state.activeServer === 'all';
-  return apiFetch(isAllServers ? '/api/autonomous/prds/aggregated' : '/api/autonomous/prds').then(d => {
+  // Single server: the summary list narrowed to the three statuses kept below
+  // (the all-servers aggregate has no summary or filter form).
+  return apiFetch(isAllServers ? '/api/autonomous/prds/aggregated' : '/api/autonomous/prds?status=running,blocked,planning&limit=500').then(d => {
     const list = Array.isArray(d) ? d : ((d && d.prds) || []);
     _dash._prds = list.filter(p => p.status === 'running' || p.status === 'blocked' || p.status === 'planning');
   });

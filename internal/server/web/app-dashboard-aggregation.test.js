@@ -46,10 +46,10 @@ function mockFetchJSON(sandbox, byUrl) {
   };
 }
 
-test('_dashFetchPRDs hits the plain endpoint and unwraps {prds:[...]} when not in all-servers mode', async () => {
+test('_dashFetchPRDs hits the status-filtered summary list and unwraps {prds:[...]} when not in all-servers mode', async () => {
   const sandbox = loadAppJS();
   mockFetchJSON(sandbox, {
-    '/api/autonomous/prds': { prds: [{ id: 'p1', status: 'running' }, { id: 'p2', status: 'completed' }] },
+    '/api/autonomous/prds?status=running,blocked,planning&limit=500': { prds: [{ id: 'p1', status: 'running' }, { id: 'p2', status: 'completed' }] },
   });
   await vm.runInContext('_dashFetchPRDs()', sandbox);
   const prds = vm.runInContext('_dash._prds', sandbox);
