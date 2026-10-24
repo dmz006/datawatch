@@ -5,6 +5,10 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## v9.10.0 — Plugin widget data gated on plugin:read and plugin:write
+
+Plugin widget data endpoints now gate on the new `plugin:read` and `plugin:write` federation capabilities instead of `config:read` and `config:write`. Federation peers must be granted them explicitly; full-control, the operator token (PWA, mobile, CLI) and session-scoped credentials are unaffected. Tests cover the capability checks for every widget route. This finished work from the plugin widgets series sat unmerged on its branch and was found by the content-based branch audit.
+
 ## v9.9.1 — Orphan sweep no longer ends live workers
 
 Fixes the orphan sweep that ended every live Claude worker about five minutes after its task was delivered, which had been failing long tasks with "no new changes" since the sweep went live.
